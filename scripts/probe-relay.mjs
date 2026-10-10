@@ -820,7 +820,7 @@ check(
 		liveAim.designation === "RELAY · HOSTILE" &&
 		// Its shields and hull under the name, as any ship's in a fight: a relay
 		// has no shields, and the replacement is whole.
-		liveAim.conditionLine === "SHD F 0 A 0  HULL 100%",
+		liveAim.conditionLine === "SHD F 0% A 0%  HULL 100%",
 	JSON.stringify(liveAim),
 );
 // The replacement starts whole: one pulse wears it, it does not die (sage
@@ -1006,7 +1006,7 @@ check(
 		tenderGimbal.selected.beamOffDeg < 1 &&
 		// And its shields and hull under the name, as any ship's: a ship's shields
 		// (Q13), and whole here.
-		/^SHD F [1-9]\d* A [1-9]\d*  HULL 100%$/.test(
+		/^SHD F [1-9]\d*% A [1-9]\d*%  HULL 100%$/.test(
 			tenderGimbal.selected.conditionLine ?? "",
 		) &&
 		tenderGimbal.control.noseOffDeg > 2 &&
@@ -1203,7 +1203,10 @@ await capture("06-tender-next");
 // read the tender that comes for that.
 const secondVisit = await page.evaluate(async (killedAt) => {
 	const g = window.__seelite;
-	const { SHIELD_POOL } = await import("/src/ship-condition.ts");
+	const { fullCondition } = await import("/src/ship-condition.ts");
+	const { RELAY_TENDER_HULL_ID } = await import("/src/relay-slot.ts");
+	// The tender's own pool, which is its hull's since #866.
+	const SHIELD_POOL = fullCondition(RELAY_TENDER_HULL_ID).shieldMax;
 	const relay = await import("/src/pirate-relay.ts");
 	const tender = await import("/src/relay-tender.ts");
 	const probe = window.__relayProbe;

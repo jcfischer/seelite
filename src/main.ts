@@ -440,7 +440,6 @@ import {
 	type ShieldSide,
 	type ShipCondition,
 	HEAT_LOCK,
-	SHIELD_POOL,
 	applyDamage,
 	fullCondition,
 	headOnPool,
@@ -13970,7 +13969,7 @@ class Game {
 				raiderFiring: this.raiderFiring,
 				engaged,
 				standing: this.legalStanding(),
-				shieldShare: Math.min(c.fore, c.aft) / SHIELD_POOL,
+				shieldShare: Math.min(c.fore, c.aft) / c.shieldMax,
 				hullShare: c.hull / c.hullMax,
 				systemSeed: this.world.system.record.seed,
 				stationRole: station?.type ?? null,
@@ -14101,7 +14100,7 @@ class Game {
 					fore: c.fore,
 					aft: c.aft,
 					hull: c.hull,
-					poolMax: SHIELD_POOL,
+					poolMax: c.shieldMax,
 					sinceStruckS: c.sinceStruckS,
 				},
 				target:
@@ -19019,6 +19018,7 @@ class Game {
 			return {
 				fore: 0,
 				aft: 0,
+				shieldMax: 0,
 				hull: this.relayHull,
 				hullMax: RELAY_INTEGRITY,
 			};

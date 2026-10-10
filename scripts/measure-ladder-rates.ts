@@ -66,7 +66,7 @@ import {
 } from "../src/ladder";
 import { fullKitCr } from "../src/market";
 import { STATION_BERTHS_OPEN } from "../src/station";
-import { PULSE_LASER, SHIELD_POOL } from "../src/ship-condition";
+import { PULSE_LASER } from "../src/ship-condition";
 import { RELAY_INTEGRITY } from "../src/pirate-relay";
 import { RAIDER_REPAIR_S, RAIDER_WRECK_S } from "../src/raider-wreck";
 import { legEncounter, raiderLegChance } from "../src/raider-slots";
@@ -626,7 +626,7 @@ const credit = (own: HullId, target: HullId): number =>
 	killCredit({ hull: own }, target);
 
 console.log(
-	`\n   strength S = (SHIELD_POOL ${SHIELD_POOL} + integrity) × DPS × aiSkill 1; DPS = PULSE_LASER.damagePerS ${PULSE_LASER.damagePerS} if armed, else 0; own S (always armed): courier ${fittedStrength({ hull: PLAYER_BASELINE_HULL })}`,
+	`\n   strength S = (the hull's shieldPool + integrity) × DPS × aiSkill 1; DPS = PULSE_LASER.damagePerS ${PULSE_LASER.damagePerS} if armed, else 0; own S (always armed): courier ${fittedStrength({ hull: PLAYER_BASELINE_HULL })}`,
 );
 for (const h of DOCKABLE_HULL_IDS)
 	console.log(

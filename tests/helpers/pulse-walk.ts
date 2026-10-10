@@ -17,7 +17,6 @@
 import {
 	applyDamage,
 	isAlive,
-	SHIELD_POOL,
 	type ShipCondition,
 } from "../../src/ship-condition";
 import { PULSE_LASER } from "../../src/ship-condition";
@@ -47,7 +46,7 @@ export const walkDownToKill = (start: ShipCondition): ShipCondition[] => {
 	const seen: ShipCondition[] = [];
 	let c = start;
 	const budget =
-		Math.ceil((start.hullMax * 3 + SHIELD_POOL * 2) / PULSE_TICK) + 8;
+		Math.ceil((start.hullMax * 3 + start.shieldMax * 2) / PULSE_TICK) + 8;
 	for (let i = 0; i < budget && isAlive(c); i++) {
 		c = applyDamage(c, PULSE_TICK, "fore");
 		seen.push(c);

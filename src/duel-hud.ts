@@ -19,15 +19,21 @@
  */
 import type { FloorCell, FloorTone } from "./cockpit";
 import type { EncounterPhase } from "./encounter";
+import { HULL_SPECS, PURCHASABLE_HULL_IDS, stockPlant } from "./hull";
 import {
-	ENERGY_BANK,
 	HEAT_LOCK,
 	printHull,
 	printHullPercent,
-	SHIELD_POOL,
+	printShieldPercent,
 	type ConditionPrint,
 	type ShipCondition,
 } from "./ship-condition";
+
+/** The largest shield pool among the hulls a pilot can fly: the widest figure
+ *  the pilot's own shield cell can print, now that each hull has its own pool
+ *  (#866). */
+const widestPool = (): number =>
+	Math.max(...PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].shieldPool));
 
 /** The glass row's cells, in order. */
 export const DUEL_ROW_LABELS = ["SHD", "HEAT"] as const;
@@ -70,12 +76,21 @@ export function duelRowCells(c: ShipCondition): FloorCell[] {
  */
 export function duelRowWidest(): Record<DuelRowLabel, string> {
 	const widest: Record<DuelRowLabel, string> = { SHD: "", HEAT: "" };
+	// The row is the pilot's own, so the widest pool is the widest a pilot can
+	// fly: a hull a shipyard sells.
+	const pool = widestPool();
+	const bank = Math.max(
+		...PURCHASABLE_HULL_IDS.map((id) => stockPlant(id).bankE),
+	);
 	const base: ShipCondition = {
-		fore: SHIELD_POOL,
-		aft: SHIELD_POOL,
+		fore: pool,
+		aft: pool,
 		hull: 1,
 		hullMax: 1,
-		energy: ENERGY_BANK,
+		shieldMax: pool,
+		energy: bank,
+		energyMax: bank,
+		energyRegenPerS: 0,
 		heat: 0,
 		heatLocked: false,
 		sinceStruckS: 0,
@@ -106,10 +121,10 @@ export interface DuelConsoleReadout {
 /** The Flight console's full combat detail. */
 export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 	return {
-		fore: `${Math.round(c.fore)} / ${SHIELD_POOL}`,
-		aft: `${Math.round(c.aft)} / ${SHIELD_POOL}`,
+		fore: `${Math.round(c.fore)} / ${c.shieldMax}`,
+		aft: `${Math.round(c.aft)} / ${c.shieldMax}`,
 		hull: `${printHull(c.hull)} / ${c.hullMax}`,
-		bank: `${Math.round(c.energy)} / ${ENERGY_BANK}`,
+		bank: `${Math.round(c.energy)} / ${c.energyMax}`,
 		heat: heatValue(c),
 	};
 }
@@ -117,11 +132,12 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 /**
  * The selected enemy's condition, as the line under its label on the glass
  * (#324, the principal's ruling after the second playtest): shield pools and
- * hull, printed as the duel row prints them. It is refused while either printed
- * pool is 0, so an open side reads at a glance.
+ * hull. It is refused while either printed pool is 0, so an open side reads at
+ * a glance. Since #866 each hull has its own pool, so both pools print as a
+ * share of it, as the hull does (the principal's ruling on #866).
  *
  * **Both pools print, every time.** A carrier cut off from behind loses `aft`
- * while `fore` stands at 106, and one met from ahead the other way round; those
+ * while `fore` stands whole, and one met from ahead the other way round; those
  * are different fights, and a reading that named one pool could not tell them
  * apart. #395's measurement is what found the question had never been asked.
  *
@@ -133,10 +149,10 @@ export function targetConditionLine(c: ConditionPrint): {
 	text: string;
 	tone: FloorTone;
 } {
-	const fore = Math.round(c.fore);
-	const aft = Math.round(c.aft);
+	const fore = printShieldPercent(c.fore, c.shieldMax);
+	const aft = printShieldPercent(c.aft, c.shieldMax);
 	return {
-		text: `SHD F ${fore} A ${aft}  HULL ${printHullPercent(c)}%`,
+		text: `SHD F ${fore}% A ${aft}%  HULL ${printHullPercent(c)}%`,
 		tone: fore === 0 || aft === 0 ? "refused" : "passive",
 	};
 }
@@ -165,15 +181,15 @@ export function targetConditionWidest(): string {
 	// condition to ask it meant naming three fields this function can neither see
 	// nor vary, and giving each of them a value it is not entitled to choose.
 	const base: ConditionPrint = {
-		fore: SHIELD_POOL,
-		aft: SHIELD_POOL,
+		fore: 1,
+		aft: 1,
+		shieldMax: 1,
 		hull: 1,
 		hullMax: 1,
 	};
-	// One case, not a sweep, and the reason is in each of the three figures: both
-	// pools are clamped to `SHIELD_POOL` by `stepCondition`, and the hull is a
-	// percent that reads 100 at both ends of the roster. A zeroed pool is therefore
-	// never wider than this one — `0` is one character and `106` is three. It still
+	// One case, not a sweep, and the reason is in each of the three figures: each
+	// is a percent that reads 100 at both ends of the roster, since both pools are
+	// clamped to the hull's `shieldPool` by `stepCondition` (#866). It still
 	// goes through the formatter rather than being spelled out, so the fit cannot
 	// drift from the print, and `tests/duel-hud.test.ts` holds that this string is
 	// actually attained rather than a guess with room in it.

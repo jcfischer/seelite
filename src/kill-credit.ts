@@ -12,7 +12,7 @@
  */
 
 import { HULL_SPECS, type HullId } from "./hull";
-import { PULSE_LASER, SHIELD_POOL } from "./ship-condition";
+import { PULSE_LASER } from "./ship-condition";
 import { ARMED_TRAFFIC_HULLS } from "./traffic-engagement";
 
 /** AI skill, S's third factor. 1 for every ship today (#562 D3): S is derived
@@ -44,11 +44,10 @@ export const isArmedTarget = (hull: HullId): boolean =>
 	ARMED_TRAFFIC_HULLS.has(hull) || hull === "raider";
 
 /**
- * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one shield bank
- * plus integrity. The pilot's own ship is always armed.
+ * S = effective HP × DPS × AI skill (#562 D3). X * plus integrity. The pilot's own ship is always armed.
  */
 const hullStrength = (hull: HullId, dps: number): number =>
-	(SHIELD_POOL + HULL_SPECS[hull].integrity) * dps * AI_SKILL;
+	(HULL_SPECS[hull].shieldPool + HULL_SPECS[hull].integrity) * dps * AI_SKILL;
 
 export const strength = (ship: FittedShip): number =>
 	hullStrength(ship.hull, fittedDps(ship));
