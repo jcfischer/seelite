@@ -25,12 +25,13 @@ import {
 	type HullSlot,
 	INTERNAL_FAMILIES,
 	type InternalFamily,
-	POWER_PLANT_E_OUTPUT,
+	POWER_PLANT_OUTPUT,
 	PURCHASABLE_HULL_IDS,
 	ROLE_INTERNAL_FAMILY,
 	SHIELD_COMBAT_FACTOR,
 	SHIELD_COMBAT_ROLES,
 	SHIELD_REFERENCE,
+	shieldPoolUnderLaw,
 	slotCapacity,
 	stockPlant,
 } from "../src/hull";
@@ -235,8 +236,8 @@ describe("the stock power plant (#867 D3)", () => {
 				"E",
 				HULL_SPECS[id].plantSize,
 			]);
-			expect(plant.bankE).toBe(POWER_PLANT_E_OUTPUT[plant.size].bankE);
-			expect(plant.regenPerS).toBe(POWER_PLANT_E_OUTPUT[plant.size].regenPerS);
+			expect(plant.bankE).toBe(POWER_PLANT_OUTPUT.E[plant.size].bankE);
+			expect(plant.regenPerS).toBe(POWER_PLANT_OUTPUT.E[plant.size].regenPerS);
 		}
 	});
 
@@ -252,35 +253,44 @@ describe("the stock power plant (#867 D3)", () => {
 	});
 
 	test("a bigger plant has a bigger bank and faster regen", () => {
-		expect(POWER_PLANT_E_OUTPUT[2].bankE).toBeGreaterThan(
-			POWER_PLANT_E_OUTPUT[1].bankE,
+		expect(POWER_PLANT_OUTPUT.E[2].bankE).toBeGreaterThan(
+			POWER_PLANT_OUTPUT.E[1].bankE,
 		);
-		expect(POWER_PLANT_E_OUTPUT[3].bankE).toBeGreaterThan(
-			POWER_PLANT_E_OUTPUT[2].bankE,
+		expect(POWER_PLANT_OUTPUT.E[3].bankE).toBeGreaterThan(
+			POWER_PLANT_OUTPUT.E[2].bankE,
 		);
-		expect(POWER_PLANT_E_OUTPUT[2].regenPerS).toBeGreaterThan(
-			POWER_PLANT_E_OUTPUT[1].regenPerS,
+		expect(POWER_PLANT_OUTPUT.E[2].regenPerS).toBeGreaterThan(
+			POWER_PLANT_OUTPUT.E[1].regenPerS,
 		);
-		expect(POWER_PLANT_E_OUTPUT[3].regenPerS).toBeGreaterThan(
-			POWER_PLANT_E_OUTPUT[2].regenPerS,
+		expect(POWER_PLANT_OUTPUT.E[3].regenPerS).toBeGreaterThan(
+			POWER_PLANT_OUTPUT.E[2].regenPerS,
 		);
 	});
 });
 
 describe("the shield baseline", () => {
 	test("every shield figure is the law the table states it follows", () => {
-		// The `integrity` discipline: a stored figure against a written law, so a
-		// hand-edited row is a visible deviation rather than a typo.
+		// The `integrity` discipline: a stored figure against the module's own
+		// law, so a hand-edited row is a visible deviation rather than a typo, and
+		// a retune of the law moves the check with it (sage #879 round 1).
 		for (const id of HULL_IDS) {
 			const { massT, role } = HULL_SPECS[id];
-			const factor = (SHIELD_COMBAT_ROLES as readonly string[]).includes(role)
-				? SHIELD_COMBAT_FACTOR
-				: 1;
 			expect([id, HULL_SPECS[id].shieldPool]).toEqual([
 				id,
-				Math.round(SHIELD_REFERENCE * (massT / 60) ** 0.6 * factor),
+				shieldPoolUnderLaw(massT, role),
 			]);
 		}
+	});
+
+	test("the law is the mass law on #48's pool, a quarter up for combat roles", () => {
+		// Pins the law's own constants, which the row above now reads through.
+		expect(SHIELD_REFERENCE).toBe(106);
+		expect(SHIELD_COMBAT_FACTOR).toBe(1.25);
+		expect([...SHIELD_COMBAT_ROLES].sort() as string[]).toEqual(
+			["battle-line", "fast", "outlaw", "security"].sort(),
+		);
+		expect(shieldPoolUnderLaw(60, "player-baseline")).toBe(106);
+		expect(shieldPoolUnderLaw(60, "outlaw")).toBe(Math.round(106 * 1.25));
 	});
 
 	test("the courier keeps the pool it flew before #866", () => {

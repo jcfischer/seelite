@@ -439,33 +439,45 @@ export const ROLE_INTERNAL_FAMILY: Readonly<Record<HullRole, InternalFamily>> =
 	};
 
 /**
- * A stock power plant's output by size — grade E, the only grade this node
- * sets (#866). Size 1 is the bank every ship flew before #866
- * (`ENERGY_BANK = 100`, `ENERGY_REGEN_PER_S = 12`), so the courier is
- * unchanged; each size up is half as much again. The D and A grades, and every
- * plant's mass and price, are the pricing instrument's (#868, #867 D15).
+ * A power plant's grade (#867 D6). Only E exists until the pricing instrument
+ * (#868) measures D and A and widens this union; the output table is keyed by
+ * it already, so those grades join the one table rather than a second.
  */
-export const POWER_PLANT_E_OUTPUT: Readonly<
-	Record<SlotSize, { readonly bankE: number; readonly regenPerS: number }>
-> = {
-	1: { bankE: 100, regenPerS: 12 },
-	2: { bankE: 150, regenPerS: 18 },
-	3: { bankE: 225, regenPerS: 27 },
-};
+export type PlantGrade = "E";
 
-export interface PowerPlant {
-	readonly size: SlotSize;
-	readonly grade: "E";
+export interface PlantOutput {
 	/** The energy bank's capacity. */
 	readonly bankE: number;
 	/** Bank regeneration per second of sim time, while the gun is not firing. */
 	readonly regenPerS: number;
 }
 
+/**
+ * A power plant's output by grade and size. Grade E is the only grade this
+ * node sets (#866). Its size 1 is the bank every ship flew before #866
+ * (`ENERGY_BANK = 100`, `ENERGY_REGEN_PER_S = 12`), so the courier is
+ * unchanged; each size up is half as much again. The D and A grades, and every
+ * plant's mass and price, are the pricing instrument's (#868, #867 D15).
+ */
+export const POWER_PLANT_OUTPUT: Readonly<
+	Record<PlantGrade, Readonly<Record<SlotSize, PlantOutput>>>
+> = {
+	E: {
+		1: { bankE: 100, regenPerS: 12 },
+		2: { bankE: 150, regenPerS: 18 },
+		3: { bankE: 225, regenPerS: 27 },
+	},
+};
+
+export interface PowerPlant extends PlantOutput {
+	readonly size: SlotSize;
+	readonly grade: PlantGrade;
+}
+
 /** The plant a hull ships with: grade E, the hull's plant size (#867 D3). */
 export const stockPlant = (id: HullId): PowerPlant => {
 	const size = HULL_SPECS[id].plantSize;
-	return { size, grade: "E", ...POWER_PLANT_E_OUTPUT[size] };
+	return { size, grade: "E", ...POWER_PLANT_OUTPUT.E[size] };
 };
 
 /**

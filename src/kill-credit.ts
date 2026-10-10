@@ -44,7 +44,9 @@ export const isArmedTarget = (hull: HullId): boolean =>
 	ARMED_TRAFFIC_HULLS.has(hull) || hull === "raider";
 
 /**
- * S = effective HP × DPS × AI skill (#562 D3). X * plus integrity. The pilot's own ship is always armed.
+ * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one side of the
+ * hull's own `shieldPool` (#866) plus its integrity. The pilot's own ship is
+ * always armed.
  */
 const hullStrength = (hull: HullId, dps: number): number =>
 	(HULL_SPECS[hull].shieldPool + HULL_SPECS[hull].integrity) * dps * AI_SKILL;
