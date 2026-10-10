@@ -440,3 +440,74 @@ Round-4 final verification (2026-10-10):
 - C3/C4: tested — `npm test` ran once: 5,779 pass, 0 fail, 9,054,272 assertions across 320 files, 403.53 seconds. No source changed after this run.
 - C4: tested — production build, strict typecheck, format, script lint, launcher wiring and diff whitespace checks passed.
 - C3/C4: tested — the production Metal focused gate passed 1/1 in 60 seconds; all four untouched default/Auto checks and matching procedural-state comparisons passed. This remains partial browser coverage.
+
+## Principal rulings and the LOD1 default (2026-10-10)
+
+The principal ruled twice on PR #864. First, Full rather than Auto as the
+default (round 2's cost finding). Then, against round 3's frame-budget finding,
+**LOD1 uniformly in production**: the medium level, with Full kept in the repo
+and in the review controls for later use. Round 3 had forced LOD2 and round 4
+restored Auto; both are superseded. `buildInteriorKit` calls
+`lods.setMode("1")`. Full geometry still owns gameplay measurements.
+
+The packed-asset test asserts the LOD1 default (`levels[1] > 0`,
+`levels[2] === 0`, fewer triangles than Full) and then drives Auto explicitly
+for its close-inspection retention row. It failed against `e7a6b23`'s code and
+passes. The production probe gained an LOD1 arm and requires the untouched
+default to equal it in levels, calls and triangles, below Full and above LOD2
+in triangles; its default timing column measures LOD1.
+
+### Two probe reds the kit caused
+
+Ranger's full suite failed twice at `e7a6b23` on `probe-adaptive-resolution`
+and `probe-planet-surfaces`. Both were green alone on `origin/main`
+(`e1faa6f`) and red alone on this branch at the same load, so they were the
+branch and not the machine.
+
+- **The background install lands inside measurements.** The adaptive probe
+  read a frame-period median of 528.95 ms while the kit loaded and installed.
+  Both probes now wait for `interiorModelsSettled` after `bootedGame`
+  (`scripts/probe-guard.mjs`), and the adaptive probe is green. The stall a
+  player feels during the install is charted as node #877.
+- **The floods recompiled lit programs as stations crossed layers.** Each kit
+  adds four flood `PointLight`s, and `numPointLights` is in every lit
+  program's cache key. A station moves between layer scenes with its distance,
+  and its detail toggled the lamps' `visible`, so a scene's point-light count
+  flipped and every lit material in it compiled a new variant. The band walk
+  compiled ten programs, all differing from an existing key only in
+  `numPointLights` (8 → 0). A re-run of the relief pre-warm after install did
+  not help and was not kept. The floods now sit on layer 31, which no camera
+  enables, and `syncInteriorFloods` copies the nearest near-layer interior's
+  floods into a fixed pool of near-scene lights that go dark by intensity,
+  the rule `syncCabinMirrors` already follows. `probe-planet-surfaces`,
+  `probe-station-interior-kit` and `probe-cabin-pass` pass alone.
+  The pool reproduces the floods: the four kit frames differ from the
+  pre-pool build on 0.02–0.06% of pixels (>24/255), while a control arm with
+  the pool dark moves 67–96% of them and roughly halves mean luma. One limit:
+  only the nearest near-layer interior is lit by floods.
+
+### Production measurement at LOD1
+
+Evidence: `spikes/interiors/evidence/production-lod1-principal.json`. Same
+instrument (shuffled seed 843, eight blocks of eight serial render + 1×1
+`readPixels` frames per arm), Vite production bundle, Apple M1 Pro / ANGLE
+Metal, trade `port-deep` chase camera, with the flood pool in place.
+
+| Theme | Procedural ms | Full ms | LOD1 (default) ms | Auto ms | LOD2 ms | Calls Full / LOD1 / Auto | Triangles Full → LOD1 | LOD1 slower than Full |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |
+| civic | 8.112 | 14.913 | 13.563 | 14.700 | 12.769 | 907 / 907 / 1143 | 11,665,026 → 8,748,066 | 8/64 |
+| works | 8.219 | 14.425 | 13.400 | 14.600 | 13.050 | 1163 / 1163 / 1328 | 10,023,870 → 7,585,950 | 5/64 |
+| frontier | 7.662 | 14.519 | 13.256 | 14.606 | 12.894 | 1032 / 1032 / 1239 | 10,939,472 → 8,280,752 | 5/64 |
+| survey | 8.125 | 15.106 | 13.306 | 14.594 | 13.100 | 958 / 958 / 1179 | 10,932,722 → 8,213,042 | 0/64 |
+
+LOD1 keeps Full's draw-call count, submits about 25% fewer triangles, and is
+faster than Full in 87–100% of pairings; every default median is below
+16.7 ms in this run. These are drained composer frame costs, not delivered
+FPS, and they say nothing about a lower-end device. Compare arms within this
+run only. Not measured: the open-space cost of the pool's four always-present
+near-scene lights.
+
+Verification: `npm test` 5,794 pass, 0 fail across 327 files; typecheck,
+format, script lint, launcher wiring and build pass. Browser probes run alone
+on the hardware lane: `probe-adaptive-resolution`, `probe-planet-surfaces`,
+`probe-station-interior-kit`, `probe-cabin-pass`. The full suite is ranger's.
