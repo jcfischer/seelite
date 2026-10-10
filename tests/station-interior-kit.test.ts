@@ -73,26 +73,53 @@ test("shipping scenes match the full and reduced triangle records", () => {
 		}
 });
 afterEach(() => installInteriorKitBuilder(null));
-test("station kits default to uniform LOD2 while Full and per-fitting Auto remain available", () => {
+test("station kits default to per-fitting Auto and retain Full for close inspection", () => {
 	const interior = stationInterior(
 		"trade",
 		STATION_GEOMETRY.trade.aperturePlaneKm,
 		47,
 	);
-	const camera = new THREE.PerspectiveCamera(60, 1.6, 0.01, 20000);
-	camera.position.z = 2;
 	for (const { id } of THEMES) {
+		const camera = new THREE.PerspectiveCamera(60, 1.6, 0.01, 20000);
+		camera.position.z = 2;
 		const kit = buildInteriorKit(interior, 47, id, assets, records);
 		const lod = kit.userData.interiorLods as InteriorLods;
 		lod.update(camera, 900);
 		const coarse = lod.stats();
-		expect(coarse.mode).toBe("2");
+		expect(coarse.mode).toBe("auto");
 		expect(coarse.levels[1]).toBe(0);
 		expect(coarse.levels[2]).toBeGreaterThan(0);
-		// Only unchanged shell modules remain at level 0. Verify the submitted
-		// packed fitting cost, not a claim based on the selector's mode string.
+		// At this distant camera the removed fasteners fall below the pixel floor.
 		expect(coarse.triangles).toBeLessThan(coarse.fullTriangles * 0.6);
 		const population = coarse.levels.reduce((sum, n) => sum + n, 0);
+		// Inspect a real berth at 15 m from its nearest surface using the game
+		// near plane and display height. Its removed hardware is now resolvable.
+		kit.updateMatrixWorld(true);
+		const berth = kit.getObjectByName(
+			"interior-lod-berth-2",
+		) as THREE.InstancedMesh;
+		const inspectedId = berth.userData.instanceIds[0];
+		expect(typeof inspectedId).toBe("string");
+		const transform = new THREE.Matrix4();
+		berth.getMatrixAt(0, transform);
+		transform.premultiply(berth.matrixWorld);
+		const bounds = new THREE.Box3(
+			new THREE.Vector3(...records.berth.full.min),
+			new THREE.Vector3(...records.berth.full.max),
+		).applyMatrix4(transform);
+		const centre = bounds.getCenter(new THREE.Vector3());
+		camera.position.set(centre.x, centre.y, bounds.max.z + 0.015);
+		lod.update(camera, 900);
+		const close = lod.stats();
+		expect(close.levels[0]).toBeGreaterThan(coarse.levels[0]);
+		const fullBerth = kit.getObjectByName(
+			"interior-lod-berth-0",
+		) as THREE.InstancedMesh;
+		expect(fullBerth.userData.instanceIds).toContain(inspectedId);
+		// Returning to the distant pose must repopulate the reduced buckets.
+		camera.position.set(0, 0, 2);
+		lod.update(camera, 900);
+		expect(lod.stats().levels).toEqual(coarse.levels);
 		lod.setMode("0");
 		lod.update(camera, 900);
 		const full = lod.stats();

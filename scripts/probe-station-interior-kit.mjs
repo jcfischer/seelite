@@ -278,15 +278,16 @@ try {
 			}, mode);
 		}
 		check(
-			`${fixture.theme} defaults to uniform LOD2 with fewer triangles than Full`,
+			`${fixture.theme} defaults to per-fitting Auto and retains nearby full detail`,
 			counts.default.modes.length > 0 &&
-				counts.default.modes.every((mode) => mode === "2") &&
-				counts.default.levels[1] === 0 &&
+				counts.default.modes.every((mode) => mode === "auto") &&
+				counts.default.levels[0] > counts["2"].levels[0] &&
 				counts.default.levels[2] > 0 &&
-				counts.default.calls === counts["2"].calls &&
-				counts.default.triangles === counts["2"].triangles &&
-				counts.default.triangles < counts["0"].triangles * 0.65 &&
-				counts.default.calls <= counts["0"].calls,
+				JSON.stringify(counts.default.levels) ===
+					JSON.stringify(counts.auto.levels) &&
+				counts.default.calls === counts.auto.calls &&
+				counts.default.triangles === counts.auto.triangles &&
+				counts.default.triangles < counts["0"].triangles,
 		);
 		check(
 			`${fixture.theme} reduced buckets submit fewer triangles without changing instance population`,
@@ -300,7 +301,7 @@ try {
 		);
 		await page.evaluate(() => {
 			const g = window.__seelite;
-			for (const h of g.interiorPresentations.values()) h.lods.setMode("2");
+			for (const h of g.interiorPresentations.values()) h.lods.setMode("auto");
 			g.render(0);
 		});
 		await page.screenshot({ path: `${output}/${fixture.theme}.png` });
@@ -420,13 +421,14 @@ try {
 				? separation(timings.auto, timings.procedural)
 				: null,
 			medianFullMs: timings["0"].length ? median(timings["0"]) : null,
-			medianDefaultMs: timings["2"].length ? median(timings["2"]) : null,
-			defaultVsFull: timings["2"].length
-				? separation(timings["2"], timings["0"])
+			medianDefaultMs: timings.auto.length ? median(timings.auto) : null,
+			defaultVsFull: timings.auto.length
+				? separation(timings.auto, timings["0"])
 				: null,
 			defaultVsProcedural: timings.procedural.length
-				? separation(timings["2"], timings.procedural)
+				? separation(timings.auto, timings.procedural)
 				: null,
+			medianLod2Ms: timings["2"].length ? median(timings["2"]) : null,
 			medianAutoMs: timings.auto.length ? median(timings.auto) : null,
 			separation: timings.auto.length
 				? separation(timings.auto, timings["0"])

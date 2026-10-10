@@ -126,10 +126,9 @@ export function buildInteriorKit(
 	const lods = new InteriorLods(assets, records, (m) =>
 		interiorMaterial(m, theme, unitsPerMetre),
 	);
-	// Full exceeded the production docked frame budget. Use the accepted LOD2
-	// fittings uniformly: fewer triangles, one populated bucket per family.
-	// Full geometry still owns measurements; review controls retain Full/Auto.
-	lods.setMode("2");
+	// Keep the accepted per-fitting pixel policy: nearby removed hardware must
+	// retain Full. Mixed levels can add instanced batches; fewer triangles alone
+	// establish no frame-time gain. Forced levels remain diagnostic controls.
 	assembly.userData.interiorLods = lods;
 	function place(
 		name: string,
