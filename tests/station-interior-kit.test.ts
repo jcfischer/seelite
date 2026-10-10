@@ -73,7 +73,7 @@ test("shipping scenes match the full and reduced triangle records", () => {
 		}
 });
 afterEach(() => installInteriorKitBuilder(null));
-test("station kits default to per-fitting Auto and retain Full for close inspection", () => {
+test("station kits default to uniform LOD1 while Full and per-fitting Auto remain available", () => {
 	const interior = stationInterior(
 		"trade",
 		STATION_GEOMETRY.trade.aperturePlaneKm,
@@ -85,13 +85,22 @@ test("station kits default to per-fitting Auto and retain Full for close inspect
 		const kit = buildInteriorKit(interior, 47, id, assets, records);
 		const lod = kit.userData.interiorLods as InteriorLods;
 		lod.update(camera, 900);
+		const medium = lod.stats();
+		expect(medium.mode).toBe("1");
+		expect(medium.levels[1]).toBeGreaterThan(0);
+		expect(medium.levels[2]).toBe(0);
+		expect(medium.triangles).toBeLessThan(medium.fullTriangles);
+		const population = medium.levels.reduce((sum, n) => sum + n, 0);
+		// Auto stays a review control: at this distant camera the removed
+		// fasteners fall below the pixel floor, so it submits LOD2.
+		lod.setMode("auto");
+		lod.update(camera, 900);
 		const coarse = lod.stats();
-		expect(coarse.mode).toBe("auto");
 		expect(coarse.levels[1]).toBe(0);
 		expect(coarse.levels[2]).toBeGreaterThan(0);
-		// At this distant camera the removed fasteners fall below the pixel floor.
 		expect(coarse.triangles).toBeLessThan(coarse.fullTriangles * 0.6);
-		const population = coarse.levels.reduce((sum, n) => sum + n, 0);
+		expect(medium.triangles).toBeGreaterThan(coarse.triangles);
+		expect(coarse.levels.reduce((sum, n) => sum + n, 0)).toBe(population);
 		// Inspect a real berth at 15 m from its nearest surface using the game
 		// near plane and display height. Its removed hardware is now resolvable.
 		kit.updateMatrixWorld(true);

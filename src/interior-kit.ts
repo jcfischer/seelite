@@ -126,9 +126,11 @@ export function buildInteriorKit(
 	const lods = new InteriorLods(assets, records, (m) =>
 		interiorMaterial(m, theme, unitsPerMetre),
 	);
-	// Keep the accepted per-fitting pixel policy: nearby removed hardware must
-	// retain Full. Mixed levels can add instanced batches; fewer triangles alone
-	// establish no frame-time gain. Forced levels remain diagnostic controls.
+	// The principal's ruling on #843: production draws LOD1 uniformly, one
+	// populated bucket per family. Full exceeded the docked frame budget and
+	// Auto's mixed levels add instanced batches. Full and Auto stay available
+	// as review controls; Full geometry still owns measurements.
+	lods.setMode("1");
 	assembly.userData.interiorLods = lods;
 	function place(
 		name: string,

@@ -262,7 +262,7 @@ try {
 				actual.dockPhase === "docked",
 		);
 		const counts = {};
-		for (const mode of ["default", "0", "auto", "2"]) {
+		for (const mode of ["default", "0", "1", "auto", "2"]) {
 			counts[mode] = await page.evaluate((mode) => {
 				const g = window.__seelite;
 				if (mode !== "default")
@@ -278,16 +278,17 @@ try {
 			}, mode);
 		}
 		check(
-			`${fixture.theme} defaults to per-fitting Auto and retains nearby full detail`,
+			`${fixture.theme} defaults to uniform LOD1 between Full and LOD2`,
 			counts.default.modes.length > 0 &&
-				counts.default.modes.every((mode) => mode === "auto") &&
-				counts.default.levels[0] > counts["2"].levels[0] &&
-				counts.default.levels[2] > 0 &&
+				counts.default.modes.every((mode) => mode === "1") &&
+				counts.default.levels[1] > 0 &&
+				counts.default.levels[2] === 0 &&
 				JSON.stringify(counts.default.levels) ===
-					JSON.stringify(counts.auto.levels) &&
-				counts.default.calls === counts.auto.calls &&
-				counts.default.triangles === counts.auto.triangles &&
-				counts.default.triangles < counts["0"].triangles,
+					JSON.stringify(counts["1"].levels) &&
+				counts.default.calls === counts["1"].calls &&
+				counts.default.triangles === counts["1"].triangles &&
+				counts.default.triangles < counts["0"].triangles &&
+				counts.default.triangles > counts["2"].triangles,
 		);
 		check(
 			`${fixture.theme} reduced buckets submit fewer triangles without changing instance population`,
@@ -301,7 +302,7 @@ try {
 		);
 		await page.evaluate(() => {
 			const g = window.__seelite;
-			for (const h of g.interiorPresentations.values()) h.lods.setMode("auto");
+			for (const h of g.interiorPresentations.values()) h.lods.setMode("1");
 			g.render(0);
 		});
 		await page.screenshot({ path: `${output}/${fixture.theme}.png` });
@@ -378,10 +379,10 @@ try {
 				path: output + "/" + fixture.theme + "-procedural.png",
 			});
 		}
-		const timings = { procedural: [], 0: [], auto: [], 2: [] };
+		const timings = { procedural: [], 0: [], 1: [], auto: [], 2: [] };
 		if (process.env.SEELITE_INTERIOR_MEASURE === "1")
 			for (let block = 0; block < 8; block++)
-				for (const mode of shuffle(["procedural", "0", "auto", "2"]))
+				for (const mode of shuffle(["procedural", "0", "1", "auto", "2"]))
 					timings[mode].push(
 						await (mode === "procedural" ? procedural : page).evaluate(
 							(mode) => {
@@ -421,12 +422,12 @@ try {
 				? separation(timings.auto, timings.procedural)
 				: null,
 			medianFullMs: timings["0"].length ? median(timings["0"]) : null,
-			medianDefaultMs: timings.auto.length ? median(timings.auto) : null,
-			defaultVsFull: timings.auto.length
-				? separation(timings.auto, timings["0"])
+			medianDefaultMs: timings["1"].length ? median(timings["1"]) : null,
+			defaultVsFull: timings["1"].length
+				? separation(timings["1"], timings["0"])
 				: null,
 			defaultVsProcedural: timings.procedural.length
-				? separation(timings.auto, timings.procedural)
+				? separation(timings["1"], timings.procedural)
 				: null,
 			medianLod2Ms: timings["2"].length ? median(timings["2"]) : null,
 			medianAutoMs: timings.auto.length ? median(timings.auto) : null,
