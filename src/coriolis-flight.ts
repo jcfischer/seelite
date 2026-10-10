@@ -84,7 +84,7 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			berthSeed,
 		);
 		// Recess only the rendered mouth; berth coordinates remain the sim's.
-		const bay = buildStationInterior("trade", interior, 0.03);
+		const bay = buildStationInterior("trade", interior, 0.03, berthSeed);
 		const fixtures: StationFixture[] = [];
 		const aperture = buildCoriolisNavigation(fixtures, exterior);
 		aperture.add(bay);

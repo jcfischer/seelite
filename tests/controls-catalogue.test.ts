@@ -235,7 +235,8 @@ describe("the catalogue is complete against the source", () => {
 			// the panel's own listener.
 			"system.settings": "this.settingsPanel?.open()",
 			"system.commander": "this.commanderOverlay?.open()",
-			"system.postcard": "this.postcardPanel?.open()",
+			// Node #843: sharing waits for the models before opening the panel.
+			"system.postcard": "this.openPostcardWithModels()",
 			"view.reference": "controlsKeyMove(",
 			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
 			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",

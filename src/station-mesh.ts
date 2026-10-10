@@ -1140,7 +1140,12 @@ function buildAperture(
 	// form the two are the same number by construction, which is what keeps the
 	// drawn bay and the sim's berths in step.
 	group.add(
-		buildStationInterior(type, stationInterior(type, faceZ, berthSeed)),
+		buildStationInterior(
+			type,
+			stationInterior(type, faceZ, berthSeed),
+			0,
+			berthSeed,
+		),
 	);
 	group.name = "aperture";
 	return group;

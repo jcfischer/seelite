@@ -131,6 +131,7 @@ export const LEVERS = Object.freeze({
 	105: "the cockpit interior",
 	112: "the galaxy-chart hover label",
 	147: "the station interior",
+	843: "the accepted station interior kit in production, with per-fitting detail",
 	162: "the aperture cut into the hull",
 	165: "the landing pad, and the shipyard keel aft of its hub",
 	199: "the exposure budget",
@@ -1308,7 +1309,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "berth-arrival",
-		covers: [147, 105, 99, 201, 204, 651],
+		covers: [843, 147, 105, 99, 201, 204, 651],
 		what: "§13.6.1 — a trade station's bay mid-transfer to a deep overhead berth, in the cockpit. The scripted traversal, at the leg that leaves the lane.",
 		shot: {
 			kind: "berth",
@@ -1356,7 +1357,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "berth-free-look",
-		covers: [199, 147, 102, 99, 201, 203],
+		covers: [843, 199, 147, 102, 99, 201, 203],
 		/**
 		 * **Chase, not a cockpit head-turn, and the frame decided it.** §13.6.3
 		 * asks for a free look showing bay depth and the other berths; a docked
@@ -1395,7 +1396,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "shipyard-wall-berth",
-		covers: [199, 147, 99],
+		covers: [843, 199, 147, 99],
 		what: "§13.6.5 — a shipyard's bay from a wall berth, chase: coarse structure, cold work light, gantries.",
 		shot: {
 			kind: "berth",

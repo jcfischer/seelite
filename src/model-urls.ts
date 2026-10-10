@@ -26,3 +26,9 @@ export const LONGWALL_MINER_GLB_URL = new URL(
 	"./models/longwall-miner.glb",
 	import.meta.url,
 ).href;
+
+/** Accepted per-fitting station interiors, node #843. */
+export const STATION_INTERIORS_GLB_URL = new URL(
+	"./models/station-interiors.glb",
+	import.meta.url,
+).href;

@@ -1,3 +1,5 @@
+import { refreshStationInteriorKit } from "./station-interior-mesh";
+import type { InteriorLods } from "./interior-lod";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
  * origin.
@@ -5489,6 +5491,7 @@ class Game {
 					markOcclusion(built.root),
 				]);
 				this.stationVisuals.set(body.id, built);
+				this.registerInteriorPresentation(body.id, built);
 			} else if (body.appearance) {
 				// #54's classes, drawn by the game rather than by the gallery.
 				//
@@ -6443,6 +6446,79 @@ class Game {
 					error,
 				);
 			}));
+	}
+
+	private readonly interiorPresentations = new Map<
+		string,
+		{
+			group: THREE.Object3D;
+			lods: InteriorLods;
+			lamps: THREE.PointLight[];
+			release: (() => void)[];
+		}
+	>();
+	private registerInteriorPresentation(id: string, station: StationMesh): void {
+		this.interiorPresentations.get(id)?.release.forEach((undo) => undo());
+		const group = station.root.getObjectByName("authored-interior");
+		if (!group) return;
+		const lamps: THREE.PointLight[] = [];
+		group.traverse((o) => {
+			if (o instanceof THREE.PointLight) lamps.push(o);
+		});
+		this.interiorPresentations.set(id, {
+			group,
+			lods: group.userData.interiorLods,
+			lamps,
+			release: lamps.map((l) => this.mirrorIntoCabin(l)),
+		});
+	}
+	private interiorLoad?: Promise<void>;
+	interiorModelsSettled = false;
+	/** Current interim install seam; node #838 owns the future general queue. */
+	loadInteriorsAfterBoot(): Promise<void> {
+		return (this.interiorLoad ??= import("./interior-model")
+			.then(async ({ prepareInteriorModel }) => {
+				await prepareInteriorModel();
+				this.refreshInteriorMeshes();
+			})
+			.catch((error) =>
+				console.warn(
+					"station interiors: background load failed; keeping procedural bays",
+					error,
+				),
+			)
+			.finally(() => {
+				this.interiorModelsSettled = true;
+			}));
+	}
+
+	private refreshInteriorMeshes(): void {
+		for (const [id, station] of this.stationVisuals) {
+			if (!refreshStationInteriorKit(station.root)) continue;
+			station.accessories.length = 0;
+			station.root.traverse((o) => {
+				if (o.userData.minDetail) station.accessories.push(o);
+			});
+			this.registerInteriorPresentation(id, station);
+		}
+		for (let i = this.markedOcclusion.length - 1; i >= 0; i--)
+			if (this.markedOcclusion[i][0].startsWith("station-"))
+				this.markedOcclusion.splice(i, 1);
+		for (const station of this.stationVisuals.values())
+			this.markedOcclusion.push([
+				`station-${station.type}`,
+				markOcclusion(station.root),
+			]);
+	}
+	/** Sharing a card waits for the authored kit, even after a background failure. */
+	private async openPostcardWithModels(): Promise<void> {
+		const { prepareInteriorModel } = await import("./interior-model");
+		await loadRequiredModels(
+			[prepareInteriorModel],
+			loadingPanel("postcard interiors"),
+		);
+		this.refreshInteriorMeshes();
+		this.postcardPanel?.open();
 	}
 
 	/**
@@ -9828,7 +9904,7 @@ class Game {
 			// #406. The same door as the two screens above, and for their reason:
 			// the registry owns the opening key so a rebind moves it.
 			case "system.postcard":
-				this.postcardPanel?.open();
+				void this.openPostcardWithModels();
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
@@ -14541,6 +14617,9 @@ class Game {
 		this.clearArrivalRift();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
+		for (const handle of this.interiorPresentations.values())
+			handle.release.forEach((undo) => undo());
+		this.interiorPresentations.clear();
 		for (const station of this.stationVisuals.values()) station.dispose();
 		this.meshes.clear();
 		this.bodyVisuals.clear();
@@ -16135,6 +16214,19 @@ class Game {
 				mesh.quaternion.setFromRotationMatrix(STATION_BASIS);
 				spinner.rotation.z = pose.phaseRad;
 			}
+		}
+		// After camera-relative placement and spin. Bounds follow the actual station
+		// parent, including near/far scale, and the current drawing-buffer height.
+		for (const [id, handle] of this.interiorPresentations) {
+			const station = this.stationVisuals.get(id)!;
+			if (handle.group.visible)
+				handle.lods.update(
+					this.layers.get(id) === "far" ? this.farCamera : this.nearCamera,
+					this.renderer.domElement.height,
+				);
+			for (const lamp of handle.lamps)
+				lamp.visible =
+					station.detail === "full" && this.settings.value.quality === "high";
 		}
 		// **After the loop, not inside it** — see the declaration above.
 		this.widestBodyId = widestId;
@@ -20649,6 +20741,12 @@ if (postcard) {
 		loadingPanel("postcard hull"),
 	);
 	await game.loadCourierHullAfterBoot();
+	const { prepareInteriorModel } = await import("./interior-model");
+	await loadRequiredModels(
+		[prepareInteriorModel],
+		loadingPanel("postcard interiors"),
+	);
+	await game.loadInteriorsAfterBoot();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
@@ -20736,12 +20834,16 @@ if (postcard) {
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
 		import("./longwall-model"),
-	]).then(([m, cockpit, longwall]) =>
+		query.has("interiors-full")
+			? import("./interior-model")
+			: Promise.resolve(null),
+	]).then(([m, cockpit, longwall, interiors]) =>
 		loadRequiredModels(
 			[
 				m.prepareCoriolisModel,
 				cockpit.prepareCockpitModel,
 				longwall.prepareLongwallModel,
+				...(interiors ? [interiors.prepareInteriorModel] : []),
 			],
 			loading.view,
 			{ then: "building" },
@@ -20936,6 +21038,7 @@ if (postcard) {
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
 	void game.loadCourierHullAfterBoot();
+	void game.loadInteriorsAfterBoot();
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	game.clockHeld = true;
 	game.saveFault = plan.fault;
