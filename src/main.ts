@@ -2684,7 +2684,7 @@ class Game {
 
 	/** What the flown ship weighs now, tonnes: `flownMassT` over the flown
 	 *  hull, the commander's hold and the entrusted lots aboard. */
-	get flownMassT(): number {
+	get flownShipMassT(): number {
 		return flownMassT(
 			this.flownHull,
 			this.commander,
@@ -2693,7 +2693,7 @@ class Game {
 	}
 
 	private get flownPerformance(): FlightPerformance {
-		const massT = this.flownMassT;
+		const massT = this.flownShipMassT;
 		const cached = this.flownPerformanceOf;
 		if (cached?.hull === this.flownHull && cached.massT === massT)
 			return cached.perf;
@@ -3860,7 +3860,7 @@ class Game {
 			id: this.flownHull,
 			variant: HULL_SPECS[this.flownHull].variant,
 			spec: HULL_SPECS[this.flownHull],
-			massT: this.flownMassT,
+			massT: this.flownShipMassT,
 			performance: this.flownPerformance,
 		};
 	}
