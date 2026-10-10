@@ -216,9 +216,12 @@ async function ensureFixture(page, seed, system = null) {
 	// frame. The duel placer forces its own raider, which this does not stop.
 	// `system` is left off the URL when the row declares none, which is every
 	// row written before #432 and every row that is not a frame of the rim.
-	await page.goto(gameUrl(SERVING, { seed, raider: "off", system }), {
-		waitUntil: "load",
-	});
+	await page.goto(
+		gameUrl(SERVING, { seed, raider: "off", system, "interiors-full": true }),
+		{
+			waitUntil: "load",
+		},
+	);
 	await bootedGame(page);
 	if (system !== null) {
 		const booted = await page.evaluate(
@@ -951,6 +954,7 @@ const PLACERS = {
 				raider: "off",
 				guided: true,
 				cinematic: "held",
+				"interiors-full": true,
 			}),
 			{ waitUntil: "load" },
 		);
@@ -1337,9 +1341,12 @@ await page.addInitScript(() => {
 		);
 });
 await installViewFraming(page);
-await page.goto(gameUrl(SERVING, { seed: SEED, raider: "off" }), {
-	waitUntil: "load",
-});
+await page.goto(
+	gameUrl(SERVING, { seed: SEED, raider: "off", "interiors-full": true }),
+	{
+		waitUntil: "load",
+	},
+);
 await bootedGame(page);
 await applyCaptureQuality(page);
 currentSeed = SEED;

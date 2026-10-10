@@ -95,6 +95,11 @@ export function markOcclusion(root: THREE.Object3D): OcclusionMarking {
  *  in a `WeakMap` here so a probe can read it off the page. */
 const BOUNDS_KEY = "occlusionBounds";
 
+/** An authored install changes the subtree measured by subjectOf. */
+export function invalidateOcclusionBounds(root: THREE.Object3D): void {
+	delete root.userData[BOUNDS_KEY];
+}
+
 const scratch = new THREE.Box3();
 
 /**

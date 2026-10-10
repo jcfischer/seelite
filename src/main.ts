@@ -1,3 +1,6 @@
+import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
+import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
+import type { InteriorLods } from "./interior-lod";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
  * origin.
@@ -718,6 +721,7 @@ import {
 import {
 	type StationMesh,
 	buildStationMesh,
+	setStationDetail,
 	stationVisualSnapshot,
 	updateStationVisuals,
 	warmStationMaps,
@@ -1489,6 +1493,13 @@ const COCKPIT_FORWARD_KM = 0.008;
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
 const MIRROR_CARRIED: CabinLightState = newCabinLightState();
+/** A layer no camera enables, so a light on it is never counted (#843). The
+ *  light count is in every lit program's cache key, and a station's floods
+ *  move between the layer scenes with its distance: counted where they stand,
+ *  they recompiled every lit material of a scene they entered or left. */
+const UNCOUNTED_LIGHT_LAYER = 31;
+const FLOOD_SCRATCH = new THREE.Vector3();
+const FLOOD_CAMERA = new THREE.Vector3();
 
 /** Below this speed the prograde marker is hidden: the velocity is noise, and a
  *  marker chasing it would swing around a screen belonging to a ship that is
@@ -2310,6 +2321,11 @@ class Game {
 		THREE.PointLight,
 		{ copy: THREE.PointLight; holders: number }
 	>();
+	/** The near scene's stand-ins for one station's interior floods (#843).
+	 *  The floods themselves are uncounted; these copies are added once and
+	 *  only ever go dark by intensity, so the near scene's light count stays
+	 *  put while stations cross layers and their detail changes. */
+	private readonly interiorFloodPool: THREE.PointLight[] = [];
 
 	/** Ship orientation. Positions live in `sim.ts`; this does not, and the
 	 *  module docstring there says why. */
@@ -5505,6 +5521,7 @@ class Game {
 					markOcclusion(built.root),
 				]);
 				this.stationVisuals.set(body.id, built);
+				this.registerInteriorPresentation(body.id, built);
 			} else if (body.appearance) {
 				// #54's classes, drawn by the game rather than by the gallery.
 				//
@@ -5840,6 +5857,15 @@ class Game {
 		const cabinFill = fill.clone();
 		this.cabinScene.add(cabinFill);
 		this.fills = [fill, cabinFill];
+		// Allocate the fixed flood pool before the first frame. Installing a
+		// bay must not change numPointLights and recompile the whole near scene.
+		for (let i = 0; i < 4; i++) {
+			const copy = new THREE.PointLight(0xffffff, 0);
+			copy.name = `interior-flood-pool:${i}`;
+			this.nearScene.add(copy);
+			this.interiorFloodPool.push(copy);
+			this.mirrorIntoCabin(copy);
+		}
 
 		// **#201: one shadow-casting light in the game, and it is the near
 		// layer's sun.** The far and approach suns are left alone — a planet
@@ -6459,6 +6485,145 @@ class Game {
 					error,
 				);
 			}));
+	}
+
+	private readonly interiorPresentations = new Map<
+		string,
+		{
+			group: THREE.Object3D;
+			lods: InteriorLods;
+			lamps: THREE.PointLight[];
+			release: (() => void)[];
+		}
+	>();
+	private registerInteriorPresentation(id: string, station: StationMesh): void {
+		this.interiorPresentations.get(id)?.release.forEach((undo) => undo());
+		this.interiorPresentations.delete(id);
+		const group = station.root.getObjectByName("authored-interior");
+		if (!group) return;
+		const lamps: THREE.PointLight[] = [];
+		group.traverse((o) => {
+			if (o instanceof THREE.PointLight) lamps.push(o);
+		});
+		for (const lamp of lamps) lamp.layers.set(UNCOUNTED_LIGHT_LAYER);
+		while (this.interiorFloodPool.length < lamps.length) {
+			const copy = new THREE.PointLight(0xffffff, 0);
+			copy.name = `interior-flood-pool:${this.interiorFloodPool.length}`;
+			this.nearScene.add(copy);
+			this.interiorFloodPool.push(copy);
+		}
+		this.interiorPresentations.set(id, {
+			group,
+			lods: group.userData.interiorLods,
+			lamps,
+			// The fixed near-scene pool owns its cabin mirrors for this Game.
+			// Bay registration adds no lights or shader variants to either scene.
+			release: [],
+		});
+	}
+	private interiorLoad?: Promise<void>;
+	private interiorWarningShown = false;
+	private warnInteriorFailure(error: unknown): void {
+		if (this.interiorWarningShown) return;
+		this.interiorWarningShown = true;
+		console.warn(
+			"station interiors: background load failed; keeping procedural bays",
+			error,
+		);
+	}
+	interiorModelsSettled = false;
+	/** Current interim install seam; node #838 owns the future general queue. */
+	loadInteriorsAfterBoot(): Promise<void> {
+		return (this.interiorLoad ??= import("./interior-model")
+			.then(async ({ prepareInteriorModel }) => {
+				await prepareInteriorModel();
+				await this.refreshInteriorMeshes();
+			})
+			.catch((error) => this.warnInteriorFailure(error))
+			.finally(() => {
+				this.interiorModelsSettled = true;
+			}));
+	}
+
+	private interiorRefresh?: Promise<void>;
+	private refreshInteriorMeshes(): Promise<void> {
+		if (this.interiorRefresh) return this.interiorRefresh;
+		this.interiorModelsSettled = false;
+		return (this.interiorRefresh = this.installInteriorMeshes().finally(() => {
+			this.interiorRefresh = undefined;
+			this.interiorModelsSettled = true;
+		}));
+	}
+	private async installInteriorMeshes(): Promise<void> {
+		// Re-read the live map after each slice. A jump never waits for an old
+		// system's assembly and its disposed roots never receive the finished kit.
+		for (const [id, station] of this.stationVisuals) {
+			if (
+				!(await refreshStationInteriorKitAsync(
+					station.root,
+					() => this.stationVisuals.get(id) === station,
+					(kit, live) => this.warmInteriorKit(kit, live),
+				))
+			)
+				continue;
+			station.accessories.length = 0;
+			station.root.traverse((o) => {
+				if (o.userData.minDetail) station.accessories.push(o);
+			});
+			setStationDetail(station, station.detail);
+			this.registerInteriorPresentation(id, station);
+		}
+		for (let i = this.markedOcclusion.length - 1; i >= 0; i--)
+			if (this.markedOcclusion[i][0].startsWith("station-"))
+				this.markedOcclusion.splice(i, 1);
+		for (const station of this.stationVisuals.values())
+			this.markedOcclusion.push([
+				`station-${station.type}`,
+				markOcclusion(station.root),
+			]);
+	}
+	/** Compile fitting programs off-scene, one mesh at a time, while the
+	 * procedural bay keeps drawing. The composer target selects the same
+	 * output-colour variant as gameplay; restore it before yielding.
+	 */
+	private async warmInteriorKit(kit: THREE.Group, live: () => boolean) {
+		const meshes: THREE.Mesh[] = [];
+		kit.traverse((o) => {
+			if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+			if (o instanceof THREE.PointLight) o.layers.set(UNCOUNTED_LIGHT_LAYER);
+		});
+		markOcclusion(kit);
+		let sliceStart = performance.now();
+		for (const mesh of meshes) {
+			if (!live()) return;
+			const target = this.renderer.getRenderTarget();
+			let compiled: Promise<THREE.Object3D>;
+			try {
+				this.renderer.setRenderTarget(this.composer.renderTarget1);
+				compiled = this.renderer.compileAsync(
+					mesh,
+					this.nearCamera,
+					this.nearScene,
+				);
+			} finally {
+				this.renderer.setRenderTarget(target);
+			}
+			await compiled;
+			if (performance.now() - sliceStart >= INTERIOR_SLICE_MS) {
+				await nextInteriorFrame();
+				sliceStart = performance.now();
+			}
+		}
+	}
+	/** Sharing a card waits for the authored kit, even after a background failure. */
+	private async openPostcardWithModels(): Promise<void> {
+		const { prepareInteriorModel } = await import("./interior-model");
+		await loadRequiredModels(
+			[prepareInteriorModel],
+			loadingPanel("postcard interiors"),
+		);
+		await this.refreshInteriorMeshes();
+		this.postcardPanel?.open();
 	}
 
 	/**
@@ -9844,7 +10009,7 @@ class Game {
 			// #406. The same door as the two screens above, and for their reason:
 			// the registry owns the opening key so a rebind moves it.
 			case "system.postcard":
-				this.postcardPanel?.open();
+				void this.openPostcardWithModels();
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
@@ -14557,6 +14722,9 @@ class Game {
 		this.clearArrivalRift();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
+		for (const handle of this.interiorPresentations.values())
+			handle.release.forEach((undo) => undo());
+		this.interiorPresentations.clear();
 		for (const station of this.stationVisuals.values()) station.dispose();
 		this.meshes.clear();
 		this.bodyVisuals.clear();
@@ -14582,6 +14750,13 @@ class Game {
 				this.markedOcclusion.splice(i, 1);
 
 		this.buildBodies();
+		this.interiorModelsSettled = false;
+		void this.loadInteriorsAfterBoot()
+			.then(() => this.refreshInteriorMeshes())
+			.catch((error) => this.warnInteriorFailure(error))
+			.finally(() => {
+				this.interiorModelsSettled = true;
+			});
 		this.buildEnvironment();
 		// The sky is a picture of *this* system's neighbourhood, so a jump to a
 		// different star draws a different sky (#431). The faint population is
@@ -16152,6 +16327,19 @@ class Game {
 				spinner.rotation.z = pose.phaseRad;
 			}
 		}
+		// After camera-relative placement and spin. Bounds follow the actual station
+		// parent, including near/far scale, and the current drawing-buffer height.
+		for (const [id, handle] of this.interiorPresentations) {
+			const station = this.stationVisuals.get(id)!;
+			if (handle.group.visible)
+				handle.lods.update(
+					this.layers.get(id) === "far" ? this.farCamera : this.nearCamera,
+					this.renderer.domElement.height,
+				);
+			for (const lamp of handle.lamps)
+				lamp.visible =
+					station.detail === "full" && this.settings.value.quality === "high";
+		}
 		// **After the loop, not inside it** — see the declaration above.
 		this.widestBodyId = widestId;
 		this.widestRadiusPx = widestPx;
@@ -16241,6 +16429,7 @@ class Game {
 		this.stepBakes();
 
 		this.syncCabinMirrors();
+		this.syncInteriorFloods();
 
 		this.occlusionGate = stepOcclusionGate(
 			this.occlusionGate,
@@ -16488,6 +16677,48 @@ class Game {
 		mirror.copy.removeFromParent();
 		mirror.copy.dispose();
 		this.cabinMirrors.delete(light);
+	}
+
+	/** Light the nearest near-layer interior through `interiorFloodPool`, after
+	 *  the world is placed for this frame. A flood counts as drawn only while
+	 *  it and every ancestor are visible up to the near scene, the rule
+	 *  `syncCabinMirrors` uses; every other copy goes dark. */
+	private syncInteriorFloods() {
+		const drawnInNear = (o: THREE.Object3D) => {
+			let root = o;
+			if (!root.visible) return false;
+			while (root.parent) {
+				root = root.parent;
+				if (!root.visible) return false;
+			}
+			return root === this.nearScene;
+		};
+		this.nearCamera.getWorldPosition(FLOOD_CAMERA);
+		let chosen: THREE.PointLight[] | undefined;
+		let best = Infinity;
+		for (const handle of this.interiorPresentations.values()) {
+			if (handle.lamps.length === 0 || !drawnInNear(handle.group)) continue;
+			const d = handle.group
+				.getWorldPosition(FLOOD_SCRATCH)
+				.distanceToSquared(FLOOD_CAMERA);
+			if (d < best) {
+				best = d;
+				chosen = handle.lamps;
+			}
+		}
+		for (let i = 0; i < this.interiorFloodPool.length; i++) {
+			const copy = this.interiorFloodPool[i];
+			const lamp = chosen?.[i];
+			if (!lamp || !drawnInNear(lamp)) {
+				copy.intensity = 0;
+				continue;
+			}
+			lamp.getWorldPosition(copy.position);
+			copy.color.copy(lamp.color);
+			copy.intensity = lamp.intensity;
+			copy.distance = lamp.distance;
+			copy.decay = lamp.decay;
+		}
 	}
 
 	/** Put each mirrored light where `cabinLight` says, after the world is
@@ -20666,6 +20897,12 @@ if (postcard) {
 		loadingPanel("postcard hull"),
 	);
 	await game.loadCourierHullAfterBoot();
+	const { prepareInteriorModel } = await import("./interior-model");
+	await loadRequiredModels(
+		[prepareInteriorModel],
+		loadingPanel("postcard interiors"),
+	);
+	await game.loadInteriorsAfterBoot();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
@@ -20753,12 +20990,16 @@ if (postcard) {
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
 		import("./longwall-model"),
-	]).then(([m, cockpit, longwall]) =>
+		query.has("interiors-full")
+			? import("./interior-model")
+			: Promise.resolve(null),
+	]).then(([m, cockpit, longwall, interiors]) =>
 		loadRequiredModels(
 			[
 				m.prepareCoriolisModel,
 				cockpit.prepareCockpitModel,
 				longwall.prepareLongwallModel,
+				...(interiors ? [interiors.prepareInteriorModel] : []),
 			],
 			loading.view,
 			{ then: "building" },
@@ -20952,9 +21193,13 @@ if (postcard) {
 	}
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
-	void game.loadCourierHullAfterBoot();
 	// Held until a store is attached or the player chooses (§11.2 step 4).
+	// Before the `interiors-full` wait: a probe boot that awaits the sliced
+	// install must not let the sim run through it (#843).
 	game.clockHeld = true;
+	void game.loadCourierHullAfterBoot();
+	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
+	else void game.loadInteriorsAfterBoot();
 	game.saveFault = plan.fault;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander

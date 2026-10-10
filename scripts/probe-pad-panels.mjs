@@ -389,6 +389,36 @@ try {
 			);
 			const perTab = [];
 			for (let i = 0; i < tabCount; i++) {
+				// **Settled before it is read.** A tab tap repaints the panel and its
+				// hint on later frames, and a read straight after the tap caught a
+				// Galaxy Map with 13 targets and the previous hint under suite load
+				// (#843, also once on #823). Wait for the tab, the hint and the walk
+				// count to hold for three frames, not for the answer the check wants.
+				await page.evaluate(
+					() =>
+						new Promise((resolve) => {
+							const read = () =>
+								JSON.stringify([
+									document.querySelector("[data-live-cockpit]")?.dataset
+										.liveLeftView,
+									document.querySelector("[data-live-pad-hint]")?.textContent ??
+										null,
+									document.querySelectorAll('[data-live-panel="left"] *')
+										.length,
+								]);
+							const until = performance.now() + 3000;
+							let last = read();
+							let same = 0;
+							const step = () => {
+								const now = read();
+								same = now === last ? same + 1 : 0;
+								last = now;
+								if (same >= 3 || performance.now() > until) resolve();
+								else requestAnimationFrame(step);
+							};
+							requestAnimationFrame(step);
+						}),
+				);
 				const seen = await page.evaluate(() => ({
 					tab: document.querySelector("[data-live-cockpit]").dataset
 						.liveLeftView,

@@ -69,3 +69,4 @@ public/music-samples/index.json
 spikes/coriolis/*.blend1
 spikes/courier-cockpit/*.blend1
 spikes/longwall-miner/*.blend1
+spikes/interiors/__pycache__/
