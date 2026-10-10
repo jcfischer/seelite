@@ -315,7 +315,7 @@ const dockBuyLaunch = async (p, label) => {
 	await p.waitForFunction(() => !window.__seelite.clockHeld);
 	const docked = await p.evaluate(
 		async ({ funds, fitted }) => {
-			const { migrateEquipment, equipmentNames } = await import(
+			const { legacyModule, moduleRow, equipmentNames } = await import(
 				"/src/loadout.ts"
 			);
 
@@ -339,7 +339,14 @@ const dockBuyLaunch = async (p, label) => {
 				) ?? false;
 			// The purchases, at the till: the till takes each price and fits it,
 			// and the adopt point marks the save dirty for the debounce.
-			g.commander.credits = funds;
+			const funded =
+				funds +
+				fitted.reduce(
+					(sum, name) =>
+						sum + moduleRow(legacyModule(g.commander.hull, name)).priceCr,
+					0,
+				);
+			g.commander.credits = funded;
 			const bought = [
 				...fitted.map((equipment) =>
 					g.transactStation({ type: "buy-equipment", equipment }),
@@ -361,6 +368,7 @@ const dockBuyLaunch = async (p, label) => {
 				docked: true,
 				station: g.dockedAt,
 				bought,
+				funded,
 				credits,
 				food: g.commander.cargo.Food ?? 0,
 				liveCredits: live?.commander?.state?.credits ?? null,
@@ -387,7 +395,7 @@ const dockBuyLaunch = async (p, label) => {
 		`${label}: the pod, a computer and Food are bought at the till and reach live`,
 		docked.bought?.every(Boolean) &&
 			docked.food === 2 &&
-			docked.credits < POD_FUNDS &&
+			docked.credits < docked.funded &&
 			docked.liveCredits === docked.credits,
 		JSON.stringify(docked),
 	);

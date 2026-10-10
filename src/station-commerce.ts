@@ -283,7 +283,7 @@ const quantityOf = (action: StationAction): number =>
 const holdCapacityT = (commander: CommanderState): number =>
 	HULL_SPECS[commander.hull].holdT +
 	Object.values(commander.loadout).reduce(
-		(n, m) => n + (moduleRow(m).output.cargoT ?? 0),
+		(n, m) => n + (m.module === "cargo-rack" ? moduleRow(m).output.cargoT : 0),
 		0,
 	);
 

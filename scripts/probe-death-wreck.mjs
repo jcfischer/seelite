@@ -15,6 +15,33 @@ const origin = await guardedOrigin(
 );
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
+const inventory = (items) =>
+	JSON.stringify(
+		items.map((c) => [
+			c.kind,
+			c.id,
+			c.tonnes,
+			c.left,
+			c.unit,
+			c.fitting?.module,
+			c.fitting?.size,
+			c.fitting?.grade,
+			c.fitting?.variant,
+			c.fitting?.ammo,
+		]),
+	);
+const fittingInventory = (items) =>
+	JSON.stringify(
+		items.map((c) => [
+			c.id,
+			c.tonnes,
+			c.module,
+			c.size,
+			c.grade,
+			c.variant,
+			c.ammo,
+		]),
+	);
 try {
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
@@ -63,7 +90,17 @@ try {
 		g.commerceWorld = advanceTo(g.commerceWorld, at);
 		g.world.ship.pos.x += 200;
 		g.updateLocalFrameBody();
-		return { pos: { ...g.world.ship.pos }, at, frame: g.deathFrameId() };
+		return {
+			pos: { ...g.world.ship.pos },
+			at,
+			frame: g.deathFrameId(),
+			expected: deathWreckContents(
+				g.commerceWorld.seed,
+				at,
+				g.commander,
+				"destroyed",
+			),
+		};
 	});
 	const reloaded = page.waitForEvent("load", { timeout: 20000 });
 	await page.evaluate(() => {
@@ -99,7 +136,7 @@ try {
 				0.01 &&
 			after.row.bodyId === fixture.frame &&
 			after.row.lostAt === fixture.at &&
-			after.row.containers.length === 3,
+			inventory(after.row.containers) === inventory(fixture.expected),
 		JSON.stringify(after.row),
 	);
 	check(
@@ -201,12 +238,16 @@ try {
 			notice: g.scoop.text,
 		};
 	});
+	const expectedFittings = fixture.expected
+		.filter((c) => c.kind === "fitting")
+		.map((c) => ({ id: c.id, tonnes: c.tonnes, ...c.fitting }));
 	check(
 		"the live proximity scoop recovers cargo and carries the fitting without fitting it",
 		!scooped.dead &&
 			scooped.cargo.Food === 8 &&
 			scooped.cargo.Gold === 12 &&
-			scooped.fittings?.[0]?.id === "Docking Computer" &&
+			fittingInventory(scooped.fittings ?? []) ===
+				fittingInventory(expectedFittings) &&
 			scooped.equipment.length === 1 &&
 			scooped.equipment[0] === "Extra Pulse Laser",
 		JSON.stringify(scooped.fittings),
@@ -217,9 +258,9 @@ try {
 			!scooped.drawn &&
 			scooped.saved.commander.state.cargo.Food === 8 &&
 			scooped.saved.commander.state.cargo.Gold === 12 &&
-			scooped.saved.commander.state.recoveredFittings?.[0]?.id ===
-				"Docking Computer" &&
-			scooped.saved.commander.state.recoveredFittings[0].tonnes === 1 &&
+			fittingInventory(
+				scooped.saved.commander.state.recoveredFittings ?? [],
+			) === fittingInventory(expectedFittings) &&
 			Object.keys(scooped.saved.commander.state.loadout).length === 2 &&
 			!scooped.saved.world.galaxies[scooped.galaxyIndex].deathWreck,
 	);

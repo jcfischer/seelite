@@ -41,10 +41,18 @@ export const LEGACY_MODULES: Readonly<Record<string, ModuleKind>> = {
 let rows: ModuleRow[] | undefined;
 export const moduleRows = (): readonly ModuleRow[] =>
 	(rows ??= deriveProposal().rows);
+let rowIndex: Map<string, ModuleRow> | undefined;
 export function moduleRow(m: FittedModule): ModuleRow {
-	const r = moduleRows().find(
-		(r) => r.kind === m.module && r.size === m.size && r.grade === m.grade,
+	rowIndex ??= new Map(
+		moduleRows().map((r) => [`${r.kind}/${r.size}/${r.grade}`, r]),
 	);
+	// Keep parser identity strict: the string key must not admit size "1".
+	const r =
+		typeof m.module === "string" &&
+		typeof m.size === "number" &&
+		typeof m.grade === "string"
+			? rowIndex.get(`${m.module}/${m.size}/${m.grade}`)
+			: undefined;
 	if (!r) throw new Error(`Unknown module ${m.module}/${m.size}/${m.grade}`);
 	return r;
 }
