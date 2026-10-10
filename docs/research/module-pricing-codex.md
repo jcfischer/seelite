@@ -38,9 +38,9 @@ between grades are candidate values. The instrument reports active energy draw
 and weapon heat beside benefits; the Pareto check covers price, mass and all
 output benefits, not a claim about combat effectiveness.
 
-The principal requested graded performance for the formerly binary modules.
-The proposed metrics, still awaiting confirmation, are docking-computer
-engagement range and escape-pod eject delay. Both keep the existing clearance
+The principal requested graded performance for the formerly binary modules and
+chose docking-computer engagement range and escape-pod eject delay on 2026-10-10.
+Their numeric values remain proposed. Both keep the existing clearance
 requirement and survival/loss outcome rules. A delay would still expose the
 ship to damage for longer; that consequence requires explicit approval.
 The computer's proposed ranges are narrower than today's engagement ceiling,
