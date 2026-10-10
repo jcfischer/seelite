@@ -21176,11 +21176,13 @@ if (postcard) {
 	}
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
+	// Held until a store is attached or the player chooses (§11.2 step 4).
+	// Before the `interiors-full` wait: a probe boot that awaits the sliced
+	// install must not let the sim run through it (#843).
+	game.clockHeld = true;
 	void game.loadCourierHullAfterBoot();
 	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
 	else void game.loadInteriorsAfterBoot();
-	// Held until a store is attached or the player chooses (§11.2 step 4).
-	game.clockHeld = true;
 	game.saveFault = plan.fault;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander

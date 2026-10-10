@@ -117,7 +117,10 @@ try {
 			},
 		});
 	});
-	await reader.goto(gameUrl(origin, { seed: 47 }));
+	// No `interiors-full` wait: the init script above holds every frame until
+	// `__seelite` is published, and the sliced install yields on frames, so a
+	// boot that awaits it before publishing never publishes (#843).
+	await reader.goto(gameUrl(origin, { seed: 47, "interiors-full": false }));
 	await bootedGame(reader);
 	const first = await reader.evaluate(() => window.__bloomFirstFrame);
 	t.check(
