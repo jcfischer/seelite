@@ -126,6 +126,10 @@ export function buildInteriorKit(
 	const lods = new InteriorLods(assets, records, (m) =>
 		interiorMaterial(m, theme, unitsPerMetre),
 	);
+	// Production measurements show mixed Auto buckets add calls without an
+	// established frame-time gain. Full keeps each fitting family in one batch;
+	// the study viewer and diagnostic probes can still select Auto explicitly.
+	lods.setMode("0");
 	assembly.userData.interiorLods = lods;
 	function place(
 		name: string,

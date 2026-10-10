@@ -72,6 +72,8 @@ Procedural/Full/Auto frames on the built bundle and the player's renderer.
 - C3: Layout, policy and bucket code now live in `src/`; spike imports share them.
   Buckets include station-parent transforms, near/far scale and drawing height.
   Entry is one device pixel; hysteresis retains a coarse level until 1.2 pixels.
+  Production defaults to Full after round 2's cost review; Auto remains available
+  in the study viewer and diagnostic controls, without a claimed FPS benefit.
   Four inset floods use the existing cabin-mirror seam, on High at full station
   detail; teardown releases the mirrors and per-station instance resources.
 - C1/C4: The decoded bundle stays in memory. Every live bay installs once;
@@ -93,8 +95,8 @@ Theme is `station.berthSeed % 4`, consuming no RNG and persisting no new state. 
 keeps all four accepted appearances without inventing a new gameplay distinction.
 
 Field Notes proposal for the integration PR, awaiting principal approval:
-“Station bays now have distinct industrial interiors, with detail that follows
-your distance from each fitting.” Do not put it in `src/changelog.ts` before approval.
+“Station bays now have four distinct industrial interiors, with fitted machinery
+around their landing berths.” Do not put it in `src/changelog.ts` before approval.
 
 ## Changelog
 
@@ -217,9 +219,9 @@ a few counts from the earlier capture; that original Full/Auto run remains
 archived above. This is one device and an interior-facing view, not a claim about
 a lower-end device, moving-camera selection cost or every station approach.
 
-Optional scheduling/allocation changes and a new default LOD policy are deferred:
-they need moving-camera and target-device cost evidence. The accepted automatic
-policy remains; its triangle reduction is not presented as an FPS gain. GLB
+Round 1 deferred scheduling/allocation changes and kept the automatic default.
+Round 2 supersedes that default with Full based on the extra Auto batches and
+the absence of an established frame-time benefit. GLB
 serialization consolidation and pixel-diff consolidation are independent study
 maintenance. Historical asset identifiers, technical API names and approved
 reference copy are retained rather than renamed for glossary substring matches.
@@ -231,3 +233,63 @@ Round-1 final verification (2026-10-10):
 - C4: tested — game and strict standalone-viewer typechecks, production build, format, script lint and diff whitespace checks passed.
 - C1/C3/C4: tested — the focused production Metal runner passed 1/1 gating probe in 56 seconds; 98/99 probes were not run. The added mirror-release row and four matching procedural-state rows passed. This remains partial browser coverage.
 - C3/C4: tested — final shared-viewer Metal capture passed all 16 theme/view comparisons, forced levels, near/far transitions, role/seed rebuilds and the Fittings toggle across a replaced assembly. Zero browser errors and zero changed pixels in every full/full repeat; maximum Full/Auto changed fraction was 0.0298%. Frames were inspected by the worker, not approved by the principal.
+
+### Sage round 2 repair
+
+The performance finding is taken: `buildInteriorKit` selects Full before its
+first render. Each fitting family therefore uses one populated geometry-level
+bucket by default. All three levels, per-fitting Auto selection, drawing-buffer
+scaling and hysteresis remain unchanged and available to the viewer/probes.
+The study viewer explicitly applies its selector, so its Auto default remains
+a review control. No geometry, material, dimension, loading or save changes.
+
+The packed shipping-asset test was written first and failed on the old Auto
+default. With the repair it verifies Full at a camera distance where Auto would
+reduce fittings, across all four themes, then verifies that opt-in Auto still
+reduces triangles without changing population. The focused kit/LOD run passed
+15 tests, 0 failures, 25,003 assertions.
+
+Repeated production evidence: `spikes/interiors/evidence/production-review2-codex.json`.
+Same instrument and shuffled eight-block/eight-frame design as round 1; M1 Pro /
+ANGLE Metal, High, 1440×900, real 0.01 km game near plane, trade `port-deep` chase
+camera. All four untouched-default browser checks require Full mode, nonempty
+full buckets, and identical submitted calls/triangles to forced Full. All four
+procedural comparison pages again matched camera, world clock and quality.
+
+| Theme | Procedural calls | Default / Full calls | Auto calls | Procedural ms | Full ms | Auto ms | Auto vs Full separation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| civic | 569 | 907 | 1143 | 14.794 | 24.025 | 24.250 | 39/64 (61%) |
+| works | 607 | 1163 | 1307 | 14.425 | 24.431 | 24.575 | 38/64 (59%) |
+| frontier | 609 | 1032 | 1218 | 14.300 | 24.831 | 24.725 | 26/64 (41%) |
+| survey | 614 | 958 | 1179 | 12.363 | 23.856 | 22.375 | 35/64 (55%) |
+
+Separation counts Auto block costs higher than Full across all block pairings.
+Full removes 144–236 calls relative to Auto; neither timing arm separates
+consistently. These are drained frame costs, not delivered FPS. This run's times
+are higher than round 1's on the same device; no comparison of elapsed costs
+between the two runs is claimed. Full still costs more than the procedural
+stand-in: 338–556 extra calls, with Full/procedural separation at 64/64 for the
+first three themes and 56/64 for survey. This repair removes the additional
+mixed-LOD call cost; it does not establish a speedup over the procedural bay.
+
+The focused production runner passed 1/1 gating probe in 69 seconds, peak load
+7.6 on 10 cores; 98/99 probes were not run. Mandatory selection returned `all`
+because the integration branch touches shared capture infrastructure. The worker
+SOP limits this pass to affected probes; the supervisor owes the full suite.
+All four Full screenshots were opened and inspected by the worker. Principal
+production flight approval remains pending.
+
+The four failed Sage lenses (CodeQuality, Architecture, Maintainability,
+HonestOracle) produced no source finding to repair. They must be rerun by the
+supervisor before merge; this commit does not claim those reviews passed.
+The 21 optional glossary nits are declined: `spawn` is Node's child-process API,
+`command` identifies an accepted control-room fitting rather than a consequence
+model intervention, and the study reference title uses “Hangar” as quoted design
+copy. Renaming historical assets, generated evidence or those technical names
+would add unrelated churn. CONTEXT's scoped alias rule remains authoritative.
+
+Round-2 final verification (2026-10-10):
+
+- C3/C4: tested — `npm test` ran once: 5,779 pass, 0 fail, 9,054,236 assertions across 320 files, 429.57 seconds. No source changed after this run.
+- C4: tested — production build (including game typecheck), format, script lint, launcher wiring and diff whitespace checks passed.
+- C3/C4: tested — the production Metal focused gate passed 1/1 in 69 seconds; all four default/Full count checks, Auto controls and matching procedural-state checks passed. This remains partial browser coverage.

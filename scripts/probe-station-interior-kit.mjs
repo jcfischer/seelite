@@ -253,21 +253,33 @@ try {
 				actual.dockPhase === "docked",
 		);
 		const counts = {};
-		for (const mode of ["0", "auto", "2"]) {
+		for (const mode of ["default", "0", "auto", "2"]) {
 			counts[mode] = await page.evaluate((mode) => {
 				const g = window.__seelite;
-				for (const h of g.interiorPresentations.values()) h.lods.setMode(mode);
+				if (mode !== "default")
+					for (const h of g.interiorPresentations.values())
+						h.lods.setMode(mode);
 				g.renderer.info.autoReset = false;
 				g.renderer.info.reset();
 				g.render(0);
 				const stat = { ...g.renderer.info.render };
 				return {
 					...stat,
+					modes: [...g.interiorPresentations.values()].map((h) => h.lods.mode),
 					levels: g.interiorPresentations.get("station-trade").lods.stats()
 						.levels,
 				};
 			}, mode);
 		}
+		check(
+			`${fixture.theme} defaults to Full with the same calls and triangles as forced Full`,
+			counts.default.modes.length > 0 &&
+				counts.default.modes.every((mode) => mode === "0") &&
+				counts.default.levels[0] > 0 &&
+				counts.default.levels.slice(1).every((n) => n === 0) &&
+				counts.default.calls === counts["0"].calls &&
+				counts.default.triangles === counts["0"].triangles,
+		);
 		check(
 			`${fixture.theme} reduced buckets submit fewer triangles without changing instance population`,
 			counts["2"].triangles < counts["0"].triangles &&
@@ -280,7 +292,7 @@ try {
 		);
 		await page.evaluate(() => {
 			const g = window.__seelite;
-			for (const h of g.interiorPresentations.values()) h.lods.setMode("auto");
+			for (const h of g.interiorPresentations.values()) h.lods.setMode("0");
 			g.render(0);
 		});
 		await page.screenshot({ path: `${output}/${fixture.theme}.png` });

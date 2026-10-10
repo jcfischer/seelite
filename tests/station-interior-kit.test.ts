@@ -73,6 +73,32 @@ test("shipping scenes match the full and reduced triangle records", () => {
 		}
 });
 afterEach(() => installInteriorKitBuilder(null));
+test("station kits default to one full-detail bucket while Auto remains available", () => {
+	const interior = stationInterior(
+		"trade",
+		STATION_GEOMETRY.trade.aperturePlaneKm,
+		47,
+	);
+	const camera = new THREE.PerspectiveCamera(60, 1.6, 0.01, 20000);
+	camera.position.z = 2;
+	for (const { id } of THEMES) {
+		const kit = buildInteriorKit(interior, 47, id, assets, records);
+		const lod = kit.userData.interiorLods as InteriorLods;
+		lod.update(camera, 900);
+		const full = lod.stats();
+		expect(full.mode).toBe("0");
+		expect(full.levels[0]).toBeGreaterThan(0);
+		expect(full.levels.slice(1)).toEqual([0, 0]);
+		expect(full.triangles).toBe(full.fullTriangles);
+		lod.setMode("auto");
+		lod.update(camera, 900);
+		const auto = lod.stats();
+		expect(auto.levels[1] + auto.levels[2]).toBeGreaterThan(0);
+		expect(auto.triangles).toBeLessThan(full.triangles);
+		expect(auto.levels.reduce((sum, n) => sum + n, 0)).toBe(full.levels[0]);
+		disposeSubtree(kit);
+	}
+});
 test("review metre and game kilometre assemblies have the same bounds at every detail level", () => {
 	const interior = stationInterior(
 		"trade",
