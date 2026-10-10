@@ -21,6 +21,8 @@ import {
 	reducedLevel,
 } from "../src/authored-levels";
 import {
+	COURIER_ALLOY_MATERIAL,
+	COURIER_ALLOY_ROUGHNESS,
 	COURIER_LENGTH_INSET_KM,
 	COURIER_FRAME_NAME,
 	COURIER_LEVEL_NAMES,
@@ -361,6 +363,16 @@ describe("what the game needs that the study did not carry", () => {
 					material.emissiveIntensity <= EMISSIVE_CEILING,
 				]).toEqual([mesh.name, true]);
 		}
+	});
+
+	test("the machined alloy is rough enough not to flash under a bay flood (#843)", () => {
+		const alloy = meshesOf(courier())
+			.map((mesh) => mesh.material as THREE.MeshStandardMaterial)
+			.filter((material) => material.name === COURIER_ALLOY_MATERIAL);
+		expect(alloy.length).toBeGreaterThan(0);
+		for (const material of alloy)
+			expect(material.roughness).toBe(COURIER_ALLOY_ROUGHNESS);
+		expect(COURIER_ALLOY_ROUGHNESS).toBeGreaterThanOrEqual(0.4);
 	});
 
 	test("every courier draws the one loaded model", () => {
