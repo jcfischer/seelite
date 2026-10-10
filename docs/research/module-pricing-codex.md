@@ -18,6 +18,10 @@ A-grade budget, then applies the same unit to every kind, size and grade. It
 also solves a mass unit from a chosen empty-hold E-fit acceleration penalty.
 The resulting masses go through the shipped `flightPerformance` function.
 
+The principal confirmed the E-fit handling calibration on 2026-10-10: retain
+the proposed empty-hold acceleration loss. The grade-specific mass results in
+the generated table therefore stand; approval of the complete table is pending.
+
 The budget, handling penalty, kind weights and grade multipliers are **design
 inputs**. They are not discovered by a market simulation. The instrument
 derives their consequences, checks that no grade dominates another, and exposes
