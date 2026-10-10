@@ -529,6 +529,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-flown-mass.mjs",
+			"Boots a live game, fills the hold, and checks the flown mass and the handling the frame loop flies follow the cargo by the mass ratio, then empties the hold and checks the empty handling returns exactly.",
+			[
+				"flown mass",
+				"cargo",
+				"handling",
+				"flight performance",
+				"acceleration",
+				"commander",
+			],
+		),
+		entry(
 			"probe-shipyard.mjs",
 			"Docks at a shipyard, reads the Shipyard tab's hull rows, buys a hull and checks the mesh, handling, condition and berth follow it, delivers a hull at the launch crossing, and reloads to fly the saved hull over a conflicting ?hull=.",
 			[

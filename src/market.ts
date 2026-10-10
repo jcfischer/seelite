@@ -987,6 +987,19 @@ export function marketRow(
 export interface Equipment {
 	name: string;
 	priceCr: number;
+	/**
+	 * What the module adds to the flown mass, tonnes (#865, `flownMassT`).
+	 *
+	 * **Zero on every row, by the principal's ruling on #865 (2026-10-10).**
+	 * Ship outfitting's D15 makes mass an output of the pricing instrument
+	 * (#868), and no figure is written ahead of it — so a fit weighs nothing
+	 * yet, and what is in the hold (cargo, recovered fittings, entrusted lots)
+	 * is the only mass a pilot feels. A recovered fitting weighs its 1 t of hold
+	 * (D10) while the same module fitted weighs 0 t; that asymmetry closes when
+	 * the instrument's table lands. Required rather than
+	 * optional, so the instrument's table has a field on every row to fill.
+	 */
+	massT: number;
 	scope: "universal" | "refinery" | "shipyard";
 	/** Not in Elite's cassette list — introduced by station-types.md §4.1 and
 	 *  priced here from the disc/Master figures research §3.1 cites. */
@@ -1040,33 +1053,42 @@ export const LONG_RANGE_SCANNER_PRICE_CR = 1000;
 export const ESCAPE_POD = "Escape Pod";
 
 export const EQUIPMENT: readonly Equipment[] = [
-	{ name: "Missile", priceCr: 30, scope: "universal" },
-	{ name: "Large Cargo Bay", priceCr: 400, scope: "universal" },
-	{ name: "Extra Pulse Laser", priceCr: 400, scope: "universal" },
-	{ name: "E.C.M. System", priceCr: 600, scope: "universal" },
-	{ name: "Extra Beam Laser", priceCr: 1000, scope: "universal" },
-	{ name: ESCAPE_POD, priceCr: 1000, scope: "universal" },
-	{ name: "Energy Bomb", priceCr: 900, scope: "universal" },
-	{ name: "Docking Computer", priceCr: 1000, scope: "universal" },
-	{ name: "Galactic Hyperdrive", priceCr: 5000, scope: "universal" },
-	{ name: "Fuel Scoops", priceCr: 525, scope: "refinery" },
-	{ name: "Mining Laser", priceCr: 800, scope: "refinery", newToSeelite: true },
-	{ name: "Extra Energy Unit", priceCr: 1500, scope: "shipyard" },
+	{ name: "Missile", priceCr: 30, massT: 0, scope: "universal" },
+	{ name: "Large Cargo Bay", priceCr: 400, massT: 0, scope: "universal" },
+	{ name: "Extra Pulse Laser", priceCr: 400, massT: 0, scope: "universal" },
+	{ name: "E.C.M. System", priceCr: 600, massT: 0, scope: "universal" },
+	{ name: "Extra Beam Laser", priceCr: 1000, massT: 0, scope: "universal" },
+	{ name: ESCAPE_POD, priceCr: 1000, massT: 0, scope: "universal" },
+	{ name: "Energy Bomb", priceCr: 900, massT: 0, scope: "universal" },
+	{ name: "Docking Computer", priceCr: 1000, massT: 0, scope: "universal" },
+	{ name: "Galactic Hyperdrive", priceCr: 5000, massT: 0, scope: "universal" },
+	{ name: "Fuel Scoops", priceCr: 525, massT: 0, scope: "refinery" },
+	{
+		name: "Mining Laser",
+		priceCr: 800,
+		massT: 0,
+		scope: "refinery",
+		newToSeelite: true,
+	},
+	{ name: "Extra Energy Unit", priceCr: 1500, massT: 0, scope: "shipyard" },
 	{
 		name: "Military Laser",
 		priceCr: 6000,
+		massT: 0,
 		scope: "shipyard",
 		newToSeelite: true,
 	},
 	{
 		name: SCAN_MODULE,
 		priceCr: SCAN_MODULE_PRICE_CR,
+		massT: 0,
 		scope: "shipyard",
 		newToSeelite: true,
 	},
 	{
 		name: LONG_RANGE_SCANNER,
 		priceCr: LONG_RANGE_SCANNER_PRICE_CR,
+		massT: 0,
 		scope: "shipyard",
 		newToSeelite: true,
 	},

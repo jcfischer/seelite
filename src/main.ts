@@ -1094,6 +1094,7 @@ import {
 import { BeamLayer } from "./beam-layer";
 import {
 	commanderHold,
+	flownMassT,
 	newCommander,
 	shipyardScreen,
 	transactAtStation,
@@ -2607,12 +2608,16 @@ class Game {
 	/** A hull bought while docked that takes over at the next launch (D10). */
 	private hullOnLaunch: HullId | null = null;
 
-	/** The flown hull's handling, derived once per hull: `flightPerformance`
-	 *  is pure and the roster does not change mid-frame. */
-	private flownPerformanceOf: { hull: HullId; perf: FlightPerformance } = {
-		hull: this.flownHull,
-		perf: flightPerformance(this.flownHull),
-	};
+	/** The flown ship's handling, derived once per hull and flown mass (#865):
+	 *  `flightPerformance` is pure, and the mass moves only when something is
+	 *  bought, sold, taken aboard or lost. The key is the exact mass rather
+	 *  than a step of it, because a cargo change is an event and not a
+	 *  per-frame drift, so an exact key rebuilds once per change. */
+	private flownPerformanceOf: {
+		hull: HullId;
+		massT: number;
+		perf: FlightPerformance;
+	} | null = null;
 
 	/** Everything the pointer holds, gone: the delta and the flick being read.
 	 *  The one place besides `takePointer` that zeroes the delta (#641). */
@@ -2677,13 +2682,24 @@ class Game {
 		return this.flownSolidOf.solid;
 	}
 
+	/** What the flown ship weighs now, tonnes: `flownMassT` over the flown
+	 *  hull, the commander's hold and the entrusted lots aboard. */
+	get flownShipMassT(): number {
+		return flownMassT(
+			this.flownHull,
+			this.commander,
+			entrustedTonnesAboard(this.requests),
+		);
+	}
+
 	private get flownPerformance(): FlightPerformance {
-		if (this.flownPerformanceOf.hull !== this.flownHull)
-			this.flownPerformanceOf = {
-				hull: this.flownHull,
-				perf: flightPerformance(this.flownHull),
-			};
-		return this.flownPerformanceOf.perf;
+		const massT = this.flownShipMassT;
+		const cached = this.flownPerformanceOf;
+		if (cached?.hull === this.flownHull && cached.massT === massT)
+			return cached.perf;
+		const perf = flightPerformance(this.flownHull, {}, massT);
+		this.flownPerformanceOf = { hull: this.flownHull, massT, perf };
+		return perf;
 	}
 
 	/** The flown hull's envelope, which a berth's fit predicate compares
@@ -3844,6 +3860,7 @@ class Game {
 			id: this.flownHull,
 			variant: HULL_SPECS[this.flownHull].variant,
 			spec: HULL_SPECS[this.flownHull],
+			massT: this.flownShipMassT,
 			performance: this.flownPerformance,
 		};
 	}
