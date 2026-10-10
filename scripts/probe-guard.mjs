@@ -59,6 +59,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
+import { directRunNotice } from "./lib/probe-contention.mjs";
 
 /** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
@@ -357,7 +358,36 @@ export async function guardedOrigin(origin) {
  */
 export async function guardedTree(origin) {
 	const resolved = originOf(process.env.PROBE_URL ?? origin);
+	warnSharedMachine();
 	return { origin: resolved, served: await assertServingThisTree(resolved) };
+}
+
+/**
+ * Once per run, say it if it is not alone on the machine (#882).
+ *
+ * The lock serialises suites; a probe run directly takes none — that is how a
+ * red gets re-run alone — and nothing at all sees a sibling worktree's probes, a
+ * `sage review` or a test run. Before this, only a **red** printed a load figure,
+ * so a suite of slow greens read as slow probes: 63 probes at 1992 s looked like
+ * `probe-music` taking 410 s rather than eight cores at load 23–47 with someone
+ * else's browser in every one of them.
+ *
+ * Here rather than in `launchChromium` because this is the probe's preamble: the
+ * one place every probe passes on its way to measuring anything, including the
+ * ones that reach a page through their own launcher.
+ *
+ * **stderr, and once.** A suite captures a probe's stdout to reprint it under a
+ * failure, and a line nobody asked for belongs where the guard already puts what
+ * is not a verdict. Once, because a probe that boots four pages should not say it
+ * four times.
+ */
+let sharedMachineSaid = false;
+export function warnSharedMachine() {
+	if (sharedMachineSaid) return "";
+	sharedMachineSaid = true;
+	const line = directRunNotice();
+	if (line) console.error(line);
+	return line;
 }
 
 /**

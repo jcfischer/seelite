@@ -11,6 +11,7 @@ import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -56,20 +57,50 @@ const lintAs = (path: string, source: string) => {
 };
 
 /**
+ * Every module the entries reach through a relative import, transitively, as
+ * paths under `scripts/`.
+ *
+ * The list this replaces was typed, which made the fixture a second copy of the
+ * import graph: adding one import to `probe-guard.mjs` — #882's contention
+ * notice did — left the scratch tree unable to load the gate at all, and the test
+ * failed as `ERR_MODULE_NOT_FOUND` naming a file nobody had heard of. Deriving
+ * the list is what stops the next person reading that error as their own bug.
+ *
+ * Text rather than a real module load, because the fixture's job is to know which
+ * *files* to copy, not to evaluate them. Entries and results are paths under
+ * `scripts/`, which is what the copy loop below expects.
+ */
+const transitiveScripts = (entries: string[]): string[] => {
+	const seen = new Set<string>();
+	const queue = [...entries];
+	while (queue.length) {
+		const rel = queue.shift() as string;
+		if (seen.has(rel) || !existsSync(repoPath(join("scripts", rel)))) continue;
+		seen.add(rel);
+		const dir = dirname(join("scripts", rel)).replace(/^scripts\/?/, "");
+		const source = readFileSync(repoPath(join("scripts", rel)), "utf8");
+		for (const m of source.matchAll(/from\s+["'](\.[^"']+)["']/g)) {
+			const target = join("scripts", dir, m[1]);
+			if (target.startsWith("scripts/"))
+				queue.push(target.slice("scripts/".length));
+		}
+	}
+	return [...seen];
+};
+
+/**
  * Run the wiring gate over a scratch `scripts/` holding copies of the gate, the
- * launcher and its one import, plus `files`. The gate scans its own directory,
- * so this is what lets a case be built to make it fail without touching the
- * real tree.
+ * launcher and everything the launcher imports, plus `files`. The gate scans its
+ * own directory, so this is what lets a case be built to make it fail without
+ * touching the real tree.
  */
 const wiringOver = (files: Record<string, string>) => {
 	const root = mkdtempSync(join(tmpdir(), "seelite-wiring-"));
 	try {
-		for (const rel of [
+		for (const rel of transitiveScripts([
 			"check-launcher-wiring.mjs",
 			"probe-guard.mjs",
-			"lib/tree-declaration.mjs",
-			"lib/players-renderer.mjs",
-		]) {
+		])) {
 			mkdirSync(dirname(join(root, "scripts", rel)), { recursive: true });
 			copyFileSync(repoPath(`scripts/${rel}`), join(root, "scripts", rel));
 		}
