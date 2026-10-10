@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * #564: save schema 6 → 7, the ladders' record on the commander (#183 D9).
  *
@@ -39,17 +45,17 @@ const saved = () => {
 		...commander.state,
 		credits: 5000,
 		cargo: { Food: 6 },
-		ownedEquipment: ["Military Laser"],
+		loadout: migrateEquipment("courier", ["Military Laser"]).loadout,
 	};
 	return { world: newWorld(42), commander };
 };
 
 describe("#183 D9 — the ladders in the save", () => {
-	test("the schema is 12, and carries the ladders since 7", () => {
+	test("the schema is 13, and carries the ladders since 7", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(12);
+		expect(SAVE_SCHEMA_VERSION).toBe(13);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 		]);
 	});
 
@@ -84,6 +90,8 @@ describe("#183 D9 — the ladders in the save", () => {
 	test("a v6 record migrates at zero, seeded, and keeps what it owns", () => {
 		const v6 = resealed(serializeSave(saved()), (body) => {
 			body.saveSchemaVersion = 6;
+			body.commander.state.ownedEquipment = ["Military Laser"];
+			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
@@ -102,8 +110,10 @@ describe("#183 D9 — the ladders in the save", () => {
 		expect(commander.ladders.playedS).toBe(0);
 		// Owned stays owned (a gated item), and a v6 guided choice is kept: 6
 		// is the version that added it.
-		expect(commander.state.ownedEquipment).toEqual(["Military Laser"]);
-		expect(commander.state.credits).toBe(5000);
+		expect(equipmentNames(commander.state.loadout)).toEqual(["Military Laser"]);
+		expect(commander.state.credits).toBe(
+			5000 + migrateEquipment("courier", ["Military Laser"]).refundCr,
+		);
 		expect(commander.firstDay).toBe("guided");
 	});
 
@@ -116,6 +126,8 @@ describe("#183 D9 — the ladders in the save", () => {
 		save.world.galaxies[0] = { ...save.world.galaxies[0], visited: [5] };
 		const v6 = resealed(serializeSave(save), (body) => {
 			body.saveSchemaVersion = 6;
+			body.commander.state.ownedEquipment = [];
+			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
@@ -134,6 +146,8 @@ describe("#183 D9 — the ladders in the save", () => {
 	test("an older version carrying the key is refused by name", () => {
 		const grafted = resealed(serializeSave(saved()), (body) => {
 			body.saveSchemaVersion = 6;
+			body.commander.state.ownedEquipment = [];
+			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
 		});
 		expect(() => parseSave(grafted)).toThrow(

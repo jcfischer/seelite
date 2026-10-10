@@ -1211,6 +1211,10 @@ try {
 	await salvagePage.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 	await bootedGame(salvagePage);
 	const salvageFixture = await salvagePage.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const { derelictSlots } = await import("/src/derelict-slots.ts");
 		const { salvageTargetsOf } = await import("/src/salvage-jobs.ts");
@@ -1224,7 +1228,7 @@ try {
 				{ kind: "fitting", id: "Docking Computer", tonnes: 1, left: 1 },
 			],
 		};
-		g.commander.ownedEquipment = [];
+		g.commander.loadout = migrateEquipment(g.commander.hull, []).loadout;
 		const target = salvageTargetsOf(
 			g.commerceWorld,
 			g.world.system,

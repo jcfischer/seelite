@@ -60,6 +60,10 @@ export async function installViewFraming(page) {
 		 * leaves again.
 		 */
 		window.__parkInBerth = async (stationId, berthId, opts = {}) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
+
 			const g = window.__seelite;
 			// Canonical visual fixtures own their berth layout. Dynamic Traffic is
 			// verified by its own live route probe; leaving it enabled here lets a
@@ -119,10 +123,10 @@ export async function installViewFraming(page) {
 				if (!g.hasDockingComputer)
 					g.commander = {
 						...g.commander,
-						ownedEquipment: [
-							...g.commander.ownedEquipment,
+						loadout: migrateEquipment(g.commander.hull, [
+							...equipmentNames(g.commander.loadout ?? {}),
 							g.dockingComputerName,
-						],
+						]).loadout,
 					};
 				g.toggleDockingComputer();
 			}
@@ -144,10 +148,10 @@ export async function installViewFraming(page) {
 						if (!g.hasDockingComputer)
 							g.commander = {
 								...g.commander,
-								ownedEquipment: [
-									...g.commander.ownedEquipment,
+								loadout: migrateEquipment(g.commander.hull, [
+									...equipmentNames(g.commander.loadout ?? {}),
 									g.dockingComputerName,
-								],
+								]).loadout,
 							};
 						g.toggleDockingComputer();
 					}

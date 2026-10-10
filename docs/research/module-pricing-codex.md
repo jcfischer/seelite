@@ -1,14 +1,15 @@
 # Module pricing proposal
 
 Node: [Derive module prices, mass and output](https://github.com/jcfischer/seelite/issues/868).
-Author: Codex. Status: proposal awaiting principal approval.
+Author: Codex. Status: approved in the [pricing receipt](https://github.com/jcfischer/seelite/issues/868#issuecomment-6099639051), 2026-10-10.
 
 Run `bun scripts/measure-module-pricing.ts` for the complete Markdown table, or
 append `--json` for unrounded values and the full module-by-hull mass sweep.
-`scripts/lib/module-pricing.ts` is the sole home of the proposed tuning. This
-document carries the rationale, not another copy of its numbers. Nothing in
-`src/` imports the proposal. The live equipment prices, mass and behaviours do
-not change in this PR.
+`src/module-catalog.ts` owns the approved tuning and derivation. The runtime
+loadout and the instrument share it; `scripts/lib/module-pricing.ts` adds the
+handling measurement. This document carries the rationale, not a second table.
+Node #876 adopts prices, mass and rack capacities; other module behaviours
+remain with their build nodes.
 
 ## What is derived
 
@@ -20,7 +21,7 @@ The resulting masses go through the shipped `flightPerformance` function.
 
 The principal confirmed the E-fit handling calibration on 2026-10-10: retain
 the proposed empty-hold acceleration loss. The grade-specific mass results in
-the generated table therefore stand; approval of the complete table is pending.
+the generated table therefore stand; the complete table was subsequently approved in the receipt above.
 
 The budget, handling penalty, kind weights and grade multipliers are **design
 inputs**. They are not discovered by a market simulation. The instrument
@@ -31,8 +32,9 @@ weights or output rates feel good in play.
 The reference is a full fit, not the most expensive collection of modules. The
 per-hull minimum/maximum price bounds choose each slot independently. They
 permit duplicate active devices, so they are arithmetic envelopes, not a ruling
-on stacking or a promise that every combination is playable. The compatibility
-check uses exact sizes; the smaller-in-larger question remains open.
+on stacking or a promise that every combination is playable. The reference fit uses exact-size rows. The principal subsequently approved
+smaller modules in larger compatible slots on #876; the shared fit predicate
+and the instrument's cost envelope now include those choices.
 
 ## Output choices for review
 
@@ -44,7 +46,7 @@ output benefits, not a claim about combat effectiveness.
 
 The principal requested graded performance for the formerly binary modules and
 chose docking-computer engagement range and escape-pod eject delay on 2026-10-10.
-Their numeric values remain proposed. Both keep the existing clearance
+Their numeric values were approved in the receipt above. Both keep the existing clearance
 requirement and survival/loss outcome rules. A delay would still expose the
 ship to damage for longer; that consequence requires explicit approval.
 The computer's proposed ranges are narrower than today's engagement ceiling,

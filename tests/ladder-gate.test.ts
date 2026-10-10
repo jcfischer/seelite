@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * #564: the ladder gate on the Equipment tab and at the till (#183 D6, #562
  * D6-D7).
@@ -23,7 +29,7 @@ const buy = (equipment: string, rungs: Rungs, owned: string[] = []) =>
 		commander: {
 			...newCommander(PLAYER_BASELINE_HULL),
 			credits: 100_000,
-			ownedEquipment: owned,
+			loadout: migrateEquipment("courier", owned).loadout,
 		},
 		deficits: {},
 		station: marketStationOf(

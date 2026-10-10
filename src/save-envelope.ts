@@ -1,3 +1,10 @@
+import {
+	carriedModule,
+	parseLoadout,
+	parseModule,
+	migrateEquipment,
+	type Loadout,
+} from "./loadout";
 /**
  * #89's D5: a save is `{ world, commander }` in one envelope under one hash.
  *
@@ -139,8 +146,9 @@ import {
  * records migrate empty; older readers must refuse rather than discard
  * learned rows.
  */
-/** 12 adds one commander death wreck in world state. Older saves migrate empty. */
-export const SAVE_SCHEMA_VERSION = 12;
+/** 12 adds one commander death wreck. 13 replaces the flat equipment list
+ * with a validated slot loadout and preserves typed fittings in the hold/wreck. */
+export const SAVE_SCHEMA_VERSION = 13;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -174,7 +182,7 @@ export const SAVE_SCHEMA_VERSION = 12;
  * recovered fittings and predates the sweep ledger.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 ] as const;
 
 /**
@@ -453,7 +461,11 @@ const canonicalCommander = (record: CommanderRecord) => {
 		state: {
 			credits: record.state.credits,
 			cargo,
-			ownedEquipment: [...record.state.ownedEquipment].sort(),
+			loadout: Object.fromEntries(
+				Object.entries(
+					parseLoadout(record.state.loadout, record.state.hull),
+				).sort(([a], [b]) => a.localeCompare(b)),
+			),
 			...(record.state.recoveredFittings?.length
 				? {
 						recoveredFittings: record.state.recoveredFittings.map((item) => ({
@@ -630,7 +642,8 @@ const parseCommander = (
 				(item) =>
 					!item ||
 					typeof item !== "object" ||
-					!EQUIPMENT.some((e) => e.name === item.id) ||
+					(!EQUIPMENT.some((e) => e.name === item.id) &&
+						!(version >= 13 && item.module)) ||
 					!Number.isInteger(item.tonnes) ||
 					item.tonnes <= 0,
 			))
@@ -638,9 +651,41 @@ const parseCommander = (
 		fail(
 			"commander.state: recoveredFittings is not a list of fitting items with positive whole tonnes",
 		);
-	const equipment = state.ownedEquipment;
-	if (!Array.isArray(equipment) || equipment.some((e) => typeof e !== "string"))
-		fail("commander.state: ownedEquipment is not a list of names");
+	let loadout: Loadout;
+	let refundCr = 0;
+	const carried = Array.isArray(recovered)
+		? recovered.map((item) => {
+				if (item.module !== undefined) {
+					if (version < 13) fail("legacy fitting contains module fields");
+					const { id, tonnes, ...module } = item;
+					const parsed = parseModule(module);
+					if (tonnes !== 1 || carriedModule(parsed).id !== id)
+						fail("invalid carried module identity or quantity");
+					return { id, tonnes, ...parsed };
+				}
+				if (Object.keys(item).some((k) => k !== "id" && k !== "tonnes"))
+					fail("legacy fitting contains unknown fields");
+				return { id: item.id as string, tonnes: item.tonnes as number };
+			})
+		: [];
+	if (version >= 13) {
+		if (Object.hasOwn(state, "ownedEquipment"))
+			fail("v13 cannot contain ownedEquipment");
+		loadout = parseLoadout(state.loadout, hull as HullId);
+	} else {
+		if (Object.hasOwn(state, "loadout"))
+			fail("legacy save cannot contain loadout");
+		const equipment = state.ownedEquipment;
+		if (
+			!Array.isArray(equipment) ||
+			equipment.some((e) => typeof e !== "string")
+		)
+			fail("ownedEquipment is not a list of names");
+		const migrated = migrateEquipment(hull as HullId, equipment as string[]);
+		loadout = migrated.loadout;
+		refundCr = migrated.refundCr;
+		carried.push(...migrated.recoveredFittings);
+	}
 	const dockedAt = o.dockedAt;
 	// `undefined` is refused alongside a malformed key rather than read as
 	// "in flight": an absent field is a truncated record, and #89's obligation
@@ -726,17 +771,10 @@ const parseCommander = (
 							now,
 						),
 		state: {
-			credits: num(state, "credits", "commander.state"),
+			credits: num(state, "credits", "commander.state") + refundCr,
 			cargo,
-			ownedEquipment: [...(equipment as string[])].sort(),
-			...(Array.isArray(recovered) && recovered.length
-				? {
-						recoveredFittings: recovered.map((item) => ({
-							id: item.id as string,
-							tonnes: item.tonnes as number,
-						})),
-					}
-				: {}),
+			loadout,
+			...(carried.length ? { recoveredFittings: carried } : {}),
 			// **Clamped to the hull's tank, not refused** (#554). Every save
 			// before it filled to the courier's 7 LY whatever the hull, so a
 			// short-tank commander's record carries more fuel than the hull
@@ -822,6 +860,13 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	// carry one is enforced, as `flight.rates` is one level down.
 	if ((version as number) < 9) refuseDerelicts(o.world, version as number);
 	const world = parseWorld(o.world);
+	if ((version as number) < 13) {
+		for (const g of world.galaxies)
+			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])
+				for (const container of Object.values(row?.containers ?? {}))
+					if (Object.hasOwn(container, "fitting"))
+						fail("legacy world contains typed fitting");
+	}
 	// Schema 2 at 7f1cfd3 is the supported pre-journal envelope. Verify its
 	// original hash above, then migrate a copy; the store retains its original
 	// until the normal complete-envelope transaction succeeds.

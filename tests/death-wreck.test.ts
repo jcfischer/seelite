@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 import { expect, test } from "bun:test";
 import {
 	deathWreckContents,
@@ -71,7 +77,11 @@ const dying = {
 	state: {
 		...newCommanderRecord("courier").state,
 		cargo: { Food: 8, Gold: 12 },
-		ownedEquipment: ["Escape Pod", "Docking Computer", "Fuel Scoops"],
+		loadout: migrateEquipment("courier", [
+			"Escape Pod",
+			"Docking Computer",
+			"Fuel Scoops",
+		]).loadout,
 	},
 	flight: {
 		...newCommanderRecord("courier").flight,
@@ -106,8 +116,10 @@ test("Holdings returns the restored commander beside the dying inventory's wreck
 			deathWreckContents(47, DEATH_AT, dying.state, cause),
 		);
 		expect(outcome.commander.state.cargo).toEqual({});
-		expect(outcome.commander.state.ownedEquipment).toEqual(
-			cause === "eject" ? ["Docking Computer", "Fuel Scoops"] : [],
+		expect(equipmentNames(outcome.commander.state.loadout)).toEqual(
+			cause === "eject"
+				? ["Extra Pulse Laser", "Docking Computer", "Fuel Scoops"]
+				: ["Extra Pulse Laser"],
 		);
 		parseSave(serializeSave(outcome));
 	}
@@ -238,7 +250,7 @@ test("every purchasable hull's largest container inventory fits the death row bo
 	for (const hull of PURCHASABLE_HULL_IDS) {
 		const state: CommanderState = {
 			...newCommanderRecord(hull).state,
-			ownedEquipment: fittings,
+			loadout: migrateEquipment(hull, fittings).loadout,
 			cargo,
 		};
 		const capacity = commanderHold(state, 0).capacityT;
@@ -272,7 +284,7 @@ test("per-item death draws are deterministic, independent of list order and othe
 	const reordered = {
 		...dying.state,
 		cargo: { Gold: 12, Food: 8 },
-		ownedEquipment: [...dying.state.ownedEquipment].reverse(),
+		loadout: Object.fromEntries(Object.entries(dying.state.loadout).reverse()),
 	};
 	expect(deathWreckContents(47, 10, reordered, "destroyed")).toEqual(draw);
 	for (let at = 0; at < 100; at++) {
@@ -392,7 +404,7 @@ test("the Holdings wreck scoop recovers goods and fittings once and removes a st
 		).toBe(0);
 	}
 	expect(world.galaxies[0].deathWreck).toBeUndefined();
-	expect(holdings.commander.ownedEquipment).toEqual([]);
+	expect(holdings.commander.loadout).toEqual(stockLoadout("courier"));
 	parseSave(
 		serializeSave({
 			world,
@@ -559,6 +571,8 @@ test("death scoop honors speed, partial tonnes, whole fittings and native kg/g w
 test("schema 11 migrates empty and refuses a grafted death wreck; malformed new rows refuse", () => {
 	const raw = serializeSave({ world: newWorld(47), commander: dying }) as any;
 	raw.saveSchemaVersion = 11;
+	raw.commander.state.ownedEquipment = [];
+	delete raw.commander.state.loadout;
 	const { integrity, ...body } = raw;
 	raw.integrity = fnv1a(JSON.stringify(body));
 	expect(parseSave(raw).world.galaxies.every((g) => !g.deathWreck)).toBe(true);
@@ -571,6 +585,8 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 	for (const mutate of [
 		(r: any) => {
 			r.saveSchemaVersion = 11;
+			r.commander.state.ownedEquipment = [];
+			delete r.commander.state.loadout;
 		},
 		(r: any) => {
 			r.world.galaxies[1].deathWreck = structuredClone(

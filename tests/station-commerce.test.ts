@@ -1,3 +1,10 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	legacyModule,
+	moduleRow,
+} from "../src/loadout";
 import { describe, expect, test } from "bun:test";
 import { TOP_RUNGS } from "../src/ladder";
 import { type CarrierKey, carrierKey } from "../src/carrier-key";
@@ -310,13 +317,16 @@ describe("node #777 unit trades across frame ticks", () => {
 
 test("available equipment is charged once, then becomes owned and unavailable", () => {
 	const before = input({
-		commander: { ...newCommander(PLAYER_BASELINE_HULL), credits: 1_000 },
+		commander: { ...newCommander(PLAYER_BASELINE_HULL), credits: 10_000 },
 		action: { type: "buy-equipment", equipment: "Large Cargo Bay" },
 	});
 	const bought = transactAtStation(before);
 	expect(bought).toMatchObject({ accepted: true });
-	expect(bought.commander.credits).toBe(600);
-	expect(bought.commander.ownedEquipment).toContain("Large Cargo Bay");
+	expect(bought.commander.credits).toBe(
+		10_000 -
+			moduleRow(legacyModule(PLAYER_BASELINE_HULL, "Large Cargo Bay")).priceCr,
+	);
+	expect(equipmentNames(bought.commander.loadout)).toContain("Large Cargo Bay");
 	const again = transactAtStation(
 		input({
 			commander: bought.commander,

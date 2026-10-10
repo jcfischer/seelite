@@ -23,6 +23,10 @@ try {
 	await page.goto(gameUrl(origin, { seed: 47 }));
 	await bootedGame(page);
 	const fixture = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		g.clockHeld = true;
 		g.resetFlightToStart();
@@ -34,7 +38,10 @@ try {
 		g.commander = {
 			...g.commander,
 			cargo: { Food: 8, Gold: 12 },
-			ownedEquipment: ["Escape Pod", "Docking Computer"],
+			loadout: migrateEquipment(g.commander.hull, [
+				"Escape Pod",
+				"Docking Computer",
+			]).loadout,
 		};
 		let at = Math.ceil(g.world.gameTime);
 		for (; at < 10000; at++) {
@@ -67,7 +74,11 @@ try {
 	});
 	await reloaded;
 	await bootedGame(page);
-	const after = await page.evaluate(() => {
+	const after = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		g.clockHeld = true;
 		g.render(0);
@@ -77,7 +88,7 @@ try {
 			row,
 			pos: wreck?.pose.pos,
 			contact: g.contacts.find((c) => c.id === row?.key),
-			equipment: g.commander.ownedEquipment,
+			equipment: equipmentNames(g.commander.loadout ?? {}),
 			cargo: g.commander.cargo,
 		};
 	});
@@ -105,7 +116,8 @@ try {
 	check(
 		"own loss is already a contact without a scanner and the pilot wakes empty",
 		after.contact?.name.includes("Own wreck") &&
-			after.equipment.length === 0 &&
+			after.equipment.length === 1 &&
+			after.equipment[0] === "Extra Pulse Laser" &&
 			Object.keys(after.cargo).length === 0,
 	);
 	await page.evaluate(() => {
@@ -154,6 +166,10 @@ try {
 		String(changed),
 	);
 	const scooped = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const { tetherPose } = await import("/src/derelict.ts");
 		const row = g.commerceWorld.galaxies[g.world.galaxy.index].deathWreck;
@@ -178,7 +194,7 @@ try {
 			galaxyIndex: g.world.galaxy.index,
 			cargo: g.commander.cargo,
 			fittings: g.commander.recoveredFittings,
-			equipment: g.commander.ownedEquipment,
+			equipment: equipmentNames(g.commander.loadout ?? {}),
 			wreck: g.commerceWorld.galaxies[g.world.galaxy.index].deathWreck,
 			drawn: g.derelictMeshes.has(row.key + ":" + row.instanceOrdinal),
 			saved: await g.save.backend.read(g.save.defaultSlot, "live"),
@@ -191,7 +207,8 @@ try {
 			scooped.cargo.Food === 8 &&
 			scooped.cargo.Gold === 12 &&
 			scooped.fittings?.[0]?.id === "Docking Computer" &&
-			scooped.equipment.length === 0,
+			scooped.equipment.length === 1 &&
+			scooped.equipment[0] === "Extra Pulse Laser",
 		JSON.stringify(scooped.fittings),
 	);
 	check(
@@ -203,7 +220,7 @@ try {
 			scooped.saved.commander.state.recoveredFittings?.[0]?.id ===
 				"Docking Computer" &&
 			scooped.saved.commander.state.recoveredFittings[0].tonnes === 1 &&
-			scooped.saved.commander.state.ownedEquipment.length === 0 &&
+			Object.keys(scooped.saved.commander.state.loadout).length === 2 &&
 			!scooped.saved.world.galaxies[scooped.galaxyIndex].deathWreck,
 	);
 } finally {

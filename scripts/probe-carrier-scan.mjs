@@ -42,6 +42,10 @@ try {
 	await bootedGame(page);
 
 	const scan = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		// Driven by hand from here: the hold is a function of frames flown, and a
 		// loop running in the background would make "how long was the nose on it"
@@ -173,7 +177,10 @@ try {
 		const rowOf = () =>
 			world.readKnowledge(g.commerceWorld.galaxies[galaxy], key);
 		const fitted = (own) => {
-			g.commander.ownedEquipment = own ? [market.SCAN_MODULE] : [];
+			g.commander.loadout = migrateEquipment(
+				g.commander.hull,
+				own ? [market.SCAN_MODULE] : [],
+			).loadout;
 		};
 
 		// 1. Unequipped, on a carrier the verb would otherwise accept.

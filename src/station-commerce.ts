@@ -1,3 +1,17 @@
+import {
+	type Loadout,
+	type FittedModule,
+	parseModule,
+	fitted,
+	stockLoadout,
+	moduleRow,
+	legacyModule,
+	moduleFits,
+	carriedModule,
+	fittingValue,
+	LEGACY_MODULES,
+	transferLoadout,
+} from "./loadout";
 /**
  * The atomic boundary between a docked commander and a station market.
  *
@@ -34,10 +48,18 @@ import {
 	stationEquipmentScreen,
 } from "./station-console";
 
-export interface RecoveredFitting {
+export interface RecoveredFitting extends Partial<FittedModule> {
 	id: string;
 	tonnes: number;
 }
+const recoveredModule = (
+	item: RecoveredFitting,
+	hull: HullId,
+): FittedModule => {
+	if (!item.module) return legacyModule(hull, item.id);
+	const { id, tonnes, ...module } = item;
+	return parseModule(module);
+};
 export const recoveredTonnes = (commander: CommanderState): number =>
 	(commander.recoveredFittings ?? []).reduce(
 		(sum, item) => sum + item.tonnes,
@@ -48,7 +70,7 @@ export interface CommanderState {
 	credits: number;
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;
-	ownedEquipment: readonly string[];
+	loadout: Loadout;
 	/** Unfitted salvage items; omitted when empty to preserve older save integrity. */
 	recoveredFittings?: readonly RecoveredFitting[];
 	/**
@@ -73,6 +95,32 @@ export interface CommanderState {
 }
 
 export const STARTING_CREDITS = 100;
+const slotFor = (c: CommanderState, m: FittedModule) =>
+	HULL_SPECS[c.hull].slots.find((s) => !c.loadout[s.key] && moduleFits(m, s)) ??
+	HULL_SPECS[c.hull].slots.find(
+		(s) =>
+			s.key === "h1" &&
+			c.loadout.h1?.module === "pulse-laser" &&
+			["beam-laser", "military-laser", "mining-laser"].includes(m.module) &&
+			moduleFits(m, s),
+	);
+const fitOne = (c: CommanderState, m: FittedModule): CommanderState => {
+	const slot = slotFor(c, m);
+	if (!slot) throw Error("No compatible free slot");
+	const old = c.loadout[slot.key];
+	return {
+		...c,
+		loadout: { ...c.loadout, [slot.key]: m },
+		...(old
+			? {
+					recoveredFittings: [
+						...(c.recoveredFittings ?? []),
+						carriedModule(old),
+					],
+				}
+			: {}),
+	};
+};
 export const LARGE_CARGO_BAY_BONUS_T = 15;
 
 /** **The hull is required, not defaulted.** Same rule as `FlightPerformance`
@@ -81,7 +129,7 @@ export const LARGE_CARGO_BAY_BONUS_T = 15;
 export const newCommander = (hull: HullId): CommanderState => ({
 	credits: STARTING_CREDITS,
 	cargo: {},
-	ownedEquipment: [],
+	loadout: stockLoadout(hull),
 	// A full tank of the hull's own `tankLy` (#554), which is Elite's opening
 	// position — the courier's full tank is 14 Cr.
 	fuelLy: HULL_SPECS[hull].tankLy,
@@ -234,9 +282,10 @@ const quantityOf = (action: StationAction): number =>
  *  shipyard sells you a freighter. */
 const holdCapacityT = (commander: CommanderState): number =>
 	HULL_SPECS[commander.hull].holdT +
-	(commander.ownedEquipment.includes("Large Cargo Bay")
-		? LARGE_CARGO_BAY_BONUS_T
-		: 0);
+	Object.values(commander.loadout).reduce(
+		(n, m) => n + (moduleRow(m).output.cargoT ?? 0),
+		0,
+	);
 
 const heldTonnes = (cargo: Readonly<Record<string, number>>): number =>
 	Object.entries(cargo).reduce((sum, [name, amount]) => {
@@ -309,6 +358,7 @@ const availableEquipment = (
 ): readonly ConsoleEquipmentEntry[] =>
 	stationEquipmentScreen({
 		type: input.station.type,
+		hull: input.commander.hull,
 		displayTL: input.displayTL,
 		rungs: input.rungs,
 	}).available.filter((item) => item.per === "unit");
@@ -375,15 +425,17 @@ export function transactAtStation(
 			? input.commander.recoveredFittings?.[action.index]
 			: undefined;
 		const entry = item && EQUIPMENT.find((e) => e.name === item.id);
-		if (!item || !entry) return rejected(input, "equipment-unavailable");
+		if (!item || (!entry && !item.module))
+			return rejected(input, "equipment-unavailable");
 		if (action.type === "fit-recovered") {
-			if (input.commander.ownedEquipment.includes(item.id))
+			if (!item.module && !LEGACY_MODULES[item.id])
+				return rejected(input, "equipment-unavailable");
+			if (fitted(input.commander.loadout, item.id))
 				return rejected(input, "equipment-owned");
 			if (gateRefusal(item.id, input.rungs))
 				return rejected(input, "equipment-locked");
 			if (
-				mountsUsed([...input.commander.ownedEquipment, item.id]) >
-				HULL_SPECS[input.commander.hull].hardpoints
+				!slotFor(input.commander, recoveredModule(item, input.commander.hull))
 			)
 				return rejected(input, "hull-mounts");
 		}
@@ -393,19 +445,23 @@ export function transactAtStation(
 		const commander = { ...input.commander };
 		if (kept.length) commander.recoveredFittings = kept;
 		else delete commander.recoveredFittings;
+		const next =
+			action.type === "fit-recovered"
+				? fitOne(commander, recoveredModule(item, commander.hull))
+				: {
+						...commander,
+						credits: commander.credits + fittingValue(item) * 0.9,
+					};
+		if (
+			action.type === "fit-recovered" &&
+			commanderHold(next, input.entrustedT).usedT >
+				commanderHold(next, input.entrustedT).capacityT
+		)
+			return rejected(input, "hull-hold");
 		return {
 			accepted: true,
 			reason: null,
-			commander: {
-				...commander,
-				credits:
-					commander.credits +
-					(action.type === "sell-recovered" ? entry.priceCr : 0),
-				ownedEquipment:
-					action.type === "fit-recovered"
-						? [...commander.ownedEquipment, item.id]
-						: commander.ownedEquipment,
-			},
+			commander: next,
 			deficits: input.deficits,
 		};
 	}
@@ -413,21 +469,30 @@ export function transactAtStation(
 		const entry = availableEquipment(input).find(
 			(item) => item.name === action.equipment,
 		);
-		if (!entry) return rejected(input, "equipment-unavailable");
+		if (!entry || !LEGACY_MODULES[entry.name])
+			return rejected(input, "equipment-unavailable");
 		// Owned before locked: a gate blocks only new purchases (#183 D9), so an
 		// item a v6 commander already fitted is "already fitted", not locked.
-		if (input.commander.ownedEquipment.includes(entry.name))
+		if (fitted(input.commander.loadout, entry.name))
 			return rejected(input, "equipment-owned");
 		if (entry.locked) return rejected(input, "equipment-locked");
+		const module = legacyModule(input.commander.hull, entry.name);
+		if (!slotFor(input.commander, module))
+			return rejected(input, "hull-mounts");
+		const next = fitOne(input.commander, module);
+		if (
+			commanderHold(next, input.entrustedT).usedT >
+			commanderHold(next, input.entrustedT).capacityT
+		)
+			return rejected(input, "hull-hold");
 		if (input.commander.credits < entry.priceCr)
 			return rejected(input, "insufficient-credits");
 		return {
 			accepted: true,
 			reason: null,
 			commander: {
-				...input.commander,
+				...next,
 				credits: input.commander.credits - entry.priceCr,
-				ownedEquipment: [...input.commander.ownedEquipment, entry.name],
 			},
 			deficits: input.deficits,
 		};
@@ -524,12 +589,8 @@ const TONNES_PER_UNIT = { t: 1, kg: 1e-3, g: 1e-6 } as const;
  *   good takes no hold (`heldTonnes`, Elite's rule) but its mass is real, so
  *   this sums by unit rather than reusing `commanderHold`'s `usedT`.
  *   Recovered fittings and entrusted lots are tonnes on both sides.
- * - **Every module is 0 t** until the pricing instrument (#868) fills
- *   `Equipment.massT`; the sum is wired so its table lands without a second
- *   change here. A name the catalogue does not hold weighs nothing: the save
- *   checks only that `ownedEquipment` is a list of strings, and a throw here
- *   would end the frame loop on an old record. The typed loadout (#876)
- *   replaces the list and refuses unknown ids at load.
+ * - The fitted mass reads the shared catalogue row for each slot. Carried
+ *   fittings occupy and weigh 1 t; the fitted module has its catalogue mass.
  */
 export const flownMassT = (
 	hull: HullId,
@@ -543,9 +604,8 @@ export const flownMassT = (
 			sum + amount * TONNES_PER_UNIT[commodity(name).unit],
 		0,
 	);
-	const fittedT = commander.ownedEquipment.reduce(
-		(sum, name) =>
-			sum + (EQUIPMENT.find((item) => item.name === name)?.massT ?? 0),
+	const fittedT = Object.values(commander.loadout).reduce(
+		(n, m) => n + moduleRow(m).massT,
 		0,
 	);
 	return (
@@ -564,30 +624,6 @@ export const flownMassT = (
 /** #556 D5: the flown hull is taken at nine tenths of its list price, so a
  *  swap and back loses a tenth of each hull and no loop earns. */
 export const HULL_TRADE_IN_FRACTION = 0.9;
-
-/**
- * The fittings that take a weapon mount (#556 D4), and every other fitting.
- *
- * The pilot's standard pulse laser is part of the hull and takes no row here;
- * the extra lasers and the mining laser each take one of the new hull's
- * `hardpoints`. Both lists are asserted against `EQUIPMENT` in
- * `tests/hull-sale.test.ts`, so a new fitting has to be put on one side.
- */
-export const MOUNTED_EQUIPMENT = [
-	"Extra Pulse Laser",
-	"Extra Beam Laser",
-	"Military Laser",
-	"Mining Laser",
-] as const satisfies readonly (typeof EQUIPMENT)[number]["name"][];
-
-export const UNMOUNTED_EQUIPMENT: readonly string[] = EQUIPMENT.map(
-	(item) => item.name,
-).filter((name) => !(MOUNTED_EQUIPMENT as readonly string[]).includes(name));
-
-const mountsUsed = (owned: readonly string[]): number =>
-	owned.filter((name) =>
-		(MOUNTED_EQUIPMENT as readonly string[]).includes(name),
-	).length;
 
 /** One lot the offer sells to make the cargo fit the new hold (#556 D6). */
 export interface SoldLot {
@@ -621,7 +657,7 @@ export type HullOffer = StationCommerceResult & {
 };
 
 /**
- * #556 in one function: the trade-in (D5), the mount check (D4), the cargo
+ * #556 in one function: the trade-in (D5), the slot transfer (#876), the cargo
  * over the new hold sold through this till (D6), and the refusal order D9
  * rules — lock, reach, fit, credits, first match wins.
  *
@@ -669,13 +705,18 @@ export function hullOffer(
 	const reach = input.hullReach(hull);
 	if (!reach.ok) return { ...rejected(input, "no-reach"), ...base, reach };
 	const reached = { ...base, reach };
-	if (mountsUsed(commander.ownedEquipment) > HULL_SPECS[hull].hardpoints)
-		return { ...rejected(input, "hull-mounts"), ...reached };
-
-	// D6: what the new hold can take, and what must go to make it fit.
-	const capacityT = holdCapacityT({ ...commander, hull });
+	const moved = transferLoadout(commander.loadout, hull);
+	const transferred: CommanderState = {
+		...commander,
+		loadout: moved.loadout,
+		recoveredFittings: [
+			...(commander.recoveredFittings ?? []),
+			...moved.overflow,
+		],
+	};
+	const capacityT = holdCapacityT({ ...transferred, hull });
 	let overflowT = Math.ceil(
-		commanderHold(commander, input.entrustedT).usedT - capacityT,
+		commanderHold(transferred, input.entrustedT).usedT - capacityT,
 	);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))
@@ -734,6 +775,8 @@ export function hullOffer(
 		reason: null,
 		commander: {
 			...state.commander,
+			loadout: moved.loadout,
+			recoveredFittings: transferred.recoveredFittings,
 			hull,
 			credits: state.commander.credits - offer.netCr,
 			// As #554's load clamp does: the tank is the hull's, never topped up.

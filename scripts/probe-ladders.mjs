@@ -228,9 +228,14 @@ try {
 	const buy = laserRow.locator('[data-live-station-action="buy-equipment"]');
 	check("the rung unlocks it: a BUY is drawn", (await buy.count()) === 1);
 	await buy.click();
-	const owned = await page.evaluate(() =>
-		window.__seelite.commander.ownedEquipment.includes("Military Laser"),
-	);
+	const owned = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+		return equipmentNames(window.__seelite.commander.loadout ?? {}).includes(
+			"Military Laser",
+		);
+	});
 	check(
 		"and the till sells it",
 		owned && /OWNED/.test(await laserRow.innerText()),

@@ -315,6 +315,10 @@ const dockBuyLaunch = async (p, label) => {
 	await p.waitForFunction(() => !window.__seelite.clockHeld);
 	const docked = await p.evaluate(
 		async ({ funds, fitted }) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
+
 			const g = window.__seelite;
 			if (!g.saveStore) return { store: false };
 			if (!g.startDockedAtHome()) return { store: true, docked: false };
@@ -361,8 +365,9 @@ const dockBuyLaunch = async (p, label) => {
 				food: g.commander.cargo.Food ?? 0,
 				liveCredits: live?.commander?.state?.credits ?? null,
 				arrivalPod:
-					arrival?.commander?.state?.ownedEquipment?.includes("Escape Pod") ??
-					null,
+					equipmentNames(arrival?.commander?.state.loadout ?? {})?.includes(
+						"Escape Pod",
+					) ?? null,
 				visitedAtDock,
 			};
 		},
@@ -400,6 +405,10 @@ const dockBuyLaunch = async (p, label) => {
 		timeout: 30000,
 	});
 	const launched = await p.evaluate(async (leg) => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		await g.saveStore.settled();
 		const record = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
@@ -410,8 +419,9 @@ const dockBuyLaunch = async (p, label) => {
 		return {
 			credits: record?.commander?.state?.credits ?? null,
 			pod:
-				record?.commander?.state?.ownedEquipment?.includes("Escape Pod") ??
-				false,
+				equipmentNames(record?.commander?.state.loadout ?? {})?.includes(
+					"Escape Pod",
+				) ?? false,
 			food: record?.commander?.state?.cargo?.Food ?? 0,
 			dockedAt: record?.commander?.dockedAt ?? null,
 		};
@@ -430,6 +440,10 @@ const dockBuyLaunch = async (p, label) => {
 /** What the reload woke to: where, with what, and what it was told. */
 const wokeTo = (p) =>
 	p.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const hull = await import("/src/hull.ts");
 		g.updateCockpit();
@@ -441,7 +455,7 @@ const wokeTo = (p) =>
 			hull: g.commander.hull,
 			baseline: hull.PLAYER_BASELINE_HULL,
 			fuelFull: g.commander.fuelLy === hull.HULL_SPECS[g.commander.hull].tankLy,
-			equipment: [...g.commander.ownedEquipment].sort(),
+			equipment: [...equipmentNames(g.commander.loadout ?? {})].sort(),
 			cargo: Object.keys(g.commander.cargo).length,
 			wake: g.wakeShown,
 			message: message?.textContent ?? null,
@@ -470,7 +484,8 @@ if (launchedForDeath) {
 			"in a stock courier with a full tank: no pod, no computer, an empty hold",
 			woke.hull === woke.baseline &&
 				woke.fuelFull &&
-				woke.equipment.length === 0 &&
+				woke.equipment.length === 1 &&
+				woke.equipment[0] === "Extra Pulse Laser" &&
 				woke.cargo === 0,
 			JSON.stringify(woke),
 		);
@@ -524,7 +539,7 @@ if (launchedForEject) {
 		check(
 			"with the launch hull and the computer kept, the pod spent and the hold empty",
 			woke.hull === woke.baseline &&
-				woke.equipment.join() === "Docking Computer" &&
+				woke.equipment.join() === "Docking Computer,Extra Pulse Laser" &&
 				woke.cargo === 0,
 			JSON.stringify(woke),
 		);
@@ -650,6 +665,8 @@ await warnPage.goto(gameUrl(origin, { seed: 42, "no-save": true }));
 await bootedGame(warnPage);
 await warnPage.waitForFunction(() => !window.__seelite.clockHeld);
 const warned = await warnPage.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	const cost = await import("/src/death-cost.ts");
 	const names = await import("/src/key-names.ts");
@@ -693,7 +710,8 @@ const warned = await warnPage.evaluate(async () => {
 	const fit = (on) => {
 		g.commander = {
 			...g.commander,
-			ownedEquipment: on ? [market.ESCAPE_POD] : [],
+			loadout: migrateEquipment(g.commander.hull, on ? [market.ESCAPE_POD] : [])
+				.loadout,
 		};
 	};
 	const full = g.condition.hullMax;

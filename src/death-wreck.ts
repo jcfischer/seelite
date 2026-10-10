@@ -1,3 +1,4 @@
+import { carriedModule, type FittedModule } from "./loadout";
 /** Node #705: one own-loss wreck, a share of the inventory aboard at death.
  * Contents are fixed once, before the commander is restored. Entrusted lots
  * live in Requests and are deliberately never read here. */
@@ -40,6 +41,7 @@ export function deathWreckContents(
 		id: string,
 		tonnes: number,
 		token: string,
+		fitting?: FittedModule,
 	) => {
 		if (tonnes > 0 && survives(token))
 			containers.push({
@@ -48,6 +50,7 @@ export function deathWreckContents(
 				tonnes,
 				left: tonnes,
 				unit: kind === "good" ? commodity(id).unit : "t",
+				...(fitting ? { fitting } : {}),
 			});
 	};
 	for (const [id, amount] of Object.entries(state.cargo).sort(([a], [b]) =>
@@ -55,12 +58,12 @@ export function deathWreckContents(
 	))
 		put("good", id, amount, `cargo:${id}`);
 	if (cause === "destroyed") {
-		const counts = new Map<string, number>();
-		for (const id of [...state.ownedEquipment].sort()) {
-			if (id === ESCAPE_POD || !EQUIPMENT.some((e) => e.name === id)) continue;
-			const ordinal = counts.get(id) ?? 0;
-			counts.set(id, ordinal + 1);
-			put("fitting", id, 1, `fitted:${id}:${ordinal}`);
+		for (const [slot, module] of Object.entries(state.loadout).sort(
+			([a], [b]) => a.localeCompare(b),
+		)) {
+			if (module.module === "escape-pod") continue;
+			const item = carriedModule(module);
+			put("fitting", item.id, 1, `fitted:${slot}:${module.module}`, module);
 		}
 	}
 	// Unfitted salvage is cargo too: the pod is still excluded and an eject
@@ -73,7 +76,21 @@ export function deathWreckContents(
 		const token = `${item.id}:${item.tonnes}`;
 		const ordinal = counts.get(token) ?? 0;
 		counts.set(token, ordinal + 1);
-		put("fitting", item.id, item.tonnes, `carried:${token}:${ordinal}`);
+		put(
+			"fitting",
+			item.id,
+			item.tonnes,
+			`carried:${token}:${ordinal}`,
+			item.module
+				? {
+						module: item.module,
+						size: item.size!,
+						grade: item.grade!,
+						...(item.variant ? { variant: item.variant } : {}),
+						...(item.ammo !== undefined ? { ammo: item.ammo } : {}),
+					}
+				: undefined,
+		);
 	}
 	if (containers.length > DEATH_WRECK_MAX_CONTAINERS)
 		throw Error(

@@ -522,6 +522,10 @@ try {
 	// -----------------------------------------------------------------------
 	const trade = await page.evaluate(
 		async ([targetSeed]) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
+
 			const g = window.__seelite;
 			const dt = g.units.MAX_DT;
 			// **The ship starts an AU from any station** — the arrival point is near
@@ -554,10 +558,10 @@ try {
 				if (!g.hasDockingComputer)
 					g.commander = {
 						...g.commander,
-						ownedEquipment: [
-							...g.commander.ownedEquipment,
+						loadout: migrateEquipment(g.commander.hull, [
+							...equipmentNames(g.commander.loadout ?? {}),
 							g.dockingComputerName,
-						],
+						]).loadout,
 					};
 				g.toggleDockingComputer();
 			}

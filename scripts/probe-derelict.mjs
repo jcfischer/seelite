@@ -53,9 +53,16 @@ try {
 
 	// Node #733: the fixture has no identification. Opening consoles reads no
 	// objective position; a sweep is a deliberate press and carries only regions.
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
-		g.commander = { ...g.commander, ownedEquipment: [] };
+		g.commander = {
+			...g.commander,
+			loadout: migrateEquipment(g.commander.hull, []).loadout,
+		};
 	});
 	await placeNear(page, fixture, 3000, { look: "left" });
 	check(
@@ -83,9 +90,16 @@ try {
 				.count()) === 0,
 	);
 	await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const { LONG_RANGE_SCANNER } = await import("/src/market.ts");
-		g.commander = { ...g.commander, ownedEquipment: [LONG_RANGE_SCANNER] };
+		g.commander = {
+			...g.commander,
+			loadout: migrateEquipment(g.commander.hull, [LONG_RANGE_SCANNER]).loadout,
+		};
 		g.updateCockpit();
 	});
 	await page.locator('[data-live-left-tab="Sweep"]').click();
@@ -165,9 +179,16 @@ try {
 		g.ladderPending = emptyPending();
 	}, fixture);
 
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
-		g.commander = { ...g.commander, ownedEquipment: [] };
+		g.commander = {
+			...g.commander,
+			loadout: migrateEquipment(g.commander.hull, []).loadout,
+		};
 	});
 	await placeNear(page, fixture, 9.9, { step: true, look: "left" });
 	await page.locator('[data-live-left-tab="Navigation"]').click();

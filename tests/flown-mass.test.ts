@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * The flown mass (#865): what a ship carries weighs something, and #181's law
  * turns the weight into handling.
@@ -113,47 +119,68 @@ describe("flightPerformance at a flown mass", () => {
 });
 
 describe("flownMassT", () => {
+	const stockMass = (hull: typeof PLAYER_BASELINE_HULL) =>
+		Object.values(stockLoadout(hull)).reduce(
+			(n, m) => n + moduleRow(m).massT,
+			0,
+		);
+	const base = 60 + stockMass("courier");
 	const courier = (patch: Partial<CommanderState> = {}): CommanderState => ({
 		...newCommander("courier"),
 		...patch,
 	});
 
-	test("an empty ship weighs its hull", () => {
+	test("an empty stock ship weighs its hull and its fitted modules", () => {
 		for (const id of HULL_IDS)
-			expect(flownMassT(id, newCommander(id), 0)).toBe(HULL_SPECS[id].massT);
+			expect(flownMassT(id, newCommander(id), 0)).toBeCloseTo(
+				HULL_SPECS[id].massT + stockMass(id),
+				10,
+			);
 	});
 
 	test("tonne cargo, recovered fittings and entrusted lots each add their tonnes", () => {
-		expect(flownMassT("courier", courier({ cargo: { Food: 12 } }), 0)).toBe(72);
+		expect(
+			flownMassT("courier", courier({ cargo: { Food: 12 } }), 0),
+		).toBeCloseTo(base + 12, 10);
 		expect(
 			flownMassT(
 				"courier",
 				courier({ recoveredFittings: [{ id: "E.C.M. System", tonnes: 1 }] }),
 				0,
 			),
-		).toBe(61);
-		expect(flownMassT("courier", courier(), 3)).toBe(63);
+		).toBeCloseTo(base + 1, 10);
+		expect(flownMassT("courier", courier(), 3)).toBeCloseTo(base + 3, 10);
 	});
 
 	test("kilogram and gram goods weigh what they are, though they take no hold", () => {
 		expect(
 			flownMassT("courier", courier({ cargo: { Gold: 500 } }), 0),
-		).toBeCloseTo(60.5, 12);
+		).toBeCloseTo(base + 0.5, 12);
 		expect(
 			flownMassT("courier", courier({ cargo: { "Gem-Stones": 2000 } }), 0),
-		).toBeCloseTo(60.002, 12);
+		).toBeCloseTo(base + 0.002, 12);
 	});
 
 	test("the flown hull is the one named, not the commander's", () => {
 		// A hull bought where no berth fits waits for launch (#556 D10): the
 		// commander owns it and the ship in the berth is still the old one.
-		expect(flownMassT("courier", newCommander("freighter"), 0)).toBe(60);
+		expect(flownMassT("courier", newCommander("freighter"), 0)).toBeCloseTo(
+			60 + stockMass("freighter"),
+			10,
+		);
 	});
 
-	test("every module weighs 0 t until #868 measures it", () => {
-		for (const item of EQUIPMENT) expect(item.massT).toBe(0);
-		const kitted = courier({ ownedEquipment: EQUIPMENT.map((e) => e.name) });
-		expect(flownMassT("courier", kitted, 0)).toBe(60);
+	test("the fitted catalogue mass adds to the flown hull", () => {
+		const loadout = migrateEquipment("courier", ["Docking Computer"]).loadout;
+		const added = Object.values(loadout).reduce(
+			(n, m) => n + moduleRow(m).massT,
+			0,
+		);
+		expect(added).toBeGreaterThan(0);
+		expect(flownMassT("courier", courier({ loadout }), 0)).toBeCloseTo(
+			60 + added,
+			10,
+		);
 	});
 
 	test("a negative entrusted figure is refused", () => {

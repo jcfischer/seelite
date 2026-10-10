@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * Node 443: the one hold projection the trade screen, the delivery's words and
  * the Hold page all read.
@@ -64,7 +70,7 @@ describe("the capacity is the till's, not the screen's", () => {
 	test("a Large Cargo Bay counts, because `commanderHold` counts it", () => {
 		const commander = {
 			...pilot({}),
-			ownedEquipment: ["Large Cargo Bay"],
+			loadout: migrateEquipment("courier", ["Large Cargo Bay"]).loadout,
 		};
 		expect(holdSummary(commander, emptyRequests()).capacityT).toBe(
 			COURIER_HOLD_T + LARGE_CARGO_BAY_BONUS_T,

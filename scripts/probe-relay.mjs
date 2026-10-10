@@ -77,7 +77,9 @@ const settle = () =>
 
 // The page-side helpers, installed once. Every one of them drives the shipped
 // game through its public handle.
-await page.evaluate(() => {
+await page.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
 	const frame = () => {
@@ -157,7 +159,10 @@ await page.evaluate(() => {
 		 *  constant goes falsely red the day the module is renamed. */
 		async fitScanner(own) {
 			const market = await import("/src/market.ts");
-			g.commander.ownedEquipment = own ? [market.LONG_RANGE_SCANNER] : [];
+			g.commander.loadout = migrateEquipment(
+				g.commander.hull,
+				own ? [market.LONG_RANGE_SCANNER] : [],
+			).loadout;
 			frame();
 		},
 		/** What the probe reads of the relay and the glass. */
@@ -1270,10 +1275,14 @@ watch(quiet);
 await quiet.goto(gameUrl(origin, { seed: NO_RELAY_SEED }));
 await bootedGame(quiet);
 const absent = await quiet.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
 	const market = await import("/src/market.ts");
-	g.commander.ownedEquipment = [market.LONG_RANGE_SCANNER];
+	g.commander.loadout = migrateEquipment(g.commander.hull, [
+		market.LONG_RANGE_SCANNER,
+	]).loadout;
 	g.targetId = "station-trade";
 	g.step(dt);
 	g.render(dt);

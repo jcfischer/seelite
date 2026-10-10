@@ -282,12 +282,17 @@ check(
 // world, so this row cannot see a leak — `step` never runs to cancel
 // anything. The routing is held headlessly by `pointerOwner`'s rows; the
 // cockpit arm below is the control.
-await page.evaluate(() => {
+await page.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	if (!g.hasDockingComputer)
 		g.commander = {
 			...g.commander,
-			ownedEquipment: [...g.commander.ownedEquipment, g.dockingComputerName],
+			loadout: migrateEquipment(g.commander.hull, [
+				...equipmentNames(g.commander.loadout ?? {}),
+				g.dockingComputerName,
+			]).loadout,
 		};
 	if (!g.dockingComputer.engaged) g.toggleDockingComputer();
 });

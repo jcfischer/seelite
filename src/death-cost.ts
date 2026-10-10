@@ -183,7 +183,8 @@ export function deathWake(
 		cause,
 		hull: lost.state.hull,
 		holdT: commanderHold(lost.state, entrustedT).usedT,
-		fittingsLost: cause === "eject" ? 1 : lost.state.ownedEquipment.length,
+		fittingsLost:
+			cause === "eject" ? 1 : Object.keys(lost.state.loadout).length,
 		failedJobs: requestsAfterLostHold(lost.requests).failed.length,
 		firstLife,
 	};
