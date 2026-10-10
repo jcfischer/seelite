@@ -16,6 +16,7 @@ import {
 import { disposeSubtree, shared } from "../src/gpu-teardown";
 import records from "../src/interior-lod-records.json";
 import type { InteriorLods } from "../src/interior-lod";
+import { bakeQuantisedNodes } from "../src/interior-dequantize";
 // Decode the actual shipping file; no synthetic fitting geometry in these rows.
 await MeshoptDecoder.ready;
 const io = new NodeIO()
@@ -26,11 +27,16 @@ const document = await io.read(
 );
 const assets = new Map<string, THREE.Group>();
 for (const scene of document.getRoot().listScenes()) {
+	// A mesh node's transform goes on its meshes, as three's GLTFLoader puts
+	// it on a single-primitive node's Mesh, so `bakeQuantisedNodes` folds the
+	// dequantising transform exactly as it does in the game.
 	const convert = (node: any): THREE.Object3D => {
 		const group = new THREE.Group();
-		group.position.fromArray(node.getTranslation());
-		group.quaternion.fromArray(node.getRotation());
-		group.scale.fromArray(node.getScale());
+		const onMesh = node.getMesh() !== null;
+		const placed: THREE.Object3D = onMesh ? new THREE.Object3D() : group;
+		placed.position.fromArray(node.getTranslation());
+		placed.quaternion.fromArray(node.getRotation());
+		placed.scale.fromArray(node.getScale());
 		for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
 			const geometry = new THREE.BufferGeometry();
 			geometry.setAttribute(
@@ -38,23 +44,29 @@ for (const scene of document.getRoot().listScenes()) {
 				new THREE.BufferAttribute(
 					primitive.getAttribute("POSITION").getArray(),
 					3,
+					primitive.getAttribute("POSITION").getNormalized(),
 				),
 			);
 			geometry.setIndex(
 				new THREE.BufferAttribute(primitive.getIndices().getArray(), 1),
 			);
-			group.add(
-				new THREE.Mesh(
-					shared(geometry),
-					shared(new THREE.MeshStandardMaterial()),
-				),
+			const mesh = new THREE.Mesh(
+				shared(geometry),
+				shared(new THREE.MeshStandardMaterial()),
 			);
+			if (onMesh) {
+				mesh.position.copy(placed.position);
+				mesh.quaternion.copy(placed.quaternion);
+				mesh.scale.copy(placed.scale);
+			}
+			group.add(mesh);
 		}
 		for (const child of node.listChildren()) group.add(convert(child));
 		return group;
 	};
 	const group = new THREE.Group();
 	for (const node of scene.listChildren()) group.add(convert(node));
+	bakeQuantisedNodes([group]);
 	assets.set(scene.getExtras().interiorFile as string, group);
 }
 test("shipping scenes match the full and reduced triangle records", () => {

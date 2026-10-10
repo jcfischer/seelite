@@ -1,17 +1,22 @@
 /** Production bundle for node #843. Full and reduced geometry stay in metres.
- * Meshopt is lossless, paint is embedded lossless WebP, and vite hashes the GLB.
+ * Positions and normals are quantised to 16 bits (KHR_mesh_quantization), then
+ * Meshopt-compressed losslessly; paint is embedded lossless WebP, and vite
+ * hashes the GLB. Unquantised, the file was 27,963,660 bytes, over Cloudflare
+ * Pages' 25 MiB per-file limit, and the deploy of #843 failed on it.
  * Review sources and intermediate assets remain under spikes/.
  */
 import { NodeIO, Document } from "@gltf-transform/core";
 import {
 	ALL_EXTENSIONS,
 	EXTMeshoptCompression,
+	KHRMeshQuantization,
 } from "@gltf-transform/extensions";
 import {
 	mergeDocuments,
 	unpartition,
 	dedup,
 	reorder,
+	quantize,
 	textureCompress,
 } from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptDecoder } from "meshoptimizer";
@@ -31,48 +36,33 @@ const report = JSON.parse(
 const document = new Document();
 const records = {};
 // Compare against each source BEFORE optimisation, independent of vertex order.
-const soup = (scene) => {
-	const rows = [];
-	for (const node of scene.listChildren())
-		node.traverse((n) => {
+/** Triangle count and world-space bounds of a scene, decoding normalised
+ *  attributes, so a quantised scene is comparable with its float source. */
+const shape = (scene) => {
+	const lo = [Infinity, Infinity, Infinity];
+	const hi = [-Infinity, -Infinity, -Infinity];
+	let triangles = 0;
+	const v = [0, 0, 0];
+	for (const root of scene.listChildren())
+		root.traverse((n) => {
 			const mesh = n.getMesh();
 			if (!mesh) return;
+			const m = n.getWorldMatrix();
 			for (const p of mesh.listPrimitives()) {
-				const semantics = p.listSemantics().sort();
-				const attributes = semantics.map((s) => p.getAttribute(s));
-				const indices = p.getIndices().getArray();
-				const corner = (i) =>
-					attributes
-						.map((a) =>
-							Array.from(
-								a
-									.getArray()
-									.subarray(
-										i * a.getElementSize(),
-										(i + 1) * a.getElementSize(),
-									),
-							).join(","),
-						)
-						.join("|");
-				const triangles = [];
-				for (let t = 0; t < indices.length; t += 3) {
-					const corners = [
-						corner(indices[t]),
-						corner(indices[t + 1]),
-						corner(indices[t + 2]),
-					];
-					triangles.push(
-						[0, 1, 2]
-							.map((start) =>
-								[0, 1, 2].map((i) => corners[(start + i) % 3]).join("/"),
-							)
-							.sort()[0],
-					);
+				triangles += p.getIndices().getCount() / 3;
+				const pos = p.getAttribute("POSITION");
+				for (let i = 0; i < pos.getCount(); i++) {
+					pos.getElement(i, v);
+					for (let a = 0; a < 3; a++) {
+						const w =
+							m[a] * v[0] + m[4 + a] * v[1] + m[8 + a] * v[2] + m[12 + a];
+						if (w < lo[a]) lo[a] = w;
+						if (w > hi[a]) hi[a] = w;
+					}
 				}
-				rows.push(JSON.stringify([n.getName(), semantics, triangles.sort()]));
 			}
 		});
-	return rows.sort();
+	return { triangles, bounds: [...lo, ...hi] };
 };
 const approved = new Map();
 for (const [name, record] of Object.entries(report)) {
@@ -83,7 +73,7 @@ for (const [name, record] of Object.entries(report)) {
 	])) {
 		const source = await io.read(`spikes/interiors/modules/${file}`);
 		const scene = source.getRoot().listScenes()[0];
-		approved.set(file, soup(scene));
+		approved.set(file, shape(scene));
 		scene.setExtras({ interiorFile: file });
 		mergeDocuments(document, source);
 	}
@@ -97,7 +87,10 @@ await document.transform(
 	dedup(),
 	reorder({ encoder: MeshoptEncoder }),
 	textureCompress({ encoder: sharp, targetFormat: "webp", lossless: true }),
+	// UVs leave [0,1] here, so `quantize` keeps them float; it says so per mesh.
+	quantize({ quantizePosition: 16, quantizeNormal: 16, quantizeTexcoord: 16 }),
 );
+document.createExtension(KHRMeshQuantization).setRequired(true);
 const attributes = (doc) =>
 	doc
 		.getRoot()
@@ -126,12 +119,21 @@ assert.deepEqual(
 	"Meshopt changed vertex attributes",
 );
 assert.equal(decoded.getRoot().listScenes().length, 46);
-for (const scene of decoded.getRoot().listScenes())
-	assert.deepEqual(
-		soup(scene),
-		approved.get(scene.getExtras().interiorFile),
-		"Packing changed source triangle attributes or winding",
-	);
+// Quantisation moves vertices by up to half a step of each mesh's own
+// extent, so the packed scenes are held to the sources by triangle count and
+// world-space bounds within QUANTISED_BOUNDS_M rather than exactly.
+const QUANTISED_BOUNDS_M = 0.002;
+for (const scene of decoded.getRoot().listScenes()) {
+	const file = scene.getExtras().interiorFile;
+	const want = approved.get(file);
+	const got = shape(scene);
+	assert.equal(got.triangles, want.triangles, `${file}: triangle count`);
+	for (let i = 0; i < 6; i++)
+		assert.ok(
+			Math.abs(got.bounds[i] - want.bounds[i]) <= QUANTISED_BOUNDS_M,
+			`${file}: bound ${i} moved ${got.bounds[i] - want.bounds[i]} m`,
+		);
+}
 for (const t of decoded.getRoot().listTextures())
 	assert.deepEqual(
 		await sharp(t.getImage()).ensureAlpha().raw().toBuffer(),
