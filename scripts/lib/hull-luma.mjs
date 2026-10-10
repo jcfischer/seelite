@@ -28,7 +28,7 @@
  */
 
 /**
- * Measured on `9f8d533` (node #812), rig B (`LIGHT_RIG`, the principal's
+ * Measured on `9f8d533` (node #812), refreshed on node #831, rig B (`LIGHT_RIG`, the principal's
  * choice on #231), `hull-chase`, five samples per lane, same-build noise 0.00
  * at every one. Where the two rasterisers disagree the **lower** reading is
  * recorded, because these are floors and the conservative arm is the dark one.
@@ -38,6 +38,15 @@
  * | peak | 252.21 | 252.21 |
  * | lower quartile | 10.16 | 10.16 |
  * | median | 37.88 | 38.80 |
+ *
+ * Node #831 re-encoded normals and eligible UVs with 16-bit quantisation.
+ * Five samples of the old file and five of the new file on each lane read
+ * exactly alike, including the mask's pixel count (21,543 on Metal and
+ * 21,531 on SwiftShader). The old-file control reproduces this table, so
+ * the new subject hash below retains the readings, margins and floors.
+ * Paired results: `/tmp/node-831-luma-{hardware,cpu}.json`; the worker's
+ * receipt records the provenance. Positions, triangles and textures are
+ * unchanged, as the asset tests verify.
  *
  * **The subject is the authored O4 courier**, the hull node #812 put in the
  * game, and the principal accepted its in-game look as the reference (Q1, O1,
@@ -81,9 +90,9 @@ export const HULL_LUMA_CALIBRATION = Object.freeze({
 		hull: "courier",
 		authored: true,
 		modelSha256:
-			"65879357cb7dee085f7fe1da5b886853e2ba28db9f45cbda46613b49e268378f",
+			"c66ef59a1cc679c246493ca8fa63fc87d005b296879ac0d5c3668be48fe2287d",
 	}),
-	ref: "9f8d533",
+	ref: "node-831",
 	peak: 252.21,
 	lowerQuartile: 10.16,
 	median: 37.88,

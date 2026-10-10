@@ -45,7 +45,7 @@ import {
 	type HullId,
 	type HullVariantId,
 } from "./hull";
-import { shared } from "./gpu-teardown";
+import { disposeSubtree, shared } from "./gpu-teardown";
 import type { Vec3 } from "./vec3";
 import {
 	currentHullFinish,
@@ -7080,9 +7080,9 @@ const authoredCourierNavLights = new WeakMap<
  * Install (or, with `undefined`, remove) the authored courier exterior
  * (node #812, `courier-hull.ts`). Until it is installed `buildShipMesh`
  * draws the procedural Kestrel, as `buildStationForm` draws the procedural
- * Coriolis until `installCoriolisBuilder` runs: every page that builds a
- * `Game` awaits `prepareCourierHullModel` first, and the headless rows that
- * read the courier's measured figures install the shipped file themselves.
+ * Coriolis until `installCoriolisBuilder` runs. Games install it after boot
+ * and rebuild their cached stand-ins; headless rows measuring the authored
+ * hull install the shipped file themselves.
  */
 export function installAuthoredCourier(
 	builder: AuthoredHullBuilder | undefined,
@@ -7099,6 +7099,35 @@ export function installAuthoredCourier(
  *  procedural Kestrel beside it on the same page. */
 export const authoredCourierBuilder = (): AuthoredHullBuilder | undefined =>
 	authoredCourier;
+
+/** Replace a pre-install courier's contents once (node #831). The root stays
+ *  in its cache and scene, with its name, visibility and pose untouched.
+ *  A caller owning a wreck supplies its builder and disposer so the replacement
+ *  stays dark and its cloned resources are freed. New resources are built
+ *  before any old resources are freed. */
+export function rebuildCourierStandIn(
+	root: THREE.Object3D,
+	build: () => THREE.Group = () =>
+		buildShipMesh("courier", AUTHORED_COURIER_VARIANT).root,
+	dispose: (root: THREE.Object3D) => void = disposeSubtree,
+): boolean {
+	if (
+		!authoredCourier ||
+		root.userData.hullId !== "courier" ||
+		root.userData.variant !== AUTHORED_COURIER_VARIANT ||
+		root.userData.authored === true
+	)
+		return false;
+	const replacement = build();
+	measureMuzzles("courier", AUTHORED_COURIER_VARIANT, replacement);
+	const parent = root.parent;
+	dispose(root);
+	root.clear();
+	root.add(...replacement.children);
+	root.userData = replacement.userData;
+	if (parent && root.parent !== parent) parent.add(root);
+	return true;
+}
 
 /** The authored courier into `root`: the model, its nav lights (placed once
  *  and cloned after) and the undetailed ship's adoption. */

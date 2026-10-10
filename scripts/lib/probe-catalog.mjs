@@ -655,7 +655,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-model-download.mjs",
-			"Holds every model response back and checks that a player boot draws the Commander overlay and its progress bar before the models are in; a Continue chosen then waits, survives a refused download through the overlay's Retry, and is carried out once the models arrive; the bar reads 100% before it goes; New game chosen during the download reloads only after it; and a direct boot keeps the full-screen loading panel with its bar.",
+			"Holds boot model responses and checks the Commander overlay, progress bar, queued Continue and New game choices, Retry, and the painted building line. Separately holds the courier response until after Game construction: existing player and Traffic stand-ins rebuild once on success; failure keeps them, warns once and shows no Retry.",
 			[
 				"model loading",
 				"GLB models",
@@ -666,6 +666,8 @@ export const PROBE_CATALOG = Object.freeze(
 				"Continue",
 				"New game",
 				"application boot",
+				"background courier hull",
+				"Traffic mesh cache",
 			],
 		),
 		entry(

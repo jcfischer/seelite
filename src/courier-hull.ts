@@ -291,7 +291,9 @@ export async function createCourierHullBuilder(
 
 let ready: Promise<void> | undefined;
 
-/** Await before any Game, postcard or ship workbench builds a courier.
+/** Games start this after construction and refresh their cached couriers on
+ *  resolution (node #831). The postcard viewer waits before drawing; the ship
+ *  workbench waits before building its review hulls.
  *  `onProgress` hears the download this call starts (#833), as
  *  `prepareCoriolisModel`'s does: without it the boot's tracker has no total
  *  for this model and draws its bar without a value until it resolves. */
@@ -303,12 +305,12 @@ export function prepareCourierHullModel(
 		.loadAsync(COURIER_HULL_GLB_URL, onProgress)
 		.then(async (gltf) => {
 			installAuthoredCourier(await createCourierHullBuilder(gltf.scene));
-			// One courier built now, behind the loading panel: the first build
+			// One courier built now, before refreshing stand-ins: the first build
 			// places the nav lights by raycast against the model, about 0.3 s,
 			// and without this the first Traffic courier drawn mid-flight
 			// would pay it. Every later build reuses them. Its throats are
 			// measured off the same build for the same reason (`ventThroats`
-			// keeps them): a pilot flying a courier pays it at boot otherwise,
+			// keeps them): otherwise a pilot pays it during replacement,
 			// and a shipyard swap to one pays it on the frame.
 			const { root } = buildShipMesh("courier", AUTHORED_COURIER_VARIANT);
 			ventThroats(root, "courier");

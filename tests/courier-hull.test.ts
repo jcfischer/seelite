@@ -11,6 +11,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { buildDerelictMesh } from "../src/derelict-mesh";
 import { DETAIL_RADII } from "../src/detail-level";
@@ -92,11 +93,26 @@ const countCalls = (
 afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
 describe("the shipped file is the approved study", () => {
-	test("every mesh, its triangles and their corners' attributes, exactly", async () => {
-		// The prepare script (`spikes/courier-hull/prepare-game-asset.mjs`)
-		// only re-encodes: no simplification, no quantisation. Held against the
-		// study export the principal approved, decoded through the same loader:
-		// every corner's position, normal and texture coordinate.
+	test("shipped vertex attributes use KHR_mesh_quantization", () => {
+		const file = readFileSync("src/models/courier-hull.glb");
+		const json = JSON.parse(
+			file.subarray(20, 20 + file.readUInt32LE(12)).toString(),
+		);
+		expect(json.extensionsUsed).toContain("KHR_mesh_quantization");
+		expect(json.extensionsRequired).toContain("KHR_mesh_quantization");
+		// The unquantised asset on this node's base commit.
+		expect(file.byteLength).toBeLessThan(15_940_136);
+		for (const mesh of json.meshes)
+			for (const primitive of mesh.primitives) {
+				expect(
+					json.accessors[primitive.attributes.POSITION].componentType,
+				).toBe(5126);
+				expect(json.accessors[primitive.attributes.NORMAL].componentType).toBe(
+					5122,
+				);
+			}
+	});
+	test("every triangle and position is exact; normals and UVs have bounded quantisation error", async () => {
 		const study = await decodeShippedGlb(
 			"spikes/courier-hull/courier-hull.glb",
 		);
@@ -108,33 +124,44 @@ describe("the shipped file is the approved study", () => {
 					const normal = m.geometry.getAttribute("normal");
 					const uv = m.geometry.getAttribute("uv");
 					const index = m.geometry.getIndex();
-					// One triangle list per mesh, as positions: a reorder of the
-					// vertex buffer moves indices but never what is drawn.
-					const triangles: string[] = [];
+					const triangles = [];
 					const count = index ? index.count : position.count;
 					for (let i = 0; i < count; i += 3) {
-						const corner = (k: number) => {
+						const corners = [0, 1, 2].map((k) => {
 							const v = index ? index.getX(i + k) : i + k;
-							return [
-								position.getX(v),
-								position.getY(v),
-								position.getZ(v),
-								normal.getX(v),
-								normal.getY(v),
-								normal.getZ(v),
-								uv.getX(v),
-								uv.getY(v),
-							].join(",");
-						};
-						// Started at its least corner: re-encoding may rotate a
-						// triangle's corners, which keeps its winding and its face.
-						const c = [corner(0), corner(1), corner(2)];
-						const first = c.indexOf([...c].sort()[0]);
-						triangles.push(
-							[c[first], c[(first + 1) % 3], c[(first + 2) % 3]].join("|"),
+							return {
+								key: [
+									position.getX(v),
+									position.getY(v),
+									position.getZ(v),
+								].join(","),
+								attributes: [
+									normal.getX(v),
+									normal.getY(v),
+									normal.getZ(v),
+									uv.getX(v),
+									uv.getY(v),
+								],
+							};
+						});
+						// Rotate the first corner without reversing the winding.
+						const first = corners.findIndex(
+							(c) => c.key === corners.map((c) => c.key).sort()[0],
 						);
+						const ordered = [
+							corners[first],
+							corners[(first + 1) % 3],
+							corners[(first + 2) % 3],
+						];
+						triangles.push({
+							key: ordered.map((c) => c.key).join("|"),
+							attributes: ordered.flatMap((c) => c.attributes),
+						});
 					}
-					return { name: m.name, triangles: triangles.sort() };
+					return {
+						name: m.name,
+						triangles: triangles.sort((a, b) => a.key.localeCompare(b.key)),
+					};
 				})
 				.sort((a, b) => a.name.localeCompare(b.name));
 		const a = shape(study);
@@ -142,8 +169,28 @@ describe("the shipped file is the approved study", () => {
 		expect(b.map((m) => m.name)).toEqual(a.map((m) => m.name));
 		expect(b.length).toBe(36);
 		expect(b.reduce((n, m) => n + m.triangles.length, 0)).toBe(353_954);
-		for (let i = 0; i < a.length; i++)
-			expect([a[i].name, b[i].triangles]).toEqual([a[i].name, a[i].triangles]);
+		for (let i = 0; i < a.length; i++) {
+			expect(b[i].triangles.map((t) => t.key)).toEqual(
+				a[i].triangles.map((t) => t.key),
+			);
+			let normalError = 0;
+			let uvError = 0;
+			for (let j = 0; j < a[i].triangles.length; j++) {
+				const expected = a[i].triangles[j].attributes;
+				b[i].triangles[j].attributes.forEach((value, k) => {
+					const error = Math.abs(value - expected[k]);
+					if (k % 5 < 3) normalError = Math.max(normalError, error);
+					else uvError = Math.max(uvError, error);
+				});
+			}
+			// Signed 16-bit normals and unsigned 16-bit UVs: one interval,
+			// allowing float32's original normalisation error as well.
+			expect([a[i].name, normalError <= 1 / 32767 + 1e-6]).toEqual([
+				a[i].name,
+				true,
+			]);
+			expect([a[i].name, uvError <= 1 / 65535]).toEqual([a[i].name, true]);
+		}
 	}, 60_000);
 });
 
