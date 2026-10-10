@@ -940,8 +940,8 @@ export interface FlightPerformance {
 	 * The hull's condition, read by `ventLoads` and never by the authorities
 	 * above. Nothing writes it yet: what damages a vent is #622's. **A writer
 	 * owes a rebuild** — `main.ts` caches the player's performance by hull
-	 * alone (`flownPerformance`), so health set on a cached struct's source
-	 * would not reach it.
+	 * and flown mass (`flownPerformance`, #865), so health set on a cached
+	 * struct's source would not reach it.
 	 */
 	health: VentHealth;
 	axisSlots: AxisSlots;
@@ -1078,16 +1078,36 @@ function addLevel(levels: VentLevels, slot: VentSlot, level: number): void {
  * Authority is read off a **whole** hull: `health` scales what the vents
  * deliver in `ventLoads`, never what the assist believes it has, so a dead vent
  * is a demand the hull cannot meet rather than a quieter assist (§3.7).
+ *
+ * **`massT` is the flown mass (#865)**: the hull, its fit and its hold, which
+ * `flownMassT` in `station-commerce.ts` sums. It defaults to the hull's own,
+ * which is the empty ship every NPC flies until outfitting's D16 gives them
+ * loadouts, and at that mass the struct is exactly the one #619 solved. A
+ * heavier ship divides the same forces and couples by more mass and a
+ * proportionally larger `boxInertia` — the load is taken as spread through the
+ * hull's box — so every authority above falls by `hull / flown`. The assist's
+ * demands follow from those against the baseline's **empty** figures, so a
+ * laden ship also asks for a lower peak rate and drifts out over longer: the
+ * principal's ruling on #865, one rule for mass and hull alike. A mass below
+ * the hull's is refused, because nothing aboard weighs less than nothing.
  */
 export function flightPerformance(
 	id: HullId,
 	health: VentHealth = {},
+	massT: number = HULL_SPECS[id].massT,
 ): FlightPerformance {
-	const own = ventAuthority(id);
-	const baseline = ventAuthority(PLAYER_BASELINE_HULL);
+	const spec = HULL_SPECS[id];
+	if (!(massT >= spec.massT))
+		throw new RangeError(
+			`flown mass ${massT} t is below the ${id}'s own ${spec.massT} t`,
+		);
+	const own = authorityAt(id, massT);
+	const baseline = authorityAt(
+		PLAYER_BASELINE_HULL,
+		HULL_SPECS[PLAYER_BASELINE_HULL].massT,
+	);
 	const agility = (axis: AngularAxis) =>
 		own.angular[axis] / baseline.angular[axis];
-	const spec = HULL_SPECS[id];
 	return {
 		thrustKms2: own.linear.main,
 		retroKms2: own.linear.retro,
@@ -1106,7 +1126,7 @@ export function flightPerformance(
 			own.angular.roll,
 		),
 		angularDampTauS: REFERENCE_ANGULAR_DAMP_TAU_S / agility("yaw"),
-		massT: spec.massT,
+		massT,
 		thrustMN: spec.thrustMN,
 		inertia: own.inertia,
 		vents: spec.vents,
@@ -1115,8 +1135,9 @@ export function flightPerformance(
 	};
 }
 
-/** What a whole hull's vents deliver on each axis at full: a property of the
- *  hull's table alone, so worked out once per hull. */
+/** What a whole hull's vents push and turn with on each axis at full, MN and
+ *  MN·km: a property of the hull's table alone and not of what it carries, so
+ *  worked out once per hull. `authorityAt` divides it by a mass. */
 const ventAuthority = (() => {
 	const cache = new Map<HullId, ReturnType<typeof ventAuthorityOf>>();
 	return (id: HullId) => {
@@ -1129,9 +1150,30 @@ const ventAuthority = (() => {
 	};
 })();
 
+/** A hull's authorities at a flown mass: the cached loads over that mass and
+ *  over `boxInertia` at it. At the hull's own mass this is the arithmetic the
+ *  cache did before #865, operation for operation. */
+function authorityAt(id: HullId, massT: number) {
+	const loads = ventAuthority(id);
+	const inertia = boxInertia(massT, HULL_SPECS[id].env);
+	return {
+		inertia,
+		axisSlots: loads.axisSlots,
+		linear: {
+			main: loads.force.main / massT,
+			retro: -loads.force.retro / massT,
+			strafe: loads.force.strafe / massT,
+		},
+		angular: {
+			pitch: loads.torque.pitch / inertia.pitch,
+			yaw: loads.torque.yaw / inertia.yaw,
+			roll: loads.torque.roll / inertia.roll,
+		},
+	};
+}
+
 function ventAuthorityOf(id: HullId) {
 	const spec = HULL_SPECS[id];
-	const inertia = boxInertia(spec.massT, spec.env);
 	const axisSlots = axisSlotsOf(spec.vents);
 	const at = (slots: VentSlot[]) =>
 		ventLoads(
@@ -1140,20 +1182,19 @@ function ventAuthorityOf(id: HullId) {
 			spec.thrustMN,
 			{},
 		);
-	const angular = (axis: AngularAxis) =>
-		angularOf(at(axisSlots[axis].plus).torque, axis) / inertia[axis];
+	const torque = (axis: AngularAxis) =>
+		angularOf(at(axisSlots[axis].plus).torque, axis);
 	return {
-		inertia,
 		axisSlots,
-		linear: {
-			main: linearOf(at(axisSlots.surge.plus).force, "surge") / spec.massT,
-			retro: -linearOf(at(axisSlots.surge.minus).force, "surge") / spec.massT,
-			strafe: linearOf(at(axisSlots.sway.plus).force, "sway") / spec.massT,
+		force: {
+			main: linearOf(at(axisSlots.surge.plus).force, "surge"),
+			retro: linearOf(at(axisSlots.surge.minus).force, "surge"),
+			strafe: linearOf(at(axisSlots.sway.plus).force, "sway"),
 		},
-		angular: {
-			pitch: angular("pitch"),
-			yaw: angular("yaw"),
-			roll: angular("roll"),
+		torque: {
+			pitch: torque("pitch"),
+			yaw: torque("yaw"),
+			roll: torque("roll"),
 		},
 	};
 }

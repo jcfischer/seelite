@@ -508,6 +508,55 @@ export const commanderHold = (
 	capacityT: holdCapacityT(commander),
 });
 
+/** Tonnes in one unit of each `CommodityUnit`. */
+const TONNES_PER_UNIT = { t: 1, kg: 1e-3, g: 1e-6 } as const;
+
+/**
+ * What the ship weighs as flown, tonnes (#865): the hull, its fit and its hold.
+ *
+ * Outfitting's D4 turns this into handling through #181's law
+ * (`flightPerformance`'s third argument). Three things about it:
+ *
+ * - **The hull is named, not read off the commander.** A hull bought where
+ *   no berth fits waits for launch (#556 D10), so the commander owns one hull
+ *   and flies another, and the cargo is aboard the one being flown.
+ * - **Cargo weighs what it is, which is not what it occupies.** A kilogram
+ *   good takes no hold (`heldTonnes`, Elite's rule) but its mass is real, so
+ *   this sums by unit rather than reusing `commanderHold`'s `usedT`.
+ *   Recovered fittings and entrusted lots are tonnes on both sides.
+ * - **Every module is 0 t** until the pricing instrument (#868) fills
+ *   `Equipment.massT`; the sum is wired so its table lands without a second
+ *   change here. A name the catalogue does not hold weighs nothing: the save
+ *   checks only that `ownedEquipment` is a list of strings, and a throw here
+ *   would end the frame loop on an old record. The typed loadout (#876)
+ *   replaces the list and refuses unknown ids at load.
+ */
+export const flownMassT = (
+	hull: HullId,
+	commander: CommanderState,
+	entrustedT: number,
+): number => {
+	if (!(entrustedT >= 0))
+		throw new RangeError(`entrusted tonnes ${entrustedT} is not a mass`);
+	const cargoT = Object.entries(commander.cargo).reduce(
+		(sum, [name, amount]) =>
+			sum + amount * TONNES_PER_UNIT[commodity(name).unit],
+		0,
+	);
+	const fittedT = commander.ownedEquipment.reduce(
+		(sum, name) =>
+			sum + (EQUIPMENT.find((item) => item.name === name)?.massT ?? 0),
+		0,
+	);
+	return (
+		HULL_SPECS[hull].massT +
+		fittedT +
+		cargoT +
+		recoveredTonnes(commander) +
+		entrustedT
+	);
+};
+
 // ---------------------------------------------------------------------------
 // The shipyard's hull sale (#556, #583)
 // ---------------------------------------------------------------------------
