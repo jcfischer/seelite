@@ -66,6 +66,122 @@ const hasKit = (page) =>
 		),
 	);
 try {
+	// A genuinely cold optional download with the game's rAF and sim active.
+	// Read every interval from release through settled; never measure only the
+	// installed kit and silently omit its installation cost.
+	for (const coldView of ["flight", "bay"]) {
+		const cold = await livePage();
+		await installViewPlacement(cold);
+		await installViewFraming(cold);
+		let coldRelease;
+		const coldGate = new Promise((resolve) => {
+			coldRelease = resolve;
+		});
+		await cold.route("**/*station-interiors*.glb*", async (route) => {
+			await coldGate;
+			await route.continue();
+		});
+		await cold.goto(gameUrl(origin, params));
+		await bootedGame(cold);
+		if (coldView === "bay") {
+			await cold.evaluate(() => window.__seelite.skipOpening());
+			await cold.evaluate(() =>
+				window.__parkInBerth("station-trade", "port-deep"),
+			);
+			await setView(cold, "chase");
+		}
+		await cold.evaluate(() => {
+			const g = window.__seelite;
+			g.skipOpening();
+			g.clockHeld = false;
+			const sample = (window.__interiorCold = {
+				periods: [],
+				baseline: [],
+				done: false,
+				last: performance.now(),
+				released: false,
+				startTime: g.world.gameTime,
+			});
+			const tick = (now) => {
+				(sample.released ? sample.periods : sample.baseline).push(
+					now - sample.last,
+				);
+				sample.last = now;
+				if (sample.released && g.interiorModelsSettled) {
+					sample.done = true;
+					sample.endTime = g.world.gameTime;
+				} else requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		});
+		await cold.waitForFunction(
+			() => window.__interiorCold.baseline.length >= 30,
+		);
+		await cold.evaluate(() => {
+			const g = window.__seelite,
+				sample = window.__interiorCold;
+			sample.startTime = g.world.gameTime;
+			sample.startFrame = g.renderer.info.render.frame;
+			sample.released = true;
+		});
+		coldRelease();
+		await cold.waitForFunction(
+			() => window.__interiorCold.done,
+			{},
+			{ timeout: 60000 },
+		);
+		const cadence = await cold.evaluate(() => {
+			const { baseline, periods, startTime, endTime } = window.__interiorCold;
+			return {
+				baseline: baseline.slice(1),
+				periods,
+				startTime,
+				endTime,
+				renderFrames:
+					window.__seelite.renderer.info.render.frame -
+					window.__interiorCold.startFrame,
+			};
+		});
+		const coldStats = {
+			view: coldView,
+			build: process.env.SEELITE_INTERIOR_BUILD ?? "Vite development modules",
+			renderer: await cold.evaluate(() => {
+				const gl = window.__seelite.renderer.getContext();
+				const ext = gl.getExtension("WEBGL_debug_renderer_info");
+				return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : "unknown";
+			}),
+			frames: cadence.periods.length,
+			baselineMedianMs: median(cadence.baseline),
+			installMedianMs: median(cadence.periods),
+			installMaxMs: Math.max(...cadence.periods),
+			gameTimeAdvanced: cadence.endTime - cadence.startTime,
+			renderFrames: cadence.renderFrames,
+			periods: cadence.periods,
+		};
+		check(
+			"cold install keeps gameplay ticking between slices",
+			coldStats.frames > 2 &&
+				coldStats.gameTimeAdvanced > 0 &&
+				coldStats.renderFrames > 0 &&
+				(await hasKit(cold)),
+		);
+		// A relative median rejects the reported 528 ms repeated freeze while
+		// tolerating the renderer lane's own baseline cost. Keep the tail visible.
+		check(
+			"cold install cadence stays below twice its live baseline",
+			coldStats.installMedianMs < coldStats.baselineMedianMs * 2,
+		);
+		check(
+			"cold install tail stays within its live-frame budget",
+			coldStats.installMaxMs < Math.max(50, Math.max(...cadence.baseline) * 2),
+		);
+		console.log("cold interior install", JSON.stringify(coldStats));
+		await writeFile(
+			`${output}/cold-install-${coldView}.json`,
+			JSON.stringify(coldStats, null, 2),
+		);
+		await cold.close();
+	}
 	const held = await livePage();
 	let release;
 	const gate = new Promise((resolve) => {
@@ -122,6 +238,9 @@ try {
 		await held.evaluate(() => {
 			const g = window.__seelite;
 			const [id, handle] = g.interiorPresentations.entries().next().value;
+			// Exercise release ownership independently of the fixed flood pool,
+			// whose mirrors now live for the whole Game rather than per bay.
+			handle.release.push(() => {});
 			let releases = 0;
 			const count = handle.release.length;
 			handle.release = handle.release.map((undo) => () => {

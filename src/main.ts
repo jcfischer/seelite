@@ -1,4 +1,5 @@
-import { refreshStationInteriorKit } from "./station-interior-mesh";
+import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
+import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
@@ -721,6 +722,7 @@ import {
 import {
 	type StationMesh,
 	buildStationMesh,
+	setStationDetail,
 	stationVisualSnapshot,
 	updateStationVisuals,
 	warmStationMaps,
@@ -5839,6 +5841,15 @@ class Game {
 		const cabinFill = fill.clone();
 		this.cabinScene.add(cabinFill);
 		this.fills = [fill, cabinFill];
+		// Allocate the fixed flood pool before the first frame. Installing a
+		// bay must not change numPointLights and recompile the whole near scene.
+		for (let i = 0; i < 4; i++) {
+			const copy = new THREE.PointLight(0xffffff, 0);
+			copy.name = `interior-flood-pool:${i}`;
+			this.nearScene.add(copy);
+			this.interiorFloodPool.push(copy);
+			this.mirrorIntoCabin(copy);
+		}
 
 		// **#201: one shadow-casting light in the game, and it is the near
 		// layer's sun.** The far and approach suns are left alone — a planet
@@ -6489,36 +6500,61 @@ class Game {
 			group,
 			lods: group.userData.interiorLods,
 			lamps,
-			release: lamps.map((l) => this.mirrorIntoCabin(l)),
+			// The fixed near-scene pool owns its cabin mirrors for this Game.
+			// Bay registration adds no lights or shader variants to either scene.
+			release: [],
 		});
 	}
 	private interiorLoad?: Promise<void>;
+	private interiorWarningShown = false;
+	private warnInteriorFailure(error: unknown): void {
+		if (this.interiorWarningShown) return;
+		this.interiorWarningShown = true;
+		console.warn(
+			"station interiors: background load failed; keeping procedural bays",
+			error,
+		);
+	}
 	interiorModelsSettled = false;
 	/** Current interim install seam; node #838 owns the future general queue. */
 	loadInteriorsAfterBoot(): Promise<void> {
 		return (this.interiorLoad ??= import("./interior-model")
 			.then(async ({ prepareInteriorModel }) => {
 				await prepareInteriorModel();
-				this.refreshInteriorMeshes();
+				await this.refreshInteriorMeshes();
 			})
-			.catch((error) =>
-				console.warn(
-					"station interiors: background load failed; keeping procedural bays",
-					error,
-				),
-			)
+			.catch((error) => this.warnInteriorFailure(error))
 			.finally(() => {
 				this.interiorModelsSettled = true;
 			}));
 	}
 
-	private refreshInteriorMeshes(): void {
+	private interiorRefresh?: Promise<void>;
+	private refreshInteriorMeshes(): Promise<void> {
+		if (this.interiorRefresh) return this.interiorRefresh;
+		this.interiorModelsSettled = false;
+		return (this.interiorRefresh = this.installInteriorMeshes().finally(() => {
+			this.interiorRefresh = undefined;
+			this.interiorModelsSettled = true;
+		}));
+	}
+	private async installInteriorMeshes(): Promise<void> {
+		// Re-read the live map after each slice. A jump never waits for an old
+		// system's assembly and its disposed roots never receive the finished kit.
 		for (const [id, station] of this.stationVisuals) {
-			if (!refreshStationInteriorKit(station.root)) continue;
+			if (
+				!(await refreshStationInteriorKitAsync(
+					station.root,
+					() => this.stationVisuals.get(id) === station,
+					(kit, live) => this.warmInteriorKit(kit, live),
+				))
+			)
+				continue;
 			station.accessories.length = 0;
 			station.root.traverse((o) => {
 				if (o.userData.minDetail) station.accessories.push(o);
 			});
+			setStationDetail(station, station.detail);
 			this.registerInteriorPresentation(id, station);
 		}
 		for (let i = this.markedOcclusion.length - 1; i >= 0; i--)
@@ -6530,6 +6566,39 @@ class Game {
 				markOcclusion(station.root),
 			]);
 	}
+	/** Compile fitting programs off-scene, one mesh at a time, while the
+	 * procedural bay keeps drawing. The composer target selects the same
+	 * output-colour variant as gameplay; restore it before yielding.
+	 */
+	private async warmInteriorKit(kit: THREE.Group, live: () => boolean) {
+		const meshes: THREE.Mesh[] = [];
+		kit.traverse((o) => {
+			if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+			if (o instanceof THREE.PointLight) o.layers.set(UNCOUNTED_LIGHT_LAYER);
+		});
+		markOcclusion(kit);
+		let sliceStart = performance.now();
+		for (const mesh of meshes) {
+			if (!live()) return;
+			const target = this.renderer.getRenderTarget();
+			let compiled: Promise<THREE.Object3D>;
+			try {
+				this.renderer.setRenderTarget(this.composer.renderTarget1);
+				compiled = this.renderer.compileAsync(
+					mesh,
+					this.nearCamera,
+					this.nearScene,
+				);
+			} finally {
+				this.renderer.setRenderTarget(target);
+			}
+			await compiled;
+			if (performance.now() - sliceStart >= INTERIOR_SLICE_MS) {
+				await nextInteriorFrame();
+				sliceStart = performance.now();
+			}
+		}
+	}
 	/** Sharing a card waits for the authored kit, even after a background failure. */
 	private async openPostcardWithModels(): Promise<void> {
 		const { prepareInteriorModel } = await import("./interior-model");
@@ -6537,7 +6606,7 @@ class Game {
 			[prepareInteriorModel],
 			loadingPanel("postcard interiors"),
 		);
-		this.refreshInteriorMeshes();
+		await this.refreshInteriorMeshes();
 		this.postcardPanel?.open();
 	}
 
@@ -14665,6 +14734,13 @@ class Game {
 				this.markedOcclusion.splice(i, 1);
 
 		this.buildBodies();
+		this.interiorModelsSettled = false;
+		void this.loadInteriorsAfterBoot()
+			.then(() => this.refreshInteriorMeshes())
+			.catch((error) => this.warnInteriorFailure(error))
+			.finally(() => {
+				this.interiorModelsSettled = true;
+			});
 		this.buildEnvironment();
 		// The sky is a picture of *this* system's neighbourhood, so a jump to a
 		// different star draws a different sky (#431). The faint population is
@@ -21101,7 +21177,8 @@ if (postcard) {
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
 	void game.loadCourierHullAfterBoot();
-	void game.loadInteriorsAfterBoot();
+	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
+	else void game.loadInteriorsAfterBoot();
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	game.clockHeld = true;
 	game.saveFault = plan.fault;

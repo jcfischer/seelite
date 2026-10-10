@@ -468,7 +468,8 @@ branch and not the machine.
   read a frame-period median of 528.95 ms while the kit loaded and installed.
   Both probes now wait for `interiorModelsSettled` after `bootedGame`
   (`scripts/probe-guard.mjs`), and the adaptive probe is green. The stall a
-  player feels during the install is charted as node #877.
+  player felt during the install was charted as node #877 at that checkpoint.
+  Round 6 below repairs the installation path and measures the interval itself.
 - **The floods recompiled lit programs as stations crossed layers.** Each kit
   adds four flood `PointLight`s, and `numPointLights` is in every lit
   program's cache key. A station moves between layer scenes with its distance,
@@ -511,3 +512,84 @@ Verification: `npm test` 5,794 pass, 0 fail across 327 files; typecheck,
 format, script lint, launcher wiring and build pass. Browser probes run alone
 on the hardware lane: `probe-adaptive-resolution`, `probe-planet-surfaces`,
 `probe-station-interior-kit`, `probe-cabin-pass`. The full suite is ranger's.
+
+## Sage round 6 — installation during active gameplay
+
+The important finding is taken. Waiting for a settled kit remains correct for
+steady-state measurements, but is no longer the only installation check.
+The ordinary boot still waits for no interior model; live node #838 remained
+OPEN when re-read for this repair. Its general queue remains separate work.
+
+Assembly now uses a shared generator, drained synchronously by the study and
+in four-millisecond slices by production. It yields between face construction,
+collar segments and individual instanced mesh batches. Conservative bounds
+union each source's cached box under the actual float32 instance matrix;
+this per-batch bounds work yields with the rest of assembly. Shader preparation also yields on
+that budget, compiling against the production near-scene lights and composer
+target. This is a cooperative budget between work units, not preemption of a
+driver call. Meshopt decoding uses two workers, released after the load.
+
+The procedural bay remains attached until its replacement and shader preparation
+finish. Concurrent refreshes share one promise. A failed build or warmup retains
+the stand-in and disposes the unfinished kit. A jump cancels work on obsolete
+station roots and starts sliced installation for the new system without waiting.
+Full-set capture boots and postcards await completion; the settled predicate
+also covers a retry's installation. Full geometry, metre conversion, berth
+identity, clearance, open decks and the principal's uniform LOD1 ruling remain.
+
+The fixed near-scene flood pool and its cabin mirrors are now allocated before
+the first frame. A bay install changes no existing scene's light count. The
+nearest near-layer bay still supplies their positions, colour and intensity.
+New accessories inherit the station's current detail level at the atomic swap.
+
+Evidence: `spikes/interiors/evidence/production-sliced-install-codex.json`.
+Production Vite bundle, Apple M1 Pro / ANGLE Metal, 1440 × 900 at DPR 1, seed 5.
+Each cold case holds the optional GLB until after boot and 30 baseline frames,
+then records every rAF interval through settlement with the game loop active.
+The bay case uses the real `port-deep` berth and chase camera. Rendering and
+game-clock advancement are read over the installation interval itself.
+
+| Cold case | Frames during install | Baseline median ms | Install median ms | Worst interval ms | Game clock advanced s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flight | 33 | 8.4 | 8.3 | 9.3 | 0.276 |
+| Bay | 38 | 8.3 | 8.3 | 33.2 | 0.365 |
+
+The new probe requires both a median below twice its own live baseline and a
+tail below the larger of 50 ms or twice its worst baseline interval. Thus the
+earlier unsliced shader swap measured at 83–117 ms would fail the tail check
+even though its median was 8.3 ms. These cold cases are not the same instrument
+or camera as the historical 528.95 ms adaptive-probe reading. They do not imply
+a universal FPS gain or a four-millisecond worst delivered frame.
+
+The same run retains the shuffled production cost instrument: eight blocks of
+eight serial composer renders and 1×1 readPixels per arm, with matching camera,
+clock, display and quality. Counts are unchanged from the previous LOD1 receipt;
+the raw new costs are in the evidence file. They measure the installed kit,
+separately from the cold rAF cadence above.
+
+The maintainability suggestion is taken: the two overwritten first authoring
+definitions were removed, retaining the effective `plated_box` and `microship`
+implementations. No asset was regenerated. The glossary nits are retained:
+Command names a fitting/module identity and Hangar names an authored form in
+the inherited study/evidence; replacing them with simulation vocabulary would
+change provenance or identities rather than this installation repair.
+
+Targeted headless verification: 42 pass across five files, covering yielding,
+cancellation, build/warmup failures, duplicate refreshes, float32 bounds,
+actual packed fitting geometry, clearance, kilometre conversion and LODs.
+Final production `probe-station-interior-kit`: passed in 76 seconds, hardware
+lane, peak machine load 28.8 on ten cores. The selector returned all 99 probes
+for shared `main.ts`; worker scope permits affected probes only, and the full
+browser suite remains the supervisor's gate. Principal production flight
+approval and Field Notes approval remain pending.
+
+The five additional affected hardware probes also passed: cabin pass, dock
+arrival, layer handoff, model download and postcard (64 seconds total; peak
+machine load 21.2 on ten cores). This is six affected probes across the two
+runs, not a full-suite result. Typecheck/build, format, script lint, launcher
+wiring and `git diff --check` pass.
+
+The required final full `npm test` ran once: 5,784 pass, zero failures,
+9,054,614 assertions across 321 files, 426.84 seconds, exit 0. The RTK wrapper
+mislabelled a passing test whose name contains the word FAIL; the underlying
+test summary and command exit both passed. No source changed after that run.

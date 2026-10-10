@@ -63,6 +63,11 @@ export class InteriorLods {
 		});
 	}
 	flush() {
+		for (const _ of this.flushSteps()) {
+			/* synchronous review/full-set path */
+		}
+	}
+	*flushSteps(): Generator<void> {
 		for (const b of this.buckets.values()) {
 			if (b.parts[0].length) continue;
 			const files = [`${b.name}.glb`, ...b.record.levels.map((l) => l.file)];
@@ -71,8 +76,11 @@ export class InteriorLods {
 					continue;
 				const asset = this.assets.get(files[level])!;
 				asset.updateMatrixWorld(true);
+				const sources: THREE.Mesh[] = [];
 				asset.traverse((o) => {
-					if (!(o as THREE.Mesh).isMesh) return;
+					if ((o as THREE.Mesh).isMesh) sources.push(o as THREE.Mesh);
+				});
+				for (const o of sources) {
 					const source = o as THREE.Mesh;
 					const mesh = new THREE.InstancedMesh(
 						source.geometry,
@@ -84,15 +92,32 @@ export class InteriorLods {
 					mesh.castShadow = b.name !== "panel";
 					mesh.receiveShadow = true;
 					// A fixed conservative bound covers any later subset of these instances.
-					b.instances.forEach((i, n) =>
-						mesh.setMatrixAt(n, i.transform.clone().multiply(o.matrixWorld)),
-					);
-					mesh.computeBoundingSphere();
+					// Union cached source bounds, never scan all source vertices for
+					// every instance. Covers every future LOD subset conservatively.
+					if (!source.geometry.boundingBox)
+						source.geometry.computeBoundingBox();
+					const bounds = new THREE.Box3();
+					const partBounds = new THREE.Box3();
+					const matrix = new THREE.Matrix4();
+					b.instances.forEach((i, n) => {
+						matrix.multiplyMatrices(i.transform, o.matrixWorld);
+						mesh.setMatrixAt(n, matrix);
+						// Bound the float32 transform the GPU actually receives.
+						mesh.getMatrixAt(n, matrix);
+						bounds.union(
+							partBounds
+								.copy(source.geometry.boundingBox!)
+								.applyMatrix4(matrix),
+						);
+					});
+					mesh.boundingBox = bounds;
+					mesh.boundingSphere = bounds.getBoundingSphere(new THREE.Sphere());
 					mesh.count = 0;
 					mesh.visible = false;
 					b.parent.add(mesh);
 					b.parts[level].push({ mesh, local: o.matrixWorld.clone() });
-				});
+					yield;
+				}
 				if (!b.parts[level].length)
 					throw Error(`Empty LOD mesh batch: ${files[level]}`);
 			}

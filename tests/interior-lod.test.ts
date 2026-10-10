@@ -59,3 +59,51 @@ test("removed-detail hysteresis retains coarse until its release threshold", () 
 	expect(selectLod(2, 249, 1000, [0.2, 0.3])).toBe(1);
 	expect(selectLod(2, 0, 1000, [0.2, 0.3])).toBe(0);
 });
+
+test("sliced batches retain conservative bounds for every transformed instance and later subset", () => {
+	const assets = new Map<string, THREE.Group>();
+	for (const file of ["f.glb", "f-lod1.glb", "f-lod2.glb"]) {
+		const g = new THREE.Group();
+		const mesh = new THREE.Mesh(
+			new THREE.BoxGeometry(2, 4, 6),
+			new THREE.MeshBasicMaterial(),
+		);
+		mesh.position.set(3, 5, 7);
+		mesh.rotation.x = 0.7;
+		g.add(mesh);
+		assets.set(file, g);
+	}
+	const record: LodRecord = {
+		full: { min: [-3, -3, -3], max: [3, 3, 3], triangles: 12 },
+		levels: [
+			{ file: "f-lod1.glb", maxRemovedDiameter: 0.2, triangles: 12 },
+			{ file: "f-lod2.glb", maxRemovedDiameter: 0.3, triangles: 12 },
+		],
+	};
+	const parent = new THREE.Group();
+	const lod = new InteriorLods(assets, { f: record }, (m) => m);
+	for (const x of [-40, 40])
+		lod.add("f", new THREE.Matrix4().makeTranslation(x, 0, -100), parent);
+	expect([...lod.flushSteps()]).toHaveLength(3);
+	const camera = new THREE.PerspectiveCamera();
+	for (const mode of ["0", "1", "2"] as const) {
+		lod.setMode(mode);
+		lod.update(camera, 900);
+		for (const child of parent.children) {
+			const mesh = child as THREE.InstancedMesh;
+			for (let i = 0; i < mesh.count; i++) {
+				const matrix = new THREE.Matrix4();
+				mesh.getMatrixAt(i, matrix);
+				const positions = mesh.geometry.getAttribute("position");
+				for (let v = 0; v < positions.count; v++) {
+					const point = new THREE.Vector3()
+						.fromBufferAttribute(positions, v)
+						.applyMatrix4(matrix);
+					expect(mesh.boundingBox!.containsPoint(point)).toBe(true);
+					expect(mesh.boundingSphere!.containsPoint(point)).toBe(true);
+				}
+			}
+		}
+	}
+	lod.clear();
+});

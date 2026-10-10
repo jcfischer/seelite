@@ -109,16 +109,6 @@ def annulus(c,z,ri,ro,depth,mat,n=32,phase=0):
  for i in range(n):
   a=math.tau*i/n+phase;b=math.tau*(i+1)/n+phase
   prism([(c[0]+r*math.cos(t),c[1]+r*math.sin(t),z) for r,t in [(ri,a),(ro,a),(ro,b),(ri,b)]],Z,depth,mat)
-def plated_box(c,size,mat=None,step=5):
- c=Vector(c);sx,sy,sz=size
- box(c,size,steel)
- for u,v,n,wu,wv,dist in [(X,Z,Y,sx,sz,sy/2),(X,Z,-Y,sx,sz,sy/2),(X,Y,Z,sx,sy,sz/2),(X,Y,-Z,sx,sy,sz/2),(Z,Y,X,sz,sy,sx/2),(Z,Y,-X,sz,sy,sx/2)]:
-  nu=max(1,round(wu/step));nv=max(1,round(wv/step));ctr=c+n*(dist+.015)
-  for i in range(nu):
-   for j in range(nv):
-    a=-wu/2+i*wu/nu;b=-wv/2+j*wv/nv
-    pts=[ctr+u*x+v*y for x,y in [(a,b),(a+wu/nu,b),(a+wu/nu,b+wv/nv),(a,b+wv/nv)]]
-    plate(pts,mat or random.choice(ivory),n,.10,True)
 def girder(a,b,w=3,h=4,skin=False):
  a,b=Vector(a),Vector(b);d=(b-a).normalized();v=Y;u=v.cross(d).normalized();L=(b-a).length
  for sx in [-1,1]:
@@ -166,16 +156,6 @@ def flood(c,normal=Y):
  box(c,(1.6,.6,.6),steel,(u,v,n));box(c+n*.36,(1.18,.32,.12),white,(u,v,n))
 def deck_tile(x,y,z,w,d):
  plate([(x-w/2,y,z-d/2),(x+w/2,y,z-d/2),(x+w/2,y,z+d/2),(x-w/2,y,z+d/2)],random.choice(blue),Y,.10)
-def microship(c,length=12,carrier=False):
- c=Vector(c);w=length*.22
- plated_box(c,(w*1.5,w*.6,length),blue[1],4)
- if carrier:
-  for z in [-length*.32,0,length*.32]:plated_box(c+Vector((-w*1.45,w*.23,z)),(w*1.5,w*1.2,length*.29),ivory[1],3)
- else:plated_box(c+Vector((0,w*.55,length*.22)),(w*.9,w*.38,length*.3),ivory[1],3)
- for side in [-1,1]:
-  tube(c+Vector((side*w*.7,-w*.1,-length*.50)),c+Vector((side*w*.7,-w*.1,-length*.57)),w*.20,steel,12)
-  tube(c+Vector((side*w*.7,-w*.1,-length*.571)),c+Vector((side*w*.7,-w*.1,-length*.59)),w*.12,cyan,12)
- box(c+Vector((0,w*.72,length*.29)),(w*.7,.12,length*.10),glass)
 def industrial_pods(x,y,z,count=5):
  for i in range(count):
   zz=z+i*12

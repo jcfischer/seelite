@@ -354,8 +354,71 @@ type InteriorKitBuilder = (
 	recess: number,
 ) => THREE.Group;
 let interiorKitBuilder: InteriorKitBuilder | null = null;
-export function installInteriorKitBuilder(builder: InteriorKitBuilder | null) {
+type AsyncInteriorKitBuilder = (
+	interior: StationInterior,
+	seed: number,
+	recess: number,
+	live: () => boolean,
+) => Promise<THREE.Group | undefined>;
+let asyncInteriorKitBuilder: AsyncInteriorKitBuilder | undefined;
+export function installInteriorKitBuilder(
+	builder: InteriorKitBuilder | null,
+	asyncBuilder?: AsyncInteriorKitBuilder,
+) {
 	interiorKitBuilder = builder;
+	asyncInteriorKitBuilder = asyncBuilder;
+}
+function replaceInteriorStandIn(group: THREE.Group, kit: THREE.Group) {
+	for (const child of [...group.children]) {
+		if (child.name === NAMEPLATE_NAME) continue;
+		child.removeFromParent();
+		disposeSubtree(child);
+	}
+	group.add(kit);
+	delete group.userData.interiorStandIn;
+}
+const pendingInteriors = new WeakMap<THREE.Object3D, Promise<boolean>>();
+/** Build off-scene over frame slices, then replace the still-live stand-in once.
+ * A jump can dispose this station during a slice; never attach to that old root.
+ */
+export function refreshStationInteriorKitAsync(
+	root: THREE.Object3D,
+	live: () => boolean = () => true,
+	prepare?: (kit: THREE.Group, live: () => boolean) => Promise<void>,
+): Promise<boolean> {
+	const pending = pendingInteriors.get(root);
+	if (pending) return pending;
+	const promise = (async () => {
+		const candidates: THREE.Group[] = [];
+		root.traverse((o) => {
+			if (o.userData.interiorStandIn) candidates.push(o as THREE.Group);
+		});
+		let changed = false;
+		for (const group of candidates) {
+			const builder = asyncInteriorKitBuilder;
+			if (!builder || !live()) continue;
+			const standIn = group.userData.interiorStandIn;
+			const { interior, seed, recess } = standIn;
+			const kit = await builder(interior, seed, recess, live);
+			if (!kit) continue;
+			try {
+				if (live()) await prepare?.(kit, live);
+			} catch (error) {
+				disposeSubtree(kit);
+				throw error;
+			}
+			if (!live() || group.userData.interiorStandIn !== standIn) {
+				disposeSubtree(kit);
+				continue;
+			}
+			replaceInteriorStandIn(group, kit);
+			changed = true;
+		}
+		if (changed) invalidateOcclusionBounds(root);
+		return changed;
+	})().finally(() => pendingInteriors.delete(root));
+	pendingInteriors.set(root, promise);
+	return promise;
 }
 /** Refresh a stand-in once, preserving the root and painted nameplate identities. */
 export function refreshStationInteriorKit(root: THREE.Object3D): boolean {
@@ -368,13 +431,7 @@ export function refreshStationInteriorKit(root: THREE.Object3D): boolean {
 		if (!interiorKitBuilder) continue;
 		const { interior, seed, recess } = group.userData.interiorStandIn;
 		const kit = interiorKitBuilder(interior, seed, recess);
-		for (const child of [...group.children]) {
-			if (child.name === NAMEPLATE_NAME) continue;
-			child.removeFromParent();
-			disposeSubtree(child);
-		}
-		group.add(kit);
-		delete group.userData.interiorStandIn;
+		replaceInteriorStandIn(group, kit);
 		changed = true;
 	}
 	if (changed) invalidateOcclusionBounds(root);
@@ -588,7 +645,9 @@ export function buildStationInterior(
 			buildRoleFittings(type, interior, plate, structure, mouthRecessKm),
 		),
 	);
-	refreshStationInteriorKit(group);
+	// A review-only synchronous builder can refresh immediately. Production
+	// retains the stand-in until sliced installation finishes, also after jumps.
+	if (!asyncInteriorKitBuilder) refreshStationInteriorKit(group);
 	return group;
 }
 

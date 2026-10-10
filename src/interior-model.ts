@@ -3,13 +3,13 @@
  * Node #838 still owns the future general queue; this load adds no boot model.
  */
 import * as THREE from "three";
-import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { MeshoptDecoder } from "meshoptimizer/decoder";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { STATION_INTERIORS_GLB_URL } from "./model-urls";
 import { shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
 import { installInteriorKitBuilder } from "./station-interior-mesh";
-import { buildInteriorKit } from "./interior-kit";
+import { buildInteriorKit, buildInteriorKitAsync } from "./interior-kit";
 import { THEMES, type Theme } from "./interior-layout";
 import records from "./interior-lod-records.json";
 let ready: Promise<void> | undefined;
@@ -21,6 +21,9 @@ export function interiorTheme(seed: number): Theme {
 export function prepareInteriorModel(
 	onProgress?: ModelProgressListener,
 ): Promise<void> {
+	// Meshopt's async API otherwise runs its entire decode on the main thread.
+	// These two workers decode bundle bytes only; no additional file is fetched.
+	if (!ready) MeshoptDecoder.useWorkers(2);
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
 		.loadAsync(STATION_INTERIORS_GLB_URL, onProgress)
@@ -51,19 +54,31 @@ export function prepareInteriorModel(
 					...record.levels.map((l) => l.file),
 				]))
 					if (!assets.has(file)) throw Error(`Missing fitting ${file}`);
-			installInteriorKitBuilder((interior, seed, recess) =>
-				buildInteriorKit(
-					interior,
-					seed,
-					interiorTheme(seed),
-					assets,
-					records,
-					recess,
-				),
+			installInteriorKitBuilder(
+				(interior, seed, recess) =>
+					buildInteriorKit(
+						interior,
+						seed,
+						interiorTheme(seed),
+						assets,
+						records,
+						recess,
+					),
+				(interior, seed, recess, live) =>
+					buildInteriorKitAsync(
+						interior,
+						seed,
+						interiorTheme(seed),
+						assets,
+						records,
+						recess,
+						live,
+					),
 			);
 		})
 		.catch((error) => {
 			ready = undefined;
 			throw error;
-		}));
+		})
+		.finally(() => MeshoptDecoder.useWorkers(0)));
 }
