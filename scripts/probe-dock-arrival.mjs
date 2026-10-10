@@ -229,7 +229,15 @@ const roster = await page.evaluate(() => {
 			parts: (() => {
 				const mesh = window.__meshOfBody(s.id);
 				const found = [];
-				if (mesh) mesh.traverse((o) => found.push(o.name));
+				if (mesh)
+					mesh.traverse((o) => {
+						found.push(o.name);
+						// Authored pads share instanced meshes; their ids follow the
+						// actual instance slots rather than adding empty named groups.
+						if (o.isInstancedMesh)
+							for (const id of o.userData.instanceIds ?? [])
+								if (id) found.push(`berth-${id}`);
+					});
 				return found;
 			})(),
 		};

@@ -19,6 +19,19 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-station-interior-kit.mjs",
+			"Holds the optional fitting bundle across boot, tests one-time background installation and failure stand-ins, full-set capture readiness, and camera-driven instanced LODs in all four production bay themes.",
+			[
+				"station interiors",
+				"LOD",
+				"authored models",
+				"background loading",
+				"bay geometry",
+				"game camera",
+				"draw calls",
+			],
+		),
+		entry(
 			"probe-death-wreck.mjs",
 			"Kills and reloads the live pilot, checks an immediate own-loss contact and persistent death-point wreck, measures painted wreck pixels (hull and tethers together), and recovers its cargo and unfitted fitting through the existing proximity scoop into one save.",
 			[

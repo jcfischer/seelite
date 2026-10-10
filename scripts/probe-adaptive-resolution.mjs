@@ -26,6 +26,7 @@
  */
 import {
 	bootedGame,
+	interiorModelsSettled,
 	guardedOrigin,
 	launchChromium,
 	tally,
@@ -118,6 +119,7 @@ t.watch(page);
 // ── the manual rungs move the buffer and nothing else ───────────────────────
 await page.goto(gameUrl(origin, { seed: 47 }));
 await bootedGame(page);
+await interiorModelsSettled(page);
 
 const rungs = [1, 0.75, 0.5];
 const measured = [];

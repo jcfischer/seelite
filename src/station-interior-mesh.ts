@@ -1,3 +1,5 @@
+import { invalidateOcclusionBounds } from "./occlusion-mesh";
+import { disposeSubtree } from "./gpu-teardown";
 /**
  * The drawn station interior — `docs/specs/docking.md` §13, as geometry.
  *
@@ -344,10 +346,103 @@ const atFullDetail = <T extends THREE.Object3D>(object: T): T => {
  */
 // A recessed hull may end the rendered mouth behind the sim plane; this trims
 // only its enclosure and corner rails, leaving berths and fittings in place.
+
+/** Installed by the optional authored-model loader; the sim never reads it. */
+type InteriorKitBuilder = (
+	interior: StationInterior,
+	seed: number,
+	recess: number,
+) => THREE.Group;
+let interiorKitBuilder: InteriorKitBuilder | null = null;
+type AsyncInteriorKitBuilder = (
+	interior: StationInterior,
+	seed: number,
+	recess: number,
+	live: () => boolean,
+) => Promise<THREE.Group | undefined>;
+let asyncInteriorKitBuilder: AsyncInteriorKitBuilder | undefined;
+export function installInteriorKitBuilder(
+	builder: InteriorKitBuilder | null,
+	asyncBuilder?: AsyncInteriorKitBuilder,
+) {
+	interiorKitBuilder = builder;
+	asyncInteriorKitBuilder = asyncBuilder;
+}
+function replaceInteriorStandIn(group: THREE.Group, kit: THREE.Group) {
+	for (const child of [...group.children]) {
+		if (child.name === NAMEPLATE_NAME) continue;
+		child.removeFromParent();
+		disposeSubtree(child);
+	}
+	group.add(kit);
+	delete group.userData.interiorStandIn;
+}
+const pendingInteriors = new WeakMap<THREE.Object3D, Promise<boolean>>();
+/** Build off-scene over frame slices, then replace the still-live stand-in once.
+ * A jump can dispose this station during a slice; never attach to that old root.
+ */
+export function refreshStationInteriorKitAsync(
+	root: THREE.Object3D,
+	live: () => boolean = () => true,
+	prepare?: (kit: THREE.Group, live: () => boolean) => Promise<void>,
+): Promise<boolean> {
+	const pending = pendingInteriors.get(root);
+	if (pending) return pending;
+	const promise = (async () => {
+		const candidates: THREE.Group[] = [];
+		root.traverse((o) => {
+			if (o.userData.interiorStandIn) candidates.push(o as THREE.Group);
+		});
+		let changed = false;
+		for (const group of candidates) {
+			const builder = asyncInteriorKitBuilder;
+			if (!builder || !live()) continue;
+			const standIn = group.userData.interiorStandIn;
+			const { interior, seed, recess } = standIn;
+			const kit = await builder(interior, seed, recess, live);
+			if (!kit) continue;
+			try {
+				if (live()) await prepare?.(kit, live);
+			} catch (error) {
+				disposeSubtree(kit);
+				throw error;
+			}
+			if (!live() || group.userData.interiorStandIn !== standIn) {
+				disposeSubtree(kit);
+				continue;
+			}
+			replaceInteriorStandIn(group, kit);
+			changed = true;
+		}
+		if (changed) invalidateOcclusionBounds(root);
+		return changed;
+	})().finally(() => pendingInteriors.delete(root));
+	pendingInteriors.set(root, promise);
+	return promise;
+}
+/** Refresh a stand-in once, preserving the root and painted nameplate identities. */
+export function refreshStationInteriorKit(root: THREE.Object3D): boolean {
+	const candidates: THREE.Group[] = [];
+	root.traverse((o) => {
+		if (o.userData.interiorStandIn) candidates.push(o as THREE.Group);
+	});
+	let changed = false;
+	for (const group of candidates) {
+		if (!interiorKitBuilder) continue;
+		const { interior, seed, recess } = group.userData.interiorStandIn;
+		const kit = interiorKitBuilder(interior, seed, recess);
+		replaceInteriorStandIn(group, kit);
+		changed = true;
+	}
+	if (changed) invalidateOcclusionBounds(root);
+	return changed;
+}
+
 export function buildStationInterior(
 	type: StationType,
 	interior: StationInterior,
 	mouthRecessKm = 0,
+	seed = 0,
 ): THREE.Group {
 	// **Two presentations, and the sim already decided which** (#165). A pad
 	// role has no enclosure to draw: no shell, no mouth bulkhead, no end wall.
@@ -357,6 +452,7 @@ export function buildStationInterior(
 	if (interior.presentation === "pad") return buildPadDeck(type, interior);
 	const group = new THREE.Group();
 	group.name = INTERIOR_GROUP_NAME;
+	group.userData.interiorStandIn = { interior, seed, recess: mouthRecessKm };
 	const visuals = STATION_VISUALS[type];
 	const structure = structureMaterial(type);
 	const mouth = interior.mouthAxialKm - mouthRecessKm;
@@ -549,6 +645,9 @@ export function buildStationInterior(
 			buildRoleFittings(type, interior, plate, structure, mouthRecessKm),
 		),
 	);
+	// A review-only synchronous builder can refresh immediately. Production
+	// retains the stand-in until sliced installation finishes, also after jumps.
+	if (!asyncInteriorKitBuilder) refreshStationInteriorKit(group);
 	return group;
 }
 

@@ -1,0 +1,844 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "results": [
+    {
+      "theme": "civic",
+      "view": "axis",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 3395604,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 6955056,
+          "calls": 944
+        },
+        "1": {
+          "lod": {
+            "mode": "1",
+            "levels": [
+              778,
+              184,
+              0
+            ],
+            "triangles": 2412724,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 4989296,
+          "calls": 944
+        },
+        "2": {
+          "lod": {
+            "mode": "2",
+            "levels": [
+              778,
+              0,
+              184
+            ],
+            "triangles": 1822996,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 3809840,
+          "calls": 944
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              861,
+              17,
+              84
+            ],
+            "triangles": 2617748,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 5399344,
+          "calls": 1079
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 466,
+        "fraction": 0.00029656443466927337,
+        "meanChannelDifference": 0.024830377022917346
+      }
+    },
+    {
+      "theme": "civic",
+      "view": "command",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 3395604,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 6712208,
+          "calls": 179
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 3395604,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 6712208,
+          "calls": 179
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "civic",
+      "view": "loading",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 3395604,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 6712352,
+          "calls": 191
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 3395604,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 6712352,
+          "calls": 191
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "civic",
+      "view": "gangway",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 3395604,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 6713408,
+          "calls": 192
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 3395604,
+            "fullTriangles": 3395604
+          },
+          "renderTriangles": 6713408,
+          "calls": 192
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "works",
+      "view": "axis",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 2819220,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 5803968,
+          "calls": 1122
+        },
+        "1": {
+          "lod": {
+            "mode": "1",
+            "levels": [
+              830,
+              132,
+              0
+            ],
+            "triangles": 2006580,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 4178688,
+          "calls": 1122
+        },
+        "2": {
+          "lod": {
+            "mode": "2",
+            "levels": [
+              830,
+              0,
+              132
+            ],
+            "triangles": 1518996,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 3203520,
+          "calls": 1122
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              892,
+              12,
+              58
+            ],
+            "triangles": 2152980,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 4471488,
+          "calls": 1232
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 316,
+        "fraction": 0.00020110377973281198,
+        "meanChannelDifference": 0.016845411439665472
+      }
+    },
+    {
+      "theme": "works",
+      "view": "command",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 2819220,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 5568348,
+          "calls": 298
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              960,
+              2,
+              0
+            ],
+            "triangles": 2810420,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 5550748,
+          "calls": 324
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 8,
+        "fraction": 0.000005091234929944607,
+        "meanChannelDifference": 0.0006467989708917128
+      }
+    },
+    {
+      "theme": "works",
+      "view": "loading",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 2819220,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 5470300,
+          "calls": 214
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 2819220,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 5470300,
+          "calls": 214
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "works",
+      "view": "gangway",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 2819220,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 5471332,
+          "calls": 213
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              962,
+              0,
+              0
+            ],
+            "triangles": 2819220,
+            "fullTriangles": 2819220
+          },
+          "renderTriangles": 5471332,
+          "calls": 213
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "frontier",
+      "view": "axis",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              1117,
+              0,
+              0
+            ],
+            "triangles": 3104680,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 6373832,
+          "calls": 1028
+        },
+        "1": {
+          "lod": {
+            "mode": "1",
+            "levels": [
+              882,
+              235,
+              0
+            ],
+            "triangles": 2222280,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 4609032,
+          "calls": 1028
+        },
+        "2": {
+          "lod": {
+            "mode": "2",
+            "levels": [
+              882,
+              0,
+              235
+            ],
+            "triangles": 1692840,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 3550152,
+          "calls": 1028
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              984,
+              23,
+              110
+            ],
+            "triangles": 2368296,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 4901064,
+          "calls": 1152
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 279,
+        "fraction": 0.0001775568181818182,
+        "meanChannelDifference": 0.015939595891712826
+      }
+    },
+    {
+      "theme": "frontier",
+      "view": "command",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              1117,
+              0,
+              0
+            ],
+            "triangles": 3104680,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 6138692,
+          "calls": 244
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              1112,
+              5,
+              0
+            ],
+            "triangles": 3096200,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 6121732,
+          "calls": 282
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 7,
+        "fraction": 0.0000044548305637015314,
+        "meanChannelDifference": 0.00035850779298359945
+      }
+    },
+    {
+      "theme": "frontier",
+      "view": "loading",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              1117,
+              0,
+              0
+            ],
+            "triangles": 3104680,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 6040908,
+          "calls": 182
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              1117,
+              0,
+              0
+            ],
+            "triangles": 3104680,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 6040908,
+          "calls": 182
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "frontier",
+      "view": "gangway",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              1117,
+              0,
+              0
+            ],
+            "triangles": 3104680,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 6041988,
+          "calls": 185
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              1117,
+              0,
+              0
+            ],
+            "triangles": 3104680,
+            "fullTriangles": 3104680
+          },
+          "renderTriangles": 6041988,
+          "calls": 185
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "survey",
+      "view": "axis",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              969,
+              0,
+              0
+            ],
+            "triangles": 3142988,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 6449824,
+          "calls": 946
+        },
+        "1": {
+          "lod": {
+            "mode": "1",
+            "levels": [
+              778,
+              191,
+              0
+            ],
+            "triangles": 2227788,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 4619424,
+          "calls": 946
+        },
+        "2": {
+          "lod": {
+            "mode": "2",
+            "levels": [
+              778,
+              0,
+              191
+            ],
+            "triangles": 1678668,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 3521184,
+          "calls": 946
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              863,
+              18,
+              88
+            ],
+            "triangles": 2404172,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 4972192,
+          "calls": 1081
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 387,
+        "fraction": 0.0002462884897360704,
+        "meanChannelDifference": 0.020505160815140654
+      }
+    },
+    {
+      "theme": "survey",
+      "view": "command",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              969,
+              0,
+              0
+            ],
+            "triangles": 3142988,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 6047648,
+          "calls": 167
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              969,
+              0,
+              0
+            ],
+            "triangles": 3142988,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 6047648,
+          "calls": 167
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "survey",
+      "view": "loading",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              969,
+              0,
+              0
+            ],
+            "triangles": 3142988,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 6208096,
+          "calls": 191
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              969,
+              0,
+              0
+            ],
+            "triangles": 3142988,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 6208096,
+          "calls": 191
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    },
+    {
+      "theme": "survey",
+      "view": "gangway",
+      "metrics": {
+        "0": {
+          "lod": {
+            "mode": "0",
+            "levels": [
+              969,
+              0,
+              0
+            ],
+            "triangles": 3142988,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 6205008,
+          "calls": 190
+        },
+        "auto": {
+          "lod": {
+            "mode": "auto",
+            "levels": [
+              969,
+              0,
+              0
+            ],
+            "triangles": 3142988,
+            "fullTriangles": 3142988
+          },
+          "renderTriangles": 6205008,
+          "calls": 190
+        }
+      },
+      "control": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      },
+      "autoDifference": {
+        "changedPixels": 0,
+        "fraction": 0,
+        "meanChannelDifference": 0
+      }
+    }
+  ],
+  "transitions": {
+    "far": {
+      "mode": "auto",
+      "levels": [
+        0,
+        0,
+        6
+      ],
+      "triangles": 103084,
+      "fullTriangles": 203948
+    },
+    "near": {
+      "mode": "auto",
+      "levels": [
+        6,
+        0,
+        0
+      ],
+      "triangles": 203948,
+      "fullTriangles": 203948
+    }
+  },
+  "errors": []
+}

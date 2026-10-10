@@ -179,6 +179,10 @@ function discGeometry(): THREE.BufferGeometry {
 	return disc;
 }
 
+/** The courier study material whose roughness the game raises (#843). */
+export const COURIER_ALLOY_MATERIAL = "machined-alloy";
+export const COURIER_ALLOY_ROUGHNESS = 0.4;
+
 /**
  * Prepare a loaded study scene once and return the builder `buildShipMesh`
  * calls for every courier: the template's geometry, materials and textures
@@ -203,6 +207,13 @@ export async function createCourierHullBuilder(
 		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
 	for (const m of materials) m.emissiveIntensity /= divisor;
+	// The study's machined alloy is a flat, unmapped mirror (roughness 0.28),
+	// and under a station bay's flood lights one panel flashed for exactly one
+	// frame as the lights turned past it (#843, `probe-station-mouth`). 0.40
+	// is the smallest tried that clears it; 0.28 is still the study's figure.
+	for (const m of materials)
+		if (m.name === COURIER_ALLOY_MATERIAL)
+			m.roughness = COURIER_ALLOY_ROUGHNESS;
 	const unpowered = shared(new THREE.MeshBasicMaterial({ color: 0x01090b }));
 	unpowered.name = "interior-screen-unpowered";
 	template.name = COURIER_LEVEL_NAMES.full;
