@@ -736,6 +736,7 @@ import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
 	buildShipMesh,
+	rebuildCourierStandIn,
 	fleetLayout,
 	measureMuzzles,
 	shipMuzzlesKm,
@@ -6396,6 +6397,52 @@ class Game {
 		}
 		this.ventPlumes = plumes;
 		this.nearScene.add(plumes.object);
+	}
+
+	/** Node #831: called after the background hull installs, including cached
+	 *  Traffic outside the materialisation range. Roots retain their identity
+	 *  so contacts, fleet slots and scene membership need no reassignment. */
+	private refreshCourierHulls(): void {
+		if (rebuildCourierStandIn(this.shipMesh)) {
+			this.mountVentPlumes(this.shipMesh, this.flownHull);
+			const marked = this.markedOcclusion.findIndex(
+				([name]) => name === "ship",
+			);
+			if (marked >= 0)
+				this.markedOcclusion[marked] = ["ship", markOcclusion(this.shipMesh)];
+		}
+		for (const root of this.trafficMeshes.values()) rebuildCourierStandIn(root);
+		for (const parked of this.fleet) {
+			if (!rebuildCourierStandIn(parked.mesh)) continue;
+			const name = `fleet-${parked.mesh.name || "hull"}`;
+			const marked = this.markedOcclusion.findIndex(([key]) => key === name);
+			if (marked >= 0)
+				this.markedOcclusion[marked] = [name, markOcclusion(parked.mesh)];
+		}
+		for (const drawn of this.derelictMeshes.values())
+			rebuildCourierStandIn(
+				drawn.root,
+				() => buildDerelictMesh("courier"),
+				() => disposeDerelict(drawn.root),
+			);
+	}
+
+	/** A background failure keeps the Kestrel and never reaches the boot Retry
+	 *  panel. Each Game starts this once, after construction; postcards await
+	 *  it before painting their single frame. */
+	private courierHullLoad?: Promise<void>;
+	loadCourierHullAfterBoot(): Promise<void> {
+		return (this.courierHullLoad ??= import("./courier-hull")
+			.then(async ({ prepareCourierHullModel }) => {
+				await prepareCourierHullModel();
+				this.refreshCourierHulls();
+			})
+			.catch((error) => {
+				console.warn(
+					"courier hull: background load failed; keeping Kestrel",
+					error,
+				);
+			}));
 	}
 
 	/**
@@ -20587,14 +20634,13 @@ if (postcard) {
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
 	const { prepareCockpitModel } = await import("./cockpit-model");
-	const { prepareCourierHullModel } = await import("./courier-hull");
 	const { prepareLongwallModel } = await import("./longwall-model");
 	await (await import("./coriolis-flight")).prepareCoriolisPage([
 		prepareCockpitModel,
-		prepareCourierHullModel,
 		prepareLongwallModel,
 	]);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
+	await game.loadCourierHullAfterBoot();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
@@ -20675,23 +20721,18 @@ if (postcard) {
 	// since nothing yet says whether the overlay opens, and moves into the
 	// overlay once the plan says it does.
 	//
-	// The courier hull (node #812) and the miner (node #815) are not in map
-	// #1's boot set (cockpit and home exterior only): awaiting them here is an
-	// interim breach the principal waived on node #838 (2026-10-09,
-	// issuecomment-6080935296) until #838 moves them out of boot and gives
-	// each a stand-in.
+	// Node #831 loads the courier after Game construction. The miner's
+	// interim boot wait remains under the principal's waiver on node #838.
 	const loading = loadRelay(loadingPanel("game"));
 	const stationModel = Promise.all([
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
-		import("./courier-hull"),
 		import("./longwall-model"),
-	]).then(([m, cockpit, courier, longwall]) =>
+	]).then(([m, cockpit, longwall]) =>
 		loadRequiredModels(
 			[
 				m.prepareCoriolisModel,
 				cockpit.prepareCockpitModel,
-				courier.prepareCourierHullModel,
 				longwall.prepareLongwallModel,
 			],
 			loading.view,
@@ -20886,6 +20927,7 @@ if (postcard) {
 	}
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
+	void game.loadCourierHullAfterBoot();
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	game.clockHeld = true;
 	game.saveFault = plan.fault;
