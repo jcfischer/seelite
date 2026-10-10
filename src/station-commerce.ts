@@ -8,7 +8,8 @@ import {
 	legacyModule,
 	moduleFits,
 	carriedModule,
-	fittingValue,
+	fittingSaleValue,
+	freeSlot,
 	LEGACY_MODULES,
 	transferLoadout,
 	repeatableEquipment,
@@ -53,7 +54,7 @@ export interface RecoveredFitting extends Partial<FittedModule> {
 	id: string;
 	tonnes: number;
 }
-const recoveredModule = (
+export const recoveredModule = (
 	item: RecoveredFitting,
 	hull: HullId,
 ): FittedModule => {
@@ -97,7 +98,7 @@ export interface CommanderState {
 
 export const STARTING_CREDITS = 100;
 const slotFor = (c: CommanderState, m: FittedModule) =>
-	HULL_SPECS[c.hull].slots.find((s) => !c.loadout[s.key] && moduleFits(m, s)) ??
+	freeSlot(c.loadout, c.hull, m) ??
 	HULL_SPECS[c.hull].slots.find(
 		(s) =>
 			s.key === "h1" &&
@@ -454,7 +455,7 @@ export function transactAtStation(
 				? fitOne(commander, recoveredModule(item, commander.hull))
 				: {
 						...commander,
-						credits: commander.credits + fittingValue(item) * 0.9,
+						credits: commander.credits + fittingSaleValue(item),
 					};
 		if (
 			action.type === "fit-recovered" &&

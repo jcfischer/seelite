@@ -1,7 +1,8 @@
 import {
 	fitted,
 	equipmentNames,
-	fittingValue,
+	fittingSaleValue,
+	freeSlot,
 	repeatableEquipment,
 } from "./loadout";
 /**
@@ -1105,6 +1106,7 @@ import {
 	transactAtStation,
 	type StationAction,
 	type ConsoleInput,
+	recoveredModule,
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
@@ -17481,11 +17483,16 @@ class Game {
 				(item, index) => ({
 					...item,
 					index,
-					priceCr: fittingValue(item) * 0.9,
+					priceCr: fittingSaleValue(item),
 					locked: gateRefusal(item.id, this.rungs()),
 					owned:
-						!repeatableEquipment(item.id) &&
-						fitted(this.commander.loadout, item.id),
+						fitted(this.commander.loadout, item.id) &&
+						(!repeatableEquipment(item.id) ||
+							!freeSlot(
+								this.commander.loadout,
+								this.commander.hull,
+								recoveredModule(item, this.commander.hull),
+							)),
 				}),
 			),
 			fuelLy: this.commander.fuelLy,

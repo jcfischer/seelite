@@ -1,5 +1,5 @@
 /** Slot identities are hull-owned. Catalogue rows own price, mass and capacity.
- * Legacy display names are confined to the migration and the old console adapter. */
+ * Legacy names remain as stable salvage aliases and in the old console adapter. */
 import { HULL_SPECS, type HullId, type SlotSize, type HullSlot } from "./hull";
 import {
 	deriveProposal,
@@ -87,6 +87,17 @@ export function fittingValue(f: {
 		? moduleRow(f as FittedModule).priceCr * f.tonnes
 		: (EQUIPMENT.find((e) => e.name === f.id)?.priceCr ?? 0);
 }
+export const fittingSaleValue = (
+	item: Parameters<typeof fittingValue>[0],
+): number => fittingValue(item) * 0.9;
+export const freeSlot = (
+	loadout: Loadout,
+	hull: HullId,
+	module: FittedModule,
+): HullSlot | undefined =>
+	HULL_SPECS[hull].slots.find(
+		(slot) => !loadout[slot.key] && moduleFits(module, slot),
+	);
 export const carriedModule = (m: FittedModule): ModuleFitting => ({
 	...m,
 	id:

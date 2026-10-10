@@ -66,3 +66,12 @@ installed module kinds, so the stock pulse projects as Extra Pulse Laser; it is
 not purchase history. Kill credit still ignores equipment until weapon behaviours
 are implemented. Recovered fittings sell at 90% of list value, as ratified by
 Ship outfitting D10; the displayed quote and till use the same fraction.
+
+Typed carried modules and wreck containers retain `id` as a frozen persisted
+alias (the legacy equipment name where one exists, otherwise the module kind).
+The parser validates this alias against `module`; retiring the legacy console
+must preserve these aliases for existing schema-13 records.
+
+The death notice counts modules beyond the lost hull's stock fit. It already
+names the lost hull, so its baseline plant and pulse are not separately counted;
+upgraded core modules, weapon replacements and additional slots are counted.

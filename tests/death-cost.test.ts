@@ -434,14 +434,26 @@ describe("the wake: what the death took", () => {
 
 	test("a death without one took the ship, its fittings and the hold", () => {
 		const wake = deathWake("jameson", launch, "destroyed", false);
-		expect(wake.fittingsLost).toBe(Object.keys(launch.state.loadout).length);
+		expect(wake.fittingsLost).toBe(FITTED.length);
 		const text = wakeText(wake);
 		expect(text).toContain("stock courier");
-		expect(text).toContain(`your ${LAUNCH_HULL}, 5 fittings and the hold`);
+		expect(text).toContain(`your ${LAUNCH_HULL}, 3 fittings and the hold`);
 	});
 
 	test("a bare courier with nothing aboard is told so, with no jobs line", () => {
 		const bare = newCommanderRecord(PLAYER_BASELINE_HULL);
+		expect(deathWake("x", bare, "destroyed", false).fittingsLost).toBe(0);
+		const upgraded = {
+			...bare,
+			state: {
+				...bare.state,
+				loadout: {
+					...bare.state.loadout,
+					plant: { ...bare.state.loadout.plant, grade: "A" as const },
+				},
+			},
+		};
+		expect(deathWake("x", upgraded, "destroyed", false).fittingsLost).toBe(1);
 		const text = wakeText(deathWake("x", bare, "destroyed", false));
 		expect(text).toContain("an empty hold");
 		expect(text).not.toContain("Requests");

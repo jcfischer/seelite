@@ -1,3 +1,4 @@
+import { stockLoadout } from "./loadout";
 /**
  * What a death costs the pilot, past the leg it already cost (#660, built by
  * node #704): the escape pod's eject (D2), a death without one (D6), the
@@ -155,7 +156,7 @@ export interface DeathWake {
 	hull: HullId;
 	/** Tonnes aboard at the launch, the pilot's own and entrusted. */
 	holdT: number;
-	/** Fittings lost: the pod after an eject, every fitting otherwise. */
+	/** Fittings beyond the hull stock fit lost; the pod after an eject. */
 	fittingsLost: number;
 	/** Jobs that failed with the hold (#660 D3). */
 	failedJobs: number;
@@ -178,13 +179,28 @@ export function deathWake(
 	firstLife: boolean,
 ): DeathWake {
 	const entrustedT = entrustedTonnesAboard(lost.requests);
+	// The notice already counts the hull. Its stock plant and primary pulse
+	// are part of that baseline, while upgraded modules and extra slots count.
+	const stock = stockLoadout(lost.state.hull);
+	const fittingsLost = Object.entries(lost.state.loadout).filter(
+		([slot, m]) => {
+			const base = stock[slot];
+			return (
+				!base ||
+				m.module !== base.module ||
+				m.size !== base.size ||
+				m.grade !== base.grade ||
+				m.variant !== base.variant ||
+				m.ammo !== base.ammo
+			);
+		},
+	).length;
 	return {
 		saveSlot,
 		cause,
 		hull: lost.state.hull,
 		holdT: commanderHold(lost.state, entrustedT).usedT,
-		fittingsLost:
-			cause === "eject" ? 1 : Object.keys(lost.state.loadout).length,
+		fittingsLost: cause === "eject" ? 1 : fittingsLost,
 		failedJobs: requestsAfterLostHold(lost.requests).failed.length,
 		firstLife,
 	};

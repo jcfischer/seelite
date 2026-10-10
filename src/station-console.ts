@@ -1,11 +1,11 @@
-import { HULL_SPECS, type HullId } from "./hull";
+import { type HullId } from "./hull";
 import {
 	legacyModule,
 	moduleRow,
 	LEGACY_MODULES,
 	repeatableEquipment,
 	type Loadout,
-	moduleFits,
+	freeSlot,
 } from "./loadout";
 /**
  * `hud-and-scanner.md` §8 — the station console's two screens, as data.
@@ -566,10 +566,10 @@ export function stationEquipmentScreen(input: {
 									repeatable:
 										repeatableEquipment(e.name) &&
 										(!input.loadout ||
-											HULL_SPECS[input.hull!].slots.some(
-												(slot) =>
-													!input.loadout![slot.key] &&
-													moduleFits(legacyModule(input.hull!, e.name), slot),
+											!!freeSlot(
+												input.loadout,
+												input.hull!,
+												legacyModule(input.hull!, e.name),
 											)),
 								}
 							: e,
