@@ -75,3 +75,7 @@ must preserve these aliases for existing schema-13 records.
 The death notice counts modules beyond the lost hull's stock fit. It already
 names the lost hull, so its baseline plant and pulse are not separately counted;
 upgraded core modules, weapon replacements and additional slots are counted.
+
+Stock modules are also excluded from wreck salvage: respawn already replaces
+them, so recovering them would mint saleable fittings from repeated deaths.
+Upgraded modules and additional fittings retain the existing survival lottery.

@@ -472,18 +472,7 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
 		const live = await h.store.load("default");
 		for (const save of [restored, live]) {
-			expect({
-				...save!.world,
-				galaxies: save!.world.galaxies.map(({ deathWreck, ...g }) => ({
-					...g,
-					knowledge: Object.fromEntries(
-						Object.entries(g.knowledge).filter(
-							([key]) => key !== deathWreck?.key,
-						),
-					),
-				})),
-			}).toEqual(dying);
-			expect(save!.world.galaxies[0].deathWreck).toBeDefined();
+			expect(save!.world).toEqual(dying);
 			expect(save?.world.galaxies[0].visited).toContain(9);
 		}
 		expect(
@@ -500,18 +489,7 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		const dying = h.world;
 		await h.store.revertToLastDocked(h.commander, "destroyed");
 		const savedWorld = (await h.store.load("default")).world;
-		expect({
-			...savedWorld,
-			galaxies: savedWorld.galaxies.map(({ deathWreck, ...g }) => ({
-				...g,
-				knowledge: Object.fromEntries(
-					Object.entries(g.knowledge).filter(
-						([key]) => key !== deathWreck?.key,
-					),
-				),
-			})),
-		}).toEqual(dying);
-		expect(savedWorld.galaxies[0].deathWreck).toBeDefined();
+		expect(savedWorld).toEqual(dying);
 	});
 
 	test("the time flown before the death stays in the play log (#581)", async () => {

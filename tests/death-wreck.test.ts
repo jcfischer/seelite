@@ -725,3 +725,25 @@ test("entrusted lots never enter either death cause's wreck", () => {
 		}
 	}
 });
+
+test("stock respawn modules cannot be farmed from an otherwise empty death wreck", () => {
+	const stock = newCommanderRecord("courier").state;
+	for (let seed = 0; seed < 30; seed++)
+		expect(deathWreckContents(seed, 1, stock, "destroyed")).toEqual([]);
+	const upgraded = {
+		...stock,
+		loadout: {
+			...stock.loadout,
+			plant: { ...stock.loadout.plant, grade: "A" as const },
+		},
+	};
+	expect(
+		Array.from({ length: 30 }, (_, seed) =>
+			deathWreckContents(seed, 1, upgraded, "destroyed"),
+		).some((items) =>
+			items.some(
+				(c) => c.fitting?.module === "power-plant" && c.fitting.grade === "A",
+			),
+		),
+	).toBe(true);
+});

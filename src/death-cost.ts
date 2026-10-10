@@ -1,4 +1,4 @@
-import { stockLoadout } from "./loadout";
+import { stockModuleAt } from "./loadout";
 /**
  * What a death costs the pilot, past the leg it already cost (#660, built by
  * node #704): the escape pod's eject (D2), a death without one (D6), the
@@ -181,19 +181,8 @@ export function deathWake(
 	const entrustedT = entrustedTonnesAboard(lost.requests);
 	// The notice already counts the hull. Its stock plant and primary pulse
 	// are part of that baseline, while upgraded modules and extra slots count.
-	const stock = stockLoadout(lost.state.hull);
 	const fittingsLost = Object.entries(lost.state.loadout).filter(
-		([slot, m]) => {
-			const base = stock[slot];
-			return (
-				!base ||
-				m.module !== base.module ||
-				m.size !== base.size ||
-				m.grade !== base.grade ||
-				m.variant !== base.variant ||
-				m.ammo !== base.ammo
-			);
-		},
+		([slot, module]) => !stockModuleAt(lost.state.hull, slot, module),
 	).length;
 	return {
 		saveSlot,

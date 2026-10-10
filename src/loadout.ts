@@ -18,6 +18,20 @@ export interface FittedModule {
 	variant?: string;
 	ammo?: number;
 }
+export const sameModule = (a: FittedModule, b: FittedModule): boolean =>
+	a.module === b.module &&
+	a.size === b.size &&
+	a.grade === b.grade &&
+	a.variant === b.variant &&
+	a.ammo === b.ammo;
+export const stockModuleAt = (
+	hull: HullId,
+	slot: string,
+	module: FittedModule,
+): boolean => {
+	const base = stockLoadout(hull)[slot];
+	return !!base && sameModule(module, base);
+};
 export type Loadout = Readonly<Record<string, FittedModule>>;
 export interface ModuleFitting extends FittedModule {
 	id: string;

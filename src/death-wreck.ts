@@ -1,4 +1,4 @@
-import { carriedModule, type FittedModule } from "./loadout";
+import { carriedModule, stockModuleAt, type FittedModule } from "./loadout";
 /** Node #705: one own-loss wreck, a share of the inventory aboard at death.
  * Contents are fixed once, before the commander is restored. Entrusted lots
  * live in Requests and are deliberately never read here. */
@@ -61,7 +61,11 @@ export function deathWreckContents(
 		for (const [slot, module] of Object.entries(state.loadout).sort(
 			([a], [b]) => a.localeCompare(b),
 		)) {
-			if (module.module === "escape-pod") continue;
+			if (
+				module.module === "escape-pod" ||
+				stockModuleAt(state.hull, slot, module)
+			)
+				continue;
 			const item = carriedModule(module);
 			put("fitting", item.id, 1, `fitted:${slot}:${module.module}`, module);
 		}
