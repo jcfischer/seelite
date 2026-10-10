@@ -85,8 +85,10 @@ describe("combat credit (#562 D3, D4)", () => {
 		expect(killCredit({ hull: "courier" }, "raider")).toBeLessThan(2);
 	});
 
-	test("the courier kills a raider for 0.952, #562's figure", () => {
-		expect(killCredit({ hull: "courier" }, "raider")).toBeCloseTo(0.952, 3);
+	test("the courier kills a raider for 0.954, #562's figure on #866's pools", () => {
+		// #562 measured 0.952 against one 106-point pool for every hull. #866 gave
+		// the raider its own 107 (the principal accepted the shift on #866).
+		expect(killCredit({ hull: "courier" }, "raider")).toBeCloseTo(0.954, 3);
 	});
 
 	test("an unarmed target pays nothing, an armed Clean hull pays", () => {

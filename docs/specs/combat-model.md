@@ -49,7 +49,7 @@ ruling after the second playtest. #48's 6/s equalled the pulse's damage rate:
 every break in hits longer than the delay refilled a shield as fast as a pilot
 could take it down, and duels ran extremely long. The rule is every ship's,
 the player's included. A kill with every shot landing on one side is about 31 s
-against a raider (106 shield, 81 hull, 6 damage/s); a real duel is longer, by the share
+against a raider (107 shield since #866, 81 hull, 6 damage/s); a real duel is longer, by the share
 of time off target.
 
 **The g loads are arcade, and stay so.** Thrust is about 204 g for the courier

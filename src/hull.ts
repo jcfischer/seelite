@@ -339,6 +339,173 @@ export const ventTable = (
 	});
 };
 
+/**
+ * A slot's size, 1–3 (#867 D2). A module of a size fits a slot of that size;
+ * whether a smaller one fits a bigger slot is the catalogue's to rule (#868).
+ */
+export type SlotSize = 1 | 2 | 3;
+
+/**
+ * What an internal slot can be asked to hold (#866). The families sort #867
+ * D5's internal modules: cargo racks; the fuel scoop and the fuel tank; the
+ * long-range scanner; the escape pod; the extra energy unit; armour plating.
+ * The shield booster is a utility module, so it is not here.
+ */
+export const INTERNAL_FAMILIES = [
+	"cargo",
+	"fuel",
+	"sensor",
+	"survival",
+	"power",
+	"armour",
+] as const;
+export type InternalFamily = (typeof INTERNAL_FAMILIES)[number];
+
+/**
+ * One slot on a hull (#866, #867 D1 and D2).
+ *
+ * The key is stable — `h1`, `u1`, `i1`, `flex` — because the save (#876) and
+ * the Equipment tab (#869) address a slot by it. An internal slot is tagged by
+ * the hull's role with the families it accepts; the one flex slot accepts
+ * `"any"`, which is the tailoring D1 gives every hull.
+ */
+export type HullSlot =
+	| {
+			readonly key: string;
+			readonly kind: "hardpoint" | "utility";
+			readonly size: SlotSize;
+	  }
+	| {
+			readonly key: string;
+			readonly kind: "internal";
+			readonly size: SlotSize;
+			readonly accepts: readonly InternalFamily[] | "any";
+	  };
+
+/** One tagged internal as a row writes it: its size and what it accepts. */
+type TaggedInternal = readonly [SlotSize, readonly InternalFamily[]];
+
+/**
+ * A row's slots from its sizes, keyed in order. One builder so the keys are a
+ * rule rather than twelve hand-written lists that can disagree.
+ */
+const slotLayout = (layout: {
+	readonly hardpoint: readonly SlotSize[];
+	readonly utility: readonly SlotSize[];
+	readonly internal: readonly TaggedInternal[];
+	readonly flex: SlotSize;
+}): readonly HullSlot[] => [
+	...layout.hardpoint.map(
+		(size, i): HullSlot => ({ key: `h${i + 1}`, kind: "hardpoint", size }),
+	),
+	...layout.utility.map(
+		(size, i): HullSlot => ({ key: `u${i + 1}`, kind: "utility", size }),
+	),
+	...layout.internal.map(
+		([size, accepts], i): HullSlot => ({
+			key: `i${i + 1}`,
+			kind: "internal",
+			size,
+			accepts,
+		}),
+	),
+	{ key: "flex", kind: "internal", size: layout.flex, accepts: "any" },
+];
+
+/** Total slot capacity: the sum of every slot's size, the plant excluded.
+ *  A heavier hull never has less (`tests/hull-slots.test.ts`). */
+export const slotCapacity = (id: HullId): number =>
+	HULL_SPECS[id].slots.reduce((sum, slot) => sum + slot.size, 0);
+
+/**
+ * The family a role's largest internal must accept (#866). It is what keeps
+ * the role when a pilot tailors the rest: a freighter's biggest slot takes
+ * cargo, an explorer's takes fuel.
+ */
+export const ROLE_INTERNAL_FAMILY: Readonly<Record<HullRole, InternalFamily>> =
+	{
+		"player-baseline": "cargo",
+		fast: "power",
+		cargo: "cargo",
+		industrial: "cargo",
+		security: "armour",
+		survey: "fuel",
+		outlaw: "power",
+		capital: "cargo",
+		salvage: "cargo",
+		prospect: "cargo",
+		"battle-line": "armour",
+		expedition: "fuel",
+	};
+
+/**
+ * A power plant's grade (#867 D6). Only E exists until the pricing instrument
+ * (#868) measures D and A and widens this union; the output table is keyed by
+ * it already, so those grades join the one table rather than a second.
+ */
+export type PlantGrade = "E";
+
+export interface PlantOutput {
+	/** The energy bank's capacity. */
+	readonly bankE: number;
+	/** Bank regeneration per second of sim time, while the gun is not firing. */
+	readonly regenPerS: number;
+}
+
+/**
+ * A power plant's output by grade and size. Grade E is the only grade this
+ * node sets (#866). Its size 1 is the bank every ship flew before #866
+ * (`ENERGY_BANK = 100`, `ENERGY_REGEN_PER_S = 12`), so the courier is
+ * unchanged; each size up is half as much again. The D and A grades, and every
+ * plant's mass and price, are the pricing instrument's (#868, #867 D15).
+ */
+export const POWER_PLANT_OUTPUT: Readonly<
+	Record<PlantGrade, Readonly<Record<SlotSize, PlantOutput>>>
+> = {
+	E: {
+		1: { bankE: 100, regenPerS: 12 },
+		2: { bankE: 150, regenPerS: 18 },
+		3: { bankE: 225, regenPerS: 27 },
+	},
+};
+
+export interface PowerPlant extends PlantOutput {
+	readonly size: SlotSize;
+	readonly grade: PlantGrade;
+}
+
+/** The plant a hull ships with: grade E, the hull's plant size (#867 D3). */
+export const stockPlant = (id: HullId): PowerPlant => {
+	const size = HULL_SPECS[id].plantSize;
+	return { size, grade: "E", ...POWER_PLANT_OUTPUT.E[size] };
+};
+
+/**
+ * The shield law (#866, the principal's ruling): `SHIELD_REFERENCE ×
+ * (massT / 60) ^ SHIELD_LAW_EXPONENT`, times `SHIELD_COMBAT_FACTOR` for the
+ * combat roles, rounded. It is `integrity`'s mass law on #48's tuned pool, so
+ * the courier keeps 106; the factor keeps the raider's pool at 107, so a duel
+ * against it is the duel it was.
+ */
+export const SHIELD_REFERENCE = 106;
+export const SHIELD_LAW_EXPONENT = 0.6;
+export const SHIELD_COMBAT_FACTOR = 1.25;
+export const SHIELD_COMBAT_ROLES = [
+	"fast",
+	"security",
+	"outlaw",
+	"battle-line",
+] as const satisfies readonly HullRole[];
+
+export const shieldPoolUnderLaw = (massT: number, role: HullRole): number =>
+	Math.round(
+		SHIELD_REFERENCE *
+			(massT / 60) ** SHIELD_LAW_EXPONENT *
+			((SHIELD_COMBAT_ROLES as readonly HullRole[]).includes(role)
+				? SHIELD_COMBAT_FACTOR
+				: 1),
+	);
+
 export interface HullSpec {
 	readonly role: HullRole;
 	/**
@@ -391,6 +558,18 @@ export interface HullSpec {
 	 *  today, so a second mount is a property #8's build will read rather than
 	 *  one anything reads now. */
 	readonly hardpoints: number;
+	/** The hull's slots — `HullSlot` — in key order: hardpoints, utility, the
+	 *  tagged internals, then the one flex internal (#866). The hardpoint slots
+	 *  are `hardpoints` by count, which `tests/hull-slots.test.ts` holds. */
+	readonly slots: readonly HullSlot[];
+	/** The power plant's size, the one core slot (#867 D3). The hull ships an
+	 *  E-grade plant of this size — `stockPlant`. */
+	readonly plantSize: SlotSize;
+	/** Each shield pool's capacity, fore and aft — the hull's shield generator,
+	 *  which stays the hull's (#867 D3). Set by `shieldPoolUnderLaw`, which
+	 *  `tests/hull-slots.test.ts` asserts every row against, the way
+	 *  `integrity` is. */
+	readonly shieldPool: number;
 	/** Hull integrity, against the 100 the combat prototype gives every ship
 	 *  (`combat-prototype.ts`). Set from mass — structure is mass — as
 	 *  `100 × (massT / 60) ^ 0.6`, rounded — a law `tests/hull.test.ts` asserts
@@ -630,6 +809,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 20,
 		hardpoints: 1,
+		slots: slotLayout({
+			hardpoint: [1],
+			utility: [1, 1, 1],
+			internal: [
+				[2, ["cargo", "fuel", "armour"]],
+				[2, ["cargo", "power", "armour"]],
+				[1, ["sensor", "survival"]],
+				[1, ["survival", "sensor", "power"]],
+			],
+			flex: 1,
+		}),
+		plantSize: 1,
+		shieldPool: 106,
 		integrity: 100,
 		tankLy: 7,
 		chargeAu: 12,
@@ -659,6 +851,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 8,
 		hardpoints: 2,
+		slots: slotLayout({
+			hardpoint: [2, 1],
+			utility: [1, 1, 1],
+			internal: [
+				[1, ["power", "armour"]],
+				[1, ["power", "armour", "sensor"]],
+				[1, ["survival", "sensor"]],
+				[1, ["fuel", "cargo"]],
+			],
+			flex: 1,
+		}),
+		plantSize: 1,
+		shieldPool: 126,
 		integrity: 95,
 		tankLy: 5,
 		chargeAu: 10,
@@ -690,6 +895,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		// a 60 t hold leans three times as hard on a market that remembers it.
 		holdT: 60,
 		hardpoints: 1,
+		slots: slotLayout({
+			hardpoint: [2],
+			utility: [1, 1, 1],
+			internal: [
+				[3, ["cargo"]],
+				[3, ["cargo", "power", "armour"]],
+				[2, ["fuel", "power", "armour"]],
+				[1, ["survival", "sensor"]],
+			],
+			flex: 2,
+		}),
+		plantSize: 2,
+		shieldPool: 176,
 		integrity: 166,
 		tankLy: 7,
 		chargeAu: 12,
@@ -726,6 +944,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 40,
 		hardpoints: 1,
+		slots: slotLayout({
+			hardpoint: [3],
+			utility: [2, 1, 1],
+			internal: [
+				[3, ["cargo"]],
+				[3, ["cargo", "armour", "fuel"]],
+				[2, ["power", "fuel"]],
+				[1, ["survival", "sensor"]],
+			],
+			flex: 2,
+		}),
+		plantSize: 2,
+		shieldPool: 228,
 		integrity: 215,
 		tankLy: 6,
 		chargeAu: 10,
@@ -763,6 +994,18 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 6,
 		hardpoints: 2,
+		slots: slotLayout({
+			hardpoint: [2, 2],
+			utility: [1, 1],
+			internal: [
+				[1, ["armour", "power"]],
+				[1, ["power", "sensor"]],
+				[1, ["survival", "fuel"]],
+			],
+			flex: 1,
+		}),
+		plantSize: 1,
+		shieldPool: 113,
 		integrity: 85,
 		tankLy: 6,
 		chargeAu: 12,
@@ -792,6 +1035,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 30,
 		hardpoints: 1,
+		slots: slotLayout({
+			hardpoint: [2],
+			utility: [2, 1, 1],
+			internal: [
+				[3, ["fuel"]],
+				[2, ["sensor", "fuel"]],
+				[2, ["power", "cargo", "armour"]],
+				[1, ["survival"]],
+			],
+			flex: 2,
+		}),
+		plantSize: 2,
+		shieldPool: 194,
 		integrity: 183,
 		// The one purchasable hull with more range than the baseline, which is
 		// what a survey hull is for — see `tankLy` above.
@@ -823,6 +1079,18 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 10,
 		hardpoints: 2,
+		slots: slotLayout({
+			hardpoint: [2, 1],
+			utility: [1, 1],
+			internal: [
+				[1, ["power", "armour"]],
+				[1, ["cargo", "fuel"]],
+				[1, ["survival", "sensor"]],
+			],
+			flex: 1,
+		}),
+		plantSize: 1,
+		shieldPool: 107,
 		integrity: 81,
 		tankLy: 6,
 		chargeAu: 10,
@@ -852,6 +1120,21 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 400,
 		hardpoints: 6,
+		slots: slotLayout({
+			hardpoint: [3, 3, 3, 3, 3, 3],
+			utility: [3, 3, 3, 3],
+			internal: [
+				[3, ["cargo"]],
+				[3, ["cargo"]],
+				[3, ["armour"]],
+				[3, ["power"]],
+				[3, ["fuel", "sensor"]],
+				[3, ["survival"]],
+			],
+			flex: 3,
+		}),
+		plantSize: 3,
+		shieldPool: 2793,
 		integrity: 2635,
 		tankLy: 12,
 		chargeAu: 30,
@@ -881,6 +1164,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 24,
 		hardpoints: 1,
+		slots: slotLayout({
+			hardpoint: [2],
+			utility: [1, 1, 1],
+			internal: [
+				[3, ["cargo", "armour"]],
+				[2, ["power", "fuel"]],
+				[1, ["survival", "sensor"]],
+				[1, ["sensor", "fuel"]],
+			],
+			flex: 2,
+		}),
+		plantSize: 2,
+		shieldPool: 161,
 		integrity: 152,
 		tankLy: 6,
 		chargeAu: 10,
@@ -910,6 +1206,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 12,
 		hardpoints: 1,
+		slots: slotLayout({
+			hardpoint: [2],
+			utility: [1, 1, 1],
+			internal: [
+				[2, ["cargo"]],
+				[1, ["fuel", "sensor"]],
+				[1, ["power", "armour"]],
+				[1, ["survival", "sensor"]],
+			],
+			flex: 1,
+		}),
+		plantSize: 1,
+		shieldPool: 104,
 		integrity: 98,
 		tankLy: 6,
 		chargeAu: 12,
@@ -939,6 +1248,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 200,
 		hardpoints: 8,
+		slots: slotLayout({
+			hardpoint: [3, 3, 3, 3, 3, 3, 3, 3],
+			utility: [3, 3, 3],
+			internal: [
+				[3, ["armour"]],
+				[3, ["armour", "power"]],
+				[3, ["power"]],
+				[3, ["sensor", "survival"]],
+			],
+			flex: 3,
+		}),
+		plantSize: 3,
+		shieldPool: 3183,
 		integrity: 2402,
 		tankLy: 12,
 		chargeAu: 30,
@@ -979,6 +1301,19 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		},
 		holdT: 240,
 		hardpoints: 1,
+		slots: slotLayout({
+			hardpoint: [2],
+			utility: [2, 2, 1],
+			internal: [
+				[3, ["fuel"]],
+				[3, ["sensor", "fuel"]],
+				[3, ["cargo"]],
+				[2, ["survival", "power", "armour"]],
+			],
+			flex: 3,
+		}),
+		plantSize: 3,
+		shieldPool: 321,
 		integrity: 303,
 		tankLy: 16,
 		chargeAu: 40,

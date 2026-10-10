@@ -529,7 +529,9 @@ the gimbal has turned the beam more than 0.2° off the boresight.
 
 **The enemy's condition and fire are on the glass** (the principal's ruling
 after the second playtest). A second line under the selected target's name reads
-`SHD F 72 A 106  HULL 50%`. It is refused while either printed pool is 0,
+`SHD F 67% A 99%  HULL 50%`: since #866 each hull has its own pool, so each
+pool prints as a share of it, as the hull does. It is refused while either
+printed pool is 0,
 otherwise passive (`targetConditionLine`). While the raider fires, a warm beam
 runs from its point on the glass toward the bottom of the glass, where the
 player sits. After a hit lands on the player, the canopy rim glows red for

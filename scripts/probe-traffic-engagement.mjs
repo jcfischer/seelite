@@ -69,7 +69,8 @@ const { check, watch, exit } = tally();
  * that passes.
  */
 function pools(line) {
-	const m = /^SHD F (\d+) A (\d+)\s/.exec(line);
+	// Each pool prints as a share of the hull's own since #866.
+	const m = /^SHD F (\d+)% A (\d+)%\s/.exec(line);
 	return m ? [Number(m[1]), Number(m[2])] : null;
 }
 
@@ -303,9 +304,11 @@ try {
 			heatAt: legalMod.heatAt,
 			// How long a full shield side takes the pulse laser: the divert's
 			// trigger is the first hit that gets past it (H3d), and this is read
-			// off the module rather than multiplied out here.
-			shieldSeconds:
-				conditionMod.SHIELD_POOL / conditionMod.PULSE_LASER.damagePerS,
+			// off the module rather than multiplied out here. Per hull since #866,
+			// which gave each its own pool.
+			shieldSeconds: (hullId) =>
+				conditionMod.fullCondition(hullId).shieldMax /
+				conditionMod.PULSE_LASER.damagePerS,
 			gimbalConeRad: gimbalMod.GIMBAL_CONE_RAD,
 			lifecycleS: wreckMod.RAIDER_WRECK_S + wreckMod.RAIDER_REPAIR_S,
 			advanceTo(t) {
@@ -463,8 +466,9 @@ try {
 			contact: g.trafficReadout().contacts.find((c) => c.key === key),
 			first,
 			mark: painted(),
-			// Off the module, never restated here (CLAUDE.md).
-			shieldPool: conditionMod.SHIELD_POOL,
+			// The line prints each pool as a share of the hull's own (#866), so a
+			// whole pool reads 100.
+			shieldPool: 100,
 		};
 	}, key);
 	check(
@@ -655,7 +659,7 @@ try {
 			steps,
 			seconds: steps * g.units.MAX_DT,
 			secondsFired: p.framesFired * g.units.MAX_DT,
-			shieldSeconds: p.shieldSeconds,
+			shieldSeconds: p.shieldSeconds(actor.hullId),
 			repairS: wreck.RAIDER_REPAIR_S,
 			parked,
 			// The mark either side of the strike, and the home station's range as

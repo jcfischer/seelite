@@ -12,13 +12,9 @@
  * No Three.js and no world: sim tier. The laser here is a resource and a damage
  * rate. What it hits is the caller's to decide.
  */
-import { HULL_SPECS, type HullId } from "./hull";
+import { HULL_SPECS, type HullId, stockPlant } from "./hull";
 import { type Vec3, dot } from "./vec3";
 
-/** Each shield pool's capacity. #48's tuned figure. */
-export const SHIELD_POOL = 106;
-/** The shared energy bank's capacity. */
-export const ENERGY_BANK = 100;
 /** Laser heat at which the gun locks. */
 export const HEAT_LOCK = 100;
 /** Heat a locked gun must cool to before it fires again. */
@@ -31,8 +27,8 @@ export const PULSE_LASER = {
 	heatPerS: 1.5,
 } as const;
 
-/** Bank regeneration and gun cooling, both only while the gun is not firing. */
-export const ENERGY_REGEN_PER_S = 12;
+/** Gun cooling, only while the gun is not firing. The bank's regeneration is
+ *  the power plant's (`ShipCondition.energyRegenPerS`, #866). */
 export const HEAT_COOL_PER_S = 16;
 
 /**
@@ -138,7 +134,14 @@ export interface ShipCondition {
 	hull: number;
 	/** The flown hull's `integrity`. Carried so a condition needs no hull id. */
 	hullMax: number;
+	/** Each shield pool's capacity: the hull's `shieldPool` (#866). Carried
+	 *  for `hullMax`'s reason. */
+	shieldMax: number;
 	energy: number;
+	/** The energy bank's capacity and its regeneration per second: the fitted
+	 *  power plant's (#867 D3). A fresh condition carries the stock plant. */
+	energyMax: number;
+	energyRegenPerS: number;
 	heat: number;
 	heatLocked: boolean;
 	/** Sim seconds since the last hit; gates the shield recharge. */
@@ -146,13 +149,17 @@ export interface ShipCondition {
 }
 
 export function fullCondition(hull: HullId): ShipCondition {
-	const hullMax = HULL_SPECS[hull].integrity;
+	const { integrity: hullMax, shieldPool: shieldMax } = HULL_SPECS[hull];
+	const plant = stockPlant(hull);
 	return {
-		fore: SHIELD_POOL,
-		aft: SHIELD_POOL,
+		fore: shieldMax,
+		aft: shieldMax,
 		hull: hullMax,
 		hullMax,
-		energy: ENERGY_BANK,
+		shieldMax,
+		energy: plant.bankE,
+		energyMax: plant.bankE,
+		energyRegenPerS: plant.regenPerS,
 		heat: 0,
 		heatLocked: false,
 		// Clear of the delay, so a fresh ship recharges rather than spending its
@@ -177,7 +184,7 @@ export type HullReading = Pick<ShipCondition, "hull" | "hullMax">;
 /** A reading that shows both facings as well as the hull. */
 export type ConditionPrint = Pick<
 	ShipCondition,
-	"fore" | "aft" | "hull" | "hullMax"
+	"fore" | "aft" | "shieldMax" | "hull" | "hullMax"
 >;
 
 export const isAlive = (c: HullReading): boolean => c.hull > 0;
@@ -212,6 +219,19 @@ export const isAlive = (c: HullReading): boolean => c.hull > 0;
  */
 export const printHullPercent = (c: HullReading): number =>
 	isAlive(c) ? Math.max(1, Math.round((c.hull / c.hullMax) * 100)) : 0;
+
+/**
+ * One shield pool as a share of the hull's own pool, in whole percent (#866).
+ *
+ * Each hull has its own pool since #866, from a raider's 107 to a
+ * dreadnought's 3183, so a target's shields print as a share for the reason its
+ * hull does (`printHullPercent`): one width across the roster. **0% means the
+ * same as it did in points** — the pool rounds to 0 points — so the line is
+ * refused at exactly the reading it was refused at before. A pool that still
+ * prints a point floors at 1%, which is the hull's floor for the same reason.
+ */
+export const printShieldPercent = (points: number, max: number): number =>
+	Math.round(points) === 0 ? 0 : Math.max(1, Math.round((points / max) * 100));
 
 /**
  * Whether this hull is too broken for the bank to buy shields with.
@@ -296,7 +316,7 @@ export function stepCondition(
 		const lower: ShieldSide = next.fore <= next.aft ? "fore" : "aft";
 		const wanted = Math.min(
 			SHIELD_RECHARGE_PER_S * step,
-			SHIELD_POOL - next[lower],
+			c.shieldMax - next[lower],
 		);
 		const points = Math.min(
 			wanted,
@@ -317,7 +337,7 @@ export function stepCondition(
 		next.heat = clamp(next.heat + PULSE_LASER.heatPerS * step, HEAT_LOCK);
 		damage = PULSE_LASER.damagePerS * step;
 	} else {
-		next.energy = clamp(next.energy + ENERGY_REGEN_PER_S * step, ENERGY_BANK);
+		next.energy = clamp(next.energy + c.energyRegenPerS * step, c.energyMax);
 		next.heat = clamp(next.heat - HEAT_COOL_PER_S * step, HEAT_LOCK);
 	}
 	next.heatLocked =
