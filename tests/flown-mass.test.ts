@@ -2,10 +2,17 @@
  * The flown mass (#865): what a ship carries weighs something, and #181's law
  * turns the weight into handling.
  *
- * The principal's rulings on #865 (2026-10-10): cargo is the live mass, every
- * module weighs 0 t until the pricing instrument (#868) measures it, the
- * assist's demands scale with the authority the mass leaves, and `massT` stays
- * the empty hull, so a full hold costs the courier a quarter of its thrust.
+ * The principal's rulings on #865 (2026-10-10): what is in the hold is the
+ * live mass — cargo, recovered fittings and entrusted lots — while every
+ * fitted module weighs 0 t until the pricing instrument (#868) measures it;
+ * the assist's demands scale with the authority the mass leaves; and the
+ * hull row's `massT` stays the empty hull, which the role's feel was solved at,
+ * so a full hold costs the courier a quarter of its thrust.
+ * `FlightPerformance.massT` is the flown mass: the hull's plus what it carries.
+ *
+ * A fitted module and the same module recovered into the hold weigh
+ * differently until #868: the recovered one is 1 t of cargo by D10 and the
+ * fitted one has no figure yet. That asymmetry closes when the table lands.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -20,7 +27,11 @@ import {
 import { v3 } from "../src/vec3";
 
 describe("flightPerformance at a flown mass", () => {
-	test("at the hull's own mass it is today's struct, on every hull", () => {
+	// The default is the explicit hull mass. That an empty hull still flies
+	// #181's figures is not this row's to show — it compares the new function
+	// with itself — but the row in `tests/vents.test.ts`, "every hull flies its pre-vent
+	// figures", which holds every hull to the law independently of this code.
+	test("the default mass is the hull's own, on every hull", () => {
 		for (const id of HULL_IDS)
 			expect(flightPerformance(id, {}, HULL_SPECS[id].massT)).toEqual(
 				flightPerformance(id),

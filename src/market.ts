@@ -993,7 +993,10 @@ export interface Equipment {
 	 * **Zero on every row, by the principal's ruling on #865 (2026-10-10).**
 	 * Ship outfitting's D15 makes mass an output of the pricing instrument
 	 * (#868), and no figure is written ahead of it — so a fit weighs nothing
-	 * yet, and cargo is the only mass a pilot feels. Required rather than
+	 * yet, and what is in the hold (cargo, recovered fittings, entrusted lots)
+	 * is the only mass a pilot feels. A recovered fitting weighs its 1 t of hold
+	 * (D10) while the same module fitted weighs 0 t; that asymmetry closes when
+	 * the instrument's table lands. Required rather than
 	 * optional, so the instrument's table has a field on every row to fill.
 	 */
 	massT: number;
