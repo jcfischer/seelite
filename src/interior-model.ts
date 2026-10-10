@@ -9,6 +9,7 @@ import { STATION_INTERIORS_GLB_URL } from "./model-urls";
 import { shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
 import { installInteriorKitBuilder } from "./station-interior-mesh";
+import { bakeQuantisedNodes } from "./interior-dequantize";
 import { buildInteriorKit, buildInteriorKitAsync } from "./interior-kit";
 import { THEMES, type Theme } from "./interior-layout";
 import records from "./interior-lod-records.json";
@@ -28,6 +29,7 @@ export function prepareInteriorModel(
 		.setMeshoptDecoder(MeshoptDecoder)
 		.loadAsync(STATION_INTERIORS_GLB_URL, onProgress)
 		.then((gltf) => {
+			bakeQuantisedNodes(gltf.scenes);
 			const assets = new Map<string, THREE.Group>();
 			for (const scene of gltf.scenes) {
 				const file = scene.userData.interiorFile;
