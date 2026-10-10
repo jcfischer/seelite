@@ -528,6 +528,25 @@ export async function bootedGame(page, timeout = 20000) {
 }
 
 /**
+ * Wait until the station interior kit's background load has settled (#843).
+ *
+ * The first frame is not that moment: a live game loads the kit after boot and
+ * then rebuilds every station's interior. Landing inside a measurement, that
+ * install compiled ten programs into `probe-planet-surfaces`' band walk and
+ * held frame periods near half a second through `probe-adaptive-resolution`.
+ * Both were green on `main` and red alone on the branch. A probe that measures
+ * steady-state frames or program counts waits here after `bootedGame`.
+ * Settled includes a failed load, which keeps the procedural bays.
+ */
+export async function interiorModelsSettled(page, timeout = 60000) {
+	await page.waitForFunction(
+		() => window.__seelite?.interiorModelsSettled === true,
+		null,
+		{ timeout },
+	);
+}
+
+/**
  * Wait until the settings screen exists, so a script can drive its key.
  *
  * **The first drawn frame is not that moment.** `main.ts` mounts the screen from

@@ -50,6 +50,7 @@
  */
 import {
 	bootedGame,
+	interiorModelsSettled,
 	guardedOrigin,
 	installViewPlacement,
 	launchChromium,
@@ -654,6 +655,7 @@ await installViewPlacement(page);
 await installViewFraming(page);
 await page.goto(URL, { waitUntil: "domcontentloaded" });
 await bootedGame(page);
+await interiorModelsSettled(page);
 
 /**
  * Wait until every cube bake has landed (#208).
