@@ -1491,6 +1491,13 @@ const COCKPIT_FORWARD_KM = 0.008;
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
 const MIRROR_CARRIED: CabinLightState = newCabinLightState();
+/** A layer no camera enables, so a light on it is never counted (#843). The
+ *  light count is in every lit program's cache key, and a station's floods
+ *  move between the layer scenes with its distance: counted where they stand,
+ *  they recompiled every lit material of a scene they entered or left. */
+const UNCOUNTED_LIGHT_LAYER = 31;
+const FLOOD_SCRATCH = new THREE.Vector3();
+const FLOOD_CAMERA = new THREE.Vector3();
 
 /** Below this speed the prograde marker is hidden: the velocity is noise, and a
  *  marker chasing it would swing around a screen belonging to a ship that is
@@ -2312,6 +2319,11 @@ class Game {
 		THREE.PointLight,
 		{ copy: THREE.PointLight; holders: number }
 	>();
+	/** The near scene's stand-ins for one station's interior floods (#843).
+	 *  The floods themselves are uncounted; these copies are added once and
+	 *  only ever go dark by intensity, so the near scene's light count stays
+	 *  put while stations cross layers and their detail changes. */
+	private readonly interiorFloodPool: THREE.PointLight[] = [];
 
 	/** Ship orientation. Positions live in `sim.ts`; this does not, and the
 	 *  module docstring there says why. */
@@ -6466,6 +6478,13 @@ class Game {
 		group.traverse((o) => {
 			if (o instanceof THREE.PointLight) lamps.push(o);
 		});
+		for (const lamp of lamps) lamp.layers.set(UNCOUNTED_LIGHT_LAYER);
+		while (this.interiorFloodPool.length < lamps.length) {
+			const copy = new THREE.PointLight(0xffffff, 0);
+			copy.name = `interior-flood-pool:${this.interiorFloodPool.length}`;
+			this.nearScene.add(copy);
+			this.interiorFloodPool.push(copy);
+		}
 		this.interiorPresentations.set(id, {
 			group,
 			lods: group.userData.interiorLods,
@@ -16318,6 +16337,7 @@ class Game {
 		this.stepBakes();
 
 		this.syncCabinMirrors();
+		this.syncInteriorFloods();
 
 		this.occlusionGate = stepOcclusionGate(
 			this.occlusionGate,
@@ -16565,6 +16585,48 @@ class Game {
 		mirror.copy.removeFromParent();
 		mirror.copy.dispose();
 		this.cabinMirrors.delete(light);
+	}
+
+	/** Light the nearest near-layer interior through `interiorFloodPool`, after
+	 *  the world is placed for this frame. A flood counts as drawn only while
+	 *  it and every ancestor are visible up to the near scene, the rule
+	 *  `syncCabinMirrors` uses; every other copy goes dark. */
+	private syncInteriorFloods() {
+		const drawnInNear = (o: THREE.Object3D) => {
+			let root = o;
+			if (!root.visible) return false;
+			while (root.parent) {
+				root = root.parent;
+				if (!root.visible) return false;
+			}
+			return root === this.nearScene;
+		};
+		this.nearCamera.getWorldPosition(FLOOD_CAMERA);
+		let chosen: THREE.PointLight[] | undefined;
+		let best = Infinity;
+		for (const handle of this.interiorPresentations.values()) {
+			if (handle.lamps.length === 0 || !drawnInNear(handle.group)) continue;
+			const d = handle.group
+				.getWorldPosition(FLOOD_SCRATCH)
+				.distanceToSquared(FLOOD_CAMERA);
+			if (d < best) {
+				best = d;
+				chosen = handle.lamps;
+			}
+		}
+		for (let i = 0; i < this.interiorFloodPool.length; i++) {
+			const copy = this.interiorFloodPool[i];
+			const lamp = chosen?.[i];
+			if (!lamp || !drawnInNear(lamp)) {
+				copy.intensity = 0;
+				continue;
+			}
+			lamp.getWorldPosition(copy.position);
+			copy.color.copy(lamp.color);
+			copy.intensity = lamp.intensity;
+			copy.distance = lamp.distance;
+			copy.decay = lamp.decay;
+		}
 	}
 
 	/** Put each mirrored light where `cabinLight` says, after the world is
