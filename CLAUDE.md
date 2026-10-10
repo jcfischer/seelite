@@ -147,9 +147,16 @@ it — a checkout from before #84 runs unlocked, and only its load shows. A seco
 waits and names the holder. **Exit 75 with `NOT RUN` is a wait that ran out,
 not a red**; `scripts/lib/probe-lock.mjs` owns the limit and the rules. A probe
 run directly does not take the lock, which is how a red is re-run alone — and
-it does not check it either, so a rerun is alone only while
-`/tmp/seelite-probe.lock` is absent; look before reading it. Each
-red prints its kind and the peak load it ran under. Neither names a cause —
+it does not wait on it either, so a rerun is alone only while
+`/tmp/seelite-probe.lock` is absent. Since #882 it no longer asks you to know
+that: a direct run finds the lock held by someone else and **names the holder on
+stderr**, and says its own seconds are not evidence. Each
+red prints its kind and the peak load it ran under, and since #882 so does each
+**green over a minute** — only reds carried a figure before, which is how a suite
+run beside another agent's probes came to read as a slow suite (63 probes at
+1992 s, `probe-music` at 410 s) rather than a starved one. The summary names the
+slowest probes and what share of the run they were, because a hundred lines in
+alphabetical order answer nothing. Neither names a cause —
 no load threshold has been measured, and a regression that throws reads
 `crash` as readily as a starved navigation does — so a `crash` or `killed` red
 is unattributed until it is rerun alone: green alone points at the machine,

@@ -97,6 +97,34 @@ const untilOver = (page, timeout = 120000) =>
 		polling: 250,
 	});
 
+/**
+ * Run the opening on to `shownS` seconds into `shot`, and stop there (#882).
+ *
+ * The game's own phase handle rather than a clock the probe made up:
+ * `holdOpening` steps the script at `OPENING.dtS` — the one step it is flown at,
+ * watched or skipped — so it arrives at a shot in milliseconds instead of the
+ * 10–37 s of wall clock a frame-driven run spends getting there. The rows that
+ * only need to *be on* a shot were paying that wait for nothing.
+ *
+ * `release` hands the frames back, so a key pressed after it still goes down on a
+ * real frame. **Every row that uses it still compares its own end state with the
+ * skipped run's**, which is the control on this substitution: a hold that changed
+ * the run would show up there rather than quietly pass.
+ *
+ * `{ release: false }` stays held, for a row that quits on the shot and never
+ * flies on from it — giving the clock back there would only drift off the shot it
+ * is naming.
+ */
+const holdToShot = (page, shot, shownS = 1, { release = true } = {}) =>
+	page.evaluate(
+		async ([s, at, back]) => {
+			const g = window.__seelite;
+			g.holdOpening(s, at);
+			if (back) g.holdOpening(null);
+		},
+		[shot, shownS, release],
+	);
+
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const differing = (a, b) =>
 	Object.keys(a)
@@ -356,11 +384,9 @@ for (const seed of [47, 48, 49, 50, 51]) {
 // ---------------------------------------------------------------------------
 
 const midway = await boot({ guided: true, cinematic: 1 }, "guided midway");
-await midway.page.waitForFunction(
-	() => window.__seelite.openingReading().shot === "cruise",
-	null,
-	{ timeout: 60000, polling: 100 },
-);
+// The Enter row tests that the skip works *during* the cruise shot, not that the
+// wall clock reaches it (#882).
+await holdToShot(midway.page, "cruise");
 await midway.page.keyboard.press("Enter");
 await untilOver(midway.page, 10000);
 const midwayEnd = await endState(midway.page);
@@ -376,11 +402,9 @@ await midway.context.close();
 // ---------------------------------------------------------------------------
 
 const clicked = await boot({ guided: true, cinematic: 1 }, "guided clicked");
-await clicked.page.waitForFunction(
-	() => window.__seelite.openingReading().shot === "flypast",
-	null,
-	{ timeout: 30000, polling: 100 },
-);
+// Held rather than waited for, and released at once: the click has to land on a
+// live frame with the pointer free, which is what #370 is about (#882).
+await holdToShot(clicked.page, "flypast", 0.5);
 const hint = await clicked.page.evaluate(() => {
 	const skip = document.querySelector("[data-opening-skip]");
 	const box = skip?.getBoundingClientRect();
@@ -423,11 +447,9 @@ await clicked.context.close();
 
 for (const shot of ["cruise", "dock"]) {
 	const quit = await boot({ guided: true, cinematic: 1 }, `quit at ${shot}`);
-	await quit.page.waitForFunction(
-		(s) => window.__seelite.openingReading().shot === s,
-		shot,
-		{ timeout: 60000, polling: 50 },
-	);
+	// Held on the shot, and it stays held: this row quits *from* the shot, so the
+	// clock has nothing to give back (#882).
+	await holdToShot(quit.page, shot, 1, { release: false });
 	const saved = await quit.page.evaluate(async () => {
 		const g = window.__seelite;
 		await g.saveFlush("quit");
