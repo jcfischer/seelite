@@ -593,3 +593,47 @@ The required final full `npm test` ran once: 5,784 pass, zero failures,
 9,054,614 assertions across 321 files, 426.84 seconds, exit 0. The RTK wrapper
 mislabelled a passing test whose name contains the word FAIL; the underlying
 test summary and command exit both passed. No source changed after that run.
+
+## Principal rulings on round 6 and the four sliced-install reds (2026-10-10)
+
+The principal first declined round 6's install-stall finding in favour of
+node #877, then withdrew that ruling and kept the sliced install
+(`c4c2cd6`). #877 is covered by this PR and closes after merge.
+
+Ranger's full suite failed twice at `c4c2cd6` on five probes. Each was rerun
+alone on `c4c2cd6` and on the pre-install head `ee82971`. `probe-pad-panels`
+was green on both (a flake). The other four were red only on `c4c2cd6`, and
+three of them had one cause.
+
+- **The `interiors-full` boot wait ran the clock.** Since round 1, `gameUrl`
+  adds `interiors-full` to every direct-boot probe URL, and `c4c2cd6` made the
+  boot await the sliced install when it is present. That wait sat before
+  `game.clockHeld = true`, so the sim ran through it: `probe-save`'s resumed
+  tumble decayed to 0.174 of its saved rates on every axis (the check wants
+  0.85), and `probe-opening`'s watched and skipped runs ended two steps apart.
+  The clock is now held before the wait. Players never pass the parameter.
+- **`probe-quality-bloom` deadlocked.** Its reader page defers every frame
+  callback until `__seelite` is published, the boot now awaited a frame-sliced
+  install before publishing, and so the page never published. Markers placed
+  after each boot await located the stop between the `Game` build and the hold.
+  The reader boots with `"interiors-full": false`; it measures frame-one bloom.
+- **`probe-station-mouth` found a one-frame glint.** The 19 px it reports at
+  t = 2.2 s are a Traffic courier with #831's authored hull standing in the
+  bay: one flat `machined-alloy` panel (roughness 0.28, metalness 0.86, no
+  roughness or normal map) catches a kit flood at the mirror angle for exactly
+  one 1/60 s step. Per-mesh hiding at t = 2.183/2.200/2.217 s put the jump on
+  that mesh alone (+219,216 against −2,534 and +2,216 in the region sum); the
+  courier's state was identical in all three frames. It is not new in
+  `c4c2cd6`: `ee82971` shows the same 19 px once the probe waits for the
+  authored courier, and `c4c2cd6` only changed when the hull had loaded. Green
+  with the hull blocked, the kit hidden or the floods dark; shadows off and AO
+  off change nothing. By the principal's ruling the courier's machined alloy is
+  raised to roughness 0.40 at load (`COURIER_ALLOY_ROUGHNESS`,
+  `src/courier-hull.ts`), the smallest value tried that clears it (0.40 and
+  0.50 both pass); the study and its GLB keep 0.28. A headless row fails
+  without the override. This is a look change for the principal's view check.
+
+`npm test`: 5,800 pass, 0 fail across 328 files. Test files at this head:
+321 against 320 at `ee82971`, the one addition being
+`tests/interior-install.test.ts`; none was removed, so round 6's "5,784" was
+not a count of this tree.
