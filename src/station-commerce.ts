@@ -433,8 +433,13 @@ export function transactAtStation(
 			if (!item.module && !LEGACY_MODULES[item.id])
 				return rejected(input, "equipment-unavailable");
 			if (
-				!repeatableEquipment(item.id) &&
-				fitted(input.commander.loadout, item.id)
+				fitted(input.commander.loadout, item.id) &&
+				(!repeatableEquipment(item.id) ||
+					!freeSlot(
+						input.commander.loadout,
+						input.commander.hull,
+						recoveredModule(item, input.commander.hull),
+					))
 			)
 				return rejected(input, "equipment-owned");
 			if (gateRefusal(item.id, input.rungs))
@@ -479,8 +484,13 @@ export function transactAtStation(
 		// Owned before locked: a gate blocks only new purchases (#183 D9), so an
 		// item a v6 commander already fitted is "already fitted", not locked.
 		if (
-			!repeatableEquipment(entry.name) &&
-			fitted(input.commander.loadout, entry.name)
+			fitted(input.commander.loadout, entry.name) &&
+			(!repeatableEquipment(entry.name) ||
+				!freeSlot(
+					input.commander.loadout,
+					input.commander.hull,
+					legacyModule(input.commander.hull, entry.name),
+				))
 		)
 			return rejected(input, "equipment-owned");
 		if (entry.locked) return rejected(input, "equipment-locked");
