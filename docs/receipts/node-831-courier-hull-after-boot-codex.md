@@ -113,3 +113,32 @@ This is performance tuning under `src/changelog.ts`'s definition of major;
 no new changelog entry is owed. The supervisor owns the PR, Sage, the full
 browser gate, the principal's chase-view approval, merge and graph checkpoint
 `courier-hull-after-boot`. This worker commits only its checked-out branch.
+
+## Sage round 1: postcard download failure
+
+The postcard's hull wait now uses `loadRequiredModels` after constructing its
+read-only Game. A failed courier download shows the existing loading panel's
+failure message and Retry button, and mounts no postcard viewer. Retry starts
+a fresh courier attempt; after it succeeds, the Game refreshes its stand-ins
+before the viewer paints. Live play keeps the existing memoised background
+attempt, one warning and procedural fallback, with no Retry panel.
+
+The new refusal row in `probe-postcard` failed against the previous code:
+`retry: false, card: true`. Its recovery arm holds the Retry response to verify
+no card is painted early, then checks the authored player mesh and completed
+card. The probe uses the game's own exterior recipe and compares stored bytes
+before and after refusal and recovery.
+
+The three optional suggestions are left unchanged: automatic root tracking
+would need to preserve Game-owned vent and occlusion updates plus wreck-specific
+rebuilds; scheduling cached replacements changes the install-completion timing
+and needs its own measured frame-cost evidence; the two occlusion assignments
+remain explicit rather than adding a helper unrelated to the failure policy.
+The synchronous replacement's possible live-frame hitch remains unmeasured.
+
+Round-1 validation: `probe-postcard` and `probe-model-download` passed on
+ANGLE Metal (Apple M1 Pro); the focused postcard/model-progress headless run
+passed 94 tests. Build/typecheck, format, lint and launcher wiring passed.
+The single final `npm test` run passed **5,758 tests, 0 failures** across 316
+files in 391.12 s. Browser coverage is partial; the supervisor owns the full
+browser run and the principal's chase-view approval.

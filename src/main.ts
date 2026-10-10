@@ -6428,8 +6428,8 @@ class Game {
 	}
 
 	/** A background failure keeps the Kestrel and never reaches the boot Retry
-	 *  panel. Each Game starts this once, after construction; postcards await
-	 *  it before painting their single frame. */
+	 *  panel. Each live Game starts this once, after construction. A postcard
+	 *  requires the model separately, then calls this to refresh its stand-ins. */
 	private courierHullLoad?: Promise<void>;
 	loadCourierHullAfterBoot(): Promise<void> {
 		return (this.courierHullLoad ??= import("./courier-hull")
@@ -20640,6 +20640,14 @@ if (postcard) {
 		prepareLongwallModel,
 	]);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
+	// A postcard must draw the authored hull: its failure is a visible Retry,
+	// unlike a live game's background fallback. Wait after Game construction,
+	// then refresh the stand-ins before mounting the single-frame viewer.
+	const { prepareCourierHullModel } = await import("./courier-hull");
+	await loadRequiredModels(
+		[prepareCourierHullModel],
+		loadingPanel("postcard hull"),
+	);
 	await game.loadCourierHullAfterBoot();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;

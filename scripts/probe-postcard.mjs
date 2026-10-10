@@ -544,6 +544,75 @@ check(
 	(await storageBytes()) === before,
 );
 
+// A viewer must not silently paint the procedural courier on a failed hull
+// download (node #831). Each case has its own page, as every measured boot does.
+phase = "viewer-hull-failure";
+{
+	const page = await context.newPage();
+	watch(page, "viewer hull failure");
+	let attempts = 0;
+	let retryRoute;
+	const retryHeld = new Promise((resolve) => {
+		retryRoute = resolve;
+	});
+	await page.route(/courier-hull[^/]*\.glb/, (route) => {
+		attempts++;
+		if (attempts === 1) return route.abort("failed");
+		retryRoute(route);
+	});
+	await page.goto(postcardUrl(ORIGIN, cards.exterior.state.fragment), {
+		waitUntil: "load",
+	});
+	await page.waitForFunction(
+		() =>
+			document.querySelector('[data-model-load="failed"]') ||
+			window.__seelite?.postcardViewState?.card,
+		null,
+		{ timeout: 60000 },
+	);
+	const failed = await page.evaluate(() => ({
+		text: document.querySelector('[data-model-load="failed"] [role="status"]')
+			?.textContent,
+		retry: !!document.querySelector('[data-model-load="failed"] button'),
+		card: !!document.querySelector("#seelite-postcard-viewer img.card"),
+	}));
+	check(
+		"a failed postcard hull download shows Retry and paints no substitute card",
+		attempts === 1 &&
+			failed.text ===
+				"The postcard hull could not be loaded. Check your connection and try again." &&
+			failed.retry &&
+			!failed.card,
+		JSON.stringify({ attempts, ...failed }),
+	);
+	if (failed.retry) {
+		await page.click('[data-model-load="failed"] button');
+		const route = await retryHeld;
+		check(
+			"a postcard hull retry still paints no card while the response is held",
+			attempts === 2 &&
+				(await page.$("#seelite-postcard-viewer img.card")) === null,
+			`${attempts} attempts`,
+		);
+		await route.continue();
+		await waitViewerCard(page);
+		check(
+			"Retry installs the authored courier before painting the postcard",
+			await page.evaluate(
+				() =>
+					window.__seelite.shipMesh.userData.authored === true &&
+					!!window.__seelite.postcardViewState.card &&
+					!document.querySelector("[data-model-load]"),
+			),
+		);
+	}
+	await page.close();
+}
+check(
+	"a failed postcard hull download and its retry leave every stored byte unchanged",
+	(await storageBytes()) === before,
+);
+
 // ---------------------------------------------------------------------------
 // Refused links.
 // ---------------------------------------------------------------------------
