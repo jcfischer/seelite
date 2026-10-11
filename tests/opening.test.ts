@@ -495,6 +495,28 @@ describe("the phase handle", () => {
 		const run = new OpeningRun("free");
 		expect(() => run.advanceTo(new FakeSim(), "dock", 0)).toThrow();
 	});
+
+	test("an aim past the end of a shot stops at its boundary, not at the end of the script", () => {
+		// A sampler stepping every shot aims one step ahead of where it is. When
+		// the shot ends first, that aim can never be reached *in that shot*, and
+		// until #882 `advanceTo` kept stepping after it: it ran the whole rest of
+		// the script and then threw. Measured on seed 47 the sampler died at the
+		// `forming` boundary — `the opening ended before forming at 3.0166 s` —
+		// after 181 of the script's ~5500 steps.
+		const sim = new FakeSim();
+		const run = new OpeningRun("guided");
+		run.advanceTo(sim, "forming", OPENING.formS + 5);
+		expect(run.done).toBe(false);
+		// The step that ended the shot is the last one it ran: the shot is over,
+		// and the caller reads where the script got to rather than being told the
+		// aim was impossible.
+		expect(run.shownBy.forming).toBeCloseTo(OPENING.formS, 6);
+		expect(run.shot).not.toBe("forming");
+		// And the script is still there to be walked on to, step by step.
+		run.advanceTo(sim, "cruise", 1);
+		expect(run.shot).toBe("cruise");
+		expect(run.done).toBe(false);
+	});
 });
 
 describe("who sees the opening (#530 D3, amended)", () => {

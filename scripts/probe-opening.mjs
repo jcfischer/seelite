@@ -268,10 +268,14 @@ await watched.page.screenshot({
 await watched.context.close();
 
 // ---------------------------------------------------------------------------
-// Every frame of every shot, on the principal's seeds (47–51). A held frame
-// steps no sim, and the arrival flicker the principal saw on 47 and the second
-// ship on 49 only happened between stepped frames: the camera's side was float
-// noise on seeds that face the star, and swung round the ship each step.
+// Every step of every shot, on the principal's seeds (47–51). The arrival
+// flicker the principal saw on 47 and the second ship on 49 only happened
+// *between* frames — the camera's side was float noise on seeds that face the
+// star, and swung round the ship each step — so the sampler has to see every
+// step the script runs at. Since #882 it does that by stepping the script with
+// its own phase handle rather than waiting for frames to arrive, which is finer
+// than a frame at 60 fps and costs 4 s per seed instead of 43. The note under
+// the sampler names what that trades away.
 // ---------------------------------------------------------------------------
 
 for (const seed of [47, 48, 49, 50, 51]) {
@@ -284,41 +288,99 @@ for (const seed of [47, 48, 49, 50, 51]) {
 		gameUrl(origin, { seed, raider: "off", guided: true, cinematic: 1 }),
 	);
 	await bootedGame(page);
+	// **Stepped, not watched** (#882). The row measures the camera *between the*
+	// opening's own steps, and `holdOpening` runs the script at `OPENING.dtS` — the
+	// one step it is flown at, watched or skipped — so each seed samples every step
+	// in about 4 s instead of the 43 s of wall clock it cost when its frames had to
+	// arrive on their own (five seeds: 217 s of the probe's 396). Measured both ways
+	// at one build on seed 47: the continuity figures are **identical**
+	// (`takeJumpR` 0.0293, `takeTurnDeg` 0.80) and the framing figures agree to a
+	// decimal (`closestR` 6.206 both, `worstOffDeg` 19.36 stepped against 19.05
+	// watched). And this samples every step rather than every frame: the arrival
+	// shot yields exactly **360 rows — `arriveS / OPENING.dtS`** — against the
+	// watched run's 710 frame rows for those same 360 steps, because a frame
+	// shorter than the script's step samples the same camera twice. Finer and
+	// without the duplicates.
+	//
+	// What a stepped run shows **less** of is the arrival's *look*: that runs on
+	// wall time and a hold runs none of it. So this row is evidence about the camera
+	// and the ship through the script, and never about what the flicker looked like
+	// on a person's screen — that stays the watched row above, the shots it writes
+	// to disk, and `npm run views`.
 	const frames = await page.evaluate(
-		() =>
-			new Promise((done) => {
-				const g = window.__seelite;
-				const rows = [];
-				const tick = () => {
-					const cam = g.openingActive ? g.openingCamera() : null;
-					if (cam) {
-						const s = g.openingScene();
-						const rel = {
-							x: cam.pos.x - s.ship.pos.x,
-							y: cam.pos.y - s.ship.pos.y,
-							z: cam.pos.z - s.ship.pos.z,
-						};
-						const d = Math.hypot(rel.x, rel.y, rel.z);
-						const c =
-							-(
-								rel.x * cam.forward.x +
-								rel.y * cam.forward.y +
-								rel.z * cam.forward.z
-							) / d;
-						rows.push({
-							shot: g.openingReading().shot,
-							rel,
-							cam: cam.pos,
-							forward: cam.forward,
-							distR: d / s.reachKm,
-							offDeg: (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI,
-						});
-					}
-					if (g.openingActive) requestAnimationFrame(tick);
-					else done(rows);
-				};
-				requestAnimationFrame(tick);
-			}),
+		(order) => {
+			const g = window.__seelite;
+			const run = g.opening;
+			const rows = [];
+			/**
+			 * Aim one step ahead in the shot being worked through, and move to the
+			 * next one when the script leaves it — including into a cut, where it is
+			 * crossed whole as a watched frame crosses it.
+			 *
+			 * The step's worth of shown seconds is **measured**, not restated: the
+			 * first call in a shot sees how far the run got, and that distance is one
+			 * step of that shot. So neither `OPENING.dtS` nor `SHOT_RATIO` is copied
+			 * into this file, and a retuned shot costs a sample rather than a lie.
+			 */
+			let si = Math.max(0, order.indexOf(run.shot ?? order[0]));
+			let aim = run.shownBy[order[si]] ?? 0;
+			let stepS = null;
+			let steps = 0;
+			while (g.openingActive && steps++ < 60000) {
+				const shot = order[si];
+				if (!shot) break;
+				const before = run.shownBy[shot];
+				try {
+					g.holdOpening(shot, aim);
+				} catch {
+					break; // the script ended on that step
+				}
+				const after = run.shownBy[shot];
+				if (stepS === null && after > before) stepS = after - before;
+				const cam = g.openingActive ? g.openingCamera() : null;
+				if (cam) {
+					const s = g.openingScene();
+					const rel = {
+						x: cam.pos.x - s.ship.pos.x,
+						y: cam.pos.y - s.ship.pos.y,
+						z: cam.pos.z - s.ship.pos.z,
+					};
+					const d = Math.hypot(rel.x, rel.y, rel.z);
+					const c =
+						-(
+							rel.x * cam.forward.x +
+							rel.y * cam.forward.y +
+							rel.z * cam.forward.z
+						) / d;
+					rows.push({
+						shot: g.openingReading().shot,
+						rel,
+						cam: cam.pos,
+						forward: cam.forward,
+						distR: d / s.reachKm,
+						offDeg: (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI,
+					});
+				}
+				const now = run.shot;
+				const wi = now === null ? -1 : order.indexOf(now);
+				if (wi > si) {
+					si = wi;
+					aim = run.shownBy[order[wi]];
+					stepS = null;
+				} else if (now === null) {
+					si = Math.min(si + 1, order.length - 1);
+					aim = 0;
+					stepS = null;
+				} else {
+					aim = after + (stepS ?? 1 / 60);
+				}
+			}
+			return rows;
+		},
+		// The guided script's shot order. Restating it is safe *here* rather than
+		// quiet: the row below asserts the shots this sampler actually saw, so an
+		// order that drifted from the script's is a red, not a silent no-op.
+		["forming", "arrival", "flypast", "cruise", "approach", "dock"],
 	);
 	// **One take from the arrival through the fly-past** (the principal's
 	// sixth note): between two frames of it the camera may move only by the

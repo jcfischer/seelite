@@ -423,6 +423,13 @@ export class OpeningRun {
 	 * #530's phase handle: run on to `shownS` seconds into `shot` and hold
 	 * there. It only moves forward — the sim cannot be put back — and it
 	 * refuses a shot this kind does not have.
+	 *
+	 * **The shot's own end counts as arriving** (#882). A step can end the shot
+	 * before the aim is reached, and once it has, the aim can never be reached
+	 * *in that shot* — so chasing it ran the whole rest of the script and then
+	 * threw, which is what made a probe that steps one shot at a time die at the
+	 * first boundary. A caller reads `shot` afterwards to learn whether it got
+	 * its time or the boundary, and steps on from there.
 	 */
 	advanceTo(sim: OpeningSim, shot: OpeningShot, shownS: number): void {
 		const order = OPENING_SHOTS[this.kind];
@@ -437,11 +444,15 @@ export class OpeningRun {
 			this.shownBy[shot] > shownS + 1e-9;
 		if (passed)
 			throw new Error(`the opening is already past ${shot} at ${shownS} s`);
-		while (
-			!this.done &&
-			!(this.shot === shot && this.shownBy[shot] >= shownS - 1e-9)
-		)
+		const atAim = () =>
+			this.shot === shot && this.shownBy[shot] >= shownS - 1e-9;
+		while (!this.done && !atAim()) {
+			const before = this.shot;
 			this.unit(sim);
+			// A step ended the shot this call was aiming inside of. The aim is
+			// unreachable now, and the step is the thing the caller wanted anyway.
+			if (before === shot && this.shot !== shot) break;
+		}
 		if (this.done)
 			throw new Error(`the opening ended before ${shot} at ${shownS} s`);
 		this.held = true;
