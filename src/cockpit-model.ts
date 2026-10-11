@@ -21,10 +21,10 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import type { ModelProgressListener } from "./model-progress";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
+import type { ModelProgressListener } from "./model-progress";
 import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 
 /** Cabin kilometres per model metre. */
@@ -278,6 +278,200 @@ export const carriedLamp = (lamp: (typeof COCKPIT_MODEL_LAMPS)[number]) =>
 		},
 		COCKPIT_MODEL_KM_PER_M,
 	);
+
+/**
+ * How far a canopy lamp's anchor may sit from the nearest authored frame vertex,
+ * model metres (node #887).
+ *
+ * The lamps are placed *on the model*, and this is the figure that makes that a
+ * claim with a test behind it rather than a comment. Each anchor is the centroid
+ * of authored frame vertices within a 0.12 m band along a pillar, drawn 4.5% of
+ * its own reach toward the eye so the head sits inside the strut's surface rather
+ * than floating in front of it. The gap that leaves is widest at the aft anchors,
+ * 0.071 m, where the pillar turns aft and the band is sparsest. The bound is 0.08 m
+ * with a centimetre of slack, and `tests/canopy-lamps.test.ts`
+ * measures every anchor against the shipped cabin GLB — re-authored struts that
+ * move out from under a lamp go red there, which is the only way an anchor can
+ * stop being on the model.
+ */
+export const CANOPY_LAMP_SEPARATION_M = 0.08;
+
+/**
+ * The canopy lamp head's radius, model metres.
+ *
+ * Bigger than the procedural lamp it replaces: `COCKPIT_LAMP.size` was 0.143 km by
+ * 0.052 km in the cabin's hundred-times frame — 14.3 cm by 5.2 cm life size — and
+ * the principal asked for the struts lit *bigger*. At 0.17 m across and 1.2-1.6 m
+ * from the eye a head subtends about 6°, which is a visible fitting rather than a
+ * speck, and still small enough not to sit in front of the outside view.
+ */
+export const CANOPY_LAMP_HEAD_RADIUS_M = 0.085;
+
+/**
+ * The cabin's own frame lamps, as the authored cabin carries them (node #887).
+ *
+ * The procedural arch had six lamps along its two side rails. They went with the
+ * arch when #792's authored cabin replaced the cabin those rails were bolted to,
+ * and what remained of the cabin's lighting is `COCKPIT_MODEL_LAMPS`: three point
+ * lights at y -1.65 model metres, under the console, below and behind an eye at y
+ * 0.3. That is why the cabin reads as a dark room with a bright dashboard: the
+ * frame beside and above the pilot has nothing on it and catches nothing.
+ *
+ * **These are placed from the authored model, not from the arch's outline.** The
+ * cabin GLB has no frame geometry at all within ±60° of vertical — the arch stood
+ * in space the authored cabin leaves open — and what it does carry is a mirrored
+ * pair of side pillars of `weathered-blue-steel` and `exposed-machined-edges`,
+ * running 0.94 to 1.66 m out and forward of the eye. Each anchor is the centroid of
+ * that material in a band along one pillar (`CANOPY_LAMP_SEPARATION_M` holds the
+ * figure and the test that re-measures it), which is also where the pilot's own
+ * peripheral view of the canopy edge falls.
+ *
+ * **Every one is gated, and its head is not.** A head is `MeshBasicMaterial` and
+ * costs the fragments it covers; a cast is a `PointLight`, and three evaluates
+ * every one of them for every standard fragment in the cabin's scene whether it
+ * lights anything or not — the lesson `cockpit-surface.ts` records from #651. Six
+ * casts is a real cost, so low keeps the six dots and medium and high get the light
+ * with them, which is the same split the procedural cabin's lamp pools were on.
+ */
+export const COCKPIT_CANOPY_LAMPS = [
+	{
+		name: "canopy-lamp-port-aft",
+		gated: true,
+		color: 0xffc27a,
+		intensity: 2.2,
+		rangeM: 3.5,
+		positionM: [-1.222, 0.749, 0.233],
+	},
+	{
+		name: "canopy-lamp-port-mid",
+		gated: true,
+		color: 0xffc27a,
+		intensity: 2.2,
+		rangeM: 3.5,
+		positionM: [-1.098, 0.797, 0.501],
+	},
+	{
+		name: "canopy-lamp-port-fore",
+		gated: true,
+		color: 0xffc27a,
+		intensity: 2.2,
+		rangeM: 3.5,
+		positionM: [-0.965, 0.816, 0.739],
+	},
+	{
+		name: "canopy-lamp-starboard-aft",
+		gated: true,
+		color: 0xffc27a,
+		intensity: 2.2,
+		rangeM: 3.5,
+		positionM: [1.222, 0.749, 0.233],
+	},
+	{
+		name: "canopy-lamp-starboard-mid",
+		gated: true,
+		color: 0xffc27a,
+		intensity: 2.2,
+		rangeM: 3.5,
+		positionM: [1.098, 0.797, 0.501],
+	},
+	{
+		name: "canopy-lamp-starboard-fore",
+		gated: true,
+		color: 0xffc27a,
+		intensity: 2.2,
+		rangeM: 3.5,
+		positionM: [0.965, 0.816, 0.739],
+	},
+] as const;
+
+/** A canopy lamp carried into the cabin's frame, as `carriedLamp` does. */
+export const carriedCanopyLamp = (
+	lamp: (typeof COCKPIT_CANOPY_LAMPS)[number],
+) =>
+	cabinLight(
+		{
+			positionKm: lamp.positionM,
+			distanceKm: lamp.rangeM,
+			intensity: lamp.intensity,
+			decay: 2,
+		},
+		COCKPIT_MODEL_KM_PER_M,
+	);
+
+/**
+ * The head's own self-light, quoted against the shared exposure ceiling the way
+ * `COCKPIT_EMISSIVE_INTENSITIES` quotes every other cabin emitter.
+ *
+ * The procedural lamp sat at `lamp`, 0.34 of the ceiling, and was called dim on
+ * purpose: an indicator rather than a source. These are asked to *read as lights on
+ * the frame* from the pilot seat, so they sit at `lampPool` × 2 — still short of the
+ * ceiling, and short of the console's own screens, so a lit strut never out-shines
+ * the instrument a pilot is reading.
+ */
+export const CANOPY_LAMP_HEAD_INTENSITY = EMISSIVE_CEILING * 0.24;
+
+/** The shared head geometry and material; see `shared` in `gpu-teardown`. */
+let headGeometry: THREE.CircleGeometry | null = null;
+let headMaterial: THREE.MeshBasicMaterial | null = null;
+
+/** The canopy lamp head's geometry: `CANOPY_LAMP_HEAD_RADIUS_M` across. */
+export function cockpitLampHeadGeometry(): THREE.CircleGeometry {
+	headGeometry ??= new THREE.CircleGeometry(CANOPY_LAMP_HEAD_RADIUS_M, 16);
+	return headGeometry;
+}
+
+function cockpitLampHeadMaterial(): THREE.MeshBasicMaterial {
+	headMaterial ??= new THREE.MeshBasicMaterial({
+		color: new THREE.Color(COCKPIT_CANOPY_LAMPS[0].color).multiplyScalar(
+			CANOPY_LAMP_HEAD_INTENSITY,
+		),
+		side: THREE.DoubleSide,
+	});
+	return headMaterial;
+}
+
+/**
+ * The cabin's canopy frame lamps, ready to add to `AuthoredCabin.modelSpace`.
+ *
+ * One group per lamp, holding its head and its cast. The head faces the eye and is
+ * `MeshBasicMaterial`: like the procedural lamp it lights itself and nothing else,
+ * which is what makes it free at every quality. The cast is the part that costs, and
+ * `main.ts` hands these to `registerKeyLight`, which is the gate that already flips
+ * the console's amber lamps when `quality` moves — a lamp built visible-only-above-
+ * low here would not respond when the setting changed mid-flight.
+ */
+export function buildCanopyLamps(): THREE.Group[] {
+	const eye = new THREE.Vector3(...COCKPIT_MODEL_EYE_M);
+	return COCKPIT_CANOPY_LAMPS.map((lamp) => {
+		const group = new THREE.Group();
+		group.name = lamp.name;
+		const [headX, headY, headZ] = lamp.positionM;
+		group.position.set(headX, headY, headZ);
+		const head = new THREE.Mesh(
+			cockpitLampHeadGeometry(),
+			cockpitLampHeadMaterial(),
+		);
+		head.name = `${lamp.name}-head`;
+		// A disc has one face, and the pillars lean: aimed at the eye rather than
+		// along the strut's own normal, every head is broadside to the pilot instead
+		// of presenting its edge, which at 0.02 m of visible depth is nothing at all.
+		head.lookAt(eye);
+		group.add(head);
+		const carried = carriedCanopyLamp(lamp);
+		const light = new THREE.PointLight(
+			lamp.color,
+			carried.intensity,
+			carried.distanceKm,
+			carried.decay,
+		);
+		light.name = lamp.name;
+		// At the group's own origin, which `modelSpace`'s scale places. A point
+		// light's range and intensity ignore its parent's scale, which is why
+		// `carriedCanopyLamp` carries them.
+		group.add(light);
+		return group;
+	});
+}
 
 /**
  * The angle below which two faces meeting at a vertex are one smooth surface
