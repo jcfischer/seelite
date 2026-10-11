@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+	actionOf,
 	commandOf,
 	letsFailurePass,
 	parseWorkflowText,
+	refOf,
 	type WorkflowStep,
 } from "./lib/workflow-scan";
 
@@ -53,6 +55,33 @@ describe("a key written as a block scalar is read as a value", () => {
           npm run format:check`),
 		);
 		expect(step.run).toBe("npm ci\nnpm run format:check");
+	});
+
+	test("uses, and the two halves of it", () => {
+		// A `uses:` wrapped to stay inside a workflow's column is a folded scalar,
+		// and a reader that collected `|` blocks for `run` alone used to report a
+		// step with no action at all. `actionOf`/`refOf` are measured here too, on
+		// the same reading: "this step publishes" is a claim about the action, "and
+		// it is pinned" about the ref, and a step whose ref is `latest` must not be
+		// able to satisfy both.
+		const step = firstStep(
+			aroundStep(`      - uses: >-
+          cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0`),
+		);
+		expect(step.uses).toBe(
+			"cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0",
+		);
+		expect([actionOf(step), refOf(step)]).toEqual([
+			"cloudflare/wrangler-action",
+			"953926a2e2182532811c01a25e53647d93bf07c0",
+		]);
+		const floating = firstStep(
+			aroundStep(`      - uses: actions/checkout@main`),
+		);
+		expect([actionOf(floating), refOf(floating)]).toEqual([
+			"actions/checkout",
+			"main",
+		]);
 	});
 
 	test("if", () => {

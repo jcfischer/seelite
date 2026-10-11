@@ -346,6 +346,21 @@ export const commandOf = (step: WorkflowStep) =>
 	`${step.run ?? ""}${step.uses ?? ""}`.trim();
 
 /**
+ * The action a `uses:` names, with its ref gone.
+ *
+ * Separated from `commandOf` because the two claims differ. "This is the step
+ * that publishes" is a claim about the action, and holds whether the ref is
+ * written `@v4` or `@` plus forty hex characters; "and it is pinned" is a claim
+ * about the ref. Blending them means a row that goes red on a bump for a reason
+ * that has nothing to do with what the step does.
+ */
+export const actionOf = (step: WorkflowStep) => (step.uses ?? "").split("@")[0];
+
+/** The ref a `uses:` carries — what a pinned action pins. */
+export const refOf = (step: WorkflowStep) =>
+	step.uses === undefined ? undefined : step.uses.split("@").slice(1).join("@");
+
+/**
  * Whether a `continue-on-error:` takes the teeth out of what it is written on.
  *
  * `false` is the default said out loud, and a check that reddens it has begun to

@@ -27,9 +27,11 @@ import {
 import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
 import { repoPath } from "./lib/source-scan";
 import {
+	actionOf,
 	commandOf,
 	letsFailurePass,
 	parseWorkflow,
+	refOf,
 	type Workflow,
 } from "./lib/workflow-scan";
 
@@ -315,9 +317,7 @@ test("the wiring gate runs ahead of the unit tier and of anything that publishes
 	expect(waitsOn(step.job).has("unit")).toBe(false);
 	// And no job that only tests publishes. The guard above, because an empty
 	// publish list would make every one of these loops pass on nothing.
-	expect(publishSteps().map(commandOf)).toEqual([
-		"cloudflare/wrangler-action@v4",
-	]);
+	expect(publishSteps().map(actionOf)).toEqual(["cloudflare/wrangler-action"]);
 	for (const job of ciWorkflow().jobs)
 		if (job.name !== "deploy")
 			expect(
@@ -355,6 +355,25 @@ test("no condition in the file asks the event alone", () => {
 		expect(step.condition ?? "").not.toContain("github.event_name");
 	for (const job of ciWorkflow().jobs)
 		expect(job.condition ?? "").not.toContain("github.event_name");
+});
+
+test("every action the workflows call is pinned to a commit", () => {
+	// A `vN` tag is a branch someone can force-push, so every `uses:` here names
+	// a commit instead. The pins and their versions are listed at the top of
+	// `ci.yml`; this row holds that the steps actually carry one, so a bump that
+	// writes `@v4` back into a step is red here rather than drift between that
+	// table and the file. Both workflows are read: `probes.yml` shares the two
+	// actions and its steps would otherwise be unpinned by nobody noticing.
+	const called = [".github/workflows/ci.yml", ".github/workflows/probes.yml"]
+		.flatMap((path) => parseWorkflow(path).steps)
+		.filter((step) => step.uses !== undefined)
+		.map((step) => ({ action: actionOf(step), ref: refOf(step) ?? "" }));
+	expect(called.length).toBeGreaterThan(0);
+	expect(
+		called
+			.filter(({ ref }) => !/^[0-9a-f]{40}$/.test(ref))
+			.map(({ action, ref }) => `${action}@${ref}`),
+	).toEqual([]);
 });
 
 test("the shards split the suite across runners without narrowing it", () => {

@@ -36,6 +36,25 @@
 # warns and reports `publish=false` rather than failing, so the test stage
 # works from the first commit and the deploy switches on the day the secret
 # lands.
+#
+# ## Actions are pinned to full commit SHAs
+#
+# A `vN` tag is a branch someone can force-push; a SHA is not. Each reference
+# below is the commit that tag pointed at on 2026-10-11, which is every one's
+# latest release in the major it names — so pinning changed nothing about what
+# the runner executes.
+#
+#   actions/checkout           v4.4.0  11d5960a326750d5838078e36cf38b85af677262
+#   actions/setup-node         v4.4.0  49933ea5288caeca8642d1e84afbd3f7d6820020
+#   actions/cache              v4.3.0  0057852bfaa89a56745cba8c7296529d2fc39830
+#   actions/upload-artifact    v4.6.2  ea165f8d65b6e75b540449e92b4886f43607fa02
+#   actions/download-artifact  v4.3.0  d3f86a106a0bac45b974a628896c90dbdf5c8093
+#   cloudflare/wrangler-action v4.1.3  953926a2e2182532811c01a25e53647d93bf07c0
+#   oven-sh/setup-bun          v2.2.0  0c5077e51419868618aeaa5fe8019c62421857d6
+#
+# Bumping one is: read the tag, confirm the tag object still peels to that
+# commit, then write the new SHA and the new version here. `probes.yml` carries
+# the same pins for the two actions it shares with this file.
 name: CI
 
 on:
@@ -97,9 +116,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ env.node-version }}
           cache: npm
@@ -164,16 +183,16 @@ jobs:
         total: [4]
     name: unit (${{ matrix.shard }}/${{ matrix.total }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ env.node-version }}
           cache: npm
 
       - run: npm ci
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
 
@@ -196,9 +215,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ env.node-version }}
           cache: npm
@@ -215,7 +234,7 @@ jobs:
       # nothing; the key moves when the pinned files do (#604).
       - name: Cache the voice model
         if: needs.gate.outputs.publish == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .voice-model-cache
           key: voice-model-${{ hashFiles('scripts/lib/voice-model.mjs') }}
@@ -242,7 +261,7 @@ jobs:
       # shrinking almost nothing.
       - name: Stage the site for the deploy stage
         if: needs.gate.outputs.publish == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pages-dist
           # `dist/**` rather than `dist`, because the two spellings put the
@@ -276,11 +295,11 @@ jobs:
       # the old deploy job had and `actions` is what this one actually needs.
       actions: read
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ env.node-version }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: pages-dist
           path: dist
@@ -300,7 +319,13 @@ jobs:
           fi
 
       - name: Publish to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v4
+        # Folded, because `cloudflare/wrangler-action@` plus a full SHA is one
+        # character wider than this file's column and `uses:` has nowhere else
+        # to break. A folded scalar is the same string to the runner, and the
+        # workflow reader these rows stand on reads `uses:` through the value
+        # reader that handles `run:`.
+        uses: >-
+          cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
