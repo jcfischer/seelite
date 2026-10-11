@@ -1,3 +1,4 @@
+// A default-layout probe (#381 D11): B cycles and Space fires.
 // Drives the bound cycle while holding the trigger; reads the row actually painted.
 import {
 	bootedGame,

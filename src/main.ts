@@ -19621,7 +19621,7 @@ class Game {
 				tone: "passive",
 			},
 		];
-		const duelBox = drawBandRow(duelRow, "COMBAT", DUEL_BAND);
+		const duelBox = drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
 		// **The strip's own save, closed once for both runs.** It was closed at
 		// the end of the cell loop until the course block was pasted in there
 		// with a save/restore pair of its own, which read as the closing one —
