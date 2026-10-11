@@ -1,178 +1,206 @@
-# Node #882 — where the browser-probe suite's wall clock goes
+# Node #882 — probe wall clock: an idle baseline, and the two slowest rows
 
-Author: Ivy (Pi.dev substrate). Date: 2026-10-11.
-Checkpoint: `probe-wallclock-idle-baseline-music-opening`.
+Branch `node/882-probe-wallclock`. Checkpoint
+`probe-wallclock-idle-baseline-music-opening`: *the suite's slowest rows have a
+measured idle baseline and at least one of them is demonstrably shorter, with
+the gate still green.*
 
-Every figure below was measured on this machine (Apple M1 Pro, 8 physical / 10
-logical cores) against `node/882-probe-wallclock`. The idle baseline is the
-committed tree at `9ba7b893`. **One claim this receipt withdraws is named in
-§1** — it was asserted before it was measured, and the measurement refutes it.
+Logs: `/tmp/seelite-882-before.log` (before), `/tmp/seelite-882-after.log`
+(after, same tree as the four commits below), `/tmp/seelite-882-test.log`
+(headless), `/tmp/seelite-882-opening-final.log` and
+`/tmp/seelite-882-opening-step2.log` (the opening probe alone, before and after
+its rows), `/tmp/seelite-music-bands.log` (the music render-window sweep).
 
-## 1. The starting numbers, and a claim corrected
+## 0. The request, and what it turned out not to be
 
-A suite run that shared the machine with another worktree's direct probe runs,
-at load average 23–47:
+The timings that started this — `probe-music` 410.8 s, `probe-opening` 422.5 s —
+came from a suite that was running while other things were too. That is worth
+saying once because it is the easy explanation and it is mostly **wrong**.
+Same 63 probes, one agent's sample against an idle re-run:
 
-```
-100 probes, 63 of them printed: 1992.0s of probe seconds in 36.5 min of wall
-     probe-music    410.8s   probe-opening   422.5s   probe-audio-cues 156.8s
-```
-
-The claim carried into the node was that those seconds were mostly the machine,
-not the probes. **It is wrong except for one probe.** The same 63 probes, run
-alone with nothing else on the box:
-
-| probe | loaded | alone | ratio |
+| probe | contended | idle | |
 |---|---|---|---|
-| probe-occlusion.mjs | 52.2s | 17.9s | **2.92** |
-| probe-neural-voice.mjs | 29.7s | 21.7s | 1.37 |
-| measure-cruise-detour.mjs | 67.1s | 60.2s | 1.11 |
-| probe-audio-cues.mjs | 156.8s | 142.4s | 1.10 |
-| probe-binding-store.mjs | 73.9s | 67.8s | 1.09 |
-| probe-music.mjs | 410.8s | 379.9s | 1.08 |
-| probe-opening.mjs | 422.5s | 395.9s | 1.07 |
-| **the 63 together** | **1992s** | **1810s** | **1.10** |
+| `probe-occlusion` | 52.2 s | 17.9 s | ×2.9 |
+| `probe-hud` | 59.3 s | 34.8 s | ×1.7 |
+| `probe-ai-intent` | 57.6 s | 37.7 s | ×1.5 |
+| `probe-binding-store` | 73.9 s | 67.8 s | ×1.1 |
+| `probe-music` | 410.8 s | 379.9 s | ×1.08 |
+| `probe-opening` | 422.5 s | 395.9 s | ×1.07 |
+| 63 probes, total | 1992 s | 1810 s | ×1.10 |
 
-Contention cost 9% of the total and 2.9× on `probe-occlusion`. The two probes
-that dominate are **intrinsically** slow. #84's rule still holds — a red under
-load is unattributed — but "the suite is slow because the box was busy" is not
-true, and saying it was would have hidden the actual cost.
+Contention is worth ~10% of a suite and nearly 3× on a GPU-bound probe. It is
+worth nothing on the two rows that dominate. Those two are slow **by
+construction**, and only construction is available for them.
 
-## 2. Idle baseline, whole suite (before)
+## 1. The baseline (O1), idle
 
-```
-100/100 gating probes passed in 2357s · peak load 12.0 on 10 cores
-     slowest 5 of 100: probe-opening.mjs 395.9s · probe-music.mjs 379.9s ·
-     probe-audio-cues.mjs 142.4s · probe-binding-store.mjs 67.8s ·
-     measure-cruise-detour.mjs 60.2s — 1046.2s of 2356.8s (95 more under)
-```
+`npm run probe` with nothing else on the machine: **100/100 in 2356.8 s**, peak
+load 12.0 on 10 cores. The slowest five are 1046 s — 44% of the suite — in one
+sequential lane:
 
-Log: `/tmp/seelite-882-before.log`. Two probes are 33% of the suite; five are
-44%. That is where any speedup has to come from, and it is why the summary now
-prints that line — a hundred lines in alphabetical order did not say it.
+`probe-opening` 395.9 · `probe-music` 379.9 · `probe-audio-cues` 142.4 ·
+`probe-binding-store` 67.8 · `measure-cruise-detour` 60.2
 
-## 3. `probe-music` (379.9s): the render is the wall clock, and it does not parallelise
+## 2. What shipped
 
-The probe renders 32 music entries; cut to its 20 s band window that is **630 s
-of audio rendered offline**, plus ~28 s of hard sleeps (one 17 s, so the Danube
-intro passes on wall time before the docking plane) and a few live-context rows.
+**A run says what it was running on** (`scripts/lib/probe-contention.mjs`,
+`probe-all.mjs`, `probe-guard.mjs`). A direct run while the suite holds the lock
+prints who holds it and that its timings are not trustworthy; a suite child
+stays quiet, and a suite that is the holder does not warn about itself. The
+runner adds two lines at the end: peak load, and the slowest probes with their
+share of the total. Both are cheap and both are the thing that was missing —
+this whole node exists because a number was read as a defect.
 
-Render rate, one page, idle box (`sequential, one page`):
+**Four opening rows reach their shot through the game's phase handle instead of
+waiting for it** (`probe-opening.mjs`, commit `353ef579`). Enter during the
+cruise shot, click SKIP, and the two quit rows each waited in wall clock for a
+shot the page could have been put in directly. The row that *watches* the
+opening still watches it — that row's claim is the wall clock.
 
-```
-98s of audio in 41.9s wall — 2.34x realtime
-8 renders in parallel, 8 pages, one browser: 128s in 47.8s — 2.68x
-2 renders in parallel, 2 browsers:  32s in 13.9s — 2.30x
-4 renders in parallel, 4 browsers:  64s in 25.6s — 2.50x
-8 renders in parallel, 8 browsers: 128s in 50.3s — 2.55x
-```
+**The seed sweep steps the script instead of watching it** (`probe-opening.mjs`,
+commit `f41f1c2b`), which needed a change in `src/opening.ts` — see §4.
 
-**Offline audio rendering does not parallelise on this machine** — eight browser
-processes reach 2.55× against one page's 2.34×, so a parallel lane buys ~9–14%,
-not the 4–8× that would pay for the lane machinery. Node #882's out-of-scope note
-predicted this from a loaded run; it is now measured on an idle one.
+**A direct run names the renderer lane it took** (`probe-guard.mjs`, commit
+`25a26c80`). `npm run probe` forces the GPU lane and `probe:cpu` names the
+software one; a bare `node scripts/probe-x.mjs` sets neither and gets a
+SwiftShader page in silence. Measured here: the same boot reached a first frame
+in 1.6 s on the GPU lane and never got there inside `bootedGame`'s 20 s on the
+software one — which reads as a page that will not boot.
 
-So the only lever left is **rendering fewer audio seconds** — and that is not
-free. Every music entry was rendered at 6/8/10/12/20 s windows and its band
-statistics compared against the entry's own 20 s figures (13 of 32 entries before
-the run was stopped; the pattern is uniform):
+## 3. The opening rows: 395.9 s → 137.5 s
 
-| entry | rms at 6s | rms at 20s | drift |
-|---|---|---|---|
-| voice-strings | 0.05551 | 0.03647 | **+52%** |
-| voice-brass | 0.05407 | 0.03628 | +49% |
-| music-voices | 0.03553 | 0.03047 | +17% |
+Attributed by timestamp, before (`/tmp/seelite-882-opening-rows.log`):
 
-A shorter window measures a different span of the song — the attack rather than
-the phrase — so **no shortened window lands inside the existing ±10% band**. The
-bands are centred on the render the principal listened to (`probe-music`'s own
-words), which means cutting windows re-anchors that evidence and narrows what it
-covers. That is a criterion decision, not a harness tuning, and this node did not
-make it. **C4 as written assumed a free 50%; there is no free 50%.**
-
-## 4. `probe-opening` (395.9s): eleven openings, and where each one sits
-
-Per-row wall timestamps (same build, alone, `/tmp/seelite-882-opening-rows.log`):
-
-| row group | wall | what it waits for |
+| the time went to | before | after |
 |---|---|---|
-| guided skipped at boot | 5.0s | nothing — `skip()` fast-forwards |
-| watched guided opening | 44.1s | the whole script, on frames |
-| **per-frame sweep, seeds 47–51** | **217.0s** | the whole script, per seed |
-| Enter during the cruise shot | 18.0s | wall clock to reach `cruise` |
-| click on SKIP | 13.0s | wall clock to reach `flypast` |
-| quit at `cruise`, quit at `dock` | 57.3s | wall clock to reach each shot |
-| free watched opening | 17.0s | the free script, on frames |
-| `?boot=direct`, `?system=`, raider, fallback | 17.0s | fast-forwarded runs |
-| `?cinematic=held` | 8.1s | — |
+| the per-frame seed sweep, 5 seeds | 217 s | 17 s |
+| the 4 rows that waited for a shot | 88 s | 12 s |
+| two watched openings | 61 s | 61 s — still watched |
+| everything else | 30 s | 47 s |
 
-Four rows were paying 88 s to *arrive* at a shot they only needed to be on.
-They now get there through the game's own phase handle (`holdOpening` →
-`advanceTo`, which steps at `OPENING.dtS` — the one step the script is flown at):
+28/28 checks, same as before. The watched rows are untouched on purpose: they
+are the evidence that the sequence *looks* right, and a hold runs no wall time.
 
-```
-before  395.9s in suite / 396.6s alone
-after   330.9s alone, 28/28 checks passed
-```
+## 4. `advanceTo`, and why the sweep could not be stepped before
 
-`/tmp/seelite-882-opening-final.log`. Every one of those four rows still compares
-its own end state with the skipped run's, which is the control on the
-substitution: a hold that changed the run would go red there rather than pass.
+`OpeningRun.advanceTo` treated an aim past the end of the aimed shot as
+impossible and kept stepping after it: the whole rest of the script, then a
+throw. Measured on seed 47 — `the opening ended before forming at 3.0166 s` —
+after 181 of the script's ~2600 steps. That is correct for a caller that wants
+a moment and cannot get it, and fatal for one that walks the script a step at a
+time and wants the boundary.
 
-## 5. The sweep is 55% of the probe, and what it needs to be cut
+Now the shot's own end counts as arriving; the caller reads `shot` afterwards to
+learn whether it got its time or the boundary. Test first in
+`tests/opening.test.ts`; the whole headless suite is green — 5855 pass, 0 fail —
+with it.
 
-Stepping the script instead of watching frames was tried, and the measurement is
-good: same seed, same build, two pages:
+**Both ways at one build on seed 47**, in that order (`/tmp/seelite-step.log`,
+`/tmp/seelite-882-opening-step2.log`):
 
-```
-watched on frames: 4777 rows, 44.0s wall
-stepped by handle: 5545 rows,  2.3s wall
-takeJumpR 0.0293 both · takeTurnDeg 0.80 both · closestR 6.206 both
-worstOffDeg 19.36 stepped against 19.05 watched
-```
+| | watched, every frame | stepped, every step |
+|---|---|---|
+| `takeJumpR` / `takeTurnDeg` | 0.0293 / 0.80 | **0.0293 / 0.80** |
+| `closestR` | 6.206 | 6.206 |
+| `worstOffDeg` | 19.05 | 19.36 |
+| arrival rows | 710 | **360 = `arriveS / OPENING.dtS`** |
+| one seed | 44 s | 4 s |
 
-Same run, sampled every step instead of every frame — a finer sample, since the
-step is smaller than a 60 fps frame. **It cannot be shipped as it is**:
-`advanceTo` treats an aim past the end of the current shot as an error and runs
-the script to `done` on the way there, so a per-step sampler either dies at the
-first shot boundary (`the opening ended before forming at 3.0166 s`) or has to
-restate each shot's length in the probe. Cutting that needs a small change in
-`src/opening.ts` — `advanceTo` stopping at the shot's end instead of throwing —
-and that is its own node with its own test, not a line inside a probe.
+The continuity figures are identical and the framing figures agree to a decimal.
+The row counts look backwards and are the point: 360 is every step the arrival
+shot has, and the watched run's 710 frames cover those same 360 steps — a frame
+shorter than the script's step samples the same camera twice. So the stepped
+sampler is finer *and* free of duplicates.
 
-One more thing the stepped sampler would have traded: the arrival's *look* runs
-on wall time and a hold runs none of it, so a stepped sweep is evidence about the
-camera and the ship through the script and never about what the flicker looked
-like on a person's screen.
+What it shows less of is the arrival's **look**: that runs on wall time, and a
+hold runs none of it. The row's own comment says it is evidence about the camera
+and the ship through the script, never about what the flicker looked like on a
+person's screen — that stays with the watched row, the frames it writes to disk,
+and `npm run views`.
 
-## 6. What shipped in this node
+## 5. The music row: measured, and left alone
 
-- `scripts/lib/probe-contention.mjs` + `tests/probe-contention.test.ts`: a direct
-  probe run names whoever holds the probe lock, on stderr, once, and says its own
-  seconds are not evidence. `probe-all` sets `PROBE_LOCK_PID` so a suite does not
-  warn about itself. Still not a refusal — re-running a red alone is what the
-  no-lock rule is for (#84).
-- `probe-all`: the peak load now prints on a **green** probe over a minute, and
-  the summary names the slowest probes and their share of the run.
-- `tests/script-gates.test.ts` derives the scratch tree's copies from the import
-  graph rather than typing the list, which is what made adding one import to
-  `probe-guard.mjs` fail there as `ERR_MODULE_NOT_FOUND`.
-- `probe-opening`: four rows reach their shot through the phase handle. **−65 s.**
-- `CLAUDE.md`: the #84 paragraph now says a direct run names the holder and a
-  slow green line names its load.
+`probe-music`'s 379.9 s is offline rendering, ~578 audio-seconds of it. Measured
+throughput:
 
-Not shipped, with the reason measured above: a parallel render lane (§3), shorter
-music windows (§3, a criterion decision), the stepped seed sweep (§5, needs
-`src/opening.ts`).
+| pages | browsers | audio/s | wall for 578 s of audio |
+|---|---|---|---|
+| 1 | 1 | 2.34× | 247 s |
+| 8 | 1 | 2.68× | 216 s |
+| 2 | 2 | 2.30× | — |
+| 4 | 4 | 2.50× | — |
+| 8 | 8 | 2.55× | — |
 
-## 7. Loose ends worth naming
+**Parallelism does not scale.** Ten times the browsers buys 9%. A second
+renderer lane would cost its own lock, port and evidence-directory rules to buy
+25 s. Not taken.
 
-- **A direct probe run without `SEELITE_PROBE_RENDERER=hardware` silently gets
-  the software lane.** It cost this session a 20 s `bootedGame` timeout that read
-  like a defect in the page. `npm run probe:cpu` is the deliberate fallback; a
-  bare `node scripts/probe-x.mjs` gets it by accident. Same honesty gap as §6,
-  different variable.
-- `npm test` 5852 pass / 1 fail on this branch was the `script-gates` fixture
-  list described above; it is fixed in the same commit.
-- The full-suite `after` figure is not in this receipt: the suite has not been
-  run whole since the `probe-opening` change. Expected from §4: 2357s → ~2290s.
+The window cut was taken as far as the evidence allowed and then stopped
+(`/tmp/seelite-music-bands.log`). Cutting every held bed to 8 s and the Danube
+intro to 12 s takes 578 audio-seconds to 366 — 91 s of the suite, 3.9%. What it
+costs:
+
+| | at the shorter window |
+|---|---|
+| centroid (`hz`) | **identical on all 32** — the timbre claim survives |
+| onset | **identical** — it is a script event, not a window |
+| rms | −8% to −37% (music-calm-second −37%) |
+| peak | **0 to −42%** — the bed's loudest moment is not in its first 8 s |
+
+Peak is the clipping guard: the row compares against `MUSIC_CEILING_PEAK`.
+Re-anchoring it downward means the guard would no longer contain the loudest
+sample of the music it guards, for 21 of 32 renders, to save 3.9% of a suite.
+The only windows that lose nothing are the two adaptive runs at 12 s — the scene
+change they exist to test is at 10 s, and rms/peak/hz/onset come back identical
+— and that is worth 7 s. Not taken either.
+
+**This is the row that would not yield, and the reason is the evidence, not the
+machinery.** If the suite's wall clock matters more than 3.9%, the honest way to
+buy it is a second music-shaped row that renders a short window *in addition* to
+the band rows — more time, not less — or 8-page parallel rendering inside the
+one browser, worth ~25 s.
+
+## 6. After
+
+`npm run probe` on the shipped tree: **99/100 in 2250.9 s**, peak load **18.1**
+on 10 cores (`/tmp/seelite-882-after.log`) — 2356.8 s to 2250.9 s is **not** the
+change's worth, because this run was not idle either: another agent's capture
+servers were up through it, and the runner's own line says so.
+
+The two rows this branch moved, from that run:
+
+| | before | after |
+|---|---|---|
+| `probe-opening` | 395.9 s | **138.8 s** |
+| `probe-music` | 379.9 s | 400.5 s — untouched, and the run was loaded |
+| slowest five | 1046.2 s | 819.8 s |
+
+**The one red is not this branch's.** `probe-station-interior-kit`'s
+*cold install tail stays within its live-frame budget* failed on the `bay` view
+with `installMaxMs` 66.6 ms against an 8.8 ms median, and passed on `flight`. It
+reproduced alone on this branch twice and — run as its own checkout against its
+own origin, `.worktrees/882-main-check` at `origin/main` `8b7a5871` —
+**reproduced identically on main, twice, same check, same view**, at load 9.6 and
+17.2. Nothing this branch touches is in that probe's path: not `probe-opening`,
+not the runner, not `OpeningRun.advanceTo`. It is an assertion that does not
+survive the machine being busy with something that is not another probe.
+
+That last sentence is the finding this node leaves behind. The lock guards
+probe-against-probe. It cannot see a capture run, a compile, or a second agent —
+and §0 measured that a loaded machine is worth ×2.9 on `probe-occlusion` and a
+66 ms frame in a cold interior install. `probe-all` prints peak load for every
+slow probe; a **direct** run that fails prints no load at all. That is the next
+node.
+
+## 7. Not done here
+
+- The suite's *parallelism*, which is the only remaining lever of size and is a
+  node of its own: a music-lane render in parallel with the game lane would need
+  the machine-scaling above re-measured with the GPU lane in the mix, because
+  two browsers were 2.30× — and `probe-occlusion` shows contention multiplies
+  where pixels are involved.
+- The 8-page in-browser render parallelism (~25 s), measured and left.
+- The headless (`probe:cpu`) lane, which `probe-lock.mjs` says has never been
+  run as a lane; §5's numbers say it would not be faster.
+- `probe-audio-cues` (142.4 s), untouched: its cues are rendered whole, and a
+  cue's whole body *is* what its row measures.
