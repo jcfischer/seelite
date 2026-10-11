@@ -726,7 +726,7 @@ export const OCCLUSION_FRAMINGS = Object.freeze({
 	 *
 	 * #247 asks whether #242's 4.6% is a property of bays or of *that* bay, and
 	 * one berth of one station cannot say. A shipyard's bay is cut into a
-	 * rotating drum with a static spine (`CLAUDE.md`), so it is a differently
+	 * rotating drum with a static spine (`docs/pitfalls.md`), so it is a differently
 	 * shaped enclosure around the same aperture rule.
 	 *
 	 * **Parked fully docked, with no `stopAtArrivalFraction`**, which is what

@@ -115,7 +115,7 @@ const scratch = new THREE.Box3();
  *
  * `Sphere.applyMatrix4` takes the largest of the matrix's three scales, so a
  * station mesh scaled by `radiusKm` at layer time reports a subject at the size
- * it is drawn, which is the unit trap `CLAUDE.md` names.
+ * it is drawn, which is the unit trap `docs/pitfalls.md` names.
  */
 export function subjectOf(root: THREE.Object3D): ShadowSubject {
 	// **This object's own world matrix, brought up to date, and nothing else's.**

@@ -415,7 +415,7 @@ const installHelpers = (page) =>
 			const V3 = g.nearScene.position.constructor;
 
 			// The camera that draws the layer this body is currently in. A body's
-			// layer is its distance (`CLAUDE.md`), so it is looked up rather than
+			// layer is its distance (`docs/pitfalls.md`), so it is looked up rather than
 			// assumed — projecting with the wrong one puts every sample off frame
 			// and reports an empty profile, which reads exactly like a body that
 			// is not there.

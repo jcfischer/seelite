@@ -642,7 +642,7 @@ const listedAt = (station: Station, system: SystemRecord): Commodity[] => [
  * **A total record, not a ternary.** The draw used to split on
  * `family === "courier" ? 1 : 2`, and a third family would have shared the
  * second's stream without a word from the compiler — the correlation
- * `CLAUDE.md`'s per-system RNG rule warns about. The two shipped values are
+ * `docs/pitfalls.md`'s per-system RNG rule warns about. The two shipped values are
  * kept, so no courier or procurement board moves. Keyed by post since #408,
  * which added the Local run as a fourth stream rather than a draw inside the
  * floor's, so no floor courier moved either.

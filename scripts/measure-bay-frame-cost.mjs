@@ -63,7 +63,7 @@
  * cadence the player actually gets. So the GPU medians are printed and **not
  * used**, and the decomposition rests on the arms alone. A diagnostic that
  * reports a number it cannot have, under a status that says it is fine, is the
- * class `CLAUDE.md` already carries several of; naming it is this node's, fixing
+ * class `docs/pitfalls.md` already carries several of; naming it is this node's, fixing
  * it is not.
  *
  * The CPU submission column survives that, and it is the one that disposes of
@@ -508,7 +508,7 @@ const apertureFraction = (page, subjectId) =>
 		//
 		// A *standard* material driven by `emissive` rather than a basic one:
 		// emissive is unlit and constant, so it is flat under any light rig, and
-		// station plating is standard (`CLAUDE.md`) so an instance is always
+		// station plating is standard (`docs/pitfalls.md`) so an instance is always
 		// there to take the constructor from. Throwing rather than falling back
 		// to a threshold — a coverage mask that quietly degrades into the
 		// brightness comparison this replaced is worse than one that stops.

@@ -111,7 +111,7 @@ export const RELAY_IDENTIFY_RANGE_KM = 150;
  * in #508's capture at 0.43. The assist holds still in the station's frame
  * (`localFrame`, since #10), so a pilot parked beside the relay at zero
  * throttle drifted off it while firing: 1.0 km to 5.2 km across one kill.
- * `CLAUDE.md`'s rule is that a fight beside a body is flown in that body's
+ * `docs/pitfalls.md`'s rule is that a fight beside a body is flown in that body's
  * frame, and the relay is what this fight is beside.
  *
  * The identification range, because that is where the relay becomes a place

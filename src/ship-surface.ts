@@ -168,7 +168,7 @@ export type HullQuality = keyof typeof HULL_QUALITY;
  * ranks silhouettes: several finishes exist at once, the sheet is captured
  * under each, and the principal picks. So a finish is a **preset**, not a
  * default with overrides — the same shape as `HULL_QUALITY`, for the reason
- * `CLAUDE.md` records against a one-caller override field.
+ * `docs/pitfalls.md` records against a one-caller override field.
  *
  * **`stock` is byte-identical to the hull that shipped before this node.** It
  * is the control on the sheet; the default is `DEFAULT_HULL_FINISH`, the
@@ -500,7 +500,7 @@ uniform float uRim;`;
  * independent of every light in the scene and reads the same on the unlit
  * half — which is the half it exists for. `uRim` is the finish's dial and
  * `stock` sets it to zero, where the branch keeps the cost out of the
- * fragment as well as the effect (`CLAUDE.md`, a dial at zero).
+ * fragment as well as the effect (`docs/pitfalls.md`, a dial at zero).
  */
 const RIM_SURFACE = /* glsl */ `#include <emissivemap_fragment>
 if (uRim > 0.0) {
