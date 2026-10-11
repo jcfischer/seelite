@@ -504,10 +504,9 @@ export const PLAYWRIGHT_ENV_VARS = ["PLAYWRIGHT_DIR", "PLAYWRIGHT_MODULE"];
  * Both module shapes are accepted because a path bypasses the package's `exports`
  * map and lands on the CommonJS entry, where the namespace arrives under
  * `default` instead of as named exports. #147 has the history.
- */
-/**
+ *
  * Launch Chromium the way the probe lane asks for, and say once what lane that
- * turned out to be.
+ * turned out to be (`rendererLaneNotice`, below).
  *
  * @param {Record<string, unknown> & { args?: string[], probeWindow?: string }} options
  */

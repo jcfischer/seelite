@@ -531,7 +531,9 @@ describe("the phase handle", () => {
 		const run = new OpeningRun("guided");
 		for (const shot of OPENING_SHOTS.guided) {
 			const want = openingSteps(shot);
-			// The dock ends when the flight docks, not on a count.
+			// Three of the six shots belong to the pilot's actions — the fly-past to the
+			// spool, the cruise to the leg, the dock to the docking — so `null` there is
+			// the honest answer and this walk sizes itself against the other three.
 			if (want === null) continue;
 			const stride = openingStepS(shot);
 			// Cross any cut into the shot without sampling it, then step it once per

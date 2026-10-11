@@ -430,9 +430,9 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	// shot have to sit exactly one of the script's own steps apart — `openingStepS`,
 	// which for a shot shown at 1.5x or 2x is *less* than `OPENING.dtS`. That is the
 	// property the sampler has to have, and unlike a row count it holds for the shots
-	// whose length the flight decides: the cruise shows the leg's ETA window and the
-	// dock ends when the ship docks, so across the five seeds here the cruise shot
-	// yields anywhere from 17 to 868 rows. Counting rows was this branch's first
+	// whose length the flight decides: the cruise shot begins when cruise engages and
+	// the dock ends when the ship docks, so across the five seeds here the cruise
+	// shot yields anywhere from 17 to 868 rows. Counting rows was this branch's first
 	// attempt at the check, and it was wrong about exactly those shots.
 	let strideErr = 0;
 	for (let i = 1; i < frames.length; i++) {

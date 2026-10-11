@@ -811,7 +811,6 @@ import {
 	openingCaption,
 	openingOwedOnLoad,
 	openingStepS,
-	openingSteps,
 } from "./opening";
 import {
 	type ShotAnchor,
@@ -18171,8 +18170,7 @@ class Game {
 
 	/**
 	 * The script's own shape, for a probe that walks it (#882): the shots this
-	 * kind shows, in order, the shown seconds one step of each advances, and the
-	 * steps in the shots whose length the script fixes. A probe stepping the
+	 * kind shows, in order, and the shown seconds one step of each advances. A probe stepping the
 	 * opening must not restate any of it — CLAUDE.md's rule that a probe with its
 	 * own copy of a constant goes falsely red when the module changes it, and
 	 * #882's first seed sweep aimed by a `1 / 60` it typed itself, which on the
@@ -18182,17 +18180,12 @@ class Game {
 		kind: OpeningKind | null;
 		shots: readonly OpeningShot[];
 		stepS: Record<string, number>;
-		steps: Record<string, number | null>;
 	} {
 		const kind = this.opening?.kind ?? null;
 		const shots = kind ? OPENING_SHOTS[kind] : [];
 		const stepS: Record<string, number> = {};
-		const steps: Record<string, number | null> = {};
-		for (const shot of shots) {
-			stepS[shot] = openingStepS(shot);
-			steps[shot] = openingSteps(shot);
-		}
-		return { kind, shots, stepS, steps };
+		for (const shot of shots) stepS[shot] = openingStepS(shot);
+		return { kind, shots, stepS };
 	}
 
 	/** What the opening is doing, for a probe to read by name. */

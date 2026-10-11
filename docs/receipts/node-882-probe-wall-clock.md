@@ -133,16 +133,20 @@ holds only for a 1:1 shot.
 What shipped instead:
 
 - `src/opening.ts` owns the stride and the counts: `openingStepS(shot)` is
-  `OPENING.dtS / shotRatio(shot)`, and `openingSteps(shot)` is how many steps each
-  shot whose length the script fixes has — `null` for the fly-past and the dock,
-  which the pilot's actions end.
+  `OPENING.dtS / shotRatio(shot)` — now also what `unit()` steps by, so the
+  arithmetic is spelled once — and `openingSteps(shot)` answers for every shot in a
+  whole `Record`: a number for the three the script sizes, `null` for the three the
+  pilot's actions end.
 - `Game.openingScript()` puts the shot order, the stride and the counts on the
   page, so the probe reads them off the module instead of restating them —
   CLAUDE.md's rule, which the first version broke twice over: its own shot-order
   array and its own `1 / 60`.
-- The seed row now **checks** rows per shot against `openingSteps` for every sized
-  shot, so a stride one step wide is a red naming the shot rather than a comment
-  quietly stopping being true.
+- The seed row checks the **stride**, not a row count: consecutive samples have to
+  sit exactly one of the script's steps apart in the script's own shown clock, and
+  `strideErr` comes out ~1e-16 on all five seeds. Counting rows per shot was the
+  first attempt at the check and it was wrong — the cruise shot yielded 17 to 868
+  rows across the five seeds, because the leg sizes that shot, which is why
+  `openingSteps` says `null` for it now instead of the 720 it used to claim.
 - `tests/opening.test.ts` pins it without a browser, and was mutation-checked:
   aiming by `OPENING.dtS` instead of `openingStepS` turns it red.
 

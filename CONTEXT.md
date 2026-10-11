@@ -487,13 +487,13 @@ _Avoid_: Tutorial (there is no separate mode), onboarding (in the pilot's copy)
 
 **Opening**:
 A new game's first flight, filmed: the rift forming, the arrival from witchspace, a fly-past and, for a guided game, the planet fly-by, the station approach and the dock into its **First day**. A real flight in the sim, watched or skipped into the same state, with #530 D6's placement as its fallback. `src/opening.ts` owns the script and which shot shows it, `src/opening-camera.ts` how each shot is framed, and #530's resolution the decisions.
-
-> **A third way through it: held** (#882, `?cinematic=held`). `OpeningRun.held` — reached through `Game.holdOpening` — runs the script to a named shot and shown second and stops there, so a capture or a probe can sample one step as many times as it likes, or step through the script one step per call. It is the same flight at the same `OPENING.dtS`, and it runs **no wall time**, which is what makes it the wrong evidence for anything that takes real seconds to look right — the arrival's rift is one of those — and the right evidence for where the camera and the ship were at each step. A row that holds says which of the two it is measuring.
 _Avoid_: Intro, cutscene (it is not a film; the flight is the game's)
 A song's first **section** is named `intro` in every score — the waltz and
 each of its **Versions** — which is music's word for it and never this
 flight. A reviewer flagging that has found the alias rule firing on a
 section name.
+
+> **A third way through it: held** (#882, `?cinematic=held`). `OpeningRun.held` — reached through `Game.holdOpening` — runs the script to a named shot and shown second and stops there, so a capture or a probe can sample one step as many times as it likes, or step through the script one step per call. It is the same flight at the same `OPENING.dtS`, and it runs **no wall time**, which is what makes it the wrong evidence for anything that takes real seconds to look right — the arrival's rift is one of those — and the right evidence for where the camera and the ship were at each step. A row that holds says which of the two it is measuring.
 
 **Station control**:
 The voice that speaks to a guided pilot on the docked station console and in the Communications log during the first day. `docs/specs/first-useful-day.md` D3 owns where it speaks and when it stops.
