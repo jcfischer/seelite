@@ -4,7 +4,10 @@ import {
 	fittingSaleValue,
 	freeSlot,
 	repeatableEquipment,
+	parseModule,
 } from "./loadout";
+import { outfittingScreen } from "./outfitting";
+import { commanderJumpRangeLy } from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
@@ -1084,7 +1087,7 @@ import {
 	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
-import { ESCAPE_POD, marketStationOf } from "./market";
+import { ESCAPE_POD, marketStationOf, marketEpoch } from "./market";
 import { type HoldBids, holdSummary, pilotGoods } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
@@ -2558,6 +2561,8 @@ class Game {
 	private wreckContacts = new Map<CarrierKey, DisplayContact>();
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
+	private outfittingSlot = "h1";
+	private outfittingCandidate = "";
 	private requests = emptyRequests();
 	private sweepReadings: SweepReading[] = [];
 	private sweepCharge: SweepCharge | null = null;
@@ -4928,6 +4933,27 @@ class Game {
 			onRequestAction: (action, id) =>
 				this.consolePress(this.actOnRequest(action, id)),
 			onStationAction: (type, name) => {
+				this.outfittingCandidate = "";
+				if (type === "buy-module") {
+					try {
+						const payload = JSON.parse(name);
+						if (typeof payload.slot !== "string") return;
+						this.consolePress(
+							this.transactStation({
+								type,
+								slot: payload.slot,
+								module: parseModule(payload.module),
+							}),
+						);
+					} catch {
+						this.consolePress(false);
+					}
+					return;
+				}
+				if (type === "remove-module" || type === "buy-missiles") {
+					this.consolePress(this.transactStation({ type, slot: name }));
+					return;
+				}
 				if (type === "buy-hull") {
 					// The row carries a hull id; one the roster does not sell is a
 					// tampered press, and it buys nothing.
@@ -4936,6 +4962,26 @@ class Game {
 					return;
 				}
 				if (type === "fit-recovered" || type === "sell-recovered") {
+					if (type === "fit-recovered" && name.startsWith("{")) {
+						try {
+							const payload = JSON.parse(name);
+							if (
+								typeof payload.slot !== "string" ||
+								!Number.isInteger(payload.index)
+							)
+								return;
+							this.consolePress(
+								this.transactStation({
+									type,
+									slot: payload.slot,
+									index: payload.index,
+								}),
+							);
+						} catch {
+							this.consolePress(false);
+						}
+						return;
+					}
 					this.consolePress(
 						this.transactStation({ type, index: Number(name) }),
 					);
@@ -4949,6 +4995,7 @@ class Game {
 							: { type, commodity: name };
 				this.consolePress(this.transactStation(action));
 			},
+			onOutfittingSelect: (kind, name) => this.selectOutfitting(kind, name),
 			// A refused press holds the launch, and the hold is on the console, so
 			// both outcomes repaint (#314).
 			onLaunch: () => {
@@ -12848,7 +12895,7 @@ class Game {
 	 * than a field, because a restored save names the hull after construction.
 	 */
 	get fuelCapacityLy(): number {
-		return HULL_SPECS[this.commander.hull].tankLy;
+		return commanderJumpRangeLy(this.commander);
 	}
 
 	/** The drive charge's capacity: the flown hull's `chargeAu` (#185 D6). The
@@ -17674,12 +17721,20 @@ class Game {
 		// The rows read the rungs and the flown hull too: a dock banks rungs,
 		// and a purchase changes the hull, and both must reprice the Shipyard.
 		const rungs = this.rungs();
-		const key = `${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
+		const key = `${marketEpoch(market.phaseMin, context.gameTimeMin)}|${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCacheStationId = this.dock.stationId;
 		this.stationConsoleMarketSampleS = sampleS;
 		this.stationConsoleCache = {
+			outfitting:
+				this.stationConsoleTab === "Equipment"
+					? outfittingScreen(
+							this.consoleInput(context),
+							this.outfittingSlot,
+							this.outfittingCandidate,
+						)
+					: undefined,
 			label: this.nameOfStation(station.id),
 			tab:
 				this.stationConsoleTab === "Shipyard" && market.type !== "shipyard"
@@ -18779,6 +18834,18 @@ class Game {
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
 		};
+	}
+
+	/** A preview selection repaints the console and never changes saved state. */
+	private selectOutfitting(kind: "slot" | "candidate", name: string) {
+		if (kind === "slot") {
+			this.outfittingSlot = name;
+			this.outfittingCandidate = "";
+		} else this.outfittingCandidate = name;
+		this.stationConsoleRevision += 1;
+		this.clearStationRefusal();
+		this.consolePress(true);
+		this.updateCockpit();
 	}
 
 	/** How far a hull reaches from the system the ship is in (#185 D3): the

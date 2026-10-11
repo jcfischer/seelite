@@ -520,7 +520,9 @@ try {
 		g.updateCockpit();
 		g.render(0);
 	});
-	const row = page.locator('[data-live-recovered-fitting="Military Laser"]');
+	const row = page.locator("[data-live-recovered-fitting]", {
+		hasText: "Military laser",
+	});
 	check(
 		"Equipment shows carried tonnage and the fitting's locked rung",
 		(await row.innerText()).includes("1 t") &&

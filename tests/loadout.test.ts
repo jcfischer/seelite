@@ -11,7 +11,12 @@ import {
 	stockLoadout,
 } from "../src/loadout";
 import { deathWreckContents } from "../src/death-wreck";
-import { moduleFits, makeModule, transferLoadout } from "../src/loadout";
+import {
+	moduleFits,
+	makeModule,
+	transferLoadout,
+	carriedModule,
+} from "../src/loadout";
 
 test("smaller modules fit larger slots without relaxing type or family", () => {
 	const laser = makeModule("pulse-laser", 1);
@@ -141,6 +146,7 @@ test("a carried typed fitting and a surviving wreck preserve grade, ammo and var
 		grade: "A" as const,
 		ammo: 2,
 		variant: "precise",
+		purchaseCostCr: 725,
 	};
 	c.loadout = { ...c.loadout, h2: rack };
 	let contents: ReturnType<typeof deathWreckContents> = [];
@@ -199,9 +205,31 @@ function seal(o: any) {
 	const { integrity: _, ...body } = o;
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 }
+test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the new field", () => {
+	const raw = fixture();
+	raw.commander.state.loadout.h1.purchaseCostCr = 850;
+	raw.commander.state.recoveredFittings = [
+		{ ...carriedModule(makeModule("pulse-laser", 1)), purchaseCostCr: 0 },
+	];
+	const parsed = parseSave(seal(raw));
+	expect(parsed.commander.state.loadout.h1.purchaseCostCr).toBe(850);
+	expect(parsed.commander.state.recoveredFittings?.[0].purchaseCostCr).toBe(0);
+	expect(parseSave(serializeSave(parsed))).toEqual(parsed);
+	const wrecks = Array.from({ length: 40 }, (_, seed) =>
+		deathWreckContents(seed, 1, parsed.commander.state, "destroyed"),
+	);
+	expect(wrecks.flat().some((c) => c.fitting?.purchaseCostCr === 0)).toBe(true);
+	raw.saveSchemaVersion = 13;
+	expect(() => parseSave(seal(raw))).toThrow();
+	delete raw.commander.state.loadout.h1.purchaseCostCr;
+	delete raw.commander.state.recoveredFittings[0].purchaseCostCr;
+	expect(parseSave(seal(raw)).commander.state.credits).toBe(
+		raw.commander.state.credits,
+	);
+});
 test("v13 writes only loadout; mixed versions and unknown old ids are refused", () => {
 	const current = fixture();
-	expect(current.saveSchemaVersion).toBe(13);
+	expect(current.saveSchemaVersion).toBe(14);
 	expect(current.commander.state.ownedEquipment).toBeUndefined();
 	expect(() =>
 		parseSave(

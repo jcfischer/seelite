@@ -930,7 +930,7 @@ const liveEquipment = await page.evaluate(() => {
 			document
 				.querySelector("[data-live-station-console]")
 				?.getAttribute("data-live-station-tab-active") === "Equipment",
-		rows: document.querySelectorAll("[data-live-equipment]").length,
+		rows: document.querySelectorAll("[data-live-slot]").length,
 	};
 });
 

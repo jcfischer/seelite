@@ -165,6 +165,8 @@ export const DOMAIN = {
 	DERELICT_HOME: 35,
 	/** Per-death, per-item survival; independent of salvage schedules. */
 	DEATH_WRECK: 36,
+	/** Station module availability per market epoch, independent of commodity draws. */
+	MODULE_STOCK: 37,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
