@@ -19,7 +19,11 @@ import { derelictRegion } from "./long-range-scanner";
 import type { RequestsState } from "./requests";
 import { seededRand } from "./rng";
 import type { System } from "./sim";
-import { effectiveDerelict, type WorldState } from "./world-state";
+import {
+	type EffectiveDerelict,
+	effectiveDerelict,
+	type WorldState,
+} from "./world-state";
 
 export type SalvagePosting = Pick<BindContext, "system" | "station">;
 
@@ -73,6 +77,18 @@ export function repriceSalvageOffer(
 	};
 }
 
+/**
+ * Whether the station that lost this instance still posts it: inside the offer
+ * window after the loss, and only for a loss on the clock. A slot's first
+ * instance can be lost before game time 0 (S16, node #775), and an offer is
+ * stamped with its loss, which no journal can hold before zero — so a wreck
+ * already adrift when the clock started is free salvage from the start.
+ */
+const offerOpen = (
+	row: Extract<EffectiveDerelict, { condition: "destroyed" }>,
+	at: number,
+): boolean => row.lostAt >= 0 && at < row.lostAt + SALVAGE_OFFER_WINDOW_S;
+
 /** The cheap board facts; frame pose and lead region are derived only on a miss. */
 export function salvageBoardKey(
 	world: WorldState,
@@ -83,8 +99,7 @@ export function salvageBoardKey(
 	return derelictSlots(record.index, record.government)
 		.flatMap(({ key }) => {
 			const row = effectiveDerelict(world, record.galaxy, key, at);
-			return row.condition === "destroyed" &&
-				at < row.lostAt + SALVAGE_OFFER_WINDOW_S
+			return row.condition === "destroyed" && offerOpen(row, at)
 				? [
 						`${key}:${row.instanceOrdinal}:${row.containers.map((c) => c.left).join(",")}`,
 					]
@@ -103,11 +118,7 @@ export function salvageTargetsOf(
 	if (!stations.length) return [];
 	return derelictSlots(record.index, record.government).flatMap(({ key }) => {
 		const row = effectiveDerelict(world, record.galaxy, key, at);
-		if (
-			row.condition !== "destroyed" ||
-			at >= row.lostAt + SALVAGE_OFFER_WINDOW_S
-		)
-			return [];
+		if (row.condition !== "destroyed" || !offerOpen(row, at)) return [];
 		const rand = seededRand(
 			carrierInstanceSeed(
 				record.seed,

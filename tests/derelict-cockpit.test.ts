@@ -7,7 +7,7 @@ import {
 import { expect, test, spyOn } from "bun:test";
 import { derelictPose, tetherOffset } from "../src/derelict";
 import { scoopWreckContainer } from "../src/derelict-salvage";
-import { derelictSlots, derelictFirstLossAt } from "../src/derelict-slots";
+import { derelictNextLossAt, derelictSlots } from "../src/derelict-slots";
 import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { makeWorld, advanceSystem } from "../src/sim";
 import { newCommander, commanderHold } from "../src/station-commerce";
@@ -141,7 +141,7 @@ test("a multi-tonne fitting refuses partial room and recovers exactly one whole 
 	).toBe(false);
 });
 test("Holdings reports adopted takes and refusals, while a stale wreck event has no scoop signal", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	const world = advanceTo(newWorld(47), at);
 	const wreck = effectiveDerelict(world, 0, key, at);
 	if (wreck.condition !== "destroyed") throw Error("no wreck");
@@ -237,7 +237,7 @@ test("pose follows the seeded body at the requested clock and tumbles slowly", (
 	expect(derelictPose(system, key, 0, 100)).toEqual(a);
 });
 test("the hold event writes the row and reloads remainder with the same hold", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	let world = advanceTo(newWorld(47), at);
 	const e = effectiveDerelict(world, 0, key, at);
 	if (e.condition !== "destroyed") throw Error("no wreck");
@@ -395,7 +395,7 @@ test("fitting items survive reload and legacy or malformed fitting rows refuse",
 	).toThrow("not a version 9 field");
 });
 test("a death loses goods and carried fittings while its world keeps the strip", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	const world = advanceTo(newWorld(47), at);
 	const e = effectiveDerelict(world, 0, key, at);
 	if (e.condition !== "destroyed") throw Error("no wreck");
@@ -528,7 +528,7 @@ test("wrecks share one orbital placement per step end and reuse post-step poses"
 	}
 });
 test("a schema 9 save with a partially stripped derelict loads its world remainder", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	const initial = advanceTo(newWorld(47), at);
 	const world = scoopDerelict(initial, 0, key, 0, 1, at);
 	const commander = newCommanderRecord("courier", {
