@@ -302,10 +302,11 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	// opening's own steps, taking them through the game's phase handle instead of
 	// waiting for frames to arrive: each seed samples the script in about 4 s
 	// rather than the 43 s of wall clock its frames used to cost (five seeds: 217 s
-	// of the probe's 396). What it reads on the corrected stride, all five seeds:
-	// `takeJumpR` 0.0293, `takeTurnDeg` 0.80, `closestR` 6.2, `worstOffDeg` **20.0**
-	// — against 19.36 from the too-wide sampler just below and 19.05 watched. The fix
-	// sees a slightly *worse* worst framing, which is what sampling every step is for.
+	// of the probe's 396). What it measures, all five seeds at one build, agrees with
+	// the watched row **to six decimals** — `closestR` 6.197014/…6.197024,
+	// `worstOffDeg` 20.000000, `takeTurnDeg` 0.7978 — while sampling 2852–3702 steps
+	// to the watched run's 4373–4722 frames (`/tmp/seelite-882-ladder.log`). Fewer
+	// samples, every one of them a distinct step of the script, same answers.
 	//
 	// **One step per sample, and the page says how wide a step is.** A shot shown
 	// at 1.5x moves the script's shown clock by less than `OPENING.dtS` per step, so
@@ -324,7 +325,12 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	// on a person's screen — that stays the watched row above, the shots it writes
 	// to disk, and `npm run views`.
 	const script = await page.evaluate(() => window.__seelite.openingScript());
-	const { rows: frames, byShot } = await page.evaluate((script) => {
+	const {
+		rows: frames,
+		byShot,
+		ended: swept,
+		cap: truncated,
+	} = await page.evaluate((script) => {
 		const g = window.__seelite;
 		const run = g.opening;
 		const order = script.shots;
@@ -392,7 +398,10 @@ for (const seed of [47, 48, 49, 50, 51]) {
 			if (wi > si) si = wi;
 			aim = aimAfter(si);
 		}
-		return { rows, byShot };
+		// A sweep that stopped early would otherwise look like a sweep that saw the
+		// whole opening: `ended` is the script finishing, `cap` is this loop's own
+		// ceiling, and the check under the sampler gates on both.
+		return { rows, byShot, ended: !g.openingActive, cap: steps >= 60000 };
 	}, script);
 	// **One take from the arrival through the fly-past** (the principal's
 	// sixth note): between two frames of it the camera may move only by the
@@ -447,11 +456,13 @@ for (const seed of [47, 48, 49, 50, 51]) {
 		strideErr = Math.max(strideErr, Math.abs(b.shown - a.shown - stepS));
 	}
 	check(
-		`seed ${seed}: every sample is one of the script's own steps apart`,
-		strideErr < 1e-9,
+		`seed ${seed}: the sweep walked the whole opening, one script step per sample`,
+		strideErr < 1e-9 && swept === true && !truncated,
 		JSON.stringify({
 			rows: frames.length,
 			strideErr,
+			swept,
+			truncated,
 			samples: script.shots.map((x) => `${x} ${byShot[x] ?? 0}`).join(" "),
 		}),
 	);

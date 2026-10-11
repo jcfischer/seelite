@@ -464,11 +464,10 @@ test("the renderer lane a direct run took is named, and only to that run", () =>
 	);
 	expect(rendererLaneNotice({ mode: null, direct: false })).toBe("");
 	// The row that can fail is the third: a bare `node scripts/probe-x.mjs` gets
-	// a software page and nothing said so. Measured on #882: the same boot was
-	// 1.6s on the GPU lane and never reached a first frame inside `bootedGame`'s
-	// 20s here, which reads as a page that will not boot rather than as a lane
-	// several times slower. The words have to name the variable, and the npm script
-	// that would have put the run on the other lane.
+	// a software page and nothing said so. `docs/receipts/node-882-probe-wall-clock.md`
+	// §2 has the measured gap between the lanes — this file does not restate it — and
+	// the words have to name the variable, and the npm script that would have put
+	// the run on the other lane.
 	const line = rendererLaneNotice({ mode: null, direct: true });
 	expect(line).toContain("software");
 	expect(line).toContain(PROBE_RENDERER_ENV);

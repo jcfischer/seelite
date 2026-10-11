@@ -564,9 +564,10 @@ export async function launchChromium(options = {}) {
  * `npm run probe` forces the GPU lane and `npm run probe:cpu` names the software
  * one. A bare `node scripts/probe-x.mjs` — the way a red gets re-run alone —
  * takes **neither**, and gets a software page without a word saying so. Measured
- * here: the same boot reached a first frame in 1.6 s on the GPU lane and never
- * got there inside `bootedGame`'s 20 s on this one, which reads as a page that
- * will not boot rather than as a lane several times slower.
+ * on #882: the same boot reached a first frame on the GPU lane seconds before it
+ * reached one here — which reads as a page that will not boot rather than as a
+ * lane several times slower. `docs/receipts/node-882-probe-wall-clock.md` §2 has
+ * the figures; this file does not restate them (sage round 4).
  *
  * Quiet on the GPU default, and quiet for a suite's child: `probe:cpu` chose the
  * fallback knowingly and would otherwise print this a hundred times.

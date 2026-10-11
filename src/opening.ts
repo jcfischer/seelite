@@ -200,48 +200,6 @@ const steps = (s: number) => Math.round(s / OPENING.dtS);
 export const openingStepS = (shot: OpeningShot): number =>
 	OPENING.dtS / shotRatio(shot);
 
-/**
- * Sim seconds each shot shows, or `null` when something other than the script's
- * own timing ends it. A whole `Record`, not a partial: a shot added to
- * `OpeningShot` has to be answered here rather than fall through to `null`
- * unnoticed (#882, sage round 2).
- */
-const SHOT_COVERED_S: Record<OpeningShot, number | null> = {
-	/** The prologue and the arrival are timed. */
-	forming: OPENING.formS,
-	arrival: OPENING.arriveS,
-	/** The burn runs until cruise engages, and the spool decides when. */
-	flypast: null,
-	/** The shot shows the leg's last `simS` seconds **from the moment cruise
-	 *  engages**, so the leg decides its length: measured on #882's five seeds the
-	 *  shot yielded 17 to 868 samples, where `simS / dtS` would have claimed 720 —
-	 *  the number this function used to return, and the reason it no longer does. */
-	cruise: null,
-	/** The approach is a fixed window of the run-in. */
-	approach: OPENING.approachShot.toS - OPENING.approachShot.fromS,
-	/** The dock ends when the ship docks. */
-	dock: null,
-};
-
-/**
- * How many steps `shot` shows when the script fixes its length, or `null` when
- * the flight does (#882).
- *
- * The module owns this because it is the only thing that knows which shots it
- * sizes. It is not a promise about a run: three of the six shots belong to the
- * pilot's actions, and guessing those is how a check comes to be wrong about the
- * very seeds it gates (#882's first version did exactly that, with 720).
- *
- * **No production caller** (sage round 3 on #884, accepted). Its caller is
- * `tests/opening.test.ts`, which holds a stepped walk to these counts. The
- * alternative — the test computing shot lengths out of `OPENING` itself — is the
- * restating this repo's probe rule exists to prevent, one directory over.
- */
-export const openingSteps = (shot: OpeningShot): number | null => {
-	const simS = SHOT_COVERED_S[shot];
-	return simS === null ? null : steps(simS);
-};
-
 export const startPilot = (kind: OpeningKind): PilotState => ({
 	kind,
 	leg: "form",

@@ -153,9 +153,9 @@ that: a direct run finds the lock held by someone else and **names the holder on
 stderr**, and says its own seconds are not evidence. Nor does a direct run pick a
 renderer lane: with `SEELITE_PROBE_RENDERER` unset it gets the software page
 `probe:cpu` names deliberately, several times slower than the GPU default the
-suite runs on — #882 measured the same boot reaching a first frame in 1.6 s on one
-and never reaching it inside `bootedGame`'s 20 s on the other — and it now says so,
-which is why `npm run probe:one <name>` is the way to re-run one red.
+suite runs on — #882 measured the gap, and
+`docs/receipts/node-882-probe-wall-clock.md` §2 carries the figures — and it now
+says so, which is why `npm run probe:one <name>` is the way to re-run one red.
 Each
 red prints its kind and the peak load it ran under, and since #882 so does each
 **green over a minute** — only reds carried a figure before, which is how a suite

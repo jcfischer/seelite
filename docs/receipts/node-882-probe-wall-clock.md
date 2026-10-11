@@ -73,7 +73,7 @@ SwiftShader page in silence. Measured here: the same boot reached a first frame
 in 1.6 s on the GPU lane and never got there inside `bootedGame`'s 20 s on the
 software one — which reads as a page that will not boot.
 
-## 3. The opening rows: 395.9 s → 156.4 s
+## 3. The opening rows: 395.9 s → 138.9 s
 
 Attributed by timestamp, before (`/tmp/seelite-882-opening-rows.log`):
 
@@ -83,6 +83,14 @@ Attributed by timestamp, before (`/tmp/seelite-882-opening-rows.log`):
 | the 4 rows that waited for a shot | 88 s | 12 s |
 | two watched openings | 61 s | 61 s — still watched |
 | everything else | 30 s | 47 s |
+
+The after-column is the **suite** figure for the final tree (`probe-opening`
+138.9 s in `/tmp/seelite-882-after2.log`, peak load 12.1) — the same conditions as
+the 395.9 s before it. The standalone re-runs of that probe read 156.4 s, and this
+branch's own notice says why that number is not the one to quote: that run shared
+the machine with the suite and prints “Nothing in this run is evidence about how
+long anything takes.” Comparing a contended after-time to an idle before-time is
+the mixed-conditions read this node exists to prevent (sage round 4 on #884).
 
 **33/33 checks** — the 28 the watched version ran, plus one stride check per
 seed (§4). The watched rows are untouched on purpose: they
@@ -135,19 +143,34 @@ arrival alone, so it was never a control on the stride — it passed while the s
 was wrong. Sage's round 1 on PR #884 named the defect; round 3 named this sentence
 about it.
 
-The post-fix figures are the row's own, and they are worse, which is the point: on
-the corrected stride all five seeds read `takeJumpR` 0.0293, `takeTurnDeg` 0.80,
-`closestR` 6.2 and `worstOffDeg` **20.0**, against 19.36 from the too-wide sampler
-and 19.05 watched (`/tmp/seelite-882-opening-step5.log`). Sampling every step finds
-a slightly worse worst-case framing than sampling every second one; the bound is 25.
+And the figures did not move — which
+is a finding, not a clean-up. Measured at one build on all five seeds, three
+samplers, full precision (`/tmp/seelite-882-ladder.log`):
+
+| sampler | rows, seed 47 → 51 | `closestR` | `worstOffDeg` | `takeTurnDeg` |
+|---|---|---|---|---|
+| watched, every frame | 4541, 4373, 4586, 4463, 4722 | 6.197014 … 6.197024 | 20.000000 | 0.7978 |
+| stepped, the script's stride | 3702, 3551, 3648, 3562, 2852 | **identical** | **identical** | **identical** |
+| stepped, the too-wide stride | 2273, 2197, 2246, 2203, 1847 | **identical** | **identical** | **identical** |
+
+So on these seeds the figures this row gates were **insensitive to the stride**: the
+too-wide sampler was not passing on a framing the corrected one now catches, and an
+earlier draft of this section and of the probe's comment claimed it was. What the
+stride check protects is the row's *claim* — that it sampled every step — and the
+2852–3702 samples it takes are 2852–3702 distinct steps, where the watched row's
+4373–4722 frames include the frames that ran no step at all.
 
 What shipped instead:
 
-- `src/opening.ts` owns the stride and the counts: `openingStepS(shot)` is
-  `OPENING.dtS / shotRatio(shot)` — now also what `unit()` steps by, so the
-  arithmetic is spelled once — and `openingSteps(shot)` answers for every shot in a
-  whole `Record`: a number for the three the script sizes, `null` for the three the
-  pilot's actions end.
+- `src/opening.ts` owns the stride: `openingStepS(shot)` is
+  `OPENING.dtS / shotRatio(shot)`, and it is now also what `unit()` steps by, so the
+  arithmetic is spelled once. There was an `openingSteps(shot)` beside it claiming
+  720 steps for the cruise shot — round 2's finding, since the leg sizes that shot —
+  and its replacement, a whole `Record` of shot lengths, was round 4's: a table of
+  lengths is a second spelling of the state machine that owns them. It is gone, and
+  the headless test holds the walk to the stride itself, which needs no lengths:
+  `advanceTo` by `openingStepS` advances `shownBy` by exactly that, or the test is
+  red. Mutation-checked: aiming by `OPENING.dtS` turns it red.
 - `Game.openingScript()` puts the shot order, the stride and the counts on the
   page, so the probe reads them off the module instead of restating them —
   CLAUDE.md's rule, which the first version broke twice over: its own shot-order
@@ -285,6 +308,17 @@ down four times with its figures drifting between copies, which now lives in
 `probe-contention.mjs` and this receipt only; and `openingSteps`'s lack of a
 production caller, accepted on the record — its caller is the headless test, and
 the alternative is that test restating `OPENING`'s arithmetic one directory over.
+
+Round 4 (`c552ee89`) kept finding true things: a sampler that stops early looked
+like a sampler that saw the whole opening (the row now gates on `swept` and
+`truncated`); the contention notice hung on `guardedTree`, a seam not every probe
+passes, so it now also prints from `launchChromium`, which every browser probe
+passes; one 1.6 s measurement lived in four files, so CLAUDE.md and the code and
+test comments cite the receipt instead of restating it; `peak load` was spelled in
+two branches, so `loadSuffix` spells it; the `23–47` load figure in the lib header
+matched no retained run, so it names the shared suite it came from without the
+number; and §3's headline after-time came from a run whose own first line disowns
+its timings, so it quotes the suite instead. That round's seven lenses all ran.
 
 Left, deliberately: the two older shot-order spellings inside `probe-opening.mjs`
 that predate this branch — one is an assertion's own expected string — and

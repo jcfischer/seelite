@@ -5,9 +5,10 @@
  * deliberately, since a direct run is how a red gets re-run alone — and it cannot
  * see a `sage review`, a test run, or another agent's dev server. What a run
  * under that load reports is inflated seconds, and until #882 only a **red**
- * carried a load figure. A pasted suite of 63 probes at 1992 s therefore read as
- * a slow suite — `probe-music` 410 s, `probe-opening` 422 s — when the box was
- * holding a load average of 23–47 on eight physical cores while a second
+ * carried a load figure. A suite pasted in from a run shared with another agent's
+ * probes therefore read as a slow suite — `probe-music` at 410 s, `probe-opening`
+ * at 422 — when the box was holding a load average well over twice its core count
+ * while a second
  * worktree ran probes straight off it.
  *
  * This module turns the two invisible things into printed ones:
@@ -131,8 +132,19 @@ export function directRunNotice({
  */
 export function slowRunNote({ ms, peak, slowMs = SLOW_PROBE_MS }) {
 	if (ms < slowMs) return "";
-	return ` · peak load ${formatLoad(peak)}`;
+	return loadSuffix(peak);
 }
+
+/**
+ * The load suffix itself, so the label `peak load` is spelled in one file.
+ *
+ * Both of the runner's branches print it — a red always, a green over a minute
+ * — and the second spelling of the label is the drift extracting `formatLoad`
+ * was meant to end (sage round 4 on #884).
+ *
+ * @param {number | null} peak
+ */
+export const loadSuffix = (peak) => ` · peak load ${formatLoad(peak)}`;
 
 /**
  * A load average as printed, or `?` where none could be read.

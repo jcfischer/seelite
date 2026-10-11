@@ -76,7 +76,7 @@ import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
 import { failureKind, killedCode } from "./lib/probe-failure-kind.mjs";
 import {
-	formatLoad,
+	loadSuffix,
 	slowestLine,
 	slowRunNote,
 	SUITE_PID_ENV,
@@ -289,7 +289,7 @@ async function runAll(files) {
 			const peak = load.peakBetween(r.started, r.started + r.ms);
 			const why = r.ok
 				? slowRunNote({ ms: r.ms, peak })
-				: ` exit=${r.code} ${r.kind} peak load ${formatLoad(peak)}`;
+				: ` exit=${r.code} ${r.kind}${loadSuffix(peak)}`;
 			console.log(`${mark} ${file} (${(r.ms / 1000).toFixed(1)}s)${why}`);
 			if (!r.ok) {
 				// the failing probe's own output, indented — the whole point of a
@@ -376,7 +376,7 @@ const failed = gating.filter((r) => !r.ok);
 
 console.log(
 	`\n${gating.length - failed.length}/${gating.length} gating probes passed in ${((Date.now() - started) / 1000).toFixed(0)}s` +
-		` · peak load ${formatLoad(load.peak())} on ${availableParallelism()} cores` +
+		`${loadSuffix(load.peak())} on ${availableParallelism()} cores` +
 		partialSummary(),
 );
 // Where the wall clock went. A suite prints its probes in file order, which is
