@@ -62,6 +62,9 @@ Review, the browser gate and in-game approval are next.
   included: 1.10 s for the courier (on `main` today) and 1.40 s for the tug
   (median of 5; first shown without the refresh, see history). The fix for
   both hulls is its own node, #907.
+- **D7. Paints:** the study's paints ship unchanged. Main's #887 now lifts
+  the courier's and the miner's paints in their prepare scripts; bringing the
+  tug under that rule is node #909.
 - **Hull handling:** the tug's roll stop is 1.4% slower than #5's law with the
   re-solved shares (pitch and yaw unchanged), inside #619's 20% bound;
   re-confirmed under that ruling.
