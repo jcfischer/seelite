@@ -136,14 +136,43 @@ export const EXPOSURE = {
 export const CABIN_HEMISPHERE_GAIN = 0.7;
 
 /**
- * The hemisphere a layer's scene gets: the rig's figure everywhere, `CABIN_HEMISPHERE_GAIN`
- * of it in the cabin. A function rather than an inline ternary in `main.ts` so the
- * cabin-only scope of the exception is asserted rather than described — Sage's second
- * finding on #898 was that the branch as written could be applied to the wrong layers and
- * every row would stay green.
+ * The cabin's share of the rig's hemisphere **at low quality** (node #912).
+ *
+ * `CABIN_HEMISPHERE_GAIN` was set with the six perimeter lamps on, and low turns every
+ * one of them off (`COCKPIT_PERIMETER_LAMPS`, `COCKPIT_QUALITY.low.keyLight`). So on low
+ * the 0.7 only took light away, and a pilot on low sat in a cabin darker than before #898
+ * — which the principal had already read as too dark. Low gets its own figure instead of
+ * lamps: a hemisphere is already evaluated for every cabin fragment, so raising it costs
+ * nothing, where keeping two lamps on would have added two point lights to the setting
+ * meant to be cheap (the principal's choice, 2026-10-11).
+ *
+ * **9 is the principal's figure, set by eye** on a live slider in the cabin at low
+ * (2026-10-11), from the trade station's berth. It is not read off a sweep: a slider
+ * capped at 4 was the first thing rejected ("needs at least 4"). On low the cabin's
+ * point lights are down to `cockpit-light`, the one ungated console lamp — the key, the
+ * centre lamp and all six perimeter lamps are off — so the hemisphere carries the room.
+ * The hull layers keep the rig's figure on both settings.
  */
-export const hemisphereIntensityFor = (cabinLayer: boolean) =>
-	LIGHT_RIG.hemisphere.intensity * (cabinLayer ? CABIN_HEMISPHERE_GAIN : 1);
+export const CABIN_LOW_QUALITY_HEMISPHERE_GAIN = 9;
+
+/**
+ * The hemisphere a layer's scene gets: the rig's figure everywhere, and in the cabin
+ * `CABIN_HEMISPHERE_GAIN` of it on high and `CABIN_LOW_QUALITY_HEMISPHERE_GAIN` on low.
+ * A function rather than an inline ternary in `main.ts` so the cabin-only scope of the
+ * exception is asserted rather than described — Sage's second finding on #898 was that
+ * the branch as written could be applied to the wrong layers and every row would stay
+ * green.
+ */
+export const hemisphereIntensityFor = (
+	cabinLayer: boolean,
+	quality: keyof typeof LIGHT_RIG.quality,
+) =>
+	LIGHT_RIG.hemisphere.intensity *
+	(cabinLayer
+		? quality === "low"
+			? CABIN_LOW_QUALITY_HEMISPHERE_GAIN
+			: CABIN_HEMISPHERE_GAIN
+		: 1);
 
 export const LIGHT_RIG = {
 	/** Directional, because one light cannot serve two scenes at two scales;

@@ -9,6 +9,7 @@ import {
 import { INTERIOR_FLOOD_INTENSITY } from "../src/interior-kit";
 import {
 	CABIN_HEMISPHERE_GAIN,
+	CABIN_LOW_QUALITY_HEMISPHERE_GAIN,
 	hemisphereIntensityFor,
 	LIGHT_RIG,
 } from "../src/light-rig";
@@ -38,8 +39,41 @@ describe("the docked cabin's lighting ruling", () => {
 		// every layer starts counting as the cabin — which is the failure the exception
 		// exists to avoid, since moving the hull layers' ambient moves the
 		// `HULL_LUMA_CALIBRATION` subject this ruling is careful not to touch.
-		expect(hemisphereIntensityFor(true)).toBeCloseTo(3.425 * 0.7, 12);
-		expect(hemisphereIntensityFor(false)).toBe(3.425);
+		expect(hemisphereIntensityFor(true, "high")).toBeCloseTo(3.425 * 0.7, 12);
+		expect(hemisphereIntensityFor(false, "high")).toBe(3.425);
+	});
+
+	test("on low the cabin takes its own figure, and no other layer moves (node #912)", () => {
+		// Low turns off the six perimeter lamps the 0.7 was tuned against, so on low the
+		// cut only removes light. The low figure is at least the full rig — the cabin
+		// before #898, which the principal already read as too dark — and above high's.
+		// 9 is the principal's figure, set by eye on the live slider (#912).
+		expect(CABIN_LOW_QUALITY_HEMISPHERE_GAIN).toBe(9);
+		expect(CABIN_LOW_QUALITY_HEMISPHERE_GAIN).toBeGreaterThanOrEqual(1);
+		expect(CABIN_LOW_QUALITY_HEMISPHERE_GAIN).toBeGreaterThan(
+			CABIN_HEMISPHERE_GAIN,
+		);
+		expect(hemisphereIntensityFor(true, "low")).toBeCloseTo(
+			3.425 * CABIN_LOW_QUALITY_HEMISPHERE_GAIN,
+			12,
+		);
+		// The hull layers keep the rig's figure on both settings, for the same
+		// `HULL_LUMA_CALIBRATION` reason as the row above.
+		expect(hemisphereIntensityFor(false, "low")).toBe(3.425);
+	});
+
+	test("a quality change reaches every layer's hemisphere, live", () => {
+		// Built with the figure and re-applied by `applyQuality`: a figure set only at
+		// build time would leave a pilot who switches to low mid-flight in the dark
+		// cabin until a reload.
+		const game = readFileSync("src/main.ts", "utf8");
+		const applyQuality = game.slice(
+			game.indexOf("private applyQuality() {"),
+			game.indexOf("\n\t}\n", game.indexOf("private applyQuality() {")),
+		);
+		expect(applyQuality).toContain(
+			"rig.hemisphere.intensity = hemisphereIntensityFor(",
+		);
 	});
 
 	test("the authored interior's floods are a fifth of what the kit shipped with", () => {
@@ -69,6 +103,8 @@ describe("the docked cabin's lighting ruling", () => {
 		);
 		const game = readFileSync("src/main.ts", "utf8");
 		expect(game).toContain("carriedConsoleLamp(lamp)");
-		expect(game).toContain("hemisphereIntensityFor(cabinScene)");
+		expect(game).toContain(
+			"hemisphereIntensityFor(cabinScene, this.settings.value.quality)",
+		);
 	});
 });

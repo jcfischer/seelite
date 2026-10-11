@@ -5925,7 +5925,7 @@ class Game {
 			const hemi = new THREE.HemisphereLight(
 				LIGHT_RIG.hemisphere.sky,
 				LIGHT_RIG.hemisphere.ground,
-				hemisphereIntensityFor(cabinScene),
+				hemisphereIntensityFor(cabinScene, this.settings.value.quality),
 			);
 			hemi.name = "hemisphere";
 			scene.add(hemi);
@@ -6204,6 +6204,15 @@ class Game {
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
 		this.bloomPass.enabled = this.bloomDefault;
+		// The cabin's hemisphere follows the setting (#912): low has no perimeter
+		// lamps, so it takes `CABIN_LOW_QUALITY_HEMISPHERE_GAIN` instead of the cut
+		// tuned against them. Every layer is assigned so the function stays the one
+		// place that says which layer moves.
+		for (const rig of this.layerLights)
+			rig.hemisphere.intensity = hemisphereIntensityFor(
+				rig.scene === this.cabinScene,
+				this.settings.value.quality,
+			);
 		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
 		this.renderer.toneMappingExposure = mode.exposure;
