@@ -23,7 +23,7 @@ import {
 	ENEMY_VISUAL_SCALE,
 	STRIKER_HULL_ID,
 } from "../src/combat-enemy";
-import { useProceduralHulls } from "./helpers/procedural-courier";
+import { useProceduralHulls } from "./helpers/procedural-hulls";
 
 useProceduralHulls();
 

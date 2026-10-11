@@ -17,7 +17,7 @@ let builder: AuthoredHullBuilder | undefined;
  * names and materials are the shipped ones.
  *
  * Here rather than in the test tree because `scripts/measure-vent-placement.ts`
- * calls it too; the test-only half is `tests/helpers/procedural-courier.ts`.
+ * calls it too; the test-only half is `tests/helpers/procedural-hulls.ts`.
  */
 export async function installShippedCourierHull(): Promise<void> {
 	builder ??= await createCourierHullBuilder(

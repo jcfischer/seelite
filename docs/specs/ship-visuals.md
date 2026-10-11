@@ -212,8 +212,8 @@ model replaces every courier once it installs
 download keeps the Kestrel, warns once and shows no Retry. The postcard and
 the ship workbench wait for the model behind the Retry panel. Outside
 flight it is drawn wherever the model is not installed: the headless rows
-that hold the hull generator (`tests/helpers/procedural-courier.ts`), the
-cost instrument's comparison arm (`scripts/measure-courier-hull-cost.mjs`),
+that hold the hull generator (`tests/helpers/procedural-hulls.ts`), the
+cost instrument's comparison arm (`scripts/measure-authored-hull-cost.mjs`),
 and the cockpit spike's review page (`src/courier-cockpit-viewer.ts`).
 
 **The detail band switches the model.** Every Traffic courier is the O4, so

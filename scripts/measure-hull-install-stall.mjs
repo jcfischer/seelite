@@ -86,12 +86,13 @@ try {
 					const urls = await import("/src/model-urls.ts");
 					const made = await import(h.module);
 					// The loader and decoder the game itself imports: their URLs read
-					// off vite's transform of the hull module, so the page uses the
-					// same pre-bundled instances.
-					const served = await (await fetch(h.module)).text();
+					// off vite's transform of `authored-hull.ts`, which loads every
+					// authored hull, so the page uses the same pre-bundled instances.
+					const loaderModule = "/src/authored-hull.ts";
+					const served = await (await fetch(loaderModule)).text();
 					const urlOf = (name) => {
 						const m = served.match(new RegExp(`from\\s+"([^"]*${name}[^"]*)"`));
-						if (!m) throw new Error(`${h.module} imports no ${name}`);
+						if (!m) throw new Error(`${loaderModule} imports no ${name}`);
 						return m[1];
 					};
 					const { GLTFLoader } = await import(urlOf("GLTFLoader"));

@@ -22,16 +22,22 @@
  * the vent throats are placed on the approved metal.
  */
 import * as THREE from "three";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { levelErrorKm, reducedLevel } from "./authored-levels";
-import { shared } from "./gpu-teardown";
+import { disposeSubtree, shared } from "./gpu-teardown";
 import { HULL_SPECS } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
+import type { ModelProgressListener } from "./model-progress";
 import {
 	type AfterBootHullId,
 	type AuthoredHullBuilder,
 	HULL_REACH_KM,
+	buildShipMesh,
+	installAuthoredHull,
 } from "./ship-mesh";
+import { ventThroats } from "./vent-plumes";
 
 /** One drive nozzle pair, study metres: the throat's centre on the starboard
  *  side of the study (`x`; the port one is its mirror), the closed throat // glossary-ignore: throat
@@ -247,4 +253,42 @@ export async function createAuthoredHullBuilder(
 		root.add(frame);
 		return { full, reduced, outline };
 	};
+}
+
+/**
+ * The loader a hull module exports as its `prepare…HullModel`: fetch the
+ * shipped GLB, make its builder and install it, memoised, so the Game's
+ * after-boot load, the postcard and the workbench share one download. A
+ * failure clears the memo, so the Retry panel's next attempt fetches again.
+ * `onProgress` hears the download this call starts (#833), as
+ * `prepareCoriolisModel`'s does: without it the boot's tracker has no total
+ * for the model and draws its bar without a value until it resolves.
+ */
+export function authoredHullLoader(
+	id: AfterBootHullId,
+	url: string,
+	createBuilder: (template: THREE.Object3D) => Promise<AuthoredHullBuilder>,
+): (onProgress?: ModelProgressListener) => Promise<void> {
+	let ready: Promise<void> | undefined;
+	return (onProgress) =>
+		(ready ??= new GLTFLoader()
+			.setMeshoptDecoder(MeshoptDecoder)
+			.loadAsync(url, onProgress)
+			.then(async (gltf) => {
+				installAuthoredHull(id, await createBuilder(gltf.scene));
+				// One ship built now, before the stand-ins are refreshed: the first
+				// build places the nav lights by raycast against the model, and
+				// without this the first Traffic ship drawn mid-flight would pay
+				// it. Every later build reuses them. Its throats are measured off
+				// the same build for the same reason (`ventThroats` keeps them):
+				// otherwise a pilot pays it during replacement, and a shipyard swap
+				// to one pays it on the frame.
+				const { root } = buildShipMesh(id, HULL_SPECS[id].variant);
+				ventThroats(root, id);
+				disposeSubtree(root);
+			})
+			.catch((error) => {
+				ready = undefined;
+				throw error;
+			}));
 }

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll } from "bun:test";
 import {
 	AFTER_BOOT_HULL_IDS,
+	type AfterBootHullId,
 	type AuthoredHullBuilder,
 	authoredHullBuilder,
 	installAuthoredHull,
@@ -15,10 +16,7 @@ import {
  * hulls' own rows are `tests/courier-hull.test.ts`'s and `tests/tug-hull.test.ts`'s.
  */
 export function useProceduralHulls(): void {
-	const installed = new Map<
-		(typeof AFTER_BOOT_HULL_IDS)[number],
-		AuthoredHullBuilder | undefined
-	>();
+	const installed = new Map<AfterBootHullId, AuthoredHullBuilder | undefined>();
 	beforeAll(() => {
 		for (const id of AFTER_BOOT_HULL_IDS) {
 			installed.set(id, authoredHullBuilder(id));

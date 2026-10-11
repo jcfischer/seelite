@@ -22,7 +22,7 @@ import {
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
-import { useProceduralHulls } from "./helpers/procedural-courier";
+import { useProceduralHulls } from "./helpers/procedural-hulls";
 
 useProceduralHulls();
 

@@ -169,11 +169,11 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 
 /**
  * An authored hull's throats (node #812; the tug since node #814), measured
- * once per installed model and drive glow. Every authored courier is the one
- * model, so its throats are one answer — and measuring it raycasts against
- * 354k triangles, about
- * half a second, which a shipyard swap to a courier would otherwise pay on
- * the frame. Keyed on the builder, so installing another model (or none)
+ * once per installed model and drive glow. Every authored ship of a hull is
+ * the one model, so its throats are one answer — and measuring them raycasts
+ * against the whole model, over half a second for either hull
+ * (`scripts/measure-hull-install-stall.mjs`), which a shipyard swap to one
+ * would otherwise pay on the frame. Keyed on the builder, so installing another model (or none)
  * leaves the old answer unreachable; and on the glow the root was built
  * with (a bowl or a disc, picked by the finish in force at its build), which
  * the main drive's plume starts at — keyed on the finish in force when it

@@ -35,25 +35,17 @@
  * cast no shadow and are left out of the reduced levels.
  */
 import * as THREE from "three";
-import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
 	AUTHORED_ALLOY_MATERIAL,
 	AUTHORED_ALLOY_ROUGHNESS,
+	authoredHullLoader,
 	createAuthoredHullBuilder,
 } from "./authored-hull";
 import { levelErrorKm } from "./authored-levels";
-import { disposeSubtree, shared } from "./gpu-teardown";
-import type { ModelProgressListener } from "./model-progress";
+import { shared } from "./gpu-teardown";
 import { COURIER_HULL_GLB_URL } from "./model-urls";
 import { HULL_SPECS } from "./hull";
-import {
-	type AuthoredHullBuilder,
-	HULL_REACH_KM,
-	buildShipMesh,
-	installAuthoredHull,
-} from "./ship-mesh";
-import { ventThroats } from "./vent-plumes";
+import { type AuthoredHullBuilder, HULL_REACH_KM } from "./ship-mesh";
 
 /** The frame every authored courier's levels and glows hang under. */
 export const COURIER_FRAME_NAME = "courier-hull-frame";
@@ -141,38 +133,11 @@ export function createCourierHullBuilder(
 	});
 }
 
-let ready: Promise<void> | undefined;
-
 /** Games start this after construction and refresh their cached couriers on
  *  resolution (node #831). The postcard viewer waits before drawing; the ship
- *  workbench waits before building its review hulls.
- *  `onProgress` hears the download this call starts (#833), as
- *  `prepareCoriolisModel`'s does: without it the boot's tracker has no total
- *  for this model and draws its bar without a value until it resolves. */
-export function prepareCourierHullModel(
-	onProgress?: ModelProgressListener,
-): Promise<void> {
-	return (ready ??= new GLTFLoader()
-		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(COURIER_HULL_GLB_URL, onProgress)
-		.then(async (gltf) => {
-			installAuthoredHull(
-				"courier",
-				await createCourierHullBuilder(gltf.scene),
-			);
-			// One courier built now, before refreshing stand-ins: the first build
-			// places the nav lights by raycast against the model, about 0.3 s,
-			// and without this the first Traffic courier drawn mid-flight
-			// would pay it. Every later build reuses them. Its throats are
-			// measured off the same build for the same reason (`ventThroats`
-			// keeps them): otherwise a pilot pays it during replacement,
-			// and a shipyard swap to one pays it on the frame.
-			const { root } = buildShipMesh("courier", HULL_SPECS.courier.variant);
-			ventThroats(root, "courier");
-			disposeSubtree(root);
-		})
-		.catch((error) => {
-			ready = undefined;
-			throw error;
-		}));
-}
+ *  workbench waits before building its review hulls (`authoredHullLoader`). */
+export const prepareCourierHullModel = authoredHullLoader(
+	"courier",
+	COURIER_HULL_GLB_URL,
+	createCourierHullBuilder,
+);

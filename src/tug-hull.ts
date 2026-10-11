@@ -15,19 +15,9 @@
  * a shadow and every mesh is in the reduced levels.
  */
 import * as THREE from "three";
-import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { createAuthoredHullBuilder } from "./authored-hull";
-import { disposeSubtree } from "./gpu-teardown";
-import { HULL_SPECS } from "./hull";
-import type { ModelProgressListener } from "./model-progress";
+import { authoredHullLoader, createAuthoredHullBuilder } from "./authored-hull";
 import { BOLLARD_TUG_GLB_URL } from "./model-urls";
-import {
-	type AuthoredHullBuilder,
-	buildShipMesh,
-	installAuthoredHull,
-} from "./ship-mesh";
-import { ventThroats } from "./vent-plumes";
+import type { AuthoredHullBuilder } from "./ship-mesh";
 
 /** The frame every authored tug's levels and glows hang under. */
 export const TUG_FRAME_NAME = "tug-hull-frame";
@@ -75,29 +65,12 @@ export function createTugHullBuilder(
 	});
 }
 
-let ready: Promise<void> | undefined;
-
 /** Games start this after construction, once the courier's has settled, and
  *  refresh their cached tugs on resolution (`loadAuthoredHullsAfterBoot`).
- *  The postcard viewer and the ship workbench wait before drawing.
- *  `onProgress` hears the download this call starts, as the courier's does. */
-export function prepareTugHullModel(
-	onProgress?: ModelProgressListener,
-): Promise<void> {
-	return (ready ??= new GLTFLoader()
-		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(BOLLARD_TUG_GLB_URL, onProgress)
-		.then(async (gltf) => {
-			installAuthoredHull("tug", await createTugHullBuilder(gltf.scene));
-			// One tug built now, before refreshing stand-ins, for the courier's
-			// reason: the first build places the nav lights by raycast against
-			// the model, and its throats are measured off the same build.
-			const { root } = buildShipMesh("tug", HULL_SPECS.tug.variant);
-			ventThroats(root, "tug");
-			disposeSubtree(root);
-		})
-		.catch((error) => {
-			ready = undefined;
-			throw error;
-		}));
-}
+ *  The postcard viewer and the ship workbench wait before drawing
+ *  (`authoredHullLoader`). */
+export const prepareTugHullModel = authoredHullLoader(
+	"tug",
+	BOLLARD_TUG_GLB_URL,
+	createTugHullBuilder,
+);

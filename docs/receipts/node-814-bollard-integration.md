@@ -67,7 +67,7 @@ Review, the browser gate and in-game approval are next.
 
 ## Asset and geometry preflight
 
-- **Command:** `node spikes/bollard-hull/prepare-flight-asset.mjs`. Two runs
+- **Run:** `node spikes/bollard-hull/prepare-flight-asset.mjs`. Two runs
   wrote the same sha256.
 - **Encoding:** `dedup`, `reorder`, Meshopt with the lossless NONE filter,
   lossless WebP. No simplification, quantization or resize. The script asserts
@@ -95,11 +95,11 @@ Review, the browser gate and in-game approval are next.
 
 ## Runtime and performance evidence
 
-### Lifecycle rows (SOP §3)
+### Paths (SOP §3)
 
 | Path | Result | Evidence |
 | --- | --- | --- |
-| Boot and cold download | The tug is not in the boot set: a live Game is built on the loft, and the tug's download starts when the courier's has settled | `probe-model-download` §5 and §6, GPU lane, green |
+| Boot and cold download | The tug is not in the boot set: a live Game is built on the loft. The tug's download starts when the courier's has settled; no probe watches that order | outside the boot set: `probe-model-download` §5 and §6, GPU lane, green; the order: `Game.loadAuthoredHullsAfterBoot` in `src/main.ts` |
 | Background installation | Release replaces every existing tug once and removes the loft. The swap blocks the main thread 1.50 s (D6) | `probe-model-download` §6; `scripts/measure-hull-install-stall.mjs` |
 | Interrupted or failed load | A refused tug keeps every stand-in, warns once, shows no Retry, and play goes on | `probe-model-download` §6 |
 | Postcard/export | Waits for the courier and the tug behind the Retry panel, then refreshes its stand-ins | `src/main.ts`; probed by the selected gate (owed) |
@@ -110,7 +110,7 @@ Review, the browser gate and in-game approval are next.
 
 ### Cost (SOP §4)
 
-`HULL=tug node scripts/measure-courier-hull-cost.mjs` and the same with
+`HULL=tug node scripts/measure-authored-hull-cost.mjs` and the same with
 `HULL=courier`, 2026-10-11, on the same page and fixture: M1 Pro, ANGLE Metal,
 1440 x 900 at device scale 2, chase, clock held, 12 blocks of 120 frames per
 arm, order shuffled from seed 20261009. Load average 11–17 from other sessions,
@@ -129,6 +129,8 @@ with the tug, 312 with the loft and 280 with neither: the study is batched by
 material, so it costs fewer calls than the loft.
 
 ### Install stall
+
+<!-- glossary-ignore: throat — the vent term `ventThroats` measures, not a station Bay. -->
 
 `RUNS=5 node scripts/measure-hull-install-stall.mjs`, same machine, load
 average about 16. Each install repeated from fetched bytes in a running game;

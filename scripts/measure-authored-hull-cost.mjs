@@ -3,8 +3,8 @@
  * replaced: the courier against the Kestrel (node #812), or the tug's
  * Bollard O4 against the tug loft (node #814, `HULL=tug`).
  *
- *   node scripts/measure-courier-hull-cost.mjs
- *   HULL=tug node scripts/measure-courier-hull-cost.mjs
+ *   node scripts/measure-authored-hull-cost.mjs
+ *   HULL=tug node scripts/measure-authored-hull-cost.mjs
  *
  * For the tug the player's group holds the tug in place of the courier: the
  * player never flies one, but the same camera and clock are what keep the
@@ -102,7 +102,9 @@ try {
 			throw new Error(`the page's ship-mesh module has no authored ${hullId}`);
 		const ship = g.shipMesh;
 		if (ship.userData.authored !== true)
-			throw new Error("the player's hull is not the authored courier");
+			throw new Error(
+				"the player's courier is not authored: the page has not installed its after-boot hulls",
+			);
 		const build = (authored) => {
 			if (!authored) mesh.installAuthoredHull(hullId, undefined);
 			try {
@@ -200,7 +202,7 @@ try {
 					throw new Error(`${arm}: a ${hullId} draws ${levelOf(root)}`);
 		if (FAR.some(([, , radii]) => radii <= DETAIL_RADII.full))
 			throw new Error("a far slot is inside the band's first edge");
-		window.__courierArm = (arm) => {
+		window.__hullArm = (arm) => {
 			for (const child of [...ship.children]) ship.remove(child);
 			if (arm === "none") return;
 			const hull = arm.startsWith("authored") ? "authored" : "loft";
@@ -220,7 +222,7 @@ try {
 			([a, occ, frames]) => {
 				const g = window.__seelite;
 				const gl = g.renderer.getContext();
-				window.__courierArm(a);
+				window.__hullArm(a);
 				g.setOcclusion(occ, occ);
 				const sync = new Uint8Array(4);
 				g.render(0);
@@ -236,7 +238,7 @@ try {
 		page.evaluate(
 			([a, occ]) => {
 				const g = window.__seelite;
-				window.__courierArm(a);
+				window.__hullArm(a);
 				g.setOcclusion(occ, occ);
 				g.render(0);
 				const r = g.renderer;
@@ -296,7 +298,7 @@ try {
 			`  authored+4 − authored+4far: ${delta("authored+4", "authored+4far")}`,
 		);
 	}
-	await page.evaluate(() => window.__courierArm("authored"));
+	await page.evaluate(() => window.__hullArm("authored"));
 } finally {
 	await browser.close();
 	await server.close();

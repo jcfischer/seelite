@@ -7103,7 +7103,7 @@ export function installAuthoredHull(
 }
 
 /** The installed authored builder for a hull, if any: what an instrument
- *  (`scripts/measure-courier-hull-cost.mjs`) puts back after drawing the
+ *  (`scripts/measure-authored-hull-cost.mjs`) puts back after drawing the
  *  procedural loft beside it on the same page. */
 export const authoredHullBuilder = (
 	id: HullId,

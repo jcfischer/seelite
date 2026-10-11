@@ -54,7 +54,7 @@ import {
 	surfaceTexels,
 } from "../src/station-visuals";
 import { STATION_TYPES } from "../src/station";
-import { useProceduralHulls } from "./helpers/procedural-courier";
+import { useProceduralHulls } from "./helpers/procedural-hulls";
 
 useProceduralHulls();
 

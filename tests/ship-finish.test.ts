@@ -44,7 +44,7 @@ import {
 	setHullFinish,
 } from "../src/ship-surface";
 import { hullLoft, uvUnitsOf } from "../src/loft";
-import { useProceduralHulls } from "./helpers/procedural-courier";
+import { useProceduralHulls } from "./helpers/procedural-hulls";
 
 useProceduralHulls();
 
