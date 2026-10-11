@@ -620,10 +620,11 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 				hullPriceCr(row.holdT),
 			]);
 
-		// **CLAUDE.md names the constants rather than restating them**, so there is
-		// nothing there to go stale — which is the fix for the round where it
-		// carried a superseded pair with every gate green.
-		const claudeMd = read("CLAUDE.md");
+		// **The pitfalls name the constants rather than restating them**, so there
+		// is nothing there to go stale — which is the fix for the round where
+		// CLAUDE.md carried a superseded pair with every gate green. The trap moved
+		// to docs/pitfalls.md with the rest of them.
+		const claudeMd = read("docs/pitfalls.md");
 		expect(claudeMd).toContain("HULL_PRICE_BASELINE_CR");
 		expect(claudeMd).toContain("HULL_PRICE_EXPONENT");
 		const hullTrap = claudeMd.slice(

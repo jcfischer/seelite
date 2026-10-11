@@ -92,6 +92,9 @@ export function deathWreckContents(
 						grade: item.grade!,
 						...(item.variant ? { variant: item.variant } : {}),
 						...(item.ammo !== undefined ? { ammo: item.ammo } : {}),
+						...(item.purchaseCostCr !== undefined
+							? { purchaseCostCr: item.purchaseCostCr }
+							: {}),
 					}
 				: undefined,
 		);

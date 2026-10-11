@@ -152,12 +152,40 @@ nothing until it is sold.
 government, as raider slots are (`raiderSlotCount`): more in the lawless
 governments, fewer in the lawful.
 
-**S16 — Where new losses come from.** A slot starts empty. Its losses run on a
-seeded schedule: the first loss is seeded across the future, and after a strip
-the next follows a seeded gap. A derelict left unstripped for the **salvager
-time**, counted from its loss, is taken by other salvagers: its row reads `salvaged` with no player
-provenance, and the slot's next loss follows. A death wreck has no salvager
-time.
+**S16 — Where new losses come from.** A slot's losses run on a seeded
+schedule, a cycle of a seeded gap and then an instance adrift: after a strip,
+the next loss follows a seeded gap. A derelict left unstripped for the
+**salvager time**, counted from its loss, is taken by other salvagers: its row
+reads `salvaged` with no player provenance, and the slot's next loss follows. A
+death wreck has no salvager time.
+
+**The clock starts part-way through every slot's cycle** (node #775). There is
+no ramp. At game time 0 a slot is as likely to hold a wreck as at any later
+time, so a new commander's first visit has the same chance of a wreck as a
+later one. The
+cycle running at 0 is drawn with weight proportional to its length, because a
+random instant falls in a long cycle more often than a short one, and 0 falls at
+a uniform point in it. So a slot's first instance may be adrift as the clock
+starts, lost before 0; that one instance may carry a negative loss time on its
+row, no earlier than a week before the clock (`DERELICT_EARLIEST_LOSS_S`, a
+save-format bound the parse reads), and no later instance can. A Salvage offer is stamped with its loss, so a
+wreck lost before 0 posts no job (S15) and is free salvage from the start.
+
+**The rate is the principal's** (2026-10-07): with the Long-Range Scanner a
+pilot finds a wreck on about 20% of system visits, and wrecks are short-lived
+and frequent (O2) rather than one long-lived wreck seen on every return. The
+Sweep reads every slot in the system (S9), so a sweep finds a wreck exactly when
+the system holds one. The figure tuned and measured is the share of systems
+holding a live derelict at a game time, which is the per-visit rate only for
+visits spread evenly over the systems as well as over game time. A slot is adrift for the salvager time out of each cycle,
+8 of a mean 94 h or 8.5%. A system with `n` slots therefore holds a wreck
+`1 − (1 − 8.5%)^n` of the time. Galaxy 0 is mostly three- and two-slot systems,
+which comes to 20%. `scripts/measure-derelict-pacing.ts` prints the measured
+table beside that expectation. Measured over galaxy 0 at seeds 42, 47 and 7,
+pooled, it reads 17.7–23.0% at each of the ten times the instrument reads between 0 h and 300 h; the times between them are not read. A single seed's cell
+spreads by 2.5 points. A visit a day after one that found a wreck finds one
+17.7–19.2% of the time, against 20% at all. The gap's range runs down to 6 h so
+that a slot is not locked out for days after each wreck.
 
 **S14 — The poster is the derelict's home station.** Every derelict draws a home
 station: the station that lost it. That station alone posts "recover our lost
@@ -200,9 +228,9 @@ tuned by #705.
 | Figure | Start |
 | --- | --- |
 | Derelict slots by government (S21) | 3 for governments 0–2, 2 for 3–5, 1 for 6–7 |
-| First loss of a slot (S16) | seeded over the first 48 h of game time |
-| Gap from a strip to the next loss (S16) | seeded, 6–24 h |
-| Salvager time (S16) | 72 h |
+| First loss of a slot (S16) | a stationary start: the clock falls at a uniform point of a length-weighted first cycle, so the loss is from one salvager time before 0 to the longest gap after it |
+| Gap from a strip to the next loss (S16) | seeded, 6–166 h (mean 86 h) |
+| Salvager time (S16) | 8 h |
 | Offer window (S15) | 2 h |
 | Visual floor (S9) | 10 km |
 | Fitting container chance (S6) | 25% of instances |

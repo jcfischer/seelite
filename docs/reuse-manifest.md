@@ -41,7 +41,7 @@ here by hand; there is no sync and there will not be one.
 | `tests/headless.test.ts` | The pattern kept exactly — set equality between the listed modules and the required ones, plus per-module load tests and leaf assertions. The module list is seelite's. |
 | `tests/source-scan.test.ts` | Subjects re-pointed at `src/main.ts` and `scripts/probe-boot.mjs`. |
 | `package.json` scripts, `vite.config.ts`, `index.html` | Same shape; `@biomejs/biome` added as a devDependency, because CI gates on `format:check` and seekolous relies on the binary being available ambiently. |
-| `.github/workflows/deploy.yml` | Same fast-gate shape. Added `npm test` (bun), since seelite has a headless tier from day one and seekolous's deploy job does not run one. Project name changed. |
+| `.github/workflows/ci.yml` | Same fast-gate shape, and named `deploy.yml` until the split into a test stage and a deploy stage. Added `npm test` (bun), since seelite has a headless tier from day one and seekolous's deploy job does not run one. Project name changed. |
 | `.github/workflows/probes.yml` | **Deliberately different.** Seekolous's probe suite takes ~24 minutes in CI, so it was moved off the pull-request path to nightly. Seelite's takes ~10 seconds, so it gates on pull requests — with the nightly schedule kept, so the day the suite outgrows a pull-request gate the policy is already there. |
 
 ## Deliberately left behind
@@ -53,7 +53,7 @@ here by hand; there is no sync and there will not be one.
 | The 40-odd `probe-*.mjs` scripts | Each is written against seekolous's world. `probe-boot.mjs` is seelite's first, written from scratch against the shape they share. |
 | `src/main.ts` and everything else in `src/` | A god game. What crossed from `main.ts` is the *bootstrap pattern* — `WebGLRenderer` with ACES tonemapping, an `EffectComposer` with `UnrealBloomPass` and `OutputPass`, the `?seed=` parse with its empty-string trap, a `window.__<game>` handle for probes, and `step(dt)` as a method so a probe runs the game's frame order rather than its own copy of it. |
 | `src/style.css` | Seelite's UI is one HUD line; its styling is inline in `index.html`. |
-| Cloudflare Pages project | Not created. `deploy.yml` warns and skips until `CLOUDFLARE_API_TOKEN` is set, so the build and typecheck gate works from the first commit. |
+| Cloudflare Pages project | Not created. `ci.yml`'s publish gate warns and skips until `CLOUDFLARE_API_TOKEN` is set, so the build and typecheck gate works from the first commit. |
 
 ## What the scaffold added that seekolous has no equivalent of
 

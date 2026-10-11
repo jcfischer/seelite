@@ -1033,11 +1033,21 @@ const PLACERS = {
 		// **A build without the tab is captured, not refused**, on the
 		// Controls row's precedent: the `before` of #583 is a shipyard whose
 		// console has no Shipyard tab, and the subject line says so.
-		const tab = page.locator('[data-live-station-tab="Shipyard"]');
+		const tabName = shot.tab ?? "Shipyard";
+		const tab = page.locator(`[data-live-station-tab="${tabName}"]`);
 		if ((await tab.count()) === 0)
 			return `${result.id} · no Shipyard tab on this build`;
 		await tab.click();
-		return `${result.id} · Shipyard tab at ${shot.rungs} rungs`;
+		if (tabName === "Equipment")
+			await page.evaluate(() => {
+				const g = window.__seelite;
+				g.commander = { ...g.commander, cargo: {} };
+				g.outfittingSlot = "h1";
+				g.outfittingCandidate = "stock:pulse-laser/1/E";
+				g.stationConsoleRevision++;
+				g.updateCockpit();
+			});
+		return `${result.id} · ${tabName} tab at ${shot.rungs} rungs`;
 	},
 	/**
 	 * #621's two cues, in one state the real sim was flown into: the assist

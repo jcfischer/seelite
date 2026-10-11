@@ -33,6 +33,8 @@ import { type CarrierKey, isCarrierKey } from "./carrier-key";
 // and an erased import cannot close a cycle.
 import type { SoldLot, StationAction } from "./station-commerce";
 import { GALAXY_COUNT, isSystemIndex } from "./world-state";
+import { fittingCost } from "./loadout";
+import type { RecoveredFitting } from "./station-commerce";
 
 // ---------------------------------------------------------------------------
 // The ladders and their thresholds (#562 D1, D2, D8)
@@ -676,6 +678,7 @@ export const ladderAfterPlay = (
 
 /** The two commander fields a market transaction moves. */
 interface Purse {
+	recoveredFittings?: readonly RecoveredFitting[];
 	credits: number;
 	cargo: Readonly<Record<string, number>>;
 }
@@ -695,8 +698,16 @@ export const ladderAfterMarket = (
 	before: Purse,
 	after: Purse,
 ): LadderRecord => {
-	if (action.type === "sell-recovered")
-		return bankTrade(record, after.credits - before.credits);
+	if (action.type === "sell-recovered") {
+		const item = before.recoveredFittings?.[action.index];
+		return bankTrade(
+			record,
+			Math.max(
+				0,
+				after.credits - before.credits - (item ? fittingCost(item) : 0),
+			),
+		);
+	}
 	if (action.type !== "buy-commodity" && action.type !== "sell-commodity")
 		return record;
 	// Brought into line with the hold first. A guard: a job hand-over reconciles

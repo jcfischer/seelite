@@ -19,6 +19,35 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-music-game.mjs",
+			"Live music unlock, audible station and flight beds, and docking-waltz engage, resolve, duck and cancel commands.",
+			["music director", "audio unlock", "docking computer", "live music bus"],
+		),
+		entry(
+			"probe-opening-cinematic.mjs",
+			"Watched guided and free openings, shot order, letterboxing, input suppression, equality to skipped state, and five-seed camera geometry.",
+			[
+				"opening camera",
+				"opening overlay",
+				"opening script",
+				"cinematic frames",
+			],
+		),
+		entry(
+			"probe-outfitting.mjs",
+			"Exercises the live two-pane Equipment tab: slot and stock selection, pre-purchase handling/range/kill-credit comparison, purchase, removal, fitting from hold, resale cost basis and keyboard selection.",
+			[
+				"outfitting",
+				"equipment",
+				"modules",
+				"commerce",
+				"cost basis",
+				"trade ladder",
+				"cockpit",
+				"preview",
+			],
+		),
+		entry(
 			"probe-station-interior-kit.mjs",
 			"Holds the optional fitting bundle across boot, tests one-time background installation and failure stand-ins, full-set capture readiness, and camera-driven instanced LODs in all four production bay themes.",
 			[
@@ -165,7 +194,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-music.mjs",
-			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a failed load that says why and retries, a stop that fades, a crossfade's tail and a stem swap by colour, the bus as the only music level, and the game loading the synth on the gesture that opens its sound and sounding it live; and a docking-computer run playing the Blue Danube, ducking the ship bus, resolving at the plane before the station bed, and fading on a throttle key.",
+			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a failed load that says why and retries, a stop that fades, a crossfade's tail and a stem swap by colour, the bus as the only music level, and the limiter leaving music alone. Live game integration is a separate probe.",
 			[
 				"audio",
 				"music",
@@ -442,6 +471,11 @@ export const PROBE_CATALOG = Object.freeze(
 			"probe-duel-hud.mjs",
 			"Checks the live raider-duel HUD, selected-hostile styling, warnings, and on-target sightline.",
 			["duel", "combat HUD", "raider", "target ring", "on target"],
+		),
+		entry(
+			"probe-fire-groups.mjs",
+			"Cycles loadout-derived fire groups under a held trigger and checks the cockpit label and narrow combat-row fit.",
+			["fire groups", "primary trigger", "combat HUD"],
 		),
 		entry(
 			"probe-eject.mjs",
@@ -730,7 +764,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-opening.mjs",
-			"Flies the opening cinematic: a guided start watched, skipped at boot and skipped by the key ending in one state and docked with lastDocked, a free start ending in flight near the arrival point, no sequence under ?boot=direct or ?system=, no interdiction, the fallback, the phase handle repeatable, and a capture of every shot.",
+			"Checks opening state: guided direct boot, key/click skip, quit and resume, no sequence under direct or system overrides, no interdiction, fallback and repeatable held phase. Watched frames and camera geometry have a separate probe.",
 			[
 				"opening cinematic",
 				"new game",

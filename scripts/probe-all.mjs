@@ -75,6 +75,12 @@ import { createServer } from "vite";
 import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
 import { failureKind, killedCode } from "./lib/probe-failure-kind.mjs";
+import {
+	loadSuffix,
+	slowestLine,
+	slowRunNote,
+	SUITE_PID_ENV,
+} from "./lib/probe-contention.mjs";
 import { loadSampler } from "./lib/probe-load.mjs";
 import { holdProbeLockOrExit, stopChildren } from "./lib/probe-lock.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
@@ -221,6 +227,11 @@ function run(file) {
 		// caller would replace each probe's whole URL and take its seed with it
 		const env = { ...process.env, PROBE_ORIGIN: BASE };
 		delete env.PROBE_URL;
+		// This child is *inside* the run that holds the probe lock, and the guard
+		// cannot tell that from its own pid — which differs every time — so the
+		// suite says so. Without it a suite would print the #882 notice a hundred
+		// times about itself.
+		env[SUITE_PID_ENV] = String(process.pid);
 		const child = spawn(process.execPath, [join(HERE, file), BASE], {
 			env,
 			stdio: ["ignore", "pipe", "pipe"],
@@ -257,10 +268,6 @@ function run(file) {
 	});
 }
 
-/** A load average as printed, or `?` where none could be read. */
-const fmtLoad = (/** @type {number | null} */ l) =>
-	l === null ? "?" : l.toFixed(1);
-
 /** Run the list `CONCURRENCY` at a time, in order, reporting as each lands. */
 async function runAll(files) {
 	const queue = [...files];
@@ -274,12 +281,15 @@ async function runAll(files) {
 			results.push(r);
 			const gating = !REPORTERS.has(file) && !QUARANTINED.has(file);
 			const mark = r.ok ? "ok  " : gating ? "FAIL" : "warn";
-			// a red names its kind and the load it ran under, so a navigation
-			// that timed out on a starved machine does not read like an
-			// assertion that caught a regression (#84)
+			// A **green** over a minute prints its load too: slow seconds under load
+			// are the machine's, and nothing said so before, which is how a starved
+			// suite came to read as a slow one (#882). Both branches print through the
+			// same function, so a line either names the load or says there was no
+			// reading — it never means both things at once (sage round 1).
+			const peak = load.peakBetween(r.started, r.started + r.ms);
 			const why = r.ok
-				? ""
-				: ` exit=${r.code} ${r.kind} peak load ${fmtLoad(load.peakBetween(r.started, r.started + r.ms))}`;
+				? slowRunNote({ ms: r.ms, peak })
+				: ` exit=${r.code} ${r.kind}${loadSuffix(peak)}`;
 			console.log(`${mark} ${file} (${(r.ms / 1000).toFixed(1)}s)${why}`);
 			if (!r.ok) {
 				// the failing probe's own output, indented — the whole point of a
@@ -339,7 +349,7 @@ const partialHeader = () =>
 const partialSummary = () =>
 	ONLY
 		? ` — PARTIAL RUN, ${skippedCount()}` +
-			`\n     This is not a pass for the suite. Run \`npm run probe\` for that.`
+			`\n     This is selected coverage, not a full-suite pass. A repository-selected run satisfies the ordinary PR browser gate; manual filters do not.`
 		: "";
 
 const server = await serve();
@@ -366,9 +376,14 @@ const failed = gating.filter((r) => !r.ok);
 
 console.log(
 	`\n${gating.length - failed.length}/${gating.length} gating probes passed in ${((Date.now() - started) / 1000).toFixed(0)}s` +
-		` · peak load ${fmtLoad(load.peak())} on ${availableParallelism()} cores` +
+		`${loadSuffix(load.peak())} on ${availableParallelism()} cores` +
 		partialSummary(),
 );
+// Where the wall clock went. A suite prints its probes in file order, which is
+// alphabetical and answers nothing, and the seconds that matter are two or three
+// files out of a hundred (#882). Skipped for a run of one, where it would repeat
+// the line above it.
+if (results.length > 1) console.log(`     ${slowestLine(results)}`);
 if (failed.length) {
 	/** @type {Map<string, number>} */
 	const kinds = new Map();

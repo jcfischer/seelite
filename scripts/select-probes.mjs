@@ -2,7 +2,10 @@
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { readGitEvidence } from "./lib/probe-git-evidence.mjs";
+import {
+	readImpactEvidence,
+	assertRunnableHead,
+} from "./lib/probe-git-evidence.mjs";
 import { createTypeSafeProbeJudge } from "./lib/typesafe-probe-judge.mjs";
 import { probeRunnerEnvironment } from "./lib/probe-runner-env.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
@@ -40,6 +43,8 @@ const renderText = (result) => {
 	console.log(`probe selection: ${result.mode}`);
 	console.log(`reason: ${result.reason}`);
 	console.log(`selected: ${result.probes.length}`);
+	if (result.headOid)
+		console.log(`evidence: ${result.baseOid}...${result.headOid}`);
 	for (const file of result.probes) {
 		const decision = result.decisions?.find((row) => row.file === file);
 		console.log(
@@ -73,10 +78,14 @@ function runSelectedProbes(result) {
 
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
+	if (args.run && args.changedFiles.length)
+		throw new Error(
+			"--run requires git evidence; --changed-file is diagnostic only.",
+		);
 	let gitEvidence = { changedFiles: args.changedFiles };
 	if (!args.changedFiles.length) {
 		try {
-			gitEvidence = readGitEvidence(args.base, args.head, PROJECT_ROOT);
+			gitEvidence = readImpactEvidence(args.base, args.head, PROJECT_ROOT);
 		} catch (error) {
 			throw new Error(
 				`could not read git diff ${args.base}...${args.head}: ${error instanceof Error ? error.message : String(error)}`,
@@ -88,18 +97,27 @@ async function main() {
 	const judge = apiKey ? createTypeSafeProbeJudge({ apiKey }) : undefined;
 	const started = performance.now();
 	const result = await selectProbes(
-		{ changedFiles: gitEvidence.changedFiles, intent: args.intent },
+		{
+			changedFiles: gitEvidence.changedFiles,
+			intent: args.intent,
+			impact: gitEvidence.impact,
+		},
 		judge,
 	);
 	const output = {
 		...result,
 		changedFiles: gitEvidence.changedFiles,
+		baseOid: gitEvidence.baseOid,
+		headOid: gitEvidence.headOid,
 		latencyMs: Math.round(performance.now() - started),
 	};
 	if (args.json) console.log(JSON.stringify(output, null, 2));
 	else renderText(output);
 
-	if (args.run) runSelectedProbes(result);
+	if (args.run) {
+		assertRunnableHead(gitEvidence.headOid, PROJECT_ROOT);
+		runSelectedProbes(result);
+	}
 }
 
 main().catch((error) => {

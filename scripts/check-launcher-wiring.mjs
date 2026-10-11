@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"lib/opening-probe.mjs",
+		"Shared fixture receives the caller tally check/watch; every page is watched and both opening entrypoints own tally and exit.",
+	],
+	[
 		"measure-open-space-repro.mjs",
 		"node #249's headed instrument, run unchanged against older checkouts to tell a build from an instrument: it prints pair-off, pair-on and gate-live medians with a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor; a software rasteriser or a wrong-tree server throws out of the run",
 	],
@@ -303,8 +307,14 @@ for (const path of scripts(DIR).sort()) {
 	// isolate it. The exception is per file, not per page: the probe's other pages
 	// carry no `perf` and this cannot tell them apart, so a key added to *this*
 	// page is what to check against that test's list.
+	// `probe-key-dispatch.mjs` joins for the opposite reason (#892): its `?perf`
+	// page presses `b`, the one key the panel shares with a flight command
+	// (#385 D6), and the panel's listener seeing it is that row's subject —
+	// bloom toggles and the fire-group cycle does not. That page sends `b` and
+	// nothing else; the probe's first page carries no `perf`.
 	const PERF_OWNERS = new Set([
 		"probe-frame-attribution.mjs",
+		"probe-key-dispatch.mjs",
 		"probe-pad-instrument.mjs",
 		"probe-pointer-lock.mjs",
 	]);

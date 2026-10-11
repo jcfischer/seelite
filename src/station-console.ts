@@ -647,6 +647,10 @@ const REFUSAL_SENTENCES: Record<
 	CommerceRefusal,
 	(hold: RefusalHold) => string
 > = {
+	"module-slot": () => "That module does not fit the selected slot.",
+	"missiles-full": () => "The missile rack is full.",
+	"core-required": () =>
+		"Replace the power plant with another; the ship needs its core plant.",
 	"cargo-full": (hold) =>
 		`No room — ${hold.freeT} t free of ${hold.capacityT}${entrustedClause(hold.entrustedT, ", with ", " to a job")}.`,
 	"cargo-missing": () => "None of that aboard.",
