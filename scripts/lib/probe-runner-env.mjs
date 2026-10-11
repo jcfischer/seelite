@@ -44,6 +44,8 @@ export function probeRunnerEnvironment(env, selectedProbes = undefined) {
 		"PROBE_RING_BODY",
 		"PROBE_RING_URL",
 		"PROBE_SCREENSHOT",
+		"PROBE_LOG",
+		"PROBE_SHOW_OUTPUT",
 	]);
 	const childEnv = Object.fromEntries(
 		Object.entries(env).filter(

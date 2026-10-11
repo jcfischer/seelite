@@ -12,7 +12,11 @@
  * full one. A wrong refusal wastes a minute; a wrong pass ships.
  */
 import { expect, test, describe } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
+import { lineSplitter, teeConsole } from "../scripts/lib/probe-output.mjs";
 
 const ALL = ["probe-alpha.mjs", "probe-beta.mjs", "probe-cost.mjs"];
 /** `probe-cost` stands in for the report-only probes, whose exit is not a verdict. */
@@ -232,5 +236,48 @@ describe("the target", () => {
 			/is not a target/,
 		);
 		expect(resolve(["beta"]).refusal).toMatch(/is not a target/);
+	});
+});
+
+describe("watching a run", () => {
+	// F14 of the 2026-10-11 retro: a passing probe printed nothing, and a run
+	// in the background showed nothing until npm exited.
+	test("--show-output and --log are read, and the log path is not a target", () => {
+		const a = parseArgs(["--only", "alpha", "--show-output", "--log", "x.log"]);
+		expect(a.showOutput).toBe(true);
+		expect(a.log).toBe("x.log");
+		expect(a.target).toBeNull();
+		expect(a.only).toBe("alpha");
+		expect(parseArgs(["--log=y.log"]).log).toBe("y.log");
+		expect(parseArgs([]).showOutput).toBe(false);
+		expect(parseArgs([]).log).toBeNull();
+		// A bare `--log` has no path; the runner refuses the empty string.
+		expect(parseArgs(["--log", "--show-output"]).log).toBe("");
+		expect(resolve(["--log", "x.log"]).refusal).toBeUndefined();
+	});
+	test("a child's output reaches the reader one whole line at a time", () => {
+		const lines: string[] = [];
+		const split = lineSplitter((l) => lines.push(l));
+		split.push("one\ntw");
+		expect(lines).toEqual(["one"]);
+		split.push("o\nthree");
+		expect(lines).toEqual(["one", "two"]);
+		split.flush();
+		split.flush();
+		expect(lines).toEqual(["one", "two", "three"]);
+	});
+	test("the log gets every console line as it is printed", () => {
+		const dir = mkdtempSync(join(tmpdir(), "probe-log-"));
+		const path = join(dir, "run.log");
+		const sink = {
+			log: (..._: unknown[]) => {},
+			error: (..._: unknown[]) => {},
+		};
+		teeConsole(path, sink);
+		sink.log("probing %s", "x");
+		expect(readFileSync(path, "utf8")).toBe("probing x\n");
+		sink.error("FAIL", 2);
+		expect(readFileSync(path, "utf8")).toBe("probing x\nFAIL 2\n");
+		rmSync(dir, { recursive: true });
 	});
 });

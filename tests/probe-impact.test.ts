@@ -126,6 +126,98 @@ describe("production contract ownership", () => {
 		// The name alone does not exempt a source file.
 		expect(impact(["src/measure-unknown.ts"]).probes).toBeUndefined();
 	});
+	test("a new probe's catalog and roots entries select that probe and smoke", async () => {
+		// The retro on 2026-10-11: registering one new probe sent #865 to all
+		// probes, because both registries live under scripts/lib/probe-*.
+		const CATALOG = "scripts/lib/probe-catalog.mjs";
+		const ROOTS = "scripts/lib/probe-contract-roots.mjs";
+		const PROBE = "scripts/probe-witchspace.mjs";
+		const before = new Map(sources);
+		const catalog = sources.get(CATALOG)!;
+		const start = catalog.indexOf('\t\tentry(\n\t\t\t"probe-witchspace.mjs"');
+		const end = catalog.indexOf("\t\t),\n", start) + "\t\t),\n".length;
+		before.set(CATALOG, catalog.slice(0, start) + catalog.slice(end));
+		const roots = sources.get(ROOTS)!;
+		const line = roots.match(/\t"probe-witchspace\.mjs": .*\n/)![0];
+		before.set(ROOTS, roots.replace(line, ""));
+		before.delete(PROBE);
+		const select = (after: Map<string, string>, files = [CATALOG, ROOTS]) =>
+			selectProbes({
+				changedFiles: [...files, PROBE],
+				impact: { before, after },
+			});
+		const added = await select(sources);
+		expect(added.mode).toBe("exact");
+		expect(added.probes).toEqual(
+			[...SMOKE_PROBES, "probe-witchspace.mjs"].sort(),
+		);
+		expect(added.reason).toContain("probe-witchspace.mjs");
+		// Its own sources still route through the new contract's roots.
+		const withSource = await select(sources, [
+			CATALOG,
+			ROOTS,
+			"src/witchspace.ts",
+		]);
+		expect(withSource.mode).toBe("affected");
+		expect(withSource.probes).toContain("probe-witchspace.mjs");
+		// Anything but a pure addition is still the harness.
+		const edited = new Map(sources);
+		edited.set(
+			CATALOG,
+			catalog.replace(
+				"the live station-witness legal loop",
+				"the station-witness legal loop",
+			),
+		);
+		expect((await select(edited)).mode).toBe("all");
+		const smoke = new Map(sources);
+		smoke.set(ROOTS, roots.replace('"probe-live-cockpit.mjs",', ""));
+		expect((await select(smoke)).mode).toBe("all");
+		const removed = await selectProbes({
+			changedFiles: [CATALOG, ROOTS],
+			impact: { before: sources, after: before },
+		});
+		expect(removed.mode).toBe("all");
+	});
+	test("quarantining or lifting a red selects that probe and smoke", async () => {
+		// F13 of the 2026-10-11 retro: the list lived in the runner, so recording
+		// a red there sent the PR to all probes.
+		const FILE = "scripts/lib/probe-quarantine.mjs";
+		const text = sources.get(FILE)!;
+		const quarantined = new Map(sources);
+		quarantined.set(
+			FILE,
+			text.replace(
+				"new Map([\n",
+				'new Map([\n\t["probe-witchspace.mjs", "#1 the rift lens"],\n',
+			),
+		);
+		const select = (before: Map<string, string>, after: Map<string, string>) =>
+			selectProbes({ changedFiles: [FILE], impact: { before, after } });
+		const add = await select(sources, quarantined);
+		expect(add.mode).toBe("exact");
+		expect(add.probes).toEqual(
+			[...SMOKE_PROBES, "probe-witchspace.mjs"].sort(),
+		);
+		const lift = await select(quarantined, sources);
+		expect(lift.probes).toEqual(add.probes);
+		const reworded = new Map(sources);
+		reworded.set(
+			FILE,
+			quarantined.get(FILE)!.replace("the rift lens", "the arrival lens"),
+		);
+		expect((await select(quarantined, reworded)).probes).toEqual(add.probes);
+		// A probe the runner does not know, or a line outside the list, is harness.
+		const unknown = new Map(sources);
+		unknown.set(
+			FILE,
+			text.replace("new Map([\n", 'new Map([\n\t["probe-nope.mjs", "#1"],\n'),
+		);
+		expect((await select(sources, unknown)).mode).toBe("all");
+		const outside = new Map(sources);
+		outside.set(FILE, `${quarantined.get(FILE)}\nexport const X = 1;\n`);
+		expect((await select(sources, outside)).mode).toBe("all");
+	});
 	test("mapped main projection narrows; new collaborators and unowned methods expand", () => {
 		const before = new Map(sources);
 		before.set(

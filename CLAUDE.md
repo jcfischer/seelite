@@ -93,6 +93,7 @@ through the PR gate below.
 rtk test npm test               # bun, headless — sim logic, generators, unit scheme
 npm run probe                   # GPU default: every browser probe — see the PR gate's ruling
 npm run probe:one <name>        # GPU default: one probe
+npm run probe:one -- <name> --show-output --log /tmp/p.log  # stream its lines; log written as printed
 npm run probe:cpu               # explicit headless/SwiftShader fallback
 npx tsc --noEmit                # no errors
 rtk lint npm run format:check   # biome, no fixes applied
@@ -131,7 +132,9 @@ Selection follows declared contract roots and their transitive imports in both
 revisions. Reviewed, body-only Game method changes can use narrower ownership;
 unmapped methods, new collaborators, boot wiring, shared simulation, build and
 harness changes expand to all probes. Unknown paths and catalog drift also expand
-to all. Never manually narrow unknown gameplay impact. For selection-policy or
+to all. A change that only adds a probe's catalog and roots entries, or edits
+`scripts/lib/probe-quarantine.mjs`, selects those probes plus smoke. Never
+manually narrow unknown gameplay impact. For selection-policy or
 probe-organization changes, a reviewed diff that leaves game code and browser
 launch behavior unchanged may use routing tests, changed probe contracts and
 smoke instead of the infrastructure fallback. Record that scope and its evidence

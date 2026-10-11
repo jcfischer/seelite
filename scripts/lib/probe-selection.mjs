@@ -1,6 +1,10 @@
 import { PROBE_CATALOG } from "./probe-catalog.mjs";
 import { discoverProbeFiles } from "./probe-inventory.mjs";
-import { selectImpact } from "./probe-impact.mjs";
+import {
+	PROBE_REGISTRIES,
+	registryChanges,
+	selectImpact,
+} from "./probe-impact.mjs";
 import { SMOKE_PROBES } from "./probe-contract-roots.mjs";
 
 /** A Noul must be at or below this probability to exclude a probe. */
@@ -151,12 +155,30 @@ function scoreProbes(answers, forcedProbes) {
  *
  * @param {string[]} changedFiles
  */
-function selectDeterministic(changedFiles, directlyChanged, impact) {
-	if (!changedFiles.length)
+function selectDeterministic(allChanged, directlyChanged, impact) {
+	if (!allChanged.length)
 		return all(
 			"No changed-file evidence was available, so relevance is unknown.",
 			true,
 		);
+	// A new probe's registry entries, and a quarantine entry, are routing data:
+	// they select that probe and change no other contract. Any other registry
+	// edit is harness.
+	const added = impact
+		? registryChanges(allChanged, impact.before, impact.after)
+		: null;
+	const registered = added?.every((p) => RUNNER_PROBE_FILES.includes(p))
+		? added
+		: null;
+	const changedFiles = registered
+		? allChanged.filter((file) => !(file in PROBE_REGISTRIES))
+		: allChanged;
+	const forced = [
+		...new Set([...directlyChanged, ...(registered ?? [])]),
+	].sort();
+	const note = registered
+		? ` Registry entries for ${registered.join(", ")} select them; no other entry changed.`
+		: "";
 
 	const globalFile = changedFiles.find((file) => isGlobalRisk(file, !!impact));
 	if (globalFile)
@@ -171,17 +193,19 @@ function selectDeterministic(changedFiles, directlyChanged, impact) {
 		if (!impact) return null;
 		const selected = selectImpact(changedFiles, impact, RUNNER_PROBE_FILES);
 		return selected.probes
-			? result("affected", selected.probes, selected.reason)
+			? result(
+					"affected",
+					[...new Set([...selected.probes, ...forced])].sort(),
+					selected.reason + note,
+				)
 			: all(selected.reason, true);
 	}
-	if (!directlyChanged.length)
+	if (!forced.length)
 		return result("none", [], "Only documentation or headless tests changed.");
 	return result(
 		"exact",
-		impact
-			? [...new Set([...SMOKE_PROBES, ...directlyChanged])].sort()
-			: directlyChanged,
-		"Only explicitly named probe scripts and non-runtime evidence changed.",
+		impact ? [...new Set([...SMOKE_PROBES, ...forced])].sort() : forced,
+		`Only explicitly named probe scripts and non-runtime evidence changed.${note}`,
 	);
 }
 
