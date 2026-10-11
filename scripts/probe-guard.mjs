@@ -533,6 +533,12 @@ export async function launchChromium(options = {}) {
 	// The lane, named before the launch that proves it: `printCondition` says it
 	// once per process, so a probe that opens four pages does not say it four times.
 	printCondition("lane", rendererLaneNotice({ mode, direct: !isSuiteChild() }));
+	// And the lock condition, from the same seam. `guardedTree` says it too, but not
+	// every probe passes through `guardedTree` — some build their origin themselves —
+	// and a notice that hangs on a seam some runs skip is a notice some runs never
+	// get (sage round 4 on #884; round 5 caught this line being claimed and not
+	// shipped, which is the whole reason the check below exists).
+	printCondition("machine", directRunNotice());
 	const browser = await chromium.launch(launchOptions);
 	// **What this launch actually was, recorded on the browser it opened.** A
 	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row

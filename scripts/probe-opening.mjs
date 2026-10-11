@@ -302,11 +302,12 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	// opening's own steps, taking them through the game's phase handle instead of
 	// waiting for frames to arrive: each seed samples the script in about 4 s
 	// rather than the 43 s of wall clock its frames used to cost (five seeds: 217 s
-	// of the probe's 396). What it measures, all five seeds at one build, agrees with
-	// the watched row **to six decimals** — `closestR` 6.197014/…6.197024,
-	// `worstOffDeg` 20.000000, `takeTurnDeg` 0.7978 — while sampling 2852–3702 steps
-	// to the watched run's 4373–4722 frames (`/tmp/seelite-882-ladder.log`). Fewer
-	// samples, every one of them a distinct step of the script, same answers.
+	// of the probe's 396). What it measures agrees with the watched row to six
+	// decimals on all five seeds — the figures, and the ladder between the watched
+	// run, this sampler, and the too-wide one, are in
+	// `docs/receipts/node-882-probe-wall-clock.md` §4 rather than here, because a
+	// second copy of a measurement is how it starts to drift (sage round 5 on #884).
+	// Fewer samples than the watched row, every one a distinct step of the script.
 	//
 	// **One step per sample, and the page says how wide a step is.** A shot shown
 	// at 1.5x moves the script's shown clock by less than `OPENING.dtS` per step, so
@@ -457,7 +458,11 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	}
 	check(
 		`seed ${seed}: the sweep walked the whole opening, one script step per sample`,
-		strideErr < 1e-9 && swept === true && !truncated,
+		// An empty sweep has no pair of rows to be one step apart, so a stride
+		// check on it is vacuously true: the floor is what makes this a gate rather
+		// than a tautology. The five seeds measure 2852–3702 rows here (#882's
+		// ladder), so anything near this floor is a sampler that stopped seeing.
+		frames.length > 1000 && strideErr < 1e-9 && swept === true && !truncated,
 		JSON.stringify({
 			rows: frames.length,
 			strideErr,
