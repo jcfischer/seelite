@@ -193,6 +193,19 @@ try {
 		g.scanHold = verb.beginScanHold();
 		const before = paintNow();
 
+		// Arm through the same cycle action as the player, then hold Space.
+		const armScanner = () => {
+			for (let i = 0; i < g.fireGroups.length; i++) {
+				if (g.armedFireGroup.current(g.fireGroups)?.kind === "scanner") return;
+				g.cycleFireGroup();
+			}
+			throw new Error("no scanner group");
+		};
+		armScanner();
+		g.stepScan(verb.SCAN_CHARGE_S);
+		const lockOnly = { charge: g.scanHold.chargeS, wrote: !!rowOf()?.scan };
+		g.keys.add(" ");
+
 		// 2b. **Why is the scan not holding?** The flight test's whole finding: a
 		//    pilot shown `UNKNOWN` cannot tell too-far from off-sight from broken,
 		//    and reports broken. And the axis the cone is measured on is the
@@ -222,21 +235,52 @@ try {
 		g.setAttitude({ x: 0, y: 0, z: -1 }, g.shipUp());
 		g.updateTrafficPresentation(g.world.ship.pos);
 		cue.far = cell();
+		g.keys.delete(" ");
+		cue.farReleased = cell();
+		g.keys.add(" ");
+		g.cycleFireGroup();
+		cue.farLaser = cell();
+		armScanner();
 		place();
 		const sightBefore = g.weaponAim().z;
 		g.headLook = "left";
 		g.updateTrafficPresentation(g.world.ship.pos);
 		cue.looked = cell();
+		g.keys.delete(" ");
+		cue.lookedReleased = cell();
+		g.keys.add(" ");
+		g.cycleFireGroup();
+		cue.lookedLaser = cell();
+		armScanner();
 		cue.sightMoved = Math.abs(g.weaponAim().z - sightBefore) > 0.5;
 		g.headLook = "forward";
 		place();
 
 		// 3. A charge part-way through, read as the glass shows it.
-		g.scanHold = {
-			key,
-			chargeS: verb.SCAN_CHARGE_S * 0.62,
-		};
+		g.stepScan(verb.SCAN_CHARGE_S * 0.62);
 		const charging = paintNow();
+		g.keys.delete(" ");
+		const releasedCell = cell(); // same clock, same charge: memo must invalidate
+		g.stepScan(verb.SCAN_CHARGE_S);
+		const released = {
+			charge: g.scanHold.chargeS,
+			wrote: !!rowOf()?.scan,
+			cell: releasedCell,
+		};
+		g.keys.add(" ");
+		g.stepScan(verb.SCAN_CHARGE_S * 0.2);
+		const restarted = g.scanHold.chargeS;
+		g.cycleFireGroup();
+		const cycled = g.scanHold.chargeS;
+		g.stepScan(verb.SCAN_CHARGE_S);
+		const laserHeld = { charge: g.scanHold.chargeS, wrote: !!rowOf()?.scan };
+		armScanner();
+		g.stepScan(verb.SCAN_CHARGE_S * 0.2);
+		const regimeBefore = g.regime;
+		g.regime = "cruise";
+		g.stepScan(verb.SCAN_CHARGE_S);
+		const cruise = { charge: g.scanHold.chargeS, wrote: !!rowOf()?.scan };
+		g.regime = regimeBefore;
 
 		// 4. Flown for real: the nose on it until the charge completes, through
 		//    the game's own `stepScan`, with nothing written by hand.
@@ -314,6 +358,7 @@ try {
 				g.carrierCondition(key).instanceOrdinal,
 			),
 			figures: verb.CARRIER_SCAN_FIGURES,
+			trigger: { lockOnly, released, restarted, cycled, laserHeld, cruise },
 			gate,
 			before,
 			charging,
@@ -334,6 +379,36 @@ try {
 	if (scan.error) {
 		check("a scannable carrier is present to read", false, scan.error);
 	} else {
+		const quiet = (line) =>
+			typeof line === "string" && !/TOO FAR|OFF AXIS|SCANNING/.test(line);
+		check(
+			"lock alone, laser trigger and cruise never charge or write",
+			[
+				scan.trigger.lockOnly,
+				scan.trigger.laserHeld,
+				scan.trigger.cruise,
+			].every((r) => r.charge === 0 && !r.wrote),
+			JSON.stringify(scan.trigger),
+		);
+		check(
+			"release clears the cue immediately and resets; repress starts fresh; cycle breaks immediately",
+			quiet(scan.trigger.released.cell) &&
+				scan.trigger.released.charge === 0 &&
+				!scan.trigger.released.wrote &&
+				Math.abs(scan.trigger.restarted - scan.figures.chargeS * 0.2) < 1e-9 &&
+				scan.trigger.cycled === 0,
+			JSON.stringify(scan.trigger),
+		);
+		check(
+			"refusal cues stay quiet when released or lasers armed",
+			[
+				scan.cue.farReleased,
+				scan.cue.farLaser,
+				scan.cue.lookedReleased,
+				scan.cue.lookedLaser,
+			].every(quiet),
+			JSON.stringify(scan.cue),
+		);
 		const standing = "(CLEAN|WANTED|FUGITIVE)";
 		// Named first because every shape check below reads a string this probe
 		// locates rather than restates: if the instrument painted something other
