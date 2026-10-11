@@ -351,7 +351,13 @@ try {
 		const g = window.__seelite;
 		cancelAnimationFrame(g.animationFrame);
 		const market = await import("/src/market.ts");
-		g.commander.ownedEquipment.push(market.LONG_RANGE_SCANNER);
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+		g.commander.loadout = migrateEquipment(g.commander.hull, [
+			...equipmentNames(g.commander.loadout),
+			market.LONG_RANGE_SCANNER,
+		]).loadout;
 		g.headLook = "left";
 		g.updateCockpit();
 		const record = g.world.system.record;

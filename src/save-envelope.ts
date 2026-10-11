@@ -191,7 +191,8 @@ export const SAVE_SCHEMA_VERSION = 15;
  * recovered fittings and predates the sweep ledger.
  *
  * **11 is every save written between nodes #482 and #705**, and **12 every
- * save written between nodes #705 and #769**: both carry a sweep ledger whose
+ * save written from node #705 until the slot loadout**. **13 adds the typed
+ * loadout and 14 its purchase cost**; all four carry a sweep ledger whose
  * pressure rows have no strength.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
