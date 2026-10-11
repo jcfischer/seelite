@@ -154,8 +154,8 @@ describe("the cabin's perimeter frame lamps", () => {
 
 	test("nothing stands between any lamp and the pilot", () => {
 		// The failure this replaces: an anchor at a tube's centroid is inside solid
-		// geometry, and `COCKPIT_LAMP.standoffKm` says so in words — "without it the
-		// lamps do not exist".
+		// geometry, and the procedural arch's `COCKPIT_LAMP.standoffKm` said so in
+		// words before #887 removed it — "without it the lamps do not exist".
 		for (const lamp of COCKPIT_PERIMETER_LAMPS) {
 			const anchor = new THREE.Vector3(
 				...(lamp.positionM as unknown as number[]),

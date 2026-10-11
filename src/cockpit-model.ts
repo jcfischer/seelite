@@ -561,9 +561,10 @@ export function prepareCockpitModel(
  * frame vertices. A centroid of a swept tube is the **middle of solid geometry**:
  * raycast from those anchors toward the eye and the strut's inner surface was 0.180 m
  * away at one station and 0.293 m at another, so a head was drawn inside the tube and
- * its light sat inside closed geometry. `COCKPIT_LAMP.standoffKm` records the same
- * failure on the procedural arch in its own words — "without it the lamps do not
- * exist" — and that lesson did not carry across the cabin's replacement.
+ * its light sat inside closed geometry. The procedural arch's `COCKPIT_LAMP.standoffKm`
+ * (removed with the arch, #887) recorded the same failure in its own words — "without
+ * it the lamps do not exist" — and that lesson did not carry across the cabin's
+ * replacement.
  *
  * So an anchor here is the **first frame surface along a look-direction from the eye**
  * — the surface the pilot actually sees — drawn back along that ray by this margin.
@@ -645,8 +646,9 @@ export const PERIMETER_LAMP_LOOK_DEG = [
  * both figures and `CABIN_HEMISPHERE_GAIN` in place, the centre of the view reads mean
  * **31.0**, median **24.2**, p95 **100** with the six on, against 18.9 / 19.9 / 34 with
  * them off, and **0.09%** of pixels blown — a lit cabin whose shadow floor has come up,
- * at a quarter of the blown fraction the row above this one accepted. `COCKPIT_LAMP.intensity` records what
- * overshooting looks like — a lit strut reading as a white bar.
+ * at a quarter of the blown fraction the row above this one accepted. The procedural
+ * arch's first pass (removed, #887) recorded what overshooting looks like: at 0.9
+ * its continuous lit strips rendered as solid white bars.
  */
 export const PERIMETER_LAMP_CAST_INTENSITY = 0.24;
 

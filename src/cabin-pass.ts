@@ -15,8 +15,7 @@
  * at the origin and head-look only rotates them, so in a pass that draws the
  * cabin alone its absolute size cannot be seen — only its angular size can,
  * and that does not change. Dividing every cabin figure by a hundred would
- * re-author `COCKPIT_PANEL_KM`, `COCKPIT_CHAMFER_KM`, `COCKPIT_LAMP`,
- * `COCKPIT_KEY_LIGHT`, every `CANOPY_*` figure and the ambient occlusion's
+ * re-author `COCKPIT_PANEL_KM`, `COCKPIT_CHAMFER_KM` and the ambient occlusion's
  * radius for a frame that would look the same. What the scale *does* touch is
  * a light carried in from the world, and `cabinLight` is where that is paid.
  *

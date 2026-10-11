@@ -19,8 +19,8 @@
  *    world fragment the cabin did not cover. A coverage mask must not look at
  *    what anything *looks like*, so the arms are flat colours with bloom,
  *    dither, the occlusion passes and the far layers off, and the test is
- *    which channel dominates. The glass and the additive lamp pools are no
- *    footprint: through them the world is meant to show.
+ *    which channel dominates. The glass and every other transparent surface
+ *    are no footprint: through them the world is meant to show.
  * 2. **The cabin camera brackets the built cabin.** Every vertex of every
  *    cabin mesh, in world space with the camera at the origin, lies between
  *    the cabin camera's near and far planes — so no head turn slices a
@@ -346,8 +346,8 @@ const r = await page.evaluate(
 
 		loud();
 
-		// The opaque footprint only: through the glass and the pools the world
-		// lamp is meant to show.
+		// The opaque footprint only: through the glass and any transparent
+		// surface the world lamp is meant to show.
 		const delta = (a, b) => {
 			let sum = 0;
 			let worst = 0;

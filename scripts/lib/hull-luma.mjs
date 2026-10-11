@@ -100,7 +100,7 @@
  * a silent one, which is the only reason carrying the figure is survivable. The
  * margins' other constraint, that each exceed `laneSpread`, is unaffected and stays
  * conservative. Whoever boots the portable lane on this subject should replace all
- * four figures and close the issue.
+ * four figures and close node #924, which carries the lane's failure to boot.
  *
  * **Why the key is the subject and not the finish.** Through #463 the hull
  * on screen was the procedural courier, which every finish preset paints, so
