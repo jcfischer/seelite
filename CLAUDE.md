@@ -119,8 +119,13 @@ Selection follows declared contract roots and their transitive imports in both
 revisions. Reviewed, body-only Game method changes can use narrower ownership;
 unmapped methods, new collaborators, boot wiring, shared simulation, build and
 harness changes expand to all probes. Unknown paths and catalog drift also expand
-to all. Never manually narrow a fallback. Documentation/headless-test-only changes
-need no browser run; changed probe scripts still run their own checks.
+to all. Never manually narrow unknown gameplay impact. For selection-policy or
+probe-organization changes, a reviewed diff that leaves game code and browser
+launch behavior unchanged may use routing tests, changed probe contracts and
+smoke instead of the infrastructure fallback. Record that scope and its evidence
+in the PR; do not describe it as an automatic selection or a full-suite pass.
+Documentation/headless-test-only changes need no browser run; changed probe
+scripts still run their own checks.
 
 The PR runner requires a clean checkout at the selected HEAD. Its printed base
 and head identify the evidence. Re-run selection after changing the diff or
