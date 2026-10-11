@@ -1143,24 +1143,29 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	tug: {
 		role: "salvage",
 		variant: "a",
-		env: { lengthKm: 0.0585, beamKm: 0.0457, heightKm: 0.0257 },
-		envCentre: { rightKm: 0, upKm: 0, foreKm: -0.0005 },
+		// **The envelope is Bollard O4's (node #814), drawn 1:1** by the
+		// principal's ruling: the model's box rounded up, against the loft's
+		// 58.5 x 45.7 x 25.7 m. 120 t reads 2.07 t per 1000 m³ at this box,
+		// inside the band, so the mass is unchanged. The loft still stands in
+		// until the model installs (`tug-hull.ts`).
+		env: { lengthKm: 0.0566, beamKm: 0.0484, heightKm: 0.0212 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0 },
 		massT: 120,
 		thrustMN: 168,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00859617,
-			yaw: 0.0116028,
-			roll: 0.00740908,
+			pitch: 0.00895723,
+			yaw: 0.0124744,
+			roll: 0.00734376,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: -0.425, fore: 0.9975, aft: 0.9975 },
-			roll: { z: -0.225, port: 0.9975, starboard: 0.9975 },
+			yaw: { y: -0.075, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.8325 },
+			roll: { z: 0, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 24,
 		hardpoints: 1,

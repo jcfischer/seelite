@@ -183,8 +183,12 @@ const EXEMPT = new Map([
 		"#201's headed occlusion-cost instrument; a sibling of #99's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints four arms and a separation count for a receipt and gates on nothing. What it does refuse is a software rasteriser, which throws out of the run rather than counting a failed check",
 	],
 	[
-		"measure-courier-hull-cost.mjs",
-		"node #812's headed instrument pricing the authored courier against the procedural Kestrel on one page; like #201's it prints medians and a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser or a page whose courier is not the authored model throws out of the run",
+		"measure-authored-hull-cost.mjs",
+		"node #812's headed instrument pricing an authored hull against its procedural loft on one page (the tug since node #814); like #201's it prints medians and a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser or a page whose courier is not the authored model throws out of the run",
+	],
+	[
+		"measure-hull-install-stall.mjs",
+		"node #814's headed instrument timing each after-boot hull's install phases and the longest frame gap they cause; it prints medians for the receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser throws out of the run",
 	],
 	[
 		"measure-courier-level-pop.mjs",

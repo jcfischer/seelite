@@ -444,7 +444,7 @@ await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 // Node #831: the absolute hull band measures the authored model after install.
-await page.evaluate(() => window.__seelite.loadCourierHullAfterBoot());
+await page.evaluate(() => window.__seelite.loadAuthoredHullsAfterBoot());
 await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
 
 const liveEmissives = await page.evaluate(() => {

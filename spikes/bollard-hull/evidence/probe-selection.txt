@@ -1,0 +1,12 @@
+
+> seelite@0.1.0 probe:select
+> node scripts/select-probes.mjs --base 53be4f7 --head HEAD --intent Add an isolated Bollard tug model study and viewer without altering production game code
+
+probe selection: semantic
+reason: TypeSafe evaluated 96 independent probe contracts; only probabilities at or below 0.25 were excluded.
+selected: 3
+  probe-chase-orbit.mjs (p=0.260)
+  probe-model-viewer.mjs (p=0.700)
+  probe-pointer-lock.mjs (p=0.260)
+TypeSafe: jev-1.13.0, 22799 input + 1835 output tokens
+decision latency: 526 ms

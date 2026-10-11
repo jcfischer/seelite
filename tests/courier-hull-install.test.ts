@@ -3,17 +3,17 @@ import * as THREE from "three";
 import { HULL_SPECS } from "../src/hull";
 import { buildDerelictMesh, disposeDerelict } from "../src/derelict-mesh";
 import {
-	authoredCourierBuilder,
+	authoredHullBuilder,
 	buildShipMesh,
-	installAuthoredCourier,
-	rebuildCourierStandIn,
+	installAuthoredHull,
+	rebuildAuthoredStandIn,
 } from "../src/ship-mesh";
 
-const installed = authoredCourierBuilder();
-afterEach(() => installAuthoredCourier(installed));
+const installed = authoredHullBuilder("courier");
+afterEach(() => installAuthoredHull("courier", installed));
 
 test("pre-install player and cached Traffic couriers rebuild once, retaining their roots and poses", () => {
-	installAuthoredCourier(undefined);
+	installAuthoredHull("courier", undefined);
 	const player = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
 	const traffic = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
 	const scene = new THREE.Scene();
@@ -27,14 +27,14 @@ test("pre-install player and cached Traffic couriers rebuild once, retaining the
 	const pose = player.matrix.clone();
 	const oldChildren = [...player.children];
 	expect(player.userData.authored).not.toBe(true);
-	expect(rebuildCourierStandIn(player)).toBe(false);
-	installAuthoredCourier(installed);
+	expect(rebuildAuthoredStandIn(player)).toBe(false);
+	installAuthoredHull("courier", installed);
 	for (const root of [player, traffic]) {
-		expect(rebuildCourierStandIn(root)).toBe(true);
+		expect(rebuildAuthoredStandIn(root)).toBe(true);
 		expect(root.userData.authored).toBe(true);
 		expect(root.getObjectByName("courier-hull-frame")).toBeDefined();
 		const frame = root.children[0];
-		expect(rebuildCourierStandIn(root)).toBe(false);
+		expect(rebuildAuthoredStandIn(root)).toBe(false);
 		expect(root.children[0]).toBe(frame);
 	}
 	expect(oldChildren.every((child) => child.parent === null)).toBe(true);
@@ -45,14 +45,16 @@ test("pre-install player and cached Traffic couriers rebuild once, retaining the
 	expect(player.visible).toBe(false);
 	expect(traffic.parent).toBeNull();
 	expect(traffic.scale.x).toBe(0.001);
-	expect(rebuildCourierStandIn(buildShipMesh("courier", "b").root)).toBe(false);
-	expect(rebuildCourierStandIn(buildShipMesh("interceptor", "a").root)).toBe(
+	expect(rebuildAuthoredStandIn(buildShipMesh("courier", "b").root)).toBe(
+		false,
+	);
+	expect(rebuildAuthoredStandIn(buildShipMesh("interceptor", "a").root)).toBe(
 		false,
 	);
 });
 
 test("a cached courier wreck is rebuilt through its own dark builder", () => {
-	installAuthoredCourier(undefined);
+	installAuthoredHull("courier", undefined);
 	const root = buildDerelictMesh("courier");
 	const scene = new THREE.Scene();
 	scene.add(root);
@@ -67,9 +69,9 @@ test("a cached courier wreck is rebuilt through its own dark builder", () => {
 	const freed = new Set<THREE.Material>();
 	for (const material of materials)
 		material.addEventListener("dispose", () => freed.add(material));
-	installAuthoredCourier(installed);
+	installAuthoredHull("courier", installed);
 	expect(
-		rebuildCourierStandIn(
+		rebuildAuthoredStandIn(
 			root,
 			() => buildDerelictMesh("courier"),
 			() => disposeDerelict(root),
@@ -88,7 +90,7 @@ test("a cached courier wreck is rebuilt through its own dark builder", () => {
 			expect(object.material.emissiveIntensity).toBe(0);
 	});
 	disposeDerelict(root);
-	installAuthoredCourier(undefined);
+	installAuthoredHull("courier", undefined);
 	const standIn = buildDerelictMesh("courier");
 	expect(standIn.userData.torn).not.toBeNull();
 	disposeDerelict(standIn);

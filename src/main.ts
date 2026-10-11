@@ -750,8 +750,10 @@ import {
 	type FleetSlot,
 	HULL_REACH_KM,
 	HULL_VARIANTS,
+	AFTER_BOOT_HULL_IDS,
+	type AfterBootHullId,
 	buildShipMesh,
-	rebuildCourierStandIn,
+	rebuildAuthoredStandIn,
 	fleetLayout,
 	measureMuzzles,
 	shipMuzzlesKm,
@@ -2181,6 +2183,17 @@ const FLEET_REACH_KM =
 			reachKm([hullBox(HULL_SPECS[id].env, HULL_SPECS[id].envCentre)]),
 		),
 	);
+
+/** Each after-boot hull's loader (node #831; the tug since node #814), imported
+ *  on demand so neither model's module is in the boot chunk. */
+const AFTER_BOOT_HULL_MODELS: Record<
+	AfterBootHullId,
+	() => Promise<() => Promise<void>>
+> = {
+	courier: () =>
+		import("./courier-hull").then((m) => m.prepareCourierHullModel),
+	tug: () => import("./tug-hull").then((m) => m.prepareTugHullModel),
+};
 
 class Game {
 	readonly world: World;
@@ -6530,11 +6543,13 @@ class Game {
 		this.nearScene.add(plumes.object);
 	}
 
-	/** Node #831: called after the background hull installs, including cached
+	/** Node #831: called after a background hull installs, including cached
 	 *  Traffic outside the materialisation range. Roots retain their identity
-	 *  so contacts, fleet slots and scene membership need no reassignment. */
-	private refreshCourierHulls(): void {
-		if (rebuildCourierStandIn(this.shipMesh)) {
+	 *  so contacts, fleet slots and scene membership need no reassignment.
+	 *  Every after-boot hull's stand-ins are rebuilt (node #814); a root whose
+	 *  hull is not yet installed is left as it is. */
+	private refreshAuthoredHulls(): void {
+		if (rebuildAuthoredStandIn(this.shipMesh)) {
 			this.mountVentPlumes(this.shipMesh, this.flownHull);
 			const marked = this.markedOcclusion.findIndex(
 				([name]) => name === "ship",
@@ -6542,38 +6557,48 @@ class Game {
 			if (marked >= 0)
 				this.markedOcclusion[marked] = ["ship", markOcclusion(this.shipMesh)];
 		}
-		for (const root of this.trafficMeshes.values()) rebuildCourierStandIn(root);
+		for (const root of this.trafficMeshes.values())
+			rebuildAuthoredStandIn(root);
 		for (const parked of this.fleet) {
-			if (!rebuildCourierStandIn(parked.mesh)) continue;
+			if (!rebuildAuthoredStandIn(parked.mesh)) continue;
 			const name = `fleet-${parked.mesh.name || "hull"}`;
 			const marked = this.markedOcclusion.findIndex(([key]) => key === name);
 			if (marked >= 0)
 				this.markedOcclusion[marked] = [name, markOcclusion(parked.mesh)];
 		}
 		for (const drawn of this.derelictMeshes.values())
-			rebuildCourierStandIn(
+			rebuildAuthoredStandIn(
 				drawn.root,
-				() => buildDerelictMesh("courier"),
+				(id) => buildDerelictMesh(id),
 				() => disposeDerelict(drawn.root),
 			);
 	}
 
-	/** A background failure keeps the Kestrel and never reaches the boot Retry
-	 *  panel. Each live Game starts this once, after construction. A postcard
-	 *  requires the model separately, then calls this to refresh its stand-ins. */
-	private courierHullLoad?: Promise<void>;
-	loadCourierHullAfterBoot(): Promise<void> {
-		return (this.courierHullLoad ??= import("./courier-hull")
-			.then(async ({ prepareCourierHullModel }) => {
-				await prepareCourierHullModel();
-				this.refreshCourierHulls();
+	/** A background failure keeps that hull's loft and never reaches the boot
+	 *  Retry panel. Each live Game starts this once, after construction. A
+	 *  postcard requires the models separately, then calls this to refresh its
+	 *  stand-ins. The courier, the player's own hull, loads first; the tug's
+	 *  download starts when the courier's has settled (node #814), so the two
+	 *  do not share the link. Each hull fails alone. */
+	private authoredHullsLoad?: Promise<void>;
+	loadAuthoredHullsAfterBoot(): Promise<void> {
+		return (this.authoredHullsLoad ??= AFTER_BOOT_HULL_IDS.reduce(
+			(previous, id) => previous.then(() => this.loadAuthoredHull(id)),
+			Promise.resolve(),
+		));
+	}
+	private loadAuthoredHull(id: AfterBootHullId): Promise<void> {
+		return AFTER_BOOT_HULL_MODELS[id]()
+			.then(async (prepare) => {
+				await prepare();
+				this.refreshAuthoredHulls();
 			})
 			.catch((error) => {
 				console.warn(
-					"courier hull: background load failed; keeping Kestrel",
+					`${id} hull: background load failed; keeping the procedural hull`,
 					error,
 				);
-			}));
+			});
 	}
 
 	private readonly interiorPresentations = new Map<
@@ -21073,15 +21098,16 @@ if (postcard) {
 		prepareLongwallModel,
 	]);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
-	// A postcard must draw the authored hull: its failure is a visible Retry,
+	// A postcard must draw the authored hulls: a failure is a visible Retry,
 	// unlike a live game's background fallback. Wait after Game construction,
 	// then refresh the stand-ins before mounting the single-frame viewer.
 	const { prepareCourierHullModel } = await import("./courier-hull");
+	const { prepareTugHullModel } = await import("./tug-hull");
 	await loadRequiredModels(
-		[prepareCourierHullModel],
+		[prepareCourierHullModel, prepareTugHullModel],
 		loadingPanel("postcard hull"),
 	);
-	await game.loadCourierHullAfterBoot();
+	await game.loadAuthoredHullsAfterBoot();
 	const { prepareInteriorModel } = await import("./interior-model");
 	await loadRequiredModels(
 		[prepareInteriorModel],
@@ -21096,12 +21122,14 @@ if (postcard) {
 	if (query.get("model-viewer") === "station")
 		await (await import("./coriolis-flight")).prepareCoriolisPage();
 	// The ship workbench draws every variant: the courier the game flies
-	// (node #812) and the authored `miner/b` (node #815).
+	// (node #812), the authored `miner/b` (node #815) and the tug (node #814).
 	else if (query.get("model-viewer") === "ship") {
 		const { prepareCourierHullModel } = await import("./courier-hull");
+		const { prepareTugHullModel } = await import("./tug-hull");
 		const { prepareLongwallModel } = await import("./longwall-model");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			prepareCourierHullModel,
+			prepareTugHullModel,
 			prepareLongwallModel,
 		]);
 	}
@@ -21382,7 +21410,7 @@ if (postcard) {
 	// Before the `interiors-full` wait: a probe boot that awaits the sliced
 	// install must not let the sim run through it (#843).
 	game.clockHeld = true;
-	void game.loadCourierHullAfterBoot();
+	void game.loadAuthoredHullsAfterBoot();
 	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
 	else void game.loadInteriorsAfterBoot();
 	game.saveFault = plan.fault;

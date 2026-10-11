@@ -409,10 +409,17 @@ describe("§3.9: rotation", () => {
 	test("the bound bites where the ease-out asks more than the couple: not on the slow hulls", () => {
 		expect(easeOutCost("courier").pitch).toBeLessThan(1e-9);
 		expect(easeOutCost("courier").roll).toBeGreaterThan(0.03);
-		for (const id of ["freighter", "miner", "explorer", "tug"] as const) {
+		for (const id of ["freighter", "miner", "explorer"] as const) {
 			const cost = easeOutCost(id);
 			expect(Math.max(cost.pitch, cost.yaw, cost.roll)).toBeLessThan(1e-9);
 		}
+		// The tug left that list with Bollard O4 (node #814): the wider model
+		// moved its roll couple, so its roll stop is 1.4% slower than #5's and
+		// its pitch and yaw are untouched. Re-confirmed under #619's ruling by the
+		// principal on 2026-10-11.
+		const tug = easeOutCost("tug");
+		expect(Math.max(tug.pitch, tug.yaw)).toBeLessThan(1e-9);
+		expect(tug.roll).toBeCloseTo(0.0141, 4);
 	});
 
 	test("a pointer flick is a demand: it moves a rate by at most the couple's authority", () => {

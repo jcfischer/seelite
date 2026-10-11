@@ -84,7 +84,7 @@ for (const viewport of VIEWPORTS) {
 			!cockpit.duplicateDomFloor,
 	);
 	// Node #831 boots with the Kestrel; this row measures the authored hull.
-	await page.evaluate(() => window.__seelite.loadCourierHullAfterBoot());
+	await page.evaluate(() => window.__seelite.loadAuthoredHullsAfterBoot());
 	await page.keyboard.press("v");
 	// Visibility is written by render after the view changes in the key handler.
 	// Waiting on the drawn state cannot be satisfied by frames before the press.

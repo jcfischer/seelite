@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #814: approved by the principal on 2026-10-11 with the merge.
+	{
+		date: "2026-10-11",
+		text: "The salvage tug has a new hull: the Bollard, a 57-metre open-frame tug with twin barrel drives, a reinforced towing collar and a dorsal winch.",
+		node: 814,
+	},
 	{
 		date: "2026-10-11",
 		text: "Cycle fire groups with B and see which weapons or scanner your trigger has armed.",

@@ -323,7 +323,8 @@ export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	// one has to answer that at a distance, which is why its detail is many
 	// small repeated parts rather than a few large smooth ones.
 	carrier: 0.2,
-	tug: 0.031,
+	// Bollard O4 at 1:1 (node #814): its farthest vertex, 36.03 m, rounded up.
+	tug: 0.0361,
 	prospector: 0.035,
 	// Longer and narrower than the carrier, and it wears its armour outside.
 	// Two capital classes only earn their places if they cannot be mistaken for
@@ -7058,68 +7059,80 @@ export type AuthoredHullBuilder = (
 	exhaust: THREE.MeshStandardMaterial,
 ) => ShipLevels;
 
-/** The courier variant the authored model draws (node #812): the selected
- *  one, read off `HULL_SPECS` so the model follows the selection and every
- *  reader of `HULL_SPECS.courier.variant` sees it. */
-export const AUTHORED_COURIER_VARIANT: HullVariantId =
-	HULL_SPECS.courier.variant;
+/**
+ * The hulls whose selected variant is an authored model installed after boot
+ * (node #831's path): the courier (node #812) and the tug (node #814). Each is
+ * drawn as its procedural loft — the stand-in — until its builder is
+ * installed. Longwall B is not one of them: it is a template installed before
+ * any Game is built (`installLongwallModel`, node #838's waiver).
+ */
+export const AFTER_BOOT_HULL_IDS = ["courier", "tug"] as const;
+export type AfterBootHullId = (typeof AFTER_BOOT_HULL_IDS)[number];
 
-let authoredCourier: AuthoredHullBuilder | undefined;
-/** The authored courier's nav lights, placed once. `addNavLights` finds the
- *  metal by raycast, and against the model's 354k triangles that is a third
- *  of a second — paid by every Traffic courier drawn, were they not kept.
+const isAfterBootHull = (id: unknown): id is AfterBootHullId =>
+	(AFTER_BOOT_HULL_IDS as readonly unknown[]).includes(id);
+
+const authoredHulls = new Map<AfterBootHullId, AuthoredHullBuilder>();
+/** An authored hull's nav lights, placed once. `addNavLights` finds the
+ *  metal by raycast, and against the courier's 354k triangles that is a third
+ *  of a second — paid by every Traffic ship drawn, were they not kept.
  *  The points' geometry is shared by every copy. Keyed on the model they
  *  were placed on, so removing it and putting it back — as an instrument
- *  drawing a Kestrel beside it does — keeps them. */
-const authoredCourierNavLights = new WeakMap<
-	AuthoredHullBuilder,
-	THREE.Points
->();
+ *  drawing a loft beside it does — keeps them. */
+const authoredNavLights = new WeakMap<AuthoredHullBuilder, THREE.Points>();
 
 /**
- * Install (or, with `undefined`, remove) the authored courier exterior
- * (node #812, `courier-hull.ts`). Until it is installed `buildShipMesh`
- * draws the procedural Kestrel, as `buildStationForm` draws the procedural
+ * Install (or, with `undefined`, remove) an authored hull exterior
+ * (`courier-hull.ts`, `tug-hull.ts`). Until it is installed `buildShipMesh`
+ * draws the procedural loft, as `buildStationForm` draws the procedural
  * Coriolis until `installCoriolisBuilder` runs. Games install it after boot
  * and rebuild their cached stand-ins; headless rows measuring the authored
- * hull install the shipped file themselves.
+ * hull install the shipped file themselves. The model is the hull's
+ * **selected** variant, read off `HULL_SPECS`.
  */
-export function installAuthoredCourier(
+export function installAuthoredHull(
+	id: AfterBootHullId,
 	builder: AuthoredHullBuilder | undefined,
 ): void {
-	if (builder === authoredCourier) return;
-	authoredCourier = builder;
-	// The muzzles were measured off whichever courier was drawn before.
+	if (builder === authoredHulls.get(id)) return;
+	if (builder) authoredHulls.set(id, builder);
+	else authoredHulls.delete(id);
+	// The muzzles were measured off whichever hull was drawn before.
 	for (const key of muzzleCache.keys())
-		if (key.startsWith("courier/")) muzzleCache.delete(key);
+		if (key.startsWith(`${id}/`)) muzzleCache.delete(key);
 }
 
-/** The installed authored courier builder, if any: what an instrument
- *  (`scripts/measure-courier-hull-cost.mjs`) puts back after drawing the
- *  procedural Kestrel beside it on the same page. */
-export const authoredCourierBuilder = (): AuthoredHullBuilder | undefined =>
-	authoredCourier;
+/** The installed authored builder for a hull, if any: what an instrument
+ *  (`scripts/measure-authored-hull-cost.mjs`) puts back after drawing the
+ *  procedural loft beside it on the same page. */
+export const authoredHullBuilder = (
+	id: HullId,
+): AuthoredHullBuilder | undefined =>
+	isAfterBootHull(id) ? authoredHulls.get(id) : undefined;
 
-/** Replace a pre-install courier's contents once (node #831). The root stays
- *  in its cache and scene, with its name, visibility and pose untouched.
- *  A caller owning a wreck supplies its builder and disposer so the replacement
- *  stays dark and its cloned resources are freed. New resources are built
- *  before any old resources are freed. */
-export function rebuildCourierStandIn(
+/** Replace a pre-install stand-in's contents once (node #831), for whichever
+ *  after-boot hull `root` is. The root stays in its cache and scene, with its
+ *  name, visibility and pose untouched. A caller owning a wreck supplies its
+ *  builder and disposer so the replacement stays dark and its cloned
+ *  resources are freed. New resources are built before any old resources are
+ *  freed. */
+export function rebuildAuthoredStandIn(
 	root: THREE.Object3D,
-	build: () => THREE.Group = () =>
-		buildShipMesh("courier", AUTHORED_COURIER_VARIANT).root,
+	build?: (id: AfterBootHullId) => THREE.Group,
 	dispose: (root: THREE.Object3D) => void = disposeSubtree,
 ): boolean {
+	const id = root.userData.hullId;
 	if (
-		!authoredCourier ||
-		root.userData.hullId !== "courier" ||
-		root.userData.variant !== AUTHORED_COURIER_VARIANT ||
+		!isAfterBootHull(id) ||
+		!authoredHulls.has(id) ||
+		root.userData.variant !== HULL_SPECS[id].variant ||
 		root.userData.authored === true
 	)
 		return false;
-	const replacement = build();
-	measureMuzzles("courier", AUTHORED_COURIER_VARIANT, replacement);
+	const replacement = build
+		? build(id)
+		: buildShipMesh(id, HULL_SPECS[id].variant).root;
+	measureMuzzles(id, HULL_SPECS[id].variant, replacement);
 	const parent = root.parent;
 	dispose(root);
 	root.clear();
@@ -7129,17 +7142,18 @@ export function rebuildCourierStandIn(
 	return true;
 }
 
-/** The authored courier into `root`: the model, its nav lights (placed once
+/** An authored hull into `root`: the model, its nav lights (placed once
  *  and cloned after) and the undetailed ship's adoption. */
-function buildAuthoredCourier(
+function buildAuthoredHull(
 	root: THREE.Group,
+	id: AfterBootHullId,
 	builder: AuthoredHullBuilder,
 ): void {
 	root.userData.authored = true;
-	const levels = builder(root, makePalette("courier").exhaust);
+	const levels = builder(root, makePalette(id).exhaust);
 	// After the model, for the reason the procedural branch gives: the
 	// lights are placed from the built hull's own box.
-	const known = authoredCourierNavLights.get(builder);
+	const known = authoredNavLights.get(builder);
 	if (known) {
 		const lights = known.clone();
 		lights.onBeforeRender = known.onBeforeRender;
@@ -7148,9 +7162,9 @@ function buildAuthoredCourier(
 		addNavLights(root);
 		const placed = root.getObjectByName("nav-lights") as THREE.Points;
 		shared(placed.geometry);
-		authoredCourierNavLights.set(builder, placed);
+		authoredNavLights.set(builder, placed);
 	}
-	adoptUndetailedShip(root, HULL_REACH_KM.courier, levels);
+	adoptUndetailedShip(root, HULL_REACH_KM[id], levels);
 }
 
 export function buildShipMesh(
@@ -7163,12 +7177,9 @@ export function buildShipMesh(
 	root.userData.role = HULL_SPECS[id].role;
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
-	if (
-		id === "courier" &&
-		variant === AUTHORED_COURIER_VARIANT &&
-		authoredCourier
-	) {
-		buildAuthoredCourier(root, authoredCourier);
+	const authored = authoredHullBuilder(id);
+	if (authored && isAfterBootHull(id) && variant === HULL_SPECS[id].variant) {
+		buildAuthoredHull(root, id, authored);
 		return { root };
 	}
 	const plan = SHIP_DETAIL_PLANS[id][variant];

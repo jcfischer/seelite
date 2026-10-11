@@ -23,9 +23,9 @@ import {
 	ENEMY_VISUAL_SCALE,
 	STRIKER_HULL_ID,
 } from "../src/combat-enemy";
-import { useProceduralCourier } from "./helpers/procedural-courier";
+import { useProceduralHulls } from "./helpers/procedural-hulls";
 
-useProceduralCourier();
+useProceduralHulls();
 
 function bounds(id: (typeof HULL_IDS)[number], variant: HullVariantId = "a") {
 	const root = buildShipMesh(id, variant).root;

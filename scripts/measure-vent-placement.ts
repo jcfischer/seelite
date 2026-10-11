@@ -3,8 +3,8 @@
  *
  *   bun scripts/measure-vent-placement.ts
  *
- * It installs the shipped courier model first (node #812), so the courier's
- * row is measured on the hull the game draws.
+ * It installs the shipped courier (node #812) and tug (node #814) models
+ * first, so their rows are measured on the hulls the game draws.
  *
  * The table put every vent on its envelope's box, and no attitude vent's line
  * of action met the hull on any hull: the roll pairs passed 9 to 28 m clear of
@@ -41,6 +41,7 @@ import {
 import { buildShipMesh } from "../src/ship-mesh";
 import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedCourierHull } from "./lib/shipped-courier-hull";
+import { installShippedTugHull } from "./lib/shipped-tug-hull";
 import { axisLineTester, hullMetal } from "./lib/axis-line-hits";
 
 /** Steps per half-extent: a reach is found to a quarter of a percent. */
@@ -161,6 +162,7 @@ if (import.meta.main) {
 	// `miner/b` is the authored Longwall B (node #815), built only once it is
 	// installed.
 	await installShippedCourierHull();
+	await installShippedTugHull();
 	await installShippedLongwall();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {
