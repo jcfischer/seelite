@@ -4,10 +4,9 @@ Follows [the authored-model integration SOP](../model-integration-sop.md).
 
 ## Current result
 
-SOP steps 1 to 3 are done and step 4 is measured. The tug is drawn as
-Bollard O4, installed after boot on the courier's path, which this node
-shares between the two hulls. Two decisions are open (D5, D6) before the
-review loop.
+SOP steps 1 to 4 are done. The tug is drawn as Bollard O4, installed after
+boot on the courier's path, which this node shares between the two hulls.
+Review, the browser gate and in-game approval are next.
 
 - **Design:** PR #802, branch `spike/bollard-hull-798`, rebased on `origin/main`
   on 2026-10-11 to `6445d75d`. The accepted design is commit `26d6958`
@@ -24,7 +23,7 @@ review loop.
   (`installAuthoredHull`, `rebuildAuthoredStandIn`), and the Game loads the
   courier and then the tug (`loadAuthoredHullsAfterBoot`), each failing alone.
 - **LOD and loading:** the courier's policy, unchanged: the full model inside
-  `DETAIL_RADII.full`, two simplified levels beyond it. Pending D5.
+  `DETAIL_RADII.full`, two simplified levels beyond it (D5).
 
 ### Contract
 
@@ -56,17 +55,15 @@ review loop.
 - **Step 3 design:** generalise the courier's after-boot path per hull rather
   than fork it (option O1).
 
-### Open decisions
-
-- **D5. LOD policy.** Keep the courier's levels for the tug. Measured cost is
+- **D5. LOD policy:** the courier's levels for the tug. Measured cost is
   within 0.25 ms of the courier's in every arm (below).
-- **D6. Install stall.** Each after-boot install blocks the main thread in one
-  piece after its download: 1.18 s for the courier (on `main` today) and
-  1.50 s for the tug (median of 5). Accept it as the courier's is accepted, and
-  chart the fix as its own node; or fix it in this node.
-- **Hull handling.** The tug's roll stop is 1.4% slower than #5's law with the
-  re-solved shares (pitch and yaw unchanged), inside #619's 20% bound. It is a
-  new figure for that ruling to re-confirm.
+- **D6. Install stall:** accepted as the courier's is. Each after-boot install
+  blocks the main thread in one piece after its download: 1.18 s for the
+  courier (on `main` today) and 1.50 s for the tug (median of 5). The fix for
+  both hulls is its own node, #907.
+- **Hull handling:** the tug's roll stop is 1.4% slower than #5's law with the
+  re-solved shares (pitch and yaw unchanged), inside #619's 20% bound;
+  re-confirmed under that ruling.
 
 ## Asset and geometry preflight
 

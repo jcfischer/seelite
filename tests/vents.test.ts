@@ -415,7 +415,8 @@ describe("§3.9: rotation", () => {
 		}
 		// The tug left that list with Bollard O4 (node #814): the wider model
 		// moved its roll couple, so its roll stop is 1.4% slower than #5's and
-		// its pitch and yaw are untouched.
+		// its pitch and yaw are untouched. Re-confirmed under #619's ruling by the
+		// principal on 2026-10-11.
 		const tug = easeOutCost("tug");
 		expect(Math.max(tug.pitch, tug.yaw)).toBeLessThan(1e-9);
 		expect(tug.roll).toBeCloseTo(0.0141, 4);
