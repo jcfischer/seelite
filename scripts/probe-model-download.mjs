@@ -330,132 +330,148 @@ try {
 	}
 
 	// -----------------------------------------------------------------------
-	// 6. The courier alone is held: play starts before it succeeds or fails.
+	// 6. One after-boot hull is held: play starts before it succeeds or fails.
+	// The courier (#831) and the tug (node #814) each, alone.
 	// -----------------------------------------------------------------------
-	for (const outcome of ["release", "refuse"]) {
-		const page = await context.newPage();
-		watch(page);
-		let held;
-		const hullRequest = page.waitForRequest(/courier-hull[^/]*\.glb/, {
-			timeout: 30000,
-		});
-		let requested = 0;
-		const warnings = [];
-		page.on("console", (message) => {
-			if (
-				message.type() === "warning" &&
-				message.text().startsWith("courier hull:")
-			)
-				warnings.push(message.text());
-		});
-		await page.route(/courier-hull[^/]*\.glb/, (route) => {
-			requested++;
-			held = route;
-		});
-		await page.goto(
-			gameUrl(ORIGIN, {
-				seed: SEED,
-				"no-save": true,
-				voices: "formant",
-				raider: "off",
-			}),
-		);
-		await bootedGame(page, 30000);
-		await hullRequest;
-		const before = await page.evaluate(() => {
-			const g = window.__seelite;
-			g.clockHeld = true;
-			// Materialise the real cold roster at its courier's home station.
-			const actor = g.trafficActors.find((a) => a.hullId === "courier");
-			if (!actor)
-				throw new Error("probe-model-download: fixture has no courier");
-			const station = g.world.system.bodies.find(
-				(b) => b.id === actor.homeStationId,
+	const AFTER_BOOT = [
+		{
+			id: "courier",
+			file: /courier-hull[^/]*\.glb/,
+			frame: "courier-hull-frame",
+			loft: "Kestrel",
+		},
+		{
+			id: "tug",
+			file: /bollard-tug[^/]*\.glb/,
+			frame: "tug-hull-frame",
+			loft: "tug loft",
+		},
+	];
+	for (const hull of AFTER_BOOT)
+		for (const outcome of ["release", "refuse"]) {
+			const page = await context.newPage();
+			watch(page);
+			let held;
+			const hullRequest = page.waitForRequest(hull.file, {
+				timeout: 60000,
+			});
+			let requested = 0;
+			const warnings = [];
+			page.on("console", (message) => {
+				if (
+					message.type() === "warning" &&
+					message.text().startsWith(`${hull.id} hull:`)
+				)
+					warnings.push(message.text());
+			});
+			await page.route(hull.file, (route) => {
+				requested++;
+				held = route;
+			});
+			await page.goto(
+				gameUrl(ORIGIN, {
+					seed: SEED,
+					"no-save": true,
+					voices: "formant",
+					raider: "off",
+				}),
 			);
-			g.world.ship.pos = { ...station.pos };
-			g.render(0);
-			const traffic = [...g.trafficMeshes.values()].filter(
-				(m) => m.userData.hullId === "courier",
-			);
-			window.__courierStandIns = [g.shipMesh, ...traffic];
-			window.__courierOldChildren = window.__courierStandIns.map((m) => [
-				...m.children,
-			]);
-			return {
-				traffic: traffic.length,
-				procedural: window.__courierStandIns.every((m) => !m.userData.authored),
-				retry: !!document.querySelector("[data-model-retry]"),
-			};
-		});
-		check(
-			`held courier: Game and Traffic build without awaiting the hull (${outcome})`,
-			requested === 1 &&
-				!!held &&
-				before.traffic > 0 &&
-				before.procedural &&
-				!before.retry,
-			JSON.stringify({ requested, ...before }),
-		);
-		if (!held)
-			throw new Error("probe-model-download: courier request was not held");
-		if (outcome === "release") {
-			await held.continue();
-			await page.waitForFunction(
-				() => window.__courierStandIns.every((m) => m.userData.authored),
-				undefined,
-				{ timeout: 30000 },
-			);
-			const once = await page.evaluate(async () => {
+			await bootedGame(page, 30000);
+			await hullRequest;
+			const before = await page.evaluate((id) => {
 				const g = window.__seelite;
-				const roots = window.__courierStandIns;
-				const frames = roots.map((m) =>
-					m.getObjectByName("courier-hull-frame"),
+				g.clockHeld = true;
+				// Materialise the real cold roster at one of the hull's home stations.
+				const actor = g.trafficActors.find((a) => a.hullId === id);
+				if (!actor)
+					throw new Error(`probe-model-download: fixture has no ${id}`);
+				const station = g.world.system.bodies.find(
+					(b) => b.id === actor.homeStationId,
 				);
-				await g.loadAuthoredHullsAfterBoot();
-				return roots.every(
-					(m, i) =>
-						frames[i] &&
-						m.getObjectByName("courier-hull-frame") === frames[i] &&
-						window.__courierOldChildren[i].every(
-							(child) => child.parent === null,
-						),
+				g.world.ship.pos = { ...station.pos };
+				g.render(0);
+				const traffic = [...g.trafficMeshes.values()].filter(
+					(m) => m.userData.hullId === id,
 				);
-			});
+				// The player flies the courier; the tug is Traffic only.
+				window.__standIns = [
+					...(g.shipMesh.userData.hullId === id ? [g.shipMesh] : []),
+					...traffic,
+				];
+				window.__oldChildren = window.__standIns.map((m) => [...m.children]);
+				return {
+					traffic: traffic.length,
+					procedural: window.__standIns.every((m) => !m.userData.authored),
+					retry: !!document.querySelector("[data-model-retry]"),
+				};
+			}, hull.id);
 			check(
-				"courier install replaces every existing courier once and removes the Kestrel",
-				once,
+				`held ${hull.id}: Game and Traffic build without awaiting the hull (${outcome})`,
+				requested === 1 &&
+					!!held &&
+					before.traffic > 0 &&
+					before.procedural &&
+					!before.retry,
+				JSON.stringify({ requested, ...before }),
 			);
-		} else {
-			await held.abort("failed");
-			await page.evaluate(async () => {
-				await window.__seelite.loadAuthoredHullsAfterBoot();
-				await window.__seelite.loadAuthoredHullsAfterBoot();
-			});
-			const after = await page.evaluate(() => ({
-				procedural: window.__courierStandIns.every((m) => !m.userData.authored),
-				retry: !!document.querySelector("[data-model-retry]"),
-			}));
-			check(
-				"failed background courier keeps every stand-in, warns once, and shows no Retry",
-				after.procedural &&
-					!after.retry &&
-					warnings.length === 1 &&
-					requested === 1,
-				JSON.stringify({ ...after, warnings, requested }),
-			);
-			const time = await page.evaluate(() => {
-				const g = window.__seelite;
-				g.resetFlightToStart();
-				g.clockHeld = false;
-				return g.world.gameTime;
-			});
-			check(
-				"play keeps stepping after the courier download fails",
-				await waitFor(page, (t) => window.__seelite.world.gameTime > t, time),
-			);
+			if (!held)
+				throw new Error(
+					`probe-model-download: ${hull.id} request was not held`,
+				);
+			if (outcome === "release") {
+				await held.continue();
+				await page.waitForFunction(
+					() => window.__standIns.every((m) => m.userData.authored),
+					undefined,
+					{ timeout: 30000 },
+				);
+				const once = await page.evaluate(async (frame) => {
+					const g = window.__seelite;
+					const roots = window.__standIns;
+					const frames = roots.map((m) => m.getObjectByName(frame));
+					await g.loadAuthoredHullsAfterBoot();
+					return roots.every(
+						(m, i) =>
+							frames[i] &&
+							m.getObjectByName(frame) === frames[i] &&
+							window.__oldChildren[i].every((child) => child.parent === null),
+					);
+				}, hull.frame);
+				check(
+					`${hull.id} install replaces every existing ${hull.id} once and removes the ${hull.loft}`,
+					once,
+				);
+			} else {
+				await held.abort("failed");
+				await page.evaluate(async () => {
+					await window.__seelite.loadAuthoredHullsAfterBoot();
+					await window.__seelite.loadAuthoredHullsAfterBoot();
+				});
+				const after = await page.evaluate(() => ({
+					procedural: window.__standIns.every((m) => !m.userData.authored),
+					retry: !!document.querySelector("[data-model-retry]"),
+				}));
+				check(
+					`failed background ${hull.id} keeps every stand-in, warns once, and shows no Retry`,
+					after.procedural &&
+						!after.retry &&
+						warnings.length === 1 &&
+						requested === 1,
+					JSON.stringify({ ...after, warnings, requested }),
+				);
+				const time = await page.evaluate(() => {
+					const g = window.__seelite;
+					g.resetFlightToStart();
+					g.clockHeld = false;
+					return g.world.gameTime;
+				});
+				check(
+					`play keeps stepping after the ${hull.id} download fails`,
+					await waitFor(page, (t) => window.__seelite.world.gameTime > t, time),
+				);
+			}
+			await page.close();
 		}
-		await page.close();
-	}
 
 	// -----------------------------------------------------------------------
 	// 5. A direct boot: the panel, with the bar
