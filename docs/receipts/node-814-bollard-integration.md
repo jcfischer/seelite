@@ -157,11 +157,26 @@ the longest gap is close to their sum. The refresh grows with the live ships
 of the hull: 36 ms for 5 couriers in another fixture.
 ## Delivery evidence
 
-Owed: Sage (D4), `probe:pr` on the final head, the view set, the principal's
-in-game approval, and the Field Notes sentence (the node is a major change by
-`src/changelog.ts`'s rule; the sentence is proposed in the PR).
+All at `9f12d973`, the branch rebased on `origin/main` (16 commits, #887
+among them).
 
-Headless at `f3e360df`: `npm test` 5959 pass, 0 fail.
+- **Headless:** `npm test` 5995 pass, 0 fail; typecheck, format, lint,
+  wiring, build and `check-dist-sizes` green.
+- **Review:** Sage rounds 1–3 on PR #908, all seven lenses each time, no
+  blockers. 8, 3 and 1 findings taken; declined findings are restated glossary
+  hits on the spike files and one optional test refactor. Review stopped by
+  the map's rule.
+- **Browser, selected by the principal (not the PR gate):** the repository's
+  selector chose all 104 probes (`check-launcher-wiring.mjs` and the boot
+  wiring are infrastructure). The principal asked for the relevant probes only,
+  so 19 ran on the GPU lane (ANGLE Metal, M1 Pro): the smoke set
+  (`probe-boot`, `probe-live-cockpit`) and every probe that draws or loads
+  ships, Traffic, wrecks, vents, the postcard, the workbench, the shipyard or
+  the bay flood. **19/19 green** in 461 s, peak load 102 on 10 cores. 85 probes
+  did not run; this is not a full-suite pass.
+- **Owed:** the view set, the principal flying the tug in the game, and the
+  Field Notes sentence (the node is a major change by `src/changelog.ts`'s
+  rule; the sentence is proposed in the PR).
 
 ## Historical measurements
 
