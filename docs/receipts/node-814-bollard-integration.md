@@ -5,7 +5,7 @@ Follows [the authored-model integration SOP](../model-integration-sop.md).
 ## Current result
 
 Steps 1 and 2 of the SOP: the contract and the shipping asset. No game code
-loads the model yet. Steps 3 to 7 wait on the decisions below.
+loads the model yet; steps 3 to 7 follow the rulings below.
 
 - **Design:** PR #802, branch `spike/bollard-hull-798`, rebased on `origin/main`
   on 2026-10-11 to `6445d75d`. The accepted design is commit `26d6958`
@@ -22,31 +22,26 @@ loads the model yet. Steps 3 to 7 wait on the decisions below.
 | Item | Value | Source |
 | --- | --- | --- |
 | Hull row | `tug`, role `salvage`, 120 t, purchasable at 27,600 cr | `src/hull.ts` |
-| Variant | proposed `tug/b` = Bollard, selected (Longwall's `miner/b` pattern); `tug/a` loft stays as the procedural variant | decision D1 |
+| Variant | Bollard is `tug/a`; the procedural loft is no longer a variant, only the stand-in until the model installs (the courier's pattern) | D1, ruled |
 | Units, axes | metres, Y up, +Z forward in the study; the game's nose is −z, so the install turns the model 180° about Y | `spikes/bollard-hull/README.md`, `tests/courier-hull.test.ts` |
-| Scale | 1:1, no scale | decision D2 |
-| Envelope | proposed 56.6 x 48.4 x 21.2 m (L x B x H), the model's box rounded up 0.1 m; was 58.5 x 45.7 x 25.7 m | decision D2 |
+| Scale | 1:1, no scale | D2, ruled |
+| Envelope | 56.6 x 48.4 x 21.2 m (L x B x H), the model's box rounded up 0.1 m; was 58.5 x 45.7 x 25.7 m | D2, ruled |
 | Envelope centre | box centre at x 0, y −0.29 m, z +0.16 m (study frame); to be centred on the origin on install, as Longwall's is | measured |
 | Mass | 120 t unchanged; density 2.07 t per 1000 m³ at the new box, inside the 1.2–2.4 band | measured |
 | Collision owner | the hull envelope, as for every hull | `src/hull.ts` |
 | Moving parts | none: no animations, 15 nodes batched by material; the dorsal winch is static geometry, so it cannot be posed without a re-export | study GLB, `build_model.py` |
 | Resources | one GLB under `src/models/`, content-hashed (#834); review files stay in `spikes/bollard-hull/` | SOP §2 |
 
-### Decisions for the principal
+### Principal rulings, 2026-10-11
 
-- **D1. Variant mapping.** Bollard becomes `tug/b` and the tug row's selected
-  variant, as Longwall B became `miner/b`.
-- **D2. Envelope.** The tug row takes the model's own box at 1:1 (Longwall's
-  pattern), not a scale to the old roster length (the courier's pattern). The
-  box fits every berth either way, so no berth decision follows.
-- **D3. Boot policy.** Install after boot with the `tug/a` loft as the
-  stand-in (courier, #831), or wait at boot (Longwall, under the waiver on the
-  open #838). The SOP forbids an accidental new blocking asset; the node
-  body's "before any Game is built" rule predates #831. With D3 = after boot,
-  the stand-in loft is 4.5 m taller than the new envelope (25.7 against
-  21.2 m) until the model installs.
-- **D4. Review export.** Sage did not run on #802: its retry would send this
-  private PR's source to the reviewer and was held for explicit authorization.
+- **D1. Variant:** Bollard replaces `tug/a`. With D3 the procedural loft
+  stays only as the stand-in, as the Kestrel does for the courier (#831).
+- **D2. Envelope:** the model's own box at 1:1 (Longwall's pattern), not a
+  scale to the old roster length. It fits every berth.
+- **D3. Boot:** install after boot, the courier's path (#831). No new
+  blocking asset. Until the model installs, the stand-in loft is 4.5 m taller
+  than the new envelope (25.7 against 21.2 m).
+- **D4. Review:** Sage is authorized to review this node's PR.
 
 ## Asset and geometry preflight
 
