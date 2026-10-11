@@ -75,6 +75,9 @@ const isNonRuntime = (file) =>
 	file.endsWith(".md") ||
 	file === "biome.jsonc";
 
+/** Several probe lists as one, each file once, in order. */
+const union = (...lists) => [...new Set(lists.flat())].sort();
+
 const directlyChangedProbes = (changedFiles) =>
 	changedFiles.map(directProbe).filter(Boolean).sort();
 
@@ -173,9 +176,7 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 	const changedFiles = registered
 		? allChanged.filter((file) => !(file in PROBE_REGISTRIES))
 		: allChanged;
-	const forced = [
-		...new Set([...directlyChanged, ...(registered ?? [])]),
-	].sort();
+	const forced = union(directlyChanged, registered ?? []);
 	const note = registered
 		? ` Registry entries for ${registered.join(", ")} select them; no other entry changed.`
 		: "";
@@ -195,7 +196,7 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 		return selected.probes
 			? result(
 					"affected",
-					[...new Set([...selected.probes, ...forced])].sort(),
+					union(selected.probes, forced),
 					selected.reason + note,
 				)
 			: all(selected.reason, true);
@@ -204,7 +205,7 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 		return result("none", [], "Only documentation or headless tests changed.");
 	return result(
 		"exact",
-		impact ? [...new Set([...SMOKE_PROBES, ...forced])].sort() : forced,
+		impact ? union(SMOKE_PROBES, forced) : forced,
 		`Only explicitly named probe scripts and non-runtime evidence changed.${note}`,
 	);
 }

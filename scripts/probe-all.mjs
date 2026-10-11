@@ -235,10 +235,13 @@ function run(file) {
 		let out = "";
 		// One splitter per stream, so a stderr chunk cannot land inside a stdout line.
 		const shown = [child.stdout, child.stderr].map((stream) => {
+			// Decoded by the stream, so a character split across two chunks arrives
+			// whole; probes print `│` and `—`.
+			stream.setEncoding("utf8");
 			const split = lineSplitter((l) => console.log(`     │ ${l}`));
 			stream.on("data", (d) => {
 				out += d;
-				if (SHOW_OUTPUT) split.push(String(d));
+				if (SHOW_OUTPUT) split.push(d);
 			});
 			return split;
 		});

@@ -200,6 +200,17 @@ export const PROBE_REGISTRIES = Object.freeze({
 	},
 });
 
+/** The node naming an entry's probe file, in each registry's shape. */
+function entryKey(item) {
+	// OWNERS: `"probe-x.mjs": [roots]`
+	if (ts.isPropertyAssignment(item)) return item.name;
+	// PROBE_CATALOG: `entry("probe-x.mjs", contract, evidence)`
+	if (ts.isCallExpression(item)) return item.arguments[0];
+	// QUARANTINED: `["probe-x.mjs", "#123 why"]`
+	if (ts.isArrayLiteralExpression(item)) return item.elements[0];
+	return undefined;
+}
+
 /** Entries keyed by probe file, and the file's text with the list cut out. */
 function registryEntries(text, declaration) {
 	const ast = ts.createSourceFile("r.mjs", text, ts.ScriptTarget.Latest, true);
@@ -223,13 +234,7 @@ function registryEntries(text, declaration) {
 	if (!list) return null;
 	const entries = new Map();
 	for (const item of list) {
-		const key = ts.isPropertyAssignment(item)
-			? item.name
-			: ts.isCallExpression(item)
-				? item.arguments[0]
-				: ts.isArrayLiteralExpression(item)
-					? item.elements[0]
-					: undefined;
+		const key = entryKey(item);
 		if (!key || !ts.isStringLiteralLike(key) || entries.has(key.text))
 			return null;
 		entries.set(key.text, item.getText(ast));

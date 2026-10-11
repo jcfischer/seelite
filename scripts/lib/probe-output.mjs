@@ -8,7 +8,7 @@
  * as they arrive; `--log <path>` writes every runner line to a file at the
  * moment it is printed, whatever buffers the runner's stdout.
  */
-import { appendFileSync, writeFileSync } from "node:fs";
+import { openSync, writeSync } from "node:fs";
 import { format } from "node:util";
 
 /**
@@ -37,12 +37,13 @@ export function lineSplitter(emit) {
  * @param {Pick<Console, "log" | "error">} [sink]
  */
 export function teeConsole(path, sink = console) {
-	writeFileSync(path, "");
+	// Opened once: under --show-output this runs for every line a probe prints.
+	const fd = openSync(path, "w");
 	for (const name of ["log", "error"]) {
 		const print = sink[name].bind(sink);
 		sink[name] = (...args) => {
 			print(...args);
-			appendFileSync(path, `${format(...args)}\n`);
+			writeSync(fd, `${format(...args)}\n`);
 		};
 	}
 }
