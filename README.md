@@ -49,12 +49,14 @@ Both tiers gate on pull requests (`.github/workflows/`).
 ## Deploying
 
 `main` publishes to [seelite.pages.dev](https://seelite.pages.dev) via
-`.github/workflows/deploy.yml`. The Pages project is **direct upload**, not
+`.github/workflows/ci.yml`, whose deploy stage runs on `main` alone — a pull
+request or a branch run gets the test stage and publishes nothing. The Pages
+project is **direct upload**, not
 Cloudflare's Git integration — a direct-upload project cannot be converted
 later, so the deploy is driven from CI to get push-to-deploy without committing
 to a project shape.
 
-The deploy step is inert unless `CLOUDFLARE_API_TOKEN` is set as a repository
+The deploy stage is inert unless `CLOUDFLARE_API_TOKEN` is set as a repository
 secret: it emits a warning and skips, so the build, typecheck and test gates
 work regardless. `CLOUDFLARE_ACCOUNT_ID` is already set. To deploy by hand:
 

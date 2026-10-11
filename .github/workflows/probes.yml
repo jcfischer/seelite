@@ -4,7 +4,7 @@
 #
 # The unit tier (`npm test`, bun, no browser) covers anything that is
 # arithmetic: seeded generation, the float64 sim, the module boundary. It runs
-# in `deploy.yml` because it costs seconds.
+# in `ci.yml` because it costs seconds.
 #
 # The probes cover anything that only means something in front of a running
 # renderer — layer membership, camera-relative placement, the seed actually
@@ -55,9 +55,13 @@ jobs:
     # has to be raised every time a probe lands is a cap nobody trusts.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to the same commits `ci.yml`'s header table names. This file is
+      # manual-only, so nothing would notice a drift here; one row in
+      # `tests/script-gates.test.ts` reads both files and fails on a floating
+      # `uses:`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
           cache: npm
@@ -81,7 +85,7 @@ jobs:
       # A *dev* server, not a preview of `dist/`: probe-guard fetches the
       # TypeScript source by path to confirm the server is serving this
       # checkout, which only the dev server does. The type check a production
-      # build would have given us is not lost — `deploy.yml` runs `npm run
+      # build would have given us is not lost — `ci.yml` runs `npm run
       # build` on the same pull request.
       #
       # `npm run probe`, not `node scripts/probe-all.mjs`, so the

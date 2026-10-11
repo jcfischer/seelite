@@ -1,0 +1,333 @@
+# Two stages. Stage 1 is static checks, the unit tier in four shards, and the
+# build: what every run gets. Stage 2 is the publish to Cloudflare Pages, which
+# only a run on `main` reaches.
+#
+# ## Why this replaced `deploy.yml`
+#
+# One job did both stages and was named `deploy`. Every pull request therefore
+# carried a check called `deploy` that reported `success` in 8-14 minutes about
+# a build, with the publish steps skipped. The name described the rarest thing
+# the job did, and a green `Deploy` on a branch read as "it shipped" when it
+# meant "it compiled".
+#
+# The same shortcut had a sharper edge: publishing was gated on
+# `github.event_name != 'pull_request'` — the event, not the ref. A push to
+# `main` was the intended path, but `workflow_dispatch` satisfied that
+# condition from *any* branch, and the publish step names `--branch=main`. So
+# the day the token lands, a hand-run on a feature branch ships that branch to
+# the live site. Both gates now read the ref. `gate` decides once, everything
+# downstream reads its output, and "is this a pull request?" is no longer the
+# same question as "does this publish?".
+#
+# ## The split from `probes.yml` stays as it was
+#
+# This is still the fast gate every pull request waits on. The browser probes
+# are slow enough that putting them here would train everyone to route around
+# the check; what each tier is for is written up in `probes.yml`.
+#
+# ## Still a GitHub Actions deploy, not Cloudflare's own Git integration
+#
+# A Pages project created by direct upload cannot be converted to Git
+# integration later — Cloudflare is explicit about that — so driving
+# `wrangler pages deploy` from CI is what gets push-to-deploy behaviour without
+# committing to a project shape before the project exists.
+#
+# The deploy stage stays inert until `CLOUDFLARE_API_TOKEN` is set: `gate`
+# warns and reports `publish=false` rather than failing, so the test stage
+# works from the first commit and the deploy switches on the day the secret
+# lands.
+#
+# ## Actions are pinned to full commit SHAs
+#
+# A `vN` tag is a branch someone can force-push; a SHA is not. Each reference
+# below is the commit that tag pointed at on 2026-10-11, which is every one's
+# latest release in the major it names — so pinning changed nothing about what
+# the runner executes.
+#
+#   actions/checkout           v4.4.0  11d5960a326750d5838078e36cf38b85af677262
+#   actions/setup-node         v4.4.0  49933ea5288caeca8642d1e84afbd3f7d6820020
+#   actions/cache              v4.3.0  0057852bfaa89a56745cba8c7296529d2fc39830
+#   actions/upload-artifact    v4.6.2  ea165f8d65b6e75b540449e92b4886f43607fa02
+#   actions/download-artifact  v4.3.0  d3f86a106a0bac45b974a628896c90dbdf5c8093
+#   cloudflare/wrangler-action v4.1.3  953926a2e2182532811c01a25e53647d93bf07c0
+#   oven-sh/setup-bun          v2.2.0  0c5077e51419868618aeaa5fe8019c62421857d6
+#
+# Bumping one is: read the tag, confirm the tag object still peels to that
+# commit, then write the new SHA and the new version here. `probes.yml` carries
+# the same pins for the two actions it shares with this file.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A later run on the same ref supersedes an earlier one. On `main` that also
+  # cancels a publish in flight, as `deploy.yml` did: the newer push is the one
+  # worth shipping.
+  cancel-in-progress: true
+
+env:
+  # Quoted, because `env` values are strings and `20` unquoted is a number that
+  # GitHub coerces rather than a version it reads.
+  node-version: "20"
+
+jobs:
+  # ## Stage 1 — test
+  #
+  # One job holds the publish rules so they are not restated in three places
+  # and cannot drift apart. It reads no source, so it finishes in seconds and
+  # every other job can depend on it.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      # True only for `main` itself, and only with credentials to publish with.
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - name: Decide whether this run publishes
+        id: decide
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pull request — test stage only."
+          elif [ "$REF" != "refs/heads/main" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Not main ($REF) — test stage only."
+          elif [ -z "$TOKEN" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set — deploy skipped."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Format, lint, launcher wiring: no bun, no browser, no build. Its own job so
+  # a Biome drift names itself rather than stopping a run six minutes into the
+  # unit tier, and so the shards start beside it instead of behind it.
+  static:
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      # The repo is Biome-formatted (see biome.jsonc at the root; `npm run
+      # format` re-applies it). This gate fails if a pull request drifts.
+      - run: npm run format:check
+
+      # Undeclared names in `scripts/`; what it covers and what it cannot see
+      # is written in biome.jsonc (#402).
+      - run: npm run lint
+
+      # Every script that opens a browser is bound to the launcher it calls
+      # (#403). Static — it scans `scripts/` and launches nothing — so it does
+      # not reopen #14's reason for keeping the browser tier off GitHub.
+      #
+      # `tests/script-gates.test.ts` runs the same gate inside the unit tier,
+      # as it has since #402. This step is about the shape of the failure
+      # rather than its presence: the runner lists `Run npm run check:wiring`
+      # ahead of the unit tier and the build, instead of at the tail of a
+      # 305-file shard whose exit code does not name the gate that failed. It
+      # is green on `main`, so adding it cannot open every PR red.
+      - run: npm run check:wiring
+
+  # The headless tier: seeded generation, the float64 sim, the module boundary
+  # that keeps Three.js out of it. No browser, and four runners where it had
+  # one.
+  #
+  # ## Why four shards
+  #
+  # `bun test tests/` runs 305 files in one process: 322 s on a measured
+  # passing tree, and the longest step of a job that took 8-14 minutes in the
+  # open. Splitting the files across runners costs nothing — the wall clock
+  # becomes the slowest shard's rather than the sum's. Four, because a shard's
+  # fixed cost (checkout, `npm ci`, bun) is around a minute, so a fifth shard
+  # buys little and is one more red row to read.
+  #
+  # `--shard` deals files round-robin by name, so the four are uneven: measured
+  # on one machine they ran 108 / 73 / 70 / 51 s. `--timings` balances them by
+  # measured duration instead, and it was tried — it moved the slowest shard
+  # from 108 s to 102 s. The reason so little moves is a floor no split of
+  # files can go under: `tests/music-generate-berlin.test.ts` renders audio and
+  # takes 88 s by itself, a quarter of the suite. So no timings file is
+  # committed, and the shard holding that file is the tier's length. Reach for
+  # `--timings`, or a fifth shard, if the suite grows a second heavy file.
+  #
+  # `fail-fast: false` so all four report. With it on, the first red shard
+  # cancelled the rest, and "cancelled" is the worst thing a shard can report:
+  # it does not distinguish "your change broke this" from "another shard did".
+  unit:
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # `total` is a one-value dimension of its own so the shard count is
+        # written once. Going to five means editing `shard` and this.
+        shard: [1, 2, 3, 4]
+        total: [4]
+    name: unit (${{ matrix.shard }}/${{ matrix.total }})
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: latest
+
+      - name: Unit tests (shard ${{ matrix.shard }}/${{ matrix.total }})
+        run: >
+          bun test tests/
+          --shard=${{ matrix.shard }}/${{ matrix.total }}
+
+  # The build belongs to stage 1: `npm run build` is `tsc --noEmit && vite
+  # build`, so a type error fails here on every pull request, and
+  # `vite.config.ts` asserts at build time that the voice chunk ships with its
+  # loader. Those are not the deploy's checks to make, and a pull request that
+  # builds nothing still has to prove it builds.
+  #
+  # `needs` is what makes this a stage and not a suggestion: nothing is built,
+  # and so nothing can be published, while the static checks or any shard is
+  # red.
+  build:
+    needs: [gate, static, unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      # The voice model and the music samples are what a *site* needs, not what
+      # a gate needs, so a pull request spends neither 280 MiB of downloads nor
+      # LFS bandwidth on them, and builds without them — which is what it has
+      # always done. The condition is `gate`'s, so it reads `main` rather than
+      # "not a pull request": a hand-run on a branch fetches neither.
+      #
+      # The voice downloads are kept by checksum, so a cached run fetches
+      # nothing; the key moves when the pinned files do (#604).
+      - name: Cache the voice model
+        if: needs.gate.outputs.publish == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .voice-model-cache
+          key: voice-model-${{ hashFiles('scripts/lib/voice-model.mjs') }}
+      - name: Fetch the voice model
+        if: needs.gate.outputs.publish == 'true'
+        run: node scripts/fetch-voice-model.mjs
+
+      # The music's instrument samples are in Git LFS (map #1's Constraints,
+      # 2026-10-06), and the checkout above leaves them as pointer files.
+      # git-lfs is preinstalled on GitHub's Ubuntu runners.
+      - name: Fetch the music samples
+        if: needs.gate.outputs.publish == 'true'
+        run: git lfs pull --include "public/music-samples/**"
+
+      - run: npm run build
+
+      # Publish what was built and tested here rather than letting the deploy
+      # job build again and hoping the second build matches the first. Only
+      # where a deploy will read it: a pull request's `dist` is nobody's input.
+      #
+      # Uncompressed, because the payload is ~36 MB of audio and 244 MiB of
+      # already-deflated model parts (`scripts/lib/voice-model.mjs` splits them
+      # under Cloudflare's 25 MiB per-asset limit), so gzip would spend minutes
+      # shrinking almost nothing.
+      - name: Stage the site for the deploy stage
+        if: needs.gate.outputs.publish == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pages-dist
+          # `dist/**` rather than `dist`, because the two spellings put the
+          # bytes at different places inside the artifact and only the wildcard
+          # is documented: "the path hierarchy will be preserved after the first
+          # wildcard pattern", so what is under `dist/` is stored without the
+          # `dist/` prefix and the download can re-add it.
+          path: dist/**
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  # ## Stage 2 — deploy
+  #
+  # `main` only, and only with the token — `gate`'s output, so the ref is read
+  # in one place. A push to `main` and a hand-run on `main` reach this job. A
+  # pull request never does, and neither does a branch, dispatched or not.
+  #
+  # It installs nothing and compiles nothing: `wrangler-action` brings its own
+  # wrangler, and the bytes come from `build`'s artifact.
+  deploy:
+    needs: [gate, build]
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      deployments: write
+      # `actions/download-artifact` reads the run's own artifact store with this
+      # token. The job checks out nothing, so `contents` is here for the shape
+      # the old deploy job had and `actions` is what this one actually needs.
+      actions: read
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.node-version }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: pages-dist
+          path: dist
+
+      # Publish refuses an empty or missing directory, and would do so after
+      # `wrangler-action` had installed itself; this names the layout instead of
+      # leaving a first main push to discover that one of the two path spellings
+      # above meant something other than what it says. `index.html` is the file
+      # the site cannot be without, and the build has already refused to finish
+      # without it.
+      - name: Check the staged site
+        run: |
+          if [ ! -f dist/index.html ]; then
+            echo "::error::dist/index.html missing — artifact layout is wrong."
+            ls -R dist | head -20
+            exit 1
+          fi
+
+      - name: Publish to Cloudflare Pages
+        # Folded, because `cloudflare/wrangler-action@` plus a full SHA is one
+        # character wider than this file's column and `uses:` has nowhere else
+        # to break. A folded scalar is the same string to the runner, and the
+        # workflow reader these rows stand on reads `uses:` through the value
+        # reader that handles `run:`.
+        uses: >-
+          cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=seelite
+            --branch=main

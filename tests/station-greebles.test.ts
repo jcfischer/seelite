@@ -385,7 +385,14 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 						[],
 					]);
 				}
-	});
+		// **30 s, not bun's 5 s default** — the same raise this file's heavier
+		// rows carry. The row builds every station form under every finish and
+		// raycasts every greeble instance: ~1.0 s warm in a full run on the laptop
+		// it was written on, 3.1 s run alone, and **5.2 s on a GitHub runner**,
+		// which is where the default read it as a stall and failed a green tree.
+		// The default is a budget for a laptop's arithmetic, not a claim about how
+		// long a check may take to be true.
+	}, 30_000);
 });
 
 describe("#102 §2 — no greeble may be a station's farthest vertex", () => {

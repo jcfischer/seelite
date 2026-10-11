@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+	actionOf,
+	commandOf,
 	letsFailurePass,
 	parseWorkflowText,
+	refOf,
 	type WorkflowStep,
 } from "./lib/workflow-scan";
 
@@ -13,7 +16,7 @@ import {
  * at all, a header rule written three times and already diverging between the
  * readers, `pull_request:` read as unconditional while carrying a `paths:`
  * filter, and a step's position retrieved and then thrown away. Every one of them
- * was found by hand, against the real `deploy.yml`, and each left a row green
+ * was found by hand, against the real `ci.yml`, and each left a row green
  * that should have been red.
  *
  * That is the reason this file exists rather than those rows being trusted
@@ -52,6 +55,33 @@ describe("a key written as a block scalar is read as a value", () => {
           npm run format:check`),
 		);
 		expect(step.run).toBe("npm ci\nnpm run format:check");
+	});
+
+	test("uses, and the two halves of it", () => {
+		// A `uses:` wrapped to stay inside a workflow's column is a folded scalar,
+		// and a reader that collected `|` blocks for `run` alone used to report a
+		// step with no action at all. `actionOf`/`refOf` are measured here too, on
+		// the same reading: "this step publishes" is a claim about the action, "and
+		// it is pinned" about the ref, and a step whose ref is `latest` must not be
+		// able to satisfy both.
+		const step = firstStep(
+			aroundStep(`      - uses: >-
+          cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0`),
+		);
+		expect(step.uses).toBe(
+			"cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0",
+		);
+		expect([actionOf(step), refOf(step)]).toEqual([
+			"cloudflare/wrangler-action",
+			"953926a2e2182532811c01a25e53647d93bf07c0",
+		]);
+		const floating = firstStep(
+			aroundStep(`      - uses: actions/checkout@main`),
+		);
+		expect([actionOf(floating), refOf(floating)]).toEqual([
+			"actions/checkout",
+			"main",
+		]);
 	});
 
 	test("if", () => {
@@ -209,9 +239,9 @@ jobs:
 });
 
 test("a comment cannot satisfy any of it", () => {
-	// The reason the reader exists at all: `deploy.yml` explains itself at length,
-	// so a search over the file goes green on the paragraph that merely says a
-	// gate runs. This fixture is all prose and no configuration.
+	// The reason the reader exists at all: `ci.yml` explains itself at length, so
+	// a search over the file goes green on the paragraph that merely says a gate
+	// runs. This fixture is all prose and no configuration.
 	const { triggers, jobs, steps } = parseWorkflowText(`
 # This workflow runs the launcher-wiring check on every pull request, ahead of
 # the unit tier, and nothing skips it.
@@ -227,4 +257,73 @@ jobs:
 	expect(steps).toEqual([]);
 	expect(jobs.map((j) => j.name)).toEqual(["deploy"]);
 	expect(triggers).toEqual([{ name: "pull_request", keys: [] }]);
+});
+
+describe("needs is read as the list it means", () => {
+	// "Stage 1 runs ahead of the publish" is a claim about `needs` now that the
+	// work sits in several jobs, and the key has three spellings that mean one
+	// thing. A reader that collected only the flow list would report the job
+	// written `needs: gate` as a job with no dependencies — which is the reading
+	// that turns "nothing waits on the unit tier" green on a tier three jobs wait
+	// on.
+	const twoJobs = (gateNeeds: string, secondNeeds: string) => `
+on: pull_request
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    ${gateNeeds}
+    steps:
+      - run: npm run check:wiring
+  publish:
+    runs-on: ubuntu-latest
+    ${secondNeeds}
+    steps:
+      - run: npm run build
+`;
+
+	test("a bare job name", () => {
+		const { jobs } = parseWorkflowText(twoJobs("", "needs: gate"));
+		// Absent is reported as absent, not as an empty list: `needs: []` reads as
+		// `[]`, and the difference is a job that waits on nothing written two ways.
+		expect(jobs.map((j) => j.needs)).toEqual([undefined, ["gate"]]);
+	});
+
+	test("a flow list", () => {
+		const { jobs } = parseWorkflowText(twoJobs("", "needs: [gate, build]"));
+		expect(jobs[1].needs).toEqual(["gate", "build"]);
+	});
+
+	test("a block list", () => {
+		const { jobs } = parseWorkflowText(
+			twoJobs("", "needs:\n      - gate\n      - build"),
+		);
+		expect(jobs[1].needs).toEqual(["gate", "build"]);
+	});
+
+	test("and a block list belongs to its own job only", () => {
+		// The items sit at the column a step reader also looks at, so the two
+		// hazards are the ones a cursor that does not skip them produces: the next
+		// job inherits them, or a `- gate` line is counted as a step. Neither is
+		// safe, so neither is allowed to happen.
+		const { jobs, steps } = parseWorkflowText(`
+on: pull_request
+jobs:
+  gate:
+    needs:
+      - build
+    steps:
+      - run: npm run check:wiring
+  publish:
+    steps:
+      - run: npm run build
+`);
+		expect(jobs.map((j) => [j.name, j.needs])).toEqual([
+			["gate", ["build"]],
+			["publish", undefined],
+		]);
+		expect(steps.map((s) => [s.job, commandOf(s)])).toEqual([
+			["gate", "npm run check:wiring"],
+			["publish", "npm run build"],
+		]);
+	});
 });

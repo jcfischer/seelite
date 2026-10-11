@@ -2,8 +2,8 @@
  * Reading a GitHub Actions workflow from its configuration rather than its prose,
  * for the rows that check what the pull-request gate actually runs.
  *
- * `deploy.yml` explains itself at length, so a substring search over the file
- * goes green on the paragraph that merely *says* a gate runs. And there is no
+ * `ci.yml` explains itself at length, so a substring search over the file goes
+ * green on the paragraph that merely *says* a gate runs. And there is no
  * YAML dependency in this tree — this is one file, of a hundred lines, with one
  * caller, so the shape is `tests/lib/source-scan.ts` again: a reader written for
  * the question, with the direction of its failure stated rather than assumed.
@@ -58,6 +58,18 @@ export type WorkflowJob = {
 	condition?: string;
 	/** A job that fails without failing the run gates nothing either. */
 	continueOnError?: string;
+	/**
+	 * Its `needs:`, as a list whatever the spelling.
+	 *
+	 * The order a workflow runs in is this key, and nothing else: once a stage's
+	 * work split into jobs, "the wiring gate runs ahead of the unit tier" is a
+	 * claim about the graph rather than about two lines' positions in a file.
+	 * Read as a list for the same reason `if:` is read through `readValue` — a
+	 * scalar, a flow list and a block list are one claim written three ways, and
+	 * a reader that saw only one of them would report a stage with no
+	 * dependencies for a stage that has three.
+	 */
+	needs?: string[];
 };
 
 /** One entry from a workflow's `steps:` list. */
@@ -153,10 +165,53 @@ const readTriggers = (block: Line[]): WorkflowTrigger[] => {
 };
 
 /**
- * Each job, with the two keys that take it off an event.
+ * `needs:` as the list it means, from any of the three spellings.
  *
- * Both sit at a column no step reader ever looks at, and either one is enough to
- * stop a pull request waiting on a gate it was supposed to run.
+ * A block list's items are not values `readValue` returns: it stops at the first
+ * line it cannot fold into a scalar, and `- gate` at six columns is one of
+ * those. So the items are collected here, and `used` reports how many lines they
+ * took, so the caller's cursor does not walk back over them and read the last
+ * job's dependencies into the next job.
+ */
+const readNeeds = (
+	block: Line[],
+	at: number,
+	written: string,
+): { needs: string[]; used: number } => {
+	const inline = written.trim();
+	if (inline !== "")
+		return {
+			needs: inline
+				.replace(/^\[|\]$/g, "")
+				.split(",")
+				.map((part) => part.trim().replace(/^['"]|['"]$/g, ""))
+				.filter(Boolean),
+			used: 0,
+		};
+	const needs: string[] = [];
+	let used = 0;
+	while (at + 1 + used < block.length) {
+		const next = block[at + 1 + used];
+		if (next.text.trim() === "") {
+			used++;
+			continue;
+		}
+		if (next.indent <= COLUMN.childKey) break;
+		const item = next.text.trim().match(/^-\s*(\S+)\s*$/);
+		if (!item) break;
+		needs.push(item[1].replace(/^['"]|['"]$/g, ""));
+		used++;
+	}
+	return { needs, used };
+};
+
+/**
+ * Each job, with the two keys that take it off an event and the one that places
+ * it in a stage.
+ *
+ * All three sit at a column no step reader ever looks at, and either of the
+ * first two is enough to stop a pull request waiting on a gate it was supposed
+ * to run.
  */
 const readJobs = (block: Line[]): WorkflowJob[] => {
 	const jobs: WorkflowJob[] = [];
@@ -171,12 +226,20 @@ const readJobs = (block: Line[]): WorkflowJob[] => {
 		const written = keyAt(line, COLUMN.childKey);
 		if (
 			!written ||
-			(written.name !== "if" && written.name !== "continue-on-error")
+			(written.name !== "if" &&
+				written.name !== "continue-on-error" &&
+				written.name !== "needs")
 		)
 			continue;
+		const job = jobs[jobs.length - 1];
+		if (written.name === "needs") {
+			const { needs, used } = readNeeds(block, i, written.written);
+			i += used;
+			job.needs = needs;
+			continue;
+		}
 		const { value, used } = readValue(block, i, written.written);
 		i += used;
-		const job = jobs[jobs.length - 1];
 		if (written.name === "if") job.condition = value;
 		else job.continueOnError = value;
 	}
@@ -281,6 +344,21 @@ export const parseWorkflow = (rel: string): Workflow =>
 /** What a step runs, in the one spelling every filter over the list should use. */
 export const commandOf = (step: WorkflowStep) =>
 	`${step.run ?? ""}${step.uses ?? ""}`.trim();
+
+/**
+ * The action a `uses:` names, with its ref gone.
+ *
+ * Separated from `commandOf` because the two claims differ. "This is the step
+ * that publishes" is a claim about the action, and holds whether the ref is
+ * written `@v4` or `@` plus forty hex characters; "and it is pinned" is a claim
+ * about the ref. Blending them means a row that goes red on a bump for a reason
+ * that has nothing to do with what the step does.
+ */
+export const actionOf = (step: WorkflowStep) => (step.uses ?? "").split("@")[0];
+
+/** The ref a `uses:` carries — what a pinned action pins. */
+export const refOf = (step: WorkflowStep) =>
+	step.uses === undefined ? undefined : step.uses.split("@").slice(1).join("@");
 
 /**
  * Whether a `continue-on-error:` takes the teeth out of what it is written on.
