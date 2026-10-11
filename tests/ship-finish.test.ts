@@ -125,6 +125,9 @@ describe("stock is the hull that shipped", () => {
 		expect(HULL_FINISHES[DEFAULT_HULL_FINISH].collar).toBe("flange");
 	});
 
+	// Builds every hull under every finish. Main's copy of this file (fa3f6f8),
+	// run alone on an M1 Pro, timed out at bun's five-second default after
+	// 6.2 s and 7.0 s; 15 s is about twice that.
 	test("no finish moves a hull's envelope: every built box is stock's", () => {
 		// A hull's envelope is the berth catalogue's fit predicate
 		// (`hull.ts`), so a finish that grew a box would change which berths
@@ -163,7 +166,7 @@ describe("stock is the hull that shipped", () => {
 					}
 				}
 			}
-	});
+	}, 15_000);
 
 	test("every hull's geometry and UVs hash to the pin taken on main", () => {
 		// Taken at `cbf3f0f`: 33 hulls, 192,257 vertices. Under `stock` by
@@ -387,6 +390,9 @@ describe("a ring is hollow", () => {
 	 * a ray along the ring's own axis never meets the ring, whatever else it
 	 * meets.
 	 */
+	// Builds every hull under every finish: 3.9 s alone on an M1 Pro against
+	// main's copy of this file (fa3f6f8), inside bun's five-second default
+	// with no margin for the full suite's load; 15 s matches the envelope row.
 	test("a ray along every ring's axis passes through it, under every finish", () => {
 		for (const finish of HULL_FINISH_IDS) {
 			setHullFinish(finish);
@@ -447,7 +453,7 @@ describe("a ring is hollow", () => {
 				}
 			expect([finish, rings > 0]).toEqual([finish, true]);
 		}
-	});
+	}, 15_000);
 });
 
 describe("the maps are the plating's, not the finish's", () => {

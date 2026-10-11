@@ -157,6 +157,33 @@ try {
 				0,
 	);
 	await page.screenshot({ path: "/tmp/node482-system-sweep.png" });
+	// Node #769: the pressure row reads a strength in words, never a count.
+	// This boot's system is lawful and has no outpost; an anarchy is swept in
+	// its own context below for the contrast.
+	const PRESSURE_ROW = '[data-live-sweep-region$=":pressure"]';
+	const firstPressure = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const record = g.world.system.record;
+		const anarchy = (await import("/src/galaxy.ts"))
+			.generateGalaxy(g.world.seed, record.galaxy)
+			.systems.find((r) => r.government === 0);
+		return {
+			government: record.government,
+			outpost: g.world.system.contents.stations.some(
+				(s) => s.type === "outpost",
+			),
+			anarchyIndex: anarchy.index,
+		};
+	});
+	firstPressure.label = await page.locator(`${PRESSURE_ROW} h3`).innerText();
+	firstPressure.region = await page.locator(`${PRESSURE_ROW} p`).innerText();
+	check(
+		"without an outpost the pressure region names the cruise lanes",
+		firstPressure.government >= 6 &&
+			!firstPressure.outpost &&
+			firstPressure.region.endsWith("· cruise lanes"),
+		JSON.stringify(firstPressure),
+	);
 	const padAction = await page.evaluate(() => {
 		const g = window.__seelite;
 		g.liveCockpit.stepFocus(1);
@@ -253,6 +280,13 @@ try {
 			(await page.locator("[data-live-sweep-region]").count()) ===
 				completed.rows.length,
 	);
+	check(
+		"reload keeps the pressure row's recorded strength and cruise lanes",
+		(await page.locator(`${PRESSURE_ROW} h3`).innerText()) ===
+			firstPressure.label &&
+			(await page.locator(`${PRESSURE_ROW} p`).innerText()) ===
+				firstPressure.region,
+	);
 	const approach = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const relay = await import("/src/pirate-relay.ts");
@@ -300,6 +334,80 @@ try {
 		approach.cue && approach.unknown && approach.identified && approach.contact,
 		JSON.stringify(approach),
 	);
+	// Node #769: an anarchy, swept by a real press in its own browser context.
+	// A pinned system attaches no save store, which is why reload is proven on
+	// the lawful boot above rather than here.
+	const anarchyContext = await browser.newContext({
+		viewport: { width: 1440, height: 900 },
+	});
+	const anarchyPage = await anarchyContext.newPage();
+	watch(anarchyPage);
+	await anarchyPage.goto(
+		gameUrl(origin, { seed: 56, system: firstPressure.anarchyIndex }),
+		{ waitUntil: "load" },
+	);
+	await bootedGame(anarchyPage);
+	const anarchy = await anarchyPage.evaluate(async () => {
+		const g = window.__seelite;
+		cancelAnimationFrame(g.animationFrame);
+		const market = await import("/src/market.ts");
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+		g.commander.loadout = migrateEquipment(g.commander.hull, [
+			...equipmentNames(g.commander.loadout),
+			market.LONG_RANGE_SCANNER,
+		]).loadout;
+		g.headLook = "left";
+		g.updateCockpit();
+		const record = g.world.system.record;
+		return { index: record.index, government: record.government };
+	});
+	await anarchyPage.locator('[data-live-left-tab="Sweep"]').click();
+	await anarchyPage.locator("[data-live-sweep-action]").click();
+	await anarchyPage.evaluate(async () => {
+		const g = window.__seelite;
+		const sweep = await import("/src/system-sweep.ts");
+		const seconds = sweep.SWEEP_CHARGE_S + g.units.MAX_DT;
+		const n = Math.ceil(seconds / g.units.MAX_DT);
+		for (let i = 0; i < n; i++) g.step(seconds / n);
+		g.updateCockpit();
+	});
+	const anarchyRow = anarchyPage.locator(PRESSURE_ROW);
+	anarchy.label = await anarchyRow.locator("h3").innerText();
+	anarchy.region = await anarchyRow.locator("p").innerText();
+	const strengthWords = /^(Light|Moderate|Heavy) raider pressure$/;
+	check(
+		"a lawful system and an anarchic one read different pressure strengths, neither as a count",
+		anarchy.government === 0 &&
+			anarchy.index === firstPressure.anarchyIndex &&
+			strengthWords.test(firstPressure.label) &&
+			strengthWords.test(anarchy.label) &&
+			firstPressure.label !== anarchy.label,
+		JSON.stringify({ firstPressure, anarchy }),
+	);
+	check(
+		"an outpost keeps its station name as the pressure region",
+		anarchy.region.startsWith("Surrounds of "),
+		anarchy.region,
+	);
+	const anarchyClean = await anarchyPage.evaluate(() => {
+		const g = window.__seelite;
+		const targetable = g.selectable().map((c) => c.id);
+		return g.sweepReadings.every(
+			(r) => !targetable.includes(r.id) && !("pos" in r),
+		);
+	});
+	check(
+		"the anarchy's rows stay unselectable",
+		anarchyClean &&
+			(await anarchyPage
+				.locator("[data-live-sweep-region]")
+				.locator("button, a, [data-live-nav-target]")
+				.count()) === 0,
+	);
+	await anarchyPage.screenshot({ path: "/tmp/node769-anarchy-sweep.png" });
+	await anarchyContext.close();
 } finally {
 	await browser.close();
 }

@@ -497,11 +497,11 @@ describe("the save", () => {
 		expect(parseWorld(serializeWorld(world))).toEqual(world);
 	});
 
-	test("the schema is 14, and 8 is still read", () => {
+	test("the schema is 15, and 8 is still read", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(14);
+		expect(SAVE_SCHEMA_VERSION).toBe(15);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 		]);
 	});
 

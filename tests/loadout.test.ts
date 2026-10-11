@@ -168,6 +168,10 @@ test("a carried typed fitting and a surviving wreck preserve grade, ammo and var
 		{ ...rack, id: "Missile", tonnes: 1 },
 	]);
 	expect(parseSave(serializeSave(saved))).toEqual(saved);
+	// Schema 14 already carried typed fittings and their purchase cost, before
+	// sweep strength was added.
+	raw.saveSchemaVersion = 14;
+	expect(parseSave(seal(raw))).toEqual(saved);
 });
 test("invalid slots, grades, missing plants and impossible ammunition are refused", () => {
 	for (const mutate of [
@@ -227,9 +231,9 @@ test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the n
 		raw.commander.state.credits,
 	);
 });
-test("v13 writes only loadout; mixed versions and unknown old ids are refused", () => {
+test("current saves write only loadout; mixed versions and unknown old ids are refused", () => {
 	const current = fixture();
-	expect(current.saveSchemaVersion).toBe(14);
+	expect(current.saveSchemaVersion).toBe(15);
 	expect(current.commander.state.ownedEquipment).toBeUndefined();
 	expect(() =>
 		parseSave(
