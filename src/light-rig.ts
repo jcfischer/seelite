@@ -145,8 +145,15 @@ export const CABIN_HEMISPHERE_GAIN = 0.7;
  * lamps: a hemisphere is already evaluated for every cabin fragment, so raising it costs
  * nothing, where keeping two lamps on would have added two point lights to the setting
  * meant to be cheap (the principal's choice, 2026-10-11).
+ *
+ * **9 is the principal's figure, set by eye** on a live slider in the cabin at low
+ * (2026-10-11), from the trade station's berth. It is not read off a sweep: a slider
+ * capped at 4 was the first thing rejected ("needs at least 4"). On low the cabin's
+ * point lights are down to `cockpit-light`, the one ungated console lamp — the key, the
+ * centre lamp and all six perimeter lamps are off — so the hemisphere carries the room.
+ * The hull layers keep the rig's figure on both settings.
  */
-export const CABIN_LOW_QUALITY_HEMISPHERE_GAIN = 1.6;
+export const CABIN_LOW_QUALITY_HEMISPHERE_GAIN = 9;
 
 /**
  * The hemisphere a layer's scene gets: the rig's figure everywhere, and in the cabin

@@ -47,6 +47,8 @@ describe("the docked cabin's lighting ruling", () => {
 		// Low turns off the six perimeter lamps the 0.7 was tuned against, so on low the
 		// cut only removes light. The low figure is at least the full rig — the cabin
 		// before #898, which the principal already read as too dark — and above high's.
+		// 9 is the principal's figure, set by eye on the live slider (#912).
+		expect(CABIN_LOW_QUALITY_HEMISPHERE_GAIN).toBe(9);
 		expect(CABIN_LOW_QUALITY_HEMISPHERE_GAIN).toBeGreaterThanOrEqual(1);
 		expect(CABIN_LOW_QUALITY_HEMISPHERE_GAIN).toBeGreaterThan(
 			CABIN_HEMISPHERE_GAIN,
