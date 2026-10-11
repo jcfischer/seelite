@@ -1,5 +1,6 @@
 /** Opening cinematic contract: watched guided/free runs, input suppression,
  * shot captures, equality to skipped state, and the five-seed camera sweep. */
+// A default-layout probe (#381 D11): Shift, j and a must be ignored while watched.
 import { bootedGame, launchChromium, tally } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { openingFixture } from "./lib/opening-probe.mjs";

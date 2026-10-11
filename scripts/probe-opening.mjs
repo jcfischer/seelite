@@ -1,5 +1,6 @@
 /** Opening state contract: skip, save/resume, bypass, fallback and held repeatability.
  * Watched shots and camera geometry live in probe-opening-cinematic.mjs. */
+// A default-layout probe (#381 D11): Enter is the shipped opening-skip key.
 import { bootedGame, launchChromium, tally } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { openingFixture } from "./lib/opening-probe.mjs";
