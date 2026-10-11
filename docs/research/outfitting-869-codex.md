@@ -60,3 +60,29 @@ The cash-for-trade-credit conversion was rejected.
   The UI must show those live values until their behaviour nodes change them.
 - The console uses named slots, a preview before committing, and separate
   fuel and rack-rearming services. Verification evidence lives in the PR.
+
+## Verification, 2026-10-11
+
+- Full headless suite: 5,848 passed, zero failed. Typecheck, formatting,
+  script lint and production build passed.
+- The browser selector chose all 101 probes because this change updates the
+  shared canonical capture harness. The full hardware run passed 98/101.
+  Commander passed 29/29 on its isolated rerun. Outfitting passed 12/12 after
+  keeping native button activation from bubbling into flight commands.
+- The remaining red is the station-interior cold-install tail budget. It
+  failed 38/39 on the isolated branch rerun and also 38/39 on base commit
+  `8b7a5871fde3f73e958fe6ee22c3faa8fbc3b24e`, in the bay view on both.
+  This is baseline reproduction, not a green gate or an approved waiver.
+- Canonical hardware capture completed all 73 views before and after. The
+  base worktree carries only the new capture definitions and harness so both
+  revisions expose the same view inventory; its game source is unchanged.
+  The local comparison sheet is `/tmp/seelite-869-views/index.html`.
+- Principal approved the public changelog sentence. Visual approval and Sage
+  remain pending. Sage must wait for the other worktree's browser suite to
+  release the machine; the map's delivery SOP forbids overlapping them.
+
+PR: https://github.com/jcfischer/seelite/pull/886. Detailed local logs are
+`/tmp/seelite-869-headless-final.log`, `/tmp/seelite-869-browser.log`,
+`/tmp/seelite-869-outfitting-rerun.log`, `/tmp/seelite-869-commander-rerun.log`,
+`/tmp/seelite-869-interior-rerun.log` and
+`/tmp/seelite-869-interior-baseline.log`.
