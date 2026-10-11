@@ -17,6 +17,14 @@
  * tuned where they are actually seen. `Save figures` writes /tmp/tuning.json; the same
  * figures are printed to this terminal every few seconds, and become the sliders'
  * starting point the next time this runs.
+ *
+ *   TUNE_QUALITY=low SEELITE_PROBE_RENDERER=hardware node scripts/tune-cabin-lights.mjs
+ *
+ * boots the game at that quality (node #912): low has no perimeter lamps and its own cabin
+ * hemisphere, `CABIN_LOW_QUALITY_HEMISPHERE_GAIN`. Every slider is a multiple of the figure
+ * the game built **at the quality it booted with**, so set the quality here and not in
+ * the game's console — switching there re-applies the game's own figure underneath the
+ * panel's recorded base.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { gameUrl } from "../scripts/lib/game-url.mjs";
@@ -55,6 +63,22 @@ const page = await context.newPage();
 // `window.__viewAlongAxis is not a function`.
 await installViewPlacement(page);
 await installViewFraming(page);
+const quality = process.env.TUNE_QUALITY;
+if (quality !== undefined) {
+	if (quality !== "high" && quality !== "low")
+		throw new Error(`TUNE_QUALITY must be high or low, got ${quality}`);
+	// The game's own settings key (`src/settings.ts`), written before it boots so the
+	// first frame — and the base every slider multiplies — is at this quality.
+	await page.addInitScript((value) => {
+		const key = "seelite:settings:v1";
+		const saved = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+		window.localStorage.setItem(
+			key,
+			JSON.stringify({ ...saved, quality: value }),
+		);
+	}, quality);
+	console.error(`booting at quality ${quality}`);
+}
 await page.goto(gameUrl("http://localhost:5199", { seed: 1 }));
 await page.waitForFunction(
 	() => window.__seelite && window.__seelite.frames > 0,
