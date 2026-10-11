@@ -219,7 +219,8 @@ export const tintLuma = (tint) =>
  * with a provenance rather than a band a suite enforces, and it says so rather than
  * pretending otherwise.
  */
-export const STEEL_WEAR_MEAN_LUMA = 0.4466;
+export const STEEL_WEAR_MEAN_LUMA =
+	AUTHORED_HULL_ASSETS[0].baseColorLuma["dark-structure"];
 
 /**
  * The procedural roster's painted hull, as the comparison the lift is sized
@@ -364,7 +365,3 @@ export const ceilingFailures = (rows) =>
 		(row) =>
 			row.diffuse > row.ceiling + 1e-9 && row.diffuse > row.fromDiffuse + 1e-9,
 	);
-
-/** The diffuse fraction a paint returns at its lifted values — what survives at
- *  every angle, before any texture. */
-export const diffuseFraction = ({ metalness }) => 1 - metalness;

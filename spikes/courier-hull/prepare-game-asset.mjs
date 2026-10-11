@@ -23,12 +23,11 @@ import {
 } from "@gltf-transform/functions";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import sharp from "sharp";
+import { AUTHORED_HULL_ASSETS } from "../../scripts/lib/authored-hull-paint.mjs";
 import {
-	AUTHORED_HULL_ASSETS,
-	ceilingFailures,
-	liftAuthoredHullPaint,
-} from "../../scripts/lib/authored-hull-paint.mjs";
-import { baseColorLumaByMaterial } from "../../scripts/lib/texture-luma.mjs";
+	formatLiftRow,
+	liftAndVerifyAuthoredHull,
+} from "../../scripts/lib/authored-hull-prepare.mjs";
 
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready]);
 const io = new NodeIO()
@@ -41,32 +40,10 @@ const document = await io.read("spikes/courier-hull/courier-hull.glb");
 const asset = AUTHORED_HULL_ASSETS.find(
 	(a) => a.shipped === "src/models/courier-hull.glb",
 );
-// The lift's brightness depends on each paint's base colour map, so the pixels are
-// measured and held to the recorded figure: a re-authored wear map that has moved
-// changes the shipped hull's brightness, and that is a look someone has to decide
-// rather than a number a build quietly carries.
-const measured = await baseColorLumaByMaterial(document);
-for (const [name, recorded] of Object.entries(asset.baseColorLuma)) {
-	const got = measured.get(name) ?? 1;
-	assert(
-		Math.abs(got - recorded) < 1e-3,
-		`${name}: its base colour map means ${got.toFixed(4)}, not the recorded ${recorded}. Re-record the figure on the node that re-authored the texture.`,
-	);
-}
-const lifted = liftAuthoredHullPaint(document, measured);
-const missing = asset.liftedPaints.filter(
-	(name) => !lifted.some((row) => row.name === name),
-);
-assert.deepEqual(missing, [], "the study lost a paint the lift names");
-const over = ceilingFailures(lifted);
-assert.deepEqual(
-	over.map(
-		(row) =>
-			`${row.name}: ${row.diffuse.toFixed(4)} > ${row.ceiling.toFixed(4)}`,
-	),
-	[],
-	"a paint the lift brightened past the roster's painted hull",
-);
+// Measure the maps, hold them to the recorded figures, lift, and assert the ceiling.
+// One sequence for every authored hull, in `authored-hull-prepare.mjs`.
+const lifted = await liftAndVerifyAuthoredHull(document, asset);
+
 const pixels = async (doc) =>
 	Promise.all(
 		doc
@@ -138,13 +115,4 @@ assert.deepEqual(
 console.log(
 	"Verified the Meshopt round trip of every vertex attribute, and exact texture pixels.",
 );
-const triple = (tint) =>
-	tint
-		.slice(0, 3)
-		.map((v) => v.toFixed(3))
-		.join(",");
-for (const row of lifted)
-	console.log(
-		`lifted ${row.name}: tint ${triple(row.from.tint)} -> ${triple(row.to.tint)} (x${row.scale.toFixed(2)}), metalness ${row.from.metalness.toFixed(2)} -> ${row.to.metalness.toFixed(2)}` +
-			(row.ceilingBound ? " [diffuse ceiling]" : ""),
-	);
+for (const row of lifted) console.log(formatLiftRow(row));

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { COCKPIT_MODEL_LAMP_GAIN } from "../src/cockpit-model";
+import {
+	COCKPIT_MODEL_LAMP_GAIN,
+	COCKPIT_MODEL_LAMPS,
+	carriedLamp,
+} from "../src/cockpit-model";
 import { INTERIOR_FLOOD_INTENSITY } from "../src/interior-kit";
 import { CABIN_HEMISPHERE_GAIN, LIGHT_RIG } from "../src/light-rig";
 
@@ -39,13 +43,23 @@ describe("the docked cabin's lighting ruling", () => {
 		expect(COCKPIT_MODEL_LAMP_GAIN).toBeGreaterThan(1);
 	});
 
-	test("the gain is applied outside the carry, not inside it", () => {
-		// `carriedLamp` raises an intensity by k^decay on its way into the cabin, which
-		// is why a lamp authored in model metres must not go through it at all (see
-		// `PERIMETER_LAMP_CAST_INTENSITY`). A gain multiplied into the *authored* figure
-		// is on the other side of that carry and so survives it unchanged — which is
-		// what makes 2.8 mean 2.8 in the picture rather than 2.8×10⁴.
-		const authored = 0.05;
-		expect(authored * COCKPIT_MODEL_LAMP_GAIN).toBeCloseTo(0.14, 10);
+	test("the gain commutes with the carry into the cabin", () => {
+		// `main.ts` multiplies each authored figure by the gain on its way *into*
+		// `carriedLamp`. That is equivalent to raising the cabin's figure afterwards,
+		// because the carry scales intensity by k^decay and is linear in it — and it is
+		// equivalence worth asserting, because the two readings are easy to confuse and
+		// a gain moved to the wrong side of a non-linear step would change the picture.
+		const lamp = COCKPIT_MODEL_LAMPS.find(
+			(entry) => entry.name === "cockpit-light",
+		)!;
+		const carriedAuthored = carriedLamp(lamp).intensity;
+		const gainedThenCarried = carriedLamp({
+			...lamp,
+			intensity: lamp.intensity * COCKPIT_MODEL_LAMP_GAIN,
+		} as (typeof COCKPIT_MODEL_LAMPS)[number]).intensity;
+		expect(gainedThenCarried).toBeCloseTo(
+			carriedAuthored * COCKPIT_MODEL_LAMP_GAIN,
+			12,
+		);
 	});
 });

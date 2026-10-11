@@ -16,12 +16,11 @@ import {
 import { dedup, reorder, textureCompress } from "@gltf-transform/functions";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import sharp from "sharp";
+import { AUTHORED_HULL_ASSETS } from "../../scripts/lib/authored-hull-paint.mjs";
 import {
-	AUTHORED_HULL_ASSETS,
-	ceilingFailures,
-	liftAuthoredHullPaint,
-} from "../../scripts/lib/authored-hull-paint.mjs";
-import { baseColorLumaByMaterial } from "../../scripts/lib/texture-luma.mjs";
+	formatLiftRow,
+	liftAndVerifyAuthoredHull,
+} from "../../scripts/lib/authored-hull-prepare.mjs";
 import { triangleSoup } from "./triangle-soup.mjs";
 
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready]);
@@ -40,36 +39,16 @@ const document = await io.read(source);
 // `triangle-soup.mjs` keys each primitive by its material's factors, so a
 // document lifted after that read would make this assert on two paint jobs.
 const asset = AUTHORED_HULL_ASSETS.find((a) => a.shipped === target);
-// The lift's brightness depends on each paint's base colour map, so the pixels are
-// measured and held to the recorded figure: this export carries no map on two of
-// these paints and one on three, and that difference is why the same rule lands
-// twice as bright here as on the courier.
-const measured = await baseColorLumaByMaterial(document);
-for (const [name, recorded] of Object.entries(asset.baseColorLuma)) {
-	const got = measured.get(name) ?? 1;
-	assert(
-		Math.abs(got - recorded) < 1e-3,
-		`${name}: its base colour map means ${got.toFixed(4)}, not the recorded ${recorded}. Re-record the figure on the node that re-authored the texture.`,
-	);
-}
-const lifted = liftAuthoredHullPaint(document, measured);
-const missing = asset.liftedPaints.filter(
-	(name) => !lifted.some((row) => row.name === name),
-);
-assert.deepEqual(
-	missing,
-	[],
-	"the approved export lost a paint the lift names",
-);
-const over = ceilingFailures(lifted);
-assert.deepEqual(
-	over.map(
-		(row) =>
-			`${row.name}: ${row.diffuse.toFixed(4)} > ${row.ceiling.toFixed(4)}`,
-	),
-	[],
-	`a paint the lift brightened past the roster's painted hull`,
-);
+// Measure each paint's base colour map, hold it to the recorded figure, lift, and
+// assert the ceiling — the same sequence the courier prepares with, in
+// `authored-hull-prepare.mjs`. This export carries no map on two of these paints and
+// one on three, and that difference is why the same rule lands twice as bright here
+// as on the courier, which is what the measurement is for.
+//
+// **Before `triangleSoup`**: that module keys each primitive by its material's
+// factors, so a document lifted after the read would make the triangle assert on two
+// paint jobs.
+const lifted = await liftAndVerifyAuthoredHull(document, asset);
 const pixels = async (doc) =>
 	Promise.all(
 		doc
@@ -151,13 +130,4 @@ assert.deepEqual(
 console.log(
 	`Verified the approved export's triangles and exact vertex attributes, texture pixels, node transforms to 10 µm; ${target} is ${((await stat(target)).size / 2 ** 20).toFixed(2)} MiB.`,
 );
-const triple = (tint) =>
-	tint
-		.slice(0, 3)
-		.map((v) => v.toFixed(3))
-		.join(",");
-for (const row of lifted)
-	console.log(
-		`lifted ${row.name}: tint ${triple(row.from.tint)} -> ${triple(row.to.tint)} (x${row.scale.toFixed(2)}), metalness ${row.from.metalness.toFixed(2)} -> ${row.to.metalness.toFixed(2)}` +
-			(row.ceilingBound ? " [diffuse ceiling]" : ""),
-	);
+for (const row of lifted) console.log(formatLiftRow(row));

@@ -8888,9 +8888,10 @@ class Game {
 			if (lamp.gated) gated.push(light);
 		}
 		// The frame lamps on the perimeter supports the authored cabin presents to
-		// the pilot (#887). Their heads are `MeshBasicMaterial` and stay on at every
-		// quality; their casts go through the same gate as the console's, so they
-		// respond when the setting moves mid-flight.
+		// the pilot (#887). What is added here is the cast — the fitting the cabin
+		// already carries under its window sill is left alone — so there is nothing
+		// ungated to see at low quality, and the casts go through the same gate as the
+		// console's so they respond when the setting moves mid-flight.
 		for (const lamp of buildPerimeterLamps()) {
 			cabin.modelSpace.add(lamp);
 			const light = lamp.children.find((o) => o instanceof THREE.PointLight);

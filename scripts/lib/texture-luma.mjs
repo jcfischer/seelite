@@ -15,14 +15,12 @@
  * that read it do not load a native binding to do it.
  */
 import sharp from "sharp";
-
-/** The sRGB-to-linear transfer, so a mean over 0–255 pixels lands in the same
- *  space as a base colour factor. */
-export const srgbToLinear = (channel) =>
-	channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-
-/** Rec. 709 luma of a linear triple. */
-export const linearLuma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+// The transfer and the luma come from the lift's own module rather than being
+// restated here. Two definitions of a colour transfer is two chances for a paint's
+// recorded mean and the rule that consumes it to disagree about what "linear" means,
+// and `authored-hull-paint.mjs` is pure arithmetic, so importing it here drags no
+// image decoder into the tests that read it.
+import { srgbToLinear, tintLuma } from "./authored-hull-paint.mjs";
 
 /**
  * Every 97th pixel of a `@gltf-transform` Texture, as linear Rec. 709 luma.
@@ -52,7 +50,7 @@ export async function textureMeanLuma(texture) {
 	let mean = 0;
 	let seen = 0;
 	for (let i = 0; i < pixels; i += 97) {
-		mean += linearLuma([
+		mean += tintLuma([
 			srgbToLinear(data[i * 4] / 255),
 			srgbToLinear(data[i * 4 + 1] / 255),
 			srgbToLinear(data[i * 4 + 2] / 255),

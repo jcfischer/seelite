@@ -339,7 +339,7 @@ console.error("Press Save, or just tell me the numbers.\n");
 let printed = "";
 try {
 	while (true) {
-		await Bun.sleep(5000);
+		await new Promise((resolve) => setTimeout(resolve, 5000));
 		const state = await page.evaluate(() => ({
 			figures: window.__tuningFigures,
 			readout: window.__tuningReadout ?? "measuring…",

@@ -74,12 +74,19 @@ export type CockpitScreen = (typeof COCKPIT_SCREENS)[number];
  * (node #887): **2.8×**, set by the principal on the live panel in the cockpit and again
  * in the docked cabin.
  *
- * Applied by `main.ts` rather than written into `COCKPIT_MODEL_LAMPS`, because those
- * figures are the authored study's — `build_model.py`'s emission figures for the
- * housings under the console — and the model owns them. What the game decided is that
- * they were too dim: with the frame lamps off, the centre of the view reads mean 18.5
- * with a q25 of 1, which is the "dark room with a bright dashboard" this node started
- * from.
+ * Applied by `main.ts` to each lamp's authored figure **on the way into** `carriedLamp`,
+ * rather than written into `COCKPIT_MODEL_LAMPS`, because those figures are the authored
+ * study's — `build_model.py`'s emission figures for the housings under the console — and
+ * the model owns them. What the game decided is that they were too dim: with the frame
+ * lamps off, the centre of the view reads mean 18.5 with a q25 of 1, which is the "dark
+ * room with a bright dashboard" this node started from.
+ *
+ * Going in rather than coming out is equivalent, and it is worth saying why, because the
+ * two readings are easy to confuse: `cabinLight`'s carry multiplies intensity by
+ * `k^decay`, which is linear in intensity, so scaling the authored figure by 2.8 before
+ * the carry scales the cabin's figure by 2.8 as well. `tests/cabin-lighting-ruling.test.ts`
+ * asserts that commutation rather than the arithmetic, so a gain moved to the far side of
+ * the carry — or dropped — has to answer to it.
  */
 export const COCKPIT_MODEL_LAMP_GAIN = 2.8;
 
@@ -665,11 +672,15 @@ export const perimeterLampCast = () => ({
  * and `assets.md`'s locked composition — clear centre sightline, no roof beam — is
  * untouched.
  *
- * **Every one is gated, and its head is not.** A cast is a `PointLight`, and three
- * evaluates every one of them for every standard fragment in the cabin's scene whether
- * it lights anything or not — the lesson `cockpit-surface.ts` records from #651. Six
- * casts is a real cost, so low keeps the six dots and medium and high get light with
- * them, which is the split the procedural cabin's lamp pools were on.
+ * **Every one is gated, and at low quality there is nothing of them left to see.** A
+ * cast is a `PointLight`, and three evaluates every one of them for every standard
+ * fragment in the cabin's scene whether it lights anything or not — the lesson
+ * `cockpit-surface.ts` records from #651, and six of them is a real cost. The
+ * procedural cabin's lamp pools could keep their lamp *bodies* visible on low and drop
+ * only the casts, because a body was `MeshBasicMaterial`; these lamps have no body — see
+ * the note above `PERIMETER_LAMP_LOOK_DEG` — so low quality shows the authored fittings
+ * and none of this light. That is the honest consequence of removing the disc, and it is
+ * the opposite trade from the one the arch's pools made.
  */
 export const COCKPIT_PERIMETER_LAMPS = [
 	{
