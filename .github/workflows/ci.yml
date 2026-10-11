@@ -66,10 +66,19 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # A later run on the same ref supersedes an earlier one. On `main` that also
-  # cancels a publish in flight, as `deploy.yml` did: the newer push is the one
-  # worth shipping.
-  cancel-in-progress: true
+  # Cancel a superseded run on a pull request or a branch — the newer push is
+  # the one worth testing and the minutes the older one would spend are wasted.
+  #
+  # **Not on `main`.** A run there carries the publish, and `main` pushes land
+  # minutes apart here: measured on 2026-10-11 three consecutive runs went
+  # cancelled, cancelled, failed before one was allowed to finish, which is a
+  # merge that never shipped and no red to read. Cancelling meant "the newest
+  # commit wins"; with the publish at the end of a six-minute stage 1 it means
+  # "whichever commit happened to be alone when the timer ran out wins". So a
+  # push to `main` queues behind the run in flight and every merge publishes,
+  # in order. The price is a full stage-1 run per queued merge — four shards
+  # each — paid for the guarantee, not for speed.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   # Quoted, because `env` values are strings and `20` unquoted is a number that
