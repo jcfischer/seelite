@@ -280,21 +280,36 @@ export const carriedLamp = (lamp: (typeof COCKPIT_MODEL_LAMPS)[number]) =>
 	);
 
 /**
- * How far a canopy lamp's anchor may sit from the nearest authored frame vertex,
+ * How far a canopy lamp stands off the inner face of the strut it is mounted on,
  * model metres (node #887).
  *
- * The lamps are placed *on the model*, and this is the figure that makes that a
- * claim with a test behind it rather than a comment. Each anchor is the centroid
- * of authored frame vertices within a 0.12 m band along a pillar, drawn 4.5% of
- * its own reach toward the eye so the head sits inside the strut's surface rather
- * than floating in front of it. The gap that leaves is widest at the aft anchors,
- * 0.071 m, where the pillar turns aft and the band is sparsest. The bound is 0.08 m
- * with a centimetre of slack, and `tests/canopy-lamps.test.ts`
- * measures every anchor against the shipped cabin GLB — re-authored struts that
- * move out from under a lamp go red there, which is the only way an anchor can
- * stop being on the model.
+ * The first placement put each anchor at the centroid of the authored frame vertices
+ * along a pillar. That is the **middle of a solid tube**: raycasting from those
+ * anchors toward the eye found the strut's inner surface 0.180 m away at the aft
+ * station and 0.293 m at the mid, so a head 0.17 m across was drawn *inside* the
+ * strut and its point light sat inside closed geometry. The view set measured
+ * exactly that — `cockpit-arrival` reads mean 14.23 on the base build and 14.23 on
+ * the build with six lamps in it. `COCKPIT_LAMP.standoffKm` records the same failure
+ * on the procedural arch in its own words, "without it the lamps do not exist", and
+ * that lesson did not carry across the cabin's replacement.
+ *
+ * So an anchor is the strut centroid drawn along the ray to the eye by the exit
+ * distance the raycast measures, plus this margin: the head's face sits 15 mm off
+ * the strut's inner surface and the light is outside the geometry it is meant to
+ * cast. `tests/canopy-lamps.test.ts` raycasts both ways against the shipped GLB —
+ * outward to prove the lamp is mounted on a strut, inward to prove nothing is
+ * between it and the pilot — because an anchor that is merely *near* the frame is
+ * the failure this replaces.
  */
-export const CANOPY_LAMP_SEPARATION_M = 0.08;
+export const CANOPY_LAMP_STANDOFF_M = 0.015;
+
+/**
+ * How far back from a lamp to authored frame geometry its mount may be, model
+ * metres. Measured after the standoff: 0.015 m at the aft and mid stations, 0.043 m
+ * at the fore. The bound is that with margin, and it is what stops a lamp being
+ * re-anchored in front of nothing.
+ */
+export const CANOPY_LAMP_MOUNT_REACH_M = 0.05;
 
 /**
  * The canopy lamp head's radius, model metres.
@@ -322,9 +337,10 @@ export const CANOPY_LAMP_HEAD_RADIUS_M = 0.085;
  * in space the authored cabin leaves open — and what it does carry is a mirrored
  * pair of side pillars of `weathered-blue-steel` and `exposed-machined-edges`,
  * running 0.94 to 1.66 m out and forward of the eye. Each anchor is the centroid of
- * that material in a band along one pillar (`CANOPY_LAMP_SEPARATION_M` holds the
- * figure and the test that re-measures it), which is also where the pilot's own
- * peripheral view of the canopy edge falls.
+ * that material in a band along one pillar, drawn out to the standoff in
+ * `CANOPY_LAMP_STANDOFF_M` (`tests/canopy-lamps.test.ts` re-measures the standoff
+ * against the shipped GLB), which is also where the pilot's own peripheral view of
+ * the canopy edge falls.
  *
  * **Every one is gated, and its head is not.** A head is `MeshBasicMaterial` and
  * costs the fragments it covers; a cast is a `PointLight`, and three evaluates
@@ -340,7 +356,7 @@ export const COCKPIT_CANOPY_LAMPS = [
 		color: 0xffc27a,
 		intensity: 2.2,
 		rangeM: 3.5,
-		positionM: [-1.222, 0.749, 0.233],
+		positionM: [-1.072, 0.694, 0.346],
 	},
 	{
 		name: "canopy-lamp-port-mid",
@@ -348,7 +364,7 @@ export const COCKPIT_CANOPY_LAMPS = [
 		color: 0xffc27a,
 		intensity: 2.2,
 		rangeM: 3.5,
-		positionM: [-1.098, 0.797, 0.501],
+		positionM: [-0.851, 0.685, 0.647],
 	},
 	{
 		name: "canopy-lamp-port-fore",
@@ -356,7 +372,7 @@ export const COCKPIT_CANOPY_LAMPS = [
 		color: 0xffc27a,
 		intensity: 2.2,
 		rangeM: 3.5,
-		positionM: [-0.965, 0.816, 0.739],
+		positionM: [-0.953, 0.809, 0.744],
 	},
 	{
 		name: "canopy-lamp-starboard-aft",
@@ -364,7 +380,7 @@ export const COCKPIT_CANOPY_LAMPS = [
 		color: 0xffc27a,
 		intensity: 2.2,
 		rangeM: 3.5,
-		positionM: [1.222, 0.749, 0.233],
+		positionM: [1.072, 0.694, 0.346],
 	},
 	{
 		name: "canopy-lamp-starboard-mid",
@@ -372,7 +388,7 @@ export const COCKPIT_CANOPY_LAMPS = [
 		color: 0xffc27a,
 		intensity: 2.2,
 		rangeM: 3.5,
-		positionM: [1.098, 0.797, 0.501],
+		positionM: [0.851, 0.685, 0.647],
 	},
 	{
 		name: "canopy-lamp-starboard-fore",
@@ -380,7 +396,7 @@ export const COCKPIT_CANOPY_LAMPS = [
 		color: 0xffc27a,
 		intensity: 2.2,
 		rangeM: 3.5,
-		positionM: [0.965, 0.816, 0.739],
+		positionM: [0.953, 0.809, 0.744],
 	},
 ] as const;
 
