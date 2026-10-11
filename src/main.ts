@@ -5286,6 +5286,16 @@ class Game {
 	}
 
 	/**
+	 * Move the armed fire group on by one (#385 D6, bound to `b` by #892).
+	 *
+	 * **Empty on purpose, and for one node only.** #892 makes the command
+	 * exist and reach this site; #893 derives the cycle from the loadout and
+	 * gives this its body. It is blocked by #892, so the key prints on the
+	 * `Controls` tab and does nothing until that lands.
+	 */
+	cycleFireGroup() {}
+
+	/**
 	 * Point the nose at the selected target.
 	 *
 	 * A **prototype aid**, and worth saying so plainly: §6 makes cruise free —
@@ -9966,6 +9976,9 @@ class Game {
 				key: route.key,
 				code: e.code,
 				view: this.view,
+				// While `?perf` is up, its keys are its own: `b` toggles bloom
+				// on the panel's listener and does not cycle the fire group (#892).
+				perfPanel: this.perfPanel !== null,
 			}))
 				this.command(id);
 		if (route.prevent) e.preventDefault();
@@ -10123,6 +10136,9 @@ class Game {
 			case "fight.faceTarget":
 				this.faceTarget();
 				return;
+			case "fight.cycleFireGroup":
+				this.cycleFireGroup();
+				return;
 			case "dock.clearance":
 				// §6's request. A no-op outside `VICINITY_KM`, which is a refusal
 				// to answer rather than a denial — see `requestClearance`.
@@ -10143,7 +10159,8 @@ class Game {
 				// **`Enter` rather than a letter, because every letter is taken** —
 				// twenty-six flight and dial bindings, plus `PERF_KEYS`,
 				// `RESTORE_KEY` and `SETTINGS_KEY`, which
-				// `tests/perf-panel-keys.test.ts` enforces are not flight bindings.
+				// `tests/perf-panel-keys.test.ts` enforces are not flight bindings
+				// — bar `b`, which the panel shares with the fire-group cycle (#892).
 				//
 				// Press to launch, press again to skip the traversal: one key, and
 				// the second press is the skip §12.2 makes unconditional. **Both

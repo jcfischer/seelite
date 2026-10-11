@@ -21,7 +21,7 @@ import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { commandById, DEFAULT_BINDINGS } from "../src/commands";
+import { commandById, DEFAULT_BINDINGS, resolveKey } from "../src/commands";
 /**
  * Every key the game binds to something that is **not** a diagnostic.
  *
@@ -56,7 +56,13 @@ describe("the perf panel stays out of the flight controls", () => {
 		expect(bound).toContain("w"); // an axis half: pitch
 	});
 
-	test("no diagnostic key is a flight binding", () => {
+	test("the one diagnostic key a flight command shares is b, by ruling", () => {
+		// **`b` left the partition in #892, on #385 D6:** the fire-group
+		// cycle is `b`, and bloom keeps it only while the panel is open. That
+		// is one ruled exception, not a relaxed rule — a flight binding on any
+		// *other* diagnostic key is still red here, because the panel would
+		// take it from the pilot in the mode built to be used while flying.
+		//
 		// **`SETTINGS_KEY` left this list in #381 S4, and its absence is the
 		// change rather than a hole.** `z` is a flight-path binding now —
 		// `system.settings` dispatches through `Game.command` like any other
@@ -65,8 +71,37 @@ describe("the perf panel stays out of the flight controls", () => {
 		// makes safe. The row below still holds it apart from every *perf*
 		// key, which is this file's subject.
 		const bound = flightKeys();
+		const shared = [...PERF_KEYS, RESTORE_KEY].filter((key) => bound.has(key));
+		expect(shared).toEqual(["b"]);
+	});
+
+	test("while the panel is open, no diagnostic key reaches a flight command", () => {
+		// The exception above is safe only because of this: with `?perf` up the
+		// panel's key is the panel's, and `resolveKey` hands the ship nothing.
+		for (const view of ["cockpit", "chase"] as const)
+			for (const key of [...PERF_KEYS, RESTORE_KEY]) {
+				const reached = resolveKey(DEFAULT_BINDINGS, {
+					key,
+					view,
+					perfPanel: true,
+				});
+				// Guard the guard: an empty answer would pass the loop vacuously.
+				expect(`${key}: ${reached.length > 0}`).toBe(`${key}: true`);
+				for (const id of reached)
+					expect(`${key} → ${id}: ${commandById(id).fixed}`).toBe(
+						`${key} → ${id}: diagnostic`,
+					);
+			}
+	});
+
+	test("while the panel is closed, no key reaches a diagnostic", () => {
+		// The other half: without the panel, `b` is the cycle, and a key
+		// resolved to bloom there would be a press that does nothing.
 		for (const key of [...PERF_KEYS, RESTORE_KEY])
-			expect(`${key}: ${bound.has(key)}`).toBe(`${key}: false`);
+			for (const id of resolveKey(DEFAULT_BINDINGS, { key, view: "cockpit" }))
+				expect(`${key} → ${id}: ${commandById(id).fixed}`).not.toBe(
+					`${key} → ${id}: diagnostic`,
+				);
 	});
 
 	test("and the settings key is one, which is the point of D12", () => {

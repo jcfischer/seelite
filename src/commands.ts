@@ -738,6 +738,18 @@ const AUTHORED = [
 		keys: ["f"],
 	},
 	{
+		// #385 D6: the cycle key is `b`, and bloom keeps `b` only while the
+		// `?perf` panel is open. So the two share a key without colliding:
+		// `perf.bloom`'s scope says it is live only with the panel up, and
+		// `resolveKey` gives the panel's key to the panel while it is (#892).
+		// **No pad button**: every standard button is taken, `home` by the
+		// eject and d-pad ↓ by the instrument — `PAD_FLIGHT_COMMANDS` says so.
+		id: "fight.cycleFireGroup",
+		name: "Cycle the fire group",
+		group: "fight",
+		keys: ["b"],
+	},
+	{
 		id: "fight.rigIncoming",
 		name: "Call an incoming raider (combat rig)",
 		group: "fight",
@@ -1543,11 +1555,13 @@ const makeScope = (
 	views: readonly ViewMode[],
 	surface?: Surface,
 	photoMode?: boolean,
+	perfPanel?: true,
 ): Scope => ({
 	pad, // glossary-ignore: pad
 	views,
 	...(surface === undefined ? {} : { surface }),
 	...(photoMode === undefined ? {} : { photoMode }),
+	...(perfPanel === undefined ? {} : { perfPanel }),
 });
 
 export interface Scope {
@@ -1556,6 +1570,23 @@ export interface Scope {
 	readonly surface?: Surface;
 	/** Fixed pointer gestures are active in normal flight or Photo mode. */
 	readonly photoMode?: boolean;
+	/**
+	 * Live only while the `?perf` panel is open (#892), and present on the
+	 * diagnostics alone — derived from `fixed: "diagnostic"`, never authored.
+	 *
+	 * **Not a `Surface`**, although it claims keys the way one does. The
+	 * surfaces are mutually exclusive by construction and `overlapScope`
+	 * compares them by inequality; the panel sits over a running game and can
+	 * be up beside the Requests console, so as a surface it would be the
+	 * containment case `Surface`'s note forbids. And it claims a key only
+	 * where it has one: a flight key the panel does not bind still flies.
+	 *
+	 * **While open, the panel's key is the panel's.** `resolveKey` returns the
+	 * diagnostic alone for a key both answer, which is what lets `b` be the
+	 * fire-group cycle and bloom at once (#385 D6) — and why `overlapScope`
+	 * does not report the pair: the two are never dispatched together.
+	 */
+	readonly perfPanel?: true;
 }
 
 export interface Command {
@@ -1623,7 +1654,10 @@ export interface Binding {
  * change to what a note *prints* for every keyboard row, which is #370's
  * screen rather than this node's.
  */
-const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
+const scopeOf = (
+	trigger: Trigger,
+	command: Pick<Command, "views" | "fixed">,
+): Scope => {
 	const pad =
 		"contexts" in trigger
 			? trigger.contexts
@@ -1637,9 +1671,10 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 			: undefined;
 	return makeScope(
 		pad, // glossary-ignore: pad
-		views,
+		command.views,
 		surface,
 		trigger.kind === "mouse-move" ? trigger.photoMode === true : undefined,
+		command.fixed === "diagnostic" ? true : undefined,
 	);
 };
 
@@ -1798,7 +1833,7 @@ export const DEFAULT_BINDINGS: Layout = layoutOf(
 		c.defaultTriggers.map((trigger) => ({
 			command: c.id,
 			trigger,
-			scope: scopeOf(trigger, c.views),
+			scope: scopeOf(trigger, c),
 		})),
 	),
 );
@@ -1855,7 +1890,7 @@ const mouseFlightRow = (b: Binding): Binding => {
 	return {
 		command: b.command,
 		trigger,
-		scope: scopeOf(trigger, commandById(b.command).views),
+		scope: scopeOf(trigger, commandById(b.command)),
 	};
 };
 
@@ -1938,6 +1973,9 @@ const intersection = <T>(a: readonly T[], b: readonly T[]) =>
  */
 const overlapScope = (a: Scope, b: Scope): Scope | null => {
 	if (a.surface !== b.surface) return null;
+	// The panel's key wins while it is open, so a diagnostic and a ship's
+	// binding on one key are never dispatched together (`Scope.perfPanel`).
+	if (a.perfPanel !== b.perfPanel) return null;
 	if (
 		a.photoMode !== undefined &&
 		b.photoMode !== undefined &&
@@ -1947,7 +1985,13 @@ const overlapScope = (a: Scope, b: Scope): Scope | null => {
 	const pad = intersection(a.pad, b.pad);
 	const views = intersection(a.views, b.views);
 	if (pad.length === 0 || views.length === 0) return null;
-	return makeScope(pad, views, a.surface, a.photoMode ?? b.photoMode); // glossary-ignore: pad
+	return makeScope(
+		pad, // glossary-ignore: pad
+		views,
+		a.surface,
+		a.photoMode ?? b.photoMode,
+		a.perfPanel,
+	);
 };
 
 export interface Collision {
@@ -2040,6 +2084,9 @@ export interface KeyFacts {
 	readonly view: ViewMode;
 	/** The screen that owns the keyboard right now, when one does. */
 	readonly surface?: Surface;
+	/** Whether the `?perf` panel is open. Absent is closed, which is every
+	 *  player's game (#892). */
+	readonly perfPanel?: boolean;
 }
 
 const keyBinding = (
@@ -2075,7 +2122,8 @@ const liveFor = (b: Binding, facts: KeyFacts): boolean => {
 	return (
 		keyed !== null &&
 		matchesQualifiers(keyed.trigger, facts) &&
-		b.scope.views.includes(facts.view)
+		b.scope.views.includes(facts.view) &&
+		(b.scope.perfPanel !== true || facts.perfPanel === true)
 	);
 };
 
@@ -2112,7 +2160,10 @@ export function resolveKey(bindings: Layout, facts: KeyFacts): CommandId[] {
 		byCode.length > 0
 			? byCode
 			: live.filter((b) => keyBinding(b)?.trigger.key === facts.key);
-	return [...new Set(hits.map((b) => b.command))];
+	// While the panel is open its key is its own (`Scope.perfPanel`): `b`
+	// toggles bloom there and does not also cycle the fire group.
+	const panel = hits.filter((b) => b.scope.perfPanel === true);
+	return [...new Set((panel.length > 0 ? panel : hits).map((b) => b.command))];
 }
 
 /**
@@ -2446,7 +2497,7 @@ export function rebound(
 	next[at] = {
 		command,
 		trigger: moved,
-		scope: scopeOf(moved, commandById(command).views),
+		scope: scopeOf(moved, commandById(command)),
 	};
 	return { layout: layoutOf(next, bindings.base), stored: moved };
 }
