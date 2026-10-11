@@ -21,10 +21,10 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import type { ModelProgressListener } from "./model-progress";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
+import type { ModelProgressListener } from "./model-progress";
 import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 
 /** Cabin kilometres per model metre. */
@@ -512,4 +512,221 @@ export function prepareCockpitModel(
 			ready = undefined;
 			throw error;
 		}));
+}
+
+/**
+ * How far a perimeter lamp stands off the frame surface it is mounted on, model
+ * metres (node #887).
+ *
+ * The first placement of these lamps put each anchor at the centroid of a band of
+ * frame vertices. A centroid of a swept tube is the **middle of solid geometry**:
+ * raycast from those anchors toward the eye and the strut's inner surface was 0.180 m
+ * away at one station and 0.293 m at another, so a head was drawn inside the tube and
+ * its light sat inside closed geometry. `COCKPIT_LAMP.standoffKm` records the same
+ * failure on the procedural arch in its own words — "without it the lamps do not
+ * exist" — and that lesson did not carry across the cabin's replacement.
+ *
+ * So an anchor here is the **first frame surface along a look-direction from the eye**
+ * — the surface the pilot actually sees — drawn back along that ray by this margin.
+ * 60 mm, because the head is a flat disc that must clear whatever it stands on.
+ * `tests/perimeter-lamps.test.ts` re-measures both directions against the shipped GLB.
+ */
+export const PERIMETER_LAMP_STANDOFF_M = 0.06;
+
+/**
+ * The look-directions the lamps were placed from: degrees off the nose, degrees
+ * below the eye line, after the cabin's own pitch (`COCKPIT_MODEL_PITCH_RAD`).
+ *
+ * Recorded because they are how `positionM` below was derived and how it is re-derived
+ * if the cabin is ever re-authored: cast from `COCKPIT_MODEL_EYE_M` along each
+ * direction, take the first `weathered-blue-steel` or `exposed-machined-edges`
+ * surface, stand off by `PERIMETER_LAMP_STANDOFF_M`. All six land inside the cabin
+ * camera's frustum — 60° vertical at aspect 1.6 is ±42.7° horizontally, ±30°
+ * vertically — at 13°/11°, 24°/7° and 33°/4°, and every one is on geometry *below* the
+ * eye line, which is where `assets.md` puts the cabin's warm service lights: "below
+ * window, never a huge roof bar". Nothing here crosses the centre sightline.
+ */
+export const PERIMETER_LAMP_LOOK_DEG = [
+	[13, 11],
+	[24, 7],
+	[33, 4],
+] as const;
+
+/** The perimeter lamp head's radius, model metres. */
+export const PERIMETER_LAMP_HEAD_RADIUS_M = 0.13;
+
+/**
+ * The head's own self-light. `MeshBasicMaterial`, so like the procedural lamp it
+ * illuminates nothing and costs only the fragments it covers — which is what lets it
+ * stay on at every quality while its cast is gated. At `EMISSIVE_CEILING` × 0.34 it is
+ * the level the procedural arch's lamps were struck at, and this time there are six of
+ * them, 26 cm across instead of 14.3 cm.
+ */
+export const PERIMETER_LAMP_HEAD_INTENSITY = EMISSIVE_CEILING * 0.34;
+
+/**
+ * A perimeter lamp's cast, in the cabin's own units — **not** carried through
+ * `cabinLight`, and that distinction is the reason the first six contributed nothing.
+ *
+ * `cabinLight` multiplies a lamp's intensity by `k^decay` (`cabin-pass.ts`), because it
+ * carries a *world* lamp: distances in the cabin's frame are `k = 0.1` times the
+ * model's metres, so intensity has to fall by `k^decay` with them for `intensity /
+ * d^decay` to come out the same at both ends. A lamp authored in model metres and
+ * parented to `modelSpace` is not in that situation — it is already where it will
+ * stand, and three's attenuation floor (`max(d², 0.01)` in scene units, i.e. 1 m of
+ * real cabin) already flattens everything nearer than that. Multiplying by `k²` shrank
+ * these six for nothing: measured on the shipped build they moved the cabin's own side
+ * band by **0.00** — 18.14 with them, 18.14 with them hidden — where the three
+ * under-console lamps give +0.98, +0.89 and +0.33.
+ *
+ * **1 is measured, and it is 8 fewer than the first figure here.** With the anchors on
+ * geometry the camera could not see, brightness could not be judged from the picture at
+ * all, and the figure was swept against the cabin's side band. With the anchors on the
+ * frame the pilot actually sees, the same sweep on the centre of the view reads (six
+ * casts off: mean 18.47, median 19.5, q25 1.0, p95 32.7, nothing blown):
+ *
+ * | intensity | mean | median | q25 | p95 | blown |
+ * | --- | --- | --- | --- | --- | --- |
+ * | 0.05 | 21.48 | 20.6 | 3.1 | 39.6 | 0.00% |
+ * | 0.25 | 32.13 | 24.9 | 19.3 | 106.5 | 0.09% |
+ * | 0.5 | 43.61 | 31.6 | 26.4 | 149.1 | 0.16% |
+ * | **1** | **61.95** | **44.7** | **35.3** | **187.6** | **0.35%** |
+ * | 2 | 90.38 | 69.5 | 53.9 | 220.6 | 0.64% |
+ * | 8 | 171.06 | 163.9 | 135.3 | 249.1 | 4.29% |
+ *
+ * 1 triples the centre's mean, lifts the shadow floor off q25 = 1 — the reason the
+ * cabin read as a dark room — and blows 0.35% of pixels, which is the figure the hull's
+ * own view set is gated at. 2 gives a lit cockpit at the cost of 0.64% blown and a
+ * p95 of 220; 8 whitens the cabin out. `COCKPIT_LAMP.intensity` records the failure
+ * mode of overshooting this, a lit strut reading as a white bar.
+ */
+export const PERIMETER_LAMP_CAST_INTENSITY = 1;
+
+/** The cast's cut-off in cabin kilometres: 3.5 model metres, about the cabin's width. */
+export const PERIMETER_LAMP_CAST_RANGE_KM = 0.35;
+
+/** A perimeter lamp's cast as `main.ts` builds it. */
+export const perimeterLampCast = () => ({
+	color: 0xffc27a,
+	intensity: PERIMETER_LAMP_CAST_INTENSITY,
+	distanceKm: PERIMETER_LAMP_CAST_RANGE_KM,
+	decay: 2,
+});
+
+/**
+ * The cabin's frame lamps, on the perimeter supports the authored cabin already
+ * presents to the pilot (node #887).
+ *
+ * The procedural arch carried six lamps along its two side rails. They went with the
+ * arch when #792's authored cabin replaced the cabin those rails were bolted to, and
+ * what is left of the cabin's lighting is `COCKPIT_MODEL_LAMPS`: three point lights at
+ * y −1.65 model metres, under the console, below and behind an eye at y 0.3. That is
+ * why the cabin reads as a dark room with a bright dashboard — the frame the pilot
+ * sees catches nothing.
+ *
+ * The first attempt at putting them back looked for frame near the eye and found only
+ * geometry 45–80° off the nose, and concluded the authored cabin presented no frame at
+ * all. **That was the instrument, not the cabin**: the histogram dropped every vertex
+ * more than 2.5 m from the eye, and the cabin is 4.5 m deep, so it discarded exactly
+ * the forward geometry that appears in view. Re-measured without that cut, 23,669
+ * frame vertices are inside the frustum, 3,023 of them within 10° of the nose. These
+ * anchors come from that measurement, which is why no new canopy geometry was needed
+ * and `assets.md`'s locked composition — clear centre sightline, no roof beam — is
+ * untouched.
+ *
+ * **Every one is gated, and its head is not.** A cast is a `PointLight`, and three
+ * evaluates every one of them for every standard fragment in the cabin's scene whether
+ * it lights anything or not — the lesson `cockpit-surface.ts` records from #651. Six
+ * casts is a real cost, so low keeps the six dots and medium and high get light with
+ * them, which is the split the procedural cabin's lamp pools were on.
+ */
+export const COCKPIT_PERIMETER_LAMPS = [
+	{
+		name: "perimeter-lamp-port-fore",
+		gated: true,
+		positionM: [-1.015, -1.605, -2.908],
+	},
+	{
+		name: "perimeter-lamp-port-mid",
+		gated: true,
+		positionM: [-2.156, -1.492, -3.395],
+	},
+	{
+		name: "perimeter-lamp-port-aft",
+		gated: true,
+		positionM: [-2.772, -1.068, -2.908],
+	},
+	{
+		name: "perimeter-lamp-starboard-fore",
+		gated: true,
+		positionM: [1.015, -1.605, -2.908],
+	},
+	{
+		name: "perimeter-lamp-starboard-mid",
+		gated: true,
+		positionM: [2.156, -1.492, -3.395],
+	},
+	{
+		name: "perimeter-lamp-starboard-aft",
+		gated: true,
+		positionM: [2.772, -1.068, -2.908],
+	},
+] as const;
+
+let perimeterHeadGeometry: THREE.CircleGeometry | undefined;
+let perimeterHeadMaterial: THREE.MeshBasicMaterial | undefined;
+
+/** The lamp head's disc, shared by all six. */
+export function perimeterLampHeadGeometry(): THREE.CircleGeometry {
+	perimeterHeadGeometry ??= new THREE.CircleGeometry(
+		PERIMETER_LAMP_HEAD_RADIUS_M,
+		16,
+	);
+	return perimeterHeadGeometry;
+}
+
+function perimeterLampHeadMaterial(): THREE.MeshBasicMaterial {
+	perimeterHeadMaterial ??= new THREE.MeshBasicMaterial({
+		color: new THREE.Color(0xffc27a).multiplyScalar(
+			PERIMETER_LAMP_HEAD_INTENSITY,
+		),
+		side: THREE.DoubleSide,
+	});
+	return perimeterHeadMaterial;
+}
+
+/**
+ * The cabin's perimeter lamps, ready to add to `AuthoredCabin.modelSpace`.
+ *
+ * One group per lamp holding its head and its cast. The head is aimed at the eye
+ * rather than along the frame's own normal: these supports lean, and a disc seen
+ * edge-on is nothing at all. The cast is quoted in cabin units — see
+ * `PERIMETER_LAMP_CAST_INTENSITY` — and a point light's range and intensity ignore its
+ * parent's scale, which is why they need no carrying here.
+ */
+export function buildPerimeterLamps(): THREE.Group[] {
+	const eye = new THREE.Vector3(...COCKPIT_MODEL_EYE_M);
+	return COCKPIT_PERIMETER_LAMPS.map((lamp) => {
+		const group = new THREE.Group();
+		group.name = lamp.name;
+		const [x, y, z] = lamp.positionM;
+		group.position.set(x, y, z);
+		const head = new THREE.Mesh(
+			perimeterLampHeadGeometry(),
+			perimeterLampHeadMaterial(),
+		);
+		head.name = `${lamp.name}-head`;
+		head.lookAt(eye);
+		group.add(head);
+		const cast = perimeterLampCast();
+		const light = new THREE.PointLight(
+			cast.color,
+			cast.intensity,
+			cast.distanceKm,
+			cast.decay,
+		);
+		light.name = lamp.name;
+		group.add(light);
+		return group;
+	});
 }
