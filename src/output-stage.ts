@@ -235,7 +235,7 @@ export class SeeliteOutputPass extends OutputPass {
 	 * have to isolate a full-screen term far smaller than a frame's own
 	 * block-to-block variation, and nothing here says how small the term is.
 	 *
-	 * `docs/pitfalls.md` carries the three wrong answers this one term produced and why
+	 * `docs/pitfalls.md` carries the wrong answers this one term produced and why
 	 * each was wrong — it is a lesson about measuring, not about dithering.
 	 */
 	setDither(on: boolean) {
