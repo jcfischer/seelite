@@ -137,7 +137,7 @@ test("a mesh with several materials takes part only if all of them do", () => {
 
 test("the subject follows the scale the subtree is drawn at", () => {
 	// `subjectOf` is what `main.ts` fits the shadow camera to, and the trap it
-	// exists for is `CLAUDE.md`'s "a local frame has units": a station mesh is
+	// exists for is `docs/pitfalls.md`'s "a local frame has units": a station mesh is
 	// built one core radius across and scaled by `radiusKm` at layer time, so a
 	// subject read before the scale is out by whatever that radius is.
 	const ship = buildShipMesh("courier").root;

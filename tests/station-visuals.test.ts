@@ -534,7 +534,7 @@ describe("what the renderer drives, at every range", () => {
  * on a deck reads 1 of 9, and both are plainly visible.
  *
  * **A ray cast from outside is legitimate where one cast from inside is not.**
- * `CLAUDE.md`'s warning — a hull mesh is `FrontSide`, so a ray from inside
+ * `docs/pitfalls.md`'s warning — a hull mesh is `FrontSide`, so a ray from inside
  * passes straight through — is about the interior checks. Coming the other way,
  * down the axis from the docking approach, the first surface a ray meets is a
  * front face and the cull does not apply.

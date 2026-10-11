@@ -240,7 +240,7 @@ describe("the face finish (#204)", () => {
 	});
 
 	test("face sits under the roughest finish, so the calibration is unmoved", () => {
-		// `CLAUDE.md`, "A material dial cannot exceed 1". `calibrate` reads
+		// `docs/pitfalls.md`, "A material dial cannot exceed 1". `calibrate` reads
 		// only the strongest roughness and metalness over every finish, so a
 		// finish under both of the other three's maxima leaves the lift exactly
 		// where it was, and the other three are not repainted.

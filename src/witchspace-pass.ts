@@ -64,7 +64,7 @@
  * below — data, so a test reads it rather than a comment. The pass is
  * **disabled** whenever every term of the look is zero, and the composer skips a
  * disabled pass — what that idle frame costs is not priced (the cost instrument
- * says so); inside a jump, every term also branches on its uniform (`CLAUDE.md`:
+ * says so); inside a jump, every term also branches on its uniform (`docs/pitfalls.md`:
  * a dial at zero still evaluates everything to its right), and the tunnel is
  * evaluated only inside its own opening.
  *
@@ -460,7 +460,7 @@ export class WitchspacePass extends ShaderPass {
 
 	/**
 	 * Draw a look. Called every frame from the state, never poked from outside —
-	 * the vignette's lesson (`CLAUDE.md`): a probe writing a uniform the frame
+	 * the vignette's lesson (`docs/pitfalls.md`): a probe writing a uniform the frame
 	 * loop rewrites measures its own write being overwritten.
 	 *
 	 * `flow` is the phase, so a held phase draws the same frame every capture.
