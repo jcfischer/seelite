@@ -27,7 +27,6 @@ const SAVED = "/tmp/tuning.json";
 const defaults = {
 	castIntensity: 0.24,
 	castRangeKm: 0.22,
-	headLevel: 0,
 	stripGain: 1,
 	consoleGain: 2.8,
 	stationGain: 1,
@@ -140,7 +139,9 @@ await page.evaluate((initial) => {
 		eachMaterial(/amber|warm|work-light|indicator/i, (m, b) => {
 			m.emissiveIntensity = b.emissiveIntensity * F.stripGain;
 		});
-		setHeads(F.headLevel);
+		// No head slider: the added disc was removed as unrealistic (#898), so the
+		// only `-head` meshes a build could hold here are stale; keep them hidden.
+		setHeads(0);
 		g.renderer.toneMappingExposure = F.exposure;
 		window.__tuningApply = apply;
 	};
@@ -357,7 +358,7 @@ try {
 		}
 		const f = state.figures;
 		console.error(
-			`cast ${f.castIntensity} reach ${f.castRangeKm} strips ×${f.stripGain} disc ${f.headLevel} | console ×${f.consoleGain} station ×${f.stationGain} sun ×${f.sunGain} hemi ×${f.hemiGain} fill ×${f.fillGain} exp ${f.exposure}\n  ${state.readout}${state.status ? `  |  ${state.status}` : ""}`,
+			`cast ${f.castIntensity} reach ${f.castRangeKm} strips ×${f.stripGain} | console ×${f.consoleGain} station ×${f.stationGain} sun ×${f.sunGain} hemi ×${f.hemiGain} fill ×${f.fillGain} exp ${f.exposure}\n  ${state.readout}${state.status ? `  |  ${state.status}` : ""}`,
 		);
 	}
 } catch {

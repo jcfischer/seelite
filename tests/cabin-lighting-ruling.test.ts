@@ -33,6 +33,13 @@ describe("the docked cabin's lighting ruling", () => {
 		expect(CABIN_HEMISPHERE_GAIN).toBe(0.7);
 		expect(CABIN_HEMISPHERE_GAIN).toBeLessThan(1);
 		expect(LIGHT_RIG.hemisphere.intensity).toBe(3.425);
+		// **The branch, not the figures.** Sage's third round on #898 caught that a row
+		// holding 0.7 and 3.425 stays green even if the function ignores its argument or
+		// every layer starts counting as the cabin — which is the failure the exception
+		// exists to avoid, since moving the hull layers' ambient moves the
+		// `HULL_LUMA_CALIBRATION` subject this ruling is careful not to touch.
+		expect(hemisphereIntensityFor(true)).toBeCloseTo(3.425 * 0.7, 12);
+		expect(hemisphereIntensityFor(false)).toBe(3.425);
 	});
 
 	test("the authored interior's floods are a fifth of what the kit shipped with", () => {

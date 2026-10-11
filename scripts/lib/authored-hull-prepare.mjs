@@ -55,7 +55,7 @@ export async function liftAndVerifyAuthoredHull(document, asset) {
 	assert.deepEqual(
 		missing,
 		[],
-		`${asset.id}: the study lost a paint the lift names`,
+		`${asset.shipped}: the study lost a paint the lift names`,
 	);
 	const over = ceilingFailures(lifted);
 	assert.deepEqual(
@@ -64,7 +64,7 @@ export async function liftAndVerifyAuthoredHull(document, asset) {
 				`${row.name}: ${row.diffuse.toFixed(4)} > ${row.ceiling.toFixed(4)}`,
 		),
 		[],
-		`${asset.id}: a paint the lift brightened past the roster's painted hull`,
+		`${asset.shipped}: a paint the lift brightened past the roster's painted hull`,
 	);
 	return lifted;
 }
