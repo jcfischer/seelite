@@ -1,5 +1,6 @@
 /** Slot selection, truthful pre-purchase comparison, removal and resale in the
- * live cockpit. Arithmetic and save-version rejection are headless tests. */
+ * live cockpit. Arithmetic and save-version rejection are headless tests.
+ * default-layout probe (#381 D11): Enter activates the focused slot. */
 import { mkdirSync } from "node:fs";
 import {
 	bootedGame,
