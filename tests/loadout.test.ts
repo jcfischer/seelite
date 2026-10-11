@@ -146,6 +146,7 @@ test("a carried typed fitting and a surviving wreck preserve grade, ammo and var
 		grade: "A" as const,
 		ammo: 2,
 		variant: "precise",
+		purchaseCostCr: 725,
 	};
 	c.loadout = { ...c.loadout, h2: rack };
 	let contents: ReturnType<typeof deathWreckContents> = [];

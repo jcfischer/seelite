@@ -41,7 +41,7 @@ import {
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(13);
+		expect(SAVE_SCHEMA_VERSION).toBe(14);
 		const world = newWorld(56);
 		const raw = serializeSave({
 			world,

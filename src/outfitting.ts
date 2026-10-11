@@ -19,6 +19,7 @@ import {
 	type StationAction,
 	transactAtStation,
 	recoveredModule,
+	recoveredLocked,
 	flownMassT,
 	commanderJumpRangeLy,
 } from "./station-commerce";
@@ -114,7 +115,7 @@ export function outfittingScreen(
 				module,
 				row: moduleRow(module),
 				fits: accepts(module),
-				locked: moduleLocked(module, input.rungs),
+				locked: recoveredLocked(item, input.commander.hull, input.rungs),
 				saleCr: fittingSaleValue(item),
 			};
 		});

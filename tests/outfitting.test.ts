@@ -199,3 +199,65 @@ test("preview equals the committed fit, including the replaced module's carried 
 	expect(screen.before.jump).toBe(screen.after!.jump);
 	expect(screen.before.credit).toBe(screen.after!.credit);
 });
+
+test("missile refills use rack capacity and affordable whole ammunition", () => {
+	const i = input();
+	const rack = { ...makeModule("missile-rack", 1), ammo: 0 };
+	i.commander = {
+		...i.commander,
+		credits: 65,
+		loadout: { ...i.commander.loadout, h1: rack },
+	};
+	i.action = { type: "buy-missiles", slot: "h1" };
+	const out = transactAtStation(i);
+	expect(out.accepted).toBe(true);
+	expect(out.commander.loadout.h1.ammo).toBe(2);
+	expect(out.commander.credits).toBe(5);
+	expect(transactAtStation({ ...i, commander: out.commander }).reason).toBe(
+		"insufficient-credits",
+	);
+	expect(
+		transactAtStation({
+			...i,
+			commander: {
+				...i.commander,
+				loadout: { ...i.commander.loadout, h1: makeModule("missile-rack", 1) },
+			},
+		}).reason,
+	).toBe("missiles-full");
+});
+
+test("retired legacy salvage remains sellable without crashing the outfitting tab", () => {
+	const i = input();
+	i.commander = {
+		...i.commander,
+		recoveredFittings: [{ id: "Galactic Hyperdrive", tonnes: 1 }],
+	};
+	expect(outfittingScreen(i).retired[0].id).toBe("Galactic Hyperdrive");
+	expect(
+		transactAtStation({
+			...i,
+			action: { type: "fit-recovered", index: 0, slot: "flex" },
+		}).reason,
+	).toBe("equipment-unavailable");
+	expect(
+		transactAtStation({ ...i, action: { type: "sell-recovered", index: 0 } })
+			.accepted,
+	).toBe(true);
+});
+
+test("previously bought modules can be refitted below their purchase rung; new salvage remains gated", () => {
+	const i = input();
+	i.rungs = { combat: 0, trade: 0, exploration: 0 };
+	for (const purchaseCostCr of [0, 1000]) {
+		i.commander = {
+			...i.commander,
+			recoveredFittings: [
+				carriedModule({ ...makeModule("military-laser", 1), purchaseCostCr }),
+			],
+		};
+		const screen = outfittingScreen(i, "h1", "hold:0");
+		expect(screen.offer?.accepted).toBe(purchaseCostCr > 0);
+		expect(screen.carried[0].locked === null).toBe(purchaseCostCr > 0);
+	}
+});

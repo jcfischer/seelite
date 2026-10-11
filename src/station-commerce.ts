@@ -9,6 +9,7 @@ import {
 	moduleFits,
 	carriedModule,
 	fittingSaleValue,
+	fittingCost,
 	freeSlot,
 	LEGACY_MODULES,
 	transferLoadout,
@@ -73,6 +74,15 @@ export const recoveredTonnes = (commander: CommanderState): number =>
 		(sum, item) => sum + item.tonnes,
 		0,
 	);
+/** The gate applies to acquiring a module, not refitting one already bought. */
+export const recoveredLocked = (
+	item: RecoveredFitting,
+	hull: HullId,
+	rungs: Rungs,
+): GateRefusal | null =>
+	fittingCost(item) > 0
+		? null
+		: moduleLocked(recoveredModule(item, hull), rungs);
 
 export interface CommanderState {
 	credits: number;
@@ -554,7 +564,7 @@ export function transactAtStation(
 			if (!item.module && !LEGACY_MODULES[item.id])
 				return rejected(input, "equipment-unavailable");
 			const m = recoveredModule(item, input.commander.hull);
-			if (moduleLocked(m, input.rungs))
+			if (recoveredLocked(item, input.commander.hull, input.rungs))
 				return rejected(input, "equipment-locked");
 			const commander = {
 				...input.commander,
@@ -580,9 +590,7 @@ export function transactAtStation(
 					))
 			)
 				return rejected(input, "equipment-owned");
-			if (
-				moduleLocked(recoveredModule(item, input.commander.hull), input.rungs)
-			)
+			if (recoveredLocked(item, input.commander.hull, input.rungs))
 				return rejected(input, "equipment-locked");
 			if (
 				!slotFor(input.commander, recoveredModule(item, input.commander.hull))

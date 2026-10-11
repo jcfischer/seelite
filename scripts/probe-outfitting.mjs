@@ -136,6 +136,38 @@ try {
 		/Power plant/.test(await preview.innerText()),
 	);
 	await page.screenshot({ path: `${out}/core.png` });
+	check(
+		"controller navigation includes uniquely named slot and stock controls",
+		await page.evaluate(() => {
+			const c = window.__seelite.liveCockpit;
+			const els = c.focusElements();
+			const ids = c.focusIds(els);
+			return (
+				ids.some((id) => id.startsWith("outfit-slot:")) &&
+				ids.some((id) => id.startsWith("outfit-candidate:stock:")) &&
+				new Set(ids).size === ids.length
+			);
+		}),
+	);
+	check(
+		"a market epoch refreshes the painted stock without a transaction",
+		await page.evaluate(async () => {
+			const g = window.__seelite;
+			const { MARKET_PERIOD_MIN } = await import("/src/market.ts");
+			const before = g.stationConsoleCache.outfitting.epoch;
+			g.world.gameTime += MARKET_PERIOD_MIN * 60;
+			g.updateCockpit();
+			const screen = g.stationConsoleCache.outfitting;
+			const painted = [...document.querySelectorAll(".lc-outfit-stock")].map(
+				(e) => e.dataset.outfitCandidate,
+			);
+			return (
+				screen.epoch !== before &&
+				JSON.stringify(painted) ===
+					JSON.stringify(screen.stock.map((c) => c.id))
+			);
+		}),
+	);
 	check("no browser errors", errors.length === 0);
 } finally {
 	await browser.close();

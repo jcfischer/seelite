@@ -895,6 +895,8 @@ export class LiveCockpit {
 		"[data-live-sweep-action]",
 		"[data-live-request-action]",
 		"[data-live-station-action]",
+		"[data-outfit-slot]",
+		"[data-outfit-candidate]:not(:disabled)",
 		"[data-live-launch]",
 		"[data-live-launch-cancel]",
 		"[data-live-nav-kind]",
@@ -1021,6 +1023,9 @@ export class LiveCockpit {
 		if (el.dataset.liveRequestAction)
 			return `request:${el.dataset.liveRequestAction}:${el.dataset.liveRequestId}`;
 		const d = el.dataset;
+		if (d.outfitSlot !== undefined) return `outfit-slot:${d.outfitSlot}`;
+		if (d.outfitCandidate !== undefined)
+			return `outfit-candidate:${d.outfitCandidate}`;
 		if (d.liveStationAction !== undefined)
 			return `station-action:${d.liveStationAction}:${d.liveStationName}`;
 		if (d.liveStationTab !== undefined)

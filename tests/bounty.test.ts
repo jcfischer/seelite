@@ -485,13 +485,13 @@ describe("the journal (#508 D4: no save version bump)", () => {
 
 describe("the whole save (#508 D4)", () => {
 	test("carries a bounty through a ready-to-report save", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(13);
+		expect(SAVE_SCHEMA_VERSION).toBe(14);
 		const world = newWorld(WORLD);
 		world.gameTime = 200;
 		const commander = newCommanderRecord("courier");
 		commander.requests = recordKill(accepted(), REF, 100);
 		const saved = serializeSave({ world, commander });
-		expect((saved as { saveSchemaVersion: number }).saveSchemaVersion).toBe(13);
+		expect((saved as { saveSchemaVersion: number }).saveSchemaVersion).toBe(14);
 		expect(parseSave(saved)).toEqual({ world, commander });
 	});
 });
