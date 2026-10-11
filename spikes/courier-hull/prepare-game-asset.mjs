@@ -1,17 +1,35 @@
 // Run after build_model.py exports the approved courier hull study (node #812).
 // Node #831 quantises normals and UVs, retaining exact positions, triangles
 // and lossless texture pixels. No simplification or resize.
+//
+// Node #887 lifts nine hull paints here: the study's materials were lit for the
+// spike's own viewer, and `AUTHORED_HULL_PAINT_LIFT` says what that costs in the
+// game's light. The geometry and the texture pixels below are still checked
+// exact, so the lift is the only thing that differs from the approved study.
+
+import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { NodeIO } from "@gltf-transform/core";
 import {
 	ALL_EXTENSIONS,
 	EXTMeshoptCompression,
 	KHRMeshQuantization,
 } from "@gltf-transform/extensions";
-import { dedup, quantize, reorder, textureCompress } from "@gltf-transform/functions";
-import { MeshoptEncoder, MeshoptDecoder } from "meshoptimizer";
+import {
+	dedup,
+	quantize,
+	reorder,
+	textureCompress,
+} from "@gltf-transform/functions";
+import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import sharp from "sharp";
-import { mkdir } from "node:fs/promises";
-import assert from "node:assert/strict";
+import {
+	AUTHORED_HULL_ASSETS,
+	ceilingFailures,
+	liftAuthoredHullPaint,
+} from "../../scripts/lib/authored-hull-paint.mjs";
+import { baseColorLumaByMaterial } from "../../scripts/lib/texture-luma.mjs";
+
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready]);
 const io = new NodeIO()
 	.registerExtensions(ALL_EXTENSIONS)
@@ -19,8 +37,35 @@ const io = new NodeIO()
 		"meshopt.encoder": MeshoptEncoder,
 		"meshopt.decoder": MeshoptDecoder,
 	});
-const document = await io.read(
-	"spikes/courier-hull/courier-hull.glb",
+const document = await io.read("spikes/courier-hull/courier-hull.glb");
+const asset = AUTHORED_HULL_ASSETS.find(
+	(a) => a.shipped === "src/models/courier-hull.glb",
+);
+// The lift's brightness depends on each paint's base colour map, so the pixels are
+// measured and held to the recorded figure: a re-authored wear map that has moved
+// changes the shipped hull's brightness, and that is a look someone has to decide
+// rather than a number a build quietly carries.
+const measured = await baseColorLumaByMaterial(document);
+for (const [name, recorded] of Object.entries(asset.baseColorLuma)) {
+	const got = measured.get(name) ?? 1;
+	assert(
+		Math.abs(got - recorded) < 1e-3,
+		`${name}: its base colour map means ${got.toFixed(4)}, not the recorded ${recorded}. Re-record the figure on the node that re-authored the texture.`,
+	);
+}
+const lifted = liftAuthoredHullPaint(document, measured);
+const missing = asset.liftedPaints.filter(
+	(name) => !lifted.some((row) => row.name === name),
+);
+assert.deepEqual(missing, [], "the study lost a paint the lift names");
+const over = ceilingFailures(lifted);
+assert.deepEqual(
+	over.map(
+		(row) =>
+			`${row.name}: ${row.diffuse.toFixed(4)} > ${row.ceiling.toFixed(4)}`,
+	),
+	[],
+	"a paint the lift brightened past the roster's painted hull",
 );
 const pixels = async (doc) =>
 	Promise.all(
@@ -93,3 +138,13 @@ assert.deepEqual(
 console.log(
 	"Verified the Meshopt round trip of every vertex attribute, and exact texture pixels.",
 );
+const triple = (tint) =>
+	tint
+		.slice(0, 3)
+		.map((v) => v.toFixed(3))
+		.join(",");
+for (const row of lifted)
+	console.log(
+		`lifted ${row.name}: tint ${triple(row.from.tint)} -> ${triple(row.to.tint)} (x${row.scale.toFixed(2)}), metalness ${row.from.metalness.toFixed(2)} -> ${row.to.metalness.toFixed(2)}` +
+			(row.ceilingBound ? " [diffuse ceiling]" : ""),
+	);
