@@ -520,8 +520,8 @@ is not saved. The fit reserves the widest group label alongside SHD and HEAT.
 
 **The Flight console: five readings beside ASSIST and CHARGE** — `FORE`, `AFT`,
 `HULL`, `ENERGY BANK` and `HEAT`, each against its maximum (`72 / 106`), heat as the
-glass reads it. The block is shown under the same predicate as the glass row and
-hidden in peace, with an inline `display` rather than the `hidden` attribute,
+glass reads it. The block follows the glass shield/heat cells
+and is hidden in peace, with an inline `display` rather than the `hidden` attribute,
 which loses to `.lc-readout`'s own `display`.
 
 **A second block sits beside it since #364, and it is not a duel's.** `NAME`,
