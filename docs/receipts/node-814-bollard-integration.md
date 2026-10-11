@@ -6,7 +6,7 @@ Follows [the authored-model integration SOP](../model-integration-sop.md).
 
 SOP steps 1 to 4 are done. The tug is drawn as Bollard O4, installed after
 boot on the courier's path, which this node shares between the two hulls.
-Review, the browser gate and in-game approval are next.
+Reviewed, probed (selected) and approved in game by the principal.
 
 - **Design:** PR #802, branch `spike/bollard-hull-798`, rebased on `origin/main`
   on 2026-10-11 to `6445d75d`. The accepted design is commit `26d6958`
@@ -174,9 +174,11 @@ among them).
   ships, Traffic, wrecks, vents, the postcard, the workbench, the shipyard or
   the bay flood. **19/19 green** in 461 s, peak load 102 on 10 cores. 85 probes
   did not run; this is not a full-suite pass.
-- **Owed:** the view set, the principal flying the tug in the game, and the
-  Field Notes sentence (the node is a major change by `src/changelog.ts`'s
-  rule; the sentence is proposed in the PR).
+- **Principal approval, 2026-10-11:** the principal flew the tug on a dev
+  server of this branch (`?boot=direct&hull=tug&no-save`, `541b0882`) and
+  approved it and the merge, without a view-set contact sheet. The Field Notes
+  sentence proposed in the PR is in `src/changelog.ts`, approved with the
+  merge.
 
 ## Historical measurements
 
