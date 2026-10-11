@@ -193,18 +193,21 @@ one browser, worth ~25 s.
 
 ## 6. After
 
-`npm run probe` on the shipped tree: **99/100 in 2250.9 s**, peak load **18.1**
-on 10 cores (`/tmp/seelite-882-after.log`) — 2356.8 s to 2250.9 s is **not** the
-change's worth, because this run was not idle either: another agent's capture
-servers were up through it, and the runner's own line says so.
+Two runs on two trees, both with the runner's own load figure printed:
 
-The two rows this branch moved, from that run:
+| tree | suite | peak load | `probe-opening` | slowest five |
+|---|---|---|---|---|
+| before (`9ba7b893`, idle-ish) | **2356.8 s** | 12.0 | 395.9 s | 1046.2 s |
+| PR round 1 (`d0d36dd6`, loaded) | 99/100 in 2250.9 s | 18.1 | 138.8 s | 819.8 s |
+| **final tree** (`4663dae8`) | **100/100 in 2223.7 s** | 23.9 | **138.9 s** | **812.0 s** |
 
-| | before | after |
-|---|---|---|
-| `probe-opening` | 395.9 s | **138.8 s** |
-| `probe-music` | 379.9 s | 400.5 s — untouched, and the run was loaded |
-| slowest five | 1046.2 s | 819.8 s |
+The last row is the one to quote: `/tmp/seelite-882-after2.log`, green including
+`probe-station-interior-kit`, which had been the round-1 red (below). 2356.8 s to
+2223.7 s is 5.7% — less than `probe-opening` alone gave up (257 s of the suite,
+10.9%), because `probe-music` took 389.1 s in that run against 379.9 s in the
+baseline and nothing on this branch touched it. Peak load reached 23.9 on 10 cores
+towards the end of a run nobody else was sharing the machine with, which is itself
+the reason the figure prints on every slow line now.
 
 **The one red is not this branch's.** `probe-station-interior-kit`'s
 *cold install tail stays within its live-frame budget* failed on the `bay` view
@@ -215,6 +218,11 @@ own origin, `.worktrees/882-main-check` at `origin/main` `8b7a5871` —
 17.2. Nothing this branch touches is in that probe's path: not `probe-opening`,
 not the runner, not `OpeningRun.advanceTo`. It is an assertion that does not
 survive the machine being busy with something that is not another probe.
+
+The round-2 run on the final tree had that row **green** at the same kind of load —
+which is what a load-sensitive assertion does, and is not a fix: nothing on this
+branch touches it. It is `probe-occlusion`'s ×2.9 in a different costume, and
+`#885` is the node about saying so on the line that fails.
 
 That last sentence is the finding this node leaves behind. The lock guards
 probe-against-probe. It cannot see a capture run, a compile, or a second agent —
