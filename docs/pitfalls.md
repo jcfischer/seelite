@@ -253,8 +253,11 @@ was written in; the history it tells is still this text's history.
   what the reference actually shows. They are warm white rather than the
   reference's red on purpose: `hud-and-scanner.md` §4 owns red as *refusal*, and
   a red lamp on the canopy frame would be an alarm the player cannot act on.
-  A lamp also needs `COCKPIT_LAMP.standoffKm` — the first ones were smaller than
-  the rail's own radius and were drawn inside it, so the sheet showed nothing.
+  A lamp also needs a standoff from what it is mounted on. The procedural
+  arch's first lamps were drawn inside their rail, so the sheet showed nothing;
+  the authored cabin's first perimeter anchors sat inside a strut. Its lamps
+  now stand `PERIMETER_LAMP_STANDOFF_M` off the first surface the pilot sees
+  (`cockpit-model.ts`).
 - **A material dial cannot exceed 1, and clamping one is a silent repaint.**
   `MeshStandardMaterial` multiplies `roughness` by the wear map's green channel,
   so a finish rougher than a clean plate simply cannot be asked for. The cabin's
