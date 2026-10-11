@@ -59,7 +59,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
-import { directRunNotice } from "./lib/probe-contention.mjs";
+import { directRunNotice, isSuiteChild } from "./lib/probe-contention.mjs";
 
 /** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
@@ -494,6 +494,40 @@ export const PLAYWRIGHT_ENV_VARS = ["PLAYWRIGHT_DIR", "PLAYWRIGHT_MODULE"];
  * map and lands on the CommonJS entry, where the namespace arrives under
  * `default` instead of as named exports. #147 has the history.
  */
+/**
+ * The line naming the renderer lane a run actually took (#882), or `""`.
+ *
+ * `npm run probe` forces the GPU lane and `npm run probe:cpu` names the software
+ * one. A bare `node scripts/probe-x.mjs` — the way a red gets re-run alone —
+ * takes **neither**, and gets a software page without a word saying so. Measured
+ * here: the same boot reached a first frame in 1.6 s on the GPU lane and never
+ * got there inside `bootedGame`'s 20 s on this one, which reads as a page that
+ * will not boot rather than as a lane several times slower.
+ *
+ * Quiet on the GPU default, and quiet for a suite's child: `probe:cpu` chose the
+ * fallback knowingly and would otherwise print this a hundred times.
+ *
+ * @param {{ mode: string | null, direct: boolean }} a
+ */
+export function rendererLaneNotice({ mode, direct }) {
+	if (mode === HARDWARE_RENDERER || !direct) return "";
+	return (
+		`[probe] renderer lane: software — ${PROBE_RENDERER_ENV} is unset, so this is the ` +
+		"`probe:cpu` fallback: a SwiftShader page is several times slower than the GPU default, " +
+		"so a slow boot or a timeout here is the lane rather than the game. " +
+		"For the GPU lane: `npm run probe:one <name>`."
+	);
+}
+
+/** Whether this process has already been told what it got. */
+let laneSaid = false;
+
+/**
+ * Launch Chromium the way the probe lane asks for, and say once what lane that
+ * turned out to be.
+ *
+ * @param {Record<string, unknown> & { args?: string[], probeWindow?: string }} options
+ */
 export async function launchChromium(options = {}) {
 	// `name` stays null when neither variable is set, so a failure on the bare
 	// name says so instead of blaming a variable the operator never typed.
@@ -515,6 +549,13 @@ export async function launchChromium(options = {}) {
 		);
 	const mode = probeRendererMode();
 	const launchOptions = probeLaunchOptions(options, mode);
+	// The lane, named before the launch that proves it. Once per process, so a
+	// probe that opens four pages does not say it four times.
+	if (!laneSaid) {
+		laneSaid = true;
+		const lane = rendererLaneNotice({ mode, direct: !isSuiteChild() });
+		if (lane) console.error(lane);
+	}
 	const browser = await chromium.launch(launchOptions);
 	// **What this launch actually was, recorded on the browser it opened.** A
 	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row

@@ -35,6 +35,9 @@ import {
 } from "./lib/source-scan";
 import {
 	assertServingThisTree,
+	HARDWARE_RENDERER,
+	PROBE_RENDERER_ENV,
+	rendererLaneNotice,
 	TREE_ENDPOINT,
 } from "../scripts/probe-guard.mjs";
 import { treeDeclaration } from "../scripts/lib/tree-declaration.mjs";
@@ -450,4 +453,24 @@ test("no caller passes a file list any more", () => {
 		]),
 	);
 	expect(offenders).toEqual([]);
+});
+
+test("the renderer lane a direct run took is named, and only to that run", () => {
+	// The GPU default says nothing about itself, and neither does the software
+	// lane when the run is a suite's child — `npm run probe:cpu` chose it, and a
+	// hundred children would print it a hundred times.
+	expect(rendererLaneNotice({ mode: HARDWARE_RENDERER, direct: true })).toBe(
+		"",
+	);
+	expect(rendererLaneNotice({ mode: null, direct: false })).toBe("");
+	// The row that can fail is the third: a bare `node scripts/probe-x.mjs` gets
+	// a software page and nothing said so. Measured on #882: the same boot was
+	// 1.6s on the GPU lane and never reached a first frame inside `bootedGame`'s
+	// 20s here, which reads as a page that will not boot rather than as a lane
+	// several times slower. The words have to name the variable and the command
+	// that would have avoided it.
+	const line = rendererLaneNotice({ mode: null, direct: true });
+	expect(line).toContain("software");
+	expect(line).toContain(PROBE_RENDERER_ENV);
+	expect(line).toContain("probe:one");
 });

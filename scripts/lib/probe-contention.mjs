@@ -78,6 +78,22 @@ export function contentionNotice({ holder, selfPid, suitePid = null }) {
 }
 
 /**
+ * Whether this process is a suite's child rather than a run someone typed.
+ *
+ * Cheap on purpose — one environment read, no process table — because both
+ * notices this file owns have to decide the same thing: a suite chose its lane
+ * and holds the lock, so telling it about either is 100 lines of noise about a
+ * condition it declared. `PROBE_LOCK_PID` names 0 for anything unset, and 0 is
+ * no pid at all.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function isSuiteChild(env = process.env) {
+	const named = Number(env[SUITE_PID_ENV] ?? "");
+	return Number.isInteger(named) && named > 0;
+}
+
+/**
  * The notice for a run happening **now**, read off the lock file.
  *
  * A holder whose pid is gone is not a contender: the lock's own takeover rule
@@ -96,13 +112,10 @@ export function directRunNotice({
 } = {}) {
 	const holder = readHolder(path);
 	if (!holder || !isAlive(holder.pid)) return "";
-	// The suite's children inherit nothing that identifies it unless the runner
-	// said so; `Number("")` is 0, which is no pid at all rather than a match.
-	const named = Number(env[SUITE_PID_ENV] ?? "");
 	return contentionNotice({
 		holder,
 		selfPid,
-		suitePid: Number.isInteger(named) && named > 0 ? named : null,
+		suitePid: isSuiteChild(env) ? Number(env[SUITE_PID_ENV]) : null,
 	});
 }
 
