@@ -1,10 +1,11 @@
 """Three industrial shipyard studies. Blender --background --python this_file.py.
 Metres, Y up, +Z forward. Material-batched authored geometry; seeded detail.
 """
-import bpy, bmesh, math, random, json, struct
+import bpy, bmesh, math, random, json, struct, sys
 from pathlib import Path
 from mathutils import Vector
 OUT=Path(__file__).resolve().parent
+FLIGHT="--flight" in sys.argv  # see "Flight export" below
 random.seed(798)
 bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
 MATS={}; BATCH={}; GROUP_MAT={}; RIG={}; OWNER="static"
@@ -271,6 +272,24 @@ def front_frame(cx,cy,z,w,h,b=2.8,mat=None):
   if j%2:corner_hardware(mid)
 
 
+# The drum is an octagon 22 units to its corners, so its faces, and the .12 plates
+# on them, stand at 22*cos(pi/8)+.12 = 20.45. The side mounts (housings, vents,
+# bars) were placed at 22.1 and 22.55 as if the faces stood at 22, and float
+# 15-25 m off the hull. Flight lowers both groups by one amount, so the lowest
+# part (the bar blocks, inner face 22.55-.85/2) rests on the plates and every
+# part keeps its place on the others. The review GLBs keep the approved offset.
+DRUM_FACE=22*math.cos(math.pi/8)+.12
+MOUNT_SINK=(22.55-.85/2-DRUM_FACE) if FLIGHT else 0
+
+def opening_corner(a,b,hw=5.1,hh=3.3):
+ # The display end cap inscribes an octagon in its rectangular opening, so the
+ # plates between a side and the top cut the rectangle's corners off. Flight
+ # plates turn the corner instead (an L-shaped inner edge).
+ side=lambda p:abs(abs(p.x)-hw)<1e-6;top=lambda p:abs(abs(p.y)-hh)<1e-6
+ if top(a) and side(b):return [Vector((math.copysign(hw,b.x),math.copysign(hh,a.y),a.z))]
+ if side(a) and top(b):return [Vector((math.copysign(hw,a.x),math.copysign(hh,b.y),a.z))]
+ return []
+
 def capsule(origin):
  global OWNER
  OWNER="capsule";r=22;zf=9;zb=-9;n=8;phase=math.pi/8
@@ -292,7 +311,9 @@ def capsule(origin):
   f=min(5.1/max(abs(p.x),1e-6),3.3/max(abs(p.y),1e-6));inner.append(Vector((p.x*f,p.y*f,zf)))
  for j in range(n):
   k=(j+1)%n
-  pts=[inner[j],outer[j],outer[k],inner[k]];plate(pts,ivory[j%3],Z,.2)
+  pts=[inner[j],outer[j],outer[k],inner[k]]
+  if FLIGHT:plate(pts+opening_corner(inner[k],inner[j]),ivory[j%3],Z,.2,rng_edges=4)
+  else:plate(pts,ivory[j%3],Z,.2)
   a=inner[j].lerp(outer[j],.14);b=inner[j].lerp(outer[j],.91)
   tube(a+Z*.3,b+Z*.3,.23,steel,4)
  # Portal jambs, inner throat walls and a recessed rear wall.
@@ -312,7 +333,7 @@ def capsule(origin):
   a=phase+(j+.5)*math.tau/n;nn=Vector((math.cos(a),math.sin(a),0));t=Vector((-math.sin(a),math.cos(a),0));ctr=nn*20.45+Z*9.25
   box(ctr,(1.7,.48,.4),steel,(t,nn,Z));box(ctr+Z*.26,(.9,.22,.13),warm,(t,nn,Z))
   # Thin rows of habitation windows, solid mount housing, side vents.
-  ctr=nn*22.1
+  ctr=nn*(22.1-MOUNT_SINK)
   box(ctr,(7,.3,2),steel,(t,nn,Z))
   for ii in range(7):box(ctr+t*(ii-3)*.85+nn*.2,(.43,.12,.6),warm,(t,nn,Z))
   for zz in [-4.7,4.1]:
@@ -516,7 +537,7 @@ def capsule(origin):
    box((x,0,z),(.18,6,.2),alloy)
    box((x,-2.95,z),(.18,.18,1.6),warm)
  for j in range(8):
-  a=phase+(j+.5)*math.tau/8;normal=Vector((math.cos(a),math.sin(a),0));t=Vector((-math.sin(a),math.cos(a),0));p=normal*22.55
+  a=phase+(j+.5)*math.tau/8;normal=Vector((math.cos(a),math.sin(a),0));t=Vector((-math.sin(a),math.cos(a),0));p=normal*(22.55-MOUNT_SINK)
   for off in [-4.5,4.5]:
    box(p+t*off,(1.0,.6,14),steel,(t,normal,Z))
    for zz in [-5,0,5]:box(p+t*off+Z*zz,(1.6,.85,1.2),alloy,(t,normal,Z))
@@ -1016,10 +1037,49 @@ def slipway():
  return info
 
 
+# Flight export (`-- o2 --flight`): the approved layout at a density the game can ship.
+# Fasteners, seam strips and wear trails are dropped from every plate, and so is the
+# cladding bevel. The lean plate draws the same random numbers in the same order,
+# so every later plate keeps its approved colour and place.
+if FLIGHT:
+ def plate(points,mat,n=(0,1,0),depth=.09,bolts=True,rng_edges=None):
+  pts=[Vector(p) for p in points];n=Vector(n).normalized();c=sum(pts,Vector())/len(pts)
+  pts=[c+(p-c)*.982 for p in pts];prism(pts,n,depth,mat,group="cladding-"+mat)
+  if bolts:
+   for i in range(rng_edges or len(pts)):
+    for t in [.08,.19,.36,.49,.67,.83,.92]:random.uniform(.03,.13)
+    for t in [.27,.73]:random.uniform(.16,.55);random.uniform(.025,.07)
+
+# The production shipyard slot is 120 x 70 m (`src/station.ts`). The display throat's
+# innermost parts are its rails and lamps, at |x| 4.61 and |y| 3.075 author units, so
+# capsule-local geometry in front of the throat's back is stretched until they clear
+# 6.05 x 3.55. The stretch is linear inside the throat and blends back to identity at
+# the coaming's outer edge, so jambs, frame and coaming move with the opening and
+# nothing tears. The display rear wall (`throat-back`) is dropped: the authoritative
+# interior replaces it.
+APERTURE={"target":(6.05,3.55),"source":(4.61,3.075),"inner":(5.9,3.95),"outer":(10.5,7.6),"fade":3.0,"z":(-4.0,-3.2)}
+def _stretch(t,s,a0,a1):
+ m=abs(t)
+ if m<=a0:r=m*s
+ elif m<a1:r=s*a0+(m-a0)*(a1-s*a0)/(a1-a0)
+ else:r=m
+ return math.copysign(r,t)-t
+def _gate(t,a1,fade):return max(0.,min(1.,1-(abs(t)-a1)/fade))
+def widen_aperture(v):
+ x,y,z=v;A=APERTURE;z0,z1=A["z"];gz=max(0.,min(1.,(z-z0)/(z1-z0)))
+ sx,sy=[t/s for t,s in zip(A["target"],A["source"])]
+ dx=_stretch(x,sx,A["inner"][0],A["outer"][0])*_gate(y,A["outer"][1],A["fade"])*gz
+ dy=_stretch(y,sy,A["inner"][1],A["outer"][1])*_gate(x,A["outer"][0],A["fade"])*gz
+ return (x+dx,y+dy,z)
+
 def export(id,info):
  objects=[]
  root=bpy.data.objects.new("shipyard-"+id,None);bpy.context.collection.objects.link(root)
  spin=bpy.data.objects.new("life-capsule",None);bpy.context.collection.objects.link(spin);spin.parent=root;spin.location=Vector(info["origin"])*10;spin.rotation_euler.x=info.get("tiltX",0)
+ if FLIGHT:
+  BATCH.pop("capsule/throat-back",None)
+  for name,(verts,faces,uvs) in BATCH.items():
+   if name.startswith("capsule/"):verts[:]=[widen_aperture(v) for v in verts]
  rigs={}
  for name,spec in RIG.items():
   ob=bpy.data.objects.new(name,None);bpy.context.collection.objects.link(ob)
@@ -1036,14 +1096,18 @@ def export(id,info):
    for index,xy in zip(face.loop_indices,coords):uv.data[index].uv=xy
   bm=bmesh.new();bm.from_mesh(mesh);bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.00001);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(mesh);bm.free();mesh.update()
   ob=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(ob);ob.parent=spin if name.startswith("capsule/") else rigs.get(owner,root);objects.append(ob)
-  if "/cladding-" in name:
+  if "/cladding-" in name and not FLIGHT:
    bevel=ob.modifiers.new("plate-edge-radius","BEVEL");bevel.width=.28;bevel.segments=1
    normal=ob.modifiers.new("weighted-normals","WEIGHTED_NORMAL");normal.keep_sharp=True
  for name,loc,parent in [("docking-centre",info["portLocal"],spin),("bearing-centre",info["bearing"],root)]:
   ob=bpy.data.objects.new(name,None);bpy.context.collection.objects.link(ob);ob.location=Vector(loc)*10;ob.parent=parent
  root["crew_route_author_units"]=json.dumps(info["crewRoute"]);root["tooling"]="rigid guided manipulators with positive clamps";root["design"]=id;root["metres_per_author_unit"]=10;spin["axis"]="local +Z";spin["radius_m"]=info["radius"]*10
- bpy.context.preferences.filepaths.save_version=0;bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(OUT/(id+".blend")))
- glb=OUT/(id+".glb");bpy.ops.export_scene.gltf(filepath=str(glb),export_format="GLB",export_yup=False,export_apply=True,export_materials="EXPORT",export_extras=True)
+ if FLIGHT:
+  # Intermediate: `prepare-flight-asset.mjs` encodes it into src/models/.
+  flight=OUT.parent.parent/".dream-loop"/"shipyard-flight";flight.mkdir(parents=True,exist_ok=True);glb=flight/(id+".glb")
+ else:
+  bpy.context.preferences.filepaths.save_version=0;bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(OUT/(id+".blend")));glb=OUT/(id+".glb")
+ bpy.ops.export_scene.gltf(filepath=str(glb),export_format="GLB",export_yup=False,export_apply=True,export_materials="EXPORT",export_extras=True)
  data=glb.read_bytes();jl=struct.unpack_from("<I",data,12)[0];doc=json.loads(data[20:20+jl])
  for m in doc["materials"]:
   if "baseColorTexture" in m.get("pbrMetallicRoughness",{}):m["pbrMetallicRoughness"]["baseColorFactor"]=list(MATS[m["name"]].diffuse_color)
@@ -1051,8 +1115,8 @@ def export(id,info):
  glb.write_bytes(struct.pack("<4sII",b"glTF",2,20+len(enc)+len(tail))+struct.pack("<II",len(enc),0x4E4F534A)+enc+tail)
  print("EXPORTED",id,glb.stat().st_size,flush=True)
 
-import sys
-wanted=sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else ["o1","o2","o3"]
+wanted=[a for a in sys.argv[sys.argv.index("--")+1:] if not a.startswith("--")] if "--" in sys.argv else []
+wanted=wanted or ["o1","o2","o3"]
 for id,fn in [("o1",gantry),("o2",hangar),("o3",slipway)]:
  if id not in wanted:continue
  bpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();RIG.clear();OWNER="static";random.seed(800+int(id[1]))

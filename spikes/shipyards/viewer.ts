@@ -4,6 +4,7 @@ import { buildShipMesh } from "../../src/ship-mesh";
 import { HULL_SPECS } from "../../src/hull";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -242,15 +243,30 @@ const stats = {
 	view: selectedView,
 };
 const cache = new Map<string, THREE.Group>();
+// The flight export (#818) is the shipped asset the game will load: the same
+// layout without plate fasteners, seams or bevels, and a widened throat.
+const flightAsset: Record<string, string> = {
+	o1: "gantry",
+	o2: "foundry",
+	o3: "slipway",
+};
+let flight = new URLSearchParams(location.search).get("flight") === "1";
 const referenceCarrier = buildShipMesh("carrier", "a").root;
 let generation = 0;
 async function selectModel(id: string) {
 	if (!names[id]) return;
 	const token = ++generation;
 	stats.loaded = false;
-	let object = cache.get(id);
+	const key = flight ? id + ":flight" : id;
+	let object = cache.get(key);
 	if (!object) {
-		const gltf = await new GLTFLoader().loadAsync("./" + id + ".glb");
+		const gltf = await new GLTFLoader()
+			.setMeshoptDecoder(MeshoptDecoder)
+			.loadAsync(
+				flight
+					? `../../src/models/shipyard-${flightAsset[id]}.glb`
+					: "./" + id + ".glb",
+			);
 		object = gltf.scene;
 		object.scale.setScalar(0.1);
 		object.traverse((o) => {
@@ -266,7 +282,7 @@ async function selectModel(id: string) {
 					}
 			}
 		});
-		cache.set(id, object);
+		cache.set(key, object);
 	}
 	if (token !== generation) return;
 	ship.clear();
@@ -342,7 +358,8 @@ async function selectModel(id: string) {
 		.getSize(new THREE.Vector3())
 		.multiplyScalar(10)
 		.toArray();
-	document.querySelector("#model-name")!.textContent = names[id];
+	document.querySelector("#model-name")!.textContent =
+		names[id] + (flight ? " · flight export" : "");
 	document.querySelector<HTMLImageElement>("#target-dialog img")!.src =
 		"./references/coriolis-hero.png";
 	for (const b of document.querySelectorAll<HTMLElement>("[data-model]"))
@@ -359,6 +376,13 @@ document.querySelector<HTMLButtonElement>("#tooling")!.onclick = () => {
 	document
 		.querySelector("#tooling")!
 		.setAttribute("aria-pressed", String(tooling));
+};
+const flightButton = document.querySelector<HTMLButtonElement>("#flight")!;
+flightButton.setAttribute("aria-pressed", String(flight));
+flightButton.onclick = () => {
+	flight = !flight;
+	flightButton.setAttribute("aria-pressed", String(flight));
+	void selectModel(modelId);
 };
 void selectModel(new URLSearchParams(location.search).get("model") ?? "o1");
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-view]"))
@@ -451,6 +475,6 @@ function frame(now: number) {
 	stats.calls = renderer.info.render.calls;
 	stats.view = selectedView;
 	document.querySelector("#readout")!.innerHTML =
-		`${modelId.toUpperCase()} · ${names[modelId].toUpperCase()}<br>${stats.fps.toFixed(0)} FPS · ${Math.round(stats.modelTriangles / 1000)}K TRIANGLES`;
+		`${modelId.toUpperCase()} · ${names[modelId].toUpperCase()}${flight ? " · FLIGHT" : " · REVIEW"}<br>${stats.fps.toFixed(0)} FPS · ${Math.round(stats.modelTriangles / 1000)}K TRIANGLES`;
 }
 requestAnimationFrame(frame);

@@ -33,6 +33,16 @@ node spikes/shipyards/capture.mjs round-N
 
 To rebuild one model, append `-- o1` (or o2/o3) to the Blender command. The capture observes the shared probe lock, checks the served worktree and requires a hardware renderer. It records seven views per station, checks the docking approach at five roll angles, samples fixed geometry against the capsule envelope, and exercises the viewer controls. These are prototype checks, not production collision validation.
 
+**Flight export (node #818).** The shipping assets are built separately and do not touch the review files:
+
+```sh
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup --python spikes/shipyards/build_model.py -- o1 o2 o3 --flight
+node spikes/shipyards/prepare-flight-asset.mjs   # writes src/models/shipyard-{gantry,foundry,slipway}.glb
+bun test tests/shipyard-flight-asset.test.ts
+```
+
+The viewer's **Flight export** button (or `?flight=1`) shows them. What the flight build changes, and why, is in [the integration receipt](../../docs/receipts/node-818-shipyard-integration.md).
+
 Vite may miss edits under ignored `.worktrees/`; restart this worktree's server before recording a changed viewer. Intermediate captures stay in ignored `.dream-loop/`. Final review and capture evidence lives in `evidence/`.
 
 ## Verified stopping point

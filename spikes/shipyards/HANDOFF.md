@@ -24,13 +24,17 @@ The reference vessel is the current game Carrier A (`buildShipMesh("carrier", "a
 
 ## What exists, and what does not
 
-Editable `.blend`, exported `.glb`, deterministic Blender source, textures, joint hierarchy, viewer and prototype tests are complete. No production station builder, simulation geometry, collision proxy, LOD, game asset loader or flight integration has changed. Current GLBs are review assets (~55/80/34 MiB); they are not deployment-ready flight assets.
+Editable `.blend`, exported `.glb`, deterministic Blender source, textures, joint hierarchy, viewer and prototype tests are complete. No production station builder, simulation geometry, collision proxy, LOD, game asset loader or flight integration has changed. Current GLBs are review assets (~55/80/34 MiB); they are not deployment-ready flight assets. *(2026-10-11: superseded by the flight export below.)*
 
 Author units are 10 m. Exported GLB coordinates are **metres**, Y up. Viewer scale is **0.1**, while the game needs **0.001** to convert metres to kilometres. Do not copy the viewer scale into flight. Carrier geometry starts in kilometres and uses 100 viewer units/km.
 
 The `life-capsule` node rotates around local +Z. `docking-centre` is its child at local `[0,0,96]` m; `bearing-centre` belongs to the static root. Articulated nodes follow `tool-N-carriage/shoulder/elbow/wrist`; metadata records motion amplitude/phase. Root extras include the enclosed crew route in author units. See the builder/tests for exact hierarchy rather than duplicating it in a second catalogue.
 
-**Critical flight mismatch:** the display aperture is 102 × 66 m; production shipyard slot dimensions currently are 120 × 70 m. The model also has a display rear bulkhead at capsule-local Z = -27 m. Build a flight export with a correctly sized opening and remove that display closure before attaching the authoritative interior. Do not globally rescale the whole yard to fit the slot. Existing prototype rays establish a clear approach into the display throat, not a fly-through interior.
+**Critical flight mismatch:** the display aperture is 102 × 66 m; production shipyard slot dimensions currently are 120 × 70 m. The model also has a display rear bulkhead at capsule-local Z = -27 m. Build a flight export with a correctly sized opening and remove that display closure before attaching the authoritative interior. Do not globally rescale the whole yard to fit the slot. Existing prototype rays establish a clear approach into the display throat, not a fly-through interior. *(2026-10-11: the flight export below widens the opening and removes the rear wall; the display throat's real clear opening was about 92 × 61.5 m.)*
+
+## Flight export (2026-10-11)
+
+The shipping candidates exist: `src/models/shipyard-gantry.glb`, `shipyard-foundry.glb` and `shipyard-slipway.glb` (8.01 / 8.28 / 6.32 MiB, 201 k / 209 k / 136 k triangles), built by `build_model.py -- o1 o2 o3 --flight` and encoded losslessly by `prepare-flight-asset.mjs`. The flight build drops plate fasteners, seams, wear trails and the cladding bevel, widens the capsule throat to a clear 121 × 71 m, removes the display rear wall and seats the drum's side mounts on its faces. The principal approved the flight look in the viewer (`?flight=1`) on 2026-10-11 and ruled the mapping: O1 → shipyard `a`, O2 → `b`, O3 → `c`, replacing the current forms. The game loads none of them yet. Shipped models live in `src/models/`, not `public/models/` as step 7 says. Figures, checks and what remains open: [the integration receipt](../../docs/receipts/node-818-shipyard-integration.md); headless checks: `tests/shipyard-flight-asset.test.ts`.
 
 ## Integration sequence
 
