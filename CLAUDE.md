@@ -75,6 +75,14 @@ This file exists because it is **tracked**, so it is present in every git
 worktree the SOP tells you to create. Per-agent memory is not: a worktree is its
 own project scope and loads none of it.
 
+## Authored-model integration
+
+Before integrating an approved ship, station, cockpit or interior study, read
+[the authored-model integration SOP](docs/model-integration-sop.md). It orders
+asset preflight, one complete production integration, measured LOD selection,
+verification and review, and supplies a receipt template. It supplements the
+live map's delivery SOP; it does not replace its constraints or merge gates.
+
 ## Verification, both tiers
 
 Anything arithmetic gets a headless test; anything rendered or spatial gets a
