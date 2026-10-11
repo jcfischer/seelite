@@ -85,7 +85,7 @@ Attributed by timestamp, before (`/tmp/seelite-882-opening-rows.log`):
 | everything else | 30 s | 47 s |
 
 The after-column is the **suite** figure for the final tree (`probe-opening`
-138.9 s in `/tmp/seelite-882-after2.log`, peak load 12.1) — the same conditions as
+138.0 s in `/tmp/seelite-882-after3.log`; 138.9 s on the round-2 tree) — the same conditions as
 the 395.9 s before it. The standalone re-runs of that probe read 156.4 s, and this
 branch's own notice says why that number is not the one to quote: that run shared
 the machine with the suite and prints “Nothing in this run is evidence about how
@@ -237,12 +237,12 @@ Two runs on two trees, both with the runner's own load figure printed:
 |---|---|---|---|---|
 | before (`9ba7b893`, idle-ish) | **2356.8 s** | 12.0 | 395.9 s | 1046.2 s |
 | PR round 1 (`d0d36dd6`, loaded) | 99/100 in 2250.9 s | 18.1 | 138.8 s | 819.8 s |
-| **final tree** (`4663dae8`) | **100/100 in 2223.7 s** | 23.9 | **138.9 s** | **812.0 s** |
+| round-2 tree (`4663dae8`) | **100/100 in 2223.7 s** | 23.9 | 138.9 s | 812.0 s |
+| **final tree** (`1347f914`) | 99/100 in **2183.3 s** | 19.2 | **138.0 s** | **804.1 s** |
 
-The last row is the one to quote: `/tmp/seelite-882-after2.log`, green including
-`probe-station-interior-kit`, which had been the round-1 red (below). 2356.8 s to
-2223.7 s is 5.7% — less than `probe-opening` alone gave up (257 s of the suite,
-10.9%), because `probe-music` took 389.1 s in that run against 379.9 s in the
+The last row is the one to quote: `/tmp/seelite-882-after3.log`. 2356.8 s to
+2183.3 s is **7.4%** — less than `probe-opening` alone gave up (258 s of the suite,
+11.0%), because `probe-music` took 388.1 s in that run against 379.9 s in the
 baseline and nothing on this branch touched it. Peak load reached 23.9 on 10 cores
 towards the end of a run nobody else was sharing the machine with, which is itself
 the reason the figure prints on every slow line now.
@@ -257,10 +257,12 @@ own origin, `.worktrees/882-main-check` at `origin/main` `8b7a5871` —
 not the runner, not `OpeningRun.advanceTo`. It is an assertion that does not
 survive the machine being busy with something that is not another probe.
 
-The round-2 run on the final tree had that row **green** at the same kind of load —
-which is what a load-sensitive assertion does, and is not a fix: nothing on this
-branch touches it. It is `probe-occlusion`'s ×2.9 in a different costume, and
-`#885` is the node about saying so on the line that fails.
+The round-2 run had it **green** and the final tree's run had it **red** again
+(`99/100`, `/tmp/seelite-882-after3.log`) — and re-run alone, with the lock free, it
+is **39/39 green** again at load 14. That is the SOP's own discriminator, "green
+alone points at the machine", applied three times over two trees, and it is what
+`#885` is about: the row is load-sensitive on a machine that is rarely quiet, and
+nothing on this branch touches it.
 
 That last sentence is the finding this node leaves behind. The lock guards
 probe-against-probe. It cannot see a capture run, a compile, or a second agent —
