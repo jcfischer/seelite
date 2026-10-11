@@ -647,8 +647,8 @@ export const PERIMETER_LAMP_LOOK_DEG = [
  * **31.0**, median **24.2**, p95 **100** with the six on, against 18.9 / 19.9 / 34 with
  * them off, and **0.09%** of pixels blown — a lit cabin whose shadow floor has come up,
  * at a quarter of the blown fraction the row above this one accepted. The procedural
- * arch's lamps (removed, #887) recorded what overshooting looks like: at 0.9 they
- * rendered as solid white bars.
+ * arch's first pass (removed, #887) recorded what overshooting looks like: at 0.9
+ * its continuous lit strips rendered as solid white bars.
  */
 export const PERIMETER_LAMP_CAST_INTENSITY = 0.24;
 
