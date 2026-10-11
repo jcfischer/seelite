@@ -250,7 +250,21 @@ export function selectImpact(changedFiles, impact, inventory) {
 	// changes are checked above; contracts declare the mechanisms they observe.
 	a.delete("src/main.ts");
 	b.delete("src/main.ts");
-	const affected = affectedProbes(paths, a, b, PROBE_ROOTS);
+	// A measurement script is run by hand, never by the runner. One that no
+	// contract reaches in either revision cannot change a probe; one a probe
+	// imports keeps that probe's ownership below.
+	const contracts = Object.values(PROBE_ROOTS);
+	const instruments = paths.filter(
+		(p) =>
+			/^scripts\/measure-[^/]+$/.test(p) &&
+			!contracts.some(
+				(roots) =>
+					dependencyClosure(roots, a).has(p) ||
+					dependencyClosure(roots, b).has(p),
+			),
+	);
+	const owned = paths.filter((p) => !instruments.includes(p));
+	const affected = affectedProbes(owned, a, b, PROBE_ROOTS);
 	if (!affected)
 		return {
 			reason:
@@ -258,6 +272,6 @@ export function selectImpact(changedFiles, impact, inventory) {
 		};
 	return {
 		probes: [...new Set([...SMOKE_PROBES, ...affected])].sort(),
-		reason: `Smoke plus contracts reached through base/head dependencies${methods.length ? `; Game.${methods.join(", Game.")}` : ""}.`,
+		reason: `Smoke plus contracts reached through base/head dependencies${methods.length ? `; Game.${methods.join(", Game.")}` : ""}${instruments.length ? `; no probe loads measurement script ${instruments.join(", ")}` : ""}.`,
 	};
 }
