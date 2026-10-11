@@ -9,13 +9,10 @@ import {
 	carriedLamp,
 	PERIMETER_LAMP_CAST_INTENSITY,
 	PERIMETER_LAMP_CAST_RANGE_KM,
-	PERIMETER_LAMP_HEAD_INTENSITY,
-	PERIMETER_LAMP_HEAD_RADIUS_M,
 	PERIMETER_LAMP_LOOK_DEG,
 	PERIMETER_LAMP_STANDOFF_M,
 	perimeterLampCast,
 } from "../src/cockpit-model";
-import { EMISSIVE_CEILING } from "../src/light-rig";
 
 /** The two materials the authored cabin builds its frame from. */
 const FRAME = new Set(["weathered-blue-steel", "exposed-machined-edges"]);
@@ -209,26 +206,40 @@ describe("the cabin's perimeter frame lamps", () => {
 		}
 	});
 
-	test("heads stay on at every quality while every cast is gated", () => {
+	test("every cast is gated, so low quality keeps its cost off", () => {
+		// A cast is a `PointLight`, and three evaluates every one of them for every
+		// standard fragment in the cabin's scene whether it lights anything or not —
+		// the lesson `cockpit-surface.ts` records from #651.
 		for (const lamp of COCKPIT_PERIMETER_LAMPS) expect(lamp.gated).toBe(true);
 		for (const group of buildPerimeterLamps()) {
-			const head = group.children.find(
-				(object) => object instanceof THREE.Mesh,
-			) as THREE.Mesh | undefined;
-			expect(head).toBeDefined();
-			expect((head?.material as THREE.MeshBasicMaterial).type).toBe(
-				"MeshBasicMaterial",
-			);
-			expect(head?.visible).toBe(true);
+			const light = group.children.find(
+				(object) => object instanceof THREE.PointLight,
+			) as THREE.PointLight | undefined;
+			expect(light).toBeDefined();
+			expect(light?.visible).toBe(true);
 		}
 	});
 
-	test("a head is bigger than the procedural lamp it stands in for", () => {
-		// COCKPIT_LAMP.size was 0.143 km in the cabin's hundred-times frame: 14.3 cm
-		// life size. The ask was for the frame's lamps back and bigger.
-		expect(PERIMETER_LAMP_HEAD_RADIUS_M * 2).toBeGreaterThan(0.143);
-		expect(PERIMETER_LAMP_HEAD_INTENSITY).toBe(EMISSIVE_CEILING * 0.34);
-		expect(PERIMETER_LAMP_HEAD_INTENSITY).toBeLessThan(EMISSIVE_CEILING);
+	test("there is no added head, only the cast", () => {
+		// A billboarded `MeshBasicMaterial` disc 26 cm across, five metres out, is not
+		// a fitting: it is a flat circle of uniform colour in front of a canopy. The
+		// principal's word from the live panel was "totally unrealistic — just a bright
+		// circle", and the fitting the authored cabin already carries under its window
+		// sill is left to be the thing you see.
+		for (const group of buildPerimeterLamps()) {
+			expect(
+				group.children.filter((o) => o instanceof THREE.Mesh),
+			).toHaveLength(0);
+			expect(group.children).toHaveLength(1);
+		}
+	});
+
+	test("its figures are the ones set on the live frame", () => {
+		// Not a rule about brightness — a guard that a shipped figure does not drift
+		// back to something a sweep produced. Both were set by eye on the docked cabin
+		// with the panel driving these exact lights.
+		expect(PERIMETER_LAMP_CAST_INTENSITY).toBe(0.24);
+		expect(PERIMETER_LAMP_CAST_RANGE_KM).toBe(0.22);
 	});
 
 	test("carriedLamp would have shrunken them, which is what it is for", () => {

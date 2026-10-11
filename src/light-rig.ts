@@ -117,6 +117,24 @@ export const EXPOSURE = {
  * display-space band even after ACES, while the camera-side fill still owns the
  * separate backlit-hull case.
  */
+/**
+ * The cabin's share of the rig's hemisphere: **0.7 of it** (node #887).
+ *
+ * Every layer scene — far, approach, near, cabin — is built with the same sun,
+ * hemisphere and fill, and #651 asked deliberately for that: the cabin left the near
+ * layer so the bay could not stand inside it, not so it could be lit differently. That
+ * held while the cabin was the only thing in its scene. It does not hold with four
+ * authored interior floods in the bay outside and six frame lamps inside it: the ambient
+ * that reads correctly on a hull against space is lift on top of lift in a closed room,
+ * and the principal's reading from the docked cabin was that the room was washed out.
+ *
+ * So the cabin takes 0.7 and every other layer keeps 1. The figure was set on the live
+ * panel in the docked cabin; `main.ts` applies it where the layer lights are built. It
+ * is the cabin alone because the hull's look — and `HULL_LUMA_CALIBRATION`, which is
+ * recorded against those readings — was judged and measured at the full figure.
+ */
+export const CABIN_HEMISPHERE_GAIN = 0.7;
+
 export const LIGHT_RIG = {
 	/** Directional, because one light cannot serve two scenes at two scales;
 	 *  `main.ts` has the argument. */

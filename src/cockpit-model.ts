@@ -70,6 +70,20 @@ export const COCKPIT_SCREENS = [
 export type CockpitScreen = (typeof COCKPIT_SCREENS)[number];
 
 /**
+ * How much brighter the cabin's console lamps read than the spike struck them
+ * (node #887): **2.8×**, set by the principal on the live panel in the cockpit and again
+ * in the docked cabin.
+ *
+ * Applied by `main.ts` rather than written into `COCKPIT_MODEL_LAMPS`, because those
+ * figures are the authored study's — `build_model.py`'s emission figures for the
+ * housings under the console — and the model owns them. What the game decided is that
+ * they were too dim: with the frame lamps off, the centre of the view reads mean 18.5
+ * with a q25 of 1, which is the "dark room with a bright dashboard" this node started
+ * from.
+ */
+export const COCKPIT_MODEL_LAMP_GAIN = 2.8;
+
+/**
  * The spike's under-console lamps, model metres and the viewer's figures.
  * `main.ts` carries them into the cabin's frame by `cabinLight`, at
  * `COCKPIT_MODEL_KM_PER_M`. Names are the procedural cabin's, which probes and
@@ -552,17 +566,22 @@ export const PERIMETER_LAMP_LOOK_DEG = [
 	[33, 4],
 ] as const;
 
-/** The perimeter lamp head's radius, model metres. */
-export const PERIMETER_LAMP_HEAD_RADIUS_M = 0.13;
-
 /**
- * The head's own self-light. `MeshBasicMaterial`, so like the procedural lamp it
- * illuminates nothing and costs only the fragments it covers — which is what lets it
- * stay on at every quality while its cast is gated. At `EMISSIVE_CEILING` × 0.34 it is
- * the level the procedural arch's lamps were struck at, and this time there are six of
- * them, 26 cm across instead of 14.3 cm.
+ * There is no lamp **head** here, only its cast, and that is a ruling rather than an
+ * omission.
+ *
+ * The first version of these lamps carried a `MeshBasicMaterial` disc 26 cm across,
+ * billboarded at the eye, in the tradition of the procedural arch's lamp — which got
+ * away with it because the arch's lamps were 14.3 cm and 20 cm from the pilot. At five
+ * metres in an authored cabin the disc is not a fitting: it is a flat circle of
+ * uniform colour floating in front of a canopy, with no housing, no gradient and no
+ * relation to anything the modeller drew. The principal's word from the live panel was
+ * "totally unrealistic — just a bright circle", and they turned it to zero.
+ *
+ * So the light is the thing that comes back, and the fitting the cabin already has is
+ * left alone: the authored model carries its own housings and `amber-work-lights`
+ * strips under the window sill, which is where `assets.md` says the warm lights live.
  */
-export const PERIMETER_LAMP_HEAD_INTENSITY = EMISSIVE_CEILING * 0.34;
 
 /**
  * A perimeter lamp's cast, in the cabin's own units — **not** carried through
@@ -594,16 +613,28 @@ export const PERIMETER_LAMP_HEAD_INTENSITY = EMISSIVE_CEILING * 0.34;
  * | 2 | 90.38 | 69.5 | 53.9 | 220.6 | 0.64% |
  * | 8 | 171.06 | 163.9 | 135.3 | 249.1 | 4.29% |
  *
- * 1 triples the centre's mean, lifts the shadow floor off q25 = 1 — the reason the
- * cabin read as a dark room — and blows 0.35% of pixels, which is the figure the hull's
- * own view set is gated at. 2 gives a lit cockpit at the cost of 0.64% blown and a
- * p95 of 220; 8 whitens the cabin out. `COCKPIT_LAMP.intensity` records the failure
- * mode of overshooting this, a lit strut reading as a white bar.
+ * The table is why 1 was rejected — it whitens the cabin out — but **0.24 is not read
+ * off it. It is the principal's figure, set by eye on the live panel in the cockpit and
+ * again in the docked cabin** (the panel drove these same lights and measured the frame
+ * back; it is `node scripts/tune-cabin-lights.mjs`). Re-measured on the build with
+ * both figures and `CABIN_HEMISPHERE_GAIN` in place, the centre of the view reads mean
+ * **31.0**, median **24.2**, p95 **100** with the six on, against 18.9 / 19.9 / 34 with
+ * them off, and **0.09%** of pixels blown — a lit cabin whose shadow floor has come up,
+ * at a quarter of the blown fraction the row above this one accepted. `COCKPIT_LAMP.intensity` records what
+ * overshooting looks like — a lit strut reading as a white bar.
  */
-export const PERIMETER_LAMP_CAST_INTENSITY = 1;
+export const PERIMETER_LAMP_CAST_INTENSITY = 0.24;
 
-/** The cast's cut-off in cabin kilometres: 3.5 model metres, about the cabin's width. */
-export const PERIMETER_LAMP_CAST_RANGE_KM = 0.35;
+/**
+ * The cast's cut-off in cabin kilometres: **2.2 model metres**, set on the same panel
+ * run as the intensity.
+ *
+ * It matters more than it looks. At 3.5 m the six reach across the cabin and light the
+ * far wall, which is what made the sweep blow pixels at every intensity worth having;
+ * at 2.2 m they are what their name says — lamps that light the frame they sit on and
+ * the surfaces near it.
+ */
+export const PERIMETER_LAMP_CAST_RANGE_KM = 0.22;
 
 /** A perimeter lamp's cast as `main.ts` builds it. */
 export const perimeterLampCast = () => ({
@@ -673,51 +704,20 @@ export const COCKPIT_PERIMETER_LAMPS = [
 	},
 ] as const;
 
-let perimeterHeadGeometry: THREE.CircleGeometry | undefined;
-let perimeterHeadMaterial: THREE.MeshBasicMaterial | undefined;
-
-/** The lamp head's disc, shared by all six. */
-export function perimeterLampHeadGeometry(): THREE.CircleGeometry {
-	perimeterHeadGeometry ??= new THREE.CircleGeometry(
-		PERIMETER_LAMP_HEAD_RADIUS_M,
-		16,
-	);
-	return perimeterHeadGeometry;
-}
-
-function perimeterLampHeadMaterial(): THREE.MeshBasicMaterial {
-	perimeterHeadMaterial ??= new THREE.MeshBasicMaterial({
-		color: new THREE.Color(0xffc27a).multiplyScalar(
-			PERIMETER_LAMP_HEAD_INTENSITY,
-		),
-		side: THREE.DoubleSide,
-	});
-	return perimeterHeadMaterial;
-}
-
 /**
  * The cabin's perimeter lamps, ready to add to `AuthoredCabin.modelSpace`.
  *
- * One group per lamp holding its head and its cast. The head is aimed at the eye
- * rather than along the frame's own normal: these supports lean, and a disc seen
- * edge-on is nothing at all. The cast is quoted in cabin units — see
+ * One group per lamp, holding its cast. The cast is quoted in cabin units — see
  * `PERIMETER_LAMP_CAST_INTENSITY` — and a point light's range and intensity ignore its
- * parent's scale, which is why they need no carrying here.
+ * parent's scale, which is why they need no carrying here. There is no head: see the
+ * note above `PERIMETER_LAMP_LOOK_DEG`.
  */
 export function buildPerimeterLamps(): THREE.Group[] {
-	const eye = new THREE.Vector3(...COCKPIT_MODEL_EYE_M);
 	return COCKPIT_PERIMETER_LAMPS.map((lamp) => {
 		const group = new THREE.Group();
 		group.name = lamp.name;
 		const [x, y, z] = lamp.positionM;
 		group.position.set(x, y, z);
-		const head = new THREE.Mesh(
-			perimeterLampHeadGeometry(),
-			perimeterLampHeadMaterial(),
-		);
-		head.name = `${lamp.name}-head`;
-		head.lookAt(eye);
-		group.add(head);
 		const cast = perimeterLampCast();
 		const light = new THREE.PointLight(
 			cast.color,
