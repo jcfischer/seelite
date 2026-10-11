@@ -77,8 +77,9 @@ The cash-for-trade-credit conversion was rejected.
   base worktree carries only the new capture definitions and harness so both
   revisions expose the same view inventory; its game source is unchanged.
   The local comparison sheet is `/tmp/seelite-869-views/index.html`.
-- Principal approved the public changelog sentence. Visual approval and Sage
-  remain pending. Sage must wait for the other worktree's browser suite to
+- Principal approved the public changelog sentence and, after reviewing the
+  dev server, approved the visual on 2026-10-11. Sage remains pending.
+  Sage must wait for the other worktree's browser suite to
   release the machine; the map's delivery SOP forbids overlapping them.
 
 PR: https://github.com/jcfischer/seelite/pull/886. Detailed local logs are
