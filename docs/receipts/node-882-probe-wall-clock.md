@@ -69,18 +69,19 @@ SwiftShader page in silence. Measured here: the same boot reached a first frame
 in 1.6 s on the GPU lane and never got there inside `bootedGame`'s 20 s on the
 software one — which reads as a page that will not boot.
 
-## 3. The opening rows: 395.9 s → 137.5 s
+## 3. The opening rows: 395.9 s → 156.4 s
 
 Attributed by timestamp, before (`/tmp/seelite-882-opening-rows.log`):
 
 | the time went to | before | after |
 |---|---|---|
-| the per-frame seed sweep, 5 seeds | 217 s | 17 s |
+| the per-frame seed sweep, 5 seeds | 217 s | ~30 s |
 | the 4 rows that waited for a shot | 88 s | 12 s |
 | two watched openings | 61 s | 61 s — still watched |
 | everything else | 30 s | 47 s |
 
-28/28 checks, same as before. The watched rows are untouched on purpose: they
+**33/33 checks** — the 28 the watched version ran, plus one stride check per
+seed (§4). The watched rows are untouched on purpose: they
 are the evidence that the sequence *looks* right, and a hold runs no wall time.
 
 ## 4. `advanceTo`, and why the sweep could not be stepped before
