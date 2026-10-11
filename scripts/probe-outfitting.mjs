@@ -76,6 +76,32 @@ try {
 		/ACCEL.*→.*JUMP.*→.*CREDIT \/ RAIDER.*→/s.test(await preview.innerText()),
 	);
 	await page.screenshot({ path: `${out}/comparison.png` });
+	await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { makeModule } = await import("/src/loadout.ts");
+		g.commander = {
+			...g.commander,
+			loadout: {
+				...g.commander.loadout,
+				u1: makeModule("identity-scanner", 1),
+			},
+		};
+		g.cycleFireGroup();
+	});
+	check(
+		"scanner is armed before the refit",
+		await page.evaluate(
+			() =>
+				window.__seelite.armedFireGroup.current(window.__seelite.fireGroups)
+					?.kind === "scanner",
+		),
+	);
+	// Repaint the comparison after the fixture added the scanner.
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.stationConsoleRevision++;
+		g.updateCockpit();
+	});
 	const expected = await page.evaluate(
 		() => window.__seelite.stationConsoleCache.outfitting.after,
 	);
@@ -90,6 +116,13 @@ try {
 					JSON.stringify(expected) && g.commander.loadout.h1.purchaseCostCr > 0
 			);
 		}, expected),
+	);
+	check(
+		"Equipment refit resets the armed group",
+		await page.evaluate(() => {
+			const g = window.__seelite;
+			return g.armedFireGroup.label(g.fireGroups) === "H1 PULSE LASER · 1/2";
+		}),
 	);
 	await page
 		.locator('[data-live-slot="h1"] [data-live-station-action="remove-module"]')

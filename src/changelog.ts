@@ -28,6 +28,11 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	{
+		date: "2026-10-11",
+		text: "Cycle fire groups with B and see which weapons or scanner your trigger has armed.",
+		node: 893,
+	},
 	// Node #869: sentence approved by the principal, 2026-10-11.
 	{
 		date: "2026-10-11",

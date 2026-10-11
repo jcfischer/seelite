@@ -1,3 +1,4 @@
+import { ArmedFireGroup, fireGroups } from "./fire-group";
 import {
 	fitted,
 	equipmentNames,
@@ -5285,15 +5286,22 @@ class Game {
 		this.face(scale(this.world.ship.pos, -1 / d));
 	}
 
-	/**
-	 * Move the armed fire group on by one (#385 D6, bound to `b` by #892).
-	 *
-	 * **Empty on purpose, and for one node only.** #892 makes the command
-	 * exist and reach this site; #893 derives the cycle from the loadout and
-	 * gives this its body. It is blocked by #892, so the key prints on the
-	 * `Controls` tab and does nothing until that lands.
-	 */
-	cycleFireGroup() {}
+	readonly armedFireGroup = new ArmedFireGroup();
+
+	get fireGroups() {
+		return fireGroups(this.commander.loadout, this.commander.hull);
+	}
+
+	cycleFireGroup() {
+		this.armedFireGroup.cycle(this.fireGroups);
+		this.updateCockpit();
+	}
+
+	private laserTriggerHeld(): boolean {
+		return (
+			this.armedFireGroup.firesLaser(this.fireGroups) && this.triggerHeld()
+		);
+	}
 
 	/**
 	 * Point the nose at the selected target.
@@ -12080,6 +12088,7 @@ class Game {
 			LAUNCH_CLEAR_HULL_LENGTHS * this.flownEnvelope.lengthKm,
 		);
 		if (this.dock.phase === "launching") {
+			this.armedFireGroup.reset();
 			// The console is gone; its last refusal goes with it, or the next
 			// dock opens on a sentence about a station the ship has left (#443).
 			this.clearStationRefusal();
@@ -14332,7 +14341,7 @@ class Game {
 			{
 				fired: gun.fired,
 				shotSound: gun.sound,
-				trigger: this.triggerHeld(),
+				trigger: this.laserTriggerHeld(),
 				heatLocked: c.heatLocked,
 				heat: c.heat / HEAT_LOCK,
 				own: {
@@ -15010,7 +15019,7 @@ class Game {
 		// Every phase, docked included: energy regenerates and shields recharge
 		// on the sim clock wherever the ship is. The trigger is the pilot's
 		// (`triggerHeld`), and what the gun delivered is this frame's shot.
-		const gun = stepCondition(this.condition, dt, this.triggerHeld());
+		const gun = stepCondition(this.condition, dt, this.laserTriggerHeld());
 		this.condition = gun.condition;
 		const shot: PlayerShot = { fired: gun.fired, damage: gun.damage };
 		// What the player sees and hears of the shot. Without these a held
@@ -17513,6 +17522,13 @@ class Game {
 			{ holdings: this.holdings(), world: this.commerceWorld },
 			next,
 		);
+		if (
+			this.commander.loadout !== next.holdings.commander.loadout ||
+			this.commander.hull !== next.holdings.commander.hull
+		) {
+			this.armedFireGroup.reset();
+			this.floorFit = null;
+		}
 		this.commander = next.holdings.commander;
 		this.requests = next.holdings.requests;
 		this.ladders = next.holdings.ladders;
@@ -19490,11 +19506,20 @@ class Game {
 				label,
 				value: DUEL_ROW_WIDEST[label],
 			}));
+			const groups = this.fireGroups;
+			const widestGroup = groups.map((group, index) => ({
+				label: "",
+				value: group.label + " · " + (index + 1) + "/" + groups.length,
+			}));
+			if (!widestGroup.length)
+				widestGroup.push({ label: "", value: "NO WEAPONS" });
 			const runAt = (scale: number) =>
 				Math.max(
 					floorRunWidths(ctx, widestCells, scale).total,
 					floorRunWidths(ctx, widestCourse, scale).total,
-					floorRunWidths(ctx, widestDuel, scale).total,
+					...widestGroup.map(
+						(group) => floorRunWidths(ctx, [...widestDuel, group], scale).total,
+					),
 				);
 			const atOne = runAt(1);
 			const solved = Math.max(
@@ -19587,13 +19612,16 @@ class Game {
 			courseRow === null
 				? null
 				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
-		// #324's duel row, in the top band: shield pools and the heat lock, only
-		// while a raider is contesting, dueling or selected.
-		const duelRow = this.duelRowShown() ? duelRowCells(this.condition) : null;
-		const duelBox =
-			duelRow === null
-				? null
-				: drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
+		// The armed group stays readable in peace; combat adds shields and heat.
+		const duelRow: FloorCell[] = [
+			...(this.duelRowShown() ? duelRowCells(this.condition) : []),
+			{
+				label: "",
+				value: this.armedFireGroup.label(this.fireGroups),
+				tone: "passive",
+			},
+		];
+		const duelBox = drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
 		// **The strip's own save, closed once for both runs.** It was closed at
 		// the end of the cell loop until the course block was pasted in there
 		// with a save/restore pair of its own, which read as the closing one —
