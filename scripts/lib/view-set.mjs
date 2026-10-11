@@ -161,6 +161,7 @@ export const LEVERS = Object.freeze({
 	535: "the opening cinematic: the rift forming, the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
 	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
+	869: "the outfitting console: slots beside stock and the change shown before purchase",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
@@ -1449,6 +1450,17 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "shipyard-tab", rungs: "top", view: "cockpit" },
 	},
 	{
+		name: "outfitting-comparison",
+		covers: [869],
+		what: "Docked Equipment tab: ship slots beside station stock, with a pulse laser selected and the handling, range and raider credit shown before buying.",
+		shot: {
+			kind: "shipyard-tab",
+			rungs: "top",
+			tab: "Equipment",
+			view: "cockpit",
+		},
+	},
+	{
 		name: "outpost-interior-workbench",
 		covers: [165, 147, 257],
 		/**
@@ -1594,7 +1606,9 @@ const SHOT_REQUIREMENTS = {
 	// Which hover the frame shows (#177 D2).
 	chart: (s) => CHART_SPOTS.includes(s.spot),
 	// Which rungs the rows are read at (#583): a new game's, or the top.
-	"shipyard-tab": (s) => s.rungs === "new-game" || s.rungs === "top",
+	"shipyard-tab": (s) =>
+		(s.rungs === "new-game" || s.rungs === "top") &&
+		(s.tab === undefined || s.tab === "Equipment"),
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	// #647: above the envelope, or the attitude vents fire nothing past the

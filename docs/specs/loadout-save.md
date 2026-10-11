@@ -13,9 +13,10 @@ still apply; a larger module never fits a smaller slot. The same size rule
 applies to the core plant. Stock commanders have an E-grade plant and an
 E-grade pulse laser, sized for their hull.
 
-## Schema 13
+## Schema 14
 
-Schema 13 writes only the slot loadout. It refuses a simultaneous
+Schema 14 writes the slot loadout and optional purchase-cost provenance (node
+#869). Schema 13 remains readable. Both refuse a simultaneous
 `ownedEquipment` field; older versions refuse a loadout. Unknown module kinds,
 sizes, grades, fields, slot keys, incompatible placements and missing plants
 are refused. Missile racks require whole ammunition within capacity; other
@@ -58,7 +59,8 @@ Fitted catalogue mass contributes to flown mass; carried modules use their hold
 footprint. Cargo racks contribute their catalogue capacity. Existing consoles
 and scanners use a derived legacy-name projection or the central `fitted`
 query. That projection is never persisted. Slot-oriented UI and graded device
-behaviours belong to the following outfitting nodes.
+behaviours are separate: the Equipment tab now shows slots and seeded station
+stock (#869), while device behaviours belong to the following outfitting nodes.
 
 The compatibility console permits repeated hardpoint modules, subject to free
 compatible slots and existing ladder gates. Its legacy name projection describes
@@ -79,3 +81,19 @@ upgraded core modules, weapon replacements and additional slots are counted.
 Stock modules are also excluded from wreck salvage: respawn already replaces
 them, so recovering them would mint saleable fittings from repeated deaths.
 Upgraded modules and additional fittings retain the existing survival lottery.
+
+## Purchase cost and the outfitting tab (#869)
+
+`purchaseCostCr` follows a bought module through slots, removal into the hold,
+hull transfer, wreck survival and save round trips. It must be finite and
+nonnegative. Zero means known salvage. An absent cost on a typed module uses
+list value conservatively; untyped legacy salvage keeps zero basis. A resale
+banks only `max(0, proceeds - cost)` on the trade ladder. All resale proceeds
+still reach the purse. Schemas before 14 refuse explicit cost fields.
+
+The Equipment tab selects a slot, then a compatible station or carried module.
+The preview calculates the same transaction the confirm button commits,
+including any replaced module's carried tonne and the resulting hold capacity.
+Removal is atomic and the core plant can only be replaced. Fuel and per-rack
+missile refills remain separate services. The gate assignments and cost ruling
+are recorded in `../research/outfitting-869-codex.md`.

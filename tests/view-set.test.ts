@@ -185,7 +185,7 @@ describe("the view set itself", () => {
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
-		expect(VIEWS.length).toBe(72);
+		expect(VIEWS.length).toBe(73);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -763,7 +763,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–29.0s");
+		expect(html).toContain("· clock 0.6–29.4s");
 		expect(html).not.toContain("pinned");
 	});
 

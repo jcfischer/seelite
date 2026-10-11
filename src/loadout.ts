@@ -17,6 +17,9 @@ export interface FittedModule {
 	/** Reserved identity; rolling and interpreting traits belongs to node #875. */
 	variant?: string;
 	ammo?: number;
+	/** Cost basis for trade credit. Zero is salvage; absent is legacy/stock
+	 * equipment, conservatively valued at list price rather than free loot. */
+	purchaseCostCr?: number;
 }
 export const sameModule = (a: FittedModule, b: FittedModule): boolean =>
 	a.module === b.module &&
@@ -104,6 +107,9 @@ export function fittingValue(f: {
 export const fittingSaleValue = (
 	item: Parameters<typeof fittingValue>[0],
 ): number => fittingValue(item) * 0.9;
+export const fittingCost = (
+	item: Parameters<typeof fittingValue>[0] & { purchaseCostCr?: number },
+): number => item.purchaseCostCr ?? (item.module ? fittingValue(item) : 0);
 export const freeSlot = (
 	loadout: Loadout,
 	hull: HullId,
@@ -145,12 +151,29 @@ export function parseModule(raw: unknown): FittedModule {
 	const o = raw as Record<string, unknown>;
 	if (
 		Object.keys(o).some(
-			(k) => !["module", "size", "grade", "variant", "ammo"].includes(k),
+			(k) =>
+				![
+					"module",
+					"size",
+					"grade",
+					"variant",
+					"ammo",
+					"purchaseCostCr",
+				].includes(k),
 		)
 	)
 		throw Error("unknown module field");
 	const m = { module: o.module, size: o.size, grade: o.grade } as FittedModule;
 	const row = moduleRow(m);
+	if (o.purchaseCostCr !== undefined) {
+		if (
+			typeof o.purchaseCostCr !== "number" ||
+			!Number.isFinite(o.purchaseCostCr) ||
+			o.purchaseCostCr < 0
+		)
+			throw Error("invalid module purchase cost");
+		m.purchaseCostCr = o.purchaseCostCr;
+	}
 	if (o.variant !== undefined) {
 		if (typeof o.variant !== "string" || !o.variant.trim())
 			throw Error("invalid variant");

@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-outfitting.mjs",
+			"Exercises the live two-pane Equipment tab: slot and stock selection, pre-purchase handling/range/kill-credit comparison, purchase, removal, fitting from hold, resale cost basis and keyboard selection.",
+			[
+				"outfitting",
+				"equipment",
+				"modules",
+				"commerce",
+				"cost basis",
+				"trade ladder",
+				"cockpit",
+				"preview",
+			],
+		),
+		entry(
 			"probe-station-interior-kit.mjs",
 			"Holds the optional fitting bundle across boot, tests one-time background installation and failure stand-ins, full-set capture readiness, and camera-driven instanced LODs in all four production bay themes.",
 			[

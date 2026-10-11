@@ -148,101 +148,67 @@ try {
 		g.updateCockpit();
 	});
 	await page.locator('[data-live-station-tab="Equipment"]').click();
+	const pulse = page.locator('[data-outfit-candidate="stock:pulse-laser/1/E"]');
+	await pulse.click();
 	const gate = await page.evaluate(async () => {
 		const L = await import("/src/ladder.ts");
-		return {
-			gate: L.gateOf("Military Laser"),
-			name: L.RUNG_NAMES.combat[L.gateOf("Military Laser").rung],
-		};
+		const g = L.gateOf("Extra Pulse Laser");
+		return { ...g, name: L.RUNG_NAMES[g.ladder][g.rung] };
 	});
-	const laserRow = page.locator('[data-live-equipment="available"]', {
-		hasText: "Military Laser",
-	});
-	const lockedText = await laserRow.innerText();
+	const preview = page.locator("[data-live-outfit-preview]");
 	check(
-		"a gated shipyard item lists, locked, naming its ladder, rung and rung name",
-		lockedText.includes(
-			`COMBAT ${gate.gate.rung} · ${gate.name.toUpperCase()}`,
-		) && lockedText.includes("LOCKED"),
-		lockedText.replaceAll("\n", " | "),
-	);
-	// Each row is its own grid, so a wide action cell moves the price column;
-	// the first capture showed exactly that.
-	// The docking computer `__parkInBerth` fitted is the owned row; the check
-	// says which kinds it measured rather than assuming all three were there.
-	const columns = await page.evaluate(() => {
-		const rows = [
-			...document.querySelectorAll('[data-live-equipment="available"]'),
-		].filter((row) => !/Fuel/.test(row.textContent ?? ""));
-		return {
-			x: rows.map((row) =>
-				Math.round(row.children[1].getBoundingClientRect().right),
-			),
-			kinds: [
-				...new Set(
-					rows.map((row) =>
-						/OWNED/.test(row.textContent ?? "")
-							? "owned"
-							: /LOCKED/.test(row.textContent ?? "")
-								? "locked"
-								: "open",
-					),
-				),
-			].sort(),
-		};
-	});
-	check(
-		"the price column stays aligned across locked, owned and open rows",
-		new Set(columns.x).size === 1 &&
-			columns.kinds.join(",") === "locked,open,owned",
-		`${columns.kinds.join(",")} · ${columns.x.join(",")}`,
+		"a locked module names its ladder, rung and rung name",
+		(await preview.innerText()).includes(
+			"COMBAT " + gate.rung + " · " + gate.name,
+		),
 	);
 	check(
-		"and draws no BUY",
-		(await laserRow
-			.locator('[data-live-station-action="buy-equipment"]')
+		"a locked preview has no BUY",
+		(await preview
+			.locator('[data-live-station-action="buy-module"]')
 			.count()) === 0,
 	);
-	const scannerRow = page.locator('[data-live-equipment="available"]', {
-		hasText: "Long-Range Scanner",
-	});
+	const columns = await page
+		.locator(".lc-outfit-stock em")
+		.evaluateAll((rows) =>
+			rows.map((r) => Math.round(r.getBoundingClientRect().right)),
+		);
 	check(
-		"the Long-Range Scanner stays at rung 0: it has a BUY",
-		(await scannerRow
-			.locator('[data-live-station-action="buy-equipment"]')
-			.count()) === 1,
+		"stock prices align across grades and locked rows",
+		columns.length > 0 && new Set(columns).size === 1,
 	);
-	await page.screenshot({ path: `${out}/02-shipyard-locked-row.png` });
-
+	await page.screenshot({ path: out + "/02-shipyard-locked-row.png" });
 	await page.evaluate(async () => {
 		const L = await import("/src/ladder.ts");
 		const g = window.__seelite;
-		const rung = L.gateOf("Military Laser").rung;
 		g.ladders = {
 			...g.ladders,
-			banked: { ...g.ladders.banked, combat: L.threshold("combat", rung) },
+			banked: {
+				...g.ladders.banked,
+				combat: L.threshold("combat", L.gateOf("Extra Pulse Laser").rung),
+			},
 		};
 		g.stationConsoleRevision += 1;
 		g.updateCockpit();
 	});
-	const buy = laserRow.locator('[data-live-station-action="buy-equipment"]');
-	check("the rung unlocks it: a BUY is drawn", (await buy.count()) === 1);
-	await buy.click();
-	const owned = await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
-			"/src/loadout.ts"
-		);
-		return equipmentNames(window.__seelite.commander.loadout ?? {}).includes(
-			"Military Laser",
-		);
-	});
+	const buy = preview.locator('[data-live-station-action="buy-module"]');
 	check(
-		"and the till sells it",
-		owned && /OWNED/.test(await laserRow.innerText()),
+		"reaching the rung enables the selected purchase",
+		(await buy.count()) === 1,
 	);
-	await page.screenshot({ path: `${out}/03-shipyard-unlocked.png` });
-
-	// A stock primary is a physical pulse, but does not occupy a free h2.
+	await buy.click();
+	check(
+		"purchase reaches the slot and leaves the displaced module in the hold",
+		await page.evaluate(() => {
+			const c = window.__seelite.commander;
+			return (
+				c.loadout.h1.module === "pulse-laser" &&
+				c.loadout.h1.purchaseCostCr > 0 &&
+				c.recoveredFittings.some((f) => f.module === "pulse-laser")
+			);
+		}),
+	);
+	await page.screenshot({ path: out + "/03-shipyard-unlocked.png" });
 	await page.evaluate(async () => {
 		const { stockLoadout } = await import("/src/loadout.ts");
 		const g = window.__seelite;
@@ -255,19 +221,11 @@ try {
 		g.stationConsoleRevision += 1;
 		g.updateCockpit();
 	});
-	const pulseRow = page.locator('[data-live-equipment="available"]', {
-		hasText: "Extra Pulse Laser",
-	});
-	const extraPulse = pulseRow.locator(
-		'[data-live-station-action="buy-equipment"]',
-	);
+	await page.locator('[data-outfit-slot="h2"]').click();
+	await pulse.click();
+	await preview.locator('[data-live-station-action="buy-module"]').click();
 	check(
-		"stock pulse leaves BUY available for a free second hardpoint",
-		(await extraPulse.count()) === 1,
-	);
-	await extraPulse.click();
-	check(
-		"the extra pulse is fitted to h2 by the live console",
+		"a second pulse fits the selected second hardpoint",
 		await page.evaluate(
 			() => window.__seelite.commander.loadout.h2?.module === "pulse-laser",
 		),

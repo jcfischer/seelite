@@ -148,7 +148,9 @@ import {
  */
 /** 12 adds one commander death wreck. 13 replaces the flat equipment list
  * with a validated slot loadout and preserves typed fittings in the hold/wreck. */
-export const SAVE_SCHEMA_VERSION = 13;
+/** v14 adds module purchase cost; absent typed costs are conservatively list
+ * price, while untyped legacy salvage remains zero-cost. No value is removed. */
+export const SAVE_SCHEMA_VERSION = 14;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -182,7 +184,7 @@ export const SAVE_SCHEMA_VERSION = 13;
  * recovered fittings and predates the sweep ledger.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
 ] as const;
 
 /**
@@ -658,6 +660,8 @@ const parseCommander = (
 				if (item.module !== undefined) {
 					if (version < 13) fail("legacy fitting contains module fields");
 					const { id, tonnes, ...module } = item;
+					if (version < 14 && Object.hasOwn(module, "purchaseCostCr"))
+						fail("legacy fitting contains purchase cost");
 					const parsed = parseModule(module);
 					if (tonnes !== 1 || carriedModule(parsed).id !== id)
 						fail("invalid carried module identity or quantity");
@@ -672,6 +676,11 @@ const parseCommander = (
 		if (Object.hasOwn(state, "ownedEquipment"))
 			fail("v13 cannot contain ownedEquipment");
 		loadout = parseLoadout(state.loadout, hull as HullId);
+		if (
+			version < 14 &&
+			Object.values(loadout).some((m) => m.purchaseCostCr !== undefined)
+		)
+			fail("legacy loadout contains purchase cost");
 	} else {
 		if (Object.hasOwn(state, "loadout"))
 			fail("legacy save cannot contain loadout");
@@ -860,6 +869,13 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	// carry one is enforced, as `flight.rates` is one level down.
 	if ((version as number) < 9) refuseDerelicts(o.world, version as number);
 	const world = parseWorld(o.world);
+	if ((version as number) < 14) {
+		for (const g of world.galaxies)
+			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])
+				for (const container of Object.values(row?.containers ?? {}))
+					if (container.fitting?.purchaseCostCr !== undefined)
+						fail("legacy world contains module purchase cost");
+	}
 	if ((version as number) < 13) {
 		for (const g of world.galaxies)
 			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])
