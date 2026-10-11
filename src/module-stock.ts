@@ -70,7 +70,7 @@ export function moduleStock(input: ModuleStockInput): readonly ModuleRow[] {
 		if (legacy && legacy.scope !== "universal" && legacy.scope !== station.type)
 			return false;
 		// Technology raises the odds, while size and grade lower them. Type and
-		// economy tilt odds, rather than clamping away a modifier at either end.
+		// economy tilt odds, rather than clamping away their effect at either end.
 		const logOdds =
 			(displayTL - 7) / 5 -
 			(row.size - 1) * 0.55 -

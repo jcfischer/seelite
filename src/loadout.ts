@@ -18,7 +18,7 @@ export interface FittedModule {
 	variant?: string;
 	ammo?: number;
 	/** Cost basis for trade credit. Zero is salvage; absent is legacy/stock
-	 * equipment, conservatively valued at list price rather than free loot. */
+	 * equipment, conservatively valued at list price rather than zero. */
 	purchaseCostCr?: number;
 }
 export const sameModule = (a: FittedModule, b: FittedModule): boolean =>

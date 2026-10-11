@@ -246,10 +246,10 @@ test("retired legacy salvage remains sellable without crashing the outfitting ta
 	).toBe(true);
 });
 
-test("previously bought modules can be refitted below their purchase rung; new salvage remains gated", () => {
+test("only explicit purchase provenance bypasses the fitting gate; unknown and new salvage remain gated", () => {
 	const i = input();
 	i.rungs = { combat: 0, trade: 0, exploration: 0 };
-	for (const purchaseCostCr of [0, 1000]) {
+	for (const purchaseCostCr of [undefined, 0, 1000]) {
 		i.commander = {
 			...i.commander,
 			recoveredFittings: [
@@ -257,7 +257,7 @@ test("previously bought modules can be refitted below their purchase rung; new s
 			],
 		};
 		const screen = outfittingScreen(i, "h1", "hold:0");
-		expect(screen.offer?.accepted).toBe(purchaseCostCr > 0);
-		expect(screen.carried[0].locked === null).toBe(purchaseCostCr > 0);
+		expect(screen.offer?.accepted).toBe((purchaseCostCr ?? 0) > 0);
+		expect(screen.carried[0].locked === null).toBe((purchaseCostCr ?? 0) > 0);
 	}
 });

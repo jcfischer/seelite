@@ -89,7 +89,10 @@ hull transfer, wreck survival and save round trips. It must be finite and
 nonnegative. Zero means known salvage. An absent cost on a typed module uses
 list value conservatively; untyped legacy salvage keeps zero basis. A resale
 banks only `max(0, proceeds - cost)` on the trade ladder. All resale proceeds
-still reach the purse. Schemas before 14 refuse explicit cost fields.
+still reach Holdings. Schemas before 14 refuse explicit cost fields.
+The fallback cost is only a resale basis: it does not prove a prior purchase.
+Only an explicit positive purchase cost bypasses the fitting rank gate;
+unknown legacy fittings and known salvage retain the gate.
 
 The Equipment tab selects a slot, then a compatible station or carried module.
 The preview calculates the same transaction the confirm button commits,

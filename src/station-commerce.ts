@@ -9,7 +9,6 @@ import {
 	moduleFits,
 	carriedModule,
 	fittingSaleValue,
-	fittingCost,
 	freeSlot,
 	LEGACY_MODULES,
 	transferLoadout,
@@ -74,13 +73,14 @@ export const recoveredTonnes = (commander: CommanderState): number =>
 		(sum, item) => sum + item.tonnes,
 		0,
 	);
-/** The gate applies to acquiring a module, not refitting one already bought. */
+/** Only an explicit paid cost proves prior purchase. The conservative resale
+ * basis for an unknown legacy fitting does not confer fitting permission. */
 export const recoveredLocked = (
 	item: RecoveredFitting,
 	hull: HullId,
 	rungs: Rungs,
 ): GateRefusal | null =>
-	fittingCost(item) > 0
+	(item.purchaseCostCr ?? 0) > 0
 		? null
 		: moduleLocked(recoveredModule(item, hull), rungs);
 
