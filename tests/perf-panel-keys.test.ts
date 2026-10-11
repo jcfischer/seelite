@@ -21,7 +21,12 @@ import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { commandById, DEFAULT_BINDINGS, resolveKey } from "../src/commands";
+import {
+	COMMANDS,
+	commandById,
+	DEFAULT_BINDINGS,
+	resolveKey,
+} from "../src/commands";
 /**
  * Every key the game binds to something that is **not** a diagnostic.
  *
@@ -73,6 +78,18 @@ describe("the perf panel stays out of the flight controls", () => {
 		const bound = flightKeys();
 		const shared = [...PERF_KEYS, RESTORE_KEY].filter((key) => bound.has(key));
 		expect(shared).toEqual(["b"]);
+	});
+
+	test("the rows scoped to the panel are exactly the panel's keys, all diagnostics", () => {
+		// `perfPanel` is authored on each row rather than inferred from
+		// `fixed` (sage round 1 on #897), so this is what keeps the two lists —
+		// the registry's and the panel's own — in step.
+		const scoped = COMMANDS.filter((c) => c.perfPanel);
+		expect(scoped.every((c) => c.fixed === "diagnostic")).toBe(true);
+		const keys = scoped.flatMap((c) =>
+			c.defaultTriggers.flatMap((t) => (t.kind === "key" ? [t.key] : [])),
+		);
+		expect(keys.sort()).toEqual([...PERF_KEYS, RESTORE_KEY].sort());
 	});
 
 	test("while the panel is open, no diagnostic key reaches a flight command", () => {

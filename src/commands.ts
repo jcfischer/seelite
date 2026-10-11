@@ -506,6 +506,8 @@ interface Authored {
 	 *   is always clickable, not a binding a player could move elsewhere.
 	 */
 	readonly fixed?: FixedReason;
+	/** Live only while the `?perf` panel is open — `Scope.perfPanel`. */
+	readonly perfPanel?: true;
 	readonly keys?: readonly KeySpec[];
 	/**
 	 * Physical keys (`KeyboardEvent.code`) that reach this command under Alt.
@@ -1071,6 +1073,7 @@ const AUTHORED = [
 		name: `Bloom (${PERF})`,
 		group: "system",
 		fixed: "diagnostic",
+		perfPanel: true,
 		keys: ["b"],
 	},
 	{
@@ -1078,6 +1081,7 @@ const AUTHORED = [
 		name: `Atmosphere (${PERF})`,
 		group: "system",
 		fixed: "diagnostic",
+		perfPanel: true,
 		keys: ["h"],
 	},
 	{
@@ -1085,6 +1089,7 @@ const AUTHORED = [
 		name: `Clouds (${PERF})`,
 		group: "system",
 		fixed: "diagnostic",
+		perfPanel: true,
 		keys: ["y"],
 	},
 	{
@@ -1092,6 +1097,7 @@ const AUTHORED = [
 		name: `Relief (${PERF})`,
 		group: "system",
 		fixed: "diagnostic",
+		perfPanel: true,
 		keys: ["r"],
 	},
 	{
@@ -1099,6 +1105,7 @@ const AUTHORED = [
 		name: `Craters (${PERF})`,
 		group: "system",
 		fixed: "diagnostic",
+		perfPanel: true,
 		keys: ["o"],
 	},
 	{
@@ -1106,6 +1113,7 @@ const AUTHORED = [
 		name: `Planet class (${PERF})`,
 		group: "system",
 		fixed: "diagnostic",
+		perfPanel: true,
 		keys: ["p"],
 	},
 	{
@@ -1113,6 +1121,7 @@ const AUTHORED = [
 		name: `Restore every switch (${PERF})`,
 		group: "system",
 		fixed: "diagnostic",
+		perfPanel: true,
 		keys: ["i"],
 	},
 ] as const satisfies readonly Authored[];
@@ -1553,9 +1562,11 @@ const NOT_WHILE_CAPTURING: readonly PadContext[] = PAD_CONTEXTS.filter(
 const makeScope = (
 	pad: readonly PadContext[],
 	views: readonly ViewMode[],
-	surface?: Surface,
-	photoMode?: boolean,
-	perfPanel?: true,
+	{
+		surface,
+		photoMode,
+		perfPanel,
+	}: Pick<Scope, "surface" | "photoMode" | "perfPanel"> = {},
 ): Scope => ({
 	pad, // glossary-ignore: pad
 	views,
@@ -1572,7 +1583,9 @@ export interface Scope {
 	readonly photoMode?: boolean;
 	/**
 	 * Live only while the `?perf` panel is open (#892), and present on the
-	 * diagnostics alone — derived from `fixed: "diagnostic"`, never authored.
+	 * rows that say so — authored on each, and not inferred from `fixed`: a
+	 * diagnostic is a reason a row cannot be moved, which says nothing about
+	 * which screen listens for it (sage round 1).
 	 *
 	 * **Not a `Surface`**, although it claims keys the way one does. The
 	 * surfaces are mutually exclusive by construction and `overlapScope`
@@ -1598,6 +1611,8 @@ export interface Command {
 	readonly fixed?: FixedReason;
 	/** Derived from `fixed`, for the common question. */
 	readonly rebindable: boolean;
+	/** The `?perf` panel's own key (`Scope.perfPanel`), when it is one. */
+	readonly perfPanel?: true;
 	readonly views: readonly ViewMode[];
 	/**
 	 * The pad contexts this command's **pad triggers** are live in, and empty
@@ -1656,7 +1671,7 @@ export interface Binding {
  */
 const scopeOf = (
 	trigger: Trigger,
-	command: Pick<Command, "views" | "fixed">,
+	command: Pick<Command, "views" | "perfPanel">,
 ): Scope => {
 	const pad =
 		"contexts" in trigger
@@ -1672,9 +1687,12 @@ const scopeOf = (
 	return makeScope(
 		pad, // glossary-ignore: pad
 		command.views,
-		surface,
-		trigger.kind === "mouse-move" ? trigger.photoMode === true : undefined,
-		command.fixed === "diagnostic" ? true : undefined,
+		{
+			surface,
+			photoMode:
+				trigger.kind === "mouse-move" ? trigger.photoMode === true : undefined,
+			perfPanel: command.perfPanel,
+		},
 	);
 };
 
@@ -1710,6 +1728,7 @@ function toCommand(a: Authored): Command {
 		group: a.group,
 		...(a.fixed === undefined ? {} : { fixed: a.fixed }),
 		rebindable: a.fixed === undefined,
+		...(a.perfPanel === undefined ? {} : { perfPanel: a.perfPanel }),
 		views: a.views ?? VIEW_MODES,
 		padTriggerContexts: contextsOf(defaultTriggers),
 		defaultTriggers,
@@ -1988,9 +2007,11 @@ const overlapScope = (a: Scope, b: Scope): Scope | null => {
 	return makeScope(
 		pad, // glossary-ignore: pad
 		views,
-		a.surface,
-		a.photoMode ?? b.photoMode,
-		a.perfPanel,
+		{
+			surface: a.surface,
+			photoMode: a.photoMode ?? b.photoMode,
+			perfPanel: a.perfPanel,
+		},
 	);
 };
 
