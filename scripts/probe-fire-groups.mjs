@@ -31,6 +31,7 @@ for (const width of [900, 390]) {
 				u1: makeModule("identity-scanner", 1),
 			},
 		};
+		g.setFlownHull("patrol");
 		g.armedFireGroup.reset();
 		g.floorFit = null;
 		g.render(0);
@@ -68,6 +69,7 @@ for (const width of [900, 390]) {
 			shot.ports === 2,
 		JSON.stringify(shot),
 	);
+	await page.screenshot({ path: `/tmp/seelite-870-all-${width}.png` });
 	for (let i = 1; i <= 2; i++) {
 		await page.keyboard.press("b");
 		const single = await page.evaluate(async (slot) => {
@@ -96,6 +98,7 @@ for (const width of [900, 390]) {
 				JSON.stringify(single.ports) === JSON.stringify([single.expectedPort]),
 			JSON.stringify(single),
 		);
+		await page.screenshot({ path: `/tmp/seelite-870-h${i}-${width}.png` });
 	}
 	await page.keyboard.press("b");
 	const scanner = await page.evaluate(() => {
