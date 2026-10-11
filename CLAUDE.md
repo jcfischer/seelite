@@ -150,11 +150,18 @@ run directly does not take the lock, which is how a red is re-run alone — and
 it does not wait on it either, so a rerun is alone only while
 `/tmp/seelite-probe.lock` is absent. Since #882 it no longer asks you to know
 that: a direct run finds the lock held by someone else and **names the holder on
-stderr**, and says its own seconds are not evidence. Each
+stderr**, and says its own seconds are not evidence. Nor does a direct run pick a
+renderer lane: with `SEELITE_PROBE_RENDERER` unset it gets the software page
+`probe:cpu` names deliberately, several times slower than the GPU default the
+suite runs on — #882 measured the same boot reaching a first frame in 1.6 s on one
+and never reaching it inside `bootedGame`'s 20 s on the other — and it now says so,
+which is why `npm run probe:one <name>` is the way to re-run one red.
+Each
 red prints its kind and the peak load it ran under, and since #882 so does each
 **green over a minute** — only reds carried a figure before, which is how a suite
-run beside another agent's probes came to read as a slow suite (63 probes at
-1992 s, `probe-music` at 410 s) rather than a starved one. The summary names the
+run beside another agent's probes came to read as a slow suite rather than a
+starved one; the measured figures are in
+`docs/receipts/node-882-probe-wall-clock.md`. The summary names the
 slowest probes and what share of the run they were, because a hundred lines in
 alphabetical order answer nothing. Neither names a cause —
 no load threshold has been measured, and a regression that throws reads

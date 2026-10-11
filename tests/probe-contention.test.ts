@@ -1,18 +1,12 @@
 /**
- * Saying when a probe run did not have the machine (#84).
+ * The two lines that say when a probe run did not have the machine.
  *
- * The lock makes two *suites* take turns. It says nothing about a probe run
- * directly — deliberately, since that is how a red gets re-run alone — and
- * nothing about a `sage review` or a test run alongside either. What a run
- * under that load reports is inflated times, and since only reds carried a load
- * figure, a slow green line looked like the probe's own fault: a pasted suite of
- * 63 probes at 1992 s read as a slow suite when the box was at load 23–47 on
- * eight physical cores with another agent's probes running in it.
- *
- * So the two things that were invisible become visible: a direct run names who
- * holds the lock, and a slow probe says the load it ran under. Neither gates.
- * #84 measured no threshold worth refusing on, and a run that shares the machine
- * is still evidence — just not evidence about how long something takes.
+ * `scripts/lib/probe-contention.mjs` owns the why and the measured figures, and
+ * `docs/receipts/node-882-probe-wall-clock.md` owns the runs behind them; this
+ * file pins what each rule does, block by block: `sharesMachine`'s four cases,
+ * the holder line a direct run prints, the slow-run suffix and its `?`, and the
+ * summary line's share. Nothing here restates a measurement — four copies of one
+ * suite figure is the drift this repo warns about elsewhere.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -25,6 +19,7 @@ import {
 	SLOW_PROBE_MS,
 	SUITE_PID_ENV,
 	slowestLine,
+	formatLoad,
 	slowRunNote,
 } from "../scripts/lib/probe-contention.mjs";
 
@@ -172,8 +167,17 @@ describe("slowRunNote", () => {
 		);
 	});
 
-	test("no figure read means no figure claimed", () => {
-		expect(slowRunNote({ ms: 410_800, peak: null })).toBe("");
+	test("a probe that ran long with no reading says there was none", () => {
+		// Silence here would mean two different things — "fast probe" and "no
+		// reading" — which is the ambiguity #882's runner exists to remove. The red
+		// branch of the same line has always printed `?`.
+		expect(slowRunNote({ ms: 410_800, peak: null })).toContain("peak load ?");
+	});
+
+	test("formatLoad prints one shape for a load figure", () => {
+		expect(formatLoad(34.62)).toBe("34.6");
+		expect(formatLoad(null)).toBe("?");
+		expect(formatLoad(Number.NaN)).toBe("?");
 	});
 });
 

@@ -187,6 +187,42 @@ export interface PilotState {
 
 const steps = (s: number) => Math.round(s / OPENING.dtS);
 
+/**
+ * The shown seconds one step of `shot` advances (#882).
+ *
+ * The script is flown at `OPENING.dtS` of **sim** time per step, so a shot shown
+ * faster than 1:1 moves `shownBy` by less than that. Anything walking the script
+ * a step at a time has to aim by this and not by `dtS`: one `dtS` aimed at the
+ * 1.5x cruise shot swallows two steps, and a sampler that believes it is seeing
+ * every step is seeing every second one — which is how #882's first version of
+ * the seed sweep shipped.
+ */
+export const openingStepS = (shot: OpeningShot): number =>
+	OPENING.dtS / shotRatio(shot);
+
+/**
+ * How many steps `shot` shows when the script fixes its length, or `null` when
+ * something else ends it (#882).
+ *
+ * The module owns this because it is the only thing that knows a shot's length:
+ * the prologue and the arrival are timed, the fly-past is the burn, the cruise
+ * and the approach are windows of the flight at their own ratios, and the dock
+ * ends when the ship docks — which no arithmetic here can predict.
+ */
+export const openingSteps = (shot: OpeningShot): number | null => {
+	/** Sim seconds the shot covers. Absent for a shot the pilot's own actions
+	 *  end: the fly-past runs until cruise engages, which is the spool's doing,
+	 *  and the dock ends when the ship docks. */
+	const coveredS: Partial<Record<OpeningShot, number>> = {
+		forming: OPENING.formS,
+		arrival: OPENING.arriveS,
+		cruise: OPENING.cruiseShot.simS,
+		approach: OPENING.approachShot.toS - OPENING.approachShot.fromS,
+	};
+	const simS = coveredS[shot];
+	return simS === undefined ? null : steps(simS);
+};
+
 export const startPilot = (kind: OpeningKind): PilotState => ({
 	kind,
 	leg: "form",

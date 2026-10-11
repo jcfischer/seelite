@@ -16,6 +16,8 @@ import {
 	OPENING,
 	OPENING_SHOTS,
 	type OpeningSim,
+	openingStepS,
+	openingSteps,
 	OpeningRun,
 	type PilotAction,
 	openingAtBoot,
@@ -502,7 +504,7 @@ describe("the phase handle", () => {
 		// until #882 `advanceTo` kept stepping after it: it ran the whole rest of
 		// the script and then threw. Measured on seed 47 the sampler died at the
 		// `forming` boundary — `the opening ended before forming at 3.0166 s` —
-		// after 181 of the script's ~5500 steps.
+		// after 181 steps.
 		const sim = new FakeSim();
 		const run = new OpeningRun("guided");
 		run.advanceTo(sim, "forming", OPENING.formS + 5);
@@ -516,6 +518,43 @@ describe("the phase handle", () => {
 		run.advanceTo(sim, "cruise", 1);
 		expect(run.shot).toBe("cruise");
 		expect(run.done).toBe(false);
+	});
+
+	test("the script's own step counts are what a stepped walk sees, at every shot's ratio", () => {
+		// #882's seed sweep samples the opening by stepping it, and its claim is
+		// that it sees **every** step. A shot shown faster than 1:1 is where that
+		// claim breaks: the stride has to be that shot's own shown seconds per step,
+		// not the sim's `dtS` — one `dtS` aimed at a 1.5x shot swallows two steps and
+		// the sampler silently sees every second one. So the counts come from the
+		// module and the walk is held to them.
+		const sim = new FakeSim();
+		const run = new OpeningRun("guided");
+		for (const shot of OPENING_SHOTS.guided) {
+			const want = openingSteps(shot);
+			// The dock ends when the flight docks, not on a count.
+			if (want === null) continue;
+			const stride = openingStepS(shot);
+			// Cross any cut into the shot without sampling it, then step it once per
+			// call until it ends. A stride one step too wide — `OPENING.dtS` on a 1.5x
+			// shot, which is #882's first version — counts about *half* this many.
+			// Aim at where the run already is: the step that ended the shot before
+			// this one may already have given this shot shown seconds, and an aim of
+			// zero would then read as asking for a moment already past.
+			run.advanceTo(sim, shot, run.shownBy[shot]);
+			let seen = 0;
+			while (run.shot === shot && seen <= want + 2) {
+				run.advanceTo(sim, shot, run.shownBy[shot] + stride);
+				seen++;
+			}
+			// The last step is the one that ended the shot, and `shownBy` is a sum of
+			// 1/60s that does not come to 6, so the top of the range has two steps of
+			// slack. The bottom is where a wrong stride shows up.
+			expect([shot, seen >= want, seen <= want + 2]).toEqual([
+				shot,
+				true,
+				true,
+			]);
+		}
 	});
 });
 

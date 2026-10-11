@@ -131,10 +131,22 @@ export function directRunNotice({
  */
 export function slowRunNote({ ms, peak, slowMs = SLOW_PROBE_MS }) {
 	if (ms < slowMs) return "";
-	return typeof peak === "number" && Number.isFinite(peak)
-		? ` · peak load ${peak.toFixed(1)}`
-		: "";
+	return ` · peak load ${formatLoad(peak)}`;
 }
+
+/**
+ * A load average as printed, or `?` where none could be read.
+ *
+ * One spelling for both the runner's own summary line and each probe's suffix,
+ * because two rules for the same figure drift: the red branch printed `?` for no
+ * reading and the green one printed nothing, so a green line without a load said
+ * either "fast probe" or "no reading" (#882, sage round 1). A probe that ran long
+ * and had no reading says so, which is the answer a reader needs.
+ *
+ * @param {number | null} l
+ */
+export const formatLoad = (l) =>
+	typeof l === "number" && Number.isFinite(l) ? l.toFixed(1) : "?";
 
 /**
  * One summary line naming the slowest probes and their share of the run.

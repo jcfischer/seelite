@@ -1,313 +1,309 @@
 {
-  "galaxies": [
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 0,
-      "nonSignatureSlots": 1962,
-      "haulers": 647,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.32976554536187563,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 1,
-      "nonSignatureSlots": 1896,
-      "haulers": 606,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.31962025316455694,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 2,
-      "nonSignatureSlots": 1916,
-      "haulers": 606,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3162839248434238,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 3,
-      "nonSignatureSlots": 1868,
-      "haulers": 621,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.33244111349036404,
-      "maxSampledInboundToCapacity": 1.6666666666666667
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 4,
-      "nonSignatureSlots": 1882,
-      "haulers": 619,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3289054197662062,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 5,
-      "nonSignatureSlots": 1888,
-      "haulers": 606,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3209745762711864,
-      "maxSampledInboundToCapacity": 2.6666666666666665
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 6,
-      "nonSignatureSlots": 1912,
-      "haulers": 585,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3059623430962343,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1,
-      "galaxy": 7,
-      "nonSignatureSlots": 1916,
-      "haulers": 605,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3157620041753653,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 0,
-      "nonSignatureSlots": 1914,
-      "haulers": 622,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.32497387669801464,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 1,
-      "nonSignatureSlots": 1908,
-      "haulers": 625,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3275681341719078,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 2,
-      "nonSignatureSlots": 1890,
-      "haulers": 599,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.31693121693121695,
-      "maxSampledInboundToCapacity": 3
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 3,
-      "nonSignatureSlots": 1910,
-      "haulers": 597,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.312565445026178,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 4,
-      "nonSignatureSlots": 1886,
-      "haulers": 590,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.31283138918345704,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 5,
-      "nonSignatureSlots": 1908,
-      "haulers": 627,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.32861635220125784,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 6,
-      "nonSignatureSlots": 1924,
-      "haulers": 615,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3196465696465696,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 47,
-      "galaxy": 7,
-      "nonSignatureSlots": 1942,
-      "haulers": 659,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.339340885684861,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 0,
-      "nonSignatureSlots": 1916,
-      "haulers": 624,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.325678496868476,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 1,
-      "nonSignatureSlots": 1938,
-      "haulers": 614,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.31682146542827655,
-      "maxSampledInboundToCapacity": 2.6666666666666665
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 2,
-      "nonSignatureSlots": 1916,
-      "haulers": 648,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.33820459290187893,
-      "maxSampledInboundToCapacity": 2.6666666666666665
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 3,
-      "nonSignatureSlots": 1906,
-      "haulers": 617,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3237145855194124,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 4,
-      "nonSignatureSlots": 1914,
-      "haulers": 626,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3270637408568443,
-      "maxSampledInboundToCapacity": 2.3333333333333335
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 5,
-      "nonSignatureSlots": 1862,
-      "haulers": 614,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3297529538131042,
-      "maxSampledInboundToCapacity": 2.6666666666666665
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 6,
-      "nonSignatureSlots": 1902,
-      "haulers": 623,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.3275499474237645,
-      "maxSampledInboundToCapacity": 2
-    },
-    {
-      "kind": "galaxy",
-      "seed": 1234,
-      "galaxy": 7,
-      "nonSignatureSlots": 1930,
-      "haulers": 634,
-      "nominalShare": 0.3333333333333333,
-      "realisedShare": 0.32849740932642485,
-      "maxSampledInboundToCapacity": 2
-    }
-  ],
-  "summary": {
-    "kind": "summary",
-    "worldSeeds": [
-      1,
-      47,
-      1234
-    ],
-    "galaxiesPerSeed": 8,
-    "galaxies": 24,
-    "stations": 9521,
-    "nominalShare": 0.3333333333333333,
-    "realisedShare": {
-      "n": 24,
-      "min": 0.3059623430962343,
-      "median": 0.325678496868476,
-      "max": 0.339340885684861,
-      "mean": 0.323728010077119
-    },
-    "stationMaxInboundToCapacity": {
-      "n": 9521,
-      "min": 0,
-      "median": 0.6,
-      "max": 3,
-      "mean": 0.7188440589974084
-    },
-    "galaxyMaxInboundToCapacity": {
-      "n": 24,
-      "min": 1.6666666666666667,
-      "median": 2.3333333333333335,
-      "max": 3,
-      "mean": 2.2499999999999996
-    },
-    "cold": [
-      {
-        "days": 1,
-        "ms": {
-          "n": 7,
-          "min": 11.471999999997934,
-          "median": 12.456374999997934,
-          "max": 17.61804200000188,
-          "mean": 13.641494142856702
-        },
-        "generatedSystems": {
-          "n": 7,
-          "min": 33,
-          "median": 33,
-          "max": 33,
-          "mean": 33
-        }
-      },
-      {
-        "days": 365,
-        "ms": {
-          "n": 7,
-          "min": 12.581374999997934,
-          "median": 13.262041999998473,
-          "max": 13.820707999999286,
-          "mean": 13.234059571427808
-        },
-        "generatedSystems": {
-          "n": 7,
-          "min": 33,
-          "median": 33,
-          "max": 33,
-          "mean": 33
-        }
-      }
-    ]
-  }
+	"galaxies": [
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 0,
+			"nonSignatureSlots": 1962,
+			"haulers": 647,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.32976554536187563,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 1,
+			"nonSignatureSlots": 1896,
+			"haulers": 606,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.31962025316455694,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 2,
+			"nonSignatureSlots": 1916,
+			"haulers": 606,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3162839248434238,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 3,
+			"nonSignatureSlots": 1868,
+			"haulers": 621,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.33244111349036404,
+			"maxSampledInboundToCapacity": 1.6666666666666667
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 4,
+			"nonSignatureSlots": 1882,
+			"haulers": 619,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3289054197662062,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 5,
+			"nonSignatureSlots": 1888,
+			"haulers": 606,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3209745762711864,
+			"maxSampledInboundToCapacity": 2.6666666666666665
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 6,
+			"nonSignatureSlots": 1912,
+			"haulers": 585,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3059623430962343,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1,
+			"galaxy": 7,
+			"nonSignatureSlots": 1916,
+			"haulers": 605,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3157620041753653,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 0,
+			"nonSignatureSlots": 1914,
+			"haulers": 622,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.32497387669801464,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 1,
+			"nonSignatureSlots": 1908,
+			"haulers": 625,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3275681341719078,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 2,
+			"nonSignatureSlots": 1890,
+			"haulers": 599,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.31693121693121695,
+			"maxSampledInboundToCapacity": 3
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 3,
+			"nonSignatureSlots": 1910,
+			"haulers": 597,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.312565445026178,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 4,
+			"nonSignatureSlots": 1886,
+			"haulers": 590,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.31283138918345704,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 5,
+			"nonSignatureSlots": 1908,
+			"haulers": 627,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.32861635220125784,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 6,
+			"nonSignatureSlots": 1924,
+			"haulers": 615,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3196465696465696,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 47,
+			"galaxy": 7,
+			"nonSignatureSlots": 1942,
+			"haulers": 659,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.339340885684861,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 0,
+			"nonSignatureSlots": 1916,
+			"haulers": 624,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.325678496868476,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 1,
+			"nonSignatureSlots": 1938,
+			"haulers": 614,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.31682146542827655,
+			"maxSampledInboundToCapacity": 2.6666666666666665
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 2,
+			"nonSignatureSlots": 1916,
+			"haulers": 648,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.33820459290187893,
+			"maxSampledInboundToCapacity": 2.6666666666666665
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 3,
+			"nonSignatureSlots": 1906,
+			"haulers": 617,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3237145855194124,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 4,
+			"nonSignatureSlots": 1914,
+			"haulers": 626,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3270637408568443,
+			"maxSampledInboundToCapacity": 2.3333333333333335
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 5,
+			"nonSignatureSlots": 1862,
+			"haulers": 614,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3297529538131042,
+			"maxSampledInboundToCapacity": 2.6666666666666665
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 6,
+			"nonSignatureSlots": 1902,
+			"haulers": 623,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.3275499474237645,
+			"maxSampledInboundToCapacity": 2
+		},
+		{
+			"kind": "galaxy",
+			"seed": 1234,
+			"galaxy": 7,
+			"nonSignatureSlots": 1930,
+			"haulers": 634,
+			"nominalShare": 0.3333333333333333,
+			"realisedShare": 0.32849740932642485,
+			"maxSampledInboundToCapacity": 2
+		}
+	],
+	"summary": {
+		"kind": "summary",
+		"worldSeeds": [1, 47, 1234],
+		"galaxiesPerSeed": 8,
+		"galaxies": 24,
+		"stations": 9521,
+		"nominalShare": 0.3333333333333333,
+		"realisedShare": {
+			"n": 24,
+			"min": 0.3059623430962343,
+			"median": 0.325678496868476,
+			"max": 0.339340885684861,
+			"mean": 0.323728010077119
+		},
+		"stationMaxInboundToCapacity": {
+			"n": 9521,
+			"min": 0,
+			"median": 0.6,
+			"max": 3,
+			"mean": 0.7188440589974084
+		},
+		"galaxyMaxInboundToCapacity": {
+			"n": 24,
+			"min": 1.6666666666666667,
+			"median": 2.3333333333333335,
+			"max": 3,
+			"mean": 2.2499999999999996
+		},
+		"cold": [
+			{
+				"days": 1,
+				"ms": {
+					"n": 7,
+					"min": 11.471999999997934,
+					"median": 12.456374999997934,
+					"max": 17.61804200000188,
+					"mean": 13.641494142856702
+				},
+				"generatedSystems": {
+					"n": 7,
+					"min": 33,
+					"median": 33,
+					"max": 33,
+					"mean": 33
+				}
+			},
+			{
+				"days": 365,
+				"ms": {
+					"n": 7,
+					"min": 12.581374999997934,
+					"median": 13.262041999998473,
+					"max": 13.820707999999286,
+					"mean": 13.234059571427808
+				},
+				"generatedSystems": {
+					"n": 7,
+					"min": 33,
+					"median": 33,
+					"max": 33,
+					"mean": 33
+				}
+			}
+		]
+	}
 }

@@ -363,32 +363,43 @@ export async function guardedTree(origin) {
 }
 
 /**
+ * Say one of this run's machine conditions, once per process, on stderr.
+ *
+ * A suite captures a probe's stdout to reprint it under a failure, so a line
+ * nobody asked for goes where the guard already puts what is not a verdict. Once,
+ * because a probe that boots four pages should not say it four times; and nothing
+ * is marked as said until there *is* a line, because a condition — another suite
+ * taking the lock, for one — can arrive partway through a run.
+ *
+ * One helper because this file had written the same say-once shape twice (#882,
+ * sage round 1).
+ */
+const conditionsSaid = new Set();
+const printCondition = (key, line) => {
+	if (!line || conditionsSaid.has(key)) return "";
+	conditionsSaid.add(key);
+	console.error(line);
+	return line;
+};
+
+/**
  * Once per run, say it if it is not alone on the machine (#882).
  *
  * The lock serialises suites; a probe run directly takes none — that is how a
  * red gets re-run alone — and nothing at all sees a sibling worktree's probes, a
  * `sage review` or a test run. Before this, only a **red** printed a load figure,
- * so a suite of slow greens read as slow probes: 63 probes at 1992 s looked like
- * `probe-music` taking 410 s rather than eight cores at load 23–47 with someone
- * else's browser in every one of them.
+ * so a suite of slow greens read as slow probes: a contended suite came to look
+ * like one probe had turned slow, rather than eight cores at more than twice
+ * their cores in load average with someone else's browser in every one of them.
+ * The measured figures are in `docs/receipts/node-882-probe-wall-clock.md`.
  *
  * Here rather than in `launchChromium` because this is the probe's preamble: the
  * one place every probe passes on its way to measuring anything, including the
  * ones that reach a page through their own launcher.
  *
- * **stderr, and once.** A suite captures a probe's stdout to reprint it under a
- * failure, and a line nobody asked for belongs where the guard already puts what
- * is not a verdict. Once, because a probe that boots four pages should not say it
- * four times.
+ * **stderr, and once**: `printCondition`.
  */
-let sharedMachineSaid = false;
-export function warnSharedMachine() {
-	if (sharedMachineSaid) return "";
-	sharedMachineSaid = true;
-	const line = directRunNotice();
-	if (line) console.error(line);
-	return line;
-}
+const warnSharedMachine = () => printCondition("machine", directRunNotice());
 
 /**
  * A path becomes an absolute file URL; a package name stays a package name.
@@ -495,34 +506,6 @@ export const PLAYWRIGHT_ENV_VARS = ["PLAYWRIGHT_DIR", "PLAYWRIGHT_MODULE"];
  * `default` instead of as named exports. #147 has the history.
  */
 /**
- * The line naming the renderer lane a run actually took (#882), or `""`.
- *
- * `npm run probe` forces the GPU lane and `npm run probe:cpu` names the software
- * one. A bare `node scripts/probe-x.mjs` — the way a red gets re-run alone —
- * takes **neither**, and gets a software page without a word saying so. Measured
- * here: the same boot reached a first frame in 1.6 s on the GPU lane and never
- * got there inside `bootedGame`'s 20 s on this one, which reads as a page that
- * will not boot rather than as a lane several times slower.
- *
- * Quiet on the GPU default, and quiet for a suite's child: `probe:cpu` chose the
- * fallback knowingly and would otherwise print this a hundred times.
- *
- * @param {{ mode: string | null, direct: boolean }} a
- */
-export function rendererLaneNotice({ mode, direct }) {
-	if (mode === HARDWARE_RENDERER || !direct) return "";
-	return (
-		`[probe] renderer lane: software — ${PROBE_RENDERER_ENV} is unset, so this is the ` +
-		"`probe:cpu` fallback: a SwiftShader page is several times slower than the GPU default, " +
-		"so a slow boot or a timeout here is the lane rather than the game. " +
-		"For the GPU lane: `npm run probe:one <name>`."
-	);
-}
-
-/** Whether this process has already been told what it got. */
-let laneSaid = false;
-
-/**
  * Launch Chromium the way the probe lane asks for, and say once what lane that
  * turned out to be.
  *
@@ -549,13 +532,9 @@ export async function launchChromium(options = {}) {
 		);
 	const mode = probeRendererMode();
 	const launchOptions = probeLaunchOptions(options, mode);
-	// The lane, named before the launch that proves it. Once per process, so a
-	// probe that opens four pages does not say it four times.
-	if (!laneSaid) {
-		laneSaid = true;
-		const lane = rendererLaneNotice({ mode, direct: !isSuiteChild() });
-		if (lane) console.error(lane);
-	}
+	// The lane, named before the launch that proves it: `printCondition` says it
+	// once per process, so a probe that opens four pages does not say it four times.
+	printCondition("lane", rendererLaneNotice({ mode, direct: !isSuiteChild() }));
 	const browser = await chromium.launch(launchOptions);
 	// **What this launch actually was, recorded on the browser it opened.** A
 	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row
@@ -579,6 +558,31 @@ export async function launchChromium(options = {}) {
 		await browser.close();
 		throw error;
 	}
+}
+
+/**
+ * The line naming the renderer lane a run actually took (#882), or `""`.
+ *
+ * `npm run probe` forces the GPU lane and `npm run probe:cpu` names the software
+ * one. A bare `node scripts/probe-x.mjs` — the way a red gets re-run alone —
+ * takes **neither**, and gets a software page without a word saying so. Measured
+ * here: the same boot reached a first frame in 1.6 s on the GPU lane and never
+ * got there inside `bootedGame`'s 20 s on this one, which reads as a page that
+ * will not boot rather than as a lane several times slower.
+ *
+ * Quiet on the GPU default, and quiet for a suite's child: `probe:cpu` chose the
+ * fallback knowingly and would otherwise print this a hundred times.
+ *
+ * @param {{ mode: string | null, direct: boolean }} a
+ */
+export function rendererLaneNotice({ mode, direct }) {
+	if (mode === HARDWARE_RENDERER || !direct) return "";
+	return (
+		`[probe] renderer lane: software — ${PROBE_RENDERER_ENV} is unset, so this is the ` +
+		"`probe:cpu` fallback: a SwiftShader page is several times slower than the GPU default, " +
+		"so a slow boot or a timeout here is the lane rather than the game. " +
+		"For the GPU lane: `npm run probe:one <name>`."
+	);
 }
 
 /**

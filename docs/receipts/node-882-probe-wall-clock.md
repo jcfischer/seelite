@@ -46,10 +46,12 @@ sequential lane:
 **A run says what it was running on** (`scripts/lib/probe-contention.mjs`,
 `probe-all.mjs`, `probe-guard.mjs`). A direct run while the suite holds the lock
 prints who holds it and that its timings are not trustworthy; a suite child
-stays quiet, and a suite that is the holder does not warn about itself. The
-runner adds two lines at the end: peak load, and the slowest probes with their
-share of the total. Both are cheap and both are the thing that was missing —
-this whole node exists because a number was read as a defect.
+stays quiet, and a suite that is the holder does not warn about itself. A **green**
+probe over a minute now prints its peak load too — only reds carried a figure
+before — and the runner ends with a new line naming the slowest probes and their
+share of the total. (The trailing peak-load line itself is #84's, not this node's.)
+Both are cheap and both are the thing that was missing — this whole node exists
+because a number was read as a defect.
 
 **Four opening rows reach their shot through the game's phase handle instead of
 waiting for it** (`probe-opening.mjs`, commit `353ef579`). Enter during the
@@ -92,8 +94,9 @@ time and wants the boundary.
 
 Now the shot's own end counts as arriving; the caller reads `shot` afterwards to
 learn whether it got its time or the boundary. Test first in
-`tests/opening.test.ts`; the whole headless suite is green — 5855 pass, 0 fail —
-with it.
+`tests/opening.test.ts`; the whole headless suite is green with it — **5857 pass,
+0 fail** (`/tmp/seelite-882-test2.log`) — and `tsc --noEmit`, `biome format` and
+`npm run check:wiring` are clean.
 
 **Both ways at one build on seed 47**, in that order (`/tmp/seelite-step.log`,
 `/tmp/seelite-882-opening-step2.log`):
@@ -103,20 +106,47 @@ with it.
 | `takeJumpR` / `takeTurnDeg` | 0.0293 / 0.80 | **0.0293 / 0.80** |
 | `closestR` | 6.206 | 6.206 |
 | `worstOffDeg` | 19.05 | 19.36 |
-| arrival rows | 710 | **360 = `arriveS / OPENING.dtS`** |
 | one seed | 44 s | 4 s |
 
 The continuity figures are identical and the framing figures agree to a decimal.
-The row counts look backwards and are the point: 360 is every step the arrival
-shot has, and the watched run's 710 frames cover those same 360 steps — a frame
-shorter than the script's step samples the same camera twice. So the stepped
-sampler is finer *and* free of duplicates.
 
 What it shows less of is the arrival's **look**: that runs on wall time, and a
 hold runs none of it. The row's own comment says it is evidence about the camera
 and the ship through the script, never about what the flicker looked like on a
 person's screen — that stays with the watched row, the frames it writes to disk,
 and `npm run views`.
+
+### The stride was one step too wide, and a review caught it
+
+The sampler that produced the figures above aimed each step by a `1 / 60` it had
+typed itself and believed it was seeing every step. It was not: a shot shown at
+1.5x or 2x moves the script's shown clock by *less* than `dtS` per step, so aiming
+`dtS` at the cruise, approach and dock shots swallowed two steps at a time — and
+since `closestR` and `worstOffDeg` are min/max over those rows, the fly-by's worst
+framing could fall between samples and still pass. The equivalence table was
+measured on the arrival, whose ratio is 1, which is exactly why it read clean.
+Sage's round 1 on PR #884 named it; the claim in this receipt and in the probe's
+comment was wrong before that, and the "360 rows = every step" figure it leaned on
+holds only for a 1:1 shot.
+
+What shipped instead:
+
+- `src/opening.ts` owns the stride and the counts: `openingStepS(shot)` is
+  `OPENING.dtS / shotRatio(shot)`, and `openingSteps(shot)` is how many steps each
+  shot whose length the script fixes has — `null` for the fly-past and the dock,
+  which the pilot's actions end.
+- `Game.openingScript()` puts the shot order, the stride and the counts on the
+  page, so the probe reads them off the module instead of restating them —
+  CLAUDE.md's rule, which the first version broke twice over: its own shot-order
+  array and its own `1 / 60`.
+- The seed row now **checks** rows per shot against `openingSteps` for every sized
+  shot, so a stride one step wide is a red naming the shot rather than a comment
+  quietly stopping being true.
+- `tests/opening.test.ts` pins it without a browser, and was mutation-checked:
+  aiming by `OPENING.dtS` instead of `openingStepS` turns it red.
+
+The saving stands — about 4 s a seed against 43 — and the sampler is finer than a
+watched frame on every shot now, not on one of them.
 
 ## 5. The music row: measured, and left alone
 
@@ -136,9 +166,9 @@ renderer lane would cost its own lock, port and evidence-directory rules to buy
 25 s. Not taken.
 
 The window cut was taken as far as the evidence allowed and then stopped
-(`/tmp/seelite-music-bands.log`). Cutting every held bed to 8 s and the Danube
-intro to 12 s takes 578 audio-seconds to 366 — 91 s of the suite, 3.9%. What it
-costs:
+(`/tmp/seelite-music-bands.log`). Cutting every held bed to 8 s and each Danube
+piece to its first 12 s instead of 20 takes 578 audio-seconds to 366 — 91 s of the
+suite, 3.9%. What it costs:
 
 | | at the shorter window |
 |---|---|
@@ -191,6 +221,33 @@ and §0 measured that a loaded machine is worth ×2.9 on `probe-occlusion` and a
 66 ms frame in a cold interior install. `probe-all` prints peak load for every
 slow probe; a **direct** run that fails prints no load at all. That is the next
 node.
+
+## 6b. Sage round 1 on PR #884, and what it changed
+
+Verdict `changes-requested`: 17 findings, 3 important. The two that mattered were
+both true and both about claims this receipt had made:
+
+- **the stride was one step too wide** — §4's own sub-section.
+- **the probe restated the opening's shot order**, which CLAUDE.md:742 forbids for
+  the reason it gives: a probe holding its own copy of a constant goes falsely red
+  when the module changes it. The order, the stride and the counts now come from
+  `Game.openingScript()`.
+
+Also taken: the four `holdToShot` rows read back the shot they landed on and assert
+it (a row named "Enter during the cruise shot" stayed green off that shot, because
+the end state it compares matches the skipped run whatever shot the hold reached);
+`formatLoad` in one place instead of two rules for the same figure; one `printCondition`
+helper instead of the say-once shape written twice; the unstable suite-size figures out
+of CLAUDE.md and out of a duplicated test header, pointing at this receipt; the
+renderer-lane sentence into the SOP paragraph that told people to re-run a red alone;
+`rendererLaneNotice` back below the doc comment it had displaced; this receipt's
+credit for #84's trailing peak-load line corrected; and the two glossary aliases
+(§Opening now names the **held** way through it, and the `hold` alias note its sixth
+sense).
+
+Left, deliberately: the two older shot-order spellings inside `probe-opening.mjs`
+that predate this branch — one is an assertion's own expected string — and
+8-page in-browser render parallelism, measured at ~25 s for its own machinery.
 
 ## 7. Not done here
 

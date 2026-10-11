@@ -76,6 +76,7 @@ import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
 import { failureKind, killedCode } from "./lib/probe-failure-kind.mjs";
 import {
+	formatLoad,
 	slowestLine,
 	slowRunNote,
 	SUITE_PID_ENV,
@@ -267,10 +268,6 @@ function run(file) {
 	});
 }
 
-/** A load average as printed, or `?` where none could be read. */
-const fmtLoad = (/** @type {number | null} */ l) =>
-	l === null ? "?" : l.toFixed(1);
-
 /** Run the list `CONCURRENCY` at a time, in order, reporting as each lands. */
 async function runAll(files) {
 	const queue = [...files];
@@ -284,16 +281,15 @@ async function runAll(files) {
 			results.push(r);
 			const gating = !REPORTERS.has(file) && !QUARANTINED.has(file);
 			const mark = r.ok ? "ok  " : gating ? "FAIL" : "warn";
-			// a red names its kind and the load it ran under, so a navigation
-			// that timed out on a starved machine does not read like an
-			// assertion that caught a regression (#84). A **green** over a minute
-			// now prints its load too: slow seconds under load are the machine's,
-			// and nothing said so before, which is how a starved suite came to read
-			// as a slow one (#882).
+			// A **green** over a minute prints its load too: slow seconds under load
+			// are the machine's, and nothing said so before, which is how a starved
+			// suite came to read as a slow one (#882). Both branches print through the
+			// same function, so a line either names the load or says there was no
+			// reading — it never means both things at once (sage round 1).
 			const peak = load.peakBetween(r.started, r.started + r.ms);
 			const why = r.ok
 				? slowRunNote({ ms: r.ms, peak })
-				: ` exit=${r.code} ${r.kind} peak load ${fmtLoad(peak)}`;
+				: ` exit=${r.code} ${r.kind} peak load ${formatLoad(peak)}`;
 			console.log(`${mark} ${file} (${(r.ms / 1000).toFixed(1)}s)${why}`);
 			if (!r.ok) {
 				// the failing probe's own output, indented — the whole point of a
@@ -380,7 +376,7 @@ const failed = gating.filter((r) => !r.ok);
 
 console.log(
 	`\n${gating.length - failed.length}/${gating.length} gating probes passed in ${((Date.now() - started) / 1000).toFixed(0)}s` +
-		` · peak load ${fmtLoad(load.peak())} on ${availableParallelism()} cores` +
+		` · peak load ${formatLoad(load.peak())} on ${availableParallelism()} cores` +
 		partialSummary(),
 );
 // Where the wall clock went. A suite prints its probes in file order, which is
