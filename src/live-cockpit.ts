@@ -577,6 +577,9 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-outfit-deltas { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10px; color: #c19667; }
 .lc-outfit-deltas b { color: #ffe1a9; }
 .lc-outfit-services { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 9px; color: #c19667; }
+.lc-outfit-fuel > div { display: flex; flex-direction: column; gap: 3px; padding: 6px; color: #ffe1a9; }
+.lc-outfit-fuel small { color: #c19667; font-size: 9px; }
+.lc-outfit-fuel b { font-weight: 500; }
 /* A fixed action column: each row is its own grid, so BUY, OWNED and LOCKED at their own widths moved the price column (#564). */
 .lc-station-equipment .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 64px; }
 .lc-station-equipment .lc-station-row > :nth-child(4) { justify-self: end; }

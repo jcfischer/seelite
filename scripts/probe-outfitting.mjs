@@ -64,6 +64,31 @@ try {
 			)
 			.count()) === 2,
 	);
+	// Fuel is the first ship row (hotfix after #869): it was a 9 px footnote.
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.commander = { ...g.commander, fuelLy: 1 };
+		g.stationConsoleRevision++;
+		g.updateCockpit();
+	});
+	const fuelRow = page
+		.locator(".lc-outfit-scroll")
+		.first()
+		.locator(":scope > :first-child");
+	check(
+		"fuel is the first ship row",
+		(await fuelRow.getAttribute("data-live-fuel")) !== null &&
+			(await fuelRow.isVisible()),
+	);
+	await fuelRow.locator('[data-live-station-action="buy-fuel"]').click();
+	check(
+		"the fuel row's FILL fills the tank",
+		await page.evaluate(async () => {
+			const g = window.__seelite;
+			const { commanderJumpRangeLy } = await import("/src/station-commerce.ts");
+			return g.commander.fuelLy === commanderJumpRangeLy(g.commander);
+		}),
+	);
 	const credits = await page.evaluate(() => window.__seelite.commander.credits);
 	await page.locator('[data-outfit-candidate="stock:pulse-laser/1/E"]').click();
 	check(

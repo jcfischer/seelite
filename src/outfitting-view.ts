@@ -16,6 +16,11 @@ export function outfittingBody(
 	hold: RefusalHold,
 	fuel: { ly: number; capacityLy: number },
 ) {
+	// **Fuel is the first ship row, not a footnote** (hotfix after #869). The
+	// slot screen moved it from the old Equipment list to a 9 px line under the
+	// preview, and a pilot looking for fuel did not find it there.
+	const shortLy = Math.max(0, fuel.capacityLy - fuel.ly);
+	const fuelRow = `<div class="lc-outfit-slot lc-outfit-fuel" data-live-fuel><div><small>FUEL · ${FUEL_CR_PER_LY} Cr/LY</small><b>${fuel.ly.toFixed(1)} / ${fuel.capacityLy.toFixed(1)} LY</b><small>${shortLy > 0 ? `${(shortLy * FUEL_CR_PER_LY).toFixed(1)} Cr to fill` : "TANK FULL"}</small></div>${action("buy-fuel", "Fuel", "FILL")}</div>`;
 	const slots = s.slots
 		.map(
 			(
@@ -67,5 +72,5 @@ export function outfittingBody(
 		confirm = `<span class="lc-station-locked">${s.candidate?.locked ? locked(s.candidate.locked) : esc(refusalSentence(s.offer.reason, hold))}</span>`;
 	}
 	const missilePrice = EQUIPMENT.find((e) => e.name === "Missile")!.priceCr;
-	return `<div class="lc-outfitting" data-live-outfitting><div class="lc-outfit-panes"><section><h3>SHIP SLOTS</h3><div class="lc-outfit-scroll">${slots}${carried ? `<h3>FITTINGS IN HOLD · SELL AT 90%</h3>${carried}` : ""}</div></section><section><h3>STATION STOCK · ${esc(s.slot.toUpperCase())}</h3><div class="lc-outfit-scroll">${stock || "No compatible modules here."}</div></section></div><div class="lc-outfit-preview" data-live-outfit-preview><b>${s.candidate ? esc(moduleLabel(s.candidate.module)) : "Select a slot, then a module to compare."}</b>${delta}${s.moved ? `<small>${esc(s.moved)} moves to the hold · 1 t</small>` : ""}${confirm}</div><div class="lc-outfit-services"><span>FUEL ${fuel.ly.toFixed(1)}/${fuel.capacityLy.toFixed(1)} LY · ${FUEL_CR_PER_LY} Cr/LY</span>${action("buy-fuel", "Fuel", "FILL")}<span>MISSILES ${missilePrice} Cr each · rearm a fitted rack</span></div></div>`;
+	return `<div class="lc-outfitting" data-live-outfitting><div class="lc-outfit-panes"><section><h3>SHIP SLOTS</h3><div class="lc-outfit-scroll">${fuelRow}${slots}${carried ? `<h3>FITTINGS IN HOLD · SELL AT 90%</h3>${carried}` : ""}</div></section><section><h3>STATION STOCK · ${esc(s.slot.toUpperCase())}</h3><div class="lc-outfit-scroll">${stock || "No compatible modules here."}</div></section></div><div class="lc-outfit-preview" data-live-outfit-preview><b>${s.candidate ? esc(moduleLabel(s.candidate.module)) : "Select a slot, then a module to compare."}</b>${delta}${s.moved ? `<small>${esc(s.moved)} moves to the hold · 1 t</small>` : ""}${confirm}</div><div class="lc-outfit-services"><span>MISSILES ${missilePrice} Cr each · rearm a fitted rack</span></div></div>`;
 }
