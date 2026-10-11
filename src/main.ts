@@ -2138,6 +2138,7 @@ interface ScanFacts {
 
 /** A memoised answer, with everything it was true about. */
 interface ScanFrame {
+	active: boolean;
 	target: Body | null;
 	gameTime: number;
 	chargeS: number;
@@ -5296,7 +5297,15 @@ class Game {
 
 	cycleFireGroup() {
 		this.armedFireGroup.cycle(this.fireGroups);
+		this.scanHold = beginScanHold();
 		this.updateCockpit();
+	}
+
+	private scanTrigger() {
+		return {
+			armed: this.armedFireGroup.current(this.fireGroups)?.kind === "scanner",
+			held: this.regime !== "cruise" && this.triggerHeld(),
+		};
 	}
 
 	private laserTriggerHeld(): boolean {
@@ -8521,11 +8530,9 @@ class Game {
 	/**
 	 * One frame of the scan (§4).
 	 *
-	 * **Automatic on the hold, with no key bound to it** — the principal's
-	 *  ruling, and every letter on the flight deck is taken. The charge builds
-	 *  while the nose holds a scannable carrier inside the cone and the range,
-	 *  and the writing of the record is the one transition, so a long lock ages
-	 *  the reading instead of renewing it.
+	 * The armed Identity Scanner charges while the trigger and sightline are
+	 * held. One completed hold writes one reading; keeping the trigger down
+	 * afterwards leaves its age intact.
 	 */
 	private stepScan(dt: number) {
 		const target = this.targetBody();
@@ -8556,7 +8563,7 @@ class Game {
 				? { key: actor.key }
 				: null;
 		const before = this.scanHold;
-		this.scanHold = stepScanHold(before, held, dt);
+		this.scanHold = stepScanHold(before, held, dt, this.scanTrigger());
 		if (!actor || !scanCompleted(before, this.scanHold)) return;
 		const { instanceOrdinal } = this.carrierCondition(actor.key);
 		this.commerceWorld = observeScan(
@@ -8628,6 +8635,8 @@ class Game {
 		// frame that turned the sight off a carrier without the clock moving must
 		// not be served the reading taken while it was on.
 		const standoff = this.scanStandoffNow(target);
+		const trigger = this.scanTrigger();
+		const active = trigger.armed && trigger.held;
 		const memo = this.scanFacts;
 		if (
 			memo !== null &&
@@ -8635,12 +8644,14 @@ class Game {
 			memo.gameTime === this.world.gameTime &&
 			memo.chargeS === this.scanHold.chargeS &&
 			memo.fitted === fitted &&
+			memo.active === active &&
 			memo.standoff === standoff &&
 			memo.stamp === stamp
 		)
 			return memo.facts;
-		const facts = this.computeScanFacts(target, standoff);
+		const facts = this.computeScanFacts(target, standoff, active);
 		this.scanFacts = {
+			active,
 			target,
 			gameTime: this.world.gameTime,
 			chargeS: this.scanHold.chargeS,
@@ -8680,6 +8691,7 @@ class Game {
 	private computeScanFacts(
 		target: Body | null,
 		standoff: ScanStandoff | null,
+		active: boolean,
 	): ScanFacts {
 		const actor = this.scanSubject(target);
 		const reading = actor ? this.recordedReading(actor) : null;
@@ -8696,6 +8708,7 @@ class Game {
 		// scanning — which is worse than `UNKNOWN`, because it tells the pilot a
 		// scan is underway when the nose is simply not on the target.
 		const progress =
+			active &&
 			!refusal &&
 			scannable &&
 			this.scanHold.chargeS > 0 &&
@@ -8712,7 +8725,11 @@ class Game {
 				// and a carrier with a reading is being read. So: fitted, scannable,
 				// nothing running, nothing recorded.
 				standoff:
-					!refusal && scannable && reading === null && progress === undefined
+					active &&
+					!refusal &&
+					scannable &&
+					reading === null &&
+					progress === undefined
 						? standoff
 						: null,
 			},

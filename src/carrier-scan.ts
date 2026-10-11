@@ -43,8 +43,7 @@
  * A charge that completes stays complete until the hold breaks; writing the row
  * again every frame would keep `observedAt` current and so **hold the age at
  * zero**, which is F8's whole point — "a reading without its age invites a
- * pilot to act on an hour-old answer". Refreshing is a deliberate act: swing
- * off, swing back on.
+ * pilot to act on an hour-old answer". Refreshing is a deliberate act: release the trigger, then hold it again.
  */
 import type { CarrierKey } from "./carrier-key";
 import { carrierManifest } from "./carrier-manifest";
@@ -154,7 +153,8 @@ export interface ScanHold {
 export const beginScanHold = (): ScanHold => ({ key: null, chargeS: 0 });
 
 /**
- * One frame of the hold. Breaking it zeroes the charge — §4: "a break in the
+ * One frame of the armed, trigger-held scan. Releasing or disarming breaks
+ * the hold. Breaking it zeroes the charge — §4: "a break in the
  * hold does not pause the charge, it resets it" — and a completed charge sits at
  * the ceiling until the hold breaks, so a long lock cannot keep the record's
  * clock current.
@@ -171,8 +171,9 @@ export function stepScanHold(
 	hold: ScanHold,
 	held: ScanSubject | null,
 	dt: number,
+	trigger: { armed: boolean; held: boolean },
 ): ScanHold {
-	if (held === null)
+	if (!trigger.armed || !trigger.held || held === null)
 		return hold.chargeS === 0 && hold.key === null ? hold : beginScanHold();
 	const step = Math.max(0, dt);
 	if (held.key !== hold.key)

@@ -35,6 +35,7 @@ import { SCAN_SOURCE, type KnowledgeRow } from "../src/world-state";
 import { v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
 
+const ON = { armed: true, held: true } as const;
 const AHEAD = v3(0, 0, -1);
 /** A bearing `deg` off the nose, in the horizontal plane. */
 const offNose = (deg: number) => {
@@ -124,14 +125,14 @@ describe("the hold", () => {
 		// second — which is exactly what sweeping the nose across a traffic queue
 		// does (sage #384 round 1, the PR's blocker).
 		let hold = beginScanHold();
-		for (let i = 0; i < 4; i++) hold = stepScanHold(hold, A, 1);
+		for (let i = 0; i < 4; i++) hold = stepScanHold(hold, A, 1, ON);
 		expect(scanProgress(hold)).toBeCloseTo(4 / SCAN_CHARGE_S);
-		const swung = stepScanHold(hold, B, 1);
+		const swung = stepScanHold(hold, B, 1, ON);
 		expect(swung.key).toBe(B.key);
 		expect(swung.chargeS).toBe(1);
 		expect(scanCompleted(hold, swung)).toBe(false);
 		// And it does not come back: returning to A pays its own five seconds.
-		const back = stepScanHold(swung, A, SCAN_CHARGE_S - 1);
+		const back = stepScanHold(swung, A, SCAN_CHARGE_S - 1, ON);
 		expect(back.chargeS).toBe(SCAN_CHARGE_S - 1);
 	});
 
@@ -142,8 +143,8 @@ describe("the hold", () => {
 		// Interdiction checks range once because a contest runs in cruise on a
 		// pinned offset; a scan is flown, so driving out breaks it.
 		let hold = beginScanHold();
-		hold = stepScanHold(hold, A, 2);
-		hold = stepScanHold(hold, scanInRange(SCAN_RANGE_KM * 2) ? A : null, 1);
+		hold = stepScanHold(hold, A, 2, ON);
+		hold = stepScanHold(hold, scanInRange(SCAN_RANGE_KM * 2) ? A : null, 1, ON);
 		expect(hold.chargeS).toBe(0);
 	});
 
@@ -151,12 +152,12 @@ describe("the hold", () => {
 		// §4's own words. Five seconds of *attention* completes a scan; five
 		// seconds spread across a broken hold does not.
 		let hold = beginScanHold();
-		hold = stepScanHold(hold, A, SCAN_CHARGE_S - 1);
+		hold = stepScanHold(hold, A, SCAN_CHARGE_S - 1, ON);
 		expect(scanProgress(hold)).toBeCloseTo((SCAN_CHARGE_S - 1) / SCAN_CHARGE_S);
-		const broken = stepScanHold(hold, null, 0.1);
+		const broken = stepScanHold(hold, null, 0.1, ON);
 		expect(broken.chargeS).toBe(0);
 		expect(broken.key).toBeNull();
-		const again = stepScanHold(broken, A, SCAN_CHARGE_S - 1);
+		const again = stepScanHold(broken, A, SCAN_CHARGE_S - 1, ON);
 		expect(scanCompleted(broken, again)).toBe(false);
 	});
 
@@ -169,26 +170,56 @@ describe("the hold", () => {
 		const run = () => {
 			let hold = beginScanHold();
 			for (let i = 0; i < 40; i++)
-				hold = stepScanHold(hold, i % 7 !== 3 ? A : null, 1 / 60);
+				hold = stepScanHold(hold, i % 7 !== 3 ? A : null, 1 / 60, ON);
 			return hold.chargeS;
 		};
 		expect(run()).toBe(run());
 	});
 
 	test("one completed scan per hold, and the age survives a long lock", () => {
-		let hold = stepScanHold(beginScanHold(), A, SCAN_CHARGE_S);
+		let hold = stepScanHold(beginScanHold(), A, SCAN_CHARGE_S, ON);
 		expect(scanCompleted(beginScanHold(), hold)).toBe(true);
 		expect(scanProgress(hold)).toBe(1);
 		// Holding it longer writes nothing further, so `observedAt` stays where
 		// it was and the reading keeps ageing on the glass.
-		const later = stepScanHold(hold, A, 600);
+		const later = stepScanHold(hold, A, 600, ON);
 		expect(later.chargeS).toBe(SCAN_CHARGE_S);
 		expect(scanCompleted(hold, later)).toBe(false);
 		// Breaking and re-acquiring is the deliberate refresh.
-		const broken = stepScanHold(later, null, 0.5);
-		const refilled = stepScanHold(broken, A, SCAN_CHARGE_S);
+		const broken = stepScanHold(later, null, 0.5, ON);
+		const refilled = stepScanHold(broken, A, SCAN_CHARGE_S, ON);
 		expect(scanCompleted(broken, refilled)).toBe(true);
 	});
+});
+
+describe("the armed trigger", () => {
+	const subject = { key: carrierKey(3, "station-trade/traffic-000") };
+	for (const input of [
+		{ armed: false, held: true },
+		{ armed: true, held: false },
+		{ armed: false, held: false },
+	]) {
+		test(
+			JSON.stringify(input) + " cannot charge and breaks a partial hold",
+			() => {
+				expect(
+					stepScanHold(beginScanHold(), subject, SCAN_CHARGE_S, input),
+				).toEqual(beginScanHold());
+				const partial = stepScanHold(
+					beginScanHold(),
+					subject,
+					SCAN_CHARGE_S - 1,
+					ON,
+				);
+				const broken = stepScanHold(partial, subject, 1, input);
+				expect(broken).toEqual(beginScanHold());
+				expect(scanCompleted(partial, broken)).toBe(false);
+				const restarted = stepScanHold(broken, subject, 1, ON);
+				expect(restarted.chargeS).toBe(1);
+				expect(scanCompleted(broken, restarted)).toBe(false);
+			},
+		);
+	}
 });
 
 describe("the reading", () => {

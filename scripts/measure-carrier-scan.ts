@@ -93,7 +93,7 @@ function flyStraight(
 		if (!scanConeHeld(v3(0, 0, -1), v3(cross, 0, -r)))
 			return { t, why: "the cone" };
 		if (!scanInRange(Math.hypot(r, cross))) return { t, why: "the range" };
-		hold = stepScanHold(hold, { key: TARGET }, DT);
+		hold = stepScanHold(hold, { key: TARGET }, DT, { armed: true, held: true });
 		if (hold.chargeS >= CHARGE) return null;
 	}
 	return null;
