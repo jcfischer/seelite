@@ -12,7 +12,6 @@
 import { describe, expect, test } from "bun:test";
 import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import {
-	DERELICT_FIRST_LOSS_S,
 	DERELICT_FITTING_CHANCE,
 	DERELICT_FITTINGS,
 	DERELICT_GAP_S,
@@ -21,6 +20,7 @@ import {
 	derelictContents,
 	derelictFirstLossAt,
 	derelictGapS,
+	derelictNextLossAt,
 	derelictSlotCount,
 	derelictSlots,
 } from "../src/derelict-slots";
@@ -69,10 +69,13 @@ const adrift = (e: EffectiveDerelict) => {
 	return e;
 };
 
-/** The slot's first loss, read off the world rather than restated. */
+/** The slot's next loss on the clock, read off the schedule rather than
+ *  restated: a fresh instance adrift, whichever ordinal it is. */
 const firstLoss = (key: CarrierKey = KEY): number => {
-	const e = effectiveDerelict(newWorld(WORLD), G, key, 0);
-	return e.condition === "empty" ? e.firstLossAt : 0;
+	const index = Number(key.split(":")[0]);
+	const record = SYSTEMS.find((s) => s.index === index);
+	if (!record) throw new Error(`no system ${index}`);
+	return derelictNextLossAt(record.seed, key);
 };
 
 /** Every container scooped out, one after another, at `at`. */
@@ -152,43 +155,41 @@ describe("S21 — the slots", () => {
 });
 
 describe("S16 — the schedule, derived from the clock", () => {
-	test("empty before the first loss, adrift from it, salvaged by others at 72 h", () => {
+	test("not adrift before a loss, adrift from it, salvaged by others at 8 h", () => {
 		const world = newWorld(WORLD);
 		const lostAt = firstLoss();
-		expect(lostAt).toBeGreaterThanOrEqual(0);
-		expect(lostAt).toBeLessThan(48 * HOUR);
-		expect(effectiveDerelict(world, G, KEY, lostAt - 1e-6).condition).toBe(
-			"empty",
+		expect(lostAt).toBeGreaterThan(0);
+		expect(effectiveDerelict(world, G, KEY, lostAt - 1e-6).condition).not.toBe(
+			"destroyed",
 		);
 		const at = adrift(effectiveDerelict(world, G, KEY, lostAt));
-		expect(at.instanceOrdinal).toBe(0);
+		const ordinal = at.instanceOrdinal;
 		expect(at.lostAt).toBe(lostAt);
-		expect(at.salvagerAt).toBe(lostAt + 72 * HOUR);
+		expect(at.salvagerAt).toBe(lostAt + 8 * HOUR);
 		expect(
-			effectiveDerelict(world, G, KEY, lostAt + 72 * HOUR - 1e-6).condition,
+			effectiveDerelict(world, G, KEY, lostAt + 8 * HOUR - 1e-6).condition,
 		).toBe("destroyed");
-		const taken = effectiveDerelict(world, G, KEY, lostAt + 72 * HOUR);
+		const taken = effectiveDerelict(world, G, KEY, lostAt + 8 * HOUR);
 		if (taken.condition !== "salvaged") throw new Error(taken.condition);
 		// No player provenance: other salvagers, off the clock.
 		expect(taken.cause).toEqual(OTHER_SALVAGERS);
 		expect(taken.cause.playerRole).toBe("none");
-		expect(taken.salvagedAt).toBe(lostAt + 72 * HOUR);
+		expect(taken.salvagedAt).toBe(lostAt + 8 * HOUR);
 		const gap = taken.nextLossAt - taken.salvagedAt;
 		expect(gap).toBeGreaterThanOrEqual(6 * HOUR);
-		expect(gap).toBeLessThanOrEqual(24 * HOUR);
+		expect(gap).toBeLessThanOrEqual(166 * HOUR);
 		const next = adrift(effectiveDerelict(world, G, KEY, taken.nextLossAt));
-		expect(next.instanceOrdinal).toBe(1);
+		expect(next.instanceOrdinal).toBe(ordinal + 1);
 		expect(next.lostAt).toBe(taken.nextLossAt);
 	});
 
 	test("the §5 figures are the named constants", () => {
-		expect(DERELICT_FIRST_LOSS_S).toBe(48 * HOUR);
-		expect(DERELICT_GAP_S).toEqual([6 * HOUR, 24 * HOUR]);
-		expect(DERELICT_SALVAGER_S).toBe(72 * HOUR);
+		expect(DERELICT_GAP_S).toEqual([6 * HOUR, 166 * HOUR]);
+		expect(DERELICT_SALVAGER_S).toBe(8 * HOUR);
 		expect(DERELICT_FITTING_CHANCE).toBe(0.25);
 	});
 
-	test("first losses spread over the first 48 h and gaps over 6–24 h, across every slot", () => {
+	test("first losses spread from one life before the clock to the longest gap after it, and gaps over 6–166 h, across every slot", () => {
 		const first: number[] = [];
 		const gaps: number[] = [];
 		for (const record of SYSTEMS)
@@ -197,17 +198,15 @@ describe("S16 — the schedule, derived from the clock", () => {
 				for (let k = 0; k < 4; k++)
 					gaps.push(derelictGapS(record.seed, slot.key, k));
 			}
-		expect(Math.min(...first)).toBeGreaterThanOrEqual(0);
-		expect(Math.max(...first)).toBeLessThan(48 * HOUR);
-		// Spread, not bunched: both halves of the window are used.
-		expect(first.filter((t) => t < 24 * HOUR).length).toBeGreaterThan(
-			first.length / 3,
-		);
-		expect(first.filter((t) => t >= 24 * HOUR).length).toBeGreaterThan(
-			first.length / 3,
-		);
+		expect(Math.min(...first)).toBeGreaterThan(-8 * HOUR);
+		expect(Math.max(...first)).toBeLessThanOrEqual(166 * HOUR);
+		// Spread, not bunched: some slots were lost before the clock started,
+		// and the rest wait anything from minutes to most of the longest gap.
+		expect(first.some((t) => t <= 0)).toBe(true);
+		expect(first.some((t) => t > 0 && t < 6 * HOUR)).toBe(true);
+		expect(first.some((t) => t > 120 * HOUR)).toBe(true);
 		expect(Math.min(...gaps)).toBeGreaterThanOrEqual(6 * HOUR);
-		expect(Math.max(...gaps)).toBeLessThanOrEqual(24 * HOUR);
+		expect(Math.max(...gaps)).toBeLessThanOrEqual(166 * HOUR);
 	});
 
 	test("a read writes nothing, and no tick is needed to reach a later instance", () => {
@@ -293,24 +292,32 @@ describe("S6 — the contents, drawn per instance and stored on first touch", ()
 		const drawn = adrift(
 			effectiveDerelict(newWorld(WORLD), G, KEY, lostAt),
 		).containers;
+		const ordinal = adrift(
+			effectiveDerelict(newWorld(WORLD), G, KEY, lostAt),
+		).instanceOrdinal;
 		expect(drawn).toEqual(
-			derelictContents(ANARCHY.seed, ANARCHY.government, KEY, 0).map((c) => ({
-				...c,
-				left: c.tonnes,
-			})),
+			derelictContents(ANARCHY.seed, ANARCHY.government, KEY, ordinal).map(
+				(c) => ({
+					...c,
+					left: c.tonnes,
+				}),
+			),
 		);
 		const world = materializeDerelict(newWorld(WORLD), G, KEY, lostAt + 10);
 		const row = world.galaxies[G].derelicts[KEY];
-		expect(row.instanceOrdinal).toBe(0);
+		expect(row.instanceOrdinal).toBe(ordinal);
 		expect(row.lostAt).toBe(lostAt);
 		expect(row.containers).toEqual(drawn);
 		expect(row.salvaged).toBeUndefined();
 		const read = adrift(effectiveDerelict(world, G, KEY, lostAt + 20));
 		expect(read.stored).toBe(true);
 		expect(read.containers).toEqual(drawn);
-		// Materializing an empty slot writes nothing.
+		// Materializing a slot with nothing adrift writes nothing.
 		expect(
-			materializeDerelict(newWorld(WORLD), G, KEY, lostAt / 2).galaxies[G]
+			effectiveDerelict(newWorld(WORLD), G, KEY, lostAt - 1).condition,
+		).not.toBe("destroyed");
+		expect(
+			materializeDerelict(newWorld(WORLD), G, KEY, lostAt - 1).galaxies[G]
 				.derelicts,
 		).toEqual({});
 	});
@@ -376,6 +383,9 @@ describe("S2 — the strip, and the next loss after it", () => {
 	test("scooping every container to zero writes salvaged with the pilot's provenance", () => {
 		const lostAt = firstLoss();
 		const at = lostAt + 5 * HOUR;
+		const ordinal = adrift(
+			effectiveDerelict(newWorld(WORLD), G, KEY, at),
+		).instanceOrdinal;
 		const world = strip(newWorld(WORLD), KEY, at);
 		const row = world.galaxies[G].derelicts[KEY];
 		expect(row.containers.every((c) => c.left === 0)).toBe(true);
@@ -384,26 +394,28 @@ describe("S2 — the strip, and the next loss after it", () => {
 		const read = effectiveDerelict(world, G, KEY, at);
 		if (read.condition !== "salvaged") throw new Error(read.condition);
 		expect(read.cause).toEqual(PLAYER_SALVAGE);
-		// Scheduled from the strip, not from the salvagers' 72 h.
-		expect(read.nextLossAt).toBe(at + derelictGapS(ANARCHY.seed, KEY, 0));
+		// Scheduled from the strip, not from the salvagers' 8 h.
+		expect(read.nextLossAt).toBe(at + derelictGapS(ANARCHY.seed, KEY, ordinal));
 		const next = adrift(effectiveDerelict(world, G, KEY, read.nextLossAt));
-		expect(next.instanceOrdinal).toBe(1);
+		expect(next.instanceOrdinal).toBe(ordinal + 1);
 		expect(next.stored).toBe(false);
 		expect(next.containers).toEqual(
-			derelictContents(ANARCHY.seed, ANARCHY.government, KEY, 1).map((c) => ({
-				...c,
-				left: c.tonnes,
-			})),
+			derelictContents(ANARCHY.seed, ANARCHY.government, KEY, ordinal + 1).map(
+				(c) => ({
+					...c,
+					left: c.tonnes,
+				}),
+			),
 		);
 	});
 
-	test("a partial scoop leaves the rest, and the salvagers still come at 72 h", () => {
+	test("a partial scoop leaves the rest, and the salvagers still come at 8 h", () => {
 		const lostAt = firstLoss();
 		const world = scoopDerelict(newWorld(WORLD), G, KEY, 0, 1, lostAt + 1);
 		const row = world.galaxies[G].derelicts[KEY];
 		expect(row.containers[0].left).toBe(row.containers[0].tonnes - 1);
 		expect(row.salvaged).toBeUndefined();
-		const taken = effectiveDerelict(world, G, KEY, lostAt + 72 * HOUR);
+		const taken = effectiveDerelict(world, G, KEY, lostAt + 8 * HOUR);
 		if (taken.condition !== "salvaged") throw new Error(taken.condition);
 		expect(taken.cause).toEqual(OTHER_SALVAGERS);
 	});
@@ -411,8 +423,10 @@ describe("S2 — the strip, and the next loss after it", () => {
 	test("a scoop refuses by name what the instance cannot give", () => {
 		const lostAt = firstLoss();
 		const world = newWorld(WORLD);
-		expect(() => scoopDerelict(world, G, KEY, 0, 1, lostAt / 2)).toThrow(
-			"is empty; nothing is adrift",
+		const before = effectiveDerelict(world, G, KEY, lostAt - 1).condition;
+		expect(before).not.toBe("destroyed");
+		expect(() => scoopDerelict(world, G, KEY, 0, 1, lostAt - 1)).toThrow(
+			`is ${before}; nothing is adrift`,
 		);
 		const n = adrift(effectiveDerelict(world, G, KEY, lostAt)).containers
 			.length;
@@ -627,15 +641,18 @@ describe("a malformed row is refused by name", () => {
 		}
 	});
 
-	test("a loss before zero or after the clock", () => {
+	test("a later instance lost before zero, or any loss after the clock", () => {
+		// Only instance 0 can be lost before the clock started (S16): every
+		// later one follows a strip made on the clock.
 		const before = edit((row) => {
+			row.instanceOrdinal = Math.max(1, row.instanceOrdinal);
 			row.lostAt = -1;
 		});
 		expect(() => parseWorld(before)).toThrow("outside the clock's 0 to");
 		const ahead = resealedWorld(base(), (body) => {
 			body.galaxies[G].derelicts[KEY].lostAt = body.gameTime + 1;
 		});
-		expect(() => parseWorld(ahead)).toThrow("outside the clock's 0 to");
+		expect(() => parseWorld(ahead)).toThrow("outside the clock's");
 	});
 
 	test("a strip after the clock", () => {

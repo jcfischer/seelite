@@ -1,5 +1,5 @@
 /**
- * Natural first loss, framed through the production pose; no discovery fixture.
+ * Natural next loss, framed through the production pose; no discovery fixture.
  *
  * `framing: "tear"` (node #735) then moves the camera to stand off the wreck's
  * most sunlit tear, read off the drawn hull's own `userData.torn`, so the
@@ -8,7 +8,7 @@
 export async function placeDerelict(page, shot = {}) {
 	return page.evaluate(async (framing) => {
 		const g = window.__seelite;
-		const { derelictFirstLossAt, derelictSlots } = await import(
+		const { derelictNextLossAt, derelictSlots } = await import(
 			"/src/derelict-slots.ts"
 		);
 		const { advanceTo } = await import("/src/world-state.ts");
@@ -21,12 +21,12 @@ export async function placeDerelict(page, shot = {}) {
 		const system = g.world.system;
 		const key = derelictSlots(system.record.index, system.record.government)[0]
 			.key;
-		const at = derelictFirstLossAt(system.record.seed, key) + 1;
+		const at = derelictNextLossAt(system.record.seed, key) + 1;
 		g.world.gameTime = at;
 		advanceSystem(system, at);
 		g.commerceWorld = advanceTo(g.commerceWorld, at);
 		const wreck = g.derelictsAt().find((w) => w.key === key);
-		if (!wreck) throw Error("no derelict at first loss");
+		if (!wreck) throw Error("no derelict at its next loss");
 		const pose = wreck.pose;
 		g.world.ship.pos = {
 			x: pose.pos.x + 0.5,
