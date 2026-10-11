@@ -38,7 +38,7 @@ watch(page);
 await page.goto(gameUrl(origin, { seed: 42 }));
 await bootedGame(page);
 
-const kill = await page.evaluate(() => {
+const kill = await page.evaluate(async () => {
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
 	const frame = (each) => {
@@ -47,6 +47,16 @@ const kill = await page.evaluate(() => {
 		g.render(dt);
 	};
 	g.resetFlightToStart();
+	// #870: the real kill must price an upgraded fit, not a stock-hull guess.
+	const { makeModule } = await import("/src/loadout.ts");
+	g.commander = {
+		...g.commander,
+		loadout: {
+			...g.commander.loadout,
+			h1: makeModule("military-laser", 1, "A"),
+		},
+	};
+	g.armedFireGroup.reset();
 	let far = null;
 	let farKm = 0;
 	for (const b of g.world.system.bodies) {
@@ -143,6 +153,7 @@ const kill = await page.evaluate(() => {
 		cargoBefore,
 		pendingDelta: g.ladderPending.combat - pendingBefore,
 		ownHull: g.commander.hull,
+		ownLoadout: g.commander.loadout,
 	};
 });
 check(
@@ -154,8 +165,8 @@ check(
 // pending until a dock. Read off the page's own formula, never restated.
 const expectedCredit = await page.evaluate(
 	async (own) =>
-		(await import("/src/kill-credit.ts")).killCredit({ hull: own }, "raider"),
-	kill.ownHull,
+		(await import("/src/kill-credit.ts")).killCredit(own, "raider"),
+	{ hull: kill.ownHull, loadout: kill.ownLoadout },
 );
 check(
 	"the kill is pending combat credit at the game's price for a raider (#564)",

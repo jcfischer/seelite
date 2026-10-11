@@ -1,3 +1,4 @@
+import { stockLoadout, makeModule } from "../src/loadout";
 /**
  * #564: the three ladders' core — credit, banking on dock, the basis a sale's
  * margin is read against, and the gate catalogue #562 D7 ruled.
@@ -81,25 +82,57 @@ describe("thresholds (#562 D1, D8)", () => {
 
 describe("combat credit (#562 D3, D4)", () => {
 	test("a matched kill pays 1 and no kill pays 2", () => {
-		expect(killCredit({ hull: "raider" }, "raider")).toBeCloseTo(1, 12);
-		expect(killCredit({ hull: "courier" }, "raider")).toBeLessThan(2);
+		expect(
+			killCredit(
+				{ hull: "raider", loadout: { h1: makeModule("pulse-laser", 1) } },
+				"raider",
+			),
+		).toBeCloseTo(1, 12);
+		expect(
+			killCredit(
+				{ hull: "courier", loadout: stockLoadout("courier") },
+				"raider",
+			),
+		).toBeLessThan(2);
 	});
 
 	test("the courier kills a raider for 0.954, #562's figure on #866's pools", () => {
 		// #562 measured 0.952 against one 106-point pool for every hull. #866 gave
 		// the raider its own 107 (the principal accepted the shift on #866).
-		expect(killCredit({ hull: "courier" }, "raider")).toBeCloseTo(0.954, 3);
+		expect(
+			killCredit(
+				{ hull: "courier", loadout: stockLoadout("courier") },
+				"raider",
+			),
+		).toBeCloseTo(0.954, 3);
 	});
 
 	test("an unarmed target pays nothing, an armed Clean hull pays", () => {
 		for (const unarmed of ["freighter", "miner", "courier", "tug"] as const)
-			expect(killCredit({ hull: "courier" }, unarmed)).toBe(0);
-		expect(killCredit({ hull: "courier" }, "patrol")).toBeGreaterThan(0);
-		expect(killCredit({ hull: "courier" }, "interceptor")).toBeGreaterThan(0);
+			expect(
+				killCredit(
+					{ hull: "courier", loadout: stockLoadout("courier") },
+					unarmed,
+				),
+			).toBe(0);
+		expect(
+			killCredit(
+				{ hull: "courier", loadout: stockLoadout("courier") },
+				"patrol",
+			),
+		).toBeGreaterThan(0);
+		expect(
+			killCredit(
+				{ hull: "courier", loadout: stockLoadout("courier") },
+				"interceptor",
+			),
+		).toBeGreaterThan(0);
 	});
 
-	test("the fitted ship is always armed: S_own is never 0", () => {
-		expect(strength({ hull: "freighter" })).toBeGreaterThan(0);
+	test("a stock fit has positive combat strength", () => {
+		expect(
+			strength({ hull: "freighter", loadout: stockLoadout("freighter") }),
+		).toBeGreaterThan(0);
 	});
 });
 

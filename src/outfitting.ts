@@ -57,7 +57,7 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 		).thrustKms2,
 		jump: commanderJumpRangeLy(commander),
 		credit: killCredit(
-			{ hull: commander.hull, equipment: equipmentNames(commander.loadout) },
+			{ hull: commander.hull, loadout: commander.loadout },
 			"raider",
 		),
 	};

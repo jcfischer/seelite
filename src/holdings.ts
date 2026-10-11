@@ -528,7 +528,7 @@ function transition(
 					killCredit(
 						{
 							hull: holdings.commander.hull,
-							equipment: equipmentNames(holdings.commander.loadout),
+							loadout: holdings.commander.loadout,
 						},
 						event.hull,
 					),

@@ -97,7 +97,8 @@ export const DEFINITIONS: readonly Definition[] = [
 		slotKind: "hardpoint",
 		priceWeight: 2,
 		massWeight: 1.4,
-		output: { extractionTPerS: 0.1 },
+		// Principal, #870: ten percent of the equivalent Pulse against a hull.
+		output: { extractionTPerS: 0.1, damagePerS: PULSE_LASER.damagePerS * 0.1 },
 		drawPerS: 2,
 		heatPerS: 2,
 	},

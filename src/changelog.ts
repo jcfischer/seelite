@@ -30,6 +30,11 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-10-11",
+		text: "Fitted lasers now set your firepower, energy draw and heat, and stronger weapon fits earn less combat credit per kill.",
+		node: 870,
+	},
+	{
+		date: "2026-10-11",
 		text: "Cycle fire groups with B and see which weapons or scanner your trigger has armed.",
 		node: 893,
 	},

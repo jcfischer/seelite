@@ -1,4 +1,5 @@
 import { ArmedFireGroup, fireGroups } from "./fire-group";
+import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
 	fitted,
 	equipmentNames,
@@ -3387,6 +3388,8 @@ class Game {
 	} = { beam: null, rim: 0 };
 	/** The pulse laser's tracer and shot-sound pacing (`gun-feedback.ts`). */
 	gunFeedback: GunFeedback = QUIET_GUN;
+	/** Ports of the last actual volley, held for the tracer's short decay. */
+	private firedMuzzleIndices: readonly number[] = [];
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
@@ -3496,6 +3499,9 @@ class Game {
 	get gunTracer() {
 		return {
 			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
+			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
+				(_, i) => this.firedMuzzleIndices.includes(i),
+			),
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
 			soundGapS: SHOT_SOUND_GAP_S,
@@ -11285,7 +11291,9 @@ class Game {
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
-			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant),
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
+				(_, i) => this.firedMuzzleIndices.includes(i),
+			),
 		);
 		const camPos = this.cameraPos();
 		const camRot = this.cameraRotation();
@@ -15053,7 +15061,15 @@ class Game {
 		// Every phase, docked included: energy regenerates and shields recharge
 		// on the sim clock wherever the ship is. The trigger is the pilot's
 		// (`triggerHeld`), and what the gun delivered is this frame's shot.
-		const gun = stepCondition(this.condition, dt, this.laserTriggerHeld());
+		const armedGroup = this.armedFireGroup.current(this.fireGroups);
+		const gun = stepCondition(
+			this.condition,
+			dt,
+			this.laserTriggerHeld(),
+			groupLaserRates(this.commander.loadout, armedGroup),
+		);
+		if (gun.fired)
+			this.firedMuzzleIndices = groupMuzzleIndices(this.flownHull, armedGroup);
 		this.condition = gun.condition;
 		const shot: PlayerShot = { fired: gun.fired, damage: gun.damage };
 		// What the player sees and hears of the shot. Without these a held
@@ -19945,7 +19961,7 @@ class Game {
 		strokes.length = 0;
 		if (this.gunFeedback.tracerLeftS > 0)
 			for (const stroke of tracerStrokes(
-				tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
+				this.gunTracer.firedPorts,
 				this.onFrame(this.beamAim()) ?? TRACER_AIM,
 			))
 				strokes.push(stroke);
