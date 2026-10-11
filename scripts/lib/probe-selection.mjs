@@ -153,6 +153,27 @@ function scoreProbes(answers, forcedProbes) {
 }
 
 /**
+ * A new probe's registry entries, and a quarantine entry, are routing data:
+ * they select that probe and change no other contract. Any other registry edit
+ * leaves the registry file in `changedFiles`, where it is harness.
+ */
+function narrowRegistries(allChanged, directlyChanged, impact) {
+	const added = impact
+		? registryChanges(allChanged, impact.before, impact.after)
+		: null;
+	const registered = added?.every((p) => RUNNER_PROBE_FILES.includes(p))
+		? added
+		: null;
+	if (!registered)
+		return { changedFiles: allChanged, forced: directlyChanged, note: "" };
+	return {
+		changedFiles: allChanged.filter((file) => !(file in PROBE_REGISTRIES)),
+		forced: union(directlyChanged, registered),
+		note: ` Registry entries for ${registered.join(", ")} select them; no other entry changed.`,
+	};
+}
+
+/**
  * Return a complete deterministic result, or null when semantic judgment is
  * required.
  *
@@ -164,22 +185,11 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 			"No changed-file evidence was available, so relevance is unknown.",
 			true,
 		);
-	// A new probe's registry entries, and a quarantine entry, are routing data:
-	// they select that probe and change no other contract. Any other registry
-	// edit is harness.
-	const added = impact
-		? registryChanges(allChanged, impact.before, impact.after)
-		: null;
-	const registered = added?.every((p) => RUNNER_PROBE_FILES.includes(p))
-		? added
-		: null;
-	const changedFiles = registered
-		? allChanged.filter((file) => !(file in PROBE_REGISTRIES))
-		: allChanged;
-	const forced = union(directlyChanged, registered ?? []);
-	const note = registered
-		? ` Registry entries for ${registered.join(", ")} select them; no other entry changed.`
-		: "";
+	const { changedFiles, forced, note } = narrowRegistries(
+		allChanged,
+		directlyChanged,
+		impact,
+	);
 
 	const globalFile = changedFiles.find((file) => isGlobalRisk(file, !!impact));
 	if (globalFile)
