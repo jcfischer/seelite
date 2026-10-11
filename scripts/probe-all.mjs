@@ -349,7 +349,7 @@ const partialHeader = () =>
 const partialSummary = () =>
 	ONLY
 		? ` — PARTIAL RUN, ${skippedCount()}` +
-			`\n     This is not a pass for the suite. Run \`npm run probe\` for that.`
+			`\n     This is selected coverage, not a full-suite pass. A repository-selected run satisfies the ordinary PR browser gate; manual filters do not.`
 		: "";
 
 const server = await serve();

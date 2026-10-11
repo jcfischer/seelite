@@ -23,7 +23,8 @@
 		"views:diff": "node scripts/diff-view-set.mjs",
 		"views:levels": "node scripts/levels-view-set.mjs",
 		"sounds": "node scripts/capture-sounds.mjs",
-		"probe:browser": "playwright install chromium"
+		"probe:browser": "playwright install chromium",
+		"probe:full": "npm run probe:gpu"
 	},
 	"dependencies": {
 		"meshoptimizer": "1.3.0",
