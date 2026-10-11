@@ -261,3 +261,28 @@ test("only explicit purchase provenance bypasses the fitting gate; unknown and n
 		expect(screen.carried[0].locked === null).toBe((purchaseCostCr ?? 0) > 0);
 	}
 });
+
+test("the Equipment screen lists fuel as the first ship row, with one FILL", async () => {
+	const { outfittingBody } = await import("../src/outfitting-view");
+	const { FUEL_CR_PER_LY } = await import("../src/market");
+	const hold = { freeT: 20, capacityT: 20, entrustedT: 0 };
+	const html = outfittingBody(outfittingScreen(input()), hold, {
+		ly: 4,
+		capacityLy: 7,
+	});
+	const slots = html.slice(
+		html.indexOf("SHIP SLOTS"),
+		html.indexOf("STATION STOCK"),
+	);
+	const fuel = slots.indexOf("data-live-fuel");
+	expect(fuel).toBeGreaterThan(-1);
+	expect(fuel).toBeLessThan(slots.indexOf("data-live-slot="));
+	expect(slots).toContain("4.0 / 7.0 LY");
+	expect(slots).toContain(`${(3 * FUEL_CR_PER_LY).toFixed(1)} Cr to fill`);
+	expect(html.match(/data-live-station-action="buy-fuel"/g)).toHaveLength(1);
+	const full = outfittingBody(outfittingScreen(input()), hold, {
+		ly: 7,
+		capacityLy: 7,
+	});
+	expect(full).toContain("TANK FULL");
+});
