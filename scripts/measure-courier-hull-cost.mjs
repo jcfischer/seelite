@@ -1,19 +1,25 @@
 /**
- * What the authored courier costs a frame, against the procedural Kestrel it
- * replaced (node #812).
+ * What an authored hull costs a frame, against the procedural loft it
+ * replaced: the courier against the Kestrel (node #812), or the tug's
+ * Bollard O4 against the tug loft (node #814, `HULL=tug`).
  *
  *   node scripts/measure-courier-hull-cost.mjs
+ *   HULL=tug node scripts/measure-courier-hull-cost.mjs
+ *
+ * For the tug the player's group holds the tug in place of the courier: the
+ * player never flies one, but the same camera and clock are what keep the
+ * arms comparable.
  *
  * Starts its own dev server on this tree, boots headed and refuses a software
  * rasteriser (#98), and measures **one page, one camera, one clock**: the
  * player's hull group in chase view holds, block by block, nothing, the
- * authored O4, or the procedural Kestrel — and, for Traffic, the same hull
+ * authored O4, or the procedural loft — and, for Traffic, the same hull
  * with four more of it parked in frame ahead: close (`+4`, inside the
  * detail band's first edge, so the full model) and far (`+4far`, past it,
  * so the reduced level the band switches a courier to there, and the
- * Kestrel's reduced band without its clutter). Both hulls are built on this
+ * loft's reduced band without its clutter). Both hulls are built on this
  * page by the game's own `ship-mesh.ts` (vite serves the one module instance),
- * the Kestrel by uninstalling the authored builder for one build and putting
+ * the loft by uninstalling the authored builder for one build and putting
  * it back. So the arms differ by the hull drawn and nothing else.
  *
  * The design is `measure-occlusion-cost.mjs`'s and for its reasons: blocks
@@ -41,15 +47,18 @@ const BLOCKS = Number(process.env.BLOCKS ?? 12);
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20261009);
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5196);
+const HULL = process.env.HULL ?? "courier";
+if (!["courier", "tug"].includes(HULL))
+	throw new Error(`HULL must be courier or tug, not ${HULL}`);
 
 const ARMS = [
 	"none",
 	"authored",
-	"kestrel",
+	"loft",
 	"authored+4",
-	"kestrel+4",
+	"loft+4",
 	"authored+4far",
-	"kestrel+4far",
+	"loft+4far",
 ];
 
 const server = await createServer({
@@ -79,32 +88,35 @@ try {
 	const renderer = await assertPlayersRenderer(page, "measure");
 	await page.keyboard.press("v");
 	await page.waitForFunction(() => window.__seelite.view === "chase");
-	const setup = await page.evaluate(async () => {
+	const setup = await page.evaluate(async (hullId) => {
 		const g = window.__seelite;
+		// Both after-boot hulls installed, as a live Game has them (#831).
+		await g.loadAuthoredHullsAfterBoot();
 		g.clockHeld = true;
 		g.chaseYaw = -0.8;
 		g.chaseElevation = 0.3;
 		const mesh = await import("/src/ship-mesh.ts");
 		const { markOcclusion } = await import("/src/occlusion-mesh.ts");
-		const builder = mesh.authoredHullBuilder("courier");
+		const builder = mesh.authoredHullBuilder(hullId);
 		if (!builder)
-			throw new Error("the page's ship-mesh module has no authored courier");
+			throw new Error(`the page's ship-mesh module has no authored ${hullId}`);
 		const ship = g.shipMesh;
 		if (ship.userData.authored !== true)
 			throw new Error("the player's hull is not the authored courier");
 		const build = (authored) => {
-			if (!authored) mesh.installAuthoredHull("courier", undefined);
+			if (!authored) mesh.installAuthoredHull(hullId, undefined);
 			try {
-				const root = mesh.buildShipMesh("courier", "a").root;
+				const root = mesh.buildShipMesh(hullId, "a").root;
 				markOcclusion(root);
 				return root;
 			} finally {
-				mesh.installAuthoredHull("courier", builder);
+				mesh.installAuthoredHull(hullId, builder);
 			}
 		};
 		const kids = {
-			authored: [...ship.children],
-			kestrel: [...build(false).children],
+			authored:
+				hullId === "courier" ? [...ship.children] : [...build(true).children],
+			loft: [...build(false).children],
 		};
 		// Four more of each hull ahead of the player, in the ship's frame
 		// (kilometres, nose −z): Traffic's case, every one in the frustum.
@@ -119,7 +131,7 @@ try {
 		// spread across the frame. Placed from the chase camera's pose, because
 		// "ahead of the ship" is out of frame at this yaw that far out.
 		const { DETAIL_RADII } = await import("/src/detail-level.ts");
-		const reach = mesh.HULL_REACH_KM.courier;
+		const reach = mesh.HULL_REACH_KM[hullId];
 		g.render(0);
 		const camera = g.nearCamera;
 		camera.updateMatrixWorld(true);
@@ -167,28 +179,31 @@ try {
 		};
 		const fleets = {
 			"authored+4": fleet(true, false),
-			"kestrel+4": fleet(false, false),
+			"loft+4": fleet(false, false),
 			"authored+4far": fleet(true, true),
-			"kestrel+4far": fleet(false, true),
+			"loft+4far": fleet(false, true),
 		};
-		const { COURIER_LEVEL_NAMES } = await import("/src/courier-hull.ts");
+		const LEVEL_NAMES =
+			hullId === "courier"
+				? (await import("/src/courier-hull.ts")).COURIER_LEVEL_NAMES
+				: (await import("/src/tug-hull.ts")).TUG_LEVEL_NAMES;
 		const levelOf = (root) =>
-			Object.values(COURIER_LEVEL_NAMES)
+			Object.values(LEVEL_NAMES)
 				.map((name) => root.getObjectByName(name))
 				.find((o) => o?.visible)?.name;
 		for (const [arm, levels] of [
-			["authored+4", COURIER_LEVEL_NAMES.full],
-			["authored+4far", COURIER_LEVEL_NAMES.reduced],
+			["authored+4", LEVEL_NAMES.full],
+			["authored+4far", LEVEL_NAMES.reduced],
 		])
 			for (const root of fleets[arm].children)
 				if (levelOf(root) !== levels)
-					throw new Error(`${arm}: a courier draws ${levelOf(root)}`);
+					throw new Error(`${arm}: a ${hullId} draws ${levelOf(root)}`);
 		if (FAR.some(([, , radii]) => radii <= DETAIL_RADII.full))
 			throw new Error("a far slot is inside the band's first edge");
 		window.__courierArm = (arm) => {
 			for (const child of [...ship.children]) ship.remove(child);
 			if (arm === "none") return;
-			const hull = arm.startsWith("authored") ? "authored" : "kestrel";
+			const hull = arm.startsWith("authored") ? "authored" : "loft";
 			for (const child of kids[hull]) ship.add(child);
 			if (fleets[arm]) ship.add(fleets[arm]);
 		};
@@ -196,9 +211,9 @@ try {
 		const { isLevelStandIn } = await import("/src/ship-detail.ts");
 		return {
 			authored: meshStats(kids.authored, isLevelStandIn),
-			kestrel: meshStats(kids.kestrel),
+			loft: meshStats(kids.loft),
 		};
-	});
+	}, HULL);
 
 	const timed = (arm, occlusion) =>
 		page.evaluate(
@@ -247,8 +262,8 @@ try {
 		`  ${BLOCKS} blocks per arm, ${FRAMES} frames per block, arm order shuffled from seed ${ORDER_SEED}`,
 	);
 	console.log(
-		`  hull: authored ${setup.authored.meshes} meshes / ${setup.authored.triangles} triangles; ` +
-			`Kestrel ${setup.kestrel.meshes} meshes / ${setup.kestrel.triangles} triangles`,
+		`  hull ${HULL}: authored ${setup.authored.meshes} meshes / ${setup.authored.triangles} triangles; ` +
+			`loft ${setup.loft.meshes} meshes / ${setup.loft.triangles} triangles`,
 	);
 	const shuffled = seededShuffler(ORDER_SEED);
 	for (const occlusion of [false, true]) {
@@ -271,13 +286,11 @@ try {
 		const delta = (a, b) =>
 			`${(median(blocks[a]) - median(blocks[b])).toFixed(3)} ms, ${a} slower in ${separation(blocks[a], blocks[b])}`;
 		console.log(`  authored − none:        ${delta("authored", "none")}`);
-		console.log(`  kestrel − none:         ${delta("kestrel", "none")}`);
-		console.log(`  authored − kestrel:     ${delta("authored", "kestrel")}`);
+		console.log(`  loft − none:            ${delta("loft", "none")}`);
+		console.log(`  authored − loft:        ${delta("authored", "loft")}`);
+		console.log(`  authored+4 − loft+4:    ${delta("authored+4", "loft+4")}`);
 		console.log(
-			`  authored+4 − kestrel+4: ${delta("authored+4", "kestrel+4")}`,
-		);
-		console.log(
-			`  authored+4far − kestrel+4far: ${delta("authored+4far", "kestrel+4far")}`,
+			`  authored+4far − loft+4far: ${delta("authored+4far", "loft+4far")}`,
 		);
 		console.log(
 			`  authored+4 − authored+4far: ${delta("authored+4", "authored+4far")}`,
