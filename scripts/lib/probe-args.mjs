@@ -20,6 +20,8 @@ const isMissingOrFlag = (v) => v === undefined || v.startsWith("-");
  * @property {string | null} only     the filter pattern, if one was given
  * @property {boolean} onlySeen       whether `--only` appeared at all
  * @property {string | null} extra    a second bare token, which is an error
+ * @property {boolean} showOutput     stream each probe's own lines as they arrive
+ * @property {string | null} log      a file every runner line is written to
  */
 
 /**
@@ -48,9 +50,30 @@ const isMissingOrFlag = (v) => v === undefined || v.startsWith("-");
  */
 export function parseArgs(argv) {
 	/** @type {ProbeArgs} */
-	const out = { target: null, only: null, onlySeen: false, extra: null };
+	const out = {
+		target: null,
+		only: null,
+		onlySeen: false,
+		extra: null,
+		showOutput: false,
+		log: null,
+	};
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
+		if (a === "--show-output") {
+			out.showOutput = true;
+			continue;
+		}
+		// The path is consumed here so it can never be read as the target. A bare
+		// `--log` leaves an empty path, which the runner refuses.
+		if (a.startsWith("--log=")) {
+			out.log = a.slice("--log=".length);
+			continue;
+		}
+		if (a === "--log") {
+			out.log = isMissingOrFlag(argv[i + 1]) ? "" : argv[++i];
+			continue;
+		}
 		if (a.startsWith("--only=")) {
 			out.onlySeen = true;
 			out.only = a.slice("--only=".length);

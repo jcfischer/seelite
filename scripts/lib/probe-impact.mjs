@@ -187,6 +187,88 @@ export function methodCallers(text, method) {
 	return callers.sort();
 }
 
+/** Probe registries: the declaration that holds each one's entries, and
+ * whether an existing entry may change. A catalog or roots edit changes what an
+ * existing contract means; a quarantine edit only changes whether it gates.
+ */
+export const PROBE_REGISTRIES = Object.freeze({
+	"scripts/lib/probe-catalog.mjs": { declaration: "PROBE_CATALOG" },
+	"scripts/lib/probe-contract-roots.mjs": { declaration: "OWNERS" },
+	"scripts/lib/probe-quarantine.mjs": {
+		declaration: "QUARANTINED",
+		edits: true,
+	},
+});
+
+/** The node naming an entry's probe file, in each registry's shape. */
+function entryKey(item) {
+	// OWNERS: `"probe-x.mjs": [roots]`
+	if (ts.isPropertyAssignment(item)) return item.name;
+	// PROBE_CATALOG: `entry("probe-x.mjs", contract, evidence)`
+	if (ts.isCallExpression(item)) return item.arguments[0];
+	// QUARANTINED: `["probe-x.mjs", "#123 why"]`
+	if (ts.isArrayLiteralExpression(item)) return item.elements[0];
+	return undefined;
+}
+
+/** Entries keyed by probe file, and the file's text with the list cut out. */
+function registryEntries(text, declaration) {
+	const ast = ts.createSourceFile("r.mjs", text, ts.ScriptTarget.Latest, true);
+	if (ast.parseDiagnostics.length) return null;
+	let list;
+	const find = (node) => {
+		if (list) return;
+		if (ts.isArrayLiteralExpression(node)) list = node.elements;
+		else if (ts.isObjectLiteralExpression(node)) list = node.properties;
+		else ts.forEachChild(node, find);
+	};
+	const walk = (node) => {
+		if (
+			ts.isVariableDeclaration(node) &&
+			node.name.getText(ast) === declaration
+		)
+			find(node.initializer);
+		else ts.forEachChild(node, walk);
+	};
+	walk(ast);
+	if (!list) return null;
+	const entries = new Map();
+	for (const item of list) {
+		const key = entryKey(item);
+		if (!key || !ts.isStringLiteralLike(key) || entries.has(key.text))
+			return null;
+		entries.set(key.text, item.getText(ast));
+	}
+	return {
+		entries,
+		skeleton: text.slice(0, list.pos) + text.slice(list.end),
+	};
+}
+
+/** Probes whose registry entries a change adds, or in the quarantine also
+ * edits or removes. Null when it edits or removes a catalog or roots entry, or
+ * changes a line outside the lists. Entry order is free: lists are read as sets.
+ */
+export function registryChanges(changedFiles, before, after) {
+	const changed = new Set();
+	for (const [file, { declaration, edits }] of Object.entries(
+		PROBE_REGISTRIES,
+	)) {
+		if (!changedFiles.includes(file)) continue;
+		const a = registryEntries(before.get(file) ?? "", declaration),
+			b = registryEntries(after.get(file) ?? "", declaration);
+		if (!a || !b || a.skeleton !== b.skeleton) return null;
+		for (const [key, text] of a.entries)
+			if (b.entries.get(key) !== text) {
+				if (!edits) return null;
+				changed.add(key);
+			}
+		for (const key of b.entries.keys())
+			if (!a.entries.has(key)) changed.add(key);
+	}
+	return changed.size ? [...changed].sort() : null;
+}
+
 /** Deterministic selection from both revisions. Unknown ownership expands all. */
 export function selectImpact(changedFiles, impact, inventory) {
 	if (

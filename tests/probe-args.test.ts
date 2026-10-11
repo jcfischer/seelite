@@ -234,3 +234,21 @@ describe("the target", () => {
 		expect(resolve(["beta"]).refusal).toMatch(/is not a target/);
 	});
 });
+
+describe("watching a run", () => {
+	// F14 of the 2026-10-11 retro: a passing probe printed nothing, and a run
+	// in the background showed nothing until npm exited.
+	test("--show-output and --log are read, and the log path is not a target", () => {
+		const a = parseArgs(["--only", "alpha", "--show-output", "--log", "x.log"]);
+		expect(a.showOutput).toBe(true);
+		expect(a.log).toBe("x.log");
+		expect(a.target).toBeNull();
+		expect(a.only).toBe("alpha");
+		expect(parseArgs(["--log=y.log"]).log).toBe("y.log");
+		expect(parseArgs([]).showOutput).toBe(false);
+		expect(parseArgs([]).log).toBeNull();
+		// A bare `--log` has no path; the runner refuses the empty string.
+		expect(parseArgs(["--log", "--show-output"]).log).toBe("");
+		expect(resolve(["--log", "x.log"]).refusal).toBeUndefined();
+	});
+});
