@@ -4993,16 +4993,7 @@ class Game {
 							: { type, commodity: name };
 				this.consolePress(this.transactStation(action));
 			},
-			onOutfittingSelect: (kind, name) => {
-				if (kind === "slot") {
-					this.outfittingSlot = name;
-					this.outfittingCandidate = "";
-				} else this.outfittingCandidate = name;
-				this.stationConsoleRevision += 1;
-				this.clearStationRefusal();
-				this.consolePress(true);
-				this.updateCockpit();
-			},
+			onOutfittingSelect: (kind, name) => this.selectOutfitting(kind, name),
 			// A refused press holds the launch, and the hold is on the console, so
 			// both outcomes repaint (#314).
 			onLaunch: () => {
@@ -18821,6 +18812,18 @@ class Game {
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
 		};
+	}
+
+	/** A preview selection repaints the console and never changes saved state. */
+	private selectOutfitting(kind: "slot" | "candidate", name: string) {
+		if (kind === "slot") {
+			this.outfittingSlot = name;
+			this.outfittingCandidate = "";
+		} else this.outfittingCandidate = name;
+		this.stationConsoleRevision += 1;
+		this.clearStationRefusal();
+		this.consolePress(true);
+		this.updateCockpit();
 	}
 
 	/** How far a hull reaches from the system the ship is in (#185 D3): the

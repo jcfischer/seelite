@@ -509,6 +509,8 @@ describe("the Game's world writes", () => {
 		const allowed: [head: string, beforeEvent: boolean][] = [
 			["private adopt(", false],
 			["private stationConsoleState(", false],
+			// Selecting an outfitting row changes only the preview, never Holdings.
+			["private selectOutfitting(", false],
 			["private transactStation(", true],
 			["private actOnRequest(", true],
 		];
