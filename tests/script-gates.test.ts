@@ -388,6 +388,21 @@ test("no condition in the file asks the event alone", () => {
 		expect(job.condition ?? "").not.toContain("github.event_name");
 });
 
+test("a merge to main is not cancelled by the next push", () => {
+	// Stage 2 sits at the end of a several-minute stage 1, so what a second push
+	// to `main` does to the run in flight decides which commit ships. Measured on
+	// 2026-10-11, three consecutive `main` runs went cancelled, cancelled, failed
+	// under `cancel-in-progress: true` before one finished: merges whose only
+	// evidence was a grey dot. A pull request still loses to its own next push —
+	// those minutes are wasted ones — so the value names the ref rather than
+	// turning cancelling off everywhere.
+	const { concurrency } = ciWorkflow();
+	expect(concurrency?.cancelInProgress).toContain("refs/heads/main");
+	// And the group keeps `main`'s queue apart from every pull request's, or a
+	// burst of PR runs becomes the thing a deploy waits behind.
+	expect(concurrency?.group).toContain("github.ref");
+});
+
 test("every action the workflows call is pinned to a commit", () => {
 	// A `vN` tag is a branch someone can force-push, so every `uses:` here names
 	// a commit instead. The pins and their versions are listed at the top of

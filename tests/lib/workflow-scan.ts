@@ -90,6 +90,21 @@ export type Workflow = {
 	triggers: WorkflowTrigger[];
 	jobs: WorkflowJob[];
 	steps: WorkflowStep[];
+	/** Its `concurrency:`, or absent when the file declares none. */
+	concurrency?: WorkflowConcurrency;
+};
+
+/**
+ * The two keys of a top-level `concurrency:` block.
+ *
+ * Read because this workflow's publish sits at the end of a several-minute
+ * stage, and `cancel-in-progress` decides what a second push does to a run that
+ * is carrying it: cancel it, or wait behind it. "Which push ships?" is a
+ * configuration question, and a paragraph saying so is worth nothing.
+ */
+export type WorkflowConcurrency = {
+	group?: string;
+	cancelInProgress?: string;
 };
 
 /**
@@ -317,6 +332,31 @@ const readSteps = (block: Line[]): WorkflowStep[] => {
 };
 
 /**
+ * The top-level `concurrency:` block, key by key.
+ *
+ * A file that declares none reads as `undefined` rather than as an empty object:
+ * "this run queues or cancels the last one on its ref" is a claim about a block
+ * that exists, and no row should be able to satisfy it with nothing.
+ */
+const readConcurrency = (block: Line[]): WorkflowConcurrency | undefined => {
+	if (!block.length) return undefined;
+	const concurrency: WorkflowConcurrency = {};
+	for (let i = 0; i < block.length; i++) {
+		const written = keyAt(block[i], COLUMN.child);
+		if (
+			!written ||
+			(written.name !== "group" && written.name !== "cancel-in-progress")
+		)
+			continue;
+		const { value, used } = readValue(block, i, written.written);
+		i += used;
+		if (written.name === "group") concurrency.group = value;
+		else concurrency.cancelInProgress = value;
+	}
+	return concurrency;
+};
+
+/**
  * A workflow from its text, read from configuration and not from prose.
  *
  * What it admits is `COLUMN`'s layout. A workflow written some other way reads as
@@ -334,6 +374,7 @@ export const parseWorkflowText = (text: string): Workflow => {
 		triggers: readTriggers(topLevelBlock(lines, "on")),
 		jobs: readJobs(jobsBlock),
 		steps: readSteps(jobsBlock),
+		concurrency: readConcurrency(topLevelBlock(lines, "concurrency")),
 	};
 };
 

@@ -327,3 +327,55 @@ jobs:
 		]);
 	});
 });
+
+describe("concurrency is read as the two keys that decide it", () => {
+	// Whether a second push cancels the run in flight or waits behind it is what
+	// decides which commit ships, and this workflow now carries a publish at the
+	// end of a several-minute stage. So the block is read, and read as absent
+	// when it is absent: an empty object would let a row that asks "does `main`
+	// wait?" pass on a workflow that says nothing about waiting at all.
+	test("a group and a cancel spelled as an expression", () => {
+		const { concurrency } = parseWorkflowText(`
+name: CI
+on:
+  push:
+    branches: [main]
+concurrency:
+  group: ci-\${{ github.ref }}
+  cancel-in-progress: \${{ github.ref != 'refs/heads/main' }}
+jobs:
+  gate:
+    steps:
+      - run: npm test
+`);
+		expect(concurrency).toEqual({
+			group: "ci-${{ github.ref }}",
+			cancelInProgress: "${{ github.ref != 'refs/heads/main' }}",
+		});
+	});
+
+	test("a plain `true`, which is the shape a row must be able to see", () => {
+		const { concurrency } = parseWorkflowText(`
+on: push
+concurrency:
+  group: pages-deploy-\${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  deploy:
+    steps:
+      - run: npm test
+`);
+		expect(concurrency?.cancelInProgress).toBe("true");
+	});
+
+	test("and no block at all is absent, not empty", () => {
+		const { concurrency } = parseWorkflowText(`
+on: push
+jobs:
+  deploy:
+    steps:
+      - run: npm test
+`);
+		expect(concurrency).toBeUndefined();
+	});
+});
