@@ -24,8 +24,8 @@
  * has to run before the suite, not a claim to be a lexer. #147 has the history.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PLAYWRIGHT_ENV_VARS } from "./probe-guard.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
@@ -117,6 +117,10 @@ const EXEMPT = new Map([
 	[
 		"measure-cabin-pass-cost.mjs",
 		"#651's headed cabin-pass instrument, two builds against each other on two servers; a sibling of #201's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints build-against-build deltas and a separation count for a receipt and gates on nothing. It refuses a software rasteriser, a base server that declares no tree or the same commit, and a non-finite block, each by throwing out of the run",
+	],
+	[
+		"tune-cabin-lights.mjs",
+		"node #887's interactive brightness panel: it drives the frame lamps, the console lamps, the authored interior's floods and the rig's ambient live in front of the principal so a look can be set by eye, and prints mean/q25/median/p95/blown measured back off the rendered frame, plus the chosen figures to /tmp/tuning.json for `src/` to adopt. It gates on nothing deliberately — what it decides is signed by looking, and a tally row would be asserting a taste — while a page error throws out of the run. The figures it produces are held as soon as they are adopted: tests/cabin-lighting-ruling.test.ts and tests/perimeter-lamps.test.ts.",
 	],
 	[
 		"capture-sounds.mjs",

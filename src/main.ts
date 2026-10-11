@@ -124,6 +124,7 @@ import {
 	LIGHT_RIG,
 	equirectEnvironment,
 	gasParamsFrom,
+	hemisphereIntensityFor,
 	type SkyBakeParams,
 } from "./light-rig";
 import {
@@ -873,8 +874,9 @@ import {
 } from "./cockpit-surface";
 import {
 	buildAuthoredCabin,
+	buildPerimeterLamps,
 	COCKPIT_MODEL_LAMPS,
-	carriedLamp,
+	carriedConsoleLamp,
 	type CockpitScreen,
 	containedFace,
 	INSTRUMENT_FACE_KM,
@@ -5874,6 +5876,9 @@ class Game {
 			this.nearScene,
 			this.cabinScene,
 		]) {
+			// The cabin keeps the same rig with one exception it earned: see
+			// `CABIN_HEMISPHERE_GAIN`.
+			const cabinScene = scene === this.cabinScene;
 			const sun = new THREE.DirectionalLight(
 				LIGHT_RIG.sun.color,
 				LIGHT_RIG.sun.intensity,
@@ -5892,7 +5897,7 @@ class Game {
 			const hemi = new THREE.HemisphereLight(
 				LIGHT_RIG.hemisphere.sky,
 				LIGHT_RIG.hemisphere.ground,
-				LIGHT_RIG.hemisphere.intensity,
+				hemisphereIntensityFor(cabinScene),
 			);
 			hemi.name = "hemisphere";
 			scene.add(hemi);
@@ -8927,7 +8932,9 @@ class Game {
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
 		for (const lamp of COCKPIT_MODEL_LAMPS) {
-			const carried = carriedLamp(lamp);
+			// The composed carry — gain then carry, in one reachable function:
+			// see `COCKPIT_MODEL_LAMP_GAIN`.
+			const carried = carriedConsoleLamp(lamp);
 			const light = new THREE.PointLight(
 				lamp.color,
 				carried.intensity,
@@ -8942,6 +8949,16 @@ class Game {
 			light.position.set(x, y, z);
 			cabin.modelSpace.add(light);
 			if (lamp.gated) gated.push(light);
+		}
+		// The frame lamps on the perimeter supports the authored cabin presents to
+		// the pilot (#887). What is added here is the cast — the fitting the cabin
+		// already carries under its window sill is left alone — so there is nothing
+		// ungated to see at low quality, and the casts go through the same gate as the
+		// console's so they respond when the setting moves mid-flight.
+		for (const lamp of buildPerimeterLamps()) {
+			cabin.modelSpace.add(lamp);
+			const light = lamp.children.find((o) => o instanceof THREE.PointLight);
+			if (light instanceof THREE.PointLight) gated.push(light);
 		}
 		// **Gated** (#651): `cockpit-surface.ts` decides which side of `quality`
 		// these are on. A point light costs every lit cabin fragment, so low

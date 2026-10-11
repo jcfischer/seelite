@@ -64,6 +64,44 @@
  * all — they are recorded as measured rather than padded to a figure nobody
  * read.
  *
+ * ## Node #887: the paints are lifted, and one lane could not be read
+ *
+ * The authored courier's paints were lifted out of silhouette (#887): tint and
+ * metalness in the prepare pipeline, so the shipped GLB carries the look, bounded
+ * by a metalness cap and by `MAX_DIFFUSE_OF_ROSTER` so no lifted paint is brighter
+ * than the procedural roster's painted hull. Same rig, same view, same mask, five
+ * samples, same-build noise 0.00, 25,587 px — **the mask's pixel count is
+ * unchanged**, so these are the same pixels, not a different crop:
+ *
+ * | | ANGLE Metal (M1 Pro) | was |
+ * | --- | --- | --- |
+ * | peak | **238.21** | 252.21 |
+ * | lower quartile | **34.66** | 10.16 |
+ * | median | **51.87** | 37.88 |
+ *
+ * The quartile and the median rise and the peak falls, which is the whole point of
+ * a lift: paint that was in shadow comes up while the brightest highlight on the
+ * machined alloy comes down. `HULL_LUMA_BAND`'s ceiling was not relaxed to make
+ * this fit.
+ *
+ * **`laneSpread` is carried forward unverified for this subject, and that is the
+ * weakest thing in this record.** The SwiftShader lane no longer boots on this
+ * machine: `bootedGame` never saw `__seelite.frames` rise above 0 in **300 s** on
+ * this branch's dev server. That is not a regression this branch caused — the
+ * identical instrument, wait and seed fail the same way on the base build's dev
+ * server at `8b7a5871` with its own installed `node_modules`. So the spread above
+ * is what the *previous* subject's two lanes disagreed by.
+ *
+ * What follows from that, stated rather than hidden: the recording rule here is
+ * "where the lanes disagree, record the lower", and with one lane readable the
+ * figures below are the Metal lane's alone. If the portable lane reads *lower*
+ * than this on the lifted paints, the derived `SHIPPED_FLOORS` are too high for it
+ * and its probe rows go red on a machine that can boot it — a detected failure, not
+ * a silent one, which is the only reason carrying the figure is survivable. The
+ * margins' other constraint, that each exceed `laneSpread`, is unaffected and stays
+ * conservative. Whoever boots the portable lane on this subject should replace all
+ * four figures and close the issue.
+ *
  * **Why the key is the subject and not the finish.** Through #463 the hull
  * on screen was the procedural courier, which every finish preset paints, so
  * the finish named the subject. The authored courier carries the study's own
@@ -90,12 +128,12 @@ export const HULL_LUMA_CALIBRATION = Object.freeze({
 		hull: "courier",
 		authored: true,
 		modelSha256:
-			"c66ef59a1cc679c246493ca8fa63fc87d005b296879ac0d5c3668be48fe2287d",
+			"6967208f3169dcb900f24e6164ac09023db5d6b6ee5495a92b157ce20c310c30",
 	}),
-	ref: "node-831",
-	peak: 252.21,
-	lowerQuartile: 10.16,
-	median: 37.88,
+	ref: "node-887",
+	peak: 238.21,
+	lowerQuartile: 34.66,
+	median: 51.87,
 	laneSpread: Object.freeze({ peak: 0, lowerQuartile: 0, median: 0.92 }),
 });
 

@@ -1,17 +1,34 @@
 // Run after build_model.py exports the approved courier hull study (node #812).
 // Node #831 quantises normals and UVs, retaining exact positions, triangles
 // and lossless texture pixels. No simplification or resize.
+//
+// Node #887 lifts nine hull paints here: the study's materials were lit for the
+// spike's own viewer, and `AUTHORED_HULL_PAINT_LIFT` says what that costs in the
+// game's light. The geometry and the texture pixels below are still checked
+// exact, so the lift is the only thing that differs from the approved study.
+
+import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { NodeIO } from "@gltf-transform/core";
 import {
 	ALL_EXTENSIONS,
 	EXTMeshoptCompression,
 	KHRMeshQuantization,
 } from "@gltf-transform/extensions";
-import { dedup, quantize, reorder, textureCompress } from "@gltf-transform/functions";
-import { MeshoptEncoder, MeshoptDecoder } from "meshoptimizer";
+import {
+	dedup,
+	quantize,
+	reorder,
+	textureCompress,
+} from "@gltf-transform/functions";
+import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import sharp from "sharp";
-import { mkdir } from "node:fs/promises";
-import assert from "node:assert/strict";
+import { AUTHORED_HULL_ASSETS } from "../../scripts/lib/authored-hull-paint.mjs";
+import {
+	formatLiftRow,
+	liftAndVerifyAuthoredHull,
+} from "../../scripts/lib/authored-hull-prepare.mjs";
+
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready]);
 const io = new NodeIO()
 	.registerExtensions(ALL_EXTENSIONS)
@@ -19,9 +36,14 @@ const io = new NodeIO()
 		"meshopt.encoder": MeshoptEncoder,
 		"meshopt.decoder": MeshoptDecoder,
 	});
-const document = await io.read(
-	"spikes/courier-hull/courier-hull.glb",
+const document = await io.read("spikes/courier-hull/courier-hull.glb");
+const asset = AUTHORED_HULL_ASSETS.find(
+	(a) => a.shipped === "src/models/courier-hull.glb",
 );
+// Measure the maps, hold them to the recorded figures, lift, and assert the ceiling.
+// One sequence for every authored hull, in `authored-hull-prepare.mjs`.
+const lifted = await liftAndVerifyAuthoredHull(document, asset);
+
 const pixels = async (doc) =>
 	Promise.all(
 		doc
@@ -93,3 +115,4 @@ assert.deepEqual(
 console.log(
 	"Verified the Meshopt round trip of every vertex attribute, and exact texture pixels.",
 );
+for (const row of lifted) console.log(formatLiftRow(row));

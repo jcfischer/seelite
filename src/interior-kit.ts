@@ -3,20 +3,39 @@
  * Ships, reservations, names and traversal remain owned by the game. Node #843.
  */
 import * as THREE from "three";
-import { InteriorLods, type LodRecord } from "./interior-lod";
+import { disposeSubtree, shared } from "./gpu-teardown";
+import { runInteriorSlices } from "./interior-install";
 import {
-	planInterior,
-	worldPoint,
 	FACE_ROLL,
+	planInterior,
 	THEMES,
 	type Theme,
 	type V3,
+	worldPoint,
 } from "./interior-layout";
-import type { InteriorFace, StationInterior } from "./station-interior";
-import { runInteriorSlices } from "./interior-install";
-import { disposeSubtree, shared } from "./gpu-teardown";
+import { InteriorLods, type LodRecord } from "./interior-lod";
 import { EMISSIVE_CEILING } from "./light-rig";
+import type { InteriorFace, StationInterior } from "./station-interior";
+
 const materials = new Map<string, THREE.Material>();
+/**
+ * One authored interior flood's luminous intensity, candela, before the
+ * metre-to-kilometre scaling the kit works in (node #887).
+ *
+ * **This is a fifth of what the kit shipped with.** The floods were authored at 50,000
+ * and that is what every view set and enclosure figure was captured against; in the
+ * docked cabin — with the cabin's own console and frame lamps on top of them, and a
+ * hemisphere lifted over the top of that — the principal's reading from the live panel
+ * was that the bay's lights were simply too bright, and they dialed the floods to 0.2×
+ * and left it there. `CABIN_HEMISPHERE_GAIN` is the other half of the same ruling.
+ *
+ * Untouched deliberately: the floods' `380 m` reach and `decay 2`. The complaint was
+ * how hard they light the room, not how far they reach — and at 0.2× the geometry the
+ * kit was built to illuminate is still lit, which is what the comment below this one
+ * has always claimed these are for.
+ */
+export const INTERIOR_FLOOD_INTENSITY = 10_000;
+
 export function interiorMaterial(
 	source: THREE.Material,
 	theme: Theme,
@@ -613,7 +632,7 @@ export function* buildInteriorKitSteps(
 		for (const face of faces) {
 			const light = new THREE.PointLight(
 				THEMES.find((t) => t.id === theme)!.light,
-				50000 * unitsPerMetre ** 2,
+				INTERIOR_FLOOD_INTENSITY * unitsPerMetre ** 2,
 				380 * unitsPerMetre,
 				2,
 			);
