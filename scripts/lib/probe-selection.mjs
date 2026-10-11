@@ -1,5 +1,7 @@
 import { PROBE_CATALOG } from "./probe-catalog.mjs";
 import { discoverProbeFiles } from "./probe-inventory.mjs";
+import { selectImpact } from "./probe-impact.mjs";
+import { SMOKE_PROBES } from "./probe-contract-roots.mjs";
 
 /** A Noul must be at or below this probability to exclude a probe. */
 export const PROBE_EXCLUSION_MAX = 0.25;
@@ -136,14 +138,16 @@ function scoreProbes(answers, forcedProbes) {
  *
  * @param {string[]} changedFiles
  */
-function selectDeterministic(changedFiles, directlyChanged) {
+function selectDeterministic(changedFiles, directlyChanged, impact) {
 	if (!changedFiles.length)
 		return all(
 			"No changed-file evidence was available, so relevance is unknown.",
 			true,
 		);
 
-	const globalFile = changedFiles.find(isGlobalRisk);
+	const globalFile = changedFiles.find(
+		(file) => isGlobalRisk(file) && !(impact && file === "src/main.ts"),
+	);
 	if (globalFile)
 		return all(
 			`${globalFile} is shared runtime, build, or probe-harness infrastructure.`,
@@ -152,12 +156,20 @@ function selectDeterministic(changedFiles, directlyChanged) {
 	const onlyDirectOrNonRuntime = changedFiles.every(
 		(file) => directProbe(file) || isNonRuntime(file),
 	);
-	if (!onlyDirectOrNonRuntime) return null;
+	if (!onlyDirectOrNonRuntime) {
+		if (!impact) return null;
+		const selected = selectImpact(changedFiles, impact, RUNNER_PROBE_FILES);
+		return selected.probes
+			? result("affected", selected.probes, selected.reason)
+			: all(selected.reason, true);
+	}
 	if (!directlyChanged.length)
 		return result("none", [], "Only documentation or headless tests changed.");
 	return result(
 		"exact",
-		directlyChanged,
+		impact
+			? [...new Set([...SMOKE_PROBES, ...directlyChanged])].sort()
+			: directlyChanged,
 		"Only explicitly named probe scripts and non-runtime evidence changed.",
 	);
 }
@@ -240,7 +252,11 @@ export async function selectProbes(input, judge = undefined) {
 		);
 	const changedFiles = [...new Set(rawChangedFiles)].sort();
 	const forcedProbes = directlyChangedProbes(changedFiles);
-	const deterministic = selectDeterministic(changedFiles, forcedProbes);
+	const deterministic = selectDeterministic(
+		changedFiles,
+		forcedProbes,
+		input.impact,
+	);
 	if (deterministic) return deterministic;
 	const intent = typeof input.intent === "string" ? input.intent.trim() : "";
 	if (!intent || intent.length > MAX_INTENT_LENGTH)

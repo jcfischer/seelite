@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"lib/opening-probe.mjs",
+		"Shared fixture receives the caller tally check/watch; every page is watched and both opening entrypoints own tally and exit.",
+	],
+	[
 		"measure-open-space-repro.mjs",
 		"node #249's headed instrument, run unchanged against older checkouts to tell a build from an instrument: it prints pair-off, pair-on and gate-live medians with a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor; a software rasteriser or a wrong-tree server throws out of the run",
 	],

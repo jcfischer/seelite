@@ -39,7 +39,8 @@ renderer gets a browser.
 
 ```bash
 npm test               # headless: seeded generation, the float64 sim, module boundaries
-npm run probe          # browser: boots its own dev server, runs the probe suite
+npm run probe:pr       # PR browser gate: smoke plus affected contracts (clean HEAD)
+npm run probe:full     # full hardware browser regression suite
 npm run build          # tsc --noEmit && vite build
 npm run format         # biome
 ```

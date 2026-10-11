@@ -123,10 +123,11 @@ Follow CLAUDE.md's mandatory selector before browser probes and its canonical
 selected runner. A selector fallback to all must not be manually narrowed.
 
 During implementation, use meaningful geometry/unit tests and selected browser
-coverage to resolve specific defects. Reserve the required full delivery suite
-for a stable integration; rerun affected checks after fixes and follow the live
-SOP for final coverage. Selected checks never substitute for a required full
-suite. Do not rerun broad suites merely to rewrite a receipt.
+coverage to resolve specific defects. The ordinary PR browser gate is smoke plus
+affected contracts, selected by the repository (#891). Reserve a full suite for
+the selector's broad/unknown-impact fallback, explicit node criteria, release or
+weekly regression coverage. Rerun affected checks after fixes; do not rerun broad
+suites merely to rewrite a receipt.
 
 Keep Sage and browser suites sequential. Measure GPU performance without another
 suite or capture competing for the machine. Record renderer, machine/load, build

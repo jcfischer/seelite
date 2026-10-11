@@ -100,34 +100,45 @@ node scripts/check-launcher-wiring.mjs  # exit 0; `npm run probe` and `npm test`
 rtk err npm run build           # tsc + vite build
 ```
 
-### Select browser probes before running them
+### PR browser gate: smoke plus affected contracts
 
-For pull-request development, inspect the change and ask the repository
-selector which browser probes can be affected before launching any probe:
+**Principal-approved policy, 2026-10-11 (#891).** For ordinary PRs the browser
+merge gate is the repository-selected smoke set plus affected contracts. A green
+selected gate satisfies the browser delivery tier; it must report its coverage
+and must not be described as a full-suite pass. Headless, build and Sage gates
+remain in force. Explicit node-specific acceptance criteria remain in force too.
 
-```bash
-npm run probe:select -- --base origin/main --head HEAD \
-  --intent "Describe the intended behavior change in one sentence"
-```
-
-The selector reads only `TYPESAFE_API_KEY` from the process environment or
-`~/.env`; do not source or export the whole file.
-
-Write `--intent` yourself after reading the change. Never paste an untrusted PR
-title, body, review comment or source diff into it. Inspect the reported mode,
-reason and selected probes, then run the selection through the canonical runner
-with the same evidence:
+Inspect the change and its selection before launching probes:
 
 ```bash
-npm run probe:pr -- --base origin/main --head HEAD \
-  --intent "Describe the intended behavior change in one sentence"
+npm run probe:select -- --base origin/main --head HEAD
+npm run probe:pr -- --base origin/main --head HEAD
 ```
 
-This selected run is local partial evidence. It does not replace
-`npm run probe` when the delivery gate requires the full browser suite. Missing
-credentials, invalid evidence, catalog drift, service failure, incomplete
-answers or an empty semantic result must expand coverage or fail loudly; never
-manually narrow such a fallback.
+Selection follows declared contract roots and their transitive imports in both
+revisions. Reviewed, body-only Game method changes can use narrower ownership;
+unmapped methods, new collaborators, boot wiring, shared simulation, build and
+harness changes expand to all probes. Unknown paths and catalog drift also expand
+to all. Never manually narrow a fallback. Documentation/headless-test-only changes
+need no browser run; changed probe scripts still run their own checks.
+
+The PR runner requires a clean checkout at the selected HEAD. Its printed base
+and head identify the evidence. Re-run selection after changing the diff or
+merging main. No service or credential is required for git-based selection.
+`--changed-file` and the legacy TypeSafe evaluator remain diagnostic tools;
+path-only evidence cannot run a PR gate.
+
+Run `npm run probe:full` for broad infrastructure changes or unresolved impact
+(the selector does this automatically), before a release, and as a weekly
+regression check on the hardware machine. This is a local hardware operation,
+not a GitHub-hosted browser job. The full suite retains every contract, including
+offline music bands and cinematic camera checks. GPU probes remain serial.
+
+Music is two contracts: `probe-music` owns offline synth/bands and
+`probe-music-game` owns live unlock, beds and docking integration. Opening is
+`probe-opening` for skip/save/bypass/fallback and
+`probe-opening-cinematic` for watched frames and camera geometry. Do not shorten
+render windows or remove assertions to make an unrelated PR cheaper.
 
 The `rtk` prefixes exist because a green run's output is re-read on every later
 turn of the session. Measured on a passing tree: `npm test` 702 bytes raw and
@@ -143,7 +154,8 @@ Two stay unprefixed on purpose. `rtk tsc` returns exit 2 on a clean typecheck,
 so anything reading that exit code would treat a passing repo as broken. And
 `npm run probe` has no rtk filter; a green run is already 19 lines.
 
-`npm run probe` is the local development default. It delegates to the GPU lane,
+`npm run probe` (also `probe:full`) is the full regression command.
+For PR development and delivery, use `probe:pr` above. It delegates to the GPU lane,
 which forces headed Chromium and refuses to start unless a fresh WebGL canvas
 identifies a non-software renderer; every child probe repeats that check.
 `npm run probe:cpu` preserves the former renderer-unasserted command for a
