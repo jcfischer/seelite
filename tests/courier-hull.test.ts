@@ -33,9 +33,9 @@ import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
 import {
 	HULL_REACH_KM,
-	authoredCourierBuilder,
+	authoredHullBuilder,
 	buildShipMesh,
-	installAuthoredCourier,
+	installAuthoredHull,
 	isDriveBell,
 	shipMuzzlesKm,
 	updateShipVisuals,
@@ -479,7 +479,7 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 				own.userData.authored = false;
 				const fresh = mainsOf(own);
 				setHullFinish(asked);
-				if (courier().userData.courierGlow === root.userData.courierGlow)
+				if (courier().userData.authoredGlow === root.userData.authoredGlow)
 					continue;
 				pairs++;
 				expect([built, asked, mainsOf(root)]).toEqual([built, asked, fresh]);
@@ -502,25 +502,25 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 		// `addNavLights` casts one ray per light through `intersectObject`.
 		const placements = (run: () => void) => countCalls("intersectObject", run);
 		courier();
-		const installed = authoredCourierBuilder();
-		installAuthoredCourier(undefined);
+		const installed = authoredHullBuilder("courier");
+		installAuthoredHull("courier", undefined);
 		try {
 			// The Kestrel places its own lights; that is not what is counted.
 			buildShipMesh("courier", HULL_SPECS.courier.variant);
 		} finally {
-			installAuthoredCourier(installed);
+			installAuthoredHull("courier", installed);
 		}
 		expect(placements(() => courier())).toBe(0);
 	});
 
 	test("the procedural courier is measured, not handed the model's throats", () => {
-		const installed = authoredCourierBuilder();
-		installAuthoredCourier(undefined);
+		const installed = authoredHullBuilder("courier");
+		installAuthoredHull("courier", undefined);
 		try {
 			const root = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
 			expect(raycasts(() => ventThroats(root, "courier"))).toBeGreaterThan(0);
 		} finally {
-			installAuthoredCourier(installed);
+			installAuthoredHull("courier", installed);
 		}
 	});
 });

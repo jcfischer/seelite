@@ -411,7 +411,7 @@ try {
 				const frames = roots.map((m) =>
 					m.getObjectByName("courier-hull-frame"),
 				);
-				await g.loadCourierHullAfterBoot();
+				await g.loadAuthoredHullsAfterBoot();
 				return roots.every(
 					(m, i) =>
 						frames[i] &&
@@ -428,8 +428,8 @@ try {
 		} else {
 			await held.abort("failed");
 			await page.evaluate(async () => {
-				await window.__seelite.loadCourierHullAfterBoot();
-				await window.__seelite.loadCourierHullAfterBoot();
+				await window.__seelite.loadAuthoredHullsAfterBoot();
+				await window.__seelite.loadAuthoredHullsAfterBoot();
 			});
 			const after = await page.evaluate(() => ({
 				procedural: window.__courierStandIns.every((m) => !m.userData.authored),

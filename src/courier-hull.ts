@@ -29,35 +29,29 @@
  * they are unpowered — the cockpit model's own convention for a screen with
  * no live source.
  *
- * **Every Traffic courier is this model, so the detail band switches it.**
- * Inside the band's first edge (`DETAIL_RADII.full`) a courier is the
- * approved model, triangle for triangle; beyond it, a reduced copy made to a
- * **target** error of half a device pixel at that edge, in
- * `LEVEL_FRAME` (`courierLevelErrorKm`), and beyond the second edge
- * a coarser one made to the same target. A target and not a bound: the error
- * is the simplifier's own metric, and how the switch looks is judged by eye. Both copies are made here, once,
- * from the loaded model, and share its materials and textures; the cabin and
- * the pilot behind the canopy are left out of both (`authored-levels.ts`
- * makes them, as it makes the miner's). A reduced level is drawn
- * and never measured: its meshes take no ray (`AuthoredLevelMesh`), so the nav lights, the muzzles
- * and the vent throats are placed on the approved metal.
+ * The model is built by `authored-hull.ts`, the tug's way too (node #814):
+ * this module supplies the courier's scale, nozzles and the meshes it treats
+ * differently — the screens, and the cabin and pilot behind the canopy, which
+ * cast no shadow and are left out of the reduced levels.
  */
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { MeshoptSimplifier } from "meshoptimizer/simplifier";
-import { levelErrorKm, reducedLevel } from "./authored-levels";
+import {
+	AUTHORED_ALLOY_MATERIAL,
+	AUTHORED_ALLOY_ROUGHNESS,
+	createAuthoredHullBuilder,
+} from "./authored-hull";
+import { levelErrorKm } from "./authored-levels";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
 import { COURIER_HULL_GLB_URL } from "./model-urls";
 import { HULL_SPECS } from "./hull";
-import { EMISSIVE_CEILING } from "./light-rig";
 import {
-	AUTHORED_COURIER_VARIANT,
 	type AuthoredHullBuilder,
 	HULL_REACH_KM,
 	buildShipMesh,
-	installAuthoredCourier,
+	installAuthoredHull,
 } from "./ship-mesh";
 import { ventThroats } from "./vent-plumes";
 
@@ -111,193 +105,40 @@ export const COURIER_NOZZLES_M = {
 	lipRadius: 2.85,
 } as const;
 
-/** The drive glow's profile, study metres, (radius, z), throat to lip: `v` // glossary-ignore: throat
- *  runs 0 at the throat's centre to 1 at the lip, the axis the shared // glossary-ignore: throat
- *  exhaust ramp grades along. */
-function bowlProfile(): THREE.Vector2[] {
-	const n = COURIER_NOZZLES_M;
-	return [
-		new THREE.Vector2(0, n.throatZ + 0.02),
-		new THREE.Vector2(n.throatRadius * 0.5, n.throatZ),
-		new THREE.Vector2(n.throatRadius, n.throatZ - 0.05),
-		new THREE.Vector2(
-			(n.throatRadius + n.lipRadius) / 2,
-			(n.throatZ + n.lipZ) / 2,
-		),
-		new THREE.Vector2(n.lipRadius, n.lipZ),
-	];
-}
-
-/**
- * The glow bowl about the study's Z axis, opening aft (−Z), its faces
- * winding and lit outward. The shipped finishes draw a drive glow
- * `BackSide` — its far wall is what a viewer looking into the nozzle sees —
- * so outward is the winding that draws; `tests/courier-hull.test.ts` checks
- * it.
- */
-function bowlGeometry(): THREE.BufferGeometry {
-	const lathe = new THREE.LatheGeometry(bowlProfile(), 48);
-	// Lathe revolves about Y; turn Y onto Z so a profile's `y` is the study z.
-	lathe.rotateX(Math.PI / 2);
-	const position = lathe.getAttribute("position") as THREE.BufferAttribute;
-	const index = lathe.getIndex() as THREE.BufferAttribute;
-	// Wind outward: test one face away from the axis, flip every face if not.
-	const a = new THREE.Vector3();
-	const b = new THREE.Vector3();
-	const c = new THREE.Vector3();
-	let outward = 0;
-	for (let f = 0; f < index.count; f += 3) {
-		a.fromBufferAttribute(position, index.getX(f));
-		b.fromBufferAttribute(position, index.getX(f + 1));
-		c.fromBufferAttribute(position, index.getX(f + 2));
-		const normal = new THREE.Vector3().subVectors(b, a).cross(c.clone().sub(a));
-		const radial = new THREE.Vector3(
-			(a.x + b.x + c.x) / 3,
-			(a.y + b.y + c.y) / 3,
-			0,
-		);
-		outward += Math.sign(normal.dot(radial));
-	}
-	if (outward < 0) {
-		for (let f = 0; f < index.count; f += 3) {
-			const first = index.getX(f + 1);
-			index.setX(f + 1, index.getX(f + 2));
-			index.setX(f + 2, first);
-		}
-	}
-	lathe.computeVertexNormals();
-	return lathe;
-}
-
-/** The glow as a flat disc on the throat plate, facing aft: the drive the // glossary-ignore: throat
- *  `stock` finish draws, whose exhaust material is front-sided and unmapped. */
-function discGeometry(): THREE.BufferGeometry {
-	const n = COURIER_NOZZLES_M;
-	const disc = new THREE.CircleGeometry(n.throatRadius, 32);
-	disc.rotateY(Math.PI);
-	disc.translate(0, 0, n.throatZ);
-	return disc;
-}
-
-/** The courier study material whose roughness the game raises (#843). */
-export const COURIER_ALLOY_MATERIAL = "machined-alloy";
-export const COURIER_ALLOY_ROUGHNESS = 0.4;
+/** The courier study material whose roughness the game raises (#843); the
+ *  floor is `authored-hull.ts`'s, shared with the tug. */
+export const COURIER_ALLOY_MATERIAL = AUTHORED_ALLOY_MATERIAL;
+export const COURIER_ALLOY_ROUGHNESS = AUTHORED_ALLOY_ROUGHNESS;
 
 /**
  * Prepare a loaded study scene once and return the builder `buildShipMesh`
- * calls for every courier: the template's geometry, materials and textures
- * are shared by every copy and survive any one ship's teardown, and so are
- * its two reduced levels, made here.
+ * calls for every courier (`createAuthoredHullBuilder`).
+ *
+ * **The scale is set by the courier's length and nothing else** (see above):
+ * the model is drawn `COURIER_LENGTH_INSET_KM` inside the declared length.
  */
-export async function createCourierHullBuilder(
+export function createCourierHullBuilder(
 	template: THREE.Object3D,
 ): Promise<AuthoredHullBuilder> {
-	await MeshoptSimplifier.ready;
-	// The study's lamps were set for its own viewer; the game's exposure
-	// contract caps an authoring dial at white. Normalise once, keeping the
-	// relative strengths, as the Coriolis and the cockpit models do.
-	const materials = new Set<THREE.MeshStandardMaterial>();
-	template.traverse((o) => {
-		if (o instanceof THREE.Mesh)
-			for (const m of Array.isArray(o.material) ? o.material : [o.material])
-				if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
-	});
-	const divisor = Math.max(
-		1,
-		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
-	);
-	for (const m of materials) m.emissiveIntensity /= divisor;
-	// The study's machined alloy is a flat, unmapped mirror (roughness 0.28),
-	// and under a station bay's flood lights one panel flashed for exactly one
-	// frame as the lights turned past it (#843, `probe-station-mouth`). 0.40
-	// is the smallest tried that clears it; 0.28 is still the study's figure.
-	for (const m of materials)
-		if (m.name === COURIER_ALLOY_MATERIAL)
-			m.roughness = COURIER_ALLOY_ROUGHNESS;
 	const unpowered = shared(new THREE.MeshBasicMaterial({ color: 0x01090b }));
 	unpowered.name = "interior-screen-unpowered";
-	template.name = COURIER_LEVEL_NAMES.full;
-	template.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return;
-		const screen = o.name.startsWith(FIXTURE_SCREEN_PREFIX);
-		if (screen) o.material = unpowered;
-		// The cabin and the pilot sit inside the closed hull: nothing they
-		// would shade is lit through it, so they stay out of the shadow pass.
-		o.castShadow = !screen && !BEHIND_THE_CANOPY.test(o.name);
-		o.receiveShadow = true;
-		shared(o.geometry);
-		for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-			shared(m);
-			for (const value of Object.values(m))
-				if (value instanceof THREE.Texture) shared(value);
-		}
+	return createAuthoredHullBuilder(template, {
+		hull: "courier",
+		frameName: COURIER_FRAME_NAME,
+		levelNames: COURIER_LEVEL_NAMES,
+		kmPerM: (box) =>
+			(HULL_SPECS.courier.env.lengthKm - COURIER_LENGTH_INSET_KM) /
+			(box.max.z - box.min.z),
+		nozzles: COURIER_NOZZLES_M,
+		prepareMesh: (mesh) => {
+			const screen = mesh.name.startsWith(FIXTURE_SCREEN_PREFIX);
+			if (screen) mesh.material = unpowered;
+			// The cabin and the pilot sit inside the closed hull: nothing they
+			// would shade is lit through it, so they stay out of the shadow pass.
+			mesh.castShadow = !screen && !BEHIND_THE_CANOPY.test(mesh.name);
+		},
+		skipInLevels: (mesh) => BEHIND_THE_CANOPY.test(mesh.name),
 	});
-
-	template.updateMatrixWorld(true);
-	const box = new THREE.Box3().setFromObject(template);
-	const studyLengthM = box.max.z - box.min.z;
-	const spec = HULL_SPECS.courier;
-	const kmPerM = (spec.env.lengthKm - COURIER_LENGTH_INSET_KM) / studyLengthM;
-	const studyCentre = box.getCenter(new THREE.Vector3());
-	// A half-turn about Y sends (x, y, z) to (−x, y, −z). The box centre then
-	// lands on `envCentre`: starboard +x, dorsal +y, forward −z.
-	const offset = new THREE.Vector3(
-		spec.envCentre.rightKm + studyCentre.x * kmPerM,
-		spec.envCentre.upKm - studyCentre.y * kmPerM,
-		-spec.envCentre.foreKm + studyCentre.z * kmPerM,
-	);
-	const bowl = shared(bowlGeometry());
-	const disc = shared(discGeometry());
-	const behindTheCanopy = {
-		skip: (mesh: THREE.Mesh) => BEHIND_THE_CANOPY.test(mesh.name),
-	};
-	const levels = {
-		reduced: reducedLevel(
-			template,
-			courierLevelErrorKm("reduced") / kmPerM,
-			kmPerM,
-			COURIER_LEVEL_NAMES.reduced,
-			behindTheCanopy,
-		),
-		outline: reducedLevel(
-			template,
-			courierLevelErrorKm("outline") / kmPerM,
-			kmPerM,
-			COURIER_LEVEL_NAMES.outline,
-			behindTheCanopy,
-		),
-	};
-
-	return (root, exhaust) => {
-		const frame = new THREE.Group();
-		frame.name = COURIER_FRAME_NAME;
-		frame.rotation.y = Math.PI;
-		frame.scale.setScalar(kmPerM);
-		frame.position.copy(offset);
-		const full = template.clone(true);
-		const reduced = levels.reduced.clone(true);
-		const outline = levels.outline.clone(true);
-		frame.add(full, reduced, outline);
-		// The bowl when the finish's glow is a bowl, the disc when it is not:
-		// a back-sided material on a disc draws nothing from astern.
-		const glow = exhaust.side === THREE.BackSide ? bowl : disc;
-		// What this root carries, for `ventThroats`: the finish in force when
-		// it is asked need not be the one it was built under.
-		root.userData.courierGlow = glow === bowl ? "bowl" : "disc";
-		// Named by the ship's sides, starboard being the mesh's +x: the
-		// half-turn puts the study's +x nozzle there on the port side.
-		for (const [side, x] of [
-			["port", COURIER_NOZZLES_M.x],
-			["starboard", -COURIER_NOZZLES_M.x],
-		] as const) {
-			const mesh = new THREE.Mesh(glow, exhaust);
-			mesh.name = `courier-${side}-exhaust`;
-			mesh.position.set(x, COURIER_NOZZLES_M.y, 0);
-			frame.add(mesh);
-		}
-		root.add(frame);
-		return { full, reduced, outline };
-	};
 }
 
 let ready: Promise<void> | undefined;
@@ -315,7 +156,10 @@ export function prepareCourierHullModel(
 		.setMeshoptDecoder(MeshoptDecoder)
 		.loadAsync(COURIER_HULL_GLB_URL, onProgress)
 		.then(async (gltf) => {
-			installAuthoredCourier(await createCourierHullBuilder(gltf.scene));
+			installAuthoredHull(
+				"courier",
+				await createCourierHullBuilder(gltf.scene),
+			);
 			// One courier built now, before refreshing stand-ins: the first build
 			// places the nav lights by raycast against the model, about 0.3 s,
 			// and without this the first Traffic courier drawn mid-flight
@@ -323,7 +167,7 @@ export function prepareCourierHullModel(
 			// measured off the same build for the same reason (`ventThroats`
 			// keeps them): otherwise a pilot pays it during replacement,
 			// and a shipyard swap to one pays it on the frame.
-			const { root } = buildShipMesh("courier", AUTHORED_COURIER_VARIANT);
+			const { root } = buildShipMesh("courier", HULL_SPECS.courier.variant);
 			ventThroats(root, "courier");
 			disposeSubtree(root);
 		})

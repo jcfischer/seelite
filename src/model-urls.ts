@@ -22,6 +22,11 @@ export const COURIER_HULL_GLB_URL = new URL(
 	"./models/courier-hull.glb",
 	import.meta.url,
 ).href;
+/** Prepared by `spikes/bollard-hull/prepare-flight-asset.mjs` (node #814). */
+export const BOLLARD_TUG_GLB_URL = new URL(
+	"./models/bollard-tug.glb",
+	import.meta.url,
+).href;
 export const LONGWALL_MINER_GLB_URL = new URL(
 	"./models/longwall-miner.glb",
 	import.meta.url,

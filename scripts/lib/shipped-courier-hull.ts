@@ -1,7 +1,7 @@
 import { createCourierHullBuilder } from "../../src/courier-hull";
 import {
 	type AuthoredHullBuilder,
-	installAuthoredCourier,
+	installAuthoredHull,
 } from "../../src/ship-mesh";
 import { decodeShippedGlb } from "./shipped-glb";
 
@@ -23,5 +23,5 @@ export async function installShippedCourierHull(): Promise<void> {
 	builder ??= await createCourierHullBuilder(
 		await decodeShippedGlb("src/models/courier-hull.glb"),
 	);
-	installAuthoredCourier(builder);
+	installAuthoredHull("courier", builder);
 }

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll } from "bun:test";
 import {
 	type AuthoredHullBuilder,
-	authoredCourierBuilder,
-	installAuthoredCourier,
+	authoredHullBuilder,
+	installAuthoredHull,
 } from "../../src/ship-mesh";
 
 /**
@@ -15,8 +15,8 @@ import {
 export function useProceduralCourier(): void {
 	let installed: AuthoredHullBuilder | undefined;
 	beforeAll(() => {
-		installed = authoredCourierBuilder();
-		installAuthoredCourier(undefined);
+		installed = authoredHullBuilder("courier");
+		installAuthoredHull("courier", undefined);
 	});
-	afterAll(() => installAuthoredCourier(installed));
+	afterAll(() => installAuthoredHull("courier", installed));
 }

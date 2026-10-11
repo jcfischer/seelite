@@ -36,7 +36,7 @@ import {
 import { EMISSIVE_CEILING } from "./light-rig";
 import {
 	type AuthoredHullBuilder,
-	authoredCourierBuilder,
+	authoredHullBuilder,
 	exhaustRamp,
 	isDriveBell,
 } from "./ship-mesh";
@@ -145,8 +145,8 @@ export function plumeParticle(
  * origin is not that centre on every hull.
  */
 export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
-	const builder = authoredCourierBuilder();
-	if (id !== "courier" || root.userData.authored !== true || !builder)
+	const builder = authoredHullBuilder(id);
+	if (root.userData.authored !== true || !builder)
 		return measureThroats(root, id);
 	let byGlow = authoredThroats.get(builder);
 	if (!byGlow) {
@@ -154,7 +154,7 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 		authoredThroats.set(builder, byGlow);
 	}
 	// The glow the root was built with, not the finish in force now.
-	const glow = String(root.userData.courierGlow);
+	const glow = String(root.userData.authoredGlow);
 	let known = byGlow.get(glow);
 	if (!known) {
 		known = measureThroats(root, id);
@@ -168,9 +168,10 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 }
 
 /**
- * The authored courier's throats (node #812), measured once per installed
- * model and drive glow. Every authored courier is the one model, so its throats
- * are one answer — and measuring it raycasts against 354k triangles, about
+ * An authored hull's throats (node #812; the tug since node #814), measured
+ * once per installed model and drive glow. Every authored courier is the one
+ * model, so its throats are one answer — and measuring it raycasts against
+ * 354k triangles, about
  * half a second, which a shipyard swap to a courier would otherwise pay on
  * the frame. Keyed on the builder, so installing another model (or none)
  * leaves the old answer unreachable; and on the glow the root was built

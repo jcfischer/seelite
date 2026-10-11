@@ -86,20 +86,20 @@ try {
 		g.chaseElevation = 0.3;
 		const mesh = await import("/src/ship-mesh.ts");
 		const { markOcclusion } = await import("/src/occlusion-mesh.ts");
-		const builder = mesh.authoredCourierBuilder();
+		const builder = mesh.authoredHullBuilder("courier");
 		if (!builder)
 			throw new Error("the page's ship-mesh module has no authored courier");
 		const ship = g.shipMesh;
 		if (ship.userData.authored !== true)
 			throw new Error("the player's hull is not the authored courier");
 		const build = (authored) => {
-			if (!authored) mesh.installAuthoredCourier(undefined);
+			if (!authored) mesh.installAuthoredHull("courier", undefined);
 			try {
 				const root = mesh.buildShipMesh("courier", "a").root;
 				markOcclusion(root);
 				return root;
 			} finally {
-				mesh.installAuthoredCourier(builder);
+				mesh.installAuthoredHull("courier", builder);
 			}
 		};
 		const kids = {
