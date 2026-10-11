@@ -113,7 +113,7 @@ learn whether it got its time or the boundary. Test first in
 | `worstOffDeg` | 19.05 | 19.36 |
 | one seed | 44 s | 4 s |
 
-The continuity figures are identical and the framing figures agree to a decimal.
+The table's figures came from a sampler whose stride was wrong (§4's second half), so read it as a timing comparison only.
 
 What it shows less of is the arrival's **look**: that runs on wall time, and a
 hold runs none of it. The row's own comment says it is evidence about the camera
@@ -128,11 +128,18 @@ typed itself and believed it was seeing every step. It was not: a shot shown at
 1.5x or 2x moves the script's shown clock by *less* than `dtS` per step, so aiming
 `dtS` at the cruise, approach and dock shots swallowed two steps at a time — and
 since `closestR` and `worstOffDeg` are min/max over those rows, the fly-by's worst
-framing could fall between samples and still pass. The equivalence table was
-measured on the arrival, whose ratio is 1, which is exactly why it read clean.
-Sage's round 1 on PR #884 named it; the claim in this receipt and in the probe's
-comment was wrong before that, and the "360 rows = every step" figure it leaned on
-holds only for a 1:1 shot.
+framing could fall between samples and still pass. And the equivalence table above is
+**not evidence about the corrected sampler**: it was measured with that too-wide
+one, and `closestR`/`worstOffDeg` are computed over every row rather than over the
+arrival alone, so it was never a control on the stride — it passed while the stride
+was wrong. Sage's round 1 on PR #884 named the defect; round 3 named this sentence
+about it.
+
+The post-fix figures are the row's own, and they are worse, which is the point: on
+the corrected stride all five seeds read `takeJumpR` 0.0293, `takeTurnDeg` 0.80,
+`closestR` 6.2 and `worstOffDeg` **20.0**, against 19.36 from the too-wide sampler
+and 19.05 watched (`/tmp/seelite-882-opening-step5.log`). Sampling every step finds
+a slightly worse worst-case framing than sampling every second one; the bound is 25.
 
 What shipped instead:
 
@@ -239,7 +246,7 @@ and §0 measured that a loaded machine is worth ×2.9 on `probe-occlusion` and a
 slow probe; a **direct** run that fails prints no load at all. That is the next
 node.
 
-## 6b. Sage round 1 on PR #884, and what it changed
+## 6b. Sage on PR #884: three rounds, and what each changed
 
 Verdict `changes-requested`: 17 findings, 3 important. The two that mattered were
 both true and both about claims this receipt had made:
@@ -261,6 +268,23 @@ renderer-lane sentence into the SOP paragraph that told people to re-run a red a
 credit for #84's trailing peak-load line corrected; and the two glossary aliases
 (§Opening now names the **held** way through it, and the `hold` alias note its sixth
 sense).
+
+Round 2 (`d0d36dd6`) came back `changes-requested` with two true findings of its
+own — `openingSteps` asserting 720 steps for the cruise shot the leg sizes
+(§4), and `openingStepS` duplicating arithmetic still inline in `unit()` — plus
+collateral this branch had caused: a `biome format docs` run had reformatted another
+node's evidence JSON, which is not this branch's to do and was reverted, twice,
+because the second copy (`node-684-capacity-summary.json`) was found in round 3.
+Two lenses failed to run in that round, so it does not count as the round; round 3
+ran all seven and came back `commented`, and its one important finding was this
+file's and the probe's own comment still crediting the abandoned row-count check.
+Both are corrected here, along with: the `holdToShot` doc claiming every row that
+uses it compares end states (the two quit rows assert named save/reload fields
+instead, and now also the shot the hold landed on); the starvation story written
+down four times with its figures drifting between copies, which now lives in
+`probe-contention.mjs` and this receipt only; and `openingSteps`'s lack of a
+production caller, accepted on the record — its caller is the headless test, and
+the alternative is that test restating `OPENING`'s arithmetic one directory over.
 
 Left, deliberately: the two older shot-order spellings inside `probe-opening.mjs`
 that predate this branch — one is an assertion's own expected string — and

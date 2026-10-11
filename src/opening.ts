@@ -230,7 +230,12 @@ const SHOT_COVERED_S: Record<OpeningShot, number | null> = {
  * The module owns this because it is the only thing that knows which shots it
  * sizes. It is not a promise about a run: three of the six shots belong to the
  * pilot's actions, and guessing those is how a check comes to be wrong about the
- * very seeds it gates.
+ * very seeds it gates (#882's first version did exactly that, with 720).
+ *
+ * **No production caller** (sage round 3 on #884, accepted). Its caller is
+ * `tests/opening.test.ts`, which holds a stepped walk to these counts. The
+ * alternative — the test computing shot lengths out of `OPENING` itself — is the
+ * restating this repo's probe rule exists to prevent, one directory over.
  */
 export const openingSteps = (shot: OpeningShot): number | null => {
 	const simS = SHOT_COVERED_S[shot];

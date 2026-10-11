@@ -387,11 +387,10 @@ const printCondition = (key, line) => {
  *
  * The lock serialises suites; a probe run directly takes none — that is how a
  * red gets re-run alone — and nothing at all sees a sibling worktree's probes, a
- * `sage review` or a test run. Before this, only a **red** printed a load figure,
- * so a suite of slow greens read as slow probes: a contended suite came to look
- * like one probe had turned slow, rather than eight cores at more than twice
- * their cores in load average with someone else's browser in every one of them.
- * The measured figures are in `docs/receipts/node-882-probe-wall-clock.md`.
+ * `sage review` or a test run. `scripts/lib/probe-contention.mjs` owns why that
+ * mattered, and `docs/receipts/node-882-probe-wall-clock.md` owns the measured
+ * figures; this file only says the line (sage round 3 on #884, on a story this PR
+ * had written down four times with its numbers drifting between copies).
  *
  * Here rather than in `launchChromium` because this is the probe's preamble: the
  * one place every probe passes on its way to measuring anything, including the

@@ -107,9 +107,12 @@ const untilOver = (page, timeout = 120000) =>
  * only need to *be on* a shot were paying that wait for nothing.
  *
  * `release` hands the frames back, so a key pressed after it still goes down on a
- * real frame. **Every row that uses it still compares its own end state with the
- * skipped run's**, which is the control on this substitution: a hold that changed
- * the run would show up there rather than quietly pass.
+ * real frame. The control on this substitution is the row's own comparison: **the
+ * Enter row and the SKIP row still compare their end state with the skipped run's**,
+ * so a hold that changed the run would surface there rather than pass quietly. The
+ * two quit rows cannot make that comparison — their claim is what a save taken
+ * mid-shot and a reload carry, so they assert the fields that say so, and each now
+ * asserts the shot the hold actually landed on.
  *
  * `{ release: false }` stays held, for a row that quits on the shot and never
  * flies on from it — giving the clock back there would only drift off the shot it
@@ -299,9 +302,10 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	// opening's own steps, taking them through the game's phase handle instead of
 	// waiting for frames to arrive: each seed samples the script in about 4 s
 	// rather than the 43 s of wall clock its frames used to cost (five seeds: 217 s
-	// of the probe's 396). Measured both ways at one build on seed 47 the figures
-	// agree — `takeJumpR` 0.0293 and `takeTurnDeg` 0.80 **identical**, `closestR`
-	// 6.206 both, `worstOffDeg` 19.36 stepped against 19.05 watched.
+	// of the probe's 396). What it reads on the corrected stride, all five seeds:
+	// `takeJumpR` 0.0293, `takeTurnDeg` 0.80, `closestR` 6.2, `worstOffDeg` **20.0**
+	// — against 19.36 from the too-wide sampler just below and 19.05 watched. The fix
+	// sees a slightly *worse* worst framing, which is what sampling every step is for.
 	//
 	// **One step per sample, and the page says how wide a step is.** A shot shown
 	// at 1.5x moves the script's shown clock by less than `OPENING.dtS` per step, so
@@ -309,10 +313,10 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	// aimed by a `1 / 60` it had typed itself and saw every second step of the
 	// cruise, approach and dock shots while its comment claimed every one. So the
 	// stride comes from `openingScript()` — `OPENING.dtS / SHOT_RATIO[shot]`, read
-	// off the module that owns it, same as the shot order — and the row below
-	// **checks** the counts against the steps that module says each fixed-length
-	// shot has. A stride one step too wide is now a red, and `tests/opening.test.ts`
-	// pins the same thing without a browser.
+	// off the module that owns it, same as the shot order — and the check under this
+	// sampler measures consecutive samples against it: one step apart in the script's
+	// own clock, or the row is red. A stride one step too wide cannot hide, and
+	// `tests/opening.test.ts` pins the same arithmetic without a browser.
 	//
 	// What a stepped run shows **less** of is the arrival's *look*: that runs on
 	// wall time and a hold runs none of it. So this row is evidence about the camera
