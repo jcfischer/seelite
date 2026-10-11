@@ -4,10 +4,12 @@ import {
 	changedMethods,
 	dependencyClosure,
 } from "../scripts/lib/probe-impact.mjs";
-import { selectImpact } from "../scripts/lib/probe-impact.mjs";
+import { selectImpact, methodCallers } from "../scripts/lib/probe-impact.mjs";
+import { selectProbes } from "../scripts/lib/probe-selection.mjs";
 import {
 	PROBE_ROOTS,
 	SMOKE_PROBES,
+	MAIN_METHOD_CALLERS,
 } from "../scripts/lib/probe-contract-roots.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
 import { readFileSync, readdirSync } from "node:fs";
@@ -32,6 +34,27 @@ const impact = (paths: string[], before = sources, after = sources) =>
 	selectImpact(paths, { before, after }, inventory);
 
 describe("production contract ownership", () => {
+	test("feature fixtures use dependencies, while shared runner edits expand", async () => {
+		const result = await selectProbes({
+			changedFiles: ["scripts/lib/opening-probe.mjs"],
+			impact: { before: sources, after: sources },
+		});
+		expect(result.mode).toBe("affected");
+		expect(result.probes).toContain("probe-opening.mjs");
+		expect(result.probes).toContain("probe-opening-cinematic.mjs");
+		expect(result.probes).not.toContain("probe-music.mjs");
+		const harness = await selectProbes({
+			changedFiles: ["scripts/lib/probe-lock.mjs"],
+			impact: { before: sources, after: sources },
+		});
+		expect(harness.mode).toBe("all");
+	});
+	test("reviewed method callers match the production orchestrator", () => {
+		for (const [method, callers] of Object.entries(MAIN_METHOD_CALLERS))
+			expect(methodCallers(sources.get("src/main.ts"), method)).toEqual(
+				callers,
+			);
+	});
 	test("owns every runner probe and roots exist", () => {
 		expect(Object.keys(PROBE_ROOTS).sort()).toEqual(inventory);
 		for (const roots of Object.values(PROBE_ROOTS))
@@ -69,7 +92,7 @@ describe("production contract ownership", () => {
 		const before = new Map(sources);
 		before.set(
 			"src/main.ts",
-			"class Game { navRows() { return 1; } update() { return 1; } }",
+			"class Game { updateCockpit() { return this.navRows(); } navRows() { return 1; } update() { return 1; } }",
 		);
 		const after = new Map(before);
 		after.set(
@@ -84,9 +107,29 @@ describe("production contract ownership", () => {
 		expect(impact(["src/main.ts"], before, after).probes).not.toContain(
 			"probe-music.mjs",
 		);
+		const drifted = new Map(before);
+		drifted.set(
+			"src/main.ts",
+			before
+				.get("src/main.ts")!
+				.replace(
+					"class Game {",
+					"class Game { audit() { return this.navRows(); }",
+				),
+		);
+		const driftedAfter = new Map(drifted);
+		driftedAfter.set(
+			"src/main.ts",
+			drifted
+				.get("src/main.ts")!
+				.replace("navRows() { return 1", "navRows() { return 2"),
+		);
+		expect(
+			impact(["src/main.ts"], drifted, driftedAfter).probes,
+		).toBeUndefined();
 		after.set(
 			"src/main.ts",
-			"class Game { navRows() { this.saveFlush(); return 1; } update() { return 1; } }",
+			"class Game { updateCockpit() { return this.navRows(); } navRows() { this.saveFlush(); return 1; } update() { return 1; } }",
 		);
 		expect(impact(["src/main.ts"], before, after).probes).toBeUndefined();
 		after.set(

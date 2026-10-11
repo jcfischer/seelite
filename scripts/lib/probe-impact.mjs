@@ -3,6 +3,7 @@ import { posix } from "node:path";
 import {
 	PROBE_ROOTS,
 	MAIN_METHOD_ROOTS,
+	MAIN_METHOD_CALLERS,
 	SMOKE_PROBES,
 } from "./probe-contract-roots.mjs";
 
@@ -150,6 +151,42 @@ function memberReads(text, method) {
 	return reads;
 }
 
+export function methodCallers(text, method) {
+	const ast = ts.createSourceFile(
+		"main.ts",
+		text,
+		ts.ScriptTarget.Latest,
+		true,
+	);
+	const game = ast.statements.find(
+		(n) => ts.isClassDeclaration(n) && n.name?.text === "Game",
+	);
+	if (!game) return [];
+	const callers = [];
+	for (const member of game.members) {
+		let hit = false;
+		const walk = (node) => {
+			if (ts.isPropertyAccessExpression(node) && node.name.text === method)
+				hit = true;
+			if (
+				ts.isElementAccessExpression(node) &&
+				ts.isStringLiteralLike(node.argumentExpression) &&
+				node.argumentExpression.text === method
+			)
+				hit = true;
+			ts.forEachChild(node, walk);
+		};
+		walk(member);
+		if (hit)
+			callers.push(
+				ts.isConstructorDeclaration(member)
+					? "constructor"
+					: member.name?.getText(ast),
+			);
+	}
+	return callers.sort();
+}
+
 /** Deterministic selection from both revisions. Unknown ownership expands all. */
 export function selectImpact(changedFiles, impact, inventory) {
 	if (
@@ -178,6 +215,19 @@ export function selectImpact(changedFiles, impact, inventory) {
 			return {
 				reason:
 					"src/main.ts changes unowned methods, declarations or boot wiring.",
+			};
+		if (
+			methods.some((m) =>
+				[a, b].some(
+					(text) =>
+						JSON.stringify(methodCallers(text, m)) !==
+						JSON.stringify(MAIN_METHOD_CALLERS[m]),
+				),
+			)
+		)
+			return {
+				reason:
+					"src/main.ts method callers differ from reviewed ownership; impact needs review.",
 			};
 		// A mapped projection acquiring a new collaborator needs an ownership
 		// review. Do not silently keep its old consumer list.

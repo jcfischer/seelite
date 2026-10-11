@@ -47,9 +47,22 @@ const directProbe = (file) =>
 		? RUNNER_PROBE_FILES.find((probe) => `scripts/${probe}` === file)
 		: undefined;
 
-const isGlobalRisk = (file) =>
-	GLOBAL_RISK_FILES.has(file) ||
-	(file.startsWith("scripts/") && !directProbe(file)) ||
+const HARNESS_FILES = new Set([
+	"scripts/probe-all.mjs",
+	"scripts/probe-guard.mjs",
+	"scripts/select-probes.mjs",
+	"scripts/check-launcher-wiring.mjs",
+	"scripts/lib/free-port.mjs",
+	"scripts/lib/players-renderer.mjs",
+	"scripts/lib/tree-declaration.mjs",
+]);
+const isGlobalRisk = (file, withImpact = false) =>
+	(GLOBAL_RISK_FILES.has(file) && !(withImpact && file === "src/main.ts")) ||
+	(file.startsWith("scripts/") &&
+		!directProbe(file) &&
+		(!withImpact ||
+			HARNESS_FILES.has(file) ||
+			file.startsWith("scripts/lib/probe-"))) ||
 	file.startsWith(".github/");
 
 const isNonRuntime = (file) =>
@@ -145,9 +158,7 @@ function selectDeterministic(changedFiles, directlyChanged, impact) {
 			true,
 		);
 
-	const globalFile = changedFiles.find(
-		(file) => isGlobalRisk(file) && !(impact && file === "src/main.ts"),
-	);
+	const globalFile = changedFiles.find((file) => isGlobalRisk(file, !!impact));
 	if (globalFile)
 		return all(
 			`${globalFile} is shared runtime, build, or probe-harness infrastructure.`,

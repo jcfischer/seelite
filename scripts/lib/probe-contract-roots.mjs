@@ -502,6 +502,16 @@ export const MAIN_METHOD_ROOTS = Object.freeze({
 	selectOutfitting: ["src/outfitting.ts", "src/station-console.ts"],
 });
 
+/** Reviewed callers: a new consumer invalidates the narrower ownership rule. */
+export const MAIN_METHOD_CALLERS = Object.freeze({
+	navRows: ["updateCockpit"],
+	firstDayPanel: ["updateCockpit"],
+	firstDayGlassPrompt: ["cruisePrompt"],
+	floorCells: ["drawFlightFloor", "updateCockpit"],
+	tuningSummary: ["updateCockpit"],
+	selectOutfitting: ["constructor"],
+});
+
 // Game probes also observe the shared boot, simulation and renderer. These
 // implicit orchestrator dependencies must not disappear just because main.ts
 // is deliberately excluded from the import closure. Standalone pages/offline
