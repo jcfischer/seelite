@@ -10,6 +10,7 @@ import {
 	PROBE_ROOTS,
 	SMOKE_PROBES,
 	MAIN_METHOD_CALLERS,
+	contractRoots,
 } from "../scripts/lib/probe-contract-roots.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
 import { readFileSync, readdirSync } from "node:fs";
@@ -34,6 +35,16 @@ const impact = (paths: string[], before = sources, after = sources) =>
 	selectImpact(paths, { before, after }, inventory);
 
 describe("production contract ownership", () => {
+	test("new probe contracts inherit game dependencies unless reviewed standalone", () => {
+		const roots = contractRoots("probe-new-game-contract.mjs", [
+			"src/new-feature.ts",
+		]);
+		expect(roots).toContain("src/new-feature.ts");
+		expect(roots).toContain("src/boot-system.ts");
+		expect(roots).toContain("src/sim.ts");
+		for (const probe of ["probe-music.mjs", "probe-public-site.mjs"])
+			expect(contractRoots(probe, [])).not.toContain("src/boot-system.ts");
+	});
 	test("feature fixtures use dependencies, while shared runner edits expand", async () => {
 		const result = await selectProbes({
 			changedFiles: ["scripts/lib/opening-probe.mjs"],

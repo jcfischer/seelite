@@ -120,7 +120,9 @@ tradeoff ruling, settled before the main review loop.
 ## 5. Verify in increasing scope
 
 Follow CLAUDE.md's mandatory selector before browser probes and its canonical
-selected runner. A selector fallback to all must not be manually narrowed.
+selected runner. Unknown gameplay impact must not be manually narrowed. The
+reviewed dispatch-only exception is defined in CLAUDE.md; model integration
+changes gameplay/rendering inputs and does not qualify for that exception.
 
 During implementation, use meaningful geometry/unit tests and selected browser
 coverage to resolve specific defects. The ordinary PR browser gate is smoke plus

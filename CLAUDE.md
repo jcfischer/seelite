@@ -160,7 +160,7 @@ so anything reading that exit code would treat a passing repo as broken. And
 `npm run probe` has no rtk filter; a green run is already 19 lines.
 
 `npm run probe` (also `probe:full`) is the full regression command.
-For PR development and delivery, use `probe:pr` above. It delegates to the GPU lane,
+For PR development and delivery, use `probe:pr` above. `npm run probe` uses the GPU lane,
 which forces headed Chromium and refuses to start unless a fresh WebGL canvas
 identifies a non-software renderer; every child probe repeats that check.
 `npm run probe:cpu` preserves the former renderer-unasserted command for a
