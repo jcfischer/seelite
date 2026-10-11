@@ -170,6 +170,24 @@ jobs:
   # `fail-fast: false` so all four report. With it on, the first red shard
   # cancelled the rest, and "cancelled" is the worst thing a shard can report:
   # it does not distinguish "your change broke this" from "another shard did".
+  #
+  # ## Why the shards pass `--timeout=60000`
+  #
+  # bun's 5 s per-test default is a budget for the laptop a row was written
+  # on, not a claim about how long a check may take to be true, and a runner
+  # puts a row's laptop time up about fivefold. Two rows landed just over
+  # 5000 ms there and failed a green tree: `every instance has structure under
+  # it` at 5215 ms and `no finish moves a hull's envelope` at 5287 ms, both
+  # ~1.1 s warm here.
+  #
+  # **It is not a blunt instrument, and it is not a hang detector.** A 17 s row
+  # in the suite passes under the 5 s default today — the default does not
+  # interrupt every slow row, only ones that land past it — so leaving it in
+  # place buys a red on `main` roughly every few merges and no signal. 60 s is
+  # what this suite already raises its own heavy rows to, a wedged row still
+  # costs one row rather than the tier, and `timeout-minutes` above it is what
+  # bounds a wedged job. Local `npm test` keeps bun's default: the asymmetry is
+  # deliberate, and the numbers above are why.
   unit:
     needs: gate
     runs-on: ubuntu-latest
@@ -200,6 +218,7 @@ jobs:
         run: >
           bun test tests/
           --shard=${{ matrix.shard }}/${{ matrix.total }}
+          --timeout=60000
 
   # The build belongs to stage 1: `npm run build` is `tsc --noEmit && vite
   # build`, so a type error fails here on every pull request, and
@@ -314,7 +333,7 @@ jobs:
         run: |
           if [ ! -f dist/index.html ]; then
             echo "::error::dist/index.html missing — artifact layout is wrong."
-            ls -R dist | head -20
+            find dist -maxdepth 2 | head -20
             exit 1
           fi
 

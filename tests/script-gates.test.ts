@@ -424,6 +424,7 @@ test("the shards split the suite across runners without narrowing it", () => {
 	).toEqual([
 		"bun test tests/",
 		"--shard=${{ matrix.shard }}/${{ matrix.total }}",
+		"--timeout=60000",
 	]);
 	// A shard that skips itself is a shard that never ran, and a shard that
 	// shrugs off a failure reports a green quarter of a suite it did not run.
