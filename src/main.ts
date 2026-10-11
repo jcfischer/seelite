@@ -204,10 +204,9 @@ import {
 import {
 	buildAuthoredCabin,
 	buildPerimeterLamps,
-	COCKPIT_MODEL_LAMP_GAIN,
 	COCKPIT_MODEL_LAMPS,
 	type CockpitScreen,
-	carriedLamp,
+	carriedConsoleLamp,
 	containedFace,
 	INSTRUMENT_FACE_KM,
 	SCANNER_FACE_KM,
@@ -557,10 +556,10 @@ import {
 	settleIncident,
 } from "./legal";
 import {
-	CABIN_HEMISPHERE_GAIN,
 	EXPOSURE,
 	equirectEnvironment,
 	gasParamsFrom,
+	hemisphereIntensityFor,
 	LIGHT_RIG,
 	type SkyBakeParams,
 } from "./light-rig";
@@ -5830,8 +5829,7 @@ class Game {
 			const hemi = new THREE.HemisphereLight(
 				LIGHT_RIG.hemisphere.sky,
 				LIGHT_RIG.hemisphere.ground,
-				LIGHT_RIG.hemisphere.intensity *
-					(cabinScene ? CABIN_HEMISPHERE_GAIN : 1),
+				hemisphereIntensityFor(cabinScene),
 			);
 			hemi.name = "hemisphere";
 			scene.add(hemi);
@@ -8866,12 +8864,9 @@ class Game {
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
 		for (const lamp of COCKPIT_MODEL_LAMPS) {
-			// The authored study's figures, lifted by the principal's measured gain:
+			// The composed carry — gain then carry, in one reachable function:
 			// see `COCKPIT_MODEL_LAMP_GAIN`.
-			const carried = carriedLamp({
-				...lamp,
-				intensity: lamp.intensity * COCKPIT_MODEL_LAMP_GAIN,
-			} as (typeof COCKPIT_MODEL_LAMPS)[number]);
+			const carried = carriedConsoleLamp(lamp);
 			const light = new THREE.PointLight(
 				lamp.color,
 				carried.intensity,

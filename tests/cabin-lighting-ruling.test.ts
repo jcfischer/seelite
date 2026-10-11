@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
 	COCKPIT_MODEL_LAMP_GAIN,
 	COCKPIT_MODEL_LAMPS,
+	carriedConsoleLamp,
 	carriedLamp,
 } from "../src/cockpit-model";
 import { INTERIOR_FLOOD_INTENSITY } from "../src/interior-kit";
-import { CABIN_HEMISPHERE_GAIN, LIGHT_RIG } from "../src/light-rig";
+import {
+	CABIN_HEMISPHERE_GAIN,
+	hemisphereIntensityFor,
+	LIGHT_RIG,
+} from "../src/light-rig";
 
 /**
  * The three figures the principal set on the live brightness panel in the docked cabin
@@ -43,23 +49,19 @@ describe("the docked cabin's lighting ruling", () => {
 		expect(COCKPIT_MODEL_LAMP_GAIN).toBeGreaterThan(1);
 	});
 
-	test("the gain commutes with the carry into the cabin", () => {
-		// `main.ts` multiplies each authored figure by the gain on its way *into*
-		// `carriedLamp`. That is equivalent to raising the cabin's figure afterwards,
-		// because the carry scales intensity by k^decay and is linear in it — and it is
-		// equivalence worth asserting, because the two readings are easy to confuse and
-		// a gain moved to the wrong side of a non-linear step would change the picture.
+	test("the composed carry commutes, and the game reaches for it", () => {
+		// Two halves, because Sage caught this claim once already: an assertion about
+		// the composition alone stays green when `main.ts` never calls it, and a claim
+		// that the game calls it stays green when the composition is wrong.
 		const lamp = COCKPIT_MODEL_LAMPS.find(
 			(entry) => entry.name === "cockpit-light",
 		)!;
-		const carriedAuthored = carriedLamp(lamp).intensity;
-		const gainedThenCarried = carriedLamp({
-			...lamp,
-			intensity: lamp.intensity * COCKPIT_MODEL_LAMP_GAIN,
-		} as (typeof COCKPIT_MODEL_LAMPS)[number]).intensity;
-		expect(gainedThenCarried).toBeCloseTo(
-			carriedAuthored * COCKPIT_MODEL_LAMP_GAIN,
+		expect(carriedConsoleLamp(lamp).intensity).toBeCloseTo(
+			carriedLamp(lamp).intensity * COCKPIT_MODEL_LAMP_GAIN,
 			12,
 		);
+		const game = readFileSync("src/main.ts", "utf8");
+		expect(game).toContain("carriedConsoleLamp(lamp)");
+		expect(game).toContain("hemisphereIntensityFor(cabinScene)");
 	});
 });

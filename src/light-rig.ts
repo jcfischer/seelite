@@ -135,6 +135,16 @@ export const EXPOSURE = {
  */
 export const CABIN_HEMISPHERE_GAIN = 0.7;
 
+/**
+ * The hemisphere a layer's scene gets: the rig's figure everywhere, `CABIN_HEMISPHERE_GAIN`
+ * of it in the cabin. A function rather than an inline ternary in `main.ts` so the
+ * cabin-only scope of the exception is asserted rather than described — Sage's second
+ * finding on #898 was that the branch as written could be applied to the wrong layers and
+ * every row would stay green.
+ */
+export const hemisphereIntensityFor = (cabinLayer: boolean) =>
+	LIGHT_RIG.hemisphere.intensity * (cabinLayer ? CABIN_HEMISPHERE_GAIN : 1);
+
 export const LIGHT_RIG = {
 	/** Directional, because one light cannot serve two scenes at two scales;
 	 *  `main.ts` has the argument. */

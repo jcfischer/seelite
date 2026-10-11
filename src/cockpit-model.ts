@@ -84,9 +84,15 @@ export type CockpitScreen = (typeof COCKPIT_SCREENS)[number];
  * Going in rather than coming out is equivalent, and it is worth saying why, because the
  * two readings are easy to confuse: `cabinLight`'s carry multiplies intensity by
  * `k^decay`, which is linear in intensity, so scaling the authored figure by 2.8 before
- * the carry scales the cabin's figure by 2.8 as well. `tests/cabin-lighting-ruling.test.ts`
- * asserts that commutation rather than the arithmetic, so a gain moved to the far side of
- * the carry — or dropped — has to answer to it.
+ * the carry scales the cabin's figure by 2.8 as well.
+ *
+ * **Where the guard lives.** Sage caught #898 twice on this exact point: a test that
+ * multiplies the constant by an authored figure cannot see the gain being deleted from
+ * `main.ts`, and the suite stays green when the picture goes dark. So the composition is
+ * a function here — `carriedConsoleLamp` — the game calls that function and nothing else,
+ * and `tests/cabin-lighting-ruling.test.ts` holds both halves: that the composition
+ * commutes with the carry, and that `main.ts` reaches for it. Neither half alone is a
+ * guard.
  */
 export const COCKPIT_MODEL_LAMP_GAIN = 2.8;
 
@@ -134,6 +140,18 @@ export const COCKPIT_TINTS: Readonly<Record<string, number>> = {
 	"service-ochre": 0xbc7923,
 	"guarded-red": 0x992c20,
 };
+
+/**
+ * One console lamp, gained and carried into the cabin's frame. The only way the game is
+ * allowed to light them — see `COCKPIT_MODEL_LAMP_GAIN`'s note on where the guard lives.
+ */
+export const carriedConsoleLamp = (
+	lamp: (typeof COCKPIT_MODEL_LAMPS)[number],
+) =>
+	carriedLamp({
+		...lamp,
+		intensity: lamp.intensity * COCKPIT_MODEL_LAMP_GAIN,
+	} as (typeof COCKPIT_MODEL_LAMPS)[number]);
 
 /** A screen quad's frame in the cabin: where a face of a given aspect goes. */
 export interface ScreenFrame {
