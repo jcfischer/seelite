@@ -58,8 +58,9 @@ Review, the browser gate and in-game approval are next.
 - **D5. LOD policy:** the courier's levels for the tug. Measured cost is
   within 0.25 ms of the courier's in every arm (below).
 - **D6. Install stall:** accepted as the courier's is. Each after-boot install
-  blocks the main thread in one piece after its download: 1.18 s for the
-  courier (on `main` today) and 1.50 s for the tug (median of 5). The fix for
+  blocks the main thread in one piece after its download, its refresh
+  included: 1.10 s for the courier (on `main` today) and 1.40 s for the tug
+  (median of 5; first shown without the refresh, see history). The fix for
   both hulls is its own node, #907.
 - **Hull handling:** the tug's roll stop is 1.4% slower than #5's law with the
   re-solved shares (pitch and yaw unchanged), inside #619's 20% bound;
@@ -100,7 +101,7 @@ Review, the browser gate and in-game approval are next.
 | Path | Result | Evidence |
 | --- | --- | --- |
 | Boot and cold download | The tug is not in the boot set: a live Game is built on the loft. The tug's download starts when the courier's has settled; no probe watches that order | outside the boot set: `probe-model-download` §5 and §6, GPU lane, green; the order: `Game.loadAuthoredHullsAfterBoot` in `src/main.ts` |
-| Background installation | Release replaces every existing tug once and removes the loft. The swap blocks the main thread 1.50 s (D6) | `probe-model-download` §6; `scripts/measure-hull-install-stall.mjs` |
+| Background installation | Release replaces every existing tug once and removes the loft. The install and refresh block the main thread 1.40 s (D6) | `probe-model-download` §6; `scripts/measure-hull-install-stall.mjs` |
 | Interrupted or failed load | A refused tug keeps every stand-in, warns once, shows no Retry, and play goes on | `probe-model-download` §6 |
 | Postcard/export | Waits for the courier and the tug behind the Retry panel, then refreshes its stand-ins | `src/main.ts`; probed by the selected gate (owed) |
 | Flight and traffic | Vents, muzzle, nav lights and throats are measured on the model; the envelope fits every berth; the gun is forward on metal | `tests/tug-hull.test.ts`, `tests/vent-placement.test.ts`, `tests/hull.test.ts` |
@@ -130,23 +131,27 @@ material, so it costs fewer calls than the loft.
 
 ### Install stall
 
-<!-- glossary-ignore: throat — the vent term `ventThroats` measures, not a station Bay. -->
+<!-- glossary-ignore: throat -->
 
-`RUNS=5 node scripts/measure-hull-install-stall.mjs`, same machine, load
-average about 16. Each install repeated from fetched bytes in a running game;
+`RUNS=5 node scripts/measure-hull-install-stall.mjs`, with the refresh phase
+sage round 2 asked for, same machine, load average about 10. The probe's
+fixture (seed 42, default start system), with the player at a home station of
+the hull's Traffic. Each install repeated from fetched bytes in a running game,
+with the Game's refresh in the same task, as `loadAuthoredHull` runs it;
 median of 5.
 
 | Phase, ms | Courier | Tug |
 | --- | ---: | ---: |
-| Parse and Meshopt decode | 64 | 68 |
-| Builder (two simplified levels) | 491 | 634 |
-| First build (nav-light raycast) | 138 | 177 |
-| Throat measurement | 574 | 687 |
-| Longest frame gap | 1,183 | 1,501 |
+| Parse and Meshopt decode | 73 | 79 |
+| Builder (two simplified levels) | 553 | 699 |
+| First build (nav-light raycast) | 103 | 139 |
+| Throat measurement | 430 | 535 |
+| Refresh of the live ships (2 each) | 27 | 35 |
+| Longest frame gap | 1,100 | 1,398 |
 
-The builder, first build and throat measurement run in one task, so the
-longest gap is close to their sum.
-
+The builder, first build, throat measurement and refresh run in one task, so
+the longest gap is close to their sum. The refresh grows with the live ships
+of the hull: 36 ms for 5 couriers in another fixture.
 ## Delivery evidence
 
 Owed: Sage (D4), `probe:pr` on the final head, the view set, the principal's
@@ -157,6 +162,10 @@ Headless at `f3e360df`: `npm test` 5959 pass, 0 fail.
 
 ## Historical measurements
 
+- Install stall without the refresh, 2026-10-11 at `573a8a51`, seed 42 system
+  0, load average about 16: courier 1,183 ms, tug 1,501 ms longest gap.
+  Superseded above: sage round 2 found the refresh missing, which D6 had been
+  shown as the whole stall. The refresh adds 26–36 ms.
 - Study viewer, 2026-10-08: 56.25 FPS on M1 Pro at 1,778,434 submitted
   triangles, 83 calls (`spikes/bollard-hull/evidence/metrics.json`). Study
   viewer only; not production evidence.

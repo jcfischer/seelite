@@ -47,9 +47,26 @@ const BLOCKS = Number(process.env.BLOCKS ?? 12);
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20261009);
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5196);
+/** Each after-boot hull this measures: the module naming its levels, and
+ *  whether the player's own group already holds it (the courier) or the
+ *  authored arm is built (the tug). */
+const HULLS = {
+	courier: {
+		module: "/src/courier-hull.ts",
+		levelNames: "COURIER_LEVEL_NAMES",
+		players: true,
+	},
+	tug: {
+		module: "/src/tug-hull.ts",
+		levelNames: "TUG_LEVEL_NAMES",
+		players: false,
+	},
+};
 const HULL = process.env.HULL ?? "courier";
-if (!["courier", "tug"].includes(HULL))
-	throw new Error(`HULL must be courier or tug, not ${HULL}`);
+if (!HULLS[HULL])
+	throw new Error(
+		`HULL must be one of ${Object.keys(HULLS).join(", ")}, not ${HULL}`,
+	);
 
 const ARMS = [
 	"none",
@@ -88,134 +105,135 @@ try {
 	const renderer = await assertPlayersRenderer(page, "measure");
 	await page.keyboard.press("v");
 	await page.waitForFunction(() => window.__seelite.view === "chase");
-	const setup = await page.evaluate(async (hullId) => {
-		const g = window.__seelite;
-		// Both after-boot hulls installed, as a live Game has them (#831).
-		await g.loadAuthoredHullsAfterBoot();
-		g.clockHeld = true;
-		g.chaseYaw = -0.8;
-		g.chaseElevation = 0.3;
-		const mesh = await import("/src/ship-mesh.ts");
-		const { markOcclusion } = await import("/src/occlusion-mesh.ts");
-		const builder = mesh.authoredHullBuilder(hullId);
-		if (!builder)
-			throw new Error(`the page's ship-mesh module has no authored ${hullId}`);
-		const ship = g.shipMesh;
-		if (ship.userData.authored !== true)
-			throw new Error(
-				"the player's courier is not authored: the page has not installed its after-boot hulls",
-			);
-		const build = (authored) => {
-			if (!authored) mesh.installAuthoredHull(hullId, undefined);
-			try {
-				const root = mesh.buildShipMesh(hullId, "a").root;
-				markOcclusion(root);
-				return root;
-			} finally {
-				mesh.installAuthoredHull(hullId, builder);
-			}
-		};
-		const kids = {
-			authored:
-				hullId === "courier" ? [...ship.children] : [...build(true).children],
-			loft: [...build(false).children],
-		};
-		// Four more of each hull ahead of the player, in the ship's frame
-		// (kilometres, nose −z): Traffic's case, every one in the frustum.
-		const SLOTS = [
-			[-0.09, 0.02, -0.16],
-			[0.09, 0.02, -0.16],
-			[-0.05, -0.03, -0.32],
-			[0.05, -0.03, -0.32],
-		];
-		// Past the band's first edge: four hulls on the camera's own axis at
-		// 60 and 80 courier reaches from it, against `DETAIL_RADII.full`'s 40,
-		// spread across the frame. Placed from the chase camera's pose, because
-		// "ahead of the ship" is out of frame at this yaw that far out.
-		const { DETAIL_RADII } = await import("/src/detail-level.ts");
-		const reach = mesh.HULL_REACH_KM[hullId];
-		g.render(0);
-		const camera = g.nearCamera;
-		camera.updateMatrixWorld(true);
-		const eye = camera.getWorldPosition(new ship.position.constructor());
-		const basis = (x, y, z) =>
-			new ship.position.constructor(x, y, z).transformDirection(
-				camera.matrixWorld,
-			);
-		const forward = basis(0, 0, -1);
-		const right = basis(1, 0, 0);
-		const up = basis(0, 1, 0);
-		const FAR = [
-			[-0.25, 0.1, 60],
-			[0.25, 0.1, 60],
-			[-0.15, -0.1, 80],
-			[0.15, -0.1, 80],
-		];
-		const placedFar = (root, [across, high, radii]) => {
-			const range = radii * reach;
-			const at = eye
-				.clone()
-				.addScaledVector(forward, range)
-				.addScaledVector(right, across * range)
-				.addScaledVector(up, high * range);
-			const distance = at.distanceTo(eye);
-			root.position.copy(ship.worldToLocal(at));
-			return distance;
-		};
-		const fleet = (authored, far) => {
-			const group = new ship.constructor();
-			for (let i = 0; i < 4; i++) {
-				const root = build(authored);
-				let distance;
-				if (far) distance = placedFar(root, FAR[i]);
-				else {
-					root.position.set(...SLOTS[i]);
-					distance = root.position.length();
+	const setup = await page.evaluate(
+		async ([hullId, spec]) => {
+			const g = window.__seelite;
+			// Both after-boot hulls installed, as a live Game has them (#831).
+			await g.loadAuthoredHullsAfterBoot();
+			g.clockHeld = true;
+			g.chaseYaw = -0.8;
+			g.chaseElevation = 0.3;
+			const mesh = await import("/src/ship-mesh.ts");
+			const { markOcclusion } = await import("/src/occlusion-mesh.ts");
+			const builder = mesh.authoredHullBuilder(hullId);
+			if (!builder)
+				throw new Error(
+					`the page's ship-mesh module has no authored ${hullId}`,
+				);
+			const ship = g.shipMesh;
+			if (ship.userData.authored !== true)
+				throw new Error(
+					"the player's courier is not authored: the page has not installed its after-boot hulls",
+				);
+			const build = (authored) => {
+				if (!authored) mesh.installAuthoredHull(hullId, undefined);
+				try {
+					const root = mesh.buildShipMesh(hullId, "a").root;
+					markOcclusion(root);
+					return root;
+				} finally {
+					mesh.installAuthoredHull(hullId, builder);
 				}
-				// Stepped once, as the game steps every hull it draws: the
-				// clock is held, so the range does not change.
-				mesh.updateShipVisuals(root, distance, "high");
-				group.add(root);
-			}
-			return group;
-		};
-		const fleets = {
-			"authored+4": fleet(true, false),
-			"loft+4": fleet(false, false),
-			"authored+4far": fleet(true, true),
-			"loft+4far": fleet(false, true),
-		};
-		const LEVEL_NAMES =
-			hullId === "courier"
-				? (await import("/src/courier-hull.ts")).COURIER_LEVEL_NAMES
-				: (await import("/src/tug-hull.ts")).TUG_LEVEL_NAMES;
-		const levelOf = (root) =>
-			Object.values(LEVEL_NAMES)
-				.map((name) => root.getObjectByName(name))
-				.find((o) => o?.visible)?.name;
-		for (const [arm, levels] of [
-			["authored+4", LEVEL_NAMES.full],
-			["authored+4far", LEVEL_NAMES.reduced],
-		])
-			for (const root of fleets[arm].children)
-				if (levelOf(root) !== levels)
-					throw new Error(`${arm}: a ${hullId} draws ${levelOf(root)}`);
-		if (FAR.some(([, , radii]) => radii <= DETAIL_RADII.full))
-			throw new Error("a far slot is inside the band's first edge");
-		window.__hullArm = (arm) => {
-			for (const child of [...ship.children]) ship.remove(child);
-			if (arm === "none") return;
-			const hull = arm.startsWith("authored") ? "authored" : "loft";
-			for (const child of kids[hull]) ship.add(child);
-			if (fleets[arm]) ship.add(fleets[arm]);
-		};
-		const { meshStats } = await import("/scripts/lib/mesh-stats.mjs");
-		const { isLevelStandIn } = await import("/src/ship-detail.ts");
-		return {
-			authored: meshStats(kids.authored, isLevelStandIn),
-			loft: meshStats(kids.loft),
-		};
-	}, HULL);
+			};
+			const kids = {
+				authored: spec.players ? [...ship.children] : [...build(true).children],
+				loft: [...build(false).children],
+			};
+			// Four more of each hull ahead of the player, in the ship's frame
+			// (kilometres, nose −z): Traffic's case, every one in the frustum.
+			const SLOTS = [
+				[-0.09, 0.02, -0.16],
+				[0.09, 0.02, -0.16],
+				[-0.05, -0.03, -0.32],
+				[0.05, -0.03, -0.32],
+			];
+			// Past the band's first edge: four hulls on the camera's own axis at
+			// 60 and 80 courier reaches from it, against `DETAIL_RADII.full`'s 40,
+			// spread across the frame. Placed from the chase camera's pose, because
+			// "ahead of the ship" is out of frame at this yaw that far out.
+			const { DETAIL_RADII } = await import("/src/detail-level.ts");
+			const reach = mesh.HULL_REACH_KM[hullId];
+			g.render(0);
+			const camera = g.nearCamera;
+			camera.updateMatrixWorld(true);
+			const eye = camera.getWorldPosition(new ship.position.constructor());
+			const basis = (x, y, z) =>
+				new ship.position.constructor(x, y, z).transformDirection(
+					camera.matrixWorld,
+				);
+			const forward = basis(0, 0, -1);
+			const right = basis(1, 0, 0);
+			const up = basis(0, 1, 0);
+			const FAR = [
+				[-0.25, 0.1, 60],
+				[0.25, 0.1, 60],
+				[-0.15, -0.1, 80],
+				[0.15, -0.1, 80],
+			];
+			const placedFar = (root, [across, high, radii]) => {
+				const range = radii * reach;
+				const at = eye
+					.clone()
+					.addScaledVector(forward, range)
+					.addScaledVector(right, across * range)
+					.addScaledVector(up, high * range);
+				const distance = at.distanceTo(eye);
+				root.position.copy(ship.worldToLocal(at));
+				return distance;
+			};
+			const fleet = (authored, far) => {
+				const group = new ship.constructor();
+				for (let i = 0; i < 4; i++) {
+					const root = build(authored);
+					let distance;
+					if (far) distance = placedFar(root, FAR[i]);
+					else {
+						root.position.set(...SLOTS[i]);
+						distance = root.position.length();
+					}
+					// Stepped once, as the game steps every hull it draws: the
+					// clock is held, so the range does not change.
+					mesh.updateShipVisuals(root, distance, "high");
+					group.add(root);
+				}
+				return group;
+			};
+			const fleets = {
+				"authored+4": fleet(true, false),
+				"loft+4": fleet(false, false),
+				"authored+4far": fleet(true, true),
+				"loft+4far": fleet(false, true),
+			};
+			const LEVEL_NAMES = (await import(spec.module))[spec.levelNames];
+			const levelOf = (root) =>
+				Object.values(LEVEL_NAMES)
+					.map((name) => root.getObjectByName(name))
+					.find((o) => o?.visible)?.name;
+			for (const [arm, levels] of [
+				["authored+4", LEVEL_NAMES.full],
+				["authored+4far", LEVEL_NAMES.reduced],
+			])
+				for (const root of fleets[arm].children)
+					if (levelOf(root) !== levels)
+						throw new Error(`${arm}: a ${hullId} draws ${levelOf(root)}`);
+			if (FAR.some(([, , radii]) => radii <= DETAIL_RADII.full))
+				throw new Error("a far slot is inside the band's first edge");
+			window.__hullArm = (arm) => {
+				for (const child of [...ship.children]) ship.remove(child);
+				if (arm === "none") return;
+				const hull = arm.startsWith("authored") ? "authored" : "loft";
+				for (const child of kids[hull]) ship.add(child);
+				if (fleets[arm]) ship.add(fleets[arm]);
+			};
+			const { meshStats } = await import("/scripts/lib/mesh-stats.mjs");
+			const { isLevelStandIn } = await import("/src/ship-detail.ts");
+			return {
+				authored: meshStats(kids.authored, isLevelStandIn),
+				loft: meshStats(kids.loft),
+			};
+		},
+		[HULL, HULLS[HULL]],
+	);
 
 	const timed = (arm, occlusion) =>
 		page.evaluate(

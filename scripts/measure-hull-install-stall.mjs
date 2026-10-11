@@ -9,12 +9,17 @@
  * each install is main-thread work: the GLB's parse and Meshopt decode, the
  * builder (`createAuthoredHullBuilder`, whose two reduced levels are made by
  * the simplifier), and the first build, which places the nav lights by
- * raycast and measures the throats. This boots the game headed on the // glossary-ignore: throat
+ * raycast and measures the throats; and then, in the same task, the Game's // glossary-ignore: throat
+ * refresh (`refreshAuthoredHulls`), which rebuilds every live ship of the hull
+ * and measures its muzzles again. This boots the game headed on the
  * player's renderer, lets it settle with both hulls installed, then repeats
  * each hull's install from bytes already fetched — so the download is not in
  * the figure — with the frame loop running, and reports each phase's wall
  * time and the longest gap between two animation frames across the whole
- * install. `RUNS` repeats it; the first run of a page also pays shader and
+ * install. For the refresh, every live root of the hull is marked a stand-in
+ * again so the Game rebuilds it as it rebuilds a loft, and the count of roots
+ * is printed: the refresh's cost scales with it, and how many ships are live
+ * at install depends on where the player is. `RUNS` repeats it; the first run of a page also pays shader and
  * module warm-up, so the median is the figure and the first is printed beside
  * it. It is a diagnosis that asserts no threshold.
  */
@@ -44,7 +49,6 @@ try {
 	await page.goto(
 		gameUrl(origin, {
 			seed: 42,
-			system: 0,
 			"no-save": true,
 			raider: "off",
 		}),
@@ -75,6 +79,18 @@ try {
 		},
 	];
 	for (const hull of HULLS) {
+		// At a home station of the hull's Traffic, as `probe-model-download`
+		// stands, so the refresh has that station's ships to rebuild.
+		await page.evaluate((id) => {
+			const g = window.__seelite;
+			const actor = g.trafficActors.find((a) => a.hullId === id);
+			if (!actor) throw new Error(`the fixture has no ${id} Traffic`);
+			const station = g.world.system.bodies.find(
+				(b) => b.id === actor.homeStationId,
+			);
+			g.world.ship.pos = { ...station.pos };
+			g.render(0);
+		}, hull.id);
 		const runs = [];
 		for (let r = 0; r < RUNS; r++)
 			runs.push(
@@ -131,6 +147,22 @@ try {
 					ventThroats(root, h.id);
 					const t4 = performance.now();
 					disposeSubtree(root);
+					// The Game's refresh, in the same task as in `loadAuthoredHull`:
+					// every live root of the hull made a stand-in again, so it is
+					// rebuilt as a loft would be.
+					const g = window.__seelite;
+					const live = [
+						g.shipMesh,
+						...g.trafficMeshes.values(),
+						...g.fleet.map((f) => f.mesh),
+						...[...g.derelictMeshes.values()].map((d) => d.root),
+					].filter(
+						(r) => r.userData.hullId === h.id && r.userData.authored === true,
+					);
+					for (const r of live) r.userData.authored = false;
+					g.refreshAuthoredHulls();
+					const t5 = performance.now();
+					const rebuilt = live.filter((r) => r.userData.authored === true);
 					await new Promise((done) =>
 						requestAnimationFrame(() => requestAnimationFrame(done)),
 					);
@@ -141,15 +173,32 @@ try {
 						builder: t2 - t1,
 						firstBuild: t3 - t2,
 						throats: t4 - t3,
+						refresh: t5 - t4,
+						live: live.length,
+						rebuilt: rebuilt.length,
 						worstGap: worst,
 						frames,
 					};
 				}, hull),
 			);
+		for (const run of runs)
+			if (run.rebuilt !== run.live)
+				throw new Error(
+					`${hull.id}: the refresh rebuilt ${run.rebuilt} of ${run.live} live roots`,
+				);
 		const col = (k) =>
 			`${median(runs.map((x) => x[k])).toFixed(1)} (first ${runs[0][k].toFixed(1)})`;
-		console.log(`\n  ${hull.id}: ms, median of ${RUNS}`);
-		for (const k of ["parse", "builder", "firstBuild", "throats", "worstGap"])
+		console.log(
+			`\n  ${hull.id}: ms, median of ${RUNS}; ${runs[0].live} live ${hull.id} root(s) refreshed`,
+		);
+		for (const k of [
+			"parse",
+			"builder",
+			"firstBuild",
+			"throats",
+			"refresh",
+			"worstGap",
+		])
 			console.log(`    ${k.padEnd(11)} ${col(k)}`);
 	}
 } finally {
