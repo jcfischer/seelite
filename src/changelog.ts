@@ -28,7 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// Node #869: wording awaits principal approval before merge.
+	// Node #869: sentence approved by the principal, 2026-10-11.
 	{
 		date: "2026-10-11",
 		text: "Outfit your ship slot by slot, compare the change before buying, and carry or sell the modules you remove.",

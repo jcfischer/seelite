@@ -691,6 +691,16 @@ export class LiveCockpit {
 		this.root = document.createElement("section");
 		this.root.id = "live-cockpit";
 		this.root.setAttribute("data-live-cockpit", "true");
+		// Native button activation belongs to outfitting, not to the ship's
+		// Enter-to-launch binding. Leave keyup bubbling so held keys release.
+		this.root.addEventListener("keydown", (event) => {
+			if (
+				(event.key === "Enter" || event.key === " ") &&
+				event.target instanceof HTMLButtonElement &&
+				event.target.closest("[data-live-outfitting]")
+			)
+				event.stopPropagation();
+		});
 		// Delegation keeps clicks live after a structural render is replaced.
 		this.root.addEventListener("click", (event) => {
 			const element = event.target as HTMLElement;
