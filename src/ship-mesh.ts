@@ -323,7 +323,8 @@ export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	// one has to answer that at a distance, which is why its detail is many
 	// small repeated parts rather than a few large smooth ones.
 	carrier: 0.2,
-	tug: 0.031,
+	// Bollard O4 at 1:1 (node #814): its farthest vertex, 36.03 m, rounded up.
+	tug: 0.0361,
 	prospector: 0.035,
 	// Longer and narrower than the carrier, and it wears its armour outside.
 	// Two capital classes only earn their places if they cannot be mistaken for

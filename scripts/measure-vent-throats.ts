@@ -16,9 +16,12 @@ import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
 import { ventThroats } from "../src/vent-plumes";
 import { installShippedLongwall } from "./lib/install-longwall";
+import { installShippedTugHull } from "./lib/shipped-tug-hull";
 
 // `miner/b` is the authored Longwall B, built only once it is installed.
 await installShippedLongwall();
+// The tug is the authored Bollard (node #814), drawn once installed.
+await installShippedTugHull();
 
 const metres = (km: number): string => {
 	if (!Number.isFinite(km)) throw new Error(`non-finite gap: ${km}`);

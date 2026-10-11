@@ -44,9 +44,9 @@ import {
 	setHullFinish,
 } from "../src/ship-surface";
 import { hullLoft, uvUnitsOf } from "../src/loft";
-import { useProceduralCourier } from "./helpers/procedural-courier";
+import { useProceduralHulls } from "./helpers/procedural-courier";
 
-useProceduralCourier();
+useProceduralHulls();
 
 // Restore the **default**, not stock: bun runs every test file in one
 // process, and a file that left `stock` behind would hand the next file a

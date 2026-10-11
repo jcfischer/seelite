@@ -43,20 +43,22 @@ export const TUG_LEVEL_NAMES = {
 export const TUG_KM_PER_M = 0.001;
 
 /**
- * The two drive mouths, study metres. Read off `build_model.py` ("Real
- * recessed rear engine mouth"): each barrel engine is centred at x ±17.7,
- * y 0; its inner wall is a 3.4 m ring running from z −27.5 to the closed // glossary-ignore: throat
- * plate at z −25.6. The glow sits a few centimetres inside that wall, as the
- * courier's does. The wall is a superellipse, round enough at its axes that a
- * circle of the wall's radius stays inside it.
+ * The two drive mouths, study metres: each barrel engine is centred at
+ * x ±17.7, y 0 (`build_model.py`). **Measured off the shipped model, not read
+ * off the source**: the barrel's end cap at z −26.0 closes the mouth, so the
+ * plate and ochre ring the source places at −25.6 are behind it, and sixteen
+ * alloy rods line the wall. The mouth's clear radius, 3 cm off the nearest
+ * triangle, is 3.22–3.37 m from z −26.2 to −27.2, 3.10 m at −27.4 and 2.97 m
+ * at the lip; the glow's plate sits 10 cm aft of the cap and its radii stay
+ * inside those. `tests/tug-hull.test.ts` measures the clearance.
  */
 export const TUG_NOZZLES_M = {
 	x: 17.7,
 	y: 0,
-	throatZ: -25.62,
+	throatZ: -26.1,
 	lipZ: -27.45,
-	throatRadius: 3.35,
-	lipRadius: 3.35,
+	throatRadius: 3.15,
+	lipRadius: 3.0,
 } as const;
 
 /** Prepare a loaded study scene once and return the builder `buildShipMesh`
