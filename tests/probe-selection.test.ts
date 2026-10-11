@@ -103,7 +103,7 @@ describe("the deterministic branches", () => {
 			"scripts/probe-guard.mjs",
 			"scripts/select-probes.mjs",
 			"scripts/future-shared-harness.mjs",
-			".github/workflows/deploy.yml",
+			".github/workflows/ci.yml",
 			"vite.config.ts",
 		]) {
 			const result = await selectProbes({ changedFiles: [file] });

@@ -200,8 +200,7 @@ test("`npm run lint` runs the rule over the real tree and it is clean", () => {
 
 let parsed: Workflow | null = null;
 /** Parsed once: the rows below all read the same file. */
-const deployWorkflow = () =>
-	(parsed ??= parseWorkflow(".github/workflows/deploy.yml"));
+const ciWorkflow = () => (parsed ??= parseWorkflow(".github/workflows/ci.yml"));
 
 /**
  * The single step that runs the launcher-wiring gate, claimed by the rows that
@@ -213,7 +212,7 @@ const deployWorkflow = () =>
  * deleted step reached twice.
  */
 const theWiringStep = () => {
-	const found = deployWorkflow().steps.filter((s) =>
+	const found = ciWorkflow().steps.filter((s) =>
 		commandOf(s).includes("check:wiring"),
 	);
 	expect(found.map(commandOf)).toEqual(["npm run check:wiring"]);
@@ -221,24 +220,27 @@ const theWiringStep = () => {
 };
 
 /**
- * The pull-request gate runs the launcher-wiring check (#403).
+ * The pull-request gate runs the launcher-wiring check (#403), and publishes
+ * only from `main`.
  *
  * `npm test` has run that gate on every pull request since #402, so these rows
- * do not claim first coverage. They hold the shape the new step adds: an event
- * list that reaches pull requests without a filter hiding them, neither the step
- * nor its job skipping itself or shrugging off a failure, the step ahead of the
- * unit tier and of anything in its job that can publish, and the command it names
- * still the script the local tier runs. Each is a row of its own because each is
- * a claim of its own, and a failure should say which.
+ * do not claim first coverage. They hold the shape the step adds: an event list
+ * that reaches pull requests without a filter hiding them, neither the step nor
+ * its job skipping itself or shrugging off a failure, the gate ahead of the unit
+ * tier and of anything that publishes, and the command it names still the
+ * script the local tier runs. The rows after those hold the split into stages:
+ * where publishing is decided, and what the unit tier's shards may not do.
+ * Each is a row of its own because each is a claim of its own, and a failure
+ * should say which.
  *
- * What no row here can hold is that a runner runs the step. That is the `Deploy`
+ * What no row here can hold is that a runner runs the step. That is the `static`
  * job's own step list, which names `Run npm run check:wiring` on a green pull
  * request and stops a red one there; the headless tier can only hold what the
  * file says. The reader these rows stand on is measured in
  * `tests/workflow-scan.test.ts`, not by them.
  */
-test("the deploy workflow runs on a pull request, with no filter hiding it", () => {
-	const { triggers, steps } = deployWorkflow();
+test("the CI workflow runs on a pull request, with no filter hiding it", () => {
+	const { triggers, steps } = ciWorkflow();
 	// A parse that finds nothing finds nothing for a reason of its own, and every
 	// green below would then be an absence measured as a presence.
 	expect(steps.length).toBeGreaterThan(0);
@@ -252,12 +254,12 @@ test("the deploy workflow runs on a pull request, with no filter hiding it", () 
 
 test("neither the wiring step nor its job skips or excuses a pull request", () => {
 	const step = theWiringStep();
-	const job = deployWorkflow().jobs.find((j) => j.name === step.job);
-	// An `if:` naming an event is how the two deploy steps keep off pull requests,
-	// and neither this step nor the job holding it may be written so. The job is
-	// found by name rather than the job list pinned: a second job added for some
-	// other reason says nothing about this gate.
-	expect(step.job).toBe("deploy");
+	const job = ciWorkflow().jobs.find((j) => j.name === step.job);
+	// An `if:` naming the publish decision is how the steps a site needs alone
+	// keep off pull requests, and neither this step nor the job holding it may be
+	// written so. The job is found by name rather than the job list pinned: a
+	// second job added for some other reason says nothing about this gate.
+	expect(step.job).toBe("static");
 	expect(step.condition).toBeUndefined();
 	expect(job?.condition).toBeUndefined();
 	// And a gate that reports success while failing gates nothing, at either
@@ -268,27 +270,120 @@ test("neither the wiring step nor its job skips or excuses a pull request", () =
 	expect(letsFailurePass(job?.continueOnError)).toBe(false);
 });
 
-test("the wiring step runs ahead of the unit tier and of anything that publishes", () => {
+/** Every job `root` waits on, directly or through the jobs it waits on. */
+const waitsOn = (root: string): Set<string> => {
+	const seen = new Set<string>();
+	const queue = [root];
+	while (queue.length) {
+		const name = queue.shift() as string;
+		const job = ciWorkflow().jobs.find((j) => j.name === name);
+		for (const need of job?.needs ?? [])
+			if (!seen.has(need)) {
+				seen.add(need);
+				queue.push(need);
+			}
+	}
+	return seen;
+};
+
+/** The steps that put bytes on the live site, wherever they are written. */
+const publishSteps = () =>
+	ciWorkflow().steps.filter((s) => /wrangler|pages deploy/.test(commandOf(s)));
+
+test("the wiring gate runs ahead of the unit tier and of anything that publishes", () => {
 	const step = theWiringStep();
-	// One assertion over the order rather than a comparison per pair: being ahead
-	// of these two *is* the step's whole justification, and a row that fetched
-	// `npm test` and discarded its position did not hold it. The list is in
-	// per-job file order and cannot pass by omission — all three must be present,
-	// in that order, in the gate's own job. A publish step relocated to a second
-	// job leaves this list without its third entry rather than silently passing a
-	// comparison over an empty set.
-	expect(
-		deployWorkflow()
-			.steps.filter((s) => s.job === step.job)
-			.filter((s) =>
-				/check:wiring|npm test|wrangler|pages deploy/.test(commandOf(s)),
-			)
-			.map(commandOf),
-	).toEqual([
-		"npm run check:wiring",
-		"npm test",
+	// `needs` is the only order a workflow of several jobs has. The single job
+	// that came before held this claim with three steps in one column; with the
+	// stages pulled apart, "ahead" means *needed* — transitively, by the job that
+	// publishes — and a job that stopped being needed would let the site publish
+	// over a red gate.
+	//
+	// One assertion over the whole closure rather than a comparison per pair: it
+	// cannot pass by omission, and a job added, renamed or dropped off the graph
+	// is the set that says so.
+	expect([...waitsOn("deploy")].sort()).toEqual([
+		"build",
+		"gate",
+		"static",
+		"unit",
+	]);
+	// The shards beside the static checks rather than queued behind them: both
+	// are stage 1, and making a shard wait on Biome buys nothing.
+	expect(ciWorkflow().jobs.find((j) => j.name === "unit")?.needs).toEqual([
+		"gate",
+	]);
+	expect(waitsOn(step.job).has("unit")).toBe(false);
+	// And no job that only tests publishes. The guard above, because an empty
+	// publish list would make every one of these loops pass on nothing.
+	expect(publishSteps().map(commandOf)).toEqual([
 		"cloudflare/wrangler-action@v4",
 	]);
+	for (const job of ciWorkflow().jobs)
+		if (job.name !== "deploy")
+			expect(
+				publishSteps()
+					.filter((s) => s.job === job.name)
+					.map(commandOf),
+			).toEqual([]);
+});
+
+test("publishing is decided once, from the ref", () => {
+	const [publish] = publishSteps();
+	const job = ciWorkflow().jobs.find((j) => j.name === publish.job);
+	// The step no longer gates itself; the job does. A decision held by the job
+	// cannot be undone by editing the step, and a second publishing step added to
+	// that job inherits it rather than having to be remembered.
+	expect(publish.condition).toBeUndefined();
+	expect(job?.condition).toContain("needs.gate.outputs.publish");
+	// And what that output is computed from is the ref. The reader returns a block
+	// scalar as the text it holds, so this is the script the runner runs, not a
+	// comment about it: `refs/heads/main` on the side that refuses, `publish=true`
+	// as what it writes when nothing refuses.
+	const gate = ciWorkflow().steps.find((s) => s.job === "gate");
+	expect(gate?.run).toContain("refs/heads/main");
+	expect(gate?.run).toContain("publish=true");
+});
+
+test("no condition in the file asks the event alone", () => {
+	// How a hand-run on a feature branch used to be able to publish: the publish
+	// steps were gated on `github.event_name != 'pull_request'`, and every event
+	// that is not a pull request satisfies that — `workflow_dispatch` from any
+	// branch included, while the step named `--branch=main`. The decision reads
+	// the ref now, and an event condition is how it would regress: same file, same
+	// steps, a branch shipping to the live site.
+	for (const step of ciWorkflow().steps)
+		expect(step.condition ?? "").not.toContain("github.event_name");
+	for (const job of ciWorkflow().jobs)
+		expect(job.condition ?? "").not.toContain("github.event_name");
+});
+
+test("the shards split the suite across runners without narrowing it", () => {
+	const runs = ciWorkflow().steps.filter((s) =>
+		commandOf(s).includes("bun test"),
+	);
+	expect(runs.map((s) => s.job)).toEqual(["unit"]);
+	// The path is still the whole of `tests/`, so `--shard` is the only thing that
+	// divides the suite. A path narrowed to make a shard quicker would run a
+	// quarter of it on every pull request and report green.
+	//
+	// The `run:` is a folded scalar, which the reader hands back line by line.
+	expect(
+		commandOf(runs[0])
+			.split("\n")
+			.map((line) => line.trim()),
+	).toEqual([
+		"bun test tests/",
+		"--shard=${{ matrix.shard }}/${{ matrix.total }}",
+	]);
+	// A shard that skips itself is a shard that never ran, and a shard that
+	// shrugs off a failure reports a green quarter of a suite it did not run.
+	expect(runs[0].condition).toBeUndefined();
+	expect(letsFailurePass(runs[0].continueOnError)).toBe(false);
+	// And the local entry is untouched: the split is CI's, not the suite's.
+	const { scripts } = JSON.parse(
+		readFileSync(repoPath("package.json"), "utf8"),
+	) as unknown as { scripts: Record<string, string> };
+	expect(scripts.test).toBe("bun test tests/");
 });
 
 /**

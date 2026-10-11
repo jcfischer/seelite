@@ -4,7 +4,7 @@
 #
 # The unit tier (`npm test`, bun, no browser) covers anything that is
 # arithmetic: seeded generation, the float64 sim, the module boundary. It runs
-# in `deploy.yml` because it costs seconds.
+# in `ci.yml` because it costs seconds.
 #
 # The probes cover anything that only means something in front of a running
 # renderer — layer membership, camera-relative placement, the seed actually
@@ -81,7 +81,7 @@ jobs:
       # A *dev* server, not a preview of `dist/`: probe-guard fetches the
       # TypeScript source by path to confirm the server is serving this
       # checkout, which only the dev server does. The type check a production
-      # build would have given us is not lost — `deploy.yml` runs `npm run
+      # build would have given us is not lost — `ci.yml` runs `npm run
       # build` on the same pull request.
       #
       # `npm run probe`, not `node scripts/probe-all.mjs`, so the
