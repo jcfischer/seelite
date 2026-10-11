@@ -31,6 +31,7 @@ for (const width of [900, 390]) {
 				u1: makeModule("identity-scanner", 1),
 			},
 		};
+		g.setFlownHull("patrol");
 		g.armedFireGroup.reset();
 		g.floorFit = null;
 		g.render(0);
@@ -42,13 +43,64 @@ for (const width of [900, 390]) {
 		JSON.stringify(first.duelRow),
 	);
 	await page.keyboard.down(" ");
-	const shot = await page.evaluate(() => {
+	const shot = await page.evaluate(async () => {
 		const g = window.__seelite;
+		const { fullCondition } = await import("/src/ship-condition.ts");
+		const { moduleRow } = await import("/src/loadout.ts");
+		g.condition = fullCondition("patrol");
+		const before = g.condition.energy;
 		g.step(0.05);
-		return g.condition.heat;
+		g.render(0);
+		const rows = [g.commander.loadout.h1, g.commander.loadout.h2].map(
+			moduleRow,
+		);
+		return {
+			heat: g.condition.heat,
+			energy: before - g.condition.energy,
+			expectedHeat: rows.reduce((s, r) => s + r.heatPerS, 0) * 0.05,
+			expectedEnergy: rows.reduce((s, r) => s + r.drawPerS, 0) * 0.05,
+			ports: g.gunTracer.firedPorts.length,
+		};
 	});
-	check(`${width}: laser group fires`, shot > 0, shot);
-	for (let i = 0; i < 3; i++) await page.keyboard.press("b");
+	check(
+		`${width}: all fitted lasers spend their summed rates and draw two ports`,
+		Math.abs(shot.heat - shot.expectedHeat) < 1e-9 &&
+			Math.abs(shot.energy - shot.expectedEnergy) < 1e-9 &&
+			shot.ports === 2,
+		JSON.stringify(shot),
+	);
+	await page.screenshot({ path: `/tmp/seelite-870-all-${width}.png` });
+	for (let i = 1; i <= 2; i++) {
+		await page.keyboard.press("b");
+		const single = await page.evaluate(async (slot) => {
+			const g = window.__seelite;
+			const { fullCondition } = await import("/src/ship-condition.ts");
+			const { moduleRow } = await import("/src/loadout.ts");
+			const { tracerPorts } = await import("/src/gun-feedback.ts");
+			g.condition = fullCondition("patrol");
+			const before = g.condition.energy,
+				row = moduleRow(g.commander.loadout[`h${slot}`]);
+			g.step(0.05);
+			g.render(0);
+			return {
+				heat: g.condition.heat,
+				energy: before - g.condition.energy,
+				expectedHeat: row.heatPerS * 0.05,
+				expectedEnergy: row.drawPerS * 0.05,
+				ports: g.gunTracer.firedPorts,
+				expectedPort: tracerPorts(2)[slot - 1],
+			};
+		}, i);
+		check(
+			`${width}: H${i} alone uses its own rates and physical port`,
+			Math.abs(single.heat - single.expectedHeat) < 1e-9 &&
+				Math.abs(single.energy - single.expectedEnergy) < 1e-9 &&
+				JSON.stringify(single.ports) === JSON.stringify([single.expectedPort]),
+			JSON.stringify(single),
+		);
+		await page.screenshot({ path: `/tmp/seelite-870-h${i}-${width}.png` });
+	}
+	await page.keyboard.press("b");
 	const scanner = await page.evaluate(() => {
 		const g = window.__seelite;
 		const before = g.condition.heat;
@@ -85,6 +137,38 @@ for (const width of [900, 390]) {
 		}),
 	);
 	await page.screenshot({ path: `/tmp/seelite-893-${width}.png` });
+	const mining = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { makeModule, moduleRow } = await import("/src/loadout.ts");
+		const { fullCondition } = await import("/src/ship-condition.ts");
+		g.commander = {
+			...g.commander,
+			loadout: {
+				...g.commander.loadout,
+				h1: makeModule("mining-laser", 1, "A"),
+				h2: makeModule("pulse-laser", 1),
+			},
+		};
+		g.armedFireGroup.reset();
+		g.condition = fullCondition("patrol");
+		g.keys.add(" ");
+		g.step(0.05);
+		g.keys.delete(" ");
+		g.render(0);
+		const rows = [g.commander.loadout.h1, g.commander.loadout.h2].map(
+			moduleRow,
+		);
+		return {
+			heat: g.condition.heat,
+			expected: rows.reduce((s, r) => s + r.heatPerS, 0) * 0.05,
+			ports: g.gunTracer.firedPorts.length,
+		};
+	});
+	check(
+		`${width}: Mining fires alongside Pulse on the same trigger`,
+		Math.abs(mining.heat - mining.expected) < 1e-9 && mining.ports === 2,
+		JSON.stringify(mining),
+	);
 	await page.close();
 }
 await browser.close();

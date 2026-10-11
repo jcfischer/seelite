@@ -12,13 +12,14 @@
  */
 
 import { HULL_SPECS, type HullId } from "./hull";
+import { moduleRow, type Loadout } from "./loadout";
 import { PULSE_LASER } from "./ship-condition";
 import { ARMED_TRAFFIC_HULLS } from "./traffic-engagement";
 
 /** AI skill, S's third factor. 1 for every ship today (#562 D3): S is derived
  *  from stats, and a learned skill is #563's fog. */
 const AI_SKILL = 1;
-/** The most a kill pays, reached only against an infinitely stronger target:
+/** The most a kill pays, reached when the own fit has no combat DPS:
  *  a matched kill pays 2·S/(S+S) = 1. */
 const CREDIT_K = 2;
 
@@ -26,17 +27,28 @@ const CREDIT_K = 2;
  * The ship the pilot flies, as far as strength reads it.
  *
  * **The fitted ship, not the hull** (#562 D3): a weapon upgrade raises S_own.
- * Today every weapon item is inert — hardpoints have no behaviour and the
- * pilot fires one pulse laser whatever is fitted — so `equipment` changes
- * nothing yet. It is on the input so the node that gives a laser behaviour
- * changes `fittedDps` and not every caller.
+ * Every fitted combat laser counts, regardless of the armed fire group.
+ * Mining lasers and carried fittings add no combat strength (#870).
  */
 export interface FittedShip {
 	hull: HullId;
-	equipment?: readonly string[];
+	loadout: Loadout;
 }
 
-const fittedDps = (_ship: FittedShip): number => PULSE_LASER.damagePerS;
+export const fittedDps = (ship: FittedShip): number =>
+	HULL_SPECS[ship.hull].slots.reduce((dps, slot) => {
+		const m = ship.loadout[slot.key];
+		return (
+			dps +
+			(slot.kind === "hardpoint" &&
+			m &&
+			(m.module === "pulse-laser" ||
+				m.module === "beam-laser" ||
+				m.module === "military-laser")
+				? moduleRow(m).output.damagePerS
+				: 0)
+		);
+	}, 0);
 
 /** Whether a hull fires when it is a target: Traffic's armed hulls and the
  *  raider. Every other hull never fires (`traffic-engagement.ts`, H3). */
@@ -45,8 +57,8 @@ export const isArmedTarget = (hull: HullId): boolean =>
 
 /**
  * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one side of the
- * hull's own `shieldPool` (#866) plus its integrity. The pilot's own ship is
- * always armed.
+ * hull's own `shieldPool` (#866) plus its integrity. A fit without combat
+ * lasers has zero strength.
  */
 const hullStrength = (hull: HullId, dps: number): number =>
 	(HULL_SPECS[hull].shieldPool + HULL_SPECS[hull].integrity) * dps * AI_SKILL;
@@ -60,7 +72,7 @@ export const targetStrength = (hull: HullId): number =>
 
 /**
  * What one kill pays: 2·S_target / (S_own + S_target) (#562 D3). The curve is
- * its own clamp — a matched kill pays 1, none pays 2, and a much weaker target
+ * its own clamp — a matched kill pays 1, at most 2, and a much weaker target
  * pays close to 0. An unarmed target pays exactly 0 (#562 D4); it still pays
  * in cargo, bounty and heat, which are not this ladder's.
  */

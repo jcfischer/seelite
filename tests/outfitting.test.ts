@@ -200,6 +200,20 @@ test("preview equals the committed fit, including the replaced module's carried 
 	expect(screen.before.credit).toBe(screen.after!.credit);
 });
 
+test("the equipment readout prices the fitted weapon, not a carried upgrade", () => {
+	const c = input().commander;
+	const upgraded = {
+		...c,
+		loadout: { ...c.loadout, h1: makeModule("military-laser", 1, "A") },
+	};
+	expect(fitReadout(upgraded, 0).credit).toBeLessThan(fitReadout(c, 0).credit);
+	const carried = {
+		...c,
+		recoveredFittings: [carriedModule(makeModule("military-laser", 1, "A"))],
+	};
+	expect(fitReadout(carried, 0).credit).toBe(fitReadout(c, 0).credit);
+});
+
 test("missile refills use rack capacity and affordable whole ammunition", () => {
 	const i = input();
 	const rack = { ...makeModule("missile-rack", 1), ammo: 0 };

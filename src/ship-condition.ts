@@ -21,7 +21,13 @@ export const HEAT_LOCK = 100;
 export const HEAT_RELEASE = HEAT_LOCK * 0.5;
 
 /** §2's starter weapon. Rates per second of sim time. */
-export const PULSE_LASER = {
+export interface LaserRates {
+	readonly damagePerS: number;
+	readonly energyPerS: number;
+	readonly heatPerS: number;
+}
+
+export const PULSE_LASER: LaserRates = {
 	damagePerS: 6,
 	energyPerS: 1,
 	heatPerS: 1.5,
@@ -308,6 +314,7 @@ export function stepCondition(
 	c: ShipCondition,
 	dt: number,
 	trigger: boolean,
+	laser: LaserRates = PULSE_LASER,
 ): ConditionStep {
 	const step = Math.max(0, dt);
 	const next = { ...c, sinceStruckS: c.sinceStruckS + step };
@@ -326,7 +333,7 @@ export function stepCondition(
 		next.energy -= points * SHIELD_RECHARGE_ENERGY_PER_POINT;
 	}
 
-	const cost = PULSE_LASER.energyPerS * step;
+	const cost = laser.energyPerS * step;
 	// A gun at the ceiling is locked on the step it reaches it, not the step
 	// after — the flag is only the hysteresis on the way back down.
 	const locked = c.heatLocked || c.heat >= HEAT_LOCK;
@@ -334,8 +341,8 @@ export function stepCondition(
 	let damage = 0;
 	if (fired) {
 		next.energy -= cost;
-		next.heat = clamp(next.heat + PULSE_LASER.heatPerS * step, HEAT_LOCK);
-		damage = PULSE_LASER.damagePerS * step;
+		next.heat = clamp(next.heat + laser.heatPerS * step, HEAT_LOCK);
+		damage = laser.damagePerS * step;
 	} else {
 		next.energy = clamp(next.energy + c.energyRegenPerS * step, c.energyMax);
 		next.heat = clamp(next.heat - HEAT_COOL_PER_S * step, HEAT_LOCK);
