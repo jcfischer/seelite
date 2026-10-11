@@ -12770,6 +12770,7 @@ class Game {
 		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
+		this.firedMuzzleIndices = [];
 		// A new session's first reading of the ship and of a target is not a
 		// fall, and no loop carries over (#545).
 		this.weaponSoundState = QUIET_WEAPONS;
@@ -12856,6 +12857,7 @@ class Game {
 			this.ensureTrafficActors();
 		}
 		this.clearFlightSession();
+		this.armedFireGroup.reset();
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
 		this.condition = this.flownFullCondition();
