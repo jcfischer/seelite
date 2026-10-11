@@ -99,6 +99,33 @@ describe("production contract ownership", () => {
 			]).probes,
 		).toBeUndefined();
 	});
+	test("a measurement script no probe loads selects smoke, not the suite", () => {
+		// The retro on 2026-10-11: a `scripts/measure-*.ts` edit sent #866 to
+		// all probes, 2163 s, though no probe can load the file.
+		const instrument = impact(["scripts/measure-ladder-rates.ts"]);
+		expect(instrument.probes).toEqual([...SMOKE_PROBES].sort());
+		expect(instrument.reason).toContain("measurement script");
+		// A new instrument is just as unreachable, on the head side only.
+		const after = new Map(sources);
+		after.set("scripts/measure-new-thing.mjs", "export const x = 1;");
+		expect(
+			impact(["scripts/measure-new-thing.mjs"], sources, after).probes,
+		).toEqual([...SMOKE_PROBES].sort());
+		// One a probe imports keeps that probe's ownership.
+		const reached = new Map(sources);
+		const owner = Object.keys(PROBE_ROOTS).find(
+			(p) => p !== "probe-boot.mjs" && !SMOKE_PROBES.includes(p),
+		)!;
+		reached.set(
+			`scripts/${owner}`,
+			`import "./measure-ladder-rates.ts";\n${sources.get(`scripts/${owner}`)}`,
+		);
+		expect(
+			impact(["scripts/measure-ladder-rates.ts"], sources, reached).probes,
+		).toContain(owner);
+		// The name alone does not exempt a source file.
+		expect(impact(["src/measure-unknown.ts"]).probes).toBeUndefined();
+	});
 	test("mapped main projection narrows; new collaborators and unowned methods expand", () => {
 		const before = new Map(sources);
 		before.set(
