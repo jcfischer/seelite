@@ -242,7 +242,7 @@ async function selectSemantic(input, judge, forcedProbes) {
  * `judge` is injected so the policy remains testable without a network. It
  * receives one state and all independent Noul questions in one batch.
  *
- * @param {{changedFiles: string[], intent?: string}} input
+ * @param {{changedFiles: string[], intent?: string, impact?: {before: Map<string, string>, after: Map<string, string>}}} input
  * @param {((request: {state: object, questions: object}) => Promise<object>) | undefined} judge
  */
 export async function selectProbes(input, judge = undefined) {
