@@ -261,12 +261,12 @@ for (const viewport of VIEWPORTS) {
 		};
 	});
 	check(
-		`${v}: in peace the duel row is not drawn and no cue is recorded`,
+		`${v}: in peace only the armed group is drawn and no cue is recorded`,
 		peace.regime === "cruise" &&
 			peace.encounter === null &&
 			peace.floor !== null &&
-			peace.floor.duelRow === null &&
-			peace.floor.duelBox === null &&
+			peace.floor.duelRow?.length === 1 &&
+			peace.floor.duelRow[0].value === "H1 PULSE LASER · 1/1" &&
 			peace.cue === null,
 		JSON.stringify(peace),
 	);
@@ -294,7 +294,7 @@ for (const viewport of VIEWPORTS) {
 		`${v}: a contesting raider draws the SHD and HEAT row`,
 		contest.phase === "contest" &&
 			row !== null &&
-			row.map((c) => c.label).join(",") === "SHD,HEAT" &&
+			row.map((c) => c.label).join(",") === "SHD,HEAT," &&
 			box !== null,
 		JSON.stringify(contest.floor),
 	);
@@ -678,7 +678,7 @@ for (const viewport of VIEWPORTS) {
 		return { floor: window.__duel.floor(), cue: g.cueRender };
 	});
 	check(
-		`${v}: after the encounter ends the row, the cue and the console detail are gone`,
+		`${v}: after the encounter ends only the armed group remains, without cue or console detail`,
 		after.encounter === null &&
 			after.raiderFiring === false &&
 			afterConsole.present &&
@@ -686,7 +686,7 @@ for (const viewport of VIEWPORTS) {
 			// readout is hidden, so `visible` alone would pass there on nothing.
 			afterConsole.inlineDisplay === "none" &&
 			!afterConsole.visible &&
-			afterFloor.floor?.duelRow === null &&
+			afterFloor.floor?.duelRow?.length === 1 &&
 			afterFloor.cue === null,
 		JSON.stringify({ after, afterConsole, afterFloor }),
 	);

@@ -139,6 +139,10 @@ const OWNERS = Object.freeze({
 		"src/docking-director.ts",
 		"src/station-traffic.ts",
 	],
+	"probe-fire-groups.mjs": [
+		"scripts/probe-fire-groups.mjs",
+		"src/fire-group.ts",
+	],
 	"probe-duel-hud.mjs": ["scripts/probe-duel-hud.mjs", "src/duel-hud.ts"],
 	"probe-eject.mjs": ["scripts/probe-eject.mjs", "src/eject.ts"],
 	"probe-first-day.mjs": [
