@@ -262,15 +262,24 @@ export async function acquireProbeLock({
 		if (waited - lastStatus >= statusEveryMs) {
 			lastStatus = waited;
 			log(
-				`probe lock: waiting ${Math.round(waited / 1000)}s for ${describe(current)}`,
+				`probe lock: waiting ${Math.round(waited / 1000)}s for ${describeHolder(current)}`,
 			);
 		}
 		await new Promise((r) => setTimeout(r, pollMs));
 	}
 }
 
-/** @param {Holder} h */
-function describe(h) {
+/**
+ * A holder as every message about it says it: who, doing what, in which tree,
+ * since when.
+ *
+ * Exported because #882's direct-run notice needs the same wording a waiting
+ * suite prints. Two spellings of "who holds the lock" is how a reader ends up
+ * comparing two lines that look like they name different runs.
+ *
+ * @param {Holder} h
+ */
+export function describeHolder(h) {
 	return `pid ${h.pid} (${h.label}) in ${h.tree} since ${h.startedAt}`;
 }
 
@@ -283,7 +292,7 @@ function describe(h) {
  */
 export function notRunMessage(holder, waitedMs, path) {
 	return (
-		`NOT RUN: the probe lock is held by ${describe(holder)}; ` +
+		`NOT RUN: the probe lock is held by ${describeHolder(holder)}; ` +
 		`waited ${Math.round(waitedMs / 1000)}s (PROBE_LOCK_WAIT_MS). ` +
 		`This is not a red. Lock: ${path}`
 	);

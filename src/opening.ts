@@ -187,6 +187,19 @@ export interface PilotState {
 
 const steps = (s: number) => Math.round(s / OPENING.dtS);
 
+/**
+ * The shown seconds one step of `shot` advances (#882).
+ *
+ * The script is flown at `OPENING.dtS` of **sim** time per step, so a shot shown
+ * faster than 1:1 moves `shownBy` by less than that. Anything walking the script
+ * a step at a time has to aim by this and not by `dtS`: one `dtS` aimed at the
+ * 1.5x cruise shot swallows two steps, and a sampler that believes it is seeing
+ * every step is seeing every second one — which is how #882's first version of
+ * the seed sweep shipped.
+ */
+export const openingStepS = (shot: OpeningShot): number =>
+	OPENING.dtS / shotRatio(shot);
+
 export const startPilot = (kind: OpeningKind): PilotState => ({
 	kind,
 	leg: "form",
@@ -377,7 +390,7 @@ export class OpeningRun {
 		sim.step(OPENING.dtS);
 		this.stepsRun++;
 		if (shownShot !== null) {
-			const shown = OPENING.dtS / shotRatio(shownShot);
+			const shown = openingStepS(shownShot);
 			this.shownS += shown;
 			this.shownBy[shownShot] += shown;
 		}
@@ -423,6 +436,13 @@ export class OpeningRun {
 	 * #530's phase handle: run on to `shownS` seconds into `shot` and hold
 	 * there. It only moves forward — the sim cannot be put back — and it
 	 * refuses a shot this kind does not have.
+	 *
+	 * **The shot's own end counts as arriving** (#882). A step can end the shot
+	 * before the aim is reached, and once it has, the aim can never be reached
+	 * *in that shot* — so chasing it ran the whole rest of the script and then
+	 * threw, which is what made a probe that steps one shot at a time die at the
+	 * first boundary. A caller reads `shot` afterwards to learn whether it got
+	 * its time or the boundary, and steps on from there.
 	 */
 	advanceTo(sim: OpeningSim, shot: OpeningShot, shownS: number): void {
 		const order = OPENING_SHOTS[this.kind];
@@ -437,11 +457,15 @@ export class OpeningRun {
 			this.shownBy[shot] > shownS + 1e-9;
 		if (passed)
 			throw new Error(`the opening is already past ${shot} at ${shownS} s`);
-		while (
-			!this.done &&
-			!(this.shot === shot && this.shownBy[shot] >= shownS - 1e-9)
-		)
+		const atAim = () =>
+			this.shot === shot && this.shownBy[shot] >= shownS - 1e-9;
+		while (!this.done && !atAim()) {
+			const before = this.shot;
 			this.unit(sim);
+			// A step ended the shot this call was aiming inside of. The aim is
+			// unreachable now, and the step is the thing the caller wanted anyway.
+			if (before === shot && this.shot !== shot) break;
+		}
 		if (this.done)
 			throw new Error(`the opening ended before ${shot} at ${shownS} s`);
 		this.held = true;

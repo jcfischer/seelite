@@ -231,6 +231,8 @@ _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 
 > **Scope of the `hold` alias** (added by [#486](https://github.com/jcfischer/seelite/pull/486), the same reading as the `Command` note below). A fifth English sense is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is flown by keeping a key down rather than by pressing it — #369 D3 splits `x` pressed from `x` held on exactly that — and #381's storage slice writes it into `seelite:bindings`. It is a property of an input and never of cargo, a carrier or a launch, so it takes no canonical name here; it is listed because it is durable now, and a reader meeting `{ kind: "key", hold: true }` in a stored blob should find it rather than wonder which of the four it is. The `_Avoid_` line above is **Hold**'s and not this note's.
 
+> **... and a sixth: a held opening** (#882). `OpeningRun.held`, `Game.holdOpening` and `?cinematic=held` hold the **Opening** at a named shot and shown second — see that entry's note, which is where the sense belongs because it is about a sequence standing still, not about carrying anything. Never cargo, a carrier, a launch, or a key being kept down.
+
 **Holdings**:
 Everything a pilot owns that an act can move: the commander (credits, cargo,
 equipment, **Hyperspace tank**, hull), the Requests journal, the **Ladder** record with its
@@ -490,6 +492,8 @@ A song's first **section** is named `intro` in every score — the waltz and
 each of its **Versions** — which is music's word for it and never this
 flight. A reviewer flagging that has found the alias rule firing on a
 section name.
+
+> **A third way through it: held** (#882, `?cinematic=held`). `OpeningRun.held` — reached through `Game.holdOpening` — runs the script to a named shot and shown second and stops there, so a capture or a probe can sample one step as many times as it likes, or step through the script one step per call. It is the same flight at the same `OPENING.dtS`, and it runs **no wall time**, which is what makes it the wrong evidence for anything that takes real seconds to look right — the arrival's rift is one of those — and the right evidence for where the camera and the ship were at each step. A row that holds says which of the two it is measuring.
 
 **Station control**:
 The voice that speaks to a guided pilot on the docked station console and in the Communications log during the first day. `docs/specs/first-useful-day.md` D3 owns where it speaks and when it stops.

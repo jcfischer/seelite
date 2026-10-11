@@ -802,6 +802,7 @@ import {
 	type OpeningKind,
 	type OpeningOutcome,
 	OPENING,
+	OPENING_SHOTS,
 	OpeningRun,
 	type OpeningShot,
 	type OpeningSim,
@@ -809,6 +810,7 @@ import {
 	openingAtBoot,
 	openingCaption,
 	openingOwedOnLoad,
+	openingStepS,
 } from "./opening";
 import {
 	type ShotAnchor,
@@ -18164,6 +18166,26 @@ class Game {
 			this.witchspace = idleWitchspace();
 			this.clearArrivalRift();
 		}
+	}
+
+	/**
+	 * The script's own shape, for a probe that walks it (#882): the shots this
+	 * kind shows, in order, and the shown seconds one step of each advances. A probe stepping the
+	 * opening must not restate any of it — CLAUDE.md's rule that a probe with its
+	 * own copy of a constant goes falsely red when the module changes it, and
+	 * #882's first seed sweep aimed by a `1 / 60` it typed itself, which on the
+	 * 1.5x cruise shot sampled every second step while claiming to see every one.
+	 */
+	openingScript(): {
+		kind: OpeningKind | null;
+		shots: readonly OpeningShot[];
+		stepS: Record<string, number>;
+	} {
+		const kind = this.opening?.kind ?? null;
+		const shots = kind ? OPENING_SHOTS[kind] : [];
+		const stepS: Record<string, number> = {};
+		for (const shot of shots) stepS[shot] = openingStepS(shot);
+		return { kind, shots, stepS };
 	}
 
 	/** What the opening is doing, for a probe to read by name. */

@@ -16,6 +16,7 @@ import {
 	OPENING,
 	OPENING_SHOTS,
 	type OpeningSim,
+	openingStepS,
 	OpeningRun,
 	type PilotAction,
 	openingAtBoot,
@@ -494,6 +495,73 @@ describe("the phase handle", () => {
 	test("a shot the kind does not have is refused", () => {
 		const run = new OpeningRun("free");
 		expect(() => run.advanceTo(new FakeSim(), "dock", 0)).toThrow();
+	});
+
+	test("an aim past the end of a shot stops at its boundary, not at the end of the script", () => {
+		// A sampler stepping every shot aims one step ahead of where it is. When
+		// the shot ends first, that aim can never be reached *in that shot*, and
+		// until #882 `advanceTo` kept stepping after it: it ran the whole rest of
+		// the script and then threw. Measured on seed 47 the sampler died at the
+		// `forming` boundary — `the opening ended before forming at 3.0166 s` —
+		// after 181 steps.
+		const sim = new FakeSim();
+		const run = new OpeningRun("guided");
+		run.advanceTo(sim, "forming", OPENING.formS + 5);
+		expect(run.done).toBe(false);
+		// The step that ended the shot is the last one it ran: the shot is over,
+		// and the caller reads where the script got to rather than being told the
+		// aim was impossible.
+		expect(run.shownBy.forming).toBeCloseTo(OPENING.formS, 6);
+		expect(run.shot).not.toBe("forming");
+		// And the script is still there to be walked on to, step by step.
+		run.advanceTo(sim, "cruise", 1);
+		expect(run.shot).toBe("cruise");
+		expect(run.done).toBe(false);
+	});
+
+	test("a stepped walk advances exactly one script step per call, at every ratio", () => {
+		// #882's seed sweep samples the opening by stepping it, and its claim is
+		// that it sees **every** step. A shot shown faster than 1:1 is where that
+		// claim breaks: the stride has to be that shot's own shown seconds per step,
+		// not the sim's `dtS` — one `dtS` aimed at a 1.5x shot swallows two steps,
+		// and a sampler that believes it is seeing every step sees every second one.
+		// So the walk measures each call against `openingStepS` and nothing else: no
+		// shot length is stated here, because the shots the pilot's actions end have
+		// no length to state, and a table of them would be a second spelling of the
+		// state machine (sage round 4 on #884).
+		const sim = new FakeSim();
+		const run = new OpeningRun("guided");
+		let calls = 0;
+		for (const shot of OPENING_SHOTS.guided) {
+			// The dock ends when the ship docks, and the step that docks it is the
+			// script's last: an aim past it is an aim the script cannot reach.
+			if (run.done) break;
+			// Cross any cut into the shot at the seconds it has already reached — the
+			// step that ended the last one may have given this shot some already.
+			run.advanceTo(sim, shot, run.shownBy[shot]);
+			while (run.shot === shot && !run.done) {
+				const before = run.shownBy[shot];
+				try {
+					run.advanceTo(sim, shot, before + openingStepS(shot));
+				} catch {
+					// The step that docks the ship is the script's last, and an aim
+					// past it is an aim the script cannot reach: this is the walk
+					// finishing, not a stride going wrong.
+					break;
+				}
+				// Only calls that stayed inside the shot are held to the stride: the
+				// one that ends it goes on to cross the cut, as a watched frame does.
+				if (run.shot === shot) {
+					expect(run.shownBy[shot] - before).toBeCloseTo(
+						openingStepS(shot),
+						12,
+					);
+					calls++;
+				}
+			}
+		}
+		// A stride of zero, or a walk that never got past the prologue.
+		expect(calls).toBeGreaterThan(1000);
 	});
 });
 

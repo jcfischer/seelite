@@ -97,6 +97,44 @@ const untilOver = (page, timeout = 120000) =>
 		polling: 250,
 	});
 
+/**
+ * Run the opening on to `shownS` seconds into `shot`, and stop there (#882).
+ *
+ * The game's own phase handle rather than a clock the probe made up:
+ * `holdOpening` steps the script at `OPENING.dtS` — the one step it is flown at,
+ * watched or skipped — so it arrives at a shot in milliseconds instead of the
+ * 10–37 s of wall clock a frame-driven run spends getting there. The rows that
+ * only need to *be on* a shot were paying that wait for nothing.
+ *
+ * `release` hands the frames back, so a key pressed after it still goes down on a
+ * real frame. The control on this substitution is the row's own comparison: **the
+ * Enter row and the SKIP row still compare their end state with the skipped run's**,
+ * so a hold that changed the run would surface there rather than pass quietly. The
+ * two quit rows cannot make that comparison — their claim is what a save taken
+ * mid-shot and a reload carry, so they assert the fields that say so, and each now
+ * asserts the shot the hold actually landed on.
+ *
+ * `{ release: false }` stays held, for a row that quits on the shot and never
+ * flies on from it — giving the clock back there would only drift off the shot it
+ * is naming.
+ */
+const holdToShot = (page, shot, shownS = 1, { release = true } = {}) =>
+	page.evaluate(
+		async ([s, at, back]) => {
+			const g = window.__seelite;
+			g.holdOpening(s, at);
+			// Which shot the script is on after the hold. Since #882 a step can end the
+			// shot before the aim is reached, and `capture-views.mjs` reads the same
+			// thing back for the same reason: a row that names a shot in its title has to
+			// know it got that one, because the end state it compares matches the skipped
+			// run whatever shot the hold happened to reach.
+			const landed = g.openingReading().shot;
+			if (back) g.holdOpening(null);
+			return landed;
+		},
+		[shot, shownS, release],
+	);
+
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const differing = (a, b) =>
 	Object.keys(a)
@@ -240,10 +278,14 @@ await watched.page.screenshot({
 await watched.context.close();
 
 // ---------------------------------------------------------------------------
-// Every frame of every shot, on the principal's seeds (47–51). A held frame
-// steps no sim, and the arrival flicker the principal saw on 47 and the second
-// ship on 49 only happened between stepped frames: the camera's side was float
-// noise on seeds that face the star, and swung round the ship each step.
+// Every step of every shot, on the principal's seeds (47–51). The arrival
+// flicker the principal saw on 47 and the second ship on 49 only happened
+// *between* frames — the camera's side was float noise on seeds that face the
+// star, and swung round the ship each step — so the sampler has to see every
+// step the script runs at. Since #882 it does that by stepping the script with
+// its own phase handle rather than waiting for frames to arrive, which is finer
+// than a frame at 60 fps and costs 4 s per seed instead of 43. The note under
+// the sampler names what that trades away.
 // ---------------------------------------------------------------------------
 
 for (const seed of [47, 48, 49, 50, 51]) {
@@ -256,42 +298,112 @@ for (const seed of [47, 48, 49, 50, 51]) {
 		gameUrl(origin, { seed, raider: "off", guided: true, cinematic: 1 }),
 	);
 	await bootedGame(page);
-	const frames = await page.evaluate(
-		() =>
-			new Promise((done) => {
-				const g = window.__seelite;
-				const rows = [];
-				const tick = () => {
-					const cam = g.openingActive ? g.openingCamera() : null;
-					if (cam) {
-						const s = g.openingScene();
-						const rel = {
-							x: cam.pos.x - s.ship.pos.x,
-							y: cam.pos.y - s.ship.pos.y,
-							z: cam.pos.z - s.ship.pos.z,
-						};
-						const d = Math.hypot(rel.x, rel.y, rel.z);
-						const c =
-							-(
-								rel.x * cam.forward.x +
-								rel.y * cam.forward.y +
-								rel.z * cam.forward.z
-							) / d;
-						rows.push({
-							shot: g.openingReading().shot,
-							rel,
-							cam: cam.pos,
-							forward: cam.forward,
-							distR: d / s.reachKm,
-							offDeg: (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI,
-						});
-					}
-					if (g.openingActive) requestAnimationFrame(tick);
-					else done(rows);
+	// **Stepped, not watched** (#882). The row measures the camera at the
+	// opening's own steps, taking them through the game's phase handle instead of
+	// waiting for frames to arrive: each seed samples the script in about 4 s
+	// rather than the 43 s of wall clock its frames used to cost (five seeds: 217 s
+	// of the probe's 396). What it measures agrees with the watched row to six
+	// decimals on all five seeds — the figures, and the ladder between the watched
+	// run, this sampler, and the too-wide one, are in
+	// `docs/receipts/node-882-probe-wall-clock.md` §4 rather than here, because a
+	// second copy of a measurement is how it starts to drift (sage round 5 on #884).
+	// Fewer samples than the watched row, every one a distinct step of the script.
+	//
+	// **One step per sample, and the page says how wide a step is.** A shot shown
+	// at 1.5x moves the script's shown clock by less than `OPENING.dtS` per step, so
+	// an aim of `dtS` there swallows two steps: #882's first version of this sampler
+	// aimed by a `1 / 60` it had typed itself and saw every second step of the
+	// cruise, approach and dock shots while its comment claimed every one. So the
+	// stride comes from `openingScript()` — `OPENING.dtS / SHOT_RATIO[shot]`, read
+	// off the module that owns it, same as the shot order — and the check under this
+	// sampler measures consecutive samples against it: one step apart in the script's
+	// own clock, or the row is red. A stride one step too wide cannot hide, and
+	// `tests/opening.test.ts` pins the same arithmetic without a browser.
+	//
+	// What a stepped run shows **less** of is the arrival's *look*: that runs on
+	// wall time and a hold runs none of it. So this row is evidence about the camera
+	// and the ship through the script, and never about what the flicker looked like
+	// on a person's screen — that stays the watched row above, the shots it writes
+	// to disk, and `npm run views`.
+	const script = await page.evaluate(() => window.__seelite.openingScript());
+	const {
+		rows: frames,
+		byShot,
+		ended: swept,
+		cap: truncated,
+	} = await page.evaluate((script) => {
+		const g = window.__seelite;
+		const run = g.opening;
+		const order = script.shots;
+		const rows = [];
+		/** Rows per shot, counted in the shot's own name: the check below holds
+		 *  them to the steps `opening.ts` says a fixed-length shot has. */
+		const byShot = {};
+		/**
+		 * Aim one step ahead in the shot being worked through, and follow the
+		 * script when it moves on. A cut (`shot === null`) has no camera to sample,
+		 * so the aim moves into the next shot at the shown seconds it has **already**
+		 * reached — the step that ended the last shot may have given this one some,
+		 * and aiming at zero would read as asking for a moment already past.
+		 */
+		const aimAfter = (i) => {
+			const shot = order[i];
+			return (run.shownBy[shot] ?? 0) + script.stepS[shot];
+		};
+		let si = Math.max(0, order.indexOf(run.shot ?? order[0]));
+		let aim = aimAfter(si);
+		let steps = 0;
+		while (g.openingActive && steps++ < 60000) {
+			const shot = order[si];
+			if (!shot) break;
+			try {
+				g.holdOpening(shot, aim);
+			} catch {
+				break; // the script ended on that step
+			}
+			const cam = g.openingActive ? g.openingCamera() : null;
+			if (cam) {
+				const s = g.openingScene();
+				const rel = {
+					x: cam.pos.x - s.ship.pos.x,
+					y: cam.pos.y - s.ship.pos.y,
+					z: cam.pos.z - s.ship.pos.z,
 				};
-				requestAnimationFrame(tick);
-			}),
-	);
+				const d = Math.hypot(rel.x, rel.y, rel.z);
+				const c =
+					-(
+						rel.x * cam.forward.x +
+						rel.y * cam.forward.y +
+						rel.z * cam.forward.z
+					) / d;
+				const seen = g.openingReading().shot;
+				/** The script's own clock for this row: the stride check below
+				 * measures against it rather than against a count. */
+				const shown = run.shownBy[seen];
+				byShot[seen] = (byShot[seen] ?? 0) + 1;
+				rows.push({
+					shot: seen,
+					shown,
+					rel,
+					cam: cam.pos,
+					forward: cam.forward,
+					distR: d / s.reachKm,
+					offDeg: (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI,
+				});
+			}
+			const now = run.shot;
+			const wi =
+				now === null
+					? Math.min(si + 1, order.length - 1) // into the shot the cut leads to
+					: order.indexOf(now);
+			if (wi > si) si = wi;
+			aim = aimAfter(si);
+		}
+		// A sweep that stopped early would otherwise look like a sweep that saw the
+		// whole opening: `ended` is the script finishing, `cap` is this loop's own
+		// ceiling, and the check under the sampler gates on both.
+		return { rows, byShot, ended: !g.openingActive, cap: steps >= 60000 };
+	}, script);
 	// **One take from the arrival through the fly-past** (the principal's
 	// sixth note): between two frames of it the camera may move only by the
 	// orbit (~0.03 reaches a frame; the fly-past camera stands still in its
@@ -328,6 +440,37 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	const shotsSeen = [
 		...new Set(frames.map((f) => f.shot).filter(Boolean)),
 	].join(" ");
+	// **The stride, checked rather than claimed** (#882). Consecutive rows inside one
+	// shot have to sit exactly one of the script's own steps apart — `openingStepS`,
+	// which for a shot shown at 1.5x or 2x is *less* than `OPENING.dtS`. That is the
+	// property the sampler has to have, and unlike a row count it holds for the shots
+	// whose length the flight decides: the cruise shot begins when cruise engages and
+	// the dock ends when the ship docks, so across the five seeds here the cruise
+	// shot yields anywhere from 17 to 868 rows. Counting rows was this branch's first
+	// attempt at the check, and it was wrong about exactly those shots.
+	let strideErr = 0;
+	for (let i = 1; i < frames.length; i++) {
+		const [a, b] = [frames[i - 1], frames[i]];
+		if (b.shot !== a.shot || typeof b.shown !== "number") continue;
+		const stepS = script.stepS[b.shot];
+		if (typeof stepS !== "number") continue;
+		strideErr = Math.max(strideErr, Math.abs(b.shown - a.shown - stepS));
+	}
+	check(
+		`seed ${seed}: the sweep walked the whole opening, one script step per sample`,
+		// An empty sweep has no pair of rows to be one step apart, so a stride
+		// check on it is vacuously true: the floor is what makes this a gate rather
+		// than a tautology. The five seeds measure 2852–3702 rows here (#882's
+		// ladder), so anything near this floor is a sampler that stopped seeing.
+		frames.length > 1000 && strideErr < 1e-9 && swept === true && !truncated,
+		JSON.stringify({
+			rows: frames.length,
+			strideErr,
+			swept,
+			truncated,
+			samples: script.shots.map((x) => `${x} ${byShot[x] ?? 0}`).join(" "),
+		}),
+	);
 	check(
 		`seed ${seed}: arrival and fly-past are one steady take, the camera outside the hull, the ship in frame`,
 		arrivalFrames > 100 &&
@@ -356,18 +499,16 @@ for (const seed of [47, 48, 49, 50, 51]) {
 // ---------------------------------------------------------------------------
 
 const midway = await boot({ guided: true, cinematic: 1 }, "guided midway");
-await midway.page.waitForFunction(
-	() => window.__seelite.openingReading().shot === "cruise",
-	null,
-	{ timeout: 60000, polling: 100 },
-);
+// The Enter row tests that the skip works *during* the cruise shot, not that the
+// wall clock reaches it (#882).
+const midwayShot = await holdToShot(midway.page, "cruise");
 await midway.page.keyboard.press("Enter");
 await untilOver(midway.page, 10000);
 const midwayEnd = await endState(midway.page);
 check(
 	"Enter during the cruise shot skips to the same state (D2)",
-	same(midwayEnd, skippedEnd),
-	differing(midwayEnd, skippedEnd) || "identical",
+	midwayShot === "cruise" && same(midwayEnd, skippedEnd),
+	`held on ${midwayShot} — ${differing(midwayEnd, skippedEnd) || "identical"}`,
 );
 await midway.context.close();
 
@@ -376,11 +517,9 @@ await midway.context.close();
 // ---------------------------------------------------------------------------
 
 const clicked = await boot({ guided: true, cinematic: 1 }, "guided clicked");
-await clicked.page.waitForFunction(
-	() => window.__seelite.openingReading().shot === "flypast",
-	null,
-	{ timeout: 30000, polling: 100 },
-);
+// Held rather than waited for, and released at once: the click has to land on a
+// live frame with the pointer free, which is what #370 is about (#882).
+const clickedShot = await holdToShot(clicked.page, "flypast", 0.5);
 const hint = await clicked.page.evaluate(() => {
 	const skip = document.querySelector("[data-opening-skip]");
 	const box = skip?.getBoundingClientRect();
@@ -411,8 +550,8 @@ await untilOver(clicked.page, 10000);
 const clickedEnd = await endState(clicked.page);
 check(
 	"a click on SKIP skips to the same state (D2)",
-	same(clickedEnd, skippedEnd),
-	differing(clickedEnd, skippedEnd) || "identical",
+	clickedShot === "flypast" && same(clickedEnd, skippedEnd),
+	`held on ${clickedShot} — ${differing(clickedEnd, skippedEnd) || "identical"}`,
 );
 await clicked.context.close();
 
@@ -423,11 +562,9 @@ await clicked.context.close();
 
 for (const shot of ["cruise", "dock"]) {
 	const quit = await boot({ guided: true, cinematic: 1 }, `quit at ${shot}`);
-	await quit.page.waitForFunction(
-		(s) => window.__seelite.openingReading().shot === s,
-		shot,
-		{ timeout: 60000, polling: 50 },
-	);
+	// Held on the shot, and it stays held: this row quits *from* the shot, so the
+	// clock has nothing to give back (#882).
+	const heldShot = await holdToShot(quit.page, shot, 1, { release: false });
 	const saved = await quit.page.evaluate(async () => {
 		const g = window.__seelite;
 		await g.saveFlush("quit");
@@ -462,11 +599,12 @@ for (const shot of ["cruise", "dock"]) {
 			: "a quit on the run-in saves in flight, and the reload falls back to the placement and docks with lastDocked",
 		saved.dockedAt === null &&
 			!saved.lastDocked &&
+			heldShot === shot &&
 			resumed.outcome === expected &&
 			resumed.dockPhase === "docked" &&
 			resumed.stationId === trade.id &&
 			record?.dockedAt === trade.key,
-		JSON.stringify({ saved, resumed, record }),
+		JSON.stringify({ heldShot, saved, resumed, record }),
 	);
 	await quit.context.close();
 }
