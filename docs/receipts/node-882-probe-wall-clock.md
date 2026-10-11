@@ -5,11 +5,15 @@ Branch `node/882-probe-wallclock`. Checkpoint
 measured idle baseline and at least one of them is demonstrably shorter, with
 the gate still green.*
 
-Logs: `/tmp/seelite-882-before.log` (before), `/tmp/seelite-882-after.log`
-(after, same tree as the four commits below), `/tmp/seelite-882-test.log`
-(headless), `/tmp/seelite-882-opening-final.log` and
-`/tmp/seelite-882-opening-step2.log` (the opening probe alone, before and after
-its rows), `/tmp/seelite-music-bands.log` (the music render-window sweep).
+Logs. `npm run probe`: `/tmp/seelite-882-before.log` (the idle baseline),
+`/tmp/seelite-882-after.log` (the round-1 tree, kept because §6 attributes its one
+red) and `/tmp/seelite-882-after2.log` (the final tree, the one to quote).
+Headless: `/tmp/seelite-882-test3.log`. `probe-opening` alone, before its rows
+changed and on the final tree: `/tmp/seelite-882-opening-rows.log` and
+`/tmp/seelite-882-opening-step5.log`. The music render sweep:
+`/tmp/seelite-music-bands.log`. Sage: `/tmp/seelite-882-sage.log` (round 1) and
+`/tmp/seelite-882-sage2.log` (round 2, two lenses failed to run so it does not
+count as the round). PR: [**#884**](https://github.com/jcfischer/seelite/pull/884).
 
 ## 0. The request, and what it turned out not to be
 
@@ -89,7 +93,7 @@ are the evidence that the sequence *looks* right, and a hold runs no wall time.
 `OpeningRun.advanceTo` treated an aim past the end of the aimed shot as
 impossible and kept stepping after it: the whole rest of the script, then a
 throw. Measured on seed 47 — `the opening ended before forming at 3.0166 s` —
-after 181 of the script's ~2600 steps. That is correct for a caller that wants
+after 181 steps of a script that samples about 3,700 of them. That is correct for a caller that wants
 a moment and cannot get it, and fatal for one that walks the script a step at a
 time and wants the boundary.
 
