@@ -1,6 +1,13 @@
 /** Slot identities are hull-owned. Catalogue rows own price, mass and capacity.
  * Legacy names remain as stable salvage aliases and in the old console adapter. */
-import { HULL_SPECS, type HullId, type SlotSize, type HullSlot } from "./hull";
+import {
+	HULL_SPECS,
+	type HullId,
+	type FittedCapacity,
+	type HullSlot,
+	type SlotSize,
+	stockPlant,
+} from "./hull";
 import {
 	deriveProposal,
 	fits,
@@ -141,6 +148,21 @@ export function stockLoadout(hull: HullId): Loadout {
 		plant: makeModule("power-plant", spec.plantSize),
 		h1: makeModule("pulse-laser", hp.size),
 	};
+}
+/**
+ * What a fitted ship holds, read off its loadout: the one home for capacity
+ * (#873). The bank is the plant's plus every Extra Energy Unit's `bankE`; regen
+ * is the plant's alone (#925). A loadout with no plant flies the stock one.
+ * Hold, tank, integrity and shield join here, never in a second projection.
+ */
+export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
+	const plant = loadout.plant
+		? moduleRow(loadout.plant).output
+		: stockPlant(hull);
+	let bankE = plant.bankE;
+	for (const m of Object.values(loadout))
+		if (m.module === "extra-energy-unit") bankE += moduleRow(m).output.bankE;
+	return { bankE, regenPerS: plant.regenPerS };
 }
 export function moduleFits(m: FittedModule, slot: HullSlot): boolean {
 	return fits(moduleRow(m), slot);

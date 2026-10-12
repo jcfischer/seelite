@@ -469,6 +469,14 @@ export const POWER_PLANT_OUTPUT: Readonly<
 	},
 };
 
+/**
+ * What a fitted ship holds, as numbers: `fittedCapacity` in `loadout.ts`
+ * computes it and `ship-condition.ts` reads it (#925). Today the bank and its
+ * regen; the sibling slices (#926–#928) add hold, tank, integrity and shield
+ * here rather than in a second shape.
+ */
+export type FittedCapacity = PlantOutput;
+
 export interface PowerPlant extends PlantOutput {
 	readonly size: SlotSize;
 	readonly grade: PlantGrade;

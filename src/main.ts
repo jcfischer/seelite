@@ -2,11 +2,13 @@ import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
 	fitted,
+	fittedCapacity,
 	equipmentNames,
 	fittingSaleValue,
 	freeSlot,
 	repeatableEquipment,
 	parseModule,
+	stockLoadout,
 } from "./loadout";
 import { outfittingScreen } from "./outfitting";
 import { commanderJumpRangeLy } from "./station-commerce";
@@ -460,6 +462,7 @@ import {
 	fullCondition,
 	headOnPool,
 	isAlive,
+	refitCondition,
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
@@ -2759,7 +2762,18 @@ class Game {
 	/** A whole ship of the flown hull. A function, because a condition is
 	 *  mutable state and every caller needs its own. */
 	private flownFullCondition(): ShipCondition {
-		return fullCondition(this.flownHull);
+		return fullCondition(this.flownHull, this.flownCapacity());
+	}
+
+	/** The flown ship's fitted bank (#925). The commander's loadout is the
+	 *  flown hull's only once that hull is flown: a hull waiting for the launch
+	 *  (#556 D10) leaves the old one on its stock fit until it takes over. */
+	private flownCapacity() {
+		const loadout =
+			this.commander.hull === this.flownHull
+				? this.commander.loadout
+				: stockLoadout(this.flownHull);
+		return fittedCapacity(this.flownHull, loadout);
 	}
 	/**
 	 * The three ladders' banked record (#183), saved beside `commander` so a
@@ -17608,10 +17622,10 @@ class Game {
 			{ holdings: this.holdings(), world: this.commerceWorld },
 			next,
 		);
-		if (
+		const refit =
 			this.commander.loadout !== next.holdings.commander.loadout ||
-			this.commander.hull !== next.holdings.commander.hull
-		) {
+			this.commander.hull !== next.holdings.commander.hull;
+		if (refit) {
 			this.armedFireGroup.reset();
 			this.floorFit = null;
 		}
@@ -17625,6 +17639,12 @@ class Game {
 		// last sentence standing, as it always did.
 		if (cause === "settlement") this.requestMessage = signals?.message ?? "";
 		if (signals?.hullChanged) this.receiveHull(signals.hullChanged);
+		// A refit at a dock moves the bank the ship launches with (#925). A hull
+		// delivered now already took a whole condition. One waiting for the
+		// launch is not flown yet: the flown ship keeps the bank it has until
+		// `setFlownHull` gives the new hull a whole condition.
+		if (refit && this.commander.hull === this.flownHull)
+			this.condition = refitCondition(this.condition, this.flownCapacity());
 		if (effects.consoleRevision) this.stationConsoleRevision += 1;
 		if (effects.requestRevision) this.requestRevision += 1;
 		// A request is ready to report: nothing else says so (#546).

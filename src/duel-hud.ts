@@ -124,7 +124,7 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 		fore: `${Math.round(c.fore)} / ${c.shieldMax}`,
 		aft: `${Math.round(c.aft)} / ${c.shieldMax}`,
 		hull: `${printHull(c.hull)} / ${c.hullMax}`,
-		bank: `${Math.round(c.energy)} / ${c.energyMax}`,
+		bank: `${Math.round(c.energy)} / ${Math.round(c.energyMax)}`,
 		heat: heatValue(c),
 	};
 }

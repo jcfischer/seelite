@@ -12,7 +12,12 @@
  * No Three.js and no world: sim tier. The laser here is a resource and a damage
  * rate. What it hits is the caller's to decide.
  */
-import { HULL_SPECS, type HullId, stockPlant } from "./hull";
+import {
+	type FittedCapacity,
+	HULL_SPECS,
+	type HullId,
+	stockPlant,
+} from "./hull";
 import { type Vec3, dot } from "./vec3";
 
 /** Laser heat at which the gun locks. */
@@ -145,7 +150,7 @@ export interface ShipCondition {
 	shieldMax: number;
 	energy: number;
 	/** The energy bank's capacity and its regeneration per second: the fitted
-	 *  power plant's (#867 D3). A fresh condition carries the stock plant. */
+	 *  power plant's and Extra Energy Units' (#867 D3, #925). */
 	energyMax: number;
 	energyRegenPerS: number;
 	heat: number;
@@ -154,23 +159,49 @@ export interface ShipCondition {
 	sinceStruckS: number;
 }
 
-export function fullCondition(hull: HullId): ShipCondition {
+/**
+ * A whole ship. `capacity` is the fitted plant's and Extra Energy Units'
+ * (`fittedCapacity` in `loadout.ts`, #925), passed as numbers because
+ * `module-catalog.ts` imports this module and an import back closes a cycle.
+ * Without it the hull flies its stock plant, which is every NPC's (#875).
+ */
+export function fullCondition(
+	hull: HullId,
+	capacity: FittedCapacity = stockPlant(hull),
+): ShipCondition {
 	const { integrity: hullMax, shieldPool: shieldMax } = HULL_SPECS[hull];
-	const plant = stockPlant(hull);
 	return {
 		fore: shieldMax,
 		aft: shieldMax,
 		hull: hullMax,
 		hullMax,
 		shieldMax,
-		energy: plant.bankE,
-		energyMax: plant.bankE,
-		energyRegenPerS: plant.regenPerS,
+		energy: capacity.bankE,
+		energyMax: capacity.bankE,
+		energyRegenPerS: capacity.regenPerS,
 		heat: 0,
 		heatLocked: false,
 		// Clear of the delay, so a fresh ship recharges rather than spending its
 		// first seconds recovering from a hit it never took.
 		sinceStruckS: SHIELD_RECHARGE_DELAY_S,
+	};
+}
+
+/**
+ * The same ship after a refit at a dock (#925). Added capacity arrives charged,
+ * as a fitted plate arrives whole (#873), so a full bank stays full; removed
+ * capacity clamps the bank. Shields, hull and heat are not the plant's.
+ */
+export function refitCondition(
+	c: ShipCondition,
+	capacity: FittedCapacity,
+): ShipCondition {
+	const added = Math.max(0, capacity.bankE - c.energyMax);
+	return {
+		...c,
+		energy: Math.min(capacity.bankE, c.energy + added),
+		energyMax: capacity.bankE,
+		energyRegenPerS: capacity.regenPerS,
 	};
 }
 
