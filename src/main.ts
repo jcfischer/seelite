@@ -19752,8 +19752,8 @@ class Game {
 				// principal's ruling on the sheet). It shows only near a star, so
 				// the sky behind it is the brightest and warmest the glass meets,
 				// and red and amber over it did not read — #597's case for the
-				// docking notice, and its plate. Half a cell gap each side, so it
-				// never reaches a neighbour's ink.
+				// docking notice, and its plate. Short of half a cell gap each side,
+				// so it never reaches the next cell's ink.
 				if (cell.label === HULL_TEMP_LABEL) {
 					const pad = (cellGap / 2) * 0.8;
 					tempPlate = floorBox(
