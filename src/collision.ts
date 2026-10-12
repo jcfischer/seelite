@@ -912,8 +912,12 @@ function sweepMotion(
 	return result;
 }
 
-/** A list longer than this is searched through a grid (node #818). */
-const INDEXED_ABOVE = 64;
+/** A list longer than this is searched through a grid: the authored
+ *  shipyards' 490 to 2,800 boxes a list (node #818). Every other proxy is
+ *  tens of primitives and stays a plain walk — refinery/a's 66, big rock
+ *  spheres among them, took 27 s through the grid in the vertex row and
+ *  0.4 s without it. */
+const INDEXED_ABOVE = 128;
 const INDEX_CELL_KM = 0.05;
 const solidIndexes = new WeakMap<
 	readonly Primitive[],
