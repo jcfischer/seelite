@@ -19,6 +19,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { fetchBundled } from "./bundle-fetch";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
@@ -366,7 +367,10 @@ export function prepareShipyardModel(
 				: Promise.resolve(null);
 		const probes =
 			workLightMode() === "baked" || comparing
-				? fetch(SHIPYARD_PROBE_URLS[form])
+				? // A file of this bundle (#830), fetched as `bundle-fetch.ts` allows.
+					fetchBundled(
+						new URL(SHIPYARD_PROBE_URLS[form], location.href).pathname,
+					)
 						.then((r) => (r.ok ? r.arrayBuffer() : null))
 						.catch(() => null)
 				: Promise.resolve(null);
