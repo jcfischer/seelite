@@ -736,8 +736,10 @@ for (const viewport of VIEWPORTS) {
 		g.world.ship.vel = { x: 0, y: 0, z: 0 };
 		D.steps(1);
 		const cooling = g.condition.hullTemp;
+		// Just over the snap: about 0.3 s of cooling takes it under, so a
+		// second leaves it at ambient.
 		g.condition = { ...g.condition, hullTemp: 0.0051 };
-		D.steps(0.2);
+		D.steps(1);
 		return {
 			coldRow: cold?.duelRow,
 			coldInk,
