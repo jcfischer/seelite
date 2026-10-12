@@ -158,6 +158,14 @@ const installHelpers = () => {
 		passiveIn(x, y, width, height) {
 			return countIn(x, y, width, height, passive);
 		},
+		/** Lit overlay pixels in a box: any opaque glyph ink, whatever its tone,
+		 *  and never the dark plate under it (#932). `passive` above is one
+		 *  tone's hue, and the floor's labels are not drawn in it. */
+		litIn(box) {
+			if (!box) return Number.NaN;
+			const lit = (r, gr, b, a) => a > 150 && r + gr + b > 240;
+			return countIn(box.x, box.top, box.width, box.height, lit);
+		},
 		/** Share of a box's overlay pixels that are the dark plate (#931). */
 		plateShare(box) {
 			if (!box) return 0;
@@ -214,6 +222,7 @@ const installHelpers = () => {
 						duelRow: r.duelRow,
 						duelBox: r.duelBox,
 						tempPlate: r.tempPlate,
+						scoopPlate: r.scoopPlate,
 						courseBox: r.courseBox,
 						glassBottomY: r.glassBottomY,
 						marginPx: r.marginPx,
@@ -793,6 +802,143 @@ for (const viewport of VIEWPORTS) {
 			ambientPlate: skim.ambient.floor?.tempPlate,
 		}),
 	);
+	// -------------------------------------------------------------------------
+	// The fuel scoop (#932): a fitted scoop fills the tank on a cruise pass in
+	// the band, and the glass says so beside the TEMP gauge, on its plate.
+	// `tests/fuel-scoop.test.ts` and `tests/scoop-line.test.ts` own the law and
+	// the reading; what only the page answers is that the game feeds the step
+	// the regime and the star distance, and the band paints the line. The
+	// control is the same ship parked in normal flight at the same distance.
+	// -------------------------------------------------------------------------
+	const scoop = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		const { freeSlot, makeModule } = await import("/src/loadout.ts");
+		const star = g.world.system.bodies.find((b) => b.kind === "star");
+		const rOf = () =>
+			Math.hypot(
+				g.world.ship.pos.x - star.pos.x,
+				g.world.ship.pos.y - star.pos.y,
+				g.world.ship.pos.z - star.pos.z,
+			) / star.radiusKm;
+		g.resetFlightToStart();
+		const module = makeModule("fuel-scoop", 1);
+		const slot = freeSlot(g.commander.loadout, g.commander.hull, module);
+		g.commander = {
+			...g.commander,
+			loadout: { ...g.commander.loadout, [slot.key]: module },
+		};
+		const label = (row) => row?.find((c) => c.label === "SCOOPING") ?? null;
+		// Normal flight at 1.2 R: the hull heats and the tank does not fill.
+		g.fuelLy = 2;
+		D.parkAtStar(1.2);
+		D.steps(1);
+		const normal = {
+			regime: g.regime,
+			fuel: g.fuelLy,
+			floor: D.floor(),
+		};
+		const tempOnlyInk = D.litIn(normal.floor?.tempPlate);
+		// Cruise with no target, then placed at 1.2 R with the nose along the
+		// tangent: the pass is the pilot's, not a leg to a body.
+		g.targetId = null;
+		g.engageCruise();
+		for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(D.dt);
+		D.parkAtStar(1.2);
+		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
+		const fuelBefore = g.fuelLy;
+		const energyBefore = g.condition.energy;
+		D.steps(0.5);
+		const filling = {
+			regime: g.regime,
+			r: rOf(),
+			fuel: g.fuelLy,
+			energy: g.condition.energy,
+			scooping: g.scooping,
+			floor: D.floor(),
+		};
+		const scoopInk = D.litIn(filling.floor?.scoopPlate);
+		const scoopPlateShare = D.plateShare(filling.floor?.scoopPlate);
+		// On out of the band: the line goes and the tank holds.
+		let guard = 0;
+		while (g.regime === "cruise" && rOf() < 2.2 && guard++ < 200) D.steps(0.1);
+		const left = {
+			regime: g.regime,
+			r: rOf(),
+			fuel: g.fuelLy,
+			scooping: g.scooping,
+			floor: D.floor(),
+		};
+		D.steps(0.5);
+		const after = { fuel: g.fuelLy };
+		g.resetFlightToStart();
+		return {
+			normal,
+			tempOnlyInk,
+			fuelBefore,
+			energyBefore,
+			filling,
+			scoopInk,
+			scoopPlateShare,
+			left,
+			after,
+			normalLine: label(normal.floor?.duelRow),
+			fillingLine: label(filling.floor?.duelRow),
+			leftLine: label(left.floor?.duelRow),
+		};
+	});
+	check(
+		`${v}: in normal flight at 1.2 R a fitted scoop fills nothing and paints no SCOOPING line`,
+		scoop.normal.regime === "normal" &&
+			scoop.normal.fuel === 2 &&
+			scoop.normalLine === null &&
+			scoop.normal.floor?.scoopPlate === null &&
+			scoop.normal.floor?.duelRow?.some((c) => c.label === "TEMP"),
+		JSON.stringify({ normal: scoop.normal, line: scoop.normalLine }),
+	);
+	check(
+		`${v}: on a cruise pass in the band the scoop fills the tank, draws on the bank and paints SCOOPING with the tank in LY beside TEMP`,
+		scoop.filling.regime === "cruise" &&
+			scoop.filling.r < 2 &&
+			scoop.filling.scooping === true &&
+			scoop.filling.fuel > scoop.fuelBefore &&
+			scoop.filling.energy < scoop.energyBefore &&
+			scoop.fillingLine?.value === `${scoop.filling.fuel.toFixed(1)} LY` &&
+			scoop.filling.floor?.duelRow?.some((c) => c.label === "TEMP"),
+		JSON.stringify({
+			fuelBefore: scoop.fuelBefore,
+			energyBefore: scoop.energyBefore,
+			filling: scoop.filling,
+			line: scoop.fillingLine,
+		}),
+	);
+	// One plate under both cells, and the line's ink on it: more lit ink than
+	// the TEMP cell alone had on its own plate.
+	check(
+		`${v}: the SCOOPING line is painted on the TEMP cell's dark plate`,
+		scoop.filling.floor?.scoopPlate != null &&
+			JSON.stringify(scoop.filling.floor.scoopPlate) ===
+				JSON.stringify(scoop.filling.floor.tempPlate) &&
+			scoop.scoopPlateShare > 0.5 &&
+			scoop.scoopInk > scoop.tempOnlyInk,
+		JSON.stringify({
+			scoopPlate: scoop.filling.floor?.scoopPlate,
+			tempPlate: scoop.filling.floor?.tempPlate,
+			share: scoop.scoopPlateShare,
+			scoopInk: scoop.scoopInk,
+			tempOnlyInk: scoop.tempOnlyInk,
+		}),
+	);
+	check(
+		`${v}: out of the band the SCOOPING line goes and the tank stops filling`,
+		scoop.left.r >= 2 &&
+			scoop.left.scooping === false &&
+			scoop.leftLine === null &&
+			scoop.left.floor?.scoopPlate === null &&
+			scoop.after.fuel === scoop.left.fuel,
+		JSON.stringify({ left: scoop.left, after: scoop.after }),
+	);
+
 	// Last on the page, because it ends the flight: heat above the top runs the
 	// hull out through the game's own death path, and the shields stand.
 	const burnt = await page.evaluate(() => {

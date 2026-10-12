@@ -19689,13 +19689,20 @@ class Game {
 			];
 			// And the duel row (#324), for the same reason: a third run on the
 			// same axis at the same scale.
-			const widestDuel = [
-				...DUEL_ROW_LABELS.map((label) => ({
-					label,
-					value: DUEL_ROW_WIDEST[label],
-				})),
-				{ label: HULL_TEMP_LABEL, value: HULL_TEMP_WIDEST },
-				{ label: SCOOP_LABEL, value: SCOOP_WIDEST },
+			const widestTemp = { label: HULL_TEMP_LABEL, value: HULL_TEMP_WIDEST };
+			// **Two rows, never one** (#932): the scoop's line and the fight's
+			// SHD and HEAT do not share the row (`duelRow` below), so the fit
+			// takes the wider of the two rather than both at once — which would
+			// shrink every floor instrument at 390 px for a row never drawn.
+			const widestDuelRows = [
+				[
+					...DUEL_ROW_LABELS.map((label) => ({
+						label,
+						value: DUEL_ROW_WIDEST[label],
+					})),
+					widestTemp,
+				],
+				[widestTemp, { label: SCOOP_LABEL, value: SCOOP_WIDEST }],
 			];
 			const groups = this.fireGroups;
 			const widestGroup = groups.map((group, index) => ({
@@ -19708,8 +19715,10 @@ class Game {
 				Math.max(
 					floorRunWidths(ctx, widestCells, scale).total,
 					floorRunWidths(ctx, widestCourse, scale).total,
-					...widestGroup.map(
-						(group) => floorRunWidths(ctx, [...widestDuel, group], scale).total,
+					...widestDuelRows.flatMap((row) =>
+						widestGroup.map(
+							(group) => floorRunWidths(ctx, [...row, group], scale).total,
+						),
 					),
 				);
 			const atOne = runAt(1);
@@ -19841,8 +19850,13 @@ class Game {
 				? null
 				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
 		// The armed group stays readable in peace; combat adds shields and heat.
+		// **Not while the scoop fills** (#932): its line takes their place for
+		// a cruise pass, so the fit above takes the row as one or the other and
+		// never both. The Flight console keeps the fight's detail throughout.
 		const duelRow: FloorCell[] = [
-			...(this.duelRowShown() ? duelRowCells(this.condition) : []),
+			...(this.duelRowShown() && !this.scooping
+				? duelRowCells(this.condition)
+				: []),
 			// Hull temperature, while the hull is above ambient (#931).
 			...hullTempCells(this.condition),
 			// The scoop's line, while it fills (#932).
