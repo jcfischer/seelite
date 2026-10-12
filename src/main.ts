@@ -388,7 +388,7 @@ import {
 	worldStarts,
 } from "./sim";
 import { type Flick, FlickMeter, couplePxS, pointerImpulse } from "./pointer";
-import { AttitudeFollower } from "./attitude-hold";
+import { AttitudeFollower, noseTurnStick } from "./attitude-hold";
 import {
 	heldVents,
 	leverMoves,
@@ -3028,6 +3028,9 @@ class Game {
 	 *  computer wanted last frame, whose spin it asks for on top, so it is
 	 *  reset on every frame the computer does not fly (`AttitudeFollower`). */
 	private readonly computerFollower = new AttitudeFollower();
+	/** The target `F` is turning the nose onto, or `null` when no such turn
+	 *  is flying (`stepFaceTurn`). */
+	private faceTurnId: string | null = null;
 	/** Pointer movement accumulated since the last step, in pixels. Consumed
 	 *  each frame — a delta applied twice is a ship that turns at the frame
 	 *  rate rather than at the hand's speed. */
@@ -5378,14 +5381,73 @@ class Game {
 	 * 20-metre nose at a 50 km sphere an AU away is a different skill that would
 	 * dominate every measurement. Whether the shipped game offers an aiming
 	 * assist is a HUD question, and #11 owns the screen it would live on.
+	 *
+	 * **Placed in one frame, and no key calls it any more**: `F` flies
+	 * `beginFaceTurn` through the vents. This stays for the probes that need
+	 * the nose on a target now.
 	 */
 	faceTarget() {
+		this.faceTurnId = null;
+		const want = this.targetDirection();
+		if (want) this.face(want);
+	}
+
+	/** The unit vector from the ship to the selected target, or `null` with
+	 *  no target or none to point at. One aim point for the placement and the
+	 *  turn. */
+	private targetDirection(): Vec3 | null {
 		const target = this.targetBody();
-		if (!target) return;
+		if (!target) return null;
 		const to = sub(target.pos, this.world.ship.pos);
 		const d = length(to);
-		if (d === 0) return;
-		this.face(scale(to, 1 / d));
+		return d > 0 ? scale(to, 1 / d) : null;
+	}
+
+	/**
+	 * `F`: turn the nose onto the selected target **through the attitude
+	 * vents**, as the docking computer turns it (#619) — the hull eases into
+	 * the turn and out of it, and the plumes and the sound show it. It used to
+	 * place the attitude in one frame, which read as the ship jumping.
+	 *
+	 * `faceTarget` above stays the placement: a probe that needs the nose on a
+	 * target needs it now, not after a turn of several seconds.
+	 */
+	beginFaceTurn() {
+		if (!this.targetId || this.dockingComputer.engaged) return;
+		this.faceTurnId = this.targetId;
+	}
+
+	/**
+	 * The stick for this frame of `F`'s turn (`noseTurnStick`), or `null`
+	 * when none is flying. It lets go once the nose is on, and the moment the
+	 * pilot turns the ship, the target changes, or a cruise guidance takes the
+	 * nose (`stepDetour` places it every frame). Only in cruise: a guidance is
+	 * set on the engage, and `F` then `J` turns the ship through the spool.
+	 */
+	private stepFaceTurn(dt: number, pilotTurns: boolean): Angular | null {
+		if (!this.faceTurnId) return null;
+		const want = this.targetDirection();
+		const stick =
+			want && !this.faceTurnCancelled(pilotTurns)
+				? noseTurnStick(
+						{ nose: this.nose(), up: this.shipUp() },
+						want,
+						this.rates,
+						this.flownPerformance,
+						dt,
+					)
+				: null;
+		if (!stick) this.faceTurnId = null;
+		return stick;
+	}
+
+	/** Whether something other than the turn has taken the nose this frame. */
+	private faceTurnCancelled(pilotTurns: boolean): boolean {
+		if (pilotTurns) return true; // the pilot has the stick
+		if (this.targetId !== this.faceTurnId) return true; // a new target
+		if (this.dockedAt) return true;
+		// A cruise guidance places the nose every frame, but only in cruise.
+		return this.regime === "cruise" && !!(this.detour || this.cruiseTrackId);
 	}
 
 	/**
@@ -10251,7 +10313,7 @@ class Game {
 				this.cycleTarget(-1);
 				return;
 			case "fight.faceTarget":
-				this.faceTarget();
+				this.beginFaceTurn();
 				return;
 			case "fight.cycleFireGroup":
 				this.cycleFireGroup();
@@ -12884,6 +12946,7 @@ class Game {
 		this.lastExit = "";
 		this.detour = null;
 		this.cruiseTrackId = null;
+		this.faceTurnId = null;
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputer.disengage();
@@ -15399,6 +15462,8 @@ class Game {
 
 		const computer = this.stepDockingComputer(dt, approaches);
 		if (computer) {
+			// The computer has the stick; `F`'s turn does not resume after it.
+			this.faceTurnId = null;
 			this.dropPointer();
 			if (FLIGHT_SOUND.arms === "legacy") this.audio.ambient(this.throttle);
 			// The computer flies the lever, as it did before the strafe keys:
@@ -15452,11 +15517,24 @@ class Game {
 		// ask (#620, §3.5): it turns the hull and pushes it at once. Flown below,
 		// in one Hull step with the translation (#646): nothing between here and
 		// there reads the attitude or the rates.
+		const direct = heldVents(pilotHeld);
+		// `F`'s turn flies the stick until the pilot takes it, with the assist
+		// on whatever the toggle says, as the docking computer flies it.
+		const faceStick = this.stepFaceTurn(
+			dt,
+			handsHeld ||
+				yaw !== 0 ||
+				pitch !== 0 ||
+				roll !== 0 ||
+				impulse.pitch !== 0 ||
+				impulse.yaw !== 0 ||
+				Object.keys(direct).length > 0,
+		);
 		const hands = {
-			stick: { pitch, yaw, roll },
+			stick: faceStick ?? { pitch, yaw, roll },
 			impulse,
-			turnAssist: this.assist,
-			direct: heldVents(pilotHeld),
+			turnAssist: faceStick ? true : this.assist,
+			direct,
 		};
 		// #641's readout of what a flick delivered, off the step that flew it:
 		// the pointer, the impulse, what the couple could not pay and the

@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
 	AttitudeFollower,
+	FACE_SETTLED_RAD,
+	FACE_SETTLED_RATE,
 	attitudeError,
 	attitudeStick,
+	noseTurnStick,
 } from "../src/attitude-hold";
 import { HULL_IDS } from "../src/hull";
 import {
@@ -111,5 +114,57 @@ describe("holding an attitude through the vents (#619)", () => {
 		});
 		const { worst } = hold(LEVEL, want, "courier", 20, 1 / 60);
 		expect(worst).toBeLessThan((1 * Math.PI) / 180);
+	});
+});
+
+describe("F turns the nose onto a target through the vents", () => {
+	const fly = (want: ReturnType<typeof v3>, id: (typeof HULL_IDS)[number]) => {
+		const perf = flightPerformance(id);
+		const dt = 1 / 60;
+		let at = LEVEL;
+		let rates = STILL;
+		let maxRate = 0;
+		let t = 0;
+		for (; t < 60; t += dt) {
+			const stick = noseTurnStick(at, want, rates, perf, dt);
+			if (!stick) break;
+			expect(stick.roll).toBe(0);
+			rates = stepAngular(rates, stick, STILL, true, dt, perf).rates;
+			maxRate = Math.max(maxRate, Math.hypot(rates.pitch, rates.yaw));
+			at = turnAttitude(at, rates, dt);
+		}
+		return { at, rates, t, maxRate, perf };
+	};
+
+	for (const id of HULL_IDS)
+		test(`${id}: a turn half round eases on and lets go on the target`, () => {
+			const want = v3(Math.sin(2.5), 0.3, -Math.cos(2.5));
+			const n = length(want);
+			const unit = v3(want.x / n, want.y / n, want.z / n);
+			const { at, rates, t, maxRate, perf } = fly(unit, id);
+			// It takes time: not one frame, which was the jump.
+			expect(t).toBeGreaterThan(0.5);
+			expect(t).toBeLessThan(60);
+			expect(maxRate).toBeLessThanOrEqual(
+				Math.hypot(perf.angularMax.pitch, perf.angularMax.yaw) + 1e-9,
+			);
+			expect(Math.acos(Math.min(1, dot(at.nose, unit)))).toBeLessThanOrEqual(
+				FACE_SETTLED_RAD,
+			);
+			expect(Math.hypot(rates.pitch, rates.yaw)).toBeLessThanOrEqual(
+				FACE_SETTLED_RATE,
+			);
+		});
+
+	test("a nose already on the target asks for nothing", () => {
+		expect(
+			noseTurnStick(
+				LEVEL,
+				LEVEL.nose,
+				STILL,
+				flightPerformance("courier"),
+				1 / 60,
+			),
+		).toBeNull();
 	});
 });
