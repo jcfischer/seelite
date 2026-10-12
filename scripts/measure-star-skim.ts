@@ -521,7 +521,18 @@ for (const tau of [10, 15, 20, 30]) {
 const APPROVED: Heat = { rise: 0.185, tau: 15 };
 const LATE_S = [0, 1, 2, 3, 5, 8, 12];
 const KS = [0.1, 0.2, 0.3];
-/** Integrity share lost: integrate `k·max(0, T − 1)` over a held phase. */
+/** One step of D5's rule: heat for `dt` at `h`, and the integrity share
+ *  `k·max(0, T − 1)` lost over it, by the trapezoid. */
+function damageStep(
+	t: number,
+	h: number,
+	dt: number,
+	k: number,
+): { t: number; lost: number } {
+	const next = heatStep(t, h, dt, APPROVED);
+	return { t: next, lost: k * Math.max(0, (t + next) / 2 - 1) * dt };
+}
+/** Integrity share lost over a phase held at heat `h`. */
 function heldDamage(
 	t0: number,
 	h: number,
@@ -533,9 +544,9 @@ function heldDamage(
 	let t = t0;
 	let lost = 0;
 	for (let i = 0; i < steps; i++) {
-		const next = heatStep(t, h, dt, APPROVED);
-		lost += k * Math.max(0, (t + next) / 2 - 1) * dt;
-		t = next;
+		const step = damageStep(t, h, dt, k);
+		t = step.t;
+		lost += step.lost;
 	}
 	return { t, lost };
 }
@@ -543,9 +554,9 @@ function climbDamage(t0: number, k: number): number {
 	let t = t0;
 	let lost = 0;
 	flyRadial(REF_KM, refDropR, BAND, (rr, piece) => {
-		const next = heatStep(t, HEAT(rr, BAND), piece, APPROVED);
-		lost += k * Math.max(0, (t + next) / 2 - 1) * piece;
-		t = next;
+		const step = damageStep(t, HEAT(rr, BAND), piece, k);
+		t = step.t;
+		lost += step.lost;
 	});
 	return lost;
 }
