@@ -1077,8 +1077,10 @@ def widen_aperture(v):
 # forward (principal, 2026-10-11): everything from the barrel forward moves +E
 # along the axis and plain barrel plates fill the gap, so the rear face, the
 # bearing and the enclosed spine stay where they were approved and the drum stays
-# attached. The aperture plane is the drum's frontmost point, so nothing of it
-# stands in the approach corridor; the bay's mouth wall is drawn at the hub face.
+# attached. The aperture plane is the hub face, the wall the slot is cut in, so
+# the sim's bay opens where the drawn one does (principal's 5 m collision rule,
+# 2026-10-12); the coaming funnel stands in front of it, wider than the slot in
+# both directions.
 # Anything wholly inside the bay (the display throat) is the sim's room now.
 # tests/shipyard-flight-asset.test.ts reads the sim's figures and fails on drift.
 BAY_DEPTH=40.5  # 405 m
@@ -1089,8 +1091,7 @@ HUB_FACE=9.0    # the end cap's inner surface
 def grow_drum_forward(info):
  global OWNER
  caps=[v for k,v in BATCH.items() if k.startswith("capsule/")]
- front=max(p[2] for verts,_,_ in caps for p in verts)
- E=BAY_END+BAY_DEPTH-front
+ E=BAY_END+BAY_DEPTH-HUB_FACE
  for verts,faces,uvs in caps:verts[:]=[(x,y,z+E) if z>BARREL_CUT else (x,y,z) for x,y,z in verts]
  inside=lambda p:abs(p[0])<=BAY_HALF[0]+.01 and abs(p[1])<=BAY_HALF[1]+.01 and BAY_END-.01<=p[2]<=HUB_FACE+E+.01
  for verts,faces,uvs in caps:
@@ -1113,7 +1114,7 @@ def grow_drum_forward(info):
  # The rear band the barrel carried away with it.
  annulus((0,0),-7.2,22.25-.42,22.25,.55,steel,8,phase)
  OWNER="static"
- info["portLocal"]=[0,0,info["portLocal"][2]+E];info["aperturePlane"]=front+E;info["hubFace"]=HUB_FACE+E
+ info["portLocal"]=[0,0,info["portLocal"][2]+E];info["aperturePlane"]=HUB_FACE+E;info["hubFace"]=HUB_FACE+E
  # Flight plates are shrunk toward their centres for a seam, and the grown barrel
  # had nothing behind its seams. A dark shell 30 cm under the plates, over the
  # whole drum profile, so a seam shows hull.
@@ -1124,7 +1125,7 @@ def grow_drum_forward(info):
   for j in range(n):
    k=(j+1)%n;poly([ra[j]*inset+Vector((0,0,ra[j].z*(1-inset))),ra[k]*inset+Vector((0,0,ra[k].z*(1-inset))),rb[k]*inset+Vector((0,0,rb[k].z*(1-inset))),rb[j]*inset+Vector((0,0,rb[j].z*(1-inset)))],steel,group="drum-backing")
  OWNER="static"
- print("GROWN",round(E*10,1),"m; plane",round((front+E)*10,1),"m; hub face",round((HUB_FACE+E)*10,1),"m",flush=True)
+ print("GROWN",round(E*10,1),"m; plane and hub face",round((HUB_FACE+E)*10,1),"m",flush=True)
 
 # Faces that share a plane and overlap z-fight, whichever way each faces (the
 # materials are double-sided). The authored kit has hundreds: collinear beams of

@@ -8,10 +8,12 @@
  *
  * - the file fits the host and the review density has not come back;
  * - the capsule carries its docking frame and the two marks the game aligns
- *   by: `aperture-plane`, the frontmost point of the drum, which the game puts
- *   on the sim's plane, and `hub-face`, where the bay's mouth wall is drawn;
- * - the production slot is clear from the hub face out to the plane, and no
- *   drum geometry stands in front of the plane;
+ *   by: `aperture-plane`, which the game puts on the sim's plane, and
+ *   `hub-face`, the wall the slot is cut in, where the bay's mouth wall is
+ *   drawn. Since the principal's 5 m collision rule (2026-10-12) they are one
+ *   place, so the sim's bay opens where the drawn one does; the coaming
+ *   funnel stands in front of it;
+ * - the production slot is clear from the hub face out through the funnel;
  * - the sim's bay (`stationInterior("shipyard")`) fits inside the drum and no
  *   drum geometry stands in it;
  * - the drum is attached: the yard's bearing meets its rear face;
@@ -156,16 +158,15 @@ describe("shipyard flight assets (#818)", () => {
 					expect(Math.abs(p.x)).toBeLessThan(1e-3);
 					expect(Math.abs(p.y)).toBeLessThan(1e-3);
 				}
-				// The plane is the drum's frontmost point; the bay's mouth wall is
-				// drawn at the face, a coaming's depth behind it.
-				expect(Math.abs(plane!.z - front)).toBeLessThan(0.05);
-				expect(plane!.z - face!.z).toBeGreaterThan(5);
-				expect(plane!.z - face!.z).toBeLessThan(40);
+				// The slot is cut in the hub face, and the sim's plane is there.
+				expect(Math.abs(plane!.z - face!.z)).toBeLessThan(0.01);
+				// The coaming funnel stands proud of it, as the approved front does.
+				expect(front - plane!.z).toBeGreaterThan(20);
 				const dock = scene.getObjectByName("docking-centre");
 				expect(dock?.parent).toBe(capsule);
 			});
 
-			test("keeps the production slot clear from the hub face to the plane", () => {
+			test("keeps the production slot clear from the hub face out through the funnel", () => {
 				const half = [
 					(GEOMETRY.aperture.widthKm * 1000) / 2,
 					(GEOMETRY.aperture.heightKm * 1000) / 2,
