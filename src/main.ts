@@ -555,13 +555,11 @@ import { type EarshotStation, hailText } from "./distress";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
-	duelRowCells,
+	duelBandCells,
 	duelRowWidest,
 	HULL_TEMP_LABEL,
-	hullTempCells,
 	hullTempWidest,
 	SCOOP_LABEL,
-	scoopCells,
 	scoopWidest,
 	onTargetMark,
 	raiderCueTone,
@@ -19693,7 +19691,7 @@ class Game {
 			// same axis at the same scale.
 			const widestTemp = { label: HULL_TEMP_LABEL, value: HULL_TEMP_WIDEST };
 			// **Two rows, never one** (#932): the scoop's line and the fight's
-			// SHD and HEAT do not share the row (`duelRow` below), so the fit
+			// SHD and HEAT do not share the row (`duelBandCells`), so the fit
 			// takes the wider of the two rather than both at once — which would
 			// shrink every floor instrument at 390 px for a row never drawn.
 			const widestDuelRows = [
@@ -19853,17 +19851,15 @@ class Game {
 				? null
 				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
 		// The armed group stays readable in peace; combat adds shields and heat.
-		// **Not while the scoop fills** (#932): its line takes their place for
-		// a cruise pass, so the fit above takes the row as one or the other and
-		// never both. The Flight console keeps the fight's detail throughout.
+		// The scoop's line shows only out of combat (#932): `duelBandCells`
+		// owns which, so the fit above takes the row as one or the other.
 		const duelRow: FloorCell[] = [
-			...(this.duelRowShown() && !this.scooping
-				? duelRowCells(this.condition)
-				: []),
-			// Hull temperature, while the hull is above ambient (#931).
-			...hullTempCells(this.condition),
-			// The scoop's line, while it fills (#932).
-			...scoopCells(this.scooping, this.commander.fuelLy),
+			...duelBandCells({
+				inCombat: this.duelRowShown(),
+				condition: this.condition,
+				scooping: this.scooping,
+				fuelLy: this.commander.fuelLy,
+			}),
 			{
 				label: "",
 				value: this.armedFireGroup.label(this.fireGroups),

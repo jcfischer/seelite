@@ -175,6 +175,32 @@ export function scoopWidest(): string {
 	return scoopCells(true, 99.9)[0]?.value ?? "";
 }
 
+/**
+ * The duel band's cells before the armed group: SHD and HEAT in combat, the
+ * hull temperature while it is above ambient, and the scoop's line while it
+ * fills — **but never the scoop's line in combat** (#932, the principal's
+ * ruling, 2026-10-12). In combat SHD and HEAT keep their place and the line
+ * drops; the scoop still fills. Out of combat the line shows. So SHD, HEAT
+ * and SCOOPING never share the row, and the floor's fit takes the row as one
+ * or the other.
+ *
+ * `inCombat` is `showDuelRow`: the predicate that already decides whether SHD
+ * and HEAT are on the glass.
+ */
+export function duelBandCells(state: {
+	inCombat: boolean;
+	condition: ShipCondition;
+	scooping: boolean;
+	fuelLy: number;
+}): FloorCell[] {
+	return [
+		...(state.inCombat ? duelRowCells(state.condition) : []),
+		// Hull temperature, while the hull is above ambient (#931).
+		...hullTempCells(state.condition),
+		...(state.inCombat ? [] : scoopCells(state.scooping, state.fuelLy)),
+	];
+}
+
 export interface DuelConsoleReadout {
 	fore: string;
 	aft: string;

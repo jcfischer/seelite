@@ -4,8 +4,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	DUEL_ROW_LABELS,
 	HULL_TEMP_LABEL,
 	SCOOP_LABEL,
+	duelBandCells,
 	scoopCells,
 	scoopWidest,
 } from "../src/duel-hud";
@@ -17,6 +19,7 @@ import {
 	stepFuelScoop,
 	stockLoadout,
 } from "../src/loadout";
+import { fullCondition } from "../src/ship-condition";
 
 describe("the line", () => {
 	test("reads SCOOPING and the tank in LY while the scoop fills", () => {
@@ -78,5 +81,39 @@ describe("the widest reading", () => {
 				scoopWidest().length,
 			);
 		}
+	});
+});
+
+describe("the duel band in and out of combat (#932, the principal's ruling)", () => {
+	// "In combat" is `showDuelRow`, the predicate that already puts SHD and
+	// HEAT on the glass: a raider contesting or dueling, or one selected.
+	const warm = { ...fullCondition("courier"), hullTemp: 0.3 };
+	const labels = (inCombat: boolean, scooping: boolean) =>
+		duelBandCells({ inCombat, condition: warm, scooping, fuelLy: 3.2 }).map(
+			(c) => c.label,
+		);
+
+	test("out of combat, the SCOOPING line shows beside TEMP", () => {
+		expect(labels(false, true)).toEqual([HULL_TEMP_LABEL, SCOOP_LABEL]);
+	});
+
+	test("in combat, SHD and HEAT stay and the SCOOPING line drops", () => {
+		expect(labels(true, true)).toEqual([...DUEL_ROW_LABELS, HULL_TEMP_LABEL]);
+	});
+
+	test("without a scoop filling, combat shows SHD and HEAT as before", () => {
+		expect(labels(true, false)).toEqual([...DUEL_ROW_LABELS, HULL_TEMP_LABEL]);
+		expect(labels(false, false)).toEqual([HULL_TEMP_LABEL]);
+	});
+
+	test("SHD, HEAT and SCOOPING never share the row", () => {
+		for (const inCombat of [false, true])
+			for (const scooping of [false, true]) {
+				const row = labels(inCombat, scooping);
+				expect(
+					row.includes(SCOOP_LABEL) &&
+						DUEL_ROW_LABELS.some((l) => row.includes(l)),
+				).toBe(false);
+			}
 	});
 });
