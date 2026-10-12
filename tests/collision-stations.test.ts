@@ -91,6 +91,7 @@ import {
 import {
 	type ProxyBox,
 	proxyPoses,
+	proxyListDistanceKm,
 	proxyReachKm,
 	proxySolids,
 	type StationEnd,
@@ -244,18 +245,68 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 		// beside each of its two faces that look along the drum's turn there,
 		// for two seconds while the drum turns at 3 rpm. A yard posed in the
 		// spinning frame carries such a box through one of them — the arm
-		// below builds exactly that. The box is read from the proxy, the first
-		// of the largest whose two ships meet nothing as posed; a posing that
-		// turned the yard would leave no such box.
+		// below builds exactly that. The box is read from the proxy by
+		// geometry alone, not by the sweep under test: the largest whose two
+		// ships' boxes, sampled every 2 m, stand more than 1.5 m from every
+		// other yard primitive (so no plate passes between samples) and outside
+		// the drum's reach. Then the sweep must meet neither, and the arm must.
 		const proxy = stationProxyOf(stationInForm("shipyard", "a"));
 		const { env, envCentre } = HULL_SPECS[TURN_HULL];
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);
+		// Clear of the face along any direction across the axis.
 		const shipOut =
-			Math.max(
-				env.beamKm / 2 + Math.abs(envCentre.rightKm),
-				env.heightKm / 2 + Math.abs(envCentre.upKm),
-			) + 0.002;
+			env.beamKm / 2 +
+			Math.abs(envCentre.rightKm) +
+			env.heightKm / 2 +
+			Math.abs(envCentre.upKm) +
+			0.002;
+		const shipReach = reachKm(hullSolid(TURN_HULL));
+		const [shipBox] = hullSolid(TURN_HULL);
+		const { across } = slotBasis(frame);
+		/** Points over the ship's box at rest at `pos`, in the proxy's frame. */
+		const shipSurface = (pos: Vec3): Vec3[] => {
+			if (shipBox.kind !== "box") throw new Error("the hull is a box");
+			const pose = shipPose(pos, frame.axis, up);
+			const steps = shipBox.half.map((h) =>
+				Math.max(1, Math.ceil((2 * h) / 0.002)),
+			);
+			const out: Vec3[] = [];
+			for (let i = 0; i <= steps[0]; i++)
+				for (let j = 0; j <= steps[1]; j++)
+					for (let k = 0; k <= steps[2]; k++) {
+						if (
+							i > 0 &&
+							j > 0 &&
+							k > 0 &&
+							i < steps[0] &&
+							j < steps[1] &&
+							k < steps[2]
+						)
+							continue;
+						const t = [i / steps[0], j / steps[1], k / steps[2]].map(
+							(f, n) => (2 * f - 1) * shipBox.half[n],
+						);
+						const b = add(
+							add(
+								add(shipBox.centre, scale(shipBox.axes[0], t[0])),
+								scale(shipBox.axes[1], t[1]),
+							),
+							scale(shipBox.axes[2], t[2]),
+						);
+						const w = add(
+							add(add(pose.origin, scale(pose.x, b.x)), scale(pose.y, b.y)),
+							scale(pose.z, b.z),
+						);
+						out.push(v3(dot(w, across), dot(w, up), dot(w, frame.axis)));
+					}
+			return out;
+		};
+		const drumReach = proxyReachKm({
+			spinning: proxy.spinning,
+			static: [],
+			thinnestKm: proxy.thinnestKm,
+		});
 		/** The box's axis along the turn at its centre, and its half there. */
 		const alongTurn = (b: ProxyBox) => {
 			const r = Math.hypot(b.cx, b.cy);
@@ -274,21 +325,33 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 					alongTurn(p) !== null,
 			)
 			.sort((a, b) => b.hx * b.hy * b.hz - a.hx * a.hy * a.hz);
-		const shipsBeside = (b: ProxyBox) => {
+		/** The two ship centres beside the box, in the proxy's frame. */
+		const centresBeside = (b: ProxyBox) => {
 			const { axis, half } = alongTurn(b)!;
 			return [1, -1].map((side) => {
 				const off = side * (half + shipOut);
-				return {
-					pos: local(
-						"shipyard",
-						b.cx + axis.x * off,
-						b.cy + axis.y * off,
-						b.cz + axis.z * off,
-					),
-					nose: frame.axis,
-					up,
-				};
+				return v3(
+					b.cx + axis.x * off,
+					b.cy + axis.y * off,
+					b.cz + axis.z * off,
+				);
 			});
+		};
+		const shipsBeside = (b: ProxyBox) =>
+			centresBeside(b).map((c) => ({
+				pos: local("shipyard", c.x, c.y, c.z),
+				nose: frame.axis,
+				up,
+			}));
+		const clear = (b: ProxyBox) => {
+			const others = proxy.static.filter((p) => p !== b);
+			return centresBeside(b).every(
+				(c) =>
+					length(c) > drumReach + shipReach &&
+					shipSurface(local("shipyard", c.x, c.y, c.z)).every(
+						(q) => proxyListDistanceKm(others, q.x, q.y, q.z) > 0.0015,
+					),
+			);
 		};
 		const steps = Math.round(2 / MAX_DT);
 		const run = (
@@ -322,8 +385,9 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 			return met;
 		};
 		expect(proxySolids(proxy).static.length).toBeGreaterThan(0);
-		const subject = beams.find((b) => run(shipsBeside(b), false) === 0);
+		const subject = beams.find(clear);
 		expect(subject).toBeDefined();
+		expect(run(shipsBeside(subject!), false)).toBe(0);
 		expect(run(shipsBeside(subject!), true)).toBeGreaterThan(0);
 	});
 });

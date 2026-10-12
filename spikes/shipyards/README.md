@@ -57,7 +57,7 @@ Stopped visual iteration when each model reached the requested 7/10. Exact judge
 
 Validation: 3 exported-model tests, 150 assertions; strict standalone viewer TypeScript; hardware browser controls and tooling motion/pause; invariant docking centres, five-angle throat rays and sampled capsule sweep clearance. No browser errors or static sweep violations. Hashes pin final source and model artifacts. The source/GLB hierarchy preserves the carriage and three arm joints for further iteration.
 
-For a focused capture append a model ID, e.g. `node spikes/shipyards/capture.mjs review-o2 o2`. The all-model default remains available. The principal approved the final models on 2026-10-08. See [HANDOFF.md](HANDOFF.md) for production implementation and integration work. Work is isolated on `spike/shipyard-models-800`; no game integration or deployment is included.
+For a focused capture append a model ID, e.g. `node spikes/shipyards/capture.mjs review-o2 o2`. The all-model default remains available. The principal approved the final models on 2026-10-08. See [HANDOFF.md](HANDOFF.md) for production implementation and integration work. The study was isolated on `spike/shipyard-models-800`; node #818 (PR #939) integrates the flight exports into the game.
 
 The subsequent capital-ship scale correction replaces the earlier enlarged Porter reference. `evidence/carrier-scale/` contains updated captures and measured Carrier A dimensions for all three yards; the earlier fidelity reports document the station-design stopping point before this requested vessel substitution.
 

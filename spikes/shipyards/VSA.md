@@ -27,7 +27,7 @@ Three editable textured models, an interactive browser viewer, live evidence and
 - [x] C3: O3 Slipway receives independent score >=7/10 against target-o3.png.
 - [x] C4: Rotating capsule docking centres stay fixed and axial throat rays remain unobstructed.
 - [x] C5: Viewer selection, orbit, zoom, presets, rotation, target and export pass hardware browser exercise.
-- [x] C6: Anti: Changes remain isolated to this prototype and branch; production game entry points remain unchanged.
+- [x] C6: Anti: Changes remain isolated to this prototype and branch; production game entry points remain unchanged. (True of the study; node #818, PR #939, integrates it.)
 - [x] C7: Antecedent: Every model has editable source, generated textured surfaces and live multi-angle evidence.
 - [x] C8: Gantry and Hangar tools use rigid guided manipulators and positive ship restraints, with no gravity-dependent hanging hoists.
 - [x] C9: Every capsule has a continuous enclosed access spine from the main station to its rear axial rotary connection.
