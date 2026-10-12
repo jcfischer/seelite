@@ -225,15 +225,23 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		}
 	});
 
-	test(
-		"the opening is clear: no primitive holds a point of it",
-		() => {
-			for (const [type, form] of FORMS_IN_PLAY) {
+	// One row per form, as the vertex rows: the authored shipyards' openings
+	// are sampled against thousands of boxes, and the whole set in one row ran
+	// past its limit on CI (#818). A proxy that does not read the seeds (a
+	// shipyard's, one object per form) is the same object at every pair, so
+	// it is measured once.
+	for (const [type, form] of FORMS_IN_PLAY)
+		test(
+			`the opening is clear: no primitive holds a point of it: ${formLabel(type, form)}`,
+			() => {
+				const measured = new Set<object>();
 				const opening = openingOf(type, form);
 				const spinningPoints = spinningOpeningPoints(opening);
 				const staticPoints = opening.sweptCylinders.flatMap(sampleCylinder);
 				for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
 					const proxy = stationProxy(type, form, berthSeed, assemblySeed)!;
+					if (measured.has(proxy)) continue;
+					measured.add(proxy);
 					const spun = intrusions(proxy.spinning, spinningPoints);
 					const fixed = intrusions(proxy.static, staticPoints);
 					if (spun.length + fixed.length > 0) {
@@ -246,10 +254,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 					expect(spun.length).toBe(0);
 					expect(fixed.length).toBe(0);
 				}
-			}
-		},
-		HEAVY_ROW_MS,
-	);
+			},
+			HEAVY_ROW_MS,
+		);
 
 	test("the opening row goes red on a proxy that closes the opening", () => {
 		// The row above must be able to fail: a sphere over the whole reach is
