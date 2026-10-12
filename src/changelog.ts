@@ -28,7 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// Node #926: DRAFT, pending the principal's approval of the sentence.
+	// Node #926: sentence approved by the principal, 2026-10-12.
 	{
 		date: "2026-10-12",
 		text: "Fitted fuel tanks now carry extra fuel, so you can chain more jumps between refuels; the longest single jump still depends on your ship.",
