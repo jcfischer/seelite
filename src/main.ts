@@ -5322,6 +5322,7 @@ class Game {
 		// and **after the composer**, which is what makes them the variants the
 		// game will actually use (sage, PR #254).
 		this.prewarmReliefPrograms();
+		void this.prewarmShipyardPrograms();
 
 		this.updatePhotoNotice();
 		this.animate();
@@ -6898,6 +6899,7 @@ class Game {
 			built.root.name = body.id;
 			paintNameplates(built, this.nameOfStation(body.id));
 			await this.warmInteriorKit(built.root, live);
+			if (live()) await this.prewarmStationPrograms(built.root);
 			if (!live()) {
 				built.dispose();
 				continue;
@@ -6910,8 +6912,44 @@ class Game {
 			this.registerInteriorPresentation(body.id, built);
 			replaced = true;
 		}
+		// The interior install's own pass, not `refreshInteriorMeshes`: that one
+		// marks the interiors settled, and a yard installed while the interior
+		// download is still running would then report a kit that has not come.
 		if (replaced && this.world.system === system)
-			await this.refreshInteriorMeshes();
+			await this.installInteriorMeshes();
+	}
+
+	/**
+	 * An authored shipyard's programs in all three layers, before it is first
+	 * drawn in any (node #818). Its materials are its own variants — a lightmap
+	 * read through a second UV set — and a station is drawn in the far, the
+	 * approach or the near scene, each with its own lights; a scene compiles only
+	 * what is in it, so without this the yard compiled on the band crossing that
+	 * first brought it into a layer (`probe-planet-surfaces`: two programs on
+	 * the walk). Async, into the composer's target, as the relief warm-up is.
+	 */
+	private async prewarmStationPrograms(root: THREE.Object3D): Promise<void> {
+		for (const [scene, camera] of [
+			[this.farScene, this.farCamera],
+			[this.approachScene, this.approachCamera],
+			[this.nearScene, this.nearCamera],
+		] as const) {
+			const target = this.renderer.getRenderTarget();
+			let compiled: Promise<unknown>;
+			try {
+				this.renderer.setRenderTarget(this.composer.renderTarget1);
+				compiled = this.renderer.compileAsync(root, camera, scene);
+			} finally {
+				this.renderer.setRenderTarget(target);
+			}
+			await compiled;
+		}
+	}
+	/** Every drawn authored shipyard's programs, after a system is built. */
+	private async prewarmShipyardPrograms(): Promise<void> {
+		for (const station of [...this.stationVisuals.values()])
+			if (station.root.getObjectByName("shipyard-drum"))
+				await this.prewarmStationPrograms(station.root);
 	}
 
 	/** Sharing a card waits for the authored kit, even after a background failure. */
@@ -15132,6 +15170,7 @@ class Game {
 		// The composer is long up on this path, so the target below is the one the
 		// game renders into.
 		this.prewarmReliefPrograms();
+		void this.prewarmShipyardPrograms();
 
 		// The scanner's buffer is one entry per body, filled in place every frame
 		// so the projection allocates nothing. A system with more bodies than the
