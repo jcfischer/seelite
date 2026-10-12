@@ -7,7 +7,8 @@
  * dueling or selected, that it overlaps neither the course row nor the prompt,
  * that the selected raider's ring is painted amber and red while it fires, that
  * the on-target mark follows the sightline, and that the Flight console shows
- * the detail in a fight and hides it in peace.
+ * the detail in a fight and hides it in peace. Since #931 the band also
+ * carries the hull-temperature gauge, and the last rows fly a skim.
  *
  * **Colour is read off the overlay's pixels**, with the sampler shape
  * `probe-live-cockpit.mjs` uses for the refusal tone: a tone is a field on a
@@ -152,6 +153,10 @@ const installHelpers = () => {
 		 *  high of the ink, catching its bottom two rows out of eleven. It passed,
 		 *  because the name line above it leaks into the same box, which is the
 		 *  reason a check like this has to be centred rather than merely nonzero. */
+		/** Passive-tone pixels in a rectangle of the overlay. */
+		passiveIn(x, y, width, height) {
+			return countIn(x, y, width, height, passive);
+		},
 		enemyLinePaint(at) {
 			return countIn(at.x + 20, at.y + 12, 110, 12, passive);
 		},
@@ -694,6 +699,103 @@ for (const viewport of VIEWPORTS) {
 	// `tests/duel-hud.test.ts`). A browser row was built here and removed: the
 	// contest's raider is beyond the laser's range, so it passed with the gate
 	// deleted.
+
+	// -------------------------------------------------------------------------
+	// Hull temperature (#931): a skim puts the TEMP gauge in the duel band, and
+	// it goes when the hull is back at ambient. `tests/hull-temperature.test.ts`
+	// and `tests/hull-temp-gauge.test.ts` own the law and the reading; what only
+	// the page answers is that the game feeds the step its star distance and the
+	// band paints the cell. Ink is counted on the overlay alone, so the star in
+	// the WebGL frame cannot light it.
+	// -------------------------------------------------------------------------
+	const skim = await page.evaluate(() => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		const ink = (box) =>
+			box ? D.passiveIn(box.x, box.top, box.width, box.height) : Number.NaN;
+		const star = g.world.system.bodies.find((b) => b.kind === "star");
+		const home = { ...g.world.ship.pos };
+		const cold = D.floor();
+		const coldInk = ink(cold?.duelBox);
+		g.world.ship.pos = {
+			x: star.pos.x + 1.2 * star.radiusKm,
+			y: star.pos.y,
+			z: star.pos.z,
+		};
+		g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		D.steps(3);
+		const hot = {
+			temp: g.condition.hullTemp,
+			gunHeat: g.condition.heat,
+			hull: g.condition.hull,
+			floor: D.floor(),
+		};
+		const hotInk = ink(hot.floor?.duelBox);
+		// Away from the star: cooling, then the last fraction under the snap.
+		g.world.ship.pos = home;
+		g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		D.steps(1);
+		const cooling = g.condition.hullTemp;
+		g.condition = { ...g.condition, hullTemp: 0.0051 };
+		D.steps(0.2);
+		return {
+			coldRow: cold?.duelRow,
+			coldInk,
+			hot,
+			hotInk,
+			cooling,
+			ambient: { temp: g.condition.hullTemp, floor: D.floor() },
+		};
+	});
+	const tempCell = skim.hot.floor?.duelRow?.find((c) => c.label === "TEMP");
+	check(
+		`${v}: a skim at 1.2 R heats the hull and paints the TEMP gauge; ambient takes it off`,
+		!skim.coldRow?.some((c) => c.label === "TEMP") &&
+			skim.hot.temp > 0.2 &&
+			skim.hot.temp < 1 &&
+			skim.hot.gunHeat === 0 &&
+			tempCell?.value === `${Math.round(skim.hot.temp * 100)}%` &&
+			skim.hotInk > skim.coldInk &&
+			skim.cooling < skim.hot.temp &&
+			skim.ambient.temp === 0 &&
+			!skim.ambient.floor?.duelRow?.some((c) => c.label === "TEMP"),
+		JSON.stringify({ ...skim, tempCell }),
+	);
+	// Last on the page, because it ends the flight: heat above the top runs the
+	// hull out through the game's own death path, and the shields stand.
+	const burnt = await page.evaluate(() => {
+		const g = window.__seelite;
+		const star = g.world.system.bodies.find((b) => b.kind === "star");
+		g.world.ship.pos = {
+			x: star.pos.x + 1.06 * star.radiusKm,
+			y: star.pos.y,
+			z: star.pos.z,
+		};
+		g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		g.condition = { ...g.condition, hull: 2, hullTemp: 2 };
+		const fore = g.condition.fore;
+		let seconds = 0;
+		while (!g.dead && seconds < 5) {
+			g.step(g.units.MAX_DT);
+			seconds += g.units.MAX_DT;
+		}
+		return {
+			dead: g.dead,
+			seconds,
+			hull: g.condition.hull,
+			foreBefore: fore,
+			foreAfter: g.condition.fore,
+			lastExit: g.lastExit,
+		};
+	});
+	check(
+		`${v}: a hull above the top runs out of integrity and the ship is destroyed, shields untouched`,
+		burnt.dead === true &&
+			burnt.hull === 0 &&
+			burnt.foreAfter === burnt.foreBefore &&
+			burnt.lastExit === "ship destroyed",
+		JSON.stringify(burnt),
+	);
 	await page.close();
 }
 
