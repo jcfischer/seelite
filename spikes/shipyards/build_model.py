@@ -1114,7 +1114,126 @@ def grow_drum_forward(info):
  annulus((0,0),-7.2,22.25-.42,22.25,.55,steel,8,phase)
  OWNER="static"
  info["portLocal"]=[0,0,info["portLocal"][2]+E];info["aperturePlane"]=front+E;info["hubFace"]=HUB_FACE+E
+ # Flight plates are shrunk toward their centres for a seam, and the grown barrel
+ # had nothing behind its seams. A dark shell 30 cm under the plates, over the
+ # whole drum profile, so a seam shows hull.
+ OWNER="capsule";inset=1-.03/22
+ ring2=lambda z,rad:[Vector((rad*math.cos(phase+i*math.tau/n),rad*math.sin(phase+i*math.tau/n),z)) for i in range(n)]
+ rows=[ring2(-9,19.8),ring2(-7.5,22),ring2(6.7+E,22),ring2(9+E,19.8)]
+ for ra,rb in zip(rows,rows[1:]):
+  for j in range(n):
+   k=(j+1)%n;poly([ra[j]*inset+Vector((0,0,ra[j].z*(1-inset))),ra[k]*inset+Vector((0,0,ra[k].z*(1-inset))),rb[k]*inset+Vector((0,0,rb[k].z*(1-inset))),rb[j]*inset+Vector((0,0,rb[j].z*(1-inset)))],steel,group="drum-backing")
+ OWNER="static"
  print("GROWN",round(E*10,1),"m; plane",round((front+E)*10,1),"m; hub face",round((HUB_FACE+E)*10,1),"m",flush=True)
+
+# Faces that share a plane and overlap z-fight, whichever way each faces (the
+# materials are double-sided). The authored kit has hundreds: collinear beams of
+# one size, segment walls of coaxial rings, blocks set exactly on plates. Flight
+# finds every such pair in one frame (the capsule's, or the yard's) and inflates
+# one of the two parts by DECOPLANAR along all of its face normals. A part is a
+# connected set of faces in one batch, so it moves as a whole and opens no crack.
+# "One plane" is within COPLANAR_TOL, 4 cm: the game's depth step is 2.4 cm at
+# 2 km (near plane 10 m, 24-bit depth). The step is over twice that, so a pair
+# either ends 8 cm apart or interpenetrates; neither flickers. Inflating a part
+# can bring it onto a third face, so the pass repeats.
+COPLANAR_TOL=.004
+DECOPLANAR=.012
+def separate_coplanar(passes=6):
+ moved=set()
+ for n in range(passes):
+  if not _separate_coplanar_pass(n,moved):return
+
+# Each pass steps by a different amount (5, 8, 11 ... cm): with one step, a box
+# inflated in a later pass lands back on the tube cap an earlier pass pushed off
+# it.
+def _separate_coplanar_pass(n,frozen):
+ step=DECOPLANAR*(1+.6*n)
+ import collections
+ def frame(key):return "capsule" if key.startswith("capsule/") else "yard"
+ faces=[]  # (batch, face index, normal, offset, 2D hull basis)
+ for key,(verts,fs,uvs) in BATCH.items():
+  for fi,f in enumerate(fs):
+   pts=[Vector(verts[i]) for i in f];nrm=Vector()
+   for a,b in zip(pts,pts[1:]+pts[:1]):nrm+=a.cross(b)
+   area=nrm.length/2
+   if area<.004:continue
+   nrm.normalize();faces.append((key,fi,nrm,nrm.dot(pts[0]),pts))
+ def canon(n):
+  for c in n:
+   if abs(c)>1e-6:return n if c>0 else -n
+  return n
+ buckets=collections.defaultdict(list)
+ for idx,(key,fi,nrm,d,pts) in enumerate(faces):
+  c=canon(nrm);dd=c.dot(pts[0]);nk=tuple(round(x*100) for x in c)
+  buckets[(frame(key),nk,round(dd/COPLANAR_TOL))].append(idx)
+ def flat(pts,u,w,shrink):
+  c=sum(pts,Vector())/len(pts);out=[]
+  for q in pts:
+   r=q-c;L=r.length;r=r*((L-shrink)/L) if L>shrink else r*0;q=c+r;out.append((q.dot(u),q.dot(w)))
+  return out
+ def overlap(A,B):
+  for T in (A,B):
+   for i in range(len(T)):
+    x1,y1=T[i];x2,y2=T[(i+1)%len(T)];ax=(y2-y1,x1-x2)
+    pa=[q[0]*ax[0]+q[1]*ax[1] for q in A];pb=[q[0]*ax[0]+q[1]*ax[1] for q in B]
+    if max(pa)<=min(pb)+1e-9 or max(pb)<=min(pa)+1e-9:return False
+  return True
+ # Parts: faces joined by shared corners within one batch.
+ part={}
+ for key,(verts,fs,uvs) in BATCH.items():
+  parent=list(range(len(fs)))
+  def find(a,parent=parent):
+   while parent[a]!=a:parent[a]=parent[parent[a]];a=parent[a]
+   return a
+  owner={}
+  for fi,f in enumerate(fs):
+   for vi in f:
+    pk=tuple(round(c,5) for c in verts[vi])
+    if pk in owner:parent[find(fi)]=find(owner[pk])
+    else:owner[pk]=fi
+  for fi in range(len(fs)):part[(key,fi)]=(key,find(fi))
+ # Two parts with overlapping faces in one plane must not inflate alike.
+ edges=collections.defaultdict(set);seen=set()
+ for (fr,nk,db),members in list(buckets.items()):
+  # Neighbouring normal and offset buckets too: a quantisation edge must not
+  # split a pair.
+  pool=[m for a in (-1,0,1) for b in (-1,0,1) for c3 in (-1,0,1) for o in (-1,0,1) for m in buckets.get((fr,(nk[0]+a,nk[1]+b,nk[2]+c3),db+o),[])]
+  for i in members:
+   key_i,fi_i,n_i,_,pts_i=faces[i];c=canon(n_i);u=(pts_i[1]-pts_i[0]).normalized();w=c.cross(u)
+   A=flat(pts_i,u,w,.01);pi=part[(key_i,fi_i)]
+   for j in pool:
+    if j<=i or (i,j) in seen:continue
+    key_j,fi_j,n_j,_,pts_j=faces[j];pj=part[(key_j,fi_j)]
+    if pi==pj or abs(canon(n_j).dot(c))<.9995 or abs(canon(n_j).dot(pts_j[0])-c.dot(pts_i[0]))>COPLANAR_TOL:continue
+    seen.add((i,j))
+    if overlap(A,flat(pts_j,u,w,.01)):edges[pi].add(pj);edges[pj].add(pi)
+ level={}
+ for node in sorted(edges):
+  taken={level[o] for o in edges[node] if o in level}
+  level[node]=next(l for l in range(64) if l not in taken)
+ moved=0
+ for (key,root),lv in level.items():
+  if lv==0:continue
+  verts,fs,uvs=BATCH[key];members=[fi for fi in range(len(fs)) if part[(key,fi)]==(key,root)]
+  normals=collections.defaultdict(list)
+  for fi in members:
+   pts=[Vector(verts[i]) for i in fs[fi]];nrm=Vector()
+   for a,b in zip(pts,pts[1:]+pts[:1]):nrm+=a.cross(b)
+   if nrm.length<1e-9:continue
+   nrm.normalize()
+   for vi in fs[fi]:
+    pk=tuple(round(c,5) for c in verts[vi])
+    if all(abs(nrm.dot(m))<.999 for m in normals[pk]):normals[pk].append(nrm)
+  done=set()
+  for fi in members:
+   for vi in fs[fi]:
+    if vi in done:continue
+    done.add(vi);pk=tuple(round(c,5) for c in verts[vi])
+    verts[vi]=tuple(Vector(verts[vi])+sum(normals[pk],Vector())*step*lv)
+  moved+=1
+ contested=edges
+ print("DECOPLANAR pass",n,len(edges),"parts touch in a plane;",moved,"inflated; max level",max(level.values(),default=0),flush=True)
+ return bool(edges)
 
 def export(id,info):
  objects=[]
@@ -1125,6 +1244,7 @@ def export(id,info):
   for name,(verts,faces,uvs) in BATCH.items():
    if name.startswith("capsule/"):verts[:]=[widen_aperture(v) for v in verts]
   grow_drum_forward(info)
+  separate_coplanar()
  rigs={}
  for name,spec in RIG.items():
   ob=bpy.data.objects.new(name,None);bpy.context.collection.objects.link(ob)
