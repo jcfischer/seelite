@@ -41,8 +41,6 @@ function refuse(code: ExactAmountFailure): never {
 }
 
 const BINARY_SCALE = 1n << 1074n;
-const MONEY_SCALE = (1n << 2156n) * 15625n;
-const MONEY_PER_BINARY_TICK = MONEY_SCALE / BINARY_SCALE;
 const MAX_BINARY_TICKS = ((1n << 53n) - 1n) << 2045n;
 
 function checked(value: bigint, max: bigint, signed: boolean): bigint {
@@ -94,13 +92,16 @@ export interface AmountDomain<T extends bigint> {
 function domain<T extends bigint>(
 	bits: number,
 	signed: boolean,
-	scale: bigint,
+	binaryExponent: number,
+	oddFactor: bigint,
 ): AmountDomain<T> {
+	const scale = (1n << BigInt(binaryExponent)) * oddFactor;
+	const ticksPerBinaryTick = scale / BINARY_SCALE;
 	const maxTicks = (1n << BigInt(bits)) - 1n;
 	const maxEncodingLength = bits / 4 + 2 + (signed ? 1 : 0);
 	const fromTicks = (value: bigint): T => checked(value, maxTicks, signed) as T;
 	const fromNumber = (value: number): T =>
-		fromTicks(binaryTicks(value) * (scale / BINARY_SCALE));
+		fromTicks(binaryTicks(value) * ticksPerBinaryTick);
 	return Object.freeze({
 		maxTicks,
 		maxEncodingLength,
@@ -113,11 +114,10 @@ function domain<T extends bigint>(
 			if (magnitude === 0n) return 0;
 			// Remove the money scale's odd factor. A remaining factor of five in the
 			// denominator cannot be represented by any finite binary64 value.
-			const oddScale = scale === MONEY_SCALE ? 15625n : 1n;
-			if (magnitude % oddScale !== 0n) refuse("not-binary64");
-			magnitude /= oddScale;
+			if (magnitude % oddFactor !== 0n) refuse("not-binary64");
+			magnitude /= oddFactor;
 			const { coefficient, shift } = oddParts(magnitude);
-			const exponent = shift - (scale === MONEY_SCALE ? 2156 : 1074);
+			const exponent = shift - binaryExponent;
 			if (coefficient >= 1n << 53n || exponent < -1074 || exponent > 1023)
 				refuse("not-binary64");
 			const result = Number(coefficient) * 2 ** exponent * (negative ? -1 : 1);
@@ -169,13 +169,14 @@ function domain<T extends bigint>(
 	});
 }
 
-export const money: AmountDomain<Money> = domain(3200, false, MONEY_SCALE);
+export const money: AmountDomain<Money> = domain(3200, false, 2156, 15625n);
 export const signedMoney: AmountDomain<SignedMoney> = domain(
 	3200,
 	true,
-	MONEY_SCALE,
+	2156,
+	15625n,
 );
-export const mass: AmountDomain<Mass> = domain(2176, false, BINARY_SCALE);
+export const mass: AmountDomain<Mass> = domain(2176, false, 1074, 1n);
 
 /**
  * The approved recipe/native factors divide 4,000,000 grams. Accept that closed
