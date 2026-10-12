@@ -85,3 +85,11 @@ The principal approved the console on 2026-10-12: “drop \"You review the full 
 ### Prototype walkthrough observation — 2026-10-12
 
 Chromium headless rendered both console views and clicked through all seven guided walkthroughs, with no page-script errors. Ordinary processing ended with 2 t Minerals aboard; partial collection ended with 3 t Alloys aboard and 0.2 t pooled; four fractional jobs yielded one collected kilogram of Platinum. Stale confirmation refused until requoted; interrupted saving restored the old envelope and a repeated committed action was refused; collecting one of eight ready jobs freed a slot. These observations cover the standalone HTML only, not a repository browser-gate or runtime-save pass. The browser required execution outside the filesystem sandbox because macOS denied its Mach port registration inside it.
+
+### Accounting decision exposed by A1 — not yet ratified
+
+Direct invocation of the current `basisAfterBuy` / `saleMargin` functions demonstrates a policy conflict, independent of floating-point rounding. Two refinery collections each yield 1 t Alloys, carrying 10 Cr and 30 Cr costs. Selling both for 20 Cr/t yields the same 40 Cr proceeds and 40 Cr total cost. Collect together and sell together: average basis 20 Cr/t, trading credit 0. Collect/sell the cheap tonne first, then collect/sell the expensive tonne: trading credit 10 + 0 = 10, because the second sale's loss is ignored.
+
+The narrow arithmetic proposal remains integer microcredits, cumulative proportional allocation against a fixed lot, and exact retention of unallocated cost. It conserves total cost with bounded fields; it cannot alone satisfy strict collection-order-independent trading progression. Legacy floating basis also needs an explicit migration rule, not silent rounding.
+
+The principal must choose whether existing per-sale progression semantics remain (with collection-order effects named), or strict batch-equivalent progression requires a shared accounting decision. The latter must reconcile partial collection, pooled fractions, average-cost inventory, old unbased cargo, and the rule that banked rating never falls. No change to that gameplay policy is approved by this finding. Do not mark the refinery checkpoint complete or hand this ambiguity to a production worker.
