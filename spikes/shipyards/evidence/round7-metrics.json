@@ -1,0 +1,67 @@
+{
+	"gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+	"errors": [],
+	"models": [
+		{
+			"id": "o1",
+			"loaded": true,
+			"fps": 49.998611149690284,
+			"triangles": 2570692,
+			"calls": 210,
+			"modelTriangles": 1285318,
+			"meshCount": 93,
+			"bounds": [1097.9818725585938, 576.0335998535156, 1781.8800201416016],
+			"view": "hero",
+			"geometry": {
+				"axialError": 0,
+				"maxDrift": 0,
+				"clearanceViolations": 0,
+				"minThroatDepth": 12.175000000000011,
+				"sweepRadius": 23.578391694215842,
+				"zMin": -9.650000000000006,
+				"zMax": 11.980000305175778
+			}
+		},
+		{
+			"id": "o2",
+			"loaded": true,
+			"fps": 52.41548003843799,
+			"triangles": 3514800,
+			"calls": 234,
+			"modelTriangles": 1757372,
+			"meshCount": 105,
+			"bounds": [1585.9318237304688, 1223.749984741211, 1082.9918212890625],
+			"view": "hero",
+			"geometry": {
+				"axialError": 0,
+				"maxDrift": 0,
+				"clearanceViolations": 0,
+				"minThroatDepth": 12.175000000000011,
+				"sweepRadius": 23.578391694215842,
+				"zMin": -9.649999999999999,
+				"zMax": 11.980000305175778
+			}
+		},
+		{
+			"id": "o3",
+			"loaded": true,
+			"fps": 59.998000066664474,
+			"triangles": 1771596,
+			"calls": 184,
+			"modelTriangles": 885770,
+			"meshCount": 80,
+			"bounds": [1570.7061767578125, 657.0336118792031, 2006.0497913464637],
+			"view": "hero",
+			"geometry": {
+				"axialError": 0.00000360536623300602,
+				"maxDrift": 0.000003636787361926997,
+				"clearanceViolations": 0,
+				"minThroatDepth": 12.175000341651696,
+				"sweepRadius": 23.57839305718463,
+				"zMin": -9.65000034165169,
+				"zMax": 11.9799999635241
+			}
+		}
+	],
+	"controls": "selection, full orbit, zoom, seven presets, tooling motion and pause on all three stations, work lights, capsule rotation, target dialog and PNG export passed"
+}
