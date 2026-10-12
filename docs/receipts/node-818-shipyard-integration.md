@@ -17,9 +17,14 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
 
   | Form | File | Bytes | Triangles | sha256 |
   |---|---|---|---|---|
-  | a | `shipyard-gantry.glb` | 8 489 496 (8.10 MiB) | 201 300 | `d8ce90f903f588acced3ac3015ad925b593be868d093c703446b7d234da32ac5` |
-  | b | `shipyard-foundry.glb` | 8 768 300 (8.36 MiB) | 209 912 | `1823608af958d1657ef4b344584a90e2124c57f5b6f6da11175eaa2fc51a3703` |
-  | c | `shipyard-slipway.glb` | 6 688 052 (6.38 MiB) | 136 508 | `401d1b19997eb26cabf71eb18b511c27f0b74c4abff5ba5d1ea3adbae59f0981` |
+  | a | `shipyard-gantry.glb` | 10 565 488 (10.08 MiB) | 202 620 | `b8617d4dd241513e70028b3b90e4831fd7552e16e77afbb8874561d3c1bb8985` |
+  | b | `shipyard-foundry.glb` | 10 895 212 (10.39 MiB) | 210 968 | `fe5726f7a6b78b8c88a748e9a6fba3fb2318a2c9801e4ca0b6778b82e14f7e2b` |
+  | c | `shipyard-slipway.glb` | 8 070 444 (7.70 MiB) | 137 396 | `e8b16a912ed039ef80af51ffb690ab780ebb2ac0ed71826ad9a4a5458c0fbded` |
+
+  Beside each, its baked work lights: lightmaps of 1 664 654, 1 347 326 and
+  1 454 576 bytes (`-lightmap.webp`) and probe grids of 634 752, 988 416 and
+  1 099 800 bytes (`-probes.bin`). The second UV set the lightmap reads adds
+  about 2 MiB to each model.
 
 - **Flight look:** the principal approved the flight exports in the study
   viewer (`?flight=1`) on 2026-10-11, and the grown drum ("looks good") on
@@ -41,7 +46,58 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
 - **Empty space that collides: at most 5 m, relaxed to 10 m the same day.**
 - **Flicker and cracks.** Coplanar faces were separated and the drum given a
   backing shell; the principal: "looks much better — still some flickering —
-  but a lot less overall".
+  but a lot less overall". In game: "looks gorgeous. No flickering".
+- **Work lights: baked, gain 12; the ships lit by an irradiance grid** — see
+  below.
+
+## Work lights (principal, 2026-10-12)
+
+**The ruling.** In game the yards were "too dark, they would need industrial
+lights that lighten the work areas", in four places: the assembly bays and
+slips, the gantries and cranes, the drum and its mouth, and the hull overall.
+Asked baked or real time, the principal had both built on one yard to fly
+through, then chose **baked, gain 12**; then asked for the ship's hull to be lit
+in the yard too, chose an irradiance grid (H1), and found the drum's added lamps
+floating, which the seating pass below fixed.
+
+**What was measured for the choice** (`.tmp`-only instrument, the method of
+`scripts/measure-light-cost.mjs`: one page, the arm switched in place, eight
+shuffled rounds of 60 renders and a pixel read, medians; M1 Pro, Metal, device
+scale 2, 1440 × 900, O1 Gantry Works filling the frame, near layer):
+
+| Real-time arm | ms/frame | added |
+|---|---|---|
+| none | 7.18 | — |
+| 8 spot lights | 8.33 | +1.15 |
+| 16 | 24.91 | +17.7 |
+| 32 | 115.3 | +108 |
+| 16, of them 2 / 4 / 8 shadowed every frame | 22.4 / 24.9 / 27.2 | +15.2 / +17.7 / +20.0 |
+| 16, of them 4 / 8 shadowed once | 23.9 / 26.2 | +16.7 / +19.1 |
+
+The cost is the light count — three.js evaluates every light at every fragment
+of every object, over a yard's many layers — not the shadows. 12 shadowed
+lights exceeded the shader's texture units, and 67 unshadowed lights ran
+~430 ms a frame and lost the context. The design's 67 floods and 66 lamps
+cannot be lit in real time; eight can.
+
+**The bake** (`build_model.py`, flight export): every fixture registers its
+light; the added floods are seated on the yard by a ray-cast toward their
+mount (placed by figure, they had floated 3–25 m off it). A second UV layer is
+packed across the whole yard (4096², 1.7–2.7 m a texel) and Cycles bakes the
+lamps' direct and indirect light into it, the drum with its own lamps only so
+nothing turns with it that should not. The light is written as an 8-bit sRGB
+lightmap divided by its 99.5th-percentile level, which the root records
+(`lightmap_scale`); the game multiplies it back by π and `WORK_LIGHT_GAIN` (12).
+
+**The ships** (`src/ship-work-light.ts`): the same lamps are sampled every 50 m
+through the yard, with the yard's occlusion, as an ambient colour plus one per
+axis; a ship reads the grid at its position each frame and its own copies of its
+materials add the term to their indirect light (`SHIP_WORK_LIGHT_GAIN`, 1).
+
+**The comparison panel** (`src/worklight-tuner.ts`) stays: on a dev URL with
+`worklights=baked|realtime|off` it switches the mode in place and moves the
+gains, the real-time intensity and light and shadow counts while flying. The
+game never mounts it.
 
 ## Asset and geometry preflight
 
@@ -135,9 +191,9 @@ sim's own figures. Measured 2026-10-12:
 
 | Form | drum boxes | yard boxes |
 |---|---|---|
-| a | 514 | 2 806 |
-| b | 514 | 2 350 |
-| c | 483 | 2 750 |
+| a | 531 | 2 831 |
+| b | 531 | 2 378 |
+| c | 499 | 2 771 |
 
 246 KB of source; a refit takes about 5 minutes for the three. Settings were
 measured on form a: a 4.5 m fit and 1.5 m absorb gave 14 290 boxes, 9 m and
@@ -173,8 +229,10 @@ the station workbench require the models.
 
 ## Delivery evidence
 
-Headless, on the branch after merging `origin/main` (2026-10-12): `npm test`
-6 101 pass, 0 fail; typecheck, format, lint, launcher wiring and build pass;
+Headless after the work lights (fffad2e, 2026-10-12): `npm test` 6 114 pass,
+1 fail — `tests/public-site.test.ts`, the grids fetched outside
+`bundle-fetch.ts`; fixed in 3d1ce2d (that file 9 pass). Before them, after
+merging `origin/main`: 6 101 pass, 0 fail; typecheck, format, lint, launcher wiring and build pass;
 every file in `dist/` is within 25 MiB. The build ships the three models
 under hashed names; the proxies ride in the `station-console` chunk, which
 grows from 126 KB (46 KB gzipped) to 379 KB (159 KB): the sim needs them before
