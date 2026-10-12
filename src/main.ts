@@ -12938,6 +12938,8 @@ class Game {
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
 		this.condition = this.flownFullCondition();
+		// A new flight is not on a pass, so its glass has no SCOOPING line (#932).
+		this.scooping = false;
 		// `collision.md` §4.3's ghost record is the flight's, and a reset is a
 		// new flight: a second leg reads only its own placements.
 		this.collisionGhostSteps = 0;
