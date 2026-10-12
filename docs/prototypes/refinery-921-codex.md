@@ -2,7 +2,7 @@
 
 Refs #921. Author: Codex. Base: `c1b5bd00`. Prototype branch: `prototype/refinery-921`.
 
-Status: D1–D10 individually ratified in the principal's conversation on 2026-10-12. The principal approved the console with one copy correction: remove “You review the full quote before committing.” Final technical-contract ratification remains open. This is a throwaway prototype, not production integration, a shipped save migration, or economic calibration. The eventual graph receipt owns the ratified decision; this document records the prototype and its engineering proposal.
+Status: D1–D10 individually ratified in the principal's conversation on 2026-10-12. The principal approved the console with one copy correction: remove “You review the full quote before committing.” The principal approved the final checkpoint boundary in Q13: this console/service contract closes as design, with detailed shared mechanisms delegated to the three named production prerequisites. This is a throwaway prototype, not production integration, a shipped save migration, or economic calibration. The eventual graph receipt owns the ratified decision; this document records the prototype and its engineering proposal.
 
 Open `src/refinery-console.prototype.html` directly in a browser. One file, no server, no dependencies, no game storage access. The console uses the existing station palette and tab structure; it is not mounted in the actual cockpit. The blue demonstration controls are outside the proposed game UI. Its seven guided walkthroughs cover ordinary processing, an outage, partial collection, cross-job fractions, changed quotes, interrupted saving, and eight occupied slots.
 
@@ -80,7 +80,7 @@ These are the future production failure cases, not passing tests. The standalone
 
 ## Review status
 
-The principal approved the console on 2026-10-12: “drop \"You review the full quote before committing.\" that's so AI like otherwise: Very nice”. The requested sentence is removed. This approves the console layout and interactions; final technical-contract ratification remains open. No production build briefs filed yet. Separate submission/processing and collection slices follow only after their required persistence, capability and economic decisions are resolved. Keep this prototype branch as the reproducible primary source; do not merge its HTML shell into the game.
+The principal approved the console on 2026-10-12: “drop \"You review the full quote before committing.\" that's so AI like otherwise: Very nice”. The requested sentence is removed. This approves the console layout and interactions; the final checkpoint boundary is now approved as the console/service contract, with detailed shared mechanisms delegated to the three named production prerequisites. No production build briefs filed yet. Separate submission/processing and collection slices follow only after their required persistence, capability and economic decisions are resolved. Keep this prototype branch as the reproducible primary source; do not merge its HTML shell into the game.
 
 ### Prototype walkthrough observation — 2026-10-12
 
@@ -100,4 +100,8 @@ D12 is now ratified: collection order must not affect trading rating. The exact 
 - [Durable gameplay transactions](https://github.com/jcfischer/seelite/issues/936), on the machine map below Save/load policy, with refinery provenance: atomic acceptance, uncertain writes and death-checkpoint reconciliation.
 - [Station capability operational time](https://github.com/jcfischer/seelite/issues/937), below the station-damage decision, with refinery provenance: the precise outage-time contract and residual baseline decisions.
 
-All three were read back as open, typed and unassigned. They are decision prerequisites, not executable production briefs. The refinery node remains open pending final scope/contract ratification. The already-approved console is preserved unchanged.
+All three were read back as open, typed and unassigned. They are decision prerequisites, not executable production briefs. The principal approved that checkpoint boundary in Q13 on 2026-10-12. Closing the design checkpoint does not claim that the shared contracts or production have shipped. The already-approved console is preserved unchanged.
+
+### Final checkpoint ratification
+
+D13: Asked whether to close Refinery services as the approved console and service contract, requiring the three shared decisions and economic calibration before production and explicitly leaving their detailed mechanisms unresolved, the principal answered “approved”. The resolution receipt is the canonical home for this final scope. The HTML remains a preserved prototype outside main; no production test, Sage, merge, migration or deployment is claimed.
