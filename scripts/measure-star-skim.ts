@@ -457,7 +457,103 @@ for (const tau of [10, 15, 20, 30]) {
 	}
 }
 
-// ── 6. Frame-rate check ────────────────────────────────────────────────────
+// ── 6. Damage above the top ────────────────────────────────────────────────
+//
+// The principal's ruling on D5's rate (#930, 2026-10-12): damage grows with the
+// excess — `k · (T − 1)` of the hull's integrity per second above the top,
+// a share so it means the same on an 81-point courier and a 2,635-point
+// capital. Flown on the G class with the approved heat (rise 0.185/s, τ 15 s):
+// a drop-out at the shell, the spool, `late` seconds more at the shell before
+// cruise is asked for again, then the radial climb out of the band.
+const APPROVED: Heat = { rise: 0.185, tau: 15 };
+const LATE_S = [0, 1, 2, 3, 5, 8, 12];
+const KS = [0.1, 0.2, 0.3];
+/** Integrity share lost: integrate `k·max(0, T − 1)` over a held phase. */
+function heldDamage(
+	t0: number,
+	h: number,
+	seconds: number,
+	k: number,
+): { t: number; lost: number } {
+	const steps = Math.max(1, Math.ceil(seconds / 0.01));
+	const dt = seconds / steps;
+	let t = t0;
+	let lost = 0;
+	for (let i = 0; i < steps; i++) {
+		const next = heatStep(t, h, dt, APPROVED);
+		lost += k * Math.max(0, (t + next) / 2 - 1) * dt;
+		t = next;
+	}
+	return { t, lost };
+}
+function climbDamage(t0: number, k: number): number {
+	let t = t0;
+	let lost = 0;
+	const masses: Mass[] = [
+		{ id: "star", kind: "star", pos: v3(), radiusKm: REF_KM },
+	];
+	let pos = v3(refDropR * REF_KM, 0, 0);
+	const onSegment = (seg: { from: Vec3; velocity: Vec3; duration: number }) => {
+		const piece = seg.duration / PIECES;
+		for (let i = 0; i < PIECES; i++) {
+			const mid = add(seg.from, scale(seg.velocity, (i + 0.5) * piece));
+			const next = heatStep(
+				t,
+				HEAT(length(mid) / REF_KM, BAND),
+				piece,
+				APPROVED,
+			);
+			lost += k * Math.max(0, (t + next) / 2 - 1) * piece;
+			t = next;
+		}
+	};
+	for (let s = 0; length(pos) < BAND * REF_KM; s += DT) {
+		if (s > 600) throw new Error("climb never left the band");
+		pos = advanceCruise({
+			pos,
+			nose: v3(1, 0, 0),
+			throttle: 1,
+			dt: DT,
+			masses,
+			target: null,
+			params: DEFAULT_CRUISE,
+			targetParentId: null,
+			onSegment,
+		}).pos;
+	}
+	return lost;
+}
+const approvedDrop = flyPass(REF_KM, 0.9, BAND, [APPROVED]);
+const refDropR = approvedDrop.dropAtR;
+console.log(
+	`\n## 6. Damage above the top, k·(T−1) of integrity per second — G, rise ${APPROVED.rise}, τ ${APPROVED.tau}\n`,
+);
+console.log(
+	"late s = seconds at the shell after the spool before cruise is asked for; % = integrity lost\n",
+);
+console.log(
+	["late s", "T at exit", ...KS.map((k) => `k ${k}`)]
+		.map((h) => pad(h, 10))
+		.join(""),
+);
+for (const late of LATE_S) {
+	const cells = [fixed(late, 0)];
+	let peakT = 0;
+	const lost = KS.map((k) => {
+		const held = heldDamage(
+			approvedDrop.tempAtDrop[0],
+			HEAT(refDropR, BAND),
+			SPOOL_S + late,
+			k,
+		);
+		peakT = held.t;
+		return held.lost + climbDamage(held.t, k);
+	});
+	cells.push(fixed(peakT, 2), ...lost.map((l) => `${fixed(100 * l, 1)}%`));
+	console.log(cells.map((c) => pad(c, 10)).join(""));
+}
+
+// ── 7. Frame-rate check ────────────────────────────────────────────────────
 let worst = 0;
 for (const star of STAR_CLASSES) {
 	for (const b of APPROACHES) {
@@ -467,5 +563,5 @@ for (const star of STAR_CLASSES) {
 	}
 }
 console.log(
-	`\n## 6. Frame check: band seconds at ${fixed(DT, 4)} s vs MAX_DT ${MAX_DT} s differ by at most ${fixed(100 * worst, 2)}%`,
+	`\n## 7. Frame check: band seconds at ${fixed(DT, 4)} s vs MAX_DT ${MAX_DT} s differ by at most ${fixed(100 * worst, 2)}%`,
 );
