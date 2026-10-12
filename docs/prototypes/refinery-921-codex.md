@@ -92,4 +92,12 @@ Direct invocation of the current `basisAfterBuy` / `saleMargin` functions demons
 
 The narrow arithmetic proposal remains integer microcredits, cumulative proportional allocation against a fixed lot, and exact retention of unallocated cost. It conserves total cost with bounded fields; it cannot alone satisfy strict collection-order-independent trading progression. Legacy floating basis also needs an explicit migration rule, not silent rounding.
 
-The principal must choose whether existing per-sale progression semantics remain (with collection-order effects named), or strict batch-equivalent progression requires a shared accounting decision. The latter must reconcile partial collection, pooled fractions, average-cost inventory, old unbased cargo, and the rule that banked rating never falls. No change to that gameplay policy is approved by this finding. Do not mark the refinery checkpoint complete or hand this ambiguity to a production worker.
+D12 is now ratified: collection order must not affect trading rating. The exact policy and bounded representation are assigned to [Refinery cost accounting](https://github.com/jcfischer/seelite/issues/935). It must reconcile partial collection, pooled fractions, average-cost inventory, old unbased cargo, and the rule that banked rating never falls. No precision, migration, loss-carry or delayed-award algorithm has been approved. Do not hand this ambiguity to a production worker.
+
+## Charted prerequisites
+
+- [Refinery cost accounting](https://github.com/jcfischer/seelite/issues/935), below this refinery node: strict collection-order-independent progression and bounded cost representation.
+- [Durable gameplay transactions](https://github.com/jcfischer/seelite/issues/936), on the machine map below Save/load policy, with refinery provenance: atomic acceptance, uncertain writes and death-checkpoint reconciliation.
+- [Station capability operational time](https://github.com/jcfischer/seelite/issues/937), below the station-damage decision, with refinery provenance: the precise outage-time contract and residual baseline decisions.
+
+All three were read back as open, typed and unassigned. They are decision prerequisites, not executable production briefs. The refinery node remains open pending final scope/contract ratification. The already-approved console is preserved unchanged.
