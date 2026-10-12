@@ -63,7 +63,8 @@ function tuning(name: string, fallback: number): number {
  * 2026-10-12: `?worklights=baked` (the default), `realtime` (`REALTIME_WORK_LIGHTS`,
  * no lightmap) or `off` (neither).
  */
-export function workLightMode(): "baked" | "realtime" | "off" {
+export type WorkLightMode = "baked" | "realtime" | "off";
+export function workLightMode(): WorkLightMode {
 	if (typeof location === "undefined") return "baked";
 	const mode = new URLSearchParams(location.search).get("worklights");
 	return mode === "realtime" || mode === "off" ? mode : "baked";
@@ -79,12 +80,11 @@ export const REALTIME_WORK_LIGHTS: WorkLightConfig = {
 
 /** What the dev panel (`worklight-tuner.ts`) moves while the principal flies:
  *  the bake's gain and the real-time arm, starting from the URL's figures. */
-export type WorkLightMode = "baked" | "realtime" | "off";
 /** How bright the work lights draw on a ship's hull, against the grid's
  *  figures; tuned by eye like `WORK_LIGHT_GAIN`. */
 export const SHIP_WORK_LIGHT_GAIN = 1;
 export const workLightTuning = {
-	mode: workLightMode() as WorkLightMode,
+	mode: workLightMode(),
 	gain: tuning("worklight-gain", WORK_LIGHT_GAIN),
 	shipGain: tuning("worklight-ship-gain", SHIP_WORK_LIGHT_GAIN),
 	realtime: {
@@ -338,13 +338,6 @@ export function createShipyardBuilder(
 }
 
 const ready = new Map<ShipyardForm, Promise<void>>();
-const installed = new Set<(form: ShipyardForm) => void>();
-
-/** Hear each form as it installs; returns the unsubscribe. */
-export function onShipyardInstalled(listener: (form: ShipyardForm) => void) {
-	installed.add(listener);
-	return () => installed.delete(listener);
-}
 
 /** Load and install one form. A failure clears its promise, so a Retry
  *  fetches again; `onProgress` hears the download this call starts. */
@@ -367,10 +360,14 @@ export function prepareShipyardModel(
 				: Promise.resolve(null);
 		const probes =
 			workLightMode() === "baked" || comparing
-				? // A file of this bundle (#830), fetched as `bundle-fetch.ts` allows.
-					fetchBundled(
-						new URL(SHIPYARD_PROBE_URLS[form], location.href).pathname,
-					)
+				? // A file of this bundle (#830), fetched as `bundle-fetch.ts` allows;
+					// in the chain, so a failure is the catch's, as the lightmap's is.
+					Promise.resolve()
+						.then(() =>
+							fetchBundled(
+								new URL(SHIPYARD_PROBE_URLS[form], location.href).pathname,
+							),
+						)
 						.then((r) => (r.ok ? r.arrayBuffer() : null))
 						.catch(() => null)
 				: Promise.resolve(null);
@@ -380,14 +377,20 @@ export function prepareShipyardModel(
 			.then(async (gltf) => {
 				const map = await lightmap;
 				const bytes = await probes;
-				const grid = bytes && decodeProbeGrid(gltf.scene, bytes);
+				// Light, not shape: a grid that will not decode leaves the ships
+				// unlit and the yard installed.
+				let grid: ProbeGrid | null = null;
+				try {
+					grid = bytes && decodeProbeGrid(gltf.scene, bytes);
+				} catch (error) {
+					console.warn(`shipyard ${form}: no work-light grid`, error);
+				}
 				if (grid) probeGrids.set(form, grid);
 				if (map) {
 					applyShipyardLightmap(gltf.scene, map);
 					shared(map);
 				}
 				installShipyardBuilder(form, createShipyardBuilder(form, gltf.scene));
-				for (const listener of installed) listener(form);
 			})
 			.catch((error) => {
 				ready.delete(form);
@@ -453,7 +456,8 @@ export function setWorkLights(
 ): number {
 	const old: THREE.Object3D[] = [];
 	root.traverse((o) => {
-		if (o.userData.workLight) old.push(o);
+		// Their own key: a yard's root carries `workLight`, its probe grid.
+		if (o.userData.realtimeWorkLight) old.push(o);
 	});
 	for (const o of old) {
 		o.removeFromParent();
@@ -477,8 +481,8 @@ export function setWorkLights(
 			0.45,
 			0,
 		);
-		light.userData.workLight = true;
-		light.target.userData.workLight = true;
+		light.userData.realtimeWorkLight = true;
+		light.target.userData.realtimeWorkLight = true;
 		light.target.position.set(0, 0, -1);
 		mark.add(light, light.target);
 		if (i < config.shadows) {

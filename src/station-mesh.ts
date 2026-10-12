@@ -6564,11 +6564,6 @@ export function installShipyardBuilder(
 	else shipyardBuilders.delete(form);
 }
 
-/** Whether a shipyard form draws its authored model. */
-export function shipyardModelInstalled(form: StationFormId): boolean {
-	return shipyardBuilders.has(form as ShipyardForm);
-}
-
 /**
  * The shipyard's mouth for an authored exterior, in kilometres: the lit
  * frame, its strobes, the name shield and the bay, as every procedural form

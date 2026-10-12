@@ -16726,10 +16726,7 @@ class Game {
 		for (const station of this.stationVisuals.values())
 			if (station.root.userData.workLight)
 				yards.push(station.root.userData.workLight);
-		lightShipsByWorkLights(yards, [
-			this.shipMesh,
-			...this.trafficMeshes.values(),
-		]);
+		lightShipsByWorkLights(yards, [this.shipMesh], this.trafficMeshes.values());
 
 		// **#241's gate, then #201's shadow camera** — in that order, because the
 		// gate decides whether there is a shadow to fit at all and

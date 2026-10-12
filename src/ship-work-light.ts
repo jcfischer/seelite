@@ -178,6 +178,8 @@ function findLit(o: THREE.Object3D | null): Lit | undefined {
 }
 
 const at = new THREE.Vector3();
+const local = new THREE.Vector3();
+const toFrame = new WeakMap<YardWorkLight, THREE.Matrix4>();
 /**
  * Once a frame: give each ship the work light of the yard it is in, if any.
  * A ship is patched the first time it enters a grid and stays patched; one
@@ -185,9 +187,24 @@ const at = new THREE.Vector3();
  */
 export function lightShipsByWorkLights(
 	yards: readonly YardWorkLight[],
-	ships: Iterable<THREE.Object3D>,
+	...shipGroups: Iterable<THREE.Object3D>[]
 ): void {
-	for (const ship of ships) {
+	// Each yard's frame inverted once a frame, not once per ship.
+	for (const yard of yards) {
+		yard.frame.updateWorldMatrix(true, false);
+		let inverse = toFrame.get(yard);
+		if (!inverse) toFrame.set(yard, (inverse = new THREE.Matrix4()));
+		inverse.copy(yard.frame.matrixWorld).invert();
+	}
+	for (const ships of shipGroups)
+		for (const ship of ships) lightShip(ship, yards);
+}
+
+function lightShip(
+	ship: THREE.Object3D,
+	yards: readonly YardWorkLight[],
+): void {
+	{
 		const lit: Lit = (ship.userData.workLit ??= {
 			coeffs: new Float32Array(12),
 			frame: null,
@@ -197,8 +214,9 @@ export function lightShipsByWorkLights(
 		lit.gain = 0;
 		ship.getWorldPosition(at);
 		for (const yard of yards) {
-			yard.frame.updateWorldMatrix(true, false);
-			const local = yard.frame.worldToLocal(at.clone());
+			const inverse = toFrame.get(yard);
+			if (!inverse) continue;
+			local.copy(at).applyMatrix4(inverse);
 			if (!sampleProbeGrid(yard.grid, local, lit.coeffs)) continue;
 			lit.frame = yard.frame;
 			lit.gain = yard.gain();
