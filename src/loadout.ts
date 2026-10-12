@@ -16,6 +16,7 @@ import {
 	type ModuleKind,
 } from "./module-catalog";
 import { EQUIPMENT } from "./market";
+import { SKIM_BAND_R, SKIM_SHELL_R } from "./ship-condition";
 
 export interface FittedModule {
 	module: ModuleKind;
@@ -167,6 +168,71 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 		if (m.module === "fuel-tank") fuelCapacityLy += moduleRow(m).output.fuelLy;
 	}
 	return { bankE, regenPerS: plant.regenPerS, fuelCapacityLy };
+}
+/**
+ * The fuel scoop's fill shape at `rOverR`, the distance from the star's centre
+ * in its radii: linear, 1 at cruise's drop-out shell and 0 at the skim band's
+ * edge (#930's approved table). A fill rate is the row's `fuelLyPerS` times it.
+ */
+export function scoopShape(rOverR: number): number {
+	const s = (SKIM_BAND_R - rOverR) / (SKIM_BAND_R - SKIM_SHELL_R);
+	return Math.min(1, Math.max(0, s));
+}
+/** What one scoop step reads: the star distance in R, the regime, the fit,
+ *  the tank in LY and the energy bank. */
+export interface ScoopInput {
+	rOverR: number;
+	cruising: boolean;
+	hull: HullId;
+	loadout: Loadout;
+	fuelLy: number;
+	energy: number;
+	dt: number;
+}
+/** The tank and bank after the step, and whether the scoop filled on it: the
+ *  glass's `SCOOPING` line reads that flag. */
+export interface ScoopStep {
+	fuelLy: number;
+	energy: number;
+	filling: boolean;
+}
+/**
+ * One step of the fuel scoop (#932). In cruise inside the band, every fitted
+ * scoop fills the hyperspace tank at its row's `fuelLyPerS` times
+ * `scoopShape`, and the bank pays its row's `drawPerS` (#871 D1, D2). The
+ * tank stops at the fitted capacity (#926), never at the jump range, and a
+ * full tank draws nothing. A bank short of the step's draw fills nothing on
+ * that step. Normal flight never fills: the skim is a cruise pass.
+ *
+ * The shape is held over the step at the distance passed in, as the hull's
+ * temperature is (`stepHullTemperature`).
+ */
+export function stepFuelScoop(input: ScoopInput): ScoopStep {
+	const idle = { fuelLy: input.fuelLy, energy: input.energy, filling: false };
+	if (!input.cruising || !(input.dt > 0)) return idle;
+	const shape = scoopShape(input.rOverR);
+	if (!(shape > 0)) return idle;
+	const capacityLy = fittedCapacity(input.hull, input.loadout).fuelCapacityLy;
+	if (!(input.fuelLy < capacityLy)) return idle;
+	let fuelLyPerS = 0;
+	let drawPerS = 0;
+	for (const m of Object.values(input.loadout)) {
+		if (m.module !== "fuel-scoop") continue;
+		const row = moduleRow(m);
+		fuelLyPerS += row.output.fuelLyPerS;
+		drawPerS += row.drawPerS;
+	}
+	if (!(fuelLyPerS > 0)) return idle;
+	const draw = drawPerS * input.dt;
+	if (input.energy < draw) return idle;
+	return {
+		fuelLy: Math.min(
+			capacityLy,
+			input.fuelLy + fuelLyPerS * shape * input.dt,
+		),
+		energy: input.energy - draw,
+		filling: true,
+	};
 }
 export function moduleFits(m: FittedModule, slot: HullSlot): boolean {
 	return fits(moduleRow(m), slot);

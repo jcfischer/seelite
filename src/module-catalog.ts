@@ -156,7 +156,7 @@ export const DEFINITIONS: readonly Definition[] = [
 		family: "fuel",
 		priceWeight: 1.5,
 		massWeight: 1,
-		output: { fuelLyPerS: 0.1 },
+		output: { fuelLyPerS: 1.0 },
 		drawPerS: 3,
 	},
 	{
