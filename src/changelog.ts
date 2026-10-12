@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #818: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "The three shipyards have new exteriors: the open gantry of Gantry Works, the twin enclosed halls of Foundry Hangar and the open semicircle of Crescent Slipway.", // glossary-ignore: Hangar
+		node: 818,
+	},
 	// Node #926: sentence approved by the principal, 2026-10-12.
 	{
 		date: "2026-10-12",
