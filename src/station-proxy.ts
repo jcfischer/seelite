@@ -995,9 +995,22 @@ export function stationProxy(
 /**
  * The furthest extent of any primitive in the proxy, in kilometres from the
  * origin. Used by the budget test to check no primitive lies outside
- * `reachKm`.
+ * `reachKm`, and by the avoidance every step for every station near the ship
+ * — so read once per proxy: an authored shipyard's is thousands of boxes
+ * (node #818), and measuring it each step made a refinery duel four times
+ * slower.
  */
 export function proxyReachKm(proxy: StationProxy): number {
+	let reach = reachCache.get(proxy);
+	if (reach === undefined) {
+		reach = measureReachKm(proxy);
+		reachCache.set(proxy, reach);
+	}
+	return reach;
+}
+const reachCache = new WeakMap<StationProxy, number>();
+
+function measureReachKm(proxy: StationProxy): number {
 	let max = 0;
 	for (const p of [...proxy.spinning, ...proxy.static]) {
 		switch (p.kind) {
