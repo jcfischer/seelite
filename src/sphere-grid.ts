@@ -1,7 +1,7 @@
 /**
- * A uniform grid over bounding spheres, for a solid with thousands of
- * primitives (the authored shipyards' proxies, node #818: 5,000–7,000 boxes
- * each, under the principal's 5 m collision rule).
+ * A uniform grid over bounding spheres, for a solid with hundreds or
+ * thousands of primitives (the authored shipyards' proxies, node #818: 483 to
+ * 2,806 boxes a list under the principal's 10 m collision rule).
  *
  * Every sphere is entered in each cell its bounding box touches; one larger
  * than `LARGE_CELLS` cells across is kept apart and always returned. A query
@@ -11,6 +11,16 @@
  * Pure arithmetic, no imports: `sim.ts` and `collision.ts` reach it, and both
  * are headless.
  */
+/** A primitive list longer than this is searched through a grid: the
+ *  authored shipyards' 490 to 2,800 boxes a list (node #818). Every other
+ *  proxy is tens of primitives and stays a plain walk — refinery/a's 66, big
+ *  rock spheres among them, took 27 s through the grid in the vertex row and
+ *  0.4 s without it. One figure for the sweep (`collision.ts`) and the
+ *  proxy queries (`station-proxy.ts`). */
+export const INDEXED_ABOVE = 128;
+/** The grid's cell, kilometres. */
+export const INDEX_CELL_KM = 0.05;
+
 export interface Sphere {
 	x: number;
 	y: number;

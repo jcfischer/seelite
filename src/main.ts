@@ -6807,14 +6807,18 @@ class Game {
 	/**
 	 * Rebuild every drawn shipyard of `form` from its installed model. The new
 	 * mesh compiles off-scene first and replaces the old one only if the
-	 * station is still the one drawn — a jump during the compile disposes it.
-	 * Occlusion marks and interior kits are redone for the whole system, as an
-	 * interior install redoes them.
+	 * station is still the one drawn; a jump during the compile ends the
+	 * refresh, since the new system was built with whatever had installed.
+	 * When a station was replaced, occlusion marks and interior kits are redone
+	 * for the whole system, as an interior install redoes them.
 	 */
 	private async refreshShipyard(form: string): Promise<void> {
-		for (const body of this.world.system.bodies) {
+		const system = this.world.system;
+		let replaced = false;
+		for (const body of system.bodies) {
+			if (this.world.system !== system) return;
 			if (body.kind !== "station") continue;
-			const station = stationOf(this.world.system, body.id);
+			const station = stationOf(system, body.id);
 			if (station.type !== "shipyard" || station.formId !== form) continue;
 			const previous = this.stationVisuals.get(body.id);
 			// Built after the install (a home shipyard, a later jump): already
@@ -6835,8 +6839,10 @@ class Game {
 			this.meshes.set(body.id, built.root);
 			this.setLayer(body, this.layers.get(body.id) ?? "far");
 			this.registerInteriorPresentation(body.id, built);
+			replaced = true;
 		}
-		await this.refreshInteriorMeshes();
+		if (replaced && this.world.system === system)
+			await this.refreshInteriorMeshes();
 	}
 
 	/** Sharing a card waits for the authored kit, even after a background failure. */

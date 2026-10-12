@@ -73,6 +73,8 @@ import {
 import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
 import {
 	buildSphereGrid,
+	INDEX_CELL_KM,
+	INDEXED_ABOVE,
 	querySphereGrid,
 	type Sphere,
 	type SphereGrid,
@@ -457,10 +459,11 @@ function tradeCoriolisProxy(): StationProxy {
  * **The sim always collides with the authored yard, whatever is drawn**
  * (principal, 2026-10-12): a station whose model is still loading, or failed
  * to, draws its procedural stand-in and is solid as the yard it stands in
- * for, so no player's world depends on a download. **And at most 5 m of empty
- * space may collide** (principal, 2026-10-12), so the drum and the yard are
- * oriented boxes fitted to the model's own parts (`src/shipyard-proxies.ts`,
- * generated): each stands no more than 4.5 m off what is drawn.
+ * for, so no player's world depends on a download. **And at most 10 m of
+ * empty space may collide** (principal, 2026-10-12: 5 m, relaxed to 10 m the
+ * same day), so the drum and the yard are oriented boxes fitted to the model's
+ * own parts (`src/shipyard-proxies.ts`, generated): no point of a box's faces
+ * stands more than 10 m off what is drawn (`tests/shipyard-flight.test.ts`).
  *
  * **Spinning.** The drum's hull, and the sim's bay walled in it: thin walls
  * outside the bay's sides and end, and the mouth wall in front of the plane
@@ -1190,13 +1193,6 @@ export function proxyListDistanceKm(
 	return best;
 }
 
-/** A list longer than this is searched through a grid: the authored
- *  shipyards' 490 to 2,800 boxes a list (node #818). Every other proxy is
- *  tens of primitives and stays a plain walk — refinery/a's 66, big rock
- *  spheres among them, took 27 s through the grid in the vertex row and
- *  0.4 s without it. */
-const INDEXED_ABOVE = 128;
-const INDEX_CELL_KM = 0.05;
 const indexes = new WeakMap<readonly ProxyPrimitive[], SphereGrid>();
 function indexOf(primitives: readonly ProxyPrimitive[]): SphereGrid {
 	let grid = indexes.get(primitives);

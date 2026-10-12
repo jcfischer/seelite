@@ -120,6 +120,13 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
     measurement: gated on `ASSEMBLY_SEEDS`, measured over a wider spread by
     hand, and a plan outside both is not measured. Making it follow its plan
     means moving the Salvage's plan out of the renderer first.
+  - An **authored** form (the shipyards, node #818) has its proxy fitted to
+    the authored model, generated into `src/shipyard-proxies.ts` with the
+    model's hash. The sim collides with it **whatever is drawn** (principal,
+    2026-10-12): until the model installs, the procedural stand-in draws and
+    may lie outside it, and is not solid. At most 10 m of empty space within
+    it collides (the principal's rule, the same day); `tests/shipyard-flight.test.ts`
+    measures that, and that every vertex of the model lies within 1.5 m of it.
 - **What it turns with.** The proxy is stated in the spinning member's frame,
   as the drawn interior is (`docking.md` §13). Static structure — the
   shipyard's keel — is stated in the static frame.

@@ -693,9 +693,11 @@ describe("a duel beside a station stays a duel", () => {
 	 *
 	 * The blind control asks for more than a third, not half, since node #818
 	 * (2026-10-12): the authored shipyards leave less metal round the mouth
-	 * than the procedural keel and booms did, and the blind runs that met a
-	 * shipyard fell from 11, 8 and 8 to 7, 3 and 3 — 28, 23 and 26 met any
-	 * station before, 24, 18 and 21 after. Trade and refinery are unchanged.
+	 * than the procedural keel and booms did. Measured on this corpus at the
+	 * base before #818 (3150d31) and after: the blind runs that met a shipyard
+	 * fell from 11, 8 and 8 to 7, 3 and 3, and those that met any station from
+	 * 28, 23 and 26 to 24, 18 and 21 (#665's 29, 27 and 30 above are its own
+	 * code's). Trade and refinery are unchanged.
 	 */
 	for (const armed of [undefined, "patrol", "interceptor"] as const) {
 		test(`a pilot at the mouth, inside the keep-out: ${armed ?? "the raider"} holds off and keeps firing`, () => {
