@@ -776,6 +776,20 @@ regenerates on its own while the gun is idle and is never bought or refuelled.
 and the **drive charge**, which move the ship; the energy bank never does.
 _Avoid_: Energy (unqualified), capacitor, power
 
+**Hull temperature**:
+How hot a hull is from starlight (#871 D3, built by #931), in units of the
+**top**: ambient 0, the top 1. A star heats every hull inside its skim band —
+2 R from its centre, R its radius — hardest at cruise's 1.05 R drop-out shell,
+and the hull cools toward ambient everywhere, so it rises on a pass and falls
+after it. Above the top the hull loses a share of its integrity each second;
+the shields are not touched. It reads distance alone, so normal flight and
+cruise heat alike, and it is not saved: a loaded game starts at ambient. The
+glass shows it as `TEMP` while it is above ambient. #930's resolution holds
+the approved figures; `src/ship-condition.ts` carries them.
+Distinct from **laser heat**, the gun's own `heat` that locks it, and from
+**Legal heat**, which is an offence score.
+_Avoid_: Heat (unqualified), hull heat, overheat
+
 **Witchspace**:
 Where the ship is between two systems. It costs no sim time today: the clock
 advances by the wind-up, which is flown, and by nothing else — so a jump does
