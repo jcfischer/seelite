@@ -28,10 +28,13 @@ renderer.info.autoReset = false;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x010203);
+// Near plane 1 view unit = 10 m, the game's (`NEAR_NEAR_KM`): at 0.2 the
+// viewer's depth step was five times the game's and showed flicker the game
+// does not. The orbit never comes closer than 150 m.
 const camera = new THREE.PerspectiveCamera(
 	24,
 	innerWidth / innerHeight,
-	0.2,
+	1,
 	3000,
 );
 const controls = new OrbitControls(camera, renderer.domElement);
