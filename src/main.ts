@@ -19838,7 +19838,7 @@ class Game {
 		// owns which, so the fit above takes the row as one or the other.
 		const duelRow: FloorCell[] = [
 			...duelBandCells({
-				inCombat: this.duelRowShown(),
+				fighting: this.duelRowShown(),
 				condition: this.condition,
 				scooping: this.scooping,
 				fuelLy: this.commander.fuelLy,

@@ -184,16 +184,16 @@ export function scoopWidest(): string {
  * and SCOOPING never share the row, and the floor's fit takes the row as one
  * or the other.
  *
- * `inCombat` is `showDuelRow`: the predicate that already decides whether SHD
+ * `fighting` is `showDuelRow`: the predicate that already decides whether SHD
  * and HEAT are on the glass.
  */
 export function duelBandCells(state: {
-	inCombat: boolean;
+	fighting: boolean;
 	condition: ShipCondition;
 	scooping: boolean;
 	fuelLy: number;
 }): FloorCell[] {
-	return composeDuelBand(state.inCombat, {
+	return composeDuelBand(state.fighting, {
 		duel: duelRowCells(state.condition),
 		// Hull temperature, while the hull is above ambient (#931).
 		temp: hullTempCells(state.condition),
@@ -203,13 +203,13 @@ export function duelBandCells(state: {
 
 /** The one rule both the drawn row and its fit compose by. */
 function composeDuelBand(
-	inCombat: boolean,
+	fighting: boolean,
 	parts: { duel: FloorCell[]; temp: FloorCell[]; scoop: FloorCell[] },
 ): FloorCell[] {
 	return [
-		...(inCombat ? parts.duel : []),
+		...(fighting ? parts.duel : []),
 		...parts.temp,
-		...(inCombat ? [] : parts.scoop),
+		...(fighting ? [] : parts.scoop),
 	];
 }
 
@@ -230,7 +230,7 @@ export function duelBandWidestRows(): FloorCell[][] {
 		temp: [cell(HULL_TEMP_LABEL, hullTempWidest())],
 		scoop: [cell(SCOOP_LABEL, scoopWidest())],
 	};
-	return [true, false].map((inCombat) => composeDuelBand(inCombat, parts));
+	return [true, false].map((fighting) => composeDuelBand(fighting, parts));
 }
 
 export interface DuelConsoleReadout {

@@ -89,8 +89,8 @@ describe("the duel band in and out of combat (#932, the principal's ruling)", ()
 	// "In combat" is `showDuelRow`, the predicate that already puts SHD and
 	// HEAT on the glass: a raider contesting or dueling, or one selected.
 	const warm = { ...fullCondition("courier"), hullTemp: 0.3 };
-	const labels = (inCombat: boolean, scooping: boolean) =>
-		duelBandCells({ inCombat, condition: warm, scooping, fuelLy: 3.2 }).map(
+	const labels = (fighting: boolean, scooping: boolean) =>
+		duelBandCells({ fighting, condition: warm, scooping, fuelLy: 3.2 }).map(
 			(c) => c.label,
 		);
 
@@ -108,9 +108,9 @@ describe("the duel band in and out of combat (#932, the principal's ruling)", ()
 	});
 
 	test("SHD, HEAT and SCOOPING never share the row", () => {
-		for (const inCombat of [false, true])
+		for (const fighting of [false, true])
 			for (const scooping of [false, true]) {
-				const row = labels(inCombat, scooping);
+				const row = labels(fighting, scooping);
 				expect(
 					row.includes(SCOOP_LABEL) &&
 						DUEL_ROW_LABELS.some((l) => row.includes(l)),
@@ -135,15 +135,15 @@ describe("the fit's widest rows (#932)", () => {
 			{ ...fullCondition("dreadnought"), hullTemp: 1.2, fore: 0, aft: 0 },
 		];
 		for (const condition of conditions)
-			for (const inCombat of [true, false])
+			for (const fighting of [true, false])
 				for (const scooping of [true, false]) {
 					const drawn = duelBandCells({
-						inCombat,
+						fighting,
 						condition,
 						scooping,
 						fuelLy: 64.3,
 					});
-					const widest = inCombat ? combatRow : peaceRow;
+					const widest = fighting ? combatRow : peaceRow;
 					for (const cell of drawn) {
 						const w = widest.find((c) => c.label === cell.label);
 						expect(w).toBeDefined();
