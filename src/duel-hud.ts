@@ -150,6 +150,89 @@ export function hullTempWidest(): string {
 	return hullTempCells({ hullTemp: hottest })[0]?.value ?? "";
 }
 
+/** The fuel scoop's line (#932, #871 D6). */
+export const SCOOP_LABEL = "SCOOPING";
+
+/**
+ * The scoop's cell in the duel band, beside the TEMP gauge: `SCOOPING` and the
+ * tank in LY while the scoop fills (`stepFuelScoop`'s `filling`), and nothing
+ * once it stops — a full tank, the band left, the cruise ended or a bank too
+ * low to pay the draw.
+ */
+export function scoopCells(filling: boolean, fuelLy: number): FloorCell[] {
+	if (!filling) return [];
+	return [
+		{ label: SCOOP_LABEL, value: `${fuelLy.toFixed(1)} LY`, tone: "passive" },
+	];
+}
+
+/**
+ * The widest tank reading the line can print: two digits. No ship a pilot can
+ * fly carries 100 LY, and `tests/scoop-line.test.ts` fills every fuel slot of
+ * every such hull to hold that.
+ */
+export function scoopWidest(): string {
+	return scoopCells(true, 99.9)[0]?.value ?? "";
+}
+
+/**
+ * The duel band's cells before the armed group: SHD and HEAT in combat, the
+ * hull temperature while it is above ambient, and the scoop's line while it
+ * fills — **but never the scoop's line in combat** (#932, the principal's
+ * ruling, 2026-10-12). In combat SHD and HEAT keep their place and the line
+ * drops; the scoop still fills. Out of combat the line shows. So SHD, HEAT
+ * and SCOOPING never share the row, and the floor's fit takes the row as one
+ * or the other.
+ *
+ * `fighting` is `showDuelRow`: the predicate that already decides whether SHD
+ * and HEAT are on the glass.
+ */
+export function duelBandCells(state: {
+	fighting: boolean;
+	condition: ShipCondition;
+	scooping: boolean;
+	fuelLy: number;
+}): FloorCell[] {
+	return composeDuelBand(state.fighting, {
+		duel: duelRowCells(state.condition),
+		// Hull temperature, while the hull is above ambient (#931).
+		temp: hullTempCells(state.condition),
+		scoop: scoopCells(state.scooping, state.fuelLy),
+	});
+}
+
+/** The one rule both the drawn row and its fit compose by. */
+function composeDuelBand(
+	fighting: boolean,
+	parts: { duel: FloorCell[]; temp: FloorCell[]; scoop: FloorCell[] },
+): FloorCell[] {
+	return [
+		...(fighting ? parts.duel : []),
+		...parts.temp,
+		...(fighting ? [] : parts.scoop),
+	];
+}
+
+/**
+ * The widest row `duelBandCells` can draw, in combat and out of it: each
+ * cell at its widest reading, composed by the same rule. The floor's fit
+ * sizes against both, so a cell added to the band reaches the fit too.
+ */
+export function duelBandWidestRows(): FloorCell[][] {
+	const widest = duelRowWidest();
+	const cell = (label: string, value: string): FloorCell => ({
+		label,
+		value,
+		tone: "passive",
+	});
+	const parts = {
+		duel: DUEL_ROW_LABELS.map((label) => cell(label, widest[label])),
+		temp: [cell(HULL_TEMP_LABEL, hullTempWidest())],
+		scoop: [cell(SCOOP_LABEL, scoopWidest())],
+	};
+	return [true, false].map((fighting) => composeDuelBand(fighting, parts));
+}
+
 export interface DuelConsoleReadout {
 	fore: string;
 	aft: string;

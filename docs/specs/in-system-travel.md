@@ -318,7 +318,7 @@ Cruise draws on **its own reserve**, not the hyperspace fuel tank.
 | Consumption | 1 unit per AU **travelled in cruise** (distance, not time) |
 | Refill on docking | instant, free, any station |
 | Passive regeneration | **~1 AU/min** while in normal flight |
-| Fast recharge | sun-skimming, with fuel scoops (525 Cr) |
+| Fast recharge | **none** — sun-skimming does not fill the drive charge (#871 D2; see below) |
 
 Distance rather than time is the honest unit: crawling slowly through a gravity
 well already costs time, and metering by the second would charge twice for the
@@ -336,7 +336,18 @@ minutes for a full charge. A penalty that is felt and never fatal.
 
 Hyperspace fuel keeps its 1984 meaning: the courier's 7 LY tank, 0.2 Cr / 0.1 LY
 (14 Cr a full tank — `economy-trade.md` §6.1), a jump resource only. Since #554
-the tank is the flown hull's `tankLy`, which is also its jump range. Sun-skimming gains the second purpose it wanted.
+the tank starts at the flown hull's `tankLy`, which is also its jump range, and
+since #926 fitted fuel tanks add to its capacity but not to the range.
+
+**Sun-skimming fills the hyperspace tank, not the drive charge (#871 D1, D2;
+built by #932).** The row above read "fast recharge: sun-skimming, with fuel
+scoops" until #871 superseded it. A fitted fuel scoop fills the hyperspace tank
+on a cruise pass inside a star's skim band — 2 R from the star's centre, R its
+radius — and faster closer in, up to the fitted capacity, while the energy bank
+pays the scoop's draw. Normal flight never fills: the skim is a cruise pass. The
+drive charge keeps docking and passive regeneration as its only refills.
+`stepFuelScoop` in `src/loadout.ts` is the law, and #930's resolution holds
+the approved band, curve and peak.
 
 ---
 

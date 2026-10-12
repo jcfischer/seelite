@@ -34,6 +34,12 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
 		text: "The three shipyards have new exteriors: the open gantry of Gantry Works, the twin enclosed halls of Foundry Hangar and the open semicircle of Crescent Slipway.", // glossary-ignore: Hangar
 		node: 818,
 	},
+	// Node #932: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Fuel scoops now work: cruise close past a star and a fitted scoop refills your hyperspace tank, faster the closer you pass, while a SCOOPING line shows the tank rising.",
+		node: 932,
+	},
 	// Node #926: sentence approved by the principal, 2026-10-12.
 	{
 		date: "2026-10-12",

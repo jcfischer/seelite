@@ -121,6 +121,11 @@ const NOT_RESET: Record<string, string> = {
 		"stale id gives one body the large pair for one frame and then the right " +
 		"one; a jump clears it, because there the id names a body that no longer " +
 		"exists",
+	fuelLy:
+		"the hyperspace tank is the commander's, bought at a station and spent " +
+		"by a jump, and since #932 filled by the fuel scoop in `step`. Scooped " +
+		"fuel is the pilot's as bought fuel is, so a reset leaves the tank alone " +
+		"as it leaves the credits",
 	fleetStarts:
 		"node #664's scratch: the flown ships' poses at the top of a frame, " +
 		"written before the raider and the engaged carriers step and read by " +
