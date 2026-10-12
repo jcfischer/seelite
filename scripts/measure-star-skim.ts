@@ -267,16 +267,39 @@ function radialExit(
 	return { seconds, peak };
 }
 
-/** Seconds at the shell (`h` = 1) from `t0` to the top, or Infinity. */
-function secondsToTop(t0: number, k: Heat): number {
+/** Seconds held at heat `h` from `t0` to the top, or Infinity. */
+function secondsToTop(t0: number, h: number, k: Heat): number {
 	if (t0 >= 1) return 0;
-	const eq = k.rise * k.tau;
+	const eq = k.rise * h * k.tau;
 	if (eq <= 1) return Number.POSITIVE_INFINITY;
 	return -k.tau * Math.log((eq - 1) / (eq - t0));
 }
 
 const pad = (s: string, n: number) => s.padStart(n);
+/** Print one table row, every cell right-aligned to `width`. */
+const row = (cells: string[], width: number) =>
+	console.log(cells.map((c) => pad(c, width)).join(""));
 const BAND = 2;
+
+/**
+ * What follows a drop-out at `dropAtR` with the hull at `t0`: the spool held
+ * where the ship dropped, the radial climb to the band edge, the seconds held
+ * there to the top, and the slack those leave after the spool and the climb.
+ * Sections 4 and 5 both read it, so the shell's heat is taken in one place.
+ */
+function dropOut(radiusKm: number, dropAtR: number, t0: number, k: Heat) {
+	const h = HEAT(dropAtR, BAND);
+	const spoolT = heatStep(t0, h, SPOOL_S, k);
+	const out = radialExit(radiusKm, dropAtR, BAND, spoolT, k, BAND);
+	const top = secondsToTop(t0, h, k);
+	return {
+		spoolT,
+		out,
+		top,
+		slack: top - SPOOL_S - out.seconds,
+		peak: Math.max(spoolT, out.peak),
+	};
+}
 const APPROACHES = [1.06, 1.1, 1.2, 1.3, 1.5, 1.7, 1.9];
 const HEATS: Heat[] = [
 	{ rise: 0.15, tau: 20 },
@@ -306,7 +329,7 @@ const head = [
 	"band s",
 	...FILL_SHAPES.flatMap(([n]) => [`${n} ∫`, "passes"]),
 ];
-console.log(head.map((h) => pad(h, 9)).join(""));
+row(head, 9);
 for (const star of STAR_CLASSES) {
 	for (const b of APPROACHES) {
 		const p = flyPass(star.radiusKm, b, BAND, HEATS);
@@ -325,34 +348,28 @@ for (const star of STAR_CLASSES) {
 				fixed(courierTankLy / (CATALOGUE_PEAK * f), 1),
 			]),
 		];
-		console.log(cells.map((c) => pad(c, 9)).join(""));
+		row(cells, 9);
 	}
 }
 
 // ── 2. Band radius ─────────────────────────────────────────────────────────
 console.log("\n## 2. Band radius, at b = 1.2 R\n");
 const BANDS = [1.5, 2, 2.5, 3];
-console.log(
-	["class", ...BANDS.flatMap((bd) => [`${bd}R s`, `${bd}R lin∫`])]
-		.map((h) => pad(h, 10))
-		.join(""),
-);
+row(["class", ...BANDS.flatMap((bd) => [`${bd}R s`, `${bd}R lin∫`])], 10);
 for (const star of STAR_CLASSES) {
 	const cells: string[] = [star.cls];
 	for (const bd of BANDS) {
 		const p = flyPass(star.radiusKm, 1.2, bd, []);
 		cells.push(fixed(p.bandS, 2), fixed(p.fill[LINEAR], 2));
 	}
-	console.log(cells.map((c) => pad(c, 10)).join(""));
+	row(cells, 10);
 }
 
 // ── 3. Peak temperature on a good pass ────────────────────────────────
 console.log(
 	`\n## 3. Peak hull temperature on a pass through a ${BAND} R band (top = 1.00), per rise/τ\n`,
 );
-console.log(
-	["class", "b/R", ...HEATS.map(heatLabel)].map((h) => pad(h, 11)).join(""),
-);
+row(["class", "b/R", ...HEATS.map(heatLabel)], 11);
 for (const star of STAR_CLASSES) {
 	for (const b of [1.06, 1.1, 1.2, 1.5]) {
 		const p = flyPass(star.radiusKm, b, BAND, HEATS);
@@ -361,7 +378,7 @@ for (const star of STAR_CLASSES) {
 			fixed(b, 2),
 			...p.tempPeak.map((t) => fixed(t, 2)),
 		];
-		console.log(cells.map((c) => pad(c, 11)).join(""));
+		row(cells, 11);
 	}
 }
 
@@ -375,30 +392,30 @@ console.log(
 console.log(
 	`peak = highest temperature from the drop through the spool and a radial climb to the band edge (no turn, no reaction time)\n`,
 );
-console.log(
-	["class", "out s", "rise/τ", "T0", "spool T", "peak", "top s", "slack"]
-		.map((h) => pad(h, 10))
-		.join(""),
+row(
+	["class", "out s", "rise/τ", "T0", "spool T", "peak", "top s", "slack"],
+	10,
 );
 for (const star of STAR_CLASSES) {
 	const p = flyPass(star.radiusKm, 0.9, BAND, HEATS);
 	if (!p.dropped) throw new Error(`${star.cls}: a 0.9 R pass did not drop`);
 	HEATS.forEach((k, j) => {
 		const t0 = p.tempAtDrop[j];
-		const spoolT = heatStep(t0, HEAT(p.dropAtR, BAND), SPOOL_S, k);
-		const out = radialExit(star.radiusKm, p.dropAtR, BAND, spoolT, k, BAND);
-		const top = secondsToTop(t0, k);
-		const cells = [
-			star.cls,
-			fixed(out.seconds, 2),
-			heatLabel(k),
-			fixed(t0, 2),
-			fixed(spoolT, 2),
-			fixed(Math.max(spoolT, out.peak), 2),
-			Number.isFinite(top) ? fixed(top, 2) : "never",
-			Number.isFinite(top) ? fixed(top - SPOOL_S - out.seconds, 2) : "—",
-		];
-		console.log(cells.map((c) => pad(c, 10)).join(""));
+		const d = dropOut(star.radiusKm, p.dropAtR, t0, k);
+		const finite = Number.isFinite(d.top);
+		row(
+			[
+				star.cls,
+				fixed(d.out.seconds, 2),
+				heatLabel(k),
+				fixed(t0, 2),
+				fixed(d.spoolT, 2),
+				fixed(d.peak, 2),
+				finite ? fixed(d.top, 2) : "never",
+				finite ? fixed(d.slack, 2) : "—",
+			],
+			10,
+		);
 	});
 }
 
@@ -422,29 +439,22 @@ const peak = courierTankLy / (TARGET_PASSES * refFill);
 console.log(
 	`\n## 5. Fitted: ${TARGET_PASSES} passes at G 1.2 R, linear → peak ${fixed(peak, 3)} LY/s; drop-out top ${TARGET_TOP_S} s at G\n`,
 );
-console.log(
-	["class", "LY/pass", "passes", "LY@1.06", "LY@1.5"]
-		.map((h) => pad(h, 10))
-		.join(""),
-);
+row(["class", "LY/pass", "passes", "LY@1.06", "LY@1.5"], 10);
 for (const star of STAR_CLASSES) {
 	const at = (b: number) =>
 		peak * flyPass(star.radiusKm, b, BAND, []).fill[LINEAR];
 	const ly = at(1.2);
-	console.log(
+	row(
 		[
 			star.cls,
 			fixed(ly, 2),
 			fixed(courierTankLy / ly, 1),
 			fixed(at(1.06), 2),
 			fixed(at(1.5), 2),
-		]
-			.map((c) => pad(c, 10))
-			.join(""),
+		],
+		10,
 	);
 }
-const refDrop = flyPass(REF_KM, 0.9, BAND, [{ rise: 0, tau: 1 }]);
-if (!refDrop.dropped) throw new Error("G 0.9 R pass did not drop");
 /** The rise that puts a G drop-out `TARGET_TOP_S` from the top, by bisection. */
 function fitRise(tau: number): number {
 	let lo = 0.01;
@@ -452,8 +462,9 @@ function fitRise(tau: number): number {
 	for (let i = 0; i < 60; i++) {
 		const mid = (lo + hi) / 2;
 		const k = { rise: mid, tau };
-		const t0 = flyPass(REF_KM, 0.9, BAND, [k]).tempAtDrop[0];
-		const top = secondsToTop(t0, k);
+		const p = flyPass(REF_KM, 0.9, BAND, [k]);
+		if (!p.dropped) throw new Error("G 0.9 R pass did not drop");
+		const top = secondsToTop(p.tempAtDrop[0], HEAT(p.dropAtR, BAND), k);
 		if (top > TARGET_TOP_S) lo = mid;
 		else hi = mid;
 	}
@@ -462,18 +473,15 @@ function fitRise(tau: number): number {
 console.log(
 	`\nper cooling time: the fitted rise; per class the drop-out's top s and slack (− spool − climb), one pass's peak at 1.2 R, and three passes at 1.2 R with ${GAP_S} s gaps\n`,
 );
-console.log(
-	["τ s", "rise/s", "class", "top s", "slack", "1 pass", "3 passes", "3 @1.06"]
-		.map((h) => pad(h, 10))
-		.join(""),
+row(
+	["τ s", "rise/s", "class", "top s", "slack", "1 pass", "3 passes", "3 @1.06"],
+	10,
 );
 for (const tau of [10, 15, 20, 30]) {
 	const k = { rise: fitRise(tau), tau };
 	for (const star of STAR_CLASSES) {
 		const drop = flyPass(star.radiusKm, 0.9, BAND, [k]);
-		const spoolT = heatStep(drop.tempAtDrop[0], 1, SPOOL_S, k);
-		const out = radialExit(star.radiusKm, drop.dropAtR, BAND, spoolT, k, BAND);
-		const top = secondsToTop(drop.tempAtDrop[0], k);
+		const d = dropOut(star.radiusKm, drop.dropAtR, drop.tempAtDrop[0], k);
 		const chain = (b: number) => {
 			let t = 0;
 			let worst = 0;
@@ -486,19 +494,18 @@ for (const tau of [10, 15, 20, 30]) {
 			}
 			return worst;
 		};
-		console.log(
+		row(
 			[
 				fixed(tau, 0),
 				fixed(k.rise, 3),
 				star.cls,
-				fixed(top, 2),
-				fixed(top - SPOOL_S - out.seconds, 2),
+				fixed(d.top, 2),
+				fixed(d.slack, 2),
 				fixed(flyPass(star.radiusKm, 1.2, BAND, [k]).tempPeak[0], 2),
 				fixed(chain(1.2), 2),
 				fixed(chain(1.06), 2),
-			]
-				.map((c) => pad(c, 10))
-				.join(""),
+			],
+			10,
 		);
 	}
 }
@@ -550,11 +557,7 @@ console.log(
 console.log(
 	"late s = seconds at the shell after the spool before cruise is asked for; % = integrity lost\n",
 );
-console.log(
-	["late s", "T at exit", ...KS.map((k) => `k ${k}`)]
-		.map((h) => pad(h, 10))
-		.join(""),
-);
+row(["late s", "T at exit", ...KS.map((k) => `k ${k}`)], 10);
 for (const late of LATE_S) {
 	const cells = [fixed(late, 0)];
 	let peakT = 0;
@@ -569,7 +572,7 @@ for (const late of LATE_S) {
 		return held.lost + climbDamage(held.t, k);
 	});
 	cells.push(fixed(peakT, 2), ...lost.map((l) => `${fixed(100 * l, 1)}%`));
-	console.log(cells.map((c) => pad(c, 10)).join(""));
+	row(cells, 10);
 }
 
 // ── 7. Frame-rate check ────────────────────────────────────────────────────
