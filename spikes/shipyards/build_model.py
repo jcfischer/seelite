@@ -1072,6 +1072,50 @@ def widen_aperture(v):
  dy=_stretch(y,sy,A["inner"][1],A["outer"][1])*_gate(x,A["outer"][0],A["fade"])*gz
  return (x+dx,y+dy,z)
 
+# The sim's shipyard bay (`stationInterior("shipyard")`) runs 405 m behind the
+# aperture plane; the approved drum is about 21 units deep. Flight grows the drum
+# forward (principal, 2026-10-11): everything from the barrel forward moves +E
+# along the axis and plain barrel plates fill the gap, so the rear face, the
+# bearing and the enclosed spine stay where they were approved and the drum stays
+# attached. The aperture plane is the drum's frontmost point, so nothing of it
+# stands in the approach corridor; the bay's mouth wall is drawn at the hub face.
+# Anything wholly inside the bay (the display throat) is the sim's room now.
+# tests/shipyard-flight-asset.test.ts reads the sim's figures and fails on drift.
+BAY_DEPTH=40.5  # 405 m
+BAY_END=-8.0    # 12 m inside the rear cap (-9.2)
+BAY_HALF=(14.0,11.5)
+BARREL_CUT=-7.45  # between the rear chamfer's top (-7.51) and the barrel's foot (-7.37)
+HUB_FACE=9.0    # the end cap's inner surface
+def grow_drum_forward(info):
+ global OWNER
+ caps=[v for k,v in BATCH.items() if k.startswith("capsule/")]
+ front=max(p[2] for verts,_,_ in caps for p in verts)
+ E=BAY_END+BAY_DEPTH-front
+ for verts,faces,uvs in caps:verts[:]=[(x,y,z+E) if z>BARREL_CUT else (x,y,z) for x,y,z in verts]
+ inside=lambda p:abs(p[0])<=BAY_HALF[0]+.01 and abs(p[1])<=BAY_HALF[1]+.01 and BAY_END-.01<=p[2]<=HUB_FACE+E+.01
+ for verts,faces,uvs in caps:
+  keep=[i for i,f in enumerate(faces) if not all(inside(verts[j]) for j in f)]
+  faces[:]=[faces[i] for i in keep];uvs[:]=[uvs[i] for i in keep]
+ # Slot jambs reach a metre behind the hub face; end them on it, so nothing
+ # stands behind the bay's mouth wall.
+ face=HUB_FACE+E
+ for verts,faces,uvs in caps:verts[:]=[(x,y,face) if abs(x)<=BAY_HALF[0] and abs(y)<=BAY_HALF[1] and face-1<=z<face else (x,y,z) for x,y,z in verts]
+ OWNER="capsule";n=8;phase=math.pi/8;rows=max(1,round(E/7.1))
+ ring=lambda z:[Vector((22*math.cos(phase+i*math.tau/n),22*math.sin(phase+i*math.tau/n),z)) for i in range(n)]
+ for r in range(rows):
+  ra,rb=ring(-7.5+E*r/rows),ring(-7.5+E*(r+1)/rows)
+  for j in range(n):
+   k=(j+1)%n
+   for ix in range(3):
+    pts=[ra[j].lerp(ra[k],ix/3),ra[j].lerp(ra[k],(ix+1)/3),rb[j].lerp(rb[k],(ix+1)/3),rb[j].lerp(rb[k],ix/3)]
+    nn=(pts[0]+pts[1])/2;nn.z=0
+    plate(pts,ivory[(j+ix+r)%3],nn,.12,rng_edges=0)
+ # The rear band the barrel carried away with it.
+ annulus((0,0),-7.2,22.25-.42,22.25,.55,steel,8,phase)
+ OWNER="static"
+ info["portLocal"]=[0,0,info["portLocal"][2]+E];info["aperturePlane"]=front+E;info["hubFace"]=HUB_FACE+E
+ print("GROWN",round(E*10,1),"m; plane",round((front+E)*10,1),"m; hub face",round((HUB_FACE+E)*10,1),"m",flush=True)
+
 def export(id,info):
  objects=[]
  root=bpy.data.objects.new("shipyard-"+id,None);bpy.context.collection.objects.link(root)
@@ -1080,6 +1124,7 @@ def export(id,info):
   BATCH.pop("capsule/throat-back",None)
   for name,(verts,faces,uvs) in BATCH.items():
    if name.startswith("capsule/"):verts[:]=[widen_aperture(v) for v in verts]
+  grow_drum_forward(info)
  rigs={}
  for name,spec in RIG.items():
   ob=bpy.data.objects.new(name,None);bpy.context.collection.objects.link(ob)
@@ -1099,7 +1144,9 @@ def export(id,info):
   if "/cladding-" in name and not FLIGHT:
    bevel=ob.modifiers.new("plate-edge-radius","BEVEL");bevel.width=.28;bevel.segments=1
    normal=ob.modifiers.new("weighted-normals","WEIGHTED_NORMAL");normal.keep_sharp=True
- for name,loc,parent in [("docking-centre",info["portLocal"],spin),("bearing-centre",info["bearing"],root)]:
+ marks=[("docking-centre",info["portLocal"],spin),("bearing-centre",info["bearing"],root)]
+ if FLIGHT:marks+=[("aperture-plane",[0,0,info["aperturePlane"]],spin),("hub-face",[0,0,info["hubFace"]],spin)]
+ for name,loc,parent in marks:
   ob=bpy.data.objects.new(name,None);bpy.context.collection.objects.link(ob);ob.location=Vector(loc)*10;ob.parent=parent
  root["crew_route_author_units"]=json.dumps(info["crewRoute"]);root["tooling"]="rigid guided manipulators with positive clamps";root["design"]=id;root["metres_per_author_unit"]=10;spin["axis"]="local +Z";spin["radius_m"]=info["radius"]*10
  if FLIGHT:
