@@ -41,6 +41,13 @@ const instrumentStep = (t: number, h: number, dt: number) => {
 	return eq + (t - eq) * Math.exp(-dt / 15);
 };
 
+/** The distance, in R, at which a hull settles at `t`: `tableHeat` inverted
+ *  at the heat `h` where the rise balances the cooling, rise·h·τ = t. */
+const equilibrium = (t: number) => {
+	const h = t / (HULL_HEAT_RISE_PER_S * HULL_TEMP_COOL_TAU_S);
+	return { h, r: 1 / Math.sqrt(h * (1 / 1.05 ** 2 - 1 / 4) + 1 / 4) };
+};
+
 /** Step `seconds` at a fixed star distance, in R. */
 function hold(c: ShipCondition, rOverR: number, seconds: number) {
 	let next = c;
@@ -196,8 +203,7 @@ describe("cooling outside the band", () => {
 describe("damage above the top", () => {
 	test("at the top, the hull loses nothing while it holds there", () => {
 		// Equilibrium at the top: rise·h·τ = 1. The loss is k·(T − 1), zero here.
-		const h = 1 / (HULL_HEAT_RISE_PER_S * HULL_TEMP_COOL_TAU_S);
-		const r = 1 / Math.sqrt(h * (1 / 1.05 ** 2 - 1 / 4) + 1 / 4);
+		const { h, r } = equilibrium(HULL_TEMP_TOP);
 		expect(starHeat(r)).toBeCloseTo(h, 12);
 		const c = { ...fullCondition("courier"), hullTemp: HULL_TEMP_TOP };
 		const after = hold(c, r, 1);
@@ -208,8 +214,7 @@ describe("damage above the top", () => {
 	test("above it, integrity falls by k·(T − 1) of the hull each second, shields untouched", () => {
 		for (const id of ["courier", "freighter", "dreadnought"] as const) {
 			const start = { ...fullCondition(id), hullTemp: 1.5 };
-			const h = 1.5 / (HULL_HEAT_RISE_PER_S * HULL_TEMP_COOL_TAU_S);
-			const r = 1 / Math.sqrt(h * (1 / 1.05 ** 2 - 1 / 4) + 1 / 4);
+			const { r } = equilibrium(1.5);
 			const after = hold(start, r, 1);
 			// Held at its own equilibrium, T stays 1.5 and the share is 0.2·0.5.
 			expect(after.hullTemp).toBeCloseTo(1.5, 9);

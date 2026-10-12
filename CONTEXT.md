@@ -778,10 +778,12 @@ _Avoid_: Energy (unqualified), capacitor, power
 
 **Hull temperature**:
 How hot a hull is from starlight (#871 D3, built by #931), in units of the
-**top**: ambient 0, the top 1. A star heats every hull inside its skim band —
+**top**: ambient 0, the top 1. A star heats a hull inside its skim band —
 2 R from its centre, R its radius — hardest at cruise's 1.05 R drop-out shell,
 and the hull cools toward ambient everywhere, so it rises on a pass and falls
-after it. Above the top the hull loses a share of its integrity each second;
+after it. The law is every hull's (#871 D4), but only the player's ship is
+stepped today: no NPC carries a hull temperature (#931's scope, and
+`scripts/measure-traffic-star-band.ts` finds no Traffic route in a band). Above the top the hull loses a share of its integrity each second;
 the shields are not touched. It reads distance alone, so normal flight and
 cruise heat alike, and it is not saved: a loaded game starts at ambient. The
 glass shows it as `TEMP` while it is above ambient. #930's resolution holds
