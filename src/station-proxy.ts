@@ -70,6 +70,13 @@ import {
 	interiorAxialSpanKm,
 	stationInterior,
 } from "./station-interior";
+import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
+import {
+	buildSphereGrid,
+	querySphereGrid,
+	type Sphere,
+	type SphereGrid,
+} from "./sphere-grid";
 import { placementsOf } from "./station-modular";
 import {
 	REFINERY,
@@ -84,17 +91,20 @@ import { type Vec3, cross, v3 } from "./vec3";
 // Primitive types
 // ---------------------------------------------------------------------------
 
-/** An axis-aligned box centred at `centre` with half-extents. */
+/** A box centred at `centre` with half-extents: axis-aligned, or along
+ *  `axes` where it has them (the authored shipyards, node #818). */
 export interface ProxyBox {
 	readonly kind: "box";
 	/** Centre in km, in the relevant frame (spinning or static). */
 	readonly cx: number;
 	readonly cy: number;
 	readonly cz: number;
-	/** Half-extents in km. */
+	/** Half-extents in km, along `axes` when present. */
 	readonly hx: number;
 	readonly hy: number;
 	readonly hz: number;
+	/** The box's own axes, unit and orthogonal; absent is the frame's. */
+	readonly axes?: readonly [Vec3, Vec3, Vec3];
 }
 
 /** A sphere centred at `centre` with `radiusKm`. */
@@ -438,228 +448,137 @@ function tradeCoriolisProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
-// Shipyard A — Gantry
+// Shipyards A–C — the authored yards (node #818)
 // ---------------------------------------------------------------------------
 
 /**
- * The Gantry: a drum on the spin axis that turns, and a keel behind it that
- * does not.
+ * Gantry Works, Foundry Hangar and Crescent Slipway, as the game loads them. // glossary-ignore: Hangar
  *
- * **Spinning.** The drum (`core`, square section to ±0.324 km, aft face
- * -0.30 km, forward face at the 0.372 km plane) and the spindle behind it,
- * as one box cut round the bay and the prism.
+ * **The sim always collides with the authored yard, whatever is drawn**
+ * (principal, 2026-10-12): a station whose model is still loading, or failed
+ * to, draws its procedural stand-in and is solid as the yard it stands in
+ * for, so no player's world depends on a download. **And at most 5 m of empty
+ * space may collide** (principal, 2026-10-12), so the drum and the yard are
+ * oriented boxes fitted to the model's own parts (`src/shipyard-proxies.ts`,
+ * generated): each stands no more than 4.5 m off what is drawn.
  *
- * **Static.** The keel runs along x behind the drum (centred
- * `SHIPYARD_KEEL_AFT_KM` aft), carrying seven arches, two rails and the
- * fixtures; two booms run forward from it at ±y outboard of the bay. The keel
- * is a centre box and two end boxes, each as long as its corners allow inside
- * the 1.66 km reach, and the end arches — whose lowest point is beyond the end
- * boxes — are a chain of capsules each. Nothing static stands within the bay's
- * swept cylinder or the corridor, because the booms are 0.37 km off the axis.
+ * **Spinning.** The drum's hull, and the sim's bay walled in it: thin walls
+ * outside the bay's sides and end, and the mouth wall in front of the plane
+ * with the lane cut through it, where the hub face's plates stand. Nothing
+ * stands in the bay or the lane.
+ *
+ * **Static.** The yard, its bearing and the enclosed spine.
  */
-function shipyardGantryProxy(): StationProxy {
-	const drum = cutAround([axial(0.33, 0.33, -0.55, 0.4)], bayHoles("shipyard"));
-
-	const KEEL_Z = -0.68; // SHIPYARD_KEEL_AFT_KM
-	const centre: Bounds = {
-		x0: -0.95,
-		x1: 0.95,
-		y0: -0.55,
-		y1: 0.55,
-		z0: -1.09,
-		z1: -0.29,
-	};
-	const starboardEnd: Bounds = {
-		x0: 0.95,
-		x1: 1.29,
-		y0: -0.38,
-		y1: 0.38,
-		z0: -0.9,
-		z1: -0.4,
-	};
-	const portEnd: Bounds = { ...starboardEnd, x0: -1.3, x1: -0.95 };
-	const portTip: Bounds = {
-		x0: -1.38,
-		x1: -1.3,
-		y0: -0.14,
-		y1: 0.14,
-		z0: -0.85,
-		z1: -0.5,
-	};
-	const boom = (sign: number): Bounds => ({
-		x0: -0.24,
-		x1: 0.24,
-		y0: sign > 0 ? 0.37 : -0.58,
-		y1: sign > 0 ? 0.58 : -0.37,
-		z0: -0.72,
-		z1: 1.15,
-	});
-
-	// An end arch: a half-ring under the keel at x = ±1.2, from one side's
-	// top round the bottom to the other's.
-	const ARCH_RADIUS = 0.4;
-	const ARCH_TUBE = 0.03;
-	const arch = (x: number): ProxyCapsule[] => {
-		const point = (deg: number): Point => {
-			const t = (deg * Math.PI) / 180;
-			return {
-				x,
-				y: ARCH_RADIUS * Math.sin(t),
-				z: KEEL_Z - ARCH_RADIUS * Math.cos(t),
-			};
-		};
-		const steps = [-90, -60, -30, 0, 30, 60, 90];
-		return steps
-			.slice(1)
-			.map((deg, i) => capsule(point(steps[i]), point(deg), ARCH_TUBE));
-	};
-
-	const keel = [centre, starboardEnd, portEnd, portTip, boom(1), boom(-1)].map(
-		boxOf,
+const BAY_WALL_KM = 0.005;
+const MOUTH_WALL_KM = 0.002;
+function bayWalls(): ProxyBox[] {
+	const plane = STATION_GEOMETRY.shipyard.aperturePlaneKm;
+	const bay = stationInterior("shipyard", plane);
+	const [end, mouth] = interiorAxialSpanKm(bay);
+	const hx = bay.halfAcrossKm;
+	const hy = bay.halfUpKm;
+	const w = BAY_WALL_KM;
+	const shell = cutAround(
+		[axial(hx + w, hy + w, end - w, mouth)],
+		[axial(hx, hy, end, mouth)],
 	);
-	return proxyOf(drum, [...keel, ...arch(1.196), ...arch(-1.196)]);
+	const mouthWall = cutAround(
+		[axial(hx + w, hy + w, mouth, mouth + MOUTH_WALL_KM)],
+		[axial(bay.laneHalfAcrossKm, bay.laneHalfUpKm, mouth, Infinity)],
+	);
+	return [...shell, ...mouthWall];
 }
 
-// ---------------------------------------------------------------------------
-// Shipyard B — Hangar // glossary-ignore: Hangar
-// ---------------------------------------------------------------------------
-
-/**
- * The Hangar: a compact hub on the spin axis that turns, and a long slab // glossary-ignore: Hangar
- * behind it that does not (node #746).
- *
- * **Spinning.** The hub (`core`, square section to ±0.252 km, aft face
- * −0.18 km, forward face at the 0.372 km plane) as one box cut round the bay
- * and the prism, standing 28 m proud of the plane as the Gantry's drum does,
- * and the spindle behind it running back into the slab's bearing.
- *
- * **Static.** The slab runs along x behind the hub (centred
- * `SHIPYARD_KEEL_AFT_KM` aft, forward face at −0.38 km): its octagonal parallel
- * section as two boxes, and each chamfered end as two smaller boxes stepping in with
- * the taper, each as large as its corner allows inside the 1.5 km reach. A
- * band across the forward face carries the bay mouth's two lips and the dark
- * recess, which stand up to 36 m proud of it, and a box carries the bearing
- * the spindle turns in. Nothing static reaches forward of −0.335 km, so the
- * bay's swept cylinder (from −0.033 km) and the corridor are clear by
- * construction.
- */
-function shipyardHangarProxy(): StationProxy {
-	const hub = cutAround(
-		[axial(0.26, 0.26, -0.19, 0.4), axial(0.1, 0.1, -0.46, -0.19)],
-		bayHoles("shipyard"),
-	);
-	const SLAB_BACK = -0.98;
-	const SLAB_FRONT = -0.38;
-	const slab: Bounds[] = [
-		// The parallel section is an octagon: full depth to its 45° vertices at
-		// ±0.391 km, and 28 m shallower each side to its full height. Two boxes
-		// stand at most 40 m off its drawn surface, at the top-front edge, where
-		// one box stood 51 m off it (measured in the section 0.7 km out).
-		{
-			x0: -0.94,
-			x1: 0.86,
-			y0: -0.391,
-			y1: 0.391,
-			z0: SLAB_BACK,
-			z1: SLAB_FRONT,
-		},
-		{
-			x0: -0.94,
-			x1: 0.86,
-			y0: -0.432,
-			y1: 0.432,
-			z0: SLAB_BACK + 0.028,
-			z1: SLAB_FRONT - 0.028,
-		},
-		{ x0: -1.06, x1: -0.94, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
-		{ x0: -1.15, x1: -1.06, y0: -0.33, y1: 0.33, z0: -0.89, z1: -0.47 },
-		{ x0: 0.86, x1: 0.98, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
-		{ x0: 0.98, x1: 1.1, y0: -0.33, y1: 0.33, z0: -0.9, z1: -0.46 },
-		// The mouth's lips and recess, proud of the forward face.
-		{ x0: -0.54, x1: 0.54, y0: -0.19, y1: 0.19, z0: SLAB_FRONT, z1: -0.344 },
-		// The bearing ring the spindle turns in.
-		axial(0.16, 0.16, SLAB_FRONT, -0.335),
-		// The two masts on the slab's top, dish and beacon included. // glossary-ignore: beacon
-		...[-0.9, 0.81].map(
-			(x): Bounds => ({
-				x0: x - 0.04,
-				x1: x + 0.04,
-				y0: 0.4,
-				y1: 0.535,
-				z0: -0.72,
-				z1: -0.64,
-			}),
-		),
-	];
-	return proxyOf(hub, slab.map(boxOf));
+function unpack(packed: string): ProxyBox[] {
+	const bytes = Uint8Array.from(atob(packed), (ch) => ch.charCodeAt(0));
+	const n = new Int16Array(bytes.buffer);
+	const { centreM, halfM, rot } = SHIPYARD_PROXY_PACK;
+	const boxes: ProxyBox[] = [];
+	for (let i = 0; i < n.length; i += 10) {
+		const [qx, qy, qz, qw] = [n[i + 6], n[i + 7], n[i + 8], n[i + 9]].map(
+			(v) => v / rot,
+		);
+		const norm = Math.hypot(qx, qy, qz, qw);
+		const [x, y, z, w] = [qx / norm, qy / norm, qz / norm, qw / norm];
+		// The quaternion's rotation matrix, column by column: the box's axes.
+		const axes: [Vec3, Vec3, Vec3] = [
+			v3(1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)),
+			v3(2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)),
+			v3(2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)),
+		];
+		boxes.push({
+			kind: "box",
+			cx: (n[i] * centreM) / 1000,
+			cy: (n[i + 1] * centreM) / 1000,
+			cz: (n[i + 2] * centreM) / 1000,
+			hx: (n[i + 3] * halfM) / 1000,
+			hy: (n[i + 4] * halfM) / 1000,
+			hz: (n[i + 5] * halfM) / 1000,
+			axes,
+		});
+	}
+	return boxes;
 }
 
-// ---------------------------------------------------------------------------
-// Shipyard C — Slipway
-// ---------------------------------------------------------------------------
-
-/** The Slipway's arc: its major radius and tube, `buildShipyardSlipway`'s. */
-const SLIPWAY_MAJOR_KM = 2.07 * 0.62;
-const SLIPWAY_TUBE_KM = 0.12;
-/** Where the arc starts, and how far round it runs. */
-const SLIPWAY_FROM = Math.PI * 0.28;
-const SLIPWAY_SWEEP = Math.PI * 1.45;
-
 /**
- * The Slipway: a compact hub on the spin axis that turns, and a broken ring
- * round it that does not (node #746).
- *
- * **Spinning.** The hub (`core`, a rounded section to 0.24 × 0.204 km, aft
- * face −0.36 km, forward face at the 0.372 km plane) as one box cut round the
- * bay and the prism, 28 m proud of the plane as the Gantry's drum is.
- *
- * **Static.** The arc as a chain of capsules along its centreline, one per
- * facet ring of the drawn torus, so the gap between its ends — the slip — is
- * open, as it is on screen. Each slip-head as four capsules along its radial
- * arm, a pair either side of the centreline in both the tangent and Z, which
- * holds its square section where one fat capsule would carry the corners
- * past the 1.5 km reach. Each strut as a capsule from just outside the bay's
- * swept cylinder out to the arc. The masts the fixtures stand on the +Z
- * crown are covered by a capsule each.
+ * The drum's boxes, with the axis-aligned ones cut exactly round the sim's bay
+ * and lane, as every bay role's drum is. A plate on the hub face is fitted
+ * with a minimum thickness either side of it, so its box reaches a little way
+ * through the plane into the bay; the cut takes that off.
  */
-function shipyardSlipwayProxy(): StationProxy {
-	const hub = cutAround([axial(0.24, 0.205, -0.37, 0.4)], bayHoles("shipyard"));
-	const at = (theta: number, radius: number, z = 0, across = 0): Point => ({
-		x: radius * Math.cos(theta) - across * Math.sin(theta),
-		y: radius * Math.sin(theta) + across * Math.cos(theta),
-		z,
+function outsideTheBay(boxes: ProxyBox[]): ProxyBox[] {
+	const holes = bayHoles("shipyard");
+	return boxes.flatMap((b) => {
+		const bounds = alignedBounds(b);
+		return bounds ? cutAround([bounds], holes) : [b];
 	});
-	const RINGS = 22;
-	const arc = Array.from({ length: RINGS }, (_, i) =>
-		capsule(
-			at(SLIPWAY_FROM + (i / RINGS) * SLIPWAY_SWEEP, SLIPWAY_MAJOR_KM),
-			at(SLIPWAY_FROM + ((i + 1) / RINGS) * SLIPWAY_SWEEP, SLIPWAY_MAJOR_KM),
-			SLIPWAY_TUBE_KM,
-		),
-	);
-	const heads = [SLIPWAY_FROM, SLIPWAY_FROM + SLIPWAY_SWEEP].flatMap((theta) =>
-		[-1, 1].flatMap((t) =>
-			[-1, 1].map((s) =>
-				capsule(
-					at(theta, SLIPWAY_MAJOR_KM - 0.12, s * 0.09, t * 0.1),
-					at(theta, SLIPWAY_MAJOR_KM + 0.05, s * 0.09, t * 0.1),
-					0.12,
-				),
-			),
-		),
-	);
-	const struts = [0, 1, 2, 3].map((i) => {
-		const theta = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
-		return capsule(at(theta, 0.23), at(theta, SLIPWAY_MAJOR_KM), 0.045);
-	});
-	const masts = [0.6, 1, 1.4].map((turns) =>
-		capsule(
-			at(Math.PI * turns, SLIPWAY_MAJOR_KM - 0.05, SLIPWAY_TUBE_KM),
-			at(Math.PI * turns, SLIPWAY_MAJOR_KM - 0.05, SLIPWAY_TUBE_KM + 0.1),
-			0.04,
-		),
-	);
-	return proxyOf(hub, [...arc, ...heads, ...struts, ...masts]);
+}
+/** A box whose axes are the frame's, in some order, as bounds; else null. */
+function alignedBounds(b: ProxyBox): Bounds | null {
+	const extent = [b.hx, b.hy, b.hz];
+	if (b.axes) {
+		const halves = [b.hx, b.hy, b.hz];
+		for (let i = 0; i < 3; i++) {
+			const a: Vec3 = b.axes[i];
+			const c: number[] = [Math.abs(a.x), Math.abs(a.y), Math.abs(a.z)];
+			const k = c.indexOf(Math.max(...c));
+			if (c[k] < 0.9999) return null;
+			extent[k] = halves[i];
+		}
+	}
+	return {
+		x0: b.cx - extent[0],
+		x1: b.cx + extent[0],
+		y0: b.cy - extent[1],
+		y1: b.cy + extent[1],
+		z0: b.cz - extent[2],
+		z1: b.cz + extent[2],
+	};
+}
+
+const authoredShipyards = new Map<string, StationProxy>();
+function authoredShipyardProxy(
+	form: keyof typeof SHIPYARD_PROXIES,
+): StationProxy {
+	let proxy = authoredShipyards.get(form);
+	if (!proxy) {
+		const { drum, yard } = SHIPYARD_PROXIES[form];
+		proxy = proxyOf(
+			[...outsideTheBay(unpack(drum)), ...bayWalls()],
+			unpack(yard),
+		);
+		authoredShipyards.set(form, proxy);
+	}
+	return proxy;
+}
+
+/** A shipyard's written boxes as decoded, before the bay is cut from them. */
+export function shipyardProxyBoxes(form: keyof typeof SHIPYARD_PROXIES): {
+	drum: ProxyBox[];
+	yard: ProxyBox[];
+} {
+	const { drum, yard } = SHIPYARD_PROXIES[form];
+	return { drum: unpack(drum), yard: unpack(yard) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,11 +961,9 @@ export function stationProxy(
 		case "shipyard":
 			switch (form) {
 				case "a":
-					return shipyardGantryProxy();
 				case "b":
-					return shipyardHangarProxy();
 				case "c":
-					return shipyardSlipwayProxy();
+					return authoredShipyardProxy(form);
 				default:
 					return null;
 			}
@@ -1085,6 +1002,22 @@ export function proxyReachKm(proxy: StationProxy): number {
 	for (const p of [...proxy.spinning, ...proxy.static]) {
 		switch (p.kind) {
 			case "box": {
+				if (p.axes) {
+					// The farthest of its eight corners.
+					const [a, b, c] = p.axes;
+					for (const i of [-1, 1])
+						for (const j of [-1, 1])
+							for (const k of [-1, 1])
+								max = Math.max(
+									max,
+									Math.hypot(
+										p.cx + i * p.hx * a.x + j * p.hy * b.x + k * p.hz * c.x,
+										p.cy + i * p.hx * a.y + j * p.hy * b.y + k * p.hz * c.y,
+										p.cz + i * p.hx * a.z + j * p.hy * b.z + k * p.hz * c.z,
+									),
+								);
+					break;
+				}
 				// The box corner farthest from the origin
 				const dx = Math.abs(p.cx) + p.hx;
 				const dy = Math.abs(p.cy) + p.hy;
@@ -1138,9 +1071,18 @@ export function proxyDistanceKm(
 ): number {
 	switch (p.kind) {
 		case "box": {
-			const dx = Math.abs(x - p.cx) - p.hx;
-			const dy = Math.abs(y - p.cy) - p.hy;
-			const dz = Math.abs(z - p.cz) - p.hz;
+			let [ux, uy, uz] = [x - p.cx, y - p.cy, z - p.cz];
+			if (p.axes) {
+				const [a, b, c] = p.axes;
+				[ux, uy, uz] = [
+					ux * a.x + uy * a.y + uz * a.z,
+					ux * b.x + uy * b.y + uz * b.z,
+					ux * c.x + uy * c.y + uz * c.z,
+				];
+			}
+			const dx = Math.abs(ux) - p.hx;
+			const dy = Math.abs(uy) - p.hy;
+			const dz = Math.abs(uz) - p.hz;
 			return (
 				Math.hypot(Math.max(dx, 0), Math.max(dy, 0), Math.max(dz, 0)) +
 				Math.min(Math.max(dx, dy, dz), 0)
@@ -1180,7 +1122,87 @@ export function proxyContains(
 	z: number,
 	toleranceKm: number,
 ): boolean {
-	return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
+	if (primitives.length <= INDEXED_ABOVE)
+		return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
+	// The authored shipyards' thousands of boxes (node #818): only the ones
+	// whose bounding sphere comes within the tolerance can hold the point.
+	const grid = indexOf(primitives);
+	const reach = Math.max(toleranceKm, 0);
+	let found = false;
+	querySphereGrid(
+		grid,
+		x - reach,
+		y - reach,
+		z - reach,
+		x + reach,
+		y + reach,
+		z + reach,
+		(n) => {
+			found = proxyDistanceKm(primitives[n], x, y, z) <= toleranceKm;
+			return found;
+		},
+	);
+	return found;
+}
+
+/**
+ * The least `proxyDistanceKm` from a point to any primitive of a list:
+ * negative inside. Exact; a long list (node #818) is searched through its
+ * grid, in a radius that doubles until a primitive is within it.
+ */
+export function proxyListDistanceKm(
+	primitives: readonly ProxyPrimitive[],
+	x: number,
+	y: number,
+	z: number,
+): number {
+	let best = Number.POSITIVE_INFINITY;
+	if (primitives.length <= INDEXED_ABOVE) {
+		for (const p of primitives)
+			best = Math.min(best, proxyDistanceKm(p, x, y, z));
+		return best;
+	}
+	const grid = indexOf(primitives);
+	for (let r = INDEX_CELL_KM; ; r *= 2) {
+		querySphereGrid(grid, x - r, y - r, z - r, x + r, y + r, z + r, (n) => {
+			best = Math.min(best, proxyDistanceKm(primitives[n], x, y, z));
+		});
+		// Every primitive with a surface point within `r` has its bounding
+		// sphere in the box just searched.
+		if (best <= r) return best;
+		if (r > 64) break;
+	}
+	for (const p of primitives)
+		best = Math.min(best, proxyDistanceKm(p, x, y, z));
+	return best;
+}
+
+/** A list longer than this is searched through a grid. */
+const INDEXED_ABOVE = 64;
+const INDEX_CELL_KM = 0.05;
+const indexes = new WeakMap<readonly ProxyPrimitive[], SphereGrid>();
+function indexOf(primitives: readonly ProxyPrimitive[]): SphereGrid {
+	let grid = indexes.get(primitives);
+	if (!grid) {
+		grid = buildSphereGrid(primitives.map(boundOf), INDEX_CELL_KM);
+		indexes.set(primitives, grid);
+	}
+	return grid;
+}
+function boundOf(p: ProxyPrimitive): Sphere {
+	switch (p.kind) {
+		case "box":
+			return { x: p.cx, y: p.cy, z: p.cz, r: Math.hypot(p.hx, p.hy, p.hz) };
+		case "sphere":
+			return { x: p.cx, y: p.cy, z: p.cz, r: p.radiusKm };
+		case "capsule":
+			return {
+				x: (p.ax + p.bx) / 2,
+				y: (p.ay + p.by) / 2,
+				z: (p.az + p.bz) / 2,
+				r: Math.hypot(p.bx - p.ax, p.by - p.ay, p.bz - p.az) / 2 + p.radiusKm,
+			};
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1230,7 +1252,7 @@ export function resolverPrimitive(p: ProxyPrimitive): Primitive {
 			return {
 				kind: "box",
 				centre: v3(p.cx, p.cy, p.cz),
-				axes: [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)],
+				axes: p.axes ?? [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)],
 				half: [p.hx, p.hy, p.hz],
 			};
 		case "sphere":

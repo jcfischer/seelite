@@ -42,7 +42,7 @@
  * form.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
 	STATION_TYPES,
@@ -74,6 +74,10 @@ import {
 	verticesOutsideProxy,
 } from "./helpers/station-proxy-measure";
 import { codeOf } from "./lib/source-scan";
+import {
+	installShippedShipyards,
+	uninstallShipyards,
+} from "../scripts/lib/shipped-shipyards";
 
 const TYPES: StationType[] = STATION_TYPES;
 const GREY = 0x9aa6b2;
@@ -124,6 +128,13 @@ function intrusions(
 const fmt = (v: THREE.Vector3) =>
 	`(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
 
+// The shipyards' proxies are the authored yards' (node #818), which the sim
+// collides with whatever is drawn, so the rows here measure the meshes the
+// game draws once their models install. Removed after, because bun runs every
+// test file in one process and the next file may measure the stand-ins.
+beforeAll(installShippedShipyards);
+afterAll(uninstallShipyards);
+
 describe("station proxy budget (collision.md §9.1.11)", () => {
 	test("every form in every pool has a proxy", () => {
 		// Node #717: a system picks each station's form from its role's pool,
@@ -152,10 +163,12 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		}
 	});
 
-	test(
-		"no drawn vertex outside the proxy, within tolerance",
-		() => {
-			for (const [type, form] of FORMS_IN_PLAY) {
+	// One row per form: the authored shipyards draw ~200,000 vertices each,
+	// and the whole set in one row ran within a second of its limit (#818).
+	for (const [type, form] of FORMS_IN_PLAY)
+		test(
+			`no drawn vertex outside the proxy, within tolerance: ${formLabel(type, form)}`,
+			() => {
 				const opening = openingOf(type, form);
 				for (const [berthSeed, assemblySeed] of seedPairs(
 					type,
@@ -190,10 +203,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 					}
 					expect(offenders.length).toBe(0);
 				}
-			}
-		},
-		HEAVY_ROW_MS,
-	);
+			},
+			HEAVY_ROW_MS,
+		);
 
 	test("no primitive outside reachKm", () => {
 		for (const [type, form] of FORMS_IN_PLAY) {
@@ -262,7 +274,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// 1 m sliver off a box changes how finely every tick is swept. Each
 		// figure is pinned, and it is the thinnest full extent in the set:
 		// - trade: the 32 m box in front of the +Z face that carries the collar;
-		// - shipyard: the drum's 28 m lip between the plane and its frame;
+		// - shipyard: a fitted plate of the authored model, 0.7 m: its 0.5 m
+		//   minimum thickness and the packing's slack, the same on all three
+		//   (node #818; the procedural drum's lip was 28 m);
 		// - refinery: a plant cell's 26 m sliver left beside the corridor where
 		//   a diagonal cell is cut round it (0.08 km to the corridor's radius);
 		// - outpost: the core section's 90 m depth (`SALVAGE_CORE.halfHeightKm`).
@@ -274,9 +288,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// opening and no-tunnelling rows carry the separate safety obligations.
 		const DECLARED: Partial<Record<string, number>> = {
 			"trade/a": 0.032,
-			"shipyard/a": 0.028,
-			"shipyard/b": 0.028,
-			"shipyard/c": 0.028,
+			"shipyard/a": 0.0007,
+			"shipyard/b": 0.0007,
+			"shipyard/c": 0.0007,
 			"refinery/a": 0.04,
 			"refinery/b": 0.046471,
 			"refinery/c": 0.0168,

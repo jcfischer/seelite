@@ -37,3 +37,12 @@ export const STATION_INTERIORS_GLB_URL = new URL(
 	"./models/station-interiors.glb",
 	import.meta.url,
 ).href;
+
+/** The three shipyards (node #818), prepared by
+ *  `spikes/shipyards/prepare-flight-asset.mjs`: form `a` Gantry Works, `b`
+ *  Foundry Hangar, `c` Crescent Slipway. */ // glossary-ignore: Hangar
+export const SHIPYARD_GLB_URLS = {
+	a: new URL("./models/shipyard-gantry.glb", import.meta.url).href,
+	b: new URL("./models/shipyard-foundry.glb", import.meta.url).href,
+	c: new URL("./models/shipyard-slipway.glb", import.meta.url).href,
+} as const;
