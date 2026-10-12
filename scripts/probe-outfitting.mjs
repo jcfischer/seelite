@@ -18,8 +18,8 @@ await guardedOrigin(origin);
 const browser = await launchChromium();
 const t = tally();
 let passed = 0;
-function check(name, ok) {
-	if (!ok) throw Error(name);
+function check(name, ok, detail = "") {
+	if (!ok) throw Error(detail ? `${name}: ${detail}` : name);
 	console.log(`PASS ${name}`);
 	passed++;
 }
@@ -85,10 +85,59 @@ try {
 		"the fuel row's FILL fills the tank",
 		await page.evaluate(async () => {
 			const g = window.__seelite;
-			const { commanderJumpRangeLy } = await import("/src/station-commerce.ts");
-			return g.commander.fuelLy === commanderJumpRangeLy(g.commander);
+			const { commanderFuelCapacityLy } = await import(
+				"/src/station-commerce.ts"
+			);
+			return g.commander.fuelLy === commanderFuelCapacityLy(g.commander);
 		}),
 	);
+	// A fitted tank raises the gauge's capacity and leaves the range on the
+	// hull (#926). The figures come off the page's own modules.
+	const before = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { makeModule } = await import("/src/loadout.ts");
+		const saved = g.commander;
+		g.commander = {
+			...saved,
+			loadout: { ...saved.loadout, i1: makeModule("fuel-tank", 1, "E") },
+		};
+		g.stationConsoleRevision++;
+		g.updateCockpit();
+		return saved;
+	});
+	await fuelRow.locator('[data-live-station-action="buy-fuel"]').click();
+	const tank = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { HULL_SPECS } = await import("/src/hull.ts");
+		const { moduleRow } = await import("/src/loadout.ts");
+		return {
+			hullLy: HULL_SPECS[g.commander.hull].tankLy,
+			addLy: moduleRow(g.commander.loadout.i1).output.fuelLy,
+			fuelLy: g.commander.fuelLy,
+			capacityLy: g.fuelCapacityLy,
+			rangeLy: g.jumpRangeLy,
+		};
+	});
+	const gauge = await fuelRow.innerText();
+	check(
+		"a fitted tank fills past the hull's tank and the gauge shows it",
+		tank.capacityLy === tank.hullLy + tank.addLy &&
+			tank.fuelLy === tank.capacityLy &&
+			// The row prints `9.0 / 9.0 LY`; whitespace is not the claim.
+			gauge.replace(/\s+/g, "").includes(`/${tank.capacityLy.toFixed(1)}LY`),
+		JSON.stringify({ ...tank, gauge }),
+	);
+	check(
+		"the jump range stays the hull's tankLy",
+		tank.rangeLy === tank.hullLy,
+		JSON.stringify(tank),
+	);
+	await page.evaluate((saved) => {
+		const g = window.__seelite;
+		g.commander = saved;
+		g.stationConsoleRevision++;
+		g.updateCockpit();
+	}, before);
 	const credits = await page.evaluate(() => window.__seelite.commander.credits);
 	await page.locator('[data-outfit-candidate="stock:pulse-laser/1/E"]').click();
 	check(
@@ -226,6 +275,100 @@ try {
 					JSON.stringify(screen.stock.map((c) => c.id))
 			);
 		}),
+	);
+	// #925: the fitted plant and Extra Energy Units set the flown bank, through
+	// the console's own transactions; the expected figures come off the page.
+	const bank = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { carriedModule, fittedCapacity, makeModule } = await import(
+			"/src/loadout.ts"
+		);
+		const read = () => ({
+			energy: g.condition.energy,
+			max: g.condition.energyMax,
+			regen: g.condition.energyRegenPerS,
+		});
+		const want = () => fittedCapacity(g.commander.hull, g.commander.loadout);
+		const fit = (module, slot) => {
+			g.commander = {
+				...g.commander,
+				recoveredFittings: [
+					...(g.commander.recoveredFittings ?? []),
+					carriedModule(module),
+				],
+			};
+			const index = g.commander.recoveredFittings.length - 1;
+			return g.transactStation({ type: "fit-recovered", slot, index });
+		};
+		g.condition = { ...g.condition, energy: g.condition.energyMax };
+		const stock = read();
+		const fitted =
+			fit(makeModule("power-plant", 1, "A"), "plant") &&
+			fit(makeModule("extra-energy-unit", 1, "E"), "flex");
+		const bought = { ...read(), want: want() };
+		const removed = g.transactStation({ type: "remove-module", slot: "flex" });
+		const after = { ...read(), want: want() };
+		const beforeRefusal = JSON.stringify(read());
+		const plantRefused = !g.transactStation({
+			type: "remove-module",
+			slot: "plant",
+		});
+		const unchanged = JSON.stringify(read()) === beforeRefusal;
+		// A hull bought to wait for the launch (#556 D10) is adopted without
+		// being flown: the flown ship keeps its fitted bank until it takes over.
+		const own = g.commander;
+		const other = own.hull === "freighter" ? "courier" : "freighter";
+		const holding = (commander) => ({
+			holdings: { ...g.holdings(), commander },
+			world: g.commerceWorld,
+		});
+		g.adopt("world", holding({ ...own, hull: other }), null);
+		const pending = JSON.stringify(read()) === beforeRefusal;
+		g.adopt("world", holding(own), null);
+		const launched = g.launch();
+		for (let i = 0; i < 30; i++) g.step(1 / 60);
+		return {
+			stock,
+			fitted,
+			bought,
+			removed,
+			after,
+			plantRefused,
+			unchanged,
+			pending,
+			launched,
+			flown: { ...read(), want: want() },
+		};
+	});
+	console.log(JSON.stringify(bank));
+	check(
+		"a refit plant and Extra Energy Unit arrive as the flown bank, full",
+		bank.fitted &&
+			bank.bought.max === bank.bought.want.bankE &&
+			bank.bought.regen === bank.bought.want.regenPerS &&
+			bank.bought.max > bank.stock.max &&
+			bank.bought.energy === bank.bought.max,
+	);
+	check(
+		"removing the Extra Energy Unit clamps the bank to the plant's",
+		bank.removed &&
+			bank.after.max === bank.after.want.bankE &&
+			bank.after.max < bank.bought.max &&
+			bank.after.energy === bank.after.max,
+	);
+	check(
+		"the plant is replace-only and the refusal leaves the bank alone",
+		bank.plantRefused && bank.unchanged,
+	);
+	check(
+		"a hull waiting for the launch leaves the flown bank alone",
+		bank.pending,
+	);
+	check(
+		"the launched flight carries the fitted maxima",
+		bank.launched &&
+			bank.flown.max === bank.flown.want.bankE &&
+			bank.flown.regen === bank.flown.want.regenPerS,
 	);
 	check("no browser errors", errors.length === 0);
 } finally {

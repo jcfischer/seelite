@@ -2,14 +2,19 @@ import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
 	fitted,
+	fittedCapacity,
 	equipmentNames,
 	fittingSaleValue,
 	freeSlot,
 	repeatableEquipment,
 	parseModule,
+	stockLoadout,
 } from "./loadout";
 import { outfittingScreen } from "./outfitting";
-import { commanderJumpRangeLy } from "./station-commerce";
+import {
+	commanderFuelCapacityLy,
+	commanderJumpRangeLy,
+} from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
@@ -460,8 +465,10 @@ import {
 	fullCondition,
 	headOnPool,
 	isAlive,
+	refitCondition,
 	sideStruck,
 	stepCondition,
+	stepHullTemperature,
 } from "./ship-condition";
 import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import { PLAYER_LASER_RANGE_KM } from "./laser";
@@ -549,6 +556,9 @@ import {
 	duelConsoleReadout,
 	duelRowCells,
 	duelRowWidest,
+	HULL_TEMP_LABEL,
+	hullTempCells,
+	hullTempWidest,
 	onTargetMark,
 	raiderCueTone,
 	targetConditionLine,
@@ -1760,6 +1770,9 @@ const FLOOR_BANDS = DUEL_BAND;
  *  over a lit station face, and translucent so the slot stays visible. */
 const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
 const PROMPT_PLATE_PAD_PX = 8;
+/** How far the hull-temperature plate stands in from its band, top and
+ *  bottom, as a share of the band (#931). */
+const FLOOR_TEMP_PLATE_INSET = 0.12;
 
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
@@ -1808,6 +1821,8 @@ const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
 /** The widest reading the duel row can print, for the floor's fit. */
 const DUEL_ROW_WIDEST = duelRowWidest();
+/** The widest reading the hull-temperature gauge can print, in the same band. */
+const HULL_TEMP_WIDEST = hullTempWidest();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -2759,7 +2774,18 @@ class Game {
 	/** A whole ship of the flown hull. A function, because a condition is
 	 *  mutable state and every caller needs its own. */
 	private flownFullCondition(): ShipCondition {
-		return fullCondition(this.flownHull);
+		return fullCondition(this.flownHull, this.flownCapacity());
+	}
+
+	/** The flown ship's fitted bank (#925). The commander's loadout is the
+	 *  flown hull's only once that hull is flown: a hull waiting for the launch
+	 *  (#556 D10) leaves the old one on its stock fit until it takes over. */
+	private flownCapacity() {
+		const loadout =
+			this.commander.hull === this.flownHull
+				? this.commander.loadout
+				: stockLoadout(this.flownHull);
+		return fittedCapacity(this.flownHull, loadout);
 	}
 	/**
 	 * The three ladders' banked record (#183), saved beside `commander` so a
@@ -3352,6 +3378,9 @@ class Game {
 		 *  row was deliberately not drawn. */
 		duelRow: FloorCell[] | null;
 		duelBox: FloorBox | null;
+		/** The plate under the hull-temperature cell as painted (#931), or
+		 *  `null` when the hull is at ambient and no cell was drawn. */
+		tempPlate: FloorBox | null;
 		source: {
 			regime: string;
 			spoolLeftS: number;
@@ -10608,7 +10637,7 @@ class Game {
 					currentIndex: this.world.system.record.index,
 					// The flown hull's reach (#554): the shell, the lit points,
 					// the label, every route and the finder's lists.
-					tankLy: this.fuelCapacityLy,
+					tankLy: this.jumpRangeLy,
 					// **Both getters, for the same reason `currentSystem` is one.**
 					// Held as values these froze at mount: a jump with the map
 					// open runs `observeCurrentSystemRelay` and then
@@ -12994,11 +13023,21 @@ class Game {
 	}
 
 	/**
-	 * The tank's capacity, likewise: the flown hull's `tankLy`, which is also
-	 * its jump range (#185 D1, #554). A getter on the commander's hull rather
-	 * than a field, because a restored save names the hull after construction.
+	 * The tank's capacity, likewise: the flown hull's `tankLy` plus any fitted
+	 * tank (#926). What the HUD fuel line and the station fuel gauge show, and
+	 * never the range check. A getter rather than a field, because a restored save
+	 * names the hull and loadout after construction.
 	 */
 	get fuelCapacityLy(): number {
+		return commanderFuelCapacityLy(this.commander);
+	}
+
+	/**
+	 * The longest single jump: the flown hull's `tankLy` (#185 D1, #554), which
+	 * a fitted tank does not raise (#873 R1). The chart, the finder, the route
+	 * planner and the job board read this one.
+	 */
+	get jumpRangeLy(): number {
 		return commanderJumpRangeLy(this.commander);
 	}
 
@@ -13063,7 +13102,7 @@ class Game {
 			this.world.galaxy.systems,
 			here,
 			to,
-			this.fuelCapacityLy,
+			this.jumpRangeLy,
 		);
 		// **Both refusals leave any standing course alone.** An unknown index
 		// returned early above while an unroutable destination fell through to
@@ -13166,16 +13205,36 @@ class Game {
 	takeDamage(amount: number, side: ShieldSide, reason: string) {
 		if (!(amount > 0)) return;
 		this.condition = applyDamage(this.condition, amount, side);
-		// The one place damage lands is the one place a death is noticed.
-		if (!isAlive(this.condition) && !this.dead) {
-			this.dead = true;
-			this.clockHeld = true;
-			this.lastExit = "ship destroyed";
-			// Not ejected, so the ship is lost, pod fitted or not (#660 D4).
-			void this.onDeath?.("destroyed");
-		}
+		this.noticeDestroyed();
 		this.cancelJumpCharge(reason);
 		this.cancelSpoolUp(reason);
+	}
+
+	/**
+	 * The death path, for both places hull is spent: a hit (`takeDamage`) and a
+	 * star's heat (`stepHullTemperature`, #931). Heat is not a hit, so it does
+	 * not come through `takeDamage` and cancels no spool or jump charge: a
+	 * pilot climbing out of a band on a spool would otherwise lose the spool
+	 * to the heat that the climb is escaping.
+	 */
+	private noticeDestroyed() {
+		if (isAlive(this.condition) || this.dead) return;
+		this.dead = true;
+		this.clockHeld = true;
+		this.lastExit = "ship destroyed";
+		// Not ejected, so the ship is lost, pod fitted or not (#660 D4).
+		void this.onDeath?.("destroyed");
+	}
+
+	/**
+	 * The ship's distance from its system's star, in the star's radii (#931).
+	 * The star sits at the system origin (`placeBodies`), but its position is
+	 * read rather than assumed.
+	 */
+	private starDistanceR(): number {
+		const star = this.world.system.bodies.find((b) => b.kind === "star");
+		if (!star || !(star.radiusKm > 0)) return Number.POSITIVE_INFINITY;
+		return length(sub(this.world.ship.pos, star.pos)) / star.radiusKm;
 	}
 
 	/**
@@ -15106,7 +15165,15 @@ class Game {
 		);
 		if (gun.fired)
 			this.firedMuzzleIndices = groupMuzzleIndices(this.flownHull, armedGroup);
-		this.condition = gun.condition;
+		// The star heats the hull wherever the ship is, docked included (#931):
+		// a station is far outside any band, so there it only cools. It reads
+		// the frame-start position, as the gun reads the frame-start trigger.
+		this.condition = stepHullTemperature(
+			gun.condition,
+			dt,
+			this.starDistanceR(),
+		);
+		this.noticeDestroyed();
 		const shot: PlayerShot = { fired: gun.fired, damage: gun.damage };
 		// What the player sees and hears of the shot. Without these a held
 		// trigger drew nothing and played nothing, and read as a dead key.
@@ -17498,9 +17565,9 @@ class Game {
 				// filter rather than a regeneration — keying on the station made
 				// the second dock in a system pay for the whole neighbourhood
 				// again, inside a cockpit update.
-				// The tank is in the key: the neighbourhood is the flown hull's
+				// The range is in the key: the neighbourhood is the flown hull's
 				// reach (#554), and a restore can replace the hull.
-				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.fuelCapacityLy}`;
+				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.jumpRangeLy}`;
 				if (place !== this.requestDestinationsKey) {
 					this.requestDestinations = deliveryCandidates(
 						this.world.galaxy.systems,
@@ -17509,7 +17576,7 @@ class Game {
 						// No poster to exclude at this level; the filter below is
 						// what removes whichever station is posting.
 						NO_EXCLUDED_STATION,
-						this.fuelCapacityLy,
+						this.jumpRangeLy,
 					);
 					this.requestDestinationsKey = place;
 				}
@@ -17608,10 +17675,10 @@ class Game {
 			{ holdings: this.holdings(), world: this.commerceWorld },
 			next,
 		);
-		if (
+		const refit =
 			this.commander.loadout !== next.holdings.commander.loadout ||
-			this.commander.hull !== next.holdings.commander.hull
-		) {
+			this.commander.hull !== next.holdings.commander.hull;
+		if (refit) {
 			this.armedFireGroup.reset();
 			this.floorFit = null;
 		}
@@ -17625,6 +17692,12 @@ class Game {
 		// last sentence standing, as it always did.
 		if (cause === "settlement") this.requestMessage = signals?.message ?? "";
 		if (signals?.hullChanged) this.receiveHull(signals.hullChanged);
+		// A refit at a dock moves the bank the ship launches with (#925). A hull
+		// delivered now already took a whole condition. One waiting for the
+		// launch is not flown yet: the flown ship keeps the bank it has until
+		// `setFlownHull` gives the new hull a whole condition.
+		if (refit && this.commander.hull === this.flownHull)
+			this.condition = refitCondition(this.condition, this.flownCapacity());
 		if (effects.consoleRevision) this.stationConsoleRevision += 1;
 		if (effects.requestRevision) this.requestRevision += 1;
 		// A request is ready to report: nothing else says so (#546).
@@ -19210,7 +19283,7 @@ class Game {
 				// not on the floor strip because `hud-and-scanner.md` §5 fixes
 				// that strip at four cells and gives the tank no home at all —
 				// which is a HUD question this node surfaced and did not settle.
-				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy} LY`,
+				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy.toFixed(1)} LY`,
 				(() => {
 					const to = this.nextHop();
 					return to ? `next ${to.name}` : "";
@@ -19321,7 +19394,7 @@ class Game {
 		// One local, passed *and* keyed. Interpolating a constant while letting
 		// `courseProgress` take its own default keyed a number this call could
 		// not vary — protection the comment claimed and the key did not give.
-		const maxJump = this.fuelCapacityLy;
+		const maxJump = this.jumpRangeLy;
 		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${maxJump}`;
 		if (this.courseChainCache?.key !== key) {
 			const progress = courseProgress(
@@ -19588,10 +19661,13 @@ class Game {
 			];
 			// And the duel row (#324), for the same reason: a third run on the
 			// same axis at the same scale.
-			const widestDuel = DUEL_ROW_LABELS.map((label) => ({
-				label,
-				value: DUEL_ROW_WIDEST[label],
-			}));
+			const widestDuel = [
+				...DUEL_ROW_LABELS.map((label) => ({
+					label,
+					value: DUEL_ROW_WIDEST[label],
+				})),
+				{ label: HULL_TEMP_LABEL, value: HULL_TEMP_WIDEST },
+			];
 			const groups = this.fireGroups;
 			const widestGroup = groups.map((group, index) => ({
 				label: "",
@@ -19675,6 +19751,7 @@ class Game {
 		// One painter for every centred row above the strip: measure the run,
 		// centre it, box it in its band, paint each cell. The course row and
 		// #324's duel row were this block twice.
+		let tempPlate: FloorBox | null = null;
 		const drawBandRow = (
 			rowCells: FloorCell[],
 			label: string,
@@ -19684,6 +19761,29 @@ class Game {
 			let rowX = (w - run.total) / 2;
 			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
 			for (const [i, cell] of rowCells.entries()) {
+				// **A plate behind the hull-temperature cell** (#931, the
+				// principal's ruling on the sheet). It shows only near a star, so
+				// the sky behind it is the brightest and warmest the glass meets,
+				// and red and amber over it did not read — #597's case for the
+				// docking notice, and its plate. Short of half a cell gap each side,
+				// so it never reaches the next cell's ink.
+				if (cell.label === HULL_TEMP_LABEL) {
+					const pad = (cellGap / 2) * 0.8;
+					tempPlate = floorBox(
+						cell.label,
+						rowX - pad,
+						run.widths[i] + 2 * pad,
+						box.top + FLOOR_TEMP_PLATE_INSET * box.height,
+					);
+					tempPlate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
+					ctx.fillStyle = PROMPT_PLATE_FILL;
+					ctx.fillRect(
+						tempPlate.x,
+						tempPlate.top,
+						tempPlate.width,
+						tempPlate.height,
+					);
+				}
 				drawFloorCell(
 					ctx,
 					cell,
@@ -19701,6 +19801,8 @@ class Game {
 		// The armed group stays readable in peace; combat adds shields and heat.
 		const duelRow: FloorCell[] = [
 			...(this.duelRowShown() ? duelRowCells(this.condition) : []),
+			// Hull temperature, while the hull is above ambient (#931).
+			...hullTempCells(this.condition),
 			{
 				label: "",
 				value: this.armedFireGroup.label(this.fireGroups),
@@ -19727,6 +19829,7 @@ class Game {
 			courseBox,
 			duelRow,
 			duelBox,
+			tempPlate,
 			baselineY,
 			glassBottomY,
 			scale,

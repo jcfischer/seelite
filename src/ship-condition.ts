@@ -12,7 +12,12 @@
  * No Three.js and no world: sim tier. The laser here is a resource and a damage
  * rate. What it hits is the caller's to decide.
  */
-import { HULL_SPECS, type HullId, stockPlant } from "./hull";
+import {
+	type FittedCapacity,
+	HULL_SPECS,
+	type HullId,
+	stockPlant,
+} from "./hull";
 import { type Vec3, dot } from "./vec3";
 
 /** Laser heat at which the gun locks. */
@@ -104,8 +109,8 @@ export const printHull = (hull: number): number =>
  *
  * **Honest bound: the tolerance is in the writer, not in the predicate.**
  * `isAlive` is still `hull > 0`, so the glass and the law are joined for every
- * state that comes out of `applyDamage`, which is every state the game itself
- * reaches. A script that hand-builds a condition at `hull: 0.01` — three of them
+ * state that comes out of `applyDamage` or `stepHullTemperature` — both write
+ * hull through `settledHull` — which is every state the game itself reaches. A script that hand-builds a condition at `hull: 0.01` — three of them
  * do, to stand a raider on its last point — is alive and prints `HULL 0`. Moving
  * the tolerance into `isAlive` would close that too and would move those three
  * scripts' fixture above the line with it; that is a node of its own, not a line
@@ -132,6 +137,53 @@ export const HULL_KILL_TOLERANCE = HULL_PRINT_STEP / 2;
  */
 export const CRIPPLED_HULL_FRACTION = 0.25;
 
+/**
+ * Hull temperature, #930's approved table (the principal, 2026-10-12).
+ * `scripts/measure-star-skim.ts` flew it; the resolution comment on #930 says
+ * why each figure and not its alternatives. `r` is the distance from the star's
+ * centre in units of its radius.
+ *
+ * Temperature is in units of the top: ambient 0, the top 1.
+ */
+export const HULL_TEMP_AMBIENT = 0;
+export const HULL_TEMP_TOP = 1;
+/** The skim band's edge: no heat at or beyond it. */
+export const SKIM_BAND_R = 2;
+/**
+ * Where heat reaches 1: cruise's drop-out shell, `SURFACE_MARGIN` in
+ * `cruise.ts`. Restated rather than imported because `cruise` imports `sim`,
+ * which imports this module; `tests/hull-temperature.test.ts` holds them equal.
+ */
+export const SKIM_SHELL_R = 1.05;
+/** How fast a hull heats at the shell, in tops per second. */
+export const HULL_HEAT_RISE_PER_S = 0.185;
+/** The cooling time constant: `dT/dt = rise · h(r) − T / τ`. */
+export const HULL_TEMP_COOL_TAU_S = 15;
+/** Above the top a hull loses `k · (T − 1)` of its integrity per second. */
+export const HULL_HEAT_DAMAGE_PER_S = 0.2;
+/**
+ * Below this a cooling hull is at ambient.
+ *
+ * Relaxation never arrives — a hull at 0.004 of the top would wait minutes to
+ * underflow, and the gauge shows while the hull is above ambient, so it would
+ * sit on the glass reading 1% long after the pass. Half the gauge's print step,
+ * which is `HULL_KILL_TOLERANCE`'s rule: a reading too small to print is the
+ * reading it rounds to. It applies only outside the band, where nothing heats.
+ */
+export const HULL_TEMP_SNAP = 0.005;
+
+/**
+ * Starlight's heat on a hull at `rOverR`: inverse-square, re-based so it is 1
+ * at the shell and inside it and 0 at the band edge and beyond (#930).
+ */
+export function starHeat(rOverR: number): number {
+	const flux = (r: number) => 1 / (r * r);
+	const h =
+		(flux(rOverR) - flux(SKIM_BAND_R)) /
+		(flux(SKIM_SHELL_R) - flux(SKIM_BAND_R));
+	return Math.min(1, Math.max(0, h));
+}
+
 export type ShieldSide = "fore" | "aft";
 
 export interface ShipCondition {
@@ -145,32 +197,65 @@ export interface ShipCondition {
 	shieldMax: number;
 	energy: number;
 	/** The energy bank's capacity and its regeneration per second: the fitted
-	 *  power plant's (#867 D3). A fresh condition carries the stock plant. */
+	 *  power plant's and Extra Energy Units' (#867 D3, #925). */
 	energyMax: number;
 	energyRegenPerS: number;
 	heat: number;
 	heatLocked: boolean;
 	/** Sim seconds since the last hit; gates the shield recharge. */
 	sinceStruckS: number;
+	/** Hull temperature (#931), in units of the top: ambient 0, the top 1.
+	 *  Not laser `heat`, and not Legal heat. `stepHullTemperature` owns it. */
+	hullTemp: number;
 }
 
-export function fullCondition(hull: HullId): ShipCondition {
+/** The part of `FittedCapacity` a condition reads: the bank and its regen. */
+type PlantCapacity = Pick<FittedCapacity, "bankE" | "regenPerS">;
+
+/**
+ * A whole ship. `capacity` is the fitted plant's and Extra Energy Units'
+ * (`fittedCapacity` in `loadout.ts`, #925), passed as numbers because
+ * `module-catalog.ts` imports this module and an import back closes a cycle.
+ * Without it the hull flies its stock plant, which is every NPC's (#875).
+ */
+export function fullCondition(
+	hull: HullId,
+	capacity: PlantCapacity = stockPlant(hull),
+): ShipCondition {
 	const { integrity: hullMax, shieldPool: shieldMax } = HULL_SPECS[hull];
-	const plant = stockPlant(hull);
 	return {
 		fore: shieldMax,
 		aft: shieldMax,
 		hull: hullMax,
 		hullMax,
 		shieldMax,
-		energy: plant.bankE,
-		energyMax: plant.bankE,
-		energyRegenPerS: plant.regenPerS,
+		energy: capacity.bankE,
+		energyMax: capacity.bankE,
+		energyRegenPerS: capacity.regenPerS,
 		heat: 0,
 		heatLocked: false,
 		// Clear of the delay, so a fresh ship recharges rather than spending its
 		// first seconds recovering from a hit it never took.
 		sinceStruckS: SHIELD_RECHARGE_DELAY_S,
+		hullTemp: HULL_TEMP_AMBIENT,
+	};
+}
+
+/**
+ * The same ship after a refit at a dock (#925). Added capacity arrives charged,
+ * as a fitted plate arrives whole (#873), so a full bank stays full; removed
+ * capacity clamps the bank. Shields, hull and heat are not the plant's.
+ */
+export function refitCondition(
+	c: ShipCondition,
+	capacity: PlantCapacity,
+): ShipCondition {
+	const added = Math.max(0, capacity.bankE - c.energyMax);
+	return {
+		...c,
+		energy: Math.min(capacity.bankE, c.energy + added),
+		energyMax: capacity.bankE,
+		energyRegenPerS: capacity.regenPerS,
 	};
 }
 
@@ -209,8 +294,8 @@ export const isAlive = (c: HullReading): boolean => c.hull > 0;
  *
  * **Where the floor sits moved, which is the whole of the difference — and it is
  * a difference in dependency, not in what a pilot is ever shown.** `printHull`
- * cannot print 0 for a live ship *because `applyDamage` is the one writer and it
- * zeroes hull below `HULL_KILL_TOLERANCE`*: the guarantee lives in the writer,
+ * cannot print 0 for a live ship *because its writers, `applyDamage` and
+ * `stepHullTemperature`, zero hull below `HULL_KILL_TOLERANCE`*: the guarantee lives in the writer,
  * not in the print, and the note above records what that costs — a condition
  * hand-built under the tolerance is a live ship printing `HULL 0`. The game does
  * not reach that state and nothing here claims it does. What the share changes is
@@ -270,8 +355,8 @@ export function sideStruck(nose: Vec3, toSource: Vec3): ShieldSide {
 /**
  * Damage into one pool; what the pool cannot absorb goes to hull.
  *
- * The one place hull is spent, and so the one place that decides a ship is
- * finished — see `HULL_KILL_TOLERANCE`.
+ * One of two places hull is spent — `stepHullTemperature` is the other — and
+ * both decide a ship is finished by `settledHull`: see `HULL_KILL_TOLERANCE`.
  */
 export function applyDamage(
 	c: ShipCondition,
@@ -280,14 +365,18 @@ export function applyDamage(
 ): ShipCondition {
 	const hit = Math.max(0, amount);
 	const absorbed = Math.min(c[side], hit);
-	const hull = c.hull - (hit - absorbed);
 	return {
 		...c,
 		[side]: c[side] - absorbed,
-		hull: hull < HULL_KILL_TOLERANCE ? 0 : hull,
+		hull: settledHull(c.hull - (hit - absorbed)),
 		sinceStruckS: hit > 0 ? 0 : c.sinceStruckS,
 	};
 }
+
+/** A hull after a loss: under the kill tolerance it is gone. The one rule for
+ *  both writers of hull, `applyDamage` and `stepHullTemperature`. */
+const settledHull = (hull: number): number =>
+	hull < HULL_KILL_TOLERANCE ? 0 : hull;
 
 export interface ConditionStep {
 	condition: ShipCondition;
@@ -350,4 +439,44 @@ export function stepCondition(
 	next.heatLocked =
 		next.heat >= HEAT_LOCK || (locked && next.heat > HEAT_RELEASE);
 	return { condition: next, fired, damage };
+}
+
+/**
+ * One step of hull temperature (#931), at `rOverR`: the ship's distance from
+ * the star's centre in units of the star's radius.
+ *
+ * **Distance only.** No regime, no loadout and no hull reach it, so a hull
+ * heats alike in normal flight and in cruise (#871 D4), with a fuel scoop or
+ * without, on a courier or a capital. It is apart from `stepCondition` because
+ * the gun does not read the star and the star does not read the gun: laser heat
+ * and hull temperature are two quantities (`CONTEXT.md`).
+ *
+ * The heat is held over the step and the relaxation is exact, which is the
+ * instrument's own `heatStep`, so the table's figures are what the game flies.
+ * The loss above the top is the trapezoid of the excess over the step, again
+ * the instrument's. It is a share of the hull's own integrity and it takes
+ * nothing from the shields; and it is not a hit, so it does not hold the
+ * shields' recharge back (`sinceStruckS`).
+ */
+export function stepHullTemperature(
+	c: ShipCondition,
+	dt: number,
+	rOverR: number,
+): ShipCondition {
+	if (!(dt > 0)) return c;
+	const h = starHeat(rOverR);
+	const settle = HULL_HEAT_RISE_PER_S * h * HULL_TEMP_COOL_TAU_S;
+	const relaxed =
+		settle + (c.hullTemp - settle) * Math.exp(-dt / HULL_TEMP_COOL_TAU_S);
+	const hullTemp = Math.max(
+		HULL_TEMP_AMBIENT,
+		h === 0 && relaxed < HULL_TEMP_SNAP ? HULL_TEMP_AMBIENT : relaxed,
+	);
+	const excess = Math.max(0, (c.hullTemp + hullTemp) / 2 - HULL_TEMP_TOP);
+	const lost = HULL_HEAT_DAMAGE_PER_S * excess * dt * c.hullMax;
+	return {
+		...c,
+		hullTemp,
+		hull: lost > 0 ? settledHull(c.hull - lost) : c.hull,
+	};
 }

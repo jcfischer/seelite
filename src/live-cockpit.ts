@@ -291,7 +291,8 @@ export interface LiveCockpitState {
 			owned: boolean;
 		}[];
 		/** The hyperspace tank, light years, and its capacity (#187) — the Fuel
-		 *  row prints the tank where a unit item prints nothing. */
+		 *  row prints the tank where a unit item prints nothing. The capacity is
+		 *  the fitted one, hull plus tanks (#926), never the jump range. */
 		fuelLy: number;
 		fuelCapacityLy: number;
 		/** Changes only when an accepted action replaces the displayed state. */
@@ -1993,7 +1994,7 @@ export class LiveCockpit {
 				switch (row.kind) {
 					case "fill":
 						action = `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`;
-						held = `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`;
+						held = `${fuel.ly.toFixed(1)}/${fuel.capacityLy.toFixed(1)} LY`;
 						break;
 					case "owned":
 						action = '<span class="lc-station-owned">OWNED</span>';

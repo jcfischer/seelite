@@ -22,6 +22,10 @@ import type { EncounterPhase } from "./encounter";
 import { HULL_SPECS, PURCHASABLE_HULL_IDS, stockPlant } from "./hull";
 import {
 	HEAT_LOCK,
+	HULL_HEAT_RISE_PER_S,
+	HULL_TEMP_AMBIENT,
+	HULL_TEMP_COOL_TAU_S,
+	HULL_TEMP_TOP,
 	printHull,
 	printHullPercent,
 	printShieldPercent,
@@ -94,6 +98,7 @@ export function duelRowWidest(): Record<DuelRowLabel, string> {
 		heat: 0,
 		heatLocked: false,
 		sinceStruckS: 0,
+		hullTemp: HULL_TEMP_AMBIENT,
 	};
 	const candidates: ShipCondition[] = [
 		base,
@@ -107,6 +112,42 @@ export function duelRowWidest(): Record<DuelRowLabel, string> {
 			if (cell.value.length > widest[label].length) widest[label] = cell.value;
 		}
 	return widest;
+}
+
+/** The hull-temperature gauge's label: not `HEAT`, which is the gun's. */
+export const HULL_TEMP_LABEL = "TEMP";
+
+/** Hull temperature as the glass prints it: a whole percent of the top, and
+ *  never 0% above ambient (`printHullPercent`'s floor, for the same reason). */
+const hullTempPercent = (hullTemp: number): number =>
+	Math.max(1, Math.round((hullTemp / HULL_TEMP_TOP) * 100));
+
+/**
+ * The hull-temperature gauge (#931, #871 D6): one cell in the duel band while
+ * the hull is above ambient, and nothing at ambient. Amber at the gun's
+ * `HEAT_ACTION_FRACTION` of the top — close enough that staying costs hull —
+ * and red above the top, where it does. The tone reads the printed percent.
+ */
+export function hullTempCells(c: Pick<ShipCondition, "hullTemp">): FloorCell[] {
+	if (!(c.hullTemp > HULL_TEMP_AMBIENT)) return [];
+	const percent = hullTempPercent(c.hullTemp);
+	const tone: FloorTone =
+		percent > 100
+			? "refused"
+			: percent >= HEAT_ACTION_FRACTION * 100
+				? "action"
+				: "passive";
+	return [{ label: HULL_TEMP_LABEL, value: `${percent}%`, tone }];
+}
+
+/**
+ * The widest reading the gauge can print: the hottest a hull gets, settled at
+ * the shell, where the rise and the cooling balance. Asked of the formatter,
+ * as `duelRowWidest` is.
+ */
+export function hullTempWidest(): string {
+	const hottest = HULL_HEAT_RISE_PER_S * HULL_TEMP_COOL_TAU_S;
+	return hullTempCells({ hullTemp: hottest })[0]?.value ?? "";
 }
 
 export interface DuelConsoleReadout {
@@ -124,7 +165,7 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 		fore: `${Math.round(c.fore)} / ${c.shieldMax}`,
 		aft: `${Math.round(c.aft)} / ${c.shieldMax}`,
 		hull: `${printHull(c.hull)} / ${c.hullMax}`,
-		bank: `${Math.round(c.energy)} / ${c.energyMax}`,
+		bank: `${Math.round(c.energy)} / ${Math.round(c.energyMax)}`,
 		heat: heatValue(c),
 	};
 }

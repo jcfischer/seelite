@@ -7,7 +7,8 @@
  * dueling or selected, that it overlaps neither the course row nor the prompt,
  * that the selected raider's ring is painted amber and red while it fires, that
  * the on-target mark follows the sightline, and that the Flight console shows
- * the detail in a fight and hides it in peace.
+ * the detail in a fight and hides it in peace. Since #931 the band also
+ * carries the hull-temperature gauge, and the last rows fly a skim.
  *
  * **Colour is read off the overlay's pixels**, with the sampler shape
  * `probe-live-cockpit.mjs` uses for the refusal tone: a tone is a field on a
@@ -143,6 +144,27 @@ const installHelpers = () => {
 		rimPaint() {
 			return countIn(2, 2, 16, 16, rimRed);
 		},
+		/** Park the ship at rest `rOverR` star radii from the star's centre. */
+		parkAtStar(rOverR) {
+			const star = g.world.system.bodies.find((b) => b.kind === "star");
+			g.world.ship.pos = {
+				x: star.pos.x + rOverR * star.radiusKm,
+				y: star.pos.y,
+				z: star.pos.z,
+			};
+			g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		},
+		/** Passive-tone pixels in a rectangle of the overlay. */
+		passiveIn(x, y, width, height) {
+			return countIn(x, y, width, height, passive);
+		},
+		/** Share of a box's overlay pixels that are the dark plate (#931). */
+		plateShare(box) {
+			if (!box) return 0;
+			const dark = (r, gr, b, a) => a > 150 && r < 40 && gr < 40 && b < 50;
+			const n = countIn(box.x, box.top, box.width, box.height, dark);
+			return n / (Math.ceil(box.width) * Math.ceil(box.height));
+		},
 		/** Lit pixels in the band the condition line under the selected label is
 		 *  painted in.
 		 *
@@ -191,6 +213,7 @@ const installHelpers = () => {
 				? {
 						duelRow: r.duelRow,
 						duelBox: r.duelBox,
+						tempPlate: r.tempPlate,
 						courseBox: r.courseBox,
 						glassBottomY: r.glassBottomY,
 						marginPx: r.marginPx,
@@ -694,6 +717,111 @@ for (const viewport of VIEWPORTS) {
 	// `tests/duel-hud.test.ts`). A browser row was built here and removed: the
 	// contest's raider is beyond the laser's range, so it passed with the gate
 	// deleted.
+
+	// -------------------------------------------------------------------------
+	// Hull temperature (#931): a skim puts the TEMP gauge in the duel band, and
+	// it goes when the hull is back at ambient. `tests/hull-temperature.test.ts`
+	// and `tests/hull-temp-gauge.test.ts` own the law and the reading; what only
+	// the page answers is that the game feeds the step its star distance and the
+	// band paints the cell. Ink is counted on the overlay alone, so the star in
+	// the WebGL frame cannot light it.
+	// -------------------------------------------------------------------------
+	const skim = await page.evaluate(() => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		const ink = (box) =>
+			box ? D.passiveIn(box.x, box.top, box.width, box.height) : Number.NaN;
+		const home = { ...g.world.ship.pos };
+		const cold = D.floor();
+		const coldInk = ink(cold?.duelBox);
+		D.parkAtStar(1.2);
+		D.steps(3);
+		const hot = {
+			temp: g.condition.hullTemp,
+			gunHeat: g.condition.heat,
+			hull: g.condition.hull,
+			floor: D.floor(),
+		};
+		const hotInk = ink(hot.floor?.duelBox);
+		const hotPlate = D.plateShare(hot.floor?.tempPlate);
+		// Away from the star: cooling, then the last fraction under the snap.
+		g.world.ship.pos = home;
+		g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		D.steps(1);
+		const cooling = g.condition.hullTemp;
+		// Just over the snap: about 0.3 s of cooling takes it under, so a
+		// second leaves it at ambient.
+		g.condition = { ...g.condition, hullTemp: 0.0051 };
+		D.steps(1);
+		return {
+			coldRow: cold?.duelRow,
+			coldPlate: cold?.tempPlate ?? null,
+			hotPlate,
+			coldInk,
+			hot,
+			hotInk,
+			cooling,
+			ambient: { temp: g.condition.hullTemp, floor: D.floor() },
+		};
+	});
+	const tempCell = skim.hot.floor?.duelRow?.find((c) => c.label === "TEMP");
+	check(
+		`${v}: a skim at 1.2 R heats the hull and paints the TEMP gauge; ambient takes it off`,
+		!skim.coldRow?.some((c) => c.label === "TEMP") &&
+			skim.hot.temp > 0.2 &&
+			skim.hot.temp < 1 &&
+			skim.hot.gunHeat === 0 &&
+			tempCell?.value === `${Math.round(skim.hot.temp * 100)}%` &&
+			skim.hotInk > skim.coldInk &&
+			skim.cooling < skim.hot.temp &&
+			skim.ambient.temp === 0 &&
+			!skim.ambient.floor?.duelRow?.some((c) => c.label === "TEMP"),
+		JSON.stringify({ ...skim, tempCell }),
+	);
+	// The plate is what makes the cell read over a star-lit sky (#931, the
+	// principal's ruling). Most of its area is plate; the rest is the cell's ink.
+	check(
+		`${v}: the TEMP cell stands on its dark plate, and no plate is painted without it`,
+		skim.coldPlate === null &&
+			skim.hot.floor?.tempPlate != null &&
+			skim.hotPlate > 0.5 &&
+			skim.ambient.floor?.tempPlate === null,
+		JSON.stringify({
+			coldPlate: skim.coldPlate,
+			hotPlate: skim.hotPlate,
+			plate: skim.hot.floor?.tempPlate,
+			ambientPlate: skim.ambient.floor?.tempPlate,
+		}),
+	);
+	// Last on the page, because it ends the flight: heat above the top runs the
+	// hull out through the game's own death path, and the shields stand.
+	const burnt = await page.evaluate(() => {
+		const g = window.__seelite;
+		window.__duel.parkAtStar(1.06);
+		g.condition = { ...g.condition, hull: 2, hullTemp: 2 };
+		const fore = g.condition.fore;
+		let seconds = 0;
+		while (!g.dead && seconds < 5) {
+			g.step(g.units.MAX_DT);
+			seconds += g.units.MAX_DT;
+		}
+		return {
+			dead: g.dead,
+			seconds,
+			hull: g.condition.hull,
+			foreBefore: fore,
+			foreAfter: g.condition.fore,
+			lastExit: g.lastExit,
+		};
+	});
+	check(
+		`${v}: a hull above the top runs out of integrity and the ship is destroyed, shields untouched`,
+		burnt.dead === true &&
+			burnt.hull === 0 &&
+			burnt.foreAfter === burnt.foreBefore &&
+			burnt.lastExit === "ship destroyed",
+		JSON.stringify(burnt),
+	);
 	await page.close();
 }
 

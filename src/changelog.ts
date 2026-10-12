@@ -28,6 +28,24 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #926: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Fitted fuel tanks now carry extra fuel, so you can chain more jumps between refuels; the longest single jump still depends on your ship.",
+		node: 926,
+	},
+	// Node #931: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Stars now heat your hull: fly close and a TEMP gauge climbs, and a hull kept too hot for too long starts to fail.",
+		node: 931,
+	},
+	// Node #925: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Power plants and Extra Energy Units now set the size of your energy bank, and a better plant also recharges it faster.",
+		node: 925,
+	},
 	// Node #814: approved by the principal on 2026-10-11 with the merge.
 	{
 		date: "2026-10-11",
