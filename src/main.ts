@@ -19811,8 +19811,12 @@ class Game {
 			// before either cell, so neither's ink is under it.
 			let plateFrom = Number.NaN;
 			let plateTo = Number.NaN;
+			let hasTemp = false;
+			let hasScoop = false;
 			let cellX = rowX;
 			for (const [i, cell] of rowCells.entries()) {
+				hasTemp ||= cell.label === HULL_TEMP_LABEL;
+				hasScoop ||= cell.label === SCOOP_LABEL;
 				if (cell.label === HULL_TEMP_LABEL || cell.label === SCOOP_LABEL) {
 					if (Number.isNaN(plateFrom)) plateFrom = cellX;
 					plateTo = cellX + run.widths[i];
@@ -19822,9 +19826,7 @@ class Game {
 			if (!Number.isNaN(plateFrom)) {
 				const pad = (cellGap / 2) * 0.8;
 				const plate = floorBox(
-					rowCells.some((c) => c.label === HULL_TEMP_LABEL)
-						? HULL_TEMP_LABEL
-						: SCOOP_LABEL,
+					hasTemp ? HULL_TEMP_LABEL : SCOOP_LABEL,
 					plateFrom - pad,
 					plateTo - plateFrom + 2 * pad,
 					box.top + FLOOR_TEMP_PLATE_INSET * box.height,
@@ -19832,9 +19834,8 @@ class Game {
 				plate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
 				ctx.fillStyle = PROMPT_PLATE_FILL;
 				ctx.fillRect(plate.x, plate.top, plate.width, plate.height);
-				if (rowCells.some((c) => c.label === HULL_TEMP_LABEL))
-					tempPlate = plate;
-				if (rowCells.some((c) => c.label === SCOOP_LABEL)) scoopPlate = plate;
+				if (hasTemp) tempPlate = plate;
+				if (hasScoop) scoopPlate = plate;
 			}
 			for (const [i, cell] of rowCells.entries()) {
 				drawFloorCell(
