@@ -220,7 +220,7 @@ describe("the catalogue is complete against the source", () => {
 			"fly.jump": "this.chargeJump()",
 			"fight.targetNext": "this.cycleTarget(1)",
 			"fight.targetPrevious": "this.cycleTarget(-1)",
-			"fight.faceTarget": "this.faceTarget()",
+			"fight.faceTarget": "this.beginFaceTurn()",
 			// #892 binds it; #893 gives the method its body.
 			"fight.cycleFireGroup": "this.cycleFireGroup()",
 			"fight.rigIncoming": 'this.combatRig?.command("fight.rigIncoming")',
