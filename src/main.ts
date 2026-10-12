@@ -17,6 +17,7 @@ import {
 } from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { homeShipyardForm } from "./home-shipyard";
+import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
 /**
@@ -16719,6 +16720,16 @@ class Game {
 		// Hidden, it draws nothing, so it is not written either.
 		if (plumes.visible)
 			this.ventPlumes.update(this.ventFiring, this.world.gameTime);
+		// The shipyards' baked work lights on the hulls inside them (#818).
+		// Every frame, so a ship that left a yard or a system draws none.
+		const yards: YardWorkLight[] = [];
+		for (const station of this.stationVisuals.values())
+			if (station.root.userData.workLight)
+				yards.push(station.root.userData.workLight);
+		lightShipsByWorkLights(yards, [
+			this.shipMesh,
+			...this.trafficMeshes.values(),
+		]);
 
 		// **#241's gate, then #201's shadow camera** — in that order, because the
 		// gate decides whether there is a shadow to fit at all and

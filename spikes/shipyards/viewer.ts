@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { buildShipMesh } from "../../src/ship-mesh";
 import { HULL_SPECS } from "../../src/hull";
+import { applyShipyardLightmap } from "../../src/shipyard-flight";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
@@ -271,6 +272,12 @@ async function selectModel(id: string) {
 					: "./" + id + ".glb",
 			);
 		object = gltf.scene;
+		// The flight export's baked work lights, as the game draws them.
+		if (flight)
+			await new THREE.TextureLoader()
+				.loadAsync(`../../src/models/shipyard-${flightAsset[id]}-lightmap.webp`)
+				.then((map) => applyShipyardLightmap(gltf.scene, map))
+				.catch(() => {});
 		object.scale.setScalar(0.1);
 		object.traverse((o) => {
 			if (o instanceof THREE.Mesh) {

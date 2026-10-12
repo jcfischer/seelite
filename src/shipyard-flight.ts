@@ -22,7 +22,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
-import { SHIPYARD_GLB_URLS } from "./model-urls";
+import {
+	SHIPYARD_GLB_URLS,
+	SHIPYARD_LIGHTMAP_URLS,
+	SHIPYARD_PROBE_URLS,
+} from "./model-urls";
+import type { ProbeGrid, YardWorkLight } from "./ship-work-light";
 import { STATION_GEOMETRY } from "./station";
 import { NAMEPLATE_NAME } from "./station-interior-mesh";
 import {
@@ -35,6 +40,159 @@ import {
 } from "./station-mesh";
 
 export const SHIPYARD_FORMS: readonly ShipyardForm[] = ["a", "b", "c"];
+
+/**
+ * How bright the baked work lights draw (principal, 2026-10-12: the yards were
+ * too dark, and the light is baked). The lightmap holds Blender's light-only
+ * diffuse bake divided by the model's `lightmap_scale`; three.js reads a
+ * lightmap as irradiance and divides it by π, so π restores Blender's shading
+ * and this gain is the one figure tuned by eye.
+ */
+export const WORK_LIGHT_GAIN = 12;
+
+/** A dev URL's number, for tuning by eye: `?<name>=<value>`. */
+function tuning(name: string, fallback: number): number {
+	if (typeof location === "undefined") return fallback;
+	const value = Number(new URLSearchParams(location.search).get(name));
+	return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Which work lights a dev build draws, for the principal's comparison on
+ * 2026-10-12: `?worklights=baked` (the default), `realtime` (`REALTIME_WORK_LIGHTS`,
+ * no lightmap) or `off` (neither).
+ */
+export function workLightMode(): "baked" | "realtime" | "off" {
+	if (typeof location === "undefined") return "baked";
+	const mode = new URLSearchParams(location.search).get("worklights");
+	return mode === "realtime" || mode === "off" ? mode : "baked";
+}
+/** The real-time arm the comparison shows: measured on O1 (M1 Pro, retina),
+ *  8 unshadowed lights cost +1.2 ms a frame and 16 cost +18 ms. */
+export const REALTIME_WORK_LIGHTS: WorkLightConfig = {
+	count: 8,
+	shadows: 4,
+	shadowUpdate: "frame",
+	intensity: 50,
+};
+
+/** What the dev panel (`worklight-tuner.ts`) moves while the principal flies:
+ *  the bake's gain and the real-time arm, starting from the URL's figures. */
+export type WorkLightMode = "baked" | "realtime" | "off";
+/** How bright the work lights draw on a ship's hull, against the grid's
+ *  figures; tuned by eye like `WORK_LIGHT_GAIN`. */
+export const SHIP_WORK_LIGHT_GAIN = 1;
+export const workLightTuning = {
+	mode: workLightMode() as WorkLightMode,
+	gain: tuning("worklight-gain", WORK_LIGHT_GAIN),
+	shipGain: tuning("worklight-ship-gain", SHIP_WORK_LIGHT_GAIN),
+	realtime: {
+		...REALTIME_WORK_LIGHTS,
+		intensity: tuning(
+			"worklight-intensity",
+			REALTIME_WORK_LIGHTS.intensity ?? 50,
+		),
+	} as WorkLightConfig,
+};
+/** A comparison URL loads the lightmap in every mode, so the panel can switch. */
+const comparing =
+	typeof location !== "undefined" &&
+	new URLSearchParams(location.search).has("worklights");
+const lightmapped = new Set<{
+	material: THREE.MeshStandardMaterial;
+	scale: number;
+	map: THREE.Texture;
+}>();
+const shipyardRoots = new Set<THREE.Object3D>();
+/** The bake's gain, on every lightmapped material now and every one after. */
+export function setWorkLightGain(gain: number): void {
+	workLightTuning.gain = gain;
+	for (const { material, scale } of lightmapped)
+		material.lightMapIntensity = scale * Math.PI * gain;
+}
+/** The real-time arm, on every drawn yard now and every one built after. */
+export function setRealtimeWorkLights(config: WorkLightConfig): void {
+	workLightTuning.realtime = config;
+	if (workLightTuning.mode !== "realtime") return;
+	for (const root of shipyardRoots) setWorkLights(root, config);
+}
+/** Switch every drawn yard, and every one built after, to `mode`. */
+export function setWorkLightMode(mode: WorkLightMode): void {
+	workLightTuning.mode = mode;
+	for (const { material, scale, map } of lightmapped) {
+		material.lightMap = mode === "baked" ? map : null;
+		material.lightMapIntensity = scale * Math.PI * workLightTuning.gain;
+		material.needsUpdate = true;
+	}
+	for (const root of shipyardRoots)
+		setWorkLights(root, mode === "realtime" ? workLightTuning.realtime : null);
+}
+if (
+	typeof document !== "undefined" &&
+	new URLSearchParams(location.search).has("worklights")
+)
+	void import("./worklight-tuner").then((m) => m.mountWorkLightTuner());
+
+/**
+ * Put a yard's baked lightmap on every material of `template`, read through
+ * the model's second UV set. Shared by the game and the study viewer.
+ */
+export function applyShipyardLightmap(
+	template: THREE.Object3D,
+	lightmap: THREE.Texture,
+): void {
+	let scale = 1;
+	template.traverse((o) => {
+		if (typeof o.userData.lightmap_scale === "number")
+			scale = o.userData.lightmap_scale;
+	});
+	lightmap.channel = 1;
+	lightmap.flipY = false;
+	lightmap.colorSpace = THREE.SRGBColorSpace;
+	lightmap.needsUpdate = true;
+	template.traverse((o) => {
+		if (!(o instanceof THREE.Mesh) || !o.geometry.getAttribute("uv1")) return;
+		for (const m of Array.isArray(o.material) ? o.material : [o.material])
+			if (m instanceof THREE.MeshStandardMaterial) {
+				m.lightMap = workLightTuning.mode === "baked" ? lightmap : null;
+				m.lightMapIntensity = scale * Math.PI * workLightTuning.gain;
+				m.needsUpdate = true;
+				lightmapped.add({ material: m, scale, map: lightmap });
+			}
+	});
+}
+
+/** A yard's probe grid: the float16 file, scaled back by the figures the
+ *  export left on its root (`work_light_probes`). Null when either is missing. */
+export function decodeProbeGrid(
+	template: THREE.Object3D,
+	bytes: ArrayBuffer,
+): ProbeGrid | null {
+	let meta: {
+		origin: number[];
+		size: [number, number, number];
+		step: number;
+		scale: number;
+	} | null = null;
+	template.traverse((o) => {
+		if (typeof o.userData.work_light_probes === "string")
+			meta = JSON.parse(o.userData.work_light_probes);
+	});
+	if (!meta) return null;
+	const { origin, size, step, scale } = meta;
+	const half = new Uint16Array(bytes);
+	if (half.length !== size[0] * size[1] * size[2] * 12) return null;
+	const data = new Float32Array(half.length);
+	for (let i = 0; i < half.length; i++)
+		data[i] = THREE.DataUtils.fromHalfFloat(half[i]) * scale;
+	return {
+		origin: new THREE.Vector3(origin[0], origin[1], origin[2]),
+		step,
+		size,
+		data,
+	};
+}
+const probeGrids = new Map<ShipyardForm, ProbeGrid>();
 
 /** Where an export sits in the station's frame, in metres, read off its marks. */
 export function shipyardFrame(template: THREE.Object3D) {
@@ -141,7 +299,7 @@ export function createShipyardBuilder(
 			if (o.name === NAMEPLATE_NAME && o instanceof THREE.Mesh)
 				nameplates.push(o);
 		});
-		return {
+		const mesh: StationMesh = {
 			root,
 			spinner,
 			type: "shipyard",
@@ -154,6 +312,27 @@ export function createShipyardBuilder(
 			greebles: [],
 			dispose: () => disposeSubtree(root),
 		};
+		const grid = probeGrids.get(form);
+		if (grid) {
+			const workLight: YardWorkLight = {
+				grid,
+				frame: authored,
+				gain: () =>
+					workLightTuning.mode === "baked" ? workLightTuning.shipGain : 0,
+			};
+			root.userData.workLight = workLight;
+		}
+		if (comparing) {
+			if (workLightTuning.mode === "realtime")
+				setWorkLights(root, workLightTuning.realtime);
+			shipyardRoots.add(root);
+			const dispose = mesh.dispose;
+			mesh.dispose = () => {
+				shipyardRoots.delete(root);
+				dispose();
+			};
+		}
+		return mesh;
 	};
 }
 
@@ -174,10 +353,35 @@ export function prepareShipyardModel(
 ): Promise<void> {
 	let promise = ready.get(form);
 	if (!promise) {
+		// The lightmap is light, not shape: a yard whose lightmap fails still
+		// installs, dark as before.
+		const lightmap =
+			workLightMode() === "baked" || comparing
+				? new THREE.TextureLoader()
+						.loadAsync(SHIPYARD_LIGHTMAP_URLS[form])
+						.catch((error) => {
+							console.warn(`shipyard ${form}: no work-light lightmap`, error);
+							return null;
+						})
+				: Promise.resolve(null);
+		const probes =
+			workLightMode() === "baked" || comparing
+				? fetch(SHIPYARD_PROBE_URLS[form])
+						.then((r) => (r.ok ? r.arrayBuffer() : null))
+						.catch(() => null)
+				: Promise.resolve(null);
 		promise = new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
 			.loadAsync(SHIPYARD_GLB_URLS[form], onProgress)
-			.then((gltf) => {
+			.then(async (gltf) => {
+				const map = await lightmap;
+				const bytes = await probes;
+				const grid = bytes && decodeProbeGrid(gltf.scene, bytes);
+				if (grid) probeGrids.set(form, grid);
+				if (map) {
+					applyShipyardLightmap(gltf.scene, map);
+					shared(map);
+				}
 				installShipyardBuilder(form, createShipyardBuilder(form, gltf.scene));
 				for (const listener of installed) listener(form);
 			})
@@ -195,3 +399,102 @@ export const shipyardModelLoaders: readonly ModelLoader[] = SHIPYARD_FORMS.map(
 	(form) => (onProgress?: ModelProgressListener) =>
 		prepareShipyardModel(form, onProgress),
 );
+
+/**
+ * The real-time alternative to the baked work lights, for measuring it
+ * (principal, 2026-10-12: "build full occlusion lights and measure"). A spot
+ * light at each of the first `count` flood marks the export carries
+ * (`worklight-flood-*`, aimed along local −Z); the first `shadows` of them cast
+ * shadows, re-rendered every frame or rendered once. `null` removes them.
+ * Returns how many lights were added. Not wired into the game: a measurement
+ * reaches it through `window.__setWorkLights` on a dev server.
+ */
+/** `count` of the marks, spread over the yard: each next one the farthest from
+ *  those already taken, from the one nearest the marks' centre. */
+function spread(marks: THREE.Object3D[], count: number): THREE.Object3D[] {
+	if (marks.length <= count) return marks;
+	const at = marks.map((m) => m.getWorldPosition(new THREE.Vector3()));
+	const centre = at
+		.reduce((s, p) => s.add(p), new THREE.Vector3())
+		.divideScalar(at.length);
+	let first = 0;
+	at.forEach((p, i) => {
+		if (p.distanceTo(centre) < at[first].distanceTo(centre)) first = i;
+	});
+	const taken = [first];
+	const nearest = at.map((p) => p.distanceTo(at[first]));
+	while (taken.length < count) {
+		let next = 0;
+		nearest.forEach((d, i) => {
+			if (d > nearest[next]) next = i;
+		});
+		taken.push(next);
+		at.forEach((p, i) => {
+			nearest[i] = Math.min(nearest[i], p.distanceTo(at[next]));
+		});
+	}
+	return taken.map((i) => marks[i]);
+}
+
+export interface WorkLightConfig {
+	count: number;
+	shadows: number;
+	shadowUpdate: "frame" | "once";
+	intensity?: number;
+	mapSize?: number;
+}
+export function setWorkLights(
+	root: THREE.Object3D,
+	config: WorkLightConfig | null,
+): number {
+	const old: THREE.Object3D[] = [];
+	root.traverse((o) => {
+		if (o.userData.workLight) old.push(o);
+	});
+	for (const o of old) {
+		o.removeFromParent();
+		if (o instanceof THREE.SpotLight) o.dispose();
+	}
+	if (!config) return 0;
+	// A builder calls this before the root is placed; read the marks in its frame.
+	root.updateMatrixWorld(true);
+	const marks: THREE.Object3D[] = [];
+	root.traverse((o) => {
+		if (o.name.startsWith("worklight-flood-")) marks.push(o);
+	});
+	marks.sort((a, b) => (a.name < b.name ? -1 : 1));
+	const lights = spread(marks, config.count);
+	lights.forEach((mark, i) => {
+		const light = new THREE.SpotLight(
+			0xeaf2ff,
+			config.intensity ?? 3,
+			0,
+			THREE.MathUtils.degToRad(40),
+			0.45,
+			0,
+		);
+		light.userData.workLight = true;
+		light.target.userData.workLight = true;
+		light.target.position.set(0, 0, -1);
+		mark.add(light, light.target);
+		if (i < config.shadows) {
+			light.castShadow = true;
+			const size = config.mapSize ?? 1024;
+			light.shadow.mapSize.set(size, size);
+			// The near layer draws in kilometres: 2 m to 4 km.
+			light.shadow.camera.near = 0.002;
+			light.shadow.camera.far = 4;
+			light.shadow.bias = -0.0002;
+			light.shadow.normalBias = 0.0005;
+			if (config.shadowUpdate === "once") {
+				light.shadow.autoUpdate = false;
+				light.shadow.needsUpdate = true;
+			}
+		}
+	});
+	return lights.length;
+}
+if (typeof window !== "undefined" && import.meta.env?.DEV)
+	(
+		window as unknown as { __setWorkLights: typeof setWorkLights }
+	).__setWorkLights = setWorkLights;

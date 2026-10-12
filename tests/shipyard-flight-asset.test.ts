@@ -240,3 +240,40 @@ describe("shipyard flight assets (#818)", () => {
 		});
 	}
 });
+
+/**
+ * The baked work lights (principal, 2026-10-12: "too dark ... industrial
+ * lights", baked; "light the hull of the ship too"): each model carries a
+ * second UV set on every mesh and its lightmap's scale, and ships its lightmap
+ * and its probe grid beside it, the grid as long as its stated size.
+ */
+describe("shipyard work lights (#818)", () => {
+	for (const path of ASSETS)
+		test(`${path}: carries its lightmap and its probe grid`, async () => {
+			const scene = await decodeShippedGlb(path);
+			let scale: unknown;
+			let probes: { size: number[]; step: number; scale: number } | null = null;
+			let floods = 0;
+			const withoutLightmapUv: string[] = [];
+			scene.traverse((o) => {
+				if (typeof o.userData.lightmap_scale === "number")
+					scale = o.userData.lightmap_scale;
+				if (typeof o.userData.work_light_probes === "string")
+					probes = JSON.parse(o.userData.work_light_probes);
+				if (o.name.startsWith("worklight-flood-")) floods++;
+				if (o instanceof THREE.Mesh && !o.geometry.getAttribute("uv1"))
+					withoutLightmapUv.push(o.name);
+			});
+			expect(scale).toBeGreaterThan(0);
+			expect(withoutLightmapUv).toEqual([]);
+			expect(floods).toBeGreaterThan(40);
+			const lightmap = path.replace(".glb", "-lightmap.webp");
+			expect(statSync(lightmap).size).toBeGreaterThan(100_000);
+			expect(statSync(lightmap).size).toBeLessThan(4 * 2 ** 20);
+			expect(probes).not.toBeNull();
+			const { size } = probes as unknown as { size: number[] };
+			expect(statSync(path.replace(".glb", "-probes.bin")).size).toBe(
+				size[0] * size[1] * size[2] * 12 * 2,
+			);
+		});
+});

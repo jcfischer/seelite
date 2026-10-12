@@ -172,6 +172,21 @@ def mast(x,y,z,height=8):
 def flood(c,normal=Y):
  c=Vector(c);n=Vector(normal);u=X if abs(n.x)<.5 else Z;v=n.cross(u)
  box(c,(1.6,.6,.6),steel,(u,v,n));box(c+n*.36,(1.18,.32,.12),white,(u,v,n))
+# Work lights (#818, principal 2026-10-12: "too dark ... industrial lights that
+# lighten the work areas", baked). Every fixture registers the light it gives;
+# the flight export bakes their light into a lightmap (`bake_worklights`).
+LIGHTS=[]
+def worklight(c,d=None,kind="flood"):
+ LIGHTS.append((OWNER,Vector(c),Vector(d).normalized() if d is not None else None,kind))
+_fixture_flood=flood
+def flood(c,normal=Y):
+ _fixture_flood(c,normal);n=Vector(normal).normalized();worklight(Vector(c)+n*.5,n)
+_fixture_lamp=lamp
+def lamp(x,y,z,orient='front'):
+ _fixture_lamp(x,y,z,orient);worklight((x,y+(.3 if orient=='top' else 0),z+(0 if orient=='top' else .3)),None,"amber")
+_fixture_mast=mast
+def mast(x,y,z,height=8):
+ _fixture_mast(x,y,z,height);worklight((x,y+height+.7,z),None,"amber")
 def deck_tile(x,y,z,w,d):
  plate([(x-w/2,y,z-d/2),(x+w/2,y,z-d/2),(x+w/2,y,z+d/2),(x-w/2,y,z+d/2)],random.choice(blue),Y,.10)
 def microship(c,length=12,carrier=False):
@@ -1236,6 +1251,259 @@ def _separate_coplanar_pass(n,frozen):
  print("DECOPLANAR pass",n,len(edges),"parts touch in a plane;",moved,"inflated; max level",max(level.values(),default=0),flush=True)
  return bool(edges)
 
+# Work lights added for the flight export: the four areas the principal named —
+# the assembly bays and slips, the gantries and cranes, the drum and its mouth,
+# and the yard's hull. Housings are `flood` fixtures, so each registers its light.
+def drum_worklights():
+ global OWNER
+ previous=OWNER;OWNER="capsule"
+ for j in range(8):
+  a=j*math.tau/8;c,s=math.cos(a),math.sin(a)
+  # On the hub face's rim, washing the face and the mouth's approach.
+  flood((18.6*c,18.6*s,9.25),(-.55*c,-.55*s,.85))
+  # On the barrel's flats behind the front chamfer, grazing back along its
+  # plates; the housing rests on the plates (the flats stand at r 22 cos 22.5°).
+  r=22*math.cos(math.pi/8)+.3
+  flood((r*c,r*s,5.5),(.3*c,.3*s,-1))
+ OWNER=previous
+# A work light's housing rests on the yard: cast from where it is wanted
+# toward its mount (`back`, default against its aim), within `reach` author
+# units, and seated there. Measured after the first fit (2026-10-12), floods
+# placed by figure alone floated 3-25 m off the yard.
+SEAT={"bvh":None}
+def seated_flood(c,n,back=None,reach=4.):
+ from mathutils.bvhtree import BVHTree
+ if SEAT["bvh"] is None:
+  verts=[];polys=[]
+  for key,(vs,fs,uvs) in BATCH.items():
+   if key.startswith("capsule/"):continue
+   base=len(verts);verts.extend(Vector(v) for v in vs);polys.extend([base+i for i in f] for f in fs)
+  SEAT["bvh"]=BVHTree.FromPolygons(verts,polys)
+ c=Vector(c);n=Vector(n).normalized();b=(Vector(back) if back is not None else -n).normalized()
+ hit=SEAT["bvh"].ray_cast(c,b,reach)
+ if hit[0] is not None:c=hit[0]-b*.31
+ else:
+  # An open truss lets the ray through: the nearest surface instead, seated
+  # on the side of it the lamp is on.
+  near=SEAT["bvh"].find_nearest(c,reach*2)
+  if near[0] is None:print("SEAT miss",tuple(round(x,1) for x in c),flush=True)
+  else:
+   out=(c-near[0]);out=out.normalized() if out.length>1e-6 else near[1]
+   c=near[0]+out*.31
+ flood(c,n)
+def gantry_worklights():
+ for z in [-43,-4,34]:
+  # Downlights under each bridge crane onto the assembly floor.
+  for x in [-20,-10,0,10,20]:seated_flood((x,20.7,z+1.9),(0,-1,0))
+  # Uplights from the floor's edges onto the crane.
+  for x in [-25,25]:seated_flood((x,-1.5,z+5),(0,1,-.3),(0,-1,0))
+ for x in [-38,38]:
+  side=1 if x>0 else -1
+  for z in [-60,-25,10,45]:
+   # On the boom, onto the floor; and on its outer side, down onto the radiators.
+   seated_flood((x-side*4,4,z),(-side,-.7,0),(0,-1,0))
+   seated_flood((x+side*6,0,z),(side*.25,-1,0),(-side,0,0))
+ # The yard's front frame onto the drum's rear.
+ for x in [-8,8]:seated_flood((x,9,73),(0,0,1))
+ drum_worklights()
+def hangar_worklights():
+ for x in [-23.5,23.5]:
+  # Downlights along each hall's ceiling onto its deck.
+  for z in [-35,-15,5,25]:
+   for dx in [-8,8]:seated_flood((x+dx,27.4,z),(0,-1,0))
+  # Inside the hall's mouth, on its side walls, back into the hall.
+  for side in [-1,1]:seated_flood((x+side*17,2,33),(-side*.3,.25,-1),(side,0,0))
+  # On the roof's rear edge, forward over the radiators and hatches.
+  seated_flood((x,35.2,-47),(0,-.35,1),(0,-1,0))
+ for side in [-1,1]:
+  # On the machinery wings, onto the halls' outer walls.
+  for z in [-30,0,25]:seated_flood((side*51,24,z),(-side,-.45,0),(side,0,0))
+ drum_worklights()
+def slipway_worklights():
+ R=62;start=math.radians(42);end=math.radians(318)
+ def point(a,r,y):return Vector((math.sin(a)*r,y,math.cos(a)*r))
+ for i in range(18):
+  mid=start+(end-start)*(i+.5)/18
+  out=Vector((math.sin(mid),0,math.cos(mid)))
+  # On the ring's inner chord, into the slip.
+  if i%2==1:seated_flood(point(mid,R-8.5,6),(-out.x*.8,-.5,-out.z*.8),out)
+  # From the masts' tops down onto the ring's roof.
+  if i%3==0:seated_flood(point(mid,R,14.6),(0,-1,0))
+ # On the plant's tanks, down onto the plant and its radiators.
+ for x,z in [(-63,-16),(-49,-44),(0,-67),(45,-47)]:seated_flood((x-4,14,z),(0,-1,-.4),(0,-1,0),6)
+ # On the ring's apex, forward across the slip.
+ for x in [-6,6]:seated_flood((x,10,-55),(0,-.35,1),(0,-1,0),6)
+ drum_worklights()
+if FLIGHT:
+ _approved_gantry=gantry
+ def gantry():
+  info=_approved_gantry();gantry_worklights();return info
+ _approved_hangar=hangar
+ def hangar():
+  info=_approved_hangar();hangar_worklights();return info
+ _approved_slipway=slipway
+ def slipway():
+  info=_approved_slipway();slipway_worklights();return info
+
+WORK_COLOURS={"flood":(.92,.96,1.0),"amber":(1.0,.62,.32)}
+WORK_POWER={"flood":1.2e6,"amber":4e4}
+LIGHTMAP_SIZE=4096
+def encode_lightmap(img,png):
+ """The baked light as an 8-bit sRGB PNG: divided by its 99.5th-percentile
+ luminance, which the game multiplies back (`lightmap_scale` on the root)."""
+ import numpy as np
+ w,h=img.size;px=np.empty(w*h*4,dtype=np.float32);img.pixels.foreach_get(px);px=px.reshape(h,w,4)
+ rgb=np.clip(px[...,:3],0,None);lum=rgb@np.array([.2126,.7152,.0722],dtype=np.float32)
+ lit=lum[lum>1e-6];scale=float(np.percentile(lit,99.5)) if lit.size else 1.0
+ enc=np.clip(rgb/scale,0,1);enc=np.where(enc<=.0031308,enc*12.92,1.055*np.power(enc,1/2.4)-.055)
+ out=bpy.data.images.new(img.name+"-srgb",w,h,alpha=False);out.colorspace_settings.name="sRGB"
+ flat=np.concatenate([enc,np.ones((h,w,1),dtype=np.float32)],axis=2).astype(np.float32).ravel()
+ out.pixels.foreach_set(flat);out.filepath_raw=str(png);out.file_format="PNG";out.save()
+ print("LIGHTMAP",png,"scale",scale,"lit share",round(lit.size/lum.size,3),flush=True)
+ return scale
+
+def place_worklight(ob,owner,c,d,root,spin,rigs):
+ """A work light's object where its fixture ended up: a drum fixture moves with
+ the flight export's aperture warp and the drum's growth. Aimed along local -Z,
+ as a Blender spot shines."""
+ if owner=="capsule":
+  c=Vector(widen_aperture(tuple(c)))
+  if c.z>BARREL_CUT:c.z+=BAY_END+BAY_DEPTH-HUB_FACE
+  ob.parent=spin;ob.location=c*10
+ elif owner in rigs:
+  ob.parent=rigs[owner];ob.location=(c-Vector(RIG[owner]["origin"]))*10
+ else:
+  ob.parent=root;ob.location=c*10
+ if d is not None:ob.rotation_euler=(-d).to_track_quat("Z","Y").to_euler()
+
+def worklight_marks(root,spin,rigs):
+ """Each work light as an empty in the GLB, `worklight-<kind>-<n>`, for a game
+ that lights them in real time rather than reading the bake."""
+ for n,(owner,c,d,kind) in enumerate(LIGHTS):
+  ob=bpy.data.objects.new("worklight-%s-%03d"%(kind if d is not None else kind+"-point",n),None)
+  bpy.context.collection.objects.link(ob);place_worklight(ob,owner,c,d,root,spin,rigs)
+
+PROBE_STEP_M=50
+def bake_probes(id,objects,lamps,info):
+ """The work lights as a ship would meet them (principal, 2026-10-12: the hull
+ "looks very flat in the shipyard"): on a grid through the yard, every
+ \`PROBE_STEP_M\`, each lamp's irradiance where the yard does not block it,
+ kept as an ambient colour plus one colour per axis (E(n) = a + n.x X + n.y Y +
+ n.z Z, the first-order term of the light's directions). Float16, in the root
+ frame, beside the model; its grid is the root's \`work_light_probes\`."""
+ import numpy as np
+ from mathutils.bvhtree import BVHTree
+ verts=[];polys=[]
+ for ob in objects:
+  m=ob.matrix_world;base=len(verts)
+  verts.extend(m@v.co for v in ob.data.vertices)
+  polys.extend([base+i for i in p.vertices] for p in ob.data.polygons)
+ bvh=BVHTree.FromPolygons(verts,polys)
+ lo=Vector((min(v.x for v in verts),min(v.y for v in verts),min(v.z for v in verts)))-Vector((150,150,150))
+ hi=Vector((max(v.x for v in verts),max(v.y for v in verts),max(v.z for v in verts)))+Vector((150,150,150))
+ n=[int(math.ceil((hi[i]-lo[i])/PROBE_STEP_M))+1 for i in range(3)]
+ sources=[]
+ for ob in [o for obs in lamps.values() for o in obs]:
+  d=ob.data;mw=ob.matrix_world;aim=(mw.to_3x3()@Vector((0,0,-1))).normalized()
+  half=d.spot_size/2 if d.type=="SPOT" else None
+  sources.append((mw.translation.copy(),aim,half,d.spot_blend if half else 0,d.energy/(4*math.pi),Vector(d.color)))
+ grid=np.zeros((n[2],n[1],n[0],12),dtype=np.float32)
+ for k in range(n[2]):
+  for j in range(n[1]):
+   for i in range(n[0]):
+    p=lo+Vector((i,j,k))*PROBE_STEP_M;acc=[0.]*12
+    for pos,aim,half,blend,intensity,col in sources:
+     to=pos-p;dist=to.length
+     if dist<1:continue
+     l=to/dist;f=1.
+     if half is not None:
+      c=-l.dot(aim);outer=math.cos(half);inner=math.cos(half*(1-blend))
+      if c<=outer:continue
+      t=min(1.,(c-outer)/max(inner-outer,1e-6));f=t*t*(3-2*t)
+     if bvh.ray_cast(p,l,dist-1.)[0] is not None:continue
+     e=intensity*f/(dist*dist)
+     for ch in range(3):
+      w=e*col[ch];acc[ch]+=.25*w;acc[3+ch]+=.5*w*l.x;acc[6+ch]+=.5*w*l.y;acc[9+ch]+=.5*w*l.z
+    grid[k,j,i]=acc
+ scale=float(np.percentile(np.abs(grid[...,:3]),99.5)) or 1.
+ path=OUT.parent.parent/".dream-loop"/"shipyard-flight"/(id+"-probes.bin")
+ (grid/scale).astype(np.float16).tofile(str(path))
+ info["probes"]={"origin":[lo.x,lo.y,lo.z],"size":n,"step":PROBE_STEP_M,"scale":scale}
+ print("PROBES",id,n,"x",len(sources),"lights",path,flush=True)
+
+def bake_worklights(id,objects,root,spin,rigs,info):
+ # A batch the drum's growth emptied has no faces to bake.
+ objects=[ob for ob in objects if len(ob.data.polygons)]
+ scene=bpy.context.scene;scene.render.engine="CYCLES"
+ prefs=bpy.context.preferences.addons["cycles"].preferences
+ try:
+  prefs.compute_device_type="METAL";prefs.get_devices()
+  for d in prefs.devices:d.use=True
+  scene.cycles.device="GPU"
+ except Exception as e:print("BAKE cpu:",e,flush=True)
+ scene.cycles.samples=64;scene.cycles.use_denoising=False
+ world=scene.world or bpy.data.worlds.new("bake");scene.world=world;world.use_nodes=True
+ world.node_tree.nodes["Background"].inputs["Strength"].default_value=0
+ grow=BAY_END+BAY_DEPTH-HUB_FACE
+ lamps={"capsule":[],"static":[]}
+ for owner,c,d,kind in LIGHTS:
+  data=bpy.data.lights.new("work-"+kind,"SPOT" if d is not None else "POINT")
+  data.energy=WORK_POWER[kind];data.color=WORK_COLOURS[kind];data.shadow_soft_size=.6
+  if d is not None:data.spot_size=math.radians(80);data.spot_blend=.45
+  ob=bpy.data.objects.new("work-light",data);bpy.context.collection.objects.link(ob)
+  place_worklight(ob,owner,c,d,root,spin,rigs)
+  lamps["capsule" if owner=="capsule" else "static"].append(ob)
+ bpy.context.view_layer.update()
+ bake_probes(id,objects,lamps,info)
+ # One atlas for the whole yard: a second UV layer, packed across every mesh.
+ for ob in objects:
+  me=ob.data;lm=me.uv_layers.get("lightmap") or me.uv_layers.new(name="lightmap");me.uv_layers.active=lm
+ bpy.ops.object.select_all(action="DESELECT")
+ for ob in objects:ob.select_set(True)
+ bpy.context.view_layer.objects.active=objects[0]
+ # With sync on, the mesh selection is the UV selection, so the pack sees every
+ # island of every object; without it, nothing was packed and the atlas held 0.3%.
+ bpy.context.scene.tool_settings.use_uv_select_sync=True
+ bpy.ops.object.mode_set(mode="EDIT");bpy.ops.mesh.select_all(action="SELECT")
+ bpy.ops.uv.smart_project(angle_limit=math.radians(66),island_margin=.0,area_weight=0,scale_to_bounds=False)
+ bpy.ops.uv.pack_islands(udim_source="CLOSEST_UDIM",rotate=True,scale=True,margin_method="FRACTION",margin=.0006,shape_method="AABB")
+ bpy.ops.object.mode_set(mode="OBJECT")
+ uv_area=world_area=0.
+ for ob in objects:
+  bm=bmesh.new();bm.from_mesh(ob.data);lay=bm.loops.layers.uv["lightmap"]
+  for f in bm.faces:
+   world_area+=f.calc_area();co=[l[lay].uv for l in f.loops]
+   uv_area+=abs(sum(co[i].x*co[(i+1)%len(co)].y-co[(i+1)%len(co)].x*co[i].y for i in range(len(co))))/2
+  bm.free()
+ texel=math.sqrt(world_area/(uv_area*LIGHTMAP_SIZE**2)) if uv_area else float("inf")
+ print("LIGHTMAP UV coverage",round(uv_area*100,1),"% texel",round(texel,2),"m",flush=True)
+ if "--uv-only" in sys.argv:return
+ img=bpy.data.images.new(id+"-lightmap",LIGHTMAP_SIZE,LIGHTMAP_SIZE,float_buffer=True)
+ added=[]
+ for m in {s.material for ob in objects for s in ob.material_slots if s.material}:
+  nt=m.node_tree;uvn=nt.nodes.new("ShaderNodeUVMap");uvn.uv_map="lightmap"
+  tex=nt.nodes.new("ShaderNodeTexImage");tex.image=img;nt.links.new(uvn.outputs["UV"],tex.inputs["Vector"])
+  nt.nodes.active=tex;added.append((m,uvn,tex))
+ groups={"capsule":[ob for ob in objects if ob.name.startswith("capsule/")]}
+ groups["static"]=[ob for ob in objects if not ob.name.startswith("capsule/")]
+ first=True
+ for part in ["capsule","static"]:
+  # The drum turns, so it carries only its own lamps' light, and the yard only the yard's.
+  for key,obs in lamps.items():
+   for ob in obs:ob.hide_render=key!=part
+  bpy.ops.object.select_all(action="DESELECT")
+  for ob in groups[part]:ob.select_set(True)
+  bpy.context.view_layer.objects.active=groups[part][0]
+  bpy.ops.object.bake(type="DIFFUSE",pass_filter={"DIRECT","INDIRECT"},margin=4,use_clear=first)
+  first=False
+ path=OUT.parent.parent/".dream-loop"/"shipyard-flight"/(id+"-lightmap.png")
+ info["lightmapScale"]=encode_lightmap(img,OUT.parent.parent/".dream-loop"/"shipyard-flight"/(id+"-lightmap.png"))
+ for m,uvn,tex in added:m.node_tree.nodes.remove(uvn);m.node_tree.nodes.remove(tex)
+ for obs in lamps.values():
+  for ob in obs:bpy.data.objects.remove(ob,do_unlink=True)
+ for ob in objects:ob.data.uv_layers.active=ob.data.uv_layers["surface-metres"]
+ print("BAKED",id,len(LIGHTS),"lights",path,flush=True)
+
 def export(id,info):
  objects=[]
  root=bpy.data.objects.new("shipyard-"+id,None);bpy.context.collection.objects.link(root)
@@ -1265,10 +1533,15 @@ def export(id,info):
   if "/cladding-" in name and not FLIGHT:
    bevel=ob.modifiers.new("plate-edge-radius","BEVEL");bevel.width=.28;bevel.segments=1
    normal=ob.modifiers.new("weighted-normals","WEIGHTED_NORMAL");normal.keep_sharp=True
+ if FLIGHT:
+  worklight_marks(root,spin,rigs)
+  bake_worklights(id,objects,root,spin,rigs,info)
  marks=[("docking-centre",info["portLocal"],spin),("bearing-centre",info["bearing"],root)]
  if FLIGHT:marks+=[("aperture-plane",[0,0,info["aperturePlane"]],spin),("hub-face",[0,0,info["hubFace"]],spin)]
  for name,loc,parent in marks:
   ob=bpy.data.objects.new(name,None);bpy.context.collection.objects.link(ob);ob.location=Vector(loc)*10;ob.parent=parent
+ if "lightmapScale" in info:root["lightmap_scale"]=info["lightmapScale"]
+ if "probes" in info:root["work_light_probes"]=json.dumps(info["probes"])
  root["crew_route_author_units"]=json.dumps(info["crewRoute"]);root["tooling"]="rigid guided manipulators with positive clamps";root["design"]=id;root["metres_per_author_unit"]=10;spin["axis"]="local +Z";spin["radius_m"]=info["radius"]*10
  if FLIGHT:
   # Intermediate: `prepare-flight-asset.mjs` encodes it into src/models/.
@@ -1287,5 +1560,5 @@ wanted=[a for a in sys.argv[sys.argv.index("--")+1:] if not a.startswith("--")] 
 wanted=wanted or ["o1","o2","o3"]
 for id,fn in [("o1",gantry),("o2",hangar),("o3",slipway)]:
  if id not in wanted:continue
- bpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();RIG.clear();OWNER="static";random.seed(800+int(id[1]))
+ bpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();RIG.clear();OWNER="static";random.seed(800+int(id[1]));LIGHTS.clear();SEAT["bvh"]=None
  info=fn();export(id,info)
