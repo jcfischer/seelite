@@ -78,11 +78,11 @@ export const REALTIME_WORK_LIGHTS: WorkLightConfig = {
 	intensity: 50,
 };
 
-/** What the dev panel (`worklight-tuner.ts`) moves while the principal flies:
- *  the bake's gain and the real-time arm, starting from the URL's figures. */
 /** How bright the work lights draw on a ship's hull, against the grid's
  *  figures; tuned by eye like `WORK_LIGHT_GAIN`. */
 export const SHIP_WORK_LIGHT_GAIN = 1;
+/** What the dev panel (`worklight-tuner.ts`) moves while the principal flies:
+ *  the bake's gain and the real-time arm, starting from the URL's figures. */
 export const workLightTuning = {
 	mode: workLightMode(),
 	gain: tuning("worklight-gain", WORK_LIGHT_GAIN),

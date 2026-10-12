@@ -204,30 +204,28 @@ function lightShip(
 	ship: THREE.Object3D,
 	yards: readonly YardWorkLight[],
 ): void {
-	{
-		const lit: Lit = (ship.userData.workLit ??= {
-			coeffs: new Float32Array(12),
-			frame: null,
-			gain: 0,
+	const lit: Lit = (ship.userData.workLit ??= {
+		coeffs: new Float32Array(12),
+		frame: null,
+		gain: 0,
+	});
+	lit.frame = null;
+	lit.gain = 0;
+	ship.getWorldPosition(at);
+	for (const yard of yards) {
+		const inverse = toFrame.get(yard);
+		if (!inverse) continue;
+		local.copy(at).applyMatrix4(inverse);
+		if (!sampleProbeGrid(yard.grid, local, lit.coeffs)) continue;
+		lit.frame = yard.frame;
+		lit.gain = yard.gain();
+		const copies = (ship.userData.workLightCopies ??= new Map<
+			THREE.Material,
+			THREE.Material
+		>());
+		ship.traverse((o) => {
+			if (o instanceof THREE.Mesh) install(o, copies);
 		});
-		lit.frame = null;
-		lit.gain = 0;
-		ship.getWorldPosition(at);
-		for (const yard of yards) {
-			const inverse = toFrame.get(yard);
-			if (!inverse) continue;
-			local.copy(at).applyMatrix4(inverse);
-			if (!sampleProbeGrid(yard.grid, local, lit.coeffs)) continue;
-			lit.frame = yard.frame;
-			lit.gain = yard.gain();
-			const copies = (ship.userData.workLightCopies ??= new Map<
-				THREE.Material,
-				THREE.Material
-			>());
-			ship.traverse((o) => {
-				if (o instanceof THREE.Mesh) install(o, copies);
-			});
-			break;
-		}
+		break;
 	}
 }

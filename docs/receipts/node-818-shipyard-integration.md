@@ -28,10 +28,12 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
 
 - **Flight look:** the principal approved the flight exports in the study
   viewer (`?flight=1`) on 2026-10-11, and the grown drum ("looks good") on
-  2026-10-12. Neither is the in-game approval, which the map requires before
-  merge.
-- **Open:** the in-game look (the principal), the PR browser gate, SOP §4's
-  measured LOD selection, and Sage review.
+  2026-10-12. **In game** (2026-10-12) the principal approved the look ("looks
+  gorgeous. No flickering, drums look good") and then the baked work lights
+  ("looks good"), and found the drum's added lamps floating; they are re-seated
+  (below), and that re-check is the principal's.
+- **Open:** the principal's re-check of the drum lamps, the PR browser gate,
+  and SOP §4's measured LOD selection. Sage review: five rounds on PR #939.
 
 ## Rulings during the integration (principal, 2026-10-12)
 
