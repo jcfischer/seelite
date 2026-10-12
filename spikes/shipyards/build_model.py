@@ -1065,6 +1065,14 @@ if FLIGHT:
     for t in [.08,.19,.36,.49,.67,.83,.92]:random.uniform(.03,.13)
     for t in [.27,.73]:random.uniform(.16,.55);random.uniform(.025,.07)
 
+# The study's size-comparison hulls stay out of the flight export (principal,
+# 2026-10-12): drawn, for the random numbers they take, and dropped at export.
+if FLIGHT:
+ _display_microship=microship
+ def microship(c,length=12,carrier=False):
+  global OWNER
+  previous=OWNER;OWNER="discard";_display_microship(c,length,carrier);OWNER=previous
+
 # The production shipyard slot is 120 x 70 m (`src/station.ts`). The display throat's
 # innermost parts are its rails and lamps, at |x| 4.61 and |y| 3.075 author units, so
 # capsule-local geometry in front of the throat's back is stretched until they clear
@@ -1254,17 +1262,31 @@ def _separate_coplanar_pass(n,frozen):
 # Work lights added for the flight export: the four areas the principal named —
 # the assembly bays and slips, the gantries and cranes, the drum and its mouth,
 # and the yard's hull. Housings are `flood` fixtures, so each registers its light.
+def mounted_flood(surface,aim,normal):
+ """A flood whose housing rests on a surface (principal, 2026-10-12: housings
+ at one angle "instead of following the angle of the side"): its back on
+ `surface`, square to the surface's `normal`, its long side along the
+ surface, its lens on the housing face that looks most along `aim`."""
+ w=Vector(normal).normalized();a=Vector(aim).normalized()
+ u=w.cross(a)
+ if u.length<1e-4:u=w.cross(X if abs(w.x)<.9 else Y)
+ u.normalize();v=w.cross(u)
+ c=Vector(surface)+w*.3
+ box(c,(1.6,.6,.6),steel,(u,v,w))
+ face=max([w,v,-v],key=lambda d:d.dot(a))
+ if face is w:box(c+w*.36,(1.18,.32,.12),white,(u,v,w))
+ else:box(c+face*.36,(1.18,.12,.32),white,(u,v,w))
+ worklight(c+face*.5,a)
 def drum_worklights():
  global OWNER
  previous=OWNER;OWNER="capsule"
  for j in range(8):
   a=j*math.tau/8;c,s=math.cos(a),math.sin(a)
-  # On the hub face's rim, washing the face and the mouth's approach.
-  flood((18.6*c,18.6*s,9.25),(-.55*c,-.55*s,.85))
-  # On the barrel's flats behind the front chamfer, grazing back along its
-  # plates; the housing rests on the plates (the flats stand at r 22 cos 22.5°).
-  r=22*math.cos(math.pi/8)+.3
-  flood((r*c,r*s,5.5),(.3*c,.3*s,-1))
+  # On the hub face, inside its flats, washing the face and the mouth's approach.
+  mounted_flood((17.2*c,17.2*s,9.0),(-.55*c,-.55*s,.85),(0,0,1))
+  # On the barrel's flats (DRUM_FACE out, square to each face) behind the
+  # front chamfer, grazing back along the plates.
+  mounted_flood((DRUM_FACE*c,DRUM_FACE*s,5.5),(.3*c,.3*s,-1),(c,s,0))
  OWNER=previous
 # A work light's housing rests on the yard: cast from where it is wanted
 # toward its mount (`back`, default against its aim), within `reach` author
@@ -1276,21 +1298,24 @@ def seated_flood(c,n,back=None,reach=4.):
  if SEAT["bvh"] is None:
   verts=[];polys=[]
   for key,(vs,fs,uvs) in BATCH.items():
-   if key.startswith("capsule/"):continue
+   if key.startswith("capsule/") or key.startswith("discard/"):continue
    base=len(verts);verts.extend(Vector(v) for v in vs);polys.extend([base+i for i in f] for f in fs)
   SEAT["bvh"]=BVHTree.FromPolygons(verts,polys)
  c=Vector(c);n=Vector(n).normalized();b=(Vector(back) if back is not None else -n).normalized()
  hit=SEAT["bvh"].ray_cast(c,b,reach)
- if hit[0] is not None:c=hit[0]-b*.31
- else:
-  # An open truss lets the ray through: the nearest surface instead, seated
-  # on the side of it the lamp is on.
-  near=SEAT["bvh"].find_nearest(c,reach*2)
-  if near[0] is None:print("SEAT miss",tuple(round(x,1) for x in c),flush=True)
-  else:
-   out=(c-near[0]);out=out.normalized() if out.length>1e-6 else near[1]
-   c=near[0]+out*.31
- flood(c,n)
+ if hit[0] is not None:
+  # Square to the face it met, on the side it came from.
+  normal=hit[1] if hit[1].dot(b)<0 else -hit[1]
+  return mounted_flood(hit[0],n,normal)
+ # An open truss lets the ray through: the nearest surface instead, seated
+ # on the side of it the lamp is on.
+ near=SEAT["bvh"].find_nearest(c,reach*2)
+ if near[0] is None:
+  print("SEAT miss",tuple(round(x,1) for x in c),flush=True)
+  return flood(c,n)
+ out=c-near[0];out=out.normalized() if out.length>1e-6 else near[1]
+ normal=near[1] if near[1].dot(out)>0 else -near[1]
+ mounted_flood(near[0],n,normal)
 def gantry_worklights():
  for z in [-43,-4,34]:
   # Downlights under each bridge crane onto the assembly floor.
@@ -1510,6 +1535,7 @@ def export(id,info):
  spin=bpy.data.objects.new("life-capsule",None);bpy.context.collection.objects.link(spin);spin.parent=root;spin.location=Vector(info["origin"])*10;spin.rotation_euler.x=info.get("tiltX",0)
  if FLIGHT:
   BATCH.pop("capsule/throat-back",None)
+  for key in [k for k in BATCH if k.startswith("discard/")]:BATCH.pop(key);GROUP_MAT.pop(key,None)
   for name,(verts,faces,uvs) in BATCH.items():
    if name.startswith("capsule/"):verts[:]=[widen_aperture(v) for v in verts]
   grow_drum_forward(info)

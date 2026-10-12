@@ -17,13 +17,14 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
 
   | Form | File | Bytes | Triangles | sha256 |
   |---|---|---|---|---|
-  | a | `shipyard-gantry.glb` | 10 565 488 (10.08 MiB) | 202 620 | `b8617d4dd241513e70028b3b90e4831fd7552e16e77afbb8874561d3c1bb8985` |
-  | b | `shipyard-foundry.glb` | 10 895 212 (10.39 MiB) | 210 968 | `fe5726f7a6b78b8c88a748e9a6fba3fb2318a2c9801e4ca0b6778b82e14f7e2b` |
-  | c | `shipyard-slipway.glb` | 8 070 444 (7.70 MiB) | 137 396 | `e8b16a912ed039ef80af51ffb690ab780ebb2ac0ed71826ad9a4a5458c0fbded` |
+| a | `shipyard-gantry.glb` | 10 494 100 (10.01 MiB) | 200 924 | `bf0378666f0f19f9ff66a4aa599719d3ae29470f2e851930d27763f3584b4f0b` |
+  | b | `shipyard-foundry.glb` | 10 819 548 (10.32 MiB) | 209 272 | `0aed305df76af134142a6e620d184adb946440ded7e7195d6640ab0b32651cc1` |
+  | c | `shipyard-slipway.glb` | 7 992 896 (7.62 MiB) | 135 736 | `71b7edefe1bb68bda61d2e4c9f5b775970a8ff1d6cb28a675d8cc74ebd0e3cc5` |
 
-  Beside each, its baked work lights: lightmaps of 1 664 654, 1 347 326 and
-  1 454 576 bytes (`-lightmap.webp`) and probe grids of 634 752, 988 416 and
-  1 099 800 bytes (`-probes.bin`). The second UV set the lightmap reads adds
+  Beside each, its baked work lights: lightmaps of 1 704 168, 1 448 010 and
+  1 521 516 bytes (`-lightmap.webp`) and probe grids of 590 976, 912 384 and
+  1 099 800 bytes (`-probes.bin`). The study's size-comparison hulls are
+  dropped from the flight export (principal, 2026-10-12). The second UV set the lightmap reads adds
   about 2 MiB to each model.
 
 - **Flight look:** the principal approved the flight exports in the study
@@ -60,7 +61,9 @@ slips, the gantries and cranes, the drum and its mouth, and the hull overall.
 Asked baked or real time, the principal had both built on one yard to fly
 through, then chose **baked, gain 12**; then asked for the ship's hull to be lit
 in the yard too, chose an irradiance grid (H1), and found the drum's added lamps
-floating, which the seating pass below fixed.
+floating and then set at one angle; every added housing is now built on its
+surface (`mounted_flood`: its back on the surface, square to it, its long
+side along it).
 
 **What was measured for the choice** (`.tmp`-only instrument, the method of
 `scripts/measure-light-cost.mjs`: one page, the arm switched in place, eight
@@ -193,9 +196,9 @@ sim's own figures. Measured 2026-10-12:
 
 | Form | drum boxes | yard boxes |
 |---|---|---|
-| a | 531 | 2 831 |
-| b | 531 | 2 378 |
-| c | 499 | 2 771 |
+| a | 513 | 2 755 |
+| b | 513 | 2 347 |
+| c | 483 | 2 782 |
 
 246 KB of source; a refit takes about 5 minutes for the three. Settings were
 measured on form a: a 4.5 m fit and 1.5 m absorb gave 14 290 boxes, 9 m and
