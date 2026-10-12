@@ -46,7 +46,7 @@ function reduce(state,a){const s=copy(state);if(a.type==='submit'||a.type==='col
 }
 </script>
 <script>
-let state=initial(),saved=copy(state),pending=null,lastCommand=null,serial=0,quoted=null,tab='submit',notice='Choose an ore quantity. You review the full quote before committing.',history=[],scenario=0,step=0;
+let state=initial(),saved=copy(state),pending=null,lastCommand=null,serial=0,quoted=null,tab='submit',notice='Choose an ore quantity.',history=[],scenario=0,step=0;
 const $=id=>document.getElementById(id);const fmt=n=>n.toLocaleString('en',{maximumFractionDigits:3});const money=n=>fmt(n)+' Cr';
 const productAmount=(g,p)=>fmt(g/PRODUCTS[p].grams)+' '+PRODUCTS[p].unit+' '+PRODUCTS[p].name;
 function log(message){notice=message;history.unshift(message);history=history.slice(0,12);render();}

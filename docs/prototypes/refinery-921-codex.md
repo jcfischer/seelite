@@ -2,7 +2,7 @@
 
 Refs #921. Author: Codex. Base: `c1b5bd00`. Prototype branch: `prototype/refinery-921`.
 
-Status: D1–D10 individually ratified in the principal's conversation on 2026-10-12. Console review and final technical-contract ratification remain open. This is a throwaway prototype, not production integration, a shipped save migration, or economic calibration. The eventual graph receipt owns the ratified decision; this document records the prototype and its engineering proposal.
+Status: D1–D10 individually ratified in the principal's conversation on 2026-10-12. The principal approved the console with one copy correction: remove “You review the full quote before committing.” Final technical-contract ratification remains open. This is a throwaway prototype, not production integration, a shipped save migration, or economic calibration. The eventual graph receipt owns the ratified decision; this document records the prototype and its engineering proposal.
 
 Open `src/refinery-console.prototype.html` directly in a browser. One file, no server, no dependencies, no game storage access. The console uses the existing station palette and tab structure; it is not mounted in the actual cockpit. The blue demonstration controls are outside the proposed game UI. Its seven guided walkthroughs cover ordinary processing, an outage, partial collection, cross-job fractions, changed quotes, interrupted saving, and eight occupied slots.
 
@@ -80,7 +80,7 @@ These are the future production failure cases, not passing tests. The standalone
 
 ## Review status
 
-Awaiting principal review of the console and full contract. No production build briefs filed yet. Separate submission/processing and collection slices follow only after their required persistence, capability and economic decisions are resolved. Keep this prototype branch as the reproducible primary source; do not merge its HTML shell into the game.
+The principal approved the console on 2026-10-12: “drop \"You review the full quote before committing.\" that's so AI like otherwise: Very nice”. The requested sentence is removed. This approves the console layout and interactions; final technical-contract ratification remains open. No production build briefs filed yet. Separate submission/processing and collection slices follow only after their required persistence, capability and economic decisions are resolved. Keep this prototype branch as the reproducible primary source; do not merge its HTML shell into the game.
 
 ### Prototype walkthrough observation — 2026-10-12
 
