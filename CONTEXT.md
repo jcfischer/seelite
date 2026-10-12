@@ -760,9 +760,10 @@ _Avoid_: Warp, hyperjump, hyperspace jump (as a verb), FTL
 
 **Hyperspace tank**:
 The jump fuel, spent by distance and bought at any station's equipment screen
-at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY. Its capacity is the flown
-hull's `tankLy`, which is also its jump range — one number (#185 D1, #554); the
-courier's is 7 LY. `galaxy.ts`'s `JUMP_RANGE_LY` is **not** a tank: it is the
+at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY, or filled by a fitted fuel
+scoop on a cruise pass inside a star's skim band (#871 D2, built by #932). Its
+capacity is the flown hull's `tankLy` plus every fitted fuel tank (#926); the
+jump range is `tankLy` alone (#185 D1, #554), and the courier's is 7 LY. `galaxy.ts`'s `JUMP_RANGE_LY` is **not** a tank: it is the
 galaxy's connectivity predicate, the reach at which every galaxy is connected.
 Distinct from the **drive charge**, which is cruise's own reserve — the flown
 hull's `chargeAu`, 12 AU on the courier — with free refills on docking.

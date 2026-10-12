@@ -8,6 +8,7 @@ import {
 	freeSlot,
 	repeatableEquipment,
 	parseModule,
+	stepFuelScoop,
 	stockLoadout,
 } from "./loadout";
 import { outfittingScreen } from "./outfitting";
@@ -554,11 +555,10 @@ import { type EarshotStation, hailText } from "./distress";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
-	duelRowCells,
-	duelRowWidest,
+	duelBandCells,
+	duelBandWidestRows,
 	HULL_TEMP_LABEL,
-	hullTempCells,
-	hullTempWidest,
+	SCOOP_LABEL,
 	onTargetMark,
 	raiderCueTone,
 	targetConditionLine,
@@ -1819,10 +1819,8 @@ const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
  */
 const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
-/** The widest reading the duel row can print, for the floor's fit. */
-const DUEL_ROW_WIDEST = duelRowWidest();
-/** The widest reading the hull-temperature gauge can print, in the same band. */
-const HULL_TEMP_WIDEST = hullTempWidest();
+/** The duel band's widest rows, for the floor's fit (#932). */
+const DUEL_BAND_WIDEST_ROWS = duelBandWidestRows();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -3381,6 +3379,10 @@ class Game {
 		/** The plate under the hull-temperature cell as painted (#931), or
 		 *  `null` when the hull is at ambient and no cell was drawn. */
 		tempPlate: FloorBox | null;
+		/** The plate under the scoop's `SCOOPING` line as painted (#932), or
+		 *  `null` when the scoop is not filling. Beside the TEMP cell it is the
+		 *  same plate, drawn once under both. */
+		scoopPlate: FloorBox | null;
 		source: {
 			regime: string;
 			spoolLeftS: number;
@@ -4128,6 +4130,10 @@ class Game {
 	 * refills the whole condition.
 	 */
 	condition: ShipCondition = this.flownFullCondition();
+
+	/** Whether the fuel scoop filled the tank on the last step (#932): the
+	 *  glass's `SCOOPING` line reads it. `step` is its one writer. */
+	scooping = false;
 
 	/**
 	 * §12's dock state machine — arriving, docked, launching, or flying.
@@ -12924,6 +12930,8 @@ class Game {
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
 		this.condition = this.flownFullCondition();
+		// A new flight is not on a pass, so its glass has no SCOOPING line (#932).
+		this.scooping = false;
 		// `collision.md` §4.3's ghost record is the flight's, and a reset is a
 		// new flight: a second leg reads only its own placements.
 		this.collisionGhostSteps = 0;
@@ -15168,11 +15176,25 @@ class Game {
 		// The star heats the hull wherever the ship is, docked included (#931):
 		// a station is far outside any band, so there it only cools. It reads
 		// the frame-start position, as the gun reads the frame-start trigger.
-		this.condition = stepHullTemperature(
-			gun.condition,
+		const starR = this.starDistanceR();
+		this.condition = stepHullTemperature(gun.condition, dt, starR);
+		// The fuel scoop, at the same distance (#932): in cruise inside the band
+		// it fills the tank to the fitted capacity and the bank pays its draw.
+		// The regime is the frame's start, as the distance is.
+		const scoop = stepFuelScoop({
+			rOverR: starR,
+			cruising: this.regime === "cruise",
+			hull: this.commander.hull,
+			loadout: this.commander.loadout,
+			fuelLy: this.commander.fuelLy,
+			energy: this.condition.energy,
 			dt,
-			this.starDistanceR(),
-		);
+		});
+		this.scooping = scoop.filling;
+		if (scoop.filling) {
+			this.condition = { ...this.condition, energy: scoop.energy };
+			this.fuelLy = scoop.fuelLy;
+		}
 		this.noticeDestroyed();
 		const shot: PlayerShot = { fired: gun.fired, damage: gun.damage };
 		// What the player sees and hears of the shot. Without these a held
@@ -19661,13 +19683,10 @@ class Game {
 			];
 			// And the duel row (#324), for the same reason: a third run on the
 			// same axis at the same scale.
-			const widestDuel = [
-				...DUEL_ROW_LABELS.map((label) => ({
-					label,
-					value: DUEL_ROW_WIDEST[label],
-				})),
-				{ label: HULL_TEMP_LABEL, value: HULL_TEMP_WIDEST },
-			];
+			// The duel band's widest rows, in combat and out of it (#932):
+			// `duelBandWidestRows` composes them by `duelBandCells`' own rule,
+			// so SHD, HEAT and SCOOPING are never fitted as one row.
+			const widestDuelRows = DUEL_BAND_WIDEST_ROWS;
 			const groups = this.fireGroups;
 			const widestGroup = groups.map((group, index) => ({
 				label: "",
@@ -19679,8 +19698,10 @@ class Game {
 				Math.max(
 					floorRunWidths(ctx, widestCells, scale).total,
 					floorRunWidths(ctx, widestCourse, scale).total,
-					...widestGroup.map(
-						(group) => floorRunWidths(ctx, [...widestDuel, group], scale).total,
+					...widestDuelRows.flatMap((row) =>
+						widestGroup.map(
+							(group) => floorRunWidths(ctx, [...row, group], scale).total,
+						),
 					),
 				);
 			const atOne = runAt(1);
@@ -19752,6 +19773,7 @@ class Game {
 		// centre it, box it in its band, paint each cell. The course row and
 		// #324's duel row were this block twice.
 		let tempPlate: FloorBox | null = null;
+		let scoopPlate: FloorBox | null = null;
 		const drawBandRow = (
 			rowCells: FloorCell[],
 			label: string,
@@ -19760,30 +19782,43 @@ class Game {
 			const run = floorRunWidths(ctx, rowCells, scale);
 			let rowX = (w - run.total) / 2;
 			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
+			// **A plate behind the hull-temperature cell** (#931, the
+			// principal's ruling on the sheet). It shows only near a star, so
+			// the sky behind it is the brightest and warmest the glass meets,
+			// and red and amber over it did not read — #597's case for the
+			// docking notice, and its plate. Short of half a cell gap each side,
+			// so it never reaches the next cell's ink. The scoop's line (#932)
+			// shows in the same sky, beside it, so one plate spans both: drawn
+			// before either cell, so neither's ink is under it.
+			let plateFrom = Number.NaN;
+			let plateTo = Number.NaN;
+			let hasTemp = false;
+			let hasScoop = false;
+			let cellX = rowX;
 			for (const [i, cell] of rowCells.entries()) {
-				// **A plate behind the hull-temperature cell** (#931, the
-				// principal's ruling on the sheet). It shows only near a star, so
-				// the sky behind it is the brightest and warmest the glass meets,
-				// and red and amber over it did not read — #597's case for the
-				// docking notice, and its plate. Short of half a cell gap each side,
-				// so it never reaches the next cell's ink.
-				if (cell.label === HULL_TEMP_LABEL) {
-					const pad = (cellGap / 2) * 0.8;
-					tempPlate = floorBox(
-						cell.label,
-						rowX - pad,
-						run.widths[i] + 2 * pad,
-						box.top + FLOOR_TEMP_PLATE_INSET * box.height,
-					);
-					tempPlate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
-					ctx.fillStyle = PROMPT_PLATE_FILL;
-					ctx.fillRect(
-						tempPlate.x,
-						tempPlate.top,
-						tempPlate.width,
-						tempPlate.height,
-					);
+				hasTemp ||= cell.label === HULL_TEMP_LABEL;
+				hasScoop ||= cell.label === SCOOP_LABEL;
+				if (cell.label === HULL_TEMP_LABEL || cell.label === SCOOP_LABEL) {
+					if (Number.isNaN(plateFrom)) plateFrom = cellX;
+					plateTo = cellX + run.widths[i];
 				}
+				cellX += run.widths[i] + cellGap;
+			}
+			if (!Number.isNaN(plateFrom)) {
+				const pad = (cellGap / 2) * 0.8;
+				const plate = floorBox(
+					hasTemp ? HULL_TEMP_LABEL : SCOOP_LABEL,
+					plateFrom - pad,
+					plateTo - plateFrom + 2 * pad,
+					box.top + FLOOR_TEMP_PLATE_INSET * box.height,
+				);
+				plate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
+				ctx.fillStyle = PROMPT_PLATE_FILL;
+				ctx.fillRect(plate.x, plate.top, plate.width, plate.height);
+				if (hasTemp) tempPlate = plate;
+				if (hasScoop) scoopPlate = plate;
+			}
+			for (const [i, cell] of rowCells.entries()) {
 				drawFloorCell(
 					ctx,
 					cell,
@@ -19799,10 +19834,15 @@ class Game {
 				? null
 				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
 		// The armed group stays readable in peace; combat adds shields and heat.
+		// The scoop's line shows only out of combat (#932): `duelBandCells`
+		// owns which, so the fit above takes the row as one or the other.
 		const duelRow: FloorCell[] = [
-			...(this.duelRowShown() ? duelRowCells(this.condition) : []),
-			// Hull temperature, while the hull is above ambient (#931).
-			...hullTempCells(this.condition),
+			...duelBandCells({
+				fighting: this.duelRowShown(),
+				condition: this.condition,
+				scooping: this.scooping,
+				fuelLy: this.commander.fuelLy,
+			}),
 			{
 				label: "",
 				value: this.armedFireGroup.label(this.fireGroups),
@@ -19830,6 +19870,7 @@ class Game {
 			duelRow,
 			duelBox,
 			tempPlate,
+			scoopPlate,
 			baselineY,
 			glassBottomY,
 			scale,
