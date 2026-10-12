@@ -1767,6 +1767,9 @@ const FLOOR_BANDS = DUEL_BAND;
  *  over a lit station face, and translucent so the slot stays visible. */
 const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
 const PROMPT_PLATE_PAD_PX = 8;
+/** How far the hull-temperature plate stands in from its band, top and
+ *  bottom, as a share of the band (#931). */
+const FLOOR_TEMP_PLATE_INSET = 0.12;
 
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
@@ -3372,6 +3375,9 @@ class Game {
 		 *  row was deliberately not drawn. */
 		duelRow: FloorCell[] | null;
 		duelBox: FloorBox | null;
+		/** The plate under the hull-temperature cell as painted (#931), or
+		 *  `null` when the hull is at ambient and no cell was drawn. */
+		tempPlate: FloorBox | null;
 		source: {
 			regime: string;
 			spoolLeftS: number;
@@ -19732,6 +19738,7 @@ class Game {
 		// One painter for every centred row above the strip: measure the run,
 		// centre it, box it in its band, paint each cell. The course row and
 		// #324's duel row were this block twice.
+		let tempPlate: FloorBox | null = null;
 		const drawBandRow = (
 			rowCells: FloorCell[],
 			label: string,
@@ -19741,6 +19748,29 @@ class Game {
 			let rowX = (w - run.total) / 2;
 			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
 			for (const [i, cell] of rowCells.entries()) {
+				// **A plate behind the hull-temperature cell** (#931, the
+				// principal's ruling on the sheet). It shows only near a star, so
+				// the sky behind it is the brightest and warmest the glass meets,
+				// and red and amber over it did not read — #597's case for the
+				// docking notice, and its plate. Half a cell gap each side, so it
+				// never reaches a neighbour's ink.
+				if (cell.label === HULL_TEMP_LABEL) {
+					const pad = (cellGap / 2) * 0.8;
+					tempPlate = floorBox(
+						cell.label,
+						rowX - pad,
+						run.widths[i] + 2 * pad,
+						box.top + FLOOR_TEMP_PLATE_INSET * box.height,
+					);
+					tempPlate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
+					ctx.fillStyle = PROMPT_PLATE_FILL;
+					ctx.fillRect(
+						tempPlate.x,
+						tempPlate.top,
+						tempPlate.width,
+						tempPlate.height,
+					);
+				}
 				drawFloorCell(
 					ctx,
 					cell,
@@ -19786,6 +19816,7 @@ class Game {
 			courseBox,
 			duelRow,
 			duelBox,
+			tempPlate,
 			baselineY,
 			glassBottomY,
 			scale,

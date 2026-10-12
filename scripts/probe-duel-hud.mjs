@@ -167,6 +167,13 @@ const installHelpers = () => {
 		passiveIn(x, y, width, height) {
 			return countIn(x, y, width, height, passive);
 		},
+		/** Share of a box's overlay pixels that are the dark plate (#931). */
+		plateShare(box) {
+			if (!box) return 0;
+			const dark = (r, gr, b, a) => a > 150 && r < 40 && gr < 40 && b < 50;
+			const n = countIn(box.x, box.top, box.width, box.height, dark);
+			return n / (Math.ceil(box.width) * Math.ceil(box.height));
+		},
 		enemyLinePaint(at) {
 			return countIn(at.x + 20, at.y + 12, 110, 12, passive);
 		},
@@ -206,6 +213,7 @@ const installHelpers = () => {
 				? {
 						duelRow: r.duelRow,
 						duelBox: r.duelBox,
+						tempPlate: r.tempPlate,
 						courseBox: r.courseBox,
 						glassBottomY: r.glassBottomY,
 						marginPx: r.marginPx,
@@ -735,6 +743,7 @@ for (const viewport of VIEWPORTS) {
 			floor: D.floor(),
 		};
 		const hotInk = ink(hot.floor?.duelBox);
+		const hotPlate = D.plateShare(hot.floor?.tempPlate);
 		// Away from the star: cooling, then the last fraction under the snap.
 		g.world.ship.pos = home;
 		g.world.ship.vel = { x: 0, y: 0, z: 0 };
@@ -746,6 +755,8 @@ for (const viewport of VIEWPORTS) {
 		D.steps(1);
 		return {
 			coldRow: cold?.duelRow,
+			coldPlate: cold?.tempPlate ?? null,
+			hotPlate,
 			coldInk,
 			hot,
 			hotInk,
@@ -766,6 +777,21 @@ for (const viewport of VIEWPORTS) {
 			skim.ambient.temp === 0 &&
 			!skim.ambient.floor?.duelRow?.some((c) => c.label === "TEMP"),
 		JSON.stringify({ ...skim, tempCell }),
+	);
+	// The plate is what makes the cell read over a star-lit sky (#931, the
+	// principal's ruling). Most of its area is plate; the rest is the cell's ink.
+	check(
+		`${v}: the TEMP cell stands on its dark plate, and no plate is painted without it`,
+		skim.coldPlate === null &&
+			skim.hot.floor?.tempPlate != null &&
+			skim.hotPlate > 0.5 &&
+			skim.ambient.floor?.tempPlate === null,
+		JSON.stringify({
+			coldPlate: skim.coldPlate,
+			hotPlate: skim.hotPlate,
+			plate: skim.hot.floor?.tempPlate,
+			ambientPlate: skim.ambient.floor?.tempPlate,
+		}),
 	);
 	// Last on the page, because it ends the flight: heat above the top runs the
 	// hull out through the game's own death path, and the shields stand.
