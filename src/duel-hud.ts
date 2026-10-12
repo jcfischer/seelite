@@ -150,6 +150,31 @@ export function hullTempWidest(): string {
 	return hullTempCells({ hullTemp: hottest })[0]?.value ?? "";
 }
 
+/** The fuel scoop's line (#932, #871 D6). */
+export const SCOOP_LABEL = "SCOOPING";
+
+/**
+ * The scoop's cell in the duel band, beside the TEMP gauge: `SCOOPING` and the
+ * tank in LY while the scoop fills (`stepFuelScoop`'s `filling`), and nothing
+ * once it stops — a full tank, the band left, the cruise ended or a bank too
+ * low to pay the draw.
+ */
+export function scoopCells(filling: boolean, fuelLy: number): FloorCell[] {
+	if (!filling) return [];
+	return [
+		{ label: SCOOP_LABEL, value: `${fuelLy.toFixed(1)} LY`, tone: "passive" },
+	];
+}
+
+/**
+ * The widest tank reading the line can print: two digits. No ship a pilot can
+ * fly carries 100 LY, and `tests/scoop-line.test.ts` fills every fuel slot of
+ * every such hull to hold that.
+ */
+export function scoopWidest(): string {
+	return scoopCells(true, 99.9)[0]?.value ?? "";
+}
+
 export interface DuelConsoleReadout {
 	fore: string;
 	aft: string;

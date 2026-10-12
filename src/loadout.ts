@@ -226,10 +226,7 @@ export function stepFuelScoop(input: ScoopInput): ScoopStep {
 	const draw = drawPerS * input.dt;
 	if (input.energy < draw) return idle;
 	return {
-		fuelLy: Math.min(
-			capacityLy,
-			input.fuelLy + fuelLyPerS * shape * input.dt,
-		),
+		fuelLy: Math.min(capacityLy, input.fuelLy + fuelLyPerS * shape * input.dt),
 		energy: input.energy - draw,
 		filling: true,
 	};

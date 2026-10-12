@@ -220,10 +220,7 @@ describe("the fitted scoop's row sets the rate", () => {
 	test("two fitted scoops fill and draw as their sum", () => {
 		const two: Loadout = { ...scooped, flex: makeModule("fuel-scoop", 1) };
 		const out = step({ loadout: two, fuelLy: 0, energy: 50 });
-		expect(out.fuelLy).toBeCloseTo(
-			2 * TABLE_PEAK * tableShape(1.2) * DT,
-			12,
-		);
+		expect(out.fuelLy).toBeCloseTo(2 * TABLE_PEAK * tableShape(1.2) * DT, 12);
 		expect(out.energy).toBeCloseTo(50 - 2 * scoopRow.drawPerS * DT, 12);
 	});
 });
