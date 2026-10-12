@@ -28,7 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// Node #925: sentence pending the principal's approval before the merge.
+	// Node #925: sentence approved by the principal, 2026-10-12.
 	{
 		date: "2026-10-12",
 		text: "Power plants and Extra Energy Units now set the size of your energy bank, and a better plant also recharges it faster.",
