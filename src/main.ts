@@ -5414,7 +5414,8 @@ class Game {
 	 * The stick for this frame of `F`'s turn (`noseTurnStick`), or `null`
 	 * when none is flying. It lets go once the nose is on, and the moment the
 	 * pilot turns the ship, the target changes, or a cruise guidance takes the
-	 * nose (`stepDetour` places it every frame).
+	 * nose (`stepDetour` places it every frame). Only in cruise: a guidance is
+	 * set on the engage, and `F` then `J` turns the ship through the spool.
 	 */
 	private stepFaceTurn(dt: number, pilotTurns: boolean): Angular | null {
 		const id = this.faceTurnId;
@@ -5427,8 +5428,7 @@ class Game {
 			d === 0 ||
 			this.targetId !== id ||
 			this.dockedAt ||
-			this.detour ||
-			this.cruiseTrackId
+			(this.regime === "cruise" && (this.detour || this.cruiseTrackId))
 				? null
 				: noseTurnStick(
 						{ nose: this.nose(), up: this.shipUp() },
