@@ -265,6 +265,17 @@ try {
 			slot: "plant",
 		});
 		const unchanged = JSON.stringify(read()) === beforeRefusal;
+		// A hull bought to wait for the launch (#556 D10) is adopted without
+		// being flown: the flown ship keeps its fitted bank until it takes over.
+		const own = g.commander;
+		const other = own.hull === "freighter" ? "courier" : "freighter";
+		const holding = (commander) => ({
+			holdings: { ...g.holdings(), commander },
+			world: g.commerceWorld,
+		});
+		g.adopt("world", holding({ ...own, hull: other }), null);
+		const pending = JSON.stringify(read()) === beforeRefusal;
+		g.adopt("world", holding(own), null);
 		const launched = g.launch();
 		for (let i = 0; i < 30; i++) g.step(1 / 60);
 		return {
@@ -275,6 +286,7 @@ try {
 			after,
 			plantRefused,
 			unchanged,
+			pending,
 			launched,
 			flown: { ...read(), want: want() },
 		};
@@ -298,6 +310,10 @@ try {
 	check(
 		"the plant is replace-only and the refusal leaves the bank alone",
 		bank.plantRefused && bank.unchanged,
+	);
+	check(
+		"a hull waiting for the launch leaves the flown bank alone",
+		bank.pending,
 	);
 	check(
 		"the launched flight carries the fitted maxima",

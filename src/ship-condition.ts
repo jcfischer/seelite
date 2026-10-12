@@ -12,7 +12,12 @@
  * No Three.js and no world: sim tier. The laser here is a resource and a damage
  * rate. What it hits is the caller's to decide.
  */
-import { HULL_SPECS, type HullId, type PlantOutput, stockPlant } from "./hull";
+import {
+	type FittedCapacity,
+	HULL_SPECS,
+	type HullId,
+	stockPlant,
+} from "./hull";
 import { type Vec3, dot } from "./vec3";
 
 /** Laser heat at which the gun locks. */
@@ -155,14 +160,14 @@ export interface ShipCondition {
 }
 
 /**
- * A whole ship. `plant` is the fitted plant's and Extra Energy Units' capacity
+ * A whole ship. `capacity` is the fitted plant's and Extra Energy Units'
  * (`fittedCapacity` in `loadout.ts`, #925), passed as numbers because
  * `module-catalog.ts` imports this module and an import back closes a cycle.
  * Without it the hull flies its stock plant, which is every NPC's (#875).
  */
 export function fullCondition(
 	hull: HullId,
-	plant: PlantOutput = stockPlant(hull),
+	capacity: FittedCapacity = stockPlant(hull),
 ): ShipCondition {
 	const { integrity: hullMax, shieldPool: shieldMax } = HULL_SPECS[hull];
 	return {
@@ -171,9 +176,9 @@ export function fullCondition(
 		hull: hullMax,
 		hullMax,
 		shieldMax,
-		energy: plant.bankE,
-		energyMax: plant.bankE,
-		energyRegenPerS: plant.regenPerS,
+		energy: capacity.bankE,
+		energyMax: capacity.bankE,
+		energyRegenPerS: capacity.regenPerS,
 		heat: 0,
 		heatLocked: false,
 		// Clear of the delay, so a fresh ship recharges rather than spending its
@@ -189,14 +194,14 @@ export function fullCondition(
  */
 export function refitCondition(
 	c: ShipCondition,
-	bank: PlantOutput,
+	capacity: FittedCapacity,
 ): ShipCondition {
-	const added = Math.max(0, bank.bankE - c.energyMax);
+	const added = Math.max(0, capacity.bankE - c.energyMax);
 	return {
 		...c,
-		energy: Math.min(bank.bankE, c.energy + added),
-		energyMax: bank.bankE,
-		energyRegenPerS: bank.regenPerS,
+		energy: Math.min(capacity.bankE, c.energy + added),
+		energyMax: capacity.bankE,
+		energyRegenPerS: capacity.regenPerS,
 	};
 }
 

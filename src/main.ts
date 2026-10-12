@@ -17640,9 +17640,10 @@ class Game {
 		if (cause === "settlement") this.requestMessage = signals?.message ?? "";
 		if (signals?.hullChanged) this.receiveHull(signals.hullChanged);
 		// A refit at a dock moves the bank the ship launches with (#925). A hull
-		// delivered now already took a whole condition; one waiting for the
-		// launch is not flown yet, and `flownCapacity` keeps the old hull's.
-		if (refit)
+		// delivered now already took a whole condition. One waiting for the
+		// launch is not flown yet: the flown ship keeps the bank it has until
+		// `setFlownHull` gives the new hull a whole condition.
+		if (refit && this.commander.hull === this.flownHull)
 			this.condition = refitCondition(this.condition, this.flownCapacity());
 		if (effects.consoleRevision) this.stationConsoleRevision += 1;
 		if (effects.requestRevision) this.requestRevision += 1;

@@ -3,8 +3,8 @@
 import {
 	HULL_SPECS,
 	type HullId,
+	type FittedCapacity,
 	type HullSlot,
-	type PlantOutput,
 	type SlotSize,
 	stockPlant,
 } from "./hull";
@@ -155,7 +155,7 @@ export function stockLoadout(hull: HullId): Loadout {
  * is the plant's alone (#925). A loadout with no plant flies the stock one.
  * Hold, tank, integrity and shield join here, never in a second projection.
  */
-export function fittedCapacity(hull: HullId, loadout: Loadout): PlantOutput {
+export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	const plant = loadout.plant
 		? moduleRow(loadout.plant).output
 		: stockPlant(hull);
