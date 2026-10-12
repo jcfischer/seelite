@@ -465,6 +465,7 @@ import {
 	refitCondition,
 	sideStruck,
 	stepCondition,
+	stepHullTemperature,
 } from "./ship-condition";
 import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import { PLAYER_LASER_RANGE_KM } from "./laser";
@@ -552,6 +553,9 @@ import {
 	duelConsoleReadout,
 	duelRowCells,
 	duelRowWidest,
+	HULL_TEMP_LABEL,
+	hullTempCells,
+	hullTempWidest,
 	onTargetMark,
 	raiderCueTone,
 	targetConditionLine,
@@ -1811,6 +1815,8 @@ const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
 /** The widest reading the duel row can print, for the floor's fit. */
 const DUEL_ROW_WIDEST = duelRowWidest();
+/** The widest reading the hull-temperature gauge can print, in the same band. */
+const HULL_TEMP_WIDEST = hullTempWidest();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -13180,16 +13186,36 @@ class Game {
 	takeDamage(amount: number, side: ShieldSide, reason: string) {
 		if (!(amount > 0)) return;
 		this.condition = applyDamage(this.condition, amount, side);
-		// The one place damage lands is the one place a death is noticed.
-		if (!isAlive(this.condition) && !this.dead) {
-			this.dead = true;
-			this.clockHeld = true;
-			this.lastExit = "ship destroyed";
-			// Not ejected, so the ship is lost, pod fitted or not (#660 D4).
-			void this.onDeath?.("destroyed");
-		}
+		this.noticeDestroyed();
 		this.cancelJumpCharge(reason);
 		this.cancelSpoolUp(reason);
+	}
+
+	/**
+	 * The death path, for both places hull is spent: a hit (`takeDamage`) and a
+	 * star's heat (`stepHullTemperature`, #931). Heat is not a hit, so it does
+	 * not come through `takeDamage` and cancels no spool or jump charge: a
+	 * pilot climbing out of a band on a spool would otherwise lose the spool
+	 * to the heat that the climb is escaping.
+	 */
+	private noticeDestroyed() {
+		if (isAlive(this.condition) || this.dead) return;
+		this.dead = true;
+		this.clockHeld = true;
+		this.lastExit = "ship destroyed";
+		// Not ejected, so the ship is lost, pod fitted or not (#660 D4).
+		void this.onDeath?.("destroyed");
+	}
+
+	/**
+	 * The ship's distance from its system's star, in the star's radii (#931).
+	 * The star sits at the system origin (`placeBodies`), but its position is
+	 * read rather than assumed.
+	 */
+	private starDistanceR(): number {
+		const star = this.world.system.bodies.find((b) => b.kind === "star");
+		if (!star || !(star.radiusKm > 0)) return Number.POSITIVE_INFINITY;
+		return length(sub(this.world.ship.pos, star.pos)) / star.radiusKm;
 	}
 
 	/**
@@ -15120,7 +15146,15 @@ class Game {
 		);
 		if (gun.fired)
 			this.firedMuzzleIndices = groupMuzzleIndices(this.flownHull, armedGroup);
-		this.condition = gun.condition;
+		// The star heats the hull wherever the ship is, docked included (#931):
+		// a station is far outside any band, so there it only cools. It reads
+		// the frame-start position, as the gun reads the frame-start trigger.
+		this.condition = stepHullTemperature(
+			gun.condition,
+			dt,
+			this.starDistanceR(),
+		);
+		this.noticeDestroyed();
 		const shot: PlayerShot = { fired: gun.fired, damage: gun.damage };
 		// What the player sees and hears of the shot. Without these a held
 		// trigger drew nothing and played nothing, and read as a dead key.
@@ -19608,10 +19642,13 @@ class Game {
 			];
 			// And the duel row (#324), for the same reason: a third run on the
 			// same axis at the same scale.
-			const widestDuel = DUEL_ROW_LABELS.map((label) => ({
-				label,
-				value: DUEL_ROW_WIDEST[label],
-			}));
+			const widestDuel = [
+				...DUEL_ROW_LABELS.map((label) => ({
+					label,
+					value: DUEL_ROW_WIDEST[label],
+				})),
+				{ label: HULL_TEMP_LABEL, value: HULL_TEMP_WIDEST },
+			];
 			const groups = this.fireGroups;
 			const widestGroup = groups.map((group, index) => ({
 				label: "",
@@ -19721,6 +19758,8 @@ class Game {
 		// The armed group stays readable in peace; combat adds shields and heat.
 		const duelRow: FloorCell[] = [
 			...(this.duelRowShown() ? duelRowCells(this.condition) : []),
+			// Hull temperature, while the hull is above ambient (#931).
+			...hullTempCells(this.condition),
 			{
 				label: "",
 				value: this.armedFireGroup.label(this.fireGroups),
