@@ -227,6 +227,84 @@ try {
 			);
 		}),
 	);
+	// #925: the fitted plant and Extra Energy Units set the flown bank, through
+	// the console's own transactions; the expected figures come off the page.
+	const bank = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { carriedModule, fittedCapacity, makeModule } = await import(
+			"/src/loadout.ts"
+		);
+		const read = () => ({
+			energy: g.condition.energy,
+			max: g.condition.energyMax,
+			regen: g.condition.energyRegenPerS,
+		});
+		const want = () => fittedCapacity(g.commander.hull, g.commander.loadout);
+		const fit = (module, slot) => {
+			g.commander = {
+				...g.commander,
+				recoveredFittings: [
+					...(g.commander.recoveredFittings ?? []),
+					carriedModule(module),
+				],
+			};
+			const index = g.commander.recoveredFittings.length - 1;
+			return g.transactStation({ type: "fit-recovered", slot, index });
+		};
+		g.condition = { ...g.condition, energy: g.condition.energyMax };
+		const stock = read();
+		const fitted =
+			fit(makeModule("power-plant", 1, "A"), "plant") &&
+			fit(makeModule("extra-energy-unit", 1, "E"), "flex");
+		const bought = { ...read(), want: want() };
+		const removed = g.transactStation({ type: "remove-module", slot: "flex" });
+		const after = { ...read(), want: want() };
+		const beforeRefusal = JSON.stringify(read());
+		const plantRefused = !g.transactStation({
+			type: "remove-module",
+			slot: "plant",
+		});
+		const unchanged = JSON.stringify(read()) === beforeRefusal;
+		const launched = g.launch();
+		for (let i = 0; i < 30; i++) g.step(1 / 60);
+		return {
+			stock,
+			fitted,
+			bought,
+			removed,
+			after,
+			plantRefused,
+			unchanged,
+			launched,
+			flown: { ...read(), want: want() },
+		};
+	});
+	console.log(JSON.stringify(bank));
+	check(
+		"a refit plant and Extra Energy Unit arrive as the flown bank, full",
+		bank.fitted &&
+			bank.bought.max === bank.bought.want.bankE &&
+			bank.bought.regen === bank.bought.want.regenPerS &&
+			bank.bought.max > bank.stock.max &&
+			bank.bought.energy === bank.bought.max,
+	);
+	check(
+		"removing the Extra Energy Unit clamps the bank to the plant's",
+		bank.removed &&
+			bank.after.max === bank.after.want.bankE &&
+			bank.after.max < bank.bought.max &&
+			bank.after.energy === bank.after.max,
+	);
+	check(
+		"the plant is replace-only and the refusal leaves the bank alone",
+		bank.plantRefused && bank.unchanged,
+	);
+	check(
+		"the launched flight carries the fitted maxima",
+		bank.launched &&
+			bank.flown.max === bank.flown.want.bankE &&
+			bank.flown.regen === bank.flown.want.regenPerS,
+	);
 	check("no browser errors", errors.length === 0);
 } finally {
 	await browser.close();
