@@ -52,7 +52,7 @@ export function outfittingBody(
 		)
 		.join("");
 	const delta = s.after
-		? `<div class="lc-outfit-deltas" data-live-outfit-deltas><span>ACCEL <b>${s.before.accel.toFixed(3)} → ${s.after.accel.toFixed(3)}</b> km/s²</span><span>TANK <b>${s.before.tankLy.toFixed(1)} → ${s.after.tankLy.toFixed(1)}</b> LY</span><span>JUMP <b>${s.before.jump.toFixed(1)} → ${s.after.jump.toFixed(1)}</b> LY</span><span>CREDIT / RAIDER <b>${s.before.credit.toFixed(2)} → ${s.after.credit.toFixed(2)}</b></span></div>`
+		? `<div class="lc-outfit-deltas" data-live-outfit-deltas><span>ACCEL <b>${s.before.accel.toFixed(3)} → ${s.after.accel.toFixed(3)}</b> km/s²</span><span>TANK <b>${s.before.fuelCapacityLy.toFixed(1)} → ${s.after.fuelCapacityLy.toFixed(1)}</b> LY</span><span>JUMP <b>${s.before.jump.toFixed(1)} → ${s.after.jump.toFixed(1)}</b> LY</span><span>CREDIT / RAIDER <b>${s.before.credit.toFixed(2)} → ${s.after.credit.toFixed(2)}</b></span></div>`
 		: "";
 	let confirm = "";
 	if (s.action && s.offer?.accepted) {

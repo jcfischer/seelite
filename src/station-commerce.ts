@@ -126,12 +126,12 @@ export const commanderJumpRangeLy = (
 
 /**
  * The fuel the ship buys, carries and shows: the hull's `tankLy` plus every
- * fitted tank, through `fittedCapacity` (#926). Never a jump gate — that is
+ * fitted tank, through `fittedCapacity` (#926). Never the range check — that is
  * `commanderJumpRangeLy`.
  */
 export const commanderFuelCapacityLy = (
 	commander: Pick<CommanderState, "hull" | "loadout">,
-): number => fittedCapacity(commander.hull, commander.loadout).tankLy;
+): number => fittedCapacity(commander.hull, commander.loadout).fuelCapacityLy;
 
 /** Fuel clamped to the commander's capacity, after a loadout or hull change
  *  that may have lowered it (#873: a tank's removal clamps fuel). */
@@ -975,18 +975,14 @@ export function hullOffer(
 		recoveredFittings: transferred.recoveredFittings,
 		hull,
 		credits: state.commander.credits - offer.netCr,
-		// The new hull's capacity, with whatever tank moved across (#926).
-		fuelLy: Math.min(
-			state.commander.fuelLy,
-			commanderFuelCapacityLy({ hull, loadout: moved.loadout }),
-		),
 	};
 	if (!nextCommander.recoveredFittings?.length)
 		delete nextCommander.recoveredFittings;
 	return {
 		accepted: true,
 		reason: null,
-		commander: nextCommander,
+		// The new hull's capacity, with whatever tank moved across (#926).
+		commander: withFuelClamped(nextCommander),
 		deficits: state.deficits,
 		...offer,
 	};

@@ -478,8 +478,8 @@ export const POWER_PLANT_OUTPUT: Readonly<
 export interface FittedCapacity extends PlantOutput {
 	/** Light years of fuel the ship carries: the hull's `tankLy` plus every
 	 *  fitted tank's `fuelLy` (#873 R1). Capacity only — the jump range stays
-	 *  the hull's `tankLy`. */
-	tankLy: number;
+	 *  the hull's `tankLy`, and this field is named apart from it. */
+	fuelCapacityLy: number;
 }
 
 export interface PowerPlant extends PlantOutput {

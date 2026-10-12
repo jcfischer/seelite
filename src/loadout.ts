@@ -161,12 +161,12 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 		? moduleRow(loadout.plant).output
 		: stockPlant(hull);
 	let bankE = plant.bankE;
-	let tankLy = HULL_SPECS[hull].tankLy;
+	let fuelCapacityLy = HULL_SPECS[hull].tankLy;
 	for (const m of Object.values(loadout)) {
 		if (m.module === "extra-energy-unit") bankE += moduleRow(m).output.bankE;
-		if (m.module === "fuel-tank") tankLy += moduleRow(m).output.fuelLy;
+		if (m.module === "fuel-tank") fuelCapacityLy += moduleRow(m).output.fuelLy;
 	}
-	return { bankE, regenPerS: plant.regenPerS, tankLy };
+	return { bankE, regenPerS: plant.regenPerS, fuelCapacityLy };
 }
 export function moduleFits(m: FittedModule, slot: HullSlot): boolean {
 	return fits(moduleRow(m), slot);

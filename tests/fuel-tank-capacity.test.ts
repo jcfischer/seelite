@@ -73,17 +73,18 @@ const input = (
 describe("the fixture is what it claims", () => {
 	test("the courier's tank is 7 LY and a 1E tank adds 2", () => {
 		expect(COURIER_TANK_LY).toBe(7);
-		expect(fittedCapacity("courier", withTank(0).loadout).tankLy).toBe(9);
+		expect(fittedCapacity("courier", withTank(0).loadout).fuelCapacityLy).toBe(
+			9,
+		);
 	});
 });
 
 describe("two readers: capacity and range", () => {
 	test("a ship with no tank holds its hull's tankLy, so stock ships are unchanged", () => {
 		for (const id of HULL_IDS) {
-			expect([id, fittedCapacity(id, stockLoadout(id)).tankLy]).toEqual([
-				id,
-				HULL_SPECS[id].tankLy,
-			]);
+			expect([id, fittedCapacity(id, stockLoadout(id)).fuelCapacityLy]).toEqual(
+				[id, HULL_SPECS[id].tankLy],
+			);
 			const c = newCommander(id);
 			expect([id, commanderFuelCapacityLy(c)]).toEqual([
 				id,
@@ -194,15 +195,15 @@ describe("the Equipment tab's readout", () => {
 		};
 		const screen = outfittingScreen(i, "i1", "stock:fuel-tank/1/E");
 		expect(screen.action).not.toBeNull();
-		expect(screen.before.tankLy).toBe(COURIER_TANK_LY);
-		expect(screen.after?.tankLy).toBe(9);
+		expect(screen.before.fuelCapacityLy).toBe(COURIER_TANK_LY);
+		expect(screen.after?.fuelCapacityLy).toBe(9);
 		expect(screen.before.jump).toBe(COURIER_TANK_LY);
 		expect(screen.after?.jump).toBe(COURIER_TANK_LY);
 	});
 
 	test("fitReadout reads the two readers", () => {
 		const c = withTank(9);
-		expect(fitReadout(c, 0).tankLy).toBe(commanderFuelCapacityLy(c));
+		expect(fitReadout(c, 0).fuelCapacityLy).toBe(commanderFuelCapacityLy(c));
 		expect(fitReadout(c, 0).jump).toBe(commanderJumpRangeLy(c));
 	});
 });
@@ -237,5 +238,42 @@ describe("main.ts reads range and capacity through separate readers", () => {
 		expect(src).toMatch(
 			/get jumpRangeLy\(\): number \{\s*return commanderJumpRangeLy\(this\.commander\);/,
 		);
+	});
+});
+
+describe("a hull purchase clamps to the new hull's capacity", () => {
+	const SHIPYARD = marketStationOf(
+		{
+			type: "shipyard",
+			localCarrierId: "station-shipyard",
+			blackMarket: false,
+		},
+		0x926,
+	);
+	const buy = (hull: "freighter" | "interceptor") =>
+		transactAtStation(
+			input({
+				commander: withTank(9, 1_000_000),
+				station: SHIPYARD,
+				stationKey: carrierKey(0, "station-shipyard"),
+				action: { type: "buy-hull", hull },
+			}),
+		);
+
+	test("the tank moves across, so a freighter keeps 9 LY over its 7 LY hull", () => {
+		const out = buy("freighter");
+		expect(out.accepted).toBe(true);
+		expect(HULL_SPECS.freighter.tankLy).toBe(7);
+		expect(commanderFuelCapacityLy(out.commander)).toBe(9);
+		expect(out.commander.fuelLy).toBe(9);
+	});
+
+	test("a smaller hull clamps to its tank plus the moved tank", () => {
+		const out = buy("interceptor");
+		expect(out.accepted).toBe(true);
+		const capacity = HULL_SPECS.interceptor.tankLy + 2;
+		expect(capacity).toBeLessThan(9);
+		expect(commanderFuelCapacityLy(out.commander)).toBe(capacity);
+		expect(out.commander.fuelLy).toBe(capacity);
 	});
 });

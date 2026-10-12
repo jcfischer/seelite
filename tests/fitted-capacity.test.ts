@@ -22,7 +22,7 @@ describe("fittedCapacity", () => {
 		expect(fittedCapacity("courier", stockLoadout("courier"))).toEqual({
 			bankE: 100,
 			regenPerS: 12,
-			tankLy: HULL_SPECS.courier.tankLy,
+			fuelCapacityLy: HULL_SPECS.courier.tankLy,
 		});
 	});
 
@@ -31,21 +31,25 @@ describe("fittedCapacity", () => {
 		expect(fittedCapacity("courier", courierWith({ plant }))).toEqual({
 			bankE: 150,
 			regenPerS: 18,
-			tankLy: HULL_SPECS.courier.tankLy,
+			fuelCapacityLy: HULL_SPECS.courier.tankLy,
 		});
 		expect(
 			fittedCapacity(
 				"courier",
 				courierWith({ plant, flex: makeModule("extra-energy-unit", 1, "E") }),
 			),
-		).toEqual({ bankE: 200, regenPerS: 18, tankLy: HULL_SPECS.courier.tankLy });
+		).toEqual({
+			bankE: 200,
+			regenPerS: 18,
+			fuelCapacityLy: HULL_SPECS.courier.tankLy,
+		});
 	});
 
 	test("a freighter's stock 2E plant is 150 and 18", () => {
 		expect(fittedCapacity("freighter", stockLoadout("freighter"))).toEqual({
 			bankE: 150,
 			regenPerS: 18,
-			tankLy: HULL_SPECS.freighter.tankLy,
+			fuelCapacityLy: HULL_SPECS.freighter.tankLy,
 		});
 	});
 
@@ -55,7 +59,7 @@ describe("fittedCapacity", () => {
 			expect(fittedCapacity(id, stockLoadout(id))).toEqual({
 				bankE,
 				regenPerS,
-				tankLy: HULL_SPECS[id].tankLy,
+				fuelCapacityLy: HULL_SPECS[id].tankLy,
 			});
 		}
 	});

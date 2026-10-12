@@ -123,7 +123,8 @@ try {
 		"a fitted tank fills past the hull's tank and the gauge shows it",
 		tank.capacityLy === tank.hullLy + tank.addLy &&
 			tank.fuelLy === tank.capacityLy &&
-			gauge.includes(`/ ${tank.capacityLy.toFixed(1)} LY`),
+			// The row prints `9.0 / 9.0 LY`; whitespace is not the claim.
+			gauge.replace(/\s+/g, "").includes(`/${tank.capacityLy.toFixed(1)}LY`),
 		JSON.stringify({ ...tank, gauge }),
 	);
 	check(

@@ -13025,7 +13025,7 @@ class Game {
 	/**
 	 * The tank's capacity, likewise: the flown hull's `tankLy` plus any fitted
 	 * tank (#926). What the HUD fuel line and the station fuel gauge show, and
-	 * never a jump gate. A getter rather than a field, because a restored save
+	 * never the range check. A getter rather than a field, because a restored save
 	 * names the hull and loadout after construction.
 	 */
 	get fuelCapacityLy(): number {
