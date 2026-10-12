@@ -6388,12 +6388,20 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "a",
 			name: "Gantry",
 			thesis: "bridge keel under open ribbed bays sized for a ship",
-			// **The authored Gantry Works' since node #818**, which the sim
-			// collides with whatever is drawn: its generated proxy reaches
-			// 1.726 km and its mesh 1.654 (`src/shipyard-proxies.ts`). The
-			// procedural stand-in below reaches 1.65. 1.66 before, from the
-			// keel at 680 m aft (`SHIPYARD_KEEL_AFT_KM`).
-			reachKm: 1.73,
+			// **1.66 since the keel went to 680 m aft** (the spindle, see
+			// `SHIPYARD_KEEL_AFT_KM`); 1.53 before that, and #28's 1.5 before
+			// the first move. The keel's far end is `hypot(1.426, 0.120, z)`
+			// from the centre and its z is the keel's offset plus its end
+			// section's half-height: 0.50 km reached 1.516, 0.82 reaches 1.65.
+			// The declaration follows the decided shape rather than the shape
+			// being trimmed to an old declaration. `docking.md` §5's "roughly
+			// 1.5 km" is now 10% under.
+			//
+			// Since node #818 it also holds the authored Gantry Works, which
+			// replaces this form once it installs and which the sim collides
+			// with whatever is drawn: its mesh reaches 1.654 km and its proxy
+			// 1.655 (`src/shipyard-proxies.ts`), measured 2026-10-12.
+			reachKm: 1.66,
 			build: buildShipyardGantry,
 		},
 		{
@@ -6401,18 +6409,20 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Hangar",
 			thesis:
 				"a closed slab with a floodlit bay mouth; ships inside, not clamped outside",
-			// The authored Foundry Hangar's since node #818: proxy 1.364 km, // glossary-ignore: Hangar
-			// mesh 1.311. 1.5 before.
-			reachKm: 1.37,
+			// Holds this stand-in (1.497 km) and, since node #818, the authored
+			// Foundry Hangar that replaces it (mesh 1.311, proxy 1.312), // glossary-ignore: Hangar
+			// measured 2026-10-12.
+			reachKm: 1.5,
 			build: buildShipyardHangar,
 		},
 		{
 			id: "c",
 			name: "Slipway",
 			thesis: "a broken ring with the gap as the slip",
-			// The authored Crescent Slipway's since node #818: proxy 1.905 km,
-			// mesh 1.864, its yard standing 1.78 km below the drum. 1.5 before.
-			reachKm: 1.91,
+			// The authored Crescent Slipway's since node #818, which replaces
+			// this stand-in (1.450 km): mesh 1.864, proxy 1.868, measured
+			// 2026-10-12. 1.5 before.
+			reachKm: 1.87,
 			build: buildShipyardSlipway,
 		},
 	],

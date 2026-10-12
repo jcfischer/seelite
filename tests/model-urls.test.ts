@@ -7,6 +7,7 @@ import {
 	COURIER_COCKPIT_GLB_URL,
 	COURIER_HULL_GLB_URL,
 	LONGWALL_MINER_GLB_URL,
+	SHIPYARD_GLB_URLS,
 	STATION_INTERIORS_GLB_URL,
 } from "../src/model-urls";
 
@@ -32,6 +33,7 @@ describe("models are served under hashed names (#834)", () => {
 			COURIER_COCKPIT_GLB_URL,
 			COURIER_HULL_GLB_URL,
 			LONGWALL_MINER_GLB_URL,
+			...Object.values(SHIPYARD_GLB_URLS),
 			STATION_INTERIORS_GLB_URL,
 		];
 		expect(urls.map((u) => u.split("/").pop()).sort()).toEqual(shipped.sort());
@@ -45,7 +47,7 @@ describe("models are served under hashed names (#834)", () => {
 		const literals = source.match(
 			/new URL\(\s*"\.\/models\/[\w-]+\.glb",\s*import\.meta\.url,?\s*\)/g,
 		);
-		expect(literals?.length).toBe(6);
+		expect(literals?.length).toBe(9);
 	});
 
 	test("no loader names a model by a fixed path", () => {

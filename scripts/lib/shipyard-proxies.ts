@@ -513,15 +513,32 @@ function partsOf(root: THREE.Object3D, group: string): Tri[][] {
  * A drum box lying across the aperture plane from in front — a hub-face
  * plate, fitted with a minimum thickness either side of it — starts
  * `PLANE_CLEARANCE_M` in front of the plane instead, so neither that
- * thickness nor the packing's rounding reaches into the sim's bay. One turned
- * in the plane is not axis-aligned, so `station-proxy.ts` cannot cut it.
+ * thickness nor the packing's rounding reaches into the sim's bay. Only one
+ * over the bay's section and turned in the plane: an axis-aligned box
+ * `station-proxy.ts` cuts round the bay exactly, and one beside the bay —
+ * the drum's rim — has no bay to keep out of. Moved regardless, the rim's
+ * boxes left its last 4 m behind the plane uncovered.
  */
 const PLANE_CLEARANCE_M = 0.3;
 function offThePlane(boxes: Obb[]): Obb[] {
 	const plane = STATION_GEOMETRY.shipyard.aperturePlaneKm * 1000;
+	const bay = stationInterior("shipyard", plane / 1000);
+	const overBay = (o: Obb) => {
+		const cs = corners(o);
+		return (
+			Math.min(...cs.map((p) => p.x)) < bay.halfAcrossKm * 1000 &&
+			Math.max(...cs.map((p) => p.x)) > -bay.halfAcrossKm * 1000 &&
+			Math.min(...cs.map((p) => p.y)) < bay.halfUpKm * 1000 &&
+			Math.max(...cs.map((p) => p.y)) > -bay.halfUpKm * 1000
+		);
+	};
+	const aligned = (o: Obb) =>
+		o.axes.every(
+			(a) => Math.max(Math.abs(a.x), Math.abs(a.y), Math.abs(a.z)) > 0.9999,
+		);
 	for (const o of boxes) {
 		const i = o.axes.findIndex((a) => Math.abs(a.z) > 0.9999);
-		if (i < 0) continue;
+		if (i < 0 || aligned(o) || !overBay(o)) continue;
 		const lo = o.c.z - o.half[i];
 		const hi = o.c.z + o.half[i];
 		// A sheet on the plane itself (the plates' inner face) counts too.
@@ -533,7 +550,6 @@ function offThePlane(boxes: Obb[]): Obb[] {
 	}
 	// A tilted sheet at the slot's edge dips a corner behind the plane; within
 	// the bay's section, carry it forward along the axis, a metre at most.
-	const bay = stationInterior("shipyard", plane / 1000);
 	for (const o of boxes) {
 		if (o.c.z < plane - 1) continue;
 		const cs = corners(o);

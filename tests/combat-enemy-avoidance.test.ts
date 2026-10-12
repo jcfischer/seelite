@@ -690,6 +690,12 @@ describe("a duel beside a station stays a duel", () => {
 	 * against 0.296, interceptor 0.295 against 0.291, the lowest run 0.242;
 	 * blind, 29, 27 and 30 runs met the station. Before the hold-off, bent
 	 * round, they fired on 0.044 to 0.048 and some runs never fired.
+	 *
+	 * The blind control asks for more than a third, not half, since node #818
+	 * (2026-10-12): the authored shipyards leave less metal round the mouth
+	 * than the procedural keel and booms did, and the blind runs that met a
+	 * shipyard fell from 11, 8 and 8 to 7, 3 and 3 — 28, 23 and 26 met any
+	 * station before, 24, 18 and 21 after. Trade and refinery are unchanged.
 	 */
 	for (const armed of [undefined, "patrol", "interceptor"] as const) {
 		test(`a pilot at the mouth, inside the keep-out: ${armed ?? "the raider"} holds off and keeps firing`, () => {
@@ -697,7 +703,7 @@ describe("a duel beside a station stays a duel", () => {
 			const blind = corpus("assist-on", false, extra);
 			const open = corpus("assist-on", false, { ...extra, open: true });
 			const beside = corpus("assist-on", true, extra);
-			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
+			expect(struck(blind)).toBeGreaterThan(blind.length / 3);
 			expectMouthHoldOff(open, beside);
 		});
 	}

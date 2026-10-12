@@ -27,9 +27,20 @@ import {
 } from "../scripts/lib/shipyard-proxies";
 import { SHIPYARD_FORMS } from "../src/shipyard-flight";
 import { SHIPYARD_PROXY_SOURCES } from "../src/shipyard-proxies";
-import { type ProxyBox, shipyardProxyBoxes } from "../src/station-proxy";
+import {
+	type ProxyBox,
+	type ProxyPrimitive,
+	proxyContains,
+	proxyListDistanceKm,
+	shipyardProxyBoxes,
+	stationProxy,
+} from "../src/station-proxy";
 
 const ROW_MS = 120_000;
+/** How far outside its proxy a drawn vertex of the yard or the drum may lie.
+ *  The fit holds every part's triangles; a box moved clear of the bay or the
+ *  lane moves up to a metre, and the plane's clearance is 0.3 m. */
+const COVER_M = 1.5;
 
 afterAll(uninstallShipyards);
 
@@ -46,6 +57,20 @@ function metres(b: ProxyBox): Obb {
 	};
 }
 
+/** Each vertex of the triangles farther than `COVER_M` outside the boxes. */
+function uncovered(
+	tris: readonly (readonly THREE.Vector3[])[],
+	primitives: readonly ProxyPrimitive[],
+): { v: THREE.Vector3; outM: number }[] {
+	const out: { v: THREE.Vector3; outM: number }[] = [];
+	for (const v of new Set(tris.flat())) {
+		const [x, y, z] = [v.x / 1000, v.y / 1000, v.z / 1000];
+		if (!proxyContains(primitives, x, y, z, COVER_M / 1000))
+			out.push({ v, outM: proxyListDistanceKm(primitives, x, y, z) * 1000 });
+	}
+	return out;
+}
+
 /** Each box with a face sample farther than the limit from every triangle. */
 function overreaching(boxes: ProxyBox[], grid: TriangleGrid): Obb[] {
 	return boxes.map(metres).filter((o) => overreaches(o, grid));
@@ -56,6 +81,32 @@ describe("node #818: the shipyards' collision proxies", () => {
 		for (const form of SHIPYARD_FORMS)
 			expect(shipyardModelHash(form)).toBe(SHIPYARD_PROXY_SOURCES[form]);
 	});
+
+	for (const form of SHIPYARD_FORMS)
+		test(
+			`form ${form}: every drawn vertex of the yard and the drum lies within 1.5 m of its proxy`,
+			async () => {
+				const tris = await shipyardTriangles(form);
+				const proxy = stationProxy("shipyard", form, 0, 0)!;
+				const out = [
+					...uncovered(tris.drum, proxy.spinning),
+					...uncovered(tris.yard, proxy.static),
+				].sort((a, b) => b.outM - a.outM);
+				if (out.length)
+					console.log(
+						`form ${form}: ${out.length} vertices uncovered — ` +
+							out
+								.slice(0, 4)
+								.map(
+									({ v, outM }) =>
+										`(${v.x.toFixed(1)}, ${v.y.toFixed(1)}, ${v.z.toFixed(1)}) ${outM.toFixed(2)} m`,
+								)
+								.join("; "),
+					);
+				expect(out.length).toBe(0);
+			},
+			ROW_MS,
+		);
 
 	for (const form of SHIPYARD_FORMS)
 		test(
