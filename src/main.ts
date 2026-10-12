@@ -5388,12 +5388,19 @@ class Game {
 	 */
 	faceTarget() {
 		this.faceTurnId = null;
+		const want = this.targetDirection();
+		if (want) this.face(want);
+	}
+
+	/** The unit vector from the ship to the selected target, or `null` with
+	 *  no target or none to point at. One aim point for the placement and the
+	 *  turn. */
+	private targetDirection(): Vec3 | null {
 		const target = this.targetBody();
-		if (!target) return;
+		if (!target) return null;
 		const to = sub(target.pos, this.world.ship.pos);
 		const d = length(to);
-		if (d === 0) return;
-		this.face(scale(to, 1 / d));
+		return d > 0 ? scale(to, 1 / d) : null;
 	}
 
 	/**
@@ -5418,27 +5425,29 @@ class Game {
 	 * set on the engage, and `F` then `J` turns the ship through the spool.
 	 */
 	private stepFaceTurn(dt: number, pilotTurns: boolean): Angular | null {
-		const id = this.faceTurnId;
-		if (!id) return null;
-		const target = this.targetBody();
-		const to = target ? sub(target.pos, this.world.ship.pos) : v3();
-		const d = length(to);
+		if (!this.faceTurnId) return null;
+		const want = this.targetDirection();
 		const stick =
-			pilotTurns ||
-			d === 0 ||
-			this.targetId !== id ||
-			this.dockedAt ||
-			(this.regime === "cruise" && (this.detour || this.cruiseTrackId))
-				? null
-				: noseTurnStick(
+			want && !this.faceTurnCancelled(pilotTurns)
+				? noseTurnStick(
 						{ nose: this.nose(), up: this.shipUp() },
-						scale(to, 1 / d),
+						want,
 						this.rates,
 						this.flownPerformance,
 						dt,
-					);
+					)
+				: null;
 		if (!stick) this.faceTurnId = null;
 		return stick;
+	}
+
+	/** Whether something other than the turn has taken the nose this frame. */
+	private faceTurnCancelled(pilotTurns: boolean): boolean {
+		if (pilotTurns) return true; // the pilot has the stick
+		if (this.targetId !== this.faceTurnId) return true; // a new target
+		if (this.dockedAt) return true;
+		// A cruise guidance places the nose every frame, but only in cruise.
+		return this.regime === "cruise" && !!(this.detour || this.cruiseTrackId);
 	}
 
 	/**
