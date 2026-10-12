@@ -153,6 +153,16 @@ const installHelpers = () => {
 		 *  high of the ink, catching its bottom two rows out of eleven. It passed,
 		 *  because the name line above it leaks into the same box, which is the
 		 *  reason a check like this has to be centred rather than merely nonzero. */
+		/** Park the ship at rest `rOverR` star radii from the star's centre. */
+		parkAtStar(rOverR) {
+			const star = g.world.system.bodies.find((b) => b.kind === "star");
+			g.world.ship.pos = {
+				x: star.pos.x + rOverR * star.radiusKm,
+				y: star.pos.y,
+				z: star.pos.z,
+			};
+			g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		},
 		/** Passive-tone pixels in a rectangle of the overlay. */
 		passiveIn(x, y, width, height) {
 			return countIn(x, y, width, height, passive);
@@ -713,16 +723,10 @@ for (const viewport of VIEWPORTS) {
 		const D = window.__duel;
 		const ink = (box) =>
 			box ? D.passiveIn(box.x, box.top, box.width, box.height) : Number.NaN;
-		const star = g.world.system.bodies.find((b) => b.kind === "star");
 		const home = { ...g.world.ship.pos };
 		const cold = D.floor();
 		const coldInk = ink(cold?.duelBox);
-		g.world.ship.pos = {
-			x: star.pos.x + 1.2 * star.radiusKm,
-			y: star.pos.y,
-			z: star.pos.z,
-		};
-		g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		D.parkAtStar(1.2);
 		D.steps(3);
 		const hot = {
 			temp: g.condition.hullTemp,
@@ -767,13 +771,7 @@ for (const viewport of VIEWPORTS) {
 	// hull out through the game's own death path, and the shields stand.
 	const burnt = await page.evaluate(() => {
 		const g = window.__seelite;
-		const star = g.world.system.bodies.find((b) => b.kind === "star");
-		g.world.ship.pos = {
-			x: star.pos.x + 1.06 * star.radiusKm,
-			y: star.pos.y,
-			z: star.pos.z,
-		};
-		g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		window.__duel.parkAtStar(1.06);
 		g.condition = { ...g.condition, hull: 2, hullTemp: 2 };
 		const fore = g.condition.fore;
 		let seconds = 0;

@@ -70,15 +70,18 @@ for (const record of records) {
 			if (r < SKIM_BAND_R) inBand.push(`${at} r=${r.toFixed(3)} R`);
 		},
 	});
+	// A window with no carrier present is a quiet system, not a fault.
 	console.log(
-		`system ${record.index}: closest ${finite("closest", systemClosest).toFixed(1)} R`,
+		`system ${record.index}: ${Number.isFinite(systemClosest) ? `closest ${systemClosest.toFixed(1)} R` : "no samples"}`,
 	);
 }
 console.log(
 	`seed ${seed} galaxy ${galaxyIndex}: ${records.length} systems, ${windowS} s each, ${samples} samples`,
 );
 console.log(
-	`closest ${finite("closest", closest).toFixed(2)} R at ${closestAt}`,
+	Number.isFinite(closest)
+		? `closest ${closest.toFixed(2)} R at ${closestAt}`
+		: "no samples in any system",
 );
 console.log(`samples inside ${SKIM_BAND_R} R: ${inBand.length}`);
 for (const line of inBand.slice(0, 20)) console.log(`  ${line}`);
