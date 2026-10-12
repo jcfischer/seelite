@@ -50,8 +50,8 @@ function fixed(value: number, places: number): string {
 }
 
 /** The game runs at display rate, capped at `MAX_DT`. 1/60 is the nominal
- *  frame; `MAX_DT` is flown once as a check that the figures do not depend on
- *  it (the step sub-steps and sweeps, so they should not). */
+ *  frame; section 7 flies the approved table's inputs again at `MAX_DT` and
+ *  throws if any differs by more than its tolerance. */
 const DT = 1 / 60;
 /** Pieces each reported segment is cut into for the integrals. */
 const PIECES = 16;
@@ -82,6 +82,9 @@ const FILL_SHAPES: [string, Shape][] = [
 	["quadratic", quadratic],
 	["flux", flux],
 ];
+/** Sections 2, 5 and 7 measure the linear curve by name, not by position. */
+const LINEAR = FILL_SHAPES.findIndex(([n]) => n === "linear");
+if (LINEAR < 0) throw new Error("no linear fill shape");
 /** Heat follows the star's light. One shape, so the rise is the one dial. */
 const HEAT: Shape = flux;
 
@@ -94,6 +97,70 @@ interface Heat {
 function heatStep(t: number, h: number, dt: number, k: Heat): number {
 	const eq = k.rise * h * k.tau;
 	return eq + (t - eq) * Math.exp(-dt / k.tau);
+}
+
+type Segment = {
+	from: Vec3;
+	velocity: Vec3;
+	duration: number;
+	powered: boolean;
+};
+
+/**
+ * An `onSegment` that cuts each reported segment into `PIECES` and hands
+ * `fn` the radius (in R) at each piece's midpoint and the piece's seconds.
+ */
+const sampled =
+	(radiusKm: number, fn: (rOverR: number, dt: number) => void) =>
+	(seg: Segment) => {
+		const piece = seg.duration / PIECES;
+		for (let i = 0; i < PIECES; i++) {
+			const mid = add(seg.from, scale(seg.velocity, (i + 0.5) * piece));
+			fn(length(mid) / radiusKm, piece);
+		}
+	};
+
+/**
+ * Cruise from `fromR` straight out to `toR`, flown; returns the seconds to
+ * the crossing, summed from the pieces inside `toR` rather than counted in
+ * whole frames (a frame count read 9% long at `MAX_DT`, round 1 of #933).
+ * `onPiece` sees only those pieces. A drop-out on the way is a broken
+ * measurement, not a figure, so it throws.
+ */
+function flyRadial(
+	radiusKm: number,
+	fromR: number,
+	toR: number,
+	onPiece: (rOverR: number, dt: number) => void,
+	dt = DT,
+): number {
+	const masses: Mass[] = [{ id: "star", kind: "star", pos: v3(), radiusKm }];
+	let inside = 0;
+	const onSegment = sampled(radiusKm, (rr, piece) => {
+		if (rr >= toR) return;
+		inside += piece;
+		onPiece(rr, piece);
+	});
+	let pos = v3(fromR * radiusKm, 0, 0);
+	let t = 0;
+	while (length(pos) < toR * radiusKm) {
+		const step = advanceCruise({
+			pos,
+			nose: v3(1, 0, 0),
+			throttle: 1,
+			dt,
+			masses,
+			target: null,
+			params: DEFAULT_CRUISE,
+			targetParentId: null,
+			onSegment,
+		});
+		if (step.dropped) throw new Error("radial climb dropped out");
+		pos = step.pos;
+		t += dt;
+		if (t > 600) throw new Error("radial climb never left the band");
+	}
+	return inside;
 }
 
 interface PassResult {
@@ -135,23 +202,25 @@ function flyPass(
 		tempPeak: [...startTemps],
 	};
 	const temps = [...startTemps];
-	const onSegment = (seg: { from: Vec3; velocity: Vec3; duration: number }) => {
-		const piece = seg.duration / PIECES;
-		for (let i = 0; i < PIECES; i++) {
-			const mid = add(seg.from, scale(seg.velocity, (i + 0.5) * piece));
-			const rr = length(mid) / radiusKm;
-			if (rr < bandR) {
-				r.bandS += piece;
-				FILL_SHAPES.forEach(([, s], j) => {
-					r.fill[j] += s(rr, bandR) * piece;
-				});
-			}
-			const h = HEAT(rr, bandR);
-			heats.forEach((k, j) => {
-				temps[j] = heatStep(temps[j], h, piece, k);
-				r.tempPeak[j] = Math.max(r.tempPeak[j], temps[j]);
+	const sample = sampled(radiusKm, (rr, piece) => {
+		if (rr < bandR) {
+			r.bandS += piece;
+			FILL_SHAPES.forEach(([, s], j) => {
+				r.fill[j] += s(rr, bandR) * piece;
 			});
 		}
+		const h = HEAT(rr, bandR);
+		heats.forEach((k, j) => {
+			temps[j] = heatStep(temps[j], h, piece, k);
+			r.tempPeak[j] = Math.max(r.tempPeak[j], temps[j]);
+		});
+	});
+	// A drop-out reports the rest of its frame as an unpowered carry at the
+	// shell. That time is the hold after the drop — the spool counts it — so
+	// the pass stops at the event, or a long frame heats the hull before the
+	// drop is even recorded (15% on T0 at `MAX_DT` before this, round 1 of #933).
+	const onSegment = (seg: Segment) => {
+		if (seg.powered) sample(seg);
 	};
 	for (let t = 0; t < 600; t += dt) {
 		const step = advanceCruise({
@@ -191,35 +260,11 @@ function radialExit(
 ): { seconds: number; peak: number } {
 	let temp = t0;
 	let peak = t0;
-	const onSegment = (seg: { from: Vec3; velocity: Vec3; duration: number }) => {
-		const piece = seg.duration / PIECES;
-		for (let i = 0; i < PIECES; i++) {
-			const mid = add(seg.from, scale(seg.velocity, (i + 0.5) * piece));
-			temp = heatStep(temp, HEAT(length(mid) / radiusKm, bandR), piece, k);
-			peak = Math.max(peak, temp);
-		}
-	};
-	const masses: Mass[] = [{ id: "star", kind: "star", pos: v3(), radiusKm }];
-	let pos = v3(fromR * radiusKm, 0, 0);
-	let t = 0;
-	while (length(pos) < toR * radiusKm) {
-		const step = advanceCruise({
-			pos,
-			nose: v3(1, 0, 0),
-			throttle: 1,
-			dt: DT,
-			masses,
-			target: null,
-			params: DEFAULT_CRUISE,
-			targetParentId: null,
-			onSegment,
-		});
-		if (step.dropped) throw new Error("radial exit dropped out");
-		pos = step.pos;
-		t += DT;
-		if (t > 600) throw new Error("radial exit never left the band");
-	}
-	return { seconds: t, peak };
+	const seconds = flyRadial(radiusKm, fromR, toR, (rr, piece) => {
+		temp = heatStep(temp, HEAT(rr, bandR), piece, k);
+		peak = Math.max(peak, temp);
+	});
+	return { seconds, peak };
 }
 
 /** Seconds at the shell (`h` = 1) from `t0` to the top, or Infinity. */
@@ -296,7 +341,7 @@ for (const star of STAR_CLASSES) {
 	const cells: string[] = [star.cls];
 	for (const bd of BANDS) {
 		const p = flyPass(star.radiusKm, 1.2, bd, []);
-		cells.push(fixed(p.bandS, 2), fixed(p.fill[1], 2));
+		cells.push(fixed(p.bandS, 2), fixed(p.fill[LINEAR], 2));
 	}
 	console.log(cells.map((c) => pad(c, 10)).join(""));
 }
@@ -372,7 +417,7 @@ const GAP_S = 15;
 const REF = STAR_CLASSES.find((c) => c.cls === "G");
 if (!REF) throw new Error("no G class");
 const REF_KM = REF.radiusKm;
-const refFill = flyPass(REF_KM, 1.2, BAND, []).fill[1];
+const refFill = flyPass(REF_KM, 1.2, BAND, []).fill[LINEAR];
 const peak = courierTankLy / (TARGET_PASSES * refFill);
 console.log(
 	`\n## 5. Fitted: ${TARGET_PASSES} passes at G 1.2 R, linear → peak ${fixed(peak, 3)} LY/s; drop-out top ${TARGET_TOP_S} s at G\n`,
@@ -383,7 +428,8 @@ console.log(
 		.join(""),
 );
 for (const star of STAR_CLASSES) {
-	const at = (b: number) => peak * flyPass(star.radiusKm, b, BAND, []).fill[1];
+	const at = (b: number) =>
+		peak * flyPass(star.radiusKm, b, BAND, []).fill[LINEAR];
 	const ly = at(1.2);
 	console.log(
 		[
@@ -489,38 +535,11 @@ function heldDamage(
 function climbDamage(t0: number, k: number): number {
 	let t = t0;
 	let lost = 0;
-	const masses: Mass[] = [
-		{ id: "star", kind: "star", pos: v3(), radiusKm: REF_KM },
-	];
-	let pos = v3(refDropR * REF_KM, 0, 0);
-	const onSegment = (seg: { from: Vec3; velocity: Vec3; duration: number }) => {
-		const piece = seg.duration / PIECES;
-		for (let i = 0; i < PIECES; i++) {
-			const mid = add(seg.from, scale(seg.velocity, (i + 0.5) * piece));
-			const next = heatStep(
-				t,
-				HEAT(length(mid) / REF_KM, BAND),
-				piece,
-				APPROVED,
-			);
-			lost += k * Math.max(0, (t + next) / 2 - 1) * piece;
-			t = next;
-		}
-	};
-	for (let s = 0; length(pos) < BAND * REF_KM; s += DT) {
-		if (s > 600) throw new Error("climb never left the band");
-		pos = advanceCruise({
-			pos,
-			nose: v3(1, 0, 0),
-			throttle: 1,
-			dt: DT,
-			masses,
-			target: null,
-			params: DEFAULT_CRUISE,
-			targetParentId: null,
-			onSegment,
-		}).pos;
-	}
+	flyRadial(REF_KM, refDropR, BAND, (rr, piece) => {
+		const next = heatStep(t, HEAT(rr, BAND), piece, APPROVED);
+		lost += k * Math.max(0, (t + next) / 2 - 1) * piece;
+		t = next;
+	});
 	return lost;
 }
 const approvedDrop = flyPass(REF_KM, 0.9, BAND, [APPROVED]);
@@ -554,14 +573,64 @@ for (const late of LATE_S) {
 }
 
 // ── 7. Frame-rate check ────────────────────────────────────────────────────
-let worst = 0;
+//
+// Every figure the approved table rests on, flown at the nominal frame and at
+// `MAX_DT`: band seconds, linear fill and peak temperature on every pass, the
+// drop-out's temperature, and the climb's seconds. Band seconds and fill are
+// compared relative (1%); temperatures absolute, in units of the top (0.01,
+// the table's precision); the climb absolute, in seconds (0.05 s against the
+// 6 s target). Two gaps are the step's own frame dependence — it holds speed
+// over a sub-step, and from the shell a sub-step is the whole frame — and 128
+// pieces a segment leave both unchanged, so neither is sampling: the drop's T0
+// (~0.12) differs by ~0.002, 1.4% relative, and the ~1 s climb by ~0.02 s,
+// 1.9% relative. A relative limit on either measures the game at 10 fps.
+const SECONDS_TOLERANCE = 0.01;
+const TEMP_TOLERANCE = 0.01;
+const CLIMB_TOLERANCE_S = 0.05;
+const rel = (x: number, y: number) =>
+	Math.abs(x - y) / Math.max(Math.abs(x), 1e-9);
+const abs = (x: number, y: number) => Math.abs(x - y);
+const frameGaps: Record<string, { gap: number; limit: number; unit: string }> =
+	{
+		"band s": { gap: 0, limit: SECONDS_TOLERANCE, unit: "rel" },
+		"linear fill": { gap: 0, limit: SECONDS_TOLERANCE, unit: "rel" },
+		"climb s": { gap: 0, limit: CLIMB_TOLERANCE_S, unit: "s" },
+		"peak T": { gap: 0, limit: TEMP_TOLERANCE, unit: "top" },
+		"drop T0": { gap: 0, limit: TEMP_TOLERANCE, unit: "top" },
+	};
+const widen = (key: string, gap: number) => {
+	frameGaps[key].gap = Math.max(frameGaps[key].gap, gap);
+};
 for (const star of STAR_CLASSES) {
 	for (const b of APPROACHES) {
-		const a = flyPass(star.radiusKm, b, BAND, [], DT);
-		const c = flyPass(star.radiusKm, b, BAND, [], MAX_DT);
-		worst = Math.max(worst, Math.abs(a.bandS - c.bandS) / a.bandS);
+		const x = flyPass(star.radiusKm, b, BAND, [APPROVED], DT);
+		const y = flyPass(star.radiusKm, b, BAND, [APPROVED], MAX_DT);
+		widen("band s", rel(x.bandS, y.bandS));
+		widen("linear fill", rel(x.fill[LINEAR], y.fill[LINEAR]));
+		widen("peak T", abs(x.tempPeak[0], y.tempPeak[0]));
 	}
+	const x = flyPass(star.radiusKm, 0.9, BAND, [APPROVED], DT);
+	const y = flyPass(star.radiusKm, 0.9, BAND, [APPROVED], MAX_DT);
+	widen("drop T0", abs(x.tempAtDrop[0], y.tempAtDrop[0]));
+	const none = () => {};
+	widen(
+		"climb s",
+		abs(
+			flyRadial(star.radiusKm, x.dropAtR, BAND, none, DT),
+			flyRadial(star.radiusKm, y.dropAtR, BAND, none, MAX_DT),
+		),
+	);
 }
 console.log(
-	`\n## 7. Frame check: band seconds at ${fixed(DT, 4)} s vs MAX_DT ${MAX_DT} s differ by at most ${fixed(100 * worst, 2)}%`,
+	`\n## 7. Frame check, ${fixed(DT, 4)} s against MAX_DT ${MAX_DT} s (largest gap)\n`,
 );
+for (const [key, { gap, limit, unit }] of Object.entries(frameGaps)) {
+	const shown =
+		unit === "rel"
+			? `${fixed(100 * gap, 2)}% (limit ${fixed(100 * limit, 0)}%)`
+			: unit === "s"
+				? `${fixed(gap, 3)} s (limit ${fixed(limit, 2)} s)`
+				: `${fixed(gap, 4)} of the top (limit ${fixed(limit, 2)})`;
+	console.log(`${pad(key, 12)}  ${shown}`);
+	if (gap > limit) throw new Error(`${key} depends on the frame: ${shown}`);
+}
