@@ -16,6 +16,7 @@ import {
 	commanderJumpRangeLy,
 } from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
+import { homeShipyardForm } from "./home-shipyard";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
 /**
@@ -6773,6 +6774,71 @@ class Game {
 			}
 		}
 	}
+	/**
+	 * The authored shipyards (node #818) install after boot, each replacing
+	 * its form's procedural stand-in wherever one is drawn; a form that fails
+	 * keeps its stand-in, and the sim collides with the authored yard either
+	 * way. Settled once every form has installed or failed (`shipyards-full`
+	 * waits for it).
+	 */
+	shipyardModelsSettled = false;
+	private shipyardLoad?: Promise<void>;
+	loadShipyardsAfterBoot(): Promise<void> {
+		return (this.shipyardLoad ??= import("./shipyard-flight")
+			.then(({ SHIPYARD_FORMS, prepareShipyardModel }) =>
+				Promise.all(
+					SHIPYARD_FORMS.map((form) =>
+						prepareShipyardModel(form)
+							.then(() => this.refreshShipyard(form))
+							.catch((error) =>
+								console.warn(
+									`shipyard ${form}: background load failed; keeping the procedural form`,
+									error,
+								),
+							),
+					),
+				),
+			)
+			.then(() => {})
+			.finally(() => {
+				this.shipyardModelsSettled = true;
+			}));
+	}
+	/**
+	 * Rebuild every drawn shipyard of `form` from its installed model. The new
+	 * mesh compiles off-scene first and replaces the old one only if the
+	 * station is still the one drawn — a jump during the compile disposes it.
+	 * Occlusion marks and interior kits are redone for the whole system, as an
+	 * interior install redoes them.
+	 */
+	private async refreshShipyard(form: string): Promise<void> {
+		for (const body of this.world.system.bodies) {
+			if (body.kind !== "station") continue;
+			const station = stationOf(this.world.system, body.id);
+			if (station.type !== "shipyard" || station.formId !== form) continue;
+			const previous = this.stationVisuals.get(body.id);
+			// Built after the install (a home shipyard, a later jump): already
+			// the authored model.
+			if (!previous || previous.root.getObjectByName("shipyard-drum")) continue;
+			const live = () => this.stationVisuals.get(body.id) === previous;
+			const built = buildStationMesh(station, body.color);
+			built.root.name = body.id;
+			paintNameplates(built, this.nameOfStation(body.id));
+			await this.warmInteriorKit(built.root, live);
+			if (!live()) {
+				built.dispose();
+				continue;
+			}
+			previous.root.removeFromParent();
+			previous.dispose();
+			this.stationVisuals.set(body.id, built);
+			this.meshes.set(body.id, built.root);
+			this.setLayer(body, this.layers.get(body.id) ?? "far");
+			this.registerInteriorPresentation(body.id, built);
+		}
+		await this.refreshInteriorMeshes();
+	}
+
 	/** Sharing a card waits for the authored kit, even after a background failure. */
 	private async openPostcardWithModels(): Promise<void> {
 		const { prepareInteriorModel } = await import("./interior-model");
@@ -21244,13 +21310,25 @@ if (postcard) {
 		loadingPanel("postcard interiors"),
 	);
 	await game.loadInteriorsAfterBoot();
+	// The card draws the authored shipyards, as it draws the authored hulls.
+	const { shipyardModelLoaders } = await import("./shipyard-flight");
+	await loadRequiredModels(
+		[...shipyardModelLoaders],
+		loadingPanel("postcard shipyards"),
+	);
+	await game.loadShipyardsAfterBoot();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
-	if (query.get("model-viewer") === "station")
-		await (await import("./coriolis-flight")).prepareCoriolisPage();
+	if (query.get("model-viewer") === "station") {
+		// The station workbench draws the authored shipyards (node #818).
+		const { shipyardModelLoaders } = await import("./shipyard-flight");
+		await (await import("./coriolis-flight")).prepareCoriolisPage([
+			...shipyardModelLoaders,
+		]);
+	}
 	// The ship workbench draws every variant: the courier the game flies
 	// (node #812), the authored `miner/b` (node #815) and the tug (node #814).
 	else if (query.get("model-viewer") === "ship") {
@@ -21509,6 +21587,18 @@ if (postcard) {
 	const overlay = overlayBeforeModels(plan) ? mountOverlay() : null;
 	if (overlay) loading.moveTo(overlay.loading);
 	await stationModel;
+	// A Commander docked at a shipyard waits for that form's model too: the
+	// home exterior is the one station model the boot holds for (map #1,
+	// #830/#835). Every other shipyard installs after boot (node #818).
+	const homeShipyard = homeShipyardForm(plan.loaded);
+	if (homeShipyard) {
+		const { prepareShipyardModel } = await import("./shipyard-flight");
+		await loadRequiredModels(
+			[(progress) => prepareShipyardModel(homeShipyard, progress)],
+			loading.view,
+			{ then: "building" },
+		);
+	}
 	// The `Game` build blocks the page for seconds, so the "Building the
 	// world" line has to be on screen before it starts, not queued behind it.
 	await nextPaint();
@@ -21543,6 +21633,8 @@ if (postcard) {
 	void game.loadAuthoredHullsAfterBoot();
 	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
 	else void game.loadInteriorsAfterBoot();
+	if (query.has("shipyards-full")) await game.loadShipyardsAfterBoot();
+	else void game.loadShipyardsAfterBoot();
 	game.saveFault = plan.fault;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander

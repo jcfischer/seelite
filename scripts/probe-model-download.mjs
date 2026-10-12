@@ -51,6 +51,7 @@ const PLAYER_URL = gameUrl(
 );
 const DIRECT_URL = gameUrl(ORIGIN, {
 	"interiors-full": false,
+	"shipyards-full": false,
 	seed: SEED,
 	voices: "formant",
 	raider: "off",

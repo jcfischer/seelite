@@ -27,6 +27,7 @@
 import {
 	bootedGame,
 	interiorModelsSettled,
+	shipyardModelsSettled,
 	guardedOrigin,
 	launchChromium,
 	tally,
@@ -120,6 +121,7 @@ t.watch(page);
 await page.goto(gameUrl(origin, { seed: 47 }));
 await bootedGame(page);
 await interiorModelsSettled(page);
+await shipyardModelsSettled(page);
 
 const rungs = [1, 0.75, 0.5];
 const measured = [];

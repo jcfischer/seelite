@@ -109,9 +109,11 @@ const render = (query) =>
  *
  * `boot: null` leaves the parameter off. That is for a probe of the overlay
  * itself, and nothing else should want it.
- * Direct measurement boots wait for the interior kit so a background swap
- * cannot change a frame halfway through a comparison. Download probes pass
- * `"interiors-full": false`; player/overlay boots keep the normal loading policy.
+ * Direct measurement boots wait for the interior kit and the authored
+ * shipyards (node #818), so a background swap cannot change a frame halfway
+ * through a comparison. Download probes pass `"interiors-full": false` and
+ * `"shipyards-full": false`; player/overlay boots keep the normal loading
+ * policy.
  *
  * @param {string} origin
  * @param {Params} [params]
@@ -149,12 +151,13 @@ export function gameUrl(
 	for (const key of force) query.delete(key);
 	append(query, params, (key) => query.has(key));
 	if (boot !== null && !query.has(BOOT_PARAM)) query.set(BOOT_PARAM, boot);
-	if (
-		query.get(BOOT_PARAM) === BOOT_DIRECT &&
-		!("interiors-full" in params) &&
-		!query.has("interiors-full")
-	)
-		query.set("interiors-full", "");
+	for (const settle of ["interiors-full", "shipyards-full"])
+		if (
+			query.get(BOOT_PARAM) === BOOT_DIRECT &&
+			!(settle in params) &&
+			!query.has(settle)
+		)
+			query.set(settle, "");
 	const search = render(query);
 	return `${base.origin}${base.pathname}${search ? `?${search}` : ""}`;
 }
