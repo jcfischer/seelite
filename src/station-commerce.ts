@@ -14,6 +14,7 @@ import {
 	transferLoadout,
 	repeatableEquipment,
 	makeModule,
+	fittedCapacity,
 } from "./loadout";
 import { moduleStock, moduleLocked } from "./module-stock";
 /**
@@ -98,8 +99,9 @@ export interface CommanderState {
 	 * spent by the ship — the same shape as the drive charge being session
 	 * state on the renderer. It is **not** the drive charge: §7 of
 	 * `in-system-travel.md` gives cruise its own reserve — the hull's `chargeAu`
-	 * — with free refills, and a jump does not touch it. Its capacity is the
-	 * hull's `tankLy` (#554), which is also its jump range.
+	 * — with free refills, and a jump does not touch it. Its capacity is
+	 * `commanderFuelCapacityLy`: the hull's `tankLy` (#554) plus any fitted
+	 * tank (#926). The jump range stays the hull's `tankLy`.
 	 */
 	fuelLy: number;
 	/**
@@ -113,9 +115,32 @@ export interface CommanderState {
 }
 
 export const STARTING_CREDITS = 100;
-/** The live jump capacity; future fuel-module behaviour extends this shared read. */
-export const commanderJumpRangeLy = (commander: CommanderState): number =>
-	HULL_SPECS[commander.hull].tankLy;
+/**
+ * The longest single jump: the flown hull's `tankLy`, which a fitted tank does
+ * not raise (#873 R1). The galaxy finder, the route planner, the jump chart and
+ * the job board read this one.
+ */
+export const commanderJumpRangeLy = (
+	commander: Pick<CommanderState, "hull">,
+): number => HULL_SPECS[commander.hull].tankLy;
+
+/**
+ * The fuel the ship buys, carries and shows: the hull's `tankLy` plus every
+ * fitted tank, through `fittedCapacity` (#926). Never a jump gate — that is
+ * `commanderJumpRangeLy`.
+ */
+export const commanderFuelCapacityLy = (
+	commander: Pick<CommanderState, "hull" | "loadout">,
+): number => fittedCapacity(commander.hull, commander.loadout).tankLy;
+
+/** Fuel clamped to the commander's capacity, after a loadout or hull change
+ *  that may have lowered it (#873: a tank's removal clamps fuel). */
+const withFuelClamped = (commander: CommanderState): CommanderState => {
+	const capacity = commanderFuelCapacityLy(commander);
+	return commander.fuelLy > capacity
+		? { ...commander, fuelLy: capacity }
+		: commander;
+};
 const slotFor = (c: CommanderState, m: FittedModule) =>
 	freeSlot(c.loadout, c.hull, m) ??
 	HULL_SPECS[c.hull].slots.find(
@@ -328,7 +353,12 @@ function fitModuleAt(
 	};
 	const hold = commanderHold(commander, input.entrustedT);
 	if (hold.usedT > hold.capacityT) return rejected(input, "cargo-full");
-	return { accepted: true, reason: null, commander, deficits: input.deficits };
+	return {
+		accepted: true,
+		reason: null,
+		commander: withFuelClamped(commander),
+		deficits: input.deficits,
+	};
 }
 
 const quantityOf = (action: StationAction): number =>
@@ -509,7 +539,7 @@ export function transactAtStation(
 		return {
 			accepted: true,
 			reason: null,
-			commander,
+			commander: withFuelClamped(commander),
 			deficits: input.deficits,
 		};
 	}
@@ -526,9 +556,9 @@ export function transactAtStation(
 			: rejected(input, offer.reason);
 	}
 	if (action.type === "buy-fuel") {
-		// To the flown hull's tank, which is also its range (#185 D1, #554).
+		// To the fitted capacity: the hull's tank plus any fitted tank (#926).
 		const wanted =
-			commanderJumpRangeLy(input.commander) - input.commander.fuelLy;
+			commanderFuelCapacityLy(input.commander) - input.commander.fuelLy;
 		const affordable = input.commander.credits / FUEL_CR_PER_LY;
 		// **Neither figure is rounded, and the first version rounded both.** A
 		// jump costs the distance flown, which is not a multiple of anything, so
@@ -945,7 +975,11 @@ export function hullOffer(
 		recoveredFittings: transferred.recoveredFittings,
 		hull,
 		credits: state.commander.credits - offer.netCr,
-		fuelLy: Math.min(state.commander.fuelLy, HULL_SPECS[hull].tankLy),
+		// The new hull's capacity, with whatever tank moved across (#926).
+		fuelLy: Math.min(
+			state.commander.fuelLy,
+			commanderFuelCapacityLy({ hull, loadout: moved.loadout }),
+		),
 	};
 	if (!nextCommander.recoveredFittings?.length)
 		delete nextCommander.recoveredFittings;

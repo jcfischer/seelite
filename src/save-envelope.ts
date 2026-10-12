@@ -45,6 +45,7 @@ import { emptyRequests, parseRequests, type RequestsState } from "./requests";
 import { parseSweepReadings, type SweepReading } from "./system-sweep";
 import {
 	type CommanderState,
+	commanderFuelCapacityLy,
 	newCommander,
 	STARTING_CREDITS,
 } from "./station-commerce";
@@ -800,10 +801,12 @@ const parseCommander = (
 			// before it filled to the courier's 7 LY whatever the hull, so a
 			// short-tank commander's record carries more fuel than the hull
 			// holds; that is a figure a rule moved under, not a corrupt record.
-			// A new record, so D8's untouched-on-disk rule is kept.
+			// A new record, so D8's untouched-on-disk rule is kept. The
+			// capacity is the fitted one, so a fitted tank's fuel survives a
+			// reload (#926).
 			fuelLy: Math.min(
 				num(state, "fuelLy", "commander.state"),
-				HULL_SPECS[hull as HullId].tankLy,
+				commanderFuelCapacityLy({ hull: hull as HullId, loadout }),
 			),
 			hull: hull as HullId,
 		},

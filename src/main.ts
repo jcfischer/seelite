@@ -11,7 +11,10 @@ import {
 	stockLoadout,
 } from "./loadout";
 import { outfittingScreen } from "./outfitting";
-import { commanderJumpRangeLy } from "./station-commerce";
+import {
+	commanderFuelCapacityLy,
+	commanderJumpRangeLy,
+} from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
@@ -10634,7 +10637,7 @@ class Game {
 					currentIndex: this.world.system.record.index,
 					// The flown hull's reach (#554): the shell, the lit points,
 					// the label, every route and the finder's lists.
-					tankLy: this.fuelCapacityLy,
+					tankLy: this.jumpRangeLy,
 					// **Both getters, for the same reason `currentSystem` is one.**
 					// Held as values these froze at mount: a jump with the map
 					// open runs `observeCurrentSystemRelay` and then
@@ -13020,11 +13023,21 @@ class Game {
 	}
 
 	/**
-	 * The tank's capacity, likewise: the flown hull's `tankLy`, which is also
-	 * its jump range (#185 D1, #554). A getter on the commander's hull rather
-	 * than a field, because a restored save names the hull after construction.
+	 * The tank's capacity, likewise: the flown hull's `tankLy` plus any fitted
+	 * tank (#926). What the HUD fuel line and the station fuel gauge show, and
+	 * never a jump gate. A getter rather than a field, because a restored save
+	 * names the hull and loadout after construction.
 	 */
 	get fuelCapacityLy(): number {
+		return commanderFuelCapacityLy(this.commander);
+	}
+
+	/**
+	 * The longest single jump: the flown hull's `tankLy` (#185 D1, #554), which
+	 * a fitted tank does not raise (#873 R1). The chart, the finder, the route
+	 * planner and the job board read this one.
+	 */
+	get jumpRangeLy(): number {
 		return commanderJumpRangeLy(this.commander);
 	}
 
@@ -13089,7 +13102,7 @@ class Game {
 			this.world.galaxy.systems,
 			here,
 			to,
-			this.fuelCapacityLy,
+			this.jumpRangeLy,
 		);
 		// **Both refusals leave any standing course alone.** An unknown index
 		// returned early above while an unroutable destination fell through to
@@ -17552,9 +17565,9 @@ class Game {
 				// filter rather than a regeneration — keying on the station made
 				// the second dock in a system pay for the whole neighbourhood
 				// again, inside a cockpit update.
-				// The tank is in the key: the neighbourhood is the flown hull's
+				// The range is in the key: the neighbourhood is the flown hull's
 				// reach (#554), and a restore can replace the hull.
-				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.fuelCapacityLy}`;
+				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.jumpRangeLy}`;
 				if (place !== this.requestDestinationsKey) {
 					this.requestDestinations = deliveryCandidates(
 						this.world.galaxy.systems,
@@ -17563,7 +17576,7 @@ class Game {
 						// No poster to exclude at this level; the filter below is
 						// what removes whichever station is posting.
 						NO_EXCLUDED_STATION,
-						this.fuelCapacityLy,
+						this.jumpRangeLy,
 					);
 					this.requestDestinationsKey = place;
 				}
@@ -19270,7 +19283,7 @@ class Game {
 				// not on the floor strip because `hud-and-scanner.md` §5 fixes
 				// that strip at four cells and gives the tank no home at all —
 				// which is a HUD question this node surfaced and did not settle.
-				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy} LY`,
+				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy.toFixed(1)} LY`,
 				(() => {
 					const to = this.nextHop();
 					return to ? `next ${to.name}` : "";
@@ -19381,7 +19394,7 @@ class Game {
 		// One local, passed *and* keyed. Interpolating a constant while letting
 		// `courseProgress` take its own default keyed a number this call could
 		// not vary — protection the comment claimed and the key did not give.
-		const maxJump = this.fuelCapacityLy;
+		const maxJump = this.jumpRangeLy;
 		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${maxJump}`;
 		if (this.courseChainCache?.key !== key) {
 			const progress = courseProgress(

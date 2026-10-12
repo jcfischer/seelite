@@ -153,16 +153,20 @@ export function stockLoadout(hull: HullId): Loadout {
  * What a fitted ship holds, read off its loadout: the one home for capacity
  * (#873). The bank is the plant's plus every Extra Energy Unit's `bankE`; regen
  * is the plant's alone (#925). A loadout with no plant flies the stock one.
- * Hold, tank, integrity and shield join here, never in a second projection.
+ * The tank is the hull's `tankLy` plus every fitted tank's `fuelLy` (#926).
+ * Hold, integrity and shield join here, never in a second projection.
  */
 export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	const plant = loadout.plant
 		? moduleRow(loadout.plant).output
 		: stockPlant(hull);
 	let bankE = plant.bankE;
-	for (const m of Object.values(loadout))
+	let tankLy = HULL_SPECS[hull].tankLy;
+	for (const m of Object.values(loadout)) {
 		if (m.module === "extra-energy-unit") bankE += moduleRow(m).output.bankE;
-	return { bankE, regenPerS: plant.regenPerS };
+		if (m.module === "fuel-tank") tankLy += moduleRow(m).output.fuelLy;
+	}
+	return { bankE, regenPerS: plant.regenPerS, tankLy };
 }
 export function moduleFits(m: FittedModule, slot: HullSlot): boolean {
 	return fits(moduleRow(m), slot);

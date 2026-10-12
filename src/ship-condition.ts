@@ -209,6 +209,9 @@ export interface ShipCondition {
 	hullTemp: number;
 }
 
+/** The part of `FittedCapacity` a condition reads: the bank and its regen. */
+type PlantCapacity = Pick<FittedCapacity, "bankE" | "regenPerS">;
+
 /**
  * A whole ship. `capacity` is the fitted plant's and Extra Energy Units'
  * (`fittedCapacity` in `loadout.ts`, #925), passed as numbers because
@@ -217,7 +220,7 @@ export interface ShipCondition {
  */
 export function fullCondition(
 	hull: HullId,
-	capacity: FittedCapacity = stockPlant(hull),
+	capacity: PlantCapacity = stockPlant(hull),
 ): ShipCondition {
 	const { integrity: hullMax, shieldPool: shieldMax } = HULL_SPECS[hull];
 	return {
@@ -245,7 +248,7 @@ export function fullCondition(
  */
 export function refitCondition(
 	c: ShipCondition,
-	capacity: FittedCapacity,
+	capacity: PlantCapacity,
 ): ShipCondition {
 	const added = Math.max(0, capacity.bankE - c.energyMax);
 	return {

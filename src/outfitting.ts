@@ -22,6 +22,7 @@ import {
 	recoveredLocked,
 	flownMassT,
 	commanderJumpRangeLy,
+	commanderFuelCapacityLy,
 } from "./station-commerce";
 import type { ModuleKind } from "./module-catalog";
 import { marketEpoch } from "./market";
@@ -55,6 +56,8 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 			{},
 			flownMassT(commander.hull, commander, entrustedT),
 		).thrustKms2,
+		// Two readers: a fitted tank raises the tank, never the jump (#926).
+		tankLy: commanderFuelCapacityLy(commander),
 		jump: commanderJumpRangeLy(commander),
 		credit: killCredit(
 			{ hull: commander.hull, loadout: commander.loadout },
