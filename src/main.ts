@@ -556,11 +556,9 @@ import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
 	duelBandCells,
-	duelRowWidest,
+	duelBandWidestRows,
 	HULL_TEMP_LABEL,
-	hullTempWidest,
 	SCOOP_LABEL,
-	scoopWidest,
 	onTargetMark,
 	raiderCueTone,
 	targetConditionLine,
@@ -1821,12 +1819,8 @@ const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
  */
 const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
-/** The widest reading the duel row can print, for the floor's fit. */
-const DUEL_ROW_WIDEST = duelRowWidest();
-/** The widest reading the hull-temperature gauge can print, in the same band. */
-const HULL_TEMP_WIDEST = hullTempWidest();
-/** The widest reading the scoop's line can print, beside it (#932). */
-const SCOOP_WIDEST = scoopWidest();
+/** The duel band's widest rows, for the floor's fit (#932). */
+const DUEL_BAND_WIDEST_ROWS = duelBandWidestRows();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -19689,21 +19683,10 @@ class Game {
 			];
 			// And the duel row (#324), for the same reason: a third run on the
 			// same axis at the same scale.
-			const widestTemp = { label: HULL_TEMP_LABEL, value: HULL_TEMP_WIDEST };
-			// **Two rows, never one** (#932): the scoop's line and the fight's
-			// SHD and HEAT do not share the row (`duelBandCells`), so the fit
-			// takes the wider of the two rather than both at once — which would
-			// shrink every floor instrument at 390 px for a row never drawn.
-			const widestDuelRows = [
-				[
-					...DUEL_ROW_LABELS.map((label) => ({
-						label,
-						value: DUEL_ROW_WIDEST[label],
-					})),
-					widestTemp,
-				],
-				[widestTemp, { label: SCOOP_LABEL, value: SCOOP_WIDEST }],
-			];
+			// The duel band's widest rows, in combat and out of it (#932):
+			// `duelBandWidestRows` composes them by `duelBandCells`' own rule,
+			// so SHD, HEAT and SCOOPING are never fitted as one row.
+			const widestDuelRows = DUEL_BAND_WIDEST_ROWS;
 			const groups = this.fireGroups;
 			const widestGroup = groups.map((group, index) => ({
 				label: "",

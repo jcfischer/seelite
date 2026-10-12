@@ -8,6 +8,7 @@ import {
 	HULL_TEMP_LABEL,
 	SCOOP_LABEL,
 	duelBandCells,
+	duelBandWidestRows,
 	scoopCells,
 	scoopWidest,
 } from "../src/duel-hud";
@@ -115,5 +116,39 @@ describe("the duel band in and out of combat (#932, the principal's ruling)", ()
 						DUEL_ROW_LABELS.some((l) => row.includes(l)),
 				).toBe(false);
 			}
+	});
+});
+
+describe("the fit's widest rows (#932)", () => {
+	test("are the band's two compositions, in combat and out of it", () => {
+		expect(duelBandWidestRows().map((row) => row.map((c) => c.label))).toEqual([
+			[...DUEL_ROW_LABELS, HULL_TEMP_LABEL],
+			[HULL_TEMP_LABEL, SCOOP_LABEL],
+		]);
+	});
+
+	test("hold every row the band draws, cell by cell", () => {
+		const [combatRow, peaceRow] = duelBandWidestRows();
+		const conditions = [
+			{ ...fullCondition("courier"), hullTemp: 0.3 },
+			{ ...fullCondition("courier"), hullTemp: 2.77, heatLocked: true },
+			{ ...fullCondition("dreadnought"), hullTemp: 1.2, fore: 0, aft: 0 },
+		];
+		for (const condition of conditions)
+			for (const inCombat of [true, false])
+				for (const scooping of [true, false]) {
+					const drawn = duelBandCells({
+						inCombat,
+						condition,
+						scooping,
+						fuelLy: 64.3,
+					});
+					const widest = inCombat ? combatRow : peaceRow;
+					for (const cell of drawn) {
+						const w = widest.find((c) => c.label === cell.label);
+						expect(w).toBeDefined();
+						expect(cell.value.length).toBeLessThanOrEqual(w!.value.length);
+					}
+				}
 	});
 });

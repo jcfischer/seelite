@@ -193,12 +193,44 @@ export function duelBandCells(state: {
 	scooping: boolean;
 	fuelLy: number;
 }): FloorCell[] {
-	return [
-		...(state.inCombat ? duelRowCells(state.condition) : []),
+	return composeDuelBand(state.inCombat, {
+		duel: duelRowCells(state.condition),
 		// Hull temperature, while the hull is above ambient (#931).
-		...hullTempCells(state.condition),
-		...(state.inCombat ? [] : scoopCells(state.scooping, state.fuelLy)),
+		temp: hullTempCells(state.condition),
+		scoop: scoopCells(state.scooping, state.fuelLy),
+	});
+}
+
+/** The one rule both the drawn row and its fit compose by. */
+function composeDuelBand(
+	inCombat: boolean,
+	parts: { duel: FloorCell[]; temp: FloorCell[]; scoop: FloorCell[] },
+): FloorCell[] {
+	return [
+		...(inCombat ? parts.duel : []),
+		...parts.temp,
+		...(inCombat ? [] : parts.scoop),
 	];
+}
+
+/**
+ * The widest row `duelBandCells` can draw, in combat and out of it: each
+ * cell at its widest reading, composed by the same rule. The floor's fit
+ * sizes against both, so a cell added to the band reaches the fit too.
+ */
+export function duelBandWidestRows(): FloorCell[][] {
+	const widest = duelRowWidest();
+	const cell = (label: string, value: string): FloorCell => ({
+		label,
+		value,
+		tone: "passive",
+	});
+	const parts = {
+		duel: DUEL_ROW_LABELS.map((label) => cell(label, widest[label])),
+		temp: [cell(HULL_TEMP_LABEL, hullTempWidest())],
+		scoop: [cell(SCOOP_LABEL, scoopWidest())],
+	};
+	return [true, false].map((inCombat) => composeDuelBand(inCombat, parts));
 }
 
 export interface DuelConsoleReadout {
