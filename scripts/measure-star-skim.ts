@@ -120,6 +120,7 @@ function flyPass(
 	bandR: number,
 	heats: Heat[],
 	dt = DT,
+	startTemps: number[] = heats.map(() => 0),
 ): PassResult {
 	const masses: Mass[] = [{ id: "star", kind: "star", pos: v3(), radiusKm }];
 	const nose = v3(1, 0, 0);
@@ -131,9 +132,9 @@ function flyPass(
 		bandS: 0,
 		fill: FILL_SHAPES.map(() => 0),
 		tempAtDrop: heats.map(() => 0),
-		tempPeak: heats.map(() => 0),
+		tempPeak: [...startTemps],
 	};
-	const temps = heats.map(() => 0);
+	const temps = [...startTemps];
 	const onSegment = (seg: { from: Vec3; velocity: Vec3; duration: number }) => {
 		const piece = seg.duration / PIECES;
 		for (let i = 0; i < PIECES; i++) {
@@ -356,7 +357,107 @@ for (const star of STAR_CLASSES) {
 	});
 }
 
-// ── 5. Frame-rate check ────────────────────────────────────────────────────
+// ── 5. Fitting the principal's targets ─────────────────────────────────────
+//
+// The principal's targets (#930, 2026-10-12): an empty courier tank fills in
+// three good passes, and a drop-out at the shell leaves about six seconds to
+// the top. The fill peak is solved on the G class at 1.2 R with the linear
+// curve; the rise is solved, per cooling time, so a G drop-out reaches the top
+// in six seconds. Each row then shows what the other classes get, and a chain
+// of three passes with `GAP_S` out of the band between them — the heat a
+// pilot carries from one pass into the next.
+const TARGET_PASSES = 3;
+const TARGET_TOP_S = 6;
+const GAP_S = 15;
+const REF = STAR_CLASSES.find((c) => c.cls === "G");
+if (!REF) throw new Error("no G class");
+const REF_KM = REF.radiusKm;
+const refFill = flyPass(REF_KM, 1.2, BAND, []).fill[1];
+const peak = courierTankLy / (TARGET_PASSES * refFill);
+console.log(
+	`\n## 5. Fitted: ${TARGET_PASSES} passes at G 1.2 R, linear → peak ${fixed(peak, 3)} LY/s; drop-out top ${TARGET_TOP_S} s at G\n`,
+);
+console.log(
+	["class", "LY/pass", "passes", "LY@1.06", "LY@1.5"]
+		.map((h) => pad(h, 10))
+		.join(""),
+);
+for (const star of STAR_CLASSES) {
+	const at = (b: number) => peak * flyPass(star.radiusKm, b, BAND, []).fill[1];
+	const ly = at(1.2);
+	console.log(
+		[
+			star.cls,
+			fixed(ly, 2),
+			fixed(courierTankLy / ly, 1),
+			fixed(at(1.06), 2),
+			fixed(at(1.5), 2),
+		]
+			.map((c) => pad(c, 10))
+			.join(""),
+	);
+}
+const refDrop = flyPass(REF_KM, 0.9, BAND, [{ rise: 0, tau: 1 }]);
+if (!refDrop.dropped) throw new Error("G 0.9 R pass did not drop");
+/** The rise that puts a G drop-out `TARGET_TOP_S` from the top, by bisection. */
+function fitRise(tau: number): number {
+	let lo = 0.01;
+	let hi = 2;
+	for (let i = 0; i < 60; i++) {
+		const mid = (lo + hi) / 2;
+		const k = { rise: mid, tau };
+		const t0 = flyPass(REF_KM, 0.9, BAND, [k]).tempAtDrop[0];
+		const top = secondsToTop(t0, k);
+		if (top > TARGET_TOP_S) lo = mid;
+		else hi = mid;
+	}
+	return (lo + hi) / 2;
+}
+console.log(
+	`\nper cooling time: the fitted rise; per class the drop-out's top s and slack (− spool − climb), one pass's peak at 1.2 R, and three passes at 1.2 R with ${GAP_S} s gaps\n`,
+);
+console.log(
+	["τ s", "rise/s", "class", "top s", "slack", "1 pass", "3 passes", "3 @1.06"]
+		.map((h) => pad(h, 10))
+		.join(""),
+);
+for (const tau of [10, 15, 20, 30]) {
+	const k = { rise: fitRise(tau), tau };
+	for (const star of STAR_CLASSES) {
+		const drop = flyPass(star.radiusKm, 0.9, BAND, [k]);
+		const spoolT = heatStep(drop.tempAtDrop[0], 1, SPOOL_S, k);
+		const out = radialExit(star.radiusKm, drop.dropAtR, BAND, spoolT, k, BAND);
+		const top = secondsToTop(drop.tempAtDrop[0], k);
+		const chain = (b: number) => {
+			let t = 0;
+			let worst = 0;
+			for (let i = 0; i < TARGET_PASSES; i++) {
+				const p = flyPass(star.radiusKm, b, BAND, [k], DT, [t]);
+				worst = Math.max(worst, p.tempPeak[0]);
+				// The pass ends 4 R out; cool across the gap from the peak — an
+				// upper bound, since the exit leg already cooled it a little.
+				t = heatStep(p.tempPeak[0], 0, GAP_S, k);
+			}
+			return worst;
+		};
+		console.log(
+			[
+				fixed(tau, 0),
+				fixed(k.rise, 3),
+				star.cls,
+				fixed(top, 2),
+				fixed(top - SPOOL_S - out.seconds, 2),
+				fixed(flyPass(star.radiusKm, 1.2, BAND, [k]).tempPeak[0], 2),
+				fixed(chain(1.2), 2),
+				fixed(chain(1.06), 2),
+			]
+				.map((c) => pad(c, 10))
+				.join(""),
+		);
+	}
+}
+
+// ── 6. Frame-rate check ────────────────────────────────────────────────────
 let worst = 0;
 for (const star of STAR_CLASSES) {
 	for (const b of APPROACHES) {
@@ -366,5 +467,5 @@ for (const star of STAR_CLASSES) {
 	}
 }
 console.log(
-	`\n## 5. Frame check: band seconds at ${fixed(DT, 4)} s vs MAX_DT ${MAX_DT} s differ by at most ${fixed(100 * worst, 2)}%`,
+	`\n## 6. Frame check: band seconds at ${fixed(DT, 4)} s vs MAX_DT ${MAX_DT} s differ by at most ${fixed(100 * worst, 2)}%`,
 );
