@@ -871,8 +871,27 @@ for (const viewport of VIEWPORTS) {
 		};
 		D.steps(0.5);
 		const after = { fuel: g.fuelLy };
+		// In combat inside the band (the principal's ruling on #932's D3): back
+		// on the pass, a contesting raider puts SHD and HEAT in the row, the
+		// SCOOPING line drops, and the scoop goes on filling.
+		D.parkAtStar(1.2);
+		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
+		D.steps(0.2);
+		g.forceRaider("behind", 0, 30);
+		const combatFuelBefore = g.fuelLy;
+		D.steps(0.3);
+		const combat = {
+			regime: g.regime,
+			phase: g.encounter?.phase ?? null,
+			r: rOf(),
+			scooping: g.scooping,
+			fuelBefore: combatFuelBefore,
+			fuel: g.fuelLy,
+			floor: D.floor(),
+		};
 		g.resetFlightToStart();
 		return {
+			combat,
 			normal,
 			tempOnlyInk,
 			fuelBefore,
@@ -928,6 +947,19 @@ for (const viewport of VIEWPORTS) {
 			scoopInk: scoop.scoopInk,
 			tempOnlyInk: scoop.tempOnlyInk,
 		}),
+	);
+	check(
+		`${v}: in combat inside the band SHD and HEAT keep the row, SCOOPING drops, and the scoop still fills`,
+		scoop.combat.regime === "cruise" &&
+			scoop.combat.phase === "contest" &&
+			scoop.combat.r < 2 &&
+			scoop.combat.scooping === true &&
+			scoop.combat.fuel > scoop.combat.fuelBefore &&
+			scoop.combat.floor?.duelRow?.map((c) => c.label).join(",") ===
+				"SHD,HEAT,TEMP," &&
+			scoop.combat.floor?.scoopPlate === null &&
+			scoop.combat.floor?.tempPlate != null,
+		JSON.stringify(scoop.combat),
 	);
 	check(
 		`${v}: out of the band the SCOOPING line goes and the tank stops filling`,
