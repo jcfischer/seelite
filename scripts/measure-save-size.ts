@@ -170,7 +170,7 @@ interface Row {
 	readMs: number;
 }
 
-function build(tier: Tier): Row {
+function build(tier: Tier, fill?: (world: WorldState) => void): Row {
 	const world: WorldState = newWorld(SEED);
 	let carriers = 0;
 	let witnesses = 0;
@@ -297,6 +297,7 @@ function build(tier: Tier): Row {
 			charges += flown.length;
 		}
 	}
+	fill?.(world);
 	const t0 = performance.now();
 	const json = JSON.stringify(serializeWorld(world));
 	const t1 = performance.now();
@@ -318,7 +319,7 @@ function build(tier: Tier): Row {
 	};
 }
 
-const rows = TIERS.map(build);
+const rows = TIERS.map((t) => build(t));
 console.log(
 	"| Tier | Carriers | Witnessed | Charged | KiB UTF-16 | KiB UTF-8 | write ms | read ms |",
 );
@@ -417,3 +418,107 @@ console.log(
 	"An uncharged row adds nothing, for the same reason the witness list costs " +
 		"nothing when empty: the member is omitted, not written as an empty list.",
 );
+
+// ---------------------------------------------------------------------------
+// SPIKE #951: the asteroid deposit domain under O3 (depletion recovers on the
+// game clock). Rocks come from #948's generator at this script's SEED, every
+// galaxy. Each line is priced by difference against the same base tier, and
+// every fill asserts per galaxy that its rows equal the rocks it enumerated.
+// ---------------------------------------------------------------------------
+const F = await import("../spikes/asteroid-fields-948/field-proto.ts");
+const { forEachSystem, ALL_GALAXIES } = await import(
+	"../tests/helpers/station-rows.ts"
+);
+const D = await import("../src/deposit-state.ts");
+
+interface FieldRocks {
+	system: number;
+	fieldId: string;
+	cells: number;
+	slots: number[];
+}
+const fieldsByGalaxy: FieldRocks[][] = ALL_GALAXIES.map(() => []);
+forEachSystem(SEED, ALL_GALAXIES, (record: any, c: any, g: number) => {
+	for (const plan of [F.chartedField(record, c), F.rareField(record, c)]) {
+		if (!plan) continue;
+		fieldsByGalaxy[g].push({
+			system: record.index,
+			fieldId: plan.id,
+			cells: F.cells(F.PROFILE[plan.profile]).length,
+			slots: F.rocks(record, plan).map((r: any) => r.slot),
+		});
+	}
+});
+const systemIndexOk = fieldsByGalaxy.every((fs) =>
+	fs.every((f) => Number.isInteger(f.system) && f.system < 256),
+);
+if (!systemIndexOk) throw new Error("deposit fill: a system index is not 0..255");
+
+/** Widest values a row can carry: five-digit tonnes (a calibration placeholder)
+ *  and a full-precision clock ten game-years in. */
+const TONNES = 99_999;
+const T = 315_576_000.1234567;
+
+type Fill = { debit: boolean; survey: "row" | "bitmap" | "none"; fields: number; galaxies: number };
+const fill =
+	(f: Fill, count: { rows: number; rocks: number; fields: number }) =>
+	(world: WorldState) => {
+		for (let g = 0; g < f.galaxies; g++) {
+			const d = world.galaxies[g].deposits;
+			let rocksHere = 0;
+			for (const field of fieldsByGalaxy[g].slice(0, f.fields)) {
+				count.fields++;
+				rocksHere += field.slots.length;
+				for (const slot of field.slots) {
+					const row: Record<string, number> = {};
+					if (f.debit) Object.assign(row, { surface: TONNES, deep: TONNES, at: T });
+					if (f.survey === "row") row.surveyedAt = T;
+					if (Object.keys(row).length)
+						d.rows[D.depositKey(field.system, field.fieldId, slot)] = row;
+				}
+				if (f.survey === "bitmap")
+					d.surveyed[D.fieldKey(field.system, field.fieldId)] = D.surveyBitmap(
+						field.cells,
+						field.slots,
+					);
+			}
+			const rows = Object.keys(d.rows).length;
+			const expect = f.debit || f.survey === "row" ? rocksHere : 0;
+			if (rows !== expect)
+				throw new Error(`galaxy ${g}: ${rocksHere} rocks but ${rows} deposit rows — colliding keys`);
+			count.rows += rows;
+			count.rocks += rocksHere;
+		}
+	};
+
+const priceDeposits = (base: string, f: Fill, label: string) => {
+	const at = TIERS.findIndex((t) => t.name.startsWith(base));
+	if (at < 0) throw new Error(`no tier starts with "${base}"`);
+	const count = { rows: 0, rocks: 0, fields: 0 };
+	const full = build(TIERS[at], fill(f, count));
+	const bare = rows[at];
+	const added = (full.bytes - bare.bytes) * 2;
+	console.log(
+		`| ${label} | ${base} | ${count.fields} | ${count.rocks} | ${count.rows} | ` +
+			`${(added / 1024).toFixed(1)} | ${(added / Math.max(1, count.rocks)).toFixed(1)} | ` +
+			`${full.kibUtf16} | ${full.writeMs} | ${full.readMs} |`,
+	);
+};
+
+const allFields = 1e9;
+console.log(
+	`\nDeposit domain (#951 spike, O3). Rocks at SEED ${SEED}: ` +
+		fieldsByGalaxy.map((fs, g) => `g${g} ${fs.reduce((n, f) => n + f.slots.length, 0)}`).join(", "),
+);
+console.log(
+	"| Line | On | Fields | Rocks | Rows | +KiB UTF-16 | B/rock | Save KiB UTF-16 | write ms | read ms |",
+);
+console.log("|---|---|---|---|---|---|---|---|---|---|");
+priceDeposits("T1", { debit: true, survey: "row", fields: allFields, galaxies: 8 }, "C1 ceiling: every rock debited, survey on row");
+priceDeposits("T1", { debit: true, survey: "bitmap", fields: allFields, galaxies: 8 }, "C2 ceiling: every rock debited, survey bitmap");
+priceDeposits("T1", { debit: false, survey: "row", fields: allFields, galaxies: 8 }, "R1 residue: debits recovered, survey on row");
+priceDeposits("T1", { debit: false, survey: "bitmap", fields: allFields, galaxies: 8 }, "R2 residue: debits recovered, survey bitmap");
+priceDeposits("T5", { debit: true, survey: "row", fields: 20, galaxies: 1 }, "P1 heavy play: 20 fields worked, survey on row");
+priceDeposits("T5", { debit: true, survey: "bitmap", fields: 20, galaxies: 1 }, "P2 heavy play: 20 fields worked, survey bitmap");
+priceDeposits("T6", { debit: true, survey: "row", fields: 3, galaxies: 1 }, "P3 typical: 3 fields worked, survey on row");
+priceDeposits("T6", { debit: true, survey: "bitmap", fields: 3, galaxies: 1 }, "P4 typical: 3 fields worked, survey bitmap");

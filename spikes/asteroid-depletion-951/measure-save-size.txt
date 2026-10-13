@@ -1,0 +1,28 @@
+| Tier | Carriers | Witnessed | Charged | KiB UTF-16 | KiB UTF-8 | write ms | read ms |
+|---|---|---|---|---|---|---|---|
+| T1 saturated: every carrier incl. Traffic, all 8 galaxies | 37965 | 3733 | 18973 | 129022 | 64511 | 960.5 | 666.6 |
+| T2 stations only, all 8 galaxies saturated | 3733 | 3733 | 0 | 12428 | 6214 | 39.3 | 86.7 |
+| T3 one galaxy saturated incl. Traffic | 4811 | 481 | 2443 | 16371 | 8185 | 47.2 | 71.3 |
+| T4 one galaxy, stations only, saturated | 481 | 481 | 0 | 1604 | 802 | 4.7 | 4.4 |
+| T5 heavy play: 200 systems, stations, knowledge+deficits | 386 | 0 | 0 | 284 | 142 | 1.2 | 0.9 |
+| T6 typical: 50 systems, stations, knowledge+deficits | 95 | 0 | 0 | 64 | 32 | 0.3 | 0.2 |
+
+Witness list at H6's bound (T4, one galaxy, every berth): 481 berths add 10038 UTF-16 code units (20076 bytes) on top of the same tier's 811078 — 41.7 bytes per berth held, and 19.6 KiB at this bound.
+An unwitnessed row adds nothing: `canonicalEnvelope` omits an empty list, which is also what keeps a save taken before #366 hashing to what it was written with.
+
+Charge list at one galaxy's bound (T3, every Traffic carrier in it): 2443 carriers add 76531 UTF-16 code units (153062 bytes) on top of the same tier's 8305391 — 62.7 bytes per carrier held, and 149.5 KiB at this bound.
+
+Charge list at the whole save's ceiling (T1, every carrier in all 8 galaxies): 18973 carriers add 593464 UTF-16 code units (1186928 bytes) on top of the same tier's 65465767 — 62.6 bytes per carrier held, and 1159.1 KiB at this bound.
+An uncharged row adds nothing, for the same reason the witness list costs nothing when empty: the member is omitted, not written as an empty list.
+
+Deposit domain (#951 spike, O3). Rocks at SEED 1: g0 25500, g1 23043, g2 20898, g3 21086, g4 21364, g5 21198, g6 23317, g7 22282
+| Line | On | Fields | Rocks | Rows | +KiB UTF-16 | B/rock | Save KiB UTF-16 | write ms | read ms |
+|---|---|---|---|---|---|---|---|---|---|
+| C1 ceiling: every rock debited, survey on row | T1 | 1181 | 178688 | 178688 | 36041.4 | 206.5 | 165063 | 549.4 | 492.6 |
+| C2 ceiling: every rock debited, survey bitmap | T1 | 1181 | 178688 | 178688 | 25432.3 | 145.7 | 154454 | 549.3 | 461 |
+| R1 residue: debits recovered, survey on row | T1 | 1181 | 178688 | 178688 | 17893.4 | 102.5 | 146915 | 484.4 | 456 |
+| R2 residue: debits recovered, survey bitmap | T1 | 1181 | 178688 | 0 | 210.5 | 1.2 | 129232 | 380.3 | 319.8 |
+| P1 heavy play: 20 fields worked, survey on row | T5 | 20 | 3190 | 3190 | 638.0 | 204.8 | 922 | 3.3 | 3.1 |
+| P2 heavy play: 20 fields worked, survey bitmap | T5 | 20 | 3190 | 3190 | 448.6 | 144.0 | 733 | 3 | 3.4 |
+| P3 typical: 3 fields worked, survey on row | T6 | 3 | 517 | 517 | 102.9 | 203.8 | 167 | 0.7 | 0.6 |
+| P4 typical: 3 fields worked, survey bitmap | T6 | 3 | 517 | 517 | 72.3 | 143.1 | 137 | 0.6 | 0.6 |

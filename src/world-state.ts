@@ -1,3 +1,10 @@
+import {
+	canonicalDeposits,
+	type DepositState,
+	emptyDeposits,
+	isEmptyDeposits,
+	parseDeposits,
+} from "./deposit-state";
 import { parseModule, carriedModule, type FittedModule } from "./loadout";
 /**
  * The persistent world state model — `docs/specs/persistent-world-state.md`.
@@ -518,6 +525,8 @@ export interface GalaxyEnvelope {
 	/** Derelict slots the pilot has touched (`salvage.md`, node #731). Empty // glossary-ignore: slot
 	 *  means every slot is on its derived schedule, untouched. */
 	derelicts: Record<CarrierKey, DerelictRow>;
+	/** SPIKE #951: touched asteroid rocks. Empty means every rock is derived. */
+	deposits: DepositState;
 }
 
 export interface WorldState {
@@ -544,6 +553,7 @@ const ENVELOPE_DOMAINS = [
 	"legalStatus",
 	"derelicts",
 	"deathWreck",
+	"deposits",
 ] as const;
 
 /**
@@ -555,6 +565,7 @@ const ENVELOPE_DOMAINS = [
 const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set([
 	"derelicts",
 	"deathWreck",
+	"deposits",
 ]);
 
 const WORLD_FIELDS = [
@@ -575,6 +586,7 @@ export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
 	visited: [],
 	legalStatus: { heat: 0, updatedAt: 0, witnesses: [], assaulted: [] },
 	derelicts: {},
+	deposits: emptyDeposits(),
 });
 
 export const newWorld = (seed: number): WorldState => ({
@@ -2301,6 +2313,9 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	...(Object.keys(env.derelicts).length
 		? { derelicts: canonicalMap(env.derelicts, canonicalDerelict) }
 		: {}),
+	...(!isEmptyDeposits(env.deposits)
+		? { deposits: canonicalDeposits(env.deposits) }
+		: {}),
 });
 
 const canonicalBody = (world: WorldState) => ({
@@ -2946,6 +2961,7 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 			o.derelicts === undefined
 				? {}
 				: parseCarrierMap(o.derelicts, "derelicts", parseDerelictRow),
+		deposits: parseDeposits(o.deposits, slot),
 	};
 };
 
