@@ -1,0 +1,27 @@
+worlds 10 × 8 galaxies × 256 = 20480 systems
+charted (refinery) share per world: 0.363–0.392
+rare share per world: 0.193–0.204
+  refinery-orbit: total 7791  per-world 743.000–802.000
+  belt: total 1543  per-world 143.000–166.000
+  trojan: total 1245  per-world 108.000–136.000
+  outer-orbit: total 1188  per-world 103.000–133.000
+  outer-trojan: total 86  per-world 4.000–11.000
+relay watches refinery: 0 systems
+rocks/charted: min 147 p50 186 max 234; max radius 0.400 km
+rocks/rare: min 65 p50 91 max 124; max radius 0.600 km
+rock radius km p10 0.027 p50 0.046 p90 0.143 p99 0.378
+spin period min p50 max: 4.0 12.6 39.9 min; surface m/s p50 0.44 max 6.00
+min rock surface gap (sampled fields × 12 times over 6 h): 432 m
+drift speed m/s p50 0.285 p90 0.646 max 1.208; velocity vs finite difference max err 0.0006 mm/s
+charted centre → refinery surface: 149.8–300.9 km
+charted centre → relay (any relay): min 3975533 km
+field centre → other body surface (10 y, 40 samples): min 3962264 km (refinery-orbit→planet planet-1)
+new-game arrival → field centre: min 14497522 km
+rare trojan fields within 1e6 km of the outpost: 0; outer-trojan fallbacks: 86
+gallery seeds: {
+  "refinery-orbit": "world 47 galaxy 0 system 0 (GEVETI) field-00",
+  belt: "world 47 galaxy 0 system 1 (TERALA) field-01",
+  "outer-trojan": "world 47 galaxy 0 system 27 (ARORRA) field-01",
+  "outer-orbit": "world 47 galaxy 0 system 28 (INATUS) field-01",
+  trojan: "world 47 galaxy 0 system 30 (RAONRA) field-01",
+}

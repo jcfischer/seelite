@@ -1,0 +1,95 @@
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+
+
+
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport: 1440x900 at device scale 2, chase, clock held, fov 60, 1559 px/rad
+  field: 0x5ee11e g0 s173 field-00, 210 rocks, radius 25–387 m; K=8
+  12 blocks per arm, 120 frames per block, arm order shuffled from seed 7
+  build (cold, main thread):
+    inst-k@high           27.2 ms  shapes   8  geometry 5568 verts / 11040 tris
+    inst-k@low            19.0 ms  shapes   8  geometry 5568 verts / 11040 tris
+    batch-k@high          20.2 ms  shapes   8  geometry 5568 verts / 11040 tris
+    batch-k@low           19.5 ms  shapes   8  geometry 5568 verts / 11040 tris
+    batch-unique@high    447.0 ms  shapes 210  geometry 146160 verts / 289800 tris
+    batch-unique@low     422.2 ms  shapes 210  geometry 146160 verts / 289800 tris
+    naive@high           222.1 ms  shapes 210  geometry 315000 verts / 0 tris
+
+  view inside, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             2.946                          0          0  
+  inst-k@high           3.001  +0.055 121/144 (84%)     21      31380  5/42/163/0
+  batch-k@high          3.018  +0.072 132/144 (92%)      1       5840  5/42/163/0
+  batch-unique@high     3.025  +0.079 138/144 (96%)      1       5840  5/42/163/0
+  naive@high            3.129  +0.183 144/144 (100%)     49      24500  210/0/0/0
+  none@low              2.314                          0          0  
+  inst-k@low            2.415  +0.101 128/144 (89%)     17      17800  2/8/166/34
+  batch-k@low           2.427  +0.113 133/144 (92%)      2       3520  2/8/166/34
+  batch-unique@low      2.524  +0.210 144/144 (100%)      2       3520  2/8/166/34
+  naive@low             2.555  +0.242 142/144 (99%)     49      24500  210/0/0/0
+
+  view inside, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             6.213                          0          0  
+  inst-k@high           6.281  +0.068 92/144 (64%)     31      41180  5/42/163/0
+  batch-k@high          6.424  +0.211 124/144 (86%)      2       6820  5/42/163/0
+  batch-unique@high     6.410  +0.197 116/144 (81%)      2       6820  5/42/163/0
+  naive@high            6.342  +0.129 112/144 (78%)     99      49500  210/0/0/0
+  none@low              5.838                          0          0  
+  inst-k@low            5.873  +0.035 86/144 (60%)     17      18040  2/9/165/34
+  batch-k@low           6.037  +0.199 111/144 (77%)      2       3520  2/9/165/34
+  batch-unique@low      5.998  +0.160 110/144 (76%)      2       3520  2/9/165/34
+  naive@low             5.918  +0.080 93/144 (65%)     99      49500  210/0/0/0
+
+  view edge, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             3.138                          0          0  
+  inst-k@high           3.251  +0.114 121/144 (84%)     16      18900  1/18/152/39
+  batch-k@high          3.262  +0.124 126/144 (88%)      3      16500  1/18/152/39
+  batch-unique@high     3.319  +0.181 128/144 (89%)      3      16500  1/18/152/39
+  naive@high            3.962  +0.824 144/144 (100%)    195      97500  210/0/0/0
+  none@low              2.557                          0          0  
+  inst-k@low            2.692  +0.135 107/144 (74%)     14       9300  1/5/84/120
+  batch-k@low           2.731  +0.173 108/144 (75%)      3       7700  1/5/84/120
+  batch-unique@low      2.750  +0.193 122/144 (85%)      3       7700  1/5/84/120
+  naive@low             3.350  +0.793 144/144 (100%)    195      97500  210/0/0/0
+
+  view edge, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             6.129                          0          0  
+  inst-k@high           6.317  +0.188 111/144 (77%)     18      20860  1/18/152/39
+  batch-k@high          6.382  +0.253 119/144 (83%)      5      18460  1/18/152/39
+  batch-unique@high     6.445  +0.315 123/144 (85%)      5      18460  1/18/152/39
+  naive@high            6.977  +0.848 144/144 (100%)    391     195500  210/0/0/0
+  none@low              6.043                          0          0  
+  inst-k@low            6.056  +0.014 92/144 (64%)     14       9300  1/5/84/120
+  batch-k@low           6.073  +0.031 107/144 (74%)      3       7700  1/5/84/120
+  batch-unique@low      6.063  +0.020 107/144 (74%)      3       7700  1/5/84/120
+  naive@low             6.469  +0.426 144/144 (100%)    391     195500  210/0/0/0
+
+  view far, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             2.864                          0          0  
+  inst-k@high           2.896  +0.032 98/144 (68%)      4        480  0/0/6/204
+  batch-k@high          2.925  +0.061 106/144 (74%)      2        480  0/0/6/204
+  batch-unique@high     2.915  +0.051 103/144 (72%)      2        480  0/0/6/204
+  naive@high            3.748  +0.884 144/144 (100%)    210     105000  210/0/0/0
+  none@low              2.329                          0          0  
+  inst-k@low            2.347  +0.018 79/144 (55%)      1          0  0/0/0/210
+  batch-k@low           2.407  +0.078 100/144 (69%)      1          0  0/0/0/210
+  batch-unique@low      2.375  +0.046 88/144 (61%)      1          0  0/0/0/210
+  naive@low             3.109  +0.780 144/144 (100%)    210     105000  210/0/0/0
+
+  view far, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             6.196                          0          0  
+  inst-k@high           6.205  +0.009 72/144 (50%)      4        480  0/0/6/204
+  batch-k@high          6.239  +0.043 104/144 (72%)      2        480  0/0/6/204
+  batch-unique@high     6.226  +0.030 93/144 (65%)      2        480  0/0/6/204
+  naive@high            6.867  +0.670 144/144 (100%)    420     210000  210/0/0/0
+  none@low              5.688                          0          0  
+  inst-k@low            5.688  +0.000 76/144 (53%)      1          0  0/0/0/210
+  batch-k@low           5.703  +0.016 87/144 (60%)      1          0  0/0/0/210
+  batch-unique@low      5.706  +0.019 79/144 (55%)      1          0  0/0/0/210
+  naive@low             6.354  +0.666 144/144 (100%)    420     210000  210/0/0/0
+exit 0
