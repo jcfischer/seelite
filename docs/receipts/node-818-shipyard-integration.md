@@ -83,6 +83,17 @@ procedural yard:
   width and the type colour are printed, not gated, and presence (drawn,
   not empty) is still gated.
 
+- **F8, `probe-occlusion`'s bay ceiling: fix the clock and measure the reach.**
+  The bay check failed alone at 77.97–78.61% against a fixed ceiling of 77.
+  The shadow was drawn identically on both sides (same fit, extent, map and
+  biases). The figure follows the station's spin phase at capture: `main`
+  reached the bay at 93.5–98.3 s of game time (65.6–76.0%), the branch at
+  103.4–104.0 s (77.7–78.6%). At the view-set's clock both read 79.3%, so
+  `main` fails the old ceiling there too. The bay is now captured at that
+  clock, and the ceiling is the sun's measured reach in the same frame plus
+  2.5 points. It reads 79.30% against a reach of 79.31% on both sides. A relit
+  "off" frame (hemisphere ×1.5) reads 99.9% against 79.3% and fails.
+
 ## Work lights (principal, 2026-10-12)
 
 **The ruling.** In game the yards were "too dark, they would need industrial
@@ -274,7 +285,17 @@ merging `origin/main`: 6 101 pass, 0 fail; typecheck, format, lint, launcher wir
 every file in `dist/` is within 25 MiB. The build ships the three models
 under hashed names; the proxies ride in the `station-console` chunk, which
 grows from 126 KB (46 KB gzipped) to 379 KB (159 KB): the sim needs them before
-any shipyard can collide, so they are not deferred. Browser gate: pending.
+any shipyard can collide, so they are not deferred.
+
+**Browser gate** (`probe:pr`, all 104 probes selected, head becaaf53,
+2026-10-13): 93 passed in the suite. The machine's load peaked at 370 on 10
+cores during it. Of the 11 reds, 9 pass alone (`dock-arrival`,
+`docking-traffic`, `docking`, `duel-hud`, `eject`, `fire-groups`,
+`music`, `neural-voice`, `opening-cinematic`), which points at the load.
+`output-stage` is red on `main` too (1.20% edge disagreement, unchanged).
+`occlusion` was red alone, and F8 above fixes it; the fixed probe passes on
+the branch and on `main`. After becaaf53 only `probe-occlusion.mjs` and
+documents change.
 
 **Rows changed for the authored yards**, each from a measurement:
 
