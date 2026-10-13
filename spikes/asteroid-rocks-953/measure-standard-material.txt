@@ -1,0 +1,63 @@
+  host load average at start: 41.67578125 / 47.9296875 / 61.43212890625
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+7:54:02 PM [vite] (client) warning: 
+/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+1  |  const R = new URL("/src", import.meta.url).pathname;
+2  |  const { stream } = await import(`${R}/galaxy.ts`);
+   |                                  ^^^^^^^^^^^^^^^^
+3  |  const { mix } = await import(`${R}/rng.ts`);
+4  |  const sys = await import(`${R}/system.ts`);
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+7:54:02 PM [vite] (client) warning: 
+/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+1  |  const R = new URL("/src", import.meta.url).pathname;
+2  |  const { stream } = await import(`${R}/galaxy.ts`);
+3  |  const { mix } = await import(`${R}/rng.ts`);
+   |                               ^^^^^^^^^^^^^
+4  |  const sys = await import(`${R}/system.ts`);
+5  |  const TAU = Math.PI * 2;
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+7:54:02 PM [vite] (client) warning: 
+/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+2  |  const { stream } = await import(`${R}/galaxy.ts`);
+3  |  const { mix } = await import(`${R}/rng.ts`);
+4  |  const sys = await import(`${R}/system.ts`);
+   |                           ^^^^^^^^^^^^^^^^
+5  |  const TAU = Math.PI * 2;
+6  |  const AU_KM = 1495978707e-1;
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  authored load: {"bytes":19567976,"fetchMs":153.29999995231628,"decodeMs":107.90000009536743,"prepareMs":8.599999904632568}
+  viewport: 1440x900 at device scale 2, chase, clock held, fov 60, 1559 px/rad
+  field: 0x5ee11e g0 s173 field-00, 210 rocks, radius 25–387 m; K=16
+  6 blocks per arm, 60 frames per block, arm order shuffled from seed 20261013
+  build (cold, main thread):
+    batch-authored@high     6.6 ms  shapes  16  geometry 92558 verts / 162898 tris
+    batch-authored@low     3.7 ms  shapes  16  geometry 92558 verts / 162898 tris
+
+  view close, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             2.994                          0          0  
+  batch-authored@high    3.480  +0.486 36/36 (100%)      2       7844  2/11/159/38
+  none@low              2.536                          0          0  
+  batch-authored@low    2.721  +0.185 36/36 (100%)      2       7844  1/4/88/117
+
+  view close, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             6.157                          0          0  
+  batch-authored@high    6.611  +0.454 36/36 (100%)      4      23532  2/11/159/38
+  none@low              5.607                          0          0  
+  batch-authored@low    5.880  +0.273 36/36 (100%)      2       7844  1/4/88/117
+  host load average at end: 59.865234375 / 51.8359375 / 62.09912109375
