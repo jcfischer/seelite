@@ -1,0 +1,2 @@
+high: L0 count, 500 random points inside: p50 3 p99 6 max 7; 300 points 1.2–3 radii from the 10 largest rocks: p50 2 p99 4 max 4
+low: L0 count, 500 random points inside: p50 0 p99 3 max 4; 300 points 1.2–3 radii from the 10 largest rocks: p50 1 p99 3 max 3

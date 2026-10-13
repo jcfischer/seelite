@@ -34,7 +34,7 @@ export const LEVEL_PX: Record<"high" | "low", readonly [number, number, number]>
 };
 export const HYSTERESIS = 0.15;
 
-export type Arm = "inst-k" | "batch-k" | "batch-unique" | "naive";
+export type Arm = "inst-k" | "batch-k" | "batch-unique" | "naive" | "batch-plain";
 
 /** The displacement `buildAsteroid` uses (copied, not imported: it is fixed at
  *  detail 4 there), on a unit sphere, without the pad cut. */
@@ -164,7 +164,11 @@ export function buildFieldRenderer(
 	const started = performance.now();
 	const root = new THREE.Group();
 	root.name = "asteroid-field";
-	const material = fieldRockMaterial();
+	// `batch-plain`: batch-k with no rock surface patch, to price the shader apart from plain fill.
+	const material =
+		opts.arm === "batch-plain"
+			? new THREE.MeshStandardMaterial({ color: 0x9a8a72, roughness: 0.95, metalness: 0.02 })
+			: fieldRockMaterial();
 	const shapeOf = (rock: Rock) =>
 		opts.arm === "batch-unique" || opts.arm === "naive" ? rock.slot : rock.shapeSeed % opts.k;
 	const shapeTags = [...new Set(rocks.map(shapeOf))];
@@ -237,7 +241,7 @@ export function buildFieldRenderer(
 		};
 	} else {
 		// BatchedMesh: one for level 0 (it may cast), one for levels 1–2.
-		const shapes = shapeTags.map((s) => shapeLevels(opts.arm === "batch-k" ? `arch-${s}` : `rock-${s}`));
+		const shapes = shapeTags.map((s) => shapeLevels(opts.arm !== "batch-unique" ? `arch-${s}` : `rock-${s}`));
 		const size = (ls: number[]) => {
 			let v = 0;
 			let ix = 0;

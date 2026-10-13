@@ -89,6 +89,11 @@ try {
 				inside: new THREE.Vector3(1.2, 1.2, 1.2),
 				edge: new THREE.Vector3(-a - 2, 0, 0),
 				far: new THREE.Vector3(-a - 200, 0, 0),
+				close: (() => {
+					const big = rocks.reduce((x, y) => (y.radiusKm > x.radiusKm ? y : x));
+					const at = F.rockLocal(big, 0);
+					return new THREE.Vector3(at.x - 1.2 * big.radiusKm, at.y, at.z);
+				})(),
 			};
 			const renderers = {};
 			const build = {};
@@ -131,7 +136,8 @@ try {
 				g.settings.set("quality", key.split("@")[1]);
 			};
 			window.__fieldStep = () => {
-				t += 1 / 60;
+				// A 2 s window: drift stays under 4 mm, so a close stand point holds.
+				t = (t + 1 / 60) % 2;
 				window.__field?.update(t, camLocal);
 			};
 			window.__fieldLevels = () => window.__field?.stats().perLevel;
