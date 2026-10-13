@@ -422,7 +422,9 @@ export function buildFieldRenderer(
 		geometryVertices: vertices,
 		geometryTriangles: triangles,
 	});
-	return { root, update, stats, material };
+	// #952: the gallery cuts level changes out of its transition clips.
+	const levelsOf = () => Array.from(levelOf);
+	return { root, update, stats, material, levelsOf };
 }
 
 /** The page's own three, for an instrument evaluating in the page. */
