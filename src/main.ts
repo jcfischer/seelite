@@ -17,7 +17,7 @@ import {
 	commanderJumpRangeLy,
 } from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
-import { homeShipyardForm } from "./home-shipyard";
+import { homeRefineryForm, homeShipyardForm } from "./home-shipyard";
 import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
@@ -6874,7 +6874,7 @@ class Game {
 				Promise.all(
 					SHIPYARD_FORMS.map((form) =>
 						prepareShipyardModel(form)
-							.then(() => this.refreshShipyard(form))
+							.then(() => this.refreshAuthoredStations("shipyard", form))
 							.catch((error) =>
 								console.warn(
 									`shipyard ${form}: background load failed; keeping the procedural form`,
@@ -6890,23 +6890,56 @@ class Game {
 			}));
 	}
 	/**
-	 * Rebuild every drawn shipyard of `form` from its installed model. The new
+	 * The authored refineries (node #819), installed after boot as the
+	 * shipyards are, each replacing its form's procedural stand-in wherever
+	 * one is drawn; a form that fails keeps its stand-in. Settled once every
+	 * form has installed or failed (`refineries-full` waits for it).
+	 */
+	refineryModelsSettled = false;
+	private refineryLoad?: Promise<void>;
+	loadRefineriesAfterBoot(): Promise<void> {
+		return (this.refineryLoad ??= import("./refinery-flight")
+			.then(({ REFINERY_FORMS, prepareRefineryModel }) =>
+				Promise.all(
+					REFINERY_FORMS.map((form) =>
+						prepareRefineryModel(form)
+							.then(() => this.refreshAuthoredStations("refinery", form))
+							.catch((error) =>
+								console.warn(
+									`refinery ${form}: background load failed; keeping the procedural form`,
+									error,
+								),
+							),
+					),
+				),
+			)
+			.then(() => {})
+			.finally(() => {
+				this.refineryModelsSettled = true;
+			}));
+	}
+	/**
+	 * Rebuild every drawn station of `type` and `form` from its installed
+	 * model (the shipyards, node #818; the refineries, node #819). The new
 	 * mesh compiles off-scene first and replaces the old one only if the
 	 * station is still the one drawn; a jump during the compile ends the
 	 * refresh, since the new system was built with whatever had installed.
 	 * When a station was replaced, occlusion marks and interior kits are redone
 	 * for the whole system, as an interior install redoes them.
 	 */
-	private async refreshShipyard(form: string): Promise<void> {
+	private async refreshAuthoredStations(
+		type: "shipyard" | "refinery",
+		form: string,
+	): Promise<void> {
 		const system = this.world.system;
 		let replaced = false;
 		for (const body of system.bodies) {
 			if (this.world.system !== system) return;
 			if (body.kind !== "station") continue;
 			const station = stationOf(system, body.id);
-			if (station.type !== "shipyard" || station.formId !== form) continue;
+			if (station.type !== type || station.formId !== form) continue;
 			const previous = this.stationVisuals.get(body.id);
-			// Built after the install (a home shipyard, a later jump): already
+			// Built after the install (a home station, a later jump): already
 			// the authored model.
 			if (!previous || isAuthoredStation(previous.root)) continue;
 			const live = () => this.stationVisuals.get(body.id) === previous;
@@ -21504,16 +21537,26 @@ if (postcard) {
 		loadingPanel("postcard shipyards"),
 	);
 	await game.loadShipyardsAfterBoot();
+	// And the authored refineries (node #819).
+	const { refineryModelLoaders } = await import("./refinery-flight");
+	await loadRequiredModels(
+		[...refineryModelLoaders],
+		loadingPanel("postcard refineries"),
+	);
+	await game.loadRefineriesAfterBoot();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station") {
-		// The station workbench draws the authored shipyards (node #818).
+		// The station workbench draws the authored shipyards (node #818) and
+		// refineries (node #819).
 		const { shipyardModelLoaders } = await import("./shipyard-flight");
+		const { refineryModelLoaders } = await import("./refinery-flight");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			...shipyardModelLoaders,
+			...refineryModelLoaders,
 		]);
 	}
 	// The ship workbench draws every variant: the courier the game flies
@@ -21786,6 +21829,16 @@ if (postcard) {
 			{ then: "building" },
 		);
 	}
+	// And a Commander docked at a refinery for that form's (node #819).
+	const homeRefinery = homeRefineryForm(plan.loaded);
+	if (homeRefinery) {
+		const { prepareRefineryModel } = await import("./refinery-flight");
+		await loadRequiredModels(
+			[(progress) => prepareRefineryModel(homeRefinery, progress)],
+			loading.view,
+			{ then: "building" },
+		);
+	}
 	// The `Game` build blocks the page for seconds, so the "Building the
 	// world" line has to be on screen before it starts, not queued behind it.
 	await nextPaint();
@@ -21822,6 +21875,8 @@ if (postcard) {
 	else void game.loadInteriorsAfterBoot();
 	if (query.has("shipyards-full")) await game.loadShipyardsAfterBoot();
 	else void game.loadShipyardsAfterBoot();
+	if (query.has("refineries-full")) await game.loadRefineriesAfterBoot();
+	else void game.loadRefineriesAfterBoot();
 	game.saveFault = plan.fault;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander
