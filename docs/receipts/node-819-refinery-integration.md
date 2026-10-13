@@ -301,7 +301,7 @@ part (the authored berths were batched by material; they are grouped by the
 sim's ids now); `probe-station-visuals`' three rows on the procedural rock
 shader found no patched rock under an authored refinery — they now gate the
 stand-in and report an authored refinery, as #818's rows on the procedural
-yard do (**for the principal's ruling**); `probe-collision` crashed on the
+yard do (**approved by the principal, 2026-10-13**); `probe-collision` crashed on the
 harness (a `three` import from the default Vite cache this server did not
 use) and passed on its own server. Between `7b4fc14e` and `f71520b5` the
 models were rebuilt (berth groups named) and the proxies refitted; the
