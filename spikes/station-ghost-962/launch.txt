@@ -1,0 +1,39 @@
+refinery/a courier     deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a interceptor overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a freighter   port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a miner       starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a patrol      deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a explorer    overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a raider      port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a tug         starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/a prospector  deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b courier     deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b interceptor overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b freighter   port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b miner       starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b patrol      deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b explorer    overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b raider      port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b tug         starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/b prospector  deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c courier     deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c interceptor overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c freighter   port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c miner       starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c patrol      deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c explorer    overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c raider      port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c tug         starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/c prospector  deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d courier     deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d interceptor overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d freighter   port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d miner       starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d patrol      deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d explorer    overhead-near    released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d raider      port-near        released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d tug         starboard-near   released true launch end: impacts 0, ghost steps 0 of 90
+refinery/d prospector  deck-near        released true launch end: impacts 0, ghost steps 0 of 90
+ 4 pass
+ 0 fail
+Ran 4 tests across 1 file. [3.09s]

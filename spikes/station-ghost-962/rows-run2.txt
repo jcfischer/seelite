@@ -1,0 +1,166 @@
+bun test v1.4.2 (744846f84)
+spikes/station-ghost-962/rows.test.ts:
+shipyard/a rpm 0.00 courier   all       N  360  trapped box 272 solid 35 station 0  G1 272 (joined metal 246, at tick 0 174)  billed 187  stuck box 0 station 0
+shipyard/a rpm 0.00 courier   face+n    N  114  trapped box 92 solid 18 station 0  G1 92 (joined metal 85, at tick 0 59)  billed 70  stuck box 0 station 0
+shipyard/a rpm 0.00 courier   face      N    6  trapped box 2 solid 0 station 0  G1 2 (joined metal 1, at tick 0 0)  billed 1  stuck box 0 station 0
+shipyard/a rpm 0.00 courier   nose+n    N  114  trapped box 73 solid 7 station 0  G1 73 (joined metal 64, at tick 0 39)  billed 53  stuck box 0 station 0
+shipyard/a rpm 0.00 courier   nose      N    6  trapped box 1 solid 0 station 0  G1 1 (joined metal 0, at tick 0 0)  billed 0  stuck box 0 station 0
+shipyard/a rpm 0.00 courier   random+n  N  114  trapped box 103 solid 10 station 0  G1 103 (joined metal 95, at tick 0 76)  billed 62  stuck box 0 station 0
+shipyard/a rpm 0.00 courier   random    N    6  trapped box 1 solid 0 station 0  G1 1 (joined metal 1, at tick 0 0)  billed 1  stuck box 0 station 0
+shipyard/a courier: 120 placements from 120 draws
+shipyard/a rpm 0.00 freighter all       N  360  trapped box 281 solid 29 station 0  G1 281 (joined metal 244, at tick 0 199)  billed 192  stuck box 0 station 0
+shipyard/a rpm 0.00 freighter face+n    N  109  trapped box 95 solid 14 station 0  G1 95 (joined metal 85, at tick 0 79)  billed 64  stuck box 0 station 0
+shipyard/a rpm 0.00 freighter face      N   11  trapped box 4 solid 0 station 0  G1 4 (joined metal 2, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/a rpm 0.00 freighter nose+n    N  109  trapped box 74 solid 7 station 0  G1 74 (joined metal 61, at tick 0 37)  billed 49  stuck box 0 station 0
+shipyard/a rpm 0.00 freighter nose      N   11  trapped box 4 solid 0 station 0  G1 4 (joined metal 2, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/a rpm 0.00 freighter random+n  N  109  trapped box 101 solid 8 station 0  G1 101 (joined metal 92, at tick 0 83)  billed 70  stuck box 0 station 0
+shipyard/a rpm 0.00 freighter random    N   11  trapped box 3 solid 0 station 0  G1 3 (joined metal 2, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/a freighter: 120 placements from 120 draws
+shipyard/a rpm 3.00 courier   all       N  360  trapped box 297 solid 19 station 0  G1 297 (joined metal 191, at tick 0 221)  billed 198  stuck box 0 station 0
+shipyard/a rpm 3.00 courier   face+n    N  116  trapped box 98 solid 9 station 0  G1 98 (joined metal 61, at tick 0 79)  billed 67  stuck box 0 station 0
+shipyard/a rpm 3.00 courier   face      N    4  trapped box 0 solid 0 station 0  G1 0 (joined metal 0, at tick 0 0)  billed 0  stuck box 0 station 0
+shipyard/a rpm 3.00 courier   nose+n    N  116  trapped box 93 solid 6 station 0  G1 93 (joined metal 61, at tick 0 61)  billed 60  stuck box 0 station 0
+shipyard/a rpm 3.00 courier   nose      N    4  trapped box 2 solid 0 station 0  G1 2 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/a rpm 3.00 courier   random+n  N  116  trapped box 101 solid 4 station 0  G1 101 (joined metal 67, at tick 0 81)  billed 67  stuck box 0 station 0
+shipyard/a rpm 3.00 courier   random    N    4  trapped box 3 solid 0 station 0  G1 3 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/a courier: 120 placements from 120 draws
+shipyard/a rpm 3.00 freighter all       N  360  trapped box 291 solid 19 station 0  G1 291 (joined metal 182, at tick 0 196)  billed 204  stuck box 0 station 0
+shipyard/a rpm 3.00 freighter face+n    N  118  trapped box 97 solid 9 station 0  G1 97 (joined metal 57, at tick 0 74)  billed 70  stuck box 0 station 0
+shipyard/a rpm 3.00 freighter face      N    2  trapped box 0 solid 0 station 0  G1 0 (joined metal 0, at tick 0 0)  billed 0  stuck box 0 station 0
+shipyard/a rpm 3.00 freighter nose+n    N  118  trapped box 95 solid 6 station 0  G1 95 (joined metal 59, at tick 0 50)  billed 68  stuck box 0 station 0
+shipyard/a rpm 3.00 freighter nose      N    2  trapped box 1 solid 0 station 0  G1 1 (joined metal 1, at tick 0 0)  billed 1  stuck box 0 station 0
+shipyard/a rpm 3.00 freighter random+n  N  118  trapped box 97 solid 4 station 0  G1 97 (joined metal 64, at tick 0 72)  billed 64  stuck box 0 station 0
+shipyard/a rpm 3.00 freighter random    N    2  trapped box 1 solid 0 station 0  G1 1 (joined metal 1, at tick 0 0)  billed 1  stuck box 0 station 0
+shipyard/a freighter: 120 placements from 120 draws
+shipyard/b rpm 0.00 courier   all       N  360  trapped box 300 solid 24 station 0  G1 300 (joined metal 272, at tick 0 195)  billed 209  stuck box 0 station 0
+shipyard/b rpm 0.00 courier   face+n    N  115  trapped box 104 solid 13 station 0  G1 104 (joined metal 98, at tick 0 75)  billed 75  stuck box 0 station 0
+shipyard/b rpm 0.00 courier   face      N    5  trapped box 3 solid 0 station 0  G1 3 (joined metal 2, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/b rpm 0.00 courier   nose+n    N  115  trapped box 85 solid 4 station 0  G1 85 (joined metal 74, at tick 0 45)  billed 64  stuck box 0 station 0
+shipyard/b rpm 0.00 courier   nose      N    5  trapped box 2 solid 0 station 0  G1 2 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/b rpm 0.00 courier   random+n  N  115  trapped box 102 solid 7 station 0  G1 102 (joined metal 94, at tick 0 75)  billed 61  stuck box 0 station 0
+shipyard/b rpm 0.00 courier   random    N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 3, at tick 0 0)  billed 4  stuck box 0 station 0
+shipyard/b courier: 120 placements from 120 draws
+shipyard/b rpm 0.00 freighter all       N  360  trapped box 300 solid 18 station 0  G1 300 (joined metal 257, at tick 0 193)  billed 195  stuck box 0 station 0
+shipyard/b rpm 0.00 freighter face+n    N  114  trapped box 102 solid 11 station 0  G1 102 (joined metal 92, at tick 0 74)  billed 65  stuck box 0 station 0
+shipyard/b rpm 0.00 freighter face      N    6  trapped box 5 solid 0 station 0  G1 5 (joined metal 2, at tick 0 0)  billed 4  stuck box 0 station 0
+shipyard/b rpm 0.00 freighter nose+n    N  114  trapped box 83 solid 3 station 0  G1 83 (joined metal 69, at tick 0 45)  billed 60  stuck box 0 station 0
+shipyard/b rpm 0.00 freighter nose      N    6  trapped box 3 solid 0 station 0  G1 3 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/b rpm 0.00 freighter random+n  N  114  trapped box 104 solid 4 station 0  G1 104 (joined metal 91, at tick 0 74)  billed 63  stuck box 0 station 0
+shipyard/b rpm 0.00 freighter random    N    6  trapped box 3 solid 0 station 0  G1 3 (joined metal 2, at tick 0 0)  billed 1  stuck box 0 station 0
+shipyard/b freighter: 120 placements from 120 draws
+shipyard/b rpm 3.00 courier   all       N  360  trapped box 312 solid 18 station 0  G1 312 (joined metal 197, at tick 0 223)  billed 210  stuck box 0 station 0
+shipyard/b rpm 3.00 courier   face+n    N  115  trapped box 102 solid 7 station 0  G1 102 (joined metal 67, at tick 0 82)  billed 75  stuck box 0 station 0
+shipyard/b rpm 3.00 courier   face      N    5  trapped box 2 solid 0 station 0  G1 2 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/b rpm 3.00 courier   nose+n    N  115  trapped box 95 solid 6 station 0  G1 95 (joined metal 59, at tick 0 61)  billed 57  stuck box 0 station 0
+shipyard/b rpm 3.00 courier   nose      N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 0, at tick 0 0)  billed 4  stuck box 0 station 0
+shipyard/b rpm 3.00 courier   random+n  N  115  trapped box 105 solid 5 station 0  G1 105 (joined metal 69, at tick 0 80)  billed 69  stuck box 0 station 0
+shipyard/b rpm 3.00 courier   random    N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 1, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/b courier: 120 placements from 120 draws
+shipyard/b rpm 3.00 freighter all       N  360  trapped box 313 solid 15 station 0  G1 313 (joined metal 192, at tick 0 219)  billed 215  stuck box 0 station 0
+shipyard/b rpm 3.00 freighter face+n    N  115  trapped box 104 solid 6 station 0  G1 104 (joined metal 66, at tick 0 81)  billed 77  stuck box 0 station 0
+shipyard/b rpm 3.00 freighter face      N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 1, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/b rpm 3.00 freighter nose+n    N  115  trapped box 93 solid 6 station 0  G1 93 (joined metal 57, at tick 0 57)  billed 56  stuck box 0 station 0
+shipyard/b rpm 3.00 freighter nose      N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 0, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/b rpm 3.00 freighter random+n  N  115  trapped box 104 solid 3 station 0  G1 104 (joined metal 67, at tick 0 81)  billed 73  stuck box 0 station 0
+shipyard/b rpm 3.00 freighter random    N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 1, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/b freighter: 120 placements from 120 draws
+shipyard/c rpm 0.00 courier   all       N  360  trapped box 272 solid 14 station 0  G1 272 (joined metal 250, at tick 0 169)  billed 201  stuck box 0 station 0
+shipyard/c rpm 0.00 courier   face+n    N  111  trapped box 95 solid 8 station 0  G1 95 (joined metal 88, at tick 0 67)  billed 71  stuck box 0 station 0
+shipyard/c rpm 0.00 courier   face      N    9  trapped box 2 solid 0 station 0  G1 2 (joined metal 0, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/c rpm 0.00 courier   nose+n    N  111  trapped box 66 solid 3 station 0  G1 66 (joined metal 62, at tick 0 30)  billed 52  stuck box 0 station 0
+shipyard/c rpm 0.00 courier   nose      N    9  trapped box 4 solid 0 station 0  G1 4 (joined metal 2, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/c rpm 0.00 courier   random+n  N  111  trapped box 100 solid 3 station 0  G1 100 (joined metal 95, at tick 0 72)  billed 68  stuck box 0 station 0
+shipyard/c rpm 0.00 courier   random    N    9  trapped box 5 solid 0 station 0  G1 5 (joined metal 3, at tick 0 0)  billed 5  stuck box 0 station 0
+shipyard/c courier: 120 placements from 120 draws
+shipyard/c rpm 0.00 freighter all       N  360  trapped box 267 solid 12 station 0  G1 267 (joined metal 235, at tick 0 171)  billed 193  stuck box 0 station 0
+shipyard/c rpm 0.00 freighter face+n    N  108  trapped box 86 solid 8 station 0  G1 86 (joined metal 80, at tick 0 64)  billed 60  stuck box 0 station 0
+shipyard/c rpm 0.00 freighter face      N   12  trapped box 5 solid 0 station 0  G1 5 (joined metal 2, at tick 0 0)  billed 5  stuck box 0 station 0
+shipyard/c rpm 0.00 freighter nose+n    N  108  trapped box 67 solid 2 station 0  G1 67 (joined metal 58, at tick 0 35)  billed 53  stuck box 0 station 0
+shipyard/c rpm 0.00 freighter nose      N   12  trapped box 4 solid 0 station 0  G1 4 (joined metal 2, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/c rpm 0.00 freighter random+n  N  108  trapped box 98 solid 2 station 0  G1 98 (joined metal 89, at tick 0 72)  billed 66  stuck box 0 station 0
+shipyard/c rpm 0.00 freighter random    N   12  trapped box 7 solid 0 station 0  G1 7 (joined metal 4, at tick 0 0)  billed 6  stuck box 0 station 0
+shipyard/c freighter: 120 placements from 120 draws
+shipyard/c rpm 3.00 courier   all       N  360  trapped box 310 solid 27 station 0  G1 310 (joined metal 200, at tick 0 215)  billed 193  stuck box 0 station 0
+shipyard/c rpm 3.00 courier   face+n    N  115  trapped box 107 solid 12 station 0  G1 107 (joined metal 72, at tick 0 89)  billed 71  stuck box 0 station 0
+shipyard/c rpm 3.00 courier   face      N    5  trapped box 2 solid 0 station 0  G1 2 (joined metal 2, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/c rpm 3.00 courier   nose+n    N  115  trapped box 91 solid 6 station 0  G1 91 (joined metal 54, at tick 0 50)  billed 50  stuck box 0 station 0
+shipyard/c rpm 3.00 courier   nose      N    5  trapped box 1 solid 0 station 0  G1 1 (joined metal 0, at tick 0 0)  billed 1  stuck box 0 station 0
+shipyard/c rpm 3.00 courier   random+n  N  115  trapped box 105 solid 9 station 0  G1 105 (joined metal 69, at tick 0 76)  billed 66  stuck box 0 station 0
+shipyard/c rpm 3.00 courier   random    N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 3, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/c courier: 120 placements from 120 draws
+shipyard/c rpm 3.00 freighter all       N  360  trapped box 309 solid 23 station 0  G1 309 (joined metal 199, at tick 0 217)  billed 193  stuck box 0 station 0
+shipyard/c rpm 3.00 freighter face+n    N  115  trapped box 100 solid 10 station 0  G1 100 (joined metal 70, at tick 0 82)  billed 76  stuck box 0 station 0
+shipyard/c rpm 3.00 freighter face      N    5  trapped box 3 solid 0 station 0  G1 3 (joined metal 2, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/c rpm 3.00 freighter nose+n    N  115  trapped box 94 solid 5 station 0  G1 94 (joined metal 57, at tick 0 62)  billed 53  stuck box 0 station 0
+shipyard/c rpm 3.00 freighter nose      N    5  trapped box 4 solid 0 station 0  G1 4 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+shipyard/c rpm 3.00 freighter random+n  N  115  trapped box 104 solid 7 station 0  G1 104 (joined metal 68, at tick 0 73)  billed 56  stuck box 0 station 0
+shipyard/c rpm 3.00 freighter random    N    5  trapped box 4 solid 1 station 0  G1 4 (joined metal 1, at tick 0 0)  billed 3  stuck box 0 station 0
+shipyard/c freighter: 120 placements from 120 draws
+refinery/a rpm 0.00 courier   all       N  360  trapped box 326 solid 0 station 0  G1 326 (joined metal 322, at tick 0 252)  billed 236  stuck box 0 station 0
+refinery/a rpm 0.00 courier   face+n    N  118  trapped box 111 solid 0 station 0  G1 111 (joined metal 110, at tick 0 95)  billed 86  stuck box 0 station 0
+refinery/a rpm 0.00 courier   face      N    2  trapped box 1 solid 0 station 0  G1 1 (joined metal 0, at tick 0 0)  billed 1  stuck box 0 station 0
+refinery/a rpm 0.00 courier   nose+n    N  118  trapped box 103 solid 0 station 0  G1 103 (joined metal 102, at tick 0 65)  billed 77  stuck box 0 station 0
+refinery/a rpm 0.00 courier   nose      N    2  trapped box 0 solid 0 station 0  G1 0 (joined metal 0, at tick 0 0)  billed 0  stuck box 0 station 0
+refinery/a rpm 0.00 courier   random+n  N  118  trapped box 111 solid 0 station 0  G1 111 (joined metal 110, at tick 0 92)  billed 72  stuck box 0 station 0
+refinery/a rpm 0.00 courier   random    N    2  trapped box 0 solid 0 station 0  G1 0 (joined metal 0, at tick 0 0)  billed 0  stuck box 0 station 0
+refinery/a courier: 120 placements from 120 draws
+refinery/a rpm 0.00 freighter all       N  360  trapped box 332 solid 0 station 0  G1 332 (joined metal 323, at tick 0 256)  billed 254  stuck box 0 station 0
+refinery/a rpm 0.00 freighter face+n    N  116  trapped box 111 solid 0 station 0  G1 111 (joined metal 109, at tick 0 93)  billed 84  stuck box 0 station 0
+refinery/a rpm 0.00 freighter face      N    4  trapped box 2 solid 0 station 0  G1 2 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/a rpm 0.00 freighter nose+n    N  116  trapped box 104 solid 0 station 0  G1 104 (joined metal 102, at tick 0 70)  billed 85  stuck box 0 station 0
+refinery/a rpm 0.00 freighter nose      N    4  trapped box 3 solid 0 station 0  G1 3 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/a rpm 0.00 freighter random+n  N  116  trapped box 111 solid 0 station 0  G1 111 (joined metal 110, at tick 0 93)  billed 80  stuck box 0 station 0
+refinery/a rpm 0.00 freighter random    N    4  trapped box 1 solid 0 station 0  G1 1 (joined metal 0, at tick 0 0)  billed 1  stuck box 0 station 0
+refinery/a freighter: 120 placements from 120 draws
+refinery/b rpm 0.00 courier   all       N  360  trapped box 312 solid 0 station 0  G1 312 (joined metal 308, at tick 0 210)  billed 241  stuck box 0 station 0
+refinery/b rpm 0.00 courier   face+n    N  117  trapped box 98 solid 0 station 0  G1 98 (joined metal 97, at tick 0 67)  billed 78  stuck box 0 station 0
+refinery/b rpm 0.00 courier   face      N    3  trapped box 2 solid 0 station 0  G1 2 (joined metal 2, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/b rpm 0.00 courier   nose+n    N  117  trapped box 97 solid 0 station 0  G1 97 (joined metal 95, at tick 0 61)  billed 72  stuck box 0 station 0
+refinery/b rpm 0.00 courier   nose      N    3  trapped box 2 solid 0 station 0  G1 2 (joined metal 2, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/b rpm 0.00 courier   random+n  N  117  trapped box 110 solid 0 station 0  G1 110 (joined metal 109, at tick 0 82)  billed 84  stuck box 0 station 0
+refinery/b rpm 0.00 courier   random    N    3  trapped box 3 solid 0 station 0  G1 3 (joined metal 3, at tick 0 0)  billed 3  stuck box 0 station 0
+refinery/b courier: 120 placements from 120 draws
+refinery/b rpm 0.00 freighter all       N  360  trapped box 321 solid 0 station 0  G1 321 (joined metal 318, at tick 0 227)  billed 257  stuck box 0 station 0
+refinery/b rpm 0.00 freighter face+n    N  116  trapped box 103 solid 0 station 0  G1 103 (joined metal 103, at tick 0 78)  billed 86  stuck box 0 station 0
+refinery/b rpm 0.00 freighter face      N    4  trapped box 2 solid 0 station 0  G1 2 (joined metal 2, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/b rpm 0.00 freighter nose+n    N  116  trapped box 97 solid 0 station 0  G1 97 (joined metal 96, at tick 0 60)  billed 78  stuck box 0 station 0
+refinery/b rpm 0.00 freighter nose      N    4  trapped box 3 solid 0 station 0  G1 3 (joined metal 3, at tick 0 0)  billed 3  stuck box 0 station 0
+refinery/b rpm 0.00 freighter random+n  N  116  trapped box 112 solid 0 station 0  G1 112 (joined metal 110, at tick 0 89)  billed 85  stuck box 0 station 0
+refinery/b rpm 0.00 freighter random    N    4  trapped box 4 solid 0 station 0  G1 4 (joined metal 4, at tick 0 0)  billed 3  stuck box 0 station 0
+refinery/b freighter: 120 placements from 120 draws
+refinery/c rpm 0.00 courier   all       N  360  trapped box 308 solid 0 station 0  G1 308 (joined metal 269, at tick 0 182)  billed 233  stuck box 0 station 0
+refinery/c rpm 0.00 courier   face+n    N  115  trapped box 99 solid 0 station 0  G1 99 (joined metal 88, at tick 0 65)  billed 75  stuck box 0 station 0
+refinery/c rpm 0.00 courier   face      N    5  trapped box 3 solid 0 station 0  G1 3 (joined metal 3, at tick 0 0)  billed 3  stuck box 0 station 0
+refinery/c rpm 0.00 courier   nose+n    N  115  trapped box 91 solid 0 station 0  G1 91 (joined metal 72, at tick 0 38)  billed 74  stuck box 0 station 0
+refinery/c rpm 0.00 courier   nose      N    5  trapped box 0 solid 0 station 0  G1 0 (joined metal 0, at tick 0 0)  billed 0  stuck box 0 station 0
+refinery/c rpm 0.00 courier   random+n  N  115  trapped box 110 solid 0 station 0  G1 110 (joined metal 101, at tick 0 79)  billed 76  stuck box 0 station 0
+refinery/c rpm 0.00 courier   random    N    5  trapped box 5 solid 0 station 0  G1 5 (joined metal 5, at tick 0 0)  billed 5  stuck box 0 station 0
+refinery/c courier: 120 placements from 120 draws
+refinery/c rpm 0.00 freighter all       N  360  trapped box 315 solid 0 station 0  G1 315 (joined metal 270, at tick 0 200)  billed 254  stuck box 0 station 0
+refinery/c rpm 0.00 freighter face+n    N  118  trapped box 101 solid 0 station 0  G1 101 (joined metal 87, at tick 0 70)  billed 84  stuck box 0 station 0
+refinery/c rpm 0.00 freighter face      N    2  trapped box 1 solid 0 station 0  G1 1 (joined metal 0, at tick 0 0)  billed 1  stuck box 0 station 0
+refinery/c rpm 0.00 freighter nose+n    N  118  trapped box 94 solid 0 station 0  G1 94 (joined metal 76, at tick 0 47)  billed 77  stuck box 0 station 0
+refinery/c rpm 0.00 freighter nose      N    2  trapped box 2 solid 0 station 0  G1 2 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/c rpm 0.00 freighter random+n  N  118  trapped box 115 solid 0 station 0  G1 115 (joined metal 104, at tick 0 83)  billed 88  stuck box 0 station 0
+refinery/c rpm 0.00 freighter random    N    2  trapped box 2 solid 0 station 0  G1 2 (joined metal 2, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/c freighter: 120 placements from 120 draws
+refinery/d rpm 0.00 courier   all       N  360  trapped box 310 solid 0 station 0  G1 310 (joined metal 298, at tick 0 271)  billed 239  stuck box 0 station 0
+refinery/d rpm 0.00 courier   face+n    N  118  trapped box 107 solid 0 station 0  G1 107 (joined metal 103, at tick 0 98)  billed 84  stuck box 0 station 0
+refinery/d rpm 0.00 courier   face      N    2  trapped box 2 solid 0 station 0  G1 2 (joined metal 1, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/d rpm 0.00 courier   nose+n    N  118  trapped box 84 solid 0 station 0  G1 84 (joined metal 79, at tick 0 66)  billed 67  stuck box 0 station 0
+refinery/d rpm 0.00 courier   nose      N    2  trapped box 1 solid 0 station 0  G1 1 (joined metal 1, at tick 0 0)  billed 1  stuck box 0 station 0
+refinery/d rpm 0.00 courier   random+n  N  118  trapped box 114 solid 0 station 0  G1 114 (joined metal 112, at tick 0 107)  billed 83  stuck box 0 station 0
+refinery/d rpm 0.00 courier   random    N    2  trapped box 2 solid 0 station 0  G1 2 (joined metal 2, at tick 0 0)  billed 2  stuck box 0 station 0
+refinery/d courier: 120 placements from 120 draws
+refinery/d rpm 0.00 freighter all       N  360  trapped box 311 solid 0 station 0  G1 311 (joined metal 308, at tick 0 277)  billed 246  stuck box 0 station 0
+refinery/d rpm 0.00 freighter face+n    N  119  trapped box 107 solid 0 station 0  G1 107 (joined metal 107, at tick 0 100)  billed 84  stuck box 0 station 0
+refinery/d rpm 0.00 freighter face      N    1  trapped box 1 solid 0 station 0  G1 1 (joined metal 0, at tick 0 0)  billed 1  stuck box 0 station 0
+refinery/d rpm 0.00 freighter nose+n    N  119  trapped box 85 solid 0 station 0  G1 85 (joined metal 83, at tick 0 66)  billed 71  stuck box 0 station 0
+refinery/d rpm 0.00 freighter nose      N    1  trapped box 1 solid 0 station 0  G1 1 (joined metal 1, at tick 0 0)  billed 1  stuck box 0 station 0
+refinery/d rpm 0.00 freighter random+n  N  119  trapped box 116 solid 0 station 0  G1 116 (joined metal 116, at tick 0 111)  billed 88  stuck box 0 station 0
+refinery/d rpm 0.00 freighter random    N    1  trapped box 1 solid 0 station 0  G1 1 (joined metal 1, at tick 0 0)  billed 1  stuck box 0 station 0
+refinery/d freighter: 120 placements from 120 draws
+ 10 pass
+ 0 fail
+ 20 expect() calls
+Ran 10 tests across 1 file. [120.33s]
