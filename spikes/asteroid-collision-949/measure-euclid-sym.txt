@@ -1,0 +1,77 @@
+samples 38400 a proxy; overshoot and undershoot in fractions of the bound radius
+  fractured-block hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0171
+  fractured-block hs32: L0 surface below the proxy, radial p99 0.0058 p50 0.0000; overshoot p50 0.0003
+  fractured-block hs64: L0 surface below the proxy, radial p99 0.0022 p50 0.0000; overshoot p50 0.0001
+  fractured-block hs96: L0 surface below the proxy, radial p99 0.0012 p50 0.0000; overshoot p50 0.0001
+  long-wedge hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0180
+  long-wedge hs32: L0 surface below the proxy, radial p99 0.0075 p50 0.0000; overshoot p50 0.0002
+  long-wedge hs64: L0 surface below the proxy, radial p99 0.0026 p50 0.0000; overshoot p50 0.0001
+  long-wedge hs96: L0 surface below the proxy, radial p99 0.0014 p50 0.0000; overshoot p50 0.0001
+  flat-slab hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0140
+  flat-slab hs32: L0 surface below the proxy, radial p99 0.0115 p50 0.0000; overshoot p50 0.0002
+  flat-slab hs64: L0 surface below the proxy, radial p99 0.0042 p50 0.0000; overshoot p50 0.0001
+  flat-slab hs96: L0 surface below the proxy, radial p99 0.0024 p50 0.0000; overshoot p50 0.0000
+  contact-binary hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0268
+  contact-binary hs32: L0 surface below the proxy, radial p99 0.0067 p50 0.0000; overshoot p50 0.0002
+  contact-binary hs64: L0 surface below the proxy, radial p99 0.0025 p50 0.0000; overshoot p50 0.0001
+  contact-binary hs96: L0 surface below the proxy, radial p99 0.0013 p50 0.0000; overshoot p50 0.0000
+  angular-shard hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0163
+  angular-shard hs32: L0 surface below the proxy, radial p99 0.0065 p50 0.0000; overshoot p50 0.0002
+  angular-shard hs64: L0 surface below the proxy, radial p99 0.0028 p50 0.0000; overshoot p50 0.0001
+  angular-shard hs96: L0 surface below the proxy, radial p99 0.0015 p50 0.0000; overshoot p50 0.0000
+  stepped-strata hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0256
+  stepped-strata hs32: L0 surface below the proxy, radial p99 0.0104 p50 0.0000; overshoot p50 0.0014
+  stepped-strata hs64: L0 surface below the proxy, radial p99 0.0050 p50 0.0000; overshoot p50 0.0010
+  stepped-strata hs96: L0 surface below the proxy, radial p99 0.0029 p50 0.0000; overshoot p50 0.0008
+  impact-basin hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0191
+  impact-basin hs32: L0 surface below the proxy, radial p99 0.0066 p50 0.0000; overshoot p50 0.0004
+  impact-basin hs64: L0 surface below the proxy, radial p99 0.0026 p50 0.0000; overshoot p50 0.0002
+  impact-basin hs96: L0 surface below the proxy, radial p99 0.0014 p50 0.0000; overshoot p50 0.0001
+  rubble-block hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0196
+  rubble-block hs32: L0 surface below the proxy, radial p99 0.0071 p50 0.0000; overshoot p50 0.0003
+  rubble-block hs64: L0 surface below the proxy, radial p99 0.0027 p50 0.0000; overshoot p50 0.0002
+  rubble-block hs96: L0 surface below the proxy, radial p99 0.0015 p50 0.0000; overshoot p50 0.0001
+  cleaved-keel hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0187
+  cleaved-keel hs32: L0 surface below the proxy, radial p99 0.0099 p50 0.0000; overshoot p50 0.0003
+  cleaved-keel hs64: L0 surface below the proxy, radial p99 0.0034 p50 0.0000; overshoot p50 0.0001
+  cleaved-keel hs96: L0 surface below the proxy, radial p99 0.0018 p50 0.0000; overshoot p50 0.0001
+  crooked-tooth hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0185
+  crooked-tooth hs32: L0 surface below the proxy, radial p99 0.0076 p50 0.0000; overshoot p50 0.0002
+  crooked-tooth hs64: L0 surface below the proxy, radial p99 0.0028 p50 0.0000; overshoot p50 0.0001
+  crooked-tooth hs96: L0 surface below the proxy, radial p99 0.0015 p50 0.0000; overshoot p50 0.0000
+  broken-disc hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0204
+  broken-disc hs32: L0 surface below the proxy, radial p99 0.0124 p50 0.0000; overshoot p50 0.0003
+  broken-disc hs64: L0 surface below the proxy, radial p99 0.0049 p50 0.0000; overshoot p50 0.0001
+  broken-disc hs96: L0 surface below the proxy, radial p99 0.0028 p50 0.0000; overshoot p50 0.0001
+  three-lobed hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0321
+  three-lobed hs32: L0 surface below the proxy, radial p99 0.0069 p50 0.0000; overshoot p50 0.0005
+  three-lobed hs64: L0 surface below the proxy, radial p99 0.0023 p50 0.0000; overshoot p50 0.0003
+  three-lobed hs96: L0 surface below the proxy, radial p99 0.0013 p50 0.0000; overshoot p50 0.0002
+  split-spine hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0222
+  split-spine hs32: L0 surface below the proxy, radial p99 0.0090 p50 0.0000; overshoot p50 0.0010
+  split-spine hs64: L0 surface below the proxy, radial p99 0.0038 p50 0.0000; overshoot p50 0.0006
+  split-spine hs96: L0 surface below the proxy, radial p99 0.0022 p50 0.0000; overshoot p50 0.0005
+  saddle hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0253
+  saddle hs32: L0 surface below the proxy, radial p99 0.0077 p50 0.0000; overshoot p50 0.0003
+  saddle hs64: L0 surface below the proxy, radial p99 0.0029 p50 0.0000; overshoot p50 0.0001
+  saddle hs96: L0 surface below the proxy, radial p99 0.0017 p50 0.0000; overshoot p50 0.0001
+  battered-pyramid hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0214
+  battered-pyramid hs32: L0 surface below the proxy, radial p99 0.0079 p50 0.0000; overshoot p50 0.0003
+  battered-pyramid hs64: L0 surface below the proxy, radial p99 0.0025 p50 0.0000; overshoot p50 0.0001
+  battered-pyramid hs96: L0 surface below the proxy, radial p99 0.0014 p50 0.0000; overshoot p50 0.0001
+  offset-boulder hull: L0 surface below the proxy, radial p99 0.0000 p50 0.0000; overshoot p50 0.0219
+  offset-boulder hs32: L0 surface below the proxy, radial p99 0.0073 p50 0.0000; overshoot p50 0.0004
+  offset-boulder hs64: L0 surface below the proxy, radial p99 0.0026 p50 0.0000; overshoot p50 0.0002
+  offset-boulder hs96: L0 surface below the proxy, radial p99 0.0014 p50 0.0000; overshoot p50 0.0002
+hull  overshoot max 0.1836 (25 m: 4.6 m, 400 m: 73.4 m), p99 max 0.1610; drawn vertex outside max 0.0000; reach max 0.999
+      per archetype overshoot: 0.057 0.047 0.041 0.128 0.039 0.079 0.091 0.054 0.071 0.051 0.075 0.184 0.052 0.106 0.068 0.124
+      per archetype vertex-outside: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+hs32  overshoot max 0.0304 (25 m: 0.8 m, 400 m: 12.1 m), p99 max 0.0187; drawn vertex outside max 0.1039; reach max 0.994
+      per archetype overshoot: 0.022 0.015 0.015 0.014 0.012 0.030 0.023 0.018 0.016 0.014 0.016 0.021 0.024 0.017 0.016 0.020
+      per archetype vertex-outside: 0.039 0.045 0.063 0.049 0.065 0.052 0.040 0.042 0.104 0.079 0.063 0.045 0.052 0.061 0.051 0.048
+hs64  overshoot max 0.0301 (25 m: 0.8 m, 400 m: 12.0 m), p99 max 0.0186; drawn vertex outside max 0.0679; reach max 0.997
+      per archetype overshoot: 0.022 0.012 0.013 0.013 0.011 0.030 0.023 0.017 0.016 0.014 0.013 0.021 0.023 0.019 0.016 0.022
+      per archetype vertex-outside: 0.034 0.055 0.053 0.043 0.068 0.047 0.043 0.044 0.052 0.053 0.057 0.035 0.060 0.040 0.033 0.046
+hs96  overshoot max 0.0300 (25 m: 0.8 m, 400 m: 12.0 m), p99 max 0.0186; drawn vertex outside max 0.0548; reach max 0.998
+      per archetype overshoot: 0.023 0.012 0.013 0.014 0.009 0.030 0.024 0.018 0.014 0.014 0.013 0.021 0.023 0.019 0.015 0.022
+      per archetype vertex-outside: 0.029 0.039 0.045 0.044 0.053 0.047 0.035 0.042 0.047 0.052 0.055 0.037 0.044 0.048 0.040 0.035

@@ -1,0 +1,16 @@
+res 16: 1536 texels, 3 KB an archetype at 16 bits
+  overshoot max 0.4176, p99 max 0.2828, mean max 0.0825; drawn surface outside (sampled rays) max 0.0302; drawn vertex outside max 0.0352
+  per archetype max overshoot: 0.225 0.301 0.418 0.239 0.363 0.181 0.226 0.195 0.411 0.232 0.383 0.206 0.260 0.274 0.333 0.223
+  per archetype p99 overshoot: 0.140 0.202 0.270 0.181 0.242 0.138 0.173 0.139 0.255 0.166 0.283 0.162 0.172 0.194 0.186 0.169
+res 32: 6144 texels, 12 KB an archetype at 16 bits
+  overshoot max 0.2919, p99 max 0.1603, mean max 0.0421; drawn surface outside (sampled rays) max 0.0189; drawn vertex outside max 0.0356
+  per archetype max overshoot: 0.148 0.193 0.274 0.165 0.254 0.121 0.152 0.120 0.292 0.197 0.244 0.120 0.168 0.174 0.221 0.145
+  per archetype p99 overshoot: 0.079 0.111 0.153 0.100 0.134 0.087 0.100 0.083 0.139 0.096 0.160 0.091 0.097 0.115 0.103 0.098
+res 48: 13824 texels, 27 KB an archetype at 16 bits
+  overshoot max 0.2083, p99 max 0.1134, mean max 0.0283; drawn surface outside (sampled rays) max 0.0000; drawn vertex outside max 0.0358
+  per archetype max overshoot: 0.104 0.143 0.192 0.111 0.208 0.103 0.108 0.097 0.207 0.138 0.184 0.098 0.135 0.147 0.185 0.113
+  per archetype p99 overshoot: 0.056 0.077 0.106 0.069 0.094 0.068 0.072 0.060 0.095 0.067 0.113 0.063 0.071 0.079 0.072 0.070
+res 64: 24576 texels, 48 KB an archetype at 16 bits
+  overshoot max 0.1760, p99 max 0.0885, mean max 0.0214; drawn surface outside (sampled rays) max 0.0019; drawn vertex outside max 0.0427
+  per archetype max overshoot: 0.082 0.122 0.176 0.095 0.176 0.089 0.099 0.088 0.167 0.134 0.147 0.081 0.123 0.122 0.143 0.094
+  per archetype p99 overshoot: 0.044 0.060 0.084 0.054 0.072 0.058 0.056 0.047 0.073 0.053 0.088 0.049 0.057 0.062 0.056 0.055

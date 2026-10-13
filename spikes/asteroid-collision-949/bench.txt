@@ -1,0 +1,3 @@
+R 25 m: 114 box samples + 24576 texels scanned: 523.0 µs a test (0 hits)
+R 100 m: 114 box samples + 24576 texels scanned: 687.6 µs a test (0 hits)
+R 400 m: 114 box samples + 24576 texels scanned: 381.9 µs a test (0 hits)
