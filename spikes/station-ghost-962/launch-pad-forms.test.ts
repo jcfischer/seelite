@@ -23,6 +23,15 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
+import {
+	installShippedShipyards,
+	uninstallShipyards,
+} from "../../scripts/lib/shipped-shipyards";
+import {
+	EMPTY_LIMIT_M,
+	shipyardTriangles,
+	TriangleGrid,
+} from "../../scripts/lib/shipyard-proxies";
 import { LAUNCH_CLEAR_HULL_LENGTHS } from "../../src/arrival";
 import {
 	type Impact,
@@ -91,8 +100,8 @@ import {
 } from "../../src/station-interior";
 import {
 	type ProxyBox,
-	proxyPoses,
 	proxyListDistanceKm,
+	proxyPoses,
 	proxyReachKm,
 	proxySolids,
 	type StationEnd,
@@ -101,15 +110,6 @@ import {
 	stationProxyOf,
 } from "../../src/station-proxy";
 import { MAX_DT } from "../../src/units";
-import {
-	installShippedShipyards,
-	uninstallShipyards,
-} from "../../scripts/lib/shipped-shipyards";
-import {
-	EMPTY_LIMIT_M,
-	shipyardTriangles,
-	TriangleGrid,
-} from "../../scripts/lib/shipyard-proxies";
 import {
 	add,
 	cross,

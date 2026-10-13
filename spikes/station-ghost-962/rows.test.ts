@@ -22,8 +22,8 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-	pairSeparation,
 	type Primitive,
+	pairSeparation,
 	type SolidMotion,
 	shipPose,
 	sweepShip,
