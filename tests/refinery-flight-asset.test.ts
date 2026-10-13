@@ -13,8 +13,8 @@
  *   model geometry in the deck the game draws (`stationInterior("refinery")`),
  *   nor anywhere in front of it, where the berths, the traversal and the
  *   approach corridor are;
- * - the lane's floor is the model's, just behind the deck, seen through the
- *   deck's hole;
+ * - the lane's floor is the model's, behind the sim's landing well, seen
+ *   through the deck's hole;
  * - a frame surrounds the deck.
  */
 import { describe, expect, test } from "bun:test";
@@ -24,6 +24,7 @@ import { MAX_ASSET_BYTES } from "../scripts/check-dist-sizes.mjs";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
+import { padOpeningFloorKm } from "../src/station-proxy";
 
 /** The four forms, `a` to `d` (receipt §Current result). */
 const NAMES = ["warren", "collar", "spar", "works"] as const;
@@ -197,15 +198,17 @@ describe("refinery flight assets (#819)", () => {
 				expect(hits(pad)).toEqual([]);
 			});
 
-			test("floors the lane just behind the deck", () => {
-				// Seen through the deck's hole: the model's own floor, behind the
-				// deck's back face and no deeper than a deck again.
+			test("floors the lane behind the landing well", () => {
+				// Seen through the deck's hole: the model's own floor. A docking hull
+				// may reach the well's floor below the plane (`padOpeningFloorKm`),
+				// so the floor stands behind it, and no deeper than two decks.
 				const all = tris.map(({ tri }) => tri);
+				const well = padOpeningFloorKm("refinery") * 1000;
 				for (const fx of [-0.9, -0.45, 0, 0.45, 0.9])
 					for (const fy of [-0.9, -0.45, 0, 0.45, 0.9]) {
 						const z = firstHitDownAxis(all, fx * HOLE_HALF_M, fy * HOLE_HALF_M);
 						expect(z).not.toBeNull();
-						expect(z!).toBeLessThan(PLANE_M - DECK_DEPTH_M);
+						expect(z!).toBeLessThan(well);
 						expect(z!).toBeGreaterThan(PLANE_M - 2 * DECK_DEPTH_M);
 					}
 			});

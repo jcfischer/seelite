@@ -99,7 +99,7 @@ PAD_WALL_M=20
 PAD_FRAME_M=36       # the frame's border outside the walls' inner face
 PAD_FRAME_DEPTH_M=30
 PAD_RECESS_M=24      # the deck's face behind the frame's front
-PAD_FLOOR_M=45       # the lane's floor behind the deck's face
+PAD_FLOOR_M=60       # the lane's floor behind the deck's face, past the sim's 50.6 m landing well
 PAD_CUT_M=40         # rock cleared outside the housing, before displacement
 # Per model: the frame's centre and front face, metres, in the shaped frame,
 # and how far the housing runs back into the rock. None keeps the review
