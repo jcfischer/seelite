@@ -1,0 +1,18 @@
+P1 envelope − bilinear: min 0.00e+0, max 0.0729 (unit R)
+P1 envelope − bilinear: min 0.00e+0, max 0.0972 (unit R)
+R1 2 km/s z 0.6: ref 0.2752, sweep 0.2751 (60 advances), naive 0.3461 — 14.2 m past first contact
+R1 2 km/s z 0.7: ref 0.2862, sweep 0.2861 (59 advances), naive 0.3835 — 19.5 m past first contact
+R1 2 km/s z 0.8: ref 0.2972, sweep 0.2970 (59 advances), naive 0.5796 — 56.5 m past first contact
+R1 10 km/s z 0.6: ref 0.4551, sweep 0.4550 (68 advances), naive 0.4595 — 4.5 m past first contact
+R1 10 km/s z 0.7: ref 0.4572, sweep 0.4572 (68 advances), naive 0.5022 — 45.0 m past first contact
+R1 10 km/s z 0.8: ref 0.4595, sweep 0.4594 (68 advances), naive 0.4809 — 21.5 m past first contact
+R2 end of step overlaps the needle: true; naive clear; sweep impact at 0.4975; ref 0.5000
+C1 nose-on: impact prim 1 at 0.1994; belly: prim 0 at 0.1994; stowed nose-on: prim 0 at 0.4104
+G1 per rock: ghost (45 pieces overlapped); per piece: impact at 0.0701
+K1 rocks sha256 0622d06b78601aae32b7d6f414d0c1eebfb29e2a79a200e370529008f084cd1c
+P2 inflation max 1.007681; envelope − field: min 0.00e+0, max 0.0218 R
+A1 {"cases":192,"refHits":109,"sweepHits":109,"touchNoOverlap":0,"ghosts":49,"capped":0,"maxAdv":7719}
+A3 64 grazes: false impacts 0; most advances in one step 1943
+ 10 pass
+ 0 fail
+Ran 10 tests across 1 file. [41.38s]

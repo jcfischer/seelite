@@ -1,0 +1,34 @@
+rocks runtime/asteroids.glb sha256 0622d06b78601aae
+rocks runtime/asteroids.glb sha256 0622d06b78601aae
+rocks sha256 0622d06b78601aae32b7d6f414d0c1eebfb29e2a79a200e370529008f084cd1c; REPS 5; load 18.8 21.1 23.3
+320 cases built
+µs per rock per tick (median / p90 / max over 16 archetypes × REPS); work per call (GJK queries, advances); outcomes
+R  25 m approach  tree64 472/1192/1949 (gjk 438, adv 426, impact 16) | df64 3194/6143/15241 (gjk 2663, adv 2651, impact 16) | tree32 386/797/1274 (gjk 316, adv 304, impact 16) | point949 628/773/979
+R  25 m graze     tree64 289/418/538 (gjk 194, adv 182, clear 16) | df64 318/693/1307 (gjk 261, adv 249, clear 16) | tree32 281/428/552 (gjk 195, adv 183, clear 16) | point949 602/734/871
+R  25 m resting   tree64 706/1044/1300 (gjk 431, adv 198, clear 16) | df64 777/1704/3851 (gjk 709, adv 336, clear 16) | tree32 466/923/1195 (gjk 341, adv 163, clear 16) | point949 631/762/969
+R  25 m near      tree64 70/95/191 (gjk 60, adv 48, clear 16) | df64 34/58/68 (gjk 43, adv 31, clear 16) | tree32 60/84/96 (gjk 59, adv 47, clear 16) | point949 583/707/802
+R  25 m assistOff tree64 485/1279/2359 (gjk 440, adv 428, impact 16) | df64 3318/6042/9491 (gjk 2658, adv 2646, impact 16) | tree32 367/864/1104 (gjk 318, adv 306, impact 16) | point949 600/726/1014
+R  40 m approach  tree64 402/910/1201 (gjk 351, adv 339, impact 16) | df64 2514/3815/12398 (gjk 2152, adv 2140, impact 16) | tree32 309/549/1023 (gjk 276, adv 264, impact 16) | point949 639/777/919
+R  40 m graze     tree64 306/446/695 (gjk 220, adv 205, clear 16) | df64 344/749/2320 (gjk 309, adv 296, clear 16) | tree32 280/444/587 (gjk 219, adv 204, clear 16) | point949 599/698/1028
+R  40 m resting   tree64 607/1105/2037 (gjk 395, adv 186, clear 16) | df64 726/1752/4038 (gjk 626, adv 301, clear 16) | tree32 454/785/1120 (gjk 310, adv 149, clear 16) | point949 631/752/862
+R  40 m near      tree64 88/121/178 (gjk 70, adv 56, clear 16) | df64 66/105/160 (gjk 59, adv 47, clear 16) | tree32 81/107/152 (gjk 69, adv 55, clear 16) | point949 594/704/1021
+R  40 m assistOff tree64 461/1079/1234 (gjk 355, adv 343, impact 16) | df64 2747/4188/8798 (gjk 2126, adv 2114, impact 16) | tree32 343/577/1104 (gjk 279, adv 267, impact 16) | point949 606/732/970
+R 100 m approach  tree64 384/550/1040 (gjk 290, adv 273, impact 16) | df64 1820/3186/6968 (gjk 1669, adv 1655, impact 16) | tree32 290/494/1926 (gjk 243, adv 227, impact 16) | point949 618/724/799
+R 100 m graze     tree64 291/435/639 (gjk 264, adv 236, clear 16) | df64 404/918/1094 (gjk 406, adv 377, clear 16) | tree32 264/401/506 (gjk 258, adv 229, clear 16) | point949 600/692/771
+R 100 m resting   tree64 403/675/1093 (gjk 338, adv 162, clear 16) | df64 525/1170/1586 (gjk 516, adv 250, clear 16) | tree32 249/464/559 (gjk 249, adv 122, clear 16) | point949 608/719/934
+R 100 m near      tree64 114/185/290 (gjk 102, adv 80, clear 16) | df64 95/179/321 (gjk 100, adv 81, clear 16) | tree32 105/181/285 (gjk 102, adv 79, clear 16) | point949 588/682/895
+R 100 m assistOff tree64 447/640/1229 (gjk 294, adv 282, impact 16) | df64 1975/4031/9966 (gjk 1670, adv 1658, impact 16) | tree32 332/575/785 (gjk 248, adv 236, impact 16) | point949 601/686/752
+R 400 m approach  tree64 321/610/4431 (gjk 220, adv 192, impact 16) | df64 361/803/5601 (gjk 307, adv 281, impact 16) | tree32 218/395/607 (gjk 169, adv 141, impact 16) | point949 600/695/829
+R 400 m graze     tree64 359/711/820 (gjk 284, adv 228, clear 16) | df64 493/1268/1827 (gjk 447, adv 375, clear 16) | tree32 279/506/669 (gjk 249, adv 196, clear 16) | point949 587/721/789
+R 400 m resting   tree64 283/473/1064 (gjk 241, adv 119, clear 16) | df64 372/956/1395 (gjk 356, adv 177, clear 16) | tree32 205/332/514 (gjk 189, adv 93, clear 16) | point949 596/694/790
+R 400 m near      tree64 175/269/566 (gjk 142, adv 103, clear 16) | df64 172/378/557 (gjk 187, adv 138, clear 16) | tree32 146/249/306 (gjk 140, adv 101, clear 16) | point949 592/737/1816
+R 400 m assistOff tree64 375/539/924 (gjk 282, adv 269, impact 16) | df64 1453/2802/7606 (gjk 1409, adv 1396, impact 16) | tree32 285/393/684 (gjk 224, adv 211, impact 16) | point949 596/695/852
+load at end 12.3 18.3 21.9
+flat64 R 100 m approach archetype 0: 189580 µs, gjk 182697, impact
+flat64 R 100 m approach archetype 1: 201705 µs, gjk 178465, impact
+flat64 R 100 m approach archetype 2: 205514 µs, gjk 174638, impact
+flat64 R 100 m graze archetype 0: 99519 µs, gjk 142863, clear
+flat64 R 100 m graze archetype 1: 110920 µs, gjk 142145, clear
+flat64 R 100 m graze archetype 2: 120952 µs, gjk 150243, clear
+rocks in reach of one step at 2 km/s, ship within 100 m of a rock: 1: 20000 (of 20000)
+rocks in reach of one step at 10 km/s, ship within 100 m of a rock: 1: 19437, 2: 563 (of 20000)

@@ -1,0 +1,3 @@
+rocks runtime/asteroids.glb sha256 0622d06b78601aae
+run 1: build ms per archetype median 294, max 420, all 16 4949; 25,350 pieces × 5 vertices each
+run 2: build ms per archetype median 315, max 670, all 16 5855; 25,350 pieces × 5 vertices each

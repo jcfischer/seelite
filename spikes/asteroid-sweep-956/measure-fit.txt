@@ -1,0 +1,19 @@
+rocks runtime/asteroids.glb sha256 0622d06b78601aae
+fractured-block    field max 0.0221 p99 0.0106 | pieces max 0.0227 p99 0.0107 | inflation max 1.0012
+long-wedge         field max 0.0123 p99 0.0069 | pieces max 0.0142 p99 0.0070 | inflation max 1.0039
+flat-slab          field max 0.0132 p99 0.0051 | pieces max 0.0137 p99 0.0054 | inflation max 1.0048
+contact-binary     field max 0.0133 p99 0.0066 | pieces max 0.0135 p99 0.0067 | inflation max 1.0038
+angular-shard      field max 0.0110 p99 0.0044 | pieces max 0.0131 p99 0.0045 | inflation max 1.0077
+stepped-strata     field max 0.0301 p99 0.0186 | pieces max 0.0301 p99 0.0187 | inflation max 1.0019
+impact-basin       field max 0.0235 p99 0.0095 | pieces max 0.0236 p99 0.0097 | inflation max 1.0016
+rubble-block       field max 0.0171 p99 0.0095 | pieces max 0.0178 p99 0.0096 | inflation max 1.0019
+cleaved-keel       field max 0.0162 p99 0.0062 | pieces max 0.0141 p99 0.0064 | inflation max 1.0046
+crooked-tooth      field max 0.0136 p99 0.0071 | pieces max 0.0136 p99 0.0072 | inflation max 1.0032
+broken-disc        field max 0.0130 p99 0.0062 | pieces max 0.0139 p99 0.0064 | inflation max 1.0052
+three-lobed        field max 0.0209 p99 0.0126 | pieces max 0.0210 p99 0.0126 | inflation max 1.0021
+split-spine        field max 0.0232 p99 0.0128 | pieces max 0.0232 p99 0.0128 | inflation max 1.0044
+saddle             field max 0.0188 p99 0.0080 | pieces max 0.0189 p99 0.0081 | inflation max 1.0032
+battered-pyramid   field max 0.0156 p99 0.0075 | pieces max 0.0154 p99 0.0077 | inflation max 1.0021
+offset-boulder     field max 0.0220 p99 0.0101 | pieces max 0.0227 p99 0.0103 | inflation max 1.0010
+field: colliding empty space max 0.0301 R, p99 max 0.0186 R
+pieces: colliding empty space max 0.0301 R, p99 max 0.0187 R
