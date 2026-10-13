@@ -1,7 +1,9 @@
 /**
  * Node #952: pick the gallery's fixed fields from galaxy 0 of the fingerprint
- * world 0x5ee11e. Prints the p99 charted field (s173), a median charted field,
- * and one rare field of each placement kind found.
+ * world 0x5ee11e. Prints #950's fixture field (s173, looked up by system), the median charted
+ * field, and the median rare field of each placement kind. `capture.mjs` copies
+ * its choices and their rock counts by hand, and refuses a field whose count
+ * no longer matches.
  *
  *   bun spikes/asteroid-gallery-952/pick-fields.ts
  */

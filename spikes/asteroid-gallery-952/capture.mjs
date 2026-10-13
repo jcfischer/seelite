@@ -42,25 +42,29 @@ const WORLD = 0x5ee11e;
 const OUT = process.env.OUT ?? "spikes/asteroid-gallery-952/gallery";
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5198);
-/** Fixed by `pick-fields.ts`: the p99 charted field, the median charted field,
- *  and the median rare belt field of galaxy 0. */
+/** Copied from `pick-fields.ts`'s output: #950's fixture field (s173), the median
+ *  charted field and the median rare belt field of galaxy 0. `rocks` is that
+ *  output's count, and a capture whose generated field differs refuses. */
 const ALL_FIELDS = [
 	{
 		key: "s173",
 		system: 173,
 		kind: "charted",
-		note: "charted, 210 rocks (#950's p99 fixture)",
+		rocks: 210,
+		note: "charted, 210 rocks (#950's fixture)",
 	},
 	{
 		key: "s221",
 		system: 221,
 		kind: "charted",
+		rocks: 185,
 		note: "charted, 185 rocks (median of 93)",
 	},
 	{
 		key: "s84",
 		system: 84,
 		kind: "rare",
+		rocks: 90,
 		note: "rare belt field, 90 rocks (median belt)",
 	},
 ];
@@ -369,6 +373,15 @@ try {
 		await page.keyboard.press("v");
 		await page.waitForFunction(() => window.__seelite.view === "chase");
 		const info = await installField(page, field);
+		// The sheet says each field is at its charted position: hold it to that.
+		if (info.rocks !== field.rocks)
+			throw new Error(
+				`${field.key}: ${info.rocks} rocks, pick-fields printed ${field.rocks}`,
+			);
+		if (info.hostCheckKm !== null && info.hostCheckKm > 1e-6)
+			throw new Error(
+				`${field.key}: refinery off its orbit law by ${info.hostCheckKm} km`,
+			);
 		console.log(
 			`  ${field.key}: ${JSON.stringify(info)}; renderer ${renderer}`,
 		);
@@ -382,6 +395,10 @@ try {
 					},
 					[arm, view],
 				);
+				if (miss.missKm > 1e-6 || miss.offDeg > 0.01)
+					throw new Error(
+						`${field.key} ${view}: camera placed ${miss.missKm} km, ${miss.offDeg}° off`,
+					);
 				await settle(page);
 				const file = `${field.key}-${view}-${arm.replace("@", "-")}.jpg`;
 				await page.screenshot({
