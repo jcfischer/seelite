@@ -23,6 +23,7 @@ import * as THREE from "three";
 import { MAX_ASSET_BYTES } from "../scripts/check-dist-sizes.mjs";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { STATION_GEOMETRY } from "../src/station";
+import { REFINERY_PAD_FRAME } from "../src/refinery-pad-frame";
 import { stationInterior } from "../src/station-interior";
 import { padOpeningFloorKm } from "../src/station-proxy";
 
@@ -211,6 +212,39 @@ describe("refinery flight assets (#819)", () => {
 						expect(z!).toBeLessThan(well);
 						expect(z!).toBeGreaterThan(PLANE_M - 2 * DECK_DEPTH_M);
 					}
+			});
+
+			test("puts its frame's face where the lights stand on it", () => {
+				// `REFINERY_PAD_FRAME`: the game stands the heat glow on the inner
+				// lip, the vent banks on the top border and a lamp at each corner,
+				// so a model built to other figures would leave them hanging or
+				// buried. Sampled where they stand. (The
+				// Collar's side pods stand proud of the side borders' outer half,
+				// where no light is.)
+				const all = tris.map(({ tri }) => tri);
+				const front = REFINERY_PAD_FRAME.frontKm * 1000;
+				for (const [x, y] of [
+					[0, 201],
+					[0, -201],
+					[201, 0],
+					[-201, 0],
+					[0, 234],
+					[0, -234],
+					[206, 206],
+					[-206, 206],
+					[206, -206],
+					[-206, -206],
+				]) {
+					const z = firstHitDownAxis(all, x, y);
+					expect([x, y, z !== null]).toEqual([x, y, true]);
+					// The dark face, or its ochre armour 1.8 m proud of it; the
+					// lights stand 2.5 m proud (`buildRefineryPadCues`).
+					expect([x, y, z! > front - 0.3 && z! < front + 2]).toEqual([
+						x,
+						y,
+						true,
+					]);
+				}
 			});
 
 			test("frames the deck", () => {

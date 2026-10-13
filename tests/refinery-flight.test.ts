@@ -85,6 +85,20 @@ describe("authored refineries (#819)", () => {
 				mesh.dispose();
 			});
 
+			test("carries the role's heat glow, flare and obstruction lamps on its pad frame", () => {
+				// The principal's ruling of 2026-10-13 ("add lights"): §5's names,
+				// each an object with a mesh, and their lights among the fixtures.
+				const mesh = build();
+				for (const name of ["heat-glow", "flare", "obstruction-beacon"]) {
+					const found = mesh.root.getObjectByName(name);
+					expect([name, found !== undefined]).toEqual([name, true]);
+				}
+				const kinds = new Set(mesh.fixtures.map((f) => f.kind));
+				for (const kind of ["work", "flare", "beacon"])
+					expect([kind, kinds.has(kind as never)]).toEqual([kind, true]);
+				mesh.dispose();
+			});
+
 			test("names its study lamps as the role's windows", () => {
 				// `AUTHORED_FIXTURE_NAMES.refinery`; a name that missed would leave
 				// the per-fixture probe an empty list to pass on.

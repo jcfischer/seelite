@@ -49,6 +49,12 @@
  * would buy nothing §7 rests identity on.
  */
 
+import {
+	PAD_CUE_PROUD_KM,
+	PAD_VENT_BANK_KM,
+	PAD_VENT_BANK_X_KM,
+	type RefineryPadFrame,
+} from "./refinery-pad-frame";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
@@ -6628,6 +6634,75 @@ export function buildRefineryNavigation(
 		STATION_GEOMETRY.refinery.aperturePlaneKm,
 		berthSeed,
 	);
+}
+
+/**
+ * The refinery's three cues on an authored exterior (principal, 2026-10-13:
+ * "add lights"), on the pad frame every authored refinery shares: a heat
+ * glow along the frame's inner lip, two vent banks on its top border facing
+ * the approach (their throats are the flare, the first nozzle of each
+ * carries an obstruction beacon, as the procedural forms' banks do), and an
+ * obstruction beacon at each outer corner. Everything stands
+ * `PAD_CUE_PROUD_KM` in front of the frame's face, clear of its armour plates,
+ * so no lit face lies on a face of the model.
+ */
+export function buildRefineryPadCues(
+	fixtures: StationFixture[],
+	frame: RefineryPadFrame,
+): THREE.Group {
+	const group = new THREE.Group();
+	group.name = "refinery-pad-cues";
+	const z = frame.frontKm + PAD_CUE_PROUD_KM;
+	const { innerKm: inner, outerKm: outer } = frame;
+
+	const heat = emissiveMaterial(
+		STATION_VISUALS.refinery.heatColor,
+		STATION_EMISSIVE_INTENSITIES.off,
+	);
+	const glow = new THREE.Group();
+	glow.name = "heat-glow";
+	const bar = 0.004;
+	const lip = inner + 0.002 + bar / 2;
+	for (const side of [-1, 1]) {
+		const across = new THREE.Mesh(
+			new THREE.BoxGeometry(2 * (lip + bar / 2), bar, bar),
+			heat,
+		);
+		across.position.set(0, side * lip, z);
+		const up = new THREE.Mesh(
+			new THREE.BoxGeometry(bar, 2 * (lip - bar / 2), bar),
+			heat,
+		);
+		up.position.set(side * lip, 0, z);
+		glow.add(across, up);
+	}
+	detail(glow, "reduced");
+	fixtures.push({
+		material: heat,
+		base: STATION_EMISSIVE_INTENSITIES.heatRing,
+		kind: "work",
+		offsetS: 0,
+	});
+	group.add(glow);
+
+	const border = (inner + outer) / 2;
+	for (const x of PAD_VENT_BANK_X_KM) {
+		const bank = buildVentBank(fixtures, PAD_VENT_BANK_KM, true);
+		// The manifold's back on the frame's face; its nozzles lean up and out.
+		bank.position.set(x, border, z + PAD_VENT_BANK_KM * 0.17 * 0.5);
+		group.add(bank);
+	}
+
+	const corner = outer - 0.03;
+	for (const sx of [-1, 1])
+		for (const sy of [-1, 1])
+			group.add(
+				obstructionBeacon(
+					fixtures,
+					new THREE.Vector3(sx * corner, sy * corner, z),
+				),
+			);
+	return group;
 }
 
 /**

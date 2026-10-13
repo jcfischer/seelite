@@ -71,6 +71,12 @@ import {
 	interiorAxialSpanKm,
 	stationInterior,
 } from "./station-interior";
+import {
+	PAD_CUE_PROUD_KM,
+	PAD_VENT_BANK_KM,
+	PAD_VENT_BANK_X_KM,
+	REFINERY_PAD_FRAME,
+} from "./refinery-pad-frame";
 import { REFINERY_PROXIES, REFINERY_PROXY_PACK } from "./refinery-proxies";
 import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
 import {
@@ -621,6 +627,33 @@ function padDeck(): ProxyBox[] {
 	);
 }
 
+/**
+ * The two vent banks the game stands on an authored refinery's pad frame
+ * (`buildRefineryPadCues`, principal 2026-10-13): their nozzles reach 64 m in
+ * front of the frame, past the proxy's vertex slack, so they are solid. One
+ * box a bank, from `buildVentBank`'s own proportions: the manifold runs
+ * −0.34 to 0.38 of its length, is 0.17 of it across, and its nozzles lean
+ * 0.35 rad up from the axis for 0.34 of it.
+ */
+function padVentBanks(): ProxyBox[] {
+	const L = PAD_VENT_BANK_KM;
+	const across = L * 0.17;
+	const { innerKm, outerKm, frontKm } = REFINERY_PAD_FRAME;
+	const y = (innerKm + outerKm) / 2;
+	const z0 = frontKm + PAD_CUE_PROUD_KM;
+	const reach = L * 0.34;
+	return PAD_VENT_BANK_X_KM.map((x) =>
+		boxOf({
+			x0: x - L * 0.34,
+			x1: x + L * 0.38,
+			y0: y - across * 0.43,
+			y1: y + across * 0.64 + reach * Math.sin(0.35),
+			z0,
+			z1: z0 + across * 1.2 + reach * Math.cos(0.35),
+		}),
+	);
+}
+
 const authoredRefineries = new Map<string, StationProxy>();
 function authoredRefineryProxy(
 	form: keyof typeof REFINERY_PROXIES,
@@ -630,7 +663,7 @@ function authoredRefineryProxy(
 		const { rock, plant } = refineryProxyBoxes(form);
 		// A refinery does not turn; its primitives are listed as the procedural
 		// forms list theirs.
-		proxy = proxyOf([...rock, ...plant, ...padDeck()]);
+		proxy = proxyOf([...rock, ...plant, ...padDeck(), ...padVentBanks()]);
 		authoredRefineries.set(form, proxy);
 	}
 	return proxy;

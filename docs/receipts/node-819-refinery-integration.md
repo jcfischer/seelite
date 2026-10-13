@@ -33,6 +33,33 @@ is merged into `node/819-refinery-integration`, 2026-10-13.
 - **Open:** the in-game look of all four, the visual/probe rows the authored
   exteriors move, SOP §4's LOD measurement, Sage, the browser gate.
 
+## In-game look (principal, 2026-10-13)
+
+"Looking good", with flicker round the pad's dark edges, and the lights
+wanted (Q3: "yes add lights").
+
+- **Flicker.** A headless scan of every overlapping coplanar face pair from
+  different meshes at the pad (within 260 m of the axis, 80 m behind the
+  plane to 50 m in front) found none in the model and all of them in the
+  game's own pad drawing, which every pad role shares (#282's question): the
+  deck's outer walls and its kerb, the deck's hole and the lit touchdown ring,
+  and inside each berth the kerb and apron ends, the backing and apron sides,
+  and the tally and guide tops. The kerb and the touchdown ring step back one
+  rim step (1 m), as #269's bay rings do; the berth's kerb, backing and tally
+  grow by 2% of a length, 2% of a beam and 0.2 of a plate. The scan then
+  found no visible pair. Not yet confirmed in flight.
+- **Lights** (`buildRefineryPadCues`): on the pad frame every authored
+  refinery shares (`src/refinery-pad-frame.ts`), a heat glow along its inner
+  lip, two vent banks on its top border facing the approach (their throats
+  are the flare; each carries an obstruction lamp on its first nozzle), and an
+  obstruction lamp at each outer corner, all 2.5 m in front of the frame's
+  face, clear of its 1.8 m armour. `AUTHORED_FIXTURE_NAMES.refinery` is now
+  the procedural row. The banks' nozzles reach 64 m in front of the frame, past
+  the proxy's 60 m slack, so the sim makes each bank one box
+  (`padVentBanks`). A row holds every shipped model's frame face to the
+  figures where the lights stand (the Collar's side pods stand proud of its
+  side borders' outer half, where no light is).
+
 ## Integration contract
 
 - **Units and axes.** The flight export is in the station's frame, metres,

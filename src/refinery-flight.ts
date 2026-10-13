@@ -19,10 +19,12 @@ import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
 import { REFINERY_GLB_URLS } from "./model-urls";
+import { REFINERY_PAD_FRAME } from "./refinery-pad-frame";
 import { STATION_GEOMETRY } from "./station";
 import { NAMEPLATE_NAME } from "./station-interior-mesh";
 import {
 	buildRefineryNavigation,
+	buildRefineryPadCues,
 	installRefineryBuilder,
 	type RefineryForm,
 	type StationFixture,
@@ -100,7 +102,12 @@ export function createRefineryBuilder(
 		const km = new THREE.Group();
 		km.name = "km";
 		km.scale.setScalar(1 / coreRadiusKm);
-		km.add(exterior, spinner, buildRefineryNavigation(fixtures, berthSeed));
+		km.add(
+			exterior,
+			spinner,
+			buildRefineryNavigation(fixtures, berthSeed),
+			buildRefineryPadCues(fixtures, REFINERY_PAD_FRAME),
+		);
 		const root = new THREE.Group();
 		root.add(km);
 		const nameplates: THREE.Mesh[] = [];

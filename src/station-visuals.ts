@@ -352,9 +352,10 @@ export const AUTHORED_FIXTURE_NAMES: Readonly<
 > = Object.freeze({
 	shipyard: Object.freeze(["windows", "mouth-strobe"]),
 	// An authored refinery (node #819) carries its study's amber lamps as
-	// `windows`. The approved models have no heat glow, flare or obstruction
-	// beacon; whether they owe them is the principal's, at the in-game look. // glossary-ignore: beacon
-	refinery: Object.freeze(["windows"]),
+	// `windows`, and since the principal's ruling (2026-10-13, "add lights")
+	// the role's heat glow, flare and obstruction lamps on its pad frame
+	// (`buildRefineryPadCues`): the procedural row, the same four names.
+	refinery: SPEC_FIXTURE_NAMES.refinery,
 });
 
 /**
