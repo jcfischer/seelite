@@ -328,8 +328,14 @@ export const SPEC_FIXTURE_NAMES: Readonly<
  *  station carrying one is drawn from an approved model (node #818). Here
  *  rather than in `shipyard-flight.ts`, which is a lazy chunk. */
 export const AUTHORED_DRUM_NAME = "shipyard-drum";
+/** An authored refinery's exterior (node #819), the marker for a role that
+ *  has no drum. */
+export const AUTHORED_EXTERIOR_NAME = "authored-exterior";
 export function isAuthoredStation(root: THREE.Object3D): boolean {
-	return !!root.getObjectByName(AUTHORED_DRUM_NAME);
+	return (
+		!!root.getObjectByName(AUTHORED_DRUM_NAME) ||
+		!!root.getObjectByName(AUTHORED_EXTERIOR_NAME)
+	);
 }
 
 /**
@@ -345,6 +351,11 @@ export const AUTHORED_FIXTURE_NAMES: Readonly<
 	Partial<Record<StationType, readonly string[]>>
 > = Object.freeze({
 	shipyard: Object.freeze(["windows", "mouth-strobe"]),
+	// An authored refinery (node #819) carries its study's amber lamps as
+	// `windows`, and since the principal's ruling (2026-10-13, "add lights")
+	// the role's heat glow, flare and obstruction lamps on its pad frame
+	// (`buildRefineryPadCues`): the procedural row, the same four names.
+	refinery: SPEC_FIXTURE_NAMES.refinery,
 });
 
 /**

@@ -63,3 +63,13 @@ export const SHIPYARD_PROBE_URLS = {
 	b: new URL("./models/shipyard-foundry-probes.bin", import.meta.url).href,
 	c: new URL("./models/shipyard-slipway-probes.bin", import.meta.url).href,
 } as const;
+
+/** The four refineries (node #819), prepared by
+ *  `spikes/refineries/prepare-flight-asset.mjs`: form `a` Warren, `b` Collar,
+ *  `c` Spar, `d` Works. */
+export const REFINERY_GLB_URLS = {
+	a: new URL("./models/refinery-warren.glb", import.meta.url).href,
+	b: new URL("./models/refinery-collar.glb", import.meta.url).href,
+	c: new URL("./models/refinery-spar.glb", import.meta.url).href,
+	d: new URL("./models/refinery-works.glb", import.meta.url).href,
+} as const;

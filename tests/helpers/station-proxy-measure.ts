@@ -255,10 +255,21 @@ export function framePrimitives(
 	type: StationType,
 	spun: boolean,
 ): readonly ProxyPrimitive[] {
-	if (!STATION_GEOMETRY[type].spins)
-		return [...proxy.spinning, ...proxy.static];
+	if (!STATION_GEOMETRY[type].spins) {
+		// One list per proxy, not one per vertex: `proxyContains` indexes a
+		// long list once and keys the index on the list, so a fresh copy for
+		// every vertex re-indexed an authored refinery's ~10 000 boxes per
+		// vertex (node #819: one form's row ran past five minutes).
+		let both = whole.get(proxy);
+		if (!both) {
+			both = [...proxy.spinning, ...proxy.static];
+			whole.set(proxy, both);
+		}
+		return both;
+	}
 	return spun ? proxy.spinning : proxy.static;
 }
+const whole = new WeakMap<StationProxy, readonly ProxyPrimitive[]>();
 
 /** Is this vertex inside a primitive of its own frame, within a tolerance? */
 export function vertexInsideProxy(
@@ -310,9 +321,18 @@ export function verticesOutsideProxy(
 	opening: Opening,
 	tolerance: number,
 ): NamedVertex[] {
-	return extractVertices(built, type).filter(
-		(vertex) =>
-			!inOpening(opening, vertex.v) &&
-			!vertexInsideProxy(proxy, type, vertex, tolerance),
-	);
+	// One query a position: the authored models are flat-shaded, so a corner
+	// is several vertices at one place, and the Works' row ran past its
+	// budget asking each (node #819).
+	const seen = new Set<string>();
+	return extractVertices(built, type).filter((vertex) => {
+		const { v } = vertex;
+		const key = `${vertex.spun ? 1 : 0},${v.x},${v.y},${v.z}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return (
+			!inOpening(opening, v) &&
+			!vertexInsideProxy(proxy, type, vertex, tolerance)
+		);
+	});
 }

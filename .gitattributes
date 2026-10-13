@@ -6,3 +6,5 @@ public/music-samples/**/*.ogg filter=lfs diff=lfs merge=lfs -text
 # Editable visual-study model binaries, kept outside production assets.
 spikes/shipyards/*.blend filter=lfs diff=lfs merge=lfs -text
 spikes/shipyards/*.glb filter=lfs diff=lfs merge=lfs -text
+spikes/refineries/*.blend filter=lfs diff=lfs merge=lfs -text
+spikes/refineries/*.glb filter=lfs diff=lfs merge=lfs -text

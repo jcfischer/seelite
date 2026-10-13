@@ -641,6 +641,18 @@ export async function shipyardModelsSettled(page, timeout = 60000) {
 }
 
 /**
+ * Wait until the authored refineries' background load has settled (#819), for
+ * `shipyardModelsSettled`'s reason.
+ */
+export async function refineryModelsSettled(page, timeout = 60000) {
+	await page.waitForFunction(
+		() => window.__seelite?.refineryModelsSettled === true,
+		null,
+		{ timeout },
+	);
+}
+
+/**
  * Wait until the settings screen exists, so a script can drive its key.
  *
  * **The first drawn frame is not that moment.** `main.ts` mounts the screen from

@@ -612,7 +612,19 @@ for (const viewport of VIEWPORTS) {
 			programs.total > 0 && programs.unlinked === 0,
 			`${programs.total - programs.unlinked}/${programs.total} linked`,
 		);
-		check(
+		// The procedural rock's rows gate the refinery's stand-in. An authored
+		// refinery (node #819) draws the approved model's own textured rock and
+		// no patched material, so for one they are reported, not gated, as
+		// #818's rows on the procedural yard are.
+		const rockAuthored = await page.evaluate(
+			(id) => window.__seelite.isAuthoredStationId(id),
+			byType.refinery,
+		);
+		const rockCheck = (name, pass, detail) =>
+			rockAuthored
+				? console.log(`  report (authored refinery): ${name} — ${detail}`)
+				: check(name, pass, detail);
+		rockCheck(
 			"the rock's own program is among them, and linked",
 			programs.rock > 0 && programs.rockLinked === programs.rock,
 			`${programs.rockLinked}/${programs.rock} "station-rock" programs`,
@@ -658,12 +670,12 @@ for (const viewport of VIEWPORTS) {
 			return { all: out, onRefinery };
 		}, byType.refinery);
 		const landed = splices.all.flat();
-		check(
+		rockCheck(
 			"the refinery carries a patched rock material",
 			splices.onRefinery > 0,
 			`${splices.onRefinery} patched material(s) under the refinery`,
 		);
-		check(
+		rockCheck(
 			"every rock-surface splice found its marker",
 			landed.length > 0 && landed.every(([, ok]) => ok),
 			landed.length

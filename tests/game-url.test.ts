@@ -120,6 +120,16 @@ describe("gameUrl", () => {
 			has(gameUrl(ORIGIN, {}, { override: `${ORIGIN}/?boot=overlay` })),
 		).toBe(false);
 	});
+	test("and the refineries (#819); the same boots opt out", () => {
+		const has = (url: string) =>
+			new URL(url).searchParams.has("refineries-full");
+		expect(has(gameUrl(ORIGIN))).toBe(true);
+		expect(has(gameUrl(ORIGIN, { "refineries-full": false }))).toBe(false);
+		expect(has(gameUrl(ORIGIN, {}, { boot: null }))).toBe(false);
+		expect(
+			has(gameUrl(ORIGIN, {}, { override: `${ORIGIN}/?boot=overlay` })),
+		).toBe(false);
+	});
 	test("adds boot=direct to a default-route boot", () => {
 		const url = new URL(gameUrl(ORIGIN, { seed: 42 }));
 		expect(url.origin).toBe(ORIGIN);
