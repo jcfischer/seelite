@@ -22,6 +22,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import * as THREE from "three";
 import { LAUNCH_CLEAR_HULL_LENGTHS } from "../src/arrival";
 import {
 	type Impact,
@@ -100,6 +101,15 @@ import {
 	stationProxyOf,
 } from "../src/station-proxy";
 import { MAX_DT } from "../src/units";
+import {
+	installShippedShipyards,
+	uninstallShipyards,
+} from "../scripts/lib/shipped-shipyards";
+import {
+	EMPTY_LIMIT_M,
+	shipyardTriangles,
+	TriangleGrid,
+} from "../scripts/lib/shipyard-proxies";
 import {
 	add,
 	cross,
@@ -1281,7 +1291,7 @@ function crossesStation(
 }
 
 describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
-	test("the crossing count excludes empty space inside a sparse station's reach", () => {
+	test("the crossing count excludes empty space inside a sparse station's reach", async () => {
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);
 		const proxy = stationProxyOf(stationInForm("shipyard", "a"));
@@ -1298,8 +1308,39 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 		// Both chords enter the authored Gantry Works' bounding sphere (node
 		// #818). Only the second crosses metal: it runs through the centre of
 		// the yard's largest box. The first is the first point on a few rings
-		// inside the reach whose chord meets nothing — the yard is a frame,
-		// and most of its sphere is empty.
+		// inside the reach whose chord the **model** says meets nothing: no
+		// triangle within the rule's 10 m plus the hull's reach of any point on
+		// it (sage round 6: chosen by `crossesStation`, an invisible wall had
+		// passed as long as one candidate came back clear). The yard is a
+		// frame, and most of its sphere is empty.
+		await installShippedShipyards();
+		let tris: Awaited<ReturnType<typeof shipyardTriangles>>;
+		try {
+			tris = await shipyardTriangles("a");
+		} finally {
+			uninstallShipyards();
+		}
+		const [spinning, fixed] = solids;
+		const grids = [
+			{ pose: spinning.start, grid: new TriangleGrid(tris.drum, 50) },
+			{ pose: fixed.start, grid: new TriangleGrid(tris.yard, 50) },
+		];
+		const clearM = EMPTY_LIMIT_M + reachKm(hullSolid("courier")) * 1000 + 5;
+		const at = new THREE.Vector3();
+		const clearOfModel = (motion: SolidMotion) => {
+			const from = motion.start.origin;
+			const to = motion.end.origin;
+			const steps = Math.ceil((length(sub(to, from)) * 1000) / 5);
+			for (let n = 0; n <= steps; n++) {
+				const p = add(from, scale(sub(to, from), n / steps));
+				for (const { pose, grid } of grids) {
+					const d = sub(p, pose.origin);
+					at.set(dot(d, pose.x), dot(d, pose.y), dot(d, pose.z));
+					if (grid.within(at.multiplyScalar(1000), clearM)) return false;
+				}
+			}
+			return true;
+		};
 		const reach = proxyReachKm(proxy);
 		const empty = [0.9, 0.75, 0.6]
 			.flatMap((share) =>
@@ -1311,16 +1352,17 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 					] as const;
 				}),
 			)
-			.find(([x, y]) => !crossesStation(chord(x, y), solids, MAX_DT));
+			.find(([x, y]) => clearOfModel(chord(x, y)));
 		const [largest] = [...proxy.static]
 			.filter((p): p is ProxyBox => p.kind === "box")
 			.sort((a, b) => b.hx * b.hy * b.hz - a.hx * a.hy * a.hz);
 		expect(empty).toBeDefined();
 		expect(Math.hypot(...empty!)).toBeLessThan(reach);
+		expect(crossesStation(chord(...empty!), solids, MAX_DT)).toBe(false);
 		expect(crossesStation(chord(largest.cx, largest.cy), solids, MAX_DT)).toBe(
 			true,
 		);
-	});
+	}, 60_000);
 	test("no cruise exit places a ship inside a proxy, and the legs through a non-target station are counted", () => {
 		const shipBox = hullSolid("miner")[0];
 		let legs = 0;

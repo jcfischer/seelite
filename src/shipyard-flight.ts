@@ -31,6 +31,7 @@ import {
 import type { ProbeGrid, YardWorkLight } from "./ship-work-light";
 import { STATION_GEOMETRY } from "./station";
 import { NAMEPLATE_NAME } from "./station-interior-mesh";
+import { AUTHORED_DRUM_NAME } from "./station-visuals";
 import {
 	buildShipyardNavigation,
 	installShipyardBuilder,
@@ -270,7 +271,7 @@ export function createShipyardBuilder(
 		capsule.quaternion.identity();
 		capsule.scale.setScalar(1);
 		const drum = new THREE.Group();
-		drum.name = "shipyard-drum";
+		drum.name = AUTHORED_DRUM_NAME;
 		drum.scale.setScalar(0.001);
 		drum.add(capsule);
 		capsule.traverse((o) => {
@@ -349,28 +350,27 @@ export function prepareShipyardModel(
 	if (!promise) {
 		// The lightmap is light, not shape: a yard whose lightmap fails still
 		// installs, dark as before.
-		const lightmap =
-			workLightMode() === "baked" || comparing
-				? new THREE.TextureLoader()
-						.loadAsync(SHIPYARD_LIGHTMAP_URLS[form])
-						.catch((error) => {
-							console.warn(`shipyard ${form}: no work-light lightmap`, error);
-							return null;
-						})
-				: Promise.resolve(null);
-		const probes =
-			workLightMode() === "baked" || comparing
-				? // A file of this bundle (#830), fetched as `bundle-fetch.ts` allows;
-					// in the chain, so a failure is the catch's, as the lightmap's is.
-					Promise.resolve()
-						.then(() =>
-							fetchBundled(
-								new URL(SHIPYARD_PROBE_URLS[form], location.href).pathname,
-							),
-						)
-						.then((r) => (r.ok ? r.arrayBuffer() : null))
-						.catch(() => null)
-				: Promise.resolve(null);
+		const wantsBake = workLightMode() === "baked" || comparing;
+		const lightmap = wantsBake
+			? new THREE.TextureLoader()
+					.loadAsync(SHIPYARD_LIGHTMAP_URLS[form])
+					.catch((error) => {
+						console.warn(`shipyard ${form}: no work-light lightmap`, error);
+						return null;
+					})
+			: Promise.resolve(null);
+		const probes = wantsBake
+			? // A file of this bundle (#830), fetched as `bundle-fetch.ts` allows;
+				// in the chain, so a failure is the catch's, as the lightmap's is.
+				Promise.resolve()
+					.then(() =>
+						fetchBundled(
+							new URL(SHIPYARD_PROBE_URLS[form], location.href).pathname,
+						),
+					)
+					.then((r) => (r.ok ? r.arrayBuffer() : null))
+					.catch(() => null)
+			: Promise.resolve(null);
 		promise = new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
 			.loadAsync(SHIPYARD_GLB_URLS[form], onProgress)

@@ -17,7 +17,7 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
 
   | Form | File | Bytes | Triangles | sha256 |
   |---|---|---|---|---|
-| a | `shipyard-gantry.glb` | 10 494 100 (10.01 MiB) | 200 924 | `bf0378666f0f19f9ff66a4aa599719d3ae29470f2e851930d27763f3584b4f0b` |
+  | a | `shipyard-gantry.glb` | 10 494 100 (10.01 MiB) | 200 924 | `bf0378666f0f19f9ff66a4aa599719d3ae29470f2e851930d27763f3584b4f0b` |
   | b | `shipyard-foundry.glb` | 10 819 548 (10.32 MiB) | 209 272 | `0aed305df76af134142a6e620d184adb946440ded7e7195d6640ab0b32651cc1` |
   | c | `shipyard-slipway.glb` | 7 992 896 (7.62 MiB) | 135 736 | `71b7edefe1bb68bda61d2e4c9f5b775970a8ff1d6cb28a675d8cc74ebd0e3cc5` |
 

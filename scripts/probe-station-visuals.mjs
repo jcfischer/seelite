@@ -176,7 +176,7 @@ const measure = (page, bodyId, type) =>
 			const g = window.__seelite;
 			const mesh = window.__meshOfBody(id);
 			// An authored yard has its own §5 names (node #818).
-			const authored = !!mesh?.getObjectByName("shipyard-drum");
+			const authored = g.isAuthoredStationId(id);
 			const specNames =
 				(authored ? g.authoredFixtures : g.specFixtures)[role] ?? [];
 			const fixtureNames = [...new Set([...specNames, ...unruled])];
@@ -535,8 +535,7 @@ for (const viewport of VIEWPORTS) {
 		checkFraming(check, `${viewport.name}: ${type}`, framing);
 		const m = await measure(page, id, type);
 		const authored = await page.evaluate(
-			(bodyId) =>
-				!!window.__meshOfBody(bodyId)?.getObjectByName("shipyard-drum"),
+			(bodyId) => window.__seelite.isAuthoredStationId(bodyId),
 			id,
 		);
 		lit[type] = { ...m, silhouetteKm, authored };

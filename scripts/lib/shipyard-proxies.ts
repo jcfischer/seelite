@@ -27,6 +27,7 @@
  */
 import * as THREE from "three";
 import { SHIPYARD_FORMS } from "../../src/shipyard-flight";
+import { AUTHORED_DRUM_NAME } from "../../src/station-visuals";
 import { STATION_GEOMETRY } from "../../src/station";
 import { stationInterior } from "../../src/station-interior";
 import { buildStationForm } from "../../src/station-mesh";
@@ -584,7 +585,7 @@ export async function fitShipyardProxies(): Promise<
 	for (const form of SHIPYARD_FORMS) {
 		if (only && !only.includes(form)) continue;
 		const built = buildStationForm("shipyard", form, 0x888888, 0, 0);
-		const drumParts = partsOf(built.root, "shipyard-drum");
+		const drumParts = partsOf(built.root, AUTHORED_DRUM_NAME);
 		const yardParts = partsOf(built.root, "shipyard-yard");
 		const plane = STATION_GEOMETRY.shipyard.aperturePlaneKm * 1000;
 		const bay = stationInterior("shipyard", plane / 1000);
@@ -700,7 +701,7 @@ export async function shipyardTriangles(
 	await installShippedShipyards();
 	const built = buildStationForm("shipyard", form, 0x888888, 0, 0);
 	const out = {
-		drum: partsOf(built.root, "shipyard-drum").flat(),
+		drum: partsOf(built.root, AUTHORED_DRUM_NAME).flat(),
 		yard: partsOf(built.root, "shipyard-yard").flat(),
 	};
 	built.dispose();

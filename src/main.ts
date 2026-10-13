@@ -753,6 +753,7 @@ import {
 } from "./station-mesh";
 import {
 	AUTHORED_FIXTURE_NAMES,
+	isAuthoredStation,
 	SPEC_FIXTURE_NAMES,
 	stationFinishId,
 } from "./station-visuals";
@@ -4370,6 +4371,14 @@ class Game {
 	 * `fixture.material.emissiveIntensity` from the game shell made this depend
 	 * on how a fixture stores its drive.
 	 */
+	/** Whether a station is drawn from an approved model (node #818), for the
+	 *  probes that report rather than gate what such a station never had to
+	 *  pass. One predicate, so a renamed marker cannot flip one probe alone. */
+	isAuthoredStationId(id: string): boolean {
+		const station = this.stationVisuals.get(id);
+		return !!station && isAuthoredStation(station.root);
+	}
+
 	visualOfStation(id: string) {
 		const station = this.stationVisuals.get(id);
 		return station ? stationVisualSnapshot(station) : null;
@@ -6899,7 +6908,7 @@ class Game {
 			const previous = this.stationVisuals.get(body.id);
 			// Built after the install (a home shipyard, a later jump): already
 			// the authored model.
-			if (!previous || previous.root.getObjectByName("shipyard-drum")) continue;
+			if (!previous || isAuthoredStation(previous.root)) continue;
 			const live = () => this.stationVisuals.get(body.id) === previous;
 			const built = buildStationMesh(station, body.color);
 			built.root.name = body.id;
@@ -6954,7 +6963,7 @@ class Game {
 	/** Every drawn authored shipyard's programs, after a system is built. */
 	private async prewarmShipyardPrograms(): Promise<void> {
 		for (const station of [...this.stationVisuals.values()])
-			if (station.root.getObjectByName("shipyard-drum"))
+			if (isAuthoredStation(station.root))
 				await this.prewarmStationPrograms(station.root);
 	}
 

@@ -533,10 +533,7 @@ const iou = (a, b) => {
  * wide down the axis, so "wider" is not a cue they carry.
  */
 const isAuthored = (id) =>
-	page.evaluate(
-		(bodyId) => !!window.__meshOfBody(bodyId)?.getObjectByName("shipyard-drum"),
-		id,
-	);
+	page.evaluate((bodyId) => window.__seelite.isAuthoredStationId(bodyId), id);
 
 /**
  * Capture all three silhouettes at one range and compare them pairwise.
@@ -728,7 +725,7 @@ for (const station of setup.stations) {
 			return {
 				hull: core ? core.material.color.getHex() : null,
 				body: body.color,
-				authored: !!mesh?.getObjectByName("shipyard-drum"),
+				authored: g.isAuthoredStationId(id),
 			};
 		},
 		[station.id],

@@ -1311,8 +1311,9 @@ def seated_flood(c,n,back=None,reach=4.):
  # on the side of it the lamp is on.
  near=SEAT["bvh"].find_nearest(c,reach*2)
  if near[0] is None:
-  print("SEAT miss",tuple(round(x,1) for x in c),flush=True)
-  return flood(c,n)
+  # A housing with no surface in reach would float, as the by-figure ones
+  # did (3-25 m): stop the build rather than ship one (sage round 6).
+  raise RuntimeError("SEAT miss: no surface within %.0f m of %s"%(reach*2,tuple(round(x,1) for x in c)))
  out=c-near[0];out=out.normalized() if out.length>1e-6 else near[1]
  normal=near[1] if near[1].dot(out)>0 else -near[1]
  mounted_flood(near[0],n,normal)
