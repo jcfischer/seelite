@@ -104,8 +104,8 @@ PAD_CUT_M=40         # rock cleared outside the housing, before displacement
 # Per model: the frame's centre and front face, metres, in the shaped frame,
 # and how far the housing runs back into the rock. None keeps the review
 # box's place.
-FLIGHT_DOCK={'o1':(-69,-163,410),'o2':None,'o3':None,'o4':None}
-FLIGHT_DEPTH_M={'o1':300,'o2':200,'o3':200,'o4':200}
+FLIGHT_DOCK={'o1':(-69,-163,410),'o2':(0,0,650),'o3':(0,0,590),'o4':(-76,-120,500)}
+FLIGHT_DEPTH_M={'o1':300,'o2':250,'o3':200,'o4':250}
 CURRENT={}
 def flight_dock_m(x,y,z):
  """Where the flight frame stands: the review box's front, shaped, unless set."""
@@ -183,8 +183,20 @@ def boolean_cut(ob,c,size):
  bpy.ops.mesh.primitive_cube_add(size=1,location=c);cut=bpy.context.object;cut.scale=size
  bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
  bpy.context.view_layer.objects.active=ob
- mod=ob.modifiers.new("excavation","BOOLEAN");mod.operation='DIFFERENCE';mod.solver='EXACT';mod.object=cut
- bpy.ops.object.modifier_apply(modifier=mod.name);bpy.data.objects.remove(cut,do_unlink=True)
+ kept=ob.data.copy()
+ for self_intersecting in [False,True]:
+  mod=ob.modifiers.new("excavation","BOOLEAN");mod.operation='DIFFERENCE';mod.solver='EXACT';mod.object=cut
+  mod.use_self=self_intersecting
+  bpy.ops.object.modifier_apply(modifier=mod.name)
+  if len(ob.data.polygons):break
+  # The Works' quarry shell intersects itself, and under the flight export's
+  # pad cut the plain exact solver returns nothing (15 360 faces to 0).
+  # Cut the kept copy again in self-intersection mode. (The float solver
+  # returned a ring of fragments.)
+  print('BOOLEAN',ob.name,'exact solver emptied the mesh; self-intersection mode',flush=True)
+  ob.data=kept.copy()
+ if not len(ob.data.polygons):raise RuntimeError('boolean cut emptied '+ob.name)
+ bpy.data.meshes.remove(kept);bpy.data.objects.remove(cut,do_unlink=True)
 def asteroid(scale,center=(0,0,0),seed=5):
  bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=5,radius=1)
  ob=bpy.context.object;ob.name='quarried-asteroid'
@@ -518,7 +530,7 @@ def works():
 
 def clear_housing(root,plane):
  """Nothing of the review layout may stand in the housing's clear volume.
- A loose part reaching into it (a boulder, a tank) goes whole; the rock,
+ A loose part whose bounds reach into it (a boulder, a tank) goes whole; the rock,
  displaced after its cut, is pushed back out to the housing's walls and floor,
  which hide where it was flattened. Shaped metres, before the final move."""
  hi=PAD_INNER_M;back=plane.z-PAD_FLOOR_M
@@ -547,7 +559,11 @@ def clear_housing(root,plane):
      for e in g.edges:
       for h in e.link_faces:
        if h.index not in seen:seen.add(h.index);stack.append(h)
-    if any(inside(v.co) for g in island for v in g.verts):drop+=island
+    # By bounds, not vertices: a long plated box can have every corner outside
+    # the volume and a face straight across it (the Collar's front head).
+    vs=[v.co for g in island for v in g.verts]
+    lo=[min(v[k] for v in vs) for k in range(3)];up=[max(v[k] for v in vs) for k in range(3)]
+    if lo[0]<plane.x+hi and up[0]>plane.x-hi and lo[1]<plane.y+hi and up[1]>plane.y-hi and up[2]>back:drop+=island
    if drop:
     bmesh.ops.delete(bm,geom=drop,context='FACES')
     print('CLEAR',child.name,'faces dropped',len(drop),flush=True)
@@ -592,6 +608,12 @@ def export(id,rockob,port):
  else:
   bpy.context.preferences.filepaths.save_version=0;bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(OUT/(id+'.blend')))
   glb=OUT/(id+'.glb')
+ # The exporter reads the evaluated depsgraph. Without this, a mesh rewritten
+ # through bmesh (`clear_housing`) was intermittently exported as an empty
+ # node: the Warren's rock once, the Works' rock once.
+ for child in root.children:
+  if child.type=='MESH':child.data.update();child.update_tag()
+ bpy.context.view_layer.update()
  bpy.ops.export_scene.gltf(filepath=str(glb),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
  data=glb.read_bytes();jl=struct.unpack_from('<I',data,12)[0];doc=json.loads(data[20:20+jl])
  for m in doc['materials']:

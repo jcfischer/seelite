@@ -25,8 +25,19 @@ import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
 
-/** The forms shipped so far; Warren is the first (receipt §Current result). */
-const ASSETS = ["warren"].map((name) => `src/models/refinery-${name}.glb`);
+/** The four forms, `a` to `d` (receipt §Current result). */
+const NAMES = ["warren", "collar", "spar", "works"] as const;
+
+/** Each review rock's enclosed volume, million cubic metres, measured
+ *  2026-10-13 from `spikes/refineries/o{1,2,3,4}.glb`. The flight rocks read
+ *  451.2, 682.7, 295.2 and 300.1 against them: the pad's cut takes less than
+ *  the review box's bore did. */
+const REVIEW_ROCK_MM3: Record<(typeof NAMES)[number], number> = {
+	warren: 450.3,
+	collar: 666.1,
+	spar: 292.3,
+	works: 300.1,
+};
 
 /** The review studies drew 158 k to 492 k triangles. A ceiling against the
  *  review density coming back, not a measured render budget. */
@@ -105,7 +116,8 @@ function firstHitDownAxis(
 }
 
 describe("refinery flight assets (#819)", () => {
-	for (const path of ASSETS) {
+	for (const name of NAMES) {
+		const path = `src/models/refinery-${name}.glb`;
 		describe(path, async () => {
 			const scene = await decodeShippedGlb(path);
 			scene.updateMatrixWorld(true);
@@ -139,17 +151,31 @@ describe("refinery flight assets (#819)", () => {
 				expect(tris.length).toBeLessThan(TRIANGLE_CEILING);
 			});
 
-			test("carries its rock", () => {
-				// The flight export's clearance step once wrote the asteroid's node
-				// with no mesh, and every other row stayed green.
+			test("carries its rock, whole", () => {
+				// The flight export's cut once wrote the asteroid's node with no mesh,
+				// and once (the float solver on the Works) left a ring of fragments
+				// of more than 5 000 triangles. So the rock's enclosed volume is held
+				// against the review's.
 				const rock = scene.getObjectByName("quarried-asteroid");
 				expect(rock).toBeDefined();
-				let triangles = 0;
+				let volume = 0;
 				rock!.traverse((o) => {
-					if (o instanceof THREE.Mesh)
-						triangles += (o.geometry.getIndex()?.count ?? 0) / 3;
+					if (!(o instanceof THREE.Mesh)) return;
+					const p = o.geometry.getAttribute("position");
+					const ix = o.geometry.getIndex()!;
+					const [a, b, c] = [0, 1, 2].map(() => new THREE.Vector3());
+					for (let i = 0; i < ix.count; i += 3) {
+						a.fromBufferAttribute(p, ix.getX(i)).applyMatrix4(o.matrixWorld);
+						b.fromBufferAttribute(p, ix.getX(i + 1)).applyMatrix4(
+							o.matrixWorld,
+						);
+						c.fromBufferAttribute(p, ix.getX(i + 2)).applyMatrix4(
+							o.matrixWorld,
+						);
+						volume += a.dot(b.clone().cross(c)) / 6;
+					}
 				});
-				expect(triangles).toBeGreaterThan(5000);
+				expect(volume / 1e6).toBeGreaterThan(0.8 * REVIEW_ROCK_MM3[name]);
 			});
 
 			test("marks its aperture plane on the axis at the sim's figure", () => {
