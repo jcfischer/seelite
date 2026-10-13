@@ -6,6 +6,8 @@ exec(compile((Path(__file__).parent/'primitives.py').read_text(),'primitives.py'
 from mathutils import noise
 import sys
 X=Vector((1,0,0));Y=Vector((0,1,0));Z=Vector((0,0,1))
+# The approved broad asteroid proportions, applied at export.
+SHAPE={'o1':(1.15,.96,1),'o2':(1.22,.94,1.14),'o3':(1,1,1),'o4':(1.09,1,1)}
 for i,k in enumerate(ivory):
  MATS[k].diffuse_color=(.68+i*.025,.66+i*.024,.60+i*.023,1)
  for nd in MATS[k].node_tree.nodes:
@@ -81,7 +83,73 @@ def machinery(x,y,z,w=10,h=7,d=8):
 def post(x,y,z,h=4):
  tube((x,y,z),(x,y+h,z),.10,steel)
  box((x,y+h,z),(.8,.35,.6),steel);box((x,y+h-.22,z),(.63,.09,.46),white)
+# Flight export (`-- o1 --flight`, node #819): the recessed pad.
+# The sim's refinery is a pad (#165): a deck 380 m square at the aperture
+# plane, a 216 m hole round the lane and four berths standing on it
+# (`stationInterior("refinery")`). The review box (`dock`) holds neither, so
+# the flight export keeps the framed mouth in the rock, widened to hold the
+# deck and made shallow (principal ruling, 2026-10-13). The game draws the deck
+# and berths; this draws the housing round them and the lane's floor behind
+# the hole. Metres, in the exported frame after the per-model shape; the whole
+# model is then moved so the plane lies on the +Z axis at the sim's figure.
+# tests/refinery-flight-asset.test.ts reads the sim's figures and fails on drift.
+APERTURE_PLANE_M=396
+PAD_INNER_M=200      # the housing's clear half-width; the deck's is 190 m
+PAD_WALL_M=20
+PAD_FRAME_M=36       # the frame's border outside the walls' inner face
+PAD_FRAME_DEPTH_M=30
+PAD_RECESS_M=24      # the deck's face behind the frame's front
+PAD_FLOOR_M=45       # the lane's floor behind the deck's face
+PAD_CUT_M=40         # rock cleared outside the housing, before displacement
+# Per model: the frame's centre and front face, metres, in the shaped frame,
+# and how far the housing runs back into the rock. None keeps the review
+# box's place.
+FLIGHT_DOCK={'o1':(-69,-163,410),'o2':None,'o3':None,'o4':None}
+FLIGHT_DEPTH_M={'o1':300,'o2':200,'o3':200,'o4':200}
+CURRENT={}
+def flight_dock_m(x,y,z):
+ """Where the flight frame stands: the review box's front, shaped, unless set."""
+ if FLIGHT_DOCK[CURRENT['id']] is not None:return Vector(FLIGHT_DOCK[CURRENT['id']])
+ sh=SHAPE[CURRENT['id']];return Vector(((x)*10*sh[0],(y)*10*sh[1],(z+3)*10*sh[2]))
+def pad_housing(f):
+ """The recessed pad's housing, built unshaped in author units from metres."""
+ global OWNER
+ previous=OWNER;OWNER="pad"
+ u=.1;cx,cy,front=f.x*u,f.y*u,f.z*u
+ plane=front-PAD_RECESS_M*u;floor=plane-PAD_FLOOR_M*u;back=plane-FLIGHT_DEPTH_M[CURRENT['id']]*u
+ hi=PAD_INNER_M*u;ho=hi+PAD_WALL_M*u;fd=PAD_FRAME_DEPTH_M*u;fo=hi+PAD_FRAME_M*u
+ wall_front=front-fd;length=wall_front-back;mid=(wall_front+back)/2
+ # Four walls, side walls full height so the corners close.
+ for s in [-1,1]:
+  plated((cx+s*(hi+ho)/2,cy,mid),(ho-hi,2*ho,length),steel,5)
+  plated((cx,cy+s*(hi+ho)/2,mid),(2*hi,ho-hi,length),steel,5)
+ # The lane's floor, seen through the deck's hole.
+ plated((cx,cy,floor-.5),(2*hi,2*hi,1),steel,5)
+ # Ribs along the inner walls, never across the opening.
+ for zz in [floor+.6,(floor+wall_front)/2,wall_front-.4]:
+  for s in [-1,1]:
+   box((cx+s*(hi-.3),cy,zz),(.6,2*hi,.6),alloy)
+   box((cx,cy+s*(hi-.3),zz),(2*hi,.6,.6),alloy)
+ # The frame: the review box's chamfered ring and ochre armour, at pad size.
+ def corners(w,h,c):return [(-w+c,-h),(w-c,-h),(w,-h+c),(w,h-c),(w-c,h),(-w+c,h),(-w,h-c),(-w,-h+c)]
+ outer=corners(fo,fo,4.5);inner=corners(hi,hi,1.2)
+ for i in range(8):
+  j=(i+1)%8
+  pts=[(cx+a,cy+b,wall_front) for a,b in [outer[i],outer[j],inner[j],inner[i]]]
+  prism(pts,Z,fd,steel)
+  op=[Vector(p) for p in pts];c=sum(op,Vector())/4
+  plate([c+(p-c)*.79 for p in op],orange,Z,fd+.18,True)
+ for s in [-1,1]:
+  for t in [-.8,-.4,0,.4,.8]:
+   box((cx+t*hi,cy+s*(hi+1.2),front+.3),(2.4,.3,.17),warm)
+   box((cx+s*(hi+1.2),cy+t*hi,front+.3),(.3,2.4,.17),warm)
+  for t in [-.6,0,.6]:lamp(cx+s*(fo-1),cy+t*hi,front+.25)
+ OWNER=previous
+ return Vector((cx,cy,plane))
 def dock(x,y,z):
+ if FLIGHT:
+  f=flight_dock_m(x,y,z);CURRENT['front']=f
+  return pad_housing(f)
  # A real open box, with recessed ribs and no opaque face across the mouth.
  for yy in [-8.8,8.8]:plated((x,y+yy,z-8),(29,2,20),steel,6)
  for xx in [-14,14]:plated((x+xx,y,z-8),(2,16,20),steel,5)
@@ -153,7 +221,18 @@ def finish_rock(ob):
  for v in ob.data.vertices:v.co*=10
  return ob
 def bore(ob,where):
- x,y,z=where;boolean_cut(ob,(x,y,z-6),(28,17,46))
+ x,y,z=where
+ if FLIGHT:
+  # The housing's footprint and the deck's depth, cleared through the rock's
+  # front, in the rock's unshaped author units. The cut stands PAD_CUT_M
+  # outside the walls and behind the floor because the rock is displaced
+  # after it (`finish_rock`, up to ~30 m along its normals).
+  f=CURRENT['front'];sh=SHAPE[CURRENT['id']];u=.1
+  half=(PAD_INNER_M+PAD_WALL_M+PAD_CUT_M)*u
+  z0=(f.z-(PAD_RECESS_M+PAD_FLOOR_M+PAD_CUT_M))*u;z1=f.z*u+60
+  boolean_cut(ob,(f.x*u/sh[0],f.y*u/sh[1],(z0+z1)/2/sh[2]),(2*half/sh[0],2*half/sh[1],(z1-z0)/sh[2]))
+  return
+ boolean_cut(ob,(x,y,z-6),(28,17,46))
 def boulder(c,r,stretch=(1,1,1)):
  # Small solid angular fragments seated on quarry benches.
  bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,radius=1)
@@ -437,6 +516,42 @@ def works():
   boulder((x,19 if r<.91 else 23,z),random.uniform(.7,2.4))
  return finish_rock(ob),port
 
+def clear_housing(root,plane):
+ """Nothing of the review layout may stand in the housing's clear volume.
+ A loose part reaching into it (a boulder, a tank) goes whole; the rock,
+ displaced after its cut, is pushed back out to the housing's walls and floor,
+ which hide where it was flattened. Shaped metres, before the final move."""
+ hi=PAD_INNER_M;back=plane.z-PAD_FLOOR_M
+ inside=lambda v:abs(v.x-plane.x)<hi and abs(v.y-plane.y)<hi and v.z>back
+ for child in root.children:
+  if child.type!='MESH' or child.name.startswith('pad/'):continue
+  bm=bmesh.new();bm.from_mesh(child.data)
+  if child.name.startswith('quarried-asteroid'):
+   moved=0
+   for v in bm.verts:
+    if not inside(v.co):continue
+    dx=hi-abs(v.co.x-plane.x);dy=hi-abs(v.co.y-plane.y);dz=v.co.z-back
+    m=min(dx,dy,dz)
+    if m==dz:v.co.z=back-.5
+    elif m==dx:v.co.x=plane.x+math.copysign(hi+.5,v.co.x-plane.x)
+    else:v.co.y=plane.y+math.copysign(hi+.5,v.co.y-plane.y)
+    moved+=1
+   print('CLEAR',child.name,'rock vertices moved',moved,flush=True)
+  else:
+   seen=set();drop=[]
+   for f in bm.faces:
+    if f.index in seen:continue
+    island=[];stack=[f];seen.add(f.index)
+    while stack:
+     g=stack.pop();island.append(g)
+     for e in g.edges:
+      for h in e.link_faces:
+       if h.index not in seen:seen.add(h.index);stack.append(h)
+    if any(inside(v.co) for g in island for v in g.verts):drop+=island
+   if drop:
+    bmesh.ops.delete(bm,geom=drop,context='FACES')
+    print('CLEAR',child.name,'faces dropped',len(drop),flush=True)
+  bm.to_mesh(child.data);bm.free();child.data.update()
 def export(id,rockob,port):
  root=bpy.data.objects.new('refinery-'+id,None);bpy.context.collection.objects.link(root)
  rockob.parent=root
@@ -447,21 +562,36 @@ def export(id,rockob,port):
    for index,xy in zip(face.loop_indices,coords):uv.data[index].uv=xy
   bm=bmesh.new();bm.from_mesh(mesh);bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.00001);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(mesh);bm.free()
   ob=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(ob);ob.parent=root
-  if '/cladding-' in name:
+  if '/cladding-' in name and not FLIGHT:
    bevel=ob.modifiers.new('plate-edge-radius','BEVEL');bevel.width=.2;bevel.segments=1
    n=ob.modifiers.new('weighted-normals','WEIGHTED_NORMAL');n.keep_sharp=True
  marker=bpy.data.objects.new('docking-centre',None);bpy.context.collection.objects.link(marker);marker.location=Vector(port)*10;marker.parent=root
  # Match the approved broad asteroid proportions without introducing transforms
  # that an exported-geometry consumer would need to infer.
- shape={'o1':(1.15,.96,1),'o2':(1.22,.94,1.14),'o3':(1,1,1),'o4':(1.09,1,1)}[id]
+ shape=SHAPE[id]
  for child in root.children:
-  if child.type=='MESH':
+  if child.type=='MESH' and not child.name.startswith('pad/'):
    for v in child.data.vertices:
     v.co.x*=shape[0];v.co.y*=shape[1];v.co.z*=shape[2]
- marker.location=Vector(tuple(marker.location[i]*shape[i] for i in range(3)))
+ if FLIGHT:
+  clear_housing(root,Vector(port)*10)
+  # The pad's housing was built in the shaped frame; the marker is its plane.
+  # Move everything so the plane lies on +Z at the sim's figure.
+  plane=Vector(port)*10;offset=Vector((-plane.x,-plane.y,APERTURE_PLANE_M-plane.z))
+  for child in root.children:
+   if child.type=='MESH':
+    for v in child.data.vertices:v.co+=offset
+  marker.name='aperture-plane';marker.location=Vector((0,0,APERTURE_PLANE_M))
+  root['aperture_plane_m']=APERTURE_PLANE_M;root['flight_offset_m']=list(offset)
+ else:
+  marker.location=Vector(tuple(marker.location[i]*shape[i] for i in range(3)))
  root['metres_per_author_unit']=10;root['design']=id;root['author']='Codex';root['scope']='visual prototype'
- bpy.context.preferences.filepaths.save_version=0;bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(OUT/(id+'.blend')))
- glb=OUT/(id+'.glb')
+ if FLIGHT:
+  # Intermediate: `prepare-flight-asset.mjs` encodes it into src/models/.
+  flight=OUT.parent.parent/".dream-loop"/"refinery-flight";flight.mkdir(parents=True,exist_ok=True);glb=flight/(id+".glb")
+ else:
+  bpy.context.preferences.filepaths.save_version=0;bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(OUT/(id+'.blend')))
+  glb=OUT/(id+'.glb')
  bpy.ops.export_scene.gltf(filepath=str(glb),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
  data=glb.read_bytes();jl=struct.unpack_from('<I',data,12)[0];doc=json.loads(data[20:20+jl])
  for m in doc['materials']:
@@ -469,9 +599,10 @@ def export(id,rockob,port):
  enc=json.dumps(doc,separators=(',',':')).encode();enc+=b' '*((-len(enc))%4);tail=data[20+jl:]
  glb.write_bytes(struct.pack('<4sII',b'glTF',2,20+len(enc)+len(tail))+struct.pack('<II',len(enc),0x4E4F534A)+enc+tail)
  print('EXPORTED',id,glb.stat().st_size,flush=True)
-wanted=sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else ['o1','o2','o3','o4']
+wanted=[a for a in sys.argv[sys.argv.index('--')+1:] if not a.startswith('--')] if '--' in sys.argv else ['o1','o2','o3','o4']
 for id,fn in [('o1',warren),('o2',collar),('o3',spar),('o4',works)]:
  if id not in wanted:continue
  bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();random.seed(804+int(id[1]))
+ CURRENT.clear();CURRENT['id']=id
  rockob,port=fn();export(id,rockob,port)
 

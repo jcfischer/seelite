@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { launchChromium, guardedOrigin } from "../../scripts/probe-guard.mjs";
 import { assertBrowserRenderer } from "../../scripts/lib/players-renderer.mjs";
 import { holdProbeLockOrExit } from "../../scripts/lib/probe-lock.mjs";
-const origin = "http://127.0.0.1:5214",
+const origin = process.env.ORIGIN ?? "http://127.0.0.1:5214",
 	label = process.argv[2] ?? "round-1";
 if (!/^[a-zA-Z0-9_-]+$/.test(label)) throw Error("Invalid label");
 const out = ".dream-loop/" + label;
@@ -18,7 +18,12 @@ try {
 	});
 	const errors = [];
 	page.on("pageerror", (e) => errors.push(e.message));
-	await page.goto(origin + "/spikes/refineries/");
+	// FLIGHT=1 captures the flight export with the sim's pad drawn in (#819).
+	await page.goto(
+		origin +
+			"/spikes/refineries/" +
+			(process.env.FLIGHT === "1" ? "?flight=1" : ""),
+	);
 	await page.waitForFunction(
 		() => window.__refineries?.stats.loaded,
 		{},

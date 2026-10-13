@@ -1,13 +1,15 @@
 """Three industrial shipyard studies. Blender --background --python this_file.py.
 Metres, Y up, +Z forward. Material-batched authored geometry; seeded detail.
 """
-import bpy, bmesh, math, random, json, struct
+import bpy, bmesh, math, random, json, struct, sys
 from pathlib import Path
 from mathutils import Vector
 OUT=Path(__file__).resolve().parent
 random.seed(798)
 bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
 MATS={}; BATCH={}; GROUP_MAT={}; RIG={}; OWNER="static"
+# Flight export (node #819): the approved layout at a density the game ships.
+FLIGHT="--flight" in sys.argv
 
 def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
  m=bpy.data.materials.new(name);m.use_nodes=True;m.diffuse_color=(*color,alpha)
@@ -70,7 +72,13 @@ def cable(points,r=.12,mat=alloy):
 def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
  pts=[Vector(p) for p in points];n=Vector(n).normalized();c=sum(pts,Vector())/len(pts)
  pts=[c+(p-c)*.982 for p in pts];prism(pts,n,depth,mat,group="cladding-"+mat)
- if bolts:
+ if bolts and FLIGHT:
+  # The flight export draws no fasteners, seam strips or wear trails, but
+  # draws the same random numbers, so every later placement and colour holds.
+  for i in range(len(pts)):
+   for t in [.08,.19,.36,.49,.67,.83,.92]:random.uniform(.03,.13)
+   for t in [.27,.73]:random.uniform(.16,.55);random.uniform(.025,.07)
+ elif bolts:
   for i,p in enumerate(pts):
    q=pts[(i+1)%len(pts)];length=(q-p).length;count=max(1,int(length/4.5))
    for j in range(count+1):
