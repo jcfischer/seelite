@@ -271,5 +271,38 @@ diff). **The principal accepted partial coverage (2026-10-13)** rather than
 compress the data with a new dependency. Round 5's one important finding (the
 avoidance control relaxed for regimes whose figure never fell) is taken.
 
-The principal's in-game look: approved (above). The browser gate: by the
-principal's instruction, only the probes the changes directly affect.
+The principal's in-game look: approved (above).
+
+**Browser gate: the directly affected probes, by the principal's instruction
+(2026-10-13)**, not the selector's fallback to all 104 (it fell back on
+`scripts/probe-guard.mjs`). GPU lane (M1 Pro, Metal), one probe at a time
+under the probe lock, against this worktree's dev server; load 25–41 from
+other sessions throughout. The list: the probes that read refineries, the
+pad's parts, the new settle flag or wait, or the pad drawing every pad role
+shares.
+
+| Probe | Why affected | Result | Head |
+|---|---|---|---|
+| `probe-station` | authored forms, 60 km rows | pass | `f71520b5` |
+| `probe-station-visuals` | fixtures, rock-shader rows | pass (red on `7b4fc14e`, below) | `f71520b5` |
+| `probe-dock-arrival` | pad parts, berths | pass (red on `7b4fc14e`, below) | `f71520b5` |
+| `probe-docking` | docking at the pad, proxies | pass | `f71520b5` |
+| `probe-collision` | the refinery proxies | pass (own server: it imports `three` from the default Vite cache) | `f71520b5` |
+| `probe-docking-traffic` | traffic at the pad | pass | `7b4fc14e` |
+| `probe-raider-outpost` | the shared pad drawing | pass | `7b4fc14e` |
+| `probe-model-download` | `refineries-full` | pass | `7b4fc14e` |
+| `probe-quality-bloom` | `refineries-full` | pass | `7b4fc14e` |
+| `probe-adaptive-resolution` | `refineryModelsSettled` wait | pass | `7b4fc14e` |
+| `probe-planet-surfaces` | `refineryModelsSettled` wait | pass | `7b4fc14e` |
+| `probe-postcard` | the postcard loads refineries | pass | `7b4fc14e` |
+
+Reds on `7b4fc14e`, each fixed: `probe-dock-arrival` found no `berth-<id>`
+part (the authored berths were batched by material; they are grouped by the
+sim's ids now); `probe-station-visuals`' three rows on the procedural rock
+shader found no patched rock under an authored refinery — they now gate the
+stand-in and report an authored refinery, as #818's rows on the procedural
+yard do (**for the principal's ruling**); `probe-collision` crashed on the
+harness (a `three` import from the default Vite cache this server did not
+use) and passed on its own server. Between `7b4fc14e` and `f71520b5` the
+models were rebuilt (berth groups named) and the proxies refitted; the
+first column's probes were rerun on the new head.
