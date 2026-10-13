@@ -35,8 +35,8 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
   re-seated square to their faces and the study's size-comparison ships
   removed, and the principal approved that ("approved. run the full browser
   gate").
-- **Open:** the PR browser gate on the final head, and SOP §4's measured LOD
-  selection. Sage review: seven rounds on PR #939.
+- **Open:** SOP §4's measured LOD selection. The browser gate ran on
+  becaaf53 (see Delivery evidence). Sage review: seven rounds on PR #939.
 
 ## Rulings during the integration (principal, 2026-10-12)
 
