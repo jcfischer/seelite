@@ -6,3 +6,10 @@ public/music-samples/**/*.ogg filter=lfs diff=lfs merge=lfs -text
 # Editable visual-study model binaries, kept outside production assets.
 spikes/shipyards/*.blend filter=lfs diff=lfs merge=lfs -text
 spikes/shipyards/*.glb filter=lfs diff=lfs merge=lfs -text
+
+# Generated collision-proxy data (nodes #818, #819): packed boxes in base64,
+# rewritten by scripts/generate-*-proxies.ts and measured by tests rather than
+# read. Kept out of text diffs, which a reviewer cannot read and which pushed
+# a review's prompt past its limit (PR #954, round 3).
+src/shipyard-proxies.ts -diff linguist-generated=true
+src/refinery-proxies.ts -diff linguist-generated=true
