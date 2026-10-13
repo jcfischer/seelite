@@ -19,6 +19,8 @@
  * space (how far a box reaches past the drawn L0 surface), on a finer grid
  * than the fit used, and the proxy's reach (its farthest corner).
  */
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import type { Primitive } from "../../src/collision";
 import { decodeShippedGlb } from "../../scripts/lib/shipped-glb";
@@ -40,7 +42,12 @@ export const DEFAULT_ROCKS_GLB =
 	process.env.ROCKS_GLB ??
 	"../seelite-953/spikes/asteroid-rocks-953/runtime/asteroids.glb";
 
+/** The archetype file every figure was measured on (#953, uncommitted, 2026-10-13). */
+export const MEASURED_ROCKS_SHA256 = "0622d06b78601aae32b7d6f414d0c1eebfb29e2a79a200e370529008f084cd1c";
+
 export async function loadArchetypes(path = DEFAULT_ROCKS_GLB): Promise<Archetype[]> {
+	const sha = createHash("sha256").update(readFileSync(new URL(`../../${path}`, import.meta.url))).digest("hex");
+	console.log(`rocks ${path.split("/").slice(-2).join("/")} sha256 ${sha.slice(0, 16)}${sha === MEASURED_ROCKS_SHA256 ? "" : " — NOT the file the proposal's figures came from"}`);
 	const scene = await decodeShippedGlb(path);
 	scene.updateMatrixWorld(true);
 	const out: Archetype[] = [];

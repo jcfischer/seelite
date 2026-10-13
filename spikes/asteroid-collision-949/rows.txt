@@ -1,0 +1,20 @@
+bun test v1.4.2 (744846f84)
+
+spikes/asteroid-collision-949/rows.test.ts:
+rocks rocks-0622d06b/asteroids.glb sha256 0622d06b78601aae
+D1 R=200 m, 16 archetypes × 24 approaches square to the local normal: {"contact":307,"misaligned":77}; hull clear at contact 307/307
+D1 overdrive (cutter bite when the first hull sample meets rock), m: min 2.4 p10 7.9 p50 11.9 p90 18.2 max 32.1; n 307
+L1 disagreement: stepped-strata proxy miss, drawn hit 1992.2 m
+L1 disagreement: impact-basin proxy hit 2093.7 m, drawn miss
+L1 disagreement: three-lobed proxy miss, drawn hit 1966.9 m
+L1 disagreement: three-lobed proxy hit 1961.1 m, drawn miss
+L1 disagreement: saddle proxy miss, drawn hit 1947.0 m
+L1 rays 640: |proxy hit − drawn hit| in % of R: p50 0.10, p90 1.06, p99 5.11, max 35.57; hit/miss disagreements 5
+L1 worst: {"archetype":"three-lobed","err":0.3557,"proxyHitM":2044.1,"drawnHitM":1972.9,"fineHitM":2044.1,"radialCrossingsAtHit":1,"grazeDeg":64.9}
+L1 worst: {"archetype":"offset-boulder","err":0.0759,"proxyHitM":1943.4,"drawnHitM":1928.2,"fineHitM":1943.4,"radialCrossingsAtHit":1,"grazeDeg":65.3}
+L1 worst: {"archetype":"battered-pyramid","err":0.0603,"proxyHitM":1983.2,"drawnHitM":1995.2,"fineHitM":1983.2,"radialCrossingsAtHit":1,"grazeDeg":81.9}
+
+ 12 pass
+ 0 fail
+ 92 expect() calls
+Ran 12 tests across 1 file. [9.66s]

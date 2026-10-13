@@ -1,0 +1,7 @@
+rocks rocks-0622d06b/asteroids.glb sha256 0622d06b78601aae
+hs32: drawn vertex outside the proxy, Euclidean: max 0.0976 R (25 m: 2.44 m, 600 m: 58.6 m); p99 of outside vertices max 0.0439 R (600 m: 26.3 m)
+  per archetype max: 0.0298 0.0322 0.0418 0.0314 0.0415 0.0373 0.0347 0.0352 0.0976 0.0691 0.0480 0.0339 0.0485 0.0557 0.0369 0.0445
+  outside vertices per archetype: 16931 16185 15972 16068 15319 14101 16261 16441 15754 16150 15645 15851 14095 16189 16718 16776 (of ~30498)
+hs64: drawn vertex outside the proxy, Euclidean: max 0.0455 R (25 m: 1.14 m, 600 m: 27.3 m); p99 of outside vertices max 0.0195 R (600 m: 11.7 m)
+  per archetype max: 0.0223 0.0250 0.0257 0.0199 0.0210 0.0343 0.0308 0.0284 0.0455 0.0434 0.0354 0.0227 0.0315 0.0263 0.0221 0.0264
+  outside vertices per archetype: 16388 15756 16055 15970 15471 13780 16099 16102 15845 16238 15845 15324 13475 16041 16035 16228 (of ~30498)

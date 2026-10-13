@@ -125,8 +125,7 @@ export function drillState(ship: Pose, shipVel: Vec3, rock: RockSurface, extensi
 /** First hit of a ray on the rock surface, km along the ray, or null. Marches
  *  the radial gap and bisects the crossing; the step is a fraction of the
  *  rock's radius so a thin feature is not stepped over. */
-export function rayHitKm(rock: RockSurface, from: Vec3, dir: Vec3, maxKm: number): number | null {
-	const step = rock.radiusKm / 200;
+export function rayHitKm(rock: RockSurface, from: Vec3, dir: Vec3, maxKm: number, step = rock.radiusKm / 200): number | null {
 	let prev = surfaceGapKm(rock, from);
 	if (prev <= 0) return 0;
 	for (let s = step; s <= maxKm; s += step) {
