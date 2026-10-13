@@ -139,3 +139,10 @@ and the bite depth are #920's to set (`DRILL_WINDOW` is a placeholder).
 | `measure-outside.txt` | all levels, pinned file | drawn-outside, Euclidean, O3/O4 |
 | `rows.txt` | pinned file | the 12 rows, with D1 and L1 figures |
 | `bench.txt` | L0 | unculled contact cost |
+
+## Rulings (principal, 2026-10-13, in session)
+
+- **Q1: O3, the 64-texel radial heightfield.** One surface for hull, laser and drill.
+- **Q2: O-B, solid cutter.** The deployed cutter is a second ship primitive in the sweep.
+- **Q3: close on the method.** The figures stay provisional on the pinned file; the build regenerates from #953's final archetypes and re-runs the rows.
+- **Q4: the fit rule is a fraction of R.** The bar is the option's figures: colliding empty space ≤ 0.03 R, drawn surface outside the proxy p99 ≤ 0.02 R.
