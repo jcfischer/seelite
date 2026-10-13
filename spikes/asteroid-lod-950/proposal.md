@@ -63,9 +63,10 @@ The table gives Δ ms/frame above the control, as run 1 / run 2, at the worst vi
 - `naive` goes past the call budget by 30× and comes near the low ms budget. It is out.
 - A multi-draw counts as one call in `renderer.info`. ANGLE expands it in the backend, so the timing is the evidence and the call count is the API count.
 
-### D7 — Open: archetypes or one shape per rock (for the principal; touches #952)
+### D7 — Shapes: K=8 archetypes (principal, 2026-10-13: O1)
 
-The frame cost is the same. The difference is build and memory.
+The principal chose O1. The frame cost is the same either way; the difference is build and memory. #952 still judges by eye whether the archetypes read as a field. If they read as repeats, O2 is the costed fallback.
+
 - **O1 — K=8 archetypes.** Varied by scale, spin axis and rotation. Build 19 ms, 5.6k vertices. Shapes repeat: on average 26 rocks share each shape.
 - **O2 — one shape per rock** from #948 D5's `shapeSeed`. Build 433 ms and 146k vertices for 210 rocks. A one-shot build is a visible stall, so the build must be time-sliced (for example ≤ 2 ms per frame, about 4 s), starting when the field comes into range. The field shows as points until then.
 
