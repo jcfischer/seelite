@@ -143,3 +143,19 @@ export function surveyBitmap(cells: number, slots: Iterable<number>): string {
 	for (const s of slots) bytes[s >> 3] |= 1 << (s & 7);
 	return Buffer.from(bytes).toString("base64");
 }
+
+/** Calibration placeholder: game hours a survey reading lasts (principal, Q1:
+ *  readings expire too). */
+export const SURVEY_LIFETIME_H = 24;
+
+/**
+ * A row compaction may drop: nothing on it differs from the seed any more.
+ * The debit has refilled to exactly zero and the reading has expired. Never
+ * true earlier — a row dropped early is a rock that refills or a reading that
+ * outlives its rule through a reload.
+ */
+export const isDerivable = (row: DepositRow, t: number): boolean =>
+	debitAt(row.surface ?? 0, row.at ?? 0, t) === 0 &&
+	debitAt(row.deep ?? 0, row.at ?? 0, t) === 0 &&
+	(row.surveyedAt === undefined ||
+		t - row.surveyedAt >= SURVEY_LIFETIME_H * 3600);

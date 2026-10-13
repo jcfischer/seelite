@@ -53,3 +53,22 @@ describe("deposit domain (spike #951)", () => {
 		expect(debitAt(3, 0, 99 * 3600)).toBe(0);
 	});
 });
+
+describe("deposit row expiry (spike #951, O3)", () => {
+	const { isDerivable, SURVEY_LIFETIME_H } = require("../src/deposit-state");
+	const H = 3600;
+	test("a debited row is kept until its larger debit refills", () => {
+		const row = { surface: 2, deep: 5, at: 0 };
+		expect(isDerivable(row, 4 * H)).toBe(false);
+		expect(isDerivable(row, 5 * H)).toBe(true);
+	});
+	test("a surveyed row is kept until the reading expires, even with no debit", () => {
+		const row = { surveyedAt: 10 * H };
+		expect(isDerivable(row, 10 * H + SURVEY_LIFETIME_H * H - 1)).toBe(false);
+		expect(isDerivable(row, 10 * H + SURVEY_LIFETIME_H * H)).toBe(true);
+	});
+	test("an exhausted-and-surveyed row needs both to lapse", () => {
+		const row = { deep: 1, at: 0, surveyedAt: 0 };
+		expect(isDerivable(row, 1 * H)).toBe(false);
+	});
+});
