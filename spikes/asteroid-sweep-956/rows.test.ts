@@ -125,6 +125,34 @@ describe("synthetic: the failures the node names", () => {
 		expect(rock.kind).toBe("ghost");
 		expect(piece.kind).toBe("impact");
 	});
+
+	test("G2 a resting ship left 1 mm inside one face (a failed settle), pressing in at 1 m/s tick after tick: how deep each ghost rule lets it sink", () => {
+		const R = 0.4;
+		const sphere: Heightfield = { res: 64, r: new Float32Array(6 * 64 * 64).fill(0.8) };
+		const rp = buildPieces(sphere);
+		const prims = shipPrims(R, false);
+		const top = envelopeAt(rp, sphere, v3(0, 0, 1));
+		// Belly down over the pole, the box's bottom 1 mm below the surface there.
+		const z0 = top + prims[0].half[1] - 1e-6 / R;
+		const v = (1e-3 * DT) / R;
+		const sink = (ghost: "rock" | "piece") => {
+			let z = z0;
+			for (let tick = 0; tick < 300; tick++) {
+				const r = sweepRock(step(prims, v3(0, 0, z), v3(0, 0, z - v), v3(1, 0, 0), v3(0, 0, 1)), rp, sweepConfig(R, ghost));
+				// A resting pair under a ship pressing in is §3.1's: `stopResting` stops the inward motion
+				// (not prototyped here). A swept impact stops it too.
+				if (r.kind === "impact") return { tick, depthM: (z0 - z + r.s * v) * R * 1000 + 0.001, met: true };
+				if (r.kind !== "ghost" && r.restingPieces > 0) return { tick, depthM: (z0 - z) * R * 1000 + 0.001, met: true };
+				z -= v;
+			}
+			return { tick: 300, depthM: (z0 - z) * R * 1000 + 0.001, met: false };
+		};
+		const rock = sink("rock"), piece = sink("piece");
+		console.log(`G2 pressing in at 1 m/s from 1 mm inside: per rock ${rock.met ? "met" : "never met"} after ${rock.tick} ticks, ${rock.depthM.toFixed(1)} m deep; per piece held after ${piece.tick} ticks, ${piece.depthM.toFixed(1)} m deep`);
+		expect(rock.met).toBe(false);
+		expect(piece.met).toBe(true);
+	});
+
 });
 
 describe("archetypes: the ruled field on #953's sixteen rocks", () => {

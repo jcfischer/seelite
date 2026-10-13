@@ -27,7 +27,7 @@ R is a rock's bound radius. Rocks are 25–400 m (charted), 40–600 m (rare).
 | What it is | Each bilinear cell of the field is a convex piece: the hull of the origin and the cell's four surface corners. The pieces tile space by cones, so their union is the field's solid. | Advance on `|p| − r(p̂)` divided by √(1 + slope²) per texel. | A 3D signed-distance grid built from the field. |
 | Bound for #75 | `collision.ts` `advance`'s own separating-plane bound, per convex pair. No new proof. | Holds for a point. A box is not a point: its radial gap needs samples. | Holds only with an inflation of one grid cell. |
 | Fails | — | **R2**: a needle between the box's samples is not seen at all. A slope bound does not change that. | At 32³ over 2R a cell is 0.0625 R, twice D2's 0.03 R. |
-| Status | Built and measured. | Not built. R2 rules it out. | Not built. Derived, not measured. |
+| Status | Built and measured. | Not built. R2 rules out any sampled-box method; a radial gap for the continuous box was not formulated. | Not built. Derived, not measured. |
 
 **Recommended: O1.** The rock is a list of convex pieces, and the sweep is the
 existing one. A bound tree only decides the order in which pieces are tested.
@@ -51,7 +51,7 @@ existing one. A bound tree only decides the order in which pieces are tested.
   arc by at most 1.7 × 10⁻⁶ R (0.7 mm at 400 m, 4-minute spin). That figure is
   added to the contact gap.
 
-## 2. Rows (`rows.test.ts`, output `rows.txt`, 10 pass)
+## 2. Rows (`rows.test.ts`, output `rows.txt`, 11 pass)
 
 | Row | What it shows |
 |---|---|
@@ -59,6 +59,7 @@ existing one. A bound tree only decides the order in which pieces are tested.
 | **R2** needle under the box's broad face, between its surface samples, 10 m step | The box's end pose overlaps the needle. #949's sampled point test sees **nothing**. The sweep meets it at 0.4975 (reference 0.5000). |
 | **C1** cutter against hull | Nose-on, the cutter is met first and named (`prim 1`). Belly-on, the hull is met. With the cutter stowed, the hull's nose is met later (0.41 against 0.20). |
 | **G1** ship placed half inside a rock | Ghosting the whole rock lets it fly out. Ghosting only the overlapped pieces (what `classifyPairs` does per primitive) traps it: it meets the next piece's wall at 0.07 of the step. |
+| **G2** resting ship left 1 mm inside one face (a failed settle), pressing in at 1 m/s, tick after tick | Ghosting the whole rock: never met, **30 m deep after 300 ticks** and still sinking. Ghosting per piece: held after 2 ticks, 0.2 m deep, by the resting pairs around it. (Held means a resting pair with the ship pressing in; `stopResting` is not prototyped.) |
 | **P1, P2** pieces hold the field | Envelope − field ≥ 0 on a dense sample, synthetic and real. The excess is at most 0.0218 R (real). |
 | **A1** 192 random steps at the surface, 0.2–10 km/s, R 25 and 400 m, all 16 archetypes | The reference met 109; the sweep met the same 109, none later than one sub-step. 49 started inside (ghosts). No advance cap hit. |
 | **A2** tree against flat | Same piece, time and primitive on 16 steps. The tree skips nothing. |
@@ -72,11 +73,14 @@ outside the drawn L0 solid, by its distance to the L0 mesh.
 
 | | Ruled field | Pieces |
 |---|---|---|
-| Colliding empty space, max over 16 | 0.0301 R | 0.0301 R |
+| Colliding empty space, max over 16 | 0.0301 R (the figure D2 was ruled on) | 0.0301 R |
 | p99, max over 16 | 0.0186 R | 0.0187 R |
 | Largest change on one archetype | — | +0.0021 R (angular-shard, 0.0110 → 0.0131) |
 
 The pieces do not move the binding archetype (stepped-strata, 0.0301 both).
+The 38,400 directions can miss where the pieces stand farthest above the
+field, so the 50 directions of largest excess per rock (from P2's grid) were
+measured too: empty space there is at most **0.0221 R**.
 Drawn surface outside the proxy cannot grow, because the envelope is never
 below the field (P2). **A steeper field needs more inflation:** a synthetic
 needle of 0.5 → 0.9 R needed 1.089, which is 0.08 R of empty space at its tip.
@@ -88,14 +92,16 @@ row should assert the largest factor (≤ 1.01) on the final archetype set.
 Arms interleaved call by call; 16 archetypes × 5 repeats per cell. Load
 average 13–23 on 10 cores during both runs (other sessions), so absolute
 figures are high. The ratios hold. O1, run 1 / run 2 medians, µs. #949's
-point test, re-run in the same runs: 487–639 µs median in every cell.
+point test, re-run in the same runs: 487–639 µs median in every cell. That
+is inside #949's own 0.4–0.7 ms, so the load did not inflate the absolute
+figures much.
 
 | Scenario | R 25 m | R 40 m | R 100 m | R 400 m |
 |---|---|---|---|---|
 | Approach, met mid-step, 2 km/s | 472 / 535 | 402 / 480 | 384 / 446 | 321 / 261 |
 | Assist off, 10 km/s | 485 / 645 | 461 / 448 | 447 / 379 | 375 / 468 |
 | Graze 2 m clear, 2 km/s | 289 / 251 | 306 / 266 | 291 / 329 | 359 / 305 |
-| Resting 0.12 m off, sliding | 706 / 583 | 607 / 513 | 403 / 443 | 283 / 283 |
+| Resting 0.12 m off, sliding (sweep only: a lower bound) | 706 / 583 | 607 / 513 | 403 / 443 | 283 / 283 |
 | Pass 20 m clear | 70 / 68 | 88 / 74 | 114 / 124 | 175 / 204 |
 
 - **p90 worst:** 1.3 ms (approach and assist-off on a 25 m rock). The single
@@ -122,9 +128,17 @@ point test, re-run in the same runs: 487–639 µs median in every cell.
 
 - **Q1 The swept test is O1:** the field as convex cone pieces, swept with
   `collision.ts`'s own bound on a best-first quadtree. O2 and O3 are out.
-- **Q2 A rock ghosts as one solid.** Any piece overlapping at the start of a
-  step ghosts the whole rock (§4.3), unlike a station's proxy, where each
-  primitive ghosts alone (G1).
+- **Q2 How a rock ghosts (§4.3).** Each choice fails one row:
+  - **O-a per rock:** any overlapping piece ghosts the whole rock. A placed
+    ship flies out (G1). A ship left a hair inside during contact sinks
+    through (G2: 30 m and still going).
+  - **O-b per piece,** as `classifyPairs` does a station's primitives. Contact
+    holds (G2: 0.2 m). A placed ship is trapped by the next piece's wall (G1).
+  - **O-c per rock only after a placement event** (spawn, restore, cruise
+    exit, launch), until the ship has separated from that rock; per piece
+    otherwise. §4.3 says a flying ship starts inside only by being placed
+    there, so this keeps both rows. It costs a flag per (ship, rock) pair.
+    Not built.
 - **Q3 The deployed cutter collides with everything.** D3 made it a ship
   primitive, so by default it also meets stations, ships and canisters. The
   alternative is rocks only.
@@ -132,6 +146,10 @@ point test, re-run in the same runs: 487–639 µs median in every cell.
   cutter strike costs a pilot, and which side `sideStruck` bills, is
   #920's (drill interaction) or the fiction map's, not this node's.
 - **Q5 No coarse level for small rocks.** D2 binds at every size.
+- **Q6 Shipyards may trap a placed ship too.** An authored station proxy
+  (#818) ghosts each box alone, so a ship placed across two touching boxes
+  may meet the one it does not overlap, as in G1. Not tested here. File a
+  check below this node?
 
 ## 6. Owed by the build, not proved here
 
@@ -145,5 +163,3 @@ point test, re-run in the same runs: 487–639 µs median in every cell.
   `sweepShip`'s sphere grid. `Impact` gets a ship-primitive field.
 - **Browser rows** #949 listed are still owed.
 - **A quiet-machine cost run.** Both runs here ran beside other sessions.
-- **Stations with authored proxies** (#818) ghost per primitive too. Whether a
-  ship placed inside one is trapped the same way was not tested here.
