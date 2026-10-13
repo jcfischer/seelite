@@ -751,7 +751,11 @@ import {
 	updateStationVisuals,
 	warmStationMaps,
 } from "./station-mesh";
-import { SPEC_FIXTURE_NAMES, stationFinishId } from "./station-visuals";
+import {
+	AUTHORED_FIXTURE_NAMES,
+	SPEC_FIXTURE_NAMES,
+	stationFinishId,
+} from "./station-visuals";
 import {
 	HULL_IDS,
 	HULL_SPECS,
@@ -3929,6 +3933,8 @@ class Game {
 	 *  same reason: `probe-station-visuals.mjs` asserts a floor per fixture, and
 	 *  a probe holding its own copy would stay green the day §5 gains one. */
 	readonly specFixtures = SPEC_FIXTURE_NAMES;
+	/** And an authored station's, where they differ (node #818). */
+	readonly authoredFixtures = AUTHORED_FIXTURE_NAMES;
 
 	/** `persistent-world-state.md` §2's composite key, for the same reason. The
 	 *  docking probe built `${systemIndex}:${localCarrierId}` itself, which is a

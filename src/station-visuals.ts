@@ -324,6 +324,21 @@ export const SPEC_FIXTURE_NAMES: Readonly<
 });
 
 /**
+ * §5's names for an **authored** station, where they differ from the
+ * procedural form's (node #818; the principal's rulings of 2026-10-13). An
+ * authored shipyard carries its capsule's lamps as `windows` and the mouth
+ * ring; its work light is baked into its lightmap, so it has no `bay-flood` or
+ * `weld-arc` object, and the ring turns with the drum, so it carries no
+ * strobe pair. A shipyard whose model failed keeps its procedural stand-in,
+ * and `SPEC_FIXTURE_NAMES` above still rules that one.
+ */
+export const AUTHORED_FIXTURE_NAMES: Readonly<
+	Partial<Record<StationType, readonly string[]>>
+> = Object.freeze({
+	shipyard: Object.freeze(["windows", "mouth-strobe"]),
+});
+
+/**
  * The band edges, in **the station's own silhouette radii** (§3).
  *
  * Radii and not kilometres, because a rule in kilometres gives the refinery's
