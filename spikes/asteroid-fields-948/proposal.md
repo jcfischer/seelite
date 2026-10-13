@@ -1,12 +1,12 @@
 ## Resolution: asteroid field geometry and identity contract
 
 Principal rulings, 2026-10-13, live in session:
-- **Q7** (#918's Q4): **slow drift**, not a rigid layout. D5 makes it closed-form and cell-bounded.
+- **Q7** (#918's Q4): **slow drift**, not a rigid layout. The principal then confirmed the **cell-bounded** form in D5: rocks never touch and the field shape is fixed.
 - **Q8**: **own `FIELD_GENERATOR_VERSION`** and a field fingerprint (D6).
 - **Q9**: charted lead 150–300 km and rare chance 0.20, **as proposed** (D3, D4).
-- **Q10**: **more, smaller rocks**. D5 holds the re-measured profiles.
+- **Q10**: **more, smaller rocks**. The principal then accepted the D5 profiles: charted p50 186 rocks, 25–400 m; rare p50 91 rocks, 40–600 m.
 
-Prototype: a headless generator and instrument (scratch, not on a branch). Measured over 10 worlds (47, `0x5ee11e`, `worldSeeds(8)`) × 8 galaxies × 256 = **20,480 systems**, 10 simulated years at 40 samples. Every figure below is a spread across those worlds (#107).
+Prototype: a headless generator and instrument on branch `spike/asteroid-fields-948` at `c902a4c`, in `spikes/asteroid-fields-948/`. It is not production code. To reproduce, run `bun run spikes/asteroid-fields-948/measure.ts 8` and `checks.ts`. Measured over 10 worlds (47, `0x5ee11e`, `worldSeeds(8)`) × 8 galaxies × 256 = **20,480 systems**, 10 simulated years at 40 samples. Every figure below is a spread across those worlds (#107).
 
 ### D1 — Streams: four tags, appended
 
@@ -80,7 +80,7 @@ Every field rides a co-periodic or separate orbit, so no separation closes over 
 
 ### D7 — Reproducible seeds for the gallery (#952) and LOD (#950)
 
-The world seed is 47 (the view set's), galaxy 0:
+The world seed is 47 (the view set's), galaxy 0. The generator is `field-proto.ts` at `c902a4c`:
 
 - charted / refinery-orbit: system 0 GEVETI, `field-00`
 - rare / belt: system 1 TERALA, `field-01`
