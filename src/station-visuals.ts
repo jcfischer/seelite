@@ -351,6 +351,10 @@ export const AUTHORED_FIXTURE_NAMES: Readonly<
 	Partial<Record<StationType, readonly string[]>>
 > = Object.freeze({
 	shipyard: Object.freeze(["windows", "mouth-strobe"]),
+	// An authored refinery (node #819) carries its study's amber lamps as
+	// `windows`. The approved models have no heat glow, flare or obstruction
+	// beacon; whether they owe them is the principal's, at the in-game look.
+	refinery: Object.freeze(["windows"]),
 });
 
 /**

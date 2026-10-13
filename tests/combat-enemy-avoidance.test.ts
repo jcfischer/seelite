@@ -436,11 +436,12 @@ describe("the figures the avoidance is built from", () => {
 		]);
 		// Node #745's same four systems and three bearings, not an aggregate
 		// over different populations. Reusing another form's run fails here.
+		// The authored refineries' since node #819 (procedural: 6, 5, 2, 12).
 		expect(impacts).toEqual([
 			["a", 6],
-			["b", 5],
-			["c", 2],
-			["d", 12],
+			["b", 4],
+			["c", 1],
+			["d", 4],
 		]);
 	});
 	test("the clearance covers every hull's own box, so a centre outside the keep-out is a hull outside the solid", () => {
@@ -575,15 +576,22 @@ describe("avoidanceSolids: what the controller is handed", () => {
 });
 
 describe("a ship fighting beside a station does not fly into it, under all three regimes", () => {
-	// The historical Works corpus keeps its majority control and measured
-	// bands. Other forms change both the solid and the reach-derived pilot
-	// placement; adding seeds until the aggregate is a majority hides that.
+	// The historical Works corpus keeps its measured bands. Other forms change
+	// both the solid and the reach-derived pilot placement; adding seeds until
+	// the aggregate is a majority hides that.
+	//
+	// The blind control asks for more than a third, not half, since node #819
+	// (2026-10-13), for #818's mouth-duel reason: the authored Works leaves
+	// less rock in the pilot's path than the procedural one did. Measured on
+	// this corpus at the base (534cd298) and after: assist-off's blind runs
+	// fell from 26 to 18 of 39, those meeting the refinery from 12 to 4;
+	// assist-on (39) and cruise (38) are unchanged.
 	for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
 		test(`${regime}: blind, the corpus meets the station; avoiding, no run does`, () => {
 			const blind = corpus(regime, false);
 			const avoiding = corpus(regime, true);
 			// The control is red: without the solids the runs end on a surface.
-			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
+			expect(struck(blind)).toBeGreaterThan(blind.length / 3);
 			expect(avoiding.filter((r) => r.met !== null).map((r) => r.met)).toEqual(
 				[],
 			);

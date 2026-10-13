@@ -85,6 +85,20 @@ describe("authored refineries (#819)", () => {
 				mesh.dispose();
 			});
 
+			test("names its study lamps as the role's windows", () => {
+				// `AUTHORED_FIXTURE_NAMES.refinery`; a name that missed would leave
+				// the per-fixture probe an empty list to pass on.
+				const mesh = build();
+				const windows = mesh.root.getObjectByName("windows");
+				expect(windows).toBeDefined();
+				let lit = 0;
+				windows!.traverse((o) => {
+					if (o instanceof THREE.Mesh) lit++;
+				});
+				expect(lit).toBeGreaterThan(0);
+				mesh.dispose();
+			});
+
 			test("stays inside its declared reach", () => {
 				const mesh = build();
 				mesh.root.updateMatrixWorld(true);
