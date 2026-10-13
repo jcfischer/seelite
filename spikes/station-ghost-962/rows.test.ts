@@ -400,3 +400,155 @@ describe("spike #962: a ship placed inside an authored station proxy", () => {
 			);
 		}
 });
+
+/**
+ * The placement a game path can produce: a saved flight restored after a
+ * refit. The ship was clear of the old proxy, so it is shallowly inside the
+ * new one's outer surface, not deep in packed metal. A ship at a random
+ * attitude marches in along a random ray (5 m a step) to its first overlap,
+ * the boundary is bisected to 1 cm, and the ship is placed `d` metres past
+ * the last clear pose, then flown out the way it came.
+ */
+const DEPTHS_M = [0.1, 0.5, 2];
+const RAYS = Number(process.env.GHOST_RAYS ?? 80);
+
+function shallow(
+	type: StationType,
+	form: StationFormId,
+	hull: HullId,
+	rpm: number,
+	seed: number,
+): { trials: (Trial & { depthM: number; label: string })[]; rays: number } {
+	const proxy = stationProxy(type, form, 0, 0);
+	if (!proxy) throw new Error(`no proxy ${type}/${form}`);
+	const solids = stationMotions(
+		proxy,
+		stationEnd(type, rpm, 0),
+		stationEnd(type, rpm, MAX_DT),
+	);
+	const [ship] = hullSolid(hull);
+	if (ship.kind !== "box") throw new Error("hull box");
+	const reach = length(ship.centre) + halfDiag(ship);
+	const far = Math.max(
+		...solids.flatMap((s) =>
+			s.primitives.map((p) =>
+				p.kind === "box" ? length(p.centre) + halfDiag(p) : 0,
+			),
+		),
+	);
+	const r = rng(seed);
+	const trials: (Trial & { depthM: number; label: string })[] = [];
+	let rays = 0;
+	for (let k = 0; k < RAYS; k++) {
+		const out = unit(r);
+		const aim = scale(unit(r), 0.1 * r());
+		const from = add(aim, scale(out, far + reach + 0.01));
+		const inward = scale(out, -1);
+		const nose = unit(r);
+		const up = orthoUp(nose, r);
+		const hits = (s: number) =>
+			contact(
+				ship,
+				add(from, scale(inward, s)),
+				nose,
+				up,
+				solids,
+				reach,
+			).overlap.some((o) => o.length > 0);
+		let clear = 0;
+		let hit = -1;
+		for (let s = 0.005; s < 2 * (far + reach + 0.01); s += 0.005)
+			if (hits(s)) {
+				hit = s;
+				break;
+			} else clear = s;
+		if (hit < 0) continue;
+		for (let i = 0; i < 12; i++) {
+			const m = (clear + hit) / 2;
+			if (hits(m)) hit = m;
+			else clear = m;
+		}
+		rays++;
+		for (const depthM of DEPTHS_M) {
+			const pos = add(from, scale(inward, clear + depthM / 1000));
+			const c = contact(ship, pos, nose, up, solids, reach);
+			if (!c.overlap.some((o) => o.length > 0)) continue;
+			const base = { type, form, hull, rpm, pos, nose, up, depthM };
+			trials.push({ ...base, dir: out, label: "reverse" });
+			// Any other heading: split by whether it leaves the way it came
+			// (outward) or turns into the station (inward).
+			for (const dir of [nose, unit(r)])
+				trials.push({
+					...base,
+					dir,
+					label: dot(dir, out) > 0 ? "outward" : "inward",
+				});
+		}
+	}
+	return { trials, rays };
+}
+
+/** How far the per-station arm carried the ship before it overlapped nothing. */
+type Row = Record<Arm, Outcome>;
+const escapeM = (rows: Row[]) =>
+	rows.flatMap((x) =>
+		x.station.kind === "escaped"
+			? [x.station.ticks * SPEED_KMS * MAX_DT * 1000]
+			: [],
+	);
+const throughM = (rows: Row[]) => {
+	const m = escapeM(rows);
+	return m.length ? (m.reduce((a, b) => a + b, 0) / m.length).toFixed(0) : "-";
+};
+const throughMax = (rows: Row[]) => {
+	const m = escapeM(rows);
+	return m.length ? Math.max(...m).toFixed(0) : "-";
+};
+
+describe("spike #962: a restored ship shallowly inside, flown out the way it came", () => {
+	for (const { type, form } of FORMS)
+		for (const spin of [false, true]) {
+			if (spin && type !== "shipyard") continue;
+			test(
+				`${type}/${form} ${spin ? `at ${SPIN_RPM_RANGE.maxRpm} rpm` : "still"}, shallow`,
+				() => {
+					const rpm = spin ? SPIN_RPM_RANGE.maxRpm : 0;
+					for (const hull of HULLS) {
+						const { trials, rays } = shallow(
+							type,
+							form,
+							hull,
+							rpm,
+							SEED + 31 * form.charCodeAt(0) + (spin ? 1 : 0),
+						);
+						for (const depthM of DEPTHS_M)
+							for (const label of ["reverse", "outward", "inward"]) {
+								const rows = trials
+									.filter((t) => t.depthM === depthM && t.label === label)
+									.map((t) => ({
+										box: fly(t, "box"),
+										solid: fly(t, "solid"),
+										station: fly(t, "station"),
+									}));
+								const n = rows.length;
+								const trapped = (arm: Arm) =>
+									rows.filter((x) => x[arm].kind === "trapped").length;
+								const joined = rows.filter(
+									(x) => x.box.kind === "trapped" && x.box.joined,
+								).length;
+								const billed = rows.filter(
+									(x) => x.box.kind === "trapped" && x.box.damage > 0,
+								).length;
+								console.log(
+									`shallow ${type}/${form} rpm ${rpm.toFixed(2)} ${hull.padEnd(9)} d ${String(depthM).padEnd(3)} m ${label.padEnd(7)} N ${String(n).padStart(3)} of ${rays} rays  ` +
+										`trapped box ${trapped("box")} solid ${trapped("solid")} station ${trapped("station")}  joined ${joined}  billed ${billed}  ` +
+										`per station flies through metal: mean ${throughM(rows)} m, max ${throughMax(rows)} m`,
+								);
+							}
+						expect(rays).toBeGreaterThan(0);
+					}
+				},
+				ROW_MS,
+			);
+		}
+});
