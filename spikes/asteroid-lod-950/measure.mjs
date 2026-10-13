@@ -24,10 +24,20 @@
  * off the end (the refinery's range, D3).
  */
 import { createServer } from "vite";
+import { loadavg } from "node:os";
+import { holdProbeLockOrExit } from "../../scripts/lib/probe-lock.mjs";
 import { gameUrl } from "../../scripts/lib/game-url.mjs";
-import { median, seededShuffler, separation } from "../../scripts/lib/measurement.mjs";
+import {
+	median,
+	seededShuffler,
+	separation,
+} from "../../scripts/lib/measurement.mjs";
 import { assertPlayersRenderer } from "../../scripts/lib/players-renderer.mjs";
-import { bootedGame, guardedOrigin, launchChromium } from "../../scripts/probe-guard.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	launchChromium,
+} from "../../scripts/probe-guard.mjs";
 
 const FRAMES = Number(process.env.FRAMES ?? 120);
 const BLOCKS = Number(process.env.BLOCKS ?? 12);
@@ -36,13 +46,21 @@ const K = Number(process.env.K ?? 8);
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5197);
 const VIEWS = (process.env.VIEWS ?? "inside,edge,far").split(",");
-const OCCLUSION = (process.env.OCCLUSION ?? "off,on").split(",").map((s) => s === "on");
-const FIELD_ARMS = (process.env.ARMS ?? "inst-k,batch-k,batch-unique,naive").split(",");
+const OCCLUSION = (process.env.OCCLUSION ?? "off,on")
+	.split(",")
+	.map((s) => s === "on");
+const FIELD_ARMS = (
+	process.env.ARMS ?? "inst-k,batch-k,batch-unique,naive"
+).split(",");
 const QUALITIES = ["high", "low"];
-const ARMS = QUALITIES.flatMap((q) => ["none", ...FIELD_ARMS].map((a) => `${a}@${q}`));
+const ARMS = QUALITIES.flatMap((q) =>
+	["none", ...FIELD_ARMS].map((a) => `${a}@${q}`),
+);
+const releaseLock = await holdProbeLockOrExit("asteroid field measurement");
+console.log("  host load average at start:", loadavg().join(" / "));
 
 const server = await createServer({
-	server: { host: "127.0.0.1", port, strictPort: true },
+	server: { host: "127.0.0.1", port, strictPort: true, hmr: false, watch: null },
 	cacheDir: "node_modules/.vite-asteroid-950",
 });
 await server.listen();
@@ -50,15 +68,25 @@ const origin = `http://127.0.0.1:${port}`;
 await guardedOrigin(origin);
 const browser = await launchChromium({ headless: false });
 try {
-	const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 2 });
+	const page = await browser.newPage({
+		viewport: VIEWPORT,
+		deviceScaleFactor: 2,
+	});
 	page.on("pageerror", (e) => console.error("  pageerror:", e.message));
-	await page.goto(gameUrl(origin, { seed: 42, system: 0, "no-save": true, "coriolis-start": "approach" }));
+	await page.goto(
+		gameUrl(origin, {
+			seed: 42,
+			system: 0,
+			"no-save": true,
+			"coriolis-start": "approach",
+		}),
+	);
 	await bootedGame(page, 90000);
 	const renderer = await assertPlayersRenderer(page, "measure");
 	await page.keyboard.press("v");
 	await page.waitForFunction(() => window.__seelite.view === "chase");
 	const setup = await page.evaluate(
-		async ([fieldArms, k]) => {
+		async ([fieldArms, k, shading]) => {
 			const g = window.__seelite;
 			await g.loadAuthoredHullsAfterBoot();
 			g.clockHeld = true;
@@ -66,6 +94,11 @@ try {
 			g.chaseElevation = 0.3;
 			const F = await import("/spikes/asteroid-fields-948/field-proto.ts");
 			const R = await import("/spikes/asteroid-lod-950/field-render.ts");
+			const authored = fieldArms.includes("batch-authored")
+				? await (await import("/spikes/asteroid-rocks-953/load.ts")).loadRocks(
+						shading,
+					)
+				: undefined;
 			const { THREE } = R;
 			const { generateGalaxy } = await import("/src/galaxy.ts");
 			const { generateContents } = await import("/src/system.ts");
@@ -77,13 +110,18 @@ try {
 			const camera = g.nearCamera;
 			camera.updateMatrixWorld(true);
 			const size = g.renderer.getDrawingBufferSize(new THREE.Vector2());
-			const pxPerRadian = size.y / 2 / Math.tan(((camera.fov / 2) * Math.PI) / 180);
+			const pxPerRadian =
+				size.y / 2 / Math.tan(((camera.fov / 2) * Math.PI) / 180);
 			const eye = camera.getWorldPosition(new THREE.Vector3());
 			const camQ = camera.getWorldQuaternion(new THREE.Quaternion());
 			// Field +x down the view (camera −z), field y up the view's y.
 			const fieldQ = camQ
 				.clone()
-				.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)));
+				.multiply(
+					new THREE.Quaternion().setFromEuler(
+						new THREE.Euler(0, Math.PI / 2, 0),
+					),
+				);
 			const a = 24;
 			const STAND = {
 				inside: new THREE.Vector3(1.2, 1.2, 1.2),
@@ -106,7 +144,13 @@ try {
 					}
 					const fr = R.buildFieldRenderer(
 						rocks,
-						{ arm, k, quality, shadows: quality === "high" },
+						{
+							arm,
+							k,
+							quality,
+							shadows: quality === "high",
+							authored: arm === "batch-authored" ? authored : undefined,
+						},
 						pxPerRadian,
 					);
 					fr.root.quaternion.copy(fieldQ);
@@ -143,13 +187,17 @@ try {
 			window.__fieldLevels = () => window.__field?.stats().perLevel;
 			return {
 				rocks: rocks.length,
-				radii: [Math.min(...rocks.map((r) => r.radiusKm)), Math.max(...rocks.map((r) => r.radiusKm))],
+				radii: [
+					Math.min(...rocks.map((r) => r.radiusKm)),
+					Math.max(...rocks.map((r) => r.radiusKm)),
+				],
 				pxPerRadian,
 				fov: camera.fov,
 				build,
+				load: authored?.timing,
 			};
 		},
-		[FIELD_ARMS, K],
+		[FIELD_ARMS, K, process.env.SHADING ?? "lambert"],
 	);
 
 	const timed = (arm, occlusion) =>
@@ -198,20 +246,49 @@ try {
 		);
 
 	console.log(`  renderer: ${renderer}`);
+	if (setup.load) console.log("  authored load:", JSON.stringify(setup.load));
 	console.log(
 		`  viewport: ${VIEWPORT.width}x${VIEWPORT.height} at device scale 2, chase, clock held, fov ${setup.fov}, ${setup.pxPerRadian.toFixed(0)} px/rad`,
 	);
 	console.log(
 		`  field: 0x5ee11e g0 s173 field-00, ${setup.rocks} rocks, radius ${(setup.radii[0] * 1000).toFixed(0)}–${(setup.radii[1] * 1000).toFixed(0)} m; K=${K}`,
 	);
-	console.log(`  ${BLOCKS} blocks per arm, ${FRAMES} frames per block, arm order shuffled from seed ${ORDER_SEED}`);
+	console.log(
+		`  ${BLOCKS} blocks per arm, ${FRAMES} frames per block, arm order shuffled from seed ${ORDER_SEED}`,
+	);
 	console.log("  build (cold, main thread):");
 	for (const [key, b] of Object.entries(setup.build))
 		console.log(
 			`    ${key.padEnd(18)} ${b.buildMs.toFixed(1).padStart(7)} ms  shapes ${String(b.uniqueShapes).padStart(3)}  geometry ${b.geometryVertices} verts / ${b.geometryTriangles} tris`,
 		);
 	const shuffled = seededShuffler(ORDER_SEED);
+	if (process.env.INSTALL_ONLY) {
+		const install = await page.evaluate(() => {
+			const g = window.__seelite;
+			window.__fieldView("close");
+			window.__fieldArm("batch-authored@high");
+			window.__fieldStep();
+			const gl = g.renderer.getContext(),
+				pixel = new Uint8Array(4);
+			const frames = [];
+			for (let i = 0; i < 3; i++) {
+				const t = performance.now();
+				g.render(0);
+				gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+				frames.push(performance.now() - t);
+			}
+			return {
+				firstVisibleFrameMs: frames[0],
+				subsequentFramesMs: frames.slice(1),
+			};
+		});
+		console.log(
+			"  cold first visible install (upload + shader compilation + draw):",
+			JSON.stringify(install),
+		);
+	}
 	for (const view of VIEWS) {
+		if (process.env.INSTALL_ONLY) break;
 		await page.evaluate((v) => window.__fieldView(v), view);
 		if (process.env.SHOTS) {
 			for (const arm of ARMS) {
@@ -221,7 +298,9 @@ try {
 					for (let i = 0; i < 3; i++) window.__fieldStep();
 				}, arm);
 				await page.waitForTimeout(300);
-				await page.screenshot({ path: `${process.env.SHOTS}/${view}-${arm}.png` });
+				await page.screenshot({
+					path: `${process.env.SHOTS}/${view}-${arm}.png`,
+				});
 			}
 			continue;
 		}
@@ -229,11 +308,16 @@ try {
 			const blocks = Object.fromEntries(ARMS.map((a) => [a, []]));
 			for (const arm of ARMS) await timed(arm, occlusion);
 			for (let b = 0; b < BLOCKS; b++)
-				for (const arm of shuffled(ARMS)) blocks[arm].push(await timed(arm, occlusion));
+				for (const arm of shuffled(ARMS))
+					blocks[arm].push(await timed(arm, occlusion));
 			const counts = {};
 			for (const arm of ARMS) counts[arm] = await info(arm, occlusion);
-			console.log(`\n  view ${view}, occlusion ${occlusion ? "on (shadow + AO, pinned)" : "off (pinned)"}`);
-			console.log("  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt");
+			console.log(
+				`\n  view ${view}, occlusion ${occlusion ? "on (shadow + AO, pinned)" : "off (pinned)"}`,
+			);
+			console.log(
+				"  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt",
+			);
 			for (const arm of ARMS) {
 				const q = arm.split("@")[1];
 				const base = `none@${q}`;
@@ -249,4 +333,6 @@ try {
 } finally {
 	await browser.close();
 	await server.close();
+	console.log("  host load average at end:", loadavg().join(" / "));
+	releaseLock();
 }

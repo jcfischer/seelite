@@ -14,7 +14,11 @@
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { SimplexNoise } from "../../src/noise";
-import { applyRockSurface, buildAsteroid, displayRand } from "../../src/station-surface";
+import {
+	applyRockSurface,
+	buildAsteroid,
+	displayRand,
+} from "../../src/station-surface";
 import type { Rock } from "../asteroid-fields-948/field-proto.ts";
 
 const TAU = Math.PI * 2;
@@ -27,14 +31,23 @@ export const LEVEL_DETAIL = [6, 3, 1] as const;
  * quality side. Inner edge is the bound × (1 + HYSTERESIS): a rock steps up
  * only past it, so it does not flicker on a boundary.
  */
-export const LEVEL_PX: Record<"high" | "low", readonly [number, number, number]> = {
+export const LEVEL_PX: Record<
+	"high" | "low",
+	readonly [number, number, number]
+> = {
 	// [level 0 above, level 1 above, level 2 above]; below the last: a point.
 	high: [40, 10, 1.5],
 	low: [80, 20, 3],
 };
 export const HYSTERESIS = 0.15;
 
-export type Arm = "inst-k" | "batch-k" | "batch-unique" | "naive" | "batch-plain";
+export type Arm =
+	| "batch-authored"
+	| "inst-k"
+	| "batch-k"
+	| "batch-unique"
+	| "naive"
+	| "batch-plain";
 
 /** The displacement `buildAsteroid` uses (copied, not imported: it is fixed at
  *  detail 4 there), on a unit sphere, without the pad cut. */
@@ -44,7 +57,10 @@ function displaced(detail: number, tag: string): THREE.BufferGeometry {
 	g0.deleteAttribute("uv");
 	const geometry = mergeVertices(g0);
 	const noise = new SimplexNoise(
-		[...tag].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 0x01000193), 0x811c9dc5) >>> 0,
+		[...tag].reduce(
+			(h, c) => Math.imul(h ^ c.charCodeAt(0), 0x01000193),
+			0x811c9dc5,
+		) >>> 0,
 	);
 	const rand = displayRand(`${tag}-craters`);
 	const craters = Array.from({ length: 6 }, () => {
@@ -52,7 +68,11 @@ function displaced(detail: number, tag: string): THREE.BufferGeometry {
 		const theta = rand() * TAU;
 		const planar = Math.sqrt(Math.max(0, 1 - z * z));
 		return {
-			dir: new THREE.Vector3(planar * Math.cos(theta), planar * Math.sin(theta), z),
+			dir: new THREE.Vector3(
+				planar * Math.cos(theta),
+				planar * Math.sin(theta),
+				z,
+			),
 			cos: Math.cos(0.22 + rand() * 0.3),
 			depth: 0.06 + rand() * 0.1,
 		};
@@ -62,8 +82,11 @@ function displaced(detail: number, tag: string): THREE.BufferGeometry {
 	for (let i = 0; i < position.count; i++) {
 		v.fromBufferAttribute(position, i).normalize();
 		const field = (f: number) =>
-			noise.noise2D(v.x * f, v.y * f) + noise.noise2D(v.y * f, v.z * f) + noise.noise2D(v.z * f, v.x * f);
-		let scale = 1 + field(1.1) * 0.085 + field(2.7) * 0.042 + field(6.3) * 0.018;
+			noise.noise2D(v.x * f, v.y * f) +
+			noise.noise2D(v.y * f, v.z * f) +
+			noise.noise2D(v.z * f, v.x * f);
+		let scale =
+			1 + field(1.1) * 0.085 + field(2.7) * 0.042 + field(6.3) * 0.018;
 		for (const c of craters) {
 			const a = v.dot(c.dir);
 			if (a <= c.cos) continue;
@@ -84,7 +107,8 @@ export function shapeLevels(tag: string): THREE.BufferGeometry[] {
 	let max = 0;
 	for (const g of levels) {
 		const p = g.getAttribute("position");
-		for (let i = 0; i < p.count; i++) max = Math.max(max, Math.hypot(p.getX(i), p.getY(i), p.getZ(i)));
+		for (let i = 0; i < p.count; i++)
+			max = Math.max(max, Math.hypot(p.getX(i), p.getY(i), p.getZ(i)));
 	}
 	for (const g of levels) {
 		g.scale(1 / max, 1 / max, 1 / max);
@@ -102,17 +126,26 @@ export function shapeLevels(tag: string): THREE.BufferGeometry[] {
  */
 export function fieldRockMaterial(): THREE.MeshStandardMaterial {
 	const material = applyRockSurface(
-		new THREE.MeshStandardMaterial({ color: 0x9a8a72, roughness: 0.95, metalness: 0.02 }),
+		new THREE.MeshStandardMaterial({
+			color: 0x9a8a72,
+			roughness: 0.95,
+			metalness: 0.02,
+		}),
 	);
 	const base = material.onBeforeCompile;
 	const swap = (src: string, from: string, to: string) => {
-		if (!src.includes(from)) throw new Error(`field rock splice missed: ${from}`);
+		if (!src.includes(from))
+			throw new Error(`field rock splice missed: ${from}`);
 		return src.replace(from, to);
 	};
 	material.onBeforeCompile = (shader, renderer) => {
 		base.call(material, shader, renderer);
 		shader.vertexShader = swap(
-			swap(shader.vertexShader, "varying vec3 vRockP;", "varying vec3 vRockP;\nvarying mat3 vRockM;"),
+			swap(
+				shader.vertexShader,
+				"varying vec3 vRockP;",
+				"varying vec3 vRockP;\nvarying mat3 vRockM;",
+			),
 			"vRockP = position;",
 			`vRockP = position;
 #if defined( USE_BATCHING )
@@ -124,7 +157,11 @@ export function fieldRockMaterial(): THREE.MeshStandardMaterial {
 #endif`,
 		);
 		shader.fragmentShader = swap(
-			swap(shader.fragmentShader, "varying vec3 vRockP;", "varying vec3 vRockP;\nvarying mat3 vRockM;"),
+			swap(
+				shader.fragmentShader,
+				"varying vec3 vRockP;",
+				"varying vec3 vRockP;\nvarying mat3 vRockM;",
+			),
 			"normal = normalize(normalMatrix * objN);",
 			"normal = normalize(normalMatrix * (vRockM * objN));",
 		);
@@ -140,6 +177,11 @@ export interface FieldRendererOptions {
 	quality: "high" | "low";
 	/** Near-level rocks cast into the shadow map (principal: high only). */
 	shadows: boolean;
+	/** #953 study injection; the original measurement arms remain unchanged. */
+	authored?: {
+		levels: THREE.BufferGeometry[][];
+		material: THREE.MeshStandardMaterial | THREE.MeshLambertMaterial;
+	};
 }
 
 export interface FieldStats {
@@ -162,15 +204,24 @@ export function buildFieldRenderer(
 	pxPerRadian: number,
 ) {
 	const started = performance.now();
+	if (opts.authored && opts.authored.levels.length !== opts.k)
+		throw new Error("Authored archetype count does not match K");
 	const root = new THREE.Group();
 	root.name = "asteroid-field";
 	// `batch-plain`: batch-k with no rock surface patch, to price the shader apart from plain fill.
-	const material =
-		opts.arm === "batch-plain"
-			? new THREE.MeshStandardMaterial({ color: 0x9a8a72, roughness: 0.95, metalness: 0.02 })
+	const material = opts.authored
+		? opts.authored.material
+		: opts.arm === "batch-plain"
+			? new THREE.MeshStandardMaterial({
+					color: 0x9a8a72,
+					roughness: 0.95,
+					metalness: 0.02,
+				})
 			: fieldRockMaterial();
 	const shapeOf = (rock: Rock) =>
-		opts.arm === "batch-unique" || opts.arm === "naive" ? rock.slot : rock.shapeSeed % opts.k;
+		opts.arm === "batch-unique" || opts.arm === "naive"
+			? rock.slot
+			: rock.shapeSeed % opts.k;
 	const shapeTags = [...new Set(rocks.map(shapeOf))];
 	let vertices = 0;
 	let triangles = 0;
@@ -185,7 +236,11 @@ export function buildFieldRenderer(
 	pointGeom.setAttribute("position", new THREE.BufferAttribute(pointPos, 3));
 	const points = new THREE.Points(
 		pointGeom,
-		new THREE.PointsMaterial({ color: 0x8a7e6c, size: 1.5, sizeAttenuation: false }),
+		new THREE.PointsMaterial({
+			color: 0x8a7e6c,
+			size: 1.5,
+			sizeAttenuation: false,
+		}),
 	);
 	points.frustumCulled = false;
 	root.add(points);
@@ -241,7 +296,11 @@ export function buildFieldRenderer(
 		};
 	} else {
 		// BatchedMesh: one for level 0 (it may cast), one for levels 1–2.
-		const shapes = shapeTags.map((s) => shapeLevels(opts.arm !== "batch-unique" ? `arch-${s}` : `rock-${s}`));
+		const shapes = shapeTags.map(
+			(s) =>
+				opts.authored?.levels[s] ??
+				shapeLevels(opts.arm !== "batch-unique" ? `arch-${s}` : `rock-${s}`),
+		);
 		const size = (ls: number[]) => {
 			let v = 0;
 			let ix = 0;
@@ -320,7 +379,9 @@ export function buildFieldRenderer(
 				r.anchor.y + c * r.e1.y + sn * r.e2.y,
 				r.anchor.z + c * r.e1.z + sn * r.e2.z,
 			);
-			const px = (r.radiusKm / Math.max(1e-6, pos.distanceTo(cameraLocal))) * pxPerRadian;
+			const px =
+				(r.radiusKm / Math.max(1e-6, pos.distanceTo(cameraLocal))) *
+				pxPerRadian;
 			// Step up only past the inner edge of the band above.
 			let level = 3;
 			for (let l = 0; l < 3; l++) {
@@ -348,7 +409,8 @@ export function buildFieldRenderer(
 		}
 		flush();
 		pointGeom.setDrawRange(0, np);
-		(pointGeom.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+		(pointGeom.getAttribute("position") as THREE.BufferAttribute).needsUpdate =
+			true;
 		points.visible = np > 0;
 	}
 

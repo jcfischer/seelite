@@ -1,0 +1,342 @@
+{
+  "count": 16,
+  "atlasSize": 2048,
+  "archetypes": [
+    {
+      "index": 0,
+      "name": "fractured-block",
+      "levels": [
+        {
+          "name": "rock_00_fractured-block_L0",
+          "triangles": 7844,
+          "bound": 0.9921730058749025
+        },
+        {
+          "name": "rock_00_fractured-block_L1",
+          "triangles": 1899,
+          "bound": 0.9926481890467446
+        },
+        {
+          "name": "rock_00_fractured-block_L2",
+          "triangles": 423,
+          "bound": 0.9999999552965154
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "long-wedge",
+      "levels": [
+        {
+          "name": "rock_01_long-wedge_L0",
+          "triangles": 7844,
+          "bound": 0.9986857967925994
+        },
+        {
+          "name": "rock_01_long-wedge_L1",
+          "triangles": 1928,
+          "bound": 1.0000000104728315
+        },
+        {
+          "name": "rock_01_long-wedge_L2",
+          "triangles": 423,
+          "bound": 0.9904721808518917
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "flat-slab",
+      "levels": [
+        {
+          "name": "rock_02_flat-slab_L0",
+          "triangles": 7844,
+          "bound": 0.9993181842471759
+        },
+        {
+          "name": "rock_02_flat-slab_L1",
+          "triangles": 1931,
+          "bound": 0.9999999630002769
+        },
+        {
+          "name": "rock_02_flat-slab_L2",
+          "triangles": 423,
+          "bound": 0.997846821040451
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "contact-binary",
+      "levels": [
+        {
+          "name": "rock_03_contact-binary_L0",
+          "triangles": 7844,
+          "bound": 0.9949076864144821
+        },
+        {
+          "name": "rock_03_contact-binary_L1",
+          "triangles": 1935,
+          "bound": 0.9929542666878901
+        },
+        {
+          "name": "rock_03_contact-binary_L2",
+          "triangles": 423,
+          "bound": 0.9999998921994062
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "angular-shard",
+      "levels": [
+        {
+          "name": "rock_04_angular-shard_L0",
+          "triangles": 7844,
+          "bound": 0.9931619831338193
+        },
+        {
+          "name": "rock_04_angular-shard_L1",
+          "triangles": 1945,
+          "bound": 0.9913762860198353
+        },
+        {
+          "name": "rock_04_angular-shard_L2",
+          "triangles": 423,
+          "bound": 1.0000000082654878
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "stepped-strata",
+      "levels": [
+        {
+          "name": "rock_05_stepped-strata_L0",
+          "triangles": 7844,
+          "bound": 0.999999962979927
+        },
+        {
+          "name": "rock_05_stepped-strata_L1",
+          "triangles": 1875,
+          "bound": 0.9977989588722761
+        },
+        {
+          "name": "rock_05_stepped-strata_L2",
+          "triangles": 423,
+          "bound": 0.9973297248342841
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "impact-basin",
+      "levels": [
+        {
+          "name": "rock_06_impact-basin_L0",
+          "triangles": 7844,
+          "bound": 1.0000000669388078
+        },
+        {
+          "name": "rock_06_impact-basin_L1",
+          "triangles": 1899,
+          "bound": 0.9986637749647835
+        },
+        {
+          "name": "rock_06_impact-basin_L2",
+          "triangles": 423,
+          "bound": 0.9986637749647835
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "name": "rubble-block",
+      "levels": [
+        {
+          "name": "rock_07_rubble-block_L0",
+          "triangles": 7844,
+          "bound": 1.0000000185391398
+        },
+        {
+          "name": "rock_07_rubble-block_L1",
+          "triangles": 1904,
+          "bound": 0.9980547343692786
+        },
+        {
+          "name": "rock_07_rubble-block_L2",
+          "triangles": 423,
+          "bound": 0.9980547343692786
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "cleaved-keel",
+      "levels": [
+        {
+          "name": "rock_08_cleaved-keel_L0",
+          "triangles": 7844,
+          "bound": 1.0000000488944363
+        },
+        {
+          "name": "rock_08_cleaved-keel_L1",
+          "triangles": 1934,
+          "bound": 0.9998130976892816
+        },
+        {
+          "name": "rock_08_cleaved-keel_L2",
+          "triangles": 423,
+          "bound": 0.9835235297622378
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "name": "crooked-tooth",
+      "levels": [
+        {
+          "name": "rock_09_crooked-tooth_L0",
+          "triangles": 7844,
+          "bound": 0.9923398976660591
+        },
+        {
+          "name": "rock_09_crooked-tooth_L1",
+          "triangles": 1929,
+          "bound": 0.9894489001276341
+        },
+        {
+          "name": "rock_09_crooked-tooth_L2",
+          "triangles": 423,
+          "bound": 0.9999999938740984
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "name": "broken-disc",
+      "levels": [
+        {
+          "name": "rock_10_broken-disc_L0",
+          "triangles": 7844,
+          "bound": 0.9942730800631961
+        },
+        {
+          "name": "rock_10_broken-disc_L1",
+          "triangles": 1930,
+          "bound": 0.9966986200517127
+        },
+        {
+          "name": "rock_10_broken-disc_L2",
+          "triangles": 423,
+          "bound": 0.9999999814899636
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "name": "three-lobed",
+      "levels": [
+        {
+          "name": "rock_11_three-lobed_L0",
+          "triangles": 7844,
+          "bound": 0.9895532129094646
+        },
+        {
+          "name": "rock_11_three-lobed_L1",
+          "triangles": 1907,
+          "bound": 0.9906399266016439
+        },
+        {
+          "name": "rock_11_three-lobed_L2",
+          "triangles": 423,
+          "bound": 1.0000000816071373
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "name": "split-spine",
+      "levels": [
+        {
+          "name": "rock_12_split-spine_L0",
+          "triangles": 7844,
+          "bound": 0.9965358741665019
+        },
+        {
+          "name": "rock_12_split-spine_L1",
+          "triangles": 1878,
+          "bound": 1.0000000561121836
+        },
+        {
+          "name": "rock_12_split-spine_L2",
+          "triangles": 423,
+          "bound": 1.0000000561121836
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "name": "saddle",
+      "levels": [
+        {
+          "name": "rock_13_saddle_L0",
+          "triangles": 7844,
+          "bound": 0.9982369214209919
+        },
+        {
+          "name": "rock_13_saddle_L1",
+          "triangles": 1915,
+          "bound": 0.999999967638359
+        },
+        {
+          "name": "rock_13_saddle_L2",
+          "triangles": 423,
+          "bound": 0.9935842247144573
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "name": "battered-pyramid",
+      "levels": [
+        {
+          "name": "rock_14_battered-pyramid_L0",
+          "triangles": 7844,
+          "bound": 0.9987008199280185
+        },
+        {
+          "name": "rock_14_battered-pyramid_L1",
+          "triangles": 1915,
+          "bound": 1.0000000868312744
+        },
+        {
+          "name": "rock_14_battered-pyramid_L2",
+          "triangles": 423,
+          "bound": 0.9990695484069054
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "name": "offset-boulder",
+      "levels": [
+        {
+          "name": "rock_15_offset-boulder_L0",
+          "triangles": 7844,
+          "bound": 0.9999999793944878
+        },
+        {
+          "name": "rock_15_offset-boulder_L1",
+          "triangles": 1902,
+          "bound": 0.9998021218724689
+        },
+        {
+          "name": "rock_15_offset-boulder_L2",
+          "triangles": 423,
+          "bound": 0.9992538328178392
+        }
+      ]
+    }
+  ]
+}
