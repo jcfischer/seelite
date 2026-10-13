@@ -187,7 +187,7 @@ def boolean_cut(ob,c,size):
  for self_intersecting in [False,True]:
   mod=ob.modifiers.new("excavation","BOOLEAN");mod.operation='DIFFERENCE';mod.solver='EXACT';mod.object=cut
   mod.use_self=self_intersecting
-  bpy.ops.object.modifier_apply(modifier=mod.name)  # glossary-ignore: Modifier (Blender's)
+  bpy.ops.object.modifier_apply(modifier=mod.name)  # glossary-ignore: Modifier
   if len(ob.data.polygons):break
   # The Works' quarry shell intersects itself, and under the flight export's
   # pad cut the plain exact solver returns nothing (15 360 faces to 0).
@@ -208,7 +208,7 @@ def finish_rock(ob):
  # Rebuild the cut surfaces into geological facets rather than giant flat ngons.
  bpy.context.view_layer.objects.active=ob
  remesh=ob.modifiers.new('fractured-cut-surface','REMESH');remesh.mode='VOXEL';remesh.voxel_size=1.25;remesh.adaptivity=.18
- bpy.ops.object.modifier_apply(modifier=remesh.name)  # glossary-ignore: Modifier (Blender's)
+ bpy.ops.object.modifier_apply(modifier=remesh.name)  # glossary-ignore: Modifier
  ob.data.update()
  for v in ob.data.vertices:
   q=v.co.copy()

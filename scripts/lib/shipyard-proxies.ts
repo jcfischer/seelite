@@ -683,8 +683,10 @@ export interface FittedRefinery {
  * the limit (Warren: 19 460 boxes at 10 m, 17 459 at 25 m). A rock is
  * instead filled with voxels, merged into boxes: at 20 m, 908–1 711 a rock.
  * The Works' quarry rim is thinner than half a 20 m voxel along the fill's
- * rays and rounded away, leaving 291 rock vertices up to 52 m outside; at
- * 10 m none is (4 168 boxes). `tests/refinery-flight.test.ts` measures the
+ * rays and rounded away, leaving 291 rock vertices up to 52 m outside. At
+ * 10 m, 171 still stood 21–24 m out, so `voxelFill` fills the voxel of any
+ * vertex still farther than the rule from the solid (4 168 boxes to 4 177);
+ * do not drop that pass. `tests/refinery-flight.test.ts` measures the
  * filled rock's outer faces and holds every rock vertex.
  */
 export const ROCK_VOXEL_M: Readonly<Record<string, number>> = {

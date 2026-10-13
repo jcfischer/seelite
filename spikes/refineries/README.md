@@ -5,6 +5,25 @@ digger; O2 Collar, O3 Spar and O4 Works retain the approved design directions.
 The requested stopping point is independent visual fidelity 7/10. These assets
 are isolated from production station selection, collisions and flight docking.
 
+**Superseded in part by node #819 (2026-10-13).** The review files here stay
+review-only, but `build_model.py --flight` and `prepare-flight-asset.mjs` are
+now the production pipeline for `src/models/refinery-*.glb`, which the game
+loads and `scripts/generate-refinery-proxies.ts` fits the collision proxies
+to. The flight export replaces the review box with the recessed pad the sim
+docks on (principal ruling, 2026-10-13). Rebuild and verify:
+
+```sh
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
+  --python spikes/refineries/build_model.py -- o1 o2 o3 o4 --flight
+node spikes/refineries/prepare-flight-asset.mjs
+bun scripts/generate-refinery-proxies.ts
+bun test tests/refinery-flight-asset.test.ts tests/refinery-flight.test.ts
+```
+
+The receipt is `docs/receipts/node-819-refinery-integration.md`. The study
+viewer's **Flight export** button shows the shipped file with the sim's pad
+drawn into it.
+
 ## Inspect
 
 From this worktree:
