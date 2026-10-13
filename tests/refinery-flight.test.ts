@@ -26,7 +26,7 @@ import {
 	type Obb,
 	overreaches,
 	ROCK_LIMIT_M,
-	ROCK_VOXEL_M,
+	ROCK_PATCH_M,
 	refineryTriangles,
 	TriangleGrid,
 } from "../scripts/lib/shipyard-proxies";
@@ -181,8 +181,9 @@ function uncovered(
 
 /**
  * The samples on the rock's outer faces farther than the rule from its
- * surface. The rock is filled with voxels (`ROCK_VOXEL_M`), so its boxes lie on
- * one grid: rebuilt from them (rounded, since packing grows a box by a few
+ * surface. The rock is filled with voxels (`ROCK_VOXEL_M`) and patch cubes
+ * (`ROCK_PATCH_M`), so its boxes lie on one 10 m grid: rebuilt from them
+ * (rounded, since packing grows a box by a few
  * centimetres), a voxel face is outer when the voxel beside it is empty, and
  * a face against another voxel is inside the filled rock and owes nothing.
  * Each outer face is sampled every `ROCK_SPACING_M`.
@@ -293,7 +294,9 @@ describe("node #819: the refineries' collision proxies", () => {
 				const far = rockOverreach(
 					refineryProxyBoxes(form).rock,
 					new TriangleGrid(tris.rock),
-					ROCK_VOXEL_M[form],
+					// Every rock box lies on the 10 m sub-grid: the voxels, and the
+					// patch cubes of vertices the voxels left out.
+					ROCK_PATCH_M,
 				);
 				if (far.length)
 					console.log(

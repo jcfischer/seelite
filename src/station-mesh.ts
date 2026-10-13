@@ -1081,6 +1081,9 @@ function buildAperture(
 	// authored exterior whose coaming stands proud of it (`buildShipyardNavigation`).
 	// The bay's berths stay the sim's; only its rendered mouth moves back.
 	mouthRecessKm = 0,
+	// False for an authored pad (node #819), which draws its own deck and
+	// berths: the frame, its lights and the mouth's name stay the game's.
+	drawInterior = true,
 ): THREE.Group {
 	const { aperture } = STATION_GEOMETRY[type];
 	const group = new THREE.Group();
@@ -1149,14 +1152,15 @@ function buildAperture(
 	// `aperturePlaneKm` would hang in space in front of them. For a selected
 	// form the two are the same number by construction, which is what keeps the
 	// drawn bay and the sim's berths in step.
-	group.add(
-		buildStationInterior(
-			type,
-			stationInterior(type, faceZ, berthSeed),
-			mouthRecessKm,
-			berthSeed,
-		),
-	);
+	if (drawInterior)
+		group.add(
+			buildStationInterior(
+				type,
+				stationInterior(type, faceZ, berthSeed),
+				mouthRecessKm,
+				berthSeed,
+			),
+		);
 	group.name = "aperture";
 	return group;
 }
@@ -6627,12 +6631,16 @@ export function installRefineryBuilder(
 export function buildRefineryNavigation(
 	fixtures: StationFixture[],
 	berthSeed: number,
+	/** False when the authored model draws the pad itself (node #819). */
+	drawPad = true,
 ): THREE.Group {
 	return buildAperture(
 		"refinery",
 		fixtures,
 		STATION_GEOMETRY.refinery.aperturePlaneKm,
 		berthSeed,
+		0,
+		drawPad,
 	);
 }
 

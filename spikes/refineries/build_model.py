@@ -107,6 +107,9 @@ PAD_CUT_M=40         # rock cleared outside the housing, before displacement
 FLIGHT_DOCK={'o1':(-69,-163,410),'o2':(0,0,650),'o3':(0,0,590),'o4':(-76,-120,500)}
 FLIGHT_DEPTH_M={'o1':300,'o2':250,'o3':200,'o4':250}
 CURRENT={}
+# Mesh groups built in the shaped frame, which the per-model shape skips.
+PAD_GROUPS=('pad/','interior-','berth-')
+FLIGHT_DISCARD=[False]
 def flight_dock_m(x,y,z):
  """Where the flight frame stands: the review box's front, shaped, unless set."""
  if FLIGHT_DOCK[CURRENT['id']] is not None:return Vector(FLIGHT_DOCK[CURRENT['id']])
@@ -145,11 +148,129 @@ def pad_housing(f):
    box((cx+s*(hi+1.2),cy+t*hi,front+.3),(.3,2.4,.17),warm)
   for t in [-.6,0,.6]:lamp(cx+s*(fo-1),cy+t*hi,front+.25)
  OWNER=previous
+ pad_deck(cx,cy,plane)
  return Vector((cx,cy,plane))
+# The pad itself, authored (principal, 2026-10-13: the procedural pad "needs
+# to be fixed too"). Built to the sim's figures, which
+# tests/refinery-flight-asset.test.ts reads from stationInterior("refinery")
+# and fails on drift: the deck face on the plane, 189.85 m to its outer edge,
+# a 108.19 m hole, 40 m deep; four berth cells 90 x 58 x 40 m, two `deck`
+# berths at (0, +-155.05) lying along x and two `cradle` berths at
+# (+-155.05, 0) lying along y. Mesh groups (OWNER) carry the names the game
+# reads: `interior-deck`, `interior-lane-edge`, `interior-rail`, `berth-*`.
+PAD_DECK_HALF_M=189.85
+PAD_HOLE_HALF_M=108.19
+PAD_DECK_DEPTH_M=40
+PAD_BERTH_M=155.05
+PAD_CELL_M=(90,58,40)  # length, beam, height
+PLATE_RISE_M=0.95      # a plated() plate's top above its box face
+PAD_PLANE=[0]
+def pad_berth(bx,by,along,family,tallies):
+ """One berth on the deck, author units: its apron, lit outline, chocks, a
+ service crane on its outboard side and, for a cradle, two clamp arms."""
+ global OWNER
+ m=.1;L,B,H=[v*m for v in PAD_CELL_M];plane=PAD_PLANE[0]
+ ax=Vector(along);ac=Vector((-ax.y,ax.x,0))
+ if ac.dot(Vector((bx,by,0)))<0:ac=-ac   # across, pointing outboard
+ c=Vector((bx,by,0))
+ def at(u,v,w):return c+ax*u+ac*v+Z*w
+ def oriented(sa,sc,su):
+  return (abs(ax.x)*sa+abs(ac.x)*sc,abs(ax.y)*sa+abs(ac.y)*sc,su)
+ OWNER="berth-apron"
+ plated(at(0,0,plane+.05),oriented(L*1.04,B*1.08,.1),steel,2)
+ top=plane+.1+PLATE_RISE_M*m
+ OWNER="berth-guide"
+ for v in [-1,1]:box(at(0,v*B*.46,top+.03),oriented(L*.94,.1,.06),white)
+ for u in [-1,1]:box(at(u*L*.45,0,top+.03),oriented(.1,B*.82,.06),white)
+ OWNER="berth-chock"
+ for u in [-1,1]:
+  for v in [-1,1]:
+   box(at(u*L*.26,v*B*.3,top+.3),oriented(.6,.6,.6),steel)
+   box(at(u*L*.26,v*B*.3,top+.62),oriented(.5,.5,.04),orange)
+ OWNER="berth-boom"
+ post=at(-L*.42,B*.56,0)
+ # Its arm and lamp clear the cell's 40 m height, which a parked hull may fill.
+ tube(post+Z*plane,post+Z*(plane+4.9),.22,alloy,12)
+ for w in [.6,2.2,3.8]:tube(post+Z*(plane+w),post+Z*(plane+w+.12),.27,orange,12)
+ arm_from=post+Z*(plane+4.7);arm_to=at(-L*.42,-B*.18,plane+4.7)
+ box((arm_from+arm_to)/2,oriented(.35,(arm_to-arm_from).length+.4,.35),steel)
+ lamp_at=arm_to-Z*.25
+ box(lamp_at,(.6,.6,.3),steel);box(lamp_at-Z*.18,(.42,.42,.06),warm)
+ OWNER="berth-tally"
+ for i in range(tallies):box(at(L*.47,B*.4-i*.55,top+.15),oriented(.3,.25,.3),warm)
+ if family=="cradle":
+  OWNER="berth-cradle"
+  for u in [-.22,.22]:
+   for v in [-1,1]:
+    foot=at(u*L,v*B*.56,plane);head=at(u*L,v*B*.42,plane+1.6)
+    tube(foot,head,.16,orange,8);box(head,(.5,.5,.25),steel)
+ OWNER="berth-umbilical"
+ pipe([at(L*.3,B*.55,plane+.2),at(L*.3,B*.62,plane+.2),at(L*.3,B*.62,plane+.2)+ac*.3],.12,alloy)
+def pad_deck(cx,cy,plane):
+ """The deck ring, its hazard band, the lit lane edge, the kerb, corner
+ floods and the four berths, author units, centred on the housing."""
+ global OWNER
+ previous=OWNER
+ m=.1;half=PAD_DECK_HALF_M*m;hole=PAD_HOLE_HALF_M*m;depth=PAD_DECK_DEPTH_M*m
+ PAD_PLANE[0]=plane
+ face=plane-PLATE_RISE_M*m       # plated() plates' tops land on the plane
+ OWNER="interior-deck"
+ for s in [-1,1]:
+  plated((cx,cy+s*(hole+half)/2,face-depth/2),(2*half,half-hole,depth),None,2)
+  plated((cx+s*(hole+half)/2,cy,face-depth/2),(half-hole,2*hole,depth),None,2)
+ # The hazard band round the hole: ochre and black stripes, laid on the plates.
+ band=.8;stripe=.8
+ for s in [-1,1]:
+  for axis in [0,1]:
+   n=int(2*(hole+band)/stripe)
+   for i in range(n):
+    t=-hole-band+(i+.5)*stripe
+    mat=orange if i%2 else black
+    if axis==0:box((cx+t,cy+s*(hole+band/2+.1),plane+.03),(stripe,band,.06),mat)
+    else:box((cx+s*(hole+band/2+.1),cy+t,plane+.03),(band,stripe,.06),mat)
+ # The lane edge: a lit square just outside the band, the brightest line on
+ # the deck, as the procedural pad's touchdown ring was.
+ OWNER="interior-lane-edge"
+ edge=hole+band+.35
+ for s in [-1,1]:
+  box((cx,cy+s*edge,plane+.04),(2*edge+.16,.16,.08),white)
+  box((cx+s*edge,cy,plane+.04),(.16,2*edge-.16,.08),white)
+ # The kerb, a metre inside the deck's edge, and a flood mast at each corner.
+ OWNER="interior-rail"
+ k=half-.1-.25
+ for s in [-1,1]:
+  box((cx,cy+s*k,plane+.15),(2*k+.5,.5,.3),steel)
+  box((cx+s*k,cy,plane+.15),(.5,2*k-.5,.3),steel)
+  for t in [-.6,-.2,.2,.6]:
+   box((cx+t*k,cy+s*(k+.26),plane+.2),(1.2,.04,.08),orange)
+ OWNER="interior-flood"
+ for sx in [-1,1]:
+  for sy in [-1,1]:
+   base=Vector((cx+sx*(half-1.2),cy+sy*(half-1.2),plane))
+   tube(base,base+Z*2.6,.14,alloy,10)
+   head=base+Z*2.6-Vector((sx,sy,0))*.25
+   box(head,(.8,.8,.35),steel);box(head-Vector((sx,sy,0))*.05-Z*.2,(.6,.6,.06),white)
+ for (bx,by,along,family,tallies) in [
+  (0,-PAD_BERTH_M*m,(1,0,0),"deck",1),(0,PAD_BERTH_M*m,(1,0,0),"deck",1),
+  (-PAD_BERTH_M*m,0,(0,1,0),"cradle",2),(PAD_BERTH_M*m,0,(0,1,0),"cradle",2)]:
+  pad_berth(cx+bx,cy+by,along,family,tallies)
+ OWNER=previous
 def dock(x,y,z):
- if FLIGHT:
+ global OWNER
+ if FLIGHT and not FLIGHT_DISCARD[0]:
+  # The housing and the pad draw their own random numbers; the review box
+  # is then built into a discarded group so the stream every later part of
+  # the approved layout reads is exactly the review build's.
   f=flight_dock_m(x,y,z);CURRENT['front']=f
-  return pad_housing(f)
+  state=random.getstate()
+  plane=pad_housing(f)
+  random.setstate(state)
+  previous=OWNER;OWNER="discard"
+  FLIGHT_DISCARD[0]=True;dock(x,y,z);FLIGHT_DISCARD[0]=False
+  OWNER=previous
+  for key in [k for k in BATCH if k.startswith("discard/")]:
+   del BATCH[key];GROUP_MAT.pop(key,None)
+  return plane
  # A real open box, with recessed ribs and no opaque face across the mouth.
  for yy in [-8.8,8.8]:plated((x,y+yy,z-8),(29,2,20),steel,6)
  for xx in [-14,14]:plated((x+xx,y,z-8),(2,16,20),steel,5)
@@ -536,7 +657,7 @@ def clear_housing(root,plane):
  hi=PAD_INNER_M;back=plane.z-PAD_FLOOR_M
  inside=lambda v:abs(v.x-plane.x)<hi and abs(v.y-plane.y)<hi and v.z>back
  for child in root.children:
-  if child.type!='MESH' or child.name.startswith('pad/'):continue
+  if child.type!='MESH' or child.name.startswith(PAD_GROUPS):continue
   bm=bmesh.new();bm.from_mesh(child.data)
   if child.name.startswith('quarried-asteroid'):
    moved=0
@@ -586,7 +707,7 @@ def export(id,rockob,port):
  # that an exported-geometry consumer would need to infer.
  shape=SHAPE[id]
  for child in root.children:
-  if child.type=='MESH' and not child.name.startswith('pad/'):
+  if child.type=='MESH' and not child.name.startswith(PAD_GROUPS):
    for v in child.data.vertices:
     v.co.x*=shape[0];v.co.y*=shape[1];v.co.z*=shape[2]
  if FLIGHT:

@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #819: sentence approved by the principal, 2026-10-13.
+	{
+		date: "2026-10-13",
+		text: "The four refineries have new exteriors: the terraced Warren, the belted Collar, the Spar's processing spine and the quarried Works, each with its landing pad set in a framed mouth in the rock.",
+		node: 819,
+	},
 	// Node #818: sentence approved by the principal, 2026-10-12.
 	{
 		date: "2026-10-12",

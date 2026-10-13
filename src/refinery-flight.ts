@@ -21,7 +21,12 @@ import type { ModelLoader, ModelProgressListener } from "./model-progress";
 import { REFINERY_GLB_URLS } from "./model-urls";
 import { REFINERY_PAD_FRAME } from "./refinery-pad-frame";
 import { STATION_GEOMETRY } from "./station";
-import { NAMEPLATE_NAME } from "./station-interior-mesh";
+import { stationInterior } from "./station-interior";
+import {
+	buildPadNameplate,
+	INTERIOR_GROUP_NAME,
+	NAMEPLATE_NAME,
+} from "./station-interior-mesh";
 import {
 	buildRefineryNavigation,
 	buildRefineryPadCues,
@@ -34,6 +39,15 @@ import {
 import { AUTHORED_EXTERIOR_NAME } from "./station-visuals";
 
 export const REFINERY_FORMS: readonly RefineryForm[] = ["a", "b", "c", "d"];
+
+/** The authored pad's mesh groups, named as the procedural pad's parts
+ *  (`station-interior-mesh.ts`), longest prefix first. */
+const PAD_PART_NAMES = [
+	"interior-lane-edge",
+	"interior-deck",
+	"interior-rail",
+	"interior-flood",
+];
 
 /** Where the export puts the sim's plane, metres, checked at install: a
  *  model in another frame would draw its pad away from the sim's. */
@@ -84,6 +98,34 @@ export function createRefineryBuilder(
 	return (berthSeed: number, _color: number): StationMesh => {
 		const authored = template.clone(true);
 		authored.name = `refinery-${form}-model`;
+		// The authored pad (principal, 2026-10-13): its meshes leave the
+		// exterior for a `station-interior` group of their own, named as the
+		// procedural pad's parts are, so what reads a pad finds one, and the
+		// proxy fit (the exterior's parts) never sees the deck the sim walls.
+		const padMeshes: THREE.Object3D[] = [];
+		authored.traverse((o) => {
+			if (o.name.startsWith("interior-") || o.name.startsWith("berth-"))
+				padMeshes.push(o);
+		});
+		const pad = new THREE.Group();
+		pad.name = INTERIOR_GROUP_NAME;
+		const padModel = new THREE.Group();
+		padModel.scale.setScalar(0.001);
+		pad.add(padModel);
+		for (const o of padMeshes) {
+			for (const part of PAD_PART_NAMES)
+				if (o.name.startsWith(part)) o.name = part;
+			padModel.add(o);
+		}
+		pad.add(
+			buildPadNameplate(
+				stationInterior(
+					"refinery",
+					STATION_GEOMETRY.refinery.aperturePlaneKm,
+					berthSeed,
+				),
+			),
+		);
 		authored.traverse((o) => {
 			// The study's amber lamps are the role's lit windows (§5).
 			if (o.name.startsWith("staticamber-lamp")) {
@@ -105,7 +147,8 @@ export function createRefineryBuilder(
 		km.add(
 			exterior,
 			spinner,
-			buildRefineryNavigation(fixtures, berthSeed),
+			buildRefineryNavigation(fixtures, berthSeed, false),
+			pad,
 			buildRefineryPadCues(fixtures, REFINERY_PAD_FRAME),
 		);
 		const root = new THREE.Group();

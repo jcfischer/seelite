@@ -696,6 +696,9 @@ export const ROCK_VOXEL_M: Readonly<Record<string, number>> = {
 	d: 10,
 };
 export const ROCK_LIMIT_M = 20;
+/** The cube a rock vertex left outside the filled solid gets, on the fill's
+ *  sub-grid: every voxel size divides into it. */
+export const ROCK_PATCH_M = 10;
 
 /**
  * The solid a closed mesh bounds, as voxels of `h` merged into axis-aligned
@@ -761,8 +764,11 @@ function voxelFill(tris: Tri[], h: number): Obb[] {
 		half: [h / 2, h / 2, h / 2],
 	});
 	// A feature thinner than half a voxel along the rays rounds away. Every
-	// vertex farther than the rule from the solid fills its own voxel, whose
-	// faces stand within h·√3 of it (17.3 m at 10 m).
+	// vertex farther than the rule from the solid fills a cube round it on the
+	// fill's 10 m sub-grid, whose faces stand within 17.3 m of it, inside the
+	// rule. (A whole 20 m voxel would not be: its faces reach 34.6 m.)
+	const patch = ROCK_PATCH_M;
+	const patches = new Map<string, Obb>();
 	const reach = Math.ceil(ROCK_LIMIT_M / h) + 1;
 	const index = (v: number, n: number) =>
 		Math.min(n - 1, Math.max(0, Math.floor(v)));
@@ -795,7 +801,21 @@ function voxelFill(tris: Tri[], h: number): Obb[] {
 						);
 						if (Math.hypot(dx, dy, dz) <= ROCK_LIMIT_M - 0.2) held = true;
 					}
-			if (!held) solid[at(ci, cj, ck)] = 1;
+			if (held) continue;
+			const pi = Math.floor((v.x - o.x) / patch);
+			const pj = Math.floor((v.y - o.y) / patch);
+			const pk = Math.floor((v.z - o.z) / patch);
+			const key = `${pi},${pj},${pk}`;
+			if (!patches.has(key))
+				patches.set(key, {
+					c: new THREE.Vector3(
+						o.x + (pi + 0.5) * patch,
+						o.y + (pj + 0.5) * patch,
+						o.z + (pk + 0.5) * patch,
+					),
+					axes: unit(),
+					half: [patch / 2, patch / 2, patch / 2],
+				});
 		}
 	for (let i = 0; i < nx; i++)
 		for (let j = 0; j < ny; j++)
@@ -842,6 +862,7 @@ function voxelFill(tris: Tri[], h: number): Obb[] {
 					],
 				});
 			}
+	for (const box of patches.values()) if (!intrudes(box)) boxes.push(box);
 	return boxes;
 }
 

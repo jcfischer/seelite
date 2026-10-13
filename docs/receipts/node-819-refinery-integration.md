@@ -27,8 +27,8 @@ is merged into `node/819-refinery-integration`, 2026-10-13.
 - **Collision (principal ruling 2026-10-13): the rock within 20 m.** The plant
   and the housing keep the shipyards' rule (at most 10 m of empty space
   collides); the rock is filled with 20 m voxels. See *Collision proxies*.
-- **Shipping assets** (`src/models/`): Warren 7.62 MiB, Collar 7.25, Spar
-  8.95, Works 8.76 (each under Pages' 25 MiB). Checksums: see *Asset and
+- **Shipping assets** (`src/models/`, with the authored pad): Warren 8.02
+  MiB, Collar 7.66, Spar 9.38, Works 9.12 (each under Pages' 25 MiB). Checksums: see *Asset and
   geometry preflight*.
 - **Open:** the in-game look of all four, the visual/probe rows the authored
   exteriors move, SOP §4's LOD measurement, Sage, the browser gate.
@@ -59,6 +59,32 @@ wanted (Q3: "yes add lights").
   (`padVentBanks`). A row holds every shipped model's frame face to the
   figures where the lights stand (the Collar's side pods stand proud of its
   side borders' outer half, where no light is).
+
+**The pad, authored** (principal, 2026-10-13: the procedural pad "needs to
+be fixed too"). `pad_deck()` in `build_model.py --flight` builds it in the
+models' own vocabulary, to the sim's figures (`stationInterior("refinery")`):
+a plated deck ring on the plane (189.85 m to its edge, a 108.19 m hole, 40 m
+deep), an ochre and black hazard band round the hole, a lit lane edge
+outside the band, a kerb a metre inside the deck's edge and a flood mast at
+each corner; and four berths at the sim's cells (90 x 58 x 40 m): an apron,
+a lit outline, chocks and a service crane on its outboard side, whose arm
+and lamp clear the cell's 40 m height, and on the two `cradle` berths clamp
+arms. The game stops drawing the procedural deck and berths for an authored
+refinery (`buildRefineryNavigation(..., false)`) and keeps its frame lights
+and both painted names; the pad's meshes leave the exterior for a
+`station-interior` group, named as the procedural parts (`interior-deck`,
+`interior-lane-edge`, `interior-rail`, `interior-flood`), so what reads a pad
+finds one and the proxy fit never sees the deck the sim walls. Rows
+(`tests/refinery-flight-asset.test.ts`): the deck face on the plane, no pad
+part in the corridor or the landing well, an apron under every berth and
+nothing of the pad in a berth's upper half (red on the first build: the
+crane's lamp hung 0.4 m into the cell), and a lit lane edge. Two defects of
+the flight export found on the way: the housing and pad drew random numbers
+the review box did not, so every review part built after the dock landed
+differently; the stream is now restored and the review box built into a
+discarded group. And the vertex-fill pass filled whole 20 m voxels, whose
+faces can stand 34.6 m from their vertex (red on the Spar's refit); it now
+fills a 10 m cube.
 
 ## Integration contract
 
@@ -157,21 +183,26 @@ parity at each column's centre), a rock took, measured 2026-10-13:
 The filled volume matches the rock's (Warren 450 Mm³ both ways).
 
 **What shipped** (`scripts/generate-refinery-proxies.ts` →
-`src/refinery-proxies.ts`, 618 KB; a refit takes about 4 minutes):
+`src/refinery-proxies.ts`, 615 KB; a refit takes about 4 minutes; refitted
+2026-10-13 after the authored pad, whose parts the fit does not see):
 
 | Form | rock voxel | rock boxes | plant boxes | proxy reach |
 |---|---|---|---|---|
-| a Warren | 20 m | 1 172 | 5 235 | 0.839 km |
-| b Collar | 20 m | 1 711 | 1 745 | 0.900 km |
-| c Spar | 20 m | 908 | 3 151 | 1.235 km |
-| d Works | 10 m | 4 177 | 5 584 | 0.882 km |
+| a Warren | 20 m | 1 144 | 5 236 | 0.825 km |
+| b Collar | 20 m | 1 692 | 1 745 | 0.900 km |
+| c Spar | 20 m | 945 | 3 151 | 1.235 km |
+| d Works | 10 m | 4 196 | 4 912 | 0.882 km |
+
+The rock's boolean and remesh are not reproducible, so each rebuild refits a
+slightly different rock: the first fit's counts were 1 172, 1 711, 908 and
+4 177.
 
 The Works' quarry rim is thinner than half a 20 m voxel along the rays and
 rounded away: at 20 m, 291 rock vertices stood up to 52 m outside the
 proxy. At 10 m, 171 still stood 21–24 m out, so any rock vertex farther than
-the rule from the filled solid fills its own voxel (faces within 17.3 m of
-it at 10 m). That took the Works from 4 168 rock boxes to 4 177; the other
-three are unchanged.
+the rule from the filled solid gets a 10 m cube on the fill's sub-grid (faces
+within 17.3 m of it). A whole 20 m voxel there broke the rule on the Spar's
+refit (faces up to 34.6 m from the vertex).
 
 **The deck** (`padDeck` in `station-proxy.ts`): the deck the game draws, from
 its back face to 30 m above the plane (the procedural forms' figure, so the

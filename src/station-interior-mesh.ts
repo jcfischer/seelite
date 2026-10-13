@@ -1245,6 +1245,27 @@ function buildPadDeck(
 	// lane; a pad has no wall to hang it on and no throat to read it from, and
 	// the one view every approach shares is the one looking straight down at the
 	// deck. It sits on a corner of the ring, where no berth stands.
+	group.add(buildPadNameplate(interior));
+
+	const guide = glowMaterial(visuals.floodColor);
+	const accent = glowMaterial(visuals.heatColor);
+	const seat = padSeatKm(interior);
+	for (const berth of interior.berths)
+		group.add(
+			atFullDetail(buildBerth(berth, plate, structure, guide, accent, seat)),
+		);
+
+	group.add(atFullDetail(buildPadFittings(interior, plate, structure, guide)));
+	return group;
+}
+
+/**
+ * The pad's painted name, on a corner of its deck ring where no berth stands
+ * (E9/E11: a pad has no wall to hang it on). Exported for an authored pad
+ * (node #819), which draws its own deck and keeps the game's name.
+ */
+export function buildPadNameplate(interior: StationInterior): THREE.Mesh {
+	const plate = plateOf(interior);
 	const shieldW = interior.laneHalfAcrossKm * 0.8;
 	const shieldH = shieldW * 0.28;
 	const shield = box(
@@ -1262,20 +1283,9 @@ function buildPadDeck(
 	shield.position.set(
 		interior.halfAcrossKm * 0.75,
 		interior.halfUpKm * 0.75,
-		faceZ - plate * 0.4,
+		interior.mouthAxialKm - plate * 0.4,
 	);
-	group.add(shield);
-
-	const guide = glowMaterial(visuals.floodColor);
-	const accent = glowMaterial(visuals.heatColor);
-	const seat = padSeatKm(interior);
-	for (const berth of interior.berths)
-		group.add(
-			atFullDetail(buildBerth(berth, plate, structure, guide, accent, seat)),
-		);
-
-	group.add(atFullDetail(buildPadFittings(interior, plate, structure, guide)));
-	return group;
+	return shield;
 }
 
 /**

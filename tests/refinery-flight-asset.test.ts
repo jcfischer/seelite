@@ -24,7 +24,7 @@ import { MAX_ASSET_BYTES } from "../scripts/check-dist-sizes.mjs";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { STATION_GEOMETRY } from "../src/station";
 import { REFINERY_PAD_FRAME } from "../src/refinery-pad-frame";
-import { stationInterior } from "../src/station-interior";
+import { corridorRadiusKm, stationInterior } from "../src/station-interior";
 import { padOpeningFloorKm } from "../src/station-proxy";
 
 /** The four forms, `a` to `d` (receipt §Current result). */
@@ -52,6 +52,7 @@ const PAD = stationInterior(
 );
 const DECK_HALF_M = PAD.halfAcrossKm * 1000;
 const HOLE_HALF_M = PAD.padHoleHalfKm * 1000;
+const CORRIDOR_M = corridorRadiusKm(STATION_GEOMETRY.refinery.aperture) * 1000;
 /** The deck's thickness as the game draws it: the outward span the sim
  *  declares (`buildPadDeck`), reaching inward from the plane. */
 const DECK_DEPTH_M = (PAD.stagingAxialKm - PAD.mouthAxialKm) * 1000;
@@ -143,6 +144,12 @@ describe("refinery flight assets (#819)", () => {
 				tris
 					.filter(({ tri }) => triangleHitsBox(tri, b.centre, b.half))
 					.map(({ mesh }) => mesh);
+			/** The authored pad's parts (principal, 2026-10-13), which stand in
+			 *  the deck the sim declares, as the procedural pad's did. */
+			const isPad = (mesh: string) =>
+				mesh.startsWith("interior-") || mesh.startsWith("berth-");
+			const exterior = tris.filter(({ mesh }) => !isPad(mesh));
+			const pad = tris.filter(({ mesh }) => isPad(mesh));
 
 			test("fits the host's per-asset limit", () => {
 				expect(statSync(path).size).toBeLessThan(MAX_ASSET_BYTES);
@@ -189,14 +196,93 @@ describe("refinery flight assets (#819)", () => {
 				expect(Math.abs(p.z - PLANE_M)).toBeLessThan(0.01);
 			});
 
-			test("stands nothing in the deck, nor in front of it", () => {
-				// The deck the game draws, and everything over it: the berths, the
-				// hover height, the traversal and the corridor, out 2 km.
-				const pad = box(
+			test("stands nothing of the exterior in the deck, nor in front of it", () => {
+				// The deck the sim declares, and everything over it: the berths,
+				// the hover height, the traversal and the corridor, out 2 km. The
+				// pad's own parts are the next rows'.
+				const volume = box(
 					[-DECK_HALF_M, -DECK_HALF_M, PLANE_M - DECK_DEPTH_M],
 					[DECK_HALF_M, DECK_HALF_M, PLANE_M + 2000],
 				);
-				expect(hits(pad)).toEqual([]);
+				expect(
+					exterior
+						.filter(({ tri }) =>
+							triangleHitsBox(tri, volume.centre, volume.half),
+						)
+						.map(({ mesh }) => mesh),
+				).toEqual([]);
+			});
+
+			test("lays its deck face on the plane", () => {
+				// On the deck ring where nothing stands: between the hole's band and
+				// the berths. A ray may meet a plate or, in a seam, the slab under it.
+				const all = pad.map(({ tri }) => tri);
+				for (const [x, y] of [
+					[130, 130],
+					[-130, 130],
+					[130, -130],
+					[-130, -130],
+				]) {
+					const z = firstHitDownAxis(all, x, y);
+					expect([
+						x,
+						y,
+						z !== null && z > PLANE_M - 1 && z < PLANE_M + 0.05,
+					]).toEqual([x, y, true]);
+				}
+			});
+
+			test("keeps its pad out of the corridor and the landing well", () => {
+				const r = CORRIDOR_M;
+				const corridor = box(
+					[-r, -r, padOpeningFloorKm("refinery") * 1000],
+					[r, r, PLANE_M + 2000],
+				);
+				expect(
+					pad
+						.filter(({ tri }) =>
+							triangleHitsBox(tri, corridor.centre, corridor.half),
+						)
+						.map(({ mesh }) => mesh),
+				).toEqual([]);
+			});
+
+			test("puts an apron under every berth, and nothing in a berth's upper half", () => {
+				const all = pad.map(({ tri }) => tri);
+				for (const berth of PAD.berths) {
+					const x = berth.centre.across * 1000;
+					const y = berth.centre.up * 1000;
+					const z = firstHitDownAxis(all, x, y);
+					expect([
+						berth.id,
+						z !== null && z > PLANE_M + 1 && z < PLANE_M + 3,
+					]).toEqual([berth.id, true]);
+					// The cell's upper half: a parked hull's spine, never the pad's.
+					const along = Math.abs(berth.parkedNose.across) > 0.5;
+					const hl = (berth.clearLengthKm * 1000) / 2;
+					const hb = (berth.clearBeamKm * 1000) / 2;
+					const top = PLANE_M + berth.clearHeightKm * 1000;
+					const cell = box(
+						[x - (along ? hl : hb), y - (along ? hb : hl), PLANE_M + 20],
+						[x + (along ? hl : hb), y + (along ? hb : hl), top],
+					);
+					expect([
+						berth.id,
+						pad
+							.filter(({ tri }) => triangleHitsBox(tri, cell.centre, cell.half))
+							.map(({ mesh }) => mesh),
+					]).toEqual([berth.id, []]);
+				}
+			});
+
+			test("lights its lane edge", () => {
+				expect(
+					pad.some(
+						({ mesh }) =>
+							mesh === "interior-lane-edge" ||
+							mesh.startsWith("interior-lane-edge"),
+					),
+				).toBe(true);
 			});
 
 			test("floors the lane behind the landing well", () => {

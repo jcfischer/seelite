@@ -3,9 +3,6 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { STATION_GEOMETRY } from "../../src/station";
-import { stationInterior } from "../../src/station-interior";
-import { buildStationInterior } from "../../src/station-interior-mesh";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -139,9 +136,8 @@ const heroes: Record<string, number[]> = {
 };
 const cache = new Map<string, THREE.Group>();
 // The flight export (#819) is the shipped asset the game loads: the recessed
-// pad's housing in place of the review box, in the station's frame (+Z the
-// axis, the aperture plane at the sim's figure). The sim's own deck and
-// berths are drawn into it, as the game draws them.
+// pad's housing and the authored pad itself, in the station's frame (+Z the
+// axis, the aperture plane at the sim's figure).
 const flightAsset: Record<string, string> = {
 	o1: "warren",
 	o2: "collar",
@@ -149,16 +145,6 @@ const flightAsset: Record<string, string> = {
 	o4: "works",
 };
 let flight = new URLSearchParams(location.search).get("flight") === "1";
-function simPad(): THREE.Group {
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const pad = buildStationInterior(
-		"refinery",
-		stationInterior("refinery", plane),
-	);
-	// Kilometres to the viewer's tenth-metre units.
-	pad.scale.setScalar(100);
-	return pad;
-}
 const dockCentre = new THREE.Vector3();
 /** The model's own centre: the flight export is in the station's frame, so
  *  the rock no longer sits on the origin. */
@@ -225,7 +211,7 @@ async function selectModel(id: string) {
 		object.scale.setScalar(0.1);
 		if (flight) {
 			const holder = new THREE.Group();
-			holder.add(object, simPad());
+			holder.add(object);
 			object = holder;
 		}
 		object.traverse((o) => {
