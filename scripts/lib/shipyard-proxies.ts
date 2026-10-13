@@ -593,9 +593,9 @@ function stage(
 	log: (line: string) => void,
 ): Obb[] {
 	let t = performance.now();
-	const lap = (stage: string, n: number) => {
+	const lap = (step: string, n: number) => {
 		log(
-			`${label} ${stage}: ${n} boxes, ${Math.round(performance.now() - t)} ms`,
+			`${label} ${step}: ${n} boxes, ${Math.round(performance.now() - t)} ms`,
 		);
 		t = performance.now();
 	};
@@ -857,20 +857,7 @@ export async function fitRefineryProxies(): Promise<
 	for (const form of REFINERY_FORMS) {
 		if (only && !only.includes(form)) continue;
 		const built = buildStationForm("refinery", form, 0x888888, 0, 0);
-		const parts = partsOf(
-			built.root,
-			AUTHORED_EXTERIOR_NAME,
-			STATION_GEOMETRY.refinery.coreRadiusKm,
-		);
-		const rockParts = partsOf(
-			built.root,
-			"quarried-asteroid",
-			STATION_GEOMETRY.refinery.coreRadiusKm,
-		);
-		const rockSet = new Set(rockParts.flat().map((t) => t[0].toArray().join()));
-		const plantParts = parts.filter(
-			(part) => !rockSet.has(part[0][0].toArray().join()),
-		);
+		const { rockParts, plantParts } = refineryParts(built.root);
 		keepOut = [
 			new THREE.Box3(
 				new THREE.Vector3(
@@ -905,6 +892,27 @@ export async function fitRefineryProxies(): Promise<
 	return out;
 }
 
+/**
+ * A built authored refinery's connected parts, split into its rock (the
+ * `quarried-asteroid` node) and everything else. One split for the fitter and
+ * the check that measures its boxes, so the two cannot disagree on a part.
+ */
+function refineryParts(root: THREE.Object3D): {
+	rockParts: Tri[][];
+	plantParts: Tri[][];
+} {
+	const core = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const parts = partsOf(root, AUTHORED_EXTERIOR_NAME, core);
+	const rockParts = partsOf(root, "quarried-asteroid", core);
+	const rockSet = new Set(rockParts.flat().map((t) => t[0].toArray().join()));
+	return {
+		rockParts,
+		plantParts: parts.filter(
+			(part) => !rockSet.has(part[0][0].toArray().join()),
+		),
+	};
+}
+
 /** A refinery's rock and plant triangles in the station frame, for a check
  *  that measures written boxes against them. */
 export async function refineryTriangles(
@@ -912,17 +920,9 @@ export async function refineryTriangles(
 ): Promise<{ rock: Tri[]; plant: Tri[] }> {
 	await installShippedRefineries();
 	const built = buildStationForm("refinery", form, 0x888888, 0, 0);
-	const core = STATION_GEOMETRY.refinery.coreRadiusKm;
-	const parts = partsOf(built.root, AUTHORED_EXTERIOR_NAME, core);
-	const rockParts = partsOf(built.root, "quarried-asteroid", core);
-	const rockSet = new Set(rockParts.flat().map((t) => t[0].toArray().join()));
+	const { rockParts, plantParts } = refineryParts(built.root);
 	built.dispose();
-	return {
-		rock: rockParts.flat(),
-		plant: parts
-			.filter((part) => !rockSet.has(part[0][0].toArray().join()))
-			.flat(),
-	};
+	return { rock: rockParts.flat(), plant: plantParts.flat() };
 }
 
 // --- Packing: 16-bit integers, conservative -------------------------------

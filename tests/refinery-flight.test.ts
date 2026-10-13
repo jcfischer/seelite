@@ -235,6 +235,29 @@ describe("node #819: the refineries' collision proxies", () => {
 			expect(refineryModelHash(form)).toBe(REFINERY_PROXY_SOURCES[form]);
 	});
 
+	test("are what the sim collides with whatever is drawn, the stand-in included", async () => {
+		// The sim's proxy does not read the install: a refinery whose model is
+		// still loading, or failed to, draws its procedural stand-in and is
+		// solid as the authored refinery (as the shipyards, #818). The stand-in
+		// is not solid; that is the ruling, not a gap.
+		uninstallRefineries();
+		const before = REFINERY_FORMS.map((form) => {
+			const mesh = buildStationForm("refinery", form, 0x888888, 7, 7);
+			const authored = isAuthoredStation(mesh.root);
+			mesh.dispose();
+			return [authored, stationProxy("refinery", form, 7, 7)];
+		});
+		await installShippedRefineries();
+		REFINERY_FORMS.forEach((form, i) => {
+			const [standIn, proxy] = before[i] as [boolean, unknown];
+			expect(standIn).toBe(false);
+			expect(proxy).toBe(stationProxy("refinery", form, 7, 7));
+			const { rock, plant } = refineryProxyBoxes(form);
+			const p = proxy as { spinning: readonly unknown[] };
+			expect(p.spinning.length).toBeGreaterThan(rock.length + plant.length);
+		});
+	});
+
 	for (const form of REFINERY_FORMS) {
 		test(
 			`form ${form}: no plant box stands more than 10 m off the drawn model`,

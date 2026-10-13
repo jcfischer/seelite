@@ -41,10 +41,11 @@ place of the drawn mesh, with the aperture's opening left out. It is
 Three-free and is a function of the form and its seeds. For an aperture of
 kind `pad`, the landing well also derives from the admitted hull envelopes <!-- glossary-ignore: pad -->
 through `padWellDepthKm` (collision.md §2.2). No drawn vertex may
-lie outside it — on a shipyard, no vertex of the authored model: the sim
-collides with that whatever is drawn, so the procedural stand-in that draws
-until it installs is not solid (node #818). `docs/specs/collision.md` §2.2
-owns it.
+lie outside it — on a shipyard or a refinery, no vertex of the authored
+model: the sim collides with that whatever is drawn, so the procedural
+stand-in that draws until it installs is not solid (nodes #818, #819). Its
+plant is held to 10 m of empty space and a refinery's rock to 20 m.
+`docs/specs/collision.md` §2.2 owns it.
 _Avoid_: hitbox, collision mesh.
 
 **Review fleet slot**:

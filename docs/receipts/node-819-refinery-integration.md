@@ -62,10 +62,19 @@ Spar's are plate fasteners.
 differs from the review build only where this list says:
 
 1. **Density.** Plates draw no fasteners, seam strips or wear trails, but
-   draw the same random numbers, and cladding gets no bevel. Rebuilt from
-   the edited scripts, every plated and machinery mesh of the review build is
-   position-identical to the original scripts' build. The rock is not: its
-   boolean and remesh differ from run to run with the original scripts too.
+   draw the same random numbers, and cladding gets no bevel. Measured
+   2026-10-13, by hand and not by a test: the review build
+   (`-- o1 o2 o3 o4`, no `--flight`) rebuilt from the edited scripts, and
+   again from the design branch's original `build_model.py` and
+   `primitives.py` (`91f2dc2`) in a scratch copy, compared mesh by mesh on
+   their `POSITION` arrays (glTF Transform). O1–O3: every `static/*` mesh
+   (plates, cladding, machinery, lamps) identical, element for element, to
+   the original scripts' rebuild; only the rock (`Icosphere*`) differs. The
+   rock is not reproducible run to run: the original scripts' O1 rebuild
+   differs from the committed `o1.glb` in the rock alone. (O2's and O3's
+   committed mesh names carry build-order suffixes, so that comparison was
+   not made for them.) O4: the edited scripts' rebuild has the committed
+   `o4.glb`'s triangle soup exactly.
 2. **The recessed pad** (`pad_housing`): a frame 472 m square with a clear
    400 m opening, its front 24 m in front of the deck's face; walls run back
    into the rock (200–300 m per model); the lane's floor stands 60 m behind

@@ -353,7 +353,7 @@ export const AUTHORED_FIXTURE_NAMES: Readonly<
 	shipyard: Object.freeze(["windows", "mouth-strobe"]),
 	// An authored refinery (node #819) carries its study's amber lamps as
 	// `windows`. The approved models have no heat glow, flare or obstruction
-	// beacon; whether they owe them is the principal's, at the in-game look.
+	// beacon; whether they owe them is the principal's, at the in-game look. // glossary-ignore: beacon
 	refinery: Object.freeze(["windows"]),
 });
 
