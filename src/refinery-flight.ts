@@ -125,10 +125,30 @@ export function createRefineryBuilder(
 		const padModel = new THREE.Group();
 		padModel.scale.setScalar(0.001);
 		pad.add(padModel);
+		// Each berth's parts in a `berth-<id>` group, the sim's id, as the
+		// procedural pad builds them (`probe-dock-arrival` reads it).
+		const berthIds = stationInterior(
+			"refinery",
+			STATION_GEOMETRY.refinery.aperturePlaneKm,
+			berthSeed,
+		).berths.map((b) => b.id);
+		const berths = new Map<string, THREE.Group>();
 		for (const o of padMeshes) {
 			for (const part of PAD_PART_NAMES)
 				if (o.name.startsWith(part)) o.name = part;
-			padModel.add(o);
+			const id = berthIds.find((b) => o.name.startsWith(`berth-${b}`));
+			if (!id) {
+				padModel.add(o);
+				continue;
+			}
+			let group = berths.get(id);
+			if (!group) {
+				group = new THREE.Group();
+				group.name = `berth-${id}`;
+				berths.set(id, group);
+				padModel.add(group);
+			}
+			group.add(o);
 		}
 		pad.add(
 			buildPadNameplate(

@@ -41,6 +41,7 @@ import {
 	stationProxy,
 } from "../src/station-proxy";
 import { STATION_GEOMETRY } from "../src/station";
+import { stationInterior } from "../src/station-interior";
 import { INTERIOR_GROUP_NAME } from "../src/station-interior-mesh";
 import { buildStationForm, stationSilhouetteKm } from "../src/station-mesh";
 import { isAuthoredStation } from "../src/station-visuals";
@@ -83,6 +84,21 @@ describe("authored refineries (#819)", () => {
 			test("carries its authored pad, as the station-interior group", () => {
 				const mesh = build();
 				expect(mesh.root.getObjectByName(INTERIOR_GROUP_NAME)).toBeDefined();
+				mesh.dispose();
+			});
+
+			test("draws every berth in the sim's catalogue as its own part", () => {
+				// What `probe-dock-arrival` reads: a `berth-<id>` object with a mesh
+				// for each berth `stationInterior` declares.
+				const mesh = build();
+				for (const berth of stationInterior("refinery", PLANE_KM, 7).berths) {
+					const part = mesh.root.getObjectByName(`berth-${berth.id}`);
+					let meshes = 0;
+					part?.traverse((o) => {
+						if (o instanceof THREE.Mesh) meshes++;
+					});
+					expect([berth.id, meshes > 0]).toEqual([berth.id, true]);
+				}
 				mesh.dispose();
 			});
 

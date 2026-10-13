@@ -165,7 +165,7 @@ PAD_BERTH_M=155.05
 PAD_CELL_M=(90,58,40)  # length, beam, height
 PLATE_RISE_M=0.95      # a plated() plate's top above its box face
 PAD_PLANE=[0]
-def pad_berth(bx,by,along,family,tallies):
+def pad_berth(bid,bx,by,along,family,tallies):
  """One berth on the deck, author units: its apron, lit outline, chocks, a
  service crane on its outboard side and, for a cradle, two clamp arms."""
  global OWNER
@@ -176,18 +176,18 @@ def pad_berth(bx,by,along,family,tallies):
  def at(u,v,w):return c+ax*u+ac*v+Z*w
  def oriented(sa,sc,su):
   return (abs(ax.x)*sa+abs(ac.x)*sc,abs(ax.y)*sa+abs(ac.y)*sc,su)
- OWNER="berth-apron"
+ OWNER="berth-"+bid+"-apron"
  plated(at(0,0,plane+.05),oriented(L*1.04,B*1.08,.1),steel,2)
  top=plane+.1+PLATE_RISE_M*m
- OWNER="berth-guide"
+ OWNER="berth-"+bid+"-guide"
  for v in [-1,1]:box(at(0,v*B*.46,top+.03),oriented(L*.94,.1,.06),white)
  for u in [-1,1]:box(at(u*L*.45,0,top+.03),oriented(.1,B*.82,.06),white)
- OWNER="berth-chock"
+ OWNER="berth-"+bid+"-chock"
  for u in [-1,1]:
   for v in [-1,1]:
    box(at(u*L*.26,v*B*.3,top+.3),oriented(.6,.6,.6),steel)
    box(at(u*L*.26,v*B*.3,top+.62),oriented(.5,.5,.04),orange)
- OWNER="berth-boom"
+ OWNER="berth-"+bid+"-boom"
  post=at(-L*.42,B*.56,0)
  # Its arm and lamp clear the cell's 40 m height, which a parked hull may fill.
  tube(post+Z*plane,post+Z*(plane+4.9),.22,alloy,12)
@@ -196,15 +196,15 @@ def pad_berth(bx,by,along,family,tallies):
  box((arm_from+arm_to)/2,oriented(.35,(arm_to-arm_from).length+.4,.35),steel)
  lamp_at=arm_to-Z*.25
  box(lamp_at,(.6,.6,.3),steel);box(lamp_at-Z*.18,(.42,.42,.06),warm)
- OWNER="berth-tally"
+ OWNER="berth-"+bid+"-tally"
  for i in range(tallies):box(at(L*.47,B*.4-i*.55,top+.15),oriented(.3,.25,.3),warm)
  if family=="cradle":
-  OWNER="berth-cradle"
+  OWNER="berth-"+bid+"-cradle"
   for u in [-.22,.22]:
    for v in [-1,1]:
     foot=at(u*L,v*B*.56,plane);head=at(u*L,v*B*.42,plane+1.6)
     tube(foot,head,.16,orange,8);box(head,(.5,.5,.25),steel)
- OWNER="berth-umbilical"
+ OWNER="berth-"+bid+"-umbilical"
  pipe([at(L*.3,B*.55,plane+.2),at(L*.3,B*.62,plane+.2),at(L*.3,B*.62,plane+.2)+ac*.3],.12,alloy)
 def pad_deck(cx,cy,plane):
  """The deck ring, its hazard band, the lit lane edge, the kerb, corner
@@ -250,10 +250,11 @@ def pad_deck(cx,cy,plane):
    tube(base,base+Z*2.6,.14,alloy,10)
    head=base+Z*2.6-Vector((sx,sy,0))*.25
    box(head,(.8,.8,.35),steel);box(head-Vector((sx,sy,0))*.05-Z*.2,(.6,.6,.06),white)
- for (bx,by,along,family,tallies) in [
-  (0,-PAD_BERTH_M*m,(1,0,0),"deck",1),(0,PAD_BERTH_M*m,(1,0,0),"deck",1),
-  (-PAD_BERTH_M*m,0,(0,1,0),"cradle",2),(PAD_BERTH_M*m,0,(0,1,0),"cradle",2)]:
-  pad_berth(cx+bx,cy+by,along,family,tallies)
+ # The sim's berth ids (stationInterior), which name each berth's groups.
+ for (bid,bx,by,along,family,tallies) in [
+  ("deck-near",0,-PAD_BERTH_M*m,(1,0,0),"deck",1),("overhead-near",0,PAD_BERTH_M*m,(1,0,0),"deck",1),
+  ("port-near",-PAD_BERTH_M*m,0,(0,1,0),"cradle",2),("starboard-near",PAD_BERTH_M*m,0,(0,1,0),"cradle",2)]:
+  pad_berth(bid,cx+bx,cy+by,along,family,tallies)
  OWNER=previous
 def dock(x,y,z):
  global OWNER
