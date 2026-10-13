@@ -328,8 +328,14 @@ export const SPEC_FIXTURE_NAMES: Readonly<
  *  station carrying one is drawn from an approved model (node #818). Here
  *  rather than in `shipyard-flight.ts`, which is a lazy chunk. */
 export const AUTHORED_DRUM_NAME = "shipyard-drum";
+/** An authored refinery's exterior (node #819), the marker for a role that
+ *  has no drum. */
+export const AUTHORED_EXTERIOR_NAME = "authored-exterior";
 export function isAuthoredStation(root: THREE.Object3D): boolean {
-	return !!root.getObjectByName(AUTHORED_DRUM_NAME);
+	return (
+		!!root.getObjectByName(AUTHORED_DRUM_NAME) ||
+		!!root.getObjectByName(AUTHORED_EXTERIOR_NAME)
+	);
 }
 
 /**

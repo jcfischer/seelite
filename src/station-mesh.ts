@@ -6431,6 +6431,9 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "a",
 			name: "Warren",
 			thesis: "terraced plant cut into the rock; the pad is in the notch",
+			// Since node #819 it also holds the authored Warren, which replaces
+			// this form once it installs: its mesh reaches 0.828 km, measured
+			// 2026-10-13.
 			reachKm: 1.2,
 			build: buildRefineryWarren,
 		},
@@ -6438,6 +6441,8 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "b",
 			name: "Collar",
 			thesis: "a machined band gripping the rock at its waist",
+			// Holds this stand-in and, since node #819, the authored Collar that
+			// replaces it (mesh 0.900 km), measured 2026-10-13.
 			reachKm: 1.15,
 			build: buildRefineryCollar,
 		},
@@ -6445,7 +6450,9 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "c",
 			name: "Spar",
 			thesis: "a processing spar run through the rock and out the far side",
-			reachKm: 1.15,
+			// The authored Spar's since node #819, which replaces this stand-in:
+			// mesh 1.234 km, measured 2026-10-13. 1.15 before.
+			reachKm: 1.24,
 			build: buildRefinerySpar,
 		},
 		{
@@ -6459,7 +6466,11 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			// puts on the quarried floor passes it — the tallest column tops out
 			// at 0.5 km on the axis. `tests/station-mesh.test.ts` measures every
 			// plan its seed spread builds against this.
-			reachKm: 0.68,
+			//
+			// Since node #819 the authored Works replaces this stand-in, and its
+			// recessed pad's housing reaches 0.878 km, measured 2026-10-13. 0.68
+			// before.
+			reachKm: 0.88,
 			build: buildRefineryWorks,
 		},
 	],
@@ -6585,6 +6596,40 @@ export function buildShipyardNavigation(
 	);
 }
 
+export type RefineryForm = "a" | "b" | "c" | "d";
+const refineryBuilders = new Map<
+	RefineryForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** The authored refineries (node #819), installed per form by
+ *  `refinery-flight.ts` once its model has loaded. Until then a form draws
+ *  its procedural stand-in. `null` uninstalls, for a test. */
+export function installRefineryBuilder(
+	form: RefineryForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) refineryBuilders.set(form, builder);
+	else refineryBuilders.delete(form);
+}
+
+/**
+ * The refinery's pad for an authored exterior, in kilometres: the lit frame,
+ * the deck, its berths and fittings, as every procedural form has them, at
+ * the sim's plane. The authored housing stands round it (node #819).
+ */
+export function buildRefineryNavigation(
+	fixtures: StationFixture[],
+	berthSeed: number,
+): THREE.Group {
+	return buildAperture(
+		"refinery",
+		fixtures,
+		STATION_GEOMETRY.refinery.aperturePlaneKm,
+		berthSeed,
+	);
+}
+
 /**
  * Build one station in a named form.
  *
@@ -6616,6 +6661,10 @@ export function buildStationForm(
 		return coriolisBuilder(berthSeed, color);
 	if (type === "shipyard") {
 		const authored = shipyardBuilders.get(formId as ShipyardForm);
+		if (authored) return authored(berthSeed, color);
+	}
+	if (type === "refinery") {
+		const authored = refineryBuilders.get(formId as RefineryForm);
 		if (authored) return authored(berthSeed, color);
 	}
 	const form = formOf(type, formId);
