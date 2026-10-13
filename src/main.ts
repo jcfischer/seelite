@@ -4371,17 +4371,17 @@ class Game {
 	 * `fixture.material.emissiveIntensity` from the game shell made this depend
 	 * on how a fixture stores its drive.
 	 */
+	visualOfStation(id: string) {
+		const station = this.stationVisuals.get(id);
+		return station ? stationVisualSnapshot(station) : null;
+	}
+
 	/** Whether a station is drawn from an approved model (node #818), for the
 	 *  probes that report rather than gate what such a station never had to
 	 *  pass. One predicate, so a renamed marker cannot flip one probe alone. */
 	isAuthoredStationId(id: string): boolean {
 		const station = this.stationVisuals.get(id);
 		return !!station && isAuthoredStation(station.root);
-	}
-
-	visualOfStation(id: string) {
-		const station = this.stationVisuals.get(id);
-		return station ? stationVisualSnapshot(station) : null;
 	}
 
 	/**

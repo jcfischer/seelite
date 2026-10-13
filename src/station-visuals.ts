@@ -324,6 +324,14 @@ export const SPEC_FIXTURE_NAMES: Readonly<
 	]),
 });
 
+/** The name of an authored shipyard's turning drum, and so its marker: a
+ *  station carrying one is drawn from an approved model (node #818). Here
+ *  rather than in `shipyard-flight.ts`, which is a lazy chunk. */
+export const AUTHORED_DRUM_NAME = "shipyard-drum";
+export function isAuthoredStation(root: THREE.Object3D): boolean {
+	return !!root.getObjectByName(AUTHORED_DRUM_NAME);
+}
+
 /**
  * §5's names for an **authored** station, where they differ from the
  * procedural form's (node #818; the principal's rulings of 2026-10-13). An
@@ -333,14 +341,6 @@ export const SPEC_FIXTURE_NAMES: Readonly<
  * strobe pair. A shipyard whose model failed keeps its procedural stand-in,
  * and `SPEC_FIXTURE_NAMES` above still rules that one.
  */
-/** The name of an authored shipyard's turning drum, and so its marker: a
- *  station carrying one is drawn from an approved model (node #818). Here
- *  rather than in `shipyard-flight.ts`, which is a lazy chunk. */
-export const AUTHORED_DRUM_NAME = "shipyard-drum";
-export function isAuthoredStation(root: THREE.Object3D): boolean {
-	return !!root.getObjectByName(AUTHORED_DRUM_NAME);
-}
-
 export const AUTHORED_FIXTURE_NAMES: Readonly<
 	Partial<Record<StationType, readonly string[]>>
 > = Object.freeze({

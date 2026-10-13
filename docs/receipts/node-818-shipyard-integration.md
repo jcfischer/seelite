@@ -31,10 +31,12 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
   viewer (`?flight=1`) on 2026-10-11, and the grown drum ("looks good") on
   2026-10-12. **In game** (2026-10-12) the principal approved the look ("looks
   gorgeous. No flickering, drums look good") and then the baked work lights
-  ("looks good"), and found the drum's added lamps floating; they are re-seated
-  (below), and that re-check is the principal's.
-- **Open:** the principal's re-check of the drum lamps, the PR browser gate,
-  and SOP §4's measured LOD selection. Sage review: five rounds on PR #939.
+  ("looks good"), and found the drum's added lamps floating. They were
+  re-seated square to their faces and the study's size-comparison ships
+  removed, and the principal approved that ("approved. run the full browser
+  gate").
+- **Open:** the PR browser gate on the final head, and SOP §4's measured LOD
+  selection. Sage review: seven rounds on PR #939.
 
 ## Rulings during the integration (principal, 2026-10-12)
 
@@ -52,6 +54,34 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
   but a lot less overall". In game: "looks gorgeous. No flickering".
 - **Work lights: baked, gain 12; the ships lit by an irradiance grid** — see
   below.
+
+## Rulings at the browser gate (principal, 2026-10-13)
+
+The first full gate (head 1c485de9) failed 7 of 104 probes. Three were the
+branch's own and are fixed (`probe-collision`, `probe-quality-bloom`,
+`probe-planet-surfaces`), and `probe-output-stage` is red on `main` too.
+The other three needed a ruling, because each check was written for the
+procedural yard:
+
+- **F1, the interior kit's cold install: fix it here.** The kit's dequantise
+  held one frame for 75–92 ms on `main` as well. There the baseline's
+  975–1250 ms hitches set the tail budget to about 2 s, so the check could not
+  fail. With the authored yards the baseline is clean, the budget is 50 ms, and
+  the frame failed. It now runs in 4 ms slices, and the worst install frame is
+  9 ms in flight and 33–41 ms in the bay.
+- **F2, `station-visuals.md` §5: the authored yards get their own row.** Their
+  fixtures are their capsule lamps (as `windows`) and the mouth ring. Their
+  work light is the baked, warm light ruled above, so a shipyard is not ranked
+  by warmth. There are no `bay-flood` or `weld-arc` objects.
+- **F4, no strobe pair on an authored drum.** The mouth ring turns with the
+  drum and shows the rotation.
+- **F3, `probe-station` at 60 km: re-derive from measurement.** All three forms
+  were measured (seeds 54, 3, 2, 19, 9, 11): 10–42 px, aspect 0.56–1.50 against
+  the trade station's 0.75–1.20. The Foundry and the Slipway are taller than
+  wide down the axis, so "wider than trade" is not a cue they carry, and no
+  limit set from these figures would test anything. For an authored yard the
+  width and the type colour are printed, not gated, and presence (drawn,
+  not empty) is still gated.
 
 ## Work lights (principal, 2026-10-12)
 
@@ -234,6 +264,9 @@ the station workbench require the models.
 
 ## Delivery evidence
 
+Headless at 4fdf3856 (2026-10-13), after the gate fixes: `npm test` 6 166
+pass, 0 fail; typecheck, format, lint and build pass.
+
 Headless after the work lights (fffad2e, 2026-10-12): `npm test` 6 114 pass,
 1 fail — `tests/public-site.test.ts`, the grids fetched outside
 `bundle-fetch.ts`; fixed in 3d1ce2d (that file 9 pass). Before them, after
@@ -251,7 +284,21 @@ any shipyard can collide, so they are not deferred. Browser gate: pending.
   half: blind runs meeting a shipyard fell from 11, 8 and 8 to 7, 3 and 3
   (28, 23 and 26 meeting any station before; 24, 18 and 21 after), trade and
   refinery unchanged;
-- the thinnest shipyard primitive is 0.7 m, a fitted plate.
+- the thinnest shipyard primitive is 0.7 m, a fitted plate;
+- C5's empty chord is chosen by the model (no triangle within 10 m plus the
+  hull's reach), not by `crossesStation` (sage round 6);
+- `probe-collision` perches on the authored yards, measured per form;
+- `probe-quality-bloom` opts out of the shipyard wait (its frames are held, so
+  the wait could never end), and `probe-planet-surfaces` waits for the yards.
+
+**Checks that now report an authored yard instead of failing it** (the
+rulings of 2026-10-13 above). Each one still gates the procedural stand-in:
+
+- `probe-station`: the 60 km floor of 20 px (presence is still gated); the
+  60 km "wider than the trade station" check; the type-colour check;
+- `probe-station-visuals`: the shipyard's place in the warm-to-cold ranking.
+  Its per-fixture check reads `AUTHORED_FIXTURE_NAMES` for an authored yard;
+- `probe-station`'s handoff check counts the yard group as the frame.
 
 ## Historical measurements
 
