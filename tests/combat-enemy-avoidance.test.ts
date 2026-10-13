@@ -580,8 +580,8 @@ describe("a ship fighting beside a station does not fly into it, under all three
 	// both the solid and the reach-derived pilot placement; adding seeds until
 	// the aggregate is a majority hides that.
 	//
-	// The blind control asks for more than a third, not half, since node #819
-	// (2026-10-13), for #818's mouth-duel reason: the authored Works leaves
+	// On assist-off the blind control asks for more than a third, not half,
+	// since node #819 (2026-10-13), for #818's mouth-duel reason: the authored Works leaves
 	// less rock in the pilot's path than the procedural one did. Measured on
 	// this corpus at the base (534cd298) and after: assist-off's blind runs
 	// fell from 26 to 18 of 39, those meeting the refinery from 12 to 4;
@@ -591,7 +591,10 @@ describe("a ship fighting beside a station does not fly into it, under all three
 			const blind = corpus(regime, false);
 			const avoiding = corpus(regime, true);
 			// The control is red: without the solids the runs end on a surface.
-			expect(struck(blind)).toBeGreaterThan(blind.length / 3);
+			// A third on assist-off only, the regime whose figure fell (node
+			// #819); the other two keep their majority (sage round 5).
+			const share = regime === "assist-off" ? 3 : 2;
+			expect(struck(blind)).toBeGreaterThan(blind.length / share);
 			expect(avoiding.filter((r) => r.met !== null).map((r) => r.met)).toEqual(
 				[],
 			);

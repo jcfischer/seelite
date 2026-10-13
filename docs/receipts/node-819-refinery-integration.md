@@ -261,5 +261,15 @@ avoidance rows (above); each re-run green after its fix (`model-urls` 5,
 alone). Typecheck, format, lint, launcher wiring and build pass; every file
 in `dist/` is within 25 MiB.
 
-Not yet run: Sage, the browser gate (`probe:pr`), the canonical view set,
-and the principal's in-game look.
+**Sage** (PR #954): rounds 1 and 2 complete (12 and 4 findings, no blocker
+or major; taken and declined with reasons on the PR). From round 3 the
+cumulative diff (850 KB, 615 KB of it the generated `src/refinery-proxies.ts`)
+put three lenses (CodeQuality, ContextDrift, Performance) past the
+substrate's 1 M-token prompt limit: round 3 ran four of seven lenses, round 4
+on `pi` none, round 5 four. `.gitattributes` did not help (Sage builds its own
+diff). **The principal accepted partial coverage (2026-10-13)** rather than
+compress the data with a new dependency. Round 5's one important finding (the
+avoidance control relaxed for regimes whose figure never fell) is taken.
+
+The principal's in-game look: approved (above). The browser gate: by the
+principal's instruction, only the probes the changes directly affect.
