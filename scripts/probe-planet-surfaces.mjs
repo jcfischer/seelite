@@ -51,6 +51,7 @@
 import {
 	bootedGame,
 	interiorModelsSettled,
+	shipyardModelsSettled,
 	guardedOrigin,
 	installViewPlacement,
 	launchChromium,
@@ -656,6 +657,7 @@ await installViewFraming(page);
 await page.goto(URL, { waitUntil: "domcontentloaded" });
 await bootedGame(page);
 await interiorModelsSettled(page);
+await shipyardModelsSettled(page);
 
 /**
  * Wait until every cube bake has landed (#208).

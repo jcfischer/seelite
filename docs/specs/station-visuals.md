@@ -291,6 +291,19 @@ the mouth; the Slipway's floods sit on the arc's inner face between its struts
 and its arc on a slip-head, at the slip's edge. Both gain macro fixtures on
 their static frames. The trade pool is handled by its own node.
 
+**An authored shipyard has its own row** (node #818, the principal's rulings
+of 2026-10-13). The three approved yard models replace those forms in flight
+wherever they load. They carry their capsule's amber lamps as the window grid
+and the mouth ring, and nothing else this table names. Their work light is the
+principal's own ruling, baked into the yard's lightmap at gain 12: warm amber
+pools on the bays, gantries, drum and hull, so the shipyard is no longer the
+coldest role and is not ranked by warmth. There are no `bay-flood` or
+`weld-arc` objects, because the floods are in the bake. There is no strobe pair,
+because the mouth ring stands on the drum's spinner, turns with it, and so
+already shows that the station turns and how fast. `AUTHORED_FIXTURE_NAMES` in
+`station-visuals.ts` is that row. A yard whose model fails keeps its procedural
+stand-in, and the row above still rules that one.
+
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
 second palette: cool for structure and work light, warm for habitation and heat.
 The aperture keeps #28's amber frame at a fixed intensity.

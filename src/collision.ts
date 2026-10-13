@@ -40,6 +40,13 @@
  */
 
 import { DOCKING_DAMAGE_SCALE, V_GATE_KMS } from "./docking";
+import {
+	buildSphereGrid,
+	INDEX_CELL_KM,
+	INDEXED_ABOVE,
+	querySphereGrid,
+	type SphereGrid,
+} from "./sphere-grid";
 import type { HullBoxCentre, HullEnvelope } from "./hull";
 import { type ShieldSide, sideStruck } from "./ship-condition";
 import {
@@ -907,6 +914,80 @@ function sweepMotion(
 	return result;
 }
 
+const solidIndexes = new WeakMap<
+	readonly Primitive[],
+	{ reach: number; grid: SphereGrid | null }
+>();
+function solidIndex(primitives: readonly Primitive[]) {
+	let found = solidIndexes.get(primitives);
+	if (!found) {
+		found = {
+			reach: reachKm(primitives),
+			grid:
+				primitives.length > INDEXED_ABOVE
+					? buildSphereGrid(
+							primitives.map((p) => {
+								const { centre, radiusKm } = primitiveBound(p);
+								return { x: centre.x, y: centre.y, z: centre.z, r: radiusKm };
+							}),
+							INDEX_CELL_KM,
+						)
+					: null,
+		};
+		solidIndexes.set(primitives, found);
+	}
+	return found;
+}
+/** A solid's reach, read once per primitive list rather than every step. */
+const solidReachKm = (primitives: readonly Primitive[]) =>
+	solidIndex(primitives).reach;
+
+/**
+ * The primitives `primitiveMayMeet` has to look at, in list order. A short
+ * list is all of them. A long one (an authored shipyard's thousands of boxes,
+ * node #818) is narrowed through its grid: the ship's path is taken into the
+ * solid's own frame at both ends of the step and grown by everything
+ * `primitiveMayMeet` allows for — the ship's reach, the resting margin, the
+ * sagitta of the solid's turn, and how far that turn carries the ship's end
+ * against the solid — so a primitive it could pass is never skipped.
+ */
+function nearPrimitives(
+	sweep: Sweep,
+	solid: SolidMotion,
+	spin: Spin,
+	reach: number,
+): readonly Primitive[] {
+	const { grid } = solidIndex(solid.primitives);
+	if (!grid) return solid.primitives;
+	const local = (pose: Pose, p: Vec3) => {
+		const d = sub(p, pose.origin);
+		return v3(dot(d, pose.x), dot(d, pose.y), dot(d, pose.z));
+	};
+	const a = local(solid.start, sweep.ship.start.origin);
+	const b = local(solid.end, sweep.ship.end.origin);
+	const turn = 2 * Math.sin(spin.angle / 2);
+	const grow =
+		sweep.shipReach +
+		2 * RESTING_KM +
+		reach * (1 - Math.cos(spin.angle / 2)) +
+		(length(b) + reach) * turn;
+	const near: number[] = [];
+	querySphereGrid(
+		grid,
+		Math.min(a.x, b.x) - grow,
+		Math.min(a.y, b.y) - grow,
+		Math.min(a.z, b.z) - grow,
+		Math.max(a.x, b.x) + grow,
+		Math.max(a.y, b.y) + grow,
+		Math.max(a.z, b.z) + grow,
+		(n) => {
+			near.push(n);
+		},
+	);
+	near.sort((x, y) => x - y);
+	return near.map((n) => solid.primitives[n]);
+}
+
 /** A primitive's bounding sphere in its solid's frame. */
 function primitiveBound(p: Primitive): { centre: Vec3; radiusKm: number } {
 	if (p.kind === "sphere") return { centre: p.centre, radiusKm: p.radiusKm };
@@ -962,7 +1043,7 @@ function classifyPairs(
 	const touching: Touching[] = [];
 	const swept: PairState[] = [];
 	sweep.solids.forEach((solid, index) => {
-		const reach = reachKm(solid.primitives);
+		const reach = solidReachKm(solid.primitives);
 		if (
 			!mayMeet(
 				{
@@ -979,7 +1060,7 @@ function classifyPairs(
 		const shipAt = placeBox(shipBox, { ...ship.start, origin: shipOrigin });
 		const solidPose = { ...solid.start, origin: v3() };
 		const spin = sweep.spins[index];
-		for (const primitive of solid.primitives) {
+		for (const primitive of nearPrimitives(sweep, solid, spin, reach)) {
 			// §4.1's last sentence, per primitive: a station's proxy is tens of
 			// pieces, and a ship beside one face cannot reach the far side's.
 			if (!primitiveMayMeet(sweep, solid, spin, primitive)) continue;

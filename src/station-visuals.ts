@@ -35,6 +35,7 @@
  * moves the other.
  */
 
+import type * as THREE from "three";
 import type { StationType } from "./station";
 import {
 	type MacroOctave,
@@ -321,6 +322,29 @@ export const SPEC_FIXTURE_NAMES: Readonly<
 		"flare",
 		"obstruction-beacon",
 	]),
+});
+
+/** The name of an authored shipyard's turning drum, and so its marker: a
+ *  station carrying one is drawn from an approved model (node #818). Here
+ *  rather than in `shipyard-flight.ts`, which is a lazy chunk. */
+export const AUTHORED_DRUM_NAME = "shipyard-drum";
+export function isAuthoredStation(root: THREE.Object3D): boolean {
+	return !!root.getObjectByName(AUTHORED_DRUM_NAME);
+}
+
+/**
+ * §5's names for an **authored** station, where they differ from the
+ * procedural form's (node #818; the principal's rulings of 2026-10-13). An
+ * authored shipyard carries its capsule's lamps as `windows` and the mouth
+ * ring; its work light is baked into its lightmap, so it has no `bay-flood` or
+ * `weld-arc` object, and the ring turns with the drum, so it carries no
+ * strobe pair. A shipyard whose model failed keeps its procedural stand-in,
+ * and `SPEC_FIXTURE_NAMES` above still rules that one.
+ */
+export const AUTHORED_FIXTURE_NAMES: Readonly<
+	Partial<Record<StationType, readonly string[]>>
+> = Object.freeze({
+	shipyard: Object.freeze(["windows", "mouth-strobe"]),
 });
 
 /**

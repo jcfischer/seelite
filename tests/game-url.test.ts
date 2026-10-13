@@ -110,6 +110,16 @@ describe("gameUrl", () => {
 			).searchParams.has("interiors-full"),
 		).toBe(false);
 	});
+	test("measurement boots settle the shipyards too; the same boots opt out", () => {
+		const has = (url: string) =>
+			new URL(url).searchParams.has("shipyards-full");
+		expect(has(gameUrl(ORIGIN))).toBe(true);
+		expect(has(gameUrl(ORIGIN, { "shipyards-full": false }))).toBe(false);
+		expect(has(gameUrl(ORIGIN, {}, { boot: null }))).toBe(false);
+		expect(
+			has(gameUrl(ORIGIN, {}, { override: `${ORIGIN}/?boot=overlay` })),
+		).toBe(false);
+	});
 	test("adds boot=direct to a default-route boot", () => {
 		const url = new URL(gameUrl(ORIGIN, { seed: 42 }));
 		expect(url.origin).toBe(ORIGIN);

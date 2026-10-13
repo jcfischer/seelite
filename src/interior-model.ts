@@ -9,7 +9,8 @@ import { STATION_INTERIORS_GLB_URL } from "./model-urls";
 import { shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
 import { installInteriorKitBuilder } from "./station-interior-mesh";
-import { bakeQuantisedNodes } from "./interior-dequantize";
+import { bakeQuantisedSteps } from "./interior-dequantize";
+import { runInteriorSlices } from "./interior-install";
 import { buildInteriorKit, buildInteriorKitAsync } from "./interior-kit";
 import { THEMES, type Theme } from "./interior-layout";
 import records from "./interior-lod-records.json";
@@ -28,8 +29,9 @@ export function prepareInteriorModel(
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
 		.loadAsync(STATION_INTERIORS_GLB_URL, onProgress)
-		.then((gltf) => {
-			bakeQuantisedNodes(gltf.scenes);
+		.then(async (gltf) => {
+			// In 4 ms slices: in one go the fold held a frame for 75-92 ms.
+			await runInteriorSlices(bakeQuantisedSteps(gltf.scenes));
 			const assets = new Map<string, THREE.Group>();
 			for (const scene of gltf.scenes) {
 				const file = scene.userData.interiorFile;

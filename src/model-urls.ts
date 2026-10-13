@@ -37,3 +37,29 @@ export const STATION_INTERIORS_GLB_URL = new URL(
 	"./models/station-interiors.glb",
 	import.meta.url,
 ).href;
+
+/** The three shipyards (node #818), prepared by
+ *  `spikes/shipyards/prepare-flight-asset.mjs`: form `a` Gantry Works, `b`
+ *  Foundry Hangar, `c` Crescent Slipway. */ // glossary-ignore: Hangar
+export const SHIPYARD_GLB_URLS = {
+	a: new URL("./models/shipyard-gantry.glb", import.meta.url).href,
+	b: new URL("./models/shipyard-foundry.glb", import.meta.url).href,
+	c: new URL("./models/shipyard-slipway.glb", import.meta.url).href,
+} as const;
+
+/** Each shipyard's baked work lights (node #818, principal 2026-10-12), an
+ *  8-bit sRGB lightmap for the model's second UV set, written beside it by
+ *  `spikes/shipyards/prepare-flight-asset.mjs`. */
+export const SHIPYARD_LIGHTMAP_URLS = {
+	a: new URL("./models/shipyard-gantry-lightmap.webp", import.meta.url).href,
+	b: new URL("./models/shipyard-foundry-lightmap.webp", import.meta.url).href,
+	c: new URL("./models/shipyard-slipway-lightmap.webp", import.meta.url).href,
+} as const;
+
+/** Each shipyard's work lights sampled on a grid through the yard, float16,
+ *  for the ships inside it (`src/ship-work-light.ts`, node #818). */
+export const SHIPYARD_PROBE_URLS = {
+	a: new URL("./models/shipyard-gantry-probes.bin", import.meta.url).href,
+	b: new URL("./models/shipyard-foundry-probes.bin", import.meta.url).href,
+	c: new URL("./models/shipyard-slipway-probes.bin", import.meta.url).href,
+} as const;

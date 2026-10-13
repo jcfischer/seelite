@@ -25,7 +25,8 @@ import {
 	type ProxyPrimitive,
 	type StationProxy,
 	padOpeningFloorKm,
-	proxyDistanceKm,
+	proxyContains,
+	proxyListDistanceKm,
 } from "../../src/station-proxy";
 
 /**
@@ -266,7 +267,16 @@ export function vertexInsideProxy(
 	vertex: NamedVertex,
 	tolerance: number,
 ): boolean {
-	return vertexOvershootKm(proxy, type, vertex) <= tolerance;
+	// Only "within the tolerance" is asked, so the indexed early exit
+	// (`proxyContains`) answers it; the exact figure is `vertexOvershootKm`'s.
+	const { v, spun } = vertex;
+	return proxyContains(
+		framePrimitives(proxy, type, spun),
+		v.x,
+		v.y,
+		v.z,
+		tolerance,
+	);
 }
 
 /**
@@ -279,9 +289,12 @@ export function vertexOvershootKm(
 	type: StationType,
 	{ v, spun }: NamedVertex,
 ): number {
-	let d = Infinity;
-	for (const p of framePrimitives(proxy, type, spun))
-		d = Math.min(d, proxyDistanceKm(p, v.x, v.y, v.z));
+	const d = proxyListDistanceKm(
+		framePrimitives(proxy, type, spun),
+		v.x,
+		v.y,
+		v.z,
+	);
 	return d;
 }
 

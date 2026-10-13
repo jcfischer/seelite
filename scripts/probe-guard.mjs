@@ -627,6 +627,20 @@ export async function interiorModelsSettled(page, timeout = 60000) {
 }
 
 /**
+ * Wait until the authored shipyards' background load has settled (#818):
+ * each form installs after boot and rebuilds every shipyard of its form, which
+ * is the same mid-measurement swap `interiorModelsSettled` waits out.
+ * Settled includes a failed load, which keeps the procedural stand-in.
+ */
+export async function shipyardModelsSettled(page, timeout = 60000) {
+	await page.waitForFunction(
+		() => window.__seelite?.shipyardModelsSettled === true,
+		null,
+		{ timeout },
+	);
+}
+
+/**
  * Wait until the settings screen exists, so a script can drive its key.
  *
  * **The first drawn frame is not that moment.** `main.ts` mounts the screen from

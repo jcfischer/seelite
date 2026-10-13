@@ -1071,6 +1071,10 @@ function buildAperture(
 	fixtures: StationFixture[],
 	faceZ: number,
 	berthSeed: number,
+	// How far behind `faceZ` the hull the opening is cut into stands, for an
+	// authored exterior whose coaming stands proud of it (`buildShipyardNavigation`).
+	// The bay's berths stay the sim's; only its rendered mouth moves back.
+	mouthRecessKm = 0,
 ): THREE.Group {
 	const { aperture } = STATION_GEOMETRY[type];
 	const group = new THREE.Group();
@@ -1143,7 +1147,7 @@ function buildAperture(
 		buildStationInterior(
 			type,
 			stationInterior(type, faceZ, berthSeed),
-			0,
+			mouthRecessKm,
 			berthSeed,
 		),
 	);
@@ -6392,6 +6396,11 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			// The declaration follows the decided shape rather than the shape
 			// being trimmed to an old declaration. `docking.md` §5's "roughly
 			// 1.5 km" is now 10% under.
+			//
+			// Since node #818 it also holds the authored Gantry Works, which
+			// replaces this form once it installs and which the sim collides
+			// with whatever is drawn: its mesh reaches 1.654 km and its proxy
+			// 1.655 (`src/shipyard-proxies.ts`), measured 2026-10-12.
 			reachKm: 1.66,
 			build: buildShipyardGantry,
 		},
@@ -6400,6 +6409,9 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Hangar",
 			thesis:
 				"a closed slab with a floodlit bay mouth; ships inside, not clamped outside",
+			// Holds this stand-in (1.497 km) and, since node #818, the authored
+			// Foundry Hangar that replaces it (mesh 1.311, proxy 1.312), // glossary-ignore: Hangar
+			// measured 2026-10-12.
 			reachKm: 1.5,
 			build: buildShipyardHangar,
 		},
@@ -6407,7 +6419,10 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "c",
 			name: "Slipway",
 			thesis: "a broken ring with the gap as the slip",
-			reachKm: 1.5,
+			// The authored Crescent Slipway's since node #818, which replaces
+			// this stand-in (1.450 km): mesh 1.864, proxy 1.868, measured
+			// 2026-10-12. 1.5 before.
+			reachKm: 1.87,
 			build: buildShipyardSlipway,
 		},
 	],
@@ -6531,6 +6546,45 @@ export function installCoriolisBuilder(
 	coriolisBuilder = builder;
 }
 
+export type ShipyardForm = "a" | "b" | "c";
+const shipyardBuilders = new Map<
+	ShipyardForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** The authored shipyards (node #818), installed per form by
+ *  `shipyard-flight.ts` once its model has loaded. Until then a form draws its
+ *  procedural stand-in; the sim's proxy is the authored one either way
+ *  (`station-proxy.ts`). `null` uninstalls, for a test. */
+export function installShipyardBuilder(
+	form: ShipyardForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) shipyardBuilders.set(form, builder);
+	else shipyardBuilders.delete(form);
+}
+
+/**
+ * The shipyard's mouth for an authored exterior, in kilometres: the lit
+ * frame, its strobes, the name shield and the bay, as every procedural form
+ * has them, at the sim's plane. The authored coaming stands proud of the hull
+ * the slot is cut into, so the bay's rendered mouth wall is recessed to that
+ * hull by `mouthRecessKm`.
+ */
+export function buildShipyardNavigation(
+	fixtures: StationFixture[],
+	berthSeed: number,
+	mouthRecessKm: number,
+): THREE.Group {
+	return buildAperture(
+		"shipyard",
+		fixtures,
+		STATION_GEOMETRY.shipyard.aperturePlaneKm,
+		berthSeed,
+		mouthRecessKm,
+	);
+}
+
 /**
  * Build one station in a named form.
  *
@@ -6560,6 +6614,10 @@ export function buildStationForm(
 ): StationMesh {
 	if (type === "trade" && formId === "a" && coriolisBuilder)
 		return coriolisBuilder(berthSeed, color);
+	if (type === "shipyard") {
+		const authored = shipyardBuilders.get(formId as ShipyardForm);
+		if (authored) return authored(berthSeed, color);
+	}
 	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
 	// to it: with an out-parameter the return type said a builder produced no

@@ -38,30 +38,45 @@ function toFloat(
 }
 
 export function bakeQuantisedNodes(roots: Iterable<THREE.Object3D>): void {
+	const steps = bakeQuantisedSteps(roots);
+	while (!steps.next().done);
+}
+
+/**
+ * The same fold, one mesh a step, for `runInteriorSlices`: in one go it held a
+ * frame for 75-92 ms of the kit's cold install (node #818's gate). The meshes
+ * are listed before the first fold; a fold changes no node's children.
+ */
+export function* bakeQuantisedSteps(
+	roots: Iterable<THREE.Object3D>,
+): Generator<void, void> {
 	// The fold each geometry got, and an unfolded copy to fold differently.
 	const folded = new Map<
 		THREE.BufferGeometry,
 		{ matrix: THREE.Matrix4; pristine: THREE.BufferGeometry }
 	>();
+	const meshes: THREE.Mesh[] = [];
 	for (const root of roots)
 		root.traverse((o) => {
-			const mesh = o as THREE.Mesh;
-			if (!mesh.isMesh) return;
-			mesh.updateMatrix();
-			const matrix = mesh.matrix.clone();
-			const done = folded.get(mesh.geometry);
-			if (!done || !done.matrix.equals(matrix)) {
-				const geometry = done ? done.pristine.clone() : mesh.geometry;
-				const pristine = done ? done.pristine : geometry.clone();
-				for (const name of Object.keys(geometry.attributes))
-					geometry.setAttribute(name, toFloat(geometry.getAttribute(name)));
-				geometry.applyMatrix4(matrix);
-				folded.set(geometry, { matrix, pristine });
-				mesh.geometry = geometry;
-			}
-			mesh.position.set(0, 0, 0);
-			mesh.quaternion.identity();
-			mesh.scale.set(1, 1, 1);
-			mesh.updateMatrix();
+			if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
 		});
+	for (const mesh of meshes) {
+		mesh.updateMatrix();
+		const matrix = mesh.matrix.clone();
+		const done = folded.get(mesh.geometry);
+		if (!done || !done.matrix.equals(matrix)) {
+			const geometry = done ? done.pristine.clone() : mesh.geometry;
+			const pristine = done ? done.pristine : geometry.clone();
+			for (const name of Object.keys(geometry.attributes))
+				geometry.setAttribute(name, toFloat(geometry.getAttribute(name)));
+			geometry.applyMatrix4(matrix);
+			folded.set(geometry, { matrix, pristine });
+			mesh.geometry = geometry;
+		}
+		mesh.position.set(0, 0, 0);
+		mesh.quaternion.identity();
+		mesh.scale.set(1, 1, 1);
+		mesh.updateMatrix();
+		yield;
+	}
 }
