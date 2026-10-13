@@ -37,9 +37,7 @@
  * The thinnest-primitive figure is declared and asserted.
  *
  * A form in any pool with no proxy is red (node #717): the budget rows run
- * over `FORMS_IN_PLAY`, so a form added to a pool is measured by them. The
- * row on the refinery's assembly seed names the Works and reaches no other
- * form.
+ * over `FORMS_IN_PLAY`, so a form added to a pool is measured by them.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -61,7 +59,6 @@ import {
 	type StationProxy,
 	proxyContains,
 	proxyReachKm,
-	refineryPlantProxy,
 	stationProxy,
 } from "../src/station-proxy";
 import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
@@ -74,6 +71,10 @@ import {
 	verticesOutsideProxy,
 } from "./helpers/station-proxy-measure";
 import { codeOf } from "./lib/source-scan";
+import {
+	installShippedRefineries,
+	uninstallRefineries,
+} from "../scripts/lib/shipped-refineries";
 import {
 	installShippedShipyards,
 	uninstallShipyards,
@@ -101,12 +102,24 @@ const BERTH_SEEDS = [0, 1, 2, 7];
 // the proxy does not read the berth seed, and a row below says so.
 
 /** `[berthSeed, assemblySeed]` pairs a form is measured at. */
+/** The roles drawn from approved models once they install (nodes #818,
+ *  #819): their mesh and their proxy read no assembly seed, so one plan is
+ *  every plan. The Works' procedural stand-in is seeded; the authored Works
+ *  that replaces it, and the proxy the sim collides with, are not. */
+const AUTHORED_TYPES: ReadonlySet<StationType> = new Set([
+	"shipyard",
+	"refinery",
+]);
+
+const assemblySeedsOf = (type: StationType, form: StationFormId) =>
+	isSeededForm(type, form) && !AUTHORED_TYPES.has(type) ? ASSEMBLY_SEEDS : [0];
+
 function seedPairs(
 	type: StationType,
 	form: StationFormId,
 	sides: readonly number[] = [0],
 ): [number, number][] {
-	const assembly = isSeededForm(type, form) ? ASSEMBLY_SEEDS : [0];
+	const assembly = assemblySeedsOf(type, form);
 	return [
 		...assembly.flatMap((seed) =>
 			sides.map((side): [number, number] => [side, seed]),
@@ -128,12 +141,19 @@ function intrusions(
 const fmt = (v: THREE.Vector3) =>
 	`(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
 
-// The shipyards' proxies are the authored yards' (node #818), which the sim
-// collides with whatever is drawn, so the rows here measure the meshes the
-// game draws once their models install. Removed after, because bun runs every
-// test file in one process and the next file may measure the stand-ins.
-beforeAll(installShippedShipyards);
-afterAll(uninstallShipyards);
+// The shipyards' and refineries' proxies are the authored models' (nodes
+// #818, #819), which the sim collides with whatever is drawn, so the rows here
+// measure the meshes the game draws once their models install. Removed after,
+// because bun runs every test file in one process and the next file may
+// measure the stand-ins.
+beforeAll(async () => {
+	await installShippedShipyards();
+	await installShippedRefineries();
+});
+afterAll(() => {
+	uninstallShipyards();
+	uninstallRefineries();
+});
 
 describe("station proxy budget (collision.md §9.1.11)", () => {
 	test("every form in every pool has a proxy", () => {
@@ -284,8 +304,8 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// - shipyard: a fitted plate of the authored model, 0.7 m: its 0.5 m
 		//   minimum thickness and the packing's slack, the same on all three
 		//   (node #818; the procedural drum's lip was 28 m);
-		// - refinery: a plant cell's 26 m sliver left beside the corridor where
-		//   a diagonal cell is cut round it (0.08 km to the corridor's radius);
+		// - refinery: a fitted plate of the authored model, 0.8 m, the same on
+		//   all four (node #819; the procedural forms' figures were 17-46 m);
 		// - outpost: the core section's 90 m depth (`SALVAGE_CORE.halfHeightKm`).
 		//
 		// Keyed by form, not by role (node #717): two forms of one role are two
@@ -298,10 +318,10 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			"shipyard/a": 0.0007,
 			"shipyard/b": 0.0007,
 			"shipyard/c": 0.0007,
-			"refinery/a": 0.04,
-			"refinery/b": 0.046471,
-			"refinery/c": 0.0168,
-			"refinery/d": 0.026066,
+			"refinery/a": 0.0008,
+			"refinery/b": 0.0008,
+			"refinery/c": 0.0008,
+			"refinery/d": 0.0008,
 			"outpost/e": 0.09,
 		};
 		for (const [type, form] of FORMS_IN_PLAY) {
@@ -336,8 +356,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// seeded berth stands on, and both sides are inside the same primitives.
 		// If a form starts reading it, this row says so.
 		for (const [type, form] of FORMS_IN_PLAY) {
-			const assembly = isSeededForm(type, form) ? ASSEMBLY_SEEDS : [0];
-			for (const assemblySeed of assembly) {
+			for (const assemblySeed of assemblySeedsOf(type, form)) {
 				const base = JSON.stringify(stationProxy(type, form, 0, assemblySeed));
 				for (const berthSeed of BERTH_SEEDS) {
 					expect(
@@ -369,54 +388,5 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		walk("src/station-proxy.ts");
 		expect(seen.size).toBeGreaterThan(1);
 		expect(reachesThree).toEqual([]);
-	});
-
-	test(
-		"the refinery's cells carry its plant: without them the plant is outside",
-		() => {
-			// The proxy is derived from the solve cell by cell (§2.2), and this is
-			// what makes that more than a name: with every cell's box taken out, the
-			// rock and the deck leave the plant's tall units uncovered at every plan.
-			// A proxy whose cells were decorative would stay green here.
-			// The Works: the refinery form whose proxy derives from the solve.
-			const form = "d";
-			const opening = openingOf("refinery", form);
-			for (const assemblySeed of ASSEMBLY_SEEDS) {
-				const proxy = stationProxy("refinery", form, 0, assemblySeed)!;
-				const cells = new Set(
-					refineryPlantProxy(assemblySeed).map((b) => JSON.stringify(b)),
-				);
-				const withoutCells: StationProxy = {
-					...proxy,
-					spinning: proxy.spinning.filter((p) => !cells.has(JSON.stringify(p))),
-				};
-				expect(withoutCells.spinning.length).toBeLessThan(
-					proxy.spinning.length,
-				);
-				const mesh = buildStationForm("refinery", form, GREY, 0, assemblySeed);
-				const uncovered = verticesOutsideProxy(
-					mesh,
-					"refinery",
-					withoutCells,
-					opening,
-					VERTEX_TOLERANCE_KM,
-				);
-				expect(uncovered.length).toBeGreaterThan(0);
-			}
-		},
-		HEAVY_ROW_MS,
-	);
-
-	test("the refinery's proxy reads the assembly seed, cell by cell", () => {
-		// The Works is the refinery form whose proxy derives from the placement
-		// solve. Two plans must give two proxies, or a regression where the
-		// seed is ignored stays green. The Salvage bounds every plan of its
-		// welded debris with one set of primitives and is seed-independent by
-		// design.
-		const p0 = stationProxy("refinery", "d", 0, 0);
-		const p1 = stationProxy("refinery", "d", 0, 42);
-		expect(JSON.stringify(p0!.spinning)).not.toEqual(
-			JSON.stringify(p1!.spinning),
-		);
 	});
 });

@@ -6432,8 +6432,8 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Warren",
 			thesis: "terraced plant cut into the rock; the pad is in the notch",
 			// Since node #819 it also holds the authored Warren, which replaces
-			// this form once it installs: its mesh reaches 0.828 km, measured
-			// 2026-10-13.
+			// this form once it installs: its mesh reaches 0.828 km and its
+			// proxy 0.839, measured 2026-10-13.
 			reachKm: 1.2,
 			build: buildRefineryWarren,
 		},
@@ -6442,7 +6442,7 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Collar",
 			thesis: "a machined band gripping the rock at its waist",
 			// Holds this stand-in and, since node #819, the authored Collar that
-			// replaces it (mesh 0.900 km), measured 2026-10-13.
+			// replaces it (mesh 0.900 km, proxy 0.900), measured 2026-10-13.
 			reachKm: 1.15,
 			build: buildRefineryCollar,
 		},
@@ -6451,7 +6451,7 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Spar",
 			thesis: "a processing spar run through the rock and out the far side",
 			// The authored Spar's since node #819, which replaces this stand-in:
-			// mesh 1.234 km, measured 2026-10-13. 1.15 before.
+			// mesh 1.234 km, proxy 1.235, measured 2026-10-13. 1.15 before.
 			reachKm: 1.24,
 			build: buildRefinerySpar,
 		},
@@ -6467,10 +6467,10 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			// at 0.5 km on the axis. `tests/station-mesh.test.ts` measures every
 			// plan its seed spread builds against this.
 			//
-			// Since node #819 the authored Works replaces this stand-in, and its
-			// recessed pad's housing reaches 0.878 km, measured 2026-10-13. 0.68
-			// before.
-			reachKm: 0.88,
+			// Since node #819 the authored Works replaces this stand-in: its
+			// recessed pad's housing reaches 0.878 km and its proxy 0.882,
+			// measured 2026-10-13. 0.68 before.
+			reachKm: 0.89,
 			build: buildRefineryWorks,
 		},
 	],

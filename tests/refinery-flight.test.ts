@@ -6,14 +6,39 @@
  * These rows hold what a built station must be, in the station's own frame:
  * drawn from the model, its aperture plane on the sim's, the sim's pad deck
  * drawn into it, nothing turning, and inside the form's declared reach.
+ *
+ * And the written collision proxies (`src/refinery-proxies.ts`) against the
+ * models the game draws, as `tests/shipyard-flight.test.ts` holds the
+ * shipyards': fitted to the files that ship; the plant and housing under the
+ * shipyards' rule (at most 10 m of empty space collides); the rock within
+ * 20 m (principal, 2026-10-13): every face of the filled rock that is not
+ * against another of its boxes stands within 20 m of the rock's surface; and
+ * every drawn vertex held.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
 	installShippedRefineries,
+	refineryModelHash,
 	uninstallRefineries,
 } from "../scripts/lib/shipped-refineries";
+import {
+	type Obb,
+	overreaches,
+	ROCK_LIMIT_M,
+	ROCK_VOXEL_M,
+	refineryTriangles,
+	TriangleGrid,
+} from "../scripts/lib/shipyard-proxies";
 import { REFINERY_FORMS } from "../src/refinery-flight";
+import { REFINERY_PROXY_SOURCES } from "../src/refinery-proxies";
+import {
+	type ProxyBox,
+	type ProxyPrimitive,
+	proxyContains,
+	refineryProxyBoxes,
+	stationProxy,
+} from "../src/station-proxy";
 import { STATION_GEOMETRY } from "../src/station";
 import { INTERIOR_GROUP_NAME } from "../src/station-interior-mesh";
 import { buildStationForm, stationSilhouetteKm } from "../src/station-mesh";
@@ -81,5 +106,170 @@ describe("authored refineries (#819)", () => {
 				mesh.dispose();
 			});
 		});
+	}
+});
+
+const ROW_MS = 120_000;
+/** How far outside its proxy a drawn vertex of the plant may lie, as the
+ *  shipyards' (`tests/shipyard-flight.test.ts`). */
+const PLANT_COVER_M = 1.5;
+/** A rock face is sampled this often; a face point lies within half a
+ *  square's diagonal of its nearest sample. */
+const ROCK_SPACING_M = 2;
+
+/** A decoded box in metres, as the fitter's boxes are. */
+function metres(b: ProxyBox): Obb {
+	const axis = (i: number) =>
+		b.axes
+			? new THREE.Vector3(b.axes[i].x, b.axes[i].y, b.axes[i].z)
+			: new THREE.Vector3(i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0);
+	return {
+		c: new THREE.Vector3(b.cx, b.cy, b.cz).multiplyScalar(1000),
+		axes: [axis(0), axis(1), axis(2)],
+		half: [b.hx * 1000, b.hy * 1000, b.hz * 1000],
+	};
+}
+
+/** Vertices farther than `coverM` outside the primitives. */
+function uncovered(
+	tris: readonly (readonly THREE.Vector3[])[],
+	primitives: readonly ProxyPrimitive[],
+	coverM: number,
+): THREE.Vector3[] {
+	const out: THREE.Vector3[] = [];
+	for (const v of new Set(tris.flat()))
+		if (
+			!proxyContains(
+				primitives,
+				v.x / 1000,
+				v.y / 1000,
+				v.z / 1000,
+				coverM / 1000,
+			)
+		)
+			out.push(v);
+	return out;
+}
+
+/**
+ * The samples on the rock's outer faces farther than the rule from its
+ * surface. The rock is filled with voxels (`ROCK_VOXEL_M`), so its boxes lie on
+ * one grid: rebuilt from them (rounded, since packing grows a box by a few
+ * centimetres), a voxel face is outer when the voxel beside it is empty, and
+ * a face against another voxel is inside the filled rock and owes nothing.
+ * Each outer face is sampled every `ROCK_SPACING_M`.
+ */
+function rockOverreach(
+	boxes: ProxyBox[],
+	grid: TriangleGrid,
+	h: number,
+): THREE.Vector3[] {
+	const limit = ROCK_LIMIT_M - (ROCK_SPACING_M * Math.SQRT2) / 2;
+	const m = boxes.map(metres);
+	const lo = new THREE.Vector3(Infinity, Infinity, Infinity);
+	for (const b of m)
+		lo.min(
+			new THREE.Vector3(
+				b.c.x - b.half[0],
+				b.c.y - b.half[1],
+				b.c.z - b.half[2],
+			),
+		);
+	const key = (i: number, j: number, k: number) => `${i},${j},${k}`;
+	const solid = new Set<string>();
+	for (const b of m) {
+		const i0 = Math.round((b.c.x - b.half[0] - lo.x) / h);
+		const i1 = Math.round((b.c.x + b.half[0] - lo.x) / h);
+		const j0 = Math.round((b.c.y - b.half[1] - lo.y) / h);
+		const j1 = Math.round((b.c.y + b.half[1] - lo.y) / h);
+		const k0 = Math.round((b.c.z - b.half[2] - lo.z) / h);
+		const k1 = Math.round((b.c.z + b.half[2] - lo.z) / h);
+		for (let i = i0; i < i1; i++)
+			for (let j = j0; j < j1; j++)
+				for (let k = k0; k < k1; k++) solid.add(key(i, j, k));
+	}
+	const far: THREE.Vector3[] = [];
+	const n = Math.ceil(h / ROCK_SPACING_M);
+	const p = new THREE.Vector3();
+	for (const cell of solid) {
+		const [i, j, k] = cell.split(",").map(Number);
+		for (let a = 0; a < 3; a++)
+			for (const sign of [-1, 1]) {
+				const next = [i, j, k];
+				next[a] += sign;
+				if (solid.has(key(next[0], next[1], next[2]))) continue;
+				const [u, v] = [0, 1, 2].filter((q) => q !== a);
+				for (let s = 0; s <= n; s++)
+					for (let t = 0; t <= n; t++) {
+						const at = [i + 0.5, j + 0.5, k + 0.5];
+						at[a] += sign * 0.5;
+						at[u] += s / n - 0.5;
+						at[v] += t / n - 0.5;
+						p.set(lo.x + at[0] * h, lo.y + at[1] * h, lo.z + at[2] * h);
+						if (!grid.within(p, limit)) far.push(p.clone());
+					}
+			}
+	}
+	return far;
+}
+
+describe("node #819: the refineries' collision proxies", () => {
+	afterAll(uninstallRefineries);
+
+	test("were fitted to the models that ship", () => {
+		for (const form of REFINERY_FORMS)
+			expect(refineryModelHash(form)).toBe(REFINERY_PROXY_SOURCES[form]);
+	});
+
+	for (const form of REFINERY_FORMS) {
+		test(
+			`form ${form}: no plant box stands more than 10 m off the drawn model`,
+			async () => {
+				const tris = await refineryTriangles(form);
+				const grid = new TriangleGrid(tris.plant);
+				const far = refineryProxyBoxes(form)
+					.plant.map(metres)
+					.filter((o) => overreaches(o, grid));
+				expect(far.length).toBe(0);
+			},
+			ROW_MS,
+		);
+
+		test(
+			`form ${form}: the rock's outer faces stand within 20 m of the rock`,
+			async () => {
+				const tris = await refineryTriangles(form);
+				const far = rockOverreach(
+					refineryProxyBoxes(form).rock,
+					new TriangleGrid(tris.rock),
+					ROCK_VOXEL_M[form],
+				);
+				if (far.length)
+					console.log(
+						`form ${form}: ${far.length} rock face samples too far, e.g. ` +
+							far
+								.slice(0, 3)
+								.map(
+									(v) =>
+										`(${v.x.toFixed(0)}, ${v.y.toFixed(0)}, ${v.z.toFixed(0)})`,
+								)
+								.join("; "),
+					);
+				expect(far.length).toBe(0);
+			},
+			ROW_MS,
+		);
+
+		test(
+			`form ${form}: every drawn vertex is held: the plant within 1.5 m, the rock within 20 m`,
+			async () => {
+				const tris = await refineryTriangles(form);
+				const proxy = stationProxy("refinery", form, 0, 0)!;
+				const all = [...proxy.spinning, ...proxy.static];
+				expect(uncovered(tris.plant, all, PLANT_COVER_M)).toEqual([]);
+				expect(uncovered(tris.rock, all, ROCK_LIMIT_M)).toEqual([]);
+			},
+			ROW_MS,
+		);
 	}
 });

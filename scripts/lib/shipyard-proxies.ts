@@ -27,10 +27,16 @@
  */
 import * as THREE from "three";
 import { SHIPYARD_FORMS } from "../../src/shipyard-flight";
-import { AUTHORED_DRUM_NAME } from "../../src/station-visuals";
+import { REFINERY_FORMS } from "../../src/refinery-flight";
+import {
+	AUTHORED_DRUM_NAME,
+	AUTHORED_EXTERIOR_NAME,
+} from "../../src/station-visuals";
 import { STATION_GEOMETRY } from "../../src/station";
-import { stationInterior } from "../../src/station-interior";
+import { corridorRadiusKm, stationInterior } from "../../src/station-interior";
 import { buildStationForm } from "../../src/station-mesh";
+import { padOpeningFloorKm } from "../../src/station-proxy";
+import { installShippedRefineries } from "./shipped-refineries";
 import { installShippedShipyards } from "./shipped-shipyards";
 
 /** The principal's rule: at most this much empty space may collide. */
@@ -113,12 +119,12 @@ function keepsTheRule(o: Obb): boolean {
 }
 
 /** True when a sample of the box's faces stands farther than the rule allows. */
-export function overreaches(o: Obb, grid: TriangleGrid): boolean {
-	return someFacePoint(
-		o,
-		SAMPLE_SPACING_M,
-		(p) => !grid.within(p, SAMPLE_LIMIT_M),
-	);
+export function overreaches(
+	o: Obb,
+	grid: TriangleGrid,
+	limitM = SAMPLE_LIMIT_M,
+): boolean {
+	return someFacePoint(o, SAMPLE_SPACING_M, (p) => !grid.within(p, limitM));
 }
 
 /** Each triangle cut by the plane `x·axis = at`, as the triangles on either side. */
@@ -460,9 +466,13 @@ function inGroup(o: THREE.Object3D, name: string) {
 	return false;
 }
 
-/** Each connected part's triangles, in metres in the station frame. */
-function partsOf(root: THREE.Object3D, group: string): Tri[][] {
-	const core = STATION_GEOMETRY.shipyard.coreRadiusKm;
+/** Each connected part's triangles, in metres in the station frame. `core`
+ *  is the role's core radius, which the station's root is scaled by. */
+function partsOf(
+	root: THREE.Object3D,
+	group: string,
+	core = STATION_GEOMETRY.shipyard.coreRadiusKm,
+): Tri[][] {
 	const parts: Tri[][] = [];
 	root.updateMatrixWorld(true);
 	root.traverse((o) => {
@@ -575,6 +585,31 @@ export interface FittedProxy {
 	yardTris: Tri[];
 }
 
+/** One group's boxes: fitted per part, absorbed, merged, under the rule and
+ *  clear of the current keep-out. */
+function stage(
+	label: string,
+	parts: Tri[][],
+	log: (line: string) => void,
+): Obb[] {
+	let t = performance.now();
+	const lap = (stage: string, n: number) => {
+		log(
+			`${label} ${stage}: ${n} boxes, ${Math.round(performance.now() - t)} ms`,
+		);
+		t = performance.now();
+	};
+	nearModel = new TriangleGrid(parts.flat());
+	const fitted = parts.flatMap((p) => fitPart(p));
+	lap(`fit (${stranded.length} stranded so far)`, fitted.length);
+	const kept = absorb(fitted);
+	lap("absorb", kept.length);
+	const merged = mergeNeighbours(kept);
+	lap("merge", merged.length);
+	nearModel = null;
+	return merged;
+}
+
 export async function fitShipyardProxies(): Promise<
 	Record<string, FittedProxy>
 > {
@@ -611,24 +646,8 @@ export async function fitShipyardProxies(): Promise<
 				),
 			),
 		];
-		const staged = (name: string, parts: Tri[][]) => {
-			let t = performance.now();
-			const lap = (stage: string, n: number) => {
-				log(
-					`${form} ${name} ${stage}: ${n} boxes, ${Math.round(performance.now() - t)} ms`,
-				);
-				t = performance.now();
-			};
-			nearModel = new TriangleGrid(parts.flat());
-			const fitted = parts.flatMap((p) => fitPart(p));
-			lap(`fit (${stranded.length} stranded so far)`, fitted.length);
-			const kept = absorb(fitted);
-			lap("absorb", kept.length);
-			const merged = mergeNeighbours(kept);
-			lap("merge", merged.length);
-			nearModel = null;
-			return merged;
-		};
+		const staged = (name: string, parts: Tri[][]) =>
+			stage(`${form} ${name}`, parts, log);
 		const drum = offThePlane(staged("drum", drumParts));
 		keepOut = [];
 		out[form] = {
@@ -640,6 +659,270 @@ export async function fitShipyardProxies(): Promise<
 		built.dispose();
 	}
 	return out;
+}
+
+/**
+ * The refineries' proxies (node #819), by the same rule: every part of the
+ * authored exterior, which does not turn. The keep-out is the sim's pad: the
+ * deck the game draws and everything in front of it, and the corridor down
+ * into the landing well (`padOpeningFloorKm`). The deck itself is walled by
+ * `station-proxy.ts` from the sim's figures, as a shipyard's bay is.
+ */
+export interface FittedRefinery {
+	/** The rock, filled with voxels: held within `ROCK_LIMIT_M`. */
+	rock: Obb[];
+	/** Everything else, the plant and the pad's housing: the 10 m rule. */
+	plant: Obb[];
+	rockTris: Tri[];
+	plantTris: Tri[];
+}
+
+/**
+ * **The rock within 20 m** (principal, 2026-10-13). This fitter, built for
+ * plates and beams, fits a faceted rock at about one box per facet whatever
+ * the limit (Warren: 19 460 boxes at 10 m, 17 459 at 25 m). A rock is
+ * instead filled with voxels, merged into boxes: at 20 m, 908–1 711 a rock.
+ * The Works' quarry rim is thinner than half a 20 m voxel along the fill's
+ * rays and rounded away, leaving 291 rock vertices up to 52 m outside; at
+ * 10 m none is (4 168 boxes). `tests/refinery-flight.test.ts` measures the
+ * filled rock's outer faces and holds every rock vertex.
+ */
+export const ROCK_VOXEL_M: Readonly<Record<string, number>> = {
+	a: 20,
+	b: 20,
+	c: 20,
+	d: 10,
+};
+export const ROCK_LIMIT_M = 20;
+
+/**
+ * The solid a closed mesh bounds, as voxels of `h` merged into axis-aligned
+ * boxes. A voxel is solid when its column's ray down the axis has crossed the
+ * surface an odd number of times at its centre; runs along the axis grow
+ * across, then along x. Voxels that meet the keep-out are left out.
+ */
+function voxelFill(tris: Tri[], h: number): Obb[] {
+	const box = new THREE.Box3();
+	for (const t of tris) for (const v of t) box.expandByPoint(v);
+	const o = box.min;
+	const nx = Math.ceil((box.max.x - o.x) / h);
+	const ny = Math.ceil((box.max.y - o.y) / h);
+	const nz = Math.ceil((box.max.z - o.z) / h);
+	const bins = new Map<number, Tri[]>();
+	for (const t of tris) {
+		const xs = t.map((v) => v.x);
+		const ys = t.map((v) => v.y);
+		const x0 = Math.floor((Math.min(...xs) - o.x) / h);
+		const x1 = Math.floor((Math.max(...xs) - o.x) / h);
+		const y0 = Math.floor((Math.min(...ys) - o.y) / h);
+		const y1 = Math.floor((Math.max(...ys) - o.y) / h);
+		for (let i = x0; i <= x1; i++)
+			for (let j = y0; j <= y1; j++) {
+				const k = i * ny + j;
+				(bins.get(k) ?? bins.set(k, []).get(k)!).push(t);
+			}
+	}
+	const at = (i: number, j: number, k: number) => (i * ny + j) * nz + k;
+	const solid = new Uint8Array(nx * ny * nz);
+	for (let i = 0; i < nx; i++)
+		for (let j = 0; j < ny; j++) {
+			const x = o.x + (i + 0.5) * h;
+			const y = o.y + (j + 0.5) * h;
+			const zs: number[] = [];
+			for (const [a, b, c] of bins.get(i * ny + j) ?? []) {
+				const d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+				if (Math.abs(d) < 1e-12) continue;
+				const u = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / d;
+				const w = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / d;
+				if (u < 0 || w < 0 || u + w > 1) continue;
+				zs.push(u * a.z + w * b.z + (1 - u - w) * c.z);
+			}
+			zs.sort((p, q) => p - q);
+			for (let k = 0; k + 1 < zs.length; k += 2) {
+				const z0 = Math.max(0, Math.round((zs[k] - o.z) / h));
+				const z1 = Math.min(nz, Math.round((zs[k + 1] - o.z) / h));
+				for (let z = z0; z < z1; z++) solid[at(i, j, z)] = 1;
+			}
+		}
+	const unit = (): Obb["axes"] => [
+		new THREE.Vector3(1, 0, 0),
+		new THREE.Vector3(0, 1, 0),
+		new THREE.Vector3(0, 0, 1),
+	];
+	const voxel = (i: number, j: number, k: number): Obb => ({
+		c: new THREE.Vector3(
+			o.x + (i + 0.5) * h,
+			o.y + (j + 0.5) * h,
+			o.z + (k + 0.5) * h,
+		),
+		axes: unit(),
+		half: [h / 2, h / 2, h / 2],
+	});
+	// A feature thinner than half a voxel along the rays rounds away. Every
+	// vertex farther than the rule from the solid fills its own voxel, whose
+	// faces stand within h·√3 of it (17.3 m at 10 m).
+	const reach = Math.ceil(ROCK_LIMIT_M / h) + 1;
+	const index = (v: number, n: number) =>
+		Math.min(n - 1, Math.max(0, Math.floor(v)));
+	for (const t of tris)
+		for (const v of t) {
+			const ci = index((v.x - o.x) / h, nx);
+			const cj = index((v.y - o.y) / h, ny);
+			const ck = index((v.z - o.z) / h, nz);
+			let held = false;
+			for (let i = ci - reach; i <= ci + reach && !held; i++)
+				for (let j = cj - reach; j <= cj + reach && !held; j++)
+					for (let k = ck - reach; k <= ck + reach && !held; k++) {
+						if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz)
+							continue;
+						if (!solid[at(i, j, k)]) continue;
+						const dx = Math.max(
+							o.x + i * h - v.x,
+							0,
+							v.x - (o.x + (i + 1) * h),
+						);
+						const dy = Math.max(
+							o.y + j * h - v.y,
+							0,
+							v.y - (o.y + (j + 1) * h),
+						);
+						const dz = Math.max(
+							o.z + k * h - v.z,
+							0,
+							v.z - (o.z + (k + 1) * h),
+						);
+						if (Math.hypot(dx, dy, dz) <= ROCK_LIMIT_M - 0.2) held = true;
+					}
+			if (!held) solid[at(ci, cj, ck)] = 1;
+		}
+	for (let i = 0; i < nx; i++)
+		for (let j = 0; j < ny; j++)
+			for (let k = 0; k < nz; k++)
+				if (solid[at(i, j, k)] && intrudes(voxel(i, j, k)))
+					solid[at(i, j, k)] = 0;
+	const used = new Uint8Array(solid.length);
+	const free = (i: number, j: number, k: number) =>
+		solid[at(i, j, k)] === 1 && used[at(i, j, k)] === 0;
+	const boxes: Obb[] = [];
+	for (let i = 0; i < nx; i++)
+		for (let j = 0; j < ny; j++)
+			for (let k = 0; k < nz; k++) {
+				if (!free(i, j, k)) continue;
+				let k1 = k;
+				while (k1 + 1 < nz && free(i, j, k1 + 1)) k1++;
+				let j1 = j;
+				const rowFree = (jj: number) => {
+					for (let q = k; q <= k1; q++) if (!free(i, jj, q)) return false;
+					return true;
+				};
+				while (j1 + 1 < ny && rowFree(j1 + 1)) j1++;
+				let i1 = i;
+				const slabFree = (ii: number) => {
+					for (let r = j; r <= j1; r++)
+						for (let q = k; q <= k1; q++) if (!free(ii, r, q)) return false;
+					return true;
+				};
+				while (i1 + 1 < nx && slabFree(i1 + 1)) i1++;
+				for (let a = i; a <= i1; a++)
+					for (let r = j; r <= j1; r++)
+						for (let q = k; q <= k1; q++) used[at(a, r, q)] = 1;
+				boxes.push({
+					c: new THREE.Vector3(
+						o.x + ((i + i1 + 1) / 2) * h,
+						o.y + ((j + j1 + 1) / 2) * h,
+						o.z + ((k + k1 + 1) / 2) * h,
+					),
+					axes: unit(),
+					half: [
+						((i1 - i + 1) * h) / 2,
+						((j1 - j + 1) * h) / 2,
+						((k1 - k + 1) * h) / 2,
+					],
+				});
+			}
+	return boxes;
+}
+
+export async function fitRefineryProxies(): Promise<
+	Record<string, FittedRefinery>
+> {
+	await installShippedRefineries();
+	const out: Record<string, FittedRefinery> = {};
+	const only = process.env.REFINERY_FORMS?.split(",");
+	const log = process.env.SHIPYARD_PROXY_LOG ? console.log : () => {};
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	const pad = stationInterior("refinery", plane);
+	const deck = pad.halfAcrossKm * 1000;
+	const corridor = corridorRadiusKm(STATION_GEOMETRY.refinery.aperture) * 1000;
+	for (const form of REFINERY_FORMS) {
+		if (only && !only.includes(form)) continue;
+		const built = buildStationForm("refinery", form, 0x888888, 0, 0);
+		const parts = partsOf(
+			built.root,
+			AUTHORED_EXTERIOR_NAME,
+			STATION_GEOMETRY.refinery.coreRadiusKm,
+		);
+		const rockParts = partsOf(
+			built.root,
+			"quarried-asteroid",
+			STATION_GEOMETRY.refinery.coreRadiusKm,
+		);
+		const rockSet = new Set(rockParts.flat().map((t) => t[0].toArray().join()));
+		const plantParts = parts.filter(
+			(part) => !rockSet.has(part[0][0].toArray().join()),
+		);
+		keepOut = [
+			new THREE.Box3(
+				new THREE.Vector3(
+					-deck,
+					-deck,
+					pad.mouthAxialKm * 1000 -
+						(pad.stagingAxialKm - pad.mouthAxialKm) * 1000,
+				),
+				new THREE.Vector3(deck, deck, plane * 1000 + 3000),
+			),
+			new THREE.Box3(
+				new THREE.Vector3(
+					-corridor,
+					-corridor,
+					padOpeningFloorKm("refinery") * 1000,
+				),
+				new THREE.Vector3(corridor, corridor, plane * 1000 + 3000),
+			),
+		];
+		const rock = voxelFill(rockParts.flat(), ROCK_VOXEL_M[form]);
+		log(`${form} rock: ${rock.length} boxes`);
+		const plant = stage(`${form} plant`, plantParts, log);
+		out[form] = {
+			rock,
+			plant,
+			rockTris: rockParts.flat(),
+			plantTris: plantParts.flat(),
+		};
+		keepOut = [];
+		built.dispose();
+	}
+	return out;
+}
+
+/** A refinery's rock and plant triangles in the station frame, for a check
+ *  that measures written boxes against them. */
+export async function refineryTriangles(
+	form: (typeof REFINERY_FORMS)[number],
+): Promise<{ rock: Tri[]; plant: Tri[] }> {
+	await installShippedRefineries();
+	const built = buildStationForm("refinery", form, 0x888888, 0, 0);
+	const core = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const parts = partsOf(built.root, AUTHORED_EXTERIOR_NAME, core);
+	const rockParts = partsOf(built.root, "quarried-asteroid", core);
+	const rockSet = new Set(rockParts.flat().map((t) => t[0].toArray().join()));
+	built.dispose();
+	return {
+		rock: rockParts.flat(),
+		plant: parts
+			.filter((part) => !rockSet.has(part[0][0].toArray().join()))
+			.flat(),
+	};
 }
 
 // --- Packing: 16-bit integers, conservative -------------------------------
