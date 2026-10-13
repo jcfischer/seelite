@@ -3,6 +3,7 @@ bun test v1.4.2 (744846f84)
 spikes/asteroid-collision-949/rows.test.ts:
 rocks rocks-0622d06b/asteroids.glb sha256 0622d06b78601aae
 D1 R=200 m, 16 archetypes × 24 approaches square to the local normal: {"contact":307,"misaligned":77}; hull clear at contact 307/307
+D1 mixed option: the convex hull proxy already holds a hull sample at first bite in 53/307 approaches (the drill cannot reach those faces)
 D1 overdrive (cutter bite when the first hull sample meets rock), m: min 2.4 p10 7.9 p50 11.9 p90 18.2 max 32.1; n 307
 L1 disagreement: stepped-strata proxy miss, drawn hit 1992.2 m
 L1 disagreement: impact-basin proxy hit 2093.7 m, drawn miss
@@ -17,4 +18,4 @@ L1 worst: {"archetype":"battered-pyramid","err":0.0603,"proxyHitM":1983.2,"drawn
  12 pass
  0 fail
  92 expect() calls
-Ran 12 tests across 1 file. [9.66s]
+Ran 12 tests across 1 file. [10.82s]

@@ -175,9 +175,13 @@ describe("cruise: a field is a contact, never a mass", () => {
 	});
 });
 
+const fibDirsAll = (k: number): V3[] => Array.from({ length: k }, (_, i) => { const z = 1 - (2 * (i + 0.5)) / k, rr = Math.sqrt(1 - z * z), t = i * Math.PI * (3 - Math.sqrt(5)); return [rr * Math.cos(t), rr * Math.sin(t), z]; });
+
 describe("surface: drill, laser and the bound, on a real archetype (provisional: #953 in flight)", () => {
 	let arch: Archetype[] = [];
 	let fields: Heightfield[] = [];
+	/** Each archetype's convex hull, built from every level, as support planes (unit space). */
+	let hulls: { n: V3; m: number }[][] = [];
 	beforeAll(async () => {
 		arch = await loadArchetypes();
 		fields = arch.map((a) => {
@@ -186,6 +190,12 @@ describe("surface: drill, laser and the bound, on a real archetype (provisional:
 			for (const l of a.levels) { all.set(l, off); off += l.length; }
 			return { res: 64, r: outermostExits(all, 64) };
 		});
+		const dirs = fibDirsAll(1500);
+		hulls = arch.map((a) => dirs.map((n) => {
+			let m = -Infinity;
+			for (const l of a.levels) for (let i = 0; i < l.length; i += 3) m = Math.max(m, n[0] * l[i] + n[1] * l[i + 1] + n[2] * l[i + 2]);
+			return { n, m };
+		}));
 	}, 300_000);
 	const surfaceOf = (h: Heightfield, radiusKm: number, origin = v3()): RockSurface => ({
 		pose: { origin, x: v3(1, 0, 0), y: v3(0, 1, 0), z: v3(0, 0, 1) },
@@ -228,7 +238,7 @@ describe("surface: drill, laser and the bound, on a real archetype (provisional:
 		const R = 0.2;
 		const tally: Record<string, number> = {};
 		const hb = [miner.env.beamKm / 2, miner.env.heightKm / 2, miner.env.lengthKm / 2];
-		let clearHull = 0, contacts = 0;
+		let clearHull = 0, contacts = 0, blockedByConvex = 0;
 		const overdrive: number[] = [];
 		let overdrivenSeen = 0;
 		fields.forEach((h) => {
@@ -245,6 +255,16 @@ describe("surface: drill, laser and the bound, on a real archetype (provisional:
 					if (surfaceGapKm(rock, p) <= 0) inside = true;
 				}
 				if (!inside) clearHull++;
+				// The mixed option: hull on a convex hull, drill on the heightfield. Is any
+				// hull sample already inside the convex proxy when the cutter first bites?
+				const hp = hulls[fields.indexOf(h)];
+				let inConvex = false;
+				for (const sx of [-1, -0.5, 0, 0.5, 1]) for (const sy of [-1, 0, 1]) for (const sz of [-1, -0.5, 0, 0.5, 1]) {
+					const p = add(pose.origin, add(scale(pose.x, sx * hb[0]), add(scale(pose.y, sy * hb[1]), scale(pose.z, sz * hb[2]))));
+					const u: V3 = [p.x / R, p.y / R, p.z / R];
+					if (hp.every(({ n, m }) => n[0] * u[0] + n[1] * u[1] + n[2] * u[2] <= m)) inConvex = true;
+				}
+				if (inConvex) blockedByConvex++;
 				// Keep closing along the cutter axis until a hull sample is inside: the
 				// bite the predicate option lets the cutter take before the hull meets rock.
 				for (let push = 0; push < 0.05; push += 0.0001) {
@@ -266,6 +286,7 @@ describe("surface: drill, laser and the bound, on a real archetype (provisional:
 		console.log(`D1 R=200 m, 16 archetypes × 24 approaches square to the local normal: ${JSON.stringify(tally)}; hull clear at contact ${clearHull}/${contacts}`);
 		overdrive.sort((x, y) => x - y);
 		const m = (p: number) => ((overdrive[Math.floor(overdrive.length * p)] ?? 0) * 1000).toFixed(1);
+		console.log(`D1 mixed option: the convex hull proxy already holds a hull sample at first bite in ${blockedByConvex}/${contacts} approaches (the drill cannot reach those faces)`);
 		console.log(`D1 overdrive (cutter bite when the first hull sample meets rock), m: min ${m(0)} p10 ${m(0.1)} p50 ${m(0.5)} p90 ${m(0.9)} max ${((overdrive.at(-1) ?? 0) * 1000).toFixed(1)}; n ${overdrive.length}`);
 		expect(contacts).toBeGreaterThan(0);
 		expect(clearHull).toBe(contacts);
