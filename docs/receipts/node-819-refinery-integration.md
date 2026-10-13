@@ -94,8 +94,9 @@ fills a 10 m cube.
   (`createRefineryBuilder`).
 - **Docking frame and envelope.** The sim's: the pad deck, berths, corridor,
   landing well (`padWellDepthKm`, 50.6 m) and `STATION_GEOMETRY.refinery`
-  are unchanged. The game draws the deck and berths
-  (`buildRefineryNavigation`) into the model's housing.
+  are unchanged. The model draws the deck and berths to those figures (the
+  authored pad, below); the game draws the frame's lights, the role's cues
+  and both painted names.
 - **Moving parts.** None: a refinery does not spin.
 - **Collision owner.** `station-proxy.ts`, from `src/refinery-proxies.ts`
   (generated from the shipped models) plus the sim's deck.
@@ -241,7 +242,7 @@ shipyards); `refineryModelsSettled` says when all four have settled; a
 Commander docked at a refinery waits for that form (`homeRefineryForm`); the
 postcard and the station workbench require the models. Live, 2026-10-13
 (dev server, M1 Pro, Metal): seed 3's Spar installed as authored after
-settle, with the sim's pad, its berths and parked traffic drawn into the
+settle, with the (then procedural) pad, its berths and parked traffic in the
 housing, and no failed request.
 
 **Boot payload.** The proxies ride in the `station-console` chunk, which

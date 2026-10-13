@@ -30,7 +30,8 @@ import {
 	refineryTriangles,
 	TriangleGrid,
 } from "../scripts/lib/shipyard-proxies";
-import { REFINERY_FORMS } from "../src/refinery-flight";
+import { REFINERY_GLB_URLS } from "../src/model-urls";
+import { REFINERY_FORMS, REFINERY_MODEL_NAMES } from "../src/refinery-flight";
 import { REFINERY_PROXY_SOURCES } from "../src/refinery-proxies";
 import {
 	type ProxyBox,
@@ -79,12 +80,13 @@ describe("authored refineries (#819)", () => {
 				mesh.dispose();
 			});
 
-			test("carries the sim's pad deck", () => {
+			test("carries its authored pad, as the station-interior group", () => {
 				const mesh = build();
 				expect(mesh.root.getObjectByName(INTERIOR_GROUP_NAME)).toBeDefined();
 				mesh.dispose();
 			});
 
+			// The §5 fixture "obstruction-beacon". // glossary-ignore: beacon
 			test("carries the role's heat glow, flare and obstruction lamps on its pad frame", () => {
 				// The principal's ruling of 2026-10-13 ("add lights"): §5's names,
 				// each an object with a mesh, and their lights among the fixtures.
@@ -241,6 +243,13 @@ function rockOverreach(
 	}
 	return far;
 }
+
+test("one name a form: the model-URL literals agree with REFINERY_MODEL_NAMES", () => {
+	for (const form of REFINERY_FORMS)
+		expect(REFINERY_GLB_URLS[form].split("/").pop()).toBe(
+			`refinery-${REFINERY_MODEL_NAMES[form]}.glb`,
+		);
+});
 
 describe("node #819: the refineries' collision proxies", () => {
 	afterAll(uninstallRefineries);

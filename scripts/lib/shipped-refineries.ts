@@ -3,17 +3,18 @@ import { readFileSync } from "node:fs";
 import {
 	createRefineryBuilder,
 	REFINERY_FORMS,
+	REFINERY_MODEL_NAMES,
 } from "../../src/refinery-flight";
 import { installRefineryBuilder } from "../../src/station-mesh";
 import { decodeShippedGlb } from "./shipped-glb";
 
 /** Each form's shipped model. */
-export const SHIPPED_REFINERY_FILES = {
-	a: "src/models/refinery-warren.glb",
-	b: "src/models/refinery-collar.glb",
-	c: "src/models/refinery-spar.glb",
-	d: "src/models/refinery-works.glb",
-} as const;
+export const SHIPPED_REFINERY_FILES = Object.fromEntries(
+	REFINERY_FORMS.map((form) => [
+		form,
+		`src/models/refinery-${REFINERY_MODEL_NAMES[form]}.glb`,
+	]),
+) as Readonly<Record<(typeof REFINERY_FORMS)[number], string>>;
 
 /** A shipped model's SHA-256, which the proxies record as their source. */
 export function refineryModelHash(form: keyof typeof SHIPPED_REFINERY_FILES) {

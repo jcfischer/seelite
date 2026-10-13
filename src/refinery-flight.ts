@@ -8,9 +8,12 @@
  * **The asset is in the station's frame.** The flight export
  * (`spikes/refineries/build_model.py --flight`) moves each model so its
  * `aperture-plane` mark lies on +z at the sim's plane, in metres; this only
- * scales it to kilometres. The pad, its deck, berths and lights are the sim's
- * (`buildRefineryNavigation`), drawn into the model's recessed housing
- * (principal ruling, 2026-10-13). A refinery does not turn.
+ * scales it to kilometres. The pad is the model's too (principal, 2026-10-13):
+ * its deck and berths are built to the sim's figures in the recessed housing
+ * and drawn here as a `station-interior` group; the game adds the frame's
+ * lights, the role's cues (`buildRefineryPadCues`) and both painted names
+ * (`buildRefineryNavigation` without its procedural pad). The sim's berths,
+ * corridor and deck stay authoritative. A refinery does not turn.
  */
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
@@ -39,6 +42,16 @@ import {
 import { AUTHORED_EXTERIOR_NAME } from "./station-visuals";
 
 export const REFINERY_FORMS: readonly RefineryForm[] = ["a", "b", "c", "d"];
+
+/** Each form's model, by the name its files carry (`refinery-<name>.glb`).
+ *  `REFINERY_GLB_URLS` restates them as literals vite can rewrite;
+ *  `tests/refinery-flight.test.ts` holds the two to agree. */
+export const REFINERY_MODEL_NAMES: Readonly<Record<RefineryForm, string>> = {
+	a: "warren",
+	b: "collar",
+	c: "spar",
+	d: "works",
+};
 
 /** The authored pad's mesh groups, named as the procedural pad's parts
  *  (`station-interior-mesh.ts`), longest prefix first. */

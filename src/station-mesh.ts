@@ -6649,8 +6649,8 @@ export function buildRefineryNavigation(
  * "add lights"), on the pad frame every authored refinery shares: a heat
  * glow along the frame's inner lip, two vent banks on its top border facing
  * the approach (their throats are the flare, the first nozzle of each
- * carries an obstruction beacon, as the procedural forms' banks do), and an
- * obstruction beacon at each outer corner. Everything stands
+ * carries an obstruction beacon, as the procedural forms' banks do), and an // glossary-ignore: beacon
+ * obstruction beacon at each outer corner. Everything stands // glossary-ignore: beacon
  * `PAD_CUE_PROUD_KM` in front of the frame's face, clear of its armour plates,
  * so no lit face lies on a face of the model.
  */

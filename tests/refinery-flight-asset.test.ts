@@ -23,18 +23,19 @@ import * as THREE from "three";
 import { MAX_ASSET_BYTES } from "../scripts/check-dist-sizes.mjs";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { STATION_GEOMETRY } from "../src/station";
+import { REFINERY_FORMS, REFINERY_MODEL_NAMES } from "../src/refinery-flight";
 import { REFINERY_PAD_FRAME } from "../src/refinery-pad-frame";
 import { corridorRadiusKm, stationInterior } from "../src/station-interior";
 import { padOpeningFloorKm } from "../src/station-proxy";
 
 /** The four forms, `a` to `d` (receipt §Current result). */
-const NAMES = ["warren", "collar", "spar", "works"] as const;
+const NAMES = REFINERY_FORMS.map((form) => REFINERY_MODEL_NAMES[form]);
 
 /** Each review rock's enclosed volume, million cubic metres, measured
  *  2026-10-13 from `spikes/refineries/o{1,2,3,4}.glb`. The flight rocks read
  *  451.2, 682.7, 295.2 and 300.1 against them: the pad's cut takes less than
  *  the review box's bore did. */
-const REVIEW_ROCK_MM3: Record<(typeof NAMES)[number], number> = {
+const REVIEW_ROCK_MM3: Record<string, number> = {
 	warren: 450.3,
 	collar: 666.1,
 	spar: 292.3,
