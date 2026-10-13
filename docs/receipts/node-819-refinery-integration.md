@@ -165,8 +165,33 @@ flat-shaded duplicate of a position. Both fixed in
 
 ## Runtime and performance evidence
 
-To be completed.
+**Frame and loading** (`src/refinery-flight.ts`, `src/main.ts`): the builder
+checks the export's `aperture-plane` mark against the sim's plane, scales
+the model to kilometres and draws the sim's pad into it
+(`buildRefineryNavigation`); nothing turns. Each form installs after boot
+and replaces its drawn stand-ins (`refreshAuthoredStations`, shared with the
+shipyards); `refineryModelsSettled` says when all four have settled; a
+Commander docked at a refinery waits for that form (`homeRefineryForm`); the
+postcard and the station workbench require the models. Live, 2026-10-13
+(dev server, M1 Pro, Metal): seed 3's Spar installed as authored after
+settle, with the sim's pad, its berths and parked traffic drawn into the
+housing, and no failed request.
+
+**Boot payload.** The proxies ride in the `station-console` chunk, which
+grows from 379 KB to 985 KB (159 KB to 478 KB gzipped): the sim needs them
+before any refinery can collide, so they are not deferred.
+
+**Pending:** SOP §4's measured LOD selection, and the frame cost in game.
 
 ## Delivery evidence
 
-To be completed.
+Headless at 885ad0b5 (2026-10-13): `npm test` before the last fixes, 6 223 pass,
+5 fail: the launcher-wiring gate (two untracked scratch scripts, removed),
+the two model-URL rows (now counting the refinery literals) and two
+avoidance rows (above); each re-run green after its fix (`model-urls` 5,
+`combat-enemy-avoidance` 59, `refinery-flight` 33, `station-proxy` rows
+alone). Typecheck, format, lint, launcher wiring and build pass; every file
+in `dist/` is within 25 MiB.
+
+Not yet run: Sage, the browser gate (`probe:pr`), the canonical view set,
+and the principal's in-game look.
