@@ -1,0 +1,26 @@
+load before: { 16.31 15.35 14.78 }
+  view close, occlusion off (pinned)
+  none@high             2.925                          0          0  
+  batch-k@high         12.056  +9.130 144/144 (100%)      2        980  2/11/159/38
+  batch-plain@high      4.115  +1.189 144/144 (100%)      2        980  2/11/159/38
+  none@low              2.273                          0          0  
+  batch-k@low          10.405  +8.132 144/144 (100%)      2        980  1/4/88/117
+  batch-plain@low       2.977  +0.704 144/144 (100%)      2        980  1/4/88/117
+  name: 'Error'
+load after: { 14.46 15.04 14.76 }
+load before: { 14.46 15.04 14.76 }
+  view close, occlusion off (pinned)
+  none@high             3.034                          0          0  
+  batch-k@high         11.912  +8.878 122/144 (85%)      2        980  2/11/159/38
+  batch-plain@high      4.071  +1.037 124/144 (86%)      2        980  2/11/159/38
+  none@low              2.483                          0          0  
+  batch-k@low          10.294  +7.811 132/144 (92%)      2        980  1/4/88/117
+  batch-plain@low       2.928  +0.445 115/144 (80%)      2        980  1/4/88/117
+  view close, occlusion on (shadow + AO, pinned)
+  none@high             6.220                          0          0  
+  batch-k@high         16.792  +10.572 144/144 (100%)      4       2940  2/11/159/38
+  batch-plain@high      8.752  +2.532 144/144 (100%)      4       2940  2/11/159/38
+  none@low              5.632                          0          0  
+  batch-k@low          12.816  +7.184 144/144 (100%)      2        980  1/4/88/117
+  batch-plain@low       5.928  +0.296 132/144 (92%)      2        980  1/4/88/117
+load after: { 386.19 315.88 163.83 }

@@ -1,0 +1,70 @@
+load before: { 11.54 11.50 12.71 }
+
+
+
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport: 1440x900 at device scale 2, chase, clock held, fov 60, 1559 px/rad
+  field: 0x5ee11e g0 s173 field-00, 210 rocks, radius 25–387 m; K=8
+  12 blocks per arm, 120 frames per block, arm order shuffled from seed 20261013
+
+  view close, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             3.001                          0          0  
+  inst-k@high          12.120  +9.119 144/144 (100%)     18      18200  2/11/159/38
+  batch-k@high         12.111  +9.110 144/144 (100%)      2        980  2/11/159/38
+  batch-unique@high    12.707  +9.706 144/144 (100%)      2        980  2/11/159/38
+  naive@high           13.854  +10.853 144/144 (100%)      1        500  210/0/0/0
+  none@low              2.353                          0          0  
+  inst-k@low           10.283  +7.930 144/144 (100%)     14       9300  1/4/88/117
+  batch-k@low          10.457  +8.104 144/144 (100%)      2        980  1/4/88/117
+  batch-unique@low     11.045  +8.693 144/144 (100%)      2        980  1/4/88/117
+  naive@low            11.917  +9.564 144/144 (100%)      1        500  210/0/0/0
+
+  view close, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             6.066                          0          0  
+  inst-k@high          16.326  +10.260 144/144 (100%)     22      22120  2/11/159/38
+  batch-k@high         16.481  +10.415 144/144 (100%)      4       2940  2/11/159/38
+  batch-unique@high    17.234  +11.167 144/144 (100%)      4       2940  2/11/159/38
+  naive@high           18.350  +12.283 144/144 (100%)      3       1500  210/0/0/0
+  none@low              5.969                          0          0  
+  inst-k@low           12.550  +6.581 144/144 (100%)     14       9300  1/4/88/117
+  batch-k@low          12.686  +6.718 144/144 (100%)      2        980  1/4/88/117
+  batch-unique@low     13.267  +7.298 144/144 (100%)      2        980  1/4/88/117
+  naive@low            16.389  +10.420 144/144 (100%)      3       1500  210/0/0/0
+exit 0 load after: { 21.17 16.32 14.49 }
+load before: { 21.17 16.32 14.49 }
+
+
+
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport: 1440x900 at device scale 2, chase, clock held, fov 60, 1559 px/rad
+  field: 0x5ee11e g0 s173 field-00, 210 rocks, radius 25–387 m; K=8
+  12 blocks per arm, 120 frames per block, arm order shuffled from seed 7
+
+  view close, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             2.975                          0          0  
+  inst-k@high          12.066  +9.091 144/144 (100%)     18      18200  2/11/159/38
+  batch-k@high         12.085  +9.110 144/144 (100%)      2        980  2/11/159/38
+  batch-unique@high    12.685  +9.710 144/144 (100%)      2        980  2/11/159/38
+  naive@high           13.944  +10.969 144/144 (100%)      1        500  210/0/0/0
+  none@low              2.370                          0          0  
+  inst-k@low           10.287  +7.917 144/144 (100%)     14       9300  1/4/88/117
+  batch-k@low          10.384  +8.014 144/144 (100%)      2        980  1/4/88/117
+  batch-unique@low     11.007  +8.637 144/144 (100%)      2        980  1/4/88/117
+  naive@low            11.906  +9.536 144/144 (100%)      1        500  210/0/0/0
+
+  view close, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             6.141                          0          0  
+  inst-k@high          16.400  +10.258 144/144 (100%)     22      22120  2/11/159/38
+  batch-k@high         16.519  +10.378 144/144 (100%)      4       2940  2/11/159/38
+  batch-unique@high    17.256  +11.115 144/144 (100%)      4       2940  2/11/159/38
+  naive@high           18.426  +12.285 144/144 (100%)      3       1500  210/0/0/0
+  none@low              5.659                          0          0  
+  inst-k@low           12.585  +6.926 144/144 (100%)     14       9300  1/4/88/117
+  batch-k@low          12.724  +7.065 144/144 (100%)      2        980  1/4/88/117
+  batch-unique@low     13.313  +7.654 144/144 (100%)      2        980  1/4/88/117
+  naive@low            16.417  +10.758 144/144 (100%)      3       1500  210/0/0/0
+exit 0 load after: { 15.35 15.12 14.68 }
