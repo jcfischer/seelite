@@ -35,8 +35,8 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
   re-seated square to their faces and the study's size-comparison ships
   removed, and the principal approved that ("approved. run the full browser
   gate").
-- **Open:** SOP §4's measured LOD selection. The browser gate ran on
-  becaaf53 (see Delivery evidence). Sage review: seven rounds on PR #939.
+- **Open:** SOP §4's measured LOD selection. The browser gate passed on
+  6be0b9b4 except `output-stage`, red on `main` too (see Delivery evidence). Sage review: seven rounds on PR #939.
 
 ## Rulings during the integration (principal, 2026-10-12)
 
@@ -296,6 +296,11 @@ cores during it. Of the 11 reds, 9 pass alone (`dock-arrival`,
 `occlusion` was red alone, and F8 above fixes it; the fixed probe passes on
 the branch and on `main`. After becaaf53 only `probe-occlusion.mjs` and
 documents change.
+
+**Browser gate on the final head** (`probe:pr`, all 104 selected, 6be0b9b4,
+2026-10-13, peak load 64): **103 of 104 pass**. The one red is
+`output-stage`, red alone too, with the same 1.20% as on `main`. CI on
+6be0b9b4: static, unit (4 shards), build and gate pass.
 
 **Rows changed for the authored yards**, each from a measurement:
 
