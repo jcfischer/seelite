@@ -1,7 +1,7 @@
 /** Seeded arrival bake: actual texture determinism, quality and ownership. */
 import assert from "node:assert/strict";
 import { gameUrl } from "./lib/game-url.mjs";
-import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import { bootedGame, guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? "http://localhost:5173",
