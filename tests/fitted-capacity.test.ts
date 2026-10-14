@@ -35,6 +35,13 @@ const stockDefence = (id: (typeof HULL_IDS)[number]) => ({
 	scoopLyPerS: 0,
 	scoopDrawPerS: 0,
 	missiles: 0,
+	// No scanner and no pod on a stock fit (#977).
+	scanRangeKm: 0,
+	scanChargeS: 0,
+	signalRangeKm: 0,
+	podCargoShare: 0,
+	podCapsuleT: 0,
+	podCarriedModules: 0,
 });
 
 const courierWith = (extra: Record<string, ReturnType<typeof makeModule>>) =>

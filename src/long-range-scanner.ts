@@ -46,12 +46,14 @@ export function liveDerelicts(world: WorldState, system: System, at: number) {
 	return live;
 }
 
+/** `signalRangeKm` is the fitted scanner's (#977); the default is a 1E's. */
 export function derelictReadings(
 	world: WorldState,
 	system: System,
 	shipPos: Vec3,
 	modules: readonly string[],
 	at: number,
+	signalRangeKm?: number,
 ) {
 	return liveDerelicts(world, system, at).map((wreck) => {
 		const known = readKnowledge(
@@ -65,7 +67,7 @@ export function derelictReadings(
 				known?.observedCondition === "destroyed" &&
 				known.observedInstanceOrdinal === wreck.row.instanceOrdinal,
 			signal: relayScannerFitted(modules)
-				? relaySignal(shipPos, wreck.pose.pos)
+				? relaySignal(shipPos, wreck.pose.pos, signalRangeKm)
 				: null,
 		};
 	});

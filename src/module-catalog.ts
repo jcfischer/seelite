@@ -11,7 +11,7 @@ import {
 	type SlotSize,
 } from "./hull";
 import { PULSE_LASER } from "./ship-condition";
-import { SCAN_RANGE_KM } from "./carrier-scan";
+import { SCAN_CHARGE_S, SCAN_RANGE_KM } from "./carrier-scan";
 import { RELAY_SIGNAL_RANGE_KM } from "./pirate-relay";
 
 export const GRADES = ["E", "D", "A"] as const;
@@ -30,6 +30,36 @@ export const POLICY = {
 		A: { price: 8, mass: 0.8, output: 1.5 },
 	},
 } as const;
+
+/**
+ * What an escape pod brings back from an eject (principal, 2026-10-14, on
+ * #977). The grade sets the share of the pilot's own cargo kept and whether
+ * the most valuable carried module comes too; the size sets the tonnes the
+ * capsule takes, and cargo past it is lost. E keeps the pilot alone, which is
+ * the eject as it was before #977. A ruled table, not `POLICY.grade`'s scale:
+ * zero times any scale is zero.
+ */
+export const ESCAPE_POD_SURVIVAL = {
+	grade: {
+		E: { cargoShare: 0, carriedModules: 0 },
+		D: { cargoShare: 0.25, carriedModules: 0 },
+		A: { cargoShare: 0.5, carriedModules: 1 },
+	},
+	capsuleT: { 1: 5, 2: 10, 3: 20 },
+} as const satisfies {
+	grade: Record<Grade, Record<string, number>>;
+	capsuleT: Record<SlotSize, number>;
+};
+
+/** The output scale a grade gives a scaled module: E 1, D 0.8, A 1.5. */
+export const gradeOutputScale = (grade: Grade): number =>
+	POLICY.grade[grade].output;
+
+/** An identity scanner's charge, s: `SCAN_CHARGE_S` over its grade's output
+ *  scale (#977), E 5, D 6.25, A 3.33. Not a row output, because a shorter
+ *  charge is the benefit and every row output is one where more is better. */
+export const identityScanChargeS = (grade: Grade): number =>
+	SCAN_CHARGE_S / gradeOutputScale(grade);
 
 export type ModuleKind =
 	| "pulse-laser"
@@ -55,9 +85,17 @@ interface Definition {
 	family?: InternalFamily;
 	priceWeight: number;
 	massWeight: number;
-	/** Size 1 E output, with units in keys. Every key is a benefit, except
-	 * ejectDelayS, whose reciprocal is the benefit. No hidden generic score. */
+	/** Size 1 E output, with units in keys. Every key is a benefit. No hidden
+	 * generic score. A kind whose grades are a ruled table rather than a scale
+	 * (the escape pod) has its rows written by `ruledOutput`. */
 	output: Readonly<Record<string, number>>;
+	/** Each row's output from a ruled table in place of `output` scaled by
+	 *  size and grade. A ruled output may be zero: zero times a scale is zero,
+	 *  so a table is the only way to rule one. */
+	ruledOutput?: (grade: Grade, size: SlotSize) => Record<string, number>;
+	/** Mass factor per grade in place of `POLICY.grade`'s, for a kind whose
+	 *  grades differ in price and mass alone. */
+	gradeMass?: Readonly<Record<Grade, number>>;
 	integerOutput?: boolean;
 	/** Secondary active-resource costs, not included as benefits in Pareto. */
 	drawPerS?: number;
@@ -125,22 +163,29 @@ export const DEFINITIONS: readonly Definition[] = [
 		massWeight: 0.5,
 		output: { rangeKm: SCAN_RANGE_KM },
 	},
-	// Metrics chosen by the principal on 2026-10-10; values approved in the pricing instrument receipt (#868).
-	// A size-3 computer remains within the existing 10,000 km clearance range.
+	// Principal, 2026-10-14, on #977: a computer's grades differ in price and
+	// mass alone, and the dearer is the lighter. It engages inside
+	// `VICINITY_KM` and flies at one speed whatever its grade.
 	{
 		kind: "docking-computer",
 		slotKind: "utility",
 		priceWeight: 2,
 		massWeight: 0.5,
-		output: { engagementRangeKm: 2_000 },
+		output: {},
+		gradeMass: { E: 1, D: 0.8, A: 0.45 },
 	},
+	// What survives an eject (#977): `ESCAPE_POD_SURVIVAL`, by grade and size.
 	{
 		kind: "escape-pod",
 		slotKind: "internal",
 		family: "survival",
 		priceWeight: 2,
 		massWeight: 1,
-		output: { ejectDelayS: 1 },
+		output: ESCAPE_POD_SURVIVAL.grade.E,
+		ruledOutput: (grade, size) => ({
+			...ESCAPE_POD_SURVIVAL.grade[grade],
+			capsuleT: ESCAPE_POD_SURVIVAL.capsuleT[size],
+		}),
 	},
 	{
 		kind: "shield-booster",
@@ -297,17 +342,17 @@ export function deriveProposal(targetCr: number = POLICY.targetCr) {
 					size,
 					grade,
 					priceCr: d.priceWeight * s * g.price,
-					massT: d.massWeight * s * g.mass,
-					output: Object.fromEntries(
-						Object.entries(baseOutput).map(([k, v]) => [
-							k,
-							d.integerOutput
-								? Math.max(1, Math.round(v * outputScale))
-								: k === "ejectDelayS"
-									? v / outputScale
+					massT: d.massWeight * s * (d.gradeMass?.[grade] ?? g.mass),
+					output:
+						d.ruledOutput?.(grade, size) ??
+						Object.fromEntries(
+							Object.entries(baseOutput).map(([k, v]) => [
+								k,
+								d.integerOutput
+									? Math.max(1, Math.round(v * outputScale))
 									: v * outputScale,
-						]),
-					),
+							]),
+						),
 					drawPerS: (d.drawPerS ?? 0) * s * g.output,
 					heatPerS: (d.heatPerS ?? 0) * s * g.output,
 				};
@@ -340,11 +385,7 @@ export function dominates(a: ModuleRow, b: ModuleRow): boolean {
 	const pairs = [
 		[-a.priceCr, -b.priceCr],
 		[-a.massT, -b.massT],
-		...Object.keys(b.output).map((k) =>
-			k === "ejectDelayS"
-				? [-a.output[k], -b.output[k]]
-				: [a.output[k], b.output[k]],
-		),
+		...Object.keys(b.output).map((k) => [a.output[k], b.output[k]]),
 	];
 	return pairs.every(([x, y]) => x >= y) && pairs.some(([x, y]) => x > y);
 }
@@ -386,9 +427,13 @@ export function validateProposal(rows: readonly ModuleRow[]) {
 	for (const r of rows) {
 		if (![r.drawPerS, r.heatPerS].every((x) => Number.isFinite(x) && x >= 0))
 			throw new Error(`Invalid resource cost ${r.kind}`);
+		// An output may be zero only where a ruled table writes it (the pod).
+		const zeroAllowed = !!DEFINITIONS.find((d) => d.kind === r.kind)
+			?.ruledOutput;
 		if (
-			![r.priceCr, r.massT, ...Object.values(r.output)].every(
-				(x) => Number.isFinite(x) && x > 0,
+			![r.priceCr, r.massT].every((x) => Number.isFinite(x) && x > 0) ||
+			!Object.values(r.output).every(
+				(x) => Number.isFinite(x) && (x > 0 || (zeroAllowed && x === 0)),
 			)
 		)
 			throw new Error(`Invalid ${r.kind}`);

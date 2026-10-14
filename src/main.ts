@@ -534,7 +534,6 @@ import {
 	type ScanConsoleReadout,
 	type ScanHold,
 	type ScanSubject,
-	SCAN_CHARGE_S,
 	SCAN_RANGE_KM,
 	beginScanHold,
 	carrierReading,
@@ -8939,6 +8938,7 @@ class Game {
 		const target = this.targetBody();
 		const actor = this.scanSubject(target);
 		const fitted = scanFitted(equipmentNames(this.commander.loadout));
+		const { scanRangeKm, scanChargeS } = this.scannerFigures();
 		// **A subject, not a boolean.** Five seconds spent with the nose swinging
 		// across three carriers is five seconds on none of them, and a charge that
 		// does not record whose it is cannot say when to start over — the blocker
@@ -8959,13 +8959,19 @@ class Game {
 			actor !== undefined &&
 			fitted &&
 			target !== null &&
-			scanInRange(length(sub(target.pos, this.world.ship.pos))) &&
+			scanInRange(length(sub(target.pos, this.world.ship.pos)), scanRangeKm) &&
 			scanConeHeld(aim, normalizeOr(sub(target.pos, this.world.ship.pos), aim))
 				? { key: actor.key }
 				: null;
 		const before = this.scanHold;
-		this.scanHold = stepScanHold(before, held, dt, this.scanTrigger());
-		if (!actor || !scanCompleted(before, this.scanHold)) return;
+		this.scanHold = stepScanHold(
+			before,
+			held,
+			dt,
+			this.scanTrigger(),
+			scanChargeS,
+		);
+		if (!actor || !scanCompleted(before, this.scanHold, scanChargeS)) return;
 		const { instanceOrdinal } = this.carrierCondition(actor.key);
 		this.commerceWorld = observeScan(
 			this.commerceWorld,
@@ -9072,7 +9078,23 @@ class Game {
 		if (!target || !isDisplayContact(target)) return null;
 		const aim = this.weaponAim();
 		const toTarget = sub(target.pos, this.world.ship.pos);
-		return scanStandoff(length(toTarget), aim, normalizeOr(toTarget, aim));
+		return scanStandoff(
+			length(toTarget),
+			aim,
+			normalizeOr(toTarget, aim),
+			this.scannerFigures().scanRangeKm,
+		);
+	}
+
+	/** The fitted identity and long-range scanners' figures (#977), read off
+	 *  the loadout the presence checks read: a 1E is the stock 400 km, 5 s
+	 *  and 2,500 km. */
+	private scannerFigures() {
+		const { scanRangeKm, scanChargeS, signalRangeKm } = fittedCapacity(
+			this.commander.hull,
+			this.commander.loadout,
+		);
+		return { scanRangeKm, scanChargeS, signalRangeKm };
 	}
 
 	/** The recorded scan row's stamp for this target, or -1. A map lookup, paid
@@ -9108,13 +9130,14 @@ class Game {
 		// printing its progress reads as `SCANNING 0%` on a ship nobody is
 		// scanning — which is worse than `UNKNOWN`, because it tells the pilot a
 		// scan is underway when the nose is simply not on the target.
+		const { scanChargeS } = this.scannerFigures();
 		const progress =
 			active &&
 			!refusal &&
 			scannable &&
 			this.scanHold.chargeS > 0 &&
-			this.scanHold.chargeS < SCAN_CHARGE_S
-				? scanProgress(this.scanHold)
+			this.scanHold.chargeS < scanChargeS
+				? scanProgress(this.scanHold, scanChargeS)
 				: undefined;
 		return {
 			designation: {
@@ -13745,6 +13768,7 @@ class Game {
 			this.world.ship.pos,
 			equipmentNames(this.commander.loadout),
 			this.world.gameTime,
+			this.scannerFigures().signalRangeKm,
 		);
 	}
 	private syncWreckContacts() {
@@ -14163,7 +14187,11 @@ class Game {
 		// route.
 		const owned = equipmentNames(this.commander.loadout);
 		const signal = relayScannerFitted(owned)
-			? relaySignal(this.world.ship.pos, pos)
+			? relaySignal(
+					this.world.ship.pos,
+					pos,
+					this.scannerFigures().signalRangeKm,
+				)
 			: null;
 		let identified = relayIdentified(
 			owned,
@@ -19187,6 +19215,7 @@ class Game {
 				fitted(this.commander.loadout, ESCAPE_POD),
 				this.permadeath,
 				ejectPrompt(this.bindings),
+				fittedCapacity(this.commander.hull, this.commander.loadout),
 			),
 		};
 	}

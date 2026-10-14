@@ -518,7 +518,9 @@ test("a scan that has not started does not announce a scan in progress", () => {
 	expect(readout).toContain("this.scanHold.chargeS > 0");
 	// And a completed charge must not sit on the glass at 100 either: the cell
 	// gives the standing back, which is what keeps the age moving.
-	expect(readout).toContain("this.scanHold.chargeS < SCAN_CHARGE_S");
+	// The fitted scanner's charge, not the stock one (#977).
+	expect(readout).toContain("this.scanHold.chargeS < scanChargeS");
+	expect(readout).toContain("scanProgress(this.scanHold, scanChargeS)");
 });
 
 test("the charge is broken by leaving flight, not paused by it", () => {
@@ -566,6 +568,14 @@ test("the scan cone is measured on the sightline the pilot aims with", () => {
 	// so the two cannot drift apart.
 	expect(method("scanStandoffNow")).toContain("scanStandoff(");
 	expect(method("scanStandoffNow")).toContain("this.weaponAim()");
+	// Both read the fitted scanner's range and charge (#977).
+	expect(method("scanStandoffNow")).toContain(
+		"this.scannerFigures().scanRangeKm",
+	);
+	expect(step).toContain(
+		"scanInRange(length(sub(target.pos, this.world.ship.pos)), scanRangeKm)",
+	);
+	expect(step).toContain("scanCompleted(before, this.scanHold, scanChargeS)");
 });
 
 // ---------------------------------------------------------------------------

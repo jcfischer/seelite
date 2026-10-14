@@ -54,8 +54,9 @@ export const moduleLabel = (m: FittedModule): string =>
 /**
  * What the fitted ship does, as the Equipment tab compares it: one field per
  * effect a game system reads. A module whose figure no system reads (an
- * E.C.M.'s radius, a scanner's range) has no field, because a printed change
- * would promise what the game does not do (`tests/outfit-deltas.test.ts`).
+ * E.C.M.'s radius) has no field, because a printed change would promise what
+ * the game does not do (`tests/outfit-deltas.test.ts`). A docking computer
+ * has none either: its grades differ in price and mass alone (#977).
  */
 export function fitReadout(commander: CommanderState, entrustedT: number) {
 	const ship = { hull: commander.hull, loadout: commander.loadout };
@@ -77,19 +78,29 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 		fuelCapacityLy: commanderFuelCapacityLy(commander),
 		jump: commanderJumpRangeLy(commander),
 		scoopLyPerS: capacity.scoopLyPerS,
+		// The scanners and the pod (#977). 0 is "none fitted".
+		scanRangeKm: capacity.scanRangeKm,
+		scanChargeS: capacity.scanChargeS,
+		signalRangeKm: capacity.signalRangeKm,
+		podCargoPct: capacity.podCargoShare * 100,
+		podCapsuleT: capacity.podCapsuleT,
+		podCarriedModules: capacity.podCarriedModules,
 		credit: killCredit(ship, "raider"),
 	};
 }
 export type FitReadout = ReturnType<typeof fitReadout>;
 
 /** The preview's rows, in print order. `always` rows show even unmoved:
- *  every module has mass, and the credit is the combat ladder's price. */
+ *  every module has mass, and the credit is the combat ladder's price.
+ *  `noneAtZero` prints a 0 as `—`: no scanner has no charge time, and a
+ *  0 → 5 s change would read as a slower scan. */
 const FIT_DELTA_ROWS: readonly {
 	key: keyof FitReadout;
 	label: string;
 	unit: string;
 	digits: number;
 	always?: true;
+	noneAtZero?: true;
 }[] = [
 	{ key: "accel", label: "ACCEL", unit: "km/s²", digits: 3, always: true },
 	{ key: "integrity", label: "HULL", unit: "pts", digits: 1 },
@@ -102,6 +113,18 @@ const FIT_DELTA_ROWS: readonly {
 	{ key: "fuelCapacityLy", label: "TANK", unit: "LY", digits: 1 },
 	{ key: "jump", label: "JUMP", unit: "LY", digits: 1 },
 	{ key: "scoopLyPerS", label: "SCOOP", unit: "LY/s", digits: 2 },
+	{ key: "scanRangeKm", label: "SCAN RANGE", unit: "km", digits: 0 },
+	{
+		key: "scanChargeS",
+		label: "SCAN CHARGE",
+		unit: "s",
+		digits: 2,
+		noneAtZero: true,
+	},
+	{ key: "signalRangeKm", label: "SIGNAL RANGE", unit: "km", digits: 0 },
+	{ key: "podCargoPct", label: "POD CARGO", unit: "%", digits: 0 },
+	{ key: "podCapsuleT", label: "POD CAPSULE", unit: "t", digits: 0 },
+	{ key: "podCarriedModules", label: "POD MODULES", unit: "", digits: 0 },
 	{
 		key: "credit",
 		label: "CREDIT / RAIDER",
@@ -126,20 +149,32 @@ export interface FitDelta {
  * move is left out, bar the `always` rows.
  */
 export function fitDeltas(before: FitReadout, after: FitReadout): FitDelta[] {
-	return FIT_DELTA_ROWS.flatMap(({ key, label, unit, digits, always }) => {
-		const b = before[key].toFixed(digits);
-		const a = after[key].toFixed(digits);
-		if (a === b && !always) return [];
-		// The change of the printed figures, so the three always agree.
-		const d = (Number(a) - Number(b)).toFixed(digits);
-		const zero = Number(d) === 0;
-		const delta = zero
-			? `±${(0).toFixed(digits)}`
-			: d.startsWith("-")
-				? `−${d.slice(1)}`
-				: `+${d}`;
-		return [{ label, before: b, after: a, delta, unit }];
-	});
+	return FIT_DELTA_ROWS.flatMap(
+		({ key, label, unit, digits, always, noneAtZero }) => {
+			const b = before[key].toFixed(digits);
+			const a = after[key].toFixed(digits);
+			if (a === b && !always) return [];
+			if (noneAtZero && (before[key] === 0 || after[key] === 0))
+				return [
+					{
+						label,
+						before: before[key] === 0 ? "—" : b,
+						after: after[key] === 0 ? "—" : a,
+						delta: "—",
+						unit,
+					},
+				];
+			// The change of the printed figures, so the three always agree.
+			const d = (Number(a) - Number(b)).toFixed(digits);
+			const zero = Number(d) === 0;
+			const delta = zero
+				? `±${(0).toFixed(digits)}`
+				: d.startsWith("-")
+					? `−${d.slice(1)}`
+					: `+${d}`;
+			return [{ label, before: b, after: a, delta, unit }];
+		},
+	);
 }
 
 export function outfittingScreen(

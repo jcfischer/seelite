@@ -3,7 +3,7 @@ import { carriedModule, stockModuleAt, type FittedModule } from "./loadout";
  * Contents are fixed once, before the commander is restored. Entrusted lots
  * live in Requests and are deliberately never read here. */
 import { carrierKey } from "./carrier-key";
-import type { DeathCause } from "./death-cost";
+import { type DeathCause, leftByEject } from "./death-cost";
 import { DOMAIN } from "./domains";
 import { fnv1a, seededRand } from "./rng";
 import { EQUIPMENT, ESCAPE_POD, commodity } from "./market";
@@ -29,9 +29,11 @@ export const DEATH_WRECK_SURVIVAL_SHARE = 0.5;
 export function deathWreckContents(
 	seed: number,
 	at: number,
-	state: CommanderState,
+	dying: CommanderState,
 	cause: DeathCause,
 ): DerelictContainer[] {
+	// The wreck keeps what the pod does not (#977).
+	const state = cause === "eject" ? leftByEject(dying) : dying;
 	const survives = (id: string) =>
 		seededRand(fnv1a(`${seed}:${DOMAIN.DEATH_WRECK}:${at}:${id}`))() <
 		DEATH_WRECK_SURVIVAL_SHARE;

@@ -46,7 +46,11 @@ describe("module pricing proposal", () => {
 		for (const r of rows) {
 			expect(r.priceCr).toBeGreaterThan(0);
 			expect(r.massT).toBeGreaterThan(0);
-			for (const v of Object.values(r.output)) expect(v).toBeGreaterThan(0);
+			// The pod's E row keeps nothing but the pilot (#977): its zeros are
+			// the ruling, not a missing output.
+			for (const v of Object.values(r.output))
+				if (r.kind === "escape-pod") expect(v).toBeGreaterThanOrEqual(0);
+				else expect(v).toBeGreaterThan(0);
 		}
 	});
 	test("all three grades are Pareto choices at each kind and size", () => {
@@ -57,13 +61,29 @@ describe("module pricing proposal", () => {
 			const a = peers.find((r) => r.grade === "A")!;
 			expect(e.priceCr).toBeLessThan(d.priceCr);
 			expect(d.priceCr).toBeLessThan(a.priceCr);
-			expect(d.massT).toBeLessThan(a.massT);
-			expect(a.massT).toBeLessThan(e.massT);
-			for (const key of Object.keys(e.output)) {
-				const sign = key === "ejectDelayS" ? -1 : 1;
-				expect(d.output[key] * sign).toBeLessThan(e.output[key] * sign);
-				expect(e.output[key] * sign).toBeLessThan(a.output[key] * sign);
+			if (e.kind === "docking-computer") {
+				// Price and mass alone, the dearer the lighter (#977).
+				expect(a.massT).toBeLessThan(d.massT);
+				expect(d.massT).toBeLessThan(e.massT);
+				expect([e.output, d.output, a.output]).toEqual([{}, {}, {}]);
+			} else {
+				expect(d.massT).toBeLessThan(a.massT);
+				expect(a.massT).toBeLessThan(e.massT);
 			}
+			if (e.kind === "escape-pod") {
+				// A ruled table (#977): E keeps the pilot, D a quarter of the
+				// cargo, A half and the best carried module; size sets the capsule.
+				expect([e.output, d.output, a.output]).toEqual([
+					{ cargoShare: 0, carriedModules: 0, capsuleT: e.output.capsuleT },
+					{ cargoShare: 0.25, carriedModules: 0, capsuleT: e.output.capsuleT },
+					{ cargoShare: 0.5, carriedModules: 1, capsuleT: e.output.capsuleT },
+				]);
+				expect(e.output.capsuleT).toBe({ 1: 5, 2: 10, 3: 20 }[e.size]);
+			} else
+				for (const key of Object.keys(e.output)) {
+					expect(d.output[key]).toBeLessThan(e.output[key]);
+					expect(e.output[key]).toBeLessThan(a.output[key]);
+				}
 			for (const x of peers)
 				for (const y of peers) expect(dominates(x, y)).toBe(false);
 		}
@@ -87,14 +107,17 @@ describe("module pricing proposal", () => {
 			validateProposal([...rows, { ...rows[0], priceCr: rows[0].priceCr / 2 }]),
 		).toThrow();
 	});
-	test("dominance detects equal-output and inverse-metric defects", () => {
+	test("dominance detects equal-output and better-output defects", () => {
 		const r = deriveProposal().rows[0];
 		expect(dominates({ ...r, priceCr: r.priceCr / 2 }, r)).toBe(true);
 		expect(dominates({ ...r, massT: r.massT / 2 }, r)).toBe(true);
 		const pod = deriveProposal().rows.find((r) => r.kind === "escape-pod")!;
 		expect(
 			dominates(
-				{ ...pod, output: { ejectDelayS: pod.output.ejectDelayS / 2 } },
+				{
+					...pod,
+					output: { ...pod.output, cargoShare: pod.output.cargoShare + 0.1 },
+				},
 				pod,
 			),
 		).toBe(true);
