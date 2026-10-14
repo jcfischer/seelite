@@ -62,9 +62,9 @@ export const SCAN_RANGE_KM = 400;
 /** Half-angle of the cone the nose has to hold the target inside, degrees. */
 export const SCAN_CONE_DEG = 12;
 /** Seconds of unbroken hold on a grade-E scanner. Longer than interdiction's
- *  2.5 s, because the reward is information rather than a fight the other
+ *  2.5 s, because what a scan yields is information rather than a fight the other
  *  party cannot refuse. A fitted scanner's charge is this over its grade's
- *  output scale (#977): D 6.25 s, A 3.33 s; `fittedCapacity` reads it. */
+ *  output scale (#977): D 6.25 s, A 3.33 s (`identityScanChargeS`). */
 export const SCAN_CHARGE_S = 5;
 
 /** The three feel figures as one object, for the instrument and the probe to

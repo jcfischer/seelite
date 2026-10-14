@@ -359,10 +359,12 @@ export function wakeText(wake: DeathWake): string {
 		wake.failedJobs > 0
 			? ` ${plural(wake.failedJobs, "job", "jobs")} failed with it: see Requests.`
 			: "";
-	if (wake.cause === "eject" && wake.kept?.length)
-		return `Your escape pod brought you back where you launched, with ${listed(wake.kept)}. Lost: the rest of the hold and the pod. Your ${wake.hull} and its fittings are kept.${jobs}`;
-	if (wake.cause === "eject")
-		return `Your escape pod brought you back where you launched. Lost: ${hold} and the pod. Your ${wake.hull} and its fittings are kept.${jobs}`;
+	if (wake.cause === "eject") {
+		const kept = wake.kept?.length;
+		const with_ = kept ? `, with ${listed(wake.kept ?? [])}` : "";
+		const lost = kept ? "the rest of the hold" : hold;
+		return `Your escape pod brought you back where you launched${with_}. Lost: ${lost} and the pod. Your ${wake.hull} and its fittings are kept.${jobs}`;
+	}
 	const fittings =
 		wake.fittingsLost > 0
 			? `, ${plural(wake.fittingsLost, "fitting", "fittings")}`

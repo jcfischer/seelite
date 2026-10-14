@@ -11,7 +11,7 @@ import {
 	type SlotSize,
 } from "./hull";
 import { PULSE_LASER } from "./ship-condition";
-import { SCAN_RANGE_KM } from "./carrier-scan";
+import { SCAN_CHARGE_S, SCAN_RANGE_KM } from "./carrier-scan";
 import { RELAY_SIGNAL_RANGE_KM } from "./pirate-relay";
 
 export const GRADES = ["E", "D", "A"] as const;
@@ -55,6 +55,12 @@ export const ESCAPE_POD_SURVIVAL = {
 export const gradeOutputScale = (grade: Grade): number =>
 	POLICY.grade[grade].output;
 
+/** An identity scanner's charge, s: `SCAN_CHARGE_S` over its grade's output
+ *  scale (#977), E 5, D 6.25, A 3.33. Not a row output, because a shorter
+ *  charge is the benefit and every row output is one where more is better. */
+export const identityScanChargeS = (grade: Grade): number =>
+	SCAN_CHARGE_S / gradeOutputScale(grade);
+
 export type ModuleKind =
 	| "pulse-laser"
 	| "beam-laser"
@@ -83,6 +89,10 @@ interface Definition {
 	 * generic score. A kind whose grades are a ruled table rather than a scale
 	 * (the escape pod) has its rows written by `ruledOutput`. */
 	output: Readonly<Record<string, number>>;
+	/** Each row's output from a ruled table in place of `output` scaled by
+	 *  size and grade. A ruled output may be zero: zero times a scale is zero,
+	 *  so a table is the only way to rule one. */
+	ruledOutput?: (grade: Grade, size: SlotSize) => Record<string, number>;
 	/** Mass factor per grade in place of `POLICY.grade`'s, for a kind whose
 	 *  grades differ in price and mass alone. */
 	gradeMass?: Readonly<Record<Grade, number>>;
@@ -172,6 +182,10 @@ export const DEFINITIONS: readonly Definition[] = [
 		priceWeight: 2,
 		massWeight: 1,
 		output: ESCAPE_POD_SURVIVAL.grade.E,
+		ruledOutput: (grade, size) => ({
+			...ESCAPE_POD_SURVIVAL.grade[grade],
+			capsuleT: ESCAPE_POD_SURVIVAL.capsuleT[size],
+		}),
 	},
 	{
 		kind: "shield-booster",
@@ -320,13 +334,6 @@ export function deriveProposal(targetCr: number = POLICY.targetCr) {
 					d.kind === "power-plant"
 						? { ...POWER_PLANT_OUTPUT.E[size] }
 						: d.output;
-				const ruledOutput =
-					d.kind === "escape-pod"
-						? {
-								...ESCAPE_POD_SURVIVAL.grade[grade],
-								capsuleT: ESCAPE_POD_SURVIVAL.capsuleT[size],
-							}
-						: undefined;
 				const outputScale = g.output * (d.kind === "power-plant" ? 1 : s);
 				return {
 					kind: d.kind,
@@ -337,7 +344,7 @@ export function deriveProposal(targetCr: number = POLICY.targetCr) {
 					priceCr: d.priceWeight * s * g.price,
 					massT: d.massWeight * s * (d.gradeMass?.[grade] ?? g.mass),
 					output:
-						ruledOutput ??
+						d.ruledOutput?.(grade, size) ??
 						Object.fromEntries(
 							Object.entries(baseOutput).map(([k, v]) => [
 								k,
@@ -424,7 +431,11 @@ export function validateProposal(rows: readonly ModuleRow[]) {
 			![r.priceCr, r.massT].every((x) => Number.isFinite(x) && x > 0) ||
 			// An output may be zero only where a ruled table writes it (the pod).
 			!Object.values(r.output).every(
-				(x) => Number.isFinite(x) && (r.kind === "escape-pod" ? x >= 0 : x > 0),
+				(x) =>
+					Number.isFinite(x) &&
+					(DEFINITIONS.find((d) => d.kind === r.kind)?.ruledOutput
+						? x >= 0
+						: x > 0),
 			)
 		)
 			throw new Error(`Invalid ${r.kind}`);

@@ -11,13 +11,12 @@ import {
 import {
 	deriveProposal,
 	fits,
-	gradeOutputScale,
+	identityScanChargeS,
 	type Grade,
 	type ModuleRow,
 	type ModuleKind,
 } from "./module-catalog";
 import { EQUIPMENT } from "./market";
-import { SCAN_CHARGE_S } from "./carrier-scan";
 import { SKIM_BAND_R, SKIM_SHELL_R } from "./ship-condition";
 
 export interface FittedModule {
@@ -185,7 +184,7 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 			const rangeKm = moduleRow(m).output.rangeKm;
 			if (rangeKm > scanRangeKm) {
 				scanRangeKm = rangeKm;
-				scanChargeS = SCAN_CHARGE_S / gradeOutputScale(m.grade);
+				scanChargeS = identityScanChargeS(m.grade);
 			}
 		}
 		if (m.module === "long-range-scanner")
