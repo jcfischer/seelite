@@ -120,7 +120,9 @@ try {
 		g.renderer.extensions.has = has;
 		const prewarm = g.prewarmShipyardPrograms;
 		let rejected = false;
+		let warmCalls = 0;
 		g.prewarmShipyardPrograms = async () => {
+			warmCalls++;
 			throw new Error("injected warm-up failure");
 		};
 		g.buildEnvironment();
@@ -130,22 +132,25 @@ try {
 			rejected = true;
 		}
 		g.prewarmShipyardPrograms = prewarm;
-		const warmFailure = !rejected && !g.nebulaPending && read() === before;
+		const warmFailure =
+			warmCalls === 1 && !rejected && !g.nebulaPending && read() === before;
 		return {
-			warmFailure,
-			cancelled,
-			lowSkips,
-			lazy,
-			fallback,
-			emission,
-			shared,
-			stable,
-			low,
-			restored,
-			custom,
-			replay,
-			moved,
-			revisit,
+			checks: {
+				warmFailure,
+				cancelled,
+				lowSkips,
+				lazy,
+				fallback,
+				emission,
+				shared,
+				stable,
+				low,
+				restored,
+				custom,
+				replay,
+				moved,
+				revisit,
+			},
 			hashes,
 			before,
 			counts,
@@ -153,23 +158,8 @@ try {
 			fps: 120000 / (stamps[120] - stamps[0]),
 		};
 	});
-	for (const key of [
-		"warmFailure",
-		"cancelled",
-		"lowSkips",
-		"lazy",
-		"fallback",
-		"emission",
-		"shared",
-		"stable",
-		"low",
-		"restored",
-		"custom",
-		"replay",
-		"moved",
-		"revisit",
-	])
-		assert.equal(result[key], true, key);
+	for (const [key, ok] of Object.entries(result.checks))
+		assert.equal(ok, true, key);
 	assert.ok(
 		result.hashes.every((hash) => hash === result.before),
 		"deterministic rebake",
