@@ -112,8 +112,10 @@ function windows(parts: Parts, r: number, y: number, n = 70, x = 0, z = 0) {
 	for (let i = 0; i < n; i++) {
 		const a = (i / n) * Math.PI * 2;
 		const q = new T.Quaternion().setFromAxisAngle(v(0, 1, 0), Math.PI / 2 - a);
+		// Occupied window groups separated by service bays; no station RNG consumed.
+		const occupancy = (i + Math.abs(Math.round(y / 17 + x / 31 + z / 23))) % 13;
 		parts.box(
-			i % 7 === 0 ? "dark" : "light",
+			occupancy > 9 ? "dark" : occupancy > 6 ? "windowDim" : "light",
 			x + Math.cos(a) * r,
 			y,
 			z + Math.sin(a) * r,
@@ -142,6 +144,44 @@ function tower(m: GrowthModule, mats: Materials) {
 	}
 	for (let i = 0; i < 8; i++) {
 		const a = (i * Math.PI) / 4;
+		const facade = new T.Quaternion().setFromAxisAngle(
+			v(0, 1, 0),
+			Math.PI / 2 - a,
+		);
+		// Larger service panels create a readable scale between hull texture and windows.
+		for (const yy of [-42, 40]) {
+			const pattern =
+				(i * 13 + m.tier * 7 + Math.abs(m.x / 365) * 3 + (yy > 0 ? 5 : 0)) % 11;
+			if (pattern < 3) continue;
+			const panelWidth = r * (pattern % 2 === 0 ? 0.39 : 0.52);
+			p.box(
+				pattern % 3 === 0 ? "skin" : "facade",
+				Math.cos(a) * (r + 1),
+				yy,
+				Math.sin(a) * (r + 1),
+				panelWidth,
+				pattern % 2 === 0 ? 43 : 61,
+				3,
+				facade,
+			);
+			for (const offset of pattern % 3 === 0 ? [-13, 0, 13] : [16]) {
+				const center = v(
+					Math.cos(a) * (r + 3),
+					yy + offset,
+					Math.sin(a) * (r + 3),
+				);
+				p.box(
+					"dark",
+					center.x,
+					center.y,
+					center.z,
+					panelWidth * 0.65,
+					3,
+					2,
+					facade,
+				);
+			}
+		}
 		p.box(
 			"bronze",
 			Math.cos(a) * (r + 2),
@@ -434,6 +474,8 @@ export async function createMetropolis(seed = 47, moduleCount = 30) {
 	texture.colorSpace = T.SRGBColorSpace;
 	texture.wrapS = texture.wrapT = T.RepeatWrapping;
 	texture.anisotropy = 8;
+	const roughness = texture.clone();
+	roughness.colorSpace = T.NoColorSpace;
 	const normal = await new T.TextureLoader().loadAsync(
 		new URL("./hull-normal.png", import.meta.url).href,
 	);
@@ -444,17 +486,33 @@ export async function createMetropolis(seed = 47, moduleCount = 30) {
 			color: 0x989da6,
 			map: texture,
 			normalMap: normal,
-			normalScale: new T.Vector2(0.45, 0.45),
-			roughness: 0.45,
+			normalScale: new T.Vector2(0.24, 0.24),
+			roughnessMap: roughness,
+			roughness: 0.58,
 			metalness: 0.65,
 		}),
 		alloy: new T.MeshStandardMaterial({
-			color: 0x4f565f,
+			color: 0x66717e,
 			map: texture,
 			normalMap: normal,
-			normalScale: new T.Vector2(0.45, 0.45),
-			roughness: 0.44,
-			metalness: 0.65,
+			normalScale: new T.Vector2(0.26, 0.26),
+			roughnessMap: roughness,
+			roughness: 0.46,
+			metalness: 0.72,
+		}),
+		facade: new T.MeshStandardMaterial({
+			color: 0x8995a3,
+			map: texture,
+			normalMap: normal,
+			normalScale: new T.Vector2(0.22, 0.22),
+			roughness: 0.52,
+			metalness: 0.48,
+		}),
+		windowDim: new T.MeshStandardMaterial({
+			color: 0xe0c5a3,
+			emissive: 0xe7a25d,
+			emissiveIntensity: 0.65,
+			roughness: 0.35,
 		}),
 		interior: new T.MeshStandardMaterial({
 			color: 0x986333,
@@ -675,6 +733,7 @@ export async function createMetropolis(seed = 47, moduleCount = 30) {
 			});
 			Object.values(mats).forEach((m) => m.dispose());
 			texture.dispose();
+			roughness.dispose();
 			normal.dispose();
 		},
 	};

@@ -12,6 +12,8 @@ Principal feedback after round 13: "looks good", with enclosed access corridors 
 
 2026-10-14: principal explicitly **approved** the corridor-equipped live study. Preserve this visual checkpoint; Dream Loop refinement is complete by principal acceptance. Production integration and the node's remaining technical gates are separate.
 
+2026-10-14: after two further requested finish passes, principal accepted **finish15** ("very nice - we can use this") and requested a PR handoff for another agent to integrate. `evidence/finish15/` is the final accepted appearance; the earlier root evidence is historical. Preserve the final appearance, four-direction growth and enclosed corridors during integration.
+
 ## Run
 
 From this worktree:

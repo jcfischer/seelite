@@ -35,7 +35,7 @@ const pmrem = new T.PMREMGenerator(renderer),
 	room = new RoomEnvironment();
 const env = pmrem.fromScene(room, 0.04).texture;
 scene.environment = env;
-scene.environmentIntensity = 0.12;
+scene.environmentIntensity = 0.22;
 room.dispose();
 pmrem.dispose();
 const sun = new T.DirectionalLight(0xffe8c8, 4.8);
@@ -53,10 +53,10 @@ Object.assign(sun.shadow.camera, {
 sun.shadow.bias = -0.00015;
 sun.shadow.normalBias = 2;
 scene.add(sun);
-const fill = new T.DirectionalLight(0x94aabe, 0.25);
-fill.position.set(4000, 500, 4000);
+const fill = new T.DirectionalLight(0x94aabe, 0.5);
+fill.position.set(2000, -3000, 5000);
 scene.add(fill);
-const rim = new T.DirectionalLight(0xd8bd98, 1.3);
+const rim = new T.DirectionalLight(0xf2c693, 2.15);
 rim.position.set(1000, 2000, -6000);
 scene.add(rim);
 
