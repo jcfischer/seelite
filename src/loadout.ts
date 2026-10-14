@@ -155,19 +155,52 @@ export function stockLoadout(hull: HullId): Loadout {
  * (#873). The bank is the plant's plus every Extra Energy Unit's `bankE`; regen
  * is the plant's alone (#925). A loadout with no plant flies the stock one.
  * The tank is the hull's `tankLy` plus every fitted tank's `fuelLy` (#926).
- * Hold, integrity and shield join here, never in a second projection.
+ * Integrity is the hull's plus every plate's; each pool is the hull's
+ * `shieldPool` plus every booster's `pointsPerPool`, and the boosters' draws
+ * add (#927). The scoops' rate and draw (#932) and the racks' missiles add.
+ * Hold joins here, never in a second projection.
  */
 export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
+	const spec = HULL_SPECS[hull];
 	const plant = loadout.plant
 		? moduleRow(loadout.plant).output
 		: stockPlant(hull);
 	let bankE = plant.bankE;
-	let fuelCapacityLy = HULL_SPECS[hull].tankLy;
+	let fuelCapacityLy = spec.tankLy;
+	let integrity = spec.integrity;
+	let shieldPool = spec.shieldPool;
+	let boosterDrawPerS = 0;
+	let scoopLyPerS = 0;
+	let scoopDrawPerS = 0;
+	let missiles = 0;
 	for (const m of Object.values(loadout)) {
 		if (m.module === "extra-energy-unit") bankE += moduleRow(m).output.bankE;
 		if (m.module === "fuel-tank") fuelCapacityLy += moduleRow(m).output.fuelLy;
+		if (m.module === "armour-plating")
+			integrity += moduleRow(m).output.integrity;
+		if (m.module === "shield-booster") {
+			const row = moduleRow(m);
+			shieldPool += row.output.pointsPerPool;
+			boosterDrawPerS += row.drawPerS;
+		}
+		if (m.module === "fuel-scoop") {
+			const row = moduleRow(m);
+			scoopLyPerS += row.output.fuelLyPerS;
+			scoopDrawPerS += row.drawPerS;
+		}
+		if (m.module === "missile-rack") missiles += moduleRow(m).output.missiles;
 	}
-	return { bankE, regenPerS: plant.regenPerS, fuelCapacityLy };
+	return {
+		bankE,
+		regenPerS: plant.regenPerS,
+		fuelCapacityLy,
+		integrity,
+		shieldPool,
+		boosterDrawPerS,
+		scoopLyPerS,
+		scoopDrawPerS,
+		missiles,
+	};
 }
 /**
  * The fuel scoop's fill shape at `rOverR`, the distance from the star's centre
@@ -212,18 +245,14 @@ export function stepFuelScoop(input: ScoopInput): ScoopStep {
 	if (!input.cruising || !(input.dt > 0)) return idle;
 	const shape = scoopShape(input.rOverR);
 	if (!(shape > 0)) return idle;
-	const capacityLy = fittedCapacity(input.hull, input.loadout).fuelCapacityLy;
+	const {
+		fuelCapacityLy: capacityLy,
+		scoopLyPerS: fuelLyPerS,
+		scoopDrawPerS,
+	} = fittedCapacity(input.hull, input.loadout);
 	if (!(input.fuelLy < capacityLy)) return idle;
-	let fuelLyPerS = 0;
-	let drawPerS = 0;
-	for (const m of Object.values(input.loadout)) {
-		if (m.module !== "fuel-scoop") continue;
-		const row = moduleRow(m);
-		fuelLyPerS += row.output.fuelLyPerS;
-		drawPerS += row.drawPerS;
-	}
 	if (!(fuelLyPerS > 0)) return idle;
-	const draw = drawPerS * input.dt;
+	const draw = scoopDrawPerS * input.dt;
 	if (input.energy < draw) return idle;
 	return {
 		fuelLy: Math.min(capacityLy, input.fuelLy + fuelLyPerS * shape * input.dt),

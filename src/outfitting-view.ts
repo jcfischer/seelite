@@ -1,5 +1,5 @@
 import { escapeHtml as esc } from "./escape-html";
-import { moduleLabel, type OutfittingScreen } from "./outfitting";
+import { fitDeltas, moduleLabel, type OutfittingScreen } from "./outfitting";
 import { refusalSentence, type RefusalHold } from "./station-console";
 import { EQUIPMENT, FUEL_CR_PER_LY } from "./market";
 import type { ModuleRow } from "./module-catalog";
@@ -51,8 +51,17 @@ export function outfittingBody(
 				`<button type="button" class="lc-outfit-pick lc-outfit-stock" data-outfit-candidate="${c.id}" data-selected="${s.candidate?.id === c.id}" aria-pressed="${s.candidate?.id === c.id}"><b>${esc(moduleLabel(c.module))}<em>${c.row.priceCr.toLocaleString("en-US")} Cr</em></b><small>${stats(c.row)}</small>${c.locked ? `<small class="lc-station-locked">${locked(c.locked)}</small>` : ""}</button>`,
 		)
 		.join("");
+	// Every effect the candidate moves, with its signed change (#927).
 	const delta = s.after
-		? `<div class="lc-outfit-deltas" data-live-outfit-deltas><span>ACCEL <b>${s.before.accel.toFixed(3)} → ${s.after.accel.toFixed(3)}</b> km/s²</span><span>TANK <b>${s.before.fuelCapacityLy.toFixed(1)} → ${s.after.fuelCapacityLy.toFixed(1)}</b> LY</span><span>JUMP <b>${s.before.jump.toFixed(1)} → ${s.after.jump.toFixed(1)}</b> LY</span><span>CREDIT / RAIDER <b>${s.before.credit.toFixed(2)} → ${s.after.credit.toFixed(2)}</b></span></div>`
+		? `<div class="lc-outfit-deltas" data-live-outfit-deltas>${fitDeltas(
+				s.before,
+				s.after,
+			)
+				.map(
+					(d) =>
+						`<span data-outfit-delta="${esc(d.label)}">${esc(d.label)} <b>${d.before} → ${d.after}</b>${d.unit ? ` ${esc(d.unit)}` : ""} <i>${d.delta}</i></span>`,
+				)
+				.join("")}</div>`
 		: "";
 	let confirm = "";
 	if (s.action && s.offer?.accepted) {

@@ -145,11 +145,40 @@ try {
 		(await page.evaluate(() => window.__seelite.commander.credits)) === credits,
 	);
 	const preview = page.locator("[data-live-outfit-preview]");
+	const deltaText = async (label) =>
+		(await page.locator(`[data-outfit-delta="${label}"]`).allInnerTexts()).join(
+			"|",
+		);
+	// The same module as fitted (#927): the replaced pulse moves to the hold as
+	// a carried tonne, so ACCEL falls, and the same weapon leaves CREDIT unmoved.
+	// Only the two always rows show.
 	check(
-		"comparison includes handling range and credit before purchase",
-		/ACCEL.*→.*JUMP.*→.*CREDIT \/ RAIDER.*→/s.test(await preview.innerText()),
+		"comparison shows handling and credit, each with its signed change, before purchase",
+		/^ACCEL .*→.* km\/s² −\d+\.\d{3}$/.test(await deltaText("ACCEL")) &&
+			/^CREDIT \/ RAIDER .*→.*±0\.00$/.test(
+				await deltaText("CREDIT / RAIDER"),
+			) &&
+			(await page.locator("[data-outfit-delta]").count()) === 2,
+		await preview.innerText(),
 	);
 	await page.screenshot({ path: `${out}/comparison.png` });
+	// A candidate that moves a capacity prints that row with its change. A 1E
+	// cargo rack is in every station's stock (`module-stock.ts`).
+	await page.locator('[data-outfit-slot="i1"]').click();
+	await page.locator('[data-outfit-candidate="stock:cargo-rack/1/E"]').click();
+	const rackT = await page.evaluate(async () => {
+		const { moduleRow, makeModule } = await import("/src/loadout.ts");
+		return moduleRow(makeModule("cargo-rack", 1, "E")).output.cargoT;
+	});
+	const holdRow = await deltaText("HOLD");
+	check(
+		"a cargo rack prints HOLD with its tonnes as a signed change",
+		holdRow.startsWith("HOLD ") && holdRow.endsWith(` t +${rackT}`),
+		holdRow,
+	);
+	await page.screenshot({ path: `${out}/comparison-hold.png` });
+	await page.locator('[data-outfit-slot="h1"]').click();
+	await page.locator('[data-outfit-candidate="stock:pulse-laser/1/E"]').click();
 	await page.evaluate(async () => {
 		const g = window.__seelite;
 		const { makeModule } = await import("/src/loadout.ts");
