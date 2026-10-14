@@ -1,7 +1,12 @@
 /** Seeded arrival bake: actual texture determinism, quality and ownership. */
 import assert from "node:assert/strict";
 import { gameUrl } from "./lib/game-url.mjs";
-import { bootedGame, guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? "http://localhost:5173",
@@ -17,13 +22,20 @@ try {
 	await bootedGame(page, 120000);
 	const result = await page.evaluate(async () => {
 		const g = window.__seelite;
+		const { DataUtils } = await import("/node_modules/.vite/deps/three.js");
+		const { equirectEnvironment } = await import("/src/light-rig.ts");
 		g.settings.set("quality", "high");
+		let peak = 0;
 		const read = () => {
 			const t = g.nebulaTarget;
 			const pixels = new Uint16Array(t.width * t.height * 4);
 			g.renderer.readRenderTargetPixels(t, 0, 0, t.width, t.height, pixels);
 			let hash = 2166136261;
-			for (const v of pixels) hash = Math.imul(hash ^ v, 16777619);
+			for (let i = 0; i < pixels.length; i++) {
+				const v = pixels[i];
+				hash = Math.imul(hash ^ v, 16777619);
+				if (i % 4 !== 3) peak = Math.max(peak, DataUtils.fromHalfFloat(v));
+			}
 			return hash >>> 0;
 		};
 		const source = g.environmentSource;
@@ -33,6 +45,11 @@ try {
 				({ scene }) => scene.environment === g.environmentMap,
 			);
 		const before = read();
+		let basePeak = 0;
+		const base = equirectEnvironment(g.skyBake).data;
+		for (let i = 0; i < base.length; i++)
+			if (i % 4 !== 3) basePeak = Math.max(basePeak, base[i]);
+		const emission = peak > basePeak;
 		g.orientation.setFromAxisAngle(
 			g.nearScene.position.clone().set(0, 1, 0),
 			1,
@@ -69,11 +86,14 @@ try {
 		g.bakeSky(own);
 		const replay = read() === before;
 		// Use the actual jump/rebuild path, then revisit the original system.
-		g.performJump(g.world.galaxy.systems[141]);
-		const moved = read() !== before;
-		g.performJump(g.world.galaxy.systems[187]);
-		const revisit = read() === before;
+		const startingFuel = g.fuelLy;
+		g.performJump(g.world.galaxy.systems.find((s) => s.index === 141));
+		const moved = g.world.system.record.index === 141 && read() !== before;
+		g.fuelLy = startingFuel;
+		g.performJump(g.world.galaxy.systems.find((s) => s.index === 187));
+		const revisit = g.world.system.record.index === 187 && read() === before;
 		return {
+			emission,
 			shared,
 			stable,
 			low,
@@ -90,6 +110,7 @@ try {
 		};
 	});
 	for (const key of [
+		"emission",
 		"shared",
 		"stable",
 		"low",
