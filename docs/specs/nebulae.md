@@ -4,6 +4,9 @@ The principal selected O3 rose clouds and dark rifts, with O2 blue filaments
 and lesser O1 amber accents, and approved both distant landmarks and local gas
 inside those same clouds. The round 9 outside/inside captures were explicitly
 accepted on 2026-10-14, followed by authorization to implement.
+After flying that version, the principal requested irregular silhouettes and
+distinct colors per cloud, and accepted the revised visual direction. Final
+runtime approval of this revision remains pending.
 
 `src/nebula.ts` derives four volumes per galaxy from the world seed, galaxy
 index and independent `DOMAIN.NEBULA` streams. Each has a 4–6 LY radius. These
@@ -11,12 +14,18 @@ are the prototype distribution carried into the first implementation, not a
 new galaxy-generation or save-format version. Positions use the existing
 galactic flattening; observer bearings use the existing sky frame. No system
 generation stream is consumed. Moving between systems changes bearing, size
-and whether the observer lies inside the volume.
+and whether the observer lies inside the volume. Each cloud keeps a seeded
+rose, blue, amber or violet palette; the four clouds have distinct palettes.
+The sphere is only a ray-integration bound: warped, tapered branches and
+patchy gas define the visible silhouette. `nebulaView.inside` describes that
+bound, not a guarantee that the observer occupies luminous gas.
 
 `src/nebula-bake.ts` integrates procedural emission and absorption into a
 2048×1024 half-float equirectangular texture once on system entry. The approved
 gain is 1.275 and color saturation is 0.78. There are 96 samples per cloud ray;
-empty central samples and effectively opaque rays skip further work. The
+samples outside the branching gas and effectively opaque rays skip further
+work. Dark rifts displace emitting gas as well as absorbing light, keeping
+dark channels visible from inside. The
 runtime loads no generated image and uses no Blender asset.
 
 The star-free base sky retains the existing floor and core-cone haze. The
@@ -45,10 +54,10 @@ station variants are warmed again before later render-layer crossings. Unsupport
 the base sky.
 
 Hardware development measurements on Apple M1 Pro / ANGLE Metal, forcing GPU
-completion after each strip: outside maximum 12 ms (p95 9 ms), inside maximum
-11.6 ms (p95 11.3 ms). Total elapsed time including frame yields and readback was
-1.15 seconds outside and 1.57 seconds inside. Pixel work is bounded, not elapsed
+completion after each strip, with the revised branching density: outside
+maximum 15 ms (p95 13.6 ms), inside maximum 18.9 ms (p95 14.7 ms).
+Total elapsed time including frame yields and readback was 2.15 seconds
+outside and 2.17 seconds inside. Pixel work is bounded, not elapsed
 time on every device. These are two seed-47 fixtures, not a worst-case galaxy
-bound. The final texture hash matches the synchronous implementation exactly.
-The 2048 resolution softens fine filaments compared with the approved 4096
-captures; colors and volume structure are unchanged.
+bound. The 2048 resolution softens fine filaments compared with the generated
+visual reference; target-image parity is not claimed.

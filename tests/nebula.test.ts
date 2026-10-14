@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { generateNebulae, nebulaView } from "../src/nebula";
+import { generateNebulae, nebulaView, NEBULA_PALETTES } from "../src/nebula";
 import { skyFrame, galaxyToSystem } from "../src/galaxy-frame";
 import { generateGalaxy } from "../src/galaxy";
 
@@ -19,6 +19,7 @@ describe("seeded galactic nebula volumes", () => {
 			center: { x: 8, y: 2, z: -3 },
 			radiusLy: 4,
 			seed: 12,
+			palette: 0,
 		};
 		const observer = { seed: 987, pos: { x: 1, y: 2, z: -3 } };
 		const view = nebulaView(cloud, observer);
@@ -35,6 +36,17 @@ describe("seeded galactic nebula volumes", () => {
 		expect(nebulaView(cloud, { ...observer, pos: cloud.center }).inside).toBe(
 			true,
 		);
+	});
+	test("galactic landmarks have distinct, stable palette identities", () => {
+		for (const seed of [1, 47, 99]) {
+			for (let galaxy = 0; galaxy < 8; galaxy++) {
+				const clouds = generateNebulae(seed, galaxy);
+				expect(new Set(clouds.map((c) => c.palette)).size).toBe(clouds.length);
+				for (const cloud of clouds) {
+					expect(NEBULA_PALETTES[cloud.palette]).toBeDefined();
+				}
+			}
+		}
 	});
 	test("moving observer changes size and bearing, not cloud identity", () => {
 		const cloud = generateNebulae(47, 0)[0];

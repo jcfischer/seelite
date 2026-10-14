@@ -15,7 +15,16 @@ export interface NebulaCloud {
 	center: Vec3;
 	radiusLy: number;
 	seed: number;
+	palette: number;
 }
+
+/** Coherent cloud identities; the second color lights filaments within one family. */
+export const NEBULA_PALETTES = [
+	{ name: "rose", gas: [1, 0.1, 0.19], filament: [1, 0.45, 0.48] },
+	{ name: "blue", gas: [0.1, 0.32, 0.85], filament: [0.35, 0.66, 1] },
+	{ name: "amber", gas: [0.78, 0.32, 0.08], filament: [1, 0.69, 0.34] },
+	{ name: "violet", gas: [0.43, 0.16, 0.65], filament: [0.74, 0.43, 0.81] },
+] as const;
 
 /** Trial values, subject to the principal's flown visual ruling. */
 export const NEBULA_COUNT = 4;
@@ -39,6 +48,7 @@ export function generateNebulae(
 			},
 			radiusLy: 4 + rand() * 2,
 			seed: Math.floor(rand() * 0x7fffffff),
+			palette: (id + (root >>> 0)) % NEBULA_PALETTES.length,
 		};
 	});
 }
