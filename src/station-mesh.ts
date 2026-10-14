@@ -1,3 +1,4 @@
+import { wheelRimGeometry } from "./station-rim";
 /**
  * The three silhouettes (`station-types.md` §7), built procedurally at load.
  *
@@ -5858,28 +5859,7 @@ function wheelRim(
 	z: number,
 	widthKm: number,
 ) {
-	const station = (radius: number, at: number): Ring => ({
-		z: at,
-		w: radius,
-		h: radius,
-		e: 2,
-		hard: true,
-	});
-	const half = widthKm / 2;
-	// `ship-mesh.ts`'s collar construction: out across the aft face, along the
-	// outer face, in across the fore face and home along the bore, `open` so no
-	// fan is drawn across either end.
-	const geometry = hullLoft(
-		[
-			station(innerKm, z - half),
-			station(outerKm, z - half),
-			station(outerKm, z + half),
-			station(innerKm, z + half),
-			station(innerKm, z - half),
-		],
-		{ segments: 48, subdivisions: 1, open: true },
-	);
-	return panelUVs(geometry);
+	return panelUVs(wheelRimGeometry(innerKm, outerKm, z, widthKm));
 }
 
 /** A thin square member between two points, for the unfinished rim's lattice. */
