@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #927: draft, awaiting the principal's approval.
+	{
+		date: "2026-10-14",
+		text: "Armour plating and shield boosters now work: a plate adds hull, a booster adds shield to each side and draws energy while your shields recharge, and the Equipment tab shows every change a module makes before you buy it.",
+		node: 927,
+	},
 	{
 		date: "2026-10-14",
 		text: "Rose and blue nebulae now mark the galaxy: their shapes and bearings change as you jump, and nearby clouds surround your ship and light its hull.",
