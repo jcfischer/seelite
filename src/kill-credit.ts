@@ -13,7 +13,7 @@
 
 import { HULL_SPECS, type HullId } from "./hull";
 import { fittedCapacity, moduleRow, type Loadout } from "./loadout";
-import { PULSE_LASER } from "./ship-condition";
+import { PULSE_LASER, stockCapacity } from "./ship-condition";
 import { ARMED_TRAFFIC_HULLS } from "./traffic-engagement";
 
 /** AI skill, S's third factor. 1 for every ship today (#562 D3): S is derived
@@ -69,14 +69,13 @@ export const strength = (ship: FittedShip): number => {
 	return strengthOf(shieldPool + integrity, fittedDps(ship));
 };
 
-/** A target's S: zero when it never fires (#562 D4). */
-export const targetStrength = (hull: HullId): number =>
-	isArmedTarget(hull)
-		? strengthOf(
-				HULL_SPECS[hull].shieldPool + HULL_SPECS[hull].integrity,
-				PULSE_LASER.damagePerS,
-			)
-		: 0;
+/** A target's S: zero when it never fires (#562 D4). A target flies its
+ *  stock fit until NPC loadouts (#875). */
+export const targetStrength = (hull: HullId): number => {
+	if (!isArmedTarget(hull)) return 0;
+	const { shieldPool, integrity } = stockCapacity(hull);
+	return strengthOf(shieldPool + integrity, PULSE_LASER.damagePerS);
+};
 
 /**
  * What one kill pays: 2·S_target / (S_own + S_target) (#562 D3). The curve is

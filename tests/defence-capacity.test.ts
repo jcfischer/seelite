@@ -70,8 +70,15 @@ describe("fittedCapacity carries integrity and shields", () => {
 				HULL_SPECS[id].shieldPool,
 				0,
 			]);
-			const { fuelCapacityLy: _, ...rest } = c;
-			expect(rest).toEqual(stockCapacity(id));
+			// The condition's part of the projection is `stockCapacity`'s.
+			const { bankE, regenPerS, integrity, shieldPool, boosterDrawPerS } = c;
+			expect({
+				bankE,
+				regenPerS,
+				integrity,
+				shieldPool,
+				boosterDrawPerS,
+			}).toEqual(stockCapacity(id));
 		}
 	});
 

@@ -481,6 +481,11 @@ export interface FittedCapacity extends PlantOutput, DefenceCapacity {
 	 *  fitted tank's `fuelLy` (#873 R1). Capacity only — the jump range stays
 	 *  the hull's `tankLy`, and this field is named apart from it. */
 	fuelCapacityLy: number;
+	/** Every fitted scoop's `fuelLyPerS` and `drawPerS`, summed (#932). */
+	scoopLyPerS: number;
+	scoopDrawPerS: number;
+	/** The missiles every fitted rack holds when full. */
+	missiles: number;
 }
 
 /** The defence a fitted ship flies with (#927). */

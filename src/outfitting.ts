@@ -60,13 +60,6 @@ export const moduleLabel = (m: FittedModule): string =>
 export function fitReadout(commander: CommanderState, entrustedT: number) {
 	const ship = { hull: commander.hull, loadout: commander.loadout };
 	const capacity = fittedCapacity(commander.hull, commander.loadout);
-	let scoopLyPerS = 0;
-	let missiles = 0;
-	for (const m of Object.values(commander.loadout)) {
-		if (m.module === "fuel-scoop")
-			scoopLyPerS += moduleRow(m).output.fuelLyPerS;
-		if (m.module === "missile-rack") missiles += moduleRow(m).output.missiles;
-	}
 	return {
 		accel: flightPerformance(
 			commander.hull,
@@ -78,12 +71,12 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 		bankE: capacity.bankE,
 		regenPerS: capacity.regenPerS,
 		dps: fittedDps(ship),
-		missiles,
+		missiles: capacity.missiles,
 		holdT: commanderHold(commander, entrustedT).capacityT,
 		// Two readers: a fitted tank raises the tank, never the jump (#926).
 		fuelCapacityLy: commanderFuelCapacityLy(commander),
 		jump: commanderJumpRangeLy(commander),
-		scoopLyPerS,
+		scoopLyPerS: capacity.scoopLyPerS,
 		credit: killCredit(ship, "raider"),
 	};
 }

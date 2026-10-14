@@ -24,11 +24,17 @@ const courierBank = (bankE: number, regenPerS: number) => ({
 	bankE,
 	regenPerS,
 });
-/** The defence a stock hull projects, beside its bank (#927). */
+/** What a stock fit projects beside its bank and tank: the hull row's own
+ *  defence, no booster, no scoop and no rack (#927). Written out from the hull
+ *  row on purpose rather than read off `stockCapacity`, so it is an oracle
+ *  for that function and not a copy of it. */
 const stockDefence = (id: (typeof HULL_IDS)[number]) => ({
 	integrity: HULL_SPECS[id].integrity,
 	shieldPool: HULL_SPECS[id].shieldPool,
 	boosterDrawPerS: 0,
+	scoopLyPerS: 0,
+	scoopDrawPerS: 0,
+	missiles: 0,
 });
 
 const courierWith = (extra: Record<string, ReturnType<typeof makeModule>>) =>
