@@ -149,11 +149,16 @@ try {
 		(await page.locator(`[data-outfit-delta="${label}"]`).allInnerTexts()).join(
 			"|",
 		);
-	// The same module as fitted: only the two always rows, each unmoved (#927).
+	// The same module as fitted (#927): the replaced pulse moves to the hold as
+	// a carried tonne, so ACCEL falls, and the same weapon leaves CREDIT unmoved.
+	// Only the two always rows show.
 	check(
 		"comparison shows handling and credit, each with its signed change, before purchase",
-		/^ACCEL .*→.*±0\.000$/.test(await deltaText("ACCEL")) &&
-			/^CREDIT \/ RAIDER .*→.*±0\.00$/.test(await deltaText("CREDIT / RAIDER")),
+		/^ACCEL .*→.* km\/s² −\d+\.\d{3}$/.test(await deltaText("ACCEL")) &&
+			/^CREDIT \/ RAIDER .*→.*±0\.00$/.test(
+				await deltaText("CREDIT / RAIDER"),
+			) &&
+			(await page.locator("[data-outfit-delta]").count()) === 2,
 		await preview.innerText(),
 	);
 	await page.screenshot({ path: `${out}/comparison.png` });

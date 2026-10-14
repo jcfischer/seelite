@@ -28,7 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// Node #927: draft, awaiting the principal's approval.
+	// Node #927: sentence approved by the principal, 2026-10-14.
 	{
 		date: "2026-10-14",
 		text: "Armour plating and shield boosters now work: a plate adds hull, a booster adds shield to each side and draws energy while your shields recharge, and the Equipment tab shows every change a module makes before you buy it.",
