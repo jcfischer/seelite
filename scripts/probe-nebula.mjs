@@ -68,6 +68,11 @@ try {
 		const custom = g.nebulaTarget === null;
 		g.bakeSky(own);
 		const replay = read() === before;
+		// Use the actual jump/rebuild path, then revisit the original system.
+		g.performJump(g.world.galaxy.systems[141]);
+		const moved = read() !== before;
+		g.performJump(g.world.galaxy.systems[187]);
+		const revisit = read() === before;
 		return {
 			shared,
 			stable,
@@ -75,6 +80,8 @@ try {
 			restored,
 			custom,
 			replay,
+			moved,
+			revisit,
 			hashes,
 			before,
 			counts,
@@ -82,7 +89,16 @@ try {
 			fps: 120000 / (stamps[120] - stamps[0]),
 		};
 	});
-	for (const key of ["shared", "stable", "low", "restored", "custom", "replay"])
+	for (const key of [
+		"shared",
+		"stable",
+		"low",
+		"restored",
+		"custom",
+		"replay",
+		"moved",
+		"revisit",
+	])
 		assert.equal(result[key], true, key);
 	assert.ok(
 		result.hashes.every((hash) => hash === result.before),
