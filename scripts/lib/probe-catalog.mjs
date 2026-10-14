@@ -20,7 +20,7 @@ export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
 			"probe-nebula.mjs",
-			"Seeded sky texture rebakes deterministically, remains world-fixed, shares the reflection source, toggles quality without rebaking and releases replaced GPU targets.",
+			"Seeded sky texture rebakes deterministically, is reused unchanged when the camera turns, shares the reflection source, toggles quality without rebaking and releases replaced GPU targets.",
 			["nebula", "sky", "reflection", "quality", "GPU disposal"],
 		),
 		entry(

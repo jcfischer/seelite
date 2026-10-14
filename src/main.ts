@@ -6349,14 +6349,7 @@ class Game {
 		this.applyQuality();
 	}
 
-	/**
-	 * Apply the lighting row, including bloom — #98's quality gate.
-	 *
-	 * Assignment rather than a rebuild, so the setting is live: the player sees
-	 * the same frame with and without the term, which is the only way to judge
-	 * what it is worth. Rebaking on every change would also make the setting
-	 * cost more than the thing it gates.
-	 */
+	/** Complete the arrival bake before installing its sky and reflections. */
 	private beginNebulaSky() {
 		if (
 			!this.skyBake?.nebula ||
@@ -6406,6 +6399,14 @@ class Game {
 		});
 	}
 
+	/**
+	 * Apply the lighting row, including bloom — #98's quality gate.
+	 *
+	 * Assignment rather than a rebuild, so the setting is live: the player sees
+	 * the same frame with and without the term, which is the only way to judge
+	 * what it is worth. Rebaking on every change would also make the setting
+	 * cost more than the thing it gates.
+	 */
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
 		if (!mode.environment) {
