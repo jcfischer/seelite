@@ -59,21 +59,3 @@ export function nebulaView(
 			d <= cloud.radiusLy ? Math.PI : Math.asin(cloud.radiusLy / d),
 	};
 }
-/** Unit-direction ray in galactic LY. Matches the bake's sphere interval. */
-export function rayCloudInterval(
-	origin: Vec3,
-	dir: Vec3,
-	center: Vec3,
-	radius: number,
-): [number, number] | null {
-	const x = origin.x - center.x,
-		y = origin.y - center.y,
-		z = origin.z - center.z;
-	const b = x * dir.x + y * dir.y + z * dir.z;
-	const disc = b * b - (x * x + y * y + z * z - radius * radius);
-	if (disc <= 0) return null;
-	const h = Math.sqrt(disc),
-		start = Math.max(0, -b - h),
-		end = -b + h;
-	return end > start ? [start, end] : null;
-}

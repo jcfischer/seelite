@@ -3,11 +3,22 @@
  */
 import * as THREE from "three";
 import { galaxyToSystem, skyFrame } from "./galaxy-frame";
-import { generateNebulae, NEBULA_COUNT, type NebulaCloud } from "./nebula";
+import { generateNebulae, NEBULA_COUNT } from "./nebula";
 import type { Vec3 } from "./vec3";
 
 export const NEBULA_BAKE_WIDTH = 2048;
 export const NEBULA_GAIN = 1.275;
+
+export function nebulaOptions(search: string) {
+	const query = new URLSearchParams(search);
+	const width = Number(query.get("nebula-resolution") ?? NEBULA_BAKE_WIDTH);
+	const gain = Number(query.get("nebula-gain") ?? NEBULA_GAIN);
+	return {
+		enabled: query.get("nebula") !== "off",
+		width: [512, 1024, 2048, 4096].includes(width) ? width : NEBULA_BAKE_WIDTH,
+		gain: Number.isFinite(gain) ? Math.min(10, Math.max(0, gain)) : NEBULA_GAIN,
+	};
+}
 
 const fragmentShader = /* glsl */ `
 precision highp float;
@@ -88,22 +99,35 @@ void main(){
  gl_FragColor=vec4(radiance,1.0);
 }`;
 
-export interface NebulaBake {
-	target: THREE.WebGLRenderTarget;
-	clouds: NebulaCloud[];
-	/** CPU submission time. GPU completion measured separately by the capture. */
-	submitMs: number;
+/** Scissored full-size viewports preserve UVs while bounding each GPU draw. */
+export function nebulaBakeStrips(width: number, height: number) {
+	const rows = Math.max(1, Math.floor(16384 / width));
+	return Array.from({ length: Math.ceil(height / rows) }, (_, i) => ({
+		y: i * rows,
+		height: Math.min(rows, height - i * rows),
+	}));
 }
-export function bakeNebulaSky(
+export interface NebulaBakeJob {
+	ready: Promise<THREE.WebGLRenderTarget | null>;
+	cancel(): void;
+	stats: { strips: number; submitMs: number; elapsedMs: number };
+}
+export function startNebulaBake(
 	renderer: THREE.WebGLRenderer,
 	base: THREE.Texture,
-	worldSeed: number,
-	galaxy: number,
-	record: { seed: number; pos: Vec3 },
-	width = NEBULA_BAKE_WIDTH,
-	gain = NEBULA_GAIN,
-): NebulaBake {
+	world: {
+		worldSeed: number;
+		galaxy: number;
+		record: { seed: number; pos: Vec3 };
+	},
+	options: { width: number; gain: number },
+): NebulaBakeJob {
+	const { worldSeed, galaxy, record } = world;
+	const { width, gain } = options;
 	const started = performance.now();
+	const stats = { strips: 0, submitMs: 0, elapsedMs: 0 };
+	if (!renderer.extensions.has("EXT_color_buffer_float"))
+		return { ready: Promise.resolve(null), cancel() {}, stats };
 	const clouds = generateNebulae(worldSeed, galaxy);
 	const frame = skyFrame(record.seed);
 	const axis = (v: Vec3) => {
@@ -148,23 +172,68 @@ export function bakeNebulaSky(
 	const geometry = new THREE.PlaneGeometry(2, 2),
 		scene = new THREE.Scene();
 	scene.add(new THREE.Mesh(geometry, material));
-	const previous = renderer.getRenderTarget();
-	const previousXr = renderer.xr.enabled;
-	const previousAutoClear = renderer.autoClear;
-	try {
-		renderer.xr.enabled = false;
-		renderer.autoClear = true;
-		renderer.setRenderTarget(target);
-		renderer.render(scene, new THREE.Camera());
-	} catch (error) {
-		target.dispose();
-		throw error;
-	} finally {
-		renderer.setRenderTarget(previous);
-		renderer.xr.enabled = previousXr;
-		renderer.autoClear = previousAutoClear;
+	const camera = new THREE.Camera();
+	const strips = nebulaBakeStrips(width, width / 2);
+	let animationFrame = 0,
+		done = false;
+	let resolve!: (value: THREE.WebGLRenderTarget | null) => void;
+	const ready = new Promise<THREE.WebGLRenderTarget | null>((r) => {
+		resolve = r;
+	});
+	const finish = (keep: boolean) => {
+		if (done) return;
+		done = true;
+		cancelAnimationFrame(animationFrame);
 		geometry.dispose();
 		material.dispose();
-	}
-	return { target, clouds, submitMs: performance.now() - started };
+		if (!keep) target.dispose();
+		stats.elapsedMs = performance.now() - started;
+		resolve(keep ? target : null);
+	};
+	const step = () => {
+		if (done) return;
+		const previous = renderer.getRenderTarget();
+		const face = renderer.getActiveCubeFace(),
+			mip = renderer.getActiveMipmapLevel();
+		const viewport = renderer.getViewport(new THREE.Vector4());
+		const scissor = renderer.getScissor(new THREE.Vector4());
+		const scissorTest = renderer.getScissorTest();
+		const xr = renderer.xr.enabled,
+			autoClear = renderer.autoClear;
+		const strip = strips[stats.strips];
+		const start = performance.now();
+		try {
+			renderer.xr.enabled = false;
+			renderer.autoClear = false;
+			target.scissorTest = true;
+			target.scissor.set(0, strip.y, width, strip.height);
+			renderer.setRenderTarget(target);
+			const gl = renderer.getContext();
+			if (
+				gl.isContextLost() ||
+				gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE
+			) {
+				finish(false);
+				return;
+			}
+			renderer.render(scene, camera);
+			stats.strips++;
+		} catch (error) {
+			console.warn("nebula bake unavailable; retaining base sky", error);
+			finish(false);
+		} finally {
+			renderer.setRenderTarget(previous, face, mip);
+			renderer.setViewport(viewport);
+			renderer.setScissor(scissor);
+			renderer.setScissorTest(scissorTest);
+			renderer.xr.enabled = xr;
+			renderer.autoClear = autoClear;
+			stats.submitMs += performance.now() - start;
+		}
+		if (done) return;
+		if (stats.strips === strips.length) finish(true);
+		else animationFrame = requestAnimationFrame(step);
+	};
+	animationFrame = requestAnimationFrame(step);
+	return { ready, cancel: () => finish(false), stats };
 }

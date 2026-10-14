@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { generateNebulae, nebulaView, rayCloudInterval } from "../src/nebula";
+import { generateNebulae, nebulaView } from "../src/nebula";
 import { skyFrame, galaxyToSystem } from "../src/galaxy-frame";
 import { generateGalaxy } from "../src/galaxy";
 
@@ -48,21 +48,5 @@ describe("seeded galactic nebula volumes", () => {
 		});
 		expect(a.bearing).not.toEqual(b.bearing);
 		expect(b.angularRadiusRad).toBeGreaterThan(a.angularRadiusRad);
-	});
-	test("sphere ray entry handles outside, inside, miss and behind", () => {
-		const c = { x: 0, y: 0, z: 0 };
-		expect(
-			rayCloudInterval({ x: 0, y: 0, z: 10 }, { x: 0, y: 0, z: -1 }, c, 3),
-		).toEqual([7, 13]);
-		expect(rayCloudInterval(c, { x: 1, y: 0, z: 0 }, c, 3)).toEqual([0, 3]);
-		expect(
-			rayCloudInterval({ x: 0, y: 0, z: 10 }, { x: 1, y: 0, z: 0 }, c, 3),
-		).toBeNull();
-		expect(
-			rayCloudInterval({ x: 0, y: 0, z: 10 }, { x: 0, y: 0, z: 1 }, c, 3),
-		).toBeNull();
-		expect(
-			rayCloudInterval({ x: 3, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, c, 3),
-		).toBeNull();
 	});
 });

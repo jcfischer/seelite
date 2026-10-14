@@ -605,6 +605,10 @@ export async function bootedGame(page, timeout = 20000) {
 		null,
 		{ timeout },
 	);
+	// The game draws immediately; measurements wait for its progressive sky.
+	await page.waitForFunction(() => !window.__seelite?.nebulaPending, null, {
+		timeout,
+	});
 }
 
 /**

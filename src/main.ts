@@ -1,5 +1,9 @@
 import { generateNebulae, nebulaView } from "./nebula";
-import { bakeNebulaSky, NEBULA_BAKE_WIDTH, NEBULA_GAIN } from "./nebula-bake";
+import {
+	startNebulaBake,
+	nebulaOptions,
+	type NebulaBakeJob,
+} from "./nebula-bake";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
@@ -6215,15 +6219,28 @@ class Game {
 	private environmentSource: THREE.Texture | null = null;
 	private nebulaTarget: THREE.WebGLRenderTarget | null = null;
 	/** Development comparison only; the shared galactic sky is on in production. */
-	private readonly nebulaEnabled = !(
-		import.meta.env.DEV &&
-		new URLSearchParams(window.location.search).get("nebula") === "off"
+	private readonly nebulaOptions = nebulaOptions(
+		import.meta.env.DEV ? window.location.search : "",
 	);
+	private nebulaJob: NebulaBakeJob | null = null;
+	private nebulaFailed = false;
+	private skyReady: Promise<void> = Promise.resolve();
+	get nebulaPending() {
+		return this.nebulaJob !== null;
+	}
+	async whenSkyReady() {
+		let pending: Promise<void>;
+		do {
+			pending = this.skyReady;
+			await pending;
+		} while (pending !== this.skyReady);
+	}
 	nebulaBakeStats: {
 		width: number;
 		height: number;
 		submitMs: number;
-		totalSubmitMs: number;
+		strips: number;
+		elapsedMs: number;
 	} | null = null;
 
 	/** What the sky on screen was baked from. Public for `probe-light-rig.mjs`,
@@ -6274,9 +6291,9 @@ class Game {
 			haze: core
 				? { coreBearing: [core.x, core.y, core.z], strength: hazeStrength }
 				: null,
-			gas: this.nebulaEnabled ? null : gas,
+			gas: this.nebulaOptions.enabled ? null : gas,
 		};
-		this.bakeSky({ ...bakeParams, nebula: this.nebulaEnabled });
+		this.bakeSky({ ...bakeParams, nebula: this.nebulaOptions.enabled });
 	}
 
 	/**
@@ -6291,7 +6308,9 @@ class Game {
 	 * through here afterwards.
 	 */
 	bakeSky(sky: SkyBakeParams & { nebula?: boolean }) {
-		const bakeStarted = performance.now();
+		this.nebulaJob?.cancel();
+		this.nebulaJob = null;
+		this.nebulaFailed = false;
 		// Idempotent by disposal rather than by assuming a single call: a PMREM
 		// cube is a GPU texture, and a second bake that dropped the first would
 		// leak it silently.
@@ -6305,7 +6324,7 @@ class Game {
 		this.skyBake = sky;
 		const { data, width, height } = equirectEnvironment(sky);
 
-		let source: THREE.Texture = new THREE.DataTexture(
+		const source = new THREE.DataTexture(
 			data,
 			width,
 			height,
@@ -6315,39 +6334,6 @@ class Game {
 		source.mapping = THREE.EquirectangularReflectionMapping;
 		source.colorSpace = THREE.LinearSRGBColorSpace;
 		source.needsUpdate = true;
-		if (sky.nebula) {
-			const query = new URLSearchParams(
-				import.meta.env.DEV ? window.location.search : "",
-			);
-			const requested = Number(
-				query.get("nebula-resolution") ?? NEBULA_BAKE_WIDTH,
-			);
-			const width = [512, 1024, 2048, 4096].includes(requested)
-				? requested
-				: NEBULA_BAKE_WIDTH;
-			const requestedGain = Number(query.get("nebula-gain") ?? NEBULA_GAIN);
-			const gain = Number.isFinite(requestedGain)
-				? Math.min(10, Math.max(0, requestedGain))
-				: NEBULA_GAIN;
-			const baked = bakeNebulaSky(
-				this.renderer,
-				source,
-				this.world.seed,
-				this.world.galaxy.index,
-				this.world.system.record,
-				width,
-				gain,
-			);
-			source.dispose();
-			source = baked.target.texture;
-			this.nebulaTarget = baked.target;
-			this.nebulaBakeStats = {
-				width,
-				height: width / 2,
-				submitMs: baked.submitMs,
-				totalSubmitMs: 0,
-			};
-		}
 		this.environmentSource = source;
 		const pmrem = new THREE.PMREMGenerator(this.renderer);
 		this.environmentTarget = pmrem.fromEquirectangular(source);
@@ -6355,8 +6341,6 @@ class Game {
 		// The PMREM's own render targets are done; the source is kept for the
 		// backdrop background and disposed on the next bake.
 		pmrem.dispose();
-		if (this.nebulaBakeStats)
-			this.nebulaBakeStats.totalSubmitMs = performance.now() - bakeStarted;
 		// Once, here: it is a constant, and `applyQuality` runs on every quality
 		// change — writing it there dirtied every material's uniforms for a value
 		// that cannot have changed.
@@ -6373,8 +6357,61 @@ class Game {
 	 * what it is worth. Rebaking on every change would also make the setting
 	 * cost more than the thing it gates.
 	 */
+	private beginNebulaSky() {
+		if (
+			!this.skyBake?.nebula ||
+			!this.environmentSource ||
+			this.nebulaTarget ||
+			this.nebulaJob ||
+			this.nebulaFailed
+		)
+			return;
+		const base = this.environmentSource;
+		const job = startNebulaBake(
+			this.renderer,
+			base,
+			{
+				worldSeed: this.world.seed,
+				galaxy: this.world.galaxy.index,
+				record: this.world.system.record,
+			},
+			this.nebulaOptions,
+		);
+		this.nebulaJob = job;
+		this.skyReady = job.ready.then((target) => {
+			// A jump or quality switch owns a newer job; never install stale gas.
+			if (this.nebulaJob !== job) {
+				target?.dispose();
+				return;
+			}
+			this.nebulaJob = null;
+			if (!target) {
+				this.nebulaFailed = true;
+				return;
+			}
+			this.nebulaTarget = target;
+			this.environmentSource = target.texture;
+			base.dispose();
+			this.environmentTarget?.dispose();
+			const pmrem = new THREE.PMREMGenerator(this.renderer);
+			this.environmentTarget = pmrem.fromEquirectangular(target.texture);
+			this.environmentMap = this.environmentTarget.texture;
+			pmrem.dispose();
+			this.nebulaBakeStats = {
+				width: target.width,
+				height: target.height,
+				...job.stats,
+			};
+			this.applyQuality();
+		});
+	}
+
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
+		if (!mode.environment) {
+			this.nebulaJob?.cancel();
+			this.nebulaJob = null;
+		} else this.beginNebulaSky();
 		this.bloomPass.enabled = this.bloomDefault;
 		// The cabin's hemisphere follows the setting (#912): low has no perimeter
 		// lamps, so it takes `CABIN_LOW_QUALITY_HEMISPHERE_GAIN` instead of the cut
@@ -21601,6 +21638,7 @@ if (postcard) {
 		loadingPanel("postcard refineries"),
 	);
 	await game.loadRefineriesAfterBoot();
+	await game.whenSkyReady();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");

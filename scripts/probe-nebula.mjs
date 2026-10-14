@@ -25,6 +25,8 @@ try {
 		const { DataUtils } = await import("/node_modules/.vite/deps/three.js");
 		const { equirectEnvironment } = await import("/src/light-rig.ts");
 		g.settings.set("quality", "high");
+		await g.whenSkyReady();
+		g.clockHeld = true;
 		let peak = 0;
 		const read = () => {
 			const t = g.nebulaTarget;
@@ -76,6 +78,7 @@ try {
 		for (let i = 0; i < 3; i++) {
 			const start = performance.now();
 			g.buildEnvironment();
+			await g.whenSkyReady();
 			hashes.push(read());
 			times.push(performance.now() - start);
 			counts.push(g.renderer.info.memory.textures);
@@ -84,15 +87,42 @@ try {
 		g.bakeSky({ haze: null, gas: null });
 		const custom = g.nebulaTarget === null;
 		g.bakeSky(own);
+		await g.whenSkyReady();
 		const replay = read() === before;
 		// Use the actual jump/rebuild path, then revisit the original system.
 		const startingFuel = g.fuelLy;
 		g.performJump(g.world.galaxy.systems.find((s) => s.index === 141));
+		await g.whenSkyReady();
 		const moved = g.world.system.record.index === 141 && read() !== before;
 		g.fuelLy = startingFuel;
 		g.performJump(g.world.galaxy.systems.find((s) => s.index === 187));
+		await g.whenSkyReady();
 		const revisit = g.world.system.record.index === 187 && read() === before;
+		g.buildEnvironment();
+		g.settings.set("quality", "low");
+		await g.whenSkyReady();
+		const cancelled = !g.nebulaPending && g.nebulaTarget === null;
+		g.buildEnvironment();
+		const lowSkips = !g.nebulaPending && g.nebulaTarget === null;
+		g.settings.set("quality", "high");
+		await g.whenSkyReady();
+		const lazy = read() === before;
+		const has = g.renderer.extensions.has;
+		g.renderer.extensions.has = (name) =>
+			name !== "EXT_color_buffer_float" &&
+			has.call(g.renderer.extensions, name);
+		g.buildEnvironment();
+		await g.whenSkyReady();
+		const fallback =
+			!g.nebulaPending &&
+			g.nebulaTarget === null &&
+			g.backdropScene.background === g.environmentSource;
+		g.renderer.extensions.has = has;
 		return {
+			cancelled,
+			lowSkips,
+			lazy,
+			fallback,
 			emission,
 			shared,
 			stable,
@@ -110,6 +140,10 @@ try {
 		};
 	});
 	for (const key of [
+		"cancelled",
+		"lowSkips",
+		"lazy",
+		"fallback",
 		"emission",
 		"shared",
 		"stable",
