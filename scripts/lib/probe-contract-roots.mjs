@@ -4,6 +4,11 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-nebula.mjs": [
+		"scripts/probe-nebula.mjs",
+		"src/nebula.ts",
+		"src/nebula-bake.ts",
+	],
 	"measure-cruise-detour.mjs": [
 		"scripts/measure-cruise-detour.mjs",
 		"src/cruise-detour.ts",

@@ -151,17 +151,31 @@ export function mountPostcardPanel(
 		if (root) element(".status").textContent = text;
 	};
 
-	const setMode = (mode: PostcardMode) => {
+	let drawGeneration = 0;
+	const setMode = async (mode: PostcardMode) => {
 		if (!root) return;
+		const generation = ++drawGeneration,
+			opened = root;
 		state.mode = mode;
 		for (const button of root.querySelectorAll<HTMLButtonElement>(
 			"[data-mode]",
 		))
 			button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
 		say("");
+		current = null;
+		blob = null;
+		state.fragment = null;
+		state.link = null;
+		state.caption = null;
+		state.card = null;
+		element<HTMLInputElement>("input.link").value = "";
+		element<HTMLImageElement>("img.card").removeAttribute("src");
 		try {
+			await host.source.whenSkyReady?.();
+			if (root !== opened || generation !== drawGeneration) return;
 			current = makePostcard(host.source, mode);
 		} catch (error) {
+			if (root !== opened || generation !== drawGeneration) return;
 			console.error("postcard: the card could not be drawn", error);
 			current = null;
 			blob = null;

@@ -62,7 +62,8 @@ export async function openingFixture({ browser, check, watch }) {
 		const page = await context.newPage();
 		watch(page, label);
 		await page.goto(gameUrl(origin, { seed: SEED, raider: "off", ...params }));
-		await bootedGame(page);
+		// This fixture measures opening state, not the asynchronously baked sky.
+		await bootedGame(page, 20000, { sky: false });
 		return { context, page };
 	}
 

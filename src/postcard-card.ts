@@ -175,6 +175,8 @@ export function postcardLink(fragment: string): string {
 
 /** What a card is made from: `Game` answers all three. */
 export interface PostcardSource {
+	/** A progressive sky must settle before its pixels enter a shared card. */
+	whenSkyReady?(): Promise<void>;
 	postcardScene(mode: PostcardMode): PostcardScene;
 	postcardPlace(): { place: string | null; system: string };
 	capturePostcardFrame(

@@ -35,6 +35,7 @@ import {
 } from "./lib/source-scan";
 import {
 	assertServingThisTree,
+	bootedGame,
 	HARDWARE_RENDERER,
 	PROBE_RENDERER_ENV,
 	rendererLaneNotice,
@@ -472,4 +473,34 @@ test("the renderer lane a direct run took is named, and only to that run", () =>
 	expect(line).toContain("software");
 	expect(line).toContain(PROBE_RENDERER_ENV);
 	expect(line).toContain("probe:one");
+});
+
+test("sky readiness cannot accept a missing game during reload", async () => {
+	const scope = globalThis as unknown as { window: unknown };
+	const previous = scope.window;
+	const states = [
+		{ frames: 1, nebulaPending: true },
+		undefined,
+		{ frames: 0, nebulaPending: false },
+		{ frames: 1, nebulaPending: true },
+		{ frames: 1, nebulaPending: false },
+	];
+	let at = 0;
+	try {
+		await bootedGame({
+			waitForFunction: async (
+				predicate: (sky: boolean) => unknown,
+				sky: boolean,
+			) => {
+				while (at < states.length) {
+					scope.window = { __seelite: states[at++] };
+					if (predicate(sky)) return;
+				}
+				throw new Error("readiness never reached");
+			},
+		});
+		expect(at).toBe(states.length);
+	} finally {
+		scope.window = previous;
+	}
 });

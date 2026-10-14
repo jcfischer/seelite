@@ -28,6 +28,11 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	{
+		date: "2026-10-14",
+		text: "Rose and blue nebulae now mark the galaxy: their shapes and bearings change as you jump, and nearby clouds surround your ship and light its hull.",
+		node: 685,
+	},
 	// Node #819: sentence approved by the principal, 2026-10-13.
 	{
 		date: "2026-10-13",
