@@ -1045,11 +1045,16 @@ const movedBetween = (a, b) => {
 	return moved;
 };
 // And hold the page's own loop, as the combat rig does: it steps the world
-// between two screenshots otherwise.
-await page.evaluate(() => {
+// between two screenshots otherwise. And hold the sky: an arrival's nebula
+// bake runs on its own animation frames, which the page loop does not own,
+// and installs gas and reflections when it completes. Landing between the two
+// shown frames it moved ~13,700 px of the control (node #979, reproduced by
+// rebaking just before the first shot).
+await page.evaluate(async () => {
 	const g = window.__seelite;
 	if (g.animationFrame) cancelAnimationFrame(g.animationFrame);
 	g.animationFrame = 0;
+	await g.whenSkyReady();
 });
 const tenderShown = await framePng();
 const tenderShownAgain = await framePng();
