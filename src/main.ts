@@ -1,3 +1,5 @@
+import { generateNebulae, nebulaView } from "./nebula";
+import { bakeNebulaSky, NEBULA_BAKE_WIDTH, NEBULA_GAIN } from "./nebula-bake";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
@@ -6205,15 +6207,28 @@ class Game {
 	 *  which is why that method disposes what it is replacing rather than
 	 *  assuming it is the first call. */
 	private environmentMap: THREE.Texture | null = null;
+	private environmentTarget: THREE.WebGLRenderTarget | null = null;
 
 	/** The pre-PMREM equirectangular source, kept so it can serve as both
 	 *  `scene.environment` (convolved) and `backdropScene.background` (raw).
 	 *  Disposed and rebuilt on every jump alongside `environmentMap`. */
-	private environmentSource: THREE.DataTexture | null = null;
+	private environmentSource: THREE.Texture | null = null;
+	private nebulaTarget: THREE.WebGLRenderTarget | null = null;
+	/** Development comparison only; the shared galactic sky is on in production. */
+	private readonly nebulaEnabled = !(
+		import.meta.env.DEV &&
+		new URLSearchParams(window.location.search).get("nebula") === "off"
+	);
+	nebulaBakeStats: {
+		width: number;
+		height: number;
+		submitMs: number;
+		totalSubmitMs: number;
+	} | null = null;
 
 	/** What the sky on screen was baked from. Public for `probe-light-rig.mjs`,
 	 *  which reads it to put the system's own sky back after baking its own. */
-	skyBake: SkyBakeParams | null = null;
+	skyBake: (SkyBakeParams & { nebula?: boolean }) | null = null;
 
 	/**
 	 * Bake the sky once per system in the world frame (node #433, closing #100).
@@ -6259,9 +6274,9 @@ class Game {
 			haze: core
 				? { coreBearing: [core.x, core.y, core.z], strength: hazeStrength }
 				: null,
-			gas,
+			gas: this.nebulaEnabled ? null : gas,
 		};
-		this.bakeSky(bakeParams);
+		this.bakeSky({ ...bakeParams, nebula: this.nebulaEnabled });
 	}
 
 	/**
@@ -6275,16 +6290,22 @@ class Game {
 	 * same path, and reads which face it lit; the system's `skyBake` goes back
 	 * through here afterwards.
 	 */
-	bakeSky(sky: SkyBakeParams) {
+	bakeSky(sky: SkyBakeParams & { nebula?: boolean }) {
+		const bakeStarted = performance.now();
 		// Idempotent by disposal rather than by assuming a single call: a PMREM
 		// cube is a GPU texture, and a second bake that dropped the first would
 		// leak it silently.
-		this.environmentMap?.dispose();
-		this.environmentSource?.dispose();
+		this.environmentTarget?.dispose();
+		this.environmentTarget = null;
+		// A render target owns its texture; dispose that owner exactly once.
+		if (!this.nebulaTarget) this.environmentSource?.dispose();
+		this.nebulaTarget?.dispose();
+		this.nebulaTarget = null;
+		this.nebulaBakeStats = null;
 		this.skyBake = sky;
 		const { data, width, height } = equirectEnvironment(sky);
 
-		const source = new THREE.DataTexture(
+		let source: THREE.Texture = new THREE.DataTexture(
 			data,
 			width,
 			height,
@@ -6294,12 +6315,48 @@ class Game {
 		source.mapping = THREE.EquirectangularReflectionMapping;
 		source.colorSpace = THREE.LinearSRGBColorSpace;
 		source.needsUpdate = true;
+		if (sky.nebula) {
+			const query = new URLSearchParams(
+				import.meta.env.DEV ? window.location.search : "",
+			);
+			const requested = Number(
+				query.get("nebula-resolution") ?? NEBULA_BAKE_WIDTH,
+			);
+			const width = [512, 1024, 2048, 4096].includes(requested)
+				? requested
+				: NEBULA_BAKE_WIDTH;
+			const requestedGain = Number(query.get("nebula-gain") ?? NEBULA_GAIN);
+			const gain = Number.isFinite(requestedGain)
+				? Math.min(10, Math.max(0, requestedGain))
+				: NEBULA_GAIN;
+			const baked = bakeNebulaSky(
+				this.renderer,
+				source,
+				this.world.seed,
+				this.world.galaxy.index,
+				this.world.system.record,
+				width,
+				gain,
+			);
+			source.dispose();
+			source = baked.target.texture;
+			this.nebulaTarget = baked.target;
+			this.nebulaBakeStats = {
+				width,
+				height: width / 2,
+				submitMs: baked.submitMs,
+				totalSubmitMs: 0,
+			};
+		}
 		this.environmentSource = source;
 		const pmrem = new THREE.PMREMGenerator(this.renderer);
-		this.environmentMap = pmrem.fromEquirectangular(source).texture;
+		this.environmentTarget = pmrem.fromEquirectangular(source);
+		this.environmentMap = this.environmentTarget.texture;
 		// The PMREM's own render targets are done; the source is kept for the
 		// backdrop background and disposed on the next bake.
 		pmrem.dispose();
+		if (this.nebulaBakeStats)
+			this.nebulaBakeStats.totalSubmitMs = performance.now() - bakeStarted;
 		// Once, here: it is a constant, and `applyQuality` runs on every quality
 		// change — writing it there dirtied every material's uniforms for a value
 		// that cannot have changed.
@@ -22085,6 +22142,22 @@ if (postcard) {
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
 	(window as unknown as { __seelite: Game }).__seelite = game;
+	if (import.meta.env.DEV && query.has("nebula-look")) {
+		const id = Number(query.get("nebula-look"));
+		const cloud = generateNebulae(
+			game.world.seed,
+			game.world.galaxy.index,
+		).find((c) => c.id === id);
+		if (cloud) {
+			const bearing = nebulaView(cloud, game.world.system.record).bearing;
+			if (bearing)
+				game.orientation.setFromUnitVectors(
+					new THREE.Vector3(0, 0, -1),
+					new THREE.Vector3(bearing.x, bearing.y, bearing.z),
+				);
+		}
+	}
+
 	// Read off the page by `scripts/probe-save.mjs` rather than restated there:
 	// a probe with its own copy of the debounce goes falsely red the day the
 	// module moves it.

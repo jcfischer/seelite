@@ -19,6 +19,11 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-nebula.mjs",
+			"Seeded sky texture rebakes deterministically, remains world-fixed, shares the reflection source, toggles quality without rebaking and releases replaced GPU targets.",
+			["nebula", "sky", "reflection", "quality", "GPU disposal"],
+		),
+		entry(
 			"probe-music-game.mjs",
 			"Live music unlock, audible station and flight beds, and docking-waltz engage, resolve, duck and cancel commands.",
 			["music director", "audio unlock", "docking computer", "live music bus"],

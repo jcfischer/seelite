@@ -167,6 +167,8 @@ export const DOMAIN = {
 	DEATH_WRECK: 36,
 	/** Station module availability per market epoch, independent of commodity draws. */
 	MODULE_STOCK: 37,
+	/** Galactic nebula volumes; independent of system gas and sky-frame draws (#685). */
+	NEBULA: 38,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
