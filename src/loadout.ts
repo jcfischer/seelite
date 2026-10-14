@@ -155,19 +155,39 @@ export function stockLoadout(hull: HullId): Loadout {
  * (#873). The bank is the plant's plus every Extra Energy Unit's `bankE`; regen
  * is the plant's alone (#925). A loadout with no plant flies the stock one.
  * The tank is the hull's `tankLy` plus every fitted tank's `fuelLy` (#926).
- * Hold, integrity and shield join here, never in a second projection.
+ * Integrity is the hull's plus every plate's; each pool is the hull's
+ * `shieldPool` plus every booster's `pointsPerPool`, and the boosters' draws
+ * add (#927). Hold joins here, never in a second projection.
  */
 export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
+	const spec = HULL_SPECS[hull];
 	const plant = loadout.plant
 		? moduleRow(loadout.plant).output
 		: stockPlant(hull);
 	let bankE = plant.bankE;
-	let fuelCapacityLy = HULL_SPECS[hull].tankLy;
+	let fuelCapacityLy = spec.tankLy;
+	let integrity = spec.integrity;
+	let shieldPool = spec.shieldPool;
+	let boosterDrawPerS = 0;
 	for (const m of Object.values(loadout)) {
 		if (m.module === "extra-energy-unit") bankE += moduleRow(m).output.bankE;
 		if (m.module === "fuel-tank") fuelCapacityLy += moduleRow(m).output.fuelLy;
+		if (m.module === "armour-plating")
+			integrity += moduleRow(m).output.integrity;
+		if (m.module === "shield-booster") {
+			const row = moduleRow(m);
+			shieldPool += row.output.pointsPerPool;
+			boosterDrawPerS += row.drawPerS;
+		}
 	}
-	return { bankE, regenPerS: plant.regenPerS, fuelCapacityLy };
+	return {
+		bankE,
+		regenPerS: plant.regenPerS,
+		fuelCapacityLy,
+		integrity,
+		shieldPool,
+		boosterDrawPerS,
+	};
 }
 /**
  * The fuel scoop's fill shape at `rOverR`, the distance from the star's centre

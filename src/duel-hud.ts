@@ -95,6 +95,7 @@ export function duelRowWidest(): Record<DuelRowLabel, string> {
 		energy: bank,
 		energyMax: bank,
 		energyRegenPerS: 0,
+		boosterDrawPerS: 0,
 		heat: 0,
 		heatLocked: false,
 		sinceStruckS: 0,

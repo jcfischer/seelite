@@ -200,6 +200,10 @@ export interface ShipCondition {
 	 *  power plant's and Extra Energy Units' (#867 D3, #925). */
 	energyMax: number;
 	energyRegenPerS: number;
+	/** What the fitted shield boosters draw per second while a pool recharges
+	 *  (#927). Carried as a number, as the regen is, so this module needs no
+	 *  catalogue. */
+	boosterDrawPerS: number;
 	heat: number;
 	heatLocked: boolean;
 	/** Sim seconds since the last hit; gates the shield recharge. */
@@ -209,20 +213,33 @@ export interface ShipCondition {
 	hullTemp: number;
 }
 
-/** The part of `FittedCapacity` a condition reads: the bank and its regen. */
-type PlantCapacity = Pick<FittedCapacity, "bankE" | "regenPerS">;
+/** The part of `FittedCapacity` a condition reads: the bank and its regen
+ *  (#925), and the defence (#927). */
+export type ConditionCapacity = Pick<
+	FittedCapacity,
+	"bankE" | "regenPerS" | "integrity" | "shieldPool" | "boosterDrawPerS"
+>;
+
+/** A hull on its stock fit: its stock plant, its own integrity and pool, and
+ *  no booster. Every NPC flies this (#875), and it is what `fittedCapacity`
+ *  returns for a stock loadout. */
+export function stockCapacity(hull: HullId): ConditionCapacity {
+	const { bankE, regenPerS } = stockPlant(hull);
+	const { integrity, shieldPool } = HULL_SPECS[hull];
+	return { bankE, regenPerS, integrity, shieldPool, boosterDrawPerS: 0 };
+}
 
 /**
- * A whole ship. `capacity` is the fitted plant's and Extra Energy Units'
- * (`fittedCapacity` in `loadout.ts`, #925), passed as numbers because
- * `module-catalog.ts` imports this module and an import back closes a cycle.
- * Without it the hull flies its stock plant, which is every NPC's (#875).
+ * A whole ship. `capacity` is the fitted ship's (`fittedCapacity` in
+ * `loadout.ts`, #925, #927), passed as numbers because `module-catalog.ts`
+ * imports this module and an import back closes a cycle. Without it the hull
+ * flies its stock fit, which is every NPC's (#875).
  */
 export function fullCondition(
 	hull: HullId,
-	capacity: PlantCapacity = stockPlant(hull),
+	capacity: ConditionCapacity = stockCapacity(hull),
 ): ShipCondition {
-	const { integrity: hullMax, shieldPool: shieldMax } = HULL_SPECS[hull];
+	const { integrity: hullMax, shieldPool: shieldMax } = capacity;
 	return {
 		fore: shieldMax,
 		aft: shieldMax,
@@ -232,6 +249,7 @@ export function fullCondition(
 		energy: capacity.bankE,
 		energyMax: capacity.bankE,
 		energyRegenPerS: capacity.regenPerS,
+		boosterDrawPerS: capacity.boosterDrawPerS,
 		heat: 0,
 		heatLocked: false,
 		// Clear of the delay, so a fresh ship recharges rather than spending its
@@ -242,20 +260,28 @@ export function fullCondition(
 }
 
 /**
- * The same ship after a refit at a dock (#925). Added capacity arrives charged,
- * as a fitted plate arrives whole (#873), so a full bank stays full; removed
- * capacity clamps the bank. Shields, hull and heat are not the plant's.
+ * The same ship after a refit at a dock (#925, #927). Added capacity arrives
+ * charged, as a fitted plate arrives whole (#873): the bank, the hull and each
+ * shield pool rise by what was added, so a full one stays full. Removed
+ * capacity clamps each to its new maximum. Heat is no module's.
  */
 export function refitCondition(
 	c: ShipCondition,
-	capacity: PlantCapacity,
+	capacity: ConditionCapacity,
 ): ShipCondition {
-	const added = Math.max(0, capacity.bankE - c.energyMax);
+	const refilled = (value: number, max: number, nextMax: number) =>
+		Math.min(nextMax, value + Math.max(0, nextMax - max));
 	return {
 		...c,
-		energy: Math.min(capacity.bankE, c.energy + added),
+		energy: refilled(c.energy, c.energyMax, capacity.bankE),
 		energyMax: capacity.bankE,
 		energyRegenPerS: capacity.regenPerS,
+		hull: refilled(c.hull, c.hullMax, capacity.integrity),
+		hullMax: capacity.integrity,
+		fore: refilled(c.fore, c.shieldMax, capacity.shieldPool),
+		aft: refilled(c.aft, c.shieldMax, capacity.shieldPool),
+		shieldMax: capacity.shieldPool,
+		boosterDrawPerS: capacity.boosterDrawPerS,
 	};
 }
 
@@ -391,8 +417,9 @@ const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
 /**
  * One step of sim time.
  *
- * Order: the shield recharge draws first, then the gun fires from what is
- * left, then an idle gun cools and the bank regenerates. So a ship that holds
+ * Order: the shield recharge draws first — a fitted booster's draw, then the
+ * points — then the gun fires from what is left, then an idle gun cools and
+ * the bank regenerates. So a ship that holds
  * the trigger while recovering pays for both, which is §2's competition.
  *
  * A crippled ship is the exception to the first of those: its bank does not buy
@@ -410,6 +437,10 @@ export function stepCondition(
 
 	if (c.sinceStruckS >= SHIELD_RECHARGE_DELAY_S && !isCrippled(c)) {
 		const lower: ShieldSide = next.fore <= next.aft ? "fore" : "aft";
+		// A fitted booster draws only while a pool recharges (#873), and first:
+		// the recharge pays its per-point cost from what the draw leaves.
+		if (next[lower] < c.shieldMax)
+			next.energy -= Math.min(next.energy, c.boosterDrawPerS * step);
 		const wanted = Math.min(
 			SHIELD_RECHARGE_PER_S * step,
 			c.shieldMax - next[lower],

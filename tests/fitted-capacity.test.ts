@@ -12,7 +12,24 @@ import {
 	makeModule,
 	stockLoadout,
 } from "../src/loadout";
-import { fullCondition, refitCondition } from "../src/ship-condition";
+import {
+	fullCondition,
+	refitCondition,
+	stockCapacity,
+} from "../src/ship-condition";
+
+/** A courier's stock defence with the bank and regen given (#927). */
+const courierBank = (bankE: number, regenPerS: number) => ({
+	...stockCapacity("courier"),
+	bankE,
+	regenPerS,
+});
+/** The defence a stock hull projects, beside its bank (#927). */
+const stockDefence = (id: (typeof HULL_IDS)[number]) => ({
+	integrity: HULL_SPECS[id].integrity,
+	shieldPool: HULL_SPECS[id].shieldPool,
+	boosterDrawPerS: 0,
+});
 
 const courierWith = (extra: Record<string, ReturnType<typeof makeModule>>) =>
 	({ ...stockLoadout("courier"), ...extra }) as Loadout;
@@ -23,6 +40,7 @@ describe("fittedCapacity", () => {
 			bankE: 100,
 			regenPerS: 12,
 			fuelCapacityLy: HULL_SPECS.courier.tankLy,
+			...stockDefence("courier"),
 		});
 	});
 
@@ -32,6 +50,7 @@ describe("fittedCapacity", () => {
 			bankE: 150,
 			regenPerS: 18,
 			fuelCapacityLy: HULL_SPECS.courier.tankLy,
+			...stockDefence("courier"),
 		});
 		expect(
 			fittedCapacity(
@@ -42,6 +61,7 @@ describe("fittedCapacity", () => {
 			bankE: 200,
 			regenPerS: 18,
 			fuelCapacityLy: HULL_SPECS.courier.tankLy,
+			...stockDefence("courier"),
 		});
 	});
 
@@ -50,6 +70,7 @@ describe("fittedCapacity", () => {
 			bankE: 150,
 			regenPerS: 18,
 			fuelCapacityLy: HULL_SPECS.freighter.tankLy,
+			...stockDefence("freighter"),
 		});
 	});
 
@@ -60,6 +81,7 @@ describe("fittedCapacity", () => {
 				bankE,
 				regenPerS,
 				fuelCapacityLy: HULL_SPECS[id].tankLy,
+				...stockDefence(id),
 			});
 		}
 	});
@@ -67,7 +89,7 @@ describe("fittedCapacity", () => {
 
 describe("the condition takes capacity as numbers", () => {
 	test("a fresh condition carries the given bank, full", () => {
-		const c = fullCondition("courier", { bankE: 200, regenPerS: 18 });
+		const c = fullCondition("courier", courierBank(200, 18));
 		expect([c.energy, c.energyMax, c.energyRegenPerS]).toEqual([200, 200, 18]);
 	});
 
@@ -82,29 +104,26 @@ describe("the condition takes capacity as numbers", () => {
 	});
 
 	test("added capacity arrives charged, so a full bank stays full", () => {
-		const c = refitCondition(fullCondition("courier"), {
-			bankE: 200,
-			regenPerS: 18,
-		});
+		const c = refitCondition(fullCondition("courier"), courierBank(200, 18));
 		expect([c.energy, c.energyMax, c.energyRegenPerS]).toEqual([200, 200, 18]);
 		const drained = refitCondition(
 			{ ...fullCondition("courier"), energy: 40 },
-			{ bankE: 150, regenPerS: 18 },
+			courierBank(150, 18),
 		);
 		expect(drained.energy).toBe(90);
 	});
 
 	test("removed capacity clamps the bank", () => {
 		const c = refitCondition(
-			fullCondition("courier", { bankE: 200, regenPerS: 18 }),
-			{ bankE: 150, regenPerS: 18 },
+			fullCondition("courier", courierBank(200, 18)),
+			courierBank(150, 18),
 		);
 		expect([c.energy, c.energyMax]).toEqual([150, 150]);
 	});
 
-	test("a refit leaves shields, hull and heat alone", () => {
+	test("a refit that moves only the bank leaves shields, hull and heat alone", () => {
 		const before = { ...fullCondition("courier"), fore: 3, hull: 7, heat: 9 };
-		const after = refitCondition(before, { bankE: 150, regenPerS: 18 });
+		const after = refitCondition(before, courierBank(150, 18));
 		expect([after.fore, after.hull, after.heat]).toEqual([3, 7, 9]);
 	});
 

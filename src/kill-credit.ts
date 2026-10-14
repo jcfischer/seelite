@@ -12,7 +12,7 @@
  */
 
 import { HULL_SPECS, type HullId } from "./hull";
-import { moduleRow, type Loadout } from "./loadout";
+import { fittedCapacity, moduleRow, type Loadout } from "./loadout";
 import { PULSE_LASER } from "./ship-condition";
 import { ARMED_TRAFFIC_HULLS } from "./traffic-engagement";
 
@@ -56,19 +56,27 @@ export const isArmedTarget = (hull: HullId): boolean =>
 	ARMED_TRAFFIC_HULLS.has(hull) || hull === "raider";
 
 /**
- * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one side of the
- * hull's own `shieldPool` (#866) plus its integrity. A fit without combat
- * lasers has zero strength.
+ * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one shield pool
+ * plus integrity. A fit without combat lasers has zero strength.
  */
-const hullStrength = (hull: HullId, dps: number): number =>
-	(HULL_SPECS[hull].shieldPool + HULL_SPECS[hull].integrity) * dps * AI_SKILL;
+const strengthOf = (effectiveHp: number, dps: number): number =>
+	effectiveHp * dps * AI_SKILL;
 
-export const strength = (ship: FittedShip): number =>
-	hullStrength(ship.hull, fittedDps(ship));
+/** The pilot's S reads the fitted defence (#927, extending #867 D17 from
+ *  lasers to defence): a plate or a booster raises it as a laser does. */
+export const strength = (ship: FittedShip): number => {
+	const { shieldPool, integrity } = fittedCapacity(ship.hull, ship.loadout);
+	return strengthOf(shieldPool + integrity, fittedDps(ship));
+};
 
 /** A target's S: zero when it never fires (#562 D4). */
 export const targetStrength = (hull: HullId): number =>
-	isArmedTarget(hull) ? hullStrength(hull, PULSE_LASER.damagePerS) : 0;
+	isArmedTarget(hull)
+		? strengthOf(
+				HULL_SPECS[hull].shieldPool + HULL_SPECS[hull].integrity,
+				PULSE_LASER.damagePerS,
+			)
+		: 0;
 
 /**
  * What one kill pays: 2·S_target / (S_own + S_target) (#562 D3). The curve is

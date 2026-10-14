@@ -472,14 +472,27 @@ export const POWER_PLANT_OUTPUT: Readonly<
 /**
  * What a fitted ship holds, as numbers: `fittedCapacity` in `loadout.ts`
  * computes it and `ship-condition.ts` reads it (#925). The bank and its regen,
- * and the fuel the tank carries (#926); the sibling slices (#927–#928) add
- * hold, integrity and shield here rather than in a second shape.
+ * the fuel the tank carries (#926), and the defence that plates and boosters
+ * raise (#927); the sibling slice #928 adds hold here rather than in a second
+ * shape.
  */
-export interface FittedCapacity extends PlantOutput {
+export interface FittedCapacity extends PlantOutput, DefenceCapacity {
 	/** Light years of fuel the ship carries: the hull's `tankLy` plus every
 	 *  fitted tank's `fuelLy` (#873 R1). Capacity only — the jump range stays
 	 *  the hull's `tankLy`, and this field is named apart from it. */
 	fuelCapacityLy: number;
+}
+
+/** The defence a fitted ship flies with (#927). */
+export interface DefenceCapacity {
+	/** The hull's `integrity` plus every fitted plate's. */
+	integrity: number;
+	/** Each shield pool's capacity: the hull's `shieldPool` plus every fitted
+	 *  booster's `pointsPerPool`. */
+	shieldPool: number;
+	/** Every fitted booster's `drawPerS`, summed: what the bank pays while a
+	 *  pool recharges (#873). */
+	boosterDrawPerS: number;
 }
 
 export interface PowerPlant extends PlantOutput {
