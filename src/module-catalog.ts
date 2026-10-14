@@ -427,15 +427,13 @@ export function validateProposal(rows: readonly ModuleRow[]) {
 	for (const r of rows) {
 		if (![r.drawPerS, r.heatPerS].every((x) => Number.isFinite(x) && x >= 0))
 			throw new Error(`Invalid resource cost ${r.kind}`);
+		// An output may be zero only where a ruled table writes it (the pod).
+		const zeroAllowed = !!DEFINITIONS.find((d) => d.kind === r.kind)
+			?.ruledOutput;
 		if (
 			![r.priceCr, r.massT].every((x) => Number.isFinite(x) && x > 0) ||
-			// An output may be zero only where a ruled table writes it (the pod).
 			!Object.values(r.output).every(
-				(x) =>
-					Number.isFinite(x) &&
-					(DEFINITIONS.find((d) => d.kind === r.kind)?.ruledOutput
-						? x >= 0
-						: x > 0),
+				(x) => Number.isFinite(x) && (x > 0 || (zeroAllowed && x === 0)),
 			)
 		)
 			throw new Error(`Invalid ${r.kind}`);
