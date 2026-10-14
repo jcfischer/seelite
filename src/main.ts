@@ -6398,8 +6398,14 @@ class Game {
 			this.applyQuality();
 			// PMREM dimensions enter standard-material program keys. Warm the
 			// authored stations again before a later layer crossing needs them.
-			await this.prewarmShipyardPrograms();
-			if (this.nebulaJob === job) this.nebulaJob = null;
+			try {
+				await this.prewarmShipyardPrograms();
+			} catch (error) {
+				// The sky is complete; a failed optimization must not block cards.
+				console.warn("nebula station warm-up unavailable", error);
+			} finally {
+				if (this.nebulaJob === job) this.nebulaJob = null;
+			}
 		});
 	}
 

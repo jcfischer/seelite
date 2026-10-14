@@ -118,7 +118,21 @@ try {
 			g.nebulaTarget === null &&
 			g.backdropScene.background === g.environmentSource;
 		g.renderer.extensions.has = has;
+		const prewarm = g.prewarmShipyardPrograms;
+		let rejected = false;
+		g.prewarmShipyardPrograms = async () => {
+			throw new Error("injected warm-up failure");
+		};
+		g.buildEnvironment();
+		try {
+			await g.whenSkyReady();
+		} catch {
+			rejected = true;
+		}
+		g.prewarmShipyardPrograms = prewarm;
+		const warmFailure = !rejected && !g.nebulaPending && read() === before;
 		return {
+			warmFailure,
 			cancelled,
 			lowSkips,
 			lazy,
@@ -140,6 +154,7 @@ try {
 		};
 	});
 	for (const key of [
+		"warmFailure",
 		"cancelled",
 		"lowSkips",
 		"lazy",
