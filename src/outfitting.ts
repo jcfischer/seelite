@@ -6,13 +6,14 @@ import {
 	moduleRow,
 	makeModule,
 	equipmentNames,
+	fittedCapacity,
 	fittingSaleValue,
 	LEGACY_MODULES,
 } from "./loadout";
 import { moduleStock, moduleKey, moduleLocked } from "./module-stock";
 import { TOP_RUNGS } from "./ladder";
 import { flightPerformance } from "./sim";
-import { killCredit } from "./kill-credit";
+import { fittedDps, killCredit } from "./kill-credit";
 import {
 	type ConsoleInput,
 	type CommanderState,
@@ -20,6 +21,7 @@ import {
 	transactAtStation,
 	recoveredModule,
 	recoveredLocked,
+	commanderHold,
 	flownMassT,
 	commanderJumpRangeLy,
 	commanderFuelCapacityLy,
@@ -49,21 +51,102 @@ export const MODULE_LABELS: Record<ModuleKind, string> = {
 export const moduleLabel = (m: FittedModule): string =>
 	`${MODULE_LABELS[m.module]} · ${m.size}${m.grade}`;
 
+/**
+ * What the fitted ship does, as the Equipment tab compares it: one field per
+ * effect a game system reads. A module whose figure no system reads (an
+ * E.C.M.'s radius, a scanner's range) has no field, because a printed change
+ * would promise what the game does not do (`tests/outfit-deltas.test.ts`).
+ */
 export function fitReadout(commander: CommanderState, entrustedT: number) {
+	const ship = { hull: commander.hull, loadout: commander.loadout };
+	const capacity = fittedCapacity(commander.hull, commander.loadout);
+	let scoopLyPerS = 0;
+	let missiles = 0;
+	for (const m of Object.values(commander.loadout)) {
+		if (m.module === "fuel-scoop")
+			scoopLyPerS += moduleRow(m).output.fuelLyPerS;
+		if (m.module === "missile-rack") missiles += moduleRow(m).output.missiles;
+	}
 	return {
 		accel: flightPerformance(
 			commander.hull,
 			{},
 			flownMassT(commander.hull, commander, entrustedT),
 		).thrustKms2,
+		integrity: capacity.integrity,
+		shieldPool: capacity.shieldPool,
+		bankE: capacity.bankE,
+		regenPerS: capacity.regenPerS,
+		dps: fittedDps(ship),
+		missiles,
+		holdT: commanderHold(commander, entrustedT).capacityT,
 		// Two readers: a fitted tank raises the tank, never the jump (#926).
 		fuelCapacityLy: commanderFuelCapacityLy(commander),
 		jump: commanderJumpRangeLy(commander),
-		credit: killCredit(
-			{ hull: commander.hull, loadout: commander.loadout },
-			"raider",
-		),
+		scoopLyPerS,
+		credit: killCredit(ship, "raider"),
 	};
+}
+export type FitReadout = ReturnType<typeof fitReadout>;
+
+/** The preview's rows, in print order. `always` rows show even unmoved:
+ *  every module has mass, and the credit is the combat ladder's price. */
+const FIT_DELTA_ROWS: readonly {
+	key: keyof FitReadout;
+	label: string;
+	unit: string;
+	digits: number;
+	always?: true;
+}[] = [
+	{ key: "accel", label: "ACCEL", unit: "km/s²", digits: 3, always: true },
+	{ key: "integrity", label: "HULL", unit: "pts", digits: 1 },
+	{ key: "shieldPool", label: "SHIELD", unit: "pts / pool", digits: 1 },
+	{ key: "bankE", label: "BANK", unit: "E", digits: 1 },
+	{ key: "regenPerS", label: "REGEN", unit: "E/s", digits: 1 },
+	{ key: "dps", label: "DPS", unit: "/s", digits: 1 },
+	{ key: "missiles", label: "MISSILES", unit: "", digits: 0 },
+	{ key: "holdT", label: "HOLD", unit: "t", digits: 0 },
+	{ key: "fuelCapacityLy", label: "TANK", unit: "LY", digits: 1 },
+	{ key: "jump", label: "JUMP", unit: "LY", digits: 1 },
+	{ key: "scoopLyPerS", label: "SCOOP", unit: "LY/s", digits: 2 },
+	{
+		key: "credit",
+		label: "CREDIT / RAIDER",
+		unit: "",
+		digits: 2,
+		always: true,
+	},
+];
+
+export interface FitDelta {
+	label: string;
+	before: string;
+	after: string;
+	/** Signed, at the row's precision: `+25.0`, `−6.0`, `±0.00`. */
+	delta: string;
+	unit: string;
+}
+
+/**
+ * Each effect a candidate moves, as printed: before, after and the signed
+ * change (principal, 2026-10-14, on #927). A row whose printed value does not
+ * move is left out, bar the `always` rows.
+ */
+export function fitDeltas(before: FitReadout, after: FitReadout): FitDelta[] {
+	return FIT_DELTA_ROWS.flatMap(({ key, label, unit, digits, always }) => {
+		const b = before[key].toFixed(digits);
+		const a = after[key].toFixed(digits);
+		if (a === b && !always) return [];
+		// The change of the printed figures, so the three always agree.
+		const d = (Number(a) - Number(b)).toFixed(digits);
+		const zero = Number(d) === 0;
+		const delta = zero
+			? `±${(0).toFixed(digits)}`
+			: d.startsWith("-")
+				? `−${d.slice(1)}`
+				: `+${d}`;
+		return [{ label, before: b, after: a, delta, unit }];
+	});
 }
 
 export function outfittingScreen(
