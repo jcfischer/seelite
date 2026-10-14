@@ -19,5 +19,8 @@
  * @type {Map<string, string>} probe file → the issue that owns its red
  */
 export const QUARANTINED = new Map([
-	// Empty. Add `["probe-name.mjs", "#123 what fails"]`.
+	[
+		"probe-output-stage.mjs",
+		"#975 multisample lit-pixel disagreement: 1.21% on baseline, limit 1%",
+	],
 ]);

@@ -39,7 +39,9 @@ default bake and ignores those appearance overrides.
 The bake fills 128 strips across successive animation frames, each limited to
 16,384 pixels. The base sky stays visible until the entire image is ready, then
 the backdrop and reflections switch together. System changes cancel stale work;
-postcards wait for the current bake. Unsupported half-float render targets retain
+postcards wait for the current bake and authored station shader warm-up.
+The new reflection-map dimensions change standard-material shader keys, so
+station variants are warmed again before later render-layer crossings. Unsupported half-float render targets retain
 the base sky.
 
 Hardware development measurements on Apple M1 Pro / ANGLE Metal, forcing GPU

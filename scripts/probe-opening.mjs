@@ -107,7 +107,8 @@ try {
 		});
 		// The same save, booted again: a loaded commander, not a new game.
 		await quit.page.goto(gameUrl(origin, { seed: SEED, raider: "off" }));
-		await bootedGame(quit.page);
+		// Read the opening outcome immediately; sky completion advances live flight.
+		await bootedGame(quit.page, 20000, { sky: false });
 		const resumed = await quit.page.evaluate(() => {
 			const g = window.__seelite;
 			return {

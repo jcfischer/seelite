@@ -6371,14 +6371,14 @@ class Game {
 			this.nebulaOptions,
 		);
 		this.nebulaJob = job;
-		this.skyReady = job.ready.then((target) => {
+		this.skyReady = job.ready.then(async (target) => {
 			// A jump or quality switch owns a newer job; never install stale gas.
 			if (this.nebulaJob !== job) {
 				target?.dispose();
 				return;
 			}
-			this.nebulaJob = null;
 			if (!target) {
+				this.nebulaJob = null;
 				this.nebulaFailed = true;
 				return;
 			}
@@ -6396,6 +6396,10 @@ class Game {
 				...job.stats,
 			};
 			this.applyQuality();
+			// PMREM dimensions enter standard-material program keys. Warm the
+			// authored stations again before a later layer crossing needs them.
+			await this.prewarmShipyardPrograms();
+			if (this.nebulaJob === job) this.nebulaJob = null;
 		});
 	}
 

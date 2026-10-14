@@ -599,16 +599,17 @@ export function rendererLaneNotice({ mode, direct }) {
  * callback, so a probe that stopped there would read a world whose meshes have
  * never been positioned.
  */
-export async function bootedGame(page, timeout = 20000) {
+export async function bootedGame(page, timeout = 20000, { sky = true } = {}) {
+	// Readiness is one observation: a reload may replace the game between waits.
+	// The game draws immediately; measurements wait for its progressive sky.
 	await page.waitForFunction(
-		() => window.__seelite && window.__seelite.frames > 0,
-		null,
+		(waitForSky) =>
+			window.__seelite &&
+			window.__seelite.frames > 0 &&
+			(!waitForSky || !window.__seelite.nebulaPending),
+		sky,
 		{ timeout },
 	);
-	// The game draws immediately; measurements wait for its progressive sky.
-	await page.waitForFunction(() => !window.__seelite?.nebulaPending, null, {
-		timeout,
-	});
 }
 
 /**
