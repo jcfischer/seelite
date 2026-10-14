@@ -94,19 +94,66 @@ describe("fitDeltas", () => {
 		]);
 	});
 
+	test("a 1E scanner: SCAN RANGE 0 → 400 km, and a charge where there was none", () => {
+		const rows = rowsFor(makeModule("identity-scanner", 1, "E"));
+		expect(row(rows, "SCAN RANGE")).toEqual({
+			label: "SCAN RANGE",
+			before: "0",
+			after: "400",
+			delta: "+400",
+			unit: "km",
+		});
+		expect(row(rows, "SCAN CHARGE")).toEqual({
+			label: "SCAN CHARGE",
+			before: "—",
+			after: "5.00",
+			delta: "—",
+			unit: "s",
+		});
+	});
+
+	test("a 1E scanner swapped for a 1A: the range grows, the charge shortens (#977)", () => {
+		const e = withModule(base(), makeModule("identity-scanner", 1, "E"));
+		const a = withModule(base(), makeModule("identity-scanner", 1, "A"));
+		const rows = fitDeltas(fitReadout(e, 0), fitReadout(a, 0));
+		expect(row(rows, "SCAN RANGE")?.delta).toBe("+200");
+		expect(row(rows, "SCAN CHARGE")).toMatchObject({
+			before: "5.00",
+			after: "3.33",
+			delta: "−1.67",
+		});
+	});
+
+	test("a 1E long-range scanner reads SIGNAL RANGE 0 → 2,500 km", () => {
+		const r = row(
+			rowsFor(makeModule("long-range-scanner", 1, "E")),
+			"SIGNAL RANGE",
+		);
+		expect([r?.before, r?.after, r?.delta]).toEqual(["0", "2500", "+2500"]);
+	});
+
+	test("a 1A pod keeps half the cargo, 5 t of it, and one carried module; a 1E pod moves no row", () => {
+		const rows = rowsFor(makeModule("escape-pod", 1, "A"));
+		expect(row(rows, "POD CARGO")?.after).toBe("50");
+		expect(row(rows, "POD CAPSULE")?.after).toBe("5");
+		expect(row(rows, "POD MODULES")?.after).toBe("1");
+		expect(
+			rowsFor(makeModule("escape-pod", 1, "E")).map((r) => r.label),
+		).toEqual(["ACCEL", "CREDIT / RAIDER"]);
+	});
+
 	/**
 	 * The kinds whose catalogue output no game system reads yet: the module's
 	 * presence is its whole effect, so size and grade move only mass and price,
 	 * and a row for their figure would promise what the game does not do. A kind
-	 * that gains a reader must leave this list and gain a row.
+	 * that gains a reader must leave this list and gain a row. The docking
+	 * computer stays by ruling: its grades differ in price and mass alone
+	 * (principal, 2026-10-14, on #977).
 	 */
 	const PRESENCE_ONLY: readonly ModuleKind[] = [
 		"mining-laser",
 		"ecm",
-		"identity-scanner",
 		"docking-computer",
-		"escape-pod",
-		"long-range-scanner",
 	];
 
 	test("every other module kind moves at least one row beside ACCEL and CREDIT", () => {

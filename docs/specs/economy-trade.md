@@ -1732,10 +1732,21 @@ every prompt does; the voice line names it only while it is the default
 Backspace, since a rebound key may be a word the voice has none for, and a pilot
 flying from a gamepad hears the keyboard's key as the glass shows it.
 
+**A better pod brings some of the hold back** (#977, the principal's ruling of
+2026-10-14). The paragraphs above are the grade-E pod, the one a legacy save
+holds. A grade-D pod keeps a quarter of the pilot's own cargo and a grade-A pod
+half of it and the most valuable carried module; the pod's size sets the tonnes
+its capsule takes — 5, 10 or 20 t — and cargo past it is lost, dearest good
+kept first. Kilogram and gram goods take no capsule room, as they take no hold.
+Entrusted goods are never kept, so a job still fails with the hold. Fitted
+modules stay on the ship whatever the pod. The wreck holds what the pod did not
+bring back. `ESCAPE_POD_SURVIVAL` in `module-catalog.ts` holds the table and
+`ejectSurvivors` in `death-cost.ts` applies it.
+
 One consequence is recorded because #8 has to reckon with it: **ejecting dumps
 contraband**, which makes the pod a panic-button disposal route ahead of a
-shipyard scan. Whether that is a legitimate tactic or wants a cost is #8's, not
-this spec's.
+shipyard scan. A grade-D or A pod can carry a share of it back as well. Whether
+that is a legitimate tactic or wants a cost is #8's, not this spec's.
 
 **Without a pod, or without ejecting, the pilot loses the ship** (#660 D6): the
 hull, every fitting and the hold. They wake at the station they launched from in

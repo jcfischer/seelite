@@ -10,6 +10,7 @@
  */
 
 import type { CarrierKey } from "./carrier-key";
+import type { FittedCapacity } from "./hull";
 
 export {
 	FIRST_DAY_CHOICES,
@@ -256,14 +257,28 @@ export function firstDayLogsStep(
  * A permadeath commander is told the truth instead: an eject ends their save
  * as any death does (#89 D7), so the row names the key with what it costs
  * them — the promise that the ship is kept is not theirs (`economy-trade.md` §9).
+ *
+ * `pod` is the fitted pod's survival figures (`fittedCapacity`, #977): a
+ * pod that keeps cargo says how much, and an E pod keeps the sentence it had.
  */
 export function firstDayEjectLine(
 	podFitted: boolean,
 	permadeath: boolean,
 	prompt: string,
+	pod?: Pick<
+		FittedCapacity,
+		"podCargoShare" | "podCapsuleT" | "podCarriedModules"
+	>,
 ): string | null {
 	if (!podFitted) return null;
 	if (permadeath)
 		return `An escape pod is fitted, but this commander has one life: ${prompt}, and the eject ends the save as any death does.`;
+	if (pod && pod.podCargoShare > 0) {
+		const module =
+			pod.podCarriedModules > 0
+				? ", and your most valuable carried module"
+				: "";
+		return `An escape pod is fitted. When the hull is failing, ${prompt}: the pod brings back ${Math.round(pod.podCargoShare * 100)}% of your own cargo, up to ${pod.podCapsuleT} t${module}. You lose the rest of the hold and the pod, and keep the ship. Destroyed without ejecting, you lose the ship.`;
+	}
 	return `An escape pod is fitted. When the hull is failing, ${prompt}: you lose the hold and the pod and keep the ship. Destroyed without ejecting, you lose the ship.`;
 }

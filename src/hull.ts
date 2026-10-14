@@ -486,6 +486,19 @@ export interface FittedCapacity extends PlantOutput, DefenceCapacity {
 	scoopDrawPerS: number;
 	/** The missiles every fitted rack holds when full. */
 	missiles: number;
+	/** The best fitted identity scanner's `rangeKm`, and its charge: the
+	 *  stock `SCAN_CHARGE_S` over its grade's output scale (#977). Both 0
+	 *  with no scanner, which cannot scan at all. */
+	scanRangeKm: number;
+	scanChargeS: number;
+	/** The best fitted long-range scanner's `signalRangeKm`; 0 with none. */
+	signalRangeKm: number;
+	/** What the best fitted escape pod brings back from an eject (#977): the
+	 *  share of the pilot's own cargo, the tonnes of it the capsule takes
+	 *  (0 when the share is), and the carried modules. All 0 with no pod. */
+	podCargoShare: number;
+	podCapsuleT: number;
+	podCarriedModules: number;
 }
 
 /** The defence a fitted ship flies with (#927). */

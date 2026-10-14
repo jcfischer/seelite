@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #977: draft, awaiting the principal's approval.
+	{
+		date: "2026-10-14",
+		text: "Scanner and escape pod grades now matter: a better identity scanner reaches farther and scans faster, a better long-range scanner picks up signals from farther out, and a better escape pod brings part of your cargo home when you eject.",
+		node: 977,
+	},
 	// Node #927: sentence approved by the principal, 2026-10-14.
 	{
 		date: "2026-10-14",

@@ -38,7 +38,7 @@ import { identifyDerelicts } from "./long-range-scanner";
 import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
-import type { DeathCause } from "./death-cost";
+import { type DeathCause, ejectSurvivors } from "./death-cost";
 import { deathWreckRow } from "./death-wreck";
 import type { CommanderRecord, SaveEnvelope } from "./save-envelope";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
@@ -105,7 +105,9 @@ import {
  * `requestsAfterLostHold`).
  *
  * - **`eject`** (D2): the launch hull and every fitting are kept, and the pod
- *   is consumed. Tank and charge are the launch's.
+ *   is consumed. Tank and charge are the launch's. The hold is what the pod
+ *   brought back of the dying one, `ejectSurvivors` (#977): nothing for an E
+ *   pod, a share of the own cargo and a carried module for a better one.
  * - **`destroyed`** (D6): the hull and every fitting go too. The pilot wakes
  *   in a stock courier with a full tank and a full charge, and keeps the
  *   launch credits — which is what leaves no save stranded: a courier, and
@@ -149,18 +151,20 @@ export const commanderAfterDeath = (
 		...ladderAfterDeath(dock.ladders, dying.ladders),
 		basis: {},
 	};
-	if (cause === "eject")
+	if (cause === "eject") {
+		const kept = ejectSurvivors(dying.state);
 		return {
 			...dock,
 			requests,
 			ladders,
 			state: {
 				...dock.state,
-				cargo: {},
-				recoveredFittings: undefined,
+				cargo: kept.cargo,
+				recoveredFittings: kept.carried.length ? kept.carried : undefined,
 				loadout: withoutModule(dock.state.loadout, ESCAPE_POD),
 			},
 		};
+	}
 	return {
 		...dock,
 		requests,

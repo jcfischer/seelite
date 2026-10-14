@@ -54,18 +54,21 @@ import { equipmentFitted, SCAN_MODULE } from "./market";
 import type { ScanRefusal, ScanStandoff } from "./display-contact";
 import type { KnowledgeRow } from "./world-state";
 
-/** How close a carrier has to be to answer. Well inside `SCANNER_RANGE_KM`'s
- *  10,000 km — §4's bound, and the reason the passive display stays the passive
- *  display. */
+/** How close a carrier has to be to answer a 1E scanner. Well inside
+ *  `SCANNER_RANGE_KM`'s 10,000 km — §4's bound, and the reason the passive
+ *  display stays the passive display. A fitted scanner's range is its row's
+ *  `rangeKm`, scaled by size and grade from this (#977): 3A reaches 1,350. */
 export const SCAN_RANGE_KM = 400;
 /** Half-angle of the cone the nose has to hold the target inside, degrees. */
 export const SCAN_CONE_DEG = 12;
-/** Seconds of unbroken hold. Longer than interdiction's 2.5 s, because the
- *  reward is information rather than a fight the other party cannot refuse. */
+/** Seconds of unbroken hold on a grade-E scanner. Longer than interdiction's
+ *  2.5 s, because the reward is information rather than a fight the other
+ *  party cannot refuse. A fitted scanner's charge is this over its grade's
+ *  output scale (#977): D 6.25 s, A 3.33 s; `fittedCapacity` reads it. */
 export const SCAN_CHARGE_S = 5;
 
 /** The three feel figures as one object, for the instrument and the probe to
- *  print rather than restate. */
+ *  print rather than restate: a 1E scanner's. */
 export const CARRIER_SCAN_FIGURES = {
 	rangeKm: SCAN_RANGE_KM,
 	coneDeg: SCAN_CONE_DEG,
@@ -89,9 +92,12 @@ export const scanConeHeld = (nose: Vec3, towardTarget: Vec3): boolean =>
 	dot(normalizeOr(nose, nose), normalizeOr(towardTarget, towardTarget)) >=
 	SCAN_CONE_COS;
 
-/** Is the target inside scan range? */
-export const scanInRange = (rangeKm: number): boolean =>
-	rangeKm >= 0 && rangeKm <= SCAN_RANGE_KM;
+/** Is the target inside scan range? `maxKm` is the fitted scanner's
+ *  (`fittedCapacity`'s `scanRangeKm`); the default is a 1E's. */
+export const scanInRange = (
+	rangeKm: number,
+	maxKm: number = SCAN_RANGE_KM,
+): boolean => rangeKm >= 0 && rangeKm <= maxKm;
 
 /**
  * Which geometric reason the hold is not being satisfied, or `null` when the
@@ -111,8 +117,9 @@ export const scanStandoff = (
 	rangeKm: number,
 	aim: Vec3,
 	towardTarget: Vec3,
+	maxKm: number = SCAN_RANGE_KM,
 ): ScanStandoff | null =>
-	!scanInRange(rangeKm)
+	!scanInRange(rangeKm, maxKm)
 		? "too-far"
 		: scanConeHeld(aim, towardTarget)
 			? null
@@ -166,30 +173,39 @@ export const beginScanHold = (): ScanHold => ({ key: null, chargeS: 0 });
  *  another is exactly what a sweep across a traffic queue looks like from the
  *  cockpit. (#384's round 1 found the first version doing just that, because the
  *  hold was a number with nobody attached to it.)
+ *
+ * `fullS` is the fitted scanner's charge (`fittedCapacity`'s `scanChargeS`);
+ * the default is a grade E's. `scanCompleted` and `scanProgress` take the same.
  */
 export function stepScanHold(
 	hold: ScanHold,
 	held: ScanSubject | null,
 	dt: number,
 	trigger: { armed: boolean; held: boolean },
+	fullS: number = SCAN_CHARGE_S,
 ): ScanHold {
 	if (!trigger.armed || !trigger.held || held === null)
 		return hold.chargeS === 0 && hold.key === null ? hold : beginScanHold();
 	const step = Math.max(0, dt);
 	if (held.key !== hold.key)
-		return { key: held.key, chargeS: Math.min(SCAN_CHARGE_S, step) };
-	const chargeS = Math.min(SCAN_CHARGE_S, hold.chargeS + step);
+		return { key: held.key, chargeS: Math.min(fullS, step) };
+	const chargeS = Math.min(fullS, hold.chargeS + step);
 	return chargeS === hold.chargeS ? hold : { key: held.key, chargeS };
 }
 
 /** Did this frame complete a charge the previous frame had not? The one moment
  *  a scan writes its record. */
-export const scanCompleted = (before: ScanHold, after: ScanHold): boolean =>
-	before.chargeS < SCAN_CHARGE_S && after.chargeS >= SCAN_CHARGE_S;
+export const scanCompleted = (
+	before: ScanHold,
+	after: ScanHold,
+	fullS: number = SCAN_CHARGE_S,
+): boolean => before.chargeS < fullS && after.chargeS >= fullS;
 
 /** 0…1 of the way through the charge, for the instrument's progress cell. */
-export const scanProgress = (hold: ScanHold): number =>
-	Math.min(1, hold.chargeS / SCAN_CHARGE_S);
+export const scanProgress = (
+	hold: ScanHold,
+	fullS: number = SCAN_CHARGE_S,
+): number => Math.min(1, hold.chargeS / fullS);
 
 /**
  * The Flight console's reading block (§6), as the console prints it.

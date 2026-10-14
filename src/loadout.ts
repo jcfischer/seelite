@@ -11,11 +11,13 @@ import {
 import {
 	deriveProposal,
 	fits,
+	gradeOutputScale,
 	type Grade,
 	type ModuleRow,
 	type ModuleKind,
 } from "./module-catalog";
 import { EQUIPMENT } from "./market";
+import { SCAN_CHARGE_S } from "./carrier-scan";
 import { SKIM_BAND_R, SKIM_SHELL_R } from "./ship-condition";
 
 export interface FittedModule {
@@ -158,6 +160,7 @@ export function stockLoadout(hull: HullId): Loadout {
  * Integrity is the hull's plus every plate's; each pool is the hull's
  * `shieldPool` plus every booster's `pointsPerPool`, and the boosters' draws
  * add (#927). The scoops' rate and draw (#932) and the racks' missiles add.
+ * Scanners and the pod do not add: the best fitted one is read (#977).
  * Hold joins here, never in a second projection.
  */
 export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
@@ -173,7 +176,35 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	let scoopLyPerS = 0;
 	let scoopDrawPerS = 0;
 	let missiles = 0;
+	let scanRangeKm = 0;
+	let scanChargeS = 0;
+	let signalRangeKm = 0;
+	let pod = { cargoShare: 0, capsuleT: 0, carriedModules: 0 };
 	for (const m of Object.values(loadout)) {
+		if (m.module === "identity-scanner") {
+			const rangeKm = moduleRow(m).output.rangeKm;
+			if (rangeKm > scanRangeKm) {
+				scanRangeKm = rangeKm;
+				scanChargeS = SCAN_CHARGE_S / gradeOutputScale(m.grade);
+			}
+		}
+		if (m.module === "long-range-scanner")
+			signalRangeKm = Math.max(
+				signalRangeKm,
+				moduleRow(m).output.signalRangeKm,
+			);
+		if (m.module === "escape-pod") {
+			const o = moduleRow(m).output;
+			if (
+				o.cargoShare > pod.cargoShare ||
+				(o.cargoShare === pod.cargoShare && o.capsuleT > pod.capsuleT)
+			)
+				pod = {
+					cargoShare: o.cargoShare,
+					capsuleT: o.capsuleT,
+					carriedModules: o.carriedModules,
+				};
+		}
 		if (m.module === "extra-energy-unit") bankE += moduleRow(m).output.bankE;
 		if (m.module === "fuel-tank") fuelCapacityLy += moduleRow(m).output.fuelLy;
 		if (m.module === "armour-plating")
@@ -200,6 +231,12 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 		scoopLyPerS,
 		scoopDrawPerS,
 		missiles,
+		scanRangeKm,
+		scanChargeS,
+		signalRangeKm,
+		podCargoShare: pod.cargoShare,
+		podCapsuleT: pod.cargoShare > 0 ? pod.capsuleT : 0,
+		podCarriedModules: pod.carriedModules,
 	};
 }
 /**

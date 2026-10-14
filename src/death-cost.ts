@@ -1,4 +1,4 @@
-import { stockModuleAt } from "./loadout";
+import { fittedCapacity, fittingValue, stockModuleAt } from "./loadout";
 /**
  * What a death costs the pilot, past the leg it already cost (#660, built by
  * node #704): the escape pod's eject (D2), a death without one (D6), the
@@ -19,16 +19,102 @@ import { HULL_IDS, type HullId } from "./hull";
 import { requestsAfterLostHold, entrustedTonnesAboard } from "./requests";
 import type { CommanderRecord } from "./save-envelope";
 import { HULL_KILL_TOLERANCE, PULSE_LASER } from "./ship-condition";
-import { commanderHold } from "./station-commerce";
+import { commodity } from "./market";
+import {
+	commanderHold,
+	type CommanderState,
+	type RecoveredFitting,
+} from "./station-commerce";
 import { MAX_DT } from "./units";
 
 /**
  * How a life ended. **`eject`** is the escape pod: the pilot launched it in
- * time, and wakes with the launch hull and fittings, an empty hold and no pod
- * (#660 D2). **`destroyed`** is every other death — no pod, or a pod never
+ * time, and wakes with the launch hull and fittings, what the pod kept of the
+ * hold (`ejectSurvivors`) and no pod (#660 D2, #977). **`destroyed`** is every other death — no pod, or a pod never
  * launched, since the pod is manual only (D4) — and costs the ship (D6).
  */
 export type DeathCause = "eject" | "destroyed";
+
+// ---------------------------------------------------------------------------
+// What an eject keeps (#977)
+// ---------------------------------------------------------------------------
+
+/** What the escape pod brings back: own cargo and carried modules. */
+export interface EjectSurvivors {
+	cargo: Readonly<Record<string, number>>;
+	carried: readonly RecoveredFitting[];
+}
+
+/**
+ * What the dying ship's best fitted pod brings back from an eject (principal,
+ * 2026-10-14, on #977): `ESCAPE_POD_SURVIVAL` read through `fittedCapacity`.
+ *
+ * - **Own cargo only.** Entrusted lots live in Requests and are lost with the
+ *   hold, so their jobs fail as before (#660 D3).
+ * - Each good keeps its share, rounded down. A tonne good counts against the
+ *   capsule and a kilogram or gram good does not, the hold's own rule
+ *   (`heldTonnes`). Past the capsule the dearer good is kept first, by base
+ *   price and then by name, so the cut is the same every time.
+ * - The most valuable carried module comes too when the grade keeps one,
+ *   by `fittingValue` and then by id. Fitted modules stay on the ship
+ *   whatever the pod (#660 D2).
+ *
+ * An E pod keeps nothing: the eject as it was before #977.
+ */
+export function ejectSurvivors(state: CommanderState): EjectSurvivors {
+	const pod = fittedCapacity(state.hull, state.loadout);
+	const kept: Record<string, number> = {};
+	const tonneGoods: [string, number][] = [];
+	for (const [name, amount] of Object.entries(state.cargo)) {
+		const share = Math.floor(amount * pod.podCargoShare);
+		if (share <= 0) continue;
+		if (commodity(name).unit === "t") tonneGoods.push([name, share]);
+		else kept[name] = share;
+	}
+	tonneGoods.sort(
+		([a], [b]) =>
+			commodity(b).basePrice - commodity(a).basePrice || a.localeCompare(b),
+	);
+	let roomT = pod.podCapsuleT;
+	for (const [name, share] of tonneGoods) {
+		const take = Math.min(share, Math.floor(roomT));
+		if (take <= 0) break;
+		kept[name] = take;
+		roomT -= take;
+	}
+	const carried = [...(state.recoveredFittings ?? [])]
+		.sort(
+			(a, b) => fittingValue(b) - fittingValue(a) || a.id.localeCompare(b.id),
+		)
+		.slice(0, pod.podCarriedModules);
+	return {
+		cargo: Object.fromEntries(
+			Object.entries(kept).sort(([a], [b]) => a.localeCompare(b)),
+		),
+		carried,
+	};
+}
+
+/** The dying state less what the pod brings back: what an eject leaves in
+ *  the wreck's draw (`deathWreckContents`). */
+export function leftByEject(state: CommanderState): CommanderState {
+	const { cargo, carried } = ejectSurvivors(state);
+	const left = Object.fromEntries(
+		Object.entries(state.cargo).flatMap(([name, amount]) => {
+			const rest = amount - (cargo[name] ?? 0);
+			return rest > 0 ? [[name, rest]] : [];
+		}),
+	);
+	const fittings = (state.recoveredFittings ?? []).filter(
+		(f) => !carried.includes(f),
+	);
+	const { recoveredFittings: _, ...rest } = state;
+	return {
+		...rest,
+		cargo: left,
+		...(fittings.length ? { recoveredFittings: fittings } : {}),
+	};
+}
 
 // ---------------------------------------------------------------------------
 // The eject warning's threshold (#660 D12)
@@ -160,6 +246,9 @@ export interface DeathWake {
 	fittingsLost: number;
 	/** Jobs that failed with the hold (#660 D3). */
 	failedJobs: number;
+	/** What the pod brought back of the hold, as printed ("10 t Food", a
+	 *  carried module's name); absent when it kept nothing (#977). */
+	kept?: readonly string[];
 	/** A pilot who had never docked, woken as a new commander at the start
 	 *  system's trade station (#660 D10): there was no launch to go back to,
 	 *  so what was lost is read off the dying commander instead. */
@@ -177,7 +266,9 @@ export function deathWake(
 	lost: CommanderRecord,
 	cause: DeathCause,
 	firstLife: boolean,
+	survivors?: EjectSurvivors,
 ): DeathWake {
+	const kept = survivors ? keptLines(survivors) : [];
 	const entrustedT = entrustedTonnesAboard(lost.requests);
 	// The notice already counts the hull. Its stock plant and primary pulse
 	// are part of that baseline, while upgraded modules and extra slots count.
@@ -192,8 +283,23 @@ export function deathWake(
 		fittingsLost: cause === "eject" ? 1 : fittingsLost,
 		failedJobs: requestsAfterLostHold(lost.requests).failed.length,
 		firstLife,
+		...(kept.length ? { kept } : {}),
 	};
 }
+
+/** The pod's survivors as the wake prints them: goods first, by name, then
+ *  the carried modules. */
+const keptLines = (s: EjectSurvivors): string[] => [
+	...Object.entries(s.cargo).map(
+		([name, amount]) => `${amount} ${commodity(name).unit} ${name}`,
+	),
+	...s.carried.map((f) => f.id),
+];
+
+const listed = (items: readonly string[]): string =>
+	items.length < 2
+		? (items[0] ?? "")
+		: `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
 const count = (v: unknown): v is number =>
 	typeof v === "number" && Number.isInteger(v) && v >= 0;
@@ -216,7 +322,13 @@ export function parseDeathWake(raw: unknown): DeathWake | null {
 		o.holdT < 0 ||
 		!count(o.fittingsLost) ||
 		!count(o.failedJobs) ||
-		typeof o.firstLife !== "boolean"
+		typeof o.firstLife !== "boolean" ||
+		(o.kept !== undefined &&
+			!(
+				Array.isArray(o.kept) &&
+				o.kept.length > 0 &&
+				o.kept.every((k) => typeof k === "string")
+			))
 	)
 		return null;
 	return {
@@ -227,6 +339,7 @@ export function parseDeathWake(raw: unknown): DeathWake | null {
 		fittingsLost: o.fittingsLost,
 		failedJobs: o.failedJobs,
 		firstLife: o.firstLife,
+		...(o.kept !== undefined ? { kept: o.kept as string[] } : {}),
 	};
 }
 
@@ -246,6 +359,8 @@ export function wakeText(wake: DeathWake): string {
 		wake.failedJobs > 0
 			? ` ${plural(wake.failedJobs, "job", "jobs")} failed with it: see Requests.`
 			: "";
+	if (wake.cause === "eject" && wake.kept?.length)
+		return `Your escape pod brought you back where you launched, with ${listed(wake.kept)}. Lost: the rest of the hold and the pod. Your ${wake.hull} and its fittings are kept.${jobs}`;
 	if (wake.cause === "eject")
 		return `Your escape pod brought you back where you launched. Lost: ${hold} and the pod. Your ${wake.hull} and its fittings are kept.${jobs}`;
 	const fittings =
