@@ -132,14 +132,15 @@ export function srcUses(script: string, text: string): Use[] {
 		}
 	};
 	// Bindings first, so a use above its declaration in source order resolves.
-	const declare = (n: ts.Node) => {
+	// Not named `declare`: bun 1.3.14 drops a `declare(…);` call statement.
+	const bindAll = (n: ts.Node) => {
 		if (ts.isVariableDeclaration(n) && n.initializer) {
 			if (ts.isIdentifier(n.name))
 				bind(n, n.name.text, srcImport(n.initializer) ?? null);
 		}
-		ts.forEachChild(n, declare);
+		ts.forEachChild(n, bindAll);
 	};
-	declare(sf);
+	bindAll(sf);
 	const visit = (n: ts.Node) => {
 		if (ts.isVariableDeclaration(n) && n.initializer) {
 			const module = srcImport(n.initializer);
