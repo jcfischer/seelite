@@ -169,6 +169,23 @@ export const DOMAIN = {
 	MODULE_STOCK: 37,
 	/** Galactic nebula volumes; independent of system gas and sky-frame draws (#685). */
 	NEBULA: 38,
+	/** Whether a system has a rare uncharted asteroid field (`asteroid-field.ts`,
+	 *  node #965, #948 D1): one draw per system. Its own tag, the
+	 *  `RELAY_ACTIVE` precedent, so tuning the chance moves no placement.
+	 *  #948 numbered these four 38–41; `NEBULA` took 38 first, so they are
+	 *  appended after it rather than renumbering it. */
+	ASTEROID_FIELD_ROLL: 39,
+	/** An asteroid field's placement and frame orientation, split by field slot
+	 *  (#948 D1). A rare field draws a fixed budget whatever branch it takes, so
+	 *  a system gaining a belt or a giant moves no other draw. */
+	ASTEROID_FIELD: 40,
+	/** One rock's layout, split by field slot then rock slot (#948 D1, D5):
+	 *  occupancy, radius, anchor, shape, spin and drift, in a fixed order. */
+	ASTEROID_ROCKS: 41,
+	/** A rock's hidden deposit contents, split like `ASTEROID_ROCKS` and kept
+	 *  off it so a charted layout is public while its contents are not
+	 *  (#948 D1, D2). Reserved: #951 and #920 draw from it. */
+	ASTEROID_DEPOSIT: 42,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
