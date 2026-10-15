@@ -234,6 +234,47 @@ export function duelBandWidestRows(): FloorCell[][] {
 	return [true, false].map((fighting) => composeDuelBand(fighting, parts));
 }
 
+/** The name a plate under the armed-group label goes by: the cell itself has
+ *  no label, only its value. */
+export const ARMED_GROUP_PLATE = "GROUP";
+
+/** One dark plate under the duel band: the run of cells `from`..`to`
+ *  (inclusive) it stands behind, and the name it goes by. */
+export interface DuelBandPlate {
+	label: string;
+	from: number;
+	to: number;
+}
+
+/**
+ * The plates the duel band stands on, for the row as drawn (#945, the
+ * principal's ruling, 2026-10-12): **every cell its own plate, always** — SHD,
+ * HEAT and the armed-group label as much as TEMP — so the band reads against a
+ * bright sky. Not one plate for the row, and not only near a star. The one
+ * exception is #932's: TEMP and SCOOPING, beside each other, share one plate.
+ *
+ * A plate exists only with its cell, so a cell that is not in the row has no
+ * plate; this changes what stands behind a cell, never which cells show.
+ */
+export function duelBandPlates(row: readonly FloorCell[]): DuelBandPlate[] {
+	const plates: DuelBandPlate[] = [];
+	const shared = (label: string) =>
+		label === HULL_TEMP_LABEL || label === SCOOP_LABEL;
+	for (const [i, cell] of row.entries()) {
+		const last = plates[plates.length - 1];
+		if (shared(cell.label) && last?.to === i - 1 && shared(row[i - 1].label)) {
+			last.to = i;
+			continue;
+		}
+		plates.push({
+			label: cell.label === "" ? ARMED_GROUP_PLATE : cell.label,
+			from: i,
+			to: i,
+		});
+	}
+	return plates;
+}
+
 export interface DuelConsoleReadout {
 	fore: string;
 	aft: string;
