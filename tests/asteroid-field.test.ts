@@ -481,8 +481,8 @@ describe("identity and versions (#948 D6)", () => {
 		expect(
 			ALL_GALAXIES.map((g) => fieldBaselineFingerprint(FINGERPRINT_WORLD, g)),
 		).toEqual([
-			0xa39e51cc, 0xdb6e00e4, 0xef5a4868, 0x858546ef, 0x5cc3d712, 0xd77c9822,
-			0xe0e1cd4b, 0x65f648c9,
+			0x121b5e9d, 0xb072a310, 0x5e1a5d47, 0x10f6ba13, 0x9a3d192d, 0x535d9298,
+			0x15f59129, 0x20d6e54a,
 		]);
 	});
 
@@ -511,11 +511,116 @@ describe("identity and versions (#948 D6)", () => {
 		// The unmoved rows are the pin, so the row builder is the one the pin uses.
 		expect(fnv1a(lines((r) => r))).toBe(pinned);
 		const nudged = fnv1a(
-			lines((r) => ({ ...r, anchor: { ...r.anchor, x: r.anchor.x + 0.001 } })),
+			lines((r) => ({
+				...r,
+				anchor: { ...r.anchor, x: r.anchor.x + 0.000001 },
+			})),
 		);
 		expect(nudged).not.toBe(pinned);
 		const grown = fnv1a(lines((r) => ({ ...r, radiusKm: r.radiusKm + 0.001 })));
 		expect(grown).not.toBe(pinned);
+	});
+
+	test("failure case: changing charted lead changes the galaxy pin with identical local rocks", () => {
+		const rows: string[] = [];
+		let changedLine = -1;
+		let movedLine = "";
+		for (const record of generateGalaxy(FINGERPRINT_WORLD, 0).systems) {
+			for (const plan of systemFields(record, generateContents(record))) {
+				for (const rock of fieldRocks(record, plan)) {
+					if (changedLine < 0 && plan.kind === "refinery-orbit") {
+						// The result of increasing the charted lead by 50 km:
+						// placement moves while every rock-local input stays fixed.
+						const moved: FieldPlan = {
+							...plan,
+							orbit: {
+								...plan.orbit,
+								theta0: plan.orbit.theta0 + 50 / plan.orbit.radiusKm,
+							},
+						};
+						expect(fieldRocks(record, moved)).toEqual(fieldRocks(record, plan));
+						expect(
+							length(
+								sub(rockPose(moved, rock, 0).pos, rockPose(plan, rock, 0).pos),
+							),
+						).toBeGreaterThan(49);
+						changedLine = rows.length;
+						movedLine = fieldFingerprintRow(record.index, moved, rock);
+					}
+					rows.push(fieldFingerprintRow(record.index, plan, rock));
+				}
+			}
+		}
+		expect(changedLine).toBeGreaterThanOrEqual(0);
+		const pinned = fieldBaselineFingerprint(FINGERPRINT_WORLD, 0);
+		expect(fnv1a(rows.join("\n"))).toBe(pinned);
+		rows[changedLine] = movedLine;
+		expect(fnv1a(rows.join("\n"))).not.toBe(pinned);
+	});
+
+	test("every placement, shape and motion input affects the fingerprint", () => {
+		// Small angular changes must survive serialization: at orbital ranges,
+		// rounding radians to six places can hide metres of movement.
+		const nudge = (n: number): number =>
+			n + Math.max(1e-9, Math.abs(n) * Number.EPSILON * 2);
+		for (const { row, plan, rocks } of sampled.slice(0, 5)) {
+			const rock = rocks[0];
+			const hash = (p: FieldPlan, r: Rock): number =>
+				fnv1a(fieldFingerprintRow(row.record.index, p, r));
+			const baseline = hash(plan, rock);
+			for (const key of [
+				"radiusKm",
+				"periodS",
+				"theta0",
+				"inclination",
+				"node",
+			] as const)
+				expect(
+					hash(
+						{
+							...plan,
+							orbit: { ...plan.orbit, [key]: nudge(plan.orbit[key]) },
+						},
+						rock,
+					),
+				).not.toBe(baseline);
+			expect(
+				hash({ ...plan, offPlaneKm: nudge(plan.offPlaneKm) }, rock),
+			).not.toBe(baseline);
+			for (const key of ["x", "y", "z", "w"] as const)
+				expect(
+					hash(
+						{
+							...plan,
+							rotation: { ...plan.rotation, [key]: nudge(plan.rotation[key]) },
+						},
+						rock,
+					),
+				).not.toBe(baseline);
+			for (const key of ["slot", "shapeSeed"] as const)
+				expect(hash(plan, { ...rock, [key]: rock[key] + 1 })).not.toBe(
+					baseline,
+				);
+			for (const key of [
+				"radiusKm",
+				"driftKm",
+				"driftPeriodS",
+				"driftPhase",
+				"spinPeriodS",
+				"spinPhase",
+			] as const)
+				expect(hash(plan, { ...rock, [key]: nudge(rock[key]) })).not.toBe(
+					baseline,
+				);
+			for (const key of ["anchor", "e1", "e2", "spinAxis"] as const)
+				for (const axis of ["x", "y", "z"] as const)
+					expect(
+						hash(plan, {
+							...rock,
+							[key]: { ...rock[key], [axis]: nudge(rock[key][axis]) },
+						}),
+					).not.toBe(baseline);
+		}
 	});
 
 	test("a system's rows are its fields' rocks, in slot order", () => {

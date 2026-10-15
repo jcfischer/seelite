@@ -574,9 +574,10 @@ export function rockPose(
 // --- identity -----------------------------------------------------------------
 
 /**
- * One rock's fingerprint line: `system | fieldId | kind | rockSlot | radius |
- * anchor`, in km to the millimetre (`toFixed(6)`, the carrier lines' rule) —
- * so a rock moved or resized by a millimetre changes its line.
+ * One rock's identity, shape and complete closed-form pose inputs. Include the
+ * field placement as well as the local anchor: an unchanged anchor can ride a
+ * changed orbit or frame. Numbers retain their round-trip precision; rounding
+ * angles to six places can hide metres of motion at orbital distances.
  */
 export const fieldFingerprintRow = (
 	systemIndex: number,
@@ -588,10 +589,35 @@ export const fieldFingerprintRow = (
 		plan.id,
 		plan.kind,
 		rock.slot,
-		rock.radiusKm.toFixed(6),
-		rock.anchor.x.toFixed(6),
-		rock.anchor.y.toFixed(6),
-		rock.anchor.z.toFixed(6),
+		rock.radiusKm,
+		rock.anchor.x,
+		rock.anchor.y,
+		rock.anchor.z,
+		plan.orbit.radiusKm,
+		plan.orbit.periodS,
+		plan.orbit.theta0,
+		plan.orbit.inclination,
+		plan.orbit.node,
+		plan.offPlaneKm,
+		plan.rotation.x,
+		plan.rotation.y,
+		plan.rotation.z,
+		plan.rotation.w,
+		rock.shapeSeed,
+		rock.driftKm,
+		rock.e1.x,
+		rock.e1.y,
+		rock.e1.z,
+		rock.e2.x,
+		rock.e2.y,
+		rock.e2.z,
+		rock.driftPeriodS,
+		rock.driftPhase,
+		rock.spinAxis.x,
+		rock.spinAxis.y,
+		rock.spinAxis.z,
+		rock.spinPeriodS,
+		rock.spinPhase,
 	].join("|");
 
 /** Every rock's fingerprint line in one system, fields in slot order. */
@@ -608,8 +634,9 @@ export function fieldFingerprintRows(
 
 /**
  * The per-galaxy field fingerprint (#948 D6): every rock's identity, size and
- * anchor, hashed. It is brittle on purpose — a change that moves, resizes or
- * re-slots any rock turns its pin red, and that change owes a
+ * shape and full placement/motion inputs, hashed. It is brittle on purpose — a
+ * change to those generated inputs turns its pin red, and a change that moves,
+ * resizes or re-slots an existing rock owes a
  * `FIELD_GENERATOR_VERSION` bump and #951's deposit migration.
  */
 export function fieldBaselineFingerprint(
