@@ -92,7 +92,7 @@ function flown(
 }
 
 describe("the cutter's box is the ruled geometry (#949 D3)", () => {
-	test("rotor ±5.5 m across, −8.9…+2.1 m high, from the bow plane at 42.2 m to 52.8 m", () => {
+	test("rotor ±5.5 m across, −8.91…+2.09 m high, from the bow plane at 42.2 m to 52.8 m", () => {
 		const box = cutterBox(cutter);
 		if (box.kind !== "box") throw new Error("the cutter is a box");
 		const span = (k: "x" | "y" | "z", i: 0 | 1 | 2) =>
@@ -100,7 +100,7 @@ describe("the cutter's box is the ruled geometry (#949 D3)", () => {
 				(km) => Math.round(km * 1e5) / 100,
 			);
 		expect(span("x", 0)).toEqual([-5.5, 5.5]);
-		expect(span("y", 1)).toEqual([-8.9, 2.1]);
+		expect(span("y", 1)).toEqual([-8.91, 2.09]);
 		expect(span("z", 2)).toEqual([42.2, 52.8]);
 		expect(box.part).toBe("cutter");
 	});

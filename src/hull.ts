@@ -991,11 +991,11 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		env: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
 		envCentre: { rightKm: 0, upKm: 0, foreKm: 0 },
 		// The spike's figures (node #956's `CUTTER_KM`, after #949's `drill.ts`):
-		// rotor x ±5.5 m and y −8.9…+2.1 m, from the bow plane at 42.2 m — half
+		// rotor x ±5.5 m and y −8.91…+2.09 m, from the bow plane at 42.2 m — half
 		// the hull box — to bow + #803's 10.6 m feed travel, 52.8 m.
 		cutter: {
 			radiusKm: 0.0055,
-			downKm: 0.0034,
+			downKm: 0.00341,
 			bowKm: 0.0422,
 			feedTravelKm: 0.0106,
 		},
