@@ -160,7 +160,8 @@ export function stockLoadout(hull: HullId): Loadout {
  * `shieldPool` plus every booster's `pointsPerPool`, and the boosters' draws
  * add (#927). The scoops' rate and draw (#932) and the racks' missiles add.
  * Scanners and the pod do not add: the best fitted one is read (#977).
- * Hold joins here, never in a second projection.
+ * The hold is the hull's `holdT` plus every rack's `cargoT` (#928); an NPC
+ * passes its stock loadout, which has no rack, so it reads the bare hold.
  */
 export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	const spec = HULL_SPECS[hull];
@@ -168,6 +169,7 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 		? moduleRow(loadout.plant).output
 		: stockPlant(hull);
 	let bankE = plant.bankE;
+	let holdT = spec.holdT;
 	let fuelCapacityLy = spec.tankLy;
 	let integrity = spec.integrity;
 	let shieldPool = spec.shieldPool;
@@ -219,10 +221,12 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 			scoopDrawPerS += row.drawPerS;
 		}
 		if (m.module === "missile-rack") missiles += moduleRow(m).output.missiles;
+		if (m.module === "cargo-rack") holdT += moduleRow(m).output.cargoT;
 	}
 	return {
 		bankE,
 		regenPerS: plant.regenPerS,
+		holdT,
 		fuelCapacityLy,
 		integrity,
 		shieldPool,

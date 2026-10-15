@@ -29,6 +29,8 @@ const courierBank = (bankE: number, regenPerS: number) => ({
  *  row on purpose rather than read off `stockCapacity`, so it is an oracle
  *  for that function and not a copy of it. */
 const stockDefence = (id: (typeof HULL_IDS)[number]) => ({
+	// No rack on a stock fit: the hull's own hold (#928).
+	holdT: HULL_SPECS[id].holdT,
 	integrity: HULL_SPECS[id].integrity,
 	shieldPool: HULL_SPECS[id].shieldPool,
 	boosterDrawPerS: 0,
