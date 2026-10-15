@@ -475,14 +475,41 @@ describe("identity and versions (#948 D6)", () => {
 		]);
 	});
 
+	test("fingerprint floats use six decimals; ids and integers keep their representation", () => {
+		const { row, plan, rocks } = sampled[0];
+		const rock = rocks[0];
+		const columns = fieldFingerprintRow(row.record.index, plan, rock).split(
+			"|",
+		);
+		expect(columns.slice(0, 4)).toEqual([
+			String(row.record.index),
+			plan.id,
+			plan.kind,
+			String(rock.slot),
+		]);
+		expect(columns[18]).toBe(String(rock.shapeSeed));
+		for (const column of [...columns.slice(4, 18), ...columns.slice(19)])
+			expect(column).toMatch(/^-?\d+\.\d{6}$/);
+		// Last-bit noise from platform sin/cos must not change the row.
+		expect(
+			fieldFingerprintRow(row.record.index, plan, {
+				...rock,
+				anchor: {
+					...rock.anchor,
+					x: rock.anchor.x + Number.EPSILON * Math.abs(rock.anchor.x),
+				},
+			}),
+		).toBe(columns.join("|"));
+	});
+
 	test("the field fingerprint is pinned per galaxy", () => {
 		// A change that moves, resizes or re-slots any rock turns this red; it
 		// owes a FIELD_GENERATOR_VERSION bump and #951's deposit migration.
 		expect(
 			ALL_GALAXIES.map((g) => fieldBaselineFingerprint(FINGERPRINT_WORLD, g)),
 		).toEqual([
-			0x121b5e9d, 0xb072a310, 0x5e1a5d47, 0x10f6ba13, 0x9a3d192d, 0x535d9298,
-			0x15f59129, 0x20d6e54a,
+			0x4f0131af, 0x65f00de5, 0x2b9b940b, 0xc2327556, 0xfaa9595e, 0xba8f574c,
+			0x1baec61c, 0xc25dbbdf,
 		]);
 	});
 
@@ -559,10 +586,10 @@ describe("identity and versions (#948 D6)", () => {
 	});
 
 	test("every placement, shape and motion input affects the fingerprint", () => {
-		// Small angular changes must survive serialization: at orbital ranges,
-		// rounding radians to six places can hide metres of movement.
+		// Principal's node #965 ruling: all float inputs use six decimals.
+		// Exercise every input at that precision, including angular inputs.
 		const nudge = (n: number): number =>
-			n + Math.max(1e-9, Math.abs(n) * Number.EPSILON * 2);
+			n + Math.max(1e-6, Math.abs(n) * Number.EPSILON * 2);
 		for (const { row, plan, rocks } of sampled.slice(0, 5)) {
 			const rock = rocks[0];
 			const hash = (p: FieldPlan, r: Rock): number =>
