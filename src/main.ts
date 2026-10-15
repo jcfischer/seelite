@@ -563,7 +563,9 @@ import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
 	duelBandCells,
+	duelBandPlates,
 	duelBandWidestRows,
+	type DuelBandPlate,
 	HULL_TEMP_LABEL,
 	SCOOP_LABEL,
 	onTargetMark,
@@ -3391,6 +3393,10 @@ class Game {
 		 *  row was deliberately not drawn. */
 		duelRow: FloorCell[] | null;
 		duelBox: FloorBox | null;
+		/** Every plate under the duel band as painted (#945), in row order: one
+		 *  per cell, but one for TEMP and SCOOPING together. Each carries its
+		 *  cell's label, or `ARMED_GROUP_PLATE` under the armed group. */
+		duelPlates: FloorBox[];
 		/** The plate under the hull-temperature cell as painted (#931), or
 		 *  `null` when the hull is at ambient and no cell was drawn. */
 		tempPlate: FloorBox | null;
@@ -20153,40 +20159,35 @@ class Game {
 		// #324's duel row were this block twice.
 		let tempPlate: FloorBox | null = null;
 		let scoopPlate: FloorBox | null = null;
+		const duelPlates: FloorBox[] = [];
 		const drawBandRow = (
 			rowCells: FloorCell[],
 			label: string,
 			band: number,
+			plates: readonly DuelBandPlate[] = [],
 		): FloorBox => {
 			const run = floorRunWidths(ctx, rowCells, scale);
 			let rowX = (w - run.total) / 2;
 			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
-			// **A plate behind the hull-temperature cell** (#931, the
-			// principal's ruling on the sheet). It shows only near a star, so
-			// the sky behind it is the brightest and warmest the glass meets,
-			// and red and amber over it did not read — #597's case for the
-			// docking notice, and its plate. Short of half a cell gap each side,
-			// so it never reaches the next cell's ink. The scoop's line (#932)
-			// shows in the same sky, beside it, so one plate spans both: drawn
-			// before either cell, so neither's ink is under it.
-			let plateFrom = Number.NaN;
-			let plateTo = Number.NaN;
-			let hasTemp = false;
-			let hasScoop = false;
-			let cellX = rowX;
-			for (const [i, cell] of rowCells.entries()) {
-				hasTemp ||= cell.label === HULL_TEMP_LABEL;
-				hasScoop ||= cell.label === SCOOP_LABEL;
-				if (cell.label === HULL_TEMP_LABEL || cell.label === SCOOP_LABEL) {
-					if (Number.isNaN(plateFrom)) plateFrom = cellX;
-					plateTo = cellX + run.widths[i];
-				}
-				cellX += run.widths[i] + cellGap;
+			// **A plate behind each cell of the duel band** (#945, the principal's
+			// ruling): the hull-temperature cell's plate since #931, #597's
+			// docking-notice plate, now under SHD, HEAT and the armed group too, so
+			// the band reads over a star disc. Short of half a cell gap each side,
+			// so a plate never reaches the next cell's ink and two plates never
+			// touch, and the fit is the run's as before. TEMP and the scoop's line
+			// (#932) share one plate; `duelBandPlates` owns which cells go
+			// together. Drawn before any cell, so no ink is under a plate.
+			const cellX: number[] = [];
+			for (let i = 0, x = rowX; i < rowCells.length; i++) {
+				cellX.push(x);
+				x += run.widths[i] + cellGap;
 			}
-			if (!Number.isNaN(plateFrom)) {
-				const pad = (cellGap / 2) * 0.8;
+			const pad = (cellGap / 2) * 0.8;
+			for (const span of plates) {
+				const plateFrom = cellX[span.from];
+				const plateTo = cellX[span.to] + run.widths[span.to];
 				const plate = floorBox(
-					hasTemp ? HULL_TEMP_LABEL : SCOOP_LABEL,
+					span.label,
 					plateFrom - pad,
 					plateTo - plateFrom + 2 * pad,
 					box.top + FLOOR_TEMP_PLATE_INSET * box.height,
@@ -20194,8 +20195,10 @@ class Game {
 				plate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
 				ctx.fillStyle = PROMPT_PLATE_FILL;
 				ctx.fillRect(plate.x, plate.top, plate.width, plate.height);
-				if (hasTemp) tempPlate = plate;
-				if (hasScoop) scoopPlate = plate;
+				duelPlates.push(plate);
+				const spanned = rowCells.slice(span.from, span.to + 1);
+				if (spanned.some((c) => c.label === HULL_TEMP_LABEL)) tempPlate = plate;
+				if (spanned.some((c) => c.label === SCOOP_LABEL)) scoopPlate = plate;
 			}
 			for (const [i, cell] of rowCells.entries()) {
 				drawFloorCell(
@@ -20228,7 +20231,12 @@ class Game {
 				tone: "passive",
 			},
 		];
-		const duelBox = drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
+		const duelBox = drawBandRow(
+			duelRow,
+			DUEL_ROW_LABELS.join(" "),
+			DUEL_BAND,
+			duelBandPlates(duelRow),
+		);
 		// **The strip's own save, closed once for both runs.** It was closed at
 		// the end of the cell loop until the course block was pasted in there
 		// with a save/restore pair of its own, which read as the closing one —
@@ -20248,6 +20256,7 @@ class Game {
 			courseBox,
 			duelRow,
 			duelBox,
+			duelPlates,
 			tempPlate,
 			scoopPlate,
 			baselineY,

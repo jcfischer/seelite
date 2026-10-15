@@ -31,9 +31,11 @@ const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+// `floorScale` is the floor fit origin/main drew at before #945 put a plate
+// under every duel-band cell; a plate that changed it would be a shrunk band.
 const VIEWPORTS = [
-	{ name: "desktop", width: 900, height: 620 },
-	{ name: "narrow", width: 390, height: 780 },
+	{ name: "desktop", width: 900, height: 620, floorScale: 1 },
+	{ name: "narrow", width: 390, height: 780, floorScale: 0.72 },
 ];
 
 const installHelpers = () => {
@@ -130,14 +132,31 @@ const installHelpers = () => {
 		 * amber reads as warm, and above the dash with the raider aimed at —
 		 * rather than at the midpoint. Chase keeps its beam on the
 		 * overlay, ending on the hull, and is sampled at the midpoint as before.
+		 *
+		 * **And never under a duel-band plate** (#945): at 900 px the square 28
+		 * px down sat in the band, and the plate a cell stands on darkens the
+		 * beam behind it. The square walks on down the beam until it is clear.
 		 */
 		beamPaint(beam) {
 			const dx = beam.to.x - beam.from.x;
 			const dy = beam.to.y - beam.from.y;
 			const len = Math.hypot(dx, dy) || 1;
-			const along = g.view === "cockpit" ? Math.min(28, len / 2) : len / 2;
-			const x = beam.from.x + (dx / len) * along;
-			const y = beam.from.y + (dy / len) * along;
+			const plates = g.floorRender?.duelPlates ?? [];
+			const at = (along) => ({
+				x: beam.from.x + (dx / len) * along,
+				y: beam.from.y + (dy / len) * along,
+			});
+			const clear = ({ x, y }) =>
+				plates.every(
+					(p) =>
+						x + 6 < p.x ||
+						x - 6 > p.x + p.width ||
+						y + 6 < p.top ||
+						y - 6 > p.top + p.height,
+				);
+			let along = g.view === "cockpit" ? Math.min(28, len / 2) : len / 2;
+			while (!clear(at(along)) && along < len) along += 2;
+			const { x, y } = at(along);
 			return countInFrame(x - 6, y - 6, 12, 12, warm);
 		},
 		/** Rim-red pixels in the glass's top-left corner. */
@@ -172,6 +191,27 @@ const installHelpers = () => {
 			const dark = (r, gr, b, a) => a > 150 && r < 40 && gr < 40 && b < 50;
 			const n = countIn(box.x, box.top, box.width, box.height, dark);
 			return n / (Math.ceil(box.width) * Math.ceil(box.height));
+		},
+		/**
+		 * Each duel-band plate as painted (#945): its name, its painted dark
+		 * share, and the dark pixels in a one-pixel column at the middle of the
+		 * gap to the next plate — zero where two plates do not touch.
+		 */
+		platesPainted(floor) {
+			const plates = floor?.duelPlates ?? [];
+			const dark = (r, gr, b, a) => a > 150 && r < 40 && gr < 40 && b < 50;
+			return plates.map((plate, i) => {
+				const next = plates[i + 1];
+				const end = plate.x + plate.width;
+				return {
+					label: plate.label,
+					share: this.plateShare(plate),
+					gapPx: next ? next.x - end : null,
+					gapDark: next
+						? countIn((end + next.x) / 2, plate.top, 1, plate.height, dark)
+						: null,
+				};
+			});
 		},
 		/** Lit pixels in the band the condition line under the selected label is
 		 *  painted in.
@@ -221,8 +261,11 @@ const installHelpers = () => {
 				? {
 						duelRow: r.duelRow,
 						duelBox: r.duelBox,
+						duelPlates: r.duelPlates,
 						tempPlate: r.tempPlate,
 						scoopPlate: r.scoopPlate,
+						scale: r.scale,
+						overflowPx: r.overflowPx,
 						courseBox: r.courseBox,
 						glassBottomY: r.glassBottomY,
 						marginPx: r.marginPx,
@@ -285,10 +328,12 @@ for (const viewport of VIEWPORTS) {
 		);
 		g.commitCourseTo(elsewhere.index);
 		D.steps(0.2);
+		const floor = D.floor();
 		return {
 			regime,
 			encounter: g.encounter,
-			floor: D.floor(),
+			floor,
+			plates: D.platesPainted(floor),
 			cue: g.cueRender,
 		};
 	});
@@ -312,10 +357,12 @@ for (const viewport of VIEWPORTS) {
 		const D = window.__duel;
 		g.forceRaider("behind", 0.5, 30);
 		D.steps(1.2);
+		const floor = D.floor();
 		return {
 			phase: g.encounter?.phase ?? null,
 			regime: g.regime,
-			floor: D.floor(),
+			floor,
+			plates: D.platesPainted(floor),
 			stripTop: g.floorRender.glassBottomY - g.floorRender.duelBox?.height,
 		};
 	});
@@ -329,6 +376,41 @@ for (const viewport of VIEWPORTS) {
 			row.map((c) => c.label).join(",") === "SHD,HEAT," &&
 			box !== null,
 		JSON.stringify(contest.floor),
+	);
+	// -------------------------------------------------------------------------
+	// Plates (#945, the principal's ruling): in a fight SHD, HEAT and the
+	// armed group each stand on their own dark plate, read off the paint, and
+	// no two plates touch; in peace only the armed group's is drawn. The
+	// floor fit is the one origin/main drew at.
+	// -------------------------------------------------------------------------
+	const plateNames = (plates) => plates.map((p) => p.label).join(",");
+	const apart = (plates) =>
+		plates.every((p) => p.gapPx === null || (p.gapPx > 0 && p.gapDark === 0));
+	check(
+		`${v}: in a fight away from a star SHD, HEAT and the armed group each stand on a plate, apart`,
+		plateNames(contest.plates) === "SHD,HEAT,GROUP" &&
+			contest.plates.every((p) => p.share > 0.5) &&
+			apart(contest.plates) &&
+			contest.floor?.tempPlate === null,
+		JSON.stringify({
+			plates: contest.plates,
+			boxes: contest.floor?.duelPlates,
+		}),
+	);
+	check(
+		`${v}: in peace only the armed group's plate is drawn`,
+		plateNames(peace.plates) === "GROUP" && peace.plates[0].share > 0.5,
+		JSON.stringify(peace.plates),
+	);
+	check(
+		`${v}: the plates leave the floor fit at scale ${viewport.floorScale}, overflow 0`,
+		[peace, contest].every(
+			(s) =>
+				s.floor?.scale === viewport.floorScale && s.floor?.overflowPx === 0,
+		),
+		JSON.stringify(
+			[peace, contest].map((s) => [s.floor?.scale, s.floor?.overflowPx]),
+		),
 	);
 	check(
 		`${v}: the duel row sits inside the glass, within the margins`,
@@ -703,12 +785,22 @@ for (const viewport of VIEWPORTS) {
 	});
 	await nextFrames(page);
 	const afterConsole = await page.evaluate(() => window.__duel.console());
-	const afterFloor = await page.evaluate(() => {
+	// The SHD plate's leading edge, where the fight painted it: the centred
+	// peace row never reaches it, so a plate there without its cell is paint.
+	const shdPlate = contest.floor?.duelPlates?.[0] ?? null;
+	const shdEdge = shdPlate && { ...shdPlate, width: 4 };
+	const afterFloor = await page.evaluate((edge) => {
 		const g = window.__seelite;
 		g.setHeadLook("forward");
 		window.__duel.steps(0.1);
-		return { floor: window.__duel.floor(), cue: g.cueRender };
-	});
+		const floor = window.__duel.floor();
+		return {
+			floor,
+			cue: g.cueRender,
+			plates: window.__duel.platesPainted(floor),
+			shdEdgeShare: window.__duel.plateShare(edge),
+		};
+	}, shdEdge);
 	check(
 		`${v}: after the encounter ends only the armed group remains, without cue or console detail`,
 		after.encounter === null &&
@@ -721,6 +813,17 @@ for (const viewport of VIEWPORTS) {
 			afterFloor.floor?.duelRow?.length === 1 &&
 			afterFloor.cue === null,
 		JSON.stringify({ after, afterConsole, afterFloor }),
+	);
+	check(
+		`${v}: with the fight over the SHD and HEAT plates go with their cells`,
+		shdPlate?.label === "SHD" &&
+			plateNames(afterFloor.plates) === "GROUP" &&
+			afterFloor.shdEdgeShare === 0,
+		JSON.stringify({
+			shdPlate,
+			after: afterFloor.plates,
+			edge: afterFloor.shdEdgeShare,
+		}),
 	);
 	// The contest's side of the on-target gate is headless (`onTargetMark` in
 	// `tests/duel-hud.test.ts`). A browser row was built here and removed: the
@@ -738,8 +841,9 @@ for (const viewport of VIEWPORTS) {
 	const skim = await page.evaluate(() => {
 		const g = window.__seelite;
 		const D = window.__duel;
-		const ink = (box) =>
-			box ? D.passiveIn(box.x, box.top, box.width, box.height) : Number.NaN;
+		// Any lit ink, not the passive hue: since #945 every cell stands on a
+		// plate, and glyph ink composited over one leaves the passive window.
+		const ink = (box) => D.litIn(box);
 		const home = { ...g.world.ship.pos };
 		const cold = D.floor();
 		const coldInk = ink(cold?.duelBox);
@@ -889,6 +993,7 @@ for (const viewport of VIEWPORTS) {
 			fuel: g.fuelLy,
 			floor: D.floor(),
 		};
+		combat.plates = D.platesPainted(combat.floor);
 		g.resetFlightToStart();
 		return {
 			combat,
@@ -960,6 +1065,25 @@ for (const viewport of VIEWPORTS) {
 			scoop.combat.floor?.scoopPlate === null &&
 			scoop.combat.floor?.tempPlate != null,
 		JSON.stringify(scoop.combat),
+	);
+	// #945 inside the band: every cell on its plate, TEMP's the one it had.
+	const combatTemp = scoop.combat.floor?.duelPlates?.find(
+		(p) => p.label === "TEMP",
+	);
+	check(
+		`${v}: in a fight inside the band SHD, HEAT, TEMP and the armed group each stand on a plate, apart`,
+		plateNames(scoop.combat.plates) === "SHD,HEAT,TEMP,GROUP" &&
+			scoop.combat.plates.every((p) => p.share > 0.5) &&
+			apart(scoop.combat.plates) &&
+			JSON.stringify(combatTemp) ===
+				JSON.stringify(scoop.combat.floor?.tempPlate) &&
+			scoop.combat.floor?.scale === viewport.floorScale &&
+			scoop.combat.floor?.overflowPx === 0,
+		JSON.stringify({
+			plates: scoop.combat.plates,
+			boxes: scoop.combat.floor?.duelPlates,
+			scale: scoop.combat.floor?.scale,
+		}),
 	);
 	check(
 		`${v}: out of the band the SCOOPING line goes and the tank stops filling`,
