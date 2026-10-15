@@ -915,32 +915,34 @@ export function sweepShip(
 	dt: number,
 	options: SweepOptions = {},
 ): SweepResult {
-	return sweepMotion(ship, solids, dt, options, false).result;
+	const { contacts, ...result } = sweepMotion(ship, solids, dt, options, false);
+	return { ...result, impacts: contacts.map(({ impact }) => impact) };
 }
 
-/**
- * `sweepShip`'s body, with the met solid's primitive beside each impact, in
- * the same order: the pair resolver reads which of B's parts was met.
- */
+/** Keep each impact with its surface so the pair resolver can name B's part. */
+interface MotionSweepResult extends Omit<SweepResult, "impacts"> {
+	contacts: { impact: Impact; surface: Primitive }[];
+}
+
+/** `sweepShip`'s body, retaining the met primitive internally. */
 function sweepMotion(
 	ship: SolidMotion,
 	solids: readonly SolidMotion[],
 	dt: number,
 	options: SweepOptions,
 	restingShipPair: boolean,
-): { result: SweepResult; surfaces: Primitive[] } {
-	const result: SweepResult = {
+): MotionSweepResult {
+	const result: MotionSweepResult = {
 		pos: ship.end.origin,
 		vel: ship.velEnd,
-		impacts: [],
+		contacts: [],
 		ghosts: [],
 		planeOwns: false,
 	};
-	const surfaces: Primitive[] = [];
 	const planeS = options.planeS ?? null;
 	if (!(dt > 0) || solids.length === 0) {
 		result.planeOwns = planeS !== null;
-		return { result, surfaces };
+		return result;
 	}
 	const shipBoxes = ship.primitives.filter((p) => p.kind === "box");
 	if (shipBoxes.length === 0)
@@ -955,7 +957,7 @@ function sweepMotion(
 		spins: solids.map((solid) => spinBetween(solid.start, solid.end)),
 		dt,
 	};
-	const { touching, swept } = classifyPairs(sweep, result, surfaces);
+	const { touching, swept } = classifyPairs(sweep, result);
 	const stopped = stopResting(sweep, touching, {
 		origin: ship.end.origin,
 		vel: ship.velEnd,
@@ -968,22 +970,24 @@ function sweepMotion(
 	const met = resolveEarliest(sweep, swept, end);
 	const impactFirst =
 		stopped.constrained ||
-		result.impacts.length > 0 ||
+		result.contacts.length > 0 ||
 		(met !== null && (planeS === null || met.impact.timeS <= planeS));
 	if (planeS !== null && !impactFirst) {
 		result.planeOwns = true;
-		return { result, surfaces };
+		return result;
 	}
 	if (met) {
 		end = met.end;
 		touching.push(met.touching);
-		result.impacts.push(met.impact);
-		surfaces.push(met.touching.pair.primitive);
+		result.contacts.push({
+			impact: met.impact,
+			surface: met.touching.pair.primitive,
+		});
 	}
 	end = settleTouching(sweep, touching, end, met !== null);
 	result.pos = end.origin;
 	result.vel = end.vel;
-	return { result, surfaces };
+	return result;
 }
 
 const solidIndexes = new WeakMap<
@@ -1109,8 +1113,7 @@ function primitiveMayMeet(
  */
 function classifyPairs(
 	sweep: Sweep,
-	result: SweepResult,
-	surfaces: Primitive[],
+	result: MotionSweepResult,
 ): { touching: Touching[]; swept: PairState[] } {
 	const { ship, dt } = sweep;
 	const touching: Touching[] = [];
@@ -1170,19 +1173,21 @@ function classifyPairs(
 				);
 				touching.push({ pair, normal: gap.normal, closingKms: closing });
 				if (closing > RESTING_CLOSING_FLOOR_KMS) {
-					result.impacts.push({
-						solid: index,
-						timeS: 0,
-						point: add(gap.onSurface, ref),
-						normal: gap.normal,
-						closingKms: closing,
-						damage: impactDamage(closing),
-						// §3: measured from the ship's position, as the swept branch is.
-						side: sideStruck(ship.start.z, sub(gap.onShip, shipOrigin)),
-						resting: true,
-						part: partOf(shipBox),
+					result.contacts.push({
+						impact: {
+							solid: index,
+							timeS: 0,
+							point: add(gap.onSurface, ref),
+							normal: gap.normal,
+							closingKms: closing,
+							damage: impactDamage(closing),
+							// §3: measured from the ship's position, as the swept branch is.
+							side: sideStruck(ship.start.z, sub(gap.onShip, shipOrigin)),
+							resting: true,
+							part: partOf(shipBox),
+						},
+						surface: primitive,
 					});
-					surfaces.push(primitive);
 				}
 			}
 		}
@@ -1475,7 +1480,10 @@ export interface ShipPairResult {
 	a: { pos: Vec3; vel: Vec3 };
 	b: { pos: Vec3; vel: Vec3 };
 	impacts: ShipPairImpact[];
-	/** The two overlapped at the start, so were not tested (§4.3). */
+	/**
+	 * At least one primitive pair overlapped at the start and was not tested
+	 * (§4.3). Other pairs can still impact or hold the ships apart.
+	 */
 	ghost: boolean;
 }
 
@@ -1515,15 +1523,16 @@ export function sweepShipPair(
 	dt: number,
 	options: { bProjected?: boolean } = {},
 ): ShipPairResult {
-	const { result: swept, surfaces } = sweepMotion(a, [b], dt, {}, true);
+	const swept = sweepMotion(a, [b], dt, {}, true);
 	const result: ShipPairResult = {
 		a: { pos: a.end.origin, vel: a.velEnd },
 		b: { pos: b.end.origin, vel: b.velEnd },
 		impacts: [],
 		ghost: swept.ghosts.length > 0,
 	};
-	if (result.ghost) return result;
-	const billed = swept.impacts.length > 0;
+	// Overlap ghosts only that primitive pair. Other pairs still contribute
+	// their impacts and resting corrections, even when nothing is billed.
+	const billed = swept.contacts.length > 0;
 	/** A's share of what `sweepShip` did to A against an immovable B. */
 	const shareA =
 		options.bProjected && !billed ? 1 : b.massT / (a.massT + b.massT);
@@ -1542,7 +1551,7 @@ export function sweepShipPair(
 	// (`sweepShip`).
 	const aSpin = spinBetween(a.start, a.end);
 	const bSpin = spinBetween(b.start, b.end);
-	for (const [k, impact] of swept.impacts.entries()) {
+	for (const { impact, surface } of swept.contacts) {
 		const n = impact.normal;
 		// Each pose at the meeting, on the arc its box was swept along: a chord
 		// between its two end noses lags a fast turn by tens of degrees.
@@ -1583,7 +1592,7 @@ export function sweepShipPair(
 			sideB: sideStruck(bAt.z, sub(impact.point, bAt.origin)),
 			resting: impact.resting,
 			partA: impact.part,
-			partB: partOf(surfaces[k]),
+			partB: partOf(surface),
 		});
 	}
 	return result;

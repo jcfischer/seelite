@@ -16,6 +16,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	IDENTITY_AXES,
+	RESTING_KM,
+	SEPARATION_KM,
 	type Pose,
 	type Primitive,
 	type ShipMotion,
@@ -31,7 +33,7 @@ import {
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { ASSIST_CAP_KMS } from "../src/sim";
 import { proxySolids, stationProxy } from "../src/station-proxy";
-import { type Vec3, add, scale, v3 } from "../src/vec3";
+import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
 
 const dt = 0.1;
 const miner = HULL_SPECS.miner;
@@ -288,6 +290,94 @@ describe("node #959: the deployed cutter collides with everything (#956 Q3)", ()
 			velEnd: vel,
 		};
 	};
+
+	for (const reversed of [false, true]) {
+		const order = reversed ? "miner is B" : "miner is A";
+		for (const resting of [false, true]) {
+			test(`a cutter overlap preserves ${resting ? "an unbilled resting hull hold" : "a swept hull impact"} (${order})`, () => {
+				const moving = flown(true, v3(), v3(0.02, 0, 0), nose, up);
+				if (resting) moving.velStart = v3();
+				// The flank intersects the cutter but leaves the hull clear,
+				// either just resting or 4.75 m away and closing this tick.
+				const other = courierAt(
+					resting ? HULL_FRONT_KM + SEPARATION_KM : 0.047,
+				);
+				const [hull, cut] = moving.primitives;
+				const surface = other.primitives[0];
+				const hullStart = pairSeparation(
+					hull,
+					moving.start,
+					surface,
+					other.start,
+				);
+				expect(hullStart.overlap).toBe(false);
+				if (hullStart.overlap) throw new Error("the hull must start clear");
+				expect(hullStart.distanceKm > RESTING_KM).toBe(!resting);
+				expect(
+					pairSeparation(cut, moving.start, surface, other.start).overlap,
+				).toBe(true);
+				// Without resolution the hull penetrates, independently of the
+				// cutter overlap that must remain untested.
+				expect(
+					pairSeparation(hull, moving.end, surface, other.end).overlap,
+				).toBe(true);
+				const [a, b] = reversed ? [other, moving] : [moving, other];
+				const result = sweepShipPair(a, b, dt);
+				expect(result.ghost).toBe(true);
+				expect(result.impacts.map((i) => [i.partA, i.partB])).toEqual(
+					resting ? [] : [["hull", "hull"]],
+				);
+				const minerEnd = reversed ? result.b : result.a;
+				const courierEnd = reversed ? result.a : result.b;
+				const apart = pairSeparation(
+					hull,
+					{ ...moving.end, origin: minerEnd.pos },
+					surface,
+					{ ...other.end, origin: courierEnd.pos },
+				);
+				expect(apart.overlap).toBe(false);
+				if (apart.overlap) throw new Error("the hull must end separated");
+				expect(apart.distanceKm).toBeCloseTo(SEPARATION_KM, 6);
+				expect(minerEnd.pos.x).toBeLessThan(moving.end.origin.x);
+				expect(courierEnd.pos.x).toBeGreaterThan(other.end.origin.x);
+				const relative = dot(sub(minerEnd.vel, courierEnd.vel), v3(-1, 0, 0));
+				if (resting) expect(relative).toBeCloseTo(0, 12);
+				else {
+					expect(result.impacts[0].resting).toBe(false);
+					expect(result.impacts[0].damage).toBeGreaterThan(0);
+					expect(relative).toBeGreaterThan(0);
+				}
+				const momentumBefore = add(
+					scale(a.velEnd, a.massT),
+					scale(b.velEnd, b.massT),
+				);
+				const momentumAfter = add(
+					scale(result.a.vel, a.massT),
+					scale(result.b.vel, b.massT),
+				);
+				expect(length(sub(momentumAfter, momentumBefore))).toBeLessThan(1e-10);
+			});
+		}
+
+		test(`a cutter-only overlap leaves a departing ship unchanged (${order})`, () => {
+			const moving = flown(true, v3(), v3(-0.02, 0, 0), nose, up);
+			const other = courierAt(0.047);
+			expect(
+				pairSeparation(
+					moving.primitives[1],
+					moving.start,
+					other.primitives[0],
+					other.start,
+				).overlap,
+			).toBe(true);
+			const [a, b] = reversed ? [other, moving] : [moving, other];
+			const result = sweepShipPair(a, b, dt);
+			expect(result.ghost).toBe(true);
+			expect(result.impacts).toEqual([]);
+			expect(result.a).toEqual({ pos: a.end.origin, vel: a.velEnd });
+			expect(result.b).toEqual({ pos: b.end.origin, vel: b.velEnd });
+		});
+	}
 
 	test("against another ship, the miner's deployed cutter is the part that meets it", () => {
 		// The miner's cutter face 50 m from the courier's flank, closing 100 m.
