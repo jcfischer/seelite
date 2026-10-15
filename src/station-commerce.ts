@@ -364,16 +364,13 @@ function fitModuleAt(
 const quantityOf = (action: StationAction): number =>
 	"quantity" in action ? (action.quantity ?? 1) : 1;
 
-/** The hull's hold plus whatever the commander has bolted into it. **`STARTING_HOLD_T`
- *  is gone** (#181): it was a second copy of the courier's 20 t, and a constant
- *  named for the *start* of a game cannot answer for a hold that changes when a
- *  shipyard sells you a freighter. */
+/** The hull's hold plus whatever the commander has bolted into it, read off the
+ *  one capacity projection (#928). **`STARTING_HOLD_T` is gone** (#181): it was
+ *  a second copy of the courier's 20 t, and a constant named for the *start* of
+ *  a game cannot answer for a hold that changes when a shipyard sells you a
+ *  freighter. */
 const holdCapacityT = (commander: CommanderState): number =>
-	HULL_SPECS[commander.hull].holdT +
-	Object.values(commander.loadout).reduce(
-		(n, m) => n + (m.module === "cargo-rack" ? moduleRow(m).output.cargoT : 0),
-		0,
-	);
+	fittedCapacity(commander.hull, commander.loadout).holdT;
 
 const heldTonnes = (cargo: Readonly<Record<string, number>>): number =>
 	Object.entries(cargo).reduce((sum, [name, amount]) => {

@@ -8366,7 +8366,9 @@ class Game {
 			instanceOrdinal,
 			voyageOrdinal,
 			{
-				holdT: HULL_SPECS[actor.hullId].holdT,
+				// An NPC passes its stock loadout until NPC loadouts (#875) give it
+				// racks: the projection then reads the bare hold (#928).
+				holdT: fittedCapacity(actor.hullId, stockLoadout(actor.hullId)).holdT,
 				government: record.government,
 			},
 		);
@@ -8997,7 +8999,7 @@ class Game {
 			systemSeed: record.seed,
 			key: actor.key,
 			row: readKnowledge(this.commerceWorld.galaxies[record.galaxy], actor.key),
-			holdT: HULL_SPECS[actor.hullId].holdT,
+			holdT: fittedCapacity(actor.hullId, stockLoadout(actor.hullId)).holdT,
 			government: record.government,
 			gameTime: this.world.gameTime,
 		});

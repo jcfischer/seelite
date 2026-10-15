@@ -473,10 +473,12 @@ export const POWER_PLANT_OUTPUT: Readonly<
  * What a fitted ship holds, as numbers: `fittedCapacity` in `loadout.ts`
  * computes it and `ship-condition.ts` reads it (#925). The bank and its regen,
  * the fuel the tank carries (#926), and the defence that plates and boosters
- * raise (#927); the sibling slice #928 adds hold here rather than in a second
- * shape.
+ * raise (#927), and the hold the racks add (#928).
  */
 export interface FittedCapacity extends PlantOutput, DefenceCapacity {
+	/** Tonnes the hold carries: the hull's `holdT` plus every fitted rack's
+	 *  `cargoT` (#873). Every hold reader reads this, never the bare hull row. */
+	holdT: number;
 	/** Light years of fuel the ship carries: the hull's `tankLy` plus every
 	 *  fitted tank's `fuelLy` (#873 R1). Capacity only — the jump range stays
 	 *  the hull's `tankLy`, and this field is named apart from it. */
