@@ -4,8 +4,7 @@
  * it, and no other source reads a bare `HULL_SPECS[...].holdT`.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import {
 	fittedCapacity,
@@ -15,6 +14,7 @@ import {
 	stockLoadout,
 } from "../src/loadout";
 import { commanderHold, newCommander } from "../src/station-commerce";
+import { repoPath, srcFiles, stripComments } from "./lib/source-scan";
 
 const RACK_1E = makeModule("cargo-rack", 1, "E");
 const RACK_2A = makeModule("cargo-rack", 2, "A");
@@ -78,19 +78,16 @@ const BARE_HOLD = [
  *  `HOLD_REFERENCE_T`, a reference constant rather than a hold. */
 const ALLOWED = ["src/hull.ts", "src/loadout.ts", "src/market.ts"];
 
-const ROOT = join(import.meta.dir, "..");
-const sources = (dir: string): string[] =>
-	readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-		e.isDirectory()
-			? sources(join(dir, e.name))
-			: /\.ts$/.test(e.name)
-				? [join(dir, e.name)]
-				: [],
-	);
-const readers = sources(join(ROOT, "src"))
-	.filter((f) => BARE_HOLD.some((re) => re.test(readFileSync(f, "utf8"))))
-	.map((f) => relative(ROOT, f).split("\\").join("/"))
-	.sort();
+const readsBareHold = (source: string) =>
+	BARE_HOLD.some((re) => re.test(stripComments(source)));
+const readersIn = (sources: [string, string][]) =>
+	sources
+		.filter(([, source]) => readsBareHold(source))
+		.map(([file]) => file)
+		.sort();
+const readers = readersIn(
+	srcFiles().map((file) => [file, readFileSync(repoPath(file), "utf8")]),
+);
 
 describe("no hold reader outside the projection reads the bare hull row", () => {
 	test("the scan catches every shape", () => {
@@ -105,6 +102,38 @@ describe("no hold reader outside the projection reads the bare hull row", () => 
 		expect(BARE_HOLD.some((re) => re.test("fittedCapacity(h, l).holdT"))).toBe(
 			false,
 		);
+	});
+
+	test("a commented-out read cannot keep an allowlist entry alive", () => {
+		for (const source of [
+			"// HULL_SPECS[hull].holdT",
+			"/* const spec = HULL_SPECS[hull]; spec.holdT */",
+		])
+			expect(readsBareHold(source)).toBe(false);
+	});
+
+	test("the scan names a forbidden reader in a nested source directory", () => {
+		const found = readersIn([
+			["src/npc/manifest.ts", "const hold = HULL_SPECS[actor.hullId].holdT;"],
+			["src/npc/stock.ts", "const hold = fittedCapacity(hull, fit).holdT;"],
+		]);
+		expect(found.filter((file) => !ALLOWED.includes(file))).toEqual([
+			"src/npc/manifest.ts",
+		]);
+	});
+
+	test("the scan names each dead allowlist entry even if a comment remains", () => {
+		for (const removed of ALLOWED) {
+			const found = readersIn(
+				ALLOWED.map((file) => [
+					file,
+					`${file === removed ? "// " : ""}HULL_SPECS[hull].holdT`,
+				]),
+			);
+			expect(ALLOWED.filter((file) => !found.includes(file))).toEqual([
+				removed,
+			]);
+		}
 	});
 
 	test("only the allowlisted files read HULL_SPECS[...].holdT", () => {
