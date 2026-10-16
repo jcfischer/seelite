@@ -65,6 +65,14 @@ supervisor, so the two runs above are **manual partial coverage**, not a
 repository-selected PR gate or a full-suite pass. Neither existing probe nor
 `tests/derived-names.test.ts` was edited.
 
+After commit `63b08bec7bfe2f8c9939a870fb96843aa3c6b83c`, selection with real
+git evidence (`--base c7aad0fcbd2223811f6598fcc2faa0ebdce2ceb3 --head HEAD`)
+selected **nine** probes: boot, capture, controls-reference, death,
+live-cockpit, mouse-flight-layout, pad-instrument, raider-frame and rebind.
+Unlike the earlier path-only diagnostic, this selection proved no probe loads
+the measurement script. This is the supervisor's pending selected browser
+gate; the node-specific derived-name probe additionally passed above.
+
 ### Full headless run: red, attribution pending
 
 The one required `rtk test npm test` run returned **6,338 pass, 31 fail** across
