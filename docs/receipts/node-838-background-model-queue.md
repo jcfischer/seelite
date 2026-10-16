@@ -20,12 +20,23 @@ Successful installs refresh live station and hull caches, including Traffic,
 fleet, tender and wreck roots. Hull roots keep their identity and pose; station
 replacement checks the current system and root after asynchronous warm-up.
 Existing sliced interior installation stays in use. Longwall B now uses miner/a
-as a temporary stand-in, rather than blocking boot. Its authoritative envelope,
-vents and muzzle measurements still use the authored model.
+as a temporary stand-in, rather than blocking boot. The envelope, collision and
+vent tables stay fixed at their authored measurements in `HULL_SPECS`; the
+stand-in does not change those tables. Chase muzzles are measured on the
+procedural miner before install, then invalidated and measured on Longwall B
+when the mesh is rebuilt. The earlier version of this receipt incorrectly
+claimed that muzzles used the authored model throughout the cold-load window.
+The cold-install headless row explicitly removes the preload, ray-checks both
+sets of muzzles against their respective meshes, checks fixed hull data across
+the swap, and verifies that the second rebuild does nothing.
 
 A background failure is terminal for that model in the queue: warn once, keep
 the stand-in, continue. Sharing a postcard explicitly retries failed required
 models through the Retry view rather than silently exporting a stand-in.
+Mesh-refresh failures have a separate warning and keep the template's installed
+state; readiness still waits until the refresh finishes or fails. A postcard
+therefore does not download an already installed template again after a refresh
+failure.
 
 ## Deterministic readiness
 
@@ -42,7 +53,7 @@ models through the Retry view rather than silently exporting a stand-in.
   requires those models before construction, and mounts its one-frame viewer
   only after interior installation. No catalog/store/input/loop is added.
 
-## Verification
+## Verification at the initial implementation
 
 Affected headless files: **151 passed**, including queue priority changes during
 a held load, terminal failure/continuation, current-set settlement independent
@@ -67,9 +78,46 @@ build's emitted files pass the existing 25 MiB guard. No model bytes, geometry,
 LOD settings or lighting were changed. This is loading/performance work under
 `src/changelog.ts`'s definition, so it adds no public changelog entry.
 
-Full headless suite: the single final `npm test` run passed **6,370 tests,
-0 failures**, across 368 files (host run; 713.50 seconds). Full output:
+Full headless suite at the initial implementation: its final `npm test` run
+passed **6,370 tests, 0 failures**, across 368 files (host run; 713.50 seconds). Full output:
 `/tmp/seelite-838-full-tests.log`.
+
+## Review round 1
+
+The miner measurement claim is corrected above and in `ship-mesh.ts`. Its
+cold-install row now measures the stand-in and authored muzzles against their
+respective metal, checks unchanged authoritative hull data, and checks one-time
+replacement. Removing the miner's muzzle-cache invalidation makes that row fail.
+The queue refresh test fails against the reviewed queue, then passes with load
+and refresh failures separated. A refresh failure keeps its decoded template
+installed, emits its own warning, and lets remaining work continue.
+
+The Three-free model catalog owns the authored hull list and both station-family
+lists. The Game, ship builder and system model selection read that shared list.
+`trafficRosterHulls` owns the complete home/inbound roster projection used by
+next-hop prefetch and postcard boot; the restore-fault arm uses `freshWorld`.
+
+Optional early cockpit fetching was skipped: the memoized loader registers only
+its first caller's progress listener, so starting it without one would lose
+byte-progress reporting. The per-form loader factory nit was also skipped;
+explicit entries keep the precise catalog keys visible without another helper.
+
+Affected headless checks: **72 passed**, across five files. The expanded
+`probe-model-queue` passed **10/10** on the GPU lane (ANGLE Metal / Apple M1 Pro),
+including a held Longwall response and one-time replacement of the live miner.
+`probe-postcard` passed **47/47** on the same lane, including sender/viewer frame
+agreement, required-model Retry and unchanged stored bytes. Both runs were
+manual affected-probe filters; neither is a full-suite or PR-gate pass.
+The two deliberately broken headless runs each failed as expected; logs:
+`/tmp/seelite-838-review-queue-red.log` and
+`/tmp/seelite-838-review-miner-red.log`. Browser log:
+`/tmp/seelite-838-review-model-queue.log` and
+`/tmp/seelite-838-review-postcard.log`.
+
+The single final full headless run for this review pass passed **6,372 tests,
+0 failures**, across 368 files (host run; 911.15 seconds). Full output:
+`/tmp/seelite-838-review-full-tests.log`. Typecheck, production build (including
+the emitted-file size guard), formatting, lint and launcher wiring also pass.
 
 ## Handoff
 

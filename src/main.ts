@@ -33,8 +33,19 @@ import {
 } from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { ModelQueue } from "./model-queue";
-import { ALL_MODELS, modelLoaders, type ModelId } from "./model-catalog";
-import { bootModelIds, systemModelIds } from "./system-models";
+import {
+	ALL_MODELS,
+	modelLoaders,
+	type ModelId,
+	isAuthoredHullModel,
+	SHIPYARD_MODELS,
+	REFINERY_MODELS,
+} from "./model-catalog";
+import {
+	bootModelIds,
+	systemModelIds,
+	trafficRosterHulls,
+} from "./system-models";
 import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
@@ -6891,13 +6902,9 @@ class Game {
 		const next = this.nextHop();
 		if (!next) return [];
 		const contentsFor = (index: number) => this.trafficContentsFor(index);
-		const plans = [
-			...buildHaulerPlans(this.world.galaxy, next.index, contentsFor),
-			...inboundCandidates(this.world.galaxy, next.index, contentsFor),
-		];
 		return systemModelIds(
 			makeSystem(next, this.world.gameTime),
-			plans.map((p) => p.actor.hullId),
+			trafficRosterHulls(this.world.galaxy, next.index, contentsFor),
 			this.flownHull,
 		);
 	}
@@ -6906,8 +6913,7 @@ class Game {
 	}
 	/** Install callbacks always inspect live caches; a jump never waits for them. */
 	async modelInstalled(id: ModelId): Promise<void> {
-		if (id === "courier" || id === "tug" || id === "miner")
-			this.refreshAuthoredHulls();
+		if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
 		else if (id === "interiors") await this.refreshInteriorMeshes();
 		else if (id === "coriolis")
 			await this.refreshAuthoredStations("trade", "a");
@@ -7040,20 +7046,16 @@ class Game {
 		}
 	}
 	get shipyardModelsSettled(): boolean {
-		return models.settled(
-			ALL_MODELS.filter((id) => id.startsWith("shipyard/")),
-		);
+		return models.settled(SHIPYARD_MODELS);
 	}
 	loadShipyardsAfterBoot(): Promise<void> {
-		return models.wait(ALL_MODELS.filter((id) => id.startsWith("shipyard/")));
+		return models.wait(SHIPYARD_MODELS);
 	}
 	get refineryModelsSettled(): boolean {
-		return models.settled(
-			ALL_MODELS.filter((id) => id.startsWith("refinery/")),
-		);
+		return models.settled(REFINERY_MODELS);
 	}
 	loadRefineriesAfterBoot(): Promise<void> {
-		return models.wait(ALL_MODELS.filter((id) => id.startsWith("refinery/")));
+		return models.wait(REFINERY_MODELS);
 	}
 
 	/**
@@ -22023,18 +22025,14 @@ if (postcard) {
 	);
 	const contentsFor = (index: number) =>
 		generateContents(frameWorld.galaxy.systems.find((r) => r.index === index)!);
-	const plans = [
-		...buildHaulerPlans(frameWorld.galaxy, postcard.recipe.system, contentsFor),
-		...inboundCandidates(
-			frameWorld.galaxy,
-			postcard.recipe.system,
-			contentsFor,
-		),
-	];
 	await requireModels(
 		systemModelIds(
 			frameWorld.system,
-			plans.map((p) => p.actor.hullId),
+			trafficRosterHulls(
+				frameWorld.galaxy,
+				postcard.recipe.system,
+				contentsFor,
+			),
 			"courier",
 		),
 		loadingPanel("postcard models"),
@@ -22336,12 +22334,8 @@ if (postcard) {
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
 		restoreFaulted = true;
-		const fallback =
-			askedSystem === null
-				? makeWorld(worldSeed)
-				: makeWorldAtSystem(worldSeed, askedSystem);
 		await requireModels(
-			bootModelIds(fallback.system, null),
+			bootModelIds(freshWorld().system, null),
 			loading.view,
 			true,
 		);

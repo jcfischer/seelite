@@ -115,6 +115,55 @@ try {
 	);
 	await held.close();
 
+	const miner = await browser.newPage();
+	watch(miner);
+	let releaseMiner;
+	const minerGate = new Promise((resolve) => {
+		releaseMiner = resolve;
+	});
+	await miner.route(/\/longwall-miner[^/]*\.glb/, async (route) => {
+		await minerGate;
+		await route.continue();
+	});
+	await miner.goto(gameUrl(origin, { ...params, hull: "miner" }));
+	await bootedGame(miner, 60000);
+	const minerRoot = await miner.evaluateHandle(() => {
+		window.__seelite.clockHeld = true;
+		return window.__seelite.shipMesh;
+	});
+	check(
+		"a cold miner boots with its procedural stand-in while Longwall is held",
+		await miner.evaluate(() => {
+			const g = window.__seelite;
+			return (
+				g.flownHull === "miner" &&
+				!g.shipMesh.userData.authored &&
+				!g.modelsSettled()
+			);
+		}),
+	);
+	releaseMiner();
+	await miner.waitForFunction(
+		() => window.__seelite.modelsSettled(),
+		undefined,
+		{ timeout: 120000 },
+	);
+	check(
+		"Longwall installs into the existing miner root and a second refresh leaves it intact",
+		await miner.evaluate(async (root) => {
+			const g = window.__seelite;
+			const child = root.children[0];
+			await g.modelInstalled("miner");
+			return (
+				g.shipMesh === root &&
+				root.userData.authored &&
+				root.children[0] === child
+			);
+		}, minerRoot),
+	);
+	await minerRoot.dispose();
+	await miner.close();
+
 	const failed = await browser.newPage();
 	watch(failed);
 	let attempts = 0;

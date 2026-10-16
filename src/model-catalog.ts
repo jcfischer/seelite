@@ -1,6 +1,7 @@
 /** Bundle models, one lazy loader per install. The queue is renderer-free;
  * this catalog joins loaders to page consumers without eager GLTF imports. */
 import type { ModelLoader } from "./model-progress";
+import type { HullId } from "./hull";
 
 export const modelLoaders = {
 	cockpit: async (p?: Parameters<ModelLoader>[0]) =>
@@ -32,6 +33,20 @@ export const modelLoaders = {
 } satisfies Record<string, ModelLoader>;
 export type ModelId = keyof typeof modelLoaders;
 export const ALL_MODELS = Object.keys(modelLoaders) as ModelId[];
+export const AUTHORED_HULL_MODELS = [
+	"courier",
+	"tug",
+	"miner",
+] as const satisfies readonly (HullId & ModelId)[];
+export type AuthoredHullModelId = (typeof AUTHORED_HULL_MODELS)[number];
+export const isAuthoredHullModel = (id: unknown): id is AuthoredHullModelId =>
+	(AUTHORED_HULL_MODELS as readonly unknown[]).includes(id);
+export const SHIPYARD_MODELS = ALL_MODELS.filter((id) =>
+	id.startsWith("shipyard/"),
+);
+export const REFINERY_MODELS = ALL_MODELS.filter((id) =>
+	id.startsWith("refinery/"),
+);
 
 export function stationModel(station: {
 	type: string;

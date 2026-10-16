@@ -16,6 +16,11 @@
  * below replaces the plate extrusion, the lathe, and the stock cylinder.
  */
 import * as THREE from "three";
+import {
+	AUTHORED_HULL_MODELS,
+	isAuthoredHullModel as isAfterBootHull,
+	type AuthoredHullModelId,
+} from "./model-catalog";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { mutePaint } from "./surface";
@@ -2502,9 +2507,12 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  *
  * Node #838 installs this through the background queue. Before it arrives,
  * the selected miner draws miner/a as a stand-in; the authored template then
- * replaces every cached stand-in once. The authoritative envelope, vents and
- * muzzles remain measured on the authored hull, and headless geometry checks
- * preload that hull so the stand-in cannot become their measurement subject.
+ * replaces every cached stand-in once. The envelope and vent tables in
+ * HULL_SPECS stay fixed at their authored measurements. Chase muzzles follow
+ * the mesh being drawn: measured on miner/a before install, then invalidated
+ * and measured on Longwall B when the stand-in is rebuilt. Headless authored
+ * geometry checks preload the model; the cold-install row explicitly removes
+ * it to measure both sides of this transition.
  *
  * The export is model metres, +Z forward and Y up; this frame is kilometres
  * with the nose at -Z, so the exterior is turned half a turn about Y — a
@@ -7064,11 +7072,8 @@ export type AuthoredHullBuilder = (
  * installed. Longwall B uses its procedural miner/a until its template is
  * installed (node #838).
  */
-export const AFTER_BOOT_HULL_IDS = ["courier", "tug", "miner"] as const;
-export type AfterBootHullId = (typeof AFTER_BOOT_HULL_IDS)[number];
-
-const isAfterBootHull = (id: unknown): id is AfterBootHullId =>
-	(AFTER_BOOT_HULL_IDS as readonly unknown[]).includes(id);
+export const AFTER_BOOT_HULL_IDS = AUTHORED_HULL_MODELS;
+export type AfterBootHullId = AuthoredHullModelId;
 
 const authoredHulls = new Map<AfterBootHullId, AuthoredHullBuilder>();
 /** An authored hull's nav lights, placed once. `addNavLights` finds the

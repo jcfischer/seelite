@@ -1,7 +1,29 @@
 import { carrierKey } from "./carrier-key";
 import type { HullId } from "./hull";
-import { stationModel, type ModelId } from "./model-catalog";
+import type { Galaxy } from "./galaxy";
+import {
+	buildHaulerPlans,
+	inboundCandidates,
+	type ContentsQuery,
+} from "./inter-system-traffic";
+import {
+	isAuthoredHullModel,
+	stationModel,
+	type ModelId,
+} from "./model-catalog";
 import type { System } from "./sim";
+
+/** Complete seeded home and inbound roster, including currently distant ships. */
+export function trafficRosterHulls(
+	galaxy: Galaxy,
+	index: number,
+	contentsFor: ContentsQuery,
+): HullId[] {
+	return [
+		...buildHaulerPlans(galaxy, index, contentsFor),
+		...inboundCandidates(galaxy, index, contentsFor),
+	].map((p) => p.actor.hullId);
+}
 
 /** A fresh pilot's home is the trade station; a docked save names its own.
  * Procedural exteriors need no file. No other model may block ordinary boot. */
@@ -31,7 +53,7 @@ export function systemModelIds(
 		if (id) ids.add(id);
 	}
 	for (const hull of [flownHull, ...trafficHulls])
-		if (hull === "courier" || hull === "tug" || hull === "miner") ids.add(hull);
+		if (isAuthoredHullModel(hull)) ids.add(hull);
 	if (system.contents.stations.length) ids.add("interiors");
 	return [...ids];
 }

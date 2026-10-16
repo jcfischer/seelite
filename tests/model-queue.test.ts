@@ -104,3 +104,38 @@ test("current-system readiness does not wait for unrelated catalog work", async 
 	held.release();
 	await queue.wait(["current", "elsewhere"]);
 });
+
+test("refresh failure preserves an installed template and reports its own phase", async () => {
+	const held = gate();
+	let downloads = 0;
+	const warnings: string[] = [];
+	const queue = new ModelQueue(
+		{
+			model: async () => {
+				downloads++;
+			},
+			next: async () => {},
+		},
+		async (id) => {
+			if (id !== "model") return;
+			await held.promise;
+			throw Error("refresh broke");
+		},
+		(id, _error, phase) => {
+			warnings.push(`${id}:${phase}`);
+		},
+	);
+	const done = queue.wait(["model", "next"]);
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(queue.state("model")).toBe("installed");
+	expect(queue.settled(["model"])).toBe(false);
+	held.release();
+	await done;
+	expect(queue.state("model")).toBe("installed");
+	expect(queue.settled(["model", "next"])).toBe(true);
+	queue.prioritize(["model"]);
+	await queue.wait(["model"]);
+	expect(downloads).toBe(1);
+	expect(warnings).toEqual(["model:refresh"]);
+});

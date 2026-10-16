@@ -1,13 +1,17 @@
 import { expect, test } from "bun:test";
 import { makeWorld, restoreWorld } from "../src/sim";
 import { carrierKey } from "../src/carrier-key";
-import {
-	buildHaulerPlans,
-	inboundCandidates,
-} from "../src/inter-system-traffic";
 import { generateContents } from "../src/system";
-import { stationModel } from "../src/model-catalog";
-import { bootModelIds, systemModelIds } from "../src/system-models";
+import {
+	AUTHORED_HULL_MODELS,
+	isAuthoredHullModel,
+	stationModel,
+} from "../src/model-catalog";
+import {
+	bootModelIds,
+	systemModelIds,
+	trafficRosterHulls,
+} from "../src/system-models";
 
 test("boot waits only for cockpit and home exterior, including saves at any role", () => {
 	const world = makeWorld(42);
@@ -34,15 +38,8 @@ test("system set includes its stations, home and inbound Traffic hulls, and the 
 	const { system, galaxy } = makeWorld(42);
 	const contents = (i: number) =>
 		generateContents(galaxy.systems.find((r) => r.index === i)!);
-	const actors = [
-		...buildHaulerPlans(galaxy, system.record.index, contents),
-		...inboundCandidates(galaxy, system.record.index, contents),
-	].map((p) => p.actor);
-	const ids = systemModelIds(
-		system,
-		actors.map((a) => a.hullId),
-		"miner",
-	);
+	const hulls = trafficRosterHulls(galaxy, system.record.index, contents);
+	const ids = systemModelIds(system, hulls, "miner");
 	expect(ids).toContain("miner");
 	expect(ids).toContain("cockpit");
 	expect(ids).toContain("interiors");
@@ -50,8 +47,15 @@ test("system set includes its stations, home and inbound Traffic hulls, and the 
 		const id = stationModel(station);
 		if (id) expect(ids).toContain(id);
 	}
-	for (const actor of actors)
-		if (["courier", "tug", "miner"].includes(actor.hullId))
-			expect(ids as string[]).toContain(actor.hullId);
+	for (const hull of hulls)
+		if (isAuthoredHullModel(hull)) expect(ids).toContain(hull);
 	expect(new Set(ids).size).toBe(ids.length);
+});
+
+test("every authored hull is queued when flown or in Traffic", () => {
+	const { system } = makeWorld(42);
+	for (const hull of AUTHORED_HULL_MODELS) {
+		expect(systemModelIds(system, [], hull)).toContain(hull);
+		expect(systemModelIds(system, [hull], "interceptor")).toContain(hull);
+	}
 });
