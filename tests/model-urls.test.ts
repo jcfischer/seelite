@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+	ASTEROIDS_GLB_URL,
 	BOLLARD_TUG_GLB_URL,
 	CORIOLIS_GLB_URL,
 	COURIER_COCKPIT_GLB_URL,
@@ -30,6 +31,7 @@ describe("models are served under hashed names (#834)", () => {
 			n.endsWith(".glb"),
 		);
 		const urls = [
+			ASTEROIDS_GLB_URL,
 			BOLLARD_TUG_GLB_URL,
 			CORIOLIS_GLB_URL,
 			COURIER_COCKPIT_GLB_URL,

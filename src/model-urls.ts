@@ -9,6 +9,11 @@
  * kept under `public/` instead would be served at a fixed name, which a
  * browser must revalidate on every boot.
  */
+/** Authored rock archetypes (node #966); loading/drawing follows separately. */
+export const ASTEROIDS_GLB_URL = new URL(
+	"./models/asteroids.glb",
+	import.meta.url,
+).href;
 export const CORIOLIS_GLB_URL = new URL(
 	"./models/coriolis.glb",
 	import.meta.url,
