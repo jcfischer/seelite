@@ -4,6 +4,11 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-missiles.mjs": [
+		"scripts/probe-missiles.mjs",
+		"src/missiles.ts",
+		"src/missile-combat.ts",
+	],
 	"probe-nebula.mjs": [
 		"scripts/probe-nebula.mjs",
 		"src/nebula.ts",

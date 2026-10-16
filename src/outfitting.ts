@@ -28,6 +28,7 @@ import {
 } from "./station-commerce";
 import type { ModuleKind } from "./module-catalog";
 import { marketEpoch } from "./market";
+import { fittedEcm } from "./missiles";
 
 export const MODULE_LABELS: Record<ModuleKind, string> = {
 	"pulse-laser": "Pulse laser",
@@ -53,14 +54,15 @@ export const moduleLabel = (m: FittedModule): string =>
 
 /**
  * What the fitted ship does, as the Equipment tab compares it: one field per
- * effect a game system reads. A module whose figure no system reads (an
- * E.C.M.'s radius) has no field, because a printed change would promise what
+ * effect a game system reads. A module whose figure no system reads has no
+ * field, because a printed change would promise what
  * the game does not do (`tests/outfit-deltas.test.ts`). A docking computer
  * has none either: its grades differ in price and mass alone (#977).
  */
 export function fitReadout(commander: CommanderState, entrustedT: number) {
 	const ship = { hull: commander.hull, loadout: commander.loadout };
 	const capacity = fittedCapacity(commander.hull, commander.loadout);
+	const ecm = fittedEcm(commander.loadout);
 	return {
 		accel: flightPerformance(
 			commander.hull,
@@ -73,6 +75,9 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 		regenPerS: capacity.regenPerS,
 		dps: fittedDps(ship),
 		missiles: capacity.missiles,
+		ecmRadiusKm: ecm.radiusKm,
+		ecmCooldownS: ecm.cooldownS,
+		ecmDrawPerS: ecm.drawPerS,
 		holdT: commanderHold(commander, entrustedT).capacityT,
 		// Two readers: a fitted tank raises the tank, never the jump (#926).
 		fuelCapacityLy: commanderFuelCapacityLy(commander),
@@ -109,6 +114,9 @@ const FIT_DELTA_ROWS: readonly {
 	{ key: "regenPerS", label: "REGEN", unit: "E/s", digits: 1 },
 	{ key: "dps", label: "DPS", unit: "/s", digits: 1 },
 	{ key: "missiles", label: "MISSILES", unit: "", digits: 0 },
+	{ key: "ecmRadiusKm", label: "ECM RADIUS", unit: "km", digits: 2 },
+	{ key: "ecmCooldownS", label: "ECM COOLDOWN", unit: "s", digits: 2 },
+	{ key: "ecmDrawPerS", label: "ECM DRAW", unit: "E/s", digits: 1 },
 	{ key: "holdT", label: "HOLD", unit: "t", digits: 0 },
 	{ key: "fuelCapacityLy", label: "TANK", unit: "LY", digits: 1 },
 	{ key: "jump", label: "JUMP", unit: "LY", digits: 1 },

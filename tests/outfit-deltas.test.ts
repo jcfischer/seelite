@@ -36,6 +36,17 @@ const row = (rows: ReturnType<typeof fitDeltas>, label: string) =>
 	rows.find((r) => r.label === label);
 
 describe("fitDeltas", () => {
+	test("ECM prints signed radius, cooldown and draw; A shortens the cooldown", () => {
+		const e = withModule(base(), makeModule("ecm", 1, "E"));
+		const rows = rowsFor(makeModule("ecm", 1, "E"));
+		expect(row(rows, "ECM RADIUS")?.delta).toBe("+2.00");
+		expect(row(rows, "ECM COOLDOWN")?.delta).toBe("+8.00");
+		expect(row(rows, "ECM DRAW")?.delta).toBe("+8.0");
+		const swap = rowsFor(makeModule("ecm", 1, "A"), e);
+		expect(row(swap, "ECM RADIUS")?.delta).toBe("+1.00");
+		expect(row(swap, "ECM COOLDOWN")?.delta).toBe("−2.67");
+		expect(row(swap, "ECM DRAW")?.delta).toBe("+4.0");
+	});
 	test("a 1E plate: HULL 100 → 125, +25", () => {
 		expect(row(rowsFor(makeModule("armour-plating", 1, "E")), "HULL")).toEqual({
 			label: "HULL",
@@ -152,7 +163,6 @@ describe("fitDeltas", () => {
 	 */
 	const PRESENCE_ONLY: readonly ModuleKind[] = [
 		"mining-laser",
-		"ecm",
 		"docking-computer",
 	];
 

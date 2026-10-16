@@ -223,6 +223,8 @@ describe("the catalogue is complete against the source", () => {
 			"fight.faceTarget": "this.beginFaceTurn()",
 			// #892 binds it; #893 gives the method its body.
 			"fight.cycleFireGroup": "this.cycleFireGroup()",
+			"fight.launchMissile": "this.fireMissile()",
+			"fight.ecm": "this.fireEcm()",
 			"fight.rigIncoming": 'this.combatRig?.command("fight.rigIncoming")',
 			"fight.rigEcm": 'this.combatRig?.command("fight.rigEcm")',
 			"dock.clearance": "this.requestDockingClearance()",

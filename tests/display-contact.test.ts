@@ -6,6 +6,7 @@ import { projectNavTargets } from "../src/cockpit";
 import { AttitudeFollower } from "../src/attitude-hold";
 import { ORBIT_ASTERN } from "../src/chase-orbit";
 import { DockingComputer } from "../src/docking-computer";
+import { MissileCombat } from "../src/missile-combat";
 import {
 	EJECT_IDLE,
 	type EjectHold,
@@ -399,6 +400,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			dockingComputer: new DockingComputer(),
 			computerFollower: new AttitudeFollower(),
 			flickMeter: { reset() {} },
+			missileCombat: new MissileCombat(),
 			selectableCache: null,
 			targetId: null as string | null,
 			ejectHold,
@@ -428,6 +430,19 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 	expect(subject.cargoContacts.size).toBe(0);
 	expect(subject.targetId).toBeNull();
 	expect(subject.selectableCache).toBeNull();
+});
+
+test("a jump clears missile flight, acquisition and ECM readiness from the departed system", () => {
+	const subject = teardownSubject(EJECT_IDLE, false);
+	subject.missileCombat.lock = { targetId: "departed", seconds: 1.5 };
+	subject.missileCombat.missiles = [
+		{ targetId: "player", pos: v3(1, 0, 0), nose: v3(-1, 0, 0), leftS: 12 },
+	];
+	subject.missileCombat.ecmReadyAt = 100;
+	subject.clearFlightSession();
+	expect(subject.missileCombat.lock).toBeNull();
+	expect(subject.missileCombat.missiles).toEqual([]);
+	expect(subject.missileCombat.ecmReadyAt).toBe(0);
 });
 
 test("a jump breaks the system sweep but retains its dated provenance", () => {

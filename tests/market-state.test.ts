@@ -307,12 +307,13 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 			ASTEROID_FIELD: 40,
 			ASTEROID_ROCKS: 41,
 			ASTEROID_DEPOSIT: 42,
+			RAIDER_MISSILE_FIT: 43,
 		});
 		// And a *new* tag is safe only when it is larger than every existing one,
 		// which is the operation this table was designed for.
 		const tags: number[] = Object.values(DOMAIN);
 		expect(tags.length).toBe(new Set(tags).size);
-		expect(DOMAIN.ASTEROID_DEPOSIT as number).toBe(Math.max(...tags));
+		expect(DOMAIN.RAIDER_MISSILE_FIT as number).toBe(Math.max(...tags));
 	});
 
 	test("the market seed is a function of the system seed alone", () => {
