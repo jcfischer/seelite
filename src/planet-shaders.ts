@@ -13,6 +13,8 @@
 
 import { RINGED_CLASSES, type SurfaceClass } from "./planet-appearance";
 import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
+import { PLANET_EXTRA_OCTAVES } from "./planet-footprint";
+import { makeSplicer } from "./shader-splice";
 import {
 	CLOUD_FIELD_GLSL,
 	CLOUD_MOTION_GLSL,
@@ -101,6 +103,37 @@ float fbm${octaves}(vec3 p) {
 	)
 	.join("\n");
 
+/** Continue the original stream, including its offsets and normalisation.
+ * The zero arm calls the original helper: no new operations on its sum.
+ * A cell must span at least two target pixels; log-space weighting admits a
+ * fractional last octave instead of popping a whole frequency band on. */
+const FOOTPRINT_VARIANTS = [3, 4, 5, "ridged" as const]
+	.map((kind) => {
+		const ridge = kind === "ridged";
+		const name = ridge ? "ridged" : `fbm${kind}`;
+		const count = ridge ? 4 : kind;
+		const lac = ridge ? "2.07" : "2.03";
+		const offset = ridge ? "9.2" : "17.1";
+		const sample = ridge ? "(1.0 - abs(2.0 * vnoise(p) - 1.0))" : "vnoise(p)";
+		return /* glsl */ `
+float ${name}Footprint(vec3 p, float footprint, float cap) {
+  float extra = clamp(log(0.5 / max(footprint * pow(${lac}, ${count}.0), 1e-12)) / log(${lac}), 0.0, cap);
+  if (extra <= 0.0) return ${name}(p);
+  float s = 0.0, a = 0.5, n = 0.0;
+  for (int i = 0; i < ${count}; ++i) {
+    s += a * ${sample}; n += a; p = p * ${lac} + ${offset}; a *= 0.5;
+  }
+  for (int i = 0; i < ${PLANET_EXTRA_OCTAVES}; ++i) {
+    float weight = clamp(extra - float(i), 0.0, 1.0);
+    if (weight <= 0.0) break;
+    s += a * weight * ${sample}; n += a * weight;
+    p = p * ${lac} + ${offset}; a *= 0.5;
+  }
+  return s / n;
+}`;
+	})
+	.join("\n");
+
 export const NOISE_GLSL = /* glsl */ `
 const float PI = 3.14159265;
 ${CRATER_RIM}
@@ -134,6 +167,8 @@ float ridged(vec3 p) {
   }
   return s / n;
 }
+
+${FOOTPRINT_VARIANTS}
 
 // Push the sample point around with another noise field before reading it.
 // Un-warped fbm makes round blobs; warped fbm makes coastlines, because the
@@ -418,10 +453,47 @@ ${SURFACE_VERTEX_BODY}
 export const RELIEF_PATHS = ["four-tap", "screen-space", "none"] as const;
 export type ReliefPath = (typeof RELIEF_PATHS)[number];
 
+// Only the live terran program adopts detail. Bakes retain the original fields,
+// and warp's fbm3 calls keep their octave count. Every replacement is observable.
+const terranSplicer = makeSplicer("terran footprint fields");
+let liveTerran = CLASS_GLSL.terran;
+for (const [base, extended] of [
+	[
+		"fbm5(warp(p * 1.15 + seedOffset, 1.4, 0.85))",
+		"fbm5Footprint(warp(terrainCoordinates(p) * 1.15 + seedOffset, 1.4, 0.85), terrainFootprint * 1.15, terrainOctaveCap)",
+	],
+	[
+		"ridged(p * 11.0 + seedOffset)",
+		"ridgedFootprint(terrainCoordinates(p) * 11.0 + seedOffset, terrainFootprint * 11.0, terrainOctaveCap)",
+	],
+	[
+		"fbm4(p * 2.1 + 53.0 + seedOffset)",
+		"fbm4Footprint(terrainCoordinates(p) * 2.1 + 53.0 + seedOffset, terrainFootprint * 2.1, terrainOctaveCap)",
+	],
+	[
+		"fbm3(p * 4.0 + 7.0)",
+		"fbm3Footprint(terrainCoordinates(p) * 4.0 + 7.0, terrainFootprint * 4.0, terrainOctaveCap)",
+	],
+])
+	liveTerran = terranSplicer.splice("fragment", liveTerran, base, extended);
+export const TERRAN_FOOTPRINT_SPLICES = terranSplicer.log;
+
+const TERRAN_FOOTPRINT_INPUTS = /* glsl */ `
+uniform float surfacePixelAngle;
+uniform float extraOctaveCap;
+float terrainFootprint;
+float terrainOctaveCap;
+// Coordinate seam: replace the unit-sphere frame here when a camera-local
+// ground frame is adopted. Frequencies and the seed stream remain field-owned.
+vec3 terrainCoordinates(vec3 p) { return p; }
+`;
+
 export function fragmentFor(
 	surface: SurfaceClass,
 	relief: ReliefPath = "four-tap",
+	footprint = true,
 ): string {
+	const detail = surface === "terran" && footprint;
 	return /* glsl */ `
 precision highp float;
 ${relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
@@ -429,17 +501,28 @@ ${relief === "none" ? "#define RELIEF_NONE 1" : ""}
 ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
+${detail ? TERRAN_FOOTPRINT_INPUTS : ""}
 ${surface === "terran" ? CLOUD_FIELD_GLSL + CLOUD_PROJECTION_GLSL : ""}
 ${surface === "terran" ? "uniform samplerCube cloudCoverage;\nuniform float cloudCoverageReady;" : ""}
 ${LIGHT_GLSL}
 float height(vec3 p);
 ${RELIEF}
-${CLASS_GLSL[surface]}
+${detail ? liveTerran : CLASS_GLSL[surface]}
 ${RINGED_CLASSES.includes(surface) ? `${RING_GLSL}\n${RING_SHADOW_GLSL}` : ""}
 void main() {
   vec3 p = normalize(vObjP);
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
+${
+	detail
+		? `
+  float cameraR = distance(cameraPosition, vCenter) / vRadius;
+  terrainOctaveCap = extraOctaveCap * (1.0 - smoothstep(1.6, 2.0, cameraR));
+  terrainFootprint = distance(cameraPosition, vWorldP) * surfacePixelAngle
+    / (vRadius * max(abs(dot(V, N)), 0.1));
+`
+		: ""
+}
 
   vec3  albedo = vec3(0.5);
   vec3  emissive = vec3(0.0);

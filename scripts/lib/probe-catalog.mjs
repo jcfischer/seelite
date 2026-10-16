@@ -800,6 +800,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["planet surface", "shader", "planet class", "rings", "atmosphere"],
 		),
 		entry(
+			"probe-planet-footprint.mjs",
+			"Checks terran footprint cap arms at close and distant ranges, exact base arithmetic, deterministic pixels, quality and actual target pixel angle; writes canonical horizon pairs for the principal.",
+			["planet surface", "footprint", "octaves", "quality", "determinism"],
+		),
+		entry(
 			"probe-planets.mjs",
 			"Checks that gallery planet classes render as visually distinct, spherical, and star-lit bodies.",
 			["planet gallery", "planet classes", "lighting", "pixels"],

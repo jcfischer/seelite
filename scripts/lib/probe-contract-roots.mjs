@@ -333,6 +333,11 @@ const OWNERS = Object.freeze({
 		"src/planet-surface.ts",
 		"src/planet-appearance.ts",
 	],
+	"probe-planet-footprint.mjs": [
+		"scripts/probe-planet-footprint.mjs",
+		"src/planet-surface.ts",
+		"src/planet-footprint.ts",
+	],
 	"probe-planets.mjs": [
 		"scripts/probe-planets.mjs",
 		"src/planet-surface.ts",

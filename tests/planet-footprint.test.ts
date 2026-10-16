@@ -1,0 +1,199 @@
+import { expect, test } from "bun:test";
+import * as THREE from "three";
+import { readFileSync } from "node:fs";
+import { appearanceFor } from "../src/planet-appearance";
+import { CLASS_GLSL } from "../src/planet-classes.glsl";
+import { planetDetailCap, targetPixelAngle } from "../src/planet-footprint";
+import {
+	NOISE_GLSL,
+	bakeFragmentFor,
+	fragmentFor,
+} from "../src/planet-shaders";
+import { buildBodyVisual } from "../src/planet-surface";
+
+test("quality maps to the interim cap, with other classes staying at zero", () => {
+	expect(planetDetailCap("low", "terran")).toBe(0);
+	expect(planetDetailCap("high", "terran")).toBe(6);
+	for (const kind of Object.keys(CLASS_GLSL)) {
+		if (kind !== "terran")
+			expect(planetDetailCap("high", kind as keyof typeof CLASS_GLSL)).toBe(0);
+	}
+});
+
+test("pixel angle follows target height and the camera projection", () => {
+	const camera = new THREE.PerspectiveCamera(60, 1.6, 0.1, 100);
+	const full = targetPixelAngle(camera.projectionMatrix.elements[5], 900);
+	expect(full).toBeCloseTo((2 * Math.tan(Math.PI / 6)) / 900, 15);
+	expect(targetPixelAngle(camera.projectionMatrix.elements[5], 450)).toBe(
+		full * 2,
+	);
+});
+
+test("live terran extends exactly its four fields, leaving warp and bakes alone", () => {
+	const source = fragmentFor("terran", "screen-space");
+	for (const call of [
+		"fbm5Footprint(warp(terrainCoordinates(p) * 1.15 + seedOffset, 1.4, 0.85), terrainFootprint * 1.15, terrainOctaveCap)",
+		"ridgedFootprint(terrainCoordinates(p) * 11.0 + seedOffset, terrainFootprint * 11.0, terrainOctaveCap)",
+		"fbm4Footprint(terrainCoordinates(p) * 2.1 + 53.0 + seedOffset, terrainFootprint * 2.1, terrainOctaveCap)",
+		"fbm3Footprint(terrainCoordinates(p) * 4.0 + 7.0, terrainFootprint * 4.0, terrainOctaveCap)",
+	])
+		expect(source).toContain(call);
+	expect(bakeFragmentFor("terran", "albedo")).toContain(CLASS_GLSL.terran);
+	expect(source).toContain("fbm3(p * freq + 11.0)");
+	expect(source).toContain("1.0 - smoothstep(1.6, 2.0, cameraR)");
+	expect(source).toContain(
+		"distance(cameraPosition, vWorldP) * surfacePixelAngle",
+	);
+	expect(source).toContain("max(abs(dot(V, N)), 0.1)");
+	expect(fragmentFor("terran", "screen-space", false)).toContain(
+		CLASS_GLSL.terran,
+	);
+});
+
+test("zero extension returns the original helper without changed arithmetic", () => {
+	for (const name of ["fbm3", "fbm4", "fbm5", "ridged"]) {
+		expect(NOISE_GLSL).toContain(`if (extra <= 0.0) return ${name}(p);`);
+	}
+	expect(NOISE_GLSL).toContain(
+		"float weight = clamp(extra - float(i), 0.0, 1.0)",
+	);
+	expect(NOISE_GLSL).toContain("if (weight <= 0.0) break;");
+});
+
+// Run the emitted scalar arithmetic with a scalar coordinate and deterministic
+// noise stub. GLSL's vector multiply/add applies this recurrence per component;
+// the browser probe separately executes the actual three-dimensional field.
+function scalarFunction(name: string): string {
+	const start = NOISE_GLSL.indexOf(`float ${name}(`);
+	if (start < 0) throw new Error(`missing GLSL function ${name}`);
+	const open = NOISE_GLSL.indexOf("{", start);
+	let end = open + 1,
+		depth = 1;
+	for (; depth > 0; end++) {
+		if (NOISE_GLSL[end] === "{") depth++;
+		if (NOISE_GLSL[end] === "}") depth--;
+	}
+	return NOISE_GLSL.slice(start, end)
+		.replace(/float\(i\)/g, "i")
+		.replace(
+			/float (\w+)\(([^)]*)\)/,
+			(_, fn, args) =>
+				`function ${fn}(${args.replace(/(?:float|vec3) /g, "")})`,
+		)
+		.replace(/\b(?:float|int) /g, "let ");
+}
+
+test("emitted helpers normalise a fractional last octave and obey the cap", () => {
+	for (const name of ["fbm3", "fbm4", "fbm5", "ridged"]) {
+		const ridge = name === "ridged";
+		const count = ridge ? 4 : Number(name.slice(3));
+		const lac = ridge ? 2.07 : 2.03;
+		const offset = ridge ? 9.2 : 17.1;
+		const noise = (p: number) => 0.5 + Math.sin(p) * 0.25;
+		const run = new Function(
+			"vnoise",
+			`
+const {log, max, pow, abs} = Math;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+${scalarFunction(name)}
+${scalarFunction(`${name}Footprint`)}
+return [${name}, ${name}Footprint];`,
+		)(noise) as [
+			(p: number) => number,
+			(p: number, footprint: number, cap: number) => number,
+		];
+		for (const requested of [0, 0.5, 1, 2.5, 6, 9]) {
+			const footprint = 0.5 / lac ** (count + requested);
+			let p = 0.37,
+				sum = 0,
+				norm = 0;
+			const extra = Math.min(6, requested);
+			for (let i = 0; i < count + Math.ceil(extra); i++) {
+				const weight = 0.5 ** (i + 1) * Math.min(1, count + extra - i);
+				const value = ridge ? 1 - Math.abs(2 * noise(p) - 1) : noise(p);
+				sum += weight * value;
+				norm += weight;
+				p = p * lac + offset;
+			}
+			expect(run[1](0.37, footprint, 6)).toBeCloseTo(sum / norm, 14);
+			expect(run[1](0.37, footprint, 0)).toBe(run[0](0.37));
+		}
+		expect(run[1](0.37, 1, 6)).toBe(run[0](0.37));
+	}
+});
+
+test("draw callback reads the actual target and exposes all landed splices", () => {
+	const body = buildBodyVisual(
+		appearanceFor("planet", "footprint-47", 1, false),
+		new THREE.SphereGeometry(),
+	);
+	body.setDetailQuality("low");
+	expect(body.uniforms.extraOctaveCap.value).toBe(0);
+	body.setDetailQuality("high");
+	expect(body.uniforms.extraOctaveCap.value).toBe(6);
+	const camera = new THREE.PerspectiveCamera(60, 1.6, 0.1, 100);
+	let target: { height: number } | null = { height: 450 };
+	const renderer = {
+		getRenderTarget: () => target,
+		getDrawingBufferSize: (v: THREE.Vector2) => v.set(1440, 900),
+	} as unknown as THREE.WebGLRenderer;
+	const draw = () =>
+		body.surfaceMesh.onBeforeRender(
+			renderer,
+			new THREE.Scene(),
+			camera,
+			body.surfaceMesh.geometry,
+			body.surfaceMesh.material,
+			null as never,
+		);
+	draw();
+	const half = body.uniforms.surfacePixelAngle.value;
+	expect(body.surfaceMesh.material.fragmentShader).toContain(
+		"terrainOctaveCap =",
+	);
+	camera.position.z = 2;
+	draw();
+	expect(body.surfaceMesh.material.fragmentShader).toBe(
+		fragmentFor("terran", "four-tap", false),
+	);
+	camera.position.z = 1.2;
+	body.setDetailQuality("low");
+	draw();
+	expect(body.surfaceMesh.material.fragmentShader).toBe(
+		fragmentFor("terran", "four-tap", false),
+	);
+	target = null;
+	draw();
+	expect(body.uniforms.surfacePixelAngle.value).toBe(half / 2);
+	const splices = body.surfaceMesh.userData.footprintSplices;
+	expect(Object.keys(splices)).toHaveLength(4);
+	expect(Object.values(splices).every((hit) => hit === true)).toBe(true);
+});
+
+test("warm-up can compile the footprint variant without pinning or moving the body", () => {
+	const body = buildBodyVisual(
+		appearanceFor("planet", "footprint-47", 1, false),
+		new THREE.SphereGeometry(),
+	);
+	const base = body.surfaceMesh.material.fragmentShader;
+	const undo = body.prewarmFootprint();
+	expect(undo).not.toBeNull();
+	expect(body.surfaceMesh.material.fragmentShader).toContain(
+		"terrainOctaveCap =",
+	);
+	expect(body.surfaceMesh.userData.surfacePinned).toBe(false);
+	undo?.();
+	expect(body.surfaceMesh.material.fragmentShader).toBe(base);
+	body.setSurfaceClass("desert");
+	expect(body.prewarmFootprint()).toBeNull();
+});
+
+test("live game applies quality to each body before selecting its surface band", () => {
+	const source = readFileSync(
+		new URL("../src/main.ts", import.meta.url),
+		"utf8",
+	);
+	expect(source).toContain(
+		"visual.setDetailQuality(this.settings.value.quality)",
+	);
+});
