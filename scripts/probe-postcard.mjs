@@ -580,7 +580,7 @@ phase = "viewer-hull-failure";
 		"a failed postcard hull download shows Retry and paints no substitute card",
 		attempts === 1 &&
 			failed.text ===
-				"The postcard hull could not be loaded. Check your connection and try again." &&
+				"The postcard models could not be loaded. Check your connection and try again." &&
 			failed.retry &&
 			!failed.card,
 		JSON.stringify({ attempts, ...failed }),

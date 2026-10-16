@@ -33,6 +33,8 @@ import {
 	LONGWALL_NOZZLES_M,
 	buildShipMesh,
 	installLongwallModel,
+	rebuildAuthoredStandIn,
+	shipMuzzlesKm,
 	isAuthoredHull,
 	isDriveBell,
 	isHullPaint,
@@ -73,10 +75,40 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 		expect(isAuthoredHull("courier", "a")).toBe(false);
 	});
 
-	test("building it uninstalled throws rather than drawing a loft", async () => {
+	test("before install the selected miner measures stand-in muzzles; install remeasures the authored hull once", async () => {
+		const authoritative = structuredClone(HULL_SPECS.miner);
 		installLongwallModel(null);
 		try {
-			expect(() => buildShipMesh("miner", "b")).toThrow(/prepareLongwallModel/);
+			const root = buildShipMesh("miner", "b").root;
+			expect(root.userData.authored).not.toBe(true);
+			const before = shipMuzzlesKm("miner", "b", root);
+			const onMetal = (muzzles: ReturnType<typeof shipMuzzlesKm>) => {
+				root.updateMatrixWorld(true);
+				const box = new THREE.Box3().setFromObject(root);
+				const caster = new THREE.Raycaster();
+				expect(muzzles).toHaveLength(HULL_SPECS.miner.hardpoints);
+				for (const m of muzzles) {
+					caster.set(
+						new THREE.Vector3(m.x, m.y, box.min.z - 1),
+						new THREE.Vector3(0, 0, 1),
+					);
+					const hit = caster.intersectObject(root, true).find((h) => h.face);
+					expect(hit).toBeDefined();
+					expect(hit!.point.z).toBeCloseTo(m.z, 6);
+				}
+			};
+			onMetal(before);
+			expect(HULL_SPECS.miner).toEqual(authoritative);
+			expect(rebuildAuthoredStandIn(root)).toBe(false);
+			await installShippedLongwall();
+			expect(rebuildAuthoredStandIn(root)).toBe(true);
+			expect(root.userData.authored).toBe(true);
+			const after = shipMuzzlesKm("miner", "b");
+			expect(after).not.toEqual(before);
+			onMetal(after);
+			expect(HULL_SPECS.miner).toEqual(authoritative);
+			expect(rebuildAuthoredStandIn(root)).toBe(false);
+			expect(shipMuzzlesKm("miner", "b")).toBe(after);
 			// The lofts do not depend on it.
 			expect(() => buildShipMesh("miner", "a")).not.toThrow();
 		} finally {

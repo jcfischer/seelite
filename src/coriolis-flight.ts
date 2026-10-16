@@ -140,8 +140,8 @@ async function loadIndustrialStationBuilder(
 }
 
 let ready: Promise<void> | undefined;
-/** Await before any game, postcard or station workbench constructs station
- * geometry. `onProgress` hears the download this call starts; a call that
+/** Required when the home exterior or postcard frame draws trade/a; otherwise
+ * the session queue installs this behind the procedural stand-in. `onProgress` hears the download this call starts; a call that
  * finds one already started or done hears nothing, and the boot's tracker
  * counts it on resolve (`model-progress.ts`). */
 export function prepareCoriolisModel(
@@ -155,11 +155,8 @@ export function prepareCoriolisModel(
 		}));
 }
 
-/** The asset is required for the world, so an interrupted download gets a
- * visible retry before any Game (or save-store attachment) is constructed.
- * `also` names the page's other required models — a Game's cockpit
- * (`cockpit-model.ts`). The full-screen panel's form of `loadRequiredModels`,
- * for every page whose world waits on nothing else. */
+/** Workbench loading panel. Game and postcard boot select their required
+ * model IDs in main.ts instead of unconditionally requiring a Coriolis. */
 export function prepareCoriolisPage(
 	also: readonly ModelLoader[] = [],
 ): Promise<void> {

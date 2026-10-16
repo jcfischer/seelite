@@ -4,6 +4,12 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-model-queue.mjs": [
+		"scripts/probe-model-queue.mjs",
+		"src/model-queue.ts",
+		"src/model-catalog.ts",
+		"src/system-models.ts",
+	],
 	"probe-missiles.mjs": [
 		"scripts/probe-missiles.mjs",
 		"src/missiles.ts",

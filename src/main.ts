@@ -32,7 +32,20 @@ import {
 	commanderJumpRangeLy,
 } from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
-import { homeRefineryForm, homeShipyardForm } from "./home-shipyard";
+import { ModelQueue } from "./model-queue";
+import {
+	ALL_MODELS,
+	modelLoaders,
+	type ModelId,
+	isAuthoredHullModel,
+	SHIPYARD_MODELS,
+	REFINERY_MODELS,
+} from "./model-catalog";
+import {
+	bootModelIds,
+	systemModelIds,
+	trafficRosterHulls,
+} from "./system-models";
 import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
@@ -785,7 +798,6 @@ import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
 	AFTER_BOOT_HULL_IDS,
-	type AfterBootHullId,
 	buildShipMesh,
 	rebuildAuthoredStandIn,
 	fleetLayout,
@@ -2221,16 +2233,25 @@ const FLEET_REACH_KM =
 		),
 	);
 
-/** Each after-boot hull's loader (node #831; the tug since node #814), imported
- *  on demand so neither model's module is in the boot chunk. */
-const AFTER_BOOT_HULL_MODELS: Record<
-	AfterBootHullId,
-	() => Promise<() => Promise<void>>
-> = {
-	courier: () =>
-		import("./courier-hull").then((m) => m.prepareCourierHullModel),
-	tug: () => import("./tug-hull").then((m) => m.prepareTugHullModel),
-};
+/** One session queue. Required loads adopt their result before a Game exists. */
+let installedGame: Game | undefined;
+const models = new ModelQueue(modelLoaders, async (id) => {
+	await installedGame?.modelInstalled(id as ModelId);
+});
+async function requireModels(
+	ids: readonly ModelId[],
+	view = loadingPanel("game"),
+	building = false,
+) {
+	await loadRequiredModels(
+		ids.map((id) => modelLoaders[id]),
+		view,
+		{ then: building ? "building" : "done" },
+	);
+	if (installedGame)
+		for (const id of ids) await installedGame.modelInstalled(id);
+	models.adopt(ids);
+}
 
 class Game {
 	readonly world: World;
@@ -6838,6 +6859,7 @@ class Game {
 			if (marked >= 0)
 				this.markedOcclusion[marked] = ["ship", markOcclusion(this.shipMesh)];
 		}
+		rebuildAuthoredStandIn(this.tenderMesh);
 		for (const root of this.trafficMeshes.values())
 			rebuildAuthoredStandIn(root);
 		for (const parked of this.fleet) {
@@ -6855,31 +6877,54 @@ class Game {
 			);
 	}
 
-	/** A background failure keeps that hull's loft and never reaches the boot
-	 *  Retry panel. Each live Game starts this once, after construction. A
-	 *  postcard requires the models separately, then calls this to refresh its
-	 *  stand-ins. The courier, the player's own hull, loads first; the tug's
-	 *  download starts when the courier's has settled (node #814), so the two
-	 *  do not share the link. Each hull fails alone. */
-	private authoredHullsLoad?: Promise<void>;
-	loadAuthoredHullsAfterBoot(): Promise<void> {
-		return (this.authoredHullsLoad ??= AFTER_BOOT_HULL_IDS.reduce(
-			(previous, id) => previous.then(() => this.loadAuthoredHull(id)),
-			Promise.resolve(),
-		));
+	/** Queue readiness includes current-system mesh refreshes, not an elapsed delay. */
+	modelsSettled(): boolean {
+		return models.settled(this.currentModelIds()) && !this.interiorRefresh;
 	}
-	private loadAuthoredHull(id: AfterBootHullId): Promise<void> {
-		return AFTER_BOOT_HULL_MODELS[id]()
-			.then(async (prepare) => {
-				await prepare();
-				this.refreshAuthoredHulls();
-			})
-			.catch((error) => {
-				console.warn(
-					`${id} hull: background load failed; keeping the procedural hull`,
-					error,
-				);
-			});
+	private currentModelIds(): ModelId[] {
+		this.ensureTrafficActors();
+		return systemModelIds(
+			this.world.system,
+			[
+				...this.trafficCandidates().map((a) => a.hullId),
+				...(this.tenderMesh.parent ? [RELAY_TENDER_HULL_ID] : []),
+				...this.fleet.map((p) => p.mesh.userData.hullId as HullId),
+				...Array.from(
+					this.derelictMeshes.values(),
+					(d) => d.root.userData.hullId as HullId,
+				),
+			],
+			this.flownHull,
+		);
+	}
+	/** Derive the complete destination roster before arrival, from seeded contents. */
+	private nextModelIds(): ModelId[] {
+		const next = this.nextHop();
+		if (!next) return [];
+		const contentsFor = (index: number) => this.trafficContentsFor(index);
+		return systemModelIds(
+			makeSystem(next, this.world.gameTime),
+			trafficRosterHulls(this.world.galaxy, next.index, contentsFor),
+			this.flownHull,
+		);
+	}
+	startModelQueue(): void {
+		models.prioritize(this.currentModelIds(), this.nextModelIds());
+	}
+	/** Install callbacks always inspect live caches; a jump never waits for them. */
+	async modelInstalled(id: ModelId): Promise<void> {
+		if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
+		else if (id === "interiors") await this.refreshInteriorMeshes();
+		else if (id === "coriolis")
+			await this.refreshAuthoredStations("trade", "a");
+		else if (id.startsWith("shipyard/"))
+			await this.refreshAuthoredStations("shipyard", id.split("/")[1]);
+		else if (id.startsWith("refinery/"))
+			await this.refreshAuthoredStations("refinery", id.split("/")[1]);
+	}
+	/** Compatibility handles for existing probes; every load uses the same queue. */
+	loadAuthoredHullsAfterBoot(): Promise<void> {
+		return models.wait(AFTER_BOOT_HULL_IDS);
 	}
 
 	private readonly interiorPresentations = new Map<
@@ -6916,7 +6961,6 @@ class Game {
 			release: [],
 		});
 	}
-	private interiorLoad?: Promise<void>;
 	private interiorWarningShown = false;
 	private warnInteriorFailure(error: unknown): void {
 		if (this.interiorWarningShown) return;
@@ -6926,27 +6970,18 @@ class Game {
 			error,
 		);
 	}
-	interiorModelsSettled = false;
-	/** Current interim install seam; node #838 owns the future general queue. */
+	get interiorModelsSettled(): boolean {
+		return models.settled(["interiors"]) && !this.interiorRefresh;
+	}
 	loadInteriorsAfterBoot(): Promise<void> {
-		return (this.interiorLoad ??= import("./interior-model")
-			.then(async ({ prepareInteriorModel }) => {
-				await prepareInteriorModel();
-				await this.refreshInteriorMeshes();
-			})
-			.catch((error) => this.warnInteriorFailure(error))
-			.finally(() => {
-				this.interiorModelsSettled = true;
-			}));
+		return models.wait(["interiors"]);
 	}
 
 	private interiorRefresh?: Promise<void>;
 	private refreshInteriorMeshes(): Promise<void> {
 		if (this.interiorRefresh) return this.interiorRefresh;
-		this.interiorModelsSettled = false;
 		return (this.interiorRefresh = this.installInteriorMeshes().finally(() => {
 			this.interiorRefresh = undefined;
-			this.interiorModelsSettled = true;
 		}));
 	}
 	private async installInteriorMeshes(): Promise<void> {
@@ -7010,65 +7045,19 @@ class Game {
 			}
 		}
 	}
-	/**
-	 * The authored shipyards (node #818) install after boot, each replacing
-	 * its form's procedural stand-in wherever one is drawn; a form that fails
-	 * keeps its stand-in, and the sim collides with the authored yard either
-	 * way. Settled once every form has installed or failed (`shipyards-full`
-	 * waits for it).
-	 */
-	shipyardModelsSettled = false;
-	private shipyardLoad?: Promise<void>;
+	get shipyardModelsSettled(): boolean {
+		return models.settled(SHIPYARD_MODELS);
+	}
 	loadShipyardsAfterBoot(): Promise<void> {
-		return (this.shipyardLoad ??= import("./shipyard-flight")
-			.then(({ SHIPYARD_FORMS, prepareShipyardModel }) =>
-				Promise.all(
-					SHIPYARD_FORMS.map((form) =>
-						prepareShipyardModel(form)
-							.then(() => this.refreshAuthoredStations("shipyard", form))
-							.catch((error) =>
-								console.warn(
-									`shipyard ${form}: background load failed; keeping the procedural form`,
-									error,
-								),
-							),
-					),
-				),
-			)
-			.then(() => {})
-			.finally(() => {
-				this.shipyardModelsSettled = true;
-			}));
+		return models.wait(SHIPYARD_MODELS);
 	}
-	/**
-	 * The authored refineries (node #819), installed after boot as the
-	 * shipyards are, each replacing its form's procedural stand-in wherever
-	 * one is drawn; a form that fails keeps its stand-in. Settled once every
-	 * form has installed or failed (`refineries-full` waits for it).
-	 */
-	refineryModelsSettled = false;
-	private refineryLoad?: Promise<void>;
+	get refineryModelsSettled(): boolean {
+		return models.settled(REFINERY_MODELS);
+	}
 	loadRefineriesAfterBoot(): Promise<void> {
-		return (this.refineryLoad ??= import("./refinery-flight")
-			.then(({ REFINERY_FORMS, prepareRefineryModel }) =>
-				Promise.all(
-					REFINERY_FORMS.map((form) =>
-						prepareRefineryModel(form)
-							.then(() => this.refreshAuthoredStations("refinery", form))
-							.catch((error) =>
-								console.warn(
-									`refinery ${form}: background load failed; keeping the procedural form`,
-									error,
-								),
-							),
-					),
-				),
-			)
-			.then(() => {})
-			.finally(() => {
-				this.refineryModelsSettled = true;
-			}));
+		return models.wait(REFINERY_MODELS);
 	}
+
 	/**
 	 * Rebuild every drawn station of `type` and `form` from its installed
 	 * model (the shipyards, node #818; the refineries, node #819). The new
@@ -7079,7 +7068,7 @@ class Game {
 	 * for the whole system, as an interior install redoes them.
 	 */
 	private async refreshAuthoredStations(
-		type: "shipyard" | "refinery",
+		type: "trade" | "shipyard" | "refinery",
 		form: string,
 	): Promise<void> {
 		const system = this.world.system;
@@ -7092,7 +7081,12 @@ class Game {
 			const previous = this.stationVisuals.get(body.id);
 			// Built after the install (a home station, a later jump): already
 			// the authored model.
-			if (!previous || isAuthoredStation(previous.root)) continue;
+			if (
+				!previous ||
+				isAuthoredStation(previous.root) ||
+				previous.root.getObjectByName("industrial-coriolis-exterior")
+			)
+				continue;
 			const live = () => this.stationVisuals.get(body.id) === previous;
 			const built = buildStationMesh(station, body.color);
 			built.root.name = body.id;
@@ -7153,12 +7147,15 @@ class Game {
 
 	/** Sharing a card waits for the authored kit, even after a background failure. */
 	private async openPostcardWithModels(): Promise<void> {
-		const { prepareInteriorModel } = await import("./interior-model");
-		await loadRequiredModels(
-			[prepareInteriorModel],
-			loadingPanel("postcard interiors"),
-		);
-		await this.refreshInteriorMeshes();
+		const ids = this.currentModelIds();
+		const view = loadingPanel("postcard models");
+		view({ kind: "loading", fraction: null });
+		await models.wait(ids);
+		const failed = ids.filter((id) => models.state(id) === "failed");
+		if (failed.length) {
+			await requireModels(failed, view);
+		}
+		view({ kind: "done" });
 		this.postcardPanel?.open();
 	}
 
@@ -7199,6 +7196,7 @@ class Game {
 		if (marked >= 0) this.markedOcclusion[marked] = record;
 		else this.markedOcclusion.push(record);
 		this.nearScene.add(mesh);
+		if (installedGame === this) this.startModelQueue();
 	}
 
 	/**
@@ -13485,6 +13483,7 @@ class Game {
 	setCourseTo(course: Course | null) {
 		this.course = course;
 		this.jumpNotice = "";
+		if (installedGame === this) this.startModelQueue();
 	}
 
 	/**
@@ -15620,13 +15619,11 @@ class Game {
 				this.markedOcclusion.splice(i, 1);
 
 		this.buildBodies();
-		this.interiorModelsSettled = false;
-		void this.loadInteriorsAfterBoot()
-			.then(() => this.refreshInteriorMeshes())
-			.catch((error) => this.warnInteriorFailure(error))
-			.finally(() => {
-				this.interiorModelsSettled = true;
-			});
+		if (models.state("interiors") === "installed")
+			void this.refreshInteriorMeshes().catch((error) =>
+				this.warnInteriorFailure(error),
+			);
+		this.startModelQueue();
 		this.buildEnvironment();
 		// The sky is a picture of *this* system's neighbourhood, so a jump to a
 		// different star draws a different sky (#431). The faint population is
@@ -22020,43 +22017,29 @@ if (postcard) {
 		throw new Error(
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
-	const { prepareCockpitModel } = await import("./cockpit-model");
-	const { prepareLongwallModel } = await import("./longwall-model");
-	await (await import("./coriolis-flight")).prepareCoriolisPage([
-		prepareCockpitModel,
-		prepareLongwallModel,
-	]);
+	const frameWorld = restoreWorld(
+		postcard.recipe.seed,
+		postcard.recipe.galaxy,
+		postcard.recipe.system,
+		postcard.recipe.timeS,
+	);
+	const contentsFor = (index: number) =>
+		generateContents(frameWorld.galaxy.systems.find((r) => r.index === index)!);
+	await requireModels(
+		systemModelIds(
+			frameWorld.system,
+			trafficRosterHulls(
+				frameWorld.galaxy,
+				postcard.recipe.system,
+				contentsFor,
+			),
+			"courier",
+		),
+		loadingPanel("postcard models"),
+	);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
-	// A postcard must draw the authored hulls: a failure is a visible Retry,
-	// unlike a live game's background fallback. Wait after Game construction,
-	// then refresh the stand-ins before mounting the single-frame viewer.
-	const { prepareCourierHullModel } = await import("./courier-hull");
-	const { prepareTugHullModel } = await import("./tug-hull");
-	await loadRequiredModels(
-		[prepareCourierHullModel, prepareTugHullModel],
-		loadingPanel("postcard hull"),
-	);
-	await game.loadAuthoredHullsAfterBoot();
-	const { prepareInteriorModel } = await import("./interior-model");
-	await loadRequiredModels(
-		[prepareInteriorModel],
-		loadingPanel("postcard interiors"),
-	);
-	await game.loadInteriorsAfterBoot();
-	// The card draws the authored shipyards, as it draws the authored hulls.
-	const { shipyardModelLoaders } = await import("./shipyard-flight");
-	await loadRequiredModels(
-		[...shipyardModelLoaders],
-		loadingPanel("postcard shipyards"),
-	);
-	await game.loadShipyardsAfterBoot();
-	// And the authored refineries (node #819).
-	const { refineryModelLoaders } = await import("./refinery-flight");
-	await loadRequiredModels(
-		[...refineryModelLoaders],
-		loadingPanel("postcard refineries"),
-	);
-	await game.loadRefineriesAfterBoot();
+	installedGame = game;
+	await game.modelInstalled("interiors");
 	await game.whenSkyReady();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
@@ -22143,35 +22126,11 @@ if (postcard) {
 	// `?seed=N` visit booted somebody else's galaxy with nothing said, so a
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
-	// Fetch in parallel with the Commander catalog; wait only at world construction.
+	// Open the Commander overlay before requesting the selected boot models.
 	// **One relay for the download (#833)**: it starts on the full-screen panel,
-	// since nothing yet says whether the overlay opens, and moves into the
-	// overlay once the plan says it does.
+	// and moves into the overlay once the plan says it opens.
 	//
-	// Node #831 loads the courier after Game construction. The miner's
-	// interim boot wait remains under the principal's waiver on node #838.
 	const loading = loadRelay(loadingPanel("game"));
-	const stationModel = Promise.all([
-		import("./coriolis-flight"),
-		import("./cockpit-model"),
-		import("./longwall-model"),
-		query.has("interiors-full")
-			? import("./interior-model")
-			: Promise.resolve(null),
-	]).then(([m, cockpit, longwall, interiors]) =>
-		loadRequiredModels(
-			[
-				m.prepareCoriolisModel,
-				cockpit.prepareCockpitModel,
-				longwall.prepareLongwallModel,
-				...(interiors ? [interiors.prepareInteriorModel] : []),
-			],
-			loading.view,
-			{ then: "building" },
-		),
-	);
-	// Keep a fast rejection handled while IndexedDB is still opening.
-	void stationModel.catch(() => {});
 	const boot = bootMode(query);
 	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
 	// #432). Where the permission is computed and why it is the boot's rather than
@@ -22330,33 +22289,32 @@ if (postcard) {
 	};
 	const overlay = overlayBeforeModels(plan) ? mountOverlay() : null;
 	if (overlay) loading.moveTo(overlay.loading);
-	await stationModel;
-	// A Commander docked at a shipyard waits for that form's model too: the
-	// home exterior is the one station model the boot holds for (map #1,
-	// #830/#835). Every other shipyard installs after boot (node #818).
-	const homeShipyard = homeShipyardForm(plan.loaded);
-	if (homeShipyard) {
-		const { prepareShipyardModel } = await import("./shipyard-flight");
-		await loadRequiredModels(
-			[(progress) => prepareShipyardModel(homeShipyard, progress)],
-			loading.view,
-			{ then: "building" },
-		);
-	}
-	// And a Commander docked at a refinery for that form's (node #819).
-	const homeRefinery = homeRefineryForm(plan.loaded);
-	if (homeRefinery) {
-		const { prepareRefineryModel } = await import("./refinery-flight");
-		await loadRequiredModels(
-			[(progress) => prepareRefineryModel(homeRefinery, progress)],
-			loading.view,
-			{ then: "building" },
-		);
-	}
-	// The `Game` build blocks the page for seconds, so the "Building the
-	// world" line has to be on screen before it starts, not queued behind it.
-	await nextPaint();
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
+	const freshWorld = () =>
+		askedSystem === null
+			? makeWorld(worldSeed)
+			: makeWorldAtSystem(worldSeed, askedSystem);
+	const bootWorld = (() => {
+		if (!plan.loaded) return freshWorld();
+		try {
+			return restoreWorld(
+				plan.loaded.world.seed,
+				plan.loaded.commander.galaxyIndex,
+				plan.loaded.commander.systemIndex,
+				plan.loaded.world.gameTime,
+			);
+		} catch {
+			return freshWorld();
+		} // Game reports the restore fault below.
+	})();
+	await requireModels(
+		query.has("models-full")
+			? ALL_MODELS
+			: bootModelIds(bootWorld.system, plan.loaded?.commander.dockedAt ?? null),
+		loading.view,
+		true,
+	);
+	await nextPaint();
 	let game: Game;
 	try {
 		game = new Game(worldSeed, plan.loaded, askedSystem);
@@ -22376,6 +22334,11 @@ if (postcard) {
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
 		restoreFaulted = true;
+		await requireModels(
+			bootModelIds(freshWorld().system, null),
+			loading.view,
+			true,
+		);
 		game = new Game(worldSeed, null, askedSystem);
 	}
 	// The world is built: the loading panel or the overlay's line goes.
@@ -22384,7 +22347,11 @@ if (postcard) {
 	// Before the `interiors-full` wait: a probe boot that awaits the sliced
 	// install must not let the sim run through it (#843).
 	game.clockHeld = true;
-	void game.loadAuthoredHullsAfterBoot();
+	installedGame = game;
+	game.startModelQueue();
+	// Models adopted before construction already draw authored geometry.
+	if (models.state("interiors") === "installed")
+		await game.modelInstalled("interiors");
 	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
 	else void game.loadInteriorsAfterBoot();
 	if (query.has("shipyards-full")) await game.loadShipyardsAfterBoot();
