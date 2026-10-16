@@ -93,6 +93,10 @@ import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
  */
 export const RIG_MOUSE: Trigger = { kind: "mouse-button", action: "hold" };
 
+// Layout freezes through its rows; rebind returns a new identity. Weak keys
+// let retired layouts go without an invalidation hook (node #500).
+const rigLegends = new WeakMap<Layout, string>();
+
 /**
  * The legend, read off the layout in force (#381 S5).
  *
@@ -110,6 +114,8 @@ export const RIG_MOUSE: Trigger = { kind: "mouse-button", action: "hold" };
  * drawn on is `?combat=1`, which says what it is.
  */
 export function rigLegend(layout: Layout): string {
+	const held = rigLegends.get(layout);
+	if (held !== undefined) return held;
 	const keys = (id: CommandId) => boundNames(layout, id, onKeyboard);
 	const beam = anyOf([...keys("fight.fireBeam"), triggerLabel(RIG_MOUSE)]);
 	// The mouse-flight layout gives the pulse laser's key to the vertical
@@ -121,7 +127,9 @@ export function rigLegend(layout: Layout): string {
 		const found = keys(id);
 		return found.length > 0 ? anyOf(found) : "unbound";
 	};
-	return `${named("fight.firePulse")} pulse · ${beam} beam · ${named("fight.rigIncoming")} warning · ${named("fight.rigEcm")} ECM`;
+	const legend = `${named("fight.firePulse")} pulse · ${beam} beam · ${named("fight.rigIncoming")} warning · ${named("fight.rigEcm")} ECM`;
+	rigLegends.set(layout, legend);
+	return legend;
 }
 
 /** The font a line was fitted at, and the width its widest text takes there. */
