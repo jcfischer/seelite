@@ -289,7 +289,15 @@ hub strobes and mouth ring where the aperture axis sees them. The Hangar's <!-- 
 floods sit on the lips of its bay mouth and its arc on the slab's face below
 the mouth; the Slipway's floods sit on the arc's inner face between its struts
 and its arc on a slip-head, at the slip's edge. Both gain macro fixtures on
-their static frames. The trade pool is handled by its own node.
+their static frames.
+
+Node #747 flies trade Coriolis, Ring, Drum and Assembly, uniformly drawn per
+system. Ring's bay and mouth sit in its enlarged hub on the shared trade
+plane. Drum's mouth and forward cap meet that plane and carry a window run
+visible on approach alongside its barrel windows. Assembly's hub clutter
+turns with its hub, while its industrial service rails and tip masts stay on
+the planted static spine. The role's warm windows, strobes and mouth ring
+remain common to all four forms; the Wheel follows in its own node.
 
 **An authored shipyard has its own row** (node #818, the principal's rulings
 of 2026-10-13). The three approved yard models replace those forms in flight

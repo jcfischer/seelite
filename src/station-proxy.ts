@@ -45,8 +45,8 @@
  * plan outside the range it names is not measured.
  *
  * **What it turns with.** `spinning` primitives are in the spinning member's
- * frame. `static` primitives are in the static frame — only non-empty for the
- * shipyard, whose keel is static while the drum spins.
+ * frame. `static` primitives are in the static frame: the shipyard's yard
+ * and the trade Assembly's cell structure stay still while their hubs spin.
  *
  * **The openings** (§2.2), read from the interior catalogue rather than
  * restated. On a trade station or a shipyard the proxy leaves the bay open over
@@ -88,6 +88,7 @@ import {
 	type SphereGrid,
 } from "./sphere-grid";
 import { SALVAGE_CORE } from "./station-plant";
+import { HUB, modularPlacements } from "./station-modular";
 import { type Vec3, cross, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
@@ -142,12 +143,12 @@ export type ProxyPrimitive = ProxyBox | ProxySphere | ProxyCapsule;
  * Both primitive lists are in kilometres. `spinning` is in the spinning
  * member's frame (rotated by the phase from `slotPhaseRad`). `static` is
  * in the station's non-rotating frame; it is non-empty only for forms
- * with a static structure (the shipyard's keel).
+ * with a static structure (the shipyard's yard and the trade Assembly).
  */
 export interface StationProxy {
 	/** Primitives in the spinning member's frame. */
 	readonly spinning: readonly ProxyPrimitive[];
-	/** Primitives in the static frame (the shipyard's keel). */
+	/** Primitives in the static frame (the shipyard's yard or Assembly's cells). */
 	readonly static: readonly ProxyPrimitive[];
 	/**
 	 * The thinnest primitive in the proxy, kilometres — the figure §4.1's
@@ -448,6 +449,111 @@ function tradeCoriolisProxy(): StationProxy {
 		...cutAround(solid, bayHoles("trade")),
 		...vertices.map((v) => sphere(v, VERTEX_RADIUS)),
 	]);
+}
+
+// ---------------------------------------------------------------------------
+// Trade B — Ring
+// ---------------------------------------------------------------------------
+
+function tradeRingProxy(): StationProxy {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const major = r * 0.92;
+	const spinning: ProxyPrimitive[] = [
+		...ring(major, 0, r * 0.17, 24),
+		...ring(major * 0.56, 0, r * 0.016, 24),
+		...cutAround(
+			[
+				axial(
+					r * 0.34,
+					r * 0.34,
+					-r * 0.42,
+					STATION_GEOMETRY.trade.aperturePlaneKm + 0.016,
+				),
+			],
+			bayHoles("trade"),
+		),
+	];
+	// The two face masts carry dishes 90 m above the rim's crown.
+	for (const side of [-1, 1])
+		spinning.push(
+			capsule(
+				{ x: side * major, y: 0, z: r * 0.13 },
+				{ x: side * major, y: 0, z: r * 0.13 + 0.092 },
+				0.015,
+			),
+		);
+	for (let i = 0; i < 4; i++) {
+		const theta = (i * Math.PI) / 2;
+		for (const side of [-1, 1]) {
+			const point = (radial: number, tangent: number): Point => ({
+				x: Math.cos(theta) * radial - Math.sin(theta) * tangent,
+				y: Math.sin(theta) * radial + Math.cos(theta) * tangent,
+				z: 0,
+			});
+			spinning.push(
+				capsule(
+					point(r * 0.14, side * r * 0.04),
+					point(major - r * 0.13 * 0.94, side * r * 0.15),
+					r * 0.026,
+				),
+			);
+		}
+	}
+	return proxyOf(spinning);
+}
+
+// ---------------------------------------------------------------------------
+// Trade C — Drum
+// ---------------------------------------------------------------------------
+
+function tradeDrumProxy(): StationProxy {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const body = r * 0.46;
+	// Twelve-sided barrel, bands, and its flank machinery. Slices narrow at
+	// the aft cap so their corners stay within the form's 660 m reach.
+	const solid = [
+		axial(body * 0.55, body * 0.55, -r * 1.02, -r * 0.86),
+		axial(0.29, 0.29, -r * 0.86, -r * 0.5),
+		axial(body * 1.18, body * 1.18, -r * 0.5, r * 0.6),
+		axial(
+			body * 0.8,
+			body * 0.8,
+			r * 0.6,
+			STATION_GEOMETRY.trade.aperturePlaneKm + 0.016,
+		),
+	];
+	return proxyOf(cutAround(solid, bayHoles("trade")));
+}
+
+// ---------------------------------------------------------------------------
+// Trade D — Assembly: the hub spins; the solved cell structure does not.
+// ---------------------------------------------------------------------------
+
+function tradeAssemblyProxy(assemblySeed: number): StationProxy {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
+	const spinning = cutAround(
+		[axial(r * 0.34, r * 0.34, -r * 0.3, plane + 0.016)],
+		bayHoles("trade"),
+	);
+	const bay = stationInterior("trade", plane);
+	const [end] = interiorAxialSpanKm(bay);
+	const swept = Math.hypot(bay.halfAcrossKm, bay.halfUpKm);
+	// Cut the swept bay, not its phase-zero rectangle, from static cells.
+	const holes = [axial(swept, swept, end, Infinity)];
+	const cells = modularPlacements(assemblySeed)
+		.placements.filter((p) => p.module !== HUB)
+		.map(
+			(p): Bounds => ({
+				x0: p.dx * 0.2 - 0.1,
+				x1: p.dx * 0.2 + 0.1,
+				y0: p.dy * 0.2 - 0.1,
+				y1: p.dy * 0.2 + 0.1,
+				z0: -0.06,
+				z1: 0.1,
+			}),
+		);
+	return proxyOf(spinning, cutAround(cells, holes));
 }
 
 // ---------------------------------------------------------------------------
@@ -757,7 +863,18 @@ export function stationProxy(
 ): StationProxy | null {
 	switch (type) {
 		case "trade":
-			return form === "a" ? tradeCoriolisProxy() : null;
+			switch (form) {
+				case "a":
+					return tradeCoriolisProxy();
+				case "b":
+					return tradeRingProxy();
+				case "c":
+					return tradeDrumProxy();
+				case "d":
+					return tradeAssemblyProxy(assemblySeed);
+				default:
+					return null;
+			}
 		case "shipyard":
 			switch (form) {
 				case "a":
@@ -1080,7 +1197,7 @@ export function resolverPrimitive(p: ProxyPrimitive): Primitive {
 
 /**
  * The proxy's two frames as resolver primitives. `static` is empty except on
- * the shipyard; a station that does not spin has one frame, and both lists
+ * the shipyard and trade Assembly; a station that does not spin has one frame, and both lists
  * are posed on it.
  */
 export function proxySolids(proxy: StationProxy): {

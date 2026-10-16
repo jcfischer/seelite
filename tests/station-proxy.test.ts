@@ -62,6 +62,7 @@ import {
 	stationProxy,
 } from "../src/station-proxy";
 import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
+import { HUB, modularPlacements } from "../src/station-modular";
 import { ASSEMBLY_SEEDS, isSeededForm } from "./helpers/solved-forms";
 import {
 	BERTH_SIDES,
@@ -156,6 +157,29 @@ afterAll(() => {
 });
 
 describe("station proxy budget (collision.md §9.1.11)", () => {
+	test("the trade Assembly's proxy reads the assembly seed, cell by cell", () => {
+		const shapes = new Set<string>();
+		for (const seed of ASSEMBLY_SEEDS) {
+			const proxy = stationProxy("trade", "d", 0, seed)!;
+			const cells = modularPlacements(seed).placements.filter(
+				(p) => p.module !== HUB,
+			);
+			for (let x = -4; x <= 4; x++)
+				for (let y = -4; y <= 4; y++)
+					expect([
+						seed,
+						x,
+						y,
+						proxyContains(proxy.static, x * 0.2, y * 0.2, -0.04, 0),
+					]).toEqual([seed, x, y, cells.some((p) => p.dx === x && p.dy === y)]);
+			shapes.add(JSON.stringify(proxy.static));
+			expect(proxy.spinning).toEqual(
+				stationProxy("trade", "d", 0, 0)!.spinning,
+			);
+		}
+		expect(shapes.size).toBeGreaterThan(1);
+	});
+
 	test("every form in every pool has a proxy", () => {
 		// Node #717: a system picks each station's form from its role's pool,
 		// so every member can be drawn and every member is solid. Growing a
@@ -315,6 +339,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// opening and no-tunnelling rows carry the separate safety obligations.
 		const DECLARED: Partial<Record<string, number>> = {
 			"trade/a": 0.032,
+			"trade/b": 0.016,
+			"trade/c": 0.016,
+			"trade/d": 0.016,
 			"shipyard/a": 0.0007,
 			"shipyard/b": 0.0007,
 			"shipyard/c": 0.0007,

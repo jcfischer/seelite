@@ -1563,10 +1563,15 @@ check(
 );
 
 // Node #745: fly generated refineries in four systems, one page per case;
-// node #746 adds the shipyard's three forms, each in its own start system.
+// node #746 adds the shipyard's three forms, and node #747 trade a–d,
+// each in its own start system.
 // Seeds pin every pooled form; never mutate a station's drawn form in place.
 // The approach, berth reservation and launch all go through Game's protocol.
 for (const [type, seed, formId] of [
+	["trade", 3, "a"],
+	["trade", 5, "b"],
+	["trade", 21, "c"],
+	["trade", 1, "d"],
 	["refinery", 1, "a"],
 	["refinery", 28, "b"],
 	["refinery", 2, "c"],
