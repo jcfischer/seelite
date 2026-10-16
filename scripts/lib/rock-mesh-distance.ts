@@ -1,7 +1,6 @@
 /** Exact point-to-mesh measurement from node #949 spike commit 31f9c00c. */
 import type { V3 } from "../../src/rock-heightfields";
-const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+import { dot, sub } from "./v3";
 /** Closest point on triangle abc to p (Ericson, Real-Time Collision Detection 5.1.5). */
 export function closestOnTriangle(p: V3, a: V3, b: V3, c: V3): V3 {
 	const ab = sub(b, a),

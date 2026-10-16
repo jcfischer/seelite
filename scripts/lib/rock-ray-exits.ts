@@ -1,18 +1,21 @@
 /** Texel-centre outermost exits, from node #949 spike commit 31f9c00c.
  * No dilation: this is the symmetric heightfield selected by D1.
  */
-import { dirOf, faceUV, type V3 } from "../../src/rock-heightfields";
+import {
+	dirOf,
+	faceUV,
+	ROCK_HEIGHTFIELD_FACES,
+	type V3,
+} from "../../src/rock-heightfields";
+import { cross, dot, sub } from "./v3";
 const texel = (res: number, f: number, i: number, j: number) =>
 	(f * res + j) * res + i;
-const cross = (a: V3, b: V3): V3 => [
-	a[1] * b[2] - a[2] * b[1],
-	a[2] * b[0] - a[0] * b[2],
-	a[0] * b[1] - a[1] * b[0],
-];
-const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 export function outermostExits(tris: Float32Array, res: number): Float32Array {
 	const nt = tris.length / 9;
-	const bins: number[][] = Array.from({ length: 6 * res * res }, () => []);
+	const bins: number[][] = Array.from(
+		{ length: ROCK_HEIGHTFIELD_FACES * res * res },
+		() => [],
+	);
 	for (let t = 0; t < nt; t++) {
 		const o = t * 9;
 		const vs: V3[] = [0, 1, 2].map(
@@ -53,8 +56,8 @@ export function outermostExits(tris: Float32Array, res: number): Float32Array {
 			}
 		for (const s of seen) bins[s].push(t);
 	}
-	const raw = new Float32Array(6 * res * res);
-	for (let f = 0; f < 6; f++)
+	const raw = new Float32Array(ROCK_HEIGHTFIELD_FACES * res * res);
+	for (let f = 0; f < ROCK_HEIGHTFIELD_FACES; f++)
 		for (let j = 0; j < res; j++)
 			for (let i = 0; i < res; i++) {
 				const d = dirOf(
@@ -80,15 +83,15 @@ export function rayExit(
 		const e1 = sub([tris[o + 3], tris[o + 4], tris[o + 5]], a),
 			e2 = sub([tris[o + 6], tris[o + 7], tris[o + 8]], a);
 		const pv = cross(d, e2),
-			det = e1[0] * pv[0] + e1[1] * pv[1] + e1[2] * pv[2];
+			det = dot(e1, pv);
 		if (Math.abs(det) < 1e-12) continue;
 		const tv: V3 = [-a[0], -a[1], -a[2]];
-		const u = (tv[0] * pv[0] + tv[1] * pv[1] + tv[2] * pv[2]) / det;
+		const u = dot(tv, pv) / det;
 		if (u < 0 || u > 1) continue;
 		const q = cross(tv, e1);
-		const v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) / det;
+		const v = dot(d, q) / det;
 		if (v < 0 || u + v > 1) continue;
-		const s = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) / det;
+		const s = dot(e2, q) / det;
 		if (s > best) best = s;
 	}
 	return best;

@@ -21,8 +21,10 @@ bun test tests/rock-heightfields.test.ts tests/rock-assets-bundle.test.ts tests/
 The generator uses the browser's GLTFLoader through `decodeShippedGlb`, including
 world transforms. It refuses missing/duplicate archetypes or LODs, unexpected
 mesh names, invalid positions and radii, and positions beyond the unit bound.
-The source check hashes GLB bytes before parsing; a changed source fails with
-both the recorded and actual hashes. A mutation row exercises that failure.
+The source-check test hashes GLB bytes before parsing and compares them with
+the binary header; a changed source makes the test fail with both the recorded
+and actual hashes. A mutation row exercises that failure. This is test-time
+enforcement: no runtime GLB installer or hash-check caller exists in this node.
 
 ## Fit
 
@@ -55,21 +57,29 @@ and fails loudly on non-finite results.
 ## Bundle and scope
 
 `src/rock-assets.ts` uses Vite's existing `?url&inline` support: the binary is
-base64 in JS and is decoded synchronously, without a fetch. `Game.rockAssets`
-holds the decoded fields and the separately emitted, hashed GLB URL before any
-rock model installer exists. Headless code imports the pure decoder instead.
-No dependency or Vite configuration change is needed.
+base64 in JS, without a fetch. The Three-free `getRockHeightfields()` decodes it
+synchronously on first use and caches the result. Its base64 byte conversion
+uses a preallocated array and a plain loop. Importing the module, constructing
+`Game`, or reading the GLB URL does not decode any fields. `Game.rockAssets` is
+only a lazy render-side handle; future collision consumers import the accessor
+directly. Headless code imports the pure decoder instead. No dependency or
+Vite configuration change is needed.
 
-The production build contains the current binary in `main-B68sj_so.js`, emits
+The production build contains the current binary in its main JS chunk, emits
 `asteroids-DxMe7_ZN.glb`, and emits no separate rock-heightfield binary.
-The bundle test also checks the inline bytes and absence of a fetch. Other
-shipyard probe binaries still ship under their existing contract.
+The bundle test checks the inline bytes and absence of a fetch, then executes
+the actual built module in a fresh process: zero base64 decode calls on import
+and URL access, one on first field access, and the same cached object through
+both accessors afterward. It replaces the old assertion on Game source text.
+The inline base64 still adds about 1.05 MB to the main chunk; only decode and
+decoded-array allocation are deferred. Other shipyard probe binaries still
+ship under their existing contract.
 
 This node adds no rock drawing, model loading, cone pieces or collision sweep.
 Those remain field-integration work. It changes no appearance and is not a
 major changelog entry under `src/changelog.ts`.
 
-## Delivery checks
+## Initial implementation checks
 
 Typecheck, production build/asset-size guard, format, lint and wiring passed.
 The one required `npm test` run finished **6,379 pass, 1 fail** across 370 files
@@ -87,8 +97,8 @@ its cause is not established. No vent code or timeout was changed, and the
 full suite was not rerun under the worker's once-only rule. The supervisor's
 full headless gate remains pending.
 
-The diagnostic selector reports all 108 probes because the generator path is
-unmapped infrastructure. The full browser gate is left to the supervisor under
+The diagnostic selector reports all 108 probes because the Game/boot wiring
+change is unowned. The full browser gate is left to the supervisor under
 the ranger worker contract; the worker runs only the boot probe affected by
 the new synchronous module. This is not a repository-selected browser-gate pass.
 The first sandboxed Chromium launch aborted; the authorized unsandboxed GPU
@@ -99,3 +109,44 @@ A temporary snapshot of base `c1eacb4ca84f7d5010f9860e634dd2f864df8493`
 then passed 58/58, as did the final implementation rerun: **58/58**, 84.9 s,
 ANGLE Metal / Apple M1 Pro, peak load 82.4. The earlier timeouts remain
 unattributed; no timing or probe tolerance was changed.
+
+## Review round 1
+
+The executable bundle regression first failed on the reviewed implementation:
+`module import eagerly decoded collision data` (`1 !== 0`). The same test now
+passes with the cached accessor, without changing the inline/no-fetch contract.
+The roughly 1.05 MB inline payload remains; this pass defers the byte conversion,
+sample decoding and decoded-array allocation until first use.
+
+The format magic, version and face count now have one owner shared by encoder
+and decoder. The two measurement helpers share `sub`, `dot` and `cross` through
+`scripts/lib/v3.ts`. The hash paragraph above now states its test-time scope.
+The Game field remains only as the lazy render-side handle permitted by the
+review; the executable test no longer pins that placement.
+
+Affected headless tests passed **13/13** (heightfields 7/7, bundle/URLs 6/6).
+Regeneration remained byte-exact and all sixteen fit rows met their unchanged
+budgets. Production build/typecheck/asset-size guard, format, lint and wiring
+passed. The exact base64 is present in `main-C-i7xBeI.js`, with no emitted
+heightfield binary and the unchanged hashed asteroid GLB.
+
+Before probing, diagnostic selection at `3dac678` against `c1eacb4` reported
+all 108 probes for unowned Game/boot wiring. Per the worker SOP, this fix pass
+ran only the affected boot probe: **58/58**, **117.5 s**, ANGLE Metal / Apple
+M1 Pro, peak load **32.7**. No assertion or timing limit changed. The other
+107 probes were not run; this manual partial run is not the repository-selected
+PR browser gate. The supervisor owns that gate on the reviewed final head.
+
+The single full `npm test` run for this fix pass finished **6,379 pass, 1 fail**
+across 370 files (**1,212.81 s**). All node #966 tests passed. The only failure
+was again `tests/vent-plumes.test.ts`, "a line that meets the hull puts its
+throat on the metal, on the exhaust side": **6.21 s** against its unchanged
+**5 s** timeout. That failure preceded the rock bundle test in the run.
+
+The vent file then passed **10/10** unchanged in isolation on this branch
+(12.29 s total) and an untouched `c1eacb4` snapshot (7.78 s total), both using
+the original `bunfig.toml` and all three authored-hull preloads. Both executed
+9,690 assertions. The test, preloads, hull models and vent implementation are
+unchanged from base. The full-run timeout's cause remains unestablished; no
+vent code or timeout was changed. The full suite was not repeated under the
+worker's once-only rule; the supervisor retains the full merge-base comparison.

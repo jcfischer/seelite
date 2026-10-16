@@ -4,6 +4,9 @@ import { Mesh } from "three";
 import {
 	ROCK_ARCHETYPE_COUNT,
 	ROCK_HEIGHTFIELD_HEADER_BYTES,
+	ROCK_HEIGHTFIELD_MAGIC,
+	ROCK_HEIGHTFIELD_VERSION,
+	ROCK_HEIGHTFIELD_FACES,
 	ROCK_HEIGHTFIELD_RES,
 	dirOf,
 	radiusAt,
@@ -85,15 +88,15 @@ export async function generateRockHeightfields(
 	const hash = createHash("sha256").update(source).digest();
 	const rocks = await loadRockArchetypes(path);
 	const res = ROCK_HEIGHTFIELD_RES,
-		samples = 6 * res * res;
+		samples = ROCK_HEIGHTFIELD_FACES * res * res;
 	const bytes = Buffer.alloc(
 		ROCK_HEIGHTFIELD_HEADER_BYTES + rocks.length * samples * 2,
 	);
-	bytes.write("RHF1", 0, "ascii");
-	bytes.writeUInt16LE(1, 4);
+	bytes.write(ROCK_HEIGHTFIELD_MAGIC, 0, "ascii");
+	bytes.writeUInt16LE(ROCK_HEIGHTFIELD_VERSION, 4);
 	bytes.writeUInt16LE(res, 6);
 	bytes.writeUInt16LE(rocks.length, 8);
-	bytes.writeUInt16LE(6, 10);
+	bytes.writeUInt16LE(ROCK_HEIGHTFIELD_FACES, 10);
 	hash.copy(bytes, 16);
 	let offset = ROCK_HEIGHTFIELD_HEADER_BYTES;
 	for (const rock of rocks) {
@@ -118,14 +121,14 @@ export async function generateRockHeightfields(
 /** Fine lattice of the bilinear surface, exactly as measure-outside.ts in #949. */
 function triangulate(h: RockHeightfield): Float32Array {
 	const k = h.res * 2,
-		out = new Float32Array(6 * k * k * 18);
+		out = new Float32Array(ROCK_HEIGHTFIELD_FACES * k * k * 18);
 	const p = (f: number, i: number, j: number): V3 => {
 		const d = dirOf(f, (i / k) * 2 - 1, (j / k) * 2 - 1);
 		const r = radiusAt(h, d);
 		return [d[0] * r, d[1] * r, d[2] * r];
 	};
 	let offset = 0;
-	for (let f = 0; f < 6; f++)
+	for (let f = 0; f < ROCK_HEIGHTFIELD_FACES; f++)
 		for (let j = 0; j < k; j++)
 			for (let i = 0; i < k; i++) {
 				const a = p(f, i, j),
@@ -152,7 +155,7 @@ export function measureRockFit(rock: RockArchetype, h: RockHeightfield) {
 		exits = outermostExits(rock.levels[0], s);
 	let emptyMax = 0,
 		sample = 0;
-	for (let f = 0; f < 6; f++)
+	for (let f = 0; f < ROCK_HEIGHTFIELD_FACES; f++)
 		for (let j = 0; j < s; j++)
 			for (let i = 0; i < s; i++, sample++) {
 				const d = dirOf(f, ((i + 0.5) / s) * 2 - 1, ((j + 0.5) / s) * 2 - 1);

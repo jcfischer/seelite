@@ -6,6 +6,9 @@
  * Faces are +X,-X,+Y,-Y,+Z,-Z. No filesystem, renderer or fetching here.
  */
 export const ROCK_HEIGHTFIELD_RES = 64;
+export const ROCK_HEIGHTFIELD_MAGIC = "RHF1";
+export const ROCK_HEIGHTFIELD_VERSION = 1;
+export const ROCK_HEIGHTFIELD_FACES = 6;
 export const ROCK_ARCHETYPE_COUNT = 16;
 export const ROCK_HEIGHTFIELD_HEADER_BYTES = 48;
 export type V3 = [number, number, number];
@@ -20,7 +23,7 @@ export interface RockHeightfields {
 }
 
 export function decodeRockHeightfields(bytes: Uint8Array): RockHeightfields {
-	const samples = 6 * ROCK_HEIGHTFIELD_RES ** 2;
+	const samples = ROCK_HEIGHTFIELD_FACES * ROCK_HEIGHTFIELD_RES ** 2;
 	if (
 		bytes.byteLength !==
 		ROCK_HEIGHTFIELD_HEADER_BYTES + ROCK_ARCHETYPE_COUNT * samples * 2
@@ -28,11 +31,11 @@ export function decodeRockHeightfields(bytes: Uint8Array): RockHeightfields {
 		throw new Error(`Invalid rock heightfield length: ${bytes.byteLength}`);
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	if (
-		String.fromCharCode(...bytes.subarray(0, 4)) !== "RHF1" ||
-		view.getUint16(4, true) !== 1 ||
+		String.fromCharCode(...bytes.subarray(0, 4)) !== ROCK_HEIGHTFIELD_MAGIC ||
+		view.getUint16(4, true) !== ROCK_HEIGHTFIELD_VERSION ||
 		view.getUint16(6, true) !== ROCK_HEIGHTFIELD_RES ||
 		view.getUint16(8, true) !== ROCK_ARCHETYPE_COUNT ||
-		view.getUint16(10, true) !== 6 ||
+		view.getUint16(10, true) !== ROCK_HEIGHTFIELD_FACES ||
 		view.getUint32(12, true) !== 0
 	)
 		throw new Error("Invalid rock heightfield header");
