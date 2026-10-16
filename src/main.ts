@@ -5917,6 +5917,19 @@ class Game {
 				this.approachCamera,
 				surfaces,
 			);
+			const detailRestores = [...this.bodyVisuals.values()]
+				.map((visual) => visual.prewarmFootprint())
+				.filter((undo) => undo !== null);
+			if (detailRestores.length) {
+				for (const [scene, camera] of surfaceScenes)
+					this.renderer.compile(scene, camera);
+				this.planetHalfRes.prewarmSurfaces(
+					this.renderer,
+					this.approachCamera,
+					surfaces,
+				);
+				for (const undo of detailRestores) undo();
+			}
 		}
 		for (const [id, visual] of this.bodyVisuals) {
 			const was = before.get(id);
@@ -5948,6 +5961,17 @@ class Game {
 					[this.nearScene, this.nearCamera],
 				] as const)
 					this.renderer.compile(scene, camera);
+				const undoDetail = policyVisual.prewarmFootprint();
+				if (undoDetail) {
+					for (const [scene, camera] of surfaceScenes)
+						this.renderer.compile(scene, camera);
+					this.planetHalfRes.prewarmSurfaces(
+						this.renderer,
+						this.approachCamera,
+						surfaces,
+					);
+					undoDetail();
+				}
 			}
 			policyVisual.setSurfaceClass(wasClass);
 			policyVisual.applyReliefBand(wasPath);
@@ -16813,6 +16837,7 @@ class Game {
 				// granulation are `f(gameTime)` like every other time-varying thing
 				// (#6), so they survive a pause and a save.
 				visual.setTime(this.world.gameTime);
+				visual.setDetailQuality(this.settings.value.quality);
 
 				/**
 				 * #207's band, from the size this body actually looks.
