@@ -15,6 +15,42 @@ Every combat ship obeys the same movement, collision, weapon, energy, shield, an
 - **Missiles:** a target must remain in a forward acquisition cone through a short, uninterrupted lock. Breaking line of sight or cone breaks the lock. Launch warns the target; maneuvering and a consumable ECM provide counterplay. An uncountered missile destroys a standard light combat ship and inflicts a large, but not automatically lethal, hull hit on tougher ships.
 - **Pacing target:** tune a matched starter duel with a prototype: 20–30 seconds of sustained pulse fire destroys an unshielded hull; shields, breaks, and energy decisions make a typical duel 60–90 seconds.
 
+### Missiles and E.C.M. (node #874)
+
+A fitted hardpoint rack carries its catalogue capacity as whole rounds. F7
+(rebindable) launches one round at the selected live ship after 1.5 uninterrupted
+seconds inside the 12° forward sightline cone, within 12 km and with no solid
+blocking the sightline. A changed target or broken cone/visibility resets the
+lock. Missiles stay outside the laser/scanner fire-group cycle. Equipment's
+REARM buys as many missing rounds as the wallet affords, at 30 Cr each. The
+rack's remaining ammunition is saved; missiles in flight and acquisition are
+transient, like laser tracers and the encounter itself.
+
+Initial seeker tuning is 6 km/s in the fight's translating frame, 0.8 rad/s
+turn authority, an 80° seeker cone and 12 seconds of life. A swept hit spends
+240 damage through the ordinary facing shield and hull path: lethal to a
+whole courier or raider, survivable by a freighter. A hard jink can lose the
+seeker; cruise leaves the exchange behind. A hit on ordinary traffic retains
+its hail, diversion, offence, destruction and cargo consequences.
+
+F8 (rebindable) pulses the fitted E.C.M. It defeats incoming missiles inside
+the fitted `radiusKm` **at the press**, including the radius boundary: 1E is
+2 km, 3A is 6.75 km. A pulse reserves one second of the catalogue's active
+draw upfront (8 E for 1E); an insufficient bank refuses the entire pulse.
+Cooldown is 8 seconds divided by the grade's output scale: E 8 s, D 10 s,
+A 5.33 s. Multiple modules use the greatest radius, without multiplying it or
+bypassing cooldown. The Equipment preview prints signed radius, cooldown and
+active draw changes. No E.C.M. ammunition item is consumed; the earlier
+"consumable ECM" wording above is superseded by #867 D5's energy-bank module.
+
+The cockpit names ammunition, lock progress, incoming range, E.C.M. readiness
+and refusals on a dark plate. A raider's carrier-instance seed draws a rack
+on its own domain tag (35% initial frequency), preserving its stock laser.
+It uses the same acquisition and ammunition rules, waits eight seconds before
+the first launch and between launches, and holds at most one incoming missile
+in flight. This implements the missile-bearing slice of D16; broader NPC
+catalogue grades and fitting drops remain separate work.
+
 ### 2.1 The gimbal and the g loads (#324, the principal's rulings)
 
 **The pulse laser is gimballed.** The beam turns toward the **selected target**

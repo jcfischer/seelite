@@ -186,6 +186,8 @@ export const DOMAIN = {
 	 *  off it so a charted layout is public while its contents are not
 	 *  (#948 D1, D2). Reserved: #951 and #920 draw from it. */
 	ASTEROID_DEPOSIT: 42,
+	/** Whether a raider carries missile ammunition (node #874). */
+	RAIDER_MISSILE_FIT: 43,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

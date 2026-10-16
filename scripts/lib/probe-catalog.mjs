@@ -19,6 +19,11 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-missiles.mjs",
+			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
+			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],
+		),
+		entry(
 			"probe-nebula.mjs",
 			"Seeded sky texture rebakes deterministically, is reused unchanged when the camera turns, shares the reflection source, toggles quality without rebaking and releases replaced GPU targets.",
 			["nebula", "sky", "reflection", "quality", "GPU disposal"],

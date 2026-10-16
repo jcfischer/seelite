@@ -5,6 +5,15 @@ import {
 	type NebulaBakeJob,
 } from "./nebula-bake";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
+import { MissileCombat, missileVisible } from "./missile-combat";
+import {
+	MISSILE,
+	fittedEcm,
+	missileAmmo,
+	stepMissile,
+	type MissileTarget,
+	type Missile,
+} from "./missiles";
 import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
 	fitted,
@@ -3066,6 +3075,14 @@ class Game {
 	}
 	/** The raider encounter on this leg, from its draw to its end (#324). */
 	encounter: Encounter | null = null;
+	readonly missileCombat = new MissileCombat();
+	missileRender: {
+		text: string;
+		incoming: boolean;
+		x: number;
+		y: number;
+		width: number;
+	} | null = null;
 	/** Where the encounter's raider is this frame, for the renderer. */
 	private encounterView: EncounterContact | null = null;
 	/**
@@ -3187,7 +3204,7 @@ class Game {
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	/**
-	 * Ordinary carriers the player has fired on (`civilian-combat.md` H2, H3):
+	 * Ordinary carriers the player has fired on (`civilian-control.md` H2, H3):
 	 * flown rather than projected while engaged. An engagement ends in a kill
 	 * or, in this change, when the ship leaves the materialization band.
 	 */
@@ -8187,7 +8204,7 @@ class Game {
 	}
 
 	/**
-	 * One frame of civilian combat (`civilian-combat.md` H2, H3, H10).
+	 * One frame of civilian combat (`civilian-control.md` H2, H3, H10).
 	 *
 	 * **A shot that lands on a projected carrier engages it**: the carrier is
 	 * handed from its projection to flight at the pose it is drawn in, and the
@@ -8437,7 +8454,7 @@ class Game {
 	}
 
 	/**
-	 * The sustained-fire charge (`civilian-combat.md` H4's third rung, #396): the
+	 * The sustained-fire charge (`civilian-control.md` H4's third rung, #396): the
 	 * pilot's fire has landed on this ordinary carrier for `ASSAULT_FIRE_S`, and
 	 * that is an offence before a single hull point has been spent.
 	 *
@@ -8589,7 +8606,7 @@ class Game {
 	}
 
 	/**
-	 * A hull strike (`civilian-combat.md` H3b, H3c, H3d): the carrier is disabled
+	 * A hull strike (`civilian-control.md` H3b, H3c, H3d): the carrier is disabled
 	 * by the player's own fire and booked into its home berth in the same tick,
 	 * and the strike is an offence.
 	 *
@@ -8630,7 +8647,7 @@ class Game {
 	}
 
 	/**
-	 * A kill (`civilian-combat.md` H1, H4, H9, H11): the carrier's destroy with
+	 * A kill (`civilian-control.md` H1, H4, H9, H11): the carrier's destroy with
 	 * its scheduled replacement, the manifest a scan would have shown dropped as
 	 * canisters, and the offence judged on its true standing and written.
 	 */
@@ -10583,6 +10600,12 @@ class Game {
 			case "fight.rigEcm":
 				if (this.combatRig?.command("fight.rigEcm")) return;
 				break;
+			case "fight.launchMissile":
+				this.fireMissile();
+				return;
+			case "fight.ecm":
+				this.fireEcm();
+				return;
 			case "fly.cruise":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) this.cancelSpoolUp();
@@ -12382,6 +12405,7 @@ class Game {
 			// charge is cancelled rather than frozen, because a frozen one would
 			// resume on launch with a notice from before the dock.
 			this.cancelJumpCharge("docked");
+			this.missileCombat.reset();
 			// A dock ends any encounter: a station is not a place a raider follows.
 			this.encounter = null;
 			this.encounterView = null;
@@ -13174,6 +13198,8 @@ class Game {
 	 * to drop and a reset has a clock rewind's worth.
 	 */
 	private clearFlightSession() {
+		this.missileCombat.reset();
+		this.missileRender = null;
 		this.regime = "normal";
 		this.spoolLeftS = 0;
 		this.throttle = 0;
@@ -13639,11 +13665,240 @@ class Game {
 		);
 	}
 
-	/**
-	 * One frame of the leg's raider encounter (#324): step it, then do the
-	 * three things only `Game` can — drop the player out of cruise, land the
-	 * raider's fire through `takeDamage`, and say how it ended.
-	 */
+	/** Only identified live combat contacts can acquire a missile lock. */
+	private missileTarget(id: string | null): MissileTarget | null {
+		if (!id) return null;
+		const e = this.encounter;
+		if (e?.phase === "duel" && e.slot.key === id && e.raider)
+			return {
+				id,
+				pos: e.raider.flight.ship.pos,
+				vel: e.raider.flight.ship.vel,
+				radiusKm: HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2,
+			};
+		const actor = this.trafficActorByKey(id as CarrierKey);
+		const contact = this.trafficContacts.get(id as CarrierKey);
+		if (actor && contact) {
+			const ship = this.trafficEngagements.get(actor.key)?.flight.ship;
+			return {
+				id,
+				pos: ship?.pos ?? contact.pos,
+				vel: ship?.vel ?? contact.velocity,
+				radiusKm: HULL_SPECS[actor.hullId].env.lengthKm / 2,
+			};
+		}
+		return null;
+	}
+	private missileControlsLive(): boolean {
+		return (
+			!this.dead &&
+			!this.photoMode &&
+			!this.openingActive &&
+			!this.combatRig &&
+			flightLive(this.dock.phase) &&
+			this.regime !== "cruise"
+		);
+	}
+	private fireMissile() {
+		if (!this.missileControlsLive()) return;
+		const target = this.missileTarget(this.targetId),
+			origin = this.weaponOrigin(),
+			nose = this.weaponAim();
+		// Revalidate at the press: a selection, turn, or obstruction since the
+		// last simulation step cannot spend a stale lock.
+		this.missileCombat.acquire(target, origin, nose, this.fightSolids(), 0);
+		const loadout = this.missileCombat.launch(
+			this.commander.loadout,
+			target,
+			origin,
+			nose,
+			this.world.gameTime,
+		);
+		if (!loadout) return;
+		this.adopt(
+			"ammunition",
+			{
+				holdings: {
+					...this.holdings(),
+					commander: { ...this.commander, loadout },
+				},
+				world: this.commerceWorld,
+			},
+			null,
+		);
+	}
+	private fireEcm() {
+		if (!this.missileControlsLive()) return;
+		this.condition = {
+			...this.condition,
+			energy: this.missileCombat.ecm(
+				this.commander.loadout,
+				this.condition.energy,
+				this.world.gameTime,
+				this.world.ship.pos,
+			),
+		};
+	}
+	private stepMissileCombat(dt: number, solids: readonly AvoidSphere[]) {
+		const control = this.missileCombat;
+		if (!this.missileControlsLive()) {
+			control.lock = null;
+			control.missiles = [];
+			control.enemy = null;
+			return;
+		}
+		const origin = this.weaponOrigin(),
+			nose = this.weaponAim(),
+			now = this.world.gameTime;
+		control.acquire(
+			this.missileTarget(this.targetId),
+			origin,
+			nose,
+			solids,
+			dt,
+		);
+		const e = this.encounter;
+		if (e?.phase === "duel" && e.raider)
+			control.launchEnemy(
+				carrierInstanceSeed(
+					this.world.system.record.seed,
+					e.slot.key,
+					this.carrierCondition(e.slot.key).instanceOrdinal,
+					DOMAIN.RAIDER_MISSILE_FIT,
+				),
+				e.raider.flight.ship.pos,
+				e.raider.flight.nose,
+				{
+					id: "player",
+					...this.world.ship,
+					radiusKm: HULL_SPECS[this.flownHull].env.lengthKm / 2,
+				},
+				solids,
+				now,
+				dt,
+			);
+		else control.enemy = null;
+		const flying: Missile[] = [];
+		const frame = this.assistFrameMotion(dt);
+		for (const missile of control.missiles) {
+			const target =
+				missile.targetId === "player"
+					? {
+							id: "player",
+							...this.world.ship,
+							radiusKm: HULL_SPECS[this.flownHull].env.lengthKm / 2,
+						}
+					: this.missileTarget(missile.targetId);
+			const step = stepMissile(
+				missile,
+				target,
+				scale(add(frame.start, frame.end), 0.5),
+				dt,
+			);
+			if (
+				step.missile &&
+				missileVisible(
+					missile.pos,
+					{ id: "", pos: step.missile.pos, vel: v3(), radiusKm: 0 },
+					solids,
+				)
+			)
+				flying.push(step.missile);
+			if (step.hit && target && missileVisible(missile.pos, target, solids))
+				this.landMissile(missile, target);
+		}
+		control.missiles = flying;
+		// A kill or disappearance on this step drops the acquisition immediately.
+		if (!this.missileTarget(control.lock?.targetId ?? null))
+			control.lock = null;
+	}
+	private landMissile(missile: Missile, target: MissileTarget) {
+		if (target.id === "player") {
+			this.takeDamage(
+				MISSILE.damage,
+				sideStruck(this.nose(), sub(missile.pos, target.pos)),
+				"missile hit",
+			);
+			this.struckFor = STRUCK_FLASH_S;
+			return;
+		}
+		const e = this.encounter;
+		if (e?.slot.key === target.id && e.raider) {
+			const landed = landRaiderImpacts(
+				e,
+				{
+					...e.raider.flight.ship,
+					impacts: [
+						{
+							damage: MISSILE.damage,
+							side: sideStruck(
+								e.raider.flight.nose,
+								sub(missile.pos, target.pos),
+							),
+						},
+					],
+				},
+				this.encounterView,
+			);
+			if (!landed) return;
+			if (landed.wreck)
+				this.endEncounter(e, landed.encounter, landed.wreck, undefined);
+			else {
+				this.encounter = landed.encounter;
+				this.encounterView = landed.contact;
+			}
+			return;
+		}
+		const actor = this.trafficActorByKey(target.id as CarrierKey);
+		if (!actor) return;
+		let engagement = this.trafficEngagements.get(actor.key);
+		if (!engagement) {
+			const route = this.trafficRouteByKey(actor.key);
+			engagement = engage(
+				{
+					key: actor.key,
+					hullId: actor.hullId,
+					pos: target.pos,
+					vel: target.vel,
+					nose:
+						route?.nose ??
+						normalizeOr(sub(target.vel, this.localFrame()), v3(0, 0, -1)),
+					up: route?.up ?? null,
+					voyageOrdinal: this.trafficVoyage(actor),
+				},
+				carrierInstanceSeed(
+					this.trafficHomeRecord(actor).seed,
+					actor.key,
+					this.carrierCondition(actor.key).instanceOrdinal,
+					DOMAIN.TRAFFIC_ENGAGEMENT,
+				),
+				{
+					assaultAlreadyCharged: assaultCharged(this.legalStatus(), actor.key),
+					byPilot: true,
+				},
+			);
+		}
+		if (!engagement.struckOnce) this.hailTrafficCarrier(actor);
+		const before = engagement.condition;
+		engagement = {
+			...provoke(engagement),
+			struckOnce: true,
+			condition: applyDamage(
+				before,
+				MISSILE.damage,
+				sideStruck(engagement.flight.nose, sub(missile.pos, target.pos)),
+			),
+		};
+		if (!isAlive(engagement.condition))
+			this.destroyTrafficCarrier(actor, engagement);
+		else {
+			if (engagement.condition.hull < before.hull)
+				this.divertTrafficCarrier(actor, engagement);
+			this.trafficEngagements.set(actor.key, engagement);
+		}
+	}
+
+	/** Step the encounter, land return fire, and record its end. */
 	private stepRaider(
 		dt: number,
 		shot: PlayerShot,
@@ -15646,12 +15901,13 @@ class Game {
 		this.stepRaider(dt, shot, solids);
 		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot, solids);
+		this.stepMissileCombat(dt, solids);
 		this.stepCargoCanisters(dt);
 		this.stepDerelictScoops();
 		this.stepDerelictFinding();
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
-		// flyable balance rig over the shared flight loop, not production combat.
+		// flyable balance rig over the shared flight loop, not production control.
 		this.combatRig?.step(dt, this.held, this.regime === "cruise", {
 			ship: this.world.ship,
 			nose: this.nose(),
@@ -18084,8 +18340,9 @@ class Game {
 			next,
 		);
 		const refit =
-			this.commander.loadout !== next.holdings.commander.loadout ||
-			this.commander.hull !== next.holdings.commander.hull;
+			cause !== "ammunition" &&
+			(this.commander.loadout !== next.holdings.commander.loadout ||
+				this.commander.hull !== next.holdings.commander.hull);
 		if (refit) {
 			this.armedFireGroup.reset();
 			this.floorFit = null;
@@ -20973,7 +21230,25 @@ class Game {
 			}
 		}
 
+		// Missile tracking pips are cockpit cues in world direction; float64
+		// sim positions never pass through the scene graph.
+		if (shipCues)
+			for (const missile of this.missileCombat.missiles) {
+				const dir = directionTo(camPos, missile.pos),
+					at = dir && place(dir);
+				if (!at?.on) continue;
+				ctx.save();
+				ctx.strokeStyle = missile.targetId === "player" ? "#ff8068" : "#b8e9ef";
+				ctx.beginPath();
+				ctx.moveTo(at.x, at.y - 4);
+				ctx.lineTo(at.x + 4, at.y + 4);
+				ctx.lineTo(at.x - 4, at.y + 4);
+				ctx.closePath();
+				ctx.stroke();
+				ctx.restore();
+			}
 		this.drawDockingDirector(ctx, w, h, camPos);
+		this.drawMissileHud(ctx, w, h, shipCues);
 		if (shipCues) this.drawFlightFloor(ctx, w, h);
 		else this.floorRender = null;
 
@@ -21297,6 +21572,74 @@ class Game {
 	 * arrow, which would be a second permanent edge cue beside the selected
 	 * target's. `core` is `null` where the frame has no glass for it.
 	 */
+	/** Plated and fitted to the viewport, including the narrow cockpit. The
+	 * record is written from the painted text, as the flight floor's is. */
+	private drawMissileHud(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		shown: boolean,
+	) {
+		this.missileRender = null;
+		if (!shown || !flightLive(this.dock.phase)) return;
+		const control = this.missileCombat,
+			now = this.world.gameTime;
+		const incoming = control.missiles.some((m) => m.targetId === "player");
+		const nearest = Math.min(
+			...control.missiles
+				.filter((m) => m.targetId === "player")
+				.map((m) => length(sub(m.pos, this.world.ship.pos))),
+		);
+		const ammo = missileAmmo(this.commander.loadout);
+		const capacity = this.flownCapacity().missiles;
+		const ecm = fittedEcm(this.commander.loadout);
+		if (!capacity && !ecm.radiusKm && !incoming && control.noticeUntil <= now)
+			return;
+		const lock = control.lock?.seconds ?? 0;
+		const state =
+			lock >= MISSILE.lockS
+				? "LOCKED"
+				: lock > 0
+					? `LOCK ${Math.floor((lock / MISSILE.lockS) * 100)}%`
+					: "NO LOCK";
+		const left = Math.max(0, control.ecmReadyAt - now);
+		const lines = [
+			...(incoming ? [`INCOMING MISSILE · ${nearest.toFixed(2)} km`] : []),
+			...(capacity
+				? [
+						`MISSILES ${ammo}/${capacity} · ${state} · ${spoken(this.bindings, "fight.launchMissile")}`,
+					]
+				: []),
+			...(ecm.radiusKm
+				? [
+						`ECM ${left > 0 ? `${left.toFixed(1)}s` : "READY"} · ${ecm.radiusKm.toFixed(2)} km · ${spoken(this.bindings, "fight.ecm")}`,
+					]
+				: []),
+			...(control.noticeUntil > now ? [control.notice] : []),
+		];
+		ctx.save();
+		ctx.font = "13px monospace";
+		ctx.textAlign = "center";
+		const width = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 20;
+		const fit = Math.min(1, (w - 24) / width),
+			x = w / 2,
+			y = h * 0.13;
+		ctx.translate(x, y);
+		ctx.scale(fit, fit);
+		ctx.fillStyle = "rgba(4, 10, 17, 0.9)";
+		ctx.fillRect(-width / 2, -15, width, lines.length * 19 + 8);
+		ctx.fillStyle = incoming ? "#ff8068" : "#b8e9ef";
+		for (const [i, line] of lines.entries()) ctx.fillText(line, 0, i * 19);
+		ctx.restore();
+		this.missileRender = {
+			text: lines.join("\n"),
+			incoming,
+			x: x - (width * fit) / 2,
+			y: y - 15 * fit,
+			width: width * fit,
+		};
+	}
+
 	private drawCoreMark(
 		ctx: CanvasRenderingContext2D,
 		core: Vec3 | null,
