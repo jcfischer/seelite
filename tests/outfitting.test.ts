@@ -33,7 +33,10 @@ const input = (): StationCommerceInput => ({
 
 test("removal carries the exact module as one tonne and selling returns ninety percent", () => {
 	const i = input();
-	const laser = { ...makeModule("pulse-laser", 1, "D"), variant: "kept-trait" };
+	const laser = {
+		...makeModule("pulse-laser", 1, "D"),
+		variant: "overcharged",
+	};
 	i.commander = {
 		...i.commander,
 		loadout: { ...i.commander.loadout, h1: laser },

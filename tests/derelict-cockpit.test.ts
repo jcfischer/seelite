@@ -531,6 +531,12 @@ test("a schema 9 save with a partially stripped derelict loads its world remaind
 	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	const initial = advanceTo(newWorld(47), at);
 	const world = scoopDerelict(initial, 0, key, 0, 1, at);
+	// Schema 9 predates typed fittings. Freeze its legacy contents instead of
+	// grafting today's generated module metadata into an old envelope.
+	const row = world.galaxies[0].derelicts[key];
+	row.containers = row.containers.map(
+		({ fitting: _, ...container }) => container,
+	);
 	const commander = newCommanderRecord("courier", {
 		systemIndex: system.record.index,
 	});

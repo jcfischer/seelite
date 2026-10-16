@@ -121,18 +121,10 @@ export function leftByEject(state: CommanderState): CommanderState {
 // ---------------------------------------------------------------------------
 
 /**
- * Every weapon a hostile fires at the player, with the most **hull** damage it
- * lands in a second. Hull, not shield: the warning is about the last hits, and
- * by then a shield is down, so all of it reaches the hull.
- *
- * **One row today, and that is read off the code rather than chosen.** A
- * raider (its relay-defender call included) and a carrier returning fire both
- * fire through `stepCondition`, which fires `PULSE_LASER` and nothing else, at
- * one gun per ship — `combat-model.md` §2's one forward weapon. A hostile
- * weapon added later is a row here, added by hand, and the threshold moves
- * with it. `tests/death-cost.test.ts` checks that no hull in the roster fires
- * a harder gun through `stepCondition` than this table's strongest row; a
- * weapon fired by some other path it cannot see.
+ * The fallback hostile weapon when no active NPC fit is known. A live fight
+ * supplies its strongest fitted laser group to `ejectWarningDue` (#875),
+ * so a graded or variant gun buys the same reaction window as the stock pulse.
+ * Hull damage matters: once the facing shield is down, all of it reaches hull.
  *
  * **One weapon, not a fleet**: two hostiles firing at once land twice the
  * rate, and the warning can then come later than D12 asks. D12 is written
@@ -196,12 +188,19 @@ export const ejectWarningDue = (facts: {
 	readonly flying: boolean;
 	readonly alive: boolean;
 	readonly hull: number;
+	/** The strongest active hostile laser group, when NPC fits are known. */
+	readonly hostileDamagePerS?: number;
 }): boolean =>
 	facts.podFitted &&
 	!facts.permadeath &&
 	facts.flying &&
 	facts.alive &&
-	facts.hull < EJECT_WARNING_HULL;
+	facts.hull <
+		Math.max(
+			EJECT_WARNING_HULL,
+			(facts.hostileDamagePerS ?? 0) * EJECT_WARNING_WINDOW_S +
+				HULL_KILL_TOLERANCE,
+		);
 
 /**
  * One frame of the warning: whether to speak. The sentence on the glass stands

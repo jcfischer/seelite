@@ -50,7 +50,7 @@ export const MODULE_LABELS: Record<ModuleKind, string> = {
 	"power-plant": "Power plant",
 };
 export const moduleLabel = (m: FittedModule): string =>
-	`${MODULE_LABELS[m.module]} · ${m.size}${m.grade}`;
+	`${MODULE_LABELS[m.module]} · ${m.size}${m.grade}${m.variant ? ` · ${m.variant}` : ""}`;
 
 /**
  * What the fitted ship does, as the Equipment tab compares it: one field per

@@ -25,6 +25,7 @@
  * into a world-state destroy, a drop and a heat write. No world, no renderer.
  */
 import type { CarrierKey } from "./carrier-key";
+import { fittedCapacity, moduleRow } from "./loadout";
 import {
 	type CombatEnemyState,
 	type EnemyIntent,
@@ -120,6 +121,7 @@ export const trafficInSights = (
 export const ASSAULT_FIRE_S = 5;
 
 export interface Engagement {
+	loadout?: import("./loadout").Loadout;
 	key: CarrierKey;
 	hullId: HullId;
 	armed: boolean;
@@ -216,6 +218,7 @@ export function engage(
 		nose: Vec3;
 		up: Vec3 | null;
 		voyageOrdinal: number;
+		loadout?: import("./loadout").Loadout;
 	},
 	seed: number,
 	prior: EngagementStart,
@@ -227,7 +230,13 @@ export function engage(
 		hullId: target.hullId,
 		armed,
 		intent,
-		condition: fullCondition(target.hullId),
+		loadout: target.loadout,
+		condition: fullCondition(
+			target.hullId,
+			target.loadout
+				? fittedCapacity(target.hullId, target.loadout)
+				: undefined,
+		),
 		voyageOrdinal: target.voyageOrdinal,
 		landedFireS: 0,
 		assaultCharged: prior.assaultAlreadyCharged,
@@ -293,8 +302,20 @@ export function stepEngagement(
 ): EngagementStep {
 	const step = stepCombatShip(engagement, pilot, shot, dt, {
 		hitRadiusKm: trafficHitRadiusKm(engagement.hullId),
-		performance: flightPerformance(engagement.hullId),
+		performance: flightPerformance(
+			engagement.hullId,
+			{},
+			HULL_SPECS[engagement.hullId].massT +
+				(engagement.loadout
+					? Object.values(engagement.loadout).reduce(
+							(mass, m) => mass + moduleRow(m).massT,
+							0,
+						)
+					: 0),
+		),
 		intent: engagement.intent,
+		loadout: engagement.loadout,
+		hull: engagement.hullId,
 	});
 	// Held, not reset, when nothing lands this frame. A pilot who breaks off to
 	// line up another shot has not un-done the seconds they already spent.

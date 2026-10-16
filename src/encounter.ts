@@ -57,6 +57,7 @@ import { defenderDraw } from "./relay-defender";
 import { mix } from "./rng";
 import type { ShieldSide } from "./ship-condition";
 import { applyDamage, fullCondition, isAlive } from "./ship-condition";
+import { fittedCapacity, type Loadout } from "./loadout";
 import { flightPerformance } from "./sim";
 import {
 	type Vec3,
@@ -90,6 +91,8 @@ export type EncounterEnd =
 export type EncounterOrigin = "leg" | "defender";
 
 export interface Encounter {
+	/** Materialized by Game from the carrier instance, not the leg's AI seed. */
+	loadout?: Loadout;
 	origin: EncounterOrigin;
 	slot: RaiderSlot;
 	/** The slot's display name. */
@@ -358,7 +361,7 @@ export function landRaiderImpacts(
 	return {
 		encounter: {
 			...e,
-			raider: { flight: { ...raider.flight, ship }, condition },
+			raider: { ...raider, flight: { ...raider.flight, ship }, condition },
 		},
 		wreck: null,
 		contact: view
@@ -416,7 +419,14 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 				{
 					...e,
 					phase: "duel",
-					raider: { flight, condition: fullCondition(RAIDER_HULL_ID) },
+					raider: {
+						flight,
+						loadout: e.loadout,
+						condition: fullCondition(
+							RAIDER_HULL_ID,
+							e.loadout ? fittedCapacity(RAIDER_HULL_ID, e.loadout) : undefined,
+						),
+					},
 				},
 				f,
 			);
@@ -484,7 +494,11 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			pilot.ship,
 			e.seed,
 		),
-		condition: fullCondition(RAIDER_HULL_ID),
+		loadout: e.loadout,
+		condition: fullCondition(
+			RAIDER_HULL_ID,
+			e.loadout ? fittedCapacity(RAIDER_HULL_ID, e.loadout) : undefined,
+		),
 	};
 	const step = stepDuel(raider, pilot, f.shot, f.dt);
 	if (step.raiderDestroyed)

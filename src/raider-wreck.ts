@@ -38,6 +38,7 @@ import {
 	v3,
 } from "./vec3";
 import { type Provenance, type TransitionEvent } from "./world-state";
+import type { FittedModule } from "./loadout";
 
 /** How long a destroyed raider stays destroyed before its replacement starts. */
 export const RAIDER_WRECK_S = 600;
@@ -147,6 +148,8 @@ export const CANISTER_KEEP_FRACTION = 0.2;
 export interface Canister {
 	id: string;
 	commodity: string;
+	/** A one-tonne fitting uses the same flight and scoop gate as cargo. */
+	fitting?: FittedModule;
 	tonnes: number;
 	pos: Vec3;
 	/** Its velocity now, which falls linearly toward the velocity of its own
@@ -332,6 +335,26 @@ const canisterAt = (
 	restsAt: kill.killedAt + CANISTER_FADE_S,
 	expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
 });
+
+/** A fitting's ejection has its own identity, leaving cargo draws unchanged. */
+export function dropFittingCanister(
+	kill: Parameters<typeof dropCanisters>[0],
+	fitting: FittedModule | undefined,
+): Canister[] {
+	if (!fitting) return [];
+	const { second, rand } = dropStream(kill);
+	return [
+		{
+			...canisterAt(kill, second, 0, {
+				commodity: fitting.module.replaceAll("-", " "),
+				tonnes: 1,
+				vel: ejectionRing(kill, rand, 1)[0],
+			}),
+			id: `${kill.key}#fitting-${second}`,
+			fitting: { ...fitting, purchaseCostCr: 0 },
+		},
+	];
+}
 
 /**
  * One canister moved one step, from game time `now`. Its velocity relative to

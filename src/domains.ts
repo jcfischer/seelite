@@ -188,6 +188,12 @@ export const DOMAIN = {
 	ASTEROID_DEPOSIT: 42,
 	/** Whether a raider carries missile ammunition (node #874). */
 	RAIDER_MISSILE_FIT: 43,
+	/** A fitting's one trait and cost; independent of its source's contents. */
+	MODULE_VARIANT: 44,
+	/** Catalogue equipment of one carrier instance, independent of AI draws. */
+	NPC_LOADOUT: 45,
+	/** Whether a killed carrier yields one of its fitted modules. */
+	NPC_FITTING_DROP: 46,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

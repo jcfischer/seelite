@@ -221,8 +221,7 @@ export type ConditionCapacity = Pick<
 >;
 
 /** A hull on its stock fit: its stock plant, its own integrity and pool, and
- *  no booster. Every NPC flies this (#875), and it is what `fittedCapacity`
- *  returns for a stock loadout. */
+ *  no booster. This is what `fittedCapacity` returns for a stock loadout. */
 export function stockCapacity(hull: HullId): ConditionCapacity {
 	const { bankE, regenPerS } = stockPlant(hull);
 	const { integrity, shieldPool } = HULL_SPECS[hull];
@@ -233,7 +232,7 @@ export function stockCapacity(hull: HullId): ConditionCapacity {
  * A whole ship. `capacity` is the fitted ship's (`fittedCapacity` in
  * `loadout.ts`, #925, #927), passed as numbers because `module-catalog.ts`
  * imports this module and an import back closes a cycle. Without it the hull
- * flies its stock fit, which is every NPC's (#875).
+ * flies its stock fit; an outfitted NPC passes its own fitted capacity.
  */
 export function fullCondition(
 	hull: HullId,

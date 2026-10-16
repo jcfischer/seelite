@@ -28,6 +28,9 @@ import {
 } from "./combat-enemy";
 import { HULL_SPECS } from "./hull";
 import { PLAYER_LASER_RANGE_KM } from "./laser";
+import { type Loadout, moduleRow } from "./loadout";
+import { groupLaserRates } from "./laser-modules";
+import { fireGroups } from "./fire-group";
 import { RAIDER_HULL_ID } from "./raider-slots";
 import {
 	type ShieldSide,
@@ -100,6 +103,7 @@ export const raiderInSights = (
 export interface Raider {
 	flight: CombatEnemyState;
 	condition: ShipCondition;
+	loadout?: Loadout;
 }
 
 /** What the duel reads of the player this step. */
@@ -180,11 +184,23 @@ export function stepDuel(
 ): DuelStep {
 	const step = stepCombatShip(raider, pilot, shot, dt, {
 		hitRadiusKm: RAIDER_HIT_RADIUS_KM,
-		performance: RAIDER_PERFORMANCE,
+		performance: raider.loadout
+			? flightPerformance(
+					RAIDER_HULL_ID,
+					{},
+					HULL_SPECS[RAIDER_HULL_ID].massT +
+						Object.values(raider.loadout).reduce(
+							(mass, m) => mass + moduleRow(m).massT,
+							0,
+						),
+				)
+			: RAIDER_PERFORMANCE,
 		intent: "attacker",
+		loadout: raider.loadout,
+		hull: RAIDER_HULL_ID,
 	});
 	return {
-		raider: { flight: step.flight, condition: step.condition },
+		raider: { ...raider, flight: step.flight, condition: step.condition },
 		playerHit: step.playerHit,
 		raiderHit: step.returnFire,
 		raiderDestroyed: step.destroyed,
@@ -197,6 +213,8 @@ export interface CombatShipRules {
 	/** **Required**, for `FlightPerformance`'s reason. */
 	performance: FlightPerformance;
 	intent: EnemyIntent;
+	loadout?: Loadout;
+	hull?: import("./hull").HullId;
 }
 
 export interface CombatShipStep {
@@ -264,6 +282,14 @@ export function stepCombatShip(
 		condition,
 		dt,
 		isAlive(condition) && flown.enemyFiring,
+		rules.loadout && rules.hull
+			? groupLaserRates(
+					rules.loadout,
+					fireGroups(rules.loadout, rules.hull).find(
+						(g) => g.kind === "lasers",
+					),
+				)
+			: undefined,
 	);
 	condition = gun.condition;
 	const returnFire =
