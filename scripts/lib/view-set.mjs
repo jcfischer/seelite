@@ -1,3 +1,6 @@
+/** Captures build their Game only after the entire model catalog is installed. */
+export const MODEL_BOOT_PARAMS = Object.freeze({ "models-full": true });
+
 /**
  * The canonical view set: what a visual node is judged on.
  *

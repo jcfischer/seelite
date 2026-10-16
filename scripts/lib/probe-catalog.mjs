@@ -19,6 +19,17 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-model-queue.mjs",
+			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot.",
+			[
+				"background loading",
+				"model queue",
+				"boot",
+				"jump",
+				"deterministic readiness",
+			],
+		),
+		entry(
 			"probe-missiles.mjs",
 			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
 			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],

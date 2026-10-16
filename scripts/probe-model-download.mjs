@@ -50,6 +50,7 @@ const PLAYER_URL = gameUrl(
 	{ boot: null },
 );
 const DIRECT_URL = gameUrl(ORIGIN, {
+	"models-full": false,
 	"interiors-full": false,
 	"shipyards-full": false,
 	"refineries-full": false,
@@ -110,18 +111,24 @@ function traceLoadBar() {
  */
 const holdModels = async (page) => {
 	const held = [];
+	let firstRequest;
+	const started = new Promise((resolve) => {
+		firstRequest = resolve;
+	});
 	let passing = false;
 	await page.route(
 		(url) => new URL(url).pathname.endsWith(".glb"),
 		(route) => {
 			if (passing) return route.continue();
 			held.push(route);
+			firstRequest();
 		},
 	);
 	const letRest = async () => {
 		for (const r of held.splice(0)) await r.continue();
 	};
 	return {
+		started,
 		count: () => held.length,
 		release: async () => {
 			passing = true;
@@ -205,6 +212,7 @@ try {
 		const drawn = await waitFor(page, () =>
 			document.querySelector("#seelite-commander [data-model-load] progress"),
 		);
+		await models.started;
 		let s = await overlayState(page);
 		check(
 			"a player boot draws the Commander overlay and its progress bar before the models are in",
@@ -362,7 +370,7 @@ try {
 			page.on("console", (message) => {
 				if (
 					message.type() === "warning" &&
-					message.text().startsWith(`${hull.id} hull:`)
+					message.text().startsWith(`${hull.id}:`)
 				)
 					warnings.push(message.text());
 			});
@@ -373,6 +381,7 @@ try {
 			await page.goto(
 				gameUrl(ORIGIN, {
 					seed: SEED,
+					"models-full": false,
 					"no-save": true,
 					voices: "formant",
 					raider: "off",

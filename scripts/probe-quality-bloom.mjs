@@ -124,6 +124,7 @@ try {
 	await reader.goto(
 		gameUrl(origin, {
 			seed: 47,
+			"models-full": false,
 			"interiors-full": false,
 			"shipyards-full": false,
 			"refineries-full": false,

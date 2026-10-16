@@ -558,9 +558,9 @@ was written in; the history it tells is still this text's history.
 - **The probe registry authorises no `command` or `url` probes for this repo.** A
   work-graph node declaring one will refuse to close until the adopter declares
   it.
-- **`gameUrl` waits for the interior kit on every direct boot.** A
-  direct-boot URL gets `interiors-full` unless the caller's parameters or the
-  `PROBE_URL` override already name it (`scripts/lib/game-url.mjs`), so a
-  measurement boot cannot have a background swap change a frame mid-comparison.
-  Download probes pass `"interiors-full": false`; overlay and player boots keep
-  the normal loading policy.
+- **Measurement boots wait for the full model catalog.** `gameUrl` adds
+  `models-full` to direct boots (`scripts/lib/game-url.mjs`); download probes
+  pass `"models-full": false`. Live probes that need the current system settled
+  wait on `__seelite.modelsSettled()`, which includes mesh installation and
+  treats background failures as settled stand-ins. Player boots wait only for
+  the cockpit and home exterior.

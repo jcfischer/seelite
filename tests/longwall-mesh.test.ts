@@ -73,10 +73,10 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 		expect(isAuthoredHull("courier", "a")).toBe(false);
 	});
 
-	test("building it uninstalled throws rather than drawing a loft", async () => {
+	test("building it uninstalled draws the procedural stand-in", async () => {
 		installLongwallModel(null);
 		try {
-			expect(() => buildShipMesh("miner", "b")).toThrow(/prepareLongwallModel/);
+			expect(buildShipMesh("miner", "b").root.userData.authored).not.toBe(true);
 			// The lofts do not depend on it.
 			expect(() => buildShipMesh("miner", "a")).not.toThrow();
 		} finally {

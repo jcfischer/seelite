@@ -2500,15 +2500,11 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * its own. Map #1's Constraint allows the file: authored models are
  * same-origin bundle files (#830, #835, principal 2026-10-09).
  *
- * **There is no procedural fallback yet.** The envelope, the collision box,
- * the vent placement and the muzzles are all measured off the built mesh
- * (`hull.ts`), so a build that quietly drew the old loft would measure a hull
- * the game no longer draws. Building `miner/b` before the install throws, so
- * the model loads before a `Game` is built — and that is **not** what the
- * same Constraint allows: it puts only the cockpit and the home station in
- * the boot set. Installing the rest after boot, with a procedural stand-in,
- * is node #838's; until it lands this hull blocks boot, an interim breach
- * the principal waived on node #838 (2026-10-09).
+ * Node #838 installs this through the background queue. Before it arrives,
+ * the selected miner draws miner/a as a stand-in; the authored template then
+ * replaces every cached stand-in once. The authoritative envelope, vents and
+ * muzzles remain measured on the authored hull, and headless geometry checks
+ * preload that hull so the stand-in cannot become their measurement subject.
  *
  * The export is model metres, +Z forward and Y up; this frame is kilometres
  * with the nose at -Z, so the exterior is turned half a turn about Y — a
@@ -2611,6 +2607,8 @@ export function installLongwallModel(scene: THREE.Group | null): void {
 	// Swapped only once the prepare has returned: a prepare that throws leaves
 	// the previous install whole (sage round 8).
 	longwallTemplate = scene ? prepareLongwall(scene) : null;
+	for (const key of muzzleCache.keys())
+		if (key.startsWith("miner/")) muzzleCache.delete(key);
 }
 
 function prepareLongwall(scene: THREE.Group): THREE.Group {
@@ -7063,10 +7061,10 @@ export type AuthoredHullBuilder = (
  * The hulls whose selected variant is an authored model installed after boot
  * (node #831's path): the courier (node #812) and the tug (node #814). Each is
  * drawn as its procedural loft — the stand-in — until its builder is
- * installed. Longwall B is not one of them: it is a template installed before
- * any Game is built (`installLongwallModel`, node #838's waiver).
+ * installed. Longwall B uses its procedural miner/a until its template is
+ * installed (node #838).
  */
-export const AFTER_BOOT_HULL_IDS = ["courier", "tug"] as const;
+export const AFTER_BOOT_HULL_IDS = ["courier", "tug", "miner"] as const;
 export type AfterBootHullId = (typeof AFTER_BOOT_HULL_IDS)[number];
 
 const isAfterBootHull = (id: unknown): id is AfterBootHullId =>
@@ -7124,7 +7122,7 @@ export function rebuildAuthoredStandIn(
 	const id = root.userData.hullId;
 	if (
 		!isAfterBootHull(id) ||
-		!authoredHulls.has(id) ||
+		!(id === "miner" ? longwallTemplate : authoredHulls.has(id)) ||
 		root.userData.variant !== HULL_SPECS[id].variant ||
 		root.userData.authored === true
 	)
@@ -7182,7 +7180,10 @@ export function buildShipMesh(
 		buildAuthoredHull(root, id, authored);
 		return { root };
 	}
-	const plan = SHIP_DETAIL_PLANS[id][variant];
+	const plan =
+		id === "miner" && variant === HULL_SPECS.miner.variant && !longwallTemplate
+			? SHIP_DETAIL_PLANS.miner.a
+			: SHIP_DETAIL_PLANS[id][variant];
 	if (plan.authored) {
 		root.userData.authored = true;
 		// Nav lights come with the template, placed once (`prepareLongwall`).

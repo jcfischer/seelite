@@ -90,41 +90,10 @@ function unbuiltNavigations(source: string): { line: number; arg: string }[] {
 }
 
 describe("gameUrl", () => {
-	test("measurement boots settle interiors; download probes and player boots opt out", () => {
-		expect(new URL(gameUrl(ORIGIN)).searchParams.has("interiors-full")).toBe(
-			true,
-		);
-		expect(
-			new URL(gameUrl(ORIGIN, { "interiors-full": false })).searchParams.has(
-				"interiors-full",
-			),
-		).toBe(false);
-		expect(
-			new URL(gameUrl(ORIGIN, {}, { boot: null })).searchParams.has(
-				"interiors-full",
-			),
-		).toBe(false);
-		expect(
-			new URL(
-				gameUrl(ORIGIN, {}, { override: `${ORIGIN}/?boot=overlay` }),
-			).searchParams.has("interiors-full"),
-		).toBe(false);
-	});
-	test("measurement boots settle the shipyards too; the same boots opt out", () => {
-		const has = (url: string) =>
-			new URL(url).searchParams.has("shipyards-full");
+	test("measurements wait for the full model catalog; player and download boots opt out", () => {
+		const has = (url: string) => new URL(url).searchParams.has("models-full");
 		expect(has(gameUrl(ORIGIN))).toBe(true);
-		expect(has(gameUrl(ORIGIN, { "shipyards-full": false }))).toBe(false);
-		expect(has(gameUrl(ORIGIN, {}, { boot: null }))).toBe(false);
-		expect(
-			has(gameUrl(ORIGIN, {}, { override: `${ORIGIN}/?boot=overlay` })),
-		).toBe(false);
-	});
-	test("and the refineries (#819); the same boots opt out", () => {
-		const has = (url: string) =>
-			new URL(url).searchParams.has("refineries-full");
-		expect(has(gameUrl(ORIGIN))).toBe(true);
-		expect(has(gameUrl(ORIGIN, { "refineries-full": false }))).toBe(false);
+		expect(has(gameUrl(ORIGIN, { "models-full": false }))).toBe(false);
 		expect(has(gameUrl(ORIGIN, {}, { boot: null }))).toBe(false);
 		expect(
 			has(gameUrl(ORIGIN, {}, { override: `${ORIGIN}/?boot=overlay` })),

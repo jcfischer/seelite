@@ -50,6 +50,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	GAME_TIME_S,
+	MODEL_BOOT_PARAMS,
 	SEED,
 	SHOT_KINDS,
 	VIEWPORT,
@@ -217,7 +218,13 @@ async function ensureFixture(page, seed, system = null) {
 	// `system` is left off the URL when the row declares none, which is every
 	// row written before #432 and every row that is not a frame of the rim.
 	await page.goto(
-		gameUrl(SERVING, { seed, raider: "off", system, "interiors-full": true }),
+		gameUrl(SERVING, {
+			seed,
+			raider: "off",
+			system,
+			...MODEL_BOOT_PARAMS,
+			"interiors-full": true,
+		}),
 		{
 			waitUntil: "load",
 		},
@@ -958,6 +965,7 @@ const PLACERS = {
 				raider: "off",
 				guided: true,
 				cinematic: "held",
+				...MODEL_BOOT_PARAMS,
 				"interiors-full": true,
 			}),
 			{ waitUntil: "load" },
@@ -1356,7 +1364,12 @@ await page.addInitScript(() => {
 });
 await installViewFraming(page);
 await page.goto(
-	gameUrl(SERVING, { seed: SEED, raider: "off", "interiors-full": true }),
+	gameUrl(SERVING, {
+		seed: SEED,
+		raider: "off",
+		...MODEL_BOOT_PARAMS,
+		"interiors-full": true,
+	}),
 	{
 		waitUntil: "load",
 	},
