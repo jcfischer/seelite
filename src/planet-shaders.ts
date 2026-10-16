@@ -104,7 +104,10 @@ float fbm${octaves}(vec3 p) {
 	.join("\n");
 
 /** Continue the original stream, including its offsets and normalisation.
- * The zero arm calls the original helper: no new operations on its sum.
+ * Keep the original accumulation and division in this function. At zero extra
+ * weight the extension loop breaks before touching either sum. Returning via
+ * the original helper instead changed screen-space normals on ANGLE Metal,
+ * despite isolated helper equality (node #755's forced-program regression).
  * A cell must span at least two target pixels; log-space weighting admits a
  * fractional last octave instead of popping a whole frequency band on. */
 const FOOTPRINT_VARIANTS = [3, 4, 5, "ridged" as const]
@@ -118,7 +121,6 @@ const FOOTPRINT_VARIANTS = [3, 4, 5, "ridged" as const]
 		return /* glsl */ `
 float ${name}Footprint(vec3 p, float footprint, float cap) {
   float extra = clamp(log(0.5 / max(footprint * pow(${lac}, ${count}.0), 1e-12)) / log(${lac}), 0.0, cap);
-  if (extra <= 0.0) return ${name}(p);
   float s = 0.0, a = 0.5, n = 0.0;
   for (int i = 0; i < ${count}; ++i) {
     s += a * ${sample}; n += a; p = p * ${lac} + ${offset}; a *= 0.5;

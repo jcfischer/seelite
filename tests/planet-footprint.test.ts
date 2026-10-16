@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { readFileSync } from "node:fs";
+import { glslFunctionRange } from "../scripts/lib/glsl-function.mjs";
 import { appearanceFor } from "../src/planet-appearance";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import { planetDetailCap, targetPixelAngle } from "../src/planet-footprint";
@@ -50,9 +51,13 @@ test("live terran extends exactly its four fields, leaving warp and bakes alone"
 	);
 });
 
-test("zero extension returns the original helper without changed arithmetic", () => {
+test("zero extension preserves the original accumulation arithmetic", () => {
 	for (const name of ["fbm3", "fbm4", "fbm5", "ridged"]) {
-		expect(NOISE_GLSL).toContain(`if (extra <= 0.0) return ${name}(p);`);
+		// Keep the original accumulation and division in the footprint function.
+		// A separate early return changed screen-space normals on ANGLE Metal.
+		expect(scalarFunction(`${name}Footprint`)).not.toContain(
+			`return ${name}(p)`,
+		);
 	}
 	expect(NOISE_GLSL).toContain(
 		"float weight = clamp(extra - float(i), 0.0, 1.0)",
@@ -64,15 +69,7 @@ test("zero extension returns the original helper without changed arithmetic", ()
 // noise stub. GLSL's vector multiply/add applies this recurrence per component;
 // the browser probe separately executes the actual three-dimensional field.
 function scalarFunction(name: string): string {
-	const start = NOISE_GLSL.indexOf(`float ${name}(`);
-	if (start < 0) throw new Error(`missing GLSL function ${name}`);
-	const open = NOISE_GLSL.indexOf("{", start);
-	let end = open + 1,
-		depth = 1;
-	for (; depth > 0; end++) {
-		if (NOISE_GLSL[end] === "{") depth++;
-		if (NOISE_GLSL[end] === "}") depth--;
-	}
+	const { start, end } = glslFunctionRange(NOISE_GLSL, name);
 	return NOISE_GLSL.slice(start, end)
 		.replace(/float\(i\)/g, "i")
 		.replace(
@@ -82,6 +79,18 @@ function scalarFunction(name: string): string {
 		)
 		.replace(/\b(?:float|int) /g, "let ");
 }
+
+test("GLSL function ranges include nested blocks and refuse malformed helpers", () => {
+	const fn = "float f(float p) { if (p > 0.0) { return p; } return 0.0; }";
+	const source = `// prefix\n${fn}\nfloat other() { return 1.0; }`;
+	const { start, end } = glslFunctionRange(source, "f");
+	expect(source.slice(start, end)).toBe(fn);
+	expect(() => glslFunctionRange(source, "absent")).toThrow("missing");
+	expect(() => glslFunctionRange("float f(float p)", "f")).toThrow("missing");
+	expect(() =>
+		glslFunctionRange("float f(float p) { if (true) { }", "f"),
+	).toThrow("unclosed");
+});
 
 test("emitted helpers normalise a fractional last octave and obey the cap", () => {
 	for (const name of ["fbm3", "fbm4", "fbm5", "ridged"]) {
@@ -119,6 +128,10 @@ return [${name}, ${name}Footprint];`,
 			expect(run[1](0.37, footprint, 0)).toBe(run[0](0.37));
 		}
 		expect(run[1](0.37, 1, 6)).toBe(run[0](0.37));
+		for (let p = -30; p < 30; p += 0.37) {
+			expect(run[1](p, 1e-5, 0)).toBe(run[0](p));
+			expect(run[1](p, 1, 6)).toBe(run[0](p));
+		}
 	}
 });
 

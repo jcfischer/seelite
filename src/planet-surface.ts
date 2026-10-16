@@ -655,8 +655,8 @@ export function buildBodyVisual(
 			camera.projectionMatrix.elements[5],
 			height,
 		);
-		// The original program outside the detail band avoids a compiler's
-		// reassociation changing one display code despite zero added weight.
+		// Outside the detail band, keep the base program so inactive detail pays
+		// neither footprint inputs nor octave-selection arithmetic.
 		detailCentre.setFromMatrixPosition(planet.matrixWorld);
 		detailScale.setFromMatrixScale(planet.matrixWorld);
 		camera.getWorldPosition(detailEye);

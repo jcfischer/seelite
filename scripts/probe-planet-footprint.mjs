@@ -83,6 +83,9 @@ try {
 		const { appearanceFor } = await import("/src/planet-appearance.ts");
 		const { fragmentFor, NOISE_GLSL } = await import("/src/planet-shaders.ts");
 		const { CLASS_GLSL } = await import("/src/planet-classes.glsl.ts");
+		const { glslFunctionRange } = await import(
+			"/scripts/lib/glsl-function.mjs"
+		);
 		const renderer = new THREE.WebGLRenderer();
 		renderer.setSize(720, 450);
 		const target = new THREE.WebGLRenderTarget(720, 450);
@@ -96,7 +99,10 @@ try {
 		visual.setSurfacePath("screen-space");
 		const material = visual.surfaceMesh.material;
 		const base = fragmentFor("terran", "screen-space", false);
-		const read = (cap, source = null) => {
+		const footprint = fragmentFor("terran", "screen-space", true);
+		// Force source after the shipped selector: cap zero and distant High
+		// normally pick the base program, which would make this comparison inert.
+		const read = (cap, source) => {
 			visual.uniforms.extraOctaveCap.value = cap;
 			const draw = visual.surfaceMesh.onBeforeRender;
 			visual.surfaceMesh.onBeforeRender = (...args) => {
@@ -122,32 +128,50 @@ try {
 		};
 		const diff = (a, b) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0);
 		const results = [];
-		for (const r of [1.2, 1.5, 2, 3, 20]) {
+		for (const r of [1.2, 1.5, 1.9, 1.99, 1.9999, 2, 3, 20]) {
 			camera.position.z = r;
-			const zero = read(0),
-				high = read(6),
-				repeat = read(6),
+			const zero = read(0, footprint),
+				high = read(6, footprint),
+				repeat = read(6, footprint),
 				original = read(0, base);
 			results.push({
 				r,
 				changed: diff(zero, high),
 				repeat: diff(high, repeat),
 				base: diff(zero, original),
+				highBase: diff(high, original),
 				lit: high.filter((v, i) => i % 4 !== 3 && v > 0).length,
 			});
 		}
+		// Deliberate defects must move the pixels these gates read. A regression
+		// to selecting the base program for both arms would miss both defects.
+		camera.position.z = 1.2;
+		const zeroFault = diff(
+			read(0, base),
+			read(
+				0,
+				footprint.replaceAll(
+					"if (weight <= 0.0) break;",
+					"if (weight <= 0.0) { s += 0.01; break; }",
+				),
+			),
+		);
+		camera.position.z = 2;
+		const fadeFault = diff(
+			read(0, base),
+			read(
+				6,
+				footprint.replace(
+					"smoothstep(1.6, 2.0, cameraR)",
+					"smoothstep(1.6, 2.2, cameraR)",
+				),
+			),
+		);
 		// Reconstruct the previous shared source by removing only the four new,
 		// unreachable helper definitions. Every other class must reproduce it.
 		const withoutFootprint = (source) => {
 			for (const name of ["fbm3", "fbm4", "fbm5", "ridged"]) {
-				const start = source.indexOf(`float ${name}Footprint(`);
-				if (start < 0) throw new Error(`missing helper ${name}`);
-				let end = source.indexOf("{", start) + 1,
-					depth = 1;
-				for (; depth > 0; end++) {
-					if (source[end] === "{") depth++;
-					if (source[end] === "}") depth--;
-				}
+				const { start, end } = glslFunctionRange(source, `${name}Footprint`);
 				source = source.slice(0, start) + source.slice(end);
 			}
 			return source;
@@ -199,7 +223,15 @@ void main() {
 		tiny.dispose();
 		visual.dispose();
 		renderer.dispose();
-		return { results, classes, coarse, fullAngle, halfAngle };
+		return {
+			results,
+			classes,
+			coarse,
+			fullAngle,
+			halfAngle,
+			zeroFault,
+			fadeFault,
+		};
 	});
 	for (const row of rig.classes)
 		t.check(
@@ -209,7 +241,7 @@ void main() {
 		);
 	for (const row of rig.results) {
 		t.check(
-			`original arithmetic and cap 0 agree at ${row.r}R`,
+			`forced footprint program at cap 0 matches original pixels at ${row.r}R`,
 			row.base === 0,
 			JSON.stringify(row),
 		);
@@ -218,10 +250,21 @@ void main() {
 			row.repeat === 0 && row.lit > 0,
 		);
 		t.check(
-			`cap arms ${row.r < 2 ? "differ" : "agree"} at ${row.r}R`,
-			row.r < 2 ? row.changed > 0 : row.changed === 0,
+			`forced High ${row.r <= 1.99 ? "adds detail" : "joins original pixels"} at ${row.r}R`,
+			row.r <= 1.99 ? row.changed > 0 : row.highBase === 0,
+			JSON.stringify(row),
 		);
 	}
+	t.check(
+		"parity detector catches a zero-weight arithmetic defect",
+		rig.zeroFault > 0,
+		`changed channels: ${rig.zeroFault}`,
+	);
+	t.check(
+		"2R detector catches a fade continuing past 2R",
+		rig.fadeFault > 0,
+		`changed channels: ${rig.fadeFault}`,
+	);
 	t.check(
 		"coarse footprint with cap six equals original fields",
 		rig.coarse === 0,

@@ -13,29 +13,44 @@ the half-resolution prepass, adaptive resolution and postcard targets.
 
 Low's uniform cap is 0; High terran's interim cap is 6. Other classes receive 0.
 The cap fades from full at 1.6R to zero at 2R. Low and cameras at or beyond 2R
-select the original program: merely returning the old fBm through a new helper
-changed one display code in one channel on ANGLE Metal. Both programs are warmed
-before approach, including the half-target variant. Relief policy stays as shipped;
-the close production terran path remains screen-space.
+select the original program to avoid inactive footprint arithmetic. Both programs
+are warmed before approach, including the half-target variant. Relief policy
+stays as shipped; the close production terran path remains screen-space.
+
+Round 1 corrected the parity oracle: the probe now forces the footprint source
+after the draw hook, including at cap zero and beyond 2R. The earlier 33/33 result
+compared the base program with itself on those arms and did not prove the claimed
+terran parity. The corrected check reproduced one changed channel at 1.2, 1.5,
+1.9999 and 2R on ANGLE Metal. Diagnostic normal output differed even where albedo
+matched. Removing the helpers' early return through the original fBm removed this
+drift: the footprint helper now always performs the original accumulation and
+division, breaking before touching either sum when the extra weight is zero.
 
 ## Verification
 
-- `tests/planet-footprint.test.ts`: 8 tests, including generated helper arithmetic
+- `tests/planet-footprint.test.ts`: 9 tests, including generated helper arithmetic
   at fractional and capped octave counts, zero-weight equality, quality mapping,
   actual draw-target height, base-program selection, splice logs and warm-up.
-- GPU lane: ANGLE Metal / Apple M1 Pro. `probe-planet-footprint`: 33/33 checks.
-  All nine classes match the original shared source at cap zero. Terran cap zero
-  matches its original fields at 1.2, 1.5, 2, 3 and 20R. Repeat differences are
-  zero. Cap 0 versus 6 differs at 1.2/1.5R and is identical at 2/3/20R.
+  The probe and tests share a GLSL function-range reader with nested-block and
+  malformed-source checks. Targeted planet tests: 101 passing across nine files.
+- GPU lane: ANGLE Metal / Apple M1 Pro. `probe-planet-footprint`: 44/44 checks.
+  All nine classes match the original shared source without the new helper
+  definitions. The forced footprint program at cap zero matches original pixels
+  at 1.2, 1.5, 1.9, 1.99, 1.9999, 2, 3 and 20R. Repeat differences are zero.
+  Forced High differs at 1.2/1.5/1.9/1.99R and joins original pixels exactly at
+  1.9999/2/3/20R. No pixel tolerance was added. Deliberately changing zero-weight
+  arithmetic moves 357,385 channels; delaying the fade end to 2.2R moves 19,611
+  channels at 2R, proving both detectors see the defects they name.
   The actual GLSL helpers match base fBm exactly for coarse footprints and cap
   zero, before framebuffer quantisation. Half-target pixel angle is exactly twice
   the full target's. All four field splices report landed in mesh userData.
 - `probe-planet-surfaces`: 114/114 checks; includes the pre-warm regression.
-- `probe-planets`: passing gallery contract. These are manually selected affected
-  probes, not a full browser-suite or PR-gate pass.
+- `probe-planets`: 69/69 checks. All three affected probes passed in 89 seconds.
+  These are manually selected affected probes, not a full browser-suite or
+  PR-gate pass.
 - Typecheck, formatting, lint, wiring and production build checked locally.
-  The single final `npm test` run on this host passed: 6,354 tests, 0 failures,
-  across 364 files (721.22 s).
+  The single final review-pass `npm test` run on this host passed: 6,355 tests,
+  0 failures, across 364 files (704.22 s).
 
 ## Eye gate and handoff
 
@@ -56,6 +71,13 @@ yes on coast, mountain, vegetation and ice-line legibility remains required by
 
 The supervisor owns push, PR, Sage, final browser selection and the principal's
 merge. The selector's working-diff diagnostic falls back to all probes because
-`src/main.ts` is shared runtime. No graph node has been changed or closed.
+`src/main.ts` is shared runtime; the added GLSL reader also triggers the shared
+probe-harness fallback. The ranger contract limits this worker to the affected
+planet probes. No graph node has been changed or closed.
 This is detail tuning of an existing surface, not a new mechanic or screen under
 the public changelog's definition of major.
+
+The optional program-selection and prewarm refactors were left out of this
+parity repair to keep runtime changes narrow. No frame-time price is claimed;
+the cap-0/cap-6 timing baseline remains for the pricing node below #720, which
+owns the final cap. The review's shared GLSL scanner suggestion was taken.
