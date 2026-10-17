@@ -1,3 +1,4 @@
+import { fieldContactsAt } from "./field-contact";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
 	startNebulaBake,
@@ -11320,6 +11321,8 @@ class Game {
 	 * order is position-independent, which is what makes one build enough.
 	 */
 	private selectable(): Body[] {
+		// Refresh even when membership is cached: fields orbit on the game clock.
+		const fields = fieldContactsAt(this.world.system, this.world.gameTime);
 		if (!this.selectableCache) {
 			const order = {
 				station: 0,
@@ -11333,6 +11336,7 @@ class Game {
 				// kind missing here is a build error rather than a silent NaN.
 				cargo: 6,
 				wreck: 7,
+				field: 8,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -11340,6 +11344,7 @@ class Game {
 					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
 				);
 			this.selectableCache.push(...this.contacts);
+			this.selectableCache.push(...fields);
 		}
 		return this.selectableCache;
 	}
@@ -19875,7 +19880,10 @@ class Game {
 			{
 				orientation: this.orientation,
 				output: this.scannerContactBuffer,
-				flooredContacts: this.contacts,
+				flooredContacts: [
+					...this.contacts,
+					...fieldContactsAt(this.world.system, this.world.gameTime),
+				],
 			},
 		);
 	}

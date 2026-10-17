@@ -100,6 +100,7 @@ test("the renderer's bodies carry the appearance the generator implies", () => {
 		if (
 			body.kind === "ship" ||
 			body.kind === "relay" ||
+			body.kind === "field" ||
 			body.kind === "cargo" ||
 			body.kind === "wreck"
 		)

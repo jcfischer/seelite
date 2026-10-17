@@ -34,7 +34,11 @@ const OWNERS = Object.freeze({
 		"src/station-traffic.ts",
 		"src/docking.ts",
 	],
-	"probe-arrival.mjs": ["scripts/probe-arrival.mjs", "src/arrival.ts"],
+	"probe-arrival.mjs": [
+		"scripts/probe-arrival.mjs",
+		"src/arrival.ts",
+		"src/field-contact.ts",
+	],
 	"probe-audio-cues.mjs": [
 		"scripts/probe-audio-cues.mjs",
 		"src/audio.ts",
