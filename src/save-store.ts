@@ -800,7 +800,14 @@ export class SaveStore {
 	private adoptCommitted(tx: CommitTransaction, from: SaveEnvelope): void {
 		if (this.current().commander.txSeq >= tx.candidateTxSeq) return;
 		tx.op.adopt(from);
-		this.adoptedFootprints.push({ seq: this.adoptions, apply: tx.op.apply });
+		// **Kept only while a checkpoint snapshot is outstanding.** `checkpointBlob`
+		// is its only consumer, and `adoptions` — which counts every step whether
+		// or not the callback was retained — is what its filter reads, so skipping
+		// the push costs a snapshot nothing: any footprint it can still owe is one
+		// adopted while it was queued. Commit after commit with no checkpoint behind
+		// it would otherwise pile up closures over envelopes no record will read.
+		if (this.outstandingCheckpoints > 0)
+			this.adoptedFootprints.push({ seq: this.adoptions, apply: tx.op.apply });
 		this.adoptions += 1;
 		// Saved state moved on top of any checkpoint snapshot a flush queued
 		// behind this commit (`run`'s `edits`), and any debounced write behind it
@@ -856,6 +863,40 @@ export class SaveStore {
 	}
 
 	/**
+	 * Whether live state already carries this transaction. `txSeq` steps by
+	 * exactly one per adoption (D4), so a live sequence at or past the candidate
+	 * names an adoption that covers it — this transaction's own acknowledgement,
+	 * or a later one derived from state that already contained it.
+	 */
+	private liveCarries(tx: CommitTransaction): boolean {
+		return this.current().commander.txSeq >= tx.candidateTxSeq;
+	}
+
+	/**
+	 * Answer a read-back that arrives after live state moved past its
+	 * transaction: the outcome is `committed`, and recovery state does not move.
+	 *
+	 * **Why the guard is here at all.** Between the read and its answer the
+	 * unsettled write can land — its acknowledgement adopts the footprint and
+	 * lifts the refusal — and once `inFlight` frees, another op can commit and
+	 * step the sequence again. What this read returns then decides nothing: it
+	 * names a moment live has left behind, and on the failure paths it decided
+	 * nothing even while it was fresh. Recording uncertainty from it blocked every
+	 * write for a transaction that is already durable, and the next read answered
+	 * with the newer number — which matches neither accepted value — so the
+	 * refusal could not lift at all. D4's refusal is for an outcome that is
+	 * *unknown*, not for one that was settled while the read was out.
+	 *
+	 * The refusal lifts only when it names **this** transaction: one raised for a
+	 * later commit still owes its own read, and an obsolete answer about an older
+	 * one may not clear it.
+	 */
+	private obsoleteAnswer(tx: CommitTransaction): SaveCommitOutcome {
+		if (this.uncertainCommit === tx) this.uncertainCommit = null;
+		return "committed";
+	}
+
+	/**
 	 * Decide an unsettled commit by reading `live` back (#936 D4). The record
 	 * is the only witness that survives the page: a txSeq that advanced means
 	 * the write landed, and the footprint is taken **from the record read**
@@ -863,7 +904,8 @@ export class SaveStore {
 	 * live has moved past it meanwhile (`adoptCommitted`). The previous value
 	 * means it did not land, and a retry is allowed. A read that fails — or
 	 * answers with a number neither — leaves the outcome uncertain, and nothing
-	 * writes until a read succeeds.
+	 * writes until a read succeeds — unless live already carries the transaction,
+	 * which settles it without the record (`obsoleteAnswer`).
 	 */
 	private async readBackCommit(
 		tx: CommitTransaction,
@@ -872,9 +914,14 @@ export class SaveStore {
 		try {
 			raw = await this.backend.read(this.slot, "live");
 		} catch {
+			if (this.liveCarries(tx)) return this.obsoleteAnswer(tx);
 			this.uncertainCommit = tx;
 			return "uncertain";
 		}
+		// Checked before the record is read for anything: the bytes are what the
+		// read transaction captured, which can predate a landing this store has
+		// already adopted.
+		if (this.liveCarries(tx)) return this.obsoleteAnswer(tx);
 		// **No record at all is definite, not unknown**: a transaction that
 		// landed leaves a record behind, so there is nothing for the pending
 		// write to have advanced. (In production a `live` record always exists
@@ -1557,7 +1604,13 @@ export interface MemorySaveBackend extends SaveBackend {
 	 * moment than the live state it would be adopted into (#936 D4).
 	 */
 	hangNextRead(): void;
-	releaseRead(): void;
+	/**
+	 * Let the held read answer. With `fail`, the held read comes back **failing**
+	 * rather than with the bytes it captured: a read that was out long enough to
+	 * be overtaken and then dies is the case a late failure has to be answered
+	 * for (#936 D4), and a read that fails the moment it is called is not.
+	 */
+	releaseRead(options?: { fail?: boolean }): void;
 	release(): void;
 	failNextWrite(): void;
 	/** Fail the next `deleteSlot`, so a rename can be interrupted between its
@@ -1602,6 +1655,7 @@ export function memorySaveBackend(): MemorySaveBackend {
 	let readGate: Promise<void> | null = null;
 	let openReadGate: (() => void) | null = null;
 	let hangReadNext = 0;
+	let failReleasedRead = false;
 	const calls: {
 		slot: string;
 		kinds: readonly SaveRecordKind[];
@@ -1667,6 +1721,10 @@ export function memorySaveBackend(): MemorySaveBackend {
 					openReadGate = resolve;
 				});
 				await readGate;
+				if (failReleasedRead) {
+					failReleasedRead = false;
+					throw new Error("backend: the read failed after it was held");
+				}
 			}
 			return captured;
 		},
@@ -1781,7 +1839,10 @@ export function memorySaveBackend(): MemorySaveBackend {
 				openReadGate = resolve;
 			});
 		},
-		releaseRead() {
+		releaseRead(options: { fail?: boolean } = {}) {
+			// Arm the failure only when a read actually stands behind the gate:
+			// nothing to release must not leave it armed for the next hung read.
+			failReleasedRead = (options.fail ?? false) && openReadGate !== null;
 			openReadGate?.();
 			readGate = null;
 			openReadGate = null;

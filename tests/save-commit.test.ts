@@ -251,6 +251,28 @@ describe("#936 D1 — a checkpoint queued behind a commit", () => {
 		expect(checkpoint.world.galaxies[0].visited).not.toContain(9);
 	});
 
+	test("a checkpoint queued behind a later commit catches up each commit it missed once, after earlier ones are already in its snapshot", async () => {
+		// The footprints a commit records are owed only to a snapshot that is
+		// outstanding when it adopts. Two commits land with nothing queued, so
+		// their bytes are already in the launch snapshot's own serialization;
+		// re-applying them there would debit twice and print a `txSeq` no
+		// transaction made (#936 D4: one step per commit).
+		const h = harness();
+		expect(await h.store.commit(h.debit(10))).toBe("committed");
+		expect(await h.store.commit(h.debit(20))).toBe("committed");
+		h.backend.hangNextWrite();
+		const commit = h.store.commit(h.debit(5)); // the third transaction, held
+		const launched = h.store.flush("undock"); // its snapshot sees tx 1 and 2
+		h.backend.release(); // tx 3 lands and adopts, then the checkpoint writes
+		expect(await commit).toBe("committed");
+		await launched;
+		const checkpoint = (await h.backend.raw(SLOT, "lastDocked")) as {
+			commander: { txSeq: number; state: { credits: number } };
+		};
+		expect(checkpoint.commander.txSeq).toBe(3);
+		expect(checkpoint.commander.state.credits).toBe(65);
+	});
+
 	test("a death after that launch restores the committed credits, not the fee", async () => {
 		const h = harness();
 		h.backend.hangNextWrite();
@@ -441,6 +463,74 @@ describe("#936 D4 — a write that does not settle (case 4)", () => {
 		expect(durable.commander.txSeq).toBe(2);
 		// And transaction 1 is not freed for reuse by the late answer.
 		expect(await h.store.commit({ ...h.debit(5), txSeq: 1 })).toBe("stale");
+	});
+
+	test("a read-back that answers with the previous txSeq after the write landed and adopted resolves committed, not failed", async () => {
+		// The record a read returns is the one its transaction saw, captured
+		// before the write landed. Answering `failed` off that stale value would
+		// tell the pilot the purchase had not happened while the fee is already
+		// durable and adopted into live state — and the action would be offered a
+		// second time, debiting twice (#936 D4: one transaction per accepted action).
+		const h = harness();
+		h.backend.hangNextWrite(); // tx 1 hangs before it lands
+		const first = h.store.commit(h.debit(60));
+		h.backend.hangNextRead();
+		h.clock.fire(SAVE_COMMIT_TIMEOUT_MS);
+		await quiesce(); // the read has captured the pre-landing record
+		h.backend.release(); // tx 1 lands and adopts
+		await quiesce();
+		expect(h.state.commander.txSeq).toBe(1);
+		h.backend.releaseRead(); // the stale answer arrives
+		expect(await first).toBe("committed");
+		expect(h.state.commander.state.credits).toBe(40);
+		expect(h.store.hasUncertainCommit).toBe(false);
+	});
+
+	test("a read-back that fails after its own commit acknowledged and a later commit landed resolves committed and leaves writes open", async () => {
+		// The transaction landed, its acknowledgement adopted it, and a second
+		// transaction committed while this read was out — all before the read
+		// came back failing. Its failure is not an unknown outcome: the number it
+		// could not read is already in live state, and treating it as one kept the
+		// store refusing every write for a transaction that is durable.
+		const h = harness();
+		h.backend.hangNextWriteApplied(); // tx 1 is on disk, its ack withheld
+		const first = h.store.commit(h.debit(60));
+		h.backend.hangNextRead();
+		h.clock.fire(SAVE_COMMIT_TIMEOUT_MS); // the read-back runs and is held
+		await quiesce(); // it has captured the corrupt row by now
+		h.backend.release(); // the ack arrives: tx 1 adopts, the queue frees
+		await quiesce();
+		expect(h.state.commander.txSeq).toBe(1);
+		expect(await h.store.commit(h.debit(10))).toBe("committed"); // tx 2
+		h.backend.releaseRead({ fail: true }); // the held read comes back failing
+		expect(await first).toBe("committed");
+		expect(h.store.hasUncertainCommit).toBe(false);
+		// The store still writes — nothing is being held back.
+		expect(await h.store.commit(h.debit(5))).toBe("committed"); // tx 3
+		expect(h.state.commander.state.credits).toBe(25);
+		expect(h.state.commander.txSeq).toBe(3);
+	});
+
+	test("a read-back that answers with an unparseable record after its own commit acknowledged resolves committed and leaves writes open", async () => {
+		// Same shape through the other failure door: the record the read
+		// transaction captured will not parse (D9's named error), so it can
+		// neither be adopted nor compared — and by the time it answers, live
+		// carries the transaction it was sent to decide about.
+		const h = harness();
+		expect(await h.store.commit(h.debit(1))).toBe("committed"); // tx 1 on disk
+		await h.backend.corruptVersion(SLOT, "live"); // what the next read finds
+		h.backend.hangNextWrite(); // tx 2 hangs before it lands
+		const second = h.store.commit(h.debit(60));
+		h.backend.hangNextRead();
+		h.clock.fire(SAVE_COMMIT_TIMEOUT_MS); // the read captures the corrupt row
+		await quiesce(); // the capture is what the answer will carry
+		h.backend.release(); // tx 2 lands and adopts
+		await quiesce();
+		expect(h.state.commander.txSeq).toBe(2);
+		expect(await h.store.commit(h.debit(10))).toBe("committed"); // tx 3
+		h.backend.releaseRead(); // the corrupt answer arrives
+		expect(await second).toBe("committed");
+		expect(h.store.hasUncertainCommit).toBe(false);
 	});
 
 	test("a late definite failure settles an uncertain outcome toward retry", async () => {
