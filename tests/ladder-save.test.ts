@@ -51,11 +51,11 @@ const saved = () => {
 };
 
 describe("#183 D9 — the ladders in the save", () => {
-	test("the schema is 15, and carries the ladders since 7", () => {
+	test("the schema is 16, and carries the ladders since 7", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(15);
+		expect(SAVE_SCHEMA_VERSION).toBe(16);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 		]);
 	});
 
@@ -95,6 +95,7 @@ describe("#183 D9 — the ladders in the save", () => {
 			delete body.commander.sweepReadings;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
+			delete body.commander.txSeq;
 		});
 		const { commander } = parseSave(v6);
 		expect(commander.ladders.banked).toEqual({
@@ -131,6 +132,7 @@ describe("#183 D9 — the ladders in the save", () => {
 			delete body.commander.sweepReadings;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
+			delete body.commander.txSeq;
 		});
 		const { commander } = parseSave(v6);
 		expect(commander.ladders.banked.exploration).toBe(0);

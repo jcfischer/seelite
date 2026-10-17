@@ -171,6 +171,7 @@ test("a carried typed fitting and a surviving wreck preserve grade, ammo and var
 	// Schema 14 already carried typed fittings and their purchase cost, before
 	// sweep strength was added.
 	raw.saveSchemaVersion = 14;
+	delete raw.commander.txSeq;
 	expect(parseSave(seal(raw))).toEqual(saved);
 });
 test("invalid slots, grades, missing plants and impossible ammunition are refused", () => {
@@ -224,6 +225,7 @@ test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the n
 	);
 	expect(wrecks.flat().some((c) => c.fitting?.purchaseCostCr === 0)).toBe(true);
 	raw.saveSchemaVersion = 13;
+	delete raw.commander.txSeq;
 	expect(() => parseSave(seal(raw))).toThrow();
 	delete raw.commander.state.loadout.h1.purchaseCostCr;
 	delete raw.commander.state.recoveredFittings[0].purchaseCostCr;
@@ -233,7 +235,7 @@ test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the n
 });
 test("current saves write only loadout; mixed versions and unknown old ids are refused", () => {
 	const current = fixture();
-	expect(current.saveSchemaVersion).toBe(15);
+	expect(current.saveSchemaVersion).toBe(16);
 	expect(current.commander.state.ownedEquipment).toBeUndefined();
 	expect(() =>
 		parseSave(
@@ -248,6 +250,7 @@ test("current saves write only loadout; mixed versions and unknown old ids are r
 	).toThrow();
 	const old = fixture();
 	old.saveSchemaVersion = 12;
+	delete old.commander.txSeq;
 	old.commander.state.ownedEquipment = [];
 	expect(() => parseSave(seal(old))).toThrow();
 	delete old.commander.state.loadout;
