@@ -51,6 +51,7 @@ import {
 	type HullVariantId,
 } from "./hull";
 import { disposeSubtree, shared } from "./gpu-teardown";
+import { finishHullWork } from "./hull-install-work";
 import type { Vec3 } from "./vec3";
 import {
 	currentHullFinish,
@@ -6865,6 +6866,12 @@ function addNavLights(
 
 /** Where the four lights go on a built hull, `NAV_LIGHTS` order, kilometres. */
 function navLightPositions(root: THREE.Group): Float32Array | null {
+	return finishHullWork(navLightPositionSteps(root));
+}
+
+function* navLightPositionSteps(
+	root: THREE.Group,
+): Generator<void, Float32Array | null> {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
 	if (box.isEmpty()) return null;
@@ -6883,9 +6890,13 @@ function navLightPositions(root: THREE.Group): Float32Array | null {
 	 * centre line would otherwise get no light at all, and a light a little off
 	 * the surface is a far smaller error than a missing one.
 	 */
-	const onSurface = (from: THREE.Vector3, inward: THREE.Vector3) => {
+	function* onSurface(
+		from: THREE.Vector3,
+		inward: THREE.Vector3,
+	): Generator<void, THREE.Vector3> {
 		caster.set(from, inward);
 		const hit = caster.intersectObject(root, true).find((h) => h.face);
+		yield;
 		// Proud of the surface, then **clamped back into the hull's own box**.
 		//
 		// Proud on its own is not enough, and the rebase onto #181 is what
@@ -6910,23 +6921,23 @@ function navLightPositions(root: THREE.Group): Float32Array | null {
 			? hit.point.clone().addScaledVector(inward, -proud)
 			: from.clone().addScaledVector(inward, standoff);
 		return at.clamp(box.min, box.max);
-	};
+	}
 	// The mesh's nose is -Z (`buildShipMesh`'s callers read it back out that
 	// way), so the tail light comes in from the far +Z end.
 	const at: Record<(typeof NAV_LIGHTS)[number]["role"], THREE.Vector3> = {
-		port: onSurface(
+		port: yield* onSurface(
 			new THREE.Vector3(box.min.x - standoff, centre.y, centre.z),
 			new THREE.Vector3(1, 0, 0),
 		),
-		starboard: onSurface(
+		starboard: yield* onSurface(
 			new THREE.Vector3(box.max.x + standoff, centre.y, centre.z),
 			new THREE.Vector3(-1, 0, 0),
 		),
-		dorsal: onSurface(
+		dorsal: yield* onSurface(
 			new THREE.Vector3(centre.x, box.max.y + standoff, centre.z),
 			new THREE.Vector3(0, -1, 0),
 		),
-		tail: onSurface(
+		tail: yield* onSurface(
 			new THREE.Vector3(centre.x, centre.y, box.max.z + standoff),
 			new THREE.Vector3(0, 0, -1),
 		),
@@ -7165,8 +7176,17 @@ function buildAuthoredHull(
 	id: AfterBootHullId,
 	builder: AuthoredHullBuilder,
 ): void {
+	finishHullWork(buildAuthoredHullSteps(root, id, builder));
+}
+
+function* buildAuthoredHullSteps(
+	root: THREE.Group,
+	id: AfterBootHullId,
+	builder: AuthoredHullBuilder,
+	exhaust = makePalette(id).exhaust,
+): Generator<void, void> {
 	root.userData.authored = true;
-	const levels = builder(root, makePalette(id).exhaust);
+	const levels = builder(root, exhaust);
 	// After the model, for the reason the procedural branch gives: the
 	// lights are placed from the built hull's own box.
 	const known = authoredNavLights.get(builder);
@@ -7175,12 +7195,33 @@ function buildAuthoredHull(
 		lights.onBeforeRender = known.onBeforeRender;
 		root.add(lights);
 	} else {
-		addNavLights(root);
+		addNavLights(root, yield* navLightPositionSteps(root));
 		const placed = root.getObjectByName("nav-lights") as THREE.Points;
 		shared(placed.geometry);
 		authoredNavLights.set(builder, placed);
 	}
 	adoptUndetailedShip(root, HULL_REACH_KM[id], levels);
+}
+
+/** Build and warm an unpublished builder, without exposing it to the frame
+ * loop. The caller owns and disposes this temporary root.
+ */
+export function* prepareAuthoredHull(
+	id: AfterBootHullId,
+	builder: AuthoredHullBuilder,
+	exhaust?: THREE.MeshStandardMaterial,
+): Generator<void, THREE.Group> {
+	const root = new THREE.Group();
+	root.userData.hullId = id;
+	root.userData.variant = HULL_SPECS[id].variant;
+	let complete = false;
+	try {
+		yield* buildAuthoredHullSteps(root, id, builder, exhaust);
+		complete = true;
+		return root;
+	} finally {
+		if (!complete) disposeSubtree(root);
+	}
 }
 
 export function buildShipMesh(

@@ -41,6 +41,7 @@ import {
 	isDriveBell,
 } from "./ship-mesh";
 import { isLevelStandIn } from "./ship-detail";
+import { finishHullWork } from "./hull-install-work";
 import type { VentLevels } from "./sim";
 
 /**
@@ -184,8 +185,32 @@ const authoredThroats = new WeakMap<
 	Map<string, readonly Throat[]> // glossary-ignore: throat
 >();
 
+/** Warm a private builder before it can be used by flight. Both glow forms
+ * are prepared by the loader; no global installed builder is consulted.
+ */
+export function* prepareAuthoredThroats(
+	root: THREE.Object3D,
+	id: HullId,
+	builder: AuthoredHullBuilder,
+): Generator<void, void> {
+	let byGlow = authoredThroats.get(builder);
+	if (!byGlow) {
+		byGlow = new Map();
+		authoredThroats.set(builder, byGlow);
+	}
+	const glow = String(root.userData.authoredGlow);
+	if (!byGlow.has(glow)) byGlow.set(glow, yield* measureThroatSteps(root, id));
+}
+
 // glossary-ignore: throat
 function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
+	return finishHullWork(measureThroatSteps(root, id));
+}
+
+function* measureThroatSteps(
+	root: THREE.Object3D,
+	id: HullId,
+): Generator<void, Throat[]> {
 	const spec = HULL_SPECS[id];
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
@@ -255,6 +280,7 @@ function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
 					placed: "bell",
 					gapKm: 0,
 				});
+			yield;
 			continue;
 		}
 		const table = new THREE.Vector3(...vent.posKm).add(centre);
@@ -274,6 +300,7 @@ function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
 			placed: "line",
 			gapKm,
 		});
+		yield;
 	}
 	return throats;
 }
