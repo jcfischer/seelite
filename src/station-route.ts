@@ -31,6 +31,12 @@ import type { SystemRecord } from "./galaxy";
 import type { HullEnvelope, HullId } from "./hull";
 import { HULL_SPECS } from "./hull";
 import {
+	CROSSING,
+	crossingDistanceKm,
+	emergenceOffset,
+	emergenceVelocity,
+} from "./witchspace-crossing";
+import {
 	advanceSystem,
 	bodyAccelerationBound,
 	bodyVelocity,
@@ -717,6 +723,16 @@ const interpolate = (a: Vec3, b: Vec3, u: number): Vec3 => ({
 const smooth = (u: number) => u * u * (3 - 2 * u);
 const clamp01 = (u: number) => Math.max(0, Math.min(1, u));
 
+/**
+ * How far a hull of `hullId` stands off its lane point at the start of a jump
+ * crossing, km (node #1006). Read from `HULL_SPECS.env`, the measured box the
+ * sim owns — never `ship-mesh.ts`'s `HULL_REACH_KM`, which is what a renderer
+ * draws and a route may not depend on (`hull.ts`'s own docblock keeps the same
+ * split for a berth), and held against it by `tests/witchspace-crossing.test.ts`.
+ */
+const crossingLeadKm = (hullId: HullId): number =>
+	crossingDistanceKm(HULL_SPECS[hullId].env, HULL_SPECS[hullId].envCentre);
+
 const blockedUntil = (
 	timeline: readonly TrafficArbitrationEvent[],
 	stationId: string,
@@ -822,7 +838,6 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		originBerthId,
 		readyAtS,
 		awayOrdinal,
-		finalPhase,
 		pendingIntent,
 	} = input;
 	const originNow = input.projectionSystem
@@ -1382,8 +1397,26 @@ function projectTrafficFlight(
 					: "lane-point-hold",
 			{
 				key: actor.key,
-				pos: lanePoint.pos,
-				vel: { x: 0, y: 0, z: 0 },
+				pos: add(
+					lanePoint.pos,
+					gameTime < jumpAtS
+						? emergenceOffset(
+								"departure",
+								gameTime - jumpAtS,
+								crossingLeadKm(actor.hullId),
+								nose,
+							)
+						: { x: 0, y: 0, z: 0 },
+				),
+				vel:
+					gameTime < jumpAtS
+						? emergenceVelocity(
+								"departure",
+								gameTime - jumpAtS,
+								crossingLeadKm(actor.hullId),
+								nose,
+							)
+						: { x: 0, y: 0, z: 0 },
 				nose,
 				up: drop.up,
 			},
@@ -2106,19 +2139,33 @@ function projectLanePointArrival(
 		pos: lanePoint.pos,
 		nose: lanePoint.nose,
 	};
-	if (input.gameTime < lanePoint.atS + JUMP_CHARGE_S)
+	if (input.gameTime < lanePoint.atS + JUMP_CHARGE_S) {
+		// #1006: the hull comes **through** the ring rather than being found
+		// inside it. It starts aft of the point, eases across the plane, and is at
+		// rest on the point at `atS + crossS` — well inside the hold — so the leg
+		// that follows begins from the position and velocity it has always begun
+		// from and no downstream time moves.
+		const distance = crossingDistanceKm(
+			HULL_SPECS[input.actor.hullId].env,
+			HULL_SPECS[input.actor.hullId].envCentre,
+		);
+		const ageS = input.gameTime - lanePoint.atS;
 		return withRoute(
 			input.actor,
 			"lane-point-hold",
 			{
 				key: input.actor.key,
-				pos: lanePoint.pos,
-				vel: { x: 0, y: 0, z: 0 },
+				pos: add(
+					lanePoint.pos,
+					emergenceOffset("arrival", ageS, distance, lanePoint.nose),
+				),
+				vel: emergenceVelocity("arrival", ageS, distance, lanePoint.nose),
 				nose: lanePoint.nose,
 				up: lanePointUp,
 			},
 			{ chargeAu: lanePoint.chargeAu, originBerthOccupied: false, jump },
 		);
+	}
 	const start = lanePointArrivalStart(input, v, lanePointUp);
 	const result = projectTrafficFlight(
 		{
@@ -2146,13 +2193,43 @@ function projectLanePointArrival(
 	return { ...result, jump };
 }
 
+/**
+ * The ring of an arrival that has not happened yet (#1006): the crossing's
+ * build-up, published `CROSSING.openS` before the instant so a watcher sees
+ * space open before anything comes through it. The hauler still has no place in
+ * this system — `hyperspace-away`, and `present: false` where it is absent — so
+ * no hull, contact or collision comes with the ring, which is drawn from a
+ * `jump` alone.
+ */
+const imminentArrivalJump = (
+	v: TrafficHaulerVoyage,
+	gameTime: number,
+): SystemTrafficProjection["jump"] => {
+	const ageS = gameTime - v.arrival.atS;
+	return ageS < 0 && ageS >= -CROSSING.openS
+		? {
+				kind: "arrival",
+				atS: v.arrival.atS,
+				pos: v.arrival.pos,
+				nose: v.arrival.nose,
+			}
+		: undefined;
+};
+
 /** A hauler in another system: it has no place in this one. */
-const absentHauler = (actor: TrafficActor): SystemTrafficProjection =>
+const absentHauler = (
+	actor: TrafficActor,
+	jump?: SystemTrafficProjection["jump"],
+): SystemTrafficProjection =>
 	withRoute(
 		actor,
 		"hyperspace-away",
 		{ key: actor.key, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 } },
-		{ originBerthOccupied: false, present: false },
+		{
+			originBerthOccupied: false,
+			present: false,
+			...(jump ? { jump } : {}),
+		},
 	);
 
 /** Stamp a hauler projection with the identity of the visit it belongs to. */
@@ -2229,8 +2306,19 @@ function projectHomeVoyage(
 		committedDepartureAtS: input.activeVisit?.outboundDepartureAtS,
 		cruiseBudget: budgetOf(input.cruiseTickBudget),
 	});
-	if (outgoing.phase !== "hyperspace-away" || gameTime < v.arrival.atS)
-		return { projection: markVisit(outgoing, v, input.activeVisit) };
+	if (outgoing.phase !== "hyperspace-away" || gameTime < v.arrival.atS) {
+		// The ring the departing hauler left has closed long before its return is
+		// imminent; until it has, that one is what this system is shown, and the
+		// return's opening must not cut it short.
+		const jump = imminentArrivalJump(v, gameTime);
+		const departureLive =
+			outgoing.jump !== undefined &&
+			gameTime - outgoing.jump.atS < CROSSING.windowEndS;
+		const marked = markVisit(outgoing, v, input.activeVisit);
+		return {
+			projection: jump && !departureLive ? { ...marked, jump } : marked,
+		};
+	}
 	const arrived = projectLanePointArrival(input, v);
 	const nextDeparture = v.departureAtS + actor.schedule.cycleS;
 	if (
@@ -2268,7 +2356,11 @@ function projectAwayVoyage(
 	v: TrafficHaulerVoyage,
 	isLast: boolean,
 ): SystemTrafficProjection | null {
-	if (input.gameTime < v.arrival.atS) return null;
+	if (input.gameTime < v.arrival.atS) {
+		// The ring opens ahead of the hauler; the hauler itself is still elsewhere.
+		const jump = imminentArrivalJump(v, input.gameTime);
+		return jump ? absentHauler(input.actor, jump) : null;
+	}
 	const arrived = projectLanePointArrival(input, v);
 	if (
 		arrived.phase !== "docked-away" ||

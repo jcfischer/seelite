@@ -62,6 +62,7 @@ export const ARRIVAL_RIFT = Object.freeze({
 const FRAGMENT = /* glsl */ `
 #define OCTAVES 3
 uniform float uStrength;
+uniform float uFlare;
 uniform float uPhase;
 varying vec2 vUv;
 ${WITCHSPACE_MIST_GLSL}
@@ -80,7 +81,10 @@ void main() {
 	float haze = (1.0 - smoothstep(0.6, 0.9, r)) * smoothstep(0.35, 0.75, r) * 0.3;
 	vec3 tint = witchPalette(n * 1.4 + uPhase * 0.1);
 	vec3 col = tint * (ring * (0.7 + 0.9 * n) + haze * n);
-	gl_FragColor = vec4(col * uStrength, 1.0);
+	// The flare (#1006) is light without size: the crossing and the seal are
+	// moments, and a ring that brightened by growing would read as the ring
+	// getting bigger instead of as something happening at it.
+	gl_FragColor = vec4(col * (uStrength + uFlare), 1.0);
 }
 `;
 
@@ -108,7 +112,11 @@ export class ArrivalRift {
 		};
 		this.fullRadiusKm = ARRIVAL_RIFT.radiusReaches * reachKm;
 		const material = new THREE.ShaderMaterial({
-			uniforms: { uStrength: { value: 0 }, uPhase: { value: 0 } },
+			uniforms: {
+				uStrength: { value: 0 },
+				uFlare: { value: 0 },
+				uPhase: { value: 0 },
+			},
 			vertexShader: WITCHSPACE_VERTEX,
 			fragmentShader: FRAGMENT,
 			transparent: true,
@@ -140,14 +148,22 @@ export class ArrivalRift {
 		return this.object.material.uniforms.uStrength.value as number;
 	}
 
+	/** The flare on top of the strength — light the radius does not carry. */
+	get flare(): number {
+		return this.object.material.uniforms.uFlare.value as number;
+	}
+
 	/**
-	 * One frame: the strength from `witchspaceLook`, the phase for the drift, and
-	 * the camera's world position for the camera-relative placement.
+	 * One frame: the strength from `witchspaceLook` or `npcRiftLook`, the phase
+	 * for the drift, and the camera's world position for the camera-relative
+	 * placement. `flare` is optional because #535's prologue drives the strength
+	 * with the camera's own easing and wants no flare of its own.
 	 */
-	update(strength: number, phase: number, cameraPos: Vec3) {
-		this.object.visible = strength > 0;
+	update(strength: number, phase: number, cameraPos: Vec3, flare = 0) {
+		this.object.visible = strength > 0 || flare > 0;
 		const u = this.object.material.uniforms;
 		u.uStrength.value = strength;
+		u.uFlare.value = flare;
 		u.uPhase.value = phase;
 		const open =
 			ARRIVAL_RIFT.openFrom + (1 - ARRIVAL_RIFT.openFrom) * Math.sqrt(strength);

@@ -843,6 +843,11 @@ import {
 } from "./chase-orbit";
 import { ArrivalRift } from "./arrival-rift";
 import {
+	CROSSING as CROSSING_TIMELINE,
+	npcRiftLook,
+	npcRiftVisible,
+} from "./witchspace-crossing";
+import {
 	buildHaulerPlans,
 	inboundCandidates,
 	routeVoyages,
@@ -854,7 +859,6 @@ import {
 	type WitchspaceState,
 	abortWitchspace,
 	arriveWitchspace,
-	npcRiftStrength,
 	beginWitchspace,
 	entryWitchspace,
 	idleWitchspace,
@@ -8278,6 +8282,17 @@ class Game {
 	}
 
 	/** The listener is the camera: its right axis, not the hull's, pans a ring. */
+	/**
+	 * One frame of a Traffic carrier's ring, at either end of its jump.
+	 *
+	 * The age is **signed** (#1006): a ring runs from `CROSSING.openS` before its
+	 * crossing to `CROSSING.windowEndS` after it, so a watcher sees it tear open
+	 * with nothing in it, flare as the hull passes through, and seal behind it.
+	 * The old window was `[0, riftEndS)` — the ring could only appear once the
+	 * ship was already sitting inside it, which is the frame the principal saw.
+	 * The ring is drawn from `route.jump` alone, so an arrival whose hauler is
+	 * still in another system (`present: false`) gets its opening on screen.
+	 */
 	private updateTrafficRifts(
 		cameraPos: Vec3,
 		cameraRotation: THREE.Quaternion,
@@ -8295,8 +8310,7 @@ class Game {
 				? TRAFFIC_DEMATERIALIZE_KM
 				: TRAFFIC_MATERIALIZE_KM;
 			if (
-				age < 0 ||
-				age >= WITCHSPACE.riftEndS ||
+				!npcRiftVisible(age) ||
 				length(sub(jump.pos, this.world.ship.pos)) > range
 			)
 				continue;
@@ -8312,10 +8326,13 @@ class Game {
 				this.trafficRifts.set(id, rift);
 				this.nearScene.add(rift.object);
 			}
-			const strength = npcRiftStrength(age);
-			rift.update(strength, age, cameraPos);
+			const { strength, flare } = npcRiftLook(age);
+			rift.update(strength, age, cameraPos, flare);
 			if (!this.trafficJumpSounds.has(id)) {
-				this.trafficJumpSounds.set(id, jump.atS + WITCHSPACE.riftEndS);
+				// The sound arrives with the *opening*, not with the ship: the ring's
+				// own length is the crossing's window, and it starts `openS` before
+				// the hull is here at all.
+				this.trafficJumpSounds.set(id, jump.atS + CROSSING_TIMELINE.windowEndS);
 				const rel = sub(jump.pos, cameraPos),
 					distance = length(rel);
 				const r = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRotation);
@@ -8334,7 +8351,7 @@ class Game {
 				});
 				this.play({
 					kind: "witchspaceRift",
-					seconds: WITCHSPACE.riftEndS,
+					seconds: CROSSING_TIMELINE.windowS,
 					spatial,
 				});
 			}
@@ -15416,6 +15433,7 @@ class Game {
 						inScene: rift.object.parent === this.nearScene,
 						visible: rift.object.visible,
 						strength: rift.strength,
+						flare: rift.flare,
 						radiusKm: rift.radiusKm,
 						anchor: { ...rift.anchor },
 					}
@@ -15465,7 +15483,7 @@ class Game {
 			this.clearArrivalRift();
 			return;
 		}
-		this.arrivalRift.update(look.rift, phase, camPos);
+		this.arrivalRift.update(look.rift, phase, camPos, look.riftFlare);
 	}
 	private readonly witchspaceSize = new THREE.Vector2();
 	/**
