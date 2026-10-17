@@ -33,6 +33,9 @@
 import { carrierKey } from "../src/carrier-key";
 import { enumerateCarriers, GALAXY_COUNT } from "../src/world-state";
 import { generateGalaxy } from "../src/galaxy";
+import { fieldRocks, systemFields } from "../src/asteroid-field";
+import { depositKey } from "../src/deposit-state";
+import { generateContents } from "../src/system";
 import { COMMODITIES } from "../src/market";
 import {
 	type GalaxyEnvelope,
@@ -170,7 +173,7 @@ interface Row {
 	readMs: number;
 }
 
-function build(tier: Tier): Row {
+function build(tier: Tier, fill?: (world: WorldState) => void): Row {
 	const world: WorldState = newWorld(SEED);
 	let carriers = 0;
 	let witnesses = 0;
@@ -297,11 +300,20 @@ function build(tier: Tier): Row {
 			charges += flown.length;
 		}
 	}
+	fill?.(world);
 	const t0 = performance.now();
 	const json = JSON.stringify(serializeWorld(world));
 	const t1 = performance.now();
-	parseWorld(JSON.parse(json));
+	const loaded = parseWorld(JSON.parse(json));
 	const t2 = performance.now();
+	for (let g = 0; g < GALAXY_COUNT; g++) {
+		const written = Object.keys(world.galaxies[g].deposits.rows).length;
+		const restored = Object.keys(loaded.galaxies[g].deposits.rows).length;
+		if (written !== restored)
+			throw new Error(
+				`galaxy ${g}: ${written} live deposit rows became ${restored} in the save round trip`,
+			);
+	}
 	return {
 		name: tier.name,
 		carriers: finite("carriers", carriers),
@@ -318,7 +330,7 @@ function build(tier: Tier): Row {
 	};
 }
 
-const rows = TIERS.map(build);
+const rows = TIERS.map((tier) => build(tier));
 console.log(
 	"| Tier | Carriers | Witnessed | Charged | KiB UTF-16 | KiB UTF-8 | write ms | read ms |",
 );
@@ -417,3 +429,106 @@ console.log(
 	"An uncharged row adds nothing, for the same reason the witness list costs " +
 		"nothing when empty: the member is omitted, not written as an empty list.",
 );
+
+// #951 D6, production generator and real save round trips. These stress fills
+// are snapshots, not a claim that a pilot can touch every rock before recovery.
+// The live bound is extraction rate / recovery rate debit rows plus survey
+// rate × survey lifetime reading rows; galaxy size is not a term.
+const depositFields = Array.from({ length: GALAXY_COUNT }, (_, g) =>
+	generateGalaxy(SEED, g).systems.flatMap((record) =>
+		systemFields(record, generateContents(record)).map((field) => ({
+			system: record.index,
+			id: field.id,
+			slots: fieldRocks(record, field).map((rock) => rock.slot),
+		})),
+	),
+);
+const DEPOSIT_TONNES = 99_999;
+const DEPOSIT_TIME = 315_576_000.1234567;
+function priceDeposits(
+	base: string,
+	galaxies: number,
+	fields: number,
+	debit: boolean,
+	label: string,
+) {
+	const tier = TIERS.find((t) => t.name.startsWith(base));
+	if (!tier) throw new Error(`deposit fill: no tier ${base}`);
+	const bare = build(tier, (w) => {
+		w.gameTime = DEPOSIT_TIME;
+	});
+	let rockCount = 0;
+	let fieldCount = 0;
+	let rowBytes = 0;
+	const full = build(tier, (world) => {
+		world.gameTime = DEPOSIT_TIME;
+		for (let g = 0; g < galaxies; g++) {
+			let rocksHere = 0;
+			const rows = world.galaxies[g].deposits.rows;
+			for (const field of depositFields[g].slice(0, fields)) {
+				fieldCount++;
+				for (const slot of field.slots) {
+					rows[depositKey(field.system, field.id, slot)] = {
+						...(debit
+							? {
+									surface: DEPOSIT_TONNES,
+									deep: DEPOSIT_TONNES,
+									at: DEPOSIT_TIME,
+								}
+							: {}),
+						surveyedAt: DEPOSIT_TIME,
+					};
+					rocksHere++;
+				}
+			}
+			if (Object.keys(rows).length !== rocksHere)
+				throw new Error(
+					`galaxy ${g}: ${rocksHere} rocks but ${Object.keys(rows).length} rows — colliding deposit keys`,
+				);
+			rockCount += rocksHere;
+			// Include each keyed row and its separator, as in D6's row price.
+			// Version/pin metadata is reported separately, and included in +KiB.
+			rowBytes += (JSON.stringify(rows).length - 1) * 2;
+		}
+	});
+	if (!rockCount) throw new Error(`${label}: no deposit rows measured`);
+	const added = finite(`${label} added bytes`, (full.bytes - bare.bytes) * 2);
+	const perRow = finite(`${label} bytes per row`, added / rockCount);
+	const payloadPerRow = finite(
+		`${label} row payload bytes`,
+		rowBytes / rockCount,
+	);
+	const metadata = finite(`${label} metadata bytes`, added - rowBytes);
+	console.log(
+		`| ${label} | ${base} | ${fieldCount} | ${rockCount} | ${rockCount} | ${(added / 1024).toFixed(1)} | ${payloadPerRow.toFixed(1)} | ${(metadata / 1024).toFixed(1)} | ${perRow.toFixed(1)} | ${full.kibUtf16} | ${full.writeMs} | ${full.readMs} |`,
+	);
+}
+console.log(
+	"\nDeposit domain (#951 D6), UTF-16 bytes including per-field identity pins; full-precision clock at ten game-years, five-digit tonnes.",
+);
+console.log(
+	"| Line | On | Fields | Rocks | Rows | +KiB UTF-16 | Row B | Metadata KiB | Total B/row | Save KiB UTF-16 | write ms | read ms |",
+);
+console.log("|---|---|---|---|---|---|---|---|---|---|---|---|");
+priceDeposits(
+	"T1",
+	GALAXY_COUNT,
+	Infinity,
+	true,
+	"C1 ceiling: every rock debited, survey on row",
+);
+priceDeposits(
+	"T1",
+	GALAXY_COUNT,
+	Infinity,
+	false,
+	"R1 residue: debits recovered, survey on row",
+);
+priceDeposits(
+	"T5",
+	1,
+	20,
+	true,
+	"P1 heavy play: 20 fields worked, survey on row",
+);
+priceDeposits("T6", 1, 3, true, "P3 typical: 3 fields worked, survey on row");
