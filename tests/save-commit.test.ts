@@ -214,6 +214,62 @@ describe("#936 D1/D4 — commit lands", () => {
 	});
 });
 
+describe("#936 D1 — a checkpoint queued behind a commit", () => {
+	test("a launch checkpoint queued behind a commit that lands keeps the committed footprint (case 9)", async () => {
+		// The pilot launches while a transaction is still writing. The launch
+		// does not await its flush, so the checkpoint snapshot is taken before
+		// the commit adopts — and the bytes it carries are the pre-adoption
+		// commander. Writing them to `lastDocked` is what reverses a transaction
+		// the pilot was told about: the fee comes back on a death (D1's rule that
+		// a queued write never serializes state from before adoption).
+		const h = harness();
+		h.backend.hangNextWrite();
+		const commit = h.store.commit(h.debit(50));
+		h.fly(7, 600);
+		const launched = h.store.flush("undock");
+		h.backend.release(); // the commit lands and adopts
+		h.backend.hangNextWrite(); // the checkpoint queues in its place
+		await quiesce();
+		expect(h.backend.inFlight).toBe(1);
+		expect(h.state.commander.state.credits).toBe(50);
+		// Flown on while the checkpoint waits — the world outside the footprint.
+		h.fly(9, 1200);
+		h.backend.release();
+		expect(await commit).toBe("committed");
+		await launched;
+		const checkpoint = (await h.backend.raw(SLOT, "lastDocked")) as {
+			commander: { txSeq: number; state: { credits: number } };
+			world: { gameTime: number; galaxies: { visited: number[] }[] };
+		};
+		// The footprint is the committed one, sequence and all...
+		expect(checkpoint.commander.state.credits).toBe(50);
+		expect(checkpoint.commander.txSeq).toBe(1);
+		// ...and the record is still the launch: the world it names is the one at
+		// the transition, neither the commit candidate's nor the live state's.
+		expect(checkpoint.world.gameTime).toBe(600);
+		expect(checkpoint.world.galaxies[0].visited).toContain(7);
+		expect(checkpoint.world.galaxies[0].visited).not.toContain(9);
+	});
+
+	test("a death after that launch restores the committed credits, not the fee", async () => {
+		const h = harness();
+		h.backend.hangNextWrite();
+		const commit = h.store.commit(h.debit(50));
+		const launched = h.store.flush("undock");
+		h.backend.release();
+		h.backend.hangNextWrite();
+		h.backend.release();
+		expect(await commit).toBe("committed");
+		await launched;
+		const restored = await h.store.revertToLastDocked(
+			{ permadeath: false },
+			"destroyed",
+		);
+		expect(restored?.commander.state.credits).toBe(50);
+		expect(restored?.commander.txSeq).toBe(1);
+	});
+});
+
 describe("#936 D4 — the definite outcomes", () => {
 	test("a rejected write resolves failed, changes nothing, and holds the fault for the kinds written (case 3)", async () => {
 		const h = harness();
@@ -356,6 +412,35 @@ describe("#936 D4 — a write that does not settle (case 4)", () => {
 		expect(h.store.hasUncertainCommit).toBe(false);
 		expect(h.state.commander.state.credits).toBe(50);
 		expect(h.state.commander.txSeq).toBe(1);
+	});
+
+	test("a read-back that answers after a later commit does not undo that commit", async () => {
+		// The record a read-back returns is the one its transaction read, whenever
+		// the answer lands. Here it names transaction 1 and arrives after
+		// transaction 1 acknowledged *and* transaction 2 committed: adopting what
+		// it read would put the older footprint and the older `txSeq` over the
+		// newer commit — live behind durable, and the newer sequence free to be
+		// written a second time.
+		const h = harness();
+		h.backend.hangNextWriteApplied();
+		const first = h.store.commit(h.debit(60)); // txSeq 1, credits 40
+		h.backend.hangNextRead();
+		h.clock.fire(SAVE_COMMIT_TIMEOUT_MS);
+		h.backend.release(); // the first ack arrives: it adopts, the queue frees
+		await quiesce();
+		expect(h.state.commander.txSeq).toBe(1);
+		const second = h.store.commit(h.debit(10)); // txSeq 2, credits 30
+		expect(await second).toBe("committed");
+		h.backend.releaseRead(); // the stale answer arrives
+		expect(await first).toBe("committed");
+		expect(h.state.commander.state.credits).toBe(30);
+		expect(h.state.commander.txSeq).toBe(2);
+		const durable = (await h.backend.raw(SLOT, "live")) as {
+			commander: { txSeq: number };
+		};
+		expect(durable.commander.txSeq).toBe(2);
+		// And transaction 1 is not freed for reuse by the late answer.
+		expect(await h.store.commit({ ...h.debit(5), txSeq: 1 })).toBe("stale");
 	});
 
 	test("a late definite failure settles an uncertain outcome toward retry", async () => {

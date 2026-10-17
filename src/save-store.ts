@@ -77,6 +77,7 @@ import {
 	type CommanderRecord,
 	parseSave,
 	type SaveEnvelope,
+	type SaveRecordBody,
 	serializeSave,
 } from "./save-envelope";
 
@@ -350,7 +351,18 @@ export interface SaveCommitOp {
 	 * pick their kinds.
 	 */
 	readonly checkpoint?: boolean;
-	/** The candidate: the current envelope with the op applied (D1). */
+	/**
+	 * The candidate: the envelope it is handed, with the op applied (D1).
+	 *
+	 * **A pure function of its argument, and the store calls it more than once.**
+	 * The candidate is one call; the others are the checkpoint snapshots `flush`
+	 * took before this commit adopted, which re-apply the landed footprint
+	 * before they are written (D1: a queued write never serializes state from
+	 * before adoption). So `apply` may read only the envelope it is given — a
+	 * closure over live state, or a number computed outside it, would stamp the
+	 * transaction's value into a moment it was never quoted at. It leaves
+	 * `txSeq` alone: the store steps that.
+	 */
 	readonly apply: (envelope: SaveEnvelope) => SaveEnvelope;
 	/**
 	 * Adopt **only the footprint fields** into live state — the credits, cargo
@@ -374,6 +386,29 @@ export interface SaveCommitOp {
  * succeeds.
  */
 export type SaveCommitOutcome = "committed" | "failed" | "stale" | "uncertain";
+
+/**
+ * One `commit` the store still owes an answer to: its own acknowledgement, a
+ * record read back, and a checkpoint queued behind it all need the same thing —
+ * the op, the number it stamped, and which kinds it wrote.
+ */
+type CommitTransaction = {
+	readonly op: SaveCommitOp;
+	/** The sequence this transaction stamps onto its candidate (D4). */
+	readonly candidateTxSeq: number;
+	readonly stamped: SaveEnvelope;
+	readonly kinds: readonly SaveRecordKind[];
+};
+
+/** A checkpoint a flush took at its transition and holds while its write
+ *  queues (`flush`, `checkpointBlob`). */
+type CheckpointSnapshot = {
+	readonly blob: SaveRecordBody;
+	readonly edits: number;
+	/** How many footprints had been adopted when the snapshot was taken — the
+	 *  ones after this number are the transactions it must be caught up with. */
+	readonly adoptions: number;
+};
 
 const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
@@ -495,11 +530,24 @@ export class SaveStore {
 	 * landing (adopt), a late definite failure (retry), or a successful read
 	 * (`resolveUncertainCommit`).
 	 */
-	private uncertainCommit: {
-		readonly candidateTxSeq: number;
-		readonly adopt: (committed: SaveEnvelope) => void;
-		readonly kinds: readonly SaveRecordKind[];
-	} | null = null;
+	private uncertainCommit: CommitTransaction | null = null;
+
+	/**
+	 * The footprints a commit adopted while a checkpoint snapshot was queued
+	 * behind it, oldest first, each named by how many adoptions went before it
+	 * (#936 D1). `checkpointBlob` re-applies the ones a snapshot has not seen;
+	 * they are dropped once no snapshot is outstanding, because any later
+	 * snapshot already contains them.
+	 */
+	private readonly adoptedFootprints: {
+		readonly seq: number;
+		readonly apply: (envelope: SaveEnvelope) => SaveEnvelope;
+	}[] = [];
+	/** Footprints adopted so far — the sequence the next one takes. */
+	private adoptions = 0;
+	/** Checkpoint snapshots taken whose write has not finished. While one is
+	 *  outstanding the footprints behind it have to be retained. */
+	private outstandingCheckpoints = 0;
 
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
@@ -585,10 +633,22 @@ export class SaveStore {
 		// for this flush: read `current()` after the queue and a slow earlier
 		// write hands `lastDocked` the ship already clear of the station, with
 		// whatever happened since — and a death restores flight, not the launch.
+		// **A transaction that lands while it waits is the one thing the snapshot
+		// may not stay without** (`checkpointBlob`): a queued write reversing an
+		// accepted commit is D1's named hazard, and `lastDocked` is what a death
+		// restores (#936 case 9).
 		try {
-			const snapshot = checkpoint
-				? { blob: serializeSave(this.current()), edits: this.edits }
+			const snapshot: CheckpointSnapshot | undefined = checkpoint
+				? {
+						blob: serializeSave(this.current()),
+						edits: this.edits,
+						adoptions: this.adoptions,
+					}
 				: undefined;
+			// Registered after the bytes exist and released by `run`'s `finally`:
+			// the footprints adopted from here until then are what that snapshot
+			// owes, and nothing else needs them kept.
+			if (snapshot) this.outstandingCheckpoints += 1;
 			await this.run(kinds, slot, snapshot); // glossary-ignore: slot
 		} catch (error) {
 			// A flush is a transition the player made — a dock, an undock, a jump,
@@ -648,15 +708,11 @@ export class SaveStore {
 			? ["live", "lastDocked"]
 			: ["live"];
 		let decided: SaveCommitOutcome | null = null;
-		const adoptCommit = (from: SaveEnvelope) => {
-			op.adopt(from);
-			// Saved state moved on top of any checkpoint snapshot a flush queued
-			// behind this commit took before the adoption (`run`'s `edits`), and
-			// any debounced write behind it serializes the adopted state anyway.
-			this.edits += 1;
-			this.failures = 0;
-			for (const kind of kinds) this.faultsHeld.delete(kind);
-			this.uncertainCommit = null;
+		const tx: CommitTransaction = {
+			op,
+			candidateTxSeq: base + 1,
+			stamped,
+			kinds,
 		};
 		const work = this.backend.writeMany(this.slot, kinds, blob);
 		// **Adoption runs inside the in-flight chain, before `inFlight`
@@ -669,9 +725,10 @@ export class SaveStore {
 		// the uncertain refusal with it.
 		const chain = work.then(
 			() => {
-				// If the read-back already adopted the record this write
-				// carried, there is no second adoption to make — same bytes.
-				if (decided !== "committed") adoptCommit(stamped);
+				// `adoptCommitted`'s own guard decides whether this acknowledgement
+				// or a read-back of the same bytes makes the adoption — in either
+				// order, not only when the read finished first.
+				this.adoptCommitted(tx, stamped);
 				this.uncertainCommit = null;
 				decided ??= "committed";
 			},
@@ -716,30 +773,106 @@ export class SaveStore {
 		// No settle within the window: read `live` back and let the record
 		// answer (D4). A blind retry of a write that committed before its
 		// acknowledgement would write twice what already landed (case 4).
-		const outcome = await this.readBackCommit(base + 1, adoptCommit, kinds);
+		const outcome = await this.readBackCommit(tx);
 		decided = outcome;
 		return outcome;
 	}
 
 	/**
+	 * Adopt a landed commit's footprint into live state (#936 D1) — unless live
+	 * has already moved past it.
+	 *
+	 * **The guard is what makes the order of the answers not matter.** Both this
+	 * transaction's own acknowledgement and a read-back of it can make the
+	 * adoption, and a read-back can answer last: the record it returns is the one
+	 * its read transaction saw, not what the backend holds when the answer lands.
+	 * If a later commit has been adopted in the meantime, re-applying the older
+	 * footprint and the older `txSeq` would leave live behind durable and free
+	 * the newer sequence to be written a second time. `txSeq` advances by exactly
+	 * one per adoption (D4), so live at or past the candidate names an adoption
+	 * that already covers this one — every later op was derived from state that
+	 * contained it.
+	 *
+	 * **A footprint is recorded as well as adopted**, for the checkpoint queue:
+	 * a queued `flush` re-serializes nothing by itself, so it needs the op to
+	 * re-apply its own footprint (`checkpointBlob`).
+	 */
+	private adoptCommitted(tx: CommitTransaction, from: SaveEnvelope): void {
+		if (this.current().commander.txSeq >= tx.candidateTxSeq) return;
+		tx.op.adopt(from);
+		this.adoptedFootprints.push({ seq: this.adoptions, apply: tx.op.apply });
+		this.adoptions += 1;
+		// Saved state moved on top of any checkpoint snapshot a flush queued
+		// behind this commit (`run`'s `edits`), and any debounced write behind it
+		// serializes the adopted state anyway.
+		this.edits += 1;
+		this.failures = 0;
+		for (const kind of tx.kinds) this.faultsHeld.delete(kind);
+		this.uncertainCommit = null;
+	}
+
+	/**
+	 * The bytes a queued checkpoint writes: the snapshot its transition took,
+	 * with every footprint adopted while it waited re-applied to it.
+	 *
+	 * Why the snapshot is taken at the transition at all is `flush`'s rule — a
+	 * launch queued behind a slow write must not hand `lastDocked` the flight
+	 * that followed it. Why it may not be written as it stands is D1's: a
+	 * transaction the pilot was told about cannot be reversed by a write that was
+	 * merely queued first, and `lastDocked` is the record a death restores (#936
+	 * case 9). So the checkpoint keeps its own world — a live mutation, a markDirty
+	 * or a debounced purchase behind it still reads as the launch to a death — and
+	 * takes only the transactions it missed, each op's `apply` again over the
+	 * parsed snapshot in the order they landed.
+	 *
+	 * **The round trip through `parseSave` is not a courtesy.** The snapshot is
+	 * bytes rather than `current()`'s object because a live envelope handed to a
+	 * queued write is the read-it-later the flush exists to refuse, and
+	 * re-validating the caught-up pair before writing it is §9.9's no-graft rule
+	 * reaching a pair this method assembled. An op whose `apply` cannot be re-run
+	 * over the snapshot therefore fails as a failed flush does — with the fault
+	 * held — rather than writing the reversal quietly.
+	 *
+	 * Each commit steps `txSeq` by exactly one (D4) and adoptions are counted in
+	 * that same order, so the snapshot's own sequence counts the steps out: the
+	 * record cannot claim a transaction no op made.
+	 */
+	private checkpointBlob(snapshot: CheckpointSnapshot): SaveRecordBody {
+		const missed = this.adoptedFootprints.filter(
+			(footprint) => footprint.seq >= snapshot.adoptions,
+		);
+		if (missed.length === 0) return snapshot.blob;
+		let envelope = parseSave(snapshot.blob);
+		let seq = envelope.commander.txSeq;
+		for (const { apply } of missed) {
+			envelope = apply(envelope);
+			seq += 1;
+			envelope = {
+				...envelope,
+				commander: { ...envelope.commander, txSeq: seq },
+			};
+		}
+		return serializeSave(envelope);
+	}
+
+	/**
 	 * Decide an unsettled commit by reading `live` back (#936 D4). The record
 	 * is the only witness that survives the page: a txSeq that advanced means
-	 * the write landed, and the footprint is adopted **from the record read**
-	 * — that state, not the candidate, is what the store durably has. The
-	 * previous value means it did not land, and a retry is allowed. A read
-	 * that fails — or answers with a number neither — leaves the outcome
-	 * uncertain, and nothing writes until a read succeeds.
+	 * the write landed, and the footprint is taken **from the record read**
+	 * — that state, not the candidate, is what the store durably has — unless
+	 * live has moved past it meanwhile (`adoptCommitted`). The previous value
+	 * means it did not land, and a retry is allowed. A read that fails — or
+	 * answers with a number neither — leaves the outcome uncertain, and nothing
+	 * writes until a read succeeds.
 	 */
 	private async readBackCommit(
-		candidateTxSeq: number,
-		adopt: (committed: SaveEnvelope) => void,
-		kinds: readonly SaveRecordKind[],
+		tx: CommitTransaction,
 	): Promise<SaveCommitOutcome> {
 		let raw: unknown;
 		try {
 			raw = await this.backend.read(this.slot, "live");
 		} catch {
-			this.uncertainCommit = { candidateTxSeq, adopt, kinds };
+			this.uncertainCommit = tx;
 			return "uncertain";
 		}
 		// **No record at all is definite, not unknown**: a transaction that
@@ -758,22 +891,22 @@ export class SaveStore {
 			// A record that will not parse is D9's named error, not an answer:
 			// it can neither be adopted nor compared, so the outcome stays
 			// uncertain rather than pretending to decide.
-			this.uncertainCommit = { candidateTxSeq, adopt, kinds };
+			this.uncertainCommit = tx;
 			return "uncertain";
 		}
-		if (record.commander.txSeq === candidateTxSeq) {
+		if (record.commander.txSeq === tx.candidateTxSeq) {
 			this.uncertainCommit = null;
-			adopt(record);
+			this.adoptCommitted(tx, record);
 			return "committed";
 		}
-		if (record.commander.txSeq === candidateTxSeq - 1) {
+		if (record.commander.txSeq === tx.candidateTxSeq - 1) {
 			// The record answered: the write did not land. That is an outcome,
 			// and the refusal lifts with it — the retry queues behind the
 			// unsettled write and meets `stale` there if it lands after all.
 			this.uncertainCommit = null;
 			return "failed";
 		}
-		this.uncertainCommit = { candidateTxSeq, adopt, kinds };
+		this.uncertainCommit = tx;
 		return "uncertain";
 	}
 
@@ -796,12 +929,7 @@ export class SaveStore {
 	 */
 	async resolveUncertainCommit(): Promise<SaveCommitOutcome> {
 		const pending = this.uncertainCommit;
-		if (pending)
-			return this.readBackCommit(
-				pending.candidateTxSeq,
-				pending.adopt,
-				pending.kinds,
-			);
+		if (pending) return this.readBackCommit(pending);
 		return fail(
 			"there is no uncertain commit to resolve — read records with load",
 		);
@@ -826,7 +954,7 @@ export class SaveStore {
 	private async run(
 		kinds: SaveRecordKind[],
 		slot: string, // glossary-ignore: slot
-		snapshot?: { readonly blob: unknown; readonly edits: number },
+		snapshot?: CheckpointSnapshot,
 	): Promise<void> {
 		// Queue behind whatever is already writing rather than racing it. The
 		// awaited chain is what keeps `maxInFlight` at one.
@@ -843,25 +971,40 @@ export class SaveStore {
 		// little behind the world; when saved state moved while it waited
 		// (`edits`), the save stays dirty and the debounce is re-armed once the
 		// write lands, so `live` catches up on the cadence that writes it anyway.
-		while (this.inFlight) await this.inFlight.catch(() => {});
-		const blob = snapshot ? snapshot.blob : serializeSave(this.current());
-		const behind = snapshot !== undefined && snapshot.edits !== this.edits;
-		this.dirty = behind;
-		const work = this.backend.writeMany(slot, kinds, blob);
-		this.inFlight = work.finally(() => {
-			this.inFlight = null;
-		});
+		// A commit that adopted in that window is caught up into the bytes instead
+		// of left behind them, because nothing re-serializes `live` for
+		// `lastDocked` (`checkpointBlob`).
 		try {
-			await this.inFlight;
-			this.failures = 0;
-			for (const kind of kinds) this.faultsHeld.delete(kind);
-			if (behind) this.markDirty();
-		} catch (error) {
-			// The write did not land, so the save is still dirty. D9: the
-			// previous record is untouched — stale rather than broken. Whether
-			// that is a fault yet is the caller's to say (`faultsHeld`).
-			this.dirty = true;
-			throw error;
+			while (this.inFlight) await this.inFlight.catch(() => {});
+			const blob = snapshot
+				? this.checkpointBlob(snapshot)
+				: serializeSave(this.current());
+			const behind = snapshot !== undefined && snapshot.edits !== this.edits;
+			this.dirty = behind;
+			const work = this.backend.writeMany(slot, kinds, blob);
+			this.inFlight = work.finally(() => {
+				this.inFlight = null;
+			});
+			try {
+				await this.inFlight;
+				this.failures = 0;
+				for (const kind of kinds) this.faultsHeld.delete(kind);
+				if (behind) this.markDirty();
+			} catch (error) {
+				// The write did not land, so the save is still dirty. D9: the
+				// previous record is untouched — stale rather than broken. Whether
+				// that is a fault yet is the caller's to say (`faultsHeld`).
+				this.dirty = true;
+				throw error;
+			}
+		} finally {
+			if (snapshot) {
+				this.outstandingCheckpoints -= 1;
+				// With no snapshot outstanding, no adopted footprint is still owed
+				// to anything: one taken from here on already contains it.
+				if (this.outstandingCheckpoints === 0)
+					this.adoptedFootprints.length = 0;
+			}
 		}
 	}
 
@@ -1405,6 +1548,16 @@ export interface MemorySaveBackend extends SaveBackend {
 	/** Fail the next `read`, so a commit read-back meets a backend that will
 	 *  not answer and the outcome must stay uncertain. */
 	failNextRead(): void;
+	/**
+	 * Take the next read's bytes when it starts and hold only its
+	 * acknowledgement until `releaseRead` — on its own gate, so a write can
+	 * settle while it is out. That is what a real read transaction is: the
+	 * record it returns is the one its transaction read, whenever the answer
+	 * lands, and a commit read-back can therefore come back naming an older
+	 * moment than the live state it would be adopted into (#936 D4).
+	 */
+	hangNextRead(): void;
+	releaseRead(): void;
 	release(): void;
 	failNextWrite(): void;
 	/** Fail the next `deleteSlot`, so a rename can be interrupted between its
@@ -1444,6 +1597,11 @@ export function memorySaveBackend(): MemorySaveBackend {
 	let hangAppliedNext = 0;
 	let failNext = false;
 	let failRead = false;
+	// Its own gate, separate from the write gate: a read whose acknowledgement
+	// is held has to stay out while a later write lands and commits.
+	let readGate: Promise<void> | null = null;
+	let openReadGate: (() => void) | null = null;
+	let hangReadNext = 0;
 	const calls: {
 		slot: string;
 		kinds: readonly SaveRecordKind[];
@@ -1500,7 +1658,17 @@ export function memorySaveBackend(): MemorySaveBackend {
 				failRead = false;
 				throw new Error("backend: the read failed");
 			}
-			return copy(rows.get(recordKey(slot, kind)) ?? null);
+			// Captured before the gate: the bytes are what the read transaction
+			// saw when it ran, and holding the ack must not silently update them.
+			const captured = copy(rows.get(recordKey(slot, kind)) ?? null);
+			if (hangReadNext > 0) {
+				hangReadNext -= 1;
+				readGate ??= new Promise<void>((resolve) => {
+					openReadGate = resolve;
+				});
+				await readGate;
+			}
+			return captured;
 		},
 		async write(slot, kind, blob) {
 			return this.writeMany(slot, [kind], blob);
@@ -1606,6 +1774,18 @@ export function memorySaveBackend(): MemorySaveBackend {
 		},
 		failNextRead() {
 			failRead = true;
+		},
+		hangNextRead() {
+			hangReadNext += 1;
+			readGate ??= new Promise<void>((resolve) => {
+				openReadGate = resolve;
+			});
+		},
+		releaseRead() {
+			openReadGate?.();
+			readGate = null;
+			openReadGate = null;
+			hangReadNext = 0;
 		},
 		async corruptVersion(slot, kind) {
 			const row = rows.get(recordKey(slot, kind)) as Record<string, unknown>;
