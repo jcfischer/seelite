@@ -7,6 +7,7 @@ export async function installHaulerFixture() {
 	const system = await import("/src/system.ts");
 	const sim = await import("/src/sim.ts");
 	const witch = await import("/src/witchspace.ts");
+	const crossing = await import("/src/witchspace-crossing.ts");
 	const contents = new Map();
 	const get = (i) => {
 		if (!contents.has(i))
@@ -34,18 +35,24 @@ export async function installHaulerFixture() {
 		} while (!g.trafficAuthorityReady());
 		const route = g.trafficRoutes.find((r) => r.key === plan.actor.key);
 		if (!route) throw new Error("fixture route absent");
+		// The ring's window is signed (#1006): it opens `openS` before the crossing,
+		// so a frame taken before the instant is framed on the ring it is watching,
+		// not on a hull that has not arrived — and not on the origin placeholder an
+		// absent hauler carries in `route.pos`, which would point the camera at the
+		// star. Both the framing and the caption read off this one anchor.
+		const anchor =
+			route.jump && crossing.npcRiftVisible(at - route.jump.atS)
+				? route.jump.pos
+				: route.pos;
 		if (frame) {
-			const activeJump =
-				route.jump &&
-				at >= route.jump.atS &&
-				at < route.jump.atS + witch.WITCHSPACE.riftEndS;
+			const activeJump = anchor === route.jump?.pos;
 			const nose = (activeJump ? route.jump.nose : route.nose) ?? {
 				x: 0,
 				y: 0,
 				z: -1,
 			};
 			const up = route.up ?? { x: 0, y: 1, z: 0 };
-			const pos = activeJump ? route.jump.pos : route.pos;
+			const pos = anchor;
 			// Exterior camera near the ring, with no cabin or player hull in its way.
 			const range = 0.24;
 			g.world.ship.pos = {
@@ -112,13 +119,37 @@ export async function installHaulerFixture() {
 			contact: !!contact,
 			jump: route.jump ?? null,
 			rift: g.trafficRifts.get(id)?.strength ?? 0,
+			flare: g.trafficRifts.get(id)?.flare ?? 0,
+			riftRadiusKm: g.trafficRifts.get(id)?.radiusKm ?? 0,
+			// The hull's stand-off from the ring's plane, along its nose: negative
+			// while it is still behind the plane it is coming through (#1006 C2).
+			// Null when no hull is drawn in this system at all — during an opening
+			// the hauler is in another system and `route.pos` is a placeholder, so a
+			// figure here would read precise and be wrong.
+			hullThroughPlaneKm:
+				contact && route.jump
+					? ((route.pos.x - route.jump.pos.x) * route.jump.nose.x +
+							(route.pos.y - route.jump.pos.y) * route.jump.nose.y +
+							(route.pos.z - route.jump.pos.z) * route.jump.nose.z) /
+						Math.max(
+							1e-9,
+							Math.hypot(
+								route.jump.nose.x,
+								route.jump.nose.y,
+								route.jump.nose.z,
+							),
+						)
+					: null,
 			berthId: route.berthId,
 			queue: route.queueRequest,
 			terminal: route.terminalStationId,
+			// Measured to what the camera was framed on — the ring while one is
+			// open, the hull otherwise — because for an absent hauler those are
+			// 150 million km apart and only one of them is on the frame.
 			cameraRangeKm: Math.hypot(
-				route.pos.x - g.world.ship.pos.x,
-				route.pos.y - g.world.ship.pos.y,
-				route.pos.z - g.world.ship.pos.z,
+				anchor.x - g.world.ship.pos.x,
+				anchor.y - g.world.ship.pos.y,
+				anchor.z - g.world.ship.pos.z,
 			),
 		};
 	};
@@ -142,5 +173,8 @@ export async function installHaulerFixture() {
 		departure: plan.actor.schedule.departureAtS,
 		tOut: voyage.tOut,
 		tBack: voyage.tBack,
+		// The crossing's own clock, handed back rather than re-typed by the caller:
+		// a probe that wrote 1.5 by hand would keep passing if the dial moved.
+		crossing: { ...crossing.CROSSING },
 	};
 }
