@@ -158,8 +158,14 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-arrival.mjs",
-			"Flies cruise arrivals to stations beside or behind host planets and checks reachable geometry.",
-			["cruise arrival", "host planet", "moving body", "station reachability"],
+			"Flies cruise arrivals to stations beside or behind host planets and to a field contact outside its rocks.",
+			[
+				"cruise arrival",
+				"host planet",
+				"moving body",
+				"station reachability",
+				"field contact",
+			],
 		),
 		entry(
 			"probe-audio-cues.mjs",

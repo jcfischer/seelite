@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { fieldContactsAt } from "../src/field-contact";
 import { systemIndexOfKey } from "../src/carrier-key";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -119,6 +120,7 @@ test("selection includes contacts without putting them in generated bodies or ma
 	const subject = Object.assign(
 		Object.create(
 			methods(["selectable", "masses"], {
+				fieldContactsAt,
 				bodyVelocity,
 				bodyAccelerationBound,
 			}),
