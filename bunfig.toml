@@ -4,6 +4,7 @@
 # flies; live boot may temporarily draw their procedural stand-ins.
 preload = [
 	"./tests/setup-courier-hull.ts",
+	"./tests/setup/authored-hulls.ts",
 	"./tests/setup/tug-hull.ts",
 	"./tests/setup/longwall-model.ts",
 ]

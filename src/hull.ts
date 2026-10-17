@@ -98,7 +98,7 @@ export interface HullEnvelope {
  *
  * `collision.md` §2.3 (P1) puts the box on the ship, and a selected mesh is not
  * built about its origin: the carrier's box sits 13.5 m above the ship's sim
- * position and the freighter's 3 m to starboard. A box centred on the origin
+ * position and the freighter's 1.6 m aft. A box centred on the origin
  * would leave that much hull outside it, so the box carries the offset
  * (§9.1.10). Measured off the selected variant's built mesh, as `env` is, and
  * rounded to the nearest 0.1 m; `tests/collision.test.ts` rebuilds every mesh
@@ -431,7 +431,8 @@ const slotLayout = (layout: {
 ];
 
 /** Total slot capacity: the sum of every slot's size, the plant excluded.
- *  A heavier hull never has less (`tests/hull-slots.test.ts`). */
+ *  A heavier hull never has less, except the authored Porter: node #813
+ *  lowered its mass while retaining the saved slot layout (`tests/hull-slots.test.ts`). */
 export const slotCapacity = (id: HullId): number =>
 	HULL_SPECS[id].slots.reduce((sum, slot) => sum + slot.size, 0);
 
@@ -939,24 +940,28 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	freighter: {
 		role: "cargo",
 		variant: "b",
-		env: { lengthKm: 0.0697, beamKm: 0.0463, heightKm: 0.0197 },
-		envCentre: { rightKm: 0.003, upKm: 0.0012, foreKm: -0.0013 },
-		massT: 140,
-		thrustMN: 168,
+		// The authored O2 Porter's box (node #813). It is a third smaller by
+		// volume than the procedural Porter it replaced, so the mass is
+		// re-derived at the role's 2.20 t per 1,000 m³ and the thrust scaled
+		// with it: the acceleration a freighter flies at is unchanged.
+		env: { lengthKm: 0.0672, beamKm: 0.0424, heightKm: 0.0147 },
+		envCentre: { rightKm: 0.0005, upKm: 0.0004, foreKm: -0.0016 },
+		massT: 92,
+		thrustMN: 110.4,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00778113,
-			yaw: 0.010385,
-			roll: 0.00573199,
+			pitch: 0.00755031,
+			yaw: 0.010074,
+			roll: 0.00513139,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: -0.4, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.45, port: 0.995, starboard: 0.9725 },
+			yaw: { y: -0.2, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0.575, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.225, port: 0.9825, starboard: 0.9975 },
 		},
 		// Three times the reference, which is the case #26's D6 names by number:
 		// a 60 t hold leans three times as hard on a market that remembers it.
@@ -974,8 +979,8 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			flex: 2,
 		}),
 		plantSize: 2,
-		shieldPool: 176,
-		integrity: 166,
+		shieldPool: 137,
+		integrity: 129,
 		tankLy: 7,
 		chargeAu: 12,
 		priceCr: 69_000,

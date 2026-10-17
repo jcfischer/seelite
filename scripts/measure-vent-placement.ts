@@ -39,6 +39,7 @@ import {
 	coupleArms,
 } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+import "../tests/setup/authored-hulls";
 import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedCourierHull } from "./lib/shipped-courier-hull";
 import { installShippedTugHull } from "./lib/shipped-tug-hull";
@@ -55,7 +56,16 @@ type Vec = readonly [number, number, number];
  *  along `dir` meet metal? `p` in kilometres from the envelope's centre,
  *  which is the whole root's box centre: the frame `ventThroats` draws in,
  *  and the box `tests/hull.test.ts` holds `env` to. The metal set is smaller
- *  than that box on purpose; the origin is not. */
+ *  than that box on purpose; the origin is not.
+ *
+ *  Every line this instrument asks about runs along a hull axis, so the
+ *  question is two-dimensional: the line meets a triangle exactly when its
+ *  point lies inside the triangle's projection across that axis, and the
+ *  triangle faces the line's start the way `Raycaster` requires of a
+ *  `FrontSide` material. That is the ray cast it replaces — from far outside,
+ *  through the whole hull, any face — answered from a grid of projected
+ *  triangles, because the authored Porter (node #813) is 363k triangles and a
+ *  ray tested against every one of them made this a run of hours. */
 function lineTester(root: THREE.Object3D) {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);

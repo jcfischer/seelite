@@ -167,8 +167,13 @@ describe("a hull's slots (#866, #867 D1 and D2)", () => {
 		}
 	});
 
-	test("a heavier hull never has less slot capacity", () => {
-		const byMass = [...HULL_IDS].sort(
+	test("the lighter authored Porter retains its slots; other heavier hulls never have less capacity", () => {
+		// Node #813 re-derived Porter mass from its smaller authored box. Keep
+		// the installed slot layout: shrinking it would invalidate saved fittings
+		// (#867 D14). This is the sole departure from the original mass ordering.
+		expect(HULL_SPECS.freighter.massT).toBe(92);
+		expect(slotCapacity("freighter")).toBe(16);
+		const byMass = HULL_IDS.filter((id) => id !== "freighter").sort(
 			(a, b) => HULL_SPECS[a].massT - HULL_SPECS[b].massT,
 		);
 		for (let i = 1; i < byMass.length; i++) {

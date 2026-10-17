@@ -14,6 +14,8 @@
 
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+// The authored Porter is `freighter/b` (node #813): measure the shipped model.
+import "../tests/setup/authored-hulls";
 import { ventThroats } from "../src/vent-plumes";
 import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedTugHull } from "./lib/shipped-tug-hull";

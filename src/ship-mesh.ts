@@ -129,8 +129,10 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
 		{
 			id: "b",
 			name: "Porter",
+			// The authored O2 (node #813): its approved geometry carries the
+			// cassettes to port, where the procedural Porter had them starboard.
 			thesis:
-				"dominant starboard cargo bank against a compact port command keel",
+				"three freight cassettes to port of a compact starboard command keel",
 		},
 		{
 			id: "c",
@@ -6834,10 +6836,38 @@ function navLightsMaterial(): THREE.ShaderMaterial {
 }
 
 /** Place the four lights on a built hull's own surface. */
-function addNavLights(root: THREE.Group) {
+function addNavLights(
+	root: THREE.Group,
+	positions: Float32Array | null = navLightPositions(root),
+) {
+	if (!positions) return;
+	const colors = new Float32Array(NAV_LIGHTS.length * 3);
+	const color = new THREE.Color();
+	NAV_LIGHTS.forEach((light, i) => {
+		// The shader is raw, so its colours are linear. `setHex` decodes the
+		// sRGB hex into three's linear working space, and that is the only
+		// decode: a second `convertSRGBToLinear` here crushed every channel that
+		// is not 0 or 255 (#300's review).
+		color.setHex(light.color);
+		colors.set([color.r, color.g, color.b], i * 3);
+	});
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+	geometry.setAttribute("lightColor", new THREE.BufferAttribute(colors, 3));
+	const points = new THREE.Points(geometry, navLightsMaterial());
+	points.name = "nav-lights";
+	points.userData.navLightRoles = NAV_LIGHTS.map((l) => l.role);
+	points.onBeforeRender = (renderer) => {
+		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
+	};
+	root.add(points);
+}
+
+/** Where the four lights go on a built hull, `NAV_LIGHTS` order, kilometres. */
+function navLightPositions(root: THREE.Group): Float32Array | null {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
-	if (box.isEmpty()) return;
+	if (box.isEmpty()) return null;
 	const size = new THREE.Vector3();
 	const centre = new THREE.Vector3();
 	box.getSize(size);
@@ -6902,28 +6932,11 @@ function addNavLights(root: THREE.Group) {
 		),
 	};
 	const positions = new Float32Array(NAV_LIGHTS.length * 3);
-	const colors = new Float32Array(NAV_LIGHTS.length * 3);
-	const color = new THREE.Color();
 	NAV_LIGHTS.forEach((light, i) => {
 		const p = at[light.role];
 		positions.set([p.x, p.y, p.z], i * 3);
-		// The shader is raw, so its colours are linear. `setHex` decodes the
-		// sRGB hex into three's linear working space, and that is the only
-		// decode: a second `convertSRGBToLinear` here crushed every channel that
-		// is not 0 or 255 (#300's review).
-		color.setHex(light.color);
-		colors.set([color.r, color.g, color.b], i * 3);
 	});
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-	geometry.setAttribute("lightColor", new THREE.BufferAttribute(colors, 3));
-	const points = new THREE.Points(geometry, navLightsMaterial());
-	points.name = "nav-lights";
-	points.userData.navLightRoles = NAV_LIGHTS.map((l) => l.role);
-	points.onBeforeRender = (renderer) => {
-		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
-	};
-	root.add(points);
+	return positions;
 }
 
 /** A part this hull draws as a gun: a pod or a muzzle ring. */
@@ -7063,7 +7076,7 @@ function raycastMuzzles(
 export type AuthoredHullBuilder = (
 	root: THREE.Group,
 	exhaust: THREE.MeshStandardMaterial,
-) => ShipLevels;
+) => ShipLevels | undefined;
 
 /**
  * The hulls whose selected variant is an authored model installed after boot
@@ -7208,6 +7221,49 @@ export function buildShipMesh(
 	return { root };
 }
 
+/** Install the Porter on the shared after-boot path. It keeps its approved full mesh at every range. */
+export function installAuthoredPorter(model: THREE.Object3D | null): void {
+	installAuthoredHull(
+		"freighter",
+		model
+			? (root) => {
+					root.add(model.clone(true));
+					return undefined;
+				}
+			: undefined,
+	);
+}
+
+let authoredExhaust: THREE.MeshStandardMaterial | undefined;
+
+/**
+ * A drive glow for an authored model's nozzle: the procedural disc's material
+ * and its `-exhaust` name, which the main drive's plumes are drawn at
+ * (`isDriveBell`). The disc faces +Z of the geometry it is given; the caller
+ * places and turns it in the model's own frame.
+ */
+export function authoredDriveGlow(name: string, radius: number): THREE.Mesh {
+	authoredExhaust ??= shared(
+		new THREE.MeshStandardMaterial({
+			color: 0x7fc4df,
+			emissive: 0x4a9fca,
+			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+			roughness: 0.36,
+			metalness: 0.08,
+		}),
+	);
+	const glow = new THREE.Mesh(
+		shared(new THREE.CircleGeometry(radius, 24)),
+		authoredExhaust,
+	);
+	glow.name = name + EXHAUST_SUFFIX;
+	return glow;
+}
+
+/** Whether `installAuthoredPorter` has run on this page. */
+export const authoredPorterReady = (): boolean =>
+	authoredHullBuilder("freighter") !== undefined;
+
 /**
  * Is this variant an authored model rather than a loft (node #815)? The
  * procedural visual language — lofted, capped, swept, a named fuselage and
@@ -7217,4 +7273,5 @@ export function buildShipMesh(
  * what the authored model owes instead.
  */
 export const isAuthoredHull = (id: HullId, variant: HullVariantId): boolean =>
+	(id === "freighter" && variant === "b") ||
 	SHIP_DETAIL_PLANS[id][variant].authored === true;
