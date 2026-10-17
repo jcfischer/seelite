@@ -76,7 +76,7 @@ const WRECK_AT = (() => {
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(15);
+		expect(SAVE_SCHEMA_VERSION).toBe(16);
 		const world = newWorld(56);
 		const raw = serializeSave({
 			world,
@@ -99,6 +99,7 @@ describe("node #482 system sweep", () => {
 			body.commander.state.ownedEquipment = [];
 			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
+			delete body.commander.txSeq;
 		});
 		const original = JSON.stringify(old);
 		expect(parseSave(old).commander.sweepReadings).toEqual([]);
@@ -116,6 +117,7 @@ describe("node #482 system sweep", () => {
 					body.saveSchemaVersion = 10;
 					body.commander.state.ownedEquipment = [];
 					delete body.commander.state.loadout;
+					delete body.commander.txSeq;
 				}),
 			),
 		).toThrow("sweepReadings");
@@ -554,6 +556,7 @@ describe("node #769 raider pressure strength and cruise lanes", () => {
 			const saved = serializeSave({ world, commander });
 			const { integrity: _i, ...body } = JSON.parse(JSON.stringify(saved));
 			body.saveSchemaVersion = version;
+			delete body.commander.txSeq;
 			if (version < 13) {
 				body.commander.state.ownedEquipment = [];
 				delete body.commander.state.loadout;

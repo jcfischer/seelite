@@ -327,6 +327,21 @@ decision is the drift this document warns about elsewhere. Cloud storage is not
 deferred either — it is ruled out by the map's browser-only, no-backend, no
 runtime network constraint, which is a constraint rather than an open question.
 
+**Durable gameplay transactions were never on this list either, and the shared
+mechanism is now chosen and built.** #936 ratified the save-before-success
+contract for gameplay acts that must be durably accepted before they may show
+success — footprint lock and field adoption, a commit made while docked as a
+checkpoint write, one `txSeq` on the commander record under save schema 16, and
+read-back recovery of a write whose outcome is unknown — and node #943 built
+the shared mechanism: `SaveStore.commit` in `src/save-store.ts`, whose header,
+together with `tests/save-commit.test.ts`, carries the local reasoning and the
+named failure cases. **The rules are
+[#936's closing receipt](https://github.com/jcfischer/seelite/issues/936)'s and
+are not restated here** — a third copy of a decision is the drift this document
+warns about elsewhere. The Game-level Saving display and the suppression of
+repeat input and departure while a commit is pending ship with the first
+consumer (refinery submission and collection), not with the store.
+
 This model deliberately does not choose:
 
 - which infrastructure carriers v1 ships;
@@ -513,7 +528,9 @@ fails and raises its own badge rather than blocking the upgrade forever.
   `?boot=direct`** (§11.6); without it, `?seed` sets nothing aside.
 - **In play**: the save-fault badge (`hud-and-scanner.md` §5.3) is raised by a
   debounced write that has failed `SAVE_RETRY_LIMIT` times **or by any failed
-  dock, undock or jump flush**. The second half came with the badge: before it,
+  dock, undock or jump flush**, and — since node #943 (#936 D4) — by a
+  transaction commit whose write did not land (`commitFault`,
+  `commander-flow.ts`). The second half came with the badge: before it,
   `saveFlush` only logged a failed flush (`main.ts`, its `.catch`), so the dock
   flush — the write that lays down `lastDocked` — could fail with no player
   surface at all. A failed `quit` flush on a tab close has no frame left to

@@ -37,11 +37,11 @@ const resealed = (
 };
 
 describe("#408 D4 — the saved first-day choice", () => {
-	test("the schema is 15, and 6 is the first version that carries the key", () => {
+	test("the schema is 16, and 6 is the first version that carries the key", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(15);
+		expect(SAVE_SCHEMA_VERSION).toBe(16);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 		]);
 	});
 
@@ -53,6 +53,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 			delete body.commander.sweepReadings;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
+			delete body.commander.txSeq;
 		});
 		expect(parseSave(v6).commander.firstDay).toBe("guided");
 	});
@@ -80,6 +81,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 			delete body.commander.firstDay;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
+			delete body.commander.txSeq;
 		});
 		expect(parseSave(v5).commander.firstDay).toBe("free");
 	});
