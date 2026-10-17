@@ -153,8 +153,8 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-approach-handoff.mjs",
-			"Checks the spatial handoff from long-range approach into the local station flight frame.",
-			["approach", "station handoff", "local frame", "render layers"],
+			"Checks massive-body far-to-approach scale and apparent-size continuity, and rendered planet relief at both layer scales with a relief-off control.",
+			["approach", "planet relief", "surface detail", "render layers"],
 		),
 		entry(
 			"probe-arrival.mjs",
