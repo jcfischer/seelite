@@ -30,6 +30,7 @@ const OWNERS = Object.freeze({
 	],
 	"probe-approach-handoff.mjs": [
 		"scripts/probe-approach-handoff.mjs",
+		"src/planet-surface.ts",
 		"src/arrival.ts",
 		"src/station-traffic.ts",
 		"src/docking.ts",
