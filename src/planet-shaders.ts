@@ -17,6 +17,7 @@ import { PLANET_EXTRA_OCTAVES } from "./planet-footprint";
 import { makeSplicer } from "./shader-splice";
 import {
 	CLOUD_FIELD_GLSL,
+	CLOUD_FOOTPRINT_GLSL,
 	CLOUD_MOTION_GLSL,
 	CLOUD_PROJECTION_GLSL,
 } from "./planet-clouds";
@@ -667,6 +668,14 @@ void main() {
  * clouds are at a different altitude, so they cast onto a different part of the
  * disc and they cross the terminator before the ground does. Painting them into
  * the surface loses both, and loses the parallax that sells the gap.
+ *
+ * **Two weather arms, one program.** The coherent arm is terran weather and
+ * carries #720's close-detail band (node #756); the other is the pre-existing
+ * dust field of the desert and ice shells, which keeps its two fixed scales and
+ * never calls the footprint field. Selecting them is a uniform branch, so a
+ * driver that evaluates both sides pays the branch's arithmetic either way — what
+ * it cannot pay is octaves, because the dust arm has none to ask for and the
+ * terran arm's cap is zero outside the band.
  */
 export const CLOUD_FRAGMENT = /* glsl */ `
 precision highp float;
@@ -674,6 +683,7 @@ ${VARYINGS_GLSL}
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
 ${CLOUD_FIELD_GLSL}
+${CLOUD_FOOTPRINT_GLSL}
 ${CLOUD_MOTION_GLSL}
 ${LIGHT_GLSL}
 uniform float time;
@@ -682,12 +692,35 @@ uniform float cloudCoherent;
 uniform float cloudCover;
 uniform float seedOffset;
 uniform vec3  cloudTint;
+// The quality dial's extra-octave ceiling, shared with the ground's program, and
+// the shell's own target pixel angle, written by its own draw hook below.
+uniform float extraOctaveCap;
+uniform float cloudPixelAngle;
 void main() {
   vec3 p = normalize(vObjP);
+  vec3 N = normalize(vWorldN);
+  vec3 V = normalize(cameraPosition - vWorldP);
   float mask;
   if (cloudCoherent > 0.5) {
-    // Terran weather moves coherently with its baked coverage field.
-    mask = cloudField(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir);
+    // Terran weather moves coherently with its baked coverage field, and keeps
+    // detail from 1.6R down to the 1.2R boundary (node #756, #720 D9) by
+    // extending the broad and wisp fields with the footprint helper the ground
+    // uses.
+    // The fade reads **body** radii: this geometry stands at CLOUD_SHELL_R, so a
+    // band in the shell's own radii would still be adding octaves at 2R and would
+    // move every distant view out of its control noise (#720 D15).
+    float cameraR =
+      distance(cameraPosition, vCenter) / (vRadius / CLOUD_SHELL_R);
+    float cloudOctaveCap =
+      extraOctaveCap * (1.0 - smoothstep(1.6, 2.0, cameraR));
+    // One noise cell must span two target pixels. This is the shell's own target:
+    // inside the band the ground may be drawn half-size while the shells stay in
+    // the ordinary pass (#211), so borrowing the ground's angle would price
+    // octaves this field does not need. The grazing cosine and its 0.1 floor are
+    // the ground's, so the limb does not buy a full cap.
+    float cloudFootprint = distance(cameraPosition, vWorldP) * cloudPixelAngle
+      / (vRadius * max(abs(dot(V, N)), 0.1));
+    mask = cloudFieldFootprint(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir, cloudFootprint, cloudOctaveCap);
   } else {
     // Preserve the pre-node dust field: two shearing scales, no cirrus.
     vec3 slow = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
@@ -700,8 +733,6 @@ void main() {
     mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
   }
 
-  vec3 N = normalize(vWorldN);
-  vec3 V = normalize(cameraPosition - vWorldP);
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
