@@ -2,13 +2,13 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { glslFunctionRange } from "../scripts/lib/glsl-function.mjs";
 import { appearanceFor } from "../src/planet-appearance";
-import { CLOUD_SHELL_RADIUS, CLOUD_MOTION_GLSL } from "../src/planet-clouds";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
+import { CLOUD_MOTION_GLSL, CLOUD_SHELL_RADIUS } from "../src/planet-clouds";
 import { targetPixelAngle } from "../src/planet-footprint";
 import {
-	CLOUD_FRAGMENT,
-	bakeFragmentFor,
 	bakedFragmentFor,
+	bakeFragmentFor,
+	CLOUD_FRAGMENT,
 	fragmentFor,
 } from "../src/planet-shaders";
 import { buildBodyVisual } from "../src/planet-surface";
@@ -188,6 +188,9 @@ test("the weather shell reads its own draw target and the shared quality cap", (
 	expect(shell.material.uniforms.cloudPixelAngle.value).toBe(
 		targetPixelAngle(camera.projectionMatrix.elements[5], 450),
 	);
+	expect(shell.material.uniforms.cloudPixelAngle).not.toBe(
+		visual.uniforms.surfacePixelAngle,
+	);
 	target = { height: 900 };
 	draw();
 	expect(shell.material.uniforms.cloudPixelAngle.value).toBe(
@@ -195,6 +198,27 @@ test("the weather shell reads its own draw target and the shared quality cap", (
 	);
 	target = null;
 	draw();
+	expect(shell.material.uniforms.cloudPixelAngle.value).toBe(
+		targetPixelAngle(camera.projectionMatrix.elements[5], 900),
+	);
+	/**
+	 * The separation the node's whole framing turns on: the ground's draw hook
+	 * writes its own angle for a 450-high target while the shell's dial stays at the
+	 * 900 the shell's own hook measured, so the shell cannot inherit a
+	 * half-resolution angle from the surface beneath it (#720 D9).
+	 */
+	target = { height: 450 };
+	visual.surfaceMesh.onBeforeRender(
+		renderer,
+		new THREE.Scene(),
+		camera,
+		visual.surfaceMesh.geometry,
+		visual.surfaceMesh.material,
+		null as never,
+	);
+	expect(visual.uniforms.surfacePixelAngle.value).toBe(
+		targetPixelAngle(camera.projectionMatrix.elements[5], 450),
+	);
 	expect(shell.material.uniforms.cloudPixelAngle.value).toBe(
 		targetPixelAngle(camera.projectionMatrix.elements[5], 900),
 	);
