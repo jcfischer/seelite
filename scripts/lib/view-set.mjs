@@ -1,3 +1,6 @@
+/** Captures build their Game only after the entire model catalog is installed. */
+export const MODEL_BOOT_PARAMS = Object.freeze({ "models-full": true });
+
 /**
  * The canonical view set: what a visual node is judged on.
  *
@@ -131,6 +134,7 @@ export const LEVERS = Object.freeze({
 	105: "the cockpit interior",
 	112: "the galaxy-chart hover label",
 	147: "the station interior",
+	843: "the accepted station interior kit in production, with per-fitting detail",
 	162: "the aperture cut into the hull",
 	165: "the landing pad, and the shipyard keel aft of its hub",
 	199: "the exposure budget",
@@ -160,6 +164,7 @@ export const LEVERS = Object.freeze({
 	535: "the opening cinematic: the rift forming, the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
 	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
+	869: "the outfitting console: slots beside stock and the change shown before purchase",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
@@ -1312,7 +1317,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "berth-arrival",
-		covers: [147, 105, 99, 201, 204, 651],
+		covers: [843, 147, 105, 99, 201, 204, 651],
 		what: "§13.6.1 — a trade station's bay mid-transfer to a deep overhead berth, in the cockpit. The scripted traversal, at the leg that leaves the lane.",
 		shot: {
 			kind: "berth",
@@ -1360,7 +1365,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "berth-free-look",
-		covers: [199, 147, 102, 99, 201, 203],
+		covers: [843, 199, 147, 102, 99, 201, 203],
 		/**
 		 * **Chase, not a cockpit head-turn, and the frame decided it.** §13.6.3
 		 * asks for a free look showing bay depth and the other berths; a docked
@@ -1399,7 +1404,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "shipyard-wall-berth",
-		covers: [199, 147, 99],
+		covers: [843, 199, 147, 99],
 		what: "§13.6.5 — a shipyard's bay from a wall berth, chase: coarse structure, cold work light, gantries.",
 		shot: {
 			kind: "berth",
@@ -1450,6 +1455,17 @@ export const VIEWS = Object.freeze([
 		covers: [583],
 		what: "The same tab at the top rungs with 100,000 Cr and 20 t of Food aboard: every row open, its net price after the trade-in, how many systems it reaches from here, and what a smaller hold would sell.",
 		shot: { kind: "shipyard-tab", rungs: "top", view: "cockpit" },
+	},
+	{
+		name: "outfitting-comparison",
+		covers: [869],
+		what: "Docked Equipment tab: ship slots beside station stock, with a pulse laser selected and the handling, range and raider credit shown before buying.",
+		shot: {
+			kind: "shipyard-tab",
+			rungs: "top",
+			tab: "Equipment",
+			view: "cockpit",
+		},
 	},
 	{
 		name: "outpost-interior-workbench",
@@ -1597,7 +1613,9 @@ const SHOT_REQUIREMENTS = {
 	// Which hover the frame shows (#177 D2).
 	chart: (s) => CHART_SPOTS.includes(s.spot),
 	// Which rungs the rows are read at (#583): a new game's, or the top.
-	"shipyard-tab": (s) => s.rungs === "new-game" || s.rungs === "top",
+	"shipyard-tab": (s) =>
+		(s.rungs === "new-game" || s.rungs === "top") &&
+		(s.tab === undefined || s.tab === "Equipment"),
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	// #647: above the envelope, or the attitude vents fire nothing past the

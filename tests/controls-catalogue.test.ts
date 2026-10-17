@@ -220,7 +220,11 @@ describe("the catalogue is complete against the source", () => {
 			"fly.jump": "this.chargeJump()",
 			"fight.targetNext": "this.cycleTarget(1)",
 			"fight.targetPrevious": "this.cycleTarget(-1)",
-			"fight.faceTarget": "this.faceTarget()",
+			"fight.faceTarget": "this.beginFaceTurn()",
+			// #892 binds it; #893 gives the method its body.
+			"fight.cycleFireGroup": "this.cycleFireGroup()",
+			"fight.launchMissile": "this.fireMissile()",
+			"fight.ecm": "this.fireEcm()",
 			"fight.rigIncoming": 'this.combatRig?.command("fight.rigIncoming")',
 			"fight.rigEcm": 'this.combatRig?.command("fight.rigEcm")',
 			"dock.clearance": "this.requestDockingClearance()",
@@ -235,7 +239,8 @@ describe("the catalogue is complete against the source", () => {
 			// the panel's own listener.
 			"system.settings": "this.settingsPanel?.open()",
 			"system.commander": "this.commanderOverlay?.open()",
-			"system.postcard": "this.postcardPanel?.open()",
+			// Node #843: sharing waits for the models before opening the panel.
+			"system.postcard": "this.openPostcardWithModels()",
 			"view.reference": "controlsKeyMove(",
 			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
 			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",

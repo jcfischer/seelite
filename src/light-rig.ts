@@ -117,6 +117,63 @@ export const EXPOSURE = {
  * display-space band even after ACES, while the camera-side fill still owns the
  * separate backlit-hull case.
  */
+/**
+ * The cabin's share of the rig's hemisphere: **0.7 of it** (node #887).
+ *
+ * Every layer scene — far, approach, near, cabin — is built with the same sun,
+ * hemisphere and fill, and #651 asked deliberately for that: the cabin left the near
+ * layer so the bay could not stand inside it, not so it could be lit differently. That
+ * held while the cabin was the only thing in its scene. It does not hold with four
+ * authored interior floods in the bay outside and six frame lamps inside it: the ambient
+ * that reads correctly on a hull against space is lift on top of lift in a closed room,
+ * and the principal's reading from the docked cabin was that the room was washed out.
+ *
+ * So the cabin takes 0.7 and every other layer keeps 1. The figure was set on the live
+ * panel in the docked cabin; `main.ts` applies it where the layer lights are built. It
+ * is the cabin alone because the hull's look — and `HULL_LUMA_CALIBRATION`, which is
+ * recorded against those readings — was judged and measured at the full figure.
+ */
+export const CABIN_HEMISPHERE_GAIN = 0.7;
+
+/**
+ * The cabin's share of the rig's hemisphere **at low quality** (node #912).
+ *
+ * `CABIN_HEMISPHERE_GAIN` was set with the six perimeter lamps on, and low turns every
+ * one of them off (`COCKPIT_PERIMETER_LAMPS`, `COCKPIT_QUALITY.low.keyLight`). So on low
+ * the 0.7 only took light away, and a pilot on low sat in a cabin darker than before #898
+ * — which the principal had already read as too dark. Low gets its own figure instead of
+ * lamps: a hemisphere is already evaluated for every cabin fragment, so raising it costs
+ * nothing, where keeping two lamps on would have added two point lights to the setting
+ * meant to be cheap (the principal's choice, 2026-10-11).
+ *
+ * **9 is the principal's figure, set by eye** on a live slider in the cabin at low
+ * (2026-10-11), from the trade station's berth. It is not read off a sweep: a slider
+ * capped at 4 was the first thing rejected ("needs at least 4"). On low the cabin's
+ * point lights are down to `cockpit-light`, the one ungated console lamp — the key, the
+ * centre lamp and all six perimeter lamps are off — so the hemisphere carries the room.
+ * The hull layers keep the rig's figure on both settings.
+ */
+export const CABIN_LOW_QUALITY_HEMISPHERE_GAIN = 9;
+
+/**
+ * The hemisphere a layer's scene gets: the rig's figure everywhere, and in the cabin
+ * `CABIN_HEMISPHERE_GAIN` of it on high and `CABIN_LOW_QUALITY_HEMISPHERE_GAIN` on low.
+ * A function rather than an inline ternary in `main.ts` so the cabin-only scope of the
+ * exception is asserted rather than described — Sage's second finding on #898 was that
+ * the branch as written could be applied to the wrong layers and every row would stay
+ * green.
+ */
+export const hemisphereIntensityFor = (
+	cabinLayer: boolean,
+	quality: keyof typeof LIGHT_RIG.quality,
+) =>
+	LIGHT_RIG.hemisphere.intensity *
+	(cabinLayer
+		? quality === "low"
+			? CABIN_LOW_QUALITY_HEMISPHERE_GAIN
+			: CABIN_HEMISPHERE_GAIN
+		: 1);
+
 export const LIGHT_RIG = {
 	/** Directional, because one light cannot serve two scenes at two scales;
 	 *  `main.ts` has the argument. */

@@ -1,3 +1,5 @@
+import { invalidateOcclusionBounds } from "./occlusion-mesh";
+import { disposeSubtree } from "./gpu-teardown";
 /**
  * The drawn station interior — `docs/specs/docking.md` §13, as geometry.
  *
@@ -344,10 +346,103 @@ const atFullDetail = <T extends THREE.Object3D>(object: T): T => {
  */
 // A recessed hull may end the rendered mouth behind the sim plane; this trims
 // only its enclosure and corner rails, leaving berths and fittings in place.
+
+/** Installed by the optional authored-model loader; the sim never reads it. */
+type InteriorKitBuilder = (
+	interior: StationInterior,
+	seed: number,
+	recess: number,
+) => THREE.Group;
+let interiorKitBuilder: InteriorKitBuilder | null = null;
+type AsyncInteriorKitBuilder = (
+	interior: StationInterior,
+	seed: number,
+	recess: number,
+	live: () => boolean,
+) => Promise<THREE.Group | undefined>;
+let asyncInteriorKitBuilder: AsyncInteriorKitBuilder | undefined;
+export function installInteriorKitBuilder(
+	builder: InteriorKitBuilder | null,
+	asyncBuilder?: AsyncInteriorKitBuilder,
+) {
+	interiorKitBuilder = builder;
+	asyncInteriorKitBuilder = asyncBuilder;
+}
+function replaceInteriorStandIn(group: THREE.Group, kit: THREE.Group) {
+	for (const child of [...group.children]) {
+		if (child.name === NAMEPLATE_NAME) continue;
+		child.removeFromParent();
+		disposeSubtree(child);
+	}
+	group.add(kit);
+	delete group.userData.interiorStandIn;
+}
+const pendingInteriors = new WeakMap<THREE.Object3D, Promise<boolean>>();
+/** Build off-scene over frame slices, then replace the still-live stand-in once.
+ * A jump can dispose this station during a slice; never attach to that old root.
+ */
+export function refreshStationInteriorKitAsync(
+	root: THREE.Object3D,
+	live: () => boolean = () => true,
+	prepare?: (kit: THREE.Group, live: () => boolean) => Promise<void>,
+): Promise<boolean> {
+	const pending = pendingInteriors.get(root);
+	if (pending) return pending;
+	const promise = (async () => {
+		const candidates: THREE.Group[] = [];
+		root.traverse((o) => {
+			if (o.userData.interiorStandIn) candidates.push(o as THREE.Group);
+		});
+		let changed = false;
+		for (const group of candidates) {
+			const builder = asyncInteriorKitBuilder;
+			if (!builder || !live()) continue;
+			const standIn = group.userData.interiorStandIn;
+			const { interior, seed, recess } = standIn;
+			const kit = await builder(interior, seed, recess, live);
+			if (!kit) continue;
+			try {
+				if (live()) await prepare?.(kit, live);
+			} catch (error) {
+				disposeSubtree(kit);
+				throw error;
+			}
+			if (!live() || group.userData.interiorStandIn !== standIn) {
+				disposeSubtree(kit);
+				continue;
+			}
+			replaceInteriorStandIn(group, kit);
+			changed = true;
+		}
+		if (changed) invalidateOcclusionBounds(root);
+		return changed;
+	})().finally(() => pendingInteriors.delete(root));
+	pendingInteriors.set(root, promise);
+	return promise;
+}
+/** Refresh a stand-in once, preserving the root and painted nameplate identities. */
+export function refreshStationInteriorKit(root: THREE.Object3D): boolean {
+	const candidates: THREE.Group[] = [];
+	root.traverse((o) => {
+		if (o.userData.interiorStandIn) candidates.push(o as THREE.Group);
+	});
+	let changed = false;
+	for (const group of candidates) {
+		if (!interiorKitBuilder) continue;
+		const { interior, seed, recess } = group.userData.interiorStandIn;
+		const kit = interiorKitBuilder(interior, seed, recess);
+		replaceInteriorStandIn(group, kit);
+		changed = true;
+	}
+	if (changed) invalidateOcclusionBounds(root);
+	return changed;
+}
+
 export function buildStationInterior(
 	type: StationType,
 	interior: StationInterior,
 	mouthRecessKm = 0,
+	seed = 0,
 ): THREE.Group {
 	// **Two presentations, and the sim already decided which** (#165). A pad
 	// role has no enclosure to draw: no shell, no mouth bulkhead, no end wall.
@@ -357,6 +452,7 @@ export function buildStationInterior(
 	if (interior.presentation === "pad") return buildPadDeck(type, interior);
 	const group = new THREE.Group();
 	group.name = INTERIOR_GROUP_NAME;
+	group.userData.interiorStandIn = { interior, seed, recess: mouthRecessKm };
 	const visuals = STATION_VISUALS[type];
 	const structure = structureMaterial(type);
 	const mouth = interior.mouthAxialKm - mouthRecessKm;
@@ -549,6 +645,9 @@ export function buildStationInterior(
 			buildRoleFittings(type, interior, plate, structure, mouthRecessKm),
 		),
 	);
+	// A review-only synchronous builder can refresh immediately. Production
+	// retains the stand-in until sliced installation finishes, also after jumps.
+	if (!asyncInteriorKitBuilder) refreshStationInteriorKit(group);
 	return group;
 }
 
@@ -673,7 +772,9 @@ function buildBerth(
 	// from any angle but straight on, the apron now has a section.
 	for (const side of [-1, 1])
 		at(
-			box(p * 0.7, p * 2.4, L * 1.04, structure, "berth-kerb"),
+			// Longer than the apron: at its length their end faces coincided
+			// and fought (node #819).
+			box(p * 0.7, p * 2.4, L * 1.06, structure, "berth-kerb"),
 			side * B * 0.54,
 			p * 1.2,
 			0,
@@ -744,9 +845,11 @@ function buildBerth(
 		1 + (berth.band === "deep" ? 1 : 0) + (berth.family === "cradle" ? 1 : 0);
 	for (let i = 0; i < tally; i++)
 		at(
-			box(p * 0.3, p * 1.7, p * 0.9, accent, "berth-tally"),
+			// Proud of the guide rail it crosses: at one height their lit tops
+			// coincided and fought (node #819).
+			box(p * 0.3, p * 1.9, p * 0.9, accent, "berth-tally"),
 			B * 0.42 - i * p * 0.55,
-			p * 0.85,
+			p * 0.95,
 			L * 0.46,
 		);
 
@@ -754,7 +857,8 @@ function buildBerth(
 		// **A backing frame at the head of the berth.** A wall-side berth is an
 		// alcove, and what makes it one is that it has a back.
 		at(
-			box(B * 1.08, H * 0.5, p * 0.9, structure, "berth-backing"),
+			// Wider than the apron, whose sides it would otherwise lie on.
+			box(B * 1.1, H * 0.5, p * 0.9, structure, "berth-backing"),
 			0,
 			H * 0.25,
 			-L * 0.56,
@@ -1122,9 +1226,14 @@ function buildPadDeck(
 	// rather than the aperture rectangle, because that is the shape the deck
 	// itself is cut to.
 	const laneGlow = glowMaterial(visuals.strobeColor);
+	// **Stepped back from the hole**, as a bay's lane edge is (#269): built to
+	// the hole itself, its inner faces lay on the deck's and fought them as the
+	// camera moved — the flicker the principal saw round an authored
+	// refinery's pad (node #819, #282's question).
+	const laneStep = RIM_SEPARATION_KM * RIM_STEPS.laneEdge;
 	for (const [w, h, x, y] of ringAround(
 		{ across: hole + plate * 2.5, up: hole + plate * 2.5 },
-		{ across: hole, up: hole },
+		{ across: hole + laneStep, up: hole + laneStep },
 	)) {
 		const strip = box(w, h, plate * 1.2, laneGlow, "interior-lane-edge");
 		strip.position.set(x, y, faceZ - plate * 0.3);
@@ -1136,6 +1245,27 @@ function buildPadDeck(
 	// lane; a pad has no wall to hang it on and no throat to read it from, and
 	// the one view every approach shares is the one looking straight down at the
 	// deck. It sits on a corner of the ring, where no berth stands.
+	group.add(buildPadNameplate(interior));
+
+	const guide = glowMaterial(visuals.floodColor);
+	const accent = glowMaterial(visuals.heatColor);
+	const seat = padSeatKm(interior);
+	for (const berth of interior.berths)
+		group.add(
+			atFullDetail(buildBerth(berth, plate, structure, guide, accent, seat)),
+		);
+
+	group.add(atFullDetail(buildPadFittings(interior, plate, structure, guide)));
+	return group;
+}
+
+/**
+ * The pad's painted name, on a corner of its deck ring where no berth stands
+ * (E9/E11: a pad has no wall to hang it on). Exported for an authored pad
+ * (node #819), which draws its own deck and keeps the game's name.
+ */
+export function buildPadNameplate(interior: StationInterior): THREE.Mesh {
+	const plate = plateOf(interior);
 	const shieldW = interior.laneHalfAcrossKm * 0.8;
 	const shieldH = shieldW * 0.28;
 	const shield = box(
@@ -1153,20 +1283,9 @@ function buildPadDeck(
 	shield.position.set(
 		interior.halfAcrossKm * 0.75,
 		interior.halfUpKm * 0.75,
-		faceZ - plate * 0.4,
+		interior.mouthAxialKm - plate * 0.4,
 	);
-	group.add(shield);
-
-	const guide = glowMaterial(visuals.floodColor);
-	const accent = glowMaterial(visuals.heatColor);
-	const seat = padSeatKm(interior);
-	for (const berth of interior.berths)
-		group.add(
-			atFullDetail(buildBerth(berth, plate, structure, guide, accent, seat)),
-		);
-
-	group.add(atFullDetail(buildPadFittings(interior, plate, structure, guide)));
-	return group;
+	return shield;
 }
 
 /**
@@ -1194,9 +1313,11 @@ function buildPadFittings(
 	const y = interior.halfUpKm;
 	const faceZ = interior.mouthAxialKm;
 	// A kerb along each edge, seated into the deck for the reason every part in
-	// this module is: a rail laid on a surface is not joined to it.
+	// this module is: a rail laid on a surface is not joined to it. Its outer
+	// faces stand a rim step inside the deck's, which they lay on and fought
+	// (node #819).
 	for (const [w, h, px, py] of ringAround(
-		{ across: x, up: y },
+		{ across: x - RIM_SEPARATION_KM, up: y - RIM_SEPARATION_KM },
 		{ across: x - plate * 1.2, up: y - plate * 1.2 },
 	)) {
 		const kerb = box(w, h, plate * 2, structure, "interior-rail");

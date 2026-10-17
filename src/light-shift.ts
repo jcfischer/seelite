@@ -216,7 +216,7 @@ ${branches}
  * backdrop's, in `main.ts`.
  *
  * It returns at once when `uBeta` is zero, so an idle sky runs the path it always
- * ran (`CLAUDE.md`: a dial at zero still evaluates everything to its right). The
+ * ran (`docs/pitfalls.md`: a dial at zero still evaluates everything to its right). The
  * centre is read off the model matrix by the caller rather than assumed: the
  * star group follows the camera.
  */

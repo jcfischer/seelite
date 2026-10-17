@@ -15,7 +15,7 @@
  * The pass is enabled only for the few seconds around a jump, so this prices a
  * transient: the frame the player sees during the entry and the exit. Each arm
  * is a block of `FRAMES` renders fenced by a 1x1 `readPixels` (the one fence
- * that fences on ANGLE Metal, `CLAUDE.md`): `off`, held past the transition's
+ * that fences on ANGLE Metal, `docs/pitfalls.md`): `off`, held past the transition's
  * end with the pass disabled — one per view — and each side of the key at each phase
  * in `PHASES`.
  *

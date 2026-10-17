@@ -4,7 +4,7 @@
  *
  * The model is a Blender export (`spikes/porter-hull/build_model.py`) in
  * metres, Y up, nose +Z; `spikes/porter-hull/prepare-game-asset.mjs` encodes
- * it losslessly into `public/models/porter.glb`, the one Porter file the game
+ * it losslessly into `src/models/porter.glb`, the one Porter file the game
  * ships. A hull mesh is kilometres with the nose at −Z, so the template is
  * turned half a turn about Y and scaled by `PORTER_KM_PER_M`.
  *
@@ -25,9 +25,11 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { PORTER_GLB_URL } from "./model-urls";
+import type { ModelProgressListener } from "./model-progress";
 import { authoredDriveGlow, installAuthoredPorter } from "./ship-mesh";
 
-export const PORTER_MODEL_URL = "/models/porter.glb";
+export const PORTER_MODEL_URL = PORTER_GLB_URL;
 
 /** Hull kilometres per model metre. */
 export const PORTER_KM_PER_M = 0.001;
@@ -124,11 +126,13 @@ export function adoptPorterTemplate(scene: THREE.Object3D): void {
 
 let ready: Promise<void> | undefined;
 
-/** Await before anything builds a ship: every page that can draw a Porter. */
-export function preparePorterModel(): Promise<void> {
+/** The model queue installs this after boot; postcards and full-set boots await it. */
+export function preparePorterModel(
+	onProgress?: ModelProgressListener,
+): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(PORTER_MODEL_URL)
+		.loadAsync(PORTER_MODEL_URL, onProgress)
 		.then((gltf) => adoptPorterTemplate(gltf.scene))
 		.catch((error) => {
 			ready = undefined;

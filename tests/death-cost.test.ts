@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * What a death costs the pilot (#660, built by node #704): commander in,
  * commander out, for each cause — the pod's eject (D2) and a death without
@@ -108,7 +114,7 @@ const launched = (): CommanderRecord => {
 			...base.state,
 			credits: 5432,
 			cargo: { Food: 6 },
-			ownedEquipment: [...FITTED],
+			loadout: migrateEquipment(LAUNCH_HULL, [...FITTED]).loadout,
 			fuelLy: HULL_SPECS[LAUNCH_HULL].tankLy / 3,
 		},
 		ladders: {
@@ -138,8 +144,10 @@ describe("#660 D2 — an eject: the hold and the pod go, the ship stays", () => 
 
 	test("the launch hull, every other fitting, the launch credits, tank and charge", () => {
 		expect(after.state.hull).toBe(LAUNCH_HULL);
-		expect(after.state.ownedEquipment).toEqual(
-			FITTED.filter((item) => item !== ESCAPE_POD),
+		expect(equipmentNames(after.state.loadout)).toEqual(
+			equipmentNames(launch.state.loadout).filter(
+				(item) => item !== ESCAPE_POD,
+			),
 		);
 		expect(after.state.credits).toBe(5432);
 		expect(after.state.fuelLy).toBe(launch.state.fuelLy);
@@ -211,7 +219,7 @@ describe("#660 D6 — a death without ejecting: the ship goes", () => {
 
 	test("a stock courier, no fittings, an empty hold, a full tank and charge", () => {
 		expect(after.state.hull).toBe(PLAYER_BASELINE_HULL);
-		expect(after.state.ownedEquipment).toEqual([]);
+		expect(after.state.loadout).toEqual(stockLoadout(PLAYER_BASELINE_HULL));
 		expect(after.state.cargo).toEqual({});
 		expect(entrustedTonnesAboard(after.requests)).toBe(0);
 		expect(after.state.fuelLy).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
@@ -228,8 +236,8 @@ describe("#660 D6 — a death without ejecting: the ship goes", () => {
 	});
 
 	test("a pod fitted and not launched is lost with the rest (D4)", () => {
-		expect(launch.state.ownedEquipment).toContain(ESCAPE_POD);
-		expect(after.state.ownedEquipment).not.toContain(ESCAPE_POD);
+		expect(equipmentNames(launch.state.loadout)).toContain(ESCAPE_POD);
+		expect(equipmentNames(after.state.loadout)).not.toContain(ESCAPE_POD);
 	});
 
 	test("the record parses, at the launch station", () => {
@@ -434,6 +442,18 @@ describe("the wake: what the death took", () => {
 
 	test("a bare courier with nothing aboard is told so, with no jobs line", () => {
 		const bare = newCommanderRecord(PLAYER_BASELINE_HULL);
+		expect(deathWake("x", bare, "destroyed", false).fittingsLost).toBe(0);
+		const upgraded = {
+			...bare,
+			state: {
+				...bare.state,
+				loadout: {
+					...bare.state.loadout,
+					plant: { ...bare.state.loadout.plant, grade: "A" as const },
+				},
+			},
+		};
+		expect(deathWake("x", upgraded, "destroyed", false).fittingsLost).toBe(1);
 		const text = wakeText(deathWake("x", bare, "destroyed", false));
 		expect(text).toContain("an empty hold");
 		expect(text).not.toContain("Requests");

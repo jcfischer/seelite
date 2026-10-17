@@ -821,6 +821,11 @@ ships. A round three would be ranking different objects under the same letters.
   pad.
 
 `STATION_COLORS` (`src/sim.ts`) stays as the secondary cue and is unchanged.
+An authored shipyard (node #818) is the exception: it keeps its approved
+model's paint, untinted, and at 60 km it is not reliably wider than the trade
+station (the Foundry and the Slipway are taller than wide down the axis), so
+`probe-station` reports both for it and gates neither (the principal's
+ruling, 2026-10-13).
 Emissive detail — window grids and hull strobes, cold floodlit bays, glowing
 vent throats — is welcome and is not what the identity rests on, because it
 resolves at medium range and vanishes at scanner range. #36's visual pass

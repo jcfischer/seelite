@@ -213,7 +213,8 @@ try {
 	await game.goto(gameUrl(origin, { raider: "off", music: "calm" }));
 	await bootedGame(game, 60000);
 	// The synth loads on the gesture that opens the game's sound (#560 D8).
-	await game.keyboard.press("F8");
+	// F8 is now the E.C.M. (node #874); an unbound key unlocks audio alone.
+	await game.keyboard.press("F6");
 	await game.waitForFunction(() => window.__seelite.music.ready, null, {
 		timeout: 20000,
 	});

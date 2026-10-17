@@ -96,7 +96,9 @@ export const relayActive = (record: {
 	stream(record.seed, DOMAIN.RELAY_ACTIVE)() <
 	relayActiveChance(record.government);
 
-/** Inside this range of the relay the cockpit reads its signal. */
+/** Inside this range of the relay a 1E long-range scanner reads its signal. A
+ *  fitted scanner's range is its row's `signalRangeKm`, scaled by size and
+ *  grade from this (#977): 3A reads 8,437.5 km. */
 export const RELAY_SIGNAL_RANGE_KM = 2_500;
 /** Inside this range the relay is identified: a knowledge row, a contact, a
  *  target. Well under scanner range, so the scanner cannot find it first. */
@@ -111,7 +113,7 @@ export const RELAY_IDENTIFY_RANGE_KM = 150;
  * in #508's capture at 0.43. The assist holds still in the station's frame
  * (`localFrame`, since #10), so a pilot parked beside the relay at zero
  * throttle drifted off it while firing: 1.0 km to 5.2 km across one kill.
- * `CLAUDE.md`'s rule is that a fight beside a body is flown in that body's
+ * `docs/pitfalls.md`'s rule is that a fight beside a body is flown in that body's
  * frame, and the relay is what this fight is beside.
  *
  * The identification range, because that is where the relay becomes a place
@@ -271,15 +273,19 @@ export interface RelaySignal {
 }
 
 /** What the cockpit reads of the relay's transmission, or null beyond its
- *  range. Range only: the bearing is the cockpit's to draw from the position. */
-export function relaySignal(shipPos: Vec3, relayPos: Vec3): RelaySignal | null {
+ *  range. Range only: the bearing is the cockpit's to draw from the position.
+ *  `rangeKm` is the fitted scanner's (`fittedCapacity`'s `signalRangeKm`);
+ *  the default is a 1E's. A sweep still writes provenance only: identifying
+ *  stays at `RELAY_IDENTIFY_RANGE_KM` whatever the grade (#468). */
+export function relaySignal(
+	shipPos: Vec3,
+	relayPos: Vec3,
+	rangeKm: number = RELAY_SIGNAL_RANGE_KM,
+): RelaySignal | null {
 	const km = length(sub(relayPos, shipPos));
-	if (km > RELAY_SIGNAL_RANGE_KM) return null;
-	const span = RELAY_SIGNAL_RANGE_KM - RELAY_IDENTIFY_RANGE_KM;
-	const strength = Math.max(
-		0,
-		Math.min(1, (RELAY_SIGNAL_RANGE_KM - km) / span),
-	);
+	if (km > rangeKm) return null;
+	const span = rangeKm - RELAY_IDENTIFY_RANGE_KM;
+	const strength = Math.max(0, Math.min(1, (rangeKm - km) / span));
 	return { km, strength };
 }
 

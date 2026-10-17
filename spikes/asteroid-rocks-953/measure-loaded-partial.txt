@@ -1,0 +1,114 @@
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+7:20:17 PM [vite] (client) warning: 
+/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+1  |  const R = new URL("/src", import.meta.url).pathname;
+2  |  const { stream } = await import(`${R}/galaxy.ts`);
+   |                                  ^^^^^^^^^^^^^^^^
+3  |  const { mix } = await import(`${R}/rng.ts`);
+4  |  const sys = await import(`${R}/system.ts`);
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+7:20:17 PM [vite] (client) warning: 
+/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+1  |  const R = new URL("/src", import.meta.url).pathname;
+2  |  const { stream } = await import(`${R}/galaxy.ts`);
+3  |  const { mix } = await import(`${R}/rng.ts`);
+   |                               ^^^^^^^^^^^^^
+4  |  const sys = await import(`${R}/system.ts`);
+5  |  const TAU = Math.PI * 2;
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+7:20:17 PM [vite] (client) warning: 
+/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+2  |  const { stream } = await import(`${R}/galaxy.ts`);
+3  |  const { mix } = await import(`${R}/rng.ts`);
+4  |  const sys = await import(`${R}/system.ts`);
+   |                           ^^^^^^^^^^^^^^^^
+5  |  const TAU = Math.PI * 2;
+6  |  const AU_KM = 1495978707e-1;
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-953/spikes/asteroid-fields-948/field-proto.ts
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  authored load: {"bytes":19567824,"fetchMs":444.5,"decodeMs":136.5,"prepareMs":10.300000190734863}
+  viewport: 1440x900 at device scale 2, chase, clock held, fov 60, 1559 px/rad
+  field: 0x5ee11e g0 s173 field-00, 210 rocks, radius 25–387 m; K=16
+  12 blocks per arm, 120 frames per block, arm order shuffled from seed 20261013
+  build (cold, main thread):
+    batch-authored@high     7.4 ms  shapes  16  geometry 92558 verts / 162877 tris
+    batch-authored@low     4.8 ms  shapes  16  geometry 92558 verts / 162877 tris
+    batch-k@high          48.1 ms  shapes  16  geometry 11136 verts / 22080 tris
+    batch-k@low           40.1 ms  shapes  16  geometry 11136 verts / 22080 tris
+
+  view close, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             4.023                          0          0  
+  batch-authored@high    4.332  +0.309 105/144 (73%)      2       7844  2/11/159/38
+  batch-k@high         16.901  +12.878 144/144 (100%)      2        980  2/11/159/38
+  none@low              2.760                          0          0  
+  batch-authored@low    3.064  +0.303 115/144 (80%)      2       7844  1/4/88/117
+  batch-k@low          14.198  +11.438 144/144 (100%)      2        980  1/4/88/117
+
+  view close, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high            11.005                          0          0  
+  batch-authored@high   13.043  +2.038 130/144 (90%)      4      23532  2/11/159/38
+  batch-k@high         31.618  +20.613 144/144 (100%)      4       2940  2/11/159/38
+  none@low              8.197                          0          0  
+  batch-authored@low    8.675  +0.479 121/144 (84%)      2       7844  1/4/88/117
+  batch-k@low          23.395  +15.199 144/144 (100%)      2        980  1/4/88/117
+
+  view inside, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             4.884                          0          0  
+  batch-authored@high    4.845  -0.039 75/144 (52%)      1      32680  5/42/163/0
+  batch-k@high          4.633  -0.250 79/144 (55%)      1       5840  5/42/163/0
+  none@low              3.052                          0          0  
+  batch-authored@low    2.996  -0.055 86/144 (60%)      2      21218  1/9/171/29
+  batch-k@low           3.191  +0.139 97/144 (67%)      2       3920  1/9/171/29
+
+  view inside, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high            10.704                          0          0  
+  batch-authored@high   10.625  -0.080 85/144 (59%)      2      40524  5/42/163/0
+  batch-k@high         10.785  +0.081 94/144 (65%)      2       6820  5/42/163/0
+  none@low              7.840                          0          0  
+  batch-authored@low    8.056  +0.215 106/144 (74%)      2      21218  1/9/171/29
+  batch-k@low           7.901  +0.060 87/144 (60%)      2       3920  1/9/171/29
+
+  view edge, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             4.698                          0          0  
+  batch-authored@high    4.830  +0.132 78/144 (54%)      3      95854  1/19/151/39
+  batch-k@high          5.000  +0.301 89/144 (62%)      3      16980  1/19/151/39
+  none@low              3.062                          0          0  
+  batch-authored@low    3.266  +0.204 94/144 (65%)      3      44041  1/4/85/120
+  batch-k@low           3.433  +0.371 103/144 (72%)      3       7700  1/4/85/120
+
+  view edge, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             9.492                          0          0  
+  batch-authored@high    9.738  +0.246 97/144 (67%)      5     111542  1/19/151/39
+  batch-k@high         10.004  +0.512 111/144 (77%)      5      18940  1/19/151/39
+  none@low              7.737                          0          0  
+  batch-authored@low    7.832  +0.095 100/144 (69%)      3      44041  1/4/85/120
+  batch-k@low           7.949  +0.212 126/144 (88%)      3       7700  1/4/85/120
+
+  view far, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             3.035                          0          0  
+  batch-authored@high    3.199  +0.164 137/144 (95%)      2       2538  0/0/6/204
+  batch-k@high          3.217  +0.182 142/144 (99%)      2        480  0/0/6/204
+  none@low              2.428                          0          0  
+  batch-authored@low    2.589  +0.161 125/144 (87%)      1          0  0/0/0/210
+  batch-k@low           2.547  +0.119 106/144 (74%)      1          0  0/0/0/210
+
+INCONCLUSIVE: stopped after observing host load averages 111.20 / 79.06 / 67.11 at 19:26 Europe/Zurich on 2026-10-13. Incomplete run; no budget acceptance claim.

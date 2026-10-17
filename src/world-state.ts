@@ -1,3 +1,4 @@
+import { parseModule, carriedModule, type FittedModule } from "./loadout";
 /**
  * The persistent world state model — `docs/specs/persistent-world-state.md`.
  *
@@ -41,6 +42,7 @@ import {
 } from "./carrier-key";
 import { type DeficitMap, parseDeficits } from "./deficits";
 import {
+	DERELICT_EARLIEST_LOSS_S,
 	DERELICT_FITTINGS,
 	DERELICT_MAX_CONTAINERS,
 	type DerelictContainerKind,
@@ -402,6 +404,7 @@ export interface LegalStatus {
  * touch, not at the loss (`persistent-world-state.md` §7).
  */
 export interface DerelictContainer {
+	fitting?: FittedModule;
 	kind: DerelictContainerKind;
 	/** A commodity name for a good, an `EQUIPMENT` name for a fitting. */
 	id: string;
@@ -2189,6 +2192,7 @@ const canonicalDerelict = (
 				[quantity]: c.tonnes,
 				left: c.left,
 				...(c.unit === undefined ? {} : { unit: c.unit }),
+				...(c.fitting ? { fitting: parseModule(c.fitting) } : {}),
 			},
 		]),
 	),
@@ -2699,7 +2703,15 @@ const parseDerelictContainer = (
 		fail(`${what}: container kind ${kind} is unknown`);
 	const id = str(o, "id", what);
 	const allowed = CONTAINER_IDS[death ? "death" : "derelict"];
-	if (!allowed[kind as DerelictContainerKind].has(id))
+	const fitting = o.fitting === undefined ? undefined : parseModule(o.fitting);
+	if (
+		fitting &&
+		(kind !== "fitting" ||
+			carriedModule(fitting).id !== id ||
+			fitting.module === "escape-pod")
+	)
+		fail("invalid container fitting");
+	if (!fitting && !allowed[kind as DerelictContainerKind].has(id))
 		fail(
 			`${what}: ${id} is not a ${kind} a ${death ? "death wreck" : "derelict"} can hold`,
 		);
@@ -2711,6 +2723,8 @@ const parseDerelictContainer = (
 	const quantity = death ? "amount" : "tonnes";
 	const tonnes = ordinal(o, quantity, what);
 	if (tonnes === 0) fail(`${what}: a container drawn with no ${quantity}`);
+	if (fitting && tonnes !== 1)
+		fail(`${what}: a module fitting occupies one tonne`);
 	const left = ordinal(o, "left", what);
 	if (left > tonnes)
 		fail(
@@ -2718,6 +2732,7 @@ const parseDerelictContainer = (
 		);
 	return {
 		kind: kind as DerelictContainerKind,
+		...(fitting ? { fitting } : {}),
 		id,
 		tonnes,
 		left,
@@ -3029,10 +3044,15 @@ export function parseWorld(raw: unknown): WorldState {
 	//
 	// **And a row's times are on the clock**, which is also only here. Every
 	// writer advances the clock to the time it writes, so no written loss or
-	// strip is after `gameTime`, and a first loss is never before zero. A row
-	// outside that was not written: one stamped in the future throws on its
-	// first read, and one stamped far in the past sends the schedule's walk
-	// through every instance since.
+	// strip is after `gameTime`. Only a slot's first instance can be lost before
+	// zero — the clock starts part-way through its cycle (S16, node #775), so it
+	// may already be adrift — and every later one follows a strip made on the
+	// clock. Instance 0 is bounded below by a fixed save-format figure,
+	// `DERELICT_EARLIEST_LOSS_S`, and not by the tuned life, which a retune may
+	// shorten under a saved row. A row outside that was not written: one
+	// stamped in the future throws on its first read, and one stamped far in
+	// the past sends the schedule's walk through every instance since — at
+	// −1e300 a gap no longer moves the loss, and the walk never returned.
 	for (const env of world.galaxies)
 		for (const [key, row] of Object.entries(env.derelicts) as [
 			CarrierKey,
@@ -3042,9 +3062,10 @@ export function parseWorld(raw: unknown): WorldState {
 				fail(
 					`derelicts: ${key} is not a derelict slot in galaxy ${env.galaxyIndex}`,
 				);
-			if (row.lostAt < 0 || row.lostAt > world.gameTime)
+			const earliest = row.instanceOrdinal === 0 ? DERELICT_EARLIEST_LOSS_S : 0;
+			if (row.lostAt < earliest || row.lostAt > world.gameTime)
 				fail(
-					`derelict ${key}: lost at ${row.lostAt}, outside the clock's 0 to ${world.gameTime}`,
+					`derelict ${key}: lost at ${row.lostAt}, outside the clock's ${earliest} to ${world.gameTime}`,
 				);
 			if (row.salvaged && row.salvaged.at > world.gameTime)
 				fail(

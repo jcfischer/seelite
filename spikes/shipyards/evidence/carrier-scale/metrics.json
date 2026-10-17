@@ -1,0 +1,76 @@
+{
+	"gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+	"errors": [],
+	"models": [
+		{
+			"id": "o1",
+			"loaded": true,
+			"fps": 54.26753896710782,
+			"triangles": 1898644,
+			"calls": 426,
+			"modelTriangles": 948428,
+			"meshCount": 201,
+			"bounds": [1097.9818725585938, 576.0335998535156, 1781.8800201416016],
+			"view": "hero",
+			"geometry": {
+				"axialError": 0,
+				"maxDrift": 0,
+				"clearanceViolations": 0,
+				"minThroatDepth": 12.175000000000011,
+				"carrierMetres": [
+					176.39999842643738, 144.91495862603188, 379.60000239126384
+				],
+				"sweepRadius": 23.578391694215842,
+				"zMin": -9.650000000000006,
+				"zMax": 11.980000305175778
+			}
+		},
+		{
+			"id": "o2",
+			"loaded": true,
+			"fps": 53.72172148271953,
+			"triangles": 2850624,
+			"calls": 450,
+			"modelTriangles": 1424418,
+			"meshCount": 213,
+			"bounds": [1585.9318237304688, 1223.749984741211, 1082.9918212890625],
+			"view": "hero",
+			"geometry": {
+				"axialError": 0,
+				"maxDrift": 0,
+				"clearanceViolations": 0,
+				"minThroatDepth": 12.175000000000011,
+				"carrierMetres": [
+					176.39999842643738, 144.91495862603188, 379.60000239126384
+				],
+				"sweepRadius": 23.578391694215842,
+				"zMin": -9.649999999999999,
+				"zMax": 11.980000305175778
+			}
+		},
+		{
+			"id": "o3",
+			"loaded": true,
+			"fps": 59.99600026664895,
+			"triangles": 1099548,
+			"calls": 400,
+			"modelTriangles": 548880,
+			"meshCount": 188,
+			"bounds": [1570.7061767578125, 657.0336118792031, 2006.0497913464637],
+			"view": "hero",
+			"geometry": {
+				"axialError": 0.00000360536623300602,
+				"maxDrift": 0.000003636787361926997,
+				"clearanceViolations": 0,
+				"minThroatDepth": 12.175000341651696,
+				"carrierMetres": [
+					176.39999842643738, 144.91495862603188, 379.60000239126384
+				],
+				"sweepRadius": 23.57839305718463,
+				"zMin": -9.65000034165169,
+				"zMax": 11.9799999635241
+			}
+		}
+	],
+	"controls": "selection, full orbit, zoom, seven presets, tooling motion and pause on every captured station, work lights, capsule rotation, target dialog and PNG export passed"
+}

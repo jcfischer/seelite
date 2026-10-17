@@ -26,6 +26,7 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
 	type ShipMotion,
+	RESTING_CLOSING_FLOOR_KMS,
 	RESTITUTION,
 	V_SCRAPE_KMS,
 	hullBox,
@@ -489,8 +490,9 @@ describe("collision.md §9.1.13: ship against ship (C4b)", () => {
 			momentum(b.massT, pair.b.vel),
 		);
 		expect(length(sub(after, before))).toBeLessThan(1e-9);
+		// "No longer closing" to the resting rule's own floor.
 		expect(dot(sub(pair.a.vel, pair.b.vel), v3(0, 0, -1))).toBeGreaterThan(
-			-1e-12,
+			-RESTING_CLOSING_FLOOR_KMS,
 		);
 		// The next step starts touching, not inside: no ghost, nothing billed.
 		const next = sweepShipPair(
@@ -2062,16 +2064,24 @@ describe("distinctMeetings: a meeting's severity is its worst step (sage round 7
 describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 	const galaxy = generateGalaxy(47, 0);
 	const contentsFor = contentsCache(galaxy);
+	// A run is a pure function of its arguments, and the pinned row and the
+	// red build both read system 0's 1,800 s green run: fly it once.
+	const runs = new Map<string, CorpusResult>();
 	const run = (index: number, windowS: number, includeExempt = false) => {
+		const key = `${index}:${windowS}:${includeExempt}`;
+		const cached = runs.get(key);
+		if (cached) return cached;
 		const record = galaxy.systems.find((r) => r.index === index);
 		if (!record) throw new Error(`no system ${index}`);
 		const fromS = Math.floor(firstDepartureS(galaxy, record, contentsFor));
-		return trafficCollisionCorpus(galaxy, record, contentsFor, {
+		const result = trafficCollisionCorpus(galaxy, record, contentsFor, {
 			stepS: 0.5,
 			fromS,
 			toS: fromS + windowS,
 			includeExempt,
 		});
+		runs.set(key, result);
+		return result;
 	};
 	const classes = (result: CorpusResult) => {
 		const out: Record<string, number> = {};
@@ -2093,16 +2103,18 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		expect(through.closingKms).toBeGreaterThan(V_SCRAPE_KMS);
 	}, 30_000);
 
-	test("RED, pinned: system 0's launches touch at the aperture and at the release point, under V_SCRAPE", () => {
+	test("RED, pinned: system 0's launches touch at the release point, under V_SCRAPE", () => {
 		const result = run(0, 1800);
 		expect(result.steps["local-departure"]).toBeGreaterThan(4000);
 		expect(result.steps["lane-queued"]).toBeGreaterThan(1000);
 		expect(result.pairSteps).toBeGreaterThan(0);
-		expect(classes(result)).toEqual({
-			"launch-aperture": 3,
-			"release-point": 1,
-		});
-		// Both classes are touches: they cost nothing and divert nothing.
+		// Three launch-aperture touches stood here too until node #815: all three
+		// were miners (0:station-refinery/traffic-00 twice, 95:station-trade/
+		// traffic-05), and they went with the loft miner. Longwall B is narrower
+		// in section (34.1 x 18.8 m against 51.9 x 33.2) and also turns and damps
+		// differently (HANDOFF.md D2); nothing here separates which removed them.
+		expect(classes(result)).toEqual({ "release-point": 1 });
+		// The one class is a touch: it costs nothing and diverts nothing.
 		for (const m of distinctMeetings(result.meetings))
 			expect(m.closingKms).toBeLessThan(V_SCRAPE_KMS);
 		// Cruise is counted apart under C5, and here met nothing.
@@ -2111,7 +2123,11 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 
 	// glossary-ignore: pad
 	test("the red build: sweeping the exempt phases meets the pad role's deck and berths", () => {
-		const result = run(0, 600, true);
+		// 1,800 s, the pinned row's window: its one collidable meeting, the
+		// release-point touch, is at 1,519.5 s, and the subset check below is
+		// vacuous over a green run that met nothing (node #815 took 600 s's three
+		// launch-aperture touches away with the loft miner).
+		const result = run(0, 1800, true);
 		const met = distinctMeetings(result.meetings);
 		// §9.1.8's split: a pad role's deck and berths are solid, so a // glossary-ignore: pad
 		// parked, launching or arriving carrier meets them without §5.
@@ -2126,7 +2142,7 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		// And every meeting the green run sees over the same window is one the
 		// red run sees too: sweeping the exempt phases adds meetings, it does
 		// not drop or re-read one in a collidable phase.
-		const green = run(0, 600).meetings;
+		const green = run(0, 1800).meetings;
 		expect(green.length).toBeGreaterThan(0);
 		const same = (a: Meeting, b: Meeting) =>
 			a.key === b.key &&
@@ -2137,7 +2153,7 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 			(g) => !result.meetings.some((r) => same(g, r)),
 		);
 		expect(missing).toEqual([]);
-	}, 60_000);
+	}, 120_000);
 });
 
 describe("collision.md §3: a kill by impact names the impact, and pays only the player's own ram", () => {

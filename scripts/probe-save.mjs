@@ -522,6 +522,10 @@ try {
 	// -----------------------------------------------------------------------
 	const trade = await page.evaluate(
 		async ([targetSeed]) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
+
 			const g = window.__seelite;
 			const dt = g.units.MAX_DT;
 			// **The ship starts an AU from any station** — the arrival point is near
@@ -554,10 +558,10 @@ try {
 				if (!g.hasDockingComputer)
 					g.commander = {
 						...g.commander,
-						ownedEquipment: [
-							...g.commander.ownedEquipment,
+						loadout: migrateEquipment(g.commander.hull, [
+							...equipmentNames(g.commander.loadout ?? {}),
 							g.dockingComputerName,
-						],
+						]).loadout,
 					};
 				g.toggleDockingComputer();
 			}
@@ -1015,58 +1019,107 @@ try {
 		// **A tumble survives a save (#619, `flight-model.md` §3.9).** Rates
 		// are angular momentum under the vents, so a normal-flight record
 		// carries them and the restore puts them back. Seeded the same way as
-		// the cruise record above. The page is flying by the time it is read
-		// (`bootedGame` releases the clock), and with the assist on a frame or
-		// two has eased the rates: measured, 0.96 of the seed. So each axis is
-		// held to its sign and to within 15% — a restore that dropped them
-		// reads exactly zero, which is what a fresh page starts at.
+		// the cruise record above.
+		//
+		// **Read on the frame the save comes back on, not after the boot wait
+		// (node #980).** The boot releases the clock as soon as the store
+		// attaches, and `bootedGame` waits out the progressive sky, so by the
+		// time it answers the page has flown for however long the bake took,
+		// with the assist easing the rates all along: 0.96 of the seed when the
+		// wait was a frame or two, 0.21 to 0.45 once it was the sky, the share
+		// set by the machine's load. So the page records the rates on the first
+		// animation frame that finds the handle. The boot publishes `__seelite`
+		// after it releases the clock with no await between, so that frame has
+		// not stepped yet, and the row holds it to the save's own clock rather
+		// than trusting the order: a read taken after a step reads a later
+		// `gameTime` and goes red, instead of passing on a damped value. Exact,
+		// so there is no tolerance for a decay to hide in.
 		const tumble = [0.31, -0.42, 0.53];
-		const tumbling = await third.evaluate((rates) => {
-			const g = window.__seelite;
-			const env = g.saveEnvelope();
-			return {
-				berth: g.save.defaultSlot,
-				blob: g.save.serialize({
-					world: env.world,
-					commander: {
-						...env.commander,
-						dockedAt: null,
-						flight: { ...env.commander.flight, regime: "normal", rates },
-					},
-				}),
-			};
-		}, tumble);
+		const savedFlying = (rates) =>
+			third.evaluate((rates) => {
+				const g = window.__seelite;
+				const env = g.saveEnvelope();
+				return {
+					berth: g.save.defaultSlot,
+					gameTime: env.world.gameTime,
+					blob: g.save.serialize({
+						world: env.world,
+						commander: {
+							...env.commander,
+							dockedAt: null,
+							flight: { ...env.commander.flight, regime: "normal", rates },
+						},
+					}),
+				};
+			}, rates);
+		const tumbling = await savedFlying(tumble);
+		const atRest = await savedFlying([0, 0, 0]);
 		await third.close();
-		const tumbleSeed = await context.newPage();
-		watch(tumbleSeed, "tumble seed");
-		await tumbleSeed.goto(gameUrl(ORIGIN, { "no-save": true }), {
-			waitUntil: "load",
-		});
-		await bootedGame(tumbleSeed);
-		await tumbleSeed.evaluate(async ({ berth, blob }) => {
-			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
-			await indexedDbSaveBackend().write(berth, "live", blob);
-		}, tumbling);
-		await tumbleSeed.close();
-		const fourth = await context.newPage();
-		watch(fourth);
-		await fourth.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
-		await bootedGame(fourth);
-		const resumed = await fourth.evaluate(() => ({
-			fault: window.__seelite.saveFault,
-			held: window.__seelite.clockHeld,
-			rates: { ...window.__seelite.rates },
-		}));
+		/** Boots a live page from `record` and answers what its first frame held. */
+		const resumedFrom = async (record, label) => {
+			const seeder = await context.newPage();
+			watch(seeder, `${label} seed`);
+			await seeder.goto(gameUrl(ORIGIN, { "no-save": true }), {
+				waitUntil: "load",
+			});
+			await bootedGame(seeder);
+			await seeder.evaluate(async ({ berth, blob }) => {
+				const { indexedDbSaveBackend } = await import("/src/save-store.ts");
+				await indexedDbSaveBackend().write(berth, "live", blob);
+			}, record);
+			await seeder.close();
+			const resumedPage = await context.newPage();
+			watch(resumedPage);
+			// Before the game's own scripts: every callback the page schedules
+			// runs behind this one, so the first frame that finds the handle is
+			// recorded before anything in it steps.
+			await resumedPage.addInitScript(() => {
+				const request = window.requestAnimationFrame.bind(window);
+				window.requestAnimationFrame = (callback) =>
+					request((t) => {
+						const g = window.__seelite;
+						if (g && !window.__probeFirstFrame)
+							window.__probeFirstFrame = {
+								gameTime: g.world.gameTime,
+								held: g.clockHeld,
+								rates: { ...g.rates },
+							};
+						callback(t);
+					});
+			});
+			await resumedPage.goto(gameUrl(ORIGIN, { seed: SEED }), {
+				waitUntil: "load",
+			});
+			await bootedGame(resumedPage);
+			const resumed = await resumedPage.evaluate(() => ({
+				fault: window.__seelite.saveFault,
+				first: window.__probeFirstFrame ?? null,
+			}));
+			await resumedPage.close();
+			return resumed;
+		};
+		const restoredExactly = (resumed, record, rates) =>
+			resumed.fault === null &&
+			resumed.first !== null &&
+			resumed.first.gameTime === record.gameTime &&
+			["pitch", "yaw", "roll"].every(
+				(axis, i) => resumed.first.rates[axis] === rates[i],
+			);
+		const resumed = await resumedFrom(tumbling, "tumble");
 		check(
 			"a save taken tumbling resumes tumbling",
-			resumed.fault === null &&
-				["pitch", "yaw", "roll"].every((axis, i) => {
-					const share = resumed.rates[axis] / tumble[i];
-					return share > 0.85 && share <= 1 + 1e-9;
-				}),
-			JSON.stringify({ ...resumed, want: tumble }),
+			restoredExactly(resumed, tumbling, tumble),
+			JSON.stringify({ ...resumed, want: tumble, saved: tumbling.gameTime }),
 		);
-		await fourth.close();
+		// The tumble row reads its seed back, which a fresh page's zero cannot
+		// pass; this one holds the other side, so a restore that invented a
+		// spin would not pass either.
+		const rested = await resumedFrom(atRest, "at-rest");
+		check(
+			"and a save taken in normal flight at rest resumes at rest",
+			restoredExactly(rested, atRest, [0, 0, 0]),
+			JSON.stringify({ ...rested, saved: atRest.gameTime }),
+		);
 	} else {
 		await page.close();
 	}

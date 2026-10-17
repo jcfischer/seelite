@@ -1,3 +1,4 @@
+import { equipmentNames, withoutModule } from "./loadout";
 /**
  * What a pilot's act does to their **Holdings** (#626, #627): the commander,
  * the Requests journal, the ladder record and its pending credit — and the
@@ -37,7 +38,7 @@ import { identifyDerelicts } from "./long-range-scanner";
 import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
-import type { DeathCause } from "./death-cost";
+import { type DeathCause, ejectSurvivors } from "./death-cost";
 import { deathWreckRow } from "./death-wreck";
 import type { CommanderRecord, SaveEnvelope } from "./save-envelope";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
@@ -104,7 +105,9 @@ import {
  * `requestsAfterLostHold`).
  *
  * - **`eject`** (D2): the launch hull and every fitting are kept, and the pod
- *   is consumed. Tank and charge are the launch's.
+ *   is consumed. Tank and charge are the launch's. The hold is what the pod
+ *   brought back of the dying one, `ejectSurvivors` (#977): nothing for an E
+ *   pod, a share of the own cargo and a carried module for a better one.
  * - **`destroyed`** (D6): the hull and every fitting go too. The pilot wakes
  *   in a stock courier with a full tank and a full charge, and keeps the
  *   launch credits — which is what leaves no save stranded: a courier, and
@@ -148,20 +151,20 @@ export const commanderAfterDeath = (
 		...ladderAfterDeath(dock.ladders, dying.ladders),
 		basis: {},
 	};
-	if (cause === "eject")
+	if (cause === "eject") {
+		const kept = ejectSurvivors(dying.state);
 		return {
 			...dock,
 			requests,
 			ladders,
 			state: {
 				...dock.state,
-				cargo: {},
-				recoveredFittings: undefined,
-				ownedEquipment: dock.state.ownedEquipment.filter(
-					(item) => item !== ESCAPE_POD,
-				),
+				cargo: kept.cargo,
+				recoveredFittings: kept.carried.length ? kept.carried : undefined,
+				loadout: withoutModule(dock.state.loadout, ESCAPE_POD),
 			},
 		};
+	}
 	return {
 		...dock,
 		requests,
@@ -383,7 +386,7 @@ function settle(
 			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
 			holdCapacityT: hold.capacityT,
 			standing: event.standing,
-			equipment: holdings.commander.ownedEquipment,
+			equipment: equipmentNames(holdings.commander.loadout),
 		},
 	);
 	const signals = { ...QUIET, message: result.message };
@@ -529,7 +532,7 @@ function transition(
 					killCredit(
 						{
 							hull: holdings.commander.hull,
-							equipment: holdings.commander.ownedEquipment,
+							loadout: holdings.commander.loadout,
 						},
 						event.hull,
 					),
@@ -610,7 +613,7 @@ function applied(
 				world,
 				event.system,
 				event.shipPos,
-				holdings.commander.ownedEquipment,
+				equipmentNames(holdings.commander.loadout),
 				event.at,
 			);
 			if (!found.identified.length) return unchanged(holdings, world);
@@ -756,9 +759,9 @@ export interface AdoptEffects {
 	redraw: boolean;
 }
 
-/** What an adoption came from: a hold event, or `"world"` — a world write
- *  made outside Holdings, which the law owns (an offence, its lazy clear). */
-export type AdoptCause = HoldEvent["kind"] | "world";
+/** What an adoption came from: a hold event, a law-owned world write, or
+ *  ammunition spent by the missile combat controller. */
+export type AdoptCause = HoldEvent["kind"] | "world" | "ammunition";
 
 /** The state an adoption compares: the four Holdings fields and the world. */
 export interface Adopted {

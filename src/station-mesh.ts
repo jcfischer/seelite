@@ -49,6 +49,12 @@
  * would buy nothing §7 rests identity on.
  */
 
+import {
+	PAD_CUE_PROUD_KM,
+	PAD_VENT_BANK_KM,
+	PAD_VENT_BANK_X_KM,
+	type RefineryPadFrame,
+} from "./refinery-pad-frame";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
@@ -1071,6 +1077,13 @@ function buildAperture(
 	fixtures: StationFixture[],
 	faceZ: number,
 	berthSeed: number,
+	// How far behind `faceZ` the hull the opening is cut into stands, for an
+	// authored exterior whose coaming stands proud of it (`buildShipyardNavigation`).
+	// The bay's berths stay the sim's; only its rendered mouth moves back.
+	mouthRecessKm = 0,
+	// False for an authored pad (node #819), which draws its own deck and
+	// berths: the frame, its lights and the mouth's name stay the game's.
+	drawInterior = true,
 ): THREE.Group {
 	const { aperture } = STATION_GEOMETRY[type];
 	const group = new THREE.Group();
@@ -1139,9 +1152,15 @@ function buildAperture(
 	// `aperturePlaneKm` would hang in space in front of them. For a selected
 	// form the two are the same number by construction, which is what keeps the
 	// drawn bay and the sim's berths in step.
-	group.add(
-		buildStationInterior(type, stationInterior(type, faceZ, berthSeed)),
-	);
+	if (drawInterior)
+		group.add(
+			buildStationInterior(
+				type,
+				stationInterior(type, faceZ, berthSeed),
+				mouthRecessKm,
+				berthSeed,
+			),
+		);
 	group.name = "aperture";
 	return group;
 }
@@ -6387,6 +6406,11 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			// The declaration follows the decided shape rather than the shape
 			// being trimmed to an old declaration. `docking.md` §5's "roughly
 			// 1.5 km" is now 10% under.
+			//
+			// Since node #818 it also holds the authored Gantry Works, which
+			// replaces this form once it installs and which the sim collides
+			// with whatever is drawn: its mesh reaches 1.654 km and its proxy
+			// 1.655 (`src/shipyard-proxies.ts`), measured 2026-10-12.
 			reachKm: 1.66,
 			build: buildShipyardGantry,
 		},
@@ -6395,6 +6419,9 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Hangar",
 			thesis:
 				"a closed slab with a floodlit bay mouth; ships inside, not clamped outside",
+			// Holds this stand-in (1.497 km) and, since node #818, the authored
+			// Foundry Hangar that replaces it (mesh 1.311, proxy 1.312), // glossary-ignore: Hangar
+			// measured 2026-10-12.
 			reachKm: 1.5,
 			build: buildShipyardHangar,
 		},
@@ -6402,7 +6429,10 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "c",
 			name: "Slipway",
 			thesis: "a broken ring with the gap as the slip",
-			reachKm: 1.5,
+			// The authored Crescent Slipway's since node #818, which replaces
+			// this stand-in (1.450 km): mesh 1.864, proxy 1.868, measured
+			// 2026-10-12. 1.5 before.
+			reachKm: 1.87,
 			build: buildShipyardSlipway,
 		},
 	],
@@ -6411,6 +6441,9 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "a",
 			name: "Warren",
 			thesis: "terraced plant cut into the rock; the pad is in the notch",
+			// Since node #819 it also holds the authored Warren, which replaces
+			// this form once it installs: its mesh reaches 0.828 km and its
+			// proxy 0.839, measured 2026-10-13.
 			reachKm: 1.2,
 			build: buildRefineryWarren,
 		},
@@ -6418,6 +6451,8 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "b",
 			name: "Collar",
 			thesis: "a machined band gripping the rock at its waist",
+			// Holds this stand-in and, since node #819, the authored Collar that
+			// replaces it (mesh 0.900 km, proxy 0.900), measured 2026-10-13.
 			reachKm: 1.15,
 			build: buildRefineryCollar,
 		},
@@ -6425,7 +6460,9 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "c",
 			name: "Spar",
 			thesis: "a processing spar run through the rock and out the far side",
-			reachKm: 1.15,
+			// The authored Spar's since node #819, which replaces this stand-in:
+			// mesh 1.234 km, proxy 1.235, measured 2026-10-13. 1.15 before.
+			reachKm: 1.24,
 			build: buildRefinerySpar,
 		},
 		{
@@ -6439,7 +6476,11 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			// puts on the quarried floor passes it — the tallest column tops out
 			// at 0.5 km on the axis. `tests/station-mesh.test.ts` measures every
 			// plan its seed spread builds against this.
-			reachKm: 0.68,
+			//
+			// Since node #819 the authored Works replaces this stand-in: its
+			// recessed pad's housing reaches 0.878 km and its proxy 0.882,
+			// measured 2026-10-13. 0.68 before.
+			reachKm: 0.89,
 			build: buildRefineryWorks,
 		},
 	],
@@ -6526,6 +6567,152 @@ export function installCoriolisBuilder(
 	coriolisBuilder = builder;
 }
 
+export type ShipyardForm = "a" | "b" | "c";
+const shipyardBuilders = new Map<
+	ShipyardForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** The authored shipyards (node #818), installed per form by
+ *  `shipyard-flight.ts` once its model has loaded. Until then a form draws its
+ *  procedural stand-in; the sim's proxy is the authored one either way
+ *  (`station-proxy.ts`). `null` uninstalls, for a test. */
+export function installShipyardBuilder(
+	form: ShipyardForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) shipyardBuilders.set(form, builder);
+	else shipyardBuilders.delete(form);
+}
+
+/**
+ * The shipyard's mouth for an authored exterior, in kilometres: the lit
+ * frame, its strobes, the name shield and the bay, as every procedural form
+ * has them, at the sim's plane. The authored coaming stands proud of the hull
+ * the slot is cut into, so the bay's rendered mouth wall is recessed to that
+ * hull by `mouthRecessKm`.
+ */
+export function buildShipyardNavigation(
+	fixtures: StationFixture[],
+	berthSeed: number,
+	mouthRecessKm: number,
+): THREE.Group {
+	return buildAperture(
+		"shipyard",
+		fixtures,
+		STATION_GEOMETRY.shipyard.aperturePlaneKm,
+		berthSeed,
+		mouthRecessKm,
+	);
+}
+
+export type RefineryForm = "a" | "b" | "c" | "d";
+const refineryBuilders = new Map<
+	RefineryForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** The authored refineries (node #819), installed per form by
+ *  `refinery-flight.ts` once its model has loaded. Until then a form draws
+ *  its procedural stand-in. `null` uninstalls, for a test. */
+export function installRefineryBuilder(
+	form: RefineryForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) refineryBuilders.set(form, builder);
+	else refineryBuilders.delete(form);
+}
+
+/**
+ * The refinery's pad for an authored exterior, in kilometres: the lit frame,
+ * the deck, its berths and fittings, as every procedural form has them, at
+ * the sim's plane. The authored housing stands round it (node #819).
+ */
+export function buildRefineryNavigation(
+	fixtures: StationFixture[],
+	berthSeed: number,
+	/** False when the authored model draws the pad itself (node #819). */
+	drawPad = true,
+): THREE.Group {
+	return buildAperture(
+		"refinery",
+		fixtures,
+		STATION_GEOMETRY.refinery.aperturePlaneKm,
+		berthSeed,
+		0,
+		drawPad,
+	);
+}
+
+/**
+ * The refinery's three cues on an authored exterior (principal, 2026-10-13:
+ * "add lights"), on the pad frame every authored refinery shares: a heat
+ * glow along the frame's inner lip, two vent banks on its top border facing
+ * the approach (their throats are the flare, the first nozzle of each
+ * carries an obstruction beacon, as the procedural forms' banks do), and an // glossary-ignore: beacon
+ * obstruction beacon at each outer corner. Everything stands // glossary-ignore: beacon
+ * `PAD_CUE_PROUD_KM` in front of the frame's face, clear of its armour plates,
+ * so no lit face lies on a face of the model.
+ */
+export function buildRefineryPadCues(
+	fixtures: StationFixture[],
+	frame: RefineryPadFrame,
+): THREE.Group {
+	const group = new THREE.Group();
+	group.name = "refinery-pad-cues";
+	const z = frame.frontKm + PAD_CUE_PROUD_KM;
+	const { innerKm: inner, outerKm: outer } = frame;
+
+	const heat = emissiveMaterial(
+		STATION_VISUALS.refinery.heatColor,
+		STATION_EMISSIVE_INTENSITIES.off,
+	);
+	const glow = new THREE.Group();
+	glow.name = "heat-glow";
+	const bar = 0.004;
+	const lip = inner + 0.002 + bar / 2;
+	for (const side of [-1, 1]) {
+		const across = new THREE.Mesh(
+			new THREE.BoxGeometry(2 * (lip + bar / 2), bar, bar),
+			heat,
+		);
+		across.position.set(0, side * lip, z);
+		const up = new THREE.Mesh(
+			new THREE.BoxGeometry(bar, 2 * (lip - bar / 2), bar),
+			heat,
+		);
+		up.position.set(side * lip, 0, z);
+		glow.add(across, up);
+	}
+	detail(glow, "reduced");
+	fixtures.push({
+		material: heat,
+		base: STATION_EMISSIVE_INTENSITIES.heatRing,
+		kind: "work",
+		offsetS: 0,
+	});
+	group.add(glow);
+
+	const border = (inner + outer) / 2;
+	for (const x of PAD_VENT_BANK_X_KM) {
+		const bank = buildVentBank(fixtures, PAD_VENT_BANK_KM, true);
+		// The manifold's back on the frame's face; its nozzles lean up and out.
+		bank.position.set(x, border, z + PAD_VENT_BANK_KM * 0.17 * 0.5);
+		group.add(bank);
+	}
+
+	const corner = outer - 0.03;
+	for (const sx of [-1, 1])
+		for (const sy of [-1, 1])
+			group.add(
+				obstructionBeacon(
+					fixtures,
+					new THREE.Vector3(sx * corner, sy * corner, z),
+				),
+			);
+	return group;
+}
+
 /**
  * Build one station in a named form.
  *
@@ -6555,6 +6742,14 @@ export function buildStationForm(
 ): StationMesh {
 	if (type === "trade" && formId === "a" && coriolisBuilder)
 		return coriolisBuilder(berthSeed, color);
+	if (type === "shipyard") {
+		const authored = shipyardBuilders.get(formId as ShipyardForm);
+		if (authored) return authored(berthSeed, color);
+	}
+	if (type === "refinery") {
+		const authored = refineryBuilders.get(formId as RefineryForm);
+		if (authored) return authored(berthSeed, color);
+	}
 	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
 	// to it: with an out-parameter the return type said a builder produced no

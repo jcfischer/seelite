@@ -58,7 +58,10 @@ import { keyDispatch } from "../src/key-dispatch";
  * **One move since, and it was ratified rather than a side effect:** #620 put
  * `flight-model.md` §3.5's strafe on the four held arrows, which stopped
  * repeating pitch and yaw. Node #703 added a row rather than moving one: the
- * eject on a held Backspace, a key nothing had bound (#660 D4).
+ * eject on a held Backspace, a key nothing had bound (#660 D4). And #892
+ * added the fire-group cycle on `b` by #385 D6, which moved no row: bloom
+ * kept `b`, scoped to the `?perf` panel — the trailing `perf` on the
+ * diagnostics, carried for `surface`'s reason.
  */
 const RATIFIED_LAYOUT: readonly string[] = [
 	"key: ::hold → fight.firePulse @ flight/instrument/console/modal cockpit/chase -",
@@ -94,7 +97,8 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:arrowup::hold → fly.strafeDorsal @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowup::press → panel.cursorUp @ flight/instrument/console/modal cockpit/chase requests",
 	"key:arrowup:alt:press → view.headForward @ flight/instrument/console/modal cockpit -",
-	"key:b::press → perf.bloom @ flight/instrument/console/modal cockpit/chase -",
+	"key:b::press → fight.cycleFireGroup @ flight/instrument/console/modal cockpit/chase -",
+	"key:b::press → perf.bloom @ flight/instrument/console/modal cockpit/chase - perf",
 	"key:backspace::hold → fly.eject @ flight/instrument/console/modal cockpit/chase -",
 	"key:c::press → dock.clearance @ flight/instrument/console/modal cockpit/chase -",
 	"key:control::hold → fly.throttleDown @ flight/instrument/console/modal cockpit/chase -",
@@ -104,20 +108,22 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:enter::press → panel.activate @ flight/instrument/console/modal cockpit/chase requests",
 	"key:f1::press → view.reference @ flight/instrument/console/modal cockpit/chase -",
 	"key:f2::press → view.photo @ flight/instrument/console/modal cockpit/chase -",
+	"key:f7::press → fight.launchMissile @ flight/instrument/console/modal cockpit/chase -",
+	"key:f8::press → fight.ecm @ flight/instrument/console/modal cockpit/chase -",
 	"key:f::press → fight.faceTarget @ flight/instrument/console/modal cockpit/chase -",
 	"key:g::press → fight.targetPrevious @ flight/instrument/console/modal cockpit/chase -",
-	"key:h::press → perf.atmosphere @ flight/instrument/console/modal cockpit/chase -",
-	"key:i::press → perf.restore @ flight/instrument/console/modal cockpit/chase -",
+	"key:h::press → perf.atmosphere @ flight/instrument/console/modal cockpit/chase - perf",
+	"key:i::press → perf.restore @ flight/instrument/console/modal cockpit/chase - perf",
 	"key:j::press → fly.cruise @ flight/instrument/console/modal cockpit/chase -",
 	"key:k::press → tune.approachLeadDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:l::press → tune.approachLeadUp @ flight/instrument/console/modal cockpit/chase -",
 	"key:m::press → tune.vicinityUp @ flight/instrument/console/modal cockpit/chase -",
 	"key:n::press → tune.vicinityDown @ flight/instrument/console/modal cockpit/chase -",
-	"key:o::press → perf.craters @ flight/instrument/console/modal cockpit/chase -",
-	"key:p::press → perf.class @ flight/instrument/console/modal cockpit/chase -",
+	"key:o::press → perf.craters @ flight/instrument/console/modal cockpit/chase - perf",
+	"key:p::press → perf.class @ flight/instrument/console/modal cockpit/chase - perf",
 	"key:q::hold → fly.rollPort @ flight/instrument/console/modal cockpit/chase -",
 	"key:q::press → fight.rigEcm @ flight/instrument/console/modal cockpit/chase -",
-	"key:r::press → perf.relief @ flight/instrument/console/modal cockpit/chase -",
+	"key:r::press → perf.relief @ flight/instrument/console/modal cockpit/chase - perf",
 	"key:s::hold → fly.pitchUp @ flight/instrument/console/modal cockpit/chase -",
 	"key:shift::hold → fly.throttleUp @ flight/instrument/console/modal cockpit/chase -",
 	"key:t::press → fight.targetNext @ flight/instrument/console/modal cockpit/chase -",
@@ -126,12 +132,12 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:w::hold → fly.pitchDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:x::hold → fight.fireBeam @ flight/instrument/console/modal cockpit/chase -",
 	"key:x::press → fly.assist @ flight/instrument/console/modal cockpit/chase -",
-	"key:y::press → perf.clouds @ flight/instrument/console/modal cockpit/chase -",
+	"key:y::press → perf.clouds @ flight/instrument/console/modal cockpit/chase - perf",
 	"key:z::press → system.settings @ flight/instrument/console/modal cockpit/chase -",
 ];
 
 const scopeText = (b: Binding) =>
-	`${b.scope.pad.join("/")} ${b.scope.views.join("/")} ${b.scope.surface ?? "-"}`;
+	`${b.scope.pad.join("/")} ${b.scope.views.join("/")} ${b.scope.surface ?? "-"}${b.scope.perfPanel ? " perf" : ""}`;
 
 const keyRows = (bindings: readonly Binding[]) =>
 	bindings
@@ -869,6 +875,8 @@ describe("D5's two predicates", () => {
 			"arrowleft: fly.strafePort + panel.tabPrevious",
 			"arrowright: fly.strafeStarboard + panel.tabNext",
 			"arrowup: fly.strafeDorsal + panel.cursorUp",
+			// #892: the panel's key while `?perf` is open, the ship's otherwise.
+			"b: fight.cycleFireGroup + perf.bloom",
 			"enter: dock.launch + panel.activate",
 			"q: fight.rigEcm + fly.rollPort",
 			"x: fight.fireBeam + fly.assist",

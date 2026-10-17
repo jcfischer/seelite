@@ -5,7 +5,8 @@
  * card's luma reading and its comparator are here too, because
  * `probe-chase-orbit.mjs` judges cards by the same rule (node #691).
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { PNG } from "pngjs";
 
 /** The Postcard screen's card, and the viewer's. */
 export const PANEL_CARD = "#seelite-postcard img.card";
@@ -109,3 +110,26 @@ export function cardPixels(target, selector) {
  */
 export const changedCells = (a, b) =>
 	a.grid.filter((v, i) => Math.abs(v - b.grid[i]) > 10).length / a.grid.length;
+
+/**
+ * The share of a kept card's pixels above the band whose luma moved past
+ * `threshold` codes between two kept cards (node #812). Per pixel rather than
+ * per cell: a cell's mean is diluted by the sky around a subject, so whether a
+ * moved subject clears `changedCells`' ten codes is a property of how bright
+ * the subject is. Read off the PNGs `keepCard` wrote, byte for byte.
+ */
+export function movedPixels(pathA, pathB, threshold = 24) {
+	const a = PNG.sync.read(readFileSync(pathA));
+	const b = PNG.sync.read(readFileSync(pathB));
+	if (a.width !== b.width || a.height !== b.height)
+		throw new Error(
+			`movedPixels: ${a.width}x${a.height} against ${b.width}x${b.height}`,
+		);
+	const luma = (data, i) =>
+		0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+	const above = Math.round(a.height * 0.8);
+	let moved = 0;
+	for (let i = 0; i < a.width * above * 4; i += 4)
+		if (Math.abs(luma(a.data, i) - luma(b.data, i)) > threshold) moved++;
+	return moved / (a.width * above);
+}

@@ -75,9 +75,17 @@ import { createServer } from "vite";
 import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
 import { failureKind, killedCode } from "./lib/probe-failure-kind.mjs";
+import {
+	loadSuffix,
+	slowestLine,
+	slowRunNote,
+	SUITE_PID_ENV,
+} from "./lib/probe-contention.mjs";
 import { loadSampler } from "./lib/probe-load.mjs";
 import { holdProbeLockOrExit, stopChildren } from "./lib/probe-lock.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
+import { QUARANTINED } from "./lib/probe-quarantine.mjs";
+import { lineSplitter, teeConsole } from "./lib/probe-output.mjs";
 import {
 	HARDWARE_RENDERER,
 	launchChromium,
@@ -87,6 +95,16 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 const args = parseArgs(process.argv.slice(2));
+
+// Watching a run (`probe-output.mjs`). The env names reach `npm run probe:pr`,
+// whose runner passes only an allowlist through.
+const SHOW_OUTPUT = args.showOutput || process.env.PROBE_SHOW_OUTPUT === "1";
+const LOG = args.log ?? process.env.PROBE_LOG ?? null;
+if (LOG === "") {
+	console.error("--log needs a path: --log /tmp/probe.log");
+	process.exit(2);
+}
+if (LOG) teeConsole(LOG);
 
 /** An explicitly named target, or null to start a server ourselves. */
 const GIVEN = args.target ?? process.env.PROBE_URL ?? null;
@@ -100,23 +118,6 @@ const REPORTERS = new Set([
 	// probe belongs here only once someone has argued that its numbers are worth
 	// having and its verdict is not. Seelite has made that argument about
 	// nothing yet.
-]);
-
-/**
- * Probes that fail on `main` today, with the issue that owns each.
- *
- * They still **run**, and their output is still printed in full — what they do
- * not do is gate. The alternative was to gate on them and have every pull
- * request open red, which trains everyone to ignore the check and is how a
- * suite stops meaning anything.
- *
- * A quarantine is a debt, so it is written where it cannot be lost: named in
- * the summary of every run with its issue, rather than commented out or
- * silently skipped. Removing an entry is the last step of fixing the thing.
- */
-const QUARANTINED = new Map([
-	// Empty. A quarantine is a debt, and starting a repo with one would be
-	// borrowing against work that has not happened.
 ]);
 
 /**
@@ -221,14 +222,29 @@ function run(file) {
 		// caller would replace each probe's whole URL and take its seed with it
 		const env = { ...process.env, PROBE_ORIGIN: BASE };
 		delete env.PROBE_URL;
+		// This child is *inside* the run that holds the probe lock, and the guard
+		// cannot tell that from its own pid — which differs every time — so the
+		// suite says so. Without it a suite would print the #882 notice a hundred
+		// times about itself.
+		env[SUITE_PID_ENV] = String(process.pid);
 		const child = spawn(process.execPath, [join(HERE, file), BASE], {
 			env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		live.add(child);
 		let out = "";
-		child.stdout.on("data", (d) => (out += d));
-		child.stderr.on("data", (d) => (out += d));
+		// One splitter per stream, so a stderr chunk cannot land inside a stdout line.
+		const shown = [child.stdout, child.stderr].map((stream) => {
+			// Decoded by the stream, so a character split across two chunks arrives
+			// whole; probes print `│` and `—`.
+			stream.setEncoding("utf8");
+			const split = lineSplitter((l) => console.log(`     │ ${l}`));
+			stream.on("data", (d) => {
+				out += d;
+				if (SHOW_OUTPUT) split.push(d);
+			});
+			return split;
+		});
 
 		const timer = setTimeout(() => {
 			// SIGKILL rather than SIGTERM: a wedged probe is usually wedged
@@ -240,6 +256,7 @@ function run(file) {
 
 		child.on("close", (code, signal) => {
 			clearTimeout(timer);
+			for (const split of shown) split.flush();
 			live.delete(child);
 			// a killed probe has a null exit code; that is a failure with a
 			// name, not an absent result
@@ -257,10 +274,6 @@ function run(file) {
 	});
 }
 
-/** A load average as printed, or `?` where none could be read. */
-const fmtLoad = (/** @type {number | null} */ l) =>
-	l === null ? "?" : l.toFixed(1);
-
 /** Run the list `CONCURRENCY` at a time, in order, reporting as each lands. */
 async function runAll(files) {
 	const queue = [...files];
@@ -274,14 +287,18 @@ async function runAll(files) {
 			results.push(r);
 			const gating = !REPORTERS.has(file) && !QUARANTINED.has(file);
 			const mark = r.ok ? "ok  " : gating ? "FAIL" : "warn";
-			// a red names its kind and the load it ran under, so a navigation
-			// that timed out on a starved machine does not read like an
-			// assertion that caught a regression (#84)
+			// A **green** over a minute prints its load too: slow seconds under load
+			// are the machine's, and nothing said so before, which is how a starved
+			// suite came to read as a slow one (#882). Both branches print through the
+			// same function, so a line either names the load or says there was no
+			// reading — it never means both things at once (sage round 1).
+			const peak = load.peakBetween(r.started, r.started + r.ms);
 			const why = r.ok
-				? ""
-				: ` exit=${r.code} ${r.kind} peak load ${fmtLoad(load.peakBetween(r.started, r.started + r.ms))}`;
+				? slowRunNote({ ms: r.ms, peak })
+				: ` exit=${r.code} ${r.kind}${loadSuffix(peak)}`;
 			console.log(`${mark} ${file} (${(r.ms / 1000).toFixed(1)}s)${why}`);
-			if (!r.ok) {
+			// Streamed already under --show-output, so not printed twice.
+			if (!r.ok && !SHOW_OUTPUT) {
 				// the failing probe's own output, indented — the whole point of a
 				// gate is that it says what broke without a second run
 				console.log(
@@ -339,7 +356,7 @@ const partialHeader = () =>
 const partialSummary = () =>
 	ONLY
 		? ` — PARTIAL RUN, ${skippedCount()}` +
-			`\n     This is not a pass for the suite. Run \`npm run probe\` for that.`
+			`\n     This is selected coverage, not a full-suite pass. A repository-selected run satisfies the ordinary PR browser gate; manual filters do not.`
 		: "";
 
 const server = await serve();
@@ -366,9 +383,14 @@ const failed = gating.filter((r) => !r.ok);
 
 console.log(
 	`\n${gating.length - failed.length}/${gating.length} gating probes passed in ${((Date.now() - started) / 1000).toFixed(0)}s` +
-		` · peak load ${fmtLoad(load.peak())} on ${availableParallelism()} cores` +
+		`${loadSuffix(load.peak())} on ${availableParallelism()} cores` +
 		partialSummary(),
 );
+// Where the wall clock went. A suite prints its probes in file order, which is
+// alphabetical and answers nothing, and the seconds that matter are two or three
+// files out of a hundred (#882). Skipped for a run of one, where it would repeat
+// the line above it.
+if (results.length > 1) console.log(`     ${slowestLine(results)}`);
 if (failed.length) {
 	/** @type {Map<string, number>} */
 	const kinds = new Map();
@@ -398,5 +420,8 @@ for (const r of results) {
 }
 if (failed.length) {
 	console.log(`FAILED: ${failed.map((r) => r.file).join(" · ")}`);
+	console.log(
+		"     A red that is red alone on origin/main too goes in scripts/lib/probe-quarantine.mjs, with its issue.",
+	);
 	process.exit(1);
 }

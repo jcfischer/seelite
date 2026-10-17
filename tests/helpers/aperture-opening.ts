@@ -45,7 +45,7 @@ const FRAME_PART = /^(aperture|coaming|heat-glow|bay-flood)/;
  *
  * A hull is `FrontSide` and the bay's shell is `DoubleSide`, so a cast that
  * honoured `side` would report a different set of surfaces depending on which
- * way each one happens to face — and `CLAUDE.md` records the failure that comes
+ * way each one happens to face — and `docs/pitfalls.md` records the failure that comes
  * of it: *nothing headless can see geometry poking through a hull*, because a
  * ray cast from inside a `FrontSide` mesh passes straight through and reports
  * nothing at all.

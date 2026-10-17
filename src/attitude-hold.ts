@@ -156,3 +156,30 @@ export class AttitudeFollower {
 		this.last = null;
 	}
 }
+
+/** `F`'s turn is over once the nose is this close to the target, radians… */
+export const FACE_SETTLED_RAD = (0.1 * Math.PI) / 180;
+/** …and the hull is turning no faster than this, rad/s. */
+export const FACE_SETTLED_RATE = 0.002;
+
+/**
+ * The stick that turns the nose onto `want`, a unit vector, through the vents:
+ * `F`'s turn, which used to place the attitude in one frame. Pitch and yaw
+ * only — the nose's arc, with the roll left where it is. `null` once the nose
+ * is on and the hull has stopped turning, which is when the turn lets go.
+ */
+export function noseTurnStick(
+	from: Attitude,
+	want: Vec3,
+	rates: Angular,
+	perf: FlightPerformance,
+	dt: number,
+): Angular | null {
+	if (
+		dot(from.nose, want) >= Math.cos(FACE_SETTLED_RAD) &&
+		Math.hypot(rates.pitch, rates.yaw) <= FACE_SETTLED_RATE
+	)
+		return null;
+	const stick = attitudeStick(from, { nose: want, up: from.up }, perf, dt);
+	return { ...stick, roll: 0 };
+}

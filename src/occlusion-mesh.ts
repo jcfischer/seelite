@@ -95,6 +95,11 @@ export function markOcclusion(root: THREE.Object3D): OcclusionMarking {
  *  in a `WeakMap` here so a probe can read it off the page. */
 const BOUNDS_KEY = "occlusionBounds";
 
+/** An authored install changes the subtree measured by subjectOf. */
+export function invalidateOcclusionBounds(root: THREE.Object3D): void {
+	delete root.userData[BOUNDS_KEY];
+}
+
 const scratch = new THREE.Box3();
 
 /**
@@ -110,7 +115,7 @@ const scratch = new THREE.Box3();
  *
  * `Sphere.applyMatrix4` takes the largest of the matrix's three scales, so a
  * station mesh scaled by `radiusKm` at layer time reports a subject at the size
- * it is drawn, which is the unit trap `CLAUDE.md` names.
+ * it is drawn, which is the unit trap `docs/pitfalls.md` names.
  */
 export function subjectOf(root: THREE.Object3D): ShadowSubject {
 	// **This object's own world matrix, brought up to date, and nothing else's.**

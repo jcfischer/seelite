@@ -41,6 +41,8 @@ import type { HullOffer, StationAction } from "./station-commerce";
 import type { HullId } from "./hull";
 import type { HoldBids, HoldSummary } from "./hold";
 import { escapeHtml } from "./escape-html";
+import { outfittingBody } from "./outfitting-view";
+import type { OutfittingScreen } from "./outfitting";
 import { HOLD_STYLE, holdBody } from "./hold-view";
 import {
 	LADDER_STYLE,
@@ -257,6 +259,7 @@ export interface LiveCockpitState {
 		tab: StationConsoleTab;
 		market: readonly ConsoleMarketRow[];
 		equipment: ConsoleEquipmentScreen;
+		outfitting?: OutfittingScreen;
 		/**
 		 * The Shipyard tab (#556 D1, D8): the flown hull and one `hullOffer`
 		 * per purchasable hull, or `null` at every station that is not a
@@ -288,7 +291,8 @@ export interface LiveCockpitState {
 			owned: boolean;
 		}[];
 		/** The hyperspace tank, light years, and its capacity (#187) — the Fuel
-		 *  row prints the tank where a unit item prints nothing. */
+		 *  row prints the tank where a unit item prints nothing. The capacity is
+		 *  the fitted one, hull plus tanks (#926), never the jump range. */
 		fuelLy: number;
 		fuelCapacityLy: number;
 		/** Changes only when an accepted action replaces the displayed state. */
@@ -332,6 +336,7 @@ export interface LiveCockpitCallbacks {
 	onSelectTarget: (id: string) => void;
 	onStationTab: (tab: StationConsoleTab) => void;
 	onStationAction: (action: StationAction["type"], name: string) => void;
+	onOutfittingSelect?: (kind: "slot" | "candidate", name: string) => void;
 	onLaunch: () => void;
 	/** Give up a held launch (#314). */
 	onCancelLaunch: () => void;
@@ -553,6 +558,30 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-station-max { color: #ffe1a9; font-weight: normal; letter-spacing: .06em; cursor: help; }
 .lc-station-section { margin: 14px 0 6px; color: #cb8c51; font-size: 11px; letter-spacing: .08em; }
 .lc-station-equipment { flex: 1; overflow: auto; margin-top: 8px; }
+.lc-outfitting { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px; font-size: 11px; }
+.lc-outfit-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; min-height: 0; }
+.lc-outfit-panes > section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.lc-outfitting h3 { margin: 4px 0 7px; color: #d8833b; font-size: 10px; letter-spacing: .1em; }
+.lc-outfit-scroll { overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+.lc-outfit-slot { display: grid; grid-template-columns: 1fr auto; align-items: center; border-bottom: 1px solid #754421; padding: 3px; gap: 4px; }
+.lc-outfit-pick { display: flex; flex-direction: column; gap: 3px; text-align: left; border: 1px solid transparent; background: transparent; color: #ffe1a9; font: inherit; padding: 6px; cursor: pointer; min-width: 0; }
+.lc-outfit-pick small { color: #c19667; font-size: 9px; }
+.lc-outfit-pick b { font-weight: 500; }
+.lc-outfit-pick:disabled { opacity: .55; cursor: default; }
+.lc-outfit-pick:hover, .lc-outfit-pick:focus-visible { border-color: #d8833b; outline: none; }
+.lc-outfit-slot[data-selected="true"], .lc-outfit-stock[data-selected="true"] { background: #67381155; box-shadow: inset 2px 0 #f4b362; }
+.lc-outfit-stock { width: 100%; border-bottom: 1px solid #754421; }
+.lc-outfit-stock b { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
+.lc-outfit-stock em { white-space: nowrap; font-style: normal; }
+.lc-outfit-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; border: 1px solid #8d5529; background: #150a03; padding: 8px; }
+.lc-outfit-preview > small { color: #c19667; }
+.lc-outfit-deltas { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10px; color: #c19667; }
+.lc-outfit-deltas b { color: #ffe1a9; }
+.lc-outfit-deltas i { font-style: normal; color: #fff4dc; }
+.lc-outfit-services { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 9px; color: #c19667; }
+.lc-outfit-fuel > div { display: flex; flex-direction: column; gap: 3px; padding: 6px; color: #ffe1a9; }
+.lc-outfit-fuel small { color: #c19667; font-size: 9px; }
+.lc-outfit-fuel b { font-weight: 500; }
 /* A fixed action column: each row is its own grid, so BUY, OWNED and LOCKED at their own widths moved the price column (#564). */
 .lc-station-equipment .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 64px; }
 .lc-station-equipment .lc-station-row > :nth-child(4) { justify-self: end; }
@@ -667,6 +696,16 @@ export class LiveCockpit {
 		this.root = document.createElement("section");
 		this.root.id = "live-cockpit";
 		this.root.setAttribute("data-live-cockpit", "true");
+		// Native button activation belongs to outfitting, not to the ship's
+		// Enter-to-launch binding. Leave keyup bubbling so held keys release.
+		this.root.addEventListener("keydown", (event) => {
+			if (
+				(event.key === "Enter" || event.key === " ") &&
+				event.target instanceof HTMLButtonElement &&
+				event.target.closest("[data-live-outfitting]")
+			)
+				event.stopPropagation();
+		});
 		// Delegation keeps clicks live after a structural render is replaced.
 		this.root.addEventListener("click", (event) => {
 			const element = event.target as HTMLElement;
@@ -731,6 +770,16 @@ export class LiveCockpit {
 	 * is one readable unit the next target has to be placed into deliberately.
 	 */
 	private handleClick(element: HTMLElement) {
+		const outfit = element.closest<HTMLElement>(
+			"[data-outfit-slot], [data-outfit-candidate]",
+		);
+		if (outfit) {
+			this.callbacks.onOutfittingSelect?.(
+				outfit.dataset.outfitSlot ? "slot" : "candidate",
+				outfit.dataset.outfitSlot ?? outfit.dataset.outfitCandidate!,
+			);
+			return;
+		}
 		const request = element.closest<HTMLElement>("[data-live-request-action]");
 		if (request) {
 			const { liveRequestAction, liveRequestId } = request.dataset;
@@ -748,6 +797,9 @@ export class LiveCockpit {
 			if (
 				name &&
 				(action === "buy-commodity" ||
+					action === "buy-module" ||
+					action === "remove-module" ||
+					action === "buy-missiles" ||
 					action === "sell-commodity" ||
 					action === "buy-equipment" ||
 					action === "fit-recovered" ||
@@ -858,6 +910,8 @@ export class LiveCockpit {
 		"[data-live-sweep-action]",
 		"[data-live-request-action]",
 		"[data-live-station-action]",
+		"[data-outfit-slot]",
+		"[data-outfit-candidate]:not(:disabled)",
 		"[data-live-launch]",
 		"[data-live-launch-cancel]",
 		"[data-live-nav-kind]",
@@ -984,6 +1038,9 @@ export class LiveCockpit {
 		if (el.dataset.liveRequestAction)
 			return `request:${el.dataset.liveRequestAction}:${el.dataset.liveRequestId}`;
 		const d = el.dataset;
+		if (d.outfitSlot !== undefined) return `outfit-slot:${d.outfitSlot}`;
+		if (d.outfitCandidate !== undefined)
+			return `outfit-candidate:${d.outfitCandidate}`;
 		if (d.liveStationAction !== undefined)
 			return `station-action:${d.liveStationAction}:${d.liveStationName}`;
 		if (d.liveStationTab !== undefined)
@@ -1334,7 +1391,7 @@ export class LiveCockpit {
 		// list would become unusable exactly while it was being used.
 		// **The Requests tab is in it** (node #690): docking or launching resets
 		// the tab to Current without a press, so no revision moves with it.
-		const key = `${state.sweep?.fitted}|${state.leftTab === "Sweep" ? JSON.stringify(state.sweep) : ""}|${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.firstDay?.eject ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
+		const key = `${state.stationConsole?.outfitting?.epoch}|${state.sweep?.fitted}|${state.leftTab === "Sweep" ? JSON.stringify(state.sweep) : ""}|${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.firstDay?.eject ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1740,15 +1797,20 @@ export class LiveCockpit {
 					? this.market(stationConsole.market)
 					: stationConsole.tab === "Shipyard" && stationConsole.shipyard
 						? this.shipyard(stationConsole.shipyard, stationConsole.credits)
-						: this.equipment(
-								stationConsole.equipment,
-								stationConsole.ownedEquipment,
-								stationConsole.recoveredFittings ?? [],
-								{
+						: stationConsole.outfitting
+							? outfittingBody(stationConsole.outfitting, stationConsole.hold, {
 									ly: stationConsole.fuelLy,
 									capacityLy: stationConsole.fuelCapacityLy,
-								},
-							)
+								})
+							: this.equipment(
+									stationConsole.equipment,
+									stationConsole.ownedEquipment,
+									stationConsole.recoveredFittings ?? [],
+									{
+										ly: stationConsole.fuelLy,
+										capacityLy: stationConsole.fuelCapacityLy,
+									},
+								)
 		}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${this.commanderLine(stationConsole)}</p></section>`;
 	}
 
@@ -1923,7 +1985,7 @@ export class LiveCockpit {
 				const row =
 					entry.per === "ly"
 						? ({ kind: "fill" } as const)
-						: owned.includes(entry.name)
+						: owned.includes(entry.name) && !entry.repeatable
 							? ({ kind: "owned" } as const)
 							: entry.locked
 								? ({ kind: "locked", locked: entry.locked } as const)
@@ -1933,7 +1995,7 @@ export class LiveCockpit {
 				switch (row.kind) {
 					case "fill":
 						action = `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`;
-						held = `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`;
+						held = `${fuel.ly.toFixed(1)}/${fuel.capacityLy.toFixed(1)} LY`;
 						break;
 					case "owned":
 						action = '<span class="lc-station-owned">OWNED</span>';

@@ -120,6 +120,13 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
     measurement: gated on `ASSEMBLY_SEEDS`, measured over a wider spread by
     hand, and a plan outside both is not measured. Making it follow its plan
     means moving the Salvage's plan out of the renderer first.
+  - An **authored** form (the shipyards, node #818) has its proxy fitted to
+    the authored model, generated into `src/shipyard-proxies.ts` with the
+    model's hash. The sim collides with it **whatever is drawn** (principal,
+    2026-10-12): until the model installs, the procedural stand-in draws and
+    may lie outside it, and is not solid. At most 10 m of empty space within
+    it collides (the principal's rule, the same day); `tests/shipyard-flight.test.ts`
+    measures that, and that every vertex of the model lies within 1.5 m of it.
 - **What it turns with.** The proxy is stated in the spinning member's frame,
   as the drawn interior is (`docking.md` §13). Static structure — the
   shipyard's keel — is stated in the static frame.
@@ -190,6 +197,18 @@ checks:
 The box is centred on the ship's sim position. If a selected mesh's box is not
 centred on its origin, the build either carries the offset or shows the error
 is inside the 0.1 m rounding. A row decides which (§9.1.10).
+
+**A deployed cutter is a second ship primitive (#949 D3, #956 Q3–Q4, node
+#959).** The miner's cutter is a box in the ship's frame, `HULL_SPECS.miner.cutter`:
+±5.5 m across, −8.91…+2.09 m high, from the bow plane at 42.2 m to 52.8 m. While
+it is deployed, `shipPrimitives` puts it on the ship's list beside the hull box,
+and the sweep meets everything with both: rocks, stations, ships and
+canisters. Every impact names the part that met the surface, `hull` or
+`cutter` (`Impact.part`; `partA` and `partB` on a ship pair). Stowed, the list
+is the hull box alone. Whether the cutter is deployed is an input to the sweep,
+and Drill interaction (#920) owns where it comes from. What a cutter strike
+costs, and which side it bills, is #920's or the fiction map's.
+`tests/collision-cutter.test.ts` holds the rows.
 
 ### 2.4 What does not collide
 
@@ -294,7 +313,11 @@ handed to §4.3's ghost rule. Two things differ for it (derived):
 - **Its closing speed is read at the start of the step**, before this step's
   own acceleration — thrust and the frame's — is applied. A ship that the last
   step stopped at the surface starts this step with no inward speed, so thrust
-  pressing it in costs nothing at any dt. A surface that is itself moving in
+  pressing it in costs nothing at any dt. "No inward speed" is read to a
+  rounding floor, `RESTING_CLOSING_FLOOR_KMS` (1 nm/s): the pair solver
+  leaves a resolved pair's relative velocity with residues of order 1e-17
+  km/s, and an exact `> 0` billed one as a resting impact of zero damage
+  once node #812 changed the courier's box. A surface that is itself moving in
   is still billed: a Coriolis corner turning into a ship that already touches
   a face meets it at `ω × r` at the start of the step, and §3's law charges
   that.
@@ -381,8 +404,22 @@ A flying ship can only start inside a proxy by being placed there:
 
 A push-out would throw a restored ship through a hull, and would bill or bounce
 a launch off the station it is leaving. A ghost lets the ship fly out the way
-it came. §9.1.7 counts how often each placement path starts a ship inside, so
-whether launches ever do is measured rather than assumed.
+it came. Ghosting is **per overlapping box**, not per station: any other
+heading may meet the next box of the same structure, which is struck and
+billed by §3. The way out can be held for **one step, unbilled**, by a neighbour
+the ship passed inside the contact distance (principal's ruling, 2026-10-15).
+Node #963's full-proxy row in `tests/collision-stations.test.ts`, “a shallow
+restore reverses out with every neighbour present”, measures **2 of 1,678
+overlapping placements held**, each for one step, with no reverse impact
+billed and every placement clear within five `MAX_DT` ticks. It marches 40
+seeded rays per hull (courier, freighter) on each authored shipyard a–c and
+refinery a–d in a still frame, at 0.5 m a step to first overlap, bisects the
+boundary to 1 cm, and places the ship 0.1, 0.5 and 2 m past the last clear pose.
+Every sweep at 100 m/s includes every primitive; the row prints overlaps and
+held placements per form and hull. Two grazing placements no longer overlap
+at their depth and are counted out. §11.7 records the limits of this claim.
+§9.1.7 counts how often each placement path starts a ship inside, so whether
+launches ever do is measured rather than assumed.
 
 ---
 
@@ -735,11 +772,32 @@ rules for every combat ship.
    it (§9.2.2) shows the invisible wall.
 6. **Berth fixtures inside a slot's bay are not solid** (§9.1.8). Only a
    ship placed in the bay can reach them, and it passes through them.
-7. **A ship placed inside is a ghost until it leaves** (§4.3). Node #663's
+7. **A ship placed inside ghosts only the boxes it overlaps** (§4.3). Node #663's
    `tests/collision-stations.test.ts` counts spawn, hyperspace, restore <!-- glossary-ignore: Spawn -->
    fallback, cruise exit and launch placements. A saved flight pose can be
-   arbitrary; deliberately inside restores on every role are also tested,
-   including collision becoming live again after separation. A path that
-   places a ship deep inside a solid would leave it there,
-   flying through the structure until it comes out. Counting the paths is what
-   makes such a path visible.
+   arbitrary; its deliberately inside restore row on every role isolates one
+   pair to test escape and collision becoming live again after separation.
+   Node #963's row, “a shallow restore reverses out with every neighbour
+   present”, keeps **every primitive** of each authored proxy in the sweep:
+   shipyards a–c, refineries a–d, courier and freighter, 40 seeded rays each,
+   a march of 0.5 m, boundary bisected to 1 cm, depths 0.1 / 0.5 / 2 m,
+   reverse flight at 100 m/s over consecutive `MAX_DT` steps. Of 1,680 depth
+   placements, **1,678 overlap**; all escape unbilled within five ticks, with
+   **2 held for one step, unbilled** by a neighbour passed inside the contact
+   distance. The row pins and prints those counts, rejects a longer hold or
+   billed reverse contact, and requires a billed inward strike from inside
+   on every form as its control.
+
+   This is the **way it came in**, not a promise about any outward heading.
+   Another heading may meet the next box of the same structure and is struck
+   and billed. Spike #962 (`spikes/station-ghost-962/rows.test.ts`, `shallow`,
+   on `spike/station-ghost-962`) measured other outward headings struck in
+   **11–15%**, inward in **70–76%**, on its restore-after-refit placement.
+   Its longer heading trials are distinct from this row's five-tick inward
+   control. The principal's 2026-10-15 ruling permits the one-step unbilled
+   hold: the first node #963 run measured 4 of 1,680 such placements, and
+   finer marches retained those 4. The shipped corpus above is measured
+   separately. This claim is **still-frame only**: a turning drum moves the
+   reverse path away from the path in; the spike saw a strike in about 1 in
+   300 reverse placements at 3 rpm. A deep arbitrary placement likewise has
+   no reverse-escape guarantee. Counting placement paths makes it visible.

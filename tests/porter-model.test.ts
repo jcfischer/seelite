@@ -15,6 +15,7 @@ import {
 	buildShipMesh,
 	installAuthoredPorter,
 	isAuthoredHull,
+	rebuildAuthoredStandIn,
 } from "../src/ship-mesh";
 import { PORTER_KM_PER_M } from "../src/porter-model";
 
@@ -68,22 +69,27 @@ describe("the Porter is the authored model", () => {
 		expect(a.geometry).toBe(b.geometry);
 	});
 
-	test("without the template a Porter refuses to build rather than standing in", () => {
+	test("without the template the procedural Porter stands in until installation", () => {
 		// A clone of a built Porter's model is the template again: same
 		// transform, and the geometry is shared rather than copied.
 		const template = (
 			root.getObjectByName("porter-model") as THREE.Object3D
 		).clone(true);
 		installAuthoredPorter(null);
+		let standIn: THREE.Group;
 		try {
-			expect(() => buildShipMesh("freighter", "b")).toThrow(
-				/preparePorterModel/,
-			);
+			standIn = buildShipMesh("freighter", "b").root;
+			standIn.position.set(1, 2, 3);
+			expect(rebuildAuthoredStandIn(standIn)).toBe(false);
+			expect(standIn.userData.authored).not.toBe(true);
+			expect(standIn.getObjectByName("freighter-fuselage")).toBeDefined();
 		} finally {
 			installAuthoredPorter(template);
 		}
-		expect(
-			buildShipMesh("freighter", "b").root.getObjectByName("cargo-1"),
-		).toBeDefined();
+		expect(rebuildAuthoredStandIn(standIn!)).toBe(true);
+		expect(standIn!.userData.authored).toBe(true);
+		expect(standIn!.position.toArray()).toEqual([1, 2, 3]);
+		expect(rebuildAuthoredStandIn(standIn!)).toBe(false);
+		expect(standIn!.getObjectByName("cargo-1")).toBeDefined();
 	});
 });

@@ -77,7 +77,9 @@ const settle = () =>
 
 // The page-side helpers, installed once. Every one of them drives the shipped
 // game through its public handle.
-await page.evaluate(() => {
+await page.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
 	const frame = () => {
@@ -157,7 +159,10 @@ await page.evaluate(() => {
 		 *  constant goes falsely red the day the module is renamed. */
 		async fitScanner(own) {
 			const market = await import("/src/market.ts");
-			g.commander.ownedEquipment = own ? [market.LONG_RANGE_SCANNER] : [];
+			g.commander.loadout = migrateEquipment(
+				g.commander.hull,
+				own ? [market.LONG_RANGE_SCANNER] : [],
+			).loadout;
 			frame();
 		},
 		/** What the probe reads of the relay and the glass. */
@@ -820,7 +825,7 @@ check(
 		liveAim.designation === "RELAY · HOSTILE" &&
 		// Its shields and hull under the name, as any ship's in a fight: a relay
 		// has no shields, and the replacement is whole.
-		liveAim.conditionLine === "SHD F 0 A 0  HULL 100%",
+		liveAim.conditionLine === "SHD F 0% A 0%  HULL 100%",
 	JSON.stringify(liveAim),
 );
 // The replacement starts whole: one pulse wears it, it does not die (sage
@@ -1006,7 +1011,7 @@ check(
 		tenderGimbal.selected.beamOffDeg < 1 &&
 		// And its shields and hull under the name, as any ship's: a ship's shields
 		// (Q13), and whole here.
-		/^SHD F [1-9]\d* A [1-9]\d*  HULL 100%$/.test(
+		/^SHD F [1-9]\d*% A [1-9]\d*%  HULL 100%$/.test(
 			tenderGimbal.selected.conditionLine ?? "",
 		) &&
 		tenderGimbal.control.noseOffDeg > 2 &&
@@ -1040,11 +1045,16 @@ const movedBetween = (a, b) => {
 	return moved;
 };
 // And hold the page's own loop, as the combat rig does: it steps the world
-// between two screenshots otherwise.
-await page.evaluate(() => {
+// between two screenshots otherwise. And hold the sky: an arrival's nebula
+// bake runs on its own animation frames, which the page loop does not own,
+// and installs gas and reflections when it completes. Landing between the two
+// shown frames it moved ~13,700 px of the control (node #979, reproduced by
+// rebaking just before the first shot).
+await page.evaluate(async () => {
 	const g = window.__seelite;
 	if (g.animationFrame) cancelAnimationFrame(g.animationFrame);
 	g.animationFrame = 0;
+	await g.whenSkyReady();
 });
 const tenderShown = await framePng();
 const tenderShownAgain = await framePng();
@@ -1203,7 +1213,10 @@ await capture("06-tender-next");
 // read the tender that comes for that.
 const secondVisit = await page.evaluate(async (killedAt) => {
 	const g = window.__seelite;
-	const { SHIELD_POOL } = await import("/src/ship-condition.ts");
+	const { fullCondition } = await import("/src/ship-condition.ts");
+	const { RELAY_TENDER_HULL_ID } = await import("/src/relay-slot.ts");
+	// The tender's own pool, which is its hull's since #866.
+	const SHIELD_POOL = fullCondition(RELAY_TENDER_HULL_ID).shieldMax;
 	const relay = await import("/src/pirate-relay.ts");
 	const tender = await import("/src/relay-tender.ts");
 	const probe = window.__relayProbe;
@@ -1267,10 +1280,14 @@ watch(quiet);
 await quiet.goto(gameUrl(origin, { seed: NO_RELAY_SEED }));
 await bootedGame(quiet);
 const absent = await quiet.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
 	const market = await import("/src/market.ts");
-	g.commander.ownedEquipment = [market.LONG_RANGE_SCANNER];
+	g.commander.loadout = migrateEquipment(g.commander.hull, [
+		market.LONG_RANGE_SCANNER,
+	]).loadout;
 	g.targetId = "station-trade";
 	g.step(dt);
 	g.render(dt);

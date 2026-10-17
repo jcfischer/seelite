@@ -1,0 +1,38 @@
+
+> seelite@0.1.0 probe:pr
+> node scripts/select-probes.mjs --run --base origin/main --head HEAD --intent Refine an isolated courier hull inspection viewer with sealed rear hulls and flush deck covers without changing the production game
+
+probe selection: semantic
+reason: TypeSafe evaluated 96 independent probe contracts; only probabilities at or below 0.25 were excluded.
+selected: 3
+  probe-chase-orbit.mjs (p=0.350)
+  probe-model-viewer.mjs (p=0.670)
+  probe-pointer-lock.mjs (p=0.410)
+TypeSafe: jev-1.13.0, 22657 input + 1835 output tokens
+decision latency: 490 ms
+
+> seelite@0.1.0 probe
+> npm run probe:gpu
+
+
+> seelite@0.1.0 probe:gpu
+> npm run check:wiring && SEELITE_PROBE_RENDERER=hardware node scripts/probe-all.mjs
+
+
+> seelite@0.1.0 check:wiring
+> node scripts/check-launcher-wiring.mjs
+
+ok   124 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself
+probe lock: waiting 0s for pid 40453 (probe-all, 3 probes) in /Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-795 since 2026-10-08T18:58:08.277Z
+probe lock: taken after 58s
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:56350 (dev server) — 3 probes, 1 at a time
+     filtered by PROBE_FILES probe-chase-orbit.mjs,probe-model-viewer.mjs,probe-pointer-lock.mjs: 93 of 96 probes were not run.
+
+ok   probe-chase-orbit.mjs (30.7s)
+ok   probe-model-viewer.mjs (4.1s)
+ok   probe-pointer-lock.mjs (36.9s)
+
+3/3 gating probes passed in 72s · peak load 14.9 on 10 cores — PARTIAL RUN, PROBE_FILES probe-chase-orbit.mjs,probe-model-viewer.mjs,probe-pointer-lock.mjs: 93 of 96 probes were not run.
+     This is not a pass for the suite. Run `npm run probe` for that.

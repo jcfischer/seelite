@@ -37,17 +37,19 @@ const resealed = (
 };
 
 describe("#408 D4 — the saved first-day choice", () => {
-	test("the schema is 12, and 6 is the first version that carries the key", () => {
+	test("the schema is 15, and 6 is the first version that carries the key", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(12);
+		expect(SAVE_SCHEMA_VERSION).toBe(15);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 		]);
 	});
 
 	test("a version 6 record keeps its choice (#564 made 6 legacy)", () => {
 		const v6 = resealed(serializeSave(saveOf("guided")), (body) => {
 			body.saveSchemaVersion = 6;
+			body.commander.state.ownedEquipment = [];
+			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
@@ -72,6 +74,8 @@ describe("#408 D4 — the saved first-day choice", () => {
 	test("a version 5 record, which has no choice, loads as free", () => {
 		const v5 = resealed(serializeSave(saveOf("guided")), (body) => {
 			body.saveSchemaVersion = 5;
+			body.commander.state.ownedEquipment = [];
+			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
 			delete body.commander.firstDay;
 			delete body.commander.ladders;

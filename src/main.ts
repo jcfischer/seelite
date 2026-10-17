@@ -1,3 +1,54 @@
+import { generateNebulae, nebulaView } from "./nebula";
+import {
+	startNebulaBake,
+	nebulaOptions,
+	type NebulaBakeJob,
+} from "./nebula-bake";
+import { ArmedFireGroup, fireGroups } from "./fire-group";
+import { MissileCombat, missileVisible } from "./missile-combat";
+import {
+	MISSILE,
+	fittedEcm,
+	missileAmmo,
+	stepMissile,
+	type MissileTarget,
+	type Missile,
+} from "./missiles";
+import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
+import {
+	fitted,
+	fittedCapacity,
+	equipmentNames,
+	fittingSaleValue,
+	freeSlot,
+	repeatableEquipment,
+	parseModule,
+	stepFuelScoop,
+	stockLoadout,
+} from "./loadout";
+import { outfittingScreen } from "./outfitting";
+import {
+	commanderFuelCapacityLy,
+	commanderJumpRangeLy,
+} from "./station-commerce";
+import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
+import { ModelQueue } from "./model-queue";
+import {
+	ALL_MODELS,
+	modelLoaders,
+	type ModelId,
+	isAuthoredHullModel,
+	SHIPYARD_MODELS,
+	REFINERY_MODELS,
+} from "./model-catalog";
+import {
+	bootModelIds,
+	systemModelIds,
+	trafficRosterHulls,
+} from "./system-models";
+import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
+import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
+import type { InteriorLods } from "./interior-lod";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
  * origin.
@@ -110,6 +161,7 @@ import {
 	LIGHT_RIG,
 	equirectEnvironment,
 	gasParamsFrom,
+	hemisphereIntensityFor,
 	type SkyBakeParams,
 } from "./light-rig";
 import {
@@ -366,7 +418,7 @@ import {
 	worldStarts,
 } from "./sim";
 import { type Flick, FlickMeter, couplePxS, pointerImpulse } from "./pointer";
-import { AttitudeFollower } from "./attitude-hold";
+import { AttitudeFollower, noseTurnStick } from "./attitude-hold";
 import {
 	heldVents,
 	leverMoves,
@@ -440,13 +492,14 @@ import {
 	type ShieldSide,
 	type ShipCondition,
 	HEAT_LOCK,
-	SHIELD_POOL,
 	applyDamage,
 	fullCondition,
 	headOnPool,
 	isAlive,
+	refitCondition,
 	sideStruck,
 	stepCondition,
+	stepHullTemperature,
 } from "./ship-condition";
 import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import { PLAYER_LASER_RANGE_KM } from "./laser";
@@ -503,7 +556,6 @@ import {
 	type ScanConsoleReadout,
 	type ScanHold,
 	type ScanSubject,
-	SCAN_CHARGE_S,
 	SCAN_RANGE_KM,
 	beginScanHold,
 	carrierReading,
@@ -532,8 +584,12 @@ import { type EarshotStation, hailText } from "./distress";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
-	duelRowCells,
-	duelRowWidest,
+	duelBandCells,
+	duelBandPlates,
+	duelBandWidestRows,
+	type DuelBandPlate,
+	HULL_TEMP_LABEL,
+	SCOOP_LABEL,
 	onTargetMark,
 	raiderCueTone,
 	targetConditionLine,
@@ -719,11 +775,17 @@ import {
 import {
 	type StationMesh,
 	buildStationMesh,
+	setStationDetail,
 	stationVisualSnapshot,
 	updateStationVisuals,
 	warmStationMaps,
 } from "./station-mesh";
-import { SPEC_FIXTURE_NAMES, stationFinishId } from "./station-visuals";
+import {
+	AUTHORED_FIXTURE_NAMES,
+	isAuthoredStation,
+	SPEC_FIXTURE_NAMES,
+	stationFinishId,
+} from "./station-visuals";
 import {
 	HULL_IDS,
 	HULL_SPECS,
@@ -735,7 +797,9 @@ import {
 	type FleetSlot,
 	HULL_REACH_KM,
 	HULL_VARIANTS,
+	AFTER_BOOT_HULL_IDS,
 	buildShipMesh,
+	rebuildAuthoredStandIn,
 	fleetLayout,
 	measureMuzzles,
 	shipMuzzlesKm,
@@ -791,6 +855,7 @@ import {
 	type OpeningKind,
 	type OpeningOutcome,
 	OPENING,
+	OPENING_SHOTS,
 	OpeningRun,
 	type OpeningShot,
 	type OpeningSim,
@@ -798,6 +863,7 @@ import {
 	openingAtBoot,
 	openingCaption,
 	openingOwedOnLoad,
+	openingStepS,
 } from "./opening";
 import {
 	type ShotAnchor,
@@ -856,8 +922,9 @@ import {
 } from "./cockpit-surface";
 import {
 	buildAuthoredCabin,
+	buildPerimeterLamps,
 	COCKPIT_MODEL_LAMPS,
-	carriedLamp,
+	carriedConsoleLamp,
 	type CockpitScreen,
 	containedFace,
 	INSTRUMENT_FACE_KM,
@@ -1028,6 +1095,9 @@ import {
 	CommanderSwitch,
 	firstDayAtBoot,
 	flushFault,
+	GameGate,
+	overlayBeforeModels,
+	queuedContinueRefusal,
 	messageOf,
 	pendingFor,
 	permadeathAtAttach,
@@ -1057,12 +1127,18 @@ import {
 	mountCommanderOverlay,
 } from "./commander-overlay";
 import {
+	loadingPanel,
+	loadRelay,
+	loadRequiredModels,
+	nextPaint,
+} from "./model-load-view";
+import {
 	mountSaveBadge,
 	type SaveBadgeHandle,
 	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
-import { ESCAPE_POD, marketStationOf } from "./market";
+import { ESCAPE_POD, marketStationOf, marketEpoch } from "./market";
 import { type HoldBids, holdSummary, pilotGoods } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
@@ -1084,11 +1160,13 @@ import {
 import { BeamLayer } from "./beam-layer";
 import {
 	commanderHold,
+	flownMassT,
 	newCommander,
 	shipyardScreen,
 	transactAtStation,
 	type StationAction,
 	type ConsoleInput,
+	recoveredModule,
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
@@ -1479,6 +1557,13 @@ const COCKPIT_FORWARD_KM = 0.008;
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
 const MIRROR_CARRIED: CabinLightState = newCabinLightState();
+/** A layer no camera enables, so a light on it is never counted (#843). The
+ *  light count is in every lit program's cache key, and a station's floods
+ *  move between the layer scenes with its distance: counted where they stand,
+ *  they recompiled every lit material of a scene they entered or left. */
+const UNCOUNTED_LIGHT_LAYER = 31;
+const FLOOD_SCRATCH = new THREE.Vector3();
+const FLOOD_CAMERA = new THREE.Vector3();
 
 /** Below this speed the prograde marker is hidden: the velocity is noise, and a
  *  marker chasing it would swing around a screen belonging to a ship that is
@@ -1720,6 +1805,9 @@ const FLOOR_BANDS = DUEL_BAND;
  *  over a lit station face, and translucent so the slot stays visible. */
 const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
 const PROMPT_PLATE_PAD_PX = 8;
+/** How far the hull-temperature plate stands in from its band, top and
+ *  bottom, as a share of the band (#931). */
+const FLOOR_TEMP_PLATE_INSET = 0.12;
 
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
@@ -1766,8 +1854,8 @@ const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
  */
 const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
-/** The widest reading the duel row can print, for the floor's fit. */
-const DUEL_ROW_WIDEST = duelRowWidest();
+/** The duel band's widest rows, for the floor's fit (#932). */
+const DUEL_BAND_WIDEST_ROWS = duelBandWidestRows();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -2101,6 +2189,7 @@ interface ScanFacts {
 
 /** A memoised answer, with everything it was true about. */
 interface ScanFrame {
+	active: boolean;
 	target: Body | null;
 	gameTime: number;
 	chargeS: number;
@@ -2143,6 +2232,26 @@ const FLEET_REACH_KM =
 			reachKm([hullBox(HULL_SPECS[id].env, HULL_SPECS[id].envCentre)]),
 		),
 	);
+
+/** One session queue. Required loads adopt their result before a Game exists. */
+let installedGame: Game | undefined;
+const models = new ModelQueue(modelLoaders, async (id) => {
+	await installedGame?.modelInstalled(id as ModelId);
+});
+async function requireModels(
+	ids: readonly ModelId[],
+	view = loadingPanel("game"),
+	building = false,
+) {
+	await loadRequiredModels(
+		ids.map((id) => modelLoaders[id]),
+		view,
+		{ then: building ? "building" : "done" },
+	);
+	if (installedGame)
+		for (const id of ids) await installedGame.modelInstalled(id);
+	models.adopt(ids);
+}
 
 class Game {
 	readonly world: World;
@@ -2300,6 +2409,11 @@ class Game {
 		THREE.PointLight,
 		{ copy: THREE.PointLight; holders: number }
 	>();
+	/** The near scene's stand-ins for one station's interior floods (#843).
+	 *  The floods themselves are uncounted; these copies are added once and
+	 *  only ever go dark by intensity, so the near scene's light count stays
+	 *  put while stations cross layers and their detail changes. */
+	private readonly interiorFloodPool: THREE.PointLight[] = [];
 
 	/** Ship orientation. Positions live in `sim.ts`; this does not, and the
 	 *  module docstring there says why. */
@@ -2522,6 +2636,8 @@ class Game {
 	private wreckContacts = new Map<CarrierKey, DisplayContact>();
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
+	private outfittingSlot = "h1";
+	private outfittingCandidate = "";
 	private requests = emptyRequests();
 	private sweepReadings: SweepReading[] = [];
 	private sweepCharge: SweepCharge | null = null;
@@ -2597,12 +2713,16 @@ class Game {
 	/** A hull bought while docked that takes over at the next launch (D10). */
 	private hullOnLaunch: HullId | null = null;
 
-	/** The flown hull's handling, derived once per hull: `flightPerformance`
-	 *  is pure and the roster does not change mid-frame. */
-	private flownPerformanceOf: { hull: HullId; perf: FlightPerformance } = {
-		hull: this.flownHull,
-		perf: flightPerformance(this.flownHull),
-	};
+	/** The flown ship's handling, derived once per hull and flown mass (#865):
+	 *  `flightPerformance` is pure, and the mass moves only when something is
+	 *  bought, sold, taken aboard or lost. The key is the exact mass rather
+	 *  than a step of it, because a cargo change is an event and not a
+	 *  per-frame drift, so an exact key rebuilds once per change. */
+	private flownPerformanceOf: {
+		hull: HullId;
+		massT: number;
+		perf: FlightPerformance;
+	} | null = null;
 
 	/** Everything the pointer holds, gone: the delta and the flick being read.
 	 *  The one place besides `takePointer` that zeroes the delta (#641). */
@@ -2667,13 +2787,24 @@ class Game {
 		return this.flownSolidOf.solid;
 	}
 
+	/** What the flown ship weighs now, tonnes: `flownMassT` over the flown
+	 *  hull, the commander's hold and the entrusted lots aboard. */
+	get flownShipMassT(): number {
+		return flownMassT(
+			this.flownHull,
+			this.commander,
+			entrustedTonnesAboard(this.requests),
+		);
+	}
+
 	private get flownPerformance(): FlightPerformance {
-		if (this.flownPerformanceOf.hull !== this.flownHull)
-			this.flownPerformanceOf = {
-				hull: this.flownHull,
-				perf: flightPerformance(this.flownHull),
-			};
-		return this.flownPerformanceOf.perf;
+		const massT = this.flownShipMassT;
+		const cached = this.flownPerformanceOf;
+		if (cached?.hull === this.flownHull && cached.massT === massT)
+			return cached.perf;
+		const perf = flightPerformance(this.flownHull, {}, massT);
+		this.flownPerformanceOf = { hull: this.flownHull, massT, perf };
+		return perf;
 	}
 
 	/** The flown hull's envelope, which a berth's fit predicate compares
@@ -2685,7 +2816,18 @@ class Game {
 	/** A whole ship of the flown hull. A function, because a condition is
 	 *  mutable state and every caller needs its own. */
 	private flownFullCondition(): ShipCondition {
-		return fullCondition(this.flownHull);
+		return fullCondition(this.flownHull, this.flownCapacity());
+	}
+
+	/** The flown ship's fitted bank (#925). The commander's loadout is the
+	 *  flown hull's only once that hull is flown: a hull waiting for the launch
+	 *  (#556 D10) leaves the old one on its stock fit until it takes over. */
+	private flownCapacity() {
+		const loadout =
+			this.commander.hull === this.flownHull
+				? this.commander.loadout
+				: stockLoadout(this.flownHull);
+		return fittedCapacity(this.flownHull, loadout);
 	}
 	/**
 	 * The three ladders' banked record (#183), saved beside `commander` so a
@@ -2930,6 +3072,9 @@ class Game {
 	 *  computer wanted last frame, whose spin it asks for on top, so it is
 	 *  reset on every frame the computer does not fly (`AttitudeFollower`). */
 	private readonly computerFollower = new AttitudeFollower();
+	/** The target `F` is turning the nose onto, or `null` when no such turn
+	 *  is flying (`stepFaceTurn`). */
+	private faceTurnId: string | null = null;
 	/** Pointer movement accumulated since the last step, in pixels. Consumed
 	 *  each frame — a delta applied twice is a ship that turns at the frame
 	 *  rate rather than at the hand's speed. */
@@ -2951,6 +3096,14 @@ class Game {
 	}
 	/** The raider encounter on this leg, from its draw to its end (#324). */
 	encounter: Encounter | null = null;
+	readonly missileCombat = new MissileCombat();
+	missileRender: {
+		text: string;
+		incoming: boolean;
+		x: number;
+		y: number;
+		width: number;
+	} | null = null;
 	/** Where the encounter's raider is this frame, for the renderer. */
 	private encounterView: EncounterContact | null = null;
 	/**
@@ -3072,7 +3225,7 @@ class Game {
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	/**
-	 * Ordinary carriers the player has fired on (`civilian-combat.md` H2, H3):
+	 * Ordinary carriers the player has fired on (`civilian-control.md` H2, H3):
 	 * flown rather than projected while engaged. An engagement ends in a kill
 	 * or, in this change, when the ship leaves the materialization band.
 	 */
@@ -3278,6 +3431,17 @@ class Game {
 		 *  row was deliberately not drawn. */
 		duelRow: FloorCell[] | null;
 		duelBox: FloorBox | null;
+		/** Every plate under the duel band as painted (#945), in row order: one
+		 *  per cell, but one for TEMP and SCOOPING together. Each carries its
+		 *  cell's label, or `ARMED_GROUP_PLATE` under the armed group. */
+		duelPlates: FloorBox[];
+		/** The plate under the hull-temperature cell as painted (#931), or
+		 *  `null` when the hull is at ambient and no cell was drawn. */
+		tempPlate: FloorBox | null;
+		/** The plate under the scoop's `SCOOPING` line as painted (#932), or
+		 *  `null` when the scoop is not filling. Beside the TEMP cell it is the
+		 *  same plate, drawn once under both. */
+		scoopPlate: FloorBox | null;
 		source: {
 			regime: string;
 			spoolLeftS: number;
@@ -3327,6 +3491,8 @@ class Game {
 	} = { beam: null, rim: 0 };
 	/** The pulse laser's tracer and shot-sound pacing (`gun-feedback.ts`). */
 	gunFeedback: GunFeedback = QUIET_GUN;
+	/** Ports of the last actual volley, held for the tracer's short decay. */
+	private firedMuzzleIndices: readonly number[] = [];
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
@@ -3436,6 +3602,9 @@ class Game {
 	get gunTracer() {
 		return {
 			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
+			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
+				(_, i) => this.firedMuzzleIndices.includes(i),
+			),
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
 			soundGapS: SHOT_SOUND_GAP_S,
@@ -3814,6 +3983,8 @@ class Game {
 	 *  same reason: `probe-station-visuals.mjs` asserts a floor per fixture, and
 	 *  a probe holding its own copy would stay green the day §5 gains one. */
 	readonly specFixtures = SPEC_FIXTURE_NAMES;
+	/** And an authored station's, where they differ (node #818). */
+	readonly authoredFixtures = AUTHORED_FIXTURE_NAMES;
 
 	/** `persistent-world-state.md` §2's composite key, for the same reason. The
 	 *  docking probe built `${systemIndex}:${localCarrierId}` itself, which is a
@@ -3834,6 +4005,7 @@ class Game {
 			id: this.flownHull,
 			variant: HULL_SPECS[this.flownHull].variant,
 			spec: HULL_SPECS[this.flownHull],
+			massT: this.flownShipMassT,
 			performance: this.flownPerformance,
 		};
 	}
@@ -4020,6 +4192,10 @@ class Game {
 	 */
 	condition: ShipCondition = this.flownFullCondition();
 
+	/** Whether the fuel scoop filled the tank on the last step (#932): the
+	 *  glass's `SCOOPING` line reads it. `step` is its one writer. */
+	scooping = false;
+
 	/**
 	 * §12's dock state machine — arriving, docked, launching, or flying.
 	 *
@@ -4073,7 +4249,7 @@ class Game {
 	 * so it is bought, and a new pilot docks by hand.
 	 */
 	get hasDockingComputer(): boolean {
-		return this.commander.ownedEquipment.includes(DOCKING_COMPUTER);
+		return fitted(this.commander.loadout, DOCKING_COMPUTER);
 	}
 
 	/**
@@ -4247,6 +4423,14 @@ class Game {
 	visualOfStation(id: string) {
 		const station = this.stationVisuals.get(id);
 		return station ? stationVisualSnapshot(station) : null;
+	}
+
+	/** Whether a station is drawn from an approved model (node #818), for the
+	 *  probes that report rather than gate what such a station never had to
+	 *  pass. One predicate, so a renamed marker cannot flip one probe alone. */
+	isAuthoredStationId(id: string): boolean {
+		const station = this.stationVisuals.get(id);
+		return !!station && isAuthoredStation(station.root);
 	}
 
 	/**
@@ -4876,6 +5060,27 @@ class Game {
 			onRequestAction: (action, id) =>
 				this.consolePress(this.actOnRequest(action, id)),
 			onStationAction: (type, name) => {
+				this.outfittingCandidate = "";
+				if (type === "buy-module") {
+					try {
+						const payload = JSON.parse(name);
+						if (typeof payload.slot !== "string") return;
+						this.consolePress(
+							this.transactStation({
+								type,
+								slot: payload.slot,
+								module: parseModule(payload.module),
+							}),
+						);
+					} catch {
+						this.consolePress(false);
+					}
+					return;
+				}
+				if (type === "remove-module" || type === "buy-missiles") {
+					this.consolePress(this.transactStation({ type, slot: name }));
+					return;
+				}
 				if (type === "buy-hull") {
 					// The row carries a hull id; one the roster does not sell is a
 					// tampered press, and it buys nothing.
@@ -4884,6 +5089,26 @@ class Game {
 					return;
 				}
 				if (type === "fit-recovered" || type === "sell-recovered") {
+					if (type === "fit-recovered" && name.startsWith("{")) {
+						try {
+							const payload = JSON.parse(name);
+							if (
+								typeof payload.slot !== "string" ||
+								!Number.isInteger(payload.index)
+							)
+								return;
+							this.consolePress(
+								this.transactStation({
+									type,
+									slot: payload.slot,
+									index: payload.index,
+								}),
+							);
+						} catch {
+							this.consolePress(false);
+						}
+						return;
+					}
 					this.consolePress(
 						this.transactStation({ type, index: Number(name) }),
 					);
@@ -4897,6 +5122,7 @@ class Game {
 							: { type, commodity: name };
 				this.consolePress(this.transactStation(action));
 			},
+			onOutfittingSelect: (kind, name) => this.selectOutfitting(kind, name),
 			// A refused press holds the launch, and the hold is on the console, so
 			// both outcomes repaint (#314).
 			onLaunch: () => {
@@ -5160,6 +5386,7 @@ class Game {
 		// and **after the composer**, which is what makes them the variants the
 		// game will actually use (sage, PR #254).
 		this.prewarmReliefPrograms();
+		void this.prewarmShipyardPrograms();
 
 		this.updatePhotoNotice();
 		this.animate();
@@ -5186,6 +5413,31 @@ class Game {
 		this.face(scale(this.world.ship.pos, -1 / d));
 	}
 
+	readonly armedFireGroup = new ArmedFireGroup();
+
+	get fireGroups() {
+		return fireGroups(this.commander.loadout, this.commander.hull);
+	}
+
+	cycleFireGroup() {
+		this.armedFireGroup.cycle(this.fireGroups);
+		this.scanHold = beginScanHold();
+		this.updateCockpit();
+	}
+
+	private scanTrigger() {
+		return {
+			armed: this.armedFireGroup.current(this.fireGroups)?.kind === "scanner",
+			held: this.regime !== "cruise" && this.triggerHeld(),
+		};
+	}
+
+	private laserTriggerHeld(): boolean {
+		return (
+			this.armedFireGroup.firesLaser(this.fireGroups) && this.triggerHeld()
+		);
+	}
+
 	/**
 	 * Point the nose at the selected target.
 	 *
@@ -5196,14 +5448,73 @@ class Game {
 	 * 20-metre nose at a 50 km sphere an AU away is a different skill that would
 	 * dominate every measurement. Whether the shipped game offers an aiming
 	 * assist is a HUD question, and #11 owns the screen it would live on.
+	 *
+	 * **Placed in one frame, and no key calls it any more**: `F` flies
+	 * `beginFaceTurn` through the vents. This stays for the probes that need
+	 * the nose on a target now.
 	 */
 	faceTarget() {
+		this.faceTurnId = null;
+		const want = this.targetDirection();
+		if (want) this.face(want);
+	}
+
+	/** The unit vector from the ship to the selected target, or `null` with
+	 *  no target or none to point at. One aim point for the placement and the
+	 *  turn. */
+	private targetDirection(): Vec3 | null {
 		const target = this.targetBody();
-		if (!target) return;
+		if (!target) return null;
 		const to = sub(target.pos, this.world.ship.pos);
 		const d = length(to);
-		if (d === 0) return;
-		this.face(scale(to, 1 / d));
+		return d > 0 ? scale(to, 1 / d) : null;
+	}
+
+	/**
+	 * `F`: turn the nose onto the selected target **through the attitude
+	 * vents**, as the docking computer turns it (#619) — the hull eases into
+	 * the turn and out of it, and the plumes and the sound show it. It used to
+	 * place the attitude in one frame, which read as the ship jumping.
+	 *
+	 * `faceTarget` above stays the placement: a probe that needs the nose on a
+	 * target needs it now, not after a turn of several seconds.
+	 */
+	beginFaceTurn() {
+		if (!this.targetId || this.dockingComputer.engaged) return;
+		this.faceTurnId = this.targetId;
+	}
+
+	/**
+	 * The stick for this frame of `F`'s turn (`noseTurnStick`), or `null`
+	 * when none is flying. It lets go once the nose is on, and the moment the
+	 * pilot turns the ship, the target changes, or a cruise guidance takes the
+	 * nose (`stepDetour` places it every frame). Only in cruise: a guidance is
+	 * set on the engage, and `F` then `J` turns the ship through the spool.
+	 */
+	private stepFaceTurn(dt: number, pilotTurns: boolean): Angular | null {
+		if (!this.faceTurnId) return null;
+		const want = this.targetDirection();
+		const stick =
+			want && !this.faceTurnCancelled(pilotTurns)
+				? noseTurnStick(
+						{ nose: this.nose(), up: this.shipUp() },
+						want,
+						this.rates,
+						this.flownPerformance,
+						dt,
+					)
+				: null;
+		if (!stick) this.faceTurnId = null;
+		return stick;
+	}
+
+	/** Whether something other than the turn has taken the nose this frame. */
+	private faceTurnCancelled(pilotTurns: boolean): boolean {
+		if (pilotTurns) return true; // the pilot has the stick
+		if (this.targetId !== this.faceTurnId) return true; // a new target
+		if (this.dockedAt) return true;
+		// A cruise guidance places the nose every frame, but only in cruise.
+		return this.regime === "cruise" && !!(this.detour || this.cruiseTrackId);
 	}
 
 	/**
@@ -5479,6 +5790,7 @@ class Game {
 					markOcclusion(built.root),
 				]);
 				this.stationVisuals.set(body.id, built);
+				this.registerInteriorPresentation(body.id, built);
 			} else if (body.appearance) {
 				// #54's classes, drawn by the game rather than by the gallery.
 				//
@@ -5643,6 +5955,19 @@ class Game {
 				this.approachCamera,
 				surfaces,
 			);
+			const detailRestores = [...this.bodyVisuals.values()]
+				.map((visual) => visual.prewarmFootprint())
+				.filter((undo) => undo !== null);
+			if (detailRestores.length) {
+				for (const [scene, camera] of surfaceScenes)
+					this.renderer.compile(scene, camera);
+				this.planetHalfRes.prewarmSurfaces(
+					this.renderer,
+					this.approachCamera,
+					surfaces,
+				);
+				for (const undo of detailRestores) undo();
+			}
 		}
 		for (const [id, visual] of this.bodyVisuals) {
 			const was = before.get(id);
@@ -5674,6 +5999,17 @@ class Game {
 					[this.nearScene, this.nearCamera],
 				] as const)
 					this.renderer.compile(scene, camera);
+				const undoDetail = policyVisual.prewarmFootprint();
+				if (undoDetail) {
+					for (const [scene, camera] of surfaceScenes)
+						this.renderer.compile(scene, camera);
+					this.planetHalfRes.prewarmSurfaces(
+						this.renderer,
+						this.approachCamera,
+						surfaces,
+					);
+					undoDetail();
+				}
 			}
 			policyVisual.setSurfaceClass(wasClass);
 			policyVisual.applyReliefBand(wasPath);
@@ -5756,6 +6092,9 @@ class Game {
 			this.nearScene,
 			this.cabinScene,
 		]) {
+			// The cabin keeps the same rig with one exception it earned: see
+			// `CABIN_HEMISPHERE_GAIN`.
+			const cabinScene = scene === this.cabinScene;
 			const sun = new THREE.DirectionalLight(
 				LIGHT_RIG.sun.color,
 				LIGHT_RIG.sun.intensity,
@@ -5774,7 +6113,7 @@ class Game {
 			const hemi = new THREE.HemisphereLight(
 				LIGHT_RIG.hemisphere.sky,
 				LIGHT_RIG.hemisphere.ground,
-				LIGHT_RIG.hemisphere.intensity,
+				hemisphereIntensityFor(cabinScene, this.settings.value.quality),
 			);
 			hemi.name = "hemisphere";
 			scene.add(hemi);
@@ -5814,6 +6153,15 @@ class Game {
 		const cabinFill = fill.clone();
 		this.cabinScene.add(cabinFill);
 		this.fills = [fill, cabinFill];
+		// Allocate the fixed flood pool before the first frame. Installing a
+		// bay must not change numPointLights and recompile the whole near scene.
+		for (let i = 0; i < 4; i++) {
+			const copy = new THREE.PointLight(0xffffff, 0);
+			copy.name = `interior-flood-pool:${i}`;
+			this.nearScene.add(copy);
+			this.interiorFloodPool.push(copy);
+			this.mirrorIntoCabin(copy);
+		}
 
 		// **#201: one shadow-casting light in the game, and it is the near
 		// layer's sun.** The far and approach suns are left alone — a planet
@@ -5930,15 +6278,41 @@ class Game {
 	 *  which is why that method disposes what it is replacing rather than
 	 *  assuming it is the first call. */
 	private environmentMap: THREE.Texture | null = null;
+	private environmentTarget: THREE.WebGLRenderTarget | null = null;
 
 	/** The pre-PMREM equirectangular source, kept so it can serve as both
 	 *  `scene.environment` (convolved) and `backdropScene.background` (raw).
 	 *  Disposed and rebuilt on every jump alongside `environmentMap`. */
-	private environmentSource: THREE.DataTexture | null = null;
+	private environmentSource: THREE.Texture | null = null;
+	private nebulaTarget: THREE.WebGLRenderTarget | null = null;
+	/** Development comparison only; the shared galactic sky is on in production. */
+	private readonly nebulaOptions = nebulaOptions(
+		import.meta.env.DEV ? window.location.search : "",
+	);
+	private nebulaJob: NebulaBakeJob | null = null;
+	private nebulaFailed = false;
+	private skyReady: Promise<void> = Promise.resolve();
+	get nebulaPending() {
+		return this.nebulaJob !== null;
+	}
+	async whenSkyReady() {
+		let pending: Promise<void>;
+		do {
+			pending = this.skyReady;
+			await pending;
+		} while (pending !== this.skyReady);
+	}
+	nebulaBakeStats: {
+		width: number;
+		height: number;
+		submitMs: number;
+		strips: number;
+		elapsedMs: number;
+	} | null = null;
 
 	/** What the sky on screen was baked from. Public for `probe-light-rig.mjs`,
 	 *  which reads it to put the system's own sky back after baking its own. */
-	skyBake: SkyBakeParams | null = null;
+	skyBake: (SkyBakeParams & { nebula?: boolean }) | null = null;
 
 	/**
 	 * Bake the sky once per system in the world frame (node #433, closing #100).
@@ -5984,9 +6358,9 @@ class Game {
 			haze: core
 				? { coreBearing: [core.x, core.y, core.z], strength: hazeStrength }
 				: null,
-			gas,
+			gas: this.nebulaOptions.enabled ? null : gas,
 		};
-		this.bakeSky(bakeParams);
+		this.bakeSky({ ...bakeParams, nebula: this.nebulaOptions.enabled });
 	}
 
 	/**
@@ -6000,12 +6374,20 @@ class Game {
 	 * same path, and reads which face it lit; the system's `skyBake` goes back
 	 * through here afterwards.
 	 */
-	bakeSky(sky: SkyBakeParams) {
+	bakeSky(sky: SkyBakeParams & { nebula?: boolean }) {
+		this.nebulaJob?.cancel();
+		this.nebulaJob = null;
+		this.nebulaFailed = false;
 		// Idempotent by disposal rather than by assuming a single call: a PMREM
 		// cube is a GPU texture, and a second bake that dropped the first would
 		// leak it silently.
-		this.environmentMap?.dispose();
-		this.environmentSource?.dispose();
+		this.environmentTarget?.dispose();
+		this.environmentTarget = null;
+		// A render target owns its texture; dispose that owner exactly once.
+		if (!this.nebulaTarget) this.environmentSource?.dispose();
+		this.nebulaTarget?.dispose();
+		this.nebulaTarget = null;
+		this.nebulaBakeStats = null;
 		this.skyBake = sky;
 		const { data, width, height } = equirectEnvironment(sky);
 
@@ -6021,7 +6403,8 @@ class Game {
 		source.needsUpdate = true;
 		this.environmentSource = source;
 		const pmrem = new THREE.PMREMGenerator(this.renderer);
-		this.environmentMap = pmrem.fromEquirectangular(source).texture;
+		this.environmentTarget = pmrem.fromEquirectangular(source);
+		this.environmentMap = this.environmentTarget.texture;
 		// The PMREM's own render targets are done; the source is kept for the
 		// backdrop background and disposed on the next bake.
 		pmrem.dispose();
@@ -6031,6 +6414,66 @@ class Game {
 		for (const { scene } of this.layerLights)
 			scene.environmentIntensity = LIGHT_RIG.environmentIntensity;
 		this.applyQuality();
+	}
+
+	/** Complete the arrival bake before installing its sky and reflections. */
+	private beginNebulaSky() {
+		if (
+			!this.skyBake?.nebula ||
+			!this.environmentSource ||
+			this.nebulaTarget ||
+			this.nebulaJob ||
+			this.nebulaFailed
+		)
+			return;
+		const base = this.environmentSource;
+		const job = startNebulaBake(
+			this.renderer,
+			base,
+			{
+				worldSeed: this.world.seed,
+				galaxy: this.world.galaxy.index,
+				record: this.world.system.record,
+			},
+			this.nebulaOptions,
+		);
+		this.nebulaJob = job;
+		this.skyReady = job.ready.then(async (target) => {
+			// A jump or quality switch owns a newer job; never install stale gas.
+			if (this.nebulaJob !== job) {
+				target?.dispose();
+				return;
+			}
+			if (!target) {
+				this.nebulaJob = null;
+				this.nebulaFailed = true;
+				return;
+			}
+			this.nebulaTarget = target;
+			this.environmentSource = target.texture;
+			base.dispose();
+			this.environmentTarget?.dispose();
+			const pmrem = new THREE.PMREMGenerator(this.renderer);
+			this.environmentTarget = pmrem.fromEquirectangular(target.texture);
+			this.environmentMap = this.environmentTarget.texture;
+			pmrem.dispose();
+			this.nebulaBakeStats = {
+				width: target.width,
+				height: target.height,
+				...job.stats,
+			};
+			this.applyQuality();
+			// PMREM dimensions enter standard-material program keys. Warm the
+			// authored stations again before a later layer crossing needs them.
+			try {
+				await this.prewarmShipyardPrograms();
+			} catch (error) {
+				// The sky is complete; a failed optimization must not block cards.
+				console.warn("nebula station warm-up unavailable", error);
+			} finally {
+				if (this.nebulaJob === job) this.nebulaJob = null;
+			}
+		});
 	}
 
 	/**
@@ -6043,7 +6486,20 @@ class Game {
 	 */
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
+		if (!mode.environment) {
+			this.nebulaJob?.cancel();
+			this.nebulaJob = null;
+		} else this.beginNebulaSky();
 		this.bloomPass.enabled = this.bloomDefault;
+		// The cabin's hemisphere follows the setting (#912): low has no perimeter
+		// lamps, so it takes `CABIN_LOW_QUALITY_HEMISPHERE_GAIN` instead of the cut
+		// tuned against them. Every layer is assigned so the function stays the one
+		// place that says which layer moves.
+		for (const rig of this.layerLights)
+			rig.hemisphere.intensity = hemisphereIntensityFor(
+				rig.scene === this.cabinScene,
+				this.settings.value.quality,
+			);
 		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
 		this.renderer.toneMappingExposure = mode.exposure;
@@ -6389,6 +6845,320 @@ class Game {
 		this.nearScene.add(plumes.object);
 	}
 
+	/** Node #831: called after a background hull installs, including cached
+	 *  Traffic outside the materialisation range. Roots retain their identity
+	 *  so contacts, fleet slots and scene membership need no reassignment.
+	 *  Every after-boot hull's stand-ins are rebuilt (node #814); a root whose
+	 *  hull is not yet installed is left as it is. */
+	private refreshAuthoredHulls(): void {
+		if (rebuildAuthoredStandIn(this.shipMesh)) {
+			this.mountVentPlumes(this.shipMesh, this.flownHull);
+			const marked = this.markedOcclusion.findIndex(
+				([name]) => name === "ship",
+			);
+			if (marked >= 0)
+				this.markedOcclusion[marked] = ["ship", markOcclusion(this.shipMesh)];
+		}
+		rebuildAuthoredStandIn(this.tenderMesh);
+		for (const root of this.trafficMeshes.values())
+			rebuildAuthoredStandIn(root);
+		for (const parked of this.fleet) {
+			if (!rebuildAuthoredStandIn(parked.mesh)) continue;
+			const name = `fleet-${parked.mesh.name || "hull"}`;
+			const marked = this.markedOcclusion.findIndex(([key]) => key === name);
+			if (marked >= 0)
+				this.markedOcclusion[marked] = [name, markOcclusion(parked.mesh)];
+		}
+		for (const drawn of this.derelictMeshes.values())
+			rebuildAuthoredStandIn(
+				drawn.root,
+				(id) => buildDerelictMesh(id),
+				() => disposeDerelict(drawn.root),
+			);
+	}
+
+	/** Queue readiness includes current-system mesh refreshes, not an elapsed delay. */
+	modelsSettled(): boolean {
+		return models.settled(this.currentModelIds()) && !this.interiorRefresh;
+	}
+	private currentModelIds(): ModelId[] {
+		this.ensureTrafficActors();
+		return systemModelIds(
+			this.world.system,
+			[
+				...this.trafficCandidates().map((a) => a.hullId),
+				...(this.tenderMesh.parent ? [RELAY_TENDER_HULL_ID] : []),
+				...this.fleet.map((p) => p.mesh.userData.hullId as HullId),
+				...Array.from(
+					this.derelictMeshes.values(),
+					(d) => d.root.userData.hullId as HullId,
+				),
+			],
+			this.flownHull,
+		);
+	}
+	/** Derive the complete destination roster before arrival, from seeded contents. */
+	private nextModelIds(): ModelId[] {
+		const next = this.nextHop();
+		if (!next) return [];
+		const contentsFor = (index: number) => this.trafficContentsFor(index);
+		return systemModelIds(
+			makeSystem(next, this.world.gameTime),
+			trafficRosterHulls(this.world.galaxy, next.index, contentsFor),
+			this.flownHull,
+		);
+	}
+	startModelQueue(): void {
+		models.prioritize(this.currentModelIds(), this.nextModelIds());
+	}
+	/** Install callbacks always inspect live caches; a jump never waits for them. */
+	async modelInstalled(id: ModelId): Promise<void> {
+		if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
+		else if (id === "interiors") await this.refreshInteriorMeshes();
+		else if (id === "coriolis")
+			await this.refreshAuthoredStations("trade", "a");
+		else if (id.startsWith("shipyard/"))
+			await this.refreshAuthoredStations("shipyard", id.split("/")[1]);
+		else if (id.startsWith("refinery/"))
+			await this.refreshAuthoredStations("refinery", id.split("/")[1]);
+	}
+	/** Compatibility handles for existing probes; every load uses the same queue. */
+	loadAuthoredHullsAfterBoot(): Promise<void> {
+		return models.wait(AFTER_BOOT_HULL_IDS);
+	}
+
+	private readonly interiorPresentations = new Map<
+		string,
+		{
+			group: THREE.Object3D;
+			lods: InteriorLods;
+			lamps: THREE.PointLight[];
+			release: (() => void)[];
+		}
+	>();
+	private registerInteriorPresentation(id: string, station: StationMesh): void {
+		this.interiorPresentations.get(id)?.release.forEach((undo) => undo());
+		this.interiorPresentations.delete(id);
+		const group = station.root.getObjectByName("authored-interior");
+		if (!group) return;
+		const lamps: THREE.PointLight[] = [];
+		group.traverse((o) => {
+			if (o instanceof THREE.PointLight) lamps.push(o);
+		});
+		for (const lamp of lamps) lamp.layers.set(UNCOUNTED_LIGHT_LAYER);
+		while (this.interiorFloodPool.length < lamps.length) {
+			const copy = new THREE.PointLight(0xffffff, 0);
+			copy.name = `interior-flood-pool:${this.interiorFloodPool.length}`;
+			this.nearScene.add(copy);
+			this.interiorFloodPool.push(copy);
+		}
+		this.interiorPresentations.set(id, {
+			group,
+			lods: group.userData.interiorLods,
+			lamps,
+			// The fixed near-scene pool owns its cabin mirrors for this Game.
+			// Bay registration adds no lights or shader variants to either scene.
+			release: [],
+		});
+	}
+	private interiorWarningShown = false;
+	private warnInteriorFailure(error: unknown): void {
+		if (this.interiorWarningShown) return;
+		this.interiorWarningShown = true;
+		console.warn(
+			"station interiors: background load failed; keeping procedural bays",
+			error,
+		);
+	}
+	get interiorModelsSettled(): boolean {
+		return models.settled(["interiors"]) && !this.interiorRefresh;
+	}
+	loadInteriorsAfterBoot(): Promise<void> {
+		return models.wait(["interiors"]);
+	}
+
+	private interiorRefresh?: Promise<void>;
+	private refreshInteriorMeshes(): Promise<void> {
+		if (this.interiorRefresh) return this.interiorRefresh;
+		return (this.interiorRefresh = this.installInteriorMeshes().finally(() => {
+			this.interiorRefresh = undefined;
+		}));
+	}
+	private async installInteriorMeshes(): Promise<void> {
+		// Re-read the live map after each slice. A jump never waits for an old
+		// system's assembly and its disposed roots never receive the finished kit.
+		for (const [id, station] of this.stationVisuals) {
+			if (
+				!(await refreshStationInteriorKitAsync(
+					station.root,
+					() => this.stationVisuals.get(id) === station,
+					(kit, live) => this.warmInteriorKit(kit, live),
+				))
+			)
+				continue;
+			station.accessories.length = 0;
+			station.root.traverse((o) => {
+				if (o.userData.minDetail) station.accessories.push(o);
+			});
+			setStationDetail(station, station.detail);
+			this.registerInteriorPresentation(id, station);
+		}
+		for (let i = this.markedOcclusion.length - 1; i >= 0; i--)
+			if (this.markedOcclusion[i][0].startsWith("station-"))
+				this.markedOcclusion.splice(i, 1);
+		for (const station of this.stationVisuals.values())
+			this.markedOcclusion.push([
+				`station-${station.type}`,
+				markOcclusion(station.root),
+			]);
+	}
+	/** Compile fitting programs off-scene, one mesh at a time, while the
+	 * procedural bay keeps drawing. The composer target selects the same
+	 * output-colour variant as gameplay; restore it before yielding.
+	 */
+	private async warmInteriorKit(kit: THREE.Group, live: () => boolean) {
+		const meshes: THREE.Mesh[] = [];
+		kit.traverse((o) => {
+			if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+			if (o instanceof THREE.PointLight) o.layers.set(UNCOUNTED_LIGHT_LAYER);
+		});
+		markOcclusion(kit);
+		let sliceStart = performance.now();
+		for (const mesh of meshes) {
+			if (!live()) return;
+			const target = this.renderer.getRenderTarget();
+			let compiled: Promise<THREE.Object3D>;
+			try {
+				this.renderer.setRenderTarget(this.composer.renderTarget1);
+				compiled = this.renderer.compileAsync(
+					mesh,
+					this.nearCamera,
+					this.nearScene,
+				);
+			} finally {
+				this.renderer.setRenderTarget(target);
+			}
+			await compiled;
+			if (performance.now() - sliceStart >= INTERIOR_SLICE_MS) {
+				await nextInteriorFrame();
+				sliceStart = performance.now();
+			}
+		}
+	}
+	get shipyardModelsSettled(): boolean {
+		return models.settled(SHIPYARD_MODELS);
+	}
+	loadShipyardsAfterBoot(): Promise<void> {
+		return models.wait(SHIPYARD_MODELS);
+	}
+	get refineryModelsSettled(): boolean {
+		return models.settled(REFINERY_MODELS);
+	}
+	loadRefineriesAfterBoot(): Promise<void> {
+		return models.wait(REFINERY_MODELS);
+	}
+
+	/**
+	 * Rebuild every drawn station of `type` and `form` from its installed
+	 * model (the shipyards, node #818; the refineries, node #819). The new
+	 * mesh compiles off-scene first and replaces the old one only if the
+	 * station is still the one drawn; a jump during the compile ends the
+	 * refresh, since the new system was built with whatever had installed.
+	 * When a station was replaced, occlusion marks and interior kits are redone
+	 * for the whole system, as an interior install redoes them.
+	 */
+	private async refreshAuthoredStations(
+		type: "trade" | "shipyard" | "refinery",
+		form: string,
+	): Promise<void> {
+		const system = this.world.system;
+		let replaced = false;
+		for (const body of system.bodies) {
+			if (this.world.system !== system) return;
+			if (body.kind !== "station") continue;
+			const station = stationOf(system, body.id);
+			if (station.type !== type || station.formId !== form) continue;
+			const previous = this.stationVisuals.get(body.id);
+			// Built after the install (a home station, a later jump): already
+			// the authored model.
+			if (
+				!previous ||
+				isAuthoredStation(previous.root) ||
+				previous.root.getObjectByName("industrial-coriolis-exterior")
+			)
+				continue;
+			const live = () => this.stationVisuals.get(body.id) === previous;
+			const built = buildStationMesh(station, body.color);
+			built.root.name = body.id;
+			paintNameplates(built, this.nameOfStation(body.id));
+			await this.warmInteriorKit(built.root, live);
+			if (live()) await this.prewarmStationPrograms(built.root);
+			if (!live()) {
+				built.dispose();
+				continue;
+			}
+			previous.root.removeFromParent();
+			previous.dispose();
+			this.stationVisuals.set(body.id, built);
+			this.meshes.set(body.id, built.root);
+			this.setLayer(body, this.layers.get(body.id) ?? "far");
+			this.registerInteriorPresentation(body.id, built);
+			replaced = true;
+		}
+		// The interior install's own pass, not `refreshInteriorMeshes`: that one
+		// marks the interiors settled, and a yard installed while the interior
+		// download is still running would then report a kit that has not come.
+		if (replaced && this.world.system === system)
+			await this.installInteriorMeshes();
+	}
+
+	/**
+	 * An authored shipyard's programs in all three layers, before it is first
+	 * drawn in any (node #818). Its materials are its own variants — a lightmap
+	 * read through a second UV set — and a station is drawn in the far, the
+	 * approach or the near scene, each with its own lights; a scene compiles only
+	 * what is in it, so without this the yard compiled on the band crossing that
+	 * first brought it into a layer (`probe-planet-surfaces`: two programs on
+	 * the walk). Async, into the composer's target, as the relief warm-up is.
+	 */
+	private async prewarmStationPrograms(root: THREE.Object3D): Promise<void> {
+		for (const [scene, camera] of [
+			[this.farScene, this.farCamera],
+			[this.approachScene, this.approachCamera],
+			[this.nearScene, this.nearCamera],
+		] as const) {
+			const target = this.renderer.getRenderTarget();
+			let compiled: Promise<unknown>;
+			try {
+				this.renderer.setRenderTarget(this.composer.renderTarget1);
+				compiled = this.renderer.compileAsync(root, camera, scene);
+			} finally {
+				this.renderer.setRenderTarget(target);
+			}
+			await compiled;
+		}
+	}
+	/** Every drawn authored shipyard's programs, after a system is built. */
+	private async prewarmShipyardPrograms(): Promise<void> {
+		for (const station of [...this.stationVisuals.values()])
+			if (isAuthoredStation(station.root))
+				await this.prewarmStationPrograms(station.root);
+	}
+
+	/** Sharing a card waits for the authored kit, even after a background failure. */
+	private async openPostcardWithModels(): Promise<void> {
+		const ids = this.currentModelIds();
+		const view = loadingPanel("postcard models");
+		view({ kind: "loading", fraction: null });
+		await models.wait(ids);
+		const failed = ids.filter((id) => models.state(id) === "failed");
+		if (failed.length) {
+			await requireModels(failed, view);
+		}
+		view({ kind: "done" });
+		this.postcardPanel?.open();
+	}
+
 	/**
 	 * Make `hull` the flown hull now (#583 D2): handling and envelope follow
 	 * `flownHull`, the condition is a whole ship of it, and the mesh is
@@ -6426,6 +7196,7 @@ class Game {
 		if (marked >= 0) this.markedOcclusion[marked] = record;
 		else this.markedOcclusion.push(record);
 		this.nearScene.add(mesh);
+		if (installedGame === this) this.startModelQueue();
 	}
 
 	/**
@@ -7455,7 +8226,7 @@ class Game {
 	}
 
 	/**
-	 * One frame of civilian combat (`civilian-combat.md` H2, H3, H10).
+	 * One frame of civilian combat (`civilian-control.md` H2, H3, H10).
 	 *
 	 * **A shot that lands on a projected carrier engages it**: the carrier is
 	 * handed from its projection to flight at the pose it is drawn in, and the
@@ -7634,7 +8405,9 @@ class Game {
 			instanceOrdinal,
 			voyageOrdinal,
 			{
-				holdT: HULL_SPECS[actor.hullId].holdT,
+				// An NPC passes its stock loadout until NPC loadouts (#875) give it
+				// racks: the projection then reads the bare hold (#928).
+				holdT: fittedCapacity(actor.hullId, stockLoadout(actor.hullId)).holdT,
 				government: record.government,
 			},
 		);
@@ -7703,7 +8476,7 @@ class Game {
 	}
 
 	/**
-	 * The sustained-fire charge (`civilian-combat.md` H4's third rung, #396): the
+	 * The sustained-fire charge (`civilian-control.md` H4's third rung, #396): the
 	 * pilot's fire has landed on this ordinary carrier for `ASSAULT_FIRE_S`, and
 	 * that is an offence before a single hull point has been spent.
 	 *
@@ -7855,7 +8628,7 @@ class Game {
 	}
 
 	/**
-	 * A hull strike (`civilian-combat.md` H3b, H3c, H3d): the carrier is disabled
+	 * A hull strike (`civilian-control.md` H3b, H3c, H3d): the carrier is disabled
 	 * by the player's own fire and booked into its home berth in the same tick,
 	 * and the strike is an offence.
 	 *
@@ -7896,7 +8669,7 @@ class Game {
 	}
 
 	/**
-	 * A kill (`civilian-combat.md` H1, H4, H9, H11): the carrier's destroy with
+	 * A kill (`civilian-control.md` H1, H4, H9, H11): the carrier's destroy with
 	 * its scheduled replacement, the manifest a scan would have shown dropped as
 	 * canisters, and the offence judged on its true standing and written.
 	 */
@@ -8123,7 +8896,7 @@ class Game {
 
 	private systemSweepContext() {
 		return {
-			fitted: relayScannerFitted(this.commander.ownedEquipment),
+			fitted: relayScannerFitted(equipmentNames(this.commander.loadout)),
 			flying: this.dock.phase === "flying",
 			cruise: this.regime === "cruise" || this.spoolLeftS > 0,
 		};
@@ -8204,16 +8977,15 @@ class Game {
 	/**
 	 * One frame of the scan (§4).
 	 *
-	 * **Automatic on the hold, with no key bound to it** — the principal's
-	 *  ruling, and every letter on the flight deck is taken. The charge builds
-	 *  while the nose holds a scannable carrier inside the cone and the range,
-	 *  and the writing of the record is the one transition, so a long lock ages
-	 *  the reading instead of renewing it.
+	 * The armed Identity Scanner charges while the trigger and sightline are
+	 * held. One completed hold writes one reading; keeping the trigger down
+	 * afterwards leaves its age intact.
 	 */
 	private stepScan(dt: number) {
 		const target = this.targetBody();
 		const actor = this.scanSubject(target);
-		const fitted = scanFitted(this.commander.ownedEquipment);
+		const fitted = scanFitted(equipmentNames(this.commander.loadout));
+		const { scanRangeKm, scanChargeS } = this.scannerFigures();
 		// **A subject, not a boolean.** Five seconds spent with the nose swinging
 		// across three carriers is five seconds on none of them, and a charge that
 		// does not record whose it is cannot say when to start over — the blocker
@@ -8234,13 +9006,19 @@ class Game {
 			actor !== undefined &&
 			fitted &&
 			target !== null &&
-			scanInRange(length(sub(target.pos, this.world.ship.pos))) &&
+			scanInRange(length(sub(target.pos, this.world.ship.pos)), scanRangeKm) &&
 			scanConeHeld(aim, normalizeOr(sub(target.pos, this.world.ship.pos), aim))
 				? { key: actor.key }
 				: null;
 		const before = this.scanHold;
-		this.scanHold = stepScanHold(before, held, dt);
-		if (!actor || !scanCompleted(before, this.scanHold)) return;
+		this.scanHold = stepScanHold(
+			before,
+			held,
+			dt,
+			this.scanTrigger(),
+			scanChargeS,
+		);
+		if (!actor || !scanCompleted(before, this.scanHold, scanChargeS)) return;
 		const { instanceOrdinal } = this.carrierCondition(actor.key);
 		this.commerceWorld = observeScan(
 			this.commerceWorld,
@@ -8260,7 +9038,7 @@ class Game {
 			systemSeed: record.seed,
 			key: actor.key,
 			row: readKnowledge(this.commerceWorld.galaxies[record.galaxy], actor.key),
-			holdT: HULL_SPECS[actor.hullId].holdT,
+			holdT: fittedCapacity(actor.hullId, stockLoadout(actor.hullId)).holdT,
 			government: record.government,
 			gameTime: this.world.gameTime,
 		});
@@ -8305,12 +9083,14 @@ class Game {
 	 */
 	private scanReadout(target: Body | null): ScanFacts {
 		const stamp = this.scanStamp(target);
-		const fitted = scanFitted(this.commander.ownedEquipment);
+		const fitted = scanFitted(equipmentNames(this.commander.loadout));
 		// Computed before the memo is consulted, and part of its key: the cue is
 		// the one input that moves with the ship rather than with the clock, so a
 		// frame that turned the sight off a carrier without the clock moving must
 		// not be served the reading taken while it was on.
 		const standoff = this.scanStandoffNow(target);
+		const trigger = this.scanTrigger();
+		const active = trigger.armed && trigger.held;
 		const memo = this.scanFacts;
 		if (
 			memo !== null &&
@@ -8318,12 +9098,14 @@ class Game {
 			memo.gameTime === this.world.gameTime &&
 			memo.chargeS === this.scanHold.chargeS &&
 			memo.fitted === fitted &&
+			memo.active === active &&
 			memo.standoff === standoff &&
 			memo.stamp === stamp
 		)
 			return memo.facts;
-		const facts = this.computeScanFacts(target, standoff);
+		const facts = this.computeScanFacts(target, standoff, active);
 		this.scanFacts = {
+			active,
 			target,
 			gameTime: this.world.gameTime,
 			chargeS: this.scanHold.chargeS,
@@ -8343,7 +9125,23 @@ class Game {
 		if (!target || !isDisplayContact(target)) return null;
 		const aim = this.weaponAim();
 		const toTarget = sub(target.pos, this.world.ship.pos);
-		return scanStandoff(length(toTarget), aim, normalizeOr(toTarget, aim));
+		return scanStandoff(
+			length(toTarget),
+			aim,
+			normalizeOr(toTarget, aim),
+			this.scannerFigures().scanRangeKm,
+		);
+	}
+
+	/** The fitted identity and long-range scanners' figures (#977), read off
+	 *  the loadout the presence checks read: a 1E is the stock 400 km, 5 s
+	 *  and 2,500 km. */
+	private scannerFigures() {
+		const { scanRangeKm, scanChargeS, signalRangeKm } = fittedCapacity(
+			this.commander.hull,
+			this.commander.loadout,
+		);
+		return { scanRangeKm, scanChargeS, signalRangeKm };
 	}
 
 	/** The recorded scan row's stamp for this target, or -1. A map lookup, paid
@@ -8363,12 +9161,13 @@ class Game {
 	private computeScanFacts(
 		target: Body | null,
 		standoff: ScanStandoff | null,
+		active: boolean,
 	): ScanFacts {
 		const actor = this.scanSubject(target);
 		const reading = actor ? this.recordedReading(actor) : null;
 		const scannable = actor !== undefined;
 		const refusal = scanRefusal(
-			scanFitted(this.commander.ownedEquipment),
+			scanFitted(equipmentNames(this.commander.loadout)),
 			scannable,
 		);
 		// A completed charge sits at the ceiling, so the progress is only a
@@ -8378,12 +9177,14 @@ class Game {
 		// printing its progress reads as `SCANNING 0%` on a ship nobody is
 		// scanning — which is worse than `UNKNOWN`, because it tells the pilot a
 		// scan is underway when the nose is simply not on the target.
+		const { scanChargeS } = this.scannerFigures();
 		const progress =
+			active &&
 			!refusal &&
 			scannable &&
 			this.scanHold.chargeS > 0 &&
-			this.scanHold.chargeS < SCAN_CHARGE_S
-				? scanProgress(this.scanHold)
+			this.scanHold.chargeS < scanChargeS
+				? scanProgress(this.scanHold, scanChargeS)
 				: undefined;
 		return {
 			designation: {
@@ -8395,7 +9196,11 @@ class Game {
 				// and a carrier with a reading is being read. So: fitted, scannable,
 				// nothing running, nothing recorded.
 				standoff:
-					!refusal && scannable && reading === null && progress === undefined
+					active &&
+					!refusal &&
+					scannable &&
+					reading === null &&
+					progress === undefined
 						? standoff
 						: null,
 			},
@@ -8615,7 +9420,9 @@ class Game {
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
 		for (const lamp of COCKPIT_MODEL_LAMPS) {
-			const carried = carriedLamp(lamp);
+			// The composed carry — gain then carry, in one reachable function:
+			// see `COCKPIT_MODEL_LAMP_GAIN`.
+			const carried = carriedConsoleLamp(lamp);
 			const light = new THREE.PointLight(
 				lamp.color,
 				carried.intensity,
@@ -8630,6 +9437,16 @@ class Game {
 			light.position.set(x, y, z);
 			cabin.modelSpace.add(light);
 			if (lamp.gated) gated.push(light);
+		}
+		// The frame lamps on the perimeter supports the authored cabin presents to
+		// the pilot (#887). What is added here is the cast — the fitting the cabin
+		// already carries under its window sill is left alone — so there is nothing
+		// ungated to see at low quality, and the casts go through the same gate as the
+		// console's so they respond when the setting moves mid-flight.
+		for (const lamp of buildPerimeterLamps()) {
+			cabin.modelSpace.add(lamp);
+			const light = lamp.children.find((o) => o instanceof THREE.PointLight);
+			if (light instanceof THREE.PointLight) gated.push(light);
 		}
 		// **Gated** (#651): `cockpit-surface.ts` decides which side of `quality`
 		// these are on. A point light costs every lit cabin fragment, so low
@@ -9672,6 +10489,9 @@ class Game {
 				key: route.key,
 				code: e.code,
 				view: this.view,
+				// While `?perf` is up, its keys are its own: `b` toggles bloom
+				// on the panel's listener and does not cycle the fire group (#892).
+				perfPanel: this.perfPanel !== null,
 			}))
 				this.command(id);
 		if (route.prevent) e.preventDefault();
@@ -9772,7 +10592,7 @@ class Game {
 			// #406. The same door as the two screens above, and for their reason:
 			// the registry owns the opening key so a rebind moves it.
 			case "system.postcard":
-				this.postcardPanel?.open();
+				void this.openPostcardWithModels();
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
@@ -9802,6 +10622,12 @@ class Game {
 			case "fight.rigEcm":
 				if (this.combatRig?.command("fight.rigEcm")) return;
 				break;
+			case "fight.launchMissile":
+				this.fireMissile();
+				return;
+			case "fight.ecm":
+				this.fireEcm();
+				return;
 			case "fly.cruise":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) this.cancelSpoolUp();
@@ -9827,7 +10653,10 @@ class Game {
 				this.cycleTarget(-1);
 				return;
 			case "fight.faceTarget":
-				this.faceTarget();
+				this.beginFaceTurn();
+				return;
+			case "fight.cycleFireGroup":
+				this.cycleFireGroup();
 				return;
 			case "dock.clearance":
 				// §6's request. A no-op outside `VICINITY_KM`, which is a refusal
@@ -9849,7 +10678,8 @@ class Game {
 				// **`Enter` rather than a letter, because every letter is taken** —
 				// twenty-six flight and dial bindings, plus `PERF_KEYS`,
 				// `RESTORE_KEY` and `SETTINGS_KEY`, which
-				// `tests/perf-panel-keys.test.ts` enforces are not flight bindings.
+				// `tests/perf-panel-keys.test.ts` enforces are not flight bindings
+				// — bar `b`, which the panel shares with the fire-group cycle (#892).
 				//
 				// Press to launch, press again to skip the traversal: one key, and
 				// the second press is the skip §12.2 makes unconditional. **Both
@@ -10215,7 +11045,7 @@ class Game {
 					currentIndex: this.world.system.record.index,
 					// The flown hull's reach (#554): the shell, the lit points,
 					// the label, every route and the finder's lists.
-					tankLy: this.fuelCapacityLy,
+					tankLy: this.jumpRangeLy,
 					// **Both getters, for the same reason `currentSystem` is one.**
 					// Held as values these froze at mount: a jump with the map
 					// open runs `observeCurrentSystemRelay` and then
@@ -10932,7 +11762,9 @@ class Game {
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
-			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant),
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
+				(_, i) => this.firedMuzzleIndices.includes(i),
+			),
 		);
 		const camPos = this.cameraPos();
 		const camRot = this.cameraRotation();
@@ -11595,6 +12427,7 @@ class Game {
 			// charge is cancelled rather than frozen, because a frozen one would
 			// resume on launch with a notice from before the dock.
 			this.cancelJumpCharge("docked");
+			this.missileCombat.reset();
 			// A dock ends any encounter: a station is not a place a raider follows.
 			this.encounter = null;
 			this.encounterView = null;
@@ -11769,6 +12602,7 @@ class Game {
 			LAUNCH_CLEAR_HULL_LENGTHS * this.flownEnvelope.lengthKm,
 		);
 		if (this.dock.phase === "launching") {
+			this.armedFireGroup.reset();
 			// The console is gone; its last refusal goes with it, or the next
 			// dock opens on a sentence about a station the ship has left (#443).
 			this.clearStationRefusal();
@@ -11887,7 +12721,7 @@ class Game {
 		const down = this.ejectDown();
 		const refusal = ejectRefusal({
 			phase: this.dock.phase,
-			podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+			podFitted: fitted(this.commander.loadout, ESCAPE_POD),
 		});
 		const step = stepEjectControl(this.ejectHold, { live, down }, dt, refusal);
 		this.ejectHold = step.hold;
@@ -12001,7 +12835,7 @@ class Game {
 		const due =
 			!this.openingActive &&
 			ejectWarningDue({
-				podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+				podFitted: fitted(this.commander.loadout, ESCAPE_POD),
 				permadeath: this.permadeath,
 				flying: this.dock.phase === "flying",
 				alive: !this.dead && isAlive(this.condition),
@@ -12386,6 +13220,8 @@ class Game {
 	 * to drop and a reset has a clock rewind's worth.
 	 */
 	private clearFlightSession() {
+		this.missileCombat.reset();
+		this.missileRender = null;
 		this.regime = "normal";
 		this.spoolLeftS = 0;
 		this.throttle = 0;
@@ -12408,6 +13244,7 @@ class Game {
 		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
+		this.firedMuzzleIndices = [];
 		// A new session's first reading of the ship and of a target is not a
 		// fall, and no loop carries over (#545).
 		this.weaponSoundState = QUIET_WEAPONS;
@@ -12452,6 +13289,7 @@ class Game {
 		this.lastExit = "";
 		this.detour = null;
 		this.cruiseTrackId = null;
+		this.faceTurnId = null;
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputer.disengage();
@@ -12494,9 +13332,12 @@ class Game {
 			this.ensureTrafficActors();
 		}
 		this.clearFlightSession();
+		this.armedFireGroup.reset();
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
 		this.condition = this.flownFullCondition();
+		// A new flight is not on a pass, so its glass has no SCOOPING line (#932).
+		this.scooping = false;
 		// `collision.md` §4.3's ghost record is the flight's, and a reset is a
 		// new flight: a second leg reads only its own placements.
 		this.collisionGhostSteps = 0;
@@ -12596,12 +13437,22 @@ class Game {
 	}
 
 	/**
-	 * The tank's capacity, likewise: the flown hull's `tankLy`, which is also
-	 * its jump range (#185 D1, #554). A getter on the commander's hull rather
-	 * than a field, because a restored save names the hull after construction.
+	 * The tank's capacity, likewise: the flown hull's `tankLy` plus any fitted
+	 * tank (#926). What the HUD fuel line and the station fuel gauge show, and
+	 * never the range check. A getter rather than a field, because a restored save
+	 * names the hull and loadout after construction.
 	 */
 	get fuelCapacityLy(): number {
-		return HULL_SPECS[this.commander.hull].tankLy;
+		return commanderFuelCapacityLy(this.commander);
+	}
+
+	/**
+	 * The longest single jump: the flown hull's `tankLy` (#185 D1, #554), which
+	 * a fitted tank does not raise (#873 R1). The chart, the finder, the route
+	 * planner and the job board read this one.
+	 */
+	get jumpRangeLy(): number {
+		return commanderJumpRangeLy(this.commander);
 	}
 
 	/** The drive charge's capacity: the flown hull's `chargeAu` (#185 D6). The
@@ -12632,6 +13483,7 @@ class Game {
 	setCourseTo(course: Course | null) {
 		this.course = course;
 		this.jumpNotice = "";
+		if (installedGame === this) this.startModelQueue();
 	}
 
 	/**
@@ -12665,7 +13517,7 @@ class Game {
 			this.world.galaxy.systems,
 			here,
 			to,
-			this.fuelCapacityLy,
+			this.jumpRangeLy,
 		);
 		// **Both refusals leave any standing course alone.** An unknown index
 		// returned early above while an unroutable destination fell through to
@@ -12768,16 +13620,36 @@ class Game {
 	takeDamage(amount: number, side: ShieldSide, reason: string) {
 		if (!(amount > 0)) return;
 		this.condition = applyDamage(this.condition, amount, side);
-		// The one place damage lands is the one place a death is noticed.
-		if (!isAlive(this.condition) && !this.dead) {
-			this.dead = true;
-			this.clockHeld = true;
-			this.lastExit = "ship destroyed";
-			// Not ejected, so the ship is lost, pod fitted or not (#660 D4).
-			void this.onDeath?.("destroyed");
-		}
+		this.noticeDestroyed();
 		this.cancelJumpCharge(reason);
 		this.cancelSpoolUp(reason);
+	}
+
+	/**
+	 * The death path, for both places hull is spent: a hit (`takeDamage`) and a
+	 * star's heat (`stepHullTemperature`, #931). Heat is not a hit, so it does
+	 * not come through `takeDamage` and cancels no spool or jump charge: a
+	 * pilot climbing out of a band on a spool would otherwise lose the spool
+	 * to the heat that the climb is escaping.
+	 */
+	private noticeDestroyed() {
+		if (isAlive(this.condition) || this.dead) return;
+		this.dead = true;
+		this.clockHeld = true;
+		this.lastExit = "ship destroyed";
+		// Not ejected, so the ship is lost, pod fitted or not (#660 D4).
+		void this.onDeath?.("destroyed");
+	}
+
+	/**
+	 * The ship's distance from its system's star, in the star's radii (#931).
+	 * The star sits at the system origin (`placeBodies`), but its position is
+	 * read rather than assumed.
+	 */
+	private starDistanceR(): number {
+		const star = this.world.system.bodies.find((b) => b.kind === "star");
+		if (!star || !(star.radiusKm > 0)) return Number.POSITIVE_INFINITY;
+		return length(sub(this.world.ship.pos, star.pos)) / star.radiusKm;
 	}
 
 	/**
@@ -12816,11 +13688,240 @@ class Game {
 		);
 	}
 
-	/**
-	 * One frame of the leg's raider encounter (#324): step it, then do the
-	 * three things only `Game` can — drop the player out of cruise, land the
-	 * raider's fire through `takeDamage`, and say how it ended.
-	 */
+	/** Only identified live combat contacts can acquire a missile lock. */
+	private missileTarget(id: string | null): MissileTarget | null {
+		if (!id) return null;
+		const e = this.encounter;
+		if (e?.phase === "duel" && e.slot.key === id && e.raider)
+			return {
+				id,
+				pos: e.raider.flight.ship.pos,
+				vel: e.raider.flight.ship.vel,
+				radiusKm: HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2,
+			};
+		const actor = this.trafficActorByKey(id as CarrierKey);
+		const contact = this.trafficContacts.get(id as CarrierKey);
+		if (actor && contact) {
+			const ship = this.trafficEngagements.get(actor.key)?.flight.ship;
+			return {
+				id,
+				pos: ship?.pos ?? contact.pos,
+				vel: ship?.vel ?? contact.velocity,
+				radiusKm: HULL_SPECS[actor.hullId].env.lengthKm / 2,
+			};
+		}
+		return null;
+	}
+	private missileControlsLive(): boolean {
+		return (
+			!this.dead &&
+			!this.photoMode &&
+			!this.openingActive &&
+			!this.combatRig &&
+			flightLive(this.dock.phase) &&
+			this.regime !== "cruise"
+		);
+	}
+	private fireMissile() {
+		if (!this.missileControlsLive()) return;
+		const target = this.missileTarget(this.targetId),
+			origin = this.weaponOrigin(),
+			nose = this.weaponAim();
+		// Revalidate at the press: a selection, turn, or obstruction since the
+		// last simulation step cannot spend a stale lock.
+		this.missileCombat.acquire(target, origin, nose, this.fightSolids(), 0);
+		const loadout = this.missileCombat.launch(
+			this.commander.loadout,
+			target,
+			origin,
+			nose,
+			this.world.gameTime,
+		);
+		if (!loadout) return;
+		this.adopt(
+			"ammunition",
+			{
+				holdings: {
+					...this.holdings(),
+					commander: { ...this.commander, loadout },
+				},
+				world: this.commerceWorld,
+			},
+			null,
+		);
+	}
+	private fireEcm() {
+		if (!this.missileControlsLive()) return;
+		this.condition = {
+			...this.condition,
+			energy: this.missileCombat.ecm(
+				this.commander.loadout,
+				this.condition.energy,
+				this.world.gameTime,
+				this.world.ship.pos,
+			),
+		};
+	}
+	private stepMissileCombat(dt: number, solids: readonly AvoidSphere[]) {
+		const control = this.missileCombat;
+		if (!this.missileControlsLive()) {
+			control.lock = null;
+			control.missiles = [];
+			control.enemy = null;
+			return;
+		}
+		const origin = this.weaponOrigin(),
+			nose = this.weaponAim(),
+			now = this.world.gameTime;
+		control.acquire(
+			this.missileTarget(this.targetId),
+			origin,
+			nose,
+			solids,
+			dt,
+		);
+		const e = this.encounter;
+		if (e?.phase === "duel" && e.raider)
+			control.launchEnemy(
+				carrierInstanceSeed(
+					this.world.system.record.seed,
+					e.slot.key,
+					this.carrierCondition(e.slot.key).instanceOrdinal,
+					DOMAIN.RAIDER_MISSILE_FIT,
+				),
+				e.raider.flight.ship.pos,
+				e.raider.flight.nose,
+				{
+					id: "player",
+					...this.world.ship,
+					radiusKm: HULL_SPECS[this.flownHull].env.lengthKm / 2,
+				},
+				solids,
+				now,
+				dt,
+			);
+		else control.enemy = null;
+		const flying: Missile[] = [];
+		const frame = this.assistFrameMotion(dt);
+		for (const missile of control.missiles) {
+			const target =
+				missile.targetId === "player"
+					? {
+							id: "player",
+							...this.world.ship,
+							radiusKm: HULL_SPECS[this.flownHull].env.lengthKm / 2,
+						}
+					: this.missileTarget(missile.targetId);
+			const step = stepMissile(
+				missile,
+				target,
+				scale(add(frame.start, frame.end), 0.5),
+				dt,
+			);
+			if (
+				step.missile &&
+				missileVisible(
+					missile.pos,
+					{ id: "", pos: step.missile.pos, vel: v3(), radiusKm: 0 },
+					solids,
+				)
+			)
+				flying.push(step.missile);
+			if (step.hit && target && missileVisible(missile.pos, target, solids))
+				this.landMissile(missile, target);
+		}
+		control.missiles = flying;
+		// A kill or disappearance on this step drops the acquisition immediately.
+		if (!this.missileTarget(control.lock?.targetId ?? null))
+			control.lock = null;
+	}
+	private landMissile(missile: Missile, target: MissileTarget) {
+		if (target.id === "player") {
+			this.takeDamage(
+				MISSILE.damage,
+				sideStruck(this.nose(), sub(missile.pos, target.pos)),
+				"missile hit",
+			);
+			this.struckFor = STRUCK_FLASH_S;
+			return;
+		}
+		const e = this.encounter;
+		if (e?.slot.key === target.id && e.raider) {
+			const landed = landRaiderImpacts(
+				e,
+				{
+					...e.raider.flight.ship,
+					impacts: [
+						{
+							damage: MISSILE.damage,
+							side: sideStruck(
+								e.raider.flight.nose,
+								sub(missile.pos, target.pos),
+							),
+						},
+					],
+				},
+				this.encounterView,
+			);
+			if (!landed) return;
+			if (landed.wreck)
+				this.endEncounter(e, landed.encounter, landed.wreck, undefined);
+			else {
+				this.encounter = landed.encounter;
+				this.encounterView = landed.contact;
+			}
+			return;
+		}
+		const actor = this.trafficActorByKey(target.id as CarrierKey);
+		if (!actor) return;
+		let engagement = this.trafficEngagements.get(actor.key);
+		if (!engagement) {
+			const route = this.trafficRouteByKey(actor.key);
+			engagement = engage(
+				{
+					key: actor.key,
+					hullId: actor.hullId,
+					pos: target.pos,
+					vel: target.vel,
+					nose:
+						route?.nose ??
+						normalizeOr(sub(target.vel, this.localFrame()), v3(0, 0, -1)),
+					up: route?.up ?? null,
+					voyageOrdinal: this.trafficVoyage(actor),
+				},
+				carrierInstanceSeed(
+					this.trafficHomeRecord(actor).seed,
+					actor.key,
+					this.carrierCondition(actor.key).instanceOrdinal,
+					DOMAIN.TRAFFIC_ENGAGEMENT,
+				),
+				{
+					assaultAlreadyCharged: assaultCharged(this.legalStatus(), actor.key),
+					byPilot: true,
+				},
+			);
+		}
+		if (!engagement.struckOnce) this.hailTrafficCarrier(actor);
+		const before = engagement.condition;
+		engagement = {
+			...provoke(engagement),
+			struckOnce: true,
+			condition: applyDamage(
+				before,
+				MISSILE.damage,
+				sideStruck(engagement.flight.nose, sub(missile.pos, target.pos)),
+			),
+		};
+		if (!isAlive(engagement.condition))
+			this.destroyTrafficCarrier(actor, engagement);
+		else {
+			if (engagement.condition.hull < before.hull)
+				this.divertTrafficCarrier(actor, engagement);
+			this.trafficEngagements.set(actor.key, engagement);
+		}
+	}
+
+	/** Step the encounter, land return fire, and record its end. */
 	private stepRaider(
 		dt: number,
 		shot: PlayerShot,
@@ -12932,7 +14033,7 @@ class Game {
 		return liveDerelicts(this.commerceWorld, this.world.system, at);
 	}
 	private stepDerelictFinding() {
-		const floor = identifyRangeKm(this.commander.ownedEquipment);
+		const floor = identifyRangeKm(equipmentNames(this.commander.loadout));
 		if (!this.wreckReadings().some((w) => !w.identified && w.km <= floor))
 			return;
 		const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
@@ -12951,8 +14052,9 @@ class Game {
 			this.commerceWorld,
 			this.world.system,
 			this.world.ship.pos,
-			this.commander.ownedEquipment,
+			equipmentNames(this.commander.loadout),
 			this.world.gameTime,
+			this.scannerFigures().signalRangeKm,
 		);
 	}
 	private syncWreckContacts() {
@@ -13369,9 +14471,13 @@ class Game {
 		// What stays ungated is everything the relay *does*: its mesh, the shot
 		// that can destroy it, and `relayDetectionNow`'s dial on the watched
 		// route.
-		const owned = this.commander.ownedEquipment;
+		const owned = equipmentNames(this.commander.loadout);
 		const signal = relayScannerFitted(owned)
-			? relaySignal(this.world.ship.pos, pos)
+			? relaySignal(
+					this.world.ship.pos,
+					pos,
+					this.scannerFigures().signalRangeKm,
+				)
 			: null;
 		let identified = relayIdentified(
 			owned,
@@ -13897,7 +15003,7 @@ class Game {
 				raiderFiring: this.raiderFiring,
 				engaged,
 				standing: this.legalStanding(),
-				shieldShare: Math.min(c.fore, c.aft) / SHIELD_POOL,
+				shieldShare: Math.min(c.fore, c.aft) / c.shieldMax,
 				hullShare: c.hull / c.hullMax,
 				systemSeed: this.world.system.record.seed,
 				stationRole: station?.type ?? null,
@@ -14021,14 +15127,14 @@ class Game {
 			{
 				fired: gun.fired,
 				shotSound: gun.sound,
-				trigger: this.triggerHeld(),
+				trigger: this.laserTriggerHeld(),
 				heatLocked: c.heatLocked,
 				heat: c.heat / HEAT_LOCK,
 				own: {
 					fore: c.fore,
 					aft: c.aft,
 					hull: c.hull,
-					poolMax: SHIELD_POOL,
+					poolMax: c.shieldMax,
 					sinceStruckS: c.sinceStruckS,
 				},
 				target:
@@ -14485,6 +15591,9 @@ class Game {
 		this.clearArrivalRift();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
+		for (const handle of this.interiorPresentations.values())
+			handle.release.forEach((undo) => undo());
+		this.interiorPresentations.clear();
 		for (const station of this.stationVisuals.values()) station.dispose();
 		this.meshes.clear();
 		this.bodyVisuals.clear();
@@ -14510,6 +15619,11 @@ class Game {
 				this.markedOcclusion.splice(i, 1);
 
 		this.buildBodies();
+		if (models.state("interiors") === "installed")
+			void this.refreshInteriorMeshes().catch((error) =>
+				this.warnInteriorFailure(error),
+			);
+		this.startModelQueue();
 		this.buildEnvironment();
 		// The sky is a picture of *this* system's neighbourhood, so a jump to a
 		// different star draws a different sky (#431). The faint population is
@@ -14521,6 +15635,7 @@ class Game {
 		// The composer is long up on this path, so the target below is the one the
 		// game renders into.
 		this.prewarmReliefPrograms();
+		void this.prewarmShipyardPrograms();
 
 		// The scanner's buffer is one entry per body, filled in place every frame
 		// so the projection allocates nothing. A system with more bodies than the
@@ -14689,8 +15804,38 @@ class Game {
 		// Every phase, docked included: energy regenerates and shields recharge
 		// on the sim clock wherever the ship is. The trigger is the pilot's
 		// (`triggerHeld`), and what the gun delivered is this frame's shot.
-		const gun = stepCondition(this.condition, dt, this.triggerHeld());
-		this.condition = gun.condition;
+		const armedGroup = this.armedFireGroup.current(this.fireGroups);
+		const gun = stepCondition(
+			this.condition,
+			dt,
+			this.laserTriggerHeld(),
+			groupLaserRates(this.commander.loadout, armedGroup),
+		);
+		if (gun.fired)
+			this.firedMuzzleIndices = groupMuzzleIndices(this.flownHull, armedGroup);
+		// The star heats the hull wherever the ship is, docked included (#931):
+		// a station is far outside any band, so there it only cools. It reads
+		// the frame-start position, as the gun reads the frame-start trigger.
+		const starR = this.starDistanceR();
+		this.condition = stepHullTemperature(gun.condition, dt, starR);
+		// The fuel scoop, at the same distance (#932): in cruise inside the band
+		// it fills the tank to the fitted capacity and the bank pays its draw.
+		// The regime is the frame's start, as the distance is.
+		const scoop = stepFuelScoop({
+			rOverR: starR,
+			cruising: this.regime === "cruise",
+			hull: this.commander.hull,
+			loadout: this.commander.loadout,
+			fuelLy: this.commander.fuelLy,
+			energy: this.condition.energy,
+			dt,
+		});
+		this.scooping = scoop.filling;
+		if (scoop.filling) {
+			this.condition = { ...this.condition, energy: scoop.energy };
+			this.fuelLy = scoop.fuelLy;
+		}
+		this.noticeDestroyed();
 		const shot: PlayerShot = { fired: gun.fired, damage: gun.damage };
 		// What the player sees and hears of the shot. Without these a held
 		// trigger drew nothing and played nothing, and read as a dead key.
@@ -14777,12 +15922,13 @@ class Game {
 		this.stepRaider(dt, shot, solids);
 		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot, solids);
+		this.stepMissileCombat(dt, solids);
 		this.stepCargoCanisters(dt);
 		this.stepDerelictScoops();
 		this.stepDerelictFinding();
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
-		// flyable balance rig over the shared flight loop, not production combat.
+		// flyable balance rig over the shared flight loop, not production control.
 		this.combatRig?.step(dt, this.held, this.regime === "cruise", {
 			ship: this.world.ship,
 			nose: this.nose(),
@@ -14894,6 +16040,8 @@ class Game {
 
 		const computer = this.stepDockingComputer(dt, approaches);
 		if (computer) {
+			// The computer has the stick; `F`'s turn does not resume after it.
+			this.faceTurnId = null;
 			this.dropPointer();
 			if (FLIGHT_SOUND.arms === "legacy") this.audio.ambient(this.throttle);
 			// The computer flies the lever, as it did before the strafe keys:
@@ -14947,11 +16095,24 @@ class Game {
 		// ask (#620, §3.5): it turns the hull and pushes it at once. Flown below,
 		// in one Hull step with the translation (#646): nothing between here and
 		// there reads the attitude or the rates.
+		const direct = heldVents(pilotHeld);
+		// `F`'s turn flies the stick until the pilot takes it, with the assist
+		// on whatever the toggle says, as the docking computer flies it.
+		const faceStick = this.stepFaceTurn(
+			dt,
+			handsHeld ||
+				yaw !== 0 ||
+				pitch !== 0 ||
+				roll !== 0 ||
+				impulse.pitch !== 0 ||
+				impulse.yaw !== 0 ||
+				Object.keys(direct).length > 0,
+		);
 		const hands = {
-			stick: { pitch, yaw, roll },
+			stick: faceStick ?? { pitch, yaw, roll },
 			impulse,
-			turnAssist: this.assist,
-			direct: heldVents(pilotHeld),
+			turnAssist: faceStick ? true : this.assist,
+			direct,
 		};
 		// #641's readout of what a flick delivered, off the step that flew it:
 		// the pointer, the impulse, what the couple could not pay and the
@@ -15929,6 +17090,7 @@ class Game {
 				// granulation are `f(gameTime)` like every other time-varying thing
 				// (#6), so they survive a pause and a save.
 				visual.setTime(this.world.gameTime);
+				visual.setDetailQuality(this.settings.value.quality);
 
 				/**
 				 * #207's band, from the size this body actually looks.
@@ -16080,6 +17242,19 @@ class Game {
 				spinner.rotation.z = pose.phaseRad;
 			}
 		}
+		// After camera-relative placement and spin. Bounds follow the actual station
+		// parent, including near/far scale, and the current drawing-buffer height.
+		for (const [id, handle] of this.interiorPresentations) {
+			const station = this.stationVisuals.get(id)!;
+			if (handle.group.visible)
+				handle.lods.update(
+					this.layers.get(id) === "far" ? this.farCamera : this.nearCamera,
+					this.renderer.domElement.height,
+				);
+			for (const lamp of handle.lamps)
+				lamp.visible =
+					station.detail === "full" && this.settings.value.quality === "high";
+		}
 		// **After the loop, not inside it** — see the declaration above.
 		this.widestBodyId = widestId;
 		this.widestRadiusPx = widestPx;
@@ -16115,10 +17290,13 @@ class Game {
 		// emissive. All near-layer positions are camera-relative, so their length
 		// is the exact distance the band asks for.
 		const shipQuality = this.settings.value.quality;
+		// The player's own hull draws every level the band names; any other
+		// hull no more detail than its `nearest` (node #815).
 		updateShipVisuals(
 			this.shipMesh,
 			this.shipMesh.position.length(),
 			shipQuality,
+			true,
 		);
 		if (this.raiderMesh.parent)
 			updateShipVisuals(
@@ -16148,6 +17326,13 @@ class Game {
 		// Hidden, it draws nothing, so it is not written either.
 		if (plumes.visible)
 			this.ventPlumes.update(this.ventFiring, this.world.gameTime);
+		// The shipyards' baked work lights on the hulls inside them (#818).
+		// Every frame, so a ship that left a yard or a system draws none.
+		const yards: YardWorkLight[] = [];
+		for (const station of this.stationVisuals.values())
+			if (station.root.userData.workLight)
+				yards.push(station.root.userData.workLight);
+		lightShipsByWorkLights(yards, [this.shipMesh], this.trafficMeshes.values());
 
 		// **#241's gate, then #201's shadow camera** — in that order, because the
 		// gate decides whether there is a shadow to fit at all and
@@ -16166,6 +17351,7 @@ class Game {
 		this.stepBakes();
 
 		this.syncCabinMirrors();
+		this.syncInteriorFloods();
 
 		this.occlusionGate = stepOcclusionGate(
 			this.occlusionGate,
@@ -16413,6 +17599,48 @@ class Game {
 		mirror.copy.removeFromParent();
 		mirror.copy.dispose();
 		this.cabinMirrors.delete(light);
+	}
+
+	/** Light the nearest near-layer interior through `interiorFloodPool`, after
+	 *  the world is placed for this frame. A flood counts as drawn only while
+	 *  it and every ancestor are visible up to the near scene, the rule
+	 *  `syncCabinMirrors` uses; every other copy goes dark. */
+	private syncInteriorFloods() {
+		const drawnInNear = (o: THREE.Object3D) => {
+			let root = o;
+			if (!root.visible) return false;
+			while (root.parent) {
+				root = root.parent;
+				if (!root.visible) return false;
+			}
+			return root === this.nearScene;
+		};
+		this.nearCamera.getWorldPosition(FLOOD_CAMERA);
+		let chosen: THREE.PointLight[] | undefined;
+		let best = Infinity;
+		for (const handle of this.interiorPresentations.values()) {
+			if (handle.lamps.length === 0 || !drawnInNear(handle.group)) continue;
+			const d = handle.group
+				.getWorldPosition(FLOOD_SCRATCH)
+				.distanceToSquared(FLOOD_CAMERA);
+			if (d < best) {
+				best = d;
+				chosen = handle.lamps;
+			}
+		}
+		for (let i = 0; i < this.interiorFloodPool.length; i++) {
+			const copy = this.interiorFloodPool[i];
+			const lamp = chosen?.[i];
+			if (!lamp || !drawnInNear(lamp)) {
+				copy.intensity = 0;
+				continue;
+			}
+			lamp.getWorldPosition(copy.position);
+			copy.color.copy(lamp.color);
+			copy.intensity = lamp.intensity;
+			copy.distance = lamp.distance;
+			copy.decay = lamp.decay;
+		}
 	}
 
 	/** Put each mirrored light where `cabinLight` says, after the world is
@@ -17023,9 +18251,9 @@ class Game {
 				// filter rather than a regeneration — keying on the station made
 				// the second dock in a system pay for the whole neighbourhood
 				// again, inside a cockpit update.
-				// The tank is in the key: the neighbourhood is the flown hull's
+				// The range is in the key: the neighbourhood is the flown hull's
 				// reach (#554), and a restore can replace the hull.
-				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.fuelCapacityLy}`;
+				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.jumpRangeLy}`;
 				if (place !== this.requestDestinationsKey) {
 					this.requestDestinations = deliveryCandidates(
 						this.world.galaxy.systems,
@@ -17034,7 +18262,7 @@ class Game {
 						// No poster to exclude at this level; the filter below is
 						// what removes whichever station is posting.
 						NO_EXCLUDED_STATION,
-						this.fuelCapacityLy,
+						this.jumpRangeLy,
 					);
 					this.requestDestinationsKey = place;
 				}
@@ -17075,7 +18303,7 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
-			equipment: this.commander.ownedEquipment,
+			equipment: equipmentNames(this.commander.loadout),
 		};
 	}
 
@@ -17133,6 +18361,14 @@ class Game {
 			{ holdings: this.holdings(), world: this.commerceWorld },
 			next,
 		);
+		const refit =
+			cause !== "ammunition" &&
+			(this.commander.loadout !== next.holdings.commander.loadout ||
+				this.commander.hull !== next.holdings.commander.hull);
+		if (refit) {
+			this.armedFireGroup.reset();
+			this.floorFit = null;
+		}
 		this.commander = next.holdings.commander;
 		this.requests = next.holdings.requests;
 		this.ladders = next.holdings.ladders;
@@ -17143,6 +18379,12 @@ class Game {
 		// last sentence standing, as it always did.
 		if (cause === "settlement") this.requestMessage = signals?.message ?? "";
 		if (signals?.hullChanged) this.receiveHull(signals.hullChanged);
+		// A refit at a dock moves the bank the ship launches with (#925). A hull
+		// delivered now already took a whole condition. One waiting for the
+		// launch is not flown yet: the flown ship keeps the bank it has until
+		// `setFlownHull` gives the new hull a whole condition.
+		if (refit && this.commander.hull === this.flownHull)
+			this.condition = refitCondition(this.condition, this.flownCapacity());
 		if (effects.consoleRevision) this.stationConsoleRevision += 1;
 		if (effects.requestRevision) this.requestRevision += 1;
 		// A request is ready to report: nothing else says so (#546).
@@ -17358,12 +18600,20 @@ class Game {
 		// The rows read the rungs and the flown hull too: a dock banks rungs,
 		// and a purchase changes the hull, and both must reprice the Shipyard.
 		const rungs = this.rungs();
-		const key = `${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
+		const key = `${marketEpoch(market.phaseMin, context.gameTimeMin)}|${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCacheStationId = this.dock.stationId;
 		this.stationConsoleMarketSampleS = sampleS;
 		this.stationConsoleCache = {
+			outfitting:
+				this.stationConsoleTab === "Equipment"
+					? outfittingScreen(
+							this.consoleInput(context),
+							this.outfittingSlot,
+							this.outfittingCandidate,
+						)
+					: undefined,
 			label: this.nameOfStation(station.id),
 			tab:
 				this.stationConsoleTab === "Shipyard" && market.type !== "shipyard"
@@ -17371,6 +18621,8 @@ class Game {
 					: this.stationConsoleTab,
 			market: freshMarket ?? readMarket(),
 			equipment: stationEquipmentScreen({
+				hull: this.commander.hull,
+				loadout: this.commander.loadout,
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
@@ -17393,14 +18645,21 @@ class Game {
 			cargo: hold.lines
 				.filter((line) => line.owner === "pilot")
 				.map((line) => `${line.goodName} ${line.amount}`),
-			ownedEquipment: this.commander.ownedEquipment,
+			ownedEquipment: equipmentNames(this.commander.loadout),
 			recoveredFittings: (this.commander.recoveredFittings ?? []).map(
 				(item, index) => ({
 					...item,
 					index,
-					priceCr: EQUIPMENT.find((e) => e.name === item.id)!.priceCr,
+					priceCr: fittingSaleValue(item),
 					locked: gateRefusal(item.id, this.rungs()),
-					owned: this.commander.ownedEquipment.includes(item.id),
+					owned:
+						fitted(this.commander.loadout, item.id) &&
+						(!repeatableEquipment(item.id) ||
+							!freeSlot(
+								this.commander.loadout,
+								this.commander.hull,
+								recoveredModule(item, this.commander.hull),
+							)),
 				}),
 			),
 			fuelLy: this.commander.fuelLy,
@@ -17843,6 +19102,26 @@ class Game {
 		}
 	}
 
+	/**
+	 * The script's own shape, for a probe that walks it (#882): the shots this
+	 * kind shows, in order, and the shown seconds one step of each advances. A probe stepping the
+	 * opening must not restate any of it — CLAUDE.md's rule that a probe with its
+	 * own copy of a constant goes falsely red when the module changes it, and
+	 * #882's first seed sweep aimed by a `1 / 60` it typed itself, which on the
+	 * 1.5x cruise shot sampled every second step while claiming to see every one.
+	 */
+	openingScript(): {
+		kind: OpeningKind | null;
+		shots: readonly OpeningShot[];
+		stepS: Record<string, number>;
+	} {
+		const kind = this.opening?.kind ?? null;
+		const shots = kind ? OPENING_SHOTS[kind] : [];
+		const stepS: Record<string, number> = {};
+		for (const shot of shots) stepS[shot] = openingStepS(shot);
+		return { kind, shots, stepS };
+	}
+
 	/** What the opening is doing, for a probe to read by name. */
 	openingReading() {
 		const run = this.opening;
@@ -18220,9 +19499,10 @@ class Game {
 					: null,
 			controls: flightControls(this.bindings),
 			eject: firstDayEjectLine(
-				this.commander.ownedEquipment.includes(ESCAPE_POD),
+				fitted(this.commander.loadout, ESCAPE_POD),
 				this.permadeath,
 				ejectPrompt(this.bindings),
+				fittedCapacity(this.commander.hull, this.commander.loadout),
 			),
 		};
 	}
@@ -18434,6 +19714,18 @@ class Game {
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
 		};
+	}
+
+	/** A preview selection repaints the console and never changes saved state. */
+	private selectOutfitting(kind: "slot" | "candidate", name: string) {
+		if (kind === "slot") {
+			this.outfittingSlot = name;
+			this.outfittingCandidate = "";
+		} else this.outfittingCandidate = name;
+		this.stationConsoleRevision += 1;
+		this.clearStationRefusal();
+		this.consolePress(true);
+		this.updateCockpit();
 	}
 
 	/** How far a hull reaches from the system the ship is in (#185 D3): the
@@ -18679,7 +19971,7 @@ class Game {
 				// not on the floor strip because `hud-and-scanner.md` §5 fixes
 				// that strip at four cells and gives the tank no home at all —
 				// which is a HUD question this node surfaced and did not settle.
-				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy} LY`,
+				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy.toFixed(1)} LY`,
 				(() => {
 					const to = this.nextHop();
 					return to ? `next ${to.name}` : "";
@@ -18790,7 +20082,7 @@ class Game {
 		// One local, passed *and* keyed. Interpolating a constant while letting
 		// `courseProgress` take its own default keyed a number this call could
 		// not vary — protection the comment claimed and the key did not give.
-		const maxJump = this.fuelCapacityLy;
+		const maxJump = this.jumpRangeLy;
 		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${maxJump}`;
 		if (this.courseChainCache?.key !== key) {
 			const progress = courseProgress(
@@ -18943,6 +20235,7 @@ class Game {
 			return {
 				fore: 0,
 				aft: 0,
+				shieldMax: 0,
 				hull: this.relayHull,
 				hullMax: RELAY_INTEGRITY,
 			};
@@ -19056,15 +20349,26 @@ class Game {
 			];
 			// And the duel row (#324), for the same reason: a third run on the
 			// same axis at the same scale.
-			const widestDuel = DUEL_ROW_LABELS.map((label) => ({
-				label,
-				value: DUEL_ROW_WIDEST[label],
+			// The duel band's widest rows, in combat and out of it (#932):
+			// `duelBandWidestRows` composes them by `duelBandCells`' own rule,
+			// so SHD, HEAT and SCOOPING are never fitted as one row.
+			const widestDuelRows = DUEL_BAND_WIDEST_ROWS;
+			const groups = this.fireGroups;
+			const widestGroup = groups.map((group, index) => ({
+				label: "",
+				value: group.label + " · " + (index + 1) + "/" + groups.length,
 			}));
+			if (!widestGroup.length)
+				widestGroup.push({ label: "", value: "NO WEAPONS" });
 			const runAt = (scale: number) =>
 				Math.max(
 					floorRunWidths(ctx, widestCells, scale).total,
 					floorRunWidths(ctx, widestCourse, scale).total,
-					floorRunWidths(ctx, widestDuel, scale).total,
+					...widestDuelRows.flatMap((row) =>
+						widestGroup.map(
+							(group) => floorRunWidths(ctx, [...row, group], scale).total,
+						),
+					),
 				);
 			const atOne = runAt(1);
 			const solved = Math.max(
@@ -19134,14 +20438,49 @@ class Game {
 		// One painter for every centred row above the strip: measure the run,
 		// centre it, box it in its band, paint each cell. The course row and
 		// #324's duel row were this block twice.
+		let tempPlate: FloorBox | null = null;
+		let scoopPlate: FloorBox | null = null;
+		const duelPlates: FloorBox[] = [];
 		const drawBandRow = (
 			rowCells: FloorCell[],
 			label: string,
 			band: number,
+			plates: readonly DuelBandPlate[] = [],
 		): FloorBox => {
 			const run = floorRunWidths(ctx, rowCells, scale);
 			let rowX = (w - run.total) / 2;
 			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
+			// **A plate behind each cell of the duel band** (#945, the principal's
+			// ruling): the hull-temperature cell's plate since #931, #597's
+			// docking-notice plate, now under SHD, HEAT and the armed group too, so
+			// the band reads over a star disc. Short of half a cell gap each side,
+			// so a plate never reaches the next cell's ink and two plates never
+			// touch, and the fit is the run's as before. TEMP and the scoop's line
+			// (#932) share one plate; `duelBandPlates` owns which cells go
+			// together. Drawn before any cell, so no ink is under a plate.
+			const cellX: number[] = [];
+			for (let i = 0, x = rowX; i < rowCells.length; i++) {
+				cellX.push(x);
+				x += run.widths[i] + cellGap;
+			}
+			const pad = (cellGap / 2) * 0.8;
+			for (const span of plates) {
+				const plateFrom = cellX[span.from];
+				const plateTo = cellX[span.to] + run.widths[span.to];
+				const plate = floorBox(
+					span.label,
+					plateFrom - pad,
+					plateTo - plateFrom + 2 * pad,
+					box.top + FLOOR_TEMP_PLATE_INSET * box.height,
+				);
+				plate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
+				ctx.fillStyle = PROMPT_PLATE_FILL;
+				ctx.fillRect(plate.x, plate.top, plate.width, plate.height);
+				duelPlates.push(plate);
+				const spanned = rowCells.slice(span.from, span.to + 1);
+				if (spanned.some((c) => c.label === HULL_TEMP_LABEL)) tempPlate = plate;
+				if (spanned.some((c) => c.label === SCOOP_LABEL)) scoopPlate = plate;
+			}
 			for (const [i, cell] of rowCells.entries()) {
 				drawFloorCell(
 					ctx,
@@ -19157,13 +20496,28 @@ class Game {
 			courseRow === null
 				? null
 				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
-		// #324's duel row, in the top band: shield pools and the heat lock, only
-		// while a raider is contesting, dueling or selected.
-		const duelRow = this.duelRowShown() ? duelRowCells(this.condition) : null;
-		const duelBox =
-			duelRow === null
-				? null
-				: drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
+		// The armed group stays readable in peace; combat adds shields and heat.
+		// The scoop's line shows only out of combat (#932): `duelBandCells`
+		// owns which, so the fit above takes the row as one or the other.
+		const duelRow: FloorCell[] = [
+			...duelBandCells({
+				fighting: this.duelRowShown(),
+				condition: this.condition,
+				scooping: this.scooping,
+				fuelLy: this.commander.fuelLy,
+			}),
+			{
+				label: "",
+				value: this.armedFireGroup.label(this.fireGroups),
+				tone: "passive",
+			},
+		];
+		const duelBox = drawBandRow(
+			duelRow,
+			DUEL_ROW_LABELS.join(" "),
+			DUEL_BAND,
+			duelBandPlates(duelRow),
+		);
 		// **The strip's own save, closed once for both runs.** It was closed at
 		// the end of the cell loop until the course block was pasted in there
 		// with a save/restore pair of its own, which read as the closing one —
@@ -19183,6 +20537,9 @@ class Game {
 			courseBox,
 			duelRow,
 			duelBox,
+			duelPlates,
+			tempPlate,
+			scoopPlate,
 			baselineY,
 			glassBottomY,
 			scale,
@@ -19453,7 +20810,7 @@ class Game {
 		strokes.length = 0;
 		if (this.gunFeedback.tracerLeftS > 0)
 			for (const stroke of tracerStrokes(
-				tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
+				this.gunTracer.firedPorts,
 				this.onFrame(this.beamAim()) ?? TRACER_AIM,
 			))
 				strokes.push(stroke);
@@ -19895,7 +21252,25 @@ class Game {
 			}
 		}
 
+		// Missile tracking pips are cockpit cues in world direction; float64
+		// sim positions never pass through the scene graph.
+		if (shipCues)
+			for (const missile of this.missileCombat.missiles) {
+				const dir = directionTo(camPos, missile.pos),
+					at = dir && place(dir);
+				if (!at?.on) continue;
+				ctx.save();
+				ctx.strokeStyle = missile.targetId === "player" ? "#ff8068" : "#b8e9ef";
+				ctx.beginPath();
+				ctx.moveTo(at.x, at.y - 4);
+				ctx.lineTo(at.x + 4, at.y + 4);
+				ctx.lineTo(at.x - 4, at.y + 4);
+				ctx.closePath();
+				ctx.stroke();
+				ctx.restore();
+			}
 		this.drawDockingDirector(ctx, w, h, camPos);
+		this.drawMissileHud(ctx, w, h, shipCues);
 		if (shipCues) this.drawFlightFloor(ctx, w, h);
 		else this.floorRender = null;
 
@@ -20219,6 +21594,74 @@ class Game {
 	 * arrow, which would be a second permanent edge cue beside the selected
 	 * target's. `core` is `null` where the frame has no glass for it.
 	 */
+	/** Plated and fitted to the viewport, including the narrow cockpit. The
+	 * record is written from the painted text, as the flight floor's is. */
+	private drawMissileHud(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		shown: boolean,
+	) {
+		this.missileRender = null;
+		if (!shown || !flightLive(this.dock.phase)) return;
+		const control = this.missileCombat,
+			now = this.world.gameTime;
+		const incoming = control.missiles.some((m) => m.targetId === "player");
+		const nearest = Math.min(
+			...control.missiles
+				.filter((m) => m.targetId === "player")
+				.map((m) => length(sub(m.pos, this.world.ship.pos))),
+		);
+		const ammo = missileAmmo(this.commander.loadout);
+		const capacity = this.flownCapacity().missiles;
+		const ecm = fittedEcm(this.commander.loadout);
+		if (!capacity && !ecm.radiusKm && !incoming && control.noticeUntil <= now)
+			return;
+		const lock = control.lock?.seconds ?? 0;
+		const state =
+			lock >= MISSILE.lockS
+				? "LOCKED"
+				: lock > 0
+					? `LOCK ${Math.floor((lock / MISSILE.lockS) * 100)}%`
+					: "NO LOCK";
+		const left = Math.max(0, control.ecmReadyAt - now);
+		const lines = [
+			...(incoming ? [`INCOMING MISSILE · ${nearest.toFixed(2)} km`] : []),
+			...(capacity
+				? [
+						`MISSILES ${ammo}/${capacity} · ${state} · ${spoken(this.bindings, "fight.launchMissile")}`,
+					]
+				: []),
+			...(ecm.radiusKm
+				? [
+						`ECM ${left > 0 ? `${left.toFixed(1)}s` : "READY"} · ${ecm.radiusKm.toFixed(2)} km · ${spoken(this.bindings, "fight.ecm")}`,
+					]
+				: []),
+			...(control.noticeUntil > now ? [control.notice] : []),
+		];
+		ctx.save();
+		ctx.font = "13px monospace";
+		ctx.textAlign = "center";
+		const width = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 20;
+		const fit = Math.min(1, (w - 24) / width),
+			x = w / 2,
+			y = h * 0.13;
+		ctx.translate(x, y);
+		ctx.scale(fit, fit);
+		ctx.fillStyle = "rgba(4, 10, 17, 0.9)";
+		ctx.fillRect(-width / 2, -15, width, lines.length * 19 + 8);
+		ctx.fillStyle = incoming ? "#ff8068" : "#b8e9ef";
+		for (const [i, line] of lines.entries()) ctx.fillText(line, 0, i * 19);
+		ctx.restore();
+		this.missileRender = {
+			text: lines.join("\n"),
+			incoming,
+			x: x - (width * fit) / 2,
+			y: y - 15 * fit,
+			width: width * fit,
+		};
+	}
+
 	private drawCoreMark(
 		ctx: CanvasRenderingContext2D,
 		core: Vec3 | null,
@@ -20574,25 +22017,56 @@ if (postcard) {
 		throw new Error(
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
-	const { prepareCockpitModel } = await import("./cockpit-model");
-	const { preparePorterModel } = await import("./porter-model");
-	await (await import("./coriolis-flight")).prepareCoriolisPage([
-		prepareCockpitModel,
-		preparePorterModel,
-	]);
+	const frameWorld = restoreWorld(
+		postcard.recipe.seed,
+		postcard.recipe.galaxy,
+		postcard.recipe.system,
+		postcard.recipe.timeS,
+	);
+	const contentsFor = (index: number) =>
+		generateContents(frameWorld.galaxy.systems.find((r) => r.index === index)!);
+	await requireModels(
+		systemModelIds(
+			frameWorld.system,
+			trafficRosterHulls(
+				frameWorld.galaxy,
+				postcard.recipe.system,
+				contentsFor,
+			),
+			"courier",
+		),
+		loadingPanel("postcard models"),
+	);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
+	installedGame = game;
+	await game.modelInstalled("interiors");
+	await game.whenSkyReady();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
-	if (query.get("model-viewer") === "station")
-		await (await import("./coriolis-flight")).prepareCoriolisPage();
-	// The ship family builds every variant, and `freighter/b` is the authored
-	// Porter (node #813), which needs its model before the first build.
+	if (query.get("model-viewer") === "station") {
+		// The station workbench draws the authored shipyards (node #818) and
+		// refineries (node #819).
+		const { shipyardModelLoaders } = await import("./shipyard-flight");
+		const { refineryModelLoaders } = await import("./refinery-flight");
+		await (await import("./coriolis-flight")).prepareCoriolisPage([
+			...shipyardModelLoaders,
+			...refineryModelLoaders,
+		]);
+	}
+	// The ship workbench draws every variant: the courier the game flies
+	// (node #812), the authored `miner/b` (node #815) and the tug (node #814).
 	else if (query.get("model-viewer") === "ship") {
+		const { prepareCourierHullModel } = await import("./courier-hull");
+		const { prepareTugHullModel } = await import("./tug-hull");
+		const { prepareLongwallModel } = await import("./longwall-model");
 		const { preparePorterModel } = await import("./porter-model");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
+			prepareCourierHullModel,
+			prepareTugHullModel,
+			prepareLongwallModel,
 			preparePorterModel,
 		]);
 	}
@@ -20654,19 +22128,11 @@ if (postcard) {
 	// `?seed=N` visit booted somebody else's galaxy with nothing said, so a
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
-	// Fetch in parallel with the Commander catalog; wait only at world construction.
-	const stationModel = Promise.all([
-		import("./coriolis-flight"),
-		import("./cockpit-model"),
-		import("./porter-model"),
-	]).then(([m, cockpit, porter]) =>
-		m.prepareCoriolisPage([
-			cockpit.prepareCockpitModel,
-			porter.preparePorterModel,
-		]),
-	);
-	// Keep a fast rejection handled while IndexedDB is still opening.
-	void stationModel.catch(() => {});
+	// Open the Commander overlay before requesting the selected boot models.
+	// **One relay for the download (#833)**: it starts on the full-screen panel,
+	// and moves into the overlay once the plan says it opens.
+	//
+	const loading = loadRelay(loadingPanel("game"));
 	const boot = bootMode(query);
 	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
 	// #432). Where the permission is computed and why it is the boot's rather than
@@ -20706,8 +22172,151 @@ if (postcard) {
 	// sat outside the guard: a record that parsed and then would not restore
 	// threw at module scope and the page did not boot at all. The bounds in
 	// `parseCommander` close the known route in; this closes the class.
-	await stationModel;
+	// **#833: a player boot opens the overlay during the download.** Its options
+	// reach the `Game` only through `gate`, which opens once the build is done:
+	// a choice made before then waits there, and the overlay draws the download
+	// meanwhile (`loading`). A direct or one-shot boot mounts it after the
+	// build, as it always did.
+	const gate = new GameGate<Game>();
+	/** The Commander this tab's store writes, once one is attached. */
+	let attachedSlot: string | null = null;
+	let openAtBoot = overlayBeforeModels(plan);
+	/** The loaded record would not build a game, so the plan was refaulted. */
+	let restoreFaulted = false;
+	let askVoice = false;
+	// Before the `Game`, the voice question reads and writes a store over the
+	// same `localStorage`; the `Game`'s own store reads the answer when it is
+	// built, and starts the voice itself if it was Download (`applied.voice`).
+	let earlySettings: SettingsStore | undefined;
+	let earlyNeural: NeuralVoice | undefined;
+	const settingsNow = () =>
+		gate.current?.settings ?? (earlySettings ??= new SettingsStore());
+	// The overlay's footer, its close and the save-fault badge name one key.
+	// It reads the layout in force each time, through the `Game` once it is
+	// built; before that the overlay is not running, so nothing closes it and
+	// its footer names no key.
+	const commanderKey: OwnKey = {
+		names: () => gate.current?.ownKey("system.commander").names() ?? [],
+		reaches: (e) =>
+			gate.current?.ownKey("system.commander").reaches(e) ?? false,
+	};
+	const overlayBoot = () => ({
+		slot: plan.slot,
+		canContinue: plan.canContinue,
+		pendingName: plan.pending?.name ?? null,
+		fault: plan.fault,
+		faultSlot: plan.faultSlot,
+		notice: plan.notice,
+		seedPrefill: plan.seedPrefill,
+	});
+	const mountOverlay = (): CommanderOverlayHandle => {
+		// #604: whether to download the natural voice, asked on the Commander
+		// screen at boot while the row says Ask — and under `?voices=ask` on a
+		// direct boot as well, which is how a probe reaches the question.
+		askVoice =
+			VOICE_ARMS.engine === "setting" &&
+			settingsNow().value.voice === "ask" &&
+			(openAtBoot || VOICE_ARMS.ask);
+		return mountCommanderOverlay({
+			catalog: plan.writesNothing ? null : catalog,
+			switcher: plan.writesNothing
+				? null
+				: new CommanderSwitch({
+						catalog,
+						store: () => gate.current?.saveStore ?? null,
+						// #833: a switch chosen during the download reloads once the
+						// models are in. A reload mid-download would start them over;
+						// a finished one is cached under `public/_headers`' immutable
+						// rule for `/assets/*` (#834). The overlay stays busy until then.
+						reload: () => gate.ready().then(() => window.location.reload()),
+					}),
+			boot: overlayBoot(),
+			openAtBoot,
+			inPlay: () => attachedSlot,
+			// The badge's own reader, so the two cannot disagree.
+			fault: () => gate.current?.saveFaultText() ?? null,
+			onContinue: async (slot) => {
+				// #833: a Continue chosen during the download waits for the `Game`,
+				// and the overlay shows the download meanwhile.
+				const queued = gate.current === null;
+				const game = await gate.ready();
+				// **D9 holds for a Continue chosen before the build.** A record that
+				// would not restore was set aside there, and attaching a store to it
+				// would write over the only copy; the overlay has been replanned.
+				if (queued) {
+					const refusal = queuedContinueRefusal(plan);
+					if (refusal !== null) return refusal;
+				}
+				// **A dead page never resumes** (#324, sage round 1). After a death
+				// with nothing to restore, Continue reloads and the boot loads the
+				// Commander from its save — unholding the clock here would fly a hull
+				// at zero that can never die again. The store's own lock goes back
+				// first, or the one-shot below is refused by this very tab.
+				if (game.dead) {
+					if (!plan.writesNothing) {
+						game.saveStore?.release();
+						try {
+							await catalog.chooseCommander(slot);
+						} catch (error) {
+							return messageOf(error);
+						}
+					}
+					window.location.reload();
+					return null;
+				}
+				const fault = plan.writesNothing ? null : await attach(slot);
+				if (fault === null) {
+					await beginFirstDay(plan.writesNothing ? null : slot);
+					game.clockHeld = false;
+				}
+				return fault;
+			},
+			releaseHeldKeys: () => gate.current?.releaseHeldKeys(),
+			ownKey: commanderKey,
+			voiceQuestion: askVoice
+				? {
+						bytes: () =>
+							(
+								gate.current?.neural ?? (earlyNeural ??= new NeuralVoice())
+							).downloadBytes(),
+						// The answer is the row's: the settings subscription starts or
+						// clears the voice. "Not now" leaves Ask, so it is asked again.
+						answer: (a) => {
+							if (a === "download") settingsNow().set("voice", "neural");
+							else if (a === "no") settingsNow().set("voice", "formant");
+						},
+					}
+				: null,
+		});
+	};
+	const overlay = overlayBeforeModels(plan) ? mountOverlay() : null;
+	if (overlay) loading.moveTo(overlay.loading);
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
+	const freshWorld = () =>
+		askedSystem === null
+			? makeWorld(worldSeed)
+			: makeWorldAtSystem(worldSeed, askedSystem);
+	const bootWorld = (() => {
+		if (!plan.loaded) return freshWorld();
+		try {
+			return restoreWorld(
+				plan.loaded.world.seed,
+				plan.loaded.commander.galaxyIndex,
+				plan.loaded.commander.systemIndex,
+				plan.loaded.world.gameTime,
+			);
+		} catch {
+			return freshWorld();
+		} // Game reports the restore fault below.
+	})();
+	await requireModels(
+		query.has("models-full")
+			? ALL_MODELS
+			: bootModelIds(bootWorld.system, plan.loaded?.commander.dockedAt ?? null),
+		loading.view,
+		true,
+	);
+	await nextPaint();
 	let game: Game;
 	try {
 		game = new Game(worldSeed, plan.loaded, askedSystem);
@@ -20726,13 +22335,32 @@ if (postcard) {
 		}
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
+		restoreFaulted = true;
+		await requireModels(
+			bootModelIds(freshWorld().system, null),
+			loading.view,
+			true,
+		);
 		game = new Game(worldSeed, null, askedSystem);
 	}
+	// The world is built: the loading panel or the overlay's line goes.
+	loading.view({ kind: "done" });
 	// Held until a store is attached or the player chooses (§11.2 step 4).
+	// Before the `interiors-full` wait: a probe boot that awaits the sliced
+	// install must not let the sim run through it (#843).
 	game.clockHeld = true;
+	installedGame = game;
+	game.startModelQueue();
+	// Models adopted before construction already draw authored geometry.
+	if (models.state("interiors") === "installed")
+		await game.modelInstalled("interiors");
+	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
+	else void game.loadInteriorsAfterBoot();
+	if (query.has("shipyards-full")) await game.loadShipyardsAfterBoot();
+	else void game.loadShipyardsAfterBoot();
+	if (query.has("refineries-full")) await game.loadRefineriesAfterBoot();
+	else void game.loadRefineriesAfterBoot();
 	game.saveFault = plan.fault;
-	/** The Commander this tab's store writes, once one is attached. */
-	let attachedSlot: string | null = null;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander
 	// nobody chose. A store attached to a record that refused would write over
@@ -20834,7 +22462,6 @@ if (postcard) {
 		}
 		game.commanderOverlay?.open();
 	};
-	let openAtBoot = plan.mode === "overlay";
 	// #408 D1 and D4: a guided new game is docked at its home station before the
 	// clock runs — since #535 by the opening's flight, watched or skipped. **After the attach**, so that dock's flush writes the new
 	// Commander's `lastDocked`. Once per page: Continue on the overlay also
@@ -20925,78 +22552,13 @@ if (postcard) {
 			openAtBoot = true;
 		}
 	}
-	// One `OwnKey` for the two surfaces that must name the same key — the
-	// overlay's footer and close, and the save-fault badge. It reads the layout
-	// each time it is asked, so one built here follows every rebind.
-	const commanderKey = game.ownKey("system.commander");
-	// #604: whether to download the natural voice, asked on the Commander
-	// screen at boot while the row says Ask — and under `?voices=ask` on a
-	// direct boot as well, which is how a probe reaches the question.
-	const askVoice =
-		VOICE_ARMS.engine === "setting" &&
-		game.settings.value.voice === "ask" &&
-		(openAtBoot || VOICE_ARMS.ask);
-	game.commanderOverlay = mountCommanderOverlay({
-		catalog: plan.writesNothing ? null : catalog,
-		switcher: plan.writesNothing
-			? null
-			: new CommanderSwitch({
-					catalog,
-					store: () => game.saveStore,
-					reload: () => window.location.reload(),
-				}),
-		boot: {
-			slot: plan.slot,
-			canContinue: plan.canContinue,
-			pendingName: plan.pending?.name ?? null,
-			fault: plan.fault,
-			faultSlot: plan.faultSlot,
-			notice: plan.notice,
-			seedPrefill: plan.seedPrefill,
-		},
-		openAtBoot,
-		inPlay: () => attachedSlot,
-		// The badge's own reader, so the two cannot disagree.
-		fault: () => game.saveFaultText(),
-		onContinue: async (slot) => {
-			// **A dead page never resumes** (#324, sage round 1). After a death
-			// with nothing to restore, Continue reloads and the boot loads the
-			// Commander from its save — unholding the clock here would fly a hull
-			// at zero that can never die again. The store's own lock goes back
-			// first, or the one-shot below is refused by this very tab.
-			if (game.dead) {
-				if (!plan.writesNothing) {
-					game.saveStore?.release();
-					try {
-						await catalog.chooseCommander(slot);
-					} catch (error) {
-						return messageOf(error);
-					}
-				}
-				window.location.reload();
-				return null;
-			}
-			const fault = plan.writesNothing ? null : await attach(slot);
-			if (fault === null) {
-				await beginFirstDay(plan.writesNothing ? null : slot);
-				game.clockHeld = false;
-			}
-			return fault;
-		},
-		releaseHeldKeys: () => game.releaseHeldKeys(),
-		ownKey: commanderKey,
-		voiceQuestion: askVoice
-			? {
-					bytes: () => game.neural.downloadBytes(),
-					// The answer is the row's: the settings subscription starts or
-					// clears the voice. "Not now" leaves Ask, so it is asked again.
-					answer: (a) => {
-						if (a === "download") game.settings.set("voice", "neural");
-						else if (a === "no") game.settings.set("voice", "formant");
-					},
-				}
-			: null,
-	});
+	// **Opened here, after every closure it reaches is declared** (#833): a
+	// choice the early overlay queued runs on this `Game` once this block
+	// yields, after the replan. Before the late mount, so a late overlay's
+	// voice answer reaches the `Game`'s own settings store.
+	gate.open(game);
+	game.commanderOverlay = overlay ?? mountOverlay();
+	if (overlay && restoreFaulted) overlay.replan(overlayBoot());
 	if (askVoice && !openAtBoot) game.commanderOverlay.open();
 	game.saveBadge = mountSaveBadge(
 		() => game.commanderOverlay?.open(),
@@ -21006,6 +22568,22 @@ if (postcard) {
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
 	(window as unknown as { __seelite: Game }).__seelite = game;
+	if (import.meta.env.DEV && query.has("nebula-look")) {
+		const id = Number(query.get("nebula-look"));
+		const cloud = generateNebulae(
+			game.world.seed,
+			game.world.galaxy.index,
+		).find((c) => c.id === id);
+		if (cloud) {
+			const bearing = nebulaView(cloud, game.world.system.record).bearing;
+			if (bearing)
+				game.orientation.setFromUnitVectors(
+					new THREE.Vector3(0, 0, -1),
+					new THREE.Vector3(bearing.x, bearing.y, bearing.z),
+				);
+		}
+	}
+
 	// Read off the page by `scripts/probe-save.mjs` rather than restated there:
 	// a probe with its own copy of the debounce goes falsely red the day the
 	// module moves it.

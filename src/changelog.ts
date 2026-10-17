@@ -28,6 +28,105 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #977: sentence approved by the principal, 2026-10-14.
+	{
+		date: "2026-10-14",
+		text: "Scanner and escape pod grades now matter: better scanners reach farther and scan faster, and a better escape pod brings part of your cargo home when you eject.",
+		node: 977,
+	},
+	// Node #927: sentence approved by the principal, 2026-10-14.
+	{
+		date: "2026-10-14",
+		text: "Armour plating and shield boosters now work: a plate adds hull, a booster adds shield to each side and draws energy while your shields recharge, and the Equipment tab shows every change a module makes before you buy it.",
+		node: 927,
+	},
+	{
+		date: "2026-10-14",
+		text: "Rose and blue nebulae now mark the galaxy: their shapes and bearings change as you jump, and nearby clouds surround your ship and light its hull.",
+		node: 685,
+	},
+	// Node #819: sentence approved by the principal, 2026-10-13.
+	{
+		date: "2026-10-13",
+		text: "The four refineries have new exteriors: the terraced Warren, the belted Collar, the Spar's processing spine and the quarried Works, each with its landing pad set in a framed mouth in the rock.",
+		node: 819,
+	},
+	// Node #818: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "The three shipyards have new exteriors: the open gantry of Gantry Works, the twin enclosed halls of Foundry Hangar and the open semicircle of Crescent Slipway.", // glossary-ignore: Hangar
+		node: 818,
+	},
+	// Node #932: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Fuel scoops now work: cruise close past a star and a fitted scoop refills your hyperspace tank, faster the closer you pass, while a SCOOPING line shows the tank rising.",
+		node: 932,
+	},
+	// Node #926: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Fitted fuel tanks now carry extra fuel, so you can chain more jumps between refuels; the longest single jump still depends on your ship.",
+		node: 926,
+	},
+	// Node #931: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Stars now heat your hull: fly close and a TEMP gauge climbs, and a hull kept too hot for too long starts to fail.",
+		node: 931,
+	},
+	// Node #925: sentence approved by the principal, 2026-10-12.
+	{
+		date: "2026-10-12",
+		text: "Power plants and Extra Energy Units now set the size of your energy bank, and a better plant also recharges it faster.",
+		node: 925,
+	},
+	// Node #814: approved by the principal on 2026-10-11 with the merge.
+	{
+		date: "2026-10-11",
+		text: "The salvage tug has a new hull: the Bollard, a 57-metre open-frame tug with twin barrel drives, a reinforced towing collar and a dorsal winch.",
+		node: 814,
+	},
+	{
+		date: "2026-10-11",
+		text: "Fitted lasers now set your firepower, energy draw and heat, and stronger weapon fits earn less combat credit per kill.",
+		node: 870,
+	},
+	{
+		date: "2026-10-11",
+		text: "Cycle fire groups with B and see which weapons or scanner your trigger has armed.",
+		node: 893,
+	},
+	// Node #869: sentence approved by the principal, 2026-10-11.
+	{
+		date: "2026-10-11",
+		text: "Outfit your ship slot by slot, compare the change before buying, and carry or sell the modules you remove.",
+		node: 869,
+	},
+	// Node #876: sentence approved by the principal, 2026-10-10.
+	{
+		date: "2026-10-10",
+		text: "Equipment has weight: fitted modules affect handling, and changing ships keeps spare fittings in the hold.",
+		node: 876,
+	},
+	// Node #865: approved by the principal on 2026-10-10; main date pending.
+	{
+		date: "2026-10-10",
+		text: "Cargo has weight: a full hold makes a ship slower to accelerate and to turn, and an empty one flies as before.",
+		node: 865,
+	},
+	// Node #815: approved by the principal on 2026-10-09; main date pending.
+	{
+		date: "2026-10-09",
+		text: "The miner has a new hull: the Longwall, an 84-metre mining ship with three sealed ore cassettes, a two-seat bridge, four folded asteroid anchors and a cutter on an extending boom.",
+		node: 815,
+	},
+	// Node #812: approved by the principal on 2026-10-09; main date pending.
+	{
+		date: "2026-10-09",
+		text: "The courier has a new hull: a long tapered body between twin drive nacelles, with seated hatches, slope-aligned grilles and a pilot visible under the canopy.",
+		node: 812,
+	},
 	// Node #792: approved by the principal on 2026-10-08.
 	{
 		date: "2026-10-08",

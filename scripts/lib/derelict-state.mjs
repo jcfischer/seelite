@@ -1,5 +1,5 @@
 /**
- * Natural first loss, framed through the production pose; no discovery fixture.
+ * Natural next loss, framed through the production pose; no discovery fixture.
  *
  * `framing: "tear"` (node #735) then moves the camera to stand off the wreck's
  * most sunlit tear, read off the drawn hull's own `userData.torn`, so the
@@ -14,14 +14,12 @@
 export async function placeDerelict(page, shot = {}) {
 	return page.evaluate(async (framing) => {
 		const g = window.__seelite;
-		const { derelictFirstLossAt, derelictSlots } = await import(
-			"/src/derelict-slots.ts"
-		);
+		const { derelictNextLossAt, derelictSlots, derelictTimeline } =
+			await import("/src/derelict-slots.ts");
 		const { advanceTo } = await import("/src/world-state.ts");
 		const { advanceSystem } = await import("/src/sim.ts");
 		const { derelictPose, tetherPose } = await import("/src/derelict.ts");
-		const { isAuthoredHull } = await import("/src/ship-mesh.ts");
-		const { HULL_SPECS } = await import("/src/hull.ts");
+		const { isAuthoredHullModel } = await import("/src/model-catalog.ts");
 		g.resetFlightToStart();
 		g.clockHeld = true;
 		g.photoMode = false;
@@ -29,10 +27,19 @@ export async function placeDerelict(page, shot = {}) {
 		const system = g.world.system;
 		const slots = derelictSlots(system.record.index, system.record.government);
 		const lossAt = (slot) =>
-			derelictFirstLossAt(system.record.seed, slot.key) + 1;
+			derelictNextLossAt(system.record.seed, slot.key) + 1;
 		const tearable = (slot) => {
-			const { hull } = derelictPose(system, slot.key, 0, lossAt(slot));
-			return !isAuthoredHull(hull, HULL_SPECS[hull].variant);
+			const at = lossAt(slot);
+			const phase = derelictTimeline(system.record.seed, slot.key, at);
+			if (phase.condition !== "destroyed")
+				throw Error("next loss drew no wreck");
+			const { hull } = derelictPose(
+				system,
+				slot.key,
+				phase.instanceOrdinal,
+				at,
+			);
+			return !isAuthoredHullModel(hull);
 		};
 		const slot = framing === "tear" ? slots.find(tearable) : slots[0];
 		if (!slot) throw Error("no derelict slot whose wreck the tear can cut");
@@ -42,7 +49,7 @@ export async function placeDerelict(page, shot = {}) {
 		advanceSystem(system, at);
 		g.commerceWorld = advanceTo(g.commerceWorld, at);
 		const wreck = g.derelictsAt().find((w) => w.key === key);
-		if (!wreck) throw Error("no derelict at first loss");
+		if (!wreck) throw Error("no derelict at its next loss");
 		const pose = wreck.pose;
 		g.world.ship.pos = {
 			x: pose.pos.x + 0.5,

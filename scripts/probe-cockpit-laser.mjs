@@ -109,6 +109,16 @@ check(
 	JSON.stringify(setup),
 );
 await stopLoop(page);
+// Record the fitted gun's actual muzzle through the firing path before
+// freezing the scene and toggling its tracer for the pixel comparison.
+const fired = await page.evaluate(() => {
+	const g = window.__seelite;
+	g.keys.add(" ");
+	g.step(g.units.MAX_DT);
+	g.keys.delete(" ");
+	return g.gunFeedback.tracerLeftS > 0;
+});
+check("the player fires a fitted gun before measuring its tracer", fired);
 
 const r = await page.evaluate(
 	([erode, moved]) => {

@@ -459,6 +459,7 @@ trade does.
 A scan needs, all at once:
 
 - the F12 module fitted;
+- `IDENTITY SCANNER` armed in the fire-group cycle, with the trigger held (#385, built by #894);
 - a **selected** target — the scan has no acquisition of its own, and Navigation
   plus `T` stay authoritative for selection (`hud-and-scanner.md` §2);
 - that target inside a forward cone;
@@ -477,8 +478,8 @@ flying it. No headless row and no probe could see it, because every one of them
 places the nose and the sight on one ray, which makes them the same vector by
 construction.
 
-When the module is fitted, the target is a scannable carrier, nothing is charging and
-nothing is recorded, the cell adds the reason to `UNKNOWN`: `· TOO FAR` or
+When the scanner is armed and its trigger held outside cruise, the module is fitted,
+the target is a scannable carrier, nothing is charging and nothing is recorded, the cell adds the reason to `UNKNOWN`: `· TOO FAR` or
 `· OFF AXIS`, range answered first because distance is the fact with a verb attached
 to it. `UNKNOWN` survives — that you have never read this ship and that you are not
 holding it now are two facts.
@@ -493,7 +494,8 @@ the cell answers *why is the scan not holding what I am trying to scan*, and dur
 a leg there is no such attempt; #385's trigger makes that explicit by making the
 attempt something the pilot does.
 
-Breaking the cone resets the charge. The idiom is `src/interdiction.ts`'s
+Releasing the trigger, cycling away, or breaking the cone resets the charge; a
+re-press starts fresh. Lock-hold alone never starts it. The idiom is `src/interdiction.ts`'s
 contest — a lock held through a charge, broken by heading separation — and the
 implementation should read its shape rather than invent a second one.
 

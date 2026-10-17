@@ -3,9 +3,10 @@
  *
  * `probe-light-rig.mjs` reads the painted player hull's **absolute** luma off a
  * 0–255 canvas readback, so its three hull rows are a property of the hull
- * *finish* on screen, not of the lighting they are named for. That is the whole
- * reason this module exists rather than three constants sitting in the probe:
- * the readings, the finish they were taken on, and the margins applied to them
+ * *subject* on screen — on a procedural hull its finish, on an authored one its
+ * model — not of the lighting they are named for. That is the whole reason
+ * this module exists rather than three constants sitting in the probe: the
+ * readings, the subject they were taken on, and the margins applied to them
  * belong in one place a test can execute.
  *
  * **What went wrong when they did not (#294).** `ab47a33` set
@@ -22,52 +23,136 @@
  * another; what it does settle is that a lane difference cannot account for a
  * quartile that moved by 19 codes.
  *
- * So a finish change must fail **here**, by name, in the headless tier, rather
+ * So a change of subject must fail **here**, by name, in the headless tier, rather
  * than as three browser rows a later reader has to bisect.
  */
 
 /**
- * Measured on `c6f8b57`, rig B (`LIGHT_RIG`, the principal's choice on
- * #231), `hull-chase`, five samples per lane, same-build noise 0.00 at every
- * one. Where the two rasterisers disagree the **lower** reading is
+ * Measured on `9f8d533` (node #812), refreshed on node #831, rig B (`LIGHT_RIG`, the principal's
+ * choice on #231), `hull-chase`, five samples per lane, same-build noise 0.00
+ * at every one. Where the two rasterisers disagree the **lower** reading is
  * recorded, because these are floors and the conservative arm is the dark one.
  *
  * | | ANGLE Metal (M1 Pro) | SwiftShader |
  * | --- | --- | --- |
- * | peak | 204.92 | 204.92 |
- * | lower quartile | 22.80 | 22.80 |
- * | median | 79.53 | 79.73 |
+ * | peak | 252.21 | 252.21 |
+ * | lower quartile | 10.16 | 10.16 |
+ * | median | 37.88 | 38.80 |
  *
- * B moved light from the hemisphere into the sun with the median held (#723's
- * rule), so the hull reads with more contrast than #199's rig did: on
- * `9627632` that rig read 149.08 / 41.24 / 81.10.
+ * Node #831 re-encoded normals and eligible UVs with 16-bit quantisation.
+ * Five samples of the old file and five of the new file on each lane read
+ * exactly alike, including the mask's pixel count (21,543 on Metal and
+ * 21,531 on SwiftShader). The old-file control reproduces this table, so
+ * the new subject hash below retains the readings, margins and floors.
+ * Paired results: `/tmp/node-831-luma-{hardware,cpu}.json`; the worker's
+ * receipt records the provenance. Positions, triangles and textures are
+ * unchanged, as the asset tests verify.
+ *
+ * **The subject is the authored O4 courier**, the hull node #812 put in the
+ * game, and the principal accepted its in-game look as the reference (Q1, O1,
+ * 2026-10-09): the band follows the hull, not the other way round. It reads
+ * darker and with more contrast than the procedural courier this band was
+ * calibrated on before — `c6f8b57` read 204.92 / 22.80 / 79.53 on `worn` —
+ * because the model carries its own materials: a dark body with machined
+ * alloy trim that reads near white.
  *
  * `laneSpread` is what they disagreed by, and it is recorded rather than
  * described because the margins below are asserted against it. These are two
  * rasterisers on one machine; what follows from that is `SHIPPED_FLOORS`'s
- * to say. **The peak's is
- * exactly 0**, so that leg of the assertion is satisfied by any margin above
- * zero and is not a bound on the peak at all — it is recorded as measured rather
- * than padded to a figure nobody read.
+ * to say. **The peak's and the quartile's are exactly 0**, so those legs of
+ * the assertion are satisfied by any margin above zero and are not a bound at
+ * all — they are recorded as measured rather than padded to a figure nobody
+ * read.
  *
- * **Why the key is the hull finish alone.** The station finish is published on
- * the same handle and printed beside these rows, and it is deliberately not part
- * of the guard. `hull-chase` isolates the player hull by subtraction — the frame
- * is rendered without the ship's meshes and differenced against one with them —
- * so nothing a station is wearing reaches the masked pixels. Measured rather
- * than reasoned: with `DEFAULT_STATION_FINISH` moved `worn` → `nostromo` and
- * everything else held, the peak, the quartile, the median and the pixel count
- * are bit-identical at 149.08 / 41.24 / 81.10 over 25,578 px. Gating on it would
- * be a red with nothing behind it.
+ * ## Node #887: the paints are lifted, and one lane could not be read
+ *
+ * The authored courier's paints were lifted out of silhouette (#887): tint and
+ * metalness in the prepare pipeline, so the shipped GLB carries the look, bounded
+ * by a metalness cap and by `MAX_DIFFUSE_OF_ROSTER` so no lifted paint is brighter
+ * than the procedural roster's painted hull. Same rig, same view, same mask, five
+ * samples, same-build noise 0.00, 25,587 px — **the mask's pixel count is
+ * unchanged**, so these are the same pixels, not a different crop:
+ *
+ * | | ANGLE Metal (M1 Pro) | was |
+ * | --- | --- | --- |
+ * | peak | **238.21** | 252.21 |
+ * | lower quartile | **34.66** | 10.16 |
+ * | median | **51.87** | 37.88 |
+ *
+ * The quartile and the median rise and the peak falls, which is the whole point of
+ * a lift: paint that was in shadow comes up while the brightest highlight on the
+ * machined alloy comes down. `HULL_LUMA_BAND`'s ceiling was not relaxed to make
+ * this fit.
+ *
+ * **`laneSpread` is carried forward unverified for this subject, and that is the
+ * weakest thing in this record.** The SwiftShader lane no longer boots on this
+ * machine: `bootedGame` never saw `__seelite.frames` rise above 0 in **300 s** on
+ * this branch's dev server. That is not a regression this branch caused — the
+ * identical instrument, wait and seed fail the same way on the base build's dev
+ * server at `8b7a5871` with its own installed `node_modules`. So the spread above
+ * is what the *previous* subject's two lanes disagreed by.
+ *
+ * What follows from that, stated rather than hidden: the recording rule here is
+ * "where the lanes disagree, record the lower", and with one lane readable the
+ * figures below are the Metal lane's alone. If the portable lane reads *lower*
+ * than this on the lifted paints, the derived `SHIPPED_FLOORS` are too high for it
+ * and its probe rows go red on a machine that can boot it — a detected failure, not
+ * a silent one, which is the only reason carrying the figure is survivable. The
+ * margins' other constraint, that each exceed `laneSpread`, is unaffected and stays
+ * conservative. Whoever boots the portable lane on this subject should replace all
+ * four figures and close node #924, which carries the lane's failure to boot.
+ *
+ * **Why the key is the subject and not the finish.** Through #463 the hull
+ * on screen was the procedural courier, which every finish preset paints, so
+ * the finish named the subject. The authored courier carries the study's own
+ * materials, and the presets reach only its two drive glows — emissive, so
+ * `hull-chase`'s mask leaves them out. `tests/light-rig.test.ts` builds the
+ * courier under every finish and holds every painted material equal. So
+ * the subject is named by what decides the pixels: the hull, that it is the
+ * authored model, and the shipped file's sha256. A re-encoded or replaced
+ * model fails `tests/light-rig.test.ts` by name in the headless tier, and a page
+ * drawing anything else fails the probe's subject row before either band row
+ * is read.
+ *
+ * The station finish is published on the same handle and printed beside these
+ * rows, and it is deliberately not part of the guard. `hull-chase` isolates the
+ * player hull by subtraction — the frame is rendered without the ship's meshes
+ * and differenced against one with them — so nothing a station is wearing
+ * reaches the masked pixels. Measured on #463's subject: with
+ * `DEFAULT_STATION_FINISH` moved `worn` → `nostromo` and everything else held,
+ * the peak, the quartile, the median and the pixel count were bit-identical at
+ * 149.08 / 41.24 / 81.10 over 25,578 px.
  */
 export const HULL_LUMA_CALIBRATION = Object.freeze({
-	finish: "worn",
-	ref: "c6f8b57",
-	peak: 204.92,
-	lowerQuartile: 22.8,
-	median: 79.53,
-	laneSpread: Object.freeze({ peak: 0, lowerQuartile: 0, median: 0.2 }),
+	subject: Object.freeze({
+		hull: "courier",
+		authored: true,
+		modelSha256:
+			"6967208f3169dcb900f24e6164ac09023db5d6b6ee5495a92b157ce20c310c30",
+	}),
+	ref: "node-887",
+	peak: 238.21,
+	lowerQuartile: 34.66,
+	median: 51.87,
+	laneSpread: Object.freeze({ peak: 0, lowerQuartile: 0, median: 0.92 }),
 });
+
+/** The subject a page reports, in words, for a probe row and its log. */
+export const describeHullSubject = (subject) =>
+	subject
+		? `${subject.hull ?? "no hull"} (${subject.authored ? "authored" : "procedural"}, model ${subject.modelSha256 ? subject.modelSha256.slice(0, 12) : "unhashed"})`
+		: "no subject reported";
+
+/**
+ * Whether `subject` — `{ hull, authored, modelSha256 }` as the page reports it
+ * — is the one the band was calibrated on. One comparison, so the probe and
+ * the headless rows that exercise it cannot disagree about what a match is.
+ */
+export const isCalibratedHullSubject = (subject) =>
+	!!subject &&
+	subject.hull === HULL_LUMA_CALIBRATION.subject.hull &&
+	subject.authored === HULL_LUMA_CALIBRATION.subject.authored &&
+	subject.modelSha256 === HULL_LUMA_CALIBRATION.subject.modelSha256;
 
 /**
  * The lower quartile immediately **before** `ab47a33`, and where the figure
@@ -136,7 +221,8 @@ export const SUBJECT_CHANGE_QUARTILE_DROP =
  * floor was 34.972 on #199's rig, inside the ratchet, and still inside
  * `SUBJECT_CHANGE_QUARTILE_DROP / 2` at 15.57%. On rig B (#231) the quartile
  * reads 22.80 and the same margin derives 19.334, far inside the ratchet: B
- * loosened the row, which the ratchet allows.
+ * loosened the row, which the ratchet allows. On the authored O4 (node #812)
+ * it reads 10.16 and derives 8.616; the subject loosened it again.
  */
 export const SHIPPED_FLOORS = Object.freeze({
 	peak: 140,
@@ -164,10 +250,12 @@ export const FLOOR_FRACTION_OF_READING = 0.5;
  * than leaving it as prose.
  *
  * **Above**, by `SHIPPED_FLOORS` — no floor may tighten past what shipped. That
- * is why the peak's margin is 32%: rig B (#231) reads 204.92, and the 8% it
- * carried on #199's rig would derive 188.526 against a shipped 140. The smallest
- * margin the ratchet allows is 31.7%, and 32% derives 139.346. It is why the
- * quartile's is 15.2%, too.
+ * is why the peak's margin is 45%: the authored O4 (node #812) reads 252.21,
+ * and the 32% it carried on the procedural courier would derive 171.503
+ * against a shipped 140. The smallest margin the ratchet allows is 44.5%, and
+ * 45% derives 138.716. It is why the quartile's is 15.2%, too: that figure was
+ * set when the ratchet bound it on #199's rig, and on this subject neither the
+ * ratchet nor anything else asks it to move.
  *
  * **Below**, by `FLOOR_FRACTION_OF_READING`, so loosening stops short of a floor
  * nothing can fail.
@@ -185,7 +273,7 @@ export const FLOOR_FRACTION_OF_READING = 0.5;
  * to be a typo and nothing a person would choose on purpose.
  */
 export const HULL_LUMA_MARGINS = Object.freeze({
-	peak: 0.32,
+	peak: 0.45,
 	lowerQuartile: 0.152,
 	median: 0.14,
 });
@@ -222,11 +310,17 @@ export const HULL_LUMA_FLOOR_OF = Object.freeze(
  * exposure failures. Only the floor is derived — the ceiling is an authored
  * limit on how bright painted metal may read, and no calibration produces it.
  * #199 set it at 200. The principal raised it to 215 on #231 (D2) with rig B,
- * whose peak reads 204.92: about ten codes of room.
+ * whose peak reads 204.92: about ten codes of room. **The principal removed it
+ * on node #812 (2026-10-09): 255, no ceiling.** The approved O4's machined
+ * alloy trim reads near white by design — 252.21 — and the look was accepted
+ * as the reference, so the band's top is the top of the readback. The upper
+ * leg stays in the row so a later ruling can put a ceiling back in one place;
+ * until then nothing in these rows rejects a hull gone too bright, which is
+ * the cost of the ruling.
  */
 export const HULL_LUMA_BAND = Object.freeze({
 	min: HULL_LUMA_FLOOR_OF.peak,
-	max: 215,
+	max: 255,
 });
 
 /**

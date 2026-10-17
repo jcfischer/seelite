@@ -27,9 +27,9 @@ const attributes = doc => doc.getRoot().listMeshes().map(mesh => ({
  )),
 }));
 const beforeEncoding = attributes(document);
-await mkdir('public/models', {recursive: true});
-await io.write('public/models/coriolis.glb', document);
-const decoded = await io.read('public/models/coriolis.glb');
+await mkdir('src/models', {recursive: true});
+await io.write('src/models/coriolis.glb', document);
+const decoded = await io.read('src/models/coriolis.glb');
 assert.deepEqual(attributes(decoded), beforeEncoding, 'Meshopt changed vertex attributes');
 assert.deepEqual(await pixels(decoded), originalPixels, 'WebP changed texture pixels');
 console.log('Verified exact vertex attributes and texture pixels after encoding/decoding.');

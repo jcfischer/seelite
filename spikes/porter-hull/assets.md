@@ -1,6 +1,6 @@
 # Porter prototype asset provenance — Codex
 
-Original Blender geometry, authored in `build_model.py`. No downloaded third-party model. Fal credentials were absent from the process and named entries in ~/.env; Blender was the available Dream Loop Pro fallback. This prototype follows the authorized Courier and Coriolis redesign workflow; node #813 ships the encoded model as `public/models/porter.glb`; the source GLB, Blender file and textures here stay review-only.
+Original Blender geometry, authored in `build_model.py`. No downloaded third-party model. Fal credentials were absent from the process and named entries in ~/.env; Blender was the available Dream Loop Pro fallback. This prototype follows the authorized Courier and Coriolis redesign workflow; node #813 ships the encoded model as `src/models/porter.glb`; the source GLB, Blender file and textures here stay review-only.
 
 The principal selected O2 from three built-in imagegen designs. The target was grounded in a live capture of current Porter B and the selected Courier O4 exterior as a material-style reference. `target.png` retains that selection.
 

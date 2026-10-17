@@ -174,7 +174,11 @@ const measure = (page, bodyId, type) =>
 	page.evaluate(
 		([id, grid, unruled, role]) => {
 			const g = window.__seelite;
-			const specNames = g.specFixtures[role] ?? [];
+			const mesh = window.__meshOfBody(id);
+			// An authored yard has its own §5 names (node #818).
+			const authored = g.isAuthoredStationId(id);
+			const specNames =
+				(authored ? g.authoredFixtures : g.specFixtures)[role] ?? [];
 			const fixtureNames = [...new Set([...specNames, ...unruled])];
 			const W = 560;
 			const H = 400;
@@ -190,7 +194,6 @@ const measure = (page, bodyId, type) =>
 				ctx.drawImage(src, 0, 0, W, H);
 				return ctx.getImageData(0, 0, W, H).data;
 			};
-			const mesh = window.__meshOfBody(id);
 			if (!mesh) return { missing: true };
 			const luma = (d, i) =>
 				0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
@@ -531,7 +534,11 @@ for (const viewport of VIEWPORTS) {
 		);
 		checkFraming(check, `${viewport.name}: ${type}`, framing);
 		const m = await measure(page, id, type);
-		lit[type] = { ...m, silhouetteKm };
+		const authored = await page.evaluate(
+			(bodyId) => window.__seelite.isAuthoredStationId(bodyId),
+			id,
+		);
+		lit[type] = { ...m, silhouetteKm, authored };
 		check(
 			`${viewport.name}: ${type} is on screen with its aperture lit`,
 			m.station.count > 200 && m.aperture.count > 0,
@@ -605,7 +612,19 @@ for (const viewport of VIEWPORTS) {
 			programs.total > 0 && programs.unlinked === 0,
 			`${programs.total - programs.unlinked}/${programs.total} linked`,
 		);
-		check(
+		// The procedural rock's rows gate the refinery's stand-in. An authored
+		// refinery (node #819) draws the approved model's own textured rock and
+		// no patched material, so for one they are reported, not gated, as
+		// #818's rows on the procedural yard are.
+		const rockAuthored = await page.evaluate(
+			(id) => window.__seelite.isAuthoredStationId(id),
+			byType.refinery,
+		);
+		const rockCheck = (name, pass, detail) =>
+			rockAuthored
+				? console.log(`  report (authored refinery): ${name} — ${detail}`)
+				: check(name, pass, detail);
+		rockCheck(
 			"the rock's own program is among them, and linked",
 			programs.rock > 0 && programs.rockLinked === programs.rock,
 			`${programs.rockLinked}/${programs.rock} "station-rock" programs`,
@@ -651,12 +670,12 @@ for (const viewport of VIEWPORTS) {
 			return { all: out, onRefinery };
 		}, byType.refinery);
 		const landed = splices.all.flat();
-		check(
+		rockCheck(
 			"the refinery carries a patched rock material",
 			splices.onRefinery > 0,
 			`${splices.onRefinery} patched material(s) under the refinery`,
 		);
-		check(
+		rockCheck(
 			"every rock-surface splice found its marker",
 			landed.length > 0 && landed.every(([, ok]) => ok),
 			landed.length
@@ -716,13 +735,17 @@ for (const viewport of VIEWPORTS) {
 				.join(", "),
 		);
 	}
+	// An authored shipyard's work light is warm by the principal's ruling
+	// (node #818, 2026-10-13), so it is reported here and not ranked; its
+	// procedural stand-in is still the coldest of the three.
+	const rankedYard = !lit.shipyard.authored;
 	check(
 		`${viewport.name}: the three roles light differently, warm to cold`,
 		roleLight("refinery").warmth > roleLight("trade").warmth &&
-			roleLight("trade").warmth > roleLight("shipyard").warmth,
+			(!rankedYard || roleLight("trade").warmth > roleLight("shipyard").warmth),
 		`refinery ${roleLight("refinery").warmth.toFixed(3)} > trade ` +
-			`${roleLight("trade").warmth.toFixed(3)} > shipyard ` +
-			`${roleLight("shipyard").warmth.toFixed(3)}`,
+			`${roleLight("trade").warmth.toFixed(3)} ${rankedYard ? ">" : "·"} shipyard ` +
+			`${roleLight("shipyard").warmth.toFixed(3)}${rankedYard ? "" : " (authored, not ranked)"}`,
 	);
 
 	// --- 3: detail falls with range ------------------------------------------

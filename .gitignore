@@ -69,3 +69,8 @@ public/music-samples/index.json
 spikes/coriolis/*.blend1
 spikes/courier-cockpit/*.blend1
 spikes/porter-hull/*.blend1
+spikes/longwall-miner/*.blend1
+spikes/interiors/__pycache__/
+
+# Scratch scripts, never a deliverable.
+.tmp/

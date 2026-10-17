@@ -1,5 +1,11 @@
 import { PROBE_CATALOG } from "./probe-catalog.mjs";
 import { discoverProbeFiles } from "./probe-inventory.mjs";
+import {
+	PROBE_REGISTRIES,
+	registryChanges,
+	selectImpact,
+} from "./probe-impact.mjs";
+import { SMOKE_PROBES } from "./probe-contract-roots.mjs";
 
 /** A Noul must be at or below this probability to exclude a probe. */
 export const PROBE_EXCLUSION_MAX = 0.25;
@@ -45,9 +51,22 @@ const directProbe = (file) =>
 		? RUNNER_PROBE_FILES.find((probe) => `scripts/${probe}` === file)
 		: undefined;
 
-const isGlobalRisk = (file) =>
-	GLOBAL_RISK_FILES.has(file) ||
-	(file.startsWith("scripts/") && !directProbe(file)) ||
+const HARNESS_FILES = new Set([
+	"scripts/probe-all.mjs",
+	"scripts/probe-guard.mjs",
+	"scripts/select-probes.mjs",
+	"scripts/check-launcher-wiring.mjs",
+	"scripts/lib/free-port.mjs",
+	"scripts/lib/players-renderer.mjs",
+	"scripts/lib/tree-declaration.mjs",
+]);
+const isGlobalRisk = (file, withImpact = false) =>
+	(GLOBAL_RISK_FILES.has(file) && !(withImpact && file === "src/main.ts")) ||
+	(file.startsWith("scripts/") &&
+		!directProbe(file) &&
+		(!withImpact ||
+			HARNESS_FILES.has(file) ||
+			file.startsWith("scripts/lib/probe-"))) ||
 	file.startsWith(".github/");
 
 const isNonRuntime = (file) =>
@@ -55,6 +74,9 @@ const isNonRuntime = (file) =>
 	file.startsWith("tests/") ||
 	file.endsWith(".md") ||
 	file === "biome.jsonc";
+
+/** Several probe lists as one, each file once, in order. */
+const union = (...lists) => [...new Set(lists.flat())].sort();
 
 const directlyChangedProbes = (changedFiles) =>
 	changedFiles.map(directProbe).filter(Boolean).sort();
@@ -131,19 +153,45 @@ function scoreProbes(answers, forcedProbes) {
 }
 
 /**
+ * A new probe's registry entries, and a quarantine entry, are routing data:
+ * they select that probe and change no other contract. Any other registry edit
+ * leaves the registry file in `changedFiles`, where it is harness.
+ */
+function narrowRegistries(allChanged, directlyChanged, impact) {
+	const added = impact
+		? registryChanges(allChanged, impact.before, impact.after)
+		: null;
+	const registered = added?.every((p) => RUNNER_PROBE_FILES.includes(p))
+		? added
+		: null;
+	if (!registered)
+		return { changedFiles: allChanged, forced: directlyChanged, note: "" };
+	return {
+		changedFiles: allChanged.filter((file) => !(file in PROBE_REGISTRIES)),
+		forced: union(directlyChanged, registered),
+		note: ` Registry entries for ${registered.join(", ")} select them; no other entry changed.`,
+	};
+}
+
+/**
  * Return a complete deterministic result, or null when semantic judgment is
  * required.
  *
  * @param {string[]} changedFiles
  */
-function selectDeterministic(changedFiles, directlyChanged) {
-	if (!changedFiles.length)
+function selectDeterministic(allChanged, directlyChanged, impact) {
+	if (!allChanged.length)
 		return all(
 			"No changed-file evidence was available, so relevance is unknown.",
 			true,
 		);
+	const { changedFiles, forced, note } = narrowRegistries(
+		allChanged,
+		directlyChanged,
+		impact,
+	);
 
-	const globalFile = changedFiles.find(isGlobalRisk);
+	const globalFile = changedFiles.find((file) => isGlobalRisk(file, !!impact));
 	if (globalFile)
 		return all(
 			`${globalFile} is shared runtime, build, or probe-harness infrastructure.`,
@@ -152,13 +200,23 @@ function selectDeterministic(changedFiles, directlyChanged) {
 	const onlyDirectOrNonRuntime = changedFiles.every(
 		(file) => directProbe(file) || isNonRuntime(file),
 	);
-	if (!onlyDirectOrNonRuntime) return null;
-	if (!directlyChanged.length)
+	if (!onlyDirectOrNonRuntime) {
+		if (!impact) return null;
+		const selected = selectImpact(changedFiles, impact, RUNNER_PROBE_FILES);
+		return selected.probes
+			? result(
+					"affected",
+					union(selected.probes, forced),
+					selected.reason + note,
+				)
+			: all(selected.reason, true);
+	}
+	if (!forced.length)
 		return result("none", [], "Only documentation or headless tests changed.");
 	return result(
 		"exact",
-		directlyChanged,
-		"Only explicitly named probe scripts and non-runtime evidence changed.",
+		impact ? union(SMOKE_PROBES, forced) : forced,
+		`Only explicitly named probe scripts and non-runtime evidence changed.${note}`,
 	);
 }
 
@@ -219,7 +277,7 @@ async function selectSemantic(input, judge, forcedProbes) {
  * `judge` is injected so the policy remains testable without a network. It
  * receives one state and all independent Noul questions in one batch.
  *
- * @param {{changedFiles: string[], intent?: string}} input
+ * @param {{changedFiles: string[], intent?: string, impact?: {before: Map<string, string>, after: Map<string, string>}}} input
  * @param {((request: {state: object, questions: object}) => Promise<object>) | undefined} judge
  */
 export async function selectProbes(input, judge = undefined) {
@@ -240,7 +298,11 @@ export async function selectProbes(input, judge = undefined) {
 		);
 	const changedFiles = [...new Set(rawChangedFiles)].sort();
 	const forcedProbes = directlyChangedProbes(changedFiles);
-	const deterministic = selectDeterministic(changedFiles, forcedProbes);
+	const deterministic = selectDeterministic(
+		changedFiles,
+		forcedProbes,
+		input.impact,
+	);
 	if (deterministic) return deterministic;
 	const intent = typeof input.intent === "string" ? input.intent.trim() : "";
 	if (!intent || intent.length > MAX_INTENT_LENGTH)

@@ -44,6 +44,9 @@ import {
 	setHullFinish,
 } from "../src/ship-surface";
 import { hullLoft, uvUnitsOf } from "../src/loft";
+import { useProceduralHulls } from "./helpers/procedural-hulls";
+
+useProceduralHulls();
 
 // Restore the **default**, not stock: bun runs every test file in one
 // process, and a file that left `stock` behind would hand the next file a
@@ -64,6 +67,8 @@ function rosterHash(ids: readonly HullId[] = HULL_IDS) {
 	};
 	for (const id of ids)
 		for (const variant of HULL_VARIANT_IDS) {
+			// The lofts only: the authored Longwall B (node #815) is the shipped
+			// model's, pinned by `tests/longwall-mesh.test.ts`.
 			if (isAuthoredHull(id, variant)) continue;
 			buildShipMesh(id, variant).root.traverse((object) => {
 				// #130's generated detail is a finish layered onto the hull, not a
@@ -122,6 +127,9 @@ describe("stock is the hull that shipped", () => {
 		expect(HULL_FINISHES[DEFAULT_HULL_FINISH].collar).toBe("flange");
 	});
 
+	// Builds every hull under every finish. Main's copy of this file (fa3f6f8),
+	// run alone on an M1 Pro, timed out at bun's five-second default after
+	// 6.2 s and 7.0 s; 15 s is about twice that.
 	test("no finish moves a hull's envelope: every built box is stock's", () => {
 		// A hull's envelope is the berth catalogue's fit predicate
 		// (`hull.ts`), so a finish that grew a box would change which berths
@@ -163,7 +171,7 @@ describe("stock is the hull that shipped", () => {
 					}
 				}
 			}
-	}, 30_000);
+	}, 15_000);
 
 	test("every hull's geometry and UVs hash to the pin taken on main", () => {
 		// Taken at `cbf3f0f`: 33 hulls, 192,257 vertices. Under `stock` by
@@ -174,24 +182,30 @@ describe("stock is the hull that shipped", () => {
 		// old pin, so the claim that the new hulls are the whole of the change
 		// is something a run checks rather than a comment.
 		//
-		// **Re-pinned for node #813**, which replaced the procedural Porter
-		// (`freighter/b`) with an authored model the hash leaves out: 35
-		// procedural hulls, 205,905 vertices. The same hash over `4b145f3`'s
-		// roster with `freighter/b` left out reads the same pair, so the
-		// Porter is the whole of the change.
+		// **Re-pinned for node #815**, where `miner/b` became the authored
+		// Longwall B and left the hash: the 35 lofts are 205,315 vertices, and
+		// the same hash with `miner/b` skipped reads d40badcf on `main` at
+		// `4b145f3` — so no loft moved, only the one that is no longer a loft.
+		// The run that read it, and the one-line edit it took, are
+		// `spikes/longwall-miner/evidence/roster-hash-main-4b145f3.txt`.
+		// Node #813 also excludes freighter/b: 34 lofts, 200,060 vertices.
+		// Including that procedural Porter reproduces main's d40badcf /
+		// 205,315 pair; excluding it alone produces the pin below.
 		setHullFinish("stock");
-		expect(rosterHash()).toEqual({ hash: "e00963f3", vertices: 205905 });
+		expect(rosterHash()).toEqual({ hash: "ef122808", vertices: 200060 });
 	});
 
 	test("the original eleven archetypes still hash to the pin taken on main", () => {
 		// `cbf3f0f`'s pin over the ids that existed then. Adding a hull may move
 		// the whole-roster hash; it may not move any of these (#335's review).
-		// Re-pinned for node #813 as the row above is, and checked the same way
-		// against `4b145f3` without `freighter/b`.
+		// Re-pinned for node #815 as the row above was, and read the same way
+		// on `main` at `4b145f3` (the same transcript): those ids' 32 lofts,
+		// every variant but `miner/b`, are 186,412 vertices. Node #813 also
+		// leaves out freighter/b: 181,157 vertices, measured with the same hash.
 		setHullFinish("stock");
 		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
-			hash: "f18aff79",
-			vertices: 187002,
+			hash: "31c778b6",
+			vertices: 181157,
 		});
 	});
 });
@@ -217,9 +231,19 @@ describe("every finish builds the whole roster", () => {
 								.getSize(new THREE.Vector3())
 								.toArray(),
 						);
-					// An authored model has no named nacelle and bell; its glow
-					// is held in `tests/porter-model.test.ts`.
-					if (isAuthoredHull(id, variant)) continue;
+					if (id === "freighter" && variant === "b") continue;
+					if (isAuthoredHull(id, variant)) {
+						// Node #815: the authored hull has no lofted nacelle or bell, and
+						// its drives are its two rings, each with a glow inside its bore
+						// (`tests/longwall-mesh.test.ts` measures where).
+						expect(
+							root.children
+								.filter((child) => child.name.endsWith("-exhaust"))
+								.map((child) => child.name)
+								.sort(),
+						).toEqual(["longwall-port-exhaust", "longwall-starboard-exhaust"]);
+						continue;
+					}
 					let pairs = 0;
 					for (const drive of root.children) {
 						if (!drive.name.endsWith("-nacelle")) continue;
@@ -376,6 +400,9 @@ describe("a ring is hollow", () => {
 	 * a ray along the ring's own axis never meets the ring, whatever else it
 	 * meets.
 	 */
+	// Builds every hull under every finish: 3.9 s alone on an M1 Pro against
+	// main's copy of this file (fa3f6f8), inside bun's five-second default
+	// with no margin for the full suite's load; 15 s matches the envelope row.
 	test("a ray along every ring's axis passes through it, under every finish", () => {
 		for (const finish of HULL_FINISH_IDS) {
 			setHullFinish(finish);
@@ -436,7 +463,7 @@ describe("a ring is hollow", () => {
 				}
 			expect([finish, rings > 0]).toEqual([finish, true]);
 		}
-	});
+	}, 15_000);
 });
 
 describe("the maps are the plating's, not the finish's", () => {
@@ -458,5 +485,30 @@ describe("the maps are the plating's, not the finish's", () => {
 		expect(mapOf("industrial")).toBe(plated);
 		expect(mapOf("stock")).not.toBe(plated);
 		expect(mapOf("worn")).not.toBe(plated);
+	});
+});
+
+describe("the authored miner is finish-invariant (node #815)", () => {
+	test("every finish draws miner/b with the template's own geometry and paint", () => {
+		// It takes no palette (`AuthoredPlan`): its paint is the approved
+		// model's, so a finish must not reach it — held here rather than left a
+		// no-op nobody stated.
+		const drawnWith = () => {
+			const parts: string[] = [];
+			buildShipMesh("miner", "b").root.traverse((object) => {
+				const mesh = object as THREE.Mesh;
+				if (!mesh.isMesh) return;
+				const material = mesh.material as THREE.Material;
+				parts.push(`${mesh.name}:${mesh.geometry.uuid}:${material.uuid}`);
+			});
+			return parts;
+		};
+		setHullFinish("stock");
+		const stock = drawnWith();
+		expect(stock.length).toBeGreaterThan(0);
+		for (const finish of HULL_FINISH_IDS) {
+			setHullFinish(finish);
+			expect(drawnWith()).toEqual(stock);
+		}
 	});
 });

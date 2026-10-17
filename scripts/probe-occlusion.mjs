@@ -114,7 +114,17 @@ const TEXEL_CEILING_KM = { exterior: 0.01, cockpit: 0.001 };
  * by **more** than the shadow: a pixel the sun never reaches cannot be darkened
  * by toggling the sun's shadow, so a reading above the sun's reach means the
  * "off" arm was drawn differently, which is how #201's relit arm once read.
- * So the ceiling is 77, about 2.5 points above saturation.
+ * So the ceiling is about 2.5 points above saturation.
+ *
+ * **And saturation is measured, not written down** (node #818, the
+ * principal's ruling of 2026-10-13). It was a constant, 77, and the share of
+ * the bay the sun reaches turns with the station: with the clock left running
+ * from boot the bay was captured at whatever phase the run had reached, so
+ * `main` read 65.6–76.0% and a slower run 77.7–78.6% over the same build, and
+ * at the view-set's clock both read 79.3%. So the bay is captured at that clock
+ * (`CLOCK`), and `compare` measures the sun's reach in the same frame — the
+ * share of pixels that darken with the sun switched off and both passes off —
+ * and the ceiling is that reach plus `REACH_MARGIN_PCT`.
  *
  * **And the floor scales with it.** At 1 under 74% it would pass a shadow that
  * lost 98% of its coverage. On #199's rig the one short-stopped framing read
@@ -128,7 +138,10 @@ const TEXEL_CEILING_KM = { exterior: 0.01, cockpit: 0.001 };
  * exactly in `tests/occlusion.test.ts`, where they are arithmetic; this is the
  * arm that says the arithmetic reached the frame.
  */
-const SHADOW_BAND_PCT = { min: 15, max: 77 };
+const SHADOW_BAND_PCT = { min: 15 };
+/** The ceiling's margin over the measured reach: the half-float composite
+ *  through an eight-bit canvas, as `MOVED` says, and no more. */
+const REACH_MARGIN_PCT = 2.5;
 
 /** How much of the near subject the ambient occlusion has to reach before it
  *  counts as present. A bay is a room of corners; measured on a passing run it
@@ -215,6 +228,19 @@ const compare = (page, mode) =>
 			const shadowOnly = frame();
 			game.setOcclusion(false, true);
 			const aoOnly = frame();
+			// The sun's reach: everything a shadow from it could darken, against a
+			// frame of its own rather than `none` — a relit `none` is the defect
+			// the ceiling is for, and it would carry the reach up with it.
+			const sun = game.shadowSun;
+			game.setOcclusion(false, false);
+			const sunOn = frame();
+			let sunOff = sunOn;
+			if (sun) {
+				const kept = sun.intensity;
+				sun.intensity = 0;
+				sunOff = frame();
+				sun.intensity = kept;
+			}
 
 			for (const [object, was] of hidden) object.visible = was;
 			game.setOcclusion();
@@ -222,14 +248,14 @@ const compare = (page, mode) =>
 
 			const luma = (d, i) =>
 				0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-			const against = (later) => {
+			const against = (later, base = none) => {
 				let darker = 0;
 				let lighter = 0;
 				let deepest = 0;
 				let pixels = 0;
 				for (let i = 0; i < none.length; i += 4) {
 					pixels++;
-					const delta = luma(later, i) - luma(none, i);
+					const delta = luma(later, i) - luma(base, i);
 					if (delta < -moved) darker++;
 					else if (delta > moved) lighter++;
 					if (-delta > deepest) deepest = -delta;
@@ -243,6 +269,7 @@ const compare = (page, mode) =>
 			return {
 				shadow: against(shadowOnly),
 				ao: against(aoOnly),
+				reach: against(sunOff, sunOn),
 				texelKm: game.shadowTexelKm,
 				mapTexels: game.nearScene.getObjectByName("sun")?.shadow.mapSize.x,
 			};
@@ -733,6 +760,10 @@ t.check(
 
 // ---- inside a bay, which is the frame the AO was asked for ----
 
+// At the view-set's clock, before the placement: the share of the bay the sun
+// reaches turns with the station (see `REACH_MARGIN_PCT`), and a reset moves
+// the station, so it comes first.
+await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
 await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await OCCLUSION_FRAMINGS.berth.place(page);
 await setView(page, OCCLUSION_FRAMINGS.berth.view);
@@ -838,9 +869,10 @@ console.log(
 t.check(
 	"the shadow darkens the bay, and by a fraction of it",
 	bay.shadow.darkerPct > SHADOW_BAND_PCT.min &&
-		bay.shadow.darkerPct < SHADOW_BAND_PCT.max &&
+		bay.reach.darkerPct > SHADOW_BAND_PCT.min &&
+		bay.shadow.darkerPct < bay.reach.darkerPct + REACH_MARGIN_PCT &&
 		bay.shadow.lighterPct === 0,
-	`${bay.shadow.darkerPct.toFixed(3)}% darker, ${bay.shadow.lighterPct.toFixed(3)}% lighter, deepest ${bay.shadow.deepest.toFixed(1)}/255`,
+	`${bay.shadow.darkerPct.toFixed(3)}% darker against the sun's reach of ${bay.reach.darkerPct.toFixed(3)}%, ${bay.shadow.lighterPct.toFixed(3)}% lighter, deepest ${bay.shadow.deepest.toFixed(1)}/255`,
 );
 console.log(
 	`  shadow — cabin ${cabin.shadow.darkerPct.toFixed(3)}% darker, deepest ${cabin.shadow.deepest.toFixed(1)}/255`,

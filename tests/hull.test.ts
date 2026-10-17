@@ -316,6 +316,23 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 			const env = HULL_SPECS[id].env;
 			const volumeM3 = env.lengthKm * env.beamKm * env.heightKm * 1e9;
 			const density = (HULL_SPECS[id].massT * 1000) / volumeM3;
+			if (id === "miner") {
+				// **The one named exemption, and it is pinned rather than banded**
+				// (node #815). Longwall B's box replaced the loft's, and the mass
+				// it would re-derive to is a stat change the principal has not
+				// made, so the old 215 t stands in a box it was not derived from.
+				// Pinned to both figures, so re-deriving the mass or moving the
+				// box makes this row red and somebody deletes the exemption.
+				expect([HULL_SPECS.miner.massT, env]).toEqual([
+					215,
+					{ lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
+				]);
+				expect(density).toBeGreaterThan(MAX_T_PER_1000M3);
+				console.log(
+					`${id.padEnd(12)} ${density.toFixed(2)} t per 1000 m³ (exempt, node #815)`,
+				);
+				continue;
+			}
 			expect([
 				id,
 				density >= MIN_T_PER_1000M3,
@@ -605,10 +622,11 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 				hullPriceCr(row.holdT),
 			]);
 
-		// **CLAUDE.md names the constants rather than restating them**, so there is
-		// nothing there to go stale — which is the fix for the round where it
-		// carried a superseded pair with every gate green.
-		const claudeMd = read("CLAUDE.md");
+		// **The pitfalls name the constants rather than restating them**, so there
+		// is nothing there to go stale — which is the fix for the round where
+		// CLAUDE.md carried a superseded pair with every gate green. The trap moved
+		// to docs/pitfalls.md with the rest of them.
+		const claudeMd = read("docs/pitfalls.md");
 		expect(claudeMd).toContain("HULL_PRICE_BASELINE_CR");
 		expect(claudeMd).toContain("HULL_PRICE_EXPONENT");
 		const hullTrap = claudeMd.slice(

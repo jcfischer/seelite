@@ -59,7 +59,8 @@ Verified on `main` at `295320a`, 2026-09-16.
   gave the charge for sustained fire a voice. The old spelling survives in this
   paragraph as the quotation of a label that was, and nowhere else.
 - **Every ship already shares one condition model.** `fullCondition(hull)`
-  gives 106 shield per side, a bank of 100 and `HULL_SPECS[hull].integrity`
+  gives the hull's own `shieldPool` per side, its stock plant's bank (106
+  and 100 on the courier; per hull since #866) and `HULL_SPECS[hull].integrity`
   hull points (`src/ship-condition.ts:19-31, 78-92`); the pulse laser does 6
   damage per second.
 - **Station hostility is session state.** `DockingState.hostile` and
@@ -636,7 +637,7 @@ The same rule, on the diversion.
   fled, so the seconds a hull took to open is not a fact about H3d. What the
   probe holds is the frame-precise one — the hull was whole on the frame before
   the row turned, and points were spent on the frame it did — and the arithmetic
-  against `SHIELD_POOL / PULSE_LASER.damagePerS` stays where the geometry is
+  against the hull's `shieldPool` over `PULSE_LASER.damagePerS` stays where the geometry is
   pinned, in the headless rig. A row that asserted the seconds was falsely red
   here before it was rewritten.
 

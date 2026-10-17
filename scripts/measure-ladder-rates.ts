@@ -1,3 +1,4 @@
+import { stockLoadout } from "../src/loadout";
 /**
  * What each of #183's three ladders earns per hour of play — the **rates** the
  * ladder gate catalogue (#562) turns into thresholds.
@@ -66,7 +67,7 @@ import {
 } from "../src/ladder";
 import { fullKitCr } from "../src/market";
 import { STATION_BERTHS_OPEN } from "../src/station";
-import { PULSE_LASER, SHIELD_POOL } from "../src/ship-condition";
+import { PULSE_LASER } from "../src/ship-condition";
 import { RELAY_INTEGRITY } from "../src/pirate-relay";
 import { RAIDER_REPAIR_S, RAIDER_WRECK_S } from "../src/raider-wreck";
 import { legEncounter, raiderLegChance } from "../src/raider-slots";
@@ -616,17 +617,17 @@ const list = (xs: readonly number[], digits = 0) =>
 	xs.map((x) => x.toFixed(digits)).join(", ");
 
 // Combat strength and the price of a kill are the game's (`kill-credit.ts`).
-// Hardpoints have no behaviour yet, so every armed hull fires one pulse laser.
+// NPC targets still fire one Pulse. Own rows read each hull's stock module fit.
 // A *target* is armed if Traffic arms it or it is the raider; the pilot's own
-// ship is always armed. The pilot's hull is no longer printed as an armed
+// stock fit carries a combat laser. The pilot's hull is no longer printed as an armed
 // target, because in the game a courier in the lanes never fires.
 const dps = (h: HullId): number =>
 	isArmedTarget(h) ? PULSE_LASER.damagePerS : 0;
 const credit = (own: HullId, target: HullId): number =>
-	killCredit({ hull: own }, target);
+	killCredit({ hull: own, loadout: stockLoadout(own) }, target);
 
 console.log(
-	`\n   strength S = (SHIELD_POOL ${SHIELD_POOL} + integrity) × DPS × aiSkill 1; DPS = PULSE_LASER.damagePerS ${PULSE_LASER.damagePerS} if armed, else 0; own S (always armed): courier ${fittedStrength({ hull: PLAYER_BASELINE_HULL })}`,
+	`\n   strength S = (the hull's shieldPool + integrity) × DPS × aiSkill 1; DPS = PULSE_LASER.damagePerS ${PULSE_LASER.damagePerS} if armed, else 0; own S (always armed): courier ${fittedStrength({ hull: PLAYER_BASELINE_HULL, loadout: stockLoadout(PLAYER_BASELINE_HULL) })}`,
 );
 for (const h of DOCKABLE_HULL_IDS)
 	console.log(

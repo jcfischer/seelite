@@ -49,7 +49,9 @@ const flownState = (page) =>
 		const H = await import("/src/hull.ts");
 		const S = await import("/src/sim.ts");
 		const id = g.playerHull.id;
-		const perf = S.flightPerformance(id);
+		// At the flown mass (#865): the scenario carries 20 t of Food, and a
+		// laden ship's handling is not the empty hull's.
+		const perf = S.flightPerformance(id, {}, g.playerHull.massT);
 		return {
 			id,
 			commanderHull: g.commander.hull,

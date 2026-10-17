@@ -19,15 +19,16 @@
  *    world fragment the cabin did not cover. A coverage mask must not look at
  *    what anything *looks like*, so the arms are flat colours with bloom,
  *    dither, the occlusion passes and the far layers off, and the test is
- *    which channel dominates. The glass and the additive lamp pools are no
- *    footprint: through them the world is meant to show.
+ *    which channel dominates. The glass and every other transparent surface
+ *    are no footprint: through them the world is meant to show.
  * 2. **The cabin camera brackets the built cabin.** Every vertex of every
  *    cabin mesh, in world space with the camera at the origin, lies between
  *    the cabin camera's near and far planes — so no head turn slices a
  *    fitting open, and nothing is clipped at the back.
  * 3. **The ambient occlusion follows the view (D6).** Pinned on against
- *    pinned off, it darkens part of the footprint and nothing outside it,
- *    because in cockpit view the pass is handed the cabin's scene.
+ *    pinned off, it darkens part of the footprint and no world beyond the
+ *    AO buffer's sampling fringe. The raw edge spill is also reported: the
+ *    half-resolution filter interpolates over a full-resolution silhouette.
  * 4. **A world lamp reaches the cabin only through its mirror (D5).** A lamp
  *    in the near layer alone leaves the footprint untouched; mirrored with
  *    `mirrorIntoCabin` it lights it; the undo takes the light away again.
@@ -43,8 +44,8 @@
  * 310,293 px of world inside a 32.5% footprint in two runs — the frame is
  * mid-traversal, so the pose moves a little from run to run. The AO rows' red was shown another way,
  * by a source mutation forcing the AO onto the near scene (the outside read
- * 18.379%); there is no arm for that here, because it is not a state the
- * shipped build can be put in.
+ * 18.379%); SEELITE_CABIN_AO_DEFECT=world now repeats that red arm by pinning
+ * the pass's scene accessor to the near scene.
  */
 import {
 	bootedGame,
@@ -89,8 +90,15 @@ await page.evaluate(async () => {
 await stopLoop(page);
 
 const r = await page.evaluate(
-	([erode, moved]) => {
+	([erode, moved, injectWorldAo]) => {
 		const game = window.__seelite;
+		// Optional red-arm verification of the scene-containment assertion.
+		if (injectWorldAo)
+			Object.defineProperty(game.gtaoPass, "scene", {
+				get: () => game.nearScene,
+				set: () => {},
+				configurable: true,
+			});
 		// No three on the page; the scanner face is a `MeshBasicMaterial`, and
 		// its class is the one wanted. The cabin lamp's class is a point light.
 		const Basic =
@@ -264,17 +272,44 @@ const r = await page.evaluate(
 		game.setOcclusion(false, false);
 		let darkInside = 0;
 		let darkOutside = 0;
+		let darkFringe = 0;
+		// Derive the fringe from the actual AO target's texel footprint, rather
+		// than widening a display-code threshold to fit the new bay lighting.
+		const fringe = Math.ceil(
+			Math.max(
+				W / game.gtaoPass.normalRenderTarget.width,
+				H / game.gtaoPass.normalRenderTarget.height,
+			),
+		);
 		let inCount = 0;
 		let outCount = 0;
 		for (let p = 0; p < W * H; p++) {
 			const i = p * 4;
 			const darker = luma(aoOn, i) < luma(aoOff, i) - moved;
-			// The raw footprint, not the core: the AO stops at the cabin's own
-			// edge, and an eroded mask would count that edge as outside.
+			// Keep the raw cabin silhouette for the positive arm; separately report
+			// its sampling fringe instead of treating filtered edge pixels as world.
 			if (inside[p] === 1) {
 				inCount++;
 				if (darker) darkInside++;
 			} else {
+				const x = p % W,
+					y = Math.floor(p / W);
+				let atEdge = false;
+				for (let dy = -fringe; dy <= fringe && !atEdge; dy++)
+					for (let dx = -fringe; dx <= fringe && !atEdge; dx++) {
+						const xx = x + dx,
+							yy = y + dy;
+						atEdge =
+							xx >= 0 &&
+							xx < W &&
+							yy >= 0 &&
+							yy < H &&
+							inside[yy * W + xx] === 1;
+					}
+				if (atEdge) {
+					if (darker) darkFringe++;
+					continue;
+				}
 				outCount++;
 				if (darker) darkOutside++;
 			}
@@ -311,8 +346,8 @@ const r = await page.evaluate(
 
 		loud();
 
-		// The opaque footprint only: through the glass and the pools the world
-		// lamp is meant to show.
+		// The opaque footprint only: through the glass and any transparent
+		// surface the world lamp is meant to show.
 		const delta = (a, b) => {
 			let sum = 0;
 			let worst = 0;
@@ -325,6 +360,8 @@ const r = await page.evaluate(
 			return { mean: sum / Math.max(1, inCount), worst };
 		};
 		return {
+			aoFringePx: fringe,
+			aoFringeDarkened: darkFringe,
 			W,
 			H,
 			footprintPct: (100 * footprint) / (W * H),
@@ -346,7 +383,7 @@ const r = await page.evaluate(
 			undone: delta(unlit, undone),
 		};
 	},
-	[ERODE_PX, MOVED],
+	[ERODE_PX, MOVED, process.env.SEELITE_CABIN_AO_DEFECT === "world"],
 );
 await startLoop(page);
 
@@ -418,9 +455,9 @@ t.check(
 	`${r.aoInsidePct.toFixed(2)}% of the footprint past ${MOVED} codes`,
 );
 t.check(
-	"and nothing of the world outside it",
+	"and no world beyond the cabin's AO sampling fringe",
 	r.aoOutsidePct < 0.05,
-	`${r.aoOutsidePct.toFixed(3)}% of the rest`,
+	`${r.aoOutsidePct.toFixed(3)}% beyond ${r.aoFringePx}px; ${r.aoFringeDarkened}px in the raw fringe`,
 );
 t.check(
 	"a world lamp alone does not light the cabin",

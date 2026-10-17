@@ -41,7 +41,11 @@ place of the drawn mesh, with the aperture's opening left out. It is
 Three-free and is a function of the form and its seeds. For an aperture of
 kind `pad`, the landing well also derives from the admitted hull envelopes <!-- glossary-ignore: pad -->
 through `padWellDepthKm` (collision.md §2.2). No drawn vertex may
-lie outside it. `docs/specs/collision.md` §2.2 owns it.
+lie outside it — on a shipyard or a refinery, no vertex of the authored
+model: the sim collides with that whatever is drawn, so the procedural
+stand-in that draws until it installs is not solid (nodes #818, #819). Its
+plant is held to 10 m of empty space and a refinery's rock to 20 m.
+`docs/specs/collision.md` §2.2 owns it.
 _Avoid_: hitbox, collision mesh.
 
 **Review fleet slot**:
@@ -230,6 +234,8 @@ _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 > **Scope of the word `HELD`** (node #696, #473 D10). Two screens print it and they name different things. The docked Market tab's `HELD` column is the player's **Hold** — the pilot's own lines, per good, read through `pilotGoods` in `src/hold.ts`; a consignment's share stays in the hold line. The Flight console's `HELD` row is a carrier's **Manifest** (above). A ship is carrying something in both, which is why the plain word serves both glasses; the identifiers behind them — `held` on a market row, `manifest` on a carrier — are what keep the two apart.
 
 > **Scope of the `hold` alias** (added by [#486](https://github.com/jcfischer/seelite/pull/486), the same reading as the `Command` note below). A fifth English sense is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is flown by keeping a key down rather than by pressing it — #369 D3 splits `x` pressed from `x` held on exactly that — and #381's storage slice writes it into `seelite:bindings`. It is a property of an input and never of cargo, a carrier or a launch, so it takes no canonical name here; it is listed because it is durable now, and a reader meeting `{ kind: "key", hold: true }` in a stored blob should find it rather than wonder which of the four it is. The `_Avoid_` line above is **Hold**'s and not this note's.
+
+> **... and a sixth: a held opening** (#882). `OpeningRun.held`, `Game.holdOpening` and `?cinematic=held` hold the **Opening** at a named shot and shown second — see that entry's note, which is where the sense belongs because it is about a sequence standing still, not about carrying anything. Never cargo, a carrier, a launch, or a key being kept down.
 
 **Holdings**:
 Everything a pilot owns that an act can move: the commander (credits, cargo,
@@ -474,6 +480,7 @@ _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 **Sweep reading**:
 A dated system-scale observation from the pilot's own Long-Range Scanner: generated source identity, a general region and observation time. `docs/specs/system-sweep.md` owns its charge, refresh and age rules; `SweepReading` in `system-sweep.ts` is persisted in `CommanderRecord.sweepReadings`. A completed sweep replaces this system's readings, including absences; between sweeps they age unchanged. Separate from a retained **Lead** in Requests: it has no confirmation action, identified carrier reference or condition snapshot. Neither grants discovery or targeting; the per-galaxy knowledge row remains authoritative.
 Scope note: a sweep reading's region is never a **Display contact** or a target; it is never selectable.
+A raider-pressure reading carries a **pressure strength** — light, moderate or heavy, recorded at observation and never a count — and, without a raider outpost, names the system's **cruise lanes**: where the leg law meets a raider. "Cruise lanes" is not the **Transit lane** and not a **Lane point**; write it in full. `docs/specs/system-sweep.md` owns the buckets (node #769).
 
 **Local run**:
 A courier job that delivers inside the posting system, posted by every station whose system has a second station. Its own post on the board beside the courier floor, so settling one never rerolls the other. `docs/specs/first-useful-day.md` D2 owns why it exists; `docs/specs/ordinary-requests.md` §3 records the second post.
@@ -490,6 +497,8 @@ A song's first **section** is named `intro` in every score — the waltz and
 each of its **Versions** — which is music's word for it and never this
 flight. A reviewer flagging that has found the alias rule firing on a
 section name.
+
+> **A third way through it: held** (#882, `?cinematic=held`). `OpeningRun.held` — reached through `Game.holdOpening` — runs the script to a named shot and shown second and stops there, so a capture or a probe can sample one step as many times as it likes, or step through the script one step per call. It is the same flight at the same `OPENING.dtS`, and it runs **no wall time**, which is what makes it the wrong evidence for anything that takes real seconds to look right — the arrival's rift is one of those — and the right evidence for where the camera and the ship were at each step. A row that holds says which of the two it is measuring.
 
 **Station control**:
 The voice that speaks to a guided pilot on the docked station console and in the Communications log during the first day. `docs/specs/first-useful-day.md` D3 owns where it speaks and when it stops.
@@ -650,7 +659,7 @@ this — so only words that are canonical nowhere belong here. `Clearance queue`
 matching note about its own four senses of "pad".
 
 **Station interior**:
-What lies at a station's aperture, in one of two **presentations** decided by `aperture.kind` (#165). Computed in exactly one place, `src/station-interior.ts`, and drawn in exactly one, `src/station-interior-mesh.ts`; `docs/specs/docking.md` §13.1 owns the topology of both.
+What lies at a station's aperture, in one of two **presentations** decided by `aperture.kind` (#165). Computed in exactly one place, `src/station-interior.ts`. `src/station-interior-mesh.ts` draws the procedural stand-in and open decks, and installs the authored bay presentation through its builder seam: `src/interior-kit.ts` assembles it from `src/interior-layout.ts` placement; `docs/specs/docking.md` §13.1 owns the topology of both.
 _Avoid_: Hangar, throat, docking bay corridor
 
 **Bay**:
@@ -755,9 +764,10 @@ _Avoid_: Warp, hyperjump, hyperspace jump (as a verb), FTL
 
 **Hyperspace tank**:
 The jump fuel, spent by distance and bought at any station's equipment screen
-at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY. Its capacity is the flown
-hull's `tankLy`, which is also its jump range — one number (#185 D1, #554); the
-courier's is 7 LY. `galaxy.ts`'s `JUMP_RANGE_LY` is **not** a tank: it is the
+at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY, or filled by a fitted fuel
+scoop on a cruise pass inside a star's skim band (#871 D2, built by #932). Its
+capacity is the flown hull's `tankLy` plus every fitted fuel tank (#926); the
+jump range is `tankLy` alone (#185 D1, #554), and the courier's is 7 LY. `galaxy.ts`'s `JUMP_RANGE_LY` is **not** a tank: it is the
 galaxy's connectivity predicate, the reach at which every galaxy is connected.
 Distinct from the **drive charge**, which is cruise's own reserve — the flown
 hull's `chargeAu`, 12 AU on the courier — with free refills on docking.
@@ -770,6 +780,22 @@ regenerates on its own while the gun is idle and is never bought or refuelled.
 `src/ship-condition.ts` owns its figures. Distinct from the **Hyperspace tank**
 and the **drive charge**, which move the ship; the energy bank never does.
 _Avoid_: Energy (unqualified), capacitor, power
+
+**Hull temperature**:
+How hot a hull is from starlight (#871 D3, built by #931), in units of the
+**top**: ambient 0, the top 1. A star heats a hull inside its skim band —
+2 R from its centre, R its radius — hardest at cruise's 1.05 R drop-out shell,
+and the hull cools toward ambient everywhere, so it rises on a pass and falls
+after it. The law is every hull's (#871 D4), but only the player's ship is
+stepped today: no NPC carries a hull temperature (#931's scope, and
+`scripts/measure-traffic-star-band.ts` finds no Traffic route in a band). Above the top the hull loses a share of its integrity each second;
+the shields are not touched. It reads distance alone, so normal flight and
+cruise heat alike, and it is not saved: a loaded game starts at ambient. The
+glass shows it as `TEMP` while it is above ambient. #930's resolution holds
+the approved figures; `src/ship-condition.ts` carries them.
+Distinct from **laser heat**, the gun's own `heat` that locks it, and from
+**Legal heat**, which is an offence score.
+_Avoid_: Heat (unqualified), hull heat, overheat
 
 **Witchspace**:
 Where the ship is between two systems. It costs no sim time today: the clock

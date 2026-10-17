@@ -45,7 +45,7 @@ export function scoopWreckContainer(
 						...commander,
 						recoveredFittings: [
 							...(commander.recoveredFittings ?? []),
-							{ id: item.id, tonnes: item.left },
+							{ id: item.id, tonnes: item.left, ...item.fitting },
 						],
 					},
 				};

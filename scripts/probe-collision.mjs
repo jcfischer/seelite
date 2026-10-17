@@ -1,6 +1,7 @@
 /**
  * Stations are solid: a ship stops at a station's hull, at a pad berth and at a // glossary-ignore: pad
- * shipyard boom (`collision.md` §9.2.1, §9.2.2, node #663).
+ * shipyard's yard (`collision.md` §9.2.1, §9.2.2, node #663; the authored
+ * yards, node #818).
  *
  *   npm run dev                         # in one shell
  *   node scripts/probe-collision.mjs    # in another
@@ -12,7 +13,7 @@
  * works, under the name that says so. Check 5 keeps its headless rows.
  *
  * **§9.2.2 is where a too-generous proxy would show**: the pad's deck and its // glossary-ignore: pad
- * berths, and the Gantry's booms, are the sparse parts of the selected forms,
+ * berths, and the shipyards' open yards, are the sparse parts of the selected forms,
  * and a box that wraps them is an invisible wall nothing headless can see
  * (§11, joint 5). So each row casts from the stopped hull box's fore-face
  * centre along the ship's nose onto the **drawn** station, then prints the
@@ -263,46 +264,53 @@ function stopped(what, r) {
 }
 
 // §9.2.2 — a ship stops at a pad berth, and at each shipyard form's static // glossary-ignore: pad
-// frame (node #746: the Gantry's dorsal boom, the Hangar's slab, the // glossary-ignore: Hangar
-// Slipway's arc). Seed 42's systems 7, 8 and 1 build the shipyard in forms
-// a, b and c, and each row checks the form it met. Every perch is 0.35 km
-// above what it comes down onto, inside `coast`'s 0.6 km of travel:
-// - the Gantry's boom stands 0.37–0.58 km out along the static `up` and runs
-//   forward to 1.15 km; come down onto its front end;
-// - the Hangar's slab runs ±1.2 km along `across` and its forward face is at // glossary-ignore: Hangar
-//   −0.38 km on the centreline; 0.7 km across clears the hub's swept corners
-//   (0.37 km) and the bay mouth's band (0.54 km);
-// - the Slipway's arc is a 1.283 km ring whose +Z crown is at 0.12 km, and
-//   `up` at phase zero points at 0.5π, inside its 0.28π–1.73π sweep.
+// frame. Seed 42's systems 7, 8 and 1 build the shipyard in forms a, b and c,
+// and each row checks the form it met. Since node #818 the static frame is
+// the authored yard, and each perch is 0.35 km along the axis above the
+// forward face of one of its largest axis-aligned yard boxes, off the drum,
+// with nothing between (read off `shipyardProxyBoxes`: the box's centre
+// across and up, its top plus 0.35 km), inside
+// `coast`'s 0.6 km of travel. The forms' tops: a −0.143 km, b −0.811 km,
+// c −0.212 km.
 for (const [type, where, what, system, perch, formId] of [
 	["refinery", "berth", "a pad berth", SYSTEM, null, null], // glossary-ignore: pad
 	[
 		"shipyard",
 		"static",
-		"a Gantry's boom",
+		"the Gantry Works' yard",
 		7,
-		{ axialKm: 1.5, acrossKm: 0, upKm: 0.475, label: "over the dorsal boom" },
+		{
+			axialKm: 0.207,
+			acrossKm: 0.38,
+			upKm: 0.02,
+			label: "over a yard housing",
+		},
 		"a",
 	],
 	[
 		"shipyard",
 		"static",
-		"a Hangar's slab", // glossary-ignore: Hangar
+		"the Foundry Hangar's yard", // glossary-ignore: Hangar
 		8,
 		{
-			axialKm: -0.03,
-			acrossKm: 0.7,
-			upKm: 0,
-			label: "over the slab's forward face",
+			axialKm: -0.461,
+			acrossKm: -0.236,
+			upKm: 0.48,
+			label: "over a hall's forward face",
 		},
 		"b",
 	],
 	[
 		"shipyard",
 		"static",
-		"a Slipway's arc",
+		"the Crescent Slipway's yard",
 		1,
-		{ axialKm: 0.47, acrossKm: 0, upKm: 1.283, label: "over the arc's crown" },
+		{
+			axialKm: 0.138,
+			acrossKm: -0.415,
+			upKm: -1.731,
+			label: "over the ring's plant",
+		},
 		"c",
 	],
 ]) {

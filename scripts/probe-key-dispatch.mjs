@@ -355,5 +355,67 @@ check(
 	`${beforeQuestion.throttle} -> ${afterQuestion.throttle}`,
 );
 
+// ---------------------------------------------------------------------------
+// `b` is the fire-group cycle, and the `?perf` panel's bloom while it is up
+// (#892, on #385 D6). `tests/cycle-key.test.ts` holds the resolver; this holds
+// `onKey` handing it the panel's state. The cycle has no body until #893, so
+// the count is a wrapper on the Game's own method — `__seelite` is the Game —
+// rather than a field the game would carry for this probe.
+// ---------------------------------------------------------------------------
+const countCycles = (p) =>
+	p.evaluate(() => {
+		const game = window.__seelite;
+		const own = game.cycleFireGroup.bind(game);
+		window.__cycles = 0;
+		game.cycleFireGroup = () => {
+			window.__cycles++;
+			own();
+		};
+	});
+const cycleState = (p) =>
+	p.evaluate(() => ({
+		cycles: window.__cycles,
+		bloom: window.__seelite.bloom?.enabled ?? null,
+	}));
+
+await countCycles(page);
+const beforeB = await cycleState(page);
+await page.keyboard.press("b");
+await settle(page);
+const afterB = await cycleState(page);
+check(
+	"without ?perf, b cycles the fire group once and leaves bloom alone",
+	afterB.cycles === 1 && afterB.bloom === beforeB.bloom,
+	`cycles ${beforeB.cycles} -> ${afterB.cycles}, bloom ${beforeB.bloom} -> ${afterB.bloom}`,
+);
+await page.close();
+
+const perfPage = await browser.newPage({
+	viewport: { width: 1280, height: 760 },
+});
+watch(perfPage);
+await perfPage.goto(gameUrl(origin, { seed: 42, perf: 1 }), {
+	waitUntil: "load",
+});
+await bootedGame(perfPage);
+// The panel mounts after the frame sampler is enabled, some time after boot;
+// readiness is the Game holding the handle, never a wait in milliseconds.
+await perfPage.waitForFunction(() => window.__seelite.perfPanel !== null);
+await countCycles(perfPage);
+const beforePerfB = await cycleState(perfPage);
+await perfPage.keyboard.press("b");
+await settle(perfPage);
+const afterPerfB = await cycleState(perfPage);
+check(
+	"with ?perf open, b toggles bloom",
+	beforePerfB.bloom !== null && afterPerfB.bloom === !beforePerfB.bloom,
+	`bloom ${beforePerfB.bloom} -> ${afterPerfB.bloom}`,
+);
+check(
+	"and does not cycle the fire group",
+	afterPerfB.cycles === 0,
+	`cycles ${afterPerfB.cycles}`,
+);
+
 await browser.close();
 exit();

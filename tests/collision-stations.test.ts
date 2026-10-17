@@ -22,25 +22,26 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import * as THREE from "three";
 import { LAUNCH_CLEAR_HULL_LENGTHS } from "../src/arrival";
 import {
 	type Impact,
-	type Primitive,
-	SEPARATION_KM,
-	type SolidMotion,
-	V_SCRAPE_KMS,
 	impactDamage,
 	mayMeet,
+	type Primitive,
 	pairSeparation,
 	reachKm,
+	SEPARATION_KM,
+	type SolidMotion,
 	shipPose,
 	sweepShip,
+	V_SCRAPE_KMS,
 } from "../src/collision";
-import { DEFAULT_CRUISE, advanceCruise } from "../src/cruise";
+import { advanceCruise, DEFAULT_CRUISE } from "../src/cruise";
 import {
-	type DockSession,
 	berthOf,
 	collisionExempt,
+	type DockSession,
 	enterArrival,
 	interiorOfStation,
 	requestLaunch,
@@ -48,18 +49,17 @@ import {
 } from "../src/dock-session";
 import {
 	type ApertureFrame,
-	type EntryPose,
 	apertureCrossing,
 	apertureFrame,
+	type EntryPose,
 	slotBasis,
 } from "../src/docking";
 import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
 import {
-	type HullAttitude,
-	type World,
 	advanceWorldClock,
 	bodyVelocity,
 	flightPerformance,
+	type HullAttitude,
 	jumpWorldTo,
 	makeWorld,
 	restoreWorld,
@@ -70,52 +70,65 @@ import {
 	stationOf,
 	stationStarts,
 	stepWorld,
+	type World,
 } from "../src/sim";
 import {
+	formsInPlay,
 	OUTPOST_FORM,
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationFormId,
 	type StationType,
-	formsInPlay,
 	slotPhaseRad,
 } from "../src/station";
 import {
-	BERTH_CELL,
-	type StationInterior,
 	admittedHulls,
+	BERTH_CELL,
 	berthFits,
 	interiorAxialSpanKm,
+	type StationInterior,
 	stationInterior,
 } from "../src/station-interior";
 import {
-	type StationEnd,
-	type StationProxy,
+	type ProxyBox,
 	proxyPoses,
+	proxyListDistanceKm,
 	proxyReachKm,
 	proxySolids,
-	stationProxyOf,
+	type StationEnd,
+	type StationProxy,
 	stationMotions,
+	stationProxy,
+	stationProxyOf,
 } from "../src/station-proxy";
 import { MAX_DT } from "../src/units";
 import {
-	type Vec3,
+	installShippedShipyards,
+	uninstallShipyards,
+} from "../scripts/lib/shipped-shipyards";
+import {
+	EMPTY_LIMIT_M,
+	shipyardTriangles,
+	TriangleGrid,
+} from "../scripts/lib/shipyard-proxies";
+import {
 	add,
 	cross,
 	dot,
 	length,
 	scale,
 	sub,
+	type Vec3,
 	v3,
 } from "../src/vec3";
-import { stationInForm } from "./helpers/forms-in-play";
-import { hullSolid } from "./helpers/hull-solid";
 import { clearsAperture } from "./helpers/aperture-physical-fit";
 import {
 	FIXTURE_AXIS,
 	FIXTURE_REFERENCE,
 	flyTheComputer,
 } from "./helpers/fly-the-computer";
+import { stationInForm } from "./helpers/forms-in-play";
+import { hullSolid } from "./helpers/hull-solid";
 import { planLabel, stationPlansFor } from "./helpers/station-plan-corpus";
 
 // ---------------------------------------------------------------------------
@@ -237,25 +250,125 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 		expect(swept.ghosts).toEqual([]);
 	});
 
-	test("the shipyard's keel does not turn with its drum: a ship beside a boom is never met", () => {
-		// The boom stands outboard of the bay at y 0.37–0.58 km in the static
-		// frame. A ship holds beside each of its x faces for two seconds while
-		// the drum turns at 3 rpm. A keel posed in the spinning frame sweeps a
-		// boom 0.15 km in that time — the arm below builds exactly that.
+	test("the shipyard's yard does not turn with its drum: a ship beside a yard beam is never met", () => {
+		// The authored Gantry Works' yard stands still aft of its turning
+		// drum (node #818). The subject is a yard box off the axis: a ship holds
+		// beside each of its two faces that look along the drum's turn there,
+		// for two seconds while the drum turns at 3 rpm. A yard posed in the
+		// spinning frame carries such a box through one of them — the arm
+		// below builds exactly that. The box is read from the proxy by
+		// geometry alone, not by the sweep under test: the largest whose two
+		// ships' boxes, sampled every 2 m, stand more than 1.5 m from every
+		// other yard primitive (so no plate passes between samples) and outside
+		// the drum's reach. Then the sweep must meet neither, and the arm must.
 		const proxy = stationProxyOf(stationInForm("shipyard", "a"));
 		const { env, envCentre } = HULL_SPECS[TURN_HULL];
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);
-		const ships = [1, -1].map((side) => {
-			const out = 0.24 + env.beamKm / 2 + Math.abs(envCentre.rightKm) + 0.002;
-			return {
-				pos: local("shipyard", side * out, 0.47, 0.2),
+		// Clear of the face along any direction across the axis.
+		const shipOut =
+			env.beamKm / 2 +
+			Math.abs(envCentre.rightKm) +
+			env.heightKm / 2 +
+			Math.abs(envCentre.upKm) +
+			0.002;
+		const shipReach = reachKm(hullSolid(TURN_HULL));
+		const [shipBox] = hullSolid(TURN_HULL);
+		const { across } = slotBasis(frame);
+		/** Points over the ship's box at rest at `pos`, in the proxy's frame. */
+		const shipSurface = (pos: Vec3): Vec3[] => {
+			if (shipBox.kind !== "box") throw new Error("the hull is a box");
+			const pose = shipPose(pos, frame.axis, up);
+			const steps = shipBox.half.map((h) =>
+				Math.max(1, Math.ceil((2 * h) / 0.002)),
+			);
+			const out: Vec3[] = [];
+			for (let i = 0; i <= steps[0]; i++)
+				for (let j = 0; j <= steps[1]; j++)
+					for (let k = 0; k <= steps[2]; k++) {
+						if (
+							i > 0 &&
+							j > 0 &&
+							k > 0 &&
+							i < steps[0] &&
+							j < steps[1] &&
+							k < steps[2]
+						)
+							continue;
+						const t = [i / steps[0], j / steps[1], k / steps[2]].map(
+							(f, n) => (2 * f - 1) * shipBox.half[n],
+						);
+						const b = add(
+							add(
+								add(shipBox.centre, scale(shipBox.axes[0], t[0])),
+								scale(shipBox.axes[1], t[1]),
+							),
+							scale(shipBox.axes[2], t[2]),
+						);
+						const w = add(
+							add(add(pose.origin, scale(pose.x, b.x)), scale(pose.y, b.y)),
+							scale(pose.z, b.z),
+						);
+						out.push(v3(dot(w, across), dot(w, up), dot(w, frame.axis)));
+					}
+			return out;
+		};
+		const drumReach = proxyReachKm({
+			spinning: proxy.spinning,
+			static: [],
+			thinnestKm: proxy.thinnestKm,
+		});
+		/** The box's axis along the turn at its centre, and its half there. */
+		const alongTurn = (b: ProxyBox) => {
+			const r = Math.hypot(b.cx, b.cy);
+			const t = v3(-b.cy / r, b.cx / r, 0);
+			const axes = b.axes ?? [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)];
+			const k = [0, 1, 2].find((n) => Math.abs(dot(axes[n], t)) > 0.95);
+			return k === undefined
+				? null
+				: { axis: axes[k], half: [b.hx, b.hy, b.hz][k] };
+		};
+		const beams = proxy.static
+			.filter(
+				(p): p is ProxyBox =>
+					p.kind === "box" &&
+					Math.hypot(p.cx, p.cy) > 0.2 &&
+					alongTurn(p) !== null,
+			)
+			.sort((a, b) => b.hx * b.hy * b.hz - a.hx * a.hy * a.hz);
+		/** The two ship centres beside the box, in the proxy's frame. */
+		const centresBeside = (b: ProxyBox) => {
+			const { axis, half } = alongTurn(b)!;
+			return [1, -1].map((side) => {
+				const off = side * (half + shipOut);
+				return v3(
+					b.cx + axis.x * off,
+					b.cy + axis.y * off,
+					b.cz + axis.z * off,
+				);
+			});
+		};
+		const shipsBeside = (b: ProxyBox) =>
+			centresBeside(b).map((c) => ({
+				pos: local("shipyard", c.x, c.y, c.z),
 				nose: frame.axis,
 				up,
-			};
-		});
+			}));
+		const clear = (b: ProxyBox) => {
+			const others = proxy.static.filter((p) => p !== b);
+			return centresBeside(b).every(
+				(c) =>
+					length(c) > drumReach + shipReach &&
+					shipSurface(local("shipyard", c.x, c.y, c.z)).every(
+						(q) => proxyListDistanceKm(others, q.x, q.y, q.z) > 0.0015,
+					),
+			);
+		};
 		const steps = Math.round(2 / MAX_DT);
-		const run = (wrongFrame: boolean) => {
+		const run = (
+			ships: ReturnType<typeof shipsBeside>,
+			wrongFrame: boolean,
+		) => {
 			let met = 0;
 			for (const ship of ships) {
 				for (let i = 0; i < steps; i++) {
@@ -283,8 +396,10 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 			return met;
 		};
 		expect(proxySolids(proxy).static.length).toBeGreaterThan(0);
-		expect(run(false)).toBe(0);
-		expect(run(true)).toBeGreaterThan(0);
+		const subject = beams.find(clear);
+		expect(subject).toBeDefined();
+		expect(run(shipsBeside(subject!), false)).toBe(0);
+		expect(run(shipsBeside(subject!), true)).toBeGreaterThan(0);
 	});
 });
 
@@ -863,14 +978,15 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch in every poo
 });
 
 describe("collision.md §9.1.8: what the open bay does not cover — a box that overhangs its berth", () => {
-	test("two hulls' boxes overhang a slot's berth cell: the miner by 2.8 m, the explorer by 0.6 m", () => {
+	test("one hull's box overhangs a slot's berth cell: the explorer by 0.6 m", () => {
 		// glossary-ignore: slot
 		// A finding, handed on (`collision.md` §11): the berth places the
-		// ship's origin, not its box, so the miner — 33.2 m tall about a centre
-		// 6.2 m below its origin, in a 40 m cell — parks 2.8 m into the wall its
-		// berth stands on, and the explorer, 39.7 m tall about a centre 0.8 m
-		// off, 0.6 m. Arrival, parking and launch are exempt, so nothing is met;
-		// unexempt, the traversal above meets the wall. The fix is the berth
+		// ship's origin, not its box, so the explorer — 39.7 m tall about a
+		// centre 0.8 m off, in a 40 m cell — parks 0.6 m into the wall its berth
+		// stands on. The miner did too, by 2.8 m, until node #815 replaced its
+		// loft with Longwall B, whose box is centred on its origin and fits.
+		// Arrival, parking and launch are exempt, so nothing is met; unexempt,
+		// the traversal above meets the wall. The fix is the berth
 		// placement's (carry `envCentre`), not the proxy's. This row is the
 		// tripwire: another hull, or the fix, changes it.
 		const over: string[] = [];
@@ -882,12 +998,7 @@ describe("collision.md §9.1.8: what the open bay does not cover — a box that 
 			}
 		}
 		console.log(`overhanging a slot's berth cell: ${over.join(", ")}`); // glossary-ignore: slot
-		expect(over).toEqual([
-			"trade:miner:2.8 m",
-			"trade:explorer:0.6 m",
-			"shipyard:miner:2.8 m",
-			"shipyard:explorer:0.6 m",
-		]);
+		expect(over).toEqual(["trade:explorer:0.6 m", "shipyard:explorer:0.6 m"]);
 	});
 });
 
@@ -918,19 +1029,19 @@ describe("collision.md §9.1.9: the aperture is a physical fit (P1)", () => {
 	test("the fit can go red: a hull flown in off the axis meets the rim", () => {
 		// Pitched past what the miner clears at the roll limit, its box meets
 		// the coaming. The table (`scripts/measure-aperture-fit.ts`) is where
-		// each hull's margin is printed for the principal.
-		expect(
+		// each hull's margin is printed for the principal. Longwall B (node #815)
+		// is slimmer than the loft it replaced: it still clears at 35°, where
+		// the loft met the rim, and meets it by 45°, so the control is pitched
+		// there and both sides of the bound are held.
+		const pitched = (pitchDeg: number) =>
 			clearsAperture(
 				"trade",
 				"miner",
-				{
-					pitchDeg: 35,
-					yawDeg: 0,
-					rollDeg: 50,
-				},
+				{ pitchDeg, yawDeg: 0, rollDeg: 50 },
 				{ formId: "a", berthSeed: 1, assemblySeed: 0 },
-			),
-		).toBe(false);
+			);
+		expect(pitched(35)).toBe(true);
+		expect(pitched(45)).toBe(false);
 	});
 });
 
@@ -1114,7 +1225,10 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 			expect(swept.vel).toEqual(v3());
 			// §4.3 is per overlapping pair: once that primitive is left,
 			// it is solid on a return. Isolate the pair so another primitive
-			// along the escape route cannot mask the ghost being tested.
+			// along the escape route cannot mask the ghost being tested. This
+			// isolates the pair's rule, not a game restore: the full-proxy row
+			// "a shallow restore reverses out with every neighbour present"
+			// below flies the authored forms with all neighbouring boxes present.
 			const pair = [{ ...solids[0], primitives: [primitive] }];
 			const outside = add(pos, scale(pose.z, 4));
 			const away: SolidMotion = {
@@ -1145,6 +1259,219 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 			`saved flight deliberately placed inside: ${placedInside}/${STATION_TYPES.length} roles ghost, no damage or push`,
 		);
 	});
+});
+
+// ---------------------------------------------------------------------------
+// 4.3 and 11.7: a refit restore, with every authored proxy box present (node #963)
+// ---------------------------------------------------------------------------
+
+/** Spike #962's mulberry32 stream and isotropic direction draws. */
+function restoreRandom(seed: number): () => number {
+	let a = seed >>> 0;
+	return () => {
+		a = (a + 0x6d2b79f5) >>> 0;
+		let t = a;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+function restoreDirection(random: () => number): Vec3 {
+	for (;;) {
+		const p = v3(2 * random() - 1, 2 * random() - 1, 2 * random() - 1);
+		const size = length(p);
+		if (size > 0.1 && size <= 1) return scale(p, 1 / size);
+	}
+}
+
+describe("collision.md §4.3, §11.7: a shallow restore reverses out with every neighbour present", () => {
+	const forms: { type: StationType; form: StationFormId }[] = [
+		{ type: "shipyard", form: "a" },
+		{ type: "shipyard", form: "b" },
+		{ type: "shipyard", form: "c" },
+		{ type: "refinery", form: "a" },
+		{ type: "refinery", form: "b" },
+		{ type: "refinery", form: "c" },
+		{ type: "refinery", form: "d" },
+	];
+	const rays = 40;
+	const depthsM = [0.1, 0.5, 2];
+	const marchKm = 0.0005;
+	const speedKms = 0.1;
+	const maxTicks = 5;
+
+	for (const { type, form } of forms) {
+		test(
+			`${type}/${form}: reverse escapes unbilled in at most five ticks; inward can strike from inside`,
+			() => {
+				const proxy = stationProxy(type, form, 0, 0);
+				if (!proxy) throw new Error(`no authored proxy ${type}/${form}`);
+				// Exactly the spike's still frame. No claim about a turning drum:
+				// its reverse path is no longer the path the ship came in on.
+				const end = still(apertureFrame(type, v3(0, 0, 1), 0, v3(0, 1, 0)));
+				const solids = stationMotions(proxy, end, end);
+				let formOverlaps = 0;
+				let formStrikes = 0;
+				for (const hull of ["courier", "freighter"] as const) {
+					const primitives = hullSolid(hull);
+					const [ship] = primitives;
+					const shipReach = reachKm(primitives);
+					const far = Math.max(...solids.map((s) => reachKm(s.primitives)));
+					// The broad phase only skips boxes too far away to overlap.
+					// sweepShip below always receives EVERY primitive of the proxy.
+					const boxes = solids.flatMap((solid) =>
+						solid.primitives.map((primitive) => {
+							if (primitive.kind !== "box")
+								throw new Error("authored station proxies must be boxes");
+							const p = solid.start;
+							const c = primitive.centre;
+							return {
+								primitive,
+								pose: p,
+								centre: add(
+									p.origin,
+									add(add(scale(p.x, c.x), scale(p.y, c.y)), scale(p.z, c.z)),
+								),
+								reach: Math.hypot(...primitive.half) + shipReach,
+							};
+						}),
+					);
+					const random = restoreRandom(962 + 31 * form.charCodeAt(0));
+					let overlaps = 0;
+					let held = 0;
+					let inwardStruck = 0;
+					let inwardN = 0;
+					let hitRays = 0;
+					let mostTicks = 0;
+					for (let ray = 0; ray < rays; ray++) {
+						const out = restoreDirection(random);
+						const aim = scale(restoreDirection(random), 0.1 * random());
+						const span = far + shipReach + 0.01;
+						const from = add(aim, scale(out, span));
+						const inward = scale(out, -1);
+						const nose = restoreDirection(random);
+						let up: Vec3;
+						do {
+							const candidate = restoreDirection(random);
+							up = sub(candidate, scale(nose, dot(candidate, nose)));
+						} while (length(up) < 1e-6);
+						up = scale(up, 1 / length(up));
+						const inside = (pos: Vec3) => {
+							const pose = shipPose(pos, nose, up);
+							return boxes.some(
+								(b) =>
+									length(sub(b.centre, pos)) <= b.reach &&
+									pairSeparation(ship, pose, b.primitive, b.pose).overlap,
+							);
+						};
+						const along = (s: number) => add(from, scale(inward, s));
+						expect(inside(from)).toBe(false);
+						let clear = 0;
+						let hit: number | null = null;
+						for (let s = marchKm; s < 2 * span; s += marchKm) {
+							if (inside(along(s))) {
+								hit = s;
+								break;
+							}
+							clear = s;
+						}
+						if (hit === null) continue;
+						let boundary: number = hit;
+						while (boundary - clear > 0.00001) {
+							const middle = (clear + boundary) / 2;
+							if (inside(along(middle))) boundary = middle;
+							else clear = middle;
+						}
+						hitRays++;
+						for (const depthM of depthsM) {
+							const placed = along(clear + depthM / 1000);
+							if (!inside(placed)) continue;
+							overlaps++;
+							const label = { type, form, hull, ray, depthM };
+							const tick = (pos: Vec3, dir: Vec3) => {
+								// Fixed 100 m/s translation demand, unchanged attitude.
+								const vel = scale(dir, speedKms);
+								const wanted = add(pos, scale(vel, MAX_DT));
+								return {
+									wanted,
+									swept: sweepShip(
+										{
+											primitives,
+											start: shipPose(pos, nose, up),
+											end: shipPose(wanted, nose, up),
+											velStart: vel,
+											velEnd: vel,
+										},
+										solids,
+										MAX_DT,
+									),
+								};
+							};
+							let pos = placed;
+							let holds = 0;
+							let ticks = 0;
+							while (inside(pos) && ticks < maxTicks) {
+								const { wanted, swept } = tick(pos, out);
+								expect({
+									...label,
+									billed: swept.impacts.some((i) => i.damage !== 0),
+								}).toEqual({ ...label, billed: false });
+								if (length(sub(swept.pos, wanted)) > 1e-9) holds++;
+								pos = swept.pos;
+								ticks++;
+							}
+							expect({
+								...label,
+								inside: inside(pos),
+								holds: holds <= 1,
+							}).toEqual({ ...label, inside: false, holds: true });
+							if (holds > 0) held++;
+							mostTicks = Math.max(mostTicks, ticks);
+							// Keep the spike's nose/random draw order, splitting other
+							// headings by hemisphere; only inward controls are flown.
+							for (const dir of [nose, restoreDirection(random)]) {
+								if (dot(dir, out) > 0) continue;
+								inwardN++;
+								pos = placed;
+								for (let t = 0; t < maxTicks && inside(pos); t++) {
+									const { swept } = tick(pos, dir);
+									if (swept.impacts.some((i) => i.damage > 0)) {
+										inwardStruck++;
+										break;
+									}
+									pos = swept.pos;
+								}
+							}
+						}
+					}
+					console.log(
+						`restore ${type}/${form} ${hull}: ${hitRays}/${rays} rays hit, ` +
+							`${overlaps}/${rays * depthsM.length} placements overlapped, ` +
+							`${held} held one step unbilled, escape <= ${mostTicks} ticks; ` +
+							`${inwardStruck}/${inwardN} inward headings billed from inside`,
+					);
+					expect(overlaps).toBeGreaterThan(0);
+					// Exact pins for §4.3 / §11.7's measured 2 / 1,678: two
+					// grazing depth placements have already left the thin box.
+					const missed =
+						type === "refinery" &&
+						((form === "a" && hull === "freighter") ||
+							(form === "c" && hull === "courier"));
+					expect({ overlaps, held }).toEqual({
+						overlaps: rays * depthsM.length - (missed ? 1 : 0),
+						held:
+							type === "refinery" && form === "a" && hull === "courier" ? 2 : 0,
+					});
+					formOverlaps += overlaps;
+					formStrikes += inwardStruck;
+				}
+				expect(formOverlaps).toBeGreaterThan(0);
+				expect(formStrikes).toBeGreaterThan(0);
+			},
+			TRAVERSAL_MS,
+		);
+	}
 });
 
 /** An orthogonal, unit up-vector for the cruise chord's ship pose. */
@@ -1181,7 +1508,7 @@ function crossesStation(
 }
 
 describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
-	test("the crossing count excludes empty space inside a sparse station's reach", () => {
+	test("the crossing count excludes empty space inside a sparse station's reach", async () => {
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);
 		const proxy = stationProxyOf(stationInForm("shipyard", "a"));
@@ -1195,11 +1522,64 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 			),
 			end: shipPose(local("shipyard", x, y, -2), scale(frame.axis, -1), up),
 		});
-		// Both chords enter the Gantry's bounding sphere. Only the second
-		// crosses metal: its dorsal boom at y = 0.37–0.58 km.
-		expect(crossesStation(chord(1.5, 0), solids, MAX_DT)).toBe(false);
-		expect(crossesStation(chord(0, 0.47), solids, MAX_DT)).toBe(true);
-	});
+		// Both chords enter the authored Gantry Works' bounding sphere (node
+		// #818). Only the second crosses metal: it runs through the centre of
+		// the yard's largest box. The first is the first point on a few rings
+		// inside the reach whose chord the **model** says meets nothing: no
+		// triangle within the rule's 10 m plus the hull's reach of any point on
+		// it (sage round 6: chosen by `crossesStation`, an invisible wall had
+		// passed as long as one candidate came back clear). The yard is a
+		// frame, and most of its sphere is empty.
+		await installShippedShipyards();
+		let tris: Awaited<ReturnType<typeof shipyardTriangles>>;
+		try {
+			tris = await shipyardTriangles("a");
+		} finally {
+			uninstallShipyards();
+		}
+		const [spinning, fixed] = solids;
+		const grids = [
+			{ pose: spinning.start, grid: new TriangleGrid(tris.drum, 50) },
+			{ pose: fixed.start, grid: new TriangleGrid(tris.yard, 50) },
+		];
+		const clearM = EMPTY_LIMIT_M + reachKm(hullSolid("courier")) * 1000 + 5;
+		const at = new THREE.Vector3();
+		const clearOfModel = (motion: SolidMotion) => {
+			const from = motion.start.origin;
+			const to = motion.end.origin;
+			const steps = Math.ceil((length(sub(to, from)) * 1000) / 5);
+			for (let n = 0; n <= steps; n++) {
+				const p = add(from, scale(sub(to, from), n / steps));
+				for (const { pose, grid } of grids) {
+					const d = sub(p, pose.origin);
+					at.set(dot(d, pose.x), dot(d, pose.y), dot(d, pose.z));
+					if (grid.within(at.multiplyScalar(1000), clearM)) return false;
+				}
+			}
+			return true;
+		};
+		const reach = proxyReachKm(proxy);
+		const empty = [0.9, 0.75, 0.6]
+			.flatMap((share) =>
+				Array.from({ length: 12 }, (_, k) => {
+					const angle = (k * Math.PI) / 6;
+					return [
+						share * reach * Math.cos(angle),
+						share * reach * Math.sin(angle),
+					] as const;
+				}),
+			)
+			.find(([x, y]) => clearOfModel(chord(x, y)));
+		const [largest] = [...proxy.static]
+			.filter((p): p is ProxyBox => p.kind === "box")
+			.sort((a, b) => b.hx * b.hy * b.hz - a.hx * a.hy * a.hz);
+		expect(empty).toBeDefined();
+		expect(Math.hypot(...empty!)).toBeLessThan(reach);
+		expect(crossesStation(chord(...empty!), solids, MAX_DT)).toBe(false);
+		expect(crossesStation(chord(largest.cx, largest.cy), solids, MAX_DT)).toBe(
+			true,
+		);
+	}, 60_000);
 	test("no cruise exit places a ship inside a proxy, and the legs through a non-target station are counted", () => {
 		const shipBox = hullSolid("miner")[0];
 		let legs = 0;

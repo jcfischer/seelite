@@ -193,6 +193,71 @@ The player hull is the courier `Kestrel`, named in `main.ts` as an explicit
 what this spec forbids a roster to take; naming both halves means #26 can see
 what it is replacing when it arrives to own the choice properly.
 
+**Since node #812 the courier's selected variant draws an authored model**, the
+O4 hull the principal approved on #795 (`src/courier-hull.ts`, loaded from
+`src/models/courier-hull.glb` after the `Game` is built, since node #831). It
+was the first hull here that is not lofted: it carries its own textures and machinery, so the
+finishes, the plating and the greeble zones above do not reach it, and only
+its drive glows follow the finish. Its scale is set by the courier's declared
+57.5 m length, which every hull's turn rate is solved against; its beam and
+height are measured off it, and the courier's envelope and vent placement
+are now the O4's.
+
+**So the procedural Kestrel is a stand-in, not a courier the game chooses.**
+Built, it is 57.49 × 51.20 × 11.65 m against the declared 57.5 × 52.4 × 9.6 m
+— two metres taller than the collision box — and the courier's vents were
+measured on the O4. Since node #831 a live `Game` is built on it and the
+model replaces every courier once it installs
+(`Game.loadAuthoredHullsAfterBoot`, `rebuildAuthoredStandIn`); a failed
+download keeps the Kestrel, warns once and shows no Retry. The postcard and
+the ship workbench wait for the model behind the Retry panel. Outside
+flight it is drawn wherever the model is not installed: the headless rows
+that hold the hull generator (`tests/helpers/procedural-hulls.ts`), the
+cost instrument's comparison arm (`scripts/measure-authored-hull-cost.mjs`),
+and the cockpit spike's review page (`src/courier-cockpit-viewer.ts`).
+
+**The detail band switches the model.** Every Traffic courier is the O4, so
+past `DETAIL_RADII.full` a courier draws a reduced copy of it and past
+`DETAIL_RADII.reduced` a coarser one, each made by meshoptimizer's simplifier
+to a **target error** of half a device pixel at its band edge **in
+`LEVEL_FRAME`** — the near camera's 60° field of view on a frame 1800
+device pixels tall, the player's retina panel and the frame the cost
+instruments measure on (`courierLevelErrorKm`). It is a target and not a
+bound. The error is the simplifier's own metric, which it reports reaching
+and `tests/courier-hull.test.ts` holds inside the target; nothing measures
+how far a level actually lies from the model. The band's hysteresis draws
+`reduced` somewhat nearer than `DETAIL_RADII.full` on the way back in, and a
+taller frame sees the same error at more than half a pixel, in proportion to
+its height. How visible the switch is, is judged by eye in flight. The cabin and the pilot are left out of both levels, and
+neither level takes a ray, so everything placed on the hull is placed on the
+approved model. Inside the first edge — the
+player's own courier in chase among them — the model is drawn as approved.
+
+**Since node #814 the tug's selected variant is an authored model, by the
+courier's path.** Bollard O4, the salvage tug the principal approved on #798
+(`src/tug-hull.ts`, `src/models/bollard-tug.glb`), replaces the tug loft,
+which now only stands in until the model installs after boot; the courier
+installs first. Both hulls are built by `src/authored-hull.ts`, so the
+detail band, the drive glows and the stand-in's replacement are the
+courier's. Two differences: **it is drawn at 1:1**, so the tug's envelope is
+the model's own box (56.6 × 48.4 × 21.2 m, against the loft's 58.5 × 45.7 ×
+25.7) rather than the model being scaled to a declared length; and its
+drive glows are placed by measurement, inside mouths that the barrel's end
+cap closes at z −26.0 m (`TUG_NOZZLES_M`). Until the model installs, the
+loft is 4.5 m taller than the declared box. The figures are
+`tests/tug-hull.test.ts`'s and `tests/bollard-asset.test.ts`'s.
+
+**Since node #815 the miner's selected variant is an authored model too**,
+Longwall B (`miner/b`, `src/models/longwall-miner.glb`), and its levels are
+made by the same module (`src/authored-levels.ts`), with two differences.
+Its medium level is made to half a device pixel at 10 miner reaches
+(`LONGWALL_MEDIUM_RADII`) rather than at the band's first edge, and **a
+miner other than the player's own draws it however near** — a berth beside
+the player included — by the principal's ruling of 2026-10-09: the band
+holds it at `nearest` unless `updateShipVisuals` is told the hull is the
+player's own. And its levels keep every lamp whole and collapse edges
+across seams. The figures are `tests/longwall-mesh.test.ts`'s.
+
 The player hull is a near-scene object. It is hidden in cockpit view because the
 cockpit HUD, attitude floor, target director, and scanner remain the primary
 flight references. Chase view makes that same hull visible as an external
@@ -417,8 +482,10 @@ change.
 
 `freighter/b` is no longer built here. It is the O2 Modular Carrier the
 principal approved on #797, authored in Blender (`spikes/porter-hull/`) and
-shipped as `public/models/porter.glb`; `src/porter-model.ts` loads it behind
-the game's Retry panel and `buildShipMesh` clones it. Three of this spec's
+shipped from `src/models/porter.glb` at a content-hashed URL;
+`src/porter-model.ts` installs it through the after-boot model queue and
+`buildShipMesh` clones it. Until installation the procedural Porter stands in;
+postcards and full-model boots await it. Three of this spec's
 promises do not reach it, and each is said where it is checked rather than
 skipped quietly: it has no machinery zone, generated clutter or service rails
 (§3.2) because the model carries its own; its surface is its own materials and

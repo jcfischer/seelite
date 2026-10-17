@@ -492,9 +492,8 @@ rather than jumping when a raider appears. `FLOOR_BANDS` is 3.
 | `SHD` | `F 72 A 106`, each pool rounded | passive; **refused** while either rounded pool is 0 |
 | `HEAT` | `63%` of the lock, or `LOCK` | passive; **action** from 75%; **refused** while locked |
 
-The row is drawn while a raider is **contesting, dueling or selected**, and not
-otherwise — absence rather than an empty row kept on the glass, for §5.2's
-reason.
+The shield and heat cells are drawn while a raider is **contesting, dueling or
+selected**. The armed fire-group label below stays visible in peace.
 
 **The firing cue is the selected target's own marker.** A second aiming
 language on the glass is not added. When the selected target is a raider, its
@@ -509,10 +508,20 @@ One difference is left and stated: the draw tests the raider where it is after
 the step, and `stepDuel` tests it where it was at the top of the step, so at the
 edge of the hit sphere the two can disagree for one frame of relative motion.
 
+**The armed fire group (#385, built by #893)** stays in the glass combat band
+in peace and during a fight, printed as `<GROUP> · n/N` or `NO WEAPONS`.
+The cycle follows the fitted hull slots: ALL LASERS with two or more lasers,
+each laser hardpoint alone, then IDENTITY SCANNER when fitted. Mining lasers
+participate; missile racks and ECM do not. B cycles the group; a held primary
+trigger changes routing immediately. Until the laser-module node lands, a laser
+group fires today's single pulse-laser behaviour. The scanner's trigger-driven
+charge is separate work. Launch, reload and refit select group one; selection
+is not saved. The fit reserves the widest group label alongside SHD and HEAT.
+
 **The Flight console: five readings beside ASSIST and CHARGE** — `FORE`, `AFT`,
 `HULL`, `ENERGY BANK` and `HEAT`, each against its maximum (`72 / 106`), heat as the
-glass reads it. The block is shown under the same predicate as the glass row and
-hidden in peace, with an inline `display` rather than the `hidden` attribute,
+glass reads it. The block follows the glass shield/heat cells
+and is hidden in peace, with an inline `display` rather than the `hidden` attribute,
 which loses to `.lc-readout`'s own `display`.
 
 **A second block sits beside it since #364, and it is not a duel's.** `NAME`,
@@ -529,7 +538,9 @@ the gimbal has turned the beam more than 0.2° off the boresight.
 
 **The enemy's condition and fire are on the glass** (the principal's ruling
 after the second playtest). A second line under the selected target's name reads
-`SHD F 72 A 106  HULL 50%`. It is refused while either printed pool is 0,
+`SHD F 67% A 99%  HULL 50%`: since #866 each hull has its own pool, so each
+pool prints as a share of it, as the hull does. It is refused while either
+printed pool is 0,
 otherwise passive (`targetConditionLine`). While the raider fires, a warm beam
 runs from its point on the glass toward the bottom of the glass, where the
 player sits. After a hit lands on the player, the canopy rim glows red for
@@ -873,7 +884,7 @@ Headless — `tests/duel-hud.test.ts` and `tests/duel.test.ts`:
 
 Browser — `scripts/probe-duel-hud.mjs`, at both viewports:
 
-7. **In peace no row is drawn and no cue is recorded.**
+7. **In peace only the armed fire-group label is drawn and no cue is recorded** (#893).
 8. **A contesting raider draws `SHD` and `HEAT`**, inside the glass and its
    margins.
 9. **The bands stack**: the duel row above the course row, the course row above

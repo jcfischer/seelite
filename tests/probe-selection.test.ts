@@ -10,7 +10,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PROBE_CATALOG } from "../scripts/lib/probe-catalog.mjs";
-import { readGitEvidence } from "../scripts/lib/probe-git-evidence.mjs";
+import {
+	readGitEvidence,
+	readImpactEvidence,
+	assertRunnableHead,
+} from "../scripts/lib/probe-git-evidence.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
 import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
 import {
@@ -103,7 +107,7 @@ describe("the deterministic branches", () => {
 			"scripts/probe-guard.mjs",
 			"scripts/select-probes.mjs",
 			"scripts/future-shared-harness.mjs",
-			".github/workflows/deploy.yml",
+			".github/workflows/ci.yml",
 			"vite.config.ts",
 		]) {
 			const result = await selectProbes({ changedFiles: [file] });
@@ -280,6 +284,22 @@ describe("the TypeSafe transport", () => {
 
 			expect(new Set(readGitEvidence(base, head, root).changedFiles)).toEqual(
 				new Set(["src/runtime.ts", "docs/runtime.md"]),
+			);
+			const evidence = readImpactEvidence(base, head, root);
+			expect(evidence.baseOid).toBe(base);
+			expect(evidence.headOid).toBe(head);
+			expect(evidence.impact.before.get("src/runtime.ts")).toContain(
+				"live = true",
+			);
+			expect(evidence.impact.after.has("src/runtime.ts")).toBe(false);
+			expect(() => assertRunnableHead(head, root)).not.toThrow();
+			expect(() => assertRunnableHead(base, root)).toThrow("checked-out HEAD");
+			writeFileSync(
+				join(root, "src/untracked.ts"),
+				"export const dirty = true;",
+			);
+			expect(() => assertRunnableHead(head, root)).toThrow(
+				"working-tree changes",
 			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

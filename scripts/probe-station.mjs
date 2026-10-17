@@ -523,6 +523,19 @@ const iou = (a, b) => {
 };
 
 /**
+ * Whether a station is drawn from an approved model rather than a procedural
+ * form (node #818: the shipyards). An authored yard keeps its approved shape
+ * and paint, so the checks below that a procedural form was built to pass —
+ * the 60 km floor and width, the type colour — report it and do not gate it
+ * (the principal's ruling, 2026-10-13). Measured across the three forms at
+ * 60 km (seeds 54, 3, 2, 19, 9, 11): 10-42 px, and aspect 0.56-1.50 against
+ * the trade station's 0.75-1.20 — the Foundry and the Slipway are taller than
+ * wide down the axis, so "wider" is not a cue they carry.
+ */
+const isAuthored = (id) =>
+	page.evaluate((bodyId) => window.__seelite.isAuthoredStationId(bodyId), id);
+
+/**
  * Capture all three silhouettes at one range and compare them pairwise.
  *
  * Run at two ranges, because §7's standard has two halves and desaturation only
@@ -566,9 +579,10 @@ async function silhouettesAt(rangeKm, floor, gate) {
 				JSON.stringify(captured.measuredClocks),
 			);
 		}
+		const authored = await isAuthored(station.id);
 		check(
 			`${rangeKm} km — ${station.type}: the station is drawn and has a silhouette`,
-			!shape.missing && !shape.empty && shape.pixels > 20,
+			!shape.missing && !shape.empty && (authored || shape.pixels > 20),
 			shape.missing
 				? "no mesh"
 				: shape.empty
@@ -655,6 +669,8 @@ const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, {
  * **extent**. So the far-range claim is made on the thing a player has at that
  * distance: the shipyard's outboard frame makes it visibly wider than a Coriolis
  * station that is otherwise its twin, and the refinery is squatter than either.
+ * That is the procedural yard's cue; an authored yard does not carry it
+ * (`isAuthored` above), so for one the width is printed and not gated.
  */
 console.log(`\nextent at ${FAR_RANGE_KM} km (the cue that survives range):`);
 for (const type of ["trade", "shipyard", "refinery"]) {
@@ -674,13 +690,21 @@ const aspect = (t) => {
 };
 const wide = aspect("shipyard");
 const narrow = aspect("trade");
-check(
-	`at ${FAR_RANGE_KM} km the shipyard is visibly wider than the trade station`,
-	wide !== null && narrow !== null && wide > narrow * 1.5,
-	wide === null || narrow === null
-		? "a station was not captured at range"
-		: `aspect ${wide.toFixed(2)} against ${narrow.toFixed(2)}`,
+const yardAuthored = await isAuthored(
+	setup.stations.find((s) => s.type === "shipyard")?.id,
 );
+if (yardAuthored)
+	console.log(
+		`  the shipyard is authored: its width is reported, not gated (aspect ${wide?.toFixed(2)} against ${narrow?.toFixed(2)})`,
+	);
+else
+	check(
+		`at ${FAR_RANGE_KM} km the shipyard is visibly wider than the trade station`,
+		wide !== null && narrow !== null && wide > narrow * 1.5,
+		wide === null || narrow === null
+			? "a station was not captured at range"
+			: `aspect ${wide.toFixed(2)} against ${narrow.toFixed(2)}`,
+	);
 
 /**
  * §7's secondary cue, which the renderer must actually apply.
@@ -701,6 +725,7 @@ for (const station of setup.stations) {
 			return {
 				hull: core ? core.material.color.getHex() : null,
 				body: body.color,
+				authored: g.isAuthoredStationId(id),
 			};
 		},
 		[station.id],
@@ -709,6 +734,12 @@ for (const station of setup.stations) {
 		`  ${station.type}: hull #${(painted.hull ?? 0).toString(16)}, ` +
 			`body #${painted.body.toString(16)}`,
 	);
+	if (painted.authored) {
+		console.log(
+			`  ${station.type} is authored: its approved paint is not tinted`,
+		);
+		continue;
+	}
 	check(
 		`${station.type}'s hull is painted its own type's colour`,
 		painted.hull === painted.body,
@@ -941,7 +972,11 @@ if (shipyard) {
 				return {
 					layer: near ? "near" : far ? "far" : "none",
 					hasAperture: !!mesh?.getObjectByName("aperture"),
-					hasFrame: !!mesh?.getObjectByName("frame"),
+					// An authored yard's frame is its yard group (node #818).
+					hasFrame: !!(
+						mesh?.getObjectByName("frame") ??
+						mesh?.getObjectByName("shipyard-yard")
+					),
 				};
 			},
 			[shipyard.id, setup.handoffKm * multiple],

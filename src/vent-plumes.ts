@@ -34,7 +34,13 @@ import {
 	type VentSlot,
 } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
-import { exhaustRamp, isDriveBell } from "./ship-mesh";
+import {
+	type AuthoredHullBuilder,
+	authoredHullBuilder,
+	exhaustRamp,
+	isDriveBell,
+} from "./ship-mesh";
+import { isLevelStandIn } from "./ship-detail";
 import type { VentLevels } from "./sim";
 
 /**
@@ -139,6 +145,47 @@ export function plumeParticle(
  * origin is not that centre on every hull.
  */
 export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
+	const builder = authoredHullBuilder(id);
+	if (root.userData.authored !== true || !builder)
+		return measureThroats(root, id);
+	let byGlow = authoredThroats.get(builder);
+	if (!byGlow) {
+		byGlow = new Map();
+		authoredThroats.set(builder, byGlow);
+	}
+	// The glow the root was built with, not the finish in force now.
+	const glow = String(root.userData.authoredGlow);
+	let known = byGlow.get(glow);
+	if (!known) {
+		known = measureThroats(root, id);
+		byGlow.set(glow, known);
+	}
+	return known.map((t) => ({
+		...t,
+		at: t.at.clone(),
+		exhaust: t.exhaust.clone(),
+	}));
+}
+
+/**
+ * An authored hull's throats (node #812; the tug since node #814), measured
+ * once per installed model and drive glow. Every authored ship of a hull is
+ * the one model, so its throats are one answer — and measuring them raycasts
+ * against the whole model, over half a second for either hull
+ * (`scripts/measure-hull-install-stall.mjs`), which a shipyard swap to one
+ * would otherwise pay on the frame. Keyed on the builder, so installing another model (or none)
+ * leaves the old answer unreachable; and on the glow the root was built
+ * with (a bowl or a disc, picked by the finish in force at its build), which
+ * the main drive's plume starts at — keyed on the finish in force when it
+ * is asked, a root built under another finish got the wrong glow's throats.
+ */
+const authoredThroats = new WeakMap<
+	AuthoredHullBuilder,
+	Map<string, readonly Throat[]> // glossary-ignore: throat
+>();
+
+// glossary-ignore: throat
+function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
 	const spec = HULL_SPECS[id];
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
@@ -151,7 +198,8 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 	const bells: THREE.Mesh[] = [];
 	root.traverse((o) => {
 		const mesh = o as THREE.Mesh;
-		if (!mesh.isMesh) return;
+		// A reduced level is drawn, never measured (node #812).
+		if (!mesh.isMesh || isLevelStandIn(mesh)) return;
 		meshes.push(mesh);
 		if (isDriveBell(mesh)) bells.push(mesh);
 	});

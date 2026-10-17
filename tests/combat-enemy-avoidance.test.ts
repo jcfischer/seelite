@@ -436,11 +436,12 @@ describe("the figures the avoidance is built from", () => {
 		]);
 		// Node #745's same four systems and three bearings, not an aggregate
 		// over different populations. Reusing another form's run fails here.
+		// The authored refineries' since node #819 (procedural: 6, 5, 2, 12).
 		expect(impacts).toEqual([
 			["a", 6],
-			["b", 5],
-			["c", 2],
-			["d", 12],
+			["b", 4],
+			["c", 1],
+			["d", 4],
 		]);
 	});
 	test("the clearance covers every hull's own box, so a centre outside the keep-out is a hull outside the solid", () => {
@@ -497,7 +498,7 @@ describe("the figures the avoidance is built from", () => {
 		const longest = Math.max(
 			...[...flown].map((id) => avoidanceHorizonS(flightPerformance(id), 1e9)),
 		);
-		expect(longest).toBeCloseTo(22.3, 1);
+		expect(longest).toBeCloseTo(23.1, 1);
 		// And it is the miner's, as that comment says.
 		expect(longest).toBe(avoidanceHorizonS(flightPerformance("miner"), 1e9));
 		expect(AVOID_SCAN_KM).toBeGreaterThan(longest * 100);
@@ -575,15 +576,25 @@ describe("avoidanceSolids: what the controller is handed", () => {
 });
 
 describe("a ship fighting beside a station does not fly into it, under all three regimes", () => {
-	// The historical Works corpus keeps its majority control and measured
-	// bands. Other forms change both the solid and the reach-derived pilot
-	// placement; adding seeds until the aggregate is a majority hides that.
+	// The historical Works corpus keeps its measured bands. Other forms change
+	// both the solid and the reach-derived pilot placement; adding seeds until
+	// the aggregate is a majority hides that.
+	//
+	// On assist-off the blind control asks for more than a third, not half,
+	// since node #819 (2026-10-13), for #818's mouth-duel reason: the authored Works leaves
+	// less rock in the pilot's path than the procedural one did. Measured on
+	// this corpus at the base (534cd298) and after: assist-off's blind runs
+	// fell from 26 to 18 of 39, those meeting the refinery from 12 to 4;
+	// assist-on (39) and cruise (38) are unchanged.
 	for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
 		test(`${regime}: blind, the corpus meets the station; avoiding, no run does`, () => {
 			const blind = corpus(regime, false);
 			const avoiding = corpus(regime, true);
 			// The control is red: without the solids the runs end on a surface.
-			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
+			// A third on assist-off only, the regime whose figure fell (node
+			// #819); the other two keep their majority (sage round 5).
+			const share = regime === "assist-off" ? 3 : 2;
+			expect(struck(blind)).toBeGreaterThan(blind.length / share);
 			expect(avoiding.filter((r) => r.met !== null).map((r) => r.met)).toEqual(
 				[],
 			);
@@ -690,6 +701,14 @@ describe("a duel beside a station stays a duel", () => {
 	 * against 0.296, interceptor 0.295 against 0.291, the lowest run 0.242;
 	 * blind, 29, 27 and 30 runs met the station. Before the hold-off, bent
 	 * round, they fired on 0.044 to 0.048 and some runs never fired.
+	 *
+	 * The blind control asks for more than a third, not half, since node #818
+	 * (2026-10-12): the authored shipyards leave less metal round the mouth
+	 * than the procedural keel and booms did. Measured on this corpus at the
+	 * base before #818 (3150d31) and after: the blind runs that met a shipyard
+	 * fell from 11, 8 and 8 to 7, 3 and 3, and those that met any station from
+	 * 28, 23 and 26 to 24, 18 and 21 (#665's 29, 27 and 30 above are its own
+	 * code's). Trade and refinery are unchanged.
 	 */
 	for (const armed of [undefined, "patrol", "interceptor"] as const) {
 		test(`a pilot at the mouth, inside the keep-out: ${armed ?? "the raider"} holds off and keeps firing`, () => {
@@ -697,7 +716,7 @@ describe("a duel beside a station stays a duel", () => {
 			const blind = corpus("assist-on", false, extra);
 			const open = corpus("assist-on", false, { ...extra, open: true });
 			const beside = corpus("assist-on", true, extra);
-			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
+			expect(struck(blind)).toBeGreaterThan(blind.length / 3);
 			expectMouthHoldOff(open, beside);
 		});
 	}

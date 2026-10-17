@@ -1,3 +1,10 @@
+import {
+	carriedModule,
+	parseLoadout,
+	parseModule,
+	migrateEquipment,
+	type Loadout,
+} from "./loadout";
 /**
  * #89's D5: a save is `{ world, commander }` in one envelope under one hash.
  *
@@ -38,6 +45,7 @@ import { emptyRequests, parseRequests, type RequestsState } from "./requests";
 import { parseSweepReadings, type SweepReading } from "./system-sweep";
 import {
 	type CommanderState,
+	commanderFuelCapacityLy,
 	newCommander,
 	STARTING_CREDITS,
 } from "./station-commerce";
@@ -139,8 +147,18 @@ import {
  * records migrate empty; older readers must refuse rather than discard
  * learned rows.
  */
-/** 12 adds one commander death wreck in world state. Older saves migrate empty. */
-export const SAVE_SCHEMA_VERSION = 12;
+/** 12 adds one commander death wreck. 13 replaces the flat equipment list
+ * with a validated slot loadout and preserves typed fittings in the hold/wreck. */
+/** v14 adds module purchase cost; absent typed costs are conservatively list
+ * price, while untyped legacy salvage remains zero-cost. No value is removed. */
+/**
+ * **15 gives a sweep pressure row its strength, and the cruise lanes as its
+ * region where no outpost stands (node #769).** The strength is recorded at
+ * observation, like the region, so a stale row keeps the strength it was read
+ * at. An 11–14 pressure row keeps its region as observed and loads with a
+ * `null` strength; one carrying either new field was assembled
+ * (`parseSweepReadings`, `SWEEP_STRENGTH_SCHEMA`). */
+export const SAVE_SCHEMA_VERSION = 15;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -172,9 +190,14 @@ export const SAVE_SCHEMA_VERSION = 12;
  *
  * **10 is every save written between nodes #732 and #482.** It carries
  * recovered fittings and predates the sweep ledger.
+ *
+ * **11 is every save written between nodes #482 and #705**, and **12 every
+ * save written from node #705 until the slot loadout**. **13 adds the typed
+ * loadout and 14 its purchase cost**; all four carry a sweep ledger whose
+ * pressure rows have no strength.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 ] as const;
 
 /**
@@ -453,7 +476,11 @@ const canonicalCommander = (record: CommanderRecord) => {
 		state: {
 			credits: record.state.credits,
 			cargo,
-			ownedEquipment: [...record.state.ownedEquipment].sort(),
+			loadout: Object.fromEntries(
+				Object.entries(
+					parseLoadout(record.state.loadout, record.state.hull),
+				).sort(([a], [b]) => a.localeCompare(b)),
+			),
 			...(record.state.recoveredFittings?.length
 				? {
 						recoveredFittings: record.state.recoveredFittings.map((item) => ({
@@ -630,7 +657,8 @@ const parseCommander = (
 				(item) =>
 					!item ||
 					typeof item !== "object" ||
-					!EQUIPMENT.some((e) => e.name === item.id) ||
+					(!EQUIPMENT.some((e) => e.name === item.id) &&
+						!(version >= 13 && item.module)) ||
 					!Number.isInteger(item.tonnes) ||
 					item.tonnes <= 0,
 			))
@@ -638,9 +666,48 @@ const parseCommander = (
 		fail(
 			"commander.state: recoveredFittings is not a list of fitting items with positive whole tonnes",
 		);
-	const equipment = state.ownedEquipment;
-	if (!Array.isArray(equipment) || equipment.some((e) => typeof e !== "string"))
-		fail("commander.state: ownedEquipment is not a list of names");
+	let loadout: Loadout;
+	let refundCr = 0;
+	const carried = Array.isArray(recovered)
+		? recovered.map((item) => {
+				if (item.module !== undefined) {
+					if (version < 13) fail("legacy fitting contains module fields");
+					const { id, tonnes, ...module } = item;
+					if (version < 14 && Object.hasOwn(module, "purchaseCostCr"))
+						fail("legacy fitting contains purchase cost");
+					const parsed = parseModule(module);
+					if (tonnes !== 1 || carriedModule(parsed).id !== id)
+						fail("invalid carried module identity or quantity");
+					return { id, tonnes, ...parsed };
+				}
+				if (Object.keys(item).some((k) => k !== "id" && k !== "tonnes"))
+					fail("legacy fitting contains unknown fields");
+				return { id: item.id as string, tonnes: item.tonnes as number };
+			})
+		: [];
+	if (version >= 13) {
+		if (Object.hasOwn(state, "ownedEquipment"))
+			fail("v13 cannot contain ownedEquipment");
+		loadout = parseLoadout(state.loadout, hull as HullId);
+		if (
+			version < 14 &&
+			Object.values(loadout).some((m) => m.purchaseCostCr !== undefined)
+		)
+			fail("legacy loadout contains purchase cost");
+	} else {
+		if (Object.hasOwn(state, "loadout"))
+			fail("legacy save cannot contain loadout");
+		const equipment = state.ownedEquipment;
+		if (
+			!Array.isArray(equipment) ||
+			equipment.some((e) => typeof e !== "string")
+		)
+			fail("ownedEquipment is not a list of names");
+		const migrated = migrateEquipment(hull as HullId, equipment as string[]);
+		loadout = migrated.loadout;
+		refundCr = migrated.refundCr;
+		carried.push(...migrated.recoveredFittings);
+	}
 	const dockedAt = o.dockedAt;
 	// `undefined` is refused alongside a malformed key rather than read as
 	// "in flight": an absent field is a truncated record, and #89's obligation
@@ -726,25 +793,20 @@ const parseCommander = (
 							now,
 						),
 		state: {
-			credits: num(state, "credits", "commander.state"),
+			credits: num(state, "credits", "commander.state") + refundCr,
 			cargo,
-			ownedEquipment: [...(equipment as string[])].sort(),
-			...(Array.isArray(recovered) && recovered.length
-				? {
-						recoveredFittings: recovered.map((item) => ({
-							id: item.id as string,
-							tonnes: item.tonnes as number,
-						})),
-					}
-				: {}),
+			loadout,
+			...(carried.length ? { recoveredFittings: carried } : {}),
 			// **Clamped to the hull's tank, not refused** (#554). Every save
 			// before it filled to the courier's 7 LY whatever the hull, so a
 			// short-tank commander's record carries more fuel than the hull
 			// holds; that is a figure a rule moved under, not a corrupt record.
-			// A new record, so D8's untouched-on-disk rule is kept.
+			// A new record, so D8's untouched-on-disk rule is kept. The
+			// capacity is the fitted one, so a fitted tank's fuel survives a
+			// reload (#926).
 			fuelLy: Math.min(
 				num(state, "fuelLy", "commander.state"),
-				HULL_SPECS[hull as HullId].tankLy,
+				commanderFuelCapacityLy({ hull: hull as HullId, loadout }),
 			),
 			hull: hull as HullId,
 		},
@@ -822,6 +884,20 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	// carry one is enforced, as `flight.rates` is one level down.
 	if ((version as number) < 9) refuseDerelicts(o.world, version as number);
 	const world = parseWorld(o.world);
+	if ((version as number) < 14) {
+		for (const g of world.galaxies)
+			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])
+				for (const container of Object.values(row?.containers ?? {}))
+					if (container.fitting?.purchaseCostCr !== undefined)
+						fail("legacy world contains module purchase cost");
+	}
+	if ((version as number) < 13) {
+		for (const g of world.galaxies)
+			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])
+				for (const container of Object.values(row?.containers ?? {}))
+					if (Object.hasOwn(container, "fitting"))
+						fail("legacy world contains typed fitting");
+	}
 	// Schema 2 at 7f1cfd3 is the supported pre-journal envelope. Verify its
 	// original hash above, then migrate a copy; the store retains its original
 	// until the normal complete-envelope transaction succeeds.
@@ -834,7 +910,11 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	const sweepReadings = asObject(o.commander, "commander").sweepReadings;
 	if ((version as number) >= 11 && sweepReadings === undefined)
 		fail("commander.sweepReadings is missing from saveSchemaVersion 11");
-	commander.sweepReadings = parseSweepReadings(sweepReadings, world);
+	commander.sweepReadings = parseSweepReadings(
+		sweepReadings,
+		world,
+		version as number,
+	);
 	const offers = [
 		...Object.values(commander.requests.byId).map((r) => r.terms),
 		...Object.values(commander.requests.leadsById),

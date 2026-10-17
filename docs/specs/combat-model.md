@@ -10,10 +10,46 @@ Every combat ship obeys the same movement, collision, weapon, energy, shield, an
 
 ## 2. Weapons and defense
 
-- **Lasers:** only a forward **pulse** starter laser and an expensive forward **beam** upgrade. Both consume the shared energy bank and build heat; heat causes a temporary firing lockout. The beam has higher damage and heat. The screen-clearing energy bomb is excluded.
+- **Lasers (#870):** forward Pulse, Beam, Military and Mining hardpoint modules read their size and grade from the approved catalogue (`src/module-catalog.ts`). Every laser in the armed fire group fires together; damage, energy draw and heat sum on the shared bank and heat gauge. Shield recovery spends first. A volley the remaining bank cannot afford does not fire; the existing heat lock and release apply to the whole group. Mining does 10% of the equivalent Pulse laser’s hull damage (principal, 2026-10-11), and contributes no fitted combat DPS. Asteroids and actual ore extraction are owned by #872. The screen-clearing energy bomb is excluded.
 - **Shields:** separate fore and aft pools. Incoming direction selects the pool; depleted shields pass damage to persistent hull damage. The shared energy bank recharges the lower shield first, so weapon fire and recovery compete.
 - **Missiles:** a target must remain in a forward acquisition cone through a short, uninterrupted lock. Breaking line of sight or cone breaks the lock. Launch warns the target; maneuvering and a consumable ECM provide counterplay. An uncountered missile destroys a standard light combat ship and inflicts a large, but not automatically lethal, hull hit on tougher ships.
 - **Pacing target:** tune a matched starter duel with a prototype: 20–30 seconds of sustained pulse fire destroys an unshielded hull; shields, breaks, and energy decisions make a typical duel 60–90 seconds.
+
+### Missiles and E.C.M. (node #874)
+
+A fitted hardpoint rack carries its catalogue capacity as whole rounds. F7
+(rebindable) launches one round at the selected live ship after 1.5 uninterrupted
+seconds inside the 12° forward sightline cone, within 12 km and with no solid
+blocking the sightline. A changed target or broken cone/visibility resets the
+lock. Missiles stay outside the laser/scanner fire-group cycle. Equipment's
+REARM buys as many missing rounds as the wallet affords, at 30 Cr each. The
+rack's remaining ammunition is saved; missiles in flight and acquisition are
+transient, like laser tracers and the encounter itself.
+
+Initial seeker tuning is 6 km/s in the fight's translating frame, 0.8 rad/s
+turn authority, an 80° seeker cone and 12 seconds of life. A swept hit spends
+240 damage through the ordinary facing shield and hull path: lethal to a
+whole courier or raider, survivable by a freighter. A hard jink can lose the
+seeker; cruise leaves the exchange behind. A hit on ordinary traffic retains
+its hail, diversion, offence, destruction and cargo consequences.
+
+F8 (rebindable) pulses the fitted E.C.M. It defeats incoming missiles inside
+the fitted `radiusKm` **at the press**, including the radius boundary: 1E is
+2 km, 3A is 6.75 km. A pulse reserves one second of the catalogue's active
+draw upfront (8 E for 1E); an insufficient bank refuses the entire pulse.
+Cooldown is 8 seconds divided by the grade's output scale: E 8 s, D 10 s,
+A 5.33 s. Multiple modules use the greatest radius, without multiplying it or
+bypassing cooldown. The Equipment preview prints signed radius, cooldown and
+active draw changes. No E.C.M. ammunition item is consumed; the earlier
+"consumable ECM" wording above is superseded by #867 D5's energy-bank module.
+
+The cockpit names ammunition, lock progress, incoming range, E.C.M. readiness
+and refusals on a dark plate. A raider's carrier-instance seed draws a rack
+on its own domain tag (35% initial frequency), preserving its stock laser.
+It uses the same acquisition and ammunition rules, waits eight seconds before
+the first launch and between launches, and holds at most one incoming missile
+in flight. This implements the missile-bearing slice of D16; broader NPC
+catalogue grades and fitting drops remain separate work.
 
 ### 2.1 The gimbal and the g loads (#324, the principal's rulings)
 
@@ -49,7 +85,7 @@ ruling after the second playtest. #48's 6/s equalled the pulse's damage rate:
 every break in hits longer than the delay refilled a shield as fast as a pilot
 could take it down, and duels ran extremely long. The rule is every ship's,
 the player's included. A kill with every shot landing on one side is about 31 s
-against a raider (106 shield, 81 hull, 6 damage/s); a real duel is longer, by the share
+against a raider (107 shield since #866, 81 hull, 6 damage/s); a real duel is longer, by the share
 of time off target.
 
 **The g loads are arcade, and stay so.** Thrust is about 204 g for the courier
@@ -150,7 +186,7 @@ encounter, not `stepDuel`, decides it.
 
 A resolved encounter changes a named carrier rather than deleting a generic spawn. Defeating it records player provenance, removes its route threat, and derives a visible 30-minute game-clock lifecycle from **destroyed** through **repairing** to **replaced**. This is a revisitable operational consequence, never territory control.
 
-Rewards are weighted combat-rank credit, recoverable cargo, and lawful bounties only for sanctioned targets. There is no universal cash bounty. Combat rank is one of three ladders ([#183](https://github.com/jcfischer/seelite/issues/183)), and it does **not** retain Elite's named ladder: the map's Constraints forbid Elite's names, so its nine rungs carry original ones. Each rung costs exactly twice the one below (#562 D1). A kill pays Elo-like credit, 2·S_target / (S_own + S_target), from the fitted ship's strength — which today reads the hull alone, because every ship fires one pulse laser and no weapon item has behaviour yet — so a much weaker target pays close to nothing and an unarmed one pays nothing (#562 D3, D4). Credit earned in flight is banked on the next dock and lost with the ship before it (#183 D7). `src/ladder.ts` owns the thresholds, names and gates; `src/kill-credit.ts` owns the price of a kill.
+Rewards are weighted combat-rank credit, recoverable cargo, and lawful bounties only for sanctioned targets. There is no universal cash bounty. Combat rank is one of three ladders ([#183](https://github.com/jcfischer/seelite/issues/183)), and it does **not** retain Elite's named ladder: the map's Constraints forbid Elite's names, so its nine rungs carry original ones. Each rung costs exactly twice the one below (#562 D1). A kill pays Elo-like credit, 2·S_target / (S_own + S_target), from the fitted ship’s strength: the sum of all fitted combat lasers, regardless of the armed group (#870). Mining lasers and carried fittings add nothing. NPC targets still use their actual single Pulse rate until seeded NPC loadouts ship. A much weaker target pays close to nothing and an unarmed target pays nothing (#562 D3, D4). Credit earned in flight is banked on the next dock and lost with the ship before it (#183 D7). `src/ladder.ts` owns the thresholds, names and gates; `src/kill-credit.ts` owns the price of a kill.
 
 Legal status is per galaxy, bounded, and visibly presented as **Clean**, **Wanted**, or **Fugitive**. Offences add heat; thresholds determine police response and shipyard hostility. Heat decays lazily against the authoritative game clock with a 30-minute clean-play half-life, visibly stepping back through the states.
 

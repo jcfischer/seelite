@@ -52,6 +52,10 @@ async function boot() {
 	await page.goto(gameUrl(origin, { seed: RELAY_SEED }));
 	await bootedGame(page);
 	await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const dt = g.units.MAX_DT;
 		const duel = await import("/src/duel.ts");
@@ -61,7 +65,9 @@ async function boot() {
 		// The Long-Range Scanner fitted, as a Bounty pilot has it (#508): without
 		// it the relay is never identified, so never selectable, and the fight is
 		// flown in the station's frame rather than the relay's (#479, #508 F2).
-		g.commander.ownedEquipment = [market.LONG_RANGE_SCANNER];
+		g.commander.loadout = migrateEquipment(g.commander.hull, [
+			market.LONG_RANGE_SCANNER,
+		]).loadout;
 		const frame = () => {
 			g.step(dt);
 			g.render(dt);

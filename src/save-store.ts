@@ -55,6 +55,7 @@ import {
 	type DeathCause,
 	type DeathWake,
 	deathWake,
+	ejectSurvivors,
 	parseDeathWake,
 } from "./death-cost";
 import { holdingsAfterDeath } from "./holdings";
@@ -688,6 +689,9 @@ export class SaveStore {
 				firstLife ? dying.commander : dock,
 				cause,
 				firstLife,
+				// What the pod brought back is read off the dying hold, as the
+				// restore did (#977).
+				cause === "eject" ? ejectSurvivors(dying.commander.state) : undefined,
 			);
 		} catch (error) {
 			// Not retired, and the save the death interrupted is still owed: quieting

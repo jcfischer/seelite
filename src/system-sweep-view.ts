@@ -18,6 +18,14 @@ export const SWEEP_KIND_LABEL: Record<SweepReading["kind"], string> = {
 	wreck: "Salvage wreck signal",
 	pressure: "Raider pressure",
 };
+/** A pressure row names its strength in words and never in digits (node #769).
+ * A row from a save older than strengths says so rather than guessing. */
+export const PRESSURE_UNRECORDED = "Raider pressure · strength not recorded";
+export function sweepRowLabel(row: SweepReading): string {
+	if (row.kind !== "pressure") return SWEEP_KIND_LABEL[row.kind];
+	if (!row.strength) return PRESSURE_UNRECORDED;
+	return `${row.strength[0].toUpperCase()}${row.strength.slice(1)} raider pressure`;
+}
 export const SWEEP_INTERRUPTED = "Sweep interrupted · press Sweep to restart";
 export const SWEEP_IDLE = `Press Sweep · ${SWEEP_CHARGE_S} s charge`;
 export const sweepCompletion = (count: number): string =>
@@ -35,6 +43,8 @@ export function sweepRegionLabel(row: SweepReading, worldSeed: number): string {
 	];
 	if (row.region.kind === "system-space")
 		return `${record.name} · unsettled system space`;
+	if (row.region.kind === "cruise-lanes")
+		return `${record.name} · cruise lanes`;
 	const { stationId } = row.region;
 	const station = generateContents(record).stations.find(
 		(s) => s.id === stationId,
@@ -99,7 +109,7 @@ export function sweepPanel(
 					)
 					.map((r) => ({
 						id: r.id,
-						label: SWEEP_KIND_LABEL[r.kind],
+						label: sweepRowLabel(r),
 						region: cachedRegionLabel(readings, r, worldSeed),
 						age: sweepAge(r, now),
 					}))

@@ -24,8 +24,8 @@
  * has to run before the suite, not a claim to be a lexer. #147 has the history.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PLAYWRIGHT_ENV_VARS } from "./probe-guard.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
@@ -107,12 +107,20 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"lib/opening-probe.mjs",
+		"Shared fixture receives the caller tally check/watch; every page is watched and both opening entrypoints own tally and exit.",
+	],
+	[
 		"measure-open-space-repro.mjs",
 		"node #249's headed instrument, run unchanged against older checkouts to tell a build from an instrument: it prints pair-off, pair-on and gate-live medians with a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor; a software rasteriser or a wrong-tree server throws out of the run",
 	],
 	[
 		"measure-cabin-pass-cost.mjs",
 		"#651's headed cabin-pass instrument, two builds against each other on two servers; a sibling of #201's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints build-against-build deltas and a separation count for a receipt and gates on nothing. It refuses a software rasteriser, a base server that declares no tree or the same commit, and a non-finite block, each by throwing out of the run",
+	],
+	[
+		"tune-cabin-lights.mjs",
+		"node #887's interactive brightness panel: it drives the frame lamps, the console lamps, the authored interior's floods and the rig's ambient live in front of the principal so a look can be set by eye, and prints mean/q25/median/p95/blown measured back off the rendered frame, plus the chosen figures to /tmp/tuning.json for `src/` to adopt. It gates on nothing deliberately — what it decides is signed by looking, and a tally row would be asserting a taste — while a page error throws out of the run. The figures it produces are held as soon as they are adopted: tests/cabin-lighting-ruling.test.ts and tests/perimeter-lamps.test.ts.",
 	],
 	[
 		"capture-sounds.mjs",
@@ -173,6 +181,18 @@ const EXEMPT = new Map([
 	[
 		"measure-occlusion-cost.mjs",
 		"#201's headed occlusion-cost instrument; a sibling of #99's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints four arms and a separation count for a receipt and gates on nothing. What it does refuse is a software rasteriser, which throws out of the run rather than counting a failed check",
+	],
+	[
+		"measure-authored-hull-cost.mjs",
+		"node #812's headed instrument pricing an authored hull against its procedural loft on one page (the tug since node #814); like #201's it prints medians and a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser or a page whose courier is not the authored model throws out of the run",
+	],
+	[
+		"measure-hull-install-stall.mjs",
+		"node #814's headed instrument timing each after-boot hull's install phases and the longest frame gap they cause; it prints medians for the receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser throws out of the run",
+	],
+	[
+		"measure-courier-level-pop.mjs",
+		"node #812's headed instrument reading what the courier's reduced level changes on screen where the detail band first draws it; it prints a footprint, a control and a moved count per heading for the receipt's Q7 and gates on nothing — the principal judges the switch — and a software rasteriser, a page whose courier is not the authored model, a hull with no footprint or a control that moved throws out of the run",
 	],
 	[
 		"measure-cruise-guard-cost.mjs",
@@ -291,8 +311,14 @@ for (const path of scripts(DIR).sort()) {
 	// isolate it. The exception is per file, not per page: the probe's other pages
 	// carry no `perf` and this cannot tell them apart, so a key added to *this*
 	// page is what to check against that test's list.
+	// `probe-key-dispatch.mjs` joins for the opposite reason (#892): its `?perf`
+	// page presses `b`, the one key the panel shares with a flight command
+	// (#385 D6), and the panel's listener seeing it is that row's subject —
+	// bloom toggles and the fire-group cycle does not. That page sends `b` and
+	// nothing else; the probe's first page carries no `perf`.
 	const PERF_OWNERS = new Set([
 		"probe-frame-attribution.mjs",
+		"probe-key-dispatch.mjs",
 		"probe-pad-instrument.mjs",
 		"probe-pointer-lock.mjs",
 	]);

@@ -7,7 +7,8 @@
  * dueling or selected, that it overlaps neither the course row nor the prompt,
  * that the selected raider's ring is painted amber and red while it fires, that
  * the on-target mark follows the sightline, and that the Flight console shows
- * the detail in a fight and hides it in peace.
+ * the detail in a fight and hides it in peace. Since #931 the band also
+ * carries the hull-temperature gauge, and the last rows fly a skim.
  *
  * **Colour is read off the overlay's pixels**, with the sampler shape
  * `probe-live-cockpit.mjs` uses for the refusal tone: a tone is a field on a
@@ -30,9 +31,11 @@ const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+// `floorScale` is the floor fit origin/main drew at before #945 put a plate
+// under every duel-band cell; a plate that changed it would be a shrunk band.
 const VIEWPORTS = [
-	{ name: "desktop", width: 900, height: 620 },
-	{ name: "narrow", width: 390, height: 780 },
+	{ name: "desktop", width: 900, height: 620, floorScale: 1 },
+	{ name: "narrow", width: 390, height: 780, floorScale: 0.72 },
 ];
 
 const installHelpers = () => {
@@ -129,19 +132,86 @@ const installHelpers = () => {
 		 * amber reads as warm, and above the dash with the raider aimed at —
 		 * rather than at the midpoint. Chase keeps its beam on the
 		 * overlay, ending on the hull, and is sampled at the midpoint as before.
+		 *
+		 * **And never under a duel-band plate** (#945): at 900 px the square 28
+		 * px down sat in the band, and the plate a cell stands on darkens the
+		 * beam behind it. The square walks on down the beam until it is clear.
 		 */
 		beamPaint(beam) {
 			const dx = beam.to.x - beam.from.x;
 			const dy = beam.to.y - beam.from.y;
 			const len = Math.hypot(dx, dy) || 1;
-			const along = g.view === "cockpit" ? Math.min(28, len / 2) : len / 2;
-			const x = beam.from.x + (dx / len) * along;
-			const y = beam.from.y + (dy / len) * along;
+			const plates = g.floorRender?.duelPlates ?? [];
+			const at = (along) => ({
+				x: beam.from.x + (dx / len) * along,
+				y: beam.from.y + (dy / len) * along,
+			});
+			const clear = ({ x, y }) =>
+				plates.every(
+					(p) =>
+						x + 6 < p.x ||
+						x - 6 > p.x + p.width ||
+						y + 6 < p.top ||
+						y - 6 > p.top + p.height,
+				);
+			let along = g.view === "cockpit" ? Math.min(28, len / 2) : len / 2;
+			while (!clear(at(along)) && along < len) along += 2;
+			const { x, y } = at(along);
 			return countInFrame(x - 6, y - 6, 12, 12, warm);
 		},
 		/** Rim-red pixels in the glass's top-left corner. */
 		rimPaint() {
 			return countIn(2, 2, 16, 16, rimRed);
+		},
+		/** Park the ship at rest `rOverR` star radii from the star's centre. */
+		parkAtStar(rOverR) {
+			const star = g.world.system.bodies.find((b) => b.kind === "star");
+			g.world.ship.pos = {
+				x: star.pos.x + rOverR * star.radiusKm,
+				y: star.pos.y,
+				z: star.pos.z,
+			};
+			g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		},
+		/** Passive-tone pixels in a rectangle of the overlay. */
+		passiveIn(x, y, width, height) {
+			return countIn(x, y, width, height, passive);
+		},
+		/** Lit overlay pixels in a box: any opaque glyph ink, whatever its tone,
+		 *  and never the dark plate under it (#932). `passive` above is one
+		 *  tone's hue, and the floor's labels are not drawn in it. */
+		litIn(box) {
+			if (!box) return Number.NaN;
+			const lit = (r, gr, b, a) => a > 150 && r + gr + b > 240;
+			return countIn(box.x, box.top, box.width, box.height, lit);
+		},
+		/** Share of a box's overlay pixels that are the dark plate (#931). */
+		plateShare(box) {
+			if (!box) return 0;
+			const dark = (r, gr, b, a) => a > 150 && r < 40 && gr < 40 && b < 50;
+			const n = countIn(box.x, box.top, box.width, box.height, dark);
+			return n / (Math.ceil(box.width) * Math.ceil(box.height));
+		},
+		/**
+		 * Each duel-band plate as painted (#945): its name, its painted dark
+		 * share, and the dark pixels in a one-pixel column at the middle of the
+		 * gap to the next plate — zero where two plates do not touch.
+		 */
+		platesPainted(floor) {
+			const plates = floor?.duelPlates ?? [];
+			const dark = (r, gr, b, a) => a > 150 && r < 40 && gr < 40 && b < 50;
+			return plates.map((plate, i) => {
+				const next = plates[i + 1];
+				const end = plate.x + plate.width;
+				return {
+					label: plate.label,
+					share: this.plateShare(plate),
+					gapPx: next ? next.x - end : null,
+					gapDark: next
+						? countIn((end + next.x) / 2, plate.top, 1, plate.height, dark)
+						: null,
+				};
+			});
 		},
 		/** Lit pixels in the band the condition line under the selected label is
 		 *  painted in.
@@ -191,6 +261,11 @@ const installHelpers = () => {
 				? {
 						duelRow: r.duelRow,
 						duelBox: r.duelBox,
+						duelPlates: r.duelPlates,
+						tempPlate: r.tempPlate,
+						scoopPlate: r.scoopPlate,
+						scale: r.scale,
+						overflowPx: r.overflowPx,
 						courseBox: r.courseBox,
 						glassBottomY: r.glassBottomY,
 						marginPx: r.marginPx,
@@ -253,20 +328,22 @@ for (const viewport of VIEWPORTS) {
 		);
 		g.commitCourseTo(elsewhere.index);
 		D.steps(0.2);
+		const floor = D.floor();
 		return {
 			regime,
 			encounter: g.encounter,
-			floor: D.floor(),
+			floor,
+			plates: D.platesPainted(floor),
 			cue: g.cueRender,
 		};
 	});
 	check(
-		`${v}: in peace the duel row is not drawn and no cue is recorded`,
+		`${v}: in peace only the armed group is drawn and no cue is recorded`,
 		peace.regime === "cruise" &&
 			peace.encounter === null &&
 			peace.floor !== null &&
-			peace.floor.duelRow === null &&
-			peace.floor.duelBox === null &&
+			peace.floor.duelRow?.length === 1 &&
+			peace.floor.duelRow[0].value === "H1 PULSE LASER · 1/1" &&
 			peace.cue === null,
 		JSON.stringify(peace),
 	);
@@ -280,10 +357,12 @@ for (const viewport of VIEWPORTS) {
 		const D = window.__duel;
 		g.forceRaider("behind", 0.5, 30);
 		D.steps(1.2);
+		const floor = D.floor();
 		return {
 			phase: g.encounter?.phase ?? null,
 			regime: g.regime,
-			floor: D.floor(),
+			floor,
+			plates: D.platesPainted(floor),
 			stripTop: g.floorRender.glassBottomY - g.floorRender.duelBox?.height,
 		};
 	});
@@ -294,9 +373,44 @@ for (const viewport of VIEWPORTS) {
 		`${v}: a contesting raider draws the SHD and HEAT row`,
 		contest.phase === "contest" &&
 			row !== null &&
-			row.map((c) => c.label).join(",") === "SHD,HEAT" &&
+			row.map((c) => c.label).join(",") === "SHD,HEAT," &&
 			box !== null,
 		JSON.stringify(contest.floor),
+	);
+	// -------------------------------------------------------------------------
+	// Plates (#945, the principal's ruling): in a fight SHD, HEAT and the
+	// armed group each stand on their own dark plate, read off the paint, and
+	// no two plates touch; in peace only the armed group's is drawn. The
+	// floor fit is the one origin/main drew at.
+	// -------------------------------------------------------------------------
+	const plateNames = (plates) => plates.map((p) => p.label).join(",");
+	const apart = (plates) =>
+		plates.every((p) => p.gapPx === null || (p.gapPx > 0 && p.gapDark === 0));
+	check(
+		`${v}: in a fight away from a star SHD, HEAT and the armed group each stand on a plate, apart`,
+		plateNames(contest.plates) === "SHD,HEAT,GROUP" &&
+			contest.plates.every((p) => p.share > 0.5) &&
+			apart(contest.plates) &&
+			contest.floor?.tempPlate === null,
+		JSON.stringify({
+			plates: contest.plates,
+			boxes: contest.floor?.duelPlates,
+		}),
+	);
+	check(
+		`${v}: in peace only the armed group's plate is drawn`,
+		plateNames(peace.plates) === "GROUP" && peace.plates[0].share > 0.5,
+		JSON.stringify(peace.plates),
+	);
+	check(
+		`${v}: the plates leave the floor fit at scale ${viewport.floorScale}, overflow 0`,
+		[peace, contest].every(
+			(s) =>
+				s.floor?.scale === viewport.floorScale && s.floor?.overflowPx === 0,
+		),
+		JSON.stringify(
+			[peace, contest].map((s) => [s.floor?.scale, s.floor?.overflowPx]),
+		),
 	);
 	check(
 		`${v}: the duel row sits inside the glass, within the margins`,
@@ -671,14 +785,24 @@ for (const viewport of VIEWPORTS) {
 	});
 	await nextFrames(page);
 	const afterConsole = await page.evaluate(() => window.__duel.console());
-	const afterFloor = await page.evaluate(() => {
+	// The SHD plate's leading edge, where the fight painted it: the centred
+	// peace row never reaches it, so a plate there without its cell is paint.
+	const shdPlate = contest.floor?.duelPlates?.[0] ?? null;
+	const shdEdge = shdPlate && { ...shdPlate, width: 4 };
+	const afterFloor = await page.evaluate((edge) => {
 		const g = window.__seelite;
 		g.setHeadLook("forward");
 		window.__duel.steps(0.1);
-		return { floor: window.__duel.floor(), cue: g.cueRender };
-	});
+		const floor = window.__duel.floor();
+		return {
+			floor,
+			cue: g.cueRender,
+			plates: window.__duel.platesPainted(floor),
+			shdEdgeShare: window.__duel.plateShare(edge),
+		};
+	}, shdEdge);
 	check(
-		`${v}: after the encounter ends the row, the cue and the console detail are gone`,
+		`${v}: after the encounter ends only the armed group remains, without cue or console detail`,
 		after.encounter === null &&
 			after.raiderFiring === false &&
 			afterConsole.present &&
@@ -686,14 +810,320 @@ for (const viewport of VIEWPORTS) {
 			// readout is hidden, so `visible` alone would pass there on nothing.
 			afterConsole.inlineDisplay === "none" &&
 			!afterConsole.visible &&
-			afterFloor.floor?.duelRow === null &&
+			afterFloor.floor?.duelRow?.length === 1 &&
 			afterFloor.cue === null,
 		JSON.stringify({ after, afterConsole, afterFloor }),
+	);
+	check(
+		`${v}: with the fight over the SHD and HEAT plates go with their cells`,
+		shdPlate?.label === "SHD" &&
+			plateNames(afterFloor.plates) === "GROUP" &&
+			afterFloor.shdEdgeShare === 0,
+		JSON.stringify({
+			shdPlate,
+			after: afterFloor.plates,
+			edge: afterFloor.shdEdgeShare,
+		}),
 	);
 	// The contest's side of the on-target gate is headless (`onTargetMark` in
 	// `tests/duel-hud.test.ts`). A browser row was built here and removed: the
 	// contest's raider is beyond the laser's range, so it passed with the gate
 	// deleted.
+
+	// -------------------------------------------------------------------------
+	// Hull temperature (#931): a skim puts the TEMP gauge in the duel band, and
+	// it goes when the hull is back at ambient. `tests/hull-temperature.test.ts`
+	// and `tests/hull-temp-gauge.test.ts` own the law and the reading; what only
+	// the page answers is that the game feeds the step its star distance and the
+	// band paints the cell. Ink is counted on the overlay alone, so the star in
+	// the WebGL frame cannot light it.
+	// -------------------------------------------------------------------------
+	const skim = await page.evaluate(() => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		// Any lit ink, not the passive hue: since #945 every cell stands on a
+		// plate, and glyph ink composited over one leaves the passive window.
+		const ink = (box) => D.litIn(box);
+		const home = { ...g.world.ship.pos };
+		const cold = D.floor();
+		const coldInk = ink(cold?.duelBox);
+		D.parkAtStar(1.2);
+		D.steps(3);
+		const hot = {
+			temp: g.condition.hullTemp,
+			gunHeat: g.condition.heat,
+			hull: g.condition.hull,
+			floor: D.floor(),
+		};
+		const hotInk = ink(hot.floor?.duelBox);
+		const hotPlate = D.plateShare(hot.floor?.tempPlate);
+		// Away from the star: cooling, then the last fraction under the snap.
+		g.world.ship.pos = home;
+		g.world.ship.vel = { x: 0, y: 0, z: 0 };
+		D.steps(1);
+		const cooling = g.condition.hullTemp;
+		// Just over the snap: about 0.3 s of cooling takes it under, so a
+		// second leaves it at ambient.
+		g.condition = { ...g.condition, hullTemp: 0.0051 };
+		D.steps(1);
+		return {
+			coldRow: cold?.duelRow,
+			coldPlate: cold?.tempPlate ?? null,
+			hotPlate,
+			coldInk,
+			hot,
+			hotInk,
+			cooling,
+			ambient: { temp: g.condition.hullTemp, floor: D.floor() },
+		};
+	});
+	const tempCell = skim.hot.floor?.duelRow?.find((c) => c.label === "TEMP");
+	check(
+		`${v}: a skim at 1.2 R heats the hull and paints the TEMP gauge; ambient takes it off`,
+		!skim.coldRow?.some((c) => c.label === "TEMP") &&
+			skim.hot.temp > 0.2 &&
+			skim.hot.temp < 1 &&
+			skim.hot.gunHeat === 0 &&
+			tempCell?.value === `${Math.round(skim.hot.temp * 100)}%` &&
+			skim.hotInk > skim.coldInk &&
+			skim.cooling < skim.hot.temp &&
+			skim.ambient.temp === 0 &&
+			!skim.ambient.floor?.duelRow?.some((c) => c.label === "TEMP"),
+		JSON.stringify({ ...skim, tempCell }),
+	);
+	// The plate is what makes the cell read over a star-lit sky (#931, the
+	// principal's ruling). Most of its area is plate; the rest is the cell's ink.
+	check(
+		`${v}: the TEMP cell stands on its dark plate, and no plate is painted without it`,
+		skim.coldPlate === null &&
+			skim.hot.floor?.tempPlate != null &&
+			skim.hotPlate > 0.5 &&
+			skim.ambient.floor?.tempPlate === null,
+		JSON.stringify({
+			coldPlate: skim.coldPlate,
+			hotPlate: skim.hotPlate,
+			plate: skim.hot.floor?.tempPlate,
+			ambientPlate: skim.ambient.floor?.tempPlate,
+		}),
+	);
+	// -------------------------------------------------------------------------
+	// The fuel scoop (#932): a fitted scoop fills the tank on a cruise pass in
+	// the band, and the glass says so beside the TEMP gauge, on its plate.
+	// `tests/fuel-scoop.test.ts` and `tests/scoop-line.test.ts` own the law and
+	// the reading; what only the page answers is that the game feeds the step
+	// the regime and the star distance, and the band paints the line. The
+	// control is the same ship parked in normal flight at the same distance.
+	// -------------------------------------------------------------------------
+	const scoop = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		const { freeSlot, makeModule } = await import("/src/loadout.ts");
+		const star = g.world.system.bodies.find((b) => b.kind === "star");
+		const rOf = () =>
+			Math.hypot(
+				g.world.ship.pos.x - star.pos.x,
+				g.world.ship.pos.y - star.pos.y,
+				g.world.ship.pos.z - star.pos.z,
+			) / star.radiusKm;
+		g.resetFlightToStart();
+		const module = makeModule("fuel-scoop", 1);
+		const slot = freeSlot(g.commander.loadout, g.commander.hull, module);
+		g.commander = {
+			...g.commander,
+			loadout: { ...g.commander.loadout, [slot.key]: module },
+		};
+		const label = (row) => row?.find((c) => c.label === "SCOOPING") ?? null;
+		// Normal flight at 1.2 R: the hull heats and the tank does not fill.
+		g.fuelLy = 2;
+		D.parkAtStar(1.2);
+		D.steps(1);
+		const normal = {
+			regime: g.regime,
+			fuel: g.fuelLy,
+			floor: D.floor(),
+		};
+		const tempOnlyInk = D.litIn(normal.floor?.tempPlate);
+		// Cruise with no target, then placed at 1.2 R with the nose along the
+		// tangent: the pass is the pilot's, not a leg to a body.
+		g.targetId = null;
+		g.engageCruise();
+		for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(D.dt);
+		D.parkAtStar(1.2);
+		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
+		const fuelBefore = g.fuelLy;
+		const energyBefore = g.condition.energy;
+		D.steps(0.5);
+		const filling = {
+			regime: g.regime,
+			r: rOf(),
+			fuel: g.fuelLy,
+			energy: g.condition.energy,
+			scooping: g.scooping,
+			floor: D.floor(),
+		};
+		const scoopInk = D.litIn(filling.floor?.scoopPlate);
+		const scoopPlateShare = D.plateShare(filling.floor?.scoopPlate);
+		// On out of the band: the line goes and the tank holds.
+		let guard = 0;
+		while (g.regime === "cruise" && rOf() < 2.2 && guard++ < 200) D.steps(0.1);
+		const left = {
+			regime: g.regime,
+			r: rOf(),
+			fuel: g.fuelLy,
+			scooping: g.scooping,
+			floor: D.floor(),
+		};
+		D.steps(0.5);
+		const after = { fuel: g.fuelLy };
+		// In combat inside the band (the principal's ruling on #932's D3): back
+		// on the pass, a contesting raider puts SHD and HEAT in the row, the
+		// SCOOPING line drops, and the scoop goes on filling.
+		D.parkAtStar(1.2);
+		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
+		D.steps(0.2);
+		g.forceRaider("behind", 0, 30);
+		const combatFuelBefore = g.fuelLy;
+		D.steps(0.3);
+		const combat = {
+			regime: g.regime,
+			phase: g.encounter?.phase ?? null,
+			r: rOf(),
+			scooping: g.scooping,
+			fuelBefore: combatFuelBefore,
+			fuel: g.fuelLy,
+			floor: D.floor(),
+		};
+		combat.plates = D.platesPainted(combat.floor);
+		g.resetFlightToStart();
+		return {
+			combat,
+			normal,
+			tempOnlyInk,
+			fuelBefore,
+			energyBefore,
+			filling,
+			scoopInk,
+			scoopPlateShare,
+			left,
+			after,
+			normalLine: label(normal.floor?.duelRow),
+			fillingLine: label(filling.floor?.duelRow),
+			leftLine: label(left.floor?.duelRow),
+		};
+	});
+	check(
+		`${v}: in normal flight at 1.2 R a fitted scoop fills nothing and paints no SCOOPING line`,
+		scoop.normal.regime === "normal" &&
+			scoop.normal.fuel === 2 &&
+			scoop.normalLine === null &&
+			scoop.normal.floor?.scoopPlate === null &&
+			scoop.normal.floor?.duelRow?.some((c) => c.label === "TEMP"),
+		JSON.stringify({ normal: scoop.normal, line: scoop.normalLine }),
+	);
+	check(
+		`${v}: on a cruise pass in the band the scoop fills the tank, draws on the bank and paints SCOOPING with the tank in LY beside TEMP`,
+		scoop.filling.regime === "cruise" &&
+			scoop.filling.r < 2 &&
+			scoop.filling.scooping === true &&
+			scoop.filling.fuel > scoop.fuelBefore &&
+			scoop.filling.energy < scoop.energyBefore &&
+			scoop.fillingLine?.value === `${scoop.filling.fuel.toFixed(1)} LY` &&
+			scoop.filling.floor?.duelRow?.some((c) => c.label === "TEMP"),
+		JSON.stringify({
+			fuelBefore: scoop.fuelBefore,
+			energyBefore: scoop.energyBefore,
+			filling: scoop.filling,
+			line: scoop.fillingLine,
+		}),
+	);
+	// One plate under both cells, and the line's ink on it: more lit ink than
+	// the TEMP cell alone had on its own plate.
+	check(
+		`${v}: the SCOOPING line is painted on the TEMP cell's dark plate`,
+		scoop.filling.floor?.scoopPlate != null &&
+			JSON.stringify(scoop.filling.floor.scoopPlate) ===
+				JSON.stringify(scoop.filling.floor.tempPlate) &&
+			scoop.scoopPlateShare > 0.5 &&
+			scoop.scoopInk > scoop.tempOnlyInk,
+		JSON.stringify({
+			scoopPlate: scoop.filling.floor?.scoopPlate,
+			tempPlate: scoop.filling.floor?.tempPlate,
+			share: scoop.scoopPlateShare,
+			scoopInk: scoop.scoopInk,
+			tempOnlyInk: scoop.tempOnlyInk,
+		}),
+	);
+	check(
+		`${v}: in combat inside the band SHD and HEAT keep the row, SCOOPING drops, and the scoop still fills`,
+		scoop.combat.regime === "cruise" &&
+			scoop.combat.phase === "contest" &&
+			scoop.combat.r < 2 &&
+			scoop.combat.scooping === true &&
+			scoop.combat.fuel > scoop.combat.fuelBefore &&
+			scoop.combat.floor?.duelRow?.map((c) => c.label).join(",") ===
+				"SHD,HEAT,TEMP," &&
+			scoop.combat.floor?.scoopPlate === null &&
+			scoop.combat.floor?.tempPlate != null,
+		JSON.stringify(scoop.combat),
+	);
+	// #945 inside the band: every cell on its plate, TEMP's the one it had.
+	const combatTemp = scoop.combat.floor?.duelPlates?.find(
+		(p) => p.label === "TEMP",
+	);
+	check(
+		`${v}: in a fight inside the band SHD, HEAT, TEMP and the armed group each stand on a plate, apart`,
+		plateNames(scoop.combat.plates) === "SHD,HEAT,TEMP,GROUP" &&
+			scoop.combat.plates.every((p) => p.share > 0.5) &&
+			apart(scoop.combat.plates) &&
+			JSON.stringify(combatTemp) ===
+				JSON.stringify(scoop.combat.floor?.tempPlate) &&
+			scoop.combat.floor?.scale === viewport.floorScale &&
+			scoop.combat.floor?.overflowPx === 0,
+		JSON.stringify({
+			plates: scoop.combat.plates,
+			boxes: scoop.combat.floor?.duelPlates,
+			scale: scoop.combat.floor?.scale,
+		}),
+	);
+	check(
+		`${v}: out of the band the SCOOPING line goes and the tank stops filling`,
+		scoop.left.r >= 2 &&
+			scoop.left.scooping === false &&
+			scoop.leftLine === null &&
+			scoop.left.floor?.scoopPlate === null &&
+			scoop.after.fuel === scoop.left.fuel,
+		JSON.stringify({ left: scoop.left, after: scoop.after }),
+	);
+
+	// Last on the page, because it ends the flight: heat above the top runs the
+	// hull out through the game's own death path, and the shields stand.
+	const burnt = await page.evaluate(() => {
+		const g = window.__seelite;
+		window.__duel.parkAtStar(1.06);
+		g.condition = { ...g.condition, hull: 2, hullTemp: 2 };
+		const fore = g.condition.fore;
+		let seconds = 0;
+		while (!g.dead && seconds < 5) {
+			g.step(g.units.MAX_DT);
+			seconds += g.units.MAX_DT;
+		}
+		return {
+			dead: g.dead,
+			seconds,
+			hull: g.condition.hull,
+			foreBefore: fore,
+			foreAfter: g.condition.fore,
+			lastExit: g.lastExit,
+		};
+	});
+	check(
+		`${v}: a hull above the top runs out of integrity and the ship is destroyed, shields untouched`,
+		burnt.dead === true &&
+			burnt.hull === 0 &&
+			burnt.foreAfter === burnt.foreBefore &&
+			burnt.lastExit === "ship destroyed",
+		JSON.stringify(burnt),
+	);
 	await page.close();
 }
 

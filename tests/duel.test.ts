@@ -18,7 +18,6 @@ import { HULL_SPECS } from "../src/hull";
 import { steadyFrame } from "../src/sim";
 import {
 	PULSE_LASER,
-	SHIELD_POOL,
 	fullCondition,
 	stepCondition,
 } from "../src/ship-condition";
@@ -50,6 +49,8 @@ function raiderAhead(km: number): Raider {
 }
 
 const SHOT = { fired: true, damage: PULSE_LASER.damagePerS * DT };
+
+const RAIDER_POOL = HULL_SPECS.raider.shieldPool;
 
 describe("the hit sphere", () => {
 	test("is the raider's true half-length, not the rig's drawn 3x", () => {
@@ -99,10 +100,10 @@ describe("the player's shot", () => {
 		const step = stepDuel(raiderAhead(3), pilot(), SHOT, DT);
 		expect(step.playerHit).toBe(true);
 		expect(step.raider.condition.fore).toBeCloseTo(
-			SHIELD_POOL - SHOT.damage,
+			RAIDER_POOL - SHOT.damage,
 			9,
 		);
-		expect(step.raider.condition.aft).toBe(SHIELD_POOL);
+		expect(step.raider.condition.aft).toBe(RAIDER_POOL);
 	});
 
 	test("an aim off the raider does nothing to it", () => {
@@ -113,7 +114,7 @@ describe("the player's shot", () => {
 			DT,
 		);
 		expect(step.playerHit).toBe(false);
-		expect(step.raider.condition.fore).toBe(SHIELD_POOL);
+		expect(step.raider.condition.fore).toBe(RAIDER_POOL);
 	});
 
 	test("an unfired gun does nothing, however well aimed", () => {
@@ -124,7 +125,7 @@ describe("the player's shot", () => {
 			DT,
 		);
 		expect(step.playerHit).toBe(false);
-		expect(step.raider.condition.fore).toBe(SHIELD_POOL);
+		expect(step.raider.condition.fore).toBe(RAIDER_POOL);
 	});
 
 	test("a raider whose hull reaches zero is destroyed", () => {

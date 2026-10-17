@@ -7,18 +7,15 @@
 import { describe, expect, test } from "bun:test";
 import { COMBAT_PROTOTYPE_DEFAULTS } from "../src/combat-prototype";
 import { DOCKING_DAMAGE_SCALE, V_GATE_KMS, entryDamage } from "../src/docking";
-import { HULL_IDS, type HullId, HULL_SPECS } from "../src/hull";
+import { HULL_IDS, type HullId, HULL_SPECS, stockPlant } from "../src/hull";
 import {
 	CRIPPLED_HULL_FRACTION,
-	ENERGY_BANK,
-	ENERGY_REGEN_PER_S,
 	HEAT_COOL_PER_S,
 	HEAT_LOCK,
 	HEAT_RELEASE,
 	HULL_KILL_TOLERANCE,
 	HULL_PRINT_STEP,
 	PULSE_LASER,
-	SHIELD_POOL,
 	SHIELD_RECHARGE_DELAY_S,
 	SHIELD_RECHARGE_ENERGY_PER_POINT,
 	SHIELD_RECHARGE_PER_S,
@@ -50,15 +47,24 @@ function run(c: ShipCondition, seconds: number, trigger: boolean) {
 	return { condition, delivered };
 }
 
+/** The courier's figures, which the global constants carried before #866. */
+const COURIER_POOL = HULL_SPECS.courier.shieldPool;
+const COURIER_BANK = stockPlant("courier").bankE;
+const COURIER_REGEN_PER_S = stockPlant("courier").regenPerS;
+
 describe("a fresh condition", () => {
 	test("hull is the flown hull's integrity, shields and energy are full", () => {
 		for (const id of HULL_IDS) {
 			const c = fullCondition(id);
 			expect(c.hull).toBe(HULL_SPECS[id].integrity);
 			expect(c.hullMax).toBe(HULL_SPECS[id].integrity);
-			expect(c.fore).toBe(SHIELD_POOL);
-			expect(c.aft).toBe(SHIELD_POOL);
-			expect(c.energy).toBe(ENERGY_BANK);
+			// Each hull's own pool and stock plant since #866.
+			expect(c.fore).toBe(HULL_SPECS[id].shieldPool);
+			expect(c.aft).toBe(HULL_SPECS[id].shieldPool);
+			expect(c.shieldMax).toBe(HULL_SPECS[id].shieldPool);
+			expect(c.energy).toBe(stockPlant(id).bankE);
+			expect(c.energyMax).toBe(stockPlant(id).bankE);
+			expect(c.energyRegenPerS).toBe(stockPlant(id).regenPerS);
 			expect(c.heat).toBe(0);
 			expect(c.heatLocked).toBe(false);
 			expect(isAlive(c)).toBe(true);
@@ -68,11 +74,11 @@ describe("a fresh condition", () => {
 	test("starts clear of the recharge delay", () => {
 		const c = applyDamage(fullCondition("courier"), 10, "fore");
 		// A fresh condition that was never struck recharges on its first step.
-		const fresh = { ...fullCondition("courier"), fore: SHIELD_POOL - 10 };
+		const fresh = { ...fullCondition("courier"), fore: COURIER_POOL - 10 };
 		expect(stepCondition(fresh, DT, false).condition.fore).toBeGreaterThan(
-			SHIELD_POOL - 10,
+			COURIER_POOL - 10,
 		);
-		expect(stepCondition(c, DT, false).condition.fore).toBe(SHIELD_POOL - 10);
+		expect(stepCondition(c, DT, false).condition.fore).toBe(COURIER_POOL - 10);
 	});
 });
 
@@ -88,23 +94,23 @@ describe("damage by direction", () => {
 	test("fore damage leaves the aft pool untouched, and the reverse", () => {
 		const full = fullCondition("courier");
 		const fore = applyDamage(full, 30, "fore");
-		expect(fore.fore).toBe(SHIELD_POOL - 30);
-		expect(fore.aft).toBe(SHIELD_POOL);
+		expect(fore.fore).toBe(COURIER_POOL - 30);
+		expect(fore.aft).toBe(COURIER_POOL);
 		const aft = applyDamage(full, 30, "aft");
-		expect(aft.aft).toBe(SHIELD_POOL - 30);
-		expect(aft.fore).toBe(SHIELD_POOL);
+		expect(aft.aft).toBe(COURIER_POOL - 30);
+		expect(aft.fore).toBe(COURIER_POOL);
 	});
 
 	test("a depleted pool bleeds exactly the remainder to hull", () => {
 		const full = fullCondition("courier");
-		const c = applyDamage(full, SHIELD_POOL + 12, "aft");
+		const c = applyDamage(full, COURIER_POOL + 12, "aft");
 		expect(c.aft).toBe(0);
-		expect(c.fore).toBe(SHIELD_POOL);
+		expect(c.fore).toBe(COURIER_POOL);
 		expect(c.hull).toBe(full.hullMax - 12);
 	});
 
 	test("the other pool does not shelter the hull", () => {
-		const c = applyDamage(fullCondition("courier"), SHIELD_POOL + 1, "fore");
+		const c = applyDamage(fullCondition("courier"), COURIER_POOL + 1, "fore");
 		expect(c.hull).toBe(fullCondition("courier").hullMax - 1);
 	});
 
@@ -129,7 +135,7 @@ describe("the pulse laser", () => {
 	test("firing spends energy and builds heat, and does not regenerate", () => {
 		const { condition } = run(fullCondition("courier"), 2, true);
 		expect(condition.energy).toBeCloseTo(
-			ENERGY_BANK - PULSE_LASER.energyPerS * 2,
+			COURIER_BANK - PULSE_LASER.energyPerS * 2,
 			6,
 		);
 		expect(condition.heat).toBeCloseTo(PULSE_LASER.heatPerS * 2, 6);
@@ -143,10 +149,10 @@ describe("the pulse laser", () => {
 		};
 		const { condition } = run(warm, 1, false);
 		expect(condition.heat).toBeCloseTo(50 - HEAT_COOL_PER_S, 6);
-		expect(condition.energy).toBeCloseTo(10 + ENERGY_REGEN_PER_S, 6);
+		expect(condition.energy).toBeCloseTo(10 + COURIER_REGEN_PER_S, 6);
 		const long = run(warm, 60, false).condition;
 		expect(long.heat).toBe(0);
-		expect(long.energy).toBe(ENERGY_BANK);
+		expect(long.energy).toBe(COURIER_BANK);
 	});
 
 	test("heat at the ceiling locks the gun and it delivers nothing", () => {
@@ -187,32 +193,32 @@ describe("shield recharge", () => {
 	test("waits out the delay after a hit", () => {
 		const hit = applyDamage(fullCondition("courier"), 20, "fore");
 		const early = run(hit, SHIELD_RECHARGE_DELAY_S - 0.1, false).condition;
-		expect(early.fore).toBe(SHIELD_POOL - 20);
+		expect(early.fore).toBe(COURIER_POOL - 20);
 		const late = run(hit, SHIELD_RECHARGE_DELAY_S + 1, false).condition;
-		expect(late.fore).toBeGreaterThan(SHIELD_POOL - 20);
+		expect(late.fore).toBeGreaterThan(COURIER_POOL - 20);
 	});
 
 	test("recharges the lower pool first", () => {
 		const c = {
 			...fullCondition("courier"),
-			fore: SHIELD_POOL - 5,
-			aft: SHIELD_POOL - 40,
+			fore: COURIER_POOL - 5,
+			aft: COURIER_POOL - 40,
 		};
 		const after = run(c, 1, false).condition;
-		expect(after.fore).toBe(SHIELD_POOL - 5);
-		expect(after.aft).toBeCloseTo(SHIELD_POOL - 40 + SHIELD_RECHARGE_PER_S, 6);
+		expect(after.fore).toBe(COURIER_POOL - 5);
+		expect(after.aft).toBeCloseTo(COURIER_POOL - 40 + SHIELD_RECHARGE_PER_S, 6);
 	});
 
 	test("draws on the energy bank, so fire and recovery compete", () => {
 		const c = {
 			...fullCondition("courier"),
-			aft: SHIELD_POOL - 40,
+			aft: COURIER_POOL - 40,
 			energy: 50,
 		};
 		const idle = run(c, 1, false).condition;
 		expect(idle.energy).toBeCloseTo(
 			50 +
-				ENERGY_REGEN_PER_S -
+				COURIER_REGEN_PER_S -
 				SHIELD_RECHARGE_PER_S * SHIELD_RECHARGE_ENERGY_PER_POINT,
 			6,
 		);
@@ -232,7 +238,7 @@ describe("shield recharge", () => {
 	});
 
 	test("never recharges hull", () => {
-		const c = applyDamage(fullCondition("courier"), SHIELD_POOL + 30, "fore");
+		const c = applyDamage(fullCondition("courier"), COURIER_POOL + 30, "fore");
 		expect(run(c, 120, false).condition.hull).toBe(c.hull);
 	});
 });
@@ -433,7 +439,7 @@ describe("a crippled ship does not rebuild shields (#367 D2)", () => {
 		const { condition, delivered } = run(c, 1, true);
 		expect(delivered).toBeGreaterThan(0);
 		expect(condition.heat).toBeGreaterThan(0);
-		expect(condition.energy).toBeLessThan(ENERGY_BANK);
+		expect(condition.energy).toBeLessThan(COURIER_BANK);
 	});
 
 	test("being crippled does not stop damage landing", () => {
@@ -468,13 +474,13 @@ test("the production numbers start where #48 tuned them", () => {
 	// Until part (d) moves the rig onto these, two copies exist. This row makes
 	// a retune of one without the other loud rather than silent.
 	const P = COMBAT_PROTOTYPE_DEFAULTS;
-	expect(SHIELD_POOL).toBe(P.shield);
-	expect(ENERGY_BANK).toBe(P.energy);
+	expect(COURIER_POOL).toBe(P.shield);
+	expect(COURIER_BANK).toBe(P.energy);
 	expect(HEAT_LOCK).toBe(P.heatLock);
 	expect(PULSE_LASER.damagePerS).toBe(P.pulseDamagePerSecond);
 	expect(PULSE_LASER.energyPerS).toBe(P.pulseEnergyPerSecond);
 	expect(PULSE_LASER.heatPerS).toBe(P.pulseHeatPerSecond);
-	expect(ENERGY_REGEN_PER_S).toBe(P.energyRegenPerSecond);
+	expect(COURIER_REGEN_PER_S).toBe(P.energyRegenPerSecond);
 	expect(HEAT_COOL_PER_S).toBe(P.heatCoolPerSecond);
 	// **The one ruled divergence.** The principal slowed production recharge to
 	// 2/s after the second playtest of #324; the rig keeps its own 6/s until part

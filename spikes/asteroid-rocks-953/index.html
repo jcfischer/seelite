@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Asteroid study</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080b10;color:#e1e5ea;font:14px system-ui,sans-serif}canvas{display:block}aside{position:fixed;top:24px;left:24px;width:270px;padding:22px;background:#101720ed;border:1px solid #33404e;border-radius:12px;backdrop-filter:blur(10px)}h1{font-size:22px;font-weight:550;margin:0 0 5px}p{color:#97a6b6;line-height:1.5;margin:0 0 22px}label{display:block;color:#b8c4d0;font-size:12px;margin:17px 0 7px}select,button{width:100%;padding:9px 11px;border:1px solid #475360;border-radius:6px;background:#18222d;color:#eef2f6;font:inherit}button{cursor:pointer}button:hover{background:#283848}input[type=range]{width:100%;accent-color:#d8b78c}.row{display:flex;gap:6px}.row button{width:auto;flex:1}.active{border-color:#d8b78c;background:#37404a}footer{position:fixed;bottom:22px;left:24px;color:#9cabbc;font-size:12px}.status{font-size:12px;color:#d4b98e;margin-top:18px;line-height:1.6}#target{position:fixed;right:24px;top:24px;width:min(42vw,580px);max-height:80vh;object-fit:contain;display:none;background:#080b10;border:1px solid #475360}a{color:#c1d8ed}#error{color:#ffb4a0}@media(max-width:650px){aside{top:10px;left:10px;width:210px;padding:14px}footer{left:10px}}
+</style></head><body>
+<aside><h1>Asteroid study</h1><p>Drag to orbit · Scroll to zoom<br>Right-drag to pan</p>
+<label for="shape">Rock</label><select id="shape"><option>Loading…</option></select>
+<label>Detail level</label><div class="row" id="levels"><button class="active" data-level="0">Near</button><button data-level="1">Mid</button><button data-level="2">Far</button></div>
+<label for="light">Sun direction</label><input id="light" type="range" min="-180" max="180" value="35">
+<label for="exposure">Exposure</label><input id="exposure" type="range" min="0.3" max="2" step="0.05" value="0.85">
+<label for="shading">Surface</label><select id="shading"><option value="lambert">Diffuse rock</option><option value="standard">Standard material</option><option value="clay">Clay · inspect shape</option><option value="wire">Wireframe</option></select>
+<label>View</label><div class="row"><button id="reset">Reset</button><button id="spin">Rotate</button></div>
+<button id="reference" style="margin-top:12px">Show target</button>
+<div class="status" id="status">Loading the first rock…</div><div id="error"></div>
+</aside><img id="target" src="/spikes/asteroid-rocks-953/target.png" alt="Approved asteroid surface direction">
+<footer>Field rocks only · Design study</footer>
+<script type="module" src="./viewer.ts"></script></body></html>

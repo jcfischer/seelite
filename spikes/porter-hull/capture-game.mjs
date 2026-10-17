@@ -48,6 +48,7 @@ try {
 			hull: "freighter",
 			"no-save": true,
 			"coriolis-start": "approach",
+			models: "all",
 		}),
 	);
 	await bootedGame(page, 90000);

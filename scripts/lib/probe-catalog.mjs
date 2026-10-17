@@ -19,6 +19,69 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-model-queue.mjs",
+			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot.",
+			[
+				"background loading",
+				"model queue",
+				"boot",
+				"jump",
+				"deterministic readiness",
+			],
+		),
+		entry(
+			"probe-missiles.mjs",
+			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
+			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],
+		),
+		entry(
+			"probe-nebula.mjs",
+			"Seeded sky texture rebakes deterministically, is reused unchanged when the camera turns, shares the reflection source, toggles quality without rebaking and releases replaced GPU targets.",
+			["nebula", "sky", "reflection", "quality", "GPU disposal"],
+		),
+		entry(
+			"probe-music-game.mjs",
+			"Live music unlock, audible station and flight beds, and docking-waltz engage, resolve, duck and cancel commands.",
+			["music director", "audio unlock", "docking computer", "live music bus"],
+		),
+		entry(
+			"probe-opening-cinematic.mjs",
+			"Watched guided and free openings, shot order, letterboxing, input suppression, equality to skipped state, and five-seed camera geometry.",
+			[
+				"opening camera",
+				"opening overlay",
+				"opening script",
+				"cinematic frames",
+			],
+		),
+		entry(
+			"probe-outfitting.mjs",
+			"Exercises the live two-pane Equipment tab: slot and stock selection, pre-purchase handling/range/kill-credit comparison, purchase, removal, fitting from hold, resale cost basis and keyboard selection.",
+			[
+				"outfitting",
+				"equipment",
+				"modules",
+				"commerce",
+				"cost basis",
+				"trade ladder",
+				"cockpit",
+				"preview",
+			],
+		),
+		entry(
+			"probe-station-interior-kit.mjs",
+			"Holds the optional fitting bundle across boot, tests one-time background installation and failure stand-ins, full-set capture readiness, and camera-driven instanced LODs in all four production bay themes.",
+			[
+				"station interiors",
+				"LOD",
+				"authored models",
+				"background loading",
+				"bay geometry",
+				"game camera",
+				"draw calls",
+			],
+		),
+		entry(
 			"probe-death-wreck.mjs",
 			"Kills and reloads the live pilot, checks an immediate own-loss contact and persistent death-point wreck, measures painted wreck pixels (hull and tethers together), and recovers its cargo and unfitted fitting through the existing proximity scoop into one save.",
 			[
@@ -46,7 +109,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-system-sweep.mjs",
-			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age and relay cue/identification at placed ranges (not flight-path evidence).",
+			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age, the pressure strength in an anarchy against a lawful system with its cruise-lanes region (node #769), and relay cue/identification at placed ranges (not flight-path evidence).",
 			[
 				"long-range scanner",
 				"system sweep",
@@ -152,7 +215,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-music.mjs",
-			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a failed load that says why and retries, a stop that fades, a crossfade's tail and a stem swap by colour, the bus as the only music level, and the game loading the synth on the gesture that opens its sound and sounding it live; and a docking-computer run playing the Blue Danube, ducking the ship bus, resolving at the plane before the station bed, and fading on a throttle key.",
+			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a failed load that says why and retries, a stop that fades, a crossfade's tail and a stem swap by colour, the bus as the only music level, and the limiter leaving music alone. Live game integration is a separate probe.",
 			[
 				"audio",
 				"music",
@@ -431,6 +494,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["duel", "combat HUD", "raider", "target ring", "on target"],
 		),
 		entry(
+			"probe-fire-groups.mjs",
+			"Cycles loadout-derived fire groups under a held trigger and checks the cockpit label and narrow combat-row fit.",
+			["fire groups", "primary trigger", "combat HUD"],
+		),
+		entry(
 			"probe-eject.mjs",
 			"Holds the eject key in flight and sees the eject event fire once and no sooner than the hold, a tap fire nothing, and the same key refused without a pod and on the arrival's rails, docked and on the launch's rails, each said on the glass or the docked station console; a spent hold stays spent through a head turn and through the Settings screen emptying the held keys; a hold cut by a lost window focus fires nothing, a held controller Home arms nothing until focus returns and then takes a whole hold, and one cut by a held clock takes a whole hold once the clock runs; a spent hold let go under the Postcard screen arms afresh after it closes; the Controls tab names the binding.",
 			[
@@ -526,6 +594,18 @@ export const PROBE_CATALOG = Object.freeze(
 				"equipment gate",
 				"locked row",
 				"right console",
+			],
+		),
+		entry(
+			"probe-flown-mass.mjs",
+			"Boots a live game, fills the hold, and checks the flown mass and the handling the frame loop flies follow the cargo by the mass ratio, then empties the hold and checks the empty handling returns exactly.",
+			[
+				"flown mass",
+				"cargo",
+				"handling",
+				"flight performance",
+				"acceleration",
+				"commander",
 			],
 		),
 		entry(
@@ -654,6 +734,23 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-model-download.mjs",
+			"Holds boot model responses and checks the Commander overlay, progress bar, queued Continue and New game choices, Retry, and the painted building line. Separately holds the courier response until after Game construction: existing player and Traffic stand-ins rebuild once on success; failure keeps them, warns once and shows no Retry.",
+			[
+				"model loading",
+				"GLB models",
+				"progress bar",
+				"loading panel",
+				"Retry",
+				"Commander overlay",
+				"Continue",
+				"New game",
+				"application boot",
+				"background courier hull",
+				"Traffic mesh cache",
+			],
+		),
+		entry(
 			"probe-model-viewer.mjs",
 			"Checks that the procedural model workbench renders models while remaining isolated from Game.",
 			["model viewer", "workbench", "procedural models", "Game isolation"],
@@ -688,7 +785,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-opening.mjs",
-			"Flies the opening cinematic: a guided start watched, skipped at boot and skipped by the key ending in one state and docked with lastDocked, a free start ending in flight near the arrival point, no sequence under ?boot=direct or ?system=, no interdiction, the fallback, the phase handle repeatable, and a capture of every shot.",
+			"Checks opening state: guided direct boot, key/click skip, quit and resume, no sequence under direct or system overrides, no interdiction, fallback and repeatable held phase. Watched frames and camera geometry have a separate probe.",
 			[
 				"opening cinematic",
 				"new game",
@@ -717,6 +814,11 @@ export const PROBE_CATALOG = Object.freeze(
 			"probe-planet-surfaces.mjs",
 			"Checks generated planet classes, live shader surfaces, terminators, bands, rings, and handoff behavior.",
 			["planet surface", "shader", "planet class", "rings", "atmosphere"],
+		),
+		entry(
+			"probe-planet-footprint.mjs",
+			"Checks terran footprint cap arms at close and distant ranges, exact base arithmetic, deterministic pixels, quality and actual target pixel angle; writes canonical horizon pairs for the principal.",
+			["planet surface", "footprint", "octaves", "quality", "determinism"],
 		),
 		entry(
 			"probe-planets.mjs",

@@ -86,7 +86,11 @@ const holdOff = (deg) =>
 			Math.PI;
 		// Full shields and hull, so a hit shows as a fall and no kill ends it.
 		const start = g.encounter.raider;
-		const full = { ...start.condition, fore: 106, aft: 106 };
+		const full = {
+			...start.condition,
+			fore: start.condition.shieldMax,
+			aft: start.condition.shieldMax,
+		};
 		g.encounter = { ...g.encounter, raider: { ...start, condition: full } };
 		const before = pool(g.encounter.raider.condition);
 		let widest = 0;

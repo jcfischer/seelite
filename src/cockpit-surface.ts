@@ -13,17 +13,18 @@
  * `ship-surface.ts` and `station-surface.ts` hold, and for their reason: a
  * second lighting model would have to be reconciled with #57's planet shaders.
  *
- * What *is* here, and what the sentence above used to deny, is the **cabin's
- * own two emitters** — `COCKPIT_LAMP` and `COCKPIT_KEY_LIGHT`. They are cabin
- * furniture rather than scene lighting: parented to the cockpit group, sized in
- * its oversized frame, and their *contribution* dying well before anything
- * outside it.
+ * **The cabin's own lights are not here either.** They were — `COCKPIT_LAMP`
+ * and `COCKPIT_KEY_LIGHT`, the procedural arch's rail lamps and its key — and
+ * left with the arch (#887). The authored cabin's lights are
+ * `COCKPIT_MODEL_LAMPS` and the perimeter lamps in `cockpit-model.ts`: cabin
+ * furniture rather than scene lighting, parented to the cockpit group. What
+ * stays here is the quality gate they go through (`registerKeyLight`).
  *
  * **Their cost is per fragment of their scene, and an earlier draft of this
  * said they had none.** Three evaluates a `PointLight` for every
  * `MeshStandardMaterial` in its scene; `distance` clamps what it adds, not
  * the arithmetic that adds nothing. Until #651 that scene was `nearScene`, so
- * hulls and station plating paid for the cabin's two lights, and #105's key
+ * hulls and station plating paid for the cabin's lights, and #105's key
  * light was gated for exactly that reason. Since #651 the cabin is drawn in a
  * scene of its own (`cabin-pass.ts`) and only its fittings pay. `settings.ts`
  * carries which side of the quality gate each one is on.
@@ -187,16 +188,13 @@ export const COCKPIT_CHAMFER_KM = 0.0003;
  * repaints them.
  *
  * `inset` has no emissive because it is a recess. The other two carry the faint
- * self-lift they were authored with; `COCKPIT_LAMP` is a separate, brighter
- * thing and is not one of these.
+ * self-lift they were authored with.
  */
 /** Cabin-authored self-light, expressed against the shared exposure ceiling. */
 export const COCKPIT_EMISSIVE_INTENSITIES = {
 	metal: EMISSIVE_CEILING * 0.08,
 	trim: EMISSIVE_CEILING * 0.14,
 	inset: EMISSIVE_CEILING * 0,
-	lamp: EMISSIVE_CEILING * 0.34,
-	lampPool: EMISSIVE_CEILING * 0.12,
 	throttleIdle: EMISSIVE_CEILING * 0.04,
 	throttleFull: EMISSIVE_CEILING * 0.32,
 } as const;
@@ -252,126 +250,6 @@ export const COCKPIT_FINISH_IDS = Object.keys(
 ) as CockpitFinish[];
 
 /**
- * The canopy-frame indicator lamps — #105's answer to where the cabin's warmth
- * comes from, after the reference corrected the first one.
- *
- * The finding the node opened on stands: `cockpit-arrival` (sun ahead) and
- * `cockpit-backlit` (sun 175° beyond the station) render the same tone inside,
- * because the cabin is lit almost entirely through the canopy and its one lamp
- * sits at 0.35 with a 0.065 km range.
- *
- * **What changed is the form, not the answer.** The first pass ran continuous
- * lit strips under the header, under the sill and along each console — bars
- * that are nowhere in the reference. What those cockpits actually carry on the
- * canopy frame is two or three *small discrete lamps* per rail, and everything
- * else that glows is an instrument. So this is a lamp rather than a strip: the
- * warmth survives, the invention does not.
- *
- * **It is not a bloom source, and an earlier draft of this said it was.** The
- * composite pass now takes its figures from `light-rig.ts`'s `EXPOSURE`, whose
- * threshold is the 1.0 emissive ceiling. `0xffd9a8` is an sRGB authoring value and three's
- * `ColorManagement` is on by default, so what the shader sees at this intensity
- * is about **0.34/0.24/0.13 in working space**, a luminance near 0.24. Not
- * close. (An earlier draft quoted 0.34/0.29/0.22, which is the sRGB triple
- * scaled — the right conclusion off the wrong numbers.)
- *
- * **And the strips' coaming lift was not bloom either.** That is a second claim
- * this docstring made and could not support: at 0.9 the same colour reaches a
- * working luminance near 0.65, still under the threshold. What lifted the
- * coaming was a large bright surface sitting beside it, not a glow around one.
- * The 0.9 rejection stands on the frame; the mechanism I attributed to it does
- * not, and is withdrawn rather than restated. #103 owns selective bloom, and
- * whether these lamps should glow is its decision rather than a side effect
- * asserted here.
- *
- * **Warm white rather than the reference's red**, and that is a deliberate
- * divergence. `hud-and-scanner.md` §4 gives red the meaning *blocking danger or
- * refusal*; a red lamp on the canopy frame of this game would be an alarm the
- * player cannot act on. The same argument makes it near-neutral rather than
- * amber or cyan, and `tests/cockpit-surface.test.ts` fails a retune that
- * saturates it.
- */
-export const COCKPIT_LAMP = {
-	color: 0xffd9a8,
-	/**
-	 * Dim: an indicator, not a light source. 0.9 was flown on the first sheet
-	 * and the strips at that value rendered as solid white bars whose bloom
-	 * lifted the coaming the flight-floor strip is read against — the
-	 * legibility regression this node is explicitly forbidden from causing.
-	 */
-	intensity: COCKPIT_EMISSIVE_INTENSITIES.lamp,
-	/** One lamp, kilometres in the cabin's oversized frame — about 2 m long on a
-	 *  32 m rail, which is the proportion the reference frames show. */
-	size: [0.0014, 0.0006, 0.0006] as const,
-	/**
-	 * How far each lamp stands off its rail's axis, toward the cabin.
-	 *
-	 * **Not decoration: without it the lamps do not exist.** A canopy side rail
-	 * is a cylinder of 1.25 m radius in the cabin's frame —
-	 * `CANOPY_RAIL_RADIUS_KM` — and the first lamps were 0.6 m across and centred on the rail
-	 * axis, so every one was drawn *inside* the rail and the sheet showed
-	 * nothing at all.
-	 *
-	 * 1.1 m is the lamp *centre*, which is **inside** the rail on purpose: with
-	 * a 0.3 m half-thickness the lamp's outer face stands at 1.4 m, proud of the
-	 * 1.25 m surface, and its inner half is buried in the rail it is set into.
-	 * That is a lamp in a housing rather than a tile stuck on one. An earlier
-	 * draft of this said "the rail radius plus a little", which is the opposite
-	 * of the number below and would send anyone following it back to the
-	 * invisible-lamp defect from the other side.
-	 */
-	standoffKm: 0.0011,
-	/** Where along each canopy side rail they sit, as a fraction of its run.
-	 *  Three, unevenly spaced: an even three reads as a decoration and the
-	 *  reference's are grouped toward the top of the rail. */
-	stops: [0.34, 0.55, 0.72] as const,
-} as const;
-
-/**
- * The warm key over the console — the one real light #105 adds.
- *
- * `COCKPIT_LAMP` gives the cabin emissive warmth but no *gradient*: a lamp
- * lights itself and nothing else. This is what puts a falloff across the
- * deck and the console tops, which are the flat tones the node opened on.
- *
- * Parented to the cockpit group like the existing lamp, so it stays the pilot's
- * own light as the ship turns rather than behaving like a second sun. Warm
- * against the existing lamp's `0x9bc5dc`, which is the contrast the reference
- * cabins have and this one does not.
- */
-export const COCKPIT_KEY_LIGHT = {
-	color: 0xffc98a,
-	/**
-	 * **0.55 was flown and rejected alongside the first pass's lit strips.** A
-	 * point light at
-	 * 20 m from a deck it is 12 m above washed the whole console assembly to a
-	 * pale warm grey and took the flight floor's dark backing with it. The
-	 * gradient is the point, not the lift: 0.18 leaves the deck reading at its
-	 * own tone and falls off across it.
-	 */
-	intensity: 0.18,
-	/**
-	 * Kilometres, in the cabin's oversized frame. It reaches the deck and the
-	 * console tops, and it **does not die before the canopy**, which this said
-	 * until #204: the canopy header is about 27 m from the light against a 50 m
-	 * range. What keeps it off the glass is the glass's material class —
-	 * `MeshBasicMaterial`, which no light reaches (`cockpit-canopy.ts`) — and
-	 * not this range. The frame members round the pane are standard materials
-	 * and do take a little of it.
-	 */
-	rangeKm: 0.05,
-	/**
-	 * Above the scanner deck, not above the console's near lip.
-	 *
-	 * At z −0.03 the light sat behind the deck and its hot spot landed on the
-	 * lip nearest the camera, which blew to white across the middle of the
-	 * frame and bloomed — a light leak rather than a gradient. Over the deck
-	 * (z −0.038) the falloff runs away from the eye instead.
-	 */
-	position: [0, 0.014, -0.038] as const,
-} as const;
-
-/**
  * What each `quality` setting gives the cabin (#98's gate, #99's key).
  *
  * Low drops the **seam normal map** and keeps the albedo and the wear map —
@@ -384,13 +262,13 @@ export const COCKPIT_KEY_LIGHT = {
  * and station fragment in the game pay for a cabin gradient; #98 requires each
  * new expensive term to declare a side, and this is that declaration. Since
  * #651 only the cabin's fittings pay, and the gate stands. Dropping it returns low to the light count that
- * shipped before this node.
+ * shipped before this node. Since #887 the same gate also takes the six
+ * perimeter-lamp casts (`buildPerimeterLamps`).
  *
- * What low does **not** drop is the pre-existing interior fill or the lamps.
+ * What low does **not** drop is the pre-existing interior fill.
  * The fill is the cabin's own lighting — #105's finding is that the cabin is
  * lit almost entirely through the canopy — so removing it gives an unlit cabin
  * rather than a cheaper one, and `settings.ts` promises the player it stays.
- * The lamps are `MeshBasicMaterial` and genuinely free.
  */
 export const COCKPIT_QUALITY = {
 	high: { seamNormals: true, keyLight: true },
@@ -726,224 +604,6 @@ export function cockpitForm(
 	return plateCockpitUVs(
 		chamferedBox(width, height, depth, COCKPIT_CHAMFER_KM),
 	);
-}
-
-/**
- * Where the lamps sit on one canopy side rail, on the rail's own axis — one
- * point per `COCKPIT_LAMP.stops`. The lamps, their pools and the tests all
- * read this, so a change to where a lamp goes is made once.
- */
-export function lampStopPoints(
-	from: readonly [number, number, number],
-	to: readonly [number, number, number],
-): THREE.Vector3[] {
-	const start = new THREE.Vector3(...from);
-	const along = new THREE.Vector3(...to).sub(start);
-	return COCKPIT_LAMP.stops.map((t) => start.clone().addScaledVector(along, t));
-}
-
-/**
- * The three lamps on one canopy side rail, ready to be added to the cabin.
- *
- * **Here rather than inside `buildCockpit`**, for the reason `cockpitForm`
- * exists: the builder was reaching past this module for `chamferedBox` and
- * `COCKPIT_CHAMFER_KM` to make the one form that must stay *unplated*, which
- * reopened the call-site door the wrapper had just shut. Nothing in the closure
- * bound it to `Game` except `cockpit.add`, so the caller adds what it is given.
- *
- * `from` and `to` are the rail's own endpoints. The caller passes the same
- * array it builds the rail from — a comment used to claim that binding while
- * the two sets of literals were typed separately, which is a binding nobody has
- * and nothing can check.
- */
-export function railLamps(
-	from: readonly [number, number, number],
-	to: readonly [number, number, number],
-): THREE.Mesh[] {
-	const start = new THREE.Vector3(...from);
-	const along = new THREE.Vector3(...to).sub(start);
-	/**
-	 * **The lamp's long axis follows the rail.** `COCKPIT_LAMP.size` names the
-	 * long side first, and without this the lamp lay across the rail rather than
-	 * along it: these rails run mostly in Y while the box is longest in X, so its
-	 * extent along the rail was two thirds of its stated length and it read as a
-	 * tile stuck on rather than a lamp set in.
-	 */
-	const orientation = new THREE.Quaternion().setFromUnitVectors(
-		new THREE.Vector3(1, 0, 0),
-		along.clone().normalize(),
-	);
-	return lampStopPoints(from, to).map((stop) => {
-		const mesh = new THREE.Mesh(lampGeometry(), lampMaterial());
-		mesh.name = "cockpit-lamp";
-		mesh.quaternion.copy(orientation);
-		// **+Z is toward the pilot**, and the standoff is what makes the lamp
-		// visible at all — see `COCKPIT_LAMP.standoffKm`. The rails run at
-		// constant z, so one axis is the whole of it.
-		mesh.position.copy(stop);
-		mesh.position.z += COCKPIT_LAMP.standoffKm;
-		return mesh;
-	});
-}
-
-/**
- * The pool of light each lamp leaves on the rail below it (#204).
- *
- * The lamps lit nothing — a `MeshBasicMaterial` lights itself and no other
- * surface — so the canopy frame carried six bright dots on an unlit rail. The
- * node offered two routes: a short-range `PointLight` per lamp, gated at
- * `high`, or a gradient on the rail. Six point lights would be six more terms
- * every standard fragment in the cabin's scene evaluates (the key light's lesson),
- * so this is the gradient: a flat strip on the rail's face toward the pilot,
- * additive, warm, brightest at the lamp and gone by `lengthKm` below it, and
- * fading to nothing at both long edges. Free, and lit by nothing, like the lamp.
- *
- * **A strip and not a sleeve.** The first build wrapped the rail in an additive
- * cylinder, which drew a lit tube wider than the dark rail inside it; the sheet
- * read it as a cream collar rather than as light lying on metal.
- *
- * - `lengthKm` **0.004**, 4 m in the cabin's frame: under the 5.4 m between
- *   the two closest stops, so no pool reaches the next lamp.
- * - `widthKm` **0.0016**: inside the rail's 2.5 m diameter, so the fade at
- *   each edge lands on the rail rather than on space beside it.
- * - `standoffFactor` **1.04**: the strip stands 5 cm proud of the rail's
- *   widest radius toward the pilot, clear of depth fighting.
- * - `intensity` is the lamp's colour scaled, under the lamp's own — a pool is
- *   never brighter than what casts it — and set by looking.
- */
-export const COCKPIT_LAMP_POOL = {
-	lengthKm: 0.004,
-	widthKm: 0.0016,
-	standoffFactor: 1.04,
-	intensity: COCKPIT_EMISSIVE_INTENSITIES.lampPool,
-} as const;
-
-/** How bright a pool is at `v` along it, 1 at the lamp and 0 at its far end —
- *  a squared falloff, so the light gathers at the lamp. */
-export function lampPoolRamp(v: number): number {
-	const t = Math.min(1, Math.max(0, v));
-	return (1 - t) ** 2;
-}
-
-/** How bright a pool is at `u` across it: 0 at both long edges, 1 on the
- *  centre line, so the strip has no edge of its own to read. */
-export function lampPoolAcross(u: number): number {
-	const t = Math.min(1, Math.max(0, u));
-	return Math.sin(Math.PI * t) ** 2;
-}
-
-let poolRamp: THREE.DataTexture | null = null;
-let poolGlow: THREE.MeshBasicMaterial | null = null;
-
-/** The two falloffs as one texture, built once. Linear data, not a colour. */
-function poolRampTexture() {
-	if (poolRamp) return poolRamp;
-	const across = 16;
-	const along = 64;
-	const data = new Uint8Array(across * along * 4);
-	for (let j = 0; j < along; j++)
-		for (let i = 0; i < across; i++) {
-			const value = Math.round(
-				lampPoolRamp(j / (along - 1)) * lampPoolAcross(i / (across - 1)) * 255,
-			);
-			data.set([value, value, value, 255], (j * across + i) * 4);
-		}
-	poolRamp = new THREE.DataTexture(data, across, along, THREE.RGBAFormat);
-	poolRamp.magFilter = THREE.LinearFilter;
-	poolRamp.minFilter = THREE.LinearFilter;
-	poolRamp.needsUpdate = true;
-	return poolRamp;
-}
-
-function poolMaterial() {
-	if (!poolGlow) {
-		poolGlow = new THREE.MeshBasicMaterial({
-			color: new THREE.Color(COCKPIT_LAMP.color).multiplyScalar(
-				COCKPIT_LAMP_POOL.intensity,
-			),
-			map: poolRampTexture(),
-			transparent: true,
-			blending: THREE.AdditiveBlending,
-			depthWrite: false,
-		});
-		poolGlow.name = "cockpit-lamp-pool";
-	}
-	return poolGlow;
-}
-
-/**
- * The pools on one canopy side rail, one under each of `railLamps`' lamps.
- *
- * `from` is the sill end. A plane faces +Z — toward the pilot — and carries
- * `v` 1 at its +Y edge; turned about Z so that +Y points down the rail, `v` 0
- * is at the lamp and the ramp's bright end is where the light is. The rails run
- * at constant z, so the turn is about Z alone and the strip keeps facing the
- * pilot.
- */
-export function railLampPools(
-	from: readonly [number, number, number],
-	to: readonly [number, number, number],
-	railRadiusKm: number,
-): THREE.Mesh[] {
-	const start = new THREE.Vector3(...from);
-	const along = new THREE.Vector3(...to).sub(start);
-	const down = along.clone().normalize().negate();
-	const orientation = new THREE.Quaternion().setFromUnitVectors(
-		new THREE.Vector3(0, 1, 0),
-		down,
-	);
-	const geometry = new THREE.PlaneGeometry(
-		COCKPIT_LAMP_POOL.widthKm,
-		COCKPIT_LAMP_POOL.lengthKm,
-	);
-	return lampStopPoints(from, to).map((stop) => {
-		const mesh = new THREE.Mesh(geometry, poolMaterial());
-		mesh.name = "cockpit-lamp-pool";
-		mesh.quaternion.copy(orientation);
-		mesh.position
-			.copy(stop)
-			.addScaledVector(down, COCKPIT_LAMP_POOL.lengthKm / 2);
-		mesh.position.z += railRadiusKm * COCKPIT_LAMP_POOL.standoffFactor;
-		return mesh;
-	});
-}
-
-/**
- * The lamps' shared material.
- *
- * `MeshBasicMaterial` rather than an emissive standard one: a lamp is a light
- * source in appearance, so it should not itself be shaded, and it keeps the
- * lamp out of `plateCockpit`'s set — a panel seam across a glowing lamp reads
- * as a crack in it.
- */
-let lampGlow: THREE.MeshBasicMaterial | null = null;
-
-/**
- * The lamps' shared geometry: **one for the cabin**, not one per rail.
- *
- * Every lamp is the same box at the same size. It was built inside the stop
- * loop first — six byte-identical buffers — and then per rail, which is two;
- * module scope is the only place that makes it one. Chamfered like every other
- * cabin form: a flat-sided box at this size read as a tan card stuck to the rail
- * rather than as a lens set into it, which is the slab problem the fittings had,
- * on the one object small enough that its edges are most of its silhouette.
- */
-let lampBox: THREE.BufferGeometry | null = null;
-
-function lampGeometry() {
-	if (!lampBox)
-		lampBox = chamferedBox(...COCKPIT_LAMP.size, COCKPIT_CHAMFER_KM);
-	return lampBox;
-}
-
-function lampMaterial() {
-	if (!lampGlow)
-		lampGlow = new THREE.MeshBasicMaterial({
-			color: new THREE.Color(COCKPIT_LAMP.color).multiplyScalar(
-				COCKPIT_LAMP.intensity,
-			),
-		});
-	return lampGlow;
 }
 
 /**

@@ -1,5 +1,11 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 import { expect, test } from "bun:test";
-import { derelictFirstLossAt, derelictSlots } from "../src/derelict-slots";
+import { derelictNextLossAt, derelictSlots } from "../src/derelict-slots";
 import { derelictPose } from "../src/derelict";
 import { makeWorld } from "../src/sim";
 import { LONG_RANGE_SCANNER } from "../src/market";
@@ -43,7 +49,7 @@ import { gameMethods } from "./lib/game-methods";
 
 const system = makeWorld(47).system;
 const key = derelictSlots(system.record.index, system.record.government)[0].key;
-const at = derelictFirstLossAt(system.record.seed, key) + 1;
+const at = derelictNextLossAt(system.record.seed, key) + 1;
 const world = advanceTo(newWorld(47), at);
 const row = effectiveDerelict(world, 0, key, at);
 if (row.condition !== "destroyed") throw Error("fixture has no wreck");
@@ -242,7 +248,10 @@ test("sweep ledger is saved only on the commander, and world parser refuses a se
 
 test("the live hold event adopts knowledge and pending credit together and a refusal changes neither", () => {
 	const holdings = {
-		commander: { ...newCommander("courier"), ownedEquipment: modules },
+		commander: {
+			...newCommander("courier"),
+			loadout: migrateEquipment("courier", modules).loadout,
+		},
 		requests: emptyRequests(),
 		ladders: emptyLadderRecord(),
 		ladderPending: emptyPending(),

@@ -59,6 +59,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
+import { directRunNotice, isSuiteChild } from "./lib/probe-contention.mjs";
 
 /** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
@@ -357,8 +358,47 @@ export async function guardedOrigin(origin) {
  */
 export async function guardedTree(origin) {
 	const resolved = originOf(process.env.PROBE_URL ?? origin);
+	warnSharedMachine();
 	return { origin: resolved, served: await assertServingThisTree(resolved) };
 }
+
+/**
+ * Say one of this run's machine conditions, once per process, on stderr.
+ *
+ * A suite captures a probe's stdout to reprint it under a failure, so a line
+ * nobody asked for goes where the guard already puts what is not a verdict. Once,
+ * because a probe that boots four pages should not say it four times; and nothing
+ * is marked as said until there *is* a line, because a condition — another suite
+ * taking the lock, for one — can arrive partway through a run.
+ *
+ * One helper because this file had written the same say-once shape twice (#882,
+ * sage round 1).
+ */
+const conditionsSaid = new Set();
+const printCondition = (key, line) => {
+	if (!line || conditionsSaid.has(key)) return "";
+	conditionsSaid.add(key);
+	console.error(line);
+	return line;
+};
+
+/**
+ * Once per run, say it if it is not alone on the machine (#882).
+ *
+ * The lock serialises suites; a probe run directly takes none — that is how a
+ * red gets re-run alone — and nothing at all sees a sibling worktree's probes, a
+ * `sage review` or a test run. `scripts/lib/probe-contention.mjs` owns why that
+ * mattered, and `docs/receipts/node-882-probe-wall-clock.md` owns the measured
+ * figures; this file only says the line (sage round 3 on #884, on a story this PR
+ * had written down four times with its numbers drifting between copies).
+ *
+ * Here rather than in `launchChromium` because this is the probe's preamble: the
+ * one place every probe passes on its way to measuring anything, including the
+ * ones that reach a page through their own launcher.
+ *
+ * **stderr, and once**: `printCondition`.
+ */
+const warnSharedMachine = () => printCondition("machine", directRunNotice());
 
 /**
  * A path becomes an absolute file URL; a package name stays a package name.
@@ -463,6 +503,11 @@ export const PLAYWRIGHT_ENV_VARS = ["PLAYWRIGHT_DIR", "PLAYWRIGHT_MODULE"];
  * Both module shapes are accepted because a path bypasses the package's `exports`
  * map and lands on the CommonJS entry, where the namespace arrives under
  * `default` instead of as named exports. #147 has the history.
+ *
+ * Launch Chromium the way the probe lane asks for, and say once what lane that
+ * turned out to be (`rendererLaneNotice`, below).
+ *
+ * @param {Record<string, unknown> & { args?: string[], probeWindow?: string }} options
  */
 export async function launchChromium(options = {}) {
 	// `name` stays null when neither variable is set, so a failure on the bare
@@ -485,6 +530,15 @@ export async function launchChromium(options = {}) {
 		);
 	const mode = probeRendererMode();
 	const launchOptions = probeLaunchOptions(options, mode);
+	// The lane, named before the launch that proves it: `printCondition` says it
+	// once per process, so a probe that opens four pages does not say it four times.
+	printCondition("lane", rendererLaneNotice({ mode, direct: !isSuiteChild() }));
+	// And the lock condition, from the same seam. `guardedTree` says it too, but not
+	// every probe passes through `guardedTree` — some build their origin themselves —
+	// and a notice that hangs on a seam some runs skip is a notice some runs never
+	// get (sage round 4 on #884; round 5 caught this line being claimed and not
+	// shipped, which is the whole reason the check below exists).
+	printCondition("machine", directRunNotice());
 	const browser = await chromium.launch(launchOptions);
 	// **What this launch actually was, recorded on the browser it opened.** A
 	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row
@@ -511,6 +565,32 @@ export async function launchChromium(options = {}) {
 }
 
 /**
+ * The line naming the renderer lane a run actually took (#882), or `""`.
+ *
+ * `npm run probe` forces the GPU lane and `npm run probe:cpu` names the software
+ * one. A bare `node scripts/probe-x.mjs` — the way a red gets re-run alone —
+ * takes **neither**, and gets a software page without a word saying so. Measured
+ * on #882: the same boot reached a first frame on the GPU lane seconds before it
+ * reached one here — which reads as a page that will not boot rather than as a
+ * lane several times slower. `docs/receipts/node-882-probe-wall-clock.md` §2 has
+ * the figures; this file does not restate them (sage round 4).
+ *
+ * Quiet on the GPU default, and quiet for a suite's child: `probe:cpu` chose the
+ * fallback knowingly and would otherwise print this a hundred times.
+ *
+ * @param {{ mode: string | null, direct: boolean }} a
+ */
+export function rendererLaneNotice({ mode, direct }) {
+	if (mode === HARDWARE_RENDERER || !direct) return "";
+	return (
+		`[probe] renderer lane: software — ${PROBE_RENDERER_ENV} is unset, so this is the ` +
+		"`probe:cpu` fallback: a SwiftShader page is several times slower than the GPU default, " +
+		"so a slow boot or a timeout here is the lane rather than the game. " +
+		"For the GPU lane: `npm run probe:one <name>`."
+	);
+}
+
+/**
  * Wait until the game has published its handle and drawn at least one frame.
  *
  * The shared version of what every probe needs before it can measure anything.
@@ -519,9 +599,59 @@ export async function launchChromium(options = {}) {
  * callback, so a probe that stopped there would read a world whose meshes have
  * never been positioned.
  */
-export async function bootedGame(page, timeout = 20000) {
+export async function bootedGame(page, timeout = 20000, { sky = true } = {}) {
+	// Readiness is one observation: a reload may replace the game between waits.
+	// The game draws immediately; measurements wait for its progressive sky.
 	await page.waitForFunction(
-		() => window.__seelite && window.__seelite.frames > 0,
+		(waitForSky) =>
+			window.__seelite &&
+			window.__seelite.frames > 0 &&
+			(!waitForSky || !window.__seelite.nebulaPending),
+		sky,
+		{ timeout },
+	);
+}
+
+/**
+ * Wait until the station interior kit's background load has settled (#843).
+ *
+ * The first frame is not that moment: a live game loads the kit after boot and
+ * then rebuilds every station's interior. Landing inside a measurement, that
+ * install compiled ten programs into `probe-planet-surfaces`' band walk and
+ * held frame periods near half a second through `probe-adaptive-resolution`.
+ * Both were green on `main` and red alone on the branch. A probe that measures
+ * steady-state frames or program counts waits here after `bootedGame`.
+ * Settled includes a failed load, which keeps the procedural bays.
+ */
+export async function interiorModelsSettled(page, timeout = 60000) {
+	await page.waitForFunction(
+		() => window.__seelite?.interiorModelsSettled === true,
+		null,
+		{ timeout },
+	);
+}
+
+/**
+ * Wait until the authored shipyards' background load has settled (#818):
+ * each form installs after boot and rebuilds every shipyard of its form, which
+ * is the same mid-measurement swap `interiorModelsSettled` waits out.
+ * Settled includes a failed load, which keeps the procedural stand-in.
+ */
+export async function shipyardModelsSettled(page, timeout = 60000) {
+	await page.waitForFunction(
+		() => window.__seelite?.shipyardModelsSettled === true,
+		null,
+		{ timeout },
+	);
+}
+
+/**
+ * Wait until the authored refineries' background load has settled (#819), for
+ * `shipyardModelsSettled`'s reason.
+ */
+export async function refineryModelsSettled(page, timeout = 60000) {
+	await page.waitForFunction(
+		() => window.__seelite?.refineryModelsSettled === true,
 		null,
 		{ timeout },
 	);

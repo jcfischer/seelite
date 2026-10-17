@@ -9,15 +9,22 @@ import {
 	COCKPIT_MODEL_LAMPS,
 	COCKPIT_SCREENS,
 	carriedLamp,
+	COCKPIT_CREASE_DEG,
 	containedFace,
 	INSTRUMENT_FACE_KM,
 	SCANNER_FACE_KM,
 	screenFrame,
 	screenMount,
+	smoothCockpitNormals,
 } from "../src/cockpit-model";
 import { disposeSubtree } from "../src/gpu-teardown";
 import { EMISSIVE_CEILING } from "../src/light-rig";
-import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
+import {
+	degBetween,
+	type PositionCopies,
+	pairCopies,
+} from "../scripts/lib/cockpit-normals";
+import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 
 /** The label canvases need a 2D surface; no assertion reads a pixel. */
 function withCanvasStub<T>(body: () => T): T {
@@ -67,8 +74,11 @@ const CABIN_SHARE = 88 / 192;
 
 let template: THREE.Group;
 let cabin: AuthoredCabin;
+/** The same model as exported, never adopted: the normals Blender wrote. */
+let exported: THREE.Group;
 beforeAll(async () => {
-	template = await decodeShippedGlb("public/models/courier-cockpit.glb");
+	exported = await decodeShippedGlb("src/models/courier-cockpit.glb");
+	template = await decodeShippedGlb("src/models/courier-cockpit.glb");
 	// Bun has no image decoder, so the helper strips the model's maps. One is
 	// put back on the steel as a stand-in, so adoption's map branch runs and
 	// the teardown row has a template texture to guard.
@@ -276,6 +286,143 @@ describe("the shipped cockpit model in the cabin pass", () => {
 		const report = disposeSubtree(second.root);
 		expect(report.freed.size).toBeGreaterThan(0);
 		for (const r of report.freed) expect(shared.has(r)).toBe(false);
+	});
+});
+
+describe("the cockpit's normals (node #839)", () => {
+	// The canopy struts are `curve_path` tubes, 12 to 20 sides, and every quad
+	// of them was exported with its own face normal: the support hoop's vertex
+	// normals sat a median 9.09° off the tube's true radial and the rib's
+	// 15.03°, which is half a facet each — flat shading. Lit by the sun on a
+	// 0.65-metal finish, each quad caught the highlight whole or not at all,
+	// and bloom drew the bright ones as rectangles.
+
+	/** Every position's copies, exported against adopted; read once. */
+	let copies: PositionCopies[];
+	beforeAll(() => {
+		copies = pairCopies(exported, template);
+	});
+
+	test("the crease sits in the empty band of the exported split angles", () => {
+		// Tube facet steps (18°, 22.5°, 30°, 36°) are below it and the chamfers,
+		// eight-sided studs (45°) and box edges (90°) above. The band is the one
+		// `COCKPIT_CREASE_DEG`'s comment states, held at both ends: a re-export
+		// that puts a join anywhere inside 42.46°–44.81° goes red here.
+		let below = 0;
+		let above = 180;
+		for (const p of copies)
+			for (let i = 0; i < p.before.length; i++)
+				for (let j = i + 1; j < p.before.length; j++) {
+					const d = degBetween(p.before[i], p.before[j]);
+					if (d < COCKPIT_CREASE_DEG) below = Math.max(below, d);
+					else above = Math.min(above, d);
+				}
+		expect(below).toBeLessThan(42.465);
+		expect(above).toBeGreaterThan(44.805);
+	});
+
+	test("where every face at a position is inside the crease, all its copies share one normal", () => {
+		// Red on the exported model: a tube's four quads meet at each grid
+		// vertex with four different normals.
+		let smoothPositions = 0;
+		let split = 0;
+		for (const p of copies) {
+			if (p.before.length < 2) continue;
+			const inside = p.before.every((a) =>
+				p.before.every((b) => degBetween(a, b) < COCKPIT_CREASE_DEG),
+			);
+			if (!inside) continue;
+			smoothPositions++;
+			if (p.after.some((n) => degBetween(n, p.after[0]) > 1e-3)) split++;
+		}
+		expect(smoothPositions).toBeGreaterThan(5000);
+		expect(split).toBe(0);
+	});
+
+	test("a copy with no other face inside the crease keeps its exported normal", () => {
+		// Box edges, chamfer steps and the studs' 45° facets stay hard.
+		let alone = 0;
+		let worst = 0;
+		for (const p of copies)
+			for (let i = 0; i < p.before.length; i++) {
+				const joins = p.before.some(
+					(b, j) => j !== i && degBetween(p.before[i], b) < COCKPIT_CREASE_DEG,
+				);
+				if (joins) continue;
+				alone++;
+				worst = Math.max(worst, degBetween(p.after[i], p.before[i]));
+			}
+		expect(alone).toBeGreaterThan(10000);
+		expect(worst).toBeLessThan(1e-4);
+	});
+
+	test("no normal moves by more than the crease", () => {
+		let worst = 0;
+		for (const p of copies)
+			for (let i = 0; i < p.before.length; i++)
+				worst = Math.max(worst, degBetween(p.after[i], p.before[i]));
+		expect(worst).toBeGreaterThan(0);
+		expect(worst).toBeLessThan(COCKPIT_CREASE_DEG);
+	});
+
+	test("a quad's corner weighs the same whichever diagonal splits it", () => {
+		// A flat quad in the xz plane meets a triangle tilted 30° at the
+		// origin. Weighted by area, the quad's corner there counts the quad's
+		// whole area when the diagonal runs through it and half when it does
+		// not, and the joined normal moves with the split. Weighted by the
+		// corner's angle, both splits give the quad 90°.
+		const tilt = (30 * Math.PI) / 180;
+		const quad = [
+			[0, 0, 0],
+			[1, 0, 0],
+			[1, 0, -1],
+			[0, 0, -1],
+		];
+		const side = [
+			[0, 0, 0],
+			[1, -Math.sin(tilt), Math.cos(tilt)],
+			[1, 0, 0],
+		];
+		const joined = (through: boolean) => {
+			const tris = through
+				? [quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]
+				: [quad[0], quad[1], quad[3], quad[1], quad[2], quad[3]];
+			const geometry = new THREE.BufferGeometry();
+			geometry.setAttribute(
+				"position",
+				new THREE.Float32BufferAttribute([...tris, ...side].flat(), 3),
+			);
+			geometry.computeVertexNormals();
+			expect(smoothCockpitNormals(geometry)).toBeGreaterThan(0);
+			return new THREE.Vector3().fromBufferAttribute(
+				geometry.getAttribute("normal"),
+				0,
+			);
+		};
+		const through = joined(true);
+		const across = joined(false);
+		// The join is real: the quad's corner leaned toward the side face.
+		expect(degBetween(through, new THREE.Vector3(0, 1, 0))).toBeGreaterThan(1);
+		expect(degBetween(through, across)).toBeLessThan(1e-4);
+	});
+
+	test("screens, labels and keys keep their exported vertices and normals", () => {
+		const raw = new Map<string, THREE.BufferGeometry>();
+		exported.traverse((o) => {
+			if (o instanceof THREE.Mesh) raw.set(o.name, o.geometry);
+		});
+		let quads = 0;
+		template.traverse((o) => {
+			if (!(o instanceof THREE.Mesh) || !/^(screen|label|key)-/.test(o.name))
+				return;
+			quads++;
+			const was = raw.get(o.name) as THREE.BufferGeometry;
+			for (const name of ["position", "normal", "uv"])
+				expect(Array.from(o.geometry.getAttribute(name).array)).toEqual(
+					Array.from(was.getAttribute(name).array),
+				);
+		});
+		expect(quads).toBe(4 + 4 + 15);
 	});
 });
 

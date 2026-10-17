@@ -24,17 +24,20 @@ import {
 	duelRowWidest,
 	showDuelRow,
 } from "../src/duel-hud";
-import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
+import { HULL_IDS, HULL_SPECS, type HullId, stockPlant } from "../src/hull";
 import { walkDownToKill } from "./helpers/pulse-walk";
 import {
-	ENERGY_BANK,
 	HEAT_LOCK,
-	SHIELD_POOL,
 	type ShipCondition,
 	applyDamage,
 	fullCondition,
 	isAlive,
 } from "../src/ship-condition";
+
+/** Each hull has its own pool and bank since #866. */
+const COURIER_POOL = HULL_SPECS.courier.shieldPool;
+const COURIER_BANK = stockPlant("courier").bankE;
+const RAIDER_POOL = HULL_SPECS.raider.shieldPool;
 
 const courier = (over: Partial<ShipCondition> = {}): ShipCondition => ({
 	...fullCondition("courier"),
@@ -56,8 +59,8 @@ describe("the glass combat row", () => {
 	});
 
 	test("the shield cell prints both pools, rounded, fore first", () => {
-		const c = courier({ fore: 71.6, aft: SHIELD_POOL });
-		expect(cell(c, "SHD").value).toBe(`F 72 A ${SHIELD_POOL}`);
+		const c = courier({ fore: 71.6, aft: COURIER_POOL });
+		expect(cell(c, "SHD").value).toBe(`F 72 A ${COURIER_POOL}`);
 		expect(cell(c, "SHD").tone).toBe("passive");
 	});
 
@@ -70,7 +73,7 @@ describe("the glass combat row", () => {
 		// A pool at 0.3 prints as 0; a tone keyed on the raw number would go calm
 		// while the cell still says 0 — the CHARGE cell's lesson (§5.1).
 		expect(cell(courier({ fore: 0.3 }), "SHD").value).toBe(
-			`F 0 A ${SHIELD_POOL}`,
+			`F 0 A ${COURIER_POOL}`,
 		);
 		expect(cell(courier({ fore: 0.3 }), "SHD").tone).toBe("refused");
 	});
@@ -96,8 +99,8 @@ describe("the glass combat row", () => {
 	test("the widest reading bounds every reading the row can print", () => {
 		const widest = duelRowWidest();
 		const readings: ShipCondition[] = [];
-		for (const fore of [0, 0.4, 9.6, 55, SHIELD_POOL])
-			for (const aft of [0, 99.5, SHIELD_POOL])
+		for (const fore of [0, 0.4, 9.6, 55, COURIER_POOL])
+			for (const aft of [0, 99.5, COURIER_POOL])
 				for (const heat of [0, 9.9, 50, HEAT_LOCK - 0.1, HEAT_LOCK])
 					for (const heatLocked of [false, true])
 						readings.push(courier({ fore, aft, heat, heatLocked }));
@@ -119,10 +122,10 @@ describe("the Flight console readout", () => {
 			heat: 37,
 		});
 		expect(duelConsoleReadout(c)).toEqual({
-			fore: `72 / ${SHIELD_POOL}`,
-			aft: `12 / ${SHIELD_POOL}`,
+			fore: `72 / ${COURIER_POOL}`,
+			aft: `12 / ${COURIER_POOL}`,
 			hull: `65 / ${c.hullMax}`,
-			bank: `42 / ${ENERGY_BANK}`,
+			bank: `42 / ${COURIER_BANK}`,
 			heat: "37%",
 		});
 	});
@@ -186,11 +189,12 @@ describe("the enemy's condition line", () => {
 		...over,
 	});
 
-	test("prints both shield pools and the hull as a share of its own", () => {
+	test("prints both shield pools and the hull, each as a share of its own", () => {
 		const line = targetConditionLine(
 			raider({ fore: 71.6, aft: 105.5, hull: 40.4 }),
 		);
-		expect(line.text).toBe("SHD F 72 A 106  HULL 50%");
+		// 71.6 and 105.5 of the raider's 107 (#866).
+		expect(line.text).toBe("SHD F 67% A 99%  HULL 50%");
 		expect(line.tone).toBe("passive");
 	});
 
@@ -205,14 +209,14 @@ describe("the enemy's condition line", () => {
 		// `aft` fell to 0. Approaching from ahead and from behind are different
 		// fights, and a reading that named one pool would not tell them apart.
 		const fromBehind = targetConditionLine(
-			raider({ fore: SHIELD_POOL, aft: 0 }),
+			raider({ fore: RAIDER_POOL, aft: 0 }),
 		).text;
 		const fromAhead = targetConditionLine(
-			raider({ fore: 0, aft: SHIELD_POOL }),
+			raider({ fore: 0, aft: RAIDER_POOL }),
 		).text;
 		expect(fromBehind).not.toBe(fromAhead);
-		expect(fromBehind).toBe(`SHD F ${SHIELD_POOL} A 0  HULL 100%`);
-		expect(fromAhead).toBe(`SHD F 0 A ${SHIELD_POOL}  HULL 100%`);
+		expect(fromBehind).toBe("SHD F 100% A 0%  HULL 100%");
+		expect(fromAhead).toBe("SHD F 0% A 100%  HULL 100%");
 	});
 });
 
@@ -248,15 +252,23 @@ describe("the widest line a selected target can print", () => {
 	test("a sweep over every pool figure bounds it, not only the walks", () => {
 		// The walks above are what the game actually produces. They are not the
 		// whole argument that this is the widest reading: the doc's claim is that
-		// one case covers the roster because both facings are clamped to
-		// `SHIELD_POOL` and a live hull's percent tops out at 100, and a claim about
-		// a clamp wants the sweep that matches it rather than a sample that happens
-		// to agree. So: every pool figure the form can print, both facings, crossed.
-		// A pool that could print a fourth character, or a percent that could print
-		// four, puts this red at the number that does it instead of on a glass.
+		// one case covers the roster because both facings are clamped to the
+		// hull's own pool and a live hull's percent tops out at 100, and a claim
+		// about a clamp wants the sweep that matches it rather than a sample that
+		// happens to agree. So: every pool figure the form can print, on every pool
+		// in the roster (#866 gave each hull its own). Each facing is swept whole
+		// against the other at both of its ends: a facing's width does not depend
+		// on the other's figure, and crossing a 3183-point pool with itself is ten
+		// million readings for no further case. A pool that could print a fourth
+		// character, or a percent that could print four, puts this red at the
+		// number that does it instead of on a glass.
 		const widest = targetConditionWidest();
-		const figures: number[] = [];
-		for (let n = 0; n <= SHIELD_POOL; n++) figures.push(n);
+		const pools = [...new Set(HULL_IDS.map((id) => HULL_SPECS[id].shieldPool))];
+		const pairs: [number, number, number][] = [];
+		for (const shieldMax of pools)
+			for (let n = 0; n <= shieldMax; n++)
+				for (const other of [0, shieldMax])
+					pairs.push([n, other, shieldMax], [other, n, shieldMax]);
 		// `hull <= hullMax`, and that limit is doing real work rather than tidying
 		// the sweep: the first version crossed every hull against every capacity and
 		// went red at 27 characters, because a 2635-point hull over a 1-point capacity
@@ -271,14 +283,19 @@ describe("the widest line a selected target can print", () => {
 		// over, at which reading — is the one thing it would not print.
 		let over: { text: string; fore: number; aft: number; hull: number } | null =
 			null;
-		for (const fore of figures)
-			for (const aft of figures)
-				for (const hullMax of [1, 85, 215, 2635])
-					for (const hull of [1, 2, 50, hullMax].filter((h) => h <= hullMax)) {
-						const text = targetConditionLine({ fore, aft, hull, hullMax }).text;
-						if (text.length > widest.length && over === null)
-							over = { text, fore, aft, hull };
-					}
+		for (const [fore, aft, shieldMax] of pairs)
+			for (const hullMax of [1, 85, 215, 2635])
+				for (const hull of [1, 2, 50, hullMax].filter((h) => h <= hullMax)) {
+					const text = targetConditionLine({
+						fore,
+						aft,
+						shieldMax,
+						hull,
+						hullMax,
+					}).text;
+					if (text.length > widest.length && over === null)
+						over = { text, fore, aft, hull };
+				}
 		expect({ width: widest.length, over }).toEqual({
 			width: widest.length,
 			over: null,

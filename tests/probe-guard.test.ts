@@ -35,6 +35,10 @@ import {
 } from "./lib/source-scan";
 import {
 	assertServingThisTree,
+	bootedGame,
+	HARDWARE_RENDERER,
+	PROBE_RENDERER_ENV,
+	rendererLaneNotice,
 	TREE_ENDPOINT,
 } from "../scripts/probe-guard.mjs";
 import { treeDeclaration } from "../scripts/lib/tree-declaration.mjs";
@@ -450,4 +454,53 @@ test("no caller passes a file list any more", () => {
 		]),
 	);
 	expect(offenders).toEqual([]);
+});
+
+test("the renderer lane a direct run took is named, and only to that run", () => {
+	// The GPU default says nothing about itself, and neither does the software
+	// lane when the run is a suite's child — `npm run probe:cpu` chose it, and a
+	// hundred children would print it a hundred times.
+	expect(rendererLaneNotice({ mode: HARDWARE_RENDERER, direct: true })).toBe(
+		"",
+	);
+	expect(rendererLaneNotice({ mode: null, direct: false })).toBe("");
+	// The row that can fail is the third: a bare `node scripts/probe-x.mjs` gets
+	// a software page and nothing said so. `docs/receipts/node-882-probe-wall-clock.md`
+	// §2 has the measured gap between the lanes — this file does not restate it — and
+	// the words have to name the variable, and the npm script that would have put
+	// the run on the other lane.
+	const line = rendererLaneNotice({ mode: null, direct: true });
+	expect(line).toContain("software");
+	expect(line).toContain(PROBE_RENDERER_ENV);
+	expect(line).toContain("probe:one");
+});
+
+test("sky readiness cannot accept a missing game during reload", async () => {
+	const scope = globalThis as unknown as { window: unknown };
+	const previous = scope.window;
+	const states = [
+		{ frames: 1, nebulaPending: true },
+		undefined,
+		{ frames: 0, nebulaPending: false },
+		{ frames: 1, nebulaPending: true },
+		{ frames: 1, nebulaPending: false },
+	];
+	let at = 0;
+	try {
+		await bootedGame({
+			waitForFunction: async (
+				predicate: (sky: boolean) => unknown,
+				sky: boolean,
+			) => {
+				while (at < states.length) {
+					scope.window = { __seelite: states[at++] };
+					if (predicate(sky)) return;
+				}
+				throw new Error("readiness never reached");
+			},
+		});
+		expect(at).toBe(states.length);
+	} finally {
+		scope.window = previous;
+	}
 });

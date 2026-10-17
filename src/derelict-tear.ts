@@ -529,6 +529,10 @@ export interface TornHull {
 export function tearHull(root: THREE.Group, hull: HullId): TornHull | null {
 	root.updateMatrixWorld(true);
 	const lofts = tearableParts(root, hull);
+	// Node #831 can replace a procedural wreck with an authored hull. The
+	// old hull's cached loft plan names parts this model does not have, and
+	// an empty authored plan must not replace the procedural plan either.
+	if (lofts.length === 0) return null;
 	const plan = planTears(root, hull, lofts);
 	if (plan.patches.length === 0) return null;
 	const envelope = drawnHullBox(root);

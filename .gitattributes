@@ -2,3 +2,9 @@
 # LFS rather than in history (map #1's Constraints, 2026-10-06). Their
 # manifests and licence files stay plain text.
 public/music-samples/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+
+# Editable visual-study model binaries, kept outside production assets.
+spikes/shipyards/*.blend filter=lfs diff=lfs merge=lfs -text
+spikes/shipyards/*.glb filter=lfs diff=lfs merge=lfs -text
+spikes/refineries/*.blend filter=lfs diff=lfs merge=lfs -text
+spikes/refineries/*.glb filter=lfs diff=lfs merge=lfs -text

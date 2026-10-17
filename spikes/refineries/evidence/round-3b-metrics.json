@@ -1,0 +1,63 @@
+{
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "results": {
+    "o1": {
+      "loaded": true,
+      "fps": 57.14013618399125,
+      "triangles": 322024,
+      "calls": 56,
+      "modelTriangles": 161002,
+      "meshCount": 17,
+      "bounds": [
+        1401.9473876953125,
+        963.8807678222656,
+        1003.0000000000001
+      ],
+      "view": "hero"
+    },
+    "o2": {
+      "loaded": true,
+      "fps": 57.62028233938345,
+      "triangles": 315944,
+      "calls": 58,
+      "modelTriangles": 157962,
+      "meshCount": 18,
+      "bounds": [
+        1498.1302490234375,
+        1023.294647216797,
+        1387.6650390625002
+      ],
+      "view": "hero"
+    },
+    "o3": {
+      "loaded": true,
+      "fps": 58.06077027288565,
+      "triangles": 642236,
+      "calls": 54,
+      "modelTriangles": 321108,
+      "meshCount": 16,
+      "bounds": [
+        980.2106628417969,
+        967.1844482421875,
+        1675
+      ],
+      "view": "hero"
+    },
+    "o4": {
+      "loaded": true,
+      "fps": 57.16735743890242,
+      "triangles": 415152,
+      "calls": 56,
+      "modelTriangles": 207566,
+      "meshCount": 17,
+      "bounds": [
+        1435.3469238281252,
+        676.18701171875,
+        1025.0692138671875
+      ],
+      "view": "hero"
+    }
+  },
+  "controls": "Orbit, vertical orbit, zoom, camera presets, per-model targets, work lights, rotation and PNG export passed"
+}

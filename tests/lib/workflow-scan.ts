@@ -2,8 +2,8 @@
  * Reading a GitHub Actions workflow from its configuration rather than its prose,
  * for the rows that check what the pull-request gate actually runs.
  *
- * `deploy.yml` explains itself at length, so a substring search over the file
- * goes green on the paragraph that merely *says* a gate runs. And there is no
+ * `ci.yml` explains itself at length, so a substring search over the file goes
+ * green on the paragraph that merely *says* a gate runs. And there is no
  * YAML dependency in this tree — this is one file, of a hundred lines, with one
  * caller, so the shape is `tests/lib/source-scan.ts` again: a reader written for
  * the question, with the direction of its failure stated rather than assumed.
@@ -58,6 +58,18 @@ export type WorkflowJob = {
 	condition?: string;
 	/** A job that fails without failing the run gates nothing either. */
 	continueOnError?: string;
+	/**
+	 * Its `needs:`, as a list whatever the spelling.
+	 *
+	 * The order a workflow runs in is this key, and nothing else: once a stage's
+	 * work split into jobs, "the wiring gate runs ahead of the unit tier" is a
+	 * claim about the graph rather than about two lines' positions in a file.
+	 * Read as a list for the same reason `if:` is read through `readValue` — a
+	 * scalar, a flow list and a block list are one claim written three ways, and
+	 * a reader that saw only one of them would report a stage with no
+	 * dependencies for a stage that has three.
+	 */
+	needs?: string[];
 };
 
 /** One entry from a workflow's `steps:` list. */
@@ -78,6 +90,21 @@ export type Workflow = {
 	triggers: WorkflowTrigger[];
 	jobs: WorkflowJob[];
 	steps: WorkflowStep[];
+	/** Its `concurrency:`, or absent when the file declares none. */
+	concurrency?: WorkflowConcurrency;
+};
+
+/**
+ * The two keys of a top-level `concurrency:` block.
+ *
+ * Read because this workflow's publish sits at the end of a several-minute
+ * stage, and `cancel-in-progress` decides what a second push does to a run that
+ * is carrying it: cancel it, or wait behind it. "Which push ships?" is a
+ * configuration question, and a paragraph saying so is worth nothing.
+ */
+export type WorkflowConcurrency = {
+	group?: string;
+	cancelInProgress?: string;
 };
 
 /**
@@ -153,10 +180,53 @@ const readTriggers = (block: Line[]): WorkflowTrigger[] => {
 };
 
 /**
- * Each job, with the two keys that take it off an event.
+ * `needs:` as the list it means, from any of the three spellings.
  *
- * Both sit at a column no step reader ever looks at, and either one is enough to
- * stop a pull request waiting on a gate it was supposed to run.
+ * A block list's items are not values `readValue` returns: it stops at the first
+ * line it cannot fold into a scalar, and `- gate` at six columns is one of
+ * those. So the items are collected here, and `used` reports how many lines they
+ * took, so the caller's cursor does not walk back over them and read the last
+ * job's dependencies into the next job.
+ */
+const readNeeds = (
+	block: Line[],
+	at: number,
+	written: string,
+): { needs: string[]; used: number } => {
+	const inline = written.trim();
+	if (inline !== "")
+		return {
+			needs: inline
+				.replace(/^\[|\]$/g, "")
+				.split(",")
+				.map((part) => part.trim().replace(/^['"]|['"]$/g, ""))
+				.filter(Boolean),
+			used: 0,
+		};
+	const needs: string[] = [];
+	let used = 0;
+	while (at + 1 + used < block.length) {
+		const next = block[at + 1 + used];
+		if (next.text.trim() === "") {
+			used++;
+			continue;
+		}
+		if (next.indent <= COLUMN.childKey) break;
+		const item = next.text.trim().match(/^-\s*(\S+)\s*$/);
+		if (!item) break;
+		needs.push(item[1].replace(/^['"]|['"]$/g, ""));
+		used++;
+	}
+	return { needs, used };
+};
+
+/**
+ * Each job, with the two keys that take it off an event and the one that places
+ * it in a stage.
+ *
+ * All three sit at a column no step reader ever looks at, and either of the
+ * first two is enough to stop a pull request waiting on a gate it was supposed
+ * to run.
  */
 const readJobs = (block: Line[]): WorkflowJob[] => {
 	const jobs: WorkflowJob[] = [];
@@ -171,12 +241,20 @@ const readJobs = (block: Line[]): WorkflowJob[] => {
 		const written = keyAt(line, COLUMN.childKey);
 		if (
 			!written ||
-			(written.name !== "if" && written.name !== "continue-on-error")
+			(written.name !== "if" &&
+				written.name !== "continue-on-error" &&
+				written.name !== "needs")
 		)
 			continue;
+		const job = jobs[jobs.length - 1];
+		if (written.name === "needs") {
+			const { needs, used } = readNeeds(block, i, written.written);
+			i += used;
+			job.needs = needs;
+			continue;
+		}
 		const { value, used } = readValue(block, i, written.written);
 		i += used;
-		const job = jobs[jobs.length - 1];
 		if (written.name === "if") job.condition = value;
 		else job.continueOnError = value;
 	}
@@ -254,6 +332,31 @@ const readSteps = (block: Line[]): WorkflowStep[] => {
 };
 
 /**
+ * The top-level `concurrency:` block, key by key.
+ *
+ * A file that declares none reads as `undefined` rather than as an empty object:
+ * "this run queues or cancels the last one on its ref" is a claim about a block
+ * that exists, and no row should be able to satisfy it with nothing.
+ */
+const readConcurrency = (block: Line[]): WorkflowConcurrency | undefined => {
+	if (!block.length) return undefined;
+	const concurrency: WorkflowConcurrency = {};
+	for (let i = 0; i < block.length; i++) {
+		const written = keyAt(block[i], COLUMN.child);
+		if (
+			!written ||
+			(written.name !== "group" && written.name !== "cancel-in-progress")
+		)
+			continue;
+		const { value, used } = readValue(block, i, written.written);
+		i += used;
+		if (written.name === "group") concurrency.group = value;
+		else concurrency.cancelInProgress = value;
+	}
+	return concurrency;
+};
+
+/**
  * A workflow from its text, read from configuration and not from prose.
  *
  * What it admits is `COLUMN`'s layout. A workflow written some other way reads as
@@ -271,6 +374,7 @@ export const parseWorkflowText = (text: string): Workflow => {
 		triggers: readTriggers(topLevelBlock(lines, "on")),
 		jobs: readJobs(jobsBlock),
 		steps: readSteps(jobsBlock),
+		concurrency: readConcurrency(topLevelBlock(lines, "concurrency")),
 	};
 };
 
@@ -281,6 +385,21 @@ export const parseWorkflow = (rel: string): Workflow =>
 /** What a step runs, in the one spelling every filter over the list should use. */
 export const commandOf = (step: WorkflowStep) =>
 	`${step.run ?? ""}${step.uses ?? ""}`.trim();
+
+/**
+ * The action a `uses:` names, with its ref gone.
+ *
+ * Separated from `commandOf` because the two claims differ. "This is the step
+ * that publishes" is a claim about the action, and holds whether the ref is
+ * written `@v4` or `@` plus forty hex characters; "and it is pinned" is a claim
+ * about the ref. Blending them means a row that goes red on a bump for a reason
+ * that has nothing to do with what the step does.
+ */
+export const actionOf = (step: WorkflowStep) => (step.uses ?? "").split("@")[0];
+
+/** The ref a `uses:` carries — what a pinned action pins. */
+export const refOf = (step: WorkflowStep) =>
+	step.uses === undefined ? undefined : step.uses.split("@").slice(1).join("@");
 
 /**
  * Whether a `continue-on-error:` takes the teeth out of what it is written on.

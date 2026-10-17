@@ -32,11 +32,14 @@ import {
 	RING_FRAGMENT,
 	RING_VERTEX,
 	SURFACE_VERTEX,
+	TERRAN_FOOTPRINT_SPLICES,
 	bakedFragmentFor,
 	fragmentFor,
 	isBakeable,
 } from "./planet-shaders";
 import type { ReliefPath } from "./planet-shaders";
+import { planetDetailCap, targetPixelAngle } from "./planet-footprint";
+import type { Quality } from "./settings";
 import {
 	type BakePrograms,
 	type BodyBake,
@@ -212,6 +215,9 @@ export interface BodyVisual {
 	/** The world clock, seconds. Drives cloud drift and stellar granulation;
 	 *  every other class ignores it. */
 	setTime(seconds: number): void;
+	setDetailQuality(quality: Quality): void;
+	/** Attach the close-detail program for compile(), then restore it. */
+	prewarmFootprint(): (() => void) | null;
 	/**
 	 * Swap the surface tessellation for the layer the body is now in.
 	 *
@@ -457,16 +463,20 @@ const ringPlane = () => {
 // Keyed by class *and* relief path: the path is a #define, so the two produce
 // different programs and one cache slot per class would hand back the wrong one.
 const fragmentCache = new Map<string, string>();
-const fragmentCacheKey = (surface: SurfaceClass, relief: ReliefPath) =>
-	`${surface}:${relief}`;
+const fragmentCacheKey = (
+	surface: SurfaceClass,
+	relief: ReliefPath,
+	footprint: boolean,
+) => `${surface}:${relief}:${footprint}`;
 const cachedFragment = (
 	surface: SurfaceClass,
 	relief: ReliefPath = "four-tap",
+	footprint = false,
 ): string => {
-	const key = fragmentCacheKey(surface, relief);
+	const key = fragmentCacheKey(surface, relief, footprint);
 	const hit = fragmentCache.get(key);
 	if (hit !== undefined) return hit;
-	const source = fragmentFor(surface, relief);
+	const source = fragmentFor(surface, relief, footprint);
 	fragmentCache.set(key, source);
 	return source;
 };
@@ -494,6 +504,8 @@ export function buildBodyVisual(
 	 */
 
 	const uniforms: Record<string, THREE.IUniform> = {
+		extraOctaveCap: { value: planetDetailCap("high", look.surface) },
+		surfacePixelAngle: { value: 0 },
 		time: { value: 0 },
 		// A direction, not a position, so it is the same vector at every render
 		// scale — which is what lets one uniform serve the far, approach and near
@@ -631,6 +643,36 @@ export function buildBodyVisual(
 	 *  patch below targets **by name**. Reaching `planet.material` instead
 	 *  reaches whichever is attached, which on a baked body is the cube's. */
 	const proceduralMaterial = planet.material as THREE.ShaderMaterial;
+	planet.userData.footprintSplices = TERRAN_FOOTPRINT_SPLICES;
+	const drawSize = new THREE.Vector2();
+	const detailCentre = new THREE.Vector3();
+	const detailEye = new THREE.Vector3();
+	const detailScale = new THREE.Vector3();
+	planet.onBeforeRender = (renderer, _scene, camera) => {
+		const target = renderer.getRenderTarget();
+		const height = target?.height ?? renderer.getDrawingBufferSize(drawSize).y;
+		uniforms.surfacePixelAngle.value = targetPixelAngle(
+			camera.projectionMatrix.elements[5],
+			height,
+		);
+		// Outside the detail band, keep the base program so inactive detail pays
+		// neither footprint inputs nor octave-selection arithmetic.
+		detailCentre.setFromMatrixPosition(planet.matrixWorld);
+		detailScale.setFromMatrixScale(planet.matrixWorld);
+		camera.getWorldPosition(detailEye);
+		const detail =
+			uniforms.extraOctaveCap.value > 0 &&
+			detailEye.distanceTo(detailCentre) < 2 * detailScale.x;
+		const source = cachedFragment(
+			planet.userData.surfaceClass,
+			planet.userData.reliefPath,
+			detail,
+		);
+		if (proceduralMaterial.fragmentShader !== source) {
+			proceduralMaterial.fragmentShader = source;
+			proceduralMaterial.needsUpdate = true;
+		}
+	};
 	const swapReliefProgram = (next: ReliefPath) => {
 		if (look.surface === "star") return;
 		if (planet.userData.reliefPath === next) return;
@@ -966,6 +1008,26 @@ export function buildBodyVisual(
 		},
 		setTime(seconds) {
 			uniforms.time.value = seconds;
+		},
+		setDetailQuality(quality) {
+			uniforms.extraOctaveCap.value = planetDetailCap(
+				quality,
+				planet.userData.surfaceClass,
+			);
+		},
+		prewarmFootprint() {
+			if (planet.userData.surfaceClass !== "terran") return null;
+			const was = proceduralMaterial.fragmentShader;
+			proceduralMaterial.fragmentShader = cachedFragment(
+				"terran",
+				planet.userData.reliefPath,
+				true,
+			);
+			proceduralMaterial.needsUpdate = true;
+			return () => {
+				proceduralMaterial.fragmentShader = was;
+				proceduralMaterial.needsUpdate = true;
+			};
 		},
 		setLayer(layer) {
 			planet.geometry = surfaceSphere(layer);

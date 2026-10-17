@@ -86,7 +86,11 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(page);
-await page.addInitScript(() => {
+await page.goto(PAGE_URL, { waitUntil: "load" });
+await bootedGame(page);
+await page.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	window.__meshOfBody = (id) =>
 		window.__seelite.nearScene.getObjectByName(id) ??
 		window.__seelite.farScene.getObjectByName(id) ??
@@ -192,18 +196,16 @@ await page.addInitScript(() => {
 			if (!g.hasDockingComputer)
 				g.commander = {
 					...g.commander,
-					ownedEquipment: [
-						...g.commander.ownedEquipment,
+					loadout: migrateEquipment(g.commander.hull, [
+						...equipmentNames(g.commander.loadout ?? {}),
 						g.dockingComputerName,
-					],
+					]).loadout,
 				};
 			g.toggleDockingComputer();
 		}
 		return snap;
 	};
 });
-await page.goto(PAGE_URL, { waitUntil: "load" });
-await bootedGame(page);
 
 // ---------------------------------------------------------------------------
 // The stations this system actually has
@@ -227,7 +229,15 @@ const roster = await page.evaluate(() => {
 			parts: (() => {
 				const mesh = window.__meshOfBody(s.id);
 				const found = [];
-				if (mesh) mesh.traverse((o) => found.push(o.name));
+				if (mesh)
+					mesh.traverse((o) => {
+						found.push(o.name);
+						// Authored pads share instanced meshes; their ids follow the
+						// actual instance slots rather than adding empty named groups.
+						if (o.isInstancedMesh)
+							for (const id of o.userData.instanceIds ?? [])
+								if (id) found.push(`berth-${id}`);
+					});
 				return found;
 			})(),
 		};
@@ -920,7 +930,7 @@ const liveEquipment = await page.evaluate(() => {
 			document
 				.querySelector("[data-live-station-console]")
 				?.getAttribute("data-live-station-tab-active") === "Equipment",
-		rows: document.querySelectorAll("[data-live-equipment]").length,
+		rows: document.querySelectorAll("[data-live-slot]").length,
 	};
 });
 

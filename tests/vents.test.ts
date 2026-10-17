@@ -409,10 +409,17 @@ describe("§3.9: rotation", () => {
 	test("the bound bites where the ease-out asks more than the couple: not on the slow hulls", () => {
 		expect(easeOutCost("courier").pitch).toBeLessThan(1e-9);
 		expect(easeOutCost("courier").roll).toBeGreaterThan(0.03);
-		for (const id of ["freighter", "miner", "explorer", "tug"] as const) {
+		for (const id of ["freighter", "miner", "explorer"] as const) {
 			const cost = easeOutCost(id);
 			expect(Math.max(cost.pitch, cost.yaw, cost.roll)).toBeLessThan(1e-9);
 		}
+		// The tug left that list with Bollard O4 (node #814): the wider model
+		// moved its roll couple, so its roll stop is 1.4% slower than #5's and
+		// its pitch and yaw are untouched. Re-confirmed under #619's ruling by the
+		// principal on 2026-10-11.
+		const tug = easeOutCost("tug");
+		expect(Math.max(tug.pitch, tug.yaw)).toBeLessThan(1e-9);
+		expect(tug.roll).toBeCloseTo(0.0141, 4);
 	});
 
 	test("a pointer flick is a demand: it moves a rate by at most the couple's authority", () => {
@@ -485,7 +492,15 @@ describe("§3.5 and §3.7: a single vent, and a vent's health", () => {
 		);
 		expect(near(whole.linearKms2)).toBe(true);
 		expect(Math.abs(dead.linearKms2.x)).toBeGreaterThan(0);
-		expect(dead.rates.yaw).toBeCloseTo(whole.rates.yaw / 2, 12);
+		// The fore vent is left, so the couple keeps the fore arm's share of
+		// it: half on a hull whose two yaw arms are equal, and the courier's
+		// are not since its arms were measured on the authored model (node
+		// #812: 0.995 fore against 0.9975 aft).
+		const { fore, aft } = HULL_SPECS.courier.ventPlacement.yaw;
+		expect(dead.rates.yaw).toBeCloseTo(
+			(whole.rates.yaw * fore) / (fore + aft),
+			12,
+		);
 		// The assist's authority is read off a whole hull: the dead vent is a
 		// demand it cannot meet, not a smaller one.
 		expect(hurt.angularAuthority).toEqual(COURIER.angularAuthority);

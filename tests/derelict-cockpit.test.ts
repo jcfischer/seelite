@@ -1,7 +1,13 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 import { expect, test, spyOn } from "bun:test";
 import { derelictPose, tetherOffset } from "../src/derelict";
 import { scoopWreckContainer } from "../src/derelict-salvage";
-import { derelictSlots, derelictFirstLossAt } from "../src/derelict-slots";
+import { derelictNextLossAt, derelictSlots } from "../src/derelict-slots";
 import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { makeWorld, advanceSystem } from "../src/sim";
 import { newCommander, commanderHold } from "../src/station-commerce";
@@ -74,7 +80,7 @@ test("a recovered fitting is a hold item rather than fitted equipment", () => {
 	expect(out.commander.recoveredFittings).toEqual([
 		{ id: "Military Laser", tonnes: 1 },
 	]);
-	expect(out.commander.ownedEquipment).toEqual([]);
+	expect(out.commander.loadout).toEqual(stockLoadout("courier"));
 	expect(commanderHold(out.commander, 0).usedT).toBe(1);
 	expect(out.row.salvaged?.at).toBe(1);
 });
@@ -124,7 +130,7 @@ test("a multi-tonne fitting refuses partial room and recovers exactly one whole 
 	});
 	expect(sale.accepted).toBe(true);
 	expect(sale.commander.credits - took.commander.credits).toBe(
-		EQUIPMENT.find((e) => e.name === "Military Laser")!.priceCr,
+		EQUIPMENT.find((e) => e.name === "Military Laser")!.priceCr * 0.9,
 	);
 	expect(
 		transactAtStation({
@@ -135,7 +141,7 @@ test("a multi-tonne fitting refuses partial room and recovers exactly one whole 
 	).toBe(false);
 });
 test("Holdings reports adopted takes and refusals, while a stale wreck event has no scoop signal", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	const world = advanceTo(newWorld(47), at);
 	const wreck = effectiveDerelict(world, 0, key, at);
 	if (wreck.condition !== "destroyed") throw Error("no wreck");
@@ -231,7 +237,7 @@ test("pose follows the seeded body at the requested clock and tumbles slowly", (
 	expect(derelictPose(system, key, 0, 100)).toEqual(a);
 });
 test("the hold event writes the row and reloads remainder with the same hold", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	let world = advanceTo(newWorld(47), at);
 	const e = effectiveDerelict(world, 0, key, at);
 	if (e.condition !== "destroyed") throw Error("no wreck");
@@ -313,7 +319,7 @@ test("a locked recovered fitting sells at Equipment, fits only at its rung, and 
 	expect(sold.accepted).toBe(true);
 	expect(sold.commander.recoveredFittings).toBeUndefined();
 	const price = EQUIPMENT.find((e) => e.name === "Military Laser")!.priceCr;
-	expect(sold.commander.credits - recovered.credits).toBe(price);
+	expect(sold.commander.credits - recovered.credits).toBe(price * 0.9);
 	expect(
 		ladderAfterMarket(
 			emptyLadderRecord(),
@@ -321,16 +327,19 @@ test("a locked recovered fitting sells at Equipment, fits only at its rung, and 
 			recovered,
 			sold.commander,
 		).banked.trade,
-	).toBe(price);
+	).toBe(price * 0.9);
 	const fitted = transactAtStation({
 		...commerce,
 		rungs: TOP_RUNGS,
 		action: { type: "fit-recovered", index: 0 },
 	});
 	expect(fitted.accepted).toBe(true);
-	expect(fitted.commander.ownedEquipment).toContain("Military Laser");
+	expect(equipmentNames(fitted.commander.loadout)).toContain("Military Laser");
 	expect(fitted.commander.credits).toBe(recovered.credits);
-	expect(commanderHold(fitted.commander, 0).usedT).toBe(0);
+	expect(commanderHold(fitted.commander, 0).usedT).toBe(1);
+	expect(fitted.commander.recoveredFittings).toMatchObject([
+		{ module: "pulse-laser", tonnes: 1 },
+	]);
 });
 test("carried fittings occupy every hold boundary and have a Hold line", () => {
 	const full = { ...recovered, cargo: { Food: 19 } };
@@ -378,13 +387,15 @@ test("fitting items survive reload and legacy or malformed fitting rows refuse",
 		parseSave(
 			corrupt((r) => {
 				r.saveSchemaVersion = 9;
+				r.commander.state.ownedEquipment = [];
+				delete r.commander.state.loadout;
 				delete r.commander.sweepReadings;
 			}),
 		),
 	).toThrow("not a version 9 field");
 });
 test("a death loses goods and carried fittings while its world keeps the strip", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	const world = advanceTo(newWorld(47), at);
 	const e = effectiveDerelict(world, 0, key, at);
 	if (e.condition !== "destroyed") throw Error("no wreck");
@@ -462,9 +473,14 @@ test("dark roster materials are isolated and the built envelope is unchanged", (
 		}
 	});
 	expect(darkMaterials).toBeGreaterThan(0);
-	const liveMaterial = (
-		live.children.find((o) => o instanceof THREE.Mesh) as THREE.Mesh
-	).material;
+	// The first mesh anywhere under the root: the authored courier (node
+	// #812) keeps its meshes in a frame group rather than as the root's own
+	// children.
+	let firstMesh: THREE.Mesh | undefined;
+	live.traverse((o) => {
+		if (!firstMesh && o instanceof THREE.Mesh) firstMesh = o;
+	});
+	const liveMaterial = (firstMesh as THREE.Mesh).material;
 	dark.traverse((o) => {
 		if (o instanceof THREE.Mesh) expect(o.material).not.toBe(liveMaterial);
 	});
@@ -512,7 +528,7 @@ test("wrecks share one orbital placement per step end and reuse post-step poses"
 	}
 });
 test("a schema 9 save with a partially stripped derelict loads its world remainder", () => {
-	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const at = derelictNextLossAt(system.record.seed, key) + 1;
 	const initial = advanceTo(newWorld(47), at);
 	const world = scoopDerelict(initial, 0, key, 0, 1, at);
 	const commander = newCommanderRecord("courier", {
@@ -524,6 +540,10 @@ test("a schema 9 save with a partially stripped derelict loads its world remaind
 	}) as Record<string, unknown>;
 	delete (body.commander as Record<string, unknown>).sweepReadings;
 	const legacy = { ...body, saveSchemaVersion: 9 };
+	const legacyState = (body.commander as { state: Record<string, unknown> })
+		.state;
+	legacyState.ownedEquipment = [];
+	delete legacyState.loadout;
 
 	const loaded = parseSave({
 		...legacy,
@@ -532,4 +552,25 @@ test("a schema 9 save with a partially stripped derelict loads its world remaind
 	const saved = world.galaxies[0].derelicts[key];
 	expect(loaded.world.galaxies[0].derelicts[key]).toEqual(saved);
 	expect(loaded.commander.state.recoveredFittings).toBeUndefined();
+});
+
+test("retired legacy salvage remains saleable and refuses fitting without throwing", () => {
+	for (const id of ["Energy Bomb", "Galactic Hyperdrive"]) {
+		const commander = { ...recovered, recoveredFittings: [{ id, tonnes: 1 }] };
+		const result = transactAtStation({
+			...commerce,
+			commander,
+			rungs: TOP_RUNGS,
+			action: { type: "fit-recovered", index: 0 },
+		});
+		expect(result.reason).toBe("equipment-unavailable");
+		expect(result.commander).toBe(commander);
+		expect(
+			transactAtStation({
+				...commerce,
+				commander,
+				action: { type: "sell-recovered", index: 0 },
+			}).accepted,
+		).toBe(true);
+	}
 });

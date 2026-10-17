@@ -45,7 +45,7 @@ import {
 	stationTrafficRoster,
 	trafficScheduleAt,
 } from "../src/station-traffic";
-import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
+import { PULSE_LASER, fullCondition } from "../src/ship-condition";
 import { flightPerformance, steadyFrame } from "../src/sim";
 import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import { carrierManifest } from "../src/carrier-manifest";
@@ -114,7 +114,8 @@ const SHOT = { fired: true, damage: PULSE_LASER.damagePerS * DT };
 
 /** One shield side and the hull at the pulse's rate, no recharge (H2). */
 const secondsOnTarget = (hull: HullId) =>
-	(SHIELD_POOL + HULL_SPECS[hull].integrity) / PULSE_LASER.damagePerS;
+	(HULL_SPECS[hull].shieldPool + HULL_SPECS[hull].integrity) /
+	PULSE_LASER.damagePerS;
 
 describe("H2: the shared condition model", () => {
 	test("an engaged carrier starts at its hull's full condition", () => {
@@ -155,13 +156,15 @@ describe("H2: the shared condition model", () => {
 		expect(seconds).toBeLessThan(secondsOnTarget("courier") + 1);
 	});
 
-	test("a Porter is about 39 s on target, a miner 54, a courier 34, a patrol 32", () => {
-		// 45 s until node #813: the authored Porter's box is a third smaller, so
-		// its mass and, by the integrity law, its hull came down (166 to 129).
-		expect(Math.round(secondsOnTarget("freighter"))).toBe(39);
-		expect(Math.round(secondsOnTarget("miner"))).toBe(54);
+	test("a Porter is about 44 s on target, a miner 74, a courier 34, a patrol 33", () => {
+		// 45, 54, 34 and 32 before #866, when every hull had the one 106-point
+		// pool. Each hull's own pool (#866) makes the heavy carriers longer work;
+		// the principal accepted that as R1 on #866. Node #813's smaller
+		// Porter is 129 integrity and 137 shield under the same mass laws.
+		expect(Math.round(secondsOnTarget("freighter"))).toBe(44);
+		expect(Math.round(secondsOnTarget("miner"))).toBe(74);
 		expect(Math.round(secondsOnTarget("courier"))).toBe(34);
-		expect(Math.round(secondsOnTarget("patrol"))).toBe(32);
+		expect(Math.round(secondsOnTarget("patrol"))).toBe(33);
 	});
 });
 
@@ -619,7 +622,7 @@ describe("H3d: the trigger is a hit that reaches hull points", () => {
 			e = step.engagement;
 			if (step.destroyed) break;
 		}
-		const shieldsGone = SHIELD_POOL / PULSE_LASER.damagePerS;
+		const shieldsGone = HULL_SPECS.courier.shieldPool / PULSE_LASER.damagePerS;
 		// Nothing before the shield side is off: a pilot who only strips shields
 		// changes nothing in the world, and shields recharge (H3d).
 		expect(firstHullFrame * DT).toBeGreaterThanOrEqual(shieldsGone);

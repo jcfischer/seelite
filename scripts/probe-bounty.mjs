@@ -67,6 +67,8 @@ await page.goto(gameUrl(origin, { seed: RELAY_SEED }), { waitUntil: "load" });
 await bootedGame(page);
 
 await page.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	// **Constants off the page**, never a copy here (`CLAUDE.md`).
 	const market = await import("/src/market.ts");
@@ -86,7 +88,10 @@ await page.evaluate(async () => {
 		fitScanner(own) {
 			g.commander = {
 				...g.commander,
-				ownedEquipment: own ? [market.LONG_RANGE_SCANNER] : [],
+				loadout: migrateEquipment(
+					g.commander.hull,
+					own ? [market.LONG_RANGE_SCANNER] : [],
+				).loadout,
 			};
 			g.updateCockpit();
 		},

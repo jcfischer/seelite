@@ -90,6 +90,15 @@ function unbuiltNavigations(source: string): { line: number; arg: string }[] {
 }
 
 describe("gameUrl", () => {
+	test("measurements wait for the full model catalog; player and download boots opt out", () => {
+		const has = (url: string) => new URL(url).searchParams.has("models-full");
+		expect(has(gameUrl(ORIGIN))).toBe(true);
+		expect(has(gameUrl(ORIGIN, { "models-full": false }))).toBe(false);
+		expect(has(gameUrl(ORIGIN, {}, { boot: null }))).toBe(false);
+		expect(
+			has(gameUrl(ORIGIN, {}, { override: `${ORIGIN}/?boot=overlay` })),
+		).toBe(false);
+	});
 	test("adds boot=direct to a default-route boot", () => {
 		const url = new URL(gameUrl(ORIGIN, { seed: 42 }));
 		expect(url.origin).toBe(ORIGIN);

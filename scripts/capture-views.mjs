@@ -50,6 +50,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	GAME_TIME_S,
+	MODEL_BOOT_PARAMS,
 	SEED,
 	SHOT_KINDS,
 	VIEWPORT,
@@ -216,9 +217,18 @@ async function ensureFixture(page, seed, system = null) {
 	// frame. The duel placer forces its own raider, which this does not stop.
 	// `system` is left off the URL when the row declares none, which is every
 	// row written before #432 and every row that is not a frame of the rim.
-	await page.goto(gameUrl(SERVING, { seed, raider: "off", system }), {
-		waitUntil: "load",
-	});
+	await page.goto(
+		gameUrl(SERVING, {
+			seed,
+			raider: "off",
+			system,
+			...MODEL_BOOT_PARAMS,
+			"interiors-full": true,
+		}),
+		{
+			waitUntil: "load",
+		},
+	);
 	await bootedGame(page);
 	if (system !== null) {
 		const booted = await page.evaluate(
@@ -453,7 +463,11 @@ const PLACERS = {
 			[id, 3],
 		);
 		const text = await page.evaluate(
-			([stationId, notice]) => {
+			async ([stationId, notice]) => {
+				const { migrateEquipment, equipmentNames } = await import(
+					"/src/loadout.ts"
+				);
+
 				const g = window.__seelite;
 				const dt = g.units.MAX_DT;
 				const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
@@ -489,10 +503,10 @@ const PLACERS = {
 					if (!g.hasDockingComputer)
 						g.commander = {
 							...g.commander,
-							ownedEquipment: [
-								...g.commander.ownedEquipment,
+							loadout: migrateEquipment(g.commander.hull, [
+								...equipmentNames(g.commander.loadout ?? {}),
 								g.dockingComputerName,
-							],
+							]).loadout,
 						};
 					g.toggleDockingComputer();
 					g.step(dt);
@@ -951,6 +965,8 @@ const PLACERS = {
 				raider: "off",
 				guided: true,
 				cinematic: "held",
+				...MODEL_BOOT_PARAMS,
+				"interiors-full": true,
 			}),
 			{ waitUntil: "load" },
 		);
@@ -1025,11 +1041,21 @@ const PLACERS = {
 		// **A build without the tab is captured, not refused**, on the
 		// Controls row's precedent: the `before` of #583 is a shipyard whose
 		// console has no Shipyard tab, and the subject line says so.
-		const tab = page.locator('[data-live-station-tab="Shipyard"]');
+		const tabName = shot.tab ?? "Shipyard";
+		const tab = page.locator(`[data-live-station-tab="${tabName}"]`);
 		if ((await tab.count()) === 0)
 			return `${result.id} · no Shipyard tab on this build`;
 		await tab.click();
-		return `${result.id} · Shipyard tab at ${shot.rungs} rungs`;
+		if (tabName === "Equipment")
+			await page.evaluate(() => {
+				const g = window.__seelite;
+				g.commander = { ...g.commander, cargo: {} };
+				g.outfittingSlot = "h1";
+				g.outfittingCandidate = "stock:pulse-laser/1/E";
+				g.stationConsoleRevision++;
+				g.updateCockpit();
+			});
+		return `${result.id} · ${tabName} tab at ${shot.rungs} rungs`;
 	},
 	/**
 	 * #621's two cues, in one state the real sim was flown into: the assist
@@ -1337,9 +1363,17 @@ await page.addInitScript(() => {
 		);
 });
 await installViewFraming(page);
-await page.goto(gameUrl(SERVING, { seed: SEED, raider: "off" }), {
-	waitUntil: "load",
-});
+await page.goto(
+	gameUrl(SERVING, {
+		seed: SEED,
+		raider: "off",
+		...MODEL_BOOT_PARAMS,
+		"interiors-full": true,
+	}),
+	{
+		waitUntil: "load",
+	},
+);
 await bootedGame(page);
 await applyCaptureQuality(page);
 currentSeed = SEED;

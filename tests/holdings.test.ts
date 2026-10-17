@@ -1,3 +1,10 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+	makeModule,
+} from "../src/loadout";
 /**
  * #626: the law that applies a pilot's act to their **Holdings**, at the
  * module's interface.
@@ -553,7 +560,9 @@ const BOUNTY = bindBounty(
 		),
 	}),
 ) as JobOffer;
-const FITTED = { ownedEquipment: [LONG_RANGE_SCANNER] };
+const FITTED = {
+	loadout: migrateEquipment("courier", [LONG_RANGE_SCANNER]).loadout,
+};
 const KILL_AT = 100;
 
 const bountyPress = (
@@ -637,7 +646,7 @@ describe("a carrier transition", () => {
 			killCredit(
 				{
 					hull: start.commander.hull,
-					equipment: start.commander.ownedEquipment,
+					loadout: start.commander.loadout,
 				},
 				RAIDER_HULL_ID,
 			),
@@ -645,6 +654,23 @@ describe("a carrier transition", () => {
 		expect(out.holdings.ladderPending.combat).toBeGreaterThan(0);
 		// Pending, not banked: a kill pays at the next dock (#562 D3).
 		expect(out.holdings.ladders).toBe(start.ladders);
+	});
+
+	test("an upgraded fitted laser earns less pending credit through the real destroy event", () => {
+		const stock = holdings();
+		const upgraded = {
+			...stock,
+			commander: {
+				...stock.commander,
+				loadout: {
+					...stock.commander.loadout,
+					h1: makeModule("military-laser", 1, "A"),
+				},
+			},
+		};
+		expect(killRaider(upgraded).holdings.ladderPending.combat).toBeLessThan(
+			killRaider(stock).holdings.ladderPending.combat,
+		);
 	});
 
 	test("a player's destroy readies the Bounty naming it, in the same event", () => {

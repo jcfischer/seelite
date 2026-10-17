@@ -24,6 +24,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
+import type { ModelProgressListener } from "./model-progress";
+import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 
 /** Cabin kilometres per model metre. */
 export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
@@ -66,6 +68,33 @@ export const COCKPIT_SCREENS = [
 	"target",
 ] as const;
 export type CockpitScreen = (typeof COCKPIT_SCREENS)[number];
+
+/**
+ * How much brighter the cabin's console lamps read than the spike struck them
+ * (node #887): **2.8×**, set by the principal on the live panel in the cockpit and again
+ * in the docked cabin.
+ *
+ * Applied by `main.ts` to each lamp's authored figure **on the way into** `carriedLamp`,
+ * rather than written into `COCKPIT_MODEL_LAMPS`, because those figures are the authored
+ * study's — `build_model.py`'s emission figures for the housings under the console — and
+ * the model owns them. What the game decided is that they were too dim: with the frame
+ * lamps off, the centre of the view reads mean 18.5 with a q25 of 1, which is the "dark
+ * room with a bright dashboard" this node started from.
+ *
+ * Going in rather than coming out is equivalent, and it is worth saying why, because the
+ * two readings are easy to confuse: `cabinLight`'s carry multiplies intensity by
+ * `k^decay`, which is linear in intensity, so scaling the authored figure by 2.8 before
+ * the carry scales the cabin's figure by 2.8 as well.
+ *
+ * **Where the guard lives.** Sage caught #898 twice on this exact point: a test that
+ * multiplies the constant by an authored figure cannot see the gain being deleted from
+ * `main.ts`, and the suite stays green when the picture goes dark. So the composition is
+ * a function here — `carriedConsoleLamp` — the game calls that function and nothing else,
+ * and `tests/cabin-lighting-ruling.test.ts` holds both halves: that the composition
+ * commutes with the carry, and that `main.ts` reaches for it. Neither half alone is a
+ * guard.
+ */
+export const COCKPIT_MODEL_LAMP_GAIN = 2.8;
 
 /**
  * The spike's under-console lamps, model metres and the viewer's figures.
@@ -111,6 +140,18 @@ export const COCKPIT_TINTS: Readonly<Record<string, number>> = {
 	"service-ochre": 0xbc7923,
 	"guarded-red": 0x992c20,
 };
+
+/**
+ * One console lamp, gained and carried into the cabin's frame. The only way the game is
+ * allowed to light them — see `COCKPIT_MODEL_LAMP_GAIN`'s note on where the guard lives.
+ */
+export const carriedConsoleLamp = (
+	lamp: (typeof COCKPIT_MODEL_LAMPS)[number],
+) =>
+	carriedLamp({
+		...lamp,
+		intensity: lamp.intensity * COCKPIT_MODEL_LAMP_GAIN,
+	} as (typeof COCKPIT_MODEL_LAMPS)[number]);
 
 /** A screen quad's frame in the cabin: where a face of a given aspect goes. */
 export interface ScreenFrame {
@@ -277,6 +318,130 @@ export const carriedLamp = (lamp: (typeof COCKPIT_MODEL_LAMPS)[number]) =>
 		COCKPIT_MODEL_KM_PER_M,
 	);
 
+/**
+ * The angle below which two faces meeting at a vertex are one smooth surface
+ * (node #839), degrees.
+ *
+ * The export's `poly()` writes fresh vertices for every face, so every quad of
+ * a swept tube is its own island and Blender's weighted-normal step had no
+ * adjacent face to average with: the canopy struts were exported flat-shaded,
+ * and each quad caught the sun's highlight whole or not at all. Exported, the
+ * angles between split normals cluster at the tubes' facet steps — 18°, 22.5°,
+ * 30° and 36° for 20-, 16-, 12- and 10-sided sections — and at 45° (chamfer
+ * steps and eight-sided studs) and 90° (box edges). Nothing lies between
+ * 42.46° and 44.81°, and the crease sits in that gap;
+ * `tests/cockpit-model.test.ts` holds both ends of it.
+ */
+export const COCKPIT_CREASE_DEG = 43.5;
+
+/**
+ * The vertex indices of `position` grouped by exact coordinates: one group per
+ * point in space, holding every copy the exporter wrote for it. Exact, because
+ * the model's 9 mm bevels and 5 mm chips are closer than any grid would allow.
+ */
+export function groupCopiesByPosition(
+	position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+): Map<string, number[]> {
+	const groups = new Map<string, number[]>();
+	for (let i = 0; i < position.count; i++) {
+		const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
+		const group = groups.get(key);
+		if (group) group.push(i);
+		else groups.set(key, [i]);
+	}
+	return groups;
+}
+
+/**
+ * Join the split normals of faces that meet inside the crease, in place.
+ *
+ * Each copy of a position takes the mean of every copy within the crease of
+ * its own exported normal, weighted by the face's corner angle there — the
+ * sum of its triangles' angles at that copy, which a quad's diagonal does not
+ * change. A copy with no other copy inside the crease keeps its normal
+ * exactly, so a join at or past the crease stays hard. Every join under it is
+ * shaded as one surface, across the whole model and not only the struts: the
+ * tubes and ducts, the shallow steps of a chamfer beside its face, and copies
+ * the exporter had already weighted. Returns how many vertices it rewrote; a
+ * rewrite whose copies already agreed leaves the normal where it was.
+ */
+export function smoothCockpitNormals(
+	geometry: THREE.BufferGeometry,
+	creaseDeg = COCKPIT_CREASE_DEG,
+): number {
+	const position = geometry.getAttribute("position");
+	const normal = geometry.getAttribute("normal");
+	if (!normal) return 0;
+	const index = geometry.index;
+	const corner = (k: number) => (index ? index.getX(k) : k);
+	const weight = new Float64Array(position.count);
+	const p = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+	const u = new THREE.Vector3();
+	const v = new THREE.Vector3();
+	const cross = new THREE.Vector3();
+	const corners = index ? index.count : position.count;
+	for (let k = 0; k < corners; k += 3) {
+		const ids = [corner(k), corner(k + 1), corner(k + 2)];
+		for (let n = 0; n < 3; n++) p[n].fromBufferAttribute(position, ids[n]);
+		for (let n = 0; n < 3; n++) {
+			u.subVectors(p[(n + 1) % 3], p[n]);
+			v.subVectors(p[(n + 2) % 3], p[n]);
+			weight[ids[n]] += Math.atan2(cross.crossVectors(u, v).length(), u.dot(v));
+		}
+	}
+	const cos = Math.cos((creaseDeg * Math.PI) / 180);
+	// Read once: the attribute may be quantised, and each read denormalises.
+	const exported = new Float64Array(normal.count * 3);
+	for (let i = 0; i < normal.count; i++)
+		for (let a = 0; a < 3; a++) exported[i * 3 + a] = normal.getComponent(i, a);
+	const component = (i: number, axis: number) => exported[i * 3 + axis];
+	let rewritten = 0;
+	for (const ids of groupCopiesByPosition(position).values()) {
+		if (ids.length < 2) continue;
+		const sums = new Float64Array(ids.length * 3);
+		const joined: boolean[] = [];
+		ids.forEach((own, m) => {
+			let faces = 0;
+			for (const other of ids) {
+				let dot = 0;
+				for (let a = 0; a < 3; a++)
+					dot += component(own, a) * component(other, a);
+				if (dot <= cos) continue;
+				// A degenerate face still carries its direction.
+				const w = weight[other] + 1e-12;
+				for (let a = 0; a < 3; a++) sums[m * 3 + a] += w * component(other, a);
+				faces++;
+			}
+			joined[m] = faces > 1;
+		});
+		ids.forEach((i, m) => {
+			if (!joined[m]) return;
+			const [x, y, z] = sums.subarray(m * 3, m * 3 + 3);
+			const length = Math.hypot(x, y, z);
+			normal.setXYZ(i, x / length, y / length, z / length);
+			rewritten++;
+		});
+	}
+	normal.needsUpdate = true;
+	return rewritten;
+}
+
+/**
+ * Smooth every distinct geometry under `root` once, as adoption does; the
+ * review viewer and the instrument go through here too, so all three shade
+ * the same normals. Returns how many vertices were rewritten.
+ */
+export function smoothCockpitScene(root: THREE.Object3D): number {
+	const geometries = new Set<THREE.BufferGeometry>();
+	root.traverse((o) => {
+		if (o instanceof THREE.Mesh) geometries.add(o.geometry);
+	});
+	let rewritten = 0;
+	for (const geometry of geometries)
+		rewritten += smoothCockpitNormals(geometry);
+	return rewritten;
+}
+
 /** Normalise and share a loaded model once, so every cabin clones it. */
 export function adoptCockpitTemplate(scene: THREE.Group): void {
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -296,6 +461,7 @@ export function adoptCockpitTemplate(scene: THREE.Group): void {
 		m.emissiveIntensity /= divisor;
 		adoptCockpitMaterial(m);
 	}
+	smoothCockpitScene(scene);
 	scene.name = "authored-cockpit";
 	scene.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
@@ -372,14 +538,226 @@ export function buildAuthoredCabin(): AuthoredCabin {
 
 let ready: Promise<void> | undefined;
 
-/** Await before any Game constructs its cabin. */
-export function prepareCockpitModel(): Promise<void> {
+/** Await before any Game constructs its cabin. `onProgress` hears the
+ *  download this call starts (#833), as `prepareCoriolisModel`'s does. */
+export function prepareCockpitModel(
+	onProgress?: ModelProgressListener,
+): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync("/models/courier-cockpit.glb")
+		.loadAsync(COURIER_COCKPIT_GLB_URL, onProgress)
 		.then((gltf) => adoptCockpitTemplate(gltf.scene))
 		.catch((error) => {
 			ready = undefined;
 			throw error;
 		}));
+}
+
+/**
+ * How far a perimeter lamp stands off the frame surface it is mounted on, model
+ * metres (node #887).
+ *
+ * The first placement of these lamps put each anchor at the centroid of a band of
+ * frame vertices. A centroid of a swept tube is the **middle of solid geometry**:
+ * raycast from those anchors toward the eye and the strut's inner surface was 0.180 m
+ * away at one station and 0.293 m at another, so a head was drawn inside the tube and
+ * its light sat inside closed geometry. The procedural arch's `COCKPIT_LAMP.standoffKm`
+ * (removed with the arch, #887) recorded the same failure in its own words — "without
+ * it the lamps do not exist" — and that lesson did not carry across the cabin's
+ * replacement.
+ *
+ * So an anchor here is the **first frame surface along a look-direction from the eye**
+ * — the surface the pilot actually sees — drawn back along that ray by this margin.
+ * 60 mm, because the head is a flat disc that must clear whatever it stands on.
+ * `tests/perimeter-lamps.test.ts` re-measures both directions against the shipped GLB.
+ */
+export const PERIMETER_LAMP_STANDOFF_M = 0.06;
+
+/**
+ * The look-directions the lamps were placed from: degrees off the nose, degrees
+ * below the eye line, after the cabin's own pitch (`COCKPIT_MODEL_PITCH_RAD`).
+ *
+ * Recorded because they are how `positionM` below was derived and how it is re-derived
+ * if the cabin is ever re-authored: cast from `COCKPIT_MODEL_EYE_M` along each
+ * direction, take the first `weathered-blue-steel` or `exposed-machined-edges`
+ * surface, stand off by `PERIMETER_LAMP_STANDOFF_M`. All six land inside the cabin
+ * camera's frustum — 60° vertical at aspect 1.6 is ±42.7° horizontally, ±30°
+ * vertically — at 13°/11°, 24°/7° and 33°/4°, and every one is on geometry *below* the
+ * eye line, which is where `assets.md` puts the cabin's warm service lights: "below
+ * window, never a huge roof bar". Nothing here crosses the centre sightline.
+ */
+export const PERIMETER_LAMP_LOOK_DEG = [
+	[13, 11],
+	[24, 7],
+	[33, 4],
+] as const;
+
+/**
+ * There is no lamp **head** here, only its cast, and that is a ruling rather than an
+ * omission.
+ *
+ * The first version of these lamps carried a `MeshBasicMaterial` disc 26 cm across,
+ * billboarded at the eye, in the tradition of the procedural arch's lamp — which got
+ * away with it because the arch's lamps were 14.3 cm and 20 cm from the pilot. At five
+ * metres in an authored cabin the disc is not a fitting: it is a flat circle of
+ * uniform colour floating in front of a canopy, with no housing, no gradient and no
+ * relation to anything the modeller drew. The principal's word from the live panel was
+ * "totally unrealistic — just a bright circle", and they turned it to zero.
+ *
+ * So the light is the thing that comes back, and the fitting the cabin already has is
+ * left alone: the authored model carries its own housings and `amber-work-lights`
+ * strips under the window sill, which is where `assets.md` says the warm lights live.
+ */
+
+/**
+ * A perimeter lamp's cast, in the cabin's own units — **not** carried through
+ * `cabinLight`, and that distinction is the reason the first six contributed nothing.
+ *
+ * `cabinLight` multiplies a lamp's intensity by `k^decay` (`cabin-pass.ts`), because it
+ * carries a *world* lamp: distances in the cabin's frame are `k = 0.1` times the
+ * model's metres, so intensity has to fall by `k^decay` with them for `intensity /
+ * d^decay` to come out the same at both ends. A lamp authored in model metres and
+ * parented to `modelSpace` is not in that situation — it is already where it will
+ * stand, and three's attenuation floor (`max(d², 0.01)` in scene units, i.e. 1 m of
+ * real cabin) already flattens everything nearer than that. Multiplying by `k²` shrank
+ * these six for nothing: measured on the shipped build they moved the cabin's own side
+ * band by **0.00** — 18.14 with them, 18.14 with them hidden — where the three
+ * under-console lamps give +0.98, +0.89 and +0.33.
+ *
+ * **1 is measured, and it is 8 fewer than the first figure here.** With the anchors on
+ * geometry the camera could not see, brightness could not be judged from the picture at
+ * all, and the figure was swept against the cabin's side band. With the anchors on the
+ * frame the pilot actually sees, the same sweep on the centre of the view reads (six
+ * casts off: mean 18.47, median 19.5, q25 1.0, p95 32.7, nothing blown):
+ *
+ * | intensity | mean | median | q25 | p95 | blown |
+ * | --- | --- | --- | --- | --- | --- |
+ * | 0.05 | 21.48 | 20.6 | 3.1 | 39.6 | 0.00% |
+ * | 0.25 | 32.13 | 24.9 | 19.3 | 106.5 | 0.09% |
+ * | 0.5 | 43.61 | 31.6 | 26.4 | 149.1 | 0.16% |
+ * | **1** | **61.95** | **44.7** | **35.3** | **187.6** | **0.35%** |
+ * | 2 | 90.38 | 69.5 | 53.9 | 220.6 | 0.64% |
+ * | 8 | 171.06 | 163.9 | 135.3 | 249.1 | 4.29% |
+ *
+ * The table is why 1 was rejected — it whitens the cabin out — but **0.24 is not read
+ * off it. It is the principal's figure, set by eye on the live panel in the cockpit and
+ * again in the docked cabin** (the panel drove these same lights and measured the frame
+ * back; it is `node scripts/tune-cabin-lights.mjs`). Re-measured on the build with
+ * both figures and `CABIN_HEMISPHERE_GAIN` in place, the centre of the view reads mean
+ * **31.0**, median **24.2**, p95 **100** with the six on, against 18.9 / 19.9 / 34 with
+ * them off, and **0.09%** of pixels blown — a lit cabin whose shadow floor has come up,
+ * at a quarter of the blown fraction the row above this one accepted. The procedural
+ * arch's first pass (removed, #887) recorded what overshooting looks like: at 0.9
+ * its continuous lit strips rendered as solid white bars.
+ */
+export const PERIMETER_LAMP_CAST_INTENSITY = 0.24;
+
+/**
+ * The cast's cut-off in cabin kilometres: **2.2 model metres**, set on the same panel
+ * run as the intensity.
+ *
+ * It matters more than it looks. At 3.5 m the six reach across the cabin and light the
+ * far wall, which is what made the sweep blow pixels at every intensity worth having;
+ * at 2.2 m they are what their name says — lamps that light the frame they sit on and
+ * the surfaces near it.
+ */
+export const PERIMETER_LAMP_CAST_RANGE_KM = 0.22;
+
+/** A perimeter lamp's cast as `main.ts` builds it. */
+export const perimeterLampCast = () => ({
+	color: 0xffc27a,
+	intensity: PERIMETER_LAMP_CAST_INTENSITY,
+	distanceKm: PERIMETER_LAMP_CAST_RANGE_KM,
+	decay: 2,
+});
+
+/**
+ * The cabin's frame lamps, on the perimeter supports the authored cabin already
+ * presents to the pilot (node #887).
+ *
+ * The procedural arch carried six lamps along its two side rails. They went with the
+ * arch when #792's authored cabin replaced the cabin those rails were bolted to, and
+ * what is left of the cabin's lighting is `COCKPIT_MODEL_LAMPS`: three point lights at
+ * y −1.65 model metres, under the console, below and behind an eye at y 0.3. That is
+ * why the cabin reads as a dark room with a bright dashboard — the frame the pilot
+ * sees catches nothing.
+ *
+ * The first attempt at putting them back looked for frame near the eye and found only
+ * geometry 45–80° off the nose, and concluded the authored cabin presented no frame at
+ * all. **That was the instrument, not the cabin**: the histogram dropped every vertex
+ * more than 2.5 m from the eye, and the cabin is 4.5 m deep, so it discarded exactly
+ * the forward geometry that appears in view. Re-measured without that cut, 23,669
+ * frame vertices are inside the frustum, 3,023 of them within 10° of the nose. These
+ * anchors come from that measurement, which is why no new canopy geometry was needed
+ * and `assets.md`'s locked composition — clear centre sightline, no roof beam — is
+ * untouched.
+ *
+ * **Every one is gated, and at low quality there is nothing of them left to see.** A
+ * cast is a `PointLight`, and three evaluates every one of them for every standard
+ * fragment in the cabin's scene whether it lights anything or not — the lesson
+ * `cockpit-surface.ts` records from #651, and six of them is a real cost. The
+ * procedural cabin's lamp pools could keep their lamp *bodies* visible on low and drop
+ * only the casts, because a body was `MeshBasicMaterial`; these lamps have no body — see
+ * the note above `PERIMETER_LAMP_LOOK_DEG` — so low quality shows the authored fittings
+ * and none of this light. That is the honest consequence of removing the disc, and it is
+ * the opposite trade from the one the arch's pools made.
+ */
+export const COCKPIT_PERIMETER_LAMPS = [
+	{
+		name: "perimeter-lamp-port-fore",
+		gated: true,
+		positionM: [-1.015, -1.605, -2.908],
+	},
+	{
+		name: "perimeter-lamp-port-mid",
+		gated: true,
+		positionM: [-2.156, -1.492, -3.395],
+	},
+	{
+		name: "perimeter-lamp-port-aft",
+		gated: true,
+		positionM: [-2.772, -1.068, -2.908],
+	},
+	{
+		name: "perimeter-lamp-starboard-fore",
+		gated: true,
+		positionM: [1.015, -1.605, -2.908],
+	},
+	{
+		name: "perimeter-lamp-starboard-mid",
+		gated: true,
+		positionM: [2.156, -1.492, -3.395],
+	},
+	{
+		name: "perimeter-lamp-starboard-aft",
+		gated: true,
+		positionM: [2.772, -1.068, -2.908],
+	},
+] as const;
+
+/**
+ * The cabin's perimeter lamps, ready to add to `AuthoredCabin.modelSpace`.
+ *
+ * One group per lamp, holding its cast. The cast is quoted in cabin units — see
+ * `PERIMETER_LAMP_CAST_INTENSITY` — and a point light's range and intensity ignore its
+ * parent's scale, which is why they need no carrying here. There is no head: see the
+ * note above `PERIMETER_LAMP_LOOK_DEG`.
+ */
+export function buildPerimeterLamps(): THREE.Group[] {
+	return COCKPIT_PERIMETER_LAMPS.map((lamp) => {
+		const group = new THREE.Group();
+		group.name = lamp.name;
+		const [x, y, z] = lamp.positionM;
+		group.position.set(x, y, z);
+		const cast = perimeterLampCast();
+		const light = new THREE.PointLight(
+			cast.color,
+			cast.intensity,
+			cast.distanceKm,
+			cast.decay,
+		);
+		light.name = lamp.name;
+		group.add(light);
+		return group;
+	});
 }

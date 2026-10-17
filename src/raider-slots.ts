@@ -67,6 +67,22 @@ export const raiderLegChance = (government: number): number =>
 		clampGovernment(government)) /
 		7;
 
+/** A law leg's chance of actually meeting a raider while `operational` of the
+ *  system's slots are up. `scheduleEncounter` does not move a draw that lands
+ *  on a down slot to another one (#41, #324 part d), so each down slot removes
+ *  its share of `raiderLegChance` rather than nothing. The system sweep's
+ *  pressure strength (node #769) buckets this figure. */
+export const raiderLegMeetChance = (
+	government: number,
+	operational: number,
+): number => {
+	const count = raiderSlotCount(government);
+	return (
+		(raiderLegChance(government) * Math.max(0, Math.min(count, operational))) /
+		count
+	);
+};
+
 /** Seconds into a leg before the raider appears. */
 export const ENCOUNTER_DELAY_S = [8, 40] as const;
 /** How far from the player it appears, km. Inside the contest's range. */

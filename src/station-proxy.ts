@@ -25,9 +25,10 @@
  * `berthSeed`**: it decides only which side the outpost's seeded berth stands
  * on, and both sides lie inside the same primitives. A test row asserts the
  * proxy is identical across berth seeds, so a form that starts to read it is
- * a red row rather than a surprise. For the refinery's solved form the proxy
- * reads the same placement solve the mesh reads (`placementsOf`), cell by
- * cell, and a row shows the cells carry the plant. The outpost's Salvage is
+ * a red row rather than a surprise. The shipyards' and the refineries'
+ * proxies are the exception to "never generated": they are fitted to their
+ * authored models (nodes #818, #819), and their own tests measure the boxes
+ * against the drawn triangles rather than against the fit. The outpost's Salvage is
  * **grown, not solved** (§2.2): `buildOutpostSalvage` accretes it from its own
  * draw, and that plan exists only inside the renderer. So its proxy does not
  * follow a plan; it is one seed-independent envelope sized to contain the
@@ -70,31 +71,43 @@ import {
 	interiorAxialSpanKm,
 	stationInterior,
 } from "./station-interior";
-import { placementsOf } from "./station-modular";
 import {
-	REFINERY,
-	REFINERY_VOCABULARY,
-	SALVAGE_CORE,
-	WORKS_CELL_KM,
-	WORKS_FLOOR_KM,
-} from "./station-plant";
+	PAD_CUE_PROUD_KM,
+	PAD_VENT_BANK_KM,
+	PAD_VENT_BANK_X_KM,
+	REFINERY_PAD_FRAME,
+} from "./refinery-pad-frame";
+import { REFINERY_PROXIES, REFINERY_PROXY_PACK } from "./refinery-proxies";
+import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
+import {
+	buildSphereGrid,
+	INDEX_CELL_KM,
+	INDEXED_ABOVE,
+	querySphereGrid,
+	type Sphere,
+	type SphereGrid,
+} from "./sphere-grid";
+import { SALVAGE_CORE } from "./station-plant";
 import { type Vec3, cross, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
 // Primitive types
 // ---------------------------------------------------------------------------
 
-/** An axis-aligned box centred at `centre` with half-extents. */
+/** A box centred at `centre` with half-extents: axis-aligned, or along
+ *  `axes` where it has them (the authored shipyards, node #818). */
 export interface ProxyBox {
 	readonly kind: "box";
 	/** Centre in km, in the relevant frame (spinning or static). */
 	readonly cx: number;
 	readonly cy: number;
 	readonly cz: number;
-	/** Half-extents in km. */
+	/** Half-extents in km, along `axes` when present. */
 	readonly hx: number;
 	readonly hy: number;
 	readonly hz: number;
+	/** The box's own axes, unit and orthogonal; absent is the frame's. */
+	readonly axes?: readonly [Vec3, Vec3, Vec3];
 }
 
 /** A sphere centred at `centre` with `radiusKm`. */
@@ -438,528 +451,234 @@ function tradeCoriolisProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
-// Shipyard A — Gantry
+// Shipyards A–C — the authored yards (node #818)
 // ---------------------------------------------------------------------------
 
 /**
- * The Gantry: a drum on the spin axis that turns, and a keel behind it that
- * does not.
+ * Gantry Works, Foundry Hangar and Crescent Slipway, as the game loads them. // glossary-ignore: Hangar
  *
- * **Spinning.** The drum (`core`, square section to ±0.324 km, aft face
- * -0.30 km, forward face at the 0.372 km plane) and the spindle behind it,
- * as one box cut round the bay and the prism.
+ * **The sim always collides with the authored yard, whatever is drawn**
+ * (principal, 2026-10-12): a station whose model is still loading, or failed
+ * to, draws its procedural stand-in and is solid as the yard it stands in
+ * for, so no player's world depends on a download. **And at most 10 m of
+ * empty space may collide** (principal, 2026-10-12: 5 m, relaxed to 10 m the
+ * same day), so the drum and the yard are oriented boxes fitted to the model's
+ * own parts (`src/shipyard-proxies.ts`, generated): no point of a box's faces
+ * stands more than 10 m off what is drawn (`tests/shipyard-flight.test.ts`).
  *
- * **Static.** The keel runs along x behind the drum (centred
- * `SHIPYARD_KEEL_AFT_KM` aft), carrying seven arches, two rails and the
- * fixtures; two booms run forward from it at ±y outboard of the bay. The keel
- * is a centre box and two end boxes, each as long as its corners allow inside
- * the 1.66 km reach, and the end arches — whose lowest point is beyond the end
- * boxes — are a chain of capsules each. Nothing static stands within the bay's
- * swept cylinder or the corridor, because the booms are 0.37 km off the axis.
+ * **Spinning.** The drum's hull, and the sim's bay walled in it: thin walls
+ * outside the bay's sides and end, and the mouth wall in front of the plane
+ * with the lane cut through it, where the hub face's plates stand. Nothing
+ * stands in the bay or the lane.
+ *
+ * **Static.** The yard, its bearing and the enclosed spine.
  */
-function shipyardGantryProxy(): StationProxy {
-	const drum = cutAround([axial(0.33, 0.33, -0.55, 0.4)], bayHoles("shipyard"));
-
-	const KEEL_Z = -0.68; // SHIPYARD_KEEL_AFT_KM
-	const centre: Bounds = {
-		x0: -0.95,
-		x1: 0.95,
-		y0: -0.55,
-		y1: 0.55,
-		z0: -1.09,
-		z1: -0.29,
-	};
-	const starboardEnd: Bounds = {
-		x0: 0.95,
-		x1: 1.29,
-		y0: -0.38,
-		y1: 0.38,
-		z0: -0.9,
-		z1: -0.4,
-	};
-	const portEnd: Bounds = { ...starboardEnd, x0: -1.3, x1: -0.95 };
-	const portTip: Bounds = {
-		x0: -1.38,
-		x1: -1.3,
-		y0: -0.14,
-		y1: 0.14,
-		z0: -0.85,
-		z1: -0.5,
-	};
-	const boom = (sign: number): Bounds => ({
-		x0: -0.24,
-		x1: 0.24,
-		y0: sign > 0 ? 0.37 : -0.58,
-		y1: sign > 0 ? 0.58 : -0.37,
-		z0: -0.72,
-		z1: 1.15,
-	});
-
-	// An end arch: a half-ring under the keel at x = ±1.2, from one side's
-	// top round the bottom to the other's.
-	const ARCH_RADIUS = 0.4;
-	const ARCH_TUBE = 0.03;
-	const arch = (x: number): ProxyCapsule[] => {
-		const point = (deg: number): Point => {
-			const t = (deg * Math.PI) / 180;
-			return {
-				x,
-				y: ARCH_RADIUS * Math.sin(t),
-				z: KEEL_Z - ARCH_RADIUS * Math.cos(t),
-			};
-		};
-		const steps = [-90, -60, -30, 0, 30, 60, 90];
-		return steps
-			.slice(1)
-			.map((deg, i) => capsule(point(steps[i]), point(deg), ARCH_TUBE));
-	};
-
-	const keel = [centre, starboardEnd, portEnd, portTip, boom(1), boom(-1)].map(
-		boxOf,
+const BAY_WALL_KM = 0.005;
+const MOUTH_WALL_KM = 0.002;
+function bayWalls(): ProxyBox[] {
+	const plane = STATION_GEOMETRY.shipyard.aperturePlaneKm;
+	const bay = stationInterior("shipyard", plane);
+	const [end, mouth] = interiorAxialSpanKm(bay);
+	const hx = bay.halfAcrossKm;
+	const hy = bay.halfUpKm;
+	const w = BAY_WALL_KM;
+	const shell = cutAround(
+		[axial(hx + w, hy + w, end - w, mouth)],
+		[axial(hx, hy, end, mouth)],
 	);
-	return proxyOf(drum, [...keel, ...arch(1.196), ...arch(-1.196)]);
+	const mouthWall = cutAround(
+		[axial(hx + w, hy + w, mouth, mouth + MOUTH_WALL_KM)],
+		[axial(bay.laneHalfAcrossKm, bay.laneHalfUpKm, mouth, Infinity)],
+	);
+	return [...shell, ...mouthWall];
 }
 
-// ---------------------------------------------------------------------------
-// Shipyard B — Hangar // glossary-ignore: Hangar
-// ---------------------------------------------------------------------------
-
-/**
- * The Hangar: a compact hub on the spin axis that turns, and a long slab // glossary-ignore: Hangar
- * behind it that does not (node #746).
- *
- * **Spinning.** The hub (`core`, square section to ±0.252 km, aft face
- * −0.18 km, forward face at the 0.372 km plane) as one box cut round the bay
- * and the prism, standing 28 m proud of the plane as the Gantry's drum does,
- * and the spindle behind it running back into the slab's bearing.
- *
- * **Static.** The slab runs along x behind the hub (centred
- * `SHIPYARD_KEEL_AFT_KM` aft, forward face at −0.38 km): its octagonal parallel
- * section as two boxes, and each chamfered end as two smaller boxes stepping in with
- * the taper, each as large as its corner allows inside the 1.5 km reach. A
- * band across the forward face carries the bay mouth's two lips and the dark
- * recess, which stand up to 36 m proud of it, and a box carries the bearing
- * the spindle turns in. Nothing static reaches forward of −0.335 km, so the
- * bay's swept cylinder (from −0.033 km) and the corridor are clear by
- * construction.
- */
-function shipyardHangarProxy(): StationProxy {
-	const hub = cutAround(
-		[axial(0.26, 0.26, -0.19, 0.4), axial(0.1, 0.1, -0.46, -0.19)],
-		bayHoles("shipyard"),
-	);
-	const SLAB_BACK = -0.98;
-	const SLAB_FRONT = -0.38;
-	const slab: Bounds[] = [
-		// The parallel section is an octagon: full depth to its 45° vertices at
-		// ±0.391 km, and 28 m shallower each side to its full height. Two boxes
-		// stand at most 40 m off its drawn surface, at the top-front edge, where
-		// one box stood 51 m off it (measured in the section 0.7 km out).
-		{
-			x0: -0.94,
-			x1: 0.86,
-			y0: -0.391,
-			y1: 0.391,
-			z0: SLAB_BACK,
-			z1: SLAB_FRONT,
-		},
-		{
-			x0: -0.94,
-			x1: 0.86,
-			y0: -0.432,
-			y1: 0.432,
-			z0: SLAB_BACK + 0.028,
-			z1: SLAB_FRONT - 0.028,
-		},
-		{ x0: -1.06, x1: -0.94, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
-		{ x0: -1.15, x1: -1.06, y0: -0.33, y1: 0.33, z0: -0.89, z1: -0.47 },
-		{ x0: 0.86, x1: 0.98, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
-		{ x0: 0.98, x1: 1.1, y0: -0.33, y1: 0.33, z0: -0.9, z1: -0.46 },
-		// The mouth's lips and recess, proud of the forward face.
-		{ x0: -0.54, x1: 0.54, y0: -0.19, y1: 0.19, z0: SLAB_FRONT, z1: -0.344 },
-		// The bearing ring the spindle turns in.
-		axial(0.16, 0.16, SLAB_FRONT, -0.335),
-		// The two masts on the slab's top, dish and beacon included. // glossary-ignore: beacon
-		...[-0.9, 0.81].map(
-			(x): Bounds => ({
-				x0: x - 0.04,
-				x1: x + 0.04,
-				y0: 0.4,
-				y1: 0.535,
-				z0: -0.72,
-				z1: -0.64,
-			}),
-		),
-	];
-	return proxyOf(hub, slab.map(boxOf));
-}
-
-// ---------------------------------------------------------------------------
-// Shipyard C — Slipway
-// ---------------------------------------------------------------------------
-
-/** The Slipway's arc: its major radius and tube, `buildShipyardSlipway`'s. */
-const SLIPWAY_MAJOR_KM = 2.07 * 0.62;
-const SLIPWAY_TUBE_KM = 0.12;
-/** Where the arc starts, and how far round it runs. */
-const SLIPWAY_FROM = Math.PI * 0.28;
-const SLIPWAY_SWEEP = Math.PI * 1.45;
-
-/**
- * The Slipway: a compact hub on the spin axis that turns, and a broken ring
- * round it that does not (node #746).
- *
- * **Spinning.** The hub (`core`, a rounded section to 0.24 × 0.204 km, aft
- * face −0.36 km, forward face at the 0.372 km plane) as one box cut round the
- * bay and the prism, 28 m proud of the plane as the Gantry's drum is.
- *
- * **Static.** The arc as a chain of capsules along its centreline, one per
- * facet ring of the drawn torus, so the gap between its ends — the slip — is
- * open, as it is on screen. Each slip-head as four capsules along its radial
- * arm, a pair either side of the centreline in both the tangent and Z, which
- * holds its square section where one fat capsule would carry the corners
- * past the 1.5 km reach. Each strut as a capsule from just outside the bay's
- * swept cylinder out to the arc. The masts the fixtures stand on the +Z
- * crown are covered by a capsule each.
- */
-function shipyardSlipwayProxy(): StationProxy {
-	const hub = cutAround([axial(0.24, 0.205, -0.37, 0.4)], bayHoles("shipyard"));
-	const at = (theta: number, radius: number, z = 0, across = 0): Point => ({
-		x: radius * Math.cos(theta) - across * Math.sin(theta),
-		y: radius * Math.sin(theta) + across * Math.cos(theta),
-		z,
-	});
-	const RINGS = 22;
-	const arc = Array.from({ length: RINGS }, (_, i) =>
-		capsule(
-			at(SLIPWAY_FROM + (i / RINGS) * SLIPWAY_SWEEP, SLIPWAY_MAJOR_KM),
-			at(SLIPWAY_FROM + ((i + 1) / RINGS) * SLIPWAY_SWEEP, SLIPWAY_MAJOR_KM),
-			SLIPWAY_TUBE_KM,
-		),
-	);
-	const heads = [SLIPWAY_FROM, SLIPWAY_FROM + SLIPWAY_SWEEP].flatMap((theta) =>
-		[-1, 1].flatMap((t) =>
-			[-1, 1].map((s) =>
-				capsule(
-					at(theta, SLIPWAY_MAJOR_KM - 0.12, s * 0.09, t * 0.1),
-					at(theta, SLIPWAY_MAJOR_KM + 0.05, s * 0.09, t * 0.1),
-					0.12,
-				),
-			),
-		),
-	);
-	const struts = [0, 1, 2, 3].map((i) => {
-		const theta = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
-		return capsule(at(theta, 0.23), at(theta, SLIPWAY_MAJOR_KM), 0.045);
-	});
-	const masts = [0.6, 1, 1.4].map((turns) =>
-		capsule(
-			at(Math.PI * turns, SLIPWAY_MAJOR_KM - 0.05, SLIPWAY_TUBE_KM),
-			at(Math.PI * turns, SLIPWAY_MAJOR_KM - 0.05, SLIPWAY_TUBE_KM + 0.1),
-			0.04,
-		),
-	);
-	return proxyOf(hub, [...arc, ...heads, ...struts, ...masts]);
-}
-
-// ---------------------------------------------------------------------------
-// Refinery A–C — rock, plant and radiator wings
-// ---------------------------------------------------------------------------
-
-/** The three flat panels and spine of each authored radiator wing. The
- * rotation is about Z; these boxes bound each panel separately rather than
- * turning the gaps between wings into a solid envelope. */
-function refineryRadiators(
-	span: number,
-	wings: readonly (readonly [number, number])[],
+function unpack(
+	packed: string,
+	pack: typeof SHIPYARD_PROXY_PACK = SHIPYARD_PROXY_PACK,
 ): ProxyBox[] {
-	const boxes: Bounds[] = [];
-	for (const [tilt, z] of wings) {
-		const c = Math.cos(tilt);
-		const s = Math.sin(tilt);
-		const panel = (
-			x: number,
-			hx: number,
-			hy: number,
-			cz: number,
-			hz: number,
-		) => {
-			const dx = Math.abs(c) * hx + Math.abs(s) * hy;
-			const dy = Math.abs(s) * hx + Math.abs(c) * hy;
-			boxes.push({
-				x0: x * c - dx,
-				x1: x * c + dx,
-				y0: x * s - dy,
-				y1: x * s + dy,
-				z0: cz - hz,
-				z1: cz + hz,
-			});
-		};
-		panel(span * 0.225, span * 0.225, span * 0.07, z, span * 0.07);
-		panel(span * 0.46, span * 0.05, span * 0.03, z, span * 0.53);
-		for (const i of [-1, 0, 1])
-			panel(
-				span * 0.82,
-				span * 0.45,
-				span * 0.015,
-				z + i * span * 0.46,
-				span * 0.21,
-			);
-	}
-	return cutAround(boxes, [corridorHole("refinery")]);
-}
-
-/** The Warren's carved rock, terraces, loading arm and two vent banks.
- * The spherical body ends below the landing well; flank capsules carry the
- * rock's equatorial lumps. The terraces and deck are cut round the same well
- * as the Works, without changing the role's aperture or berth catalogue. */
-function refineryWarrenProxy(): StationProxy {
-	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const rock = sphere({ x: 0, y: 0, z: -0.16 }, 0.4);
-	const plant = cutAround(
-		[
-			axial(r * 0.78, r * 0.78 * 0.86, r * 0.5, r * 0.94),
-			axial(0.22, 0.22, plane - 0.045, plane + 0.03),
-			{ x0: -0.16, x1: 0.3, y0: -0.25, y1: -0.15, z0: 0.04, z1: 0.25 },
-			{ x0: 0.18, x1: 0.54, y0: 0.18, y1: 0.32, z0: 0.06, z1: 0.37 },
-			{ x0: -0.46, x1: -0.1, y0: 0.25, y1: 0.4, z0: 0.06, z1: 0.37 },
-		],
-		[corridorHole("refinery")],
-	);
-	const cranes = [-1, 1].flatMap((side) =>
-		[0, -0.064].map((drop) =>
-			capsule(
-				{ x: side * 0.36, y: 0.18 + drop, z: 0.27 },
-				{ x: side * 0.59, y: 0.4 + drop, z: 0.23 },
-				0.02,
-			),
-		),
-	);
-	const masts = [-0.048, 0.048].map((x) =>
-		capsule({ x, y: 0.38, z: -0.08 }, { x, y: 0.57, z: -0.08 }, 0.02),
-	);
-	return proxyOf([
-		rock,
-		...ring(0.38, -0.04, 0.2),
-		...ring(0.36, 0.16, 0.19),
-		...plant,
-		...cranes,
-		...masts,
-		...refineryRadiators(r * 1.45, [
-			[0.5, 0],
-			[Math.PI - 0.45, -r * 0.5],
-			[Math.PI * 1.42, -r * 0.15],
-		]),
-	]);
-}
-
-/** The Collar's waist band and clamps surround a carved rock. Its boss and
- * vent banks sit forward of the band; the three radiator wings stay separate. */
-function refineryCollarProxy(): StationProxy {
-	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const major = r * 1.16 * 1.15 + r * 0.15 * 0.55;
-	const body = sphere({ x: 0, y: 0, z: -0.12 }, 0.4);
-	const plant = cutAround(
-		[
-			axial(0.22, 0.22, r * 0.5, plane + 0.03),
-			...[-1, 1].map(
-				(side): Bounds => ({
-					x0: side * major * 0.82 - 0.16,
-					x1: side * major * 0.82 + 0.16,
-					y0: 0.1,
-					y1: 0.25,
-					z0: -0.08,
-					z1: 0.21,
-				}),
-			),
-		],
-		[corridorHole("refinery")],
-	);
-	return proxyOf([
-		body,
-		...ring(0.33, 0.13, 0.19),
-		...ring(major, 0, r * 0.15 + 0.015, 20),
-		...plant,
-		...refineryRadiators(r * 1.4, [
-			[Math.PI * 0.42, -r * 0.3],
-			[Math.PI * 1.1, -r * 0.3],
-			[Math.PI * 1.62, -r * 0.3],
-		]),
-	]);
-}
-
-/** The Spar: an axial processing shaft, three tanks at its aft end, and a
- * carved rock around the shaft. The forward cap carries the same landing deck as the
- * other refinery forms; separate wing boxes preserve the space between them. */
-function refinerySparProxy(): StationProxy {
-	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const rock = sphere({ x: 0, y: 0, z: -0.12 }, 0.38);
-	const shaft = cutAround(
-		[
-			axial(0.13, 0.13, -r * 1.7, r * 0.9),
-			axial(0.22, 0.22, r * 0.9, plane + 0.03),
-			...[-1, 1].map(
-				(side): Bounds => ({
-					x0: side * r * 0.8 - 0.15,
-					x1: side * r * 0.8 + 0.15,
-					y0: 0.05,
-					y1: 0.2,
-					z0: 0.17,
-					z1: 0.43,
-				}),
-			),
-		],
-		[corridorHole("refinery")],
-	);
-	const tanks = [0, 1, 2].map((i) => {
-		const theta = (i / 3) * Math.PI * 2;
-		const x = Math.cos(theta) * r * 0.42;
-		const y = Math.sin(theta) * r * 0.42;
-		const z = -r * 1.42 + i * r * 0.06;
-		return boxOf({
-			x0: x - r * 0.19,
-			x1: x + r * 0.19,
-			y0: y - r * 0.19,
-			y1: y + r * 0.19,
-			z0: z - r * 0.24,
-			z1: z + r * 0.24,
+	const bytes = Uint8Array.from(atob(packed), (ch) => ch.charCodeAt(0));
+	const n = new Int16Array(bytes.buffer);
+	const { centreM, halfM, rot } = pack;
+	const boxes: ProxyBox[] = [];
+	for (let i = 0; i < n.length; i += 10) {
+		const [qx, qy, qz, qw] = [n[i + 6], n[i + 7], n[i + 8], n[i + 9]].map(
+			(v) => v / rot,
+		);
+		const norm = Math.hypot(qx, qy, qz, qw);
+		const [x, y, z, w] = [qx / norm, qy / norm, qz / norm, qw / norm];
+		// The quaternion's rotation matrix, column by column: the box's axes.
+		const axes: [Vec3, Vec3, Vec3] = [
+			v3(1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)),
+			v3(2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)),
+			v3(2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)),
+		];
+		boxes.push({
+			kind: "box",
+			cx: (n[i] * centreM) / 1000,
+			cy: (n[i + 1] * centreM) / 1000,
+			cz: (n[i + 2] * centreM) / 1000,
+			hx: (n[i + 3] * halfM) / 1000,
+			hy: (n[i + 4] * halfM) / 1000,
+			hz: (n[i + 5] * halfM) / 1000,
+			axes,
 		});
-	});
-	return proxyOf([
-		rock,
-		...ring(0.3, 0.08, 0.19),
-		...shaft,
-		...tanks,
-		...refineryRadiators(r * 1.4, [
-			[0.4, -r * 0.75],
-			[Math.PI - 0.4, -r * 0.75],
-			[Math.PI * 1.5, -r * 0.75],
-		]),
-	]);
-}
-
-// ---------------------------------------------------------------------------
-// Refinery D — Works (solved form)
-// ---------------------------------------------------------------------------
-
-/**
- * `STATION_SILHOUETTE_KM.refinery`, which lives in the renderer and so cannot
- * be imported here — the map's #28 keeps the display budget in the renderer
- * module on purpose, so that docking reading it is a fact about imports. The
- * reach row holds every primitive to the real figure, so a copy that drifted
- * above it is a red row rather than a quiet overshoot.
- */
-const WORKS_REACH_KM = 0.68;
-
-/**
- * How far above the floor each unit the plant can place stands, kilometres —
- * the tallest part `buildRefineryWorks` draws on that module's cell: a
- * column's cap, a flare's vent bank, the headframe's sheave and lamp, a
- * cracker's stacks. The head house is the block the deck stands on, so its
- * cell runs to the plane and the deck above it is the deck's.
- */
-const WORKS_UNIT_TOP_KM: Readonly<Record<number, number>> = {
-	[REFINERY.PIPE_X]: 0.05,
-	[REFINERY.PIPE_Y]: 0.05,
-	[REFINERY.COLUMN]: 0.37,
-	[REFINERY.CRACKER]: 0.27,
-	[REFINERY.SHAFT]: 0.29,
-	[REFINERY.TANKS]: 0.09,
-	[REFINERY.FLARE]: 0.39,
-	[REFINERY.RADIATOR]: 0.09,
-};
-
-/** Every unit is drawn from 0.05 km under its cell's centre. */
-const WORKS_UNIT_FOOT_KM = 0.05;
-
-/**
- * The plant, cell by cell from the placement solve the mesh reads: one box per
- * occupied cell, a cell wide, from the foot of its unit to the top of the
- * unit that cell holds — trimmed, at the field's outer cells, to where its
- * outer corner meets the reach. Cut round the corridor, which the tall units
- * beside the head house would otherwise cross.
- *
- * Exported for the row that holds the cells to carrying the plant: without
- * them the rock and the deck leave the tall units outside the proxy.
- */
-export function refineryPlantProxy(assemblySeed: number): ProxyBox[] {
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const half = WORKS_CELL_KM / 2;
-	const { placements } = placementsOf(REFINERY_VOCABULARY, assemblySeed);
-	const cells = placements.map((p): Bounds => {
-		const x = p.dx * WORKS_CELL_KM;
-		const y = p.dy * WORKS_CELL_KM;
-		const corner = Math.hypot(Math.abs(x) + half, Math.abs(y) + half);
-		const unitTop =
-			p.module === REFINERY.HEAD
-				? plane
-				: WORKS_FLOOR_KM + (WORKS_UNIT_TOP_KM[p.module] ?? 0);
-		const z0 = WORKS_FLOOR_KM - WORKS_UNIT_FOOT_KM;
-		// A cell whose outer corner stands at or past the reach, or whose trim
-		// would put its top under its foot, is a plan this proxy cannot hold:
-		// skipping it would drop coverage without a word, and a NaN box would
-		// poison `thinnestKm`. Neither can happen inside `REFINERY_RADIUS` 2,
-		// whose worst corner is about 0.41 km; this is the tripwire for the day
-		// the field grows.
-		const headroom = WORKS_REACH_KM ** 2 - corner ** 2;
-		const z1 =
-			headroom > 0 ? Math.min(unitTop, Math.sqrt(headroom)) : Number.NaN;
-		if (!(z1 > z0))
-			throw new Error(
-				`refinery plan at assembly seed ${assemblySeed}: the cell at ` +
-					`(${p.dx}, ${p.dy}) has no room inside the ${WORKS_REACH_KM} km reach`,
-			);
-		return {
-			x0: x - half,
-			x1: x + half,
-			y0: y - half,
-			y1: y + half,
-			z0,
-			z1,
-		};
-	});
-	return cutAround(cells, [corridorHole("refinery")]);
+	}
+	return boxes;
 }
 
 /**
- * The Works: a quarried asteroid with a WFC-solved plant on its flat top and
- * the deck at the 0.396 km plane. It does not spin; everything goes in
- * `spinning`, which for a station that does not turn is its one frame.
- *
- * - **The rock** is a sphere centred below the origin, as large as the reach
- *   allows with its top under the plane, plus a ring of capsules round its
- *   flanks where the lumps stand furthest out. Neither reaches the tall
- *   units; those are the plant's.
- * - **The plant** is `refineryPlantProxy`: the solve, cell by cell.
- * - **The deck** is a slab at the plane round the head house, cut round the
- *   corridor, and it carries the berths that stand on it.
+ * The drum's boxes, with the axis-aligned ones cut exactly round the sim's bay
+ * and lane, as every bay role's drum is. A plate on the hub face is fitted
+ * with a minimum thickness either side of it, so its box reaches a little way
+ * through the plane into the bay; the cut takes that off.
  */
-function refineryWorksProxy(assemblySeed: number): StationProxy {
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+function outsideTheBay(boxes: ProxyBox[]): ProxyBox[] {
+	const holes = bayHoles("shipyard");
+	return boxes.flatMap((b) => {
+		const bounds = alignedBounds(b);
+		return bounds ? cutAround([bounds], holes) : [b];
+	});
+}
+/** A box whose axes are the frame's, in some order, as bounds; else null. */
+function alignedBounds(b: ProxyBox): Bounds | null {
+	const extent = [b.hx, b.hy, b.hz];
+	if (b.axes) {
+		const halves = [b.hx, b.hy, b.hz];
+		for (let i = 0; i < 3; i++) {
+			const a: Vec3 = b.axes[i];
+			const c: number[] = [Math.abs(a.x), Math.abs(a.y), Math.abs(a.z)];
+			const k = c.indexOf(Math.max(...c));
+			if (c[k] < 0.9999) return null;
+			extent[k] = halves[i];
+		}
+	}
+	return {
+		x0: b.cx - extent[0],
+		x1: b.cx + extent[0],
+		y0: b.cy - extent[1],
+		y1: b.cy + extent[1],
+		z0: b.cz - extent[2],
+		z1: b.cz + extent[2],
+	};
+}
 
-	// Its top stands on the landing well's floor rather than over it: the one
-	// primitive here a cut cannot shorten.
-	const ROCK_Z = -0.15;
-	const rock = sphere(
-		{ x: 0, y: 0, z: ROCK_Z },
-		Math.min(0.53, padOpeningFloorKm("refinery") - ROCK_Z),
-	);
-	const flanks = ring(0.4, 0, 0.27);
-	const DECK_HALF = 0.215;
-	const deck = cutAround(
-		[axial(DECK_HALF, DECK_HALF, plane - 0.045, plane + 0.03)],
+const authoredShipyards = new Map<string, StationProxy>();
+function authoredShipyardProxy(
+	form: keyof typeof SHIPYARD_PROXIES,
+): StationProxy {
+	let proxy = authoredShipyards.get(form);
+	if (!proxy) {
+		const { drum, yard } = SHIPYARD_PROXIES[form];
+		proxy = proxyOf(
+			[...outsideTheBay(unpack(drum)), ...bayWalls()],
+			unpack(yard),
+		);
+		authoredShipyards.set(form, proxy);
+	}
+	return proxy;
+}
+
+/** A shipyard's written boxes as decoded, before the bay is cut from them. */
+export function shipyardProxyBoxes(form: keyof typeof SHIPYARD_PROXIES): {
+	drum: ProxyBox[];
+	yard: ProxyBox[];
+} {
+	const { drum, yard } = SHIPYARD_PROXIES[form];
+	return { drum: unpack(drum), yard: unpack(yard) };
+}
+
+// ---------------------------------------------------------------------------
+// The authored refineries (node #819)
+// ---------------------------------------------------------------------------
+
+/**
+ * Warren, Collar, Spar and Works, as the game loads them (node #819).
+ *
+ * **The sim collides with the authored refinery, whatever is drawn**, as with
+ * the shipyards (#818): a station whose model is still loading, or failed to,
+ * draws its procedural stand-in and is solid as the refinery it stands in
+ * for. Its plant and pad housing keep the shipyards' rule (at most 10 m of
+ * empty space collides), fitted to the model's own parts; its rock is filled
+ * with 20 m voxels and held within 20 m (principal, 2026-10-13), since a
+ * faceted rock fitted part by part took one box a facet
+ * (`src/refinery-proxies.ts`, generated; `tests/refinery-flight.test.ts`).
+ *
+ * **The deck is the sim's**, as a shipyard's bay walls are: the deck the game
+ * draws (`stationInterior`), up to the procedural forms' figure above the
+ * plane so its berths are solid (`collision.md` §9 obligation 8), cut round
+ * the corridor and the landing well.
+ */
+const PAD_BERTHS_KM = 0.03;
+function padDeck(): ProxyBox[] {
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	const pad = stationInterior("refinery", plane);
+	const depth = pad.stagingAxialKm - pad.mouthAxialKm;
+	return cutAround(
+		[
+			axial(
+				pad.halfAcrossKm,
+				pad.halfUpKm,
+				plane - depth,
+				plane + PAD_BERTHS_KM,
+			),
+		],
 		[corridorHole("refinery")],
 	);
+}
 
-	return proxyOf([
-		rock,
-		...flanks,
-		...refineryPlantProxy(assemblySeed),
-		...deck,
-	]);
+/**
+ * The two vent banks the game stands on an authored refinery's pad frame
+ * (`buildRefineryPadCues`, principal 2026-10-13): their nozzles reach 64 m in
+ * front of the frame, past the proxy's vertex slack, so they are solid. One
+ * box a bank, from `buildVentBank`'s own proportions: the manifold runs
+ * −0.34 to 0.38 of its length, is 0.17 of it across, and its nozzles lean
+ * 0.35 rad up from the axis for 0.34 of it.
+ */
+function padVentBanks(): ProxyBox[] {
+	const L = PAD_VENT_BANK_KM;
+	const across = L * 0.17;
+	const { innerKm, outerKm, frontKm } = REFINERY_PAD_FRAME;
+	const y = (innerKm + outerKm) / 2;
+	const z0 = frontKm + PAD_CUE_PROUD_KM;
+	const reach = L * 0.34;
+	return PAD_VENT_BANK_X_KM.map((x) =>
+		boxOf({
+			x0: x - L * 0.34,
+			x1: x + L * 0.38,
+			y0: y - across * 0.43,
+			y1: y + across * 0.64 + reach * Math.sin(0.35),
+			z0,
+			z1: z0 + across * 1.2 + reach * Math.cos(0.35),
+		}),
+	);
+}
+
+const authoredRefineries = new Map<string, StationProxy>();
+function authoredRefineryProxy(
+	form: keyof typeof REFINERY_PROXIES,
+): StationProxy {
+	let proxy = authoredRefineries.get(form);
+	if (!proxy) {
+		const { rock, plant } = refineryProxyBoxes(form);
+		// A refinery does not turn; its primitives are listed as the procedural
+		// forms list theirs.
+		proxy = proxyOf([...rock, ...plant, ...padDeck(), ...padVentBanks()]);
+		authoredRefineries.set(form, proxy);
+	}
+	return proxy;
+}
+
+/** A refinery's written boxes as decoded, rock and plant apart. */
+export function refineryProxyBoxes(form: keyof typeof REFINERY_PROXIES): {
+	rock: ProxyBox[];
+	plant: ProxyBox[];
+} {
+	const { rock, plant } = REFINERY_PROXIES[form];
+	return {
+		rock: unpack(rock, REFINERY_PROXY_PACK),
+		plant: unpack(plant, REFINERY_PROXY_PACK),
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,24 +761,19 @@ export function stationProxy(
 		case "shipyard":
 			switch (form) {
 				case "a":
-					return shipyardGantryProxy();
 				case "b":
-					return shipyardHangarProxy();
 				case "c":
-					return shipyardSlipwayProxy();
+					return authoredShipyardProxy(form);
 				default:
 					return null;
 			}
 		case "refinery":
 			switch (form) {
 				case "a":
-					return refineryWarrenProxy();
 				case "b":
-					return refineryCollarProxy();
 				case "c":
-					return refinerySparProxy();
 				case "d":
-					return refineryWorksProxy(assemblySeed);
+					return authoredRefineryProxy(form);
 				default:
 					return null;
 			}
@@ -1078,13 +792,42 @@ export function stationProxy(
 /**
  * The furthest extent of any primitive in the proxy, in kilometres from the
  * origin. Used by the budget test to check no primitive lies outside
- * `reachKm`.
+ * `reachKm`, and by the avoidance every step for every station near the ship
+ * — so read once per proxy: an authored shipyard's is thousands of boxes
+ * (node #818), and measuring it each step made a refinery duel four times
+ * slower.
  */
 export function proxyReachKm(proxy: StationProxy): number {
+	let reach = reachCache.get(proxy);
+	if (reach === undefined) {
+		reach = measureReachKm(proxy);
+		reachCache.set(proxy, reach);
+	}
+	return reach;
+}
+const reachCache = new WeakMap<StationProxy, number>();
+
+function measureReachKm(proxy: StationProxy): number {
 	let max = 0;
 	for (const p of [...proxy.spinning, ...proxy.static]) {
 		switch (p.kind) {
 			case "box": {
+				if (p.axes) {
+					// The farthest of its eight corners.
+					const [a, b, c] = p.axes;
+					for (const i of [-1, 1])
+						for (const j of [-1, 1])
+							for (const k of [-1, 1])
+								max = Math.max(
+									max,
+									Math.hypot(
+										p.cx + i * p.hx * a.x + j * p.hy * b.x + k * p.hz * c.x,
+										p.cy + i * p.hx * a.y + j * p.hy * b.y + k * p.hz * c.y,
+										p.cz + i * p.hx * a.z + j * p.hy * b.z + k * p.hz * c.z,
+									),
+								);
+					break;
+				}
 				// The box corner farthest from the origin
 				const dx = Math.abs(p.cx) + p.hx;
 				const dy = Math.abs(p.cy) + p.hy;
@@ -1138,9 +881,18 @@ export function proxyDistanceKm(
 ): number {
 	switch (p.kind) {
 		case "box": {
-			const dx = Math.abs(x - p.cx) - p.hx;
-			const dy = Math.abs(y - p.cy) - p.hy;
-			const dz = Math.abs(z - p.cz) - p.hz;
+			let [ux, uy, uz] = [x - p.cx, y - p.cy, z - p.cz];
+			if (p.axes) {
+				const [a, b, c] = p.axes;
+				[ux, uy, uz] = [
+					ux * a.x + uy * a.y + uz * a.z,
+					ux * b.x + uy * b.y + uz * b.z,
+					ux * c.x + uy * c.y + uz * c.z,
+				];
+			}
+			const dx = Math.abs(ux) - p.hx;
+			const dy = Math.abs(uy) - p.hy;
+			const dz = Math.abs(uz) - p.hz;
 			return (
 				Math.hypot(Math.max(dx, 0), Math.max(dy, 0), Math.max(dz, 0)) +
 				Math.min(Math.max(dx, dy, dz), 0)
@@ -1180,7 +932,84 @@ export function proxyContains(
 	z: number,
 	toleranceKm: number,
 ): boolean {
-	return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
+	if (primitives.length <= INDEXED_ABOVE)
+		return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
+	// The authored shipyards' thousands of boxes (node #818): only the ones
+	// whose bounding sphere comes within the tolerance can hold the point.
+	const grid = indexOf(primitives);
+	const reach = Math.max(toleranceKm, 0);
+	let found = false;
+	querySphereGrid(
+		grid,
+		x - reach,
+		y - reach,
+		z - reach,
+		x + reach,
+		y + reach,
+		z + reach,
+		(n) => {
+			found = proxyDistanceKm(primitives[n], x, y, z) <= toleranceKm;
+			return found;
+		},
+	);
+	return found;
+}
+
+/**
+ * The least `proxyDistanceKm` from a point to any primitive of a list:
+ * negative inside. Exact; a long list (node #818) is searched through its
+ * grid, in a radius that doubles until a primitive is within it.
+ */
+export function proxyListDistanceKm(
+	primitives: readonly ProxyPrimitive[],
+	x: number,
+	y: number,
+	z: number,
+): number {
+	let best = Number.POSITIVE_INFINITY;
+	if (primitives.length <= INDEXED_ABOVE) {
+		for (const p of primitives)
+			best = Math.min(best, proxyDistanceKm(p, x, y, z));
+		return best;
+	}
+	const grid = indexOf(primitives);
+	for (let r = INDEX_CELL_KM; ; r *= 2) {
+		querySphereGrid(grid, x - r, y - r, z - r, x + r, y + r, z + r, (n) => {
+			best = Math.min(best, proxyDistanceKm(primitives[n], x, y, z));
+		});
+		// Every primitive with a surface point within `r` has its bounding
+		// sphere in the box just searched.
+		if (best <= r) return best;
+		if (r > 64) break;
+	}
+	for (const p of primitives)
+		best = Math.min(best, proxyDistanceKm(p, x, y, z));
+	return best;
+}
+
+const indexes = new WeakMap<readonly ProxyPrimitive[], SphereGrid>();
+function indexOf(primitives: readonly ProxyPrimitive[]): SphereGrid {
+	let grid = indexes.get(primitives);
+	if (!grid) {
+		grid = buildSphereGrid(primitives.map(boundOf), INDEX_CELL_KM);
+		indexes.set(primitives, grid);
+	}
+	return grid;
+}
+function boundOf(p: ProxyPrimitive): Sphere {
+	switch (p.kind) {
+		case "box":
+			return { x: p.cx, y: p.cy, z: p.cz, r: Math.hypot(p.hx, p.hy, p.hz) };
+		case "sphere":
+			return { x: p.cx, y: p.cy, z: p.cz, r: p.radiusKm };
+		case "capsule":
+			return {
+				x: (p.ax + p.bx) / 2,
+				y: (p.ay + p.by) / 2,
+				z: (p.az + p.bz) / 2,
+				r: Math.hypot(p.bx - p.ax, p.by - p.ay, p.bz - p.az) / 2 + p.radiusKm,
+			};
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1230,7 +1059,7 @@ export function resolverPrimitive(p: ProxyPrimitive): Primitive {
 			return {
 				kind: "box",
 				centre: v3(p.cx, p.cy, p.cz),
-				axes: [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)],
+				axes: p.axes ?? [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)],
 				half: [p.hx, p.hy, p.hz],
 			};
 		case "sphere":

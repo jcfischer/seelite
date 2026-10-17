@@ -62,8 +62,8 @@ const attributes = (doc) =>
 		}));
 const beforeEncoding = attributes(document);
 await mkdir("public/models", { recursive: true });
-await io.write("public/models/porter.glb", document);
-const decoded = await io.read("public/models/porter.glb");
+await io.write("src/models/porter.glb", document);
+const decoded = await io.read("src/models/porter.glb");
 assert.deepEqual(
 	attributes(decoded),
 	beforeEncoding,
