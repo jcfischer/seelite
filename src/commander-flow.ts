@@ -101,11 +101,18 @@ export const flushFault = (reason: FlushReason, error: unknown): string =>
 export const writeFault = (consecutive: number, error: unknown): string =>
 	withDetail(`the save would not write (${consecutive} in a row).`, error);
 
+/** A transaction commit whose write did not land (#936 D4's definite
+ * failure — the action was not committed and a retry is offered). */
+export const commitFault = (error: unknown): string =>
+	withDetail(`the transaction save would not write.`, error);
+
 /** The words for a fault the store holds (§11.5). */
 export const heldFaultText = (fault: SaveFault): string =>
 	fault.reason === "debounce"
 		? writeFault(fault.consecutive, fault.error)
-		: flushFault(fault.reason, fault.error);
+		: fault.reason === "commit"
+			? commitFault(fault.error)
+			: flushFault(fault.reason, fault.error);
 
 /** The pointer named a Commander that is gone (§11.4). Said, not a fault: the
  *  default Commander loads normally. */

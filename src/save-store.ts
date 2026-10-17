@@ -37,6 +37,20 @@
  * derived at the death by `firstCheckpoint` rather than written at new game.
  * Nothing here changes the schema; both records are the envelope they were.
  *
+ * ## Transactional commit (#936 D1–D4, node #943)
+ *
+ * `commit(op)` is the shared durable-transaction write: the candidate is the
+ * op applied to the current envelope, a landed commit adopts **only the
+ * footprint** the op names (D1), a commit made while docked writes `live` and
+ * `lastDocked` from one blob in one transaction (D2), one `txSeq` refuses
+ * stale and repeat ops (D4), and a write that does not settle within
+ * `SAVE_COMMIT_TIMEOUT_MS` is decided by reading `live` back, never by a blind
+ * retry (D4's outcomes). The rules, the named failure cases and the footprint
+ * itself are [#936's closing receipt](https://github.com/jcfischer/seelite/issues/936)
+ * and are not restated here; the first consumer — refinery submission and
+ * collection, with D3's Saving display and input suppression at the Game
+ * level — comes with its own brief.
+ *
  * ## What deliberately is not here
  *
  * **There is no death flush.** A permadeath player who kills the tab inside the
@@ -110,6 +124,19 @@ export const DEFAULT_SLOT = "default";
  */
 export const SAVE_RETRY_LIMIT = 3;
 
+/**
+ * How long a commit waits for its write before the outcome is taken from the
+ * record instead (#936 D4).
+ *
+ * An engineering default exported for tuning, not a measured window: the
+ * debounce has a browser figure (`SAVE_DEBOUNCE_MS`) because its cost lands on
+ * every write, while this one only decides the rare transaction that neither
+ * completed nor aborted in time — and that decision is a read, not a guess.
+ * A shorter window reads a record back from writes that were merely slow;
+ * 10 s is far past the ~400 ms the whole median save takes on the probe.
+ */
+export const SAVE_COMMIT_TIMEOUT_MS = 10_000;
+
 /** A slot holds two records (#89's D7 correction). */
 export type SaveRecordKind = "live" | "lastDocked";
 
@@ -171,14 +198,15 @@ const FLUSHES_WHEN_CLEAN: ReadonlySet<FlushReason> = new Set([
 	"undock",
 ]);
 
-/**
- * Why a record kind is held as a fault (§11.5): the flush that failed, or the
- * debounced write that reached `SAVE_RETRY_LIMIT`. Kept per kind, because the
- * overlay has to name the failure that is still held — a later write that
- * failed and then landed is not it.
+/** What a record kind is held as a fault (§11.5): the flush that failed, the
+ *  transaction commit that did not land, or the debounced write that reached
+ *  `SAVE_RETRY_LIMIT`. Kept per kind, because the overlay has to name the
+ *  failure that is still held — a later write that failed and then landed is
+ *  not it.
  */
 export type SaveFault =
 	| { readonly reason: FlushReason; readonly error: unknown }
+	| { readonly reason: "commit"; readonly error: unknown }
 	| {
 			readonly reason: "debounce";
 			readonly error: unknown;
@@ -298,6 +326,55 @@ export interface SaveStoreOptions {
 	onWriteFailed?: (error: unknown, consecutive: number) => void;
 }
 
+/**
+ * One transaction op for `SaveStore.commit` (#936 D1, D4).
+ *
+ * The store does not know what a gameplay op means — only the op does. What
+ * the store owns is the *when*: the staleness gate at the head of the op's
+ * turn, the one `txSeq` step, the single transaction, and the adoption that
+ * must land before the in-flight write clears.
+ */
+export interface SaveCommitOp {
+	/**
+	 * The `txSeq` the action recorded when it was quoted or shown (#936 D4).
+	 * A commit whose recorded value is not the current one resolves `stale`
+	 * and writes nothing — which is also what refuses a second submission or
+	 * collection of the same thing.
+	 */
+	readonly txSeq: number;
+	/**
+	 * True when the commit is also the dock checkpoint: `live` and
+	 * `lastDocked` are written together from one blob, in one transaction
+	 * (D2). The consumer names it — while docked, it reads this off the
+	 * commander's own `dockedAt`, the same way the dock and undock flushes
+	 * pick their kinds.
+	 */
+	readonly checkpoint?: boolean;
+	/** The candidate: the current envelope with the op applied (D1). */
+	readonly apply: (envelope: SaveEnvelope) => SaveEnvelope;
+	/**
+	 * Adopt **only the footprint fields** into live state — the credits, cargo
+	 * and carrier rows the op touched, plus the record's `txSeq` — and nothing
+	 * else (D1). The store calls this synchronously before its in-flight write
+	 * clears, so a debounced write queued behind the commit never serializes
+	 * pre-adoption state; the game clock and every other part of the world are
+	 * kept from live state, never taken from the record.
+	 */
+	readonly adopt: (committed: SaveEnvelope) => void;
+}
+
+/**
+ * One commit's outcome (#936 D4).
+ *
+ * `committed` — the write landed (directly or on the read-back) and the
+ * footprint was adopted. `failed` — a definite abort/error, nothing adopted,
+ * a retry is allowed. `stale` — the op's recorded txSeq is not the current
+ * one, nothing was written. `uncertain` — the write did not settle and the
+ * read that should have decided it failed too; `commit` refuses until a read
+ * succeeds.
+ */
+export type SaveCommitOutcome = "committed" | "failed" | "stale" | "uncertain";
+
 const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
 };
@@ -410,6 +487,20 @@ export class SaveStore {
 	 */
 	private retired = false;
 
+	/**
+	 * A commit whose outcome is unknown (#936 D4): the write did not settle
+	 * and the read-back that should have decided it failed too. While this is
+	 * set, `commit` refuses — a blind retry could write twice what already
+	 * landed — and it clears on whichever answer arrives first: a late
+	 * landing (adopt), a late definite failure (retry), or a successful read
+	 * (`resolveUncertainCommit`).
+	 */
+	private uncertainCommit: {
+		readonly candidateTxSeq: number;
+		readonly adopt: (committed: SaveEnvelope) => void;
+		readonly kinds: readonly SaveRecordKind[];
+	} | null = null;
+
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
 		this.locks = options.locks;
@@ -506,6 +597,214 @@ export class SaveStore {
 			for (const kind of kinds) this.faultsHeld.set(kind, fault);
 			throw error;
 		}
+	}
+
+	/**
+	 * #936's shared transactional write: commit the op's candidate, and give
+	 * exactly one outcome — committed, failed, stale or uncertain (D4).
+	 *
+	 * **The staleness gate is checked at the head of the op's turn, not at
+	 * the call.** A retry queued behind an unsettled write is only answered
+	 * `stale` if that write lands in the meantime, and the live `txSeq` is the
+	 * witness — which it cannot be until the queue hands the turn over
+	 * (failure case 4's retry row).
+	 *
+	 * **The store owns the +1.** No op can skip or double-advance the
+	 * sequence: the record written and the live state adopted afterwards name
+	 * one number (D4, and the criterion that the written record's txSeq is
+	 * *the same* one live ends up holding).
+	 *
+	 * A retired store — the death restore has written its pair and the page is
+	 * reloading — refuses, because writing after that would put the dead ship
+	 * back on disk.
+	 */
+	async commit(op: SaveCommitOp): Promise<SaveCommitOutcome> {
+		if (this.retired)
+			fail(
+				"this store is retired after the death restore — it does not commit",
+			);
+		if (this.uncertainCommit)
+			fail("a commit is uncertain — nothing is written until a read succeeds");
+		if (!Number.isSafeInteger(op.txSeq) || op.txSeq < 0)
+			fail(
+				`txSeq ${String(op.txSeq)} is not a non-negative whole transaction number`,
+			);
+		// Queue behind whatever is already writing, exactly as `run` does: two
+		// overlapping transactions can land in either order, and the loser
+		// would be the newer state. The rejection of the write awaited here is
+		// swallowed for the same reason `run` swallows it — that failure is
+		// its own caller's, and this op still has its own to report.
+		while (this.inFlight) await this.inFlight.catch(() => {});
+		const live = this.current();
+		const base = live.commander.txSeq;
+		if (op.txSeq !== base) return "stale";
+		const applied = op.apply(live);
+		const stamped: SaveEnvelope = {
+			world: applied.world,
+			commander: { ...applied.commander, txSeq: base + 1 },
+		};
+		const blob = serializeSave(stamped);
+		const kinds: SaveRecordKind[] = op.checkpoint
+			? ["live", "lastDocked"]
+			: ["live"];
+		let decided: SaveCommitOutcome | null = null;
+		const adoptCommit = (from: SaveEnvelope) => {
+			op.adopt(from);
+			// Saved state moved on top of any checkpoint snapshot a flush queued
+			// behind this commit took before the adoption (`run`'s `edits`), and
+			// any debounced write behind it serializes the adopted state anyway.
+			this.edits += 1;
+			this.failures = 0;
+			for (const kind of kinds) this.faultsHeld.delete(kind);
+			this.uncertainCommit = null;
+		};
+		const work = this.backend.writeMany(this.slot, kinds, blob);
+		// **Adoption runs inside the in-flight chain, before `inFlight`
+		// clears.** A debounced write waiting on that chain resumes only after
+		// the adopt, so it serializes the state that includes the commit —
+		// #936's named hazard (case 6), closed by ordering rather than by a
+		// new write path. A late landing is the strongest evidence there is:
+		// it adopts even when the commit itself already resolved `failed` or
+		// `uncertain` through the timeout path (case 4's retry row), and lifts
+		// the uncertain refusal with it.
+		const chain = work.then(
+			() => {
+				// If the read-back already adopted the record this write
+				// carried, there is no second adoption to make — same bytes.
+				if (decided !== "committed") adoptCommit(stamped);
+				this.uncertainCommit = null;
+				decided ??= "committed";
+			},
+			(error) => {
+				// The record it refused to replace is still there (D9's
+				// stale-not-broken), and the save is still dirty. A failure
+				// named after an uncertain read-back is an answer too: the
+				// retry is offered and the refusal lifts.
+				if (decided !== "committed") {
+					const fault: SaveFault = { reason: "commit", error };
+					for (const kind of kinds) this.faultsHeld.set(kind, fault);
+					this.dirty = true;
+					decided ??= "failed";
+				}
+				this.uncertainCommit = null;
+			},
+		);
+		this.inFlight = chain.finally(() => {
+			this.inFlight = null;
+		});
+		let fireTimeout: () => void = () => {};
+		const timedOut = new Promise<"timeout">((resolve) => {
+			fireTimeout = () => resolve("timeout");
+		});
+		const cancelTimeout = this.schedule(
+			() => fireTimeout(),
+			SAVE_COMMIT_TIMEOUT_MS,
+		);
+		const raced = await Promise.race([
+			work.then(
+				() => ({ s: "landed" }) as const,
+				(error: unknown) => ({ s: "rejected", error }) as const,
+			),
+			timedOut,
+		]);
+		if (raced !== "timeout") {
+			cancelTimeout();
+			// The chain arms above ran first — they were registered first — so
+			// the adoption (or the held fault) has already happened by here.
+			return raced.s === "landed" ? "committed" : "failed";
+		}
+		// No settle within the window: read `live` back and let the record
+		// answer (D4). A blind retry of a write that committed before its
+		// acknowledgement would write twice what already landed (case 4).
+		const outcome = await this.readBackCommit(base + 1, adoptCommit, kinds);
+		decided = outcome;
+		return outcome;
+	}
+
+	/**
+	 * Decide an unsettled commit by reading `live` back (#936 D4). The record
+	 * is the only witness that survives the page: a txSeq that advanced means
+	 * the write landed, and the footprint is adopted **from the record read**
+	 * — that state, not the candidate, is what the store durably has. The
+	 * previous value means it did not land, and a retry is allowed. A read
+	 * that fails — or answers with a number neither — leaves the outcome
+	 * uncertain, and nothing writes until a read succeeds.
+	 */
+	private async readBackCommit(
+		candidateTxSeq: number,
+		adopt: (committed: SaveEnvelope) => void,
+		kinds: readonly SaveRecordKind[],
+	): Promise<SaveCommitOutcome> {
+		let raw: unknown;
+		try {
+			raw = await this.backend.read(this.slot, "live");
+		} catch {
+			this.uncertainCommit = { candidateTxSeq, adopt, kinds };
+			return "uncertain";
+		}
+		// **No record at all is definite, not unknown**: a transaction that
+		// landed leaves a record behind, so there is nothing for the pending
+		// write to have advanced. (In production a `live` record always exists
+		// before the first commit — the new-game flush writes one — this is
+		// the seam's cold case.) Definite means the refusal lifts too.
+		if (raw === null || raw === undefined) {
+			this.uncertainCommit = null;
+			return "failed";
+		}
+		let record: SaveEnvelope;
+		try {
+			record = parseSave(raw);
+		} catch {
+			// A record that will not parse is D9's named error, not an answer:
+			// it can neither be adopted nor compared, so the outcome stays
+			// uncertain rather than pretending to decide.
+			this.uncertainCommit = { candidateTxSeq, adopt, kinds };
+			return "uncertain";
+		}
+		if (record.commander.txSeq === candidateTxSeq) {
+			this.uncertainCommit = null;
+			adopt(record);
+			return "committed";
+		}
+		if (record.commander.txSeq === candidateTxSeq - 1) {
+			// The record answered: the write did not land. That is an outcome,
+			// and the refusal lifts with it — the retry queues behind the
+			// unsettled write and meets `stale` there if it lands after all.
+			this.uncertainCommit = null;
+			return "failed";
+		}
+		this.uncertainCommit = { candidateTxSeq, adopt, kinds };
+		return "uncertain";
+	}
+
+	/** Whether a commit's outcome is unknown and `commit` is refusing (§11.5's
+	 *  rule that the player is told): true from the failed read-back until the
+	 *  write settles or a read succeeds. D3's suppression of departure reads
+	 *  this when the first consumer arrives. */
+	get hasUncertainCommit(): boolean {
+		return this.uncertainCommit !== null;
+	}
+
+	/**
+	 * Attempt the read again for an uncertain commit (#936 D4: the game
+	 * "blocks retry and departure until a read succeeds"). Returns the
+	 * outcome when this read decides it — `committed` (adopting from the
+	 * record read) or `failed` (a retry is allowed) — and `uncertain` when it
+	 * still cannot answer, which leaves the refusal standing. Refuses when
+	 * nothing is uncertain: this is not a general record-read seam, `load`
+	 * already is one.
+	 */
+	async resolveUncertainCommit(): Promise<SaveCommitOutcome> {
+		const pending = this.uncertainCommit;
+		if (pending)
+			return this.readBackCommit(
+				pending.candidateTxSeq,
+				pending.adopt,
+				pending.kinds,
+			);
+		return fail(
+			"there is no uncertain commit to resolve — read records with load",
+		);
 	}
 
 	/**
@@ -1091,6 +1390,21 @@ export interface MemorySaveBackend extends SaveBackend {
 	raw(slot: string, kind: SaveRecordKind): Promise<unknown | null>;
 	/** Hold every write open until `release`, so dirt can arrive mid-write. */
 	hold(): void;
+	/**
+	 * Gate the next write only, letting later ones through once `release`
+	 * opens it — the transaction of a commit that neither completes nor
+	 * aborts, while the cadence around it keeps moving.
+	 */
+	hangNextWrite(): void;
+	/**
+	 * Store the next write's rows immediately and gate only its
+	 * acknowledgement until `release`: the record landed and the page never
+	 * heard, which is the case the read-back exists to decide (#936 case 2).
+	 */
+	hangNextWriteApplied(): void;
+	/** Fail the next `read`, so a commit read-back meets a backend that will
+	 *  not answer and the outcome must stay uncertain. */
+	failNextRead(): void;
 	release(): void;
 	failNextWrite(): void;
 	/** Fail the next `deleteSlot`, so a rename can be interrupted between its
@@ -1098,6 +1412,14 @@ export interface MemorySaveBackend extends SaveBackend {
 	failNextDelete(): void;
 	corruptVersion(slot: string, kind: SaveRecordKind): Promise<void>;
 	truncate(slot: string, kind: SaveRecordKind): Promise<void>;
+	/** Every `writeMany` issued, in order: the kinds and bytes of each
+	 *  transaction, so a test can name one call rather than infer it from the
+	 *  rows it left behind. */
+	readonly writeManyCalls: readonly {
+		readonly slot: string;
+		readonly kinds: readonly SaveRecordKind[];
+		readonly blob: unknown;
+	}[];
 }
 
 /**
@@ -1117,11 +1439,49 @@ export function memorySaveBackend(): MemorySaveBackend {
 	let maxInFlight = 0;
 	let gate: Promise<void> | null = null;
 	let openGate: (() => void) | null = null;
+	let holdAll = false;
+	let hangNext = 0;
+	let hangAppliedNext = 0;
 	let failNext = false;
-	const copy = (value: unknown) =>
-		value === null || value === undefined
-			? null
-			: (JSON.parse(JSON.stringify(value)) as unknown);
+	let failRead = false;
+	const calls: {
+		slot: string;
+		kinds: readonly SaveRecordKind[];
+		blob: unknown;
+	}[] = [];
+	const ensureGate = () => {
+		if (!gate)
+			gate = new Promise<void>((resolve) => {
+				openGate = resolve;
+			});
+	};
+	/** A stored blob that exists: a serialized envelope, a parsed record, or a
+	 *  pointer-store row — whatever a key holds, with the absent cases already
+	 *  folded out by `copy` itself. The shape belongs to the caller; this names
+	 *  only "a value", which is what the null-and-undefined refusal is not. */
+	type StoredBlob =
+		| Record<string, unknown>
+		| readonly unknown[]
+		| string
+		| number
+		| boolean;
+	const copy = (value: unknown): StoredBlob | null => {
+		if (value === null || value === undefined) return null;
+		// Deep copy through JSON, as this helper has always done: what reaches
+		// it is a `serializeSave` blob, a parsed record, or a pointer-store row,
+		// and JSON-safe in means JSON-safe out. The named refusal is for a blob
+		// that is not one — a caller bug that used to arrive from the seam as a
+		// bare SyntaxError.
+		try {
+			return JSON.parse(JSON.stringify(value)) as StoredBlob;
+		} catch (error) {
+			return fail(
+				`the memory backend was handed a blob that is not JSON-safe: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+		}
+	};
 	return {
 		get writes() {
 			return writes;
@@ -1132,7 +1492,14 @@ export function memorySaveBackend(): MemorySaveBackend {
 		get maxInFlight() {
 			return maxInFlight;
 		},
+		get writeManyCalls() {
+			return calls;
+		},
 		async read(slot, kind) {
+			if (failRead) {
+				failRead = false;
+				throw new Error("backend: the read failed");
+			}
 			return copy(rows.get(recordKey(slot, kind)) ?? null);
 		},
 		async write(slot, kind, blob) {
@@ -1141,16 +1508,31 @@ export function memorySaveBackend(): MemorySaveBackend {
 		async writeMany(slot, kinds, blob) {
 			inFlight += 1;
 			maxInFlight = Math.max(maxInFlight, inFlight);
+			calls.push({ slot, kinds: [...kinds], blob: copy(blob) });
+			// The ack-lost case stores its rows before the gate, not after it:
+			// on disk the transaction is complete while the promise hangs.
+			const appliedNow = hangAppliedNext > 0;
+			const hungNext = hangNext > 0;
+			if (appliedNow) {
+				hangAppliedNext -= 1;
+				for (const kind of kinds) rows.set(recordKey(slot, kind), copy(blob));
+				writes += 1;
+			}
 			try {
-				if (gate) await gate;
+				if (gate && (appliedNow || holdAll || hungNext)) {
+					if (hungNext && !appliedNow) hangNext -= 1;
+					await gate;
+				}
 				if (failNext) {
 					failNext = false;
 					throw new Error("backend: the write failed");
 				}
 				// One transaction, so either every key lands or none does — the
 				// same all-or-nothing the IndexedDB backend gets for free.
-				for (const kind of kinds) rows.set(recordKey(slot, kind), copy(blob));
-				writes += 1;
+				if (!appliedNow) {
+					for (const kind of kinds) rows.set(recordKey(slot, kind), copy(blob));
+					writes += 1;
+				}
 			} finally {
 				inFlight -= 1;
 			}
@@ -1200,17 +1582,30 @@ export function memorySaveBackend(): MemorySaveBackend {
 			return copy(rows.get(recordKey(slot, kind)) ?? null);
 		},
 		hold() {
-			gate = new Promise<void>((resolve) => {
-				openGate = resolve;
-			});
+			holdAll = true;
+			ensureGate();
+		},
+		hangNextWrite() {
+			hangNext += 1;
+			ensureGate();
+		},
+		hangNextWriteApplied() {
+			hangAppliedNext += 1;
+			ensureGate();
 		},
 		release() {
 			openGate?.();
 			gate = null;
 			openGate = null;
+			holdAll = false;
+			hangNext = 0;
+			hangAppliedNext = 0;
 		},
 		failNextWrite() {
 			failNext = true;
+		},
+		failNextRead() {
+			failRead = true;
 		},
 		async corruptVersion(slot, kind) {
 			const row = rows.get(recordKey(slot, kind)) as Record<string, unknown>;
