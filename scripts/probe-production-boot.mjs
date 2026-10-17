@@ -32,13 +32,16 @@ try {
 		const page = await browser.newPage();
 		watch(page, `production ${boot}`);
 		await page.goto(
-			gameUrl(origin, {
-				boot,
-				seed: 42,
-				voices: "formant",
-				"no-save": true,
-				"models-full": false,
-			}),
+			gameUrl(
+				origin,
+				{
+					seed: 42,
+					voices: "formant",
+					"no-save": true,
+					"models-full": false,
+				},
+				{ boot },
+			),
 		);
 		await bootedGame(page, 60000);
 		check(
