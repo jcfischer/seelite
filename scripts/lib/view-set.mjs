@@ -122,6 +122,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
 	720: "the terran ground and clouds across the horizon at station altitude and the flight boundary",
 	735: "a derelict's torn sections and exposed frame",
 	732: "dark derelict roster hull and tethered salvage",
@@ -679,7 +680,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [208, 199, 102, 101, 99, 200, 201, 207, 203],
+		covers: [208, 199, 102, 101, 99, 200, 201, 207, 203, 909],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -687,6 +688,32 @@ export const VIEWS = Object.freeze([
 			radii: 6,
 			sunAngleDeg: 150,
 			view: "chase",
+		},
+	},
+	{
+		name: "hull-chase-miner",
+		covers: [909],
+		what: "The Longwall miner's lifted study paints, in the courier's chase framing and light, beside the Bollard for the principal's paint decision.",
+		shot: {
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "miner",
+		},
+	},
+	{
+		name: "hull-chase-bollard",
+		covers: [909],
+		what: "The Bollard tug's lifted study paints, in the courier's chase framing and light, beside the courier and miner for the principal's paint decision.",
+		shot: {
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "tug",
 		},
 	},
 	{
@@ -1718,6 +1745,20 @@ export function validateRunViews(run, views = VIEWS) {
 		);
 }
 
+/** Select named canonical views without silently dropping an unknown request. */
+export function selectViews(names) {
+	if (names === null) return VIEWS;
+	const requested = names.split(",");
+	if (
+		new Set(requested).size !== requested.length ||
+		requested.some((name) => !VIEWS.some((v) => v.name === name))
+	)
+		throw new Error(
+			`Unknown, empty or repeated canonical view in --only ${names}`,
+		);
+	return VIEWS.filter((view) => requested.includes(view.name));
+}
+
 /**
  * Every declared view of every run, side by side, or an error.
  *
@@ -1835,6 +1876,14 @@ ${runs
 		)
 		.join("\n");
 
+	const heading =
+		views === VIEWS
+			? "Canonical view set"
+			: `Selected canonical views (${views.length} of ${VIEWS.length})`;
+	const selection =
+		views === VIEWS
+			? ""
+			: `<p>Selection: ${views.map((v) => esc(v.name)).join(", ")}</p>`;
 	return `<!doctype html>
 <meta charset="utf-8">
 <title>seelite canonical view set — seed ${SEED}</title>
@@ -1851,7 +1900,8 @@ ${runs
   th em { display:block; color:#5f6b7d; font-style:normal; margin-top:6px; font-size:12px; }
   img { display:block; width:100%; height:auto; background:#000; border:1px solid #1c2230; }
 </style>
-<h1>Canonical view set</h1>
+<h1>${heading}</h1>
+${selection}
 <p class="sub">Seed ${SEED}, ${VIEWPORT.width}×${VIEWPORT.height}, clock started at ${GAME_TIME_S}s and left running. Captured headed — every frame here is the renderer the player gets. Each camera is placed co-moving with its subject, which is what holds a framing; the clock is not stopped.</p>
 <table>
 <thead><tr><th scope="row"></th>${head}</tr></thead>

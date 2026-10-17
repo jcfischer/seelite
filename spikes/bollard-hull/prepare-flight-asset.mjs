@@ -1,8 +1,9 @@
 // The game's Bollard O4 (node #814): the approved export (#798, 26d6958),
 // Meshopt and lossless WebP, written to src/models/ (served hashed, #834). No
 // simplification, quantization or resize, so the shipped hull is the one the
-// principal approved: the written file's triangles are compared with the
-// approved export's as read, before `dedup` and `reorder` rewrite it, the way
+// principal approved: node #909 lifts only paint factors by #887's shared rule.
+// The written file's triangles are compared with the lifted approved export,
+// before `dedup` and `reorder` rewrite it, the way
 // Longwall B's are (`spikes/longwall-miner/prepare-flight-asset.mjs`).
 //
 //   node spikes/bollard-hull/prepare-flight-asset.mjs
@@ -18,6 +19,11 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { triangleSoup } from "../longwall-miner/triangle-soup.mjs";
+import { AUTHORED_HULL_ASSETS } from "../../scripts/lib/authored-hull-paint.mjs";
+import {
+	formatLiftRow,
+	liftAndVerifyAuthoredHull,
+} from "../../scripts/lib/authored-hull-prepare.mjs";
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready]);
 const io = new NodeIO()
 	.registerExtensions(ALL_EXTENSIONS)
@@ -28,6 +34,10 @@ const io = new NodeIO()
 const source = "spikes/bollard-hull/bollard-hull.glb";
 const target = "src/models/bollard-tug.glb";
 const document = await io.read(source);
+// Node #909: verify the map's measured luma, then apply #887's shared lift.
+// Before triangleSoup: it keys primitives by material factors as well as vertices.
+const asset = AUTHORED_HULL_ASSETS.find((a) => a.shipped === target);
+const lifted = await liftAndVerifyAuthoredHull(document, asset);
 const pixels = async (doc) =>
 	Promise.all(
 		doc
@@ -94,3 +104,4 @@ const sha256 = createHash("sha256")
 console.log(
 	`Verified the approved export's triangles, exact vertex attributes and texture pixels; ${target} is ${(await stat(target)).size} bytes (${((await stat(target)).size / 2 ** 20).toFixed(2)} MiB), sha256 ${sha256}.`,
 );
+for (const row of lifted) console.log(formatLiftRow(row));
