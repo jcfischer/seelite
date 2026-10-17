@@ -20,7 +20,7 @@ export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
 			"probe-production-boot.mjs",
-			"Builds and serves the production bundle, then verifies fresh Commander and direct boots render and clear loading without page errors.",
+			"Builds and serves the production bundle, then verifies fresh Commander, direct and full-model boots render and clear loading without page errors.",
 			["production bundle", "startup", "async imports", "model loading"],
 		),
 		entry(

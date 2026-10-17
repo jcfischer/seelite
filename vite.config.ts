@@ -86,6 +86,16 @@ export default defineConfig({
 	build: {
 		target: "es2022",
 		rollupOptions: {
+			output: {
+				// Startup awaits model loaders. Keep its dependencies out of this
+				// async chunk so lazy models can import shared helpers without
+				// waiting on the startup that is waiting for them (#1021).
+				onlyExplicitManualChunks: true,
+				manualChunks: (id) =>
+					id === resolve(import.meta.dirname, "src/main.ts")
+						? "game"
+						: undefined,
+			},
 			input: {
 				home: resolve(import.meta.dirname, "index.html"),
 				about: resolve(import.meta.dirname, "about/index.html"),

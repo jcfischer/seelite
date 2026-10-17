@@ -28,9 +28,14 @@ try {
 	});
 	const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
 	browser = await launchChromium();
-	for (const boot of ["overlay", "direct"]) {
+	for (const { boot, full } of [
+		{ boot: "overlay", full: false },
+		{ boot: "direct", full: false },
+		{ boot: "direct", full: true },
+	]) {
+		const label = `${boot}${full ? " full catalog" : ""}`;
 		const page = await browser.newPage();
-		watch(page, `production ${boot}`);
+		watch(page, `production ${label}`);
 		await page.goto(
 			gameUrl(
 				origin,
@@ -38,14 +43,14 @@ try {
 					seed: 42,
 					voices: "formant",
 					"no-save": true,
-					"models-full": false,
+					"models-full": full,
 				},
 				{ boot },
 			),
 		);
 		await bootedGame(page, 60000);
 		check(
-			`production ${boot} boots and clears model loading`,
+			`production ${label} boots and clears model loading`,
 			await page.evaluate(
 				() =>
 					window.__seelite.frames > 0 &&
