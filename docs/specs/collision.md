@@ -198,6 +198,18 @@ The box is centred on the ship's sim position. If a selected mesh's box is not
 centred on its origin, the build either carries the offset or shows the error
 is inside the 0.1 m rounding. A row decides which (§9.1.10).
 
+**A deployed cutter is a second ship primitive (#949 D3, #956 Q3–Q4, node
+#959).** The miner's cutter is a box in the ship's frame, `HULL_SPECS.miner.cutter`:
+±5.5 m across, −8.91…+2.09 m high, from the bow plane at 42.2 m to 52.8 m. While
+it is deployed, `shipPrimitives` puts it on the ship's list beside the hull box,
+and the sweep meets everything with both: rocks, stations, ships and
+canisters. Every impact names the part that met the surface, `hull` or
+`cutter` (`Impact.part`; `partA` and `partB` on a ship pair). Stowed, the list
+is the hull box alone. Whether the cutter is deployed is an input to the sweep,
+and Drill interaction (#920) owns where it comes from. What a cutter strike
+costs, and which side it bills, is #920's or the fiction map's.
+`tests/collision-cutter.test.ts` holds the rows.
+
 ### 2.4 What does not collide
 
 | Object | Collides? | Why |

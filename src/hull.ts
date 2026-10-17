@@ -111,6 +111,24 @@ export interface HullBoxCentre {
 }
 
 /**
+ * A hull's solid cutter at full feed, kilometres, in the ship's body frame
+ * (#949 D3, node #959): a second collision box ahead of the bow. Its rotor is a
+ * square `radiusKm` either side of the keel line, centred `downKm` below the
+ * ship's axis, and it reaches from the bow plane `bowKm` forward to
+ * `bowKm + feedTravelKm`.
+ *
+ * Whether it is deployed is an input to the sweep (`shipPrimitives` in
+ * `collision.ts`), not a fact about the hull — where that input comes from is
+ * Drill interaction's (#920).
+ */
+export interface HullCutter {
+	radiusKm: number;
+	downKm: number;
+	bowKm: number;
+	feedTravelKm: number;
+}
+
+/**
  * The vent slots every hull is described in (`flight-model.md` §3.4.1).
  *
  * **One vocabulary across the roster**, so a binding (§3.5) or a health factor
@@ -577,6 +595,9 @@ export interface HullSpec {
 	readonly env: HullEnvelope;
 	/** Where that box is centred in the ship's body frame (`HullBoxCentre`). */
 	readonly envCentre: HullBoxCentre;
+	/** The hull's solid cutter (`HullCutter`), on the one hull that carries
+	 *  one: the miner. Absent everywhere else. */
+	readonly cutter?: HullCutter;
 	/**
 	 * Mass, tonnes, and thrust, meganewtons — #26's D5, and the two numbers every
 	 * handling figure in `sim.ts` derives from.
@@ -971,6 +992,15 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		// goes red the day either figure moves.
 		env: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
 		envCentre: { rightKm: 0, upKm: 0, foreKm: 0 },
+		// The spike's figures (node #956's `CUTTER_KM`, after #949's `drill.ts`):
+		// rotor x ±5.5 m and y −8.91…+2.09 m, from the bow plane at 42.2 m — half
+		// the hull box — to bow + #803's 10.6 m feed travel, 52.8 m.
+		cutter: {
+			radiusKm: 0.0055,
+			downKm: 0.00341,
+			bowKm: 0.0422,
+			feedTravelKm: 0.0106,
+		},
 		massT: 215,
 		thrustMN: 215,
 		ventShares: {
