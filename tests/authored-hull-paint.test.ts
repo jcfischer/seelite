@@ -1,7 +1,7 @@
 /**
  * #887 — the authored hull paints, lifted for legibility.
  *
- * The finding is in the module's docstring: both authored hulls carry materials
+ * The finding is in the module's docstring: the registered hulls carry materials
  * authored for a viewer with a studio environment, and the game's baked sky lands
  * at `environmentIntensity` 0.15, so a paint at metalness 0.86 renders black except
  * where it mirrors the star. `hull-chase` reads the shipped courier at peak 252.21 /
@@ -17,9 +17,9 @@
  *    the study. Without this the lift could quietly repaint the recesses, the
  *    emitters and the pilot along with the hull, and the hull band would not see
  *    the difference — it masks the hull and its own emissives out.
- * 3. **Every paint in both files is classified.** A dark paint added by a later
+ * 3. **Every paint in each shipped file is classified.** A dark paint added by a later
  *    study is a red row here rather than an unexamined silhouette in the game.
- * 4. **The rule is safe on both assets.** No paint is brightened past
+ * 4. **The rule is safe on every registered asset.** No paint is brightened past
  *    `TINT_LUMA_CEILING`, no metalness is raised, and the study's tonal order
  *    among the lifted paints survives. This is the half that makes a scale chosen
  *    for a paint at 0.057 safe to apply to a name that also exists at 0.640.
@@ -117,6 +117,26 @@ const foldedInto = (
 };
 
 describe("the authored hull lift table", () => {
+	test("Bollard participates with its measured paint-wear map", () => {
+		const bollard = AUTHORED_HULL_ASSETS.find(
+			(asset) => asset.shipped === "src/models/bollard-tug.glb",
+		);
+		expect(bollard).toBeDefined();
+		expect(bollard?.liftedPaints).toEqual([
+			"dark-structure",
+			"machined-alloy",
+			"blue-grey-1",
+			"pale-steel-0",
+			"pale-steel-1",
+			"pale-steel-2",
+		]);
+		for (const name of bollard?.liftedPaints ?? [])
+			expect(bollard!.baseColorLuma[name]).toBe(0.4755434471582678);
+		expect(AUTHORED_HULL_PAINT_LIFT["pale-steel-2"]).toEqual(
+			AUTHORED_HULL_PAINT_LIFT["pale-steel-1"],
+		);
+	});
+
 	test("every rule lifts, caps below where it points, and is not a no-op", () => {
 		for (const [name, rule] of Object.entries(AUTHORED_HULL_PAINT_LIFT)) {
 			expect([name, rule.tintScale > 1]).toEqual([name, true]);
@@ -335,6 +355,25 @@ describe("the shipped hulls are the study, lifted", () => {
 });
 
 describe("the study's tonal order survives the lift", () => {
+	test("Bollard's pale-steel family does not reverse its diffuse order", async () => {
+		const asset = AUTHORED_HULL_ASSETS.find(
+			(a) => a.shipped === "src/models/bollard-tug.glb",
+		)!;
+		const { shipped } = await pair(asset);
+		const diffuse = ["pale-steel-0", "pale-steel-1", "pale-steel-2"].map(
+			(name) => {
+				const paint = shipped.get(name)!;
+				return (
+					tintLuma(paint.tint) *
+					asset.baseColorLuma[name] *
+					(1 - paint.metalness)
+				);
+			},
+		);
+		expect(diffuse[0]).toBeLessThanOrEqual(diffuse[1] + EPSILON);
+		expect(diffuse[1]).toBeLessThanOrEqual(diffuse[2] + EPSILON);
+	});
+
 	test("dark structure stays the darkest paint a hull is mostly made of", async () => {
 		const { shipped } = await pair(AUTHORED_HULL_ASSETS[0]);
 		const diffuse = (name: string) => {

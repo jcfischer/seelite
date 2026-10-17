@@ -4,6 +4,7 @@
  *   npm run dev                                  # in one shell
  *   npm run views                                # in another
  *   npm run views -- --label before              # name the run yourself
+ *   npm run views -- --only hull-chase,hull-chase-miner,hull-chase-bollard --out view-set/node-909
  *   open view-set/index.html
  *
  * A visual node posts a before/after against this sheet, and the principal says
@@ -54,7 +55,7 @@ import {
 	SEED,
 	SHOT_KINDS,
 	VIEWPORT,
-	VIEWS,
+	selectViews,
 	contactSheet,
 } from "./lib/view-set.mjs";
 import { requireChartSpot } from "./lib/chart-hover-spot.mjs";
@@ -76,7 +77,7 @@ import { levelsFile, writeRunLevels } from "./lib/levels-report.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
-/** `--out`, `--label` and `--quality`, both `--k v` and `--k=v`. Small enough to read here;
+/** `--out`, `--label`, `--quality` and `--only`, both `--k v` and `--k=v`. Small enough to read here;
  *  `probe-args.mjs` parses a different grammar for a different runner. */
 function arg(name, fallback) {
 	const argv = process.argv.slice(2);
@@ -115,7 +116,11 @@ function gitRef() {
 
 const REF = gitRef();
 const LABEL = arg("label", REF);
-const OUT = arg("out", "view-set");
+// Scoped captures are separate from full runs and explicitly labelled on the sheet.
+// Missing requested frames still refuse the sheet; unknown names refuse before boot.
+const ONLY = arg("only", null);
+const VIEWS = selectViews(ONLY);
+const OUT = arg("out", ONLY === null ? "view-set" : "view-set/selected");
 const QUALITY = arg("quality", null);
 if (QUALITY !== null && QUALITY !== "high" && QUALITY !== "low")
 	throw new Error(`--quality must be high or low, got ${QUALITY}`);
@@ -183,6 +188,7 @@ let currentSeed = null;
  * exactly like a whole one.
  */
 let currentSystem = null;
+let currentHull = "courier";
 /**
  * Set by a placer that writes world state — the duel's kill (#324 part d) — so
  * the next view boots on a world with no save, as the first boot does.
@@ -195,8 +201,16 @@ let currentSystem = null;
  * route, which opens no save store, and only then is the game loaded.
  */
 let worldWritten = false;
-async function ensureFixture(page, seed, system = null) {
-	if (currentSeed === seed && currentSystem === system && !worldWritten) return;
+async function ensureFixture(page, seed, system = null, hull = "courier") {
+	if (
+		currentSeed === seed &&
+		currentSystem === system &&
+		currentHull === hull &&
+		!worldWritten
+	)
+		return;
+	// Hull changes need a fresh Commander: a saved hull takes precedence over ?hull=.
+	if (currentHull !== hull) worldWritten = true;
 	if (worldWritten) {
 		await page.goto(workbenchUrl(SERVING, { "hud-gallery": true }), {
 			waitUntil: "load",
@@ -220,6 +234,7 @@ async function ensureFixture(page, seed, system = null) {
 	await page.goto(
 		gameUrl(SERVING, {
 			seed,
+			hull,
 			raider: "off",
 			system,
 			...MODEL_BOOT_PARAMS,
@@ -230,6 +245,21 @@ async function ensureFixture(page, seed, system = null) {
 		},
 	);
 	await bootedGame(page);
+	// Node #909: a saved courier must not stand in for a requested tug/miner.
+	// Compare the flown state and the drawn hull, including its authored install.
+	const flown = await page.evaluate(() => {
+		const g = window.__seelite;
+		const ship = g.nearScene.getObjectByName("ship");
+		return {
+			hull: g.commander.hull,
+			drawn: ship?.userData.hullId,
+			authored: ship?.userData.authored,
+		};
+	});
+	if (flown.hull !== hull || flown.drawn !== hull || !flown.authored)
+		throw new Error(
+			`capture: asked for authored ${hull}, got ${JSON.stringify(flown)}`,
+		);
 	if (system !== null) {
 		const booted = await page.evaluate(
 			() => window.__seelite.world.system.record.index,
@@ -244,6 +274,7 @@ async function ensureFixture(page, seed, system = null) {
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	currentSeed = seed;
 	currentSystem = system;
+	currentHull = hull;
 }
 
 /**
@@ -1218,7 +1249,7 @@ async function rebuildSheet(out) {
 	}
 	runs.sort((a, b) => (a.capturedAt < b.capturedAt ? -1 : 1));
 	await rm(join(out, "index.html"), { force: true });
-	await writeFile(join(out, "index.html"), contactSheet(runs));
+	await writeFile(join(out, "index.html"), contactSheet(runs, VIEWS));
 	return runs;
 }
 
@@ -1452,6 +1483,7 @@ try {
 				page,
 				view.shot.seed ?? SEED,
 				view.shot.system ?? null,
+				view.shot.hull ?? "courier",
 			);
 			await setView(page, view.shot.view);
 		} else {
@@ -1603,13 +1635,17 @@ const manifest = {
 	renderer,
 	seed: SEED,
 	quality: QUALITY ?? "default",
-	levelsFile: levelsFile(LABEL),
+	// The full-set tone report is deliberately absent from scoped captures.
+	levelsFile: ONLY === null ? levelsFile(LABEL) : undefined,
+	selectedViews: ONLY === null ? undefined : VIEWS.map((view) => view.name),
 	views: captured,
 };
 // A failed tone reading must not leave an older complete-looking sheet.
 await rm(join(OUT, "index.html"), { force: true });
-const toneReport = await writeRunLevels(manifest, OUT);
-console.log(`\n${toneReport.table}`);
+if (ONLY === null) {
+	const toneReport = await writeRunLevels(manifest, OUT);
+	console.log(`\n${toneReport.table}`);
+}
 await writeFile(
 	join(dir, "manifest.json"),
 	`${JSON.stringify(manifest, null, "\t")}\n`,
