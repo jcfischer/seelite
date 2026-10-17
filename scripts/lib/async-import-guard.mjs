@@ -1,7 +1,8 @@
 /**
  * A dynamic import waits for its target's top-level evaluation. A startup
  * chunk must therefore never be dynamically imported by itself or a static
- * dependency: awaiting that loader can leave both promises pending forever.
+ * dependency, including through a facade that statically imports it: awaiting
+ * that loader can leave both promises pending forever.
  * Check emitted chunks, not source imports: Rollup can create the back edge
  * when it folds a statically imported model into the awaiting entry (#1021).
  *
@@ -42,21 +43,32 @@ export function asyncImportGuard() {
 					.filter((item) => item.type === "chunk")
 					.map((chunk) => [chunk.fileName, chunk]),
 			);
-			for (const target of chunks.values()) {
-				if (!hasTopLevelAwait(this.parse(target.code))) continue;
-				const visited = new Set();
+			const closures = new Map();
+			const staticClosure = (root) => {
+				if (closures.has(root)) return closures.get(root);
+				const seen = new Set();
 				const visit = (name) => {
-					if (visited.has(name)) return;
-					visited.add(name);
-					const chunk = chunks.get(name);
-					if (!chunk) return;
-					if (chunk.dynamicImports.includes(target.fileName))
-						this.error(
-							`async startup import cycle: ${name} dynamically imports ${target.fileName}, which has top-level await and statically depends on it. Move the loader out of the async startup chunk or import it directly.`,
-						);
-					for (const dependency of chunk.imports) visit(dependency);
+					if (seen.has(name)) return;
+					seen.add(name);
+					for (const dependency of chunks.get(name)?.imports ?? [])
+						visit(dependency);
 				};
-				visit(target.fileName);
+				visit(root);
+				closures.set(root, seen);
+				return seen;
+			};
+			for (const target of chunks.values()) {
+				if (
+					!target.code.includes("await") ||
+					!hasTopLevelAwait(this.parse(target.code))
+				)
+					continue;
+				for (const name of staticClosure(target.fileName))
+					for (const lazy of chunks.get(name)?.dynamicImports ?? [])
+						if (staticClosure(lazy).has(target.fileName))
+							this.error(
+								`async startup import cycle: ${name} dynamically imports ${lazy}, which reaches unfinished ${target.fileName} through static imports. Move the loader out of the async startup chunk or import it directly.`,
+							);
 			}
 		},
 	};
