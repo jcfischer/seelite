@@ -4,6 +4,12 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-production-boot.mjs": [
+		"scripts/probe-production-boot.mjs",
+		"src/entry.ts",
+		"src/model-catalog.ts",
+		"scripts/lib/async-import-guard.mjs",
+	],
 	"probe-model-queue.mjs": [
 		"scripts/probe-model-queue.mjs",
 		"src/model-queue.ts",
@@ -516,6 +522,7 @@ const OWNERS = Object.freeze({
 });
 
 export const SMOKE_PROBES = Object.freeze([
+	"probe-production-boot.mjs",
 	"probe-boot.mjs",
 	"probe-live-cockpit.mjs",
 ]);

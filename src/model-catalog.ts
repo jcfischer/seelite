@@ -1,11 +1,14 @@
-/** Bundle models, one lazy loader per install. The queue is renderer-free;
- * this catalog joins loaders to page consumers without eager GLTF imports. */
+/** Bundle models, one loader per install. Only the cockpit is always needed
+ * at boot; every other loader stays lazy. */
+import { prepareCockpitModel } from "./cockpit-model";
 import type { ModelLoader } from "./model-progress";
 import type { HullId } from "./hull";
 
 export const modelLoaders = {
-	cockpit: async (p?: Parameters<ModelLoader>[0]) =>
-		(await import("./cockpit-model")).prepareCockpitModel(p),
+	// Main also imports cockpit-model statically. A dynamic import here can
+	// become an import of main's own unfinished top-level await in the bundle.
+	// Importing the function does not fetch the GLB; calling it still does.
+	cockpit: prepareCockpitModel,
 	coriolis: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./coriolis-flight")).prepareCoriolisModel(p),
 	courier: async (p?: Parameters<ModelLoader>[0]) =>

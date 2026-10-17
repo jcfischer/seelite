@@ -19,6 +19,11 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-production-boot.mjs",
+			"Builds and serves the production bundle, then verifies fresh Commander and direct boots render and clear loading without page errors.",
+			["production bundle", "startup", "async imports", "model loading"],
+		),
+		entry(
 			"probe-model-queue.mjs",
 			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot.",
 			[

@@ -27,7 +27,11 @@ async function buildFixture({ fixed = false, awaited = true } = {}) {
 		],
 	});
 	try {
-		return await build.generate({ format: "es" });
+		return await build.generate({
+			format: "es",
+			manualChunks: { main: ["main", "cockpit"], loader: ["loader"] },
+			onlyExplicitManualChunks: true,
+		});
 	} finally {
 		await build.close();
 	}
