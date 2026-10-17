@@ -72,9 +72,9 @@ measurements on both shipped hulls, and preservation of the previous builder on
 failure. Existing courier/tug, vents, muzzles, finish, resource teardown, model
 queue and interior-scheduler tests cover the surrounding contracts.
 
-The browser selector expands this diff to all probes because it changes shared
-ship geometry and measurement infrastructure. Under the ranger worker contract,
-only affected probes run here; the supervisor owns the broad final gate, PR,
+The final git-based browser selector requests 106 of 108 probes: smoke plus
+contracts reached through base/head dependencies. Under the ranger worker
+contract, only affected probes run here; the supervisor owns that final gate, PR,
 review and merge. No visual redesign or asset modification is intended. This is
 performance tuning, excluded from major changelog entries by `src/changelog.ts`.
 
