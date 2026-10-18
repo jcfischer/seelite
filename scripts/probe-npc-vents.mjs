@@ -24,6 +24,9 @@
  *   table: in a gun run the raider fires nearly every vent it has.
  * - **a hull no longer drawn loses its plumes**: the raider taken out of view,
  *   its set is gone and its points have left the scene.
+ *
+ * This is a default-layout probe (#381 D11): `v` is the view toggle in the
+ * shipped layout, and the setup reads the view back, so a dead key fails it.
  */
 import {
 	bootedGame,
