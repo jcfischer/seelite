@@ -89,7 +89,7 @@ away from generated trade a/b/c/d/e at seeds 3/5/21/12/1, in start systems
 24/95/147/54/90, with zero impacts. The Wheel gained 1.00969 km axially
 after launching. Each case checks the generated form; none mutates it.
 The host sandbox initially aborted Chromium before any checks ran; the same
-affected command passed outside the sandbox. These are partial browser runs.
+affected probe passed outside the sandbox. These are partial browser runs.
 
 `probe-collision` passed 35/35, including generated Wheel at world seed 42,
 system 3. Its hub is hit 170 m off-axis at 0.1 km/s: the ship bounces, survives,
@@ -105,9 +105,9 @@ Wheel tests also pass.
 
 The old seed-54 visual fixture now draws Ring rather than Coriolis and was
 42/44, with strobe-a reading zero at both viewports. It is not a Wheel result.
-This node scopes that probe to Wheel and does not repair Ring's mounting or
-claim its browser fixture is green. This observation is retained for the
-supervisor's review.
+Review round 2 restores this Ring fixture beside the Wheel, with every existing
+assertion still gating on both desktop and narrow viewports. It does not repair
+Ring's mounting or claim its browser fixture is green.
 
 ## Initial implementation headless gates
 
@@ -130,9 +130,46 @@ selection names 23. The worker contract leaves the full browser gate to the
 supervisor. Locally, `probe-traffic-engagement` passes 22/22 on the GPU lane
 (ANGLE Metal, Apple M1 Pro), including the armed return-fire row with zero
 impacts. `probe-raider-frame` also passes on that lane. Chromium aborted in
-the sandbox before any checks; the same affected commands ran outside it.
+the sandbox before any checks; the same affected probes ran outside it.
 This is affected coverage, not a full browser gate.
 
 The review pass's single full `npm test` run passed **6,496 tests, 0 failures**
 across 375 files in 695.58 seconds on this host. No implementation changes
 followed that run. The supervisor owns the final full browser gate.
+
+## Review round 2 verification
+
+The visual probe retains seed 54 (generated Ring) and adds seed 2 (generated
+Wheel). Each runs the same assertions on desktop and narrow viewports, plus
+the strobe-clock checks. Generated-form assertions identify both subjects;
+shader-link checks run once per system. No cabin, fixture floor, framing
+tolerance or production geometry changed in this round.
+
+On the unchanged parent head `f99653c`, overriding the probe URL to seed 54
+reproduced strobe-a at **0 px on both viewports**, with drive 0.95 at 0.05 s.
+That diagnostic run was 42/46: besides those two fixture failures, the two
+Wheel-subject assertions failed as expected because the override draws Ring.
+This is a comparison against the review pass's parent, not a passing or
+failing merge-base browser run. A separate `makeWorld(54)` measurement with
+the four-form pool draws Coriolis; with the five-form pool it draws Ring.
+
+The revised probe ran on the GPU lane (ANGLE Metal, Apple M1 Pro) and returned
+**90/92**, exit 1: Ring **44/46**, Wheel **46/46**. Ring's same two strobe-a
+failures remain merge-gating assertions, not reports or skips. The source of
+those failures is Ring's zero-pixel strobe contribution in the retained
+approach fixture; this round does not diagnose its mounting or repair another
+trade form. Logs: `/tmp/node-748-r2-ring-before.log` and
+`/tmp/node-748-r2-visuals-after.log`; the final rerun reproduced 90/92 in
+`/tmp/node-748-r2-visuals-final.log`.
+
+Selection was inspected before probing: the branch Git diff selects 109
+contracts, while diagnostic selection for the changed visual probe selects
+that probe alone. The worker ran only that affected probe; the supervisor
+owns the final full browser acceptance run.
+
+The 93 affected headless tests (game URL routing, script source contracts,
+station visuals and Wheel) pass. Typecheck, format and lint pass.
+
+This review pass's single full `npm test` run passed **6,496 tests, 0 failures**
+across 375 files in 695.92 seconds on this host. No implementation changes
+followed it. The restored Ring browser failures above remain unresolved.

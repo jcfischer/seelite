@@ -82,13 +82,13 @@ import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-/** All three station types in one system — the only way to compare three lit
- *  signatures under one lighting setup — each framable and fully lit at docking
- *  range. This fixture now names the Wheel (node #748); `probe-station.mjs`
- *  retains its own historical silhouette fixture and thresholds. */
-// Node #748: a generated Wheel beside a refinery and shipyard. The previous
-// seed 54 now draws Ring; its camera/cabin fixture is a separate form's work.
-const URL = gameUrl(ORIGIN, { seed: 2 }, { override: process.env.PROBE_URL });
+/** Each system holds all three roles for the lit-signature comparison. Keep
+ *  the existing Ring fixture beside the Wheel: adding a form must not remove
+ *  another pooled form's demonstrated failures from the gate (node #748). */
+const FIXTURES = [
+	{ seed: 54, formId: "b", name: "Ring" },
+	{ seed: 2, formId: "e", name: "Wheel" },
+];
 
 const VIEWPORTS = [
 	{ name: "desktop", width: 1100, height: 720 },
@@ -129,9 +129,8 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
-// The program scan below runs once, not once per viewport: a program is built
-// from a material, not from a window size.
-let scannedPrograms = false;
+// Scan each system's materials once, not once per viewport.
+const scannedPrograms = new Set();
 
 /**
  * The names the role-light difference hides — §5's own fixtures plus the two
@@ -482,13 +481,27 @@ const measure = (page, bodyId, type) =>
 		[bodyId, GRID, UNRULED_NAMES, type],
 	);
 
-for (const viewport of VIEWPORTS) {
+for (const viewport of FIXTURES.flatMap((fixture) =>
+	VIEWPORTS.map((viewport) => ({
+		...viewport,
+		...fixture,
+		formName: fixture.name,
+		name: `${fixture.name} ${viewport.name}`,
+	})),
+)) {
 	const page = await browser.newPage({
 		viewport: { width: viewport.width, height: viewport.height },
 	});
 	watch(page);
 	await installViewPlacement(page);
-	await page.goto(URL, { waitUntil: "load" });
+	await page.goto(
+		gameUrl(
+			ORIGIN,
+			{ seed: viewport.seed },
+			{ override: process.env.PROBE_URL },
+		),
+		{ waitUntil: "load" },
+	);
 	await bootedGame(page);
 	await page.evaluate(() => {
 		const game = window.__seelite;
@@ -515,8 +528,8 @@ for (const viewport of VIEWPORTS) {
 	const allThree = ["trade", "shipyard", "refinery"].every((t) => byType[t]);
 	check(`${viewport.name}: the system holds all three station types`, allThree);
 	check(
-		`${viewport.name}: the generated trade subject is the Wheel`,
-		stations.find((s) => s.type === "trade")?.formId === "e",
+		`${viewport.name}: the generated trade subject is the ${viewport.formName}`,
+		stations.find((s) => s.type === "trade")?.formId === viewport.formId,
 	);
 	if (!allThree) {
 		await page.close();
@@ -595,8 +608,8 @@ for (const viewport of VIEWPORTS) {
 	 * makes the rock's program findable by name rather than assumed to be in
 	 * the pile.
 	 */
-	if (!scannedPrograms) {
-		scannedPrograms = true;
+	if (!scannedPrograms.has(viewport.seed)) {
+		scannedPrograms.add(viewport.seed);
 		const programs = await page.evaluate(() => {
 			const renderer = window.__seelite.renderer;
 			const gl = renderer.getContext();
@@ -780,13 +793,21 @@ for (const viewport of VIEWPORTS) {
 }
 
 // --- 4: the strobes flash, on the game clock ---------------------------------
-{
+for (const fixture of FIXTURES) {
+	console.log(`\n[${fixture.name}] strobe clock checks`);
 	const page = await browser.newPage({
 		viewport: { width: 1100, height: 720 },
 	});
 	watch(page);
 	await installViewPlacement(page);
-	await page.goto(URL, { waitUntil: "load" });
+	await page.goto(
+		gameUrl(
+			ORIGIN,
+			{ seed: fixture.seed },
+			{ override: process.env.PROBE_URL },
+		),
+		{ waitUntil: "load" },
+	);
 	await bootedGame(page);
 	await page.evaluate(() => {
 		const game = window.__seelite;
