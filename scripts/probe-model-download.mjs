@@ -44,9 +44,12 @@ const ORIGIN = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
 );
 const SEED = 42;
+// The Retry race needs two boot GLBs. Keep hull/Traffic cases on SEED;
+// the boot fixture must draw a Coriolis after the trade pool grows.
+const BOOT_SEED = 3;
 const PLAYER_URL = gameUrl(
 	ORIGIN,
-	{ seed: SEED, voices: "formant", raider: "off" },
+	{ seed: BOOT_SEED, voices: "formant", raider: "off" },
 	{ boot: null },
 );
 const DIRECT_URL = gameUrl(ORIGIN, {
@@ -54,7 +57,7 @@ const DIRECT_URL = gameUrl(ORIGIN, {
 	"interiors-full": false,
 	"shipyards-full": false,
 	"refineries-full": false,
-	seed: SEED,
+	seed: BOOT_SEED,
 	voices: "formant",
 	raider: "off",
 });

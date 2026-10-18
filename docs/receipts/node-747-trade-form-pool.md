@@ -86,3 +86,36 @@ contract. The supervisor owns the fresh full-suite result on the committed head.
 
 Typecheck, production build, format and lint gates passed. No production code
 changed afterward; subsequent changes are prose and the test fixture above.
+
+## Probe repair pass (2026-10-18)
+
+At `e2248588`, the two reported blockers reproduce alone on the GPU lane
+(ANGLE Metal, Apple M1 Pro): light-rig 11/12, model-download 23/24.
+Pooling changed both probes' subjects, rather than the lighting or boot law:
+
+- Seed 47 now draws Assembly. At eight silhouette radii its sparse structure
+  contributes only 354–366 mask pixels, below light-rig's existing `>500`
+  sampling floor. Four radii gives 1,290–1,434 pixels and 12/12 checks. The
+  captured frame was opened to check the framing. Every assertion and threshold
+  is unchanged. Deliberately reflecting the bake or uploading its rows upside
+  down still fails the orientation check (11/12 for each); both temporary
+  production edits were restored, then the original probe rerun.
+- Seed 42 now draws Assembly too, so its procedural exterior needs no GLB and
+  only the cockpit blocks boot. The download race's `heldFirst >= 2` therefore
+  fails with one held model. Boot/download arms now use generated Coriolis
+  seed 3, restoring two actual held boot models and 24/24 checks. Background
+  hull/Traffic arms keep seed 42. A headless fixture row reads the probe's boot
+  seed and checks `bootModelIds(makeWorld(seed).system, null)`; it fails at
+  seed 42 and passes at seed 3.
+
+The additional `probe-station` 60 km failure is inherited. It was reproduced
+on this branch (15 pixels, 32/33) and on an archived copy of merge base
+`d95332acb5a20d3704a91823e95d20a91422023f` (16 pixels, 32/33), on the same
+host/GPU lane. Its `>20` floor is unchanged. The other five station probes
+selected by the runner's `probe-station` substring filter passed. These are
+scoped runs, not a full browser-suite pass. No production code changes ship
+in this repair.
+
+Repair validation: 99 affected headless tests pass; typecheck, format and lint
+pass. The required single full `npm test` run passes **6,488 tests, 0 failures**
+across 375 files (697.84 s).
