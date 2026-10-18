@@ -15,6 +15,28 @@
 
 import type { Angular } from "./sim";
 
+/** Whether a lock was asked for; engines without the method ask for nothing. */
+export function requestLock(el: {
+	requestPointerLock?: () => unknown;
+}): boolean {
+	if (typeof el.requestPointerLock !== "function") return false;
+	// **A refusal is read, not thrown** — it is the ordinary case, not the
+	// exceptional one: Chrome holds out after the player's own Escape and
+	// past a rate limit whatever the reason, a window that is not the key
+	// window cannot be locked at all, and Safari refuses outright without a
+	// gesture it may or may not have just seen. Dropping the promise made
+	// every refused click an unhandled rejection, which surfaces as a page
+	// error — which is why `probe-gun-feedback.mjs` had to stub this call
+	// out to keep its own click real. **And the promise is not assumed:**
+	// the returning form of this call is not universal, and on an engine
+	// that hands back `undefined` a `.catch` taken straight off it is the
+	// very uncaught error this line exists to remove. TypeScript cannot see
+	// that, because its own `lib.dom` declares the Promise. The retry is the
+	// next click, which is where we are standing.
+	void Promise.resolve(el.requestPointerLock()).catch(() => {});
+	return true;
+}
+
 /** Radians a second of rate one pixel of pointer movement asks for. */
 export const MOUSE_RAD_PER_PX = 0.0022;
 
