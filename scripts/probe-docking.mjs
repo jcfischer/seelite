@@ -274,6 +274,8 @@ async function fly(setup) {
 			if (!after) return { noSnapshot: true, id };
 			return {
 				id,
+				formId: station.formId,
+				systemIndex: g.world.system.record.index,
 				spinRpm: station.spinRpm,
 				elapsed,
 				cleared: cleared.id !== null,
@@ -367,7 +369,7 @@ function failedEntryUnderGate(what, run) {
 console.log("\n§9.2.3 a correct profile docks:");
 const good = await fly({ ...BASE, computer: true });
 console.log(
-	`  ${good.id} at ${good.spinRpm.toFixed(2)} rpm: docked=${good.docked} ` +
+	`  system ${good.systemIndex} ${good.id}/${good.formId} at ${good.spinRpm.toFixed(2)} rpm: docked=${good.docked} ` +
 		`after ${good.elapsed.toFixed(1)} s of sim time, ` +
 		`crossing at ${good.entrySpeedKms?.toFixed(4) ?? "?"} km/s ` +
 		`against a ${tolerances.gateKms} km/s gate`,
@@ -1563,7 +1565,7 @@ check(
 );
 
 // Node #745: fly generated refineries in four systems, one page per case;
-// node #746 adds the shipyard's three forms, and node #747 trade a–d,
+// node #746 adds the shipyard's three forms, and nodes #747–#748 trade a–e,
 // each in its own start system.
 // Seeds pin every pooled form; never mutate a station's drawn form in place.
 // The approach, berth reservation and launch all go through Game's protocol.
@@ -1571,7 +1573,8 @@ for (const [type, seed, formId] of [
 	["trade", 3, "a"],
 	["trade", 5, "b"],
 	["trade", 21, "c"],
-	["trade", 1, "d"],
+	["trade", 12, "d"],
+	["trade", 1, "e"],
 	["refinery", 1, "a"],
 	["refinery", 28, "b"],
 	["refinery", 2, "c"],

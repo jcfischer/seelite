@@ -157,6 +157,31 @@ afterAll(() => {
 });
 
 describe("station proxy budget (collision.md §9.1.11)", () => {
+	test("the Wheel turns both rims and its spokes, leaving the gaps between them open", () => {
+		const proxy = stationProxy("trade", "e", 0, 0)!;
+		expect(proxy).not.toBeNull();
+		expect(proxy.static).toEqual([]);
+		for (const z of [-0.16, 0.16]) {
+			for (let i = 0; i < 4; i++) {
+				const theta = (i * Math.PI) / 2;
+				for (const r of [0.5, 0.9])
+					expect(
+						proxyContains(
+							proxy.spinning,
+							r * Math.cos(theta),
+							r * Math.sin(theta),
+							z,
+							0,
+						),
+					).toBe(true);
+			}
+			// Between spokes and well inside the rims: an envelope over the
+			// whole disc would pass vertex containment but falsely close this.
+			expect(proxyContains(proxy.spinning, 0.4, 0.4, z, 0)).toBe(false);
+		}
+		expect(proxyContains(proxy.spinning, 0.9, 0, 0, 0)).toBe(false);
+	});
+
 	test("the trade Assembly's proxy reads the assembly seed, cell by cell", () => {
 		const shapes = new Set<string>();
 		for (const seed of ASSEMBLY_SEEDS) {
@@ -342,6 +367,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			"trade/b": 0.016,
 			"trade/c": 0.016,
 			"trade/d": 0.016,
+			"trade/e": 0.016,
 			"shipyard/a": 0.0007,
 			"shipyard/b": 0.0007,
 			"shipyard/c": 0.0007,

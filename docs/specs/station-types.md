@@ -128,7 +128,7 @@ Every other row names the section that owns it, for the same reason.
 | Exclusives → §4.1, §5.2 | — | fuel scoops, mining laser; contraband if `blackMarket` | hulls, military laser, energy unit | **none yet**; not a fence until it trades |
 | Law → §5.1, §5.5 | hostile odds ×1.0 | ×2.0 | ×0.5 + scan | Wanted-only berth (D5); witnesses nothing (D10) |
 | Docking → §6 | rotating slot | pad | rotating slot | pad — **closed to every pilot** until it has a market |
-| Silhouette → §7 | four forms, drawn per system (§7.1); Wheel follows separately | four forms, drawn per system (§7.1) | three forms, drawn per system (§7.1) | five forms, Salvage (E) selected |
+| Silhouette → §7 | five forms, drawn per system (§7.1) | four forms, drawn per system (§7.1) | three forms, drawn per system (§7.1) | five forms, Salvage (E) selected |
 
 <!-- glossary-ignore: slot -->
 <!-- glossary-ignore: pad -->
@@ -764,8 +764,8 @@ Every added member owes a collision proxy, macro fixtures,
 and its existing per-form budget, interior, corridor and light rows. Report
 which canonical views move with `scripts/measure-station-forms.ts`.
 
-**The trade pool is [a, b, c, d]** (node #747): Coriolis, Ring, Drum and
-Assembly, drawn uniformly in form-id order. The Wheel follows separately.
+**The trade pool is [a, b, c, d, e]** (nodes #747–#748): Coriolis, Ring, Drum,
+Assembly and Wheel, drawn uniformly in form-id order.
 Every form holds the unchanged trade aperture, bay and berth catalogue.
 The Ring's hub grows to hold the bay and its mouth moves onto the shared
 plane; the Drum's forward cap and mouth move onto that plane and gain
@@ -773,7 +773,11 @@ approach-facing windows. Assembly's collision proxy reads its own seeded
 cell plan, keeps its spine static and its hub spinning, and its hub clutter
 now turns with the hub. Service rails and tip masts mount on its planted
 spine under industrial finishes. The pooling ruling waives another visual
-sign-off; these repairs are verified by the existing form rows.
+sign-off; these repairs are verified by the existing form rows. The Wheel's
+hub front extends to the shared trade plane; its bay is measured against
+`hub`, because its named `core` is the finished rim. Both rims, spokes, hub,
+radiators and aft mast spin with its proxy. Industrial finishes add a service
+main and beacon masts on the finished rim's forward face.
 
 **The refinery pool is [a, b, c, d]** (node #745): Warren, Collar, Spar and
 Works. All use the refinery's unchanged aperture plane and berth catalogue.
@@ -798,7 +802,6 @@ the arc's inner face, and its welding arc out of the slip onto a slip-head.
 Both gain macro fixtures on their static frames. No principal viewing of these
 repaired meshes is recorded; the checks verify their budgets, corridors,
 fixtures and docking, not their appearance.
-Trade still flies **A** while its pool node is implemented.
 The outpost is not drawn: it keeps `OUTPOST_FORM` **E**, the fiction's Salvage
 (#490, #518), placed in lawless systems since #491. The Works and Cluster
 were originally selected on 2026-09-06; the Salvage replaced the Cluster on

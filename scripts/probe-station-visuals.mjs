@@ -84,10 +84,11 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /** All three station types in one system — the only way to compare three lit
  *  signatures under one lighting setup — each framable and fully lit at docking
- *  range. See `probe-station.mjs`'s note on this constant for the re-pick
- *  criterion and for a known flake in that probe: the two share the fixture and
- *  must share the seed. */
-const URL = gameUrl(ORIGIN, { seed: 54 }, { override: process.env.PROBE_URL });
+ *  range. This fixture now names the Wheel (node #748); `probe-station.mjs`
+ *  retains its own historical silhouette fixture and thresholds. */
+// Node #748: a generated Wheel beside a refinery and shipyard. The previous
+// seed 54 now draws Ring; its camera/cabin fixture is a separate form's work.
+const URL = gameUrl(ORIGIN, { seed: 2 }, { override: process.env.PROBE_URL });
 
 const VIEWPORTS = [
 	{ name: "desktop", width: 1100, height: 720 },
@@ -507,11 +508,16 @@ for (const viewport of VIEWPORTS) {
 		window.__seelite.world.system.contents.stations.map((s) => ({
 			id: s.id,
 			type: s.type,
+			formId: s.formId,
 		})),
 	);
 	const byType = Object.fromEntries(stations.map((s) => [s.type, s.id]));
 	const allThree = ["trade", "shipyard", "refinery"].every((t) => byType[t]);
 	check(`${viewport.name}: the system holds all three station types`, allThree);
+	check(
+		`${viewport.name}: the generated trade subject is the Wheel`,
+		stations.find((s) => s.type === "trade")?.formId === "e",
+	);
 	if (!allThree) {
 		await page.close();
 		continue;

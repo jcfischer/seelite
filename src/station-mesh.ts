@@ -5854,7 +5854,8 @@ const WHEEL = Object.freeze({
 	wheelZKm: 0.16,
 	hubHalfKm: 0.175,
 	collarHalfKm: 0.2,
-	hubFrontKm: 0.26,
+	// The flown mouth is the role's plane; only the hub's front extends.
+	hubFrontKm: STATION_GEOMETRY.trade.aperturePlaneKm,
 	hubAftKm: -0.24,
 	/** A spoke's half-extent along the axis, and across it. */
 	spokeHalfKm: 0.026,
@@ -6096,26 +6097,28 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 		barrel(z + 0.02, collar),
 		barrel(z + 0.04, hub),
 	];
-	group.add(
-		shell(
-			[
-				barrel(WHEEL.hubAftKm, hub * 0.7),
-				barrel(WHEEL.hubAftKm + 0.02, hub),
-				...collarAt(aft),
-				...collarAt(fore),
-				// No taper at the cap: the bay runs to the mouth at full section,
-				// and a cap drawn in to 0.91 let its corners out over the last 6 m
-				// (sage, #334 round 1). `the hub contains the bay` holds it.
-				barrel(WHEEL.hubFrontKm - 0.03, hub),
-				barrel(WHEEL.hubFrontKm, hub),
-			],
-			plainMaterial(0x8b95a0, 0.6, 0.5),
-			"hub",
-			20,
-			true,
-			apertureCut("trade"),
-		),
+	const hubShell = shell(
+		[
+			barrel(WHEEL.hubAftKm, hub * 0.7),
+			barrel(WHEEL.hubAftKm + 0.02, hub),
+			...collarAt(aft),
+			...collarAt(fore),
+			// No taper at the cap: the bay runs to the mouth at full section,
+			// and a cap drawn in to 0.91 let its corners out over the last 6 m
+			// (sage, #334 round 1). `the hub contains the bay` holds it.
+			barrel(WHEEL.hubFrontKm - 0.03, hub),
+			barrel(WHEEL.hubFrontKm, hub),
+		],
+		plainMaterial(0x8b95a0, 0.6, 0.5),
+		"hub",
+		20,
+		true,
+		apertureCut("trade"),
 	);
+	const hubMember = new THREE.Group();
+	hubMember.name = "hub-member";
+	hubMember.add(hubShell);
+	group.add(hubMember);
 	group.add(buildAperture("trade", fixtures, WHEEL.hubFrontKm, berthSeed));
 
 	// Paired ports along the finished rim's fore face, the face the approach sees.
@@ -6131,15 +6134,11 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 			);
 		}),
 	);
-	// On the same face, on the rim's centre line where no port stands.
-	group.add(
+	// The hub turns with the rims. Its forward cap keeps both strobes in
+	// the cockpit's narrow approach view, where the outer rim can leave it.
+	hubMember.add(
 		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			const theta = Math.PI / 4;
-			position.set(
-				side * Math.cos(theta) * centre,
-				side * Math.sin(theta) * centre,
-				fore + width / 2,
-			);
+			position.set(side * hub * 0.85, 0, WHEEL.hubFrontKm);
 		}),
 	);
 	// Clutter on the hub barrel between the collars, far inside the outline.

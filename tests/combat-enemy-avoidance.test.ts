@@ -667,6 +667,11 @@ describe("a ship fighting beside a station does not fly into it, under all three
 					regime: "cruise",
 					avoid: true,
 					hull,
+					// This is the hull-handling axis on the historical Coriolis,
+					// as the historical corpus above is. Pooling must not replace
+					// both its solid and its reach-derived initial placement.
+					// The per-form rows above keep their original systems/bearings.
+					tradeForm: "a",
 				}),
 			);
 			expect([hull, struck(runs)]).toEqual([hull, 0]);
