@@ -36,6 +36,7 @@ import {
 	VIEWS,
 	contactSheet,
 	malformedShots,
+	selectViews,
 	uncoveredLevers,
 } from "../scripts/lib/view-set.mjs";
 
@@ -75,6 +76,42 @@ const fullRun = (
 });
 
 describe("the view set itself", () => {
+	test("scoped capture names existing views in canonical order and refuses typos", () => {
+		expect(
+			selectViews("hull-chase-bollard,hull-chase,hull-chase-miner").map(
+				(v) => v.name,
+			),
+		).toEqual(["hull-chase", "hull-chase-miner", "hull-chase-bollard"]);
+		expect(selectViews(null)).toBe(VIEWS);
+		for (const names of ["", "hull-chase,", "typo", "hull-chase,hull-chase"])
+			expect(() => selectViews(names)).toThrow();
+	});
+
+	test("the authored paint comparison puts miner and Bollard beside courier", () => {
+		const start = VIEWS.findIndex((v) => v.name === "hull-chase");
+		const comparison = VIEWS.slice(start, start + 3);
+		expect(
+			comparison.map((v) => [
+				v.name,
+				(v.shot as { hull?: string }).hull ?? "courier",
+			]),
+		).toEqual([
+			["hull-chase", "courier"],
+			["hull-chase-miner", "miner"],
+			["hull-chase-bollard", "tug"],
+		]);
+		for (const view of comparison) {
+			expect(view.covers).toContain(909);
+			expect(view.shot).toMatchObject({
+				kind: "body-offset",
+				body: "largest-planet",
+				radii: 6,
+				sunAngleDeg: 150,
+				view: "chase",
+			});
+		}
+	});
+
 	/**
 	 * **This replaces an ordering rule, and the reversal is the point.**
 	 *
@@ -126,7 +163,7 @@ describe("the view set itself", () => {
 		// formatter decides to wrap, and whitespace after `(` is exactly the kind
 		// of change this row must stay silent about.
 		expect(loop).toMatch(
-			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,?\s*\);/,
+			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",?\s*\);/,
 		);
 		// And no placer navigates on a fixture of its own any more. `PLACERS` is
 		// the object the loop dispatches through, so a `shot.seed` read inside it
@@ -185,7 +222,7 @@ describe("the view set itself", () => {
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
-		expect(VIEWS.length).toBe(73);
+		expect(VIEWS.length).toBe(75);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -736,6 +773,23 @@ describe("node #754 horizon views", () => {
 });
 
 describe("the contact sheet", () => {
+	test("a scoped sheet declares its selection and still requires every selected frame", () => {
+		const views = VIEWS.filter((v) => v.covers.includes(909));
+		const run = fullRun("paint");
+		run.views = run.views.filter((v) =>
+			views.some((row) => row.name === v.name),
+		);
+		const html = contactSheet([run], views);
+		expect(html).toContain("Selected canonical views (3 of 75)");
+		expect(html).toContain(
+			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
+		);
+		run.views.pop();
+		expect(() => contactSheet([run], views)).toThrow(
+			/missing hull-chase-bollard/,
+		);
+	});
+
 	test("renders every declared view of every run", () => {
 		const html = contactSheet([fullRun("before"), fullRun("after")]);
 		for (const view of VIEWS) {
@@ -763,7 +817,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–29.4s");
+		expect(html).toContain("· clock 0.6–30.2s");
 		expect(html).not.toContain("pinned");
 	});
 

@@ -146,9 +146,12 @@ describe("domain tags (#948 D1)", () => {
 		]).toEqual([39, 40, 41, 42]);
 		expect(DOMAIN.MODULE_STOCK).toBe(37);
 		expect(DOMAIN.NEBULA).toBe(38);
-		const older = Object.entries(DOMAIN)
-			.filter(([name]) => !name.startsWith("ASTEROID_"))
-			.map(([, tag]) => tag as number);
+		// Later appended domains are valid. "Older" is the prefix before
+		// the first asteroid tag, not every non-asteroid tag ever added.
+		const older = Object.values(DOMAIN).slice(
+			0,
+			Object.keys(DOMAIN).indexOf("ASTEROID_FIELD_ROLL"),
+		);
 		expect(Math.max(...older)).toBe(38);
 	});
 });

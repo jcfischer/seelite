@@ -108,6 +108,8 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:enter::press → panel.activate @ flight/instrument/console/modal cockpit/chase requests",
 	"key:f1::press → view.reference @ flight/instrument/console/modal cockpit/chase -",
 	"key:f2::press → view.photo @ flight/instrument/console/modal cockpit/chase -",
+	"key:f7::press → fight.launchMissile @ flight/instrument/console/modal cockpit/chase -",
+	"key:f8::press → fight.ecm @ flight/instrument/console/modal cockpit/chase -",
 	"key:f::press → fight.faceTarget @ flight/instrument/console/modal cockpit/chase -",
 	"key:g::press → fight.targetPrevious @ flight/instrument/console/modal cockpit/chase -",
 	"key:h::press → perf.atmosphere @ flight/instrument/console/modal cockpit/chase - perf",

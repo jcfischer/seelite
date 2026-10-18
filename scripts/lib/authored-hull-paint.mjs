@@ -1,7 +1,8 @@
 /**
  * The authored hull paints, lifted for legibility (node #887).
  *
- * Both authored hulls — the O4 courier (#812) and the Longwall B miner (#815) —
+ * The registered hulls — O4 courier (#812), Longwall B miner (#815), and
+ * Bollard O4 tug (#814, lifted by node #909) —
  * carry the study's own materials, and each study was lit for its own viewer,
  * where a studio environment gives a metal something to reflect. The game gives
  * a hull the star, a hemisphere, a camera-side fill, and a baked sky applied at
@@ -26,7 +27,7 @@
  *
  * ## Why a scale and a cap, not a target figure
  *
- * The two assets share paint *names* and not paint values: the courier's
+ * These assets share paint *names* and not paint values: the courier's
  * `machined-alloy` is a mapped 0.390 at metalness 0.86, the miner's is an
  * unmapped 0.380 at 0.90, and the miner's `pale-steel-0` is a mapped **0.640**
  * that needs no lifting at all. An absolute target would repaint the bright one
@@ -70,6 +71,8 @@ export const AUTHORED_HULL_PAINT_LIFT =
 			"brushed-rail": Object.freeze({ tintScale: 1.8, metalnessCap: 0.35 }),
 			"pale-steel-0": Object.freeze({ tintScale: 1.25, metalnessCap: 0.35 }),
 			"pale-steel-1": Object.freeze({ tintScale: 1.25, metalnessCap: 0.35 }),
+			// Bollard's third steel tone: the same family rule, with tint ceiling.
+			"pale-steel-2": Object.freeze({ tintScale: 1.25, metalnessCap: 0.35 }),
 			// The four body tones, one scale so the family keeps its own steps.
 			"blue-grey-0": Object.freeze({ tintScale: 2.2, metalnessCap: 0.35 }),
 			"blue-grey-1": Object.freeze({ tintScale: 2.2, metalnessCap: 0.35 }),
@@ -108,9 +111,8 @@ export const UNLIFTED_PAINTS = /** @type {Readonly<Record<string, string>>} */ (
 		"amber-lamp": "an emitter: its own emissive carries it, not its albedo",
 		"amber-work-lights": "an emitter",
 		"cyan-display": "an emitter: a screen with a live source",
-		"canopy-glass": "glass at alpha 0.38, which reflects rather than diffuses",
-		"service-ochre":
-			"the accent stripe, already at 0.550 linear and metalness 0.37",
+		"canopy-glass": "glass, which reflects rather than diffuses",
+		"service-ochre": "the authored ochre accent stripe, at metalness 0.37",
 		"pilot-suit": "a person, not a hull",
 		"pilot-helmet": "a person",
 		"pilot-visor": "a person's visor",
@@ -135,7 +137,8 @@ export const UNLIFTED_PAINTS = /** @type {Readonly<Record<string, string>>} */ (
  *
  * `baseColorLuma` records the mean linear luma of each of those paints' base colour
  * maps — **0.4466** for the courier's one `steel-wear`, and **1** where the Longwall B
- * carries no map at all. It is recorded rather than measured at build time because
+ * carries no map at all; Bollard's `paint-wear` measures **0.4755434471582678**.
+ * It is recorded rather than inferred afresh at build time because
  * the lift's brightness depends on it, and a brightness that moves because a texture
  * was re-authored is a look that changed without anyone deciding it. Each prepare
  * script measures the pixels and refuses to write the file if the measurement has
@@ -199,6 +202,31 @@ export const AUTHORED_HULL_ASSETS = Object.freeze([
 				"pale-steel-0": 0.4755,
 				"pale-steel-1": 0.4755,
 				"blue-grey-1": 0.4755,
+			})
+		),
+	}),
+	Object.freeze({
+		study: "spikes/bollard-hull/bollard-hull.glb",
+		shipped: "src/models/bollard-tug.glb",
+		prepare: "spikes/bollard-hull/prepare-flight-asset.mjs",
+		liftedPaints: Object.freeze([
+			"dark-structure",
+			"machined-alloy",
+			"blue-grey-1",
+			"pale-steel-0",
+			"pale-steel-1",
+			"pale-steel-2",
+		]),
+		// Node #909: every lifted paint multiplies the study's `paint-wear`.
+		// textureMeanLuma measured 0.4755434471582678 linear on the approved GLB.
+		baseColorLuma: /** @type {Readonly<Record<string, number>>} */ (
+			Object.freeze({
+				"dark-structure": 0.4755434471582678,
+				"machined-alloy": 0.4755434471582678,
+				"blue-grey-1": 0.4755434471582678,
+				"pale-steel-0": 0.4755434471582678,
+				"pale-steel-1": 0.4755434471582678,
+				"pale-steel-2": 0.4755434471582678,
 			})
 		),
 	}),

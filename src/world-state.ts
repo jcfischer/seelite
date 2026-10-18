@@ -42,6 +42,13 @@ import {
 } from "./carrier-key";
 import { type DeficitMap, parseDeficits } from "./deficits";
 import {
+	type DepositState,
+	canonicalDeposits,
+	compactDeposits,
+	emptyDeposits,
+	parseDeposits,
+} from "./deposit-state";
+import {
 	DERELICT_EARLIEST_LOSS_S,
 	DERELICT_FITTINGS,
 	DERELICT_MAX_CONTAINERS,
@@ -506,6 +513,8 @@ export function withDeathWreck(
  * `(systemIndex, localCarrierId)` pair and gets its galaxy from the container.
  */
 export interface GalaxyEnvelope {
+	/** Sparse rock debits and expiring survey facts; absent on disk means untouched. */
+	deposits: DepositState;
 	deathWreck?: DeathWreckRow;
 	galaxyIndex: number;
 	objective: Record<CarrierKey, ObjectiveDelta>;
@@ -544,6 +553,7 @@ const ENVELOPE_DOMAINS = [
 	"legalStatus",
 	"derelicts",
 	"deathWreck",
+	"deposits",
 ] as const;
 
 /**
@@ -555,6 +565,7 @@ const ENVELOPE_DOMAINS = [
 const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set([
 	"derelicts",
 	"deathWreck",
+	"deposits",
 ]);
 
 const WORLD_FIELDS = [
@@ -568,6 +579,7 @@ const WORLD_FIELDS = [
 
 export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
 	galaxyIndex,
+	deposits: emptyDeposits(),
 	objective: {},
 	episodes: {},
 	knowledge: {},
@@ -2119,7 +2131,11 @@ export const compactWorld = (
 					delta.scheduled === undefined;
 				if (!derivable) objective[key] = delta;
 			}
-			return { ...env, objective };
+			return {
+				...env,
+				objective,
+				deposits: compactDeposits(env.deposits, advanced.gameTime),
+			};
 		}),
 	};
 };
@@ -2206,7 +2222,11 @@ const canonicalDerelict = (
 		: {}),
 });
 
-const canonicalEnvelope = (env: GalaxyEnvelope) => ({
+const canonicalEnvelope = (
+	env: GalaxyEnvelope,
+	seed: number,
+	gameTime: number,
+) => ({
 	galaxyIndex: env.galaxyIndex,
 	...(env.deathWreck
 		? {
@@ -2301,6 +2321,13 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	...(Object.keys(env.derelicts).length
 		? { derelicts: canonicalMap(env.derelicts, canonicalDerelict) }
 		: {}),
+	// Lazy expiry reaches ordinary saves too; callers need not compact first.
+	// JSON omits undefined, so an empty domain still writes no bytes.
+	deposits: canonicalDeposits(
+		compactDeposits(env.deposits, gameTime),
+		seed,
+		env.galaxyIndex,
+	),
 });
 
 const canonicalBody = (world: WorldState) => ({
@@ -2308,7 +2335,9 @@ const canonicalBody = (world: WorldState) => ({
 	worldGeneratorVersion: world.worldGeneratorVersion,
 	seed: world.seed,
 	gameTime: world.gameTime,
-	galaxies: world.galaxies.map(canonicalEnvelope),
+	galaxies: world.galaxies.map((env) =>
+		canonicalEnvelope(env, world.seed, world.gameTime),
+	),
 });
 
 /**
@@ -2890,7 +2919,12 @@ const parseLegalKeyList = (
 
 /** One envelope: the declared-field check, then six named domain parsers, then
  *  the one invariant that spans two of them. */
-const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
+const parseEnvelope = (
+	raw: unknown,
+	slot: number,
+	seed: number,
+	gameTime: number,
+): GalaxyEnvelope => {
 	const o = asObject(raw, `galaxy ${slot}`);
 	for (const field of Object.keys(o))
 		if (!(ENVELOPE_DOMAINS as readonly string[]).includes(field))
@@ -2928,6 +2962,7 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 
 	return {
 		galaxyIndex,
+		deposits: parseDeposits(o.deposits, seed, galaxyIndex, gameTime),
 		...(o.deathWreck === undefined
 			? {}
 			: { deathWreck: parseDeathWreck(o.deathWreck) }),
@@ -2985,15 +3020,19 @@ export function parseWorld(raw: unknown): WorldState {
 	if (!Array.isArray(o.galaxies) || o.galaxies.length !== GALAXY_COUNT)
 		fail(`snapshot: expected eight galaxy envelopes`);
 
+	const seed = num(o, "seed", "snapshot");
+	const gameTime = num(o, "gameTime", "snapshot");
 	const world: WorldState = {
 		worldSchemaVersion,
 		// Rebase old overlays onto the generated current catalog. The integrity
 		// hash below still checks the body that arrived; the next write hashes one
 		// stamped with the current version. Old physical placements are not stored.
 		worldGeneratorVersion: WORLD_GENERATOR_VERSION,
-		seed: num(o, "seed", "snapshot"),
-		gameTime: num(o, "gameTime", "snapshot"),
-		galaxies: (o.galaxies as unknown[]).map((g, i) => parseEnvelope(g, i)),
+		seed,
+		gameTime,
+		galaxies: (o.galaxies as unknown[]).map((g, i) =>
+			parseEnvelope(g, i, seed, gameTime),
+		),
 	};
 	if (world.galaxies.filter((g) => g.deathWreck).length > 1)
 		fail("death wreck: more than one commander wreck");

@@ -83,7 +83,11 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
      * quantises what the four-tap version resolved. That is a thing to look at
      * rather than to argue about, which is why it is a switch.
      */
-    vec3 dpx = dFdx(vWorldP), dpy = dFdy(vWorldP);
+    // height() is defined on a unit sphere. Express the position derivatives
+    // in those same units, retaining world orientation for N. World-unit
+    // derivatives made relief inversely proportional to the drawn radius:
+    // the far-to-approach scale change flattened slopes by 100x (node #1017).
+    vec3 dpx = dFdx(vWorldP) / vRadius, dpy = dFdy(vWorldP) / vRadius;
     float h = height(p);
     float hx = dFdx(h), hy = dFdy(h);
     vec3 r1 = cross(dpy, N), r2 = cross(N, dpx);

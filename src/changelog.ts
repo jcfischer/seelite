@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #971: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-17",
+		text: "You can target asteroid fields and cruise to a safe distance from their centre.",
+		node: 971,
+	},
 	// Node #747: proposed sentence for the principal's approval before merge.
 	{
 		date: "2026-10-16",

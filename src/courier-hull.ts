@@ -133,7 +133,7 @@ export function createCourierHullBuilder(
 	});
 }
 
-/** Games start this after construction and refresh their cached couriers on
+/** The session queue starts this after construction and refreshes cached couriers on
  *  resolution (node #831). The postcard viewer waits before drawing; the ship
  *  workbench waits before building its review hulls (`authoredHullLoader`). */
 export const prepareCourierHullModel = authoredHullLoader(

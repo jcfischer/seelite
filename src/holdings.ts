@@ -759,9 +759,9 @@ export interface AdoptEffects {
 	redraw: boolean;
 }
 
-/** What an adoption came from: a hold event, or `"world"` — a world write
- *  made outside Holdings, which the law owns (an offence, its lazy clear). */
-export type AdoptCause = HoldEvent["kind"] | "world";
+/** What an adoption came from: a hold event, a law-owned world write, or
+ *  ammunition spent by the missile combat controller. */
+export type AdoptCause = HoldEvent["kind"] | "world" | "ammunition";
 
 /** The state an adoption compares: the four Holdings fields and the world. */
 export interface Adopted {

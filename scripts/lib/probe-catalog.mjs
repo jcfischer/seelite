@@ -19,6 +19,27 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-production-boot.mjs",
+			"Builds and serves the production bundle, then verifies fresh Commander, direct and full-model boots render and clear loading without page errors.",
+			["production bundle", "startup", "async imports", "model loading"],
+		),
+		entry(
+			"probe-model-queue.mjs",
+			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot.",
+			[
+				"background loading",
+				"model queue",
+				"boot",
+				"jump",
+				"deterministic readiness",
+			],
+		),
+		entry(
+			"probe-missiles.mjs",
+			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
+			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],
+		),
+		entry(
 			"probe-nebula.mjs",
 			"Seeded sky texture rebakes deterministically, is reused unchanged when the camera turns, shares the reflection source, toggles quality without rebaking and releases replaced GPU targets.",
 			["nebula", "sky", "reflection", "quality", "GPU disposal"],
@@ -137,13 +158,19 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-approach-handoff.mjs",
-			"Checks the spatial handoff from long-range approach into the local station flight frame.",
-			["approach", "station handoff", "local frame", "render layers"],
+			"Checks massive-body far-to-approach scale and apparent-size continuity, and rendered planet relief at both layer scales with a relief-off control.",
+			["approach", "planet relief", "surface detail", "render layers"],
 		),
 		entry(
 			"probe-arrival.mjs",
-			"Flies cruise arrivals to stations beside or behind host planets and checks reachable geometry.",
-			["cruise arrival", "host planet", "moving body", "station reachability"],
+			"Flies cruise arrivals to stations beside or behind host planets and to a field contact outside its rocks.",
+			[
+				"cruise arrival",
+				"host planet",
+				"moving body",
+				"station reachability",
+				"field contact",
+			],
 		),
 		entry(
 			"probe-audio-cues.mjs",
@@ -798,6 +825,11 @@ export const PROBE_CATALOG = Object.freeze(
 			"probe-planet-surfaces.mjs",
 			"Checks generated planet classes, live shader surfaces, terminators, bands, rings, and handoff behavior.",
 			["planet surface", "shader", "planet class", "rings", "atmosphere"],
+		),
+		entry(
+			"probe-planet-footprint.mjs",
+			"Checks terran footprint cap arms at close and distant ranges, exact base arithmetic, deterministic pixels, quality and actual target pixel angle; writes canonical horizon pairs for the principal.",
+			["planet surface", "footprint", "octaves", "quality", "determinism"],
 		),
 		entry(
 			"probe-planets.mjs",

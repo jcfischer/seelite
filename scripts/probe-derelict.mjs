@@ -247,7 +247,7 @@ try {
 		// Node #735: the wreck in the scene is the torn one, and what it draws
 		// fills the box the intact hull of its kind draws.
 		const { drawnHullBox } = await import("/src/derelict-tear.ts");
-		const { buildShipMesh } = await import("/src/ship-mesh.ts");
+		const { buildShipMesh, isAuthoredHull } = await import("/src/ship-mesh.ts");
 		const { HULL_SPECS } = await import("/src/hull.ts");
 		const hull = wreck.pose.hull;
 		const intact = drawnHullBox(
@@ -266,6 +266,9 @@ try {
 			frame,
 			liners,
 			sites: drawn.root.userData.torn?.sites.length ?? 0,
+			torn: drawn.root.userData.torn ?? null,
+			hull,
+			authored: isAuthoredHull(hull, HULL_SPECS[hull].variant),
 			envelopeError,
 			finish: drawn.root.userData.finish,
 			containers: drawn.containers.size,
@@ -277,13 +280,20 @@ try {
 		"dark worn roster hull has lamps off",
 		draw.lamps === 0 && draw.emissive === 0 && draw.finish === "worn",
 	);
+	// The tear cuts procedural lofts (node #735), and the authored Porter
+	// (node #813) has none, so a freighter wreck is darkened but whole. This
+	// naturally seeded fixture's wreck may be either; the row says which it
+	// measured, and `tests/derelict-tear.test.ts` holds the tear on every
+	// procedural hull.
 	check(
-		"the drawn wreck is torn: an exposed frame and a liner per tear, inside the intact envelope",
-		draw.frame > 0 &&
-			draw.sites > 0 &&
-			draw.liners === draw.sites &&
+		draw.authored
+			? "the drawn wreck of an authored hull is whole, untorn, inside the intact envelope"
+			: "the drawn wreck is torn: an exposed frame and a liner per tear, inside the intact envelope",
+		(draw.authored
+			? draw.torn === null && draw.frame === 0 && draw.liners === 0
+			: draw.frame > 0 && draw.sites > 0 && draw.liners === draw.sites) &&
 			draw.envelopeError < 5e-5,
-		`frame ${draw.frame}, tears ${draw.sites}, liners ${draw.liners}, envelope off by ${(draw.envelopeError * 1e3).toFixed(4)} m`,
+		`${draw.hull}: frame ${draw.frame}, tears ${draw.sites}, liners ${draw.liners}, envelope off by ${(draw.envelopeError * 1e3).toFixed(4)} m`,
 	);
 	check(
 		"seen containers are pinned on the world row",

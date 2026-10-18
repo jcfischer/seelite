@@ -4,6 +4,23 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-production-boot.mjs": [
+		"scripts/probe-production-boot.mjs",
+		"src/entry.ts",
+		"src/model-catalog.ts",
+		"scripts/lib/async-import-guard.mjs",
+	],
+	"probe-model-queue.mjs": [
+		"scripts/probe-model-queue.mjs",
+		"src/model-queue.ts",
+		"src/model-catalog.ts",
+		"src/system-models.ts",
+	],
+	"probe-missiles.mjs": [
+		"scripts/probe-missiles.mjs",
+		"src/missiles.ts",
+		"src/missile-combat.ts",
+	],
 	"probe-nebula.mjs": [
 		"scripts/probe-nebula.mjs",
 		"src/nebula.ts",
@@ -19,11 +36,16 @@ const OWNERS = Object.freeze({
 	],
 	"probe-approach-handoff.mjs": [
 		"scripts/probe-approach-handoff.mjs",
+		"src/planet-surface.ts",
 		"src/arrival.ts",
 		"src/station-traffic.ts",
 		"src/docking.ts",
 	],
-	"probe-arrival.mjs": ["scripts/probe-arrival.mjs", "src/arrival.ts"],
+	"probe-arrival.mjs": [
+		"scripts/probe-arrival.mjs",
+		"src/arrival.ts",
+		"src/field-contact.ts",
+	],
 	"probe-audio-cues.mjs": [
 		"scripts/probe-audio-cues.mjs",
 		"src/audio.ts",
@@ -333,6 +355,11 @@ const OWNERS = Object.freeze({
 		"src/planet-surface.ts",
 		"src/planet-appearance.ts",
 	],
+	"probe-planet-footprint.mjs": [
+		"scripts/probe-planet-footprint.mjs",
+		"src/planet-surface.ts",
+		"src/planet-footprint.ts",
+	],
 	"probe-planets.mjs": [
 		"scripts/probe-planets.mjs",
 		"src/planet-surface.ts",
@@ -495,6 +522,7 @@ const OWNERS = Object.freeze({
 });
 
 export const SMOKE_PROBES = Object.freeze([
+	"probe-production-boot.mjs",
 	"probe-boot.mjs",
 	"probe-live-cockpit.mjs",
 ]);

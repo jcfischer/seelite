@@ -73,3 +73,7 @@ export const REFINERY_GLB_URLS = {
 	c: new URL("./models/refinery-spar.glb", import.meta.url).href,
 	d: new URL("./models/refinery-works.glb", import.meta.url).href,
 } as const;
+
+/** Prepared by the Porter study (node #813). */
+export const PORTER_GLB_URL = new URL("./models/porter.glb", import.meta.url)
+	.href;

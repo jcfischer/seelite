@@ -114,7 +114,7 @@ test("main.ts declares the rig once and builds it once", () => {
 	expect(main.slice(Math.max(0, built - 200), built)).toContain('"combat"');
 });
 
-test("no other combat vocabulary survives in main.ts", () => {
+test("only the rig seam and production missile controller use combat vocabulary in main.ts", () => {
 	const main = codeOf("src/main.ts");
 	// The catch-all under the named bans above: any *other* combat identifier in
 	// `Game`'s code is a threading site the list has not caught up with.
@@ -124,12 +124,19 @@ test("no other combat vocabulary survives in main.ts", () => {
 	// `"./combat-rig"` and the `?combat=1` query flag — and they are matched
 	// exactly rather than by substring, which would also have swallowed a real
 	// `combatFoo`.
-	const ALLOWED = new Set(["combatRig", "CombatPrototypeRig"]);
+	// Node #874's production missile controller is not the prototype. Keep
+	// the named prototype bans above, and admit only its three exact names.
+	const ALLOWED = new Set([
+		"combatRig",
+		"CombatPrototypeRig",
+		"MissileCombat",
+		"missileCombat",
+		"stepMissileCombat",
+	]);
 	const all = main.match(/[A-Za-z_$]*combat[A-Za-z0-9_$]*/gi) ?? [];
 	expect(all.filter((w) => !ALLOWED.has(w) && w !== "combat")).toEqual([]);
-	// Bounded too: one import path, one query flag. A third is a new place
-	// `main.ts` has learned the word.
-	expect(all.filter((w) => w === "combat")).toHaveLength(2);
+	// Two import paths (rig and production missiles), and the rig query flag.
+	expect(all.filter((w) => w === "combat")).toHaveLength(3);
 });
 
 /**

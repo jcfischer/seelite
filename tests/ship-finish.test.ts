@@ -53,7 +53,9 @@ useProceduralHulls();
 // hull the game no longer ships.
 afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
-/** FNV-1a over the given hulls' positions and UVs, in roster order. */
+/** FNV-1a over the given hulls' positions and UVs, in roster order.
+ *  Procedural hulls only: an authored model (node #813's O2 Porter) is not
+ *  built by the finishes this pin protects, and is held by its own file. */
 function rosterHash(ids: readonly HullId[] = HULL_IDS) {
 	let h = 0x811c9dc5;
 	let vertices = 0;
@@ -136,6 +138,9 @@ describe("stock is the hull that shipped", () => {
 		// 5 cm (`closeTo` at four places, in kilometres), which is under the
 		// 0.1 m `hull.test.ts` rounds a declaration up by and over the
 		// millimetres two polygons on the same rays differ by.
+		//
+		// 216 builds across five finishes ran 5.3 s alone at `4b145f3`, over
+		// bun's 5 s default, so the row states its own budget (node #813).
 		const boxOf = (id: HullId, variant: HullVariantId) => {
 			const root = buildShipMesh(id, variant).root;
 			root.updateMatrixWorld(true);
@@ -183,8 +188,11 @@ describe("stock is the hull that shipped", () => {
 		// `4b145f3` — so no loft moved, only the one that is no longer a loft.
 		// The run that read it, and the one-line edit it took, are
 		// `spikes/longwall-miner/evidence/roster-hash-main-4b145f3.txt`.
+		// Node #813 also excludes freighter/b: 34 lofts, 200,060 vertices.
+		// Including that procedural Porter reproduces main's d40badcf /
+		// 205,315 pair; excluding it alone produces the pin below.
 		setHullFinish("stock");
-		expect(rosterHash()).toEqual({ hash: "d40badcf", vertices: 205315 });
+		expect(rosterHash()).toEqual({ hash: "ef122808", vertices: 200060 });
 	});
 
 	test("the original eleven archetypes still hash to the pin taken on main", () => {
@@ -192,11 +200,12 @@ describe("stock is the hull that shipped", () => {
 		// the whole-roster hash; it may not move any of these (#335's review).
 		// Re-pinned for node #815 as the row above was, and read the same way
 		// on `main` at `4b145f3` (the same transcript): those ids' 32 lofts,
-		// every variant but `miner/b`, are 186,412 vertices.
+		// every variant but `miner/b`, are 186,412 vertices. Node #813 also
+		// leaves out freighter/b: 181,157 vertices, measured with the same hash.
 		setHullFinish("stock");
 		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
-			hash: "757911cd",
-			vertices: 186412,
+			hash: "31c778b6",
+			vertices: 181157,
 		});
 	});
 });
@@ -222,6 +231,7 @@ describe("every finish builds the whole roster", () => {
 								.getSize(new THREE.Vector3())
 								.toArray(),
 						);
+					if (id === "freighter" && variant === "b") continue;
 					if (isAuthoredHull(id, variant)) {
 						// Node #815: the authored hull has no lofted nacelle or bell, and
 						// its drives are its two rings, each with a glow inside its bore

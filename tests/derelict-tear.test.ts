@@ -441,7 +441,7 @@ describe("the live ship is untouched", () => {
 	});
 
 	test("a wreck disposes the tear's geometry and not the roster's", () => {
-		const wreck = buildDerelictMesh("freighter");
+		const wreck = buildDerelictMesh(TEARABLE[0]);
 		const owned = new Set<THREE.BufferGeometry>();
 		const shared = new Set<THREE.BufferGeometry>();
 		wreck.traverse((o) => {

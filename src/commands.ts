@@ -759,6 +759,18 @@ const AUTHORED = [
 		keys: ["/"],
 	},
 	{
+		id: "fight.launchMissile",
+		name: "Launch a locked missile",
+		group: "fight",
+		keys: ["f7"],
+	},
+	{
+		id: "fight.ecm",
+		name: "Pulse the E.C.M.",
+		group: "fight",
+		keys: ["f8"],
+	},
+	{
 		id: "fight.rigEcm",
 		name: "Fire the ECM (combat rig)",
 		group: "fight",
