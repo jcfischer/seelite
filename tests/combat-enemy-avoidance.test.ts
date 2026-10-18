@@ -172,10 +172,18 @@ interface FlyOptions {
 	armed?: HullId;
 	/** Explicit form axis on the original systems; never selected by outcomes. */
 	refineryForm?: StationFormId;
+	tradeForm?: StationFormId;
 }
 
-function worldInRefineryForm(seed: number, form: StationFormId | undefined) {
+function worldInRefineryForm(
+	seed: number,
+	form: StationFormId | undefined,
+	tradeForm?: StationFormId,
+) {
 	const world = makeWorld(seed);
+	if (tradeForm !== undefined)
+		for (const station of world.system.contents.stations)
+			if (station.type === "trade") station.formId = tradeForm;
 	if (form !== undefined)
 		for (const station of world.system.contents.stations)
 			if (station.type === "refinery") station.formId = form;
@@ -190,7 +198,7 @@ function worldInRefineryForm(seed: number, form: StationFormId | undefined) {
  * with.
  */
 function flyBesideStation(o: FlyOptions): Run {
-	const world = worldInRefineryForm(o.seed, o.refineryForm);
+	const world = worldInRefineryForm(o.seed, o.refineryForm, o.tradeForm);
 	const system = world.system;
 	const placed = placedStations(world);
 	const station = placed[o.stationIndex % placed.length];
@@ -347,8 +355,8 @@ function flyBesideStation(o: FlyOptions): Run {
 
 type CorpusOptions = Pick<
 	FlyOptions,
-	"hull" | "open" | "atMouth" | "armed" | "refineryForm"
-> & { refineryOnly?: boolean };
+	"hull" | "open" | "atMouth" | "armed" | "refineryForm" | "tradeForm"
+> & { refineryOnly?: boolean; tradeOnly?: boolean };
 
 /** Reuse identical deterministic flights across assertions. Even an open
  * fight depends on the form: proxy reach sets the pilot's stand-off. Keep
@@ -360,14 +368,21 @@ function corpus(
 	avoid: boolean,
 	extra: CorpusOptions = {},
 ): Run[] {
-	const { refineryOnly = false, ...options } = extra;
+	const { refineryOnly = false, tradeOnly = false, ...options } = extra;
 	// Historical controls and their measured bands used Works. Key the
 	// normalized options passed to the flight, including any future fields.
-	const flight = { ...options, refineryForm: options.refineryForm ?? "d" };
+	// Keep the original Coriolis control; pooling changes both the solid and
+	// the reach-derived pilot position. Each new trade form is swept separately.
+	const flight = {
+		...options,
+		refineryForm: options.refineryForm ?? "d",
+		tradeForm: options.tradeForm ?? "a",
+	};
 	const key = JSON.stringify([
 		regime,
 		avoid,
 		refineryOnly,
+		tradeOnly,
 		Object.fromEntries(
 			Object.entries(flight).sort(([a], [b]) => a.localeCompare(b)),
 		),
@@ -379,6 +394,7 @@ function corpus(
 		const stations = placedStations(makeWorld(seed));
 		for (let stationIndex = 0; stationIndex < stations.length; stationIndex++) {
 			if (refineryOnly && stations[stationIndex].type !== "refinery") continue;
+			if (tradeOnly && stations[stationIndex].type !== "trade") continue;
 			for (const bearing of BEARINGS)
 				runs.push(
 					flyBesideStation({
@@ -600,6 +616,21 @@ describe("a ship fighting beside a station does not fly into it, under all three
 			);
 		});
 	}
+
+	for (const form of STATION_FORM_POOL.trade)
+		test(`trade/${form}: the fixed systems avoid contact under every regime, with blind impact controls`, () => {
+			let blindImpacts = 0;
+			for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
+				const extra = { tradeForm: form, tradeOnly: true };
+				const blind = corpus(regime, false, extra);
+				const avoiding = corpus(regime, true, extra);
+				expect(blind).toHaveLength(SEEDS.length * BEARINGS.length);
+				expect(avoiding).toHaveLength(blind.length);
+				expect([form, regime, struck(avoiding)]).toEqual([form, regime, 0]);
+				blindImpacts += struck(blind);
+			}
+			expect(blindImpacts).toBeGreaterThan(0);
+		});
 
 	for (const form of STATION_FORM_POOL.refinery)
 		for (const regime of ["assist-on", "assist-off", "cruise"] as const) {

@@ -34,6 +34,12 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
 		text: "You can target asteroid fields and cruise to a safe distance from their centre.",
 		node: 971,
 	},
+	// Node #747: proposed sentence for the principal's approval before merge.
+	{
+		date: "2026-10-16",
+		text: "Trade stations now vary between systems: dock at a Coriolis, Ring, Drum or modular Assembly.",
+		node: 747,
+	},
 	// Node #977: sentence approved by the principal, 2026-10-14.
 	{
 		date: "2026-10-14",

@@ -165,11 +165,11 @@ export interface StationPlan {
  *
  * Node #744 (https://github.com/jcfischer/seelite/issues/744) admits every
  * built form to its pool, uniformly drawn in form-id order (2026-10-07).
- * That ruling followed viewing the pre-repair forms in the station viewer;
- * no principal viewing of the repaired meshes of node #745 or node #746 is
- * recorded. Node #745 grows the refinery to Warren, Collar, Spar and Works,
- * and node #746 the shipyard to Gantry, Hangar and Slipway; the trade role // glossary-ignore: Hangar
- * grows in its own node. The outpost keeps its one fiction-owned form.
+ * The trade pool holds Coriolis, Ring, Drum and Assembly (node #747); the
+ * Wheel follows in its own node. The refinery holds Warren, Collar, Spar and
+ * Works (node #745), and the shipyard Gantry, Hangar and Slipway (node #746). // glossary-ignore: Hangar
+ * The principal has seen every form in the station viewer; the ruling waives
+ * another visual sign-off for pooling. The outpost keeps its fiction-owned form.
  *
  * Every added form owes a collision proxy, the display budget, and the
  * per-form interior, corridor, finish, fixture and glow rows. Those iterate
@@ -188,7 +188,7 @@ export const STATION_FORM_POOL: Record<
 	DrawnStationType,
 	readonly StationFormId[]
 > = {
-	trade: ["a"],
+	trade: ["a", "b", "c", "d"],
 	shipyard: ["a", "b", "c"],
 	refinery: ["a", "b", "c", "d"],
 };

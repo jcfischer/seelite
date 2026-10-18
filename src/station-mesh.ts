@@ -1946,7 +1946,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	rim.material = flatCloneOf(
 		rim.material as THREE.Material,
 	) as THREE.MeshStandardMaterial;
-	rim.name = "core";
+	rim.name = "rim";
 	group.add(rim);
 
 	// **Recessed modules and slim fins, not lugs.**
@@ -2080,18 +2080,23 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	// wider than the thing it was cut into, which is why the dock read as
 	// enormous. It is sized from the aperture now — the slot plus a frame either
 	// side — rather than from a fraction of the ring.
-	const slot = STATION_GEOMETRY.trade.aperture;
-	const throat = slot.widthKm * 0.5 + r * 0.11;
+	// The hub holds the role's whole bay, not only the slot's rectangle.
+	const throat = r * 0.34;
 	group.add(
 		shell(
 			[
 				{ z: -r * 0.42, w: throat * 0.72, h: throat * 0.72, e: 6 },
 				{ z: -r * 0.24, w: throat, h: throat, e: 6, hard: true },
 				{ z: r * 0.24, w: throat, h: throat, e: 6, hard: true },
-				{ z: r * 0.34, w: throat * 0.86, h: throat * 0.86, e: 6 },
+				{
+					z: STATION_GEOMETRY.trade.aperturePlaneKm,
+					w: throat,
+					h: throat,
+					e: 6,
+				},
 			],
-			plainMaterial(0x8b95a0, 0.6, 0.5),
-			"hub",
+			hullMaterial(color, "trade"),
+			"core",
 			8,
 			true,
 			apertureCut("trade"),
@@ -2100,7 +2105,14 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	// **On the hub's own front cap**, at the same z its last ring sits at. Set
 	// short of it the hub stood 6 m past the mouth — a station poking into the
 	// corridor a ship flies down, which is the one place nothing may be.
-	group.add(buildAperture("trade", fixtures, r * 0.34, berthSeed));
+	group.add(
+		buildAperture(
+			"trade",
+			fixtures,
+			STATION_GEOMETRY.trade.aperturePlaneKm,
+			berthSeed,
+		),
+	);
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2;
@@ -2158,6 +2170,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
  *  +Z cap is the dock. The one form whose length, not its width, is the cue. */
 function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const body = r * 0.46;
@@ -2166,8 +2179,8 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 			[
 				{ z: -r * 1.02, w: body * 0.5, h: body * 0.5, e: 2.6 },
 				{ z: -r * 0.86, w: body, h: body, e: 2.6, hard: true },
-				{ z: r * 0.72, w: body, h: body, e: 2.6, hard: true },
-				{ z: r * 0.88, w: body * 0.72, h: body * 0.72, e: 2.6 },
+				{ z: r * 0.6, w: body, h: body, e: 2.6, hard: true },
+				{ z: plane, w: body * 0.72, h: body * 0.72, e: 2.6 },
 			],
 			hullMaterial(color, "trade"),
 			"core",
@@ -2185,8 +2198,15 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 		band.position.z = z;
 		group.add(band);
 	}
-	// At the drum's own front cap (`r * 0.88`), not 20 m in front of it.
-	group.add(buildAperture("trade", fixtures, r * 0.88, berthSeed));
+	// The cap and its mouth share the role's docking plane.
+	group.add(buildAperture("trade", fixtures, plane, berthSeed));
+	// The barrel's flank windows are hidden by its end cap on approach.
+	group.add(
+		portRun("trade", 12, (i, count, position, normal) => {
+			normal.set(0, 0, 1);
+			position.set(-body * 0.5 + (i / (count - 1)) * body, body * 0.4, plane);
+		}),
+	);
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2 * 3;
@@ -2201,11 +2221,11 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 		// review). It stood out on the barrel's side, metres off the hull and
 		// hidden from the axis by the cap.
 		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.set(0, side * body * 0.5, r * 0.88);
+			position.set(0, side * body * 0.5, plane);
 		}),
 	);
 	// Down the barrel, on the opposite helix to the window run so the two do not
-	// sit on each other. Short of the front cap at `r * 0.88`, which is where the
+	// sit on each other. Short of the front cap, which is where the
 	// aperture is and the one place nothing may be.
 	group.add(
 		greebleRun(
@@ -4561,7 +4581,7 @@ function buildTradeModular(
 		}),
 	);
 	// Clutter on the hub's own flank, between the ports of its docked tubes.
-	group.add(
+	spun.add(
 		greebleRun(
 			"trade",
 			"trade-d",
@@ -4583,7 +4603,7 @@ function buildTradeModular(
 					},
 				},
 			],
-			group,
+			spun,
 		),
 	);
 	return { group, fixtures, spinner: spun };
