@@ -117,6 +117,31 @@ const setup = await page.evaluate(async (extra) => {
 		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
 		return (performance.now() - started) / frames;
 	};
+	// **The arms must differ on screen**, or a null difference is a frame that
+	// drew no plume at all. Painted pixels between one frame of each arm.
+	window.__plumePainted = () => {
+		const src = g.renderer.domElement;
+		const scratch = document.createElement("canvas");
+		scratch.width = src.width;
+		scratch.height = src.height;
+		const ctx = scratch.getContext("2d", { willReadFrequently: true });
+		const read = (arm) => {
+			window.__plumeArm(arm, 0);
+			ctx.drawImage(src, 0, 0);
+			return ctx.getImageData(0, 0, src.width, src.height).data;
+		};
+		const quiet = read("quiet");
+		const firing = read("firing");
+		let rose = 0;
+		for (let i = 0; i < quiet.length; i += 4) {
+			const d =
+				0.2126 * (firing[i] - quiet[i]) +
+				0.7152 * (firing[i + 1] - quiet[i + 1]) +
+				0.0722 * (firing[i + 2] - quiet[i + 2]);
+			if (d >= 24) rose++;
+		}
+		return { rose, of: quiet.length / 4 };
+	};
 	const set = g.npcPlumes.of(raider);
 	return {
 		hull,
@@ -125,6 +150,10 @@ const setup = await page.evaluate(async (extra) => {
 		sets: 1 + roots.length,
 	};
 }, EXTRA);
+
+const painted = await page.evaluate(() => window.__plumePainted());
+if (painted.rose === 0)
+	throw new Error("measure: the firing arm painted no plume pixel");
 
 const arms = { quiet: [], firing: [] };
 const shuffle = seededShuffler(SHUFFLE_SEED);
@@ -146,6 +175,9 @@ console.log(
 );
 console.log(
 	`${setup.sets} ${setup.hull} hulls firing, ${setup.throats} throats and ${setup.points} points a set; ${BLOCKS} blocks of ${FRAMES} frames per arm, shuffle seed ${SHUFFLE_SEED}, ${VIEWPORT.width}x${VIEWPORT.height} @2x`,
+);
+console.log(
+	`firing paints ${painted.rose} pixels (${((100 * painted.rose) / painted.of).toFixed(2)}% of the frame) ≥ 24 codes brighter than quiet`,
 );
 for (const [arm, xs] of Object.entries(arms))
 	console.log(

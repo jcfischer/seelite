@@ -19,8 +19,9 @@
  * - **a firing vent, fired alone, lights its own throat** on the raider: the
  *   frame drawn from that slot against the same frame with nothing firing,
  *   sampled at the throat as the camera that drew it projects it.
- * - **a vent the table did not fire stays dark**: the same difference at the
- *   raider's other throats, away from the lit ones.
+ * - **a vent the table leaves out stays dark**: one slot fired alone, the
+ *   same difference at every other raider throat clear of it. Not the sim's
+ *   table: in a gun run the raider fires nearly every vent it has.
  * - **a hull no longer drawn loses its plumes**: the raider taken out of view,
  *   its set is gone and its points have left the scene.
  */
@@ -186,11 +187,6 @@ const plumes = await page.evaluate(
 		});
 		const onScreen = throats.filter((t) => t.visible);
 		const litThroats = onScreen.filter((t) => t.on);
-		const unlit = onScreen.filter(
-			(t) =>
-				!t.on &&
-				litThroats.every((l) => Math.hypot(l.x - t.x, l.y - t.y) > clearPx),
-		);
 		const alone = [...new Set(litThroats.map((t) => t.slot))].flatMap(
 			(slot) => {
 				const diff = window.__npcVentRise({ [slot]: aloneLevel });
@@ -199,11 +195,31 @@ const plumes = await page.evaluate(
 					.map((t) => ({ slot, rise: near(diff, t.x, t.y) }));
 			},
 		);
-		const all = window.__npcVentRise(firing);
+		// **The dark row fires one slot, not the sim's table.** A raider in a
+		// gun run fires nearly every vent it has, so the throats its table
+		// leaves out are few and all beside lit ones. The slot is the one whose
+		// throat rose most alone; every other on-screen throat clear of it is
+		// judged against the same subtraction.
+		const brightest = alone.reduce(
+			(best, t) => (t.rise > (best?.rise ?? -1) ? t : best),
+			null,
+		);
+		const own = onScreen.filter((t) => t.slot === brightest?.slot);
+		const unlit = onScreen.filter(
+			(t) =>
+				t.slot !== brightest?.slot &&
+				own.every((l) => Math.hypot(l.x - t.x, l.y - t.y) > clearPx),
+		);
+		const one = brightest
+			? window.__npcVentRise({ [brightest.slot]: aloneLevel })
+			: null;
 		return {
 			onScreen: onScreen.length,
 			lit: alone,
-			unlit: unlit.map((t) => ({ slot: t.slot, rise: near(all, t.x, t.y) })),
+			fired: brightest?.slot ?? null,
+			unlit: one
+				? unlit.map((t) => ({ slot: t.slot, rise: near(one, t.x, t.y) }))
+				: [],
 		};
 	},
 	[SAMPLE_PX, CLEAR_OF_LIT_PX, ALONE_LEVEL],
@@ -221,9 +237,9 @@ const plumes = await page.evaluate(
 {
 	const worst = Math.max(0, ...plumes.unlit.map((t) => t.rise));
 	check(
-		"a raider vent its table did not fire stays dark",
+		"a raider vent the table leaves out stays dark",
 		plumes.unlit.length > 0 && worst < DARK_DELTA,
-		`${plumes.unlit.length} unlit throats clear of the lit ones, worst rise ${worst.toFixed(1)} codes: ${plumes.unlit.map((t) => `${t.slot} ${t.rise.toFixed(0)}`).join(", ")}`,
+		`${plumes.fired} fired alone; ${plumes.unlit.length} other throats clear of it, worst rise ${worst.toFixed(1)} codes: ${plumes.unlit.map((t) => `${t.slot} ${t.rise.toFixed(0)}`).join(", ")}`,
 	);
 }
 

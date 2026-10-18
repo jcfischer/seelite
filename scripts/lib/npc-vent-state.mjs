@@ -22,6 +22,9 @@
  */
 export function holdNpcVentState({ steps, behindKm }) {
 	const g = window.__seelite;
+	// The leg and the contest on the game's longest step, as the duel's capture
+	// placer flies them; the duel itself on a frame's.
+	const leg = g.units.MAX_DT;
 	const dt = 1 / 60;
 	g.resetFlightToStart();
 	g.clockHeld = false;
@@ -43,12 +46,16 @@ export function holdNpcVentState({ steps, behindKm }) {
 	g.targetId = far.id;
 	g.faceTarget?.();
 	g.engageCruise();
-	for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
+	for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(leg);
+	if (g.regime !== "cruise")
+		throw new Error(
+			`holdNpcVentState: no cruise to interdict (regime ${g.regime}, ${g.lastExit})`,
+		);
 	g.forceRaider("ahead", 0.5, 12);
-	for (let i = 0; i < 600 && g.encounter?.phase !== "duel"; i++) g.step(dt);
+	for (let i = 0; i < 600 && g.encounter?.phase !== "duel"; i++) g.step(leg);
 	if (g.encounter?.phase !== "duel")
 		throw new Error(
-			`holdNpcVentState: the raider never interdicted (phase ${g.encounter?.phase ?? "none"})`,
+			`holdNpcVentState: the raider never interdicted (phase ${g.encounter?.phase ?? "none"}, regime ${g.regime}, ${g.lastExit})`,
 		);
 	for (let i = 0; i < steps; i++) {
 		g.step(dt);
