@@ -2082,7 +2082,9 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	// side — rather than from a fraction of the ring.
 	// The hub holds the role's whole bay, not only the slot's rectangle.
 	const throat = r * 0.34;
-	group.add(
+	const hubMember = new THREE.Group();
+	hubMember.name = "hub-member";
+	hubMember.add(
 		shell(
 			[
 				{ z: -r * 0.42, w: throat * 0.72, h: throat * 0.72, e: 6 },
@@ -2102,6 +2104,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 			apertureCut("trade"),
 		),
 	);
+	group.add(hubMember);
 	// **On the hub's own front cap**, at the same z its last ring sits at. Set
 	// short of it the hub stood 6 m past the mouth — a station poking into the
 	// corridor a ship flies down, which is the one place nothing may be.
@@ -2126,13 +2129,15 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 			);
 		}),
 	);
-	group.add(
-		// On the rim's crown, the face of the tube that looks down the axis
-		// (#300's review): the ring turns whole, so a lamp there sweeps a
-		// circle in the approach's frame. It stood past the rim's outer face,
-		// metres off the hull, at an offset written for a 42 m lamp.
-		strobePair("trade", fixtures, LAMP_POOL_KM.tube, (side, position) => {
-			position.set(0, side * major, tube);
+	hubMember.add(
+		// The hub turns with the rim. Its front cap keeps the pair visible
+		// above the cockpit dash, which covers the lower rim on approach.
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(
+				side * throat * 0.85,
+				0,
+				STATION_GEOMETRY.trade.aperturePlaneKm,
+			);
 		}),
 	);
 	// On the rim's two side faces, never on its outer one. #102's rule and this

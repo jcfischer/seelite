@@ -173,3 +173,35 @@ station visuals and Wheel) pass. Typecheck, format and lint pass.
 This review pass's single full `npm test` run passed **6,496 tests, 0 failures**
 across 375 files in 695.92 seconds on this host. No implementation changes
 followed it. The restored Ring browser failures above remain unresolved.
+
+## Browser repair pass
+
+The supervisor's two Ring failures reproduced at `4874b86` with
+`npm run probe:one -- station-visuals --show-output`: **90/92**, with
+`strobe-a` contributing **0 px** on both desktop and narrow viewports.
+The GPU lane reported ANGLE Metal on Apple M1 Pro.
+
+An isolated rendered comparison at the same seed-54 approach and strobe clock
+identified the cockpit dash as the occluder: the strobe contributed **0 px**
+with the cabin drawn and **82 px** with only the cabin hidden. The captured
+frames showed the dash covering the lower rim. This comparison diagnoses the
+cause; the acceptance probe continues to draw the cabin.
+
+The Ring's strobe pair now mounts on its rotating hub's front cap, as the
+Wheel's pair already does. The hub is grouped with its lamps so the existing
+member-relative mounting row measures the structure carrying them. The hull,
+aperture, bay, proxies and probe checks are unchanged. The 169 affected
+headless tests across station visuals, mesh, glow, finish, greebles, Wheel and
+interior pass.
+
+The same GPU probe now passes **92/92** with Ring and Wheel on both viewports.
+Ring's strobes contribute **163/160 px** on desktop and **505/519 px** on narrow
+(a/b respectively), with the cabin drawn. The checks, fixture drives and
+framing tolerances are unchanged. Logs: `/tmp/node-748-before.log` and
+`/tmp/node-748-after.log`. Only `probe-station-visuals` ran; the supervisor owns
+the final browser gate.
+
+This repair pass's single full host `npm test` run passed **6,496 tests,
+0 failures** across 375 files in **732.58 seconds**. The production build
+(including typecheck) and formatting check for the changed source file pass.
+No implementation changes followed those checks.
