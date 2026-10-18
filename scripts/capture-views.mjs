@@ -65,6 +65,7 @@ import { assertHorizonFacts } from "./lib/horizon-framing.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import { holdCruiseTurnState, holdVentState } from "./lib/vent-state.mjs";
+import { holdNpcVentState } from "./lib/npc-vent-state.mjs";
 import {
 	bootedGame,
 	guardedTree,
@@ -1151,6 +1152,29 @@ const PLACERS = {
 		if (state.lit.length === 0)
 			return `${state.hull} in cruise, spinning · this build draws no vent for a cruise turn`;
 		return `${state.hull} in cruise, spinning · ${state.lit.length} attitude vents firing (${state.lit.map((v) => v.slot).join(", ")}) · angular cue ${state.cue?.angular ? "latched" : "clear"}`;
+	},
+	/**
+	 * Node #637's NPC plumes: the duel's raider flown by the game's own `step`,
+	 * the clock held, the player placed off its stern.
+	 *
+	 * **Read back, not assumed**: a raider that fired nothing throws rather
+	 * than capturing a quiet hull under this caption. A build before node #637
+	 * keeps no table on the raider's contact; that is its honest `before`.
+	 */
+	"npc-vents": async (page, shot) => {
+		worldWritten = true;
+		const state = await page.evaluate(holdNpcVentState, {
+			steps: shot.steps,
+			behindKm: shot.behindKm,
+		});
+		await page.evaluate(
+			() => new Promise((r) => requestAnimationFrame(() => r())),
+		);
+		if (state.absent)
+			return `${state.name} (${state.hull}) · this build keeps no firing table for an NPC hull: no plumes`;
+		if (state.lit.length === 0)
+			throw new Error("npc-vents placer: the raider fired no vent");
+		return `${state.name} (${state.hull}) off its stern · ${state.lit.length} vents firing (${state.lit.map((v) => v.slot).join(", ")})`;
 	},
 	/**
 	 * #537's cruise light shift. A real leg to the farthest body, then the

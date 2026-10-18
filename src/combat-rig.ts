@@ -76,6 +76,7 @@ import type { CommandId, Layout, Trigger } from "./commands";
 import { anyOf, boundNames, onKeyboard, triggerLabel } from "./key-names";
 import type { Ship } from "./sim";
 import type { DisplayContact } from "./display-contact";
+import { NpcPlumes } from "./npc-plumes";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
 
@@ -451,6 +452,10 @@ export class CombatPrototypeRig {
 	private readonly impactMaterial: THREE.ShaderMaterial;
 	private impactPoint?: Vec3;
 	private hitFlash = 0;
+	/** Node #637: the striker's firing vents, from its own flight's table. */
+	private readonly plumes = new NpcPlumes();
+	/** The rig's own clock for the plumes' particles: it has no world clock. */
+	private plumeClockS = 0;
 	private wasHit = false;
 	private incoming = false;
 	private ecm = false;
@@ -705,6 +710,7 @@ export class CombatPrototypeRig {
 			pilot.aimNose,
 		);
 		this.enemy = flown.state;
+		this.plumeClockS += Math.max(0, dt);
 		this.contact.pos = flown.state.ship.pos;
 		this.contact.velocity = flown.state.ship.vel;
 
@@ -821,6 +827,13 @@ export class CombatPrototypeRig {
 		RIG_ATTITUDE.lookAt(RIG_ORIGIN, RIG_NOSE, RIG_UP);
 		this.targetMesh.quaternion.setFromRotationMatrix(RIG_ATTITUDE);
 		this.targetMesh.visible = view === "cockpit";
+		this.plumes.draw(
+			this.targetMesh,
+			STRIKER_HULL_ID,
+			this.enemy.firing,
+			this.plumeClockS,
+		);
+		this.plumes.endFrame();
 
 		const flash = this.hitFlash / HIT_SPARK_S;
 		if (this.impactPoint) {

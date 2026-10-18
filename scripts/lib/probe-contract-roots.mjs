@@ -497,6 +497,12 @@ const OWNERS = Object.freeze({
 		"src/station-traffic.ts",
 		"src/station-mesh.ts",
 	],
+	"probe-npc-vents.mjs": [
+		"scripts/probe-npc-vents.mjs",
+		"scripts/lib/npc-vent-state.mjs",
+		"src/npc-plumes.ts",
+		"src/vent-plumes.ts",
+	],
 	"probe-vent-display.mjs": [
 		"scripts/probe-vent-display.mjs",
 		"src/vent-plumes.ts",
