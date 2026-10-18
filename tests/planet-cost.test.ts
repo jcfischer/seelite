@@ -324,7 +324,20 @@ describe("the sweep's declared columns", () => {
 	 * quoting "the third column" wants that to keep meaning one thing.
 	 */
 	test("the renderer's relief paths are one roster, in a stable order", () => {
-		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space", "none"]);
+		expect([...RELIEF_PATHS]).toEqual([
+			"four-tap",
+			"screen-space",
+			"none",
+			"analytic-gradient",
+		]);
+	});
+	test("the cost instrument can select the analytic arm and refuses unknown paths", () => {
+		expect(narrow([...RELIEF_PATHS], ["analytic-gradient"], "relief")).toEqual([
+			"analytic-gradient",
+		]);
+		expect(() => narrow([...RELIEF_PATHS], ["analytic"], "relief")).toThrow(
+			"--relief",
+		);
 	});
 });
 

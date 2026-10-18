@@ -880,6 +880,17 @@ export const PROBE_CATALOG = Object.freeze(
 			["planet surface", "shader", "planet class", "rings", "atmosphere"],
 		),
 		entry(
+			"probe-planet-gradient.mjs",
+			"Compares terran analytic normals with legacy and fine four-tap normals at 2R, rejects a missing warp Jacobian, and reads finite footprint relief and field equality at 1.2R.",
+			[
+				"planet surface",
+				"analytic gradient",
+				"relief",
+				"footprint",
+				"normal pixels",
+			],
+		),
+		entry(
 			"probe-planet-footprint.mjs",
 			"Checks terran footprint cap arms at close and distant ranges on the ground's four fields and the weather shell's two, exact base arithmetic, the dust shell left alone, deterministic pixels, quality and each program's actual target pixel angle; writes canonical horizon pairs for the principal.",
 			[

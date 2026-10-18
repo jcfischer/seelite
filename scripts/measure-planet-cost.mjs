@@ -213,6 +213,7 @@ const DECOMPOSE = process.argv.includes("--decompose");
  * loudly.
  *
  *   node scripts/measure-planet-cost.mjs --classes terran,jovian --radii 2
+ *   node scripts/measure-planet-cost.mjs --classes terran --relief analytic-gradient --radii 2,1.2
  */
 const listArg = (name) => {
 	const argv = process.argv.slice(2);
@@ -227,6 +228,7 @@ const listArg = (name) => {
 };
 const ONLY_CLASSES = listArg("classes");
 const ONLY_RADII = listArg("radii")?.map(Number);
+const ONLY_RELIEF = listArg("relief");
 
 /**
  * The cell the drift control reads, twice.
@@ -510,10 +512,20 @@ async function run(pixelRatio) {
 		 * the roster now and `ReliefPath` is derived from it, so there is one
 		 * place a fourth path can be added.
 		 */
-		const paths = await page.evaluate(async () => {
+		const availablePaths = await page.evaluate(async () => {
 			const mod = await import("/src/planet-shaders.ts");
 			return [...mod.RELIEF_PATHS];
 		});
+		const paths = narrow(availablePaths, ONLY_RELIEF, "relief");
+		const selectedClasses = narrow(classes, ONLY_CLASSES, "classes");
+		if (
+			ONLY_RELIEF &&
+			paths.includes("analytic-gradient") &&
+			selectedClasses.some((klass) => klass !== "terran")
+		)
+			throw new Error(
+				"analytic-gradient relief is implemented for terran only; use --classes terran",
+			);
 		reliefPaths = paths;
 
 		/**
@@ -760,10 +772,15 @@ async function run(pixelRatio) {
 			// recompile and a radius change is only a camera move, so this nest pays 16
 			// recompiles a run instead of 96, and every settle after one is a settle the
 			// cheap way.
-			for (const surfaceClass of narrow(classes, ONLY_CLASSES, "classes"))
-				for (const relief of paths)
+			for (const surfaceClass of selectedClasses)
+				for (const relief of paths) {
+					// Node #757 supplies a terran derivative only. Do not print a
+					// four-tap fallback under an analytic label for another class.
+					if (relief === "analytic-gradient" && surfaceClass !== "terran")
+						continue;
 					for (const radii of SWEPT_RADII)
 						rows.push(await cell(surfaceClass, relief, radii));
+				}
 		}
 
 		controlAfter = await control();
@@ -894,6 +911,8 @@ for (const {
 				`      ${"class".padEnd(10)}${SWEPT_RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
 			);
 			for (const surfaceClass of classes) {
+				if (relief === "analytic-gradient" && surfaceClass !== "terran")
+					continue;
 				const cells = SWEPT_RADII.map((radii) =>
 					label(
 						runRows.find(

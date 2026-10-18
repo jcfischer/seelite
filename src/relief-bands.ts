@@ -122,7 +122,7 @@ export const projectedRadiusPx = (
 export function reliefPathFor(
 	radiusPx: number,
 	current: ReliefPath | null,
-): ReliefPath {
+): Exclude<ReliefPath, "analytic-gradient"> {
 	// Rising into a band takes the threshold; falling out of one takes the
 	// threshold divided by the band, so the two directions differ by exactly
 	// `RELIEF_BAND_HYSTERESIS` and a disc inside it keeps what it has.
@@ -131,7 +131,7 @@ export function reliefPathFor(
 			? RELIEF_OFF_BELOW_PX
 			: RELIEF_OFF_BELOW_PX / RELIEF_BAND_HYSTERESIS;
 	const screen =
-		current === "four-tap"
+		current === "four-tap" || current === "analytic-gradient"
 			? SCREEN_SPACE_BELOW_PX / RELIEF_BAND_HYSTERESIS
 			: SCREEN_SPACE_BELOW_PX;
 	if (radiusPx < off) return "none";
@@ -365,6 +365,15 @@ export type PlanetReliefClass = Exclude<SurfaceClass, "star">;
  * bands remain separate: this policy only replaces their full-detail
  * `"four-tap"` rung.
  */
+export type PlanetReliefPolicy = {
+	[K in PlanetReliefClass]: Extract<
+		ReliefPath,
+		| "four-tap"
+		| "screen-space"
+		| (K extends "terran" ? "analytic-gradient" : never)
+	>;
+};
+
 export const PLANET_RELIEF_PATHS = {
 	terran: "screen-space",
 	desert: "screen-space",
@@ -374,10 +383,7 @@ export const PLANET_RELIEF_PATHS = {
 	airless: "four-tap",
 	jovian: "screen-space",
 	iceGiant: "screen-space",
-} as const satisfies Record<
-	PlanetReliefClass,
-	Extract<ReliefPath, "four-tap" | "screen-space">
->;
+} as const satisfies PlanetReliefPolicy;
 
 /**
  * Apply #224's class policy after the apparent-size and bake bands chose a
