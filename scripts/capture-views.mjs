@@ -394,13 +394,13 @@ const PLACERS = {
 		// frame the set could not draw.
 		const phaseS = shot.phaseS ?? 0.5;
 		const sampled = await page.evaluate(
-			({ event, phaseS }) => {
+			({ event, phaseS, framing }) => {
 				const f = window.__haulerFixture;
 				f.sample(f.plan.actor.schedule.departureAtS + 1, false);
 				f.sample(f.voyage.tOut - 3.1, false);
 				f.sample(f.voyage.tOut + 0.5);
 				if (event === "arrival") f.follow();
-				return f.sample(f.voyage.tOut + phaseS, true, event.framing ?? "ring");
+				return f.sample(f.voyage.tOut + phaseS, true, framing ?? "ring");
 			},
 			{ event: shot.event, phaseS, framing: shot.framing },
 		);

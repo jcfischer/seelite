@@ -207,7 +207,10 @@ try {
 		arrSealing.rift > 0 &&
 			arrSealing.rift < 0.35 &&
 			arrSealing.flare > 0.05 &&
-			arrSealed.rift === 0,
+			arrSealing.riftRadiusKm > 0 &&
+			arrSealing.riftRadiusKm < arrSettled.riftRadiusKm * 0.2 &&
+			arrSealed.rift === 0 &&
+			arrSealed.riftRadiusKm === 0,
 		{ arrSealing, arrSealed },
 	);
 	const queued = await page.evaluate(() => {

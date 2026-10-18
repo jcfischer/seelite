@@ -68,12 +68,11 @@ describe("the ring's own timeline (node #1006 C1, C3)", () => {
 		expect(strengthAt(CROSSING.holdS)).toBe(1);
 	});
 
-	test("seals: it collapses to nothing rather than fading out open", () => {
+	test("the seal's strength falls to zero at the window's end", () => {
 		expect(strengthAt(CROSSING.windowEndS)).toBe(0);
 		expect(npcRiftVisible(CROSSING.windowEndS)).toBe(false);
-		// A seal is a closing, so the ring must be measurably smaller at the end
-		// of it than it was at the start — `ArrivalRift` reads its radius off the
-		// strength, so a falling strength is the collapse.
+		// This checks the timeline; arrival-rift.test.ts measures the mesh's
+		// collapse, including the flare that remains bright just before removal.
 		expect(strengthAt(CROSSING.windowEndS - CROSSING.sealS * 0.5)).toBeLessThan(
 			strengthAt(CROSSING.holdS),
 		);

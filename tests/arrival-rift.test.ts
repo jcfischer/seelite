@@ -12,6 +12,8 @@ import * as THREE from "three";
 import { ARRIVAL_RIFT, ArrivalRift } from "../src/arrival-rift";
 import { disposeSubtree, resourcesOf } from "../src/gpu-teardown";
 import { v3 } from "../src/vec3";
+import { WITCHSPACE, witchspaceLook } from "../src/witchspace";
+import { CROSSING, npcRiftLook } from "../src/witchspace-crossing";
 
 const nose = v3(0, 0, 1);
 
@@ -63,6 +65,38 @@ describe("the arrival rift", () => {
 		rift.update(0, 3.9, v3(0, 0, 0));
 		expect(rift.object.visible).toBe(false);
 	});
+
+	for (const kind of ["NPC", "player"] as const) {
+		test(`${kind} seal shrinks the drawn mesh to a point even under its flare`, () => {
+			const rift = new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm: 0.04 });
+			const fullRadius = ARRIVAL_RIFT.radiusReaches * 0.04;
+			const end = kind === "NPC" ? CROSSING.windowEndS : WITCHSPACE.riftEndS;
+			let previous = fullRadius;
+			for (const remainingS of [1, 0.5, 0.1, 0.01, 0.001, 0]) {
+				const at = end - remainingS;
+				const player = witchspaceLook({
+					kind: "exit",
+					sinceS: at,
+					from: "arrival",
+				});
+				const { strength, flare } =
+					kind === "NPC"
+						? npcRiftLook(at)
+						: { strength: player.rift, flare: player.riftFlare };
+				rift.update(strength, at, v3(0, 0, 0), flare);
+				expect(rift.radiusKm).toBeLessThanOrEqual(previous);
+				previous = rift.radiusKm;
+				if (remainingS === 0.001) {
+					// The old 30% floor leaves a large lit ring until removal.
+					expect(flare).toBeGreaterThan(0.5);
+					expect(rift.radiusKm / fullRadius).toBeLessThan(0.005);
+					expect(rift.object.visible).toBe(true);
+				}
+			}
+			expect(rift.radiusKm).toBe(0);
+			expect(rift.object.visible).toBe(false);
+		});
+	}
 
 	test("owns its geometry and material, and a teardown frees all of it", () => {
 		const rift = new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm: 0.04 });

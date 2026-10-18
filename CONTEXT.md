@@ -839,7 +839,7 @@ that moves a **Hauler** and the **Game** that draws the ring, and by the
 player's own clock for the flare and the seal; the player's exit keeps its own
 **unfurl** and **unfold** ahead of the instant, and the crossing adds the flare
 and the seal to that, not a second ring.
-_Avoid_: warp effect, jump animation, spawn/despawn
+_Avoid_: warp effect, jump animation, instant appearance/disappearance
 
 **Light shift**:
 What the cruise sky does at speed (#537): the stars crowd toward the ship's

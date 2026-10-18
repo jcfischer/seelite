@@ -40,8 +40,6 @@ export const ARRIVAL_RIFT = Object.freeze({
 	radiusReaches: 1.6,
 	/** How far behind the ship the rift stands, in its reach. */
 	standoffReaches: 1,
-	/** The radius it opens from, as a fraction of the full one. */
-	openFrom: 0.3,
 });
 
 /**
@@ -165,8 +163,9 @@ export class ArrivalRift {
 		u.uStrength.value = strength;
 		u.uFlare.value = flare;
 		u.uPhase.value = phase;
-		const open =
-			ARRIVAL_RIFT.openFrom + (1 - ARRIVAL_RIFT.openFrom) * Math.sqrt(strength);
+		// No minimum radius: a flare may still be bright at the seal, but its
+		// disc must shrink to a point before the object is removed.
+		const open = Math.sqrt(strength);
 		this.object.scale.setScalar(this.fullRadiusKm * open);
 		this.object.position.set(
 			this.anchor.x - cameraPos.x,
