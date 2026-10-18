@@ -277,6 +277,12 @@ const OWNERS = Object.freeze({
 		"src/layout-choice.ts",
 		"src/pointer.ts",
 	],
+	"probe-mouse-sensitivity.mjs": [
+		"scripts/probe-mouse-sensitivity.mjs",
+		"src/pointer.ts",
+		"src/settings.ts",
+		"src/settings-panel.ts",
+	],
 	"probe-moving-guard.mjs": [
 		"scripts/probe-moving-guard.mjs",
 		"src/collision.ts",

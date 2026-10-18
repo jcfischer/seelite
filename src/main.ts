@@ -2766,12 +2766,14 @@ class Game {
 				paid: f.assisted ? null : +(f.deliveredRadS / f.askedRadS).toFixed(2),
 				durationS: +f.durationS.toFixed(2),
 			};
+		const sensitivity = this.settings.value.mouseSensitivity;
 		return {
 			hull: this.flownHull,
 			assist: this.assist,
+			mouseSensitivity: sensitivity,
 			couplePxS: {
-				pitch: Math.round(couplePxS(a.pitch)),
-				yaw: Math.round(couplePxS(a.yaw)),
+				pitch: Math.round(couplePxS(a.pitch, sensitivity)),
+				yaw: Math.round(couplePxS(a.yaw, sensitivity)),
 			},
 			lastFlick: read(this.flickMeter.last),
 			hardestFlick: read(this.flickMeter.hardest),
@@ -16075,8 +16077,11 @@ class Game {
 		const flying = !handsHeld && contextFliesShip(this.padContext());
 		const { dx, dy } = this.takePointer();
 		if (!flying) this.flickMeter.reset();
+		// The settings row's turn per pixel (node #640), read each frame so a
+		// change on the screen flies on the next one.
+		const sensitivity = this.settings.value.mouseSensitivity;
 		const impulse = flying
-			? pointerImpulse(dx, dy)
+			? pointerImpulse(dx, dy, sensitivity)
 			: { pitch: 0, yaw: 0, roll: 0 };
 
 		// Rotation carries momentum (`stepAngular`, inside the Hull step): the
@@ -16122,6 +16127,7 @@ class Game {
 				dt,
 				{ pitch: impulse.pitch - unpaid.pitch, yaw: impulse.yaw - unpaid.yaw },
 				this.assist,
+				sensitivity,
 			);
 		};
 
