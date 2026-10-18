@@ -1,16 +1,16 @@
-import { nextInteriorFrame, runInteriorSlices } from "./interior-install";
+import { nextInstallFrame, runInstallSlices } from "./install-slices";
 
-/** The interior install's four-ms scheduler, shared by hull preparation.
+/** The shared four-ms install scheduler, applied to hull preparation.
  * Each geometry/ray operation is indivisible; the budget is checked between
  * them. Headless tools drain the same work without waiting for a browser.
  */
-export async function runHullSlices<T>(work: Generator<void, T>): Promise<T> {
-	return (await runInteriorSlices(work, {
+export function runHullSlices<T>(work: Generator<void, T>): Promise<T> {
+	return runInstallSlices(work, {
 		yieldFrame:
 			typeof document === "undefined"
 				? () => Promise.resolve()
-				: nextInteriorFrame,
-	})) as T;
+				: nextInstallFrame,
+	});
 }
 
 /** Synchronous consumers retain exactly the same geometry calculations. */

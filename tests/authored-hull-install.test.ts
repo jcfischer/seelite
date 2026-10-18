@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { reducedLevel, reducedLevelSteps } from "../src/authored-levels";
+import { finishHullWork } from "../src/hull-install-work";
 import { installPreparedAuthoredHull } from "../src/authored-hull";
 import {
 	type AuthoredHullBuilder,
@@ -15,6 +16,22 @@ import {
 	HULL_FINISH_IDS,
 	setHullFinish,
 } from "../src/ship-surface";
+
+/** Runs fn with every mesh raycast counted, restoring the prototype after. */
+function countRaycasts<T>(fn: () => T): { casts: number; value: T } {
+	const original = THREE.Mesh.prototype.raycast;
+	let casts = 0;
+	THREE.Mesh.prototype.raycast = function (...args) {
+		casts++;
+		return original.apply(this, args);
+	};
+	try {
+		const value = fn();
+		return { casts, value };
+	} finally {
+		THREE.Mesh.prototype.raycast = original;
+	}
+}
 
 test("reduced geometry yields per mesh and matches the synchronous output", () => {
 	const template = new THREE.Group();
@@ -68,22 +85,14 @@ test("installation keeps the previous builder until both glow caches are ready",
 		});
 		expect(slices).toBeGreaterThan(HULL_SPECS.tug.vents.length);
 		expect(authoredHullBuilder("tug")).toBe(builder);
-		const original = THREE.Mesh.prototype.raycast;
-		let casts = 0;
-		THREE.Mesh.prototype.raycast = function (...args) {
-			casts++;
-			return original.apply(this, args);
-		};
-		try {
+		const { casts } = countRaycasts(() => {
 			for (const finish of HULL_FINISH_IDS) {
 				setHullFinish(finish);
 				const root = buildShipMesh("tug", HULL_SPECS.tug.variant).root;
 				ventThroats(root, "tug");
 			}
-			expect(casts).toBe(0);
-		} finally {
-			THREE.Mesh.prototype.raycast = original;
-		}
+		});
+		expect(casts).toBe(0);
 	} finally {
 		setHullFinish(DEFAULT_HULL_FINISH);
 		installAuthoredHull("tug", old);
@@ -112,21 +121,14 @@ test("shipped hulls publish ray-free builds with the measured throats under ever
 			await installPreparedAuthoredHull(id, authoredHullBuilder(id)!);
 			for (const finish of HULL_FINISH_IDS) {
 				setHullFinish(finish);
-				const original = THREE.Mesh.prototype.raycast;
-				let casts = 0;
-				THREE.Mesh.prototype.raycast = function (...args) {
-					casts++;
-					return original.apply(this, args);
-				};
-				let root: THREE.Group;
-				let cached: ReturnType<typeof ventThroats>;
-				try {
-					root = buildShipMesh(id, HULL_SPECS[id].variant).root;
-					cached = ventThroats(root, id);
-					expect([id, finish, casts]).toEqual([id, finish, 0]);
-				} finally {
-					THREE.Mesh.prototype.raycast = original;
-				}
+				const {
+					casts,
+					value: { root, cached },
+				} = countRaycasts(() => {
+					const root = buildShipMesh(id, HULL_SPECS[id].variant).root;
+					return { root, cached: ventThroats(root, id) };
+				});
+				expect([id, finish, casts]).toEqual([id, finish, 0]);
 				root.userData.authored = false;
 				expect(cached).toEqual(ventThroats(root, id));
 			}
@@ -146,9 +148,7 @@ test("a failure after the first warmup also leaves the previous builder installe
 	await expect(
 		installPreparedAuthoredHull("tug", builder, async (work) => {
 			if (++phases === 2) throw Error("interrupted preparation");
-			let step = work.next();
-			while (!step.done) step = work.next();
-			return step.value;
+			return finishHullWork(work);
 		}),
 	).rejects.toThrow("interrupted preparation");
 	expect(authoredHullBuilder("tug")).toBe(old);
