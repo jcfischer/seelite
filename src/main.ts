@@ -1,4 +1,5 @@
 import { fieldContactsAt } from "./field-contact";
+import { ROCK_ASSETS } from "./rock-assets";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
 	startNebulaBake,
@@ -2261,6 +2262,9 @@ async function requireModels(
 }
 
 class Game {
+	/** Rock collision data, inlined in the bundle and decoded on first read, so it is available before the authored rock model installs. */
+	readonly rockAssets = ROCK_ASSETS;
+
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
 	readonly composer: EffectComposer;
