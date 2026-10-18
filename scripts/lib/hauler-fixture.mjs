@@ -108,6 +108,17 @@ export async function installHaulerFixture() {
 		}
 		const contact = g.trafficContacts.get(plan.actor.key);
 		const id = route.key + "|" + route.jump?.kind + "|" + route.jump?.atS;
+		const rift = g.trafficRifts.get(id);
+		const alongNoseFrom = (origin) => {
+			if (!contact || !route.jump || !origin) return null;
+			const nose = route.jump.nose;
+			return (
+				((contact.pos.x - origin.x) * nose.x +
+					(contact.pos.y - origin.y) * nose.y +
+					(contact.pos.z - origin.z) * nose.z) /
+				Math.hypot(nose.x, nose.y, nose.z)
+			);
+		};
 		return {
 			at,
 			key: plan.actor.key,
@@ -118,28 +129,17 @@ export async function installHaulerFixture() {
 			chargeAu: route.chargeAu,
 			contact: !!contact,
 			jump: route.jump ?? null,
-			rift: g.trafficRifts.get(id)?.strength ?? 0,
-			flare: g.trafficRifts.get(id)?.flare ?? 0,
-			riftRadiusKm: g.trafficRifts.get(id)?.radiusKm ?? 0,
-			// The hull's stand-off from the ring's plane, along its nose: negative
-			// while it is still behind the plane it is coming through (#1006 C2).
-			// Null when no hull is drawn in this system at all — during an opening
-			// the hauler is in another system and `route.pos` is a placeholder, so a
-			// figure here would read precise and be wrong.
-			hullThroughPlaneKm:
-				contact && route.jump
-					? ((route.pos.x - route.jump.pos.x) * route.jump.nose.x +
-							(route.pos.y - route.jump.pos.y) * route.jump.nose.y +
-							(route.pos.z - route.jump.pos.z) * route.jump.nose.z) /
-						Math.max(
-							1e-9,
-							Math.hypot(
-								route.jump.nose.x,
-								route.jump.nose.y,
-								route.jump.nose.z,
-							),
-						)
-					: null,
+			rift: rift?.strength ?? 0,
+			flare: rift?.flare ?? 0,
+			riftRadiusKm: rift?.radiusKm ?? 0,
+			// The drawn hull's sim origin relative to the actual ring plane, along
+			// the ship's nose: negative behind it, positive through it (#1006 C2).
+			// The ring is offset from the lane point in opposite directions for an
+			// arrival and a departure; only the rendered anchor owns that placement.
+			// Null without both a contact and a ring to measure.
+			hullThroughPlaneKm: alongNoseFrom(rift?.anchor),
+			// Settling at the lane point is a different claim from passing the ring.
+			hullFromLanePointKm: alongNoseFrom(route.jump?.pos),
 			berthId: route.berthId,
 			queue: route.queueRequest,
 			terminal: route.terminalStationId,

@@ -820,9 +820,9 @@ ring a lens makes, and the sky behind it bends round it — **the player's rift
 only** today, because the witchspace pass carries one lens. Owned by
 `src/arrival-rift.ts`; #530's opening reuses it, and a **Hauler**'s jump
 draws its ring at both ends, without the lens (`inter-system-traffic.md` §9).
-Its radius is never a constant: half the ship's longest envelope, floored at
-the size of the smallest hull that can open one — which is why one ring fits a
-**Cutter** and the **Ark**.
+Its full-strength radius is `ARRIVAL_RIFT.radiusReaches` times that hull's
+`HULL_REACH_KM`, with no minimum radius. The player's and a **Hauler**'s rings
+use this same law.
 _Avoid_: portal, wormhole (as an object)
 
 **The crossing**:

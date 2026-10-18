@@ -11,6 +11,8 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { ARRIVAL_RIFT, ArrivalRift } from "../src/arrival-rift";
 import { disposeSubtree, resourcesOf } from "../src/gpu-teardown";
+import { HULL_SPECS, type HullId } from "../src/hull";
+import { HULL_REACH_KM } from "../src/ship-mesh";
 import { v3 } from "../src/vec3";
 import { WITCHSPACE, witchspaceLook } from "../src/witchspace";
 import { CROSSING, npcRiftLook } from "../src/witchspace-crossing";
@@ -53,6 +55,17 @@ describe("the arrival rift", () => {
 		rift.update(1, 0.5, v3(0, 0, 0));
 		// Its diameter is wider than the ship's: the radius is past the reach.
 		expect(rift.radiusKm).toBeGreaterThan(0.04 * 1.2);
+	});
+
+	test("every hull's full ring radius is 1.6 display reaches, with no minimum floor", () => {
+		expect(ARRIVAL_RIFT.radiusReaches).toBe(1.6);
+		for (const id of Object.keys(HULL_SPECS) as HullId[]) {
+			const reachKm = HULL_REACH_KM[id];
+			const rift = new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm });
+			rift.update(1, 0, v3(0, 0, 0));
+			expect(rift.radiusKm).toBeCloseTo(1.6 * reachKm, 12);
+			disposeSubtree(rift.object);
+		}
 	});
 
 	test("opens with its strength, and draws nothing at zero", () => {

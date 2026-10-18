@@ -413,7 +413,7 @@ const PLACERS = {
 				? shot.event === "arrival"
 					? "no hull in this system yet"
 					: "no hull in this system any more"
-				: `hull ${sampled.hullThroughPlaneKm.toFixed(3)} km through the plane`
+				: `hull origin ${sampled.hullThroughPlaneKm.toFixed(3)} km from ring plane along nose`
 		} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
 	},
 	"station-axis": async (page, shot) => {

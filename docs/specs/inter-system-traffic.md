@@ -300,17 +300,14 @@ No row, transition or schema term is added.
 
 ## 9. Presentation (D12)
 
-A jump is drawn at both ends with `arrival-rift.ts`'s ring, sized from the
-hauler's hull reach as for the player: half the ship's longest envelope,
-floored at the smallest ring that reads as one (`WITCHSPACE.RING_HULL_RATIO`).
-It is never a constant — one radius cannot fit a 13 m **Cutter** and a 260 m
-**Ark** — and it is the same law the player's ring has always used. NPC rifts
-have no lens (`arrival-rift.ts`: the witchspace pass carries one lens, the
-player's).
+A jump is drawn at both ends with `arrival-rift.ts`'s ring. Its full-strength
+radius is `ARRIVAL_RIFT.radiusReaches` times the hauler's `HULL_REACH_KM`, with
+no minimum radius; the player's ring uses the same law. NPC rifts have no lens
+(`arrival-rift.ts`: the witchspace pass carries one lens, the player's).
 
 What is drawn is **the crossing** (`CONTEXT.md`; `src/witchspace-crossing.ts`
-owns its `CROSSING` clock), and its beats are keyed to the instant the hull
-passes the ring's plane — not to when anyone docks. Before #1006 both ends were
+owns its `CROSSING` clock), and its beats are keyed to the scheduled jump
+instant — not to when anyone docks. Before #1006 both ends were
 the same half-second-after-the-instant frame, which is why a watcher never saw a
 ring open or close:
 
@@ -318,19 +315,23 @@ ring open or close:
   brightens over it, with the hauler still in the other system — the projection
   carries the imminent `arrival` jump while `present` is false, so the ring is on
   screen and the hull, its **DisplayContact** and its collision are not. At the
-  instant it is at full strength and the hull stands `CROSSING.emergeRadii`
-  ring-radii aft of the plane; over `CROSSING.crossS` it eases through to rest on
+  instant it is at full strength and the hull stands `crossingDistanceKm`
+  aft of the **Lane point**. The ring stands one display reach aft of that
+  point; over `CROSSING.crossS` the hull eases through it to rest on
   the **Lane point**, where the hold hands the next leg the state it always
   handed it. The ring then holds, and seals over `CROSSING.sealS` — collapsing
   toward a point with a flare — and is gone at `CROSSING.windowEndS`.
 - **Departure:** the ring opens on the same clock ahead of the instant; the
-  hauler leaves the **Lane point** it held through its wind-up, stands
-  `CROSSING.emergeRadii` radii ahead of the plane, and eases into it over
-  `CROSSING.crossS`, and is gone at the instant: **swallowed, not deleted**. The
-  ring seals behind it on the same timeline.
+  hauler leaves the **Lane point** it held through its wind-up and eases into
+  the ring over `CROSSING.crossS`. The ring stands one display reach ahead of
+  that point; the hull ends `crossingDistanceKm` ahead of the point and is gone
+  at the instant: **swallowed, not deleted**. The ring seals behind it on the
+  same timeline. `crossingDistanceKm` is `CROSSING.emergeRadii` times the
+  measured envelope's farthest corner from the hull origin, including its
+  `envCentre` offset; it is not a multiple of the ring radius.
 
-The flare is the same `CROSSING` curve on both sides — peaking after the hull
-has passed, and again as the ring closes — and it is a separate shader term
+The flare is the same `CROSSING` curve on both sides — peaking at the jump
+instant, and again as the ring closes — and it is a separate shader term
 (`uFlare`) from the ring's size (`uStrength`), so a flare cannot resize the
 annulus out of the frame. The player's own world-anchored ring flares and seals
 by the same clock; its **unfurl** and **unfold** ahead of the instant are #532's
@@ -362,9 +363,9 @@ the closing.
 | Lane-point annulus | 2–20 km | the view rows of §9 |
 | `CROSSING.openS` — how long the ring tears open before anything is in it | 1.5 s | the `npc-arrival-opening` frame, and the principal's yes (§9) |
 | `CROSSING.crossS` — how long the hull takes to come through the plane | 1.2 s | the `npc-arrival-crossing` and `npc-departure-swallow` frames (§9) |
-| `CROSSING.holdS` + `CROSSING.sealS` — how long the ring stays, and how fast it seals | 3.6 s + 1.2 s | the `npc-departure-seal` frame; `holdS + sealS` is bounded by the jump wind-up (`JUMP_CHARGE_S` in `main.ts`) so the opening starts no earlier than the wind-up |
-| `CROSSING.emergeRadii` — how far aft (or ahead) of the plane the hull stands at the instant | 2 ring radii | the same two crossing frames; below ~1 the hull is already inside the annulus at the instant and there is no emergence to see |
-| `WITCHSPACE.RING_HULL_RATIO` — ring radius as a share of the ship's longest envelope | 0.5 | the view rows of §9, on the smallest and largest hull (`tests/witchspace-crossing.test.ts` measures both) |
+| `CROSSING.holdS` + `CROSSING.sealS` — how long the ring stays after the instant, and how fast it seals | 3.6 s + 1.2 s | the `npc-departure-seal` frame; the seal may outlast the wind-up. `openS` and `crossS` each fit inside `JUMP_CHARGE_S` (`src/hyperspace.ts`), as asserted in `tests/witchspace-crossing.test.ts` |
+| `CROSSING.emergeRadii` — hull motion from the lane point, measured by `crossingDistanceKm` | 2 envelope-corner extents | the two crossing frames; `tests/witchspace-crossing.test.ts` holds the lead long enough to clear both the ring standoff and the hull's extent |
+| `ARRIVAL_RIFT.radiusReaches` — full-strength ring radius in hull display reaches | 1.6 | the view rows of §9; `tests/arrival-rift.test.ts` checks the radius law for every hull, with no minimum floor |
 
 One share for every station role. A per-role share would say what each role is
 *for*, which is #460's to decide.

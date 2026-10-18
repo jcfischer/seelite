@@ -8281,7 +8281,6 @@ class Game {
 		}
 	}
 
-	/** The listener is the camera: its right axis, not the hull's, pans a ring. */
 	/**
 	 * One frame of a Traffic carrier's ring, at either end of its jump.
 	 *
@@ -8292,6 +8291,7 @@ class Game {
 	 * ship was already sitting inside it, which is the frame the principal saw.
 	 * The ring is drawn from `route.jump` alone, so an arrival whose hauler is
 	 * still in another system (`present: false`) gets its opening on screen.
+	 * The listener is the camera: its right axis, not the hull's, pans a ring.
 	 */
 	private updateTrafficRifts(
 		cameraPos: Vec3,

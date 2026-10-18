@@ -113,7 +113,8 @@ try {
 			depOpening.contact &&
 			depOpening.rift > 0 &&
 			depOpening.rift < 1 &&
-			Math.abs(depOpening.hullThroughPlaneKm) < 1e-6,
+			depOpening.hullThroughPlaneKm < 0 &&
+			Math.abs(depOpening.hullFromLanePointKm) < 1e-6,
 		depOpening,
 	);
 	await sample(fixture.tOut - 0.9);
@@ -121,7 +122,45 @@ try {
 	check("the opening paints the frame on its own", openingPixels > 30, {
 		openingPixels,
 	});
+	const depCreep = await sample(fixture.tOut - C.crossS + 0.15);
+	check(
+		"forward creep off the lane point has not yet reached the ring plane",
+		depCreep.hullFromLanePointKm > 0 && depCreep.hullThroughPlaneKm < 0,
+		depCreep,
+	);
 	const depSwallow = await sample(fixture.tOut - 0.05);
+	// A hull creeping forward from the lane point has not necessarily reached
+	// the ring. Move the actual rendered plane beyond this hull: the signed
+	// distance must change sides even though the hull and lane point stay put.
+	const movedPlane = await page.evaluate((at) => {
+		const g = window.__seelite;
+		const f = window.__haulerFixture;
+		const route = g.trafficRoutes.find((r) => r.key === f.plan.actor.key);
+		const id = route.key + "|" + route.jump.kind + "|" + route.jump.atS;
+		const rift = g.trafficRifts.get(id);
+		const anchor = { ...rift.anchor };
+		const shiftKm = 2 * rift.radiusKm;
+		const nose = route.jump.nose;
+		const norm = Math.hypot(nose.x, nose.y, nose.z);
+		try {
+			for (const axis of ["x", "y", "z"])
+				rift.anchor[axis] += (nose[axis] / norm) * shiftKm;
+			return { ...f.sample(at, false), shiftKm };
+		} finally {
+			Object.assign(rift.anchor, anchor);
+		}
+	}, fixture.tOut - 0.05);
+	check(
+		"crossing distance follows the drawn ring plane, not the lane point",
+		depSwallow.hullThroughPlaneKm > 0 &&
+			movedPlane.hullThroughPlaneKm < 0 &&
+			Math.abs(
+				depSwallow.hullThroughPlaneKm -
+					movedPlane.hullThroughPlaneKm -
+					movedPlane.shiftKm,
+			) < 1e-6,
+		{ depSwallow, movedPlane },
+	);
 	check(
 		"and the hauler goes through the ring rather than out of it",
 		depSwallow.hullThroughPlaneKm > 0 && depSwallow.phase === "jump-windup",
@@ -195,9 +234,10 @@ try {
 	const arrSettled = await sample(fixture.tOut + C.crossS + 0.25);
 	check(
 		"the arriving hull eases through the plane and settles on the lane point",
-		arrThrough.hullThroughPlaneKm < -0.02 &&
+		arrThrough.hullThroughPlaneKm < 0 &&
 			arrSettled.contact &&
-			Math.abs(arrSettled.hullThroughPlaneKm) < 1e-3,
+			arrSettled.hullThroughPlaneKm > 0 &&
+			Math.abs(arrSettled.hullFromLanePointKm) < 1e-3,
 		{ arrThrough, arrSettled },
 	);
 	const arrSealing = await sample(fixture.tOut + C.windowEndS - 0.05);
@@ -286,7 +326,9 @@ try {
 			arrivalPixels,
 			depOpening,
 			openingPixels,
+			depCreep,
 			depSwallow,
+			movedPlane,
 			arrOpening,
 			arrOpeningPixels,
 			arrThrough,

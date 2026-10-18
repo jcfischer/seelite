@@ -1388,6 +1388,18 @@ function projectTrafficFlight(
 				},
 			);
 		}
+		const lead = crossingLeadKm(actor.hullId);
+		const ageS = gameTime - jumpAtS;
+		const flight =
+			gameTime < jumpAtS
+				? {
+						pos: add(
+							lanePoint.pos,
+							emergenceOffset("departure", ageS, lead, nose),
+						),
+						vel: emergenceVelocity("departure", ageS, lead, nose),
+					}
+				: { pos: { ...lanePoint.pos }, vel: { x: 0, y: 0, z: 0 } };
 		return withRoute(
 			actor,
 			gameTime >= jumpAtS
@@ -1397,26 +1409,7 @@ function projectTrafficFlight(
 					: "lane-point-hold",
 			{
 				key: actor.key,
-				pos: add(
-					lanePoint.pos,
-					gameTime < jumpAtS
-						? emergenceOffset(
-								"departure",
-								gameTime - jumpAtS,
-								crossingLeadKm(actor.hullId),
-								nose,
-							)
-						: { x: 0, y: 0, z: 0 },
-				),
-				vel:
-					gameTime < jumpAtS
-						? emergenceVelocity(
-								"departure",
-								gameTime - jumpAtS,
-								crossingLeadKm(actor.hullId),
-								nose,
-							)
-						: { x: 0, y: 0, z: 0 },
+				...flight,
 				nose,
 				up: drop.up,
 			},
@@ -2145,10 +2138,7 @@ function projectLanePointArrival(
 		// rest on the point at `atS + crossS` — well inside the hold — so the leg
 		// that follows begins from the position and velocity it has always begun
 		// from and no downstream time moves.
-		const distance = crossingDistanceKm(
-			HULL_SPECS[input.actor.hullId].env,
-			HULL_SPECS[input.actor.hullId].envCentre,
-		);
+		const distance = crossingLeadKm(input.actor.hullId);
 		const ageS = input.gameTime - lanePoint.atS;
 		return withRoute(
 			input.actor,
