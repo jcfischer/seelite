@@ -170,6 +170,7 @@ export const LEVERS = Object.freeze({
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
 	647: "a turn in cruise drawn as the attitude vents' plumes, like a turn in normal flight",
+	637: "the firing vents drawn on an NPC hull — the duel's raider — from its own firing table",
 	651: "the cabin drawn in its own pass, so no world geometry enters it",
 });
 
@@ -272,6 +273,11 @@ export const LEVERS = Object.freeze({
  *   then flown `steps` steps of 1/60 s through the game's own `step` and held
  *   (`holdCruiseTurnState`). The attitude vents fire and saturate because
  *   the sim says so; cruise moves the hull, so no translation vent does.
+ * - `npc-vents` — node #637's NPC plumes: a raider forced ahead in a cruise
+ *   leg interdicts and flies `steps` steps of the duel through the game's own
+ *   `step`, then the clock is held and the player is placed `behindKm` off its
+ *   stern looking at it (`scripts/lib/npc-vent-state.mjs`). The raider stands
+ *   where the sim left it and fires what its own Hull step fired.
  */
 export const SHOT_KINDS = Object.freeze([
 	"derelict",
@@ -292,6 +298,7 @@ export const SHOT_KINDS = Object.freeze([
 	"docking-notice",
 	"vents",
 	"cruise-turn",
+	"npc-vents",
 ]);
 
 /**
@@ -1161,6 +1168,12 @@ export const VIEWS = Object.freeze([
 			view: "chase",
 		},
 	},
+	{
+		name: "npc-vent-plumes",
+		covers: [637],
+		what: "Cockpit, off the duel's raider's stern: the raider turning onto the player and driving at them, its vents firing from its own Hull step — a glow at each lit throat and a short puff thinning away from it, on the raider's hull rather than the player's.",
+		shot: { kind: "npc-vents", steps: 20, behindKm: 0.2, view: "cockpit" },
+	},
 	/**
 	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
 	 * so an ordinary capture cannot land on the same frame twice; each row holds
@@ -1653,6 +1666,14 @@ const SHOT_REQUIREMENTS = {
 		Number.isInteger(s.steps) &&
 		s.steps > 0 &&
 		(s.orbit === undefined || finite(s.orbit)),
+	// Node #637: flown into the duel, and placed off the stern at a range
+	// where a 63.5 m hull is more than a dot.
+	"npc-vents": (s) =>
+		Number.isInteger(s.steps) &&
+		s.steps > 0 &&
+		finite(s.behindKm) &&
+		s.behindKm > 0 &&
+		s.behindKm < 2,
 	// #621: above the cap and above the envelope, or nothing saturates and the
 	// frame is a quiet ship under a caption about a saturated one.
 	vents: (s) =>

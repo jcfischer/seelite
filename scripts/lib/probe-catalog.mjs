@@ -255,6 +255,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-npc-vents.mjs",
+			"Flies a forced raider into the duel through the real step, holds the clock off its stern, then reads painted pixels: the raider's own firing table is non-empty and its own hull's, one plume set stands beside its mesh and is not the player's, a raider vent fired alone lights its own throat, a vent its table left out stays dark, and a raider taken out of view loses its set.",
+			[
+				"vent plumes",
+				"thrusters",
+				"firing table",
+				"raider",
+				"NPC hulls",
+				"duel",
+			],
+		),
+		entry(
 			"probe-voices.mjs",
 			"Renders the synthesised voices offline through the engine's buses: a comms line on the console bus with the console row as its only level, the numbers station on the music bus with an echo that outlasts it against a dry control, a second line waiting for the first; and the running game saying approach control's answer on a clearance request, silent under ?voices=nocomms, and saying the director's numbers on the music bus.",
 			[

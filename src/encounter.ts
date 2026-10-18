@@ -57,7 +57,7 @@ import { defenderDraw } from "./relay-defender";
 import { mix } from "./rng";
 import type { ShieldSide } from "./ship-condition";
 import { applyDamage, fullCondition, isAlive } from "./ship-condition";
-import { flightPerformance } from "./sim";
+import { type VentLevels, flightPerformance } from "./sim";
 import {
 	type Vec3,
 	add,
@@ -127,6 +127,12 @@ export interface EncounterContact {
 	vel: Vec3;
 	nose: Vec3;
 	up: Vec3;
+	/**
+	 * The vents the raider fired on its last step (node #637), for its plumes.
+	 * Empty outside the duel: the interdiction's lock turns the nose by
+	 * `followHeading`, through no vent, so there is no table to draw.
+	 */
+	firing: VentLevels;
 }
 
 export interface EncounterStep {
@@ -374,6 +380,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 		vel: Vec3,
 		nose: Vec3,
 		up: Vec3 = upFor(nose),
+		firing: VentLevels = {},
 	): EncounterContact => ({
 		key: e.slot.key,
 		name: e.name,
@@ -381,6 +388,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 		vel,
 		nose,
 		up,
+		firing,
 	});
 
 	if (e.phase === "over") return idle(e);
@@ -515,6 +523,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			flight.ship.vel,
 			flight.nose,
 			flight.up,
+			flight.firing,
 		),
 		wreck: null,
 	};

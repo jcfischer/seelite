@@ -237,6 +237,7 @@ export function engage(
 			nose: target.nose,
 			up: target.up ?? frameAcross(target.nose),
 			rates: NO_ROTATION,
+			firing: {},
 			phase: intent === "attacker" ? "acquire" : "flee",
 			phaseSeconds: 0,
 			maneuverSeconds: 30,

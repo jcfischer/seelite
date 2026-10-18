@@ -442,6 +442,7 @@ import {
 	withAlpha,
 } from "./vent-cue";
 import { type VentPlumes, buildVentPlumes } from "./vent-plumes";
+import { NpcPlumes } from "./npc-plumes";
 import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
@@ -3243,6 +3244,9 @@ class Game {
 	 * or, in this change, when the ship leaves the materialization band.
 	 */
 	private readonly trafficEngagements = new Map<CarrierKey, Engagement>();
+	/** Node #637: the plumes on every NPC hull that fires — the raider and
+	 *  engaged Traffic — each drawn from its own flight's firing table. */
+	private readonly npcPlumes = new NpcPlumes();
 	/**
 	 * The hails this session has heard (`#396` §3), newest last, capped at
 	 * `HAIL_LOG_KEEP`.
@@ -6858,8 +6862,9 @@ class Game {
 				this.markedOcclusion[marked] = ["ship", markOcclusion(this.shipMesh)];
 		}
 		rebuildAuthoredStandIn(this.tenderMesh);
+		// A rebuilt hull's throats are measured again on its next firing frame.
 		for (const root of this.trafficMeshes.values())
-			rebuildAuthoredStandIn(root);
+			if (rebuildAuthoredStandIn(root)) this.npcPlumes.forget(root);
 		for (const parked of this.fleet) {
 			if (!rebuildAuthoredStandIn(parked.mesh)) continue;
 			const name = `fleet-${parked.mesh.name || "hull"}`;
@@ -7356,6 +7361,7 @@ class Game {
 		for (const contact of this.trafficContacts.values())
 			this.unregisterContact(contact);
 		for (const mesh of this.trafficMeshes.values()) {
+			this.npcPlumes.forget(mesh);
 			mesh.removeFromParent();
 			disposeSubtree(mesh);
 		}
@@ -17332,6 +17338,30 @@ class Game {
 		// Hidden, it draws nothing, so it is not written either.
 		if (plumes.visible)
 			this.ventPlumes.update(this.ventFiring, this.world.gameTime);
+		// **And on every NPC hull that keeps a firing table** (node #637): the
+		// raider from the encounter's contact, an engaged carrier from its
+		// flight. Projected Traffic is a schedule, not a Hull step, so it has no
+		// table and draws none; nor does the raider while the interdiction's
+		// lock turns it, which fires no vent.
+		const view = this.encounterView;
+		if (view)
+			this.npcPlumes.draw(
+				this.raiderMesh,
+				RAIDER_HULL_ID,
+				view.firing,
+				this.world.gameTime,
+			);
+		for (const [key, engagement] of this.trafficEngagements) {
+			const mesh = this.trafficMeshes.get(key);
+			if (mesh)
+				this.npcPlumes.draw(
+					mesh,
+					engagement.hullId,
+					engagement.flight.firing,
+					this.world.gameTime,
+				);
+		}
+		this.npcPlumes.endFrame();
 		// The shipyards' baked work lights on the hulls inside them (#818).
 		// Every frame, so a ship that left a yard or a system draws none.
 		const yards: YardWorkLight[] = [];

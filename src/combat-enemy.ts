@@ -51,6 +51,7 @@ import {
 	stepHull,
 	type Ship,
 	speedDemand,
+	type VentLevels,
 } from "./sim";
 import {
 	add,
@@ -97,6 +98,12 @@ export interface CombatEnemyState {
 	 * turn has momentum — the nose used to reach its turn rate in one frame.
 	 */
 	rates: Angular;
+	/**
+	 * The vents this ship fired on its last step: the `HullStep`'s firing table,
+	 * kept for the renderer's plumes (node #637) as the player's is (#621).
+	 * Empty before the first step. Output, never read back by the controller.
+	 */
+	firing: VentLevels;
 	phase: EnemyFlightPhase;
 	phaseSeconds: number;
 	/** How long the current manoeuvre holds before the machine may re-decide.
@@ -728,6 +735,7 @@ export function createCombatEnemy(
 		nose,
 		up: unit(sub(v3(0, 1, 0), scale(nose, nose.y)), perpBasis(nose)[1]),
 		rates: NO_ROTATION,
+		firing: {},
 		phase: "acquire",
 		phaseSeconds: 0,
 		maneuverSeconds: 30,
@@ -1080,6 +1088,7 @@ export function stepEnemyShip(
 			nose,
 			up,
 			rates: flown.rates,
+			firing: flown.firing,
 			phase,
 			phaseSeconds,
 			maneuverSeconds,

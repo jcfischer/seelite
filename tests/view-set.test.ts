@@ -222,7 +222,8 @@ describe("the view set itself", () => {
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
-		expect(VIEWS.length).toBe(75);
+		// Node #637 adds `npc-vent-plumes`.
+		expect(VIEWS.length).toBe(76);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -780,7 +781,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 75)");
+		expect(html).toContain("Selected canonical views (3 of 76)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -817,7 +818,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–30.2s");
+		expect(html).toContain("· clock 0.6–30.6s");
 		expect(html).not.toContain("pinned");
 	});
 
