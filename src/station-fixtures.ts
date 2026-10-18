@@ -1059,7 +1059,7 @@ const DECLARATIONS: Partial<
 		}
 	},
 
-	/** Wheel: a service main and two beacon masts on the finished rim's
+	/** Wheel: a service main and two obstruction lamps on the finished rim's
 	 * forward face, clear of the open lattice and the hub's approach. */
 	"trade/e": ({ group, pools, beaconAt }) => {
 		const S = SHIP_SCALE;

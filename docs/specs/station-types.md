@@ -777,7 +777,7 @@ sign-off; these repairs are verified by the existing form rows. The Wheel's
 hub front extends to the shared trade plane; its bay is measured against
 `hub`, because its named `core` is the finished rim. Both rims, spokes, hub,
 radiators and aft mast spin with its proxy. Industrial finishes add a service
-main and beacon masts on the finished rim's forward face.
+main and obstruction lamps on the finished rim's forward face.
 
 **The refinery pool is [a, b, c, d]** (node #745): Warren, Collar, Spar and
 Works. All use the refinery's unchanged aperture plane and berth catalogue.

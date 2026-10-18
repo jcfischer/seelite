@@ -11,11 +11,11 @@ bay-box and hull-at-plane rows now measure that hub, and the Wheel's own
 ray row still measures its actual section through the whole bay.
 
 Its independently written proxy has rectangular-section rim segments, eight
-spokes, the cut hub and radiator envelopes, the aft mast and rim beacon
+spokes, the cut hub and radiator envelopes, the aft mast and the rim's lamp
 masts, all spinning. The proxy leaves both the docking opening and the gaps
 between the spokes and rims open. The thinnest primitive is pinned at
 16 m (0.016 km). Industrial finishes add a service main and
-two beacon masts on the finished rim's forward face. The role's strobe pair
+two obstruction lamps on the finished rim's forward face. The role's strobe pair
 mounts on the hub's forward cap so the narrow cockpit approach can see both.
 The hub and its lamps share a member group; the named `hub` mesh still owns
 only its hull geometry, so bay bounds exclude fixtures. Existing budgets and
@@ -56,20 +56,26 @@ capsule roots crossed the bay; the unchanged opening row caught 420 sample
 points. Their roots now clear it. The Wheel's vertex, reach, opening,
 thickness and gap rows pass.
 
-The all-civilian cruise handling row now names Coriolis explicitly, keeping
-the handling axis on the same reference form as the historical corpus.
-The per-form rows retain their original systems and bearings and test every
-trade form under assist-on, assist-off and cruise, with blind impact controls.
-The complete avoidance test file passes 64 tests. No production avoidance
-controller changes ship.
+Review round 1 restored generated trade forms in the all-civilian cruise
+handling row. A dedicated regression keeps the exact seed-2 courier flight
+beside its generated Wheel (bearing 0, first placed station), with the same
+production collision sweep and a blind control that hits it. Before repair,
+`expect(run(true).met).toBeNull()` received `"station-trade"`.
 
-**Diagnostic limit for review:** before that fixture pin, the seed-2 courier
-cruise setup with generated Wheel contacted `station-trade`; the base commit
-passed that same row with its former generated forms. Wheel's per-form row
-uses the existing freighter cruise fixture and passes. These checks therefore
-do not establish every hull × every station form as contact-free. Broader
-NPC avoidance work remains outside this node; the supervisor should retain
-this observation when reviewing the fixture change.
+The controller changed its heading but requested only forward speed. While
+turning, its assist braked toward the pilot's star frame and dragged the
+initially co-moving courier into the rim after about 1.8 seconds. In the
+existing fallback where no heading clears the moving solid, it now requests
+lateral assist toward the least-closing heading as well. These are velocity
+demands inside the unchanged speed cap, using the hull's bounded vents and
+the same fight frame. Ordinary avoidance turns and mouth holds retain their
+forward-speed control. No proxy, geometry, collision tolerance or assertion
+threshold changed in this repair.
+
+The same regression passes after repair, with its blind impact retained.
+All 65 avoidance tests pass, including the restored generated-form civilian
+row, all pooled-form regimes, gun-run floors, body avoidance and open-space
+identity. This does not claim all hull × form combinations are contact-free.
 
 Browser selection was inspected before execution. Git selection against the
 unchanged HEAD had no diff and failed closed to all 109 probes; diagnostic
@@ -100,13 +106,33 @@ Wheel tests also pass.
 The old seed-54 visual fixture now draws Ring rather than Coriolis and was
 42/44, with strobe-a reading zero at both viewports. It is not a Wheel result.
 This node scopes that probe to Wheel and does not repair Ring's mounting or
-claim its browser fixture is green. Both this and the courier/Wheel avoidance
-observation above are retained for the supervisor's review.
+claim its browser fixture is green. This observation is retained for the
+supervisor's review.
 
-## Final headless gates
+## Initial implementation headless gates
 
 The required single full `npm test` run passed **6,495 tests, 0 failures**
 across 375 files, in 696.85 seconds on this host. Production build (including
 typecheck), format and lint gates passed. No production code changed after
 that run. The supervisor owns the full browser acceptance run and Sage review;
 the local GPU evidence above covers four affected contracts, not the full suite.
+
+## Review round 1 verification
+
+The restored generated-form civilian row and the explicit courier/Wheel
+regression pass within all 65 avoidance tests. The related engagement, duel,
+station-form and Wheel files pass 83 tests. Typecheck, production build,
+format and lint pass.
+
+Selection was inspected before the review-pass probes: the branch's existing
+Git diff selects 109 contracts; the uncommitted controller path's diagnostic
+selection names 23. The worker contract leaves the full browser gate to the
+supervisor. Locally, `probe-traffic-engagement` passes 22/22 on the GPU lane
+(ANGLE Metal, Apple M1 Pro), including the armed return-fire row with zero
+impacts. `probe-raider-frame` also passes on that lane. Chromium aborted in
+the sandbox before any checks; the same affected commands ran outside it.
+This is affected coverage, not a full browser gate.
+
+The review pass's single full `npm test` run passed **6,496 tests, 0 failures**
+across 375 files in 695.58 seconds on this host. No implementation changes
+followed that run. The supervisor owns the final full browser gate.

@@ -298,7 +298,7 @@ visible on approach alongside its barrel windows. Assembly's hub clutter
 turns with its hub, while its industrial service rails and tip masts stay on
 the planted static spine. The role's warm windows, strobes and mouth ring
 remain common to all five forms. The Wheel's hub mouth meets the shared trade
-plane; its industrial service main and beacon masts sit on the finished rim's
+plane; its industrial service main and obstruction lamps sit on the finished rim's
 forward face, leaving the unfinished rim open. Its strobe pair rides the hub's
 forward cap, where both remain visible in the narrow cockpit approach.
 
