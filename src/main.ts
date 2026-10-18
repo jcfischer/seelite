@@ -2262,8 +2262,7 @@ async function requireModels(
 }
 
 class Game {
-	/** Collision data is available before the authored rock model installs. */
-	/** Lazy render-side handle; collision consumers import rock-assets directly. */
+	/** Rock collision data, inlined in the bundle and decoded on first read, so it is available before the authored rock model installs. */
 	readonly rockAssets = ROCK_ASSETS;
 
 	readonly world: World;
