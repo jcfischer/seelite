@@ -12,7 +12,13 @@
  */
 
 import { RINGED_CLASSES, type SurfaceClass } from "./planet-appearance";
-import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
+import {
+	ANALYTIC_RELIEF,
+	CLASS_GLSL,
+	RELIEF,
+	TERRAN_GRADIENT_NOISE,
+	terranHeightGradient,
+} from "./planet-classes.glsl";
 import { PLANET_EXTRA_OCTAVES } from "./planet-footprint";
 import { makeSplicer } from "./shader-splice";
 import {
@@ -452,8 +458,22 @@ ${SURFACE_VERTEX_BODY}
  * label. That is the trap `main.ts` already records for the vignette, where a
  * probe measured its own assignment being overwritten.
  */
-export const RELIEF_PATHS = ["four-tap", "screen-space", "none"] as const;
+export const RELIEF_PATHS = [
+	"four-tap",
+	"screen-space",
+	"none",
+	"analytic-gradient",
+] as const;
 export type ReliefPath = (typeof RELIEF_PATHS)[number];
+
+const gradientSplicer = makeSplicer("terran analytic relief");
+const analyticRelief = gradientSplicer.splice(
+	"fragment",
+	RELIEF,
+	"#ifdef RELIEF_SCREEN_SPACE",
+	ANALYTIC_RELIEF,
+);
+export const TERRAN_GRADIENT_SPLICES = gradientSplicer.log;
 
 // Only the live terran program adopts detail. Bakes retain the original fields,
 // and warp's fbm3 calls keep their octave count. Every replacement is observable.
@@ -496,20 +516,23 @@ export function fragmentFor(
 	footprint = true,
 ): string {
 	const detail = surface === "terran" && footprint;
+	// Node #757 only differentiates terran. Other class cost cells retain their
+	// four-tap control; an analytic label must not imply a new class derivative.
+	const analytic = surface === "terran" && relief === "analytic-gradient";
 	return /* glsl */ `
 precision highp float;
-${relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
+${analytic ? "#define RELIEF_ANALYTIC_GRADIENT 1" : relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
 ${relief === "none" ? "#define RELIEF_NONE 1" : ""}
 ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
-${NOISE_GLSL}
+${NOISE_GLSL + (analytic ? TERRAN_GRADIENT_NOISE : "")}
 ${detail ? TERRAN_FOOTPRINT_INPUTS : ""}
 ${surface === "terran" ? CLOUD_FIELD_GLSL + CLOUD_PROJECTION_GLSL : ""}
 ${surface === "terran" ? "uniform samplerCube cloudCoverage;\nuniform float cloudCoverageReady;" : ""}
 ${LIGHT_GLSL}
-float height(vec3 p);
-${RELIEF}
-${detail ? liveTerran : CLASS_GLSL[surface]}
+float height(vec3 p);${analytic ? "\nvec4 heightAndGradient(vec3 p);" : ""}
+${analytic ? analyticRelief : RELIEF}
+${(detail ? liveTerran : CLASS_GLSL[surface]) + (analytic ? terranHeightGradient(detail) : "")}
 ${RINGED_CLASSES.includes(surface) ? `${RING_GLSL}\n${RING_SHADOW_GLSL}` : ""}
 void main() {
   vec3 p = normalize(vObjP);

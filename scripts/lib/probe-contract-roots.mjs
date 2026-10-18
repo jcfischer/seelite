@@ -355,6 +355,12 @@ const OWNERS = Object.freeze({
 		"src/planet-surface.ts",
 		"src/planet-appearance.ts",
 	],
+	"probe-planet-gradient.mjs": [
+		"scripts/probe-planet-gradient.mjs",
+		"src/planet-surface.ts",
+		"src/planet-shaders.ts",
+		"src/planet-classes.glsl.ts",
+	],
 	"probe-planet-footprint.mjs": [
 		"scripts/probe-planet-footprint.mjs",
 		"src/planet-surface.ts",
