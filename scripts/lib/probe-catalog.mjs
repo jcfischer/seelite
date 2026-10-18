@@ -780,6 +780,17 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-mouse-sensitivity.mjs",
+			"Steps the Mouse sensitivity row on the settings screen from 100% to 200% and checks the same real mouse movement, with flight assist off, turns the nose twice as fast, that the flick readout's asked turn doubles with it, and that the choice survives a reload.",
+			[
+				"mouse sensitivity",
+				"settings",
+				"pointer lock",
+				"mouse input",
+				"flight controls",
+			],
+		),
+		entry(
 			"probe-moving-guard.mjs",
 			"Checks the moving-body cruise stop and the handoff into the correct local flight frame.",
 			["moving body", "cruise guard", "local frame", "collision avoidance"],
