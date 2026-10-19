@@ -963,7 +963,6 @@ function padKeepOut(type: "refinery" | "outpost"): THREE.Box3[] {
  */
 export interface FittedOutpost {
 	hull: Obb[];
-	hullTris: Tri[];
 }
 
 export async function fitOutpostProxies(): Promise<
@@ -978,7 +977,7 @@ export async function fitOutpostProxies(): Promise<
 		keepOut = padKeepOut("outpost");
 		const hull = stage(`${form} hull`, parts, log);
 		keepOut = [];
-		out[form] = { hull, hullTris: parts.flat() };
+		out[form] = { hull };
 		built.dispose();
 	}
 	return out;
