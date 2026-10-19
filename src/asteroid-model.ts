@@ -105,12 +105,11 @@ export function flattenAuthoredRocks(scene: THREE.Object3D): RockShapes {
 		(levels[archetype] ??= [])[level] = g;
 		source = mesh.material as THREE.MeshStandardMaterial;
 	});
-	if (
-		!source ||
-		levels.length !== ROCK_ARCHETYPES ||
-		levels.some((l) => !l || l.length !== 3 || l.some((g) => !g))
-	)
-		throw new Error("Incomplete rock asset");
+	// By index: Array.some skips holes, so a missing archetype or level would pass.
+	let complete = levels.length === ROCK_ARCHETYPES;
+	for (let a = 0; complete && a < ROCK_ARCHETYPES; a++)
+		for (let l = 0; l < 3; l++) if (!levels[a]?.[l]) complete = false;
+	if (!source || !complete) throw new Error("Incomplete rock asset");
 	const colour = new THREE.Color().setRGB(2.3, 2.3, 2.3);
 	if (source.map) source.map.anisotropy = 4;
 	if (source.normalMap) source.normalMap.anisotropy = 4;
@@ -201,7 +200,6 @@ export function standInShape(archetype: number): THREE.BufferGeometry[] {
 }
 
 let standIn: RockShapes | undefined;
-export const standInRockShapes = (): RockShapes | undefined => standIn;
 
 /**
  * The failed-load stand-in: K = 16 plain-fill rocks, one archetype per slice

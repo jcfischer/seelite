@@ -13,8 +13,8 @@
  *   - the rocks reach the pixels (frame with the near batch shown vs hidden);
  *   - a failed load: plain-fill procedural K=16 rocks, never points alone, no
  *     `ROCK_SURFACE` splice, warned once, no Retry panel;
- *   - a jump while the install is in flight frees the field left behind and
- *     builds the one arrived in;
+ *   - a jump after the install frees the field left behind and builds the one
+ *     arrived in (a jump mid-install is asserted headlessly, not here);
  *   - both level directions follow #950's thresholds with hysteresis.
  *
  * Timing is not measured here (`measure-asteroid-field-cost.mjs` does that on
@@ -422,36 +422,13 @@ try {
 		])
 			out.push({ px, level: await at(distFor(px)), dir: "in" });
 		// Outbound, hysteresis: 10 % inside the level-0 edge it holds level 0.
-		out.push({
-			px: edges[0] * 0.9,
-			level: await at(distFor(edges[0] * 0.9)),
-			dir: "out",
-		});
-		out.push({
-			px: edges[0] * 0.5,
-			level: await at(distFor(edges[0] * 0.5)),
-			dir: "out",
-		});
-		out.push({
-			px: edges[1] * 0.9,
-			level: await at(distFor(edges[1] * 0.9)),
-			dir: "out",
-		});
-		out.push({
-			px: edges[1] * 0.5,
-			level: await at(distFor(edges[1] * 0.5)),
-			dir: "out",
-		});
-		out.push({
-			px: edges[2] * 0.9,
-			level: await at(distFor(edges[2] * 0.9)),
-			dir: "out",
-		});
-		out.push({
-			px: edges[2] * 0.5,
-			level: await at(distFor(edges[2] * 0.5)),
-			dir: "out",
-		});
+		for (const k of [0, 1, 2])
+			for (const f of [0.9, 0.5])
+				out.push({
+					px: edges[k] * f,
+					level: await at(distFor(edges[k] * f)),
+					dir: "out",
+				});
 		// Turned round at level 1 (just below the level-0 edge): the band above
 		// the bare edge is held, and only past edge × 1.15 does it step back up.
 		await at(distFor(edges[0] * 0.9));
@@ -532,7 +509,7 @@ try {
 		JSON.stringify(arrived),
 	);
 	check(
-		"returning keeps the decoded rocks without refetch",
+		"the system arrived in reuses the decoded rocks without refetch",
 		requests.length === 1,
 		String(requests.length),
 	);

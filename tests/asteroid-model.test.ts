@@ -57,6 +57,20 @@ test("flattening keeps position, normal and uv only, in unit-bound space, with a
 test("an incomplete asset is refused rather than drawn with holes", () => {
 	expect(() => flattenAuthoredRocks(sceneOf(15))).toThrow(/Incomplete/);
 	expect(() => flattenAuthoredRocks(sceneOf(16, 2))).toThrow(/Incomplete/);
+	// A hole, not a short row: Array.some skips holes, so length checks alone pass.
+	const without = (name: string) => {
+		const scene = sceneOf(16);
+		scene.remove(scene.getObjectByName(name)!);
+		return scene;
+	};
+	for (const l of [0, 1, 2])
+		expect(() => flattenAuthoredRocks(without(`rock_07_basalt_L${l}`))).toThrow(
+			/Incomplete/,
+		);
+	const noSeven = sceneOf(16);
+	for (const l of [0, 1, 2])
+		noSeven.remove(noSeven.getObjectByName(`rock_07_basalt_L${l}`)!);
+	expect(() => flattenAuthoredRocks(noSeven)).toThrow(/Incomplete/);
 	const odd = sceneOf(16);
 	odd.children[0].name = "something_else";
 	expect(() => flattenAuthoredRocks(odd)).toThrow(/Unrecognised/);

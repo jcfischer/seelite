@@ -59,12 +59,12 @@ shadow rule was changed.
 
 ## Runtime and performance evidence
 
-### Lifecycle rows (SOP §3)
+### Operational conditions (SOP §3)
 
 | Path | Result |
 | --- | --- |
 | Boot and cold download | Not a boot model (`bootModelIds` unchanged, asserted in `tests/system-models.test.ts`). Requested once after boot, probe row "requested once". |
-| Background installation | Points while pending; batches built in 4 ms slices, each compiled (`compileAsync` on the composer target) and its maps uploaded while hidden; then swapped in. Cold install, GPU lane, two runs: longest frame interval across the whole install 43.2 / 38.5 ms (36 ms in an earlier run), median 16.6–16.7 ms, the swap frame itself 18.4 / 19.3 ms. #953 measured a 70 ms first frame. |
+| Background installation | Points while pending; batches built in 4 ms slices, each compiled (`compileAsync` on the composer target) and its maps uploaded while hidden; then swapped in. Cold install, GPU lane, two runs: longest frame interval across the whole install 43.2 / 38.5 ms (36 ms in an earlier run), median 16.6–16.7 ms, the swap frame itself 18.4 / 19.3 ms. #953 measured a 70 ms first frame. The `INSTALL=1` runs' raw output was not kept; rerun `INSTALL=1 SEELITE_PROBE_RENDERER=hardware node scripts/measure-asteroid-field-cost.mjs` to check. |
 | Interrupted or failed load | Plain-fill K = 16 rocks, warned once, no Retry panel, settles (`probe-asteroid-field.mjs`). The queue's failed hook keeps `modelsSettled` false until the stand-in is built. |
 | Postcard/export | `systemModelIds` includes `asteroids` for a system with a field, so the postcard waits on it like any model, then `game.modelInstalled("asteroids")` finishes the batches before the card is drawn. **Not exercised by a probe run**; read from code only. |
 | Flight and traffic | Field is a near-layer object, hidden beyond `NEAR_FAR_KM` less a margin. No contacts, collision or cruise (out of scope, #971/#949). |
@@ -150,7 +150,7 @@ the low miss. Low stays above 0.4 and under the ruled +0.6 ms (D3).
 - Found in the in-game check and filed apart: the field reads too small and too
   regular (#1043). Rock collision is not in this node (#957 → #969).
 - Changelog: a major change by the docblock's definition (a pilot sees fields).
-  Proposed sentence added to `src/changelog.ts`; the principal has not approved it.
+  Sentence in `src/changelog.ts`, approved by the principal on 2026-10-19.
 
 ## Historical measurements
 
