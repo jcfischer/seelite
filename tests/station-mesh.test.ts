@@ -147,7 +147,12 @@ describe("the silhouette budget is a budget", () => {
 				);
 				expect(reach).toBeLessThanOrEqual(form.reachKm * (1 + 1e-6));
 				// And not slack: a declaration nothing approaches catches nothing.
-				expect(reach).toBeGreaterThan(form.reachKm * 0.6);
+				// An outpost's declaration is the authored model's reach (nodes
+				// #1031, #1032), which can stand well off its procedural
+				// stand-in (the Rig's, 0.28 km, against 0.58); the model is
+				// measured against it in `tests/outpost-flight.test.ts`.
+				if (type !== "outpost")
+					expect(reach).toBeGreaterThan(form.reachKm * 0.6);
 			}
 		}
 	});

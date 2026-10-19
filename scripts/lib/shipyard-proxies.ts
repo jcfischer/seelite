@@ -115,9 +115,14 @@ function fit(tris: Tri[], axes: Obb["axes"]): Obb {
  * the same way, so a box fitted here cannot fail there.
  */
 let nearModel: TriangleGrid | null = null;
+/** The distance a face sample may stand from the group's triangles while it
+ *  is fitted. Tighter than `SAMPLE_LIMIT_M` where a form asks for it
+ *  (`fitOutpostProxies`): a box on that limit passes on the samples the fit
+ *  reads and fails on the written box's, which land elsewhere. */
+let fitLimitM = SAMPLE_LIMIT_M;
 function keepsTheRule(o: Obb): boolean {
 	if (!nearModel) throw new Error("keepsTheRule: no group is being fitted");
-	return !overreaches(packed(o), nearModel);
+	return !overreaches(packed(o), nearModel, fitLimitM);
 }
 
 /** True when a sample of the box's faces stands farther than the rule allows. */
@@ -975,7 +980,12 @@ export async function fitOutpostProxies(): Promise<
 		const built = buildStationForm("outpost", form, 0x888888, 0, 0);
 		const parts = outpostParts(built.root);
 		keepOut = padKeepOut("outpost");
+		// The Salvage's boxes are as node #1031 shipped them; the forms after
+		// it (node #1032) keep half a metre inside the limit, which no box
+		// fitted to the first kept on the written box's own samples.
+		fitLimitM = form === "e" ? SAMPLE_LIMIT_M : SAMPLE_LIMIT_M - 0.5;
 		const hull = stage(`${form} hull`, parts, log);
+		fitLimitM = SAMPLE_LIMIT_M;
 		keepOut = [];
 		out[form] = { hull };
 		built.dispose();

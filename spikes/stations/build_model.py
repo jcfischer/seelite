@@ -768,7 +768,7 @@ def salvage_pad():
    box(head,(.8,.8,.35),steel);box(head-Vector((sx,sy,0))*.05-Z*.2,(.6,.6,.06),white)
  for bid,centre,along in PAD_BERTHS:pad_berth(bid,centre,along,plane)
 
-def salvage_well():
+def salvage_well(closure=True):
  """The landing well behind the deck's hole: four walls from the deck down to
  a floor past the sim's well, lamps round the floor, and the hull's front
  face closed again round it. Exterior structure, author units."""
@@ -797,7 +797,7 @@ def salvage_well():
    box((s*(li-.05),t*li,floor+.25),(.1,1.2,.3),warm)
  # The hull's front face, round the well: the review face was cut with it.
  x0,x1,y0,y1=[v*m for v in HULL_FACE_M];f=HULL_FRONT_M*m
- for (a,aa),(b,bb) in [((x0,x1),(lo,y1)),((x0,x1),(y0,-lo)),((lo,x1),(-lo,lo)),((x0,-lo),(-lo,lo))]:
+ for (a,aa),(b,bb) in ([] if not closure else [((x0,x1),(lo,y1)),((x0,x1),(y0,-lo)),((lo,x1),(-lo,lo)),((x0,-lo),(-lo,lo))]):
   box(((a+aa)/2,(b+bb)/2,f-.05),(aa-a,bb-b,.1),steel)
  owned('static')
 
@@ -810,7 +810,7 @@ def salvage_flank():
  m=.1;plane=FLIGHT_PLANE_M*m;half=PAD_DECK_HALF_M*m;face=half+PAD_SLAB_LIP-.02
  owned('pad-flank')
  for n,u in [(X,Y),(-X,-Y),(Y,-X),(-Y,X)]:
-  at=lambda t,z,out=.325:n*(face+out)+u*t+Z*z
+  at=lambda t,z,out=.325:n*(face+out)+u*t+Z*(z+plane-8.65)
   edge_trunk(at(-14.5,7.85),at(14.5,7.85),n,1.4)
   for i,t in enumerate([-11,-5.5,0,5.5,11]):
    machinery(at(t,6.4),4.2,1.3,n,u,i)
@@ -854,6 +854,118 @@ def clear_front(root):
    print('CLEAR',child.name,'faces dropped',len(drop),flush=True)
   bm.to_mesh(child.data);bm.free();child.data.update()
 
+# Forms a-d (node #1032): Derrick, Buoy, Rig and Cluster. Their study pads
+# face +Y (the spin axis), and the Rig's stands off the axis. The flight
+# export turns each so its pad faces +Z, moves its pad centre onto the axis
+# and its pad surface to the sim's plane, then carves the sim's deck and
+# landing well out of everything the study put there (a clip on the deck's
+# planes, not a drop of whole parts, so the tower under the pad stays) and
+# draws the same pad, well and flank as the Salvage. The study's pad surface
+# (the top of its `landing-grey` tiles), author units, and its centre across
+# the pad (x, z), measured on the review GLBs.
+FLIGHT_FRAMES={
+ 'derrick':dict(surface=21.33,centre=(0,0),pad=(190,170)),
+ 'buoy':dict(surface=12.33,centre=(0,0),pad=(175,165)),
+ 'rig':dict(surface=5.12,centre=(-14.735,10.535),pad=(132,153)),
+ 'cluster':dict(surface=6.33,centre=(0,0),pad=(150,145)),
+}
+# The study pad is a slab 3.2 units thick under its deck tiles: its underside
+# lies this far below the pad surface, metres.
+STUDY_PAD_DEPTH_M=36
+# A touched part with bounds under this volume, cubic metres, is dropped whole.
+CARVE_KEEP_M3=500000
+# ... and one in front of the plane within this much of the study pad's rim.
+ORPHAN_ZONE_M=25
+
+def frame_batch(name):
+ """Author units: (x,y,z) -> (x-cx, cz-z, y-surface+plane): a quarter turn
+ about X that takes +Y to +Z, then the pad centre onto the axis and the pad
+ surface onto the sim's plane."""
+ f=FLIGHT_FRAMES[name];cx,cz=f['centre'];plane=APERTURE_PLANE_M*.1
+ for verts,faces,uvs in BATCH.values():
+  for i,(x,y,z) in enumerate(verts):verts[i]=(x-cx,cz-z,y-f['surface']+plane)
+
+def carve_front(root,name):
+ """Take the sim's deck and landing well out of the exterior, metres. The
+ deck: everything above the deck's underside within its edge. The well:
+ everything above the liner's floor slab within the liner. A connected part
+ that touches the carve and is small (under CARVE_KEEP_M3 of bounds) goes
+ whole, as the Salvage's do; a large one (the tower, a hull box) is split on
+ the carve's planes and what lies inside deleted, so it keeps the rest."""
+ plane=FLIGHT_PLANE_M;half=PAD_DECK_HALF_M+.75;well=PAD_LINER_M+PAD_LINER_WALL_M
+ top=plane+4000
+ boxes=[((-half,-half,plane-PAD_DECK_DRAWN_M),(half,half,top)),
+        ((-well,-well,plane-PAD_WELL_M-3),(well,well,top))]
+ # Where the study's pad reaches past the deck, its rim goes as well, down
+ # to the slab's underside: four strips round the deck's edge.
+ px,py=[v+4 for v in FLIGHT_FRAMES[name]['pad']];low=plane-STUDY_PAD_DEPTH_M
+ if px>half:boxes+=[((half,-py,low),(px,py,top)),((-px,-py,low),(-half,py,top))]
+ if py>half:boxes+=[((-half,half,low),(half,py,top)),((-half,-py,low),(half,-half,top))]
+ eps=1e-4
+ def bounds(faces):
+  vs=[v.co for g in faces for v in g.verts]
+  return [min(v[k] for v in vs) for k in range(3)],[max(v[k] for v in vs) for k in range(3)]
+ def hits(lo,up,box):return all(lo[k]<box[1][k] and up[k]>box[0][k] for k in range(3))
+ for child in root.children:
+  if child.type!='MESH' or child.name.startswith(PAD_GROUPS):continue
+  bm=bmesh.new();bm.from_mesh(child.data);bm.faces.ensure_lookup_table()
+  seen=set();whole=[];large=[]
+  for f in bm.faces:
+   if f.index in seen:continue
+   island=[];stack=[f];seen.add(f.index)
+   while stack:
+    g=stack.pop();island.append(g)
+    for e in g.edges:
+     for h in e.link_faces:
+      if h.index not in seen:seen.add(h.index);stack.append(h)
+   lo,up=bounds(island)
+   volume=(up[0]-lo[0])*(up[1]-lo[1])*(up[2]-lo[2])
+   if not any(hits(lo,up,b) for b in boxes):continue
+   (whole if volume<CARVE_KEEP_M3 else large).append(island)
+  drop=[f for island in whole for f in island]
+  if drop:bmesh.ops.delete(bm,geom=drop,context='FACES')
+  dropped=len(drop);bm.faces.ensure_lookup_table()
+  keep={f for island in large for f in island if f.is_valid}
+  for box in boxes:
+   lo,up=box
+   def touches(f):
+    cs=[v.co for v in f.verts]
+    return all(min(c[k] for c in cs)<up[k] and max(c[k] for c in cs)>lo[k] for k in range(3))
+   for axis in range(3):
+    for at in (lo[axis],up[axis]):
+     if at>=top:continue
+     near=[f for f in keep if f.is_valid and touches(f)]
+     geom=list(set(near+[e for f in near for e in f.edges]+[v for f in near for v in f.verts]))
+     no=Vector((0,0,0));no[axis]=1
+     co=Vector((0,0,0));co[axis]=at
+     if geom:
+      cut=bmesh.ops.bisect_plane(bm,geom=geom,dist=1e-6,plane_co=co,plane_no=no)
+      keep|={g for g in cut['geom'] if isinstance(g,bmesh.types.BMFace)}
+      keep|={f for f in bm.faces if f.is_valid and any(v in geom for v in f.verts)}
+   inside=[f for f in keep if f.is_valid and all(lo[k]+eps<f.calc_center_median()[k]<up[k]-eps for k in range(3))]
+   dropped+=len(inside)
+   if inside:bmesh.ops.delete(bm,geom=inside,context='FACES')
+  # What the carve left standing wholly in front of the plane, small and
+  # within reach of the study's pad rim, was fitted to that pad (a fin, a
+  # mast): with the pad gone it hangs in the air.
+  bm.faces.ensure_lookup_table();seen=set();orphans=[]
+  for f in bm.faces:
+   if f.index in seen:continue
+   island=[];stack=[f];seen.add(f.index)
+   while stack:
+    g=stack.pop();island.append(g)
+    for e in g.edges:
+     for h in e.link_faces:
+      if h.index not in seen:seen.add(h.index);stack.append(h)
+   lo,up=bounds(island)
+   volume=(up[0]-lo[0])*(up[1]-lo[1])*(up[2]-lo[2])
+   if lo[2]>plane-2 and volume<CARVE_KEEP_M3 and up[0]<px+ORPHAN_ZONE_M and lo[0]>-px-ORPHAN_ZONE_M and up[1]<py+ORPHAN_ZONE_M and lo[1]>-py-ORPHAN_ZONE_M:
+    orphans+=island
+    print('ORPHAN',child.name,[round(v) for v in lo],[round(v) for v in up],flush=True)
+  if orphans:bmesh.ops.delete(bm,geom=orphans,context='FACES')
+  if dropped:print('CARVE',child.name,'whole parts',len(whole),'faces dropped',dropped,flush=True)
+  bm.to_mesh(child.data);bm.free();child.data.update()
+
 def export(name,info):
  root=bpy.data.objects.new('station-'+name,None);bpy.context.collection.objects.link(root)
  root['design']=name;root['author']='Codex';root['metres_per_author_unit']=10
@@ -871,7 +983,8 @@ def export(name,info):
    mod=ob.modifiers.new('weighted-normals','WEIGHTED_NORMAL');mod.keep_sharp=True
  datum=bpy.data.objects.new('docking-centre',None);bpy.context.collection.objects.link(datum);datum.parent=root;datum.location=Vector(info['port'])*10;datum['axis']=info['axis']
  if FLIGHT:
-  clear_front(root)
+  if name in FLIGHT_FRAMES:carve_front(root,name)
+  else:clear_front(root)
   # Move everything so the flight plane lies on +Z at the sim's.
   offset=Vector((0,0,APERTURE_PLANE_M-FLIGHT_PLANE_M))
   for child in root.children:
@@ -895,11 +1008,15 @@ def export(name,info):
  print('EXPORTED',name,glb.stat().st_size,flush=True)
 
 wanted=[a for a in sys.argv[sys.argv.index('--')+1:] if not a.startswith('--')] if '--' in sys.argv else []
-# Only Salvage has a flight export so far (node #1031).
-if FLIGHT and wanted!=['salvage']:raise SystemExit('--flight builds salvage alone: -- salvage --flight')
+# Flight exports: the Salvage (node #1031) and outpost forms a-d (node #1032).
+if FLIGHT and (not wanted or any(a!='salvage' and a not in FLIGHT_FRAMES for a in wanted)):raise SystemExit('--flight builds salvage, derrick, buoy, rig or cluster: -- derrick --flight')
 for name,fn in [('ring',ring),('drum',drum),('assembly',assembly),('wheel',wheel),('derrick',derrick),('buoy',buoy),('rig',rig),('cluster',cluster),('salvage',salvage)]:
  if wanted and name not in wanted:continue
  bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();random.seed(810)
  print('BUILDING',name,flush=True);info=fn()
- if FLIGHT:salvage_pad();salvage_well();salvage_flank()
+ if FLIGHT:
+  if name in FLIGHT_FRAMES:
+   frame_batch(name);FLIGHT_PLANE_M=APERTURE_PLANE_M
+  else:FLIGHT_PLANE_M=86.5
+  salvage_pad();salvage_well(closure=name not in FLIGHT_FRAMES);salvage_flank()
  export(name,info)

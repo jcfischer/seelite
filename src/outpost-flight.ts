@@ -42,12 +42,16 @@ import {
 } from "./station-mesh";
 import { AUTHORED_EXTERIOR_NAME } from "./station-visuals";
 
-export const OUTPOST_FORMS: readonly OutpostForm[] = ["e"];
+export const OUTPOST_FORMS: readonly OutpostForm[] = ["a", "b", "c", "d", "e"];
 
 /** Each form's model, by the name its file carries (`outpost-<name>.glb`).
  *  `OUTPOST_GLB_URLS` restates them as literals vite can rewrite;
  *  `tests/outpost-flight.test.ts` holds the two to agree. */
 export const OUTPOST_MODEL_NAMES: Readonly<Record<OutpostForm, string>> = {
+	a: "derrick",
+	b: "buoy",
+	c: "rig",
+	d: "cluster",
 	e: "salvage",
 };
 

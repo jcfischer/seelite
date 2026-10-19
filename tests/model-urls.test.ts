@@ -57,7 +57,7 @@ describe("models are served under hashed names (#834)", () => {
 		const literals = source.match(
 			/new URL\(\s*"\.\/models\/[\w-]+\.glb",\s*import\.meta\.url,?\s*\)/g,
 		);
-		expect(literals?.length).toBe(17);
+		expect(literals?.length).toBe(21);
 	});
 
 	test("no loader names a model by a fixed path", () => {

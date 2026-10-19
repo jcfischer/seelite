@@ -940,7 +940,16 @@ export function stationProxy(
 					return null;
 			}
 		case "outpost":
-			return form === "e" ? authoredOutpostProxy(form) : null;
+			switch (form) {
+				case "a":
+				case "b":
+				case "c":
+				case "d":
+				case "e":
+					return authoredOutpostProxy(form);
+				default:
+					return null;
+			}
 		default: {
 			// Exhaustive at compile time: a station type added later is a type
 			// error here, and at runtime it has no proxy.

@@ -6527,7 +6527,11 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "c",
 			name: "Rig",
 			thesis: "an angled truss holding a deck out over a drill head",
-			reachKm: 0.42,
+			// The authored Rig (node #1032) hangs its pad off the drill body's
+			// flank, so the body stands well off the lane's axis: its mesh reaches
+			// 0.5716 km and its proxy 0.5781, measured 2026-10-19. The stand-in
+			// stays inside the 0.42 it had.
+			reachKm: 0.58,
 			build: buildOutpostRig,
 		},
 		{
@@ -6537,8 +6541,10 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 				"the Assembly's grammar at a fifth of the size: a core can under the pad, a truss spine, cans and fins solved by wave function collapse",
 			// The spine's tips are 0.27 km out; a leaf beside a tip cell reaches
 			// about 0.25. The pool's figure, and the seed spread is measured
-			// against it.
-			reachKm: 0.42,
+			// against it. The authored Cluster (node #1032) puts its cans a pad
+			// away from the lane: its mesh reaches 0.4925 km and its proxy
+			// 0.4974, measured 2026-10-19.
+			reachKm: 0.5,
 			build: buildOutpostCluster,
 		},
 		{
@@ -6669,15 +6675,16 @@ export function buildRefineryNavigation(
 	);
 }
 
-export type OutpostForm = "e";
+export type OutpostForm = "a" | "b" | "c" | "d" | "e";
 const outpostBuilders = new Map<
 	OutpostForm,
 	(berthSeed: number, color: number) => StationMesh
 >();
 
-/** The authored outpost Salvage (node #1031), installed by
- *  `outpost-flight.ts` once its model has loaded. Until then the form draws
- *  its procedural stand-in. `null` uninstalls, for a test. */
+/** An authored outpost (the Salvage, node #1031; the Derrick, Buoy, Rig and
+ *  Cluster, node #1032), installed by `outpost-flight.ts` once its model has
+ *  loaded. Until then the form draws its procedural stand-in. `null`
+ *  uninstalls, for a test. */
 export function installOutpostBuilder(
 	form: OutpostForm,
 	builder: ((berthSeed: number, color: number) => StationMesh) | null,

@@ -201,7 +201,10 @@ describe("authored outpost Salvage (#1031)", () => {
 								CORE_KM,
 						);
 				});
-				expect(reach).toBeLessThanOrEqual(stationSilhouetteKm("outpost", form));
+				const declared = stationSilhouetteKm("outpost", form);
+				expect(reach).toBeLessThanOrEqual(declared);
+				// And not slack: the declaration is this model's reach.
+				expect(reach).toBeGreaterThan(declared * 0.6);
 				mesh.dispose();
 			});
 		});
