@@ -164,7 +164,7 @@ priority.
   "a line that meets the hull" timed out at bun's 5 s default, because it raycasts
   every throat through every hull's whole mesh and the voyager's 543k triangles
   tipped it (8 s alone with `-t`). Given a 60 s timeout in this node; the final
-  run is below.
+  run, after that fix and the format fix: **6543 pass, 0 fail** across 382 files.
 - **Model rows:** `tests/voyager-hull.test.ts` (16) and
   `tests/discovery-asset.test.ts` (5). Mutation check: raising the glow's lip
   radius from 1.7 to 2.1 m turned the 3 cm clearance row red; reverting it
