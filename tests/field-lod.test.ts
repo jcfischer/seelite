@@ -170,7 +170,10 @@ test("spin is a rotation about the rock's own axis by its angle at the clock", (
 	}
 });
 
-test("level counts on #950's views stay inside the call budget's premise: ≤ 5 rocks at level 0", () => {
+// `close` is left out on purpose: it stands beside the biggest rock and puts 6
+// at level 0 on high (receipt, "D2 re-measure"). Calls stay in budget there
+// because a batch is one call whatever it holds; the principal ruled on its cost.
+test("level counts at #950's inside, edge and far stands hold ≤ 5 rocks at level 0", () => {
 	for (const index of FIELD_SYSTEMS) {
 		const { rocks } = fieldOf(index);
 		for (const quality of ["high", "low"] as const) {
