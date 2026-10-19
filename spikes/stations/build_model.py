@@ -677,7 +677,10 @@ HULL_FACE_M=(-131.35,131.35,-171.35,131.35)
 # dock mark, 79 m).
 FLIGHT_PLANE_M=86.5
 # Mesh groups the clearance pass keeps: the pad's, and the well's liner.
-PAD_GROUPS=('interior-','berth-','pad-well')
+PAD_GROUPS=('interior-','berth-','pad-well','pad-flank')
+# The deck's slab stands this much past the sim's edge, author units, so the
+# flank dressing is seated on it while standing outside the deck's volume.
+PAD_SLAB_LIP=.05
 # The sim's berth ids (stationInterior("outpost")): `deck-near` always, and the
 # seeded side berth on `port-near` or `starboard-near`, so both are built and
 # the game keeps the one a station's seed draws. Centre, and the axis a parked
@@ -722,8 +725,10 @@ def salvage_pad():
  rise=.1   # the deck plates' thickness: their tops land on the plane
  owned('interior-deck')
  ring=[((-half,half),(hole,half)),((-half,half),(-half,-hole)),((hole,half),(-hole,hole)),((-half,-hole),(-hole,hole))]
+ def lip(v):return v+math.copysign(PAD_SLAB_LIP,v) if abs(v)>=half-1e-9 else v
  for (x0,x1),(y0,y1) in ring:
-  box(((x0+x1)/2,(y0+y1)/2,plane-rise-(depth-rise)/2),(x1-x0,y1-y0,depth-rise),steel)
+  sx0,sx1,sy0,sy1=lip(x0),lip(x1),lip(y0),lip(y1)
+  box(((sx0+sx1)/2,(sy0+sy1)/2,plane-rise-(depth-rise)/2),(sx1-sx0,sy1-sy0,depth-rise),steel)
   nu=max(1,round((x1-x0)/3.2));nv=max(1,round((y1-y0)/3.2))
   for i in range(nu):
    for j in range(nv):
@@ -797,6 +802,20 @@ def salvage_well():
  owned('static')
 
 HULL_SHELL_FACE_M2=40000
+def salvage_flank():
+ """The review pad's surround moved to the deck's outer sides (principal,
+ 2026-10-19: "yes please"): on each side an edge trunk with its pipes and
+ lamps under the deck's face, and a row of machinery below it. Exterior
+ structure, outside the deck's volume and behind its face, author units."""
+ m=.1;plane=FLIGHT_PLANE_M*m;half=PAD_DECK_HALF_M*m;face=half+PAD_SLAB_LIP-.02
+ owned('pad-flank')
+ for n,u in [(X,Y),(-X,-Y),(Y,-X),(-Y,X)]:
+  at=lambda t,z,out=.325:n*(face+out)+u*t+Z*z
+  edge_trunk(at(-14.5,7.85),at(14.5,7.85),n,1.4)
+  for i,t in enumerate([-11,-5.5,0,5.5,11]):
+   machinery(at(t,6.4),4.2,1.3,n,u,i)
+ owned('static')
+
 def clear_front(root):
  """Nothing of the review layout may reach into the deck's volume, stand in
  front of it, or stand in the well. A connected part whose bounds do goes
@@ -882,5 +901,5 @@ for name,fn in [('ring',ring),('drum',drum),('assembly',assembly),('wheel',wheel
  if wanted and name not in wanted:continue
  bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();random.seed(810)
  print('BUILDING',name,flush=True);info=fn()
- if FLIGHT:salvage_pad();salvage_well()
+ if FLIGHT:salvage_pad();salvage_well();salvage_flank()
  export(name,info)

@@ -38,9 +38,15 @@ import {
 } from "../src/station-proxy";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
-import { INTERIOR_GROUP_NAME } from "../src/station-interior-mesh";
+import {
+	INTERIOR_GROUP_NAME,
+	STATION_INTERIOR_EMISSIVE_INTENSITIES,
+} from "../src/station-interior-mesh";
 import { buildStationForm, stationSilhouetteKm } from "../src/station-mesh";
-import { isAuthoredStation } from "../src/station-visuals";
+import {
+	AUTHORED_EXTERIOR_NAME,
+	isAuthoredStation,
+} from "../src/station-visuals";
 
 const PLANE_KM = STATION_GEOMETRY.outpost.aperturePlaneKm;
 const CORE_KM = STATION_GEOMETRY.outpost.coreRadiusKm;
@@ -123,6 +129,26 @@ describe("authored outpost Salvage (#1031)", () => {
 					}
 					mesh.dispose();
 				}
+			});
+
+			test("lights its deck as the procedural pad, and leaves the hull's materials alone", () => {
+				// Principal, 2026-10-19: the authored deck read black on its night
+				// side, where the procedural pad keeps its own dim glow.
+				const mesh = build();
+				const deck = mesh.root.getObjectByName("interior-deck") as THREE.Mesh;
+				const glow = deck.material as THREE.MeshStandardMaterial;
+				expect(glow.emissiveIntensity).toBe(
+					STATION_INTERIOR_EMISSIVE_INTENSITIES.padShell,
+				);
+				const hull = new Set<THREE.Material>();
+				mesh.root.getObjectByName(AUTHORED_EXTERIOR_NAME)!.traverse((o) => {
+					if (o instanceof THREE.Mesh) hull.add(o.material as THREE.Material);
+				});
+				expect(hull.has(glow)).toBe(false);
+				for (const m of hull)
+					if (m.name === glow.name)
+						expect((m as THREE.MeshStandardMaterial).emissive.getHex()).toBe(0);
+				mesh.dispose();
 			});
 
 			test("names its study lamps as the role's windows", () => {

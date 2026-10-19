@@ -30,6 +30,7 @@ import {
 	buildPadNameplate,
 	INTERIOR_GROUP_NAME,
 	NAMEPLATE_NAME,
+	STATION_INTERIOR_EMISSIVE_INTENSITIES,
 } from "./station-interior-mesh";
 import {
 	buildOutpostNavigation,
@@ -58,6 +59,10 @@ const PAD_PART_NAMES = [
 	"interior-rail",
 	"interior-flood",
 ];
+
+/** The authored pad's meshes, by the names the flight export gives them. */
+const isPadPart = (name: string) =>
+	name.startsWith("interior-") || name.startsWith("berth-");
 
 /** Where the export puts the sim's plane, metres, checked at install: a
  *  model in another frame would draw its pad away from the sim's. */
@@ -91,6 +96,32 @@ export function createOutpostBuilder(
 		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
 	for (const m of materials) m.emissiveIntensity /= divisor;
+	// The authored pad glows as the procedural pad does (principal,
+	// 2026-10-19): its own colour at `padShell`, the floor that keeps the
+	// night side off pure black. Its own copies, since the hull shares the
+	// study's materials; a lamp keeps its own.
+	const glowing = new Map<THREE.Material, THREE.Material>();
+	template.traverse((o) => {
+		if (!(o instanceof THREE.Mesh) || !isPadPart(o.name)) return;
+		const m = o.material;
+		// The loader gives every material an intensity; a lamp is one whose
+		// emissive colour is not black.
+		if (!(m instanceof THREE.MeshStandardMaterial) || m.emissive.getHex() !== 0)
+			return;
+		let glow = glowing.get(m);
+		if (!glow) {
+			const copy = m.clone();
+			copy.emissive.copy(m.color);
+			copy.emissiveMap = m.map;
+			copy.emissiveIntensity = STATION_INTERIOR_EMISSIVE_INTENSITIES.padShell;
+			// Matte, as the procedural deck's Lambert plating: a metallic deck
+			// mirrors black space and reads black in starlight.
+			copy.metalness = 0;
+			glow = copy;
+			glowing.set(m, glow);
+		}
+		o.material = glow;
+	});
 	// One loaded asset per page, shared by every station of the form.
 	template.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
@@ -116,8 +147,7 @@ export function createOutpostBuilder(
 		// exterior's parts) never sees the deck the sim walls.
 		const padMeshes: THREE.Object3D[] = [];
 		authored.traverse((o) => {
-			if (o.name.startsWith("interior-") || o.name.startsWith("berth-"))
-				padMeshes.push(o);
+			if (isPadPart(o.name)) padMeshes.push(o);
 		});
 		const pad = new THREE.Group();
 		pad.name = INTERIOR_GROUP_NAME;
