@@ -27,7 +27,11 @@ import {
 	TriangleGrid,
 } from "../scripts/lib/shipyard-proxies";
 import { OUTPOST_GLB_URLS } from "../src/model-urls";
-import { OUTPOST_FORMS, OUTPOST_MODEL_NAMES } from "../src/outpost-flight";
+import {
+	DECK_PLATE_COLOR,
+	OUTPOST_FORMS,
+	OUTPOST_MODEL_NAMES,
+} from "../src/outpost-flight";
 import { OUTPOST_PROXY_SOURCES } from "../src/outpost-proxies";
 import {
 	type ProxyBox,
@@ -145,6 +149,25 @@ describe("authored outpost Salvage (#1031)", () => {
 					if (o instanceof THREE.Mesh) hull.add(o.material as THREE.Material);
 				});
 				expect(hull.has(glow)).toBe(false);
+				// Option 3: the deck plates' middle grey, on the pad alone.
+				const plates = new Set<THREE.MeshStandardMaterial>();
+				deck.parent!.traverse((o) => {
+					if (
+						o instanceof THREE.Mesh &&
+						(o.material as THREE.Material).name === "landing-grey"
+					)
+						plates.add(o.material as THREE.MeshStandardMaterial);
+				});
+				expect(plates.size).toBeGreaterThan(0);
+				for (const p of plates)
+					expect(p.color.getHex()).toBe(
+						new THREE.Color(DECK_PLATE_COLOR).getHex(),
+					);
+				for (const m of hull)
+					if (m.name === "landing-grey")
+						expect((m as THREE.MeshStandardMaterial).color.getHex()).not.toBe(
+							new THREE.Color(DECK_PLATE_COLOR).getHex(),
+						);
 				for (const m of hull)
 					if (m.name === glow.name)
 						expect((m as THREE.MeshStandardMaterial).emissive.getHex()).toBe(0);

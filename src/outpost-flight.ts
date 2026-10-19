@@ -60,6 +60,15 @@ const PAD_PART_NAMES = [
 	"interior-flood",
 ];
 
+/**
+ * The deck plates' grey (principal, 2026-10-19, option 3): halfway between
+ * the study's `landing-grey` (about 0x5b6060) and the procedural deck's
+ * 0x8b95a0, so the pad reads in starlight and the hull stays the darker.
+ * The pad's own copy only; the hull keeps the study's.
+ */
+const DECK_PLATE_MATERIAL = "landing-grey";
+export const DECK_PLATE_COLOR = 0x737a80;
+
 /** The authored pad's meshes, by the names the flight export gives them. */
 const isPadPart = (name: string) =>
 	name.startsWith("interior-") || name.startsWith("berth-");
@@ -111,7 +120,8 @@ export function createOutpostBuilder(
 		let glow = glowing.get(m);
 		if (!glow) {
 			const copy = m.clone();
-			copy.emissive.copy(m.color);
+			if (m.name === DECK_PLATE_MATERIAL) copy.color.set(DECK_PLATE_COLOR);
+			copy.emissive.copy(copy.color);
 			copy.emissiveMap = m.map;
 			copy.emissiveIntensity = STATION_INTERIOR_EMISSIVE_INTENSITIES.padShell;
 			// Matte, as the procedural deck's Lambert plating: a metallic deck
