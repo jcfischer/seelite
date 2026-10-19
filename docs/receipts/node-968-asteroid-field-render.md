@@ -138,6 +138,18 @@ cores: lower than the first runs (8–21), not idle.
 The figures match the loaded runs to within 0.04 ms, so host load did not drive
 the low miss. Low stays above 0.4 and under the ruled +0.6 ms (D3).
 
+**Can a station open the gate at a field?** D1 judges high with the gate shut,
+so this was measured, not assumed (Sage round 2). The gate opens when a near
+station subtends 0.5 rad, that is with the camera within 2.1 station radii of it.
+Over worlds 47 and 0x5ee11e, every galaxy, 2,391 fields, and a year sampled every
+5 days, the least distance from a field's edge (largest semi-axis, 24 km) to any
+station was 126.1 km (world 0x2f, g0, s117, a 0.4 km refinery). Level 0 needs the
+camera within about 30 km of a 0.4 km rock. So the gate would open beside a
+level-0 rock only for a station some 46 km in radius. Charted fields co-orbit
+their refinery at a lead of 150–300 km. Rare fields sit 30° or more round a
+planet's orbit, at a Trojan point, or 1.3–1.8 times out, so their distances to
+stations do not close.
+
 ## Verification and what is not done
 
 - `bun test` over the new/changed files: `field-lod`, `field-draw`,

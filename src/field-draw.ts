@@ -214,7 +214,7 @@ export class FieldDraw {
 		this.root.quaternion.set(r.x, r.y, r.z, r.w);
 		this.root.updateMatrixWorld(true);
 
-		const meshes = this.near !== undefined && this.far !== undefined;
+		const meshes = this.meshesInstalled;
 		const np = selectFieldLevels(
 			this.rocks,
 			frame.gameTime,
@@ -235,11 +235,10 @@ export class FieldDraw {
 				perLevel[level]++;
 				const want: Where = level === POINT_LEVEL ? -1 : level === 0 ? 0 : 1;
 				const was = this.where[i];
-				if (was !== want && was !== -1)
-					(was === 0 ? this.near : this.far).mesh.setVisibleAt(
-						(was === 0 ? this.near : this.far).instance[i],
-						false,
-					);
+				if (was !== want && was !== -1) {
+					const old = was === 0 ? this.near : this.far;
+					old.mesh.setVisibleAt(old.instance[i], false);
+				}
 				this.where[i] = want;
 				if (want === -1) continue;
 				const rock = this.rocks[i];
