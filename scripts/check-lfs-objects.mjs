@@ -2,8 +2,9 @@
  * Fail a change whose Git LFS objects never reached GitHub (2026-10-19).
  *
  * A push uploads LFS objects only through the `pre-push` hook, and a push
- * that skips hooks (`git push --no-verify`, which ranger's supervisor uses)
- * sends the pointers without them. Nothing then warns: the branch, the PR and
+ * that skips hooks (`git push --no-verify`) sends the pointers without them;
+ * ranger, whose git runs with hooks off, uploads them itself since
+ * the-metafactory/ranger#349. Nothing then warns: the branch, the PR and
  * the merge look whole, and every later clone gets a pointer where the file
  * should be. So CI asks GitHub's LFS batch API, for every pointer the change
  * adds or modifies, whether the object is there — without downloading it.

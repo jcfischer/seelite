@@ -320,8 +320,10 @@ exemption without a reader. Shipped models under `src/models/` stay plain.
 
 **LFS objects reach GitHub only through the `pre-push` hook.** This
 repository installs no hooks of its own (`core.hooksPath` is global), and a
-push that skips hooks (`git push --no-verify`, which ranger's supervisor
-uses) sends the pointers without their objects. So **run
+push that skips hooks (`git push --no-verify`) sends the pointers without
+their objects. Ranger's supervisor runs git with hooks off, so it uploads a
+branch's LFS objects itself before the branch (the-metafactory/ranger#349,
+2026-10-19). By hand, **run
 `git lfs push origin <branch>` before `git push`** on a branch that adds or
 changes a sample or a study binary. CI checks it:
 `scripts/check-lfs-objects.mjs` fails a change whose LFS objects are not on
