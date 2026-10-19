@@ -859,7 +859,7 @@ def clear_front(root):
 # export turns each so its pad faces +Z, moves its pad centre onto the axis
 # and its pad surface to the sim's plane, then carves the sim's deck and
 # landing well out of everything the study put there (a clip on the deck's
-# planes, not a drop of whole parts, so the tower under the pad stays) and
+# planes, not a drop of whole parts, so the column under the pad stays) and
 # draws the same pad, well and flank as the Salvage. The study's pad surface
 # (the top of its `landing-grey` tiles), author units, and its centre across
 # the pad (x, z), measured on the review GLBs.
@@ -885,12 +885,25 @@ def frame_batch(name):
  for verts,faces,uvs in BATCH.values():
   for i,(x,y,z) in enumerate(verts):verts[i]=(x-cx,cz-z,y-f['surface']+plane)
 
+def face_islands(bm):
+ """The connected groups of faces (sharing an edge) of `bm`, in face order."""
+ bm.faces.ensure_lookup_table();seen=set()
+ for f in bm.faces:
+  if f.index in seen:continue
+  island=[];stack=[f];seen.add(f.index)
+  while stack:
+   g=stack.pop();island.append(g)
+   for e in g.edges:
+    for h in e.link_faces:
+     if h.index not in seen:seen.add(h.index);stack.append(h)
+  yield island
+
 def carve_front(root,name):
  """Take the sim's deck and landing well out of the exterior, metres. The
  deck: everything above the deck's underside within its edge. The well:
  everything above the liner's floor slab within the liner. A connected part
  that touches the carve and is small (under CARVE_KEEP_M3 of bounds) goes
- whole, as the Salvage's do; a large one (the tower, a hull box) is split on
+ whole, as the Salvage's do; a large one (the column, a hull box) is split on
  the carve's planes and what lies inside deleted, so it keeps the rest."""
  plane=FLIGHT_PLANE_M;half=PAD_DECK_HALF_M+.75;well=PAD_LINER_M+PAD_LINER_WALL_M
  top=plane+4000
@@ -909,15 +922,8 @@ def carve_front(root,name):
  for child in root.children:
   if child.type!='MESH' or child.name.startswith(PAD_GROUPS):continue
   bm=bmesh.new();bm.from_mesh(child.data);bm.faces.ensure_lookup_table()
-  seen=set();whole=[];large=[]
-  for f in bm.faces:
-   if f.index in seen:continue
-   island=[];stack=[f];seen.add(f.index)
-   while stack:
-    g=stack.pop();island.append(g)
-    for e in g.edges:
-     for h in e.link_faces:
-      if h.index not in seen:seen.add(h.index);stack.append(h)
+  whole=[];large=[]
+  for island in face_islands(bm):
    lo,up=bounds(island)
    volume=(up[0]-lo[0])*(up[1]-lo[1])*(up[2]-lo[2])
    if not any(hits(lo,up,b) for b in boxes):continue
@@ -951,15 +957,8 @@ def carve_front(root,name):
   # What the carve left standing wholly in front of the plane, small and
   # within reach of the study's pad rim, was fitted to that pad (a fin, a
   # mast): with the pad gone it hangs in the air.
-  bm.faces.ensure_lookup_table();seen=set();orphans=[]
-  for f in bm.faces:
-   if f.index in seen:continue
-   island=[];stack=[f];seen.add(f.index)
-   while stack:
-    g=stack.pop();island.append(g)
-    for e in g.edges:
-     for h in e.link_faces:
-      if h.index not in seen:seen.add(h.index);stack.append(h)
+  bm.faces.ensure_lookup_table();orphans=[]
+  for island in face_islands(bm):
    lo,up=bounds(island)
    volume=(up[0]-lo[0])*(up[1]-lo[1])*(up[2]-lo[2])
    if lo[2]>plane-2 and volume<CARVE_KEEP_M3 and up[0]<px+ORPHAN_ZONE_M and lo[0]>-px-ORPHAN_ZONE_M and up[1]<py+ORPHAN_ZONE_M and lo[1]>-py-ORPHAN_ZONE_M:
