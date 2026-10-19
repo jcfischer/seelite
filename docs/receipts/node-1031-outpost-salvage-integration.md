@@ -32,7 +32,7 @@ is merged into `node/1031-outpost-salvage`, 2026-10-19.
   `36a3ada8b9b0216ccc7e7443923841083a44d2f960757e961fcc4e78893f1efd`.
 - **LOD:** none (the Full model only), as the shipyards and refineries;
   measured cost below. Frame time not measured.
-- **Open:** the principal's yes on the final look, Sage, the browser gate.
+- **Open:** the principal's yes on the final look.
 
 ## Integration contract
 
@@ -161,4 +161,30 @@ the role no longer draws).
 
 ## Delivery evidence
 
-Pending.
+**Headless** (`npm test` at `d63c4384`): 6,569 pass, 3 fail — the two
+model-URL rows (now counting the Salvage literal) and outpost E's reach row
+(0.42 → 0.43); each re-run green after its fix. The outpost, proxy, asset,
+view-set and changelog files re-run green on every later head. Typecheck,
+format, lint, launcher wiring and build pass; every file in `dist/` is within
+25 MiB.
+
+**Sage** (PR #1037): round 1 at `996fba28`, all seven lenses ran: 19
+findings, no blocker or major (3 suggestions, 16 nits); 2 taken in
+`aa73889c`, 17 declined with reasons on the PR. Stopped there under the
+map's rule.
+
+**Browser gate: the directly affected probes, by the principal's instruction
+(2026-10-19)**, not the selector's fallback to all 111 (it fell back on
+`scripts/probe-guard.mjs`). GPU lane (M1 Pro, Metal), one probe at a time
+under the probe lock, against this worktree's dev server (own Vite cache);
+`probe-collision` on its own server, since it imports `three` from the
+default cache. Head `aa73889c`, all pass, peak load 7–18 on 10 cores:
+`probe-station`, `probe-station-visuals`, `probe-dock-arrival`,
+`probe-docking`, `probe-raider-outpost`, `probe-model-download`,
+`probe-model-queue`, `probe-quality-bloom`, `probe-adaptive-resolution`,
+`probe-planet-surfaces`, `probe-postcard`, `probe-model-viewer`,
+`probe-station-interior-kit`, and the two `collision` probes. This is
+selected coverage, not a full-suite pass.
+
+**The look:** the principal's rulings D1–D4 above; the final yes before
+merge is pending. Changelog sentence approved (D3).
