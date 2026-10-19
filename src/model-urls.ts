@@ -32,6 +32,11 @@ export const BOLLARD_TUG_GLB_URL = new URL(
 	"./models/bollard-tug.glb",
 	import.meta.url,
 ).href;
+/** Prepared by `spikes/discovery/prepare-flight-asset.mjs` (node #820). */
+export const DISCOVERY_VOYAGER_GLB_URL = new URL(
+	"./models/discovery-voyager.glb",
+	import.meta.url,
+).href;
 export const LONGWALL_MINER_GLB_URL = new URL(
 	"./models/longwall-miner.glb",
 	import.meta.url,
