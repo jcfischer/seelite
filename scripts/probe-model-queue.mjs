@@ -23,6 +23,7 @@ const params = {
 	"interiors-full": false,
 	"shipyards-full": false,
 	"refineries-full": false,
+	"outposts-full": false,
 };
 await mkdir("probe-shots/model-queue", { recursive: true });
 try {
@@ -232,6 +233,7 @@ try {
 				g.shipMesh.userData.authored &&
 				g.shipyardModelsSettled &&
 				g.refineryModelsSettled &&
+				g.outpostModelsSettled &&
 				g.interiorModelsSettled
 			);
 		}),

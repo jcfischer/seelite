@@ -117,10 +117,11 @@ try {
 			},
 		});
 	});
-	// No `interiors-full`, `shipyards-full` or `refineries-full` wait: the init
-	// script above holds every frame until `__seelite` is published, and the
+	// No `interiors-full`, `shipyards-full`, `refineries-full` or
+	// `outposts-full` wait: the init script above holds every frame until
+	// `__seelite` is published, and the
 	// sliced installs yield on frames, so a boot that awaits one before
-	// publishing never publishes (#843, #818, #819).
+	// publishing never publishes (#843, #818, #819, #1031).
 	await reader.goto(
 		gameUrl(origin, {
 			seed: 47,
@@ -128,6 +129,7 @@ try {
 			"interiors-full": false,
 			"shipyards-full": false,
 			"refineries-full": false,
+			"outposts-full": false,
 		}),
 	);
 	await bootedGame(reader);

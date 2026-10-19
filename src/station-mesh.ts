@@ -6546,9 +6546,10 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Salvage",
 			thesis:
 				"welded together from salvage — hull sections, cargo pods and a ship's forward half bolted round the pad; improvised, asymmetric, lit by work lamps",
-			// Grown to 0.40 km at most, each piece's box checked as it is kept;
-			// the seed spread is measured against the pool's figure.
-			reachKm: 0.42,
+			// The larger of stand-in, mesh and proxy (node #1031): the procedural
+			// form grows to 0.40 km at most; the authored model's mesh reaches
+			// 0.4262 km and its proxy 0.4281, measured 2026-10-19.
+			reachKm: 0.43,
 			build: buildOutpostSalvage,
 		},
 	],
@@ -6668,6 +6669,42 @@ export function buildRefineryNavigation(
 	);
 }
 
+export type OutpostForm = "e";
+const outpostBuilders = new Map<
+	OutpostForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** The authored outpost Salvage (node #1031), installed by
+ *  `outpost-flight.ts` once its model has loaded. Until then the form draws
+ *  its procedural stand-in. `null` uninstalls, for a test. */
+export function installOutpostBuilder(
+	form: OutpostForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) outpostBuilders.set(form, builder);
+	else outpostBuilders.delete(form);
+}
+
+/**
+ * The outpost's aperture for an authored exterior that draws its own pad
+ * (node #1031): the lit frame round the lane and the mouth's name, at the
+ * sim's plane, without the procedural deck and berths.
+ */
+export function buildOutpostNavigation(
+	fixtures: StationFixture[],
+	berthSeed: number,
+): THREE.Group {
+	return buildAperture(
+		"outpost",
+		fixtures,
+		STATION_GEOMETRY.outpost.aperturePlaneKm,
+		berthSeed,
+		0,
+		false,
+	);
+}
+
 /**
  * The refinery's three cues on an authored exterior (principal, 2026-10-13:
  * "add lights"), on the pad frame every authored refinery shares: a heat
@@ -6772,6 +6809,10 @@ export function buildStationForm(
 	}
 	if (type === "refinery") {
 		const authored = refineryBuilders.get(formId as RefineryForm);
+		if (authored) return authored(berthSeed, color);
+	}
+	if (type === "outpost") {
+		const authored = outpostBuilders.get(formId as OutpostForm);
 		if (authored) return authored(berthSeed, color);
 	}
 	const form = formOf(type, formId);

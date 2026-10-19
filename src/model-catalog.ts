@@ -37,6 +37,8 @@ export const modelLoaders = {
 		(await import("./refinery-flight")).prepareRefineryModel("c", p),
 	"refinery/d": async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./refinery-flight")).prepareRefineryModel("d", p),
+	"outpost/e": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("e", p),
 } satisfies Record<string, ModelLoader>;
 export type ModelId = keyof typeof modelLoaders;
 export const ALL_MODELS = Object.keys(modelLoaders) as ModelId[];
@@ -55,6 +57,9 @@ export const SHIPYARD_MODELS = ALL_MODELS.filter((id) =>
 );
 export const REFINERY_MODELS = ALL_MODELS.filter((id) =>
 	id.startsWith("refinery/"),
+);
+export const OUTPOST_MODELS = ALL_MODELS.filter((id) =>
+	id.startsWith("outpost/"),
 );
 
 export function stationModel(station: {

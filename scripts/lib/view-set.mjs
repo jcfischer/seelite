@@ -1533,10 +1533,11 @@ export const VIEWS = Object.freeze([
 			kind: "workbench-interior",
 			asset: "outpost",
 			// **Named, not defaulted** (#257). The workbench opens on the first
-			// variant in the list; the outpost's selected form is D since the
-			// principal's yes on this node's sheet, and a frame that kept
-			// showing A would be a view of a form the role no longer carries.
-			variant: "d",
+			// variant in the list, and a frame of a form the role no longer
+			// carries judges nothing: D was selected on #257's sheet, and since
+			// #518 the role draws E, the Salvage, from its authored model since
+			// node #1031.
+			variant: "e",
 			radii: 1.25,
 			azimuth: 0.28,
 			elevation: 0.45,
