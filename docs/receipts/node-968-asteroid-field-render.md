@@ -2,12 +2,22 @@
 
 ## Current result
 
-**Status: built and verified except one acceptance criterion, which fails.** The
-GPU-lane budget (#950 D1) is met at the `inside`, `edge` and `far` views on both
-quality sides and missed at `close`; the node's own assumption says to stop and
-escalate rather than tune the look, so this receipt records the figures and does
-not change thresholds, shapes, material or shadow rules. The principal's yes in
-game is also still owed. Nothing here has been merged.
+**Status: built, within the budget as the principal ruled it, and approved in
+game.** The GPU-lane budget (#950 D1) is met at the `inside`, `edge` and `far`
+views on both quality sides. It was missed at `close`, and the worker stopped
+and escalated as the node says. The principal ruled on 2026-10-19 (#968 comment
+"Principal ruling … on the `close` budget miss"):
+
+- **D1:** the high arm with shadow + AO belongs to #970, which opens the
+  occlusion gate for level-0 rocks. In this node the gate opens for stations
+  only, so high at `close` is judged with it shut: +0.56 to +0.60 ms, inside 1.0.
+- **D2:** the low `close` arm was re-measured twice (below, "D2 re-measure").
+- **D3:** low at `close` above +0.4 ms is accepted as the fill-bound worst case,
+  up to about +0.6 ms, at that view only. D2 measured +0.55 / +0.58 ms.
+
+The principal said yes in game on s173, s221 and s84, on high and low, in both
+LOD directions (#968 comment, 2026-10-19). No threshold, shape, material or
+shadow rule was changed.
 
 - Settled by #950 D1–D5 and its correction, #953 (K = 16, Lambert), the look
   approved on #952, and #918 Q1 (points, then plain fill).
@@ -109,7 +119,24 @@ level 0. The spike's script could not be re-run to compare (its loader reports
 `Incomplete rock asset`), so that comparison rests on its recorded output.
 
 No change was made to thresholds, shapes, material, texture settings or shadow
-rules in answer to this. Options for the principal are in the blocked note.
+rules in answer to this.
+
+#### D2 re-measure, after the ruling
+
+Same instrument, `VIEWS=close`, on the branch rebased onto `origin/main`
+(`32371d6`), two runs (order seeds 20261019 and 7), raw output in
+`node-968-field-cost-d2-run1.txt` and `-d2-run2.txt`. Host load 12–15 on 10
+cores: lower than the first runs (8–21), not idle.
+
+| `close` arm | Run 1 | Run 2 |
+| --- | --- | --- |
+| High, occlusion off | +0.600 (2 calls) | +0.557 (2 calls) |
+| High, shadow + AO on (#970's state) | +1.837 (4) | +1.894 (4) |
+| Low, occlusion off | **+0.551** (3) | **+0.575** (3) |
+| Low, occlusion on | +0.493 (3) | +0.498 (3) |
+
+The figures match the loaded runs to within 0.04 ms, so host load did not drive
+the low miss. Low stays above 0.4 and under the ruled +0.6 ms (D3).
 
 ## Verification and what is not done
 
@@ -118,10 +145,10 @@ rules in answer to this. Options for the principal are in the blocked note.
 - `scripts/probe-asteroid-field.mjs` (new, in the catalog and contract roots):
   20/20 on the GPU lane and 18/19 earlier on the software lane before its level
   rows were corrected; `probe-model-queue` and `probe-production-boot` pass.
-- **Not done:** the principal's yes in game on #952's fixed fields (s173, s221,
-  s84) and both LOD directions; the selector-chosen `probe:pr` run; a postcard
-  probe row; the budget at `close` (above). s221 and s84 were not run through the
-  cost instrument.
+- **Not done:** the selector-chosen `probe:pr` run; a postcard probe row. s221
+  and s84 were not run through the cost instrument.
+- Found in the in-game check and filed apart: the field reads too small and too
+  regular (#1043). Rock collision is not in this node (#957 → #969).
 - Changelog: a major change by the docblock's definition (a pilot sees fields).
   Proposed sentence added to `src/changelog.ts`; the principal has not approved it.
 
