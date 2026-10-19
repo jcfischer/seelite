@@ -129,8 +129,7 @@ describe("the shipped file is the accepted study", () => {
 		expect(json.extensionsRequired).toContain("EXT_meshopt_compression");
 		expect(json.extensionsUsed).not.toContain("KHR_mesh_quantization");
 		expect(json.images.length).toBe(3);
-		for (const image of json.images)
-			expect(image.mimeType).toBe("image/webp");
+		for (const image of json.images) expect(image.mimeType).toBe("image/webp");
 	});
 
 	test("every triangle of every mesh is the study's, turned, every attribute exact", async () => {

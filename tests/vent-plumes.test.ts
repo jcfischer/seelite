@@ -91,7 +91,10 @@ describe("every throat is the vent the table names", () => {
 		// Every line meets metal since #636 (`tests/vent-placement.test.ts`
 		// holds that), so the row has subjects.
 		expect(met).toBeGreaterThan(50);
-	});
+		// Raycasts every throat through every hull's whole mesh, the authored
+		// ones (543k triangles for the voyager, node #820) included: seconds,
+		// so past bun's 5 s default under a loaded machine.
+	}, 60_000);
 });
 
 describe("a plume is the firing table and nothing else", () => {

@@ -19,7 +19,7 @@
  * only what the mesh measures is new: the beam and height, which
  * `HULL_SPECS.voyager.env` carries (`tests/hull.test.ts` holds every declared
  * box to its built one). The length is also what refuses the hull every berth
- * (`BERTH_CELL`, 90 m), so no scale above ×0.64 changes that.
+ * (`BERTH_CELL`, 90 m), so no scale above ×0.64 of the study's own size changes that.
  *
  * The study has no cabin interior and no fixture screens, so every mesh casts
  * a shadow and every mesh is in the reduced levels.

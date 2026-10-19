@@ -29,3 +29,13 @@ Rebuild with `/Applications/Blender.app/Contents/MacOS/Blender --background --py
 Current model: approximately 542k triangles, 18 meshes, embedded textures. Hardware captures on Apple M1 Pro run at about 59 FPS with no page errors. Model integrity tests (2 tests, 118 assertions), standalone viewer typecheck and all interaction checks pass. These measurements apply to the isolated viewer.
 
 No full production browser suite, production integration or principal visual acceptance is claimed. Production adoption needs the authoritative hull envelope, collision/berth fit, cockpit fit, LOD/texture budget and live-game performance reviewed separately.
+
+## Production (node #820)
+
+The accepted export is integrated as the voyager's selected variant:
+`node spikes/discovery/prepare-flight-asset.mjs` turns the nose from +X onto +Z
+and writes `src/models/discovery-voyager.glb` losslessly; `src/voyager-hull.ts`
+draws it. `node spikes/discovery/capture-game.mjs` captures it in the game on
+the GPU lane (`evidence/game-*.png`). See
+`docs/receipts/node-820-discovery-integration.md` for the contract, the
+decisions and the measurements. The study's own files above are unchanged.
