@@ -28,7 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// Node #1031: proposed sentence for the principal's approval before merge.
+	// Node #1031: sentence approved by the principal, 2026-10-19.
 	{
 		date: "2026-10-19",
 		text: "The Salvage outposts have a new exterior: a freighter section welded to cargo pods, a ship's bow and a dish, round a landing deck lit by work lamps.",

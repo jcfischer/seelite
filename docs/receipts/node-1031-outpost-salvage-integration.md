@@ -20,11 +20,19 @@ is merged into `node/1031-outpost-salvage`, 2026-10-19.
   figures in the flight export, as #819 did for the refineries. The sim's
   geometry is unchanged. Rejected: the game's generic deck over a cleared
   front (option 2), and moving the sim's outpost to the slab (option 3).
-- **Shipping asset:** `src/models/outpost-salvage.glb`, 3,868,000 bytes
-  (3.69 MiB), sha256
-  `6f78b99cb2d680fcf19c39b38faf09bb0dae81918c0e6d1fbc9979637fa180ca`.
-- **Open:** the in-game look (view set and the principal's yes), the
-  changelog sentence, SOP §4's LOD measurement, Sage, the browser gate.
+- **The look, principal rulings 2026-10-19** (flown at seed 56, system 0):
+  D1, the authored deck glows as the procedural pad (`padShell`) and its
+  plating is matte; D2, the review pad's surround (edge trunks, machinery)
+  moves to the deck's four outer sides; D3, the changelog sentence; D4
+  (option 3), the deck plates a middle grey, `0x737a80`, between the study's
+  `landing-grey` and the procedural deck's `0x8b95a0`, on the pad's own
+  material copies.
+- **Shipping asset:** `src/models/outpost-salvage.glb`, 4,213,892 bytes
+  (4.02 MiB), sha256
+  `36a3ada8b9b0216ccc7e7443923841083a44d2f960757e961fcc4e78893f1efd`.
+- **LOD:** none (the Full model only), as the shipyards and refineries;
+  measured cost below. Frame time not measured.
+- **Open:** the principal's yes on the final look, Sage, the browser gate.
 
 ## Integration contract
 
@@ -43,7 +51,7 @@ is merged into `node/1031-outpost-salvage`, 2026-10-19.
 - **Collision owner.** `station-proxy.ts`, from `src/outpost-proxies.ts`
   (generated from the shipped model) plus the sim's deck (`padDeck`).
 - **Reach.** `STATION_FORMS` outpost `e`: 0.43 km, the larger of stand-in
-  (0.40), mesh (0.4262) and proxy (0.4281).
+  (0.40), mesh (0.4262) and proxy (0.4281), measured with the dressing.
 - **Loading.** The background queue (#838): `outpost/e` in
   `model-catalog.ts`, so `systemModelIds` names it for any system with a
   Salvage, and `refreshAuthoredStations("outpost", "e")` replaces the drawn
@@ -85,12 +93,17 @@ from the review build only where this list says:
    outside the cell. Mesh groups carry the names the game reads
    (`interior-deck`, `interior-lane-edge`, `interior-rail`, `interior-flood`,
    `berth-<id>-*`).
-6. **Placement.** The whole model is moved so the plane lies on +z at 165 m.
+6. **The flank** (principal, 2026-10-19, D2): on each of the deck's four
+   outer sides an edge trunk with its pipes and lamps under the deck's face,
+   and five machinery units below it, the review pad's own parts. Exterior
+   structure, outside the deck's volume; the deck's slab stands half a metre
+   past the sim's edge so they are seated on it.
+7. **Placement.** The whole model is moved so the plane lies on +z at 165 m.
 
 **Encoding.** `spikes/stations/prepare-flight-asset.mjs`: Meshopt (NONE
 filter) and lossless WebP; it asserts exact vertex attributes, the flight
 export's triangle soup and texture pixels after a decode. No simplification,
-quantization or resize. Shipped: 39,222 triangles in 54 meshes.
+quantization or resize. Shipped: 52,150 triangles in 58 meshes.
 
 **Checks on the shipped file** (`tests/outpost-flight-asset.test.ts`,
 through `decodeShippedGlb`): under the host's per-asset limit; under 250 k
@@ -111,8 +124,8 @@ parts; the deck is the sim's (`padDeck`, now shared with the refinery).
 The model has no rock, so no voxel fill.
 
 **What shipped** (`scripts/generate-outpost-proxies.ts` →
-`src/outpost-proxies.ts`, 24 KB, about 10 s a refit): 875 boxes (3,237
-fitted, 1,365 after absorbing, 875 after merging). The fit's keep-out is the
+`src/outpost-proxies.ts`, 27 KB, about 10 s a refit): 971 boxes with the
+flank dressing (875 before it). The fit's keep-out is the
 refinery's, read from the outpost's figures (`padKeepOut`).
 
 **Checks** (`tests/outpost-flight.test.ts`): the recorded model hash matches
@@ -125,7 +138,26 @@ section was 90 m).
 
 ## Runtime and performance evidence
 
-Pending.
+**The station's cost per frame**, measured 2026-10-19 on the GPU lane (M1
+Pro, ANGLE Metal), seed 56, system 0, at four framings 0.9–1.4 km off the
+pad: `renderer.info` over five frames with the outpost shown, less five with
+it hidden (`.tmp/capture-salvage.mjs`, not tracked). Counts were constant
+across the five frames.
+
+| | draw calls | triangles |
+|---|---|---|
+| procedural Salvage | 115 | 19,184 |
+| authored, before the flank dressing | 151 | 116,946 |
+| authored, with it | 163 | 155,730 |
+
+The triangles are about three times the model's: the station is drawn in
+more than one pass. No LOD level was tried: a level adds calls, and SOP §4
+asks for a measured reason first.
+
+**The look.** Before/after frames at the same four framings, seed 56,
+system 0, were shown to the principal in this session; the view set's
+`outpost-interior-workbench` now names form `e` (it named `d`, a form
+the role no longer draws).
 
 ## Delivery evidence
 
