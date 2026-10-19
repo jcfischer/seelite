@@ -187,6 +187,10 @@ const EXEMPT = new Map([
 		"node #812's headed instrument pricing an authored hull against its procedural loft on one page (the tug since node #814); like #201's it prints medians and a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser or a page whose courier is not the authored model throws out of the run",
 	],
 	[
+		"measure-asteroid-field-cost.mjs",
+		"node #968's headed instrument pricing the shipped asteroid field against a no-field control by #950's method (and, with INSTALL=1, the cold swap from points to rocks); like #201's it prints medians, a separation count and the worst view per side for a receipt and gates on nothing — the budget is a ruling the receipt checks, not a threshold a run can derive — and a software rasteriser, a page whose field is not drawing the authored rocks or a held install that never starts throws out of the run",
+	],
+	[
 		"measure-hull-install-stall.mjs",
 		"node #814's headed instrument timing each after-boot hull's install phases and the longest frame gap they cause; it prints medians for the receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser throws out of the run",
 	],

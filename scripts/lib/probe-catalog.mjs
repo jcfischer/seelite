@@ -35,6 +35,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-asteroid-field.mjs",
+			"Asteroid fields in a charted system: points only before the rock GLB installs, two BatchedMeshes and one Points draw placed against the camera at the sim pose with drift and spin, plain procedural rocks after a failed load, level steps in both directions with hysteresis, and a jump that frees the field left behind.",
+			[
+				"asteroid field",
+				"BatchedMesh",
+				"model install",
+				"level of detail",
+				"stand-in",
+				"jump teardown",
+			],
+		),
+		entry(
 			"probe-missiles.mjs",
 			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
 			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],

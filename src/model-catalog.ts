@@ -24,6 +24,10 @@ export const modelLoaders = {
 		(await import("./porter-model")).preparePorterModel(p),
 	interiors: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./interior-model")).prepareInteriorModel(p),
+	// The authored field rocks (node #968): points until it installs, plain
+	// procedural rocks if it fails.
+	asteroids: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./asteroid-model")).prepareAsteroidModel(p),
 	"shipyard/a": async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./shipyard-flight")).prepareShipyardModel("a", p),
 	"shipyard/b": async (p?: Parameters<ModelLoader>[0]) =>

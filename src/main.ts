@@ -1,4 +1,8 @@
 import { fieldContactsAt } from "./field-contact";
+import { fieldRocks, systemFields } from "./asteroid-field";
+import { FieldDraw } from "./field-draw";
+import { pxPerRadianFor } from "./field-lod";
+import { authoredRockShapes, buildStandInRocks } from "./asteroid-model";
 import { ROCK_ASSETS } from "./rock-assets";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
@@ -50,7 +54,11 @@ import {
 	trafficRosterHulls,
 } from "./system-models";
 import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
-import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
+import {
+	INTERIOR_SLICE_MS,
+	nextInteriorFrame,
+	runInteriorSlices,
+} from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
@@ -2245,9 +2253,16 @@ const FLEET_REACH_KM =
 
 /** One session queue. Required loads adopt their result before a Game exists. */
 let installedGame: Game | undefined;
-const models = new ModelQueue(modelLoaders, async (id) => {
-	await installedGame?.modelInstalled(id as ModelId);
-});
+const models = new ModelQueue(
+	modelLoaders,
+	async (id) => {
+		await installedGame?.modelInstalled(id as ModelId);
+	},
+	undefined,
+	async (id) => {
+		await installedGame?.modelFailed(id as ModelId);
+	},
+);
 async function requireModels(
 	ids: readonly ModelId[],
 	view = loadingPanel("game"),
@@ -4725,6 +4740,7 @@ class Game {
 
 		this.buildBackdrop();
 		this.buildBodies();
+		this.buildFields();
 		// Construct before buildLights applies the stored quality. The composer
 		// adds it in its original position below; Low is off from frame one.
 		this.bloomPass = new UnrealBloomPass(
@@ -6883,7 +6899,11 @@ class Game {
 
 	/** Queue readiness includes current-system mesh refreshes, not an elapsed delay. */
 	modelsSettled(): boolean {
-		return models.settled(this.currentModelIds()) && !this.interiorRefresh;
+		return (
+			models.settled(this.currentModelIds()) &&
+			!this.interiorRefresh &&
+			!this.fieldRefresh
+		);
 	}
 	private currentModelIds(): ModelId[] {
 		this.ensureTrafficActors();
@@ -6914,11 +6934,13 @@ class Game {
 	}
 	startModelQueue(): void {
 		models.prioritize(this.currentModelIds(), this.nextModelIds());
+		void this.refreshFields();
 	}
 	/** Install callbacks always inspect live caches; a jump never waits for them. */
 	async modelInstalled(id: ModelId): Promise<void> {
 		if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
 		else if (id === "interiors") await this.refreshInteriorMeshes();
+		else if (id === "asteroids") await this.refreshFields();
 		else if (id === "coriolis")
 			await this.refreshAuthoredStations("trade", "a");
 		else if (id.startsWith("shipyard/"))
@@ -6928,6 +6950,133 @@ class Game {
 		else if (id.startsWith("outpost/"))
 			await this.refreshAuthoredStations("outpost", id.split("/")[1]);
 	}
+	/** A background load failed for good: the field rocks fall back to plain
+	 *  procedural shapes, never to points alone (node #968). */
+	async modelFailed(id: ModelId): Promise<void> {
+		if (id === "asteroids") await this.refreshFields();
+	}
+
+	/** One draw per field of the current system, built with the system and
+	 *  disposed with it (node #968). Shapes arrive later, in `refreshFields`. */
+	private fieldDraws: FieldDraw[] = [];
+	/** The current system's field draws, for probes. */
+	get fields(): readonly FieldDraw[] {
+		return this.fieldDraws;
+	}
+	private fieldRefresh?: Promise<void>;
+	/** The authored shapes were fetched but would not become a batch. */
+	private fieldShapesFailed = false;
+	/** Bumped by every build and teardown, so a slice in flight for a system
+	 *  already left installs nothing into the next one. */
+	private fieldEpoch = 0;
+	private readonly fieldBuffer = new THREE.Vector2();
+	private buildFields(): void {
+		this.disposeFields();
+		const { record, contents } = this.world.system;
+		for (const plan of systemFields(record, contents)) {
+			const draw = new FieldDraw(plan, fieldRocks(record, plan));
+			this.nearScene.add(draw.root);
+			this.fieldDraws.push(draw);
+		}
+	}
+	private disposeFields(): void {
+		this.fieldEpoch++;
+		for (const draw of this.fieldDraws) draw.dispose();
+		this.fieldDraws = [];
+	}
+	/** Give every field without meshes the shapes its model state allows:
+	 *  authored once the GLB is installed, the plain stand-in once it failed,
+	 *  none (points only) while it is still on its way. */
+	private refreshFields(): Promise<void> {
+		if (this.fieldRefresh) return this.fieldRefresh;
+		if (!this.fieldsWantMeshes()) return Promise.resolve();
+		const run = this.installFieldMeshes().finally(() => {
+			if (this.fieldRefresh === run) this.fieldRefresh = undefined;
+		});
+		return (this.fieldRefresh = run);
+	}
+	private fieldsWantMeshes(): boolean {
+		const state = models.state("asteroids");
+		return (
+			(state === "installed" || state === "failed") &&
+			this.fieldDraws.some((d) => !d.meshesInstalled)
+		);
+	}
+	/** One pass per system: a jump during a slice ends the pass for the system
+	 *  left, and the loop goes round again for the one arrived in. */
+	private async installFieldMeshes() {
+		while (this.fieldsWantMeshes()) {
+			const epoch = this.fieldEpoch;
+			const live = () => epoch === this.fieldEpoch;
+			let shapes =
+				models.state("asteroids") === "installed" && !this.fieldShapesFailed
+					? authoredRockShapes()
+					: undefined;
+			let kind: "authored" | "standin" = "authored";
+			if (!shapes) {
+				// A failed load, or an install the loader reports without shapes.
+				kind = "standin";
+				shapes = await runInteriorSlices(buildStandInRocks(), { live });
+			}
+			if (!shapes) continue;
+			for (const draw of this.fieldDraws) {
+				if (!live()) break;
+				try {
+					await draw.install(shapes, kind, nextInteriorFrame, live, (mesh) =>
+						this.warmFieldBatch(mesh, shapes, live),
+					);
+				} catch (error) {
+					// The authored batch would not build or compile here: draw the
+					// plain rocks instead, never points alone.
+					console.warn("asteroids: batch install failed; plain rocks", error);
+					this.fieldShapesFailed = true;
+					break;
+				}
+			}
+			if (this.fieldShapesFailed && kind === "authored") continue;
+			if (live() && this.fieldDraws.some((d) => !d.meshesInstalled)) return;
+		}
+	}
+	/** Compile the batch's program and upload its maps while it is hidden, one
+	 *  step per frame, so the swap from points is not the frame that pays for
+	 *  them (#953 measured a 70 ms first frame). The composer target is the one
+	 *  gameplay renders into, so the same program variant is built. */
+	private async warmFieldBatch(
+		mesh: THREE.BatchedMesh,
+		shapes: { textures: THREE.Texture[] },
+		live: () => boolean,
+	) {
+		const target = this.renderer.getRenderTarget();
+		for (const texture of shapes.textures) {
+			this.renderer.initTexture(texture);
+			await nextInteriorFrame();
+			if (!live()) return;
+		}
+		try {
+			this.renderer.setRenderTarget(this.composer.renderTarget1);
+			await this.renderer.compileAsync(mesh, this.nearCamera, this.nearScene);
+		} finally {
+			this.renderer.setRenderTarget(target);
+		}
+		await nextInteriorFrame();
+	}
+	private updateFields(camPos: Vec3): void {
+		if (!this.fieldDraws.length) return;
+		const quality = this.settings.value.quality;
+		const pxPerRadian = pxPerRadianFor(
+			this.renderer.getDrawingBufferSize(this.fieldBuffer).y,
+			this.nearCamera.fov,
+		);
+		for (const draw of this.fieldDraws)
+			draw.update({
+				gameTime: this.world.gameTime,
+				camera: camPos,
+				pxPerRadian,
+				quality,
+				shadows: LIGHT_RIG.quality[quality].shadows,
+			});
+	}
+
 	/** Compatibility handles for existing probes; every load uses the same queue. */
 	loadAuthoredHullsAfterBoot(): Promise<void> {
 		return models.wait(AFTER_BOOT_HULL_IDS);
@@ -15607,6 +15756,7 @@ class Game {
 	private rebuildSystem() {
 		// The last arrival's rift belongs to the system being left.
 		this.clearArrivalRift();
+		this.disposeFields();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
 		for (const handle of this.interiorPresentations.values())
@@ -15637,6 +15787,7 @@ class Game {
 				this.markedOcclusion.splice(i, 1);
 
 		this.buildBodies();
+		this.buildFields();
 		if (models.state("interiors") === "installed")
 			void this.refreshInteriorMeshes().catch((error) =>
 				this.warnInteriorFailure(error),
@@ -16976,6 +17127,7 @@ class Game {
 		this.updateRelayPresentation(camPos);
 		this.updateDerelictPresentation(camPos);
 		this.updateTenderPresentation(camPos);
+		this.updateFields(camPos);
 		this.presentDirector(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
@@ -22089,6 +22241,8 @@ if (postcard) {
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	installedGame = game;
 	await game.modelInstalled("interiors");
+	// A postcard of a field draws its rocks, not its points.
+	await game.modelInstalled("asteroids");
 	await game.whenSkyReady();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
@@ -22407,6 +22561,8 @@ if (postcard) {
 	// Models adopted before construction already draw authored geometry.
 	if (models.state("interiors") === "installed")
 		await game.modelInstalled("interiors");
+	// The full-set boot is settled before the first frame a probe reads.
+	if (query.has("models-full")) await game.modelInstalled("asteroids");
 	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
 	else void game.loadInteriorsAfterBoot();
 	if (query.has("shipyards-full")) await game.loadShipyardsAfterBoot();
