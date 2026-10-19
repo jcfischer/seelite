@@ -16,6 +16,15 @@ const OWNERS = Object.freeze({
 		"src/model-catalog.ts",
 		"src/system-models.ts",
 	],
+	"probe-asteroid-field.mjs": [
+		"scripts/probe-asteroid-field.mjs",
+		"src/field-draw.ts",
+		"src/field-lod.ts",
+		"src/asteroid-model.ts",
+		"src/asteroid-field.ts",
+		"src/model-catalog.ts",
+		"src/system-models.ts",
+	],
 	"probe-missiles.mjs": [
 		"scripts/probe-missiles.mjs",
 		"src/missiles.ts",

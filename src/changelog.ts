@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #968: sentence approved by the principal, 2026-10-19.
+	{
+		date: "2026-10-19",
+		text: "Asteroid fields are drawn: every system with one shows its rocks, drifting and turning, and a field far away reads as a scatter of points.",
+		node: 968,
+	},
 	// Node #1031: sentence approved by the principal, 2026-10-19.
 	{
 		date: "2026-10-19",
