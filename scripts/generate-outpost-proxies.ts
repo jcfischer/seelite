@@ -1,5 +1,5 @@
 /**
- * Write the outpost Salvage's collision proxy (node #1031) to
+ * Write the authored outposts' collision proxies (nodes #1031, #1032) to
  * `src/outpost-proxies.ts`, from the shipped model. How it is fitted is
  * `scripts/lib/shipyard-proxies.ts` (`fitOutpostProxies`). Run after the
  * model changes:
@@ -23,7 +23,7 @@ for (const [form, { hull }] of Object.entries(fitted)) {
 writeFileSync(
 	OUT,
 	`/**
- * The outpost Salvage's collision proxy (node #1031). **Generated** by
+ * The authored outposts' collision proxies (nodes #1031, #1032). **Generated** by
  * \`scripts/generate-outpost-proxies.ts\` from \`src/models/outpost-*.glb\`;
  * do not edit. The hull (the 10 m rule) is oriented boxes in the station's
  * frame, packed as the shipyards' are (\`src/shipyard-proxies.ts\`).

@@ -925,7 +925,7 @@ def carve_front(root,name):
   drop=[f for island in whole for f in island]
   if drop:bmesh.ops.delete(bm,geom=drop,context='FACES')
   dropped=len(drop);bm.faces.ensure_lookup_table()
-  keep={f for island in large for f in island if f.is_valid}
+  keep=dict.fromkeys(f for island in large for f in island if f.is_valid)
   for box in boxes:
    lo,up=box
    def touches(f):
@@ -935,13 +935,16 @@ def carve_front(root,name):
     for at in (lo[axis],up[axis]):
      if at>=top:continue
      near=[f for f in keep if f.is_valid and touches(f)]
-     geom=list(set(near+[e for f in near for e in f.edges]+[v for f in near for v in f.verts]))
+     geom=list(dict.fromkeys(near+[e for f in near for e in f.edges]+[v for f in near for v in f.verts]))
      no=Vector((0,0,0));no[axis]=1
      co=Vector((0,0,0));co[axis]=at
      if geom:
       cut=bmesh.ops.bisect_plane(bm,geom=geom,dist=1e-6,plane_co=co,plane_no=no)
-      keep|={g for g in cut['geom'] if isinstance(g,bmesh.types.BMFace)}
-      keep|={f for f in bm.faces if f.is_valid and any(v in geom for v in f.verts)}
+      # A split face is two faces: the ones on the geometry cut stay in `keep`.
+      touched=set(geom)
+      keep.update(dict.fromkeys(g for g in cut['geom'] if isinstance(g,bmesh.types.BMFace)))
+      keep.update(dict.fromkeys(f for f in bm.faces if any(v in touched for v in f.verts)))
+   keep={f:None for f in keep if f.is_valid}
    inside=[f for f in keep if f.is_valid and all(lo[k]+eps<f.calc_center_median()[k]<up[k]-eps for k in range(3))]
    dropped+=len(inside)
    if inside:bmesh.ops.delete(bm,geom=inside,context='FACES')

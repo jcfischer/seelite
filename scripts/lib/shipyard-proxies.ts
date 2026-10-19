@@ -980,9 +980,10 @@ export async function fitOutpostProxies(): Promise<
 		const built = buildStationForm("outpost", form, 0x888888, 0, 0);
 		const parts = outpostParts(built.root);
 		keepOut = padKeepOut("outpost");
-		// The Salvage's boxes are as node #1031 shipped them; the forms after
-		// it (node #1032) keep half a metre inside the limit, which no box
-		// fitted to the first kept on the written box's own samples.
+		// The Salvage's boxes are as node #1031 shipped them. The forms after
+		// it (node #1032) keep half a metre inside the limit: the Buoy had
+		// five boxes that passed on the fit's samples and failed on the
+		// written box's.
 		fitLimitM = form === "e" ? SAMPLE_LIMIT_M : SAMPLE_LIMIT_M - 0.5;
 		const hull = stage(`${form} hull`, parts, log);
 		fitLimitM = SAMPLE_LIMIT_M;

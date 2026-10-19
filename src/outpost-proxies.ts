@@ -1,5 +1,5 @@
 /**
- * The outpost Salvage's collision proxy (node #1031). **Generated** by
+ * The authored outposts' collision proxies (nodes #1031, #1032). **Generated** by
  * `scripts/generate-outpost-proxies.ts` from `src/models/outpost-*.glb`;
  * do not edit. The hull (the 10 m rule) is oriented boxes in the station's
  * frame, packed as the shipyards' are (`src/shipyard-proxies.ts`).
@@ -14,9 +14,9 @@ export const OUTPOST_PROXY_PACK = {
 } as const;
 export const OUTPOST_PROXY_SOURCES = {
 	a: "7f7a70a29b6a292292ac3f33fc2a1ad78899bb7d5a767e00cdf6a41b0e7abc20",
-	b: "536f2a0264a1c217c34dc5a2750bda94e28e7bc55a76b049a7f89abe5623d779",
-	c: "5f56c0ac892d0b43f6b298d25e4a03d1d049b27e7ce0342e7b034ac7502e85b9",
-	d: "2d3736c14fbd2ab91544bc096113df8d17caa9a43253c5cb035a52db5960cfa8",
+	b: "54ff8d7f41a753357734bbeb1e72304f863dcdaa9a0fc5c8d5ca34b3238f6628",
+	c: "ea2ce49965dc7f48bb9c8ca31219a86424a1201b6feae328326af040e705c879",
+	d: "8ca948046ffe94c9597a7994d6bc8f0ed0b17677e2fb91d8c0aef8a892adbd00",
 	e: "36a3ada8b9b0216ccc7e7443923841083a44d2f960757e961fcc4e78893f1efd",
 } as const;
 export const OUTPOST_PROXIES = {
