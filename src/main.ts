@@ -7072,8 +7072,8 @@ class Game {
 
 	/**
 	 * Rebuild every drawn station of `type` and `form` from its installed
-	 * model (the shipyards, node #818; the refineries, node #819; the outpost
-	 * Salvage, node #1031). The new
+	 * model (the shipyards, node #818; the refineries, node #819; the outposts,
+	 * nodes #1031 and #1032). The new
 	 * mesh compiles off-scene first and replaces the old one only if the
 	 * station is still the one drawn; a jump during the compile ends the
 	 * refresh, since the new system was built with whatever had installed.
@@ -22097,7 +22097,7 @@ if (postcard) {
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station") {
 		// The station workbench draws the authored shipyards (node #818),
-		// refineries (node #819) and outpost Salvage (node #1031).
+		// refineries (node #819) and outposts (nodes #1031, #1032).
 		const { shipyardModelLoaders } = await import("./shipyard-flight");
 		const { refineryModelLoaders } = await import("./refinery-flight");
 		const { outpostModelLoaders } = await import("./outpost-flight");

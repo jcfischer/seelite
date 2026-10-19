@@ -3,6 +3,7 @@
 import { prepareCockpitModel } from "./cockpit-model";
 import type { ModelLoader } from "./model-progress";
 import type { HullId } from "./hull";
+import { OUTPOST_FORM } from "./station";
 
 export const modelLoaders = {
 	// Main also imports cockpit-model statically. A dynamic import here can
@@ -37,6 +38,14 @@ export const modelLoaders = {
 		(await import("./refinery-flight")).prepareRefineryModel("c", p),
 	"refinery/d": async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./refinery-flight")).prepareRefineryModel("d", p),
+	"outpost/a": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("a", p),
+	"outpost/b": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("b", p),
+	"outpost/c": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("c", p),
+	"outpost/d": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("d", p),
 	"outpost/e": async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./outpost-flight")).prepareOutpostModel("e", p),
 } satisfies Record<string, ModelLoader>;
@@ -58,8 +67,15 @@ export const SHIPYARD_MODELS = ALL_MODELS.filter((id) =>
 export const REFINERY_MODELS = ALL_MODELS.filter((id) =>
 	id.startsWith("refinery/"),
 );
-export const OUTPOST_MODELS = ALL_MODELS.filter((id) =>
-	id.startsWith("outpost/"),
+/**
+ * The outpost models a running game sweeps in after boot: the form a world
+ * draws, the Salvage (`OUTPOST_FORM`). The Derrick, Buoy, Rig and Cluster
+ * (node #1032) are in the catalog, so a station of one installs through the
+ * same queue and the workbench draws them, but no world draws one yet (#460),
+ * so no player downloads them.
+ */
+export const OUTPOST_MODELS = ALL_MODELS.filter(
+	(id) => id === `outpost/${OUTPOST_FORM}`,
 );
 
 export function stationModel(station: {

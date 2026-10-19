@@ -1,11 +1,17 @@
 /**
- * The outpost Salvage (node #1031): the approved study's (#810) flight export
- * as the game draws it, replacing the procedural form `e`. The procedural form
- * stays as the stand-in until the model installs, and for good when it fails
- * to load.
+ * The authored outposts: the approved studies' (#810) flight exports as the
+ * game draws them, the Salvage `e` (node #1031) and the Derrick `a`, Buoy `b`,
+ * Rig `c` and Cluster `d` (node #1032). The procedural form stays as the
+ * stand-in until the model installs, and for good when it fails to load.
+ *
+ * **Only the Salvage is in play** (`OUTPOST_FORM`): no pool holds `a`–`d`
+ * until the fiction map puts them in play (#460), so a world never builds one
+ * and `OUTPOST_MODELS` does not sweep them in. The station workbench and a
+ * forced form do build them, and a station of one would install through the
+ * same queue.
  *
  * **The asset is in the station's frame.** The flight export
- * (`spikes/stations/build_model.py -- salvage --flight`) moves the model so
+ * (`spikes/stations/build_model.py -- <name> --flight`) moves the model so
  * its `aperture-plane` mark lies on +z at the sim's plane, in metres; this
  * only scales it to kilometres. The pad is the model's (principal ruling,
  * 2026-10-19, option 1): its deck and berths are built to the sim's figures
@@ -42,12 +48,16 @@ import {
 } from "./station-mesh";
 import { AUTHORED_EXTERIOR_NAME } from "./station-visuals";
 
-export const OUTPOST_FORMS: readonly OutpostForm[] = ["e"];
+export const OUTPOST_FORMS: readonly OutpostForm[] = ["a", "b", "c", "d", "e"];
 
 /** Each form's model, by the name its file carries (`outpost-<name>.glb`).
  *  `OUTPOST_GLB_URLS` restates them as literals vite can rewrite;
  *  `tests/outpost-flight.test.ts` holds the two to agree. */
 export const OUTPOST_MODEL_NAMES: Readonly<Record<OutpostForm, string>> = {
+	a: "derrick",
+	b: "buoy",
+	c: "rig",
+	d: "cluster",
 	e: "salvage",
 };
 

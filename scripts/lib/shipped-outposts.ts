@@ -26,7 +26,7 @@ export function outpostModelHash(form: keyof typeof SHIPPED_OUTPOST_FILES) {
 const builders = new Map<string, ReturnType<typeof createOutpostBuilder>>();
 
 /**
- * Install the shipped outpost Salvage (node #1031) the way the game does, from
+ * Install the shipped authored outposts (nodes #1031, #1032) the way the game does, from
  * `src/models/outpost-*.glb` through the browser's loader, as
  * `installShippedRefineries` installs the refineries. A test that measures
  * what the game draws for an outpost, or the proxy generator, awaits it first.

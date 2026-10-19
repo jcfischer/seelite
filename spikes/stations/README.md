@@ -59,3 +59,13 @@ The model delivery branch is `design/remaining-stations-codex`; worktree `.workt
 Production work still needs optimized assets/LOD and loading, scale and berth-envelope agreement, docking transforms and clearance, collision proxies, spin ownership, shared game lighting and lifecycle disposal. The study viewer's 0.1 scale and turntable are display choices, not game contracts. Source GLBs are intentionally detailed studies and must not be dropped into runtime without addressing performance.
 
 The principal explicitly said **stop tests and probes**. Do not restart them without fresh authorization. The pending closure capture was terminated while waiting for another worktree's GPU lock, so closure screenshots were not taken. Historical screenshots and scores are retained; the current exported closure geometry passed its regression checks before the stop instruction. No fresh Sage approval, full PR verification, merge or deployment is claimed.
+
+## Flight exports — nodes #1031, #1032
+
+`build_model.py -- <name> --flight` writes the game's flight export to the ignored `.dream-loop/station-flight/`, and `prepare-flight-asset.mjs` encodes it into `src/models/outpost-<name>.glb`. Salvage (#1031) and Derrick, Buoy, Rig and Cluster (#1032) have one; the review GLBs above are unchanged. See `docs/receipts/node-1031-outpost-salvage-integration.md` and `docs/receipts/node-1032-outposts-a-d.md`.
+
+```sh
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup --python spikes/stations/build_model.py -- salvage derrick buoy rig cluster --flight
+node spikes/stations/prepare-flight-asset.mjs
+bun scripts/generate-outpost-proxies.ts
+```

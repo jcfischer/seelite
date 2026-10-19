@@ -88,8 +88,13 @@ export const REFINERY_GLB_URLS = {
 export const PORTER_GLB_URL = new URL("./models/porter.glb", import.meta.url)
 	.href;
 
-/** The outpost Salvage (node #1031), prepared by
- *  `spikes/stations/prepare-flight-asset.mjs`: form `e`. */
+/** The authored outposts, prepared by
+ *  `spikes/stations/prepare-flight-asset.mjs`: forms `a`–`d` (node #1032) and
+ *  the Salvage, `e` (node #1031). */
 export const OUTPOST_GLB_URLS = {
+	a: new URL("./models/outpost-derrick.glb", import.meta.url).href,
+	b: new URL("./models/outpost-buoy.glb", import.meta.url).href,
+	c: new URL("./models/outpost-rig.glb", import.meta.url).href,
+	d: new URL("./models/outpost-cluster.glb", import.meta.url).href,
 	e: new URL("./models/outpost-salvage.glb", import.meta.url).href,
 } as const;

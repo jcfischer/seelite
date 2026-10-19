@@ -1,15 +1,16 @@
-// The game's outpost Salvage (node #1031): the approved study (#810) as a
-// flight export, Meshopt and lossless WebP, written to src/models/. The flight
-// export is `build_model.py -- salvage --flight`: the approved layout without
+// The game's authored outposts (nodes #1031 and #1032): the approved studies
+// (#810) as flight exports, Meshopt and lossless WebP, written to src/models/. The flight
+// export is `build_model.py -- <name> --flight`: the approved layout without
 // plate fasteners, seam strips, wear trails or the cladding bevel, its front
 // redrawn to the sim's outpost pad (principal ruling, 2026-10-19, option 1),
 // and the whole model moved so the aperture plane lies on +Z at the sim's
-// figure. This step adds no simplification, quantization or resize: the
+// figure. Forms a-d (Derrick, Buoy, Rig, Cluster) are also turned so their
+// pad faces +Z, and the Rig's moved so its pad is on the axis. This step adds no simplification, quantization or resize: the
 // written file's triangles are compared with the flight export's as read.
 //
 //   /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
-//     --python spikes/stations/build_model.py -- salvage --flight
-//   node spikes/stations/prepare-flight-asset.mjs
+//     --python spikes/stations/build_model.py -- salvage derrick buoy rig cluster --flight
+//   node spikes/stations/prepare-flight-asset.mjs [name ...]
 import { NodeIO } from "@gltf-transform/core";
 import {
 	ALL_EXTENSIONS,
@@ -59,7 +60,13 @@ const attributes = (doc) =>
 		}));
 await mkdir("src/models", { recursive: true });
 const wanted = process.argv.slice(2);
-for (const [id, name] of [["salvage", "salvage"]]) {
+for (const [id, name] of [
+	["derrick", "derrick"],
+	["buoy", "buoy"],
+	["rig", "rig"],
+	["cluster", "cluster"],
+	["salvage", "salvage"],
+]) {
 	if (wanted.length && !wanted.includes(id)) continue;
 	const source = `.dream-loop/station-flight/${id}.glb`;
 	const target = `src/models/outpost-${name}.glb`;

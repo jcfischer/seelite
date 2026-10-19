@@ -852,12 +852,14 @@ export function refineryProxyBoxes(form: keyof typeof REFINERY_PROXIES): {
 }
 
 // ---------------------------------------------------------------------------
-// The authored outpost Salvage (node #1031)
+// The authored outposts (nodes #1031, #1032)
 // ---------------------------------------------------------------------------
 
 /**
- * The Salvage, as the game loads it (node #1031). **The sim collides with the
- * authored outpost, whatever is drawn**, as with the refineries (#819): while
+ * An authored outpost, as the game loads it: the Salvage (node #1031), and the
+ * Derrick, Buoy, Rig and Cluster, which have proxies though no pool holds them
+ * yet (node #1032). **The sim collides with the authored outpost, whatever is
+ * drawn**, as with the refineries (#819): while
  * its model is loading, or if it failed to, the procedural stand-in is drawn
  * and is solid as the Salvage it stands in for. Its hull keeps the shipyards'
  * rule (at most 10 m of empty space collides), fitted to the model's own parts
@@ -893,7 +895,9 @@ export function outpostProxyBoxes(
  * Returns `null` for a form that has no proxy. Only the forms in play
  * (`formsInPlay`: each role's pool, and the outpost's one form) have one,
  * because only they can be drawn by a running game (§2.2), and the test rows
- * measure only them — an alternate's proxy would be a claim nothing checks. A
+ * measure only them — an alternate's proxy would be a claim nothing checks.
+ * The exception is the four outposts built ahead of any pool (node #1032),
+ * which `tests/helpers/forms-in-play.ts` lists beside the forms in play. A
  * form in play must never return `null`: the test asserts it for every member
  * of every pool, which is how pooling a form without building its proxy goes
  * red (node #717).
@@ -940,7 +944,16 @@ export function stationProxy(
 					return null;
 			}
 		case "outpost":
-			return form === "e" ? authoredOutpostProxy(form) : null;
+			switch (form) {
+				case "a":
+				case "b":
+				case "c":
+				case "d":
+				case "e":
+					return authoredOutpostProxy(form);
+				default:
+					return null;
+			}
 		default: {
 			// Exhaustive at compile time: a station type added later is a type
 			// error here, and at runtime it has no proxy.
