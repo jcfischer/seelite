@@ -15,6 +15,8 @@ export const modelLoaders = {
 		(await import("./courier-hull")).prepareCourierHullModel(p),
 	tug: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./tug-hull")).prepareTugHullModel(p),
+	voyager: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./voyager-hull")).prepareVoyagerHullModel(p),
 	miner: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./longwall-model")).prepareLongwallModel(p),
 	freighter: async (p?: Parameters<ModelLoader>[0]) =>
@@ -43,6 +45,7 @@ export const AUTHORED_HULL_MODELS = [
 	"tug",
 	"miner",
 	"freighter",
+	"voyager",
 ] as const satisfies readonly (HullId & ModelId)[];
 export type AuthoredHullModelId = (typeof AUTHORED_HULL_MODELS)[number];
 export const isAuthoredHullModel = (id: unknown): id is AuthoredHullModelId =>

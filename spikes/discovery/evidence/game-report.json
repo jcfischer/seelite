@@ -1,0 +1,12 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "hull": "voyager",
+  "authored": true,
+  "frame": true,
+  "glows": [
+    "voyager-keel-exhaust",
+    "voyager-port-exhaust",
+    "voyager-starboard-exhaust"
+  ],
+  "errors": []
+}

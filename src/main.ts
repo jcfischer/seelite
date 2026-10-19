@@ -22102,11 +22102,13 @@ if (postcard) {
 		const { prepareTugHullModel } = await import("./tug-hull");
 		const { prepareLongwallModel } = await import("./longwall-model");
 		const { preparePorterModel } = await import("./porter-model");
+		const { prepareVoyagerHullModel } = await import("./voyager-hull");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			prepareCourierHullModel,
 			prepareTugHullModel,
 			prepareLongwallModel,
 			preparePorterModel,
+			prepareVoyagerHullModel,
 		]);
 	}
 	const { mountModelViewer } = await import("./model-viewer");
