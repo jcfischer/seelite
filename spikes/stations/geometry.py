@@ -8,6 +8,8 @@ OUT=Path(__file__).resolve().parent
 random.seed(798)
 bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
 MATS={}; BATCH={}; GROUP_MAT={}; RIG={}; OWNER="static"
+# Set by build_model.py for `--flight` (node #1031): the game's export.
+FLIGHT=False
 
 def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
  m=bpy.data.materials.new(name);m.use_nodes=True;m.diffuse_color=(*color,alpha)
@@ -71,20 +73,25 @@ def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
  pts=[Vector(p) for p in points];n=Vector(n).normalized();c=sum(pts,Vector())/len(pts)
  pts=[c+(p-c)*.982 for p in pts];prism(pts,n,depth,mat,group="cladding-"+mat)
  if bolts:
+  # The flight export (node #1031) draws no fasteners, seam strips or wear
+  # trails, as the shipyards' and refineries' do, but draws the same random
+  # numbers, so every later part lands where the review build puts it.
   for i,p in enumerate(pts):
    q=pts[(i+1)%len(pts)];length=(q-p).length;count=max(1,int(length/4.5))
    for j in range(count+1):
     a=p.lerp(q,j/count)*.975+c*.025+n*(depth+.025)
-    tube(a-n*.005,a+n*.025,.115,steel,4)
-    tube(a+n*.025,a+n*.083,.075,alloy,6)
+    if not FLIGHT:
+     tube(a-n*.005,a+n*.025,.115,steel,4)
+     tube(a+n*.025,a+n*.083,.075,alloy,6)
    for t in [.08,.19,.36,.49,.67,.83,.92]:
     a=p.lerp(q,t)+n*(depth+.004);b=p.lerp(q,min(.97,t+random.uniform(.03,.13)))+n*(depth+.004)
-    mid=(a+b)/2;poly([a,b,mid*.975+c*.025+n*.012],steel if t<.7 else alloy)
+    mid=(a+b)/2
+    if not FLIGHT:poly([a,b,mid*.975+c*.025+n*.012],steel if t<.7 else alloy)
    # Local abrasion trails below a few seam fasteners, physically on each plate.
    for t in [.27,.73]:
     a=p.lerp(q,t)+n*(depth+.006);inward=(c-a).normalized();along=(q-p).normalized()
     length=random.uniform(.16,.55);width=random.uniform(.025,.07)
-    poly([a-along*width,a+along*width,a+inward*length+along*width*.3],steel)
+    if not FLIGHT:poly([a-along*width,a+along*width,a+inward*length+along*width*.3],steel)
 
 def hatch(x,y,z,w=2.2,d=2.8):
  box((x,y+.07,z),(w,.14,d),steel)

@@ -644,6 +644,197 @@ def salvage():
 
 exec((OUT/'final_shapes.py').read_text(),globals())
 
+# Flight export (`-- salvage --flight`, node #1031): Salvage's front, redrawn
+# to the sim's outpost pad (principal ruling, 2026-10-19, option 1). The
+# approved pad is a 200 x 180 m slab; the sim's outpost is a deck 314 m square
+# at the aperture plane with a hole round the lane, a 42 m landing well behind
+# it and two berths standing on it (`stationInterior("outpost")`). So the
+# flight export drops every review part that reaches into the deck, in front
+# of it or into the well, closes the hull face behind the deck, lines the well
+# and builds the deck and berths in the model's own materials, to the sim's
+# figures. Metres; the whole model is then moved so the plane lies on +Z at
+# the sim's 165 m. tests/outpost-flight-asset.test.ts reads the sim's figures and fails
+# on drift.
+FLIGHT='--flight' in sys.argv
+G.FLIGHT=FLIGHT
+APERTURE_PLANE_M=165
+PAD_DECK_HALF_M=157.26   # stationInterior("outpost").halfAcrossKm
+PAD_HOLE_HALF_M=86.55    # .padHoleHalfKm
+PAD_DECK_DEPTH_M=30      # .stagingAxialKm - .mouthAxialKm, as the procedural deck
+PAD_DECK_DRAWN_M=31      # drawn a metre deeper, into the hull plates and the liner
+PAD_BERTH_M=124.86       # each berth centre's offset from the axis
+PAD_CELL_M=(78,54,30)    # a berth's clear length, beam and height
+PAD_WELL_M=48            # the lane's floor behind the plane, past the sim's 42.1 m well
+PAD_LINER_M=87.55        # the well liner's inner face, a step outside the hole
+PAD_LINER_WALL_M=3
+# The hull's front face behind the pad: `plated_box((0,-2,-5),(29,33,21))`,
+# inset by its bevel (0.065 of its least side). Closed again where it is cut.
+HULL_FRONT_M=55
+HULL_FACE_M=(-131.35,131.35,-171.35,131.35)
+# The plane, in the review frame: the hull face's plates (their tops at 56 m)
+# behind the sim's 30 m deck, with half a metre to spare, so no exterior part
+# stands in the deck's volume. 7.5 m in front of the review pad's face (the
+# dock mark, 79 m).
+FLIGHT_PLANE_M=86.5
+# Mesh groups the clearance pass keeps: the pad's, and the well's liner.
+PAD_GROUPS=('interior-','berth-','pad-well')
+# The sim's berth ids (stationInterior("outpost")): `deck-near` always, and the
+# seeded side berth on `port-near` or `starboard-near`, so both are built and
+# the game keeps the one a station's seed draws. Centre, and the axis a parked
+# ship's length lies along (`parkedNose`).
+PAD_BERTHS=[('deck-near',(0,-PAD_BERTH_M),(1,0,0)),('port-near',(-PAD_BERTH_M,0),(0,1,0)),('starboard-near',(PAD_BERTH_M,0),(0,1,0))]
+
+def owned(name):
+ G.OWNER=name
+
+def pad_berth(bid,centre,along,plane):
+ """One berth on the deck, author units: an apron, a lit outline, tie-down
+ rings, a tally lamp and a work-lamp mast at each outboard corner, outside the
+ cell. Nothing stands in the cell above the apron."""
+ m=.1;L,B,H=[v*m for v in PAD_CELL_M]
+ ax=Vector(along);ac=Vector((-ax.y,ax.x,0));c=Vector((centre[0]*m,centre[1]*m,0))
+ if ac.dot(c)<0:ac=-ac
+ def at(u,v,w):return c+ax*u+ac*v+Z*w
+ def size(sa,sc,su):return (abs(ax.x)*sa+abs(ac.x)*sc,abs(ax.y)*sa+abs(ac.y)*sc,su)
+ owned('berth-'+bid+'-apron')
+ box(at(0,0,plane+.02),size(L*1.04,B*1.08,.04),blue[2])
+ owned('berth-'+bid+'-guide')
+ for v in [-1,1]:box(at(0,v*B*.46,plane+.05),size(L*.94,.12,.02),white)
+ for u in [-1,1]:box(at(u*L*.45,0,plane+.05),size(.12,B*.82,.02),white)
+ for u in [-.4,-.2,0,.2,.4]:box(at(u*L,0,plane+.05),size(.9,.12,.02),orange)
+ owned('berth-'+bid+'-tie')
+ for u in [-1,1]:
+  for v in [-1,1]:box(at(u*L*.3,v*B*.34,plane+.06),size(.5,.5,.04),steel)
+ owned('berth-'+bid+'-tally')
+ box(at(L*.5+.1,0,plane+.12),size(.3,1.2,.16),warm)
+ owned('berth-'+bid+'-mast')
+ for u in [-1,1]:
+  base=at(u*(L/2+.35),B*.52,plane)
+  tube(base,base+Z*1.2,.11,alloy,8)
+  head=base+Z*1.2-ac*.15
+  box(head,(.5,.5,.24),steel);box(head-Z*.13,(.38,.38,.03),warm)
+
+def salvage_pad():
+ """The deck ring, its hazard band, the lit lane edge, the kerb, a flood at
+ each corner and the three berths, author units, the deck's face on the plane
+ at FLIGHT_PLANE_M."""
+ m=.1;plane=FLIGHT_PLANE_M*m;half=PAD_DECK_HALF_M*m;hole=PAD_HOLE_HALF_M*m;depth=PAD_DECK_DRAWN_M*m
+ rise=.1   # the deck plates' thickness: their tops land on the plane
+ owned('interior-deck')
+ ring=[((-half,half),(hole,half)),((-half,half),(-half,-hole)),((hole,half),(-hole,hole)),((-half,-hole),(-hole,hole))]
+ for (x0,x1),(y0,y1) in ring:
+  box(((x0+x1)/2,(y0+y1)/2,plane-rise-(depth-rise)/2),(x1-x0,y1-y0,depth-rise),steel)
+  nu=max(1,round((x1-x0)/3.2));nv=max(1,round((y1-y0)/3.2))
+  for i in range(nu):
+   for j in range(nv):
+    a=x0+i*(x1-x0)/nu;b=y0+j*(y1-y0)/nv;aa=a+(x1-x0)/nu;bb=b+(y1-y0)/nv
+    plate([(a,b,plane-rise),(aa,b,plane-rise),(aa,bb,plane-rise),(a,bb,plane-rise)],deckpaint if (i+j)%5 else blue[1],Z,rise,False)
+ # The hazard band round the hole: ochre and black stripes on the plates.
+ band=.8;stripe=.8
+ for s in [-1,1]:
+  for axis in [0,1]:
+   n=int(2*(hole+band)/stripe)
+   for i in range(n):
+    t=-hole-band+(i+.5)*stripe;mat=orange if i%2 else black
+    if axis==0:box((t,s*(hole+band/2+.1),plane+.015),(stripe,band,.03),mat)
+    else:box((s*(hole+band/2+.1),t,plane+.015),(band,stripe,.03),mat)
+ # The lane edge: a lit square just outside the band, the brightest line on
+ # the deck, as the procedural pad's touchdown square.
+ owned('interior-lane-edge')
+ edge=hole+band+.35
+ for s in [-1,1]:
+  box((0,s*edge,plane+.02),(2*edge+.16,.16,.04),white)
+  box((s*edge,0,plane+.02),(.16,2*edge-.16,.04),white)
+ # The kerb, outside every berth's apron and inside the deck's edge.
+ owned('interior-rail')
+ k=half-.13
+ for s in [-1,1]:
+  box((0,s*k,plane+.08),(2*k+.2,.2,.16),steel)
+  box((s*k,0,plane+.08),(.2,2*k-.2,.16),steel)
+  for t in [-.8,-.4,.4,.8]:
+   box((t*k,s*(k+.11),plane+.1),(1.2,.02,.06),orange)
+   box((s*(k+.11),t*k,plane+.1),(.02,1.2,.06),orange)
+ owned('interior-flood')
+ for sx in [-1,1]:
+  for sy in [-1,1]:
+   base=Vector((sx*(half-.9),sy*(half-.9),plane))
+   tube(base,base+Z*2.2,.14,alloy,10)
+   head=base+Z*2.2-Vector((sx,sy,0))*.25
+   box(head,(.8,.8,.35),steel);box(head-Vector((sx,sy,0))*.05-Z*.2,(.6,.6,.06),white)
+ for bid,centre,along in PAD_BERTHS:pad_berth(bid,centre,along,plane)
+
+def salvage_well():
+ """The landing well behind the deck's hole: four walls from the deck down to
+ a floor past the sim's well, lamps round the floor, and the hull's front
+ face closed again round it. Exterior structure, author units."""
+ m=.1;plane=FLIGHT_PLANE_M*m;li=PAD_LINER_M*m;lo=li+PAD_LINER_WALL_M*m
+ # The liner's top stops a decimetre short of the deck's volume, inside the
+ # metre the deck is drawn deeper than it.
+ floor=plane-PAD_WELL_M*m;top=plane-PAD_DECK_DEPTH_M*m-.01
+ owned('pad-well')
+ h=top-floor;zc=(top+floor)/2
+ for s in [-1,1]:
+  box((s*(li+lo)/2,0,zc),(lo-li,2*lo,h),steel)
+  box((0,s*(li+lo)/2,zc),(2*li,lo-li,h),steel)
+  # Ribs on the walls' inner faces, a metre proud: outside the corridor.
+  for zz in [floor+.4,(floor+top)/2]:
+   box((s*(li-.05),0,zz),(.1,2*li,.4),alloy)
+   box((0,s*(li-.05),zz),(2*li-.2,.1,.4),alloy)
+ box((0,0,floor-.15),(2*lo,2*lo,.3),steel)
+ for i in range(4):
+  for j in range(4):
+   a=-li+i*li/2;b=-li+j*li/2
+   plate([(a,b,floor),(a+li/2,b,floor),(a+li/2,b+li/2,floor),(a,b+li/2,floor)],blue[i%2+1],Z,.08,False)
+ # Work lamps along the walls' foot, flush with the ribs.
+ for s in [-1,1]:
+  for t in [-.6,0,.6]:
+   box((t*li,s*(li-.05),floor+.25),(1.2,.1,.3),warm)
+   box((s*(li-.05),t*li,floor+.25),(.1,1.2,.3),warm)
+ # The hull's front face, round the well: the review face was cut with it.
+ x0,x1,y0,y1=[v*m for v in HULL_FACE_M];f=HULL_FRONT_M*m
+ for (a,aa),(b,bb) in [((x0,x1),(lo,y1)),((x0,x1),(y0,-lo)),((lo,x1),(-lo,lo)),((x0,-lo),(-lo,lo))]:
+  box(((a+aa)/2,(b+bb)/2,f-.05),(aa-a,bb-b,.1),steel)
+ owned('static')
+
+HULL_SHELL_FACE_M2=40000
+def clear_front(root):
+ """Nothing of the review layout may reach into the deck's volume, stand in
+ front of it, or stand in the well. A connected part whose bounds do goes
+ whole. One exception: the hull
+ box's steel shell is one connected part (its inset faces share corners), so
+ a part holding a face over HULL_SHELL_FACE_M2 loses only the faces that
+ reach in. Metres, before the move."""
+ plane=FLIGHT_PLANE_M;half=PAD_DECK_HALF_M+1;well=PAD_LINER_M+PAD_LINER_WALL_M;floor=plane-PAD_WELL_M-1
+ def doomed(lo,up):
+  in_front=lo[0]<half and up[0]>-half and lo[1]<half and up[1]>-half and up[2]>plane-PAD_DECK_DEPTH_M
+  in_well=lo[0]<well and up[0]>-well and lo[1]<well and up[1]>-well and up[2]>floor
+  return in_front or in_well
+ def bounds(faces):
+  vs=[v.co for g in faces for v in g.verts]
+  return [min(v[k] for v in vs) for k in range(3)],[max(v[k] for v in vs) for k in range(3)]
+ for child in root.children:
+  if child.type!='MESH' or child.name.startswith(PAD_GROUPS):continue
+  bm=bmesh.new();bm.from_mesh(child.data);bm.faces.ensure_lookup_table()
+  seen=set();drop=[]
+  for f in bm.faces:
+   if f.index in seen:continue
+   island=[];stack=[f];seen.add(f.index)
+   while stack:
+    g=stack.pop();island.append(g)
+    for e in g.edges:
+     for h in e.link_faces:
+      if h.index not in seen:seen.add(h.index);stack.append(h)
+   if not doomed(*bounds(island)):continue
+   if max(g.calc_area() for g in island)>HULL_SHELL_FACE_M2:
+    lost=[g for g in island if doomed(*bounds([g]))]
+    print('CLEAR',child.name,'hull shell faces dropped',len(lost),flush=True)
+    drop+=lost
+   else:drop+=island
+  if drop:
+   bmesh.ops.delete(bm,geom=drop,context='FACES')
+   print('CLEAR',child.name,'faces dropped',len(drop),flush=True)
+  bm.to_mesh(child.data);bm.free();child.data.update()
+
 def export(name,info):
  root=bpy.data.objects.new('station-'+name,None);bpy.context.collection.objects.link(root)
  root['design']=name;root['author']='Codex';root['metres_per_author_unit']=10
@@ -656,12 +847,27 @@ def export(name,info):
    for index,xy in zip(face.loop_indices,coords):uv.data[index].uv=xy
   bm=bmesh.new();bm.from_mesh(mesh);bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.00001);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(mesh);bm.free();mesh.update()
   ob=bpy.data.objects.new(key,mesh);bpy.context.collection.objects.link(ob);ob.parent=root
-  if '/cladding-' in key:
+  if '/cladding-' in key and not FLIGHT:
    mod=ob.modifiers.new('plate-edge-radius','BEVEL');mod.width=.24;mod.segments=1
    mod=ob.modifiers.new('weighted-normals','WEIGHTED_NORMAL');mod.keep_sharp=True
  datum=bpy.data.objects.new('docking-centre',None);bpy.context.collection.objects.link(datum);datum.parent=root;datum.location=Vector(info['port'])*10;datum['axis']=info['axis']
- bpy.context.preferences.filepaths.save_version=0;bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(OUT/(name+'.blend')))
- glb=OUT/(name+'.glb');bpy.ops.export_scene.gltf(filepath=str(glb),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
+ if FLIGHT:
+  clear_front(root)
+  # Move everything so the flight plane lies on +Z at the sim's.
+  offset=Vector((0,0,APERTURE_PLANE_M-FLIGHT_PLANE_M))
+  for child in root.children:
+   if child.type=='MESH':
+    for v in child.data.vertices:v.co+=offset
+    child.data.update();child.update_tag()
+  datum.name='aperture-plane';datum.location=Vector((0,0,APERTURE_PLANE_M))
+  root['aperture_plane_m']=APERTURE_PLANE_M;root['flight_offset_m']=list(offset)
+  bpy.context.view_layer.update()
+  # Intermediate: `prepare-flight-asset.mjs` encodes it into src/models/.
+  flight=OUT.parent.parent/'.dream-loop'/'station-flight';flight.mkdir(parents=True,exist_ok=True);glb=flight/(name+'.glb')
+ else:
+  bpy.context.preferences.filepaths.save_version=0;bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(OUT/(name+'.blend')))
+  glb=OUT/(name+'.glb')
+ bpy.ops.export_scene.gltf(filepath=str(glb),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
  data=glb.read_bytes();jl=struct.unpack_from('<I',data,12)[0];doc=json.loads(data[20:20+jl])
  for m in doc['materials']:
   if 'baseColorTexture' in m.get('pbrMetallicRoughness',{}):m['pbrMetallicRoughness']['baseColorFactor']=list(MATS[m['name']].diffuse_color)
@@ -669,8 +875,12 @@ def export(name,info):
  glb.write_bytes(struct.pack('<4sII',b'glTF',2,20+len(enc)+len(tail))+struct.pack('<II',len(enc),0x4E4F534A)+enc+tail)
  print('EXPORTED',name,glb.stat().st_size,flush=True)
 
-wanted=sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else []
+wanted=[a for a in sys.argv[sys.argv.index('--')+1:] if not a.startswith('--')] if '--' in sys.argv else []
+# Only Salvage has a flight export so far (node #1031).
+if FLIGHT and wanted!=['salvage']:raise SystemExit('--flight builds salvage alone: -- salvage --flight')
 for name,fn in [('ring',ring),('drum',drum),('assembly',assembly),('wheel',wheel),('derrick',derrick),('buoy',buoy),('rig',rig),('cluster',cluster),('salvage',salvage)]:
  if wanted and name not in wanted:continue
  bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();random.seed(810)
- print('BUILDING',name,flush=True);export(name,fn())
+ print('BUILDING',name,flush=True);info=fn()
+ if FLIGHT:salvage_pad();salvage_well()
+ export(name,info)
