@@ -156,8 +156,9 @@ jobs:
 
       # Every LFS pointer the change adds has its object on GitHub
       # (2026-10-19). A push uploads LFS objects only through the pre-push
-      # hook, and a push that skips hooks (ranger's `git push --no-verify`)
-      # sends the pointers alone: the PR and the merge look whole and every
+      # hook, and a push that skips hooks (`git push --no-verify`) sends the
+      # pointers alone (ranger uploads them itself since
+      # the-metafactory/ranger#349): the PR and the merge look whole and every
       # later clone gets a pointer for a file. Asked of the LFS batch API, so
       # nothing is downloaded. A run with no earlier commit to compare
       # (a hand-run, a new branch) has nothing to check.
