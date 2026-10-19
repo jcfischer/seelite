@@ -307,8 +307,22 @@ samples are the other exception, by the principal's ruling of 2026-10-06 in
 the map's Constraints — open-licensed (CC0 or CC BY) recordings, chosen by
 ear in blind auditions: `scripts/fetch-music-samples.mjs` prepares them into
 `public/music-samples/` and records each file's source and checksum, and the
-chosen sets are **tracked in Git LFS** (`.gitattributes`). This repository
-sets the LFS filters locally and installs no LFS hooks, because
-`core.hooksPath` here is global, so **run `git lfs push origin <branch>`
-before `git push`** on a branch that adds or changes a sample, or the remote
-holds pointers with no objects. The deploy pulls them only when it publishes.
+chosen sets are **tracked in Git LFS** (`.gitattributes`). The deploy pulls
+them only when it publishes.
+
+**Study binaries under `spikes/` are in Git LFS too** (principal,
+2026-10-19): every `.blend`, `.glb`, `.png`, `.jpg`, `.webp` and `.bin`
+there, because review files are not production assets and a plain blob is in
+every clone for good. The exceptions are the study models a headless test
+reads, listed in `.gitattributes`; CI pulls no spike objects.
+`tests/spike-binaries-lfs.test.ts` fails on a plain study binary and on an
+exemption without a reader. Shipped models under `src/models/` stay plain.
+
+**LFS objects reach GitHub only through the `pre-push` hook.** This
+repository installs no hooks of its own (`core.hooksPath` is global), and a
+push that skips hooks (`git push --no-verify`, which ranger's supervisor
+uses) sends the pointers without their objects. So **run
+`git lfs push origin <branch>` before `git push`** on a branch that adds or
+changes a sample or a study binary. CI checks it:
+`scripts/check-lfs-objects.mjs` fails a change whose LFS objects are not on
+GitHub, and names each file.

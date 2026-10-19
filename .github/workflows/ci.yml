@@ -154,6 +154,24 @@ jobs:
       # is green on `main`, so adding it cannot open every PR red.
       - run: npm run check:wiring
 
+      # Every LFS pointer the change adds has its object on GitHub
+      # (2026-10-19). A push uploads LFS objects only through the pre-push
+      # hook, and a push that skips hooks (ranger's `git push --no-verify`)
+      # sends the pointers alone: the PR and the merge look whole and every
+      # later clone gets a pointer for a file. Asked of the LFS batch API, so
+      # nothing is downloaded. A run with no earlier commit to compare
+      # (a hand-run, a new branch) has nothing to check.
+      - name: Check that the change's LFS objects are on GitHub
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "no base commit to compare; nothing to check"
+            exit 0
+          fi
+          node scripts/check-lfs-objects.mjs "$BASE" HEAD
+
   # The headless tier: seeded generation, the float64 sim, the module boundary
   # that keeps Three.js out of it. No browser, and four runners where it had
   # one.
