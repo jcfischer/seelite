@@ -1077,7 +1077,9 @@ describe("§128 — the hull comes up to the plane the checks read", () => {
 			const { root } = buildStationForm(type, formId, GREY, 0, 0);
 			root.updateMatrixWorld(true);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
-			const hull = root.getObjectByName("core") as THREE.Object3D;
+			const hull = root.getObjectByName(
+				type === "trade" && formId === "e" ? "hub" : "core",
+			) as THREE.Object3D;
 			const reach = new THREE.Box3().setFromObject(hull).max.z * core;
 			const plane = STATION_GEOMETRY[type].aperturePlaneKm;
 			// Up to the plane and not past it: the aperture frame stands proud of

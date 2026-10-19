@@ -672,6 +672,25 @@ describe("a ship fighting beside a station does not fly into it, under all three
 			expect([hull, struck(runs)]).toEqual([hull, 0]);
 		}
 	});
+
+	test("cruise: the seed-2 courier avoids the generated Wheel", () => {
+		const world = makeWorld(2);
+		expect(placedStations(world)[0]).toMatchObject({
+			type: "trade",
+			formId: "e",
+		});
+		const run = (avoid: boolean) =>
+			flyBesideStation({
+				seed: 2,
+				stationIndex: 0,
+				bearing: 0,
+				regime: "cruise",
+				avoid,
+				hull: "courier",
+			});
+		expect(run(false).met).toBe("station-trade");
+		expect(run(true).met).toBeNull();
+	});
 });
 
 describe("a duel beside a station stays a duel", () => {
@@ -859,6 +878,7 @@ describe("the law, on its own", () => {
 		);
 		expect(far).toEqual({
 			desired: ahead,
+			strafe: false,
 			maxSpeedKms: Number.POSITIVE_INFINITY,
 			avoiding: null,
 		});
@@ -900,6 +920,7 @@ describe("the law, on its own", () => {
 		);
 		expect(out).toEqual({
 			desired: heading,
+			strafe: false,
 			maxSpeedKms: Number.POSITIVE_INFINITY,
 			avoiding: null,
 		});

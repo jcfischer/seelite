@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #748: proposed sentence for the principal's approval before merge.
+	{
+		date: "2026-10-18",
+		text: "The twin-rim Wheel joins the trade stations you can dock at across the galaxy.",
+		node: 748,
+	},
 	// Node #971: proposed copy; principal approval and main date pending.
 	{
 		date: "2026-10-17",

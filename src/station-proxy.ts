@@ -557,6 +557,76 @@ function tradeAssemblyProxy(assemblySeed: number): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
+// Trade E — Wheel: both rims, eight spokes, hub, fins and aft mast all spin.
+// ---------------------------------------------------------------------------
+
+function tradeWheelProxy(): StationProxy {
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
+	// The 0.85–0.95 km box-section rims, at z ±0.16 with 0.08 km width.
+	// Oriented boxes keep the section rectangular: a round capsule large
+	// enough for its corners would put collision beyond the rim's flat faces.
+	const spinning: ProxyPrimitive[] = [];
+	for (const z of [-0.16, 0.16]) {
+		const count = 56;
+		const halfAngle = Math.PI / count;
+		const inner = 0.85 * Math.cos(halfAngle);
+		const outer = 0.95;
+		for (let i = 0; i < count; i++) {
+			const theta = ((i + 0.5) / count) * 2 * Math.PI;
+			const c = Math.cos(theta);
+			const s = Math.sin(theta);
+			spinning.push({
+				kind: "box",
+				cx: (c * (inner + outer)) / 2,
+				cy: (s * (inner + outer)) / 2,
+				cz: z,
+				hx: (outer - inner) / 2,
+				hy: outer * Math.sin(halfAngle),
+				hz: 0.04,
+				axes: [v3(c, s, 0), v3(-s, c, 0), v3(0, 0, 1)],
+			});
+		}
+		for (let i = 0; i < 4; i++) {
+			const theta = (i * Math.PI) / 2;
+			const at = (r: number): Point => ({
+				x: Math.cos(theta) * r,
+				y: Math.sin(theta) * r,
+				z,
+			});
+			// The root seats in the hub without letting a capsule's rounded
+			// end cross the bay's rectangular sides.
+			spinning.push(capsule(at(0.18), at(0.859), 0.033));
+		}
+	}
+	// Hub and collars; four diagonal radiator fins between the collars.
+	// Every box is cut around the unchanged bay and outward mouth prism.
+	const solid: Bounds[] = [axial(0.2, 0.2, -0.24, plane + 0.016)];
+	for (const side of [-1, 1])
+		spinning.push(
+			capsule(
+				{ x: side * 0.9, y: 0, z: 0.198 },
+				{ x: side * 0.9, y: 0, z: 0.292 },
+				0.012,
+			),
+		);
+	for (const sx of [-1, 1])
+		for (const sy of [-1, 1])
+			solid.push({
+				x0: sx < 0 ? -0.29 : 0.12,
+				x1: sx < 0 ? -0.12 : 0.29,
+				y0: sy < 0 ? -0.29 : 0.12,
+				y1: sy < 0 ? -0.12 : 0.29,
+				z0: -0.09,
+				z1: 0.09,
+			});
+	spinning.push(
+		...cutAround(solid, bayHoles("trade")),
+		capsule({ x: 0, y: 0, z: -0.24 }, { x: 0, y: 0, z: -0.51 }, 0.05),
+	);
+	return proxyOf(spinning);
+}
+
+// ---------------------------------------------------------------------------
 // Shipyards A–C — the authored yards (node #818)
 // ---------------------------------------------------------------------------
 
@@ -872,6 +942,8 @@ export function stationProxy(
 					return tradeDrumProxy();
 				case "d":
 					return tradeAssemblyProxy(assemblySeed);
+				case "e":
+					return tradeWheelProxy();
 				default:
 					return null;
 			}

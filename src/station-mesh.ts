@@ -2082,7 +2082,9 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	// side — rather than from a fraction of the ring.
 	// The hub holds the role's whole bay, not only the slot's rectangle.
 	const throat = r * 0.34;
-	group.add(
+	const hubMember = new THREE.Group();
+	hubMember.name = "hub-member";
+	hubMember.add(
 		shell(
 			[
 				{ z: -r * 0.42, w: throat * 0.72, h: throat * 0.72, e: 6 },
@@ -2102,6 +2104,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 			apertureCut("trade"),
 		),
 	);
+	group.add(hubMember);
 	// **On the hub's own front cap**, at the same z its last ring sits at. Set
 	// short of it the hub stood 6 m past the mouth — a station poking into the
 	// corridor a ship flies down, which is the one place nothing may be.
@@ -2126,13 +2129,15 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 			);
 		}),
 	);
-	group.add(
-		// On the rim's crown, the face of the tube that looks down the axis
-		// (#300's review): the ring turns whole, so a lamp there sweeps a
-		// circle in the approach's frame. It stood past the rim's outer face,
-		// metres off the hull, at an offset written for a 42 m lamp.
-		strobePair("trade", fixtures, LAMP_POOL_KM.tube, (side, position) => {
-			position.set(0, side * major, tube);
+	hubMember.add(
+		// The hub turns with the rim. Its front cap keeps the pair visible
+		// above the cockpit dash, which covers the lower rim on approach.
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(
+				side * throat * 0.85,
+				0,
+				STATION_GEOMETRY.trade.aperturePlaneKm,
+			);
 		}),
 	);
 	// On the rim's two side faces, never on its outer one. #102's rule and this
@@ -5854,7 +5859,8 @@ const WHEEL = Object.freeze({
 	wheelZKm: 0.16,
 	hubHalfKm: 0.175,
 	collarHalfKm: 0.2,
-	hubFrontKm: 0.26,
+	// The flown mouth is the role's plane; only the hub's front extends.
+	hubFrontKm: STATION_GEOMETRY.trade.aperturePlaneKm,
 	hubAftKm: -0.24,
 	/** A spoke's half-extent along the axis, and across it. */
 	spokeHalfKm: 0.026,
@@ -6096,26 +6102,28 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 		barrel(z + 0.02, collar),
 		barrel(z + 0.04, hub),
 	];
-	group.add(
-		shell(
-			[
-				barrel(WHEEL.hubAftKm, hub * 0.7),
-				barrel(WHEEL.hubAftKm + 0.02, hub),
-				...collarAt(aft),
-				...collarAt(fore),
-				// No taper at the cap: the bay runs to the mouth at full section,
-				// and a cap drawn in to 0.91 let its corners out over the last 6 m
-				// (sage, #334 round 1). `the hub contains the bay` holds it.
-				barrel(WHEEL.hubFrontKm - 0.03, hub),
-				barrel(WHEEL.hubFrontKm, hub),
-			],
-			plainMaterial(0x8b95a0, 0.6, 0.5),
-			"hub",
-			20,
-			true,
-			apertureCut("trade"),
-		),
+	const hubShell = shell(
+		[
+			barrel(WHEEL.hubAftKm, hub * 0.7),
+			barrel(WHEEL.hubAftKm + 0.02, hub),
+			...collarAt(aft),
+			...collarAt(fore),
+			// No taper at the cap: the bay runs to the mouth at full section,
+			// and a cap drawn in to 0.91 let its corners out over the last 6 m
+			// (sage, #334 round 1). `the hub contains the bay` holds it.
+			barrel(WHEEL.hubFrontKm - 0.03, hub),
+			barrel(WHEEL.hubFrontKm, hub),
+		],
+		plainMaterial(0x8b95a0, 0.6, 0.5),
+		"hub",
+		20,
+		true,
+		apertureCut("trade"),
 	);
+	const hubMember = new THREE.Group();
+	hubMember.name = "hub-member";
+	hubMember.add(hubShell);
+	group.add(hubMember);
 	group.add(buildAperture("trade", fixtures, WHEEL.hubFrontKm, berthSeed));
 
 	// Paired ports along the finished rim's fore face, the face the approach sees.
@@ -6131,15 +6139,11 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 			);
 		}),
 	);
-	// On the same face, on the rim's centre line where no port stands.
-	group.add(
+	// The hub turns with the rims. Its forward cap keeps both strobes in
+	// the cockpit's narrow approach view, where the outer rim can leave it.
+	hubMember.add(
 		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			const theta = Math.PI / 4;
-			position.set(
-				side * Math.cos(theta) * centre,
-				side * Math.sin(theta) * centre,
-				fore + width / 2,
-			);
+			position.set(side * hub * 0.85, 0, WHEEL.hubFrontKm);
 		}),
 	);
 	// Clutter on the hub barrel between the collars, far inside the outline.

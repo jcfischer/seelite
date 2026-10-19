@@ -528,7 +528,11 @@ line.
      the pilot's frame. When that frame becomes the star's, the carrier is
      braked toward star rest and the station's orbit drags it back into the
      station, which the avoidance meets as a fast solid: when no heading
-     clears, it takes the one that closes least.
+     clears, it takes the one that closes least and asks its lateral assist
+     for that escape direction while the nose turns (node #748). Forward
+     speed alone let braking toward the star's frame drag the courier into
+     the Wheel before it turned clear. The escape uses the same capped
+     velocity demands and bounded vents; the fight's frame stays unchanged.
    - **A duel beside a station stays a duel.** The widest station keep-out
      is under half of `GUN_RANGE_KM`. Against a pilot sitting just outside
      a station, the raider fires on about 70% as many frames as it does in
