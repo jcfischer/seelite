@@ -3,11 +3,22 @@
 # manifests and licence files stay plain text.
 public/music-samples/**/*.ogg filter=lfs diff=lfs merge=lfs -text
 
-# Editable visual-study model binaries, kept outside production assets.
-spikes/shipyards/*.blend filter=lfs diff=lfs merge=lfs -text
-spikes/shipyards/*.glb filter=lfs diff=lfs merge=lfs -text
-spikes/refineries/*.blend filter=lfs diff=lfs merge=lfs -text
-spikes/refineries/*.glb filter=lfs diff=lfs merge=lfs -text
-spikes/stations/*.blend filter=lfs diff=lfs merge=lfs -text
-spikes/stations/*.glb filter=lfs diff=lfs merge=lfs -text
-spikes/stations/**/*.png filter=lfs diff=lfs merge=lfs -text
+# Study binaries — models, scenes, review images — under spikes/ are in Git LFS
+# (principal, 2026-10-19): review files are not production assets, and as plain
+# blobs every clone carries them for good. `tests/spike-binaries-lfs.test.ts`
+# holds every tracked one to this rule; `scripts/check-lfs-objects.mjs` (CI)
+# fails a change whose LFS objects never reached GitHub.
+spikes/**/*.blend filter=lfs diff=lfs merge=lfs -text
+spikes/**/*.glb filter=lfs diff=lfs merge=lfs -text
+spikes/**/*.png filter=lfs diff=lfs merge=lfs -text
+spikes/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+spikes/**/*.webp filter=lfs diff=lfs merge=lfs -text
+spikes/**/*.bin filter=lfs diff=lfs merge=lfs -text
+
+# Exempt: study models a headless test reads. CI pulls no spike objects, so
+# these stay plain; the test above holds each to a reader.
+spikes/coriolis/coriolis-industrial.glb !filter !diff !merge !text
+spikes/courier-hull/courier-hull.glb !filter !diff !merge !text
+spikes/longwall-miner/longwall-miner.glb !filter !diff !merge !text
+spikes/bollard-hull/bollard-hull.glb !filter !diff !merge !text
+spikes/discovery/discovery.glb !filter !diff !merge !text
