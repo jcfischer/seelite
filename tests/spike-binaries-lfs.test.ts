@@ -63,20 +63,25 @@ function exemptions(): string[] {
 		.map((l) => l.split(/\s+/)[0]);
 }
 
-/** Every `spikes/…` binary path a test or a script names as a literal. */
+/** Every tracked `spikes/…` binary a test or a script names as a literal (a
+ *  made-up path in a test fixture names no file). */
 function namedReaders(): Map<string, string[]> {
 	const named = new Map<string, string[]>();
+	const tracked = new Set(git(["ls-files", "-z", "spikes"]).split("\0"));
 	const walk = (dir: string): string[] =>
 		readdirSync(dir).flatMap((n) => {
 			const p = join(dir, n);
 			return statSync(p).isDirectory() ? walk(p) : [p];
 		});
 	for (const file of [...walk("tests"), ...walk("scripts")]) {
-		if (!/\.(ts|mjs)$/.test(file) || file.endsWith("spike-binaries-lfs.test.ts"))
+		if (
+			!/\.(ts|mjs)$/.test(file) ||
+			file.endsWith("spike-binaries-lfs.test.ts")
+		)
 			continue;
 		const text = readFileSync(file, "utf8");
 		for (const m of text.matchAll(/["'`](spikes\/[\w./-]+)["'`]/g))
-			if (BINARY.test(m[1]))
+			if (BINARY.test(m[1]) && tracked.has(m[1]))
 				named.set(m[1], [...(named.get(m[1]) ?? []), file]);
 	}
 	// `tests/helpers/read-coriolis-glb.ts` builds its path from a prefix.
@@ -85,7 +90,9 @@ function namedReaders(): Map<string, string[]> {
 		.join("\n")
 		.matchAll(/readCoriolisGlb\(\s*"([\w.-]+\.glb)"/g))
 		if (m[1] !== "coriolis-industrial-flight.glb")
-			named.set(`spikes/coriolis/${m[1]}`, ["tests/helpers/read-coriolis-glb.ts"]);
+			named.set(`spikes/coriolis/${m[1]}`, [
+				"tests/helpers/read-coriolis-glb.ts",
+			]);
 	return named;
 }
 

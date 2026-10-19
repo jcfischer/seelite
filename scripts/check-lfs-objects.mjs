@@ -34,7 +34,14 @@ export function parsePointer(text) {
 
 /** The LFS pointers among the files `head` adds or modifies against `base`. */
 export function changedPointers(base, head) {
-	const paths = git(["diff", "--name-only", "--diff-filter=AM", "-z", base, head])
+	const paths = git([
+		"diff",
+		"--name-only",
+		"--diff-filter=AM",
+		"-z",
+		base,
+		head,
+	])
 		.split("\0")
 		.filter(Boolean);
 	const out = [];
@@ -56,7 +63,9 @@ export function changedPointers(base, head) {
 export async function missingObjects(pointers, batch) {
 	if (!pointers.length) return [];
 	const unique = [
-		...new Map(pointers.map((p) => [p.oid, { oid: p.oid, size: p.size }])).values(),
+		...new Map(
+			pointers.map((p) => [p.oid, { oid: p.oid, size: p.size }]),
+		).values(),
 	];
 	const missing = new Set();
 	for (let i = 0; i < unique.length; i += 100) {
@@ -91,7 +100,9 @@ function githubBatch(repository, token) {
 			},
 		);
 		if (!res.ok)
-			throw new Error(`LFS batch request: HTTP ${res.status} ${await res.text()}`);
+			throw new Error(
+				`LFS batch request: HTTP ${res.status} ${await res.text()}`,
+			);
 		return res.json();
 	};
 }
@@ -108,16 +119,22 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	if (spawnSync("git", ["cat-file", "-e", `${base}^{commit}`]).status !== 0)
 		git(["fetch", "--depth=1", "origin", base]);
 	const pointers = changedPointers(base, head);
-	const missing = await missingObjects(pointers, githubBatch(repository, token));
+	const missing = await missingObjects(
+		pointers,
+		githubBatch(repository, token),
+	);
 	if (missing.length) {
 		console.error(
 			`${missing.length} of ${pointers.length} LFS objects this change adds are not on GitHub:`,
 		);
-		for (const m of missing) console.error(`  ${m.path}  (${m.oid.slice(0, 12)}, ${m.size} bytes)`);
+		for (const m of missing)
+			console.error(`  ${m.path}  (${m.oid.slice(0, 12)}, ${m.size} bytes)`);
 		console.error(
 			"Upload them from the clone that made the commit: git lfs push origin <branch>",
 		);
 		process.exit(1);
 	}
-	console.log(`ok   ${pointers.length} LFS objects this change adds are on GitHub`);
+	console.log(
+		`ok   ${pointers.length} LFS objects this change adds are on GitHub`,
+	);
 }

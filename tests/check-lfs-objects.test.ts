@@ -4,10 +4,7 @@
  * request runs in CI, where the run's token can make it.
  */
 import { describe, expect, test } from "bun:test";
-import {
-	missingObjects,
-	parsePointer,
-} from "../scripts/check-lfs-objects.mjs";
+import { missingObjects, parsePointer } from "../scripts/check-lfs-objects.mjs";
 
 const OID_A = "a".repeat(64);
 const OID_B = "b".repeat(64);
@@ -34,7 +31,9 @@ describe("check-lfs-objects", () => {
 			size: 42,
 		});
 		expect(parsePointer("glTF\u0002binary")).toBeNull();
-		expect(parsePointer("version https://git-lfs.github.com/spec/v1\n")).toBeNull();
+		expect(
+			parsePointer("version https://git-lfs.github.com/spec/v1\n"),
+		).toBeNull();
 	});
 
 	test("names the pointers whose objects are not on the server", async () => {
