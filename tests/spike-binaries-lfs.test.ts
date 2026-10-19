@@ -11,15 +11,18 @@
  * The exemptions are the study models a headless test reads: CI pulls no
  * spike objects, so an LFS pointer there would be read as the model. Each
  * exemption must be earned by a reader, and every reader's path must be
- * exempt, so the two lists cannot drift apart.
+ * exempt. A reader is found by the quoted `spikes/…` path it names, so a
+ * reader writes its path out in full (`tests/helpers/read-coriolis-glb.ts`
+ * does); a path built at run time is not seen here, and CI, which checks out
+ * pointers, is then the check.
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { POINTER_HEADER } from "../scripts/check-lfs-objects.mjs";
 
 const BINARY = /\.(blend|glb|png|jpg|webp|bin)$/;
-const POINTER = "version https://git-lfs.github.com/spec/v1";
 
 function git(args: string[], input?: string): string {
 	const r = spawnSync("git", args, { encoding: "utf8", input });
@@ -46,9 +49,9 @@ function trackedSpikeBinaries(): { path: string; pointer: boolean }[] {
 		result.push({
 			path,
 			pointer: out
-				.subarray(start, start + POINTER.length)
+				.subarray(start, start + POINTER_HEADER.length)
 				.toString()
-				.startsWith(POINTER),
+				.startsWith(POINTER_HEADER),
 		});
 		at = start + size + 1;
 	}
@@ -84,15 +87,6 @@ function namedReaders(): Map<string, string[]> {
 			if (BINARY.test(m[1]) && tracked.has(m[1]))
 				named.set(m[1], [...(named.get(m[1]) ?? []), file]);
 	}
-	// `tests/helpers/read-coriolis-glb.ts` builds its path from a prefix.
-	for (const m of walk("tests")
-		.map((f) => readFileSync(f, "utf8"))
-		.join("\n")
-		.matchAll(/readCoriolisGlb\(\s*"([\w.-]+\.glb)"/g))
-		if (m[1] !== "coriolis-industrial-flight.glb")
-			named.set(`spikes/coriolis/${m[1]}`, [
-				"tests/helpers/read-coriolis-glb.ts",
-			]);
 	return named;
 }
 

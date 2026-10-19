@@ -16,7 +16,10 @@
  */
 import { spawnSync } from "node:child_process";
 
-const POINTER = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\n/;
+/** The first line of every LFS pointer file. */
+export const POINTER_HEADER = "version https://git-lfs.github.com/spec/v1";
+/** A pointer is ~130 bytes; a blob far larger than this is the file itself. */
+const POINTER_MAX_BYTES = 1024;
 
 function git(args) {
 	const r = spawnSync("git", args, { encoding: "utf8", maxBuffer: 2 ** 28 });
@@ -26,17 +29,33 @@ function git(args) {
 
 /** An LFS pointer's object, or null for any other blob. */
 export function parsePointer(text) {
-	if (!POINTER.test(text)) return null;
+	if (!text.startsWith(`${POINTER_HEADER}\n`)) return null;
 	const oid = /^oid sha256:([0-9a-f]{64})$/m.exec(text)?.[1];
 	const size = /^size (\d+)$/m.exec(text)?.[1];
 	return oid && size ? { oid, size: Number(size) } : null;
 }
 
-/** The LFS pointers among the files `head` adds or modifies against `base`. */
+/** Run one `git cat-file` batch over `specs`, one spec a line. */
+function catFile(mode, specs) {
+	const r = spawnSync("git", ["cat-file", mode], {
+		input: `${specs.join("\n")}\n`,
+		maxBuffer: 2 ** 28,
+	});
+	if (r.status !== 0) throw new Error(`git cat-file ${mode}: ${r.stderr}`);
+	return r.stdout;
+}
+
+/**
+ * The LFS pointers among the files `head` adds or modifies against `base`.
+ * `--no-renames`, so a pointer moved to a new path is a new path here rather
+ * than a rename the filter drops. Two git calls in all: the sizes, then the
+ * contents of the blobs small enough to be pointers.
+ */
 export function changedPointers(base, head) {
 	const paths = git([
 		"diff",
 		"--name-only",
+		"--no-renames",
 		"--diff-filter=AM",
 		"-z",
 		base,
@@ -44,13 +63,31 @@ export function changedPointers(base, head) {
 	])
 		.split("\0")
 		.filter(Boolean);
+	if (!paths.length) return [];
+	const sizes = catFile(
+		"--batch-check=%(objectsize)",
+		paths.map((p) => `${head}:${p}`),
+	)
+		.toString()
+		.trim()
+		.split("\n")
+		.map(Number);
+	const small = paths.filter((_, i) => sizes[i] <= POINTER_MAX_BYTES);
+	if (!small.length) return [];
 	const out = [];
-	for (const path of paths) {
-		const size = Number(git(["cat-file", "-s", `${head}:${path}`]).trim());
-		// A pointer is ~130 bytes; anything far larger is the file itself.
-		if (size > 1024) continue;
-		const object = parsePointer(git(["cat-file", "-p", `${head}:${path}`]));
+	const blobs = catFile(
+		"--batch",
+		small.map((p) => `${head}:${p}`),
+	);
+	let at = 0;
+	for (const path of small) {
+		const eol = blobs.indexOf(10, at);
+		const size = Number(blobs.subarray(at, eol).toString().split(" ")[2]);
+		const object = parsePointer(
+			blobs.subarray(eol + 1, eol + 1 + size).toString(),
+		);
 		if (object) out.push({ path, ...object });
+		at = eol + 1 + size + 1;
 	}
 	return out;
 }

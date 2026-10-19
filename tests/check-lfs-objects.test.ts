@@ -1,7 +1,8 @@
 /**
  * `scripts/check-lfs-objects.mjs`: the CI gate that fails a change whose LFS
- * objects never reached GitHub. The server is stubbed here; the live batch
- * request runs in CI, where the run's token can make it.
+ * objects never reached GitHub. The server is stubbed here. The live batch
+ * request runs in CI, where the run's token can make it, and only on a change
+ * that adds or modifies a pointer: one that adds none never calls it.
  */
 import { describe, expect, test } from "bun:test";
 import { missingObjects, parsePointer } from "../scripts/check-lfs-objects.mjs";

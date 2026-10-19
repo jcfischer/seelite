@@ -4,12 +4,15 @@ import { decodeShippedGlb } from "../../scripts/lib/shipped-glb";
  * Remove only texture references: Bun has no image decoder. Materials, names,
  * compressed vertex buffers and node transforms are retained, including normals.
  */
-export async function readCoriolisGlb(name: string) {
-	const scene = await decodeShippedGlb(
-		name === "coriolis-industrial-flight.glb"
-			? "src/models/coriolis.glb"
-			: "spikes/coriolis/" + name,
-	);
+/** Each name's file, written out: `tests/spike-binaries-lfs.test.ts` finds a
+ *  spike binary a test reads by its literal path. */
+const CORIOLIS_GLBS = {
+	"coriolis-industrial-flight.glb": "src/models/coriolis.glb",
+	"coriolis-industrial.glb": "spikes/coriolis/coriolis-industrial.glb",
+} as const;
+
+export async function readCoriolisGlb(name: keyof typeof CORIOLIS_GLBS) {
+	const scene = await decodeShippedGlb(CORIOLIS_GLBS[name]);
 	scene.scale.setScalar(0.001);
 	scene.updateMatrixWorld(true);
 	return scene;
