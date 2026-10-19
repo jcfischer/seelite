@@ -155,8 +155,16 @@ courier and 1.35 s for the tug in the same run. It has no live roots to
 refresh, so the figure is the install alone. This is the stall #907 owns for
 every after-boot hull; the voyager's is the longest because its builder
 simplifies the most triangles and its three bells are measured by raycast.
-Accepted as D6 accepted the tug's, and worth the principal's eye on #907's
-priority.
+The total is unchanged, but the loader no longer runs it as one task (sage
+round 1): `authored-hull.ts` yields a task between the GLB parse, the builder's
+two simplified levels, the first build and the throat measurement, so the
+longest single block is the throats' 608 ms or the builder's longer level,
+not 1.52 s, and a frame can paint between them. This applies to the courier
+and the tug too, being the shared path. Making the work itself cheaper (a
+worker, or reduced geometry and throats precomputed offline) is #907's, and
+declined here: it changes every after-boot hull, not this one. The measuring
+script times the phases directly and does not see the yields; the longest-gap
+figure it prints is the one that moves. Not re-measured in this round.
 
 ## Verification
 
@@ -200,7 +208,7 @@ only in the review fleet, the workbench or a roster that names it. Proposed
 entry if so, dated the day of the merge:
 
 > The expedition ship Voyager has a new hull: a 191-metre ivory-and-steel
-> homage to a long spine, a command sphere forward and three drive bells aft.
+> homage to a long spine, a command sphere forward and three drive bells aft. <!-- glossary-ignore: Command -->
 
 ## Open
 

@@ -2,7 +2,7 @@
 
 Author: Codex, 2026-10-08. Refs #809.
 
-- `target.png`: built-in imagegen, derived from a live Voyager A capture at main `53be4f7` and the ongoing Porter O2 target in worktree seelite-797. The prompt preserves the spherical command head, long segmented spine, dish and rear propulsion block, adding ivory industrial panels, dark machinery and ochre fittings. Working baseline: `.dream-loop/baseline.png`.
+- `target.png`: built-in imagegen, derived from a live Voyager A capture at main `53be4f7` and the ongoing Porter O2 target in worktree seelite-797. The prompt preserves the spherical command head, long segmented spine, dish and rear propulsion block, adding ivory industrial panels, dark machinery and ochre fittings. Working baseline: `.dream-loop/baseline.png`. <!-- glossary-ignore: Command -->
 - `ivory-wear.png`: built-in imagegen. Prompt: seamless uniform ivory spacecraft painted metal base color, 95 percent intact paint, restrained micro scratches and tiny chips, no lighting, panel seams or drawn geometry.
 - `steel-wear.png` and `steel-wear-coarse.png`: existing generated Porter prototype textures copied from seelite-797; upstream provenance remains in its `assets.md`.
 - `build_model.py`: authored Blender geometry using the existing Porter study's material batching helpers, with Discovery-specific curved sphere panels, service modules, pod doors, dish and propulsion assembly. Units are metres; X is longitudinal, Y is up. This is a visual study, not authoritative gameplay dimensions.

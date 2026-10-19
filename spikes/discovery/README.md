@@ -2,7 +2,7 @@
 
 Authored by Codex for the Dream Loop redesign request of 2026-10-08. Refs #809.
 
-Preserves Voyager A's Discovery One homage: spherical command section, long segmented service spine, dish and compact aft propulsion. The target derives from the live current Voyager and the ongoing Porter O2 industrial treatment. This standalone study does not replace the production ship.
+Preserves Voyager A's Discovery One homage: spherical command section, long segmented service spine, dish and compact aft propulsion. The target derives from the live current Voyager and the ongoing Porter O2 industrial treatment. This standalone study does not replace the production ship. <!-- glossary-ignore: Command -->
 
 Final independent score: **7.98/10**. Principal accepted the appearance and requested a PR handoff; see `HANDOFF-codex.md`.
 
@@ -12,7 +12,7 @@ From this worktree, run `npm run dev -- --config spikes/discovery/vite.config.ts
 
 `http://localhost:5189/spikes/discovery/`
 
-Drag to orbit; wheel to zoom; right drag to pan. Presets show front, rear, top, underside and command detail. Target opens the generated design image; Work lights reveals shadowed geometry; Save image exports the rendered canvas.
+Drag to orbit; wheel to zoom; right drag to pan. Presets show front, rear, top, underside and command detail. Target opens the generated design image; Work lights reveals shadowed geometry; Save image exports the rendered canvas. <!-- glossary-ignore: Command -->
 
 - `discovery.blend`: editable Blender source.
 - `discovery.glb`: embedded-texture model used by the viewer.

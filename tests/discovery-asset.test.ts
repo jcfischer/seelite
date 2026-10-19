@@ -160,7 +160,7 @@ describe("the study's frame", () => {
 		expect([size.z, size.x, size.y].map((m) => Math.ceil(m * 10) / 10)).toEqual(
 			[141.7, 24.4, 26.8],
 		);
-		// The command sphere is the bow, the drive block the stern.
+		// The command sphere is the bow, the drive block the stern. // glossary-ignore: Command
 		expect(b.max.z).toBeCloseTo(62.57, 2);
 		expect(b.min.z).toBeCloseTo(-79.06, 2);
 	});
