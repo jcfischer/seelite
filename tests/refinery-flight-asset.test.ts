@@ -27,11 +27,7 @@ import { REFINERY_FORMS, REFINERY_MODEL_NAMES } from "../src/refinery-flight";
 import { REFINERY_PAD_FRAME } from "../src/refinery-pad-frame";
 import { corridorRadiusKm, stationInterior } from "../src/station-interior";
 import { padOpeningFloorKm } from "../src/station-proxy";
-import {
-	box,
-	firstHitDownAxis,
-	triangleHitsBox,
-} from "./helpers/pad-geometry";
+import { box, firstHitDownAxis, triangleHitsBox } from "./helpers/pad-geometry";
 
 /** The four forms, `a` to `d` (receipt §Current result). */
 const NAMES = REFINERY_FORMS.map((form) => REFINERY_MODEL_NAMES[form]);

@@ -828,7 +828,12 @@ function authoredRefineryProxy(
 		const { rock, plant } = refineryProxyBoxes(form);
 		// A refinery does not turn; its primitives are listed as the procedural
 		// forms list theirs.
-		proxy = proxyOf([...rock, ...plant, ...padDeck("refinery"), ...padVentBanks()]);
+		proxy = proxyOf([
+			...rock,
+			...plant,
+			...padDeck("refinery"),
+			...padVentBanks(),
+		]);
 		authoredRefineries.set(form, proxy);
 	}
 	return proxy;
@@ -860,7 +865,9 @@ export function refineryProxyBoxes(form: keyof typeof REFINERY_PROXIES): {
  * deck is the sim's (`padDeck`).
  */
 const authoredOutposts = new Map<string, StationProxy>();
-function authoredOutpostProxy(form: keyof typeof OUTPOST_PROXIES): StationProxy {
+function authoredOutpostProxy(
+	form: keyof typeof OUTPOST_PROXIES,
+): StationProxy {
 	let proxy = authoredOutposts.get(form);
 	if (!proxy) {
 		proxy = proxyOf([...outpostProxyBoxes(form), ...padDeck("outpost")]);

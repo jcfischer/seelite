@@ -114,9 +114,9 @@ describe(`outpost flight asset (#1031): ${PATH}`, async () => {
 		// The square that circumscribes the corridor cylinder, as the proxy's
 		// keep-out does, from the well's floor outward.
 		const r = CORRIDOR_M;
-		expect(meshesIn(tris, [-r, -r, WELL_FLOOR_M], [r, r, PLANE_M + 2000])).toEqual(
-			[],
-		);
+		expect(
+			meshesIn(tris, [-r, -r, WELL_FLOOR_M], [r, r, PLANE_M + 2000]),
+		).toEqual([]);
 	});
 
 	test("lays its deck face on the plane", () => {
@@ -174,11 +174,7 @@ describe(`outpost flight asset (#1031): ${PATH}`, async () => {
 				berth.id,
 				meshesIn(
 					pad,
-					[
-						x - (along ? hl : hb),
-						y - (along ? hb : hl),
-						PLANE_M + height / 2,
-					],
+					[x - (along ? hl : hb), y - (along ? hb : hl), PLANE_M + height / 2],
 					[x + (along ? hl : hb), y + (along ? hb : hl), PLANE_M + height],
 				),
 			]).toEqual([berth.id, []]);

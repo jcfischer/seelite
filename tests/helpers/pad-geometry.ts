@@ -37,7 +37,10 @@ export function triangleHitsBox(
 }
 
 /** A box from its min and max corners. */
-export function box(min: [number, number, number], max: [number, number, number]) {
+export function box(
+	min: [number, number, number],
+	max: [number, number, number],
+) {
 	const lo = new THREE.Vector3(...min);
 	const hi = new THREE.Vector3(...max);
 	return {
@@ -64,7 +67,6 @@ export function firstHitDownAxis(
 	}
 	return best;
 }
-
 
 /** Every triangle of a decoded scene in its world frame, with its mesh's name. */
 export function sceneTriangles(

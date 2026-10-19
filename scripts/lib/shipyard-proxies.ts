@@ -943,7 +943,8 @@ function padKeepOut(type: "refinery" | "outpost"): THREE.Box3[] {
 			new THREE.Vector3(
 				-deck,
 				-deck,
-				pad.mouthAxialKm * 1000 - (pad.stagingAxialKm - pad.mouthAxialKm) * 1000,
+				pad.mouthAxialKm * 1000 -
+					(pad.stagingAxialKm - pad.mouthAxialKm) * 1000,
 			),
 			new THREE.Vector3(deck, deck, plane * 1000 + 3000),
 		),
