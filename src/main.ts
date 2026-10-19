@@ -42,6 +42,7 @@ import {
 	isAuthoredHullModel,
 	SHIPYARD_MODELS,
 	REFINERY_MODELS,
+	OUTPOST_MODELS,
 } from "./model-catalog";
 import {
 	bootModelIds,
@@ -6924,6 +6925,8 @@ class Game {
 			await this.refreshAuthoredStations("shipyard", id.split("/")[1]);
 		else if (id.startsWith("refinery/"))
 			await this.refreshAuthoredStations("refinery", id.split("/")[1]);
+		else if (id.startsWith("outpost/"))
+			await this.refreshAuthoredStations("outpost", id.split("/")[1]);
 	}
 	/** Compatibility handles for existing probes; every load uses the same queue. */
 	loadAuthoredHullsAfterBoot(): Promise<void> {
@@ -7060,10 +7063,17 @@ class Game {
 	loadRefineriesAfterBoot(): Promise<void> {
 		return models.wait(REFINERY_MODELS);
 	}
+	get outpostModelsSettled(): boolean {
+		return models.settled(OUTPOST_MODELS);
+	}
+	loadOutpostsAfterBoot(): Promise<void> {
+		return models.wait(OUTPOST_MODELS);
+	}
 
 	/**
 	 * Rebuild every drawn station of `type` and `form` from its installed
-	 * model (the shipyards, node #818; the refineries, node #819). The new
+	 * model (the shipyards, node #818; the refineries, node #819; the outpost
+	 * Salvage, node #1031). The new
 	 * mesh compiles off-scene first and replaces the old one only if the
 	 * station is still the one drawn; a jump during the compile ends the
 	 * refresh, since the new system was built with whatever had installed.
@@ -7071,7 +7081,7 @@ class Game {
 	 * for the whole system, as an interior install redoes them.
 	 */
 	private async refreshAuthoredStations(
-		type: "trade" | "shipyard" | "refinery",
+		type: "trade" | "shipyard" | "refinery" | "outpost",
 		form: string,
 	): Promise<void> {
 		const system = this.world.system;
@@ -22086,13 +22096,15 @@ if (postcard) {
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station") {
-		// The station workbench draws the authored shipyards (node #818) and
-		// refineries (node #819).
+		// The station workbench draws the authored shipyards (node #818),
+		// refineries (node #819) and outpost Salvage (node #1031).
 		const { shipyardModelLoaders } = await import("./shipyard-flight");
 		const { refineryModelLoaders } = await import("./refinery-flight");
+		const { outpostModelLoaders } = await import("./outpost-flight");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			...shipyardModelLoaders,
 			...refineryModelLoaders,
+			...outpostModelLoaders,
 		]);
 	}
 	// The ship workbench draws every variant: the courier the game flies
@@ -22401,6 +22413,8 @@ if (postcard) {
 	else void game.loadShipyardsAfterBoot();
 	if (query.has("refineries-full")) await game.loadRefineriesAfterBoot();
 	else void game.loadRefineriesAfterBoot();
+	if (query.has("outposts-full")) await game.loadOutpostsAfterBoot();
+	else void game.loadOutpostsAfterBoot();
 	game.saveFault = plan.fault;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander

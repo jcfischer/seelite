@@ -87,3 +87,9 @@ export const REFINERY_GLB_URLS = {
 /** Prepared by the Porter study (node #813). */
 export const PORTER_GLB_URL = new URL("./models/porter.glb", import.meta.url)
 	.href;
+
+/** The outpost Salvage (node #1031), prepared by
+ *  `spikes/stations/prepare-flight-asset.mjs`: form `e`. */
+export const OUTPOST_GLB_URLS = {
+	e: new URL("./models/outpost-salvage.glb", import.meta.url).href,
+} as const;

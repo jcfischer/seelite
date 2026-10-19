@@ -57,6 +57,7 @@ const DIRECT_URL = gameUrl(ORIGIN, {
 	"interiors-full": false,
 	"shipyards-full": false,
 	"refineries-full": false,
+	"outposts-full": false,
 	seed: BOOT_SEED,
 	voices: "formant",
 	raider: "off",

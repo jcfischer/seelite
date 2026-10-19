@@ -25,24 +25,13 @@
  * `berthSeed`**: it decides only which side the outpost's seeded berth stands
  * on, and both sides lie inside the same primitives. A test row asserts the
  * proxy is identical across berth seeds, so a form that starts to read it is
- * a red row rather than a surprise. The shipyards' and the refineries'
- * proxies are the exception to "never generated": they are fitted to their
- * authored models (nodes #818, #819), and their own tests measure the boxes
- * against the drawn triangles rather than against the fit. The outpost's Salvage is
- * **grown, not solved** (§2.2): `buildOutpostSalvage` accretes it from its own
- * draw, and that plan exists only inside the renderer. So its proxy does not
- * follow a plan; it is one seed-independent envelope sized to contain the
- * plans it was measured over, and it is only as good as that measurement.
- *
- * **Which plans that is.** `npm test` gates every row on `ASSEMBLY_SEEDS`,
- * twelve plans, and the vertex row builds each with the berth on both sides.
- * The hand-run half is `scripts/measure-station-proxy.ts`, which shares the
- * test's vertex walk, opening and frame rule. Run as
- * `bun scripts/measure-station-proxy.ts 1200 <0|1200> <refinery|outpost>` —
- * four runs over assembly seeds 0–2399. The figures are not restated here:
- * `docs/findings/station-proxy-wide-sweep.md` records the commit they were
- * taken on, the commands and the output verbatim, and a re-run replaces it. A
- * plan outside the range it names is not measured.
+ * a red row rather than a surprise. The shipyards', the refineries' and the
+ * outpost Salvage's proxies are the exception to "never generated": they are
+ * fitted to their authored models (nodes #818, #819, #1031), and their own
+ * tests measure the boxes against the drawn triangles rather than against the
+ * fit. The sim collides with the authored model whatever is drawn, so none of
+ * them reads an assembly seed, though the procedural Salvage that stands in
+ * while its model loads is grown from one.
  *
  * **What it turns with.** `spinning` primitives are in the spinning member's
  * frame. `static` primitives are in the static frame: the shipyard's yard
@@ -77,6 +66,7 @@ import {
 	PAD_VENT_BANK_X_KM,
 	REFINERY_PAD_FRAME,
 } from "./refinery-pad-frame";
+import { OUTPOST_PROXIES, OUTPOST_PROXY_PACK } from "./outpost-proxies";
 import { REFINERY_PROXIES, REFINERY_PROXY_PACK } from "./refinery-proxies";
 import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
 import {
@@ -87,7 +77,6 @@ import {
 	type Sphere,
 	type SphereGrid,
 } from "./sphere-grid";
-import { SALVAGE_CORE } from "./station-plant";
 import { HUB, modularPlacements } from "./station-modular";
 import { type Vec3, cross, v3 } from "./vec3";
 
@@ -783,12 +772,12 @@ export function shipyardProxyBoxes(form: keyof typeof SHIPYARD_PROXIES): {
  * **The deck is the sim's**, as a shipyard's bay walls are: the deck the game
  * draws (`stationInterior`), up to the procedural forms' figure above the
  * plane so its berths are solid (`collision.md` §9 obligation 8), cut round
- * the corridor and the landing well.
+ * the corridor and the landing well. The outpost Salvage's too (node #1031).
  */
 const PAD_BERTHS_KM = 0.03;
-function padDeck(): ProxyBox[] {
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const pad = stationInterior("refinery", plane);
+function padDeck(type: "refinery" | "outpost"): ProxyBox[] {
+	const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+	const pad = stationInterior(type, plane);
 	const depth = pad.stagingAxialKm - pad.mouthAxialKm;
 	return cutAround(
 		[
@@ -799,7 +788,7 @@ function padDeck(): ProxyBox[] {
 				plane + PAD_BERTHS_KM,
 			),
 		],
-		[corridorHole("refinery")],
+		[corridorHole(type)],
 	);
 }
 
@@ -839,7 +828,7 @@ function authoredRefineryProxy(
 		const { rock, plant } = refineryProxyBoxes(form);
 		// A refinery does not turn; its primitives are listed as the procedural
 		// forms list theirs.
-		proxy = proxyOf([...rock, ...plant, ...padDeck(), ...padVentBanks()]);
+		proxy = proxyOf([...rock, ...plant, ...padDeck("refinery"), ...padVentBanks()]);
 		authoredRefineries.set(form, proxy);
 	}
 	return proxy;
@@ -858,56 +847,33 @@ export function refineryProxyBoxes(form: keyof typeof REFINERY_PROXIES): {
 }
 
 // ---------------------------------------------------------------------------
-// Outpost E — Salvage (grown form, selected)
+// The authored outpost Salvage (node #1031)
 // ---------------------------------------------------------------------------
 
 /**
- * The Salvage: a boxy freighter section (the core) carrying the deck, with
- * welded debris round it. The debris is grown from the assembly seed by the
- * form's own generator rather than solved on a placement grid, and that plan
- * lives only in the renderer, so the proxy is one set of primitives sized to
- * the plans the module header names, rather than one that follows a plan:
- *
- * - the core section as a box from its keel to the underside of the deck;
- * - a sphere centred below the origin, its top under the plane, for the
- *   debris welded round the core;
- * - a ring of capsules round its flanks for the hull sections that stand
- *   furthest out;
- * - a ring round the corridor for the deck, its inner edge outside
- *   `corridorRadiusKm`, and a wider one under it for the sections welded at
- *   deck height.
+ * The Salvage, as the game loads it (node #1031). **The sim collides with the
+ * authored outpost, whatever is drawn**, as with the refineries (#819): while
+ * its model is loading, or if it failed to, the procedural stand-in is drawn
+ * and is solid as the Salvage it stands in for. Its hull keeps the shipyards'
+ * rule (at most 10 m of empty space collides), fitted to the model's own parts
+ * (`src/outpost-proxies.ts`, generated; `tests/outpost-flight.test.ts`); its
+ * deck is the sim's (`padDeck`).
  */
-function outpostSalvageProxy(): StationProxy {
-	const g = STATION_GEOMETRY.outpost;
-	const r = g.coreRadiusKm;
-	const plane = g.aperturePlaneKm;
+const authoredOutposts = new Map<string, StationProxy>();
+function authoredOutpostProxy(form: keyof typeof OUTPOST_PROXIES): StationProxy {
+	let proxy = authoredOutposts.get(form);
+	if (!proxy) {
+		proxy = proxyOf([...outpostProxyBoxes(form), ...padDeck("outpost")]);
+		authoredOutposts.set(form, proxy);
+	}
+	return proxy;
+}
 
-	const deckUnder = plane - r * 0.16;
-	const core = cutAround(
-		[
-			axial(
-				SALVAGE_CORE.halfWidthKm,
-				SALVAGE_CORE.halfHeightKm,
-				SALVAGE_CORE.bottomKm,
-				deckUnder,
-			),
-		],
-		[corridorHole("outpost")],
-	);
-	// The debris and the flank ring stand on the landing well's floor rather
-	// than over it, as the Works' rock does: neither can be cut.
-	const floor = padOpeningFloorKm("outpost");
-	const DEBRIS_Z = -0.1275;
-	const debris = sphere(
-		{ x: 0, y: 0, z: DEBRIS_Z },
-		Math.min(0.2925, floor - DEBRIS_Z),
-	);
-	const FLANK_TUBE = 0.17;
-	const flanks = ring(0.24, Math.min(-0.05, floor - FLANK_TUBE), FLANK_TUBE);
-	const deck = ring(0.2, plane + 0.005, 0.11);
-	const deckRim = ring(0.28, plane - 0.025, 0.1);
-
-	return proxyOf([...core, debris, ...flanks, ...deck, ...deckRim]);
+/** An outpost's written hull boxes as decoded. */
+export function outpostProxyBoxes(
+	form: keyof typeof OUTPOST_PROXIES,
+): ProxyBox[] {
+	return unpack(OUTPOST_PROXIES[form].hull, OUTPOST_PROXY_PACK);
 }
 
 // ---------------------------------------------------------------------------
@@ -967,7 +933,7 @@ export function stationProxy(
 					return null;
 			}
 		case "outpost":
-			return form === "e" ? outpostSalvageProxy() : null;
+			return form === "e" ? authoredOutpostProxy(form) : null;
 		default: {
 			// Exhaustive at compile time: a station type added later is a type
 			// error here, and at runtime it has no proxy.

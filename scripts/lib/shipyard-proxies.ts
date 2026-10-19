@@ -27,6 +27,7 @@
  */
 import * as THREE from "three";
 import { SHIPYARD_FORMS } from "../../src/shipyard-flight";
+import { OUTPOST_FORMS } from "../../src/outpost-flight";
 import { REFINERY_FORMS } from "../../src/refinery-flight";
 import {
 	AUTHORED_DRUM_NAME,
@@ -36,6 +37,7 @@ import { STATION_GEOMETRY } from "../../src/station";
 import { corridorRadiusKm, stationInterior } from "../../src/station-interior";
 import { buildStationForm } from "../../src/station-mesh";
 import { padOpeningFloorKm } from "../../src/station-proxy";
+import { installShippedOutposts } from "./shipped-outposts";
 import { installShippedRefineries } from "./shipped-refineries";
 import { installShippedShipyards } from "./shipped-shipyards";
 
@@ -873,33 +875,11 @@ export async function fitRefineryProxies(): Promise<
 	const out: Record<string, FittedRefinery> = {};
 	const only = process.env.REFINERY_FORMS?.split(",");
 	const log = process.env.SHIPYARD_PROXY_LOG ? console.log : () => {};
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const pad = stationInterior("refinery", plane);
-	const deck = pad.halfAcrossKm * 1000;
-	const corridor = corridorRadiusKm(STATION_GEOMETRY.refinery.aperture) * 1000;
 	for (const form of REFINERY_FORMS) {
 		if (only && !only.includes(form)) continue;
 		const built = buildStationForm("refinery", form, 0x888888, 0, 0);
 		const { rockParts, plantParts } = refineryParts(built.root);
-		keepOut = [
-			new THREE.Box3(
-				new THREE.Vector3(
-					-deck,
-					-deck,
-					pad.mouthAxialKm * 1000 -
-						(pad.stagingAxialKm - pad.mouthAxialKm) * 1000,
-				),
-				new THREE.Vector3(deck, deck, plane * 1000 + 3000),
-			),
-			new THREE.Box3(
-				new THREE.Vector3(
-					-corridor,
-					-corridor,
-					padOpeningFloorKm("refinery") * 1000,
-				),
-				new THREE.Vector3(corridor, corridor, plane * 1000 + 3000),
-			),
-		];
+		keepOut = padKeepOut("refinery");
 		const rock = voxelFill(rockParts.flat(), ROCK_VOXEL_M[form]);
 		log(`${form} rock: ${rock.length} boxes`);
 		const plant = stage(`${form} plant`, plantParts, log);
@@ -946,6 +926,82 @@ export async function refineryTriangles(
 	const { rockParts, plantParts } = refineryParts(built.root);
 	built.dispose();
 	return { rock: rockParts.flat(), plant: plantParts.flat() };
+}
+
+/**
+ * The sim's pad as a keep-out, metres: the deck the game declares and
+ * everything in front of it, and the corridor down into the landing well
+ * (`padOpeningFloorKm`). The refinery's and the outpost's, one expression.
+ */
+function padKeepOut(type: "refinery" | "outpost"): THREE.Box3[] {
+	const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+	const pad = stationInterior(type, plane);
+	const deck = pad.halfAcrossKm * 1000;
+	const corridor = corridorRadiusKm(STATION_GEOMETRY[type].aperture) * 1000;
+	return [
+		new THREE.Box3(
+			new THREE.Vector3(
+				-deck,
+				-deck,
+				pad.mouthAxialKm * 1000 - (pad.stagingAxialKm - pad.mouthAxialKm) * 1000,
+			),
+			new THREE.Vector3(deck, deck, plane * 1000 + 3000),
+		),
+		new THREE.Box3(
+			new THREE.Vector3(-corridor, -corridor, padOpeningFloorKm(type) * 1000),
+			new THREE.Vector3(corridor, corridor, plane * 1000 + 3000),
+		),
+	];
+}
+
+/**
+ * The outpost Salvage's proxy (node #1031), by the shipyards' rule: every
+ * part of the authored exterior, which does not turn, at most 10 m of empty
+ * space. It has no rock. The keep-out is the sim's pad, as a refinery's; the
+ * deck itself is walled by `station-proxy.ts` from the sim's figures.
+ */
+export interface FittedOutpost {
+	hull: Obb[];
+	hullTris: Tri[];
+}
+
+export async function fitOutpostProxies(): Promise<
+	Record<string, FittedOutpost>
+> {
+	await installShippedOutposts();
+	const out: Record<string, FittedOutpost> = {};
+	const log = process.env.SHIPYARD_PROXY_LOG ? console.log : () => {};
+	for (const form of OUTPOST_FORMS) {
+		const built = buildStationForm("outpost", form, 0x888888, 0, 0);
+		const parts = outpostParts(built.root);
+		keepOut = padKeepOut("outpost");
+		const hull = stage(`${form} hull`, parts, log);
+		keepOut = [];
+		out[form] = { hull, hullTris: parts.flat() };
+		built.dispose();
+	}
+	return out;
+}
+
+/** A built authored outpost's connected parts: its exterior, metres. */
+function outpostParts(root: THREE.Object3D): Tri[][] {
+	return partsOf(
+		root,
+		AUTHORED_EXTERIOR_NAME,
+		STATION_GEOMETRY.outpost.coreRadiusKm,
+	);
+}
+
+/** An outpost's exterior triangles in the station frame, for a check that
+ *  measures written boxes against them. */
+export async function outpostTriangles(
+	form: (typeof OUTPOST_FORMS)[number],
+): Promise<Tri[]> {
+	await installShippedOutposts();
+	const built = buildStationForm("outpost", form, 0x888888, 0, 0);
+	const tris = outpostParts(built.root).flat();
+	built.dispose();
+	return tris;
 }
 
 // --- Packing: 16-bit integers, conservative -------------------------------

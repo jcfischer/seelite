@@ -73,6 +73,10 @@ import {
 } from "./helpers/station-proxy-measure";
 import { codeOf } from "./lib/source-scan";
 import {
+	installShippedOutposts,
+	uninstallOutposts,
+} from "../scripts/lib/shipped-outposts";
+import {
 	installShippedRefineries,
 	uninstallRefineries,
 } from "../scripts/lib/shipped-refineries";
@@ -104,12 +108,14 @@ const BERTH_SEEDS = [0, 1, 2, 7];
 
 /** `[berthSeed, assemblySeed]` pairs a form is measured at. */
 /** The roles drawn from approved models once they install (nodes #818,
- *  #819): their mesh and their proxy read no assembly seed, so one plan is
- *  every plan. The Works' procedural stand-in is seeded; the authored Works
- *  that replaces it, and the proxy the sim collides with, are not. */
+ *  #819, #1031): their mesh and their proxy read no assembly seed, so one
+ *  plan is every plan. The Works' and the Salvage's procedural stand-ins are
+ *  seeded; the authored models that replace them, and the proxies the sim
+ *  collides with, are not. */
 const AUTHORED_TYPES: ReadonlySet<StationType> = new Set([
 	"shipyard",
 	"refinery",
+	"outpost",
 ]);
 
 const assemblySeedsOf = (type: StationType, form: StationFormId) =>
@@ -142,18 +148,20 @@ function intrusions(
 const fmt = (v: THREE.Vector3) =>
 	`(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
 
-// The shipyards' and refineries' proxies are the authored models' (nodes
-// #818, #819), which the sim collides with whatever is drawn, so the rows here
-// measure the meshes the game draws once their models install. Removed after,
-// because bun runs every test file in one process and the next file may
-// measure the stand-ins.
+// The shipyards', refineries' and outpost's proxies are the authored models'
+// (nodes #818, #819, #1031), which the sim collides with whatever is drawn, so
+// the rows here measure the meshes the game draws once their models install.
+// Removed after, because bun runs every test file in one process and the next
+// file may measure the stand-ins.
 beforeAll(async () => {
 	await installShippedShipyards();
 	await installShippedRefineries();
+	await installShippedOutposts();
 });
 afterAll(() => {
 	uninstallShipyards();
 	uninstallRefineries();
+	uninstallOutposts();
 });
 
 describe("station proxy budget (collision.md §9.1.11)", () => {
@@ -355,7 +363,8 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		//   (node #818; the procedural drum's lip was 28 m);
 		// - refinery: a fitted plate of the authored model, 0.8 m, the same on
 		//   all four (node #819; the procedural forms' figures were 17-46 m);
-		// - outpost: the core section's 90 m depth (`SALVAGE_CORE.halfHeightKm`).
+		// - outpost: a fitted plate of the authored Salvage, 0.8 m, as the
+		//   refineries' (node #1031; the procedural core section was 90 m).
 		//
 		// Keyed by form, not by role (node #717): two forms of one role are two
 		// solids, and a pooled form with no figure here is red below.
@@ -375,7 +384,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			"refinery/b": 0.0008,
 			"refinery/c": 0.0008,
 			"refinery/d": 0.0008,
-			"outpost/e": 0.09,
+			"outpost/e": 0.0008,
 		};
 		for (const [type, form] of FORMS_IN_PLAY) {
 			for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
