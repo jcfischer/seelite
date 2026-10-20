@@ -98,6 +98,7 @@ npm run probe:cpu               # explicit headless/SwiftShader fallback
 npx tsc --noEmit                # no errors
 rtk lint npm run format:check   # biome, no fixes applied
 rtk lint npm run lint           # biome: undeclared names in scripts/
+npm run lint:comments           # eslint: no new comments; baseline only shrinks
 node scripts/check-launcher-wiring.mjs  # exit 0; `npm run probe` and `npm test` run it
 rtk err npm run build           # tsc + vite build
 ```
@@ -262,6 +263,18 @@ everything it renders is software-rasterised anyway. `.github/workflows/ci.yml`
 gates a pull request on format, lint, wiring, typecheck, unit tests (in four
 shards) and build; its deploy stage runs on `main` and nowhere else. Nothing on
 GitHub proves the browser tier was run. That check is yours, before you merge.
+
+## Comments
+
+Code says what it does; a comment is a claim that goes stale when the code
+moves. `seelite/no-comments` (`scripts/eslint/no-comments.mjs`) fails every new
+comment except a URL to the issue or vendor doc behind a constraint, a
+`/** doc */` on an export, a `biome-ignore` or `@vite-ignore` directive, and a
+license header. The existing ones are baselined in `eslint-suppressions.json`,
+which may only shrink: CI fails a rule total above `origin/main`. Burn it down
+one slice per PR with the `no-comments` skill, then `npm run lint:prune`. On a
+rebase conflict in that file take main's copy and prune again; never
+`--suppress-all`.
 
 ## Pitfalls
 
