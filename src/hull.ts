@@ -1363,10 +1363,15 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	voyager: {
 		role: "expedition",
 		variant: "a",
-		env: { lengthKm: 0.191, beamKm: 0.0295, heightKm: 0.0301 },
+		// **The envelope is Discovery / Voyager A's (node #820), scaled to this
+		// row's 191 m** and not drawn 1:1: the model's box rounded up, against the
+		// loft's 191 x 29.5 x 30.1 m. The length, the mass and the thrust stand
+		// (`voyager-hull.ts` gives the reason); the beam and height are what the
+		// mesh measures. The loft still stands in until the model installs.
+		env: { lengthKm: 0.191, beamKm: 0.0329, heightKm: 0.0361 },
 		envCentre: { rightKm: 0, upKm: 0.002, foreKm: 0.002 },
-		// 2.24 t per 1,000 m³ of its box: a spine and a sphere enclose little of
-		// the box they span, so the density sits high in the band.
+		// 1.68 t per 1,000 m³ of its box (was 2.24 on the loft's thinner one): a
+		// spine and a sphere enclose little of the box they span.
 		massT: 380,
 		// 0.5 km/s², under the carrier's 0.6: an expedition hull is not a warship.
 		thrustMN: 190,
@@ -1374,16 +1379,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00743102,
-			yaw: 0.00740524,
-			roll: 0.00227722,
+			pitch: 0.00746292,
+			yaw: 0.00741931,
+			roll: 0.00274582,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.99, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.985 },
-			roll: { z: 0.7, port: 0.995, starboard: 0.995 },
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.825, port: 0.99, starboard: 0.9975 },
 		},
 		holdT: 240,
 		hardpoints: 1,

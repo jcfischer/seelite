@@ -29,6 +29,12 @@ import {
 	PURCHASABLE_HULL_IDS,
 } from "../src/hull";
 import { HULL_VARIANTS, buildShipMesh } from "../src/ship-mesh";
+import { useProceduralHulls } from "./helpers/procedural-hulls";
+
+// The shape rows hold the procedural loft's parts (`voyager-bridge`, the
+// vertebrae, the bells), which is the stand-in until the authored model
+// installs (node #820); the model's own rows are `tests/voyager-hull.test.ts`'s.
+useProceduralHulls();
 
 const VOYAGER: HullId = "voyager";
 

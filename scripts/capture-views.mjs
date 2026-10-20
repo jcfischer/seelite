@@ -65,6 +65,7 @@ import { assertHorizonFacts } from "./lib/horizon-framing.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import { holdCruiseTurnState, holdVentState } from "./lib/vent-state.mjs";
+import { holdNpcVentState } from "./lib/npc-vent-state.mjs";
 import {
 	bootedGame,
 	guardedTree,
@@ -387,19 +388,33 @@ const PLACERS = {
 	},
 	"npc-jump": async (page, shot) => {
 		await page.evaluate(installHaulerFixture);
-		const sampled = await page.evaluate((event) => {
-			const f = window.__haulerFixture;
-			f.sample(f.plan.actor.schedule.departureAtS + 1, false);
-			f.sample(f.voyage.tOut - 3.1, false);
-			f.sample(f.voyage.tOut + 0.5);
-			if (event.event === "arrival") f.follow();
-			return f.sample(f.voyage.tOut + 0.5, true, event.framing ?? "ring");
-		}, shot);
+		// Seconds from the crossing instant. The default is the half-second-after
+		// frame the set has always carried; the beat rows (#1006) name their own,
+		// including negative ones — a ring opening before anything is in it is the
+		// frame the set could not draw.
+		const phaseS = shot.phaseS ?? 0.5;
+		const sampled = await page.evaluate(
+			({ event, phaseS, framing }) => {
+				const f = window.__haulerFixture;
+				f.sample(f.plan.actor.schedule.departureAtS + 1, false);
+				f.sample(f.voyage.tOut - 3.1, false);
+				f.sample(f.voyage.tOut + 0.5);
+				if (event === "arrival") f.follow();
+				return f.sample(f.voyage.tOut + phaseS, true, framing ?? "ring");
+			},
+			{ event: shot.event, phaseS, framing: shot.framing },
+		);
 		if (sampled.jump?.kind !== shot.event || sampled.rift <= 0)
 			throw new Error(
 				`NPC ${shot.event} fixture did not draw its ring: ${JSON.stringify(sampled)}`,
 			);
-		return `${sampled.name} · ${sampled.hull} · ${shot.event} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
+		return `${sampled.name} · ${sampled.hull} · ${shot.event} · ${phaseS >= 0 ? "+" : ""}${phaseS.toFixed(2)} s from the crossing · ring ${(sampled.riftRadiusKm * 2).toFixed(3)} km across, strength ${sampled.rift.toFixed(2)}, flare ${sampled.flare.toFixed(2)}, ${
+			sampled.hullThroughPlaneKm === null
+				? shot.event === "arrival"
+					? "no hull in this system yet"
+					: "no hull in this system any more"
+				: `hull origin ${sampled.hullThroughPlaneKm.toFixed(3)} km from ring plane along nose`
+		} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
 	},
 	"station-axis": async (page, shot) => {
 		const id = `station-${shot.station}`;
@@ -1151,6 +1166,29 @@ const PLACERS = {
 		if (state.lit.length === 0)
 			return `${state.hull} in cruise, spinning · this build draws no vent for a cruise turn`;
 		return `${state.hull} in cruise, spinning · ${state.lit.length} attitude vents firing (${state.lit.map((v) => v.slot).join(", ")}) · angular cue ${state.cue?.angular ? "latched" : "clear"}`;
+	},
+	/**
+	 * Node #637's NPC plumes: the duel's raider flown by the game's own `step`,
+	 * the clock held, the player placed off its stern.
+	 *
+	 * **Read back, not assumed**: a raider that fired nothing throws rather
+	 * than capturing a quiet hull under this caption. A build before node #637
+	 * keeps no table on the raider's contact; that is its honest `before`.
+	 */
+	"npc-vents": async (page, shot) => {
+		worldWritten = true;
+		const state = await page.evaluate(holdNpcVentState, {
+			steps: shot.steps,
+			behindKm: shot.behindKm,
+		});
+		await page.evaluate(
+			() => new Promise((r) => requestAnimationFrame(() => r())),
+		);
+		if (state.absent)
+			return `${state.name} (${state.hull}) · this build keeps no firing table for an NPC hull: no plumes`;
+		if (state.lit.length === 0)
+			throw new Error("npc-vents placer: the raider fired no vent");
+		return `${state.name} (${state.hull}) off its stern · ${state.lit.length} vents firing (${state.lit.map((v) => v.slot).join(", ")})`;
 	},
 	/**
 	 * #537's cruise light shift. A real leg to the farthest body, then the

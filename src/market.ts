@@ -48,7 +48,7 @@
 
 import { DOMAIN } from "./domains";
 import { HULL_SPECS, PLAYER_BASELINE_HULL, requirePositiveHold } from "./hull";
-import { mix, seededRand } from "./rng";
+import { fnv1a, mix, seededRand } from "./rng";
 
 /** Elite's byte→credits step: a price byte is 0.4 Cr. */
 export const PRICE_STEP_CR = 0.4;
@@ -66,18 +66,12 @@ export type CommodityUnit = "t" | "kg" | "g";
 
 export interface Commodity {
 	name: string;
-	/** Unsigned byte. */
 	basePrice: number;
-	/** Signed: "five bits plus sign" in the 6502. */
 	gradient: number;
-	/** **Signed** byte — see this module's header. */
 	baseQuantity: number;
-	/** Which bits of the fluctuation byte this good reads. */
 	mask: number;
 	unit: CommodityUnit;
-	/** §4: the scoped class. Traded only at a fence. */
 	illegal: boolean;
-	/** Alien Items: quantity forced to 0, so it can be sold and never bought. */
 	sellOnly: boolean;
 }
 
@@ -86,13 +80,6 @@ export interface Commodity {
  *  module and needs the same reading of it. */
 export const i8 = (byte: number): number => (byte << 24) >> 24;
 
-/**
- * Builds one row. The four numeric columns are what a reader checks against
- * `txtelite.c`, so they are positional and aligned; the three flags are
- * defaults on fourteen of the seventeen rows and are named only where they
- * differ. Spelling them out on every row buried the table's real content in
- * boilerplate the spec asks readers to verify column by column.
- */
 const good = (
 	name: string,
 	basePrice: number,
@@ -124,8 +111,6 @@ export const COMMODITIES: readonly Commodity[] = [
 	good("Slaves", 0x28, -5, 0xe2, 0x1f, { illegal: true }),
 	good("Liquor/Wines", 0x53, -5, 0xfb, 0x0f),
 	good("Luxuries", 0xc4, 8, 0x36, 0x03),
-	// The one divergence from Bell's column — see `NARCOTICS_BELL` in
-	// `tests/helpers/market-math.ts`, where the rejected row is kept runnable.
 	good("Narcotics", 0x14, 13, 0x08, 0x70, { illegal: true }),
 	good("Computers", 0x9a, 14, 0x38, 0x03),
 	good("Machinery", 0x75, 6, 0x28, 0x07),
@@ -145,11 +130,8 @@ export const COMMODITIES: readonly Commodity[] = [
  * produce under §2.2's saturating close.
  */
 export const NARCOTICS_RETUNE = {
-	/** Never overflows: `20 + 112 + 7×13` = 223 ≤ 255. */
 	maxPriceByte: 223,
-	/** Measured fence→fence, independent fluctuation bytes. */
 	minMarginCr: 75,
-	/** Fraction of (economy, fluct) rows carrying stock. Bell's row gives 36%. */
 	minInStock: 0.5,
 } as const;
 
@@ -194,17 +176,10 @@ export const SATURATE: ByteClose = {
 
 export interface MarketRow {
 	commodity: Commodity;
-	/** Credits per unit, before any stock-deficit response. */
 	priceCr: number;
-	/** The same price before §3's floor — what the floor is measured against. */
 	unflooredPriceCr: number;
-	/** Units on the shelf, 0…63. */
 	quantity: number;
-	/** True when the raw byte left 0…255, whichever close handled it.
-	 *  Named for the *input* condition rather than for what `SATURATE` does to
-	 *  it, because it is set under `BELL_WRAP` too. */
 	priceOverflowed: boolean;
-	/** True when §3's floor changed the price. */
 	floorFired: boolean;
 }
 
@@ -238,13 +213,6 @@ export function marketRowAt(
 	const product = economy * commodity.gradient;
 	const changing = fluct & commodity.mask;
 	const offset = TYPE_OFFSET[station];
-	// `StationType` has four members and §3's offset table has three, so both
-	// call sites narrow a station's type to reach this function. An `outpost`
-	// would arrive here as an `undefined` offset and every price would come back
-	// `NaN` with nothing thrown — the silent-garbage failure the instrument's own
-	// `finite()` guard exists to prevent, one layer lower. Node #491 generates
-	// outposts, and `station-types.md` §3 still owes them an offset (#490 D6);
-	// `hasMarket` is how a caller asks first.
 	if (offset === undefined)
 		throw new Error(`no type offset for station type ${station}`);
 
@@ -252,15 +220,10 @@ export function marketRowAt(
 	const closedPrice = close.price(rawPrice);
 	const priceOverflowed = closedPrice !== rawPrice;
 
-	// §3: credits, after the clamp, floored at one price step.
 	const unflooredPriceCr =
 		closedPrice * PRICE_STEP_CR + offset * commodity.gradient * PRICE_STEP_CR;
 	const priceCr = Math.max(PRICE_STEP_CR, unflooredPriceCr);
 
-	// §2.2's clamp applies to the quantity byte too, and **that is a divergence
-	// from Bell, not a transcription of him** — see `BELL_WRAP`. Gold's raw
-	// quantity is always 66–80, so txtelite shows 2–16 units where seelite shows
-	// a permanent 63.
 	const baseQuantity = close.quantity(
 		commodity.baseQuantity + changing - product,
 	);
@@ -614,9 +577,6 @@ export const requireDisplayTl = (displayTL: number): number => {
  */
 export const bidCutLadder = (floor: number, grade: number) => {
 	const span = DISPLAY_TL_MAX - DISPLAY_TL_MIN;
-	// **Checked, not clamped** — see `DISPLAY_TL_MIN`'s header. The check sits here
-	// rather than in each branch because the row that says an out-of-range tech level
-	// throws went red the first time it lived on one side of a ternary.
 	return (rawTL: number): number => {
 		const displayTL = requireDisplayTl(rawTL);
 		return floor + (grade * (displayTL - DISPLAY_TL_MIN)) / span;
@@ -651,9 +611,7 @@ export const bidCutAtTl: (displayTL: number) => number = bidCutLadder(
 
 /** The two figures one market quotes for one good, one per end of the wedge. */
 export interface MarketQuote {
-	/** What the commander pays this station for one unit. */
 	buyCr: number;
-	/** What this station pays the commander for one unit. */
 	sellCr: number;
 }
 
@@ -677,11 +635,6 @@ export const PRICE_DISPLAY_STEP_CR = 0.1;
 
 /** The quote's own rounding, applied before any caller sees a number. */
 export const quantizeToDisplayStepCr = (cr: number): number => {
-	// Divide on the way back down rather than multiply. `53 × 0.1` is
-	// 5.300000000000001, which prints as `5.3` and is not `5.3` — the exact defect
-	// this function exists to remove, re-introduced by the arithmetic that removes
-	// it. `1 / 0.1` is 10 exactly, so `53 / 10` is the nearest double to 5.3, which
-	// is the number `priceLabel` prints and `Number` reads back.
 	const steps = 1 / PRICE_DISPLAY_STEP_CR;
 	return Math.round(cr * steps) / steps;
 };
@@ -706,23 +659,10 @@ export const quantizeToDisplayStepCr = (cr: number): number => {
  */
 export const quoteWithCut = (
 	cutAtTl: (displayTL: number) => number,
-	// **The knob is the law's own precision rule, which §10.3's taxonomy re-flies
-	// without it.** A reviewer asked for it out of the shipped API, and the alternative is
-	// a helper that rebuilds this body — the floor and the step — which is exactly how a
-	// test starts disagreeing with the law it means to vary (round 6 caught one of those).
-	// One optional dial, whose default *is* the shipped quote, keeps the comparison honest
-	// and the law single-sourced.
 	{ quantize = true }: { quantize?: boolean } = {},
 ): QuoteFn => {
 	const step = (cr: number): number =>
 		quantize ? quantizeToDisplayStepCr(cr) : cr;
-	// **The ask is not a parameter, and that is the law rather than an omission.** #191 D1
-	// declined the symmetric wedge, so the only shipped builder lifts one side; the
-	// rejected arm is flown as an arm (`quoteSplitting` in the greedy instrument), the way
-	// `NO_WEDGE` and `fixedReferenceResponse` are flown. An `askAtTl` here was tried in
-	// review round 6 and removed: it would have had no caller in the game, and routing the
-	// declined arm through it moved that arm's arithmetic, because a shared builder floors
-	// both sides.
 	return (midCr, displayTL) => ({
 		buyCr: step(midCr),
 		sellCr: step(Math.max(PRICE_STEP_CR, midCr * (1 - cutAtTl(displayTL)))),
@@ -758,10 +698,6 @@ export const quoteWithCut = (
  */
 export const marketQuote: QuoteFn = quoteWithCut(bidCutAtTl);
 
-// ---------------------------------------------------------------------------
-// §5.1 — station identity, and the market it derives
-// ---------------------------------------------------------------------------
-
 /**
  * A station, as the market sees it.
  *
@@ -774,25 +710,8 @@ export const marketQuote: QuoteFn = quoteWithCut(bidCutAtTl);
  */
 export interface MarketStation {
 	type: StationTypeKey;
-	/** From `marketSeedFor` — the station's own stream root, `DOMAIN.MARKET`. */
 	seed: number;
-	/**
-	 * `marketPhaseMin(seed)`, carried rather than recomputed.
-	 *
-	 * It is a pure function of the seed and never varies for the life of a
-	 * station, and `marketRow` is called once per good per quote — seventeen
-	 * times a port, thousands of times a run in the instrument — each of which
-	 * was allocating a generator to re-derive the same number.
-	 */
 	phaseMin: number;
-	/**
-	 * `station-types.md` §5.2's fence flag, carried here because §4's scope is
-	 * the market's rule and not the station record's.
-	 *
-	 * **This is the only commodity scoping in the game.** Everything else in the
-	 * table trades everywhere; Narcotics, Firearms and Slaves trade at a fence
-	 * and nowhere else.
-	 */
 	blackMarket: boolean;
 }
 
@@ -812,24 +731,6 @@ export const listsCommodity = (
 ): boolean => !commodity.illegal || station.blackMarket;
 
 /**
- * FNV-1a over the carrier id.
- *
- * The station's persistence identity is a *string* (`persistent-world-state.md`
- * §2), and the market stream has to be a function of it rather than of the
- * station's index in generation order: an inserted station would otherwise
- * re-roll every market after it, which is the coupling `DOMAIN` exists to
- * prevent one level up.
- */
-const hashCarrierId = (id: string): number => {
-	let h = 0x811c9dc5;
-	for (let i = 0; i < id.length; i++) {
-		h ^= id.charCodeAt(i);
-		h = Math.imul(h, 0x01000193) >>> 0;
-	}
-	return h >>> 0;
-};
-
-/**
  * §5.1's `stationSeed`: one station's market stream root.
  *
  * `DOMAIN.MARKET` is its own tag for the reason `station-types.md` §5.3 gives
@@ -839,11 +740,8 @@ const hashCarrierId = (id: string): number => {
 export const marketSeedFor = (
 	systemSeed: number,
 	localCarrierId: string,
-): number => mix(mix(systemSeed, DOMAIN.MARKET), hashCarrierId(localCarrierId));
+): number => mix(mix(systemSeed, DOMAIN.MARKET), fnv1a(localCarrierId));
 
-/** Separates the phase draw from the epoch-0 fluctuation draw. Without it the
- *  two are the same number, so a station's stagger would be a function of its
- *  own opening market. */
 const PHASE_TAG = 0x9e37;
 
 /**
@@ -933,8 +831,6 @@ export function marketRow(
 	gameTimeMin: number,
 	close: ByteClose = SATURATE,
 ): MarketRow {
-	// Loud rather than a zero row: a price for a good the station does not sell
-	// is a bug in the caller, and a silently empty shelf is how it would ship.
 	if (!listsCommodity(commodity, station))
 		throw new Error(
 			`${station.type} does not list ${commodity.name} (economy-trade.md §4)`,
@@ -948,28 +844,6 @@ export function marketRow(
 		close,
 	);
 }
-
-// ---------------------------------------------------------------------------
-// §6–§7 — cargo, fuel, and what a station sells
-// ---------------------------------------------------------------------------
-//
-// **§5.5's deficit map is not here, and this module does not import it.** It
-// was; `deficits.ts`'s header carries why it moved and when. What stayed is
-// §5.2's arithmetic above — `decayDeficit`, `addDeficit`,
-// `DEFICIT_HALF_LIFE_MIN` and `DEFICIT_MAX` — because the price response reads
-// it: `stockResponse`, `shelfQuantity` and `MIN_STOCK_RESPONSE_FACTOR` each
-// clamp by `DEFICIT_MAX`, which is `QUANTITY_CAP`, and
-// `tests/helpers/market-math.ts` reaches `decayDeficit` and `addDeficit` to
-// price a saturated run without ever building a `DeficitMap`. `deficits.ts`
-// imports that arithmetic from here, and the reverse would close a cycle
-// rather than move a dependency — `DEFICIT_MAX` being `QUANTITY_CAP` is what
-// makes it a cycle and not merely a redirection.
-//
-// **This paragraph is the one copy of that argument**, as `deficits.ts`'s
-// header is the one copy of the move's history. Each points at the other
-// rather than restating it, so a fourth reader of `DEFICIT_MAX` leaves one
-// comment stale and not three. `tests/deficits.test.ts` is what keeps the
-// direction itself true.
 
 /**
  * §7's equipment list.
@@ -987,22 +861,8 @@ export function marketRow(
 export interface Equipment {
 	name: string;
 	priceCr: number;
-	/**
-	 * What the module adds to the flown mass, tonnes (#865, `flownMassT`).
-	 *
-	 * **Zero on every row, by the principal's ruling on #865 (2026-10-10).**
-	 * Ship outfitting's D15 makes mass an output of the pricing instrument
-	 * (#868), and no figure is written ahead of it — so a fit weighs nothing
-	 * yet, and what is in the hold (cargo, recovered fittings, entrusted lots)
-	 * is the only mass a pilot feels. A recovered fitting weighs its 1 t of hold
-	 * (D10) while the same module fitted weighs 0 t; that asymmetry closes when
-	 * the instrument's table lands. Required rather than
-	 * optional, so the instrument's table has a field on every row to fill.
-	 */
 	massT: number;
 	scope: "universal" | "refinery" | "shipyard";
-	/** Not in Elite's cassette list — introduced by station-types.md §4.1 and
-	 *  priced here from the disc/Master figures research §3.1 cites. */
 	newToSeelite?: boolean;
 }
 
@@ -1134,7 +994,6 @@ export const FUEL_CR_PER_LY = 2;
 export interface UniversalItem {
 	name: string;
 	priceCr: number;
-	/** Fuel is the one item §7 prices by distance rather than by the unit. */
 	per: "unit" | "ly";
 }
 

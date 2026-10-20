@@ -142,6 +142,12 @@ jobs:
       # is written in biome.jsonc (#402).
       - run: npm run lint
 
+      # No new comments (seelite/no-comments). Existing ones sit in
+      # eslint-suppressions.json, and the guard fails any file whose count
+      # grows past main, so the file only shrinks. The guard reads main with git.
+      - run: git fetch --quiet --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      - run: npm run lint:comments
+
       # Every script that opens a browser is bound to the launcher it calls
       # (#403). Static — it scans `scripts/` and launches nothing — so it does
       # not reopen #14's reason for keeping the browser tier off GitHub.
@@ -153,6 +159,25 @@ jobs:
       # 305-file shard whose exit code does not name the gate that failed. It
       # is green on `main`, so adding it cannot open every PR red.
       - run: npm run check:wiring
+
+      # Every LFS pointer the change adds has its object on GitHub
+      # (2026-10-19). A push uploads LFS objects only through the pre-push
+      # hook, and a push that skips hooks (`git push --no-verify`) sends the
+      # pointers alone (ranger uploads them itself since
+      # the-metafactory/ranger#349): the PR and the merge look whole and every
+      # later clone gets a pointer for a file. Asked of the LFS batch API, so
+      # nothing is downloaded. A run with no earlier commit to compare
+      # (a hand-run, a new branch) has nothing to check.
+      - name: Check that the change's LFS objects are on GitHub
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "no base commit to compare; nothing to check"
+            exit 0
+          fi
+          node scripts/check-lfs-objects.mjs "$BASE" HEAD
 
   # The headless tier: seeded generation, the float64 sim, the module boundary
   # that keeps Three.js out of it. No browser, and four runners where it had

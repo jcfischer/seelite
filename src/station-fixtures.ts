@@ -1037,6 +1037,48 @@ const DECLARATIONS: Partial<
 		}
 	},
 
+	/** Assembly's planted spine is present on every solved plan. Its service
+	 * rails and tip masts stay on that static structure, clear of the hub. */
+	"trade/d": ({ group, pools, beaconAt }) => {
+		const S = SHIP_SCALE;
+		for (const side of [-1, 1]) {
+			truss(
+				pools,
+				V(0, side * 0.3, 0.006),
+				V(0, side * 0.78, 0.006),
+				S.trussKm,
+				V(0, 0, 1),
+			);
+			const top = mast(pools, group, {
+				base: V(0, side * 0.8, 0.006),
+				up: V(0, 0, 1),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(top.clone().add(V(0, 0, S.beaconKm * 0.6)), S.beaconKm);
+		}
+	},
+
+	/** Wheel: a service main and two obstruction lamps on the finished rim's
+	 * forward face, clear of the open lattice and the hub's approach. */
+	"trade/e": ({ group, pools, beaconAt }) => {
+		const S = SHIP_SCALE;
+		pipeRing(
+			pools,
+			{ centre: V(0, 0, 0), rx: 0.9, z: 0.198, segments: 56 },
+			S.pipeKm,
+		);
+		for (const side of [-1, 1]) {
+			const top = mast(pools, group, {
+				base: V(side * 0.9, 0, 0.198),
+				up: V(0, 0, 1),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(top.clone().add(V(0, 0, S.beaconKm * 0.6)), S.beaconKm);
+		}
+	},
+
 	/**
 	 * Shipyard A — Gantry. Everything hangs on the static keel and its rails,
 	 * whose z is read off the keel itself rather than restated: the keel sits

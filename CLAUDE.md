@@ -98,6 +98,7 @@ npm run probe:cpu               # explicit headless/SwiftShader fallback
 npx tsc --noEmit                # no errors
 rtk lint npm run format:check   # biome, no fixes applied
 rtk lint npm run lint           # biome: undeclared names in scripts/
+npm run lint:comments           # eslint: no new comments; baseline only shrinks
 node scripts/check-launcher-wiring.mjs  # exit 0; `npm run probe` and `npm test` run it
 rtk err npm run build           # tsc + vite build
 ```
@@ -263,6 +264,18 @@ gates a pull request on format, lint, wiring, typecheck, unit tests (in four
 shards) and build; its deploy stage runs on `main` and nowhere else. Nothing on
 GitHub proves the browser tier was run. That check is yours, before you merge.
 
+## Comments
+
+Code says what it does; a comment is a claim that goes stale when the code
+moves. `seelite/no-comments` (`scripts/eslint/no-comments.mjs`) fails every new
+comment except one holding a URL (point it at the issue or vendor doc behind a
+constraint), a `/** doc */` on an export, a `biome-ignore` or `@vite-ignore`
+directive, and a license header. The existing ones are baselined in
+`eslint-suppressions.json`, which may only shrink: CI fails any file whose
+count grows past `origin/main`. Burn it down one slice per PR with the
+`no-comments` skill, then `npm run lint:prune`. On a rebase conflict in that
+file take main's copy and prune again; never `--suppress-all`.
+
 ## Pitfalls
 
 **`docs/pitfalls.md` carries the traps, one heading per subsystem.** Read the
@@ -307,8 +320,24 @@ samples are the other exception, by the principal's ruling of 2026-10-06 in
 the map's Constraints — open-licensed (CC0 or CC BY) recordings, chosen by
 ear in blind auditions: `scripts/fetch-music-samples.mjs` prepares them into
 `public/music-samples/` and records each file's source and checksum, and the
-chosen sets are **tracked in Git LFS** (`.gitattributes`). This repository
-sets the LFS filters locally and installs no LFS hooks, because
-`core.hooksPath` here is global, so **run `git lfs push origin <branch>`
-before `git push`** on a branch that adds or changes a sample, or the remote
-holds pointers with no objects. The deploy pulls them only when it publishes.
+chosen sets are **tracked in Git LFS** (`.gitattributes`). The deploy pulls
+them only when it publishes.
+
+**Study binaries under `spikes/` are in Git LFS too** (principal,
+2026-10-19): every `.blend`, `.glb`, `.png`, `.jpg`, `.webp` and `.bin`
+there, because review files are not production assets and a plain blob is in
+every clone for good. The exceptions are the study models a headless test
+reads, listed in `.gitattributes`; CI pulls no spike objects.
+`tests/spike-binaries-lfs.test.ts` fails on a plain study binary and on an
+exemption without a reader. Shipped models under `src/models/` stay plain.
+
+**LFS objects reach GitHub only through the `pre-push` hook.** This
+repository installs no hooks of its own (`core.hooksPath` is global), and a
+push that skips hooks (`git push --no-verify`) sends the pointers without
+their objects. Ranger's supervisor runs git with hooks off, so it uploads a
+branch's LFS objects itself before the branch (the-metafactory/ranger#349,
+2026-10-19). By hand, **run
+`git lfs push origin <branch>` before `git push`** on a branch that adds or
+changes a sample or a study binary. CI checks it:
+`scripts/check-lfs-objects.mjs` fails a change whose LFS objects are not on
+GitHub, and names each file.

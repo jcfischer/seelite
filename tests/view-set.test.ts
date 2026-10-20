@@ -22,6 +22,7 @@ import { setHorizonOrientation } from "../scripts/lib/horizon-framing.mjs";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 import { makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
+import { CROSSING, npcRiftVisible } from "../src/witchspace-crossing";
 import {
 	assertHorizonFacts,
 	horizonGeometry,
@@ -222,7 +223,10 @@ describe("the view set itself", () => {
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
-		expect(VIEWS.length).toBe(75);
+		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
+		// the crossing, the swallow and the seal of a jump seen by someone watching
+		// it, one frame each.
+		expect(VIEWS.length).toBe(80);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -243,6 +247,38 @@ describe("the view set itself", () => {
 	 */
 	test("every shot carries the payload its kind needs", () => {
 		expect(malformedShots(VIEWS)).toEqual([]);
+	});
+
+	/**
+	 * #1006's beat rows. The set already had an NPC arrival and departure, both
+	 * taken half a second **after** the crossing — which is why a green sheet never
+	 * showed that no opening and no closing was ever drawn. What a test can hold is
+	 * that the beats are in the set and stand at the phases the crossing's own
+	 * timeline says they belong at; whether 0.9 s reads as a build-up is the
+	 * principal's, on the sheet (#98, #104).
+	 */
+	test("the jump's three beats are each framed at their own phase", () => {
+		const byName = new Map(VIEWS.map((v) => [v.name, v]));
+		const beats = [
+			["npc-arrival-opening", "arrival", -1, 0],
+			["npc-arrival-crossing", "arrival", 0, CROSSING.crossS],
+			["npc-departure-swallow", "departure", -CROSSING.crossS, 0],
+			["npc-departure-seal", "departure", CROSSING.holdS, CROSSING.windowEndS],
+		];
+		for (const [name, event, after, before] of beats) {
+			const shot = byName.get(name)?.shot as
+				| { kind?: string; event?: string; phaseS?: number }
+				| undefined;
+			expect(shot, name).toBeDefined();
+			if (!shot?.phaseS) throw new Error(`${name} names no crossing phase`);
+			expect(shot.kind).toBe("npc-jump");
+			expect(shot.event).toBe(event);
+			expect(shot.phaseS).toBeGreaterThan(after);
+			expect(shot.phaseS).toBeLessThan(before);
+			// And inside the ring's own window, or the frame would be of nothing.
+			expect(npcRiftVisible(shot.phaseS)).toBe(true);
+			expect(byName.get(name)?.covers).toContain(684);
+		}
 	});
 
 	test("a shot missing its kind's payload is named", () => {
@@ -780,7 +816,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 75)");
+		expect(html).toContain("Selected canonical views (3 of 80)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -817,7 +853,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–30.2s");
+		expect(html).toContain("· clock 0.6–32.2s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1094,6 +1130,13 @@ describe("the rim look row #480 added", () => {
 			"npc-arrival",
 			"npc-departure-at-player-lane-point",
 			"npc-arrival-at-player-lane-point",
+			// #1006's four beat rows stand in the same system as the rows they
+			// precede and follow: the same hauler, the same two lane points, only
+			// sampled at another moment of one crossing.
+			"npc-arrival-opening",
+			"npc-arrival-crossing",
+			"npc-departure-swallow",
+			"npc-departure-seal",
 		]);
 	});
 });

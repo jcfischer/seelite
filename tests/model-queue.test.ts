@@ -139,3 +139,32 @@ test("refresh failure preserves an installed template and reports its own phase"
 	expect(downloads).toBe(1);
 	expect(warnings).toEqual(["model:refresh"]);
 });
+
+test("a failed load runs the stand-in hook, and the model is not settled until it ends", async () => {
+	const held = gate();
+	const events: string[] = [];
+	const queue = new ModelQueue(
+		{
+			bad: async () => {
+				throw Error("offline");
+			},
+		},
+		async () => {
+			events.push("installed");
+		},
+		() => {},
+		async (id) => {
+			events.push(`failed:${id}`);
+			await held.promise;
+			events.push("stand-in built");
+		},
+	);
+	const done = queue.wait(["bad"]);
+	await new Promise((r) => setTimeout(r, 0));
+	expect(queue.state("bad")).toBe("failed");
+	expect(queue.settled(["bad"])).toBe(false);
+	held.release();
+	await done;
+	expect(queue.settled(["bad"])).toBe(true);
+	expect(events).toEqual(["failed:bad", "stand-in built"]);
+});

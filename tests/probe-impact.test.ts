@@ -90,6 +90,15 @@ describe("production contract ownership", () => {
 		expect(music).toContain("probe-music.mjs");
 		expect(music).toContain("probe-music-game.mjs");
 	});
+	test("a comment burn-down slice selects its file's contracts, not the suite", () => {
+		const slice = impact([
+			"src/market.ts",
+			"eslint-suppressions.json",
+			"tests/market.test.ts",
+		]).probes!;
+		expect(slice).toEqual(impact(["src/market.ts"]).probes!);
+		expect(slice).toContain("probe-market-shelf.mjs");
+	});
 	test("new ownerless sources and catalog drift expand coverage", () => {
 		expect(impact(["src/unknown.ts"]).probes).toBeUndefined();
 		expect(
