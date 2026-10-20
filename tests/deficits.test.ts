@@ -262,9 +262,9 @@ describe("#67 the split of the deficit map out of the pricing module", () => {
 	});
 
 	test("the pricing module does not import the save module back", () => {
-		// The direction is the result, not an accident of where things landed;
-		// `market.ts`'s §6-§7 divider carries the argument for it, beside the
-		// symbols that argument names.
+		// The direction is the result, not an accident of where things landed:
+		// the price response clamps by `DEFICIT_MAX`, which is `QUANTITY_CAP`,
+		// so the reverse import would close a cycle.
 		//
 		// **One assertion, and the missing one is deliberate.** A first version
 		// also required `deficits.ts` to import `market.ts`, which pins today's
