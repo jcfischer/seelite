@@ -48,7 +48,7 @@
 
 import { DOMAIN } from "./domains";
 import { HULL_SPECS, PLAYER_BASELINE_HULL, requirePositiveHold } from "./hull";
-import { mix, seededRand } from "./rng";
+import { fnv1a, mix, seededRand } from "./rng";
 
 /** Elite's byte→credits step: a price byte is 0.4 Cr. */
 export const PRICE_STEP_CR = 0.4;
@@ -812,24 +812,6 @@ export const listsCommodity = (
 ): boolean => !commodity.illegal || station.blackMarket;
 
 /**
- * FNV-1a over the carrier id.
- *
- * The station's persistence identity is a *string* (`persistent-world-state.md`
- * §2), and the market stream has to be a function of it rather than of the
- * station's index in generation order: an inserted station would otherwise
- * re-roll every market after it, which is the coupling `DOMAIN` exists to
- * prevent one level up.
- */
-const hashCarrierId = (id: string): number => {
-	let h = 0x811c9dc5;
-	for (let i = 0; i < id.length; i++) {
-		h ^= id.charCodeAt(i);
-		h = Math.imul(h, 0x01000193) >>> 0;
-	}
-	return h >>> 0;
-};
-
-/**
  * §5.1's `stationSeed`: one station's market stream root.
  *
  * `DOMAIN.MARKET` is its own tag for the reason `station-types.md` §5.3 gives
@@ -839,7 +821,7 @@ const hashCarrierId = (id: string): number => {
 export const marketSeedFor = (
 	systemSeed: number,
 	localCarrierId: string,
-): number => mix(mix(systemSeed, DOMAIN.MARKET), hashCarrierId(localCarrierId));
+): number => mix(mix(systemSeed, DOMAIN.MARKET), fnv1a(localCarrierId));
 
 /** Separates the phase draw from the epoch-0 fluctuation draw. Without it the
  *  two are the same number, so a station's stagger would be a function of its
