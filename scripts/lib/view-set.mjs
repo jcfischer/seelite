@@ -1580,6 +1580,61 @@ export const VIEWS = Object.freeze([
 			view: "cockpit",
 		},
 	},
+	// #1006's three beats, one frame each. `npc-arrival` and `npc-departure` were
+	// taken half a second **after** the crossing, which is the one moment that
+	// tells a watcher nothing about what just happened — the principal's read of
+	// the `arrival` capture was "the witchspace is open in first frame … no sense
+	// of drama when witchspace opens", and a frame at +0.5 s could not have
+	// shown either the opening or the closing. These rows stand at the opening,
+	// at the crossing, in the swallow, and at the seal.
+	{
+		name: "npc-arrival-opening",
+		covers: [684],
+		what: "The same ring 0.9 s **before** the hauler crosses: open, brightening, and with nothing in it. The build-up the capture had none of — the hull is still in another system, so its name, contact and collision are not here yet.",
+		shot: {
+			kind: "npc-jump",
+			event: "arrival",
+			phaseS: -0.9,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-arrival-crossing",
+		covers: [684],
+		what: "The moment of arrival: 0.05 s after the instant, the hull easing through the ring's plane with the flare up, a wavelength ahead of settling on the lane point.",
+		shot: {
+			kind: "npc-jump",
+			event: "arrival",
+			phaseS: 0.05,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-departure-swallow",
+		covers: [684],
+		what: "0.35 s before the departure instant: the hauler ahead of the lane point it held through its wind-up, standing into the ring that opened in front of it. Where it goes, in other words, is through there.",
+		shot: {
+			kind: "npc-jump",
+			event: "departure",
+			phaseS: -0.35,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-departure-seal",
+		covers: [684],
+		what: "The last 0.25 s of that ring's life, the hull long gone: collapsed toward a point and flaring as it closes, so the place where it opened is seen to close.",
+		shot: {
+			kind: "npc-jump",
+			event: "departure",
+			phaseS: 4.55,
+			system: 0,
+			view: "cockpit",
+		},
+	},
 ]);
 
 /**
@@ -1627,7 +1682,12 @@ const SHOT_REQUIREMENTS = {
 		(s.event === "arrival" || s.event === "departure") &&
 		(s.framing === undefined ||
 			s.framing === "ring" ||
-			s.framing === "player-lane-point"),
+			s.framing === "player-lane-point") &&
+		// Seconds from the crossing instant (#1006): negative in the opening and
+		// in the swallow, positive at the seal. A non-finite or absent one is the
+		// row the set already had — half a second after the jump — and is not what
+		// the beat rows are for, so it is allowed but not trusted.
+		(s.phaseS === undefined || finite(s.phaseS)),
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),

@@ -388,19 +388,33 @@ const PLACERS = {
 	},
 	"npc-jump": async (page, shot) => {
 		await page.evaluate(installHaulerFixture);
-		const sampled = await page.evaluate((event) => {
-			const f = window.__haulerFixture;
-			f.sample(f.plan.actor.schedule.departureAtS + 1, false);
-			f.sample(f.voyage.tOut - 3.1, false);
-			f.sample(f.voyage.tOut + 0.5);
-			if (event.event === "arrival") f.follow();
-			return f.sample(f.voyage.tOut + 0.5, true, event.framing ?? "ring");
-		}, shot);
+		// Seconds from the crossing instant. The default is the half-second-after
+		// frame the set has always carried; the beat rows (#1006) name their own,
+		// including negative ones — a ring opening before anything is in it is the
+		// frame the set could not draw.
+		const phaseS = shot.phaseS ?? 0.5;
+		const sampled = await page.evaluate(
+			({ event, phaseS, framing }) => {
+				const f = window.__haulerFixture;
+				f.sample(f.plan.actor.schedule.departureAtS + 1, false);
+				f.sample(f.voyage.tOut - 3.1, false);
+				f.sample(f.voyage.tOut + 0.5);
+				if (event === "arrival") f.follow();
+				return f.sample(f.voyage.tOut + phaseS, true, framing ?? "ring");
+			},
+			{ event: shot.event, phaseS, framing: shot.framing },
+		);
 		if (sampled.jump?.kind !== shot.event || sampled.rift <= 0)
 			throw new Error(
 				`NPC ${shot.event} fixture did not draw its ring: ${JSON.stringify(sampled)}`,
 			);
-		return `${sampled.name} · ${sampled.hull} · ${shot.event} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
+		return `${sampled.name} · ${sampled.hull} · ${shot.event} · ${phaseS >= 0 ? "+" : ""}${phaseS.toFixed(2)} s from the crossing · ring ${(sampled.riftRadiusKm * 2).toFixed(3)} km across, strength ${sampled.rift.toFixed(2)}, flare ${sampled.flare.toFixed(2)}, ${
+			sampled.hullThroughPlaneKm === null
+				? shot.event === "arrival"
+					? "no hull in this system yet"
+					: "no hull in this system any more"
+				: `hull origin ${sampled.hullThroughPlaneKm.toFixed(3)} km from ring plane along nose`
+		} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
 	},
 	"station-axis": async (page, shot) => {
 		const id = `station-${shot.station}`;

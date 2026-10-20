@@ -814,13 +814,32 @@ _Avoid_: Hyperspace (as a place), jump space
 
 **Arrival rift**:
 The world-anchored half of a jump's exit (#195 D2, built by #532): a ring of
-light one hull length behind the arriving ship, facing along its nose, that
+light one hull reach behind the arriving ship, facing along its nose, that
 opens with the new system's light and closes a few seconds later. It is the
 ring a lens makes, and the sky behind it bends round it — **the player's rift
 only** today, because the witchspace pass carries one lens. Owned by
 `src/arrival-rift.ts`; #530's opening reuses it, and a **Hauler**'s jump
 draws its ring at both ends, without the lens (`inter-system-traffic.md` §9).
+Its full-strength radius is `ARRIVAL_RIFT.radiusReaches` times that hull's
+`HULL_REACH_KM`, with no minimum radius. The player's and a **Hauler**'s rings
+use this same law.
 _Avoid_: portal, wormhole (as an object)
+
+**The crossing**:
+What a jump looks like to someone watching it happen (#1006), as against what
+it feels like from inside it (**Witchspace**). Three beats on one clock keyed
+to the instant the hull passes the ring's plane, not to when anyone docks: the
+ring **tears open** with nothing in it, the hull **comes through the plane**
+(or goes into it, departing) over the crossing's own second or two instead of
+appearing and disappearing on the tick, and the ring **seals** — collapsing
+toward a point with a flare, rather than fading out, because a fade carries no
+answer to where the ship went. Its clock is `CROSSING` in
+`src/witchspace-crossing.ts`, a leaf read by both the **Traffic authority**
+that moves a **Hauler** and the **Game** that draws the ring, and by the
+player's own clock for the flare and the seal; the player's exit keeps its own
+**unfurl** and **unfold** ahead of the instant, and the crossing adds the flare
+and the seal to that, not a second ring.
+_Avoid_: warp effect, jump animation, instant appearance/disappearance
 
 **Light shift**:
 What the cruise sky does at speed (#537): the stars crowd toward the ship's
