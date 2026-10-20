@@ -69,3 +69,25 @@ The principal explicitly said **stop tests and probes**. Do not restart them wit
 node spikes/stations/prepare-flight-asset.mjs
 bun scripts/generate-outpost-proxies.ts
 ```
+
+## Trade flight exports — node #1033
+
+Ring (`b`), Drum (`c`) and Wheel (`e`) now have flight exports and use the
+same production queue as the earlier stations. The Assembly (`d`) remains
+fully procedural, including its seeded collision proxy; its study is not shipped.
+The historical test/probe stop above was lifted for integrations by the principal
+on 2026-10-18. The approved review files stay unchanged.
+
+```sh
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup --python spikes/stations/build_model.py -- ring --flight
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup --python spikes/stations/build_model.py -- drum wheel --flight
+node spikes/stations/prepare-flight-asset.mjs ring drum wheel
+bun scripts/generate-trade-proxies.ts
+```
+
+Use those two Blender invocations to reproduce the export material names.
+Only Ring's and Wheel's hubs extend aft to fit the production bay. Their front
+faces stay fixed; no whole-model scale is applied. The flight export clears the
+sim's bay and a 40 m recessed mouth, and places the dock at the trade aperture
+plane. The game's interior, berths, spin and navigation remain authoritative.
+See [the integration receipt](../../docs/receipts/node-1033-trade-b-c-e.md).

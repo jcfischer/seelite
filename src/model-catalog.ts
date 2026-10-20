@@ -4,6 +4,12 @@ import { prepareCockpitModel } from "./cockpit-model";
 import type { ModelLoader } from "./model-progress";
 import type { HullId } from "./hull";
 import { OUTPOST_FORM } from "./station";
+import type { AuthoredTradeForm } from "./station-mesh";
+
+const tradeLoader =
+	(form: AuthoredTradeForm): ModelLoader =>
+	async (p) =>
+		(await import("./trade-flight")).prepareTradeModel(form, p);
 
 export const modelLoaders = {
 	// Main also imports cockpit-model statically. A dynamic import here can
@@ -12,6 +18,9 @@ export const modelLoaders = {
 	cockpit: prepareCockpitModel,
 	coriolis: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./coriolis-flight")).prepareCoriolisModel(p),
+	"trade/b": tradeLoader("b"),
+	"trade/c": tradeLoader("c"),
+	"trade/e": tradeLoader("e"),
 	courier: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./courier-hull")).prepareCourierHullModel(p),
 	tug: async (p?: Parameters<ModelLoader>[0]) =>

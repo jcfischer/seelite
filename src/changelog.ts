@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1033 — proposed copy; principal approval required before merge.
+	{
+		date: "2026-10-20",
+		text: "Ring, Drum and Wheel trade stations have authored exteriors, with docking bays inside their hubs.",
+		node: 1033,
+	},
 	// Node #968: sentence approved by the principal, 2026-10-19.
 	{
 		date: "2026-10-19",

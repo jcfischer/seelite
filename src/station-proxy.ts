@@ -25,9 +25,9 @@
  * `berthSeed`**: it decides only which side the outpost's seeded berth stands
  * on, and both sides lie inside the same primitives. A test row asserts the
  * proxy is identical across berth seeds, so a form that starts to read it is
- * a red row rather than a surprise. The shipyards', the refineries' and the
- * outpost Salvage's proxies are the exception to "never generated": they are
- * fitted to their authored models (nodes #818, #819, #1031), and their own
+ * a red row rather than a surprise. The shipyards', the refineries', the
+ * trade b/c/e forms' and outposts' proxies are the exception to "never generated":
+ * they are fitted to authored models (nodes #818, #819, #1031–1033), and their own
  * tests measure the boxes against the drawn triangles rather than against the
  * fit. The sim collides with the authored model whatever is drawn, so none of
  * them reads an assembly seed, though the procedural Salvage that stands in
@@ -53,6 +53,8 @@ import type { Pose, Primitive, SolidMotion } from "./collision";
 import { type ApertureFrame, frameAtPhase, slotBasis } from "./docking";
 import type { StationFormId, StationPlan, StationType } from "./station";
 import { STATION_GEOMETRY } from "./station";
+import { TRADE_PROXIES } from "./trade-proxies";
+import { TRADE_MOUTH_RECESS_KM } from "./trade-frame";
 import { HULL_SPECS } from "./hull";
 import {
 	admittedHulls,
@@ -640,10 +642,15 @@ function tradeWheelProxy(): StationProxy {
  */
 const BAY_WALL_KM = 0.005;
 const MOUTH_WALL_KM = 0.002;
-function bayWalls(): ProxyBox[] {
-	const plane = STATION_GEOMETRY.shipyard.aperturePlaneKm;
-	const bay = stationInterior("shipyard", plane);
-	const [end, mouth] = interiorAxialSpanKm(bay);
+function bayWalls(
+	type: StationType = "shipyard",
+	recessKm = 0,
+	closeMouth = true,
+): ProxyBox[] {
+	const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+	const bay = stationInterior(type, plane);
+	const [end, planeMouth] = interiorAxialSpanKm(bay);
+	const mouth = planeMouth - recessKm;
 	const hx = bay.halfAcrossKm;
 	const hy = bay.halfUpKm;
 	const w = BAY_WALL_KM;
@@ -655,7 +662,7 @@ function bayWalls(): ProxyBox[] {
 		[axial(hx + w, hy + w, mouth, mouth + MOUTH_WALL_KM)],
 		[axial(bay.laneHalfAcrossKm, bay.laneHalfUpKm, mouth, Infinity)],
 	);
-	return [...shell, ...mouthWall];
+	return closeMouth ? [...shell, ...mouthWall] : shell;
 }
 
 function unpack(
@@ -698,8 +705,11 @@ function unpack(
  * with a minimum thickness either side of it, so its box reaches a little way
  * through the plane into the bay; the cut takes that off.
  */
-function outsideTheBay(boxes: ProxyBox[]): ProxyBox[] {
-	const holes = bayHoles("shipyard");
+function outsideTheBay(
+	boxes: ProxyBox[],
+	type: StationType = "shipyard",
+): ProxyBox[] {
+	const holes = bayHoles(type);
 	return boxes.flatMap((b) => {
 		const bounds = alignedBounds(b);
 		return bounds ? cutAround([bounds], holes) : [b];
@@ -729,6 +739,24 @@ function alignedBounds(b: ProxyBox): Bounds | null {
 }
 
 const authoredShipyards = new Map<string, StationProxy>();
+const authoredTrades = new Map<string, StationProxy>();
+function authoredTradeProxy(form: keyof typeof TRADE_PROXIES): StationProxy {
+	let proxy = authoredTrades.get(form);
+	if (!proxy) {
+		proxy = proxyOf([
+			...outsideTheBay(tradeProxyBoxes(form), "trade"),
+			...bayWalls("trade", TRADE_MOUTH_RECESS_KM, false),
+		]);
+		authoredTrades.set(form, proxy);
+	}
+	return proxy;
+}
+
+/** Written authored trade hull boxes before cutting the sim-owned bay. */
+export function tradeProxyBoxes(form: keyof typeof TRADE_PROXIES): ProxyBox[] {
+	return unpack(TRADE_PROXIES[form].hull);
+}
+
 function authoredShipyardProxy(
 	form: keyof typeof SHIPYARD_PROXIES,
 ): StationProxy {
@@ -914,13 +942,11 @@ export function stationProxy(
 				case "a":
 					return tradeCoriolisProxy();
 				case "b":
-					return tradeRingProxy();
 				case "c":
-					return tradeDrumProxy();
+				case "e":
+					return authoredTradeProxy(form);
 				case "d":
 					return tradeAssemblyProxy(assemblySeed);
-				case "e":
-					return tradeWheelProxy();
 				default:
 					return null;
 			}

@@ -53,7 +53,8 @@ const GLB = /\/asteroids[^/]*\.glb(?:\?|$)/;
 /** Boot's own models. Every other model is refused so that a software-lane
  *  install of 20 MB of interiors cannot hold `modelsSettled` for minutes: this
  *  probe is about the rocks, and a refused model settles as a failure. */
-const BOOT_GLB = /\/(?:courier-cockpit|coriolis)[^/]*\.glb(?:\?|$)/;
+const BOOT_GLB =
+	/\/(?:courier-cockpit|coriolis|trade-(?:ring|drum|wheel))[^/]*\.glb(?:\?|$)/;
 /** Route every GLB: boot models through, the rocks to `rocks`, the rest refused. */
 const routeModels = (page, rocks) =>
 	page.route(/\.glb(?:\?|$)/, (route) => {
