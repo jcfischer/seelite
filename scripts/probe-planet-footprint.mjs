@@ -1,7 +1,3 @@
-/** Node #755: one-pose cap arms, original-field control, target angle and
- * deterministic pixels, on the ground's four fields and on the weather shell's
- * two (#756). The canonical horizon pairs are evidence for the principal's eye,
- * never an automated verdict about legibility. */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -97,13 +93,7 @@ try {
 			new THREE.SphereGeometry(1, 96, 64),
 		);
 		scene.add(visual.group);
-		/**
-		 * These rows measure the surface program, so the shells are out of frame.
-		 * The weather shell is cap-driven too (#756) and has a rig of its own below;
-		 * left in the picture its residual at 1.9999R — where the band's fade leaves
-		 * a weight of 2e-4 on a coarse field — reads as the *ground* program failing
-		 * to join the original, which is a verdict about the wrong layer.
-		 */
+
 		for (const o of visual.group.children)
 			if (o.userData.shell) o.visible = false;
 		visual.setSurfacePath("screen-space");
@@ -284,12 +274,6 @@ void main() {
 		rig.halfAngle === 2 * rig.fullAngle,
 	);
 
-	/**
-	 * Node #756: the same cap arms on the weather shell. The ground is hidden for
-	 * these rows so its relief can neither mask a changed cloud field nor stand in
-	 * for one — a cap pair whose only moving pixels are the surface's would prove
-	 * nothing about the clouds it is named for.
-	 */
 	const cloudRig = await page.evaluate(async () => {
 		const THREE = await import("/node_modules/.vite/deps/three.js");
 		const { buildBodyVisual } = await import("/src/planet-surface.ts");
@@ -303,14 +287,7 @@ void main() {
 		const target = new THREE.WebGLRenderTarget(720, 450);
 		const scene = new THREE.Scene();
 		const camera = new THREE.PerspectiveCamera(60, 720 / 450, 0.01, 100);
-		/**
-		 * Reconstruct the pre-#756 shell program from the shipped one: drop the two
-		 * new helper definitions and revert the coherent arm's call. The uniform
-		 * declarations and the two locals stay, because reverting only the call
-		 * leaves them reading them; dead arithmetic moves no pixels. Every replace
-		 * below reports whether it landed, since an inert base arm would make every
-		 * parity row green by construction.
-		 */
+
 		const DETAIL_CALL =
 			"cloudFieldFootprint(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir, cloudFootprint, cloudOctaveCap)";
 		const BASE_CALL =
@@ -332,8 +309,7 @@ void main() {
 			landed++;
 			return reverted;
 		})();
-		// Deliberate defects in the shipped arm. Each must move the pixels the
-		// parity rows read, or those rows cannot see the defect they name.
+
 		const zeroFaultSource = (() => {
 			const marker = "if (weight <= 0.0) break;";
 			const patched = CLOUD_FRAGMENT.replaceAll(
@@ -353,19 +329,13 @@ void main() {
 				throw new Error("fade defect missed the shell's own band");
 			return patched;
 		})();
-		/** Terran weather carries the band; a desert dust shell must not. */
+
 		const terran = buildBodyVisual(
 			appearanceFor("planet", "footprint-47", 1, false),
 			new THREE.SphereGeometry(1, 96, 64),
 		);
 		const dustLook = appearanceFor("planet", "footprint-dust", 1.6, false);
-		/**
-		 * A desert carries 0.22 cover, which is thin enough that its alpha rounds to
-		 * zero on an 8-bit target: every arm would read zero and the row below would
-		 * pass with no dust on screen at all. The rig raises it so the comparison has
-		 * pixels to discriminate, and the row prints the figure it measured (#94's
-		 * rule: a check whose every arm can read zero is not a check).
-		 */
+
 		dustLook.cloudCover = 0.6;
 		const dust = buildBodyVisual(dustLook, new THREE.SphereGeometry(1, 96, 64));
 		const cloudShell = (visual) =>
@@ -377,7 +347,7 @@ void main() {
 		]) {
 			const shell = cloudShell(visual);
 			if (!shell) throw new Error(`${name} body has no weather shell`);
-			// Only the weather is in the frame: no ground, no limb.
+
 			visual.surfaceMesh.visible = false;
 			for (const o of visual.group.children)
 				if (o.userData.shell === "atmosphere") o.visible = false;
@@ -446,8 +416,7 @@ void main() {
 				(v, i) => i % 4 !== 3 && v > 0,
 			).length,
 		};
-		// The shell's angle follows the target it is drawn into, and its surface
-		// sibling is half that size inside the band (#211).
+
 		camera.position.z = 1.2;
 		read("terran", 6, CLOUD_FRAGMENT);
 		const fullAngle = terran.uniforms.cloudPixelAngle.value;
@@ -545,7 +514,10 @@ void main() {
 				shot,
 			);
 		await stopLoop(page);
-		const pair = await page.evaluate(() => {
+		const pair = await page.evaluate(async () => {
+			const { withCloudDetailCap } = await import(
+				"/scripts/lib/cloud-detail-arm.mjs"
+			);
 			const g = window.__seelite;
 			const saved = [...g.bodyVisuals.values()].map((v) => [
 				v,
@@ -578,6 +550,12 @@ void main() {
 					control = draw(0),
 					high = draw(6),
 					repeat = draw(6);
+				const cloudDraw = (cap) =>
+					withCloudDetailCap(g.bodyVisuals.values(), cap, () => draw(6));
+				const cloudZero = cloudDraw(0),
+					cloudControl = cloudDraw(0),
+					cloudHigh = cloudDraw(6),
+					cloudRepeat = cloudDraw(6);
 				const delta = (a, b) =>
 					a.pixels.reduce((n, v, i) => n + Math.abs(v - b.pixels[i]), 0) /
 					a.pixels.length;
@@ -586,6 +564,13 @@ void main() {
 					after: high.image,
 					delta: delta(zero, high),
 					noise: Math.max(delta(zero, control), delta(high, repeat)),
+					cloudBefore: cloudZero.image,
+					cloudAfter: cloudHigh.image,
+					cloudDelta: delta(cloudZero, cloudHigh),
+					cloudNoise: Math.max(
+						delta(cloudZero, cloudControl),
+						delta(cloudHigh, cloudRepeat),
+					),
 				};
 			} finally {
 				for (const [v, fn] of saved) v.setDetailQuality = fn;
@@ -599,7 +584,18 @@ void main() {
 			join(out, `${name}-after.png`),
 			Buffer.from(pair.after, "base64"),
 		);
-		const metrics = { name, delta: pair.delta, noise: pair.noise };
+		for (const arm of ["Before", "After"])
+			await writeFile(
+				join(out, `${name}-cloud-${arm.toLowerCase()}.png`),
+				Buffer.from(pair[`cloud${arm}`], "base64"),
+			);
+		const metrics = {
+			name,
+			delta: pair.delta,
+			noise: pair.noise,
+			cloudDelta: pair.cloudDelta,
+			cloudNoise: pair.cloudNoise,
+		};
 		captures.push(metrics);
 		t.check(
 			`${name} cap pair ${shot.kind === "horizon" ? "clears" : "stays within"} same-build noise`,
@@ -608,13 +604,15 @@ void main() {
 				: pair.delta <= pair.noise,
 			JSON.stringify(metrics),
 		);
+		t.check(
+			`${name} cloud-only pair ${shot.kind === "horizon" ? "clears" : "stays within"} same-build noise with ground fixed at cap six`,
+			shot.kind === "horizon"
+				? pair.cloudDelta > pair.cloudNoise
+				: pair.cloudDelta <= pair.cloudNoise,
+			JSON.stringify(metrics),
+		);
 	}
 
-	/**
-	 * The shipped frame loop rather than the rig: at the last framing — the 1.2R
-	 * boundary — a weather shell is on screen, so its own draw hook has run and the
-	 * quality dial reaches it through the one uniform it shares with the ground.
-	 */
 	const live = await page.evaluate(() => {
 		const g = window.__seelite;
 		const shells = () =>
@@ -666,7 +664,7 @@ void main() {
 	);
 	await writeFile(
 		join(out, "index.html"),
-		`<!doctype html><meta charset="utf-8"><title>Terran footprint octaves</title><style>body{background:#17191d;color:#eee;font:16px system-ui}table{width:100%}td{width:50%}img{width:100%}</style><h1>Terran ground detail and clouds</h1><p>High quality, same pose. Left: cap 0 (base fields). Right: cap 6, which extends the ground's continent, mountain, moisture and cap-edge fields <em>and</em> the weather shell's broad and wisp fields (#755, #756). Cloud edges and wisps are the half only node #756 changes; judge them where the station's sky meets the horizon. Click a frame for full size. Principal approval pending.</p><table>${captures.map(({ name }) => `<tr><th colspan="2">${name}</th></tr><tr>${["before", "after"].map((arm) => `<td><a href="${name}-${arm}.png"><img src="${name}-${arm}.png"></a></td>`).join("")}</tr>`).join("")}</table>`,
+		`<!doctype html><meta charset="utf-8"><title>Terran footprint octaves</title><style>body{background:#17191d;color:#eee;font:16px system-ui}table{width:100%}td{width:50%}img{width:100%}</style><h1>Terran cloud detail</h1><p>High quality, same pose, ground detail held at cap 6. Left: cloud cap 0. Right: cloud cap 6, extending broad edges and wisps (#756). Click a frame for full size. Principal approval pending.</p><table>${captures.map(({ name }) => `<tr><th colspan="2">${name}</th></tr><tr>${["before", "after"].map((arm) => `<td><a href="${name}-cloud-${arm}.png"><img src="${name}-cloud-${arm}.png"></a></td>`).join("")}</tr>`).join("")}</table><h2>Ground and clouds together</h2><p>Left: both caps 0. Right: both caps 6 (#755, #756).</p><table>${captures.map(({ name }) => `<tr><th colspan="2">${name}</th></tr><tr>${["before", "after"].map((arm) => `<td><a href="${name}-${arm}.png"><img src="${name}-${arm}.png"></a></td>`).join("")}</tr>`).join("")}</table>`,
 	);
 	console.log(`Review frames: ${out}/index.html`);
 } finally {

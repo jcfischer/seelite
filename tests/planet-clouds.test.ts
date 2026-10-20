@@ -28,20 +28,13 @@ test("dust haze retains the pre-node two-scale field and opacity", () => {
 		"smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal",
 	);
 	expect(dust).not.toMatch(/cirrusDomain\(|cloudField\w*\(|fbm3\(/);
-	// Node #756's scope is terran weather. The dust arm keeps its own two fixed
-	// scales, so it must not reach the footprint helper at all.
+
 	expect(dust).not.toMatch(/Footprint/);
 	expect(CLOUD_FRAGMENT).toContain(
 		"cloudCoherent > 0.5 ? (0.48 + 0.22 * rim) : (0.62 + 0.30 * rim)",
 	);
 });
 
-/**
- * Node #720 D9 / node #756: the live terran shell extends `broad` and `wisp` by
- * footprint, the way the ground's four fields do (#755). These rows are the
- * test seam the node names — shader-source assertions that the helper is the one
- * being called, per field, at that field's own frequency.
- */
 test("terran broad and wisp extend octaves by footprint; cirrus and the cap band do not", () => {
 	const coherent = CLOUD_FRAGMENT.split("if (cloudCoherent > 0.5) {")[1]?.split(
 		"} else {",
@@ -50,20 +43,16 @@ test("terran broad and wisp extend octaves by footprint; cirrus and the cap band
 	expect(coherent).toContain(
 		"cloudFieldFootprint(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir, cloudFootprint, cloudOctaveCap)",
 	);
-	// The two fields that adopt detail, each scaled by its own frequency so the
-	// footprint is stated in the units the helper's base octaves sample at.
+
 	expect(CLOUD_FRAGMENT).toContain(
 		"fbm4Footprint(warp(broadP * 2.3, 1.1, 0.75), footprint * 2.3, cap)",
 	);
 	expect(CLOUD_FRAGMENT).toContain(
 		"fbm5Footprint(wispP * 8.5, footprint * 8.5, cap)",
 	);
-	// Cirrus and the domain warp keep their octave counts, as on the ground.
+
 	expect(CLOUD_FRAGMENT).toContain("float cirrus = fbm3(cirrusP * 1.2);");
-	// The band is the ground's: full inside 1.6R, gone by 2R, and in *body*
-	// radii even though this geometry stands at the shell's radius. A fade in
-	// shell radii would still be adding octaves at 2R and move every distant
-	// view out of its control noise.
+
 	expect(CLOUD_FRAGMENT).toContain(
 		"const float CLOUD_SHELL_R = " + CLOUD_SHELL_RADIUS.toFixed(4) + ";",
 	);
@@ -77,12 +66,6 @@ test("terran broad and wisp extend octaves by footprint; cirrus and the cap band
 	expect(coherent).toContain("max(abs(dot(V, N)), 0.1)");
 });
 
-/**
- * The two field bodies must be one template. A weight, threshold or zonal term
- * that drifted into only one of them would make the close-detail band a
- * different planet from the one the coverage cube bakes, silently, because both
- * arms shade plausibly.
- */
 test("the footprint weather field differs from the base field only in broad and wisp", () => {
 	const cases: [string, string, [string, string][]][] = [
 		[
@@ -122,8 +105,7 @@ test("the footprint weather field differs from the base field only in broad and 
 		for (const [from, to] of replacements) {
 			const before = normalised;
 			normalised = normalised.replace(from, to);
-			// A replacement that missed would turn this row into a comparison of the
-			// footprint field with itself, which is green by construction.
+
 			expect(normalised).not.toBe(before);
 		}
 		expect(normalised).toBe(emitted(base));
@@ -131,9 +113,6 @@ test("the footprint weather field differs from the base field only in broad and 
 });
 
 test("the cloud shadow and the coverage bake keep the base field and the cube", () => {
-	// #720 D4: the ground-shadow stays on the baked coverage cube, and the
-	// procedural fallback beside it stays on the base field, so a bake and the
-	// live shell cannot disagree about where the weather is.
 	for (const source of [
 		fragmentFor("terran"),
 		bakeFragmentFor("terran", "normal"),
@@ -155,7 +134,7 @@ test("the weather shell reads its own draw target and the shared quality cap", (
 	const shell = visual.group.children.find(
 		(o) => o.userData.shell === "cloud",
 	) as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
-	// One quality dial, not a second one (#720 D10).
+
 	expect(shell.material.uniforms.extraOctaveCap).toBe(
 		visual.uniforms.extraOctaveCap,
 	);
@@ -163,12 +142,7 @@ test("the weather shell reads its own draw target and the shared quality cap", (
 	expect(shell.material.uniforms.extraOctaveCap.value).toBe(0);
 	visual.setDetailQuality("high");
 	expect(shell.material.uniforms.extraOctaveCap.value).toBe(6);
-	/**
-	 * #720 D9: the footprint comes from the shell's **own** target. The surface
-	 * draws into a half-size buffer inside the band (#211) while the shells stay
-	 * in the ordinary pass, so a shell that borrowed the ground's angle would
-	 * price two octaves it does not need.
-	 */
+
 	const camera = new THREE.PerspectiveCamera(60, 1.6, 0.1, 100);
 	let target: { height: number } | null = { height: 450 };
 	const renderer = {
@@ -201,12 +175,7 @@ test("the weather shell reads its own draw target and the shared quality cap", (
 	expect(shell.material.uniforms.cloudPixelAngle.value).toBe(
 		targetPixelAngle(camera.projectionMatrix.elements[5], 900),
 	);
-	/**
-	 * The separation the node's whole framing turns on: the ground's draw hook
-	 * writes its own angle for a 450-high target while the shell's dial stays at the
-	 * 900 the shell's own hook measured, so the shell cannot inherit a
-	 * half-resolution angle from the surface beneath it (#720 D9).
-	 */
+
 	target = { height: 450 };
 	visual.surfaceMesh.onBeforeRender(
 		renderer,

@@ -661,22 +661,6 @@ void main() {
 }
 `;
 
-/**
- * The weather shell, for the classes that have weather separate from the ground.
- *
- * Kept as its own mesh rather than a term in the surface shader for one reason:
- * clouds are at a different altitude, so they cast onto a different part of the
- * disc and they cross the terminator before the ground does. Painting them into
- * the surface loses both, and loses the parallax that sells the gap.
- *
- * **Two weather arms, one program.** The coherent arm is terran weather and
- * carries #720's close-detail band (node #756); the other is the pre-existing
- * dust field of the desert and ice shells, which keeps its two fixed scales and
- * never calls the footprint field. Selecting them is a uniform branch, so a
- * driver that evaluates both sides pays the branch's arithmetic either way — what
- * it cannot pay is octaves, because the dust arm has none to ask for and the
- * terran arm's cap is zero outside the band.
- */
 export const CLOUD_FRAGMENT = /* glsl */ `
 precision highp float;
 ${VARYINGS_GLSL}

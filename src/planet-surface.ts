@@ -506,15 +506,7 @@ export function buildBodyVisual(
 	const uniforms: Record<string, THREE.IUniform> = {
 		extraOctaveCap: { value: planetDetailCap("high", look.surface) },
 		surfacePixelAngle: { value: 0 },
-		/**
-		 * The weather shell's own target pixel angle (#720 D9, node #756).
-		 *
-		 * It is not the ground's. Inside the close-detail band the surface may be
-		 * drawn into the half-size prepass while the shells stay in the ordinary
-		 * pass (#211), so `surfacePixelAngle` is written twice a frame — once at
-		 * half size, once at full — and a shell that read it would extend its
-		 * octaves against a buffer it is never drawn into.
-		 */
+
 		cloudPixelAngle: { value: 0 },
 		time: { value: 0 },
 		// A direction, not a position, so it is the same vector at every render
@@ -906,13 +898,7 @@ export function buildBodyVisual(
 			}),
 		);
 		clouds.userData.shell = "cloud";
-		/**
-		 * The shell prices its own detail octaves against the target it is actually
-		 * drawn into (node #756). The read is the ground's — the render target the
-		 * renderer is aimed at right now, so adaptive resolution and a postcard's
-		 * offscreen target are both the real figure, and the drawing-buffer size
-		 * when there is no target at all.
-		 */
+
 		const cloudDrawSize = new THREE.Vector2();
 		clouds.onBeforeRender = (renderer, _scene, camera) => {
 			const target = renderer.getRenderTarget();

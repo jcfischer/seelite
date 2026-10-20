@@ -2,14 +2,14 @@
 
 The live terran weather shell's two coarse scales — the broad cloud field at
 frequency 2.3 and the wisps at 8.5 — run through the footprint helpers #755 shipped
-(`src/planet-footprint.ts`), so cloud edges and wisps keep detail from 1.6R down to the
+(`src/planet-shaders.ts`), so cloud edges and wisps keep detail from 1.6R down to the
 1.2R boundary instead of going soft at station altitude. Nothing else about weather
 changes: coverage, drift, cirrus, lightning, ground shadow and the dust shells keep
 their shipped behaviour.
 
 `CLOUD_FIELD_GLSL` is emitted from one template twice. The base arm keeps the original
-fixed-extra-octave arithmetic and is what the coverage bake, the ground's cloud shadow
-and every non-coherent class (desert dust, ice, jovian) select. The footprint arm differs
+fixed-octave arithmetic and is what the coverage bake and the ground's cloud shadow
+select. Non-coherent dust retains its separate two-scale field. The footprint arm differs
 only in `broad` and `wisp`, which call `fbm4Footprint` and `fbm5Footprint` with the body's
 own footprint and the shell's cap. `cloudFieldFootprint` is the wrapper the fragment calls.
 The weather shell alone selects the footprint arm (`CLOUD_FRAGMENT` splices both arms and
@@ -17,8 +17,8 @@ the shared cap uniform).
 
 The shell's footprint is its own: `cloudPixelAngle`, written by the shell's draw callback
 from the height of the target that shell is actually drawn into, with the fragment's camera
-distance and a grazing cosine floor of 0.1, divided by the body radius (shell radius 1.014
-over `vRadius / CLOUD_SHELL_R`) so the shell reads the band in body radii like the ground.
+distance and a grazing cosine floor of 0.1, divided by the shell's `vRadius`. The band's
+camera distance separately divides by `vRadius / CLOUD_SHELL_R` to read body radii.
 It is not the ground's `surfacePixelAngle`: the ground can draw at half resolution while the
 shells stay full-res (#720 D9). The cap is `extraOctaveCap × (1 − smoothstep(1.6, 2.0, cameraR))`,
 so Low (cap 0) leaves the base arm's arithmetic untouched and a camera at 2R or beyond gets
@@ -28,6 +28,9 @@ The ground's cloud shadow still samples the baked coverage cube unchanged (#720 
 bake and the shadow pass take the base arm.
 
 ## Verification
+
+This section records the inherited implementation pass. The continuation below supersedes
+its sheet and final-check status.
 
 Host: ANGLE Metal / Apple M1 Pro, hardware GPU lane.
 
@@ -89,18 +92,41 @@ Host: ANGLE Metal / Apple M1 Pro, hardware GPU lane.
 ## Eye gate and handoff
 
 `npm run probe:one -- probe-planet-footprint` on the hardware lane writes
-`view-set/footprint-octaves/index.html`, PNG before/after pairs and `metrics.json`, copied out of
-the ignored path to `~/.cache/seelite/ranger/756/captures/`. Left is cap 0 (base fields), right is
-cap 6, one program pair, everything else fixed, on the canonical placers for planet-fill,
-planet-terminator, station-horizon and planet-boundary.
+`view-set/footprint-octaves/index.html`, PNG before/after pairs and `metrics.json` in this
+worktree. The first section holds ground detail at cap 6 and changes only the cloud cap from
+0 to 6, on the canonical placers for planet-fill, planet-terminator, station-horizon and
+planet-boundary. The second section retains the combined ground/cloud cap comparison.
 
-On the final capture, planet-fill and planet-terminator read zero delta with zero repeat noise —
-both sit at or beyond 2R. Mean absolute channel deltas are 0.156 at station-horizon and 0.0714 at
-planet-boundary (0–255 display codes), both repeat controls zero. This proves the band reaches
-those views; it does not prove legibility. The principal's yes on cloud-edge and wisp legibility
+The cloud-only comparison reads zero delta at planet-fill and planet-terminator, both at or
+beyond 2R. Mean absolute channel deltas are 0.083094 at station-horizon and 0.055050 at
+planet-boundary (0–255 display codes), with zero repeat noise in every view. This proves the
+cloud band reaches those views; it does not prove legibility. The principal's yes on cloud-edge and wisp legibility
 at station altitude remains required by `ranger:needs-eye`.
 
 The supervisor owns push, PR, Sage, final browser selection and the merge. No graph node has been
 changed or closed. This is detail tuning of an existing surface, not a new mechanic or screen under
 the public changelog's definition of major. The cap's final value stays with the pricing node under
 #720; the interim 6 is #755's and is unchanged here.
+
+## Continuation verification — 2026-10-21
+
+- Inherited commits `b558ba0` and `5f34c59` already implement the cloud helper. This pass
+  isolates the cloud contribution in the sheet instead of changing ground and clouds together.
+- `withCloudDetailCap` installs a temporary shell material with its own cap uniform, sharing
+  all other uniform objects. A plain uniform-table replacement after compilation was inert:
+  Three.js caches that table. The pixel-reading probe caught both horizon pairs at zero delta
+  before the temporary-material repair. The helper restores and disposes its arm in `finally`;
+  its regression test covers the ground cap, normal quality sharing and capture failure.
+- Hardware lane: ANGLE Metal / Apple M1 Pro. The footprint probe passes **79/79**, including
+  cloud-only horizon and distant pairs, original-field parity, cap-0, deliberate-defect arms,
+  own-target pixel angles, live quality and dust invariance. This is **1/112 probes**; the
+  remaining 111 were not run. The two horizon PNGs were opened for inspection.
+- Focused tests: **75 pass, 0 fail**, six files. Build (including typecheck), format, lint,
+  launcher wiring and the comment gate pass. Removed inherited new comments that exceeded
+  the baseline and pruned the footprint probe's baseline from 15 to 14.
+- `probe:select -- --base origin/main --head HEAD` selects all probes because the inherited
+  node commits touch catalog infrastructure. Per the worker contract, only the affected
+  footprint probe ran here; the supervisor owns the final browser gate.
+- The single final `npm test` run on this host passes **6,765 tests, 0 failures across 397
+  files** (956.70 s). Full output: `/tmp/seelite-756-npm-test.log`. This supersedes the earlier
+  worker's timeout result above.
