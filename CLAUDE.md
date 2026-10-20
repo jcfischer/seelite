@@ -268,13 +268,13 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 
 Code says what it does; a comment is a claim that goes stale when the code
 moves. `seelite/no-comments` (`scripts/eslint/no-comments.mjs`) fails every new
-comment except a URL to the issue or vendor doc behind a constraint, a
-`/** doc */` on an export, a `biome-ignore` or `@vite-ignore` directive, and a
-license header. The existing ones are baselined in `eslint-suppressions.json`,
-which may only shrink: CI fails a rule total above `origin/main`. Burn it down
-one slice per PR with the `no-comments` skill, then `npm run lint:prune`. On a
-rebase conflict in that file take main's copy and prune again; never
-`--suppress-all`.
+comment except one holding a URL (point it at the issue or vendor doc behind a
+constraint), a `/** doc */` on an export, a `biome-ignore` or `@vite-ignore`
+directive, and a license header. The existing ones are baselined in
+`eslint-suppressions.json`, which may only shrink: CI fails any file whose
+count grows past `origin/main`. Burn it down one slice per PR with the
+`no-comments` skill, then `npm run lint:prune`. On a rebase conflict in that
+file take main's copy and prune again; never `--suppress-all`.
 
 ## Pitfalls
 

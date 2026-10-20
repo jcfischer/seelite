@@ -143,8 +143,8 @@ jobs:
       - run: npm run lint
 
       # No new comments (seelite/no-comments). Existing ones sit in
-      # eslint-suppressions.json, and the guard fails a rule total that grows
-      # past main, so the file only shrinks. The guard reads main with git.
+      # eslint-suppressions.json, and the guard fails any file whose count
+      # grows past main, so the file only shrinks. The guard reads main with git.
       - run: git fetch --quiet --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main
       - run: npm run lint:comments
 

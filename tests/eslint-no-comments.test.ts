@@ -1,25 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import tsParser from "@typescript-eslint/parser";
 import { Linter } from "eslint";
-import { seelite } from "../scripts/eslint/seelite.mjs";
+import { seeliteLint } from "../scripts/eslint/seelite.mjs";
 
 const linter = new Linter({ configType: "flat" });
 
 function flagged(code: string, file = "x.ts"): number[] {
 	return linter
-		.verify(
-			code,
-			[
-				{
-					files: ["**/*.ts", "**/*.mjs"],
-					linterOptions: { noInlineConfig: true },
-					languageOptions: { parser: tsParser },
-					plugins: { seelite },
-					rules: { "seelite/no-comments": "error" },
-				},
-			],
-			file,
-		)
+		.verify(code, [{ files: ["**/*.ts", "**/*.mjs"], ...seeliteLint }], file)
 		.filter((m) => m.ruleId === "seelite/no-comments")
 		.map((m) => m.line);
 }
