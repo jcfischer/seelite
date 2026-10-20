@@ -142,6 +142,12 @@ jobs:
       # is written in biome.jsonc (#402).
       - run: npm run lint
 
+      # No new comments (seelite/no-comments). Existing ones sit in
+      # eslint-suppressions.json, and the guard fails any file whose count
+      # grows past main, so the file only shrinks. The guard reads main with git.
+      - run: git fetch --quiet --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      - run: npm run lint:comments
+
       # Every script that opens a browser is bound to the launcher it calls
       # (#403). Static — it scans `scripts/` and launches nothing — so it does
       # not reopen #14's reason for keeping the browser tier off GitHub.
