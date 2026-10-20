@@ -305,6 +305,39 @@ describe("hauler physical legs", () => {
 		expect(at(destination, v.tOut + 1).present).toBeUndefined();
 		expect(at(home, v.awayBoundaryS - 1).present).toBeUndefined();
 	});
+	test("the crossing never moves a hauler further in one 10 Hz tick than probe-traffic-continuity allows", () => {
+		// #1006: a departure ends a crossing ahead of its lane point, and the
+		// absent pose that followed stood on the point — a 0.084 km step at the
+		// instant, and the same step back when the return came through.
+		const p = hauler(),
+			v = haulerVoyage(p, 0);
+		const route = (t: number) =>
+			projectSystemTrafficActor({
+				record: home,
+				actor: p.actor,
+				gameTime: t,
+				haulerVoyages: routeVoyages(galaxy, p, home.index, t, getContents),
+			});
+		const speed = (u: Vec3) => length(u);
+		const steps: { t: number; from: string; to: string; km: number }[] = [];
+		let prior = route(v.tOut - 5);
+		for (const [fromS, toS] of [
+			[v.tOut - 5, v.tOut + 2],
+			[v.tBack - 2, v.tBack + 6],
+		])
+			for (let tick = Math.round(fromS * 10); tick <= toS * 10; tick++) {
+				const now = route(tick / 10);
+				const km = length(sub(now.pos, prior.pos));
+				const allowed = Math.max(
+					0.05,
+					(speed(prior.vel) + speed(now.vel)) * 0.1,
+				);
+				if (km > allowed)
+					steps.push({ t: tick / 10, from: prior.phase, to: now.phase, km });
+				prior = now;
+			}
+		expect(steps).toEqual([]);
+	});
 });
 
 describe("identity persistence and query cost", () => {

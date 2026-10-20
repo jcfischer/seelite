@@ -1388,18 +1388,16 @@ function projectTrafficFlight(
 				},
 			);
 		}
+		// After the instant the hull is absent, but its pose stays where the
+		// crossing left it, through the plane: on the point, it stepped a whole
+		// lead back at the instant and a lead forward again when its return came
+		// through (`probe-traffic-continuity`).
 		const lead = crossingLeadKm(actor.hullId);
-		const ageS = gameTime - jumpAtS;
-		const flight =
-			gameTime < jumpAtS
-				? {
-						pos: add(
-							lanePoint.pos,
-							emergenceOffset("departure", ageS, lead, nose),
-						),
-						vel: emergenceVelocity("departure", ageS, lead, nose),
-					}
-				: { pos: { ...lanePoint.pos }, vel: { x: 0, y: 0, z: 0 } };
+		const ageS = Math.min(0, gameTime - jumpAtS);
+		const flight = {
+			pos: add(lanePoint.pos, emergenceOffset("departure", ageS, lead, nose)),
+			vel: emergenceVelocity("departure", ageS, lead, nose),
+		};
 		return withRoute(
 			actor,
 			gameTime >= jumpAtS

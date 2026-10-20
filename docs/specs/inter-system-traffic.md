@@ -325,8 +325,10 @@ ring open or close:
   hauler leaves the **Lane point** it held through its wind-up and eases into
   the ring over `CROSSING.crossS`. The ring stands one display reach ahead of
   that point; the hull ends `crossingDistanceKm` ahead of the point and is gone
-  at the instant: **swallowed, not deleted**. The ring seals behind it on the
-  same timeline. `crossingDistanceKm` is `CROSSING.emergeRadii` times the
+  at the instant: **swallowed, not deleted**. The `hyperspace-away` pose that
+  follows is absent — not drawn, not collided — and stays where the crossing
+  left the hull, so the route steps neither at the instant nor when the return
+  comes through. The ring seals behind it on the same timeline. `crossingDistanceKm` is `CROSSING.emergeRadii` times the
   measured envelope's farthest corner from the hull origin, including its
   `envCentre` offset; it is not a multiple of the ring radius.
 
