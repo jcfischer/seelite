@@ -68,20 +68,18 @@ export function createTradeBuilder(
 		model.name = `trade-${form}-model`;
 		model.scale.setScalar(0.001);
 		model.traverse((o) => {
-			if (o instanceof THREE.Mesh && o.name.includes("amber-lamp"))
-				o.name = "windows";
+			if (!(o instanceof THREE.Mesh)) return;
+			if (o.name.includes("amber-lamp")) o.name = "windows";
+			else if (o.name === "staticcladding-armour-0") o.name = "core";
 		});
 		exterior.add(model);
-		const core = new THREE.Group();
-		core.name = "core";
-		core.add(exterior);
 		const fixtures: StationFixture[] = [];
 		const aperture = buildCoriolisNavigation(fixtures, exterior, {
 			originZ: 0.35,
 			strobeX: 0.15,
 			beaconX: 0.13,
 			beaconY: 0.12,
-			nameZ: geometry.aperturePlaneKm - TRADE_MOUTH_RECESS_KM + 0.0005,
+			nameZ: geometry.aperturePlaneKm,
 		});
 		const interior = stationInterior(
 			"trade",
@@ -93,7 +91,7 @@ export function createTradeBuilder(
 		);
 		const spinner = new THREE.Group();
 		spinner.name = `trade-${form}-spinner`;
-		spinner.add(core, aperture);
+		spinner.add(exterior, aperture);
 		const km = new THREE.Group();
 		km.name = "km";
 		km.scale.setScalar(1 / geometry.coreRadiusKm);

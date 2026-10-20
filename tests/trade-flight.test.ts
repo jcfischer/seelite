@@ -87,6 +87,38 @@ describe("authored trade forms, node #1033", () => {
 			expect(AUTHORED_FIXTURE_NAMES.trade).toEqual(SPEC_FIXTURE_NAMES.trade);
 			for (const name of AUTHORED_FIXTURE_NAMES.trade!)
 				expect(mesh.root.getObjectByName(name)).toBeDefined();
+			const core = mesh.root.getObjectByName("core");
+			expect(core).toBeInstanceOf(THREE.Mesh);
+			expect(
+				(core as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>)
+					.material.color,
+			).toBeInstanceOf(THREE.Color);
+			mesh.dispose();
+		});
+		test(`${form}: the mouth nameplate is the first surface seen from the approach axis`, () => {
+			const mesh = buildStationForm("trade", form, 0x888888, 7, 7);
+			mesh.root.updateMatrixWorld(true);
+			const plate = mesh.nameplates[0]!;
+			const eye = new THREE.Vector3(
+				0,
+				0,
+				STATION_GEOMETRY.trade.aperturePlaneKm * 3,
+			).applyMatrix4(mesh.spinner!.matrixWorld);
+			plate.geometry.computeBoundingBox();
+			const box = plate.geometry.boundingBox!;
+			for (const fx of [0.25, 0.5, 0.75])
+				for (const fy of [0.25, 0.5, 0.75]) {
+					const target = new THREE.Vector3(
+						THREE.MathUtils.lerp(box.min.x, box.max.x, fx),
+						THREE.MathUtils.lerp(box.min.y, box.max.y, fy),
+						box.max.z,
+					).applyMatrix4(plate.matrixWorld);
+					const first = new THREE.Raycaster(
+						eye,
+						target.sub(eye).normalize(),
+					).intersectObject(mesh.root, true)[0];
+					expect(first?.object).toBe(plate);
+				}
 			mesh.dispose();
 		});
 		test(`${form}: the sim uses the shipped authored proxy with its stand-in too`, async () => {
