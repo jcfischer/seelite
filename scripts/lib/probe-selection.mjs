@@ -1,6 +1,7 @@
 import { PROBE_CATALOG } from "./probe-catalog.mjs";
 import { discoverProbeFiles } from "./probe-inventory.mjs";
 import {
+	isNonRuntime,
 	PROBE_REGISTRIES,
 	registryChanges,
 	selectImpact,
@@ -68,14 +69,6 @@ const isGlobalRisk = (file, withImpact = false) =>
 			HARNESS_FILES.has(file) ||
 			file.startsWith("scripts/lib/probe-"))) ||
 	file.startsWith(".github/");
-
-const isNonRuntime = (file) =>
-	file.startsWith("docs/") ||
-	file.startsWith("tests/") ||
-	file.endsWith(".md") ||
-	file === "biome.jsonc" ||
-	file === "eslint.config.mjs" ||
-	file === "eslint-suppressions.json";
 
 /** Several probe lists as one, each file once, in order. */
 const union = (...lists) => [...new Set(lists.flat())].sort();

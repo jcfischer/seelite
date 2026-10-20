@@ -270,6 +270,15 @@ export function registryChanges(changedFiles, before, after) {
 }
 
 /** Deterministic selection from both revisions. Unknown ownership expands all. */
+/** Files no browser probe can observe: documentation, headless tests and lint configuration. */
+export const isNonRuntime = (file) =>
+	file.startsWith("docs/") ||
+	file.startsWith("tests/") ||
+	file.endsWith(".md") ||
+	file === "biome.jsonc" ||
+	file === "eslint.config.mjs" ||
+	file === "eslint-suppressions.json";
+
 export function selectImpact(changedFiles, impact, inventory) {
 	if (
 		Object.keys(PROBE_ROOTS).length !== inventory.length ||
@@ -279,13 +288,7 @@ export function selectImpact(changedFiles, impact, inventory) {
 			reason: "Probe dependency ownership differs from the runner inventory.",
 		};
 	const { before, after } = impact;
-	const runtime = changedFiles.filter(
-		(p) =>
-			!p.startsWith("docs/") &&
-			!p.startsWith("tests/") &&
-			!p.endsWith(".md") &&
-			p !== "biome.jsonc",
-	);
+	const runtime = changedFiles.filter((p) => !isNonRuntime(p));
 	const mainChanged = runtime.includes("src/main.ts");
 	const paths = runtime.filter((p) => p !== "src/main.ts");
 	let methods = [];
