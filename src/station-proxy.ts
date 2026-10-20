@@ -943,11 +943,10 @@ export function stationProxy(
 					return tradeCoriolisProxy();
 				case "b":
 				case "c":
+				case "e":
 					return authoredTradeProxy(form);
 				case "d":
 					return tradeAssemblyProxy(assemblySeed);
-				case "e":
-					return authoredTradeProxy(form);
 				default:
 					return null;
 			}

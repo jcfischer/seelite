@@ -3,6 +3,30 @@ import { bootedGame, installViewPlacement } from "../probe-guard.mjs";
 import { gameUrl } from "./game-url.mjs";
 import { installViewFraming } from "./view-placement.mjs";
 
+async function installTradeStation(page) {
+	await page.evaluate(() => {
+		window.__tradeStation = () => {
+			const station = window.__seelite.world.system.contents.stations.find(
+				(s) => s.type === "trade",
+			);
+			if (!station) throw Error("trade fixture has no trade station");
+			return station;
+		};
+	});
+}
+
+async function frameTrade(page, distance, view) {
+	await page.evaluate(
+		async ({ distance, view }) => {
+			const g = window.__seelite;
+			await window.__viewAlongAxis(window.__tradeStation().id, distance);
+			g.view = view;
+			g.render(0);
+		},
+		{ distance, view },
+	);
+}
+
 /** Held responses prove the authored trade forms' production installation (node #1033). */
 export async function probeTradeModels(
 	browser,
@@ -38,6 +62,7 @@ export async function probeTradeModels(
 			gameUrl(origin, { ...params, seed: 42, system: from, "no-save": true }),
 		);
 		await bootedGame(page, 120000);
+		await installTradeStation(page);
 		await page.evaluate((index) => {
 			const g = window.__seelite;
 			g.clockHeld = true;
@@ -46,15 +71,11 @@ export async function probeTradeModels(
 				throw Error(`trade jump fixture refused ${index}`);
 			g.setWitchspace({ kind: "idle" });
 		}, system);
-		const standIn = await page.evaluate(async () => {
+		await frameTrade(page, 3, "chase");
+		const standIn = await page.evaluate(() => {
 			const g = window.__seelite;
-			const station = g.world.system.contents.stations.find(
-				(s) => s.type === "trade",
-			);
+			const station = window.__tradeStation();
 			const mesh = g.stationVisuals.get(station.id);
-			await window.__viewAlongAxis(station.id, 3);
-			g.view = "chase";
-			g.render(0);
 			return {
 				form: station.formId,
 				authored: !!mesh.root.getObjectByName("authored-exterior"),
@@ -68,33 +89,15 @@ export async function probeTradeModels(
 		);
 		await page.screenshot({ path: `${out}/${name}-before.png` });
 		const closeShot = async (label) => {
-			await page.evaluate(async () => {
-				const g = window.__seelite;
-				const id = g.world.system.contents.stations.find(
-					(s) => s.type === "trade",
-				).id;
-				await window.__viewAlongAxis(id, 0.65);
-				g.view = "cockpit";
-				g.render(0);
-			});
+			await frameTrade(page, 0.65, "cockpit");
 			await page.screenshot({ path: `${out}/${name}-mouth-${label}.png` });
-			await page.evaluate(async () => {
-				const g = window.__seelite;
-				const id = g.world.system.contents.stations.find(
-					(s) => s.type === "trade",
-				).id;
-				await window.__viewAlongAxis(id, 3);
-				g.view = "chase";
-				g.render(0);
-			});
+			await frameTrade(page, 3, "chase");
 		};
 		await closeShot("before");
 		const measure = async () =>
 			page.evaluate(() => {
 				const g = window.__seelite;
-				const station = g.world.system.contents.stations.find(
-					(s) => s.type === "trade",
-				);
+				const station = window.__tradeStation();
 				const mesh = g.stationVisuals.get(station.id);
 				let owner = mesh.root;
 				while (owner.parent && owner.parent !== g.nearScene)
@@ -167,9 +170,7 @@ export async function probeTradeModels(
 		});
 		const installed = await page.evaluate(async () => {
 			const g = window.__seelite;
-			const station = g.world.system.contents.stations.find(
-				(s) => s.type === "trade",
-			);
+			const station = window.__tradeStation();
 			const mesh = g.stationVisuals.get(station.id);
 			const root = mesh.root;
 			await g.modelInstalled(`trade/${station.formId}`);
@@ -219,6 +220,7 @@ export async function probeTradeModels(
 		gameUrl(origin, { ...params, seed: 42, system: 5, "no-save": true }),
 	);
 	await bootedGame(failed, 120000);
+	await installTradeStation(failed);
 	await failed.evaluate(() => {
 		const g = window.__seelite;
 		g.clockHeld = true;
@@ -232,9 +234,7 @@ export async function probeTradeModels(
 	const fallback = await failed.evaluate(() => {
 		const g = window.__seelite;
 		g.startModelQueue();
-		const station = g.world.system.contents.stations.find(
-			(s) => s.type === "trade",
-		);
+		const station = window.__tradeStation();
 		return (
 			!g.stationVisuals
 				.get(station.id)

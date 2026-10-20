@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
+import { forEachWorldTriangle } from "./helpers/world-triangles";
 
 describe("trade flight exports, node #1033", () => {
 	for (const name of ["ring", "drum", "wheel"]) {
@@ -38,50 +39,32 @@ describe("trade flight exports, node #1033", () => {
 				new THREE.Vector3(-59.9, -34.9, plane - 40),
 				new THREE.Vector3(59.9, 34.9, plane + 3000),
 			);
-			const triangle = new THREE.Triangle();
-			let intrusions = 0;
-			let triangles = 0;
-			root.traverse((o) => {
-				if (!(o instanceof THREE.Mesh)) return;
-				const p = o.geometry.getAttribute("position");
-				const ix = o.geometry.index;
-				for (let i = 0; i < (ix?.count ?? p.count); i += 3) {
-					for (const [j, v] of [triangle.a, triangle.b, triangle.c].entries())
-						v.fromBufferAttribute(p, ix ? ix.getX(i + j) : i + j).applyMatrix4(
-							o.matrixWorld,
-						);
-					if (
-						box.intersectsTriangle(triangle) ||
-						throat.intersectsTriangle(triangle)
-					)
-						intrusions++;
-					triangles++;
-				}
-			});
-			expect(triangles).toBeGreaterThan(1000);
-			expect(intrusions).toBe(0);
 			const radius =
 				Math.hypot(geometry.aperture.widthKm, geometry.aperture.heightKm) * 500;
 			const approach = new THREE.Box3(
 				new THREE.Vector3(-radius + 0.1, -radius + 0.1, plane + 0.1),
 				new THREE.Vector3(radius - 0.1, radius - 0.1, plane + 3000),
 			);
+			let intrusions = 0;
+			let triangles = 0;
 			let approachIntrusions = 0;
+			forEachWorldTriangle(root, (triangle) => {
+				if (
+					box.intersectsTriangle(triangle) ||
+					throat.intersectsTriangle(triangle)
+				)
+					intrusions++;
+				if (approach.intersectsTriangle(triangle)) approachIntrusions++;
+				triangles++;
+			});
+			expect(triangles).toBeGreaterThan(1000);
+			expect(intrusions).toBe(0);
+			expect(approachIntrusions).toBe(0);
 			root.traverse((o) => {
 				if (!(o instanceof THREE.Mesh)) return;
-				const p = o.geometry.getAttribute("position");
-				const ix = o.geometry.index;
-				for (let i = 0; i < (ix?.count ?? p.count); i += 3) {
-					for (const [j, v] of [triangle.a, triangle.b, triangle.c].entries())
-						v.fromBufferAttribute(p, ix ? ix.getX(i + j) : i + j).applyMatrix4(
-							o.matrixWorld,
-						);
-					if (approach.intersectsTriangle(triangle)) approachIntrusions++;
-				}
 				for (const m of Array.isArray(o.material) ? o.material : [o.material])
 					m.side = THREE.DoubleSide;
 			});
-			expect(approachIntrusions).toBe(0);
 			const ray = new THREE.Raycaster(
 				new THREE.Vector3(150, 0, plane + 50),
 				new THREE.Vector3(0, 0, -1),

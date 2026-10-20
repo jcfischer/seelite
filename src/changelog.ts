@@ -28,6 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1033 — proposed copy; principal approval required before merge.
 	{
 		date: "2026-10-20",
 		text: "Ring, Drum and Wheel trade stations have authored exteriors, with docking bays inside their hubs.",

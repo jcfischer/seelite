@@ -996,6 +996,24 @@ export async function fitOutpostProxies(): Promise<
 	return out;
 }
 
+function clipOutside(tris: Tri[], boxes: THREE.Box3[]): Tri[] {
+	let remaining = tris;
+	for (const box of boxes) {
+		const bounds = box.clone().expandByScalar(1);
+		const outside: Tri[] = [];
+		let inside = remaining;
+		for (let axis = 0; axis < 3; axis++) {
+			const normal = new THREE.Vector3().setComponent(axis, 1);
+			const [low, above] = cut(inside, normal, bounds.min.getComponent(axis));
+			const [middle, high] = cut(above, normal, bounds.max.getComponent(axis));
+			outside.push(...low, ...high);
+			inside = middle;
+		}
+		remaining = outside;
+	}
+	return remaining;
+}
+
 /** Fit trade exteriors with the existing 10 m part fitter (node #1033).
  * The drawn coaming's front face gets a thin proxy 1.25 m outside the plane,
  * clear of the bay keep-out after packing; independent checks hold its
@@ -1010,79 +1028,65 @@ export async function fitTradeProxies(): Promise<
 	const plane = bay.mouthAxialKm * 1000;
 	for (const form of TRADE_FORMS) {
 		const built = buildStationForm("trade", form, 0x888888, 0, 0);
-		const parts = partsOf(
-			built.root,
-			AUTHORED_EXTERIOR_NAME,
-			STATION_GEOMETRY.trade.coreRadiusKm,
-		);
-		keepOut = [
-			new THREE.Box3(
-				new THREE.Vector3(
-					-bay.halfAcrossKm * 1000,
-					-bay.halfUpKm * 1000,
-					bay.endAxialKm * 1000,
+		try {
+			const parts = partsOf(
+				built.root,
+				AUTHORED_EXTERIOR_NAME,
+				STATION_GEOMETRY.trade.coreRadiusKm,
+			);
+			keepOut = [
+				new THREE.Box3(
+					new THREE.Vector3(
+						-bay.halfAcrossKm * 1000,
+						-bay.halfUpKm * 1000,
+						bay.endAxialKm * 1000,
+					),
+					new THREE.Vector3(
+						bay.halfAcrossKm * 1000,
+						bay.halfUpKm * 1000,
+						plane,
+					),
 				),
-				new THREE.Vector3(bay.halfAcrossKm * 1000, bay.halfUpKm * 1000, plane),
-			),
-			new THREE.Box3(
-				new THREE.Vector3(
-					-bay.laneHalfAcrossKm * 1000,
-					-bay.laneHalfUpKm * 1000,
-					plane,
+				new THREE.Box3(
+					new THREE.Vector3(
+						-bay.laneHalfAcrossKm * 1000,
+						-bay.laneHalfUpKm * 1000,
+						plane,
+					),
+					new THREE.Vector3(
+						bay.laneHalfAcrossKm * 1000,
+						bay.laneHalfUpKm * 1000,
+						plane + 3000,
+					),
 				),
-				new THREE.Vector3(
-					bay.laneHalfAcrossKm * 1000,
-					bay.laneHalfUpKm * 1000,
-					plane + 3000,
+			];
+			fitLimitM = SAMPLE_LIMIT_M - 0.5;
+			const front = parts.map((part) =>
+				part
+					.filter((tri) => tri.every((v) => Math.abs(v.z - plane) < 0.001))
+					.map(
+						(tri) =>
+							tri.map((v) =>
+								v.clone().add(new THREE.Vector3(0, 0, 1.25)),
+							) as Tri,
+					),
+			);
+			const clipped = parts
+				.map((part) => clipOutside(part, keepOut))
+				.filter((part) => part.length);
+			out[form] = {
+				hull: stage(
+					`${form} trade`,
+					[...clipped, ...front.filter((part) => part.length)],
+					log,
 				),
-			),
-		];
-		fitLimitM = SAMPLE_LIMIT_M - 0.5;
-		const front = parts.map((part) =>
-			part
-				.filter((tri) => tri.every((v) => Math.abs(v.z - plane) < 0.001))
-				.map(
-					(tri) =>
-						tri.map((v) => v.clone().add(new THREE.Vector3(0, 0, 1.25))) as Tri,
-				),
-		);
-		const clipped = parts
-			.map((part) => {
-				let remaining = part;
-				for (const box of keepOut) {
-					const bounds = box.clone().expandByScalar(1);
-					const outside: Tri[] = [];
-					let inside = remaining;
-					for (let axis = 0; axis < 3; axis++) {
-						const normal = new THREE.Vector3().setComponent(axis, 1);
-						const [low, above] = cut(
-							inside,
-							normal,
-							bounds.min.getComponent(axis),
-						);
-						const [middle, high] = cut(
-							above,
-							normal,
-							bounds.max.getComponent(axis),
-						);
-						outside.push(...low, ...high);
-						inside = middle;
-					}
-					remaining = outside;
-				}
-				return remaining;
-			})
-			.filter((part) => part.length);
-		out[form] = {
-			hull: stage(
-				`${form} trade`,
-				[...clipped, ...front.filter((part) => part.length)],
-				log,
-			),
-		};
-		fitLimitM = SAMPLE_LIMIT_M;
-		keepOut = [];
-		built.dispose();
+			};
+		} finally {
+			fitLimitM = SAMPLE_LIMIT_M;
+			keepOut = [];
+			nearModel = null;
+			built.dispose();
+		}
 	}
 	return out;
 }

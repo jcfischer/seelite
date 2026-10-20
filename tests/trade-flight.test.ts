@@ -15,6 +15,7 @@ import {
 	AUTHORED_FIXTURE_NAMES,
 	SPEC_FIXTURE_NAMES,
 } from "../src/station-visuals";
+import { forEachWorldTriangle } from "./helpers/world-triangles";
 import { corridorIntrusions } from "./helpers/aperture-opening";
 import { inOpening, openingOf } from "./helpers/station-proxy-measure";
 import {
@@ -134,19 +135,14 @@ describe("authored trade forms, node #1033", () => {
 			const built = buildStationForm("trade", form, 0x888888, 7, 7);
 			built.root.updateMatrixWorld(true);
 			const triangles: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [];
-			built.root.traverse((o) => {
-				if (!(o instanceof THREE.Mesh)) return;
-				const p = o.geometry.getAttribute("position");
-				const ix = o.geometry.index;
-				for (let i = 0; i < (ix?.count ?? p.count); i += 3)
-					triangles.push(
-						[0, 1, 2].map((j) =>
-							new THREE.Vector3()
-								.fromBufferAttribute(p, ix ? ix.getX(i + j) : i + j)
-								.applyMatrix4(o.matrixWorld)
-								.multiplyScalar(STATION_GEOMETRY.trade.coreRadiusKm * 1000),
-						) as [THREE.Vector3, THREE.Vector3, THREE.Vector3],
-					);
+			forEachWorldTriangle(built.root, (triangle) => {
+				triangles.push(
+					[triangle.a, triangle.b, triangle.c].map((v) =>
+						v
+							.clone()
+							.multiplyScalar(STATION_GEOMETRY.trade.coreRadiusKm * 1000),
+					) as [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+				);
 			});
 			const grid = new TriangleGrid(triangles);
 			const proxy = stationProxy("trade", form, 7, 7)!;

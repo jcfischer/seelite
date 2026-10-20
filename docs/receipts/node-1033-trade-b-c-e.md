@@ -20,7 +20,7 @@ Pool membership, save data and `STATION_GEOMETRY.trade` are unchanged.
 
 ## Asset and geometry preflight
 
-Reproduce with the two Blender invocations, encoding command and proxy generator
+Reproduce with the two Blender invocations, encoding invocation and proxy generator
 under **Trade flight exports** in `spikes/stations/README.md`. The invocation
 split also reproduces Blender's material names. The native Blender executable
 needed sandbox escalation for Metal device initialization on this host.
@@ -71,7 +71,7 @@ berths, shared rotation, lamps, fallback and display reach.
 
 The existing Coriolis navigation helper accepts mount coordinates with unchanged
 defaults for Coriolis. The new forms use rays starting at 350 m, strobe mounts
-at ±150 m across and beacon mounts at ±130 m / 120 m. These intersect their
+at ±150 m across and beacon mounts at ±130 m / 120 m. These intersect their <!-- glossary-ignore: beacon -->
 own front structures. Lamp emission is normalized to `EMISSIVE_CEILING`.
 
 Measured maximum proxy reaches are b 0.743834 km, c 0.691096 km, e 0.944979 km.
@@ -184,8 +184,54 @@ The approach, flank, range and all three close-mouth frames were opened for
 inspection. Capture directories are gitignored by repository policy; the
 principal's production flight and yes are still outstanding.
 
-Final typecheck (also run by build), production build, explicit distribution
-size guard, format check, script lint and comment lint pass. The one final
-`npm test` run passes: 6,756 tests across 395 files, 0 failures,
-10,615,581 assertions, 979.73 seconds on this host. No implementation changes
-followed that run; the final commit records this evidence only.
+At pre-review head `2627684`, typecheck (also run by build), production build,
+explicit distribution size guard, format check, script lint and comment lint
+passed. Its one final `npm test` run passed: 6,756 tests across 395 files,
+0 failures, 10,615,581 assertions, 979.73 seconds on this host. That commit
+recorded verification only; the finish pass below requires fresh verification.
+
+## Sage round 1 finish pass
+
+- F1: The trade fitter now resets its keep-out, fitting limit and retained
+  triangle grid, and disposes the built station, in `finally`. An isolated
+  subprocess test interrupts fitting and verifies disposal and a successful
+  subsequent fit without leaking module mocks into other tests.
+- F2: `CONTEXT.md` now includes the Ring, Drum and Wheel in the authored
+  collision-proxy contract.
+- F3: One world-triangle visitor serves both geometry test files; bay, throat
+  and approach intrusion counts share one triangle walk. Retained triangles
+  are cloned before the visitor reuses its scratch triangle.
+- F4: One per-page trade-station getter and one framing helper replace the
+  probe's repeated lookup and close-shot placement bodies.
+- F5: Keep-out clipping is extracted without changing its planes or margins.
+- F6/F7: The three trade loaders share a factory; the authored trade proxy
+  cases are grouped, with the seeded Assembly case preserved.
+- F8: The changelog sentence is explicitly marked as proposed, requiring the
+  principal's approval before merge. It remains in `CHANGELOG` as required by
+  the binding same-PR rule; its presence on this unmerged branch does not
+  claim that approval. This worker cannot merge it. Production flight
+  approval also remains pending.
+- F9/F11: The receipt uses “invocation” and the wiring row uses “installation”.
+  F10: Navigation lamp terminology is narrowly annotated because it names a
+  physical mount, not the Pirate relay.
+
+Finish-pass verification (working diff on `2627684`):
+
+- Affected tests: 34 pass across five files, 0 failures, 1,012 assertions.
+  The interrupted-fit test also fails against the pre-review fitter on its
+  missing disposal (0 disposed instead of 1), checked in an isolated copy.
+- Typecheck, production build, explicit distribution-size guard, formatting,
+  script lint, wiring check and comment lint pass.
+- GPU model-queue probe: 20/20 checks, 78.8 seconds, ANGLE Metal / Apple M1
+  Pro, peak host load 15.6. The draw-call and triangle submissions match the
+  prior table exactly. The sandboxed Chromium launch aborted before any
+  checks; the authorized run outside the sandbox completed successfully.
+- Mandatory selection still expands to all 112 probes. The worker ran only
+  the affected model-queue probe; 111 were not run. This is development
+  coverage, not a `probe:pr` or full-suite pass. The supervisor owns that gate.
+- The single finish-pass full host `npm test` run passes: 6,757 tests across
+  396 files, 0 failures, 10,615,583 assertions, 986.94 seconds. Only this
+  verification entry was added after that run; no code changed afterward.
+
+This pass changes no model bytes, dimensions or production appearance; the
+prior affected-view captures remain the visual comparison for the principal.
