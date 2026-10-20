@@ -1,0 +1,146 @@
+# Model integration: trade Ring, Drum and Wheel — node #1033
+
+## Current result
+
+PR #826's accepted design commit `75f7b23` is merged into this node branch by
+`9d8ff09`. Main already carried the study bytes through the squash-merged
+outpost integrations; the merge retains their LFS representation and newer
+flight-export code. Appearance approval is the principal's 2026-10-09 ruling.
+Production appearance and the changelog sentence still require the principal's yes.
+
+Ring → trade `b`, Drum → `c`, Wheel → `e`. Each installs through the existing
+background queue, refreshes the live station once and stays procedural until
+then. Failed background downloads retain that stand-in and warn once. A home
+exterior follows the existing cockpit-plus-home boot contract; no unrelated
+trade model becomes a boot dependency. Postcards use the same model catalogue.
+
+Coriolis `a` retains its existing builder. Assembly `d` remains procedural,
+reads `assemblySeed`, uses its existing seeded proxy and has no shipped model.
+Pool membership, save data and `STATION_GEOMETRY.trade` are unchanged.
+
+## Asset and geometry preflight
+
+Reproduce with the two Blender invocations, encoding command and proxy generator
+under **Trade flight exports** in `spikes/stations/README.md`. The invocation
+split also reproduces Blender's material names. The native Blender executable
+needed sandbox escalation for Metal device initialization on this host.
+
+| Form | File under `src/models/` | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| b | trade-ring.glb | 5,874,216 | `21b26e71940bb0c696f218cc76932e69f647efa4e73a88a44fff86df65653416` |
+| c | trade-drum.glb | 4,893,288 | `794f414e1c84b77dd230bd0b96640cd74b7b279aa7816c14b2fb8c2dfa752c24` |
+| e | trade-wheel.glb | 6,442,844 | `ae73597becd8339c014b1623ab449a83984c065148c1922d800c409f1ea6f9ba` |
+
+Each is below 25,000,000 bytes. The prepare script verifies exact decoded
+vertex attributes, triangle surfaces and lossless WebP pixels against the flight
+export, and refuses oversized files. Meshopt uses the lossless NONE filter.
+Flight export density drops the same small plate details and bevel as the
+outposts; this is separate from the encoding's lossless guarantee.
+
+The studies stay unchanged. Only flight files ship, under Vite's hashed URLs.
+`npm run build` and `node scripts/check-dist-sizes.mjs dist` pass; all deployed
+files are within the guard's limit, including the three explicitly byte-bounded GLBs.
+
+### Frame and local adaptations
+
+The export uses metres, +Z outward along the docking axis. The game converts
+metres to kilometres, without a whole-model size adjustment. Study dock datums
+are Ring 173 m, Drum 485 m and Wheel 203 m; translation places each at the
+unchanged production aperture plane, 428 m.
+
+The sim bay remains 280 × 230 × 405 m, extending from 428 to 23 m. Ring's
+310 m hub and Wheel's 370 m hub become 390 m long, extending only aft while
+keeping their front faces fixed. The rear pressure skins then stand at about
+21.5 m, behind the bay's back. Drum needs no hull extension. A 40 m rendered
+mouth recess preserves the front wedges; the export clears the bay, 120 × 70 m
+throat and approach. The outward 140 m square carve contains the corridor's
+69.46 m radius. The sim's aperture, berth catalogue, traversal and spin stay
+authoritative. Production interior geometry is built by `buildStationInterior`.
+
+`tests/trade-flight-assets.test.ts` decodes every shipped GLB with the
+production GLTFLoader/Meshopt decoder (texture references removed for Bun),
+checks the datum within 1 cm, tests triangle/volume intersections in the bay,
+throat and approach, and ray-checks retained front wedges and rear closures.
+`tests/trade-flight.test.ts` builds the production adapter, checks the approach,
+berths, shared rotation, lamps, fallback and display reach.
+
+The existing Coriolis navigation helper accepts mount coordinates with unchanged
+defaults for Coriolis. The new forms use rays starting at 350 m, strobe mounts
+at ±150 m across and beacon mounts at ±130 m / 120 m. These intersect their
+own front structures. Lamp emission is normalized to `EMISSIVE_CEILING`.
+
+Measured maximum proxy reaches are b 0.743834 km, c 0.691096 km, e 0.944979 km.
+Display declarations are b 0.75 km, c 0.70 km, e unchanged at 0.98 km. The
+display budget is separate from the unchanged dockable core and aperture.
+
+### Collision
+
+`scripts/generate-trade-proxies.ts` uses the earlier stations' oriented-part
+fitter. Generated source hashes bind each proxy to the shipped GLB. The sim
+always uses the authored proxy, including while a procedural stand-in is drawn.
+All exterior boxes spin with the station; the static list is empty. The sim's
+bay walls and keep-out retain their existing ownership.
+
+Packed hull counts: b 3,507; c 1,621; e 5,116. Thin plates measure 0.8 m after
+packing. The fitter clips input triangles out of the sim-owned keep-out before
+subdivision, avoiding futile subdivision of front faces inside that volume.
+
+The tests independently measure packed boxes on the fitter's 1 m face grid
+against decoded triangles, under its conservative sample limit for the 10 m
+empty-space rule. They also hold every exterior vertex outside the sim opening
+within 1.5 m of the proxy. The existing station budget rows cover opening
+clearance, frame ownership and reach; the collision corpus remains applicable.
+
+## Runtime and performance evidence
+
+GPU lane: ANGLE Metal / Apple M1 Pro, 1440 × 900, High. The new cases in
+`probe-model-queue.mjs` boot at an Assembly, hold one trade GLB across a real
+jump, capture the procedural form, release it, wait for current-set settlement,
+capture the authored form, verify repeat refresh preserves the root, fly the
+docking computer into `deck-near`, and launch. All three pass. A separate
+refused Ring download stays procedural and warns once. The complete affected
+model-queue probe passes 20/20, including its prior full-catalog boot and jump rows.
+
+The three cases use seed 42: Ring system 1 from 5, Drum system 0 from 52,
+Wheel system 3 from 26. Each asserts the jump reached its target. A first
+fixture incorrectly attempted two out-of-range jumps; that run is superseded.
+The arrival effect is cleared for the captures; simulation geometry is retained.
+
+No additional LOD is introduced. The prepared Full exports reduce submitted
+calls relative to the procedural exteriors in the measured production near
+scene, including shadow submissions and navigation but hiding the interior:
+
+| Form | Procedural calls / triangles | Authored calls / triangles |
+| --- | ---: | ---: |
+| b | 92 / 71,740 | 57 / 102,368 |
+| c | 78 / 39,832 | 56 / 80,012 |
+| e | 177 / 85,964 | 89 / 245,996 |
+
+These are `renderer.info` submission counts, not mesh counts. They do not
+claim a frame-time speedup. The JSON under `probe-shots/trade-models/` also
+records 120 presentation intervals and cold-install maximum intervals; the
+initial timing run overlapped focused headless verification, so its timing
+figures are diagnostic rather than an isolated GPU-cost claim.
+
+The module uses the existing shared-resource disposal and system-identity
+refresh path: a jump during an awaited refresh cannot install into the old
+system. Postcards and full-model boots consume the extended catalogue without
+a separate loader. Failed background loads are terminal for that queue.
+
+## Delivery evidence
+
+- Loader, adapter, packing-fit and coverage rows: 16/16 pass.
+- Collision/station geometry/interior/system focused run: 105/105 pass.
+- Model URL ownership and literal hashed paths: 5/5 pass.
+- Typecheck and build pass; final full unit result will be recorded below.
+- Mandatory selector reports all 112 probes because the diff touches shared
+  runtime. The worker SOP reserves that full run for the supervisor. The
+  manually scoped development browser coverage is not a `probe:pr` pass.
+- The principal's in-game yes, changelog sentence approval and supervisor Sage
+  review remain merge gates; this worker does not open a PR or merge.
+- Changelog decision: major visual change; sentence proposed in `src/changelog.ts`.
+
+Canonical before captures are under `view-set/node-1033/node-1033-before`.
+Per-form production before/after frames are under `probe-shots/trade-models/`.
+Final canonical after captures and final gate results are recorded after the
+implementation commit. These capture directories are gitignored by repository policy.

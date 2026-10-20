@@ -66,10 +66,14 @@ for (const [id, name] of [
 	["rig", "rig"],
 	["cluster", "cluster"],
 	["salvage", "salvage"],
+	["ring", "ring"],
+	["drum", "drum"],
+	["wheel", "wheel"],
 ]) {
 	if (wanted.length && !wanted.includes(id)) continue;
 	const source = `.dream-loop/station-flight/${id}.glb`;
-	const target = `src/models/outpost-${name}.glb`;
+	const role = ["ring", "drum", "wheel"].includes(id) ? "trade" : "outpost";
+	const target = `src/models/${role}-${name}.glb`;
 	const document = await io.read(source);
 	const originalPixels = await pixels(document);
 	const approved = triangleSoup(document);
@@ -105,6 +109,7 @@ for (const [id, name] of [
 		`${target}: WebP changed texture pixels`,
 	);
 	const { size } = await stat(target);
+	assert(size < 25_000_000, `${target}: exceeds the flight asset budget`);
 	const sha256 = createHash("sha256")
 		.update(await readFile(target))
 		.digest("hex");

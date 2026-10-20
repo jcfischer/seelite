@@ -12,6 +12,12 @@ export const modelLoaders = {
 	cockpit: prepareCockpitModel,
 	coriolis: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./coriolis-flight")).prepareCoriolisModel(p),
+	"trade/b": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./trade-flight")).prepareTradeModel("b", p),
+	"trade/c": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./trade-flight")).prepareTradeModel("c", p),
+	"trade/e": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./trade-flight")).prepareTradeModel("e", p),
 	courier: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./courier-hull")).prepareCourierHullModel(p),
 	tug: async (p?: Parameters<ModelLoader>[0]) =>

@@ -18,6 +18,13 @@ export const CORIOLIS_GLB_URL = new URL(
 	"./models/coriolis.glb",
 	import.meta.url,
 ).href;
+
+/** Flight exports of the approved trade studies, node #1033. */
+export const TRADE_GLB_URLS = {
+	b: new URL("./models/trade-ring.glb", import.meta.url).href,
+	c: new URL("./models/trade-drum.glb", import.meta.url).href,
+	e: new URL("./models/trade-wheel.glb", import.meta.url).href,
+} as const;
 export const COURIER_COCKPIT_GLB_URL = new URL(
 	"./models/courier-cockpit.glb",
 	import.meta.url,

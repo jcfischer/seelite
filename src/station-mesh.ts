@@ -1014,12 +1014,19 @@ function mouthStrobes(
 export function buildCoriolisNavigation(
 	fixtures: StationFixture[],
 	structure: THREE.Object3D,
+	mounts = {
+		originZ: 0.4035,
+		strobeX: 0.25,
+		beaconX: 0.18,
+		beaconY: 0.16,
+		nameZ: 0.4035,
+	},
 ) {
 	const group = new THREE.Group();
 	group.name = "aperture";
 	const cast = castOntoStructure(structure, "trade");
 	const mount = (x: number, y: number) => {
-		const hit = cast(new THREE.Vector3(x, y, 0.4035), PLUS_Z, 0.15);
+		const hit = cast(new THREE.Vector3(x, y, mounts.originZ), PLUS_Z, 0.15);
 		if (!hit)
 			throw new Error("Coriolis navigation fitting has no mounting surface");
 		return hit.point;
@@ -1048,10 +1055,10 @@ export function buildCoriolisNavigation(
 	group.add(
 		mouthStrobes("trade", fixtures, w, h, bar, aperturePlaneKm - bar / 2),
 	);
-	group.add(buildMouthNameplate(aperture, 0.4035));
+	group.add(buildMouthNameplate(aperture, mounts.nameZ));
 	group.add(
 		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.copy(mount(side * 0.25, 0));
+			position.copy(mount(side * mounts.strobeX, 0));
 		}),
 	);
 	for (const side of [-1, 1]) {
@@ -1062,7 +1069,7 @@ export function buildCoriolisNavigation(
 				side < 0 ? "beacon-coriolis-a" : "beacon-coriolis-b", // glossary-ignore: beacon
 				side < 0 ? "strobe-a" : "strobe-b",
 				0,
-				mount(side * 0.18, 0.16),
+				mount(side * mounts.beaconX, mounts.beaconY),
 				PLUS_Z,
 				null,
 				0.6,
@@ -6384,14 +6391,14 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "b",
 			name: "Ring",
 			thesis: "spun torus on a fixed hub; the dock is a tunnel on the axis",
-			reachKm: 0.73,
+			reachKm: 0.75,
 			build: buildTradeRing,
 		},
 		{
 			id: "c",
 			name: "Drum",
 			thesis: "O'Neill barrel end-on; length rather than width is the cue",
-			reachKm: 0.66,
+			reachKm: 0.7,
 			build: buildTradeDrum,
 		},
 		{
@@ -6596,6 +6603,21 @@ export function installCoriolisBuilder(
 	builder: ((berthSeed: number, color: number) => StationMesh) | null,
 ) {
 	coriolisBuilder = builder;
+}
+
+export type AuthoredTradeForm = "b" | "c" | "e";
+const tradeBuilders = new Map<
+	AuthoredTradeForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** Install a trade exterior after its queued asset has loaded (node #1033). */
+export function installTradeBuilder(
+	form: AuthoredTradeForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) tradeBuilders.set(form, builder);
+	else tradeBuilders.delete(form);
 }
 
 export type ShipyardForm = "a" | "b" | "c";
@@ -6810,6 +6832,10 @@ export function buildStationForm(
 ): StationMesh {
 	if (type === "trade" && formId === "a" && coriolisBuilder)
 		return coriolisBuilder(berthSeed, color);
+	if (type === "trade") {
+		const authored = tradeBuilders.get(formId as AuthoredTradeForm);
+		if (authored) return authored(berthSeed, color);
+	}
 	if (type === "shipyard") {
 		const authored = shipyardBuilders.get(formId as ShipyardForm);
 		if (authored) return authored(berthSeed, color);

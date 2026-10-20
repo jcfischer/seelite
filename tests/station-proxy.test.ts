@@ -79,6 +79,10 @@ import {
 } from "./helpers/station-proxy-measure";
 import { codeOf } from "./lib/source-scan";
 import {
+	installShippedTrades,
+	uninstallTrades,
+} from "../scripts/lib/shipped-trades";
+import {
 	installShippedOutposts,
 	uninstallOutposts,
 } from "../scripts/lib/shipped-outposts";
@@ -163,11 +167,13 @@ beforeAll(async () => {
 	await installShippedShipyards();
 	await installShippedRefineries();
 	await installShippedOutposts();
+	await installShippedTrades();
 });
 afterAll(() => {
 	uninstallShipyards();
 	uninstallRefineries();
 	uninstallOutposts();
+	uninstallTrades();
 });
 
 describe("station proxy budget (collision.md §9.1.11)", () => {
@@ -175,10 +181,10 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		const proxy = stationProxy("trade", "e", 0, 0)!;
 		expect(proxy).not.toBeNull();
 		expect(proxy.static).toEqual([]);
-		for (const z of [-0.16, 0.16]) {
+		for (const z of [0.135, 0.305]) {
 			for (let i = 0; i < 4; i++) {
 				const theta = (i * Math.PI) / 2;
-				for (const r of [0.5, 0.9])
+				for (const r of [0.5])
 					expect(
 						proxyContains(
 							proxy.spinning,
@@ -193,7 +199,23 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			// whole disc would pass vertex containment but falsely close this.
 			expect(proxyContains(proxy.spinning, 0.4, 0.4, z, 0)).toBe(false);
 		}
-		expect(proxyContains(proxy.spinning, 0.9, 0, 0, 0)).toBe(false);
+		for (const [r, z] of [
+			[0.775, 0.095],
+			[0.81, 0.36],
+		])
+			for (let i = 0; i < 4; i++) {
+				const theta = (i * Math.PI) / 2;
+				expect(
+					proxyContains(
+						proxy.spinning,
+						r * Math.cos(theta),
+						r * Math.sin(theta),
+						z,
+						0,
+					),
+				).toBe(true);
+			}
+		expect(proxyContains(proxy.spinning, 0.81, 0, 0.225, 0)).toBe(false);
 	});
 
 	test("the trade Assembly's proxy reads the assembly seed, cell by cell", () => {
@@ -391,10 +413,10 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// opening and no-tunnelling rows carry the separate safety obligations.
 		const DECLARED: Partial<Record<string, number>> = {
 			"trade/a": 0.032,
-			"trade/b": 0.016,
-			"trade/c": 0.016,
+			"trade/b": 0.0008,
+			"trade/c": 0.0008,
 			"trade/d": 0.016,
-			"trade/e": 0.016,
+			"trade/e": 0.0008,
 			"shipyard/a": 0.0007,
 			"shipyard/b": 0.0007,
 			"shipyard/c": 0.0007,

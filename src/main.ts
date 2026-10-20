@@ -6947,6 +6947,8 @@ class Game {
 		else if (id === "asteroids") await this.refreshFields();
 		else if (id === "coriolis")
 			await this.refreshAuthoredStations("trade", "a");
+		else if (id.startsWith("trade/"))
+			await this.refreshAuthoredStations("trade", id.split("/")[1]);
 		else if (id.startsWith("shipyard/"))
 			await this.refreshAuthoredStations("shipyard", id.split("/")[1]);
 		else if (id.startsWith("refinery/"))

@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"lib/trade-model-probe.mjs",
+		"probe-model-queue passes its own tally's check and watch into the trade lifecycle cases",
+	],
+	[
 		"lib/opening-probe.mjs",
 		"Shared fixture receives the caller tally check/watch; every page is watched and both opening entrypoints own tally and exit.",
 	],

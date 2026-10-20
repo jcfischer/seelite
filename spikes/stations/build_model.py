@@ -657,6 +657,14 @@ exec((OUT/'final_shapes.py').read_text(),globals())
 # on drift.
 FLIGHT='--flight' in sys.argv
 G.FLIGHT=FLIGHT
+TRADE_FLIGHT_NAMES=('ring','drum','wheel')
+TRADE_PLANE_M=428
+TRADE_MOUTH_RECESS_M=40
+approved_dock_hub=dock_hub
+def dock_hub(w=32,h=28,length=32,z=0):
+ if FLIGHT and name in ('ring','wheel') and length<39:
+  z-=(39-length)/2;length=39
+ return approved_dock_hub(w,h,length,z)
 APERTURE_PLANE_M=165
 PAD_DECK_HALF_M=157.26   # stationInterior("outpost").halfAcrossKm
 PAD_HOLE_HALF_M=86.55    # .padHoleHalfKm
@@ -968,6 +976,28 @@ def carve_front(root,name):
   if dropped:print('CARVE',child.name,'whole parts',len(whole),'faces dropped',dropped,flush=True)
   bm.to_mesh(child.data);bm.free();child.data.update()
 
+def carve_trade(root,plane):
+ """Clear the sim's 280 x 230 x 405 m bay and recessed slot, without moving its berths."""
+ boxes=[((-141,-116,plane-406),(141,116,plane-TRADE_MOUTH_RECESS_M)),
+        ((-60.5,-35.5,plane-TRADE_MOUTH_RECESS_M-.1),(60.5,35.5,plane+3000)),
+        ((-70,-70,plane),(70,70,plane+3000))]
+ for child in root.children:
+  if child.type!='MESH':continue
+  bm=bmesh.new();bm.from_mesh(child.data)
+  for lo,hi in boxes:
+   def touches(f):
+    return all(min(v.co[k] for v in f.verts)<hi[k] and max(v.co[k] for v in f.verts)>lo[k] for k in range(3))
+   for axis in range(3):
+    for at in (lo[axis],hi[axis]):
+     near=[f for f in bm.faces if touches(f)]
+     geom=list(dict.fromkeys(near+[e for f in near for e in f.edges]+[v for f in near for v in f.verts]))
+     no=Vector((0,0,0));no[axis]=1
+     co=Vector((0,0,0));co[axis]=at
+     if geom:bmesh.ops.bisect_plane(bm,geom=geom,dist=1e-6,plane_co=co,plane_no=no)
+   inside=[f for f in bm.faces if all(lo[k]+1e-4<f.calc_center_median()[k]<hi[k]-1e-4 for k in range(3))]
+   if inside:bmesh.ops.delete(bm,geom=inside,context='FACES')
+  bm.to_mesh(child.data);bm.free();child.data.update()
+
 def export(name,info):
  root=bpy.data.objects.new('station-'+name,None);bpy.context.collection.objects.link(root)
  root['design']=name;root['author']='Codex';root['metres_per_author_unit']=10
@@ -985,16 +1015,20 @@ def export(name,info):
    mod=ob.modifiers.new('weighted-normals','WEIGHTED_NORMAL');mod.keep_sharp=True
  datum=bpy.data.objects.new('docking-centre',None);bpy.context.collection.objects.link(datum);datum.parent=root;datum.location=Vector(info['port'])*10;datum['axis']=info['axis']
  if FLIGHT:
-  if name in FLIGHT_FRAMES:carve_front(root,name)
-  else:clear_front(root)
+  trade=name in TRADE_FLIGHT_NAMES
+  plane=TRADE_PLANE_M if trade else APERTURE_PLANE_M
+  if not trade:
+   if name in FLIGHT_FRAMES:carve_front(root,name)
+   else:clear_front(root)
   # Move everything so the flight plane lies on +Z at the sim's.
-  offset=Vector((0,0,APERTURE_PLANE_M-FLIGHT_PLANE_M))
+  offset=Vector((0,0,plane-(info['port'][2]*10 if trade else FLIGHT_PLANE_M)))
   for child in root.children:
    if child.type=='MESH':
     for v in child.data.vertices:v.co+=offset
     child.data.update();child.update_tag()
-  datum.name='aperture-plane';datum.location=Vector((0,0,APERTURE_PLANE_M))
-  root['aperture_plane_m']=APERTURE_PLANE_M;root['flight_offset_m']=list(offset)
+  if trade:carve_trade(root,plane)
+  datum.name='aperture-plane';datum.location=Vector((0,0,plane))
+  root['aperture_plane_m']=plane;root['flight_offset_m']=list(offset)
   bpy.context.view_layer.update()
   # Intermediate: `prepare-flight-asset.mjs` encodes it into src/models/.
   flight=OUT.parent.parent/'.dream-loop'/'station-flight';flight.mkdir(parents=True,exist_ok=True);glb=flight/(name+'.glb')
@@ -1011,12 +1045,12 @@ def export(name,info):
 
 wanted=[a for a in sys.argv[sys.argv.index('--')+1:] if not a.startswith('--')] if '--' in sys.argv else []
 # Flight exports: the Salvage (node #1031) and outpost forms a-d (node #1032).
-if FLIGHT and (not wanted or any(a!='salvage' and a not in FLIGHT_FRAMES for a in wanted)):raise SystemExit('--flight builds salvage, derrick, buoy, rig or cluster: -- derrick --flight')
+if FLIGHT and (not wanted or any(a!='salvage' and a not in FLIGHT_FRAMES and a not in TRADE_FLIGHT_NAMES for a in wanted)):raise SystemExit('--flight requires a named trade or outpost form; Assembly stays procedural')
 for name,fn in [('ring',ring),('drum',drum),('assembly',assembly),('wheel',wheel),('derrick',derrick),('buoy',buoy),('rig',rig),('cluster',cluster),('salvage',salvage)]:
  if wanted and name not in wanted:continue
  bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();random.seed(810)
  print('BUILDING',name,flush=True);info=fn()
- if FLIGHT:
+ if FLIGHT and name not in TRADE_FLIGHT_NAMES:
   if name in FLIGHT_FRAMES:
    frame_batch(name);FLIGHT_PLANE_M=APERTURE_PLANE_M
   else:FLIGHT_PLANE_M=86.5
