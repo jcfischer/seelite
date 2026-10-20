@@ -17,6 +17,7 @@ import type { HullId } from "../src/hull";
 import { HULL_SPECS } from "../src/hull";
 import { JUMP_CHARGE_S } from "../src/hyperspace";
 import { HULL_REACH_KM } from "../src/ship-mesh";
+import { ASSIST_CAP_KMS } from "../src/sim";
 import { WITCHSPACE, witchspaceLook } from "../src/witchspace";
 import {
 	CROSSING,
@@ -203,15 +204,29 @@ describe("the ship's own motion through the plane (node #1006 C2, C3)", () => {
 
 	test("the crossing is flown, not teleported: its fastest step is a fraction of its span", () => {
 		const step = 1 / 60;
-		let fastest = 0;
-		for (let ageS = -CROSSING.crossS; ageS <= CROSSING.crossS; ageS += step) {
-			const a = emergenceOffset("arrival", ageS, DISTANCE, NOSE);
-			const b = emergenceOffset("arrival", ageS + step, DISTANCE, NOSE);
-			fastest = Math.max(fastest, Math.abs(b.z - a.z) / step);
+		// Every hull at its own lead: peak speed grows with the lead, so the
+		// carrier's ~0.46 km is the case the bound is about, not a courier's.
+		for (const hullId of Object.keys(HULL_SPECS) as HullId[]) {
+			const { env, envCentre } = HULL_SPECS[hullId];
+			const distance = crossingDistanceKm(env, envCentre);
+			for (const kind of ["arrival", "departure"] as const) {
+				let fastest = 0;
+				for (
+					let ageS = -CROSSING.crossS;
+					ageS <= CROSSING.crossS;
+					ageS += step
+				) {
+					const a = emergenceOffset(kind, ageS, distance, NOSE);
+					const b = emergenceOffset(kind, ageS + step, distance, NOSE);
+					fastest = Math.max(fastest, Math.abs(b.z - a.z) / step);
+				}
+				// A smoothstep peaks at 1.5× its mean rate: the span in `crossS`, eased.
+				expect(fastest * CROSSING.crossS).toBeLessThan(1.5 * distance + 1e-9);
+				// Under assisted flight's cap, so nothing a watcher has in front of
+				// them is crossable at this speed, and no swept test is stretched by it.
+				expect(fastest).toBeLessThan(ASSIST_CAP_KMS);
+			}
 		}
-		// Far under the 2 km/s combat cap, so nothing a watcher has in front of
-		// them is crossable at this speed, and no swept test is stretched by it.
-		expect(fastest).toBeLessThan(0.2);
 	});
 
 	test("a hull's own size sets the distance, so a carrier's crossing is a carrier's", () => {
