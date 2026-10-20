@@ -73,7 +73,9 @@ const isNonRuntime = (file) =>
 	file.startsWith("docs/") ||
 	file.startsWith("tests/") ||
 	file.endsWith(".md") ||
-	file === "biome.jsonc";
+	file === "biome.jsonc" ||
+	file === "eslint.config.mjs" ||
+	file === "eslint-suppressions.json";
 
 /** Several probe lists as one, each file once, in order. */
 const union = (...lists) => [...new Set(lists.flat())].sort();
