@@ -269,7 +269,6 @@ export function registryChanges(changedFiles, before, after) {
 	return changed.size ? [...changed].sort() : null;
 }
 
-/** Deterministic selection from both revisions. Unknown ownership expands all. */
 /** Files no browser probe can observe: documentation, headless tests and lint configuration. */
 export const isNonRuntime = (file) =>
 	file.startsWith("docs/") ||
@@ -279,6 +278,7 @@ export const isNonRuntime = (file) =>
 	file === "eslint.config.mjs" ||
 	file === "eslint-suppressions.json";
 
+/** Deterministic selection from both revisions. Unknown ownership expands all. */
 export function selectImpact(changedFiles, impact, inventory) {
 	if (
 		Object.keys(PROBE_ROOTS).length !== inventory.length ||
