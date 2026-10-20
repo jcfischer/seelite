@@ -106,10 +106,14 @@ export async function probeTradeModels(
 					if (o.name === "station-interior") saved.push([o, o.visible]);
 				});
 				const reset = g.renderer.info.autoReset;
+				const shadow = g.renderer.shadowMap;
+				const shadowState = [shadow.autoUpdate, shadow.needsUpdate];
 				try {
 					for (const [o] of saved)
 						if (o !== owner && !o.isLight) o.visible = false;
 					g.renderer.info.autoReset = false;
+					shadow.autoUpdate = false;
+					shadow.needsUpdate = false;
 					g.renderer.info.reset();
 					g.renderer.render(g.nearScene, g.nearCamera);
 					const { calls, triangles } = g.renderer.info.render;
@@ -117,6 +121,7 @@ export async function probeTradeModels(
 				} finally {
 					for (const [o, visible] of saved) o.visible = visible;
 					g.renderer.info.autoReset = reset;
+					[shadow.autoUpdate, shadow.needsUpdate] = shadowState;
 				}
 			});
 		const procedural = await measure();

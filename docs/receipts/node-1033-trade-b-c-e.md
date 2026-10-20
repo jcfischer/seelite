@@ -123,19 +123,25 @@ The arrival effect is cleared for the captures; simulation geometry is retained.
 
 No additional LOD is introduced. The prepared Full exports reduce submitted
 calls relative to the procedural exteriors in the measured production near
-scene, including shadow submissions and navigation but hiding the interior:
+scene's colour pass, including navigation but hiding the interior. Shadow-map
+updates are pinned in both arms so an opportunistic depth pass cannot bias the
+comparison:
 
 | Form | Procedural calls / triangles | Authored calls / triangles |
 | --- | ---: | ---: |
-| b | 92 / 71,740 | 57 / 102,368 |
-| c | 78 / 39,832 | 56 / 80,012 |
-| e | 177 / 85,964 | 89 / 245,996 |
+| b | 92 / 71,740 | 57 / 102,416 |
+| c | 78 / 39,832 | 56 / 80,060 |
+| e | 105 / 43,000 | 58 / 123,064 |
 
 These are `renderer.info` submission counts, not mesh counts. They do not
 claim a frame-time speedup. The JSON under `probe-shots/trade-models/` also
-records 120 presentation intervals and cold-install maximum intervals; the
-initial timing run overlapped focused headless verification, so its timing
-figures are diagnostic rather than an isolated GPU-cost claim.
+records 120 presentation intervals and cold-install maximum intervals. On the
+final run, median / p95 / maximum cold-install intervals were Ring
+8.4 / 25.2 / 225.2 ms, Drum 8.4 / 24.8 / 150.3 ms, Wheel
+8.5 / 25.7 / 175.1 ms. This worker ran no other suite alongside it, but host
+load was about 26 on the shared M1 Pro; these timings are diagnostics rather
+than an isolated GPU-cost claim. Earlier timing and unpinned-shadow runs are
+superseded by this colour-pass comparison.
 
 The module uses the existing shared-resource disposal and system-identity
 refresh path: a jump during an awaited refresh cannot install into the old
