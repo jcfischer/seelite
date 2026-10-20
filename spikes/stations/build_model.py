@@ -999,6 +999,8 @@ def carve_trade(root,plane):
   bm.to_mesh(child.data);bm.free();child.data.update()
 
 def export(name,info):
+ if FLIGHT and name in TRADE_FLIGHT_NAMES:
+  frame((0,0,info['port'][2]-TRADE_MOUTH_RECESS_M/20),12.1,7.1,TRADE_MOUTH_RECESS_M/10,3.5,steel)
  root=bpy.data.objects.new('station-'+name,None);bpy.context.collection.objects.link(root)
  root['design']=name;root['author']='Codex';root['metres_per_author_unit']=10
  root['docking_kind']='slot' if name in ['ring','drum','assembly','wheel'] else 'pad'

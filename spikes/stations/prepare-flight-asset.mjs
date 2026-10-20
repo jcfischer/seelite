@@ -1,4 +1,4 @@
-// The game's authored outposts (nodes #1031 and #1032): the approved studies
+// The game's authored trade and outpost forms (nodes #1031–1033): the approved studies
 // (#810) as flight exports, Meshopt and lossless WebP, written to src/models/. The flight
 // export is `build_model.py -- <name> --flight`: the approved layout without
 // plate fasteners, seam strips, wear trails or the cladding bevel, its front
@@ -70,9 +70,10 @@ for (const [id, name] of [
 	["drum", "drum"],
 	["wheel", "wheel"],
 ]) {
-	if (wanted.length && !wanted.includes(id)) continue;
+	const trade = ["ring", "drum", "wheel"].includes(id);
+	if (wanted.length ? !wanted.includes(id) : trade) continue;
 	const source = `.dream-loop/station-flight/${id}.glb`;
-	const role = ["ring", "drum", "wheel"].includes(id) ? "trade" : "outpost";
+	const role = trade ? "trade" : "outpost";
 	const target = `src/models/${role}-${name}.glb`;
 	const document = await io.read(source);
 	const originalPixels = await pixels(document);

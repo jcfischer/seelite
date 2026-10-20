@@ -17,10 +17,10 @@ import {
 	stationSilhouetteKm,
 } from "./station-mesh";
 import { AUTHORED_EXTERIOR_NAME } from "./station-visuals";
+import { TRADE_MOUTH_RECESS_KM } from "./trade-frame";
 
 export const TRADE_FORMS: readonly AuthoredTradeForm[] = ["b", "c", "e"];
 export const TRADE_MODEL_NAMES = { b: "ring", c: "drum", e: "wheel" } as const;
-export const TRADE_MOUTH_RECESS_KM = 0.04;
 
 export function createTradeBuilder(
 	form: AuthoredTradeForm,

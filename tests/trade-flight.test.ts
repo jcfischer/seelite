@@ -10,7 +10,11 @@ import { TRADE_FORMS } from "../src/trade-flight";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
 import { buildStationForm, stationSilhouetteKm } from "../src/station-mesh";
-import { isAuthoredStation } from "../src/station-visuals";
+import {
+	isAuthoredStation,
+	AUTHORED_FIXTURE_NAMES,
+	SPEC_FIXTURE_NAMES,
+} from "../src/station-visuals";
 import { corridorIntrusions } from "./helpers/aperture-opening";
 import { inOpening, openingOf } from "./helpers/station-proxy-measure";
 import {
@@ -79,6 +83,9 @@ describe("authored trade forms, node #1033", () => {
 			});
 			expect(reach).toBeLessThanOrEqual(stationSilhouetteKm("trade", form));
 			expect(mesh.fixtures.length).toBeGreaterThan(0);
+			expect(AUTHORED_FIXTURE_NAMES.trade).toEqual(SPEC_FIXTURE_NAMES.trade);
+			for (const name of AUTHORED_FIXTURE_NAMES.trade!)
+				expect(mesh.root.getObjectByName(name)).toBeDefined();
 			mesh.dispose();
 		});
 		test(`${form}: the sim uses the shipped authored proxy with its stand-in too`, async () => {
@@ -122,6 +129,45 @@ describe("authored trade forms, node #1033", () => {
 						missed++;
 				}
 			expect(missed).toBe(0);
+		}, 120000);
+		test(`${form}: the final composed proxy adds no wall more than 10 m from drawn surfaces`, () => {
+			const built = buildStationForm("trade", form, 0x888888, 7, 7);
+			built.root.updateMatrixWorld(true);
+			const triangles: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [];
+			built.root.traverse((o) => {
+				if (!(o instanceof THREE.Mesh)) return;
+				const p = o.geometry.getAttribute("position");
+				const ix = o.geometry.index;
+				for (let i = 0; i < (ix?.count ?? p.count); i += 3)
+					triangles.push(
+						[0, 1, 2].map((j) =>
+							new THREE.Vector3()
+								.fromBufferAttribute(p, ix ? ix.getX(i + j) : i + j)
+								.applyMatrix4(o.matrixWorld)
+								.multiplyScalar(STATION_GEOMETRY.trade.coreRadiusKm * 1000),
+						) as [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+					);
+			});
+			const grid = new TriangleGrid(triangles);
+			const proxy = stationProxy("trade", form, 7, 7)!;
+			const far = proxy.spinning.filter((p) => {
+				if (p.kind !== "box") throw Error("expected authored box");
+				const axes = p.axes?.map((a) => new THREE.Vector3(a.x, a.y, a.z)) ?? [
+					new THREE.Vector3(1, 0, 0),
+					new THREE.Vector3(0, 1, 0),
+					new THREE.Vector3(0, 0, 1),
+				];
+				return overreaches(
+					{
+						c: new THREE.Vector3(p.cx, p.cy, p.cz).multiplyScalar(1000),
+						half: [p.hx * 1000, p.hy * 1000, p.hz * 1000],
+						axes: axes as Obb["axes"],
+					},
+					grid,
+				);
+			});
+			built.dispose();
+			expect(far.length).toBe(0);
 		}, 120000);
 	}
 	test("uninstalled trade forms stay procedural; Assembly is never an authored model", async () => {

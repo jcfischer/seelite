@@ -996,7 +996,10 @@ export async function fitOutpostProxies(): Promise<
 	return out;
 }
 
-/** Fit trade exteriors with the existing 10 m part fitter (node #1033). */
+/** Fit trade exteriors with the existing 10 m part fitter (node #1033).
+ * The drawn coaming's front face gets a thin proxy 1.25 m outside the plane,
+ * clear of the bay keep-out after packing; independent checks hold its
+ * distance to the source, and source coverage, within their measured limits. */
 export async function fitTradeProxies(): Promise<
 	Record<string, { hull: Obb[] }>
 > {
@@ -1035,6 +1038,14 @@ export async function fitTradeProxies(): Promise<
 			),
 		];
 		fitLimitM = SAMPLE_LIMIT_M - 0.5;
+		const front = parts.map((part) =>
+			part
+				.filter((tri) => tri.every((v) => Math.abs(v.z - plane) < 0.001))
+				.map(
+					(tri) =>
+						tri.map((v) => v.clone().add(new THREE.Vector3(0, 0, 1.25))) as Tri,
+				),
+		);
 		const clipped = parts
 			.map((part) => {
 				let remaining = part;
@@ -1062,7 +1073,13 @@ export async function fitTradeProxies(): Promise<
 				return remaining;
 			})
 			.filter((part) => part.length);
-		out[form] = { hull: stage(`${form} trade`, clipped, log) };
+		out[form] = {
+			hull: stage(
+				`${form} trade`,
+				[...clipped, ...front.filter((part) => part.length)],
+				log,
+			),
+		};
 		fitLimitM = SAMPLE_LIMIT_M;
 		keepOut = [];
 		built.dispose();

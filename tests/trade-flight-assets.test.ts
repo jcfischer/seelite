@@ -86,6 +86,22 @@ describe("trade flight exports, node #1033", () => {
 				new THREE.Vector3(150, 0, plane + 50),
 				new THREE.Vector3(0, 0, -1),
 			);
+			for (const [x, y] of [
+				[64, 0],
+				[0, 39],
+			]) {
+				ray.set(
+					new THREE.Vector3(x, y, plane + 10),
+					new THREE.Vector3(0, 0, -1),
+				);
+				const support = ray.intersectObject(root, true)[0];
+				expect(support).toBeDefined();
+				expect(Math.abs(support!.point.z - plane)).toBeLessThan(0.01);
+			}
+			ray.set(
+				new THREE.Vector3(150, 0, plane + 50),
+				new THREE.Vector3(0, 0, -1),
+			);
 			expect(
 				ray
 					.intersectObject(root, true)

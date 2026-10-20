@@ -67,6 +67,28 @@ export async function probeTradeModels(
 			JSON.stringify(standIn),
 		);
 		await page.screenshot({ path: `${out}/${name}-before.png` });
+		const closeShot = async (label) => {
+			await page.evaluate(async () => {
+				const g = window.__seelite;
+				const id = g.world.system.contents.stations.find(
+					(s) => s.type === "trade",
+				).id;
+				await window.__viewAlongAxis(id, 0.65);
+				g.view = "cockpit";
+				g.render(0);
+			});
+			await page.screenshot({ path: `${out}/${name}-mouth-${label}.png` });
+			await page.evaluate(async () => {
+				const g = window.__seelite;
+				const id = g.world.system.contents.stations.find(
+					(s) => s.type === "trade",
+				).id;
+				await window.__viewAlongAxis(id, 3);
+				g.view = "chase";
+				g.render(0);
+			});
+		};
+		await closeShot("before");
 		const measure = async () =>
 			page.evaluate(() => {
 				const g = window.__seelite;
@@ -158,6 +180,7 @@ export async function probeTradeModels(
 			JSON.stringify({ attempts, ...installed }),
 		);
 		await page.screenshot({ path: `${out}/${name}-after.png` });
+		await closeShot("after");
 		const dock = await page.evaluate(async (id) => {
 			await window.__parkInBerth(id, "deck-near");
 			const g = window.__seelite;

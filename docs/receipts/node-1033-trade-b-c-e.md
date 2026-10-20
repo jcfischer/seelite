@@ -27,9 +27,9 @@ needed sandbox escalation for Metal device initialization on this host.
 
 | Form | File under `src/models/` | Bytes | SHA-256 |
 | --- | --- | ---: | --- |
-| b | trade-ring.glb | 5,874,216 | `21b26e71940bb0c696f218cc76932e69f647efa4e73a88a44fff86df65653416` |
-| c | trade-drum.glb | 4,893,288 | `794f414e1c84b77dd230bd0b96640cd74b7b279aa7816c14b2fb8c2dfa752c24` |
-| e | trade-wheel.glb | 6,442,844 | `ae73597becd8339c014b1623ab449a83984c065148c1922d800c409f1ea6f9ba` |
+| b | trade-ring.glb | 5,875,120 | `16e59c914e5c9e229636f839a15fff616b40b0b10fc16613cec4f530521e2a05` |
+| c | trade-drum.glb | 4,894,180 | `c9a95bb2c0ea2c4abef69d0af0ea890df6c6b29f611a021c95c489cc47e5141a` |
+| e | trade-wheel.glb | 6,443,744 | `9ea91aa845efb1ce05de14af68b1911a8c636788db574cef19d0c2526bcb0cd3` |
 
 Each is below 25,000,000 bytes. The prepare script verifies exact decoded
 vertex attributes, triangle surfaces and lossless WebP pixels against the flight
@@ -56,6 +56,11 @@ mouth recess preserves the front wedges; the export clears the bay, 120 × 70 m
 throat and approach. The outward 140 m square carve contains the corridor's
 69.46 m radius. The sim's aperture, berth catalogue, traversal and spin stay
 authoritative. Production interior geometry is built by `buildStationInterior`.
+A 40 m local slot liner joins that recessed mouth to the aperture lamps at
+428 m. Its 121 × 71 m clear opening gives the sim's 120 × 70 m slot 0.5 m
+clearance on each side; its outer frame meets the study's larger opening.
+Loader-backed rays verify actual support behind the aperture lamps, rather
+than a floating rectangle inside the study's hole.
 
 `tests/trade-flight-assets.test.ts` decodes every shipped GLB with the
 production GLTFLoader/Meshopt decoder (texture references removed for Bun),
@@ -79,17 +84,27 @@ display budget is separate from the unchanged dockable core and aperture.
 fitter. Generated source hashes bind each proxy to the shipped GLB. The sim
 always uses the authored proxy, including while a procedural stand-in is drawn.
 All exterior boxes spin with the station; the static list is empty. The sim's
-bay walls and keep-out retain their existing ownership.
+bay keep-out stays unchanged. Side and rear shell proxies stop at the rendered
+mouth, 388 m; no synthetic forward bulkhead is added at the 428 m aperture.
+An interior mouth wall would lie inside the sim-owned bay keep-out; entry and
+traversal own that transition.
 
-Packed hull counts: b 3,507; c 1,621; e 5,116. Thin plates measure 0.8 m after
+Packed hull counts: b 3,503; c 1,615; e 5,127. Thin plates measure 0.8 m after
 packing. The fitter clips input triangles out of the sim-owned keep-out before
 subdivision, avoiding futile subdivision of front faces inside that volume.
+Coplanar coaming-front triangles receive fitting copies 1.25 m outward, keeping
+their thin proxies clear of the bay after packing. The drawn surface stays at
+428 m; the independent source-distance and vertex-coverage rows bind the offset.
 
 The tests independently measure packed boxes on the fitter's 1 m face grid
 against decoded triangles, under its conservative sample limit for the 10 m
 empty-space rule. They also hold every exterior vertex outside the sim opening
 within 1.5 m of the proxy. The existing station budget rows cover opening
 clearance, frame ownership and reach; the collision corpus remains applicable.
+The final composed proxy is also sampled against all drawn surfaces. This
+regression failed on eight synthetic wall boxes per form before the shell
+correction and passes after it; fitting only the generated exterior boxes
+would not have caught that composition defect.
 
 ## Runtime and performance evidence
 
@@ -129,7 +144,8 @@ a separate loader. Failed background loads are terminal for that queue.
 
 ## Delivery evidence
 
-- Loader, adapter, packing-fit and coverage rows: 16/16 pass.
+- Final loader, adapter, packing-fit, composed-proxy, coverage and model URL run:
+  24/24 pass, 474 assertions, on the final liner exports and generated proxies.
 - Collision/station geometry/interior/system focused run: 105/105 pass.
 - Model URL ownership and literal hashed paths: 5/5 pass.
 - Typecheck and build pass; final full unit result will be recorded below.
@@ -139,6 +155,11 @@ a separate loader. Failed background loads are terminal for that queue.
 - The principal's in-game yes, changelog sentence approval and supervisor Sage
   review remain merge gates; this worker does not open a PR or merge.
 - Changelog decision: major visual change; sentence proposed in `src/changelog.ts`.
+
+The first six-probe development run passed collision (35/35), docking (73/73),
+postcard (47/47), production boot (3/3) and station mouth (7/7). Station visuals
+found a missing authored-trade fixture catalogue row; it now reuses the existing
+trade names, and a focused rerun passes. No pixel threshold was changed.
 
 Canonical before captures are under `view-set/node-1033/node-1033-before`.
 Per-form production before/after frames are under `probe-shots/trade-models/`.

@@ -54,6 +54,7 @@ import { type ApertureFrame, frameAtPhase, slotBasis } from "./docking";
 import type { StationFormId, StationPlan, StationType } from "./station";
 import { STATION_GEOMETRY } from "./station";
 import { TRADE_PROXIES } from "./trade-proxies";
+import { TRADE_MOUTH_RECESS_KM } from "./trade-frame";
 import { HULL_SPECS } from "./hull";
 import {
 	admittedHulls,
@@ -641,10 +642,15 @@ function tradeWheelProxy(): StationProxy {
  */
 const BAY_WALL_KM = 0.005;
 const MOUTH_WALL_KM = 0.002;
-function bayWalls(type: StationType = "shipyard"): ProxyBox[] {
+function bayWalls(
+	type: StationType = "shipyard",
+	recessKm = 0,
+	closeMouth = true,
+): ProxyBox[] {
 	const plane = STATION_GEOMETRY[type].aperturePlaneKm;
 	const bay = stationInterior(type, plane);
-	const [end, mouth] = interiorAxialSpanKm(bay);
+	const [end, planeMouth] = interiorAxialSpanKm(bay);
+	const mouth = planeMouth - recessKm;
 	const hx = bay.halfAcrossKm;
 	const hy = bay.halfUpKm;
 	const w = BAY_WALL_KM;
@@ -656,7 +662,7 @@ function bayWalls(type: StationType = "shipyard"): ProxyBox[] {
 		[axial(hx + w, hy + w, mouth, mouth + MOUTH_WALL_KM)],
 		[axial(bay.laneHalfAcrossKm, bay.laneHalfUpKm, mouth, Infinity)],
 	);
-	return [...shell, ...mouthWall];
+	return closeMouth ? [...shell, ...mouthWall] : shell;
 }
 
 function unpack(
@@ -739,7 +745,7 @@ function authoredTradeProxy(form: keyof typeof TRADE_PROXIES): StationProxy {
 	if (!proxy) {
 		proxy = proxyOf([
 			...outsideTheBay(tradeProxyBoxes(form), "trade"),
-			...bayWalls("trade"),
+			...bayWalls("trade", TRADE_MOUTH_RECESS_KM, false),
 		]);
 		authoredTrades.set(form, proxy);
 	}
