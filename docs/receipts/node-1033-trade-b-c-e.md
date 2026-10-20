@@ -167,7 +167,25 @@ postcard (47/47), production boot (3/3) and station mouth (7/7). Station visuals
 found a missing authored-trade fixture catalogue row; it now reuses the existing
 trade names, and a focused rerun passes. No pixel threshold was changed.
 
-Canonical before captures are under `view-set/node-1033/node-1033-before`.
-Per-form production before/after frames are under `probe-shots/trade-models/`.
-Final canonical after captures and final gate results are recorded after the
-implementation commit. These capture directories are gitignored by repository policy.
+Final GPU development checks on the liner exports pass: model queue 20/20,
+production boot 3/3 and station visuals 92/92. The latter pair was a manual
+two-probe run, with the other 110 probes explicitly not run. The final selector
+still expands to all 112; `probe:pr` remains the supervisor's gate.
+
+Canonical before captures are under `view-set/node-1033/node-1033-before`, at
+`9d8ff09-dirty` (only spike-export work was in progress; runtime was unchanged).
+After captures are under `view-set/node-1033/node-1033-after`, at clean
+`50c62a8`. Both manifests prove the serving tree and ANGLE Metal M1 Pro renderer.
+The four selected canonical rows are station-approach, station-flank,
+station-outline and station-range; this is an affected-view set, not all views.
+The combined sheet is `view-set/node-1033/index.html`. Per-form production
+before/after and close-mouth frames are under `probe-shots/trade-models/`.
+The approach, flank, range and all three close-mouth frames were opened for
+inspection. Capture directories are gitignored by repository policy; the
+principal's production flight and yes are still outstanding.
+
+Final typecheck (also run by build), production build, explicit distribution
+size guard, format check, script lint and comment lint pass. The one final
+`npm test` run passes: 6,756 tests across 395 files, 0 failures,
+10,615,581 assertions, 979.73 seconds on this host. No implementation changes
+followed that run; the final commit records this evidence only.
