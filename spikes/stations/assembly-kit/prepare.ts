@@ -1,74 +1,57 @@
-import { Document, NodeIO } from "@gltf-transform/core";
-import * as THREE from "three";
-import { authorKit } from "./blocks";
+import { readFile, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 export async function kitBinary() {
-	const doc = new Document(),
-		buffer = doc.createBuffer(),
-		scene = doc.createScene();
-	const source = authorKit();
-	for (const block of source.children) {
-		const node = doc.createNode(block.name);
-		scene.addChild(node);
-		for (const object of block.children) {
-			const mesh = object as THREE.Mesh<
-				THREE.BufferGeometry,
-				THREE.MeshStandardMaterial
-			>;
-			const material = doc
-				.createMaterial(mesh.material.name)
-				.setBaseColorFactor([
-					mesh.material.color.r,
-					mesh.material.color.g,
-					mesh.material.color.b,
-					1,
-				])
-				.setRoughnessFactor(mesh.material.roughness)
-				.setMetallicFactor(mesh.material.metalness)
-				.setEmissiveFactor(
-					mesh.material.emissive
-						.clone()
-						.multiplyScalar(mesh.material.emissiveIntensity)
-						.toArray() as [number, number, number],
-				);
-			const primitive = doc.createPrimitive().setMaterial(material);
-			for (const [name, semantic, type] of [
-				["position", "POSITION", "VEC3"],
-				["normal", "NORMAL", "VEC3"],
-				["uv", "TEXCOORD_0", "VEC2"],
-			] as const) {
-				primitive.setAttribute(
-					semantic,
-					doc
-						.createAccessor()
-						.setType(type)
-						.setArray(new Float32Array(mesh.geometry.getAttribute(name).array))
-						.setBuffer(buffer),
-				);
-			}
-			node.addChild(
-				doc
-					.createNode(mesh.name)
-					.setMesh(doc.createMesh(mesh.name).addPrimitive(primitive)),
-			);
-		}
-	}
-	const bytes = await new NodeIO().writeBinary(doc);
-	source.traverse((o) => {
-		if (o instanceof THREE.Mesh) {
-			o.geometry.dispose();
-			o.material.dispose();
-		}
-	});
-	return bytes;
+	return new Uint8Array(await readFile(new URL("blocks.glb", import.meta.url)));
 }
 
 if (import.meta.main) {
-	const bytes = await kitBinary();
-	await Bun.write(new URL("blocks.glb", import.meta.url), bytes);
-	await Bun.write(
-		new URL("asset.json", import.meta.url),
-		`${JSON.stringify({ bytes: bytes.byteLength, sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"), units: "km", blocks: ["HUB", "HUB_STATIC", "NODE", "TUBE"] }, null, 2)}\n`,
+	const blender =
+		process.env.BLENDER ?? "/Applications/Blender.app/Contents/MacOS/Blender";
+	const result = spawnSync(
+		blender,
+		[
+			"--background",
+			"--python-exit-code",
+			"1",
+			"--python",
+			new URL("build_kit.py", import.meta.url).pathname,
+		],
+		{ stdio: "inherit" },
 	);
-	console.log(`Prepared Assembly spike: ${bytes.byteLength} bytes`);
+	if (result.error) throw result.error;
+	if (result.status !== 0) throw Error("Blender exited " + result.status);
+	const bytes = await kitBinary();
+	const buffer = Buffer.from(bytes);
+	const doc = JSON.parse(
+		buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString(),
+	);
+	const asset = {
+		batches: doc.meshes.reduce(
+			(n: number, mesh: { primitives: unknown[] }) =>
+				n + mesh.primitives.length,
+			0,
+		),
+		bytes: bytes.byteLength,
+		sha256: createHash("sha256").update(bytes).digest("hex"),
+		units: "km",
+		blocks: ["HUB", "HUB_STATIC", "NODE", "TUBE"],
+		authoring:
+			"Blender build_kit.py via stations/build_model.py and geometry.py",
+		source: "blocks.blend",
+		sourceSha256: createHash("sha256")
+			.update(await readFile(new URL("blocks.blend", import.meta.url)))
+			.digest("hex"),
+		texture: "../industrial-surface.png",
+	};
+	if (bytes.byteLength >= 25_000_000)
+		throw Error("Study GLB exceeds node size limit");
+	await writeFile(
+		new URL("asset.json", import.meta.url),
+		JSON.stringify(asset, null, 2) + "\n",
+	);
+	console.log(
+		"Prepared Blender Assembly spike: " + bytes.byteLength + " bytes",
+	);
 }

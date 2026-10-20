@@ -3,8 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { buildSpike } from "./assembly";
-import { CELL_KM } from "./blocks";
-import { NODE, TUBE_X, TUBE_Y } from "../../../src/station-modular";
+import { jointForSeed } from "./joints";
 import { STATION_GEOMETRY } from "../../../src/station";
 
 const renderer = new THREE.WebGLRenderer({
@@ -61,34 +60,14 @@ function frame(view: string) {
 		offset.set(0.24, 0.3, 0.54);
 	}
 	if (view === "joint") {
-		const node =
-			[...current!.placements]
-				.sort((a, b) => Math.hypot(b.dx, b.dy) - Math.hypot(a.dx, a.dy))
-				.find(
-					(p) =>
-						p.module === NODE &&
-						p.beside.some((m) => m === TUBE_X || m === TUBE_Y),
-				) ?? current!.placements.find((p) => p.module === NODE);
-		if (!node) throw Error(`Seed ${state.seed} has no NODE for joint evidence`);
-		const dir = node.beside.findIndex((m) => m === TUBE_X || m === TUBE_Y);
-		const axes = [
-			[-1, 0],
-			[1, 0],
-			[0, -1],
-			[0, 1],
-		];
-		const axis = axes[Math.max(0, dir)];
-		target.set(
-			node.dx * CELL_KM + (axis[0] * CELL_KM) / 2,
-			node.dy * CELL_KM + (axis[1] * CELL_KM) / 2,
-			0,
-		);
+		const selected = jointForSeed(state.seed);
+		target.fromArray(selected.target);
 		offset.set(
-			Math.sign(node.dx || 1) * 0.16,
-			Math.sign(node.dy || 1) * 0.14,
+			Math.sign(selected.target[0] || 1) * 0.16,
+			Math.sign(selected.target[1] || 1) * 0.14,
 			0.4,
 		);
-		joint = { dx: node.dx, dy: node.dy, beside: node.beside, direction: dir };
+		joint = selected;
 	}
 	camera.position.copy(target).add(offset);
 	controls.target.copy(target);

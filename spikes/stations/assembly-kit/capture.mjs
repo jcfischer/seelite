@@ -74,6 +74,12 @@ try {
 			await Promise.all(
 				[
 					"blocks.ts",
+					"build_kit.py",
+					"../build_model.py",
+					"../geometry.py",
+					"../final_shapes.py",
+					"../industrial-surface.png",
+					"joints.ts",
 					"assembly.ts",
 					"prepare.ts",
 					"viewer.ts",
@@ -113,7 +119,7 @@ try {
 			const after = rows.find(
 				(a) => a.authored && a.seed === r.seed && a.view === r.view,
 			);
-			return `<h2>Seed ${r.seed} · ${r.view}</h2><div class="pair">${[r, after].map((a) => `<figure><a href="${a.file}"><img src="${a.file}" alt="Seed ${a.seed}, ${a.view}, ${a.authored ? "authored" : "procedural"}"></a><figcaption>${a.authored ? "Authored HUB / NODE / TUBE" : "Procedural baseline"} · ${a.calls} calls · ${a.triangles.toLocaleString()} triangles</figcaption></figure>`).join("")}</div>`;
+			return `<h2>Seed ${r.seed} · ${r.view}${r.framing.joint ? ` · ${r.framing.joint.kind}` : ""}</h2><div class="pair">${[r, after].map((a) => `<figure><a href="${a.file}"><img src="${a.file}" alt="Seed ${a.seed}, ${a.view}, ${a.authored ? "authored" : "procedural"}"></a><figcaption>${a.authored ? "Authored HUB / NODE / TUBE" : "Procedural baseline"} · ${a.calls} calls · ${a.triangles.toLocaleString()} triangles</figcaption></figure>`).join("")}</div>`;
 		})
 		.join("\n");
 	await writeFile(

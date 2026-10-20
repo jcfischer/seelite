@@ -1,29 +1,40 @@
 {
   "sources": {
-    "blocks.ts": "66e3ba92dae0f3b9c168c1310e60612ed3e77809dfc28a4d36a60b37d556554c",
+    "blocks.ts": "4fc35084ceb6c2fb9239e58d4095509d5ccdcea7d7d342fcf0423edb17a8e3fd",
+    "build_kit.py": "df3c5a06a65ece9b5952b0f66bbd865c491dd09155d73617ac8cc4835926d910",
+    "../build_model.py": "94f674ceeb55f4683b230537a8055ef9fd97fc97856e47594c736c98d38dbde8",
+    "../geometry.py": "fcec145cc6564cdb379196830e7f466010f2036b1b001bd7a5c35cd2b448f148",
+    "../final_shapes.py": "26967cd1207766211056e43c6febab3b97d3590f9cdbd9d83679b36516cef3e5",
+    "../industrial-surface.png": "4589b25606011e41faf5b2951f37551bfd2a0918f5ce85f8ceee7adeba0d1cb5",
+    "joints.ts": "c77e5200b5f5388ae53dc75f42b04c5550a272f12b3d100b876f3f1311e9615e",
     "assembly.ts": "beaa131475610fceacdb1f19f1a2bfb2a60d18007401aa5c92a60dd327218592",
-    "prepare.ts": "b649e59aee75428bbebd5c75458799eacc3db2cfc7e1c3afaf3fc6edd3b9b788",
-    "viewer.ts": "515483ef9a4dcdff04a32ca0197228a600461fa1b6e654edc765ed008df9c78a",
+    "prepare.ts": "1af72930e3c3ae650ce83263e5197e6f752089a55b185d4dbbf44b8d6f6172c7",
+    "viewer.ts": "5af031a0051c028442e8a345c149a49812047075f39fbab7a358a54c47931ee0",
     "index.html": "dc7cfe03e1dc12b6108ea5542083538e2a352b7976337d029ed839f70ef7553e",
-    "capture.mjs": "31dc3c98249348e71f4f36eef5b9bcd1c3ce998da8f1de88b37a4a99484db91c"
+    "capture.mjs": "9771d942ea2e91c2e25179a65e9ad232a186f82ac10490e91459c9a3f76276d8"
   },
-  "base": "2dd890e76387c4c179116cdb81fd188fd9d13f64",
-  "capturedAt": "2026-10-20T19:51:34.600Z",
+  "base": "8cbf2218799c318c1f6ed6f4ab0409bac0bfed1f",
+  "capturedAt": "2026-10-20T22:09:39.676Z",
   "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
   "viewport": [
     1440,
     900
   ],
   "asset": {
-    "bytes": 1451156,
-    "sha256": "b079b3b41711206bb3cc2ccb980ed891df135c9292abf397a433a06b50e9b320",
+    "batches": 28,
+    "bytes": 13808236,
+    "sha256": "17431602723f3caf6a5eb0c50d1e8a9696c4133ac1f5a8591e4c20e5ef16d611",
     "units": "km",
     "blocks": [
       "HUB",
       "HUB_STATIC",
       "NODE",
       "TUBE"
-    ]
+    ],
+    "authoring": "Blender build_kit.py via stations/build_model.py and geometry.py",
+    "source": "blocks.blend",
+    "sourceSha256": "e599190181a7fefe62fa21a84d82a60903def767e250d834e1ee02a3ee8ac906",
+    "texture": "../industrial-surface.png"
   },
   "lighting": "Station study rig: ACES 1.12, room environment 0.36; key 4.5, fill 1.1, rim 1.0. Phases 0 and quarter turn (hub-quarter), studio background; no frame-time claim.",
   "plans": {
@@ -2166,8 +2177,8 @@
         ],
         "joint": null
       },
-      "calls": 244,
-      "triangles": 114188
+      "calls": 252,
+      "triangles": 361456
     },
     {
       "file": "seed-0-hub-procedural.png",
@@ -2210,8 +2221,8 @@
         ],
         "joint": null
       },
-      "calls": 168,
-      "triangles": 113084
+      "calls": 177,
+      "triangles": 360376
     },
     {
       "file": "seed-0-hub-quarter-procedural.png",
@@ -2254,8 +2265,8 @@
         ],
         "joint": null
       },
-      "calls": 169,
-      "triangles": 113086
+      "calls": 178,
+      "triangles": 360378
     },
     {
       "file": "seed-0-joint-procedural.png",
@@ -2265,29 +2276,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.7000000000000001,
+          -0.30000000000000004,
           0,
           0
         ],
         "camera": [
-          0.8600000000000001,
+          -0.4600000000000001,
           0.14,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 4,
-          "dy": 0,
-          "beside": [
-            3,
-            0,
+          "kind": "NODE–TUBE_X",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": 0,
+            "joined": [
+              false,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              0,
+              3,
+              4,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              2,
+              1,
+              8,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 1,
+          "target": [
+            -0.30000000000000004,
             0,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 20,
-      "triangles": 70680
+      "calls": 65,
+      "triangles": 73024
     },
     {
       "file": "seed-0-joint-authored.png",
@@ -2297,29 +2342,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.7000000000000001,
+          -0.30000000000000004,
           0,
           0
         ],
         "camera": [
-          0.8600000000000001,
+          -0.4600000000000001,
           0.14,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 4,
-          "dy": 0,
-          "beside": [
-            3,
-            0,
+          "kind": "NODE–TUBE_X",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": 0,
+            "joined": [
+              false,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              0,
+              3,
+              4,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              2,
+              1,
+              8,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 1,
+          "target": [
+            -0.30000000000000004,
             0,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 26,
-      "triangles": 108920
+      "calls": 70,
+      "triangles": 358936
     },
     {
       "file": "seed-0-rear-procedural.png",
@@ -2362,8 +2441,8 @@
         ],
         "joint": null
       },
-      "calls": 244,
-      "triangles": 114188
+      "calls": 252,
+      "triangles": 361456
     },
     {
       "file": "seed-1-overview-procedural.png",
@@ -2406,8 +2485,8 @@
         ],
         "joint": null
       },
-      "calls": 242,
-      "triangles": 82892
+      "calls": 250,
+      "triangles": 247064
     },
     {
       "file": "seed-1-hub-procedural.png",
@@ -2450,8 +2529,8 @@
         ],
         "joint": null
       },
-      "calls": 167,
-      "triangles": 81956
+      "calls": 176,
+      "triangles": 246152
     },
     {
       "file": "seed-1-hub-quarter-procedural.png",
@@ -2494,8 +2573,8 @@
         ],
         "joint": null
       },
-      "calls": 168,
-      "triangles": 81958
+      "calls": 177,
+      "triangles": 246154
     },
     {
       "file": "seed-1-joint-procedural.png",
@@ -2505,29 +2584,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.30000000000000004,
+          -0.21,
           0,
           0
         ],
         "camera": [
-          0.4600000000000001,
+          -0.37,
           0.14,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 2,
-          "dy": 0,
-          "beside": [
-            3,
-            5,
+          "kind": "HUB–TUBE_X",
+          "a": {
+            "module": 1,
+            "dx": 0,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              6,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              1,
+              7,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 0,
+          "target": [
+            -0.21,
             0,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 60,
-      "triangles": 58732
+      "calls": 87,
+      "triangles": 59032
     },
     {
       "file": "seed-1-joint-authored.png",
@@ -2537,29 +2650,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.30000000000000004,
+          -0.21,
           0,
           0
         ],
         "camera": [
-          0.4600000000000001,
+          -0.37,
           0.14,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 2,
-          "dy": 0,
-          "beside": [
-            3,
-            5,
+          "kind": "HUB–TUBE_X",
+          "a": {
+            "module": 1,
+            "dx": 0,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              6,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              1,
+              7,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 0,
+          "target": [
+            -0.21,
             0,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 62,
-      "triangles": 80696
+      "calls": 91,
+      "triangles": 225144
     },
     {
       "file": "seed-1-rear-procedural.png",
@@ -2602,8 +2749,8 @@
         ],
         "joint": null
       },
-      "calls": 242,
-      "triangles": 82892
+      "calls": 250,
+      "triangles": 247064
     },
     {
       "file": "seed-47-overview-procedural.png",
@@ -2646,8 +2793,8 @@
         ],
         "joint": null
       },
-      "calls": 245,
-      "triangles": 136412
+      "calls": 253,
+      "triangles": 383680
     },
     {
       "file": "seed-47-hub-procedural.png",
@@ -2690,8 +2837,8 @@
         ],
         "joint": null
       },
-      "calls": 167,
-      "triangles": 134972
+      "calls": 176,
+      "triangles": 382264
     },
     {
       "file": "seed-47-hub-quarter-procedural.png",
@@ -2734,8 +2881,8 @@
         ],
         "joint": null
       },
-      "calls": 168,
-      "triangles": 134974
+      "calls": 177,
+      "triangles": 382266
     },
     {
       "file": "seed-47-joint-procedural.png",
@@ -2745,29 +2892,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.7000000000000001,
-          0,
+          0.4,
+          0.1,
           0
         ],
         "camera": [
-          0.8600000000000001,
-          0.14,
+          0.5600000000000002,
+          0.24000000000000005,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 4,
-          "dy": 0,
-          "beside": [
-            3,
-            0,
-            0,
+          "kind": "NODE–TRUSS_Y",
+          "a": {
+            "module": 2,
+            "dx": 2,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              4,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 6,
+            "dx": 2,
+            "dy": 1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              7,
+              8,
+              2,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            0.4,
+            0.1,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 30,
-      "triangles": 94096
+      "calls": 55,
+      "triangles": 94720
     },
     {
       "file": "seed-47-joint-authored.png",
@@ -2777,29 +2958,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.7000000000000001,
-          0,
+          0.4,
+          0.1,
           0
         ],
         "camera": [
-          0.8600000000000001,
-          0.14,
+          0.5600000000000002,
+          0.24000000000000005,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 4,
-          "dy": 0,
-          "beside": [
-            3,
-            0,
-            0,
+          "kind": "NODE–TRUSS_Y",
+          "a": {
+            "module": 2,
+            "dx": 2,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              4,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 6,
+            "dx": 2,
+            "dy": 1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              7,
+              8,
+              2,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            0.4,
+            0.1,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 26,
-      "triangles": 130976
+      "calls": 60,
+      "triangles": 380872
     },
     {
       "file": "seed-47-rear-procedural.png",
@@ -2842,8 +3057,8 @@
         ],
         "joint": null
       },
-      "calls": 245,
-      "triangles": 136412
+      "calls": 253,
+      "triangles": 383680
     },
     {
       "file": "seed-1234-overview-procedural.png",
@@ -2886,8 +3101,8 @@
         ],
         "joint": null
       },
-      "calls": 243,
-      "triangles": 125132
+      "calls": 251,
+      "triangles": 416192
     },
     {
       "file": "seed-1234-hub-procedural.png",
@@ -2930,8 +3145,8 @@
         ],
         "joint": null
       },
-      "calls": 167,
-      "triangles": 124028
+      "calls": 176,
+      "triangles": 415112
     },
     {
       "file": "seed-1234-hub-quarter-procedural.png",
@@ -2974,8 +3189,8 @@
         ],
         "joint": null
       },
-      "calls": 168,
-      "triangles": 124030
+      "calls": 177,
+      "triangles": 415114
     },
     {
       "file": "seed-1234-joint-procedural.png",
@@ -2985,29 +3200,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.5000000000000001,
-          0.2,
+          -0.4,
+          -0.30000000000000004,
           0
         ],
         "camera": [
-          0.6600000000000001,
-          0.3400000000000001,
+          -0.56,
+          -0.4400000000000001,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 3,
-          "dy": 1,
-          "beside": [
-            3,
-            0,
-            0,
+          "kind": "NODE–TUBE_Y",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": -2,
+            "joined": [
+              false,
+              false,
+              false,
+              true
+            ],
+            "beside": [
+              0,
+              0,
+              0,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 4,
+            "dx": -2,
+            "dy": -1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              8,
+              8,
+              2,
+              9
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            -0.4,
+            -0.30000000000000004,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 33,
-      "triangles": 71988
+      "calls": 38,
+      "triangles": 72048
     },
     {
       "file": "seed-1234-joint-authored.png",
@@ -3017,29 +3266,63 @@
       "phase": 0,
       "framing": {
         "target": [
-          0.5000000000000001,
-          0.2,
+          -0.4,
+          -0.30000000000000004,
           0
         ],
         "camera": [
-          0.6600000000000001,
-          0.3400000000000001,
+          -0.56,
+          -0.4400000000000001,
           0.4000000000000001
         ],
         "joint": {
-          "dx": 3,
-          "dy": 1,
-          "beside": [
-            3,
-            0,
-            0,
+          "kind": "NODE–TUBE_Y",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": -2,
+            "joined": [
+              false,
+              false,
+              false,
+              true
+            ],
+            "beside": [
+              0,
+              0,
+              0,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 4,
+            "dx": -2,
+            "dy": -1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              8,
+              8,
+              2,
+              9
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            -0.4,
+            -0.30000000000000004,
             0
-          ],
-          "direction": 0
+          ]
         }
       },
-      "calls": 38,
-      "triangles": 122480
+      "calls": 52,
+      "triangles": 413624
     },
     {
       "file": "seed-1234-rear-procedural.png",
@@ -3082,8 +3365,8 @@
         ],
         "joint": null
       },
-      "calls": 243,
-      "triangles": 125132
+      "calls": 251,
+      "triangles": 416192
     }
   ],
   "errors": []

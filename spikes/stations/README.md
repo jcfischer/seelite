@@ -94,7 +94,7 @@ See [the integration receipt](../../docs/receipts/node-1033-trade-b-c-e.md).
 
 ## Assembly block spike — node #1057
 
-The next Assembly study is [an authored cell kit](assembly-kit/index.html),
+The Assembly rework is [a Blender-authored cell kit](assembly-kit/index.html),
 placed by the existing seeded WFC plan. [Four-seed comparison renders](assembly-kit/evidence/index.html)
 show HUB, NODE and rotated TUBE blocks beside the procedural parts. This is
 Phase 1, awaiting the principal's yes on the look and joints. Production remains
