@@ -7,6 +7,7 @@ import {
 	testsFor,
 	survivors,
 	strykerConfig,
+	mutationConcurrency,
 } from "../scripts/mutation-changed";
 
 describe("changed-line mutation selection", () => {
@@ -185,6 +186,57 @@ describe("changed-line mutation selection", () => {
 		]);
 	});
 
+	test("type-only named imports and exports do not create runtime edges, but mixed and default imports do", () => {
+		const index = moduleIndex(
+			new Map([
+				["src/a.ts", "export const a = 1;"],
+				["tests/types.test.ts", 'import { type a } from "../src/a";'],
+				["src/types.ts", 'export { type a } from "./a";'],
+				["tests/mixed.test.ts", 'import { type T, a } from "../src/a";'],
+				["tests/default.test.ts", 'import a, { type T } from "../src/a";'],
+				["src/mixed.ts", 'export { type T, a } from "./a";'],
+				["src/empty.ts", 'export {} from "./a";'],
+				["src/empty-import.ts", 'import {} from "./a";'],
+			]),
+		);
+		for (const file of ["tests/types.test.ts", "src/types.ts"])
+			expect(index.get(file)?.imports).toEqual([]);
+		for (const file of [
+			"tests/mixed.test.ts",
+			"tests/default.test.ts",
+			"src/mixed.ts",
+			"src/empty.ts",
+			"src/empty-import.ts",
+		])
+			expect(index.get(file)?.imports).toEqual(["src/a.ts"]);
+	});
+
+	test("mutation worker count defaults to one and accepts only positive safe integers", () => {
+		expect(mutationConcurrency(undefined)).toBe(1);
+		for (const value of ["1", "2", "3"])
+			expect(mutationConcurrency(value)).toBe(Number(value));
+		for (const value of [
+			"",
+			"0",
+			"-1",
+			"1.5",
+			"NaN",
+			"Infinity",
+			"many",
+			"9007199254740992",
+		])
+			expect(() => mutationConcurrency(value)).toThrow("MUTATION_CONCURRENCY");
+		expect(
+			strykerConfig(
+				"src/a.ts",
+				[{ start: 1, end: 1 }],
+				["tests/a.test.ts"],
+				"reports/a",
+				2,
+			).concurrency,
+		).toBe(2);
+	});
+
 	test("config uses only changed ranges and selected tests, no worktree mutation or coverage", () => {
 		const config = strykerConfig(
 			"src/a.ts",
@@ -198,6 +250,7 @@ describe("changed-line mutation selection", () => {
 			"bun test --timeout=60000 'tests/a.test.ts'",
 		);
 		expect(config.coverageAnalysis).toBe("off");
+		expect(config.concurrency).toBe(1);
 		expect(config.reporters).toContain("html");
 		expect(config.reporters).toContain("json");
 		expect(config.cleanTempDir).toBe("always");

@@ -21,6 +21,11 @@ detached snapshot at that PR's merge/head commit and its first parent as base.
 No source file is edited or restored by the runner. Stryker instruments its
 temporary sandbox and removes it even on failure.
 
+`MUTATION_CONCURRENCY` sets a positive integer worker count (default `1`). CI
+uses `2`; each worker runs tests in its own Stryker sandbox. The real CLI
+control exercises both surviving and killed mutants with two workers. Tests
+that reach resources outside their sandbox may still need a serial local run.
+
 ## Eligibility and test selection
 
 `mutableReason` in `scripts/mutation-changed.ts` owns the include/exclude rule:

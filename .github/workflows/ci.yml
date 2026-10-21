@@ -91,6 +91,8 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 30
+    env:
+      MUTATION_CONCURRENCY: "2"
     permissions:
       contents: read
     steps:

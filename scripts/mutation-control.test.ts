@@ -26,6 +26,7 @@ test("real CLI reports a weak assertion's survivor, kills it with boundary asser
 				GIT_COMMITTER_EMAIL: "mutation-control@example.invalid",
 				MUTATION_BASE_REF: base,
 				MUTATION_HEAD_REF: "HEAD",
+				MUTATION_CONCURRENCY: "2",
 			},
 		});
 		expect(
@@ -69,11 +70,35 @@ test("real CLI reports a weak assertion's survivor, kills it with boundary asser
 		write("src/positive.ts", source);
 		git("add", ".");
 		git("commit", "--quiet", "-m", "Control changed predicate");
-		const weak = run(["npm", "run", "test:mutation:changed"], 1);
+		const missing = run(
+			["npm", "run", "test:mutation:changed"],
+			2,
+			"missing-mutation-base",
+		);
+		expect(missing.stderr).toContain("missing-mutation-base");
+		expect(missing.stderr).not.toContain("Fetch origin/main");
+		expect(
+			run(["npm", "run", "test:mutation:changed"], 2, "origin/main").stderr,
+		).toContain("Fetch origin/main");
+		write(
+			"tests/positive.test.ts",
+			`${readFileSync(join(root, "tests/positive.test.ts"), "utf8")}\n`,
+		);
+		const dirty = run(["npm", "run", "test:mutation:changed"], 2);
+		expect(dirty.stderr).toContain("clean checkout");
+		expect(dirty.stderr).not.toContain("Fetch");
+		git("add", ".");
+		git("commit", "--quiet", "-m", "Control dirty checkout diagnostic");
+		const weak = run(["npm", "run", "test:mutation:changed"], 1, "HEAD~2");
 		expect(weak.stderr).toContain(
 			"src/positive.ts:2 EqualityOperator -> value >= 0",
 		);
 		const reportDir = join(root, "reports/mutation/changed");
+		expect(
+			JSON.parse(
+				readFileSync(join(reportDir, "src_positive_ts.config.json"), "utf8"),
+			).concurrency,
+		).toBe(2);
 		const summary = JSON.parse(
 			readFileSync(join(reportDir, "summary.json"), "utf8"),
 		);
@@ -94,7 +119,7 @@ test("real CLI reports a weak assertion's survivor, kills it with boundary asser
 		);
 		git("add", ".");
 		git("commit", "--quiet", "-m", "Control boundary assertions");
-		run(["npm", "run", "test:mutation:changed"], 0, "HEAD~2");
+		run(["npm", "run", "test:mutation:changed"], 0, "HEAD~3");
 		const killed = JSON.parse(
 			readFileSync(join(reportDir, "summary.json"), "utf8"),
 		);

@@ -122,6 +122,9 @@ function resolveImport(
 	);
 }
 
+const allTypeOnly = (elements: readonly { isTypeOnly: boolean }[]) =>
+	elements.length > 0 && elements.every((element) => element.isTypeOnly);
+
 /** Runtime import edges only: declarations, re-exports, literal dynamic imports and require. */
 export function moduleIndex(files: Map<string, string>): ModuleIndex {
 	const result: ModuleIndex = new Map();
@@ -148,8 +151,7 @@ export function moduleIndex(files: Map<string, string>): ModuleIndex {
 					(!clause?.name &&
 						bindings &&
 						ts.isNamedImports(bindings) &&
-						bindings.elements.length > 0 &&
-						bindings.elements.every((e) => e.isTypeOnly))
+						allTypeOnly(bindings.elements))
 				)
 					return;
 				add(node.moduleSpecifier);
@@ -160,8 +162,7 @@ export function moduleIndex(files: Map<string, string>): ModuleIndex {
 				if (
 					node.exportClause &&
 					ts.isNamedExports(node.exportClause) &&
-					node.exportClause.elements.length > 0 &&
-					node.exportClause.elements.every((e) => e.isTypeOnly)
+					allTypeOnly(node.exportClause.elements)
 				)
 					return;
 				if (node.moduleSpecifier) add(node.moduleSpecifier);
@@ -247,12 +248,20 @@ export function survivors(report: MutationReport): string[] {
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
+export function mutationConcurrency(value: string | undefined): number {
+	const count = Number(value ?? 1);
+	if (!Number.isSafeInteger(count) || count < 1)
+		throw new Error("MUTATION_CONCURRENCY must be a positive safe integer");
+	return count;
+}
+
 /** Stryker command runner has no Bun coverage integration: selected tests run once per mutant. */
 export function strykerConfig(
 	file: string,
 	ranges: LineRange[],
 	tests: string[],
 	reportStem: string,
+	concurrency = 1,
 ) {
 	return {
 		testRunner: "command",
@@ -264,7 +273,7 @@ export function strykerConfig(
 		reporters: ["clear-text", "json", "html"],
 		jsonReporter: { fileName: `${reportStem}.json` },
 		htmlReporter: { fileName: `${reportStem}.html` },
-		concurrency: 1,
+		concurrency,
 		thresholds: { high: 100, low: 100, break: null },
 		timeoutMS: 60000,
 		timeoutFactor: 1.5,
@@ -288,12 +297,98 @@ function git(args: string[]): string {
 	return run.stdout;
 }
 
+interface MutationRecord {
+	file: string;
+	ranges: LineRange[];
+	tests: string[];
+	mutants: number;
+	survivors: string[];
+	statuses: Record<string, number>;
+	wallSeconds: number;
+	html: string;
+}
+
+function mutateFile(
+	file: string,
+	ranges: LineRange[],
+	index: ModuleIndex,
+	outDir: string,
+	concurrency: number,
+): { record?: MutationRecord; failures: string[] } {
+	const failures: string[] = [];
+	const tests = testsFor(file, index);
+	const reportStem = join(outDir, file.replace(/[^a-zA-Z0-9_-]/g, "_"));
+	const configPath = `${reportStem}.config.json`;
+	writeFileSync(
+		configPath,
+		JSON.stringify(
+			strykerConfig(file, ranges, tests, reportStem, concurrency),
+			null,
+			2,
+		),
+	);
+	const fileStarted = performance.now();
+	console.log(
+		`Mutate ${file}:${ranges.map((r) => `${r.start}-${r.end}`).join(",")} against ${tests.join(", ")}`,
+	);
+	const run = spawnSync(
+		"node",
+		[
+			resolve("node_modules/@stryker-mutator/core/bin/stryker.js"),
+			"run",
+			configPath,
+		],
+		{ stdio: "inherit" },
+	);
+	if (run.status !== 0 || !existsSync(`${reportStem}.json`)) {
+		failures.push(
+			`${file}: Stryker failed (exit ${run.status}, ${run.error ?? "see dry-run output"})`,
+		);
+		return { failures };
+	}
+	const report = JSON.parse(
+		readFileSync(`${reportStem}.json`, "utf8"),
+	) as MutationReport;
+	const left = survivors(report);
+	const mutants = Object.values(report.files).flatMap((f) => f.mutants);
+	const errors = mutants.filter((m) =>
+		["RuntimeError", "Pending"].includes(m.status),
+	);
+	if (errors.length)
+		failures.push(`${file}: ${errors.length} incomplete/error mutants`);
+	failures.push(...left);
+	return {
+		failures,
+		record: {
+			file,
+			ranges,
+			tests,
+			mutants: mutants.length,
+			survivors: left,
+			statuses: mutants.reduce<Record<string, number>>((counts, m) => {
+				counts[m.status] = (counts[m.status] ?? 0) + 1;
+				return counts;
+			}, {}),
+			wallSeconds: (performance.now() - fileStarted) / 1000,
+			html: `${reportStem}.html`,
+		},
+	};
+}
+
 async function main(): Promise<number> {
 	const started = performance.now();
 	const base = process.env.MUTATION_BASE_REF ?? "origin/main";
 	const head = process.env.MUTATION_HEAD_REF ?? "HEAD";
-	const baseSha = git(["rev-parse", "--verify", `${base}^{commit}`]).trim();
+	let baseSha: string;
+	try {
+		baseSha = git(["rev-parse", "--verify", `${base}^{commit}`]).trim();
+	} catch (error) {
+		throw new Error(
+			`Cannot resolve mutation base ${base}: ${(error as Error).message}. ${base === "origin/main" ? "Fetch origin/main before running." : "Fetch or select an existing base ref."}`,
+		);
+	}
 	const headSha = git(["rev-parse", "--verify", `${head}^{commit}`]).trim();
+	const concurrency = mutationConcurrency(process.env.MUTATION_CONCURRENCY);
 	if (
 		git(["rev-parse", "HEAD"]).trim() !== headSha ||
 		git(["status", "--porcelain", "--untracked-files=normal"]).trim()
@@ -323,7 +418,7 @@ async function main(): Promise<number> {
 	const index = moduleIndex(
 		new Map(paths.map((p) => [p, readFileSync(p, "utf8")])),
 	);
-	const checked = [];
+	const checked: MutationRecord[] = [];
 	const skipped = [];
 	const failures: string[] = [];
 	for (const [file, ranges] of changedRanges(diff)) {
@@ -333,56 +428,9 @@ async function main(): Promise<number> {
 			console.log(`Skip ${file}: ${reason}`);
 			continue;
 		}
-		const tests = testsFor(file, index);
-		const reportStem = join(outDir, file.replace(/[^a-zA-Z0-9_-]/g, "_"));
-		const configPath = `${reportStem}.config.json`;
-		writeFileSync(
-			configPath,
-			JSON.stringify(strykerConfig(file, ranges, tests, reportStem), null, 2),
-		);
-		const fileStarted = performance.now();
-		console.log(
-			`Mutate ${file}:${ranges.map((r) => `${r.start}-${r.end}`).join(",")} against ${tests.join(", ")}`,
-		);
-		const run = spawnSync(
-			"node",
-			[
-				resolve("node_modules/@stryker-mutator/core/bin/stryker.js"),
-				"run",
-				configPath,
-			],
-			{ stdio: "inherit" },
-		);
-		if (run.status !== 0 || !existsSync(`${reportStem}.json`)) {
-			failures.push(
-				`${file}: Stryker failed (exit ${run.status}, ${run.error ?? "see dry-run output"})`,
-			);
-			continue;
-		}
-		const report = JSON.parse(
-			readFileSync(`${reportStem}.json`, "utf8"),
-		) as MutationReport;
-		const left = survivors(report);
-		const mutants = Object.values(report.files).flatMap((f) => f.mutants);
-		const errors = mutants.filter((m) =>
-			["RuntimeError", "Pending"].includes(m.status),
-		);
-		if (errors.length)
-			failures.push(`${file}: ${errors.length} incomplete/error mutants`);
-		failures.push(...left);
-		checked.push({
-			file,
-			ranges,
-			tests,
-			mutants: mutants.length,
-			survivors: left,
-			statuses: mutants.reduce<Record<string, number>>((counts, m) => {
-				counts[m.status] = (counts[m.status] ?? 0) + 1;
-				return counts;
-			}, {}),
-			wallSeconds: (performance.now() - fileStarted) / 1000,
-			html: `${reportStem}.html`,
-		});
+		const result = mutateFile(file, ranges, index, outDir, concurrency);
+		failures.push(...result.failures);
+		if (result.record) checked.push(result.record);
 	}
 	const summary = {
 		base: baseSha,
@@ -415,9 +463,7 @@ if (import.meta.main) {
 			process.exitCode = code;
 		})
 		.catch((error) => {
-			console.error(
-				`mutation-changed: ${error.message}. Fetch origin/main before running.`,
-			);
+			console.error(`mutation-changed: ${error.message}`);
 			process.exitCode = 2;
 		});
 }

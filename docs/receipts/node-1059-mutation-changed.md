@@ -122,3 +122,63 @@ base failures or changing/rebasing other branches.
 Probe selection at `77b836a` again selected all **112** probes because CI
 workflow changes trigger the infrastructure fallback. The full browser run,
 live PR job run, PR-body publication and merge commit remain supervisor-owned.
+
+## Sage round 1 finish pass
+
+Taken: make `MUTATION_CONCURRENCY` a validated positive safe integer (default
+one), use two workers in the advisory CI job, extract per-file Stryker execution
+and tallying into `mutateFile`, share the all-type-only specifier predicate, and
+limit base-ref fetch advice to a base-ref resolution failure. A missing custom
+base now names that base; dirty-checkout errors carry no fetch advice.
+
+The five glossary findings are declined: `command` in the mutation guide,
+receipt, runner and tests names a shell invocation or Stryker's literal
+`commandRunner.command` API, not the game's Intervention. `Spawn` in
+`package-lock.json` is third-party package metadata, not a Traffic actor or
+Encounter; changing generated dependency prose would be incorrect. No game
+vocabulary or dependency metadata was rewritten.
+
+Current-host verification (Node 24.19.0 / Bun 1.4.2):
+
+- Affected mutation, directive, workflow-reader and script-gate tests:
+  **60 pass, 0 fail**.
+- Real CLI control with **two workers**: **1 pass, 0 fail**, 29 assertions.
+  Weak assertions: **5 mutants / 4 survivors**, 5.32 s; boundary assertions:
+  **5 / 0**, 3.95 s. Checks include the emitted worker count, missing default
+  and custom base diagnostics, dirty-checkout advice, changed-line scope,
+  unchanged source bytes and clean Git status after both mutation arms.
+- Typecheck, `format:check`, Biome lint and ESLint passed; the complete
+  `lint:comments` command passes with `LINT_BASE_REF=a664c8d`.
+- Default `lint:comments` still reports `authored-hull.ts`'s **27 -> 33**
+  suppression mismatch against current `origin/main`. Comparing the merge-base
+  suppression file against `origin/main` reproduces that same mismatch. This
+  node changes neither `authored-hull.ts` nor its suppressions.
+- Probe selection at the inherited head again chooses **112** browser probes
+  for the CI/config diff. The supervisor owns that full run under the worker
+  contract; no browser-pass claim is made here.
+
+The one full unit run in this finish pass completed with **6,773 pass,
+3 fail**, 6,776 tests across 398 files, **1,330.49 s**. Its raw output is
+`/tmp/seelite-node-1059-review-1-unit.log`. Each failure exceeded Bun's default
+5,000 ms timeout:
+
+- `tests/vent-plumes.test.ts`: “a vent drawn off its table position is moved
+  along its own line of action” — 8,294.18 ms.
+- `tests/cockpit-model.test.ts`: “the dash top drops on the centre line, and
+  the cabin covers less of a 4:3 frame” — 8,580.50 ms.
+- `tests/exact-amount.test.ts`: “bit-pattern corpus spans every finite exponent
+  and both signs” — 6,495.23 ms.
+
+All `src/`, `scripts/lib/`, `tests/lib/` and these three test files are unchanged
+from merge base `a664c8d` (`git diff --exit-code` passed). Replaying just these
+three files with the default timeout in an archived merge-base snapshot passed
+**37/37** (3.87 s); replaying them alone on the working branch also passed
+**37/37** (17.23 s). Logs: `/tmp/seelite-node-1059-review-1-base-tests.log` and
+`/tmp/seelite-node-1059-review-1-rerun.log`. The full-suite timeouts did not
+reproduce in either targeted replay; their precise cause remains unattributed.
+No unrelated test, game code or timeout was changed, and the full suite was not
+repeated. This is not a full-suite-pass claim.
+
+The two-worker real CLI control also passed under **Node 22.23.3**, CI's major
+version: **1 pass, 0 fail**, 29 assertions. Weak assertions yielded **5 mutants /
+4 survivors** (4.66 s); boundary assertions yielded **5 / 0** (3.67 s).
