@@ -375,7 +375,7 @@ test("publishing is decided once, from the ref", () => {
 	expect(gate?.run).toContain("publish=true");
 });
 
-test("no condition in the file asks the event alone", () => {
+test("only the advisory mutation job asks the event alone", () => {
 	// How a hand-run on a feature branch used to be able to publish: the publish
 	// steps were gated on `github.event_name != 'pull_request'`, and every event
 	// that is not a pull request satisfies that — `workflow_dispatch` from any
@@ -384,8 +384,10 @@ test("no condition in the file asks the event alone", () => {
 	// steps, a branch shipping to the live site.
 	for (const step of ciWorkflow().steps)
 		expect(step.condition ?? "").not.toContain("github.event_name");
-	for (const job of ciWorkflow().jobs)
+	for (const job of ciWorkflow().jobs) {
+		if (job.name === "mutation-changed") continue;
 		expect(job.condition ?? "").not.toContain("github.event_name");
+	}
 });
 
 test("a merge to main is not cancelled by the next push", () => {

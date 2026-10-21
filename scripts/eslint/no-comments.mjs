@@ -2,6 +2,8 @@ const TS_SUPPRESSION = /^\s*@ts-(ignore|expect-error|nocheck)\b/;
 const LICENSE = /licen[cs]e|copyright|SPDX-License-Identifier/i;
 const URL = /https?:\/\//;
 const TOOL_DIRECTIVE = /^\s*(biome-ignore\b|@vite-ignore\b|#__PURE__\b)/;
+const STRYKER_DIRECTIVE =
+	/^\s*Stryker disable next-line [A-Z][A-Za-z]+(?:,\s*[A-Z][A-Za-z]+)*:\s*\S[^\r\n]*$/;
 const EXPORTS = new Set(["ExportNamedDeclaration", "ExportDefaultDeclaration"]);
 
 function documentsExport(source, comment) {
@@ -22,6 +24,7 @@ function isAllowed(source, comment, first) {
 	if (first && LICENSE.test(value)) return true;
 	if (type === "Line" && /^\/\s*<reference\b/.test(value)) return true;
 	if (TOOL_DIRECTIVE.test(value)) return true;
+	if (type === "Line" && STRYKER_DIRECTIVE.test(value)) return true;
 	if (URL.test(value)) return true;
 	return (
 		type === "Block" &&
@@ -39,7 +42,7 @@ export const noComments = {
 			suppression:
 				"Type-check suppression. Fix the type error instead. A test that needs a wrong-typed value casts through `unknown`.",
 			comment:
-				"Comment. Say it in code: rename, extract, add a type or a test. Kept: a URL to the issue or vendor doc behind a constraint, a /** doc */ on an export, a biome-ignore or @vite-ignore directive, a license header.",
+				"Comment. Say it in code: rename, extract, add a type or a test. Kept: a URL to the issue or vendor doc behind a constraint, a /** doc */ on an export, a biome-ignore or @vite-ignore directive, a reasoned Stryker disable next-line directive, a license header.",
 		},
 		schema: [],
 	},
