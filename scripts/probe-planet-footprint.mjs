@@ -292,7 +292,11 @@ void main() {
 			"cloudFieldFootprint(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir, cloudFootprint, cloudOctaveCap)";
 		const BASE_CALL =
 			"cloudField(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir)";
-		let landed = 0;
+		const patch = (source, from, to, what, all = false) => {
+			const out = all ? source.replaceAll(from, to) : source.replace(from, to);
+			if (out === source) throw new Error(`${what} missed its marker`);
+			return out;
+		};
 		const base = (() => {
 			let source = CLOUD_FRAGMENT;
 			for (const name of [
@@ -301,34 +305,23 @@ void main() {
 			]) {
 				const { start, end } = glslFunctionRange(source, name);
 				source = source.slice(0, start) + source.slice(end);
-				landed++;
 			}
-			const reverted = source.replace(DETAIL_CALL, BASE_CALL);
-			if (reverted === source)
-				throw new Error("cloud base-arm revert missed the coherent call");
-			landed++;
-			return reverted;
+			return patch(source, DETAIL_CALL, BASE_CALL, "cloud base-arm revert");
 		})();
 
-		const zeroFaultSource = (() => {
-			const marker = "if (weight <= 0.0) break;";
-			const patched = CLOUD_FRAGMENT.replaceAll(
-				marker,
-				"if (weight <= 0.0) { s += 0.01; break; }",
-			);
-			if (patched === CLOUD_FRAGMENT)
-				throw new Error("zero-weight defect missed its marker");
-			return patched;
-		})();
-		const fadeFaultSource = (() => {
-			const patched = CLOUD_FRAGMENT.replace(
-				"smoothstep(1.6, 2.0, cameraR)",
-				"smoothstep(1.6, 2.2, cameraR)",
-			);
-			if (patched === CLOUD_FRAGMENT)
-				throw new Error("fade defect missed the shell's own band");
-			return patched;
-		})();
+		const zeroFaultSource = patch(
+			CLOUD_FRAGMENT,
+			"if (weight <= 0.0) break;",
+			"if (weight <= 0.0) { s += 0.01; break; }",
+			"zero-weight defect",
+			true,
+		);
+		const fadeFaultSource = patch(
+			CLOUD_FRAGMENT,
+			"smoothstep(1.6, 2.0, cameraR)",
+			"smoothstep(1.6, 2.2, cameraR)",
+			"fade defect",
+		);
 
 		const terran = buildBodyVisual(
 			appearanceFor("planet", "footprint-47", 1, false),
@@ -418,12 +411,22 @@ void main() {
 		};
 
 		camera.position.z = 1.2;
+		const shell = cloudShell(terran);
+		shell.visible = false;
+		const litChannels = (pixels) =>
+			pixels.filter((v, i) => i % 4 !== 3 && v > 0).length;
+		const hiddenGround = litChannels(read("terran", 6, CLOUD_FRAGMENT));
+		terran.surfaceMesh.visible = true;
+		const visibleGround = litChannels(read("terran", 6, CLOUD_FRAGMENT));
+		terran.surfaceMesh.visible = false;
+		const hiddenGroundRepeat = litChannels(read("terran", 6, CLOUD_FRAGMENT));
+		shell.visible = true;
+
 		read("terran", 6, CLOUD_FRAGMENT);
 		const fullAngle = terran.uniforms.cloudPixelAngle.value;
 		target.setSize(360, 225);
 		read("terran", 6, CLOUD_FRAGMENT);
 		const halfAngle = terran.uniforms.cloudPixelAngle.value;
-		const surfaceDrawn = terran.surfaceMesh.visible === false;
 		for (const entry of weather.values()) entry.visual.dispose();
 		target.dispose();
 		renderer.dispose();
@@ -434,18 +437,19 @@ void main() {
 			fadeFault,
 			fullAngle,
 			halfAngle,
-			surfaceDrawn,
-			landed,
+			groundIsolation: { hiddenGround, visibleGround, hiddenGroundRepeat },
 		};
 	});
 	t.check(
-		"the cloud base arm was reconstructed, not copied",
-		cloudRig.landed === 3,
-		`replacements applied: ${cloudRig.landed}`,
+		"the cloud rig draws no ground pixels with its weather shell hidden",
+		cloudRig.groundIsolation.hiddenGround === 0 &&
+			cloudRig.groundIsolation.hiddenGroundRepeat === 0,
+		JSON.stringify(cloudRig.groundIsolation),
 	);
 	t.check(
-		"the weather shell hides the ground it is measured against",
-		cloudRig.surfaceDrawn,
+		"the ground-isolation detector sees pixels when the ground is enabled",
+		cloudRig.groundIsolation.visibleGround > 0,
+		JSON.stringify(cloudRig.groundIsolation),
 	);
 	for (const row of cloudRig.results) {
 		t.check(
@@ -662,9 +666,11 @@ void main() {
 		join(out, "metrics.json"),
 		JSON.stringify({ rig, cloudRig, live, captures }, null, 2),
 	);
+	const pairTable = (infix) =>
+		`<table>${captures.map(({ name }) => `<tr><th colspan="2">${name}</th></tr><tr>${["before", "after"].map((arm) => `<td><a href="${name}${infix}${arm}.png"><img src="${name}${infix}${arm}.png"></a></td>`).join("")}</tr>`).join("")}</table>`;
 	await writeFile(
 		join(out, "index.html"),
-		`<!doctype html><meta charset="utf-8"><title>Terran footprint octaves</title><style>body{background:#17191d;color:#eee;font:16px system-ui}table{width:100%}td{width:50%}img{width:100%}</style><h1>Terran cloud detail</h1><p>High quality, same pose, ground detail held at cap 6. Left: cloud cap 0. Right: cloud cap 6, extending broad edges and wisps (#756). Click a frame for full size. Principal approval pending.</p><table>${captures.map(({ name }) => `<tr><th colspan="2">${name}</th></tr><tr>${["before", "after"].map((arm) => `<td><a href="${name}-cloud-${arm}.png"><img src="${name}-cloud-${arm}.png"></a></td>`).join("")}</tr>`).join("")}</table><h2>Ground and clouds together</h2><p>Left: both caps 0. Right: both caps 6 (#755, #756).</p><table>${captures.map(({ name }) => `<tr><th colspan="2">${name}</th></tr><tr>${["before", "after"].map((arm) => `<td><a href="${name}-${arm}.png"><img src="${name}-${arm}.png"></a></td>`).join("")}</tr>`).join("")}</table>`,
+		`<!doctype html><meta charset="utf-8"><title>Terran footprint octaves</title><style>body{background:#17191d;color:#eee;font:16px system-ui}table{width:100%}td{width:50%}img{width:100%}</style><h1>Terran cloud detail</h1><p>High quality, same pose, ground detail held at cap 6. Left: cloud cap 0. Right: cloud cap 6, extending broad edges and wisps (#756). Click a frame for full size. Principal approval pending.</p>${pairTable("-cloud-")}<h2>Ground and clouds together</h2><p>Left: both caps 0. Right: both caps 6 (#755, #756).</p>${pairTable("-")}`,
 	);
 	console.log(`Review frames: ${out}/index.html`);
 } finally {
