@@ -774,8 +774,6 @@ async function run(pixelRatio) {
 			// cheap way.
 			for (const surfaceClass of selectedClasses)
 				for (const relief of paths) {
-					// Node #757 supplies a terran derivative only. Do not print a
-					// four-tap fallback under an analytic label for another class.
 					if (relief === "analytic-gradient" && surfaceClass !== "terran")
 						continue;
 					for (const radii of SWEPT_RADII)

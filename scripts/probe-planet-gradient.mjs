@@ -1,4 +1,5 @@
-/** Node #757. Raw float normal targets bypass lighting, sanitisation and bloom.
+/** https://github.com/jcfischer/seelite/issues/757
+ * Raw float normal targets bypass lighting, sanitisation and bloom.
  * The legacy 0.0035 taps smooth ridged cusps and narrow coasts: require 95% of
  * relief pixels within 10 degrees, 99% within 16, and every pixel within 30 at
  * 2R. The spacing sweep below isolates that truncation (p95 8.97 -> 0.36 deg
@@ -40,7 +41,6 @@ try {
 			appearanceFor("planet", "footprint-47", 1, false),
 			new THREE.SphereGeometry(1, 96, 64),
 		);
-		// Isolate the surface, excluding cloud/atmosphere geometry.
 		scene.add(body.surfaceMesh);
 		body.uniforms.cloudCover.value = 0;
 		body.setDetailQuality("high");
@@ -98,8 +98,6 @@ try {
 			const values = [];
 			for (let i = 0; i < a.length; i += 4) {
 				if (a[i + 3] !== 1 || b[i + 3] !== 1) continue;
-				// Count only pixels that have relief in either arm; oceans cannot
-				// inflate agreement by contributing a sea of identical normals.
 				if (
 					[0, 1, 2].every(
 						(k) =>
@@ -147,7 +145,6 @@ try {
 				...angles(analytic, read("four-tap", 6, source), flat),
 			});
 		}
-		// A deliberately missing warp Jacobian must fail the fine-tap gate.
 		const wrong = read(
 			"analytic-gradient",
 			6,
@@ -160,8 +157,6 @@ try {
 			wrong: angles(wrong, fine, flat),
 			finite: finite(analytic),
 		};
-		// Aim the close frame at an actual relief pixel from this same field.
-		// A radial camera at +Z happens to see ocean in this seeded fixture.
 		let peak = 0,
 			at = 0;
 		for (let i = 0; i < analytic.length; i += 4) {
@@ -193,7 +188,6 @@ try {
 				"ridgedFootprintAndGradient(terrainCoordinates(p) * 11.0 + seedOffset, terrainFootprint * 11.0, 0.0)",
 			),
 		);
-		// Values must be the scalar field's own, before lighting or quantisation.
 		const proofSource = splice(
 			fragmentFor("terran", "analytic-gradient"),
 			output,

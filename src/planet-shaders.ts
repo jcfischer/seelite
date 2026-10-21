@@ -516,8 +516,6 @@ export function fragmentFor(
 	footprint = true,
 ): string {
 	const detail = surface === "terran" && footprint;
-	// Node #757 only differentiates terran. Other class cost cells retain their
-	// four-tap control; an analytic label must not imply a new class derivative.
 	const analytic = surface === "terran" && relief === "analytic-gradient";
 	return /* glsl */ `
 precision highp float;
