@@ -64,6 +64,30 @@ four-millisecond slices or a new game-wide frame budget. Parse/decode, one mesh'
 simplification, one raycast and live-root refresh remain indivisible; visible
 short hitches remain. Offline baking or finer slicing could reduce these further.
 
+## Longwall B, the miner
+
+The after-boot queue is serial, and sliced courier and tug installs take longer
+wall time. On this branch the queue therefore reached the miner inside
+`probe-station-interior-kit`'s cold-interior window, and Longwall B's
+preparation (hull and anchor batches, two simplifier levels and four nav-light
+rays) still ran in one task. The probe then read a longest gap of 442 to
+1,069 ms, against 22 and 50 ms on the merge base `a664c8d`, where the queue was
+already holding at the interiors download when the window opened.
+
+The browser loader now runs the same preparation on the shared scheduler and
+publishes the template only when it is complete. `installLongwallModel` stays
+synchronous for tests and scripts. Per-step figures, headless (bun, M1 Pro,
+shipped GLB, three runs): 416 to 590 ms in one task before; 92 steps after,
+with the longest step 47 to 76 ms. That step is one simplifier call on a
+merged hull batch and cannot be split without changing the level.
+
+In the browser (hardware lane, ANGLE Metal, host load 39 to 100 on 10 cores),
+`probe-station-interior-kit` passed 39/39 twice. With `--show-output`, the
+longest cold-install gaps were 59.1 ms (flight) and 58.9 ms (bay), against a
+limit of 66.6 ms, which is twice that run's baseline maximum. The limit
+is `max(50, 2 × baseline max)`, so on a quiet host with a 17 ms baseline
+maximum the same 59 ms step would fail it.
+
 ## Verification and delivery
 
 The new tests cover per-mesh yields, geometry equality, publication after warmup,
