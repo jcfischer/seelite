@@ -159,6 +159,93 @@ try {
 				JSON.stringify(recorded);
 		g.commerceWorld = originalWorld;
 		g.world.gameTime = originalTime;
+		const { engage } = await import("/src/traffic-engagement.ts");
+		const trafficKills = [];
+		const originalCanisters = g.canisters;
+		for (const hull of ["patrol", "interceptor"]) {
+			const candidates = g.trafficCandidates().filter((a) => a.hullId === hull);
+			const actor =
+				candidates.find((a) =>
+					npcFittingDrop(
+						g.npcFitFor(hull, a.key),
+						npcFitSeed(
+							g.trafficHomeRecord(a).seed,
+							a.key,
+							g.carrierCondition(a.key).instanceOrdinal,
+						),
+					),
+				) ?? candidates[0];
+			if (!actor) throw Error(`No ${hull} carrier in the fixture`);
+			for (let attempt = 0; attempt < 100; attempt++) {
+				const instance = g.carrierCondition(actor.key).instanceOrdinal;
+				if (
+					npcFittingDrop(
+						g.npcFitFor(hull, actor.key),
+						npcFitSeed(g.trafficHomeRecord(actor).seed, actor.key, instance),
+					)
+				)
+					break;
+				g.commerceWorld = applyTransition(
+					g.commerceWorld,
+					galaxy,
+					actor.key,
+					trafficDestruction(
+						systemIndexOfKey(actor.key),
+						actor.homeStationId,
+						g.world.gameTime,
+					),
+				);
+				g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
+				g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
+			}
+			const ordinal = g.carrierCondition(actor.key).instanceOrdinal;
+			const fit = g.npcFitFor(hull, actor.key);
+			const fitSeed = npcFitSeed(
+				g.trafficHomeRecord(actor).seed,
+				actor.key,
+				ordinal,
+			);
+			const engagement = engage(
+				{
+					key: actor.key,
+					hullId: hull,
+					pos: g.world.ship.pos,
+					vel: g.world.ship.vel,
+					nose: { x: 0, y: 0, z: -1 },
+					up: { x: 0, y: 1, z: 0 },
+					voyageOrdinal: g.trafficVoyage(actor),
+					loadout: fit,
+				},
+				fitSeed,
+				{ assaultAlreadyCharged: false, byPilot: true },
+			);
+			g.trafficEngagements.set(actor.key, engagement);
+			g.canisters = [];
+			const beforeCredit = g.ladderPending.combat;
+			const expectedCredit = killCredit(
+				{ hull: g.commander.hull, loadout: g.commander.loadout },
+				{ hull, loadout: fit },
+			);
+			const expectedFitting = npcFittingDrop(fit, fitSeed);
+			g.destroyTrafficCarrier(actor, engagement);
+			const fittings = g.canisters.filter((c) => c.fitting);
+			trafficKills.push({
+				hull,
+				creditAgrees:
+					Math.abs(g.ladderPending.combat - beforeCredit - expectedCredit) <
+					1e-10,
+				dropAgrees: expectedFitting
+					? fittings.length === 1 &&
+						JSON.stringify(fittings[0].fitting) ===
+							JSON.stringify({ ...expectedFitting, purchaseCostCr: 0 })
+					: fittings.length === 0,
+				dropped: fittings.length,
+				removed: !g.trafficEngagements.has(actor.key),
+			});
+		}
+		g.canisters = originalCanisters;
+		g.commerceWorld = originalWorld;
+		g.world.gameTime = originalTime;
 		return {
 			materialized,
 			defence,
@@ -166,6 +253,7 @@ try {
 			credit,
 			dropAgrees,
 			scanStable,
+			trafficKills,
 			recovered,
 			saved,
 			canisters: g.canisters.length,
@@ -190,6 +278,17 @@ try {
 	t.check(
 		"a recorded scan keeps its instance's fitted hold after replacement",
 		result.scanStable,
+	);
+	t.check(
+		"armed traffic kills pay credit against their actual seeded fits",
+		result.trafficKills.every((row) => row.creditAgrees && row.removed),
+		JSON.stringify(result.trafficKills),
+	);
+	t.check(
+		"armed traffic drops retain exactly the fitting selected from their fit",
+		result.trafficKills.every((row) => row.dropAgrees) &&
+			result.trafficKills.some((row) => row.dropped === 1),
+		JSON.stringify(result.trafficKills),
 	);
 	t.check(
 		"scooped fitting leaves space and retains trait with zero cost",

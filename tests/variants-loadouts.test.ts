@@ -7,6 +7,7 @@ import {
 	parseLoadout,
 	parseModule,
 	stockLoadout,
+	type Loadout,
 } from "../src/loadout";
 import { rollVariant, VARIANT_TABLE } from "../src/module-variants";
 import { npcLoadout, npcFittingDrop, npcFitSeed } from "../src/npc-loadout";
@@ -33,6 +34,8 @@ import { deathWreckContents } from "../src/death-wreck";
 import { emptyRequests } from "../src/requests";
 import { emptyLadderRecord, emptyPending } from "../src/ladder";
 import { dropFittingCanister, stepCanisters } from "../src/raider-wreck";
+import { engage, stepEngagement } from "../src/traffic-engagement";
+import { launchMissile, MISSILE } from "../src/missiles";
 import {
 	ejectWarningDue,
 	EJECT_WARNING_HULL,
@@ -303,4 +306,113 @@ test("raiders drop exactly one of their fittings at fifteen percent on an indepe
 	expect(drops / 12000).toBeLessThan(0.16);
 	const key = carrierKey(0, "raider-0");
 	expect(npcFitSeed(47, key, 0)).not.toBe(npcFitSeed(47, key, 1));
+});
+
+test("armed traffic flies its seeded defence and fires every fitted combat laser", () => {
+	for (const hull of ["patrol", "interceptor"] as const) {
+		const key = carrierKey(0, "station-trade/traffic-02");
+		const seed = npcFitSeed(47, key, 0);
+		const loadout = npcLoadout(hull, seed);
+		const engagement = engage(
+			{
+				key,
+				hullId: hull,
+				pos: v3(0, 0, -3),
+				vel: v3(),
+				nose: v3(0, 0, 1),
+				up: v3(0, 1, 0),
+				voyageOrdinal: 0,
+				loadout,
+			},
+			seed,
+			{ assaultAlreadyCharged: false, byPilot: true },
+		);
+		expect(engagement.condition).toEqual(
+			fullCondition(hull, fittedCapacity(hull, loadout)),
+		);
+		const dt = 0.01;
+		const step = stepEngagement(
+			{
+				...engagement,
+				flight: { ...engagement.flight, phase: "attack" },
+			},
+			{
+				ship: { pos: v3(), vel: v3() },
+				nose: v3(0, 0, -1),
+				aimOrigin: v3(),
+				aimNose: v3(0, 0, -1),
+				hull: 100,
+				frame: steadyFrame(v3()),
+				solids: [],
+			},
+			{ fired: false, damage: 0 },
+			dt,
+		);
+		const lasers = Object.values(loadout).filter((m) =>
+			["pulse-laser", "beam-laser", "military-laser"].includes(m.module),
+		);
+		const damage = lasers.reduce(
+			(sum, m) => sum + moduleRow(m).output.damagePerS,
+			0,
+		);
+		const heat = lasers.reduce((sum, m) => sum + moduleRow(m).heatPerS, 0);
+		const energy = lasers.reduce((sum, m) => sum + moduleRow(m).drawPerS, 0);
+		expect(step.returnFire?.amount).toBeCloseTo(damage * dt);
+		expect(step.engagement.condition.heat).toBeCloseTo(heat * dt);
+		expect(step.engagement.condition.energy).toBeCloseTo(
+			engagement.condition.energy - energy * dt,
+		);
+		expect(step.engagement.loadout).toBe(loadout);
+	}
+});
+
+test("a dropped NPC missile rack keeps its trait and spent ammunition through recovery and save", () => {
+	const rack = { ...makeModule("missile-rack", 1, "A"), variant: "precise" };
+	rack.ammo = moduleRow(rack).output.missiles;
+	let loadout: Loadout = { h1: rack };
+	const fire = () =>
+		launchMissile(
+			loadout,
+			{ targetId: "player", seconds: MISSILE.lockS },
+			{ id: "player", pos: v3(0, 0, -3), vel: v3(), radiusKm: 0.01 },
+			v3(),
+			v3(0, 0, -1),
+		);
+	for (let shot = 0; shot < rack.ammo; shot++) {
+		const launched = fire();
+		expect(launched).not.toBeNull();
+		loadout = launched!.loadout;
+	}
+	expect(loadout.h1.ammo).toBe(0);
+	let drop: ReturnType<typeof npcFittingDrop>;
+	for (let seed = 0; seed < 100 && !drop; seed++)
+		drop = npcFittingDrop(loadout, seed);
+	expect(drop).toEqual({ ...rack, ammo: 0 });
+	const commander = newCommanderRecord("courier");
+	const holdings: Holdings = {
+		commander: commander.state,
+		requests: emptyRequests(),
+		ladders: emptyLadderRecord(),
+		ladderPending: emptyPending(),
+	};
+	const world = newWorld(47);
+	const recovered = applyHoldEvent(holdings, world, {
+		kind: "scoop",
+		commodity: "fitting",
+		tonnes: 1,
+		fitting: drop,
+	});
+	const saved = parseSave(
+		serializeSave({
+			world: recovered.world,
+			commander: { ...commander, state: recovered.holdings.commander },
+		}),
+	);
+	expect(saved.commander.state.recoveredFittings?.[0]).toMatchObject({
+		...rack,
+		ammo: 0,
+		tonnes: 1,
+		purchaseCostCr: 0,
+	});
+	expect(fire()).toBeNull();
 });
