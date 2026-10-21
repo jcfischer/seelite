@@ -70,7 +70,6 @@ test("analytic source differentiates the same base and footprint height field", 
 		);
 		expect(source).toContain("c.x * wx.xyz + c.y * wy.xyz + c.z * wz.xyz");
 	}
-	// Other classes stay on their existing programs, even in a class cost sweep.
 	expect(fragmentFor("desert", "analytic-gradient")).toBe(
 		fragmentFor("desert", "four-tap"),
 	);

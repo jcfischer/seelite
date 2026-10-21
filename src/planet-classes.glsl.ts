@@ -6,7 +6,7 @@ import { PLANET_EXTRA_OCTAVES } from "./planet-footprint";
  * held fixed while differentiating, just as in the four-tap height samples:
  * they select a filtered field, rather than becoming terrain themselves.
  * The browser probe compares helper values against the original scalar field. */
-export const TERRAN_GRADIENT_NOISE = /* glsl */ `
+export const TERRAN_GRADIENT_NOISE = `
 vec4 vnoiseAndGradient(vec3 p) {
   vec3 i = floor(p), f = fract(p);
   vec3 df = 6.0 * f * (1.0 - f);
@@ -30,7 +30,7 @@ ${[3, 5, "ridged" as const]
 		const count = ridge ? 4 : kind;
 		const lac = ridge ? "2.07" : "2.03";
 		const offset = ridge ? "9.2" : "17.1";
-		const sample = /* glsl */ `
+		const sample = `
     vec4 sampleVG = vnoiseAndGradient(p);
     ${
 			ridge
@@ -41,7 +41,7 @@ ${[3, 5, "ridged" as const]
     s += a * weight * vec4(sampleVG.xyz * frequency, sampleVG.w);
     n += a * weight;
     p = p * ${lac} + ${offset}; a *= 0.5; frequency *= ${lac};`;
-		return /* glsl */ `
+		return `
 vec4 ${name}FootprintAndGradient(vec3 p, float footprint, float cap) {
   float extra = clamp(log(0.5 / max(footprint * pow(${lac}, ${count}.0), 1e-12)) / log(${lac}), 0.0, cap);
   vec4 s = vec4(0.0);
@@ -74,7 +74,7 @@ float smoothstepSlope(float lo, float hi, float value) {
  * cusp sign(0) chooses zero (the symmetric derivative); no finite differences
  * or screen derivatives are mixed into this path. */
 export function terranHeightGradient(footprint: boolean): string {
-	return /* glsl */ `
+	return `
 vec4 heightAndGradient(vec3 p) {
   vec3 q = ${footprint ? "terrainCoordinates(p)" : "p"} * 1.15 + seedOffset;
   vec4 wx = fbm3AndGradient(q * 1.4 + 11.0);
@@ -105,7 +105,7 @@ vec4 heightAndGradient(vec3 p) {
  * The 0.007 matches four-tap's 2e convention. Projection differentiates the
  * normalised sphere coordinate; its radial component cannot tilt the normal.
  * Like four-tap, the perturbation uses the body's object-space tangent frame. */
-export const ANALYTIC_RELIEF = /* glsl */ `#ifdef RELIEF_ANALYTIC_GRADIENT
+export const ANALYTIC_RELIEF = `#ifdef RELIEF_ANALYTIC_GRADIENT
   vec3 grad = heightAndGradient(p).xyz;
   vec3 tangentGrad = grad - p * dot(p, grad);
   return normalize(N - strength * 0.007 * tangentGrad);
