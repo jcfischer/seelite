@@ -30,7 +30,7 @@ type ModuleIndex = Map<string, Module>;
 
 const SOURCE = /^src\/.*\.ts$/;
 const TEST = /\.test\.ts$/;
-const SHADER = /(?:shader|\.glsl)(?:[./-]|$)/i;
+const SHADER = /(?:shaders?|\.glsl)(?:[./-]|$)/i;
 const BROWSER =
 	/^(?:window|document|navigator|localStorage|sessionStorage|indexedDB|fetch|requestAnimationFrame|cancelAnimationFrame|Image|Worker|Audio|AudioContext|OfflineAudioContext|AudioWorkletProcessor|HTMLElement|Element|HTML\w*Element|Canvas\w*|OffscreenCanvas|WebGL\w*|GPU\w*|BaseAudioContext|Audio\w*Node)$/;
 const MAX_TEST_FILES = 8;
