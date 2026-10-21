@@ -81,5 +81,44 @@ the required final `probe:pr` gate, and Sage review, in the prescribed order.
 - No game source changed. The plural `*-shaders.ts` exclusion has its own
   regression test, observed red before correcting the filename rule.
 
-The full suite was not repeated after the control's relocation; that change
+The initial full-suite run preceded the control's relocation; that change
 was checked through its standalone command, the affected tests and typecheck.
+The later assigned-branch run is recorded separately below.
+
+## Assigned-branch verification, 2026-10-21
+
+The resumed worker inherited `ce7ec4d` and `77b836a`; no implementation change
+was needed. Current checks on `77b836a`:
+
+- Affected mutation, directive, workflow-reader and script-gate tests:
+  **58 pass, 0 fail**, 7.22 s.
+- Real control under **Node 22.23.2**, the mutation job's major version:
+  **1 pass, 0 fail**, 18 assertions. Weak assertions produced 5 mutants / 4
+  survivors (3.29 s); boundary assertions produced 5 / 0 (2.82 s). The control
+  verified unchanged source bytes and clean Git status in both arms.
+- `npm run test:mutation:changed` against `origin/main` exited 0 with no
+  changed source files, no mutants and no survivors, 1.21 s.
+- Typecheck, `format:check`, Biome lint and ESLint itself passed.
+- Full `npm test`, run once in this verification session: **6,773 pass,
+  1 fail**, 6,774 tests across 398 files, **1,132.05 s**. RTK 0.40.0's generic
+  test wrapper omitted the actual failing test and retained no recoverable raw
+  test log; its only purported failure detail was a passing test whose title
+  contains `FAIL`. The failing test is **unidentified and unattributed**.
+  It is not established to be a base failure. The supervisor must retain raw
+  output in its required rerun; this receipt makes no final full-suite-pass
+  claim. The worker did not repeat the full command, per its one-run contract.
+- Live selection includes `market.ts` (two test files) and `sim.ts` (one).
+  `main.ts`, `ship-mesh.ts` and `planet-classes.glsl.ts` are excluded; reaching
+  geometry/shader tests do not override the browser-dependency exclusion.
+
+`lint:comments` against the now-advanced `origin/main` (`4bbff7c`) exits 1:
+`src/authored-hull.ts` has 33 suppressed comments on this branch versus 27 on
+main. This node changes neither that file nor `eslint-suppressions.json`.
+The guard produces the identical failure using the merge-base (`a664c8d`)
+suppression file. `LINT_BASE_REF=a664c8d npm run lint:comments` passes. This is
+an inherited baseline difference; the worker contract forbids repairing unrelated
+base failures or changing/rebasing other branches.
+
+Probe selection at `77b836a` again selected all **112** probes because CI
+workflow changes trigger the infrastructure fallback. The full browser run,
+live PR job run, PR-body publication and merge commit remain supervisor-owned.
