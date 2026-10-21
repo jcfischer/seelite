@@ -26,7 +26,7 @@
  * node's first contact in a step is never later than any of its pieces'.
  */
 import { faceUV, type RockHeightfield } from "./rock-heightfields";
-import { type Vec3, v3 } from "./vec3";
+import { cross, dot, sub, type Vec3, v3 } from "./vec3";
 
 /** A convex hull given by its vertices, and a point inside it. */
 export interface ConvexHull {
@@ -38,11 +38,16 @@ export interface BoundNode {
 	piece: number;
 	children: BoundNode[];
 }
+interface Plane {
+	n: Vec3;
+	k: number;
+}
 export interface RockPieces {
 	res: number;
 	pieces: ConvexHull[];
 	inflate: Float64Array;
 	roots: BoundNode[];
+	planes: readonly (readonly Plane[])[];
 }
 
 /** The most a piece may be scaled out to hold its patch (#957; #956 measured 1.0077 at worst). */
@@ -113,6 +118,21 @@ export function radiusOnFace(
 export const nodePos = (res: number, k: number): number =>
 	k === 0 ? -1 : k === res + 1 ? 1 : ((k - 0.5) / res) * 2 - 1;
 
+function cellCorners(
+	res: number,
+	i0: number,
+	i1: number,
+	j0: number,
+	j1: number,
+	at: (u: number, v: number) => Vec3,
+): Vec3[] {
+	const u0 = nodePos(res, i0),
+		u1 = nodePos(res, i1),
+		w0 = nodePos(res, j0),
+		w1 = nodePos(res, j1);
+	return [at(u0, w0), at(u1, w0), at(u1, w1), at(u0, w1)];
+}
+
 function surfacePoint(h: RockHeightfield, f: number, u: number, v: number) {
 	const q = facePoint(f, u, v);
 	const l = Math.hypot(q.x, q.y, q.z);
@@ -120,19 +140,9 @@ function surfacePoint(h: RockHeightfield, f: number, u: number, v: number) {
 	return v3((q.x / l) * r, (q.y / l) * r, (q.z / l) * r);
 }
 
-function outwardPlane(a: Vec3, b: Vec3, c: Vec3): { n: Vec3; k: number } {
-	const e1x = b.x - a.x,
-		e1y = b.y - a.y,
-		e1z = b.z - a.z;
-	const e2x = c.x - a.x,
-		e2y = c.y - a.y,
-		e2z = c.z - a.z;
-	let n = v3(
-		e1y * e2z - e1z * e2y,
-		e1z * e2x - e1x * e2z,
-		e1x * e2y - e1y * e2x,
-	);
-	let k = n.x * a.x + n.y * a.y + n.z * a.z;
+function outwardPlane(a: Vec3, b: Vec3, c: Vec3): Plane {
+	let n = cross(sub(b, a), sub(c, a));
+	let k = dot(n, a);
 	if (k < 0) {
 		n = v3(-n.x, -n.y, -n.z);
 		k = -k;
@@ -140,19 +150,53 @@ function outwardPlane(a: Vec3, b: Vec3, c: Vec3): { n: Vec3; k: number } {
 	return { n, k };
 }
 
-/** How far a ray from the origin along unit `d` runs inside the hull {0, P0..P3} whose sides are the cell's cone. */
-export function hullExit(P: readonly Vec3[], d: Vec3): number {
+function topPlanes(P: readonly Vec3[]): Plane[] {
 	const a = outwardPlane(P[0], P[1], P[2]);
-	const tris =
-		a.n.x * P[3].x + a.n.y * P[3].y + a.n.z * P[3].z <= a.k * (1 + 1e-12)
-			? [a, outwardPlane(P[0], P[2], P[3])]
-			: [outwardPlane(P[0], P[1], P[3]), outwardPlane(P[1], P[2], P[3])];
+	return dot(a.n, P[3]) <= a.k * (1 + 1e-12)
+		? [a, outwardPlane(P[0], P[2], P[3])]
+		: [outwardPlane(P[0], P[1], P[3]), outwardPlane(P[1], P[2], P[3])];
+}
+
+function planesExit(planes: readonly Plane[], d: Vec3): number {
 	let t = Infinity;
-	for (const { n, k } of tris) {
-		const nd = n.x * d.x + n.y * d.y + n.z * d.z;
+	for (const { n, k } of planes) {
+		const nd = dot(n, d);
 		if (nd > 0) t = Math.min(t, k / nd);
 	}
 	return t;
+}
+
+/** How far a ray from the origin along unit `d` runs inside the hull {0, P0..P3} whose sides are the cell's cone. */
+export function hullExit(P: readonly Vec3[], d: Vec3): number {
+	return planesExit(topPlanes(P), d);
+}
+
+function cellInflation(
+	h: RockHeightfield,
+	f: number,
+	planes: readonly Plane[],
+	u0: number,
+	u1: number,
+	w0: number,
+	w1: number,
+): number {
+	const m = INFLATE_SAMPLES;
+	let need = 1;
+	for (let b = 0; b < m; b++)
+		for (let a = 0; a < m; a++) {
+			const p = surfacePoint(
+				h,
+				f,
+				u0 + ((u1 - u0) * a) / (m - 1),
+				w0 + ((w1 - w0) * b) / (m - 1),
+			);
+			const l = Math.hypot(p.x, p.y, p.z);
+			need = Math.max(
+				need,
+				l / planesExit(planes, v3(p.x / l, p.y / l, p.z / l)),
+			);
+		}
+	return need;
 }
 
 const apexCentre = (V: readonly Vec3[]): Vec3 =>
@@ -173,57 +217,47 @@ export function buildRockPieces(
 			`Invalid rock piece inflation limit ${limit}: expected 1 to ${INFLATION_LIMIT}`,
 		);
 	const res = h.res,
-		n = res + 1,
-		m = INFLATE_SAMPLES;
+		n = res + 1;
 	if (!Number.isInteger(res) || res < 1 || h.r.length !== 6 * res * res)
 		throw new Error(`Rock heightfield has ${h.r.length} radii for res ${res}`);
 	for (let k = 0; k < h.r.length; k++)
 		if (!Number.isFinite(h.r[k]) || h.r[k] <= 0)
 			throw new Error(`Invalid rock radius at sample ${k}: ${h.r[k]}`);
 	const pieces: ConvexHull[] = new Array(6 * n * n);
+	const planes: Plane[][] = new Array(6 * n * n);
 	const inflate = new Float64Array(6 * n * n);
 	const origin = v3();
 	for (let f = 0; f < 6; f++)
 		for (let j = 0; j < n; j++)
 			for (let i = 0; i < n; i++) {
-				const u0 = nodePos(res, i),
-					u1 = nodePos(res, i + 1),
-					w0 = nodePos(res, j),
-					w1 = nodePos(res, j + 1);
-				const P = [
-					surfacePoint(h, f, u0, w0),
-					surfacePoint(h, f, u1, w0),
-					surfacePoint(h, f, u1, w1),
-					surfacePoint(h, f, u0, w1),
-				];
-				let need = 1;
-				for (let b = 0; b < m; b++)
-					for (let a = 0; a < m; a++) {
-						const p = surfacePoint(
-							h,
-							f,
-							u0 + ((u1 - u0) * a) / (m - 1),
-							w0 + ((w1 - w0) * b) / (m - 1),
-						);
-						const l = Math.hypot(p.x, p.y, p.z);
-						need = Math.max(
-							need,
-							l / hullExit(P, v3(p.x / l, p.y / l, p.z / l)),
-						);
-					}
-				const s = need * (1 + INFLATE_MARGIN);
+				const P = cellCorners(res, i, i + 1, j, j + 1, (u, v) =>
+					surfacePoint(h, f, u, v),
+				);
+				const top = topPlanes(P);
+				const s =
+					cellInflation(
+						h,
+						f,
+						top,
+						nodePos(res, i),
+						nodePos(res, i + 1),
+						nodePos(res, j),
+						nodePos(res, j + 1),
+					) *
+					(1 + INFLATE_MARGIN);
 				if (!(s <= limit))
 					throw new Error(
 						`Rock pieces${options.label ? ` for ${options.label}` : ""}: face ${f} cell (${i}, ${j}) needs inflation ${s.toFixed(6)}, over the limit ${limit}`,
 					);
 				const k = pieceIndex(res, f, i, j);
 				inflate[k] = s;
+				planes[k] = top.map(({ n, k }) => ({ n, k: k * s }));
 				const V = P.map((p) => v3(p.x * s, p.y * s, p.z * s));
 				pieces[k] = { v: [origin, ...V], c: apexCentre(V) };
 			}
 	const roots: BoundNode[] = [];
 	for (let f = 0; f < 6; f++) roots.push(bound(pieces, res, f, 0, n, 0, n));
-	return { res, pieces, inflate, roots };
+	return { res, pieces, inflate, roots, planes };
 }
 
 function bound(
@@ -255,22 +289,16 @@ function bound(
 		u1 = nodePos(res, i1),
 		w0 = nodePos(res, j0),
 		w1 = nodePos(res, j1);
-	const Q = [
-		facePoint(f, u0, w0),
-		facePoint(f, u1, w0),
-		facePoint(f, u1, w1),
-		facePoint(f, u0, w1),
-	];
+	const Q = cellCorners(res, i0, i1, j0, j1, (u, v) => facePoint(f, u, v));
 
 	const cq = facePoint(f, (u0 + u1) / 2, (w0 + w1) / 2),
 		cl = Math.hypot(cq.x, cq.y, cq.z);
 	const c = v3(cq.x / cl, cq.y / cl, cq.z / cl);
 	let reach = 0;
 	for (const ch of children)
-		for (const p of ch.hull.v)
-			reach = Math.max(reach, c.x * p.x + c.y * p.y + c.z * p.z);
+		for (const p of ch.hull.v) reach = Math.max(reach, dot(c, p));
 	const V = Q.map((q) => {
-		const t = reach / (c.x * q.x + c.y * q.y + c.z * q.z);
+		const t = reach / dot(c, q);
 		return v3(q.x * t, q.y * t, q.z * t);
 	});
 	return { hull: { v: [v3(), ...V], c: apexCentre(V) }, piece: -1, children };
@@ -289,5 +317,5 @@ export function pieceAt(rp: RockPieces, d: Vec3): number {
 
 /** The pieces' outer envelope along unit `d`: the field's radius as the sweep sees it. */
 export function envelopeAt(rp: RockPieces, d: Vec3): number {
-	return hullExit(rp.pieces[pieceAt(rp, d)].v.slice(1), d);
+	return planesExit(rp.planes[pieceAt(rp, d)], d);
 }

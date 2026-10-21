@@ -14,11 +14,13 @@ import {
 	type ConvexHull,
 	envelopeAt,
 	INFLATION_LIMIT,
+	nodePos,
+	pieceAt,
 	pieceIndex,
 	piecesPerFace,
 	type RockPieces,
 } from "../src/rock-pieces";
-import { cross, dot, sub, type Vec3, v3 } from "../src/vec3";
+import { cross, dot, scale, sub, type Vec3, v3 } from "../src/vec3";
 import { loadRockArchetypes } from "../scripts/lib/rock-heightfields";
 import { measurePiecesFit } from "../scripts/lib/rock-pieces-fit";
 
@@ -88,6 +90,20 @@ function leaves(node: BoundNode, out: number[] = []): number[] {
 	return out;
 }
 
+function rayTriangle(d: Vec3, a: Vec3, b: Vec3, c: Vec3): number {
+	const e1 = sub(b, a),
+		e2 = sub(c, a),
+		p = cross(d, e2);
+	const determinant = dot(e1, p);
+	if (Math.abs(determinant) < 1e-16) return 0;
+	const t = scale(a, -1),
+		u = dot(t, p) / determinant,
+		q = cross(t, e1),
+		v = dot(d, q) / determinant;
+	if (u < -1e-10 || v < -1e-10 || u + v > 1 + 1e-10) return 0;
+	return Math.max(0, dot(e2, q) / determinant);
+}
+
 describe("rock cone pieces from a radial heightfield (node #957)", () => {
 	const fields = [
 		["sphere", sphere(64, 0.8)],
@@ -108,6 +124,26 @@ describe("rock cone pieces from a radial heightfield (node #957)", () => {
 				expect(p.v[0]).toEqual(v3());
 			}
 		}
+	});
+
+	test("the envelope agrees with independent ray intersections through the built hull vertices", () => {
+		for (const [name, , rp] of built)
+			for (let f = 0; f < 6; f++)
+				for (let j = 0; j <= rp.res; j++)
+					for (let i = 0; i <= rp.res; i++) {
+						const u = (nodePos(rp.res, i) + nodePos(rp.res, i + 1)) / 2;
+						const v = (nodePos(rp.res, j) + nodePos(rp.res, j + 1)) / 2;
+						const d = v3(...dirOf(f, u, v));
+						const [, a, b, c, e] = rp.pieces[pieceAt(rp, d)].v;
+						const expected = Math.max(
+							rayTriangle(d, a, b, c),
+							rayTriangle(d, a, c, e),
+							rayTriangle(d, a, b, e),
+							rayTriangle(d, b, c, e),
+						);
+						expect(expected, name).toBeGreaterThan(0);
+						expect(envelopeAt(rp, d), name).toBeCloseTo(expected, 12);
+					}
 	});
 
 	test("the envelope is never below the bilinear field on a dense direction sample", () => {
