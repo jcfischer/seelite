@@ -51,7 +51,7 @@ import {
 	type HullVariantId,
 } from "./hull";
 import { disposeSubtree, shared } from "./gpu-teardown";
-import { finishHullWork } from "./hull-install-work";
+import { finishHullWork, runHullSlices } from "./hull-install-work";
 import type { Vec3 } from "./vec3";
 import {
 	currentHullFinish,
@@ -72,7 +72,11 @@ import {
 	adoptUndetailedShip,
 	buildShipDetails,
 } from "./ship-detail";
-import { halfPixelKm, levelErrorKm, reducedLevel } from "./authored-levels";
+import {
+	halfPixelKm,
+	levelErrorKm,
+	reducedLevelSteps,
+} from "./authored-levels";
 import type { DetailLevel } from "./detail-level";
 
 export const SHIP_DESIGN_ROUND = 11;
@@ -2618,14 +2622,31 @@ function longwallGlowDisc() {
 export function installLongwallModel(scene: THREE.Group | null): void {
 	// Swapped only once the prepare has returned: a prepare that throws leaves
 	// the previous install whole (sage round 8).
-	longwallTemplate = scene ? prepareLongwall(scene) : null;
+	publishLongwall(scene ? finishHullWork(prepareLongwallSteps(scene)) : null);
+}
+
+/** The browser loader's install: the same preparation in background-install
+ *  slices, published once it has finished (node #907). */
+export async function installLongwallModelSliced(
+	scene: THREE.Group,
+	run: <T>(work: Generator<void, T>) => Promise<T> = runHullSlices,
+): Promise<void> {
+	publishLongwall(await run(prepareLongwallSteps(scene)));
+}
+
+function publishLongwall(template: THREE.Group | null): void {
+	longwallTemplate = template;
 	for (const key of muzzleCache.keys())
 		if (key.startsWith("miner/")) muzzleCache.delete(key);
 }
 
-function prepareLongwall(scene: THREE.Group): THREE.Group {
+function* prepareLongwallSteps(
+	scene: THREE.Group,
+): Generator<void, THREE.Group> {
 	batchLongwallHull(scene);
+	yield;
 	batchLongwallAnchors(scene);
+	yield;
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -2672,15 +2693,16 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 		permissive: true,
 	};
 	const kmPerM = 0.001;
+	yield;
 	template.add(
-		reducedLevel(
+		yield* reducedLevelSteps(
 			exterior,
 			halfPixelKm(LONGWALL_MEDIUM_RADII, HULL_REACH_KM.miner) / kmPerM,
 			kmPerM,
 			LONGWALL_LEVEL_NAMES.reduced,
 			rules,
 		),
-		reducedLevel(
+		yield* reducedLevelSteps(
 			exterior,
 			levelErrorKm("outline", HULL_REACH_KM.miner) / kmPerM,
 			kmPerM,
@@ -2707,7 +2729,7 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 	}
 	// Placed by rays against 283k triangles, so once here rather than per
 	// clone: a Traffic miner arriving mid-flight must not pay for them.
-	addNavLights(template);
+	addNavLights(template, yield* navLightPositionSteps(template));
 	template.traverse((o) => {
 		if (o.name === "nav-lights") shared((o as THREE.Points).geometry);
 	});
