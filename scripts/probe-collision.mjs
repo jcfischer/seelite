@@ -81,10 +81,16 @@ const coast = async ({ type, where, gates, system = SYSTEM, perch = null }) => {
 				const deg = g.dockingTolerances.AXIS_TOLERANCE_DEG;
 				let rel;
 				let label;
-				if (where === "face") {
+				if (where === "face" || where === "wheel-face") {
 					// Three quarters of the way to check 2's cone edge, as §9.2.4 flew
 					// it: inside the cone, four times outside the slot. // glossary-ignore: slot
-					const off = 0.75 * snap.planeKm * Math.tan((deg * Math.PI) / 180);
+					const bay = g.interiorOf(id);
+					// The Wheel's hub is narrower than the old cone-edge fixture.
+					// Aim just beyond its bay, at the metal that holds it.
+					const off =
+						where === "wheel-face"
+							? bay.halfAcrossKm + bay.laneHalfAcrossKm / 2
+							: 0.75 * snap.planeKm * Math.tan((deg * Math.PI) / 180);
 					rel = add(scale(axis, snap.planeKm + 0.5), scale(across0, off));
 					label = `${(off * 1000).toFixed(0)} m off the axis`;
 				} else if (where === "berth") {
@@ -248,9 +254,17 @@ function stopped(what, r) {
 }
 
 // §9.2.1 — a ship stops at a hull.
-{
+for (const [system, formId, where] of [
+	[SYSTEM, "a", "face"],
+	[3, "e", "wheel-face"],
+]) {
 	console.log("\n§9.2.1 a ship stops at a station's hull:");
-	const r = await coast({ type: "trade", where: "face", gates: 1 });
+	const r = await coast({ type: "trade", where, gates: 1, system });
+	check(
+		`system ${system} builds trade ${formId}`,
+		r.formId === formId,
+		JSON.stringify(r),
+	);
 	console.log(`  ${r.id} ${r.label}: ${JSON.stringify(r)}`);
 	stopped("the hull face", r);
 	check(

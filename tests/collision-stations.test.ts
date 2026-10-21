@@ -98,6 +98,7 @@ import {
 	type StationEnd,
 	type StationProxy,
 	stationMotions,
+	stationProxy,
 	stationProxyOf,
 } from "../src/station-proxy";
 import { MAX_DT } from "../src/units";
@@ -1224,7 +1225,10 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 			expect(swept.vel).toEqual(v3());
 			// §4.3 is per overlapping pair: once that primitive is left,
 			// it is solid on a return. Isolate the pair so another primitive
-			// along the escape route cannot mask the ghost being tested.
+			// along the escape route cannot mask the ghost being tested. This
+			// isolates the pair's rule, not a game restore: the full-proxy row
+			// "a shallow restore reverses out with every neighbour present"
+			// below flies the authored forms with all neighbouring boxes present.
 			const pair = [{ ...solids[0], primitives: [primitive] }];
 			const outside = add(pos, scale(pose.z, 4));
 			const away: SolidMotion = {
@@ -1255,6 +1259,219 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 			`saved flight deliberately placed inside: ${placedInside}/${STATION_TYPES.length} roles ghost, no damage or push`,
 		);
 	});
+});
+
+// ---------------------------------------------------------------------------
+// 4.3 and 11.7: a refit restore, with every authored proxy box present (node #963)
+// ---------------------------------------------------------------------------
+
+/** Spike #962's mulberry32 stream and isotropic direction draws. */
+function restoreRandom(seed: number): () => number {
+	let a = seed >>> 0;
+	return () => {
+		a = (a + 0x6d2b79f5) >>> 0;
+		let t = a;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+function restoreDirection(random: () => number): Vec3 {
+	for (;;) {
+		const p = v3(2 * random() - 1, 2 * random() - 1, 2 * random() - 1);
+		const size = length(p);
+		if (size > 0.1 && size <= 1) return scale(p, 1 / size);
+	}
+}
+
+describe("collision.md §4.3, §11.7: a shallow restore reverses out with every neighbour present", () => {
+	const forms: { type: StationType; form: StationFormId }[] = [
+		{ type: "shipyard", form: "a" },
+		{ type: "shipyard", form: "b" },
+		{ type: "shipyard", form: "c" },
+		{ type: "refinery", form: "a" },
+		{ type: "refinery", form: "b" },
+		{ type: "refinery", form: "c" },
+		{ type: "refinery", form: "d" },
+	];
+	const rays = 40;
+	const depthsM = [0.1, 0.5, 2];
+	const marchKm = 0.0005;
+	const speedKms = 0.1;
+	const maxTicks = 5;
+
+	for (const { type, form } of forms) {
+		test(
+			`${type}/${form}: reverse escapes unbilled in at most five ticks; inward can strike from inside`,
+			() => {
+				const proxy = stationProxy(type, form, 0, 0);
+				if (!proxy) throw new Error(`no authored proxy ${type}/${form}`);
+				// Exactly the spike's still frame. No claim about a turning drum:
+				// its reverse path is no longer the path the ship came in on.
+				const end = still(apertureFrame(type, v3(0, 0, 1), 0, v3(0, 1, 0)));
+				const solids = stationMotions(proxy, end, end);
+				let formOverlaps = 0;
+				let formStrikes = 0;
+				for (const hull of ["courier", "freighter"] as const) {
+					const primitives = hullSolid(hull);
+					const [ship] = primitives;
+					const shipReach = reachKm(primitives);
+					const far = Math.max(...solids.map((s) => reachKm(s.primitives)));
+					// The broad phase only skips boxes too far away to overlap.
+					// sweepShip below always receives EVERY primitive of the proxy.
+					const boxes = solids.flatMap((solid) =>
+						solid.primitives.map((primitive) => {
+							if (primitive.kind !== "box")
+								throw new Error("authored station proxies must be boxes");
+							const p = solid.start;
+							const c = primitive.centre;
+							return {
+								primitive,
+								pose: p,
+								centre: add(
+									p.origin,
+									add(add(scale(p.x, c.x), scale(p.y, c.y)), scale(p.z, c.z)),
+								),
+								reach: Math.hypot(...primitive.half) + shipReach,
+							};
+						}),
+					);
+					const random = restoreRandom(962 + 31 * form.charCodeAt(0));
+					let overlaps = 0;
+					let held = 0;
+					let inwardStruck = 0;
+					let inwardN = 0;
+					let hitRays = 0;
+					let mostTicks = 0;
+					for (let ray = 0; ray < rays; ray++) {
+						const out = restoreDirection(random);
+						const aim = scale(restoreDirection(random), 0.1 * random());
+						const span = far + shipReach + 0.01;
+						const from = add(aim, scale(out, span));
+						const inward = scale(out, -1);
+						const nose = restoreDirection(random);
+						let up: Vec3;
+						do {
+							const candidate = restoreDirection(random);
+							up = sub(candidate, scale(nose, dot(candidate, nose)));
+						} while (length(up) < 1e-6);
+						up = scale(up, 1 / length(up));
+						const inside = (pos: Vec3) => {
+							const pose = shipPose(pos, nose, up);
+							return boxes.some(
+								(b) =>
+									length(sub(b.centre, pos)) <= b.reach &&
+									pairSeparation(ship, pose, b.primitive, b.pose).overlap,
+							);
+						};
+						const along = (s: number) => add(from, scale(inward, s));
+						expect(inside(from)).toBe(false);
+						let clear = 0;
+						let hit: number | null = null;
+						for (let s = marchKm; s < 2 * span; s += marchKm) {
+							if (inside(along(s))) {
+								hit = s;
+								break;
+							}
+							clear = s;
+						}
+						if (hit === null) continue;
+						let boundary: number = hit;
+						while (boundary - clear > 0.00001) {
+							const middle = (clear + boundary) / 2;
+							if (inside(along(middle))) boundary = middle;
+							else clear = middle;
+						}
+						hitRays++;
+						for (const depthM of depthsM) {
+							const placed = along(clear + depthM / 1000);
+							if (!inside(placed)) continue;
+							overlaps++;
+							const label = { type, form, hull, ray, depthM };
+							const tick = (pos: Vec3, dir: Vec3) => {
+								// Fixed 100 m/s translation demand, unchanged attitude.
+								const vel = scale(dir, speedKms);
+								const wanted = add(pos, scale(vel, MAX_DT));
+								return {
+									wanted,
+									swept: sweepShip(
+										{
+											primitives,
+											start: shipPose(pos, nose, up),
+											end: shipPose(wanted, nose, up),
+											velStart: vel,
+											velEnd: vel,
+										},
+										solids,
+										MAX_DT,
+									),
+								};
+							};
+							let pos = placed;
+							let holds = 0;
+							let ticks = 0;
+							while (inside(pos) && ticks < maxTicks) {
+								const { wanted, swept } = tick(pos, out);
+								expect({
+									...label,
+									billed: swept.impacts.some((i) => i.damage !== 0),
+								}).toEqual({ ...label, billed: false });
+								if (length(sub(swept.pos, wanted)) > 1e-9) holds++;
+								pos = swept.pos;
+								ticks++;
+							}
+							expect({
+								...label,
+								inside: inside(pos),
+								holds: holds <= 1,
+							}).toEqual({ ...label, inside: false, holds: true });
+							if (holds > 0) held++;
+							mostTicks = Math.max(mostTicks, ticks);
+							// Keep the spike's nose/random draw order, splitting other
+							// headings by hemisphere; only inward controls are flown.
+							for (const dir of [nose, restoreDirection(random)]) {
+								if (dot(dir, out) > 0) continue;
+								inwardN++;
+								pos = placed;
+								for (let t = 0; t < maxTicks && inside(pos); t++) {
+									const { swept } = tick(pos, dir);
+									if (swept.impacts.some((i) => i.damage > 0)) {
+										inwardStruck++;
+										break;
+									}
+									pos = swept.pos;
+								}
+							}
+						}
+					}
+					console.log(
+						`restore ${type}/${form} ${hull}: ${hitRays}/${rays} rays hit, ` +
+							`${overlaps}/${rays * depthsM.length} placements overlapped, ` +
+							`${held} held one step unbilled, escape <= ${mostTicks} ticks; ` +
+							`${inwardStruck}/${inwardN} inward headings billed from inside`,
+					);
+					expect(overlaps).toBeGreaterThan(0);
+					// Exact pins for §4.3 / §11.7's measured 2 / 1,678: two
+					// grazing depth placements have already left the thin box.
+					const missed =
+						type === "refinery" &&
+						((form === "a" && hull === "freighter") ||
+							(form === "c" && hull === "courier"));
+					expect({ overlaps, held }).toEqual({
+						overlaps: rays * depthsM.length - (missed ? 1 : 0),
+						held:
+							type === "refinery" && form === "a" && hull === "courier" ? 2 : 0,
+					});
+					formOverlaps += overlaps;
+					formStrikes += inwardStruck;
+				}
+				expect(formOverlaps).toBeGreaterThan(0);
+				expect(formStrikes).toBeGreaterThan(0);
+			},
+			TRAVERSAL_MS,
+		);
+	}
 });
 
 /** An orthogonal, unit up-vector for the cruise chord's ship pose. */

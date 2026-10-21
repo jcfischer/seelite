@@ -122,6 +122,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
 	720: "the terran ground and clouds across the horizon at station altitude and the flight boundary",
 	735: "a derelict's torn sections and exposed frame",
 	732: "dark derelict roster hull and tethered salvage",
@@ -169,6 +170,7 @@ export const LEVERS = Object.freeze({
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
 	647: "a turn in cruise drawn as the attitude vents' plumes, like a turn in normal flight",
+	637: "the firing vents drawn on an NPC hull — the duel's raider — from its own firing table",
 	651: "the cabin drawn in its own pass, so no world geometry enters it",
 });
 
@@ -271,6 +273,11 @@ export const LEVERS = Object.freeze({
  *   then flown `steps` steps of 1/60 s through the game's own `step` and held
  *   (`holdCruiseTurnState`). The attitude vents fire and saturate because
  *   the sim says so; cruise moves the hull, so no translation vent does.
+ * - `npc-vents` — node #637's NPC plumes: a raider forced ahead in a cruise
+ *   leg interdicts and flies `steps` steps of the duel through the game's own
+ *   `step`, then the clock is held and the player is placed `behindKm` off its
+ *   stern looking at it (`scripts/lib/npc-vent-state.mjs`). The raider stands
+ *   where the sim left it and fires what its own Hull step fired.
  */
 export const SHOT_KINDS = Object.freeze([
 	"derelict",
@@ -291,6 +298,7 @@ export const SHOT_KINDS = Object.freeze([
 	"docking-notice",
 	"vents",
 	"cruise-turn",
+	"npc-vents",
 ]);
 
 /**
@@ -382,9 +390,13 @@ export const VIEWS = Object.freeze([
 		// frame member is under a pixel; this one stands 50 m off the tear that
 		// faces the star most. New with #735, so it has no "before" at an
 		// earlier ref: the derelict view above is the pair.
+		//
+		// Node #813: the view above's wreck is now the authored Porter, which
+		// the tear cannot cut, so this one stands at the first of the system's
+		// derelict slots whose wreck it can (`placeDerelict`).
 		name: "derelict-tear",
 		covers: [735],
-		what: "The same wreck from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
+		what: "The system's first wreck the tear can cut, from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
 		shot: { kind: "derelict", framing: "tear", view: "cockpit" },
 	},
 	{
@@ -675,7 +687,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [208, 199, 102, 101, 99, 200, 201, 207, 203],
+		covers: [208, 199, 102, 101, 99, 200, 201, 207, 203, 909],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -683,6 +695,32 @@ export const VIEWS = Object.freeze([
 			radii: 6,
 			sunAngleDeg: 150,
 			view: "chase",
+		},
+	},
+	{
+		name: "hull-chase-miner",
+		covers: [909],
+		what: "The Longwall miner's lifted study paints, in the courier's chase framing and light, beside the Bollard for the principal's paint decision.",
+		shot: {
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "miner",
+		},
+	},
+	{
+		name: "hull-chase-bollard",
+		covers: [909],
+		what: "The Bollard tug's lifted study paints, in the courier's chase framing and light, beside the courier and miner for the principal's paint decision.",
+		shot: {
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "tug",
 		},
 	},
 	{
@@ -1130,6 +1168,12 @@ export const VIEWS = Object.freeze([
 			view: "chase",
 		},
 	},
+	{
+		name: "npc-vent-plumes",
+		covers: [637],
+		what: "Cockpit, off the duel's raider's stern: the raider turning onto the player and driving at them, its vents firing from its own Hull step — a glow at each lit throat and a short puff thinning away from it, on the raider's hull rather than the player's.",
+		shot: { kind: "npc-vents", steps: 20, behindKm: 0.2, view: "cockpit" },
+	},
 	/**
 	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
 	 * so an ordinary capture cannot land on the same frame twice; each row holds
@@ -1489,10 +1533,11 @@ export const VIEWS = Object.freeze([
 			kind: "workbench-interior",
 			asset: "outpost",
 			// **Named, not defaulted** (#257). The workbench opens on the first
-			// variant in the list; the outpost's selected form is D since the
-			// principal's yes on this node's sheet, and a frame that kept
-			// showing A would be a view of a form the role no longer carries.
-			variant: "d",
+			// variant in the list, and a frame of a form the role no longer
+			// carries judges nothing: D was selected on #257's sheet, and since
+			// #518 the role draws E, the Salvage, from its authored model since
+			// node #1031.
+			variant: "e",
 			radii: 1.25,
 			azimuth: 0.28,
 			elevation: 0.45,
@@ -1531,6 +1576,61 @@ export const VIEWS = Object.freeze([
 			kind: "npc-jump",
 			event: "arrival",
 			framing: "player-lane-point",
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	// #1006's three beats, one frame each. `npc-arrival` and `npc-departure` were
+	// taken half a second **after** the crossing, which is the one moment that
+	// tells a watcher nothing about what just happened — the principal's read of
+	// the `arrival` capture was "the witchspace is open in first frame … no sense
+	// of drama when witchspace opens", and a frame at +0.5 s could not have
+	// shown either the opening or the closing. These rows stand at the opening,
+	// at the crossing, in the swallow, and at the seal.
+	{
+		name: "npc-arrival-opening",
+		covers: [684],
+		what: "The same ring 0.9 s **before** the hauler crosses: open, brightening, and with nothing in it. The build-up the capture had none of — the hull is still in another system, so its name, contact and collision are not here yet.",
+		shot: {
+			kind: "npc-jump",
+			event: "arrival",
+			phaseS: -0.9,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-arrival-crossing",
+		covers: [684],
+		what: "The moment of arrival: 0.05 s after the instant, the hull easing through the ring's plane with the flare up, a wavelength ahead of settling on the lane point.",
+		shot: {
+			kind: "npc-jump",
+			event: "arrival",
+			phaseS: 0.05,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-departure-swallow",
+		covers: [684],
+		what: "0.35 s before the departure instant: the hauler ahead of the lane point it held through its wind-up, standing into the ring that opened in front of it. Where it goes, in other words, is through there.",
+		shot: {
+			kind: "npc-jump",
+			event: "departure",
+			phaseS: -0.35,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-departure-seal",
+		covers: [684],
+		what: "The last 0.25 s of that ring's life, the hull long gone: collapsed toward a point and flaring as it closes, so the place where it opened is seen to close.",
+		shot: {
+			kind: "npc-jump",
+			event: "departure",
+			phaseS: 4.55,
 			system: 0,
 			view: "cockpit",
 		},
@@ -1582,7 +1682,12 @@ const SHOT_REQUIREMENTS = {
 		(s.event === "arrival" || s.event === "departure") &&
 		(s.framing === undefined ||
 			s.framing === "ring" ||
-			s.framing === "player-lane-point"),
+			s.framing === "player-lane-point") &&
+		// Seconds from the crossing instant (#1006): negative in the opening and
+		// in the swallow, positive at the seal. A non-finite or absent one is the
+		// row the set already had — half a second after the jump — and is not what
+		// the beat rows are for, so it is allowed but not trusted.
+		(s.phaseS === undefined || finite(s.phaseS)),
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),
@@ -1622,6 +1727,14 @@ const SHOT_REQUIREMENTS = {
 		Number.isInteger(s.steps) &&
 		s.steps > 0 &&
 		(s.orbit === undefined || finite(s.orbit)),
+	// Node #637: flown into the duel, and placed off the stern at a range
+	// where a 63.5 m hull is more than a dot.
+	"npc-vents": (s) =>
+		Number.isInteger(s.steps) &&
+		s.steps > 0 &&
+		finite(s.behindKm) &&
+		s.behindKm > 0 &&
+		s.behindKm < 2,
 	// #621: above the cap and above the envelope, or nothing saturates and the
 	// frame is a quiet ship under a caption about a saturated one.
 	vents: (s) =>
@@ -1712,6 +1825,20 @@ export function validateRunViews(run, views = VIEWS) {
 			`view-set: run "${run.label}" carries ${extra.join(", ")}, ` +
 				`which the view set does not declare — add it to VIEWS or drop it`,
 		);
+}
+
+/** Select named canonical views without silently dropping an unknown request. */
+export function selectViews(names) {
+	if (names === null) return VIEWS;
+	const requested = names.split(",");
+	if (
+		new Set(requested).size !== requested.length ||
+		requested.some((name) => !VIEWS.some((v) => v.name === name))
+	)
+		throw new Error(
+			`Unknown, empty or repeated canonical view in --only ${names}`,
+		);
+	return VIEWS.filter((view) => requested.includes(view.name));
 }
 
 /**
@@ -1831,6 +1958,14 @@ ${runs
 		)
 		.join("\n");
 
+	const heading =
+		views === VIEWS
+			? "Canonical view set"
+			: `Selected canonical views (${views.length} of ${VIEWS.length})`;
+	const selection =
+		views === VIEWS
+			? ""
+			: `<p>Selection: ${views.map((v) => esc(v.name)).join(", ")}</p>`;
 	return `<!doctype html>
 <meta charset="utf-8">
 <title>seelite canonical view set — seed ${SEED}</title>
@@ -1847,7 +1982,8 @@ ${runs
   th em { display:block; color:#5f6b7d; font-style:normal; margin-top:6px; font-size:12px; }
   img { display:block; width:100%; height:auto; background:#000; border:1px solid #1c2230; }
 </style>
-<h1>Canonical view set</h1>
+<h1>${heading}</h1>
+${selection}
 <p class="sub">Seed ${SEED}, ${VIEWPORT.width}×${VIEWPORT.height}, clock started at ${GAME_TIME_S}s and left running. Captured headed — every frame here is the renderer the player gets. Each camera is placed co-moving with its subject, which is what holds a framing; the clock is not stopped.</p>
 <table>
 <thead><tr><th scope="row"></th>${head}</tr></thead>

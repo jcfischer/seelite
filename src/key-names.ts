@@ -331,8 +331,22 @@ export const ejectPrompt = (layout: Layout): string =>
  * `CommandId`: six call sites each typing both ids was six chances to pair the
  * wrong two, and a stem the registry has no `Down` row for does not compile.
  */
-export const dialKeys = (layout: Layout, dial: DialStem): string =>
-	`(${pairOf(keyboardFirst(layout, `tune.${dial}Down`), keyboardFirst(layout, `tune.${dial}Up`))})`;
+export const dialKeys = (layout: Layout, dial: DialStem): string => {
+	let labels = dialLabels.get(layout);
+	if (!labels) {
+		labels = new Map();
+		dialLabels.set(layout, labels);
+	}
+	const held = labels.get(dial);
+	if (held !== undefined) return held;
+	const label = `(${pairOf(keyboardFirst(layout, `tune.${dial}Down`), keyboardFirst(layout, `tune.${dial}Up`))})`;
+	labels.set(dial, label);
+	return label;
+};
+
+// Only the names are stable: the legacy HUD still formats live dial values.
+// Layout is deeply frozen and rebind replaces it, so no invalidation is needed.
+const dialLabels = new WeakMap<Layout, Map<DialStem, string>>();
 
 /** The cruise dials, as the registry names their pairs: `vMax`, `exponent`, … */
 export type DialStem = CommandId extends infer C

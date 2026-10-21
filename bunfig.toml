@@ -1,9 +1,11 @@
 [test]
-# The game draws authored models for `courier` (node #812), `tug` (node #814)
-# and `miner/b` (node #815); every headless row sees the hulls the player
+# The game draws authored models for `courier` (node #812), `tug` (node #814),
+# `voyager` (node #820) and `miner/b` (node #815); every headless row sees the hulls the player
 # flies; live boot may temporarily draw their procedural stand-ins.
 preload = [
 	"./tests/setup-courier-hull.ts",
+	"./tests/setup/authored-hulls.ts",
 	"./tests/setup/tug-hull.ts",
+	"./tests/setup/voyager-hull.ts",
 	"./tests/setup/longwall-model.ts",
 ]

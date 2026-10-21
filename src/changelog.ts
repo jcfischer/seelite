@@ -28,6 +28,42 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1033 — proposed copy; principal approval required before merge.
+	{
+		date: "2026-10-20",
+		text: "Ring, Drum and Wheel trade stations have authored exteriors, with docking bays inside their hubs.",
+		node: 1033,
+	},
+	// Node #968: sentence approved by the principal, 2026-10-19.
+	{
+		date: "2026-10-19",
+		text: "Asteroid fields are drawn: every system with one shows its rocks, drifting and turning, and a field far away reads as a scatter of points.",
+		node: 968,
+	},
+	// Node #1031: sentence approved by the principal, 2026-10-19.
+	{
+		date: "2026-10-19",
+		text: "The Salvage outposts have a new exterior: a freighter section welded to cargo pods, a ship's bow and a dish, round a landing deck lit by work lamps.",
+		node: 1031,
+	},
+	// Node #748: proposed sentence for the principal's approval before merge.
+	{
+		date: "2026-10-18",
+		text: "The twin-rim Wheel joins the trade stations you can dock at across the galaxy.",
+		node: 748,
+	},
+	// Node #971: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-17",
+		text: "You can target asteroid fields and cruise to a safe distance from their centre.",
+		node: 971,
+	},
+	// Node #747: proposed sentence for the principal's approval before merge.
+	{
+		date: "2026-10-16",
+		text: "Trade stations now vary between systems: dock at a Coriolis, Ring, Drum or modular Assembly.",
+		node: 747,
+	},
 	// Node #977: sentence approved by the principal, 2026-10-14.
 	{
 		date: "2026-10-14",

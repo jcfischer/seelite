@@ -410,5 +410,70 @@ check(
 	`closest was ${behind.closestId} at ${behind.closestRatio.toFixed(6)} × its radius`,
 );
 
+// Node #971: a contact endpoint, flown through the same Game path as stations.
+// A fresh page owns this fixture; a measured page is never navigated (#121).
+const fieldPage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(fieldPage);
+await fieldPage.goto(
+	gameUrl(ORIGIN, { seed: 47, system: 173, raider: "off" }),
+	{ waitUntil: "load" },
+);
+await bootedGame(fieldPage);
+const fieldArrival = await fieldPage.evaluate(async () => {
+	const g = window.__seelite;
+	const { systemFields, fieldRocks, rockPose } = await import(
+		"/src/asteroid-field.ts"
+	);
+	const field = g.selectable().find((c) => c.kind === "field");
+	if (!field) return { missing: true };
+	const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+	g.world.ship.pos = { x: field.pos.x, y: field.pos.y, z: field.pos.z + 2000 };
+	g.world.ship.vel = { ...field.velocity };
+	g.targetId = field.id;
+	g.faceTarget();
+	g.engageCruise();
+	let cruised = false;
+	for (let i = 0; i < 100 / g.units.MAX_DT; i++) {
+		g.faceTarget();
+		g.step(g.units.MAX_DT);
+		g.render(g.units.MAX_DT);
+		if (g.regime === "cruise") cruised = true;
+		if (cruised && g.regime === "normal") break;
+	}
+	const target = g.targetBody();
+	const { record, contents } = g.world.system;
+	const plan = systemFields(record, contents).find((p) => p.id === field.id);
+	const rocks = fieldRocks(record, plan);
+	return {
+		cruised,
+		exit: g.lastExit,
+		rangeKm: distance(g.world.ship.pos, target.pos),
+		dropRadiusKm: g.cruiseParams.dropRadiusKm,
+		rockCount: rocks.length,
+		clearanceKm: Math.min(
+			...rocks.map(
+				(r) =>
+					distance(g.world.ship.pos, rockPose(plan, r, g.world.gameTime).pos) -
+					r.radiusKm,
+			),
+		),
+		body: g.world.system.byId.has(field.id),
+		mass: g.masses().some((m) => m.id === field.id),
+	};
+});
+check(
+	"cruise arrives at a field contact at the drop radius, outside every rock",
+	!fieldArrival.missing &&
+		fieldArrival.cruised &&
+		fieldArrival.exit.startsWith("arrived at field-") &&
+		Math.abs(fieldArrival.rangeKm - fieldArrival.dropRadiusKm) < 0.1 &&
+		fieldArrival.rockCount > 0 &&
+		fieldArrival.clearanceKm > 0 &&
+		!fieldArrival.body &&
+		!fieldArrival.mass,
+	JSON.stringify(fieldArrival),
+);
 await browser.close();
 exit();

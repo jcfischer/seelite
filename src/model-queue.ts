@@ -23,6 +23,9 @@ export class ModelQueue {
 					: `${id}: model installed but mesh refresh failed`,
 				error,
 			),
+		/** Runs once a load has failed for good, so a consumer can draw its
+		 *  stand-in; like `installed`, the model is not settled until it ends. */
+		private readonly failed: (id: string) => Promise<void> = async () => {},
 	) {
 		this.order = Object.keys(loaders);
 		for (const id of this.order) this.states.set(id, "pending");
@@ -81,7 +84,15 @@ export class ModelQueue {
 					await this.loaders[id]();
 				} catch (error) {
 					this.states.set(id, "failed");
+					this.refreshing.add(id);
 					this.warn(id, error, "load");
+					try {
+						await this.failed(id);
+					} catch (standInError) {
+						this.warn(id, standInError, "refresh");
+					} finally {
+						this.refreshing.delete(id);
+					}
 					this.notify();
 					continue;
 				}

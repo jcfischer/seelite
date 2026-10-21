@@ -11,6 +11,7 @@ import {
 	stationModel,
 	type ModelId,
 } from "./model-catalog";
+import { systemFields } from "./asteroid-field";
 import type { System } from "./sim";
 
 /** Complete seeded home and inbound roster, including currently distant ships. */
@@ -55,5 +56,6 @@ export function systemModelIds(
 	for (const hull of [flownHull, ...trafficHulls])
 		if (isAuthoredHullModel(hull)) ids.add(hull);
 	if (system.contents.stations.length) ids.add("interiors");
+	if (systemFields(system.record, system.contents).length) ids.add("asteroids");
 	return [...ids];
 }

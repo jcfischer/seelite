@@ -480,7 +480,6 @@ export function derelictContents(
 			fittings[
 				Math.min(fittings.length - 1, Math.floor(pick * fittings.length))
 			];
-		// The retired bomb remains readable in old rows; new draws yield a live module.
 		const id = selected === "Energy Bomb" ? "Extra Energy Unit" : selected;
 		const kind = LEGACY_MODULES[id];
 		const fitting = kind

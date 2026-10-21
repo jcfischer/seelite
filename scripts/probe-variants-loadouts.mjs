@@ -1,5 +1,3 @@
-/** Live NPC materialization, fitted kill credit, fitting ejection/scoop/save,
- * and variant identity on the cockpit Equipment tab (node #875). */
 import {
 	bootedGame,
 	guardedOrigin,
@@ -71,7 +69,6 @@ try {
 				JSON.stringify({ ...expectedDrop, purchaseCostCr: 0 })
 			: !actualDrop;
 		const paid = g.ladderPending.combat - before;
-		// Exercise variant recovery even when this carrier did not roll a drop.
 		const module = {
 			...makeModule("pulse-laser", 1, "A"),
 			variant: "overcharged",
@@ -103,8 +100,6 @@ try {
 			g.commander.hull,
 			fittedCapacity(g.commander.hull, g.commander.loadout),
 		);
-		// Replacing an armed carrier can change its hold, but cannot rewrite
-		// the manifest recorded by an earlier scan.
 		const { observeScan, applyTransition, advanceTo } = await import(
 			"/src/world-state.ts"
 		);

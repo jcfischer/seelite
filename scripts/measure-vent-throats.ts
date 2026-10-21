@@ -14,14 +14,18 @@
 
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+// The authored Porter is `freighter/b` (node #813): measure the shipped model.
+import "../tests/setup/authored-hulls";
 import { ventThroats } from "../src/vent-plumes";
 import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedTugHull } from "./lib/shipped-tug-hull";
+import { installShippedVoyagerHull } from "./lib/shipped-voyager-hull";
 
 // `miner/b` is the authored Longwall B, built only once it is installed.
 await installShippedLongwall();
 // The tug is the authored Bollard (node #814), drawn once installed.
 await installShippedTugHull();
+await installShippedVoyagerHull();
 
 const metres = (km: number): string => {
 	if (!Number.isFinite(km)) throw new Error(`non-finite gap: ${km}`);

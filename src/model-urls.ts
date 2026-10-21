@@ -9,10 +9,22 @@
  * kept under `public/` instead would be served at a fixed name, which a
  * browser must revalidate on every boot.
  */
+/** Authored rock archetypes (node #966); loading/drawing follows separately. */
+export const ASTEROIDS_GLB_URL = new URL(
+	"./models/asteroids.glb",
+	import.meta.url,
+).href;
 export const CORIOLIS_GLB_URL = new URL(
 	"./models/coriolis.glb",
 	import.meta.url,
 ).href;
+
+/** Flight exports of the approved trade studies, node #1033. */
+export const TRADE_GLB_URLS = {
+	b: new URL("./models/trade-ring.glb", import.meta.url).href,
+	c: new URL("./models/trade-drum.glb", import.meta.url).href,
+	e: new URL("./models/trade-wheel.glb", import.meta.url).href,
+} as const;
 export const COURIER_COCKPIT_GLB_URL = new URL(
 	"./models/courier-cockpit.glb",
 	import.meta.url,
@@ -25,6 +37,11 @@ export const COURIER_HULL_GLB_URL = new URL(
 /** Prepared by `spikes/bollard-hull/prepare-flight-asset.mjs` (node #814). */
 export const BOLLARD_TUG_GLB_URL = new URL(
 	"./models/bollard-tug.glb",
+	import.meta.url,
+).href;
+/** Prepared by `spikes/discovery/prepare-flight-asset.mjs` (node #820). */
+export const DISCOVERY_VOYAGER_GLB_URL = new URL(
+	"./models/discovery-voyager.glb",
 	import.meta.url,
 ).href;
 export const LONGWALL_MINER_GLB_URL = new URL(
@@ -72,4 +89,19 @@ export const REFINERY_GLB_URLS = {
 	b: new URL("./models/refinery-collar.glb", import.meta.url).href,
 	c: new URL("./models/refinery-spar.glb", import.meta.url).href,
 	d: new URL("./models/refinery-works.glb", import.meta.url).href,
+} as const;
+
+/** Prepared by the Porter study (node #813). */
+export const PORTER_GLB_URL = new URL("./models/porter.glb", import.meta.url)
+	.href;
+
+/** The authored outposts, prepared by
+ *  `spikes/stations/prepare-flight-asset.mjs`: forms `a`–`d` (node #1032) and
+ *  the Salvage, `e` (node #1031). */
+export const OUTPOST_GLB_URLS = {
+	a: new URL("./models/outpost-derrick.glb", import.meta.url).href,
+	b: new URL("./models/outpost-buoy.glb", import.meta.url).href,
+	c: new URL("./models/outpost-rig.glb", import.meta.url).href,
+	d: new URL("./models/outpost-cluster.glb", import.meta.url).href,
+	e: new URL("./models/outpost-salvage.glb", import.meta.url).href,
 } as const;

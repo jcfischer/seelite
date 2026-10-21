@@ -188,7 +188,6 @@ export const ejectWarningDue = (facts: {
 	readonly flying: boolean;
 	readonly alive: boolean;
 	readonly hull: number;
-	/** The strongest active hostile laser group, when NPC fits are known. */
 	readonly hostileDamagePerS?: number;
 }): boolean =>
 	facts.podFitted &&

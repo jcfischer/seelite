@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import { resolve } from "node:path";
 import { treeDeclaration } from "./scripts/lib/tree-declaration.mjs";
 import { socialPreview } from "./src/social-preview";
+import { asyncImportGuard } from "./scripts/lib/async-import-guard.mjs";
 
 /**
  * Drop onnxruntime-web's own `.wasm` from the build (#604, the principal's
@@ -49,7 +50,7 @@ export default defineConfig({
 	 * factory lives in `scripts/lib/tree-declaration.mjs` beside the guard that
 	 * reads it.
 	 */
-	plugins: [treeDeclaration(), socialPreview()],
+	plugins: [treeDeclaration(), socialPreview(), asyncImportGuard()],
 	/**
 	 * The game's models are referenced by URL (`src/model-urls.ts`), so vite
 	 * emits each under `assets/` with a content hash in its name (#834).
@@ -85,6 +86,16 @@ export default defineConfig({
 	build: {
 		target: "es2022",
 		rollupOptions: {
+			output: {
+				// Startup awaits model loaders. Keep its dependencies out of this
+				// async chunk so lazy models can import shared helpers without
+				// waiting on the startup that is waiting for them (#1021).
+				onlyExplicitManualChunks: true,
+				manualChunks: (id) =>
+					id === resolve(import.meta.dirname, "src/main.ts")
+						? "game"
+						: undefined,
+			},
 			input: {
 				home: resolve(import.meta.dirname, "index.html"),
 				about: resolve(import.meta.dirname, "about/index.html"),

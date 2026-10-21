@@ -271,7 +271,6 @@ export type HoldEvent =
 			 *  reads exactly like an unarmed kill. Read only on a player's
 			 *  destroy. */
 			hull: HullId | null;
-			/** The live target's fit; absent only for stock-reference callers. */
 			targetLoadout?: Loadout;
 	  }
 	/** A jump that arrived: what the plan left in the **Hyperspace tank**,

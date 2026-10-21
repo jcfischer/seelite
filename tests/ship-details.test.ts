@@ -52,7 +52,7 @@ const reach = (objects: readonly THREE.Object3D[]) => {
 
 describe("authored ship machinery regions", () => {
 	test("every current variant declares named zones on plated parts", () => {
-		expect(variants).toHaveLength(35);
+		expect(variants).toHaveLength(34);
 		for (const { id, variant } of variants) {
 			const plan = SHIP_DETAIL_PLANS[id][variant];
 			expect(plan.zones.length).toBeGreaterThan(0);
@@ -172,6 +172,8 @@ describe("ship emissive inventory", () => {
 		expect([...inhabited]).toEqual(["freighter", "carrier", "dreadnought"]);
 		for (const { id, variant } of variants) {
 			const root = buildShipMesh(id, variant).root;
+			expect(root.getObjectByName("nav-lights")).toBeDefined();
+			if (isAuthoredHull(id, variant)) continue;
 			expect([id, variant, meshesNamed(root, "ship-strip").length]).toEqual([
 				id,
 				variant,

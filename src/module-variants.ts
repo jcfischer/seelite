@@ -1,5 +1,3 @@
-/** Salvage traits: one benefit paired with one cost, applied to the base row.
- * A variant is an identity, never a list of accumulated modifiers. */
 import type { ModuleKind, ModuleRow } from "./module-catalog";
 import { DOMAIN } from "./domains";
 import { mix, seededRand } from "./rng";
@@ -16,7 +14,6 @@ interface Trait {
 const light: Trait = {
 	id: "lightweight",
 	benefit: { metric: "massT", scale: 0.8 },
-	// A stripped assembly is lighter but recovers less value at resale.
 	cost: { metric: "priceCr", scale: 0.7 },
 };
 const output = (id: string, metric: string): Trait => ({

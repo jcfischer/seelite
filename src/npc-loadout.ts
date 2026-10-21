@@ -1,5 +1,3 @@
-/** Deterministic catalogue fits, shared by flight, kill credit and salvage.
- * Input seeds name a carrier instance; they never read the combat RNG. */
 import type { CarrierKey } from "./carrier-key";
 import { carrierInstanceSeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
@@ -48,7 +46,6 @@ export function npcLoadout(hull: HullId, seed: number): Loadout {
 	fit.plant = pickModule("plant", spec.plantSize, ["power-plant"]);
 	for (const slot of spec.slots) {
 		if (slot.kind === "hardpoint") {
-			// Preserve node #874's independent 35% missile-bearing raider draw.
 			if (
 				hull === "raider" &&
 				slot.key !== "h1" &&

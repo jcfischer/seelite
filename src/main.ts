@@ -1,3 +1,9 @@
+import { fieldContactsAt } from "./field-contact";
+import { fieldRocks, systemFields } from "./asteroid-field";
+import { FieldDraw } from "./field-draw";
+import { pxPerRadianFor } from "./field-lod";
+import { authoredRockShapes, buildStandInRocks } from "./asteroid-model";
+import { ROCK_ASSETS } from "./rock-assets";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
 	startNebulaBake,
@@ -48,6 +54,7 @@ import {
 	isAuthoredHullModel,
 	SHIPYARD_MODELS,
 	REFINERY_MODELS,
+	OUTPOST_MODELS,
 } from "./model-catalog";
 import {
 	bootModelIds,
@@ -55,7 +62,11 @@ import {
 	trafficRosterHulls,
 } from "./system-models";
 import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
-import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
+import {
+	INTERIOR_SLICE_MS,
+	nextInteriorFrame,
+	runInteriorSlices,
+} from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
@@ -425,7 +436,13 @@ import {
 	thrustShares,
 	worldStarts,
 } from "./sim";
-import { type Flick, FlickMeter, couplePxS, pointerImpulse } from "./pointer";
+import {
+	type Flick,
+	FlickMeter,
+	couplePxS,
+	pointerImpulse,
+	requestLock,
+} from "./pointer";
 import { AttitudeFollower, noseTurnStick } from "./attitude-hold";
 import {
 	heldVents,
@@ -442,6 +459,7 @@ import {
 	withAlpha,
 } from "./vent-cue";
 import { type VentPlumes, buildVentPlumes } from "./vent-plumes";
+import { NpcPlumes } from "./npc-plumes";
 import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
@@ -833,6 +851,11 @@ import {
 } from "./chase-orbit";
 import { ArrivalRift } from "./arrival-rift";
 import {
+	CROSSING as CROSSING_TIMELINE,
+	npcRiftLook,
+	npcRiftVisible,
+} from "./witchspace-crossing";
+import {
 	buildHaulerPlans,
 	inboundCandidates,
 	routeVoyages,
@@ -844,7 +867,6 @@ import {
 	type WitchspaceState,
 	abortWitchspace,
 	arriveWitchspace,
-	npcRiftStrength,
 	beginWitchspace,
 	entryWitchspace,
 	idleWitchspace,
@@ -2243,9 +2265,16 @@ const FLEET_REACH_KM =
 
 /** One session queue. Required loads adopt their result before a Game exists. */
 let installedGame: Game | undefined;
-const models = new ModelQueue(modelLoaders, async (id) => {
-	await installedGame?.modelInstalled(id as ModelId);
-});
+const models = new ModelQueue(
+	modelLoaders,
+	async (id) => {
+		await installedGame?.modelInstalled(id as ModelId);
+	},
+	undefined,
+	async (id) => {
+		await installedGame?.modelFailed(id as ModelId);
+	},
+);
 async function requireModels(
 	ids: readonly ModelId[],
 	view = loadingPanel("game"),
@@ -2262,6 +2291,9 @@ async function requireModels(
 }
 
 class Game {
+	/** Rock collision data, inlined in the bundle and decoded on first read, so it is available before the authored rock model installs. */
+	readonly rockAssets = ROCK_ASSETS;
+
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
 	readonly composer: EffectComposer;
@@ -2767,12 +2799,14 @@ class Game {
 				paid: f.assisted ? null : +(f.deliveredRadS / f.askedRadS).toFixed(2),
 				durationS: +f.durationS.toFixed(2),
 			};
+		const sensitivity = this.settings.value.mouseSensitivity;
 		return {
 			hull: this.flownHull,
 			assist: this.assist,
+			mouseSensitivity: sensitivity,
 			couplePxS: {
-				pitch: Math.round(couplePxS(a.pitch)),
-				yaw: Math.round(couplePxS(a.yaw)),
+				pitch: Math.round(couplePxS(a.pitch, sensitivity)),
+				yaw: Math.round(couplePxS(a.yaw, sensitivity)),
 			},
 			lastFlick: read(this.flickMeter.last),
 			hardestFlick: read(this.flickMeter.hardest),
@@ -3238,6 +3272,9 @@ class Game {
 	 * or, in this change, when the ship leaves the materialization band.
 	 */
 	private readonly trafficEngagements = new Map<CarrierKey, Engagement>();
+	/** Node #637: the plumes on every NPC hull that fires — the raider and
+	 *  engaged Traffic — each drawn from its own flight's firing table. */
+	private readonly npcPlumes = new NpcPlumes();
 	/**
 	 * The hails this session has heard (`#396` §3), newest last, capped at
 	 * `HAIL_LOG_KEEP`.
@@ -4715,6 +4752,7 @@ class Game {
 
 		this.buildBackdrop();
 		this.buildBodies();
+		this.buildFields();
 		// Construct before buildLights applies the stored quality. The composer
 		// adds it in its original position below; Low is off from frame one.
 		this.bloomPass = new UnrealBloomPass(
@@ -5355,22 +5393,7 @@ class Game {
 				) !== "take"
 			)
 				return;
-			// **A refusal is read, not thrown** — it is the ordinary case, not the
-			// exceptional one: Chrome holds out after the player's own Escape and
-			// past a rate limit whatever the reason, a window that is not the key
-			// window cannot be locked at all, and Safari refuses outright without a
-			// gesture it may or may not have just seen. Dropping the promise made
-			// every refused click an unhandled rejection, which surfaces as a page
-			// error — which is why `probe-gun-feedback.mjs` had to stub this call
-			// out to keep its own click real. **And the promise is not assumed:**
-			// the returning form of this call is not universal, and on an engine
-			// that hands back `undefined` a `.catch` taken straight off it is the
-			// very uncaught error this line exists to remove. TypeScript cannot see
-			// that, because its own `lib.dom` declares the Promise. The retry is the
-			// next click, which is where we are standing.
-			void Promise.resolve(this.renderer.domElement.requestPointerLock()).catch(
-				() => {},
-			);
+			requestLock(this.renderer.domElement);
 		});
 		window.addEventListener("mousemove", (e) => {
 			if (!this.canvasHoldsLock()) return;
@@ -6868,8 +6891,9 @@ class Game {
 				this.markedOcclusion[marked] = ["ship", markOcclusion(this.shipMesh)];
 		}
 		rebuildAuthoredStandIn(this.tenderMesh);
+		// A rebuilt hull's throats are measured again on its next firing frame.
 		for (const root of this.trafficMeshes.values())
-			rebuildAuthoredStandIn(root);
+			if (rebuildAuthoredStandIn(root)) this.npcPlumes.forget(root);
 		for (const parked of this.fleet) {
 			if (!rebuildAuthoredStandIn(parked.mesh)) continue;
 			const name = `fleet-${parked.mesh.name || "hull"}`;
@@ -6887,7 +6911,11 @@ class Game {
 
 	/** Queue readiness includes current-system mesh refreshes, not an elapsed delay. */
 	modelsSettled(): boolean {
-		return models.settled(this.currentModelIds()) && !this.interiorRefresh;
+		return (
+			models.settled(this.currentModelIds()) &&
+			!this.interiorRefresh &&
+			!this.fieldRefresh
+		);
 	}
 	private currentModelIds(): ModelId[] {
 		this.ensureTrafficActors();
@@ -6918,18 +6946,151 @@ class Game {
 	}
 	startModelQueue(): void {
 		models.prioritize(this.currentModelIds(), this.nextModelIds());
+		void this.refreshFields();
 	}
 	/** Install callbacks always inspect live caches; a jump never waits for them. */
 	async modelInstalled(id: ModelId): Promise<void> {
 		if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
 		else if (id === "interiors") await this.refreshInteriorMeshes();
+		else if (id === "asteroids") await this.refreshFields();
 		else if (id === "coriolis")
 			await this.refreshAuthoredStations("trade", "a");
+		else if (id.startsWith("trade/"))
+			await this.refreshAuthoredStations("trade", id.split("/")[1]);
 		else if (id.startsWith("shipyard/"))
 			await this.refreshAuthoredStations("shipyard", id.split("/")[1]);
 		else if (id.startsWith("refinery/"))
 			await this.refreshAuthoredStations("refinery", id.split("/")[1]);
+		else if (id.startsWith("outpost/"))
+			await this.refreshAuthoredStations("outpost", id.split("/")[1]);
 	}
+	/** A background load failed for good: the field rocks fall back to plain
+	 *  procedural shapes, never to points alone (node #968). */
+	async modelFailed(id: ModelId): Promise<void> {
+		if (id === "asteroids") await this.refreshFields();
+	}
+
+	/** One draw per field of the current system, built with the system and
+	 *  disposed with it (node #968). Shapes arrive later, in `refreshFields`. */
+	private fieldDraws: FieldDraw[] = [];
+	/** The current system's field draws, for probes. */
+	get fields(): readonly FieldDraw[] {
+		return this.fieldDraws;
+	}
+	private fieldRefresh?: Promise<void>;
+	/** The authored shapes were fetched but would not become a batch. */
+	private fieldShapesFailed = false;
+	/** Bumped by every build and teardown, so a slice in flight for a system
+	 *  already left installs nothing into the next one. */
+	private fieldEpoch = 0;
+	private readonly fieldBuffer = new THREE.Vector2();
+	private buildFields(): void {
+		this.disposeFields();
+		const { record, contents } = this.world.system;
+		for (const plan of systemFields(record, contents)) {
+			const draw = new FieldDraw(plan, fieldRocks(record, plan));
+			this.nearScene.add(draw.root);
+			this.fieldDraws.push(draw);
+		}
+	}
+	private disposeFields(): void {
+		this.fieldEpoch++;
+		for (const draw of this.fieldDraws) draw.dispose();
+		this.fieldDraws = [];
+	}
+	/** Give every field without meshes the shapes its model state allows:
+	 *  authored once the GLB is installed, the plain stand-in once it failed,
+	 *  none (points only) while it is still on its way. */
+	private refreshFields(): Promise<void> {
+		if (this.fieldRefresh) return this.fieldRefresh;
+		if (!this.fieldsWantMeshes()) return Promise.resolve();
+		const run = this.installFieldMeshes().finally(() => {
+			if (this.fieldRefresh === run) this.fieldRefresh = undefined;
+		});
+		return (this.fieldRefresh = run);
+	}
+	private fieldsWantMeshes(): boolean {
+		const state = models.state("asteroids");
+		return (
+			(state === "installed" || state === "failed") &&
+			this.fieldDraws.some((d) => !d.meshesInstalled)
+		);
+	}
+	/** One pass per system: a jump during a slice ends the pass for the system
+	 *  left, and the loop goes round again for the one arrived in. */
+	private async installFieldMeshes() {
+		while (this.fieldsWantMeshes()) {
+			const epoch = this.fieldEpoch;
+			const live = () => epoch === this.fieldEpoch;
+			let shapes =
+				models.state("asteroids") === "installed" && !this.fieldShapesFailed
+					? authoredRockShapes()
+					: undefined;
+			let kind: "authored" | "standin" = "authored";
+			if (!shapes) {
+				// A failed load, or an install the loader reports without shapes.
+				kind = "standin";
+				shapes = await runInteriorSlices(buildStandInRocks(), { live });
+			}
+			if (!shapes) continue;
+			for (const draw of this.fieldDraws) {
+				if (!live()) break;
+				try {
+					await draw.install(shapes, kind, nextInteriorFrame, live, (mesh) =>
+						this.warmFieldBatch(mesh, shapes, live),
+					);
+				} catch (error) {
+					// The authored batch would not build or compile here: draw the
+					// plain rocks instead, never points alone.
+					console.warn("asteroids: batch install failed; plain rocks", error);
+					this.fieldShapesFailed = true;
+					break;
+				}
+			}
+			if (this.fieldShapesFailed && kind === "authored") continue;
+			if (live() && this.fieldDraws.some((d) => !d.meshesInstalled)) return;
+		}
+	}
+	/** Compile the batch's program and upload its maps while it is hidden, one
+	 *  step per frame, so the swap from points is not the frame that pays for
+	 *  them (#953 measured a 70 ms first frame). The composer target is the one
+	 *  gameplay renders into, so the same program variant is built. */
+	private async warmFieldBatch(
+		mesh: THREE.BatchedMesh,
+		shapes: { textures: THREE.Texture[] },
+		live: () => boolean,
+	) {
+		const target = this.renderer.getRenderTarget();
+		for (const texture of shapes.textures) {
+			this.renderer.initTexture(texture);
+			await nextInteriorFrame();
+			if (!live()) return;
+		}
+		try {
+			this.renderer.setRenderTarget(this.composer.renderTarget1);
+			await this.renderer.compileAsync(mesh, this.nearCamera, this.nearScene);
+		} finally {
+			this.renderer.setRenderTarget(target);
+		}
+		await nextInteriorFrame();
+	}
+	private updateFields(camPos: Vec3): void {
+		if (!this.fieldDraws.length) return;
+		const quality = this.settings.value.quality;
+		const pxPerRadian = pxPerRadianFor(
+			this.renderer.getDrawingBufferSize(this.fieldBuffer).y,
+			this.nearCamera.fov,
+		);
+		for (const draw of this.fieldDraws)
+			draw.update({
+				gameTime: this.world.gameTime,
+				camera: camPos,
+				pxPerRadian,
+				quality,
+				shadows: LIGHT_RIG.quality[quality].shadows,
+			});
+	}
+
 	/** Compatibility handles for existing probes; every load uses the same queue. */
 	loadAuthoredHullsAfterBoot(): Promise<void> {
 		return models.wait(AFTER_BOOT_HULL_IDS);
@@ -7065,10 +7226,17 @@ class Game {
 	loadRefineriesAfterBoot(): Promise<void> {
 		return models.wait(REFINERY_MODELS);
 	}
+	get outpostModelsSettled(): boolean {
+		return models.settled(OUTPOST_MODELS);
+	}
+	loadOutpostsAfterBoot(): Promise<void> {
+		return models.wait(OUTPOST_MODELS);
+	}
 
 	/**
 	 * Rebuild every drawn station of `type` and `form` from its installed
-	 * model (the shipyards, node #818; the refineries, node #819). The new
+	 * model (the shipyards, node #818; the refineries, node #819; the outposts,
+	 * nodes #1031 and #1032). The new
 	 * mesh compiles off-scene first and replaces the old one only if the
 	 * station is still the one drawn; a jump during the compile ends the
 	 * refresh, since the new system was built with whatever had installed.
@@ -7076,7 +7244,7 @@ class Game {
 	 * for the whole system, as an interior install redoes them.
 	 */
 	private async refreshAuthoredStations(
-		type: "trade" | "shipyard" | "refinery",
+		type: "trade" | "shipyard" | "refinery" | "outpost",
 		form: string,
 	): Promise<void> {
 		const system = this.world.system;
@@ -7366,6 +7534,7 @@ class Game {
 		for (const contact of this.trafficContacts.values())
 			this.unregisterContact(contact);
 		for (const mesh of this.trafficMeshes.values()) {
+			this.npcPlumes.forget(mesh);
 			mesh.removeFromParent();
 			disposeSubtree(mesh);
 		}
@@ -8122,7 +8291,18 @@ class Game {
 		}
 	}
 
-	/** The listener is the camera: its right axis, not the hull's, pans a ring. */
+	/**
+	 * One frame of a Traffic carrier's ring, at either end of its jump.
+	 *
+	 * The age is **signed** (#1006): a ring runs from `CROSSING.openS` before its
+	 * crossing to `CROSSING.windowEndS` after it, so a watcher sees it tear open
+	 * with nothing in it, flare as the hull passes through, and seal behind it.
+	 * The old window was `[0, riftEndS)` — the ring could only appear once the
+	 * ship was already sitting inside it, which is the frame the principal saw.
+	 * The ring is drawn from `route.jump` alone, so an arrival whose hauler is
+	 * still in another system (`present: false`) gets its opening on screen.
+	 * The listener is the camera: its right axis, not the hull's, pans a ring.
+	 */
 	private updateTrafficRifts(
 		cameraPos: Vec3,
 		cameraRotation: THREE.Quaternion,
@@ -8140,8 +8320,7 @@ class Game {
 				? TRAFFIC_DEMATERIALIZE_KM
 				: TRAFFIC_MATERIALIZE_KM;
 			if (
-				age < 0 ||
-				age >= WITCHSPACE.riftEndS ||
+				!npcRiftVisible(age) ||
 				length(sub(jump.pos, this.world.ship.pos)) > range
 			)
 				continue;
@@ -8157,10 +8336,13 @@ class Game {
 				this.trafficRifts.set(id, rift);
 				this.nearScene.add(rift.object);
 			}
-			const strength = npcRiftStrength(age);
-			rift.update(strength, age, cameraPos);
+			const { strength, flare } = npcRiftLook(age);
+			rift.update(strength, age, cameraPos, flare);
 			if (!this.trafficJumpSounds.has(id)) {
-				this.trafficJumpSounds.set(id, jump.atS + WITCHSPACE.riftEndS);
+				// The sound arrives with the *opening*, not with the ship: the ring's
+				// own length is the crossing's window, and it starts `openS` before
+				// the hull is here at all.
+				this.trafficJumpSounds.set(id, jump.atS + CROSSING_TIMELINE.windowEndS);
 				const rel = sub(jump.pos, cameraPos),
 					distance = length(rel);
 				const r = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRotation);
@@ -8179,7 +8361,7 @@ class Game {
 				});
 				this.play({
 					kind: "witchspaceRift",
-					seconds: WITCHSPACE.riftEndS,
+					seconds: CROSSING_TIMELINE.windowS,
 					spatial,
 				});
 			}
@@ -11364,6 +11546,8 @@ class Game {
 	 * order is position-independent, which is what makes one build enough.
 	 */
 	private selectable(): Body[] {
+		// Refresh even when membership is cached: fields orbit on the game clock.
+		const fields = fieldContactsAt(this.world.system, this.world.gameTime);
 		if (!this.selectableCache) {
 			const order = {
 				station: 0,
@@ -11377,6 +11561,7 @@ class Game {
 				// kind missing here is a build error rather than a silent NaN.
 				cargo: 6,
 				wreck: 7,
+				field: 8,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -11384,6 +11569,7 @@ class Game {
 					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
 				);
 			this.selectableCache.push(...this.contacts);
+			this.selectableCache.push(...fields);
 		}
 		return this.selectableCache;
 	}
@@ -15352,6 +15538,7 @@ class Game {
 						inScene: rift.object.parent === this.nearScene,
 						visible: rift.object.visible,
 						strength: rift.strength,
+						flare: rift.flare,
 						radiusKm: rift.radiusKm,
 						anchor: { ...rift.anchor },
 					}
@@ -15401,7 +15588,7 @@ class Game {
 			this.clearArrivalRift();
 			return;
 		}
-		this.arrivalRift.update(look.rift, phase, camPos);
+		this.arrivalRift.update(look.rift, phase, camPos, look.riftFlare);
 	}
 	private readonly witchspaceSize = new THREE.Vector2();
 	/**
@@ -15692,6 +15879,7 @@ class Game {
 	private rebuildSystem() {
 		// The last arrival's rift belongs to the system being left.
 		this.clearArrivalRift();
+		this.disposeFields();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
 		for (const handle of this.interiorPresentations.values())
@@ -15722,6 +15910,7 @@ class Game {
 				this.markedOcclusion.splice(i, 1);
 
 		this.buildBodies();
+		this.buildFields();
 		if (models.state("interiors") === "installed")
 			void this.refreshInteriorMeshes().catch((error) =>
 				this.warnInteriorFailure(error),
@@ -16182,8 +16371,11 @@ class Game {
 		const flying = !handsHeld && contextFliesShip(this.padContext());
 		const { dx, dy } = this.takePointer();
 		if (!flying) this.flickMeter.reset();
+		// The settings row's turn per pixel (node #640), read each frame so a
+		// change on the screen flies on the next one.
+		const sensitivity = this.settings.value.mouseSensitivity;
 		const impulse = flying
-			? pointerImpulse(dx, dy)
+			? pointerImpulse(dx, dy, sensitivity)
 			: { pitch: 0, yaw: 0, roll: 0 };
 
 		// Rotation carries momentum (`stepAngular`, inside the Hull step): the
@@ -16229,6 +16421,7 @@ class Game {
 				dt,
 				{ pitch: impulse.pitch - unpaid.pitch, yaw: impulse.yaw - unpaid.yaw },
 				this.assist,
+				sensitivity,
 			);
 		};
 
@@ -17058,6 +17251,7 @@ class Game {
 		this.updateRelayPresentation(camPos);
 		this.updateDerelictPresentation(camPos);
 		this.updateTenderPresentation(camPos);
+		this.updateFields(camPos);
 		this.presentDirector(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
@@ -17430,6 +17624,30 @@ class Game {
 		// Hidden, it draws nothing, so it is not written either.
 		if (plumes.visible)
 			this.ventPlumes.update(this.ventFiring, this.world.gameTime);
+		// **And on every NPC hull that keeps a firing table** (node #637): the
+		// raider from the encounter's contact, an engaged carrier from its
+		// flight. Projected Traffic is a schedule, not a Hull step, so it has no
+		// table and draws none; nor does the raider while the interdiction's
+		// lock turns it, which fires no vent.
+		const view = this.encounterView;
+		if (view)
+			this.npcPlumes.draw(
+				this.raiderMesh,
+				RAIDER_HULL_ID,
+				view.firing,
+				this.world.gameTime,
+			);
+		for (const [key, engagement] of this.trafficEngagements) {
+			const mesh = this.trafficMeshes.get(key);
+			if (mesh)
+				this.npcPlumes.draw(
+					mesh,
+					engagement.hullId,
+					engagement.flight.firing,
+					this.world.gameTime,
+				);
+		}
+		this.npcPlumes.endFrame();
 		// The shipyards' baked work lights on the hulls inside them (#818).
 		// Every frame, so a ship that left a yard or a system draws none.
 		const yards: YardWorkLight[] = [];
@@ -19987,7 +20205,10 @@ class Game {
 			{
 				orientation: this.orientation,
 				output: this.scannerContactBuffer,
-				flooredContacts: this.contacts,
+				flooredContacts: [
+					...this.contacts,
+					...fieldContactsAt(this.world.system, this.world.gameTime),
+				],
 			},
 		);
 	}
@@ -22152,6 +22373,8 @@ if (postcard) {
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	installedGame = game;
 	await game.modelInstalled("interiors");
+	// A postcard of a field draws its rocks, not its points.
+	await game.modelInstalled("asteroids");
 	await game.whenSkyReady();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
@@ -22159,13 +22382,15 @@ if (postcard) {
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station") {
-		// The station workbench draws the authored shipyards (node #818) and
-		// refineries (node #819).
+		// The station workbench draws the authored shipyards (node #818),
+		// refineries (node #819) and outposts (nodes #1031, #1032).
 		const { shipyardModelLoaders } = await import("./shipyard-flight");
 		const { refineryModelLoaders } = await import("./refinery-flight");
+		const { outpostModelLoaders } = await import("./outpost-flight");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			...shipyardModelLoaders,
 			...refineryModelLoaders,
+			...outpostModelLoaders,
 		]);
 	}
 	// The ship workbench draws every variant: the courier the game flies
@@ -22174,10 +22399,14 @@ if (postcard) {
 		const { prepareCourierHullModel } = await import("./courier-hull");
 		const { prepareTugHullModel } = await import("./tug-hull");
 		const { prepareLongwallModel } = await import("./longwall-model");
+		const { preparePorterModel } = await import("./porter-model");
+		const { prepareVoyagerHullModel } = await import("./voyager-hull");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			prepareCourierHullModel,
 			prepareTugHullModel,
 			prepareLongwallModel,
+			preparePorterModel,
+			prepareVoyagerHullModel,
 		]);
 	}
 	const { mountModelViewer } = await import("./model-viewer");
@@ -22464,12 +22693,16 @@ if (postcard) {
 	// Models adopted before construction already draw authored geometry.
 	if (models.state("interiors") === "installed")
 		await game.modelInstalled("interiors");
+	// The full-set boot is settled before the first frame a probe reads.
+	if (query.has("models-full")) await game.modelInstalled("asteroids");
 	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
 	else void game.loadInteriorsAfterBoot();
 	if (query.has("shipyards-full")) await game.loadShipyardsAfterBoot();
 	else void game.loadShipyardsAfterBoot();
 	if (query.has("refineries-full")) await game.loadRefineriesAfterBoot();
 	else void game.loadRefineriesAfterBoot();
+	if (query.has("outposts-full")) await game.loadOutpostsAfterBoot();
+	else void game.loadOutpostsAfterBoot();
 	game.saveFault = plan.fault;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander

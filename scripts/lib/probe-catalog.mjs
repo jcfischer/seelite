@@ -32,6 +32,11 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-production-boot.mjs",
+			"Builds and serves the production bundle, then verifies fresh Commander, direct and full-model boots render and clear loading without page errors.",
+			["production bundle", "startup", "async imports", "model loading"],
+		),
+		entry(
 			"probe-model-queue.mjs",
 			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot.",
 			[
@@ -40,6 +45,18 @@ export const PROBE_CATALOG = Object.freeze(
 				"boot",
 				"jump",
 				"deterministic readiness",
+			],
+		),
+		entry(
+			"probe-asteroid-field.mjs",
+			"Asteroid fields in a charted system: points only before the rock GLB installs, two BatchedMeshes and one Points draw placed against the camera at the sim pose with drift and spin, plain procedural rocks after a failed load, level steps in both directions with hysteresis, and a jump that frees the field left behind.",
+			[
+				"asteroid field",
+				"BatchedMesh",
+				"model install",
+				"level of detail",
+				"stand-in",
+				"jump teardown",
 			],
 		),
 		entry(
@@ -166,13 +183,19 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-approach-handoff.mjs",
-			"Checks the spatial handoff from long-range approach into the local station flight frame.",
-			["approach", "station handoff", "local frame", "render layers"],
+			"Checks massive-body far-to-approach scale and apparent-size continuity, and rendered planet relief at both layer scales with a relief-off control.",
+			["approach", "planet relief", "surface detail", "render layers"],
 		),
 		entry(
 			"probe-arrival.mjs",
-			"Flies cruise arrivals to stations beside or behind host planets and checks reachable geometry.",
-			["cruise arrival", "host planet", "moving body", "station reachability"],
+			"Flies cruise arrivals to stations beside or behind host planets and to a field contact outside its rocks.",
+			[
+				"cruise arrival",
+				"host planet",
+				"moving body",
+				"station reachability",
+				"field contact",
+			],
 		),
 		entry(
 			"probe-audio-cues.mjs",
@@ -254,6 +277,18 @@ export const PROBE_CATALOG = Object.freeze(
 				"prograde marker",
 				"nose marker",
 				"chase view",
+			],
+		),
+		entry(
+			"probe-npc-vents.mjs",
+			"Flies a forced raider into the duel through the real step, holds the clock off its stern, then reads painted pixels: the raider's own firing table is non-empty and its own hull's, one plume set stands beside its mesh and is not the player's, a raider vent fired alone lights its own throat, a vent its table left out stays dark, and a raider taken out of view loses its set.",
+			[
+				"vent plumes",
+				"thrusters",
+				"firing table",
+				"raider",
+				"NPC hulls",
+				"duel",
 			],
 		),
 		entry(
@@ -778,6 +813,17 @@ export const PROBE_CATALOG = Object.freeze(
 				"strafe",
 				"flight assist",
 				"rebind",
+				"flight controls",
+			],
+		),
+		entry(
+			"probe-mouse-sensitivity.mjs",
+			"Steps the Mouse sensitivity row on the settings screen from 100% to 200% and checks the same real mouse movement, with flight assist off, turns the nose twice as fast, that the flick readout's asked turn doubles with it, and that the choice survives a reload.",
+			[
+				"mouse sensitivity",
+				"settings",
+				"pointer lock",
+				"mouse input",
 				"flight controls",
 			],
 		),

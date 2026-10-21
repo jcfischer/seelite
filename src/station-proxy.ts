@@ -25,28 +25,17 @@
  * `berthSeed`**: it decides only which side the outpost's seeded berth stands
  * on, and both sides lie inside the same primitives. A test row asserts the
  * proxy is identical across berth seeds, so a form that starts to read it is
- * a red row rather than a surprise. The shipyards' and the refineries'
- * proxies are the exception to "never generated": they are fitted to their
- * authored models (nodes #818, #819), and their own tests measure the boxes
- * against the drawn triangles rather than against the fit. The outpost's Salvage is
- * **grown, not solved** (§2.2): `buildOutpostSalvage` accretes it from its own
- * draw, and that plan exists only inside the renderer. So its proxy does not
- * follow a plan; it is one seed-independent envelope sized to contain the
- * plans it was measured over, and it is only as good as that measurement.
- *
- * **Which plans that is.** `npm test` gates every row on `ASSEMBLY_SEEDS`,
- * twelve plans, and the vertex row builds each with the berth on both sides.
- * The hand-run half is `scripts/measure-station-proxy.ts`, which shares the
- * test's vertex walk, opening and frame rule. Run as
- * `bun scripts/measure-station-proxy.ts 1200 <0|1200> <refinery|outpost>` —
- * four runs over assembly seeds 0–2399. The figures are not restated here:
- * `docs/findings/station-proxy-wide-sweep.md` records the commit they were
- * taken on, the commands and the output verbatim, and a re-run replaces it. A
- * plan outside the range it names is not measured.
+ * a red row rather than a surprise. The shipyards', the refineries', the
+ * trade b/c/e forms' and outposts' proxies are the exception to "never generated":
+ * they are fitted to authored models (nodes #818, #819, #1031–1033), and their own
+ * tests measure the boxes against the drawn triangles rather than against the
+ * fit. The sim collides with the authored model whatever is drawn, so none of
+ * them reads an assembly seed, though the procedural Salvage that stands in
+ * while its model loads is grown from one.
  *
  * **What it turns with.** `spinning` primitives are in the spinning member's
- * frame. `static` primitives are in the static frame — only non-empty for the
- * shipyard, whose keel is static while the drum spins.
+ * frame. `static` primitives are in the static frame: the shipyard's yard
+ * and the trade Assembly's cell structure stay still while their hubs spin.
  *
  * **The openings** (§2.2), read from the interior catalogue rather than
  * restated. On a trade station or a shipyard the proxy leaves the bay open over
@@ -64,6 +53,8 @@ import type { Pose, Primitive, SolidMotion } from "./collision";
 import { type ApertureFrame, frameAtPhase, slotBasis } from "./docking";
 import type { StationFormId, StationPlan, StationType } from "./station";
 import { STATION_GEOMETRY } from "./station";
+import { TRADE_PROXIES } from "./trade-proxies";
+import { TRADE_MOUTH_RECESS_KM } from "./trade-frame";
 import { HULL_SPECS } from "./hull";
 import {
 	admittedHulls,
@@ -77,6 +68,7 @@ import {
 	PAD_VENT_BANK_X_KM,
 	REFINERY_PAD_FRAME,
 } from "./refinery-pad-frame";
+import { OUTPOST_PROXIES, OUTPOST_PROXY_PACK } from "./outpost-proxies";
 import { REFINERY_PROXIES, REFINERY_PROXY_PACK } from "./refinery-proxies";
 import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
 import {
@@ -87,7 +79,7 @@ import {
 	type Sphere,
 	type SphereGrid,
 } from "./sphere-grid";
-import { SALVAGE_CORE } from "./station-plant";
+import { HUB, modularPlacements } from "./station-modular";
 import { type Vec3, cross, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
@@ -142,12 +134,12 @@ export type ProxyPrimitive = ProxyBox | ProxySphere | ProxyCapsule;
  * Both primitive lists are in kilometres. `spinning` is in the spinning
  * member's frame (rotated by the phase from `slotPhaseRad`). `static` is
  * in the station's non-rotating frame; it is non-empty only for forms
- * with a static structure (the shipyard's keel).
+ * with a static structure (the shipyard's yard and the trade Assembly).
  */
 export interface StationProxy {
 	/** Primitives in the spinning member's frame. */
 	readonly spinning: readonly ProxyPrimitive[];
-	/** Primitives in the static frame (the shipyard's keel). */
+	/** Primitives in the static frame (the shipyard's yard or Assembly's cells). */
 	readonly static: readonly ProxyPrimitive[];
 	/**
 	 * The thinnest primitive in the proxy, kilometres — the figure §4.1's
@@ -451,6 +443,181 @@ function tradeCoriolisProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
+// Trade B — Ring
+// ---------------------------------------------------------------------------
+
+function tradeRingProxy(): StationProxy {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const major = r * 0.92;
+	const spinning: ProxyPrimitive[] = [
+		...ring(major, 0, r * 0.17, 24),
+		...ring(major * 0.56, 0, r * 0.016, 24),
+		...cutAround(
+			[
+				axial(
+					r * 0.34,
+					r * 0.34,
+					-r * 0.42,
+					STATION_GEOMETRY.trade.aperturePlaneKm + 0.016,
+				),
+			],
+			bayHoles("trade"),
+		),
+	];
+	// The two face masts carry dishes 90 m above the rim's crown.
+	for (const side of [-1, 1])
+		spinning.push(
+			capsule(
+				{ x: side * major, y: 0, z: r * 0.13 },
+				{ x: side * major, y: 0, z: r * 0.13 + 0.092 },
+				0.015,
+			),
+		);
+	for (let i = 0; i < 4; i++) {
+		const theta = (i * Math.PI) / 2;
+		for (const side of [-1, 1]) {
+			const point = (radial: number, tangent: number): Point => ({
+				x: Math.cos(theta) * radial - Math.sin(theta) * tangent,
+				y: Math.sin(theta) * radial + Math.cos(theta) * tangent,
+				z: 0,
+			});
+			spinning.push(
+				capsule(
+					point(r * 0.14, side * r * 0.04),
+					point(major - r * 0.13 * 0.94, side * r * 0.15),
+					r * 0.026,
+				),
+			);
+		}
+	}
+	return proxyOf(spinning);
+}
+
+// ---------------------------------------------------------------------------
+// Trade C — Drum
+// ---------------------------------------------------------------------------
+
+function tradeDrumProxy(): StationProxy {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const body = r * 0.46;
+	// Twelve-sided barrel, bands, and its flank machinery. Slices narrow at
+	// the aft cap so their corners stay within the form's 660 m reach.
+	const solid = [
+		axial(body * 0.55, body * 0.55, -r * 1.02, -r * 0.86),
+		axial(0.29, 0.29, -r * 0.86, -r * 0.5),
+		axial(body * 1.18, body * 1.18, -r * 0.5, r * 0.6),
+		axial(
+			body * 0.8,
+			body * 0.8,
+			r * 0.6,
+			STATION_GEOMETRY.trade.aperturePlaneKm + 0.016,
+		),
+	];
+	return proxyOf(cutAround(solid, bayHoles("trade")));
+}
+
+// ---------------------------------------------------------------------------
+// Trade D — Assembly: the hub spins; the solved cell structure does not.
+// ---------------------------------------------------------------------------
+
+function tradeAssemblyProxy(assemblySeed: number): StationProxy {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
+	const spinning = cutAround(
+		[axial(r * 0.34, r * 0.34, -r * 0.3, plane + 0.016)],
+		bayHoles("trade"),
+	);
+	const bay = stationInterior("trade", plane);
+	const [end] = interiorAxialSpanKm(bay);
+	const swept = Math.hypot(bay.halfAcrossKm, bay.halfUpKm);
+	// Cut the swept bay, not its phase-zero rectangle, from static cells.
+	const holes = [axial(swept, swept, end, Infinity)];
+	const cells = modularPlacements(assemblySeed)
+		.placements.filter((p) => p.module !== HUB)
+		.map(
+			(p): Bounds => ({
+				x0: p.dx * 0.2 - 0.1,
+				x1: p.dx * 0.2 + 0.1,
+				y0: p.dy * 0.2 - 0.1,
+				y1: p.dy * 0.2 + 0.1,
+				z0: -0.06,
+				z1: 0.1,
+			}),
+		);
+	return proxyOf(spinning, cutAround(cells, holes));
+}
+
+// ---------------------------------------------------------------------------
+// Trade E — Wheel: both rims, eight spokes, hub, fins and aft mast all spin.
+// ---------------------------------------------------------------------------
+
+function tradeWheelProxy(): StationProxy {
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
+	// The 0.85–0.95 km box-section rims, at z ±0.16 with 0.08 km width.
+	// Oriented boxes keep the section rectangular: a round capsule large
+	// enough for its corners would put collision beyond the rim's flat faces.
+	const spinning: ProxyPrimitive[] = [];
+	for (const z of [-0.16, 0.16]) {
+		const count = 56;
+		const halfAngle = Math.PI / count;
+		const inner = 0.85 * Math.cos(halfAngle);
+		const outer = 0.95;
+		for (let i = 0; i < count; i++) {
+			const theta = ((i + 0.5) / count) * 2 * Math.PI;
+			const c = Math.cos(theta);
+			const s = Math.sin(theta);
+			spinning.push({
+				kind: "box",
+				cx: (c * (inner + outer)) / 2,
+				cy: (s * (inner + outer)) / 2,
+				cz: z,
+				hx: (outer - inner) / 2,
+				hy: outer * Math.sin(halfAngle),
+				hz: 0.04,
+				axes: [v3(c, s, 0), v3(-s, c, 0), v3(0, 0, 1)],
+			});
+		}
+		for (let i = 0; i < 4; i++) {
+			const theta = (i * Math.PI) / 2;
+			const at = (r: number): Point => ({
+				x: Math.cos(theta) * r,
+				y: Math.sin(theta) * r,
+				z,
+			});
+			// The root seats in the hub without letting a capsule's rounded
+			// end cross the bay's rectangular sides.
+			spinning.push(capsule(at(0.18), at(0.859), 0.033));
+		}
+	}
+	// Hub and collars; four diagonal radiator fins between the collars.
+	// Every box is cut around the unchanged bay and outward mouth prism.
+	const solid: Bounds[] = [axial(0.2, 0.2, -0.24, plane + 0.016)];
+	for (const side of [-1, 1])
+		spinning.push(
+			capsule(
+				{ x: side * 0.9, y: 0, z: 0.198 },
+				{ x: side * 0.9, y: 0, z: 0.292 },
+				0.012,
+			),
+		);
+	for (const sx of [-1, 1])
+		for (const sy of [-1, 1])
+			solid.push({
+				x0: sx < 0 ? -0.29 : 0.12,
+				x1: sx < 0 ? -0.12 : 0.29,
+				y0: sy < 0 ? -0.29 : 0.12,
+				y1: sy < 0 ? -0.12 : 0.29,
+				z0: -0.09,
+				z1: 0.09,
+			});
+	spinning.push(
+		...cutAround(solid, bayHoles("trade")),
+		capsule({ x: 0, y: 0, z: -0.24 }, { x: 0, y: 0, z: -0.51 }, 0.05),
+	);
+	return proxyOf(spinning);
+}
+
+// ---------------------------------------------------------------------------
 // Shipyards A–C — the authored yards (node #818)
 // ---------------------------------------------------------------------------
 
@@ -475,10 +642,15 @@ function tradeCoriolisProxy(): StationProxy {
  */
 const BAY_WALL_KM = 0.005;
 const MOUTH_WALL_KM = 0.002;
-function bayWalls(): ProxyBox[] {
-	const plane = STATION_GEOMETRY.shipyard.aperturePlaneKm;
-	const bay = stationInterior("shipyard", plane);
-	const [end, mouth] = interiorAxialSpanKm(bay);
+function bayWalls(
+	type: StationType = "shipyard",
+	recessKm = 0,
+	closeMouth = true,
+): ProxyBox[] {
+	const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+	const bay = stationInterior(type, plane);
+	const [end, planeMouth] = interiorAxialSpanKm(bay);
+	const mouth = planeMouth - recessKm;
 	const hx = bay.halfAcrossKm;
 	const hy = bay.halfUpKm;
 	const w = BAY_WALL_KM;
@@ -490,7 +662,7 @@ function bayWalls(): ProxyBox[] {
 		[axial(hx + w, hy + w, mouth, mouth + MOUTH_WALL_KM)],
 		[axial(bay.laneHalfAcrossKm, bay.laneHalfUpKm, mouth, Infinity)],
 	);
-	return [...shell, ...mouthWall];
+	return closeMouth ? [...shell, ...mouthWall] : shell;
 }
 
 function unpack(
@@ -533,8 +705,11 @@ function unpack(
  * with a minimum thickness either side of it, so its box reaches a little way
  * through the plane into the bay; the cut takes that off.
  */
-function outsideTheBay(boxes: ProxyBox[]): ProxyBox[] {
-	const holes = bayHoles("shipyard");
+function outsideTheBay(
+	boxes: ProxyBox[],
+	type: StationType = "shipyard",
+): ProxyBox[] {
+	const holes = bayHoles(type);
 	return boxes.flatMap((b) => {
 		const bounds = alignedBounds(b);
 		return bounds ? cutAround([bounds], holes) : [b];
@@ -564,6 +739,24 @@ function alignedBounds(b: ProxyBox): Bounds | null {
 }
 
 const authoredShipyards = new Map<string, StationProxy>();
+const authoredTrades = new Map<string, StationProxy>();
+function authoredTradeProxy(form: keyof typeof TRADE_PROXIES): StationProxy {
+	let proxy = authoredTrades.get(form);
+	if (!proxy) {
+		proxy = proxyOf([
+			...outsideTheBay(tradeProxyBoxes(form), "trade"),
+			...bayWalls("trade", TRADE_MOUTH_RECESS_KM, false),
+		]);
+		authoredTrades.set(form, proxy);
+	}
+	return proxy;
+}
+
+/** Written authored trade hull boxes before cutting the sim-owned bay. */
+export function tradeProxyBoxes(form: keyof typeof TRADE_PROXIES): ProxyBox[] {
+	return unpack(TRADE_PROXIES[form].hull);
+}
+
 function authoredShipyardProxy(
 	form: keyof typeof SHIPYARD_PROXIES,
 ): StationProxy {
@@ -607,12 +800,12 @@ export function shipyardProxyBoxes(form: keyof typeof SHIPYARD_PROXIES): {
  * **The deck is the sim's**, as a shipyard's bay walls are: the deck the game
  * draws (`stationInterior`), up to the procedural forms' figure above the
  * plane so its berths are solid (`collision.md` §9 obligation 8), cut round
- * the corridor and the landing well.
+ * the corridor and the landing well. The outpost Salvage's too (node #1031).
  */
 const PAD_BERTHS_KM = 0.03;
-function padDeck(): ProxyBox[] {
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const pad = stationInterior("refinery", plane);
+function padDeck(type: "refinery" | "outpost"): ProxyBox[] {
+	const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+	const pad = stationInterior(type, plane);
 	const depth = pad.stagingAxialKm - pad.mouthAxialKm;
 	return cutAround(
 		[
@@ -623,7 +816,7 @@ function padDeck(): ProxyBox[] {
 				plane + PAD_BERTHS_KM,
 			),
 		],
-		[corridorHole("refinery")],
+		[corridorHole(type)],
 	);
 }
 
@@ -663,7 +856,12 @@ function authoredRefineryProxy(
 		const { rock, plant } = refineryProxyBoxes(form);
 		// A refinery does not turn; its primitives are listed as the procedural
 		// forms list theirs.
-		proxy = proxyOf([...rock, ...plant, ...padDeck(), ...padVentBanks()]);
+		proxy = proxyOf([
+			...rock,
+			...plant,
+			...padDeck("refinery"),
+			...padVentBanks(),
+		]);
 		authoredRefineries.set(form, proxy);
 	}
 	return proxy;
@@ -682,56 +880,37 @@ export function refineryProxyBoxes(form: keyof typeof REFINERY_PROXIES): {
 }
 
 // ---------------------------------------------------------------------------
-// Outpost E — Salvage (grown form, selected)
+// The authored outposts (nodes #1031, #1032)
 // ---------------------------------------------------------------------------
 
 /**
- * The Salvage: a boxy freighter section (the core) carrying the deck, with
- * welded debris round it. The debris is grown from the assembly seed by the
- * form's own generator rather than solved on a placement grid, and that plan
- * lives only in the renderer, so the proxy is one set of primitives sized to
- * the plans the module header names, rather than one that follows a plan:
- *
- * - the core section as a box from its keel to the underside of the deck;
- * - a sphere centred below the origin, its top under the plane, for the
- *   debris welded round the core;
- * - a ring of capsules round its flanks for the hull sections that stand
- *   furthest out;
- * - a ring round the corridor for the deck, its inner edge outside
- *   `corridorRadiusKm`, and a wider one under it for the sections welded at
- *   deck height.
+ * An authored outpost, as the game loads it: the Salvage (node #1031), and the
+ * Derrick, Buoy, Rig and Cluster, which have proxies though no pool holds them
+ * yet (node #1032). **The sim collides with the authored outpost, whatever is
+ * drawn**, as with the refineries (#819): while
+ * its model is loading, or if it failed to, the procedural stand-in is drawn
+ * and is solid as the Salvage it stands in for. Its hull keeps the shipyards'
+ * rule (at most 10 m of empty space collides), fitted to the model's own parts
+ * (`src/outpost-proxies.ts`, generated; `tests/outpost-flight.test.ts`); its
+ * deck is the sim's (`padDeck`).
  */
-function outpostSalvageProxy(): StationProxy {
-	const g = STATION_GEOMETRY.outpost;
-	const r = g.coreRadiusKm;
-	const plane = g.aperturePlaneKm;
+const authoredOutposts = new Map<string, StationProxy>();
+function authoredOutpostProxy(
+	form: keyof typeof OUTPOST_PROXIES,
+): StationProxy {
+	let proxy = authoredOutposts.get(form);
+	if (!proxy) {
+		proxy = proxyOf([...outpostProxyBoxes(form), ...padDeck("outpost")]);
+		authoredOutposts.set(form, proxy);
+	}
+	return proxy;
+}
 
-	const deckUnder = plane - r * 0.16;
-	const core = cutAround(
-		[
-			axial(
-				SALVAGE_CORE.halfWidthKm,
-				SALVAGE_CORE.halfHeightKm,
-				SALVAGE_CORE.bottomKm,
-				deckUnder,
-			),
-		],
-		[corridorHole("outpost")],
-	);
-	// The debris and the flank ring stand on the landing well's floor rather
-	// than over it, as the Works' rock does: neither can be cut.
-	const floor = padOpeningFloorKm("outpost");
-	const DEBRIS_Z = -0.1275;
-	const debris = sphere(
-		{ x: 0, y: 0, z: DEBRIS_Z },
-		Math.min(0.2925, floor - DEBRIS_Z),
-	);
-	const FLANK_TUBE = 0.17;
-	const flanks = ring(0.24, Math.min(-0.05, floor - FLANK_TUBE), FLANK_TUBE);
-	const deck = ring(0.2, plane + 0.005, 0.11);
-	const deckRim = ring(0.28, plane - 0.025, 0.1);
-
-	return proxyOf([...core, debris, ...flanks, ...deck, ...deckRim]);
+/** An outpost's written hull boxes as decoded. */
+export function outpostProxyBoxes(
+	form: keyof typeof OUTPOST_PROXIES,
+): ProxyBox[] {
+	return unpack(OUTPOST_PROXIES[form].hull, OUTPOST_PROXY_PACK);
 }
 
 // ---------------------------------------------------------------------------
@@ -744,7 +923,9 @@ function outpostSalvageProxy(): StationProxy {
  * Returns `null` for a form that has no proxy. Only the forms in play
  * (`formsInPlay`: each role's pool, and the outpost's one form) have one,
  * because only they can be drawn by a running game (§2.2), and the test rows
- * measure only them — an alternate's proxy would be a claim nothing checks. A
+ * measure only them — an alternate's proxy would be a claim nothing checks.
+ * The exception is the four outposts built ahead of any pool (node #1032),
+ * which `tests/helpers/forms-in-play.ts` lists beside the forms in play. A
  * form in play must never return `null`: the test asserts it for every member
  * of every pool, which is how pooling a form without building its proxy goes
  * red (node #717).
@@ -757,7 +938,18 @@ export function stationProxy(
 ): StationProxy | null {
 	switch (type) {
 		case "trade":
-			return form === "a" ? tradeCoriolisProxy() : null;
+			switch (form) {
+				case "a":
+					return tradeCoriolisProxy();
+				case "b":
+				case "c":
+				case "e":
+					return authoredTradeProxy(form);
+				case "d":
+					return tradeAssemblyProxy(assemblySeed);
+				default:
+					return null;
+			}
 		case "shipyard":
 			switch (form) {
 				case "a":
@@ -778,7 +970,16 @@ export function stationProxy(
 					return null;
 			}
 		case "outpost":
-			return form === "e" ? outpostSalvageProxy() : null;
+			switch (form) {
+				case "a":
+				case "b":
+				case "c":
+				case "d":
+				case "e":
+					return authoredOutpostProxy(form);
+				default:
+					return null;
+			}
 		default: {
 			// Exhaustive at compile time: a station type added later is a type
 			// error here, and at runtime it has no proxy.
@@ -1080,7 +1281,7 @@ export function resolverPrimitive(p: ProxyPrimitive): Primitive {
 
 /**
  * The proxy's two frames as resolver primitives. `static` is empty except on
- * the shipyard; a station that does not spin has one frame, and both lists
+ * the shipyard and trade Assembly; a station that does not spin has one frame, and both lists
  * are posed on it.
  */
 export function proxySolids(proxy: StationProxy): {

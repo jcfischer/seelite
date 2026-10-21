@@ -148,7 +148,6 @@ export const CANISTER_KEEP_FRACTION = 0.2;
 export interface Canister {
 	id: string;
 	commodity: string;
-	/** A one-tonne fitting uses the same flight and scoop gate as cargo. */
 	fitting?: FittedModule;
 	tonnes: number;
 	pos: Vec3;

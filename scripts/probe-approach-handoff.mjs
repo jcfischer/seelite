@@ -11,7 +11,7 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const PAGE_URL = gameUrl(
 	ORIGIN,
-	{ seed: 1 },
+	{ seed: 47, system: 185 },
 	{ override: process.env.PROBE_URL },
 );
 const EPS = 0.005;
@@ -105,6 +105,95 @@ if (setup.id) {
 					outer.drawnRadius / outer.drawnDistance,
 					inner.drawnRadius / inner.drawnDistance,
 				),
+	);
+}
+
+// Node #1017: scale the same surface and camera together. Apparent size can
+// stay continuous while the shader's terrain slopes change with render units.
+// Hold geometry, sun, clock and shader path fixed so only those units differ.
+const relief = await page.evaluate(async () => {
+	const THREE = await import("/node_modules/.vite/deps/three.js");
+	const { buildBodyVisual, surfaceSphere } = await import(
+		"/src/planet-surface.ts"
+	);
+	const { FAR_SCALE, APPROACH_SCALE } = await import("/src/units.ts");
+	const body = window.__seelite.world.system.bodies.find(
+		(b) => b.id === "planet-2",
+	);
+	if (body?.appearance?.surface !== "desert")
+		throw new Error("node #1017 fixture must be ABITI III, a desert planet");
+	const renderer = new THREE.WebGLRenderer();
+	const size = 320;
+	renderer.setSize(size, size);
+	const target = new THREE.WebGLRenderTarget(size, size);
+	const scene = new THREE.Scene();
+	const camera = new THREE.PerspectiveCamera(60, 1, 0.0001, 1e6);
+	// ABITI III's appearance; a second radius prevents a constant calibrated for one
+	// world from passing. Both sides use the production desert program.
+	const visual = buildBodyVisual(body.appearance, surfaceSphere("approach"));
+	for (const shell of visual.group.children)
+		shell.visible = shell === visual.surfaceMesh;
+	scene.add(visual.group);
+	const read = (radius, scale, path) => {
+		visual.setSurfacePath(path);
+		visual.group.scale.setScalar(radius * scale);
+		camera.position.set(0, 0, 3 * radius * scale);
+		renderer.setRenderTarget(target);
+		renderer.render(scene, camera);
+		const pixels = new Uint8Array(size * size * 4);
+		renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
+		return pixels;
+	};
+	// Centre patch avoids tessellation/silhouette coverage and derivative helper
+	// lanes. It still contains thousands of painted terrain pixels.
+	const difference = (a, b) => {
+		let sum = 0;
+		let count = 0;
+		for (let y = 110; y < 210; y++)
+			for (let x = 110; x < 210; x++)
+				for (let c = 0; c < 3; c++) {
+					sum += Math.abs(
+						a[(y * size + x) * 4 + c] - b[(y * size + x) * 4 + c],
+					);
+					count++;
+				}
+		return sum / count;
+	};
+	try {
+		return [body.radiusKm, 20000].map((radius) => {
+			const far = read(radius, FAR_SCALE, "screen-space");
+			const approach = read(radius, APPROACH_SCALE, "screen-space");
+			const flat = read(radius, APPROACH_SCALE, "none");
+			return {
+				radius,
+				delta: difference(far, approach),
+				repeat: difference(
+					approach,
+					read(radius, APPROACH_SCALE, "screen-space"),
+				),
+				detail: difference(approach, flat),
+			};
+		});
+	} finally {
+		visual.dispose();
+		target.dispose();
+		renderer.dispose();
+	}
+});
+for (const row of relief) {
+	console.log("relief layer comparison", JSON.stringify(row));
+	check(
+		`${row.radius} km: repeated terrain is deterministic`,
+		row.repeat === 0,
+	);
+	check(
+		`${row.radius} km: relief survives the approach scale`,
+		row.detail > 0.5,
+	);
+	// Allow sub-code float32 roundoff, not a visible change in terrain shading.
+	check(
+		`${row.radius} km: terrain is independent of layer scale`,
+		row.delta < 0.1,
 	);
 }
 await browser.close();

@@ -158,7 +158,18 @@ import {
  * at. An 11–14 pressure row keeps its region as observed and loads with a
  * `null` strength; one carrying either new field was assembled
  * (`parseSweepReadings`, `SWEEP_STRENGTH_SCHEMA`). */
-export const SAVE_SCHEMA_VERSION = 15;
+/**
+ * **16 adds `commander.txSeq` (#936 D4, built by node #943)** — the one
+ * transaction sequence number a durable gameplay commit moves by exactly one.
+ * A v15 and older record loads with `txSeq: 0` and may not carry the key
+ * (`LEGACY_SCHEMA_FORBIDS`); a current record without it is truncated, and one
+ * carrying a negative, fractional or unsafe integer is refused, because
+ * `commit`'s staleness gate is the only thing refusing a repeat submission and
+ * a sequence number that cannot be compared is worse than a refused save.
+ * No history of operations is stored: the record grows by a few bytes and the
+ * bound is fixed (#936 D4).
+ */
+export const SAVE_SCHEMA_VERSION = 16;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -194,10 +205,11 @@ export const SAVE_SCHEMA_VERSION = 15;
  * **11 is every save written between nodes #482 and #705**, and **12 every
  * save written from node #705 until the slot loadout**. **13 adds the typed
  * loadout and 14 its purchase cost**; all four carry a sweep ledger whose
- * pressure rows have no strength.
+ * pressure rows have no strength. **15 adds the pressure row's strength** and
+ * is every save written between node #769 and node #943; it predates `txSeq`.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 ] as const;
 
 /**
@@ -217,15 +229,20 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
 > = {
-	2: ["requests", "firstDay", "ladders", "sweepReadings"],
-	3: ["firstDay", "ladders", "sweepReadings"],
-	4: ["firstDay", "ladders", "sweepReadings"],
-	5: ["firstDay", "ladders", "sweepReadings"],
-	6: ["ladders", "sweepReadings"],
-	7: ["sweepReadings"],
-	8: ["sweepReadings"],
-	9: ["sweepReadings"],
-	10: ["sweepReadings"],
+	2: ["requests", "firstDay", "ladders", "sweepReadings", "txSeq"],
+	3: ["firstDay", "ladders", "sweepReadings", "txSeq"],
+	4: ["firstDay", "ladders", "sweepReadings", "txSeq"],
+	5: ["firstDay", "ladders", "sweepReadings", "txSeq"],
+	6: ["ladders", "sweepReadings", "txSeq"],
+	7: ["sweepReadings", "txSeq"],
+	8: ["sweepReadings", "txSeq"],
+	9: ["sweepReadings", "txSeq"],
+	10: ["sweepReadings", "txSeq"],
+	11: ["txSeq"],
+	12: ["txSeq"],
+	13: ["txSeq"],
+	14: ["txSeq"],
+	15: ["txSeq"],
 };
 
 /**
@@ -274,11 +291,11 @@ const migrateV3Requests = (raw: unknown): RequestsState => {
  * `procurement` and both move cargo, so no genuine v4 record loses its
  * operand here.
  */
-const migrateV4Requests = (raw: unknown): unknown => {
-	if (raw === null || typeof raw !== "object") return raw;
+const migrateV4Requests = (raw: unknown): WireValue => {
+	if (raw === null || typeof raw !== "object") return raw as WireValue;
 	const journal = raw as Record<string, unknown>;
-	const lift = (offer: unknown): unknown => {
-		if (offer === null || typeof offer !== "object") return offer;
+	const lift = (offer: unknown): WireValue => {
+		if (offer === null || typeof offer !== "object") return offer as WireValue;
 		const { goodName, tonnes, entrusted, ...rest } = offer as Record<
 			string,
 			unknown
@@ -289,9 +306,10 @@ const migrateV4Requests = (raw: unknown): unknown => {
 	};
 	const map = (
 		container: unknown,
-		each: (row: Record<string, unknown>) => unknown,
-	): unknown => {
-		if (container === null || typeof container !== "object") return container;
+		each: (row: Record<string, unknown>) => WireValue,
+	): WireValue => {
+		if (container === null || typeof container !== "object")
+			return container as WireValue;
 		// **A null prototype, because the keys are a save's.** `JSON.parse`
 		// makes `__proto__` an own key, and assigning it on an ordinary object
 		// reaches `Object.prototype`'s setter instead of storing a row — the
@@ -303,7 +321,7 @@ const migrateV4Requests = (raw: unknown): unknown => {
 			out[id] =
 				row !== null && typeof row === "object"
 					? each(row as Record<string, unknown>)
-					: row;
+					: (row as WireValue);
 		return out;
 	};
 	return {
@@ -371,6 +389,15 @@ export interface CommanderRecord {
 	permadeath: boolean;
 	/** #408 D4: New game's choice, written at creation and never edited. */
 	firstDay: FirstDayChoice;
+	/**
+	 * The transaction sequence number (#936 D4, node #943). A non-negative
+	 * safe integer; a successful `SaveStore.commit` moves it by exactly one.
+	 * An action records it when it is quoted or shown, and a commit whose
+	 * recorded value is not the current one is refused as stale — which is
+	 * also what refuses a second submission or collection. Legacy versions
+	 * load at 0.
+	 */
+	txSeq: number;
 	/** The three ladders' banked record (#183 D9). Beside `state` in the one
 	 *  record, so a death's revert to `lastDocked` moves the credits and the
 	 *  rungs together. */
@@ -386,6 +413,39 @@ export interface SaveEnvelope {
 
 const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
+};
+
+/**
+ * A JSON value on the wire before it is validated (#46).
+ *
+ * The integrity hash has proved the bytes are self-consistent, not that they
+ * are the shape the reader wants. The v4 migration passes through everything
+ * it does not reshape and `parseRequests` is the validator, so a migrator
+ * names this and nothing stronger — `unknown` said the same thing less
+ * honestly about values a JSON store cannot hold at all.
+ */
+type WireValue =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly unknown[]
+	| { readonly [key: string]: unknown };
+
+/**
+ * The record as the store holds it: plain JSON, with the integrity hash over
+ * the rest of the body (#89 D5, #46 — the hash covers what was written, so
+ * the writer's own key order is part of the type's meaning).
+ *
+ * The two halves stay each module's wire blob: the envelope's shape is this
+ * module's business; what lives under `world` and `commander` is validated by
+ * `parseWorld` and `parseCommander`, not here.
+ */
+export type SaveRecordBody = {
+	saveSchemaVersion: number;
+	world: unknown;
+	commander: unknown;
+	integrity: number;
 };
 
 /** A new game's commander: at rest, undocked, and a charge the caller names —
@@ -418,6 +478,7 @@ export const newCommanderRecord = (
 	chargeAu: options.chargeAu ?? 0,
 	permadeath: options.permadeath ?? false,
 	firstDay: options.firstDay ?? "free",
+	txSeq: 0,
 	// A new game is paid for nothing it starts with: its own system is seeded
 	// (#183 D9's migration rule, applied to the start). The start station is
 	// not: its first dock, a guided start's included, earns one kind.
@@ -497,6 +558,7 @@ const canonicalCommander = (record: CommanderRecord) => {
 		chargeAu: record.chargeAu,
 		permadeath: record.permadeath,
 		firstDay: record.firstDay,
+		txSeq: record.txSeq,
 		ladders: serializeLadders(record.ladders),
 		flight: {
 			pos: [...record.flight.pos],
@@ -529,7 +591,7 @@ const refuseDerelicts = (world: unknown, version: number): void => {
  * the headroom, and an opaque exported file is one neither the player nor a bug
  * report can read.
  */
-export const serializeSave = (save: SaveEnvelope): unknown => {
+export const serializeSave = (save: SaveEnvelope): SaveRecordBody => {
 	const body = {
 		saveSchemaVersion: SAVE_SCHEMA_VERSION,
 		world: serializeWorld(save.world),
@@ -731,6 +793,20 @@ const parseCommander = (
 	const firstDay: FirstDayChoice = hasFirstDay
 		? (o.firstDay as FirstDayChoice)
 		: "free";
+	// #936 D4. Below 16 the forbids table has already refused the key, so an
+	// older record loads at 0. At 16 an absent key is a truncation (refused,
+	// not read as 0 — #89's obligation 5), and a value that is not a
+	// non-negative safe integer is refused rather than trusted: the staleness
+	// gate that refuses a repeat submission compares this number, and one
+	// that cannot be compared — fractional, or past `Number.MAX_SAFE_INTEGER`
+	// where successive increments collide — is worse than a refused save.
+	if (version >= 16) {
+		if (!Number.isSafeInteger(o.txSeq))
+			fail(`commander: txSeq ${String(o.txSeq)} is not a whole safe integer`);
+		if ((o.txSeq as number) < 0)
+			fail(`commander: txSeq ${String(o.txSeq)} is negative`);
+	}
+	const txSeq = version >= 16 ? (o.txSeq as number) : 0;
 	// **Bounded, not merely finite — and bounded on both indices.** For a round
 	// the system index was checked only for being a non-negative integer while
 	// the comment claimed it covered "a system the galaxy does not have", so
@@ -821,6 +897,7 @@ const parseCommander = (
 		),
 		permadeath: o.permadeath as boolean,
 		firstDay,
+		txSeq,
 		ladders,
 		flight: parseFlight(o.flight, version),
 	};

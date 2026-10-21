@@ -11,9 +11,24 @@ const OWNERS = Object.freeze({
 		"src/loadout.ts",
 		"src/kill-credit.ts",
 	],
+	"probe-production-boot.mjs": [
+		"scripts/probe-production-boot.mjs",
+		"src/entry.ts",
+		"src/model-catalog.ts",
+		"scripts/lib/async-import-guard.mjs",
+	],
 	"probe-model-queue.mjs": [
 		"scripts/probe-model-queue.mjs",
 		"src/model-queue.ts",
+		"src/model-catalog.ts",
+		"src/system-models.ts",
+	],
+	"probe-asteroid-field.mjs": [
+		"scripts/probe-asteroid-field.mjs",
+		"src/field-draw.ts",
+		"src/field-lod.ts",
+		"src/asteroid-model.ts",
+		"src/asteroid-field.ts",
 		"src/model-catalog.ts",
 		"src/system-models.ts",
 	],
@@ -37,11 +52,16 @@ const OWNERS = Object.freeze({
 	],
 	"probe-approach-handoff.mjs": [
 		"scripts/probe-approach-handoff.mjs",
+		"src/planet-surface.ts",
 		"src/arrival.ts",
 		"src/station-traffic.ts",
 		"src/docking.ts",
 	],
-	"probe-arrival.mjs": ["scripts/probe-arrival.mjs", "src/arrival.ts"],
+	"probe-arrival.mjs": [
+		"scripts/probe-arrival.mjs",
+		"src/arrival.ts",
+		"src/field-contact.ts",
+	],
 	"probe-audio-cues.mjs": [
 		"scripts/probe-audio-cues.mjs",
 		"src/audio.ts",
@@ -273,6 +293,12 @@ const OWNERS = Object.freeze({
 		"src/layout-choice.ts",
 		"src/pointer.ts",
 	],
+	"probe-mouse-sensitivity.mjs": [
+		"scripts/probe-mouse-sensitivity.mjs",
+		"src/pointer.ts",
+		"src/settings.ts",
+		"src/settings-panel.ts",
+	],
 	"probe-moving-guard.mjs": [
 		"scripts/probe-moving-guard.mjs",
 		"src/collision.ts",
@@ -487,6 +513,12 @@ const OWNERS = Object.freeze({
 		"src/station-traffic.ts",
 		"src/station-mesh.ts",
 	],
+	"probe-npc-vents.mjs": [
+		"scripts/probe-npc-vents.mjs",
+		"scripts/lib/npc-vent-state.mjs",
+		"src/npc-plumes.ts",
+		"src/vent-plumes.ts",
+	],
 	"probe-vent-display.mjs": [
 		"scripts/probe-vent-display.mjs",
 		"src/vent-plumes.ts",
@@ -518,6 +550,7 @@ const OWNERS = Object.freeze({
 });
 
 export const SMOKE_PROBES = Object.freeze([
+	"probe-production-boot.mjs",
 	"probe-boot.mjs",
 	"probe-live-cockpit.mjs",
 ]);

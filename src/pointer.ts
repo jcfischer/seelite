@@ -6,7 +6,7 @@
  * pay is lost. So a fast movement is clipped twice: by `MOUSE_MAX_STEP` here,
  * a frame's spike guard, and by the couple there, `angularAuthority × dt`. The
  * couple's clip binds first on every hull at 60 Hz and is frame-rate
- * invariant: it is `A / MOUSE_RAD_PER_PX` pixels a second.
+ * invariant: it is `A / mouseRadPerPx(sensitivity)` pixels a second.
  * `tests/pointer.test.ts` prints it per hull.
  *
  * A `carry` arm that banked the unpaid part and asked for it again was flown
@@ -15,12 +15,56 @@
 
 import type { Angular } from "./sim";
 
-/** Radians a second of rate one pixel of pointer movement asks for. */
+/** Whether a lock was asked for; engines without the method ask for nothing. */
+export function requestLock(el: {
+	requestPointerLock?: () => unknown;
+}): boolean {
+	if (typeof el.requestPointerLock !== "function") return false;
+	// **A refusal is read, not thrown** — it is the ordinary case, not the
+	// exceptional one: Chrome holds out after the player's own Escape and
+	// past a rate limit whatever the reason, a window that is not the key
+	// window cannot be locked at all, and Safari refuses outright without a
+	// gesture it may or may not have just seen. Dropping the promise made
+	// every refused click an unhandled rejection, which surfaces as a page
+	// error — which is why `probe-gun-feedback.mjs` had to stub this call
+	// out to keep its own click real. **And the promise is not assumed:**
+	// the returning form of this call is not universal, and on an engine
+	// that hands back `undefined` a `.catch` taken straight off it is the
+	// very uncaught error this line exists to remove. TypeScript cannot see
+	// that, because its own `lib.dom` declares the Promise. The retry is the
+	// next click, which is where we are standing.
+	void Promise.resolve(el.requestPointerLock()).catch(() => {});
+	return true;
+}
+
+/** Radians a second of rate one pixel of pointer movement asks for, at the
+ *  settings row's 100% (node #640): the figure every pilot flew before the row
+ *  existed, so a player who never moves it notices no change. */
 export const MOUSE_RAD_PER_PX = 0.0022;
+
+/**
+ * Radians a second of rate one pixel asks for, at a sensitivity: a plain
+ * multiple of `MOUSE_RAD_PER_PX`. **Linear, and nothing else** (node #640,
+ * after CMDR Mechan): no deadzone and no curve, because both make the aim
+ * harder to settle with the assist off. The sensitivity is required rather
+ * than defaulted: a default would let a caller that forgot the setting fly
+ * 100% silently.
+ */
+export const mouseRadPerPx = (sensitivity: number) =>
+	MOUSE_RAD_PER_PX * sensitivity;
 
 /** How far a single frame's mouse movement may turn the ship, radians. A
  *  flicked pointer or a re-focused window can deliver a delta of hundreds of
- *  pixels in one event, and without this the ship spins. */
+ *  pixels in one event, and without this the ship spins.
+ *
+ *  **In radians, not pixels, at every sensitivity** (node #640's decision).
+ *  What it guards is what the ship does in one frame, and the couple's clip
+ *  beside it (`angularAuthority × dt`) is in radians too, so the two keep
+ *  the order `tests/pointer.test.ts` prints: the couple binds first at 60 Hz
+ *  on every hull whatever the row says. In pixels the guard would allow four
+ *  times the kick at 400% and clip a slow hand at 25%. Its pixel equivalent
+ *  therefore scales with the row: about 55 px a frame at 100%, 218 at 25%,
+ *  14 at 400%. */
 export const MOUSE_MAX_STEP = 0.12;
 
 /** A rate change on the two axes the pointer drives, rad/s. */
@@ -32,18 +76,27 @@ export interface PointerRate {
 const clampAbs = (v: number, max: number) => Math.max(-max, Math.min(max, v));
 
 /** The pointer speed, px/s, above which a couple of `authority` rad/s²
- *  stops paying a delta in full. Frame-rate invariant. */
-export const couplePxS = (authority: number) => authority / MOUSE_RAD_PER_PX;
+ *  stops paying a delta in full, at a sensitivity. Frame-rate invariant. */
+export const couplePxS = (authority: number, sensitivity: number) =>
+	authority / mouseRadPerPx(sensitivity);
 
 /** What a raw delta asks for, rad/s: the nose follows the pointer. */
-const asked = (dxPx: number, dyPx: number): PointerRate => ({
-	pitch: -dyPx * MOUSE_RAD_PER_PX,
-	yaw: -dxPx * MOUSE_RAD_PER_PX,
+const asked = (
+	dxPx: number,
+	dyPx: number,
+	sensitivity: number,
+): PointerRate => ({
+	pitch: -dyPx * MOUSE_RAD_PER_PX * sensitivity,
+	yaw: -dxPx * MOUSE_RAD_PER_PX * sensitivity,
 });
 
 /** The impulse this frame's delta asks of `stepAngular`, spike-guarded. */
-export function pointerImpulse(dxPx: number, dyPx: number): Angular {
-	const now = asked(dxPx, dyPx);
+export function pointerImpulse(
+	dxPx: number,
+	dyPx: number,
+	sensitivity: number,
+): Angular {
+	const now = asked(dxPx, dyPx, sensitivity);
 	return {
 		pitch: clampAbs(now.pitch, MOUSE_MAX_STEP),
 		yaw: clampAbs(now.yaw, MOUSE_MAX_STEP),
@@ -98,6 +151,7 @@ export class FlickMeter {
 		dt: number,
 		delivered: PointerRate,
 		assist: boolean,
+		sensitivity: number,
 	) {
 		if (!(dt > 0)) return;
 		const moving = dxPx !== 0 || dyPx !== 0;
@@ -120,7 +174,7 @@ export class FlickMeter {
 			f.peakPxS,
 			px / Math.max(windowS, FLICK_PEAK_WINDOW_S),
 		);
-		const askedNow = asked(dxPx, dyPx);
+		const askedNow = asked(dxPx, dyPx, sensitivity);
 		f.askedRadS += Math.abs(askedNow.pitch) + Math.abs(askedNow.yaw);
 		f.deliveredRadS += Math.abs(delivered.pitch) + Math.abs(delivered.yaw);
 		f.durationS += dt;

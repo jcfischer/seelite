@@ -2260,6 +2260,7 @@ describe("collision.md §3: a kill by impact names the impact, and pays only the
 			vel: v3(0, 0, -0.2),
 			nose: v3(0, 0, 1),
 			up: v3(0, 1, 0),
+			firing: {},
 		};
 		const seen = landRaiderImpacts(
 			duel,

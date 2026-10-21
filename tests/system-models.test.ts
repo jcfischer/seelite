@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { makeWorld, restoreWorld } from "../src/sim";
 import { carrierKey } from "../src/carrier-key";
+import { systemFields } from "../src/asteroid-field";
 import { generateContents } from "../src/system";
 import {
 	AUTHORED_HULL_MODELS,
@@ -58,4 +59,24 @@ test("every authored hull is queued when flown or in Traffic", () => {
 		expect(systemModelIds(system, [], hull)).toContain(hull);
 		expect(systemModelIds(system, [hull], "interceptor")).toContain(hull);
 	}
+});
+
+test("a system with an asteroid field queues the field rocks, and one without does not", () => {
+	let with_ = 0;
+	let without = 0;
+	for (let i = 0; i < 40; i++) {
+		const { system } = restoreWorld(42, 0, i, 0);
+		const ids = systemModelIds(system, [], "courier");
+		if (systemFields(system.record, system.contents).length) {
+			with_++;
+			expect(ids).toContain("asteroids");
+		} else {
+			without++;
+			expect(ids).not.toContain("asteroids");
+		}
+		// Never a boot model: a field draws points until the rocks install.
+		expect(bootModelIds(system, null)).not.toContain("asteroids");
+	}
+	expect(with_).toBeGreaterThan(0);
+	expect(without).toBeGreaterThan(0);
 });

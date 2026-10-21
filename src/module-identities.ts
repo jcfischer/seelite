@@ -1,4 +1,3 @@
-/** Stable salvage aliases, independent of catalogue projections and world state. */
 import type { ModuleKind } from "./module-catalog";
 export const LEGACY_MODULES: Readonly<Record<string, ModuleKind>> = {
 	Missile: "missile-rack",
