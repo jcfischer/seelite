@@ -9,6 +9,7 @@
 		"preview": "vite preview",
 		"test": "bun test tests/",
 		"test:mutation:changed": "bun scripts/mutation-changed.ts",
+		"test:mutation:control": "bun test scripts/mutation-control.test.ts",
 		"format": "biome format --write src scripts tests index.html",
 		"format:check": "biome format src scripts tests index.html",
 		"lint": "biome lint scripts",

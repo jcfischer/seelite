@@ -107,6 +107,7 @@ jobs:
         with:
           bun-version: latest
       - run: npm ci
+      - run: npm run test:mutation:control
       - run: npm run test:mutation:changed
       - name: Upload changed-line mutation reports
         if: always()

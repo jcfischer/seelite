@@ -20,6 +20,7 @@ describe("changed-line mutation selection", () => {
 			(step) => step.job === "mutation-changed",
 		);
 		expect(steps.map(commandOf)).toContain("npm run test:mutation:changed");
+		expect(steps.map(commandOf)).toContain("npm run test:mutation:control");
 		expect(
 			steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"))
 				?.condition,
@@ -124,6 +125,7 @@ describe("changed-line mutation selection", () => {
 				"export function draw(ctx: CanvasRenderingContext2D) { ctx.stroke(); }",
 			],
 			["src/star.glsl.ts", 'export const shader = "void main() {}";'],
+			["src/effect-shaders.ts", 'export const shader = "void main() {}";'],
 			["src/untested.ts", "export const price = 1;"],
 			[
 				"tests/pure.test.ts",
@@ -131,7 +133,7 @@ describe("changed-line mutation selection", () => {
 			],
 			[
 				"tests/geometry.test.ts",
-				'import "../src/wrapper"; import "../src/dom"; import "../src/canvas"; import "../src/star.glsl";',
+				'import "../src/wrapper"; import "../src/dom"; import "../src/canvas"; import "../src/star.glsl"; import "../src/effect-shaders";',
 			],
 		]);
 		const index = moduleIndex(files);
@@ -143,6 +145,7 @@ describe("changed-line mutation selection", () => {
 			"src/dom.ts",
 			"src/canvas.ts",
 			"src/star.glsl.ts",
+			"src/effect-shaders.ts",
 			"src/untested.ts",
 			"tests/pure.test.ts",
 		])

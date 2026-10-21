@@ -1,0 +1,40 @@
+{
+  "base": "ac6a86b38c4f0391cea9c470f08b33f085d10011",
+  "head": "01ca0b9a8758aaf317f165f3b6301e3e332c8b14",
+  "mergeBase": "ac6a86b38c4f0391cea9c470f08b33f085d10011",
+  "checked": [
+    {
+      "file": "src/key-names.ts",
+      "ranges": [
+        {
+          "start": 334,
+          "end": 349
+        }
+      ],
+      "tests": [
+        "tests/eject.test.ts",
+        "tests/vent-keys.test.ts",
+        "tests/gamepad-doc.test.ts",
+        "tests/legend-memo.test.ts",
+        "tests/derived-names.test.ts",
+        "tests/flight-controls.test.ts",
+        "tests/controls-reference.test.ts"
+      ],
+      "mutants": 13,
+      "survivors": [],
+      "statuses": {
+        "Killed": 13
+      },
+      "wallSeconds": 30.789986499999998,
+      "html": "reports/mutation/changed/src_key-names_ts.html"
+    }
+  ],
+  "skipped": [
+    {
+      "file": "src/combat-rig.ts",
+      "reason": "rendering, shader, browser API or unresolved runtime dependency"
+    }
+  ],
+  "failures": [],
+  "wallSeconds": 31.946319583
+}

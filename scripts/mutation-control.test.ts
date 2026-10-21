@@ -14,13 +14,17 @@ import { join, resolve } from "node:path";
 
 test("real CLI reports a weak assertion's survivor, kills it with boundary assertions, and leaves source bytes alone", () => {
 	const root = mkdtempSync(join(tmpdir(), "seelite-mutation-control-"));
-	const run = (args: string[], expected = 0) => {
+	const run = (args: string[], expected = 0, base = "HEAD^") => {
 		const result = spawnSync(args[0], args.slice(1), {
 			cwd: root,
 			encoding: "utf8",
 			env: {
 				...process.env,
-				MUTATION_BASE_REF: "HEAD^",
+				GIT_AUTHOR_NAME: "Mutation control",
+				GIT_AUTHOR_EMAIL: "mutation-control@example.invalid",
+				GIT_COMMITTER_NAME: "Mutation control",
+				GIT_COMMITTER_EMAIL: "mutation-control@example.invalid",
+				MUTATION_BASE_REF: base,
 				MUTATION_HEAD_REF: "HEAD",
 			},
 		});
@@ -90,16 +94,7 @@ test("real CLI reports a weak assertion's survivor, kills it with boundary asser
 		);
 		git("add", ".");
 		git("commit", "--quiet", "-m", "Control boundary assertions");
-		const strong = spawnSync("npm", ["run", "test:mutation:changed"], {
-			cwd: root,
-			encoding: "utf8",
-			env: {
-				...process.env,
-				MUTATION_BASE_REF: "HEAD~2",
-				MUTATION_HEAD_REF: "HEAD",
-			},
-		});
-		expect(strong.status, strong.stdout + strong.stderr).toBe(0);
+		run(["npm", "run", "test:mutation:changed"], 0, "HEAD~2");
 		const killed = JSON.parse(
 			readFileSync(join(reportDir, "summary.json"), "utf8"),
 		);
@@ -110,6 +105,7 @@ test("real CLI reports a weak assertion's survivor, kills it with boundary asser
 						mutants: summary.checked[0].mutants,
 						survivors: summary.checked[0].survivors.length,
 						wallSeconds: summary.wallSeconds,
+						survivingMutants: summary.checked[0].survivors,
 					},
 					strong: {
 						mutants: killed.checked[0].mutants,
