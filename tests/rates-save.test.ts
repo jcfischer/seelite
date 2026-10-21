@@ -38,8 +38,8 @@ const tumbling = () => {
 describe("#619 — the rates in the save", () => {
 	test("rates arrived at 8, which is still read beside 7", () => {
 		// Derelicts took 9, salvage 10, sweep 11, death wreck 12, loadout 13,
-		// purchase cost 14 and sweep strength 15.
-		expect(SAVE_SCHEMA_VERSION).toBe(15);
+		// purchase cost 14, sweep strength 15 and txSeq 16.
+		expect(SAVE_SCHEMA_VERSION).toBe(16);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(7);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(8);
 	});
@@ -62,6 +62,7 @@ describe("#619 — the rates in the save", () => {
 			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
 			delete body.commander.flight.rates;
+			delete body.commander.txSeq;
 		});
 		expect(parseSave(v7).commander.flight.rates).toEqual([0, 0, 0]);
 	});
@@ -72,6 +73,7 @@ describe("#619 — the rates in the save", () => {
 			body.commander.state.ownedEquipment = [];
 			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
+			delete body.commander.txSeq;
 		});
 		expect(() => parseSave(grafted)).toThrow("rates is not a version 7 field");
 	});

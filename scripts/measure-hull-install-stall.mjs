@@ -4,7 +4,7 @@
  *
  *   node scripts/measure-hull-install-stall.mjs
  *
- * A live Game installs the courier and then the tug after boot
+ * A live Game installs the courier, the tug and the voyager (node #820) after boot
  * (`loadAuthoredHullsAfterBoot`), while the player flies. Past the download,
  * each install is main-thread work: the GLB's parse and Meshopt decode, the
  * builder (`createAuthoredHullBuilder`, whose two reduced levels are made by
@@ -86,6 +86,12 @@ try {
 			create: "createTugHullBuilder",
 			url: "BOLLARD_TUG_GLB_URL",
 		},
+		{
+			id: "voyager",
+			module: "/src/voyager-hull.ts",
+			create: "createVoyagerHullBuilder",
+			url: "DISCOVERY_VOYAGER_GLB_URL",
+		},
 	];
 	for (const hull of HULLS) {
 		// At a home station of the hull's Traffic, as `probe-model-download`
@@ -93,7 +99,12 @@ try {
 		await page.evaluate((id) => {
 			const g = window.__seelite;
 			const actor = g.trafficActors.find((a) => a.hullId === id);
-			if (!actor) throw new Error(`the fixture has no ${id} Traffic`);
+			// The voyager (node #820) flies in no Traffic: its refresh has no
+			// roots to rebuild, and the figure is the install alone.
+			if (!actor) {
+				if (id === "voyager") return;
+				throw new Error(`the fixture has no ${id} Traffic`);
+			}
 			const station = g.world.system.bodies.find(
 				(b) => b.id === actor.homeStationId,
 			);

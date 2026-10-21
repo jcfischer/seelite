@@ -339,8 +339,9 @@ export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	// each other at the range a capital ship is first seen.
 	dreadnought: 0.22,
 	// Half the carrier's reach and far thinner than either capital: a sphere and
-	// a spine, which reads as nothing else in the pool at any range.
-	voyager: 0.1,
+	// a spine, which reads as nothing else in the pool at any range. The
+	// authored model's (node #820) farthest vertex, 97.48 m, rounded up.
+	voyager: 0.0975,
 };
 
 export interface ShipMesh {

@@ -574,6 +574,7 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 	raw.saveSchemaVersion = 11;
 	raw.commander.state.ownedEquipment = [];
 	delete raw.commander.state.loadout;
+	delete raw.commander.txSeq;
 	const { integrity, ...body } = raw;
 	raw.integrity = fnv1a(JSON.stringify(body));
 	expect(parseSave(raw).world.galaxies.every((g) => !g.deathWreck)).toBe(true);

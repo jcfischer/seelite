@@ -160,6 +160,7 @@ export function raiderAtDrop(
 		nose,
 		up: cross(across, nose),
 		rates: NO_ROTATION,
+		firing: {},
 		phase: "acquire",
 		phaseSeconds: 0,
 		maneuverSeconds: 30,

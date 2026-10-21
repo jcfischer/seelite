@@ -22,6 +22,7 @@ import { setHorizonOrientation } from "../scripts/lib/horizon-framing.mjs";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 import { makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
+import { CROSSING, npcRiftVisible } from "../src/witchspace-crossing";
 import {
 	assertHorizonFacts,
 	horizonGeometry,
@@ -36,6 +37,7 @@ import {
 	VIEWS,
 	contactSheet,
 	malformedShots,
+	selectViews,
 	uncoveredLevers,
 } from "../scripts/lib/view-set.mjs";
 
@@ -75,6 +77,42 @@ const fullRun = (
 });
 
 describe("the view set itself", () => {
+	test("scoped capture names existing views in canonical order and refuses typos", () => {
+		expect(
+			selectViews("hull-chase-bollard,hull-chase,hull-chase-miner").map(
+				(v) => v.name,
+			),
+		).toEqual(["hull-chase", "hull-chase-miner", "hull-chase-bollard"]);
+		expect(selectViews(null)).toBe(VIEWS);
+		for (const names of ["", "hull-chase,", "typo", "hull-chase,hull-chase"])
+			expect(() => selectViews(names)).toThrow();
+	});
+
+	test("the authored paint comparison puts miner and Bollard beside courier", () => {
+		const start = VIEWS.findIndex((v) => v.name === "hull-chase");
+		const comparison = VIEWS.slice(start, start + 3);
+		expect(
+			comparison.map((v) => [
+				v.name,
+				(v.shot as { hull?: string }).hull ?? "courier",
+			]),
+		).toEqual([
+			["hull-chase", "courier"],
+			["hull-chase-miner", "miner"],
+			["hull-chase-bollard", "tug"],
+		]);
+		for (const view of comparison) {
+			expect(view.covers).toContain(909);
+			expect(view.shot).toMatchObject({
+				kind: "body-offset",
+				body: "largest-planet",
+				radii: 6,
+				sunAngleDeg: 150,
+				view: "chase",
+			});
+		}
+	});
+
 	/**
 	 * **This replaces an ordering rule, and the reversal is the point.**
 	 *
@@ -126,7 +164,7 @@ describe("the view set itself", () => {
 		// formatter decides to wrap, and whitespace after `(` is exactly the kind
 		// of change this row must stay silent about.
 		expect(loop).toMatch(
-			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,?\s*\);/,
+			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",?\s*\);/,
 		);
 		// And no placer navigates on a fixture of its own any more. `PLACERS` is
 		// the object the loop dispatches through, so a `shot.seed` read inside it
@@ -185,7 +223,10 @@ describe("the view set itself", () => {
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
-		expect(VIEWS.length).toBe(73);
+		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
+		// the crossing, the swallow and the seal of a jump seen by someone watching
+		// it, one frame each.
+		expect(VIEWS.length).toBe(80);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -206,6 +247,38 @@ describe("the view set itself", () => {
 	 */
 	test("every shot carries the payload its kind needs", () => {
 		expect(malformedShots(VIEWS)).toEqual([]);
+	});
+
+	/**
+	 * #1006's beat rows. The set already had an NPC arrival and departure, both
+	 * taken half a second **after** the crossing — which is why a green sheet never
+	 * showed that no opening and no closing was ever drawn. What a test can hold is
+	 * that the beats are in the set and stand at the phases the crossing's own
+	 * timeline says they belong at; whether 0.9 s reads as a build-up is the
+	 * principal's, on the sheet (#98, #104).
+	 */
+	test("the jump's three beats are each framed at their own phase", () => {
+		const byName = new Map(VIEWS.map((v) => [v.name, v]));
+		const beats = [
+			["npc-arrival-opening", "arrival", -1, 0],
+			["npc-arrival-crossing", "arrival", 0, CROSSING.crossS],
+			["npc-departure-swallow", "departure", -CROSSING.crossS, 0],
+			["npc-departure-seal", "departure", CROSSING.holdS, CROSSING.windowEndS],
+		];
+		for (const [name, event, after, before] of beats) {
+			const shot = byName.get(name)?.shot as
+				| { kind?: string; event?: string; phaseS?: number }
+				| undefined;
+			expect(shot, name).toBeDefined();
+			if (!shot?.phaseS) throw new Error(`${name} names no crossing phase`);
+			expect(shot.kind).toBe("npc-jump");
+			expect(shot.event).toBe(event);
+			expect(shot.phaseS).toBeGreaterThan(after);
+			expect(shot.phaseS).toBeLessThan(before);
+			// And inside the ring's own window, or the frame would be of nothing.
+			expect(npcRiftVisible(shot.phaseS)).toBe(true);
+			expect(byName.get(name)?.covers).toContain(684);
+		}
 	});
 
 	test("a shot missing its kind's payload is named", () => {
@@ -736,6 +809,23 @@ describe("node #754 horizon views", () => {
 });
 
 describe("the contact sheet", () => {
+	test("a scoped sheet declares its selection and still requires every selected frame", () => {
+		const views = VIEWS.filter((v) => v.covers.includes(909));
+		const run = fullRun("paint");
+		run.views = run.views.filter((v) =>
+			views.some((row) => row.name === v.name),
+		);
+		const html = contactSheet([run], views);
+		expect(html).toContain("Selected canonical views (3 of 80)");
+		expect(html).toContain(
+			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
+		);
+		run.views.pop();
+		expect(() => contactSheet([run], views)).toThrow(
+			/missing hull-chase-bollard/,
+		);
+	});
+
 	test("renders every declared view of every run", () => {
 		const html = contactSheet([fullRun("before"), fullRun("after")]);
 		for (const view of VIEWS) {
@@ -763,7 +853,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–29.4s");
+		expect(html).toContain("· clock 0.6–32.2s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1040,6 +1130,13 @@ describe("the rim look row #480 added", () => {
 			"npc-arrival",
 			"npc-departure-at-player-lane-point",
 			"npc-arrival-at-player-lane-point",
+			// #1006's four beat rows stand in the same system as the rows they
+			// precede and follow: the same hauler, the same two lane points, only
+			// sampled at another moment of one crossing.
+			"npc-arrival-opening",
+			"npc-arrival-crossing",
+			"npc-departure-swallow",
+			"npc-departure-seal",
 		]);
 	});
 });

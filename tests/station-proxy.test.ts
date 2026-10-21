@@ -37,7 +37,8 @@
  * The thinnest-primitive figure is declared and asserted.
  *
  * A form in any pool with no proxy is red (node #717): the budget rows run
- * over `FORMS_IN_PLAY`, so a form added to a pool is measured by them.
+ * over `FORMS_IN_PLAY`, so a form added to a pool is measured by them. They
+ * also run over the outposts built ahead of any pool (node #1032).
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -61,7 +62,13 @@ import {
 	proxyReachKm,
 	stationProxy,
 } from "../src/station-proxy";
-import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
+import {
+	FORMS_IN_PLAY,
+	FORMS_MEASURED,
+	OUTPOST_FORMS_AHEAD,
+	formLabel,
+} from "./helpers/forms-in-play";
+import { HUB, modularPlacements } from "../src/station-modular";
 import { ASSEMBLY_SEEDS, isSeededForm } from "./helpers/solved-forms";
 import {
 	BERTH_SIDES,
@@ -71,6 +78,14 @@ import {
 	verticesOutsideProxy,
 } from "./helpers/station-proxy-measure";
 import { codeOf } from "./lib/source-scan";
+import {
+	installShippedTrades,
+	uninstallTrades,
+} from "../scripts/lib/shipped-trades";
+import {
+	installShippedOutposts,
+	uninstallOutposts,
+} from "../scripts/lib/shipped-outposts";
 import {
 	installShippedRefineries,
 	uninstallRefineries,
@@ -103,12 +118,14 @@ const BERTH_SEEDS = [0, 1, 2, 7];
 
 /** `[berthSeed, assemblySeed]` pairs a form is measured at. */
 /** The roles drawn from approved models once they install (nodes #818,
- *  #819): their mesh and their proxy read no assembly seed, so one plan is
- *  every plan. The Works' procedural stand-in is seeded; the authored Works
- *  that replaces it, and the proxy the sim collides with, are not. */
+ *  #819, #1031): their mesh and their proxy read no assembly seed, so one
+ *  plan is every plan. The Works' and the Salvage's procedural stand-ins are
+ *  seeded; the authored models that replace them, and the proxies the sim
+ *  collides with, are not. */
 const AUTHORED_TYPES: ReadonlySet<StationType> = new Set([
 	"shipyard",
 	"refinery",
+	"outpost",
 ]);
 
 const assemblySeedsOf = (type: StationType, form: StationFormId) =>
@@ -141,33 +158,109 @@ function intrusions(
 const fmt = (v: THREE.Vector3) =>
 	`(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
 
-// The shipyards' and refineries' proxies are the authored models' (nodes
-// #818, #819), which the sim collides with whatever is drawn, so the rows here
-// measure the meshes the game draws once their models install. Removed after,
-// because bun runs every test file in one process and the next file may
-// measure the stand-ins.
+// The shipyards', refineries' and outpost's proxies are the authored models'
+// (nodes #818, #819, #1031), which the sim collides with whatever is drawn, so
+// the rows here measure the meshes the game draws once their models install.
+// Removed after, because bun runs every test file in one process and the next
+// file may measure the stand-ins.
 beforeAll(async () => {
 	await installShippedShipyards();
 	await installShippedRefineries();
+	await installShippedOutposts();
+	await installShippedTrades();
 });
 afterAll(() => {
 	uninstallShipyards();
 	uninstallRefineries();
+	uninstallOutposts();
+	uninstallTrades();
 });
 
 describe("station proxy budget (collision.md §9.1.11)", () => {
-	test("every form in every pool has a proxy", () => {
+	test("the Wheel turns both rims and its spokes, leaving the gaps between them open", () => {
+		const proxy = stationProxy("trade", "e", 0, 0)!;
+		expect(proxy).not.toBeNull();
+		expect(proxy.static).toEqual([]);
+		for (const z of [0.135, 0.305]) {
+			for (let i = 0; i < 4; i++) {
+				const theta = (i * Math.PI) / 2;
+				for (const r of [0.5])
+					expect(
+						proxyContains(
+							proxy.spinning,
+							r * Math.cos(theta),
+							r * Math.sin(theta),
+							z,
+							0,
+						),
+					).toBe(true);
+			}
+			// Between spokes and well inside the rims: an envelope over the
+			// whole disc would pass vertex containment but falsely close this.
+			expect(proxyContains(proxy.spinning, 0.4, 0.4, z, 0)).toBe(false);
+		}
+		for (const [r, z] of [
+			[0.775, 0.095],
+			[0.81, 0.36],
+		])
+			for (let i = 0; i < 4; i++) {
+				const theta = (i * Math.PI) / 2;
+				expect(
+					proxyContains(
+						proxy.spinning,
+						r * Math.cos(theta),
+						r * Math.sin(theta),
+						z,
+						0,
+					),
+				).toBe(true);
+			}
+		expect(proxyContains(proxy.spinning, 0.81, 0, 0.225, 0)).toBe(false);
+	});
+
+	test("the trade Assembly's proxy reads the assembly seed, cell by cell", () => {
+		const shapes = new Set<string>();
+		for (const seed of ASSEMBLY_SEEDS) {
+			const proxy = stationProxy("trade", "d", 0, seed)!;
+			const cells = modularPlacements(seed).placements.filter(
+				(p) => p.module !== HUB,
+			);
+			for (let x = -4; x <= 4; x++)
+				for (let y = -4; y <= 4; y++)
+					expect([
+						seed,
+						x,
+						y,
+						proxyContains(proxy.static, x * 0.2, y * 0.2, -0.04, 0),
+					]).toEqual([seed, x, y, cells.some((p) => p.dx === x && p.dy === y)]);
+			shapes.add(JSON.stringify(proxy.static));
+			expect(proxy.spinning).toEqual(
+				stationProxy("trade", "d", 0, 0)!.spinning,
+			);
+		}
+		expect(shapes.size).toBeGreaterThan(1);
+	});
+
+	test("every form in every pool has a proxy, and so has each outpost built ahead", () => {
 		// Node #717: a system picks each station's form from its role's pool,
 		// so every member can be drawn and every member is solid. Growing a
 		// pool without building the form's proxy is red here by name.
-		for (const [type, formId] of FORMS_IN_PLAY)
+		for (const [type, formId] of [...FORMS_IN_PLAY, ...OUTPOST_FORMS_AHEAD])
 			expect([
 				formLabel(type, formId),
 				stationProxy(type, formId, 0, 0) !== null,
 			]).toEqual([formLabel(type, formId), true]);
 	});
 
-	test("only a form in a pool has a proxy", () => {
+	test("the outposts built ahead are the outpost forms no pool holds", () => {
+		expect(OUTPOST_FORMS_AHEAD.map(([, form]) => form)).toEqual(
+			STATION_FORMS.outpost
+				.map((f) => f.id)
+				.filter((id) => !formsInPlay("outpost").includes(id)),
+		);
+	});
+
+	test("only a form in a pool, or an outpost built ahead, has a proxy", () => {
 		// An alternate's proxy would be a claim no row measures: every row below
 		// runs over the forms in play. Pooling an alternate (node #717) makes the
 		// first row red, which is the refusal §2.2 asks for.
@@ -175,6 +268,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			const inPlay = formsInPlay(type);
 			for (const { id } of STATION_FORMS[type]) {
 				if (inPlay.includes(id)) continue;
+				// Authored outposts are solid ahead of any pool (node #1032).
+				if (OUTPOST_FORMS_AHEAD.some(([t, f]) => t === type && f === id))
+					continue;
 				expect([formLabel(type, id), stationProxy(type, id, 0, 0)]).toEqual([
 					formLabel(type, id),
 					null,
@@ -185,7 +281,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 
 	// One row per form: the authored shipyards draw ~200,000 vertices each,
 	// and the whole set in one row ran within a second of its limit (#818).
-	for (const [type, form] of FORMS_IN_PLAY)
+	for (const [type, form] of FORMS_MEASURED)
 		test(
 			`no drawn vertex outside the proxy, within tolerance: ${formLabel(type, form)}`,
 			() => {
@@ -228,7 +324,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		);
 
 	test("no primitive outside reachKm", () => {
-		for (const [type, form] of FORMS_IN_PLAY) {
+		for (const [type, form] of FORMS_MEASURED) {
 			for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
 				const proxy = stationProxy(type, form, berthSeed, assemblySeed);
 				expect(proxy).not.toBeNull();
@@ -250,7 +346,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 	// past its limit on CI (#818). A proxy that does not read the seeds (a
 	// shipyard's, one object per form) is the same object at every pair, so
 	// it is measured once.
-	for (const [type, form] of FORMS_IN_PLAY)
+	for (const [type, form] of FORMS_MEASURED)
 		test(
 			`the opening is clear: no primitive holds a point of it: ${formLabel(type, form)}`,
 			() => {
@@ -281,7 +377,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 	test("the opening row goes red on a proxy that closes the opening", () => {
 		// The row above must be able to fail: a sphere over the whole reach is
 		// what this module shipped first, and it passed rows 1 and 2.
-		for (const [type, form] of FORMS_IN_PLAY) {
+		for (const [type, form] of FORMS_MEASURED) {
 			const points = spinningOpeningPoints(openingOf(type, form));
 			const closed: ProxyPrimitive[] = [
 				{
@@ -306,7 +402,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		//   (node #818; the procedural drum's lip was 28 m);
 		// - refinery: a fitted plate of the authored model, 0.8 m, the same on
 		//   all four (node #819; the procedural forms' figures were 17-46 m);
-		// - outpost: the core section's 90 m depth (`SALVAGE_CORE.halfHeightKm`).
+		// - outpost: a fitted plate of the authored Salvage, 0.8 m, as the
+		//   refineries' (node #1031; the procedural core section was 90 m), and
+		//   the same on the four built ahead of any pool (node #1032).
 		//
 		// Keyed by form, not by role (node #717): two forms of one role are two
 		// solids, and a pooled form with no figure here is red below.
@@ -315,6 +413,10 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// opening and no-tunnelling rows carry the separate safety obligations.
 		const DECLARED: Partial<Record<string, number>> = {
 			"trade/a": 0.032,
+			"trade/b": 0.0008,
+			"trade/c": 0.0008,
+			"trade/d": 0.016,
+			"trade/e": 0.0008,
 			"shipyard/a": 0.0007,
 			"shipyard/b": 0.0007,
 			"shipyard/c": 0.0007,
@@ -322,9 +424,13 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			"refinery/b": 0.0008,
 			"refinery/c": 0.0008,
 			"refinery/d": 0.0008,
-			"outpost/e": 0.09,
+			"outpost/a": 0.0008,
+			"outpost/b": 0.0008,
+			"outpost/c": 0.0008,
+			"outpost/d": 0.0008,
+			"outpost/e": 0.0008,
 		};
-		for (const [type, form] of FORMS_IN_PLAY) {
+		for (const [type, form] of FORMS_MEASURED) {
 			for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
 				const proxy = stationProxy(type, form, berthSeed, assemblySeed)!;
 				let min = Infinity;
@@ -355,7 +461,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// reads it, because a berth seed moves only which side an outpost's
 		// seeded berth stands on, and both sides are inside the same primitives.
 		// If a form starts reading it, this row says so.
-		for (const [type, form] of FORMS_IN_PLAY) {
+		for (const [type, form] of FORMS_MEASURED) {
 			for (const assemblySeed of assemblySeedsOf(type, form)) {
 				const base = JSON.stringify(stationProxy(type, form, 0, assemblySeed));
 				for (const berthSeed of BERTH_SEEDS) {

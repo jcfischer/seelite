@@ -390,6 +390,7 @@ test("fitting items survive reload and legacy or malformed fitting rows refuse",
 				r.commander.state.ownedEquipment = [];
 				delete r.commander.state.loadout;
 				delete r.commander.sweepReadings;
+				delete r.commander.txSeq;
 			}),
 		),
 	).toThrow("not a version 9 field");
@@ -539,6 +540,7 @@ test("a schema 9 save with a partially stripped derelict loads its world remaind
 		commander,
 	}) as Record<string, unknown>;
 	delete (body.commander as Record<string, unknown>).sweepReadings;
+	delete (body.commander as Record<string, unknown>).txSeq;
 	const legacy = { ...body, saveSchemaVersion: 9 };
 	const legacyState = (body.commander as { state: Record<string, unknown> })
 		.state;

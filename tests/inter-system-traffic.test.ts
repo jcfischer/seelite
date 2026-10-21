@@ -5,6 +5,7 @@ import { generateContents, arrivalPoint, placeBodies } from "../src/system";
 import { stationTrafficRoster } from "../src/station-traffic";
 import { AU_KM } from "../src/units";
 import { length, sub, dot } from "../src/vec3";
+import type { Vec3 } from "../src/vec3";
 import {
 	buildHaulerPlans,
 	inboundHaulers,
@@ -26,16 +27,20 @@ import { carrierStanding } from "../src/carrier-standing";
 import {
 	newWorld,
 	parseWorld,
-	serializeWorld,
 	canonicalSnapshot,
 	WORLD_GENERATOR_VERSION,
-	applyTransition,
 	haulerAvailability,
 } from "../src/world-state";
 import { nextTrafficDepartureAtS } from "../src/station-traffic";
 import { readFileSync } from "node:fs";
 import { runTrafficControl } from "./inter-system-traffic-mutations";
-import { npcRiftStrength, WITCHSPACE } from "../src/witchspace";
+import { JUMP_CHARGE_S } from "../src/hyperspace";
+import { WITCHSPACE } from "../src/witchspace";
+import {
+	CROSSING,
+	npcRiftStrength,
+	npcRiftVisible,
+} from "../src/witchspace-crossing";
 
 const galaxy = generateGalaxy(47, 0);
 const contents = new Map(
@@ -300,6 +305,39 @@ describe("hauler physical legs", () => {
 		expect(at(destination, v.tOut + 1).present).toBeUndefined();
 		expect(at(home, v.awayBoundaryS - 1).present).toBeUndefined();
 	});
+	test("the crossing never moves a hauler further in one 10 Hz tick than probe-traffic-continuity allows", () => {
+		// #1006: a departure ends a crossing ahead of its lane point, and the
+		// absent pose that followed stood on the point — a 0.084 km step at the
+		// instant, and the same step back when the return came through.
+		const p = hauler(),
+			v = haulerVoyage(p, 0);
+		const route = (t: number) =>
+			projectSystemTrafficActor({
+				record: home,
+				actor: p.actor,
+				gameTime: t,
+				haulerVoyages: routeVoyages(galaxy, p, home.index, t, getContents),
+			});
+		const speed = (u: Vec3) => length(u);
+		const steps: { t: number; from: string; to: string; km: number }[] = [];
+		let prior = route(v.tOut - 5);
+		for (const [fromS, toS] of [
+			[v.tOut - 5, v.tOut + 2],
+			[v.tBack - 2, v.tBack + 6],
+		])
+			for (let tick = Math.round(fromS * 10); tick <= toS * 10; tick++) {
+				const now = route(tick / 10);
+				const km = length(sub(now.pos, prior.pos));
+				const allowed = Math.max(
+					0.05,
+					(speed(prior.vel) + speed(now.vel)) * 0.1,
+				);
+				if (km > allowed)
+					steps.push({ t: tick / 10, from: prior.phase, to: now.phase, km });
+				prior = now;
+			}
+		expect(steps).toEqual([]);
+	});
 });
 
 describe("identity persistence and query cost", () => {
@@ -495,12 +533,129 @@ describe("identity persistence and query cost", () => {
 	});
 });
 
-test("NPC rings open on the jump and close on the existing exit clock", () => {
-	expect(npcRiftStrength(-0.1)).toBe(0);
-	expect(npcRiftStrength(0.1)).toBeGreaterThan(0);
-	expect(npcRiftStrength(0.5)).toBe(1);
-	expect(npcRiftStrength(WITCHSPACE.exitS + 1)).toBe(1);
-	expect(npcRiftStrength(WITCHSPACE.riftEndS)).toBe(0);
+test("the ring a watcher sees is published by the route, on both ends", () => {
+	// The timeline itself — opening, flare, seal — is `witchspace-crossing`'s and
+	// `tests/witchspace-crossing.test.ts` holds it. What this row holds is that
+	// the route actually publishes the jump across the whole visible window, and
+	// that the window is signed: it used to open only at a non-negative age, so
+	// an NPC's ring could not announce the ship coming.
+	expect(npcRiftStrength(-CROSSING.openS + 0.2)).toBeGreaterThan(0);
+	expect(npcRiftStrength(-CROSSING.openS - 0.1)).toBe(0);
+	expect(npcRiftStrength(0)).toBe(1);
+	expect(npcRiftStrength(CROSSING.windowEndS)).toBe(0);
+	expect(WITCHSPACE.riftEndS).toBeGreaterThan(CROSSING.windowS);
+});
+
+describe("the crossing a watcher sees (node #1006)", () => {
+	const plan = () => hauler();
+	const voyage = () => haulerVoyage(plan(), 0);
+	const at = (record: typeof home, t: number) =>
+		projectSystemTrafficActor({
+			record,
+			actor: plan().actor,
+			gameTime: t,
+			haulerVoyages: routeVoyages(galaxy, plan(), record.index, t, getContents),
+		});
+	const destination = () =>
+		galaxy.systems.find((r) => r.index === voyage().destinationSystemIndex)!;
+	const destLeg = (t: number) =>
+		routeVoyages(galaxy, plan(), destination().index, t, getContents).find(
+			(r) => !r.home && r.awayOrdinal === 0,
+		)!.arrival;
+	const homeLeg = (t: number) =>
+		routeVoyages(galaxy, plan(), home.index, t, getContents).find(
+			(r) => r.home && r.awayOrdinal === 0,
+		)!.departure;
+
+	test("the arrival ring opens while the hauler is still in another system", () => {
+		const v = voyage(),
+			dest = destination(),
+			t = v.tOut - CROSSING.openS + 0.2;
+		const route = at(dest, t);
+		// A ring with no ship in it yet: that is the build-up the capture had
+		// none of. `present: false` is what keeps the hull, its contact and its
+		// collision out of this system until it has actually crossed.
+		expect(route.phase).toBe("hyperspace-away");
+		expect(route.present).toBe(false);
+		expect(route.jump?.kind).toBe("arrival");
+		expect(route.jump?.atS).toBe(v.tOut);
+		expect(route.jump?.pos).toEqual(destLeg(t).pos);
+		const age = t - v.tOut;
+		expect(npcRiftStrength(age)).toBeGreaterThan(0);
+		expect(npcRiftStrength(age)).toBeLessThan(1);
+		expect(npcRiftStrength(t + 0.5 - v.tOut)).toBeGreaterThan(
+			npcRiftStrength(age),
+		);
+	});
+
+	test("and no ring is promised before its window opens", () => {
+		const v = voyage();
+		const route = at(destination(), v.tOut - CROSSING.openS - 0.2);
+		expect(route.jump).toBeUndefined();
+		expect(npcRiftVisible(-CROSSING.openS - 0.2)).toBe(false);
+	});
+
+	test("the arriving hull comes through the plane and settles on the lane point", () => {
+		const t0 = voyage().tOut,
+			leg = destLeg(t0),
+			nose = leg.nose;
+		const entering = at(destination(), t0 + 0.05);
+		expect(entering.phase).toBe("lane-point-hold");
+		// Aft of the point it will rest at, so a watcher sees it cross the ring's
+		// plane rather than find it already standing there.
+		const aft = -dot(sub(entering.pos, leg.pos), nose);
+		expect(aft).toBeGreaterThan(0);
+		const settled = at(destination(), t0 + CROSSING.crossS);
+		expect(length(sub(settled.pos, leg.pos))).toBeLessThan(1e-9);
+		expect(length(settled.vel)).toBeLessThan(1e-9);
+		expect(settled.phase).toBe("lane-point-hold");
+		// And it is still a held ship, not a flying one: the crossing has not
+		// taken the leg's start away from it.
+		expect(settled.jump?.kind).toBe("arrival");
+		expect(settled.chargeAu).toBe(leg.chargeAu);
+	});
+
+	test("the hold hands the next leg exactly the state it always handed it", () => {
+		// A1: no schedule, lane point, wind-up or arrival time moves. The leg
+		// after the hold begins at `atS + JUMP_CHARGE_S` from the lane point at
+		// rest (`lanePointArrivalStart`), and the crossing ends on exactly that.
+		const t0 = voyage().tOut,
+			leg = destLeg(t0);
+		const handed = at(destination(), t0 + JUMP_CHARGE_S - 0.05);
+		expect(length(sub(handed.pos, leg.pos))).toBeLessThan(1e-9);
+		expect(length(handed.vel)).toBeLessThan(1e-9);
+		expect(handed.phase).toBe("lane-point-hold");
+		expect(handed.jump?.atS).toBe(t0);
+	});
+
+	test("a departing hull is swallowed rather than deleted", () => {
+		const t0 = voyage().tOut,
+			leg = homeLeg(t0 - 0.05);
+		const late = at(home, t0 - 0.05);
+		expect(late.phase).toBe("jump-windup");
+		// Ahead of the point it stood at, into the ring that stands ahead of it.
+		const ahead = dot(
+			sub(late.pos, leg.pos),
+			late.jump?.nose ?? (late.nose as Vec3),
+		);
+		expect(ahead).toBeGreaterThan(0);
+		const waiting = at(home, t0 - CROSSING.crossS - 0.05);
+		expect(waiting.phase).toBe("jump-windup");
+		expect(length(sub(waiting.pos, leg.pos))).toBeLessThan(1e-9);
+	});
+
+	test("and its ring is open before it has gone", () => {
+		const v = voyage(),
+			t = v.tOut - CROSSING.openS + 0.2;
+		const route = at(home, t);
+		expect(route.phase).toBe("jump-windup");
+		expect(route.jump?.kind).toBe("departure");
+		const age = t - v.tOut;
+		expect(npcRiftStrength(age)).toBeGreaterThan(0);
+		// …and it seals behind the ship instead of being found still open.
+		expect(npcRiftStrength(CROSSING.windowEndS - 0.01)).toBeGreaterThan(0);
+		expect(npcRiftStrength(CROSSING.windowEndS)).toBe(0);
+	});
 });
 test("the inbound steering/powered boundary agrees with a direct canonical replay", () => {
 	const g = generateGalaxy(54, 0),

@@ -11,12 +11,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { carrierKey, localCarrierIdOfKey } from "../src/carrier-key";
+import { fnv1a } from "../src/rng";
 import { recordTrade } from "../src/deficits";
 import { HOLD_REFERENCE_T } from "../src/market";
 import {
 	type CommanderRecord,
 	newCommanderRecord,
 	parseSave,
+	LEGACY_SAVE_SCHEMA_VERSIONS,
 	SAVE_SCHEMA_VERSION,
 	serializeSave,
 } from "../src/save-envelope";
@@ -343,5 +345,84 @@ describe("#89 D5 — the save envelope", () => {
 				}),
 			),
 		).toThrow(/carrier key/);
+	});
+});
+
+/** Re-seal a serialized envelope after an edit, as its writer would have. */
+const resealed = (
+	raw: unknown,
+	edit: (body: Record<string, any>) => void,
+): unknown => {
+	const { integrity: _, ...body } = JSON.parse(JSON.stringify(raw));
+	edit(body);
+	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+};
+
+// Node #943 (#936 D4): the transaction sequence number on the commander record.
+describe("#936 D4 — txSeq in the save envelope", () => {
+	const save = () => ({ world: world(), commander: commander() });
+
+	test("txSeq arrived at 16, which is read beside 15", () => {
+		expect(SAVE_SCHEMA_VERSION).toBe(16);
+		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(15);
+	});
+
+	test("a new commander starts at 0", () => {
+		expect(newCommanderRecord("courier").txSeq).toBe(0);
+	});
+
+	test("txSeq round-trips, and the hash covers it", () => {
+		const record = { ...commander(), txSeq: 7 };
+		expect(
+			parseSave(serializeSave({ ...save(), commander: record })).commander
+				.txSeq,
+		).toBe(7);
+		// The field is in the hashed body: two records differing only in txSeq
+		// serialize to different bytes, so a swapped-in txSeq fails the hash.
+		const bytes = serializeSave({ ...save(), commander: record }) as {
+			commander: { txSeq: number };
+			integrity: number;
+		};
+		// Edited without re-sealing: the stored checksum still describes the
+		// bytes with txSeq 7, so a swapped-in value fails the hash rather than
+		// riding through it.
+		const tampered = structuredClone(bytes) as {
+			commander: { txSeq: number };
+		};
+		tampered.commander.txSeq = 8;
+		expect(() => parseSave(tampered)).toThrow(/integrity/i);
+	});
+
+	test("a v15 record loads with txSeq 0", () => {
+		const v15 = resealed(serializeSave(save()), (body) => {
+			body.saveSchemaVersion = 15;
+			delete body.commander.txSeq;
+		});
+		expect(parseSave(v15).commander.txSeq).toBe(0);
+	});
+
+	test("a v15 record carrying txSeq was assembled, and is refused", () => {
+		const grafted = resealed(serializeSave(save()), (body) => {
+			body.saveSchemaVersion = 15;
+		});
+		expect(() => parseSave(grafted)).toThrow(
+			'saveSchemaVersion 15 cannot contain "txSeq"',
+		);
+	});
+
+	test("a v16 record without txSeq is truncated, and is refused", () => {
+		const truncated = resealed(serializeSave(save()), (body) => {
+			delete body.commander.txSeq;
+		});
+		expect(() => parseSave(truncated)).toThrow(/txSeq/);
+	});
+
+	test("a negative, fractional or unsafe txSeq fails parseSave", () => {
+		for (const bad of [-1, 2.5, 2 ** 53]) {
+			const raw = resealed(serializeSave(save()), (body) => {
+				body.commander.txSeq = bad;
+			});
+			expect(() => parseSave(raw)).toThrow(/txSeq/);
+		}
 	});
 });

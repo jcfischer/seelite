@@ -4,6 +4,7 @@
  *   npm run dev                                  # in one shell
  *   npm run views                                # in another
  *   npm run views -- --label before              # name the run yourself
+ *   npm run views -- --only hull-chase,hull-chase-miner,hull-chase-bollard --out view-set/node-909
  *   open view-set/index.html
  *
  * A visual node posts a before/after against this sheet, and the principal says
@@ -54,7 +55,7 @@ import {
 	SEED,
 	SHOT_KINDS,
 	VIEWPORT,
-	VIEWS,
+	selectViews,
 	contactSheet,
 } from "./lib/view-set.mjs";
 import { requireChartSpot } from "./lib/chart-hover-spot.mjs";
@@ -64,6 +65,7 @@ import { assertHorizonFacts } from "./lib/horizon-framing.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import { holdCruiseTurnState, holdVentState } from "./lib/vent-state.mjs";
+import { holdNpcVentState } from "./lib/npc-vent-state.mjs";
 import {
 	bootedGame,
 	guardedTree,
@@ -76,7 +78,7 @@ import { levelsFile, writeRunLevels } from "./lib/levels-report.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
-/** `--out`, `--label` and `--quality`, both `--k v` and `--k=v`. Small enough to read here;
+/** `--out`, `--label`, `--quality` and `--only`, both `--k v` and `--k=v`. Small enough to read here;
  *  `probe-args.mjs` parses a different grammar for a different runner. */
 function arg(name, fallback) {
 	const argv = process.argv.slice(2);
@@ -115,7 +117,11 @@ function gitRef() {
 
 const REF = gitRef();
 const LABEL = arg("label", REF);
-const OUT = arg("out", "view-set");
+// Scoped captures are separate from full runs and explicitly labelled on the sheet.
+// Missing requested frames still refuse the sheet; unknown names refuse before boot.
+const ONLY = arg("only", null);
+const VIEWS = selectViews(ONLY);
+const OUT = arg("out", ONLY === null ? "view-set" : "view-set/selected");
 const QUALITY = arg("quality", null);
 if (QUALITY !== null && QUALITY !== "high" && QUALITY !== "low")
 	throw new Error(`--quality must be high or low, got ${QUALITY}`);
@@ -183,6 +189,7 @@ let currentSeed = null;
  * exactly like a whole one.
  */
 let currentSystem = null;
+let currentHull = "courier";
 /**
  * Set by a placer that writes world state — the duel's kill (#324 part d) — so
  * the next view boots on a world with no save, as the first boot does.
@@ -195,8 +202,16 @@ let currentSystem = null;
  * route, which opens no save store, and only then is the game loaded.
  */
 let worldWritten = false;
-async function ensureFixture(page, seed, system = null) {
-	if (currentSeed === seed && currentSystem === system && !worldWritten) return;
+async function ensureFixture(page, seed, system = null, hull = "courier") {
+	if (
+		currentSeed === seed &&
+		currentSystem === system &&
+		currentHull === hull &&
+		!worldWritten
+	)
+		return;
+	// Hull changes need a fresh Commander: a saved hull takes precedence over ?hull=.
+	if (currentHull !== hull) worldWritten = true;
 	if (worldWritten) {
 		await page.goto(workbenchUrl(SERVING, { "hud-gallery": true }), {
 			waitUntil: "load",
@@ -220,6 +235,7 @@ async function ensureFixture(page, seed, system = null) {
 	await page.goto(
 		gameUrl(SERVING, {
 			seed,
+			hull,
 			raider: "off",
 			system,
 			...MODEL_BOOT_PARAMS,
@@ -230,6 +246,21 @@ async function ensureFixture(page, seed, system = null) {
 		},
 	);
 	await bootedGame(page);
+	// Node #909: a saved courier must not stand in for a requested tug/miner.
+	// Compare the flown state and the drawn hull, including its authored install.
+	const flown = await page.evaluate(() => {
+		const g = window.__seelite;
+		const ship = g.nearScene.getObjectByName("ship");
+		return {
+			hull: g.commander.hull,
+			drawn: ship?.userData.hullId,
+			authored: ship?.userData.authored,
+		};
+	});
+	if (flown.hull !== hull || flown.drawn !== hull || !flown.authored)
+		throw new Error(
+			`capture: asked for authored ${hull}, got ${JSON.stringify(flown)}`,
+		);
 	if (system !== null) {
 		const booted = await page.evaluate(
 			() => window.__seelite.world.system.record.index,
@@ -244,6 +275,7 @@ async function ensureFixture(page, seed, system = null) {
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	currentSeed = seed;
 	currentSystem = system;
+	currentHull = hull;
 }
 
 /**
@@ -356,19 +388,33 @@ const PLACERS = {
 	},
 	"npc-jump": async (page, shot) => {
 		await page.evaluate(installHaulerFixture);
-		const sampled = await page.evaluate((event) => {
-			const f = window.__haulerFixture;
-			f.sample(f.plan.actor.schedule.departureAtS + 1, false);
-			f.sample(f.voyage.tOut - 3.1, false);
-			f.sample(f.voyage.tOut + 0.5);
-			if (event.event === "arrival") f.follow();
-			return f.sample(f.voyage.tOut + 0.5, true, event.framing ?? "ring");
-		}, shot);
+		// Seconds from the crossing instant. The default is the half-second-after
+		// frame the set has always carried; the beat rows (#1006) name their own,
+		// including negative ones — a ring opening before anything is in it is the
+		// frame the set could not draw.
+		const phaseS = shot.phaseS ?? 0.5;
+		const sampled = await page.evaluate(
+			({ event, phaseS, framing }) => {
+				const f = window.__haulerFixture;
+				f.sample(f.plan.actor.schedule.departureAtS + 1, false);
+				f.sample(f.voyage.tOut - 3.1, false);
+				f.sample(f.voyage.tOut + 0.5);
+				if (event === "arrival") f.follow();
+				return f.sample(f.voyage.tOut + phaseS, true, framing ?? "ring");
+			},
+			{ event: shot.event, phaseS, framing: shot.framing },
+		);
 		if (sampled.jump?.kind !== shot.event || sampled.rift <= 0)
 			throw new Error(
 				`NPC ${shot.event} fixture did not draw its ring: ${JSON.stringify(sampled)}`,
 			);
-		return `${sampled.name} · ${sampled.hull} · ${shot.event} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
+		return `${sampled.name} · ${sampled.hull} · ${shot.event} · ${phaseS >= 0 ? "+" : ""}${phaseS.toFixed(2)} s from the crossing · ring ${(sampled.riftRadiusKm * 2).toFixed(3)} km across, strength ${sampled.rift.toFixed(2)}, flare ${sampled.flare.toFixed(2)}, ${
+			sampled.hullThroughPlaneKm === null
+				? shot.event === "arrival"
+					? "no hull in this system yet"
+					: "no hull in this system any more"
+				: `hull origin ${sampled.hullThroughPlaneKm.toFixed(3)} km from ring plane along nose`
+		} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
 	},
 	"station-axis": async (page, shot) => {
 		const id = `station-${shot.station}`;
@@ -1122,6 +1168,29 @@ const PLACERS = {
 		return `${state.hull} in cruise, spinning · ${state.lit.length} attitude vents firing (${state.lit.map((v) => v.slot).join(", ")}) · angular cue ${state.cue?.angular ? "latched" : "clear"}`;
 	},
 	/**
+	 * Node #637's NPC plumes: the duel's raider flown by the game's own `step`,
+	 * the clock held, the player placed off its stern.
+	 *
+	 * **Read back, not assumed**: a raider that fired nothing throws rather
+	 * than capturing a quiet hull under this caption. A build before node #637
+	 * keeps no table on the raider's contact; that is its honest `before`.
+	 */
+	"npc-vents": async (page, shot) => {
+		worldWritten = true;
+		const state = await page.evaluate(holdNpcVentState, {
+			steps: shot.steps,
+			behindKm: shot.behindKm,
+		});
+		await page.evaluate(
+			() => new Promise((r) => requestAnimationFrame(() => r())),
+		);
+		if (state.absent)
+			return `${state.name} (${state.hull}) · this build keeps no firing table for an NPC hull: no plumes`;
+		if (state.lit.length === 0)
+			throw new Error("npc-vents placer: the raider fired no vent");
+		return `${state.name} (${state.hull}) off its stern · ${state.lit.length} vents firing (${state.lit.map((v) => v.slot).join(", ")})`;
+	},
+	/**
 	 * #537's cruise light shift. A real leg to the farthest body, then the
 	 * clock held and the look held at `intensity`.
 	 *
@@ -1218,7 +1287,7 @@ async function rebuildSheet(out) {
 	}
 	runs.sort((a, b) => (a.capturedAt < b.capturedAt ? -1 : 1));
 	await rm(join(out, "index.html"), { force: true });
-	await writeFile(join(out, "index.html"), contactSheet(runs));
+	await writeFile(join(out, "index.html"), contactSheet(runs, VIEWS));
 	return runs;
 }
 
@@ -1452,6 +1521,7 @@ try {
 				page,
 				view.shot.seed ?? SEED,
 				view.shot.system ?? null,
+				view.shot.hull ?? "courier",
 			);
 			await setView(page, view.shot.view);
 		} else {
@@ -1603,13 +1673,17 @@ const manifest = {
 	renderer,
 	seed: SEED,
 	quality: QUALITY ?? "default",
-	levelsFile: levelsFile(LABEL),
+	// The full-set tone report is deliberately absent from scoped captures.
+	levelsFile: ONLY === null ? levelsFile(LABEL) : undefined,
+	selectedViews: ONLY === null ? undefined : VIEWS.map((view) => view.name),
 	views: captured,
 };
 // A failed tone reading must not leave an older complete-looking sheet.
 await rm(join(OUT, "index.html"), { force: true });
-const toneReport = await writeRunLevels(manifest, OUT);
-console.log(`\n${toneReport.table}`);
+if (ONLY === null) {
+	const toneReport = await writeRunLevels(manifest, OUT);
+	console.log(`\n${toneReport.table}`);
+}
 await writeFile(
 	join(dir, "manifest.json"),
 	`${JSON.stringify(manifest, null, "\t")}\n`,

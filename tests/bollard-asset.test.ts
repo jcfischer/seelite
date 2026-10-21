@@ -3,13 +3,22 @@
  *
  * `spikes/bollard-hull/prepare-flight-asset.mjs` writes it losslessly —
  * Meshopt with the NONE filter and lossless WebP, no quantization — so every
- * row here is exact. Both files decode through the browser's loader
+ * geometry row here is exact. Node #909 permits only #887's shared paint lift;
+ * every other material property stays the study's. Both files decode through the browser's loader
  * (`decodeShippedGlb`). What the game makes of the model (its frame, envelope
  * and berths) is the hull's to hold, not this file's.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
+import {
+	AUTHORED_HULL_PAINT_LIFT,
+	appliedTintScale,
+	appliedMetalness,
+	ceilingedMetalness,
+	rosterPaintedDiffuse,
+	MAX_DIFFUSE_OF_ROSTER,
+} from "../scripts/lib/authored-hull-paint.mjs";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import type { HullEnvelope } from "../src/hull";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
@@ -56,7 +65,80 @@ function glbJson(path: string) {
 	return JSON.parse(file.subarray(20, 20 + file.readUInt32LE(12)).toString());
 }
 
+/** Resolve texture identity across dedup and PNG-to-lossless-WebP encoding. */
+function materials(path: string) {
+	const json = glbJson(path);
+	return json.materials.map(
+		(material: {
+			name: string;
+			pbrMetallicRoughness: {
+				baseColorFactor: number[];
+				metallicFactor: number;
+				baseColorTexture?: { index: number };
+			};
+		}) => {
+			const map = material.pbrMetallicRoughness.baseColorTexture;
+			if (!map) return material;
+			const texture = json.textures[map.index];
+			const source =
+				texture.source ?? texture.extensions.EXT_texture_webp.source;
+			const { index: _index, ...settings } = map;
+			return {
+				...material,
+				pbrMetallicRoughness: {
+					...material.pbrMetallicRoughness,
+					baseColorTexture: {
+						...settings,
+						image: json.images[source].name,
+						sampler: {
+							wrapS: 10497,
+							wrapT: 10497,
+							...json.samplers[texture.sampler],
+						},
+					},
+				},
+			};
+		},
+	);
+}
+
 describe("the shipped file is the approved study", () => {
+	test("only the shared lift's colour and metallic factors change", () => {
+		const study = materials(STUDY);
+		const shipped = materials(SHIPPED);
+		expect(shipped.map((m: { name: string }) => m.name).sort()).toEqual(
+			study.map((m: { name: string }) => m.name).sort(),
+		);
+		let moved = 0;
+		for (const material of study) {
+			const want = structuredClone(material);
+			const rule = AUTHORED_HULL_PAINT_LIFT[material.name];
+			if (rule) {
+				const pbr = want.pbrMetallicRoughness;
+				const from = {
+					tint: pbr.baseColorFactor,
+					metalness: pbr.metallicFactor,
+				};
+				const scale = appliedTintScale(from, rule);
+				pbr.baseColorFactor = from.tint.map((v: number, i: number) =>
+					i === 3 ? v : Math.min(1, v * scale),
+				);
+				pbr.metallicFactor = ceilingedMetalness(
+					pbr.baseColorFactor,
+					appliedMetalness(from, rule),
+					0.4755434471582678,
+					rosterPaintedDiffuse() * MAX_DIFFUSE_OF_ROSTER,
+					from.metalness,
+				);
+				moved++;
+			}
+			expect(
+				shipped.find((m: { name: string }) => m.name === material.name),
+			).toEqual(want);
+		}
+		expect(moved).toBe(6);
+	});
+
 	test("the encoding is lossless: Meshopt required, no quantization, WebP texture", () => {
 		const json = glbJson(SHIPPED);
 		expect(json.extensionsRequired).toContain("EXT_meshopt_compression");

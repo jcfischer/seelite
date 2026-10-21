@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"lib/trade-model-probe.mjs",
+		"probe-model-queue passes its own tally's check and watch into the trade installation cases",
+	],
+	[
 		"lib/opening-probe.mjs",
 		"Shared fixture receives the caller tally check/watch; every page is watched and both opening entrypoints own tally and exit.",
 	],
@@ -185,6 +189,10 @@ const EXEMPT = new Map([
 	[
 		"measure-authored-hull-cost.mjs",
 		"node #812's headed instrument pricing an authored hull against its procedural loft on one page (the tug since node #814); like #201's it prints medians and a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser or a page whose courier is not the authored model throws out of the run",
+	],
+	[
+		"measure-asteroid-field-cost.mjs",
+		"node #968's headed instrument pricing the shipped asteroid field against a no-field control by #950's method (and, with INSTALL=1, the cold swap from points to rocks); like #201's it prints medians, a separation count and the worst view per side for a receipt and gates on nothing — the budget is a ruling the receipt checks, not a threshold a run can derive — and a software rasteriser, a page whose field is not drawing the authored rocks or a held install that never starts throws out of the run",
 	],
 	[
 		"measure-hull-install-stall.mjs",

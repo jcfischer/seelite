@@ -72,8 +72,10 @@ remembered.
   rounded **up** to 0.1 m (#181).
 - `STATION_FORM_POOL` (`src/station.ts`) names the forms each role may be
   built in, and each system draws one per station (`Station.formId`, node
-  #717); the proxy is the station's own form's. The trade pool holds one
-  form, the shipyard's three (node #746) and the refinery's four (node #745).
+  #717); the proxy is the station's own form's. Trade holds a–d (node #747),
+  the shipyard three forms (node #746) and the refinery four (node #745).
+  Trade Assembly's proxy follows its assembly seed's cell plan, with a
+  spinning hub and static cell structure outside the swept bay.
   The refinery's Works (`d`) is a **solved** form: its shape comes from
   `Station.assemblySeed` through `placementsOf`, and its berth side from the
   berth seed. The solve (`src/wfc.ts`, `src/station-modular.ts`) imports no
@@ -111,7 +113,7 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
   whose last run `docs/findings/station-proxy-wide-sweep.md` records.
 - **What it is a function of.** `(type, form, berthSeed, assemblySeed)`. What
   a seeded form's proxy reads depends on where its plan lives:
-  - A form solved by `placementsOf` (the Works) has its proxy derived from
+  - A procedural form solved by `placementsOf` (trade Assembly) has its proxy derived from
     **the same placement solve the mesh reads**, cell by cell. It is never a
     second copy of the plan.
   - A grown form (the Salvage) has no Three-free plan to read. Its proxy is
@@ -129,7 +131,7 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
     measures that, and that every vertex of the model lies within 1.5 m of it.
 - **What it turns with.** The proxy is stated in the spinning member's frame,
   as the drawn interior is (`docking.md` §13). Static structure — the
-  shipyard's keel — is stated in the static frame.
+  shipyard's yard and the trade Assembly's cells — is stated in the static frame.
 - **The openings.** On a **slot** role, the proxy leaves open (a) the prism
   that the aperture rectangle sweeps outward from the plane, and (b) the
   interior volume over `interiorAxialSpanKm`. On a **pad** role, the opening is
@@ -526,7 +528,11 @@ line.
      the pilot's frame. When that frame becomes the star's, the carrier is
      braked toward star rest and the station's orbit drags it back into the
      station, which the avoidance meets as a fast solid: when no heading
-     clears, it takes the one that closes least.
+     clears, it takes the one that closes least and asks its lateral assist
+     for that escape direction while the nose turns (node #748). Forward
+     speed alone let braking toward the star's frame drag the courier into
+     the Wheel before it turned clear. The escape uses the same capped
+     velocity demands and bounded vents; the fight's frame stays unchanged.
    - **A duel beside a station stays a duel.** The widest station keep-out
      is under half of `GUN_RANGE_KM`. Against a pilot sitting just outside
      a station, the raider fires on about 70% as many frames as it does in

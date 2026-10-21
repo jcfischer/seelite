@@ -1,0 +1,25 @@
+  host load average at start: 15.29248046875 / 20.1865234375 / 28.439453125
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport: 1440x900 at device scale 2, chase, clock held
+  field: world 0x5ee11e system 173 field-00, 193 rocks, the shipped path (authored)
+  12 blocks per arm, 120 frames per block, arm order shuffled from seed 20261019
+
+  view close, occlusion off (pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             1.844                          0          0  
+  field@high            2.444  +0.600 144/144 (100%)      2      37592  6/31/156/0
+  none@low              0.995                          0          0  
+  field@low             1.546  +0.551 144/144 (100%)      3      31786  3/15/148/27
+
+  view close, occlusion on (shadow + AO, pinned)
+  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt
+  none@high             3.428                          0          0  
+  field@high            5.265  +1.837 144/144 (100%)      4      61124  6/31/156/0
+  none@low              2.535                          0          0  
+  field@low             3.028  +0.493 144/144 (100%)      3      31786  3/15/148/27
+
+  worst Δ per side (budget: high ≤ 1.0 ms / ≤ 12 calls, low ≤ 0.4 ms / ≤ 6 calls):
+    high  +1.837 ms at close, occlusion on, +4 calls
+    low   +0.551 ms at close, occlusion off, +3 calls
+  host load average at end: 12.607421875 / 18.76416015625 / 27.44482421875

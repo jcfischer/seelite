@@ -7,6 +7,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { probeTradeModels } from "./lib/trade-model-probe.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
@@ -23,9 +24,11 @@ const params = {
 	"interiors-full": false,
 	"shipyards-full": false,
 	"refineries-full": false,
+	"outposts-full": false,
 };
 await mkdir("probe-shots/model-queue", { recursive: true });
 try {
+	await probeTradeModels(browser, origin, params, { check, watch });
 	const held = await browser.newPage();
 	watch(held);
 	let release;
@@ -232,6 +235,7 @@ try {
 				g.shipMesh.userData.authored &&
 				g.shipyardModelsSettled &&
 				g.refineryModelsSettled &&
+				g.outpostModelsSettled &&
 				g.interiorModelsSettled
 			);
 		}),

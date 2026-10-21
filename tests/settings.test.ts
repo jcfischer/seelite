@@ -318,9 +318,41 @@ describe("the volume rows (#552, after #542 D2)", () => {
 	});
 
 	test("the rows come after every existing row, so no cursor index moves", () => {
-		// #604's Voice row came after them for the same reason, and is last.
+		// #604's Voice row came after them for the same reason, and node
+		// #640's mouse sensitivity after that.
 		const volume = BUSES.map((b) => VOLUME_KEY[b]);
-		expect(SETTING_KEYS.slice(-volume.length - 1, -1)).toEqual(volume);
-		expect(SETTING_KEYS.at(-1)).toBe("voice");
+		expect(SETTING_KEYS.slice(-volume.length - 2, -2)).toEqual(volume);
+		expect(SETTING_KEYS.slice(-2)).toEqual(["voice", "mouseSensitivity"]);
+	});
+});
+
+describe("the mouse sensitivity row (node #640)", () => {
+	afterEach(restoreWindow);
+
+	test("defaults to 100% and offers steps either side of it", () => {
+		expect(DEFAULT_SETTINGS.mouseSensitivity).toBe(1);
+		const store = new SettingsStore({ ...DEFAULT_SETTINGS });
+		const steps = store.allowed("mouseSensitivity");
+		expect(steps).toContain(1);
+		expect([...steps].sort((x, y) => x - y)).toEqual([...steps]);
+		const describe = settingSpec("mouseSensitivity").describe as (
+			v: number,
+		) => string;
+		expect(describe(1)).toBe("100%");
+	});
+
+	test("is saved with the other settings, and survives a reload", () => {
+		const map = installStorage();
+		const store = new SettingsStore(loadSettings());
+		store.set("mouseSensitivity", 2);
+		expect(JSON.parse(map.get(KEY) ?? "{}").mouseSensitivity).toBe(2);
+		expect(loadSettings().mouseSensitivity).toBe(2);
+	});
+
+	test("a stored value off the steps falls back to 100%", () => {
+		installStorage({ [KEY]: `{"mouseSensitivity":1.1}` });
+		expect(loadSettings().mouseSensitivity).toBe(1);
+		installStorage({ [KEY]: `{"mouseSensitivity":"2"}` });
+		expect(loadSettings().mouseSensitivity).toBe(1);
 	});
 });
