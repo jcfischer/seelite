@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type * as THREE from "three";
 import { installShippedLongwall } from "../scripts/lib/install-longwall";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
+import { drainWith } from "./helpers/drain-steps";
 import { HULL_SPECS } from "../src/hull";
 import {
 	buildShipMesh,
@@ -46,16 +47,11 @@ test("the loader installs the miner in slices, publishing the synchronous templa
 		let authoredMidway = false;
 		await installLongwallModelSliced(
 			await decodeShippedGlb("src/models/longwall-miner.glb"),
-			async <T>(work: Generator<void, T>) => {
-				let step = work.next();
-				while (!step.done) {
-					if (++yields === 1)
-						authoredMidway = !!buildShipMesh("miner", HULL_SPECS.miner.variant)
-							.root.userData.authored;
-					step = work.next();
-				}
-				return step.value;
-			},
+			drainWith(() => {
+				if (++yields === 1)
+					authoredMidway = !!buildShipMesh("miner", HULL_SPECS.miner.variant)
+						.root.userData.authored;
+			}),
 		);
 		expect(authoredMidway).toBe(false);
 		expect(yields).toBeGreaterThan(10);

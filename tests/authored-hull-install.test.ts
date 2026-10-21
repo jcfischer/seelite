@@ -11,6 +11,7 @@ import {
 } from "../src/ship-mesh";
 import { HULL_SPECS } from "../src/hull";
 import { ventThroats } from "../src/vent-plumes";
+import { drainWith } from "./helpers/drain-steps";
 import {
 	DEFAULT_HULL_FINISH,
 	HULL_FINISH_IDS,
@@ -32,20 +33,17 @@ function countRaycasts<T>(fn: () => T): { casts: number; value: T } {
 	}
 }
 
-test("reduced geometry yields per mesh and matches the synchronous output", () => {
+test("reduced geometry yields per mesh and matches the synchronous output", async () => {
 	const template = new THREE.Group();
 	for (let i = 0; i < 3; i++) {
 		const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16));
 		mesh.position.x = i * 3;
 		template.add(mesh);
 	}
-	const work = reducedLevelSteps(template, 0.05, 0.001, "reduced");
 	let steps = 0;
-	let result = work.next();
-	while (!result.done) {
+	const level = await drainWith(() => {
 		steps++;
-		result = work.next();
-	}
+	})(reducedLevelSteps(template, 0.05, 0.001, "reduced"));
 	expect(steps).toBe(3);
 	const sync = reducedLevel(template, 0.05, 0.001, "reduced");
 	const buffers = (root: THREE.Object3D) =>
@@ -57,8 +55,8 @@ test("reduced geometry yields per mesh and matches the synchronous output", () =
 				index: Array.from(mesh.geometry.index!.array),
 			};
 		});
-	expect(buffers(result.value)).toEqual(buffers(sync));
-	expect(result.value.userData).toEqual(sync.userData);
+	expect(buffers(level)).toEqual(buffers(sync));
+	expect(level.userData).toEqual(sync.userData);
 });
 
 test("installation keeps the previous builder until both glow caches are ready", async () => {
@@ -72,16 +70,14 @@ test("installation keeps the previous builder until both glow caches are ready",
 	};
 	let slices = 0;
 	try {
-		await installPreparedAuthoredHull("tug", builder, async (work) => {
-			let step = work.next();
-			while (!step.done) {
+		await installPreparedAuthoredHull(
+			"tug",
+			builder,
+			drainWith(() => {
 				expect(authoredHullBuilder("tug")).toBe(old);
 				slices++;
-				await Promise.resolve();
-				step = work.next();
-			}
-			return step.value;
-		});
+			}),
+		);
 		expect(slices).toBeGreaterThan(HULL_SPECS.tug.vents.length);
 		expect(authoredHullBuilder("tug")).toBe(builder);
 		const { casts } = countRaycasts(() => {

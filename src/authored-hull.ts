@@ -288,28 +288,26 @@ export async function installPreparedAuthoredHull(
 	builder: AuthoredHullBuilder,
 	run: <T>(work: Generator<void, T>) => Promise<T> = runHullSlices,
 ): Promise<void> {
-	const root = await run(prepareAuthoredHull(id, builder));
-	try {
-		await run(prepareAuthoredThroats(root, id, builder));
-		// Owned by this preparation, rather than by either temporary subtree.
-		const exhaust = shared(
-			new THREE.MeshStandardMaterial({
-				side:
-					root.userData.authoredGlow === "bowl"
-						? THREE.FrontSide
-						: THREE.BackSide,
-			}),
-		);
-		let other: THREE.Group | undefined;
+	const warmGlow = async (exhaust?: THREE.MeshStandardMaterial) => {
+		const root = await run(prepareAuthoredHull(id, builder, exhaust));
 		try {
-			other = await run(prepareAuthoredHull(id, builder, exhaust));
-			await run(prepareAuthoredThroats(other, id, builder));
+			await run(prepareAuthoredThroats(root, id, builder));
+			return root.userData.authoredGlow;
 		} finally {
-			if (other) disposeSubtree(other);
-			exhaust.dispose();
+			disposeSubtree(root);
 		}
+	};
+	const glow = await warmGlow();
+	// Owned by this preparation, rather than by either temporary subtree.
+	const exhaust = shared(
+		new THREE.MeshStandardMaterial({
+			side: glow === "bowl" ? THREE.FrontSide : THREE.BackSide,
+		}),
+	);
+	try {
+		await warmGlow(exhaust);
 	} finally {
-		disposeSubtree(root);
+		exhaust.dispose();
 	}
 	installAuthoredHull(id, builder);
 }
