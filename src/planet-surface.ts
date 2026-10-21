@@ -506,6 +506,8 @@ export function buildBodyVisual(
 	const uniforms: Record<string, THREE.IUniform> = {
 		extraOctaveCap: { value: planetDetailCap("high", look.surface) },
 		surfacePixelAngle: { value: 0 },
+
+		cloudPixelAngle: { value: 0 },
 		time: { value: 0 },
 		// A direction, not a position, so it is the same vector at every render
 		// scale — which is what lets one uniform serve the far, approach and near
@@ -896,6 +898,17 @@ export function buildBodyVisual(
 			}),
 		);
 		clouds.userData.shell = "cloud";
+
+		const cloudDrawSize = new THREE.Vector2();
+		clouds.onBeforeRender = (renderer, _scene, camera) => {
+			const target = renderer.getRenderTarget();
+			const height =
+				target?.height ?? renderer.getDrawingBufferSize(cloudDrawSize).y;
+			uniforms.cloudPixelAngle.value = targetPixelAngle(
+				camera.projectionMatrix.elements[5],
+				height,
+			);
+		};
 		group.add(clouds);
 	}
 	if (look.atmosphere > 0) {

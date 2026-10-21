@@ -863,8 +863,15 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-planet-footprint.mjs",
-			"Checks terran footprint cap arms at close and distant ranges, exact base arithmetic, deterministic pixels, quality and actual target pixel angle; writes canonical horizon pairs for the principal.",
-			["planet surface", "footprint", "octaves", "quality", "determinism"],
+			"Checks terran footprint cap arms at close and distant ranges on the ground's four fields and the weather shell's two, exact base arithmetic, the dust shell left alone, deterministic pixels, quality and each program's actual target pixel angle; writes canonical horizon pairs for the principal.",
+			[
+				"planet surface",
+				"footprint",
+				"octaves",
+				"clouds",
+				"quality",
+				"determinism",
+			],
 		),
 		entry(
 			"probe-planets.mjs",
