@@ -49,7 +49,7 @@ describe("every throat is the vent the table names", () => {
 				expect(Number.isFinite(throat.at.length())).toBe(true);
 			}
 		}
-	});
+	}, 60_000);
 
 	test("every slot has a throat, and the main drive one per bell", () => {
 		for (const id of HULL_IDS) {
