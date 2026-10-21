@@ -28,20 +28,19 @@ const sphere = (res: number, r: number): RockHeightfield => ({
 	res,
 	r: new Float32Array(6 * res * res).fill(r),
 });
-/** Radius `base` everywhere, and on face +Z one column of texels at `top`: a ridge one texel wide. */
+
 function ridge(res: number, base: number, top: number): RockHeightfield {
 	const h = sphere(res, base);
 	for (let j = 0; j < res; j++) h.r[texel(res, 4, res / 2, j)] = top;
 	return h;
 }
-/** One texel on face +Z at `top`, beside a face edge. */
+
 function needle(res: number, base: number, top: number): RockHeightfield {
 	const h = sphere(res, base);
 	h.r[texel(res, 4, res - 1, res / 2)] = top;
 	return h;
 }
 
-/** Envelope − bilinear field over a `s`² lattice per face: the smallest and largest. */
 function envelopeExcess(rp: RockPieces, h: RockHeightfield, s: number) {
 	let under = Infinity,
 		over = -Infinity;
@@ -56,7 +55,6 @@ function envelopeExcess(rp: RockPieces, h: RockHeightfield, s: number) {
 	return { under, over };
 }
 
-/** The pyramid {0, V1..V4} as outward planes. */
 function planesOf(hull: ConvexHull): { n: Vec3; k: number }[] {
 	const V = hull.v.slice(1);
 	const orient = (n: Vec3, k: number) =>
@@ -66,7 +64,7 @@ function planesOf(hull: ConvexHull): { n: Vec3; k: number }[] {
 	planes.push(orient(cap, dot(cap, V[0])));
 	return planes;
 }
-/** The worst a vertex below `node` stands outside its bound, relative to the plane's scale. */
+
 function worstOutside(node: BoundNode): number {
 	if (!node.children.length) return 0;
 	const planes = planesOf(node.hull);
@@ -119,7 +117,7 @@ describe("rock cone pieces from a radial heightfield (node #957)", () => {
 				`${name}: envelope − field min ${under.toExponential(2)}, max ${over.toExponential(2)} R`,
 			);
 			expect(under, name).toBeGreaterThanOrEqual(0);
-			// Tight as well as outside: the excess is the cell's chord sag, not a hull over the rock.
+
 			expect(over, name).toBeLessThan(0.02);
 		}
 	});
@@ -144,23 +142,20 @@ describe("rock cone pieces from a radial heightfield (node #957)", () => {
 	});
 
 	test("a cell needing more than the limit fails the build, naming the cell", () => {
-		// The sphere's own bow at 4 texels a face: the first cell in build order over the limit.
 		expect(() => buildRockPieces(sphere(4, 0.8), { label: "coarse" })).toThrow(
 			/^Rock pieces for coarse: face 0 cell \(1, 0\) needs inflation 1\.0148\d+, over the limit 1\.01$/,
 		);
-		// A radial cliff: a straight chord from 0.5 to 0.9 sags to their harmonic mean.
+
 		expect(() => buildRockPieces(ridge(64, 0.5, 0.9))).toThrow(
 			/^Rock pieces: face 4 cell \(32, 0\) needs inflation 1\.08\d+, over the limit 1\.01$/,
 		);
 		expect(INFLATION_LIMIT).toBe(1.01);
-		// The same field passes a limit set above its need, and holds its patch.
-		const steep = ridge(64, 0.5, 0.9);
-		const rp = buildRockPieces(steep, { limit: 1.1 });
-		expect(Math.max(...rp.inflate)).toBeGreaterThan(1.01);
-		expect(envelopeExcess(rp, steep, 100).under).toBeGreaterThanOrEqual(0);
+		expect(() => buildRockPieces(ridge(64, 0.5, 0.9), { limit: 1.1 })).toThrow(
+			/inflation limit/,
+		);
 	});
 
-	test("#953's archetypes, keyed by the GLB hash: inflation ≤ 1.01, envelope holds, colliding empty space no more than the field's", async () => {
+	test("#953's GLB-hash-keyed archetypes: inflation ≤ 1.01, envelope holds, corpus empty-space maximum matches the field at 1e-4 R precision", async () => {
 		const decoded = decodeRockHeightfields(
 			readFileSync("src/models/rock-heightfields.bin"),
 		);
@@ -196,16 +191,13 @@ describe("rock cone pieces from a radial heightfield (node #957)", () => {
 		console.log(
 			`set: inflation max ${inflationMax.toFixed(4)}; colliding empty space field ${fieldMax.toFixed(4)}, pieces ${piecesMax.toFixed(4)}, at peaks ${peakMax.toFixed(4)} R`,
 		);
-		// D2 is a figure over the set, and measure-fit.ts states it to 1e-4 R: the pieces
-		// add none past the field's worst at that resolution. Exactly, they cannot — the
-		// envelope is ≥ the field, so wherever the field is outside the rock the pieces
-		// are a hair further out (measured +1.9e-5 R, on stepped-strata, from the margin
-		// and the per-piece scale). The bound below is that figure's quantum, not a slack
-		// a coarser construction may spend.
-		const at = (x: number) => Math.round(x * 1e4);
-		expect(at(piecesMax)).toBeLessThanOrEqual(at(fieldMax));
+
+		const atMeasurementPrecision = (x: number) => Math.round(x * 1e4);
+		expect(atMeasurementPrecision(piecesMax)).toBeLessThanOrEqual(
+			atMeasurementPrecision(fieldMax),
+		);
 		expect(piecesMax - fieldMax).toBeLessThan(5e-5);
 		expect(peakMax).toBeLessThanOrEqual(fieldMax);
-		expect(at(fieldMax)).toBeLessThanOrEqual(301);
+		expect(atMeasurementPrecision(fieldMax)).toBeLessThanOrEqual(301);
 	}, 600_000);
 });

@@ -1,4 +1,5 @@
 /**
+ * https://github.com/jcfischer/seelite/issues/956
  * Node #957: colliding empty space of a rock proxy, measured as #956's
  * `spikes/asteroid-sweep-956/measure-fit.ts` does. Each sampled direction's
  * proxy surface point that lies outside the drawn L0 solid counts by its exact
@@ -77,7 +78,7 @@ export function peakEmptySpace(
 	let worst = 0;
 	for (const { d } of ex.slice(0, count)) {
 		const r = envelopeAt(rp, v3(...d));
-		// Empty space only where the point is outside the drawn solid along its ray.
+
 		if (r > rayExit(rock.levels[0], all, d) + 1e-6)
 			worst = Math.max(
 				worst,

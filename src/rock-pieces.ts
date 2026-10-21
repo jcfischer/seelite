@@ -1,4 +1,5 @@
 /**
+ * https://github.com/jcfischer/seelite/issues/956
  * Node #957: a rock's radial heightfield (#949 D1) as a union of convex cone
  * pieces, and a quadtree of convex bounds over them, for the swept test #956
  * ruled (Q1 O1). Unit-bound space, the field's own. Three-free and sim-free:
@@ -34,17 +35,13 @@ export interface ConvexHull {
 }
 export interface BoundNode {
 	hull: ConvexHull;
-	/** A leaf's piece index; −1 on an inner node. */
 	piece: number;
 	children: BoundNode[];
 }
 export interface RockPieces {
 	res: number;
-	/** Indexed `(face × (res + 1) + j) × (res + 1) + i`: origin first, then four corners. */
 	pieces: ConvexHull[];
-	/** Each piece's outward scale (≥ 1) that holds its bilinear patch. */
 	inflate: Float64Array;
-	/** One quadtree per cube face, in face order +X, −X, +Y, −Y, +Z, −Z. */
 	roots: BoundNode[];
 }
 
@@ -60,7 +57,6 @@ export const INFLATE_MARGIN = 2e-5;
 export const INFLATE_SAMPLES = 9;
 
 export interface BuildOptions {
-	/** Named in a refusal, so a failing archetype says which rock it was. */
 	label?: string;
 	limit?: number;
 }
@@ -146,7 +142,6 @@ function outwardPlane(a: Vec3, b: Vec3, c: Vec3): { n: Vec3; k: number } {
 
 /** How far a ray from the origin along unit `d` runs inside the hull {0, P0..P3} whose sides are the cell's cone. */
 export function hullExit(P: readonly Vec3[], d: Vec3): number {
-	// The convex triangulation: P3 on the origin side of plane(P0, P1, P2).
 	const a = outwardPlane(P[0], P[1], P[2]);
 	const tris =
 		a.n.x * P[3].x + a.n.y * P[3].y + a.n.z * P[3].z <= a.k * (1 + 1e-12)
@@ -173,11 +168,18 @@ export function buildRockPieces(
 	options: BuildOptions = {},
 ): RockPieces {
 	const limit = options.limit ?? INFLATION_LIMIT;
+	if (!Number.isFinite(limit) || limit < 1 || limit > INFLATION_LIMIT)
+		throw new Error(
+			`Invalid rock piece inflation limit ${limit}: expected 1 to ${INFLATION_LIMIT}`,
+		);
 	const res = h.res,
 		n = res + 1,
 		m = INFLATE_SAMPLES;
 	if (!Number.isInteger(res) || res < 1 || h.r.length !== 6 * res * res)
 		throw new Error(`Rock heightfield has ${h.r.length} radii for res ${res}`);
+	for (let k = 0; k < h.r.length; k++)
+		if (!Number.isFinite(h.r[k]) || h.r[k] <= 0)
+			throw new Error(`Invalid rock radius at sample ${k}: ${h.r[k]}`);
 	const pieces: ConvexHull[] = new Array(6 * n * n);
 	const inflate = new Float64Array(6 * n * n);
 	const origin = v3();
@@ -259,7 +261,7 @@ function bound(
 		facePoint(f, u1, w1),
 		facePoint(f, u0, w1),
 	];
-	// Cap square to the tile's own centre direction: tight for a tile far from the face centre.
+
 	const cq = facePoint(f, (u0 + u1) / 2, (w0 + w1) / 2),
 		cl = Math.hypot(cq.x, cq.y, cq.z);
 	const c = v3(cq.x / cl, cq.y / cl, cq.z / cl);
@@ -279,7 +281,7 @@ export function pieceAt(rp: RockPieces, d: Vec3): number {
 	const [f, u, v] = faceUV([d.x, d.y, d.z]);
 	const res = rp.res,
 		n = res + 1;
-	// Cell i spans node i to i + 1: [edge, centre 0] is cell 0.
+
 	const cellOf = (x: number) =>
 		Math.min(n - 1, Math.max(0, Math.floor(((x + 1) / 2) * res + 0.5)));
 	return pieceIndex(res, f, cellOf(u), cellOf(v));
