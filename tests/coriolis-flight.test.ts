@@ -111,9 +111,12 @@ test("flight export removes the display tunnel and its end cap across the whole 
 });
 
 test("installed Coriolis is the canonical station builder without a URL flag", async () => {
-	const s = makeWorldAtSystem(42, 0).system.contents.stations.find(
-		(s) => s.type === "trade" && s.formId === "a",
+	// Pooling changes system 0's form. This row is about the installed
+	// Coriolis, so use a generated system that draws it (node #747).
+	const s = makeWorldAtSystem(42, 4).system.contents.stations.find(
+		(s) => s.type === "trade",
 	)!;
+	expect(s?.formId).toBe("a");
 	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
 	const build = createIndustrialCoriolisBuilder(template);
 	installCoriolisBuilder(build);

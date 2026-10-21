@@ -51,6 +51,7 @@ import {
 	stepHull,
 	type Ship,
 	speedDemand,
+	type VentLevels,
 } from "./sim";
 import {
 	add,
@@ -97,6 +98,12 @@ export interface CombatEnemyState {
 	 * turn has momentum — the nose used to reach its turn rate in one frame.
 	 */
 	rates: Angular;
+	/**
+	 * The vents this ship fired on its last step: the `HullStep`'s firing table,
+	 * kept for the renderer's plumes (node #637) as the player's is (#621).
+	 * Empty before the first step. Output, never read back by the controller.
+	 */
+	firing: VentLevels;
 	phase: EnemyFlightPhase;
 	phaseSeconds: number;
 	/** How long the current manoeuvre holds before the machine may re-decide.
@@ -451,6 +458,9 @@ const HOLD_OFF_AIM_COS = Math.cos(Math.PI / 6);
 
 export interface Avoidance {
 	desired: Vec3;
+	/** Use lateral assist toward `desired` when no forward heading clears a
+	 * fast solid; turning alone lets braking in the fight's frame win. */
+	strafe: boolean;
 	/**
 	 * The most speed the assist may hold, km/s: `Infinity` when untouched, 0
 	 * while the nose itself is still on the solid, and a figure the ship can
@@ -579,7 +589,7 @@ function mostUrgentThreat(
  *   the desired heading out of that plane. From inside the keep-out the
  *   cone is past tangent, and the ship climbs out. A solid no heading can
  *   clear — one closing faster than the hull can leave its path — gets the
- *   heading that closes least.
+ *   heading that closes least, with lateral assist toward it while turning.
  * - **Braked**, while going round, as long as thrust along the nose as it
  *   stands would close on the solid: speed 0 until the nose is round.
  *
@@ -611,7 +621,12 @@ export function avoidSolids(
 		perf,
 	);
 	if (!worst)
-		return { desired, maxSpeedKms: Number.POSITIVE_INFINITY, avoiding: null };
+		return {
+			desired,
+			strafe: false,
+			maxSpeedKms: Number.POSITIVE_INFINITY,
+			avoiding: null,
+		};
 
 	const { solid, r, dist, keep, horizon, toward, present, inside, cosLimit } =
 		worst;
@@ -643,6 +658,7 @@ export function avoidSolids(
 		const stoppable = Math.sqrt(perf.retroKms2 * Math.max(0, dist - keep));
 		return {
 			desired,
+			strafe: false,
 			maxSpeedKms: radial > 0 ? stoppable / radial : Number.POSITIVE_INFINITY,
 			avoiding: solid.id,
 		};
@@ -660,6 +676,7 @@ export function avoidSolids(
 	if (closingCos(desired) <= cosLimit)
 		return {
 			desired,
+			strafe: false,
 			maxSpeedKms,
 			avoiding: maxSpeedKms === 0 ? solid.id : null,
 		};
@@ -686,7 +703,12 @@ export function avoidSolids(
 		);
 		const cos = closingCos(heading);
 		if (cos <= cosLimit)
-			return { desired: heading, maxSpeedKms, avoiding: solid.id };
+			return {
+				desired: heading,
+				strafe: false,
+				maxSpeedKms,
+				avoiding: solid.id,
+			};
 		if (cos < bestCos) {
 			best = heading;
 			bestCos = cos;
@@ -694,8 +716,10 @@ export function avoidSolids(
 	}
 	// A solid closing faster than the hull can move off its path — a station
 	// overtaking a ship held in another frame: the heading that closes least,
-	// which is across its path rather than along it.
-	return { desired: best, maxSpeedKms, avoiding: solid.id };
+	// which is across its path rather than along it. Ask the lateral assist
+	// for that direction now: braking toward the fight's frame while waiting
+	// for the nose to turn can drag a co-moving ship into the solid first.
+	return { desired: best, strafe: true, maxSpeedKms, avoiding: solid.id };
 }
 
 /**
@@ -728,6 +752,7 @@ export function createCombatEnemy(
 		nose,
 		up: unit(sub(v3(0, 1, 0), scale(nose, nose.y)), perpBasis(nose)[1]),
 		rates: NO_ROTATION,
+		firing: {},
 		phase: "acquire",
 		phaseSeconds: 0,
 		maneuverSeconds: 30,
@@ -1037,6 +1062,17 @@ export function stepEnemyShip(
 		player.pos,
 	);
 	const desired = avoided.desired;
+	const speed = Math.min(throttle, avoided.maxSpeedKms / ASSIST_CAP_KMS);
+	// Only an escape with no clearing heading uses strafe. Ordinary gun runs and
+	// mouth holds keep their forward-speed control. These are velocity demands
+	// inside the same assist cap, flown by the hull's own bounded vents.
+	const demand = avoided.strafe
+		? {
+				surge: speed * Math.max(0, dot(desired, state.nose)),
+				sway: speed * dot(desired, cross(state.nose, state.up)),
+				heave: speed * dot(desired, state.up),
+			}
+		: speedDemand(speed);
 
 	const ship = { pos: { ...state.ship.pos }, vel: { ...state.ship.vel } };
 	// `step`, not `dt`: the clamp above is what stops a negative frame delta
@@ -1052,9 +1088,7 @@ export function stepEnemyShip(
 			stick: aimStick(state, desired, performance),
 			turnAssist: true,
 			translation: {
-				demand: speedDemand(
-					Math.min(throttle, avoided.maxSpeedKms / ASSIST_CAP_KMS),
-				),
+				demand,
 				assist: true,
 				frame,
 			},
@@ -1080,6 +1114,7 @@ export function stepEnemyShip(
 			nose,
 			up,
 			rates: flown.rates,
+			firing: flown.firing,
 			phase,
 			phaseSeconds,
 			maneuverSeconds,

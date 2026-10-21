@@ -81,6 +81,16 @@ describe("the deterministic branches", () => {
 		expect(called).toBe(false);
 	});
 
+	test("select no browser probes for the comment baseline and its config", async () => {
+		const result = await selectProbes(
+			{ changedFiles: ["eslint-suppressions.json", "eslint.config.mjs"] },
+			async () => ({ answers: probabilities() }),
+		);
+
+		expect(result.mode).toBe("none");
+		expect(result.probes).toEqual([]);
+	});
+
 	test("selects a directly edited probe without calling TypeSafe", async () => {
 		let called = false;
 		const result = await selectProbes(

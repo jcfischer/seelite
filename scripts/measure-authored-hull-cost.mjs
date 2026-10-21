@@ -1,14 +1,16 @@
 /**
  * What an authored hull costs a frame, against the procedural loft it
- * replaced: the courier against the Kestrel (node #812), or the tug's
- * Bollard O4 against the tug loft (node #814, `HULL=tug`).
+ * replaced: the courier against the Kestrel (node #812), the tug's
+ * Bollard O4 against the tug loft (node #814, `HULL=tug`), or the voyager's
+ * Discovery against the Odyssey loft (node #820, `HULL=voyager`).
  *
  *   node scripts/measure-authored-hull-cost.mjs
  *   HULL=tug node scripts/measure-authored-hull-cost.mjs
+ *   HULL=voyager node scripts/measure-authored-hull-cost.mjs
  *
- * For the tug the player's group holds the tug in place of the courier: the
- * player never flies one, but the same camera and clock are what keep the
- * arms comparable.
+ * For the tug and the voyager the player's group holds that hull in place of
+ * the courier: the player never flies either, but the same camera and clock
+ * are what keep the arms comparable.
  *
  * Starts its own dev server on this tree, boots headed and refuses a software
  * rasteriser (#98), and measures **one page, one camera, one clock**: the
@@ -59,6 +61,11 @@ const HULLS = {
 	tug: {
 		module: "/src/tug-hull.ts",
 		levelNames: "TUG_LEVEL_NAMES",
+		players: false,
+	},
+	voyager: {
+		module: "/src/voyager-hull.ts",
+		levelNames: "VOYAGER_LEVEL_NAMES",
 		players: false,
 	},
 };

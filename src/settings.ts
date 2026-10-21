@@ -326,6 +326,27 @@ const SCHEMA = {
 			v === "neural" ? "Natural" : v === "formant" ? "Synthesised" : "Ask",
 		note: "Natural is a speech model that runs in your browser: about 110 to 190 MB, downloaded from this site and kept in your browser, and downloaded again only when the game ships a new version of it. A private window keeps nothing, so there it downloads again each time the game starts. If your browser cannot run the larger version, the smaller one is downloaded instead and the larger one deleted. Until it is ready, the synthesised voice speaks. Synthesised is the game's own small voice, with nothing to download. Choosing Synthesised deletes the downloaded voice and every line it kept. Ask puts the question on the Commander screen.",
 	},
+	/**
+	 * How far the nose turns per pixel of mouse movement (node #640): a
+	 * multiplier on `pointer.ts`'s `MOUSE_RAD_PER_PX`, which `mouseRadPerPx`
+	 * applies linearly — no deadzone, no curve. 100% is that figure, so a
+	 * player who never opens this screen flies what they flew before.
+	 *
+	 * After every other row, as the volume rows and Voice were, so no cursor
+	 * index moves.
+	 *
+	 * **The steps are provisional until the principal flies CMDR Mechan's test**
+	 * on them — spin hard with the assist off, then stop the nose on a star in
+	 * two or three movements — which is how node #640 says the range is chosen.
+	 * They are about √2 apart because a hand feels a ratio, not a difference.
+	 */
+	mouseSensitivity: {
+		fallback: 1,
+		allowed: [0.25, 0.35, 0.5, 0.7, 1, 1.4, 2, 2.8, 4] as const,
+		label: "Mouse sensitivity",
+		describe: (v: number) => `${Math.round(v * 100)}%`,
+		note: "How far the nose turns for each bit the mouse moves. Higher turns faster; lower holds an aim steadier. The response is straight: no dead zone, no curve, so a small movement always does a small thing. 100% is the game's original setting.",
+	},
 } as const;
 
 /** Which settings row sets which bus. */

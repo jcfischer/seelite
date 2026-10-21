@@ -16,6 +16,15 @@ const OWNERS = Object.freeze({
 		"src/model-catalog.ts",
 		"src/system-models.ts",
 	],
+	"probe-asteroid-field.mjs": [
+		"scripts/probe-asteroid-field.mjs",
+		"src/field-draw.ts",
+		"src/field-lod.ts",
+		"src/asteroid-model.ts",
+		"src/asteroid-field.ts",
+		"src/model-catalog.ts",
+		"src/system-models.ts",
+	],
 	"probe-missiles.mjs": [
 		"scripts/probe-missiles.mjs",
 		"src/missiles.ts",
@@ -277,6 +286,12 @@ const OWNERS = Object.freeze({
 		"src/layout-choice.ts",
 		"src/pointer.ts",
 	],
+	"probe-mouse-sensitivity.mjs": [
+		"scripts/probe-mouse-sensitivity.mjs",
+		"src/pointer.ts",
+		"src/settings.ts",
+		"src/settings-panel.ts",
+	],
 	"probe-moving-guard.mjs": [
 		"scripts/probe-moving-guard.mjs",
 		"src/collision.ts",
@@ -496,6 +511,12 @@ const OWNERS = Object.freeze({
 		"scripts/probe-traffic-mouth.mjs",
 		"src/station-traffic.ts",
 		"src/station-mesh.ts",
+	],
+	"probe-npc-vents.mjs": [
+		"scripts/probe-npc-vents.mjs",
+		"scripts/lib/npc-vent-state.mjs",
+		"src/npc-plumes.ts",
+		"src/vent-plumes.ts",
 	],
 	"probe-vent-display.mjs": [
 		"scripts/probe-vent-display.mjs",

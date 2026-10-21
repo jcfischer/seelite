@@ -32,6 +32,7 @@ import {
 	marketStationOf,
 	stationCommodities,
 	stationFluct,
+	type StationTypeKey,
 } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { type Station, generateContents } from "../src/system";
@@ -209,6 +210,22 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 		const a = marketSeedFor(SYSTEMS[0].seed, LOCAL_CARRIER_ID.trade);
 		const b = marketSeedFor(SYSTEMS[1].seed, LOCAL_CARRIER_ID.trade);
 		expect(a).not.toBe(b);
+	});
+
+	test("a station's phase is not a function of its opening market", () => {
+		let stations = 0;
+		let matched = 0;
+		for (const record of SYSTEMS)
+			for (const s of marketStationsOf(record)) {
+				const seed = marketSeedFor(record.seed, s.localCarrierId);
+				const phaseByte = Math.floor(
+					(marketPhaseMin(seed) / MARKET_PERIOD_MIN) * 256,
+				);
+				stations++;
+				if (phaseByte === stationFluct(seed, 0)) matched++;
+			}
+		expect(stations).toBeGreaterThan(100);
+		expect(matched / stations).toBeLessThan(0.05);
 	});
 });
 
@@ -411,5 +428,14 @@ describe("§4 illegal goods are scoped to a fence, in the shipped module", () =>
 			);
 			expect(row.priceCr).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe("§3 a station type without an offset", () => {
+	test("throws rather than pricing NaN", () => {
+		const outpost = "outpost" as unknown as StationTypeKey;
+		expect(() => marketRowAt(commodity("Food"), 0, 0, outpost)).toThrow(
+			/no type offset/,
+		);
 	});
 });

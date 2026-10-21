@@ -376,6 +376,26 @@ check(
 	JSON.stringify(lit.riftLens),
 );
 
+const sealing = await page.evaluate(async () => {
+	const { WITCHSPACE } = await import("/src/witchspace.ts");
+	const g = window.__seelite;
+	g.view = "chase";
+	g.holdWitchspace(WITCHSPACE.riftEndS - 0.001);
+	g.render(0);
+	const rift = g.witchspaceReading().rift;
+	g.holdWitchspace(null);
+	g.view = "cockpit";
+	return rift;
+});
+check(
+	"the player's sealing rift shrinks to a point while its flare stays bright",
+	sealing?.visible === true &&
+		sealing.flare > 0.5 &&
+		sealing.radiusKm > 0 &&
+		sealing.radiusKm < lit.riftReading.radiusKm * 0.005,
+	JSON.stringify(sealing),
+);
+
 // The exit ends: the pass goes quiet and the rift is torn down.
 const ended = await page.evaluate(() => {
 	const g = window.__seelite;

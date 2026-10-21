@@ -27,6 +27,7 @@
  */
 import * as THREE from "three";
 import { SHIPYARD_FORMS } from "../../src/shipyard-flight";
+import { OUTPOST_FORMS } from "../../src/outpost-flight";
 import { REFINERY_FORMS } from "../../src/refinery-flight";
 import {
 	AUTHORED_DRUM_NAME,
@@ -36,8 +37,11 @@ import { STATION_GEOMETRY } from "../../src/station";
 import { corridorRadiusKm, stationInterior } from "../../src/station-interior";
 import { buildStationForm } from "../../src/station-mesh";
 import { padOpeningFloorKm } from "../../src/station-proxy";
+import { installShippedOutposts } from "./shipped-outposts";
 import { installShippedRefineries } from "./shipped-refineries";
 import { installShippedShipyards } from "./shipped-shipyards";
+import { TRADE_FORMS } from "../../src/trade-flight";
+import { installShippedTrades } from "./shipped-trades";
 
 /** The principal's rule: at most this much empty space may collide. */
 export const EMPTY_LIMIT_M = 10;
@@ -113,9 +117,14 @@ function fit(tris: Tri[], axes: Obb["axes"]): Obb {
  * the same way, so a box fitted here cannot fail there.
  */
 let nearModel: TriangleGrid | null = null;
+/** The distance a face sample may stand from the group's triangles while it
+ *  is fitted. Tighter than `SAMPLE_LIMIT_M` where a form asks for it
+ *  (`fitOutpostProxies`): a box on that limit passes on the samples the fit
+ *  reads and fails on the written box's, which land elsewhere. */
+let fitLimitM = SAMPLE_LIMIT_M;
 function keepsTheRule(o: Obb): boolean {
 	if (!nearModel) throw new Error("keepsTheRule: no group is being fitted");
-	return !overreaches(packed(o), nearModel);
+	return !overreaches(packed(o), nearModel, fitLimitM);
 }
 
 /** True when a sample of the box's faces stands farther than the rule allows. */
@@ -873,33 +882,11 @@ export async function fitRefineryProxies(): Promise<
 	const out: Record<string, FittedRefinery> = {};
 	const only = process.env.REFINERY_FORMS?.split(",");
 	const log = process.env.SHIPYARD_PROXY_LOG ? console.log : () => {};
-	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
-	const pad = stationInterior("refinery", plane);
-	const deck = pad.halfAcrossKm * 1000;
-	const corridor = corridorRadiusKm(STATION_GEOMETRY.refinery.aperture) * 1000;
 	for (const form of REFINERY_FORMS) {
 		if (only && !only.includes(form)) continue;
 		const built = buildStationForm("refinery", form, 0x888888, 0, 0);
 		const { rockParts, plantParts } = refineryParts(built.root);
-		keepOut = [
-			new THREE.Box3(
-				new THREE.Vector3(
-					-deck,
-					-deck,
-					pad.mouthAxialKm * 1000 -
-						(pad.stagingAxialKm - pad.mouthAxialKm) * 1000,
-				),
-				new THREE.Vector3(deck, deck, plane * 1000 + 3000),
-			),
-			new THREE.Box3(
-				new THREE.Vector3(
-					-corridor,
-					-corridor,
-					padOpeningFloorKm("refinery") * 1000,
-				),
-				new THREE.Vector3(corridor, corridor, plane * 1000 + 3000),
-			),
-		];
+		keepOut = padKeepOut("refinery");
 		const rock = voxelFill(rockParts.flat(), ROCK_VOXEL_M[form]);
 		log(`${form} rock: ${rock.length} boxes`);
 		const plant = stage(`${form} plant`, plantParts, log);
@@ -946,6 +933,198 @@ export async function refineryTriangles(
 	const { rockParts, plantParts } = refineryParts(built.root);
 	built.dispose();
 	return { rock: rockParts.flat(), plant: plantParts.flat() };
+}
+
+/**
+ * The sim's pad as a keep-out, metres: the deck the game declares and
+ * everything in front of it, and the corridor down into the landing well
+ * (`padOpeningFloorKm`). The refinery's and the outpost's, one expression.
+ */
+function padKeepOut(type: "refinery" | "outpost"): THREE.Box3[] {
+	const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+	const pad = stationInterior(type, plane);
+	const deck = pad.halfAcrossKm * 1000;
+	const corridor = corridorRadiusKm(STATION_GEOMETRY[type].aperture) * 1000;
+	return [
+		new THREE.Box3(
+			new THREE.Vector3(
+				-deck,
+				-deck,
+				pad.mouthAxialKm * 1000 -
+					(pad.stagingAxialKm - pad.mouthAxialKm) * 1000,
+			),
+			new THREE.Vector3(deck, deck, plane * 1000 + 3000),
+		),
+		new THREE.Box3(
+			new THREE.Vector3(-corridor, -corridor, padOpeningFloorKm(type) * 1000),
+			new THREE.Vector3(corridor, corridor, plane * 1000 + 3000),
+		),
+	];
+}
+
+/**
+ * The outpost Salvage's proxy (node #1031), by the shipyards' rule: every
+ * part of the authored exterior, which does not turn, at most 10 m of empty
+ * space. It has no rock. The keep-out is the sim's pad, as a refinery's; the
+ * deck itself is walled by `station-proxy.ts` from the sim's figures.
+ */
+export interface FittedOutpost {
+	hull: Obb[];
+}
+
+export async function fitOutpostProxies(): Promise<
+	Record<string, FittedOutpost>
+> {
+	await installShippedOutposts();
+	const out: Record<string, FittedOutpost> = {};
+	const log = process.env.SHIPYARD_PROXY_LOG ? console.log : () => {};
+	for (const form of OUTPOST_FORMS) {
+		const built = buildStationForm("outpost", form, 0x888888, 0, 0);
+		const parts = outpostParts(built.root);
+		keepOut = padKeepOut("outpost");
+		// The Salvage's boxes are as node #1031 shipped them. The forms after
+		// it (node #1032) keep half a metre inside the limit: the Buoy had
+		// five boxes that passed on the fit's samples and failed on the
+		// written box's.
+		fitLimitM = form === "e" ? SAMPLE_LIMIT_M : SAMPLE_LIMIT_M - 0.5;
+		const hull = stage(`${form} hull`, parts, log);
+		fitLimitM = SAMPLE_LIMIT_M;
+		keepOut = [];
+		out[form] = { hull };
+		built.dispose();
+	}
+	return out;
+}
+
+function clipOutside(tris: Tri[], boxes: THREE.Box3[]): Tri[] {
+	let remaining = tris;
+	for (const box of boxes) {
+		const bounds = box.clone().expandByScalar(1);
+		const outside: Tri[] = [];
+		let inside = remaining;
+		for (let axis = 0; axis < 3; axis++) {
+			const normal = new THREE.Vector3().setComponent(axis, 1);
+			const [low, above] = cut(inside, normal, bounds.min.getComponent(axis));
+			const [middle, high] = cut(above, normal, bounds.max.getComponent(axis));
+			outside.push(...low, ...high);
+			inside = middle;
+		}
+		remaining = outside;
+	}
+	return remaining;
+}
+
+/** Fit trade exteriors with the existing 10 m part fitter (node #1033).
+ * The drawn coaming's front face gets a thin proxy 1.25 m outside the plane,
+ * clear of the bay keep-out after packing; independent checks hold its
+ * distance to the source, and source coverage, within their measured limits. */
+export async function fitTradeProxies(): Promise<
+	Record<string, { hull: Obb[] }>
+> {
+	await installShippedTrades();
+	const out: Record<string, { hull: Obb[] }> = {};
+	const log = process.env.SHIPYARD_PROXY_LOG ? console.log : () => {};
+	const bay = stationInterior("trade", STATION_GEOMETRY.trade.aperturePlaneKm);
+	const plane = bay.mouthAxialKm * 1000;
+	for (const form of TRADE_FORMS) {
+		const built = buildStationForm("trade", form, 0x888888, 0, 0);
+		try {
+			const parts = partsOf(
+				built.root,
+				AUTHORED_EXTERIOR_NAME,
+				STATION_GEOMETRY.trade.coreRadiusKm,
+			);
+			keepOut = [
+				new THREE.Box3(
+					new THREE.Vector3(
+						-bay.halfAcrossKm * 1000,
+						-bay.halfUpKm * 1000,
+						bay.endAxialKm * 1000,
+					),
+					new THREE.Vector3(
+						bay.halfAcrossKm * 1000,
+						bay.halfUpKm * 1000,
+						plane,
+					),
+				),
+				new THREE.Box3(
+					new THREE.Vector3(
+						-bay.laneHalfAcrossKm * 1000,
+						-bay.laneHalfUpKm * 1000,
+						plane,
+					),
+					new THREE.Vector3(
+						bay.laneHalfAcrossKm * 1000,
+						bay.laneHalfUpKm * 1000,
+						plane + 3000,
+					),
+				),
+			];
+			fitLimitM = SAMPLE_LIMIT_M - 0.5;
+			const front = parts.map((part) =>
+				part
+					.filter((tri) => tri.every((v) => Math.abs(v.z - plane) < 0.001))
+					.map(
+						(tri) =>
+							tri.map((v) =>
+								v.clone().add(new THREE.Vector3(0, 0, 1.25)),
+							) as Tri,
+					),
+			);
+			const clipped = parts
+				.map((part) => clipOutside(part, keepOut))
+				.filter((part) => part.length);
+			out[form] = {
+				hull: stage(
+					`${form} trade`,
+					[...clipped, ...front.filter((part) => part.length)],
+					log,
+				),
+			};
+		} finally {
+			fitLimitM = SAMPLE_LIMIT_M;
+			keepOut = [];
+			nearModel = null;
+			built.dispose();
+		}
+	}
+	return out;
+}
+
+/** Decoded exterior triangles in metres, independently measured by proxy tests. */
+export async function tradeTriangles(
+	form: (typeof TRADE_FORMS)[number],
+): Promise<Tri[]> {
+	await installShippedTrades();
+	const built = buildStationForm("trade", form, 0x888888, 0, 0);
+	const tris = partsOf(
+		built.root,
+		AUTHORED_EXTERIOR_NAME,
+		STATION_GEOMETRY.trade.coreRadiusKm,
+	).flat();
+	built.dispose();
+	return tris;
+}
+
+/** A built authored outpost's connected parts: its exterior, metres. */
+function outpostParts(root: THREE.Object3D): Tri[][] {
+	return partsOf(
+		root,
+		AUTHORED_EXTERIOR_NAME,
+		STATION_GEOMETRY.outpost.coreRadiusKm,
+	);
+}
+
+/** An outpost's exterior triangles in the station frame, for a check that
+ *  measures written boxes against them. */
+export async function outpostTriangles(
+	form: (typeof OUTPOST_FORMS)[number],
+): Promise<Tri[]> {
+	await installShippedOutposts();
+	const built = buildStationForm("outpost", form, 0x888888, 0, 0);
+	const tris = outpostParts(built.root).flat();
+	built.dispose();
+	return tris;
 }
 
 // --- Packing: 16-bit integers, conservative -------------------------------
