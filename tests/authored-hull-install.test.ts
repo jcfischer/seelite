@@ -17,7 +17,6 @@ import {
 	setHullFinish,
 } from "../src/ship-surface";
 
-/** Runs fn with every mesh raycast counted, restoring the prototype after. */
 function countRaycasts<T>(fn: () => T): { casts: number; value: T } {
 	const original = THREE.Mesh.prototype.raycast;
 	let casts = 0;
