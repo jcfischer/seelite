@@ -66,19 +66,49 @@ not performance figures or a ruling to switch the shipped path.
 
 ## Verification scope
 
-The targeted GPU runs passed: gradient **10/10**, footprint **44/44**, live
-planet surfaces **114/114** checks. Build (including typecheck), formatting and
-lint passed. The 285 tests in the 19 directly affected shader, routing,
-headless-boundary and script-contract files passed in targeted runs.
+Current verification on 2026-10-22 retains the measured gradient figures above.
+The gradient GPU probe passes **11/11** and footprint passes **44/44** checks.
+The gradient comparison now also rejects invalid four-tap and flat reference
+targets, requiring their drawn pixel counts to match the analytic target.
+That additional assertion was observed red before its measurements were wired
+in. Build (including typecheck), formatting, Biome lint and ESLint passed.
 
-The mandatory single `npm test` run reported **6,470 pass, 1 fail**, across
-375 files in 678 seconds. RTK's filter discarded the failing test's identity,
-and no raw tee log was saved by that sandboxed invocation. The failure remains
-unidentified; this receipt does **not** claim that it also fails on the base.
-The supervisor's merge-base comparison is still required. No second full unit
-run was made, and no unrelated test was changed to conceal the failure.
+The single full host `npm test` run reported **6,763 pass, 2 fail**, across
+397 files in 1,279 seconds. Complete output is retained at
+`/tmp/node-757-npm-test.log`. Its failures are identified:
+
+- `tests/game-url.test.ts`, `no script builds a game URL by hand`: the new
+  gradient probe navigated to the bare origin. It now opens the tree declaration
+  for its offscreen renderer, with that exact navigation registered in the
+  existing non-game table. The table's stale-exemption check was observed red
+  before the navigation changed. The subsequent URL, gradient, cost and relief
+  policy run passed **101/101** tests across four files.
+- `tests/rock-heightfields.test.ts`, `decoded uint16 fields meet the selected
+  spike's Euclidean budgets per archetype`: all 16 fit rows met their numeric
+  bounds, but the test exceeded its existing 300-second limit at 314.5 seconds.
+  The test, its helpers and its model data are unchanged from merge base
+  `2dd890e`. At that base the isolated case passed in 98.5 seconds; this does
+  not establish a reproduced base timeout. The branch's isolated rerun also
+  passed, in 121.7 seconds (**1/1**, 48 assertions). The full-suite timeout's
+  cause remains unattributed. No heightfield code or timeout was changed.
+
+No second full unit run was made under the worker SOP. The preceding worker's
+unidentified full-run failure is superseded by this named, fully logged run.
+
+The broader `probe-planet-surfaces.mjs` timed out in `bootedGame` after 20
+seconds, twice on the branch and once on an immutable merge-base snapshot.
+The first branch run and the base run stopped at the same later boot on line
+2257; the second branch run stopped at its initial boot. Host peak loads were
+73.9, 93.6 and 72.3 respectively. This is a reproduced base failure, not a
+current surface-probe pass; the cause of the boot timeout remains unattributed.
+
+`npm run lint:comments` also fails its suppression-growth guard relative to
+newer `origin/main`. The same two entries fail at the branch's merge base:
+`scripts/probe-planet-footprint.mjs` (14 to 15) and `src/authored-hull.ts`
+(27 to 33). ESLint itself passes. Those unrelated baselines were left intact.
 
 The footprint probe also covers original pixels at zero cap,
 determinism, the distant fade, all other classes and the canonical horizon cap
-pairs. This is targeted coverage, not a full browser-suite pass. The supervisor
+pairs. This is targeted coverage, not a full browser-suite pass. Probe selection
+was inspected before running probes; it selected 111 contracts. The supervisor
 owns the final reviewed-head browser gate, review and publication.

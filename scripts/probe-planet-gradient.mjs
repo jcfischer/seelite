@@ -9,6 +9,7 @@
  * Paired scalar/vector accumulation differs by up to 6.2e-5 in this fixture;
  * height agreement is bounded at 1e-4 of its 0..1 range. No timing claim. */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? "http://localhost:5173",
@@ -18,7 +19,7 @@ const t = tally();
 try {
 	const page = await browser.newPage();
 	t.watch(page);
-	await page.goto(origin);
+	await page.goto(`${origin}${TREE_ENDPOINT}`);
 	const result = await page.evaluate(async () => {
 		const THREE = await import("/node_modules/.vite/deps/three.js");
 		const { buildBodyVisual } = await import("/src/planet-surface.ts");
@@ -205,10 +206,20 @@ try {
 			relief: changed(high, closeFlat),
 			maxValueError,
 		};
+		const references = [
+			...[four, flat, fine].map((pixels) => ({
+				...finite(pixels),
+				expected: far.finite.drawn,
+			})),
+			...[closeFlat, closeFine].map((pixels) => ({
+				...finite(pixels),
+				expected: close.finite.drawn,
+			})),
+		];
 		body.dispose();
 		target.dispose();
 		renderer.dispose();
-		return { far, close, splices: TERRAN_GRADIENT_SPLICES };
+		return { far, close, references, splices: TERRAN_GRADIENT_SPLICES };
 	});
 	console.log(JSON.stringify(result));
 	t.check(
@@ -218,6 +229,12 @@ try {
 	t.check(
 		"2R analytic normals are finite and cover the planet",
 		result.far.finite.bad === 0 && result.far.finite.drawn > 10000,
+	);
+	t.check(
+		"four-tap and flat reference normals are finite over the same drawn pixels",
+		result.references?.every(
+			({ bad, drawn, expected }) => bad === 0 && drawn === expected,
+		) === true,
 	);
 	t.check(
 		"2R legacy four-tap agrees within 10 deg p95 / 16 deg p99 / 30 deg max over relief pixels",

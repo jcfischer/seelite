@@ -414,6 +414,14 @@ describe("every script boots through the builder", () => {
 	 */
 	const NOT_THE_GAME = new Map([
 		[
+			"scripts/probe-planet-gradient.mjs",
+			{
+				arg: "`${origin}${TREE_ENDPOINT}`",
+				reason:
+					"Node #757's offscreen normal targets boot no game: the tree declaration supplies an origin to import the planet renderer",
+			},
+		],
+		[
 			"scripts/probe-audio-cues.mjs",
 			{
 				arg: "`${origin}/__seelite/tree`",
