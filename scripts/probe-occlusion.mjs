@@ -55,6 +55,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { waitForGateShut } from "./lib/fixture-reset.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
@@ -680,6 +681,19 @@ console.log(
 const LADDER_RUNGS = [20, 12, 8, 5, 3, 2, 1.5];
 
 await setView(page, "chase");
+await page.evaluate(
+	([id, radii]) =>
+		window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
+			comoving: true,
+		}),
+	[STATION, LADDER_RUNGS[0]],
+);
+await setView(page, "chase");
+const startedShut = await waitForGateShut(page, settleFrames);
+console.log(
+	`  ladder — started from a shut gate after ` +
+		`${startedShut.frames} frames at ${LADDER_RUNGS[0]} radii, enclosure ${startedShut.enclosureRad.toFixed(3)} rad`,
+);
 const ladder = [];
 for (const rung of LADDER_RUNGS) {
 	await page.evaluate(
