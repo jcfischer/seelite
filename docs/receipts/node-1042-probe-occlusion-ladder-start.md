@@ -19,9 +19,8 @@ there was state left over, not a reading.
 
 ## Evidence
 
-- Five runs of `npm run probe:one probe-occlusion` on this tree before the
-  fix, with the gate read before the first rung: shut each time (3 of 3
-  logged), so the unforced run does not show the cause by itself; it needs the
+- Three runs of `npm run probe:one probe-occlusion` before the fix, with the
+  gate read before the first rung: shut and green each time, so the unforced run does not show the cause by itself; it needs the
   gate open on arrival.
 - The same probe with the gate forced open before the ladder (camera at 1.5
   radii for ten frames, then the ladder as it was): the two reported checks
