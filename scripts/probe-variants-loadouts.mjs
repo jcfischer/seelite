@@ -301,6 +301,104 @@ try {
 		result.saved?.variant === result.recovered?.variant &&
 			result.saved?.grade === "A",
 	);
+	const spentRack = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const originalTime = g.world.gameTime;
+		const originalWorld = g.commerceWorld;
+		const { makeModule, moduleRow, stockLoadout } = await import(
+			"/src/loadout.ts"
+		);
+		const { npcFitSeed, npcFittingDrop } = await import("/src/npc-loadout.ts");
+		const { applyTransition, advanceTo } = await import("/src/world-state.ts");
+		const { raiderDestruction, RAIDER_WRECK_S, RAIDER_REPAIR_S } = await import(
+			"/src/raider-wreck.ts"
+		);
+		const { MISSILE } = await import("/src/missiles.ts");
+		const { parseSave, serializeSave } = await import("/src/save-envelope.ts");
+		const rack = { ...makeModule("missile-rack", 1, "A"), variant: "precise" };
+		rack.ammo = moduleRow(rack).output.missiles;
+		const fit = { ...stockLoadout("raider"), h2: rack };
+		g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
+		g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
+		g.forceRaider("ahead", 0, 5);
+		const encounter = g.encounter;
+		if (!encounter) throw Error("No operational raider after replacement");
+		const record = g.world.system.record;
+		let found = false;
+		for (let attempt = 0; attempt < 200; attempt++) {
+			const seed = npcFitSeed(
+				record.seed,
+				encounter.slot.key,
+				g.carrierCondition(encounter.slot.key).instanceOrdinal,
+			);
+			if (npcFittingDrop(fit, seed)?.module === "missile-rack") {
+				found = true;
+				break;
+			}
+			g.commerceWorld = applyTransition(
+				g.commerceWorld,
+				record.galaxy,
+				encounter.slot.key,
+				raiderDestruction(record.index, g.world.gameTime),
+			);
+			g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
+			g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
+		}
+		if (!found) throw Error("No rack drop in the bounded raider fixture");
+		encounter.origin = "defender";
+		encounter.appearsAtS = g.world.gameTime;
+		encounter.loadout = fit;
+		g.stepRaider(0, { fired: false, damage: 0 }, []);
+		g.stepMissileCombat(0, []);
+		const enemy = g.missileCombat.enemy;
+		enemy.lock = { targetId: "player", seconds: MISSILE.lockS };
+		enemy.launchAt = g.world.gameTime;
+		g.stepMissileCombat(0.05, []);
+		const live = g.encounter;
+		const remaining = live.raider.loadout.h2.ammo;
+		const launched = g.missileCombat.missiles.some(
+			(m) => m.targetId === "player",
+		);
+		g.canisters = [];
+		g.endEncounter(
+			live,
+			{ ...live, phase: "over", end: "destroyed" },
+			live.raider.flight.ship,
+			undefined,
+		);
+		const dropped = g.canisters.find((c) => c.fitting);
+		if (!dropped) throw Error("The selected rack was not dropped");
+		g.world.ship.pos = { ...dropped.pos };
+		g.world.ship.vel = { ...dropped.vel };
+		g.stepCargoCanisters(0);
+		const saved = parseSave(serializeSave(g.saveEnvelope()));
+		g.world.gameTime = originalTime;
+		g.commerceWorld = originalWorld;
+		g.missileCombat.reset();
+		return {
+			launched,
+			remaining,
+			expectedAmmo: rack.ammo - 1,
+			dropped: dropped.fitting,
+			saved: saved.commander.state.recoveredFittings?.find(
+				(f) => f.module === "missile-rack",
+			),
+		};
+	});
+	t.check(
+		"live raider launch spends ammunition on the actual fitted variant rack",
+		spentRack.launched && spentRack.remaining === spentRack.expectedAmmo,
+		JSON.stringify(spentRack),
+	);
+	t.check(
+		"a live kill, scoop and save retain the rack's trait and spent ammunition",
+		spentRack.dropped?.variant === "precise" &&
+			spentRack.dropped?.ammo === spentRack.expectedAmmo &&
+			spentRack.saved?.variant === "precise" &&
+			spentRack.saved?.ammo === spentRack.expectedAmmo &&
+			spentRack.saved?.purchaseCostCr === 0,
+		JSON.stringify(spentRack),
+	);
 	await page.evaluate(async () => {
 		const g = window.__seelite;
 		const station = g.world.system.bodies.find(
