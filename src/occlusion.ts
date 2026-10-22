@@ -301,7 +301,8 @@ const SHADOW_UNION_LIMIT = 4;
  *
  * ## The cabin and the hull are not subjects for this
  *
- * The caller passes stations only. The cabin is what the gate exists to stop
+ * The caller passes stations, plus the level-0 field rocks as `FieldGateInput`
+ * (node #970, quality high only). The cabin is what the gate exists to stop
  * paying for, and the hull alone does not earn the pass either: #233's chase
  * column is `mean|d|` 0.0000 at 20, 12 and 8 radii on a threshold-free
  * measurement, so the exterior shadow there is absent rather than small.
@@ -337,6 +338,31 @@ export function enclosureRad(stations: readonly ShadowSubject[]): number {
 }
 
 /**
+ * What the asteroid fields add to the gate (node #970): the number of rocks
+ * drawn at level 0 this frame, and the quality side they were levelled on.
+ * `high` is the only side whose level-0 rocks cast (`field-draw.ts`), so it is
+ * the only side they can open the gate for.
+ */
+export type FieldGateInput = {
+	readonly level0Rocks: number;
+	readonly quality: "high" | "low";
+};
+
+/** No field in the frame: the stations alone decide. */
+export const NO_FIELD: FieldGateInput = { level0Rocks: 0, quality: "high" };
+
+/**
+ * Whether the fields ask for the gate to be open: a level-0 rock is in view on
+ * quality high. It asks as a station at the opening threshold does, so the
+ * same two thresholds and frame counts hold it open and shut.
+ */
+export function fieldEnclosureRad(field: FieldGateInput): number {
+	return field.quality === "high" && field.level0Rocks > 0
+		? OCCLUSION.gate.openRad
+		: 0;
+}
+
+/**
  * Advance the gate by one frame.
  *
  * A reducer rather than a mutable flag so the whole rule — both thresholds,
@@ -346,8 +372,9 @@ export function enclosureRad(stations: readonly ShadowSubject[]): number {
 export function stepOcclusionGate(
 	gate: OcclusionGate,
 	stations: readonly ShadowSubject[],
+	field: FieldGateInput = NO_FIELD,
 ): OcclusionGate {
-	const rad = enclosureRad(stations);
+	const rad = Math.max(enclosureRad(stations), fieldEnclosureRad(field));
 	// Asymmetric by construction: an open gate is held by the *lower* threshold,
 	// so a station drifting between the two leaves the state it is in alone.
 	const wants = gate.open

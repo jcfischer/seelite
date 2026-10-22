@@ -179,6 +179,7 @@ import {
 	CLOSED_GATE,
 	enclosureRad,
 	OCCLUSION,
+	type FieldGateInput,
 	type OcclusionGate,
 	SHADOW_MAP_TEXELS,
 	type ShadowSubject,
@@ -7066,6 +7067,13 @@ class Game {
 		}
 		await nextInteriorFrame();
 	}
+	private fieldGateInput(): FieldGateInput {
+		let level0Rocks = 0;
+		for (const draw of this.fieldDraws)
+			if (draw.root.visible) level0Rocks += draw.perLevel[0];
+		return { level0Rocks, quality: this.settings.value.quality };
+	}
+
 	private updateFields(camPos: Vec3): void {
 		if (!this.fieldDraws.length) return;
 		const quality = this.settings.value.quality;
@@ -17574,6 +17582,7 @@ class Game {
 		this.occlusionGate = stepOcclusionGate(
 			this.occlusionGate,
 			this.buildStationSubjects(),
+			this.fieldGateInput(),
 		);
 		this.applyOcclusion();
 		this.fitShadowCamera();
