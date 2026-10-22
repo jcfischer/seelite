@@ -101,7 +101,9 @@ The Equipment tab names traits on both fitted and carried modules.
 ordinal on `DOMAIN.NPC_LOADOUT`. Raiders, patrols and interceptors draw catalogue
 grades, combat lasers and compatible defence/capacity modules in hull-owned
 slots. Other traffic retains its stock fit and does not return fire. The
-raider's independent 35% missile-rack draw remains on its existing tag. Flight
+raider's independent 35% missile-rack draw uses `DOMAIN.RAIDER_MISSILE_FIT`
+with the new instance seed from `DOMAIN.NPC_LOADOUT`, so missile-bearing
+instances are reshuffled compared with the earlier missile-only fit. Flight
 reads fitted weapon rates, condition capacity and module mass. The eject
 warning reads the strongest active hostile laser group to retain its reaction
 window when a fit raises damage. Scans and

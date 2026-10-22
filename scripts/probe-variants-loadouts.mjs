@@ -46,7 +46,8 @@ try {
 		);
 		const expected = npcLoadout("raider", seed);
 		const materialized =
-			JSON.stringify(live.raider.loadout) === JSON.stringify(expected);
+			JSON.stringify(live.loadout) === JSON.stringify(expected) &&
+			!Object.hasOwn(live.raider, "loadout");
 		const capacity = fittedCapacity("raider", expected);
 		const defence =
 			live.raider.condition.hullMax === capacity.integrity &&
@@ -139,10 +140,18 @@ try {
 			{ instanceOrdinal: 0, voyageOrdinal: 0 },
 		);
 		const recorded = g.recordedReading(subject).manifest;
-		for (let n = 0; n < replacement; n++) {
+		const replaceInstance = (key, transition) => {
 			g.commerceWorld = applyTransition(
 				g.commerceWorld,
 				galaxy,
+				key,
+				transition,
+			);
+			g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
+			g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
+		};
+		for (let n = 0; n < replacement; n++) {
+			replaceInstance(
 				subject.key,
 				trafficDestruction(
 					systemIndexOfKey(subject.key),
@@ -150,8 +159,6 @@ try {
 					g.world.gameTime,
 				),
 			);
-			g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
-			g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
 		}
 		const scanStable =
 			g.carrierCondition(subject.key).instanceOrdinal === replacement &&
@@ -185,9 +192,7 @@ try {
 					)
 				)
 					break;
-				g.commerceWorld = applyTransition(
-					g.commerceWorld,
-					galaxy,
+				replaceInstance(
 					actor.key,
 					trafficDestruction(
 						systemIndexOfKey(actor.key),
@@ -195,8 +200,6 @@ try {
 						g.world.gameTime,
 					),
 				);
-				g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
-				g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
 			}
 			const ordinal = g.carrierCondition(actor.key).instanceOrdinal;
 			const fit = g.npcFitFor(hull, actor.key);
@@ -262,7 +265,7 @@ try {
 		};
 	});
 	t.check(
-		"live raider materializes the carrier's seeded fit",
+		"live encounter owns the seeded fit without a second copy on the raider",
 		result.materialized,
 	);
 	t.check("live raider condition reads fitted defence", result.defence);
@@ -324,6 +327,16 @@ try {
 		const encounter = g.encounter;
 		if (!encounter) throw Error("No operational raider after replacement");
 		const record = g.world.system.record;
+		const replaceInstance = (key, transition) => {
+			g.commerceWorld = applyTransition(
+				g.commerceWorld,
+				record.galaxy,
+				key,
+				transition,
+			);
+			g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
+			g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
+		};
 		let found = false;
 		for (let attempt = 0; attempt < 200; attempt++) {
 			const seed = npcFitSeed(
@@ -335,14 +348,10 @@ try {
 				found = true;
 				break;
 			}
-			g.commerceWorld = applyTransition(
-				g.commerceWorld,
-				record.galaxy,
+			replaceInstance(
 				encounter.slot.key,
 				raiderDestruction(record.index, g.world.gameTime),
 			);
-			g.world.gameTime += RAIDER_WRECK_S + RAIDER_REPAIR_S + 1;
-			g.commerceWorld = advanceTo(g.commerceWorld, g.world.gameTime);
 		}
 		if (!found) throw Error("No rack drop in the bounded raider fixture");
 		encounter.origin = "defender";
@@ -354,8 +363,11 @@ try {
 		enemy.lock = { targetId: "player", seconds: MISSILE.lockS };
 		enemy.launchAt = g.world.gameTime;
 		g.stepMissileCombat(0.05, []);
+		const combat = g.encounter.raider.combat;
+		g.stepRaider(0.01, { fired: false, damage: 0 }, []);
 		const live = g.encounter;
-		const remaining = live.raider.loadout.h2.ammo;
+		const cachedCombat = live.raider.combat === combat;
+		const remaining = live.loadout.h2.ammo;
 		const launched = g.missileCombat.missiles.some(
 			(m) => m.targetId === "player",
 		);
@@ -377,6 +389,7 @@ try {
 		g.missileCombat.reset();
 		return {
 			launched,
+			cachedCombat,
 			remaining,
 			expectedAmmo: rack.ammo - 1,
 			dropped: dropped.fitting,
@@ -387,7 +400,9 @@ try {
 	});
 	t.check(
 		"live raider launch spends ammunition on the actual fitted variant rack",
-		spentRack.launched && spentRack.remaining === spentRack.expectedAmmo,
+		spentRack.launched &&
+			spentRack.cachedCombat &&
+			spentRack.remaining === spentRack.expectedAmmo,
 		JSON.stringify(spentRack),
 	);
 	t.check(

@@ -25,14 +25,20 @@
  * into a world-state destroy, a drop and a heat write. No world, no renderer.
  */
 import type { CarrierKey } from "./carrier-key";
-import { fittedCapacity, moduleRow } from "./loadout";
+import { fittedCapacity } from "./loadout";
 import {
 	type CombatEnemyState,
 	type EnemyIntent,
 	NO_ROTATION,
 	playerLaserHit,
 } from "./combat-enemy";
-import { type DuelPilot, type PlayerShot, stepCombatShip } from "./duel";
+import {
+	type CombatFit,
+	type DuelPilot,
+	type PlayerShot,
+	combatFit,
+	stepCombatShip,
+} from "./duel";
 import { HULL_SPECS, type HullId } from "./hull";
 import {
 	PLAYER_KILL,
@@ -49,7 +55,6 @@ import {
 	type TrafficSchedule,
 	nextTrafficDepartureAtS,
 } from "./station-traffic";
-import { flightPerformance } from "./sim";
 import { type Vec3, frameAcross } from "./vec3";
 import type {
 	OperationalCondition,
@@ -121,6 +126,7 @@ export const trafficInSights = (
 export const ASSAULT_FIRE_S = 5;
 
 export interface Engagement {
+	combat: CombatFit;
 	loadout?: import("./loadout").Loadout;
 	key: CarrierKey;
 	hullId: HullId;
@@ -231,6 +237,7 @@ export function engage(
 		armed,
 		intent,
 		loadout: target.loadout,
+		combat: combatFit(target.hullId, target.loadout),
 		condition: fullCondition(
 			target.hullId,
 			target.loadout
@@ -303,20 +310,8 @@ export function stepEngagement(
 ): EngagementStep {
 	const step = stepCombatShip(engagement, pilot, shot, dt, {
 		hitRadiusKm: trafficHitRadiusKm(engagement.hullId),
-		performance: flightPerformance(
-			engagement.hullId,
-			{},
-			HULL_SPECS[engagement.hullId].massT +
-				(engagement.loadout
-					? Object.values(engagement.loadout).reduce(
-							(mass, m) => mass + moduleRow(m).massT,
-							0,
-						)
-					: 0),
-		),
+		...engagement.combat,
 		intent: engagement.intent,
-		loadout: engagement.loadout,
-		hull: engagement.hullId,
 	});
 	// Held, not reset, when nothing lands this frame. A pilot who breaks off to
 	// line up another shot has not un-done the seconds they already spent.

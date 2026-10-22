@@ -59,3 +59,34 @@ The paid shipyard trait-refit service is outside this implementation.
 
 The public changelog sentence is proposed copy. The supervisor retains the
 principal's copy approval and the final main-branch date before merge.
+
+## Sage review round 1 — 2026-10-22
+
+All seven findings were accepted. Hull-plus-fit mass now has one helper in
+loadout.ts, used by both player mass and the combat snapshot. Raiders and
+traffic cache flight performance and laser rates at materialization/engagement;
+ammunition changes do not recompute those fixed metrics. Encounter.loadout is
+the raider fit owner; credit, missiles, warnings and drops use encounterFit,
+and instance seed reads use npcFitSeedFor. The probe's replacement loops share
+local helpers. The spec explicitly records that the new NPC seed reshuffles
+missile-bearing instances.
+
+Before the move, the five-file behavior pin passed 100 tests. After the move,
+282 focused tests in 11 files pass, including variant mass and cached combat
+retention. Typecheck, build, format, Biome script lint and changed-file ESLint
+pass. The inherited comment-suppression guard drift above is unchanged from
+merge base 2dd890e.
+
+The six affected hardware probes pass 137 checks: variants-loadouts 12,
+missiles 15, traffic-engagement 22, flown-mass 5, duel-hud 59 and outfitting 24.
+The variants probe verifies the sole encounter owner and retained combat
+snapshot, then fires, kills, scoops and saves a precise rack with seven rounds.
+Renderer: ANGLE Metal / Apple M1 Pro. These are manually scoped checks;
+the selector's 113-probe shared-runtime fallback remains the supervisor's gate.
+
+The required single full host run for this review round passed: **6,771 pass,
+0 fail**, 10,661,493 assertions across 397 files in 971.50 s. Raw output:
+/tmp/node-875-review-full-test.log. The earlier five failures were not
+reproduced in this round; this result supersedes the earlier incomplete
+full-suite verification above. No test threshold, host configuration or
+container runtime was changed.

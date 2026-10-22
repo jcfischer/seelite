@@ -70,6 +70,14 @@ export function moduleRow(m: FittedModule): ModuleRow {
 	if (!r) throw new Error(`Unknown module ${m.module}/${m.size}/${m.grade}`);
 	return variantRow(r, m.variant);
 }
+/** Hull and installed catalogue mass, before cargo and carried fittings. */
+export const fittedMassT = (hull: HullId, loadout: Loadout): number =>
+	HULL_SPECS[hull].massT +
+	Object.values(loadout).reduce(
+		(mass, module) => mass + moduleRow(module).massT,
+		0,
+	);
+
 export const fitted = (loadout: Loadout, name: string): boolean =>
 	Object.values(loadout).some(
 		(m) => m.module === (LEGACY_MODULES[name] ?? name),

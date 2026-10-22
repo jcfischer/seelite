@@ -34,6 +34,7 @@ import {
 	type Raider,
 	RAIDER_OUT_OF_BEAM_KM,
 	raiderAtDrop,
+	combatFit,
 	stepDuel,
 } from "./duel";
 import { HULL_SPECS } from "./hull";
@@ -428,7 +429,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 					phase: "duel",
 					raider: {
 						flight,
-						loadout: e.loadout,
+						combat: combatFit(RAIDER_HULL_ID, e.loadout),
 						condition: fullCondition(
 							RAIDER_HULL_ID,
 							e.loadout ? fittedCapacity(RAIDER_HULL_ID, e.loadout) : undefined,
@@ -501,7 +502,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			pilot.ship,
 			e.seed,
 		),
-		loadout: e.loadout,
+		combat: combatFit(RAIDER_HULL_ID, e.loadout),
 		condition: fullCondition(
 			RAIDER_HULL_ID,
 			e.loadout ? fittedCapacity(RAIDER_HULL_ID, e.loadout) : undefined,

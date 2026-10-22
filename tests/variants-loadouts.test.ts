@@ -15,7 +15,7 @@ import { strength, killCredit } from "../src/kill-credit";
 import { carrierKey } from "../src/carrier-key";
 import { derelictContents } from "../src/derelict-slots";
 import { fittedCapacity } from "../src/loadout";
-import { raiderAtDrop, stepDuel } from "../src/duel";
+import { combatFit, raiderAtDrop, stepDuel } from "../src/duel";
 import { fullCondition } from "../src/ship-condition";
 import { steadyFrame } from "../src/sim";
 import { v3 } from "../src/vec3";
@@ -116,11 +116,12 @@ test("the flown NPC gun pays its fitted heat and energy and delivers variant dam
 		solids: [],
 	};
 	const condition = fullCondition("raider", fittedCapacity("raider", loadout));
+	const combat = combatFit("raider", loadout);
 	const step = stepDuel(
 		{
 			flight: { ...raiderAtDrop(v3(0, 0, -3), ship, 47), phase: "attack" },
 			condition,
-			loadout,
+			combat,
 		},
 		pilot,
 		{ fired: false, damage: 0 },
@@ -132,7 +133,7 @@ test("the flown NPC gun pays its fitted heat and energy and delivers variant dam
 	expect(step.raider.condition.energy).toBeCloseTo(
 		condition.energy - row.drawPerS * 0.01,
 	);
-	expect(step.raider.loadout).toBe(loadout);
+	expect(step.raider.combat).toBe(combat);
 	const facts = {
 		podFitted: true,
 		permadeath: false,
@@ -363,6 +364,7 @@ test("armed traffic flies its seeded defence and fires every fitted combat laser
 			engagement.condition.energy - energy * dt,
 		);
 		expect(step.engagement.loadout).toBe(loadout);
+		expect(step.engagement.combat).toBe(engagement.combat);
 	}
 });
 

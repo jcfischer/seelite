@@ -30,6 +30,7 @@ import {
 import { dropFittingCanister } from "./raider-wreck";
 import { fittedDps } from "./kill-credit";
 import {
+	type Loadout,
 	fitted,
 	fittedCapacity,
 	equipmentNames,
@@ -8964,11 +8965,7 @@ class Game {
 				armedNpc(actor.hullId)
 					? npcFittingDrop(
 							engagement.loadout ?? this.npcFitFor(actor.hullId, actor.key),
-							npcFitSeed(
-								this.trafficHomeRecord(actor).seed,
-								actor.key,
-								this.carrierCondition(actor.key).instanceOrdinal,
-							),
+							this.npcFitSeedFor(actor.key),
 						)
 					: undefined,
 			),
@@ -13065,8 +13062,11 @@ class Game {
 		const raider = this.duelRaider();
 		const hostileDamagePerS = Math.max(
 			0,
-			raider?.loadout
-				? fittedDps({ hull: RAIDER_HULL_ID, loadout: raider.loadout })
+			raider && this.encounter
+				? fittedDps({
+						hull: RAIDER_HULL_ID,
+						loadout: this.encounterFit(this.encounter),
+					})
 				: 0,
 			...[...this.trafficEngagements.values()]
 				.filter((e) => e.intent === "attacker" && e.loadout)
@@ -13935,8 +13935,25 @@ class Game {
 		key: CarrierKey,
 		instanceOrdinal = this.carrierCondition(key).instanceOrdinal,
 	) {
-		const record = this.trafficHomeRecord({ key });
-		return npcLoadout(hull, npcFitSeed(record.seed, key, instanceOrdinal));
+		return npcLoadout(hull, this.npcFitSeedFor(key, instanceOrdinal));
+	}
+
+	private npcFitSeedFor(
+		key: CarrierKey,
+		instanceOrdinal = this.carrierCondition(key).instanceOrdinal,
+	) {
+		return npcFitSeed(
+			this.trafficHomeRecord({ key }).seed,
+			key,
+			instanceOrdinal,
+		);
+	}
+
+	private encounterFit(encounter: Encounter): Loadout {
+		return (encounter.loadout ??= this.npcFitFor(
+			RAIDER_HULL_ID,
+			encounter.slot.key,
+		));
 	}
 
 	/** Only identified live combat contacts can acquire a missile lock. */
@@ -14034,12 +14051,7 @@ class Game {
 		const e = this.encounter;
 		if (e?.phase === "duel" && e.raider) {
 			control.launchEnemy(
-				carrierInstanceSeed(
-					this.world.system.record.seed,
-					e.slot.key,
-					this.carrierCondition(e.slot.key).instanceOrdinal,
-					DOMAIN.NPC_LOADOUT,
-				),
+				this.npcFitSeedFor(e.slot.key),
 				e.raider.flight.ship.pos,
 				e.raider.flight.nose,
 				{
@@ -14050,12 +14062,9 @@ class Game {
 				solids,
 				now,
 				dt,
-				e.raider.loadout ??
-					e.loadout ??
-					this.npcFitFor(RAIDER_HULL_ID, e.slot.key),
+				this.encounterFit(e),
 			);
 			if (control.enemy) {
-				e.raider.loadout = control.enemy.loadout;
 				e.loadout = control.enemy.loadout;
 			}
 		} else control.enemy = null;
@@ -14188,12 +14197,8 @@ class Game {
 	) {
 		const current = this.encounter;
 		if (!current) return;
-		const encounter = current.loadout
-			? current
-			: {
-					...current,
-					loadout: this.npcFitFor(RAIDER_HULL_ID, current.slot.key),
-				};
+		this.encounterFit(current);
+		const encounter = current;
 		const { name } = encounter;
 		const step = stepEncounter(encounter, {
 			gameTime: this.world.gameTime,
@@ -14280,14 +14285,8 @@ class Game {
 						frameBodyId: this.frameBody?.id ?? null,
 					},
 					npcFittingDrop(
-						encounter.raider?.loadout ??
-							encounter.loadout ??
-							this.npcFitFor(RAIDER_HULL_ID, encounter.slot.key),
-						npcFitSeed(
-							record.seed,
-							encounter.slot.key,
-							this.carrierCondition(encounter.slot.key).instanceOrdinal,
-						),
+						this.encounterFit(encounter),
+						this.npcFitSeedFor(encounter.slot.key),
 					),
 				),
 			];
@@ -19921,7 +19920,7 @@ class Game {
 					hull && armedNpc(hull)
 						? (this.trafficEngagements.get(key)?.loadout ??
 							(this.encounter?.slot.key === key
-								? (this.encounter.raider?.loadout ?? this.encounter.loadout)
+								? this.encounterFit(this.encounter)
 								: undefined) ??
 							this.npcFitFor(hull, key))
 						: undefined,
