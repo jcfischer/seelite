@@ -6,7 +6,7 @@ import {
 	TRUSS_Y,
 	modularPlacements,
 } from "../../../src/station-modular";
-import { CELL_KM } from "./blocks";
+import { CELL_KM } from "./blocks.mjs";
 
 export function jointForSeed(seed: number) {
 	const fixture = new Map<number, readonly [number, number, string]>([

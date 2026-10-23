@@ -2,6 +2,8 @@ import { createServer } from "vite";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { SPIKE_SEEDS } from "./blocks.mjs";
 import {
 	launchChromium,
 	guardedOrigin,
@@ -29,7 +31,7 @@ try {
 	const plans = {},
 		authoredInstances = {};
 	let renderer;
-	for (const seed of [0, 1, 47, 1234]) {
+	for (const seed of SPIKE_SEEDS) {
 		const page = await browser.newPage({
 			viewport: { width: 1440, height: 900 },
 			deviceScaleFactor: 1,
@@ -59,7 +61,7 @@ try {
 						),
 				);
 				const file = `seed-${seed}-${view}-${authored ? "authored" : "procedural"}.png`;
-				await page.screenshot({ path: new URL(file, out).pathname });
+				await page.screenshot({ path: fileURLToPath(new URL(file, out)) });
 				const { placements, instances, ...frame } = stats;
 				plans[seed] = placements;
 				if (authored) authoredInstances[seed] = instances;
@@ -73,7 +75,7 @@ try {
 		sources: Object.fromEntries(
 			await Promise.all(
 				[
-					"blocks.ts",
+					"blocks.mjs",
 					"build_kit.py",
 					"../build_model.py",
 					"../geometry.py",

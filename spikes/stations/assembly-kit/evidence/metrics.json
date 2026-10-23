@@ -1,20 +1,20 @@
 {
   "sources": {
-    "blocks.ts": "4fc35084ceb6c2fb9239e58d4095509d5ccdcea7d7d342fcf0423edb17a8e3fd",
-    "build_kit.py": "df3c5a06a65ece9b5952b0f66bbd865c491dd09155d73617ac8cc4835926d910",
+    "blocks.mjs": "4fc35084ceb6c2fb9239e58d4095509d5ccdcea7d7d342fcf0423edb17a8e3fd",
+    "build_kit.py": "2e30fc6a9a34336bf4d180c647a473003e80d91a4cf43bc6b47b05d463542a6d",
     "../build_model.py": "94f674ceeb55f4683b230537a8055ef9fd97fc97856e47594c736c98d38dbde8",
     "../geometry.py": "fcec145cc6564cdb379196830e7f466010f2036b1b001bd7a5c35cd2b448f148",
     "../final_shapes.py": "26967cd1207766211056e43c6febab3b97d3590f9cdbd9d83679b36516cef3e5",
     "../industrial-surface.png": "4589b25606011e41faf5b2951f37551bfd2a0918f5ce85f8ceee7adeba0d1cb5",
-    "joints.ts": "c77e5200b5f5388ae53dc75f42b04c5550a272f12b3d100b876f3f1311e9615e",
-    "assembly.ts": "beaa131475610fceacdb1f19f1a2bfb2a60d18007401aa5c92a60dd327218592",
-    "prepare.ts": "1af72930e3c3ae650ce83263e5197e6f752089a55b185d4dbbf44b8d6f6172c7",
+    "joints.ts": "080d69ad87c3abc2b040949b17eefd708dcd93cf3f4aab11a6b473291ff69719",
+    "assembly.ts": "b798f468888a1254c78499f53e217a56b5a2c4de8ebf3c617ba54257aa03ee1e",
+    "prepare.ts": "557383a0fe3f6c4414751a92b3414230786d6724aa928a205c1804acc61e3af3",
     "viewer.ts": "5af031a0051c028442e8a345c149a49812047075f39fbab7a358a54c47931ee0",
     "index.html": "dc7cfe03e1dc12b6108ea5542083538e2a352b7976337d029ed839f70ef7553e",
-    "capture.mjs": "9771d942ea2e91c2e25179a65e9ad232a186f82ac10490e91459c9a3f76276d8"
+    "capture.mjs": "265dbe23fe899a5e097e3045cd5d6bd2c1e3ec5ff3f98c427d505afb9c3c0886"
   },
-  "base": "8cbf2218799c318c1f6ed6f4ab0409bac0bfed1f",
-  "capturedAt": "2026-10-20T22:09:39.676Z",
+  "base": "78a583ad8b63f41c9ccd4f5b21fe591144ca361d",
+  "capturedAt": "2026-10-23T07:21:45.337Z",
   "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
   "viewport": [
     1440,

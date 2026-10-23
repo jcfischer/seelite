@@ -1,10 +1,18 @@
 """Blender source for node #1057. Reference author units are 10 m; export km."""
 from pathlib import Path
-import sys, runpy, json, struct, hashlib
+import sys, runpy, json, struct, math, random
+import bpy, bmesh
+from mathutils import Vector
 HERE = Path(__file__).resolve().parent
 sys.argv = [str(HERE.parent / "build_model.py"), "--", "kit-only"]
 S = runpy.run_path(sys.argv[0])
-globals().update({k: v for k, v in S.items() if not k.startswith("__")})
+poly, tube, box, plate, machinery, edge_trunk, window_band, vent = (
+ S[k] for k in ("poly", "tube", "box", "plate", "machinery", "edge_trunk", "window_band", "vent")
+)
+steel, ivory, alloy, orange, warm, white, cyan, MATS = (
+ S[k] for k in ("steel", "ivory", "alloy", "orange", "warm", "white", "cyan", "MATS")
+)
+X, Y, Z = (S[k] for k in ("X", "Y", "Z"))
 import geometry as G
 G.BATCH.clear()
 G.GROUP_MAT.clear()
@@ -129,7 +137,7 @@ for axis, radius in [(X, 4.9), (-X, 4.9), (Y, 1.8), (-Y, 1.8)]:
 
 bpy.context.preferences.filepaths.save_version = 0
 roots = {}
-for key, (verts, faces, uvs) in BATCH.items():
+for key, (verts, faces, uvs) in G.BATCH.items():
  block, part = key.split("/", 1)
  if block not in roots:
   root = bpy.data.objects.new(block, None)
@@ -139,7 +147,7 @@ for key, (verts, faces, uvs) in BATCH.items():
   roots[block] = root
  mesh = bpy.data.meshes.new(key)
  mesh.from_pydata([tuple(Vector(v) * .01) for v in verts], [], faces)
- mesh.materials.append(MATS[GROUP_MAT[key]])
+ mesh.materials.append(MATS[G.GROUP_MAT[key]])
  mesh.update()
  uv = mesh.uv_layers.new(name="industrial-surface")
  for face, coords in zip(mesh.polygons, uvs):

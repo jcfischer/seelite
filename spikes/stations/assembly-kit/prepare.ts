@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 export async function kitBinary() {
 	return new Uint8Array(await readFile(new URL("blocks.glb", import.meta.url)));
@@ -16,7 +17,7 @@ if (import.meta.main) {
 			"--python-exit-code",
 			"1",
 			"--python",
-			new URL("build_kit.py", import.meta.url).pathname,
+			fileURLToPath(new URL("build_kit.py", import.meta.url)),
 		],
 		{ stdio: "inherit" },
 	);

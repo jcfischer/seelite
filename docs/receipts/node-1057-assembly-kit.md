@@ -79,7 +79,7 @@ Rows retain NODE–TUBE rays on both axes at 98/100/102 m, seeded plan equality,
 separate spinner/static bearings, instance transforms, ≤1 km vertex reach,
 and aperture/corridor checks at 0°, 45° and 90°. They assert 28 authored
 instance batches across all four seeds. Two normal-suite rows check actual
-neighbour selection and refusal of unspecified capture seeds without requiring
+adjacent-cell selection and refusal of unspecified capture seeds without requiring
 CI to hydrate study assets. No asset row silently skips or widens a threshold.
 
 ## Hardware render evidence
@@ -118,8 +118,43 @@ Whole-scene overview submissions from renderer.info.render:
 This is a detailed study, not a production performance policy. Authored parts
 are instanced per block/material; the remaining scene is procedural. Detail
 increases triangles and can increase calls. No frame-time or speedup claim.
-Full-kit batching, LOD, loading/failure, fitted proxies, lifecycle and production
+Full-kit batching, LOD, loading/failure, fitted proxies, resource ownership and production
 cost remain Phase 2 work.
+
+## Sage round 1 finish pass — 2026-10-23
+
+- F1 (paths): preparation and screenshot output use `fileURLToPath`. The new
+  host test reproduced `SCRIPT_MISSING` under a directory containing spaces and
+  `Zürich`, then passed with the fix. Real Blender preparation also succeeded
+  in an isolated directory with that spelling.
+- F2 (replacement seam): declined for this Phase 1 pass. The review explicitly
+  proposes this for Phase 2, which still waits on the principal's visual yes.
+  The spike keeps its existing seam as requested; production integration must
+  replace the name-based pruning with a per-placement module seam.
+- F3 (decode cost): the asset-backed tests share one decoded-scene promise.
+  Joint fixtures clone objects; assembly batches clone geometry and materials.
+- F4 (seed drift): `blocks.mjs` owns `SPIKE_SEEDS`; capture, asset tests and
+  camera tests import it. Plain JavaScript lets the Node capture import the
+  same constants without TypeScript runtime support.
+- F5 (Blender dependencies): named helper/material bindings replace the globals
+  injection; Blender modules are imported directly and batch tables read through
+  `geometry`. An isolated rebuild produced 13,808,236 bytes and 28 batches.
+  Compared with the reviewed GLB, positions, normals, indices, material
+  assignments and material factors were identical. Maximum UV delta was
+  1.1920928955078125e-7; no byte-identical rebuild claim. Reviewed binaries stay.
+- F6–F8 (glossary): camera-test/receipt wording now says adjacent-cell selection
+  and resource ownership. These concern physical modules and model resources.
+
+Validation: 10 scoped tests passed with 171 assertions; root and spike
+typechecks passed; `npm run build` passed including its distribution-size guard.
+The selector again selected all 112 production probes for unknown spike paths;
+the worker's full-suite prohibition still applies. The affected capture harness
+completed all 40 frames on ANGLE Metal / Apple M1 Pro at 1440 × 900. Its refreshed
+provenance identifies the reviewed base and current harness hashes. The first
+sandboxed browser launch was denied by macOS permissions; host execution passed.
+The supervisor still owns the final production browser gate and visual handoff.
+Once-only full host `npm test` for this finish pass: **6,763 pass, 0 fail**,
+398 files, 10,615,637 assertions, 1,162.92 seconds; exit 0.
 
 ## Delivery checks
 

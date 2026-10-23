@@ -15,13 +15,18 @@ import {
 } from "../../../tests/helpers/aperture-opening";
 import asset from "./asset.json";
 import { EMISSIVE_CEILING } from "../../../src/light-rig";
-import { CELL_KM, SPIKE_SEEDS } from "./blocks";
+import { CELL_KM, SPIKE_SEEDS } from "./blocks.mjs";
 import { kitBinary } from "./prepare";
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { buildSpike } from "./assembly";
 
-async function decodedKit() {
+let kitPromise: Promise<THREE.Group> | undefined;
+function decodedKit() {
+	return (kitPromise ??= decodeKit());
+}
+
+async function decodeKit() {
 	const bytes = await kitBinary();
 	const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 	const doc = await io.readBinary(bytes);

@@ -7,7 +7,7 @@ import {
 	TUBE_Y,
 	modularPlacements,
 } from "../../../src/station-modular";
-import { CELL_KM } from "./blocks";
+import { CELL_KM } from "./blocks.mjs";
 
 export function buildSpike(seed: number, kit?: THREE.Object3D) {
 	const mesh = buildStationForm("trade", "d", 0xa6adb0, 0, seed);
