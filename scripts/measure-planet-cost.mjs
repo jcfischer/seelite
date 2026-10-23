@@ -229,6 +229,8 @@ const listArg = (name) => {
 const ONLY_CLASSES = listArg("classes");
 const ONLY_RADII = listArg("radii")?.map(Number);
 const ONLY_RELIEF = listArg("relief");
+const supportsRelief = (klass, relief) =>
+	relief !== "analytic-gradient" || klass === "terran";
 
 /**
  * The cell the drift control reads, twice.
@@ -520,8 +522,9 @@ async function run(pixelRatio) {
 		const selectedClasses = narrow(classes, ONLY_CLASSES, "classes");
 		if (
 			ONLY_RELIEF &&
-			paths.includes("analytic-gradient") &&
-			selectedClasses.some((klass) => klass !== "terran")
+			selectedClasses.some((klass) =>
+				paths.some((relief) => !supportsRelief(klass, relief)),
+			)
 		)
 			throw new Error(
 				"analytic-gradient relief is implemented for terran only; use --classes terran",
@@ -774,8 +777,7 @@ async function run(pixelRatio) {
 			// cheap way.
 			for (const surfaceClass of selectedClasses)
 				for (const relief of paths) {
-					if (relief === "analytic-gradient" && surfaceClass !== "terran")
-						continue;
+					if (!supportsRelief(surfaceClass, relief)) continue;
 					for (const radii of SWEPT_RADII)
 						rows.push(await cell(surfaceClass, relief, radii));
 				}
@@ -909,8 +911,7 @@ for (const {
 				`      ${"class".padEnd(10)}${SWEPT_RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
 			);
 			for (const surfaceClass of classes) {
-				if (relief === "analytic-gradient" && surfaceClass !== "terran")
-					continue;
+				if (!supportsRelief(surfaceClass, relief)) continue;
 				const cells = SWEPT_RADII.map((radii) =>
 					label(
 						runRows.find(

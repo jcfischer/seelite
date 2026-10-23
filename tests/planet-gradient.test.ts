@@ -70,7 +70,7 @@ test("analytic source differentiates the same base and footprint height field", 
 		);
 		expect(source).toContain("c.x * wx.xyz + c.y * wy.xyz + c.z * wz.xyz");
 	}
-	expect(fragmentFor("desert", "analytic-gradient")).toBe(
-		fragmentFor("desert", "four-tap"),
+	expect(() => fragmentFor("desert", "analytic-gradient")).toThrow(
+		"analytic-gradient relief is implemented for terran only",
 	);
 });
