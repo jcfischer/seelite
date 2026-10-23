@@ -47,7 +47,12 @@ import {
 	stationBed as legacyStationBed,
 } from "./music-generate-legacy";
 import { berlinFlightBed, berlinStationBed } from "./music-generate-berlin";
-import { schoolFlightBed, schoolStationBed } from "./music-generate-school";
+import {
+	CALM_FORM_NAMES,
+	type CalmForm,
+	schoolFlightBed,
+	schoolStationBed,
+} from "./music-generate-school";
 import { numbersPhrase } from "./comms";
 import {
 	DANUBE_CANCEL_FADE_S,
@@ -194,22 +199,34 @@ export interface MusicArms {
 	 *  #603; the other two stay on `?music=` to compare in flight. */
 	readonly waltz: DanubeVoicing;
 }
-export type MusicBed = "legacy" | "second" | "berlin" | "school";
+export type MusicBed =
+	| "legacy"
+	| "second"
+	| "berlin"
+	| "school"
+	| `school-${CalmForm}`;
 
 /** Each bed's two songs: a system's flight bed and a station's. */
-const BEDS: Readonly<
-	Record<
-		MusicBed,
-		{
-			flight: (systemSeed: number, variant: number) => Song;
-			station: (systemSeed: number, role: StationType, variant: number) => Song;
-		}
-	>
-> = {
+interface BedSongs {
+	flight: (systemSeed: number, variant: number) => Song;
+	station: (systemSeed: number, role: StationType, variant: number) => Song;
+}
+
+const BEDS: Readonly<Record<MusicBed, BedSongs>> = {
 	legacy: { flight: legacyFlightBed, station: legacyStationBed },
 	second: { flight: flightBed, station: stationBed },
 	berlin: { flight: berlinFlightBed, station: berlinStationBed },
 	school: { flight: schoolFlightBed, station: schoolStationBed },
+	...(Object.fromEntries(
+		CALM_FORM_NAMES.map((form) => [
+			`school-${form}`,
+			{
+				flight: (seed: number, variant: number) =>
+					schoolFlightBed(seed, variant, form),
+				station: schoolStationBed,
+			},
+		]),
+	) as Record<`school-${CalmForm}`, BedSongs>),
 };
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,

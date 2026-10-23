@@ -122,6 +122,8 @@ export interface ResolvedPart {
 	/** The sweep: cycles per frame (0 for none), and its depth in octaves. */
 	readonly sweepInc: number;
 	readonly sweepOct: number;
+	readonly phaser: number;
+	readonly phaserInc: number;
 	readonly attackS: number;
 	readonly decayS: number;
 	readonly vibratoHz: number;
@@ -186,6 +188,8 @@ const BASE: VoiceDefaults = {
 	rosinLow: 1,
 	sweepS: 0,
 	sweepOct: 0,
+	phaser: 0,
+	phaserS: 9,
 	width: 0.5,
 	pwmHz: 0,
 	pwmDepth: 0,
@@ -454,6 +458,8 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		sweepInc:
 			d.sweepS > 0 && d.sweepOct !== 0 ? 1 / (d.sweepS * sampleRate) : 0,
 		sweepOct: d.sweepS > 0 ? d.sweepOct : 0,
+		phaser: Math.max(0, Math.min(1, d.phaser)),
+		phaserInc: d.phaserS > 0 ? 1 / (d.phaserS * sampleRate) : 0,
 		attackS: d.attackS,
 		decayS: d.decayS,
 		vibratoHz: d.vibratoHz,
@@ -667,6 +673,8 @@ export class VoiceBank {
 	/** Whether a drone voice ran this block: only then do the tables move. */
 	private droneRan = false;
 	private readonly g: Float64Array;
+	private readonly apState: Float64Array;
+	private readonly apCoef: Float64Array;
 	/** The pluck's delay line: one per slot, sized once for the floor. */
 	private readonly line: Float32Array[];
 	private readonly lineW: Int32Array;
@@ -739,6 +747,8 @@ export class VoiceBank {
 		// it changed.
 		this.drone = new DroneTables(xorshift(0x2545f491));
 		this.g = f64();
+		this.apState = new Float64Array(cap * PHASER_SLOT);
+		this.apCoef = new Float64Array(cap * 2);
 		const lineLen = Math.ceil(sampleRate / PLUCK_FLOOR_HZ) + 4;
 		this.line = Array.from({ length: cap }, () => new Float32Array(lineLen));
 		this.lineW = new Int32Array(cap);
@@ -955,6 +965,7 @@ export class VoiceBank {
 		this.bp[i] = 0;
 		this.lp2[i] = 0;
 		this.bp2[i] = 0;
+		this.apState.fill(0, i * PHASER_SLOT, (i + 1) * PHASER_SLOT);
 		this.fenv[i] = 0;
 		this.idxEnv[i] = 1;
 		this.age[i] = 0;
@@ -1407,8 +1418,34 @@ export class VoiceBank {
 				part.cutoffHz * 2 ** (part.envAmount * this.fenv[i]) * sweep(part, at),
 				sr,
 			);
-		this.sideR = this.svf2(i, r, part.damp);
-		return this.svf(i, l, part.damp, false);
+		const outR = this.svf2(i, r, part.damp);
+		const outL = this.svf(i, l, part.damp, false);
+		if (part.phaser === 0) {
+			this.sideR = outR;
+			return outL;
+		}
+		if (this.age[i] % CUT_EVERY === 1) {
+			this.apCoef[2 * i] = phaserCoef(part, at, 0, sr);
+			this.apCoef[2 * i + 1] = phaserCoef(part, at, PHASER_STEREO, sr);
+		}
+		this.sideR = this.phase(i, 1, outR, part.phaser);
+		return this.phase(i, 0, outL, part.phaser);
+	}
+
+	private phase(i: number, side: number, x: number, depth: number): number {
+		const s = this.apState;
+		const o = i * PHASER_SLOT + side * (2 * PHASER_STAGES + 1);
+		const a = this.apCoef[2 * i + side];
+		let y = x + PHASER_FEEDBACK * s[o + 2 * PHASER_STAGES];
+		for (let k = 0; k < PHASER_STAGES; k++) {
+			const x1 = o + 2 * k;
+			const out = a * y + s[x1] - a * s[x1 + 1];
+			s[x1] = y;
+			s[x1 + 1] = out;
+			y = out;
+		}
+		s[o + 2 * PHASER_STAGES] = y;
+		return (x + depth * y) / (1 + depth);
 	}
 
 	/** A legato note's glide and change of weight, from the frame it begins;
@@ -1878,6 +1915,28 @@ function sweep(part: ResolvedPart, at: number): number {
 		2 **
 		(part.sweepOct * 0.5 * (1 - Math.cos(2 * Math.PI * (ph - Math.floor(ph)))))
 	);
+}
+
+const PHASER_STAGES = 4;
+const PHASER_SLOT = 2 * (2 * PHASER_STAGES + 1);
+const PHASER_FEEDBACK = 0.45;
+const PHASER_STEREO = 0.25;
+const PHASER_LOW_HZ = 240;
+const PHASER_OCT = 3.4;
+
+function phaserCoef(
+	part: ResolvedPart,
+	at: number,
+	offset: number,
+	sampleRate: number,
+): number {
+	const ph = at * part.phaserInc + offset;
+	const hz =
+		PHASER_LOW_HZ *
+		2 **
+			(PHASER_OCT * 0.5 * (1 - Math.cos(2 * Math.PI * (ph - Math.floor(ph)))));
+	const t = Math.tan((Math.PI * hz) / sampleRate);
+	return (t - 1) / (t + 1);
 }
 
 /** Chamberlin state-variable coefficient, capped where it stays stable. */
