@@ -1,4 +1,4 @@
-Raw instrument output for docs/receipts/node-947-shipyard-lod-policy.md. Every block names the command that made it. Machine: Apple M1 Pro, 10 cores, macOS 26.7.1, Chromium 151.0.7922.34 (Playwright), ANGLE Metal, headed, 1440x900 at device scale 2. Tree 64f807d plus this node's instrument. 2026-10-22. Host load averages are printed at the start and end of every run.
+Raw instrument output for docs/receipts/node-947-shipyard-lod-policy.md. Every block names the invocation that made it. Machine: Apple M1 Pro, 10 cores, macOS 26.7.1, Chromium 151.0.7922.34 (Playwright), ANGLE Metal, headed, 1440x900 at device scale 2. Tree 64f807d plus this node's instrument. 2026-10-22. Host load averages are printed at the start and end of every run.
 
 ##### cost, quality high, form a views 1-5
 ##### SEELITE_PROBE_RENDERER=hardware MODE=cost FORMS=a VIEWS=close,approach,mid,edge,far100 BLOCKS=10 FRAMES=60 DIST_FRAMES=180
@@ -1248,6 +1248,8 @@ Raw instrument output for docs/receipts/node-947-shipyard-lod-policy.md. Every b
   p6    lod1/reduced  lod2/outline  419.9  170            41        0         40       97.56%       0          52.54  107.2→61.6  the outbound switch itself, lod1 to lod2 [785.2 km, 12px box]
   host load average at end: 53.6767578125 / 37.6162109375 / 30.1728515625
 
+Correction (Sage round 1, 2026-10-23): the historical levels blocks below have INVALID worst mesh ms columns. The old loop timed only its first next() call; later mesh work was excluded. Their total make ms and census columns are unaffected. Corrected worst step ms measurements are appended at the end.
+
 ##### candidate levels, phases and texture upload (last of three runs per form)
 ##### MODE=levels FORMS=a / b / c
   host load average at start: 28.14453125 / 34.09619140625 / 34.177734375
@@ -1360,3 +1362,35 @@ Raw instrument output for docs/receipts/node-947-shipyard-lod-policy.md. Every b
   c    lod1      24.0       23.9      61844   0.0 / 4.9 / 46.7 (19)   0.0 / 0.0 / 18.6 (0)   0+0
   c    lod2     239.9      222.5       6348   26.5 / 195.0 / 225.4 (0)   0.0 / 0.0 / 0.0 (0)   0+0
   c    lodc      96.0       95.7       9424   12.5 / 145.0 / 220.6 (1731)   0.0 / 0.0 / 0.0 (0)   0+0
+
+##### Corrected generator step timing, Sage round 1, 2026-10-23
+##### Tree c145871 plus round-1 timing correction; one levels pass per form.
+##### SEELITE_PROBE_RENDERER=hardware MODE=levels FORMS=a,b,c node scripts/measure-shipyard-lod.mjs
+##### Every next() call is timed, including completion; displayed timings rounded to whole milliseconds.
+  host load average at start: 5.91259765625 / 7.65185546875 / 7.94921875
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+
+=== form a: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":19.300000071525574,"glbBytes":10494100,"loadMs":94.5,"lightmapApplyMs":0.09999990463256836,"builderMs":0.5,"firstBuildMs":1.4000000953674316,"prewarmMs":41.799999952316284,"lightmap":{"width":4096,"height":4096},"textureUploadMs":322.59999990463257,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":31.5,"lod1":16,"lod2":9.899999976158142,"lodc":10.100000023841858,"standin":21.899999976158142}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst step ms
+  full         0.0        0.0      69        69     200924        2355        14769           0          0
+  lod1        21.3       21.3      47        47     119193        1397        14380          60         18
+  lod2       213.0      206.0       8         8       2000          23         9535          58         18
+  lodc        85.2       83.1      15        15      31732         372         9973          58         17
+
+=== form b: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":24.899999976158142,"glbBytes":10819548,"loadMs":90.5,"lightmapApplyMs":0,"builderMs":0.40000009536743164,"firstBuildMs":1.399999976158142,"prewarmMs":41.89999997615814,"lightmap":{"width":4096,"height":4096},"textureUploadMs":250.19999992847443,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":21.299999952316284,"lod1":16.700000047683716,"lod2":8.799999952316284,"lodc":10.600000023841858,"standin":6}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst step ms
+  full         0.0        0.0      80        80     209272        2452        15278           0          0
+  lod1        19.2       19.1      58        58     116954        1371        14908          59         16
+  lod2       192.5      187.4      10        10       2378          28         9078          58         15
+  lodc        77.0       76.7      18        18      10665         125        13491          59         15
+
+=== form c: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":16.299999952316284,"glbBytes":7992896,"loadMs":75,"lightmapApplyMs":0.10000002384185791,"builderMs":0.2999999523162842,"firstBuildMs":1.100000023841858,"prewarmMs":32.10000002384186,"lightmap":{"width":4096,"height":4096},"textureUploadMs":295.7000000476837,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":28.399999976158142,"lod1":15,"lod2":9,"lodc":8.5,"standin":37.700000047683716}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst step ms
+  full         0.0        0.0      55        55     135736        1591         9647           0          0
+  lod1        24.0       23.9      39        39      61844         725         9409          36         13
+  lod2       239.9      222.5       3         3       6348          74         6274          37         13
+  lodc        96.0       95.7      13        13       9424         110         7080          37         13
+  host load average at end: 7.33642578125 / 7.7646484375 / 7.97412109375

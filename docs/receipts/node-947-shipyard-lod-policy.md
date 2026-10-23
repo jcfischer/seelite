@@ -3,7 +3,7 @@
 Follows [the authored-model integration SOP](../model-integration-sop.md) §4. Continues
 [node #818](node-818-shipyard-integration.md), which shipped the three yards at full detail.
 Measured 2026-10-22 on `64f807d` plus this node's instrument. Raw output is in
-[node-947-runs.txt](node-947-runs.txt) (every block names its command); frames are in
+[node-947-runs.txt](node-947-runs.txt) (every block names its invocation); frames are in
 [node-947-shipyard-lod/](node-947-shipyard-lod/).
 
 ## Current result
@@ -108,7 +108,25 @@ Each range is across 3–4 page loads. The GPU figure is `width × height × 4 �
 allocator reading. The decode is the main-thread share of the load; the upload is one task.
 
 The candidate levels cost, per yard, 41–112 ms to make in the page (`reducedYardSteps`; one 218 ms
-under host load), the worst single mesh 5 ms, so a background install could slice them as it does the hulls' (#907). Their index
+under host load). **Correction after Sage round 1 (2026-10-23): the former claim of a worst
+single mesh of 5 ms is withdrawn.** The old loop reset its timestamp after each subsequent
+`next()` call, excluding that call's work. The corrected instrument times every call, including
+completion, using the same helper as `tests/measure-generator.test.ts`. In one new `MODE=levels`
+pass per form on the M1 Pro / ANGLE Metal GPU lane, high quality, at host load 5.9–7.3, it read:
+
+| form | make ms, `lod1` / `lod2` / `lodc` | worst step ms, `lod1` / `lod2` / `lodc` |
+|---|---:|---:|
+| a Gantry | 60 / 58 / 58 | 18 / 18 / 17 |
+| b Foundry | 59 / 58 / 59 | 16 / 15 / 15 |
+| c Slipway | 36 / 37 / 37 | 13 / 13 / 13 |
+
+These are whole-millisecond rounded wall times of synchronous generator calls, not frame
+intervals or a bound across hosts and runs. A step includes one mesh operation, with setup on
+the first call; completion is timed too. A background install can yield between meshes, but
+cannot split one operation. These 13–18 ms steps do **not** establish a smooth sliced install;
+any follow-up implementation needs its own production frame-interval measurement. The appended
+corrected run in `node-947-runs.txt` supersedes the historical `worst mesh ms` columns; their
+total construction times and census remain valid. Their index
 buffers are 1.4 / 0.02 / 0.36 MiB (a: `lod1`, `lod2`, `lodc`), 1.3 / 0.03 / 0.12 (b) and 0.7 / 0.07 /
 0.11 (c); they share the model's vertex buffers, `uv1` included.
 
@@ -369,7 +387,7 @@ that held.
   failure clears the promise) stayed in `prepareShipyardModel` in their order. Every other file is an
   instrument, a test, `scripts/check-launcher-wiring.mjs`'s exemption for the new instrument, or a document.
 - **Headless**, four `bun test tests/ --shard=n/4` runs with the default timeouts (not one `npm test`:
-  a single run exceeds the 10-minute command limit at this host's load of 27–85):
+  a single run exceeds the 10-minute execution limit at this host's load of 27–85):
   shard 1 1 743 pass, 1 fail; shard 2 1 721 pass; shard 3 1 511 pass; shard 4 1 854 pass, 4 fail.
   The two fails that were this node's are fixed and their files re-run green: the script-to-`src`
   contract read a variable of the instrument named like a module (`tests/script-src-contract.test.ts`,
@@ -383,5 +401,14 @@ that held.
   the selector will name probes for it (the model-queue, quality-bloom and station probes among them).
 - **Principal's in-game approval:** not asked for: D1 changes nothing that is drawn. Q2 would.
   Changelog: not a major change.
-- **Review:** none yet (the supervisor runs it).
+- **Review round 1:** corrected the two important timing findings with a shared step-timing helper,
+  five deterministic regressions, a GPU `MODE=levels` rerun of all three yards, and the correction
+  above. Corrected the glossary wording. Deferred the optional framebuffer capture/difference
+  refactor: those paths are unchanged and it is independent of this timing repair.
+  Targeted checks: 25 pass, 0 fail across timing and script-contract/gate tests. Typecheck,
+  formatting, lint, comment lint and production build pass. Browser selection inspected against
+  `origin/main`: all 112 selected because of the existing launcher-wiring change; the supervisor
+  owns that full browser gate. The measurement rerun passes and is not a browser-suite pass.
+  The required single host `npm test` run for this fix pass completed: **6 839 pass, 0 fail**,
+  400 files, 959 s (2026-10-23).
 

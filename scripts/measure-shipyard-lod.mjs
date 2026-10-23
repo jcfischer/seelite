@@ -1049,6 +1049,9 @@ async function levelsForm(form) {
 		const lv = await import("/scripts/lib/shipyard-levels.ts");
 		const al = await import("/src/authored-levels.ts");
 		const assets = await sf.loadShipyardAssets(window.__form);
+		const { measureGenerator } = await import(
+			"/scripts/lib/measure-generator.ts"
+		);
 		const silhouetteKm = window.__silhouetteKm;
 		const census = (root) => {
 			let meshes = 0;
@@ -1084,21 +1087,8 @@ async function levelsForm(form) {
 		for (const level of levels) {
 			const errorM =
 				al.halfPixelKm(level.radii, silhouetteKm) * 1000 * (level.pixels / 0.5);
-			let worst = 0;
-			let steps = 0;
-			const started = performance.now();
 			const work = lv.reducedYardSteps(assets.scene, errorM, level.name);
-			let last = performance.now();
-			let step = work.next();
-			while (!step.done) {
-				const now = performance.now();
-				worst = Math.max(worst, now - last);
-				steps++;
-				step = work.next();
-				last = performance.now();
-			}
-			const ms = performance.now() - started;
-			const root = step.value;
+			const { value: root, ms, steps, worstStepMs } = measureGenerator(work);
 			out.push({
 				name: level.name,
 				errorM,
@@ -1106,13 +1096,13 @@ async function levelsForm(form) {
 				...census(root),
 				ms,
 				steps,
-				worstStepMs: worst,
+				worstStepMs,
 			});
 		}
 		return out;
 	}, LEVELS);
 	console.log(
-		"  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst mesh ms",
+		"  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst step ms",
 	);
 	for (const r of rows)
 		console.log(
