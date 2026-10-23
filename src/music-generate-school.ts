@@ -707,7 +707,8 @@ export function schoolFlightBed(systemSeed: number, variant: number): Song {
 
 /** Which type a station's role plays: the market's mantra, the yard's
  *  cross-current, the refinery's breathing, the outpost's mirage. */
-export const STATION_TYPE: Readonly<Record<StationType, string>> = {
+export type StationKind = "mantra" | "cross-current" | "breathing" | "mirage";
+export const STATION_TYPE: Readonly<Record<StationType, StationKind>> = {
 	trade: "mantra",
 	shipyard: "cross-current",
 	refinery: "breathing",
@@ -738,71 +739,81 @@ export function schoolStationBed(
 	drone(w, deg, chordAt, 0, bars, 0.5);
 	choir(w, deg, chordAt, 0, bars, 0.3);
 	const kind = STATION_TYPE[role];
-	if (kind === "mantra") {
-		run(w, deg, chordAt, {
-			part: "mantra",
-			steps: tune.mantra,
-			step: 0.5,
-			from: 2,
-			to: bars,
-			register: 72,
-			vel: 0.55,
-			fixed: true,
-		});
-		run(w, deg, chordAt, {
-			part: "mantraBass",
-			steps: MANTRA_BASS,
-			step: 1,
-			from: 4,
-			to: bars,
-			register: 36,
-			len: 0.5,
-			vel: 0.5,
-		});
-	} else if (kind === "cross-current") {
-		run(w, deg, chordAt, {
-			part: "anchor",
-			steps: tune.anchor,
-			step: 0.5,
-			from: 2,
-			to: bars,
-			register: 36,
-			len: 0.7,
-			vel: 0.6,
-		});
-		run(w, deg, chordAt, {
-			part: "curL",
-			steps: CURRENT_THREE,
-			step: 0.25,
-			from: 6,
-			to: bars,
-			register: 60,
-			len: 0.6,
-			vel: 0.45,
-		});
-	} else if (kind === "breathing")
-		run(w, deg, chordAt, {
-			part: "breathA",
-			steps: [0, 4, 3],
-			step: 1,
-			from: 2,
-			to: bars,
-			register: 48,
-			len: 0.9,
-			vel: 0.6,
-		});
-	else
-		run(w, deg, chordAt, {
-			part: "mirage",
-			steps: MIRAGE_STEPS,
-			step: 2,
-			from: 2,
-			to: bars,
-			register: 60,
-			len: 0.9,
-			vel: 0.55,
-			octave: true,
-		});
+	switch (kind) {
+		case "mantra":
+			run(w, deg, chordAt, {
+				part: "mantra",
+				steps: tune.mantra,
+				step: 0.5,
+				from: 2,
+				to: bars,
+				register: 72,
+				vel: 0.55,
+				fixed: true,
+			});
+			run(w, deg, chordAt, {
+				part: "mantraBass",
+				steps: MANTRA_BASS,
+				step: 1,
+				from: 4,
+				to: bars,
+				register: 36,
+				len: 0.5,
+				vel: 0.5,
+			});
+			break;
+		case "cross-current":
+			run(w, deg, chordAt, {
+				part: "anchor",
+				steps: tune.anchor,
+				step: 0.5,
+				from: 2,
+				to: bars,
+				register: 36,
+				len: 0.7,
+				vel: 0.6,
+			});
+			run(w, deg, chordAt, {
+				part: "curL",
+				steps: CURRENT_THREE,
+				step: 0.25,
+				from: 6,
+				to: bars,
+				register: 60,
+				len: 0.6,
+				vel: 0.45,
+			});
+			break;
+		case "breathing":
+			run(w, deg, chordAt, {
+				part: "breathA",
+				steps: [0, 4, 3],
+				step: 1,
+				from: 2,
+				to: bars,
+				register: 48,
+				len: 0.9,
+				vel: 0.6,
+			});
+			break;
+		case "mirage":
+			run(w, deg, chordAt, {
+				part: "mirage",
+				steps: MIRAGE_STEPS,
+				step: 2,
+				from: 2,
+				to: bars,
+				register: 60,
+				len: 0.9,
+				vel: 0.55,
+				octave: true,
+			});
+			break;
+		default: {
+			const never: never = kind;
+			throw new Error(`no station type ${never}`);
+		}
+	}
 	const parts = { ...PARTS, ...schoolParts(bpm) };
 	const used = new Set(w.events.map((e) => e.part));
 	return {
