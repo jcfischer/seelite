@@ -360,6 +360,12 @@ try {
 			frame: "tug-hull-frame",
 			loft: "tug loft",
 		},
+		{
+			id: "interceptor",
+			file: /lance-interceptor[^/]*\.glb/,
+			frame: "interceptor-hull-frame",
+			loft: "interceptor loft",
+		},
 	];
 	for (const hull of AFTER_BOOT)
 		for (const outcome of ["release", "refuse"]) {

@@ -92,6 +92,12 @@ try {
 			create: "createVoyagerHullBuilder",
 			url: "DISCOVERY_VOYAGER_GLB_URL",
 		},
+		{
+			id: "interceptor",
+			module: "/src/interceptor-hull.ts",
+			create: "createInterceptorHullBuilder",
+			url: "LANCE_INTERCEPTOR_GLB_URL",
+		},
 	];
 	for (const hull of HULLS) {
 		// At a home station of the hull's Traffic, as `probe-model-download`
