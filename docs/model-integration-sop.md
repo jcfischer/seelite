@@ -234,6 +234,9 @@ before acting. It neither assigns work nor authorizes a merge.
 - [Coriolis #791](https://github.com/jcfischer/seelite/pull/791) and
   [cockpit #794](https://github.com/jcfischer/seelite/pull/794): shipping-loader
   geometry checks, reproducible export and shared viewer/game adoption helpers.
+- [Shipyard LOD #947](receipts/node-947-shipyard-lod-policy.md): reduced levels never added a call
+  and bought 0.03–0.17 ms outside the bay, 1.0–1.7 ms inside it; the cold-install stall was texture
+  upload, which no level removes.
 - [Probe timing #884](https://github.com/jcfischer/seelite/pull/884): deterministic
   state handles can shorten setup; measurements still need truthful coverage and
   machine conditions. Existing waits that measure real elapsed behavior remain.

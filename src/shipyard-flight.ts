@@ -340,6 +340,61 @@ export function createShipyardBuilder(
 
 const ready = new Map<ShipyardForm, Promise<void>>();
 
+/** One form's model as downloaded and decoded, before anything is installed
+ *  or applied: the scene, its work-light grid and its lightmap. */
+export interface ShipyardAssets {
+	scene: THREE.Object3D;
+	grid: ProbeGrid | null;
+	lightmap: THREE.Texture | null;
+}
+
+/** Download and decode one form's model, lightmap and probe grid. A lightmap
+ *  or grid that fails leaves the yard installable and dark; the model's own
+ *  failure rejects. Nothing is installed: `prepareShipyardModel` does that, and
+ *  the cost instrument loads a fresh copy of its own. */
+export async function loadShipyardAssets(
+	form: ShipyardForm,
+	onProgress?: ModelProgressListener,
+): Promise<ShipyardAssets> {
+	// The lightmap is light, not shape: a yard whose lightmap fails still
+	// installs, dark as before.
+	const wantsBake = workLightMode() === "baked" || comparing;
+	const lightmap = wantsBake
+		? new THREE.TextureLoader()
+				.loadAsync(SHIPYARD_LIGHTMAP_URLS[form])
+				.catch((error) => {
+					console.warn(`shipyard ${form}: no work-light lightmap`, error);
+					return null;
+				})
+		: Promise.resolve(null);
+	const probes = wantsBake
+		? // A file of this bundle (#830), fetched as `bundle-fetch.ts` allows;
+			// in the chain, so a failure is the catch's, as the lightmap's is.
+			Promise.resolve()
+				.then(() =>
+					fetchBundled(
+						new URL(SHIPYARD_PROBE_URLS[form], location.href).pathname,
+					),
+				)
+				.then((r) => (r.ok ? r.arrayBuffer() : null))
+				.catch(() => null)
+		: Promise.resolve(null);
+	const gltf = await new GLTFLoader()
+		.setMeshoptDecoder(MeshoptDecoder)
+		.loadAsync(SHIPYARD_GLB_URLS[form], onProgress);
+	const map = await lightmap;
+	const bytes = await probes;
+	// Light, not shape: a grid that will not decode leaves the ships unlit and
+	// the yard installed.
+	let grid: ProbeGrid | null = null;
+	try {
+		grid = bytes && decodeProbeGrid(gltf.scene, bytes);
+	} catch (error) {
+		console.warn(`shipyard ${form}: no work-light grid`, error);
+	}
+	return { scene: gltf.scene, grid, lightmap: map };
+}
+
 /** Load and install one form. A failure clears its promise, so a Retry
  *  fetches again; `onProgress` hears the download this call starts. */
 export function prepareShipyardModel(
@@ -348,49 +403,14 @@ export function prepareShipyardModel(
 ): Promise<void> {
 	let promise = ready.get(form);
 	if (!promise) {
-		// The lightmap is light, not shape: a yard whose lightmap fails still
-		// installs, dark as before.
-		const wantsBake = workLightMode() === "baked" || comparing;
-		const lightmap = wantsBake
-			? new THREE.TextureLoader()
-					.loadAsync(SHIPYARD_LIGHTMAP_URLS[form])
-					.catch((error) => {
-						console.warn(`shipyard ${form}: no work-light lightmap`, error);
-						return null;
-					})
-			: Promise.resolve(null);
-		const probes = wantsBake
-			? // A file of this bundle (#830), fetched as `bundle-fetch.ts` allows;
-				// in the chain, so a failure is the catch's, as the lightmap's is.
-				Promise.resolve()
-					.then(() =>
-						fetchBundled(
-							new URL(SHIPYARD_PROBE_URLS[form], location.href).pathname,
-						),
-					)
-					.then((r) => (r.ok ? r.arrayBuffer() : null))
-					.catch(() => null)
-			: Promise.resolve(null);
-		promise = new GLTFLoader()
-			.setMeshoptDecoder(MeshoptDecoder)
-			.loadAsync(SHIPYARD_GLB_URLS[form], onProgress)
-			.then(async (gltf) => {
-				const map = await lightmap;
-				const bytes = await probes;
-				// Light, not shape: a grid that will not decode leaves the ships
-				// unlit and the yard installed.
-				let grid: ProbeGrid | null = null;
-				try {
-					grid = bytes && decodeProbeGrid(gltf.scene, bytes);
-				} catch (error) {
-					console.warn(`shipyard ${form}: no work-light grid`, error);
-				}
+		promise = loadShipyardAssets(form, onProgress)
+			.then(({ scene, grid, lightmap }) => {
 				if (grid) probeGrids.set(form, grid);
-				if (map) {
-					applyShipyardLightmap(gltf.scene, map);
-					shared(map);
+				if (lightmap) {
+					applyShipyardLightmap(scene, lightmap);
+					shared(lightmap);
 				}
-				installShipyardBuilder(form, createShipyardBuilder(form, gltf.scene));
+				installShipyardBuilder(form, createShipyardBuilder(form, scene));
 			})
 			.catch((error) => {
 				ready.delete(form);
