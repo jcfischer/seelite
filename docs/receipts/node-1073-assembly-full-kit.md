@@ -280,6 +280,39 @@ test. No cross-family audit capability is available in this worker.
 The change meets `src/changelog.ts`'s major-change definition. The proposed
 sentence is in that module, pending principal approval and the merge date.
 
+## Sage round 3 finish pass (2026-10-23)
+
+Extracted the Ring/Assembly failed-download scenario into
+`probeFailedDownload` in `scripts/lib/trade-model-probe.mjs`. The
+fixture filter, call order, network abort, settlement predicate, procedural
+fallback, attempt count and warning-count assertions are unchanged. An AST
+comparison against the pre-edit body passed after normalizing only the four
+fixture-local names; formatting and trailing commas are not semantic nodes.
+
+The three glossary nits are declined as mismatched senses: `spawn` is the
+Node.js child-process API, `command` is its executable argument, and
+`neighbour` is an adjacent WFC cell's module. None denotes a Traffic actor,
+Encounter, Intervention or Hearer. Renaming them to those gameplay terms would
+misdescribe the code; no new suppression comments are added.
+
+Verification for this finish pass (completed 2026-10-24):
+
+- `npm test` ran once: 6,862 passed, zero failed across 406 files,
+  1,095.48 s. Log: `/tmp/seelite-1073-review3-full.log`. The filter's
+  `[FAIL]` heading matched a passing test's literal text; the test summary
+  and command exit status are green.
+- `bun test tests/trade-model-fixtures.test.ts`: 1/1, 17 assertions.
+- Hardware `probe-model-queue.mjs`: 24/24 in 103.7 s, ANGLE Metal /
+  Apple M1 Pro, peak one-minute load 6.5. Log:
+  `/tmp/seelite-1073-review3-model-queue.log`. This is affected coverage,
+  not the final PR browser gate or the full browser suite.
+- `npm run build` passed, including `tsc --noEmit` and the distribution
+  size guard; changed-script formatting, script lint, syntax and repository
+  comment lint passed. `git diff --check` passed.
+- Selection against `origin/main` at the incoming head `acf8761c42e2`
+  still expanded to all 113 probes. The worker contract reserves that run for
+  the supervisor; only the affected model-queue probe ran in this pass.
+
 ## Historical evidence
 
 The Phase 1 receipt remains the historical record of the approved HUB/NODE/TUBE

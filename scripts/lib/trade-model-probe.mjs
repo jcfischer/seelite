@@ -28,6 +28,62 @@ async function frameTrade(page, distance, view) {
 	);
 }
 
+async function probeFailedDownload(
+	browser,
+	{ form, name, system, from },
+	{ origin, params, check, watch },
+) {
+	const failed = await browser.newPage();
+	watch(failed);
+	let attempts = 0;
+	const warnings = [];
+	failed.on("console", (m) => {
+		if (m.type() === "warning" && m.text().startsWith(`trade/${form}:`))
+			warnings.push(m.text());
+	});
+	await failed.route(new RegExp(`/trade-${name}[^/]*\\.glb`), (route) => {
+		attempts++;
+		return route.abort();
+	});
+	await failed.goto(
+		gameUrl(origin, {
+			...params,
+			seed: 42,
+			system: from,
+			"no-save": true,
+		}),
+	);
+	await bootedGame(failed, 120000);
+	await installTradeStation(failed);
+	await failed.evaluate((index) => {
+		const g = window.__seelite;
+		g.clockHeld = true;
+		g.performJump(g.world.galaxy.systems.find((s) => s.index === index));
+	}, system);
+	await failed.waitForFunction(
+		() => window.__seelite.modelsSettled(),
+		undefined,
+		{ timeout: 180000 },
+	);
+	const fallback = await failed.evaluate(() => {
+		const g = window.__seelite;
+		g.startModelQueue();
+		const station = window.__tradeStation();
+		return (
+			!g.stationVisuals
+				.get(station.id)
+				.root.getObjectByName("authored-exterior") &&
+			!document.querySelector("[data-model-retry]")
+		);
+	});
+	check(
+		`trade/${form}: failure keeps the procedural form and warns once`,
+		fallback && attempts === 1 && warnings.length === 1,
+		JSON.stringify({ attempts, warnings }),
+	);
+	await failed.close();
+}
+
 /** Held responses prove the authored trade forms' production installation (node #1033). */
 export async function probeTradeModels(
 	browser,
@@ -201,68 +257,16 @@ export async function probeTradeModels(
 		measurements.push({ form, name, procedural, authored, timing });
 		await page.close();
 	}
-	for (const {
-		form: failureForm,
-		name: failureName,
-		system: failureSystem,
-		from: failureFrom,
-	} of TRADE_MODEL_FIXTURES.filter((f) => f.form === "b" || f.form === "d")) {
-		const failed = await browser.newPage();
-		watch(failed);
-		let attempts = 0;
-		const warnings = [];
-		failed.on("console", (m) => {
-			if (
-				m.type() === "warning" &&
-				m.text().startsWith(`trade/${failureForm}:`)
-			)
-				warnings.push(m.text());
+	for (const fixture of TRADE_MODEL_FIXTURES.filter(
+		(f) => f.form === "b" || f.form === "d",
+	))
+		await probeFailedDownload(browser, fixture, {
+			origin,
+			params,
+			check,
+			watch,
 		});
-		await failed.route(
-			new RegExp(`/trade-${failureName}[^/]*\\.glb`),
-			(route) => {
-				attempts++;
-				return route.abort();
-			},
-		);
-		await failed.goto(
-			gameUrl(origin, {
-				...params,
-				seed: 42,
-				system: failureFrom,
-				"no-save": true,
-			}),
-		);
-		await bootedGame(failed, 120000);
-		await installTradeStation(failed);
-		await failed.evaluate((index) => {
-			const g = window.__seelite;
-			g.clockHeld = true;
-			g.performJump(g.world.galaxy.systems.find((s) => s.index === index));
-		}, failureSystem);
-		await failed.waitForFunction(
-			() => window.__seelite.modelsSettled(),
-			undefined,
-			{ timeout: 180000 },
-		);
-		const fallback = await failed.evaluate(() => {
-			const g = window.__seelite;
-			g.startModelQueue();
-			const station = window.__tradeStation();
-			return (
-				!g.stationVisuals
-					.get(station.id)
-					.root.getObjectByName("authored-exterior") &&
-				!document.querySelector("[data-model-retry]")
-			);
-		});
-		check(
-			`trade/${failureForm}: failure keeps the procedural form and warns once`,
-			fallback && attempts === 1 && warnings.length === 1,
-			JSON.stringify({ attempts, warnings }),
-		);
-		await failed.close();
-	}
+
 	await writeFile(
 		`${out}/measurements.json`,
 		JSON.stringify(measurements, null, 2),
