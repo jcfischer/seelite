@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { musicArms } from "../src/music-director";
 import { MusicEngine } from "../src/music-engine";
 import { MODES, musicTheme, STATION_ROLES } from "../src/music-generate";
+import { berlinFlightBed } from "../src/music-generate-berlin";
 import {
 	anchorGrowth,
 	CALM_SPANS,
@@ -10,7 +12,6 @@ import {
 } from "../src/music-generate-school";
 import { MUSIC_VOICE_CAP, type Song } from "../src/music-score";
 import { compileSong } from "../src/music-sequencer";
-import { musicArms } from "../src/music-director";
 
 const SEEDS = Array.from({ length: 12 }, (_, i) => (i * 2654435761) >>> 0);
 
@@ -106,6 +107,18 @@ describe("the sequence-school bed", () => {
 		const song = schoolFlightBed(5, 0);
 		for (const part of ["mirage", "mirage2", "breathA", "breathB", "anchor"])
 			expect(song.parts[part].voice, part).toBe("moog");
+	});
+
+	test("combat is the Berlin bed's: its notes, voices and tempo", () => {
+		for (const seed of [1234, 5, 99]) {
+			const school = schoolFlightBed(seed, 0);
+			const berlin = berlinFlightBed(seed, 0);
+			const combat = section(school, "combat");
+			expect(combat).toEqual(section(berlin, "combat"));
+			for (const part of new Set(combat.events.map((e) => e.part)))
+				expect(school.parts[part], part).toEqual(berlin.parts[part]);
+			expect(school.tempo[3].bpm).toBe(berlin.tempo[3].bpm);
+		}
 	});
 
 	test("the gallop leans on a dotted-eighth echo", () => {

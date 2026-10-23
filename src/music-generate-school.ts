@@ -18,7 +18,7 @@ import type { StationType } from "./station";
 /**
  * The fourth bed, a prototype for the principal's ear (2026-10-23): the
  * Berlin school rebuilt from the eight sequence types in Gary P Hayes's
- * tutorial (https://www.youtube.com/watch?v=3uJIKlv7blI). Each type is a
+ * video (https://www.youtube.com/watch?v=3uJIKlv7blI). Each type is a
  * sequence with its own register, clock, length and effect, and the bed is
  * the types handed over one to the next:
  *
@@ -29,7 +29,8 @@ import type { StationType } from "./station";
  * - **modal** — root, fourth, fifth and octave only, so the choir above can
  *   turn from major to minor and back over the same sequence.
  * - **cross-current** — three, five and seven steps against the bar, apart
- *   in register and pan; a ratchet on the five.
+ *   in register and pan: the anchor's five or seven under a three and a
+ *   seven.
  * - **galloping** — one or two notes in eighths, the dotted-eighth echo as
  *   loud as the notes, so the echo is a second sequence.
  * - **breathing** — a slow clock, long notes, a resonant filter sweep on
@@ -53,7 +54,6 @@ export const SCHOOL_LEVEL_TEMPO = {
 	calm: 1,
 	wary: 1.1,
 	threat: 1.15,
-	combat: 1.25,
 } as const;
 
 /** Calm's hand-overs, in bars: each type's span, overlapping the next. */
@@ -99,6 +99,10 @@ export const MODALS: readonly (readonly Step[])[] = [
 	[0, 3, 4, 0, 7],
 	[7, 4, 0, 3, 4],
 ];
+/** The patterns a flight and a station bed share. */
+export const MIRAGE_STEPS: readonly Step[] = [0, null, 4, null, 7, null, 2];
+export const MANTRA_BASS: readonly Step[] = [0, 0, 4, 0, 6];
+export const CURRENT_THREE: readonly Step[] = [0, 4, 2];
 export const MANTRAS: readonly (readonly Step[])[] = [
 	[7, 4, 9, 4],
 	[4, 7, 4, 2],
@@ -148,8 +152,8 @@ const MOOG_BASE: PartSpec = {
 };
 
 /** The three ladder tones the principal chose by ear (2026-10-23): the fat
- *  sub is the mirage's; the resonant sweep and the filter pluck wait for a
- *  part. Each part sets its own level and pan in the mix. */
+ *  sub is the mirage's, the resonant sweep the breathing's, the filter pluck
+ *  the anchor's. Each part sets its own level and pan in the mix. */
 export const MOOG_TONES = {
 	fatSub: {
 		...MOOG_BASE,
@@ -423,7 +427,7 @@ function calm(
 
 	run(w, deg, chordAt, {
 		part: "mirage",
-		steps: [0, null, 4, null, 7, null, 2],
+		steps: MIRAGE_STEPS,
 		step: 2,
 		from: S.mirage[0],
 		to: S.mirage[1],
@@ -521,7 +525,7 @@ function calm(
 	});
 	run(w, deg, chordAt, {
 		part: "mantraBass",
-		steps: [0, 0, 4, 0, 6],
+		steps: MANTRA_BASS,
 		step: 1,
 		from: S.mantra[0] + 2,
 		to: S.mantra[1],
@@ -576,7 +580,7 @@ function wary(
 		});
 	run(w, deg, chordAt, {
 		part: "curL",
-		steps: [0, 4, 2],
+		steps: CURRENT_THREE,
 		step: 0.25,
 		from: 8,
 		to: bars,
@@ -677,11 +681,16 @@ export function schoolFlightBed(systemSeed: number, variant: number): Song {
 		},
 		combat,
 	];
+	const berlinCombatBpm = berlin.tempo[berlin.sections.indexOf(combat)].bpm;
 	let bar = 0;
 	const tempo = sections.map((s, i) => {
+		const level = FLIGHT_LEVELS[i];
 		const point = {
 			bar,
-			bpm: Math.round(bpm * SCHOOL_LEVEL_TEMPO[FLIGHT_LEVELS[i]]),
+			bpm:
+				level === "combat"
+					? berlinCombatBpm
+					: Math.round(bpm * SCHOOL_LEVEL_TEMPO[level]),
 		};
 		bar += s.bars;
 		return point;
@@ -742,7 +751,7 @@ export function schoolStationBed(
 		});
 		run(w, deg, chordAt, {
 			part: "mantraBass",
-			steps: [0, 0, 4, 0, 6],
+			steps: MANTRA_BASS,
 			step: 1,
 			from: 4,
 			to: bars,
@@ -763,7 +772,7 @@ export function schoolStationBed(
 		});
 		run(w, deg, chordAt, {
 			part: "curL",
-			steps: [0, 4, 2],
+			steps: CURRENT_THREE,
 			step: 0.25,
 			from: 6,
 			to: bars,
@@ -785,7 +794,7 @@ export function schoolStationBed(
 	else
 		run(w, deg, chordAt, {
 			part: "mirage",
-			steps: [0, null, 4, null, 7, null, 2],
+			steps: MIRAGE_STEPS,
 			step: 2,
 			from: 2,
 			to: bars,

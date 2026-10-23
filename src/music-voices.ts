@@ -1609,8 +1609,6 @@ export class VoiceBank {
 		return l;
 	}
 
-	/** The acid: a saw into two resonant stages; an envelope that snaps the
-	 *  cutoff open, harder on an accent; a slide; saturation. */
 	private moog(i: number, part: ResolvedPart, at: number) {
 		const sr = this.sampleRate;
 		const n = part.unison;
@@ -1653,6 +1651,8 @@ export class VoiceBank {
 		return d * (1 + 0.5 * k) * 1.6;
 	}
 
+	/** The acid: a saw into two resonant stages; an envelope that snaps the
+	 *  cutoff open, harder on an accent; a slide; saturation. */
 	private acid(i: number, part: ResolvedPart, at: number) {
 		const sr = this.sampleRate;
 		if (at >= this.slideAt[i]) {

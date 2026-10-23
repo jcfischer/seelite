@@ -233,13 +233,8 @@ export function musicArms(value: string | null): {
 		if (!token) continue;
 		if (token === "off") arms = { ...arms, off: true };
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
-		else if (
-			token === "legacy" ||
-			token === "second" ||
-			token === "berlin" ||
-			token === "school"
-		)
-			arms = { ...arms, bed: token };
+		else if (Object.hasOwn(BEDS, token))
+			arms = { ...arms, bed: token as MusicBed };
 		else if (Object.hasOwn(DANUBE_VOICINGS, token))
 			arms = { ...arms, waltz: token as DanubeVoicing };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
