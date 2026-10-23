@@ -1,10 +1,9 @@
 /** Missile and E.C.M. rules for both sides of a fight (node #874).
  * Flight state is transient; ammunition lives only on the saved fitted rack. */
 import { HULL_SPECS } from "./hull";
-import { type Loadout, makeModule, moduleRow, stockLoadout } from "./loadout";
+import { type Loadout, moduleRow } from "./loadout";
 import { gradeOutputScale } from "./module-catalog";
-import { mix } from "./rng";
-import { DOMAIN } from "./domains";
+import { npcLoadout } from "./npc-loadout";
 import {
 	type Vec3,
 	add,
@@ -200,16 +199,6 @@ export function pulseEcm(
 		),
 	};
 }
-/** The missile-bearing part of D16: a stable draw on its own tag, preserving
- * the stock gun. Broader NPC grades and salvage remain their own work. */
-export function seededRaiderLoadout(seed: number): Loadout {
-	const stock = stockLoadout("raider");
-	if (mix(seed, DOMAIN.RAIDER_MISSILE_FIT) / 0x1_0000_0000 >= 0.35)
-		return stock;
-	const slot = HULL_SPECS.raider.slots.find(
-		(s) => s.kind === "hardpoint" && !stock[s.key],
-	);
-	return slot
-		? { ...stock, [slot.key]: makeModule("missile-rack", slot.size) }
-		: stock;
-}
+/** Compatibility entry: the missile controller reads the shared NPC fit. */
+export const seededRaiderLoadout = (seed: number): Loadout =>
+	npcLoadout("raider", seed);

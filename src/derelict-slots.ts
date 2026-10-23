@@ -39,6 +39,9 @@ import { carrierInstanceSeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { cargoWeights, pickWeightedIndex } from "./raider-wreck";
 import { seededRand } from "./rng";
+import { LEGACY_MODULES } from "./module-identities";
+import type { FittedModule } from "./loadout";
+import { rollVariant } from "./module-variants";
 
 const HOUR_S = 3600;
 
@@ -407,6 +410,7 @@ export interface DrawnContainer {
 	kind: DerelictContainerKind;
 	id: string;
 	tonnes: number;
+	fitting?: FittedModule;
 }
 
 /**
@@ -471,13 +475,35 @@ export function derelictContents(
 	// whether or not this instance carries one.
 	const carriesFitting = rand() < DERELICT_FITTING_CHANCE;
 	const pick = rand();
-	if (carriesFitting && fittings.length > 0)
+	if (carriesFitting && fittings.length > 0) {
+		const selected =
+			fittings[
+				Math.min(fittings.length - 1, Math.floor(pick * fittings.length))
+			];
+		const id = selected === "Energy Bomb" ? "Extra Energy Unit" : selected;
+		const kind = LEGACY_MODULES[id];
+		const fitting = kind
+			? rollVariant(
+					{
+						module: kind,
+						size: 1 as const,
+						grade: "E" as const,
+						purchaseCostCr: 0,
+					},
+					carrierInstanceSeed(
+						systemSeed,
+						key,
+						instanceOrdinal,
+						DOMAIN.MODULE_VARIANT,
+					),
+				)
+			: undefined;
 		containers.push({
 			kind: "fitting",
-			id: fittings[
-				Math.min(fittings.length - 1, Math.floor(pick * fittings.length))
-			],
+			id,
 			tonnes: DERELICT_FITTING_T,
+			...(fitting ? { fitting } : {}),
 		});
+	}
 	return containers;
 }

@@ -19,6 +19,19 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-variants-loadouts.mjs",
+			"Materializes a seeded NPC fit in live combat, checks fitted defence and kill credit, scoops a variant fitting through Game, saves its trait and names it on Equipment.",
+			[
+				"NPC loadouts",
+				"variants",
+				"kill credit",
+				"fitting drops",
+				"scoop",
+				"save",
+				"Equipment",
+			],
+		),
+		entry(
 			"probe-production-boot.mjs",
 			"Builds and serves the production bundle, then verifies fresh Commander, direct and full-model boots render and clear loading without page errors.",
 			["production bundle", "startup", "async imports", "model loading"],

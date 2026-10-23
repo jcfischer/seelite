@@ -1,4 +1,10 @@
-import { equipmentNames, withoutModule } from "./loadout";
+import {
+	carriedModule,
+	equipmentNames,
+	withoutModule,
+	type FittedModule,
+	type Loadout,
+} from "./loadout";
 /**
  * What a pilot's act does to their **Holdings** (#626, #627): the commander,
  * the Requests journal, the ladder record and its pending credit — and the
@@ -238,7 +244,7 @@ export type HoldEvent =
 			at: number;
 	  }
 	/** A canister the ship passed close and slow. */
-	| { kind: "scoop"; commodity: string; tonnes: number }
+	| { kind: "scoop"; commodity: string; tonnes: number; fitting?: FittedModule }
 	| {
 			kind: "wreck-scoop";
 			key: CarrierKey;
@@ -265,6 +271,7 @@ export type HoldEvent =
 			 *  reads exactly like an unarmed kill. Read only on a player's
 			 *  destroy. */
 			hull: HullId | null;
+			targetLoadout?: Loadout;
 	  }
 	/** A jump that arrived: what the plan left in the **Hyperspace tank**,
 	 *  the visit, and a first arrival's exploration kind, pending until the
@@ -477,6 +484,27 @@ function scoop(
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "scoop" }>,
 ): Applied {
+	if (event.fitting) {
+		const hold = commanderHold(
+			holdings.commander,
+			entrustedTonnesAboard(holdings.requests),
+		);
+		if (hold.capacityT - hold.usedT < 1) return unchanged(holdings, world);
+		return {
+			holdings: {
+				...holdings,
+				commander: {
+					...holdings.commander,
+					recoveredFittings: [
+						...(holdings.commander.recoveredFittings ?? []),
+						carriedModule({ ...event.fitting, purchaseCostCr: 0 }),
+					],
+				},
+			},
+			world,
+			signals: QUIET,
+		};
+	}
 	const took = scoopCargo(
 		holdings.commander,
 		event.commodity,
@@ -534,7 +562,9 @@ function transition(
 							hull: holdings.commander.hull,
 							loadout: holdings.commander.loadout,
 						},
-						event.hull,
+						event.targetLoadout
+							? { hull: event.hull, loadout: event.targetLoadout }
+							: event.hull,
 					),
 				);
 	if (
