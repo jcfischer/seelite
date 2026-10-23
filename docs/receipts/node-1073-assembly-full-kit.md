@@ -171,8 +171,8 @@ Host verification:
 - The four-seed kit sheet and the three affected canonical before/after views
   were captured on the hardware lane. Their manifests accompany the images.
 
-The mandatory selector expands to all 113 probes because shared production and
-probe-helper inputs changed. The worker contract forbids the full browser suite:
+The committed-range selector expands to all 113 probes: at least one changed
+path has no dependency owner, so impact is unknown. The worker contract forbids the full browser suite:
 affected probes ran here, and the supervisor owns the final `probe:pr` gate. An
 incorrectly configured runner was interrupted during its first probe and yielded
 no usable suite result. This is not a selected PR-gate or full-suite pass. Sage
