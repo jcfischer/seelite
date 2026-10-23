@@ -548,7 +548,7 @@ function tradeAssemblyProxy(assemblySeed: number): StationProxy {
 	return proxyOf(
 		[
 			...outsideTheBay(assemblyProxyBoxes("HUB"), "trade"),
-			...bayWalls("trade"),
+			...bayWalls("trade", 0, false),
 		],
 		statics.flatMap((b) => cutAssemblyBay(b, opening)),
 	);

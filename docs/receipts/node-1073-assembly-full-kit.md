@@ -151,6 +151,37 @@ framing was too dark and was replaced with a closer, lit-side view.
 
 ## Delivery evidence
 
+### Docking probe repair pass — 2026-10-23
+
+The unchanged hardware docking probe reproduced D1 at `7d07e3d5`: **72/73**
+checks, losing 55.03 points against a 51.50-point limit. A temporary damage trace
+identified a station impact before the entry check, followed by the ordinary
+failed-entry charge. The Assembly proxy had added a synthetic mouth bulkhead
+that the previous Assembly proxy did not have. Its contact stopped the nose
+before the centre reached the docking plane, adding collision damage to the
+mis-rolled entry. The diagnostic was removed after tracing.
+
+The repair omits that synthetic mouth bulkhead for Assembly, retaining the
+fitted hub, bay shell, static cells and the unchanged docking/damage rules.
+A new swept courier-box regression covers a 90° mis-roll with a 30 m offset
+on both sides across the 12 Assembly seeds. It failed with one impact before
+the repair and passes with zero impacts and ghosts after it. All four Assembly
+proxy tests pass (4,604,735 assertions); `npx tsc --noEmit` passes.
+
+The unchanged `npm run probe:one -- probe-docking.mjs` now passes **73/73**,
+147.5 s on ANGLE Metal / Apple M1 Pro, peak load 11.4. D1 now reads
+`32.40 of 206`, below the unchanged quarter-pool bound. This is one affected
+probe, not a selected PR gate or full browser suite. Logs on this host:
+`/tmp/node-1073-docking-before.log`, `/tmp/node-1073-docking-diagnostic.log`
+and `/tmp/node-1073-docking-after.log`. No rendered model changed.
+
+The single required full host `npm test` run for this probe repair passed
+**6,862/6,862** tests across 406 files, zero failures, 16,404,958 assertions
+in 1,112.17 s. Log: `/tmp/node-1073-docking-full.log`. `npm run build`
+(including its distribution-size guard), TypeScript, formatting of changed
+TypeScript files, comment lint and `git diff --check` also passed. Only this
+receipt was updated after the full run; tested code is unchanged.
+
 ### Sage round 1 fix pass — 2026-10-23
 
 The important finding is addressed in `tests/assembly-proxy.test.ts`. The
