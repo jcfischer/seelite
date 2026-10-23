@@ -183,12 +183,14 @@ function cut(tris: Tri[], axis: THREE.Vector3, at: number): [Tri[], Tri[]] {
  * and still kept out of the lane.
  */
 let keepOut: THREE.Box3[] = [];
+let permitPlaneRelocation = true;
 const KEEP_OUT_MARGIN_M = 0.05;
 function intrudes(o: Obb): boolean {
 	// A box along the axis starting at the plane is `offThePlane`'s to move
 	// clear of the bay; the lane in front it must keep clear of here.
 	const along = o.axes.findIndex((a) => Math.abs(a.z) > 0.9999);
 	const onThePlane =
+		permitPlaneRelocation &&
 		along >= 0 &&
 		keepOut.length > 0 &&
 		o.c.z - o.half[along] >= keepOut[0].max.z - 0.5;
@@ -1012,6 +1014,59 @@ function clipOutside(tris: Tri[], boxes: THREE.Box3[]): Tri[] {
 		remaining = outside;
 	}
 	return remaining;
+}
+
+export function assemblyBlockParts(
+	root: THREE.Object3D,
+	name: string,
+): Tri[][] {
+	return partsOf(root, name, 1);
+}
+
+export function fitAssemblyBlock(root: THREE.Object3D, name: string): Obb[] {
+	permitPlaneRelocation = false;
+	const bay = stationInterior("trade", STATION_GEOMETRY.trade.aperturePlaneKm);
+	keepOut =
+		name === "HUB"
+			? [
+					new THREE.Box3(
+						new THREE.Vector3(
+							-bay.halfAcrossKm * 1000,
+							-bay.halfUpKm * 1000,
+							bay.endAxialKm * 1000,
+						),
+						new THREE.Vector3(
+							bay.halfAcrossKm * 1000,
+							bay.halfUpKm * 1000,
+							bay.mouthAxialKm * 1000,
+						),
+					),
+					new THREE.Box3(
+						new THREE.Vector3(
+							-bay.laneHalfAcrossKm * 1000,
+							-bay.laneHalfUpKm * 1000,
+							bay.mouthAxialKm * 1000,
+						),
+						new THREE.Vector3(
+							bay.laneHalfAcrossKm * 1000,
+							bay.laneHalfUpKm * 1000,
+							4000,
+						),
+					),
+				]
+			: [];
+	fitLimitM = SAMPLE_LIMIT_M - 0.5;
+	try {
+		const parts = assemblyBlockParts(root, name)
+			.map((p) => clipOutside(p, keepOut))
+			.filter((p) => p.length);
+		return stage(name, parts, console.log);
+	} finally {
+		permitPlaneRelocation = true;
+		keepOut = [];
+		fitLimitM = SAMPLE_LIMIT_M;
+		nearModel = null;
+	}
 }
 
 /** Fit trade exteriors with the existing 10 m part fitter (node #1033).

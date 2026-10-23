@@ -198,17 +198,17 @@ describe("authored trade forms, node #1033", () => {
 			expect(far.length).toBe(0);
 		}, 120000);
 	}
-	test("uninstalled trade forms stay procedural; Assembly is never an authored model", async () => {
+	test("uninstalled trade forms, including Assembly, stay procedural until installed", async () => {
 		uninstallTrades();
-		for (const form of TRADE_FORMS) {
+		for (const form of [...TRADE_FORMS, "d"] as const) {
 			const mesh = buildStationForm("trade", form, 0x888888, 7, 7);
 			expect(isAuthoredStation(mesh.root)).toBe(false);
 			mesh.dispose();
 		}
-		expect(stationModel({ type: "trade", formId: "d" })).toBeNull();
+		expect(stationModel({ type: "trade", formId: "d" })).toBe("trade/d");
 		await installShippedTrades();
 		const assembly = buildStationForm("trade", "d", 0x888888, 7, 7);
-		expect(isAuthoredStation(assembly.root)).toBe(false);
+		expect(isAuthoredStation(assembly.root)).toBe(true);
 		assembly.dispose();
 	});
 });

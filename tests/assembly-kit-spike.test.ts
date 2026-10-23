@@ -1,9 +1,15 @@
 import { expect, test } from "bun:test";
 import { modularPlacements } from "../src/station-modular";
 import { jointForSeed } from "../spikes/stations/assembly-kit/joints";
-import { SPIKE_SEEDS } from "../spikes/stations/assembly-kit/blocks.mjs";
+import {
+	CELL_KM,
+	SPIKE_SEEDS,
+} from "../spikes/stations/assembly-kit/blocks.mjs";
+import { ASSEMBLY_CELL_KM } from "../src/assembly-plan";
 
 test("four spike seeds frame distinct adjacent-cell joints", () => {
+	expect(CELL_KM).toBe(ASSEMBLY_CELL_KM);
+	expect(ASSEMBLY_CELL_KM).toBe(0.2);
 	const kinds = SPIKE_SEEDS.map((seed) => {
 		const joint = jointForSeed(seed);
 		const { placements } = modularPlacements(seed);

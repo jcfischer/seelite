@@ -122,6 +122,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1073: "the Assembly's authored blocks placed by its own seeded plan",
 	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
 	720: "the terran ground and clouds across the horizon at station altitude and the flight boundary",
 	735: "a derelict's torn sections and exposed frame",
@@ -379,6 +380,47 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
  * the one who notices.
  */
 export const VIEWS = Object.freeze([
+	{
+		name: "assembly-approach",
+		what: "Assembly docking hub on its approach axis; world seed 42, system 5.",
+		covers: [1073],
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 5,
+		},
+	},
+	{
+		name: "assembly-flank",
+		what: "Assembly habitat, service modules and lattice; world seed 42, system 5.",
+		covers: [1073],
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 2.2,
+			sunAngleDeg: 0,
+			view: "chase",
+			seed: 42,
+			system: 5,
+		},
+	},
+	{
+		name: "assembly-second-layout",
+		what: "A second Assembly layout with its own assembly seed; world seed 42, system 12.",
+		covers: [1073],
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 2.2,
+			sunAngleDeg: 45,
+			view: "chase",
+			seed: 42,
+			system: 12,
+		},
+	},
 	{
 		name: "derelict",
 		covers: [732, 735],

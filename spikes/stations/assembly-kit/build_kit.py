@@ -135,6 +135,89 @@ owner("HUB_STATIC")
 for axis, radius in [(X, 4.9), (-X, 4.9), (Y, 1.8), (-Y, 1.8)]:
  for t, minor, mat in [(20.5, .4, steel), (21, .2, alloy)]: band(axis, t, radius, minor, mat)
 
+def lattice(start, end, width, bays):
+ axis = (end - start).normalized()
+ u = axis.cross(Z).normalized() * width
+ v = axis.cross(u).normalized() * width
+ corners = [u + v, u - v, -u - v, -u + v]
+ for c in corners: tube(start + c, end + c, .18, alloy, 6)
+ for i in range(bays + 1):
+  at = start.lerp(end, i / bays)
+  for j in range(4):
+   tube(at + corners[j], at + corners[(j + 1) % 4], .16, steel, 6)
+  if i < bays:
+   bt = start.lerp(end, (i + 1) / bays)
+   for j in range(4):
+    tube(at + corners[j], bt + corners[(j + 1) % 4], .13, steel, 6)
+
+owner("TRUSS")
+lattice(-X * 9.8, X * 9.8, 1.2, 8)
+for sign in [-1, 1]:
+ socket(X * sign, 9.4, radius=1.8)
+ for z in [-1.4, 1.4]:
+  machinery(X * sign * 6 + Z * z, 2.2, 1.5, Z * (1 if z > 0 else -1), X, 1)
+edge_trunk(-X * 8 + Y * 1.2, X * 8 + Y * 1.2, Y, .5)
+
+owner("LINK")
+lattice(X * 0, X * 20, .65, 8)
+for t in [1, 9.5, 10.5, 19]:
+ box(X * t, (.5, 1.8, 1.8), orange)
+
+owner("RADIATOR")
+lattice(-X * 8.8, X * 8.8, .6, 8)
+for sign in [-1, 1]:
+ n = Y * sign
+ for i in range(8):
+  x = -7.7 + i * 2.2
+  for side in [-1, 1]:
+   z0, z1 = side * 1.1, side * 14
+   box((x, 0, (z0 + z1) / 2), (1.9, .22, abs(z1 - z0)), steel)
+   for row in range(5):
+    z = side * (2.35 + row * 2.55)
+    box((x, sign * .14, z), (1.7, .10, 2.3), alloy)
+    for dx in [-.6, 0, .6]:
+     tube(Vector((x + dx, sign * .22, z - .9)), Vector((x + dx, sign * .22, z + .9)), .025, steel, 4)
+ for x in [-8.9, 8.9]:
+  edge_trunk(Vector((x, 0, -14)), Vector((x, 0, 14)), n, .3)
+machinery((0, 0, 0), 3, 2, Z, X, 2)
+
+owner("TANKS")
+box((0, 0, -4.5), (16, 12, .6), steel)
+for x in [-5.2, 0, 5.2]:
+ for y in [-3.1, 3.1]:
+  centre = Vector((x, y, 0))
+  rows = [(-4.2, 1.1), (-3.2, 2.2), (2.8, 2.2), (4, 1.1)]
+  for (a, r), (b, rr) in zip(rows, rows[1:]):
+   for j in range(12):
+    q, qq = j * math.tau / 12, (j + 1) * math.tau / 12
+    points = [centre + Vector((rad * math.cos(angle), rad * math.sin(angle), z)) for z, rad, angle in [(a, r, q), (a, r, qq), (b, rr, qq), (b, rr, q)]]
+    poly(points, ivory[j % 4])
+  for z in [-2.8, 2.4]:
+   tube(centre + Z * (z - .13), centre + Z * (z + .13), 2.3, alloy, 12)
+  tube(centre + Z * 3.8, centre + Z * 4.4, .7, orange, 8)
+for y in [-5.5, 5.5]: edge_trunk(Vector((-7, y, -4)), Vector((7, y, -4)), Z, .6)
+for x in [-7, 7]: machinery((x, 0, -3.9), 1.7, 4, Z, Y, 0)
+
+owner("DISH")
+box((0, 0, 0), (5.4, 5.4, 1.2), steel)
+for x in [-1.4, 1.4]:
+ for y in [-1.4, 1.4]: tube(Vector((x, y, 0)), Vector((x * .4, y * .4, 10.8)), .22, alloy, 6)
+for i in range(8):
+ z = i * 1.3
+ tube(Vector((-1.4, -1.4, z)), Vector((1.4, 1.4, z + 1.3)), .12, steel, 6)
+for i in range(32):
+ a, b = i * math.tau / 32, (i + 1) * math.tau / 32
+ for r, rr in [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5.2)]:
+  points = [Vector((rad * math.cos(q), rad * math.sin(q), 11 + rad * rad * .055)) for rad, q in [(r, a), (rr, a), (rr, b), (r, b)]]
+  poly(points, ivory[(i // 4) % 4])
+  poly([p - Z * .12 for p in reversed(points)], steel)
+ if i % 4 == 0:
+  tube(Vector((0, 0, 9.8)), Vector((5.1 * math.cos(a), 5.1 * math.sin(a), 12.3)), .10, alloy, 6)
+for a in [0, math.tau / 3, 2 * math.tau / 3]:
+ tube(Vector((4.5 * math.cos(a), 4.5 * math.sin(a), 12.2)), Vector((0, 0, 15)), .10, steel, 6)
+box((0, 0, 15), (.8, .8, .6), orange)
+machinery((0, 0, 1), 3.8, 3.8, Z, X, 2)
+
 bpy.context.preferences.filepaths.save_version = 0
 roots = {}
 for key, (verts, faces, uvs) in G.BATCH.items():
@@ -179,7 +262,7 @@ for mat in doc["materials"]:
   mat["pbrMetallicRoughness"]["baseColorFactor"] = list(MATS[mat["name"]].diffuse_color)
 binary = bytearray(data[20 + jl:])
 for mesh in doc["meshes"]:
- axes = [0, 1] if mesh["name"].startswith("NODE/") else [0] if mesh["name"].startswith("TUBE/") else []
+ axes = [0, 1] if mesh["name"].startswith("NODE/") else [0] if mesh["name"].startswith(("TUBE/", "TRUSS/")) else []
  for primitive in mesh["primitives"]:
   accessor = doc["accessors"][primitive["attributes"]["POSITION"]]
   view = doc["bufferViews"][accessor["bufferView"]]
