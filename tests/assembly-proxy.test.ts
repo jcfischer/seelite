@@ -10,11 +10,16 @@ import { ASSEMBLY_PROXY_SOURCE } from "../src/assembly-proxies";
 import {
 	assemblyProxyBoxes,
 	stationProxyOf,
+	stationMotions,
 	proxyContains,
 	proxyListDistanceKm,
 	type ProxyBox,
 	type ProxyPrimitive,
 } from "../src/station-proxy";
+import { shipPose, sweepShip } from "../src/collision";
+import { apertureFrame, slotBasis } from "../src/docking";
+import { hullSolid } from "./helpers/hull-solid";
+import { add, scale, v3 } from "../src/vec3";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
 import { MODULAR_CENTRE, modularPlacements } from "../src/station-modular";
@@ -230,3 +235,41 @@ test("seeded proxies leave the rotating and static approach clear", () => {
 		).toBe(false);
 	}
 }, 120_000);
+
+test("Assembly leaves offset mis-rolled entries to the docking plane without an extra mouth impact", () => {
+	const frame = apertureFrame("trade", v3(0, 0, 1), 0, v3(1, 0, 0));
+	const basis = slotBasis(frame);
+	const nose = scale(frame.axis, -1);
+	const up = basis.across;
+	for (const seed of ASSEMBLY_SEEDS) {
+		const proxy = stationProxyOf({
+			type: "trade",
+			formId: "d",
+			berthSeed: 1,
+			assemblySeed: seed,
+		});
+		const still = { frame, origin: v3(), vel: v3() };
+		const solids = stationMotions(proxy, still, still);
+		for (const side of [-1, 1]) {
+			const at = (axial: number) =>
+				add(scale(frame.axis, axial), scale(basis.up, side * 0.03));
+			const swept = sweepShip(
+				{
+					primitives: hullSolid("courier"),
+					start: shipPose(at(frame.planeKm + 0.06), nose, up),
+					end: shipPose(at(frame.planeKm), nose, up),
+					velStart: scale(frame.axis, -0.09),
+					velEnd: scale(frame.axis, -0.09),
+				},
+				solids,
+				2 / 3,
+			);
+			expect({
+				seed,
+				side,
+				impacts: swept.impacts.length,
+				ghosts: swept.ghosts.length,
+			}).toEqual({ seed, side, impacts: 0, ghosts: 0 });
+		}
+	}
+});
