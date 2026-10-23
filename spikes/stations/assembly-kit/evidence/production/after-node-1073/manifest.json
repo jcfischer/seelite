@@ -1,0 +1,39 @@
+{
+	"label": "after-node-1073",
+	"gitRef": "bb2fd345-dirty",
+	"served": {
+		"root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1073",
+		"head": "bb2fd345fab3bccbf9fd321adb398abe86c3f842",
+		"branch": "node/1073-draw-the-trade-assembly-from-the-full-authored-k",
+		"dirty": true
+	},
+	"capturedAt": "2026-10-23T18:12:38.707Z",
+	"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+	"seed": 47,
+	"quality": "default",
+	"selectedViews": [
+		"assembly-approach",
+		"assembly-flank",
+		"assembly-second-layout"
+	],
+	"views": [
+		{
+			"name": "assembly-approach",
+			"file": "after-node-1073/assembly-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.6535999999046327
+		},
+		{
+			"name": "assembly-flank",
+			"file": "after-node-1073/assembly-flank.png",
+			"subject": "station-trade",
+			"gameTime": 0.9863999998569489
+		},
+		{
+			"name": "assembly-second-layout",
+			"file": "after-node-1073/assembly-second-layout.png",
+			"subject": "station-trade",
+			"gameTime": 0.6952999999523163
+		}
+	]
+}

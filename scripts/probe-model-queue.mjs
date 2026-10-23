@@ -8,6 +8,7 @@ import {
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { probeTradeModels } from "./lib/trade-model-probe.mjs";
+import { MODEL_QUEUE_HOME } from "./lib/trade-model-fixtures.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
@@ -15,7 +16,7 @@ const origin = await guardedOrigin(
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const params = {
-	seed: 42,
+	...MODEL_QUEUE_HOME,
 	voices: "formant",
 	raider: "off",
 	cinematic: false,
@@ -39,7 +40,7 @@ try {
 	await held.route(/\.glb(?:\?|$)/, async (route) => {
 		const url = route.request().url();
 		requests.push(url);
-		// Seed 42 starts at trade/a: these two are the entire boot set.
+		// https://github.com/jcfischer/seelite/issues/1073 — the held fixture boots at seed 42/system 4, trade/a.
 		if (!/\/(?:coriolis|courier-cockpit)[^/]*\.glb/.test(url)) await gate;
 		await route.continue();
 	});

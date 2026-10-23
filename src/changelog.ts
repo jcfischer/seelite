@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1073 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-23",
+		text: "Assembly trade stations keep their seeded layouts, now built from detailed habitat, truss and service modules around a rotating docking hub.",
+		node: 1073,
+	},
 	// https://github.com/jcfischer/seelite/issues/875 — proposed copy; principal approval and main date pending.
 	{
 		date: "2026-10-22",

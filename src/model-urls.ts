@@ -19,6 +19,12 @@ export const CORIOLIS_GLB_URL = new URL(
 	import.meta.url,
 ).href;
 
+/** Full authored Assembly kit, exported in kilometres (node #1073). */
+export const ASSEMBLY_GLB_URL = new URL(
+	"./models/trade-assembly.glb",
+	import.meta.url,
+).href;
+
 /** Flight exports of the approved trade studies, node #1033. */
 export const TRADE_GLB_URLS = {
 	b: new URL("./models/trade-ring.glb", import.meta.url).href,

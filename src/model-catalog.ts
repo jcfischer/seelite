@@ -20,6 +20,8 @@ export const modelLoaders = {
 		(await import("./coriolis-flight")).prepareCoriolisModel(p),
 	"trade/b": tradeLoader("b"),
 	"trade/c": tradeLoader("c"),
+	"trade/d": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./assembly-flight")).prepareAssemblyModel(p),
 	"trade/e": tradeLoader("e"),
 	courier: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./courier-hull")).prepareCourierHullModel(p),
