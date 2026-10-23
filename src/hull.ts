@@ -898,11 +898,6 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	interceptor: {
 		role: "fast",
 		variant: "a",
-		// **The authored Lance's box (node #1034), drawn 1:1**: 62.31 x 25.02 x
-		// 25.02 m, rounded up. The length stands; the loft's beam and height were
-		// 0.28 and 0.18 m over the model's, beyond the 0.1 m the envelope row
-		// allows. The mass, thrust and hold stand, so the density only moves
-		// from 1.38 to 1.40 t per 1,000 m³.
 		env: { lengthKm: 0.0624, beamKm: 0.0251, heightKm: 0.0251 },
 		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.0013 },
 		massT: 55,

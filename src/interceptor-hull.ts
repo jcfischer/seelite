@@ -1,24 +1,3 @@
-/**
- * The authored interceptor exterior (node #1034): the Lance, the first of the
- * seven ship studies the principal accepted on #827 (Dream Loop Pro, checkpoint
- * `e96d393`, PR #829), drawn as the interceptor's selected variant in place of
- * the procedural loft, which stands in until it installs. Built by
- * `authored-hull.ts`, the courier's, the tug's and the voyager's way.
- *
- * The study (`spikes/seven-ships/interceptor/`) is metres, Y up, **+Z forward**,
- * the frame every authored hull is in, so the shipped file is the study's
- * geometry untouched (`prepare-game-asset.mjs` turns nothing) and the one
- * conversion to a hull mesh's kilometres and −Z nose is the install's, once:
- * a half-turn about Y and a uniform scale (`authored-hull.ts`).
- *
- * **Drawn at 1:1.** The Lance's box is 62.31 × 25.02 × 25.02 m against the
- * interceptor row's declared 62.4 × 25.3 × 25.2, so it fits the envelope and
- * every berth the loft fit without a scale, and the row's mass, thrust and
- * hold stand (`tests/interceptor-hull.test.ts` holds both).
- *
- * The study has no cabin interior and no fixture screens, so every mesh casts a
- * shadow and every mesh is in the reduced levels.
- */
 import * as THREE from "three";
 import { authoredHullLoader, createAuthoredHullBuilder } from "./authored-hull";
 import { LANCE_INTERCEPTOR_GLB_URL } from "./model-urls";

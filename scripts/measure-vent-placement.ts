@@ -177,7 +177,7 @@ if (import.meta.main) {
 	await installShippedCourierHull();
 	await installShippedTugHull();
 	await installShippedVoyagerHull();
-await installShippedInterceptorHull();
+	await installShippedInterceptorHull();
 	await installShippedLongwall();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {
