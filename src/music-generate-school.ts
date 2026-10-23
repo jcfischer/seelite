@@ -56,15 +56,6 @@ export const SCHOOL_LEVEL_TEMPO = {
 	threat: 1.15,
 } as const;
 
-/** Calm's hand-overs, in bars: each type's span, overlapping the next. */
-export const CALM_SPANS = {
-	mirage: [0, 12],
-	breathing: [8, 26],
-	canopy: [24, 40],
-	modal: [38, 50],
-	mantra: [48, 64],
-} as const;
-
 /** The dotted-eighth echo every type leans on, louder than the other beds'. */
 export const SCHOOL_SPACE: SongSpace = {
 	reverbS: 5,
@@ -75,6 +66,7 @@ export const SCHOOL_SPACE: SongSpace = {
 const CHORD_BARS = 4;
 const SCHOOL_TUNE = 0x7363686f;
 const STREAM = { calm: 1, wary: 2, threat: 3, station: 5 } as const;
+const LOOK_STREAM = 6;
 
 type Step = number | null;
 type Deg = (base: number, d: number) => number;
@@ -111,15 +103,23 @@ export const MANTRAS: readonly (readonly Step[])[] = [
 
 /** What the seed fixes: one pattern of each type. */
 export interface SchoolTune {
+	readonly form: CalmForm;
+	readonly drive: readonly number[];
+	readonly driveChords: readonly number[];
 	readonly anchor: readonly Step[];
 	readonly canopy: readonly Step[];
 	readonly modal: readonly Step[];
 	readonly mantra: readonly Step[];
 }
 
-export function schoolTune(systemSeed: number): SchoolTune {
+export function schoolTune(systemSeed: number, form?: CalmForm): SchoolTune {
 	const rand = seededRand(mix(systemSeed >>> 0, SCHOOL_TUNE));
+	const look = seededRand(mix(systemSeed >>> 0, SCHOOL_TUNE + LOOK_STREAM));
+	const seeded = pickOf(look, CALM_FORM_NAMES);
 	return {
+		form: form ?? seeded,
+		drive: pickOf(look, DRIVE_SHAPES),
+		driveChords: pickOf(look, DRIVE_PROGRESSIONS),
 		anchor: pickOf(rand, ANCHORS),
 		canopy: pickOf(rand, CANOPIES),
 		modal: pickOf(rand, MODALS),
@@ -320,6 +320,50 @@ function schoolParts(bpm: number): Record<string, PartSpec> {
 			pan: -0.35,
 			echo: 0.1,
 		}),
+		phased: {
+			voice: "analog",
+			level: 0.17,
+			unison: 4,
+			detune: 0.12,
+			drift: 4,
+			spread: 1,
+			attackS: 1.2,
+			sustain: 0.9,
+			releaseS: 1.4,
+			cutoffHz: 1500,
+			envAmount: 0.4,
+			envDecayS: 4,
+			vibrato: 0.04,
+			phaser: 0.9,
+			phaserS: barsS(4, bpm),
+			reverb: 0.6,
+			echo: 0.15,
+		},
+		drive: {
+			...MOOG_TONES.filterPluck,
+			level: 0.26,
+			decayS: 0.22,
+			sustain: 0.1,
+			releaseS: 0.06,
+			sweepS: barsS(16, bpm),
+			sweepOct: 2.4,
+			pan: -0.08,
+			reverb: 0.2,
+			echo: 0.6,
+		},
+		drive2: seqVoice({
+			level: 0.11,
+			detune: 0.08,
+			spread: 0.7,
+			cutoffHz: 420,
+			envAmount: 1.6,
+			resonance: 0.4,
+			sweepS: barsS(11, bpm),
+			sweepOct: 1.8,
+			pan: 0.4,
+			reverb: 0.4,
+			echo: 0.5,
+		}),
 		run: seqVoice({
 			level: 0.13,
 			decayS: 0.12,
@@ -407,143 +451,286 @@ function drone(
 const streamOf = (systemSeed: number, variant: number, section: number) =>
 	seededRand(mix(mix(systemSeed >>> 0, SCHOOL_TUNE + section), variant + 1));
 
+type CalmType =
+	| "mirage"
+	| "breathing"
+	| "canopy"
+	| "modal"
+	| "mantra"
+	| "drive";
+type Span = readonly [CalmType, number, number];
+
+const PEDAL: ReadonlySet<CalmType> = new Set(["mirage", "modal", "mantra"]);
+const OWN_HARMONY: ReadonlySet<CalmType> = new Set(["modal", "drive"]);
+const MINOR_TRIAD = [0, 3, 7] as const;
+const DRIVE_CHORD_BARS = 8;
+
+interface Calm {
+	readonly w: Writer;
+	readonly deg: Deg;
+	readonly chordAt: (bar: number) => number;
+	readonly tune: SchoolTune;
+	readonly rand: () => number;
+	readonly theme: MusicTheme;
+}
+
+const CALM_WRITERS: Readonly<
+	Record<CalmType, (c: Calm, from: number, to: number) => void>
+> = {
+	mirage: ({ w, deg, chordAt }, from, to) => {
+		run(w, deg, chordAt, {
+			part: "mirage",
+			steps: MIRAGE_STEPS,
+			step: 2,
+			from,
+			to,
+			register: 60,
+			len: 0.9,
+			vel: 0.6,
+			octave: true,
+		});
+		run(w, deg, chordAt, {
+			part: "mirage2",
+			steps: [4, null, 7, 9, null],
+			step: 3,
+			from: from + 2,
+			to,
+			register: 60,
+			len: 0.6,
+			vel: 0.5,
+		});
+	},
+	breathing: ({ w, deg, chordAt, rand }, from, to) => {
+		run(w, deg, chordAt, {
+			part: "breathA",
+			steps: pickOf(rand, [
+				[0, 4],
+				[0, 4, 3],
+				[0, 7, 4],
+			]),
+			step: 1,
+			from,
+			to,
+			register: 48,
+			len: 0.9,
+			vel: 0.65,
+		});
+		run(w, deg, chordAt, {
+			part: "breathB",
+			steps: [0, 4, 2],
+			step: 2,
+			from: from + 4,
+			to,
+			register: 36,
+			len: 0.9,
+			vel: 0.55,
+		});
+	},
+	canopy: ({ w, deg, chordAt, tune }, from, to) => {
+		run(w, deg, chordAt, {
+			part: "canopy",
+			steps: tune.canopy,
+			step: 0.5,
+			from,
+			to,
+			register: 72,
+			len: 0.7,
+			vel: 0.6,
+		});
+		run(w, deg, chordAt, {
+			part: "mantraBass",
+			steps: [0],
+			step: 1,
+			from: from + 4,
+			to,
+			register: 36,
+			len: 0.5,
+			vel: 0.55,
+		});
+	},
+	modal: ({ w, theme, tune }, from, to) => {
+		const major = inMode(theme, MODES.ionian);
+		const minor = inMode(theme, MODES.aeolian);
+		for (let b = from; b < to; b += CHORD_BARS) {
+			const third = Math.floor((b - from) / 8) % 2 === 0 ? minor : major;
+			for (const k of [0, 2, 4])
+				w.at("choir", b * 4, CHORD_BARS * 4 - 1.5, third(48, k), 0.35);
+		}
+		run(w, minor, () => 0, {
+			part: "modal",
+			steps: tune.modal,
+			step: 0.25,
+			from,
+			to,
+			register: 48,
+			len: 0.8,
+			vel: 0.65,
+			fixed: true,
+		});
+	},
+	mantra: ({ w, deg, chordAt, tune }, from, to) => {
+		run(w, deg, chordAt, {
+			part: "mantra",
+			steps: tune.mantra,
+			step: 0.5,
+			from,
+			to,
+			register: 72,
+			len: 0.6,
+			vel: 0.6,
+			fixed: true,
+		});
+		run(w, deg, chordAt, {
+			part: "mantraBass",
+			steps: MANTRA_BASS,
+			step: 1,
+			from: from + 2,
+			to,
+			register: 36,
+			len: 0.5,
+			vel: 0.55,
+		});
+		run(w, deg, chordAt, {
+			part: "run",
+			steps: [0, 2, 4, 2],
+			step: 0.25,
+			from: from + 8,
+			to,
+			register: 60,
+			len: 0.5,
+			vel: 0.5,
+			fixed: true,
+		});
+	},
+	drive: ({ w, deg, chordAt, tune }, from, to) => {
+		for (let b = from; b < to; b += CHORD_BARS) {
+			const root = deg(48, chordAt(b));
+			const len = Math.min(CHORD_BARS, to - b) * 4 - 0.5;
+			for (const k of MINOR_TRIAD) w.at("phased", b * 4, len, root + k, 0.42);
+			w.at("phased", b * 4, len, root + 12, 0.3);
+		}
+		const semis = (
+			part: string,
+			step: number,
+			register: number,
+			start: number,
+			vel: number,
+			offset: number,
+		) => {
+			const n = tune.drive.length;
+			for (
+				let t = start * 4 + offset, k = 0;
+				t < to * 4 - 1e-9;
+				t += step, k++
+			) {
+				const root = deg(register, chordAt(Math.floor(t / 4)));
+				w.at(
+					part,
+					t,
+					step * 0.8,
+					root + tune.drive[k % n],
+					k % n === 0 ? vel : vel * 0.68,
+				);
+			}
+		};
+		semis("drive", 0.25, 36, from + 2, 0.85, 0);
+		if (to - from >= 16) semis("drive2", 0.5, 48, from + 12, 0.55, 0.25);
+	},
+};
+
+/** Each calm form: which types play, over which bars of the 64, in order.
+ *  A system plays one, so two systems differ in what their calm is made of,
+ *  not only in key. `voyage` is the prototype's first form. */
+export const CALM_FORMS = {
+	voyage: [
+		["mirage", 0, 12],
+		["breathing", 8, 26],
+		["canopy", 24, 40],
+		["modal", 38, 50],
+		["mantra", 48, 64],
+	],
+	drive: [
+		["drive", 0, 38],
+		["mirage", 36, 50],
+		["drive", 48, 64],
+	],
+	tide: [
+		["breathing", 0, 24],
+		["drive", 20, 48],
+		["mantra", 44, 64],
+	],
+	lantern: [
+		["mirage", 0, 16],
+		["modal", 14, 30],
+		["canopy", 28, 46],
+		["breathing", 44, 64],
+	],
+	ascent: [
+		["canopy", 0, 20],
+		["mantra", 16, 40],
+		["drive", 36, 64],
+	],
+	cathedral: [
+		["modal", 0, 20],
+		["breathing", 18, 40],
+		["mirage", 38, 52],
+		["mantra", 50, 64],
+	],
+} as const satisfies Record<string, readonly Span[]>;
+export type CalmForm = keyof typeof CALM_FORMS;
+export const CALM_FORM_NAMES = Object.keys(CALM_FORMS) as CalmForm[];
+
+/** The drive type's chord roots, as degrees of its minor mode, eight bars a
+ *  chord; every chord is a minor triad. */
+export const DRIVE_PROGRESSIONS: readonly (readonly number[])[] = [
+	[0, 0, 3, 4],
+	[0, 3, 0, 4],
+	[0, 4, 3, 3],
+	[0, 0, 4, 3],
+];
+
+/** The drive type's rooted sequence, semitones over the chord's root: five
+ *  sixteenths run unbroken across the 4/4 bar, so the root lands a sixteenth
+ *  later each time round. The first is C G c eb Bb. */
+export const DRIVE_SHAPES: readonly (readonly number[])[] = [
+	[0, 7, 12, 15, 10],
+	[0, 12, 10, 7, 15],
+	[0, 7, 15, 12, 10],
+];
+
 function calm(
 	theme: MusicTheme,
 	tune: SchoolTune,
 	rand: () => number,
 ): NoteEvent[] {
-	const deg = inMode(theme, MODES[theme.calmMode]);
+	const spans: readonly Span[] = CALM_FORMS[tune.form];
+	const hasDrive = spans.some(([t]) => t === "drive");
+	const mode = hasDrive
+		? theme.calmMode === "dorian"
+			? "dorian"
+			: "aeolian"
+		: theme.calmMode;
+	const deg = inMode(theme, MODES[mode]);
 	const chords = calmChords(rand);
-	const S = CALM_SPANS;
-	const progression = (b: number) =>
-		chords[Math.floor(b / CHORD_BARS) % chords.length];
-	const chordAt = (b: number) =>
-		b < S.mirage[1] || (b >= S.modal[0] && b < S.modal[1]) ? 0 : progression(b);
+	const active = (b: number) =>
+		spans.filter(([, from, to]) => b >= from && b < to).map(([t]) => t);
+	const chordAt = (b: number) => {
+		const now = active(b);
+		if (now.some((t) => PEDAL.has(t))) return 0;
+		if (now.includes("drive"))
+			return tune.driveChords[
+				Math.floor(b / DRIVE_CHORD_BARS) % tune.driveChords.length
+			];
+		return chords[Math.floor(b / CHORD_BARS) % chords.length];
+	};
 	const w = writer(4);
 	const bars = SCHOOL_CALM_BARS;
 	drone(w, deg, chordAt, 0, bars, 0.55);
-	choir(w, deg, chordAt, 4, S.modal[0], 0.35);
-	choir(w, deg, chordAt, S.modal[1], bars, 0.35);
-
-	run(w, deg, chordAt, {
-		part: "mirage",
-		steps: MIRAGE_STEPS,
-		step: 2,
-		from: S.mirage[0],
-		to: S.mirage[1],
-		register: 60,
-		len: 0.9,
-		vel: 0.6,
-		octave: true,
-	});
-	run(w, deg, chordAt, {
-		part: "mirage2",
-		steps: [4, null, 7, 9, null],
-		step: 3,
-		from: S.mirage[0] + 2,
-		to: S.mirage[1],
-		register: 60,
-		len: 0.6,
-		vel: 0.5,
-	});
-
-	run(w, deg, chordAt, {
-		part: "breathA",
-		steps: pickOf(rand, [
-			[0, 4],
-			[0, 4, 3],
-			[0, 7, 4],
-		]),
-		step: 1,
-		from: S.breathing[0],
-		to: S.breathing[1],
-		register: 48,
-		len: 0.9,
-		vel: 0.65,
-	});
-	run(w, deg, chordAt, {
-		part: "breathB",
-		steps: [0, 4, 2],
-		step: 2,
-		from: S.breathing[0] + 4,
-		to: S.breathing[1],
-		register: 36,
-		len: 0.9,
-		vel: 0.55,
-	});
-
-	run(w, deg, chordAt, {
-		part: "canopy",
-		steps: tune.canopy,
-		step: 0.5,
-		from: S.canopy[0],
-		to: S.canopy[1],
-		register: 72,
-		len: 0.7,
-		vel: 0.6,
-	});
-	run(w, deg, chordAt, {
-		part: "mantraBass",
-		steps: [0],
-		step: 1,
-		from: S.canopy[0] + 4,
-		to: S.canopy[1],
-		register: 36,
-		len: 0.5,
-		vel: 0.55,
-	});
-
-	const major = inMode(theme, MODES.ionian);
-	const minor = inMode(theme, MODES.aeolian);
-	for (let b = S.modal[0]; b < S.modal[1]; b += CHORD_BARS) {
-		const third = Math.floor((b - S.modal[0]) / 8) % 2 === 0 ? minor : major;
-		for (const k of [0, 2, 4])
-			w.at("choir", b * 4, CHORD_BARS * 4 - 1.5, third(48, k), 0.35);
-	}
-	run(w, minor, () => 0, {
-		part: "modal",
-		steps: tune.modal,
-		step: 0.25,
-		from: S.modal[0],
-		to: S.modal[1],
-		register: 48,
-		len: 0.8,
-		vel: 0.65,
-		fixed: true,
-	});
-
-	run(w, deg, chordAt, {
-		part: "mantra",
-		steps: tune.mantra,
-		step: 0.5,
-		from: S.mantra[0],
-		to: S.mantra[1],
-		register: 72,
-		len: 0.6,
-		vel: 0.6,
-		fixed: true,
-	});
-	run(w, deg, chordAt, {
-		part: "mantraBass",
-		steps: MANTRA_BASS,
-		step: 1,
-		from: S.mantra[0] + 2,
-		to: S.mantra[1],
-		register: 36,
-		len: 0.5,
-		vel: 0.55,
-	});
-	run(w, deg, chordAt, {
-		part: "run",
-		steps: [0, 2, 4, 2],
-		step: 0.25,
-		from: S.mantra[0] + 8,
-		to: S.mantra[1],
-		register: 60,
-		len: 0.5,
-		vel: 0.5,
-		fixed: true,
-	});
+	for (let b = 4; b < bars; b += CHORD_BARS)
+		if (!active(b).some((t) => OWN_HARMONY.has(t)))
+			choir(w, deg, chordAt, b, b + CHORD_BARS, 0.35);
+	const c: Calm = { w, deg, chordAt, tune, rand, theme };
+	for (const [type, from, to] of spans) CALM_WRITERS[type](c, from, to);
 	return w.events;
 }
 
@@ -656,9 +843,13 @@ function threat(
 
 /** A system's flight bed, fourth form: calm, wary and threat from the eight
  *  types, combat the Berlin bed's. */
-export function schoolFlightBed(systemSeed: number, variant: number): Song {
+export function schoolFlightBed(
+	systemSeed: number,
+	variant: number,
+	form?: CalmForm,
+): Song {
 	const theme = musicTheme(systemSeed);
-	const tune = schoolTune(systemSeed);
+	const tune = schoolTune(systemSeed, form);
 	const bpm = schoolBpm(theme);
 	const berlin = berlinFlightBed(systemSeed, variant);
 	const combat = berlin.sections.find((s) => s.name === "combat");

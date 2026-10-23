@@ -24,6 +24,7 @@ import {
 	stepMusic,
 } from "./music-director";
 import { FLIGHT_LEVELS, type MusicLevel, musicTheme } from "./music-generate";
+import { CALM_FORM_NAMES, schoolTune } from "./music-generate-school";
 import type { StationType } from "./station";
 
 const NOTE = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
@@ -49,7 +50,7 @@ export function mountMusicLab() {
     <select id="role"><option>trade</option><option>refinery</option><option>shipyard</option><option>outpost</option></select></label>
   <label><input type="radio" name="scene" value="witchspace"> Witchspace (music yields)</label>
   <label style="margin-left:12px"><input id="cruise" type="checkbox"> Cruise</label>
-  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="school">Berlin sequences (fourth, prototype)</option><option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
+  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="school">Berlin sequences (fourth, prototype)</option>${CALM_FORM_NAMES.map((f) => `<option value="school-${f}">Berlin sequences, ${f} form on every system</option>`).join("")}<option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
 </fieldset>
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Danger level</legend>
   ${FLIGHT_LEVELS.map((l, i) => `<label><input type="radio" name="level" value="${l}"${i === 0 ? " checked" : ""}> ${l}</label>`).join(" ")}
@@ -70,7 +71,7 @@ export function mountMusicLab() {
 	const showTheme = () => {
 		const t = musicTheme(Number(seedIn.value) >>> 0);
 		$("theme").textContent =
-			`${NOTE[t.tonic]} ${t.calmMode}, ${t.bpm} bpm, bell ×${t.bellRatio}`;
+			`${NOTE[t.tonic]} ${t.calmMode}, ${t.bpm} bpm, bell ×${t.bellRatio}, sequences form ${schoolTune(Number(seedIn.value) >>> 0).form}`;
 	};
 	showTheme();
 	seedIn.oninput = showTheme;

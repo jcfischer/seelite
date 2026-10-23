@@ -5,10 +5,13 @@ import { MODES, musicTheme, STATION_ROLES } from "../src/music-generate";
 import { berlinFlightBed } from "../src/music-generate-berlin";
 import {
 	anchorGrowth,
-	CALM_SPANS,
+	CALM_FORM_NAMES,
+	CALM_FORMS,
+	DRIVE_SHAPES,
 	SCHOOL_SPACE,
 	schoolFlightBed,
 	schoolStationBed,
+	schoolTune,
 } from "../src/music-generate-school";
 import { MUSIC_VOICE_CAP, type Song } from "../src/music-score";
 import { compileSong } from "../src/music-sequencer";
@@ -47,23 +50,66 @@ describe("the sequence-school bed", () => {
 		expect(musicArms("school").arms.bed).toBe("school");
 	});
 
-	test("calm hands each type to the next inside its span", () => {
-		const song = schoolFlightBed(1234, 0);
-		const spans: [string, readonly [number, number]][] = [
-			["mirage", CALM_SPANS.mirage],
-			["breathA", CALM_SPANS.breathing],
-			["canopy", CALM_SPANS.canopy],
-			["modal", CALM_SPANS.modal],
-			["mantra", CALM_SPANS.mantra],
-		];
-		for (const [part, [from, to]] of spans) {
-			const bars = barsOf(song, "calm", part);
-			expect(bars.has(from), part).toBe(true);
-			expect(bars.has(to - 1), part).toBe(true);
-			for (const b of bars) {
-				expect(b, part).toBeGreaterThanOrEqual(from);
-				expect(b, part).toBeLessThan(to);
+	const LEAD: Record<string, string> = {
+		mirage: "mirage",
+		breathing: "breathA",
+		canopy: "canopy",
+		modal: "modal",
+		mantra: "mantra",
+		drive: "drive",
+	};
+
+	for (const form of CALM_FORM_NAMES)
+		test(`the ${form} form plays each type only inside its spans`, () => {
+			const song = schoolFlightBed(1234, 0, form);
+			const spans: readonly (readonly [string, number, number])[] =
+				CALM_FORMS[form];
+			for (const type of new Set(spans.map(([t]) => t))) {
+				const own = spans.filter(([t]) => t === type);
+				const bars = barsOf(song, "calm", LEAD[type]);
+				for (const [, from] of own)
+					expect(bars.has(from + (type === "drive" ? 2 : 0)), type).toBe(true);
+				for (const b of bars)
+					expect(
+						own.some(([, from, to]) => b >= from && b < to),
+						`${type} at bar ${b}`,
+					).toBe(true);
 			}
+		});
+
+	test("systems spread across the calm forms", () => {
+		const seeds = Array.from({ length: 60 }, (_, i) => (i * 2654435761) >>> 0);
+		const forms = new Set(seeds.map((seed) => schoolTune(seed).form));
+		expect(forms.size).toBe(CALM_FORM_NAMES.length);
+	});
+
+	test("the drive runs its five steps unbroken across the bar", () => {
+		const seed = 1234;
+		const shape = schoolTune(seed).drive;
+		expect(DRIVE_SHAPES).toContainEqual(shape);
+		const notes = section(schoolFlightBed(seed, 0, "drive"), "calm")
+			.events.filter((e) => e.part === "drive" && e.bar >= 4 && e.bar < 8)
+			.sort((x, y) => x.bar * 4 + x.beat - (y.bar * 4 + y.beat));
+		expect(notes.length).toBe(64);
+		const root = notes[0].pitch - shape[(4 * 16 - 2 * 16) % 5];
+		notes.forEach((e, i) =>
+			expect(e.pitch - root).toBe(shape[(2 * 16 + i) % 5]),
+		);
+	});
+
+	test("the drive's strings are minor triads, phased", () => {
+		const song = schoolFlightBed(1234, 0, "drive");
+		expect(song.parts.phased.phaser ?? 0).toBeGreaterThan(0);
+		const byStart = new Map<number, number[]>();
+		for (const e of section(song, "calm").events)
+			if (e.part === "phased") {
+				const t = e.bar * 4 + e.beat;
+				byStart.set(t, [...(byStart.get(t) ?? []), e.pitch]);
+			}
+		expect(byStart.size).toBeGreaterThan(0);
+		for (const pitches of byStart.values()) {
+			const [r, ...rest] = [...pitches].sort((x, y) => x - y);
+			expect(rest.map((p) => p - r)).toEqual([3, 7, 12]);
 		}
 	});
 
@@ -80,15 +126,13 @@ describe("the sequence-school bed", () => {
 	});
 
 	test("the choir turns between major and minor over the modal sequence", () => {
-		const song = schoolFlightBed(1234, 0);
+		const song = schoolFlightBed(1234, 0, "voyage");
+		const [, modalFrom, modalTo] = CALM_FORMS.voyage[3];
 		const tonic = musicTheme(1234).tonic;
 		const thirds = new Set(
 			section(song, "calm")
 				.events.filter(
-					(e) =>
-						e.part === "choir" &&
-						e.bar >= CALM_SPANS.modal[0] &&
-						e.bar < CALM_SPANS.modal[1],
+					(e) => e.part === "choir" && e.bar >= modalFrom && e.bar < modalTo,
 				)
 				.map((e) => (((e.pitch - tonic) % 12) + 12) % 12)
 				.filter((pc) => pc === 3 || pc === 4),
@@ -162,6 +206,13 @@ function peakVoices(
 }
 
 describe("the voice cap", () => {
+	for (const form of CALM_FORM_NAMES)
+		test(`calm in the ${form} form never reaches it`, () => {
+			expect(peakVoices(schoolFlightBed(1234, 0, form), "calm")).toBeLessThan(
+				MUSIC_VOICE_CAP,
+			);
+		}, 30000);
+
 	for (const name of ["calm", "wary", "threat"])
 		test(`${name} never reaches it`, () => {
 			expect(peakVoices(schoolFlightBed(1234, 0), name)).toBeLessThan(
