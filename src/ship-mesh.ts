@@ -324,7 +324,8 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
  */
 export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	courier: 0.036,
-	interceptor: 0.036,
+	// The authored Lance (node #1034): its farthest vertex, 32.70 m, rounded up.
+	interceptor: 0.0328,
 	freighter: 0.04,
 	miner: 0.0422,
 	patrol: 0.034,
