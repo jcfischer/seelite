@@ -88,8 +88,10 @@ The hub fit disables the shared fitter's front-plane relocation exception:
 this hub's face is recessed and does not use that exception's adapter. Static
 cells retain the existing swept-bay keep-out. Oriented boxes intersecting its
 boundary are recursively subdivided; intersecting residual boxes with all
-half-extents ≤1 m are removed. This only removes collision, with at most a
-2√3 m boundary gap. No fitted box is grown by that operation. Bay-wall collision
+half-extents ≤1 m are removed. This only removes collision within a strip at most
+2√3 m outside the keep-out boundary; a thin part in that strip can be removed
+entirely, so this is not a bound on distance to the nearest surviving box.
+No fitted box is grown by that operation. Bay-wall collision
 continues to come from the interior catalogue.
 
 The 12-seed proxy corpus holds reach, vertex coverage and both rotating/static
@@ -149,7 +151,66 @@ framing was too dark and was replaced with a closer, lit-side view.
 
 ## Delivery evidence
 
-Host verification:
+### Sage round 1 fix pass — 2026-10-23
+
+The important finding is addressed in `tests/assembly-proxy.test.ts`. The
+12-seed corpus now checks every fitted source box, including HUB_STATIC and
+LINK, using independently constructed Three.js placement matrices. Every box
+unaffected by the bay cut must appear exactly, with multiplicity. All 27
+centre/face/edge/corner samples of every returned box must belong to the placed
+source geometry. Remaining split boxes must fit wholly inside a source box
+that intersects the keep-out. Every source sample outside the permitted cut
+strip must still collide, and every source sample inside the keep-out must
+remain clear. A full lattice row, including the empty border, compares
+collision against the placed kit at four axial depths. The rotating/static
+approach rows remain separate. Boundary coverage is sampled, not an exact
+reimplementation of the production subdivision algorithm.
+
+Mutation verification reproduced the weakness before the fix: removing the
+second fitted box from every static block passed the original row. The new
+row rejects that omission, a phantom box at x = 2 km, a 20 m displacement,
+and reversed cell rotation. All temporary mutations were restored.
+
+Optional findings taken: the Collision proxy glossary now names Assembly and
+node #1073; the duplicate station-mesh import is merged; the historical test
+invocation wording is clarified. The bay-cut allowance above now states the
+actual boundary-strip contract rather than implying a distance to surviving
+collision.
+
+Optional findings declined:
+
+- Exporting `placeAssemblyBox` for both production and the expectation would
+  make a transform error agree with itself. The new independent matrix-based
+  expectation checks the existing production transform instead.
+- The fitter's kilometre-to-metre literals remain local and unchanged. This
+  optional readability refactor repairs no observed fit defect and is not
+  needed for the test-coverage correction.
+- `spawn` and its executable argument are Node process API terminology;
+  the lattice variable `neighbour` names an adjacent module. Neither refers to
+  an Encounter, Intervention or Hearer. Renaming these to gameplay vocabulary
+  would misdescribe their meaning, so those glossary nits are declined.
+
+This pass changes headless checks, an import consolidation in their shared
+asset helper, and prose. It changes no production drawing, collision,
+asset, browser launcher or capture behavior. No new visual approval is claimed;
+the supervisor still owns the final branch browser gate and principal review.
+
+Affected verification: `bun test tests/assembly-proxy.test.ts
+tests/trade-flight.test.ts` passed 22/22 with 4,604,831 assertions in 51.71 s.
+The final tuple-typing correction was followed by the exhaustive placement row
+and `npx tsc --noEmit`.
+
+The single full host `npm test` run for this fix pass passed **6,861/6,861**
+tests across 406 files, with zero failures and 16,404,934 assertions in
+1,116.52 s. This supersedes the original implementation's failed full-run result
+below. `npm run build`, the explicit `node scripts/check-dist-sizes.mjs dist`,
+formatting of the changed TypeScript files, comment lint and `git diff --check`
+also passed. Only this receipt was updated after the full run; tested code is
+unchanged. The full log is `/tmp/seelite-1073-review1-full.log` on this host.
+
+### Original implementation verification — before the review fix
+
+Host verification at the original implementation revision:
 
 - The single required `npm test` run completed 6,860 tests across 406 files in
   1,063.95 s: 6,859 passed, one failed. The failure was the older trade-flight
@@ -157,7 +218,7 @@ Host verification:
   Updated that row to assert procedural fallback before installation and authored
   Assembly afterward. `bun test tests/trade-flight.test.ts` then passed 19/19
   (120 assertions, 31.65 s). No production code changed after the full run. The
-  full command was not repeated, per the worker's once-only instruction; the
+  full invocation was not repeated, per the worker's once-only instruction; the
   supervisor owns the full run on the delivered head.
 - `npx tsc --noEmit`, the spike typecheck, `npm run build` and the explicit
   `node scripts/check-dist-sizes.mjs dist` passed. Formatting, script lint and
