@@ -6,12 +6,12 @@ import {
 	TRADE_MODEL_NAMES,
 } from "../../src/trade-flight";
 import {
+	installAssemblyBlocks,
 	installTradeBuilder,
 	type AuthoredTradeForm,
 } from "../../src/station-mesh";
 import { decodeShippedGlb } from "./shipped-glb";
 import { createAssemblyBlocks } from "../../src/assembly-flight";
-import { installAssemblyBlocks } from "../../src/station-mesh";
 
 export const SHIPPED_TRADE_FILES = Object.fromEntries(
 	TRADE_FORMS.map((form) => [
