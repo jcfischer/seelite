@@ -7,20 +7,14 @@
  */
 import * as THREE from "three";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
-import { halfPixelKm } from "../src/authored-levels";
 import { stationSilhouetteKm } from "../src/station-mesh";
 import { decodeShippedGlb } from "./lib/shipped-glb";
-import { reducedYard } from "./lib/shipyard-levels";
+import { levelTargetM, reducedYard, YARD_LEVELS } from "./lib/shipyard-levels";
 
 const SAMPLES = Number(process.env.SAMPLES ?? 40_000);
 const CAP_M = 400;
 const CELL_M = 25;
 const NAMES = { a: "gantry", b: "foundry", c: "slipway" } as const;
-const LEVELS = [
-	{ name: "lod1", radii: 40, pixels: 0.5 },
-	{ name: "lod2", radii: 400, pixels: 0.5 },
-	{ name: "lodc", radii: 40, pixels: 2 },
-];
 
 type Tri = readonly [
 	number,
@@ -213,11 +207,8 @@ for (const form of forms) {
 	const full = triangles(scene);
 	const fullGrid = grid(full);
 	const fromFull = sample(full, SAMPLES, 947);
-	for (const level of LEVELS) {
-		const targetM =
-			halfPixelKm(level.radii, stationSilhouetteKm("shipyard", form)) *
-			1000 *
-			(level.pixels / 0.5);
+	for (const level of YARD_LEVELS) {
+		const targetM = levelTargetM(level, stationSilhouetteKm("shipyard", form));
 		const reduced = reducedYard(scene, targetM, level.name);
 		const tris = triangles(reduced);
 		const levelGrid = grid(tris);

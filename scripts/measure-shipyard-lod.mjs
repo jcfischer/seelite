@@ -42,13 +42,12 @@ const KEEP_KINDS = new Set(["a", "b", "a4", "b4", "diff4"]);
 const AMP = Number(process.env.AMP ?? 6);
 const ARMSET = process.env.ARMSET ?? "base";
 if (!["base", "amp"].includes(ARMSET)) throw new Error("ARMSET is base or amp");
-const LEVELS = (process.env.LEVELS ?? "lod1=40:0.5,lod2=400:0.5,lodc=40:2")
-	.split(",")
-	.map((spec) => {
+const LEVELS =
+	process.env.LEVELS?.split(",").map((spec) => {
 		const [name, rest] = spec.split("=");
 		const [radii, pixels] = rest.split(":").map(Number);
 		return { name, radii, pixels };
-	});
+	}) ?? null;
 const VIEW_DEFS = {
 	close: { sun: 35, radii: 2, pin: true },
 	approach: { axis: true, radii: 6, pin: true },
@@ -97,7 +96,7 @@ const SETUP = async ({ form, levels, quality, amp, armset }) => {
 	const sm = await import("/src/station-mesh.ts");
 	const sf = await import("/src/shipyard-flight.ts");
 	const lv = await import("/scripts/lib/shipyard-levels.ts");
-	const al = await import("/src/authored-levels.ts");
+	levels ??= lv.YARD_LEVELS;
 	const { markOcclusion } = await import("/src/occlusion-mesh.ts");
 	const station = g.world.system.contents.stations.find(
 		(s) => s.type === "shipyard",
@@ -136,8 +135,7 @@ const SETUP = async ({ form, levels, quality, amp, armset }) => {
 	const silhouetteKm = g.stationVisuals.get(station.id).silhouetteKm;
 	const reduced = {};
 	for (const level of levels) {
-		const errorM =
-			al.halfPixelKm(level.radii, silhouetteKm) * 1000 * (level.pixels / 0.5);
+		const errorM = lv.levelTargetM(level, silhouetteKm);
 		const started = performance.now();
 		const template = lv.reducedYard(assets.scene, errorM, level.name);
 		reduced[level.name] = { errorM, ms: performance.now() - started, template };
@@ -1047,7 +1045,6 @@ async function levelsForm(form) {
 	const rows = await page.evaluate(async (levels) => {
 		const sf = await import("/src/shipyard-flight.ts");
 		const lv = await import("/scripts/lib/shipyard-levels.ts");
-		const al = await import("/src/authored-levels.ts");
 		const assets = await sf.loadShipyardAssets(window.__form);
 		const { measureGenerator } = await import(
 			"/scripts/lib/measure-generator.ts"
@@ -1084,9 +1081,8 @@ async function levelsForm(form) {
 				worstStepMs: 0,
 			},
 		];
-		for (const level of levels) {
-			const errorM =
-				al.halfPixelKm(level.radii, silhouetteKm) * 1000 * (level.pixels / 0.5);
+		for (const level of levels ?? lv.YARD_LEVELS) {
+			const errorM = lv.levelTargetM(level, silhouetteKm);
 			const work = lv.reducedYardSteps(assets.scene, errorM, level.name);
 			const { value: root, ms, steps, worstStepMs } = measureGenerator(work);
 			out.push({

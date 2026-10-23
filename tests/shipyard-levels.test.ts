@@ -7,12 +7,13 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
-import { halfPixelKm } from "../src/authored-levels";
 import { stationSilhouetteKm } from "../src/station-mesh";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import {
+	levelTargetM,
 	reducedYard,
 	YARD_LEVEL_REACHED_ERROR_M,
+	YARD_LEVELS,
 } from "../scripts/lib/shipyard-levels";
 
 await MeshoptSimplifier.ready;
@@ -42,11 +43,6 @@ const FORMS = [
 		lod2: 6_348,
 		lodc: 9_424,
 	},
-] as const;
-const LEVELS = [
-	{ name: "lod1", radii: 40, pixels: 0.5 },
-	{ name: "lod2", radii: 400, pixels: 0.5 },
-	{ name: "lodc", radii: 40, pixels: 2 },
 ] as const;
 
 function meshes(root: THREE.Object3D): THREE.Mesh[] {
@@ -83,9 +79,8 @@ describe("shipyard candidate levels (#947)", () => {
 			scene.updateMatrixWorld(true);
 			const full = meshes(scene);
 			const silhouetteKm = stationSilhouetteKm("shipyard", row.form);
-			const built = LEVELS.map((level) => {
-				const errorM =
-					halfPixelKm(level.radii, silhouetteKm) * 1000 * (level.pixels / 0.5);
+			const built = YARD_LEVELS.map((level) => {
+				const errorM = levelTargetM(level, silhouetteKm);
 				const root = reducedYard(scene, errorM, level.name);
 				root.updateMatrixWorld(true);
 				return { ...level, errorM, root, drawn: meshes(root) };

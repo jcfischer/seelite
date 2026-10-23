@@ -6,7 +6,22 @@
  */
 import * as THREE from "three";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
+import { halfPixelKm } from "../../src/authored-levels";
 import { shared } from "../../src/gpu-teardown";
+import { measureGenerator } from "./measure-generator";
+
+export const YARD_LEVELS = [
+	{ name: "lod1", radii: 40, pixels: 0.5 },
+	{ name: "lod2", radii: 400, pixels: 0.5 },
+	{ name: "lodc", radii: 40, pixels: 2 },
+] as const;
+
+export function levelTargetM(
+	level: { radii: number; pixels: number },
+	silhouetteKm: number,
+): number {
+	return halfPixelKm(level.radii, silhouetteKm) * 1000 * (level.pixels / 0.5);
+}
 
 /** The weights the simplifier is given for the attributes a corner carries. */
 export const LEVEL_ATTRIBUTE_WEIGHTS = {
@@ -147,8 +162,5 @@ export function reducedYard(
 	errorM: number,
 	name: string,
 ): THREE.Object3D {
-	const work = reducedYardSteps(template, errorM, name);
-	let step = work.next();
-	while (!step.done) step = work.next();
-	return step.value;
+	return measureGenerator(reducedYardSteps(template, errorM, name)).value;
 }
