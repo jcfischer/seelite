@@ -128,22 +128,19 @@ try {
 		const analytic = read("analytic-gradient", 6, analyticSource);
 		const four = read("four-tap", 6, fourSource);
 		const flat = read("none", 6, normalSource("none"));
-		const fineSource = splice(
-			splice(fourSource, "float e = 0.0035;", "float e = 0.0001;"),
-			"strength * (dt * t + db * b)",
-			"strength * 35.0 * (dt * t + db * b)",
-		);
-		const fine = read("four-tap", 6, fineSource);
-		const convergence = [];
-		for (const e of [0.001, 0.00035, 0.0001, 0.000035]) {
-			const source = splice(
+		const spaced = (e) =>
+			splice(
 				splice(fourSource, "float e = 0.0035;", `float e = ${e};`),
 				"strength * (dt * t + db * b)",
 				`strength * ${(0.0035 / e).toFixed(8)} * (dt * t + db * b)`,
 			);
+		const fineSource = spaced(0.0001);
+		const fine = read("four-tap", 6, fineSource);
+		const convergence = [];
+		for (const e of [0.001, 0.00035, 0.0001, 0.000035]) {
 			convergence.push({
 				e,
-				...angles(analytic, read("four-tap", 6, source), flat),
+				...angles(analytic, read("four-tap", 6, spaced(e)), flat),
 			});
 		}
 		const wrong = read(
@@ -189,6 +186,23 @@ try {
 				"ridgedFootprintAndGradient(terrainCoordinates(p) * 11.0 + seedOffset, terrainFootprint * 11.0, 0.0)",
 			),
 		);
+		const fbmSource = analyticSource.slice(
+			analyticSource.indexOf("vec4 fbm5FootprintAndGradient("),
+			analyticSource.indexOf("vec4 fbm5AndGradient("),
+		);
+		const missingExtendedFbm = read(
+			"analytic-gradient",
+			6,
+			splice(
+				analyticSource,
+				fbmSource,
+				splice(
+					fbmSource,
+					"if (weight <= 0.0) break;",
+					"if (weight <= 0.0) break; frequency = 0.0;",
+				),
+			),
+		);
 		const proofSource = splice(
 			fragmentFor("terran", "analytic-gradient"),
 			output,
@@ -201,6 +215,7 @@ try {
 		const close = {
 			fine: angles(high, closeFine, closeFlat),
 			missingExtendedRidge: angles(missingExtendedRidge, closeFine, closeFlat),
+			missingExtendedFbm: angles(missingExtendedFbm, closeFine, closeFlat),
 			finite: finite(high),
 			extended: changed(zero, high),
 			relief: changed(high, closeFlat),
@@ -268,6 +283,10 @@ try {
 	t.check(
 		"omitting extended ridge octaves fails the close gradient comparison",
 		result.close.missingExtendedRidge.p95 >= 2,
+	);
+	t.check(
+		"omitting extended fbm derivatives fails the close gradient comparison",
+		result.close.missingExtendedFbm.p95 >= 2,
 	);
 	t.check(
 		"1.2R differentiated and scalar height fields agree within 1e-4",

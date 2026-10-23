@@ -45,6 +45,7 @@ Measured on **Apple M1 Pro, ANGLE Metal**, on this host:
 | Missing warp Jacobian vs fine control, 2R | 8,211 | 14.419° | 19.146° | 37.013° |
 | Analytic vs fine four-tap, extended field at 1.2R | 120,865 | 1.493° | 6.366° | 21.029° |
 | Missing extended ridge octaves vs fine control, 1.2R | 120,865 | 14.561° | 19.995° | 37.989° |
+| Missing extended fbm derivatives vs fine control, 1.2R | 120,870 | 20.026° | 28.437° | 49.457° |
 
 The stated legacy tolerance is **p95 < 10°, p99 < 16°, maximum < 30°**
 over this pixel sample. This is agreement with a finite-spaced approximation,
@@ -54,7 +55,13 @@ the `2e` strength convention constant: p95 is 3.632° at `e=0.001`, 0.722° at
 `0.00035`, and 0.356° at `0.0001`, before rounding error raises it to 0.894°
 at `0.000035`. This diagnoses the initial overly tight legacy bound and selects
 a precision-qualified control; no shipped parameter was retuned. The fine
-control gates p95 at 0.5° at 2R and 2° at 1.2R, rejecting both injected defects.
+control gates p95 at 0.5° at 2R and 2° at 1.2R, rejecting all three injected defects.
+
+The fbm mutation zeros only the extended-loop derivative frequency inside
+`fbm5FootprintAndGradient`; its base derivatives, values, weights and
+normalisation remain intact. It therefore tests omission of the extended fbm
+derivatives without changing the height field seen by the two arms. The
+existing 2° close gate rejects it without any tolerance adjustment.
 
 At 1.2R, all 256,000 drawn normal pixels are finite. Switching the octave cap
 from zero to six changes 374,977 RGB components by more than `1e-4`; relief
@@ -112,3 +119,28 @@ determinism, the distant fade, all other classes and the canonical horizon cap
 pairs. This is targeted coverage, not a full browser-suite pass. Probe selection
 was inspected before running probes; it selected 111 contracts. The supervisor
 owns the final reviewed-head browser gate, review and publication.
+
+## Sage round 1 — 2026-10-23
+
+All four findings were taken. `fragmentFor` now refuses non-terran analytic
+requests; its desert rejection test failed before the guard and passes after
+it. The cost instrument uses one `supportsRelief` predicate for explicit
+request validation, sweeping and reporting. The gradient probe uses one
+`spaced(e)` helper for both its fine control and convergence sweep, and adds
+the derivative-only fbm mutation measured above.
+
+The GPU gradient probe passes **12/12** checks on **Apple M1 Pro, ANGLE Metal**;
+the other measured gradient figures are unchanged. Affected headless tests
+pass **124/124** across six files, including both shipped screen-space shader
+source pins. Build/typecheck, formatting, Biome lint and standalone ESLint pass.
+The comments suppression-growth guard still reports the same two entries as
+above; comparison of merge base `2dd890e` against `origin/main` reproduces
+both entries, and this branch leaves the baseline unchanged.
+
+This round's single full host `npm test` run passes **6,765/6,765**, with
+**0 failures**, across 397 files in 931.23 seconds. Its complete output is at
+`/tmp/node-757-review-npm-test.log`. The rock-heightfield case that timed out
+in the prior full run passes here in 154.3 seconds.
+
+Probe selection was inspected again before the targeted run (111 contracts
+selected); the supervisor retains the broader final-head browser gate.

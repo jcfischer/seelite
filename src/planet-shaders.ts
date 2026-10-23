@@ -516,6 +516,8 @@ export function fragmentFor(
 	relief: ReliefPath = "four-tap",
 	footprint = true,
 ): string {
+	if (relief === "analytic-gradient" && surface !== "terran")
+		throw new Error("analytic-gradient relief is implemented for terran only");
 	const detail = surface === "terran" && footprint;
 	const analytic = surface === "terran" && relief === "analytic-gradient";
 	return /* glsl */ `
