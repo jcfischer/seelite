@@ -45,6 +45,7 @@ const EPIANO = 14;
 const HARPSI = 15;
 const SOFTSAW = 16;
 const SAMPLER = 17;
+const MOOG = 18;
 const KIND: Record<VoiceKind, number> = {
 	pad: PAD,
 	pluck: PLUCK,
@@ -64,6 +65,7 @@ const KIND: Record<VoiceKind, number> = {
 	harpsi: HARPSI,
 	softsaw: SOFTSAW,
 	sampler: SAMPLER,
+	moog: MOOG,
 };
 /** The voices that are two signals, one a side; every other is one, panned.
  *  Indexed by kind, and filled by name (sage round 8), so a kind added or
@@ -108,6 +110,7 @@ export interface ResolvedPart {
 	readonly envDecayCoef: number;
 	/** The state-variable filter's damping, from the resonance. */
 	readonly damp: number;
+	readonly ladderK: number;
 	readonly drive: number;
 	/** Strings: the drive's gain into its `tanh` and the `1 / tanh` that
 	 *  keeps its level — constants of the part, so not worked per sample. */
@@ -395,6 +398,22 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		sustain: 1,
 		releaseS: 0.25,
 	},
+	moog: {
+		...BASE,
+		attackS: 0.005,
+		decayS: 1.2,
+		sustain: 0.6,
+		releaseS: 0.3,
+		cutoffHz: 600,
+		unison: 3,
+		detune: 0.07,
+		drift: 0.3,
+		envAmount: 2,
+		envDecayS: 0.6,
+		resonance: 0.35,
+		index: 0,
+		drive: 0.2,
+	},
 };
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
@@ -426,6 +445,7 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		envAmount: d.envAmount,
 		envDecayCoef: fall60(d.envDecayS, sampleRate),
 		damp: 2 - 1.9 * Math.max(0, Math.min(1, d.resonance)),
+		ladderK: LADDER_K_MAX * Math.max(0, Math.min(1, d.resonance)),
 		drive: d.drive,
 		driveK: 1 + 8 * d.drive,
 		driveNorm: 1 / Math.tanh(1 + 8 * d.drive),
@@ -521,6 +541,10 @@ const DRONE_ROWS = 64;
 const DRIFT_GLIDE = 0.002;
 /** Frames between filter-coefficient updates on the swept voices. */
 const CUT_EVERY = 8;
+const LADDER_K_MAX = 3.8;
+const LADDER_MAX_HZ = 0.3;
+const ladderCoef = (hz: number, sr: number) =>
+	1 - Math.exp((-2 * Math.PI * Math.min(hz, LADDER_MAX_HZ * sr)) / sr);
 /** The bow noise's one-pole that takes its lows away, per frame. */
 const BOW_HIGHPASS = 0.2;
 /** The rosin's comb: how much of each period feeds back, which is how
@@ -1033,6 +1057,11 @@ export class VoiceBank {
 				this.unisonOn(i, part);
 				this.ph2[i] = 0.5 * (this.noise() + 1);
 				break;
+			case MOOG:
+				this.inc1[i] = f / sr;
+				this.unisonOn(i, part);
+				this.g[i] = ladderCoef(part.cutoffHz, sr);
+				break;
 			case SAMPLER:
 				// A read position into the recording, in its frames.
 				this.sbuf[i] = zone;
@@ -1262,6 +1291,8 @@ export class VoiceBank {
 				return this.softsaw(i, part, env, at);
 			case SAMPLER:
 				return this.sampler(i);
+			case MOOG:
+				return this.moog(i, part, at);
 			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
@@ -1576,6 +1607,48 @@ export class VoiceBank {
 		}
 		this.sideR = r;
 		return l;
+	}
+
+	private moog(i: number, part: ResolvedPart, at: number) {
+		const sr = this.sampleRate;
+		const n = part.unison;
+		const base = i * MAX_OPS;
+		const t = this.age[i]++ / sr;
+		this.wander(i, part);
+		let x = 0;
+		for (let k = 0; k < n; k++) {
+			const o = base + k;
+			const inc = this.inc1[i] * semis(this.opOff[o] + this.opJit[o]);
+			x += saw(this.opPh[o], inc);
+			this.opPh[o] = wrap(this.opPh[o] + inc);
+		}
+		x /= Math.sqrt(n);
+		if (part.index > 0) {
+			const inc = this.inc1[i] / 2;
+			const p = this.ph2[i];
+			x += part.index * (saw(p, inc) - saw(wrap(p + 0.5), inc));
+			this.ph2[i] = wrap(p + inc);
+		}
+		if (t < part.attackS) this.fenv[i] = t / part.attackS;
+		else if (t === 0) this.fenv[i] = 1;
+		else this.fenv[i] *= part.envDecayCoef;
+		if (this.age[i] % CUT_EVERY === 1)
+			this.g[i] = ladderCoef(
+				part.cutoffHz * 2 ** (part.envAmount * this.fenv[i]) * sweep(part, at),
+				sr,
+			);
+		const k = part.ladderK;
+		const g = this.g[i];
+		const u = Math.tanh((1 + 3 * part.drive) * 0.5 * x - k * this.bp2[i]);
+		const a = this.lp[i] + g * (u - Math.tanh(this.lp[i]));
+		const b = this.bp[i] + g * (Math.tanh(a) - Math.tanh(this.bp[i]));
+		const c = this.lp2[i] + g * (Math.tanh(b) - Math.tanh(this.lp2[i]));
+		const d = this.bp2[i] + g * (Math.tanh(c) - Math.tanh(this.bp2[i]));
+		this.lp[i] = a;
+		this.bp[i] = b;
+		this.lp2[i] = c;
+		this.bp2[i] = d;
+		return d * (1 + 0.5 * k) * 1.6;
 	}
 
 	/** The acid: a saw into two resonant stages; an envelope that snaps the

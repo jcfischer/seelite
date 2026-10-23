@@ -47,6 +47,7 @@ import {
 	stationBed as legacyStationBed,
 } from "./music-generate-legacy";
 import { berlinFlightBed, berlinStationBed } from "./music-generate-berlin";
+import { schoolFlightBed, schoolStationBed } from "./music-generate-school";
 import { numbersPhrase } from "./comms";
 import {
 	DANUBE_CANCEL_FADE_S,
@@ -193,7 +194,7 @@ export interface MusicArms {
 	 *  #603; the other two stay on `?music=` to compare in flight. */
 	readonly waltz: DanubeVoicing;
 }
-export type MusicBed = "legacy" | "second" | "berlin";
+export type MusicBed = "legacy" | "second" | "berlin" | "school";
 
 /** Each bed's two songs: a system's flight bed and a station's. */
 const BEDS: Readonly<
@@ -208,6 +209,7 @@ const BEDS: Readonly<
 	legacy: { flight: legacyFlightBed, station: legacyStationBed },
 	second: { flight: flightBed, station: stationBed },
 	berlin: { flight: berlinFlightBed, station: berlinStationBed },
+	school: { flight: schoolFlightBed, station: schoolStationBed },
 };
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
@@ -231,8 +233,8 @@ export function musicArms(value: string | null): {
 		if (!token) continue;
 		if (token === "off") arms = { ...arms, off: true };
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
-		else if (token === "legacy" || token === "second" || token === "berlin")
-			arms = { ...arms, bed: token };
+		else if (Object.hasOwn(BEDS, token))
+			arms = { ...arms, bed: token as MusicBed };
 		else if (Object.hasOwn(DANUBE_VOICINGS, token))
 			arms = { ...arms, waltz: token as DanubeVoicing };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
