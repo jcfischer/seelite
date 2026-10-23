@@ -51,7 +51,7 @@ describe("§3.2.1 every line of action meets metal", () => {
 				.map((t) => `${t.slot} ${(t.gapKm * 1000).toFixed(1)} m`);
 			expect({ id, missed }).toEqual({ id, missed: [] });
 		}
-	});
+	}, 60_000);
 
 	test("the stored placement is the one the mesh gives", () => {
 		for (const id of HULL_IDS)

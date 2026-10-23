@@ -898,7 +898,12 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	interceptor: {
 		role: "fast",
 		variant: "a",
-		env: { lengthKm: 0.0624, beamKm: 0.0253, heightKm: 0.0252 },
+		// **The authored Lance's box (node #1034), drawn 1:1**: 62.31 x 25.02 x
+		// 25.02 m, rounded up. The length stands; the loft's beam and height were
+		// 0.28 and 0.18 m over the model's, beyond the 0.1 m the envelope row
+		// allows. The mass, thrust and hold stand, so the density only moves
+		// from 1.38 to 1.40 t per 1,000 m³.
+		env: { lengthKm: 0.0624, beamKm: 0.0251, heightKm: 0.0251 },
 		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.0013 },
 		massT: 55,
 		thrustMN: 154,
@@ -906,16 +911,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00838067,
-			yaw: 0.00839002,
-			roll: 0.00593896,
+			pitch: 0.00837137,
+			yaw: 0.00838187,
+			roll: 0.00581131,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			yaw: { y: -0.025, fore: 0.995, aft: 0.9975 },
 			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.725, port: 0.9775, starboard: 0.9775 },
+			roll: { z: 0.55, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 8,
 		hardpoints: 2,
