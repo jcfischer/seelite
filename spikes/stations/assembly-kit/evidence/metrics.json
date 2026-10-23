@@ -1,0 +1,3373 @@
+{
+  "sources": {
+    "blocks.mjs": "4fc35084ceb6c2fb9239e58d4095509d5ccdcea7d7d342fcf0423edb17a8e3fd",
+    "build_kit.py": "2e30fc6a9a34336bf4d180c647a473003e80d91a4cf43bc6b47b05d463542a6d",
+    "../build_model.py": "94f674ceeb55f4683b230537a8055ef9fd97fc97856e47594c736c98d38dbde8",
+    "../geometry.py": "fcec145cc6564cdb379196830e7f466010f2036b1b001bd7a5c35cd2b448f148",
+    "../final_shapes.py": "26967cd1207766211056e43c6febab3b97d3590f9cdbd9d83679b36516cef3e5",
+    "../industrial-surface.png": "4589b25606011e41faf5b2951f37551bfd2a0918f5ce85f8ceee7adeba0d1cb5",
+    "joints.ts": "080d69ad87c3abc2b040949b17eefd708dcd93cf3f4aab11a6b473291ff69719",
+    "assembly.ts": "b798f468888a1254c78499f53e217a56b5a2c4de8ebf3c617ba54257aa03ee1e",
+    "prepare.ts": "557383a0fe3f6c4414751a92b3414230786d6724aa928a205c1804acc61e3af3",
+    "viewer.ts": "5af031a0051c028442e8a345c149a49812047075f39fbab7a358a54c47931ee0",
+    "index.html": "dc7cfe03e1dc12b6108ea5542083538e2a352b7976337d029ed839f70ef7553e",
+    "capture.mjs": "265dbe23fe899a5e097e3045cd5d6bd2c1e3ec5ff3f98c427d505afb9c3c0886"
+  },
+  "base": "78a583ad8b63f41c9ccd4f5b21fe591144ca361d",
+  "capturedAt": "2026-10-23T07:21:45.337Z",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "asset": {
+    "batches": 28,
+    "bytes": 13808236,
+    "sha256": "17431602723f3caf6a5eb0c50d1e8a9696c4133ac1f5a8591e4c20e5ef16d611",
+    "units": "km",
+    "blocks": [
+      "HUB",
+      "HUB_STATIC",
+      "NODE",
+      "TUBE"
+    ],
+    "authoring": "Blender build_kit.py via stations/build_model.py and geometry.py",
+    "source": "blocks.blend",
+    "sourceSha256": "e599190181a7fefe62fa21a84d82a60903def767e250d834e1ee02a3ee8ac906",
+    "texture": "../industrial-surface.png"
+  },
+  "lighting": "Station study rig: ACES 1.12, room environment 0.36; key 4.5, fill 1.1, rim 1.0. Phases 0 and quarter turn (hub-quarter), studio background; no frame-time claim.",
+  "plans": {
+    "0": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          7,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 9,
+        "dx": -2,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          4
+        ],
+        "host": 3
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          8,
+          9,
+          2
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          4,
+          6,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          7,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          6,
+          4,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 4,
+        "dx": 2,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          0,
+          9
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": -2,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          3,
+          4,
+          4
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          2,
+          1,
+          8,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          1,
+          9,
+          7,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          3,
+          3,
+          4,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          9,
+          2,
+          0,
+          8
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 4,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          7,
+          2,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          4,
+          6,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          3,
+          0
+        ],
+        "host": 2
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ],
+    "1": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          3
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          5
+        ],
+        "host": 3
+      },
+      {
+        "module": 3,
+        "dx": -2,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          3,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          1,
+          7,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          1,
+          2,
+          7,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          5,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 5,
+        "dx": 3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          2,
+          8,
+          7,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 4,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          5,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          3,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          8,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 1,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ],
+    "47": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -2,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          7,
+          0,
+          4
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          4,
+          6,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 2,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          4
+        ],
+        "host": 3
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          4,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          8,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          6,
+          4,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 4,
+        "dx": 2,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          7,
+          8,
+          2
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          4,
+          0,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 9,
+        "dx": -4,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": -3,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          9,
+          0,
+          0,
+          9
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          1,
+          0,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          1,
+          2,
+          8,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          4,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          2,
+          2,
+          7,
+          8
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 4,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          5,
+          6,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          9,
+          7,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          5,
+          6,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          6,
+          6,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 2,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          8,
+          2,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 2,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": 2
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          9,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": 1,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ],
+    "1234": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": -3,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 2,
+        "dx": -2,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          4
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          4,
+          0,
+          3
+        ],
+        "host": 1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          8,
+          2,
+          9
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          4,
+          6,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          0,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 2,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          3,
+          0,
+          8
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -4,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          3,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          3,
+          9,
+          8,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          4,
+          5
+        ],
+        "host": 0
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          9,
+          1,
+          8,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          1,
+          8,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          0,
+          3,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          9,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 2,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          2,
+          8,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 3,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 2,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          7,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ]
+  },
+  "authoredInstances": {
+    "0": [
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1
+      },
+      {
+        "module": 4,
+        "dx": 2,
+        "dy": -1
+      },
+      {
+        "module": 2,
+        "dx": -2,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": 0
+      },
+      {
+        "module": 2,
+        "dx": 4,
+        "dy": 0
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": 1
+      }
+    ],
+    "1": [
+      {
+        "module": 3,
+        "dx": -2,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0
+      },
+      {
+        "module": 2,
+        "dx": 2,
+        "dy": 0
+      }
+    ],
+    "47": [
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -2
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1
+      },
+      {
+        "module": 4,
+        "dx": 2,
+        "dy": -1
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0
+      },
+      {
+        "module": 2,
+        "dx": 2,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": 0
+      },
+      {
+        "module": 2,
+        "dx": 4,
+        "dy": 0
+      }
+    ],
+    "1234": [
+      {
+        "module": 2,
+        "dx": -2,
+        "dy": -2
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1
+      },
+      {
+        "module": 3,
+        "dx": 2,
+        "dy": -1
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": -1
+      },
+      {
+        "module": 3,
+        "dx": -4,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": -3,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0
+      },
+      {
+        "module": 3,
+        "dx": 2,
+        "dy": 1
+      },
+      {
+        "module": 2,
+        "dx": 3,
+        "dy": 1
+      }
+    ]
+  },
+  "rows": [
+    {
+      "file": "seed-0-overview-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 258,
+      "triangles": 77496
+    },
+    {
+      "file": "seed-0-overview-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 252,
+      "triangles": 361456
+    },
+    {
+      "file": "seed-0-hub-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 176,
+      "triangles": 75472
+    },
+    {
+      "file": "seed-0-hub-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 360376
+    },
+    {
+      "file": "seed-0-hub-quarter-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 75474
+    },
+    {
+      "file": "seed-0-hub-quarter-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 178,
+      "triangles": 360378
+    },
+    {
+      "file": "seed-0-joint-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.30000000000000004,
+          0,
+          0
+        ],
+        "camera": [
+          -0.4600000000000001,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_X",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": 0,
+            "joined": [
+              false,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              0,
+              3,
+              4,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              2,
+              1,
+              8,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 1,
+          "target": [
+            -0.30000000000000004,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 65,
+      "triangles": 73024
+    },
+    {
+      "file": "seed-0-joint-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.30000000000000004,
+          0,
+          0
+        ],
+        "camera": [
+          -0.4600000000000001,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_X",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": 0,
+            "joined": [
+              false,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              0,
+              3,
+              4,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              2,
+              1,
+              8,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 1,
+          "target": [
+            -0.30000000000000004,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 70,
+      "triangles": 358936
+    },
+    {
+      "file": "seed-0-rear-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 258,
+      "triangles": 77496
+    },
+    {
+      "file": "seed-0-rear-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 252,
+      "triangles": 361456
+    },
+    {
+      "file": "seed-1-overview-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 243,
+      "triangles": 61672
+    },
+    {
+      "file": "seed-1-overview-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 250,
+      "triangles": 247064
+    },
+    {
+      "file": "seed-1-hub-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 169,
+      "triangles": 60760
+    },
+    {
+      "file": "seed-1-hub-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 176,
+      "triangles": 246152
+    },
+    {
+      "file": "seed-1-hub-quarter-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 170,
+      "triangles": 60762
+    },
+    {
+      "file": "seed-1-hub-quarter-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 246154
+    },
+    {
+      "file": "seed-1-joint-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.21,
+          0,
+          0
+        ],
+        "camera": [
+          -0.37,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "HUB–TUBE_X",
+          "a": {
+            "module": 1,
+            "dx": 0,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              6,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              1,
+              7,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 0,
+          "target": [
+            -0.21,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 87,
+      "triangles": 59032
+    },
+    {
+      "file": "seed-1-joint-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.21,
+          0,
+          0
+        ],
+        "camera": [
+          -0.37,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "HUB–TUBE_X",
+          "a": {
+            "module": 1,
+            "dx": 0,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              6,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              1,
+              7,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 0,
+          "target": [
+            -0.21,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 91,
+      "triangles": 225144
+    },
+    {
+      "file": "seed-1-rear-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 243,
+      "triangles": 61672
+    },
+    {
+      "file": "seed-1-rear-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 250,
+      "triangles": 247064
+    },
+    {
+      "file": "seed-47-overview-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 260,
+      "triangles": 99864
+    },
+    {
+      "file": "seed-47-overview-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 253,
+      "triangles": 383680
+    },
+    {
+      "file": "seed-47-hub-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 179,
+      "triangles": 97904
+    },
+    {
+      "file": "seed-47-hub-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 176,
+      "triangles": 382264
+    },
+    {
+      "file": "seed-47-hub-quarter-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 180,
+      "triangles": 97906
+    },
+    {
+      "file": "seed-47-hub-quarter-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 382266
+    },
+    {
+      "file": "seed-47-joint-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.4,
+          0.1,
+          0
+        ],
+        "camera": [
+          0.5600000000000002,
+          0.24000000000000005,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TRUSS_Y",
+          "a": {
+            "module": 2,
+            "dx": 2,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              4,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 6,
+            "dx": 2,
+            "dy": 1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              7,
+              8,
+              2,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            0.4,
+            0.1,
+            0
+          ]
+        }
+      },
+      "calls": 55,
+      "triangles": 94720
+    },
+    {
+      "file": "seed-47-joint-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.4,
+          0.1,
+          0
+        ],
+        "camera": [
+          0.5600000000000002,
+          0.24000000000000005,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TRUSS_Y",
+          "a": {
+            "module": 2,
+            "dx": 2,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              4,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 6,
+            "dx": 2,
+            "dy": 1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              7,
+              8,
+              2,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            0.4,
+            0.1,
+            0
+          ]
+        }
+      },
+      "calls": 60,
+      "triangles": 380872
+    },
+    {
+      "file": "seed-47-rear-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 260,
+      "triangles": 99864
+    },
+    {
+      "file": "seed-47-rear-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 253,
+      "triangles": 383680
+    },
+    {
+      "file": "seed-1234-overview-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 257,
+      "triangles": 78744
+    },
+    {
+      "file": "seed-1234-overview-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 251,
+      "triangles": 416192
+    },
+    {
+      "file": "seed-1234-hub-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 176,
+      "triangles": 76368
+    },
+    {
+      "file": "seed-1234-hub-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 176,
+      "triangles": 415112
+    },
+    {
+      "file": "seed-1234-hub-quarter-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 76370
+    },
+    {
+      "file": "seed-1234-hub-quarter-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 415114
+    },
+    {
+      "file": "seed-1234-joint-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.4,
+          -0.30000000000000004,
+          0
+        ],
+        "camera": [
+          -0.56,
+          -0.4400000000000001,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_Y",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": -2,
+            "joined": [
+              false,
+              false,
+              false,
+              true
+            ],
+            "beside": [
+              0,
+              0,
+              0,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 4,
+            "dx": -2,
+            "dy": -1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              8,
+              8,
+              2,
+              9
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            -0.4,
+            -0.30000000000000004,
+            0
+          ]
+        }
+      },
+      "calls": 38,
+      "triangles": 72048
+    },
+    {
+      "file": "seed-1234-joint-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.4,
+          -0.30000000000000004,
+          0
+        ],
+        "camera": [
+          -0.56,
+          -0.4400000000000001,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_Y",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": -2,
+            "joined": [
+              false,
+              false,
+              false,
+              true
+            ],
+            "beside": [
+              0,
+              0,
+              0,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 4,
+            "dx": -2,
+            "dy": -1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              8,
+              8,
+              2,
+              9
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            -0.4,
+            -0.30000000000000004,
+            0
+          ]
+        }
+      },
+      "calls": 52,
+      "triangles": 413624
+    },
+    {
+      "file": "seed-1234-rear-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 257,
+      "triangles": 78744
+    },
+    {
+      "file": "seed-1234-rear-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 251,
+      "triangles": 416192
+    }
+  ],
+  "errors": []
+}
