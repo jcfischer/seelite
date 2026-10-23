@@ -17,7 +17,8 @@
  *  voices: a burst of filtered noise, and a sine that drops in pitch.
  *  `pulse`, `epiano`, `harpsi` and `softsaw` are the Danube versions':
  *  a chip's pulse wave, an electric piano, a harpsichord and a soft-edged
- *  saw lead. */
+ *  saw lead. `moog` is saws and a sub square into a four-pole ladder
+ *  filter that saturates. */
 export type VoiceKind =
 	| "pad"
 	| "pluck"
@@ -36,6 +37,7 @@ export type VoiceKind =
 	| "epiano"
 	| "harpsi"
 	| "softsaw"
+	| "moog"
 	| "sampler";
 
 /**
