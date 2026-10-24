@@ -163,7 +163,7 @@ export const waltzCadenceS = (voicing: DanubeVoicing): number => {
 /** Whether these arms play the numbers station at all (#600): the one
  *  gate the director says them by and the host renders them ahead by. */
 export const numbersOn = (arms: MusicArms) =>
-	arms.voice && arms.bed === "berlin";
+	arms.voice && (arms.bed === "berlin" || arms.bed.startsWith("school"));
 
 /** The numbers station's first phrase in calm, and the gap after each. By
  *  ear, and a placeholder until it is heard: rare enough to be an event. */
@@ -232,7 +232,7 @@ export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
 	force: null,
 	lowHull: "threat",
-	bed: "berlin",
+	bed: "school",
 	voice: true,
 	waltz: "hybrid",
 };
