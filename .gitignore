@@ -74,3 +74,5 @@ spikes/interiors/__pycache__/
 
 # Scratch scripts, never a deliverable.
 .tmp/
+reports/mutation/
+.stryker-tmp/

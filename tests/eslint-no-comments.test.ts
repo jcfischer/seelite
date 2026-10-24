@@ -12,6 +12,28 @@ function flagged(code: string, file = "x.ts"): number[] {
 }
 
 describe("seelite/no-comments", () => {
+	test("allows only reasoned next-line Stryker line directives", () => {
+		expect(
+			flagged(
+				"// Stryker disable next-line EqualityOperator: equality cannot occur here\nconst a = 1;",
+			),
+		).toEqual([]);
+		for (const comment of [
+			"// Stryker disable all: skip everything",
+			"// Stryker disable next-line EqualityOperator:",
+			"// Stryker disable next-line: because",
+			"// Stryker is useful",
+			"/* Stryker disable next-line EqualityOperator: reason */",
+			"// narration Stryker disable next-line EqualityOperator: reason",
+			"// ordinary comment after a directive",
+		])
+			expect(flagged(`${comment}\nconst a = 1;`)).toEqual([1]);
+		expect(
+			flagged(
+				"// Stryker disable next-line BooleanLiteral: equivalent\n// an unrelated comment\nconst a = true;",
+			),
+		).toEqual([2]);
+	});
 	test("flags narration, banners, corpses and doc comments on private code", () => {
 		const code = [
 			"// the principal said never call this twice",

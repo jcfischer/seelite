@@ -1,0 +1,49 @@
+{
+  "base": "e950f79efadbade88a3a48f4eb59738b494117b2",
+  "head": "9f12a2654bb418c335d67b71f7a2c60bdfcdf031",
+  "mergeBase": "e950f79efadbade88a3a48f4eb59738b494117b2",
+  "checked": [
+    {
+      "file": "src/deficits.ts",
+      "ranges": [
+        {
+          "start": 24,
+          "end": 27
+        }
+      ],
+      "tests": [
+        "tests/deficits.test.ts"
+      ],
+      "mutants": 0,
+      "survivors": [],
+      "statuses": {},
+      "wallSeconds": 5.758073833,
+      "html": "reports/mutation/changed/src_deficits_ts.html"
+    },
+    {
+      "file": "src/market.ts",
+      "ranges": [
+        {
+          "start": 51,
+          "end": 51
+        },
+        {
+          "start": 743,
+          "end": 743
+        }
+      ],
+      "tests": [
+        "tests/market.test.ts",
+        "tests/market-state.test.ts"
+      ],
+      "mutants": 0,
+      "survivors": [],
+      "statuses": {},
+      "wallSeconds": 7.652873667000001,
+      "html": "reports/mutation/changed/src_market_ts.html"
+    }
+  ],
+  "skipped": [],
+  "failures": [],
+  "wallSeconds": 14.4544385
+}
