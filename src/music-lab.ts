@@ -24,7 +24,11 @@ import {
 	stepMusic,
 } from "./music-director";
 import { FLIGHT_LEVELS, type MusicLevel, musicTheme } from "./music-generate";
-import { CALM_FORM_NAMES, schoolTune } from "./music-generate-school";
+import {
+	CALM_FORM_NAMES,
+	schoolForm,
+	schoolTune,
+} from "./music-generate-school";
 import type { StationType } from "./station";
 
 const NOTE = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
@@ -115,7 +119,7 @@ export function mountMusicLab() {
 		renderNumbersAhead(numbersPhrase(reading.systemSeed, state.voiceN));
 		if (step.voice) sayNumbers(fx, step.voice);
 		$("state").textContent = [
-			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant})` : ""}`,
+			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant}, sequences form ${schoolForm(reading.systemSeed, state.variant)})` : ""}`,
 			`level    ${state.level}${state.fallS > 0 ? `  falling in ${(FALL_HOLD_S - state.fallS).toFixed(1)} s` : ""}`,
 			`cruise   ${state.cruise}`,
 			`synth    ${music.ready ? "ready" : "loading"}`,

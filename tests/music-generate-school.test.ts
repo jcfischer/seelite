@@ -1,18 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { musicArms } from "../src/music-director";
+import { CRUISE_TEMPO, musicArms, REFRESH_S } from "../src/music-director";
 import { MusicEngine } from "../src/music-engine";
 import { MODES, musicTheme, STATION_ROLES } from "../src/music-generate";
 import { berlinFlightBed } from "../src/music-generate-berlin";
 import {
 	anchorGrowth,
 	CALM_FORM_NAMES,
-	CALM_FORMS,
-	DRIVE_SHAPES,
+	calmSpans,
+	SCHOOL_CALM_S,
 	SCHOOL_SPACE,
+	schoolBpm,
+	schoolCalmBars,
+	schoolForm,
 	schoolFlightBed,
 	schoolStationBed,
 	schoolTune,
 } from "../src/music-generate-school";
+import { DRIVE_SHAPES, MODALS, stepDegree } from "../src/music-school-patterns";
 import { MUSIC_VOICE_CAP, type Song } from "../src/music-score";
 import { compileSong } from "../src/music-sequencer";
 
@@ -62,8 +66,7 @@ describe("the sequence-school bed", () => {
 	for (const form of CALM_FORM_NAMES)
 		test(`the ${form} form plays each type only inside its spans`, () => {
 			const song = schoolFlightBed(1234, 0, form);
-			const spans: readonly (readonly [string, number, number])[] =
-				CALM_FORMS[form];
+			const spans = calmSpans(form, section(song, "calm").bars);
 			for (const type of new Set(spans.map(([t]) => t))) {
 				const own = spans.filter(([t]) => t === type);
 				const bars = barsOf(song, "calm", LEAD[type]);
@@ -87,13 +90,14 @@ describe("the sequence-school bed", () => {
 		const seed = 1234;
 		const shape = schoolTune(seed).drive;
 		expect(DRIVE_SHAPES).toContainEqual(shape);
+		const n = shape.length;
 		const notes = section(schoolFlightBed(seed, 0, "drive"), "calm")
 			.events.filter((e) => e.part === "drive" && e.bar >= 4 && e.bar < 8)
 			.sort((x, y) => x.bar * 4 + x.beat - (y.bar * 4 + y.beat));
 		expect(notes.length).toBe(64);
-		const root = notes[0].pitch - shape[(4 * 16 - 2 * 16) % 5];
+		const root = notes[0].pitch - shape[(2 * 16) % n];
 		notes.forEach((e, i) =>
-			expect(e.pitch - root).toBe(shape[(2 * 16 + i) % 5]),
+			expect(e.pitch - root).toBe(shape[(2 * 16 + i) % n]),
 		);
 	});
 
@@ -127,7 +131,10 @@ describe("the sequence-school bed", () => {
 
 	test("the choir turns between major and minor over the modal sequence", () => {
 		const song = schoolFlightBed(1234, 0, "voyage");
-		const [, modalFrom, modalTo] = CALM_FORMS.voyage[3];
+		const [, modalFrom, modalTo] = calmSpans(
+			"voyage",
+			section(song, "calm").bars,
+		)[3];
 		const tonic = musicTheme(1234).tonic;
 		const thirds = new Set(
 			section(song, "calm")
@@ -138,6 +145,94 @@ describe("the sequence-school bed", () => {
 				.filter((pc) => pc === 3 || pc === 4),
 		);
 		expect([...thirds].sort()).toEqual([3, 4]);
+	});
+
+	test("calm outlasts the refresh, even at the cruise lift", () => {
+		for (const seed of SEEDS) {
+			const bpm = schoolBpm(musicTheme(seed)) * CRUISE_TEMPO;
+			expect(
+				(schoolCalmBars(schoolBpm(musicTheme(seed))) * 240) / bpm,
+			).toBeGreaterThanOrEqual(REFRESH_S);
+		}
+		expect(SCHOOL_CALM_S * (1 / CRUISE_TEMPO)).toBeGreaterThan(REFRESH_S);
+	});
+
+	test("each variant is a new form: never the one before it", () => {
+		for (const seed of SEEDS) {
+			const forms = Array.from({ length: 8 }, (_, v) => schoolForm(seed, v));
+			for (let v = 1; v < forms.length; v++)
+				expect(forms[v]).not.toBe(forms[v - 1]);
+			expect(new Set(forms).size).toBeGreaterThanOrEqual(3);
+			expect(schoolTune(seed, undefined, 3).form).toBe(forms[3]);
+		}
+	});
+
+	test("three variants of a system are three different movements", () => {
+		for (const seed of SEEDS) {
+			const calms = [0, 1, 2].map((v) =>
+				JSON.stringify(section(schoolFlightBed(seed, v), "calm").events),
+			);
+			expect(new Set(calms).size).toBe(3);
+		}
+	});
+
+	test("a sequence changes as it plays and comes home", () => {
+		const song = schoolFlightBed(1234, 0, "voyage");
+		const [, from, to] = calmSpans("voyage", section(song, "calm").bars)[2];
+		const canopy = section(song, "calm").events.filter(
+			(e) => e.part === "canopy",
+		);
+		const bars = (a: number) =>
+			JSON.stringify(
+				canopy
+					.filter((e) => e.bar >= a && e.bar < a + 2)
+					.map((e) => [e.bar - a, e.beat, e.pitch]),
+			);
+		expect(to - from).toBeGreaterThanOrEqual(16);
+		expect(bars(from + 8)).not.toBe(bars(from));
+	});
+
+	test("the pentatonic never leaves its five notes, over any chord", () => {
+		for (const mode of [
+			"ionian",
+			"lydian",
+			"mixolydian",
+			"dorian",
+			"aeolian",
+		] as const) {
+			const deg = (base: number, d: number) =>
+				base + 12 * Math.floor(d / 7) + MODES[mode][((d % 7) + 7) % 7];
+			const minor = MODES[mode][2] === 3;
+			const allowed = new Set(minor ? [0, 3, 5, 7, 10] : [0, 2, 4, 7, 9]);
+			for (let root = 0; root < 7; root++)
+				for (let d = -5; d < 12; d++) {
+					const pc = ((deg(0, stepDegree(deg, true, root, d)) % 12) + 12) % 12;
+					expect(allowed.has(pc), `${mode} root ${root} step ${d}`).toBe(true);
+				}
+		}
+	});
+
+	test("the modal pool holds only root, fourth, fifth and octave", () => {
+		for (const m of MODALS)
+			for (const d of m.steps) expect([0, 3, 4, 7, null]).toContain(d);
+	});
+
+	test("hats, a slow kick and the noise wash come and go in calm", () => {
+		const seeds = Array.from({ length: 24 }, (_, i) => (i * 2654435761) >>> 0);
+		let kicks = 0;
+		let washes = 0;
+		for (const seed of seeds) {
+			const song = schoolFlightBed(seed, 0);
+			const calmBars = section(song, "calm").bars;
+			const ticks = barsOf(song, "calm", "tick");
+			expect(ticks.size).toBeGreaterThan(0);
+			expect(ticks.size).toBeLessThan(calmBars);
+			if (barsOf(song, "calm", "thud").size > 0) kicks++;
+			if (barsOf(song, "calm", "washL").size > 0) washes++;
+		}
+		expect(kicks).toBeGreaterThan(0);
+		expect(kicks).toBeLessThan(seeds.length);
+		expect(washes).toBeGreaterThan(0);
 	});
 
 	test("the anchor grows from roots one step at a time", () => {
