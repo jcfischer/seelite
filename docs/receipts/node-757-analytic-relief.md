@@ -144,3 +144,22 @@ in the prior full run passes here in 154.3 seconds.
 
 Probe selection was inspected again before the targeted run (111 contracts
 selected); the supervisor retains the broader final-head browser gate.
+
+## Base merge pass — 2026-10-24
+
+Merged `origin/main` at `b8f53d3b` as `cb3a54cf`, without conflicts.
+The single full host `npm test` run returned **6,874 pass, 1 fail** across
+405 files in 991.09 seconds. RTK omitted the failure details and saved no
+recovery log. A focused rerun reproduced one failure: the shipped-terran
+source hash assertion in `tests/planet-gradient.test.ts`.
+
+The merged cloud helper changed source formatting. Both screen-space terran
+programs, with footprint off and on, were compared as complete strings against
+an isolated `git archive origin/main src` snapshot and were byte-identical.
+The two hash pins now record that merged base; no production source was edited.
+
+After the repair, **125 tests pass, 0 fail** across eight affected and guard
+files (`/tmp/node-757-merge-targeted-tests.log`), and `npx tsc --noEmit` passes.
+The full command was not repeated under the worker's once-only rule; the
+supervisor's final full run remains pending. No browser probes ran in this
+base-only pass.
