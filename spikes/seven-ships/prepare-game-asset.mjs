@@ -7,11 +7,11 @@
 //
 //   node spikes/seven-ships/prepare-game-asset.mjs interceptor
 //
-// Quantises normals and UVs to 16 bits and keeps positions, triangles and
-// texture pixels exact: Meshopt with the lossless NONE filter and lossless
+// Quantises normals to 16 bits; out-of-range UVs remain float32. Positions, triangles and
+// texture pixels remain exact: Meshopt with the lossless NONE filter and lossless
 // WebP. No simplification, resize or paint change. The study is metres, Y up,
 // +Z forward, like every authored hull: the one conversion to the game's
-// kilometres and -Z nose is the install's (`src/lance-hull.ts`), not this
+// kilometres and -Z nose is the install's (`src/interceptor-hull.ts`), not this
 // script's.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

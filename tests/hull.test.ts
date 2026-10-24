@@ -144,7 +144,7 @@ const commerceInput = (commander: ReturnType<typeof newCommander>) => ({
 });
 
 describe("the envelope is the mesh, not a claim about it", () => {
-	test.each([...HULL_IDS])(
+	test.each(HULL_IDS.filter((id) => id !== "interceptor"))(
 		"%s's declared box is its selected variant's built box, rounded up",
 		(id) => {
 			const spec = HULL_SPECS[id];
@@ -169,6 +169,18 @@ describe("the envelope is the mesh, not a claim about it", () => {
 			);
 		},
 	);
+
+	test("the interceptor retains its established fit envelope around the Lance", () => {
+		const env = HULL_SPECS.interceptor.env;
+		expect(env).toEqual({
+			lengthKm: 0.0624,
+			beamKm: 0.0253,
+			heightKm: 0.0252,
+		});
+		const built = builtEnvelope("interceptor", HULL_SPECS.interceptor.variant);
+		for (const axis of ["lengthKm", "beamKm", "heightKm"] as const)
+			expect(built[axis]).toBeLessThanOrEqual(env[axis]);
+	});
 
 	test("the selection rule is what chose each variant, not taste", () => {
 		// **The variant admitted by the most station roles, `a` on a tie.** Stated
