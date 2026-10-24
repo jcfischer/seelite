@@ -15319,8 +15319,8 @@ class Game {
 		// The numbers station, far off in the music (#600). The next phrase is
 		// rendered ahead, in idle time, never inside this step.
 		// Only where it will be said, and worked out only when it changes.
-		if (numbersOn(DIRECTOR_ARMS) && step.state.bed === "flight") {
-			const seed = this.world.system.record.seed;
+		const seed = this.world.system.record.seed;
+		if (numbersOn(DIRECTOR_ARMS, seed) && step.state.bed === "flight") {
 			const n = step.state.voiceN;
 			if (seed !== this.numbersAhead.seed || n !== this.numbersAhead.n) {
 				this.numbersAhead = { seed, n };

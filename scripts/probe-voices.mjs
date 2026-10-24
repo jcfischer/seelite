@@ -24,7 +24,9 @@
  *   not** — the wiring in `main.ts`, read by a spy on `audio.speak` around a
  *   clearance request beside a station.
  * - **the game says the numbers on the music bus** — the director's phrase,
- *   once the synth is ready, reaches `audio.speak` on the music bus.
+ *   once the synth is ready, reaches `audio.speak` on the music bus. The bed
+ *   is pinned to the school: the default draws techno for some systems, and
+ *   techno has no numbers.
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import {
@@ -210,7 +212,7 @@ try {
 	// ── The game says the numbers on the music bus ──────────────────────────
 	const game = await browser.newPage();
 	watch(game);
-	await game.goto(gameUrl(origin, { raider: "off", music: "calm" }));
+	await game.goto(gameUrl(origin, { raider: "off", music: "calm,school" }));
 	await bootedGame(game, 60000);
 	// The synth loads on the gesture that opens the game's sound (#560 D8).
 	// F8 is now the E.C.M. (node #874); an unbound key unlocks audio alone.

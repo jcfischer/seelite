@@ -352,6 +352,20 @@ const RAW_PARTS: Readonly<Record<string, PartSpec>> = {
 		reverb: 0.4,
 		echo: 0.5,
 	},
+	arp: {
+		voice: "analog",
+		level: 0.04,
+		attackS: 0.003,
+		decayS: 0.12,
+		sustain: 0,
+		releaseS: 0.06,
+		cutoffHz: 1600,
+		envAmount: 1.2,
+		envDecayS: 0.08,
+		pan: 0.3,
+		reverb: 0.35,
+		echo: 0.4,
+	},
 	riser: {
 		voice: "noise",
 		level: 0.05,
@@ -599,7 +613,7 @@ export function technoSection(
 	level: MusicLevel,
 	bars: number,
 	rand: () => number,
-	opts: { intro: boolean; breakdowns: boolean },
+	opts: { intro: boolean; breakdowns: boolean; arp?: boolean },
 ): NoteEvent[] {
 	const spec: TechnoStyleSpec = TECHNO_STYLES[tune.style];
 	const mode = MODES[spec.mode];
@@ -770,6 +784,20 @@ export function technoSection(
 				step("riser", bar, s, 0.2, 72 + s * 2.5, 0.3 + s * 0.04);
 		if (bar % PHRASE === 0 && p > 0 && plan[p - 1].breakdown)
 			step("crash", bar, 0, 4, 100, 0.8);
+		if (opts.arp)
+			for (let s = 0; s < 16; s++) {
+				const up = [...tune.voicing, tune.voicing[0] + 12];
+				const at = s % (2 * up.length - 2);
+				const i = at < up.length ? at : 2 * up.length - 2 - at;
+				step(
+					"arp",
+					bar,
+					s,
+					0.2,
+					root(chordRoot + 24) + up[i],
+					s % 4 === 0 ? 0.6 : 0.4,
+				);
+			}
 	}
 	return w.events;
 }
@@ -799,7 +827,11 @@ export function technoFlightBed(
 			level,
 			lengths[level],
 			streamOf(systemSeed, variant, STREAM[level]),
-			{ intro: level === "calm", breakdowns: level === "calm" },
+			{
+				intro: level === "calm",
+				breakdowns: level === "calm",
+				arp: level === "calm" || level === "wary",
+			},
 		),
 	}));
 	let bar = 0;

@@ -68,6 +68,7 @@ import {
 } from "./music-danube";
 import type { MusicCommand, Song } from "./music-score";
 import { beatSeconds, bpmAt } from "./music-sequencer";
+import { mix, seededRand } from "./rng";
 import type { StationType } from "./station";
 
 /** Who owns the sound this frame. */
@@ -168,8 +169,10 @@ export const waltzCadenceS = (voicing: DanubeVoicing): number => {
 
 /** Whether these arms play the numbers station at all (#600): the one
  *  gate the director says them by and the host renders them ahead by. */
-export const numbersOn = (arms: MusicArms) =>
-	arms.voice && (arms.bed === "berlin" || arms.bed.startsWith("school"));
+export const numbersOn = (arms: MusicArms, systemSeed: number) => {
+	const bed = arms.bed === "system" ? systemBed(systemSeed) : arms.bed;
+	return arms.voice && (bed === "berlin" || bed.startsWith("school"));
+};
 
 /** The numbers station's first phrase in calm, and the gap after each. By
  *  ear, and a placeholder until it is heard: rare enough to be an event. */
@@ -212,7 +215,20 @@ export type MusicBed =
 	| "school"
 	| `school-${CalmForm}`
 	| "techno"
+	| "system"
 	| `techno-${TechnoStyle}`;
+
+/** The share of systems that play techno under the `system` bed, the
+ *  sequence school the rest (the principal, 2026-10-24: 60:40). */
+export const TECHNO_SHARE = 0.4;
+const SYSTEM_BED_TAG = 0x62656473;
+
+/** The bed a system plays under the `system` arm, drawn once from its
+ *  seed. */
+export const systemBed = (systemSeed: number): "school" | "techno" =>
+	seededRand(mix(systemSeed >>> 0, SYSTEM_BED_TAG))() < TECHNO_SHARE
+		? "techno"
+		: "school";
 
 /** Each bed's two songs: a system's flight bed and a station's. */
 interface BedSongs {
@@ -236,6 +252,11 @@ const BEDS: Readonly<Record<MusicBed, BedSongs>> = {
 		]),
 	) as Record<`school-${CalmForm}`, BedSongs>),
 	techno: { flight: technoFlightBed, station: technoStationBed },
+	system: {
+		flight: (seed, variant) => BEDS[systemBed(seed)].flight(seed, variant),
+		station: (seed, role, variant) =>
+			BEDS[systemBed(seed)].station(seed, role, variant),
+	},
 	...(Object.fromEntries(
 		TECHNO_STYLE_NAMES.map((style) => [
 			`techno-${style}`,
@@ -251,7 +272,7 @@ export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
 	force: null,
 	lowHull: "threat",
-	bed: "school",
+	bed: "system",
 	voice: true,
 	waltz: "hybrid",
 };
@@ -600,7 +621,7 @@ export function stepMusic(
 	// it; the director only says when and what.
 	let { voiceS, voiceN } = s;
 	let voice: string | undefined;
-	if (numbersOn(arms) && level === "calm") {
+	if (numbersOn(arms, r.systemSeed) && level === "calm") {
 		voiceS += dt;
 		if (voiceS >= (voiceN === 0 ? VOICE_FIRST_S : VOICE_EVERY_S)) {
 			voiceS = 0;

@@ -16,6 +16,7 @@ import { Music } from "./music";
 import {
 	DEFAULT_MUSIC_ARMS,
 	type MusicBed,
+	systemBed,
 	FALL_HOLD_S,
 	initialMusicState,
 	type MusicReading,
@@ -55,7 +56,7 @@ export function mountMusicLab() {
     <select id="role"><option>trade</option><option>refinery</option><option>shipyard</option><option>outpost</option></select></label>
   <label><input type="radio" name="scene" value="witchspace"> Witchspace (music yields)</label>
   <label style="margin-left:12px"><input id="cruise" type="checkbox"> Cruise</label>
-  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="school" selected>Berlin sequences (fourth, the default)</option>${CALM_FORM_NAMES.map((f) => `<option value="school-${f}">Berlin sequences, ${f} form on every system</option>`).join("")}<option value="techno">Techno (spike)</option>${TECHNO_STYLE_NAMES.map((s) => `<option value="techno-${s}">Techno, ${s} on every system</option>`).join("")}<option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
+  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="system" selected>Each system: Berlin sequences 60 %, techno 40 % (the default)</option><option value="school">Berlin sequences (fourth)</option>${CALM_FORM_NAMES.map((f) => `<option value="school-${f}">Berlin sequences, ${f} form on every system</option>`).join("")}<option value="techno">Techno (spike)</option>${TECHNO_STYLE_NAMES.map((s) => `<option value="techno-${s}">Techno, ${s} on every system</option>`).join("")}<option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
 </fieldset>
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Danger level</legend>
   ${FLIGHT_LEVELS.map((l, i) => `<label><input type="radio" name="level" value="${l}"${i === 0 ? " checked" : ""}> ${l}</label>`).join(" ")}
@@ -74,7 +75,8 @@ export function mountMusicLab() {
 			.value;
 
 	const formLine = (seed: number, variant: number) => {
-		const bed = $<HTMLSelectElement>("bed").value;
+		const chosen = $<HTMLSelectElement>("bed").value;
+		const bed = chosen === "system" ? systemBed(seed) : chosen;
 		if (bed === "school")
 			return `, sequences form ${schoolForm(seed, variant)}`;
 		if (bed.startsWith("school-"))

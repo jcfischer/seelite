@@ -1,6 +1,7 @@
 /**
  * The voice in the music (#600): a numbers station overheard, far off in the
- * calm of the Berlin bed and the sequence school, and nowhere else. The director says when and what; the
+ * calm of the Berlin bed and the sequence school, and nowhere else: under
+ * the default `system` bed, only in a system that draws the school. The director says when and what; the
  * host renders and plays it (`comms-voice.ts`, `AudioFX.speak`).
  */
 import { describe, expect, test } from "bun:test";
@@ -12,6 +13,7 @@ import {
 	type MusicReading,
 	QUIET_READING,
 	stepMusic,
+	systemBed,
 	VOICE_EVERY_S,
 	VOICE_FIRST_S,
 } from "../src/music-director";
@@ -55,9 +57,10 @@ describe("the numbers in the music", () => {
 	test("a new system starts its own numbers from the first", () => {
 		let state = initialMusicState();
 		const heard: string[] = [];
+		const school = { ...DEFAULT_MUSIC_ARMS, bed: "school" as const };
 		const fly = (reading: MusicReading, seconds: number) => {
 			for (let i = 0; i < Math.round(seconds / STEP); i++) {
-				const step = stepMusic(state, reading, STEP);
+				const step = stepMusic(state, reading, STEP, school);
 				state = step.state;
 				if (step.voice) heard.push(step.voice);
 			}
@@ -69,6 +72,16 @@ describe("the numbers in the music", () => {
 			numbersPhrase(1234, 1),
 			numbersPhrase(99, 0),
 		]);
+	});
+
+	test("the default bed says them in a school system and not in a techno one", () => {
+		const seeds = Array.from({ length: 40 }, (_, i) => (i * 2654435761) >>> 0);
+		const school = seeds.find((s) => systemBed(s) === "school") ?? 0;
+		const techno = seeds.find((s) => systemBed(s) === "techno") ?? 0;
+		const hears = (systemSeed: number) =>
+			listen(VOICE_FIRST_S + 1, { ...calm, systemSeed }).length;
+		expect(hears(school)).toBe(1);
+		expect(hears(techno)).toBe(0);
 	});
 
 	test("a fight hears none", () => {
