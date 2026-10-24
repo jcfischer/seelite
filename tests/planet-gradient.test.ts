@@ -39,10 +39,10 @@ test("an analytic class policy retains the full-detail band's hysteresis", () =>
 	expect(reliefPathFor(release - 1, "analytic-gradient")).toBe("screen-space");
 });
 
-test("both shipped terran programs retain their pre-node source byte for byte", () => {
+test("both shipped terran programs retain their merged-base source byte for byte", () => {
 	for (const [footprint, digest] of [
-		[false, "b3f289d26a46b83a4d14376ed8d83c958a69e50c3876caefe6081a7a8a07b317"],
-		[true, "85f85ee9ba367dc06552336ed0d1d13bb79cbb6aff8c4c6fbb49ebdcf07dcba5"],
+		[false, "692eefddfe12c9be8a512aa369071fc505bc31cb9783d8872012a6d7078fe59e"],
+		[true, "a1ab9c4fce377164570b270220954c45e59b641af0abd806b9215467b40e9642"],
 	] as const) {
 		expect(
 			createHash("sha256")
