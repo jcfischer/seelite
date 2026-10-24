@@ -257,6 +257,7 @@ function stopped(what, r) {
 for (const [system, formId, where] of [
 	[SYSTEM, "a", "face"],
 	[3, "e", "wheel-face"],
+	[5, "d", "wheel-face"],
 ]) {
 	console.log("\n§9.2.1 a ship stops at a station's hull:");
 	const r = await coast({ type: "trade", where, gates: 1, system });

@@ -128,7 +128,7 @@ describe("Assembly authored-block spike", () => {
 				);
 				expect(instance).toBeDefined();
 			}
-			expect(built.instances.filter((p) => p.module === HUB)).toHaveLength(1);
+			expect(built.instances.filter((p) => p.block === "HUB")).toHaveLength(1);
 			expect(built.mesh.spinner.getObjectByName("authored-HUB")).toBeDefined();
 			expect(
 				built.mesh.spinner.getObjectByName("authored-TUBE"),
@@ -143,11 +143,14 @@ describe("Assembly authored-block spike", () => {
 			built.mesh.root.traverse((o) => {
 				if (
 					o instanceof THREE.InstancedMesh &&
-					/^[A-Z]+(_STATIC)?-/.test(o.name)
+					o.userData.assemblyBlock
 				)
 					batches++;
 			});
-			expect(batches).toBe(asset.batches);
+			const present = new Set(built.instances.map((p) => p.block));
+			let expectedBatches = 0;
+			for (const block of present) kit.getObjectByName(block)!.traverse((o) => { if (o instanceof THREE.Mesh) expectedBatches++; });
+			expect(batches).toBe(expectedBatches);
 			for (const phase of [0, Math.PI / 4, Math.PI / 2]) {
 				built.mesh.spinner.rotation.z = phase;
 				built.mesh.root.rotation.z = -phase;
