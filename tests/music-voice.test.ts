@@ -1,6 +1,6 @@
 /**
  * The voice in the music (#600): a numbers station overheard, far off in the
- * Berlin bed's calm, and nowhere else. The director says when and what; the
+ * calm of the Berlin bed and the sequence school, and nowhere else. The director says when and what; the
  * host renders and plays it (`comms-voice.ts`, `AudioFX.speak`).
  */
 import { describe, expect, test } from "bun:test";
@@ -38,15 +38,19 @@ function listen(
 const calm: MusicReading = { ...QUIET_READING, systemSeed: 1234 };
 
 describe("the numbers in the music", () => {
-	test("calm on the Berlin bed hears the system's phrases in order", () => {
-		const heard = listen(VOICE_FIRST_S + VOICE_EVERY_S + 1, calm);
-		expect(heard.map((h) => h.text)).toEqual([
-			numbersPhrase(1234, 0),
-			numbersPhrase(1234, 1),
-		]);
-		expect(heard[0].at).toBeCloseTo(VOICE_FIRST_S, 0);
-		expect(heard[1].at - heard[0].at).toBeCloseTo(VOICE_EVERY_S, 0);
-	});
+	for (const bed of ["school", "school-drive", "berlin"] as const)
+		test(`calm on the ${bed} bed hears the system's phrases in order`, () => {
+			const heard = listen(VOICE_FIRST_S + VOICE_EVERY_S + 1, calm, {
+				...DEFAULT_MUSIC_ARMS,
+				bed,
+			});
+			expect(heard.map((h) => h.text)).toEqual([
+				numbersPhrase(1234, 0),
+				numbersPhrase(1234, 1),
+			]);
+			expect(heard[0].at).toBeCloseTo(VOICE_FIRST_S, 0);
+			expect(heard[1].at - heard[0].at).toBeCloseTo(VOICE_EVERY_S, 0);
+		});
 
 	test("a new system starts its own numbers from the first", () => {
 		let state = initialMusicState();
