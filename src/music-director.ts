@@ -53,6 +53,12 @@ import {
 	schoolFlightBed,
 	schoolStationBed,
 } from "./music-generate-school";
+import {
+	TECHNO_STYLE_NAMES,
+	type TechnoStyle,
+	technoFlightBed,
+	technoStationBed,
+} from "./music-generate-techno";
 import { numbersPhrase } from "./comms";
 import {
 	DANUBE_CANCEL_FADE_S,
@@ -204,7 +210,9 @@ export type MusicBed =
 	| "second"
 	| "berlin"
 	| "school"
-	| `school-${CalmForm}`;
+	| `school-${CalmForm}`
+	| "techno"
+	| `techno-${TechnoStyle}`;
 
 /** Each bed's two songs: a system's flight bed and a station's. */
 interface BedSongs {
@@ -227,6 +235,17 @@ const BEDS: Readonly<Record<MusicBed, BedSongs>> = {
 			},
 		]),
 	) as Record<`school-${CalmForm}`, BedSongs>),
+	techno: { flight: technoFlightBed, station: technoStationBed },
+	...(Object.fromEntries(
+		TECHNO_STYLE_NAMES.map((style) => [
+			`techno-${style}`,
+			{
+				flight: (seed: number, variant: number) =>
+					technoFlightBed(seed, variant, style),
+				station: technoStationBed,
+			},
+		]),
+	) as Record<`techno-${TechnoStyle}`, BedSongs>),
 };
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
