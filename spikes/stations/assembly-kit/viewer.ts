@@ -5,6 +5,11 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { buildSpike } from "./assembly";
 import { jointForSeed } from "./joints";
 import { STATION_GEOMETRY } from "../../../src/station";
+import { SPIKE_SEEDS } from "./blocks.mjs";
+
+const seedPicker = document.querySelector<HTMLSelectElement>("#seed")!;
+for (const seed of SPIKE_SEEDS)
+	seedPicker.add(new Option(`${seed}`, `${seed}`));
 
 const renderer = new THREE.WebGLRenderer({
 	antialias: true,
