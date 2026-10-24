@@ -25,7 +25,7 @@ Start classification reuses the existing per-pair ghost and resting paths.
 Placement-gated ghost policy and resting across cone boundaries are not delivered
 by this node. The two ship boxes remain separate pairs throughout.
 
-## Accuracy and regression evidence
+## Lateness and regression evidence
 
 `bun test tests/collision-rock.test.ts tests/rock-pieces-boundary.test.ts`:
 **14 passed, 0 failed**, including nine rock-sweep tests.
@@ -108,3 +108,65 @@ same-host spike.
 - This internal collision seam is not a major public changelog change.
 - Full host `npm test`, run once before commit: **6,890 passed, 0 failed**
   across 407 files (1,101 s).
+
+## Review round 1
+
+All six findings were taken. Scaled hulls are cached by bound node and radius,
+with weak node ownership; classification and repeated sweep passes reuse them.
+`getOrInsert` owns map insertion at the cache, pair and skip-set sites.
+`classifyRock` reuses the start traversal's candidates and retains the existing
+world-axis witness query and piece-then-primitive ordering. Ordinary
+solids have their own classification loop. The advance mode resolves placements,
+translation, turning, contact, target and rounding allowance before iteration.
+The 64-advance limit and contact constants are unchanged.
+
+The sub-step comparisons above bound lateness, not symmetric time error.
+R1, R2 and every A1 reference hit now also query the reported piece and ship
+primitive with the retained independent GJK at the reported time. Their gap
+must be at most the declared 0.05 m swept-contact gap (0.15 m for an initially
+resting pair), plus 1 micrometre of numerical tolerance. The spin fixture checks
+the exact world-path pose against 0.05 m plus twice the rock sagitta.
+These are spatial bounds on early reporting, not a claim of symmetric temporal
+accuracy. Temporarily adding 2 m to the production contact allowance made R1
+fail on its new gap assertion (2.05 m observed against 0.050001 m allowed);
+the mutation was removed.
+
+Both A2 hits are checked for definedness before reading fields. Two additional
+rows cover repeated use of the same geometry at different radii and initial
+ghost/resting classification under a rotated, translated rock frame.
+
+The original nine rock tests passed with the new gap assertions before the
+structural edits. A separate before/after comparison against reviewed commit
+`7857a3c2` covered 102 sweep outputs over the synthetic ridge and all 16
+archetypes at 40/400 m radii, including initial ghosts and resting contacts in
+translated/rotated frames: all discrete fields and 64,694 numeric fields agreed
+exactly. An attempted reuse of local-frame resting witnesses changed some
+witness points; that change was withdrawn in favour of the existing world-axis
+query. The seven affected collision/pieces files passed 207 tests; the final
+rock/pieces rerun passed 16 tests after that adjustment.
+
+The cost instrument was rerun with nine repetitions on the Apple M1 Pro, load
+4.3 / 4.8 / 4.7. All 20 radius/scenario rows passed, with no capped pair.
+The table gives ranges across the four radii, not a before/after speedup.
+
+| Scenario | Production (µs/rock/tick) | Production/spike |
+| --- | ---: | ---: |
+| approach | 262.5–505.3 | 1.02–1.11 |
+| assist off | 352.8–495.3 | 1.05–1.07 |
+| graze | 249.4–331.0 | 1.02–1.09 |
+| resting | 266.5–615.0 | 1.08–1.13 |
+| near | 61.3–163.6 | 1.05–1.10 |
+
+Typecheck/production build, format, script lint and comment lint passed; the
+comment suppression count for `collision.ts` shrank from 121 to 113.
+
+Browser selection was inspected before the run: 112 probes selected for the
+committed implementation diff. The worker ran only the affected collision
+probes, on ANGLE Metal / Apple M1 Pro: surface 9/9, station collision 35/35,
+**2/2 gating probes**, 125 s, peak load 11.2. This is manually filtered partial
+coverage: 111 of the 113 available probes did not run; the supervisor owns the
+final repository-selected gate. Sandboxed preflight aborted with EPERM; the
+successful run was outside the sandbox on this host.
+
+Full host `npm test`, run once immediately before the review-fix commit:
+**6,892 passed, 0 failed**, 407 files, 1,107.83 s. No finding was declined.

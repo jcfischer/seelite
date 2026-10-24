@@ -1178,14 +1178,37 @@ function rockReach(rock: RockSolid): number {
 	return reach * rock.radiusKm;
 }
 
-const rockHull = (
+function getOrInsert<K, V>(
+	map: { get(key: K): V | undefined; set(key: K, value: V): unknown },
+	key: K,
+	make: () => V,
+): V {
+	let value = map.get(key);
+	if (value === undefined) {
+		value = make();
+		map.set(key, value);
+	}
+	return value;
+}
+
+const rockHulls = new WeakMap<
+	BoundNode,
+	Map<number, ConvexHull & { kind: "hull" }>
+>();
+function rockHull(
 	node: BoundNode,
 	radius: number,
-): ConvexHull & { kind: "hull" } => ({
-	kind: "hull",
-	c: scale(node.hull.c, radius),
-	v: node.hull.v.map((v) => scale(v, radius)),
-});
+): ConvexHull & { kind: "hull" } {
+	return getOrInsert(
+		getOrInsert(rockHulls, node, () => new Map()),
+		radius,
+		() => ({
+			kind: "hull",
+			c: scale(node.hull.c, radius),
+			v: node.hull.v.map((v) => scale(v, radius)),
+		}),
+	);
+}
 
 function inFrame(pose: Pose, frame: Pose): Pose {
 	const vector = (v: Vec3) =>
@@ -1247,23 +1270,14 @@ function sweepRock(
 	};
 	const pairs = new Map<BoundNode, Map<Primitive, PairState>>();
 	const pairFor = (node: BoundNode, shipBox: Primitive) => {
-		let byBox = pairs.get(node);
-		if (!byBox) {
-			byBox = new Map();
-			pairs.set(node, byBox);
-		}
-		let pair = byBox.get(shipBox);
-		if (!pair) {
-			pair = {
-				solid: index,
-				shipBox,
-				primitive: rockHull(node, rock.radiusKm),
-				reach: rockReach(rock),
-				piece: node.piece,
-			};
-			byBox.set(shipBox, pair);
-		}
-		return pair;
+		const byBox = getOrInsert(pairs, node, () => new Map());
+		return getOrInsert(byBox, shipBox, () => ({
+			solid: index,
+			shipBox,
+			primitive: rockHull(node, rock.radiusKm),
+			reach: rockReach(rock),
+			piece: node.piece,
+		}));
 	};
 	const met = firstRockLeaf(
 		rock.pieces.roots,
@@ -1276,6 +1290,82 @@ function sweepRock(
 	return met ? { pair: pairFor(met.node, met.primitive), s: met.s } : null;
 }
 
+function recordStartContact(
+	sweep: Sweep,
+	pair: PairState,
+	gap: Separation,
+	result: MotionSweepResult,
+	touching: Touching[],
+): void {
+	const { ship, dt } = sweep;
+	const solid = sweep.solids[pair.solid];
+	if (gap.overlap) {
+		if (!result.ghosts.includes(pair.solid)) result.ghosts.push(pair.solid);
+		return;
+	}
+	const ref = solid.start.origin;
+	const solidPose = { ...solid.start, origin: v3() };
+	const surfaceVel = sweep.restingShipPair
+		? solid.velStart
+		: pointVelocity(
+				solid,
+				sweep.spins[pair.solid],
+				dt,
+				0,
+				solidPose,
+				gap.onSurface,
+			);
+	const closing = closingSpeed(sub(ship.velStart, surfaceVel), gap.normal);
+	touching.push({ pair, normal: gap.normal, closingKms: closing });
+	if (closing > RESTING_CLOSING_FLOOR_KMS) {
+		result.contacts.push({
+			impact: {
+				solid: pair.solid,
+				timeS: 0,
+				point: add(gap.onSurface, ref),
+				normal: gap.normal,
+				closingKms: closing,
+				damage: impactDamage(closing),
+				side: sideStruck(
+					ship.start.z,
+					sub(gap.onShip, sub(ship.start.origin, ref)),
+				),
+				resting: true,
+				part: partOf(pair.shipBox),
+				...(pair.piece === undefined ? {} : { piece: pair.piece }),
+			},
+			surface: pair.primitive,
+		});
+	}
+}
+
+function classifyRock(
+	sweep: Sweep,
+	rock: RockSolid,
+	index: number,
+	result: MotionSweepResult,
+	touching: Touching[],
+): void {
+	const skips = new Map<Primitive, Set<number>>();
+	sweep.rockSkips.set(index, skips);
+	const reach = rockReach(rock);
+	const shipStart = {
+		...sweep.ship.start,
+		origin: sub(sweep.ship.start.origin, rock.start.origin),
+	};
+	const solidPose = { ...rock.start, origin: v3() };
+	for (const [primitive, piece] of startRockPieces(sweep, rock)) {
+		const placed = place(primitive, solidPose);
+		for (const shipBox of sweep.shipBoxes) {
+			const gap = separation(placeBox(shipBox, shipStart), placed);
+			if (!gap.overlap && gap.distanceKm > RESTING_KM) continue;
+			getOrInsert(skips, shipBox, () => new Set()).add(piece);
+			const pair = { solid: index, shipBox, primitive, reach, piece };
+			recordStartContact(sweep, pair, gap, result, touching);
+		}
+	}
+}
+
 /**
  * §4.3 and §3.1: every pair at the start of the step is a ghost, resting or
  * swept. Ghosts and resting impacts go onto `result` as they are found.
@@ -1284,14 +1374,13 @@ function classifyPairs(
 	sweep: Sweep,
 	result: MotionSweepResult,
 ): { touching: Touching[]; swept: PairState[] } {
-	const { ship, dt } = sweep;
+	const { ship } = sweep;
 	const touching: Touching[] = [];
 	const swept: PairState[] = [];
 	sweep.solids.forEach((solid, index) => {
-		const rock = isRock(solid) ? solid : null;
-		const reach = rock
-			? rockReach(rock)
-			: solidReachKm((solid as SolidMotion).primitives);
+		const reach = isRock(solid)
+			? rockReach(solid)
+			: solidReachKm(solid.primitives);
 		if (
 			!mayMeet(
 				{
@@ -1303,94 +1392,22 @@ function classifyPairs(
 			)
 		)
 			return;
+		if (isRock(solid)) {
+			classifyRock(sweep, solid, index, result, touching);
+			return;
+		}
 		const ref = solid.start.origin;
-		const shipOrigin = sub(ship.start.origin, ref);
-		const shipStart = { ...ship.start, origin: shipOrigin };
+		const shipStart = { ...ship.start, origin: sub(ship.start.origin, ref) };
 		const solidPose = { ...solid.start, origin: v3() };
 		const spin = sweep.spins[index];
-		const pieces = rock ? startRockPieces(sweep, rock) : null;
-		const primitives = pieces
-			? [...pieces.keys()]
-			: nearPrimitives(sweep, solid as SolidMotion, spin, reach);
-		if (rock) sweep.rockSkips.set(index, new Map());
-		for (const primitive of primitives) {
-			// §4.1's last sentence, per primitive: a station's proxy is tens of
-			// pieces, and a ship beside one face cannot reach the far side's.
-			if (
-				!rock &&
-				!primitiveMayMeet(
-					sweep,
-					solid as SolidMotion,
-					spin,
-					primitive as Primitive,
-				)
-			)
-				continue;
+		for (const primitive of nearPrimitives(sweep, solid, spin, reach)) {
+			if (!primitiveMayMeet(sweep, solid, spin, primitive)) continue;
 			const placed = place(primitive, solidPose);
-			// Every ship box against it, each its own pair (node #959): a
-			// deployed cutter is ghosted, resting or swept on its own terms.
 			for (const shipBox of sweep.shipBoxes) {
-				const pair: PairState = {
-					solid: index,
-					shipBox,
-					primitive,
-					reach,
-					...(rock ? { piece: pieces!.get(primitive)! } : {}),
-				};
+				const pair: PairState = { solid: index, shipBox, primitive, reach };
 				const gap = separation(placeBox(shipBox, shipStart), placed);
-				if (rock && (gap.overlap || gap.distanceKm <= RESTING_KM)) {
-					const skips = sweep.rockSkips.get(index)!;
-					let skipped = skips.get(shipBox);
-					if (!skipped) {
-						skipped = new Set();
-						skips.set(shipBox, skipped);
-					}
-					skipped.add(pair.piece!);
-				}
-				if (gap.overlap) {
-					if (!result.ghosts.includes(index)) result.ghosts.push(index);
-					continue;
-				}
-				if (gap.distanceKm > RESTING_KM) {
-					if (!rock) swept.push(pair);
-					continue;
-				}
-				// Both ships keep the own-turn exemption at rest (§3.1). Their
-				// translation at the start still bills; a moving world surface
-				// is still billed. Swept impacts use both point velocities below.
-				const surfaceVel = sweep.restingShipPair
-					? solid.velStart
-					: pointVelocity(
-							solid,
-							sweep.spins[index],
-							dt,
-							0,
-							solidPose,
-							gap.onSurface,
-						);
-				const closing = closingSpeed(
-					sub(ship.velStart, surfaceVel),
-					gap.normal,
-				);
-				touching.push({ pair, normal: gap.normal, closingKms: closing });
-				if (closing > RESTING_CLOSING_FLOOR_KMS) {
-					result.contacts.push({
-						impact: {
-							solid: index,
-							timeS: 0,
-							point: add(gap.onSurface, ref),
-							normal: gap.normal,
-							closingKms: closing,
-							damage: impactDamage(closing),
-							// §3: measured from the ship's position, as the swept branch is.
-							side: sideStruck(ship.start.z, sub(gap.onShip, shipOrigin)),
-							resting: true,
-							part: partOf(shipBox),
-							...(rock ? { piece: pair.piece } : {}),
-						},
-						surface: primitive,
-					});
-				}
+				if (!gap.overlap && gap.distanceKm > RESTING_KM) swept.push(pair);
+				else recordStartContact(sweep, pair, gap, result, touching);
 			}
 		}
 	});
@@ -1606,31 +1623,44 @@ function advance(
 	frame?: RockFrame,
 ): number | null {
 	const { dt, diagnostics } = sweep;
-	const shipSpin = frame?.spin ?? sweep.shipSpin;
-	const solid: Motion = frame
-		? {
-				start: { ...IDENTITY_AXES, origin: v3() },
-				end: { ...IDENTITY_AXES, origin: v3() },
-				velStart: v3(),
-				velEnd: v3(),
-			}
-		: sweep.solids[pair.solid];
-	const solidSpin = frame
-		? { axis: v3(1, 0, 0), angle: 0 }
-		: sweep.spins[pair.solid];
-	ship = frame ? { ...ship, ...frame.motion } : ship;
+	const solid = sweep.solids[pair.solid];
+	const solidSpin = sweep.spins[pair.solid];
 	const ref = solid.start.origin;
-	const translation = scale(
-		sub(
-			sub(ship.end.origin, ship.start.origin),
-			sub(solid.end.origin, solid.start.origin),
-		),
-		1 / dt,
-	);
-	const turning =
-		(shipSpin.angle / dt) *
-			(frame ? primitiveReachKm(pair.shipBox) : sweep.shipReach) +
-		(solidSpin.angle / dt) * pair.reach;
+	const mode = frame
+		? {
+				translation: scale(
+					sub(frame.motion.end.origin, frame.motion.start.origin),
+					1 / dt,
+				),
+				turning: (frame.spin.angle / dt) * primitiveReachKm(pair.shipBox),
+				shipAt: (s: number) =>
+					placeBox(pair.shipBox, poseAt(frame.motion, frame.spin, s, v3())),
+				solidAt: (_s: number): Placed => pair.primitive as Placed,
+				contact: frame.contact,
+				target: frame.contact,
+				slack: 1e-12,
+			}
+		: {
+				translation: scale(
+					sub(
+						sub(ship.end.origin, ship.start.origin),
+						sub(solid.end.origin, solid.start.origin),
+					),
+					1 / dt,
+				),
+				turning:
+					(sweep.shipSpin.angle / dt) * sweep.shipReach +
+					(solidSpin.angle / dt) * pair.reach,
+				shipAt: (s: number) =>
+					placeBox(pair.shipBox, poseAt(ship, sweep.shipSpin, s, ref)),
+				solidAt: (s: number) =>
+					place(pair.primitive, poseAt(solid, solidSpin, s, ref)),
+				contact: CONTACT_KM,
+				target: ADVANCE_TARGET_KM,
+				slack: 0,
+			};
+	const { translation, turning, shipAt, solidAt, contact, target, slack } =
+		mode;
 	let s = from;
 	for (let i = 0; i < MAX_ADVANCES; i++) {
 		if (diagnostics) {
@@ -1640,17 +1670,11 @@ function advance(
 				i + 1,
 			);
 		}
-		const shipAt = placeBox(pair.shipBox, poseAt(ship, shipSpin, s, ref));
-		const solidAt = frame
-			? (pair.primitive as Placed)
-			: place(pair.primitive, poseAt(solid, solidSpin, s, ref));
-		const gap = separation(shipAt, solidAt);
-		const contact = frame?.contact ?? CONTACT_KM;
-		if (gap.overlap || gap.distanceKm <= contact + (frame ? 1e-12 : 0))
-			return s;
+		const gap = separation(shipAt(s), solidAt(s));
+		if (gap.overlap || gap.distanceKm <= contact + slack) return s;
 		const bound = Math.max(0, -dot(translation, gap.normal)) + turning;
 		if (!(bound > 0)) return null;
-		s += (gap.distanceKm - (frame ? contact : ADVANCE_TARGET_KM)) / bound / dt;
+		s += (gap.distanceKm - target) / bound / dt;
 		if (s > 1) return null;
 	}
 	if (diagnostics) diagnostics.cappedPairs++;

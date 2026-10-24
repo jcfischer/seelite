@@ -2,7 +2,11 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import {
 	bodySphere,
 	IDENTITY_AXES,
+	RESTING_KM,
+	SEPARATION_KM,
+	spinBetween,
 	sweepShip,
+	type Impact,
 	type Pose,
 	type SolidMotion,
 } from "../src/collision";
@@ -19,7 +23,12 @@ import {
 	type Vec3,
 } from "../src/vec3";
 import { envelopeAt as spikeEnvelope } from "./fixtures/rock-sweep-956/pieces";
-import { firstOverlap } from "./fixtures/rock-sweep-956/rock-sweep";
+import { placeBox, separation } from "./fixtures/rock-sweep-956/gjk";
+import {
+	firstOverlap,
+	shipPoseAt,
+	type ShipStep,
+} from "./fixtures/rock-sweep-956/rock-sweep";
 import {
 	DT,
 	archetypes,
@@ -35,6 +44,20 @@ import {
 	unit,
 	upFor,
 } from "./fixtures/rock-sweep";
+
+function contactGap(
+	s: ShipStep,
+	oracle: ReturnType<typeof spikePieces>,
+	hit: Impact,
+	R: number,
+	at = shipPoseAt(s.start, s.end, spinBetween(s.start, s.end), hit.timeS / DT),
+): number {
+	const primitive = s.prims.find((p) => (p.part ?? "hull") === hit.part);
+	expect(primitive).toBeDefined();
+	expect(hit.piece).toBeDefined();
+	const gap = separation(placeBox(primitive!, at), oracle.pieces[hit.piece!]);
+	return gap.overlap ? 0 : gap.distanceKm * R;
+}
 
 describe("sweepShip against rock solids (node #958)", () => {
 	test("R1 crosses the spike ridge at 2 and 10 km/s no later than the 20,000-sub-step reference", () => {
@@ -58,6 +81,9 @@ describe("sweepShip against rock solids (node #958)", () => {
 				expect(hit).toBeDefined();
 				expect(hit.part).toBe("hull");
 				expect(hit.timeS / DT).toBeLessThanOrEqual(ref! + 1 / 20_000);
+				expect(contactGap(s, oracle, hit, R)).toBeLessThanOrEqual(
+					SEPARATION_KM / 2 + 1e-9,
+				);
 				expect(diagnostics.cappedPairs).toBe(0);
 			}
 	}, 120_000);
@@ -113,6 +139,9 @@ describe("sweepShip against rock solids (node #958)", () => {
 		expect(sampleGap).toBeGreaterThan(0);
 		expect(hit).toBeDefined();
 		expect(hit.timeS / DT).toBeLessThanOrEqual(ref! + 1 / 4000);
+		expect(contactGap(s, oracle, hit, R)).toBeLessThanOrEqual(
+			SEPARATION_KM / 2 + 1e-9,
+		);
 	});
 
 	test("a translated and turned rock reports world witnesses and body-relative closing speed", () => {
@@ -159,6 +188,84 @@ describe("sweepShip against rock solids (node #958)", () => {
 				),
 			),
 		).toBeLessThan(1e-6);
+	});
+
+	test("reusing one rock geometry at different radii preserves each sweep", () => {
+		const rp = synthetic(false);
+		const run = (R: number) =>
+			sweep(
+				step(R, v3(0, 0, 1.3), v3(0, 0, 0.4), v3(0, 0, -1), v3(0, 1, 0)),
+				rp,
+				R,
+			).result;
+		const small = run(0.04);
+		const large = run(0.4);
+		expect(small.impacts[0]).toBeDefined();
+		expect(large.impacts[0]).toBeDefined();
+		expect(run(0.04)).toEqual(small);
+		expect(run(0.4)).toEqual(large);
+		expect(small.impacts[0].timeS).not.toBe(large.impacts[0].timeS);
+	});
+
+	test("initial rock overlap and resting contact retain world-frame classification", () => {
+		const R = 0.4,
+			rp = synthetic(false);
+		const s = step(R, v3(0, 0, 1.3), v3(0, 0, 0.4), v3(0, 0, -1), v3(0, 1, 0));
+		const first = sweep(s, rp, R).hit;
+		expect(first).toBeDefined();
+		const ship = motion(s, R),
+			rock = solid(rp, R);
+		ship.start.origin = add(
+			ship.start.origin,
+			scale(sub(ship.end.origin, ship.start.origin), first.timeS / DT),
+		);
+		ship.end = ship.start;
+		const resting = sweepShip(ship, [rock], DT);
+		expect(resting.impacts[0]).toBeDefined();
+		expect(resting.impacts[0].resting).toBe(true);
+		expect(resting.impacts[0].timeS).toBe(0);
+		expect(resting.impacts[0].closingKms).toBeGreaterThan(0);
+		const axis = unit(v3(1, 2, 3)),
+			angle = 1.3,
+			origin = v3(30, -20, 40);
+		const pose = (p: Pose): Pose => ({
+			origin: add(origin, rotateAbout(p.origin, axis, angle)),
+			x: rotateAbout(p.x, axis, angle),
+			y: rotateAbout(p.y, axis, angle),
+			z: rotateAbout(p.z, axis, angle),
+		});
+		ship.start = pose(ship.start);
+		ship.end = pose(ship.end);
+		ship.velStart = ship.velEnd = rotateAbout(ship.velStart, axis, angle);
+		rock.start = pose(rock.start);
+		rock.end = pose(rock.end);
+		const turned = sweepShip(ship, [rock], DT);
+		expect(turned.impacts[0]).toBeDefined();
+		expect(turned.impacts[0].resting).toBe(true);
+		expect(turned.impacts[0].closingKms).toBeCloseTo(
+			resting.impacts[0].closingKms,
+			8,
+		);
+		expect(
+			length(
+				sub(
+					turned.impacts[0].normal,
+					rotateAbout(resting.impacts[0].normal, axis, angle),
+				),
+			),
+		).toBeLessThan(1e-8);
+		expect(
+			length(
+				sub(
+					turned.impacts[0].point,
+					add(origin, rotateAbout(resting.impacts[0].point, axis, angle)),
+				),
+			),
+		).toBeLessThan(1e-8);
+		ship.start.origin = ship.end.origin = rock.start.origin;
+		const ghost = sweepShip(ship, [rock], DT);
+		expect(ghost.ghosts).toEqual([0]);
+		expect(ghost.impacts).toEqual([]);
 	});
 
 	test("rock contact competes with ordinary solids and the aperture plane on one timeline", () => {
@@ -228,30 +335,31 @@ describe("sweepShip against rock solids (node #958)", () => {
 		const diagnostics = { advances: 0, maxPairAdvances: 0, cappedPairs: 0 };
 		const hit = sweepShip(ship, [rock], DT, { diagnostics }).impacts[0];
 		let ref: number | null = null;
+		const exactPose = (f: number): Pose => ({
+			origin: rotateAbout(
+				add(s.start.origin, scale(sub(s.end.origin, s.start.origin), f)),
+				axis,
+				-angle * f,
+			),
+			x: rotateAbout(
+				rotateAbout(s.start.x, shipAxis, shipAngle * f),
+				axis,
+				-angle * f,
+			),
+			y: rotateAbout(
+				rotateAbout(s.start.y, shipAxis, shipAngle * f),
+				axis,
+				-angle * f,
+			),
+			z: rotateAbout(
+				rotateAbout(s.start.z, shipAxis, shipAngle * f),
+				axis,
+				-angle * f,
+			),
+		});
 		for (let i = 0; i <= 4000; i++) {
 			const f = i / 4000;
-			const at: Pose = {
-				origin: rotateAbout(
-					add(s.start.origin, scale(sub(s.end.origin, s.start.origin), f)),
-					axis,
-					-angle * f,
-				),
-				x: rotateAbout(
-					rotateAbout(s.start.x, shipAxis, shipAngle * f),
-					axis,
-					-angle * f,
-				),
-				y: rotateAbout(
-					rotateAbout(s.start.y, shipAxis, shipAngle * f),
-					axis,
-					-angle * f,
-				),
-				z: rotateAbout(
-					rotateAbout(s.start.z, shipAxis, shipAngle * f),
-					axis,
-					-angle * f,
-				),
-			};
+			const at = exactPose(f);
 			if (
 				firstOverlap({ prims: s.prims, start: at, end: at }, oracle, 1) !== null
 			) {
@@ -262,6 +370,13 @@ describe("sweepShip against rock solids (node #958)", () => {
 		expect(ref).not.toBeNull();
 		expect(hit).toBeDefined();
 		expect(hit.timeS / DT).toBeLessThanOrEqual(ref! + 1 / 4000);
+		const sagitta =
+			R *
+			Math.max(length(s.start.origin), length(s.end.origin)) *
+			(1 - Math.cos(angle / 2));
+		expect(
+			contactGap(s, oracle, hit, R, exactPose(hit.timeS / DT)),
+		).toBeLessThanOrEqual(SEPARATION_KM / 2 + 2 * sagitta + 1e-9);
 		expect(diagnostics.cappedPairs).toBe(0);
 	});
 
@@ -343,6 +458,12 @@ describe("sweepShip against rock solids (node #958)", () => {
 							hits++;
 							expect(hit, `case ${cases}`).toBeDefined();
 							expect(hit.timeS / DT).toBeLessThanOrEqual(ref + 1 / n);
+							expect(
+								contactGap(s, oracles[k], hit, R),
+								`case ${cases}`,
+							).toBeLessThanOrEqual(
+								(hit.resting ? RESTING_KM : SEPARATION_KM / 2) + 1e-9,
+							);
 						}
 					}
 				});
@@ -376,8 +497,9 @@ describe("sweepShip against rock solids (node #958)", () => {
 				const tree = sweep(s, rp, R),
 					all = sweep(s, flat, R);
 				expect(tree.result.ghosts).toEqual([]);
-				expect(tree.hit.resting).toBe(false);
 				expect(tree.hit).toBeDefined();
+				expect(all.hit).toBeDefined();
+				expect(tree.hit.resting).toBe(false);
 				expect(tree.hit.piece).toBe(all.hit.piece);
 				expect(tree.hit.part).toBe(all.hit.part);
 				expect(Math.abs(tree.hit.timeS - all.hit.timeS)).toBeLessThan(1e-9);
