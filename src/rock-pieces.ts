@@ -319,3 +319,61 @@ export function pieceAt(rp: RockPieces, d: Vec3): number {
 export function envelopeAt(rp: RockPieces, d: Vec3): number {
 	return planesExit(rp.planes[pieceAt(rp, d)], d);
 }
+
+/** First cone-piece contact, advancing each child from its convex parent's contact time. */
+export function firstRockLeaf<T>(
+	roots: readonly BoundNode[],
+	primitives: readonly T[],
+	advance: (node: BoundNode, primitive: T, from: number) => number | null,
+): { node: BoundNode; primitive: T; s: number } | null {
+	type Item = { node: BoundNode; primitive: T; index: number; s: number };
+	const heap: Item[] = [];
+	const before = (a: Item, b: Item) =>
+		a.s < b.s ||
+		(a.s === b.s &&
+			(a.index < b.index ||
+				(a.index === b.index && a.node.piece < b.node.piece)));
+	const offer = (
+		node: BoundNode,
+		primitive: T,
+		index: number,
+		from: number,
+	) => {
+		const s = advance(node, primitive, from);
+		if (s === null) return;
+		heap.push({ node, primitive, index, s });
+		let i = heap.length - 1;
+		while (i > 0) {
+			const parent = (i - 1) >> 1;
+			if (!before(heap[i], heap[parent])) break;
+			[heap[i], heap[parent]] = [heap[parent], heap[i]];
+			i = parent;
+		}
+	};
+	primitives.forEach((p, index) => {
+		for (const root of roots) offer(root, p, index, 0);
+	});
+	while (heap.length) {
+		const first = heap[0],
+			last = heap.pop()!;
+		if (heap.length) {
+			heap[0] = last;
+			let i = 0;
+			for (;;) {
+				const left = i * 2 + 1,
+					right = left + 1;
+				let next = i;
+				if (left < heap.length && before(heap[left], heap[next])) next = left;
+				if (right < heap.length && before(heap[right], heap[next]))
+					next = right;
+				if (next === i) break;
+				[heap[i], heap[next]] = [heap[next], heap[i]];
+				i = next;
+			}
+		}
+		if (first.node.piece >= 0) return first;
+		for (const child of first.node.children)
+			offer(child, first.primitive, first.index, first.s);
+	}
+	return null;
+}
