@@ -22,6 +22,7 @@ import {
 	hits,
 	KICK_FILLS,
 	KICK_MAIN,
+	KICK_ONE,
 	PROGRESSIONS,
 	VOICINGS,
 } from "./music-techno-patterns";
@@ -331,7 +332,7 @@ const RAW_PARTS: Readonly<Record<string, PartSpec>> = {
 	},
 	pad: {
 		voice: "drone",
-		level: 0.15,
+		level: 0.17,
 		attackS: 2,
 		releaseS: 2,
 		detune: 0.1,
@@ -351,6 +352,31 @@ const RAW_PARTS: Readonly<Record<string, PartSpec>> = {
 		pan: -0.25,
 		reverb: 0.4,
 		echo: 0.5,
+	},
+	sub: {
+		voice: "fm",
+		level: 0.3,
+		ratio: 1,
+		index: 0,
+		attackS: 0.02,
+		decayS: 0.4,
+		sustain: 0.6,
+		releaseS: 0.2,
+		reverb: 0.04,
+	},
+	chordCalm: {
+		voice: "analog",
+		level: 0.25,
+		unison: 2,
+		detune: 0.1,
+		spread: 0.9,
+		attackS: 0.08,
+		decayS: 0.6,
+		sustain: 0.3,
+		releaseS: 0.4,
+		cutoffHz: 700,
+		reverb: 0.7,
+		echo: 0.3,
 	},
 	arp: {
 		voice: "analog",
@@ -506,9 +532,9 @@ export function technoTune(
 		hats: Math.floor(rand() * HATS.length),
 		clap: Math.floor(rand() * CLAPS.length),
 		fill: Math.floor(rand() * KICK_FILLS.length),
-		bassLine: spec.acidBass
-			? []
-			: bassSteps(BASS_LINES[pickOf(rand, spec.bass)]),
+		bassLine: bassSteps(
+			BASS_LINES[spec.acidBass ? "offbeat" : pickOf(rand, spec.bass)],
+		),
 		acid: acidLine(rand, mode),
 		voicing: pickOf(rand, VOICINGS),
 		stab: euclid(stabKind, 16, stabRotate),
@@ -578,11 +604,12 @@ export function arrange(
 
 const layerList = (s: string) => s.split(" ") as Layer[];
 const LEVEL_LAYERS: Readonly<Record<MusicLevel, readonly Layer[]>> = {
-	calm: layerList("kick hats ohat clap rim perc bass chords pad blip"),
-	wary: layerList("kick hats ohat clap rim perc bass chords blip"),
-	threat: layerList("kick hats ohat clap rim bass acid chords ride"),
+	calm: layerList("kick bass chords pad"),
+	wary: layerList("kick ohat bass chords pad"),
+	threat: layerList("kick hats ohat clap bass acid chords blip"),
 	combat: layerList("kick hats ohat clap rim perc bass acid chords ride"),
 };
+const CALM_ORDER = layerList("pad chords kick bass");
 const LEVEL_ENERGY: Readonly<Record<MusicLevel, number>> = {
 	calm: 1,
 	wary: 0.8,
@@ -590,16 +617,19 @@ const LEVEL_ENERGY: Readonly<Record<MusicLevel, number>> = {
 	combat: 1,
 };
 
-function layersOf(tune: TechnoTune, level: MusicLevel): Set<Layer> {
+function layersOf(
+	tune: TechnoTune,
+	level: MusicLevel,
+	base: readonly Layer[] = LEVEL_LAYERS[level],
+): Set<Layer> {
 	const spec: TechnoStyleSpec = TECHNO_STYLES[tune.style];
-	const on = new Set(LEVEL_LAYERS[level]);
-	if (spec.chords === "none") on.delete("chords");
+	const on = new Set(base);
+	if (spec.chords === "none" && level !== "calm") on.delete("chords");
 	if (!spec.blip) on.delete("blip");
-	if (spec.acidBass) {
+	if (spec.acidBass && level !== "calm") {
 		on.delete("bass");
 		on.add("acid");
 	}
-	if (level === "calm" && tune.style === "dub") on.delete("clap");
 	return on;
 }
 
@@ -613,7 +643,13 @@ export function technoSection(
 	level: MusicLevel,
 	bars: number,
 	rand: () => number,
-	opts: { intro: boolean; breakdowns: boolean; arp?: boolean },
+	opts: {
+		intro: boolean;
+		breakdowns: boolean;
+		arp?: boolean;
+		layers?: readonly Layer[];
+		sparse?: boolean;
+	},
 ): NoteEvent[] {
 	const spec: TechnoStyleSpec = TECHNO_STYLES[tune.style];
 	const mode = MODES[spec.mode];
@@ -621,8 +657,8 @@ export function technoSection(
 	const plan = arrange(
 		rand,
 		Math.ceil(bars / PHRASE),
-		layersOf(tune, level),
-		tune.order,
+		layersOf(tune, level, opts.layers),
+		opts.sparse ? CALM_ORDER : tune.order,
 		opts,
 	);
 	const versions = acidVersions(
@@ -664,7 +700,14 @@ export function technoSection(
 	const acidPart =
 		level === "combat" || tune.style === "industrial" ? "acidHard" : "acid";
 	const acidRoot = spec.acidBass ? bassRoot : bassRoot + 12;
-	const kickMain = hits(KICK_MAIN);
+	const kickMain = hits(opts.sparse ? KICK_ONE : KICK_MAIN);
+	const bassLine = opts.sparse
+		? bassSteps(BASS_LINES.sub).map((n, s) => (s < 8 ? n : null))
+		: level === "wary"
+			? bassSteps(BASS_LINES.offbeat)
+			: tune.bassLine;
+	const eighths = level === "threat";
+	const full = level === "combat";
 	for (let bar = 0; bar < bars; bar++) {
 		const p = Math.floor(bar / PHRASE);
 		const { on, breakdown } = plan[p];
@@ -673,8 +716,9 @@ export function technoSection(
 		const shift = tune.progression[p % tune.progression.length];
 		const root = (base: number) => base + (shift > 6 ? shift - 12 : shift);
 		if (on.has("kick")) {
-			const kick =
-				last && next?.breakdown
+			const kick = opts.sparse
+				? kickMain
+				: last && next?.breakdown
 					? KICK_FILLS[KICK_FILLS.length - 1]
 					: last
 						? KICK_FILLS[(tune.fill + p) % (KICK_FILLS.length - 1)]
@@ -685,7 +729,9 @@ export function technoSection(
 			pattern(
 				"hat",
 				bar,
-				HATS[(tune.hats + Math.floor(p / 2)) % HATS.length],
+				HATS[(tune.hats + Math.floor(p / 2)) % HATS.length].map((h, s) =>
+					eighths && s % 2 === 1 ? null : full ? (h ?? 0.25) : h,
+				),
 				HAT + 4,
 				0.1,
 				breakdown ? 0.5 : 0.8,
@@ -717,14 +763,14 @@ export function technoSection(
 					step("perc", bar, s, 0.1, 64 + ((g / tune.perc) % 3) * 5, 0.55);
 			}
 		if (on.has("bass"))
-			tune.bassLine.forEach((n, s) => {
+			bassLine.forEach((n, s) => {
 				if (n !== null) {
-					const sub = tune.bassLine.filter((x) => x !== null).length === 2;
+					const sub = bassLine.filter((x) => x !== null).length === 2;
 					step(
-						"bass",
+						opts.sparse ? "sub" : "bass",
 						bar,
 						s,
-						sub ? 1.4 : 0.2,
+						sub ? (opts.sparse ? 0.5 : 1.4) : 0.2,
 						root(bassRoot) + n,
 						s % 4 === 2 ? 0.85 : 0.65,
 					);
@@ -748,15 +794,20 @@ export function technoSection(
 			});
 		}
 		if (on.has("chords")) {
-			const part = spec.chords === "dub" ? "dub" : "stab";
+			const part = opts.sparse
+				? "chordCalm"
+				: spec.chords === "dub"
+					? "dub"
+					: "stab";
+			const first = tune.stab.indexOf(true);
 			tune.stab.forEach((hit, s) => {
-				if (hit)
+				if (hit && (!opts.sparse || s === first))
 					for (const v of tune.voicing)
 						step(
 							part,
 							bar,
 							s,
-							part === "dub" ? 0.5 : 0.25,
+							opts.sparse ? 3.5 : part === "dub" ? 0.5 : 0.25,
 							root(chordRoot + 12) + v,
 							breakdown ? 0.7 : 0.55,
 						);
@@ -831,6 +882,7 @@ export function technoFlightBed(
 				intro: level === "calm",
 				breakdowns: level === "calm",
 				arp: level === "calm" || level === "wary",
+				sparse: level === "calm",
 			},
 		),
 	}));
@@ -881,6 +933,7 @@ export function technoStationBed(
 	const events = technoSection(theme, tune, "calm", TECHNO_STATION_BARS, rand, {
 		intro: false,
 		breakdowns: false,
+		layers,
 	}).map((e) => (e.part === "kick" ? { ...e, vel: e.vel * 0.7 } : e));
 	return {
 		name: `techno station ${role} ${systemSeed >>> 0}/${variant}`,

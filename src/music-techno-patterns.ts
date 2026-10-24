@@ -31,14 +31,16 @@ export function euclid(k: number, n: number, rotate = 0): boolean[] {
 }
 
 /** The kick's bars: the four on the floor, and the fills that end a phrase. */
-export const KICK_MAIN = "X...X...X...X...";
+export const KICK_MAIN = "X---X---X---X---";
+/** Calm's kick: a soft one on the bar line, and nothing else. */
+export const KICK_ONE = "o---------------";
 export const KICK_FILLS = [
-	"X...X...X...X.x.",
-	"X...X...X..xX...",
-	"X...X...X...X..x",
-	"X...X...X.x.X.x.",
-	"X...X...X...xxXx",
-	"X...X...X.......",
+	"X---X---X---X-x-",
+	"X---X---X--xX---",
+	"X---X---X---X--x",
+	"X---X---X-x-X-x-",
+	"X---X---X---xxXx",
+	"X---X---X-------",
 ].map(hits);
 
 /** Closed hats: which sixteenths they play, and their accents. */
