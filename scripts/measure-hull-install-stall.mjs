@@ -99,7 +99,12 @@ try {
 			url: "LANCE_INTERCEPTOR_GLB_URL",
 		},
 	];
-	for (const hull of HULLS) {
+	const selected = process.env.HULL
+		? HULLS.filter((hull) => hull.id === process.env.HULL)
+		: HULLS;
+	if (!selected.length)
+		throw new Error(`unknown authored hull: ${process.env.HULL}`);
+	for (const hull of selected) {
 		// At a home station of the hull's Traffic, as `probe-model-download`
 		// stands, so the refresh has that station's ships to rebuild.
 		await page.evaluate((id) => {

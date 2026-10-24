@@ -138,8 +138,8 @@ describe("a derelict's envelope is the intact hull's", () => {
 		// The instrument's own control: delete every fuselage triangle touching
 		// the nose's plane — which is the hull's foremost — and `drawnHullBox`
 		// moves while `Box3.setFromObject` does not.
-		const root = live("interceptor");
-		const fuselage = root.getObjectByName("interceptor-fuselage") as THREE.Mesh;
+		const root = live("patrol");
+		const fuselage = root.getObjectByName("patrol-fuselage") as THREE.Mesh;
 		const before = drawnHullBox(root);
 		const cut = fuselage.geometry.clone();
 		const position = cut.getAttribute("position");
@@ -471,7 +471,7 @@ describe("the live ship is untouched", () => {
 
 describe("the broken look goes dark with the rest", () => {
 	test("the frame, the liner and the scorched skin carry no light of their own", () => {
-		const wreck = buildDerelictMesh("interceptor");
+		const wreck = buildDerelictMesh("patrol");
 		let frame = 0;
 		let liners = 0;
 		wreck.traverse((o) => {

@@ -392,6 +392,7 @@ try {
 				gameUrl(ORIGIN, {
 					seed: SEED,
 					"models-full": false,
+					hull: hull.id,
 					"no-save": true,
 					voices: "formant",
 					raider: "off",

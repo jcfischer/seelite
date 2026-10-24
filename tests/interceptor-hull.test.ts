@@ -16,6 +16,7 @@ import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
 import {
 	HULL_REACH_KM,
+	NAV_LIGHT_PROUD,
 	authoredHullBuilder,
 	buildShipMesh,
 	installAuthoredHull,
@@ -320,7 +321,7 @@ describe("what the game needs that the study did not carry", () => {
 		}
 	});
 
-	test("the one gun is forward, on metal", () => {
+	test("every gun is forward, on metal", () => {
 		const root = interceptor();
 		const box = new THREE.Box3().setFromObject(root);
 		const size = box.getSize(new THREE.Vector3());
@@ -519,6 +520,27 @@ describe("every Traffic interceptor is the model, so the detail band switches it
 		const p = new THREE.Vector3();
 		for (let i = 0; i < position.count; i++)
 			expect(box.containsPoint(p.fromBufferAttribute(position, i))).toBe(true);
+		const axes = [
+			new THREE.Vector3(1, 0, 0),
+			new THREE.Vector3(-1, 0, 0),
+			new THREE.Vector3(0, -1, 0),
+			new THREE.Vector3(0, 0, -1),
+		];
+		const caster = new THREE.Raycaster();
+		for (let i = 0; i < position.count; i++) {
+			const light = p.fromBufferAttribute(position, i).clone();
+			caster.set(light.clone().addScaledVector(axes[i], -0.1), axes[i]);
+			const hit = caster.intersectObject(full, true).find((h) => h.face);
+			expect(hit).toBeDefined();
+			expect(hit!.point.distanceTo(light)).toBeLessThan(
+				HULL_SPECS.interceptor.env.lengthKm * NAV_LIGHT_PROUD + 1e-9,
+			);
+		}
+		const placed = Array.from(position.array);
+		for (const radii of [44, 440, 408, 380, 38]) {
+			updateShipVisuals(root, radii * reachKm, "high");
+			expect(Array.from(position.array)).toEqual(placed);
+		}
 	});
 
 	test("every interceptor shares the levels' geometry, and the glows stay outside them", () => {

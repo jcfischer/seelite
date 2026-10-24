@@ -1,5 +1,9 @@
 # Integration handoff — seven accepted ships
 
+Lance production integration follows [node #1034's receipt](../../docs/receipts/node-1034-lance-interceptor.md).
+Its current loading, shipping and level policy supersedes the corresponding
+historical handoff steps below for the interceptor only.
+
 Author: Codex. Updated 2026-10-09. Design [PR #829](https://github.com/jcfischer/seelite/pull/829), branch `design/seven-ships-codex`, study [node #827](https://github.com/jcfischer/seelite/issues/827). Verified implementation checkpoint: `e96d393`.
 
 ## Start here

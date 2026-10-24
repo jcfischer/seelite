@@ -49,6 +49,9 @@ describe("the shipped file", () => {
 				expect(json.accessors[primitive.attributes.NORMAL].componentType).toBe(
 					5122,
 				);
+				expect(
+					json.accessors[primitive.attributes.TEXCOORD_0].componentType,
+				).toBe(5126);
 			}
 	});
 
@@ -186,6 +189,7 @@ describe("the study's frame", () => {
 			beamKm: 0.0253,
 			heightKm: 0.0252,
 		};
+		expect(HULL_SPECS.interceptor.env).toEqual(loft);
 		expect(model.lengthKm).toBeLessThanOrEqual(loft.lengthKm);
 		expect(model.beamKm).toBeLessThanOrEqual(loft.beamKm);
 		expect(model.heightKm).toBeLessThanOrEqual(loft.heightKm);
