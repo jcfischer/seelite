@@ -19,8 +19,12 @@ stand-in. There is no added boot-blocking model.
 
 The original `HULL_SPECS.interceptor` envelope remains **62.4 × 25.3 × 25.2 m**,
 with the same centre, mass, thrust, hold, hardpoints and economy. The inherited
-implementation had narrowed beam and height; final verification restored the
-original contract. Vents were remeasured on the Full Lance and their shares
+implementation had narrowed beam and height; final verification restored those
+original simulation dimensions as this node requires. This explicitly retains
+the pre-integration box rather than remeasuring it from the Lance rounded up.
+`RETAINED_ENVELOPE_HULLS` names that policy; the tests pin its membership and
+original dimensions and require the authored mesh to fit inside it. Every other
+hull keeps the selected-mesh box rounded up to 0.1 m. Vents were remeasured on the Full Lance and their shares
 re-solved against the original inertia, preserving the existing handling law.
 
 Production appearance, the proposed changelog sentence, Sage and the final
@@ -165,10 +169,49 @@ level was checked. Shading changes at transitions remain a principal eye gate.
   The ranger worker contract reserves that final run, PR and Sage for the
   supervisor. Principal flight/appearance approval and changelog copy approval
   remain pending.
-- Final full host `npm test`, run once immediately before the worker commit:
+- Prior full host `npm test` at `43b41bb1`, before Sage round 1 changes:
   **6,883 passed, 0 failed**, 406 files, 11,964,206 assertions, 1,023.08 seconds.
-  Log: `/tmp/seelite-1034-final-host-suite-20261024.log`. No code changed after
-  that run; this final receipt update records its result.
+  Log: `/tmp/seelite-1034-final-host-suite-20261024.log`.
+
+## Sage round 1 follow-through — 2026-10-24
+
+- Named the retained-envelope policy in `hull.ts`; both the rounded-mesh rule
+  and retained-box containment rows read that set. Membership and the original
+  interceptor dimensions are pinned. The receipt now describes this exception
+  explicitly. The review's claim that the old test allowed the declared beam
+  to drift was incorrect: it already asserted the exact original dimensions.
+- Removed the global Lance preload. Nine mesh-dependent test files explicitly
+  install the cached builder and restore the previous installation afterward.
+  Unrelated tests keep the procedural stand-in. A separate test holds that
+  boundary; restoring the former global preload makes it fail on the installed
+  builder, as intended. No suite-speedup claim is made from this change.
+- Moved the seven role names and three habitat role names to `roles.mjs`.
+  All five reviewed spike files import the shared names. Direct comparison
+  against the previous literals confirms the same values and order; capture
+  and generator syntax checks pass. The two existing spike test files pass
+  **15 tests / 1,565 assertions** on the same exported assets.
+- Removed the duplicate envelope and berth assertions in `lance-asset.test.ts`;
+  it still pins the retained envelope and compares every berth's fit result.
+- Left the optional glossary nits in accepted design sources and historical
+  reviews unchanged. Their prior disposition in `REVIEW-codex.md` still applies:
+  ship command structures and CLI commands are not the gameplay Intervention,
+  and a visual judge's reward is not the Bounty mechanic. JSON cannot contain
+  the suggested comment annotations. No accepted design wording was rewritten.
+- The affected geometry set passed **198 tests across 10 files**; the subsequent
+  hull/installation/stand-in run passed **62 tests across three files**.
+  Typecheck, format, lint, comment lint, production build and the explicit
+  distribution-size check passed. Logs: `/tmp/seelite-1034-review-geometry.log`,
+  `/tmp/seelite-1034-review-spike.log`, `/tmp/seelite-1034-preload-regression.log`.
+- These review changes preserve runtime hull geometry, materials and rendering.
+  The imported capture arrays are identical; no new browser run is claimed.
+  The branch selector still requests all 113 probes from the original boot
+  wiring change (`bb2fd345` to `43b41bb1`); the final PR gate and next Sage round
+  remain with the supervisor, and the principal still owns the visual yes.
+- Full host `npm test`, run once after these review changes and immediately
+  before the review commit: **6,885 passed, 0 failed**, 407 files,
+  11,964,187 assertions, 963.94 seconds. Log:
+  `/tmp/seelite-1034-review1-host-suite-20261024.log`. Only this result was added
+  to the receipt after the run; no code changed afterward.
 
 ## Historical measurements
 

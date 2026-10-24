@@ -1,3 +1,4 @@
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { afterEach, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
@@ -46,6 +47,8 @@ import {
 	trianglePoints,
 } from "./helpers/surface-distance";
 
+await useShippedInterceptorHull();
+
 const REDUCED_TRIANGLES = 95_784;
 const OUTLINE_TRIANGLES = 10_242;
 const installed = authoredHullBuilder("interceptor");
@@ -73,7 +76,7 @@ const meshesOf = (root: THREE.Object3D) => {
 	return out;
 };
 
-test("the preload installed the model: the selected interceptor is authored", () => {
+test("the opted-in model is installed: the selected interceptor is authored", () => {
 	expect(installed).toBeDefined();
 	expect(interceptor().userData.authored).toBe(true);
 	expect(

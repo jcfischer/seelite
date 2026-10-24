@@ -193,13 +193,6 @@ describe("the study's frame", () => {
 		expect(model.lengthKm).toBeLessThanOrEqual(loft.lengthKm);
 		expect(model.beamKm).toBeLessThanOrEqual(loft.beamKm);
 		expect(model.heightKm).toBeLessThanOrEqual(loft.heightKm);
-		expect(model.lengthKm).toBeLessThanOrEqual(
-			HULL_SPECS.interceptor.env.lengthKm,
-		);
-		expect(model.beamKm).toBeLessThanOrEqual(HULL_SPECS.interceptor.env.beamKm);
-		expect(model.heightKm).toBeLessThanOrEqual(
-			HULL_SPECS.interceptor.env.heightKm,
-		);
 		let admitted = 0;
 		for (const type of STATION_TYPES) {
 			const { berths } = stationInterior(
@@ -208,13 +201,10 @@ describe("the study's frame", () => {
 				1,
 			);
 			for (const berth of berths) {
-				if (berthFits(berth, loft)) {
-					expect([type, berthFits(berth, model)]).toEqual([type, true]);
-					admitted++;
-				}
+				if (berthFits(berth, loft)) admitted++;
 				expect([type, berthFits(berth, model)]).toEqual([
 					type,
-					berthFits(berth, HULL_SPECS.interceptor.env),
+					berthFits(berth, loft),
 				]);
 			}
 		}

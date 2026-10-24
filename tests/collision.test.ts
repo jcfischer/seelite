@@ -12,6 +12,7 @@
  * (#25).
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
@@ -59,6 +60,8 @@ import {
 	sub,
 	v3,
 } from "../src/vec3";
+
+await useShippedInterceptorHull();
 
 const unit = (a: Vec3): Vec3 => scale(a, 1 / length(a));
 

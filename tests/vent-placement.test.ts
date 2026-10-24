@@ -9,6 +9,7 @@
  * table actually has, so no hull's handling moved (`tests/vents.test.ts`).
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
@@ -24,6 +25,8 @@ import { ventLoads } from "../src/sim";
 import { length } from "../src/vec3";
 import { ventThroats } from "../src/vent-plumes";
 import { measureVentPlacement } from "../scripts/measure-vent-placement";
+
+await useShippedInterceptorHull();
 
 const built = new Map<HullId, THREE.Group>();
 const rootOf = (id: HullId) => {

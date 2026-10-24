@@ -1,3 +1,4 @@
+import { roles } from './roles.mjs';
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,7 +9,6 @@ test('radial clearance includes edges, interiors and degenerate projections',()=
  expect(minimumTriangleRadius([2,0],[3,0],[4,0])).toBe(2);
  expect(minimumTriangleRadius([-2,0],[2,0],[4,0])).toBe(0);
 });
-const roles=['interceptor','patrol','explorer','raider','carrier','prospector','dreadnought'];
 for(const role of roles) test(`${role}: exported geometry, textures and measured bounds`,()=>{
  const b=readFileSync(join(import.meta.dir,role,'model.glb'));
  expect(b.toString('ascii',0,4)).toBe('glTF');

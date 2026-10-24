@@ -1,3 +1,4 @@
+import { roles, habitatRoles } from './roles.mjs';
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -6,7 +7,6 @@ import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import * as THREE from 'three';
 
 const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);
-const roles=['interceptor','patrol','explorer','raider','carrier','prospector','dreadnought'];
 for(const role of roles)test(`${role}: two smaller, aligned, complete LOD exports`,async()=>{
  const base=`${import.meta.dir}/${role}/`;
  const report=JSON.parse(readFileSync(base+'lod-report.json','utf8'));
@@ -47,7 +47,7 @@ for(const role of roles)test(`${role}: two smaller, aligned, complete LOD export
    expect(entry.errorMetres).toBeCloseTo(entry.distanceMetres*Math.tan(Math.PI/6)/1800,8);
   }
   previous=triangles;
-  if(['explorer','carrier','dreadnought'].includes(role)) {
+  if(habitatRoles.includes(role)) {
    const rotor=doc.getRoot().listNodes().find(n=>n.getName()==='habitat-rotor')!;
    expect(rotor).toBeDefined();
    expect(rotor.getExtras().rotationRPM).toBe(role==='explorer'?3:2.5);

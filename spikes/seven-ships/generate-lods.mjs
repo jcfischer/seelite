@@ -1,3 +1,4 @@
+import { roles } from './roles.mjs';
 /** Offline form of node 812 / PR 828's position-welded Meshopt levels.
  * All coordinates remain study metres, Y up, +Z forward. Full assets untouched.
  * Run `npm ci --prefix spikes/seven-ships`, then this script from any directory.
@@ -13,7 +14,6 @@ import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const root = fileURLToPath(new URL('./', import.meta.url));
-export const roles = ['interceptor','patrol','explorer','raider','carrier','prospector','dreadnought'];
 const requested = process.argv.slice(2);
 if (requested.some(role => !roles.includes(role))) throw Error('Unknown ship role');
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);

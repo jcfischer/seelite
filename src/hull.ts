@@ -33,7 +33,8 @@
  * this box and `BERTH_CELL` had been sized from the declaration: against the
  * meshes, `miner/a` and `miner/c` are 40.0 m and 47.5 m tall to a 40 m cell and
  * fit no berth in the game at all. `tests/hull.test.ts` rebuilds each selected
- * variant's mesh and compares.
+ * variant's mesh and compares. `RETAINED_ENVELOPE_HULLS` names authored
+ * replacements required to fit inside the established simulation box instead.
  *
  * **Mass is a density band, not a density table.** Each row's `massT` is its
  * selected variant's box volume against a role density — a freighter dense for
@@ -60,6 +61,11 @@ export const HULL_IDS = [
 	"voyager",
 ] as const;
 export type HullId = (typeof HULL_IDS)[number];
+
+/** Authored replacements constrained to the existing simulation envelope. https://github.com/jcfischer/seelite/issues/1034 */
+export const RETAINED_ENVELOPE_HULLS: ReadonlySet<HullId> = new Set([
+	"interceptor",
+]);
 
 export const HULL_VARIANT_IDS = ["a", "b", "c"] as const;
 export type HullVariantId = (typeof HULL_VARIANT_IDS)[number];

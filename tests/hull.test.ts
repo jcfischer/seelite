@@ -21,6 +21,7 @@
  *   exactly rather than nearly.
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -44,6 +45,7 @@ import {
 	isCapital,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
+	RETAINED_ENVELOPE_HULLS,
 	type HullEnvelope,
 	type HullId,
 	type HullVariantId,
@@ -71,6 +73,8 @@ import {
 	rosterCeiling,
 	stretchedToHold,
 } from "./helpers/hull-math";
+
+await useShippedInterceptorHull();
 
 /** 0.1 m, in kilometres — the quantum the table's envelopes are rounded **up**
  *  to, and the tolerance the row below allows. */
@@ -143,8 +147,8 @@ const commerceInput = (commander: ReturnType<typeof newCommander>) => ({
 	action: { type: "buy-commodity" as const, commodity: "Food" },
 });
 
-describe("the envelope is the mesh, not a claim about it", () => {
-	test.each(HULL_IDS.filter((id) => id !== "interceptor"))(
+describe("envelopes measure the mesh or retain an approved simulation box", () => {
+	test.each(HULL_IDS.filter((id) => !RETAINED_ENVELOPE_HULLS.has(id)))(
 		"%s's declared box is its selected variant's built box, rounded up",
 		(id) => {
 			const spec = HULL_SPECS[id];
@@ -170,17 +174,24 @@ describe("the envelope is the mesh, not a claim about it", () => {
 		},
 	);
 
-	test("the interceptor retains its established fit envelope around the Lance", () => {
-		const env = HULL_SPECS.interceptor.env;
-		expect(env).toEqual({
-			lengthKm: 0.0624,
-			beamKm: 0.0253,
-			heightKm: 0.0252,
-		});
-		const built = builtEnvelope("interceptor", HULL_SPECS.interceptor.variant);
-		for (const axis of ["lengthKm", "beamKm", "heightKm"] as const)
-			expect(built[axis]).toBeLessThanOrEqual(env[axis]);
+	const retainedEnvelopes: Partial<Record<HullId, HullEnvelope>> = {
+		interceptor: { lengthKm: 0.0624, beamKm: 0.0253, heightKm: 0.0252 },
+	};
+	test("only approved hulls retain their established fit envelopes", () => {
+		expect(Object.keys(retainedEnvelopes)).toEqual([
+			...RETAINED_ENVELOPE_HULLS,
+		]);
 	});
+	test.each([...RETAINED_ENVELOPE_HULLS])(
+		"%s retains its established fit envelope around its authored hull",
+		(id) => {
+			const spec = HULL_SPECS[id];
+			expect(retainedEnvelopes[id]).toEqual(spec.env);
+			const built = builtEnvelope(id, spec.variant);
+			for (const axis of ["lengthKm", "beamKm", "heightKm"] as const)
+				expect(built[axis]).toBeLessThanOrEqual(spec.env[axis]);
+		},
+	);
 
 	test("the selection rule is what chose each variant, not taste", () => {
 		// **The variant admitted by the most station roles, `a` on a tie.** Stated

@@ -16,12 +16,15 @@
  *    tear made in place would cut every live ship of that hull.
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { buildDerelictMesh, disposeDerelict } from "../src/derelict-mesh";
 import { drawnBoxes, drawnHullBox, tearHull } from "../src/derelict-tear";
 import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+
+await useShippedInterceptorHull();
 
 /** The hulls a derelict is drawn from (`derelict.ts`), at their flown variant. */
 const live = (id: HullId) => buildShipMesh(id, HULL_SPECS[id].variant).root;
