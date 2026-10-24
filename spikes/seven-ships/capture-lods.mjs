@@ -1,3 +1,4 @@
+import { roles as shipRoles, habitatRoles } from './roles.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { PNG } from 'pngjs';
 import { launchChromium, guardedOrigin } from '../../scripts/probe-guard.mjs';
@@ -5,8 +6,8 @@ import { assertBrowserRenderer } from '../../scripts/lib/players-renderer.mjs';
 import { holdProbeLockOrExit } from '../../scripts/lib/probe-lock.mjs';
 const origin='http://127.0.0.1:5227';
 const roles=process.argv.slice(2);
-if(!roles.length)roles.push('interceptor','patrol','explorer','raider','carrier','prospector','dreadnought');
-if(roles.some(r=>!['interceptor','patrol','explorer','raider','carrier','prospector','dreadnought'].includes(r)))throw Error('Invalid role');
+if(!roles.length)roles.push(...shipRoles);
+if(roles.some(r=>!shipRoles.includes(r)))throw Error('Invalid role');
 await guardedOrigin(origin);
 const release=await holdProbeLockOrExit('seven ships LOD capture');
 let browser;
@@ -64,7 +65,7 @@ try {
   }
   await page.locator('[data-view="hero"]').click();
   await page.waitForFunction(()=>window.__fleet.stats.lod==='full');
-  if(['explorer','carrier','dreadnought'].includes(role)) {
+  if(habitatRoles.includes(role)) {
    await page.locator('#habitat').click();await page.waitForTimeout(600);await page.locator('#habitat').click();
    const angles=await page.evaluate(()=>window.__fleet.rotors.map(r=>r.rotation.z));
    if(angles.length!==3||angles.some(a=>a<=0||Math.abs(a-angles[0])>1e-8))throw Error('LOD habitat phases differ');

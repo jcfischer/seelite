@@ -1,10 +1,11 @@
+import { roles as shipRoles, habitatRoles } from './roles.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { launchChromium, guardedOrigin } from '../../scripts/probe-guard.mjs';
 import { assertBrowserRenderer } from '../../scripts/lib/players-renderer.mjs';
 import { holdProbeLockOrExit } from '../../scripts/lib/probe-lock.mjs';
-const roles=process.argv.slice(3);if(!roles.length)roles.push('interceptor','patrol','explorer','raider','carrier','prospector','dreadnought');
+const roles=process.argv.slice(3);if(!roles.length)roles.push(...shipRoles);
 const label=process.argv[2]??'round-1';
-if(!/^[\w-]+$/.test(label)||roles.some(r=>!['interceptor','patrol','explorer','raider','carrier','prospector','dreadnought'].includes(r)))throw Error('Invalid capture arguments');
+if(!/^[\w-]+$/.test(label)||roles.some(r=>!shipRoles.includes(r)))throw Error('Invalid capture arguments');
 const origin='http://127.0.0.1:5227';
 await guardedOrigin(origin);
 const release=await holdProbeLockOrExit('seven ship exterior capture');
@@ -39,7 +40,7 @@ try{
   await page.locator('#lights').click();if(await page.locator('#lights').getAttribute('aria-pressed')!=='true')throw Error('Lights failed');await page.locator('#lights').click();
   await page.locator('#spin').click();const rot=await page.evaluate(()=>window.__fleet.ship.rotation.y);await page.waitForTimeout(250);
   if(await page.evaluate(r=>window.__fleet.ship.rotation.y===r,rot))throw Error('Spin failed');await page.locator('#spin').click();
-  if(['explorer','carrier','dreadnought'].includes(role)){
+  if(habitatRoles.includes(role)){
    const start=await page.evaluate(()=>({angle:window.__fleet.rotor.rotation.z,time:performance.now()}));
    await page.locator('#habitat').click();await page.waitForTimeout(2000);await page.locator('#habitat').click();
    const end=await page.evaluate(()=>({angle:window.__fleet.rotor.rotation.z,time:performance.now()}));

@@ -4,6 +4,7 @@
  * muzzle in the wrong place is a beam that starts in empty space or inside
  * the hull.
  */
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
@@ -13,6 +14,8 @@ import {
 	type HullVariantId,
 } from "../src/hull";
 import { buildShipMesh, shipMuzzlesKm } from "../src/ship-mesh";
+
+await useShippedInterceptorHull();
 
 function built(id: (typeof HULL_IDS)[number], variant: HullVariantId) {
 	const root = buildShipMesh(id, variant).root;
