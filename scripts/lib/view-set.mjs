@@ -122,6 +122,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1034: "the authored Lance interceptor in the game's chase camera",
 	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
 	720: "the terran ground and clouds across the horizon at station altitude and the flight boundary",
 	735: "a derelict's torn sections and exposed frame",
@@ -721,6 +722,19 @@ export const VIEWS = Object.freeze([
 			sunAngleDeg: 150,
 			view: "chase",
 			hull: "tug",
+		},
+	},
+	{
+		name: "hull-chase-lance",
+		covers: [1034],
+		what: "The authored Lance interceptor in the game's chase camera, beside the other hulls at the same light and planet framing.",
+		shot: {
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "interceptor",
 		},
 	},
 	{

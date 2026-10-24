@@ -360,6 +360,12 @@ try {
 			frame: "tug-hull-frame",
 			loft: "tug loft",
 		},
+		{
+			id: "interceptor",
+			file: /lance-interceptor[^/]*\.glb/,
+			frame: "interceptor-hull-frame",
+			loft: "interceptor loft",
+		},
 	];
 	for (const hull of AFTER_BOOT)
 		for (const outcome of ["release", "refuse"]) {
@@ -386,6 +392,7 @@ try {
 				gameUrl(ORIGIN, {
 					seed: SEED,
 					"models-full": false,
+					hull: hull.id,
 					"no-save": true,
 					voices: "formant",
 					raider: "off",

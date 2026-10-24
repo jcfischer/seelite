@@ -68,6 +68,11 @@ const HULLS = {
 		levelNames: "VOYAGER_LEVEL_NAMES",
 		players: false,
 	},
+	interceptor: {
+		module: "/src/interceptor-hull.ts",
+		levelNames: "INTERCEPTOR_LEVEL_NAMES",
+		players: false,
+	},
 };
 const HULL = process.env.HULL ?? "courier";
 if (!HULLS[HULL])
