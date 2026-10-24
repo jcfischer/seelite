@@ -241,6 +241,24 @@ export const MOOG_TONES = {
 	},
 } as const satisfies Record<string, PartSpec>;
 
+const washOf = (
+	level: number,
+	sweepS: number,
+	sweepOct: number,
+	pan: number,
+): PartSpec => ({
+	voice: "noise",
+	level,
+	attackS: 1.5,
+	sustain: 1,
+	releaseS: 1.5,
+	resonance: 0.85,
+	sweepS,
+	sweepOct,
+	pan,
+	reverb: 0.7,
+});
+
 const seqVoice = (o: Partial<PartSpec>): PartSpec => ({
 	voice: "analog",
 	level: 0.26,
@@ -445,30 +463,8 @@ function schoolParts(bpm: number): Record<string, PartSpec> {
 			echo: 0.3,
 		},
 		thud: { voice: "kick", level: 0.42, reverb: 0.1, echo: 0.1 },
-		washL: {
-			voice: "noise",
-			level: 0.045,
-			attackS: 1.5,
-			sustain: 1,
-			releaseS: 1.5,
-			resonance: 0.85,
-			sweepS: WIND_S[0],
-			sweepOct: 3.2,
-			pan: -0.6,
-			reverb: 0.7,
-		},
-		washR: {
-			voice: "noise",
-			level: 0.04,
-			attackS: 1.5,
-			sustain: 1,
-			releaseS: 1.5,
-			resonance: 0.85,
-			sweepS: WIND_S[1],
-			sweepOct: 2.8,
-			pan: 0.6,
-			reverb: 0.7,
-		},
+		washL: washOf(0.045, WIND_S[0], 3.2, -0.6),
+		washR: washOf(0.04, WIND_S[1], 2.8, 0.6),
 		rise: {
 			voice: "noise",
 			level: 0.07,
@@ -491,7 +487,8 @@ export interface Evolve {
 }
 
 /** A step sequence on `part` over bars `[from, to)`, its phase continuous
- *  across bar lines, transposed with the chord unless `fixed`. */
+ *  across bar lines, transposed with the chord unless `fixed`; with
+ *  `semitones` its steps are semitones over the chord root, not degrees. */
 export interface Run {
 	readonly part: string;
 	readonly steps: readonly Step[];
@@ -506,6 +503,9 @@ export interface Run {
 	readonly octave?: boolean;
 	readonly ratchetEvery?: number;
 	readonly evolve?: Evolve;
+	readonly semitones?: boolean;
+	readonly offset?: number;
+	readonly soft?: number;
 }
 
 function run(w: Writer, deg: Deg, chordAt: (bar: number) => number, r: Run) {
@@ -521,14 +521,21 @@ function run(w: Writer, deg: Deg, chordAt: (bar: number) => number, r: Run) {
 				Math.ceil((r.to - r.from) / every) + 1,
 			)
 		: [r.steps];
-	for (let t = r.from * 4, k = 0; t < r.to * 4 - 1e-9; t += r.step, k++) {
+	const soft = r.soft ?? 0.75;
+	for (
+		let t = r.from * 4 + (r.offset ?? 0), k = 0;
+		t < r.to * 4 - 1e-9;
+		t += r.step, k++
+	) {
 		const bar = Math.floor(t / 4);
 		const v = Math.min(versions.length - 1, Math.floor((bar - r.from) / every));
 		const d = versions[v][k % n];
 		if (d === null) continue;
 		const root = r.fixed ? 0 : chordAt(bar);
-		const pitch = deg(r.register, stepDegree(deg, r.pent, root, d));
-		const loud = k % n === 0 ? vel : vel * 0.75;
+		const pitch = r.semitones
+			? deg(r.register, root) + d
+			: deg(r.register, stepDegree(deg, r.pent, root, d));
+		const loud = k % n === 0 ? vel : vel * soft;
 		if (r.ratchetEvery && k % r.ratchetEvery === r.ratchetEvery - 1) {
 			w.at(r.part, t, r.step / 2.2, pitch, loud);
 			w.at(r.part, t + r.step / 2, r.step / 2.2, pitch, loud * 0.8);
@@ -813,41 +820,29 @@ const CALM_WRITERS: Readonly<
 			for (const k of MINOR_TRIAD) w.at("phased", b * 4, len, root + k, 0.42);
 			w.at("phased", b * 4, len, root + 12, 0.3);
 		}
-		const semis = (
+		const line = (
 			part: string,
 			step: number,
 			register: number,
 			start: number,
 			vel: number,
 			offset: number,
-		) => {
-			const n = tune.drive.length;
-			const e = evolve(EVOLVE_BARS, DRIVE_EAR);
-			const versions = evolution(
-				tune.drive,
-				e.rand,
-				DRIVE_EAR,
-				Math.ceil((to - start) / EVOLVE_BARS) + 1,
-			);
-			for (
-				let t = start * 4 + offset, k = 0;
-				t < to * 4 - 1e-9;
-				t += step, k++
-			) {
-				const bar = Math.floor(t / 4);
-				const shape = versions[Math.floor((bar - start) / EVOLVE_BARS)];
-				const root = deg(register, chordAt(bar));
-				w.at(
-					part,
-					t,
-					step * 0.8,
-					root + (shape[k % n] as number),
-					k % n === 0 ? vel : vel * 0.68,
-				);
-			}
-		};
-		semis("drive", 0.25, 36, from + 2, 0.85, 0);
-		if (to - from >= 16) semis("drive2", 0.5, 48, from + 12, 0.55, 0.25);
+		) =>
+			run(w, deg, chordAt, {
+				part,
+				steps: tune.drive,
+				semitones: true,
+				step,
+				from: start,
+				to,
+				register,
+				vel,
+				soft: 0.68,
+				offset,
+				evolve: evolve(EVOLVE_BARS, DRIVE_EAR),
+			});
+		line("drive", 0.25, 36, from + 2, 0.85, 0);
+		if (to - from >= 16) line("drive2", 0.5, 48, from + 12, 0.55, 0.25);
 	},
 };
 

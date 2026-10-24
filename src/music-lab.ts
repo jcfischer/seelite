@@ -72,6 +72,14 @@ export function mountMusicLab() {
 		(root.querySelector(`input[name=${name}]:checked`) as HTMLInputElement)
 			.value;
 
+	const formLine = (seed: number, variant: number) => {
+		const bed = $<HTMLSelectElement>("bed").value;
+		if (bed === "school")
+			return `, sequences form ${schoolForm(seed, variant)}`;
+		if (bed.startsWith("school-"))
+			return `, sequences form ${bed.slice("school-".length)}`;
+		return "";
+	};
 	const showTheme = () => {
 		const t = musicTheme(Number(seedIn.value) >>> 0);
 		$("theme").textContent =
@@ -119,7 +127,7 @@ export function mountMusicLab() {
 		renderNumbersAhead(numbersPhrase(reading.systemSeed, state.voiceN));
 		if (step.voice) sayNumbers(fx, step.voice);
 		$("state").textContent = [
-			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant}, sequences form ${schoolForm(reading.systemSeed, state.variant)})` : ""}`,
+			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant}${formLine(reading.systemSeed, state.variant)})` : ""}`,
 			`level    ${state.level}${state.fallS > 0 ? `  falling in ${(FALL_HOLD_S - state.fallS).toFixed(1)} s` : ""}`,
 			`cruise   ${state.cruise}`,
 			`synth    ${music.ready ? "ready" : "loading"}`,

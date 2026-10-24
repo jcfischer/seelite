@@ -6,6 +6,7 @@ import { berlinFlightBed } from "../src/music-generate-berlin";
 import {
 	anchorGrowth,
 	CALM_FORM_NAMES,
+	type CalmForm,
 	calmSpans,
 	SCHOOL_CALM_S,
 	SCHOOL_SPACE,
@@ -301,12 +302,29 @@ function peakVoices(
 }
 
 describe("the voice cap", () => {
+	const crowd = (song: Song) => {
+		const edges = section(song, "calm").events.flatMap((e) => {
+			const t = e.bar * 4 + e.beat;
+			return [
+				[t, 1],
+				[t + e.dur + 1, -1],
+			] as const;
+		});
+		edges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+		let now = 0;
+		let most = 0;
+		for (const [, d] of edges) most = Math.max(most, (now += d));
+		return most;
+	};
+	const densest = (form: CalmForm) =>
+		SEEDS.slice(0, 8)
+			.flatMap((seed) => [0, 1].map((v) => schoolFlightBed(seed, v, form)))
+			.reduce((a, b) => (crowd(b) > crowd(a) ? b : a));
+
 	for (const form of CALM_FORM_NAMES)
-		test(`calm in the ${form} form never reaches it`, () => {
-			expect(peakVoices(schoolFlightBed(1234, 0, form), "calm")).toBeLessThan(
-				MUSIC_VOICE_CAP,
-			);
-		}, 30000);
+		test(`calm in the ${form} form never reaches it, its most crowded of 16 systems and variants`, () => {
+			expect(peakVoices(densest(form), "calm")).toBeLessThan(MUSIC_VOICE_CAP);
+		}, 60000);
 
 	for (const name of ["calm", "wary", "threat"])
 		test(`${name} never reaches it`, () => {
