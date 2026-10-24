@@ -199,7 +199,7 @@ const KICK = 29;
 const HAT = 104;
 const PHRASE = 8;
 
-const PARTS: Readonly<Record<string, PartSpec>> = {
+const RAW_PARTS: Readonly<Record<string, PartSpec>> = {
 	kick: { voice: "kick", level: 0.6, reverb: 0.04 },
 	hat: {
 		voice: "noise",
@@ -331,7 +331,7 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	},
 	pad: {
 		voice: "drone",
-		level: 0.06,
+		level: 0.15,
 		attackS: 2,
 		releaseS: 2,
 		detune: 0.1,
@@ -371,6 +371,16 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		reverb: 0.5,
 	},
 };
+
+/** Every part's level is raised by this, so the bed is as loud as the
+ *  sequence school's (measured headless, 2026-10-24). */
+export const TECHNO_GAIN = 1.45;
+const PARTS: Readonly<Record<string, PartSpec>> = Object.fromEntries(
+	Object.entries(RAW_PARTS).map(([k, p]) => [
+		k,
+		{ ...p, level: p.level * TECHNO_GAIN },
+	]),
+);
 
 /** The bed's room: a short reverb, and the dotted-eighth echo the stabs and
  *  the blip sit in. */
@@ -560,9 +570,9 @@ const LEVEL_LAYERS: Readonly<Record<MusicLevel, readonly Layer[]>> = {
 	combat: layerList("kick hats ohat clap rim perc bass acid chords ride"),
 };
 const LEVEL_ENERGY: Readonly<Record<MusicLevel, number>> = {
-	calm: 0.72,
-	wary: 0.85,
-	threat: 0.93,
+	calm: 1,
+	wary: 0.8,
+	threat: 0.82,
 	combat: 1,
 };
 
