@@ -1086,7 +1086,7 @@
   },
   "scripts/probe-music.mjs": {
     "seelite/no-comments": {
-      "count": 77
+      "count": 75
     }
   },
   "scripts/probe-navigation-console.mjs": {
