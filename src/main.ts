@@ -22,6 +22,15 @@ import {
 } from "./missiles";
 import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
+	npcLoadout,
+	npcFitSeed,
+	npcFittingDrop,
+	armedNpc,
+} from "./npc-loadout";
+import { dropFittingCanister } from "./raider-wreck";
+import { fittedDps } from "./kill-credit";
+import {
+	type Loadout,
 	fitted,
 	fittedCapacity,
 	equipmentNames,
@@ -179,6 +188,7 @@ import {
 	CLOSED_GATE,
 	enclosureRad,
 	OCCLUSION,
+	type FieldGateInput,
 	type OcclusionGate,
 	SHADOW_MAP_TEXELS,
 	type ShadowSubject,
@@ -7066,6 +7076,13 @@ class Game {
 		}
 		await nextInteriorFrame();
 	}
+	private fieldGateInput(): FieldGateInput {
+		let level0Rocks = 0;
+		for (const draw of this.fieldDraws)
+			if (draw.root.visible) level0Rocks += draw.perLevel[0];
+		return { level0Rocks, quality: this.settings.value.quality };
+	}
+
 	private updateFields(camPos: Vec3): void {
 		if (!this.fieldDraws.length) return;
 		const quality = this.settings.value.quality;
@@ -8471,6 +8488,7 @@ class Game {
 						nose,
 						up: route?.up ?? null,
 						voyageOrdinal: this.trafficVoyage(actor),
+						loadout: this.npcFitFor(actor.hullId, actor.key),
 					},
 					carrierInstanceSeed(
 						this.trafficHomeRecord({ key }).seed,
@@ -8587,9 +8605,11 @@ class Game {
 			instanceOrdinal,
 			voyageOrdinal,
 			{
-				// An NPC passes its stock loadout until NPC loadouts (#875) give it
-				// racks: the projection then reads the bare hold (#928).
-				holdT: fittedCapacity(actor.hullId, stockLoadout(actor.hullId)).holdT,
+				// A scan and a kill read the same fitted hold.
+				holdT: fittedCapacity(
+					actor.hullId,
+					this.npcFitFor(actor.hullId, actor.key, instanceOrdinal),
+				).holdT,
 				government: record.government,
 			},
 		);
@@ -8939,6 +8959,24 @@ class Game {
 				frameVel: this.localFrame(),
 				frameBodyId: this.frameBody?.id ?? null,
 			}),
+			...dropFittingCanister(
+				{
+					systemSeed: this.trafficHomeRecord(actor).seed,
+					government: this.trafficHomeRecord(actor).government,
+					key: actor.key,
+					killedAt: this.world.gameTime,
+					pos: engagement.flight.ship.pos,
+					vel: engagement.flight.ship.vel,
+					frameVel: this.localFrame(),
+					frameBodyId: this.frameBody?.id ?? null,
+				},
+				armedNpc(actor.hullId)
+					? npcFittingDrop(
+							engagement.loadout ?? this.npcFitFor(actor.hullId, actor.key),
+							this.npcFitSeedFor(actor.key),
+						)
+					: undefined,
+			),
 		];
 		this.play({ kind: "explosion" });
 		this.trafficEngagements.delete(actor.key);
@@ -9216,11 +9254,22 @@ class Game {
 	 *  own clock and voyage. `null` is F8's `UNKNOWN`. */
 	private recordedReading(actor: TrafficActor): CarrierReading | null {
 		const record = this.trafficHomeRecord(actor);
+		const row = readKnowledge(
+			this.commerceWorld.galaxies[record.galaxy],
+			actor.key,
+		);
 		return carrierReading({
 			systemSeed: record.seed,
 			key: actor.key,
-			row: readKnowledge(this.commerceWorld.galaxies[record.galaxy], actor.key),
-			holdT: fittedCapacity(actor.hullId, stockLoadout(actor.hullId)).holdT,
+			row,
+			holdT: fittedCapacity(
+				actor.hullId,
+				this.npcFitFor(
+					actor.hullId,
+					actor.key,
+					row?.scan?.observedInstanceOrdinal,
+				),
+			).holdT,
 			government: record.government,
 			gameTime: this.world.gameTime,
 		});
@@ -13018,6 +13067,19 @@ class Game {
 	 * and never for a permadeath commander, whose save an eject ends (§9).
 	 */
 	private stepEjectWarning() {
+		const raider = this.duelRaider();
+		const hostileDamagePerS = Math.max(
+			0,
+			raider && this.encounter
+				? fittedDps({
+						hull: RAIDER_HULL_ID,
+						loadout: this.encounterFit(this.encounter),
+					})
+				: 0,
+			...[...this.trafficEngagements.values()]
+				.filter((e) => e.intent === "attacker" && e.loadout)
+				.map((e) => fittedDps({ hull: e.hullId, loadout: e.loadout! })),
+		);
 		const due =
 			!this.openingActive &&
 			ejectWarningDue({
@@ -13026,6 +13088,7 @@ class Game {
 				flying: this.dock.phase === "flying",
 				alive: !this.dead && isAlive(this.condition),
 				hull: this.condition.hull,
+				hostileDamagePerS,
 			});
 		const step = stepEjectWarning(this.ejectWarningSpoken, due);
 		this.ejectWarningSpoken = step.spoken;
@@ -13874,6 +13937,33 @@ class Game {
 		);
 	}
 
+	/** One carrier instance owns its fit across fights, scans and drops. */
+	private npcFitFor(
+		hull: HullId,
+		key: CarrierKey,
+		instanceOrdinal = this.carrierCondition(key).instanceOrdinal,
+	) {
+		return npcLoadout(hull, this.npcFitSeedFor(key, instanceOrdinal));
+	}
+
+	private npcFitSeedFor(
+		key: CarrierKey,
+		instanceOrdinal = this.carrierCondition(key).instanceOrdinal,
+	) {
+		return npcFitSeed(
+			this.trafficHomeRecord({ key }).seed,
+			key,
+			instanceOrdinal,
+		);
+	}
+
+	private encounterFit(encounter: Encounter): Loadout {
+		return (encounter.loadout ??= this.npcFitFor(
+			RAIDER_HULL_ID,
+			encounter.slot.key,
+		));
+	}
+
 	/** Only identified live combat contacts can acquire a missile lock. */
 	private missileTarget(id: string | null): MissileTarget | null {
 		if (!id) return null;
@@ -13967,14 +14057,9 @@ class Game {
 			dt,
 		);
 		const e = this.encounter;
-		if (e?.phase === "duel" && e.raider)
+		if (e?.phase === "duel" && e.raider) {
 			control.launchEnemy(
-				carrierInstanceSeed(
-					this.world.system.record.seed,
-					e.slot.key,
-					this.carrierCondition(e.slot.key).instanceOrdinal,
-					DOMAIN.RAIDER_MISSILE_FIT,
-				),
+				this.npcFitSeedFor(e.slot.key),
 				e.raider.flight.ship.pos,
 				e.raider.flight.nose,
 				{
@@ -13985,8 +14070,12 @@ class Game {
 				solids,
 				now,
 				dt,
+				this.encounterFit(e),
 			);
-		else control.enemy = null;
+			if (control.enemy) {
+				e.loadout = control.enemy.loadout;
+			}
+		} else control.enemy = null;
 		const flying: Missile[] = [];
 		const frame = this.assistFrameMotion(dt);
 		for (const missile of control.missiles) {
@@ -14074,6 +14163,7 @@ class Game {
 						normalizeOr(sub(target.vel, this.localFrame()), v3(0, 0, -1)),
 					up: route?.up ?? null,
 					voyageOrdinal: this.trafficVoyage(actor),
+					loadout: this.npcFitFor(actor.hullId, actor.key),
 				},
 				carrierInstanceSeed(
 					this.trafficHomeRecord(actor).seed,
@@ -14113,8 +14203,10 @@ class Game {
 		shot: PlayerShot,
 		solids: readonly AvoidSphere[],
 	) {
-		const encounter = this.encounter;
-		if (!encounter) return;
+		const current = this.encounter;
+		if (!current) return;
+		this.encounterFit(current);
+		const encounter = current;
 		const { name } = encounter;
 		const step = stepEncounter(encounter, {
 			gameTime: this.world.gameTime,
@@ -14189,6 +14281,22 @@ class Game {
 					// in, so they keep station with it after the player leaves.
 					frameBodyId: this.frameBody?.id ?? null,
 				}),
+				...dropFittingCanister(
+					{
+						systemSeed: record.seed,
+						government: record.government,
+						key: encounter.slot.key,
+						killedAt: now,
+						pos: wreck.pos,
+						vel: wreck.vel,
+						frameVel: this.localFrame(),
+						frameBodyId: this.frameBody?.id ?? null,
+					},
+					npcFittingDrop(
+						this.encounterFit(encounter),
+						this.npcFitSeedFor(encounter.slot.key),
+					),
+				),
 			];
 			this.play({ kind: "explosion" });
 		}
@@ -14420,12 +14528,14 @@ class Game {
 					kind: "scoop",
 					commodity: canister.commodity,
 					tonnes: canister.tonnes,
+					fitting: canister.fitting,
 				});
 				if (outcome.holdings === before) return 0;
 				// The adopt point saves an accepted canister (#631): one dirty
 				// mark per canister rather than one per step, which the store's
 				// debounce reads as the same instant.
 				this.adoptHoldings(outcome);
+				if (canister.fitting) return 1;
 				// What went aboard, read off the hold: a tonne good, so exact.
 				return (
 					(outcome.holdings.commander.cargo[canister.commodity] ?? 0) -
@@ -16844,6 +16954,7 @@ class Game {
 				nose: ship.motion.end.z,
 				up: ship.motion.end.y,
 				voyageOrdinal: this.trafficVoyage(actor),
+				loadout: this.npcFitFor(actor.hullId, actor.key),
 			},
 			carrierInstanceSeed(
 				this.trafficHomeRecord({ key: actor.key }).seed,
@@ -17574,6 +17685,7 @@ class Game {
 		this.occlusionGate = stepOcclusionGate(
 			this.occlusionGate,
 			this.buildStationSubjects(),
+			this.fieldGateInput(),
 		);
 		this.applyOcclusion();
 		this.fitShadowCamera();
@@ -19813,6 +19925,14 @@ class Game {
 				key,
 				transition: event,
 				hull,
+				targetLoadout:
+					hull && armedNpc(hull)
+						? (this.trafficEngagements.get(key)?.loadout ??
+							(this.encounter?.slot.key === key
+								? this.encounterFit(this.encounter)
+								: undefined) ??
+							this.npcFitFor(hull, key))
+						: undefined,
 			}),
 		);
 	}

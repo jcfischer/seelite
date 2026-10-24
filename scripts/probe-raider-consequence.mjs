@@ -81,6 +81,7 @@ const kill = await page.evaluate(async () => {
 	if (!encounter?.raider) return { error: "no duel", phase: encounter?.phase };
 	const key = encounter.slot.key;
 	const name = encounter.name;
+	const targetLoadout = structuredClone(encounter.loadout);
 	// The raider's last point of hull, and every shield spent, two kilometres
 	// ahead at the ship's velocity: at that hull it flees at once, and from
 	// further out it leaves the laser's reach before a shot lands.
@@ -154,6 +155,7 @@ const kill = await page.evaluate(async () => {
 		pendingDelta: g.ladderPending.combat - pendingBefore,
 		ownHull: g.commander.hull,
 		ownLoadout: g.commander.loadout,
+		targetLoadout,
 	};
 });
 check(
@@ -164,14 +166,25 @@ check(
 // #564: the kill path the game flew prices the raider on the combat ladder,
 // pending until a dock. Read off the page's own formula, never restated.
 const expectedCredit = await page.evaluate(
-	async (own) =>
-		(await import("/src/kill-credit.ts")).killCredit(own, "raider"),
-	{ hull: kill.ownHull, loadout: kill.ownLoadout },
+	async ({ own, targetLoadout }) => {
+		const { killCredit } = await import("/src/kill-credit.ts");
+		const { RAIDER_HULL_ID } = await import("/src/raider-slots.ts");
+		return {
+			fitted: killCredit(own, { hull: RAIDER_HULL_ID, loadout: targetLoadout }),
+			stock: killCredit(own, RAIDER_HULL_ID),
+		};
+	},
+	{
+		own: { hull: kill.ownHull, loadout: kill.ownLoadout },
+		targetLoadout: kill.targetLoadout,
+	},
 );
 check(
 	"the kill is pending combat credit at the game's price for a raider (#564)",
-	expectedCredit > 0 && Math.abs(kill.pendingDelta - expectedCredit) < 1e-9,
-	`${kill.pendingDelta} against ${expectedCredit}`,
+	expectedCredit.fitted > 0 &&
+		Math.abs(expectedCredit.fitted - expectedCredit.stock) > 1e-9 &&
+		Math.abs(kill.pendingDelta - expectedCredit.fitted) < 1e-9,
+	`${kill.pendingDelta} against fitted ${expectedCredit.fitted}, stock ${expectedCredit.stock}`,
 );
 check(
 	"the kill writes the slot's destruction into world state",

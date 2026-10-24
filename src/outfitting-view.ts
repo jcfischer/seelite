@@ -26,7 +26,7 @@ export function outfittingBody(
 			(
 				row,
 			) => `<div class="lc-outfit-slot" data-live-slot="${row.key}" data-selected="${s.slot === row.key}">
-		<button type="button" class="lc-outfit-pick" data-outfit-slot="${row.key}" aria-pressed="${s.slot === row.key}"><small>${esc(row.kind.toUpperCase())} ${row.size} · ${esc(row.key.toUpperCase())}</small><b>${row.module ? esc(moduleLabel(row.module)) : "EMPTY"}</b><small>${row.row ? stats(row.row) : "Select to fit a module"}${row.module?.variant ? ` · ${esc(row.module.variant)}` : ""}</small></button>
+		<button type="button" class="lc-outfit-pick" data-outfit-slot="${row.key}" aria-pressed="${s.slot === row.key}"><small>${esc(row.kind.toUpperCase())} ${row.size} · ${esc(row.key.toUpperCase())}</small><b>${row.module ? esc(moduleLabel(row.module)) : "EMPTY"}</b><small>${row.row ? stats(row.row) : "Select to fit a module"}</small></button>
 		${row.module && !row.removeReason ? action("remove-module", row.key, "REMOVE") : row.module ? `<small class="lc-station-locked">${esc(row.removeReason === "core-required" ? "REPLACE ONLY" : "HOLD FULL")}</small>` : ""}
 		${row.module?.module === "missile-rack" ? `<small>${row.module.ammo ?? 0}/${row.row!.output.missiles} MISSILES</small>${(row.module.ammo ?? 0) < row.row!.output.missiles ? action("buy-missiles", row.key, "REARM") : ""}` : ""}
 	</div>`,

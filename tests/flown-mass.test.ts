@@ -3,6 +3,8 @@ import {
 	equipmentNames,
 	stockLoadout,
 	moduleRow,
+	fittedMassT,
+	makeModule,
 } from "../src/loadout";
 /**
  * The flown mass (#865): what a ship carries weighs something, and #181's law
@@ -186,4 +188,28 @@ describe("flownMassT", () => {
 	test("a negative entrusted figure is refused", () => {
 		expect(() => flownMassT("courier", courier(), -1)).toThrow();
 	});
+});
+
+test("fitted mass includes a variant once, while flown mass adds only the hold", () => {
+	const module = {
+		...makeModule("armour-plating", 1, "A"),
+		variant: "lightweight",
+	};
+	const loadout = { i1: module };
+	const expected =
+		HULL_SPECS.courier.massT +
+		moduleRow(makeModule("armour-plating", 1, "A")).massT * 0.8;
+	expect(fittedMassT("courier", loadout)).toBeCloseTo(expected, 10);
+	expect(
+		flownMassT(
+			"courier",
+			{
+				...newCommander("courier"),
+				loadout,
+				cargo: { Food: 3 },
+				recoveredFittings: [{ id: "E.C.M. System", tonnes: 1 }],
+			},
+			2,
+		),
+	).toBeCloseTo(expected + 6, 10);
 });

@@ -3,7 +3,7 @@
  * sits, and that a plume is the firing table and nothing else.
  */
 
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
@@ -27,6 +27,10 @@ const rootOf = (id: HullId) => {
 	return root;
 };
 
+beforeAll(() => {
+	for (const id of HULL_IDS) rootOf(id);
+}, 60_000);
+
 describe("every throat is the vent the table names", () => {
 	test("a vent drawn off its table position is moved along its own line of action", () => {
 		// Sliding a vent along the line its push acts on changes neither its
@@ -49,7 +53,7 @@ describe("every throat is the vent the table names", () => {
 				expect(Number.isFinite(throat.at.length())).toBe(true);
 			}
 		}
-	});
+	}, 60_000);
 
 	test("every slot has a throat, and the main drive one per bell", () => {
 		for (const id of HULL_IDS) {

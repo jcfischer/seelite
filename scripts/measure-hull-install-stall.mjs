@@ -9,7 +9,7 @@
  * each install is main-thread work: the GLB's parse and Meshopt decode, the
  * builder (`createAuthoredHullBuilder`, whose two reduced levels are made by
  * the simplifier), and the first build, which places the nav lights by
- * raycast and measures the throats; and then, in the same task, the Game's // glossary-ignore: throat
+ * raycast and measures the throats; and then the Game's // glossary-ignore: throat
  * refresh (`refreshAuthoredHulls`), which rebuilds every live ship of the hull
  * and measures its muzzles again. This boots the game headed on the
  * player's renderer, lets it settle with both hulls installed, then repeats
@@ -21,7 +21,11 @@
  * is printed: the refresh's cost scales with it, and how many ships are live
  * at install depends on where the player is. `RUNS` repeats it; the first run of a page also pays shader and
  * module warm-up, so the median is the figure and the first is printed beside
- * it. It is a diagnosis that asserts no threshold.
+ * it. Since node #907, builder and fitting preparation yield between geometry
+ * operations. `warmup` uses the production installer (both glow caches, before
+ * publication); phase times include time given back to flight. Settled rAF
+ * periods are printed separately and never substituted for the install gap.
+ * MAX_GAP_MS optionally gates the median install gap for a local regression run.
  */
 import { createServer } from "vite";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -30,6 +34,11 @@ import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
 
 const RUNS = Number(process.env.RUNS ?? 5);
+const MAX_GAP_MS = Number(process.env.MAX_GAP_MS ?? Number.POSITIVE_INFINITY);
+if (!Number.isInteger(RUNS) || RUNS < 1 || !(MAX_GAP_MS > 0))
+	throw new Error(
+		"RUNS must be a positive integer; MAX_GAP_MS must be positive",
+	);
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5197);
 
@@ -102,6 +111,23 @@ try {
 			g.world.ship.pos = { ...station.pos };
 			g.render(0);
 		}, hull.id);
+		const settled = await page.evaluate(async () => {
+			const gaps = [];
+			let last = await new Promise(requestAnimationFrame);
+			for (let i = 0; i < 60; i++) {
+				const next = await new Promise(requestAnimationFrame);
+				gaps.push(next - last);
+				last = next;
+			}
+			gaps.sort((a, b) => a - b);
+			return {
+				median: (gaps[29] + gaps[30]) / 2,
+				p95: gaps[56],
+				max: gaps[59],
+			};
+		});
+		if (Object.values(settled).some((n) => !Number.isFinite(n)))
+			throw new Error(`${hull.id}: non-finite settled-frame measurement`);
 		const runs = [];
 		for (let r = 0; r < RUNS; r++)
 			runs.push(
@@ -110,6 +136,9 @@ try {
 					const { HULL_SPECS } = await import("/src/hull.ts");
 					const { ventThroats } = await import("/src/vent-plumes.ts");
 					const { disposeSubtree } = await import("/src/gpu-teardown.ts");
+					const { installPreparedAuthoredHull } = await import(
+						"/src/authored-hull.ts"
+					);
 					const urls = await import("/src/model-urls.ts");
 					const made = await import(h.module);
 					// The loader and decoder the game itself imports: their URLs read
@@ -152,13 +181,14 @@ try {
 					const t1 = performance.now();
 					const builder = await made[h.create](gltf.scene);
 					const t2 = performance.now();
-					mesh.installAuthoredHull(h.id, builder);
+					await installPreparedAuthoredHull(h.id, builder);
+					const warmed = performance.now();
 					const { root } = mesh.buildShipMesh(h.id, HULL_SPECS[h.id].variant);
 					const t3 = performance.now();
 					ventThroats(root, h.id);
 					const t4 = performance.now();
 					disposeSubtree(root);
-					// The Game's refresh, in the same task as in `loadAuthoredHull`:
+					// The Game's refresh after preparation, as in `loadAuthoredHull`:
 					// every live root of the hull made a stand-in again, so it is
 					// rebuilt as a loft would be.
 					const g = window.__seelite;
@@ -182,7 +212,8 @@ try {
 					return {
 						parse: t1 - t0,
 						builder: t2 - t1,
-						firstBuild: t3 - t2,
+						warmup: warmed - t2,
+						firstBuild: t3 - warmed,
 						throats: t4 - t3,
 						refresh: t5 - t4,
 						live: live.length,
@@ -193,7 +224,9 @@ try {
 				}, hull),
 			);
 		for (const run of runs)
-			if (run.rebuilt !== run.live)
+			if (Object.values(run).some((n) => !Number.isFinite(n)))
+				throw new Error(`${hull.id}: non-finite measurement`);
+			else if (run.rebuilt !== run.live)
 				throw new Error(
 					`${hull.id}: the refresh rebuilt ${run.rebuilt} of ${run.live} live roots`,
 				);
@@ -202,15 +235,23 @@ try {
 		console.log(
 			`\n  ${hull.id}: ms, median of ${RUNS}; ${runs[0].live} live ${hull.id} root(s) refreshed`,
 		);
+		console.log(
+			`    settled     median ${settled.median.toFixed(1)}, p95 ${settled.p95.toFixed(1)}, max ${settled.max.toFixed(1)} (60 frames, before install)`,
+		);
 		for (const k of [
 			"parse",
 			"builder",
+			"warmup",
 			"firstBuild",
 			"throats",
 			"refresh",
 			"worstGap",
 		])
 			console.log(`    ${k.padEnd(11)} ${col(k)}`);
+		if (median(runs.map((r) => r.worstGap)) > MAX_GAP_MS)
+			throw new Error(
+				`${hull.id}: median install gap exceeds ${MAX_GAP_MS} ms`,
+			);
 	}
 } finally {
 	await browser.close();

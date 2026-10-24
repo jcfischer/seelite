@@ -18,12 +18,13 @@ import {
 } from "./module-catalog";
 import { EQUIPMENT } from "./market";
 import { SKIM_BAND_R, SKIM_SHELL_R } from "./ship-condition";
+import { variantRow } from "./module-variants";
 
 export interface FittedModule {
 	module: ModuleKind;
 	size: SlotSize;
 	grade: Grade;
-	/** Reserved identity; rolling and interpreting traits belongs to node #875. */
+	/** One per-kind tradeoff identity, interpreted by moduleRow. */
 	variant?: string;
 	ammo?: number;
 	/** Cost basis for trade credit. Zero is salvage; absent is legacy/stock
@@ -49,21 +50,8 @@ export interface ModuleFitting extends FittedModule {
 	id: string;
 	tonnes: number;
 }
-export const LEGACY_MODULES: Readonly<Record<string, ModuleKind>> = {
-	Missile: "missile-rack",
-	"Large Cargo Bay": "cargo-rack",
-	"Extra Pulse Laser": "pulse-laser",
-	"Extra Beam Laser": "beam-laser",
-	"Military Laser": "military-laser",
-	"Mining Laser": "mining-laser",
-	"E.C.M. System": "ecm",
-	"Docking Computer": "docking-computer",
-	"Identity Scanner": "identity-scanner",
-	"Long-Range Scanner": "long-range-scanner",
-	"Fuel Scoops": "fuel-scoop",
-	"Escape Pod": "escape-pod",
-	"Extra Energy Unit": "extra-energy-unit",
-};
+export { LEGACY_MODULES } from "./module-identities";
+import { LEGACY_MODULES } from "./module-identities";
 let rows: ModuleRow[] | undefined;
 export const moduleRows = (): readonly ModuleRow[] =>
 	(rows ??= deriveProposal().rows);
@@ -80,8 +68,16 @@ export function moduleRow(m: FittedModule): ModuleRow {
 			? rowIndex.get(`${m.module}/${m.size}/${m.grade}`)
 			: undefined;
 	if (!r) throw new Error(`Unknown module ${m.module}/${m.size}/${m.grade}`);
-	return r;
+	return variantRow(r, m.variant);
 }
+/** Hull and installed catalogue mass, before cargo and carried fittings. */
+export const fittedMassT = (hull: HullId, loadout: Loadout): number =>
+	HULL_SPECS[hull].massT +
+	Object.values(loadout).reduce(
+		(mass, module) => mass + moduleRow(module).massT,
+		0,
+	);
+
 export const fitted = (loadout: Loadout, name: string): boolean =>
 	Object.values(loadout).some(
 		(m) => m.module === (LEGACY_MODULES[name] ?? name),
@@ -108,6 +104,7 @@ export function fittingValue(f: {
 	module?: string;
 	size?: SlotSize;
 	grade?: Grade;
+	variant?: string;
 }): number {
 	return f.module
 		? moduleRow(f as FittedModule).priceCr * f.tonnes
@@ -160,8 +157,8 @@ export function stockLoadout(hull: HullId): Loadout {
  * `shieldPool` plus every booster's `pointsPerPool`, and the boosters' draws
  * add (#927). The scoops' rate and draw (#932) and the racks' missiles add.
  * Scanners and the pod do not add: the best fitted one is read (#977).
- * The hold is the hull's `holdT` plus every rack's `cargoT` (#928); an NPC
- * passes its stock loadout, which has no rack, so it reads the bare hold.
+ * The hold is the hull's `holdT` plus every rack's `cargoT` (#928); NPCs
+ * pass the same instance-owned fit their combat and manifest read (#875).
  */
 export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	const spec = HULL_SPECS[hull];
@@ -337,11 +334,12 @@ export function parseModule(raw: unknown): FittedModule {
 			throw Error("invalid variant");
 		m.variant = o.variant;
 	}
+	const effective = moduleRow(m);
 	if (row.kind === "missile-rack") {
 		if (
 			!Number.isInteger(o.ammo) ||
 			Number(o.ammo) < 0 ||
-			Number(o.ammo) > row.output.missiles
+			Number(o.ammo) > effective.output.missiles
 		)
 			throw Error("invalid missile ammunition");
 		m.ammo = Number(o.ammo);

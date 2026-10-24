@@ -25,13 +25,20 @@
  * into a world-state destroy, a drop and a heat write. No world, no renderer.
  */
 import type { CarrierKey } from "./carrier-key";
+import { fittedCapacity } from "./loadout";
 import {
 	type CombatEnemyState,
 	type EnemyIntent,
 	NO_ROTATION,
 	playerLaserHit,
 } from "./combat-enemy";
-import { type DuelPilot, type PlayerShot, stepCombatShip } from "./duel";
+import {
+	type CombatFit,
+	type DuelPilot,
+	type PlayerShot,
+	combatFit,
+	stepCombatShip,
+} from "./duel";
 import { HULL_SPECS, type HullId } from "./hull";
 import {
 	PLAYER_KILL,
@@ -48,7 +55,6 @@ import {
 	type TrafficSchedule,
 	nextTrafficDepartureAtS,
 } from "./station-traffic";
-import { flightPerformance } from "./sim";
 import { type Vec3, frameAcross } from "./vec3";
 import type {
 	OperationalCondition,
@@ -120,6 +126,8 @@ export const trafficInSights = (
 export const ASSAULT_FIRE_S = 5;
 
 export interface Engagement {
+	combat: CombatFit;
+	loadout?: import("./loadout").Loadout;
 	key: CarrierKey;
 	hullId: HullId;
 	armed: boolean;
@@ -216,6 +224,7 @@ export function engage(
 		nose: Vec3;
 		up: Vec3 | null;
 		voyageOrdinal: number;
+		loadout?: import("./loadout").Loadout;
 	},
 	seed: number,
 	prior: EngagementStart,
@@ -227,7 +236,14 @@ export function engage(
 		hullId: target.hullId,
 		armed,
 		intent,
-		condition: fullCondition(target.hullId),
+		loadout: target.loadout,
+		combat: combatFit(target.hullId, target.loadout),
+		condition: fullCondition(
+			target.hullId,
+			target.loadout
+				? fittedCapacity(target.hullId, target.loadout)
+				: undefined,
+		),
 		voyageOrdinal: target.voyageOrdinal,
 		landedFireS: 0,
 		assaultCharged: prior.assaultAlreadyCharged,
@@ -294,7 +310,7 @@ export function stepEngagement(
 ): EngagementStep {
 	const step = stepCombatShip(engagement, pilot, shot, dt, {
 		hitRadiusKm: trafficHitRadiusKm(engagement.hullId),
-		performance: flightPerformance(engagement.hullId),
+		...engagement.combat,
 		intent: engagement.intent,
 	});
 	// Held, not reset, when nothing lands this frame. A pilot who breaks off to

@@ -4,6 +4,13 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-variants-loadouts.mjs": [
+		"scripts/probe-variants-loadouts.mjs",
+		"src/module-variants.ts",
+		"src/npc-loadout.ts",
+		"src/loadout.ts",
+		"src/kill-credit.ts",
+	],
 	"probe-production-boot.mjs": [
 		"scripts/probe-production-boot.mjs",
 		"src/entry.ts",
@@ -380,6 +387,7 @@ const OWNERS = Object.freeze({
 		"scripts/probe-planet-footprint.mjs",
 		"src/planet-surface.ts",
 		"src/planet-footprint.ts",
+		"src/planet-clouds.ts",
 	],
 	"probe-planets.mjs": [
 		"scripts/probe-planets.mjs",

@@ -15,6 +15,7 @@ import {
 	repeatableEquipment,
 	makeModule,
 	fittedCapacity,
+	fittedMassT,
 } from "./loadout";
 import { moduleStock, moduleLocked } from "./module-stock";
 /**
@@ -800,13 +801,8 @@ export const flownMassT = (
 			sum + amount * TONNES_PER_UNIT[commodity(name).unit],
 		0,
 	);
-	const fittedT = Object.values(commander.loadout).reduce(
-		(n, m) => n + moduleRow(m).massT,
-		0,
-	);
 	return (
-		HULL_SPECS[hull].massT +
-		fittedT +
+		fittedMassT(hull, commander.loadout) +
 		cargoT +
 		recoveredTonnes(commander) +
 		entrustedT

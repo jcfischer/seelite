@@ -19,6 +19,19 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-variants-loadouts.mjs",
+			"Materializes a seeded NPC fit in live combat, checks fitted defence and kill credit, scoops a variant fitting through Game, saves its trait and names it on Equipment.",
+			[
+				"NPC loadouts",
+				"variants",
+				"kill credit",
+				"fitting drops",
+				"scoop",
+				"save",
+				"Equipment",
+			],
+		),
+		entry(
 			"probe-production-boot.mjs",
 			"Builds and serves the production bundle, then verifies fresh Commander, direct and full-model boots render and clear loading without page errors.",
 			["production bundle", "startup", "async imports", "model loading"],
@@ -874,8 +887,15 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-planet-footprint.mjs",
-			"Checks terran footprint cap arms at close and distant ranges, exact base arithmetic, deterministic pixels, quality and actual target pixel angle; writes canonical horizon pairs for the principal.",
-			["planet surface", "footprint", "octaves", "quality", "determinism"],
+			"Checks terran footprint cap arms at close and distant ranges on the ground's four fields and the weather shell's two, exact base arithmetic, the dust shell left alone, deterministic pixels, quality and each program's actual target pixel angle; writes canonical horizon pairs for the principal.",
+			[
+				"planet surface",
+				"footprint",
+				"octaves",
+				"clouds",
+				"quality",
+				"determinism",
+			],
 		),
 		entry(
 			"probe-planets.mjs",

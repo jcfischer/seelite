@@ -1146,7 +1146,7 @@
   },
   "scripts/probe-planet-footprint.mjs": {
     "seelite/no-comments": {
-      "count": 15
+      "count": 14
     }
   },
   "scripts/probe-planet-surfaces.mjs": {
@@ -1396,7 +1396,7 @@
   },
   "src/authored-hull.ts": {
     "seelite/no-comments": {
-      "count": 33
+      "count": 27
     }
   },
   "src/authored-levels.ts": {

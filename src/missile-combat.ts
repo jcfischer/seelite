@@ -117,11 +117,12 @@ export class MissileCombat {
 		solids: readonly MissileSolid[],
 		now: number,
 		dt: number,
+		loadout?: Loadout,
 	) {
 		if (this.enemy?.seed !== seed)
 			this.enemy = {
 				seed,
-				loadout: seededRaiderLoadout(seed),
+				loadout: loadout ?? seededRaiderLoadout(seed),
 				lock: null,
 				launchAt: now + 8,
 			};

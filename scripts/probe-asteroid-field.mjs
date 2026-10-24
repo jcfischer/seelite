@@ -280,6 +280,7 @@ try {
 			castNear: near.castShadow,
 			castFar: far.castShadow,
 			quality: g.settings.value.quality,
+			gate: g.occlusionState,
 			frustum: [near.perObjectFrustumCulled, far.perObjectFrustumCulled],
 			material: near.material.type,
 			sameMaterial: near.material === far.material,
@@ -319,6 +320,29 @@ try {
 			placed.castNear === (placed.quality === "high") &&
 			placed.castFar === false,
 		`quality ${placed.quality}, cast ${placed.castNear}/${placed.castFar}`,
+	);
+
+	check(
+		"a level-0 rock opens the occlusion gate on high and never on low, with no station enclosing the camera",
+		!placed.gate.pinned &&
+			placed.perLevel[0] > 0 &&
+			placed.gate.enclosureRad < 0.35 &&
+			placed.gate.open === (placed.quality === "high"),
+		`quality ${placed.quality}, L0 ${placed.perLevel[0]}, ${JSON.stringify(placed.gate)}`,
+	);
+	const farGate = await held.evaluate(async () => {
+		const g = window.__seelite;
+		const A = await import("/src/asteroid-field.ts");
+		const draw = g.fields[0];
+		const rock = draw.rocks[window.__bigRock()];
+		const p = A.rockLocal(rock, g.world.gameTime);
+		await window.__stand({ x: p.x - 5000, y: p.y, z: p.z }, p, 45);
+		return { open: g.occlusionState.open, level0: draw.perLevel[0] };
+	});
+	check(
+		"far from the field, with no level-0 rock and no station, the gate is shut",
+		farGate.level0 === 0 && farGate.open === false,
+		JSON.stringify(farGate),
 	);
 
 	// --- the clock moves every rock: drift and spin ------------------------

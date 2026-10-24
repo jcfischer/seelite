@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/875 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-22",
+		text: "Salvaged modules can carry a special trait with a tradeoff, and armed ships fight with varied fittings you can recover from their wreckage.",
+		node: 875,
+	},
 	// https://github.com/jcfischer/seelite/issues/1033 — proposed copy; principal approval required before merge.
 	{
 		date: "2026-10-20",

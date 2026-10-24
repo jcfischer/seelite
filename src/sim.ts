@@ -1082,8 +1082,8 @@ function addLevel(levels: VentLevels, slot: VentSlot, level: number): void {
  *
  * **`massT` is the flown mass (#865)**: the hull, its fit and its hold, which
  * `flownMassT` in `station-commerce.ts` sums. It defaults to the hull's own,
- * which is the empty ship every NPC flies until outfitting's D16 gives them
- * loadouts, and at that mass the struct is exactly the one #619 solved. A
+ * the empty reference ship; fitted NPCs pass their module mass too (#875).
+ * At the reference mass the struct is exactly the one #619 solved. A
  * heavier ship divides the same forces and couples by more mass and a
  * proportionally larger `boxInertia` — the load is taken as spread through the
  * hull's box — so every authority above falls by `hull / flown`. The assist's
