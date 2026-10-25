@@ -373,20 +373,6 @@ try {
 			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(ladder, 20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
 		);
 	}
-	const techno = rendered.get("music-adaptive-ladder-techno");
-	if (techno) {
-		const [calm, wary, threat, fight] = [
-			[6, 18],
-			[20, 36],
-			[38, 54],
-			[56, 72],
-		].map(([a, b]) => perS(techno, a, b));
-		check(
-			"the techno ladder gets busier: wary over calm, threat and combat over wary",
-			wary > calm && threat > wary && fight > wary,
-			`transients/s calm ${calm.toFixed(2)}, wary ${wary.toFixed(2)}, threat ${threat.toFixed(2)}, combat ${fight.toFixed(2)}`,
-		);
-	}
 	/** Rms over a window in seconds, or the whole buffer: one body for every
 	 *  row that reads a level (sage round 4). */
 	const rmsOf = (x, a = 0, b = x.length / SR) => {
@@ -396,6 +382,23 @@ try {
 		for (let i = i0; i < i1; i++) s += x[i] * x[i];
 		return Math.sqrt(s / (i1 - i0));
 	};
+	const techno = rendered.get("music-adaptive-ladder-techno");
+	if (techno) {
+		const [calm, wary, threat, fight] = [
+			[6, 18],
+			[20, 36],
+			[38, 54],
+			[56, 72],
+		].map(([a, b]) => perS(techno, a, b));
+		check(
+			"the techno ladder rises: wary busier than calm, threat and combat busier than wary, combat louder than threat",
+			wary > calm &&
+				threat > wary &&
+				fight > wary &&
+				rmsOf(techno, 56, 72) > rmsOf(techno, 38, 54),
+			`transients/s calm ${calm.toFixed(2)}, wary ${wary.toFixed(2)}, threat ${threat.toFixed(2)}, combat ${fight.toFixed(2)}; rms threat ${rmsOf(techno, 38, 54).toFixed(4)}, combat ${rmsOf(techno, 56, 72).toFixed(4)}`,
+		);
+	}
 
 	for (const [row, ask] of [
 		[

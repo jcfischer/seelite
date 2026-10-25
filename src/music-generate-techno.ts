@@ -400,8 +400,9 @@ const RAW_PARTS: Readonly<Record<string, PartSpec>> = {
 	},
 };
 
-/** Every part's level is raised by this, so the bed is as loud as the
- *  sequence school's (measured headless, 2026-10-24). */
+/** Every part's level is raised by this, so the bed is about as loud as the
+ *  sequence school's: on average over six systems (headless, 2026-10-24),
+ *  while three systems' whole calm read 0.89–1.17 of the school's. */
 export const TECHNO_GAIN = 1.45;
 const PARTS: Readonly<Record<string, PartSpec>> = Object.fromEntries(
 	Object.entries(RAW_PARTS).map(([k, p]) => [
@@ -433,9 +434,9 @@ export function technoStyle(systemSeed: number, variant: number): TechnoStyle {
 }
 
 /** The system's tempo: from its first style's range, held by every
- *  variant. */
-export function technoBpm(systemSeed: number): number {
-	const [lo, hi] = TECHNO_STYLES[technoStyle(systemSeed, 0)].bpm;
+ *  variant; or from `forced`'s range, when one style plays everywhere. */
+export function technoBpm(systemSeed: number, forced?: TechnoStyle): number {
+	const [lo, hi] = TECHNO_STYLES[forced ?? technoStyle(systemSeed, 0)].bpm;
 	const rand = streamOf(systemSeed, 0, 9);
 	return lo + Math.floor(rand() * (hi - lo + 1));
 }
@@ -516,7 +517,7 @@ export function technoTune(
 	];
 	return {
 		style,
-		bpm: technoBpm(systemSeed),
+		bpm: technoBpm(systemSeed, forced),
 		hats: Math.floor(rand() * HATS.length),
 		clap: Math.floor(rand() * CLAPS.length),
 		fill: Math.floor(rand() * KICK_FILLS.length),

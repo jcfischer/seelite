@@ -7,6 +7,7 @@ import {
 	arrange,
 	LAYERS,
 	TECHNO_STYLE_NAMES,
+	TECHNO_STYLES,
 	technoBpm,
 	technoCalmBars,
 	technoFlightBed,
@@ -75,6 +76,17 @@ describe("the techno tune", () => {
 				expect(technoStyle(seed, v)).not.toBe(technoStyle(seed, v - 1));
 			for (let v = 0; v < 5; v++)
 				expect(technoTune(seed, v).bpm).toBe(technoBpm(seed));
+		}
+	});
+
+	test("a forced style plays in its own tempo range", () => {
+		for (const style of TECHNO_STYLE_NAMES) {
+			const [lo, hi] = TECHNO_STYLES[style].bpm;
+			for (const seed of SEEDS) {
+				const bpm = technoFlightBed(seed, 0, style).tempo[0].bpm;
+				expect(bpm).toBeGreaterThanOrEqual(lo);
+				expect(bpm).toBeLessThanOrEqual(hi);
+			}
 		}
 	});
 

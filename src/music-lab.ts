@@ -17,7 +17,6 @@ import {
 	DEFAULT_MUSIC_ARMS,
 	drawnBed,
 	type MusicBed,
-	systemBed,
 	FALL_HOLD_S,
 	initialMusicState,
 	type MusicReading,
@@ -77,7 +76,10 @@ export function mountMusicLab() {
 
 	const formLine = (seed: number, variant: number) => {
 		const chosen = $<HTMLSelectElement>("bed").value;
-		const bed = chosen === "system" ? systemBed(seed) : chosen;
+		const bed = drawnBed(
+			{ ...DEFAULT_MUSIC_ARMS, bed: chosen as MusicBed },
+			seed,
+		);
 		if (bed === "school")
 			return `, sequences form ${schoolForm(seed, variant)}`;
 		if (bed.startsWith("school-"))
