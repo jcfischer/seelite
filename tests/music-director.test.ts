@@ -259,7 +259,7 @@ describe("the prototype's arms, from ?music=", () => {
 			off: false,
 			force: "threat",
 			lowHull: "always",
-			bed: "berlin",
+			bed: "school",
 			voice: true,
 			waltz: "hybrid",
 		});
@@ -280,7 +280,7 @@ describe("the prototype's arms, from ?music=", () => {
 		expect(dangerLevel(at({ hullShare: 0.1 }), arms)).toBe("combat");
 	});
 
-	test("each bed arm loads its bed, the default the Berlin prototype", () => {
+	test("each bed arm loads its bed, the default the sequence school", () => {
 		const legacy = { ...DEFAULT_MUSIC_ARMS, bed: "legacy" as const };
 		const song = (arms: MusicArms) => {
 			const load = stepMusic(initialMusicState(), calm, 0.1, arms).commands[0];
@@ -291,7 +291,10 @@ describe("the prototype's arms, from ?music=", () => {
 		expect(song({ ...DEFAULT_MUSIC_ARMS, bed: "second" }).name).toMatch(
 			/^flight /,
 		);
-		expect(song(DEFAULT_MUSIC_ARMS).name).toMatch(/^berlin /);
+		expect(song(DEFAULT_MUSIC_ARMS).name).toMatch(/^school /);
+		expect(song({ ...DEFAULT_MUSIC_ARMS, bed: "berlin" }).name).toMatch(
+			/^berlin /,
+		);
 	});
 
 	test("off plays nothing, and fades out what was playing", () => {
@@ -324,6 +327,7 @@ test("death fades the music though it holds the clock", () => {
 });
 
 test("a rise just after a fresh variant is asked for still lands on the next bar", () => {
+	const BERLIN_ARMS = { ...DEFAULT_MUSIC_ARMS, bed: "berlin" as const };
 	// Through the real engine: a refresh placed on a section line made the
 	// incoming song the lead at once, and a rise sent then waited for that
 	// line — up to a whole section of calm under a raider.
@@ -342,7 +346,7 @@ test("a rise just after a fresh variant is asked for still lands on the next bar
 		// The rise comes 0.5 s after the refresh.
 		const r = t >= REFRESH_S + 0.5 ? at({ encounter: "contest" }) : calm;
 		if (riseAt < 0 && r !== calm) riseAt = Math.round(t * SR);
-		const s = stepMusic(state, r, 0.1);
+		const s = stepMusic(state, r, 0.1, BERLIN_ARMS);
 		state = s.state;
 		for (const cmd of s.commands) engine.command(cmd, frame);
 		for (const end = Math.round((t + 0.1) * SR); frame < end; frame += 128)
