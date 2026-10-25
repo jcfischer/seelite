@@ -113,6 +113,7 @@ const OWNERS = Object.freeze({
 	],
 	"probe-rock-placement.mjs": [
 		"scripts/probe-rock-placement.mjs",
+		"src/main.ts",
 		"src/collision.ts",
 		"src/sim.ts",
 		"src/save-envelope.ts",

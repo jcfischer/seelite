@@ -183,9 +183,11 @@ interface RockPlacement {
 	rocks: Set<string>;
 }
 
+const placedRocks = (): RockPlacement => ({ placed: true, rocks: new Set() });
+
 /** Arm transient whole-rock ghosting after placing a ship (collision.md §4.3). */
 export function markShipPlaced(world: World): void {
-	world.rockPlacement = { placed: true, rocks: new Set() };
+	world.rockPlacement = placedRocks();
 }
 
 export interface System {
@@ -660,7 +662,7 @@ export function restoreWorld(
 		galaxy,
 		system,
 		ship,
-		rockPlacement: { placed: true, rocks: new Set() },
+		rockPlacement: placedRocks(),
 	};
 }
 

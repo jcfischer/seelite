@@ -39,7 +39,8 @@ try {
 			const { v3, sub } = await import("/src/vec3.ts");
 			let g = window.__seelite;
 			const dt = g.units.MAX_DT;
-			g.world.rockPlacement = { placed: false, rocks: new Set() };
+			const unplaced = () => ({ placed: false, rocks: new Set() });
+			g.world.rockPlacement = unplaced();
 			let reached = false;
 			if (path === "cruise exit") {
 				g.regime = "cruise";
@@ -49,7 +50,7 @@ try {
 			} else if (path === "launch") {
 				if (!g.startDockedAtHome())
 					throw new Error("could not dock for launch");
-				g.world.rockPlacement = { placed: false, rocks: new Set() };
+				g.world.rockPlacement = unplaced();
 				g.launch();
 				for (let i = 0; i < 12000 && g.dockPhase !== "flying"; i++) {
 					if (g.dockPhase === "launching") g.skipDockTraversal();
@@ -129,7 +130,7 @@ try {
 				};
 			};
 			const controlWorld = structuredClone(g.world);
-			controlWorld.rockPlacement = { placed: false, rocks: new Set() };
+			controlWorld.rockPlacement = unplaced();
 			const control = run(controlWorld);
 			const placed = run(g.world);
 			const savedActive = JSON.stringify(serializeSave(g.saveEnvelope()));
