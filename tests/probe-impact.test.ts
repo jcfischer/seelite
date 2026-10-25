@@ -30,6 +30,7 @@ function readSources(dir: string) {
 }
 readSources("src");
 readSources("scripts");
+readSources("spikes");
 const inventory = discoverProbeFiles(resolve(root, "scripts"));
 const impact = (paths: string[], before = sources, after = sources) =>
 	selectImpact(paths, { before, after }, inventory);
@@ -357,5 +358,127 @@ describe("deterministic browser impact", () => {
 		expect(
 			changedMethods(before, before.replace("panel()", "other()")),
 		).toBeNull();
+	});
+
+	describe("spike rule: study files under spikes/", () => {
+		const real = { before: sources, after: sources };
+		const select = (files: string[], impact = real) =>
+			selectProbes({ changedFiles: files, impact });
+		test("a study confined diff selects no probe and names the rule", async () => {
+			const result = await select([
+				"spikes/stations/assembly-kit/index.html",
+				"spikes/stations/assembly-kit/viewer.ts",
+			]);
+			expect(result.mode).toBe("none");
+			expect(result.probes).toEqual([]);
+			expect(result.reason).toContain("spike rule");
+		});
+		test("the Coriolis glb that src/ fetches by URL is runtime", async () => {
+			const result = await select(["spikes/coriolis/coriolis-industrial.glb"]);
+			expect(result.mode).not.toBe("none");
+			expect(result.reason).not.toContain("spike rule");
+		});
+		test("a courier-cockpit asset that src/ loads from its directory is runtime", async () => {
+			const result = await select(["spikes/courier-cockpit/anything.png"]);
+			expect(result.mode).not.toBe("none");
+			expect(result.reason).not.toContain("spike rule");
+		});
+		test("a study file is runtime when only the base or only the head names it", async () => {
+			const naming = new Map([
+				["src/viewer.ts", 'fetch("/spikes/demo/model.glb");'],
+			]);
+			const bare = new Map([["src/viewer.ts", ""]]);
+			const files = ["spikes/demo/model.glb"];
+			for (const impact of [
+				{ before: naming, after: bare },
+				{ before: bare, after: naming },
+			])
+				expect((await select(files, impact)).mode).not.toBe("none");
+			expect((await select(files, { before: bare, after: bare })).mode).toBe(
+				"none",
+			);
+		});
+		test("a relative import, a glob and a bare spikes literal reach the files under them", async () => {
+			const bare = new Map([["src/a.ts", ""]]);
+			const cases: [string, string][] = [
+				['import "../spikes/demo/lib";', "spikes/demo/lib.ts"],
+				['import.meta.glob("/spikes/demo/**/*.glb");', "spikes/demo/x/y.glb"],
+				[
+					'import.meta.glob("/spikes/demo/model-*.glb");',
+					"spikes/demo/model-a.glb",
+				],
+				[
+					'import.meta.glob("/spikes/demo/model-{a,b}.glb");',
+					"spikes/demo/model-a.glb",
+				],
+				[
+					'import.meta.glob("/spikes/demo/model-[ab].glb");',
+					"spikes/demo/model-a.glb",
+				],
+				['join(root, "spikes", name);', "spikes/demo/z.ts"],
+				["fetch(`/spikes/demo/${name}.glb`);", "spikes/demo/q.glb"],
+			];
+			for (const [text, file] of cases) {
+				const naming = new Map([["src/a.ts", text]]);
+				expect(
+					(await select([file], { before: bare, after: naming })).mode,
+				).not.toBe("none");
+			}
+		});
+		test("transitive spike imports retain their owners in either revision", async () => {
+			for (const root of [
+				"src/outfitting-view.ts",
+				"scripts/probe-outfitting.mjs",
+			]) {
+				const naming = new Map([
+					[root, 'import "../spikes/demo/entry";'],
+					["spikes/demo/entry.ts", 'import "./lib";'],
+					["spikes/demo/lib.ts", "export const value = 1;"],
+				]);
+				const bare = new Map([[root, ""]]);
+				for (const impact of [
+					{ before: naming, after: bare },
+					{ before: bare, after: naming },
+				]) {
+					const result = await select(["spikes/demo/lib.ts"], impact);
+					expect(result.mode).toBe("affected");
+					expect(result.probes).toContain("probe-outfitting.mjs");
+				}
+			}
+		});
+		test("URLs named by transitive runtime imports stay runtime", async () => {
+			const naming = new Map([
+				["src/a.ts", 'import "../spikes/demo/entry";'],
+				["spikes/demo/entry.ts", 'fetch("/spikes/other/model.glb");'],
+			]);
+			const result = await select(["spikes/other/model.glb"], {
+				before: naming,
+				after: naming,
+			});
+			expect(result.mode).toBe("all");
+		});
+		test("a comment that mentions a study does not reach it", async () => {
+			const impact = {
+				before: new Map([["src/a.ts", "// see spikes/demo/model.glb"]]),
+				after: new Map([["src/a.ts", "// see spikes/demo/model.glb"]]),
+			};
+			expect((await select(["spikes/demo/model.glb"], impact)).mode).toBe(
+				"none",
+			);
+		});
+		test("a study file beside a runtime change keeps the runtime owners only", () => {
+			const result = impact([
+				"src/outfitting.ts",
+				"spikes/stations/assembly-kit/viewer.ts",
+			]);
+			expect(result.probes).toBeDefined();
+			expect(result.reason).toContain("study files");
+		});
+		test("without snapshots a spikes/ path is never a study file", async () => {
+			const result = await selectProbes({
+				changedFiles: ["spikes/stations/assembly-kit/viewer.ts"],
+			});
+			expect(result.reason).not.toContain("spike rule");
+		});
 	});
 });

@@ -141,7 +141,17 @@ launch behavior unchanged may use routing tests, changed probe contracts and
 smoke instead of the infrastructure fallback. Record that scope and its evidence
 in the PR; do not describe it as an automatic selection or a full-suite pass.
 Documentation/headless-test-only changes need no browser run; changed probe
-scripts still run their own checks.
+scripts still run their own checks. So do study files under `spikes/` (node
+#1081, the spike rule): a `spikes/` path outside the transitive import closure
+of `src/` and probe scripts that no string literal in that closure names, in
+either revision, as the file, an ancestor directory, an import stem or a glob
+prefix, is a study file, and a diff confined to them selects no probe. Glob
+prefixes match everything before the first wildcard, including part of a
+filename. Git snapshots include spike sources so transitive imports keep their
+owners; URL references without an owner still expand to all.
+`src/coriolis-spike-viewer.ts` and
+`src/courier-cockpit-viewer.ts` name their spike assets by URL, so those stay
+runtime. `isStudyFile` in `scripts/lib/probe-impact.mjs` owns the rule.
 
 The PR runner requires a clean checkout at the selected HEAD. Its printed base
 and head identify the evidence. Re-run selection after changing the diff or

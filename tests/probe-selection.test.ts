@@ -265,19 +265,63 @@ describe("the semantic branch", () => {
 });
 
 describe("the TypeSafe transport", () => {
-	test("git evidence keeps both sides of a runtime-to-docs rename", () => {
-		const root = mkdtempSync(join(tmpdir(), "seelite-probe-git-"));
-		const git = (args: string[], encoding?: BufferEncoding) =>
-			execFileSync("git", args, {
+	async function withTempRepo<T>(
+		prefix: string,
+		run: (git: (args: string[]) => string, root: string) => T | Promise<T>,
+	): Promise<T> {
+		const root = mkdtempSync(join(tmpdir(), prefix));
+		const git = (args: string[]) =>
+			execFileSync("git", ["-c", "core.hooksPath=/dev/null", ...args], {
 				cwd: root,
-				encoding,
-				stdio: encoding ? ["ignore", "pipe", "pipe"] : "ignore",
+				encoding: "utf8",
+				env: {
+					...process.env,
+					GIT_AUTHOR_NAME: "Probe selector test",
+					GIT_AUTHOR_EMAIL: "probe-selector@example.invalid",
+					GIT_COMMITTER_NAME: "Probe selector test",
+					GIT_COMMITTER_EMAIL: "probe-selector@example.invalid",
+				},
+				stdio: ["ignore", "pipe", "pipe"],
 			});
 		try {
 			git(["init"]);
-			git(["config", "core.hooksPath", "/dev/null"]);
-			git(["config", "user.name", "Probe selector test"]);
-			git(["config", "user.email", "probe-selector@example.invalid"]);
+			return await run(git, root);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
+
+	test("git evidence preserves transitive runtime spike ownership", async () => {
+		await withTempRepo("seelite-probe-spikes-", async (git, root) => {
+			mkdirSync(join(root, "src"));
+			mkdirSync(join(root, "spikes/demo"), { recursive: true });
+			writeFileSync(
+				join(root, "src/outfitting-view.ts"),
+				'import "../spikes/demo/entry";',
+			);
+			writeFileSync(join(root, "spikes/demo/entry.ts"), 'import "./lib";');
+			writeFileSync(
+				join(root, "spikes/demo/lib.ts"),
+				"export const value = 1;",
+			);
+			git(["add", "."]);
+			git(["commit", "-m", "base"]);
+			const base = git(["rev-parse", "HEAD"]).trim();
+			writeFileSync(
+				join(root, "spikes/demo/lib.ts"),
+				"export const value = 2;",
+			);
+			git(["add", "."]);
+			git(["commit", "-m", "change runtime spike"]);
+			const evidence = readImpactEvidence(base, "HEAD", root);
+			const result = await selectProbes(evidence);
+			expect(result.mode).toBe("affected");
+			expect(result.probes).toContain("probe-outfitting.mjs");
+		});
+	});
+
+	test("git evidence keeps both sides of a runtime-to-docs rename", async () => {
+		await withTempRepo("seelite-probe-git-", (git, root) => {
 			mkdirSync(join(root, "src"));
 			writeFileSync(
 				join(root, "src/runtime.ts"),
@@ -285,12 +329,12 @@ describe("the TypeSafe transport", () => {
 			);
 			git(["add", "."]);
 			git(["commit", "-m", "base"]);
-			const base = String(git(["rev-parse", "HEAD"], "utf8")).trim();
+			const base = git(["rev-parse", "HEAD"]).trim();
 			mkdirSync(join(root, "docs"));
 			renameSync(join(root, "src/runtime.ts"), join(root, "docs/runtime.md"));
 			git(["add", "-A"]);
 			git(["commit", "-m", "rename"]);
-			const head = String(git(["rev-parse", "HEAD"], "utf8")).trim();
+			const head = git(["rev-parse", "HEAD"]).trim();
 
 			expect(new Set(readGitEvidence(base, head, root).changedFiles)).toEqual(
 				new Set(["src/runtime.ts", "docs/runtime.md"]),
@@ -311,9 +355,7 @@ describe("the TypeSafe transport", () => {
 			expect(() => assertRunnableHead(head, root)).toThrow(
 				"working-tree changes",
 			);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
+		});
 	});
 
 	test("the CLI fails loudly when its git range is invalid", () => {

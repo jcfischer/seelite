@@ -18,6 +18,7 @@ export function readSourceSnapshot(ref, cwd) {
 		"--",
 		"src",
 		"scripts",
+		"spikes",
 	])
 		.split("\0")
 		.filter((p) => /\.(ts|js|mjs|css|json)$/.test(p));
