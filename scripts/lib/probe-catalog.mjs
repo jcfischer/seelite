@@ -19,6 +19,11 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-rock-placement.mjs",
+			"Runs Game cruise exit, launch, flight restore, refused docked restore and guided fallback, then steps their final poses against a supplied rock to verify unsaved whole-rock ghost state; an unplaced control must impact.",
+			["rock ghost", "placement", "cruise exit", "launch", "restore", "save"],
+		),
+		entry(
 			"probe-variants-loadouts.mjs",
 			"Materializes a seeded NPC fit in live combat, checks fitted defence and kill credit, scoops a variant fitting through Game, saves its trait and names it on Equipment.",
 			[

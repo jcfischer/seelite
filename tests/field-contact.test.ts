@@ -23,6 +23,7 @@ import {
 	jumpWorldTo,
 	makeSystem,
 	makeWorldAtSystem,
+	markShipPlaced,
 	stationHostIdOf,
 } from "../src/sim";
 import { arrivalPoint } from "../src/system";
@@ -56,6 +57,7 @@ function subjectAt(index: number) {
 					advanceWorldClock,
 					chargeAfterTravel,
 					exitVelocity,
+					markShipPlaced,
 					scale,
 					v3,
 				},

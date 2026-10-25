@@ -35,6 +35,26 @@ const impact = (paths: string[], before = sources, after = sources) =>
 	selectImpact(paths, { before, after }, inventory);
 
 describe("production contract ownership", () => {
+	test("rock placement declares its Game placement paths as an owner", () => {
+		expect(PROBE_ROOTS["probe-rock-placement.mjs"]).toContain("src/main.ts");
+	});
+	test("removing any Game placement arm still selects the rock placement probe", async () => {
+		const main = sources.get("src/main.ts")!;
+		const calls = [...main.matchAll(/markShipPlaced\(this\.world\);/g)];
+		expect(calls).toHaveLength(5);
+		for (const call of calls) {
+			const after = new Map(sources);
+			after.set(
+				"src/main.ts",
+				main.slice(0, call.index) + main.slice(call.index! + call[0].length),
+			);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before: sources, after },
+			});
+			expect(result.probes).toContain("probe-rock-placement.mjs");
+		}
+	});
 	test("new probe contracts inherit game dependencies unless reviewed standalone", () => {
 		const roots = contractRoots("probe-new-game-contract.mjs", [
 			"src/new-feature.ts",
