@@ -443,6 +443,16 @@ export function selectImpact(changedFiles, impact, inventory) {
 		};
 	return {
 		probes: [...new Set([...SMOKE_PROBES, ...affected])].sort(),
-		reason: `Smoke plus contracts reached through base/head dependencies${methods.length ? `; Game.${methods.join(", Game.")}` : ""}${instruments.length ? `; no probe loads measurement script ${instruments.join(", ")}` : ""}${studies.length ? `; spike rule: no src/ or probe-script literal names study files ${studies.join(", ")}` : ""}.`,
+		reason:
+			[
+				"Smoke plus contracts reached through base/head dependencies",
+				methods.length && `Game.${methods.join(", Game.")}`,
+				instruments.length &&
+					`no probe loads measurement script ${instruments.join(", ")}`,
+				studies.length &&
+					`spike rule: no src/ or probe-script literal names study files ${studies.join(", ")}`,
+			]
+				.filter(Boolean)
+				.join("; ") + ".",
 	};
 }
