@@ -1521,7 +1521,7 @@
   },
   "src/collision.ts": {
     "seelite/no-comments": {
-      "count": 121
+      "count": 113
     }
   },
   "src/combat-enemy.ts": {
