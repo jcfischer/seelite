@@ -12787,7 +12787,7 @@ class Game {
 		// the station until the pilot takes over.
 		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
 			const { axis } = this.poseOfStation(wasAt);
-			markShipPlaced(this.world.ship);
+			markShipPlaced(this.world);
 			this.world.ship.vel = add(
 				this.world.ship.vel,
 				scale(axis, LAUNCH_EXIT_KMS),
@@ -16033,7 +16033,7 @@ class Game {
 				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
 		this.regime = "normal";
 		// The other end of the leg — see the note beside the engage.
-		markShipPlaced(this.world.ship);
+		markShipPlaced(this.world);
 		this.saveDirty();
 		this.detour = null;
 		this.cruiseSpeedKms = 0;
@@ -19143,7 +19143,7 @@ class Game {
 				body.pos.z + snap.axis.z * distance,
 			);
 			this.world.ship.vel = this.stationVelocity(station.id);
-			markShipPlaced(this.world.ship);
+			markShipPlaced(this.world);
 			this.targetId = station.id;
 			this.setThrottle(0);
 			this.setAttitude(
@@ -19200,7 +19200,7 @@ class Game {
 			// not hold a berth for a ship that went back to the arrival point.
 			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
 			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
-			markShipPlaced(this.world.ship);
+			markShipPlaced(this.world);
 			this.orientation.copy(from.orientation);
 			this.targetId = from.targetId;
 			return false;
@@ -19309,7 +19309,7 @@ class Game {
 			body.pos.z + axis.z * rangeKm,
 		);
 		this.world.ship.vel = this.stationVelocity(id);
-		markShipPlaced(this.world.ship);
+		markShipPlaced(this.world);
 		this.orientation.setFromUnitVectors(
 			new THREE.Vector3(0, 0, -1),
 			new THREE.Vector3(-axis.x, -axis.y, -axis.z),

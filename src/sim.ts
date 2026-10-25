@@ -183,11 +183,9 @@ interface RockPlacement {
 	rocks: Set<string>;
 }
 
-const shipPlacements = new WeakMap<Ship, RockPlacement>();
-
 /** Arm transient whole-rock ghosting after placing a ship (collision.md §4.3). */
-export function markShipPlaced(ship: Ship): void {
-	shipPlacements.set(ship, { placed: true, rocks: new Set() });
+export function markShipPlaced(world: World): void {
+	world.rockPlacement = { placed: true, rocks: new Set() };
 }
 
 export interface System {
@@ -222,6 +220,7 @@ export interface World {
 	galaxy: Galaxy;
 	system: System;
 	ship: Ship;
+	rockPlacement: RockPlacement;
 }
 
 /** A new game starts in galaxy 0 (spec §5.1). Which system within it is
@@ -655,13 +654,13 @@ export function restoreWorld(
 		pos: arrivalPoint(record, system.contents, null, gameTime),
 		vel: v3(),
 	};
-	markShipPlaced(ship);
 	return {
 		seed,
 		gameTime,
 		galaxy,
 		system,
 		ship,
+		rockPlacement: { placed: true, rocks: new Set() },
 	};
 }
 
@@ -770,7 +769,7 @@ export function jumpWorldTo(world: World, to: SystemRecord): void {
 	// stated in. Carrying the origin system's velocity across would be carrying
 	// a number from a coordinate system that no longer exists.
 	world.ship.vel = v3();
-	markShipPlaced(world.ship);
+	markShipPlaced(world);
 }
 
 /**
@@ -3126,7 +3125,7 @@ function collideShip(
 		starts,
 		clock,
 		clock.planeS,
-		shipPlacements.get(world.ship),
+		world.rockPlacement,
 	);
 	world.ship.pos = swept.pos;
 	world.ship.vel = swept.vel;
@@ -3244,5 +3243,5 @@ export function resetWorldToStart(world: World): void {
 		world.gameTime,
 	);
 	world.ship.vel = v3();
-	markShipPlaced(world.ship);
+	markShipPlaced(world);
 }

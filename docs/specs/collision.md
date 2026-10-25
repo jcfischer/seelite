@@ -411,8 +411,12 @@ same step then tests the rock normally. Without a placement event, only the
 overlapped cone pieces are ghosts. `sweepShip` takes `placed` and the preceding
 step's `rockGhosts` (remapped to the current solid indices), and returns the
 active `rockGhosts`. The sim carries these by solid owner id outside saved
-state. Spawn, restore, hyperspace arrival, cruise exit and launch arm the
-placement; a save contains neither the flag nor the active ghosts.
+state in `World.rockPlacement`. Initial placement, restore, hyperspace arrival,
+cruise exit and launch arm the placement; a save contains neither the flag nor
+the active ghosts. `scripts/probe-rock-placement.mjs` runs the Game placement
+paths, then supplies a rock through `stepWorld` at their final poses, with an
+unplaced control that must impact. This checks placement state before the
+production field-collision wiring ships.
 
 A push-out would throw a restored ship through a hull, and would bill or bounce
 a launch off the station it is leaving. A ghost lets the ship fly out the way

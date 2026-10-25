@@ -939,7 +939,8 @@ interface Sweep {
 	dt: number;
 	diagnostics?: SweepDiagnostics;
 	rockSkips: Map<number, Map<Primitive, Set<number>>>;
-	options: SweepOptions;
+	placed?: boolean;
+	rockGhosts?: readonly number[];
 }
 
 /** The ship's end translation, as each stage corrects it. */
@@ -1025,7 +1026,8 @@ function sweepMotion(
 		dt,
 		diagnostics: options.diagnostics,
 		rockSkips: new Map(),
-		options,
+		placed: options.placed,
+		rockGhosts: options.rockGhosts,
 	};
 	const { touching, swept } = classifyPairs(sweep, result);
 	const stopped = stopResting(sweep, touching, {
@@ -1383,7 +1385,7 @@ function classifyRock(
 		}
 	}
 	if (
-		(sweep.options.placed || sweep.options.rockGhosts?.includes(index)) &&
+		(sweep.placed || sweep.rockGhosts?.includes(index)) &&
 		contacts.some(({ gap }) => gap.overlap)
 	) {
 		result.ghosts.push(index);

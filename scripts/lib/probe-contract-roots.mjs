@@ -111,6 +111,12 @@ const OWNERS = Object.freeze({
 		"scripts/probe-cockpit-surface.mjs",
 		"src/cockpit-surface.ts",
 	],
+	"probe-rock-placement.mjs": [
+		"scripts/probe-rock-placement.mjs",
+		"src/collision.ts",
+		"src/sim.ts",
+		"src/save-envelope.ts",
+	],
 	"probe-collision-surface.mjs": [
 		"scripts/probe-collision-surface.mjs",
 		"src/collision.ts",

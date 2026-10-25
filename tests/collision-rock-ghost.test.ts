@@ -20,7 +20,6 @@ import {
 } from "../src/sim";
 import { add, length, scale, sub, v3, type Vec3 } from "../src/vec3";
 import { DT, solid } from "./fixtures/rock-sweep";
-import { codeOf, methodBodyOf } from "./lib/source-scan";
 
 const rock = solid(
 	buildRockPieces({ res: 64, r: new Float32Array(6 * 64 * 64).fill(0.8) }),
@@ -130,7 +129,7 @@ describe("placement-gated rock ghosts (node #960)", () => {
 		expect(result.pos).toEqual(ship.end.origin);
 	});
 
-	test("spawn, restore and reset arm an unsaved placement; later explicit placement rearms it", () => {
+	test("initial placement survives Ship replacement, restore and reset; explicit placement rearms it", () => {
 		for (const world of [makeWorld(47), restoreWorld(47, 0, 17, 123)]) {
 			const run = (id: string) => {
 				const at = motion(world.ship.pos, world.ship.pos);
@@ -170,12 +169,14 @@ describe("placement-gated rock ghosts (node #960)", () => {
 				);
 			};
 			const savedShape = JSON.stringify(world.ship);
+			world.ship = { pos: { ...world.ship.pos }, vel: { ...world.ship.vel } };
 			expect(run("first").impacts).toEqual([]);
 			expect(JSON.stringify(world.ship)).toBe(savedShape);
+			world.ship = { ...world.ship };
 			world.ship.vel = v3(0.1, 0, 0);
 			expect(run("first").impacts).toEqual([]);
 			expect(run("new-rock").impacts.length).toBeGreaterThan(0);
-			markShipPlaced(world.ship);
+			markShipPlaced(world);
 			expect(run("new-rock").impacts).toEqual([]);
 			resetWorldToStart(world);
 			world.ship.vel = v3(0.1, 0, 0);
@@ -187,19 +188,5 @@ describe("placement-gated rock ghosts (node #960)", () => {
 			world.ship.vel = v3(0.1, 0, 0);
 			expect(run("arrival-rock").impacts).toEqual([]);
 		}
-	});
-
-	test("the Game placement paths arm the player rather than saving a ghost flag", () => {
-		const source = codeOf("src/main.ts");
-		for (const method of ["dropOut", "stepDockPhase", "startDockedAtHome"])
-			expect(methodBodyOf(source, method)).toContain(
-				"markShipPlaced(this.world.ship)",
-			);
-		expect(source).toMatch(
-			/this\.world\.ship\.vel = this\.stationVelocity\(id\);\s+markShipPlaced\(this\.world\.ship\)/,
-		);
-		expect(methodBodyOf(source, "commanderRecord")).not.toMatch(
-			/placed|ghost/i,
-		);
 	});
 });
