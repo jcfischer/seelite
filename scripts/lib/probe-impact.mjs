@@ -278,6 +278,74 @@ export const isNonRuntime = (file) =>
 	file === "eslint.config.mjs" ||
 	file === "eslint-suppressions.json";
 
+const spikeReferenceCache = new WeakMap();
+
+function spikeReferences(sources) {
+	let refs = spikeReferenceCache.get(sources);
+	if (refs) return refs;
+	refs = new Set();
+	const add = (literal) => {
+		const at = literal.search(/(^|\/)spikes(\/|$)/);
+		if (at < 0) return;
+		const from = literal.indexOf("spikes", at);
+		const tail = literal.slice(from).split(/[?#]/)[0];
+		const glob = tail.search(/[*{[?]/);
+		refs.add(glob < 0 ? tail : tail.slice(0, glob));
+	};
+	const probeScripts = dependencyClosure(
+		[...sources.keys()].filter((f) => /^scripts\/probe-[^/]+\.mjs$/.test(f)),
+		sources,
+	);
+	for (const [file, text] of sources) {
+		if (!text.includes("spikes")) continue;
+		if (!file.startsWith("src/") && !probeScripts.has(file)) continue;
+		if (!/\.(ts|js|mjs)$/.test(file)) {
+			for (const m of text.matchAll(/[^\s"'`()]*spikes[^\s"'`()]*/g)) add(m[0]);
+			continue;
+		}
+		const walk = (node) => {
+			if (
+				ts.isStringLiteralLike(node) ||
+				ts.isTemplateHead(node) ||
+				ts.isTemplateMiddle(node) ||
+				ts.isTemplateTail(node)
+			)
+				add(node.text);
+			ts.forEachChild(node, walk);
+		};
+		walk(ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true));
+	}
+	spikeReferenceCache.set(sources, refs);
+	return refs;
+}
+
+/** A study file: a `spikes/` path that no `src/` or probe-script string literal,
+ * in either revision, names as the file, an ancestor directory, or the stem of
+ * an extensionless import. Game pages and probes reach `spikes/` only by such
+ * a literal: an import, a `fetch` URL, a `page.goto`, or a path a script
+ * reads. `src/coriolis-spike-viewer.ts` fetches
+ * `/spikes/coriolis/coriolis-industrial.glb` and
+ * `src/courier-cockpit-viewer.ts` loads from `/spikes/courier-cockpit/`, so
+ * those stay runtime. A study file no literal names cannot change what a
+ * browser probe loads, so a change confined to such files needs no browser
+ * run. A glob stops at its first wildcard, a query or fragment is dropped, and
+ * a literal that is only `spikes` reaches the whole directory. Without
+ * snapshots a `spikes/` path is never a study file.
+ */
+export function isStudyFile(file, impact) {
+	if (!file.startsWith("spikes/") || !impact) return false;
+	return ![impact.before, impact.after].some((sources) =>
+		[...spikeReferences(sources)].some(
+			(ref) =>
+				ref === "spikes" ||
+				file === ref ||
+				(ref.endsWith("/")
+					? file.startsWith(ref)
+					: file.startsWith(`${ref}/`) || file.startsWith(`${ref}.`)),
+		),
+	);
+}
+
 /** Deterministic selection from both revisions. Unknown ownership expands all. */
 export function selectImpact(changedFiles, impact, inventory) {
 	if (
@@ -288,7 +356,10 @@ export function selectImpact(changedFiles, impact, inventory) {
 			reason: "Probe dependency ownership differs from the runner inventory.",
 		};
 	const { before, after } = impact;
-	const runtime = changedFiles.filter((p) => !isNonRuntime(p));
+	const studies = changedFiles.filter((p) => isStudyFile(p, impact));
+	const runtime = changedFiles.filter(
+		(p) => !isNonRuntime(p) && !studies.includes(p),
+	);
 	const mainChanged = runtime.includes("src/main.ts");
 	const paths = runtime.filter((p) => p !== "src/main.ts");
 	let methods = [];
@@ -357,6 +428,6 @@ export function selectImpact(changedFiles, impact, inventory) {
 		};
 	return {
 		probes: [...new Set([...SMOKE_PROBES, ...affected])].sort(),
-		reason: `Smoke plus contracts reached through base/head dependencies${methods.length ? `; Game.${methods.join(", Game.")}` : ""}${instruments.length ? `; no probe loads measurement script ${instruments.join(", ")}` : ""}.`,
+		reason: `Smoke plus contracts reached through base/head dependencies${methods.length ? `; Game.${methods.join(", Game.")}` : ""}${instruments.length ? `; no probe loads measurement script ${instruments.join(", ")}` : ""}${studies.length ? `; spike rule: no src/ or probe-script literal names study files ${studies.join(", ")}` : ""}.`,
 	};
 }

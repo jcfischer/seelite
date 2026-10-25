@@ -2,6 +2,7 @@ import { PROBE_CATALOG } from "./probe-catalog.mjs";
 import { discoverProbeFiles } from "./probe-inventory.mjs";
 import {
 	isNonRuntime,
+	isStudyFile,
 	PROBE_REGISTRIES,
 	registryChanges,
 	selectImpact,
@@ -193,7 +194,8 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 		);
 
 	const onlyDirectOrNonRuntime = changedFiles.every(
-		(file) => directProbe(file) || isNonRuntime(file),
+		(file) =>
+			directProbe(file) || isNonRuntime(file) || isStudyFile(file, impact),
 	);
 	if (!onlyDirectOrNonRuntime) {
 		if (!impact) return null;
@@ -207,7 +209,13 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 			: all(selected.reason, true);
 	}
 	if (!forced.length)
-		return result("none", [], "Only documentation or headless tests changed.");
+		return result(
+			"none",
+			[],
+			changedFiles.some((file) => isStudyFile(file, impact))
+				? "Only documentation, headless tests and study files under spikes/ that no src/ or probe-script literal names changed (spike rule)."
+				: "Only documentation or headless tests changed.",
+		);
 	return result(
 		"exact",
 		impact ? union(SMOKE_PROBES, forced) : forced,
