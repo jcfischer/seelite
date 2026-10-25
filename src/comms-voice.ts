@@ -11,6 +11,7 @@
  */
 import type { AudioFX, SpeechSpace } from "./audio";
 import { COMMS_LINES, type CommsLineId } from "./comms";
+import type { NumbersRoom } from "./music-director";
 import {
 	NEURAL_ROLE,
 	type NeuralVoice,
@@ -53,6 +54,20 @@ export const MUSIC_VOICE_SPACE: SpeechSpace = {
 	echoS: 0.42,
 	feedback: 0.5,
 };
+
+/** The numbers station's room over the techno bed (the principal,
+ *  2026-10-25: "maybe without the long delays that wash them"): one short
+ *  slap, which the kick and the dub echo do not blur. By ear, and a
+ *  placeholder until it is heard. */
+export const TECHNO_VOICE_SPACE: SpeechSpace = {
+	level: 0.24,
+	echoS: 0.11,
+	feedback: 0.18,
+};
+
+/** The numbers station's room, by the director's `numbersRoom`. */
+export const numbersSpace = (room: NumbersRoom): SpeechSpace =>
+	room === "techno" ? TECHNO_VOICE_SPACE : MUSIC_VOICE_SPACE;
 
 /** Run `fn` when the page is idle: never inside a frame. Headless, a timer. */
 const whenIdle = (fn: () => void) => {
@@ -213,11 +228,15 @@ export async function prewarmNeural() {
 /** The numbers station, far off in the music: the game's and the lab's one
  *  way of saying it. In the neural voice from the line cache when it was
  *  rendered ahead, else the formant voice's. */
-export async function sayNumbers(fx: AudioFX, text: string) {
+export async function sayNumbers(
+	fx: AudioFX,
+	text: string,
+	space: SpeechSpace = MUSIC_VOICE_SPACE,
+) {
 	// Rendered ahead only: a phrase still generating is said by the formant
 	// voice now rather than seconds after its step (sage round 1 on #606).
 	const n = readyVoice() ? (aheadNeural.get(text) ?? null) : null;
 	aheadNeural.delete(text);
 	const out = n ? radio(n, { ...RADIO_NEURAL, beepHz: 0 }) : takeNumbers(text);
-	fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
+	fx.speak(out, SPEECH_RATE, "music", space);
 }

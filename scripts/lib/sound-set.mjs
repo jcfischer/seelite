@@ -301,17 +301,28 @@ function adaptiveTimelines() {
 	return [
 		tune("music-adaptive-run-a", 140, run(1234)),
 		tune("music-adaptive-run-b", 140, run(987654)),
-		// Every level at once, rising: the four sections of one system.
-		tune("music-adaptive-ladder", 72, [
-			[0, { systemSeed: 1234 }],
-			[18, { encounter: "inbound" }],
-			[36, { encounter: "contest" }],
-			[54, { raiderFiring: true }],
-		]),
+		// Every level at once, rising: one system, on the school and on techno.
+		...[
+			["music-adaptive-ladder", "school"],
+			["music-adaptive-ladder-techno", "techno"],
+		].map(([name, bed]) =>
+			tune(
+				name,
+				72,
+				[
+					[0, { systemSeed: 1234 }],
+					[18, { encounter: "inbound" }],
+					[36, { encounter: "contest" }],
+					[54, { raiderFiring: true }],
+				],
+				bed,
+			),
+		),
 		// The sequence school (the default since 2026-10-24) against the Berlin
 		// bed (#600), the second and the first (D12): the same system held at
 		// calm for 100 s, and the same station, each way.
 		tune("music-calm", 100, [[0, { systemSeed: 1234 }]], "calm"),
+		tune("music-calm-school", 100, [[0, { systemSeed: 1234 }]], "calm,school"),
 		tune("music-calm-berlin", 100, [[0, { systemSeed: 1234 }]], "calm,berlin"),
 		tune("music-calm-second", 100, [[0, { systemSeed: 1234 }]], "calm,second"),
 		tune("music-calm-legacy", 100, [[0, { systemSeed: 1234 }]], "calm,legacy"),

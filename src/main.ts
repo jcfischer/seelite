@@ -233,6 +233,7 @@ import {
 	type MusicState,
 	musicArms,
 	numbersOn,
+	numbersRoom,
 	stepMusic,
 	waltzDuckDb,
 } from "./music-director";
@@ -260,6 +261,7 @@ import {
 	renderLine,
 	renderNumbersAhead,
 	sayLine,
+	numbersSpace,
 	sayNumbers,
 	useNeuralVoice,
 } from "./comms-voice";
@@ -15319,15 +15321,20 @@ class Game {
 		// The numbers station, far off in the music (#600). The next phrase is
 		// rendered ahead, in idle time, never inside this step.
 		// Only where it will be said, and worked out only when it changes.
-		if (numbersOn(DIRECTOR_ARMS) && step.state.bed === "flight") {
-			const seed = this.world.system.record.seed;
+		const seed = this.world.system.record.seed;
+		if (numbersOn(DIRECTOR_ARMS, seed) && step.state.bed === "flight") {
 			const n = step.state.voiceN;
 			if (seed !== this.numbersAhead.seed || n !== this.numbersAhead.n) {
 				this.numbersAhead = { seed, n };
 				renderNumbersAhead(numbersPhrase(seed, n));
 			}
 		}
-		if (step.voice) void sayNumbers(this.audio, step.voice);
+		if (step.voice)
+			void sayNumbers(
+				this.audio,
+				step.voice,
+				numbersSpace(numbersRoom(DIRECTOR_ARMS, seed)),
+			);
 	}
 
 	/** The numbers phrase last rendered ahead: its system and index (#600). */

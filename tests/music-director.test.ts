@@ -5,30 +5,33 @@
  * the principal's ear.
  */
 import { describe, expect, test } from "bun:test";
+import { DANUBE_CANCEL_FADE_S } from "../src/music-danube";
 import {
 	DEFAULT_MUSIC_ARMS,
 	dangerLevel,
 	FALL_HOLD_S,
 	initialMusicState,
-	WALTZ_CADENCE_S,
-	WALTZ_DUCK_DB,
-	waltzCadenceS,
-	waltzDuckDb,
 	LOW_HULL_SHARE,
 	LOW_SHIELD_SHARE,
+	MUSIC_BED_NAMES,
 	type MusicArms,
-	musicArms,
 	type MusicReading,
+	musicArms,
 	QUIET_READING,
 	REFRESH_S,
 	STRUCK_WINDOW_S,
 	stepMusic,
+	systemBed,
+	TECHNO_SHARE,
+	WALTZ_CADENCE_S,
+	WALTZ_DUCK_DB,
+	waltzCadenceS,
+	waltzDuckDb,
 } from "../src/music-director";
-import { DANUBE_CANCEL_FADE_S } from "../src/music-danube";
-import type { MusicCommand } from "../src/music-score";
-import { fullCondition } from "../src/ship-condition";
 import { MusicEngine } from "../src/music-engine";
 import { berlinFlightBed } from "../src/music-generate-berlin";
+import type { MusicCommand } from "../src/music-score";
+import { fullCondition } from "../src/ship-condition";
 
 const calm: MusicReading = { ...QUIET_READING, systemSeed: 1234 };
 const at = (over: Partial<MusicReading>): MusicReading => ({
@@ -259,7 +262,7 @@ describe("the prototype's arms, from ?music=", () => {
 			off: false,
 			force: "threat",
 			lowHull: "always",
-			bed: "school",
+			bed: "system",
 			voice: true,
 			waltz: "hybrid",
 		});
@@ -280,7 +283,7 @@ describe("the prototype's arms, from ?music=", () => {
 		expect(dangerLevel(at({ hullShare: 0.1 }), arms)).toBe("combat");
 	});
 
-	test("each bed arm loads its bed, the default the sequence school", () => {
+	test("each bed arm loads its bed, the default the system's draw", () => {
 		const legacy = { ...DEFAULT_MUSIC_ARMS, bed: "legacy" as const };
 		const song = (arms: MusicArms) => {
 			const load = stepMusic(initialMusicState(), calm, 0.1, arms).commands[0];
@@ -291,10 +294,39 @@ describe("the prototype's arms, from ?music=", () => {
 		expect(song({ ...DEFAULT_MUSIC_ARMS, bed: "second" }).name).toMatch(
 			/^flight /,
 		);
-		expect(song(DEFAULT_MUSIC_ARMS).name).toMatch(/^school /);
+		expect(systemBed(calm.systemSeed)).toBe("techno");
+		expect(song(DEFAULT_MUSIC_ARMS).name).toMatch(/^techno /);
+		expect(song({ ...DEFAULT_MUSIC_ARMS, bed: "school" }).name).toMatch(
+			/^school /,
+		);
 		expect(song({ ...DEFAULT_MUSIC_ARMS, bed: "berlin" }).name).toMatch(
 			/^berlin /,
 		);
+	});
+
+	test("the default bed draws techno for 40 % of systems, the school for the rest", () => {
+		const N = 4000;
+		let techno = 0;
+		for (let i = 0; i < N; i++)
+			if (systemBed((i * 2654435761) >>> 0) === "techno") techno++;
+		expect(Math.abs(techno / N - TECHNO_SHARE)).toBeLessThan(0.03);
+		expect(systemBed(1234)).toBe(systemBed(1234));
+	});
+
+	test("every bed carries the cruise stem's part, so a cruise never throws", () => {
+		expect(MUSIC_BED_NAMES.length).toBeGreaterThan(20);
+		for (const bed of MUSIC_BED_NAMES)
+			for (const systemSeed of [1234, 987654]) {
+				const arms = musicArms(bed).arms;
+				const load = stepMusic(
+					initialMusicState(),
+					{ ...calm, systemSeed },
+					0.1,
+					arms,
+				).commands[0];
+				if (load.type !== "load") throw new Error(`first command ${load.type}`);
+				expect(Object.hasOwn(load.song.parts, "arp")).toBe(true);
+			}
 	});
 
 	test("off plays nothing, and fades out what was playing", () => {

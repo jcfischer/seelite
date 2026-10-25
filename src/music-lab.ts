@@ -11,15 +11,17 @@
  */
 import { AudioFX } from "./audio";
 import { numbersPhrase } from "./comms";
-import { renderNumbersAhead, sayNumbers } from "./comms-voice";
+import { numbersSpace, renderNumbersAhead, sayNumbers } from "./comms-voice";
 import { Music } from "./music";
 import {
 	DEFAULT_MUSIC_ARMS,
-	type MusicBed,
+	drawnBed,
 	FALL_HOLD_S,
 	initialMusicState,
+	type MusicBed,
 	type MusicReading,
 	type MusicScene,
+	numbersRoom,
 	QUIET_READING,
 	stepMusic,
 } from "./music-director";
@@ -29,6 +31,7 @@ import {
 	schoolForm,
 	schoolTune,
 } from "./music-generate-school";
+import { TECHNO_STYLE_NAMES, technoStyle } from "./music-generate-techno";
 import type { StationType } from "./station";
 
 const NOTE = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
@@ -54,7 +57,7 @@ export function mountMusicLab() {
     <select id="role"><option>trade</option><option>refinery</option><option>shipyard</option><option>outpost</option></select></label>
   <label><input type="radio" name="scene" value="witchspace"> Witchspace (music yields)</label>
   <label style="margin-left:12px"><input id="cruise" type="checkbox"> Cruise</label>
-  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="school" selected>Berlin sequences (fourth, the default)</option>${CALM_FORM_NAMES.map((f) => `<option value="school-${f}">Berlin sequences, ${f} form on every system</option>`).join("")}<option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
+  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="system" selected>Each system: Berlin sequences 60 %, techno 40 % (the default)</option><option value="school">Berlin sequences (fourth)</option>${CALM_FORM_NAMES.map((f) => `<option value="school-${f}">Berlin sequences, ${f} form on every system</option>`).join("")}<option value="techno">Techno (spike)</option>${TECHNO_STYLE_NAMES.map((s) => `<option value="techno-${s}">Techno, ${s} on every system</option>`).join("")}<option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
 </fieldset>
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Danger level</legend>
   ${FLIGHT_LEVELS.map((l, i) => `<label><input type="radio" name="level" value="${l}"${i === 0 ? " checked" : ""}> ${l}</label>`).join(" ")}
@@ -73,11 +76,18 @@ export function mountMusicLab() {
 			.value;
 
 	const formLine = (seed: number, variant: number) => {
-		const bed = $<HTMLSelectElement>("bed").value;
+		const chosen = $<HTMLSelectElement>("bed").value;
+		const bed = drawnBed(
+			{ ...DEFAULT_MUSIC_ARMS, bed: chosen as MusicBed },
+			seed,
+		);
 		if (bed === "school")
 			return `, sequences form ${schoolForm(seed, variant)}`;
 		if (bed.startsWith("school-"))
 			return `, sequences form ${bed.slice("school-".length)}`;
+		if (bed === "techno") return `, techno style ${technoStyle(seed, variant)}`;
+		if (bed.startsWith("techno-"))
+			return `, techno style ${bed.slice("techno-".length)}`;
 		return "";
 	};
 	const showTheme = () => {
@@ -116,16 +126,22 @@ export function mountMusicLab() {
 			systemSeed: Number(seedIn.value) >>> 0,
 			stationRole: $<HTMLSelectElement>("role").value as StationType,
 		};
-		const step = stepMusic(state, reading, STEP_S, {
+		const arms = {
 			...DEFAULT_MUSIC_ARMS,
 			force: checked("level") as MusicLevel,
 			bed: $<HTMLSelectElement>("bed").value as MusicBed,
-		});
+		};
+		const step = stepMusic(state, reading, STEP_S, arms);
 		state = step.state;
 		for (const cmd of step.commands) music.send(cmd);
 		// The numbers station, far off in the music (#600).
 		renderNumbersAhead(numbersPhrase(reading.systemSeed, state.voiceN));
-		if (step.voice) sayNumbers(fx, step.voice);
+		if (step.voice)
+			sayNumbers(
+				fx,
+				step.voice,
+				numbersSpace(numbersRoom(arms, reading.systemSeed)),
+			);
 		$("state").textContent = [
 			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant}${formLine(reading.systemSeed, state.variant)})` : ""}`,
 			`level    ${state.level}${state.fallS > 0 ? `  falling in ${(FALL_HOLD_S - state.fallS).toFixed(1)} s` : ""}`,
