@@ -93,16 +93,16 @@ const RENDERED = {
 	// #548's director renders fade in by design — a crossfade from silence,
 	// and a drone's or station pad's slow attack — so each carries its own
 	// onset, in the band like the rest, rather than the limiter's 10 ms.
-	// Measured on the sequence school, the default bed since PR #1079, over
-	// each render's opening `PROBE_RENDER_S`, the ladder whole; the principal
-	// has not heard these renders. `-berlin` is the Berlin bed (#600), approved
+	// Measured on the default bed, which draws techno for system 1234 and the
+	// school for 987654, over each render's opening `PROBE_RENDER_S`, the ladders
+	// whole; `-school` pins the school. `-berlin` is the Berlin bed (#600), approved
 	// by ear on 2026-09-30, `-second` the second bed (D12) and the `-legacy`
 	// rows the first, kept to compare against.
 	"music-adaptive-run-a": {
-		rms: 0.0119,
-		peak: 0.05974,
-		hz: 1252,
-		onset: 486.1,
+		rms: 0.01699,
+		peak: 0.10513,
+		hz: 455,
+		onset: 257.85,
 	},
 	"music-adaptive-run-b": {
 		rms: 0.01047,
@@ -116,15 +116,20 @@ const RENDERED = {
 		hz: 894,
 		onset: 245.9,
 	},
-	"music-calm": { rms: 0.01377, peak: 0.08052, hz: 894, onset: 245.9 },
+	"music-calm": { rms: 0.02075, peak: 0.11495, hz: 865, onset: 423.73 },
 	"music-calm-school": { rms: 0.01377, peak: 0.08052, hz: 894, onset: 245.9 },
-	"music-adaptive-ladder-techno": { rms: 0, peak: 0, hz: 0, onset: 0 },
+	"music-adaptive-ladder-techno": {
+		rms: 0.02072,
+		peak: 0.11849,
+		hz: 865,
+		onset: 423.73,
+	},
 	"music-calm-berlin": { rms: 0.01749, peak: 0.11267, hz: 1220, onset: 422.08 },
 	"music-calm-second": { rms: 0.02423, peak: 0.12964, hz: 694, onset: 387.94 },
 	"music-calm-legacy": { rms: 0.01264, peak: 0.0644, hz: 1104, onset: 298.25 },
-	"music-wary": { rms: 0.01083, peak: 0.05401, hz: 481, onset: 262.17 },
-	"music-threat": { rms: 0.01374, peak: 0.08957, hz: 429, onset: 249.9 },
-	"music-combat": { rms: 0.01775, peak: 0.11183, hz: 2688, onset: 229.08 },
+	"music-wary": { rms: 0.01717, peak: 0.0963, hz: 1462, onset: 244.04 },
+	"music-threat": { rms: 0.01774, peak: 0.09005, hz: 282, onset: 125.02 },
+	"music-combat": { rms: 0.02291, peak: 0.11176, hz: 2251, onset: 70.63 },
 	"music-station-trade-legacy": {
 		rms: 0.01045,
 		peak: 0.05091,
@@ -132,28 +137,28 @@ const RENDERED = {
 		onset: 494.46,
 	},
 	"music-station-trade": {
-		rms: 0.01241,
-		peak: 0.06322,
-		hz: 1252,
-		onset: 486.1,
+		rms: 0.01568,
+		peak: 0.07898,
+		hz: 455,
+		onset: 257.85,
 	},
 	"music-station-refinery": {
-		rms: 0.01429,
-		peak: 0.07425,
-		hz: 1252,
-		onset: 486.1,
+		rms: 0.01698,
+		peak: 0.08291,
+		hz: 520,
+		onset: 258.04,
 	},
 	"music-station-shipyard": {
-		rms: 0.01228,
-		peak: 0.0592,
-		hz: 1252,
-		onset: 486.1,
+		rms: 0.01523,
+		peak: 0.07081,
+		hz: 1336,
+		onset: 257.85,
 	},
 	"music-station-outpost": {
-		rms: 0.01378,
-		peak: 0.07832,
-		hz: 1252,
-		onset: 486.1,
+		rms: 0.00747,
+		peak: 0.04526,
+		hz: 4071,
+		onset: 460.85,
 	},
 	// #547's orchestral voices alone, and the waltz in its three voicings.
 	// Every waltz row is read over its opening 20 s, which is the intro in
