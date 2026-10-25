@@ -11,10 +11,11 @@
  */
 import { AudioFX } from "./audio";
 import { numbersPhrase } from "./comms";
-import { renderNumbersAhead, sayNumbers } from "./comms-voice";
+import { numbersSpace, renderNumbersAhead, sayNumbers } from "./comms-voice";
 import { Music } from "./music";
 import {
 	DEFAULT_MUSIC_ARMS,
+	drawnBed,
 	type MusicBed,
 	systemBed,
 	FALL_HOLD_S,
@@ -122,16 +123,22 @@ export function mountMusicLab() {
 			systemSeed: Number(seedIn.value) >>> 0,
 			stationRole: $<HTMLSelectElement>("role").value as StationType,
 		};
-		const step = stepMusic(state, reading, STEP_S, {
+		const arms = {
 			...DEFAULT_MUSIC_ARMS,
 			force: checked("level") as MusicLevel,
 			bed: $<HTMLSelectElement>("bed").value as MusicBed,
-		});
+		};
+		const step = stepMusic(state, reading, STEP_S, arms);
 		state = step.state;
 		for (const cmd of step.commands) music.send(cmd);
 		// The numbers station, far off in the music (#600).
 		renderNumbersAhead(numbersPhrase(reading.systemSeed, state.voiceN));
-		if (step.voice) sayNumbers(fx, step.voice);
+		if (step.voice)
+			sayNumbers(
+				fx,
+				step.voice,
+				numbersSpace(drawnBed(arms, reading.systemSeed)),
+			);
 		$("state").textContent = [
 			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant}${formLine(reading.systemSeed, state.variant)})` : ""}`,
 			`level    ${state.level}${state.fallS > 0 ? `  falling in ${(FALL_HOLD_S - state.fallS).toFixed(1)} s` : ""}`,

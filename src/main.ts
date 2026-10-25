@@ -232,6 +232,7 @@ import {
 	type MusicScene,
 	type MusicState,
 	musicArms,
+	drawnBed,
 	numbersOn,
 	stepMusic,
 	waltzDuckDb,
@@ -260,6 +261,7 @@ import {
 	renderLine,
 	renderNumbersAhead,
 	sayLine,
+	numbersSpace,
 	sayNumbers,
 	useNeuralVoice,
 } from "./comms-voice";
@@ -15327,7 +15329,12 @@ class Game {
 				renderNumbersAhead(numbersPhrase(seed, n));
 			}
 		}
-		if (step.voice) void sayNumbers(this.audio, step.voice);
+		if (step.voice)
+			void sayNumbers(
+				this.audio,
+				step.voice,
+				numbersSpace(drawnBed(DIRECTOR_ARMS, seed)),
+			);
 	}
 
 	/** The numbers phrase last rendered ahead: its system and index (#600). */

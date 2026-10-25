@@ -1,11 +1,16 @@
 /**
  * The voice in the music (#600): a numbers station overheard, far off in the
- * calm of the Berlin bed and the sequence school, and nowhere else: under
- * the default `system` bed, only in a system that draws the school. The director says when and what; the
+ * calm of the Berlin bed, the sequence school and techno, and not on the two
+ * older beds. Over techno it has a drier room than over the school. The director says when and what; the
  * host renders and plays it (`comms-voice.ts`, `AudioFX.speak`).
  */
 import { describe, expect, test } from "bun:test";
 import { numbersPhrase } from "../src/comms";
+import {
+	MUSIC_VOICE_SPACE,
+	numbersSpace,
+	TECHNO_VOICE_SPACE,
+} from "../src/comms-voice";
 import {
 	DEFAULT_MUSIC_ARMS,
 	initialMusicState,
@@ -74,14 +79,22 @@ describe("the numbers in the music", () => {
 		]);
 	});
 
-	test("the default bed says them in a school system and not in a techno one", () => {
+	test("the default bed says them in a school system and in a techno one", () => {
 		const seeds = Array.from({ length: 40 }, (_, i) => (i * 2654435761) >>> 0);
 		const school = seeds.find((s) => systemBed(s) === "school") ?? 0;
 		const techno = seeds.find((s) => systemBed(s) === "techno") ?? 0;
 		const hears = (systemSeed: number) =>
 			listen(VOICE_FIRST_S + 1, { ...calm, systemSeed }).length;
 		expect(hears(school)).toBe(1);
-		expect(hears(techno)).toBe(0);
+		expect(hears(techno)).toBe(1);
+	});
+
+	test("over techno the voice has a short slap, not the school's long wash", () => {
+		const t = numbersSpace("techno-dub");
+		expect(numbersSpace("school")).toEqual(MUSIC_VOICE_SPACE);
+		expect(t).toEqual(TECHNO_VOICE_SPACE);
+		expect(t.echoS).toBeLessThan(MUSIC_VOICE_SPACE.echoS / 2);
+		expect(t.feedback).toBeLessThan(MUSIC_VOICE_SPACE.feedback / 2);
 	});
 
 	test("a fight hears none", () => {

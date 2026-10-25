@@ -170,9 +170,14 @@ export const waltzCadenceS = (voicing: DanubeVoicing): number => {
 /** Whether these arms play the numbers station at all (#600): the one
  *  gate the director says them by and the host renders them ahead by. */
 export const numbersOn = (arms: MusicArms, systemSeed: number) => {
-	const bed = arms.bed === "system" ? systemBed(systemSeed) : arms.bed;
-	return arms.voice && (bed === "berlin" || bed.startsWith("school"));
+	const bed = drawnBed(arms, systemSeed);
+	return arms.voice && bed !== "legacy" && bed !== "second";
 };
+
+/** The bed a system plays under these arms: the `system` arm's draw, or
+ *  the arm itself. */
+export const drawnBed = (arms: MusicArms, systemSeed: number): MusicBed =>
+	arms.bed === "system" ? systemBed(systemSeed) : arms.bed;
 
 /** The numbers station's first phrase in calm, and the gap after each. By
  *  ear, and a placeholder until it is heard: rare enough to be an event. */
