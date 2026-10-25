@@ -265,6 +265,52 @@ describe("the semantic branch", () => {
 });
 
 describe("the TypeSafe transport", () => {
+	test("git evidence preserves transitive runtime spike ownership", async () => {
+		const root = mkdtempSync(join(tmpdir(), "seelite-probe-spikes-"));
+		const git = (args: string[]) =>
+			execFileSync("git", ["-c", "core.hooksPath=/dev/null", ...args], {
+				cwd: root,
+				encoding: "utf8",
+				env: {
+					...process.env,
+					GIT_AUTHOR_NAME: "Probe selector test",
+					GIT_AUTHOR_EMAIL: "probe-selector@example.invalid",
+					GIT_COMMITTER_NAME: "Probe selector test",
+					GIT_COMMITTER_EMAIL: "probe-selector@example.invalid",
+				},
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		try {
+			git(["init"]);
+			mkdirSync(join(root, "src"));
+			mkdirSync(join(root, "spikes/demo"), { recursive: true });
+			writeFileSync(
+				join(root, "src/outfitting-view.ts"),
+				'import "../spikes/demo/entry";',
+			);
+			writeFileSync(join(root, "spikes/demo/entry.ts"), 'import "./lib";');
+			writeFileSync(
+				join(root, "spikes/demo/lib.ts"),
+				"export const value = 1;",
+			);
+			git(["add", "."]);
+			git(["commit", "-m", "base"]);
+			const base = git(["rev-parse", "HEAD"]).trim();
+			writeFileSync(
+				join(root, "spikes/demo/lib.ts"),
+				"export const value = 2;",
+			);
+			git(["add", "."]);
+			git(["commit", "-m", "change runtime spike"]);
+			const evidence = readImpactEvidence(base, "HEAD", root);
+			const result = await selectProbes(evidence);
+			expect(result.mode).toBe("affected");
+			expect(result.probes).toContain("probe-outfitting.mjs");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("git evidence keeps both sides of a runtime-to-docs rename", () => {
 		const root = mkdtempSync(join(tmpdir(), "seelite-probe-git-"));
 		const git = (args: string[], encoding?: BufferEncoding) =>

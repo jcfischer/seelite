@@ -30,6 +30,7 @@ function readSources(dir: string) {
 }
 readSources("src");
 readSources("scripts");
+readSources("spikes");
 const inventory = discoverProbeFiles(resolve(root, "scripts"));
 const impact = (paths: string[], before = sources, after = sources) =>
 	selectImpact(paths, { before, after }, inventory);
@@ -402,6 +403,18 @@ describe("deterministic browser impact", () => {
 			const cases: [string, string][] = [
 				['import "../spikes/demo/lib";', "spikes/demo/lib.ts"],
 				['import.meta.glob("/spikes/demo/**/*.glb");', "spikes/demo/x/y.glb"],
+				[
+					'import.meta.glob("/spikes/demo/model-*.glb");',
+					"spikes/demo/model-a.glb",
+				],
+				[
+					'import.meta.glob("/spikes/demo/model-{a,b}.glb");',
+					"spikes/demo/model-a.glb",
+				],
+				[
+					'import.meta.glob("/spikes/demo/model-[ab].glb");',
+					"spikes/demo/model-a.glb",
+				],
 				['join(root, "spikes", name);', "spikes/demo/z.ts"],
 				["fetch(`/spikes/demo/${name}.glb`);", "spikes/demo/q.glb"],
 			];
@@ -411,6 +424,38 @@ describe("deterministic browser impact", () => {
 					(await select([file], { before: bare, after: naming })).mode,
 				).not.toBe("none");
 			}
+		});
+		test("transitive spike imports retain their owners in either revision", async () => {
+			for (const root of [
+				"src/outfitting-view.ts",
+				"scripts/probe-outfitting.mjs",
+			]) {
+				const naming = new Map([
+					[root, 'import "../spikes/demo/entry";'],
+					["spikes/demo/entry.ts", 'import "./lib";'],
+					["spikes/demo/lib.ts", "export const value = 1;"],
+				]);
+				const bare = new Map([[root, ""]]);
+				for (const impact of [
+					{ before: naming, after: bare },
+					{ before: bare, after: naming },
+				]) {
+					const result = await select(["spikes/demo/lib.ts"], impact);
+					expect(result.mode).toBe("affected");
+					expect(result.probes).toContain("probe-outfitting.mjs");
+				}
+			}
+		});
+		test("URLs named by transitive runtime imports stay runtime", async () => {
+			const naming = new Map([
+				["src/a.ts", 'import "../spikes/demo/entry";'],
+				["spikes/demo/entry.ts", 'fetch("/spikes/other/model.glb");'],
+			]);
+			const result = await select(["spikes/other/model.glb"], {
+				before: naming,
+				after: naming,
+			});
+			expect(result.mode).toBe("all");
 		});
 		test("a comment that mentions a study does not reach it", async () => {
 			const impact = {

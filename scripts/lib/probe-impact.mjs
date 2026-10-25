@@ -269,7 +269,9 @@ export function registryChanges(changedFiles, before, after) {
 	return changed.size ? [...changed].sort() : null;
 }
 
-/** Files no browser probe can observe: documentation, headless tests and lint configuration. */
+/** Files no browser probe can observe: documentation, headless tests and lint configuration.
+ * Snapshot-dependent spike study exclusions are defined by isStudyFile below.
+ */
 export const isNonRuntime = (file) =>
 	file.startsWith("docs/") ||
 	file.startsWith("tests/") ||
@@ -283,22 +285,28 @@ const spikeReferenceCache = new WeakMap();
 function spikeReferences(sources) {
 	let refs = spikeReferenceCache.get(sources);
 	if (refs) return refs;
-	refs = new Set();
+	refs = {
+		paths: new Set(),
+		prefixes: new Set(),
+		imports: dependencyClosure(
+			[...sources.keys()].filter(
+				(f) => f.startsWith("src/") || /^scripts\/probe-[^/]+\.mjs$/.test(f),
+			),
+			sources,
+		),
+	};
 	const add = (literal) => {
 		const at = literal.search(/(^|\/)spikes(\/|$)/);
 		if (at < 0) return;
 		const from = literal.indexOf("spikes", at);
 		const tail = literal.slice(from).split(/[?#]/)[0];
 		const glob = tail.search(/[*{[?]/);
-		refs.add(glob < 0 ? tail : tail.slice(0, glob));
+		if (glob < 0) refs.paths.add(tail);
+		else refs.prefixes.add(tail.slice(0, glob));
 	};
-	const probeScripts = dependencyClosure(
-		[...sources.keys()].filter((f) => /^scripts\/probe-[^/]+\.mjs$/.test(f)),
-		sources,
-	);
 	for (const [file, text] of sources) {
 		if (!text.includes("spikes")) continue;
-		if (!file.startsWith("src/") && !probeScripts.has(file)) continue;
+		if (!refs.imports.has(file)) continue;
 		if (!/\.(ts|js|mjs)$/.test(file)) {
 			for (const m of text.matchAll(/[^\s"'`()]*spikes[^\s"'`()]*/g)) add(m[0]);
 			continue;
@@ -319,31 +327,38 @@ function spikeReferences(sources) {
 	return refs;
 }
 
-/** A study file: a `spikes/` path that no `src/` or probe-script string literal,
- * in either revision, names as the file, an ancestor directory, or the stem of
- * an extensionless import. Game pages and probes reach `spikes/` only by such
+/** A study file: a `spikes/` path outside the import closure of `src/` and probe
+ * scripts that no string literal in that closure, in either revision, names as
+ * the file, an ancestor directory, or the stem of an extensionless import.
+ * Game pages and probes reach `spikes/` only by such
  * a literal: an import, a `fetch` URL, a `page.goto`, or a path a script
  * reads. `src/coriolis-spike-viewer.ts` fetches
  * `/spikes/coriolis/coriolis-industrial.glb` and
  * `src/courier-cockpit-viewer.ts` loads from `/spikes/courier-cockpit/`, so
  * those stay runtime. A study file no literal names cannot change what a
  * browser probe loads, so a change confined to such files needs no browser
- * run. A glob stops at its first wildcard, a query or fragment is dropped, and
+ * run. A glob matches any path starting with its prefix before the first
+ * wildcard, a query or fragment is dropped, and
  * a literal that is only `spikes` reaches the whole directory. Without
  * snapshots a `spikes/` path is never a study file.
  */
 export function isStudyFile(file, impact) {
 	if (!file.startsWith("spikes/") || !impact) return false;
-	return ![impact.before, impact.after].some((sources) =>
-		[...spikeReferences(sources)].some(
-			(ref) =>
-				ref === "spikes" ||
-				file === ref ||
-				(ref.endsWith("/")
-					? file.startsWith(ref)
-					: file.startsWith(`${ref}/`) || file.startsWith(`${ref}.`)),
-		),
-	);
+	return ![impact.before, impact.after].some((sources) => {
+		const { paths, prefixes, imports } = spikeReferences(sources);
+		return (
+			imports.has(file) ||
+			[...prefixes].some((prefix) => file.startsWith(prefix)) ||
+			[...paths].some(
+				(ref) =>
+					ref === "spikes" ||
+					file === ref ||
+					(ref.endsWith("/")
+						? file.startsWith(ref)
+						: file.startsWith(`${ref}/`) || file.startsWith(`${ref}.`)),
+			)
+		);
+	});
 }
 
 /** Deterministic selection from both revisions. Unknown ownership expands all. */
