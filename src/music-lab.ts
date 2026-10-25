@@ -16,11 +16,12 @@ import { Music } from "./music";
 import {
 	DEFAULT_MUSIC_ARMS,
 	drawnBed,
-	type MusicBed,
 	FALL_HOLD_S,
 	initialMusicState,
+	type MusicBed,
 	type MusicReading,
 	type MusicScene,
+	numbersRoom,
 	QUIET_READING,
 	stepMusic,
 } from "./music-director";
@@ -139,7 +140,7 @@ export function mountMusicLab() {
 			sayNumbers(
 				fx,
 				step.voice,
-				numbersSpace(drawnBed(arms, reading.systemSeed)),
+				numbersSpace(numbersRoom(arms, reading.systemSeed)),
 			);
 		$("state").textContent = [
 			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant}${formLine(reading.systemSeed, state.variant)})` : ""}`,

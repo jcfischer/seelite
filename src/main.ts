@@ -232,8 +232,8 @@ import {
 	type MusicScene,
 	type MusicState,
 	musicArms,
-	drawnBed,
 	numbersOn,
+	numbersRoom,
 	stepMusic,
 	waltzDuckDb,
 } from "./music-director";
@@ -15333,7 +15333,7 @@ class Game {
 			void sayNumbers(
 				this.audio,
 				step.voice,
-				numbersSpace(drawnBed(DIRECTOR_ARMS, seed)),
+				numbersSpace(numbersRoom(DIRECTOR_ARMS, seed)),
 			);
 	}
 

@@ -341,6 +341,12 @@ try {
 	// wash (#600), and so does wary, so wary is still left to the ear.
 	// **A held note outlives a jump**: the Berlin wash's first 32-bar notes
 	// rang on into the threat and read it at 0.06/s here.
+	const LADDER = {
+		calm: [6, 18],
+		wary: [20, 36],
+		threat: [38, 54],
+		combat: [56, 72],
+	};
 	const perS = (ladder, a, b) => {
 		const F = SR / 100;
 		const e = [];
@@ -362,15 +368,15 @@ try {
 	};
 	const ladder = rendered.get("music-adaptive-ladder");
 	if (ladder) {
-		const calmRate = perS(ladder, 6, 18);
-		const threatRate = perS(ladder, 38, 54);
-		const fightRate = perS(ladder, 56, 72);
+		const calmRate = perS(ladder, ...LADDER.calm);
+		const threatRate = perS(ladder, ...LADDER.threat);
+		const fightRate = perS(ladder, ...LADDER.combat);
 		check(
 			"the ladder's threat and combat are busier than its calm (#548)",
 			threatRate >= Math.max(1, 2 * calmRate) &&
 				fightRate >= Math.max(3, 4 * calmRate) &&
 				fightRate > threatRate,
-			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(ladder, 20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
+			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(ladder, ...LADDER.wary).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
 		);
 	}
 	/** Rms over a window in seconds, or the whole buffer: one body for every
@@ -385,18 +391,17 @@ try {
 	const techno = rendered.get("music-adaptive-ladder-techno");
 	if (techno) {
 		const [calm, wary, threat, fight] = [
-			[6, 18],
-			[20, 36],
-			[38, 54],
-			[56, 72],
+			LADDER.calm,
+			LADDER.wary,
+			LADDER.threat,
+			LADDER.combat,
 		].map(([a, b]) => perS(techno, a, b));
+		const threatRms = rmsOf(techno, ...LADDER.threat);
+		const fightRms = rmsOf(techno, ...LADDER.combat);
 		check(
 			"the techno ladder rises: wary busier than calm, threat and combat busier than wary, combat louder than threat",
-			wary > calm &&
-				threat > wary &&
-				fight > wary &&
-				rmsOf(techno, 56, 72) > rmsOf(techno, 38, 54),
-			`transients/s calm ${calm.toFixed(2)}, wary ${wary.toFixed(2)}, threat ${threat.toFixed(2)}, combat ${fight.toFixed(2)}; rms threat ${rmsOf(techno, 38, 54).toFixed(4)}, combat ${rmsOf(techno, 56, 72).toFixed(4)}`,
+			wary > calm && threat > wary && fight > wary && fightRms > threatRms,
+			`transients/s calm ${calm.toFixed(2)}, wary ${wary.toFixed(2)}, threat ${threat.toFixed(2)}, combat ${fight.toFixed(2)}; rms threat ${threatRms.toFixed(4)}, combat ${fightRms.toFixed(4)}`,
 		);
 	}
 

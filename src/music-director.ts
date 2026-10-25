@@ -179,6 +179,15 @@ export const numbersOn = (arms: MusicArms, systemSeed: number) => {
 export const drawnBed = (arms: MusicArms, systemSeed: number): MusicBed =>
 	arms.bed === "system" ? systemBed(systemSeed) : arms.bed;
 
+/** Which room the numbers station is heard in: a short slap over techno,
+ *  the far-off wash over every other bed. */
+export type NumbersRoom = "techno" | "far";
+export const numbersRoom = (
+	arms: MusicArms,
+	systemSeed: number,
+): NumbersRoom =>
+	drawnBed(arms, systemSeed).startsWith("techno") ? "techno" : "far";
+
 /** The numbers station's first phrase in calm, and the gap after each. By
  *  ear, and a placeholder until it is heard: rare enough to be an event. */
 export const VOICE_FIRST_S = 40;
@@ -273,6 +282,8 @@ const BEDS: Readonly<Record<MusicBed, BedSongs>> = {
 		]),
 	) as Record<`techno-${TechnoStyle}`, BedSongs>),
 };
+/** Every value the bed arm takes. */
+export const MUSIC_BED_NAMES = Object.keys(BEDS) as MusicBed[];
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
 	force: null,

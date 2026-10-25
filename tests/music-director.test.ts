@@ -13,6 +13,7 @@ import {
 	initialMusicState,
 	LOW_HULL_SHARE,
 	LOW_SHIELD_SHARE,
+	MUSIC_BED_NAMES,
 	type MusicArms,
 	type MusicReading,
 	musicArms,
@@ -29,7 +30,6 @@ import {
 } from "../src/music-director";
 import { MusicEngine } from "../src/music-engine";
 import { berlinFlightBed } from "../src/music-generate-berlin";
-import { TECHNO_STYLE_NAMES } from "../src/music-generate-techno";
 import type { MusicCommand } from "../src/music-score";
 import { fullCondition } from "../src/ship-condition";
 
@@ -314,17 +314,8 @@ describe("the prototype's arms, from ?music=", () => {
 	});
 
 	test("every bed carries the cruise stem's part, so a cruise never throws", () => {
-		const beds = [
-			"legacy",
-			"second",
-			"berlin",
-			"school",
-			"school-drive",
-			"techno",
-			...TECHNO_STYLE_NAMES.map((s) => `techno-${s}`),
-			"system",
-		];
-		for (const bed of beds)
+		expect(MUSIC_BED_NAMES.length).toBeGreaterThan(20);
+		for (const bed of MUSIC_BED_NAMES)
 			for (const systemSeed of [1234, 987654]) {
 				const arms = musicArms(bed).arms;
 				const load = stepMusic(

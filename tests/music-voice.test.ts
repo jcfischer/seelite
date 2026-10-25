@@ -15,7 +15,9 @@ import {
 	DEFAULT_MUSIC_ARMS,
 	initialMusicState,
 	type MusicArms,
+	type MusicBed,
 	type MusicReading,
+	numbersRoom,
 	QUIET_READING,
 	stepMusic,
 	systemBed,
@@ -90,8 +92,13 @@ describe("the numbers in the music", () => {
 	});
 
 	test("over techno the voice has a short slap, not the school's long wash", () => {
-		const t = numbersSpace("techno-dub");
-		expect(numbersSpace("school")).toEqual(MUSIC_VOICE_SPACE);
+		const room = (bed: MusicBed) =>
+			numbersSpace(numbersRoom({ ...DEFAULT_MUSIC_ARMS, bed }, 1234));
+		const t = room("techno-dub");
+		expect(room("school")).toEqual(MUSIC_VOICE_SPACE);
+		expect(room("system")).toEqual(
+			numbersSpace(systemBed(1234) === "techno" ? "techno" : "far"),
+		);
 		expect(t).toEqual(TECHNO_VOICE_SPACE);
 		expect(t.echoS).toBeLessThan(MUSIC_VOICE_SPACE.echoS / 2);
 		expect(t.feedback).toBeLessThan(MUSIC_VOICE_SPACE.feedback / 2);

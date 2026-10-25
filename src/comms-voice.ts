@@ -11,6 +11,7 @@
  */
 import type { AudioFX, SpeechSpace } from "./audio";
 import { COMMS_LINES, type CommsLineId } from "./comms";
+import type { NumbersRoom } from "./music-director";
 import {
 	NEURAL_ROLE,
 	type NeuralVoice,
@@ -64,9 +65,9 @@ export const TECHNO_VOICE_SPACE: SpeechSpace = {
 	feedback: 0.18,
 };
 
-/** The numbers station's room on a bed (`drawnBed` in the director). */
-export const numbersSpace = (bed: string): SpeechSpace =>
-	bed.startsWith("techno") ? TECHNO_VOICE_SPACE : MUSIC_VOICE_SPACE;
+/** The numbers station's room, by the director's `numbersRoom`. */
+export const numbersSpace = (room: NumbersRoom): SpeechSpace =>
+	room === "techno" ? TECHNO_VOICE_SPACE : MUSIC_VOICE_SPACE;
 
 /** Run `fn` when the page is idle: never inside a frame. Headless, a timer. */
 const whenIdle = (fn: () => void) => {
