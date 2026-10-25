@@ -112,22 +112,28 @@ describe("the arrangement", () => {
 		expect(plan[b + 1].on).toEqual(all);
 	});
 
-	test("calm opens on the pad alone, and its kick is one soft beat a bar", () => {
+	test("calm opens on the pad, then keeps four on the floor outside its breakdowns and fills", () => {
 		for (const seed of SEEDS) {
 			const calm = section(technoFlightBed(seed, 0), "calm");
-			const first = new Set(
-				calm.events.filter((e) => e.bar < 8).map((e) => e.part),
+			expect(calm.events.some((e) => e.bar < 8 && e.part === "pad")).toBe(true);
+			expect(calm.events.some((e) => e.part === "hat")).toBe(false);
+			const kicks = new Set(
+				calm.events
+					.filter((e) => e.part === "kick")
+					.map((e) => e.bar * 4 + e.beat),
 			);
-			expect([...first]).toEqual(expect.arrayContaining(["pad"]));
-			expect(first.has("kick")).toBe(false);
-			const kicks = calm.events.filter((e) => e.part === "kick");
-			expect(kicks.length).toBeGreaterThan(0);
-			for (const k of kicks) expect(k.beat).toBe(0);
+			const barsWithKick = new Set([...kicks].map((t) => Math.floor(t / 4)));
+			for (const bar of barsWithKick)
+				if (bar % 8 !== 7)
+					for (let q = 0; q < 4; q++) expect(kicks.has(bar * 4 + q)).toBe(true);
+			for (const t of kicks)
+				if (Math.floor(t / 4) % 8 !== 7) expect(t % 1).toBe(0);
+			expect(barsWithKick.size).toBeLessThan(calm.bars);
 			expect(calm.events.some((e) => e.part === "riser")).toBe(true);
 		}
 	});
 
-	test("the danger rises: more onsets a bar at each level, the acid in threat and combat, the ride in combat", () => {
+	test("the danger rises: wary busier than calm, threat and combat busier than wary, the acid in threat and combat, the ride in combat", () => {
 		const perBar = (song: Song, name: string) => {
 			const s = section(song, name);
 			const at = new Set(
@@ -147,7 +153,7 @@ describe("the arrangement", () => {
 			].map((n) => perBar(song, n));
 			expect(wary).toBeGreaterThan(calm);
 			expect(threat).toBeGreaterThan(wary);
-			expect(combat).toBeGreaterThanOrEqual(threat);
+			expect(combat).toBeGreaterThan(wary);
 			for (const name of ["threat", "combat"]) {
 				const parts = new Set(section(song, name).events.map((e) => e.part));
 				expect(parts.has("acid") || parts.has("acidHard")).toBe(true);

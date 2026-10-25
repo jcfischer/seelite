@@ -32,8 +32,6 @@ export function euclid(k: number, n: number, rotate = 0): boolean[] {
 
 /** The kick's bars: the four on the floor, and the fills that end a phrase. */
 export const KICK_MAIN = "X---X---X---X---";
-/** Calm's kick: a soft one on the bar line, and nothing else. */
-export const KICK_ONE = "o---------------";
 export const KICK_FILLS = [
 	"X---X---X---X-x-",
 	"X---X---X--xX---",

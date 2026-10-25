@@ -22,7 +22,6 @@ import {
 	hits,
 	KICK_FILLS,
 	KICK_MAIN,
-	KICK_ONE,
 	PROGRESSIONS,
 	VOICINGS,
 } from "./music-techno-patterns";
@@ -353,20 +352,9 @@ const RAW_PARTS: Readonly<Record<string, PartSpec>> = {
 		reverb: 0.4,
 		echo: 0.5,
 	},
-	sub: {
-		voice: "fm",
-		level: 0.3,
-		ratio: 1,
-		index: 0,
-		attackS: 0.02,
-		decayS: 0.4,
-		sustain: 0.6,
-		releaseS: 0.2,
-		reverb: 0.04,
-	},
 	chordCalm: {
 		voice: "analog",
-		level: 0.25,
+		level: 0.17,
 		unison: 2,
 		detune: 0.1,
 		spread: 0.9,
@@ -604,12 +592,12 @@ export function arrange(
 
 const layerList = (s: string) => s.split(" ") as Layer[];
 const LEVEL_LAYERS: Readonly<Record<MusicLevel, readonly Layer[]>> = {
-	calm: layerList("kick bass chords pad"),
-	wary: layerList("kick ohat bass chords pad"),
-	threat: layerList("kick hats ohat clap bass acid chords blip"),
-	combat: layerList("kick hats ohat clap rim perc bass acid chords ride"),
+	calm: layerList("kick ohat bass chords pad"),
+	wary: layerList("kick hats ohat rim bass chords pad blip"),
+	threat: layerList("kick hats ohat clap rim bass acid chords blip"),
+	combat: layerList("kick hats ohat clap rim perc bass acid chords ride blip"),
 };
-const CALM_ORDER = layerList("pad chords kick bass");
+const CALM_ORDER = layerList("pad kick chords bass ohat");
 const LEVEL_ENERGY: Readonly<Record<MusicLevel, number>> = {
 	calm: 1,
 	wary: 0.8,
@@ -700,13 +688,12 @@ export function technoSection(
 	const acidPart =
 		level === "combat" || tune.style === "industrial" ? "acidHard" : "acid";
 	const acidRoot = spec.acidBass ? bassRoot : bassRoot + 12;
-	const kickMain = hits(opts.sparse ? KICK_ONE : KICK_MAIN);
-	const bassLine = opts.sparse
-		? bassSteps(BASS_LINES.sub).map((n, s) => (s < 8 ? n : null))
-		: level === "wary"
+	const kickMain = hits(KICK_MAIN);
+	const bassLine =
+		level === "calm" || level === "wary"
 			? bassSteps(BASS_LINES.offbeat)
 			: tune.bassLine;
-	const eighths = level === "threat";
+	const eighths = level === "wary";
 	const full = level === "combat";
 	for (let bar = 0; bar < bars; bar++) {
 		const p = Math.floor(bar / PHRASE);
@@ -716,9 +703,8 @@ export function technoSection(
 		const shift = tune.progression[p % tune.progression.length];
 		const root = (base: number) => base + (shift > 6 ? shift - 12 : shift);
 		if (on.has("kick")) {
-			const kick = opts.sparse
-				? kickMain
-				: last && next?.breakdown
+			const kick =
+				last && next?.breakdown
 					? KICK_FILLS[KICK_FILLS.length - 1]
 					: last
 						? KICK_FILLS[(tune.fill + p) % (KICK_FILLS.length - 1)]
@@ -767,10 +753,10 @@ export function technoSection(
 				if (n !== null) {
 					const sub = bassLine.filter((x) => x !== null).length === 2;
 					step(
-						opts.sparse ? "sub" : "bass",
+						"bass",
 						bar,
 						s,
-						sub ? (opts.sparse ? 0.5 : 1.4) : 0.2,
+						sub ? 1.4 : 0.2,
 						root(bassRoot) + n,
 						s % 4 === 2 ? 0.85 : 0.65,
 					);

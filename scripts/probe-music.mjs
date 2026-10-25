@@ -65,7 +65,10 @@ const PRINT = process.env.PRINT === "1";
 /** How much of each music render the bands are read off, s. */
 const PROBE_RENDER_S = 20;
 /** The renders a row reads past that, and so rendered whole. */
-const FULL_LENGTH = new Set(["music-adaptive-ladder"]);
+const FULL_LENGTH = new Set([
+	"music-adaptive-ladder",
+	"music-adaptive-ladder-techno",
+]);
 const SR = 48000;
 /** 120 bpm in 4/4: a bar is two seconds. The probe songs below say so. */
 const BAR = 2 * SR;
@@ -114,6 +117,8 @@ const RENDERED = {
 		onset: 245.9,
 	},
 	"music-calm": { rms: 0.01377, peak: 0.08052, hz: 894, onset: 245.9 },
+	"music-calm-school": { rms: 0.01377, peak: 0.08052, hz: 894, onset: 245.9 },
+	"music-adaptive-ladder-techno": { rms: 0, peak: 0, hz: 0, onset: 0 },
 	"music-calm-berlin": { rms: 0.01749, peak: 0.11267, hz: 1220, onset: 422.08 },
 	"music-calm-second": { rms: 0.02423, peak: 0.12964, hz: 694, onset: 387.94 },
 	"music-calm-legacy": { rms: 0.01264, peak: 0.0644, hz: 1104, onset: 298.25 },
@@ -331,36 +336,50 @@ try {
 	// wash (#600), and so does wary, so wary is still left to the ear.
 	// **A held note outlives a jump**: the Berlin wash's first 32-bar notes
 	// rang on into the threat and read it at 0.06/s here.
+	const perS = (ladder, a, b) => {
+		const F = SR / 100;
+		const e = [];
+		for (let k = a * SR; k + F < b * SR; k += F) {
+			let q = 0;
+			for (let j = k + 1; j < k + F; j++) {
+				const d = ladder[j] - ladder[j - 1];
+				q += d * d;
+			}
+			e.push(q);
+		}
+		let n = 0;
+		for (let i = 5; i < e.length; i++) {
+			const jump = (j) =>
+				e[j] > (e[j - 1] + e[j - 2] + e[j - 3] + e[j - 4]) / 2;
+			if (jump(i) && !jump(i - 1)) n++;
+		}
+		return n / (b - a);
+	};
 	const ladder = rendered.get("music-adaptive-ladder");
 	if (ladder) {
-		const perS = (a, b) => {
-			const F = SR / 100;
-			const e = [];
-			for (let k = a * SR; k + F < b * SR; k += F) {
-				let q = 0;
-				for (let j = k + 1; j < k + F; j++) {
-					const d = ladder[j] - ladder[j - 1];
-					q += d * d;
-				}
-				e.push(q);
-			}
-			let n = 0;
-			for (let i = 5; i < e.length; i++) {
-				const jump = (j) =>
-					e[j] > (e[j - 1] + e[j - 2] + e[j - 3] + e[j - 4]) / 2;
-				if (jump(i) && !jump(i - 1)) n++;
-			}
-			return n / (b - a);
-		};
-		const calmRate = perS(6, 18);
-		const threatRate = perS(38, 54);
-		const fightRate = perS(56, 72);
+		const calmRate = perS(ladder, 6, 18);
+		const threatRate = perS(ladder, 38, 54);
+		const fightRate = perS(ladder, 56, 72);
 		check(
 			"the ladder's threat and combat are busier than its calm (#548)",
 			threatRate >= Math.max(1, 2 * calmRate) &&
 				fightRate >= Math.max(3, 4 * calmRate) &&
 				fightRate > threatRate,
-			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
+			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(ladder, 20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
+		);
+	}
+	const techno = rendered.get("music-adaptive-ladder-techno");
+	if (techno) {
+		const [calm, wary, threat, fight] = [
+			[6, 18],
+			[20, 36],
+			[38, 54],
+			[56, 72],
+		].map(([a, b]) => perS(techno, a, b));
+		check(
+			"the techno ladder gets busier: wary over calm, threat and combat over wary",
+			wary > calm && threat > wary && fight > wary,
+			`transients/s calm ${calm.toFixed(2)}, wary ${wary.toFixed(2)}, threat ${threat.toFixed(2)}, combat ${fight.toFixed(2)}`,
 		);
 	}
 	/** Rms over a window in seconds, or the whole buffer: one body for every
