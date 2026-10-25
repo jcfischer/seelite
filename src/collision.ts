@@ -870,6 +870,7 @@ export interface SweepResult {
 	 * how a caller sees that it did.
 	 */
 	ghosts: number[];
+	rockGhosts: number[];
 	/**
 	 * §4.2: the aperture plane owned the tick. The ship's centre crossed a plane
 	 * at `planeS` before any impact (a tie goes to the impact), so nothing was
@@ -879,8 +880,15 @@ export interface SweepResult {
 	planeOwns: boolean;
 }
 
-/** What a step's sweep is told about the rest of the tick (§4.2). */
+/**
+ * What a step's sweep is told about the rest of the tick (§4.2).
+ * `placed` arms whole-rock ghosting at a newly placed pose (§4.3, node #960).
+ * Carry the result's `rockGhosts` into the next step, remapping the indices
+ * into that step's solid order.
+ */
 export interface SweepOptions {
+	placed?: boolean;
+	rockGhosts?: readonly number[];
 	/**
 	 * Seconds into the step at which the ship's centre crosses an aperture
 	 * plane, or `null` when it crosses none. An impact at or before it owns the
@@ -931,6 +939,7 @@ interface Sweep {
 	dt: number;
 	diagnostics?: SweepDiagnostics;
 	rockSkips: Map<number, Map<Primitive, Set<number>>>;
+	options: SweepOptions;
 }
 
 /** The ship's end translation, as each stage corrects it. */
@@ -943,7 +952,9 @@ interface End {
  * One step of the ship against a list of solids: §3.1, §4.1 and §4.3.
  *
  * **A pair that overlaps at the start is a ghost** (§4.3): untested until it
- * has separated, with no damage and no push-out. **A pair touching at the
+ * has separated, with no damage and no push-out. A rock overlapping a placed
+ * ship, or carried in `options.rockGhosts`, ghosts every piece until the ship
+ * separates from the whole rock (node #960). **A pair touching at the
  * start is resting** (§3.1): its closing speed is read at the start of the
  * step, before this step's thrust, the frame's acceleration or the ship's own
  * turn, and its inward motion is stopped at the surface. **Every other pair
@@ -992,6 +1003,7 @@ function sweepMotion(
 		vel: ship.velEnd,
 		contacts: [],
 		ghosts: [],
+		rockGhosts: [],
 		planeOwns: false,
 	};
 	const planeS = options.planeS ?? null;
@@ -1013,6 +1025,7 @@ function sweepMotion(
 		dt,
 		diagnostics: options.diagnostics,
 		rockSkips: new Map(),
+		options,
 	};
 	const { touching, swept } = classifyPairs(sweep, result);
 	const stopped = stopResting(sweep, touching, {
@@ -1176,6 +1189,11 @@ function rockReach(rock: RockSolid): number {
 		rockReaches.set(rock.pieces, reach);
 	}
 	return reach * rock.radiusKm;
+}
+
+/** A solid's bounding reach, including a radial rock's scaled pieces. */
+export function solidReach(solid: Solid): number {
+	return isRock(solid) ? rockReach(solid) : solidReachKm(solid.primitives);
 }
 
 function getOrInsert<K, V>(
@@ -1347,7 +1365,7 @@ function classifyRock(
 	touching: Touching[],
 ): void {
 	const skips = new Map<Primitive, Set<number>>();
-	sweep.rockSkips.set(index, skips);
+	const contacts: { pair: PairState; gap: Separation }[] = [];
 	const reach = rockReach(rock);
 	const shipStart = {
 		...sweep.ship.start,
@@ -1361,9 +1379,20 @@ function classifyRock(
 			if (!gap.overlap && gap.distanceKm > RESTING_KM) continue;
 			getOrInsert(skips, shipBox, () => new Set()).add(piece);
 			const pair = { solid: index, shipBox, primitive, reach, piece };
-			recordStartContact(sweep, pair, gap, result, touching);
+			contacts.push({ pair, gap });
 		}
 	}
+	if (
+		(sweep.options.placed || sweep.options.rockGhosts?.includes(index)) &&
+		contacts.some(({ gap }) => gap.overlap)
+	) {
+		result.ghosts.push(index);
+		result.rockGhosts.push(index);
+		return;
+	}
+	sweep.rockSkips.set(index, skips);
+	for (const { pair, gap } of contacts)
+		recordStartContact(sweep, pair, gap, result, touching);
 }
 
 /**
@@ -1378,9 +1407,7 @@ function classifyPairs(
 	const touching: Touching[] = [];
 	const swept: PairState[] = [];
 	sweep.solids.forEach((solid, index) => {
-		const reach = isRock(solid)
-			? rockReach(solid)
-			: solidReachKm(solid.primitives);
+		const reach = solidReach(solid);
 		if (
 			!mayMeet(
 				{

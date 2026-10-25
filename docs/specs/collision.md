@@ -404,6 +404,16 @@ A flying ship can only start inside a proxy by being placed there:
   open in the proxy, so a hull that fits the aperture overlaps nothing. On a
   pad, or with a hull near its fit margin, it may.
 
+For a rock solid, a placement event arms a **whole-rock ghost** only for rocks
+the ship overlaps at that pose (#956 Q2, O-c; node #960). Every ship primitive
+passes through that rock until none overlaps it at the start of a step; the
+same step then tests the rock normally. Without a placement event, only the
+overlapped cone pieces are ghosts. `sweepShip` takes `placed` and the preceding
+step's `rockGhosts` (remapped to the current solid indices), and returns the
+active `rockGhosts`. The sim carries these by solid owner id outside saved
+state. Spawn, restore, hyperspace arrival, cruise exit and launch arm the
+placement; a save contains neither the flag nor the active ghosts.
+
 A push-out would throw a restored ship through a hull, and would bill or bounce
 a launch off the station it is leaving. A ghost lets the ship fly out the way
 it came. Ghosting is **per overlapping box**, not per station: any other

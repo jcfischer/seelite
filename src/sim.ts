@@ -82,6 +82,7 @@ import {
 	type Primitive,
 	type Reach,
 	type ShipMotion,
+	type Solid,
 	type SolidMotion,
 	IDENTITY_AXES,
 	bodySphere,
@@ -90,6 +91,7 @@ import {
 	pushOutAlong,
 	reachKm,
 	shipPose,
+	solidReach,
 	sweepShip,
 	sweepShipPair,
 } from "./collision";
@@ -174,6 +176,18 @@ export interface Ship {
 	pos: Vec3;
 	/** Kilometres per second. */
 	vel: Vec3;
+}
+
+interface RockPlacement {
+	placed: boolean;
+	rocks: Set<string>;
+}
+
+const shipPlacements = new WeakMap<Ship, RockPlacement>();
+
+/** Arm transient whole-rock ghosting after placing a ship (collision.md §4.3). */
+export function markShipPlaced(ship: Ship): void {
+	shipPlacements.set(ship, { placed: true, rocks: new Set() });
 }
 
 export interface System {
@@ -637,15 +651,17 @@ export function restoreWorld(
 	// them. Building at zero and assigning `gameTime` afterwards would pass
 	// every field check and leave every planet an orbit out of date.
 	const system = makeSystem(record, gameTime);
+	const ship = {
+		pos: arrivalPoint(record, system.contents, null, gameTime),
+		vel: v3(),
+	};
+	markShipPlaced(ship);
 	return {
 		seed,
 		gameTime,
 		galaxy,
 		system,
-		ship: {
-			pos: arrivalPoint(record, system.contents, null, gameTime),
-			vel: v3(),
-		},
+		ship,
 	};
 }
 
@@ -754,6 +770,7 @@ export function jumpWorldTo(world: World, to: SystemRecord): void {
 	// stated in. Carrying the origin system's velocity across would be carrying
 	// a number from a coordinate system that no longer exists.
 	world.ship.vel = v3();
+	markShipPlaced(world.ship);
 }
 
 /**
@@ -2038,7 +2055,7 @@ export function stepWorld(
 	solid?: readonly Primitive[] | null,
 	planes: readonly PlaneWatch[] = [],
 	fleet: readonly FleetShip[] = [],
-	extraSolids: readonly { id: string; motion: SolidMotion }[] = [],
+	extraSolids: readonly { id: string; motion: Solid }[] = [],
 ): WorldStep {
 	const from = { ...world.ship.pos };
 	const fromVel = { ...world.ship.vel };
@@ -2397,6 +2414,7 @@ function sweepWorld(
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number },
 	cutS: number | null,
+	placement?: RockPlacement,
 ): {
 	pos: Vec3;
 	vel: Vec3;
@@ -2414,15 +2432,15 @@ function sweepWorld(
 		starts,
 		{ fromTime: clock.fromTime, toTime: world.gameTime },
 	);
-	if (solids.length === 0)
-		return {
-			pos: motion.end.origin,
-			vel: motion.velEnd,
-			impacts: [],
-			ghosts: [],
-			deferred: cutS !== null,
-		};
-	const swept = sweepShip(motion, solids, clock.dt, { planeS: cutS });
+	const swept = sweepShip(motion, solids, clock.dt, {
+		planeS: cutS,
+		placed: placement?.placed,
+		rockGhosts: owner.flatMap((id, i) => (placement?.rocks.has(id) ? [i] : [])),
+	});
+	if (placement) {
+		placement.placed = false;
+		placement.rocks = new Set(swept.rockGhosts.map((i) => owner[i]));
+	}
 	return {
 		pos: swept.pos,
 		vel: swept.vel,
@@ -2923,7 +2941,7 @@ function holdPlanetBoundary(
  *  placed station's place and pose. Snapshot before the clock moves. */
 export interface WorldStarts {
 	/** Persisted local hulls, posed at both ends by their owner. */
-	readonly extraSolids?: readonly { id: string; motion: SolidMotion }[];
+	readonly extraSolids?: readonly { id: string; motion: Solid }[];
 	bodies: ReadonlyMap<string, Vec3>;
 	stations: readonly StationStart[];
 }
@@ -2932,7 +2950,7 @@ export interface WorldStarts {
 export function worldStarts(
 	system: System,
 	gameTime: number,
-	extraSolids: readonly { id: string; motion: SolidMotion }[] = [],
+	extraSolids: readonly { id: string; motion: Solid }[] = [],
 ): WorldStarts {
 	return {
 		extraSolids,
@@ -2965,9 +2983,9 @@ export function worldSolids(
 	ship: Reach,
 	starts: WorldStarts,
 	clock: { fromTime: number; toTime: number },
-): { owner: string[]; motions: SolidMotion[] } {
+): { owner: string[]; motions: Solid[] } {
 	const owner: string[] = [];
-	const motions: SolidMotion[] = [];
+	const motions: Solid[] = [];
 	for (const body of solidBodies(system)) {
 		const start = starts.bodies.get(body.id);
 		if (!start) continue;
@@ -3012,7 +3030,7 @@ export function worldSolids(
 			!mayMeet(ship, {
 				start: motion.start.origin,
 				end: motion.end.origin,
-				reachKm: reachKm(motion.primitives),
+				reachKm: solidReach(motion),
 			})
 		)
 			continue;
@@ -3102,7 +3120,14 @@ function collideShip(
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number; planeS: number | null },
 ): { impacts: WorldImpact[]; ghosts: string[]; planeOwns: boolean } {
-	const swept = sweepWorld(world, motion, starts, clock, clock.planeS);
+	const swept = sweepWorld(
+		world,
+		motion,
+		starts,
+		clock,
+		clock.planeS,
+		shipPlacements.get(world.ship),
+	);
 	world.ship.pos = swept.pos;
 	world.ship.vel = swept.vel;
 	return {
@@ -3219,4 +3244,5 @@ export function resetWorldToStart(world: World): void {
 		world.gameTime,
 	);
 	world.ship.vel = v3();
+	markShipPlaced(world.ship);
 }
