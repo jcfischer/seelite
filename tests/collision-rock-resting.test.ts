@@ -115,7 +115,11 @@ describe("consecutive rock resting steps (node #961)", () => {
 		const first = at.origin;
 		const contacts = query(oracle, at).nearby;
 		expect(
-			contacts.some((a) => contacts.some((b) => dot(a.normal, b.normal) < 0)),
+			contacts.some((a) =>
+				contacts.some(
+					(b) => a.piece !== b.piece && dot(a.normal, b.normal) < 0,
+				),
+			),
 		).toBe(true);
 		for (let tick = 0; tick < 600; tick++) {
 			const result = sweepShip(motion(at, v3(0, 0, -0.001)), [rock], DT);
@@ -135,7 +139,7 @@ describe("consecutive rock resting steps (node #961)", () => {
 			for (const direction of [v3(0, 0, 1), unit(v3(1, 0, 1))]) {
 				let at = land(rock, direction);
 				const contacts = query(oracle, at).nearby;
-				if (contacts.length > 1) multiple++;
+				if (new Set(contacts.map((c) => c.piece)).size > 1) multiple++;
 				for (let tick = 0; tick < 100; tick++) {
 					const result = sweepShip(
 						motion(at, scale(direction, -0.001)),
@@ -181,7 +185,7 @@ describe("consecutive rock resting steps (node #961)", () => {
 			}
 			times.sort((a, b) => a - b);
 			console.log(
-				`rock ${index}, R=${R} km, host CPU: resting median ${times[300].toFixed(3)}, p95 ${times[570].toFixed(3)} ms/tick`,
+				`rock ${index}, R=${R} km, host CPU: resting median ${times[Math.floor(times.length * 0.5)].toFixed(3)}, p95 ${times[Math.floor(times.length * 0.95)].toFixed(3)} ms/tick`,
 			);
 		}
 	}, 120_000);
@@ -207,6 +211,10 @@ describe("consecutive rock resting steps (node #961)", () => {
 				at = { ...at, origin: result.pos };
 				const state = query(oracle, at);
 				expect(state.gap, `tick ${tick}`).toBeGreaterThanOrEqual(0);
+				expect(
+					Math.abs(state.gap - SEPARATION_KM),
+					`tick ${tick}`,
+				).toBeLessThanOrEqual(RESTING_KM);
 				for (const { piece } of state.nearby) touched.add(piece);
 				for (const impact of result.impacts)
 					expect(impact.closingKms).toBeLessThanOrEqual(V_SCRAPE_KMS);
