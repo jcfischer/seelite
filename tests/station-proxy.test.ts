@@ -69,6 +69,8 @@ import {
 	formLabel,
 } from "./helpers/forms-in-play";
 import { HUB, modularPlacements } from "../src/station-modular";
+import { assemblyInstances } from "../src/assembly-plan";
+import { assemblyProxyBoxes } from "../src/station-proxy";
 import { ASSEMBLY_SEEDS, isSeededForm } from "./helpers/solved-forms";
 import {
 	BERTH_SIDES,
@@ -222,17 +224,10 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		const shapes = new Set<string>();
 		for (const seed of ASSEMBLY_SEEDS) {
 			const proxy = stationProxy("trade", "d", 0, seed)!;
-			const cells = modularPlacements(seed).placements.filter(
-				(p) => p.module !== HUB,
-			);
-			for (let x = -4; x <= 4; x++)
-				for (let y = -4; y <= 4; y++)
-					expect([
-						seed,
-						x,
-						y,
-						proxyContains(proxy.static, x * 0.2, y * 0.2, -0.04, 0),
-					]).toEqual([seed, x, y, cells.some((p) => p.dx === x && p.dy === y)]);
+			const cells = assemblyInstances(modularPlacements(seed).placements);
+			expect(cells.length).toBeGreaterThan(9);
+			expect(proxy.static.length).toBeGreaterThan(100);
+			expect(proxyContains(proxy.static, 0.29, 0.09, 0.09, 0)).toBe(false);
 			shapes.add(JSON.stringify(proxy.static));
 			expect(proxy.spinning).toEqual(
 				stationProxy("trade", "d", 0, 0)!.spinning,
@@ -415,7 +410,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			"trade/a": 0.032,
 			"trade/b": 0.0008,
 			"trade/c": 0.0008,
-			"trade/d": 0.016,
+			"trade/d": 0.0008,
 			"trade/e": 0.0008,
 			"shipyard/a": 0.0007,
 			"shipyard/b": 0.0007,

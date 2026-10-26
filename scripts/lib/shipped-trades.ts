@@ -6,10 +6,12 @@ import {
 	TRADE_MODEL_NAMES,
 } from "../../src/trade-flight";
 import {
+	installAssemblyBlocks,
 	installTradeBuilder,
 	type AuthoredTradeForm,
 } from "../../src/station-mesh";
 import { decodeShippedGlb } from "./shipped-glb";
+import { createAssemblyBlocks } from "../../src/assembly-flight";
 
 export const SHIPPED_TRADE_FILES = Object.fromEntries(
 	TRADE_FORMS.map((form) => [
@@ -25,7 +27,12 @@ const builders = new Map<
 	AuthoredTradeForm,
 	ReturnType<typeof createTradeBuilder>
 >();
+let assembly: ReturnType<typeof createAssemblyBlocks> | undefined;
 export async function installShippedTrades(): Promise<void> {
+	assembly ??= createAssemblyBlocks(
+		await decodeShippedGlb("src/models/trade-assembly.glb"),
+	);
+	installAssemblyBlocks(assembly);
 	for (const form of TRADE_FORMS) {
 		let builder = builders.get(form);
 		if (!builder) {
@@ -39,5 +46,6 @@ export async function installShippedTrades(): Promise<void> {
 	}
 }
 export function uninstallTrades(): void {
+	installAssemblyBlocks(null);
 	for (const form of TRADE_FORMS) installTradeBuilder(form, null);
 }

@@ -142,4 +142,4 @@ controls.addEventListener("change", render);
 set({});
 (window as any).__assemblyKit = { renderer, set, snapshot, ready: true };
 document.querySelector("#status")!.textContent =
-	"200 m grid · drag to orbit · wheel to zoom · Phase 1 study, awaiting visual approval";
+	"200 m grid · drag to orbit · wheel to zoom · full kit · production drawing seam · awaiting flight approval";
