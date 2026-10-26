@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -103,9 +102,16 @@ try {
 					.map(([level]) => level),
 			};
 		}, radii);
-		assert.deepEqual(row.visible, [expected]);
-		assert(Math.abs(row.actualKm - radii * fixture.reachKm) < 1e-9);
-		check(`${radii} reaches draws ${expected} alone`, row.visible.length === 1);
+		check(
+			`${radii} reaches draws ${expected} alone`,
+			row.visible.length === 1 && row.visible[0] === expected,
+			`visible ${JSON.stringify(row.visible)}`,
+		);
+		check(
+			`${radii} reaches is placed at ${radii} reaches`,
+			Math.abs(row.actualKm - radii * fixture.reachKm) < 1e-9,
+			`${row.actualKm} km against ${radii * fixture.reachKm} km`,
+		);
 		const file = `${rows.length + 1}-${radii}-${expected}.png`;
 		await page.screenshot({ path: `${out}/${file}` });
 		rows.push({ ...row, file });

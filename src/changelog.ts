@@ -28,10 +28,10 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// https://github.com/jcfischer/seelite/issues/1034 — proposed copy; principal approval and main date pending.
+	// https://github.com/jcfischer/seelite/issues/1034 — sentence approved by the principal, 2026-10-26.
 	{
-		date: "2026-10-24",
-		text: "The interceptor flies as the authored Lance, with four engines and distance levels for nearby traffic.",
+		date: "2026-10-26",
+		text: "New 3d model: The Interceptor.",
 		node: 1034,
 	},
 	// https://github.com/jcfischer/seelite/issues/1073 — proposed copy; principal approval and main date pending.

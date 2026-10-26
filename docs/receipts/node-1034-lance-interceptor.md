@@ -164,6 +164,14 @@ level was checked. Shading changes at transitions remain a principal eye gate.
   alone, including an actual flown-hull readback; the pixel assertions are
   unchanged. A regression test requires a URL-eligible, still-procedural hull.
   The download probe now flies each tested hull as well as drawing its Traffic.
+- `probe-occlusion` crashed on this branch in every run from 2026-10-24 to
+  2026-10-26 ("Execution context was destroyed"). The bay section reset the
+  clock with the ship still at the ladder's 1.5-radii rung, and the station
+  struck the courier during the reset's two frames: 185 damage on `main`
+  (2bce8be0, survived) and 213–338 on this branch (fatal, so the page
+  reloaded). The strike grows with the game time the earlier sections used.
+  The probe now resets through `resetToFixture` and checks that the reset
+  records no collision impact; on b2e71f57 it passed 24/24 alone.
 - This is manual affected coverage, **not** a `probe:pr` pass. The selector
   requests all 113 probes because inspection boot wiring has broad ownership.
   The ranger worker contract reserves that final run, PR and Sage for the
