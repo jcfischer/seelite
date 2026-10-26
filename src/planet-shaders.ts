@@ -467,6 +467,13 @@ export const RELIEF_PATHS = [
 ] as const;
 export type ReliefPath = (typeof RELIEF_PATHS)[number];
 
+/** The relief programs `fragmentFor` can build for one surface class. */
+export function reliefPathsFor(surface: SurfaceClass): readonly ReliefPath[] {
+	return surface === "terran"
+		? RELIEF_PATHS
+		: RELIEF_PATHS.filter((path) => path !== "analytic-gradient");
+}
+
 const gradientSplicer = makeSplicer("terran analytic relief");
 const analyticRelief = gradientSplicer.splice(
 	"fragment",
@@ -516,7 +523,7 @@ export function fragmentFor(
 	relief: ReliefPath = "four-tap",
 	footprint = true,
 ): string {
-	if (relief === "analytic-gradient" && surface !== "terran")
+	if (!reliefPathsFor(surface).includes(relief))
 		throw new Error("analytic-gradient relief is implemented for terran only");
 	const detail = surface === "terran" && footprint;
 	const analytic = surface === "terran" && relief === "analytic-gradient";

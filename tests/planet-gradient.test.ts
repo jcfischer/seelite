@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { RELIEF_PATHS, fragmentFor } from "../src/planet-shaders";
+import {
+	fragmentFor,
+	RELIEF_PATHS,
+	reliefPathsFor,
+} from "../src/planet-shaders";
+import type { SurfaceClass } from "../src/planet-appearance";
 import {
 	PLANET_RELIEF_PATHS,
 	type PlanetReliefPolicy,
@@ -73,4 +78,16 @@ test("analytic source differentiates the same base and footprint height field", 
 	expect(() => fragmentFor("desert", "analytic-gradient")).toThrow(
 		"analytic-gradient relief is implemented for terran only",
 	);
+});
+
+test("every class compiles every relief path on its menu, and only terran lists analytic", () => {
+	for (const surface of Object.keys(PLANET_RELIEF_PATHS) as SurfaceClass[]) {
+		const menu = reliefPathsFor(surface);
+		for (const path of menu)
+			expect(() => fragmentFor(surface, path)).not.toThrow();
+		expect(menu.includes("analytic-gradient")).toBe(surface === "terran");
+		for (const path of RELIEF_PATHS)
+			if (!menu.includes(path))
+				expect(() => fragmentFor(surface, path)).toThrow();
+	}
 });

@@ -472,7 +472,11 @@ import {
 	surfaceSphere,
 } from "./planet-surface";
 import { PlanetHalfResolution, useHalfResolution } from "./planet-half-res";
-import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
+import {
+	type ReliefPath,
+	RELIEF_PATHS,
+	reliefPathsFor,
+} from "./planet-shaders";
 import {
 	BAKE_FACE_SIZES,
 	PLANET_RELIEF_PATHS,
@@ -5983,7 +5987,8 @@ class Game {
 			// loop's own work brought forward, and pinning every body during it
 			// would switch #207's selector off for the whole session.
 			for (const visual of this.bodyVisuals.values())
-				visual.applyReliefBand(path);
+				if (reliefPathsFor(visual.surfaceClass()).includes(path))
+					visual.applyReliefBand(path);
 			for (const [scene, camera] of surfaceScenes)
 				this.renderer.compile(scene, camera);
 			this.planetHalfRes.prewarmSurfaces(
