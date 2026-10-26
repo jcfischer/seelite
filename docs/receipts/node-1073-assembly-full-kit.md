@@ -313,6 +313,44 @@ Verification for this finish pass (completed 2026-10-24):
   still expanded to all 113 probes. The worker contract reserves that run for
   the supervisor; only the affected model-queue probe ran in this pass.
 
+### Rebase, browser gate and principal approval — 2026-10-25/26
+
+Ranger parked the node twice at `6319e59b` on probe crashes under host load
+(peak one-minute load 75–150, a different set of probes each run). The branch
+was rebased on `origin/main` `db046132` without conflicts. The new head is
+`e922565e`, and `npx tsc --noEmit` passed.
+
+- The four probes named in the parked runs, alone in one locked suite on the
+  hardware lane (ANGLE Metal / Apple M1 Pro): `probe-docking` (73/73),
+  `probe-commander`, `probe-adaptive-resolution` and `measure-cruise-detour`
+  passed 4/4 in 432 s, peak load 39.2. The parked reds were the host, not the
+  branch.
+- Browser gate, by the principal's ruling for this node: affected contracts
+  plus smoke, chosen by hand, because `probe:select` expands to all 114. Every
+  probe roots `src/station-mesh.ts` through the Game, and the spike paths have
+  no owner. `probe-production-boot`, `probe-boot`, `probe-live-cockpit`,
+  `probe-docking`, `probe-docking-traffic`, `probe-dock-arrival`,
+  `probe-collision`, `probe-collision-surface`, `probe-station`,
+  `probe-station-visuals`, `probe-station-mouth`,
+  `probe-station-route-traffic`, `probe-station-console`, `probe-traffic-mouth`,
+  `probe-lane-wait`, `probe-model-download`, `probe-model-queue`,
+  `probe-occlusion`, `probe-approach-handoff` and `probe-arrival` passed 20/20
+  in 972 s at `e922565e`, peak load 44.0. This is a manual selection, not a
+  repository-selected gate and not a full-suite pass.
+- View set: 82 of 83 canonical views at `db046132` (before, with this branch's
+  `view-set.mjs` for the three Assembly views) and at `e922565e` (after), on the
+  hardware lane. `derelict-tear` throws on `main` as well and is left out of
+  both runs; it is node #1089. The Assembly views changed as intended
+  (`assembly-flank` 3.6 %, `assembly-second-layout` 3.0 %, `assembly-approach`
+  1.4 % of pixels above 24/255). `berth-arrival`, `docking-notice-bounce` and
+  `berth-launch-chase` also moved (14.6 %, 11.0 %, 6.4 %): the same bay
+  interior at a different spin phase and traffic, with no control run to bound
+  it.
+- The principal accepted the visuals on 2026-10-26.
+- CI at `e922565e`: static, unit (4 shards), build and gate pass. The advisory
+  `mutation-changed` job failed on its harness: the Stryker sandbox has no
+  `public/_headers` for `tests/model-urls.test.ts`, and the job then timed out.
+
 ## Historical evidence
 
 The Phase 1 receipt remains the historical record of the approved HUB/NODE/TUBE
