@@ -99,6 +99,19 @@ describe("the view set itself", () => {
 			expect(() => selectViews(names)).toThrow();
 	});
 
+	test("the Lance view judges node 1034 on the interceptor in chase", () => {
+		const view = VIEWS.find((v) => v.name === "hull-chase-lance");
+		expect(view?.covers).toContain(1034);
+		expect(view?.shot).toMatchObject({
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "interceptor",
+		});
+	});
+
 	test("the authored paint comparison puts miner and Bollard beside courier", () => {
 		const start = VIEWS.findIndex((v) => v.name === "hull-chase");
 		const comparison = VIEWS.slice(start, start + 3);
@@ -240,7 +253,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(83);
+		expect(VIEWS.length).toBe(84);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -830,7 +843,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 83)");
+		expect(html).toContain("Selected canonical views (3 of 84)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -867,7 +880,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–33.4s");
+		expect(html).toContain("· clock 0.6–33.8s");
 		expect(html).not.toContain("pinned");
 	});
 

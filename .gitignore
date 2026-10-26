@@ -76,3 +76,4 @@ spikes/interiors/__pycache__/
 .tmp/
 reports/mutation/
 .stryker-tmp/
+*.blend1

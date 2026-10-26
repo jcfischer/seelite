@@ -19,6 +19,7 @@ import "../tests/setup/authored-hulls";
 import { ventThroats } from "../src/vent-plumes";
 import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedTugHull } from "./lib/shipped-tug-hull";
+import { installShippedInterceptorHull } from "./lib/shipped-interceptor-hull";
 import { installShippedVoyagerHull } from "./lib/shipped-voyager-hull";
 
 // `miner/b` is the authored Longwall B, built only once it is installed.
@@ -26,6 +27,7 @@ await installShippedLongwall();
 // The tug is the authored Bollard (node #814), drawn once installed.
 await installShippedTugHull();
 await installShippedVoyagerHull();
+await installShippedInterceptorHull();
 
 const metres = (km: number): string => {
 	if (!Number.isFinite(km)) throw new Error(`non-finite gap: ${km}`);
