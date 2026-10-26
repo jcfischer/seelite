@@ -1428,12 +1428,12 @@ const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
 	MINING_QUERY.get("rock-pick") ?? "",
 )
 	? (MINING_QUERY.get("rock-pick") as RockPick)
-	: "near";
+	: "aim";
 const SURVEY_INTERRUPT: SurveyInterrupt = (
 	SURVEY_INTERRUPTS as readonly string[]
 ).includes(MINING_QUERY.get("survey-interrupt") ?? "")
 	? (MINING_QUERY.get("survey-interrupt") as SurveyInterrupt)
-	: "reset";
+	: "decay";
 const positiveParam = (name: string, fallback: number): number => {
 	const v = Number(MINING_QUERY.get(name));
 	return Number.isFinite(v) && v > 0 ? v : fallback;

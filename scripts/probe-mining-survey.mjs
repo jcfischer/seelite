@@ -87,23 +87,18 @@ try {
 		JSON.stringify(setup),
 	);
 	if (setup.fields > 0) {
-		const first = await page.evaluate(() => {
+		const picked = await page.evaluate(() => {
 			const g = window.__seelite;
 			g.cycleTarget(1);
 			return g.surveyState();
 		});
 		check(
-			"the target key selects the nearest rock first",
-			first.target?.id === first.near[0]?.id,
-			JSON.stringify(first.target),
+			"aim and decay are the defaults",
+			picked.pick === "aim" && picked.interrupt === "decay",
+			`${picked.pick}/${picked.interrupt}`,
 		);
-		const picked = await page.evaluate((id) => {
-			const g = window.__seelite;
-			for (let i = 0; i < 12 && g.targetId !== id; i++) g.cycleTarget(1);
-			return g.surveyState();
-		}, setup.id);
 		check(
-			"the cycle reaches the stood-off rock",
+			"the target key selects the rock in the reticle",
 			picked.target?.id === setup.id,
 			JSON.stringify(picked.target),
 		);
