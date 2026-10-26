@@ -139,6 +139,7 @@ export type BodyKind =
 	| "ship"
 	| "relay"
 	| "field"
+	| "rock"
 	| "wreck"
 	| "cargo";
 

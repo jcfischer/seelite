@@ -170,3 +170,31 @@ describe("survey reading", () => {
 		expect(later?.deepLeftT).toBe(72);
 	});
 });
+
+describe("rock target cycle (near variant)", () => {
+	const { cycleWithRocks } =
+		require("../src/rock-target") as typeof import("../src/rock-target");
+	const rocks = ["rock:a:1", "rock:a:2"];
+	const ordinary = ["station-trade", "planet-1"];
+
+	test("from an ordinary target the key goes to the nearest rock", () => {
+		expect(cycleWithRocks(rocks, ordinary, "station-trade", 1)).toBe(
+			"rock:a:1",
+		);
+		expect(cycleWithRocks(rocks, ordinary, null, 1)).toBe("rock:a:1");
+		expect(cycleWithRocks(rocks, ordinary, "station-trade", -1)).toBe(
+			"rock:a:2",
+		);
+	});
+
+	test("past the last rock the cycle continues into the ordinary list", () => {
+		expect(cycleWithRocks(rocks, ordinary, "rock:a:1", 1)).toBe("rock:a:2");
+		expect(cycleWithRocks(rocks, ordinary, "rock:a:2", 1)).toBe(
+			"station-trade",
+		);
+	});
+
+	test("a rock that left the near set restarts at the nearest", () => {
+		expect(cycleWithRocks(rocks, ordinary, "rock:b:9", 1)).toBe("rock:a:1");
+	});
+});

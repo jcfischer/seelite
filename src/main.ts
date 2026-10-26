@@ -1,4 +1,38 @@
 import { fieldContactsAt } from "./field-contact";
+import {
+	type DepositKey,
+	type DepositRow,
+	depositKey,
+	SURVEY_LIFETIME_H,
+} from "./deposit-state";
+import {
+	beginSurveyHold,
+	type RockContents,
+	rockContents,
+	SURVEY,
+	SURVEY_INTERRUPTS,
+	type SurveyHold,
+	type SurveyInterrupt,
+	stepSurveyHold,
+	surveyCompleted,
+	surveyFigures,
+	surveyReading,
+} from "./rock-survey";
+import {
+	aimedRock,
+	cycleWithRocks,
+	type FieldRocks,
+	isRockTargetId,
+	nearRocks,
+	ROCK_CYCLE_MAX,
+	ROCK_DROP_KM,
+	ROCK_PICKS,
+	type RockPick,
+	type RockRef,
+	resolveRock,
+	rockContact,
+	rockDirectionNow,
+} from "./rock-target";
 import { fieldRocks, systemFields } from "./asteroid-field";
 import { FieldDraw } from "./field-draw";
 import { pxPerRadianFor } from "./field-lod";
@@ -40,6 +74,7 @@ import {
 	parseModule,
 	stepFuelScoop,
 	stockLoadout,
+	makeModule,
 } from "./loadout";
 import { outfittingScreen } from "./outfitting";
 import {
@@ -1385,6 +1420,35 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
  * `forceRaider`. With neither, the leg law runs as a player meets it.
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
+
+/** Node #920's prototype switches: `?mining=1`, `?rock-pick=near|aim`, `?survey-interrupt=reset|hold|decay`, `?survey-range=`, `?survey-dwell=`. */
+const MINING_QUERY = new URLSearchParams(window.location.search);
+const MINING_ON = MINING_QUERY.get("mining") === "1";
+const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
+	MINING_QUERY.get("rock-pick") ?? "",
+)
+	? (MINING_QUERY.get("rock-pick") as RockPick)
+	: "near";
+const SURVEY_INTERRUPT: SurveyInterrupt = (
+	SURVEY_INTERRUPTS as readonly string[]
+).includes(MINING_QUERY.get("survey-interrupt") ?? "")
+	? (MINING_QUERY.get("survey-interrupt") as SurveyInterrupt)
+	: "reset";
+const positiveParam = (name: string, fallback: number): number => {
+	const v = Number(MINING_QUERY.get(name));
+	return Number.isFinite(v) && v > 0 ? v : fallback;
+};
+/** Prototype: the mouth marker sits at this share of the bounding radius, until the heightfield gives the true surface. */
+const DEEP_MOUTH_RADIUS_SHARE = 0.85;
+const SURVEY_GRADE_SHORT = {
+	poor: "POOR",
+	standard: "STD",
+	rich: "RICH",
+} as const;
+const SURVEY_BASE = {
+	rangeKm: positiveParam("survey-range", SURVEY.rangeKm),
+	dwellS: positiveParam("survey-dwell", SURVEY.dwellS),
+};
 
 /**
  * The flight sound's arms (#544), from `?flightsound=`: comma-separated
@@ -4672,6 +4736,7 @@ class Game {
 		const boot = bootHull(ASKED_HULL, save ? save.commander.state.hull : null);
 		if (boot.warning) console.warn(boot.warning);
 		this.flownHull = boot.hull;
+		if (MINING_ON) this.fitPrototypeMiningLaser();
 		this.condition = this.flownFullCondition();
 		this.observeCurrentSystemRelay();
 		for (const _body of this.world.system.bodies)
@@ -9258,6 +9323,256 @@ class Game {
 		this.saveDirty();
 	}
 
+	private surveyHold: SurveyHold = beginSurveyHold();
+	/** Node #920: where the DEEP cue was painted this frame, for the probe. */
+	deepCueRender: { x: number; y: number; facing: boolean } | null = null;
+
+	/** Node #920 prototype affordance: a ship without a Mining Laser gets one on a free hardpoint, else on H1. */
+	private fitPrototypeMiningLaser() {
+		const loadout = this.commander.loadout;
+		if (Object.values(loadout).some((m) => m.module === "mining-laser")) return;
+		const hardpoints = HULL_SPECS[this.commander.hull].slots.filter(
+			(s) => s.kind === "hardpoint",
+		);
+		const slot = hardpoints.find((s) => !loadout[s.key]) ?? hardpoints[0];
+		if (!slot) return;
+		this.commander = {
+			...this.commander,
+			loadout: {
+				...loadout,
+				[slot.key]: makeModule("mining-laser", slot.size),
+			},
+		};
+	}
+
+	private fieldRockSets(): FieldRocks[] {
+		return this.fieldDraws.map((d) => ({ plan: d.plan, rocks: d.rocks }));
+	}
+
+	private rockRef(id: string): RockRef | null {
+		const ref = resolveRock(
+			this.fieldRockSets(),
+			id,
+			this.world.ship.pos,
+			this.world.gameTime,
+		);
+		return ref && ref.distKm <= ROCK_DROP_KM ? ref : null;
+	}
+
+	/** Node #920: the target keys reach rocks first while any are near. */
+	private cycleRockTarget(step: number): boolean {
+		const near = nearRocks(
+			this.fieldRockSets(),
+			this.world.ship.pos,
+			this.world.gameTime,
+		);
+		if (near.length === 0) return false;
+		if (ROCK_PICK === "aim") {
+			const aimed = aimedRock(near, this.world.ship.pos, this.weaponAim());
+			if (!aimed || aimed.id === this.targetId) return false;
+			this.targetId = aimed.id;
+			return true;
+		}
+		this.targetId = cycleWithRocks(
+			near.slice(0, ROCK_CYCLE_MAX).map((r) => r.id),
+			this.selectable().map((b) => b.id),
+			this.targetId,
+			step,
+		);
+		return true;
+	}
+
+	/** The best fitted Mining Laser's survey figures, or `null` with none fitted (#872 D5). */
+	private surveyFiguresFitted(): { rangeKm: number; dwellS: number } | null {
+		let best: { rangeKm: number; dwellS: number } | null = null;
+		for (const m of Object.values(this.commander.loadout)) {
+			if (m.module !== "mining-laser") continue;
+			const f = surveyFigures(m.size, m.grade, SURVEY_BASE);
+			if (
+				!best ||
+				f.rangeKm > best.rangeKm ||
+				(f.rangeKm === best.rangeKm && f.dwellS < best.dwellS)
+			)
+				best = f;
+		}
+		return best;
+	}
+
+	private rockDepositKey(ref: RockRef): DepositKey {
+		return depositKey(
+			this.world.system.record.index,
+			ref.plan.id,
+			ref.rock.slot,
+		);
+	}
+
+	private rockDepositRow(ref: RockRef): DepositRow | undefined {
+		const galaxy = this.world.system.record.galaxy;
+		return this.commerceWorld.galaxies[galaxy].deposits.rows[
+			this.rockDepositKey(ref)
+		];
+	}
+
+	private rockContentsOf(ref: RockRef): RockContents {
+		return rockContents(
+			this.world.system.record.seed,
+			ref.plan.slot,
+			ref.plan.profile,
+			ref.rock,
+		);
+	}
+
+	/** Why a survey hold is not charging this frame, or `null` when it is. */
+	private surveyBlock(ref: RockRef | null): string | null {
+		if (!ref) return "NO ROCK";
+		const figures = this.surveyFiguresFitted();
+		if (!figures) return "NO MINING LASER";
+		if (this.triggerHeld()) return "FIRING";
+		if (ref.distKm > figures.rangeKm)
+			return `OUT OF RANGE ${figures.rangeKm.toFixed(1)} KM`;
+		const aim = this.weaponAim();
+		const to = sub(ref.pos, this.world.ship.pos);
+		const len = length(to);
+		const off =
+			len === 0
+				? 0
+				: Math.acos(
+						Math.min(1, (to.x * aim.x + to.y * aim.y + to.z * aim.z) / len),
+					);
+		const half = Math.asin(
+			Math.min(1, ref.rock.radiusKm / Math.max(len, 1e-9)),
+		);
+		if (off - half > (SURVEY.coneDeg * Math.PI) / 180) return "HOLD IN VIEW";
+		return null;
+	}
+
+	/** Node #920: one frame of the survey hold on the selected rock (#872 D15). */
+	private stepSurvey(dt: number) {
+		const ref = isRockTargetId(this.targetId)
+			? this.rockRef(this.targetId)
+			: null;
+		const figures = this.surveyFiguresFitted();
+		const held = ref && this.surveyBlock(ref) === null ? ref.id : null;
+		const dwellS = figures?.dwellS ?? SURVEY_BASE.dwellS;
+		const before = this.surveyHold;
+		this.surveyHold = stepSurveyHold(
+			before,
+			held,
+			dt,
+			dwellS,
+			SURVEY_INTERRUPT,
+		);
+		if (!ref || !surveyCompleted(before, this.surveyHold, dwellS)) return;
+		const galaxy = this.world.system.record.galaxy;
+		const key = this.rockDepositKey(ref);
+		const envelope = this.commerceWorld.galaxies[galaxy];
+		const rows = {
+			...envelope.deposits.rows,
+			[key]: {
+				...envelope.deposits.rows[key],
+				surveyedAt: this.world.gameTime,
+			},
+		};
+		const galaxies = this.commerceWorld.galaxies.slice();
+		galaxies[galaxy] = { ...envelope, deposits: { rows } };
+		this.commerceWorld = { ...this.commerceWorld, galaxies };
+		this.saveDirty();
+	}
+
+	/** The surveyed rock's deep-deposit mouth, on the glass (#872 D15: a reading carries its location). */
+	private drawDeepDepositCue(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+	) {
+		if (!isRockTargetId(this.targetId)) return;
+		const ref = this.rockRef(this.targetId);
+		if (!ref) return;
+		const reading = surveyReading(
+			this.rockContentsOf(ref),
+			this.rockDepositRow(ref),
+			this.world.gameTime,
+			SURVEY_LIFETIME_H,
+		);
+		if (!reading?.deepDir) return;
+		const d = rockDirectionNow(ref, reading.deepDir, this.world.gameTime);
+		const r = ref.rock.radiusKm * DEEP_MOUTH_RADIUS_SHARE;
+		const mouth = {
+			x: ref.pos.x + d.x * r,
+			y: ref.pos.y + d.y * r,
+			z: ref.pos.z + d.z * r,
+		};
+		const facing =
+			d.x * (camPos.x - mouth.x) +
+				d.y * (camPos.y - mouth.y) +
+				d.z * (camPos.z - mouth.z) >
+			0;
+		const at = place(normalizeOr(sub(mouth, camPos), d));
+		if (!at?.on) return;
+		ctx.save();
+		ctx.strokeStyle = facing
+			? "rgba(255, 176, 64, .95)"
+			: "rgba(255, 176, 64, .4)";
+		ctx.fillStyle = ctx.strokeStyle;
+		ctx.lineWidth = 2;
+		ctx.setLineDash(facing ? [] : [3, 3]);
+		ctx.beginPath();
+		ctx.arc(at.x, at.y, 7, 0, Math.PI * 2);
+		ctx.stroke();
+		ctx.font = "11px monospace";
+		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x + 11, at.y + 4);
+		ctx.restore();
+		this.deepCueRender = { x: at.x, y: at.y, facing };
+	}
+
+	/** The target instrument's line for a selected rock. */
+	private surveyDesignation(id: string): string {
+		const ref = this.rockRef(id);
+		if (!ref) return "ROCK · OUT OF RANGE";
+		const reading = surveyReading(
+			this.rockContentsOf(ref),
+			this.rockDepositRow(ref),
+			this.world.gameTime,
+			SURVEY_LIFETIME_H,
+		);
+		if (reading) {
+			const deep = reading.deepDir ? ` · DEEP ${reading.deepLeftT} T` : "";
+			return `${reading.family.toUpperCase()} ${SURVEY_GRADE_SHORT[reading.grade]} · ${reading.surfaceLeftT} T${deep}`;
+		}
+		const figures = this.surveyFiguresFitted();
+		if (this.surveyHold.key === id && figures && this.surveyHold.chargeS > 0)
+			return `ROCK · SURVEYING ${Math.floor((this.surveyHold.chargeS / figures.dwellS) * 100)}%`;
+		return `ROCK · ${this.surveyBlock(ref) ?? "SURVEYING 0%"}`;
+	}
+
+	/** Probe handle for node #920's prototype: the selected rock, its reading and the hold. */
+	surveyState() {
+		const ref = isRockTargetId(this.targetId)
+			? this.rockRef(this.targetId)
+			: null;
+		return {
+			on: MINING_ON,
+			pick: ROCK_PICK,
+			interrupt: SURVEY_INTERRUPT,
+			figures: this.surveyFiguresFitted(),
+			hold: this.surveyHold,
+			target: ref
+				? { id: ref.id, distKm: ref.distKm, radiusKm: ref.rock.radiusKm }
+				: null,
+			block: ref ? this.surveyBlock(ref) : null,
+			designation: ref ? this.surveyDesignation(ref.id) : null,
+			contents: ref ? this.rockContentsOf(ref) : null,
+			row: ref ? (this.rockDepositRow(ref) ?? null) : null,
+			near: nearRocks(
+				this.fieldRockSets(),
+				this.world.ship.pos,
+				this.world.gameTime,
+			)
+				.slice(0, ROCK_CYCLE_MAX)
+				.map((r) => ({ id: r.id, distKm: r.distKm })),
+		};
+	}
+
 	/** What the pilot has recorded about this carrier, re-derived from the row's
 	 *  own clock and voyage. `null` is F8's `UNKNOWN`. */
 	private recordedReading(actor: TrafficActor): CarrierReading | null {
@@ -10016,7 +10331,10 @@ class Game {
 			this.targetRelativeKms(),
 			"  ",
 		)}`;
-		const designation = targetDesignation(target, scan.designation);
+		const designation =
+			target?.kind === "rock"
+				? this.surveyDesignation(target.id)
+				: targetDesignation(target, scan.designation);
 		// `chargeAu` is **not** in this key any more: the target instrument stopped
 		// printing it when §5's strip took it, and a key holding a value no
 		// painted pixel depends on repaints two canvas textures on the frame the
@@ -11575,6 +11893,7 @@ class Game {
 				cargo: 6,
 				wreck: 7,
 				field: 8,
+				rock: 9,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -11601,6 +11920,7 @@ class Game {
 	}
 
 	cycleTarget(step: number) {
+		if (MINING_ON && this.cycleRockTarget(step)) return;
 		const list = this.selectable();
 		if (list.length === 0) return;
 		const at = list.findIndex((b) => b.id === this.targetId);
@@ -11629,6 +11949,10 @@ class Game {
 
 	/** Resolve through the same selection projection that exposes contacts. */
 	private bodyFor(id: string): Body | null {
+		if (isRockTargetId(id)) {
+			const ref = this.rockRef(id);
+			return ref ? rockContact(ref) : null;
+		}
 		return (
 			this.world.system.byId.get(id) ??
 			this.selectable().find((body) => body.id === id) ??
@@ -16638,6 +16962,7 @@ class Game {
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
 		this.stepScan(dt);
+		if (MINING_ON) this.stepSurvey(dt);
 		this.stepSystemSweep();
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
@@ -21333,6 +21658,8 @@ class Game {
 			const m = this.markerNdc(dir);
 			return m.behind ? null : { ...toPixels(m.ndcX, m.ndcY), on: m.onScreen };
 		};
+		this.deepCueRender = null;
+		if (MINING_ON) this.drawDeepDepositCue(ctx, camPos, place);
 
 		// The attitude reference: a short level line rolled to the system's
 		// reference plane. Faint, because it is a background fact rather than
@@ -21806,7 +22133,11 @@ class Game {
 				);
 			}
 		}
-		for (const body of this.selectable()) {
+		const rockSelected =
+			MINING_ON && isRockTargetId(this.targetId) ? this.targetBody() : null;
+		for (const body of rockSelected
+			? [...this.selectable(), rockSelected]
+			: this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
 			const selected = this.isSelectedTarget(body.id);
