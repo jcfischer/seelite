@@ -140,9 +140,10 @@ export function plumeParticle(
  * Every throat of a built hull. Read off the mesh once, at build: where each
  * vent's line of action leaves the metal, or where the drive bells are.
  *
- * `root` is the hull's own root as `buildShipMesh` returned it, with no
- * transform applied. Its box centre is the hull frame's origin — the table's
- * positions are measured from the envelope's centre (`hull.ts`), and the mesh
+ * `root` may already be placed: its pose and parent are set aside during
+ * measurement and restored afterwards. Its box centre is the hull frame's
+ * origin — the table's positions are measured from the envelope's centre
+ * (`hull.ts`), and the mesh
  * origin is not that centre on every hull.
  */
 export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
@@ -208,6 +209,29 @@ function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
 }
 
 function* measureThroatSteps(
+	root: THREE.Object3D,
+	id: HullId,
+): Generator<void, Throat[]> {
+	const parent = root.parent;
+	const position = root.position.clone();
+	const quaternion = root.quaternion.clone();
+	const scale = root.scale.clone();
+	root.removeFromParent();
+	root.position.set(0, 0, 0);
+	root.quaternion.identity();
+	root.scale.set(1, 1, 1);
+	try {
+		return yield* measureUnplacedThroatSteps(root, id);
+	} finally {
+		root.position.copy(position);
+		root.quaternion.copy(quaternion);
+		root.scale.copy(scale);
+		parent?.add(root);
+		root.updateWorldMatrix(true, true);
+	}
+}
+
+function* measureUnplacedThroatSteps(
 	root: THREE.Object3D,
 	id: HullId,
 ): Generator<void, Throat[]> {
@@ -414,7 +438,7 @@ function material(): THREE.ShaderMaterial {
 	return plumeMaterial;
 }
 
-/** Build the plume set for a hull whose root `buildShipMesh` just returned. */
+/** Build plumes in the hull's local frame, even if its root is already placed. */
 export function buildVentPlumes(root: THREE.Object3D, id: HullId): VentPlumes {
 	const throats = ventThroats(root, id);
 	const count = throats.length * PER_THROAT;

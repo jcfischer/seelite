@@ -57,7 +57,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-model-queue.mjs",
-			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot.",
+			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot; reads miner drive glow, main plume and attitude plume pixels before and after the background Longwall install.",
 			[
 				"background loading",
 				"model queue",

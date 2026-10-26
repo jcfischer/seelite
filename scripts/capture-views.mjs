@@ -1139,6 +1139,24 @@ const PLACERS = {
 			: "no glass this frame";
 		return `${state.hull} at ${state.speedOverCap.toFixed(2)}× the cap, spinning · ${state.lit.length} vents firing · ${pulse}`;
 	},
+	"miner-vents": async (page, shot) => {
+		worldWritten = true;
+		const state = await page.evaluate(holdVentState, {
+			overCap: 0,
+			spin: 2.5,
+			steps: 6,
+		});
+		await page.evaluate((yaw) => {
+			window.__seelite.chaseYaw = yaw;
+		}, shot.orbit);
+		if (
+			state.hull !== "miner" ||
+			!state.lit.includes("main") ||
+			!state.cue?.angular
+		)
+			throw new Error(`miner vents placer: ${JSON.stringify(state)}`);
+		return `miner · main drive and attitude vents firing · ${state.lit.length} slots`;
+	},
 	/**
 	 * #647's cruise turn: a real cruise leg, the hull spinning past its yaw
 	 * envelope with the assist on, flown by the game's own `step` and held.

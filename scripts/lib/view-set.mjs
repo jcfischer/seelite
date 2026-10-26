@@ -122,6 +122,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1094: "the miner drive glow and firing vent plumes on the installed Longwall",
 	1034: "the authored Lance interceptor in the game's chase camera",
 	1073: "the Assembly's authored blocks placed by its own seeded plan",
 	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
@@ -299,6 +300,7 @@ export const SHOT_KINDS = Object.freeze([
 	"shipyard-tab",
 	"docking-notice",
 	"vents",
+	"miner-vents",
 	"cruise-turn",
 	"npc-vents",
 ]);
@@ -1207,6 +1209,12 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "miner-vent-plumes",
+		covers: [1094],
+		what: "The installed Longwall in chase from its flank: throttle drives both aft nozzles while the assist brakes a yaw and roll, showing drive glow and the firing attitude vents.",
+		shot: { kind: "miner-vents", hull: "miner", view: "chase", orbit: 0.9 },
+	},
+	{
 		name: "vent-cue-cockpit",
 		covers: [621],
 		what: "Cockpit, the same state held at the pulse's trough: the prograde marker (the green ring) and the nose cross dimmed in their own tones while the assist cannot meet the speed or the spin. The retrograde marker pulses too, but it is behind the camera here.",
@@ -1801,6 +1809,8 @@ const SHOT_REQUIREMENTS = {
 		Number.isInteger(s.steps) &&
 		s.steps > 0 &&
 		(s.orbit === undefined || finite(s.orbit)),
+	"miner-vents": (s) =>
+		s.hull === "miner" && s.view === "chase" && finite(s.orbit),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||

@@ -2441,7 +2441,7 @@
   },
   "src/npc-plumes.ts": {
     "seelite/no-comments": {
-      "count": 7
+      "count": 6
     }
   },
   "src/occlusion-mesh.ts": {
