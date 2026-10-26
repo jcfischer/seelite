@@ -143,6 +143,15 @@ describe("the bands", () => {
 		expect(reliefPathFor(clear, "four-tap")).toBe("screen-space");
 	});
 
+	test("inside the upper band, a full-detail path holds and screen-space does not rise", () => {
+		const inBand =
+			(SCREEN_SPACE_BELOW_PX / RELIEF_BAND_HYSTERESIS + SCREEN_SPACE_BELOW_PX) /
+			2;
+		expect(reliefPathFor(inBand, "screen-space")).toBe("screen-space");
+		expect(reliefPathFor(inBand, "four-tap")).toBe("four-tap");
+		expect(reliefPathFor(inBand, "analytic-gradient")).toBe("four-tap");
+	});
+
 	test("the lower threshold has the same band", () => {
 		const up = RELIEF_OFF_BELOW_PX * 1.02;
 		expect(reliefPathFor(up, "none")).toBe("screen-space");
