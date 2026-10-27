@@ -87,6 +87,25 @@
  * and it can still read zero for a cell that stalled less than an earlier one
  * — a real limit of the figure, stated rather than left for a reader to find.
  *
+ * ## `--close-detail` (node #758)
+ *
+ * Prices the close-detail band of node #720 on terran, at 2, 1.6, 1.5 and 1.2
+ * radii, with the arms `CLOSE_DETAIL_ARMS` names: band off against the interim
+ * cap and a cap ladder, half-res against full-res ground, screen-space against
+ * analytic-gradient relief, and clouds on their own footprint against the
+ * ground's. It prices the view's native terran body with its own weather shell
+ * (default view `planet-terminator`), pins the subject's relief path, and reads
+ * every arm's state back from the page before it accepts the cell.
+ *
+ * Cells are not nested. The whole arm-by-radius set is shuffled from a printed
+ * seed (`--seed`) with no arm twice in a row, and the sweep is meant to be run
+ * twice, with `--label` naming each run's file; `scripts/report-close-detail-cost.mjs`
+ * joins them. A 200-radius column rides along as the run's own invariant. Every
+ * row names renderer, pixel ratio, build SHA and lane, and the lane must be the
+ * GPU lane (`SEELITE_PROBE_RENDERER=hardware`).
+ *
+ *   SEELITE_PROBE_RENDERER=hardware node scripts/measure-planet-cost.mjs --close-detail --ratios 1 --seed 20261027 --label sweep1
+ *
  * ## What it writes
  *
  * A table to stdout, and the same rows as JSON under `view-set/` — gitignored,
@@ -96,17 +115,30 @@
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
 import { mkdir, writeFile } from "node:fs/promises";
+import { loadavg } from "node:os";
 import { join } from "node:path";
 import {
+	CLOSE_DETAIL_ARMS,
+	CLOSE_DETAIL_RADII,
 	RADII,
+	armDelta,
+	armLandedRefusal,
+	buildShaOf,
+	closeDetailArmsRefusal,
+	controlPairGap,
 	farColumnVerdict,
 	finite,
 	flagExcursions,
+	identityLine,
+	laneOf,
 	narrow,
 	parseFpsReadout,
 	radiiRefusal,
+	stampRows,
+	sweepOrder,
 	vsyncRefusal,
 } from "./lib/planet-cost.mjs";
+import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { GAME_TIME_S, SEED, VIEWPORT, VIEWS } from "./lib/view-set.mjs";
@@ -150,9 +182,12 @@ const OUT = "view-set";
  *
  *   node scripts/measure-planet-cost.mjs --view ringed-giant --classes iceGiant
  */
+const CLOSE_DETAIL = process.argv.includes("--close-detail");
 const PRICED_VIEW = process.argv.includes("--view")
 	? (process.argv[process.argv.indexOf("--view") + 1] ?? "")
-	: "planet-fill";
+	: CLOSE_DETAIL
+		? "planet-terminator"
+		: "planet-fill";
 const priced = VIEWS.find((v) => v.name === PRICED_VIEW);
 if (!priced)
 	throw new Error(
@@ -168,17 +203,6 @@ const SUBJECT = priced.shot.body;
 const SUN_ANGLE_DEG = priced.shot.sunAngleDeg;
 /** The world the priced view is framed in — its own, or the fixture's. */
 const PRICED_SEED = priced.shot.seed ?? SEED;
-
-/**
- * The two drawing-buffer scales, as two runs.
- *
- * `measure-light-cost.mjs` argues the case for 2: the fill-rate-bound terms are
- * paid per fragment, and at the default 1 the buffer is a quarter of a retina
- * one. A planet surface is *entirely* a fill-rate term, so the ratio between
- * these two runs is close to the whole story of what it costs — which is why
- * both are swept here rather than one being picked.
- */
-const PIXEL_RATIOS = [1, 2];
 
 /**
  * `--decompose`: price the ladder instead of the class table.
@@ -226,6 +250,29 @@ const listArg = (name) => {
 		throw new Error(`--${name} requires a comma-separated value`);
 	return value.split(",").map((v) => v.trim());
 };
+/**
+ * The two drawing-buffer scales, as two runs.
+ *
+ * `measure-light-cost.mjs` argues the case for 2: the fill-rate-bound terms are
+ * paid per fragment, and at the default 1 the buffer is a quarter of a retina
+ * one. A planet surface is *entirely* a fill-rate term, so the ratio between
+ * these two runs is close to the whole story of what it costs — which is why
+ * both are swept here rather than one being picked. `--ratios` narrows to one,
+ * which the close-detail sweep uses to keep each invocation inside a foreground
+ * command's time limit.
+ */
+const PIXEL_RATIOS = (listArg("ratios") ?? ["1", "2"]).map(Number);
+if (PIXEL_RATIOS.some((r) => ![1, 2].includes(r)))
+	throw new Error(
+		"--ratios names 1 and 2, the two drawing-buffer scales swept",
+	);
+const scalarArg = (name, fallback) => {
+	const list = listArg(name);
+	return list ? list[0] : fallback;
+};
+const ORDER_SEED = Number(scalarArg("seed", "20261027"));
+const RUN_LABEL = scalarArg("label", "");
+const ONLY_ARMS = listArg("arms");
 const ONLY_CLASSES = listArg("classes");
 const ONLY_RADII = listArg("radii")?.map(Number);
 const ONLY_RELIEF = listArg("relief");
@@ -417,8 +464,26 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 // four minutes in would waste four minutes.
 const buried = radiiRefusal(RADII);
 if (buried) throw new Error(buried);
+const LANE = CLOSE_DETAIL ? laneOf(process.env) : null;
+if (CLOSE_DETAIL && !ONLY_ARMS) {
+	const armsRefusal = closeDetailArmsRefusal(CLOSE_DETAIL_ARMS);
+	if (armsRefusal) throw new Error(armsRefusal);
+}
+if (CLOSE_DETAIL && (DECOMPOSE || ONLY_CLASSES || ONLY_RELIEF))
+	throw new Error(
+		"--close-detail prices terran with its own arms; --decompose, --classes and --relief belong to the other modes",
+	);
 
 const origin = await guardedOrigin(ORIGIN);
+const HOST_LOAD = loadavg()
+	.map((v) => v.toFixed(2))
+	.join(" / ");
+
+const declaredBuild = async () => {
+	const response = await fetch(`${origin}${TREE_ENDPOINT}`);
+	return buildShaOf(await response.json());
+};
+const BUILD_SHA = CLOSE_DETAIL ? await declaredBuild() : null;
 
 /**
  * One run at one pixel ratio: every class at every apparent size on both relief
@@ -440,6 +505,8 @@ async function run(pixelRatio) {
 	let renderer = "";
 	let controlBefore;
 	let controlAfter;
+	let unpinnedAtRadii = [];
+	let sweepSeq = [];
 	const browser = await launchChromium({
 		headless: false,
 		// The two flags the whole measurement rests on. Without them the meter
@@ -720,6 +787,137 @@ async function run(pixelRatio) {
 			return sampleHere(label, { radii, arm });
 		};
 
+		const installCloseDetail = async () =>
+			page.evaluate(async (id) => {
+				const g = window.__seelite;
+				const v = g.bodyVisuals.get(id);
+				if (!v) throw new Error(`no body visual for ${id}`);
+				const cd = {
+					cap: null,
+					cloudAtGround: false,
+					groundAngles: [],
+					cloudRatio: 1,
+				};
+				window.__closeDetail = cd;
+				const setQuality = v.setDetailQuality;
+				v.setDetailQuality = (quality) => {
+					if (cd.cap === null) setQuality.call(v, quality);
+					else
+						v.uniforms.extraOctaveCap.value =
+							v.surfaceClass() === "terran" ? cd.cap : 0;
+				};
+				const ground = v.surfaceMesh;
+				const groundDraw = ground.onBeforeRender;
+				ground.onBeforeRender = function (...args) {
+					groundDraw.apply(this, args);
+					cd.groundAngles.push(v.uniforms.surfacePixelAngle.value);
+					if (cd.groundAngles.length > 8) cd.groundAngles.shift();
+				};
+				const cloud = v.group.children.find(
+					(c) => c.userData.shell === "cloud",
+				);
+				if (cloud) {
+					const cloudDraw = cloud.onBeforeRender;
+					cloud.onBeforeRender = function (...args) {
+						cloudDraw.apply(this, args);
+						const own = v.uniforms.cloudPixelAngle.value;
+						const halfResGround =
+							ground.material?.uniforms?.lowRes !== undefined;
+						if (cd.cloudAtGround && halfResGround) {
+							const coarsest = Math.max(...cd.groundAngles.slice(-2));
+							v.uniforms.cloudPixelAngle.value = coarsest;
+							cd.cloudRatio = coarsest / own;
+						} else cd.cloudRatio = 1;
+					};
+				}
+			}, SUBJECT);
+
+		const applyArm = async (arm) => {
+			await page.evaluate(
+				([id, spec]) => {
+					const g = window.__seelite;
+					const cd = window.__closeDetail;
+					cd.cap = spec.cap === "shipped" ? null : spec.cap;
+					cd.cloudAtGround = spec.clouds === "at-ground";
+					cd.groundAngles.length = 0;
+					g.setPlanetHalfResAllowed(spec.halfRes);
+					g.bodyVisuals.get(id).setSurfacePath(spec.relief);
+				},
+				[SUBJECT, arm],
+			);
+		};
+
+		const readArmState = () =>
+			page.evaluate(async (id) => {
+				const g = window.__seelite;
+				const v = g.bodyVisuals.get(id);
+				const cd = window.__closeDetail;
+				const { planetDetailCap } = await import("/src/planet-footprint.ts");
+				const cloud = v.group.children.find(
+					(c) => c.userData.shell === "cloud",
+				);
+				const half = g.planetHalfResState();
+				const angles = cd.groundAngles.slice(-4);
+				return {
+					quality: g.settings.value.quality,
+					interimCap: planetDetailCap("high", "terran"),
+					groundCap: v.uniforms.extraOctaveCap.value,
+					cloudCap: cloud?.material.uniforms.extraOctaveCap.value ?? Number.NaN,
+					halfResEngaged: half.engaged,
+					surfacePath: v.surfacePath(),
+					hasCloudShell: Boolean(cloud),
+					cloudAngleRatio: cd.cloudRatio,
+					halfResRatio: angles.length
+						? Math.max(...angles) / Math.min(...angles)
+						: Number.NaN,
+					footprintProgram:
+						v.surfaceMesh.material.fragmentShader.includes("terrainFootprint"),
+				};
+			}, SUBJECT);
+
+		const closeArms = narrow(
+			CLOSE_DETAIL_ARMS.map((a) => a.name),
+			ONLY_ARMS,
+			"arms",
+		).map((name) => CLOSE_DETAIL_ARMS.find((a) => a.name === name));
+		const closeRadii = narrow([...CLOSE_DETAIL_RADII], ONLY_RADII, "radii");
+
+		const closeCell = async (armName, radii) => {
+			const arm = CLOSE_DETAIL_ARMS.find((a) => a.name === armName);
+			const label = `${arm.name} at ${radii} radii, ratio ${pixelRatio}`;
+			await place(radii);
+			await applyArm(arm);
+			const row = await sampleHere(label, { radii, arm: arm.name });
+			if (!CLOSE_DETAIL_RADII.includes(radii)) return row;
+			const seen = await readArmState();
+			const refusal = armLandedRefusal(arm, seen);
+			if (refusal) throw new Error(`${label}: ${refusal}`);
+			return { ...row, footprintProgram: seen.footprintProgram };
+		};
+
+		const closeDetailPrelude = async () => {
+			await installCloseDetail();
+			const unpinned = [];
+			for (const radii of closeRadii) {
+				await place(radii);
+				await page.waitForTimeout(2000);
+				const seen = await readArmState();
+				unpinned.push({
+					radii,
+					surfacePath: seen.surfacePath,
+					halfResEngaged: seen.halfResEngaged,
+					groundCap: seen.groundCap,
+					footprintProgram: seen.footprintProgram,
+				});
+			}
+			for (const arm of closeArms) {
+				await place(closeRadii[closeRadii.length - 1]);
+				await applyArm(arm);
+				await page.waitForTimeout(2000);
+			}
+			return unpinned;
+		};
+
 		/**
 		 * **The drift control, and why a sweep this long needs one.**
 		 *
@@ -757,14 +955,24 @@ async function run(pixelRatio) {
 		// The control is the ladder's own denominator in decompose mode, because
 		// `CONTROL` forces a class and this mode deliberately does not force one.
 		// Same cell at both ends either way: that is what makes it a control.
-		const control = DECOMPOSE
-			? () => armCell("full", RADII[0])
-			: () => cell(...CONTROL);
+		const control = CLOSE_DETAIL
+			? () => closeCell("interim", RADII[0])
+			: DECOMPOSE
+				? () => armCell("full", RADII[0])
+				: () => cell(...CONTROL);
+
+		if (CLOSE_DETAIL) {
+			unpinnedAtRadii = await closeDetailPrelude();
+			sweepSeq = sweepOrder(ORDER_SEED, closeArms, [RADII[0], ...closeRadii]);
+		}
 
 		controlBefore = await control();
 
 		rows = [];
-		if (DECOMPOSE) {
+		if (CLOSE_DETAIL) {
+			for (const [seq, c] of sweepSeq.entries())
+				rows.push({ ...(await closeCell(c.arm, c.radii)), seq });
+		} else if (DECOMPOSE) {
 			// Arm outermost, radius innermost: an arm change recompiles (relief and
 			// the ablate level are both a `#define` or a uniform every material
 			// carries) and a radius change is only a camera move.
@@ -784,7 +992,9 @@ async function run(pixelRatio) {
 		}
 
 		controlAfter = await control();
-		armPrices = arms;
+		armPrices = CLOSE_DETAIL
+			? closeArms.map((a) => ({ name: a.name, prices: a.prices }))
+			: arms;
 	} finally {
 		await browser.close();
 	}
@@ -798,6 +1008,8 @@ async function run(pixelRatio) {
 		controlAfter,
 		armPrices,
 		reliefPaths,
+		unpinnedAtRadii,
+		sweepSeq,
 	};
 }
 
@@ -831,8 +1043,29 @@ const verdicts = Object.fromEntries(
  */
 flagExcursions(rows, verdicts);
 const renderer = runs[0].renderer;
+if (CLOSE_DETAIL) {
+	const buildAfter = await declaredBuild();
+	if (buildAfter !== BUILD_SHA)
+		throw new Error(
+			`the server's build moved during the run: ${BUILD_SHA} at the start, ${buildAfter} at the end`,
+		);
+	for (const [i, r] of runs.entries())
+		r.rows = stampRows(r.rows, {
+			renderer,
+			pixelRatio: PIXEL_RATIOS[i],
+			buildSha: BUILD_SHA,
+			lane: LANE,
+		});
+}
 
 console.log(`  renderer: ${renderer}`);
+if (CLOSE_DETAIL) {
+	console.log(`  build: ${BUILD_SHA} | lane: ${LANE}`);
+	console.log(
+		`  mode: close-detail — node #758, terran ${SUBJECT}, arms shuffled from seed ${ORDER_SEED}, no arm twice in a row${RUN_LABEL ? `, run "${RUN_LABEL}"` : ""}`,
+	);
+	console.log(`  host load average at start: ${HOST_LOAD}`);
+}
 console.log(
 	DECOMPOSE
 		? `  mode: decomposition — #248's ablation ladder on the subject as the view set frames it, its own class and its own shells`
@@ -859,11 +1092,91 @@ for (const {
 	controlAfter,
 } of runs.map((r, i) => ({ pixelRatio: PIXEL_RATIOS[i], ...r }))) {
 	console.log(`  pixel ratio ${pixelRatio}`);
+	if (CLOSE_DETAIL)
+		console.log(
+			`    figure: ${identityLine({ renderer, pixelRatio, buildSha: BUILD_SHA, lane: LANE })}`,
+		);
 	const label = (row) =>
 		`${row.ms.toFixed(1)}±${row.spreadMs.toFixed(1)}${row.settled ? "" : "?"}${
 			row.staleSamples ? "!" : ""
 		}`.padStart(14);
-	if (DECOMPOSE) {
+	if (CLOSE_DETAIL) {
+		const armNames = CLOSE_DETAIL_ARMS.map((a) => a.name).filter((n) =>
+			runRows.some((r) => r.arm === n),
+		);
+		const columns = [RADII[0], ...CLOSE_DETAIL_RADII].filter((r) =>
+			runRows.some((row) => row.radii === r),
+		);
+		const at = (arm, radii) =>
+			runRows.find((r) => r.arm === arm && r.radii === radii);
+		console.log(
+			`      ${"arm".padEnd(18)}${columns.map((r) => `${r}r`.padStart(14)).join("")}`,
+		);
+		for (const arm of armNames)
+			console.log(
+				`      ${arm.padEnd(18)}${columns.map((r) => label(at(arm, r))).join("")}`,
+			);
+		const close = columns.filter((r) => r !== RADII[0]);
+		const deltaRow = (arm, versus) =>
+			close
+				.map((r) => {
+					const d = armDelta(runRows, arm, versus, r);
+					return `${d >= 0 ? "+" : ""}${d.toFixed(2)}`.padStart(14);
+				})
+				.join("");
+		const have = (n) => armNames.includes(n);
+		console.log("");
+		console.log(
+			`      ms against interim (the shipped frame), per arm — positive means the arm costs more`,
+		);
+		console.log(
+			`      ${"arm".padEnd(18)}${close.map((r) => `${r}r`.padStart(14)).join("")}`,
+		);
+		if (have("interim"))
+			for (const arm of armNames.filter((n) => n !== "interim"))
+				console.log(`      ${arm.padEnd(18)}${deltaRow(arm, "interim")}`);
+		console.log("");
+		console.log(
+			`      ms against cap-0 (the band off), per arm — what each cap costs over no band`,
+		);
+		console.log(
+			`      ${"arm".padEnd(18)}${close.map((r) => `${r}r`.padStart(14)).join("")}`,
+		);
+		if (have("cap-0"))
+			for (const arm of armNames.filter((n) => /^(interim|cap-[246])$/.test(n)))
+				console.log(`      ${arm.padEnd(18)}${deltaRow(arm, "cap-0")}`);
+		if (have("interim") && have("cap-6")) {
+			const gap = controlPairGap(runRows, close);
+			console.log("");
+			console.log(
+				`      control pair — interim minus cap-6, one state reached two ways, so the noise floor under every delta above: ${close
+					.map((r) => `${r}r ${gap[r] >= 0 ? "+" : ""}${gap[r].toFixed(2)}`)
+					.join(", ")} ms`,
+			);
+		}
+		console.log("");
+		console.log(
+			`      what the unpinned game draws at each radius: ${runs[
+				PIXEL_RATIOS.indexOf(pixelRatio)
+			].unpinnedAtRadii
+				.map(
+					(u) =>
+						`${u.radii}r ${u.surfacePath}${u.halfResEngaged ? " half-res" : " full-res"} cap ${u.groundCap}${u.footprintProgram ? " footprint-program" : " base-program"}`,
+				)
+				.join("; ")}`,
+		);
+		const noProgram = runRows.filter(
+			(r) => r.footprintProgram === false && r.arm !== "cap-0",
+		);
+		console.log(
+			noProgram.length
+				? `      cells drawn with the base program although their cap is not 0: ${noProgram.map(cellName).join(", ")}`
+				: `      every non-cap-0 cell inside the band drew the footprint program`,
+		);
+		console.log(
+			`      sweep order: ${runs[PIXEL_RATIOS.indexOf(pixelRatio)].sweepSeq.map((c) => `${c.arm}@${c.radii}`).join(" ")}`,
+		);
+	} else if (DECOMPOSE) {
 		const arms = [...new Set(runRows.map((r) => r.arm))];
 		const at = (arm, radii) =>
 			runRows.find((r) => r.arm === arm && r.radii === radii);
@@ -931,7 +1244,7 @@ for (const {
 	// exceptions and not as a column of zeroes.
 	/** How a cell is named in the lists below — by arm, or by class and path. */
 	const cellName = (r) =>
-		DECOMPOSE
+		DECOMPOSE || CLOSE_DETAIL
 			? `${r.arm}@${r.radii}r`
 			: `${r.surfaceClass}/${r.relief}@${r.radii}r`;
 
@@ -999,7 +1312,7 @@ for (const {
 		!controlBefore.staleSamples &&
 		!controlAfter.staleSamples;
 	console.log(
-		`    drift control (${DECOMPOSE ? `full at ${RADII[0]}r` : CONTROL_LABEL}): ${controlBefore.ms.toFixed(1)} ms before, ` +
+		`    drift control (${CLOSE_DETAIL ? `interim at ${RADII[0]}r` : DECOMPOSE ? `full at ${RADII[0]}r` : CONTROL_LABEL}): ${controlBefore.ms.toFixed(1)} ms before, ` +
 			`${controlAfter.ms.toFixed(1)} ms after — the machine moved ` +
 			`${drift >= 0 ? "+" : ""}${drift.toFixed(1)} ms end to end` +
 			(controlsHeld
@@ -1019,7 +1332,11 @@ await mkdir(OUT, { recursive: true });
 // of two runs must not silently compare a ladder against a class table.
 const path = join(
 	OUT,
-	DECOMPOSE ? "planet-decomposition.json" : "planet-cost.json",
+	CLOSE_DETAIL
+		? `planet-close-detail${RUN_LABEL ? `-${RUN_LABEL}` : ""}.json`
+		: DECOMPOSE
+			? "planet-decomposition.json"
+			: "planet-cost.json",
 );
 await writeFile(
 	path,
@@ -1031,7 +1348,26 @@ await writeFile(
 			seed: SEED,
 			subject: SUBJECT,
 			sunAngleDeg: SUN_ANGLE_DEG,
-			mode: DECOMPOSE ? "decomposition" : "class-sweep",
+			mode: CLOSE_DETAIL
+				? "close-detail"
+				: DECOMPOSE
+					? "decomposition"
+					: "class-sweep",
+			closeDetail: CLOSE_DETAIL
+				? {
+						buildSha: BUILD_SHA,
+						lane: LANE,
+						label: RUN_LABEL,
+						orderSeed: ORDER_SEED,
+						hostLoadAtStart: HOST_LOAD,
+						narrowed: Boolean(ONLY_ARMS || ONLY_RADII),
+						orders: runs.map((r, i) => ({
+							pixelRatio: PIXEL_RATIOS[i],
+							order: r.sweepSeq,
+							unpinned: r.unpinnedAtRadii,
+						})),
+					}
+				: null,
 			// The widest column's verdict, per run. `excursion: true`
 			// means that run had one the endpoint drift control cannot see. It
 			// is here and as `runExcursion` on every row of that run, because a
@@ -1059,7 +1395,11 @@ await writeFile(
 			// comparing two machines as much as two builds.
 			driftControl: runs.map((r, i) => ({
 				pixelRatio: PIXEL_RATIOS[i],
-				cell: DECOMPOSE ? `full at ${RADII[0]}r` : CONTROL_LABEL,
+				cell: CLOSE_DETAIL
+					? `interim at ${RADII[0]}r`
+					: DECOMPOSE
+						? `full at ${RADII[0]}r`
+						: CONTROL_LABEL,
 				beforeMs: r.controlBefore.ms,
 				afterMs: r.controlAfter.ms,
 				// Both ends, because a control that did not settle cannot qualify
