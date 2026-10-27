@@ -99,8 +99,9 @@
  *
  * Cells are not nested. The whole arm-by-radius set is shuffled from a printed
  * seed (`--seed`) with no arm twice in a row, and the sweep is meant to be run
- * twice, with `--label` naming each run's file; `scripts/report-close-detail-cost.mjs`
- * joins them. A 200-radius column rides along as the run's own invariant. Every
+ * twice, with `--label` naming each run's file and a different `--seed` for each;
+ * `node scripts/report-close-detail-cost.mjs <four files>` joins them, two sweeps
+ * per pixel ratio. A 200-radius column rides along as the run's own invariant. Every
  * row names renderer, pixel ratio, build SHA and lane, and the lane must be the
  * GPU lane (`SEELITE_PROBE_RENDERER=hardware`).
  *
@@ -378,9 +379,10 @@ const SETTLE_TIMEOUT_MS = 8000;
  * the least that can honestly be called a spread — and it is what
  * `one-sample-is-not-a-measurement` asks for. It is still small: the honest
  * reading of a wide range here is "re-run this cell", not "the middle one is
- * right".
+ * right". The close-detail sweep takes five: its deltas are fractions of a
+ * millisecond and a median of five moves less on one interrupted window.
  */
-const READINGS = 3;
+const READINGS = process.argv.includes("--close-detail") ? 5 : 3;
 
 /**
  * One fresh reading of the meter.
@@ -1016,6 +1018,21 @@ async function run(pixelRatio) {
 const runs = [];
 for (const ratio of PIXEL_RATIOS) runs.push(await run(ratio));
 
+if (CLOSE_DETAIL) {
+	const buildAfter = await declaredBuild();
+	if (buildAfter !== BUILD_SHA)
+		throw new Error(
+			`the server's build moved during the run: ${BUILD_SHA} at the start, ${buildAfter} at the end`,
+		);
+	for (const [i, r] of runs.entries())
+		r.rows = stampRows(r.rows, {
+			renderer: runs[0].renderer,
+			pixelRatio: PIXEL_RATIOS[i],
+			buildSha: BUILD_SHA,
+			lane: LANE,
+		});
+}
+
 const rows = runs.flatMap((r) => r.rows);
 
 /**
@@ -1043,20 +1060,6 @@ const verdicts = Object.fromEntries(
  */
 flagExcursions(rows, verdicts);
 const renderer = runs[0].renderer;
-if (CLOSE_DETAIL) {
-	const buildAfter = await declaredBuild();
-	if (buildAfter !== BUILD_SHA)
-		throw new Error(
-			`the server's build moved during the run: ${BUILD_SHA} at the start, ${buildAfter} at the end`,
-		);
-	for (const [i, r] of runs.entries())
-		r.rows = stampRows(r.rows, {
-			renderer,
-			pixelRatio: PIXEL_RATIOS[i],
-			buildSha: BUILD_SHA,
-			lane: LANE,
-		});
-}
 
 console.log(`  renderer: ${renderer}`);
 if (CLOSE_DETAIL) {
