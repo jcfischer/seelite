@@ -175,6 +175,7 @@ control pair and the repeats above carry the argument.
 
 ## Verification
 
+- The single full `npm test` run on this host: **7,064 pass, 0 fail** across 421 files (1,386 s).
 - `bun test tests/planet-cost.test.ts`: 67 pass. Typecheck, biome format and lint, ESLint and the comment
   baseline guard are clean; `check-launcher-wiring` is ok.
 - The instrument ran on the hardware lane as above. A reduced run first showed the stamped rows carry the
