@@ -198,3 +198,36 @@ describe("rock target cycle (near variant)", () => {
 		expect(cycleWithRocks(rocks, ordinary, "rock:b:9", 1)).toBe("rock:a:1");
 	});
 });
+
+describe("rock target (front variant)", () => {
+	const { frontRock } =
+		require("../src/rock-target") as typeof import("../src/rock-target");
+	const at = (id: string, x: number, y: number, z: number, radiusKm: number) =>
+		({
+			id,
+			pos: { x, y, z },
+			vel: { x: 0, y: 0, z: 0 },
+			distKm: Math.hypot(x, y, z) - radiusKm,
+			rock: { radiusKm },
+		}) as unknown as import("../src/rock-target").RockRef;
+	const ship = { x: 0, y: 0, z: 0 };
+	const ahead = { x: 0, y: 0, z: -1 };
+
+	test("takes the nearest rock the sightline meets, not the one nearest the ship", () => {
+		const big = at("big", 0, 0, -8, 1);
+		const side = at("side", 1.2, 0, -1.5, 0.2);
+		const behind = at("behind", 0, 0, -20, 3);
+		expect(frontRock([side, big, behind], ship, ahead)?.id).toBe("big");
+	});
+
+	test("with nothing on the sightline, the rock whose edge is nearest it inside 5 degrees", () => {
+		const off3 = at("off3", Math.tan((3 * Math.PI) / 180) * 5, 0, -5, 0.01);
+		const off9 = at("off9", Math.tan((9 * Math.PI) / 180) * 2, 0, -2, 0.01);
+		expect(frontRock([off9, off3], ship, ahead)?.id).toBe("off3");
+		expect(frontRock([off9], ship, ahead)).toBeNull();
+	});
+
+	test("a rock behind the ship is not in front", () => {
+		expect(frontRock([at("back", 0, 0, 5, 1)], ship, ahead)).toBeNull();
+	});
+});

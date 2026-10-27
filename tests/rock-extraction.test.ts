@@ -7,12 +7,14 @@ import {
 	EXTRACTION,
 	type Fragment,
 	fragmentAt,
+	inScoopWindow,
 	oreShare,
+	pullFragment,
 	releaseFragment,
 	stepCut,
 	stepFragments,
 } from "../src/rock-extraction";
-import { sub, v3 } from "../src/vec3";
+import { add, scale, sub, v3 } from "../src/vec3";
 
 const cutFor = (seconds: number, rate: number, share: number, left = 1e9) => {
 	let cut = beginCut();
@@ -199,5 +201,54 @@ describe("fragments", () => {
 		expect(offered).toBe(0);
 		expect(s.lost.map((f) => f.id)).toEqual(["old"]);
 		expect(s.kept).toHaveLength(1);
+	});
+});
+
+describe("the drift toward the ship", () => {
+	const ore = { family: "gold", grade: "rich" } as const;
+	const rock = { pos: v3(), vel: v3(30, 0, 0) };
+	const base: Fragment = {
+		id: "f",
+		rockId: "r",
+		ore,
+		offset: v3(0, 0, 0.5),
+		ejectVel: v3(0, 0, 0.01),
+		bornAt: 0,
+		expiresAt: 120,
+	};
+
+	test("does not move the fragment where it is now", () => {
+		const ship = { pos: v3(300, 1, 0.5), vel: v3(30, 0, 0) };
+		const r = { pos: v3(300, 0, 0), vel: rock.vel };
+		const before = fragmentAt(base, r, 10);
+		const after = fragmentAt(pullFragment(base, r, ship, 10, 0.1), r, 10);
+		expect(after.pos.x).toBeCloseTo(before.pos.x, 9);
+		expect(after.pos.y).toBeCloseTo(before.pos.y, 9);
+		expect(after.pos.z).toBeCloseTo(before.pos.z, 9);
+	});
+
+	test("brings it to a waiting ship at the drift speed", () => {
+		let f = base;
+		const dt = 0.1;
+		let reached = false;
+		for (let t = 0; t < 120 && !reached; t += dt) {
+			const r = { pos: scale(rock.vel, t), vel: rock.vel };
+			const s = {
+				pos: add(v3(0, 1.5, 0.5), scale(rock.vel, t)),
+				vel: rock.vel,
+			};
+			f = pullFragment(f, r, s, t, dt);
+			reached = inScoopWindow(fragmentAt(f, r, t), s);
+		}
+		expect(reached).toBe(true);
+		const v = f.ejectVel;
+		expect(Math.hypot(v.x, v.y, v.z)).toBeCloseTo(EXTRACTION.driftKms, 6);
+	});
+
+	test("waste and far fragments are not pulled", () => {
+		const ship = { pos: v3(0, 5, 0), vel: rock.vel };
+		const waste = { ...base, ore: null };
+		expect(pullFragment(waste, rock, ship, 1, 1)).toBe(waste);
+		expect(pullFragment(base, rock, ship, 1, 1)).toBe(base);
 	});
 });

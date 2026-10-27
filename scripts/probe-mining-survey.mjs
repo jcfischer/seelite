@@ -93,8 +93,8 @@ try {
 			return g.surveyState();
 		});
 		check(
-			"aim and decay are the defaults",
-			picked.pick === "aim" && picked.interrupt === "decay",
+			"front and decay are the defaults",
+			picked.pick === "front" && picked.interrupt === "decay",
 			`${picked.pick}/${picked.interrupt}`,
 		);
 		check(
@@ -193,6 +193,8 @@ try {
 				log: { ...g.miningLog },
 				ore: g.fragmentPlaces().filter((f) => f.ore).length,
 				drawn: g.fragmentRender,
+				impact: g.impactRender,
+				beam: g.miningBeam,
 				line: g.miningLineRender,
 			};
 		});
@@ -212,6 +214,14 @@ try {
 			JSON.stringify(cut.drawn),
 		);
 		await page.screenshot({ path: "probe-shots/mining-survey/fragments.png" });
+		check(
+			"the beam ends on the rock with a flare and sparks",
+			cut.beam?.hit?.rockId === setup.id &&
+				cut.impact !== null &&
+				cut.impact.r >= 3 &&
+				cut.impact.sparks > 0,
+			JSON.stringify(cut.impact),
+		);
 		const scoop = await page.evaluate(async () => {
 			const g = window.__seelite;
 			const dt = g.units.MAX_DT;

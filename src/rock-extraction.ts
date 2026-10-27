@@ -25,6 +25,9 @@ export const EXTRACTION = {
 	ejectSpread: 0.6,
 	lifetimeS: 120,
 	wasteLifetimeS: 20,
+	driftKms: 0.015,
+	driftPullKmsPerS: 0.004,
+	driftRangeKm: 3,
 	oreShareE: 0.5,
 	scoopRadiusKm: 0.05,
 	scoopSpeedKms: 0.25,
@@ -247,4 +250,37 @@ export function stepFragments(
 		out.kept.push(f);
 	}
 	return out;
+}
+
+/**
+ * Ore fragments near the ship are pulled toward it (the principal, 2026-10-27):
+ * the fragment's velocity relative to the ship turns toward `driftKms` along the
+ * line to the ship, changing by at most `driftPullKmsPerS` a second. The offset
+ * moves with the velocity change, so the fragment does not jump. Waste is not pulled.
+ */
+export function pullFragment(
+	f: Fragment,
+	rock: Anchor,
+	ship: Anchor,
+	now: number,
+	dt: number,
+): Fragment {
+	if (!f.ore) return f;
+	const at = fragmentAt(f, rock, now);
+	const to = sub(ship.pos, at.pos);
+	if (lengthSq(to) > EXTRACTION.driftRangeKm * EXTRACTION.driftRangeKm)
+		return f;
+	const want = add(
+		sub(ship.vel, rock.vel),
+		scale(normalizeOr(to, v3()), EXTRACTION.driftKms),
+	);
+	const dv = sub(want, f.ejectVel);
+	const most = EXTRACTION.driftPullKmsPerS * dt;
+	const step =
+		lengthSq(dv) <= most * most ? dv : scale(normalizeOr(dv, v3()), most);
+	return {
+		...f,
+		ejectVel: add(f.ejectVel, step),
+		offset: sub(f.offset, scale(step, now - f.bornAt)),
+	};
 }

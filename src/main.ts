@@ -32,14 +32,17 @@ import {
 	type Fragment,
 	fragmentAt,
 	oreShare,
+	pullFragment,
 	releaseFragment,
 	stepCut,
 	stepFragments,
 } from "./rock-extraction";
+import { impactRadiusPx, miningBeamStrokes } from "./mining-beam";
 import {
 	aimedRock,
 	cycleWithRocks,
 	type FieldRocks,
+	frontRock,
 	isRockTargetId,
 	nearRocks,
 	ROCK_CYCLE_MAX,
@@ -1441,14 +1444,14 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 
-/** Node #920's prototype switches: `?mining=1`, `?rock-pick=near|aim`, `?survey-interrupt=reset|hold|decay`, `?survey-range=`, `?survey-dwell=`. */
+/** Node #920's prototype switches: `?mining=1`, `?rock-pick=front|near|aim`, `?survey-interrupt=reset|hold|decay`, `?survey-range=`, `?survey-dwell=`. */
 const MINING_QUERY = new URLSearchParams(window.location.search);
 const MINING_ON = MINING_QUERY.get("mining") === "1";
 const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
 	MINING_QUERY.get("rock-pick") ?? "",
 )
 	? (MINING_QUERY.get("rock-pick") as RockPick)
-	: "aim";
+	: "front";
 const SURVEY_INTERRUPT: SurveyInterrupt = (
 	SURVEY_INTERRUPTS as readonly string[]
 ).includes(MINING_QUERY.get("survey-interrupt") ?? "")
@@ -1467,6 +1470,11 @@ const SURVEY_GRADE_SHORT = {
 } as const;
 const oreCargoName = (family: OreFamily, grade: OreGrade): string =>
 	`${ORE_FAMILY_NAME[family]} ${SURVEY_GRADE_SHORT[grade]}`;
+const SPARK_RATE_PER_S = 70;
+const SPARK_KMS = 0.12;
+const SPARK_LIFE_S = 0.6;
+const SPARK_TRAIL_S = 0.05;
+const HEAT_GLOW_S = 4;
 const FRAGMENT_CSS: Readonly<Record<OreFamily, string>> = {
 	silicate: "rgba(214, 196, 160, .95)",
 	metallic: "rgba(150, 190, 230, .95)",
@@ -9395,6 +9403,21 @@ class Game {
 			this.world.ship.pos,
 			this.world.gameTime,
 		);
+		if (ROCK_PICK === "front") {
+			const front = frontRock(
+				nearRocks(
+					this.fieldRockSets(),
+					this.world.ship.pos,
+					this.world.gameTime,
+					ROCK_DROP_KM,
+				),
+				this.world.ship.pos,
+				this.weaponAim(),
+			);
+			if (!front) return false;
+			this.targetId = front.id;
+			return true;
+		}
 		if (near.length === 0) return false;
 		if (ROCK_PICK === "aim") {
 			const aimed = aimedRock(near, this.world.ship.pos, this.weaponAim());
@@ -9509,6 +9532,22 @@ class Game {
 	}
 
 	private gunFiredNow = false;
+	/** Node #920: this step's mining beam, its end on a rock or at full range. */
+	miningBeam: {
+		hit: { rockId: string; offset: Vec3 } | null;
+		distKm: number;
+	} | null = null;
+	private sparks: {
+		rockId: string;
+		offset: Vec3;
+		vel: Vec3;
+		bornAt: number;
+	}[] = [];
+	private sparkDebt = 0;
+	private heatSpots = new Map<string, { offset: Vec3; at: number }>();
+	/** Node #920: the impact as painted, for the probe. */
+	impactRender: { x: number; y: number; r: number; sparks: number } | null =
+		null;
 	private cut: Cut = beginCut();
 	/** Node #920: fragments in flight, world frame. */
 	fragments: Fragment[] = [];
@@ -9568,7 +9607,10 @@ class Game {
 		this.miningNotice.left = Math.max(0, this.miningNotice.left - dt);
 		const fired = this.gunFiredNow ? this.firedExtraction() : null;
 		this.miningLog.cutRockId = null;
+		this.miningBeam = null;
+		this.sparks = this.sparks.filter((k) => now - k.bornAt < SPARK_LIFE_S);
 		if (fired && fired.rate > 0) {
+			this.miningBeam = { hit: null, distKm: PLAYER_LASER_RANGE_KM };
 			const near = nearRocks(
 				this.fieldRockSets(),
 				this.world.ship.pos,
@@ -9590,6 +9632,27 @@ class Game {
 			const ref = hit && near.find((r) => r.id === hit.id);
 			if (hit && ref) {
 				this.miningLog.cutRockId = ref.id;
+				const offset = sub(hit.point, ref.pos);
+				this.miningBeam = {
+					hit: { rockId: ref.id, offset },
+					distKm: hit.distKm,
+				};
+				this.heatSpots.set(ref.id, { offset, at: now });
+				this.sparkDebt += SPARK_RATE_PER_S * dt;
+				for (; this.sparkDebt >= 1; this.sparkDebt--) {
+					const n = hit.normal;
+					const r = () => Math.random() * 2 - 1;
+					const dir = normalizeOr(
+						{ x: n.x + r() * 0.8, y: n.y + r() * 0.8, z: n.z + r() * 0.8 },
+						n,
+					);
+					this.sparks.push({
+						rockId: ref.id,
+						offset,
+						vel: scale(dir, SPARK_KMS * (0.4 + Math.random() * 0.6)),
+						bornAt: now,
+					});
+				}
 				const contents = this.rockContentsOf(ref);
 				const row = this.rockDepositRow(ref);
 				const taken =
@@ -9627,6 +9690,10 @@ class Game {
 			}
 		}
 		if (this.fragments.length === 0) return;
+		this.fragments = this.fragments.map((f) => {
+			const rock = this.fragmentRock(f.rockId);
+			return rock ? pullFragment(f, rock, this.world.ship, now, dt) : f;
+		});
 		const scooped = stepFragments(
 			this.fragments,
 			this.world.ship,
@@ -9669,6 +9736,111 @@ class Game {
 			);
 		if (scooped.lost.length)
 			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
+	}
+
+	/** Where the mining beam ends on the frame: its rock point, or the beam's aim at full range. */
+	private miningBeamEnd(
+		camPos: Vec3,
+		beam: NonNullable<Game["miningBeam"]>,
+	): FramePoint | null {
+		if (!beam.hit) return this.onFrame(this.beamAim());
+		const rock = this.fragmentRock(beam.hit.rockId);
+		return rock
+			? this.onFrame(directionTo(camPos, add(rock.pos, beam.hit.offset)))
+			: null;
+	}
+
+	/**
+	 * Node #920: the cut as the pilot sees it: a flickering flare at the beam's
+	 * end sized by its distance, sparks thrown off the surface, and a glow that
+	 * stays on the cut spot for a few seconds after the beam stops.
+	 */
+	private drawImpact(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+		h: number,
+	) {
+		const now = this.world.gameTime;
+		const pxPerRadian = h / ((this.nearCamera.fov * Math.PI) / 180);
+		const at = (rockId: string, offset: Vec3) => {
+			const rock = this.fragmentRock(rockId);
+			if (!rock) return null;
+			const pos = add(rock.pos, offset);
+			const to = sub(pos, camPos);
+			const p = place(normalizeOr(to, { x: 0, y: 0, z: -1 }));
+			return p?.on ? { ...p, d: length(to), rock, pos } : null;
+		};
+		ctx.save();
+		ctx.globalCompositeOperation = "lighter";
+		for (const [rockId, spot] of this.heatSpots) {
+			const age = now - spot.at;
+			if (age > HEAT_GLOW_S) {
+				this.heatSpots.delete(rockId);
+				continue;
+			}
+			const p = at(rockId, spot.offset);
+			if (!p) continue;
+			const r = impactRadiusPx(p.d, pxPerRadian) * 0.8;
+			const a = 0.55 * (1 - age / HEAT_GLOW_S);
+			const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+			g.addColorStop(0, `rgba(255, 120, 30, ${a})`);
+			g.addColorStop(1, "rgba(255, 60, 0, 0)");
+			ctx.fillStyle = g;
+			ctx.beginPath();
+			ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+			ctx.fill();
+		}
+		let drawn = 0;
+		ctx.lineCap = "round";
+		for (const k of this.sparks) {
+			const age = now - k.bornAt;
+			const rock = this.fragmentRock(k.rockId);
+			if (!rock) continue;
+			const head = add(rock.pos, add(k.offset, scale(k.vel, age)));
+			const tail = add(
+				rock.pos,
+				add(k.offset, scale(k.vel, Math.max(0, age - SPARK_TRAIL_S))),
+			);
+			const a = place(normalizeOr(sub(head, camPos), { x: 0, y: 0, z: -1 }));
+			const b = place(normalizeOr(sub(tail, camPos), { x: 0, y: 0, z: -1 }));
+			if (!a?.on || !b) continue;
+			const life = 1 - age / SPARK_LIFE_S;
+			ctx.strokeStyle = `rgba(255, ${Math.round(150 + 90 * life)}, ${Math.round(60 * life)}, ${life})`;
+			ctx.lineWidth = 1 + life;
+			ctx.beginPath();
+			ctx.moveTo(b.x, b.y);
+			ctx.lineTo(a.x, a.y);
+			ctx.stroke();
+			drawn++;
+		}
+		const beam = this.miningBeam;
+		if (beam?.hit) {
+			const p = at(beam.hit.rockId, beam.hit.offset);
+			if (p) {
+				const flicker = 0.75 + 0.25 * Math.random();
+				const r = impactRadiusPx(p.d, pxPerRadian) * flicker;
+				const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+				g.addColorStop(0, "rgba(255, 255, 235, 1)");
+				g.addColorStop(0.25, "rgba(255, 200, 90, .9)");
+				g.addColorStop(1, "rgba(255, 90, 10, 0)");
+				ctx.fillStyle = g;
+				ctx.beginPath();
+				ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.globalCompositeOperation = "source-over";
+				ctx.font = "11px monospace";
+				ctx.fillStyle = "rgba(255, 200, 120, .9)";
+				ctx.textAlign = "right";
+				ctx.fillText(
+					`CUTTING ${p.d < 1 ? `${Math.round(p.d * 1000)} M` : `${p.d.toFixed(1)} KM`}`,
+					p.x - r - 6,
+					p.y + 4,
+				);
+				this.impactRender = { x: p.x, y: p.y, r, sparks: drawn };
+			}
+		}
+		ctx.restore();
 	}
 
 	/** A fragment's rock pose now, or `null` past `ROCK_DROP_KM`. */
@@ -21768,7 +21940,9 @@ class Game {
 		this.cockpitRaiderBeam = null;
 		const raider = this.raiderFiring && this.raiderListed;
 		const rig = this.combatRig?.tracerStrokes(this.view) ?? NO_BEAM_STROKES;
-		const any = this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0;
+		const mining = MINING_ON ? this.miningBeam : null;
+		const any =
+			this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0 || !!mining;
 		if (!(this.view === "cockpit" && any && this.flightGlassShown())) {
 			// Nothing to draw: one call to disable the pass if it drew last
 			// frame, and no allocation on the frames between shots.
@@ -21778,7 +21952,17 @@ class Game {
 		}
 		const strokes = this.cockpitStrokes;
 		strokes.length = 0;
-		if (this.gunFeedback.tracerLeftS > 0)
+		const miningEnd = mining && this.miningBeamEnd(camPos, mining);
+		if (mining && miningEnd)
+			for (const stroke of miningBeamStrokes(
+				this.gunTracer.firedPorts,
+				miningEnd,
+				mining.distKm,
+				mining.hit !== null,
+				this.world.gameTime,
+			))
+				strokes.push(stroke);
+		else if (this.gunFeedback.tracerLeftS > 0)
 			for (const stroke of tracerStrokes(
 				this.gunTracer.firedPorts,
 				this.onFrame(this.beamAim()) ?? TRACER_AIM,
@@ -21946,7 +22130,9 @@ class Game {
 		};
 		this.deepCueRender = null;
 		this.fragmentRender = null;
+		this.impactRender = null;
 		if (MINING_ON) this.drawDeepDepositCue(ctx, camPos, place);
+		if (MINING_ON) this.drawImpact(ctx, camPos, place, h);
 		if (MINING_ON) this.drawFragments(ctx, camPos, place, w, h);
 
 		// The attitude reference: a short level line rolled to the system's

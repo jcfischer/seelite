@@ -7,8 +7,8 @@ import {
 	type FieldPlan,
 	type Rock,
 	rockPose,
-	rotateByQuat,
 	rockSpinAngle,
+	rotateByQuat,
 } from "./asteroid-field";
 import type { DisplayContact } from "./display-contact";
 import { spinQuat } from "./field-lod";
@@ -23,7 +23,10 @@ export const ROCK_AIM_DEG = 20;
 /** A selected rock farther than this is dropped as a target, km. */
 export const ROCK_DROP_KM = 40;
 
-export const ROCK_PICKS = ["near", "aim"] as const;
+/** Candidate: the front variant's cone when the sightline meets no rock, degrees. */
+export const ROCK_FRONT_DEG = 5;
+
+export const ROCK_PICKS = ["front", "near", "aim"] as const;
 export type RockPick = (typeof ROCK_PICKS)[number];
 
 export interface FieldRocks {
@@ -168,4 +171,33 @@ export function rockDirectionNow(
 	);
 	const out = rotateByQuat(ref.plan.rotation, spun);
 	return v3(out.x, out.y, out.z);
+}
+
+/**
+ * The rock in front (the principal, 2026-10-27): the nearest rock the sightline
+ * meets, else the rock whose edge is nearest the sightline within `maxDeg`.
+ */
+export function frontRock(
+	candidates: readonly RockRef[],
+	shipPos: Vec3,
+	aim: Vec3,
+	maxDeg: number = ROCK_FRONT_DEG,
+): RockRef | null {
+	let hit: RockRef | null = null;
+	let hitAlong = Number.POSITIVE_INFINITY;
+	for (const c of candidates) {
+		const ox = shipPos.x - c.pos.x;
+		const oy = shipPos.y - c.pos.y;
+		const oz = shipPos.z - c.pos.z;
+		const b = ox * aim.x + oy * aim.y + oz * aim.z;
+		const disc = b * b - (ox * ox + oy * oy + oz * oz - c.rock.radiusKm ** 2);
+		if (disc < 0) continue;
+		const along = Math.max(0, -b - Math.sqrt(disc));
+		if (-b + Math.sqrt(disc) < 0) continue;
+		if (along < hitAlong) {
+			hit = c;
+			hitAlong = along;
+		}
+	}
+	return hit ?? aimedRock(candidates, shipPos, aim, maxDeg);
 }
