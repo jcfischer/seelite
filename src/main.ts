@@ -51,6 +51,7 @@ import {
 	aimedRock,
 	cycleWithRocks,
 	type FieldRocks,
+	edgeAngleOff,
 	frontRock,
 	isRockTargetId,
 	nearRocks,
@@ -9489,19 +9490,11 @@ class Game {
 		if (this.triggerHeld()) return "FIRING";
 		if (ref.distKm > figures.rangeKm)
 			return `OUT OF RANGE ${figures.rangeKm.toFixed(1)} KM`;
-		const aim = this.weaponAim();
-		const to = sub(ref.pos, this.world.ship.pos);
-		const len = length(to);
-		const off =
-			len === 0
-				? 0
-				: Math.acos(
-						Math.min(1, (to.x * aim.x + to.y * aim.y + to.z * aim.z) / len),
-					);
-		const half = Math.asin(
-			Math.min(1, ref.rock.radiusKm / Math.max(len, 1e-9)),
-		);
-		if (off - half > (SURVEY.coneDeg * Math.PI) / 180) return "HOLD IN VIEW";
+		if (
+			edgeAngleOff(ref, this.world.ship.pos, this.weaponAim()) >
+			(SURVEY.coneDeg * Math.PI) / 180
+		)
+			return "HOLD IN VIEW";
 		return null;
 	}
 
@@ -9576,6 +9569,14 @@ class Game {
 				})),
 			],
 		};
+	}
+
+	private minedHold(): { usedT: number; capacityT: number } {
+		const hold = commanderHold(
+			this.commander,
+			entrustedTonnesAboard(this.requests),
+		);
+		return { usedT: hold.usedT + this.minedT, capacityT: hold.capacityT };
 	}
 
 	private get minedT(): number {
@@ -9723,11 +9724,8 @@ class Game {
 			now,
 			(f) => this.fragmentRock(f.rockId),
 			(f) => {
-				const hold = commanderHold(
-					this.commander,
-					entrustedTonnesAboard(this.requests),
-				);
-				if (hold.usedT + this.minedT + 1 > hold.capacityT) return "hold-full";
+				const hold = this.minedHold();
+				if (hold.usedT + 1 > hold.capacityT) return "hold-full";
 				if (this.condition.energy < EXTRACTION.scoopChargeE)
 					return "low-energy";
 				this.condition = {
@@ -9932,14 +9930,11 @@ class Game {
 				);
 			}
 		}
-		const hold = commanderHold(
-			this.commander,
-			entrustedTonnesAboard(this.requests),
-		);
+		const hold = this.minedHold();
 		const ore = this.fragments.filter((f) => f.ore).length;
 		ctx.textAlign = "center";
 		ctx.fillStyle = "rgba(255, 210, 140, .9)";
-		const line = `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT + this.minedT)}/${hold.capacityT} T`;
+		const line = `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`;
 		ctx.fillText(line, w / 2, h * 0.7);
 		if (this.miningNotice.left > 0)
 			ctx.fillText(this.miningNotice.text, w / 2, h * 0.7 - 16);

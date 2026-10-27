@@ -78,6 +78,24 @@ export function nearRocks(
 }
 
 /** The rock nearest the sightline within `maxDeg`, or `null`. */
+/** How far the sightline passes outside a rock's bounding sphere, radians; 0 when it meets it. */
+export function edgeAngleOff(
+	c: Pick<RockRef, "pos" | "rock">,
+	shipPos: Vec3,
+	aim: Vec3,
+): number {
+	const dx = c.pos.x - shipPos.x;
+	const dy = c.pos.y - shipPos.y;
+	const dz = c.pos.z - shipPos.z;
+	const len = Math.hypot(dx, dy, dz);
+	if (len === 0) return 0;
+	const cos = (dx * aim.x + dy * aim.y + dz * aim.z) / len;
+	return Math.max(
+		0,
+		Math.acos(Math.min(1, cos)) - Math.asin(Math.min(1, c.rock.radiusKm / len)),
+	);
+}
+
 export function aimedRock(
 	candidates: readonly RockRef[],
 	shipPos: Vec3,
@@ -87,17 +105,7 @@ export function aimedRock(
 	let best: RockRef | null = null;
 	let bestAngle = (maxDeg * Math.PI) / 180;
 	for (const c of candidates) {
-		const dx = c.pos.x - shipPos.x;
-		const dy = c.pos.y - shipPos.y;
-		const dz = c.pos.z - shipPos.z;
-		const len = Math.hypot(dx, dy, dz);
-		if (len === 0) return c;
-		const cos = (dx * aim.x + dy * aim.y + dz * aim.z) / len;
-		const angle = Math.max(
-			0,
-			Math.acos(Math.min(1, cos)) -
-				Math.asin(Math.min(1, c.rock.radiusKm / len)),
-		);
+		const angle = edgeAngleOff(c, shipPos, aim);
 		if (angle < bestAngle) {
 			best = c;
 			bestAngle = angle;

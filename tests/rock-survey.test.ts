@@ -251,3 +251,20 @@ describe("a rock's own frame", () => {
 			}
 	});
 });
+
+describe("the angle off a rock's edge", () => {
+	const { edgeAngleOff } =
+		require("../src/rock-target") as typeof import("../src/rock-target");
+	const rock = { pos: v3(0, 0, -10), rock: { radiusKm: 1 } } as Parameters<
+		typeof edgeAngleOff
+	>[0];
+
+	test("a sightline through the sphere is zero off", () => {
+		expect(edgeAngleOff(rock, v3(), v3(0, 0, -1))).toBe(0);
+	});
+
+	test("a sightline beside it is the angle to its edge", () => {
+		const off = edgeAngleOff(rock, v3(), v3(1, 0, 0));
+		expect(off).toBeCloseTo(Math.PI / 2 - Math.asin(0.1), 12);
+	});
+});
