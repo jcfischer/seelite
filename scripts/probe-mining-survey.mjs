@@ -72,6 +72,7 @@ try {
 			for (let i = 0; i < 2; i++)
 				await new Promise((r) => requestAnimationFrame(r));
 		};
+		window.__rockRadiusKm = best.radiusKm;
 		await window.__standOff(2);
 		return {
 			fields: g.fields.length,
@@ -222,6 +223,91 @@ try {
 				cut.impact.sparks > 0,
 			JSON.stringify(cut.impact),
 		);
+		const beside = await page.evaluate(async () => {
+			const g = window.__seelite;
+			const dt = g.units.MAX_DT;
+			const p = window.__rockPose();
+			const ship = g.world.ship.pos;
+			const to = {
+				x: p.pos.x - ship.x,
+				y: p.pos.y - ship.y,
+				z: p.pos.z - ship.z,
+			};
+			const d = Math.hypot(to.x, to.y, to.z);
+			const f = { x: to.x / d, y: to.y / d, z: to.z / d };
+			const a =
+				Math.abs(f.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+			const cross = (p, q) => ({
+				x: p.y * q.z - p.z * q.y,
+				y: p.z * q.x - p.x * q.z,
+				z: p.x * q.y - p.y * q.x,
+			});
+			const unit = (v) => {
+				const l = Math.hypot(v.x, v.y, v.z);
+				return { x: v.x / l, y: v.y / l, z: v.z / l };
+			};
+			const u = unit(cross(a, f));
+			const w = unit(cross(f, u));
+			const R = window.__rockRadiusKm;
+			const V = g.nearScene.position.constructor;
+			const tried = [];
+			g.keys.add(" ");
+			for (let k = 0; k < 24; k++) {
+				const th = (k / 24) * Math.PI * 2;
+				const off = 0.97 * R;
+				const aim = unit({
+					x: to.x + off * (Math.cos(th) * u.x + Math.sin(th) * w.x),
+					y: to.y + off * (Math.cos(th) * u.y + Math.sin(th) * w.y),
+					z: to.z + off * (Math.cos(th) * u.z + Math.sin(th) * w.z),
+				});
+				g.orientation.setFromUnitVectors(
+					new V(0, 0, -1),
+					new V(aim.x, aim.y, aim.z),
+				);
+				for (let i = 0; i < 3; i++) g.step(dt);
+				tried.push(g.miningBeam?.hit?.rockId ?? null);
+				if (g.miningBeam && !g.miningBeam.hit) {
+					for (let i = 0; i < 2; i++)
+						await new Promise((r) => requestAnimationFrame(r));
+					const out = { k, R, impact: g.impactRender, beam: g.miningBeam };
+					g.keys.delete(" ");
+					return out;
+				}
+			}
+			g.keys.delete(" ");
+			return { R, tried };
+		});
+		check(
+			"a beam inside the bounding sphere but clear of the surface makes no flare",
+			!!beside.beam && beside.beam.hit === null && beside.impact === null,
+			JSON.stringify(beside),
+		);
+		const chase = await page.evaluate(async () => {
+			const g = window.__seelite;
+			const dt = g.units.MAX_DT;
+			await window.__standOff(1);
+			g.view = "chase";
+			g.keys.add(" ");
+			for (let i = 0; i < 3; i++) g.step(dt);
+			for (let i = 0; i < 2; i++)
+				await new Promise((r) => requestAnimationFrame(r));
+			return {
+				segments: g.chaseMiningRender,
+				hit: g.miningBeam?.hit?.rockId ?? null,
+				impact: g.impactRender,
+			};
+		});
+		await page.screenshot({ path: "probe-shots/mining-survey/chase.png" });
+		await page.evaluate(() => {
+			const g = window.__seelite;
+			g.keys.delete(" ");
+			g.view = "cockpit";
+		});
+		check(
+			"chase view draws the mining beam to the cut",
+			chase.segments > 0 && chase.hit === setup.id && chase.impact !== null,
+			JSON.stringify(chase),
+		);
 		const scoop = await page.evaluate(async () => {
 			const g = window.__seelite;
 			const dt = g.units.MAX_DT;
@@ -233,6 +319,17 @@ try {
 			};
 			await visit(ore[0]);
 			const took = { ...g.miningLog, mined: { ...g.minedOre } };
+			g.rightTab = "Hold";
+			g.step(dt);
+			for (let i = 0; i < 2; i++)
+				await new Promise((r) => requestAnimationFrame(r));
+			const holdRows = [
+				...document.querySelectorAll("[data-live-hold-row]"),
+			].map((row) => ({
+				good: row.getAttribute("data-live-hold-row"),
+				amount: row.querySelector("[data-live-hold-amount]")?.textContent,
+				ore: /mined ore/.test(row.textContent ?? ""),
+			}));
 			const hold = g.commander;
 			g.minedOre = { "Prototype fill": 10000 };
 			if (ore[1]) await visit(ore[1]);
@@ -245,6 +342,7 @@ try {
 			for (let s = 0; s < 125; s += dt) g.step(dt);
 			return {
 				took,
+				holdRows,
 				full,
 				hasSecond: !!ore[1],
 				lost: g.miningLog.lost,
@@ -253,6 +351,11 @@ try {
 				hull: hold.hull,
 			};
 		});
+		check(
+			"the hold page lists the scooped ore",
+			scoop.holdRows.some((r) => r.ore && r.amount === "1 t"),
+			JSON.stringify(scoop.holdRows),
+		);
 		check(
 			"a fragment in the scoop window goes into the hold",
 			scoop.took.taken === 1 &&

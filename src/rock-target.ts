@@ -173,6 +173,15 @@ export function rockDirectionNow(
 	return v3(out.x, out.y, out.z);
 }
 
+/** The inverse of `rockDirectionNow`: a star-centric vector in the rock's own frame. */
+export function rockLocalVector(ref: RockRef, v: Vec3, gameTime: number): Vec3 {
+	const r = ref.plan.rotation;
+	const field = rotateByQuat({ x: -r.x, y: -r.y, z: -r.z, w: r.w }, v);
+	const q = spinQuat(ref.rock, rockSpinAngle(ref.rock, gameTime));
+	const out = rotateByQuat({ x: -q.x, y: -q.y, z: -q.z, w: q.w }, field);
+	return v3(out.x, out.y, out.z);
+}
+
 /**
  * The rock in front (the principal, 2026-10-27): the nearest rock the sightline
  * meets, else the rock whose edge is nearest the sightline within `maxDeg`.

@@ -60,7 +60,8 @@ export interface HoldLine {
 	 * next field on a consignment would have added a seventh.
 	 */
 	job?: HoldJob;
-	kind?: "fitting";
+	/** `ore`: node #920's prototype ore, held outside the commander's cargo. */
+	kind?: "fitting" | "ore";
 }
 
 /** Where a consignment has to end up, and which end applies. */

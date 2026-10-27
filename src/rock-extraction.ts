@@ -25,7 +25,7 @@ export const EXTRACTION = {
 	ejectSpread: 0.6,
 	lifetimeS: 120,
 	wasteLifetimeS: 20,
-	driftKms: 0.015,
+	driftKms: 0.03,
 	driftPullKmsPerS: 0.004,
 	driftRangeKm: 3,
 	oreShareE: 0.5,
@@ -101,11 +101,65 @@ export function debitSurface(
 	};
 }
 
+/** A rock's drawn surface: its frame's turn, and its radius along a unit direction as a share of `radiusKm`. */
+export interface RockShape {
+	toLocal(v: Vec3): Vec3;
+	toWorld(v: Vec3): Vec3;
+	radiusAt(unitDir: Vec3): number;
+}
 export interface BeamTarget {
 	id: string;
 	pos: Vec3;
 	vel: Vec3;
+	/** The bounding radius: no surface point lies outside it. */
 	radiusKm: number;
+	shape?: RockShape;
+}
+
+/** Samples along the beam's chord through the bounding sphere before the bisection. */
+export const SURFACE_STEPS = 128;
+
+function surfaceHit(
+	origin: Vec3,
+	dir: Vec3,
+	r: BeamTarget & { shape: RockShape },
+	t0: number,
+	t1: number,
+): { along: number; normal: Vec3 } | null {
+	const o = scale(r.shape.toLocal(sub(origin, r.pos)), 1 / r.radiusKm);
+	const d = scale(r.shape.toLocal(dir), 1 / r.radiusKm);
+	const gapAt = (p: Vec3) => {
+		const l = Math.hypot(p.x, p.y, p.z);
+		return l < 1e-9 ? -1 : l - r.shape.radiusAt(scale(p, 1 / l));
+	};
+	const gap = (t: number) => gapAt(add(o, scale(d, t)));
+	let a = t0;
+	for (let k = 1; k <= SURFACE_STEPS; k++) {
+		const b = t0 + ((t1 - t0) * k) / SURFACE_STEPS;
+		if (gap(b) > 0) {
+			a = b;
+			continue;
+		}
+		let lo = a,
+			hi = b;
+		for (let i = 0; i < 30; i++) {
+			const mid = (lo + hi) / 2;
+			if (gap(mid) > 0) lo = mid;
+			else hi = mid;
+		}
+		const p = add(o, scale(d, hi));
+		const e = 1e-3;
+		const grad = v3(
+			gapAt(add(p, v3(e, 0, 0))) - gapAt(add(p, v3(-e, 0, 0))),
+			gapAt(add(p, v3(0, e, 0))) - gapAt(add(p, v3(0, -e, 0))),
+			gapAt(add(p, v3(0, 0, e))) - gapAt(add(p, v3(0, 0, -e))),
+		);
+		return {
+			along: hi,
+			normal: normalizeOr(r.shape.toWorld(grad), scale(dir, -1)),
+		};
+	}
+	return null;
 }
 export interface BeamHit {
 	id: string;
@@ -128,6 +182,20 @@ export function beamHit(
 		const c = lengthSq(oc) - r.radiusKm * r.radiusKm;
 		const disc = b * b - c;
 		if (disc < 0) continue;
+		if (r.shape) {
+			const t0 = Math.max(0, -b - Math.sqrt(disc));
+			const t1 = Math.min(rangeKm, -b + Math.sqrt(disc));
+			if (t1 <= t0 || (best && t0 >= best.distKm)) continue;
+			const met = surfaceHit(origin, dir, { ...r, shape: r.shape }, t0, t1);
+			if (!met || (best && met.along >= best.distKm)) continue;
+			best = {
+				id: r.id,
+				point: add(origin, scale(dir, met.along)),
+				normal: met.normal,
+				distKm: met.along,
+			};
+			continue;
+		}
 		const along = -b - Math.sqrt(disc);
 		if (along < 0 || along > rangeKm) continue;
 		if (best && along >= best.distKm) continue;

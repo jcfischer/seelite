@@ -98,6 +98,36 @@ describe("the beam", () => {
 		expect(beamHit(v3(), v3(0, 0, -1), rocks, 3.9)).toBeNull();
 		expect(beamHit(v3(), v3(0, 1, 0), rocks, 12)).toBeNull();
 	});
+
+	const swap = (v: { x: number; y: number; z: number }) => v3(v.y, v.x, v.z);
+	const shaped = {
+		id: "lumpy",
+		pos: v3(0, 0, -5),
+		vel: v3(),
+		radiusKm: 1,
+		shape: {
+			toLocal: swap,
+			toWorld: swap,
+			radiusAt: (d: { x: number }) => (d.x > 0.5 ? 1 : 0.5),
+		},
+	};
+
+	test("a shaped rock is hit on its drawn surface, not its bounding sphere", () => {
+		const hit = beamHit(v3(), v3(0, 0, -1), [shaped], 12);
+		expect(hit?.distKm).toBeCloseTo(4.5, 6);
+		expect(hit?.normal.z).toBeCloseTo(1, 3);
+	});
+
+	test("a beam inside the bounding sphere but clear of the surface misses", () => {
+		expect(beamHit(v3(0.7, 0, 0), v3(0, 0, -1), [shaped], 12)).toBeNull();
+	});
+
+	test("the shape is read in the rock's own frame", () => {
+		const side = beamHit(v3(3, 0, -5), v3(-1, 0, 0), [shaped], 12);
+		expect(side?.distKm).toBeCloseTo(2.5, 6);
+		const lobe = beamHit(v3(0, 3, -5), v3(0, -1, 0), [shaped], 12);
+		expect(lobe?.distKm).toBeCloseTo(2, 6);
+	});
 });
 
 describe("fragments", () => {

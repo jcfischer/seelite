@@ -34,10 +34,16 @@ import {
 	oreShare,
 	pullFragment,
 	releaseFragment,
+	type RockShape,
 	stepCut,
 	stepFragments,
 } from "./rock-extraction";
-import { impactRadiusPx, miningBeamStrokes } from "./mining-beam";
+import {
+	impactRadiusPx,
+	MINING_BEAM,
+	miningBeamStrokes,
+	miningBeamWidthPx,
+} from "./mining-beam";
 import {
 	aimedRock,
 	cycleWithRocks,
@@ -53,10 +59,12 @@ import {
 	resolveRock,
 	rockContact,
 	rockDirectionNow,
+	rockLocalVector,
 } from "./rock-target";
 import { fieldRocks, systemFields } from "./asteroid-field";
 import { FieldDraw } from "./field-draw";
-import { pxPerRadianFor } from "./field-lod";
+import { pxPerRadianFor, rockArchetype } from "./field-lod";
+import { radiusAt } from "./rock-heightfields";
 import { authoredRockShapes, buildStandInRocks } from "./asteroid-model";
 import { ROCK_ASSETS } from "./rock-assets";
 import { generateNebulae, nebulaView } from "./nebula";
@@ -1236,7 +1244,12 @@ import {
 	heldSaveFault,
 } from "./save-badge";
 import { ESCAPE_POD, marketStationOf, marketEpoch } from "./market";
-import { type HoldBids, holdSummary, pilotGoods } from "./hold";
+import {
+	type HoldBids,
+	type HoldSummary,
+	holdSummary,
+	pilotGoods,
+} from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
 import {
@@ -9545,6 +9558,8 @@ class Game {
 	}[] = [];
 	private sparkDebt = 0;
 	private heatSpots = new Map<string, { offset: Vec3; at: number }>();
+	/** Node #920: mining beam segments painted in chase this frame, for the probe. */
+	chaseMiningRender = 0;
 	/** Node #920: the impact as painted, for the probe. */
 	impactRender: { x: number; y: number; r: number; sparks: number } | null =
 		null;
@@ -9564,6 +9579,28 @@ class Game {
 		lost: 0,
 		refused: 0,
 	};
+
+	/** Node #920: the hold page with the scooped ore added as pilot lines. */
+	private withMinedOre(hold: HoldSummary): HoldSummary {
+		const ore = Object.entries(this.minedOre).filter(([, t]) => t > 0);
+		if (ore.length === 0) return hold;
+		const t = this.minedT;
+		return {
+			...hold,
+			usedT: hold.usedT + t,
+			freeT: hold.freeT - t,
+			lines: [
+				...hold.lines,
+				...ore.map(([goodName, amount]) => ({
+					goodName,
+					amount,
+					unit: "t" as const,
+					owner: "pilot" as const,
+					kind: "ore" as const,
+				})),
+			],
+		};
+	}
 
 	private get minedT(): number {
 		return Object.values(this.minedOre).reduce((a, b) => a + b, 0);
@@ -9602,6 +9639,17 @@ class Game {
 	}
 
 	/** Node #920: one frame of the laser cut and the fragment scoop (#872 D3, #917 D8, #1095 D4–D6). */
+	/** Node #920: a rock's drawn surface for the beam, off the heightfield its archetype is drawn from. */
+	private rockShape(ref: RockRef): RockShape {
+		const field = ROCK_ASSETS.heightfields.fields[rockArchetype(ref.rock)];
+		const t = this.world.gameTime;
+		return {
+			toLocal: (v) => rockLocalVector(ref, v, t),
+			toWorld: (v) => rockDirectionNow(ref, v, t),
+			radiusAt: (d) => radiusAt(field, [d.x, d.y, d.z]),
+		};
+	}
+
 	private stepExtraction(dt: number) {
 		const now = this.world.gameTime;
 		this.miningNotice.left = Math.max(0, this.miningNotice.left - dt);
@@ -9626,6 +9674,7 @@ class Game {
 					pos: r.pos,
 					vel: r.vel,
 					radiusKm: r.rock.radiusKm,
+					shape: this.rockShape(r),
 				})),
 				PLAYER_LASER_RANGE_KM,
 			);
@@ -12781,6 +12830,76 @@ class Game {
 	 * through the camera and cut at its plane. A muzzle is the hull's own, so a
 	 * shipyard trade moves it with the hull.
 	 */
+	/** Node #920: the mining beam in chase, from the hull's fired muzzles to the cut, tapered and pulsed by depth from the camera. */
+	private drawChaseMiningBeam(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		beam: NonNullable<Game["miningBeam"]>,
+	) {
+		const muzzles = muzzlesWorld(
+			this.world.ship.pos,
+			this.orientation,
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
+				(_, i) => this.firedMuzzleIndices.includes(i),
+			),
+		);
+		const rock = beam.hit && this.fragmentRock(beam.hit.rockId);
+		const camPos = this.cameraPos();
+		const camRot = this.cameraRotation();
+		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
+		const t = this.world.gameTime;
+		const n = MINING_BEAM.segments;
+		ctx.save();
+		ctx.globalCompositeOperation = "lighter";
+		ctx.lineCap = "round";
+		for (const muzzle of muzzles) {
+			const end =
+				beam.hit && rock
+					? add(rock.pos, beam.hit.offset)
+					: add(muzzle, scale(this.beamAim(), PLAYER_LASER_RANGE_KM));
+			const at = (k: number) =>
+				add(muzzle, scale(sub(end, muzzle), (k / n) ** 2));
+			for (let k = 0; k < n; k++) {
+				const a = at(k),
+					b = at(k + 1);
+				const seg = projectSegment(
+					a,
+					b,
+					camPos,
+					camRot,
+					fovYRad,
+					this.nearCamera.aspect,
+				);
+				if (!seg) continue;
+				const from = ndcToPx(seg[0], w, h),
+					to = ndcToPx(seg[1], w, h);
+				const width = miningBeamWidthPx(
+					length(sub(add(a, b), scale(camPos, 2))) / 2,
+				);
+				const pulse =
+					0.5 +
+					0.5 *
+						Math.sin(
+							2 * Math.PI * MINING_BEAM.pulseHz * t -
+								k * MINING_BEAM.pulseSpacing,
+						);
+				const alpha = (0.55 + 0.45 * pulse) * (beam.hit ? 1 : 1 - k / n);
+				ctx.strokeStyle = `rgba(255, 140, 40, ${0.35 * alpha})`;
+				ctx.lineWidth = width * 2.5;
+				ctx.beginPath();
+				ctx.moveTo(from.x, from.y);
+				ctx.lineTo(to.x, to.y);
+				ctx.stroke();
+				ctx.strokeStyle = `rgba(255, 210, 120, ${alpha})`;
+				ctx.lineWidth = width;
+				ctx.stroke();
+				this.chaseMiningRender++;
+			}
+		}
+		ctx.restore();
+	}
+
 	private chaseBeamPx(w: number, h: number) {
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
@@ -19171,7 +19290,7 @@ class Game {
 		const dockContext = this.dockedStationContext();
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).
-		const hold = holdSummary(this.commander, this.requests);
+		const hold = this.withMinedOre(holdSummary(this.commander, this.requests));
 		// One board per update: the console draws it and the first day asks it
 		// whether a Local run is posted (#408). Station control's log is written
 		// here, once, before the panel reads it.
@@ -22366,7 +22485,10 @@ class Game {
 		}
 		// The cockpit's tracer is in the frame, behind the cabin
 		// (`drawCockpitBeams`, node #806); chase has no cabin and keeps its own.
-		if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
+		const chaseMining = MINING_ON && this.view === "chase" && this.miningBeam;
+		this.chaseMiningRender = 0;
+		if (chaseMining) this.drawChaseMiningBeam(ctx, w, h, chaseMining);
+		else if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
 			// From the hull's muzzles, its range along the beam, as the camera
 			// sees it (#607 D3). Not the cockpit's ports on a glass chase does
 			// not have.
