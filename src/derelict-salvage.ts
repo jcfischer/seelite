@@ -1,5 +1,6 @@
 /** Owned wreck recovery: one row and hold change through the shared scoop gate. */
-import { scoops } from "./raider-wreck";
+import { scoopAttempt, type ScoopGear } from "./raider-wreck";
+import { SCOOP_REFUSAL_TEXT } from "./cargo-notice";
 import {
 	type CommanderState,
 	commanderHold,
@@ -15,6 +16,8 @@ export function scoopWreckContainer(
 	entrustedT: number,
 	container: { pos: Vec3; vel: Vec3 },
 	ship: { pos: Vec3; vel: Vec3 },
+	gear: ScoopGear,
+	bankE: number,
 	at: number,
 	/** A named job item stays separate from every owned-cargo path. */
 	entrusted = false,
@@ -29,8 +32,10 @@ export function scoopWreckContainer(
 		refusal,
 	});
 	const item = row.containers[index];
-	if (row.salvaged || !item || item.left <= 0 || !scoops(container, ship))
-		return unchanged();
+	if (row.salvaged || !item || item.left <= 0) return unchanged();
+	const attempt = scoopAttempt(container, ship, gear, bankE);
+	if (attempt === "out") return unchanged();
+	if (attempt !== "take") return unchanged(SCOOP_REFUSAL_TEXT[attempt]);
 	if ((entrusted || item.kind === "fitting") && freeT < item.left)
 		return unchanged(
 			`Hold full: ${freeT} t free; ${item.left} t ${item.id} must be recovered whole.`,

@@ -25,6 +25,7 @@ import {
 	raiderDestruction,
 	scoops,
 	stepCanisters,
+	STOCK_SCOOP,
 } from "../src/raider-wreck";
 import { newCommander, scoopCargo } from "../src/station-commerce";
 import { add, dot, length, scale, sub, v3 } from "../src/vec3";
@@ -189,6 +190,8 @@ describe("the cargo drop", () => {
 					500 + t,
 					(c: Canister) => c.tonnes,
 					() => steadyFrame(frameVel),
+					STOCK_SCOOP,
+					() => 100,
 				).kept[0];
 			return c;
 		};
@@ -227,6 +230,8 @@ describe("the cargo drop", () => {
 				500 + t,
 				(c: Canister) => c.tonnes,
 				() => frame,
+				STOCK_SCOOP,
+				() => 100,
 			).kept[0];
 		}
 		expect(length(sub(c.vel, last))).toBeLessThan(1e-9);
@@ -257,6 +262,8 @@ describe("the cargo drop", () => {
 				500 + t,
 				(c: Canister) => c.tonnes,
 				() => frame,
+				STOCK_SCOOP,
+				() => 100,
 			).kept[0];
 			mark = add(mark, scale(frameMean(frame), dt));
 		}
@@ -274,6 +281,8 @@ describe("the cargo drop", () => {
 				500 + t,
 				(c: Canister) => c.tonnes,
 				() => steadyFrame(frameAt(0)),
+				STOCK_SCOOP,
+				() => 100,
 			).kept[0];
 		const tracked = length(sub(c.pos, mark));
 		const stranded = length(sub(frozen.pos, mark));
@@ -309,6 +318,8 @@ describe("the cargo drop", () => {
 				t,
 				(c: Canister) => c.tonnes,
 				() => frameOver(t, dt),
+				STOCK_SCOOP,
+				() => 100,
 			).kept[0];
 			worst = Math.max(
 				worst,
@@ -340,6 +351,8 @@ describe("the cargo drop", () => {
 				950 + t,
 				(c: Canister) => c.tonnes,
 				frameFor,
+				STOCK_SCOOP,
+				() => 100,
 			).kept;
 		// One rests with its station, the other in star coordinates — from one
 		// step, with the observer nowhere near either.
@@ -391,13 +404,33 @@ describe("drift, expiry and the scoop", () => {
 			50,
 			takeAll,
 			carried,
+			STOCK_SCOOP,
+			() => 100,
 		).kept;
 		expect(moved.pos.x).toBeCloseTo(0.02, 12);
 		expect(
-			stepCanisters([canister], farShip, 0.1, 99.999, takeAll, carried).kept,
+			stepCanisters(
+				[canister],
+				farShip,
+				0.1,
+				99.999,
+				takeAll,
+				carried,
+				STOCK_SCOOP,
+				() => 100,
+			).kept,
 		).toHaveLength(1);
 		expect(
-			stepCanisters([canister], farShip, 0.1, 100, takeAll, carried).kept,
+			stepCanisters(
+				[canister],
+				farShip,
+				0.1,
+				100,
+				takeAll,
+				carried,
+				STOCK_SCOOP,
+				() => 100,
+			).kept,
 		).toHaveLength(0);
 	});
 
@@ -405,7 +438,16 @@ describe("drift, expiry and the scoop", () => {
 		// Drifted first, this canister is 0.2 km off the ship and out of reach.
 		const moving = { ...canister, vel: v3(0.2, 0, 0) };
 		const ship = { pos: v3(0, 0, 0), vel: v3() };
-		const step = stepCanisters([moving], ship, 1, 50, takeAll, still);
+		const step = stepCanisters(
+			[moving],
+			ship,
+			1,
+			50,
+			takeAll,
+			still,
+			STOCK_SCOOP,
+			() => 100,
+		);
 		expect(step.kept).toHaveLength(0);
 		expect(step.scoops).toEqual([
 			{ canister: moving, accepted: true, tonnes: 1 },
@@ -414,7 +456,16 @@ describe("drift, expiry and the scoop", () => {
 
 	test("a canister the hold refuses stays in space and drifts on", () => {
 		const ship = { pos: v3(0, 0, 0), vel: v3() };
-		const step = stepCanisters([canister], ship, 2, 50, () => 0, carried);
+		const step = stepCanisters(
+			[canister],
+			ship,
+			2,
+			50,
+			() => 0,
+			carried,
+			STOCK_SCOOP,
+			() => 100,
+		);
 		expect(step.scoops).toEqual([{ canister, accepted: false, tonnes: 0 }]);
 		expect(step.kept).toHaveLength(1);
 		expect(step.kept[0].pos.x).toBeCloseTo(0.02, 12);
@@ -435,6 +486,8 @@ describe("drift, expiry and the scoop", () => {
 			50,
 			takeAll,
 			still,
+			STOCK_SCOOP,
+			() => 100,
 		).kept;
 		expect(moved.pos.x).toBeCloseTo((0.2 * 0.1) / 2, 12);
 		expect(moved.vel).toEqual(v3(0, 0, 0));
@@ -442,18 +495,26 @@ describe("drift, expiry and the scoop", () => {
 
 	test("a close, slow pass scoops it; a far or a fast one does not", () => {
 		const slow = { pos: v3(CANISTER_SCOOP_RADIUS_KM * 0.5, 0, 0), vel: v3() };
-		expect(scoops(canister, slow)).toBe(true);
+		expect(scoops(canister, slow, STOCK_SCOOP)).toBe(true);
 		expect(
-			scoops(canister, {
-				...slow,
-				pos: v3(CANISTER_SCOOP_RADIUS_KM * 2, 0, 0),
-			}),
+			scoops(
+				canister,
+				{
+					...slow,
+					pos: v3(CANISTER_SCOOP_RADIUS_KM * 2, 0, 0),
+				},
+				STOCK_SCOOP,
+			),
 		).toBe(false);
 		expect(
-			scoops(canister, {
-				...slow,
-				vel: v3(CANISTER_SCOOP_SPEED_KMS * 2, 0, 0),
-			}),
+			scoops(
+				canister,
+				{
+					...slow,
+					vel: v3(CANISTER_SCOOP_SPEED_KMS * 2, 0, 0),
+				},
+				STOCK_SCOOP,
+			),
 		).toBe(false);
 	});
 
@@ -490,6 +551,8 @@ describe("a scoop takes what fits (civilian-combat.md H11)", () => {
 			10,
 			() => 5,
 			() => steadyFrame(v3()),
+			STOCK_SCOOP,
+			() => 100,
 		);
 		expect(step.scoops).toEqual([{ canister: lot, accepted: true, tonnes: 5 }]);
 		expect(step.kept).toHaveLength(1);
@@ -505,6 +568,8 @@ describe("a scoop takes what fits (civilian-combat.md H11)", () => {
 			10,
 			(c) => c.tonnes,
 			() => steadyFrame(v3()),
+			STOCK_SCOOP,
+			() => 100,
 		);
 		expect(step.kept).toHaveLength(0);
 	});

@@ -33,7 +33,11 @@ import { newWorld } from "../src/world-state";
 import { deathWreckContents } from "../src/death-wreck";
 import { emptyRequests } from "../src/requests";
 import { emptyLadderRecord, emptyPending } from "../src/ladder";
-import { dropFittingCanister, stepCanisters } from "../src/raider-wreck";
+import {
+	dropFittingCanister,
+	stepCanisters,
+	STOCK_SCOOP,
+} from "../src/raider-wreck";
 import { engage, stepEngagement } from "../src/traffic-engagement";
 import { launchMissile, MISSILE } from "../src/missiles";
 import {
@@ -198,6 +202,8 @@ test("fitting canisters recover atomically with their trait and zero cost, and r
 			return took ? 1 : 0;
 		},
 		() => steadyFrame(v3()),
+		STOCK_SCOOP,
+		() => 100,
 	);
 	expect(recovered.kept).toHaveLength(0);
 	expect(h.commander.recoveredFittings?.[0]).toMatchObject({

@@ -37,6 +37,7 @@ import {
 	CANISTER_SCOOP_SPEED_KMS,
 	CARGO_CONTACT_COLOUR,
 	scoops,
+	STOCK_SCOOP,
 } from "../src/raider-wreck";
 import { length, sub, v3 } from "../src/vec3";
 import {
@@ -342,13 +343,13 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 		CANISTER_SCOOP_SPEED_KMS + 0.01,
 		10,
 	);
-	expect(scoops(canister, world.ship)).toBe(false);
+	expect(scoops(canister, world.ship, STOCK_SCOOP)).toBe(false);
 	world.ship.vel = v3(0, CANISTER_SCOOP_SPEED_KMS - 0.01, 0);
 	expect(subject.targetRelativeKms()).toBeCloseTo(
 		CANISTER_SCOOP_SPEED_KMS - 0.01,
 		10,
 	);
-	expect(scoops(canister, world.ship)).toBe(true);
+	expect(scoops(canister, world.ship, STOCK_SCOOP)).toBe(true);
 
 	subject.targetId = null;
 	expect(subject.targetRelativeKms()).toBeNull();

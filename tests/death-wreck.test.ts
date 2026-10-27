@@ -1,3 +1,4 @@
+import { STOCK_SCOOP } from "../src/raider-wreck";
 import {
 	migrateEquipment,
 	equipmentNames,
@@ -170,6 +171,8 @@ test("wreck recovery takes native kg/g units with a full hold and updates basis 
 		const pose = { pos: v3(), vel: v3() };
 		const outcome = applyHoldEvent(holdings, world, {
 			kind: "wreck-scoop",
+			gear: STOCK_SCOOP,
+			bankE: 100,
 			key: wreck.key,
 			galaxyIndex: 0,
 			instanceOrdinal: wreck.instanceOrdinal,
@@ -388,6 +391,8 @@ test("the Holdings wreck scoop recovers goods and fittings once and removes a st
 		const at = { pos: v3(), vel: v3() };
 		const event = {
 			kind: "wreck-scoop" as const,
+			gear: STOCK_SCOOP,
+			bankE: 100,
 			key: wreck.key,
 			galaxyIndex: 0,
 			instanceOrdinal: wreck.instanceOrdinal,
@@ -548,13 +553,43 @@ test("death scoop honors speed, partial tonnes, whole fittings and native kg/g w
 	};
 	const pose = { pos: v3(), vel: v3() };
 	const full = { ...dying.state, cargo: { Food: 19 } };
-	const partial = scoopWreckContainer(row, 0, full, 0, pose, pose, 1);
+	const partial = scoopWreckContainer(
+		row,
+		0,
+		full,
+		0,
+		pose,
+		pose,
+		STOCK_SCOOP,
+		100,
+		1,
+	);
 	expect(partial.tonnes).toBe(1);
 	expect(partial.row.containers[0].left).toBe(7);
-	const kg = scoopWreckContainer(row, 1, partial.commander, 0, pose, pose, 1);
+	const kg = scoopWreckContainer(
+		row,
+		1,
+		partial.commander,
+		0,
+		pose,
+		pose,
+		STOCK_SCOOP,
+		100,
+		1,
+	);
 	expect(kg.commander.cargo.Gold).toBe(12);
 	expect(
-		scoopWreckContainer(row, 2, kg.commander, 0, pose, pose, 1).refusal,
+		scoopWreckContainer(
+			row,
+			2,
+			kg.commander,
+			0,
+			pose,
+			pose,
+			STOCK_SCOOP,
+			100,
+			1,
+		).refusal,
 	).toContain("0 t free");
 	expect(
 		scoopWreckContainer(
@@ -564,6 +599,8 @@ test("death scoop honors speed, partial tonnes, whole fittings and native kg/g w
 			0,
 			pose,
 			{ pos: v3(), vel: v3(2, 0, 0) },
+			STOCK_SCOOP,
+			100,
 			1,
 		).tonnes,
 	).toBe(0);

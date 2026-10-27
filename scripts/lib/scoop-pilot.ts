@@ -33,6 +33,7 @@ import {
 	type Canister,
 	dropCanisters,
 	stepCanisters,
+	STOCK_SCOOP,
 } from "../../src/raider-wreck";
 import {
 	ASSIST_CAP_KMS,
@@ -144,6 +145,8 @@ export function flyToCargo(
 			now,
 			(c) => c.tonnes,
 			() => steadyFrame(frameVel),
+			STOCK_SCOOP,
+			() => Infinity,
 		);
 		scooped += step.scoops.filter((s) => s.accepted).length;
 		canisters = step.kept;

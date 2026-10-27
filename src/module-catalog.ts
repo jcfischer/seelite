@@ -13,6 +13,10 @@ import {
 import { PULSE_LASER } from "./ship-condition";
 import { SCAN_CHARGE_S, SCAN_RANGE_KM } from "./carrier-scan";
 import { RELAY_SIGNAL_RANGE_KM } from "./pirate-relay";
+import {
+	CANISTER_SCOOP_RADIUS_KM,
+	CANISTER_SCOOP_SPEED_KMS,
+} from "./scoop-window";
 
 export const GRADES = ["E", "D", "A"] as const;
 export type Grade = (typeof GRADES)[number];
@@ -76,6 +80,7 @@ export type ModuleKind =
 	| "long-range-scanner"
 	| "extra-energy-unit"
 	| "cargo-rack"
+	| "cargo-scoop"
 	| "armour-plating"
 	| "fuel-tank"
 	| "power-plant";
@@ -228,6 +233,21 @@ export const DEFINITIONS: readonly Definition[] = [
 		massWeight: 1.5,
 		output: { cargoT: 10 },
 		integerOutput: true,
+	},
+	{
+		kind: "cargo-scoop",
+		slotKind: "internal",
+		family: "cargo",
+		priceWeight: 1,
+		massWeight: 1,
+		output: {
+			scoopRadiusKm: CANISTER_SCOOP_RADIUS_KM,
+			scoopSpeedKms: CANISTER_SCOOP_SPEED_KMS,
+		},
+		ruledOutput: (grade, size) => ({
+			scoopRadiusKm: CANISTER_SCOOP_RADIUS_KM * POLICY.sizeScale[size],
+			scoopSpeedKms: CANISTER_SCOOP_SPEED_KMS * gradeOutputScale(grade),
+		}),
 	},
 	{
 		kind: "armour-plating",

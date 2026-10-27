@@ -39,6 +39,17 @@ import {
 } from "./vec3";
 import { type Provenance, type TransitionEvent } from "./world-state";
 import type { FittedModule } from "./loadout";
+import {
+	CANISTER_SCOOP_CHARGE_E,
+	CANISTER_SCOOP_RADIUS_KM,
+	CANISTER_SCOOP_SPEED_KMS,
+} from "./scoop-window";
+
+export {
+	CANISTER_SCOOP_CHARGE_E,
+	CANISTER_SCOOP_RADIUS_KM,
+	CANISTER_SCOOP_SPEED_KMS,
+};
 
 /** How long a destroyed raider stays destroyed before its replacement starts. */
 export const RAIDER_WRECK_S = 600;
@@ -105,8 +116,6 @@ export function playerKillDestruction(
 export const CANISTER_LIFETIME_S = 300;
 export const CANISTER_TONNES = 1;
 export const CANISTER_COUNT = { min: 1, max: 3 } as const;
-/** How close a ship must pass to scoop one. */
-export const CANISTER_SCOOP_RADIUS_KM = 0.05;
 /** How big one is: a two-metre drum. This is the contact's display size and
  *  never the scoop gate, which is a distance a ship has to close to. */
 export const CANISTER_RADIUS_KM = 0.002;
@@ -119,8 +128,6 @@ export const CARGO_CONTACT_COLOUR = 0x96f0aa;
 export const CARGO_CONTACT_CSS = `rgba(${(CARGO_CONTACT_COLOUR >> 16) & 255}, ${
 	(CARGO_CONTACT_COLOUR >> 8) & 255
 }, ${CARGO_CONTACT_COLOUR & 255}, 0.9)`;
-/** And how slowly, relative to the canister. */
-export const CANISTER_SCOOP_SPEED_KMS = 0.25;
 /**
  * How fast each canister leaves the wreck, on top of the share of the wreck's
  * velocity it keeps. The canisters of one drop leave in directions spread
@@ -406,6 +413,7 @@ export interface CanisterScoop {
 	/** Tonnes taken. Less than the canister holds when the hold had less room
 	 *  (`civilian-combat.md` H11), and the rest stays in the canister. */
 	tonnes: number;
+	refusal?: ScoopRefusal;
 }
 
 /**
@@ -434,13 +442,18 @@ export function stepCanisters(
 	 * bring every canister to rest in star coordinates.
 	 */
 	frameFor: (canister: Canister) => FrameMotion,
+	gear: ScoopGear,
+	bankE: () => number,
 ): { kept: Canister[]; scoops: CanisterScoop[] } {
 	const kept: Canister[] = [];
 	const tried: CanisterScoop[] = [];
 	for (const canister of canisters) {
 		if (now >= canister.expiresAt) continue;
 		let left = canister;
-		if (scoops(canister, ship)) {
+		const attempt = scoopAttempt(canister, ship, gear, bankE());
+		if (attempt === "no-scoop" || attempt === "low-bank")
+			tried.push({ canister, accepted: false, tonnes: 0, refusal: attempt });
+		else if (attempt === "take") {
 			const tonnes = Math.max(0, Math.min(canister.tonnes, accept(canister)));
 			tried.push({ canister, accepted: tonnes > 0, tonnes });
 			if (tonnes >= canister.tonnes) continue;
@@ -451,10 +464,60 @@ export function stepCanisters(
 	return { kept, scoops: tried };
 }
 
-/** Whether a ship scoops the canister now: close, and slow relative to it. */
+/** The window a fitted scoop gives, from `fittedCapacity` (node #1096). */
+export interface ScoopGear {
+	scoopRadiusKm: number;
+	scoopSpeedKms: number;
+}
+
+/** The window of the stock 1E scoop every new ship carries (node #1096). */
+export const STOCK_SCOOP: ScoopGear = {
+	scoopRadiusKm: CANISTER_SCOOP_RADIUS_KM,
+	scoopSpeedKms: CANISTER_SCOOP_SPEED_KMS,
+};
+
+/** Why a ship in reach of a pickup does not take it: no gear, or no charge. */
+export type ScoopRefusal = "no-scoop" | "low-bank";
+
+const reaches = (
+	canister: { pos: Vec3; vel: Vec3 },
+	ship: { pos: Vec3; vel: Vec3 },
+	radiusKm: number,
+	speedKms: number,
+): boolean =>
+	length(sub(canister.pos, ship.pos)) <= radiusKm &&
+	length(sub(canister.vel, ship.vel)) <= speedKms;
+
+/**
+ * Whether a ship scoops the canister now: inside the fitted scoop's window,
+ * close and slow relative to it. A ship with no scoop has no window. Every
+ * pickup from space (canister, wreck container, the pilot's own wreck) asks
+ * this.
+ */
 export const scoops = (
 	canister: { pos: Vec3; vel: Vec3 },
 	ship: { pos: Vec3; vel: Vec3 },
+	gear: ScoopGear,
 ): boolean =>
-	length(sub(canister.pos, ship.pos)) <= CANISTER_SCOOP_RADIUS_KM &&
-	length(sub(canister.vel, ship.vel)) <= CANISTER_SCOOP_SPEED_KMS;
+	gear.scoopRadiusKm > 0 &&
+	reaches(canister, ship, gear.scoopRadiusKm, gear.scoopSpeedKms);
+
+/**
+ * What a ship does about a pickup it is near: nothing (`out`), take it, or
+ * refuse for a reason a pilot can be told. `no-scoop` is said only inside the
+ * fixed window a 1E scoop has, so a ship without one is told when it has
+ * reached something it could have taken, not at every object in the sky.
+ */
+export function scoopAttempt(
+	canister: { pos: Vec3; vel: Vec3 },
+	ship: { pos: Vec3; vel: Vec3 },
+	gear: ScoopGear,
+	bankE: number,
+): "out" | "take" | ScoopRefusal {
+	if (scoops(canister, ship, gear))
+		return bankE >= CANISTER_SCOOP_CHARGE_E ? "take" : "low-bank";
+	return gear.scoopRadiusKm <= 0 &&
+		reaches(canister, ship, CANISTER_SCOOP_RADIUS_KM, CANISTER_SCOOP_SPEED_KMS)
+		? "no-scoop"
+		: "out";
+}

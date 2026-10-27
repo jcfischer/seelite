@@ -67,7 +67,7 @@ import {
 import { recordTrade } from "./deficits";
 import { commodity, ESCAPE_POD } from "./market";
 import type { Standing } from "./legal";
-import { PLAYER_KILL } from "./raider-wreck";
+import { PLAYER_KILL, type ScoopGear } from "./raider-wreck";
 import {
 	type RequestOffer,
 	type RequestStation,
@@ -254,6 +254,8 @@ export type HoldEvent =
 			at: number;
 			container: { pos: Vec3; vel: Vec3 };
 			ship: { pos: Vec3; vel: Vec3 };
+			gear: ScoopGear;
+			bankE: number;
 	  }
 	/** Any carrier transition (#627 D3). A destroy with the player's
 	 *  provenance is a kill: it pays every accepted Bounty naming the carrier
@@ -704,6 +706,8 @@ function applied(
 				entrustedTonnesAboard(holdings.requests),
 				event.container,
 				event.ship,
+				event.gear,
+				event.bankE,
 				event.at,
 				!!job,
 			);
