@@ -1,4 +1,5 @@
 /**
+ * https://github.com/jcfischer/seelite/issues/920
  * Prototype for node #920: a Mining Laser's cut releases whole-tonne fragments that
  * drift, expire or are scooped (#872 D3, D4; #917 D8; #1095 D4–D6). A fragment's
  * tonne leaves the deposit when it is released, so a lost fragment restores nothing.
@@ -111,7 +112,6 @@ export interface BeamTarget {
 	id: string;
 	pos: Vec3;
 	vel: Vec3;
-	/** The bounding radius: no surface point lies outside it. */
 	radiusKm: number;
 	shape?: RockShape;
 }

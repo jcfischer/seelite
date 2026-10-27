@@ -1,4 +1,5 @@
 /**
+ * https://github.com/jcfischer/seelite/issues/920
  * Prototype for node #920: candidate rock contents on `ASTEROID_DEPOSIT` and the
  * Mining Laser's survey hold (#872 D5, D15; #951 D1, D3). Every figure here is a
  * provisional candidate for #922's economic measurement, not a ratified rate.
@@ -73,7 +74,6 @@ export interface RockContents {
 	grade: OreGrade;
 	surfaceT: number;
 	deepT: number;
-	/** Unit direction of the deep deposit's mouth in the rock's own (unspun) frame, or `null` with no deep deposit. */
 	deepDir: Vec3 | null;
 }
 

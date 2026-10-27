@@ -11,6 +11,7 @@ import {
 	surveyReading,
 } from "../src/rock-survey";
 import { generateContents } from "../src/system";
+import { v3 } from "../src/vec3";
 
 const systems = generateGalaxy(0x5eed, 0).systems;
 const fields = systems.slice(0, 64).flatMap((record) =>
@@ -229,5 +230,24 @@ describe("rock target (front variant)", () => {
 
 	test("a rock behind the ship is not in front", () => {
 		expect(frontRock([at("back", 0, 0, 5, 1)], ship, ahead)).toBeNull();
+	});
+});
+
+describe("a rock's own frame", () => {
+	const { rockDirectionNow, rockLocalVector } =
+		require("../src/rock-target") as typeof import("../src/rock-target");
+
+	test("rockLocalVector undoes rockDirectionNow at any time", () => {
+		const { plan, rocks } = fields[0];
+		expect(rocks.length).toBeGreaterThan(0);
+		for (const rock of rocks.slice(0, 8))
+			for (const t of [0, 37.5, 3600]) {
+				const ref = { id: "r", plan, rock, pos: v3(), vel: v3(), distKm: 0 };
+				const v = v3(0.3, -1.2, 2);
+				const back = rockDirectionNow(ref, rockLocalVector(ref, v, t), t);
+				expect(back.x).toBeCloseTo(v.x, 9);
+				expect(back.y).toBeCloseTo(v.y, 9);
+				expect(back.z).toBeCloseTo(v.z, 9);
+			}
 	});
 });

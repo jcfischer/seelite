@@ -4,6 +4,15 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-mining-survey.mjs": [
+		"scripts/probe-mining-survey.mjs",
+		"src/rock-survey.ts",
+		"src/rock-extraction.ts",
+		"src/rock-target.ts",
+		"src/mining-beam.ts",
+		"src/deposit-state.ts",
+		"src/hold-view.ts",
+	],
 	"probe-variants-loadouts.mjs": [
 		"scripts/probe-variants-loadouts.mjs",
 		"src/module-variants.ts",

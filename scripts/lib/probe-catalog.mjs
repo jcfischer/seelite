@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-mining-survey.mjs",
+			"With ?mining=1 in a charted field: selects the rock in front, holds a survey to a reading with its deep-deposit mark, refuses past range, cuts the rock with the Mining Laser on its drawn surface, debits the deposit per released tonne, draws the beam with flare and sparks in cockpit and chase and no flare beside the surface, scoops a fragment into the Hold page, refuses a full hold and loses an expired fragment without restoring the deposit.",
+			[
+				"mining",
+				"survey",
+				"rock target",
+				"mining laser",
+				"fragments",
+				"scoop",
+				"hold",
+				"deposit",
+			],
+		),
+		entry(
 			"probe-rock-placement.mjs",
 			"Runs Game cruise exit, launch, flight restore, refused docked restore and guided fallback, then steps their final poses against a supplied rock to verify unsaved whole-rock ghost state; an unplaced control must impact.",
 			["rock ghost", "placement", "cruise exit", "launch", "restore", "save"],

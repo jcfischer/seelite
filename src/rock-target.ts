@@ -1,4 +1,5 @@
 /**
+ * https://github.com/jcfischer/seelite/issues/920
  * Prototype for node #920: individual rocks as selectable targets while mining is on.
  * Rocks stay out of `Game.selectable()`, whose membership is cached per system; a
  * `rock:` id resolves here against the ship's position and the game clock instead.

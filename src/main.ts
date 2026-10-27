@@ -1457,7 +1457,6 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 
-/** Node #920's prototype switches: `?mining=1`, `?rock-pick=front|near|aim`, `?survey-interrupt=reset|hold|decay`, `?survey-range=`, `?survey-dwell=`. */
 const MINING_QUERY = new URLSearchParams(window.location.search);
 const MINING_ON = MINING_QUERY.get("mining") === "1";
 const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
@@ -1474,7 +1473,6 @@ const positiveParam = (name: string, fallback: number): number => {
 	const v = Number(MINING_QUERY.get(name));
 	return Number.isFinite(v) && v > 0 ? v : fallback;
 };
-/** Prototype: the mouth marker sits at this share of the bounding radius, until the heightfield gives the true surface. */
 const DEEP_MOUTH_RADIUS_SHARE = 0.85;
 const SURVEY_GRADE_SHORT = {
 	poor: "POOR",
@@ -9374,10 +9372,8 @@ class Game {
 	}
 
 	private surveyHold: SurveyHold = beginSurveyHold();
-	/** Node #920: where the DEEP cue was painted this frame, for the probe. */
 	deepCueRender: { x: number; y: number; facing: boolean } | null = null;
 
-	/** Node #920 prototype affordance: a ship without a Mining Laser gets one on a free hardpoint, else on H1. */
 	private fitPrototypeMiningLaser() {
 		const loadout = this.commander.loadout;
 		if (Object.values(loadout).some((m) => m.module === "mining-laser")) return;
@@ -9409,7 +9405,6 @@ class Game {
 		return ref && ref.distKm <= ROCK_DROP_KM ? ref : null;
 	}
 
-	/** Node #920: the target keys reach rocks first while any are near. */
 	private cycleRockTarget(step: number): boolean {
 		const near = nearRocks(
 			this.fieldRockSets(),
@@ -9447,7 +9442,6 @@ class Game {
 		return true;
 	}
 
-	/** The best fitted Mining Laser's survey figures, or `null` with none fitted (#872 D5). */
 	private surveyFiguresFitted(): { rangeKm: number; dwellS: number } | null {
 		let best: { rangeKm: number; dwellS: number } | null = null;
 		for (const m of Object.values(this.commander.loadout)) {
@@ -9487,7 +9481,6 @@ class Game {
 		);
 	}
 
-	/** Why a survey hold is not charging this frame, or `null` when it is. */
 	private surveyBlock(ref: RockRef | null): string | null {
 		if (!ref) return "NO ROCK";
 		const figures = this.surveyFiguresFitted();
@@ -9511,7 +9504,6 @@ class Game {
 		return null;
 	}
 
-	/** Node #920: one frame of the survey hold on the selected rock (#872 D15). */
 	private stepSurvey(dt: number) {
 		const ref = isRockTargetId(this.targetId)
 			? this.rockRef(this.targetId)
@@ -9545,7 +9537,6 @@ class Game {
 	}
 
 	private gunFiredNow = false;
-	/** Node #920: this step's mining beam, its end on a rock or at full range. */
 	miningBeam: {
 		hit: { rockId: string; offset: Vec3 } | null;
 		distKm: number;
@@ -9558,19 +9549,14 @@ class Game {
 	}[] = [];
 	private sparkDebt = 0;
 	private heatSpots = new Map<string, { offset: Vec3; at: number }>();
-	/** Node #920: mining beam segments painted in chase this frame, for the probe. */
 	chaseMiningRender = 0;
-	/** Node #920: the impact as painted, for the probe. */
 	impactRender: { x: number; y: number; r: number; sparks: number } | null =
 		null;
 	private cut: Cut = beginCut();
-	/** Node #920: fragments in flight, world frame. */
 	fragments: Fragment[] = [];
 	private fragmentSeq = 0;
-	/** Node #920 prototype hold: scooped ore tonnes by cargo name, outside the commander's cargo until #917's goods exist. */
 	minedOre: Record<string, number> = {};
 	private miningNotice = { text: "", left: 0 };
-	/** Node #920: what the cut and the scoop did, for the probe. */
 	miningLog = {
 		cutRockId: null as string | null,
 		released: 0,
@@ -9580,7 +9566,6 @@ class Game {
 		refused: 0,
 	};
 
-	/** Node #920: the hold page with the scooped ore added as pilot lines. */
 	private withMinedOre(hold: HoldSummary): HoldSummary {
 		const ore = Object.entries(this.minedOre).filter(([, t]) => t > 0);
 		if (ore.length === 0) return hold;
@@ -9610,7 +9595,6 @@ class Game {
 		this.miningNotice = { text, left: 3 };
 	}
 
-	/** The fired group's Mining Laser extraction rate and its best grade. */
 	private firedExtraction(): { rate: number; grade: Grade } {
 		const group = this.armedFireGroup.current(this.fireGroups);
 		let rate = 0;
@@ -9638,8 +9622,6 @@ class Game {
 		this.saveDirty();
 	}
 
-	/** Node #920: one frame of the laser cut and the fragment scoop (#872 D3, #917 D8, #1095 D4–D6). */
-	/** Node #920: a rock's drawn surface for the beam, off the heightfield its archetype is drawn from. */
 	private rockShape(ref: RockRef): RockShape {
 		const field = ROCK_ASSETS.heightfields.fields[rockArchetype(ref.rock)];
 		const t = this.world.gameTime;
@@ -9787,7 +9769,6 @@ class Game {
 			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
 	}
 
-	/** Where the mining beam ends on the frame: its rock point, or the beam's aim at full range. */
 	private miningBeamEnd(
 		camPos: Vec3,
 		beam: NonNullable<Game["miningBeam"]>,
@@ -9799,11 +9780,6 @@ class Game {
 			: null;
 	}
 
-	/**
-	 * Node #920: the cut as the pilot sees it: a flickering flare at the beam's
-	 * end sized by its distance, sparks thrown off the surface, and a glow that
-	 * stays on the cut spot for a few seconds after the beam stops.
-	 */
 	private drawImpact(
 		ctx: CanvasRenderingContext2D,
 		camPos: Vec3,
@@ -9892,13 +9868,11 @@ class Game {
 		ctx.restore();
 	}
 
-	/** A fragment's rock pose now, or `null` past `ROCK_DROP_KM`. */
 	private fragmentRock(rockId: string): Anchor | null {
 		const ref = this.rockRef(rockId);
 		return ref ? { pos: ref.pos, vel: ref.vel } : null;
 	}
 
-	/** Node #920: each live fragment with its place now, for the glass and the probe. */
 	fragmentPlaces(): (Fragment & Anchor)[] {
 		const now = this.world.gameTime;
 		const rocks = new Map<string, Anchor | null>();
@@ -9912,7 +9886,6 @@ class Game {
 		return out;
 	}
 
-	/** Fragments on the glass as diamonds in their family's colour, the nearest ore one with its range, and the mining line. */
 	private drawFragments(
 		ctx: CanvasRenderingContext2D,
 		camPos: Vec3,
@@ -9980,11 +9953,9 @@ class Game {
 		};
 	}
 
-	/** Node #920: the nearest ore fragment's diamond and the mining line as painted, for the probe. */
 	fragmentRender: { x: number; y: number; id: string } | null = null;
 	miningLineRender: { line: string; notice: string | null } | null = null;
 
-	/** The surveyed rock's deep-deposit mouth, on the glass (#872 D15: a reading carries its location). */
 	private drawDeepDepositCue(
 		ctx: CanvasRenderingContext2D,
 		camPos: Vec3,
@@ -10030,7 +10001,6 @@ class Game {
 		this.deepCueRender = { x: at.x, y: at.y, facing };
 	}
 
-	/** The target instrument's line for a selected rock. */
 	private surveyDesignation(id: string): string {
 		const ref = this.rockRef(id);
 		if (!ref) return "ROCK · OUT OF RANGE";
@@ -10050,7 +10020,6 @@ class Game {
 		return `ROCK · ${this.surveyBlock(ref) ?? "SURVEYING 0%"}`;
 	}
 
-	/** Probe handle for node #920's prototype: the selected rock, its reading and the hold. */
 	surveyState() {
 		const ref = isRockTargetId(this.targetId)
 			? this.rockRef(this.targetId)
@@ -12830,7 +12799,6 @@ class Game {
 	 * through the camera and cut at its plane. A muzzle is the hull's own, so a
 	 * shipyard trade moves it with the hull.
 	 */
-	/** Node #920: the mining beam in chase, from the hull's fired muzzles to the cut, tapered and pulsed by depth from the camera. */
 	private drawChaseMiningBeam(
 		ctx: CanvasRenderingContext2D,
 		w: number,

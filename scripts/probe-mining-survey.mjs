@@ -11,8 +11,7 @@ import {
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
 );
-/** The asteroid-field probe's world and system: a charted field near the start. */
-const WORLD = 0x5ee11e;
+const CHARTED_FIELD_WORLD = 0x5ee11e;
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 await mkdir("probe-shots/mining-survey", { recursive: true });
@@ -25,7 +24,7 @@ try {
 	await installViewPlacement(page);
 	await page.goto(
 		gameUrl(origin, {
-			seed: WORLD,
+			seed: CHARTED_FIELD_WORLD,
 			system: 173,
 			hull: "miner",
 			mining: "1",

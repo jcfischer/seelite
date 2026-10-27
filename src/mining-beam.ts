@@ -1,4 +1,5 @@
 /**
+ * https://github.com/jcfischer/seelite/issues/920
  * Prototype for node #920: the Mining Laser's beam in the cockpit frame, with depth
  * (the principal, 2026-10-27: "no sense of depth / distance or impact on target").
  * The beam is cut into segments placed by perspective along its real length, so
