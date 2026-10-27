@@ -30,6 +30,7 @@ import {
 } from "../src/display-contact";
 import { trafficPresence } from "../src/traffic-engagement";
 import { SWEEP_INTERRUPTED, SWEEP_IDLE } from "../src/system-sweep-view";
+import { isRockTargetId } from "../src/rock-target";
 import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
@@ -194,6 +195,7 @@ test("target lookup and velocity follow the live contact, while bodies keep orbi
 			methods(["bodyFor", "targetBody", "velocityOf", "targetVelocity"], {
 				bodyVelocity,
 				isDisplayContact,
+				isRockTargetId,
 				v3,
 			}),
 		),
@@ -305,7 +307,7 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 					"velocityOf",
 					"targetVelocity",
 				],
-				{ bodyVelocity, isDisplayContact, v3, length, sub },
+				{ bodyVelocity, isDisplayContact, isRockTargetId, v3, length, sub },
 			),
 		),
 		{ world, targetId: contact.id, selectable: () => [contact] },

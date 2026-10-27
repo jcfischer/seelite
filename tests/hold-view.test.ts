@@ -287,3 +287,21 @@ describe("the page's own markup carries what the first sheet lacked", () => {
 		expect(source.match(/lc-hold-body/g)).toHaveLength(2);
 	});
 });
+
+describe("mined ore on the hold page", () => {
+	test("an ore line is the pilot's, names itself mined ore and says it has no market", () => {
+		const html = holdBody(
+			summary({
+				usedT: 2,
+				freeT: 18,
+				lines: [{ ...pilotLine("Gold-bearing ore STD", 2), kind: "ore" }],
+			}),
+			null,
+		);
+		expect(html).toContain('data-live-hold-row="Gold-bearing ore STD"');
+		expect(html).toContain('data-live-hold-owner="pilot"');
+		expect(html).toContain("2 t");
+		expect(html).toContain("mined ore · no market yet");
+		expect(html).not.toContain("sellable");
+	});
+});
