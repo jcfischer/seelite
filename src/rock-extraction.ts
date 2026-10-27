@@ -1,0 +1,231 @@
+/**
+ * Prototype for node #920: a Mining Laser's cut releases whole-tonne fragments that
+ * drift, expire or are scooped (#872 D3, D4; #917 D8; #1095 D4–D6). A fragment's
+ * tonne leaves the deposit when it is released, so a lost fragment restores nothing.
+ * Every figure here is a provisional candidate for #922's economic measurement.
+ */
+import { type DepositRow, debitAt } from "./deposit-state";
+import { type Grade, gradeOutputScale } from "./module-catalog";
+import type { OreFamily, OreGrade } from "./rock-survey";
+import {
+	add,
+	cross,
+	dot,
+	lengthSq,
+	normalizeOr,
+	scale,
+	sub,
+	type Vec3,
+	v3,
+} from "./vec3";
+
+/** Candidate extraction and scoop figures. The scoop window and charge are #1095 D5 and D6. */
+export const EXTRACTION = {
+	ejectKms: 0.01,
+	ejectSpread: 0.6,
+	lifetimeS: 120,
+	wasteLifetimeS: 20,
+	oreShareE: 0.5,
+	scoopRadiusKm: 0.05,
+	scoopSpeedKms: 0.25,
+	scoopChargeE: 2,
+} as const;
+
+/** The share of removed rock that comes away as ore: grade E 0.5, D 0.4, A 0.75 (O6 of #927's review). */
+export const oreShare = (grade: Grade): number =>
+	Math.min(0.9, EXTRACTION.oreShareE * gradeOutputScale(grade));
+
+/** Sub-tonne progress of the cut on one rock. Whole tonnes leave as fragments. */
+export interface Cut {
+	key: string | null;
+	oreT: number;
+	wasteT: number;
+}
+export const beginCut = (): Cut => ({ key: null, oreT: 0, wasteT: 0 });
+
+export interface CutStep {
+	cut: Cut;
+	ore: number;
+	waste: number;
+	depleted: boolean;
+}
+
+/**
+ * One frame of cutting. `key` is the rock the beam hits, or `null` when it hits none;
+ * progress on a rock is kept while the beam is off and dropped when it moves to
+ * another rock. Ore fragments never exceed the reserve left.
+ */
+export function stepCut(
+	cut: Cut,
+	key: string | null,
+	rateTPerS: number,
+	share: number,
+	dt: number,
+	reserveLeftT: number,
+): CutStep {
+	if (key === null || rateTPerS <= 0)
+		return { cut, ore: 0, waste: 0, depleted: false };
+	const base = cut.key === key ? cut : { key, oreT: 0, wasteT: 0 };
+	const removed = rateTPerS * dt;
+	const depleted = reserveLeftT <= 0;
+	let oreT = base.oreT + (depleted ? 0 : removed * share);
+	let wasteT = base.wasteT + removed * (depleted ? 1 : 1 - share);
+	let ore = Math.floor(oreT);
+	if (ore > reserveLeftT) {
+		ore = Math.max(0, Math.floor(reserveLeftT));
+		oreT = ore;
+	}
+	oreT -= ore;
+	const waste = Math.floor(wasteT);
+	wasteT -= waste;
+	return { cut: { key, oreT, wasteT }, ore, waste, depleted };
+}
+
+/** A deposit row with `n` more surface tonnes taken at `t`, both debits rebased to `t`. */
+export function debitSurface(
+	row: DepositRow | undefined,
+	t: number,
+	n: number,
+): DepositRow {
+	const at = row?.at ?? 0;
+	const surface = debitAt(row?.surface ?? 0, at, t) + n;
+	const deep = row?.deep === undefined ? undefined : debitAt(row.deep, at, t);
+	return {
+		...row,
+		surface,
+		...(deep !== undefined && { deep }),
+		at: t,
+	};
+}
+
+export interface BeamTarget {
+	id: string;
+	pos: Vec3;
+	vel: Vec3;
+	radiusKm: number;
+}
+export interface BeamHit {
+	id: string;
+	point: Vec3;
+	normal: Vec3;
+	distKm: number;
+}
+
+/** The nearest rock surface the beam meets within `rangeKm`, or `null`. `dir` is a unit vector. */
+export function beamHit(
+	origin: Vec3,
+	dir: Vec3,
+	rocks: readonly BeamTarget[],
+	rangeKm: number,
+): BeamHit | null {
+	let best: BeamHit | null = null;
+	for (const r of rocks) {
+		const oc = sub(origin, r.pos);
+		const b = dot(oc, dir);
+		const c = lengthSq(oc) - r.radiusKm * r.radiusKm;
+		const disc = b * b - c;
+		if (disc < 0) continue;
+		const along = -b - Math.sqrt(disc);
+		if (along < 0 || along > rangeKm) continue;
+		if (best && along >= best.distKm) continue;
+		const point = add(origin, scale(dir, along));
+		best = {
+			id: r.id,
+			point,
+			normal: normalizeOr(sub(point, r.pos), scale(dir, -1)),
+			distKm: along,
+		};
+	}
+	return best;
+}
+
+export interface Fragment {
+	id: string;
+	ore: { family: OreFamily; grade: OreGrade } | null;
+	pos: Vec3;
+	vel: Vec3;
+	expiresAt: number;
+}
+
+const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+
+/** A fragment leaving the hit point along the surface normal, fanned by `index` so a burst spreads. */
+export function releaseFragment(
+	id: string,
+	index: number,
+	ore: Fragment["ore"],
+	hit: BeamHit,
+	rockVel: Vec3,
+	now: number,
+): Fragment {
+	const n = hit.normal;
+	const u = normalizeOr(
+		cross(n, Math.abs(n.y) < 0.9 ? v3(0, 1, 0) : v3(1, 0, 0)),
+		v3(1, 0, 0),
+	);
+	const w = cross(n, u);
+	const a = index * GOLDEN;
+	const tilt = EXTRACTION.ejectSpread;
+	const out = normalizeOr(
+		add(n, add(scale(u, Math.cos(a) * tilt), scale(w, Math.sin(a) * tilt))),
+		n,
+	);
+	return {
+		id,
+		ore,
+		pos: hit.point,
+		vel: add(rockVel, scale(out, EXTRACTION.ejectKms)),
+		expiresAt: now + (ore ? EXTRACTION.lifetimeS : EXTRACTION.wasteLifetimeS),
+	};
+}
+
+/** What the caller's hold and bank say about one scoop attempt. */
+export type ScoopVerdict = "taken" | "hold-full" | "low-energy";
+
+export interface FragmentStep {
+	kept: Fragment[];
+	taken: Fragment[];
+	refused: { fragment: Fragment; verdict: Exclude<ScoopVerdict, "taken"> }[];
+	lost: Fragment[];
+}
+
+/** Whether the ship is inside a fragment's scoop window: close, and slow relative to it. */
+export const inScoopWindow = (
+	f: { pos: Vec3; vel: Vec3 },
+	ship: { pos: Vec3; vel: Vec3 },
+): boolean =>
+	lengthSq(sub(f.pos, ship.pos)) <=
+		EXTRACTION.scoopRadiusKm * EXTRACTION.scoopRadiusKm &&
+	lengthSq(sub(f.vel, ship.vel)) <=
+		EXTRACTION.scoopSpeedKms * EXTRACTION.scoopSpeedKms;
+
+/**
+ * One frame of fragments: expired ones are lost, ore fragments in the window are
+ * offered to `accept`, which pays the charge and fills the hold, and the rest drift.
+ * Waste is never scooped.
+ */
+export function stepFragments(
+	fragments: readonly Fragment[],
+	ship: { pos: Vec3; vel: Vec3 },
+	dt: number,
+	now: number,
+	accept: (f: Fragment) => ScoopVerdict,
+): FragmentStep {
+	const out: FragmentStep = { kept: [], taken: [], refused: [], lost: [] };
+	for (const f of fragments) {
+		if (now >= f.expiresAt) {
+			if (f.ore) out.lost.push(f);
+			continue;
+		}
+		if (f.ore && inScoopWindow(f, ship)) {
+			const verdict = accept(f);
+			if (verdict === "taken") {
+				out.taken.push(f);
+				continue;
+			}
+			out.refused.push({ fragment: f, verdict });
+		}
+		out.kept.push({ ...f, pos: add(f.pos, scale(f.vel, dt)) });
+	}
+	return out;
+}
