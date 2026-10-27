@@ -15403,14 +15403,14 @@ class Game {
 	private stepCargoCanisters(dt: number) {
 		if (this.canisters.length === 0) return;
 		// `stepCanisters` owns the order (scoop, then drift); this owns the hold.
-		const step = stepCanisters(
-			this.canisters,
-			this.world.ship,
+		const step = stepCanisters({
+			canisters: this.canisters,
+			ship: this.world.ship,
 			dt,
-			this.world.gameTime,
+			now: this.world.gameTime,
 			// Applied per canister, inside the step: a second canister scooped
 			// in the same step is judged against the hold the first one left.
-			(canister) => {
+			accept: (canister) => {
 				const before = this.holdings();
 				const outcome = applyHoldEvent(before, this.commerceWorld, {
 					kind: "scoop",
@@ -15436,11 +15436,11 @@ class Game {
 			// so a pilot who flies past `NEAR_FAR_KM` would drop every canister at
 			// the station to star rest and lose them inside their five minutes
 			// (sage #355).
-			(canister) =>
+			frameFor: (canister) =>
 				this.frameMotion(this.bodyFrameSource(canister.frameBodyId), dt),
-			this.flownCapacity(),
-			() => this.condition.energy,
-		);
+			gear: this.flownCapacity(),
+			bankE: () => this.condition.energy,
+		});
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.

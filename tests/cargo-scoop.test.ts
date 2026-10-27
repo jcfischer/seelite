@@ -151,19 +151,19 @@ describe("the pickup gate", () => {
 	} as Canister;
 	const step = (gear: typeof STOCK_SCOOP, bank: number) => {
 		let taken = 0;
-		const out = stepCanisters(
-			[canister],
+		const out = stepCanisters({
+			canisters: [canister],
 			ship,
-			0.1,
-			10,
-			(c) => {
+			dt: 0.1,
+			now: 10,
+			accept: (c) => {
 				taken += c.tonnes;
 				return c.tonnes;
 			},
-			() => steadyFrame(v3()),
+			frameFor: () => steadyFrame(v3()),
 			gear,
-			() => bank,
-		);
+			bankE: () => bank,
+		});
 		return { out, taken };
 	};
 
@@ -215,17 +215,17 @@ describe("a wreck container", () => {
 		containers: [{ kind: "good" as const, id: "Food", tonnes: 8, left: 8 }],
 	};
 	const attempt = (gear: typeof STOCK_SCOOP, bankE: number) =>
-		scoopWreckContainer(
+		scoopWreckContainer({
 			row,
-			0,
-			newCommander("courier"),
-			0,
-			pose(0.01),
+			index: 0,
+			commander: newCommander("courier"),
+			entrustedT: 0,
+			container: pose(0.01),
 			ship,
 			gear,
 			bankE,
-			1,
-		);
+			at: 1,
+		});
 
 	test("is left alone by an unfitted ship, which is told why", () => {
 		const r = attempt(NO_SCOOP, 100);

@@ -553,56 +553,56 @@ test("death scoop honors speed, partial tonnes, whole fittings and native kg/g w
 	};
 	const pose = { pos: v3(), vel: v3() };
 	const full = { ...dying.state, cargo: { Food: 19 } };
-	const partial = scoopWreckContainer(
+	const partial = scoopWreckContainer({
 		row,
-		0,
-		full,
-		0,
-		pose,
-		pose,
-		STOCK_SCOOP,
-		100,
-		1,
-	);
+		index: 0,
+		commander: full,
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 1,
+	});
 	expect(partial.tonnes).toBe(1);
 	expect(partial.row.containers[0].left).toBe(7);
-	const kg = scoopWreckContainer(
+	const kg = scoopWreckContainer({
 		row,
-		1,
-		partial.commander,
-		0,
-		pose,
-		pose,
-		STOCK_SCOOP,
-		100,
-		1,
-	);
+		index: 1,
+		commander: partial.commander,
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 1,
+	});
 	expect(kg.commander.cargo.Gold).toBe(12);
 	expect(
-		scoopWreckContainer(
+		scoopWreckContainer({
 			row,
-			2,
-			kg.commander,
-			0,
-			pose,
-			pose,
-			STOCK_SCOOP,
-			100,
-			1,
-		).refusal,
+			index: 2,
+			commander: kg.commander,
+			entrustedT: 0,
+			container: pose,
+			ship: pose,
+			gear: STOCK_SCOOP,
+			bankE: 100,
+			at: 1,
+		}).refusal,
 	).toContain("0 t free");
 	expect(
-		scoopWreckContainer(
+		scoopWreckContainer({
 			row,
-			1,
-			full,
-			0,
-			pose,
-			{ pos: v3(), vel: v3(2, 0, 0) },
-			STOCK_SCOOP,
-			100,
-			1,
-		).tonnes,
+			index: 1,
+			commander: full,
+			entrustedT: 0,
+			container: pose,
+			ship: { pos: v3(), vel: v3(2, 0, 0) },
+			gear: STOCK_SCOOP,
+			bankE: 100,
+			at: 1,
+		}).tonnes,
 	).toBe(0);
 });
 

@@ -138,16 +138,16 @@ export function flyToCargo(
 	let scooped = 0;
 	for (let t = 0; t < limitS; t += PILOT_DT) {
 		const now = killedAt + t;
-		const step = stepCanisters(
+		const step = stepCanisters({
 			canisters,
 			ship,
-			PILOT_DT,
+			dt: PILOT_DT,
 			now,
-			(c) => c.tonnes,
-			() => steadyFrame(frameVel),
-			STOCK_SCOOP,
-			() => Infinity,
-		);
+			accept: (c) => c.tonnes,
+			frameFor: () => steadyFrame(frameVel),
+			gear: STOCK_SCOOP,
+			bankE: () => Infinity,
+		});
 		scooped += step.scoops.filter((s) => s.accepted).length;
 		canisters = step.kept;
 		if (scooped === dropped) return { dropped, scooped, allScoopedS: t };

@@ -699,18 +699,18 @@ function applied(
 				)
 					return unchanged(holdings, world);
 			}
-			const took = scoopWreckContainer(
-				e,
-				event.containerIndex,
-				holdings.commander,
-				entrustedTonnesAboard(holdings.requests),
-				event.container,
-				event.ship,
-				event.gear,
-				event.bankE,
-				event.at,
-				!!job,
-			);
+			const took = scoopWreckContainer({
+				row: e,
+				index: event.containerIndex,
+				commander: holdings.commander,
+				entrustedT: entrustedTonnesAboard(holdings.requests),
+				container: event.container,
+				ship: event.ship,
+				gear: event.gear,
+				bankE: event.bankE,
+				at: event.at,
+				entrusted: !!job,
+			});
 			if (!took.tonnes && !took.refusal) return unchanged(holdings, world);
 			const signals = {
 				...QUIET,

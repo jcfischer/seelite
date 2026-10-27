@@ -428,12 +428,21 @@ export interface CanisterScoop {
  * the ship it was tested against, and at combat speed that step is wider than
  * the scoop's radius, so a pass right alongside missed.
  */
-export function stepCanisters(
-	canisters: readonly Canister[],
-	ship: { pos: Vec3; vel: Vec3 },
-	dt: number,
-	now: number,
-	accept: (canister: Canister) => number,
+export function stepCanisters({
+	canisters,
+	ship,
+	dt,
+	now,
+	accept,
+	frameFor,
+	gear,
+	bankE,
+}: {
+	canisters: readonly Canister[];
+	ship: { pos: Vec3; vel: Vec3 };
+	dt: number;
+	now: number;
+	accept: (canister: Canister) => number;
 	/**
 	 * The frame **this canister** comes to rest in, across this step. Per canister and
 	 * not one vector for all of them: the frame belongs to the body the kill
@@ -441,10 +450,10 @@ export function stepCanisters(
 	 * for `FlightPerformance`'s reason — a caller that forgot would silently
 	 * bring every canister to rest in star coordinates.
 	 */
-	frameFor: (canister: Canister) => FrameMotion,
-	gear: ScoopGear,
-	bankE: () => number,
-): { kept: Canister[]; scoops: CanisterScoop[] } {
+	frameFor: (canister: Canister) => FrameMotion;
+	gear: ScoopGear;
+	bankE: () => number;
+}): { kept: Canister[]; scoops: CanisterScoop[] } {
 	const kept: Canister[] = [];
 	const tried: CanisterScoop[] = [];
 	for (const canister of canisters) {
