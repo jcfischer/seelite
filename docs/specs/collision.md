@@ -440,7 +440,10 @@ measured 34–140 ms against 323–637 ms for an inline build (2026-10-27,
 host CPU, load 10–30; the stall grows with load in both arms). A flat transfer rebuilt across frames would remove it; it is
 not built. The cost
 row holds the in-field tick, less a tick away from the field, to 0.71 ms per
-rock in reach, on the fastest of seven interleaved batches. `scripts/probe-field-flight.mjs` flies an impact at a
+rock in reach, on the fastest of seven interleaved batches. That budget is
+#956's figure on the hardware machine, so a CI runner logs its own figure
+and does not assert it (0.878 ms on GitHub's Linux runner, 2026-10-27); the
+row that holds the tick to twice the bare sweep runs everywhere. `scripts/probe-field-flight.mjs` flies an impact at a
 rock face, a ride pressed against a spinning rock, and a placement inside a
 rock.
 
