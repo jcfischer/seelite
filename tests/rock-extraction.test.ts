@@ -6,12 +6,13 @@ import {
 	debitSurface,
 	EXTRACTION,
 	type Fragment,
+	fragmentAt,
 	oreShare,
 	releaseFragment,
 	stepCut,
 	stepFragments,
 } from "../src/rock-extraction";
-import { v3 } from "../src/vec3";
+import { sub, v3 } from "../src/vec3";
 
 const cutFor = (seconds: number, rate: number, share: number, left = 1e9) => {
 	let cut = beginCut();
@@ -100,63 +101,96 @@ describe("the beam", () => {
 describe("fragments", () => {
 	const hit = { id: "r", point: v3(0, 0, 1), normal: v3(0, 0, 1), distKm: 4 };
 	const ore = { family: "metallic", grade: "standard" } as const;
+	const still = { pos: v3(), vel: v3() };
 
-	test("leave the surface outward at the eject speed on top of the rock's", () => {
-		const f = releaseFragment("f1", 3, ore, hit, v3(1, 0, 0), 100);
-		const rel = { x: f.vel.x - 1, y: f.vel.y, z: f.vel.z };
+	test("leave the surface outward at the eject speed and ride with the rock", () => {
+		const f = releaseFragment("f1", 3, ore, hit, v3(), 100);
+		expect(f.rockId).toBe("r");
+		expect(f.expiresAt).toBe(100 + EXTRACTION.lifetimeS);
+		const at = fragmentAt(f, { pos: v3(500, 0, 0), vel: v3(30, 0, 0) }, 110);
+		const rel = sub(at.vel, v3(30, 0, 0));
 		expect(Math.hypot(rel.x, rel.y, rel.z)).toBeCloseTo(EXTRACTION.ejectKms, 9);
 		expect(rel.z).toBeGreaterThan(0);
-		expect(f.expiresAt).toBe(100 + EXTRACTION.lifetimeS);
+		const off = sub(at.pos, v3(500, 0, 1));
+		expect(off.z).toBeCloseTo(rel.z * 10, 9);
 	});
 
 	test("a burst fans out", () => {
 		const a = releaseFragment("a", 0, ore, hit, v3(), 0);
 		const b = releaseFragment("b", 1, ore, hit, v3(), 0);
 		expect(
-			Math.abs(a.vel.x - b.vel.x) + Math.abs(a.vel.y - b.vel.y),
+			Math.abs(a.ejectVel.x - b.ejectVel.x) +
+				Math.abs(a.ejectVel.y - b.ejectVel.y),
 		).toBeGreaterThan(1e-4);
 	});
 
 	const sitting = (over: Partial<Fragment> = {}): Fragment => ({
 		id: "f",
+		rockId: "r",
 		ore,
-		pos: v3(0.01, 0, 0),
-		vel: v3(),
+		offset: v3(0.01, 0, 0),
+		ejectVel: v3(),
+		bornAt: 0,
 		expiresAt: 100,
 		...over,
 	});
-	const ship = { pos: v3(), vel: v3() };
+	const rock = () => still;
 
 	test("one in the window is offered and taken", () => {
-		const s = stepFragments([sitting()], ship, 0.1, 10, () => "taken");
+		const s = stepFragments([sitting()], still, 10, rock, () => "taken");
 		expect(s.taken).toHaveLength(1);
 		expect(s.kept).toHaveLength(0);
 	});
 
 	test("a refused one stays and says why", () => {
-		const s = stepFragments([sitting()], ship, 0.1, 10, () => "hold-full");
+		const s = stepFragments([sitting()], still, 10, rock, () => "hold-full");
 		expect(s.kept).toHaveLength(1);
 		expect(s.refused[0].verdict).toBe("hold-full");
 	});
 
-	test("too fast or too far is not offered", () => {
+	test("too fast, too far or an unresolved rock is not offered", () => {
 		let offered = 0;
 		const count = () => {
 			offered++;
 			return "taken" as const;
 		};
-		stepFragments([sitting({ vel: v3(0.3, 0, 0) })], ship, 0.1, 10, count);
-		stepFragments([sitting({ pos: v3(0.06, 0, 0) })], ship, 0.1, 10, count);
+		stepFragments(
+			[sitting({ ejectVel: v3(0.3, 0, 0) })],
+			still,
+			0,
+			rock,
+			count,
+		);
+		stepFragments(
+			[sitting({ offset: v3(0.06, 0, 0) })],
+			still,
+			10,
+			rock,
+			count,
+		);
+		stepFragments([sitting()], still, 10, () => null, count);
 		expect(offered).toBe(0);
+	});
+
+	test("the window reads the fragment and the ship at the same moment", () => {
+		const moving = { pos: v3(300, 0, 0), vel: v3(30, 0, 0) };
+		const s = stepFragments(
+			[sitting()],
+			moving,
+			10,
+			() => moving,
+			() => "taken",
+		);
+		expect(s.taken).toHaveLength(1);
 	});
 
 	test("waste is never offered, and an expired ore fragment is lost", () => {
 		let offered = 0;
 		const s = stepFragments(
 			[sitting({ ore: null }), sitting({ id: "old", expiresAt: 5 })],
-			ship,
-			0.1,
+			still,
 			10,
+			rock,
 			() => {
 				offered++;
 				return "taken";

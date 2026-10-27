@@ -139,13 +139,31 @@ export function beamHit(
 	return best;
 }
 
+/**
+ * A fragment rides with the rock it came from: its place is the rock's place now,
+ * plus where it left the surface, plus its eject velocity times its age. So the
+ * rock's orbit and the ship's frame cannot carry the two apart.
+ */
 export interface Fragment {
 	id: string;
+	rockId: string;
 	ore: { family: OreFamily; grade: OreGrade } | null;
-	pos: Vec3;
-	vel: Vec3;
+	offset: Vec3;
+	ejectVel: Vec3;
+	bornAt: number;
 	expiresAt: number;
 }
+
+export interface Anchor {
+	pos: Vec3;
+	vel: Vec3;
+}
+
+/** Where a fragment is at `now`, given its rock's pose at `now`. */
+export const fragmentAt = (f: Fragment, rock: Anchor, now: number): Anchor => ({
+	pos: add(rock.pos, add(f.offset, scale(f.ejectVel, now - f.bornAt))),
+	vel: add(rock.vel, f.ejectVel),
+});
 
 const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
@@ -155,7 +173,7 @@ export function releaseFragment(
 	index: number,
 	ore: Fragment["ore"],
 	hit: BeamHit,
-	rockVel: Vec3,
+	rockPos: Vec3,
 	now: number,
 ): Fragment {
 	const n = hit.normal;
@@ -172,9 +190,11 @@ export function releaseFragment(
 	);
 	return {
 		id,
+		rockId: hit.id,
 		ore,
-		pos: hit.point,
-		vel: add(rockVel, scale(out, EXTRACTION.ejectKms)),
+		offset: sub(hit.point, rockPos),
+		ejectVel: scale(out, EXTRACTION.ejectKms),
+		bornAt: now,
 		expiresAt: now + (ore ? EXTRACTION.lifetimeS : EXTRACTION.wasteLifetimeS),
 	};
 }
@@ -190,25 +210,23 @@ export interface FragmentStep {
 }
 
 /** Whether the ship is inside a fragment's scoop window: close, and slow relative to it. */
-export const inScoopWindow = (
-	f: { pos: Vec3; vel: Vec3 },
-	ship: { pos: Vec3; vel: Vec3 },
-): boolean =>
+export const inScoopWindow = (f: Anchor, ship: Anchor): boolean =>
 	lengthSq(sub(f.pos, ship.pos)) <=
 		EXTRACTION.scoopRadiusKm * EXTRACTION.scoopRadiusKm &&
 	lengthSq(sub(f.vel, ship.vel)) <=
 		EXTRACTION.scoopSpeedKms * EXTRACTION.scoopSpeedKms;
 
 /**
- * One frame of fragments: expired ones are lost, ore fragments in the window are
- * offered to `accept`, which pays the charge and fills the hold, and the rest drift.
- * Waste is never scooped.
+ * One frame of fragments at `now`, with the ship where it is at `now`: expired ones
+ * are lost, and ore fragments in the window are offered to `accept`, which pays the
+ * charge and fills the hold. `rockOf` is `null` for a rock too far to resolve; such
+ * a fragment only ages. Waste is never scooped.
  */
 export function stepFragments(
 	fragments: readonly Fragment[],
-	ship: { pos: Vec3; vel: Vec3 },
-	dt: number,
+	ship: Anchor,
 	now: number,
+	rockOf: (f: Fragment) => Anchor | null,
 	accept: (f: Fragment) => ScoopVerdict,
 ): FragmentStep {
 	const out: FragmentStep = { kept: [], taken: [], refused: [], lost: [] };
@@ -217,7 +235,8 @@ export function stepFragments(
 			if (f.ore) out.lost.push(f);
 			continue;
 		}
-		if (f.ore && inScoopWindow(f, ship)) {
+		const rock = f.ore ? rockOf(f) : null;
+		if (rock && inScoopWindow(fragmentAt(f, rock, now), ship)) {
 			const verdict = accept(f);
 			if (verdict === "taken") {
 				out.taken.push(f);
@@ -225,7 +244,7 @@ export function stepFragments(
 			}
 			out.refused.push({ fragment: f, verdict });
 		}
-		out.kept.push({ ...f, pos: add(f.pos, scale(f.vel, dt)) });
+		out.kept.push(f);
 	}
 	return out;
 }

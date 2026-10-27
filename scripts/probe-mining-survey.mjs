@@ -172,6 +172,94 @@ try {
 			/^OUT OF RANGE/.test(far ?? ""),
 			String(far),
 		);
+		const cut = await page.evaluate(async () => {
+			const g = window.__seelite;
+			await window.__standOff(1);
+			const before = g.surveyState().row?.surface ?? 0;
+			const dt = g.units.MAX_DT;
+			g.keys.add(" ");
+			let rock = null;
+			for (let s = 0; s < 40 && g.miningLog.released < 2; s += dt) {
+				g.step(dt);
+				rock ??= g.miningLog.cutRockId;
+			}
+			g.keys.delete(" ");
+			for (let i = 0; i < 2; i++)
+				await new Promise((r) => requestAnimationFrame(r));
+			return {
+				rock,
+				before,
+				after: g.surveyState().row?.surface ?? 0,
+				log: { ...g.miningLog },
+				ore: g.fragmentPlaces().filter((f) => f.ore).length,
+				drawn: g.fragmentRender,
+				line: g.miningLineRender,
+			};
+		});
+		check(
+			"the Mining Laser cuts the rock in its beam",
+			cut.rock === setup.id,
+			String(cut.rock),
+		);
+		check(
+			"each released ore tonne leaves the deposit at once",
+			cut.log.released >= 1 && cut.after - cut.before === cut.log.released,
+			JSON.stringify(cut),
+		);
+		check(
+			"ore fragments drift and the nearest is marked",
+			cut.ore === cut.log.released && cut.drawn !== null,
+			JSON.stringify(cut.drawn),
+		);
+		await page.screenshot({ path: "probe-shots/mining-survey/fragments.png" });
+		const scoop = await page.evaluate(async () => {
+			const g = window.__seelite;
+			const dt = g.units.MAX_DT;
+			const ore = g.fragmentPlaces().filter((f) => f.ore);
+			const visit = async (seen) => {
+				const f = g.fragmentPlaces().find((p) => p.id === seen.id);
+				await window.__placeShipAt(f.pos, f.vel);
+				for (let i = 0; i < 3; i++) g.step(dt);
+			};
+			await visit(ore[0]);
+			const took = { ...g.miningLog, mined: { ...g.minedOre } };
+			const hold = g.commander;
+			g.minedOre = { "Prototype fill": 10000 };
+			if (ore[1]) await visit(ore[1]);
+			for (let i = 0; i < 2; i++)
+				await new Promise((r) => requestAnimationFrame(r));
+			const full = { ...g.miningLog, notice: g.miningLineRender?.notice };
+			g.minedOre = {};
+			await window.__standOff(5);
+			const surface = g.surveyState().row?.surface ?? 0;
+			for (let s = 0; s < 125; s += dt) g.step(dt);
+			return {
+				took,
+				full,
+				hasSecond: !!ore[1],
+				lost: g.miningLog.lost,
+				surface,
+				surfaceAfter: g.surveyState().row?.surface ?? 0,
+				hull: hold.hull,
+			};
+		});
+		check(
+			"a fragment in the scoop window goes into the hold",
+			scoop.took.taken === 1 &&
+				Object.values(scoop.took.mined).reduce((a, b) => a + b, 0) === 1,
+			JSON.stringify(scoop.took),
+		);
+		check(
+			"a full hold leaves the fragment and says so",
+			!scoop.hasSecond ||
+				(scoop.full.refused > 0 && /HOLD FULL/.test(scoop.full.notice ?? "")),
+			JSON.stringify(scoop.full),
+		);
+		check(
+			"an expired fragment is lost and the deposit is not restored",
+			scoop.lost >= 1 && scoop.surfaceAfter === scoop.surface,
+			JSON.stringify(scoop),
+		);
 	}
 } finally {
 	await browser.close();

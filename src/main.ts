@@ -28,7 +28,9 @@ import {
 	type Cut,
 	debitSurface,
 	EXTRACTION,
+	type Anchor,
 	type Fragment,
+	fragmentAt,
 	oreShare,
 	releaseFragment,
 	stepCut,
@@ -9615,7 +9617,7 @@ class Game {
 							n,
 							i < step.ore ? ore : null,
 							hit,
-							ref.vel,
+							ref.pos,
 							now,
 						),
 					);
@@ -9628,8 +9630,8 @@ class Game {
 		const scooped = stepFragments(
 			this.fragments,
 			this.world.ship,
-			dt,
 			now,
+			(f) => this.fragmentRock(f.rockId),
 			(f) => {
 				const hold = commanderHold(
 					this.commander,
@@ -9669,6 +9671,26 @@ class Game {
 			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
 	}
 
+	/** A fragment's rock pose now, or `null` past `ROCK_DROP_KM`. */
+	private fragmentRock(rockId: string): Anchor | null {
+		const ref = this.rockRef(rockId);
+		return ref ? { pos: ref.pos, vel: ref.vel } : null;
+	}
+
+	/** Node #920: each live fragment with its place now, for the glass and the probe. */
+	fragmentPlaces(): (Fragment & Anchor)[] {
+		const now = this.world.gameTime;
+		const rocks = new Map<string, Anchor | null>();
+		const out: (Fragment & Anchor)[] = [];
+		for (const f of this.fragments) {
+			if (!rocks.has(f.rockId))
+				rocks.set(f.rockId, this.fragmentRock(f.rockId));
+			const rock = rocks.get(f.rockId);
+			if (rock) out.push({ ...f, ...fragmentAt(f, rock, now) });
+		}
+		return out;
+	}
+
 	/** Fragments on the glass as diamonds in their family's colour, the nearest ore one with its range, and the mining line. */
 	private drawFragments(
 		ctx: CanvasRenderingContext2D,
@@ -9678,9 +9700,9 @@ class Game {
 		h: number,
 	) {
 		const ship = this.world.ship;
-		let nearest: { f: Fragment; d: number } | null = null;
+		let nearest: { f: Fragment & Anchor; d: number } | null = null;
 		ctx.save();
-		for (const f of this.fragments) {
+		for (const f of this.fragmentPlaces()) {
 			const to = sub(f.pos, camPos);
 			const d = length(to);
 			if (d > PLAYER_LASER_RANGE_KM * 1.5) continue;
