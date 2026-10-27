@@ -53,15 +53,13 @@ export function firedExtraction(
 }
 
 /**
- * The hardpoint `?mining=1` fits a Mining Laser on: `fitted` when one is
- * fitted already, else the first free hardpoint. With every hardpoint taken it
- * replaces the first only when `replace` (a boot that writes nothing), so a
- * saved weapon is never lost; otherwise `null`.
+ * The hardpoint `?mining=1` fits a Mining Laser on, on a boot that writes
+ * nothing: `fitted` when one is fitted already, else the first free hardpoint,
+ * else the first hardpoint; `null` on a hull with none.
  */
 export function prototypeMiningLaserSlot<K extends string>(
 	hardpoints: readonly { key: K }[],
 	loadout: Readonly<Partial<Record<K, { module: string }>>>,
-	replace: boolean,
 ): K | "fitted" | null {
 	if (
 		Object.values(loadout).some(
@@ -69,8 +67,9 @@ export function prototypeMiningLaserSlot<K extends string>(
 		)
 	)
 		return "fitted";
-	const free = hardpoints.find((s) => !loadout[s.key])?.key;
-	return free ?? (replace ? (hardpoints[0]?.key ?? null) : null);
+	return (
+		hardpoints.find((s) => !loadout[s.key])?.key ?? hardpoints[0]?.key ?? null
+	);
 }
 
 /** Sub-tonne progress of the cut on one rock. Whole tonnes leave as fragments. */

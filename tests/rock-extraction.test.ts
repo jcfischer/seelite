@@ -308,36 +308,43 @@ describe("the fired lasers", () => {
 
 describe("the prototype's Mining Laser fit", () => {
 	const hardpoints = [{ key: "H1" }, { key: "H2" }];
-	const full = {
-		H1: { module: "pulse-laser" },
-		H2: { module: "beam-laser" },
-	};
 
 	test("goes on the first free hardpoint", () => {
 		expect(
-			prototypeMiningLaserSlot(
-				hardpoints,
-				{ H1: { module: "pulse-laser" } },
-				false,
-			),
+			prototypeMiningLaserSlot(hardpoints, { H1: { module: "pulse-laser" } }),
 		).toBe("H2");
 	});
 
-	test("never replaces a fitted weapon on a boot that saves", () => {
-		expect(prototypeMiningLaserSlot(hardpoints, full, false)).toBeNull();
-	});
-
-	test("replaces the first hardpoint only on a boot that writes nothing", () => {
-		expect(prototypeMiningLaserSlot(hardpoints, full, true)).toBe("H1");
+	test("with every hardpoint taken it takes the first", () => {
+		expect(
+			prototypeMiningLaserSlot(hardpoints, {
+				H1: { module: "pulse-laser" },
+				H2: { module: "beam-laser" },
+			}),
+		).toBe("H1");
 	});
 
 	test("does nothing when one is fitted", () => {
 		expect(
-			prototypeMiningLaserSlot(
-				hardpoints,
-				{ H2: { module: "mining-laser" } },
-				true,
-			),
+			prototypeMiningLaserSlot(hardpoints, { H2: { module: "mining-laser" } }),
 		).toBe("fitted");
 	});
+
+	test("a hull with no hardpoint gets none", () => {
+		expect(prototypeMiningLaserSlot([], {})).toBeNull();
+	});
+});
+
+test("Game fits the prototype laser only on a boot that writes nothing", async () => {
+	const main = await Bun.file(
+		new URL("../src/main.ts", import.meta.url),
+	).text();
+	const at = main.indexOf(
+		"\tfitPrototypeMiningLaser(writesNothing: boolean) {",
+	);
+	expect(at).toBeGreaterThan(0);
+	expect(main.slice(at, at + 120)).toContain("if (!writesNothing) return;");
+	expect(main).toContain(
+		"if (MINING_ON) game.fitPrototypeMiningLaser(plan.writesNothing);",
+	);
 });

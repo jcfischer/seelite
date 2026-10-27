@@ -1285,6 +1285,7 @@ import {
 	newWorld as newPersistentWorld,
 	observeDocking,
 	observeScan,
+	setDepositRow,
 	advanceTo,
 	effectiveCarrier,
 	type EffectiveCarrier,
@@ -9377,20 +9378,18 @@ class Game {
 	deepCueRender: { x: number; y: number; facing: boolean } | null = null;
 
 	fitPrototypeMiningLaser(writesNothing: boolean) {
-		const loadout = this.commander.loadout;
+		if (!writesNothing) return;
 		const hardpoints = HULL_SPECS[this.commander.hull].slots.filter(
 			(s) => s.kind === "hardpoint",
 		);
-		const key = prototypeMiningLaserSlot(hardpoints, loadout, writesNothing);
+		const key = prototypeMiningLaserSlot(hardpoints, this.commander.loadout);
 		const slot = hardpoints.find((s) => s.key === key);
 		if (!slot) return;
-		this.commander = {
-			...this.commander,
-			loadout: {
-				...loadout,
-				[slot.key]: makeModule("mining-laser", slot.size),
-			},
+		const loadout = {
+			...this.commander.loadout,
+			[slot.key]: makeModule("mining-laser", slot.size),
 		};
+		this.commander = { ...this.commander, loadout };
 	}
 
 	private fieldRockSets(): FieldRocks[] {
@@ -9605,16 +9604,13 @@ class Game {
 	}
 
 	private putDepositRow(ref: RockRef, row: DepositRow) {
-		const galaxy = this.world.system.record.galaxy;
-		const envelope = this.commerceWorld.galaxies[galaxy];
-		const galaxies = this.commerceWorld.galaxies.slice();
-		galaxies[galaxy] = {
-			...envelope,
-			deposits: {
-				rows: { ...envelope.deposits.rows, [this.rockDepositKey(ref)]: row },
-			},
-		};
-		this.commerceWorld = { ...this.commerceWorld, galaxies };
+		this.commerceWorld = setDepositRow(
+			this.commerceWorld,
+			this.world.system.record.galaxy,
+			this.rockDepositKey(ref),
+			row,
+			this.world.gameTime,
+		);
 		this.saveDirty();
 	}
 
@@ -14434,6 +14430,7 @@ class Game {
 		// has hit twice now.
 		const replacesSystem = !canResetWorldToStart(this.world);
 		resetWorldToStart(this.world);
+		this.gunFiredNow = false;
 		// A reset is a new start, and its clock runs from zero again (#515).
 		this.defenderWatches = {};
 		if (replacesSystem) {
