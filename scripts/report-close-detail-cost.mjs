@@ -112,6 +112,15 @@ for (const ratio of ratios) {
 			);
 		console.log("");
 	}
+	for (const [i, s] of sweeps.entries()) {
+		const reread = s.rows.filter((r) => r.attempts > 1);
+		console.log(
+			reread.length
+				? `${labelOf(i)} read again: ${reread.map((r) => `${r.arm}@${r.radii}R (discarded ${r.discarded.map((d) => d.samplesMs.map((v) => v.toFixed(1)).join(",")).join(" | ")})`).join("; ")}.`
+				: `${labelOf(i)} read again: no cell.`,
+		);
+	}
+	console.log("");
 	const gaps = sweepAgreement(sweeps[0].rows, sweeps[1].rows);
 	const closeGaps = gaps
 		.filter((g) => close.includes(g.radii))

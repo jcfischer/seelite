@@ -20,12 +20,14 @@ import { VIEWS } from "../scripts/lib/view-set.mjs";
 import {
 	CAP_LADDER,
 	CLOSE_DETAIL_ARMS,
+	CELL_TREND_LIMIT,
 	CLOSE_DETAIL_RADII,
 	FAR_COLUMN_OUTLIER_FACTOR,
 	RADII,
 	armDelta,
 	armLandedRefusal,
 	buildShaOf,
+	cellTrend,
 	closeDetailArmsRefusal,
 	controlPairGap,
 	farColumnVerdict,
@@ -587,6 +589,7 @@ describe("an arm that did not land", () => {
 	};
 	const landed = {
 		quality: "high",
+		renderScale: 1,
 		interimCap: 6,
 		groundCap: 6,
 		cloudCap: 6,
@@ -647,6 +650,15 @@ describe("an arm that did not land", () => {
 		expect(
 			armLandedRefusal(interim, { ...landed, cloudAngleRatio: 2 }),
 		).toMatch(/extended/);
+	});
+
+	test("an Auto or reduced render scale is a refusal, because it moves the buffer inside a cell", () => {
+		expect(
+			armLandedRefusal(interim, { ...landed, renderScale: "auto" }),
+		).toMatch(/render scale/);
+		expect(armLandedRefusal(interim, { ...landed, renderScale: 0.75 })).toMatch(
+			/render scale/,
+		);
 	});
 
 	test("a cloud arm with no half-resolution ground is not an arm at all", () => {
@@ -769,5 +781,40 @@ describe("reading the arms against each other", () => {
 		expect(() =>
 			sweepAgreement([cell("interim", 2, 10)], [cell("cap-0", 2, 10)]),
 		).toThrow(/same cells/);
+	});
+});
+
+describe("a cell whose readings are still moving", () => {
+	test("reads a steady cell as no trend", () => {
+		expect(cellTrend([5.3, 5.3, 5.2, 5.4, 5.3])).toBeCloseTo(0, 1);
+		expect(cellTrend([5.2, 4.3, 5.4, 5.2, 6.2])).toBeLessThan(CELL_TREND_LIMIT);
+	});
+
+	test("reads the decay of a cell that inherited its predecessor's cost", () => {
+		expect(cellTrend([27.9, 27.2, 22.0, 14.0, 13.9])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+		expect(cellTrend([30.7, 30.7, 16.5, 11.7, 11.7])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+		expect(cellTrend([24.4, 14.1, 11.3, 11.5, 11.4])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+	});
+
+	test("reads a rise as well as a fall", () => {
+		expect(cellTrend([11.7, 11.7, 16.5, 30.7, 30.7])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+	});
+
+	test("the limit sits between the noisiest steady cell measured and the quietest decay", () => {
+		expect(CELL_TREND_LIMIT).toBeGreaterThan(0.25);
+		expect(CELL_TREND_LIMIT).toBeLessThan(0.68);
+	});
+
+	test("refuses readings it cannot compare", () => {
+		expect(() => cellTrend([5, 5, 5])).toThrow(/five/);
+		expect(() => cellTrend([5, Number.NaN, 5, 5, 5])).toThrow(/trend/);
 	});
 });

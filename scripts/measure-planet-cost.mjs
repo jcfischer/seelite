@@ -119,12 +119,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { loadavg } from "node:os";
 import { join } from "node:path";
 import {
+	CELL_TREND_LIMIT,
 	CLOSE_DETAIL_ARMS,
 	CLOSE_DETAIL_RADII,
 	RADII,
 	armDelta,
 	armLandedRefusal,
 	buildShaOf,
+	cellTrend,
 	closeDetailArmsRefusal,
 	controlPairGap,
 	farColumnVerdict,
@@ -382,6 +384,7 @@ const SETTLE_TIMEOUT_MS = 8000;
  * right". The close-detail sweep takes five: its deltas are fractions of a
  * millisecond and a median of five moves less on one interrupted window.
  */
+const TREND_ATTEMPTS = 3;
 const READINGS = process.argv.includes("--close-detail") ? 5 : 3;
 
 /**
@@ -610,7 +613,7 @@ async function run(pixelRatio) {
 		 * four doubt fields — is the same measurement and must stay one copy of it,
 		 * or a guard added to one kind of cell would quietly not apply to the other.
 		 */
-		const sampleHere = async (label, meta) => {
+		const sampleOnce = async (label, meta) => {
 			const settled = await settle(page);
 			const samples = [];
 			let text = settled.text;
@@ -645,6 +648,23 @@ async function run(pixelRatio) {
 				// as "did not stall".
 				peakRiseMs: finite(label, Math.max(0, last.peakMs - settled.peak)),
 			};
+		};
+
+		const sampleHere = async (label, meta) => {
+			if (!CLOSE_DETAIL) return sampleOnce(label, meta);
+			const discarded = [];
+			for (let attempt = 1; attempt <= TREND_ATTEMPTS; attempt++) {
+				const row = await sampleOnce(label, meta);
+				const trend = cellTrend(row.samplesMs);
+				if (trend <= CELL_TREND_LIMIT)
+					return { ...row, trend, attempts: attempt, discarded };
+				discarded.push({ samplesMs: row.samplesMs, trend });
+			}
+			throw new Error(
+				`${label}: the readings were still moving on all ${TREND_ATTEMPTS} reads (${discarded
+					.map((d) => d.samplesMs.map((v) => v.toFixed(1)).join(","))
+					.join(" | ")}), so there is no steady cost to report`,
+			);
 		};
 
 		/**
@@ -862,6 +882,7 @@ async function run(pixelRatio) {
 				const angles = cd.groundAngles.slice(-4);
 				return {
 					quality: g.settings.value.quality,
+					renderScale: g.settings.value.renderScale,
 					interimCap: planetDetailCap("high", "terran"),
 					groundCap: v.uniforms.extraOctaveCap.value,
 					cloudCap: cloud?.material.uniforms.extraOctaveCap.value ?? Number.NaN,
@@ -1302,6 +1323,21 @@ for (const {
 					.join(", ")}`
 			: `    stale reads: none — every sample was taken on a line the meter had just written`,
 	);
+	if (CLOSE_DETAIL) {
+		const reread = runRows.filter((r) => r.attempts > 1);
+		console.log(
+			reread.length
+				? `    read again (trend over ${CELL_TREND_LIMIT}): ${reread.length} of ${runRows.length} cells — ${reread
+						.map(
+							(r) =>
+								`${cellName(r)} discarded ${r.discarded
+									.map((d) => d.samplesMs.map((v) => v.toFixed(1)).join(","))
+									.join(" | ")}`,
+						)
+						.join("; ")}`
+				: `    read again: none — every cell's readings were steady on the first read`,
+		);
+	}
 	// The drift control. Printed last because it qualifies everything above it:
 	// a column-to-column difference smaller than this is not a difference.
 	const drift = controlAfter.ms - controlBefore.ms;
