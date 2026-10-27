@@ -29,10 +29,11 @@ import {
 	rockSolid,
 	setRockShapeSource,
 } from "../src/field-collision";
-import { ROCK_ARCHETYPES, rockArchetype, spinQuat } from "../src/field-lod";
+import { rockArchetype, spinQuat } from "../src/field-lod";
 import { decodeRockHeightfields } from "../src/rock-heightfields";
 import { HULL_SPECS } from "../src/hull";
-import { envelopeAt } from "../src/rock-pieces";
+import { buildRockPieces, envelopeAt } from "../src/rock-pieces";
+import { rockPiecesThread } from "../src/rock-pieces-thread";
 import {
 	type World,
 	flightPerformance,
@@ -306,36 +307,60 @@ describe("the flown ship against field rocks (node #969)", () => {
 		).toBeGreaterThan(rock.radiusKm * 2);
 	});
 
-	test("pieces built ahead of flight leave a tick in the field nothing to build", () => {
+	test("pieces built on a worker match the main thread's, never hold it, and leave a tick nothing to build", async () => {
 		const decoded = decodeRockHeightfields(
 			new Uint8Array(readFileSync("src/models/rock-heightfields.bin")),
 		);
-		let builds = 0;
-		setRockShapeSource(() => {
-			builds++;
+		let reads = 0;
+		const countingSource = () => {
+			reads++;
 			return decoded;
-		});
+		};
+		const longestStallMs = async (work: () => Promise<void>) => {
+			let last = performance.now();
+			let longest = 0;
+			const beat = setInterval(() => {
+				const now = performance.now();
+				longest = Math.max(longest, now - last);
+				last = now;
+			}, 2);
+			await work();
+			clearInterval(beat);
+			return Math.max(longest, performance.now() - last);
+		};
 		try {
+			setRockShapeSource(countingSource);
+			const inline = await longestStallMs(() =>
+				prebuildRockPieces(async (archetype, field) => {
+					if (archetype >= 2) throw new Error("control arm stops at two");
+					return buildRockPieces(field);
+				}).catch(() => {}),
+			);
+			setRockShapeSource(countingSource);
 			const { world, plan, rocks } = fieldWorld();
 			const rock = biggest(rocks);
-			archetypePieces(rockArchetype(rock));
-			expect(builds).toBe(1);
-			const queue: (() => void)[] = [];
-			prebuildRockPieces((build) => queue.push(build));
-			let calls = 0;
-			for (let build = queue.shift(); build; build = queue.shift()) {
-				const before = builds;
-				build();
-				calls++;
-				expect(builds - before).toBeLessThanOrEqual(1);
-			}
-			expect([calls, builds]).toEqual([ROCK_ARCHETYPES, ROCK_ARCHETYPES]);
+			const thread = rockPiecesThread();
+			const offThread = await longestStallMs(() =>
+				prebuildRockPieces(thread.build).finally(thread.close),
+			);
+			console.log(
+				`longest main-thread stall: ${inline.toFixed(0)} ms building inline, ${offThread.toFixed(0)} ms on the worker`,
+			);
+			expect(inline).toBeGreaterThan(100);
+			expect(offThread).toBeLessThan(100);
+			const archetype = rockArchetype(rock);
+			expect(archetypePieces(archetype)).toEqual(
+				buildRockPieces(decoded.fields[archetype], {
+					label: `archetype ${archetype}`,
+				}),
+			);
+			const before = reads;
 			placeOnFace(world, plan, rock, 0.3, 0.5);
 			world.rockPlacement = { placed: false, rocks: new Set() };
 			let impacts = 0;
 			for (let i = 0; i < 40 && impacts === 0; i++)
 				impacts = fly(world).impacts.length;
-			expect([impacts > 0, builds]).toEqual([true, ROCK_ARCHETYPES]);
+			expect([impacts > 0, reads - before]).toEqual([true, 0]);
 		} finally {
 			setRockShapeSource(() => decoded);
 		}

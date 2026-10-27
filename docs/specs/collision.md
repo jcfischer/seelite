@@ -429,10 +429,12 @@ ends, grown by the hull's reach and the field centre's bend over the step, and
 only the occupied cells in that index range are posed. A rock's id is
 `<field id>:rock-<slot>`, and a ghost or an impact names it. The cone pieces
 of all 16 archetypes are built from the heightfields the game registers with
-`setRockShapeSource`, one archetype per idle callback from boot
-(`prebuildRockPieces`), because a build takes 160–230 ms (measured 2026-10-27,
-host CPU) and would stall the tick that first met a rock of that kind. An
-archetype a tick needs before its idle turn is built in that tick. The cost
+`setRockShapeSource`, one archetype at a time on a module Worker from boot
+(`prebuildRockPieces`, `src/rock-pieces.worker.ts`), because a build takes
+160–230 ms (measured 2026-10-27, host CPU) and would stall the tick that first
+met a rock of that kind, or any frame it ran in. An archetype a tick needs
+before the worker returns it is built in that tick, and so is every archetype
+if the worker fails. The cost
 row holds the in-field tick, less a tick away from the field, to 0.71 ms per
 rock in reach, on the fastest of seven interleaved batches. `scripts/probe-field-flight.mjs` flies an impact at a
 rock face, a ride pressed against a spinning rock, and a placement inside a

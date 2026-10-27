@@ -20,16 +20,18 @@ import {
 	solidReach,
 } from "./collision";
 import { ROCK_ARCHETYPES, rockArchetype } from "./field-lod";
-import type { RockHeightfields } from "./rock-heightfields";
+import type { RockHeightfield, RockHeightfields } from "./rock-heightfields";
 import { type RockPieces, buildRockPieces } from "./rock-pieces";
 import type { System } from "./sim";
 import { type Vec3, length, rotateAbout, sub } from "./vec3";
 
 let shapeSource: (() => RockHeightfields) | null = null;
+let generation = 0;
 
 /** Register where the authored heightfields come from: the game's `getRockHeightfields`, or a headless reader of the same file. */
 export function setRockShapeSource(source: () => RockHeightfields): void {
 	shapeSource = source;
+	generation++;
 	piecesByArchetype.clear();
 }
 
@@ -52,22 +54,28 @@ export function archetypePieces(archetype: number): RockPieces {
 }
 
 /**
- * Build every archetype's pieces ahead of flight, one archetype per call to
- * `schedule`, so the first rock of each kind in reach does not stall the tick
- * that meets it (~0.2 s a build, sage round 1 on PR #1110). An archetype a
- * tick asks for first is built there, by `archetypePieces`, and skipped here.
+ * Build every archetype's pieces ahead of flight with `build` (the game's is a
+ * Worker, `rockPiecesThread`), one archetype at a time, so neither the first
+ * rock of a kind in reach nor the build itself holds the main thread: a build
+ * takes 160–230 ms (sage rounds 1–2 on PR #1110). An archetype a tick needed
+ * first is skipped, and a result that lands after `setRockShapeSource` swapped
+ * the shapes is dropped.
  */
-export function prebuildRockPieces(
-	schedule: (build: () => void) => void,
-): void {
-	const next = (archetype: number): void => {
-		if (archetype >= ROCK_ARCHETYPES) return;
-		schedule(() => {
-			archetypePieces(archetype);
-			next(archetype + 1);
-		});
-	};
-	next(0);
+export async function prebuildRockPieces(
+	build: (archetype: number, field: RockHeightfield) => Promise<RockPieces>,
+): Promise<void> {
+	const source = shapeSource;
+	const issued = generation;
+	if (!source) throw new Error("no rock shape source is registered");
+	for (let archetype = 0; archetype < ROCK_ARCHETYPES; archetype++) {
+		if (piecesByArchetype.has(archetype)) continue;
+		const field = source().fields[archetype];
+		if (!field) throw new Error(`no rock archetype ${archetype}`);
+		const pieces = await build(archetype, field);
+		if (issued !== generation) return;
+		if (!piecesByArchetype.has(archetype))
+			piecesByArchetype.set(archetype, pieces);
+	}
 }
 
 const KEY_OFFSET = 128;

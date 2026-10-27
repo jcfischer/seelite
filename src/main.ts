@@ -72,6 +72,7 @@ import { radiusAt } from "./rock-heightfields";
 import { authoredRockShapes, buildStandInRocks } from "./asteroid-model";
 import { prebuildRockPieces, setRockShapeSource } from "./field-collision";
 import { ROCK_ASSETS, getRockHeightfields } from "./rock-assets";
+import { rockPiecesThread } from "./rock-pieces-thread";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
 	startNebulaBake,
@@ -1111,12 +1112,17 @@ import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
 
 setRockShapeSource(getRockHeightfields);
-prebuildRockPieces((build) => {
-	const idle = (globalThis as { requestIdleCallback?: (f: () => void) => void })
-		.requestIdleCallback;
-	if (idle) idle(build);
-	else setTimeout(build, 0);
-});
+{
+	const rockThread = rockPiecesThread();
+	prebuildRockPieces(rockThread.build)
+		.catch((e) =>
+			console.warn(
+				"rock pieces: off-thread build failed, built on first use",
+				e,
+			),
+		)
+		.finally(rockThread.close);
+}
 
 /**
  * The keys that are only ever half of a press, for the capture modal.
