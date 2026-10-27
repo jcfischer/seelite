@@ -51,13 +51,13 @@ for (const ratio of ratios) {
 			drift: json.driftControl.find((d) => d.pixelRatio === ratio),
 			far: json.farColumns.find((d) => d.pixelRatio === ratio),
 		}));
-	if (sweeps.length !== 2)
+	if (sweeps.length < 2)
 		throw new Error(
-			`pixel ratio ${ratio} has ${sweeps.length} sweeps: the receipt compares exactly two`,
+			`pixel ratio ${ratio} has ${sweeps.length} sweep: the receipt compares at least two`,
 		);
-	if (sweeps[0].seed === sweeps[1].seed)
+	if (new Set(sweeps.map((x) => x.seed)).size !== sweeps.length)
 		throw new Error(
-			`the two sweeps at pixel ratio ${ratio} share order seed ${sweeps[0].seed}: the repeat would run the same order twice`,
+			`two sweeps at pixel ratio ${ratio} share an order seed (${sweeps.map((x) => x.seed).join(", ")}): the repeat would run the same order twice`,
 		);
 	const head = identityLine({
 		renderer: runs[0].json.renderer,
@@ -121,16 +121,16 @@ for (const ratio of ratios) {
 		);
 	}
 	console.log("");
-	const gaps = sweepAgreement(sweeps[0].rows, sweeps[1].rows);
-	const closeGaps = gaps
-		.filter((g) => close.includes(g.radii))
-		.map((g) => g.gapMs)
-		.sort((a, b) => a - b);
-	const worst = gaps
-		.filter((g) => close.includes(g.radii))
-		.sort((a, b) => b.gapMs - a.gapMs)[0];
-	console.log(
-		`Sweeps S1 and S2 disagree on a close cell by a median of ${f2(closeGaps[closeGaps.length >> 1])} ms and at most ${f2(worst.gapMs)} ms (${worst.arm} at ${worst.radii}R).`,
-	);
+	for (let i = 0; i < sweeps.length; i++)
+		for (let k = i + 1; k < sweeps.length; k++) {
+			const gaps = sweepAgreement(sweeps[i].rows, sweeps[k].rows).filter((g) =>
+				close.includes(g.radii),
+			);
+			const sorted = gaps.map((g) => g.gapMs).sort((x, y) => x - y);
+			const worst = gaps.reduce((a, g) => (g.gapMs > a.gapMs ? g : a));
+			console.log(
+				`${labelOf(i)} and ${labelOf(k)} disagree on a close cell by a median of ${f2(sorted[sorted.length >> 1])} ms and at most ${f2(worst.gapMs)} ms (${worst.arm} at ${worst.radii}R).`,
+			);
+		}
 	console.log("");
 }
