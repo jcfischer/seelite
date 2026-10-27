@@ -77,7 +77,6 @@ export function nearRocks(
 	return out.sort((a, b) => a.distKm - b.distKm);
 }
 
-/** The rock nearest the sightline within `maxDeg`, or `null`. */
 /** How far the sightline passes outside a rock's bounding sphere, radians; 0 when it meets it. */
 export function edgeAngleOff(
 	c: Pick<RockRef, "pos" | "rock">,
@@ -96,6 +95,7 @@ export function edgeAngleOff(
 	);
 }
 
+/** The rock nearest the sightline within `maxDeg`, or `null`. */
 export function aimedRock(
 	candidates: readonly RockRef[],
 	shipPos: Vec3,

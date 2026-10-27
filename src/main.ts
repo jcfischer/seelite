@@ -12785,12 +12785,6 @@ class Game {
 		);
 	}
 
-	/**
-	 * The chase beams on the canvas (#607 D3): from each of the flown hull's
-	 * muzzles, `PLAYER_LASER_RANGE_KM` along the gimballed beam, projected
-	 * through the camera and cut at its plane. A muzzle is the hull's own, so a
-	 * shipyard trade moves it with the hull.
-	 */
 	private drawChaseMiningBeam(
 		ctx: CanvasRenderingContext2D,
 		w: number,
@@ -12853,6 +12847,12 @@ class Game {
 		ctx.restore();
 	}
 
+	/**
+	 * The chase beams on the canvas (#607 D3): from each of the flown hull's
+	 * muzzles, `PLAYER_LASER_RANGE_KM` along the gimballed beam, projected
+	 * through the camera and cut at its plane. A muzzle is the hull's own, so a
+	 * shipyard trade moves it with the hull.
+	 */
 	private chaseBeamPx(w: number, h: number) {
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
