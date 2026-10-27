@@ -2,11 +2,15 @@ import { fieldContactsAt } from "./field-contact";
 import {
 	type DepositKey,
 	type DepositRow,
+	debitAt,
 	depositKey,
 	SURVEY_LIFETIME_H,
 } from "./deposit-state";
 import {
 	beginSurveyHold,
+	ORE_FAMILY_NAME,
+	type OreFamily,
+	type OreGrade,
 	type RockContents,
 	rockContents,
 	SURVEY,
@@ -18,6 +22,18 @@ import {
 	surveyFigures,
 	surveyReading,
 } from "./rock-survey";
+import {
+	beamHit,
+	beginCut,
+	type Cut,
+	debitSurface,
+	EXTRACTION,
+	type Fragment,
+	oreShare,
+	releaseFragment,
+	stepCut,
+	stepFragments,
+} from "./rock-extraction";
 import {
 	aimedRock,
 	cycleWithRocks,
@@ -75,6 +91,7 @@ import {
 	stepFuelScoop,
 	stockLoadout,
 	makeModule,
+	moduleRow,
 } from "./loadout";
 import { outfittingScreen } from "./outfitting";
 import {
@@ -573,6 +590,7 @@ import {
 } from "./ship-condition";
 import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import { PLAYER_LASER_RANGE_KM } from "./laser";
+import type { Grade } from "./module-catalog";
 import {
 	type Engagement,
 	engage,
@@ -1445,6 +1463,15 @@ const SURVEY_GRADE_SHORT = {
 	standard: "STD",
 	rich: "RICH",
 } as const;
+const oreCargoName = (family: OreFamily, grade: OreGrade): string =>
+	`${ORE_FAMILY_NAME[family]} ${SURVEY_GRADE_SHORT[grade]}`;
+const FRAGMENT_CSS: Readonly<Record<OreFamily, string>> = {
+	silicate: "rgba(214, 196, 160, .95)",
+	metallic: "rgba(150, 190, 230, .95)",
+	gold: "rgba(255, 214, 80, .95)",
+	platinum: "rgba(240, 240, 250, .95)",
+	gem: "rgba(240, 110, 220, .95)",
+};
 const SURVEY_BASE = {
 	rangeKm: positiveParam("survey-range", SURVEY.rangeKm),
 	dwellS: positiveParam("survey-dwell", SURVEY.dwellS),
@@ -9479,6 +9506,241 @@ class Game {
 		this.saveDirty();
 	}
 
+	private gunFiredNow = false;
+	private cut: Cut = beginCut();
+	/** Node #920: fragments in flight, world frame. */
+	fragments: Fragment[] = [];
+	private fragmentSeq = 0;
+	/** Node #920 prototype hold: scooped ore tonnes by cargo name, outside the commander's cargo until #917's goods exist. */
+	minedOre: Record<string, number> = {};
+	private miningNotice = { text: "", left: 0 };
+	/** Node #920: what the cut and the scoop did, for the probe. */
+	miningLog = {
+		cutRockId: null as string | null,
+		released: 0,
+		waste: 0,
+		taken: 0,
+		lost: 0,
+		refused: 0,
+	};
+
+	private get minedT(): number {
+		return Object.values(this.minedOre).reduce((a, b) => a + b, 0);
+	}
+
+	private sayMining(text: string) {
+		this.miningNotice = { text, left: 3 };
+	}
+
+	/** The fired group's Mining Laser extraction rate and its best grade. */
+	private firedExtraction(): { rate: number; grade: Grade } {
+		const group = this.armedFireGroup.current(this.fireGroups);
+		let rate = 0;
+		let grade: Grade = "E";
+		for (const key of group?.slots ?? []) {
+			const m = this.commander.loadout[key];
+			if (m?.module !== "mining-laser") continue;
+			rate += moduleRow(m).output.extractionTPerS;
+			if (oreShare(m.grade) > oreShare(grade)) grade = m.grade;
+		}
+		return { rate, grade };
+	}
+
+	private putDepositRow(ref: RockRef, row: DepositRow) {
+		const galaxy = this.world.system.record.galaxy;
+		const envelope = this.commerceWorld.galaxies[galaxy];
+		const galaxies = this.commerceWorld.galaxies.slice();
+		galaxies[galaxy] = {
+			...envelope,
+			deposits: {
+				rows: { ...envelope.deposits.rows, [this.rockDepositKey(ref)]: row },
+			},
+		};
+		this.commerceWorld = { ...this.commerceWorld, galaxies };
+		this.saveDirty();
+	}
+
+	/** Node #920: one frame of the laser cut and the fragment scoop (#872 D3, #917 D8, #1095 D4–D6). */
+	private stepExtraction(dt: number) {
+		const now = this.world.gameTime;
+		this.miningNotice.left = Math.max(0, this.miningNotice.left - dt);
+		const fired = this.gunFiredNow ? this.firedExtraction() : null;
+		this.miningLog.cutRockId = null;
+		if (fired && fired.rate > 0) {
+			const near = nearRocks(
+				this.fieldRockSets(),
+				this.world.ship.pos,
+				now,
+				PLAYER_LASER_RANGE_KM,
+			);
+			const ray = this.weaponRay();
+			const hit = beamHit(
+				ray.origin,
+				ray.aim,
+				near.map((r) => ({
+					id: r.id,
+					pos: r.pos,
+					vel: r.vel,
+					radiusKm: r.rock.radiusKm,
+				})),
+				PLAYER_LASER_RANGE_KM,
+			);
+			const ref = hit && near.find((r) => r.id === hit.id);
+			if (hit && ref) {
+				this.miningLog.cutRockId = ref.id;
+				const contents = this.rockContentsOf(ref);
+				const row = this.rockDepositRow(ref);
+				const taken =
+					row?.surface === undefined
+						? 0
+						: debitAt(row.surface, row.at ?? 0, now);
+				const step = stepCut(
+					this.cut,
+					ref.id,
+					fired.rate,
+					oreShare(fired.grade),
+					dt,
+					contents.surfaceT - taken,
+				);
+				this.cut = step.cut;
+				if (step.depleted) this.sayMining("ROCK DEPLETED · WASTE ONLY");
+				if (step.ore > 0)
+					this.putDepositRow(ref, debitSurface(row, now, step.ore));
+				const ore = { family: contents.family, grade: contents.grade };
+				for (let i = 0; i < step.ore + step.waste; i++) {
+					const n = this.fragmentSeq++;
+					this.fragments.push(
+						releaseFragment(
+							`frag:${n}`,
+							n,
+							i < step.ore ? ore : null,
+							hit,
+							ref.vel,
+							now,
+						),
+					);
+				}
+				this.miningLog.released += step.ore;
+				this.miningLog.waste += step.waste;
+			}
+		}
+		if (this.fragments.length === 0) return;
+		const scooped = stepFragments(
+			this.fragments,
+			this.world.ship,
+			dt,
+			now,
+			(f) => {
+				const hold = commanderHold(
+					this.commander,
+					entrustedTonnesAboard(this.requests),
+				);
+				if (hold.usedT + this.minedT + 1 > hold.capacityT) return "hold-full";
+				if (this.condition.energy < EXTRACTION.scoopChargeE)
+					return "low-energy";
+				this.condition = {
+					...this.condition,
+					energy: this.condition.energy - EXTRACTION.scoopChargeE,
+				};
+				const name = f.ore ? oreCargoName(f.ore.family, f.ore.grade) : "";
+				this.minedOre = {
+					...this.minedOre,
+					[name]: (this.minedOre[name] ?? 0) + 1,
+				};
+				return "taken";
+			},
+		);
+		this.fragments = scooped.kept;
+		this.miningLog.taken += scooped.taken.length;
+		this.miningLog.lost += scooped.lost.length;
+		this.miningLog.refused += scooped.refused.length;
+		for (const f of scooped.taken)
+			if (f.ore)
+				this.sayMining(
+					`SCOOPED 1 T ${oreCargoName(f.ore.family, f.ore.grade).toUpperCase()} · -${EXTRACTION.scoopChargeE} E`,
+				);
+		for (const { verdict } of scooped.refused)
+			this.sayMining(
+				verdict === "hold-full"
+					? "HOLD FULL · FRAGMENT LEFT"
+					: `ENERGY BELOW ${EXTRACTION.scoopChargeE} E · FRAGMENT LEFT`,
+			);
+		if (scooped.lost.length)
+			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
+	}
+
+	/** Fragments on the glass as diamonds in their family's colour, the nearest ore one with its range, and the mining line. */
+	private drawFragments(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+		w: number,
+		h: number,
+	) {
+		const ship = this.world.ship;
+		let nearest: { f: Fragment; d: number } | null = null;
+		ctx.save();
+		for (const f of this.fragments) {
+			const to = sub(f.pos, camPos);
+			const d = length(to);
+			if (d > PLAYER_LASER_RANGE_KM * 1.5) continue;
+			const at = place(normalizeOr(to, { x: 0, y: 0, z: -1 }));
+			if (!at?.on) continue;
+			const r = f.ore ? 4 : 2;
+			ctx.fillStyle = f.ore
+				? FRAGMENT_CSS[f.ore.family]
+				: "rgba(150, 150, 150, .6)";
+			ctx.beginPath();
+			ctx.moveTo(at.x, at.y - r);
+			ctx.lineTo(at.x + r, at.y);
+			ctx.lineTo(at.x, at.y + r);
+			ctx.lineTo(at.x - r, at.y);
+			ctx.closePath();
+			ctx.fill();
+			if (f.ore && (!nearest || d < nearest.d)) nearest = { f, d };
+			if (f.ore && nearest?.f === f)
+				this.fragmentRender = { x: at.x, y: at.y, id: f.id };
+		}
+		ctx.font = "11px monospace";
+		if (nearest) {
+			const at = place(
+				normalizeOr(sub(nearest.f.pos, camPos), { x: 0, y: 0, z: -1 }),
+			);
+			if (at?.on) {
+				const closing = length(sub(nearest.f.vel, ship.vel));
+				ctx.strokeStyle = FRAGMENT_CSS[nearest.f.ore?.family ?? "silicate"];
+				ctx.lineWidth = 1.5;
+				ctx.strokeRect(at.x - 8, at.y - 8, 16, 16);
+				ctx.fillStyle = ctx.strokeStyle;
+				ctx.fillText(
+					`${Math.round(nearest.d * 1000)} M · ${Math.round(closing * 1000)} M/S`,
+					at.x + 12,
+					at.y + 4,
+				);
+			}
+		}
+		const hold = commanderHold(
+			this.commander,
+			entrustedTonnesAboard(this.requests),
+		);
+		const ore = this.fragments.filter((f) => f.ore).length;
+		ctx.textAlign = "center";
+		ctx.fillStyle = "rgba(255, 210, 140, .9)";
+		const line = `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT + this.minedT)}/${hold.capacityT} T`;
+		ctx.fillText(line, w / 2, h * 0.7);
+		if (this.miningNotice.left > 0)
+			ctx.fillText(this.miningNotice.text, w / 2, h * 0.7 - 16);
+		ctx.restore();
+		this.miningLineRender = {
+			line,
+			notice: this.miningNotice.left > 0 ? this.miningNotice.text : null,
+		};
+	}
+
+	/** Node #920: the nearest ore fragment's diamond and the mining line as painted, for the probe. */
+	fragmentRender: { x: number; y: number; id: string } | null = null;
+	miningLineRender: { line: string; notice: string | null } | null = null;
+
 	/** The surveyed rock's deep-deposit mouth, on the glass (#872 D15: a reading carries its location). */
 	private drawDeepDepositCue(
 		ctx: CanvasRenderingContext2D,
@@ -16451,6 +16713,7 @@ class Game {
 		);
 		if (gun.fired)
 			this.firedMuzzleIndices = groupMuzzleIndices(this.flownHull, armedGroup);
+		this.gunFiredNow = gun.fired;
 		// The star heats the hull wherever the ship is, docked included (#931):
 		// a station is far outside any band, so there it only cools. It reads
 		// the frame-start position, as the gun reads the frame-start trigger.
@@ -16963,6 +17226,7 @@ class Game {
 		// breaks it, and reading the old position would hold it forever.
 		this.stepScan(dt);
 		if (MINING_ON) this.stepSurvey(dt);
+		if (MINING_ON) this.stepExtraction(dt);
 		this.stepSystemSweep();
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
@@ -21659,7 +21923,9 @@ class Game {
 			return m.behind ? null : { ...toPixels(m.ndcX, m.ndcY), on: m.onScreen };
 		};
 		this.deepCueRender = null;
+		this.fragmentRender = null;
 		if (MINING_ON) this.drawDeepDepositCue(ctx, camPos, place);
+		if (MINING_ON) this.drawFragments(ctx, camPos, place, w, h);
 
 		// The attitude reference: a short level line rolled to the system's
 		// reference plane. Faint, because it is a background fact rather than
