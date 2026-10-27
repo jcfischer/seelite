@@ -70,7 +70,8 @@ import { FieldDraw } from "./field-draw";
 import { pxPerRadianFor, rockArchetype } from "./field-lod";
 import { radiusAt } from "./rock-heightfields";
 import { authoredRockShapes, buildStandInRocks } from "./asteroid-model";
-import { ROCK_ASSETS } from "./rock-assets";
+import { setRockShapeSource } from "./field-collision";
+import { ROCK_ASSETS, getRockHeightfields } from "./rock-assets";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
 	startNebulaBake,
@@ -1108,6 +1109,8 @@ import {
 } from "./commands";
 import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
+
+setRockShapeSource(getRockHeightfields);
 
 /**
  * The keys that are only ever half of a press, for the capture modal.

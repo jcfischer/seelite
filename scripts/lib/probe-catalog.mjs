@@ -79,6 +79,11 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-field-flight.mjs",
+			"The flown ship against asteroid-field rocks in the running game: an impact at a rock face names the rock and reads the closing speed in its frame, pressing against a spinning rock rides it without ghost, damage, sinking or jump, and a ship placed inside a rock ghosts it whole and meets it again after leaving.",
+			["asteroid field", "rock collision", "rotating frame", "placement ghost"],
+		),
+		entry(
 			"probe-missiles.mjs",
 			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
 			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],

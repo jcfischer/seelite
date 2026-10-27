@@ -415,8 +415,24 @@ state in `World.rockPlacement`. Initial placement, restore, hyperspace arrival,
 cruise exit and launch arm the placement; a save contains neither the flag nor
 the active ghosts. `scripts/probe-rock-placement.mjs` runs the Game placement
 paths, then supplies a rock through `stepWorld` at their final poses, with an
-unplaced control that must impact. This checks placement state before the
-production field-collision wiring ships.
+unplaced control that must impact. The production wiring is below.
+
+**Field rocks in normal flight** (node #969; #949 D4–D5, #956). `stepWorld`
+sweeps the flown ship's hull and deployed cutter against every rock in reach,
+through `worldSolids`' `rocks` option (`src/field-collision.ts`); a fleet ship's
+sweep does not ask for them, because `avoidanceSolids` carries no rock. A rock
+is a `RockSolid` posed at both ends of the step from the clock (#43) by
+`rockPose`, its velocity the pose's derivative, so a contact is read in the
+rock's frame, spin included (#75). The reach set is a lattice query: a rock
+never leaves its cell, so the ship's path is taken into the field frame at both
+ends, grown by the hull's reach and the field centre's bend over the step, and
+only the occupied cells in that index range are posed. A rock's id is
+`<field id>:rock-<slot>`, and a ghost or an impact names it. The cone pieces
+of an archetype are built the first time a rock of it is in reach (about 0.3 s
+each, #956), from the heightfields the game registers with
+`setRockShapeSource`. `scripts/probe-field-flight.mjs` flies an impact at a
+rock face, a ride pressed against a spinning rock, and a placement inside a
+rock.
 
 A push-out would throw a restored ship through a hull, and would bill or bounce
 a launch off the station it is leaving. A ghost lets the ship fly out the way
