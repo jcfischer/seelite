@@ -29,10 +29,14 @@ import {
 	rockSolid,
 	setRockShapeSource,
 } from "../src/field-collision";
-import { rockArchetype, spinQuat } from "../src/field-lod";
+import { ROCK_ARCHETYPES, rockArchetype, spinQuat } from "../src/field-lod";
 import { decodeRockHeightfields } from "../src/rock-heightfields";
 import { HULL_SPECS } from "../src/hull";
-import { buildRockPieces, envelopeAt } from "../src/rock-pieces";
+import {
+	type RockPieces,
+	buildRockPieces,
+	envelopeAt,
+} from "../src/rock-pieces";
 import { rockPiecesThread } from "../src/rock-pieces-thread";
 import {
 	type World,
@@ -348,13 +352,13 @@ describe("the flown ship against field rocks (node #969)", () => {
 			);
 			expect(inline).toBeGreaterThan(100);
 			expect(offThread).toBeLessThan(inline / 2);
+			const before = reads;
 			const archetype = rockArchetype(rock);
 			expect(archetypePieces(archetype)).toEqual(
 				buildRockPieces(decoded.fields[archetype], {
 					label: `archetype ${archetype}`,
 				}),
 			);
-			const before = reads;
 			placeOnFace(world, plan, rock, 0.3, 0.5);
 			world.rockPlacement = { placed: false, rocks: new Set() };
 			let impacts = 0;
@@ -365,6 +369,51 @@ describe("the flown ship against field rocks (node #969)", () => {
 			setRockShapeSource(() => decoded);
 		}
 	}, 30_000);
+
+	test("a prebuild skips what a tick built, keeps what a tick builds meanwhile, and drops results once the shapes are swapped", async () => {
+		const decoded = decodeRockHeightfields(
+			new Uint8Array(readFileSync("src/models/rock-heightfields.bin")),
+		);
+		const built = (archetype: number) =>
+			({ archetype }) as unknown as RockPieces;
+		try {
+			setRockShapeSource(() => decoded);
+			const first = archetypePieces(0);
+			const asked: number[] = [];
+			let tickBuilt: RockPieces | undefined;
+			await prebuildRockPieces(async (archetype) => {
+				asked.push(archetype);
+				if (archetype === 3) tickBuilt = archetypePieces(3);
+				return built(archetype);
+			});
+			expect(asked).toEqual(
+				Array.from({ length: ROCK_ARCHETYPES - 1 }, (_, i) => i + 1),
+			);
+			expect(archetypePieces(0)).toBe(first);
+			expect(archetypePieces(3)).toBe(tickBuilt as RockPieces);
+			expect(archetypePieces(5)).toEqual(built(5));
+
+			setRockShapeSource(() => decoded);
+			const late: number[] = [];
+			await prebuildRockPieces(async (archetype) => {
+				late.push(archetype);
+				if (archetype === 2) setRockShapeSource(() => decoded);
+				return built(archetype);
+			});
+			expect(late).toEqual([0, 1, 2]);
+			expect(archetypePieces(2)).not.toEqual(built(2));
+		} finally {
+			setRockShapeSource(() => decoded);
+		}
+	}, 30_000);
+
+	test("each rock's id names its field and slot, so no two rocks share an owner", () => {
+		const { plan, rocks } = fieldWorld();
+		expect(rockId({ id: "field-00" }, { slot: 17 })).toBe("field-00:rock-17");
+		expect(new Set(rocks.map((rock) => rockId(plan, rock))).size).toBe(
+			rocks.length,
+		);
+	});
 
 	test("collision cost stays within #956's 0.71 ms per rock in reach, and the reach set adds almost none", () => {
 		if (process.env.SEELITE_FIELD_COST_RUN !== "isolated") {
