@@ -12,13 +12,14 @@ import {
 } from "./asteroid-field";
 import {
 	IDENTITY_AXES,
+	type Pose,
 	RESTING_KM,
 	type Reach,
 	type RockSolid,
 	mayMeet,
 	solidReach,
 } from "./collision";
-import { rockArchetype } from "./field-lod";
+import { ROCK_ARCHETYPES, rockArchetype } from "./field-lod";
 import type { RockHeightfields } from "./rock-heightfields";
 import { type RockPieces, buildRockPieces } from "./rock-pieces";
 import type { System } from "./sim";
@@ -48,6 +49,25 @@ export function archetypePieces(archetype: number): RockPieces {
 		piecesByArchetype.set(archetype, pieces);
 	}
 	return pieces;
+}
+
+/**
+ * Build every archetype's pieces ahead of flight, one archetype per call to
+ * `schedule`, so the first rock of each kind in reach does not stall the tick
+ * that meets it (~0.2 s a build, sage round 1 on PR #1110). An archetype a
+ * tick asks for first is built there, by `archetypePieces`, and skipped here.
+ */
+export function prebuildRockPieces(
+	schedule: (build: () => void) => void,
+): void {
+	const next = (archetype: number): void => {
+		if (archetype >= ROCK_ARCHETYPES) return;
+		schedule(() => {
+			archetypePieces(archetype);
+			next(archetype + 1);
+		});
+	};
+	next(0);
 }
 
 const KEY_OFFSET = 128;
@@ -85,6 +105,25 @@ function buildLattice(system: System, plan: FieldPlan): FieldLattice {
 		extent: [n(profile.semiKm[0]), n(profile.semiKm[1]), n(profile.semiKm[2])],
 		byCell,
 	};
+}
+
+function latticeRange(
+	lattice: FieldLattice,
+	a: Vec3,
+	b: Vec3,
+	grow: number,
+): [number, number][] {
+	const half = lattice.cellKm / 2;
+	return (["x", "y", "z"] as const).map((axis, n) => [
+		Math.max(
+			-lattice.extent[n],
+			Math.ceil((Math.min(a[axis], b[axis]) - grow - half) / lattice.cellKm),
+		),
+		Math.min(
+			lattice.extent[n],
+			Math.floor((Math.max(a[axis], b[axis]) + grow + half) / lattice.cellKm),
+		),
+	]);
 }
 
 interface SystemFields {
@@ -130,6 +169,13 @@ function rockMotionAt(plan: FieldPlan, rock: Rock, gameTime: number) {
 		vel: pose.vel,
 	};
 }
+
+/** A rock's frame at one instant: the pose `rockSolid` gives either end of a step. */
+export const rockFrameAt = (
+	plan: FieldPlan,
+	rock: Rock,
+	gameTime: number,
+): Pose => rockMotionAt(plan, rock, gameTime).pose;
 
 /** A rock as a solid across the step: posed from the clock at both ends. */
 export function rockSolid(
@@ -204,26 +250,7 @@ export function fieldRockSolids(
 			lattice = buildLattice(system, plan);
 			lattices.set(plan.id, lattice);
 		}
-		const half = lattice.cellKm / 2;
-		const range = (lo: number, hi: number, n: number): [number, number] => [
-			Math.max(-n, Math.ceil((lo - grow - half) / lattice.cellKm)),
-			Math.min(n, Math.floor((hi + grow + half) / lattice.cellKm)),
-		];
-		const [i0, i1] = range(
-			Math.min(a.x, b.x),
-			Math.max(a.x, b.x),
-			lattice.extent[0],
-		);
-		const [j0, j1] = range(
-			Math.min(a.y, b.y),
-			Math.max(a.y, b.y),
-			lattice.extent[1],
-		);
-		const [k0, k1] = range(
-			Math.min(a.z, b.z),
-			Math.max(a.z, b.z),
-			lattice.extent[2],
-		);
+		const [[i0, i1], [j0, j1], [k0, k1]] = latticeRange(lattice, a, b, grow);
 		for (let i = i0; i <= i1; i++)
 			for (let j = j0; j <= j1; j++)
 				for (let k = k0; k <= k1; k++) {

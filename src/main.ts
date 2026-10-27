@@ -70,7 +70,7 @@ import { FieldDraw } from "./field-draw";
 import { pxPerRadianFor, rockArchetype } from "./field-lod";
 import { radiusAt } from "./rock-heightfields";
 import { authoredRockShapes, buildStandInRocks } from "./asteroid-model";
-import { setRockShapeSource } from "./field-collision";
+import { prebuildRockPieces, setRockShapeSource } from "./field-collision";
 import { ROCK_ASSETS, getRockHeightfields } from "./rock-assets";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
@@ -1111,6 +1111,12 @@ import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
 
 setRockShapeSource(getRockHeightfields);
+prebuildRockPieces((build) => {
+	const idle = (globalThis as { requestIdleCallback?: (f: () => void) => void })
+		.requestIdleCallback;
+	if (idle) idle(build);
+	else setTimeout(build, 0);
+});
 
 /**
  * The keys that are only ever half of a press, for the capture modal.

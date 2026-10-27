@@ -48,11 +48,7 @@ const flyRows = async () => {
 		const { plan, rocks } = g.fields[0];
 		const rock = rocks.reduce((a, b) => (b.radiusKm > a.radiusKm ? b : a));
 		const id = F.rockId(plan, rock);
-		const poseNow = () =>
-			F.rockSolid(plan, rock, {
-				fromTime: g.world.gameTime,
-				toTime: g.world.gameTime,
-			}).start;
+		const poseNow = () => F.rockFrameAt(plan, rock, g.world.gameTime);
 		const velNow = () => A.rockPose(plan, rock, g.world.gameTime).vel;
 		const face = envelopeAt(F.archetypePieces(rockArchetype(rock)), {
 			x: 0,
