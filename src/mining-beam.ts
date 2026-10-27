@@ -38,6 +38,22 @@ export function screenShare(depthKm: number, endKm: number): number {
 	return (u * endKm) / ((1 - u) * z0 + u * endKm);
 }
 
+/** Segment `k` of `n`'s alpha at `t` seconds: a pulse running toward the rock, and on a miss a fade toward full range. */
+export function miningBeamAlpha(
+	k: number,
+	n: number,
+	t: number,
+	hit: boolean,
+): number {
+	const pulse =
+		0.5 +
+		0.5 *
+			Math.sin(
+				2 * Math.PI * MINING_BEAM.pulseHz * t - k * MINING_BEAM.pulseSpacing,
+			);
+	return (0.55 + 0.45 * pulse) * (hit ? 1 : 1 - k / n);
+}
+
 /**
  * The beam from each port to `end`, `endKm` from the eye. With `hit` false it is
  * at full range and fades out at its far end. `t` is seconds, for the pulses.
@@ -61,20 +77,12 @@ export function miningBeamStrokes(
 		for (let k = 0; k < n; k++) {
 			const za = z0 * (far / z0) ** (k / n);
 			const zb = z0 * (far / z0) ** ((k + 1) / n);
-			const pulse =
-				0.5 +
-				0.5 *
-					Math.sin(
-						2 * Math.PI * MINING_BEAM.pulseHz * t -
-							k * MINING_BEAM.pulseSpacing,
-					);
-			const fade = hit ? 1 : 1 - k / n;
 			out.push({
 				from: at(screenShare(za, far)),
 				to: at(screenShare(zb, far)),
 				widthPx: miningBeamWidthPx((za + zb) / 2),
 				rgb: MINING_BEAM_RGB,
-				alpha: (0.55 + 0.45 * pulse) * fade,
+				alpha: miningBeamAlpha(k, n, t, hit),
 			});
 		}
 	}

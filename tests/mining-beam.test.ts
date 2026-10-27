@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	impactRadiusPx,
 	MINING_BEAM,
+	miningBeamAlpha,
 	miningBeamStrokes,
 	miningBeamWidthPx,
 	screenShare,
@@ -48,5 +49,15 @@ describe("the mining beam", () => {
 		expect(impactRadiusPx(0.2, 1000)).toBeGreaterThan(impactRadiusPx(2, 1000));
 		expect(impactRadiusPx(0.001, 1000)).toBe(40);
 		expect(impactRadiusPx(100, 1000)).toBe(3);
+	});
+});
+
+describe("one pulse for both views", () => {
+	test("the cockpit strokes carry miningBeamAlpha", () => {
+		const n = MINING_BEAM.segments;
+		const s = miningBeamStrokes([port], end, 3, false, 0.37);
+		s.forEach((stroke, k) =>
+			expect(stroke.alpha).toBeCloseTo(miningBeamAlpha(k, n, 0.37, false), 12),
+		);
 	});
 });

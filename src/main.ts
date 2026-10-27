@@ -25,6 +25,8 @@ import {
 import {
 	beamHit,
 	beginCut,
+	firedExtraction,
+	prototypeMiningLaserSlot,
 	type Cut,
 	debitSurface,
 	EXTRACTION,
@@ -41,6 +43,7 @@ import {
 import {
 	impactRadiusPx,
 	MINING_BEAM,
+	miningBeamAlpha,
 	miningBeamStrokes,
 	miningBeamWidthPx,
 } from "./mining-beam";
@@ -4784,7 +4787,6 @@ class Game {
 		const boot = bootHull(ASKED_HULL, save ? save.commander.state.hull : null);
 		if (boot.warning) console.warn(boot.warning);
 		this.flownHull = boot.hull;
-		if (MINING_ON) this.fitPrototypeMiningLaser();
 		this.condition = this.flownFullCondition();
 		this.observeCurrentSystemRelay();
 		for (const _body of this.world.system.bodies)
@@ -9374,13 +9376,13 @@ class Game {
 	private surveyHold: SurveyHold = beginSurveyHold();
 	deepCueRender: { x: number; y: number; facing: boolean } | null = null;
 
-	private fitPrototypeMiningLaser() {
+	fitPrototypeMiningLaser(writesNothing: boolean) {
 		const loadout = this.commander.loadout;
-		if (Object.values(loadout).some((m) => m.module === "mining-laser")) return;
 		const hardpoints = HULL_SPECS[this.commander.hull].slots.filter(
 			(s) => s.kind === "hardpoint",
 		);
-		const slot = hardpoints.find((s) => !loadout[s.key]) ?? hardpoints[0];
+		const key = prototypeMiningLaserSlot(hardpoints, loadout, writesNothing);
+		const slot = hardpoints.find((s) => s.key === key);
 		if (!slot) return;
 		this.commander = {
 			...this.commander,
@@ -9406,11 +9408,6 @@ class Game {
 	}
 
 	private cycleRockTarget(step: number): boolean {
-		const near = nearRocks(
-			this.fieldRockSets(),
-			this.world.ship.pos,
-			this.world.gameTime,
-		);
 		if (ROCK_PICK === "front") {
 			const front = frontRock(
 				nearRocks(
@@ -9426,6 +9423,11 @@ class Game {
 			this.targetId = front.id;
 			return true;
 		}
+		const near = nearRocks(
+			this.fieldRockSets(),
+			this.world.ship.pos,
+			this.world.gameTime,
+		);
 		if (near.length === 0) return false;
 		if (ROCK_PICK === "aim") {
 			const aimed = aimedRock(near, this.world.ship.pos, this.weaponAim());
@@ -9520,20 +9522,10 @@ class Game {
 			SURVEY_INTERRUPT,
 		);
 		if (!ref || !surveyCompleted(before, this.surveyHold, dwellS)) return;
-		const galaxy = this.world.system.record.galaxy;
-		const key = this.rockDepositKey(ref);
-		const envelope = this.commerceWorld.galaxies[galaxy];
-		const rows = {
-			...envelope.deposits.rows,
-			[key]: {
-				...envelope.deposits.rows[key],
-				surveyedAt: this.world.gameTime,
-			},
-		};
-		const galaxies = this.commerceWorld.galaxies.slice();
-		galaxies[galaxy] = { ...envelope, deposits: { rows } };
-		this.commerceWorld = { ...this.commerceWorld, galaxies };
-		this.saveDirty();
+		this.putDepositRow(ref, {
+			...this.rockDepositRow(ref),
+			surveyedAt: this.world.gameTime,
+		});
 	}
 
 	private gunFiredNow = false;
@@ -9597,15 +9589,19 @@ class Game {
 
 	private firedExtraction(): { rate: number; grade: Grade } {
 		const group = this.armedFireGroup.current(this.fireGroups);
-		let rate = 0;
-		let grade: Grade = "E";
-		for (const key of group?.slots ?? []) {
-			const m = this.commander.loadout[key];
-			if (m?.module !== "mining-laser") continue;
-			rate += moduleRow(m).output.extractionTPerS;
-			if (oreShare(m.grade) > oreShare(grade)) grade = m.grade;
-		}
-		return { rate, grade };
+		return firedExtraction(
+			(group?.slots ?? []).flatMap((key) => {
+				const m = this.commander.loadout[key];
+				return m?.module === "mining-laser"
+					? [
+							{
+								grade: m.grade,
+								extractionTPerS: moduleRow(m).output.extractionTPerS,
+							},
+						]
+					: [];
+			}),
+		);
 	}
 
 	private putDepositRow(ref: RockRef, row: DepositRow) {
@@ -9788,8 +9784,13 @@ class Game {
 	) {
 		const now = this.world.gameTime;
 		const pxPerRadian = h / ((this.nearCamera.fov * Math.PI) / 180);
+		const anchors = new Map<string, Anchor | null>();
+		const anchorOf = (rockId: string) => {
+			if (!anchors.has(rockId)) anchors.set(rockId, this.fragmentRock(rockId));
+			return anchors.get(rockId) ?? null;
+		};
 		const at = (rockId: string, offset: Vec3) => {
-			const rock = this.fragmentRock(rockId);
+			const rock = anchorOf(rockId);
 			if (!rock) return null;
 			const pos = add(rock.pos, offset);
 			const to = sub(pos, camPos);
@@ -9820,7 +9821,7 @@ class Game {
 		ctx.lineCap = "round";
 		for (const k of this.sparks) {
 			const age = now - k.bornAt;
-			const rock = this.fragmentRock(k.rockId);
+			const rock = anchorOf(k.rockId);
 			if (!rock) continue;
 			const head = add(rock.pos, add(k.offset, scale(k.vel, age)));
 			const tail = add(
@@ -12845,14 +12846,7 @@ class Game {
 				const width = miningBeamWidthPx(
 					length(sub(add(a, b), scale(camPos, 2))) / 2,
 				);
-				const pulse =
-					0.5 +
-					0.5 *
-						Math.sin(
-							2 * Math.PI * MINING_BEAM.pulseHz * t -
-								k * MINING_BEAM.pulseSpacing,
-						);
-				const alpha = (0.55 + 0.45 * pulse) * (beam.hit ? 1 : 1 - k / n);
+				const alpha = miningBeamAlpha(k, n, t, beam.hit !== null);
 				ctx.strokeStyle = `rgba(255, 140, 40, ${0.35 * alpha})`;
 				ctx.lineWidth = width * 2.5;
 				ctx.beginPath();
@@ -23605,6 +23599,7 @@ if (postcard) {
 		);
 		game = new Game(worldSeed, null, askedSystem);
 	}
+	if (MINING_ON) game.fitPrototypeMiningLaser(plan.writesNothing);
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
 	// Held until a store is attached or the player chooses (§11.2 step 4).

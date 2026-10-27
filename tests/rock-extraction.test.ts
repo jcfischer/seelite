@@ -6,9 +6,11 @@ import {
 	debitSurface,
 	EXTRACTION,
 	type Fragment,
+	firedExtraction,
 	fragmentAt,
 	inScoopWindow,
 	oreShare,
+	prototypeMiningLaserSlot,
 	pullFragment,
 	releaseFragment,
 	stepCut,
@@ -280,5 +282,62 @@ describe("the drift toward the ship", () => {
 		const waste = { ...base, ore: null };
 		expect(pullFragment(waste, rock, ship, 1, 1)).toBe(waste);
 		expect(pullFragment(base, rock, ship, 1, 1)).toBe(base);
+	});
+});
+
+describe("the fired lasers", () => {
+	test("a D-only group cuts at D's ore share, not E's", () => {
+		const out = firedExtraction([{ grade: "D", extractionTPerS: 0.1 }]);
+		expect(out.grade).toBe("D");
+		expect(oreShare(out.grade)).toBeCloseTo(0.4, 9);
+	});
+
+	test("rates sum and the best ore share wins", () => {
+		const out = firedExtraction([
+			{ grade: "D", extractionTPerS: 0.1 },
+			{ grade: "A", extractionTPerS: 0.2 },
+		]);
+		expect(out.rate).toBeCloseTo(0.3, 9);
+		expect(out.grade).toBe("A");
+	});
+
+	test("no laser fired is a zero rate", () => {
+		expect(firedExtraction([])).toEqual({ rate: 0, grade: "E" });
+	});
+});
+
+describe("the prototype's Mining Laser fit", () => {
+	const hardpoints = [{ key: "H1" }, { key: "H2" }];
+	const full = {
+		H1: { module: "pulse-laser" },
+		H2: { module: "beam-laser" },
+	};
+
+	test("goes on the first free hardpoint", () => {
+		expect(
+			prototypeMiningLaserSlot(
+				hardpoints,
+				{ H1: { module: "pulse-laser" } },
+				false,
+			),
+		).toBe("H2");
+	});
+
+	test("never replaces a fitted weapon on a boot that saves", () => {
+		expect(prototypeMiningLaserSlot(hardpoints, full, false)).toBeNull();
+	});
+
+	test("replaces the first hardpoint only on a boot that writes nothing", () => {
+		expect(prototypeMiningLaserSlot(hardpoints, full, true)).toBe("H1");
+	});
+
+	test("does nothing when one is fitted", () => {
+		expect(
+			prototypeMiningLaserSlot(
+				hardpoints,
+				{ H2: { module: "mining-laser" } },
+				true,
+			),
+		).toBe("fitted");
 	});
 });

@@ -39,6 +39,40 @@ export const EXTRACTION = {
 export const oreShare = (grade: Grade): number =>
 	Math.min(0.9, EXTRACTION.oreShareE * gradeOutputScale(grade));
 
+/** The fired Mining Lasers' summed rate, and the grade among them with the best ore share; E when none fired. */
+export function firedExtraction(
+	lasers: readonly { grade: Grade; extractionTPerS: number }[],
+): { rate: number; grade: Grade } {
+	let rate = 0;
+	let grade: Grade | null = null;
+	for (const l of lasers) {
+		rate += l.extractionTPerS;
+		if (grade === null || oreShare(l.grade) > oreShare(grade)) grade = l.grade;
+	}
+	return { rate, grade: grade ?? "E" };
+}
+
+/**
+ * The hardpoint `?mining=1` fits a Mining Laser on: `fitted` when one is
+ * fitted already, else the first free hardpoint. With every hardpoint taken it
+ * replaces the first only when `replace` (a boot that writes nothing), so a
+ * saved weapon is never lost; otherwise `null`.
+ */
+export function prototypeMiningLaserSlot<K extends string>(
+	hardpoints: readonly { key: K }[],
+	loadout: Readonly<Partial<Record<K, { module: string }>>>,
+	replace: boolean,
+): K | "fitted" | null {
+	if (
+		Object.values(loadout).some(
+			(m) => (m as { module: string } | undefined)?.module === "mining-laser",
+		)
+	)
+		return "fitted";
+	const free = hardpoints.find((s) => !loadout[s.key])?.key;
+	return free ?? (replace ? (hardpoints[0]?.key ?? null) : null);
+}
+
 /** Sub-tonne progress of the cut on one rock. Whole tonnes leave as fragments. */
 export interface Cut {
 	key: string | null;
