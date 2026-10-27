@@ -551,13 +551,15 @@ export function sweepOrder(seed, arms, radii) {
  * read-back is the arm's proof.
  *
  * @param {{name: string, cap: number | string, halfRes: boolean, relief: string, clouds: string}} arm
- * @param {{quality: string, interimCap: number, groundCap: number, cloudCap: number, halfResEngaged: boolean, surfacePath: string, hasCloudShell: boolean, cloudAngleRatio: number, halfResRatio: number}} seen
+ * @param {{quality: string, renderScale: number | string, interimCap: number, groundCap: number, cloudCap: number, halfResEngaged: boolean, surfacePath: string, hasCloudShell: boolean, cloudAngleRatio: number, halfResRatio: number}} seen
  * @returns {string | null}
  */
 export function armLandedRefusal(arm, seen) {
 	const who = `arm "${arm.name}"`;
 	if (seen.quality !== "high")
 		return `${who}: quality reads "${seen.quality}", not "high"; Low adds no octaves so no cell here prices the band`;
+	if (seen.renderScale !== 1)
+		return `${who}: the render scale reads ${seen.renderScale}, not 1; Auto or a reduced scale moves the buffer inside a cell`;
 	const cap = arm.cap === "shipped" ? seen.interimCap : arm.cap;
 	if (!(seen.groundCap === cap))
 		return `${who}: the ground's cap reads ${seen.groundCap}, not ${cap}`;
@@ -703,3 +705,36 @@ export function sweepAgreement(a, b) {
 		};
 	});
 }
+
+/**
+ * How far a cell's readings moved between its first two and its last two, as a
+ * fraction of the lower of the two means.
+ *
+ * Node #758's first sweeps showed cells whose opening readings were the
+ * preceding cell's cost and whose closing readings were their own: 27.9, 27.2,
+ * 22.0, 14.0, 13.9 after a 25.8 ms cell. The settle had passed on two readings
+ * still at the old level. A median of five cannot recover a cell that spends
+ * three readings in the previous state, so the trend is measured and the cell
+ * read again.
+ *
+ * @param {ReadonlyArray<number>} samplesMs five readings, in the order taken
+ * @returns {number}
+ */
+export function cellTrend(samplesMs) {
+	if (samplesMs.length !== 5)
+		throw new Error(
+			`a cell's trend is read off five readings, got ${samplesMs.length}`,
+		);
+	const ms = samplesMs.map((v) => finite("trend reading", v));
+	const head = (ms[0] + ms[1]) / 2;
+	const tail = (ms[3] + ms[4]) / 2;
+	return Math.abs(head - tail) / Math.min(head, tail);
+}
+
+/**
+ * The trend past which a cell is read again. Measured over the 160 cells of the
+ * first four sweeps: every cell that was steady sat at 0.25 or below, and the
+ * three that carried a predecessor's cost sat at 0.68, 0.97 and 1.62, so the
+ * limit stands in a gap with no cell in it.
+ */
+export const CELL_TREND_LIMIT = 0.4;
