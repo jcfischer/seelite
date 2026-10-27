@@ -434,7 +434,11 @@ of all 16 archetypes are built from the heightfields the game registers with
 160–230 ms (measured 2026-10-27, host CPU) and would stall the tick that first
 met a rock of that kind, or any frame it ran in. An archetype a tick needs
 before the worker returns it is built in that tick, and so is every archetype
-if the worker fails. The cost
+if the worker fails. Receiving an archetype still costs the main thread the
+structured-clone deserialize of its ~400,000 objects: the longest stall
+measured 34–140 ms against 323–637 ms for an inline build (2026-10-27,
+host CPU, load 10–30; the stall grows with load in both arms). A flat transfer rebuilt across frames would remove it; it is
+not built. The cost
 row holds the in-field tick, less a tick away from the field, to 0.71 ms per
 rock in reach, on the fastest of seven interleaved batches. `scripts/probe-field-flight.mjs` flies an impact at a
 rock face, a ride pressed against a spinning rock, and a placement inside a

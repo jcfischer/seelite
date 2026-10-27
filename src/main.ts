@@ -1112,17 +1112,14 @@ import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
 
 setRockShapeSource(getRockHeightfields);
-{
-	const rockThread = rockPiecesThread();
-	prebuildRockPieces(rockThread.build)
-		.catch((e) =>
-			console.warn(
-				"rock pieces: off-thread build failed, built on first use",
-				e,
-			),
-		)
-		.finally(rockThread.close);
-}
+Promise.resolve()
+	.then(() => {
+		const rockThread = rockPiecesThread();
+		return prebuildRockPieces(rockThread.build).finally(rockThread.close);
+	})
+	.catch((e) =>
+		console.warn("rock pieces: off-thread build failed, built on first use", e),
+	);
 
 /**
  * The keys that are only ever half of a press, for the capture modal.

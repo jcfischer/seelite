@@ -55,8 +55,8 @@ export function archetypePieces(archetype: number): RockPieces {
 
 /**
  * Build every archetype's pieces ahead of flight with `build` (the game's is a
- * Worker, `rockPiecesThread`), one archetype at a time, so neither the first
- * rock of a kind in reach nor the build itself holds the main thread: a build
+ * Worker, `rockPiecesThread`), one archetype at a time, so the first rock of a
+ * kind in reach does not stall its tick and no frame runs a build: a build
  * takes 160–230 ms (sage rounds 1–2 on PR #1110). An archetype a tick needed
  * first is skipped, and a result that lands after `setRockShapeSource` swapped
  * the shapes is dropped.

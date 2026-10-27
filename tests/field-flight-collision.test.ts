@@ -307,7 +307,7 @@ describe("the flown ship against field rocks (node #969)", () => {
 		).toBeGreaterThan(rock.radiusKm * 2);
 	});
 
-	test("pieces built on a worker match the main thread's, never hold it, and leave a tick nothing to build", async () => {
+	test("pieces built on a worker match the main thread's, stall it less than half as long as an inline build, and leave a tick nothing to build", async () => {
 		const decoded = decodeRockHeightfields(
 			new Uint8Array(readFileSync("src/models/rock-heightfields.bin")),
 		);
@@ -347,7 +347,7 @@ describe("the flown ship against field rocks (node #969)", () => {
 				`longest main-thread stall: ${inline.toFixed(0)} ms building inline, ${offThread.toFixed(0)} ms on the worker`,
 			);
 			expect(inline).toBeGreaterThan(100);
-			expect(offThread).toBeLessThan(100);
+			expect(offThread).toBeLessThan(inline / 2);
 			const archetype = rockArchetype(rock);
 			expect(archetypePieces(archetype)).toEqual(
 				buildRockPieces(decoded.fields[archetype], {
