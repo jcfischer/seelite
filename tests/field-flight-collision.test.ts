@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import {
 	FIELD_PROFILE,
 	type FieldPlan,
@@ -208,6 +209,40 @@ describe("the flown ship against field rocks (node #969)", () => {
 		expect(hit!.closingKms).toBeLessThan(0.6);
 	});
 
+	test("stepWorld meets a field rock on the deployed cutter before the stowed hull", () => {
+		const impact = (deployed: boolean) => {
+			const { world, plan, rocks } = fieldWorld();
+			const rock = biggest(rocks);
+			const { pose, out } = placeOnFace(world, plan, rock, 0.15, 2);
+			world.rockPlacement = { placed: false, rocks: new Set() };
+			const step = stepWorld(
+				world,
+				{
+					nose: scale(out, -1),
+					up: pose.y,
+					rates: { pitch: 0, yaw: 0, roll: 0 },
+				},
+				{
+					stick: { pitch: 0, yaw: 0, roll: 0 },
+					turnAssist: false,
+					translation: { demand: speedDemand(0), assist: false },
+				},
+				DT,
+				perf,
+				shipPrimitives(HULL_SPECS.miner, deployed),
+			);
+			expect(step.ghosts).toEqual([]);
+			expect(step.impacts).toHaveLength(1);
+			expect(step.impacts[0].bodyId).toBe(rockId(plan, rock));
+			return step.impacts[0];
+		};
+		const cutter = impact(true);
+		const stowed = impact(false);
+		expect(cutter.part).toBe("cutter");
+		expect(stowed.part).toBe("hull");
+		expect(cutter.timeS).toBeLessThan(stowed.timeS - 0.001);
+	});
+
 	test("pressed against a spinning rock, the ship rides it without sinking or jitter", () => {
 		const { world, plan, rocks } = fieldWorld();
 		const rock = biggest(rocks);
@@ -276,13 +311,34 @@ describe("the flown ship against field rocks (node #969)", () => {
 	});
 
 	test("collision cost stays within #956's 0.71 ms per rock in reach, and the reach set adds almost none", () => {
+		if (process.env.SEELITE_FIELD_COST_RUN !== "isolated") {
+			const measured = spawnSync(
+				process.execPath,
+				[
+					"test",
+					import.meta.path,
+					"--test-name-pattern",
+					"collision cost stays",
+				],
+				{
+					env: { ...process.env, SEELITE_FIELD_COST_RUN: "isolated" },
+					encoding: "utf8",
+					timeout: 25_000,
+				},
+			);
+			process.stdout.write(measured.stdout);
+			process.stderr.write(measured.stderr);
+			if (measured.error) throw measured.error;
+			expect(measured.status).toBe(0);
+			return;
+		}
 		const { world, plan, rocks } = fieldWorld();
 		const rock = biggest(rocks);
 		const t = world.gameTime;
 		const clock = { fromTime: t, toTime: t + DT };
-		const there = rockPose(plan, rock, t);
-		const start = add(there.pos, v3(0, 0, rock.radiusKm * 0.9 + 0.1));
-		const vel = add(there.vel, v3(0, 0, -2));
+		placeOnFace(world, plan, rock, 0.15, 2);
+		const start = { ...world.ship.pos };
+		const vel = { ...world.ship.vel };
 		const end = add(start, scale(vel, DT));
 		const ship = { start, end, reachKm: HULL_REACH_KM };
 		const reached = fieldRockSolids(world.system, ship, clock).owner.length;
@@ -295,6 +351,7 @@ describe("the flown ship against field rocks (node #969)", () => {
 			velStart: vel,
 			velEnd: vel,
 		};
+		expect(sweepShip(motion, [solid], DT).impacts.length).toBeGreaterThan(0);
 		const tick = (offset: Vec3) => () => {
 			world.gameTime = t;
 			world.ship.pos = add(start, offset);
@@ -302,22 +359,43 @@ describe("the flown ship against field rocks (node #969)", () => {
 			world.rockPlacement = { placed: false, rocks: new Set() };
 			return fly(world);
 		};
-		const fastestMs = (run: () => unknown): number => {
-			for (let i = 0; i < 20; i++) run();
-			const batches: number[] = [];
-			for (let batch = 0; batch < 7; batch++) {
-				const t0 = performance.now();
-				for (let i = 0; i < 50; i++) run();
-				batches.push((performance.now() - t0) / 50);
-			}
-			return Math.min(...batches);
+		const inFieldTick = tick(v3());
+		const awayTick = tick(v3(1e6, 0, 0));
+		const workloads = {
+			query: () => fieldRockSolids(world.system, ship, clock).owner.length,
+			sweep: () => sweepShip(motion, [solid], DT).impacts.length,
+			inField: () => inFieldTick().impacts.length,
+			away: () => awayTick().impacts.length,
 		};
-		const query = fastestMs(() => fieldRockSolids(world.system, ship, clock));
-		const sweep = fastestMs(() => sweepShip(motion, [solid], DT));
-		const inField = fastestMs(tick(v3()));
-		const away = fastestMs(tick(v3(1e6, 0, 0)));
+		const times: Record<keyof typeof workloads, number[]> = {
+			query: [],
+			sweep: [],
+			inField: [],
+			away: [],
+		};
+		const names = ["query", "sweep", "inField", "away"] as const;
+		for (const name of names) for (let i = 0; i < 20; i++) workloads[name]();
+		for (let batch = 0; batch < 7; batch++)
+			for (const name of names) {
+				let work = 0;
+				const t0 = performance.now();
+				for (let i = 0; i < 50; i++) work += workloads[name]();
+				times[name].push((performance.now() - t0) / 50);
+				expect(work).toBe(name === "away" ? 0 : 50);
+			}
+		const medianMs = (name: keyof typeof workloads): number => {
+			const sorted = [...times[name]].sort((a, b) => a - b);
+			console.log(
+				`host CPU ${name}, ${name === "away" ? 0 : reached} rock in reach: warmed median ${sorted[3].toFixed(3)} ms/tick, range ${sorted[0].toFixed(3)}–${sorted[6].toFixed(3)}, 7 interleaved batches × 50 ticks`,
+			);
+			return sorted[3];
+		};
+		const query = medianMs("query");
+		const sweep = medianMs("sweep");
+		const inField = medianMs("inField");
+		const away = medianMs("away");
 		expect(query).toBeLessThan(0.05);
 		expect(sweep / reached).toBeLessThanOrEqual(0.71);
 		expect(inField - away).toBeLessThanOrEqual(2 * sweep + 0.15);
-	});
+	}, 30_000);
 });
