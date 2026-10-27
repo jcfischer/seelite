@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -6,7 +7,6 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
-import { gameUrl } from "./lib/game-url.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
