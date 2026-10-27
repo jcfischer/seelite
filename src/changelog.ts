@@ -28,10 +28,10 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// https://github.com/jcfischer/seelite/issues/969 — proposed copy; principal approval and main date pending.
+	// https://github.com/jcfischer/seelite/issues/969 — sentence approved by the principal, 2026-10-27.
 	{
 		date: "2026-10-27",
-		text: "Asteroid field rocks are solid: your ship and its deployed cutter can strike their faces and rest against their turning surfaces.",
+		text: "Asteroids are solid: you can crash into a rock, or come to rest against it.",
 		node: 969,
 	},
 	// https://github.com/jcfischer/seelite/issues/1034 — sentence approved by the principal, 2026-10-26.
