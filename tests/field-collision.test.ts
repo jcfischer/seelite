@@ -347,4 +347,29 @@ describe("the flown ship against field rocks (node #969)", () => {
 			rocks.length,
 		);
 	});
+
+	test("a repeated field query reuses its system plans and rock lattice", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const record = world.system.record;
+		let reads = 0;
+		Object.defineProperty(world.system, "record", {
+			get: () => {
+				reads++;
+				return record;
+			},
+		});
+		const rock = biggest(rocks);
+		const clock = { fromTime: world.gameTime, toTime: world.gameTime + DT };
+		const ship = {
+			start: rockPose(plan, rock, clock.fromTime).pos,
+			end: rockPose(plan, rock, clock.toTime).pos,
+			reachKm: HULL_REACH_KM,
+		};
+		const first = fieldRockSolids(world.system, ship, clock);
+		expect(first.owner).toContain(rockId(plan, rock));
+		expect(reads).toBeGreaterThan(0);
+		const before = reads;
+		expect(fieldRockSolids(world.system, ship, clock)).toEqual(first);
+		expect(reads).toBe(before);
+	});
 });
