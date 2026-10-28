@@ -245,17 +245,20 @@ jobs:
   #   a file that needs another file's module side effects is
   #   `tests/import-cycles.test.ts`'s to catch. Run locally in three file
   #   orders (slowest first, the four shards, and `--randomize`), no file
-  #   failed for a neighbour's state.
+  #   failed for another file's state.
   # - `--timings=tests/timings.json` deals the files by measured duration and
   #   starts each shard's slowest file first. A file missing from it still
   #   runs. The committed durations were measured locally under four workers.
   #   Durations measured on CI under four workers were tried and balanced
-  #   worse (slowest shard 144 s twice): a parallel run records each file's
-  #   wall time beside whatever shared its runner, not its cost.
-  # - `--update-timings` rewrites this shard's files in the runner's copy and
-  #   the next step uploads it, so `npm run test:timings [run-id]` can merge a
-  #   green run's four artifacts into the committed file. Judge a refresh by
-  #   two CI runs' slowest shard, as above, before committing it.
+  #   worse (slowest shard 144 s twice). Any parallel run records a file's
+  #   wall time beside whatever shared its machine, the committed one too, so
+  #   the evidence for this file is those runs' slowest shard, not its numbers.
+  # - `--update-timings` writes a file that holds only this shard's files (run
+  #   40694531268: 65 + 178 + 141 + 48 = all 432, no file twice), and the next
+  #   step uploads it, so `npm run test:timings [run-id]` can merge a green
+  #   run's four artifacts into the committed file; it refuses two artifacts
+  #   that name one file. Judge a refresh by two CI runs' slowest shard, as
+  #   above, before committing it.
   #
   # bun is pinned (`bun-version` below, and in `mutation-changed`) because these
   # flags are recent: `latest` ran 1.4.4 on 2026-10-28, and a release that drops

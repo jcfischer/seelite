@@ -54,6 +54,9 @@ try {
 		);
 		if (read.version !== 1)
 			throw new Error(`${shard}: version ${read.version}`);
+		for (const file of Object.keys(read.files))
+			if (file in files)
+				throw new Error(`${shard}: ${file} is in another shard's artifact`);
 		Object.assign(files, read.files);
 	}
 	const kept = Object.fromEntries(
