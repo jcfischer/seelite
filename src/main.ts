@@ -771,8 +771,9 @@ import {
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
-	scoops,
+	scoopAttempt,
 	CANISTER_RADIUS_KM,
+	CANISTER_SCOOP_CHARGE_E,
 	CARGO_CONTACT_COLOUR,
 	CARGO_CONTACT_CSS,
 	type Canister,
@@ -784,6 +785,7 @@ import {
 } from "./raider-wreck";
 import {
 	SCOOP_NOTICE_S,
+	SCOOP_REFUSAL_TEXT,
 	type ScoopNotice,
 	nextScoopNotice,
 	scoopExit,
@@ -15285,12 +15287,21 @@ class Game {
 			};
 		});
 	}
+	private spendScoopCharge() {
+		this.condition = {
+			...this.condition,
+			energy: Math.max(0, this.condition.energy - CANISTER_SCOOP_CHARGE_E),
+		};
+	}
 	private stepDerelictScoops() {
 		if (this.regime === "cruise" || this.dock.phase !== "flying") return;
+		const gear = this.flownCapacity();
 		for (const { key, row, pose } of this.derelictsAt())
 			for (let i = 0; i < row.containers.length; i++) {
 				const container = tetherPose(pose, i);
-				if (!scoops(container, this.world.ship)) continue;
+				const bankE = this.condition.energy;
+				if (scoopAttempt(container, this.world.ship, gear, bankE) === "out")
+					continue;
 				const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
 					kind: "wreck-scoop",
 					key,
@@ -15300,10 +15311,13 @@ class Game {
 					at: this.world.gameTime,
 					container,
 					ship: this.world.ship,
+					gear,
+					bankE,
 				});
 				this.adoptHoldings(outcome);
 				const tried = outcome.signals.wreckScoop;
 				if (!tried) continue;
+				if (tried.tonnes > 0) this.spendScoopCharge();
 				const event = {
 					...tried,
 					// Notice dedupe key only; the wreck stays on its persisted row.
@@ -15389,14 +15403,14 @@ class Game {
 	private stepCargoCanisters(dt: number) {
 		if (this.canisters.length === 0) return;
 		// `stepCanisters` owns the order (scoop, then drift); this owns the hold.
-		const step = stepCanisters(
-			this.canisters,
-			this.world.ship,
+		const step = stepCanisters({
+			canisters: this.canisters,
+			ship: this.world.ship,
 			dt,
-			this.world.gameTime,
+			now: this.world.gameTime,
 			// Applied per canister, inside the step: a second canister scooped
 			// in the same step is judged against the hold the first one left.
-			(canister) => {
+			accept: (canister) => {
 				const before = this.holdings();
 				const outcome = applyHoldEvent(before, this.commerceWorld, {
 					kind: "scoop",
@@ -15409,6 +15423,7 @@ class Game {
 				// mark per canister rather than one per step, which the store's
 				// debounce reads as the same instant.
 				this.adoptHoldings(outcome);
+				this.spendScoopCharge();
 				if (canister.fitting) return 1;
 				// What went aboard, read off the hold: a tonne good, so exact.
 				return (
@@ -15421,13 +15436,15 @@ class Game {
 			// so a pilot who flies past `NEAR_FAR_KM` would drop every canister at
 			// the station to star rest and lose them inside their five minutes
 			// (sage #355).
-			(canister) =>
+			frameFor: (canister) =>
 				this.frameMotion(this.bodyFrameSource(canister.frameBodyId), dt),
-		);
+			gear: this.flownCapacity(),
+			bankE: () => this.condition.energy,
+		});
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.
-		for (const { canister, accepted, tonnes } of step.scoops) {
+		for (const { canister, accepted, tonnes, refusal } of step.scoops) {
 			// A refusal reports the canister's tonnes; a take what it took and,
 			// when the hold could not take it all, what is left (H11).
 			const event = {
@@ -15436,6 +15453,7 @@ class Game {
 				tonnes: accepted ? tonnes : canister.tonnes,
 				accepted,
 				leftT: accepted ? canister.tonnes - tonnes : undefined,
+				refusal: refusal ? SCOOP_REFUSAL_TEXT[refusal] : undefined,
 			};
 			// The exit line and the glass: the canister disappearing is what
 			// expiring and flying past also look like, so the event needs to say

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { migrateEquipment } from "../src/loadout";
 import { carrierKey } from "../src/carrier-key";
 import type { JobOffer } from "../src/jobs";
 import { firstOffer } from "./helpers/job-board";
@@ -428,6 +429,10 @@ const paidTrialWithLead = () => {
 	);
 	if (!retained.ok) throw new Error(`retain: ${retained.message}`);
 	trial.commander.requests = retained.state;
+	trial.commander.state = {
+		...trial.commander.state,
+		loadout: migrateEquipment(trial.commander.state.hull, []).loadout,
+	};
 	return trial;
 };
 

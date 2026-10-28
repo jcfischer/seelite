@@ -67,7 +67,7 @@ import {
 import { recordTrade } from "./deficits";
 import { commodity, ESCAPE_POD } from "./market";
 import type { Standing } from "./legal";
-import { PLAYER_KILL } from "./raider-wreck";
+import { PLAYER_KILL, type ScoopGear } from "./raider-wreck";
 import {
 	type RequestOffer,
 	type RequestStation,
@@ -254,6 +254,8 @@ export type HoldEvent =
 			at: number;
 			container: { pos: Vec3; vel: Vec3 };
 			ship: { pos: Vec3; vel: Vec3 };
+			gear: ScoopGear;
+			bankE: number;
 	  }
 	/** Any carrier transition (#627 D3). A destroy with the player's
 	 *  provenance is a kill: it pays every accepted Bounty naming the carrier
@@ -697,16 +699,18 @@ function applied(
 				)
 					return unchanged(holdings, world);
 			}
-			const took = scoopWreckContainer(
-				e,
-				event.containerIndex,
-				holdings.commander,
-				entrustedTonnesAboard(holdings.requests),
-				event.container,
-				event.ship,
-				event.at,
-				!!job,
-			);
+			const took = scoopWreckContainer({
+				row: e,
+				index: event.containerIndex,
+				commander: holdings.commander,
+				entrustedT: entrustedTonnesAboard(holdings.requests),
+				container: event.container,
+				ship: event.ship,
+				gear: event.gear,
+				bankE: event.bankE,
+				at: event.at,
+				entrusted: !!job,
+			});
 			if (!took.tonnes && !took.refusal) return unchanged(holdings, world);
 			const signals = {
 				...QUIET,

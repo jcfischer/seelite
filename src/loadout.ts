@@ -142,10 +142,17 @@ export function makeModule(
 }
 export function stockLoadout(hull: HullId): Loadout {
 	const spec = HULL_SPECS[hull],
-		hp = spec.slots.find((s) => s.key === "h1")!;
+		hp = spec.slots.find((s) => s.key === "h1")!,
+		scoopSlot = spec.slots.find(
+			(s) =>
+				s.kind === "internal" &&
+				s.accepts !== "any" &&
+				s.accepts.includes("cargo"),
+		);
 	return {
 		plant: makeModule("power-plant", spec.plantSize),
 		h1: makeModule("pulse-laser", hp.size),
+		...(scoopSlot && { [scoopSlot.key]: makeModule("cargo-scoop", 1) }),
 	};
 }
 /**
@@ -156,7 +163,8 @@ export function stockLoadout(hull: HullId): Loadout {
  * Integrity is the hull's plus every plate's; each pool is the hull's
  * `shieldPool` plus every booster's `pointsPerPool`, and the boosters' draws
  * add (#927). The scoops' rate and draw (#932) and the racks' missiles add.
- * Scanners and the pod do not add: the best fitted one is read (#977).
+ * Scanners and the pod do not add: the best fitted one is read (#977), and so
+ * is the cargo scoop, whose window is the widest fitted one's (node #1096).
  * The hold is the hull's `holdT` plus every rack's `cargoT` (#928); NPCs
  * pass the same instance-owned fit their combat and manifest read (#875).
  */
@@ -177,6 +185,8 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	let scanRangeKm = 0;
 	let scanChargeS = 0;
 	let signalRangeKm = 0;
+	let scoopRadiusKm = 0;
+	let scoopSpeedKms = 0;
 	let pod = { cargoShare: 0, capsuleT: 0, carriedModules: 0 };
 	for (const m of Object.values(loadout)) {
 		if (m.module === "identity-scanner") {
@@ -184,6 +194,16 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 			if (rangeKm > scanRangeKm) {
 				scanRangeKm = rangeKm;
 				scanChargeS = identityScanChargeS(m.grade);
+			}
+		}
+		if (m.module === "cargo-scoop") {
+			const o = moduleRow(m).output;
+			if (
+				o.scoopRadiusKm > scoopRadiusKm ||
+				(o.scoopRadiusKm === scoopRadiusKm && o.scoopSpeedKms > scoopSpeedKms)
+			) {
+				scoopRadiusKm = o.scoopRadiusKm;
+				scoopSpeedKms = o.scoopSpeedKms;
 			}
 		}
 		if (m.module === "long-range-scanner")
@@ -234,6 +254,8 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 		scanRangeKm,
 		scanChargeS,
 		signalRangeKm,
+		scoopRadiusKm,
+		scoopSpeedKms,
 		podCargoShare: pod.cargoShare,
 		podCapsuleT: pod.cargoShare > 0 ? pod.capsuleT : 0,
 		podCarriedModules: pod.carriedModules,
