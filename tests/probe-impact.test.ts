@@ -318,6 +318,29 @@ describe("deterministic browser impact", () => {
 			[...sources.keys()].sort(),
 		);
 	});
+	test("a path's edges follow its text and the snapshot's files, not an earlier snapshot", () => {
+		const first = new Map([
+			["src/root.ts", 'import "./a";'],
+			["src/a.ts", ""],
+			["src/b/index.ts", ""],
+		]);
+		expect([...dependencyClosure(["src/root.ts"], first)].sort()).toEqual([
+			"src/a.ts",
+			"src/root.ts",
+		]);
+		const edited = new Map(first);
+		edited.set("src/root.ts", 'import "./b";');
+		expect([...dependencyClosure(["src/root.ts"], edited)].sort()).toEqual([
+			"src/b/index.ts",
+			"src/root.ts",
+		]);
+		const moved = new Map(edited);
+		moved.set("src/b.ts", "");
+		expect([...dependencyClosure(["src/root.ts"], moved)].sort()).toEqual([
+			"src/b.ts",
+			"src/root.ts",
+		]);
+	});
 	test("a changed helper reaches its owner, not an unrelated synth", () => {
 		const sources = new Map([
 			["src/panel.ts", 'import "./text";'],
