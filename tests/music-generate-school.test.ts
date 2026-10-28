@@ -277,7 +277,9 @@ function peakVoices(
 	jump?: { afterBars: number; to: string },
 ): number {
 	const SR = 48000;
-	const e = new MusicEngine(SR);
+	const e = new MusicEngine(SR, MUSIC_VOICE_CAP, undefined, {
+		countOnly: true,
+	});
 	e.command({ type: "load", id: "s", song }, 0);
 	e.command({ type: "play", id: "s", section: from, at: "bar", hold: true }, 0);
 	const i = song.sections.findIndex((x) => x.name === from);
