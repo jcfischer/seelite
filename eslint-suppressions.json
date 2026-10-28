@@ -296,7 +296,7 @@
   },
   "scripts/lib/rock-mesh-distance.ts": {
     "seelite/no-comments": {
-      "count": 2
+      "count": 1
     }
   },
   "scripts/lib/rock-ray-exits.ts": {
