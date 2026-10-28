@@ -132,6 +132,9 @@ function raycastKey(mesh: THREE.Mesh, raycaster: THREE.Raycaster): string {
 	return `${keyWords.join(",")}|${materials.map((m) => m?.side).join(",")}`;
 }
 
+const remembering = <T>(on: boolean, body: () => T): T =>
+	on ? rememberingRaycasts(body) : body();
+
 function rememberingRaycasts<T>(body: () => T): T {
 	const prototype = THREE.Mesh.prototype;
 	const cast = prototype.raycast;
@@ -409,8 +412,16 @@ export interface Crossing {
  * a ray exactly on it asks a question about float32 rather than about geometry.
  *
  * Nothing here asserts. The assertion lives in the test.
+ *
+ * `remember` answers a raycast made before from memory, keyed on everything
+ * it reads: worth it for a caller that casts one station again and again,
+ * a cost for one that casts each station once.
  */
-export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
+export function crossings(
+	root: THREE.Object3D,
+	type: StationType,
+	remember = false,
+): Crossing[] {
 	const core = STATION_GEOMETRY[type].coreRadiusKm;
 	const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
 	const band = bayBand(root);
@@ -424,7 +435,7 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 	/** How far out the outermost sample sits, as a share of the half-extent. */
 	const EDGE_FRACTION = 0.99;
 	twoSided(root, () =>
-		rememberingRaycasts(() => {
+		remembering(remember, () => {
 			for (let ix = 0; ix < CELLS; ix++) {
 				for (let iy = 0; iy < CELLS; iy++) {
 					const cell = ix * CELLS + iy;
