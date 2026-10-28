@@ -49,10 +49,10 @@ export function forEachWorldVertex(
 		if (!position || !include(object)) return;
 		const instanced = object as THREE.InstancedMesh;
 		const count = instanced.isInstancedMesh ? instanced.count : 1;
+		mesh.updateWorldMatrix(true, false);
 		for (let n = 0; n < count; n++) {
 			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
 			else instance.identity();
-			mesh.updateWorldMatrix(true, false);
 			for (let i = 0; i < position.count; i++) {
 				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
 				v.applyMatrix4(instance);
