@@ -191,12 +191,28 @@ describe("count-only mode writes no sample", () => {
 		expect(b.sounding).toBe(2);
 		expect(out.every((x) => x === 7)).toBe(true);
 	});
-	test("the worklet builds a full engine", () => {
+	test("the worklet builds its one engine from a rate and a cap, and no mode", () => {
 		const src = readFileSync(
 			new URL("../src/music-worklet.ts", import.meta.url),
 			"utf8",
 		);
-		expect(src).toContain("new MusicEngine(");
+		const calls = src.split("new MusicEngine(");
+		expect(calls.length).toBe(2);
+		let depth = 0;
+		let args = 1;
+		let end = 0;
+		for (const ch of calls[1]) {
+			end++;
+			if (ch === "(" || ch === "{" || ch === "[") depth++;
+			else if (ch === ")" || ch === "}" || ch === "]") {
+				if (depth === 0) break;
+				depth--;
+			} else if (ch === "," && depth === 0) args++;
+		}
+		const list = calls[1].slice(0, end - 1).trim();
+		expect(list.endsWith(",") ? args - 1 : args).toBe(2);
+		expect(list.split(",")[0].trim()).toBe("sampleRate");
+		expect(src).not.toContain("RenderMode");
 		expect(src).not.toContain("countOnly");
 	});
 });

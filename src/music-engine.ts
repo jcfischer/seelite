@@ -359,16 +359,12 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			if (s.player.playing)
 				this.roomOf(i).space.setEcho((s.echoBeats * 60) / s.player.bpm);
 		}
-		if (this.countOnly) {
-			this.bank.render(
-				n === BLOCK ? this.bufL : this.bufL.subarray(0, n),
-				frame,
-				this,
-			);
-			return;
-		}
 		const whole = n === BLOCK;
 		const L = whole ? this.bufL : this.bufL.subarray(0, n);
+		if (this.countOnly) {
+			this.bank.render(L, frame, this);
+			return;
+		}
 		const stereo: StereoOut = whole
 			? this.stereo
 			: {
