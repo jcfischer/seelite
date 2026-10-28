@@ -18,6 +18,7 @@ import {
 	technoStationBed,
 } from "../src/music-generate-techno";
 import type { Song } from "../src/music-score";
+import { beatSeconds, bpmAt, compileSong } from "../src/music-sequencer";
 import { SVF_STABLE, svfLimit, svfStep } from "../src/music-voices";
 
 const RATES = [16000, 22050, 24000, 44100, 48000];
@@ -39,7 +40,7 @@ const peakOf = (
 ) => {
 	const e = new MusicEngine(sr, 16);
 	e.command({ type: "load", id: "s", song }, 0);
-	e.command({ type: "play", id: "s", at: "bar", section }, 0);
+	e.command({ type: "play", id: "s", at: "bar", section, hold: true }, 0);
 	const L = new Float32Array(128);
 	const R = new Float32Array(128);
 	let peak = 0;
@@ -51,6 +52,26 @@ const peakOf = (
 		if (!(peak < 1)) return peak;
 	}
 	return peak;
+};
+
+const sectionWindow = (song: Song, section: string) => {
+	const compiled = compileSong(song);
+	const s = compiled.sections[compiled.sectionIndex(section)];
+	let durationS = 0;
+	for (let bar = s.scoreBar; bar < s.scoreBar + s.bars; bar++)
+		durationS += beatSeconds(
+			bpmAt(song.tempo, bar, false),
+			bpmAt(song.tempo, bar, true),
+			song.beatsPerBar,
+			song.beatsPerBar,
+		);
+	const parts = Object.values(song.parts);
+	const sweepS = Math.max(
+		0,
+		...parts.flatMap((part) => [part.sweepS ?? 0, part.phaserS ?? 0]),
+	);
+	const tailS = Math.max(0, ...parts.map((part) => part.releaseS ?? 0));
+	return Math.max(durationS, sweepS) + tailS;
 };
 
 describe("the state-variable filter", () => {
@@ -93,11 +114,11 @@ describe("every bed at the rates a device may run", () => {
 					["station", station(1234, "trade", 0)],
 				] as const)
 					for (const s of song.sections) {
-						const p = peakOf(song, s.name, sr, 0, 6);
+						const p = peakOf(song, s.name, sr, 0, sectionWindow(song, s.name));
 						if (!(p < 1)) loud.push(`${kind} ${s.name}: ${p}`);
 					}
 				expect(loud).toEqual([]);
-			}, 60_000);
+			}, 300_000);
 
 	test("the school bed's calm holds at 24 kHz to the end of its sweeps", () => {
 		const loud: string[] = [];
