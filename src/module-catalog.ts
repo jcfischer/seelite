@@ -12,7 +12,7 @@ import {
 } from "./hull";
 import { PULSE_LASER } from "./ship-condition";
 import { SCAN_CHARGE_S, SCAN_RANGE_KM } from "./carrier-scan";
-import { RELAY_SIGNAL_RANGE_KM } from "./pirate-relay";
+import { RELAY_SIGNAL_RANGE_KM } from "./relay-signal-range";
 import {
 	CANISTER_SCOOP_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
