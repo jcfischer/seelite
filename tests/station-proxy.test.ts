@@ -112,7 +112,7 @@ const VERTEX_TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
  * seconds, so bun's 5 s default would fail them on a slower machine for
  * load rather than for a defect.
  */
-const HEAVY_ROW_MS = 30_000;
+const HEAVY_ROW_MS = 60_000;
 
 const GRID_GUARD_SEEDS = [0, 1];
 

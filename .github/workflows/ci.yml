@@ -236,8 +236,11 @@ jobs:
   # - `--parallel=3`, not 4. Four workers on the runner's four vCPUs ran the
   #   heaviest rows 1.5-2.5x slower than one at a time, and rows whose own
   #   budgets are 10 s and 30 s timed out on four of five runs. Three passed
-  #   twice, those rows at up to 8.9 s and 23 s, so they are still the first
-  #   thing a busier runner reddens.
+  #   twice and then timed out once more (run 40702410676: 31.8 s against
+  #   30 s). Those budgets guard against a hang, not a cost (station-proxy's
+  #   says so), so the three rows that came within 90% of theirs now carry
+  #   this job's 60 s: authored-hull-install's ray-free row, station-proxy's
+  #   HEAVY_ROW_MS and station-route's attitude row.
   # - `--no-isolate` keeps one global and module registry per worker. Plain
   #   `--parallel` isolates every file and re-runs the six bunfig preloads for
   #   each, and on the node's first measurement ran 2.5x slower than without

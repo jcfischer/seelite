@@ -131,7 +131,7 @@ test("shipped hulls publish ray-free builds with the measured throats under ever
 	} finally {
 		setHullFinish(DEFAULT_HULL_FINISH);
 	}
-}, 30_000);
+}, 60_000);
 
 test("a failure after the first warmup also leaves the previous builder installed", async () => {
 	const old = authoredHullBuilder("tug");
