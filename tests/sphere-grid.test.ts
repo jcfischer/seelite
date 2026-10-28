@@ -159,8 +159,7 @@ describe("the box grid (node #1118)", () => {
 		expect(checked).toBeGreaterThan(0);
 	});
 
-	test("a long thin plate is indexed cell by cell, not visited by every query", () => {
-		// refinery/d's plates: a 1.38 km bounding sphere, 28 cells across.
+	test("a 1.38 km plate, 28 cells long, is indexed cell by cell, not visited by every query", () => {
 		const c = Math.cos(0.17);
 		const s = Math.sin(0.17);
 		const plate = boundsOfBox(

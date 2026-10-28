@@ -1133,7 +1133,6 @@ function nearPrimitives(
 	return near.map((n) => solid.primitives[n]);
 }
 
-/** A primitive's axis-aligned bounds in its solid's frame. */
 function primitiveBox(p: Primitive): Bounds {
 	if (p.kind === "sphere") {
 		const c = p.centre;
