@@ -20,6 +20,7 @@
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "../../src/station";
 import type { StationInterior } from "../../src/station-interior";
+import { forEachWorldVertex } from "./world-triangles";
 
 /**
  * The bay's own parts — what lies beyond the opening on purpose.
@@ -81,45 +82,37 @@ function twoSided<T>(root: THREE.Object3D, body: () => T): T {
 	}
 }
 
-interface RaycastMemo {
-	position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
-	positionVersion: number;
-	index: THREE.BufferAttribute | null;
-	indexVersion: number;
-	shape: string;
-	hits: Map<string, THREE.Intersection[]>;
-}
-
-const raycastMemos = new WeakMap<THREE.BufferGeometry, RaycastMemo>();
-
-function memoFor(geometry: THREE.BufferGeometry): RaycastMemo {
+function fingerprintOf(geometry: THREE.BufferGeometry) {
 	const position = geometry.getAttribute("position");
 	const index = geometry.getIndex();
-	const positionVersion = "version" in position ? position.version : -1;
-	const indexVersion = index ? index.version : -1;
-	const shape = JSON.stringify([
-		geometry.drawRange,
-		geometry.groups,
-		Object.keys(geometry.morphAttributes),
-	]);
-	const known = raycastMemos.get(geometry);
-	if (
-		known &&
-		known.position === position &&
-		known.positionVersion === positionVersion &&
-		known.index === index &&
-		known.indexVersion === indexVersion &&
-		known.shape === shape
-	)
-		return known;
-	const memo = {
+	return {
 		position,
-		positionVersion,
+		positionVersion: "version" in position ? position.version : -1,
 		index,
-		indexVersion,
-		shape,
-		hits: new Map(),
+		indexVersion: index ? index.version : -1,
+		shape: JSON.stringify([
+			geometry.drawRange,
+			geometry.groups,
+			Object.keys(geometry.morphAttributes),
+		]),
 	};
+}
+
+type Fingerprint = ReturnType<typeof fingerprintOf>;
+
+const sameFingerprint = (a: Fingerprint, b: Fingerprint) =>
+	(Object.keys(a) as (keyof Fingerprint)[]).every((k) => a[k] === b[k]);
+
+const raycastMemos = new WeakMap<
+	THREE.BufferGeometry,
+	{ fingerprint: Fingerprint; hits: Map<string, THREE.Intersection[]> }
+>();
+
+function memoFor(geometry: THREE.BufferGeometry) {
+	const fingerprint = fingerprintOf(geometry);
+	const known = raycastMemos.get(geometry);
+	if (known && sameFingerprint(known.fingerprint, fingerprint)) return known;
+	const memo = { fingerprint, hits: new Map<string, THREE.Intersection[]>() };
 	raycastMemos.set(geometry, memo);
 	return memo;
 }
@@ -299,38 +292,26 @@ export function corridorIntrusions(
 	// The aperture plane, read off the bars' own centre — they straddle it.
 	const front = mouthPlane(root) * core;
 	const found = new Map<string, number>();
-	const v = new THREE.Vector3();
-	const instance = new THREE.Matrix4();
-	root.traverse((object) => {
-		const mesh = object as THREE.Mesh;
-		const position = mesh.geometry?.getAttribute?.("position");
-		if (!position) return;
-		// The aperture's own frame lives in the corridor by construction — it
-		// *is* the opening.
-		if (object.name.startsWith("aperture")) return;
-		// A light pool is a lit decal lying on a surface, with no volume a ship
-		// could strike (#300). The mouth ring's pools reach a few metres inside
-		// the corridor from lamps that stand outside it, and a ship flying
-		// through a pool of light is flying through light.
-		if (object.userData.pool) return;
-		const instanced = object as THREE.InstancedMesh;
-		const count = instanced.isInstancedMesh ? instanced.count : 1;
-		for (let n = 0; n < count; n++) {
-			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
-			else instance.identity();
-			mesh.updateWorldMatrix(true, false);
-			for (let i = 0; i < position.count; i++) {
-				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
-				v.applyMatrix4(instance);
-				v.applyMatrix4(mesh.matrixWorld);
-				v.multiplyScalar(core);
-				if (v.z <= front + WALL_EPSILON_KM) continue;
-				if (Math.hypot(v.x, v.y) > radius) continue;
-				const name = object.name || object.type;
-				found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
-			}
-		}
-	});
+	forEachWorldVertex(
+		root,
+		(v, object) => {
+			v.multiplyScalar(core);
+			if (v.z <= front + WALL_EPSILON_KM) return;
+			if (Math.hypot(v.x, v.y) > radius) return;
+			const name = object.name || object.type;
+			found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
+		},
+		(object) => {
+			// The aperture's own frame lives in the corridor by construction — it
+			// *is* the opening.
+			if (object.name.startsWith("aperture")) return false;
+			// A light pool is a lit decal lying on a surface, with no volume a ship
+			// could strike (#300). The mouth ring's pools reach a few metres inside
+			// the corridor from lamps that stand outside it, and a ship flying
+			// through a pool of light is flying through light.
+			return !object.userData.pool;
+		},
+	);
 	return found;
 }
 

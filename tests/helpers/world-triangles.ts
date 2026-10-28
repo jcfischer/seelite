@@ -29,3 +29,36 @@ export function forEachWorldTriangle(
 		}
 	});
 }
+
+/**
+ * Visits each drawn vertex in world space, instance by instance, with the
+ * object it belongs to; the vertex is reused, so a caller that keeps it clones
+ * it. Objects `include` refuses are not walked.
+ */
+export function forEachWorldVertex(
+	root: THREE.Object3D,
+	visit: (vertex: THREE.Vector3, object: THREE.Object3D) => void,
+	include: (object: THREE.Object3D) => boolean = () => true,
+): void {
+	root.updateMatrixWorld(true);
+	const v = new THREE.Vector3();
+	const instance = new THREE.Matrix4();
+	root.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		const position = mesh.geometry?.getAttribute?.("position");
+		if (!position || !include(object)) return;
+		const instanced = object as THREE.InstancedMesh;
+		const count = instanced.isInstancedMesh ? instanced.count : 1;
+		for (let n = 0; n < count; n++) {
+			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
+			else instance.identity();
+			mesh.updateWorldMatrix(true, false);
+			for (let i = 0; i < position.count; i++) {
+				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
+				v.applyMatrix4(instance);
+				v.applyMatrix4(mesh.matrixWorld);
+				visit(v, object);
+			}
+		}
+	});
+}

@@ -21,6 +21,7 @@ import {
 	stationInterior,
 } from "../../src/station-interior";
 import { stationSilhouetteKm } from "../../src/station-mesh";
+import { forEachWorldVertex } from "./world-triangles";
 import {
 	type ProxyPrimitive,
 	type StationProxy,
@@ -199,34 +200,21 @@ export function forEachVertex(
 	visit: (vertex: NamedVertex) => void,
 ): void {
 	const { root, spinner } = built;
-	root.updateMatrixWorld(true);
-	const v = new THREE.Vector3();
-	const instance = new THREE.Matrix4();
 	const core = STATION_GEOMETRY[type].coreRadiusKm;
-
-	root.traverse((object) => {
-		const mesh = object as THREE.Mesh;
-		const position = mesh.geometry?.getAttribute?.("position");
-		if (!position) return;
-		let spun = false;
-		for (let a: THREE.Object3D | null = object; a; a = a.parent)
-			if (a === spinner) spun = true;
-		const name = object.name || object.type;
-		const instanced = object as THREE.InstancedMesh;
-		const count = instanced.isInstancedMesh ? instanced.count : 1;
-		for (let n = 0; n < count; n++) {
-			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
-			else instance.identity();
-			mesh.updateWorldMatrix(true, false);
-			for (let i = 0; i < position.count; i++) {
-				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
-				v.applyMatrix4(instance);
-				v.applyMatrix4(mesh.matrixWorld);
-				// The root is normalised to core radii — convert back to km
-				v.multiplyScalar(core);
-				visit({ v, name, spun });
-			}
+	let current: THREE.Object3D | null = null;
+	let name = "";
+	let spun = false;
+	forEachWorldVertex(root, (v, object) => {
+		if (object !== current) {
+			current = object;
+			name = object.name || object.type;
+			spun = false;
+			for (let a: THREE.Object3D | null = object; a; a = a.parent)
+				if (a === spinner) spun = true;
 		}
+		// The root is normalised to core radii — convert back to km
+		v.multiplyScalar(core);
+		visit({ v, name, spun });
 	});
 }
 
