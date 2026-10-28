@@ -45,49 +45,99 @@ export function closestOnTriangle(p: V3, a: V3, b: V3, c: V3): V3 {
 		a[2] + ab[2] * v + ac[2] * w,
 	];
 }
+/** A uniform grid of n³ cubes from lo, spanning the mesh; cell c holds triangle ids ids[start[c]] to ids[start[c + 1] - 1]. */
 export interface MeshIndex {
 	tris: Float32Array;
 	n: number;
 	lo: number;
 	cell: number;
-	cells: number[][];
+	start: Int32Array;
+	ids: Int32Array;
 }
-export function indexMesh(
-	tris: Float32Array,
-	n = 24,
-	lo = -1.2,
-	hi = 1.2,
-): MeshIndex {
+/** Bin each triangle's bounding box into an n³ grid over the mesh's bounding cube. */
+export function indexMesh(tris: Float32Array, n = 96): MeshIndex {
+	let lo = Infinity,
+		hi = -Infinity;
+	for (const v of tris) {
+		lo = Math.min(lo, v);
+		hi = Math.max(hi, v);
+	}
+	if (!(hi > lo)) {
+		lo = Number.isFinite(lo) ? lo - 0.5 : 0;
+		hi = lo + 1;
+	}
 	const cell = (hi - lo) / n;
-	const cells: number[][] = Array.from({ length: n * n * n }, () => []);
 	const ix = (v: number) =>
 		Math.min(n - 1, Math.max(0, Math.floor((v - lo) / cell)));
-	for (let t = 0; t < tris.length / 9; t++) {
+	const count = tris.length / 9;
+	const box = new Int32Array(count * 6);
+	const start = new Int32Array(n * n * n + 1);
+	const visit = (t: number, at: (c: number) => void) => {
+		const b = t * 6;
+		for (let k = box[b + 2]; k <= box[b + 5]; k++)
+			for (let j = box[b + 1]; j <= box[b + 4]; j++)
+				for (let i = box[b]; i <= box[b + 3]; i++) at((k * n + j) * n + i);
+	};
+	for (let t = 0; t < count; t++) {
 		const o = t * 9;
-		const mn = [0, 1, 2].map((k) =>
-			Math.min(tris[o + k], tris[o + 3 + k], tris[o + 6 + k]),
-		);
-		const mx = [0, 1, 2].map((k) =>
-			Math.max(tris[o + k], tris[o + 3 + k], tris[o + 6 + k]),
-		);
-		for (let k = ix(mn[2]); k <= ix(mx[2]); k++)
-			for (let j = ix(mn[1]); j <= ix(mx[1]); j++)
-				for (let i = ix(mn[0]); i <= ix(mx[0]); i++)
-					cells[(k * n + j) * n + i].push(t);
+		for (let k = 0; k < 3; k++) {
+			box[t * 6 + k] = ix(
+				Math.min(tris[o + k], tris[o + 3 + k], tris[o + 6 + k]),
+			);
+			box[t * 6 + 3 + k] = ix(
+				Math.max(tris[o + k], tris[o + 3 + k], tris[o + 6 + k]),
+			);
+		}
+		visit(t, (c) => start[c + 1]++);
 	}
-	return { tris, n, lo, cell, cells };
+	for (let c = 0; c < n * n * n; c++) start[c + 1] += start[c];
+	const ids = new Int32Array(start[n * n * n]);
+	const fill = start.slice(0, n * n * n);
+	for (let t = 0; t < count; t++) visit(t, (c) => (ids[fill[c]++] = t));
+	return { tris, n, lo, cell, start, ids };
 }
-/** Distance from p to the mesh, and the closest point. */
+function outside(v: number, from: number, to: number): number {
+	return v < from ? from - v : v > to ? v - to : 0;
+}
+function distanceToUnscannedCells(
+	m: MeshIndex,
+	p: V3,
+	a: number[],
+	b: number[],
+): number {
+	const { n, lo, cell } = m,
+		hi = lo + n * cell;
+	const gap = p.map((v) => outside(v, lo, hi));
+	const rest = gap[0] * gap[0] + gap[1] * gap[1] + gap[2] * gap[2];
+	let bound = Infinity;
+	for (let k = 0; k < 3; k++) {
+		const others = rest - gap[k] * gap[k];
+		if (a[k] > 0) {
+			const d = Math.max(0, p[k] - (lo + a[k] * cell));
+			bound = Math.min(bound, Math.sqrt(d * d + others));
+		}
+		if (b[k] < n - 1) {
+			const d = Math.max(0, lo + (b[k] + 1) * cell - p[k]);
+			bound = Math.min(bound, Math.sqrt(d * d + others));
+		}
+	}
+	return bound - cell * 1e-9;
+}
+/** Distance from p to the mesh, and the closest point; exact for any p, inside or outside the grid. */
 export function meshDistance(m: MeshIndex, p: V3): { d: number; q: V3 } {
-	const { n, lo, cell, tris } = m;
-	const c = p.map((v) => Math.floor((v - lo) / cell));
+	const { n, lo, cell, tris, start, ids } = m;
+	const c = p.map((v) =>
+		Math.min(n - 1, Math.max(0, Math.floor((v - lo) / cell))),
+	);
 	let best = Infinity,
 		bq: V3 = p;
 	const seen = new Set<number>();
 	for (let ring = 0; ring < n; ring++) {
-		for (let k = c[2] - ring; k <= c[2] + ring; k++)
-			for (let j = c[1] - ring; j <= c[1] + ring; j++)
-				for (let i = c[0] - ring; i <= c[0] + ring; i++) {
+		const a = c.map((v) => Math.max(0, v - ring)),
+			b = c.map((v) => Math.min(n - 1, v + ring));
+		for (let k = a[2]; k <= b[2]; k++)
+			for (let j = a[1]; j <= b[1]; j++)
+				for (let i = a[0]; i <= b[0]; i++) {
 					if (
 						Math.max(
 							Math.abs(i - c[0]),
@@ -96,8 +146,9 @@ export function meshDistance(m: MeshIndex, p: V3): { d: number; q: V3 } {
 						) !== ring
 					)
 						continue;
-					if (i < 0 || j < 0 || k < 0 || i >= n || j >= n || k >= n) continue;
-					for (const t of m.cells[(k * n + j) * n + i]) {
+					const cellIndex = (k * n + j) * n + i;
+					for (let s = start[cellIndex]; s < start[cellIndex + 1]; s++) {
+						const t = ids[s];
 						if (seen.has(t)) continue;
 						seen.add(t);
 						const o = t * 9;
@@ -114,8 +165,7 @@ export function meshDistance(m: MeshIndex, p: V3): { d: number; q: V3 } {
 						}
 					}
 				}
-		// Every cell within `ring` is searched; anything nearer lies inside it.
-		if (best <= ring * cell) break;
+		if (best <= distanceToUnscannedCells(m, p, a, b)) break;
 	}
 	return { d: best, q: bq };
 }
