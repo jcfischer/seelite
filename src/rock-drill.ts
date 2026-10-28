@@ -374,22 +374,26 @@ export const shipPointKm = (
 	);
 };
 
-/** How far past the study's deployed foot a strut may reach to find rock, as a share of its deployed length. */
-export const STRUT_REACH_SHARE = 1.25;
+type M3 = [number, number, number];
 
-/** One strut's reach in the export's metres: its base, its study deployed foot and the longest reach. */
+/** How far past the study's deployed foot a strut may reach to find rock, as a share of its deployed length. */
+export const STRUT_REACH_SHARE = 1.4;
+
+/**
+ * One strut's reach in the export's metres: its base, its deployed foot and
+ * the longest reach. The study's feet stand on an inclined fixture facet
+ * (`rockContactZ`), which leaves the starboard pair 25 m short of the port
+ * pair; here every foot aims at the cutter's face plane (`MINING.rockZ`).
+ */
 export function strutReach(index: number) {
 	const deployed = anchorPose(index, 1);
+	const foot: M3 = [deployed.foot[0], deployed.foot[1], LONGWALL_STUDY.rockZ];
+	const base = deployed.base as M3;
 	const reachM =
-		Math.hypot(
-			deployed.foot[0] - deployed.base[0],
-			deployed.foot[1] - deployed.base[1],
-			deployed.foot[2] - deployed.base[2],
-		) * STRUT_REACH_SHARE;
-	return { base: deployed.base, foot: deployed.foot, reachM };
+		Math.hypot(foot[0] - base[0], foot[1] - base[1], foot[2] - base[2]) *
+		STRUT_REACH_SHARE;
+	return { base, foot, reachM };
 }
-
-type M3 = [number, number, number];
 
 /**
  * A strut posed toward `target` (export metres) at `deployment` 0…1: the

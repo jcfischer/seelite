@@ -9835,6 +9835,8 @@ class Game {
 		feet: [] as {
 			onRock: boolean;
 			rockId: string | null;
+			rockM: number | null;
+			reachM: number;
 			target: [number, number, number];
 		}[],
 		holdWhy: "DEPLOYING" as ReturnType<typeof holdAllowed>,
@@ -10201,19 +10203,23 @@ class Game {
 		this.drill.feet = [0, 1, 2, 3].map((i) => {
 			const reach = strutReach(i);
 			const base = shipPointKm(ship.pos, nose, up, frame.toShip(reach.base));
-			const study = shipPointKm(ship.pos, nose, up, frame.toShip(reach.foot));
-			const met =
+			const column = shipPointKm(
+				ship.pos,
+				nose,
+				up,
+				frame.toShip([reach.foot[0], reach.foot[1], reach.base[2]]),
+			);
+			const seen =
 				this.drill.extension > 0
-					? beamHit(
-							base,
-							normalizeOr(sub(study, base), nose),
-							targets,
-							reach.reachM / 1000,
-						)
+					? beamHit(column, nose, targets, (reach.reachM * 2) / 1000)
 					: null;
+			const seenM = seen ? length(sub(seen.point, base)) * 1000 : null;
+			const met = seen && seenM !== null && seenM <= reach.reachM ? seen : null;
 			return {
 				onRock: met !== null && this.drill.extension >= 1,
 				rockId: met?.id ?? null,
+				rockM: seenM,
+				reachM: reach.reachM,
 				target: met
 					? frame.toExport(shipFrameM(ship.pos, nose, up, met.point))
 					: reach.foot,
@@ -10258,7 +10264,7 @@ class Game {
 		const struts = d.held
 			? "STRUTS HOLDING"
 			: d.extension >= 1
-				? `FEET ${feet}/4${d.holdWhy === "OK" ? " · 4 TO HOLD" : ""}`
+				? `FEET ${feet}/4${d.holdWhy === "OK" ? " · PRESS 4 TO HOLD" : ""}`
 				: "";
 		const fine = d.fine
 			? `FINE${d.fine.rangeKm === null ? "" : ` · RANGE ${m(d.fine.rangeKm)} M`} · CLOSE ${m(d.fine.closingKms)} · SLIDE ${m(d.fine.slideKms)} M/S`

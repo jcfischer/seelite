@@ -235,3 +235,10 @@ describe("surface drilling (D-D3)", () => {
 		expect(s.ore + s.waste).toBe(0);
 	});
 });
+
+test("every strut aims at the cutter's face plane, so the four reach alike", () => {
+	const reaches = [0, 1, 2, 3].map((i) => strutReach(i));
+	for (const r of reaches) expect(r.foot[2]).toBe(48);
+	expect(reaches[0].reachM).toBeCloseTo(reaches[1].reachM, 9);
+	expect(reaches[2].reachM).toBeCloseTo(reaches[3].reachM, 9);
+});
