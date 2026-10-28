@@ -1133,7 +1133,9 @@ function nearPrimitives(
 	return near.map((n) => solid.primitives[n]);
 }
 
-function primitiveBox(p: Primitive): Bounds {
+/** A primitive's axis-aligned bounds in its solid's frame: what the
+ *  collision grid indexes it by (node #1118). */
+export function primitiveBox(p: Primitive): Bounds {
 	if (p.kind === "sphere") {
 		const c = p.centre;
 		return boundsOfSegment(c.x, c.y, c.z, c.x, c.y, c.z, p.radiusKm);

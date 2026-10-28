@@ -1251,8 +1251,8 @@ export function proxyListDistanceKm(
 		queryBoxGrid(grid, x - r, y - r, z - r, x + r, y + r, z + r, (n) => {
 			best = Math.min(best, proxyDistanceKm(primitives[n], x, y, z));
 		});
-		// Every primitive with a surface point within `r` has its bounding
-		// bounds touching the box just searched.
+		// Every primitive with a surface point within `r` has its bounds
+		// touching the box just searched.
 		if (best <= r) return best;
 		if (r > 64) break;
 	}

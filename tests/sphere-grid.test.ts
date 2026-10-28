@@ -7,6 +7,7 @@ import {
 	queryBoxGrid,
 } from "../src/sphere-grid";
 import { makeRng } from "../src/wfc";
+import { type Primitive, primitiveBox } from "../src/collision";
 
 type V = { x: number; y: number; z: number };
 
@@ -93,6 +94,61 @@ describe("the box grid (node #1118)", () => {
 			maxY: 2.2,
 			maxZ: 3.3,
 		});
+	});
+
+	test("the collision grid bounds each resolver primitive by its extreme points", () => {
+		const raw = makeRng(5);
+		const rng = () => raw() / 2 ** 32;
+		const within = (b: Bounds, p: V) =>
+			p.x >= b.minX - 1e-12 &&
+			p.x <= b.maxX + 1e-12 &&
+			p.y >= b.minY - 1e-12 &&
+			p.y <= b.maxY + 1e-12 &&
+			p.z >= b.minZ - 1e-12 &&
+			p.z <= b.maxZ + 1e-12;
+		for (let i = 0; i < 200; i++) {
+			const c = { x: rng() * 2 - 1, y: rng() * 2 - 1, z: rng() * 2 - 1 };
+			const axes = randomAxes(rng);
+			const half: [number, number, number] = [
+				rng() * 0.7,
+				rng() * 0.01,
+				rng() * 0.2,
+			];
+			const box: Primitive = { kind: "box", centre: c, axes, half };
+			const ps = corners(c, axes, half);
+			const b = primitiveBox(box);
+			for (const p of ps) expect(within(b, p)).toBe(true);
+			expect(b.maxX).toBeCloseTo(Math.max(...ps.map((p) => p.x)), 12);
+			expect(b.minY).toBeCloseTo(Math.min(...ps.map((p) => p.y)), 12);
+			expect(b.maxZ).toBeCloseTo(Math.max(...ps.map((p) => p.z)), 12);
+			const r = rng() * 0.1;
+			const end = {
+				x: c.x + axes[0].x * half[0],
+				y: c.y + axes[0].y * half[0],
+				z: c.z + axes[0].z * half[0],
+			};
+			const capsule = primitiveBox({
+				kind: "capsule",
+				a: c,
+				b: end,
+				radiusKm: r,
+			});
+			const sphere = primitiveBox({ kind: "sphere", centre: c, radiusKm: r });
+			for (const q of [c, end])
+				for (const d of [-r, r]) {
+					expect(within(capsule, { ...q, x: q.x + d })).toBe(true);
+					expect(within(capsule, { ...q, y: q.y + d })).toBe(true);
+					expect(within(capsule, { ...q, z: q.z + d })).toBe(true);
+				}
+			expect(sphere).toEqual({
+				minX: c.x - r,
+				minY: c.y - r,
+				minZ: c.z - r,
+				maxX: c.x + r,
+				maxY: c.y + r,
+				maxZ: c.z + r,
+			});
+		}
 	});
 
 	test("every query returns each box its range touches, once, against brute force", () => {
