@@ -52,7 +52,8 @@ try {
 		const read = JSON.parse(
 			readFileSync(join(dir, shard, "timings.json"), "utf8"),
 		);
-		if (read.version !== 1) throw new Error(`${shard}: version ${read.version}`);
+		if (read.version !== 1)
+			throw new Error(`${shard}: version ${read.version}`);
 		Object.assign(files, read.files);
 	}
 	const kept = Object.fromEntries(

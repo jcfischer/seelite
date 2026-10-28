@@ -447,20 +447,33 @@ test("the shards split the suite across runners without narrowing it", () => {
 		"--timings=tests/timings.json",
 		"--update-timings",
 	]);
-	// `--parallel`, `--no-isolate` and `--timings` are recent bun flags, so the
-	// job names an exact bun rather than `latest`: a release that dropped or
-	// renamed one would otherwise turn every shard red with nothing changed here.
+	// A shard that skips itself is a shard that never ran, and a shard that
+	// shrugs off a failure reports a green quarter of a suite it did not run.
+	expect(runs[0].condition).toBeUndefined();
+	expect(letsFailurePass(runs[0].continueOnError)).toBe(false);
+	// And the local entry is untouched: the split is CI's, not the suite's.
+	const { scripts } = JSON.parse(
+		readFileSync(repoPath("package.json"), "utf8"),
+	) as unknown as { scripts: Record<string, string> };
+	expect(scripts.test).toBe("bun test tests/");
+});
+
+const PINNED_BUN = "1.4.2";
+
+test("every bun the CI workflow installs is the pinned release the shard flags exist in", () => {
 	const setups = ciWorkflow().steps.filter(
 		(s) => actionOf(s) === "oven-sh/setup-bun",
 	);
-	const pins = [
+	expect(setups.map((s) => s.job)).toContain("unit");
+	const writtenVersions = [
 		...readFileSync(repoPath(".github/workflows/ci.yml"), "utf8").matchAll(
 			/^\s+bun-version:\s*(\S+)\s*$/gm,
 		),
 	].map((m) => m[1]);
-	expect(pins).toEqual(setups.map(() => "1.4.2"));
-	expect(setups.map((s) => s.job)).toContain("unit");
-	// And the timings file the shards balance on is one bun can read.
+	expect(writtenVersions).toEqual(setups.map(() => PINNED_BUN));
+});
+
+test("the timings file the shards balance on is one bun reads", () => {
 	const timings = JSON.parse(
 		readFileSync(repoPath("tests/timings.json"), "utf8"),
 	) as { version: number; files: Record<string, number> };
@@ -471,15 +484,6 @@ test("the shards split the suite across runners without narrowing it", () => {
 		expect(file).toMatch(/^tests\/.*\.test\.ts$/);
 		expect(ms).toBeGreaterThan(0);
 	}
-	// A shard that skips itself is a shard that never ran, and a shard that
-	// shrugs off a failure reports a green quarter of a suite it did not run.
-	expect(runs[0].condition).toBeUndefined();
-	expect(letsFailurePass(runs[0].continueOnError)).toBe(false);
-	// And the local entry is untouched: the split is CI's, not the suite's.
-	const { scripts } = JSON.parse(
-		readFileSync(repoPath("package.json"), "utf8"),
-	) as unknown as { scripts: Record<string, string> };
-	expect(scripts.test).toBe("bun test tests/");
 });
 
 /**
