@@ -520,5 +520,60 @@
     {"id":"146","location":{"end":{"column":26,"line":277},"start":{"column":6,"line":277}},"mutator":"CallExpression","replacement":";","before":"Killed","after":"Killed","seconds":6.482903500000015,"failureRows":["(fail) the flown ship against field rocks (node #969) > an impact at a rock face names the rock and reads the closing speed in its frame [20.06ms]","(fail) the flown ship against field rocks (node #969) > stepWorld meets a field rock on the deployed cutter before the stowed hull [1.48ms]","(fail) the flown ship against field rocks (node #969) > pressed against a spinning rock, the ship rides it without sinking or jitter [5.77ms]","(fail) the flown ship against field rocks (node #969) > a ship placed inside a rock ghosts the whole rock and flies out [4.38ms]"]},
     {"id":"147","location":{"end":{"column":27,"line":280},"start":{"column":9,"line":280}},"mutator":"ObjectLiteral","replacement":"{}","before":"Killed","after":"Killed","seconds":6.4244047920000735,"failureRows":["(fail) the flown ship against field rocks (node #969) > only rocks in cells within reach of the step are swept, and none a step can meet is missed [2698.87ms]","(fail) the flown ship against field rocks (node #969) > a step far from every field sweeps no rock [1.27ms]","(fail) the flown ship against field rocks (node #969) > an impact at a rock face names the rock and reads the closing speed in its frame [20.92ms]","(fail) the flown ship against field rocks (node #969) > stepWorld meets a field rock on the deployed cutter before the stowed hull [1.89ms]","(fail) the flown ship against field rocks (node #969) > pressed against a spinning rock, the ship rides it without sinking or jitter [1.46ms]","(fail) the flown ship against field rocks (node #969) > a ship placed inside a rock ghosts the whole rock and flies out [1.43ms]","(fail) the flown ship against field rocks (node #969) > a repeated field query reuses its system plans and rock lattice [182.71ms]"]},
     {"id":"149","location":{"end":{"column":44,"line":287},"start":{"column":14,"line":287}},"mutator":"StringLiteral","replacement":"``","before":"Survived","after":"Killed","seconds":6.740233291000012,"failureRows":["(fail) the flown ship against field rocks (node #969) > each rock's id names its field and slot, so no two rocks share an owner [1.27ms]"]}
-  ]
+  ],
+  "reviewRound1": {
+    "reviewedHead": "35b6da7798fa06b342067c5dabbeb8faf104917f",
+    "unchangedTestCalls": {
+      "tests/field-collision.test.ts": 12,
+      "tests/field-flight-collision.test.ts": 2
+    },
+    "fixtureBlock": "Identical to both reviewed files after removing export modifiers",
+    "fileSha256": {
+      "tests/field-collision.test.ts": "05ff745651bcebb481eb2eaf9f00cd0f3b5eb7238260e88d7eabeba8b11c26d9",
+      "tests/field-flight-collision.test.ts": "44d89c67f103f326cec01c7441c8de2b28a2e9086c16522e6e2151fb7e14d2b4",
+      "tests/lib/field-rock-fixtures.ts": "6d01fef4212c98242270315ec0d99ede9fb65cb84e16f98ab3c107ca8cd71fe6",
+      "tests/mutation-changed.test.ts": "d1e47a652417eff67f025d5403e9a5d15441d044b83f2a0f58d0d95a9a871a3e"
+    },
+    "mutationAndTiming": "Historical results above retain their original hashes; not remeasured after fixture extraction",
+    "verification": {
+      "affected": {
+        "pass": 25,
+        "fail": 0
+      },
+      "typecheck": "passed",
+      "format": "passed",
+      "biomeLint": "passed",
+      "eslint": "passed",
+      "build": "passed",
+      "browserSelection": {
+        "probes": 0,
+        "reason": "Only documentation or headless tests changed"
+      },
+      "fullSuite": {
+        "runs": 1,
+        "pass": 7105,
+        "fail": 1,
+        "files": 426,
+        "seconds": 1505.79,
+        "failedFile": "tests/probe-impact.test.ts",
+        "failedRow": "a measurement script no probe loads selects smoke, not the suite",
+        "failure": "5000 ms timeout after 5377.09 ms"
+      },
+      "isolatedProbeImpact": {
+        "base": "8a92daf32a150328f1ae42d1a00beea58becc4ac",
+        "baseResult": {
+          "pass": 29,
+          "fail": 0,
+          "seconds": 15.25
+        },
+        "workingTreeResult": {
+          "pass": 29,
+          "fail": 0,
+          "seconds": 15.44
+        },
+        "inputs": "No Git diff from base in the failed test or src/, scripts/, spikes/ inputs; archived base tests and linked unchanged source directories",
+        "conclusion": "Timeout did not reproduce in isolation; cause unattributed"
+      }
+    }
+  }
 }

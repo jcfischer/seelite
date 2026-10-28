@@ -9,7 +9,9 @@ Checkpoint: `cp-seelite-field-collision-mutation-split`.
 rows remain in the flight file. All twelve original test calls, including
 their names, assertions, loops, fixtures and timeouts, compare byte-for-byte
 against `8a92daf3` after parsing their boundaries with TypeScript. Imports
-were trimmed; the shared local fixtures were copied without changes.
+were trimmed; the shared local fixtures were initially copied without changes.
+Review round 1 moves those fixtures to `tests/lib/field-rock-fixtures.ts`,
+imported by both files. The review verification is recorded below.
 Two additional fast rows count metadata reads on a repeated query and real
 rock poses on a one-cell query. They preserve detection of work regressions
 that the timing rows alone killed in the historical report.
@@ -38,7 +40,7 @@ measurement or a controlled speed comparison.
 | Fast file, combined with two retries | 109 | 0 | 0 |
 
 All 100 historical kills are preserved. All nine named survivors are now
-killed. The final test file's SHA-256 is
+killed. The replayed test file's SHA-256 is
 `2015e867c8e2d08c68ec832df2680f66b66a59ca71e33bc11a45443a9be56003`;
 the initial replay and retries used identical source and test bytes.
 
@@ -146,10 +148,10 @@ peaks across those observations were 0.9% and 4.7%, respectively. The old
 probe-lock record named a dead process; the canonical `readHolder` and
 `pidAlive` helpers confirmed that it held no live lock. The shared record
 was left untouched. Earlier samples overlapping other validation work
-were excluded. The accepted run uses the same final source and test hashes
+were excluded. The accepted run uses the same source and test hashes
 as the mutation replay. This is one sample, without a CI speedup claim.
 
-## Local verification
+## Initial implementation verification
 
 The change is confined to headless tests and this receipt. The path-only
 probe-selection diagnostic reports no probes, with reason “Only
@@ -165,6 +167,45 @@ An independent Codex agent audited the split, mutation identities, replay
 locations and spy restoration without finding a code blocker. Its exact
 model slug was unavailable; this was a same-family check. The supervisor
 owns the subsequent Sage review.
+
+## Review round 1: shared fixtures
+
+`tests/lib/field-rock-fixtures.ts` now owns the shared fixture constants and
+functions. Both field test files import them. The selector row indexes the
+helper alongside both test files and still selects only
+`tests/field-collision.test.ts`.
+
+A TypeScript AST comparison against reviewed commit `35b6da77` confirms
+that all fourteen `test(...)` calls are byte-identical: twelve in the fast
+file and two in the timing file. Removing the helper's `export` modifiers
+also reproduces each original fixture block byte-for-byte. Imports are
+trimmed to the symbols each file uses. No test or production behavior changes.
+
+The mutation counts and quiet timing above describe the earlier replayed
+files, identified by their original hashes. They were not remeasured after
+this extraction. The machine-readable evidence preserves those measurements
+and records the review's new file hashes separately.
+
+The glossary suggestions are declined: “command” here means a shell
+invocation, including the JSON `command` keys. The game's canonical term
+“Intervention” describes a different concept and would mislabel this evidence.
+
+Review verification on this host: the three affected files pass together,
+25 tests and zero failures. TypeScript, formatting, Biome lint, ESLint and
+the production build pass. The probe-selection diagnostic selects no probes
+because only headless tests and documentation changed.
+
+The required single full `npm test` run reports **7,105 passed and one
+failed**, across 426 files in 1,505.79 seconds. The failure is
+`tests/probe-impact.test.ts`'s “a measurement script no probe loads selects
+smoke, not the suite”: a 5,000 ms timeout after 5,377.09 ms. The test and
+the `src/`, `scripts/` and `spikes/` inputs it scans have no Git diff from
+merge base `8a92daf3`. A subsequent isolated run of the whole file passes
+on both the base snapshot (29/29, 15.25 seconds) and this working tree
+(29/29, 15.44 seconds). The base snapshot uses archived base tests and
+links the unchanged source directories and installed dependencies. The
+timeout does not reproduce in isolation; its cause is unattributed. No
+timeout or unrelated test was changed, and the full suite was not rerun.
 
 [Machine-readable evidence](node-1111-field-collision-mutation-split.json)
 contains the complete required mutant set, outcome history, content hashes,

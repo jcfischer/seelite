@@ -3,22 +3,13 @@ import { readFileSync } from "node:fs";
 import * as asteroidField from "../src/asteroid-field";
 import {
 	FIELD_PROFILE,
-	type FieldPlan,
-	type Rock,
 	fieldCells,
 	fieldCentre,
-	fieldRocks,
 	rockLocal,
 	rockPose,
 	rotateByQuat,
-	systemFields,
 } from "../src/asteroid-field";
-import {
-	mayMeet,
-	reachKm as shipReachKm,
-	shipPrimitives,
-	solidReach,
-} from "../src/collision";
+import { mayMeet, shipPrimitives, solidReach } from "../src/collision";
 import {
 	archetypePieces,
 	fieldRockSolids,
@@ -28,68 +19,21 @@ import {
 	rockSolid,
 	setRockShapeSource,
 } from "../src/field-collision";
-import { ROCK_ARCHETYPES, rockArchetype, spinQuat } from "../src/field-lod";
-import { decodeRockHeightfields } from "../src/rock-heightfields";
+import { ROCK_ARCHETYPES, spinQuat } from "../src/field-lod";
 import { HULL_SPECS } from "../src/hull";
-import { type RockPieces, envelopeAt } from "../src/rock-pieces";
-import {
-	type World,
-	flightPerformance,
-	makeWorldAtSystem,
-	markShipPlaced,
-	speedDemand,
-	stepWorld,
-} from "../src/sim";
+import { decodeRockHeightfields } from "../src/rock-heightfields";
+import type { RockPieces } from "../src/rock-pieces";
+import { markShipPlaced, speedDemand, stepWorld } from "../src/sim";
 import { add, length, scale, sub, v3 } from "../src/vec3";
-
-const DT = 0.1;
-const hull = shipPrimitives(HULL_SPECS.miner, false);
-const perf = flightPerformance("miner");
-const HULL_REACH_KM = shipReachKm(hull);
-const attitude = { nose: v3(1, 0, 0), up: v3(0, 0, 1) };
-
-function fieldWorld() {
-	const world = makeWorldAtSystem(47, 0);
-	const [plan] = systemFields(world.system.record, world.system.contents);
-	const rocks = fieldRocks(world.system.record, plan);
-	return { world, plan, rocks };
-}
-
-const biggest = (rocks: Rock[]): Rock =>
-	rocks.reduce((a, b) => (b.radiusKm > a.radiusKm ? b : a));
-
-function fly(world: World) {
-	return stepWorld(
-		world,
-		{ ...attitude, rates: { pitch: 0, yaw: 0, roll: 0 } },
-		{
-			stick: { pitch: 0, yaw: 0, roll: 0 },
-			turnAssist: false,
-			translation: { demand: speedDemand(0), assist: false },
-		},
-		DT,
-		perf,
-		hull,
-	);
-}
-
-function placeOnFace(
-	world: World,
-	plan: FieldPlan,
-	rock: Rock,
-	gapKm: number,
-	closingKms: number,
-) {
-	const pose = rockFrameAt(plan, rock, world.gameTime);
-	const e = envelopeAt(archetypePieces(rockArchetype(rock)), v3(0, 0, 1));
-	const out = pose.z;
-	world.ship.pos = add(pose.origin, scale(out, e * rock.radiusKm + gapKm));
-	world.ship.vel = sub(
-		rockPose(plan, rock, world.gameTime).vel,
-		scale(out, closingKms),
-	);
-	return { out, pose };
-}
+import {
+	biggest,
+	DT,
+	fieldWorld,
+	fly,
+	HULL_REACH_KM,
+	perf,
+	placeOnFace,
+} from "./lib/field-rock-fixtures";
 
 describe("the flown ship against field rocks (node #969)", () => {
 	test("a rock never leaves its lattice cell", () => {

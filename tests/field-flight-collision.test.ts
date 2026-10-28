@@ -1,89 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import {
-	type FieldPlan,
-	type Rock,
-	fieldRocks,
-	rockPose,
-	systemFields,
-} from "../src/asteroid-field";
-import {
-	shipPose,
-	sweepShip,
-	reachKm as shipReachKm,
-	shipPrimitives,
-} from "../src/collision";
+import { shipPose, sweepShip } from "../src/collision";
 import {
 	archetypePieces,
 	fieldRockSolids,
 	prebuildRockPieces,
-	rockFrameAt,
 	rockSolid,
 	setRockShapeSource,
 } from "../src/field-collision";
 import { rockArchetype } from "../src/field-lod";
 import { decodeRockHeightfields } from "../src/rock-heightfields";
-import { HULL_SPECS } from "../src/hull";
-import { buildRockPieces, envelopeAt } from "../src/rock-pieces";
+import { buildRockPieces } from "../src/rock-pieces";
 import { rockPiecesThread } from "../src/rock-pieces-thread";
+import { add, length, scale, type Vec3, v3 } from "../src/vec3";
 import {
-	type World,
-	flightPerformance,
-	makeWorldAtSystem,
-	speedDemand,
-	stepWorld,
-} from "../src/sim";
-import { type Vec3, add, length, scale, sub, v3 } from "../src/vec3";
-
-const DT = 0.1;
-const hull = shipPrimitives(HULL_SPECS.miner, false);
-const perf = flightPerformance("miner");
-const HULL_REACH_KM = shipReachKm(hull);
-const attitude = { nose: v3(1, 0, 0), up: v3(0, 0, 1) };
-
-function fieldWorld() {
-	const world = makeWorldAtSystem(47, 0);
-	const [plan] = systemFields(world.system.record, world.system.contents);
-	const rocks = fieldRocks(world.system.record, plan);
-	return { world, plan, rocks };
-}
-
-const biggest = (rocks: Rock[]): Rock =>
-	rocks.reduce((a, b) => (b.radiusKm > a.radiusKm ? b : a));
-
-function fly(world: World) {
-	return stepWorld(
-		world,
-		{ ...attitude, rates: { pitch: 0, yaw: 0, roll: 0 } },
-		{
-			stick: { pitch: 0, yaw: 0, roll: 0 },
-			turnAssist: false,
-			translation: { demand: speedDemand(0), assist: false },
-		},
-		DT,
-		perf,
-		hull,
-	);
-}
-
-function placeOnFace(
-	world: World,
-	plan: FieldPlan,
-	rock: Rock,
-	gapKm: number,
-	closingKms: number,
-) {
-	const pose = rockFrameAt(plan, rock, world.gameTime);
-	const e = envelopeAt(archetypePieces(rockArchetype(rock)), v3(0, 0, 1));
-	const out = pose.z;
-	world.ship.pos = add(pose.origin, scale(out, e * rock.radiusKm + gapKm));
-	world.ship.vel = sub(
-		rockPose(plan, rock, world.gameTime).vel,
-		scale(out, closingKms),
-	);
-	return { out, pose };
-}
+	attitude,
+	biggest,
+	DT,
+	fieldWorld,
+	fly,
+	HULL_REACH_KM,
+	hull,
+	placeOnFace,
+} from "./lib/field-rock-fixtures";
 
 describe("the flown ship against field rocks (node #969)", () => {
 	test("pieces built on a worker match the main thread's, stall it less than half as long as an inline build, and leave a tick nothing to build", async () => {

@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { parseWorkflow, commandOf } from "./lib/workflow-scan";
 import {
 	changedRanges,
 	moduleIndex,
 	mutableReason,
-	testsFor,
-	survivors,
-	strykerConfig,
 	mutationConcurrency,
+	strykerConfig,
+	survivors,
+	testsFor,
 } from "../scripts/mutation-changed";
+import { commandOf, parseWorkflow } from "./lib/workflow-scan";
 
 describe("changed-line mutation selection", () => {
 	test("field-collision selects its fast same-stem file instead of the flight timing rows", () => {
@@ -17,6 +17,7 @@ describe("changed-line mutation selection", () => {
 			"src/field-collision.ts",
 			"tests/field-flight-collision.test.ts",
 			"tests/field-collision.test.ts",
+			"tests/lib/field-rock-fixtures.ts",
 		];
 		const index = moduleIndex(
 			new Map(paths.map((path) => [path, readFileSync(path, "utf8")])),
