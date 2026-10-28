@@ -4146,7 +4146,7 @@
   },
   "tests/music-director.test.ts": {
     "seelite/no-comments": {
-      "count": 42
+      "count": 41
     }
   },
   "tests/music-engine.test.ts": {
