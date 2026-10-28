@@ -88,17 +88,21 @@ export function cycleMembers(graph: Map<string, string[]>): string[] {
 const TDZ = /Cannot access '[^']+' before initialization/;
 
 /**
- * Imports each module first and alone, one fresh `bun` process per module, and
- * returns the ones whose first import threw a temporal-dead-zone
- * `ReferenceError`, with the message. Any other failure (a module that needs
- * `document`, `window` or a worklet global) is outside the headless tier and
- * is not reported: this asks about evaluation order and nothing else.
+ * Imports each module first and alone, one fresh `bun` process per module, at
+ * most `workers` at a time, and returns the ones whose first import threw a
+ * temporal-dead-zone `ReferenceError`, with the message, or did not finish
+ * within `timeoutMs` (reported as `timeout`, since a hung import was never
+ * checked). Any other failure (a module that needs `document`, `window` or a
+ * worklet global) is outside the headless tier and is not reported: this asks
+ * about evaluation order and nothing else.
  */
 export async function firstImportTdz(
 	modules: string[],
 	cwd: string,
+	{ workers = 8, timeoutMs = 30_000 } = {},
 ): Promise<{ module: string; error: string }[]> {
-	const runs = modules.map(async (module) => {
+	const found: { module: string; error: string }[] = [];
+	const check = async (module: string): Promise<void> => {
 		const proc = Bun.spawn(
 			[
 				process.execPath,
@@ -107,14 +111,26 @@ export async function firstImportTdz(
 			],
 			{ cwd, stdout: "ignore", stderr: "pipe" },
 		);
-		const timer = setTimeout(() => proc.kill(), 30_000);
+		let timedOut = false;
+		const timer = setTimeout(() => {
+			timedOut = true;
+			proc.kill();
+		}, timeoutMs);
 		const stderr = await new Response(proc.stderr).text();
 		await proc.exited;
 		clearTimeout(timer);
-		const error = stderr.split("\n").find((line) => TDZ.test(line));
-		return error
-			? { module: relative(cwd, resolve(cwd, module)), error }
-			: null;
-	});
-	return (await Promise.all(runs)).filter((r) => r !== null);
+		const name = relative(cwd, resolve(cwd, module));
+		const error = timedOut
+			? "timeout"
+			: stderr.split("\n").find((line) => TDZ.test(line));
+		if (error) found.push({ module: name, error });
+	};
+	const queue = [...modules];
+	const worker = async (): Promise<void> => {
+		for (let m = queue.shift(); m !== undefined; m = queue.shift()) {
+			await check(m);
+		}
+	};
+	await Promise.all(Array.from({ length: workers }, worker));
+	return found.sort((a, b) => a.module.localeCompare(b.module));
 }

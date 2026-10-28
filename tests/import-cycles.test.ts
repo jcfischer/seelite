@@ -9,13 +9,16 @@ import {
 } from "./helpers/import-cycles";
 
 const ROOT = join(import.meta.dir, "..");
+const SRC = join(ROOT, "src");
 
 describe("first import alone (node #1114)", () => {
 	test("the scan sees value imports and drops type-only ones", () => {
-		const graph = importGraph("src");
-		expect(graph.get("src/world-state.ts")).toContain("src/loadout.ts");
-		expect(graph.get("src/units.ts")).toEqual([]);
-		expect(graph.get("src/vec3.ts")).toEqual([]);
+		const graph = importGraph(SRC);
+		expect(graph.get(join(SRC, "world-state.ts"))).toContain(
+			join(SRC, "loadout.ts"),
+		);
+		expect(graph.get(join(SRC, "units.ts"))).toEqual([]);
+		expect(graph.get(join(SRC, "vec3.ts"))).toEqual([]);
 	});
 
 	test("a cycle read at evaluation is found, and each member throws a TDZ when it loads first", async () => {
@@ -45,8 +48,20 @@ describe("first import alone (node #1114)", () => {
 		}
 	});
 
+	test("an import that does not finish is reported, not passed", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "seelite-hang-"));
+		try {
+			writeFileSync(join(dir, "hang.ts"), "setInterval(() => {}, 1000);\n");
+			expect(
+				await firstImportTdz(["hang.ts"], dir, { timeoutMs: 1_000 }),
+			).toEqual([{ module: "hang.ts", error: "timeout" }]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("every src module on an import cycle loads first and alone without a TDZ error", async () => {
-		const members = cycleMembers(importGraph("src"));
+		const members = cycleMembers(importGraph(SRC));
 		expect(await firstImportTdz(members, ROOT)).toEqual([]);
 	}, 120_000);
 });
