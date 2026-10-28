@@ -2,6 +2,7 @@ import {
 	carriedModule,
 	parseLoadout,
 	parseModule,
+	grantLegacyScoop,
 	migrateEquipment,
 	type Loadout,
 } from "./loadout";
@@ -169,7 +170,17 @@ import {
  * No history of operations is stored: the record grows by a few bytes and the
  * bound is fixed (#936 D4).
  */
-export const SAVE_SCHEMA_VERSION = 16;
+/**
+ * **17 grants the cargo scoop once (node #1097, settled by #1095 D8).** A
+ * record older than 17 loads with a size-1 grade-E cargo scoop in the first
+ * empty cargo-accepting internal slot in key order, the flex slot never; where
+ * none is free it loads unchanged and carries `scoopNotice`, which the next
+ * dock says and clears. The grant is keyed on the version, so a 17 record
+ * whose pilot sold the scoop is not granted another. A record older than 17
+ * may not carry `scoopNotice`, and a 17 record carries it only as `true`
+ * (`LEGACY_SCHEMA_FORBIDS`).
+ */
+export const SAVE_SCHEMA_VERSION = 17;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -207,9 +218,11 @@ export const SAVE_SCHEMA_VERSION = 16;
  * loadout and 14 its purchase cost**; all four carry a sweep ledger whose
  * pressure rows have no strength. **15 adds the pressure row's strength** and
  * is every save written between node #769 and node #943; it predates `txSeq`.
+ * **16 is every save written between node #943 and node #1097**; it predates
+ * the cargo-scoop grant.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 ] as const;
 
 /**
@@ -229,20 +242,28 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
 > = {
-	2: ["requests", "firstDay", "ladders", "sweepReadings", "txSeq"],
-	3: ["firstDay", "ladders", "sweepReadings", "txSeq"],
-	4: ["firstDay", "ladders", "sweepReadings", "txSeq"],
-	5: ["firstDay", "ladders", "sweepReadings", "txSeq"],
-	6: ["ladders", "sweepReadings", "txSeq"],
-	7: ["sweepReadings", "txSeq"],
-	8: ["sweepReadings", "txSeq"],
-	9: ["sweepReadings", "txSeq"],
-	10: ["sweepReadings", "txSeq"],
-	11: ["txSeq"],
-	12: ["txSeq"],
-	13: ["txSeq"],
-	14: ["txSeq"],
-	15: ["txSeq"],
+	2: [
+		"requests",
+		"firstDay",
+		"ladders",
+		"sweepReadings",
+		"txSeq",
+		"scoopNotice",
+	],
+	3: ["firstDay", "ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	4: ["firstDay", "ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	5: ["firstDay", "ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	6: ["ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	7: ["sweepReadings", "txSeq", "scoopNotice"],
+	8: ["sweepReadings", "txSeq", "scoopNotice"],
+	9: ["sweepReadings", "txSeq", "scoopNotice"],
+	10: ["sweepReadings", "txSeq", "scoopNotice"],
+	11: ["txSeq", "scoopNotice"],
+	12: ["txSeq", "scoopNotice"],
+	13: ["txSeq", "scoopNotice"],
+	14: ["txSeq", "scoopNotice"],
+	15: ["txSeq", "scoopNotice"],
+	16: ["scoopNotice"],
 };
 
 /**
@@ -398,6 +419,7 @@ export interface CommanderRecord {
 	 * load at 0.
 	 */
 	txSeq: number;
+	scoopNotice: boolean;
 	/** The three ladders' banked record (#183 D9). Beside `state` in the one
 	 *  record, so a death's revert to `lastDocked` moves the credits and the
 	 *  rungs together. */
@@ -479,6 +501,7 @@ export const newCommanderRecord = (
 	permadeath: options.permadeath ?? false,
 	firstDay: options.firstDay ?? "free",
 	txSeq: 0,
+	scoopNotice: false,
 	// A new game is paid for nothing it starts with: its own system is seeded
 	// (#183 D9's migration rule, applied to the start). The start station is
 	// not: its first dock, a guided start's included, earns one kind.
@@ -559,6 +582,7 @@ const canonicalCommander = (record: CommanderRecord) => {
 		permadeath: record.permadeath,
 		firstDay: record.firstDay,
 		txSeq: record.txSeq,
+		...(record.scoopNotice ? { scoopNotice: true } : {}),
 		ladders: serializeLadders(record.ladders),
 		flight: {
 			pos: [...record.flight.pos],
@@ -807,6 +831,14 @@ const parseCommander = (
 			fail(`commander: txSeq ${String(o.txSeq)} is negative`);
 	}
 	const txSeq = version >= 16 ? (o.txSeq as number) : 0;
+	if (o.scoopNotice !== undefined && o.scoopNotice !== true)
+		fail(`commander: scoopNotice ${String(o.scoopNotice)} is not true`);
+	let scoopNotice = o.scoopNotice === true;
+	if (version < 17) {
+		const granted = grantLegacyScoop(hull as HullId, loadout);
+		loadout = granted.loadout;
+		scoopNotice = granted.owed;
+	}
 	// **Bounded, not merely finite — and bounded on both indices.** For a round
 	// the system index was checked only for being a non-negative integer while
 	// the comment claimed it covered "a system the galaxy does not have", so
@@ -898,6 +930,7 @@ const parseCommander = (
 		permadeath: o.permadeath as boolean,
 		firstDay,
 		txSeq,
+		scoopNotice,
 		ladders,
 		flight: parseFlight(o.flight, version),
 	};
