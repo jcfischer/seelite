@@ -31,6 +31,7 @@ import {
 	debitSurface,
 	type Anchor,
 	type Fragment,
+	FRAGMENT_REFUSAL_NOTICE,
 	fragmentAt,
 	oreShare,
 	pullFragment,
@@ -9760,13 +9761,7 @@ class Game {
 					`SCOOPED 1 T ${oreCargoName(f.ore.family, f.ore.grade).toUpperCase()} · -${CANISTER_SCOOP_CHARGE_E} E`,
 				);
 		for (const { verdict } of scooped.refused)
-			this.sayMining(
-				verdict === "hold-full"
-					? "HOLD FULL · FRAGMENT LEFT"
-					: verdict === "no-scoop"
-						? SCOOP_REFUSAL_TEXT[verdict].toUpperCase()
-						: `ENERGY BELOW ${CANISTER_SCOOP_CHARGE_E} E · FRAGMENT LEFT`,
-			);
+			this.sayMining(FRAGMENT_REFUSAL_NOTICE[verdict]);
 		if (scooped.lost.length)
 			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
 	}

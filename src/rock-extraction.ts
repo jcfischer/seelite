@@ -5,6 +5,7 @@
  * tonne leaves the deposit when it is released, so a lost fragment restores nothing.
  * Every figure here is a provisional candidate for #922's economic measurement.
  */
+import { SCOOP_REFUSAL_TEXT } from "./cargo-notice";
 import { type DepositRow, debitAt } from "./deposit-state";
 import { type Grade, gradeOutputScale } from "./module-catalog";
 import {
@@ -13,6 +14,7 @@ import {
 	scoopAttempt,
 } from "./raider-wreck";
 import type { OreFamily, OreGrade } from "./rock-survey";
+import { CANISTER_SCOOP_CHARGE_E } from "./scoop-window";
 import {
 	add,
 	cross,
@@ -307,6 +309,16 @@ export function releaseFragment(
 
 /** What the caller's hold and bank say about one scoop attempt. */
 export type ScoopVerdict = "taken" | "hold-full" | ScoopRefusal;
+
+/** The cockpit notice for each refused fragment, one row per verdict so a new refusal cannot fall through. */
+export const FRAGMENT_REFUSAL_NOTICE: Record<
+	Exclude<ScoopVerdict, "taken">,
+	string
+> = {
+	"hold-full": "HOLD FULL · FRAGMENT LEFT",
+	"no-scoop": SCOOP_REFUSAL_TEXT["no-scoop"].toUpperCase(),
+	"low-bank": `ENERGY BELOW ${CANISTER_SCOOP_CHARGE_E} E · FRAGMENT LEFT`,
+};
 
 export interface FragmentStep {
 	kept: Fragment[];

@@ -319,7 +319,13 @@ try {
 			const noScoop = { present: !!ore[0] };
 			if (ore[0]) {
 				const fitted = g.commander;
-				const { i1: _scoop, ...bare } = fitted.loadout;
+				const bare = Object.fromEntries(
+					Object.entries(fitted.loadout).filter(
+						([, m]) => m.module !== "cargo-scoop",
+					),
+				);
+				noScoop.removed =
+					Object.keys(fitted.loadout).length - Object.keys(bare).length;
 				g.commander = { ...fitted, loadout: bare };
 				const hadMined = g.minedT;
 				const refusedBefore = g.miningLog.refused;
@@ -388,6 +394,7 @@ try {
 		check(
 			"with the scoop removed a fragment in the window is refused and the no-scoop notice is painted",
 			scoop.noScoop.present &&
+				scoop.noScoop.removed === 1 &&
 				scoop.noScoop.left &&
 				scoop.noScoop.minedDelta === 0 &&
 				scoop.noScoop.refused > 0 &&

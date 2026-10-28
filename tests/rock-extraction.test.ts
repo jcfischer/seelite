@@ -14,6 +14,7 @@ import {
 	debitSurface,
 	EXTRACTION,
 	type Fragment,
+	FRAGMENT_REFUSAL_NOTICE,
 	firedExtraction,
 	fragmentAt,
 	oreShare,
@@ -23,6 +24,7 @@ import {
 	stepCut,
 	stepFragments,
 } from "../src/rock-extraction";
+import { SCOOP_REFUSAL_TEXT } from "../src/cargo-notice";
 import { add, scale, sub, v3 } from "../src/vec3";
 
 const cutFor = (seconds: number, rate: number, share: number, left = 1e9) => {
@@ -456,5 +458,17 @@ test("Game fits the prototype laser only on a boot that writes nothing", async (
 	expect(main.slice(at, at + 120)).toContain("if (!writesNothing) return;");
 	expect(main).toContain(
 		"if (MINING_ON) game.fitPrototypeMiningLaser(plan.writesNothing);",
+	);
+});
+
+test("a refused fragment's notice: the canister's no-scoop words, the low-bank charge, a full hold", () => {
+	expect(FRAGMENT_REFUSAL_NOTICE["no-scoop"]).toBe(
+		SCOOP_REFUSAL_TEXT["no-scoop"].toUpperCase(),
+	);
+	expect(FRAGMENT_REFUSAL_NOTICE["low-bank"]).toBe(
+		`ENERGY BELOW ${CANISTER_SCOOP_CHARGE_E} E · FRAGMENT LEFT`,
+	);
+	expect(FRAGMENT_REFUSAL_NOTICE["hold-full"]).toBe(
+		"HOLD FULL · FRAGMENT LEFT",
 	);
 });
