@@ -139,13 +139,6 @@ function raycastKey(mesh: THREE.Mesh, raycaster: THREE.Raycaster): string {
 	return `${keyWords.join(",")}|${materials.map((m) => m?.side).join(",")}`;
 }
 
-/**
- * Run `body` with each plain mesh under `root` answering a raycast it has
- * answered before from memory: keyed on its geometry's attributes, versions,
- * draw range and groups, its world matrix, its materials' sides and the ray,
- * which is everything `THREE.Mesh.raycast` reads for a mesh with no morph
- * targets, skin or instances.
- */
 function rememberingRaycasts<T>(root: THREE.Object3D, body: () => T): T {
 	const patched: THREE.Mesh[] = [];
 	root.traverse((object) => {

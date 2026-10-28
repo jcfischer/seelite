@@ -76,7 +76,6 @@ const flyFresh = (
 
 const flights = new Map<string, ReturnType<typeof flyFresh>>();
 
-/** `flyFresh`, once per flight: `flyTheComputer` reads `perfHull` only as `perfHull ?? hull`, so the key does too. */
 const fly = (
 	hull: HullId,
 	type: StationType,

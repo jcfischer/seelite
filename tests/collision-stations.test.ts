@@ -1112,10 +1112,6 @@ describe("collision.md §9.1.9 and §9.1.15: seeded pad plans", () => {
 	}, 60_000);
 });
 
-/**
- * Every pad-plan row's measurement of one hull against one station plan: the
- * entry angles that do not clear, then the computer's flight.
- */
 function flyPlan(
 	type: StationType,
 	hull: HullId,
@@ -1143,11 +1139,6 @@ function flyPlan(
 	return { angles, run };
 }
 
-/**
- * A key equal for two values exactly when their data is: JSON, with negative
- * zero and the non-finite numbers spelled out rather than folded into `0` and
- * `null`.
- */
 function exactKey(value: unknown): string {
 	return JSON.stringify(value, (_, v) =>
 		typeof v === "number" && (Object.is(v, -0) || !Number.isFinite(v))
@@ -1344,7 +1335,6 @@ function restoreDirection(random: () => number): Vec3 {
 
 const PREFILTER_SLACK_KM = 1e-9;
 
-/** How far `pos` stands outside an oriented box, kilometres; zero inside. */
 function boxGapKm(
 	box: { centre: Vec3; axes: Vec3[]; primitive: { half: readonly number[] } },
 	pos: Vec3,
@@ -1358,7 +1348,6 @@ function boxGapKm(
 	return Math.sqrt(sq);
 }
 
-/** The distance from `point` to the segment from `from` along unit `dir` for `lengthKm`. */
 function segmentGapKm(
 	point: Vec3,
 	from: Vec3,
@@ -1582,7 +1571,6 @@ const solidReaches = new WeakMap<
 	{ count: number; reach: number }
 >();
 
-/** `reachKm` once per primitive list; a list that has grown or shrunk is measured again. */
 function solidReachKm(primitives: readonly Primitive[]): number {
 	const known = solidReaches.get(primitives);
 	if (known && known.count === primitives.length) return known.reach;
