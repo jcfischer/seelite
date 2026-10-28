@@ -37,6 +37,7 @@
  * to admit one — which would be a decision reversed by accident.
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { describe, expect, test } from "bun:test";
 import { ROLL_TOLERANCE_DEG } from "../src/docking";
 import { CAPITAL_HULL_IDS, HULL_IDS, type HullId } from "../src/hull";
@@ -46,6 +47,8 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
+
+await useShippedInterceptorHull();
 
 /** The capital classes — `hull.ts`'s named list, imported rather than copied,
  *  so a capital added there reaches this file (#335's review). Named rather

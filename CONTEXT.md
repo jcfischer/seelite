@@ -41,12 +41,12 @@ place of the drawn mesh, with the aperture's opening left out. It is
 Three-free and is a function of the form and its seeds. For an aperture of
 kind `pad`, the landing well also derives from the admitted hull envelopes <!-- glossary-ignore: pad -->
 through `padWellDepthKm` (collision.md §2.2). No drawn vertex may
-lie outside it — on an authored trade form (Ring, Drum or Wheel), a shipyard,
-a refinery or an authored outpost (the Salvage, and the Derrick, Buoy, Rig
+lie outside it — on an authored trade form (Ring, Drum, Assembly or Wheel),
+a shipyard, a refinery or an authored outpost (the Salvage, and the Derrick, Buoy, Rig
 and Cluster, which no pool holds yet), no
 vertex of the authored model: the sim collides with that whatever is drawn,
 so the procedural stand-in that draws until it installs is not solid (nodes
-#818, #819, #1031, #1032, #1033). Its plant or hull is held to 10 m of empty
+#818, #819, #1031, #1032, #1033, #1073). Its plant or hull is held to 10 m of empty
 space and a refinery's rock to 20 m.
 `docs/specs/collision.md` §2.2 owns it.
 _Avoid_: hitbox, collision mesh.
@@ -585,8 +585,10 @@ carrier's signal.
 **Long-Range Scanner**:
 The module a pilot buys at a Shipyard for 1,000 Cr (#481, under #468) to read
 a **Pirate relay** at all: strength and bearing at range, identification much
-closer in, which is #43's close regime — `pirate-relay.ts` owns both figures
-and nothing restates them. Unfitted, nothing is read: no cue, no contact, no
+closer in, which is #43's close regime — `relay-signal-range.ts`, a leaf, owns
+the signal range so the module catalog can read it without a cycle (#1114),
+`pirate-relay.ts` owns the identify range and re-exports the other, and nothing
+restates them. Unfitted, nothing is read: no cue, no contact, no
 target, and no identification is recorded. **An identification already
 recorded is not erased, only unread** — the relay goes dark and is found again
 when the module is back. The relay's **Route detection** dial is deliberately

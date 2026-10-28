@@ -3,11 +3,13 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
 	ASTEROIDS_GLB_URL,
+	ASSEMBLY_GLB_URL,
 	BOLLARD_TUG_GLB_URL,
 	CORIOLIS_GLB_URL,
 	COURIER_COCKPIT_GLB_URL,
 	COURIER_HULL_GLB_URL,
 	DISCOVERY_VOYAGER_GLB_URL,
+	LANCE_INTERCEPTOR_GLB_URL,
 	LONGWALL_MINER_GLB_URL,
 	OUTPOST_GLB_URLS,
 	PORTER_GLB_URL,
@@ -35,11 +37,13 @@ describe("models are served under hashed names (#834)", () => {
 		);
 		const urls = [
 			ASTEROIDS_GLB_URL,
+			ASSEMBLY_GLB_URL,
 			BOLLARD_TUG_GLB_URL,
 			CORIOLIS_GLB_URL,
 			COURIER_COCKPIT_GLB_URL,
 			COURIER_HULL_GLB_URL,
 			DISCOVERY_VOYAGER_GLB_URL,
+			LANCE_INTERCEPTOR_GLB_URL,
 			LONGWALL_MINER_GLB_URL,
 			PORTER_GLB_URL,
 			...Object.values(SHIPYARD_GLB_URLS),
@@ -59,7 +63,7 @@ describe("models are served under hashed names (#834)", () => {
 		const literals = source.match(
 			/new URL\(\s*"\.\/models\/[\w-]+\.glb",\s*import\.meta\.url,?\s*\)/g,
 		);
-		expect(literals?.length).toBe(24);
+		expect(literals?.length).toBe(26);
 	});
 
 	test("no loader names a model by a fixed path", () => {

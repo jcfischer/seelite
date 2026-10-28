@@ -611,6 +611,15 @@ const hermite = (t: number, xm: number, x0: number, x1: number, x2: number) => {
 	return ((c3 * t + c2) * t + c1) * t + x0;
 };
 
+/** How a bank or an engine renders. With `countOnly`, notes, envelopes,
+ *  stages, fades, halts and a recording running out all run as before, so
+ *  `sounding` holds what a full render holds; no oscillator, mix or room
+ *  runs and no sample is written. For tests that count voices: the worklet
+ *  never sets it. */
+export interface RenderMode {
+	readonly countOnly?: boolean;
+}
+
 export class VoiceBank {
 	private readonly stage: Uint8Array;
 	private readonly kind: Uint8Array;
@@ -694,10 +703,14 @@ export class VoiceBank {
 	 *  phases. */
 	private readonly noise = xorshift(0x9e3779b9);
 
+	private readonly countOnly: boolean;
+
 	constructor(
 		readonly cap: number,
 		private readonly sampleRate: number,
+		mode: RenderMode = {},
 	) {
+		this.countOnly = mode.countOnly ?? false;
 		const f64 = () => new Float64Array(cap);
 		this.stage = new Uint8Array(cap);
 		this.kind = new Uint8Array(cap);
@@ -1217,6 +1230,7 @@ export class VoiceBank {
 			const amp = this.amp[i];
 			let env = this.env[i];
 			let stage = this.stage[i];
+			const synth = !this.countOnly || kind === SAMPLER;
 			for (let s = s0; s < n; s++) {
 				if (stage !== STAGE_RELEASE && s >= releaseAt) stage = STAGE_RELEASE;
 				if (stage === STAGE_ATTACK) {
@@ -1238,7 +1252,7 @@ export class VoiceBank {
 						break;
 					}
 				}
-				const x = this.sample(i, kind, part, env, frame + s);
+				const x = synth ? this.sample(i, kind, part, env, frame + s) : 0;
 				// A recording that has run out ends its note, whatever the
 				// envelope says.
 				if (this.ended) {
@@ -1246,6 +1260,7 @@ export class VoiceBank {
 					stage = STAGE_FREE;
 					break;
 				}
+				if (this.countOnly) continue;
 				const k = env * amp * gains.gain(owner, pIx, frame + s);
 				const l = x * k * part.panL;
 				const r = (STEREO[kind] ? this.sideR : x) * k * part.panR;

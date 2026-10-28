@@ -37,7 +37,7 @@ if (import.meta.main) {
 		bytes: bytes.byteLength,
 		sha256: createHash("sha256").update(bytes).digest("hex"),
 		units: "km",
-		blocks: ["HUB", "HUB_STATIC", "NODE", "TUBE"],
+		blocks: ["HUB", "HUB_STATIC", "NODE", "TUBE", "TRUSS", "RADIATOR", "TANKS", "DISH", "LINK"],
 		authoring:
 			"Blender build_kit.py via stations/build_model.py and geometry.py",
 		source: "blocks.blend",

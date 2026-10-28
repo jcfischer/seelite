@@ -60,7 +60,7 @@ export interface HoldLine {
 	 * next field on a consignment would have added a seventh.
 	 */
 	job?: HoldJob;
-	kind?: "fitting";
+	kind?: "fitting" | "ore";
 }
 
 /** Where a consignment has to end up, and which end applies. */

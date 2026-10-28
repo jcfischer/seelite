@@ -1,0 +1,93 @@
+{
+  "author": "codex",
+  "date": "2026-10-09",
+  "status": "Principal accepted current designs; Bastion stern closure and two distance LODs per ship requested and built. Historical numeric scores unchanged.",
+  "baseline": "main 53be4f75310b224ca43a087d29acdcb1bf2a694e",
+  "pipeline": "seeded Blender authoring -> packed blend -> textured GLB -> standalone Three.js viewer -> hardware capture -> independent Pro judge",
+  "references": [
+    ".worktrees/seelite-797/spikes/porter-hull/README.md",
+    ".worktrees/seelite-803/spikes/longwall-miner/HANDOFF.md"
+  ],
+  "ships": [
+    {
+      "code": "F1",
+      "role": "interceptor",
+      "name": "Lance",
+      "direction": "A lean high-acceleration interceptor. Keep the baseline's elongated exposed central drive spine, compact forward sealed crew pod, four radial engine pods clustered aft. Pale worn ceramic-metal armour, dark titanium mechanism, restrained desaturated blue markings. Strengthen thrust structure, heat exchangers, pipe bundles, maintenance collars and compact weapon mountings. No airplane wings. Cockpit windows small and human-scale.",
+      "target": "interceptor/target.png",
+      "source": "exec-ef39eed9-c6f6-4198-9b6d-62671ed00ed0.png"
+    },
+    {
+      "code": "F2",
+      "role": "patrol",
+      "name": "Warden",
+      "direction": "A compact disciplined police interdiction craft. Keep baseline's broad low armoured body, two chunky side drive sponsons, pointed forward command hull and dorsal hardpoints. Off-white armour with muted blue law-enforcement bands; sensor dome, tidy paired weapon housings, small sealed cockpit, boarding collar and flush inspection lights. Authoritative and professionally maintained but worked, no enormous greenhouse.",
+      "target": "patrol/target.png",
+      "source": "exec-68143e66-c89b-46dd-84ac-43c336f89c51.png"
+    },
+    {
+      "code": "F3",
+      "role": "explorer",
+      "name": "Pilgrim",
+      "direction": "A long-endurance expedition explorer. Preserve the baseline's unmistakable large habitat ring surrounding a long narrow central keel, front sealed command capsule, dish on aft mast and paired rear propulsion pods. Build the ring from a continuous pressure torus with eight clearly engineered panel sectors, structural spokes, bearing hub, tiny windows. Ivory and muted ochre panels, dark radiators and tanks. Ring must be circular with credible perspective. Human-scale command windows.",
+      "target": "explorer/target.png",
+      "source": "exec-893d74f7-ed6e-4ecf-8f21-f8eb73dabd3c.png",
+      "revision": {
+        "floorDiameterM": 80,
+        "approxOuterDiameterM": 84,
+        "rotationRPM": 3,
+        "gravityG": 0.4026,
+        "hullLengthM": 74,
+        "status": "Approved; built floor radius 40 m and nominal rotation 3 RPM."
+      }
+    },
+    {
+      "code": "F4",
+      "role": "raider",
+      "name": "Shiv",
+      "direction": "A dangerous improvised pirate raider. Keep baseline's low compact fast hull and powerful paired rear side drives, but express its stated identity: deliberately offset ram prow and exposed weapon rails on shoulders. Asymmetrical repaired plating, charcoal gunmetal with desaturated rust-red salvage panels and dirty ivory replacements, heavy mechanical attachment plates, small protected cockpit. Functional industrial predation, not fantasy spikes, skulls or a fighter airplane.",
+      "target": "raider/target.png",
+      "source": "exec-ae18c753-8d36-438a-8c60-3d60f8e419cb.png"
+    },
+    {
+      "code": "F5",
+      "role": "carrier",
+      "name": "Bastion",
+      "direction": "A massive industrial fleet carrier. Preserve baseline's long ribbed hull, full-length dorsal flight/service deck, bow bay mouth and aft engine cluster. Replace the closed bulbous bow with a clear deeply recessed rectangular chamfered hangar aperture large enough for small craft, structural ribs, docking lights and visible inner service gantries. Tiny bridge windows and tiny docked shuttles establish capital scale. Weathered ivory panels, graphite ribs, ochre safety edges. Low command island, no giant cockpit. Strongly distinguish from a gunship.",
+      "target": "carrier/target.png",
+      "source": "exec-42958cb3-158d-46a4-8f13-e18046c8c75f.png",
+      "principalRevision": "Remove small cockpit-like deck assemblies; command windows belong on bridge.",
+      "habitat": {
+        "floorDiameterMetres": 180,
+        "rotationRPM": 2.5,
+        "gravityG": 0.6290122264668208,
+        "target": "target-ring-v2.png",
+        "approval": "Approve both designs"
+      }
+    },
+    {
+      "code": "F6",
+      "role": "prospector",
+      "name": "Sluice",
+      "direction": "A small independent asteroid prospector. Preserve baseline's slim keel, small forward sealed crew cab, paired ore/sample panniers around midbody, aft drive cluster and bow sampling drill mounted below the command pod. A credible articulated coring tool with guarded auger and clamp jaw, assay lab equipment, sample drawers, hoses and compact sensor mast. Industrial yellow ochre and off-white work panels, dark steel machinery. Clearly smaller and lighter than the approved Longwall miner; no huge ore containers.",
+      "target": "prospector/target.png",
+      "source": "exec-82525b53-6f1f-486c-8166-0fc003135853.png"
+    },
+    {
+      "code": "F7",
+      "role": "dreadnought",
+      "name": "Rampart",
+      "direction": "A massive armoured dreadnought. Preserve baseline's long heavily ribbed fortress hull, broadside turret pairs, rear clustered drives, and axial bow aperture, but make that aperture visibly the muzzle of an immense spinal weapon recessed within armoured longitudinal rails, never a hangar. Heavy overlapping graphite and slate-grey armour belts, sparse ivory identification patches, muted red service markings, recessed tiny bridge and paired turret batteries integrated into ribs. Tiny windows and service hatches convey capital scale. No aircraft carrier deck, no oversized cockpit.",
+      "target": "dreadnought/target.png",
+      "source": "exec-feefab81-29d0-41ab-b5ac-6c946514a417.png",
+      "habitat": {
+        "floorDiameterMetres": 180,
+        "rotationRPM": 2.5,
+        "gravityG": 0.6290122264668208,
+        "target": "target-ring-v2.png",
+        "approval": "Approve both designs"
+      }
+    }
+  ],
+  "principalAcceptance": "backside of bastion iss open. Close it, then leave bastion as is. Others are ok too."
+}

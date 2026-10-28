@@ -54,14 +54,17 @@ try {
 	// Node #733: the fixture has no identification. Opening consoles reads no
 	// objective position; a sweep is a deliberate press and carries only regions.
 	await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
 		const g = window.__seelite;
 		g.commander = {
 			...g.commander,
-			loadout: migrateEquipment(g.commander.hull, []).loadout,
+			loadout: {
+				...migrateEquipment(g.commander.hull, []).loadout,
+				i1: makeModule("cargo-scoop", 1),
+			},
 		};
 	});
 	await placeNear(page, fixture, 3000, { look: "left" });
@@ -90,7 +93,7 @@ try {
 				.count()) === 0,
 	);
 	await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
@@ -98,7 +101,10 @@ try {
 		const { LONG_RANGE_SCANNER } = await import("/src/market.ts");
 		g.commander = {
 			...g.commander,
-			loadout: migrateEquipment(g.commander.hull, [LONG_RANGE_SCANNER]).loadout,
+			loadout: {
+				...migrateEquipment(g.commander.hull, [LONG_RANGE_SCANNER]).loadout,
+				i1: makeModule("cargo-scoop", 1),
+			},
 		};
 		g.updateCockpit();
 	});
@@ -180,14 +186,17 @@ try {
 	}, fixture);
 
 	await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
 		const g = window.__seelite;
 		g.commander = {
 			...g.commander,
-			loadout: migrateEquipment(g.commander.hull, []).loadout,
+			loadout: {
+				...migrateEquipment(g.commander.hull, []).loadout,
+				i1: makeModule("cargo-scoop", 1),
+			},
 		};
 	});
 	await placeNear(page, fixture, 9.9, { step: true, look: "left" });

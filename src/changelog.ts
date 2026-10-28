@@ -28,6 +28,24 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/969 — sentence approved by the principal, 2026-10-27.
+	{
+		date: "2026-10-27",
+		text: "Asteroids are solid: you can crash into a rock, or come to rest against it.",
+		node: 969,
+	},
+	// https://github.com/jcfischer/seelite/issues/1034 — sentence approved by the principal, 2026-10-26.
+	{
+		date: "2026-10-26",
+		text: "New 3d model: The Interceptor.",
+		node: 1034,
+	},
+	// https://github.com/jcfischer/seelite/issues/1073 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-23",
+		text: "Assembly trade stations keep their seeded layouts, now built from detailed habitat, truss and service modules around a rotating docking hub.",
+		node: 1073,
+	},
 	// https://github.com/jcfischer/seelite/issues/875 — proposed copy; principal approval and main date pending.
 	{
 		date: "2026-10-22",

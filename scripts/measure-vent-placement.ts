@@ -44,6 +44,7 @@ import "../tests/setup/authored-hulls";
 import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedCourierHull } from "./lib/shipped-courier-hull";
 import { installShippedTugHull } from "./lib/shipped-tug-hull";
+import { installShippedInterceptorHull } from "./lib/shipped-interceptor-hull";
 import { installShippedVoyagerHull } from "./lib/shipped-voyager-hull";
 import { axisLineTester, hullMetal } from "./lib/axis-line-hits";
 
@@ -176,6 +177,7 @@ if (import.meta.main) {
 	await installShippedCourierHull();
 	await installShippedTugHull();
 	await installShippedVoyagerHull();
+	await installShippedInterceptorHull();
 	await installShippedLongwall();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {

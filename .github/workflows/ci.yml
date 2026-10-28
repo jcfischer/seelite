@@ -107,7 +107,7 @@ jobs:
           cache: npm
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: latest
+          bun-version: 1.4.2
       - run: npm ci
       - run: npm run test:mutation:control
       - run: npm run test:mutation:changed
@@ -219,21 +219,54 @@ jobs:
   #
   # ## Why four shards
   #
-  # `bun test tests/` runs 305 files in one process: 322 s on a measured
-  # passing tree, and the longest step of a job that took 8-14 minutes in the
-  # open. Splitting the files across runners costs nothing — the wall clock
-  # becomes the slowest shard's rather than the sum's. Four, because a shard's
-  # fixed cost (checkout, `npm ci`, bun) is around a minute, so a fifth shard
-  # buys little and is one more red row to read.
+  # Splitting the files across runners makes the wall clock the slowest
+  # shard's rather than the sum's. Four, because a shard's fixed cost
+  # (checkout, `npm ci`, bun) is around half a minute, and the four-shard
+  # matrix is what the figures below were measured on.
   #
-  # `--shard` deals files round-robin by name, so the four are uneven: measured
-  # on one machine they ran 108 / 73 / 70 / 51 s. `--timings` balances them by
-  # measured duration instead, and it was tried — it moved the slowest shard
-  # from 108 s to 102 s. The reason so little moves is a floor no split of
-  # files can go under: `tests/music-generate-berlin.test.ts` renders audio and
-  # takes 88 s by itself, a quarter of the suite. So no timings file is
-  # committed, and the shard holding that file is the tier's length. Reach for
-  # `--timings`, or a fifth shard, if the suite grows a second heavy file.
+  # ## Why `--timings`, `--parallel=3` and `--no-isolate` (node #1119)
+  #
+  # `--shard` alone deals files round-robin by name and runs them one at a
+  # time. Run 40493901580 (424 files, before the unit-tier speed nodes) put
+  # 488 / 498 / 334 / 505 s of bun time on the four shards; run 40688332856, on
+  # the base this landed on, 176 / 189 / 231 / 172 s. With these flags, two
+  # runs of the same tree (40692977612 and its re-run) took 122 / 78 / 120 / 78
+  # and 119 / 132 / 119 / 85 s: the slowest shard 231 s -> 122-132 s.
+  #
+  # - `--parallel=3`, not 4. Four workers on the runner's four vCPUs ran the
+  #   heaviest rows 1.5-2.5x slower than one at a time, and rows whose own
+  #   budgets are 10 s and 30 s timed out on four of five runs. Three passed
+  #   twice and then timed out once more (run 40702410676: 31.8 s against
+  #   30 s). Those budgets guard against a hang, not a cost (station-proxy's
+  #   says so), so the three rows that came within 90% of theirs now carry
+  #   this job's 60 s: authored-hull-install's ray-free row, station-proxy's
+  #   HEAVY_ROW_MS and station-route's attitude row.
+  # - `--no-isolate` keeps one global and module registry per worker. Plain
+  #   `--parallel` isolates every file and re-runs the six bunfig preloads for
+  #   each, and on the node's first measurement ran 2.5x slower than without
+  #   it. Sharing a registry is what the suite already did in one process;
+  #   a file that needs another file's module side effects is
+  #   `tests/import-cycles.test.ts`'s to catch. Run locally in three file
+  #   orders (slowest first, the four shards, and `--randomize`), no file
+  #   failed for another file's state.
+  # - `--timings=tests/timings.json` deals the files by measured duration and
+  #   starts each shard's slowest file first. A file missing from it still
+  #   runs. The committed durations were measured locally under four workers.
+  #   Durations measured on CI under four workers were tried and balanced
+  #   worse (slowest shard 144 s twice). Any parallel run records a file's
+  #   wall time beside whatever shared its machine, the committed one too, so
+  #   the evidence for this file is those runs' slowest shard, not its numbers.
+  # - `--update-timings` writes a file that holds only this shard's files (run
+  #   40694531268: 65 + 178 + 141 + 48 = all 432, no file twice), and the next
+  #   step uploads it, so `npm run test:timings [run-id]` can merge a green
+  #   run's four artifacts into the committed file; it refuses two artifacts
+  #   that name one file. Judge a refresh by two CI runs' slowest shard, as
+  #   above, before committing it.
+  #
+  # bun is pinned (`bun-version` below, and in `mutation-changed`) because these
+  # flags are recent: `latest` ran 1.4.4 on 2026-10-28, and a release that drops
+  # or renames one would turn every shard red with nothing changed here. 1.4.2 is
+  # the version the suite was measured on locally.
   #
   # `fail-fast: false` so all four report. With it on, the first red shard
   # cancelled the rest, and "cancelled" is the worst thing a shard can report:
@@ -280,13 +313,26 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
       - name: Unit tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         run: >
           bun test tests/
           --shard=${{ matrix.shard }}/${{ matrix.total }}
           --timeout=60000
+          --parallel=3
+          --no-isolate
+          --timings=tests/timings.json
+          --update-timings
+
+      - name: Upload this shard's per-file durations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unit-timings-${{ matrix.shard }}
+          path: tests/timings.json
+          if-no-files-found: warn
+          retention-days: 30
 
   # The build belongs to stage 1: `npm run build` is `tsc --noEmit && vite
   # build`, so a type error fails here on every pull request, and

@@ -51,6 +51,7 @@ import {
 } from "../src/world-state";
 import { requestsBody } from "../src/requests-view";
 import { boardContext } from "./helpers/job-board";
+import { STOCK_SCOOP } from "../src/raider-wreck";
 
 const SEED = 0x5ee11e;
 const systems = generateGalaxy(SEED, 0).systems;
@@ -109,6 +110,8 @@ const holdings = (): Holdings => ({
 const scoop = (h = holdings(), w = world, index = 2) =>
 	applyHoldEvent(h, w, {
 		kind: "wreck-scoop",
+		gear: STOCK_SCOOP,
+		bankE: 100,
 		galaxyIndex: 0,
 		key,
 		instanceOrdinal: 1,
@@ -361,6 +364,8 @@ describe("entrusted recovery Operational condition", () => {
 		};
 		const event = {
 			kind: "wreck-scoop" as const,
+			gear: STOCK_SCOOP,
+			bankE: 100,
 			galaxyIndex: 0,
 			key,
 			instanceOrdinal: 1,

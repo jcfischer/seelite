@@ -30,12 +30,14 @@ import {
 } from "../src/display-contact";
 import { trafficPresence } from "../src/traffic-engagement";
 import { SWEEP_INTERRUPTED, SWEEP_IDLE } from "../src/system-sweep-view";
+import { isRockTargetId } from "../src/rock-target";
 import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
 	CARGO_CONTACT_COLOUR,
 	scoops,
+	STOCK_SCOOP,
 } from "../src/raider-wreck";
 import { length, sub, v3 } from "../src/vec3";
 import {
@@ -194,6 +196,7 @@ test("target lookup and velocity follow the live contact, while bodies keep orbi
 			methods(["bodyFor", "targetBody", "velocityOf", "targetVelocity"], {
 				bodyVelocity,
 				isDisplayContact,
+				isRockTargetId,
 				v3,
 			}),
 		),
@@ -305,7 +308,7 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 					"velocityOf",
 					"targetVelocity",
 				],
-				{ bodyVelocity, isDisplayContact, v3, length, sub },
+				{ bodyVelocity, isDisplayContact, isRockTargetId, v3, length, sub },
 			),
 		),
 		{ world, targetId: contact.id, selectable: () => [contact] },
@@ -340,13 +343,13 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 		CANISTER_SCOOP_SPEED_KMS + 0.01,
 		10,
 	);
-	expect(scoops(canister, world.ship)).toBe(false);
+	expect(scoops(canister, world.ship, STOCK_SCOOP)).toBe(false);
 	world.ship.vel = v3(0, CANISTER_SCOOP_SPEED_KMS - 0.01, 0);
 	expect(subject.targetRelativeKms()).toBeCloseTo(
 		CANISTER_SCOOP_SPEED_KMS - 0.01,
 		10,
 	);
-	expect(scoops(canister, world.ship)).toBe(true);
+	expect(scoops(canister, world.ship, STOCK_SCOOP)).toBe(true);
 
 	subject.targetId = null;
 	expect(subject.targetRelativeKms()).toBeNull();

@@ -20,7 +20,7 @@ import { describe, expect, test } from "bun:test";
 import { Matrix4, Quaternion, Vector3 } from "three";
 import { setHorizonOrientation } from "../scripts/lib/horizon-framing.mjs";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
-import { makeWorld } from "../src/sim.ts";
+import { makeWorld, restoreWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
 import { CROSSING, npcRiftVisible } from "../src/witchspace-crossing";
 import {
@@ -77,6 +77,17 @@ const fullRun = (
 });
 
 describe("the view set itself", () => {
+	test("Assembly rows frame two generated Assembly plans", () => {
+		const seeds = new Set<number>();
+		for (const view of VIEWS.filter((v) => v.covers.includes(1073))) {
+			const shot = view.shot as { seed: number; system: number };
+			const { system } = restoreWorld(shot.seed, 0, shot.system, 0);
+			const station = system.contents.stations.find((s) => s.type === "trade")!;
+			expect(station.formId).toBe("d");
+			seeds.add(station.assemblySeed);
+		}
+		expect(seeds.size).toBe(2);
+	});
 	test("scoped capture names existing views in canonical order and refuses typos", () => {
 		expect(
 			selectViews("hull-chase-bollard,hull-chase,hull-chase-miner").map(
@@ -86,6 +97,19 @@ describe("the view set itself", () => {
 		expect(selectViews(null)).toBe(VIEWS);
 		for (const names of ["", "hull-chase,", "typo", "hull-chase,hull-chase"])
 			expect(() => selectViews(names)).toThrow();
+	});
+
+	test("the Lance view judges node 1034 on the interceptor in chase", () => {
+		const view = VIEWS.find((v) => v.name === "hull-chase-lance");
+		expect(view?.covers).toContain(1034);
+		expect(view?.shot).toMatchObject({
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "interceptor",
+		});
 	});
 
 	test("the authored paint comparison puts miner and Bollard beside courier", () => {
@@ -189,6 +213,9 @@ describe("the view set itself", () => {
 			(v) => (v.shot as { seed?: number }).seed !== undefined,
 		).map((v) => [v.name, (v.shot as { seed?: number }).seed]);
 		expect(declared).toEqual([
+			["assembly-approach", 42],
+			["assembly-flank", 42],
+			["assembly-second-layout", 42],
 			["station-refinery-axis", 2],
 			["ringed-giant", 5],
 			["giant-fill", 5],
@@ -226,7 +253,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(80);
+		expect(VIEWS.length).toBe(84);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -816,7 +843,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 80)");
+		expect(html).toContain("Selected canonical views (3 of 84)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -853,7 +880,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–32.2s");
+		expect(html).toContain("· clock 0.6–33.8s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1124,6 +1151,9 @@ describe("the rim look row #480 added", () => {
 			(v) => (v.shot as { system?: number }).system !== undefined,
 		);
 		expect(declaring.map((v) => v.name)).toEqual([
+			"assembly-approach",
+			"assembly-flank",
+			"assembly-second-layout",
 			"cold-rocky-ice",
 			"sky-at-the-rim",
 			"npc-departure",
