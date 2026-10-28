@@ -59,7 +59,7 @@ import {
 	flyTheComputer,
 } from "./helpers/fly-the-computer";
 
-const fly = (
+const flyFresh = (
 	hull: HullId,
 	type: StationType,
 	spinRpm: number,
@@ -73,6 +73,23 @@ const fly = (
 		reference: REFERENCE,
 		perfHull,
 	});
+
+const flights = new Map<string, ReturnType<typeof flyFresh>>();
+
+/** `flyFresh`, once per flight: `flyTheComputer` reads `perfHull` only as `perfHull ?? hull`, so the key does too. */
+const fly = (
+	hull: HullId,
+	type: StationType,
+	spinRpm: number,
+	perfHull?: HullId,
+) => {
+	const key = `${hull}|${type}|${spinRpm}|${perfHull ?? hull}`;
+	const known = flights.get(key);
+	if (known) return known;
+	const run = flyFresh(hull, type, spinRpm, perfHull);
+	flights.set(key, run);
+	return run;
+};
 
 /** Which of §3's six rows a crossing failed, joined — so a red rung names the
  *  check rather than reporting a boolean. Empty when the crossing passed. */
@@ -330,6 +347,17 @@ const ceilingOf = (() => {
 const ROSTER_SWEEP_MS = 60_000;
 
 describe("the tolerances hold for the whole roster, with margin", () => {
+	test("a remembered flight is the one flown again, with its own handling named", () => {
+		const type = SPINNING_TYPES[0];
+		const remembered = fly(PLAYER_BASELINE_HULL, type, 3);
+		expect(fly(PLAYER_BASELINE_HULL, type, 3, PLAYER_BASELINE_HULL)).toBe(
+			remembered,
+		);
+		expect(
+			flyFresh(PLAYER_BASELINE_HULL, type, 3, PLAYER_BASELINE_HULL),
+		).toEqual(remembered);
+	});
+
 	test(
 		"the worst-handling hull still docks at twice the fastest station",
 		() => {

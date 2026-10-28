@@ -217,10 +217,11 @@ export function forEachVertex(
 		for (let n = 0; n < count; n++) {
 			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
 			else instance.identity();
+			mesh.updateWorldMatrix(true, false);
 			for (let i = 0; i < position.count; i++) {
 				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
 				v.applyMatrix4(instance);
-				mesh.localToWorld(v);
+				v.applyMatrix4(mesh.matrixWorld);
 				// The root is normalised to core radii — convert back to km
 				v.multiplyScalar(core);
 				visit({ v, name, spun });

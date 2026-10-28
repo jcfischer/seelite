@@ -81,6 +81,108 @@ function twoSided<T>(root: THREE.Object3D, body: () => T): T {
 	}
 }
 
+interface RaycastMemo {
+	position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+	positionVersion: number;
+	index: THREE.BufferAttribute | null;
+	indexVersion: number;
+	shape: string;
+	hits: Map<string, THREE.Intersection[]>;
+}
+
+const raycastMemos = new WeakMap<THREE.BufferGeometry, RaycastMemo>();
+
+function memoFor(geometry: THREE.BufferGeometry): RaycastMemo {
+	const position = geometry.getAttribute("position");
+	const index = geometry.getIndex();
+	const positionVersion = "version" in position ? position.version : -1;
+	const indexVersion = index ? index.version : -1;
+	const shape = JSON.stringify([
+		geometry.drawRange,
+		geometry.groups,
+		Object.keys(geometry.morphAttributes),
+	]);
+	const known = raycastMemos.get(geometry);
+	if (
+		known &&
+		known.position === position &&
+		known.positionVersion === positionVersion &&
+		known.index === index &&
+		known.indexVersion === indexVersion &&
+		known.shape === shape
+	)
+		return known;
+	const memo = {
+		position,
+		positionVersion,
+		index,
+		indexVersion,
+		shape,
+		hits: new Map(),
+	};
+	raycastMemos.set(geometry, memo);
+	return memo;
+}
+
+const keyNumbers = new Float64Array(24);
+const keyWords = new Uint32Array(keyNumbers.buffer);
+
+function raycastKey(mesh: THREE.Mesh, raycaster: THREE.Raycaster): string {
+	keyNumbers.set(mesh.matrixWorld.elements, 0);
+	raycaster.ray.origin.toArray(keyNumbers, 16);
+	raycaster.ray.direction.toArray(keyNumbers, 19);
+	keyNumbers[22] = raycaster.near;
+	keyNumbers[23] = raycaster.far;
+	const materials = Array.isArray(mesh.material)
+		? mesh.material
+		: [mesh.material];
+	return `${keyWords.join(",")}|${materials.map((m) => m?.side).join(",")}`;
+}
+
+/**
+ * Run `body` with each plain mesh under `root` answering a raycast it has
+ * answered before from memory: keyed on its geometry's attributes, versions,
+ * draw range and groups, its world matrix, its materials' sides and the ray,
+ * which is everything `THREE.Mesh.raycast` reads for a mesh with no morph
+ * targets, skin or instances.
+ */
+function rememberingRaycasts<T>(root: THREE.Object3D, body: () => T): T {
+	const patched: THREE.Mesh[] = [];
+	root.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		if (
+			!mesh.isMesh ||
+			(mesh as THREE.InstancedMesh).isInstancedMesh ||
+			(mesh as THREE.SkinnedMesh).isSkinnedMesh ||
+			mesh.morphTargetInfluences !== undefined ||
+			Object.keys(mesh.geometry.morphAttributes).length > 0 ||
+			!mesh.geometry.getAttribute("position") ||
+			Object.hasOwn(mesh, "raycast")
+		)
+			return;
+		const cast = mesh.raycast;
+		mesh.raycast = (raycaster, intersects) => {
+			const memo = memoFor(mesh.geometry);
+			const key = raycastKey(mesh, raycaster);
+			let hits = memo.hits.get(key);
+			if (!hits) {
+				hits = [];
+				cast.call(mesh, raycaster, hits);
+				memo.hits.set(key, hits);
+			}
+			for (const hit of hits)
+				intersects.push({ ...hit, point: hit.point.clone(), object: mesh });
+		};
+		patched.push(mesh);
+	});
+	try {
+		return body();
+	} finally {
+		for (const mesh of patched)
+			delete (mesh as { raycast?: THREE.Mesh["raycast"] }).raycast;
+	}
+}
+
 /**
  * One ray straight down −Z through `(xKm, yKm)`, and every surface it meets
  * from the bay's back wall outward.
@@ -223,10 +325,11 @@ export function corridorIntrusions(
 		for (let n = 0; n < count; n++) {
 			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
 			else instance.identity();
+			mesh.updateWorldMatrix(true, false);
 			for (let i = 0; i < position.count; i++) {
 				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
 				v.applyMatrix4(instance);
-				mesh.localToWorld(v);
+				v.applyMatrix4(mesh.matrixWorld);
 				v.multiplyScalar(core);
 				if (v.z <= front + WALL_EPSILON_KM) continue;
 				if (Math.hypot(v.x, v.y) > radius) continue;
@@ -350,32 +453,36 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 	const CELLS = 9;
 	/** How far out the outermost sample sits, as a share of the half-extent. */
 	const EDGE_FRACTION = 0.99;
-	twoSided(root, () => {
-		for (let ix = 0; ix < CELLS; ix++) {
-			for (let iy = 0; iy < CELLS; iy++) {
-				const cell = ix * CELLS + iy;
-				const x = ((ix / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (widthKm / 2);
-				const y = ((iy / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (heightKm / 2);
-				for (const hit of castDown(root, x, y, core, band)) {
-					const name = hit.object.name || hit.object.type;
-					// The aperture's own frame lives in the opening by
-					// construction — it *is* what frames it.
-					if (name.startsWith("aperture") || BAY_PART.test(name)) continue;
-					const past = (band.max.z - hit.point.z) * core;
-					found.set(name, Math.min(found.get(name) ?? past, past));
-					wasCut.set(
-						name,
-						(wasCut.get(name) ?? false) ||
-							(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
-								undefined,
-					);
-					const seen = rays.get(name) ?? new Set<number>();
-					seen.add(cell);
-					rays.set(name, seen);
+	twoSided(root, () =>
+		rememberingRaycasts(root, () => {
+			for (let ix = 0; ix < CELLS; ix++) {
+				for (let iy = 0; iy < CELLS; iy++) {
+					const cell = ix * CELLS + iy;
+					const x =
+						((ix / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (widthKm / 2);
+					const y =
+						((iy / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (heightKm / 2);
+					for (const hit of castDown(root, x, y, core, band)) {
+						const name = hit.object.name || hit.object.type;
+						// The aperture's own frame lives in the opening by
+						// construction — it *is* what frames it.
+						if (name.startsWith("aperture") || BAY_PART.test(name)) continue;
+						const past = (band.max.z - hit.point.z) * core;
+						found.set(name, Math.min(found.get(name) ?? past, past));
+						wasCut.set(
+							name,
+							(wasCut.get(name) ?? false) ||
+								(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
+									undefined,
+						);
+						const seen = rays.get(name) ?? new Set<number>();
+						seen.add(cell);
+						rays.set(name, seen);
+					}
 				}
 			}
-		}
-	});
+		}),
+	);
 	return [...found]
 		.map(([name, pastMouthKm]) => ({
 			name,

@@ -1257,6 +1257,7 @@ export class TriangleGrid {
 	private readonly cells = new Map<number, number[]>();
 	private readonly stamps: Uint32Array;
 	private stamp = 0;
+	private lastHit = -1;
 	private readonly triangle = new THREE.Triangle();
 	private readonly q = new THREE.Vector3();
 	constructor(
@@ -1280,21 +1281,31 @@ export class TriangleGrid {
 	private at(v: number) {
 		return Math.floor(v / this.cell);
 	}
-	/** True when some triangle lies within `limit` of `p`. */
+	/** True when some triangle lies within `limit` of `p`. The last triangle found is asked first. */
 	within(p: THREE.Vector3, limit: number): boolean {
 		const s = ++this.stamp;
 		const limitSq = limit * limit;
+		if (this.lastHit >= 0) {
+			if (this.near(this.lastHit, p, limitSq)) return true;
+			this.stamps[this.lastHit] = s;
+		}
 		for (let i = this.at(p.x - limit); i <= this.at(p.x + limit); i++)
 			for (let j = this.at(p.y - limit); j <= this.at(p.y + limit); j++)
 				for (let k = this.at(p.z - limit); k <= this.at(p.z + limit); k++)
 					for (const n of this.cells.get(cellKey(i, j, k)) ?? []) {
 						if (this.stamps[n] === s) continue;
 						this.stamps[n] = s;
-						const t = this.tris[n];
-						this.triangle.set(t[0], t[1], t[2]).closestPointToPoint(p, this.q);
-						if (this.q.distanceToSquared(p) <= limitSq) return true;
+						if (this.near(n, p, limitSq)) {
+							this.lastHit = n;
+							return true;
+						}
 					}
 		return false;
+	}
+	private near(n: number, p: THREE.Vector3, limitSq: number): boolean {
+		const t = this.tris[n];
+		this.triangle.set(t[0], t[1], t[2]).closestPointToPoint(p, this.q);
+		return this.q.distanceToSquared(p) <= limitSq;
 	}
 }
 
