@@ -219,21 +219,42 @@ jobs:
   #
   # ## Why four shards
   #
-  # `bun test tests/` runs 305 files in one process: 322 s on a measured
-  # passing tree, and the longest step of a job that took 8-14 minutes in the
-  # open. Splitting the files across runners costs nothing — the wall clock
-  # becomes the slowest shard's rather than the sum's. Four, because a shard's
-  # fixed cost (checkout, `npm ci`, bun) is around a minute, so a fifth shard
-  # buys little and is one more red row to read.
+  # Splitting the files across runners makes the wall clock the slowest
+  # shard's rather than the sum's. Four, because a shard's fixed cost
+  # (checkout, `npm ci`, bun) is around half a minute, and the four-shard
+  # matrix is what the figures below were measured on.
   #
-  # `--shard` deals files round-robin by name, so the four are uneven: measured
-  # on one machine they ran 108 / 73 / 70 / 51 s. `--timings` balances them by
-  # measured duration instead, and it was tried — it moved the slowest shard
-  # from 108 s to 102 s. The reason so little moves is a floor no split of
-  # files can go under: `tests/music-generate-berlin.test.ts` renders audio and
-  # takes 88 s by itself, a quarter of the suite. So no timings file is
-  # committed, and the shard holding that file is the tier's length. Reach for
-  # `--timings`, or a fifth shard, if the suite grows a second heavy file.
+  # ## Why `--timings`, `--parallel=4` and `--no-isolate` (node #1119)
+  #
+  # `--shard` alone deals files round-robin by name. On run 40493901580
+  # (424 files, before the unit-tier speed nodes) that put 488 / 498 / 334 /
+  # 505 s of bun time on the four shards: one runner core each, and the
+  # slowest shard the tier's length. The audio file that once floored any split
+  # at 88 s now counts its notes instead of rendering them (#1121), so time
+  # balancing has something to move.
+  #
+  # - `--timings=tests/timings.json` deals the files by measured duration, and
+  #   under `--parallel` starts the slowest file first.
+  # - `--parallel=4` uses the runner's four vCPUs instead of one.
+  # - `--no-isolate` keeps one global and module registry per worker. Plain
+  #   `--parallel` isolates every file and re-runs the six bunfig preloads for
+  #   each, and on the node's first measurement ran 2.5x slower than without
+  #   it. Sharing a registry is what the suite already did in one process
+  #   before this; a file that needs another file's module side effects is
+  #   `tests/import-cycles.test.ts`'s to catch, not the parallel run's. Run
+  #   locally in three file orders (slowest first, the four shards, and
+  #   `--randomize`), no file failed for a neighbour's state.
+  # - `--update-timings` rewrites this shard's files in the runner's copy, and
+  #   the next step uploads it. `npm run test:timings [run-id]` merges the four
+  #   artifacts of a green run into the committed file; refresh it when a heavy
+  #   file is added or sped up. A file missing from it still runs.
+  #
+  # bun is pinned (`bun-version` below, and in `mutation-changed`) because these
+  # flags are recent: `latest` ran 1.4.4 on 2026-10-28, and a release that drops
+  # or renames one would turn every shard red with nothing changed here. 1.4.2 is
+  # the version the suite was measured on locally.
+  #
+  # Measured on this PR's CI run: PR_FIGURES.
   #
   # `fail-fast: false` so all four report. With it on, the first red shard
   # cancelled the rest, and "cancelled" is the worst thing a shard can report:
