@@ -72,12 +72,14 @@ import { OUTPOST_PROXIES, OUTPOST_PROXY_PACK } from "./outpost-proxies";
 import { REFINERY_PROXIES, REFINERY_PROXY_PACK } from "./refinery-proxies";
 import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
 import {
-	buildSphereGrid,
+	type Bounds as GridBounds,
+	type BoxGrid,
+	boundsOfBox,
+	boundsOfSegment,
+	buildBoxGrid,
 	INDEX_CELL_KM,
 	INDEXED_ABOVE,
-	querySphereGrid,
-	type Sphere,
-	type SphereGrid,
+	queryBoxGrid,
 } from "./sphere-grid";
 import { HUB, modularPlacements } from "./station-modular";
 import {
@@ -1207,11 +1209,11 @@ export function proxyContains(
 	if (primitives.length <= INDEXED_ABOVE)
 		return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
 	// The authored shipyards' thousands of boxes (node #818): only the ones
-	// whose bounding sphere comes within the tolerance can hold the point.
+	// whose bounds come within the tolerance can hold the point.
 	const grid = indexOf(primitives);
 	const reach = Math.max(toleranceKm, 0);
 	let found = false;
-	querySphereGrid(
+	queryBoxGrid(
 		grid,
 		x - reach,
 		y - reach,
@@ -1246,11 +1248,11 @@ export function proxyListDistanceKm(
 	}
 	const grid = indexOf(primitives);
 	for (let r = INDEX_CELL_KM; ; r *= 2) {
-		querySphereGrid(grid, x - r, y - r, z - r, x + r, y + r, z + r, (n) => {
+		queryBoxGrid(grid, x - r, y - r, z - r, x + r, y + r, z + r, (n) => {
 			best = Math.min(best, proxyDistanceKm(primitives[n], x, y, z));
 		});
 		// Every primitive with a surface point within `r` has its bounding
-		// sphere in the box just searched.
+		// bounds touching the box just searched.
 		if (best <= r) return best;
 		if (r > 64) break;
 	}
@@ -1259,28 +1261,23 @@ export function proxyListDistanceKm(
 	return best;
 }
 
-const indexes = new WeakMap<readonly ProxyPrimitive[], SphereGrid>();
-function indexOf(primitives: readonly ProxyPrimitive[]): SphereGrid {
+const indexes = new WeakMap<readonly ProxyPrimitive[], BoxGrid>();
+function indexOf(primitives: readonly ProxyPrimitive[]): BoxGrid {
 	let grid = indexes.get(primitives);
 	if (!grid) {
-		grid = buildSphereGrid(primitives.map(boundOf), INDEX_CELL_KM);
+		grid = buildBoxGrid(primitives.map(boundOf), INDEX_CELL_KM);
 		indexes.set(primitives, grid);
 	}
 	return grid;
 }
-function boundOf(p: ProxyPrimitive): Sphere {
+function boundOf(p: ProxyPrimitive): GridBounds {
 	switch (p.kind) {
 		case "box":
-			return { x: p.cx, y: p.cy, z: p.cz, r: Math.hypot(p.hx, p.hy, p.hz) };
+			return boundsOfBox(p.cx, p.cy, p.cz, p.axes, p.hx, p.hy, p.hz);
 		case "sphere":
-			return { x: p.cx, y: p.cy, z: p.cz, r: p.radiusKm };
+			return boundsOfSegment(p.cx, p.cy, p.cz, p.cx, p.cy, p.cz, p.radiusKm);
 		case "capsule":
-			return {
-				x: (p.ax + p.bx) / 2,
-				y: (p.ay + p.by) / 2,
-				z: (p.az + p.bz) / 2,
-				r: Math.hypot(p.bx - p.ax, p.by - p.ay, p.bz - p.az) / 2 + p.radiusKm,
-			};
+			return boundsOfSegment(p.ax, p.ay, p.az, p.bx, p.by, p.bz, p.radiusKm);
 	}
 }
 
