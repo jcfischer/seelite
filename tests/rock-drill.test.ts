@@ -113,13 +113,14 @@ describe("contact", () => {
 		).toBeNull();
 	});
 
-	test("the drill takes the deep deposit only at its mouth", () => {
-		expect(drillContact(square({ deepMouth: null })).block).toBe(
-			"NO DEEP DEPOSIT",
-		);
-		expect(drillContact(square({ deepMouth: v3(1, 0, 0) })).block).toBe(
-			"OFF DEPOSIT",
-		);
+	test("on the mouth the face is on the deep deposit, elsewhere on surface ore (D-D3)", () => {
+		expect(drillContact(square()).deposit).toBe("deep");
+		const none = drillContact(square({ deepMouth: null }));
+		expect(none.block).toBeNull();
+		expect(none.deposit).toBe("surface");
+		const off = drillContact(square({ deepMouth: v3(1, 0, 0) }));
+		expect(off.block).toBeNull();
+		expect(off.deposit).toBe("surface");
 	});
 });
 
