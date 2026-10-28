@@ -132,40 +132,36 @@ function raycastKey(mesh: THREE.Mesh, raycaster: THREE.Raycaster): string {
 	return `${keyWords.join(",")}|${materials.map((m) => m?.side).join(",")}`;
 }
 
-function rememberingRaycasts<T>(root: THREE.Object3D, body: () => T): T {
-	const patched: THREE.Mesh[] = [];
-	root.traverse((object) => {
-		const mesh = object as THREE.Mesh;
+function rememberingRaycasts<T>(body: () => T): T {
+	const prototype = THREE.Mesh.prototype;
+	const cast = prototype.raycast;
+	prototype.raycast = function (
+		this: THREE.Mesh,
+		raycaster: THREE.Raycaster,
+		intersects: THREE.Intersection[],
+	) {
 		if (
-			!mesh.isMesh ||
-			(mesh as THREE.InstancedMesh).isInstancedMesh ||
-			(mesh as THREE.SkinnedMesh).isSkinnedMesh ||
-			mesh.morphTargetInfluences !== undefined ||
-			Object.keys(mesh.geometry.morphAttributes).length > 0 ||
-			!mesh.geometry.getAttribute("position") ||
-			Object.hasOwn(mesh, "raycast")
+			(this as THREE.SkinnedMesh).isSkinnedMesh ||
+			this.morphTargetInfluences !== undefined ||
+			Object.keys(this.geometry.morphAttributes).length > 0 ||
+			!this.geometry.getAttribute("position")
 		)
-			return;
-		const cast = mesh.raycast;
-		mesh.raycast = (raycaster, intersects) => {
-			const memo = memoFor(mesh.geometry);
-			const key = raycastKey(mesh, raycaster);
-			let hits = memo.hits.get(key);
-			if (!hits) {
-				hits = [];
-				cast.call(mesh, raycaster, hits);
-				memo.hits.set(key, hits);
-			}
-			for (const hit of hits)
-				intersects.push({ ...hit, point: hit.point.clone(), object: mesh });
-		};
-		patched.push(mesh);
-	});
+			return cast.call(this, raycaster, intersects);
+		const memo = memoFor(this.geometry);
+		const key = raycastKey(this, raycaster);
+		let hits = memo.hits.get(key);
+		if (!hits) {
+			hits = [];
+			cast.call(this, raycaster, hits);
+			memo.hits.set(key, hits);
+		}
+		for (const hit of hits)
+			intersects.push({ ...hit, point: hit.point.clone(), object: this });
+	};
 	try {
 		return body();
 	} finally {
-		for (const mesh of patched)
-			delete (mesh as { raycast?: THREE.Mesh["raycast"] }).raycast;
+		prototype.raycast = cast;
 	}
 }
 
@@ -428,7 +424,7 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 	/** How far out the outermost sample sits, as a share of the half-extent. */
 	const EDGE_FRACTION = 0.99;
 	twoSided(root, () =>
-		rememberingRaycasts(root, () => {
+		rememberingRaycasts(() => {
 			for (let ix = 0; ix < CELLS; ix++) {
 				for (let iy = 0; iy < CELLS; iy++) {
 					const cell = ix * CELLS + iy;

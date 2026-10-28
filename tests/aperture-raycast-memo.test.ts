@@ -59,10 +59,44 @@ describe("crossings remembers raycasts only while every input is unchanged", () 
 		);
 	});
 
-	test("the meshes answer raycasts as before once crossings returns", () => {
+	test("meshes answer raycasts as before once crossings returns", () => {
 		const { root, blocker } = withBlocker();
+		const cast = THREE.Mesh.prototype.raycast;
 		crossings(root, "trade");
+		expect(THREE.Mesh.prototype.raycast).toBe(cast);
 		expect(Object.hasOwn(blocker, "raycast")).toBe(false);
-		expect(blocker.raycast).toBe(THREE.Mesh.prototype.raycast);
+	});
+
+	test("an instanced part's casts are remembered per instance and still answer for it", () => {
+		const { root } = withBlocker();
+		const band = bayBand(root);
+		const instanced = new THREE.InstancedMesh(
+			new THREE.PlaneGeometry(2, 2),
+			new THREE.MeshBasicMaterial(),
+			2,
+		);
+		instanced.name = "memo-instanced";
+		instanced.setMatrixAt(
+			0,
+			new THREE.Matrix4().makeTranslation(0, 0, band.max.z - 0.02),
+		);
+		instanced.setMatrixAt(
+			1,
+			new THREE.Matrix4().makeTranslation(0, 0, band.max.z - 0.03),
+		);
+		root.add(instanced);
+		root.updateMatrixWorld(true);
+		const depth = () =>
+			crossings(root, "trade").find((c) => c.name === "memo-instanced")
+				?.pastMouthKm;
+		const first = depth();
+		expect(first).toBeDefined();
+		expect(depth()).toBe(first);
+		instanced.setMatrixAt(
+			0,
+			new THREE.Matrix4().makeTranslation(0, 0, band.max.z - 0.025),
+		);
+		instanced.instanceMatrix.needsUpdate = true;
+		expect(depth()).not.toBe(first);
 	});
 });
