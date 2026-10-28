@@ -107,7 +107,7 @@ jobs:
           cache: npm
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: latest
+          bun-version: 1.4.2
       - run: npm ci
       - run: npm run test:mutation:control
       - run: npm run test:mutation:changed
@@ -280,13 +280,26 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
       - name: Unit tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         run: >
           bun test tests/
           --shard=${{ matrix.shard }}/${{ matrix.total }}
           --timeout=60000
+          --parallel=4
+          --no-isolate
+          --timings=tests/timings.json
+          --update-timings
+
+      - name: Upload this shard's per-file durations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unit-timings-${{ matrix.shard }}
+          path: tests/timings.json
+          if-no-files-found: warn
+          retention-days: 30
 
   # The build belongs to stage 1: `npm run build` is `tsc --noEmit && vite
   # build`, so a type error fails here on every pull request, and

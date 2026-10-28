@@ -442,7 +442,35 @@ test("the shards split the suite across runners without narrowing it", () => {
 		"bun test tests/",
 		"--shard=${{ matrix.shard }}/${{ matrix.total }}",
 		"--timeout=60000",
+		"--parallel=4",
+		"--no-isolate",
+		"--timings=tests/timings.json",
+		"--update-timings",
 	]);
+	// `--parallel`, `--no-isolate` and `--timings` are recent bun flags, so the
+	// job names an exact bun rather than `latest`: a release that dropped or
+	// renamed one would otherwise turn every shard red with nothing changed here.
+	const setups = ciWorkflow().steps.filter(
+		(s) => actionOf(s) === "oven-sh/setup-bun",
+	);
+	const pins = [
+		...readFileSync(repoPath(".github/workflows/ci.yml"), "utf8").matchAll(
+			/^\s+bun-version:\s*(\S+)\s*$/gm,
+		),
+	].map((m) => m[1]);
+	expect(pins).toEqual(setups.map(() => "1.4.2"));
+	expect(setups.map((s) => s.job)).toContain("unit");
+	// And the timings file the shards balance on is one bun can read.
+	const timings = JSON.parse(
+		readFileSync(repoPath("tests/timings.json"), "utf8"),
+	) as { version: number; files: Record<string, number> };
+	expect(timings.version).toBe(1);
+	const durations = Object.entries(timings.files);
+	expect(durations.length).toBeGreaterThan(100);
+	for (const [file, ms] of durations) {
+		expect(file).toMatch(/^tests\/.*\.test\.ts$/);
+		expect(ms).toBeGreaterThan(0);
+	}
 	// A shard that skips itself is a shard that never ran, and a shard that
 	// shrugs off a failure reports a green quarter of a suite it did not run.
 	expect(runs[0].condition).toBeUndefined();
