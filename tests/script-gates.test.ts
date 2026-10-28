@@ -442,7 +442,7 @@ test("the shards split the suite across runners without narrowing it", () => {
 		"bun test tests/",
 		"--shard=${{ matrix.shard }}/${{ matrix.total }}",
 		"--timeout=60000",
-		"--parallel=4",
+		"--parallel=3",
 		"--no-isolate",
 		"--timings=tests/timings.json",
 		"--update-timings",
