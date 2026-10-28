@@ -224,37 +224,43 @@ jobs:
   # (checkout, `npm ci`, bun) is around half a minute, and the four-shard
   # matrix is what the figures below were measured on.
   #
-  # ## Why `--timings`, `--parallel=4` and `--no-isolate` (node #1119)
+  # ## Why `--timings`, `--parallel=3` and `--no-isolate` (node #1119)
   #
-  # `--shard` alone deals files round-robin by name. On run 40493901580
-  # (424 files, before the unit-tier speed nodes) that put 488 / 498 / 334 /
-  # 505 s of bun time on the four shards: one runner core each, and the
-  # slowest shard the tier's length. The audio file that once floored any split
-  # at 88 s now counts its notes instead of rendering them (#1121), so time
-  # balancing has something to move.
+  # `--shard` alone deals files round-robin by name and runs them one at a
+  # time. Run 40493901580 (424 files, before the unit-tier speed nodes) put
+  # 488 / 498 / 334 / 505 s of bun time on the four shards; run 40688332856, on
+  # the base this landed on, 176 / 189 / 231 / 172 s. With these flags, two
+  # runs of the same tree (40692977612 and its re-run) took 122 / 78 / 120 / 78
+  # and 119 / 132 / 119 / 85 s: the slowest shard 231 s -> 122-132 s.
   #
-  # - `--timings=tests/timings.json` deals the files by measured duration, and
-  #   under `--parallel` starts the slowest file first.
-  # - `--parallel=4` uses the runner's four vCPUs instead of one.
+  # - `--parallel=3`, not 4. Four workers on the runner's four vCPUs ran the
+  #   heaviest rows 1.5-2.5x slower than one at a time, and rows whose own
+  #   budgets are 10 s and 30 s timed out on four of five runs. Three passed
+  #   twice, those rows at up to 8.9 s and 23 s, so they are still the first
+  #   thing a busier runner reddens.
   # - `--no-isolate` keeps one global and module registry per worker. Plain
   #   `--parallel` isolates every file and re-runs the six bunfig preloads for
   #   each, and on the node's first measurement ran 2.5x slower than without
-  #   it. Sharing a registry is what the suite already did in one process
-  #   before this; a file that needs another file's module side effects is
-  #   `tests/import-cycles.test.ts`'s to catch, not the parallel run's. Run
-  #   locally in three file orders (slowest first, the four shards, and
-  #   `--randomize`), no file failed for a neighbour's state.
-  # - `--update-timings` rewrites this shard's files in the runner's copy, and
-  #   the next step uploads it. `npm run test:timings [run-id]` merges the four
-  #   artifacts of a green run into the committed file; refresh it when a heavy
-  #   file is added or sped up. A file missing from it still runs.
+  #   it. Sharing a registry is what the suite already did in one process;
+  #   a file that needs another file's module side effects is
+  #   `tests/import-cycles.test.ts`'s to catch. Run locally in three file
+  #   orders (slowest first, the four shards, and `--randomize`), no file
+  #   failed for a neighbour's state.
+  # - `--timings=tests/timings.json` deals the files by measured duration and
+  #   starts each shard's slowest file first. A file missing from it still
+  #   runs. The committed durations were measured locally under four workers.
+  #   Durations measured on CI under four workers were tried and balanced
+  #   worse (slowest shard 144 s twice): a parallel run records each file's
+  #   wall time beside whatever shared its runner, not its cost.
+  # - `--update-timings` rewrites this shard's files in the runner's copy and
+  #   the next step uploads it, so `npm run test:timings [run-id]` can merge a
+  #   green run's four artifacts into the committed file. Judge a refresh by
+  #   two CI runs' slowest shard, as above, before committing it.
   #
   # bun is pinned (`bun-version` below, and in `mutation-changed`) because these
   # flags are recent: `latest` ran 1.4.4 on 2026-10-28, and a release that drops
   # or renames one would turn every shard red with nothing changed here. 1.4.2 is
   # the version the suite was measured on locally.
-  #
-  # Measured on this PR's CI run: PR_FIGURES.
   #
   # `fail-fast: false` so all four report. With it on, the first red shard
   # cancelled the rest, and "cancelled" is the worst thing a shard can report:
