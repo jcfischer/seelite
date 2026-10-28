@@ -74,17 +74,39 @@ describe("crossings remembers raycasts only while every input is unchanged", () 
 		);
 		root.add(instanced);
 		root.updateMatrixWorld(true);
-		const depth = () =>
-			crossings(root, "trade", true).find((c) => c.name === "memo-instanced")
-				?.pastMouthKm;
-		const first = depth();
-		expect(first).toBeDefined();
-		expect(depth()).toBe(first);
-		instanced.setMatrixAt(
-			0,
-			new THREE.Matrix4().makeTranslation(0, 0, band.max.z - 0.025),
-		);
-		instanced.instanceMatrix.needsUpdate = true;
-		expect(depth()).not.toBe(first);
+		const original = THREE.Mesh.prototype.raycast;
+		let casts = 0;
+		THREE.Mesh.prototype.raycast = function (raycaster, intersects) {
+			casts++;
+			original.call(this, raycaster, intersects);
+		};
+		const measure = () => {
+			casts = 0;
+			const remembered = crossings(root, "trade", true);
+			const castsMade = casts;
+			return { remembered, castsMade };
+		};
+		const depthIn = (found: ReturnType<typeof crossings>) =>
+			found.find((c) => c.name === "memo-instanced")?.pastMouthKm;
+		try {
+			const first = measure();
+			expect(first.castsMade).toBeGreaterThan(0);
+			expect(depthIn(first.remembered)).toBeDefined();
+			expect(first.remembered).toEqual(crossings(root, "trade"));
+			const again = measure();
+			expect(again.castsMade).toBe(0);
+			expect(again.remembered).toEqual(first.remembered);
+			instanced.setMatrixAt(
+				0,
+				new THREE.Matrix4().makeTranslation(0, 0, band.max.z - 0.025),
+			);
+			instanced.instanceMatrix.needsUpdate = true;
+			const moved = measure();
+			expect(moved.castsMade).toBeGreaterThan(0);
+			expect(depthIn(moved.remembered)).not.toBe(depthIn(first.remembered));
+			expect(moved.remembered).toEqual(crossings(root, "trade"));
+		} finally {
+			THREE.Mesh.prototype.raycast = original;
+		}
 	});
 });
