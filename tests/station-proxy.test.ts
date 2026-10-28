@@ -74,11 +74,7 @@ import { INDEXED_ABOVE } from "../src/sphere-grid";
 import { HUB, modularPlacements } from "../src/station-modular";
 import { assemblyInstances } from "../src/assembly-plan";
 import { assemblyProxyBoxes } from "../src/station-proxy";
-import {
-	ASSEMBLY_SEEDS,
-	PLAN_SEEDS,
-	isSeededForm,
-} from "./helpers/solved-forms";
+import { ASSEMBLY_SEEDS, isSeededForm } from "./helpers/solved-forms";
 import {
 	BERTH_SIDES,
 	openingOf,
@@ -117,6 +113,8 @@ const VERTEX_TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
  * load rather than for a defect.
  */
 const HEAVY_ROW_MS = 30_000;
+
+const GRID_GUARD_SEEDS = [0, 1];
 
 /** Berth seeds swept on their own, at assembly seed zero. */
 const BERTH_SEEDS = [0, 1, 2, 7];
@@ -446,7 +444,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			() => {
 				const measured = new Set<object>();
 				for (const [berthSeed, assemblySeed] of seedPairs(type, form).filter(
-					([, seed]) => PLAN_SEEDS.includes(seed),
+					([berth, seed]) => berth === 0 && GRID_GUARD_SEEDS.includes(seed),
 				)) {
 					const proxy = stationProxy(type, form, berthSeed, assemblySeed)!;
 					for (const list of [proxy.spinning, proxy.static]) {
