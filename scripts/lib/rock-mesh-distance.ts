@@ -67,8 +67,7 @@ export function indexMesh(tris: Float32Array, n = 96): MeshIndex {
 		hi = lo + 1;
 	}
 	const cell = (hi - lo) / n;
-	const ix = (v: number) =>
-		Math.min(n - 1, Math.max(0, Math.floor((v - lo) / cell)));
+	const ix = (v: number) => cellOf(n, lo, cell, v);
 	const count = tris.length / 9;
 	const box = new Int32Array(count * 6);
 	const start = new Int32Array(n * n * n + 1);
@@ -95,6 +94,12 @@ export function indexMesh(tris: Float32Array, n = 96): MeshIndex {
 	const fill = start.slice(0, n * n * n);
 	for (let t = 0; t < count; t++) visit(t, (c) => (ids[fill[c]++] = t));
 	return { tris, n, lo, cell, start, ids };
+}
+function cellOf(n: number, lo: number, cell: number, v: number): number {
+	return Math.min(n - 1, Math.max(0, Math.floor((v - lo) / cell)));
+}
+function range(from: number, to: number): number[] {
+	return Array.from({ length: to - from + 1 }, (_, i) => from + i);
 }
 function outside(v: number, from: number, to: number): number {
 	return v < from ? from - v : v > to ? v - to : 0;
@@ -126,26 +131,21 @@ function distanceToUnscannedCells(
 /** Distance from p to the mesh, and the closest point; exact for any p, inside or outside the grid. */
 export function meshDistance(m: MeshIndex, p: V3): { d: number; q: V3 } {
 	const { n, lo, cell, tris, start, ids } = m;
-	const c = p.map((v) =>
-		Math.min(n - 1, Math.max(0, Math.floor((v - lo) / cell))),
-	);
+	const c = p.map((v) => cellOf(n, lo, cell, v));
 	let best = Infinity,
 		bq: V3 = p;
 	const seen = new Set<number>();
 	for (let ring = 0; ring < n; ring++) {
 		const a = c.map((v) => Math.max(0, v - ring)),
 			b = c.map((v) => Math.min(n - 1, v + ring));
+		const sides = [c[0] - ring, c[0] + ring].filter(
+			(i, at) => i >= 0 && i < n && (at === 0 || ring > 0),
+		);
 		for (let k = a[2]; k <= b[2]; k++)
-			for (let j = a[1]; j <= b[1]; j++)
-				for (let i = a[0]; i <= b[0]; i++) {
-					if (
-						Math.max(
-							Math.abs(i - c[0]),
-							Math.abs(j - c[1]),
-							Math.abs(k - c[2]),
-						) !== ring
-					)
-						continue;
+			for (let j = a[1]; j <= b[1]; j++) {
+				const face = Math.abs(k - c[2]) === ring || Math.abs(j - c[1]) === ring;
+				const row = face ? range(a[0], b[0]) : sides;
+				for (const i of row) {
 					const cellIndex = (k * n + j) * n + i;
 					for (let s = start[cellIndex]; s < start[cellIndex + 1]; s++) {
 						const t = ids[s];
@@ -165,6 +165,7 @@ export function meshDistance(m: MeshIndex, p: V3): { d: number; q: V3 } {
 						}
 					}
 				}
+			}
 		if (best <= distanceToUnscannedCells(m, p, a, b)) break;
 	}
 	return { d: best, q: bq };
