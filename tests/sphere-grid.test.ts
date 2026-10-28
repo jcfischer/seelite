@@ -3,6 +3,7 @@ import {
 	type Bounds,
 	INDEX_CELL_KM,
 	boundsOfBox,
+	boundsOfSegment,
 	buildBoxGrid,
 	queryBoxGrid,
 } from "../src/sphere-grid";
@@ -41,6 +42,9 @@ function corners(c: V, axes: readonly [V, V, V], h: readonly number[]): V[] {
 			}
 	return out;
 }
+
+const cube = (c: V, r: number): Bounds =>
+	boundsOfSegment(c.x, c.y, c.z, c.x, c.y, c.z, r);
 
 const overlaps = (a: Bounds, b: Bounds) =>
 	a.minX <= b.maxX &&
@@ -170,24 +174,10 @@ describe("the box grid (node #1118)", () => {
 				);
 			} else if (pick < 0.97) {
 				const r = rng() * 0.3;
-				boxes.push({
-					minX: c.x - r,
-					minY: c.y - r,
-					minZ: c.z - r,
-					maxX: c.x + r,
-					maxY: c.y + r,
-					maxZ: c.z + r,
-				});
+				boxes.push(cube(c, r));
 			} else {
 				const r = 0.5 + rng() * 1.5;
-				boxes.push({
-					minX: c.x - r,
-					minY: c.y - r,
-					minZ: c.z - r,
-					maxX: c.x + r,
-					maxY: c.y + r,
-					maxZ: c.z + r,
-				});
+				boxes.push(cube(c, r));
 			}
 		}
 		const grid = buildBoxGrid(boxes, INDEX_CELL_KM);
@@ -195,14 +185,7 @@ describe("the box grid (node #1118)", () => {
 		for (let i = 0; i < 3000; i++) {
 			const c = { x: rng() * 4 - 2, y: rng() * 4 - 2, z: rng() * 4 - 2 };
 			const r = i % 3 === 0 ? 0 : rng() ** 3 * (i % 7 === 0 ? 3 : 0.3);
-			const q = {
-				minX: c.x - r,
-				minY: c.y - r,
-				minZ: c.z - r,
-				maxX: c.x + r,
-				maxY: c.y + r,
-				maxZ: c.z + r,
-			};
+			const q = cube(c, r);
 			const got = query(grid, q);
 			expect(new Set(got).size).toBe(got.length);
 			const set = new Set(got);
@@ -247,14 +230,7 @@ describe("the box grid (node #1118)", () => {
 	});
 
 	test("a box larger than the large threshold is still returned by every query", () => {
-		const huge: Bounds = {
-			minX: -3,
-			minY: -3,
-			minZ: -3,
-			maxX: 3,
-			maxY: 3,
-			maxZ: 3,
-		};
+		const huge = cube({ x: 0, y: 0, z: 0 }, 3);
 		const small: Bounds = {
 			minX: 0,
 			minY: 0,
@@ -266,25 +242,7 @@ describe("the box grid (node #1118)", () => {
 		const grid = buildBoxGrid([small, huge], INDEX_CELL_KM);
 		expect(grid.large).toEqual([1]);
 		for (const at of [0, 2.9, -2.9, 50, -400])
-			expect(
-				query(grid, {
-					minX: at,
-					minY: at,
-					minZ: at,
-					maxX: at,
-					maxY: at,
-					maxZ: at,
-				}),
-			).toContain(1);
-		expect(
-			query(grid, {
-				minX: -10,
-				minY: -10,
-				minZ: -10,
-				maxX: 10,
-				maxY: 10,
-				maxZ: 10,
-			}).sort(),
-		).toEqual([0, 1]);
+			expect(query(grid, cube({ x: at, y: at, z: at }, 0))).toContain(1);
+		expect(query(grid, cube({ x: 0, y: 0, z: 0 }, 10)).sort()).toEqual([0, 1]);
 	});
 });
