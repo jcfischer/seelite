@@ -413,7 +413,7 @@ export function strutPose(index: number, deployment: number, target: M3) {
 	const elbow = base.map((v, i) => v + (foot[i] - v) * 0.48) as M3;
 	elbow[0] += (index % 2 === 0 ? -1 : 1) * 5 * t;
 	elbow[1] += (index < 2 ? 1 : -1) * 3 * t;
-	return { base, foot, elbow };
+	return { deployment: t, base, foot, elbow };
 }
 
 /** What the hold needs (D-D1): every strut's foot on rock, the feed out and the ship inside the speed window. */
@@ -430,3 +430,23 @@ export function holdAllowed(a: {
 	if (a.slideKms > DRILL.slideKms) return "SLIDING";
 	return "OK";
 }
+
+/** A world point in km to the ship's frame in metres (fore, up, starboard). */
+export const shipFrameM = (
+	pos: Vec3,
+	nose: Vec3,
+	up: Vec3,
+	p: Vec3,
+): { fore: number; up: number; starboard: number } => {
+	const d = sub(p, pos);
+	const starboard = {
+		x: nose.y * up.z - nose.z * up.y,
+		y: nose.z * up.x - nose.x * up.z,
+		z: nose.x * up.y - nose.y * up.x,
+	};
+	return {
+		fore: dot(d, nose) * 1000,
+		up: dot(d, up) * 1000,
+		starboard: dot(d, starboard) * 1000,
+	};
+};

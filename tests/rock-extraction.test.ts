@@ -447,7 +447,7 @@ describe("the prototype's Mining Laser fit", () => {
 	});
 });
 
-test("Game fits the prototype laser only on a boot that writes nothing", async () => {
+test("Game fits the prototype laser on a new game or a boot that writes nothing, never into a loaded save", async () => {
 	const main = await Bun.file(
 		new URL("../src/main.ts", import.meta.url),
 	).text();
@@ -457,7 +457,7 @@ test("Game fits the prototype laser only on a boot that writes nothing", async (
 	expect(at).toBeGreaterThan(0);
 	expect(main.slice(at, at + 120)).toContain("if (!writesNothing) return;");
 	expect(main).toContain(
-		"if (MINING_ON) game.fitPrototypeMiningLaser(plan.writesNothing);",
+		"game.fitPrototypeMiningLaser(plan.writesNothing || plan.loaded === null);",
 	);
 });
 

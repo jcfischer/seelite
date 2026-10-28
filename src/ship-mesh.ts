@@ -2645,7 +2645,7 @@ function* prepareLongwallSteps(
 ): Generator<void, THREE.Group> {
 	batchLongwallHull(scene);
 	yield;
-	batchLongwallAnchors(scene);
+	if (!longwallStrutsPosable) batchLongwallAnchors(scene);
 	yield;
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
@@ -2855,6 +2855,70 @@ function batchLongwallHull(scene: THREE.Group): void {
  * and in place, holding only the foot's lamp, so a node that poses the
  * anchors can split them again from the export.
  */
+let longwallStrutsPosable = false;
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * Keep the four struts' part groups whole so the drill prototype can pose them
+ * (D-D1). Called before the model installs; a miner then draws each strut as
+ * the export's 19 meshes rather than one batch per paint.
+ */
+export function keepLongwallStrutsPosable(): void {
+	longwallStrutsPosable = true;
+}
+
+/** One strut's joints in the export's metres: base, elbow and foot, at `deployment` 0…1. */
+export interface StrutJoints {
+	deployment: number;
+	base: readonly number[];
+	elbow: readonly number[];
+	foot: readonly number[];
+}
+
+const STRUT_FORWARD = new THREE.Vector3(0, 0, 1);
+
+/** Pose strut `index` of a built Longwall's model level to `joints`, as the #803 study's viewer does. */
+export function poseLongwallStrut(
+	level: THREE.Object3D,
+	index: number,
+	joints: StrutJoints,
+): void {
+	const part = (name: string) =>
+		level.getObjectByName(`anchor-${index}-${name}`);
+	const body = part("body");
+	const sleeve = part("sleeve");
+	const foot = part("foot");
+	const lower = part("lower");
+	const rod = part("lower-rod");
+	const joint = part("elbow");
+	if (!body || !sleeve || !foot || !lower || !rod || !joint) return;
+	const base = new THREE.Vector3().fromArray(joints.base as number[]);
+	const elbow = new THREE.Vector3().fromArray(joints.elbow as number[]);
+	const end = new THREE.Vector3().fromArray(joints.foot as number[]);
+	const upper = elbow.clone().sub(base);
+	const upperLength = upper.length();
+	const direction = upper.normalize();
+	const lowerVec = end.clone().sub(elbow);
+	const lowerLength = lowerVec.length();
+	const lowerDirection = lowerVec.normalize();
+	body.position.copy(base);
+	body.quaternion.setFromUnitVectors(STRUT_FORWARD, direction);
+	body.scale.set(1.25, 1.25, (upperLength - 3) / 9);
+	sleeve.position.copy(base).addScaledVector(direction, upperLength - 3);
+	sleeve.quaternion.copy(body.quaternion);
+	sleeve.scale.set(1, 1, 3);
+	lower.position.copy(elbow);
+	lower.quaternion.setFromUnitVectors(STRUT_FORWARD, lowerDirection);
+	lower.scale.set(1.25, 1.25, (lowerLength - 3) / 6);
+	rod.position.copy(elbow).addScaledVector(lowerDirection, lowerLength - 3);
+	rod.quaternion.copy(lower.quaternion);
+	rod.scale.set(1, 1, 3);
+	joint.position.copy(elbow);
+	joint.quaternion.copy(lower.quaternion);
+	foot.position.copy(end);
+	foot.quaternion.identity().slerp(lower.quaternion, joints.deployment);
+}
+
 function batchLongwallAnchors(scene: THREE.Group): void {
 	scene.updateMatrixWorld(true);
 	const toScene = scene.matrixWorld.clone().invert();

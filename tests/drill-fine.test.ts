@@ -98,10 +98,9 @@ describe("fine control: what one input changes, flown through the miner's Hull s
 	});
 
 	test("entering and leaving fine control keeps the asked speed", () => {
-		expect(rescaleThrottle(0.002, ASSIST_CAP_KMS, FINE.surgeCapKms)).toBeCloseTo(
-			0.4,
-			9,
-		);
+		expect(
+			rescaleThrottle(0.002, ASSIST_CAP_KMS, FINE.surgeCapKms),
+		).toBeCloseTo(0.4, 9);
 		expect(rescaleThrottle(0.3, ASSIST_CAP_KMS, FINE.surgeCapKms)).toBe(1);
 		expect(rescaleThrottle(0.4, FINE.surgeCapKms, ASSIST_CAP_KMS)).toBeCloseTo(
 			0.002,
