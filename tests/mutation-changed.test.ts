@@ -1,16 +1,32 @@
 import { describe, expect, test } from "bun:test";
-import { parseWorkflow, commandOf } from "./lib/workflow-scan";
+import { readFileSync } from "node:fs";
 import {
 	changedRanges,
 	moduleIndex,
 	mutableReason,
-	testsFor,
-	survivors,
-	strykerConfig,
 	mutationConcurrency,
+	strykerConfig,
+	survivors,
+	testsFor,
 } from "../scripts/mutation-changed";
+import { commandOf, parseWorkflow } from "./lib/workflow-scan";
 
 describe("changed-line mutation selection", () => {
+	test("field-collision selects its fast same-stem file instead of the flight timing rows", () => {
+		const paths = [
+			"src/field-collision.ts",
+			"tests/field-flight-collision.test.ts",
+			"tests/field-collision.test.ts",
+			"tests/lib/field-rock-fixtures.ts",
+		];
+		const index = moduleIndex(
+			new Map(paths.map((path) => [path, readFileSync(path, "utf8")])),
+		);
+		expect(testsFor("src/field-collision.ts", index)).toEqual([
+			"tests/field-collision.test.ts",
+		]);
+	});
+
 	test("CI runs mutation only on PRs, remains advisory and uploads reports even on survivors", () => {
 		const workflow = parseWorkflow(".github/workflows/ci.yml");
 		const job = workflow.jobs.find((job) => job.name === "mutation-changed");
