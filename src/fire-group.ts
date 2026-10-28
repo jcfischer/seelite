@@ -5,7 +5,7 @@ import type { Loadout } from "./loadout";
 export interface FireGroup {
 	readonly label: string;
 	readonly trigger: "primary" | "secondary";
-	readonly kind: "lasers" | "scanner";
+	readonly kind: "lasers" | "scanner" | "drill";
 	readonly slots: readonly string[];
 }
 const LASERS = new Set([
@@ -14,7 +14,11 @@ const LASERS = new Set([
 	"military-laser",
 	"mining-laser",
 ]);
-export function fireGroups(loadout: Loadout, hull: HullId): FireGroup[] {
+export function fireGroups(
+	loadout: Loadout,
+	hull: HullId,
+	drill = false,
+): FireGroup[] {
 	const slots = HULL_SPECS[hull].slots;
 	const lasers: FireGroup[] = slots
 		.filter((s) => s.kind === "hardpoint" && LASERS.has(loadout[s.key]?.module))
@@ -45,6 +49,13 @@ export function fireGroups(loadout: Loadout, hull: HullId): FireGroup[] {
 			trigger: "primary",
 			kind: "scanner",
 			slots: scanners,
+		});
+	if (drill && HULL_SPECS[hull].cutter)
+		result.push({
+			label: "BUILT-IN DRILL",
+			trigger: "primary",
+			kind: "drill",
+			slots: [],
 		});
 	return result;
 }

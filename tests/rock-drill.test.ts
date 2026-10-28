@@ -24,7 +24,6 @@ const nose = v3(0, 0, 1);
 const up = v3(0, 1, 0);
 const face = drillFaceKm(v3(), nose, up, cutter, 1);
 
-/** A flat face square to the nose, `gapKm` ahead of the cutter face, on the mouth. */
 const square = (over: Partial<DrillContactInput> = {}): DrillContactInput => {
 	const gapKm = 0.0005;
 	return {
@@ -109,7 +108,6 @@ describe("contact", () => {
 	test("sliding is read against the spinning surface, not the rock's centre", () => {
 		const spin = v3(DRILL.slideKms * 2, 0, 0);
 		expect(drillContact(square({ surfaceVel: spin })).block).toBe("SLIDING");
-		// Matched to the surface, the same ground speed is contact.
 		expect(
 			drillContact(square({ surfaceVel: spin, faceVel: spin })).block,
 		).toBeNull();
@@ -143,7 +141,6 @@ describe("the feed", () => {
 			e = stepFeed(e, true, 1 / 60, roomKm, cutter);
 		expect(e * cutter.feedTravelKm).toBeLessThanOrEqual(roomKm);
 		expect(e).toBeLessThan(1);
-		// Already further out than the room: it holds, it does not jump back.
 		expect(stepFeed(0.9, true, 1 / 60, roomKm, cutter)).toBe(0.9);
 	});
 
@@ -193,7 +190,6 @@ describe("extraction and conservation", () => {
 
 	test("no contact, no output: and partial progress is dropped when contact is lost", () => {
 		expect(run(10, () => ({ key: null })).tonnes).toBe(0);
-		// Bursts of contact each worth under a tonne never add up to one.
 		const burstS = 0.9 / DRILL.rateTPerS;
 		const flicker = run(10 * (burstS + 1), (s) => ({
 			key: s % (burstS + 1) < burstS ? "rock:a:1" : null,

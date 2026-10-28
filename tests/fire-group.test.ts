@@ -66,3 +66,19 @@ test("one laser is one group; scanner, empty and non-primary devices", () => {
 	expect(armed.firesLaser(empty)).toBe(false);
 	expect(new ArmedFireGroup().label(groups)).toBe("H1 PULSE LASER · 1/2");
 });
+test("the miner's built-in drill is its own group behind the mining flag (#872 D13, #920)", () => {
+	const miner = stockLoadout("miner");
+	const without = fireGroups(miner, "miner");
+	expect(without.some((g) => g.kind === "drill")).toBe(false);
+	const groups = fireGroups(miner, "miner", true);
+	expect(groups.at(-1)).toEqual({
+		label: "BUILT-IN DRILL",
+		trigger: "primary",
+		kind: "drill",
+		slots: [],
+	});
+	expect(groups.slice(0, -1)).toEqual(without);
+	expect(fireGroups(stockLoadout("courier"), "courier", true)).toEqual(
+		fireGroups(stockLoadout("courier"), "courier"),
+	);
+});

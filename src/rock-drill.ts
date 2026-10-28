@@ -94,17 +94,14 @@ export type DrillBlock =
 	| "NO DEEP DEPOSIT"
 	| "OFF DEPOSIT";
 
+/** One frame's contact facts. Velocities star-centric; `hit` is the drawn surface met along the nose from the face; `deepMouth` is the deep deposit's unit direction from the rock's centre. */
 export interface DrillContactInput {
 	extension: number;
 	nose: Vec3;
-	/** The cutter face's velocity, star-centric. */
 	faceVel: Vec3;
-	/** The drawn rock surface met along the nose from the face, or `null`. */
 	hit: { point: Vec3; normal: Vec3; distKm: number } | null;
-	/** The rock surface's velocity at `hit.point`: the rock's motion and its spin. */
 	surfaceVel: Vec3;
 	rockCentre: Vec3;
-	/** The deep deposit's direction from the rock's centre, star-centric unit, or `null`. */
 	deepMouth: Vec3 | null;
 }
 
@@ -133,8 +130,7 @@ export function drillContact(i: DrillContactInput): DrillContact {
 	if (i.extension < 1) return { ...none, block: "DEPLOYING" };
 	if (!i.hit) return { ...none, block: "NO ROCK" };
 	const n = i.hit.normal;
-	const alignDeg =
-		Math.acos(Math.min(1, Math.max(-1, -dot(i.nose, n)))) * DEG;
+	const alignDeg = Math.acos(Math.min(1, Math.max(-1, -dot(i.nose, n)))) * DEG;
 	const u = sub(i.faceVel, i.surfaceVel);
 	const un = dot(u, n);
 	const closingKms = Math.max(0, -un);
