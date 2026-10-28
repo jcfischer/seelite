@@ -12,6 +12,11 @@ import { join } from "node:path";
 
 const TARGET = "tests/timings.json";
 const SHARD_ARTIFACT = /^unit-timings-\d+$/;
+const SHARDS = Number(
+	readFileSync(".github/workflows/ci.yml", "utf8").match(
+		/^\s+total: \[(\d+)\]$/m,
+	)?.[1],
+);
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8" }).trim();
 
@@ -43,8 +48,10 @@ const dir = mkdtempSync(join(tmpdir(), "unit-timings-"));
 try {
 	gh(["run", "download", runId, "--pattern", "unit-timings-*", "--dir", dir]);
 	const shards = readdirSync(dir).filter((name) => SHARD_ARTIFACT.test(name));
-	if (shards.length === 0) {
-		console.error(`update-unit-timings: run ${runId} has no shard timings`);
+	if (shards.length !== SHARDS) {
+		console.error(
+			`update-unit-timings: run ${runId} has ${shards.length} of ${SHARDS} shard timings`,
+		);
 		process.exit(1);
 	}
 	const files = {};
