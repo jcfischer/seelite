@@ -5,9 +5,16 @@
  * tonne leaves the deposit when it is released, so a lost fragment restores nothing.
  * Every figure here is a provisional candidate for #922's economic measurement.
  */
+import { SCOOP_REFUSAL_TEXT } from "./cargo-notice";
 import { type DepositRow, debitAt } from "./deposit-state";
 import { type Grade, gradeOutputScale } from "./module-catalog";
+import {
+	type ScoopGear,
+	type ScoopRefusal,
+	scoopAttempt,
+} from "./raider-wreck";
 import type { OreFamily, OreGrade } from "./rock-survey";
+import { CANISTER_SCOOP_CHARGE_E } from "./scoop-window";
 import {
 	add,
 	cross,
@@ -20,7 +27,7 @@ import {
 	v3,
 } from "./vec3";
 
-/** Candidate extraction and scoop figures. The scoop window and charge are #1095 D5 and D6. */
+/** Candidate extraction figures. The scoop window and charge are the fitted scoop's (#1095 D5, D6; node #1100). */
 export const EXTRACTION = {
 	ejectKms: 0.01,
 	ejectSpread: 0.6,
@@ -30,9 +37,6 @@ export const EXTRACTION = {
 	driftPullKmsPerS: 0.004,
 	driftRangeKm: 3,
 	oreShareE: 0.5,
-	scoopRadiusKm: 0.05,
-	scoopSpeedKms: 0.25,
-	scoopChargeE: 2,
 } as const;
 
 /** The share of removed rock that comes away as ore: grade E 0.5, D 0.4, A 0.75 (O6 of #927's review). */
@@ -304,7 +308,17 @@ export function releaseFragment(
 }
 
 /** What the caller's hold and bank say about one scoop attempt. */
-export type ScoopVerdict = "taken" | "hold-full" | "low-energy";
+export type ScoopVerdict = "taken" | "hold-full" | ScoopRefusal;
+
+/** The cockpit notice for each refused fragment, one row per verdict so a new refusal cannot fall through. */
+export const FRAGMENT_REFUSAL_NOTICE: Record<
+	Exclude<ScoopVerdict, "taken">,
+	string
+> = {
+	"hold-full": "HOLD FULL · FRAGMENT LEFT",
+	"no-scoop": SCOOP_REFUSAL_TEXT["no-scoop"].toUpperCase(),
+	"low-bank": `ENERGY BELOW ${CANISTER_SCOOP_CHARGE_E} E · FRAGMENT LEFT`,
+};
 
 export interface FragmentStep {
 	kept: Fragment[];
@@ -313,17 +327,11 @@ export interface FragmentStep {
 	lost: Fragment[];
 }
 
-/** Whether the ship is inside a fragment's scoop window: close, and slow relative to it. */
-export const inScoopWindow = (f: Anchor, ship: Anchor): boolean =>
-	lengthSq(sub(f.pos, ship.pos)) <=
-		EXTRACTION.scoopRadiusKm * EXTRACTION.scoopRadiusKm &&
-	lengthSq(sub(f.vel, ship.vel)) <=
-		EXTRACTION.scoopSpeedKms * EXTRACTION.scoopSpeedKms;
-
 /**
  * One frame of fragments at `now`, with the ship where it is at `now`: expired ones
- * are lost, and ore fragments in the window are offered to `accept`, which pays the
- * charge and fills the hold. `rockOf` is `null` for a rock too far to resolve; such
+ * are lost, and ore fragments in the fitted scoop's window (`gear`, as a canister's)
+ * are offered to `accept`, which fills the hold and pays the charge. A ship with no
+ * scoop, or a bank below the charge, is refused without being offered. `rockOf` is `null` for a rock too far to resolve; such
  * a fragment only ages. Waste is never scooped.
  */
 export function stepFragments(
@@ -331,7 +339,9 @@ export function stepFragments(
 	ship: Anchor,
 	now: number,
 	rockOf: (f: Fragment) => Anchor | null,
-	accept: (f: Fragment) => ScoopVerdict,
+	gear: ScoopGear,
+	bankE: () => number,
+	accept: (f: Fragment) => "taken" | "hold-full",
 ): FragmentStep {
 	const out: FragmentStep = { kept: [], taken: [], refused: [], lost: [] };
 	for (const f of fragments) {
@@ -340,14 +350,18 @@ export function stepFragments(
 			continue;
 		}
 		const rock = f.ore ? rockOf(f) : null;
-		if (rock && inScoopWindow(fragmentAt(f, rock, now), ship)) {
+		const attempt = rock
+			? scoopAttempt(fragmentAt(f, rock, now), ship, gear, bankE())
+			: "out";
+		if (attempt === "take") {
 			const verdict = accept(f);
 			if (verdict === "taken") {
 				out.taken.push(f);
 				continue;
 			}
 			out.refused.push({ fragment: f, verdict });
-		}
+		} else if (attempt !== "out")
+			out.refused.push({ fragment: f, verdict: attempt });
 		out.kept.push(f);
 	}
 	return out;

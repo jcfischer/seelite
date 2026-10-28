@@ -29,9 +29,9 @@ import {
 	prototypeMiningLaserSlot,
 	type Cut,
 	debitSurface,
-	EXTRACTION,
 	type Anchor,
 	type Fragment,
+	FRAGMENT_REFUSAL_NOTICE,
 	fragmentAt,
 	oreShare,
 	pullFragment,
@@ -9737,15 +9737,12 @@ class Game {
 			this.world.ship,
 			now,
 			(f) => this.fragmentRock(f.rockId),
+			this.flownCapacity(),
+			() => this.condition.energy,
 			(f) => {
 				const hold = this.minedHold();
 				if (hold.usedT + 1 > hold.capacityT) return "hold-full";
-				if (this.condition.energy < EXTRACTION.scoopChargeE)
-					return "low-energy";
-				this.condition = {
-					...this.condition,
-					energy: this.condition.energy - EXTRACTION.scoopChargeE,
-				};
+				this.spendScoopCharge();
 				const name = f.ore ? oreCargoName(f.ore.family, f.ore.grade) : "";
 				this.minedOre = {
 					...this.minedOre,
@@ -9761,14 +9758,10 @@ class Game {
 		for (const f of scooped.taken)
 			if (f.ore)
 				this.sayMining(
-					`SCOOPED 1 T ${oreCargoName(f.ore.family, f.ore.grade).toUpperCase()} · -${EXTRACTION.scoopChargeE} E`,
+					`SCOOPED 1 T ${oreCargoName(f.ore.family, f.ore.grade).toUpperCase()} · -${CANISTER_SCOOP_CHARGE_E} E`,
 				);
 		for (const { verdict } of scooped.refused)
-			this.sayMining(
-				verdict === "hold-full"
-					? "HOLD FULL · FRAGMENT LEFT"
-					: `ENERGY BELOW ${EXTRACTION.scoopChargeE} E · FRAGMENT LEFT`,
-			);
+			this.sayMining(FRAGMENT_REFUSAL_NOTICE[verdict]);
 		if (scooped.lost.length)
 			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
 	}
