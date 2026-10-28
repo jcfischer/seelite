@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { debitAt } from "../src/deposit-state";
+import { POLICY } from "../src/module-catalog";
+import {
+	CANISTER_SCOOP_CHARGE_E,
+	CANISTER_SCOOP_RADIUS_KM,
+	CANISTER_SCOOP_SPEED_KMS,
+	STOCK_SCOOP,
+	scoops,
+} from "../src/raider-wreck";
 import {
 	beamHit,
 	beginCut,
@@ -8,7 +16,6 @@ import {
 	type Fragment,
 	firedExtraction,
 	fragmentAt,
-	inScoopWindow,
 	oreShare,
 	prototypeMiningLaserSlot,
 	pullFragment,
@@ -169,15 +176,58 @@ describe("fragments", () => {
 		...over,
 	});
 	const rock = () => still;
+	const bank = () => 100;
+	const NO_SCOOP = { scoopRadiusKm: 0, scoopSpeedKms: 0 };
+	const sized = (size: 1 | 2 | 3) => ({
+		scoopRadiusKm: CANISTER_SCOOP_RADIUS_KM * POLICY.sizeScale[size],
+		scoopSpeedKms: CANISTER_SCOOP_SPEED_KMS,
+	});
+	const offer = (
+		gear: typeof STOCK_SCOOP,
+		at: number,
+		energy = 100,
+		over: Partial<Fragment> = {},
+	) => {
+		let offered = 0;
+		const s = stepFragments(
+			[sitting({ offset: v3(at, 0, 0), ...over })],
+			still,
+			10,
+			rock,
+			gear,
+			() => energy,
+			() => {
+				offered++;
+				return "taken";
+			},
+		);
+		return { s, offered };
+	};
 
 	test("one in the window is offered and taken", () => {
-		const s = stepFragments([sitting()], still, 10, rock, () => "taken");
+		const s = stepFragments(
+			[sitting()],
+			still,
+			10,
+			rock,
+			STOCK_SCOOP,
+			bank,
+			() => "taken",
+		);
 		expect(s.taken).toHaveLength(1);
 		expect(s.kept).toHaveLength(0);
 	});
 
 	test("a refused one stays and says why", () => {
-		const s = stepFragments([sitting()], still, 10, rock, () => "hold-full");
+		const s = stepFragments(
+			[sitting()],
+			still,
+			10,
+			rock,
+			STOCK_SCOOP,
+			bank,
+			() => "hold-full",
+		);
 		expect(s.kept).toHaveLength(1);
 		expect(s.refused[0].verdict).toBe("hold-full");
 	});
@@ -193,6 +243,8 @@ describe("fragments", () => {
 			still,
 			0,
 			rock,
+			STOCK_SCOOP,
+			bank,
 			count,
 		);
 		stepFragments(
@@ -200,10 +252,64 @@ describe("fragments", () => {
 			still,
 			10,
 			rock,
+			STOCK_SCOOP,
+			bank,
 			count,
 		);
-		stepFragments([sitting()], still, 10, () => null, count);
+		stepFragments([sitting()], still, 10, () => null, STOCK_SCOOP, bank, count);
 		expect(offered).toBe(0);
+	});
+
+	test("a ship with no scoop takes nothing and is told inside today's window", () => {
+		const { s, offered } = offer(NO_SCOOP, 0.01);
+		expect(offered).toBe(0);
+		expect(s.taken).toHaveLength(0);
+		expect(s.kept).toHaveLength(1);
+		expect(s.refused[0].verdict).toBe("no-scoop");
+	});
+
+	test("a ship with no scoop is silent about a fragment outside today's window", () => {
+		const { s, offered } = offer(NO_SCOOP, 0.06);
+		expect(offered).toBe(0);
+		expect(s.refused).toHaveLength(0);
+		expect(s.kept).toHaveLength(1);
+	});
+
+	test("an unfitted ship still lets an expired fragment go, and waste stays unsaid", () => {
+		const gone = offer(NO_SCOOP, 0.01, 100, { expiresAt: 5 });
+		expect(gone.s.lost).toHaveLength(1);
+		expect(gone.s.refused).toHaveLength(0);
+		const waste = offer(NO_SCOOP, 0.01, 100, { ore: null });
+		expect(waste.s.refused).toHaveLength(0);
+	});
+
+	test("the window is the fitted scoop's: a small one ends at its own radius", () => {
+		const just = CANISTER_SCOOP_RADIUS_KM * POLICY.sizeScale[1];
+		expect(offer(sized(1), just * 0.9).offered).toBe(1);
+		expect(offer(sized(1), just * 1.1).offered).toBe(0);
+	});
+
+	test("a larger scoop takes what the stock window misses", () => {
+		const big = sized(3);
+		const at = CANISTER_SCOOP_RADIUS_KM * 1.2;
+		expect(POLICY.sizeScale[3]).toBeGreaterThan(1.2);
+		expect(offer(STOCK_SCOOP, at).offered).toBe(0);
+		expect(offer(big, at).offered).toBe(1);
+	});
+
+	test("the speed tolerance is the fitted scoop's too", () => {
+		const fast = { ...STOCK_SCOOP, scoopSpeedKms: 0.5 };
+		const f = { ejectVel: v3(0.4, 0, 0), bornAt: 10 };
+		expect(offer(STOCK_SCOOP, 0.01, 100, f).offered).toBe(0);
+		expect(offer(fast, 0.01, 100, f).offered).toBe(1);
+	});
+
+	test("a bank below the pickup charge refuses it and the fragment stays", () => {
+		const low = offer(STOCK_SCOOP, 0.01, CANISTER_SCOOP_CHARGE_E - 0.1);
+		expect(low.offered).toBe(0);
+		expect(low.s.kept).toHaveLength(1);
+		expect(low.s.refused[0].verdict).toBe("low-bank");
+		expect(offer(STOCK_SCOOP, 0.01, CANISTER_SCOOP_CHARGE_E).offered).toBe(1);
 	});
 
 	test("the window reads the fragment and the ship at the same moment", () => {
@@ -213,6 +319,8 @@ describe("fragments", () => {
 			moving,
 			10,
 			() => moving,
+			STOCK_SCOOP,
+			bank,
 			() => "taken",
 		);
 		expect(s.taken).toHaveLength(1);
@@ -225,6 +333,8 @@ describe("fragments", () => {
 			still,
 			10,
 			rock,
+			STOCK_SCOOP,
+			bank,
 			() => {
 				offered++;
 				return "taken";
@@ -270,7 +380,7 @@ describe("the drift toward the ship", () => {
 				vel: rock.vel,
 			};
 			f = pullFragment(f, r, s, t, dt);
-			reached = inScoopWindow(fragmentAt(f, r, t), s);
+			reached = scoops(fragmentAt(f, r, t), s, STOCK_SCOOP);
 		}
 		expect(reached).toBe(true);
 		const v = f.ejectVel;

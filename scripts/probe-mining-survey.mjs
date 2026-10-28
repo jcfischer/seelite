@@ -316,7 +316,24 @@ try {
 				await window.__placeShipAt(f.pos, f.vel);
 				for (let i = 0; i < 3; i++) g.step(dt);
 			};
-			await visit(ore[0]);
+			const noScoop = { present: !!ore[0] };
+			if (ore[0]) {
+				const fitted = g.commander;
+				const { i1: _scoop, ...bare } = fitted.loadout;
+				g.commander = { ...fitted, loadout: bare };
+				const hadMined = g.minedT;
+				const refusedBefore = g.miningLog.refused;
+				await visit(ore[0]);
+				for (let i = 0; i < 2; i++)
+					await new Promise((r) => requestAnimationFrame(r));
+				noScoop.left = g.fragmentPlaces().some((p) => p.id === ore[0].id);
+				noScoop.minedDelta = g.minedT - hadMined;
+				noScoop.refused = g.miningLog.refused - refusedBefore;
+				noScoop.notice = g.miningLineRender?.notice;
+				g.commander = fitted;
+				await visit(ore[0]);
+				noScoop.refitTaken = g.minedT - hadMined;
+			}
 			const took = { ...g.miningLog, mined: { ...g.minedOre } };
 			g.rightTab = "Hold";
 			g.step(dt);
@@ -343,6 +360,7 @@ try {
 				took,
 				holdRows,
 				full,
+				noScoop,
 				hasSecond: !!ore[1],
 				lost: g.miningLog.lost,
 				surface,
@@ -366,6 +384,20 @@ try {
 			!scoop.hasSecond ||
 				(scoop.full.refused > 0 && /HOLD FULL/.test(scoop.full.notice ?? "")),
 			JSON.stringify(scoop.full),
+		);
+		check(
+			"with the scoop removed a fragment in the window is refused and the no-scoop notice is painted",
+			scoop.noScoop.present &&
+				scoop.noScoop.left &&
+				scoop.noScoop.minedDelta === 0 &&
+				scoop.noScoop.refused > 0 &&
+				/NO CARGO SCOOP FITTED/.test(scoop.noScoop.notice ?? ""),
+			JSON.stringify(scoop.noScoop),
+		);
+		check(
+			"with the scoop fitted again the same fragment is taken",
+			scoop.noScoop.refitTaken === 1,
+			JSON.stringify(scoop.noScoop),
 		);
 		check(
 			"an expired fragment is lost and the deposit is not restored",
