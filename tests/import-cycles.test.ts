@@ -29,7 +29,10 @@ describe("first import alone (node #1114)", () => {
 				join(dir, "b.ts"),
 				'import { A } from "./a";\nexport const B = A + 1;\n',
 			);
-			writeFileSync(join(dir, "c.ts"), 'import { A } from "./a";\nexport const C = A;\n');
+			writeFileSync(
+				join(dir, "c.ts"),
+				'import { A } from "./a";\nexport const C = A;\n',
+			);
 			const members = cycleMembers(importGraph(dir));
 			expect(members).toEqual([join(dir, "a.ts"), join(dir, "b.ts")]);
 			const tdz = await firstImportTdz(members, dir);

@@ -46,6 +46,7 @@ import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
 import type { RouteDetection } from "./raider-slots";
+import { RELAY_SIGNAL_RANGE_KM } from "./relay-signal-range";
 import { type RelayPlan, relayPlan, relaySlot } from "./relay-slot";
 import {
 	type Orbit,
@@ -61,6 +62,8 @@ import {
 	type TransitionEvent,
 	effectiveCarrier,
 } from "./world-state";
+
+export { RELAY_SIGNAL_RANGE_KM };
 
 /** What the cockpit calls it once identified, and what the log calls it. */
 export const RELAY_NAME = "Pirate relay";
@@ -96,10 +99,6 @@ export const relayActive = (record: {
 	stream(record.seed, DOMAIN.RELAY_ACTIVE)() <
 	relayActiveChance(record.government);
 
-/** Inside this range of the relay a 1E long-range scanner reads its signal. A
- *  fitted scanner's range is its row's `signalRangeKm`, scaled by size and
- *  grade from this (#977): 3A reads 8,437.5 km. */
-export const RELAY_SIGNAL_RANGE_KM = 2_500;
 /** Inside this range the relay is identified: a knowledge row, a contact, a
  *  target. Well under scanner range, so the scanner cannot find it first. */
 export const RELAY_IDENTIFY_RANGE_KM = 150;

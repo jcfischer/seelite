@@ -112,7 +112,9 @@ export async function firstImportTdz(
 		await proc.exited;
 		clearTimeout(timer);
 		const error = stderr.split("\n").find((line) => TDZ.test(line));
-		return error ? { module: relative(cwd, resolve(cwd, module)), error } : null;
+		return error
+			? { module: relative(cwd, resolve(cwd, module)), error }
+			: null;
 	});
 	return (await Promise.all(runs)).filter((r) => r !== null);
 }
