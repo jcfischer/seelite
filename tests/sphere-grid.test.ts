@@ -245,4 +245,20 @@ describe("the box grid (node #1118)", () => {
 			expect(query(grid, cube({ x: at, y: at, z: at }, 0))).toContain(1);
 		expect(query(grid, cube({ x: 0, y: 0, z: 0 }, 10)).sort()).toEqual([0, 1]);
 	});
+
+	test("a box spanning nine cells a side is indexed by cell, and one more layer makes it large", () => {
+		const nine: Bounds = {
+			minX: 5,
+			minY: 5,
+			minZ: 5,
+			maxX: 13.5,
+			maxY: 13.5,
+			maxZ: 13.5,
+		};
+		const ten: Bounds = { ...nine, maxZ: 14.5 };
+		expect(buildBoxGrid([nine], 1).large).toEqual([]);
+		expect(buildBoxGrid([nine], 1).cells.size).toBe(729);
+		expect(buildBoxGrid([ten], 1).large).toEqual([0]);
+		expect(buildBoxGrid([ten], 1).cells.size).toBe(0);
+	});
 });
