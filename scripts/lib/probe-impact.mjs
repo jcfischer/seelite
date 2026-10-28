@@ -8,12 +8,12 @@ import {
 } from "./probe-contract-roots.mjs";
 
 const snapshotEdges = new WeakMap();
-const parsedStems = new Map();
+const parsedCandidates = new Map();
 
 function importCandidatesByText(file, text) {
-	const cached = parsedStems.get(file);
-	if (cached?.text === text) return cached.stems;
-	const stems = [];
+	const cached = parsedCandidates.get(file);
+	if (cached?.text === text) return cached.candidateLists;
+	const candidateLists = [];
 	const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
 	const walk = (node) => {
 		if (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) return;
@@ -26,7 +26,7 @@ function importCandidatesByText(file, text) {
 				const stem = raw.startsWith("/src/")
 					? raw.slice(1)
 					: posix.normalize(posix.join(posix.dirname(file), raw));
-				stems.push([
+				candidateLists.push([
 					stem,
 					`${stem}.ts`,
 					`${stem}.js`,
@@ -38,8 +38,8 @@ function importCandidatesByText(file, text) {
 		ts.forEachChild(node, walk);
 	};
 	walk(ast);
-	parsedStems.set(file, { text, stems });
-	return stems;
+	parsedCandidates.set(file, { text, candidateLists });
+	return candidateLists;
 }
 
 /** Import closure over a git snapshot, including browser imports and worker URLs. */
