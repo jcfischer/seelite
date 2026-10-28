@@ -1,10 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import * as asteroidField from "../src/asteroid-field";
 import {
 	FIELD_PROFILE,
 	type FieldPlan,
 	type Rock,
 	fieldCells,
+	fieldCentre,
 	fieldRocks,
 	rockLocal,
 	rockPose,
@@ -371,5 +373,34 @@ describe("the flown ship against field rocks (node #969)", () => {
 		const before = reads;
 		expect(fieldRockSolids(world.system, ship, clock)).toEqual(first);
 		expect(reads).toBe(before);
+	});
+
+	test("a step inside one occupied cell poses only that cell's rock", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const cells = fieldCells(FIELD_PROFILE[plan.profile]);
+		const rock = rocks.reduce((a, b) =>
+			length(cells[b.slot]) < length(cells[a.slot]) ? b : a,
+		);
+		const clock = { fromTime: world.gameTime, toTime: world.gameTime + DT };
+		const centreAt = (time: number) =>
+			add(
+				fieldCentre(plan, time),
+				rotateByQuat(plan.rotation, cells[rock.slot]),
+			);
+		const ship = {
+			start: centreAt(clock.fromTime),
+			end: centreAt(clock.toTime),
+			reachKm: HULL_REACH_KM,
+		};
+		const pose = spyOn(asteroidField, "rockPose");
+		try {
+			fieldRockSolids(world.system, ship, clock);
+			expect(pose.mock.calls.map(([p, r, t]) => [p.id, r.slot, t])).toEqual([
+				[plan.id, rock.slot, clock.fromTime],
+				[plan.id, rock.slot, clock.toTime],
+			]);
+		} finally {
+			pose.mockRestore();
+		}
 	});
 });
