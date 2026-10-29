@@ -21,7 +21,7 @@ add_light('SUN', 4.5, (-.5, -.6, -.6))
 add_light('SUN', 1.2, (.6, -.2, .7), (.6, .75, 1))
 cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam); sc.camera = cam
 sc.render.resolution_x, sc.render.resolution_y = 1536, 1024
-for name, loc, look, lens in [('front', (5, 8.5, 44), (0, 4.6, 21), 50), ('three-quarter', (-34, 26, 52), (0, 3, 8), 30)]:
+for name, loc, look, lens in [('front', (5, 8.5, 44), (0, 4.6, 21), 50), ('three-quarter', (-30, 17, 64), (0, 3, 12), 30)]:
     look_at(cam, loc, look); cam.data.lens = lens
     sc.render.filepath = f'{out}-{name}.png'
     bpy.ops.render.render(write_still=True)
