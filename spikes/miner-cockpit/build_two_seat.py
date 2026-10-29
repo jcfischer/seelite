@@ -242,16 +242,18 @@ def pod(xc, eye, width, screens, name):
     frame = (u, v, n)
     def at(a, b, d=0): return face_c + u * a + v * b + n * d
     h = .56
-    box(at(0, 0, -.16), (width, h, .3), dark, frame=frame)
+    box(at(0, 0, -.26), (width, h, .5), dark, frame=frame)
     box(at(0, 0, -.005), (width - .04, h - .04, .02), steel, frame=frame)
-    box(at(0, h / 2 + .03, -.12), (width + .06, .07, .4), steel, frame=frame)
+    box(at(0, h / 2 + .05, -.2), (width + .1, .1, .62), steel, frame=frame)
+    box(at(0, h / 2 + .105, -.2), (width + .02, .012, .56), dark, frame=frame)
     for s in [-1, 1]:
-        box(at(s * (width / 2 + .03), 0, -.12), (.06, h + .1, .4), steel, frame=frame)
+        box(at(s * (width / 2 + .05), -.04, -.2), (.1, h + .18, .62), steel, frame=frame)
+        for k in range(5): box(at(s * (width / 2 + .101), -.15 + k * .045, -.25), (.004, .02, .3), black, frame=frame)
     base_top = face_c.y - h / 2 * v.y
     box(Vector((xc, (FLOOR_Y + base_top) / 2, zc - .3)), (width - .14, base_top - FLOOR_Y, .4), black)
     for s in [-1, 1]:
-        box(Vector((xc + s * (width / 2 - .07), (FLOOR_Y + base_top) / 2, zc - .05)), (.04, base_top - FLOOR_Y, .7), steel)
-    box(Vector((xc, FLOOR_Y + .25, zc + .1)), (width - .3, .42, .05), black)
+        box(Vector((xc + s * (width / 2 + .03), (FLOOR_Y + base_top) / 2, zc - .12)), (.1, base_top - FLOOR_Y, .78), steel)
+    box(Vector((xc, FLOOR_Y + .25, zc + .1)), (width - .3, .42, .05), hose)
     for s in [-1, 1]: box(Vector((xc + s * .15, FLOOR_Y + .05, zc + .25)), (.12, .04, .22), alloy)
     for sname, a, b, w, hh in screens:
         box(at(a, b, .012), (w + .03, hh + .03, .02), black, frame=frame)
@@ -259,46 +261,58 @@ def pod(xc, eye, width, screens, name):
         bezel(at(a, b, .036), w + .04, hh + .04, .022, black, frame=frame)
     return at, frame
 
-pilot_at, pilot_frame = pod(-.22, Vector((0, 0, 0)), 1.16, [
-    ('screen-radar', -.1, .04, .54, .34),
-    ('screen-flight', .34, .15, .26, .13),
-    ('screen-target', .34, -.06, .26, .13),
-    ('screen-status', -.1, -.21, .54, .05),
-    ('screen-systems', -.42, -.2, .1, .08),
+pilot_at, pilot_frame = pod(-.28, Vector((0, 0, 0)), 1.28, [
+    ('screen-radar', -.04, .03, .6, .38),
+    ('screen-flight', .45, .13, .3, .15),
+    ('screen-target', .45, -.08, .3, .15),
+    ('screen-status', -.04, -.22, .6, .045),
+    ('screen-systems', -.5, -.2, .1, .07),
 ], 'pilot')
-for b in [.12, 0, -.1]:
-    c = pilot_at(-.42, b, .02); tube(c, c + pilot_frame[2] * .045, .03, alloy, 14); tube(c + pilot_frame[2] * .045, c + pilot_frame[2] * .07, .022, black, 12)
-plane('label-radar', pilot_at(-.1, -.16, .026), .3, .025, frame=pilot_frame)
-plane('label-flight', pilot_at(.34, .24, .026), .22, .022, frame=pilot_frame)
-plane('label-target', pilot_at(.34, -.15, .026), .22, .022, frame=pilot_frame)
-miner_at, miner_frame = pod(1.42, MINER_EYE, 1.16, [
-    ('screen-survey', -.36, .19, .21, .14),
-    ('screen-ore', -.12, .19, .21, .14),
-    ('screen-drill', .12, .19, .21, .14),
-    ('screen-anchor', .36, .19, .21, .14),
-    ('screen-stance', -.36, -.08, .2, .27),
-    ('screen-drillcam', -.04, -.08, .36, .27),
-    ('screen-lasers', .33, -.08, .21, .27),
+for b in [.15, .05, -.05]:
+    c = pilot_at(-.52, b, .02); tube(c, c + pilot_frame[2] * .045, .03, alloy, 14); tube(c + pilot_frame[2] * .045, c + pilot_frame[2] * .07, .022, black, 12)
+plane('label-radar', pilot_at(-.04, -.185, .026), .3, .025, frame=pilot_frame)
+plane('label-flight', pilot_at(.45, .235, .026), .22, .022, frame=pilot_frame)
+plane('label-target', pilot_at(.45, -.175, .026), .22, .022, frame=pilot_frame)
+miner_at, miner_frame = pod(1.48, MINER_EYE, 1.28, [
+    ('screen-survey', -.45, .19, .26, .13),
+    ('screen-ore', -.15, .19, .26, .13),
+    ('screen-drill', .15, .19, .26, .13),
+    ('screen-anchor', .45, .19, .26, .13),
+    ('screen-stance', -.47, -.07, .2, .3),
+    ('screen-drillcam', -.04, -.07, .52, .3),
+    ('screen-lasers', .44, -.07, .24, .3),
 ], 'miner')
 
 # Two seats behind the eyes: painted shells with tan cushions, wings, headrests, and a ribbed hose
 # down each outer edge. The pilot's flight stick and the miner's feed lever sit on the aisle armrests.
-shell = material('seat-shell', (.34, .45, .54), .5, .45)
+shell = material('seat-shell', (.24, .38, .46), .55, .42)
 cushion = material('seat-cushion', (.55, .40, .24), .05, .72, textured=False)
+def bucket_surface(xs, y0, y1, half, wing, z0, lean, depth, mat, flip=False, nx=10, ny=8):
+    """A U-section shell: across the seat the surface curls forward into wings, and it leans back with height."""
+    rows = []
+    for j in range(ny + 1):
+        y = y0 + (y1 - y0) * j / ny
+        rows.append([Vector((xs + t * half, y, z0 + lean * (y - y0) - wing * t ** 4 + depth)) for t in [-1 + 2 * i / nx for i in range(nx + 1)]])
+    for a, b in zip(rows, rows[1:]):
+        for i in range(nx):
+            q = [a[i], a[i + 1], b[i + 1], b[i]]
+            poly(list(reversed(q)) if flip else q, mat)
+    return rows
 for xs, aisle in [(0.0, 1), (1.2, -1)]:
-    box((xs, -1.0, .42), (.62, .1, .62), shell)
-    box((xs, -.92, .4), (.52, .08, .54), cushion)
-    tube((xs, FLOOR_Y, .42), (xs, -1.05, .42), .07, alloy, 12)
-    back = Vector((xs, -.45, .8)); tilt = basis(.18)
-    box(back, (.62, 1.0, .12), shell, frame=tilt)
-    box(back - tilt[2] * .08, (.48, .86, .06), cushion, frame=tilt)
-    for s in [-1, 1]:
-        wing = (Matrix.Rotation(-s * .35, 3, 'Y') @ tilt[0], tilt[1], Matrix.Rotation(-s * .35, 3, 'Y') @ tilt[2])
-        box(back + Vector((s * .3, 0, -.05)), (.1, .95, .22), shell, frame=wing)
-    box(Vector((xs, .14, .86)), (.36, .26, .14), shell)
-    box(Vector((xs, .14, .78)), (.3, .2, .04), cushion)
-    for s in [-1, 1]:
-        ribbed_hose([(xs + s * .38, .0, .9), (xs + s * .44, -.4, .95), (xs + s * .42, -.9, .85), (xs + s * .34, FLOOR_Y + .1, .7)], .04)
+    outer_side = -aisle
+    o = bucket_surface(xs, -.95, .02, .32, .2, .84, .14, 0, shell)
+    i = bucket_surface(xs, -.9, -.02, .26, .14, .84, .14, -.06, cushion, flip=True)
+    for row in o: pass
+    h_o = bucket_surface(xs, .05, .3, .17, .06, .98, .1, 0, shell, ny=3, nx=6)
+    bucket_surface(xs, .07, .28, .14, .04, .98, .1, -.05, cushion, flip=True, ny=3, nx=6)
+    for t in [-1, 1]:
+        tube((xs + t * .1, -.02, .98), (xs + t * .1, .06, .985), .015, alloy, 8)
+    box((xs, -1.0, .45), (.6, .1, .6), shell)
+    box((xs, -.92, .43), (.5, .08, .52), cushion)
+    for t in [-1, 1]: box((xs + t * .27, -.86, .43), (.07, .1, .5), cushion)
+    tube((xs, FLOOR_Y, .45), (xs, -1.05, .45), .07, alloy, 12)
+    ribbed_hose([(xs + outer_side * .33, .0, .92), (xs + outer_side * .42, -.35, 1.0), (xs + outer_side * .44, -.8, .95), (xs + outer_side * .36, FLOOR_Y + .1, .75)], .045)
+    for y in [-.2, -.6]: tube((xs + outer_side * .36, y, .9), (xs + outer_side * .44, y, .96), .055, alloy, 12)
     arm = Vector((xs + aisle * .38, -.72, .1))
     box(arm, (.14, .1, .62), shell)
     box(arm + Vector((0, .06, 0)), (.12, .03, .56), dark)
@@ -307,7 +321,7 @@ for xs, aisle in [(0.0, 1), (1.2, -1)]:
     if aisle > 0:
         tube(grip, grip + Vector((0, .05, 0)), .05, black, 14)
         tube(grip + Vector((0, .05, 0)), grip + Vector((0, .1, .01)), .032, black, 14)
-        tube(grip + Vector((0, .1, .01)), grip + Vector((0, .2, .02)), .016, alloy, 12)
+        tube(grip + Vector((0, .1, .01)), grip + Vector((0, .2, .02)), .016, black, 12)
         curve_path([grip + Vector((0, .19, .02)), grip + Vector((0, .28, .0)), grip + Vector((0, .36, -.01))], .034, black, sides=14, steps=6)
         box(grip + Vector((0, .3, -.045)), (.02, .04, .02), red)
         box(grip + Vector((0, .38, -.01)), (.05, .02, .05), dark)

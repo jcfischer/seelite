@@ -58,31 +58,35 @@ for o in sc.objects:
         nt.links.new(tex.outputs['Color'], em.inputs['Color']); nt.links.new(em.outputs[0], outn.inputs['Surface'])
         o.data.materials.clear(); o.data.materials.append(m)
 
-# Rock face ahead: a displaced slab with the miner study's asteroid albedo.
-bpy.ops.mesh.primitive_grid_add(x_subdivisions=220, y_subdivisions=220, size=90)
-rock = bpy.context.active_object; rock.name = 'rock-face'
+# Rock face ahead: the game's own fractured-block asteroid (src/models/asteroids.glb), scaled up so
+# its face fills the glass, its baked albedo warmed toward sandstone.
+before = set(bpy.data.objects)
+bpy.ops.import_scene.gltf(filepath=str(ROOT / 'src/models/asteroids.glb'))
+imported = [o for o in bpy.data.objects if o not in before]
+rock = next(o for o in imported if o.name.startswith('rock_00_fractured-block_L0'))
+for o in imported:
+    if o is not rock: bpy.data.objects.remove(o, do_unlink=True)
+rock.name = 'rock-face'; rock.parent = None
+rock.scale = (60, 60, 60); rock.rotation_euler = (math.radians(15), math.radians(25), math.radians(40))
+rock.location = B(-1, -8, -62)
 for f in rock.data.polygons: f.use_smooth = True
-rock.rotation_euler = (math.radians(90 - 8), math.radians(4), math.radians(-6))
-rock.location = B(-1, -3, -16)
-rm = bpy.data.materials.new('rock'); rm.use_nodes = True
-nt = rm.node_tree; bsdf = nt.nodes['Principled BSDF']
-tex = nt.nodes.new('ShaderNodeTexImage'); tex.image = bpy.data.images.load(str(ROOT / 'spikes/longwall-miner/asteroid-albedo.png'))
-mapping = nt.nodes.new('ShaderNodeMapping'); mapping.inputs['Scale'].default_value = (3, 3, 3)
-coord = nt.nodes.new('ShaderNodeTexCoord')
-nt.links.new(coord.outputs['UV'], mapping.inputs['Vector']); nt.links.new(mapping.outputs[0], tex.inputs['Vector'])
-nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color']); bsdf.inputs['Roughness'].default_value = .9
-bump = nt.nodes.new('ShaderNodeBump'); bump.inputs['Strength'].default_value = .8
-nt.links.new(tex.outputs['Color'], bump.inputs['Height']); nt.links.new(bump.outputs[0], bsdf.inputs['Normal'])
-rock.data.materials.append(rm)
-tint = nt.nodes.new('ShaderNodeMixRGB'); tint.blend_type = 'MULTIPLY'; tint.inputs[0].default_value = 1
-tint.inputs[2].default_value = (1.9, .98, .28, 1)
-nt.links.new(tex.outputs['Color'], tint.inputs[1]); nt.links.new(tint.outputs[0], bsdf.inputs['Base Color'])
-disp_tex = bpy.data.textures.new('rock-relief', 'CLOUDS'); disp_tex.noise_scale = 6; disp_tex.noise_depth = 4
-mod = rock.modifiers.new('relief', 'DISPLACE'); mod.texture = disp_tex; mod.strength = 4.5; mod.texture_coords = 'LOCAL'
+for m in rock.data.materials:
+    nt = m.node_tree; bsdf = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+    src_link = next((l for l in nt.links if l.to_socket == bsdf.inputs['Base Color']), None)
+    tint = nt.nodes.new('ShaderNodeMixRGB'); tint.blend_type = 'MULTIPLY'; tint.inputs[0].default_value = 1
+    tint.inputs[2].default_value = (2.3, 1.45, .62, 1)
+    if src_link:
+        nt.links.new(src_link.from_socket, tint.inputs[1])
+    else:
+        tint.inputs[1].default_value = bsdf.inputs['Base Color'].default_value
+    nt.links.new(tint.outputs[0], bsdf.inputs['Base Color'])
+if rock.name not in sc.collection.objects: sc.collection.objects.link(rock)
+for c in list(rock.users_collection):
+    if c is not sc.collection: c.objects.unlink(rock)
 
 # Light: a hard warm sun on the rock, warm lamps inside, cool bounce from the screens.
 w = sc.world or bpy.data.worlds.new('w'); sc.world = w; w.use_nodes = True
-w.node_tree.nodes['Background'].inputs[0].default_value = (.01, .022, .034, 1)
+w.node_tree.nodes['Background'].inputs[0].default_value = (.004, .005, .007, 1)
 def light(kind, name, energy, loc=None, rot_to=None, color=(1, 1, 1), size=None):
     l = bpy.data.lights.new(name, kind); l.energy = energy; l.color = color
     if size is not None: l.shadow_soft_size = size
@@ -93,16 +97,16 @@ def light(kind, name, energy, loc=None, rot_to=None, color=(1, 1, 1), size=None)
 outside = bpy.data.collections.new('sunlit-outside'); sc.collection.children.link(outside)
 outside.objects.link(rock)
 for o in hull.objects: outside.objects.link(o)
-sun = light('SUN', 'sun', 16, rot_to=B(.9, -.45, -.25), color=(1, .8, .52), size=.02)
+sun = light('SUN', 'sun', 22, rot_to=B(.9, -.45, -.25), color=(1, .8, .52), size=.02)
 sun.light_linking.receiver_collection = outside
-sun.data.use_shadow = False
-fill_sun = light('SUN', 'rock-fill', 4, rot_to=B(-.3, -.3, -1), color=(1, .85, .65), size=.1)
+sun.data.use_shadow = True
+fill_sun = light('SUN', 'rock-fill', 5, rot_to=B(-.3, -.3, -1), color=(1, .85, .65), size=.1)
 fill_sun.light_linking.receiver_collection = outside
 fill_sun.data.use_shadow = False
 cabin = bpy.data.collections.new('cabin'); sc.collection.children.link(cabin)
 for o in list(sc.collection.objects):
     if o.type == 'MESH' and o.name != 'rock-face': cabin.objects.link(o)
-inner_sun = light('SUN', 'cabin-sun', 6, rot_to=B(.45, -.5, .75), color=(1, .82, .58), size=.03)
+inner_sun = light('SUN', 'cabin-sun', 24, rot_to=B(.35, -.62, .7), color=(1, .82, .58), size=.03)
 inner_sun.light_linking.receiver_collection = cabin
 AMBER = (1, .5, .14)
 for p in [(-1.0, .45, -1.85), (2.2, .45, -1.85), (-.85, -.3, -2.5), (2.05, -.3, -2.5)]:
@@ -114,8 +118,8 @@ for k, dx in enumerate([-.6, .6]):
 chin = light('AREA', 'chin-key', 25, B(.6, -1.0, -5.5), rot_to=B(0, .35, 1), color=(1, .88, .72)); chin.data.size = 2.0
 for sx, d in [(-1.9, 1), (3.1, -1)]:
     side = light('AREA', f'side-window-key-{sx}', 80, B(sx + d * -1.2, .1, -.5), rot_to=B(d, -.15, -.1), color=(1, .9, .8)); side.data.size = 2.4
-light('AREA', 'cabin-fill', 130, B(.6, .9, .3), rot_to=B(0, -1, -.3), color=(.75, .85, 1)).data.size = 2.5
-light('AREA', 'floor-bounce', 90, B(.6, -1.1, -.6), rot_to=B(0, 1, 0), color=(.85, .9, 1)).data.size = 2.5
+light('AREA', 'cabin-fill', 90, B(.6, .9, .3), rot_to=B(0, -1, -.3), color=(1, .9, .8)).data.size = 2.5
+light('AREA', 'floor-bounce', 80, B(.6, -1.1, -.6), rot_to=B(0, 1, 0), color=(1, .85, .66)).data.size = 2.5
 for x in [0, 1.2]:
     light('POINT', f'pod-spill-{x}', 5, B(x, -.35, -.85), color=(.45, .85, 1), size=.4)
 
@@ -126,10 +130,10 @@ sc.render.resolution_x, sc.render.resolution_y = 1536, 1024
 if view == 'pilot':
     cam.location = (0, 0, 0); cam.rotation_euler = (math.radians(90), 0, 0)
 else:
-    cam.location = B(.6, .3, 1.45); cam.rotation_euler = (math.radians(90 - 10), 0, 0); cam.data.angle = math.radians(70)
+    cam.location = B(.6, .08, 1.18); cam.rotation_euler = (math.radians(90 - 6), 0, 0); cam.data.angle = math.radians(72)
 engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
 sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in engines else 'BLENDER_EEVEE'
-sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = .8
+sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = 1.1
 try:
     sc.eevee.use_shadows = True; sc.eevee.use_raytracing = True
 except Exception: pass
