@@ -777,9 +777,7 @@ def drum_girder(theta,z0,z1,step=.9):
 
 approved_drum=drum
 def drum():
- G.BACKING=True
- try:info=approved_drum()
- finally:G.BACKING=False
+ info=approved_drum()
  for z in [-44,-42.8,-41.6,-24,-22.8,-21.6,-20.4,-16,-14.8,8,9.2,10.4,11.6,18,19.2,20.4,21.6]:drum_window_row(z)
  for k in range(8):
   theta=(2*k+1)*math.tau/16
@@ -1294,6 +1292,9 @@ if FLIGHT and (not wanted or any(a!='salvage' and a not in FLIGHT_FRAMES and a n
 for name,fn in [('ring',ring),('drum',drum),('assembly',assembly),('wheel',wheel),('derrick',derrick),('buoy',buoy),('rig',rig),('cluster',cluster),('salvage',salvage)]:
  if wanted and name not in wanted:continue
  bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();random.seed(810)
+ # The flight export draws no seam strips, so a trade form's seams would open
+ # onto its empty hull: back every plate (see geometry.BACKING).
+ G.BACKING=FLIGHT and name in TRADE_FLIGHT_NAMES
  print('BUILDING',name,flush=True);info=fn()
  if FLIGHT and name not in TRADE_FLIGHT_NAMES:
   if name in FLIGHT_FRAMES:

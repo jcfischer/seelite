@@ -149,11 +149,13 @@ SYSTEM=0 FORM=c TYPES=trade SCALES=1 CLEAN=1 \
   (z 47 against a face at 45.18); they now sit on it.
 - Closed plate seams: `plate()` shrinks each plate to 98.2% about its
   centre, and the flight export draws no seam strips, so the Drum's seams
-  opened onto the empty inside. With `geometry.BACKING` set for the Drum, each
-  plate gets a dark full-size backing behind it. Rays cast at the barrel from
+  opened onto the empty inside. `geometry.BACKING`, set for every trade
+  flight export (Ring, Drum, Wheel), gives each plate a dark full-size backing
+  behind it. Rays cast at the barrel from
   outside that reach inside r 330 m: 9,708 of 576,000 before, 0 after; at the
-  entry face, 196 of 80,604 before, 0 after. Ring and Wheel use the same
-  plates and were not measured.
+  entry face, 196 of 80,604 before, 0 after. On an axis-aligned grid every
+  2.5 m from all six sides, the share of rays that went more than 2 m deeper
+  before the backing (through a seam): Drum 0.38%, Ring 0.65%, Wheel 0.72%.
 - The key light and beacon gain came with the Ring commit (`src/trade-flight.ts`).
 - `src/trade-proxies.ts`: regenerated from the new model.
 
@@ -162,10 +164,21 @@ The rear rim sets the form's reach: 0.687 of the 0.70 km silhouette, unchanged.
 | | before | this branch |
 |---|---|---|
 | Triangles | 82,088 | 268,068 |
-| `src/models/trade-drum.glb` | 4.9 MB | 10.9 MB |
+| `src/models/trade-drum.glb` | 4.7 MB | 10.4 MB |
 | Drum proxy hull boxes | — | 4,347 |
 
 `evidence/drum-before-after.png`: left before, right this branch; rows
 face-close, hero, wide, sun-side close, sun-side wide, taken before the
 entry-face pass. The captures ran while
 another worktree's probe suite held the GPU lock; they are images, not timings.
+
+## Seams on the Ring and Wheel
+
+The same backing on the Ring and Wheel flight exports. Ring triangles 485,440
+-> 504,380 and `trade-ring.glb` 19.0 -> 19.7 MB; Wheel 122,812 -> 139,136
+and `trade-wheel.glb` 6.1 -> 6.7 MB (MiB, as the tables). Proxy hull boxes: Ring 8,676, Wheel
+5,033. The Drum export is byte-identical to its last commit. The outposts use
+the same plates and were not changed or measured.
+
+`viewer.ts`: `?flight=1` loads the game models (`src/models/trade-<name>.glb`,
+Ring, Drum and Wheel only) in place of the review files.
