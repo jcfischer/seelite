@@ -140,6 +140,18 @@ const label = (
 	s,
 ) => `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="64"><rect width="1200" height="64" fill="#0b1114"/>
 ${text(600, 46, s, "#c9d3d6", 40, "middle", 'letter-spacing="10" font-weight="bold"')}</svg>`;
+const leg = (x1, y1, x2, y2) =>
+	`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${CYAN}" stroke-width="5"/><circle cx="${x2}" cy="${y2}" r="12" fill="${GREEN}"/>`;
+faces.stance = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="540"><rect width="400" height="540" fill="#02080b"/>
+<rect x="10" y="10" width="380" height="520" fill="none" stroke="${CYAN}" stroke-width="4"/>
+${text(200, 58, "SHIP STANCE", PALE, 34, "middle")}
+<rect x="170" y="110" width="60" height="330" rx="10" fill="none" stroke="${CYAN}" stroke-width="5"/>
+<rect x="150" y="150" width="100" height="60" fill="none" stroke="${CYAN}" stroke-width="3"/>
+<rect x="150" y="240" width="100" height="60" fill="none" stroke="${CYAN}" stroke-width="3"/>
+<rect x="150" y="330" width="100" height="60" fill="none" stroke="${CYAN}" stroke-width="3"/>
+<circle cx="200" cy="96" r="22" fill="none" stroke="${AMBER}" stroke-width="5"/>
+${leg(175, 140, 70, 90)}${leg(225, 140, 330, 90)}${leg(175, 190, 60, 230)}${leg(225, 190, 340, 230)}
+${text(200, 500, "4/4 FEET GRIPPED", GREEN, 28, "middle")}</svg>`;
 faces["label-flight"] = label("FLIGHT / RELATIVE");
 faces["label-radar"] = label("SCOPE / RANGE SELECT");
 faces["label-target"] = label("NAVIGATION COMPUTER");
