@@ -45,7 +45,7 @@ alloy = material('exposed-machined-edges', (.32, .34, .33), .82, .32)
 black = material('rubber-and-recess', (.012, .018, .02), .12, .72, textured=False)
 ochre = material('service-ochre', (.68, .32, .045), .35, .52)
 red = material('guarded-red', (.4, .032, .02), .3, .45)
-warm = material('amber-work-lights', (1, .38, .05), .15, .28, 3.0)
+warm = material('amber-work-lights', (1, .28, .01), .15, .28, .8)
 cyan = material('cyan-indicators', (.04, .6, .8), .1, .35, 2)
 lining = material('cabin-lining', (.40, .46, .50), .45, .5)
 hose = material('hose-rubber', (.01, .011, .012), 0, .9, textured=False)
@@ -141,7 +141,7 @@ def ribbed_hose(points, r, mat=hose, pitch=.024, sides=18):
 def bezel(c, w, h, thickness, mat, a=0, frame=None):
     c = Vector(c); u, v, n = frame or basis(a)
     def ring(w, h):
-        cut = .055
+        cut = min(.055, min(w, h) * .09)
         return [c + u * x + v * y for x, y in [(-w / 2 + cut, -h / 2), (w / 2 - cut, -h / 2), (w / 2, -h / 2 + cut), (w / 2, h / 2 - cut), (w / 2 - cut, h / 2), (-w / 2 + cut, h / 2), (-w / 2, h / 2 - cut), (-w / 2, -h / 2 + cut)]]
     outer = ring(w, h); inner = ring(w - 2 * thickness, h - 2 * thickness)
     for i in range(8):
@@ -201,7 +201,7 @@ def opening(q_out, q_in, inset, bar=False, n_hint=None):
     for a in range(len(q_in)):
         b = (a + 1) % len(q_in)
         poly([q_in[b], q_in[a], reveal[a], reveal[b]], lining)
-        poly([reveal[b], reveal[a], glass[a], glass[b]], steel)
+        poly([reveal[b], reveal[a], glass[a], glass[b]], dark)
         tube(reveal[a] - n * .012, reveal[b] - n * .012, .016, alloy, 6)
     if bar:
         m0 = reveal[0].lerp(reveal[1], .5); m1 = reveal[3].lerp(reveal[2], .5)
@@ -248,29 +248,30 @@ def pod(xc, eye, width, screens, name):
     for s in [-1, 1]:
         box(at(s * (width / 2 + .03), 0, -.12), (.06, h + .1, .4), steel, frame=frame)
     base_top = face_c.y - h / 2 * v.y
-    box(Vector((xc, (FLOOR_Y + base_top) / 2, zc - .18)), (width - .1, base_top - FLOOR_Y, .55), dark)
+    box(Vector((xc, (FLOOR_Y + base_top) / 2, zc - .3)), (width - .14, base_top - FLOOR_Y, .4), black)
     for s in [-1, 1]:
-        for k in range(6):
-            box(Vector((xc + s * (width / 2 - .08), FLOOR_Y + .2 + k * .07, zc + .07)), (.03, .03, .22), black)
+        box(Vector((xc + s * (width / 2 - .07), (FLOOR_Y + base_top) / 2, zc - .05)), (.04, base_top - FLOOR_Y, .7), steel)
+    box(Vector((xc, FLOOR_Y + .25, zc + .1)), (width - .3, .42, .05), black)
+    for s in [-1, 1]: box(Vector((xc + s * .15, FLOOR_Y + .05, zc + .25)), (.12, .04, .22), alloy)
     for sname, a, b, w, hh in screens:
         box(at(a, b, .012), (w + .03, hh + .03, .02), black, frame=frame)
         plane(sname, at(a, b, .024), w, hh, frame=frame)
         bezel(at(a, b, .036), w + .04, hh + .04, .022, black, frame=frame)
     return at, frame
 
-pilot_at, pilot_frame = pod(-.14, Vector((0, 0, 0)), 1.06, [
-    ('screen-radar', -.09, .05, .44, .27),
-    ('screen-flight', .32, .16, .28, .14),
-    ('screen-target', .32, -.06, .28, .14),
-    ('screen-status', -.09, -.2, .44, .06),
+pilot_at, pilot_frame = pod(-.22, Vector((0, 0, 0)), 1.16, [
+    ('screen-radar', -.1, .04, .54, .34),
+    ('screen-flight', .34, .15, .26, .13),
+    ('screen-target', .34, -.06, .26, .13),
+    ('screen-status', -.1, -.21, .54, .05),
     ('screen-systems', -.42, -.2, .1, .08),
 ], 'pilot')
 for b in [.12, 0, -.1]:
     c = pilot_at(-.42, b, .02); tube(c, c + pilot_frame[2] * .045, .03, alloy, 14); tube(c + pilot_frame[2] * .045, c + pilot_frame[2] * .07, .022, black, 12)
-plane('label-radar', pilot_at(-.09, -.12, .026), .3, .025, frame=pilot_frame)
-plane('label-flight', pilot_at(.32, .25, .026), .22, .022, frame=pilot_frame)
-plane('label-target', pilot_at(.32, -.15, .026), .22, .022, frame=pilot_frame)
-miner_at, miner_frame = pod(1.34, MINER_EYE, 1.06, [
+plane('label-radar', pilot_at(-.1, -.16, .026), .3, .025, frame=pilot_frame)
+plane('label-flight', pilot_at(.34, .24, .026), .22, .022, frame=pilot_frame)
+plane('label-target', pilot_at(.34, -.15, .026), .22, .022, frame=pilot_frame)
+miner_at, miner_frame = pod(1.42, MINER_EYE, 1.16, [
     ('screen-survey', -.36, .19, .21, .14),
     ('screen-ore', -.12, .19, .21, .14),
     ('screen-drill', .12, .19, .21, .14),
@@ -300,19 +301,22 @@ for xs, aisle in [(0.0, 1), (1.2, -1)]:
         ribbed_hose([(xs + s * .38, .0, .9), (xs + s * .44, -.4, .95), (xs + s * .42, -.9, .85), (xs + s * .34, FLOOR_Y + .1, .7)], .04)
     arm = Vector((xs + aisle * .38, -.72, .1))
     box(arm, (.14, .1, .62), shell)
-    box(arm + Vector((0, .06, 0)), (.12, .03, .56), cushion)
+    box(arm + Vector((0, .06, 0)), (.12, .03, .56), dark)
     box(Vector((arm.x, (FLOOR_Y - .72) / 2, .25)), (.12, -.72 - FLOOR_Y, .3), dark)
     grip = arm + Vector((0, .07, -.22))
     if aisle > 0:
-        tube(grip, grip + Vector((0, .14, .02)), .02, alloy, 12)
-        box(grip + Vector((0, .24, .02)), (.06, .16, .07), black)
-        box(grip + Vector((0, .33, .0)), (.05, .02, .04), red)
+        tube(grip, grip + Vector((0, .05, 0)), .05, black, 14)
+        tube(grip + Vector((0, .05, 0)), grip + Vector((0, .1, .01)), .032, black, 14)
+        tube(grip + Vector((0, .1, .01)), grip + Vector((0, .2, .02)), .016, alloy, 12)
+        curve_path([grip + Vector((0, .19, .02)), grip + Vector((0, .28, .0)), grip + Vector((0, .36, -.01))], .034, black, sides=14, steps=6)
+        box(grip + Vector((0, .3, -.045)), (.02, .04, .02), red)
+        box(grip + Vector((0, .38, -.01)), (.05, .02, .05), dark)
     else:
         for dx in [-.025, .025]: tube(grip + Vector((dx, 0, 0)), grip + Vector((dx, .14, -.04)), .013, alloy, 8)
         box(grip + Vector((0, .16, -.05)), (.09, .035, .035), red)
 
 # Discrete amber lamps on the window pillars and the header (#839).
-for p in [(-1.05, .45, -1.95), (2.25, .45, -1.95), (-.9, -.3, -2.6), (2.1, -.3, -2.6)]:
+for p in [(-1.05, .45, -1.95), (2.25, .45, -1.95), (-.95, .05, -2.25), (2.15, .05, -2.25), (-.9, -.3, -2.6), (2.1, -.3, -2.6)]:
     c = Vector(p); f = facing(c, Vector((CENTRE_X, 0, 0)))
     box(c, (.09, .15, .05), black, frame=f); box(c + f[2] * .03, (.06, .11, .012), warm, frame=f)
 

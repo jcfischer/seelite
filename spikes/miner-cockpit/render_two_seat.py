@@ -61,6 +61,7 @@ for o in sc.objects:
 # Rock face ahead: a displaced slab with the miner study's asteroid albedo.
 bpy.ops.mesh.primitive_grid_add(x_subdivisions=220, y_subdivisions=220, size=90)
 rock = bpy.context.active_object; rock.name = 'rock-face'
+for f in rock.data.polygons: f.use_smooth = True
 rock.rotation_euler = (math.radians(90 - 8), math.radians(4), math.radians(-6))
 rock.location = B(-1, -3, -16)
 rm = bpy.data.materials.new('rock'); rm.use_nodes = True
@@ -74,7 +75,7 @@ bump = nt.nodes.new('ShaderNodeBump'); bump.inputs['Strength'].default_value = .
 nt.links.new(tex.outputs['Color'], bump.inputs['Height']); nt.links.new(bump.outputs[0], bsdf.inputs['Normal'])
 rock.data.materials.append(rm)
 tint = nt.nodes.new('ShaderNodeMixRGB'); tint.blend_type = 'MULTIPLY'; tint.inputs[0].default_value = 1
-tint.inputs[2].default_value = (2.5, 1.35, .42, 1)
+tint.inputs[2].default_value = (1.9, .98, .28, 1)
 nt.links.new(tex.outputs['Color'], tint.inputs[1]); nt.links.new(tint.outputs[0], bsdf.inputs['Base Color'])
 disp_tex = bpy.data.textures.new('rock-relief', 'CLOUDS'); disp_tex.noise_scale = 6; disp_tex.noise_depth = 4
 mod = rock.modifiers.new('relief', 'DISPLACE'); mod.texture = disp_tex; mod.strength = 4.5; mod.texture_coords = 'LOCAL'
@@ -92,12 +93,16 @@ def light(kind, name, energy, loc=None, rot_to=None, color=(1, 1, 1), size=None)
 outside = bpy.data.collections.new('sunlit-outside'); sc.collection.children.link(outside)
 outside.objects.link(rock)
 for o in hull.objects: outside.objects.link(o)
-sun = light('SUN', 'sun', 28, rot_to=B(.6, -.35, -.7), color=(1, .8, .52), size=.02)
+sun = light('SUN', 'sun', 16, rot_to=B(.9, -.45, -.25), color=(1, .8, .52), size=.02)
 sun.light_linking.receiver_collection = outside
+sun.data.use_shadow = False
+fill_sun = light('SUN', 'rock-fill', 4, rot_to=B(-.3, -.3, -1), color=(1, .85, .65), size=.1)
+fill_sun.light_linking.receiver_collection = outside
+fill_sun.data.use_shadow = False
 cabin = bpy.data.collections.new('cabin'); sc.collection.children.link(cabin)
 for o in list(sc.collection.objects):
     if o.type == 'MESH' and o.name != 'rock-face': cabin.objects.link(o)
-inner_sun = light('SUN', 'cabin-sun', 4.5, rot_to=B(-.25, -.55, .8), color=(1, .82, .58), size=.03)
+inner_sun = light('SUN', 'cabin-sun', 6, rot_to=B(.45, -.5, .75), color=(1, .82, .58), size=.03)
 inner_sun.light_linking.receiver_collection = cabin
 AMBER = (1, .5, .14)
 for p in [(-1.0, .45, -1.85), (2.2, .45, -1.85), (-.85, -.3, -2.5), (2.05, -.3, -2.5)]:
@@ -121,7 +126,7 @@ sc.render.resolution_x, sc.render.resolution_y = 1536, 1024
 if view == 'pilot':
     cam.location = (0, 0, 0); cam.rotation_euler = (math.radians(90), 0, 0)
 else:
-    cam.location = B(.6, .4, 1.25); cam.rotation_euler = (math.radians(90 - 13), 0, 0); cam.data.angle = math.radians(68)
+    cam.location = B(.6, .3, 1.45); cam.rotation_euler = (math.radians(90 - 10), 0, 0); cam.data.angle = math.radians(70)
 engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
 sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in engines else 'BLENDER_EEVEE'
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = .8
