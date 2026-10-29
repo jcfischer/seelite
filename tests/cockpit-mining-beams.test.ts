@@ -1,4 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import {
+	BEAM_CAPACITY,
+	BEAM_VERTICES_PER_STROKE,
+	newBeamQuads,
+	writeBeamQuads,
+} from "../src/beam-glass";
 import { fireGroups } from "../src/fire-group";
 import { HULL_SPECS, withPrototypeMountHardpoints } from "../src/hull";
 import { groupMuzzleIndices } from "../src/laser-modules";
@@ -115,4 +121,37 @@ test("anchored, a mount's cockpit beam runs the whole way from its muzzle to the
 	expect(fromMuzzle.total).toBeGreaterThan(200);
 	expect(fromMuzzle.visible).toBeGreaterThanOrEqual(12);
 	expect(pxOf(-0.0398).total).toBeLessThan(60);
+});
+
+test("the cockpit's beam layer holds both mount beams whole beside every tracer and the raider (F7)", () => {
+	const mounts = [-0.0053, 0.0053].map((x) => ({
+		muzzle: v3(x, 0.00581, -0.0228),
+		end: v3(x, 0.00581, -0.0531),
+		hit: true,
+	}));
+	const mining = mountBeamStrokes(
+		mounts,
+		v3(0, 0, -0.008),
+		{ x: 0, y: 0, z: 0, w: 1 },
+		Math.PI / 3,
+		1280 / 800,
+		0,
+	);
+	const gun = mining[0];
+	const strokes = [
+		...mining,
+		...Array.from({ length: spec.hardpoints + 1 }, (_, i) => ({
+			...gun,
+			from: { x: 0.2 + i * 0.1, y: 0.64 },
+			to: { x: 0.5, y: 0.5 },
+		})),
+	];
+	const quads = writeBeamQuads(
+		strokes,
+		1280,
+		800,
+		1,
+		newBeamQuads(BEAM_CAPACITY),
+	);
+	expect(quads.count).toBe(strokes.length * BEAM_VERTICES_PER_STROKE);
 });

@@ -111,6 +111,9 @@ export const BEAM_FEATHER_PX = 1;
 /** Vertices per stroke: two triangles, unindexed. */
 export const BEAM_VERTICES_PER_STROKE = 6;
 
+/** The most strokes one frame draws: a gun per hardpoint, the raider, and under `?mining=1` two Mining Laser beams of a glow and a core per segment (node #920, round 11). */
+export const BEAM_CAPACITY = 128;
+
 /** Attribute arrays for `strokes`, sized for at most `capacity` strokes. */
 export interface BeamQuads {
 	/** Clip-space x, y per vertex. */
