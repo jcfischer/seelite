@@ -3125,6 +3125,7 @@ class Game {
 	 */
 	private stationConsoleMessage: string | null = null;
 	scoopNotice = false;
+	private restoringDocked = false;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -20157,11 +20158,17 @@ class Game {
 		if (!station) return false;
 		const id = station.id;
 		const t0 = this.world.gameTime;
-		const ok = this.dockByProtocol(id, () => {
-			// D2: a failed re-dock is not undone — the ship stays beside the
-			// station, not at the arrival point.
-			return false;
-		});
+		this.restoringDocked = true;
+		let ok: boolean;
+		try {
+			ok = this.dockByProtocol(id, () => {
+				// D2: a failed re-dock is not undone — the ship stays beside the
+				// station, not at the arrival point.
+				return false;
+			});
+		} finally {
+			this.restoringDocked = false;
+		}
 		// D3: the clock moved on by the run-in.
 		const elapsed = this.world.gameTime - t0;
 		console.log(
@@ -20182,6 +20189,7 @@ class Game {
 	sayScoopNotice(): void {
 		if (
 			!this.scoopNotice ||
+			this.restoringDocked ||
 			this.dockPhase !== "docked" ||
 			this.stationConsoleMessage !== null
 		)
