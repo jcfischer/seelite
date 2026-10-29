@@ -2863,8 +2863,8 @@ let longwallStrutsPosable = false;
  * (D-D1). Called before the model installs; a miner then draws each strut as
  * the export's 19 meshes rather than one batch per paint.
  */
-export function keepLongwallStrutsPosable(): void {
-	longwallStrutsPosable = true;
+export function keepLongwallStrutsPosable(on = true): void {
+	longwallStrutsPosable = on;
 }
 
 /** One strut's joints in the export's metres: base, elbow and foot, at `deployment` 0…1. */
@@ -2983,13 +2983,13 @@ export function cockpitOcclusion(
 /**
  * https://github.com/jcfischer/seelite/issues/920
  * The Longwall as the cockpit sees it under `?mining=1` (round 9 F3, round 10
- * F5): of the mounts, and of the feed and struts while `drill` is set, only the
- * parts in `seen`, the ones `cockpitOcclusion` finds the hull leaves in view; the hull
+ * F5, round 11): of the mounts, the feed and the struts, only the parts in
+ * `seen`, the ones `cockpitOcclusion` finds the hull leaves in view; the hull
  * and every other part hidden. `null` puts back what each part drew before.
  */
 export function cockpitDrillView(
 	root: THREE.Object3D,
-	view: { drill: boolean; seen: ReadonlySet<string> } | null,
+	view: { seen: ReadonlySet<string> } | null,
 ): void {
 	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
 	const parts = full?.children[0]?.children ?? [];
@@ -3011,10 +3011,7 @@ export function cockpitDrillView(
 	full.visible = true;
 	for (const o of others) o.visible = false;
 	for (const o of parts)
-		o.visible =
-			seen.has(o.name) &&
-			(/^longwall-mount-/.test(o.name) ||
-				(view.drill && /^(feed|anchor-\d)/.test(o.name)));
+		o.visible = seen.has(o.name) && COCKPIT_PARTS.test(o.name);
 }
 
 /** Pose strut `index` of a built Longwall's model level to `joints`, as the #803 study's viewer does. */

@@ -69,7 +69,6 @@ import {
 	stepDrillSurface,
 	stepFeed,
 	stepSpin,
-	strutPose,
 	strutReach,
 	miningBeamRays,
 	glassTracerIndices,
@@ -949,8 +948,6 @@ import {
 	AFTER_BOOT_HULL_IDS,
 	buildShipMesh,
 	keepLongwallStrutsPosable,
-	LONGWALL_LEVEL_NAMES,
-	poseLongwallStrut,
 	rebuildAuthoredStandIn,
 	fleetLayout,
 	measureMuzzles,
@@ -958,7 +955,8 @@ import {
 	updateShipVisuals,
 	cockpitDrillView,
 } from "./ship-mesh";
-import { COCKPIT_OCCLUSION } from "./cockpit-occlusion-table";
+import { COCKPIT_OCCLUSION, cockpitSeenParts } from "./cockpit-occlusion-table";
+import { poseLongwallDrill } from "./drill-pose";
 import {
 	beamSegments,
 	muzzlesWorld,
@@ -1792,7 +1790,12 @@ const browserPlatform = (): string =>
 /** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
  *  forward, so the view is from the nose rather than from inside the cube. */
 const COCKPIT_FORWARD_KM = 0.008;
-const COCKPIT_SEEN_PARTS: ReadonlySet<string> = new Set(COCKPIT_OCCLUSION.seen);
+const COCKPIT_SEEN_PARTS = new Map(
+	COCKPIT_OCCLUSION.poses.map((pose) => [
+		pose.seen,
+		new Set(pose.seen) as ReadonlySet<string>,
+	]),
+);
 /** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
@@ -10514,18 +10517,13 @@ class Game {
 	private poseDrillMesh() {
 		const cutter = HULL_SPECS[this.flownHull].cutter;
 		if (!cutter) return;
-		const full = this.shipMesh.getObjectByName(LONGWALL_LEVEL_NAMES.full);
-		const feed = full?.getObjectByName("feed");
-		if (!full || !feed) return;
-		feed.userData.stowedZ ??= feed.position.z;
-		feed.position.z =
-			feed.userData.stowedZ + cutter.feedTravelKm * 1000 * this.drill.extension;
-		const rotor = feed.getObjectByName("rotor");
-		if (rotor) rotor.rotation.z = this.drill.rotorRad;
-		for (let i = 0; i < 4; i++) {
-			const target = this.drill.feet[i]?.target ?? strutReach(i).foot;
-			poseLongwallStrut(full, i, strutPose(i, this.drill.extension, target));
-		}
+		poseLongwallDrill(
+			this.shipMesh,
+			cutter,
+			this.drill.extension,
+			this.drill.rotorRad,
+			this.drill.feet.map((foot) => foot?.target),
+		);
 	}
 
 	private drawImpact(
@@ -19336,8 +19334,9 @@ class Game {
 			this.shipMesh,
 			drillView
 				? {
-						drill: this.drill.extension > 0 || this.drillArmed(),
-						seen: COCKPIT_SEEN_PARTS,
+						seen:
+							COCKPIT_SEEN_PARTS.get(cockpitSeenParts(this.drill.extension)) ??
+							new Set(),
 					}
 				: null,
 		);

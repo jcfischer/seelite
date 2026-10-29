@@ -77,9 +77,9 @@ test("the cockpit draws only the parts the hull leaves in view, and leaving puts
 				.parts.filter((p) => p.seen)
 				.map((p) => p.name),
 		);
-	cockpitDrillView(root, { drill: true, seen: at(COCKPIT_EYE) });
+	cockpitDrillView(root, { seen: at(COCKPIT_EYE) });
 	expect(drawn(root)).toEqual([]);
-	cockpitDrillView(root, { drill: true, seen: at(ABOVE_MOUNTS) });
+	cockpitDrillView(root, { seen: at(ABOVE_MOUNTS) });
 	const shown = drawn(root);
 	expect(shown.length).toBeGreaterThan(0);
 	for (const d of shown) expect(d.chain.some((n) => PARTS.test(n))).toBe(true);
