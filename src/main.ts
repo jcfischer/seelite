@@ -13376,7 +13376,13 @@ class Game {
 			fields: this.fieldDraws.map((d) => d.plan),
 			shipPos: this.world.ship.pos,
 			gameTime: this.world.gameTime,
-			body: null,
+			body: this.frameBody
+				? {
+						id: this.frameBody.id,
+						distKm: length(sub(this.frameBody.pos, this.world.ship.pos)),
+						velocityAt: this.bodyFrameSource(this.frameBody.id),
+					}
+				: null,
 		});
 		return frame.kind === "field" ? frame : null;
 	}

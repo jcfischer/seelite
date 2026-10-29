@@ -10,7 +10,8 @@ import {
 import { localFrameAt } from "../src/field-frame";
 import { generateGalaxy } from "../src/galaxy";
 import { generateContents } from "../src/system";
-import { add, length, sub } from "../src/vec3";
+import { NEAR_FAR_KM } from "../src/units";
+import { add, length, sub, v3 } from "../src/vec3";
 
 const rareField = (): FieldPlan => {
 	for (const record of generateGalaxy(0x5ee11e, 0).systems) {
@@ -37,7 +38,7 @@ test("inside a rare field with no body near, the local frame is the field's cent
 	expect(length(want)).toBeGreaterThan(1);
 });
 
-test("the field frame holds out to the field's ellipsoid, and a body beyond it keeps its own frame", () => {
+test("a ship at the cruise arrival point, 50 km outside the field, is in the field frame", () => {
 	const plan = rareField();
 	const t = 50;
 	const [a] = FIELD_PROFILE.rare.semiKm;
@@ -48,26 +49,39 @@ test("the field frame holds out to the field's ellipsoid, and a body beyond it k
 			y: along.y * km,
 			z: along.z * km,
 		});
-	const body = { id: "planet-x", velocityAt: () => ({ x: 9, y: 9, z: 9 }) };
-	const inside = localFrameAt({
+	const arrival = localFrameAt({
 		fields: [plan],
-		shipPos: at(a * 0.9),
-		gameTime: t,
-		body,
-	});
-	expect(inside.kind).toBe("field");
-	const outside = localFrameAt({
-		fields: [plan],
-		shipPos: at(a * 3),
-		gameTime: t,
-		body,
-	});
-	expect(outside.kind).toBe("body");
-	const star = localFrameAt({
-		fields: [plan],
-		shipPos: at(a * 3),
+		shipPos: at(a + 50),
 		gameTime: t,
 		body: null,
 	});
-	expect(star.kind).toBe("star");
+	expect(arrival.kind).toBe("field");
+	expect(arrival.id).toBe(plan.id);
+});
+
+test("the field frame holds within NEAR_FAR_KM of the field's centre, like a body's, and the nearer wins (#1139)", () => {
+	const plan = rareField();
+	const t = 50;
+	const along = rotateByQuat(plan.rotation, { x: 1, y: 0, z: 0 });
+	const at = (km: number) =>
+		add(fieldCentre(plan, t), {
+			x: along.x * km,
+			y: along.y * km,
+			z: along.z * km,
+		});
+	const frame = (km: number, body: { distKm: number } | null) =>
+		localFrameAt({
+			fields: [plan],
+			shipPos: at(km),
+			gameTime: t,
+			body: body && {
+				id: "planet-x",
+				distKm: body.distKm,
+				velocityAt: () => v3(9, 9, 9),
+			},
+		}).kind;
+	expect(frame(NEAR_FAR_KM * 0.99, null)).toBe("field");
+	expect(frame(NEAR_FAR_KM * 1.01, null)).toBe("star");
+	expect(frame(1000, { distKm: 5000 })).toBe("field");
+	expect(frame(1000, { distKm: 500 })).toBe("body");
 });
