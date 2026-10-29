@@ -585,8 +585,10 @@ carrier's signal.
 **Long-Range Scanner**:
 The module a pilot buys at a Shipyard for 1,000 Cr (#481, under #468) to read
 a **Pirate relay** at all: strength and bearing at range, identification much
-closer in, which is #43's close regime — `pirate-relay.ts` owns both figures
-and nothing restates them. Unfitted, nothing is read: no cue, no contact, no
+closer in, which is #43's close regime — `relay-signal-range.ts`, a leaf, owns
+the signal range so the module catalog can read it without a cycle (#1114),
+`pirate-relay.ts` owns the identify range and re-exports the other, and nothing
+restates them. Unfitted, nothing is read: no cue, no contact, no
 target, and no identification is recorded. **An identification already
 recorded is not erased, only unread** — the relay goes dark and is found again
 when the module is back. The relay's **Route detection** dial is deliberately

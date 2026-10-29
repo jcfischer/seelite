@@ -76,6 +76,7 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
+import { fieldRockSolids } from "./field-collision";
 import { planetApproachEntryTime } from "./planet-approach-boundary";
 import {
 	type Impact,
@@ -139,6 +140,7 @@ export type BodyKind =
 	| "ship"
 	| "relay"
 	| "field"
+	| "rock"
 	| "wreck"
 	| "cargo";
 
@@ -2432,6 +2434,7 @@ function sweepWorld(
 		},
 		starts,
 		{ fromTime: clock.fromTime, toTime: world.gameTime },
+		{ rocks: placement !== undefined },
 	);
 	const swept = sweepShip(motion, solids, clock.dt, {
 		planeS: cutS,
@@ -2978,12 +2981,18 @@ export function worldStarts(
  * `owner[i]` names the body `motions[i]` belongs to. One builder for every
  * ship the sim sweeps — the player, a raider, a carrier (node #664) — so a
  * change to what is solid lands once.
+ *
+ * **`options.rocks` adds the field rocks in reach** (node #969, `field-collision.ts`):
+ * the flown ship's sweep asks for them, a fleet ship's does not, because what a
+ * raider's controller steers clear of is `avoidanceSolids` and rocks are not in
+ * it. Each rock's owner is its own id, so a ghost and an impact name one rock.
  */
 export function worldSolids(
 	system: System,
 	ship: Reach,
 	starts: WorldStarts,
 	clock: { fromTime: number; toTime: number },
+	options: { rocks?: boolean } = {},
 ): { owner: string[]; motions: Solid[] } {
 	const owner: string[] = [];
 	const motions: Solid[] = [];
@@ -3037,6 +3046,11 @@ export function worldSolids(
 			continue;
 		owner.push(id);
 		motions.push(motion);
+	}
+	if (options.rocks) {
+		const rocks = fieldRockSolids(system, ship, clock);
+		owner.push(...rocks.owner);
+		motions.push(...rocks.motions);
 	}
 	return { owner, motions };
 }

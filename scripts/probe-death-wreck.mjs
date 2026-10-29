@@ -50,7 +50,7 @@ try {
 	await page.goto(gameUrl(origin, { seed: 47 }));
 	await bootedGame(page);
 	const fixture = await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
@@ -65,10 +65,13 @@ try {
 		g.commander = {
 			...g.commander,
 			cargo: { Food: 8, Gold: 12 },
-			loadout: migrateEquipment(g.commander.hull, [
-				"Escape Pod",
-				"Docking Computer",
-			]).loadout,
+			loadout: {
+				...migrateEquipment(g.commander.hull, [
+					"Escape Pod",
+					"Docking Computer",
+				]).loadout,
+				i1: makeModule("cargo-scoop", 1),
+			},
 		};
 		let at = Math.ceil(g.world.gameTime);
 		for (; at < 10000; at++) {
@@ -261,7 +264,7 @@ try {
 			fittingInventory(
 				scooped.saved.commander.state.recoveredFittings ?? [],
 			) === fittingInventory(expectedFittings) &&
-			Object.keys(scooped.saved.commander.state.loadout).length === 2 &&
+			Object.keys(scooped.saved.commander.state.loadout).length === 3 &&
 			!scooped.saved.world.galaxies[scooped.galaxyIndex].deathWreck,
 	);
 } finally {

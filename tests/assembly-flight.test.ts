@@ -79,7 +79,7 @@ describe("authored Assembly production blocks", () => {
 				expect(staticPart.matrixWorld.equals(before)).toBe(true);
 				mesh.root.rotation.z = -phase;
 				expect(corridorIntrusions(mesh.root, "trade").size).toBe(0);
-				expect(crossings(mesh.root, "trade")).toEqual([]);
+				expect(crossings(mesh.root, "trade", true)).toEqual([]);
 				let reach = 0;
 				forEachWorldTriangle(mesh.root, (t) => {
 					for (const v of [t.a, t.b, t.c])

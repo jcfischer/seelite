@@ -8,4 +8,5 @@ preload = [
 	"./tests/setup/tug-hull.ts",
 	"./tests/setup/voyager-hull.ts",
 	"./tests/setup/longwall-model.ts",
+	"./tests/setup/rock-shapes.ts",
 ]

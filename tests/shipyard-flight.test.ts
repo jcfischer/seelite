@@ -77,6 +77,50 @@ function overreaching(boxes: ProxyBox[], grid: TriangleGrid): Obb[] {
 }
 
 describe("node #818: the shipyards' collision proxies", () => {
+	test("the triangle grid's remembered hit changes no verdict", () => {
+		let a = 818;
+		const random = () => {
+			a = (a + 0x6d2b79f5) >>> 0;
+			let t = a;
+			t = Math.imul(t ^ (t >>> 15), t | 1);
+			t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+		};
+		const point = (scale: number) =>
+			new THREE.Vector3(random(), random(), random()).multiplyScalar(scale);
+		const tris = Array.from({ length: 300 }, () => {
+			const corner = point(100);
+			return [
+				corner,
+				corner.clone().add(point(8)),
+				corner.clone().add(point(8)),
+			] as [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+		});
+		const grid = new TriangleGrid(tris);
+		const q = new THREE.Vector3();
+		const triangle = new THREE.Triangle();
+		const p = point(100);
+		const verdicts = { near: 0, far: 0 };
+		for (let i = 0; i < 4000; i++) {
+			p.add(point(4).subScalar(2));
+			const limit = 0.5 + 6 * random();
+			const brute = tris.some(
+				(t) =>
+					triangle
+						.set(t[0], t[1], t[2])
+						.closestPointToPoint(p, q)
+						.distanceTo(p) <= limit,
+			);
+			expect([i, grid.within(p, limit)]).toEqual([
+				i,
+				new TriangleGrid(tris).within(p, limit),
+			]);
+			expect([i, grid.within(p, limit)]).toEqual([i, brute]);
+			verdicts[brute ? "near" : "far"]++;
+		}
+		expect(verdicts.near).toBeGreaterThan(400);
+		expect(verdicts.far).toBeGreaterThan(400);
+	});
 	test("were fitted to the models that ship", () => {
 		for (const form of SHIPYARD_FORMS)
 			expect(shipyardModelHash(form)).toBe(SHIPYARD_PROXY_SOURCES[form]);

@@ -50,6 +50,7 @@ export const VARIANT_TABLE: Readonly<Record<ModuleKind, readonly Trait[]>> = {
 	"long-range-scanner": [output("long-focus", "signalRangeKm"), light],
 	"extra-energy-unit": [output("deep-bank", "bankE"), light],
 	"cargo-rack": [output("expanded", "cargoT"), light],
+	"cargo-scoop": [output("wide-mouth", "scoopRadiusKm"), light],
 	"armour-plating": [output("reinforced", "integrity"), light],
 	"fuel-tank": [output("expanded", "fuelLy"), light],
 	"power-plant": [output("high-output", "regenPerS"), light],

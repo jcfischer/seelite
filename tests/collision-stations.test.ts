@@ -125,11 +125,17 @@ import { clearsAperture } from "./helpers/aperture-physical-fit";
 import {
 	FIXTURE_AXIS,
 	FIXTURE_REFERENCE,
+	type FlightRun,
+	flightStation,
 	flyTheComputer,
 } from "./helpers/fly-the-computer";
 import { stationInForm } from "./helpers/forms-in-play";
 import { hullSolid } from "./helpers/hull-solid";
-import { planLabel, stationPlansFor } from "./helpers/station-plan-corpus";
+import {
+	planLabel,
+	type StationPlanOfType,
+	stationPlansFor,
+} from "./helpers/station-plan-corpus";
 
 // ---------------------------------------------------------------------------
 // A station at rest at the origin, on a deliberately awkward axis
@@ -1050,36 +1056,23 @@ describe("collision.md §9.1.9 and §9.1.15: seeded pad plans", () => {
 		const plans = stationPlansFor(type);
 		test(`${type}: every admitted hull clears and docks across ${plans.length} plans`, () => {
 			const misses: string[] = [];
+			const flown = new Map<string, { angles: string[]; run: FlightRun }>();
+			let visited = 0;
 			for (const seeds of plans) {
 				for (const hull of admittedHulls(type)) {
+					visited++;
 					const label = `${type}:${hull}:${planLabel(seeds)}`;
-					for (const rollDeg of [0, 50])
-						for (const [pitchDeg, yawDeg] of [
-							[0, 0],
-							[35, 0],
-							[-35, 0],
-							[0, 35],
-							[0, -35],
-						])
-							if (
-								!clearsAperture(
-									type,
-									hull,
-									{ pitchDeg, yawDeg, rollDeg },
-									seeds,
-								)
-							)
-								misses.push(
-									`${label}: pitch ${pitchDeg}, yaw ${yawDeg}, roll ${rollDeg}`,
-								);
-					const run = flyTheComputer({
-						type,
+					const key = exactKey({
 						hull,
-						spinRpm: 0,
-						axis: FIXTURE_AXIS,
-						reference: FIXTURE_REFERENCE,
-						stationPlan: seeds,
+						...flightStation({ type, stationPlan: seeds }),
 					});
+					let outcome = flown.get(key);
+					if (!outcome) {
+						outcome = flyPlan(type, hull, seeds);
+						flown.set(key, outcome);
+					}
+					for (const angle of outcome.angles) misses.push(`${label}: ${angle}`);
+					const run = outcome.run;
 					if (
 						!run.docked ||
 						run.violations ||
@@ -1092,12 +1085,67 @@ describe("collision.md §9.1.9 and §9.1.15: seeded pad plans", () => {
 				}
 			}
 			console.log(
-				`seeded ${type}: ${plans.length} plans × ${admittedHulls(type).length} admitted hulls; ${misses.length} failures`,
+				`seeded ${type}: ${plans.length} plans × ${admittedHulls(type).length} admitted hulls; ${misses.length} failures; ${flown.size} distinct flights`,
 			);
+			expect(visited).toBe(plans.length * admittedHulls(type).length);
 			expect(misses).toEqual([]);
 		}, 60_000);
 	}
+
+	test("two refinery plans with one flight key measure identically", () => {
+		const [hull] = admittedHulls("refinery");
+		const byKey = new Map<string, StationPlanOfType[]>();
+		for (const seeds of stationPlansFor("refinery")) {
+			const key = exactKey({
+				hull,
+				...flightStation({ type: "refinery", stationPlan: seeds }),
+			});
+			byKey.set(key, [...(byKey.get(key) ?? []), seeds]);
+		}
+		const shared = [...byKey.values()].find((group) => group.length > 1);
+		if (!shared) throw new Error("no two refinery plans share a flight");
+		const [first, second] = shared;
+		expect(planLabel(first)).not.toBe(planLabel(second));
+		expect(exactKey(flyPlan("refinery", hull, second))).toBe(
+			exactKey(flyPlan("refinery", hull, first)),
+		);
+	}, 60_000);
 });
+
+function flyPlan(
+	type: StationType,
+	hull: HullId,
+	seeds: StationPlanOfType,
+): { angles: string[]; run: FlightRun } {
+	const angles: string[] = [];
+	for (const rollDeg of [0, 50])
+		for (const [pitchDeg, yawDeg] of [
+			[0, 0],
+			[35, 0],
+			[-35, 0],
+			[0, 35],
+			[0, -35],
+		])
+			if (!clearsAperture(type, hull, { pitchDeg, yawDeg, rollDeg }, seeds))
+				angles.push(`pitch ${pitchDeg}, yaw ${yawDeg}, roll ${rollDeg}`);
+	const run = flyTheComputer({
+		type,
+		hull,
+		spinRpm: 0,
+		axis: FIXTURE_AXIS,
+		reference: FIXTURE_REFERENCE,
+		stationPlan: seeds,
+	});
+	return { angles, run };
+}
+
+function exactKey(value: unknown): string {
+	return JSON.stringify(value, (_, v) =>
+		typeof v === "number" && (Object.is(v, -0) || !Number.isFinite(v))
+			? `number:${Object.is(v, -0) ? "-0" : String(v)}`
+			: v,
+	);
+}
 
 // ---------------------------------------------------------------------------
 // 9.1.12's rest: cruise never leaves a ship inside a proxy
@@ -1285,6 +1333,32 @@ function restoreDirection(random: () => number): Vec3 {
 	}
 }
 
+const PREFILTER_SLACK_KM = 1e-9;
+
+function boxGapKm(
+	box: { centre: Vec3; axes: Vec3[]; primitive: { half: readonly number[] } },
+	pos: Vec3,
+): number {
+	const d = sub(pos, box.centre);
+	let sq = 0;
+	for (let i = 0; i < 3; i++) {
+		const out = Math.abs(dot(d, box.axes[i])) - box.primitive.half[i];
+		if (out > 0) sq += out * out;
+	}
+	return Math.sqrt(sq);
+}
+
+function segmentGapKm(
+	point: Vec3,
+	from: Vec3,
+	dir: Vec3,
+	lengthKm: number,
+): number {
+	const d = sub(point, from);
+	const t = Math.max(0, Math.min(lengthKm, dot(d, dir)));
+	return length(sub(d, scale(dir, t)));
+}
+
 describe("collision.md §4.3, §11.7: a shallow restore reverses out with every neighbour present", () => {
 	const forms: { type: StationType; form: StationFormId }[] = [
 		{ type: "shipyard", form: "a" },
@@ -1334,6 +1408,9 @@ describe("collision.md §4.3, §11.7: a shallow restore reverses out with every 
 									add(add(scale(p.x, c.x), scale(p.y, c.y)), scale(p.z, c.z)),
 								),
 								reach: Math.hypot(...primitive.half) + shipReach,
+								axes: primitive.axes.map((a) =>
+									add(add(scale(p.x, a.x), scale(p.y, a.y)), scale(p.z, a.z)),
+								),
 							};
 						}),
 					);
@@ -1357,20 +1434,29 @@ describe("collision.md §4.3, §11.7: a shallow restore reverses out with every 
 							up = sub(candidate, scale(nose, dot(candidate, nose)));
 						} while (length(up) < 1e-6);
 						up = scale(up, 1 / length(up));
-						const inside = (pos: Vec3) => {
+						const insideOf = (list: typeof boxes) => (pos: Vec3) => {
 							const pose = shipPose(pos, nose, up);
-							return boxes.some(
+							return list.some(
 								(b) =>
 									length(sub(b.centre, pos)) <= b.reach &&
+									boxGapKm(b, pos) <= shipReach + PREFILTER_SLACK_KM &&
 									pairSeparation(ship, pose, b.primitive, b.pose).overlap,
 							);
 						};
+						const inside = insideOf(boxes);
+						const insideRay = insideOf(
+							boxes.filter(
+								(b) =>
+									segmentGapKm(b.centre, from, inward, 2 * span) <=
+									b.reach + PREFILTER_SLACK_KM,
+							),
+						);
 						const along = (s: number) => add(from, scale(inward, s));
 						expect(inside(from)).toBe(false);
 						let clear = 0;
 						let hit: number | null = null;
 						for (let s = marchKm; s < 2 * span; s += marchKm) {
-							if (inside(along(s))) {
+							if (insideRay(along(s))) {
 								hit = s;
 								break;
 							}
@@ -1380,7 +1466,7 @@ describe("collision.md §4.3, §11.7: a shallow restore reverses out with every 
 						let boundary: number = hit;
 						while (boundary - clear > 0.00001) {
 							const middle = (clear + boundary) / 2;
-							if (inside(along(middle))) boundary = middle;
+							if (insideRay(along(middle))) boundary = middle;
 							else clear = middle;
 						}
 						hitRays++;
@@ -1480,6 +1566,19 @@ function uprightFor(nose: Vec3): Vec3 {
 	return scale(up, 1 / length(up));
 }
 
+const solidReaches = new WeakMap<
+	readonly Primitive[],
+	{ count: number; reach: number }
+>();
+
+function solidReachKm(primitives: readonly Primitive[]): number {
+	const known = solidReaches.get(primitives);
+	if (known && known.count === primitives.length) return known.reach;
+	const reach = reachKm(primitives);
+	solidReaches.set(primitives, { count: primitives.length, reach });
+	return reach;
+}
+
 /** A cruise chord meets the proxy, rather than merely its bounding reach. */
 function crossesStation(
 	ship: SolidMotion,
@@ -1497,7 +1596,7 @@ function crossesStation(
 				{
 					start: solid.start.origin,
 					end: solid.end.origin,
-					reachKm: reachKm(solid.primitives),
+					reachKm: solidReachKm(solid.primitives),
 				},
 			),
 		)
@@ -1508,6 +1607,35 @@ function crossesStation(
 }
 
 describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
+	test("a station's solids keep their primitive lists, so a cached reach is the measured one", () => {
+		let lists = 0;
+		for (const seed of CRUISE_SEEDS.slice(0, 12)) {
+			const world = makeWorld(seed);
+			for (const station of world.system.contents.stations) {
+				if (!world.system.byId.has(station.id)) continue;
+				const end = stationEndAt(world.system, station.id, world.gameTime);
+				const first = stationMotions(stationProxyOf(station), end, end);
+				const again = stationMotions(stationProxyOf(station), end, end);
+				for (const [i, solid] of first.entries()) {
+					expect(again[i].primitives).toBe(solid.primitives);
+					expect(solidReachKm(solid.primitives)).toBe(
+						reachKm(solid.primitives),
+					);
+					expect(solidReachKm(again[i].primitives)).toBe(
+						reachKm(solid.primitives),
+					);
+					lists++;
+				}
+			}
+		}
+		const grown: Primitive[] = [...hullSolid("miner")];
+		const before = solidReachKm(grown);
+		grown.push({ kind: "sphere", centre: v3(before + 1, 0, 0), radiusKm: 1 });
+		expect(solidReachKm(grown)).toBe(reachKm(grown));
+		expect(solidReachKm(grown)).not.toBe(before);
+		expect(lists).toBeGreaterThan(0);
+	});
+
 	test("the crossing count excludes empty space inside a sparse station's reach", async () => {
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);

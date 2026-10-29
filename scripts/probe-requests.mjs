@@ -1211,7 +1211,7 @@ try {
 	await salvagePage.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 	await bootedGame(salvagePage);
 	const salvageFixture = await salvagePage.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
@@ -1228,7 +1228,10 @@ try {
 				{ kind: "fitting", id: "Docking Computer", tonnes: 1, left: 1 },
 			],
 		};
-		g.commander.loadout = migrateEquipment(g.commander.hull, []).loadout;
+		g.commander.loadout = {
+			...migrateEquipment(g.commander.hull, []).loadout,
+			i1: makeModule("cargo-scoop", 1),
+		};
 		const target = salvageTargetsOf(
 			g.commerceWorld,
 			g.world.system,

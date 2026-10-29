@@ -397,6 +397,72 @@ if (process.env.SHOT_DIR) {
 	console.log(`  shot  ${to}`);
 }
 
+const gate = await page.evaluate(() => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const fitted = g.commander.loadout;
+	const saved = {
+		commander: g.commander,
+		condition: g.condition,
+		canisters: g.canisters,
+	};
+	const bare = Object.fromEntries(
+		Object.entries(fitted).filter(([, m]) => m.module !== "cargo-scoop"),
+	);
+	const arm = (loadout, energy) => {
+		g.commander = { ...g.commander, loadout, cargo: {} };
+		g.condition = { ...g.condition, energy };
+		const now = g.world.gameTime;
+		g.canisters = [
+			{
+				id: "gate#0",
+				commodity: "Food",
+				tonnes: 1,
+				pos: { ...g.world.ship.pos },
+				vel: { ...g.world.ship.vel },
+				frameBodyId: null,
+				restsAt: now,
+				expiresAt: now + 300,
+			},
+		];
+		const before = g.condition.energy;
+		g.step(dt);
+		g.render(dt);
+		return {
+			left: g.canisters.length,
+			food: g.commander.cargo.Food ?? 0,
+			notice: g.scoop.text,
+			spent: before - g.condition.energy,
+		};
+	};
+	const unfitted = arm(bare, 100);
+	const flat = arm(fitted, 0.5);
+	const taken = arm(fitted, 100);
+	g.commander = saved.commander;
+	g.condition = saved.condition;
+	g.canisters = saved.canisters;
+	return { unfitted, flat, taken };
+});
+check(
+	"a ship with no scoop takes nothing, leaves the canister, and says it has no scoop",
+	gate.unfitted.left === 1 &&
+		gate.unfitted.food === 0 &&
+		/NO CARGO SCOOP/.test(gate.unfitted.notice),
+	JSON.stringify(gate.unfitted),
+);
+check(
+	"a fitted scoop on a bank below the charge leaves the canister and says the bank is too low",
+	gate.flat.left === 1 &&
+		gate.flat.food === 0 &&
+		/BANK TOO LOW/.test(gate.flat.notice),
+	JSON.stringify(gate.flat),
+);
+check(
+	"a fitted scoop with the charge takes the canister and the bank pays for it",
+	gate.taken.left === 0 && gate.taken.food === 1 && gate.taken.spent > 0,
+	JSON.stringify(gate.taken),
+);
+
 // **The scoop is flown, not placed.** This row set the ship onto the canister
 // with the canister's own velocity, which proves the scoop predicate and not
 // that a pilot can reach one. The third playtest could not: a fleeing raider

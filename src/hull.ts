@@ -520,6 +520,8 @@ export interface FittedCapacity extends PlantOutput, DefenceCapacity {
 	scanChargeS: number;
 	/** The best fitted long-range scanner's `signalRangeKm`; 0 with none. */
 	signalRangeKm: number;
+	scoopRadiusKm: number;
+	scoopSpeedKms: number;
 	/** What the best fitted escape pod brings back from an eject (#977): the
 	 *  share of the pilot's own cargo, the tonnes of it the capsule takes
 	 *  (0 when the share is), and the carried modules. All 0 with no pod. */

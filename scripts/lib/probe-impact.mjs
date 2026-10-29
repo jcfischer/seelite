@@ -8,6 +8,39 @@ import {
 } from "./probe-contract-roots.mjs";
 
 const snapshotEdges = new WeakMap();
+const parsedCandidates = new Map();
+
+function importCandidatesByText(file, text) {
+	const cached = parsedCandidates.get(file);
+	if (cached?.text === text) return cached.candidateLists;
+	const candidateLists = [];
+	const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+	const walk = (node) => {
+		if (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) return;
+		if (ts.isExportDeclaration(node) && node.isTypeOnly) return;
+		// Literal module paths also cover imports inside page.evaluate and the
+		// new URL(..., import.meta.url) seam used by workers and worklets.
+		if (ts.isStringLiteralLike(node)) {
+			const raw = node.text.split("?")[0];
+			if (raw.startsWith(".") || raw.startsWith("/src/")) {
+				const stem = raw.startsWith("/src/")
+					? raw.slice(1)
+					: posix.normalize(posix.join(posix.dirname(file), raw));
+				candidateLists.push([
+					stem,
+					`${stem}.ts`,
+					`${stem}.js`,
+					`${stem}.mjs`,
+					`${stem}/index.ts`,
+				]);
+			}
+		}
+		ts.forEachChild(node, walk);
+	};
+	walk(ast);
+	parsedCandidates.set(file, { text, candidateLists });
+	return candidateLists;
+}
 
 /** Import closure over a git snapshot, including browser imports and worker URLs. */
 export function dependencyClosure(roots, sources) {
@@ -28,31 +61,10 @@ export function dependencyClosure(roots, sources) {
 		if (text === undefined) return;
 		const children = new Set();
 		edges.set(file, children);
-		const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-		const walk = (node) => {
-			if (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) return;
-			if (ts.isExportDeclaration(node) && node.isTypeOnly) return;
-			// Literal module paths also cover imports inside page.evaluate and the
-			// new URL(..., import.meta.url) seam used by workers and worklets.
-			if (ts.isStringLiteralLike(node)) {
-				const raw = node.text.split("?")[0];
-				if (raw.startsWith(".") || raw.startsWith("/src/")) {
-					const stem = raw.startsWith("/src/")
-						? raw.slice(1)
-						: posix.normalize(posix.join(posix.dirname(file), raw));
-					const resolved = [
-						stem,
-						`${stem}.ts`,
-						`${stem}.js`,
-						`${stem}.mjs`,
-						`${stem}/index.ts`,
-					].find((p) => sources.has(p));
-					if (resolved) children.add(resolved);
-				}
-			}
-			ts.forEachChild(node, walk);
-		};
-		walk(ast);
+		for (const candidates of importCandidatesByText(file, text)) {
+			const resolved = candidates.find((p) => sources.has(p));
+			if (resolved) children.add(resolved);
+		}
 		for (const child of children) visit(child);
 	};
 	for (const root of roots) visit(root);

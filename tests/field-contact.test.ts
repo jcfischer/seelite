@@ -26,6 +26,7 @@ import {
 	markShipPlaced,
 	stationHostIdOf,
 } from "../src/sim";
+import { isRockTargetId } from "../src/rock-target";
 import { arrivalPoint } from "../src/system";
 import { MAX_DT } from "../src/units";
 import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
@@ -49,6 +50,7 @@ function subjectAt(index: number) {
 				],
 				{
 					fieldContactsAt,
+					isRockTargetId,
 					bodyVelocity,
 					bodyAccelerationBound,
 					isDisplayContact,

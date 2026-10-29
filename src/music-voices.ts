@@ -611,6 +611,15 @@ const hermite = (t: number, xm: number, x0: number, x1: number, x2: number) => {
 	return ((c3 * t + c2) * t + c1) * t + x0;
 };
 
+/** How a bank or an engine renders. With `countOnly`, notes, envelopes,
+ *  stages, fades, halts and a recording running out all run as before, so
+ *  `sounding` holds what a full render holds; no oscillator, mix or room
+ *  runs and no sample is written. For tests that count voices: the worklet
+ *  never sets it. */
+export interface RenderMode {
+	readonly countOnly?: boolean;
+}
+
 export class VoiceBank {
 	private readonly stage: Uint8Array;
 	private readonly kind: Uint8Array;
@@ -694,10 +703,14 @@ export class VoiceBank {
 	 *  phases. */
 	private readonly noise = xorshift(0x9e3779b9);
 
+	private readonly countOnly: boolean;
+
 	constructor(
 		readonly cap: number,
 		private readonly sampleRate: number,
+		mode: RenderMode = {},
 	) {
+		this.countOnly = mode.countOnly ?? false;
 		const f64 = () => new Float64Array(cap);
 		this.stage = new Uint8Array(cap);
 		this.kind = new Uint8Array(cap);
@@ -1217,6 +1230,7 @@ export class VoiceBank {
 			const amp = this.amp[i];
 			let env = this.env[i];
 			let stage = this.stage[i];
+			const synth = !this.countOnly || kind === SAMPLER;
 			for (let s = s0; s < n; s++) {
 				if (stage !== STAGE_RELEASE && s >= releaseAt) stage = STAGE_RELEASE;
 				if (stage === STAGE_ATTACK) {
@@ -1238,7 +1252,7 @@ export class VoiceBank {
 						break;
 					}
 				}
-				const x = this.sample(i, kind, part, env, frame + s);
+				const x = synth ? this.sample(i, kind, part, env, frame + s) : 0;
 				// A recording that has run out ends its note, whatever the
 				// envelope says.
 				if (this.ended) {
@@ -1246,6 +1260,7 @@ export class VoiceBank {
 					stage = STAGE_FREE;
 					break;
 				}
+				if (this.countOnly) continue;
 				const k = env * amp * gains.gain(owner, pIx, frame + s);
 				const l = x * k * part.panL;
 				const r = (STEREO[kind] ? this.sideR : x) * k * part.panR;
@@ -1892,7 +1907,7 @@ export class VoiceBank {
 
 /** One step of a Chamberlin state-variable filter whose state is row `i` of
  *  `lp` and `bp`: its lowpass output, or with `band` its bandpass. */
-function svfStep(
+export function svfStep(
 	lp: Float64Array,
 	bp: Float64Array,
 	i: number,
@@ -1901,10 +1916,22 @@ function svfStep(
 	damp: number,
 	band: boolean,
 ): number {
-	lp[i] += g * bp[i];
-	bp[i] += g * (x - lp[i] - damp * bp[i]);
+	const c = g * (g + 2 * damp) > SVF_STABLE ? svfLimit(damp) : g;
+	lp[i] += c * bp[i];
+	bp[i] += c * (x - lp[i] - damp * bp[i]);
 	return band ? bp[i] : lp[i];
 }
+
+/** The filter's poles stay inside the unit circle while `g² + 2·g·damp < 4`;
+ *  this keeps a margin under that edge, where a pole rings at Nyquist and
+ *  decays too slowly to hear before it has grown. */
+export const SVF_STABLE = 3;
+
+/** The largest coefficient the state-variable filter takes at `damp`. A
+ *  cutoff swept toward the rate (a low rate puts the same cutoff nearer it)
+ *  asks for more, and a coefficient past this grows without bound. */
+export const svfLimit = (damp: number) =>
+	Math.sqrt(damp * damp + SVF_STABLE) - damp;
 
 /** Where a part's slow sweep has the filter at frame `at`: a multiple of
  *  the cutoff, 1 at the bottom of the cycle and `2^sweepOct` at its top. */

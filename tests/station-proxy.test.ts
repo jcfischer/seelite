@@ -59,6 +59,8 @@ import {
 	type ProxyPrimitive,
 	type StationProxy,
 	proxyContains,
+	proxyDistanceKm,
+	proxyListDistanceKm,
 	proxyReachKm,
 	stationProxy,
 } from "../src/station-proxy";
@@ -68,6 +70,7 @@ import {
 	OUTPOST_FORMS_AHEAD,
 	formLabel,
 } from "./helpers/forms-in-play";
+import { INDEXED_ABOVE } from "../src/sphere-grid";
 import { HUB, modularPlacements } from "../src/station-modular";
 import { assemblyInstances } from "../src/assembly-plan";
 import { assemblyProxyBoxes } from "../src/station-proxy";
@@ -109,7 +112,9 @@ const VERTEX_TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
  * seconds, so bun's 5 s default would fail them on a slower machine for
  * load rather than for a defect.
  */
-const HEAVY_ROW_MS = 30_000;
+const HEAVY_ROW_MS = 60_000;
+
+const GRID_GUARD_SEEDS = [0, 1];
 
 /** Berth seeds swept on their own, at assembly seed zero. */
 const BERTH_SEEDS = [0, 1, 2, 7];
@@ -159,6 +164,70 @@ function intrusions(
 
 const fmt = (v: THREE.Vector3) =>
 	`(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
+
+function pointsAroundSurfaces(
+	list: readonly ProxyPrimitive[],
+): THREE.Vector3[] {
+	const out: THREE.Vector3[] = [];
+	const stride = Math.max(1, Math.floor(list.length / 120));
+	const lo = new THREE.Vector3(Infinity, Infinity, Infinity);
+	const hi = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+	list.forEach((p, n) => {
+		const centre =
+			p.kind === "capsule"
+				? new THREE.Vector3(p.ax, p.ay, p.az)
+				: new THREE.Vector3(p.cx, p.cy, p.cz);
+		lo.min(centre);
+		hi.max(centre);
+		if (n % stride !== 0) return;
+		for (const grow of [1 - 1e-6, 1 + 1e-6, 1.05]) {
+			if (p.kind === "box") {
+				const axes = p.axes ?? [
+					{ x: 1, y: 0, z: 0 },
+					{ x: 0, y: 1, z: 0 },
+					{ x: 0, y: 0, z: 1 },
+				];
+				for (const s of [-1, 1])
+					for (const t of [-1, 1])
+						for (const u of [-1, 1]) {
+							const v = centre.clone();
+							v.x +=
+								grow *
+								(s * axes[0].x * p.hx +
+									t * axes[1].x * p.hy +
+									u * axes[2].x * p.hz);
+							v.y +=
+								grow *
+								(s * axes[0].y * p.hx +
+									t * axes[1].y * p.hy +
+									u * axes[2].y * p.hz);
+							v.z +=
+								grow *
+								(s * axes[0].z * p.hx +
+									t * axes[1].z * p.hy +
+									u * axes[2].z * p.hz);
+							out.push(v);
+						}
+			} else {
+				const r = grow * p.radiusKm;
+				for (const d of [-1, 1]) {
+					out.push(centre.clone().add(new THREE.Vector3(d * r, 0, 0)));
+					out.push(centre.clone().add(new THREE.Vector3(0, d * r, 0)));
+				}
+			}
+		}
+		out.push(centre);
+	});
+	for (let i = 0; i < 300; i++)
+		out.push(
+			new THREE.Vector3(
+				lo.x + (hi.x - lo.x) * ((i * 0.618034) % 1),
+				lo.y + (hi.y - lo.y) * ((i * 0.414214) % 1),
+				lo.z + (hi.z - lo.z) * ((i * 0.732051) % 1),
+			),
+		);
+	return out;
+}
 
 // The shipyards', refineries' and outpost's proxies are the authored models'
 // (nodes #818, #819, #1031), which the sim collides with whatever is drawn, so
@@ -364,6 +433,41 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 					}
 					expect(spun.length).toBe(0);
 					expect(fixed.length).toBe(0);
+				}
+			},
+			HEAVY_ROW_MS,
+		);
+
+	for (const [type, form] of FORMS_MEASURED)
+		test(
+			`the grid answers every containment and distance as a walk of the list would (node #1118): ${formLabel(type, form)}`,
+			() => {
+				const measured = new Set<object>();
+				for (const [berthSeed, assemblySeed] of seedPairs(type, form).filter(
+					([berth, seed]) => berth === 0 && GRID_GUARD_SEEDS.includes(seed),
+				)) {
+					const proxy = stationProxy(type, form, berthSeed, assemblySeed)!;
+					for (const list of [proxy.spinning, proxy.static]) {
+						if (list.length <= INDEXED_ABOVE || measured.has(list)) continue;
+						measured.add(list);
+						const points = pointsAroundSurfaces(list);
+						const tally = { inside: 0, outside: 0, differ: [] as string[] };
+						for (const v of points) {
+							let least = Number.POSITIVE_INFINITY;
+							for (const p of list)
+								least = Math.min(least, proxyDistanceKm(p, v.x, v.y, v.z));
+							if (least <= 0) tally.inside++;
+							else tally.outside++;
+							if (proxyListDistanceKm(list, v.x, v.y, v.z) !== least)
+								tally.differ.push(`distance at ${fmt(v)}`);
+							for (const tol of [-1e-9, 0, VERTEX_TOLERANCE_KM])
+								if (proxyContains(list, v.x, v.y, v.z, tol) !== least <= tol)
+									tally.differ.push(`contains ${tol} at ${fmt(v)}`);
+						}
+						expect(tally.differ.slice(0, 4)).toEqual([]);
+						expect(tally.inside).toBeGreaterThan(points.length / 10);
+						expect(tally.outside).toBeGreaterThan(points.length / 10);
+					}
 				}
 			},
 			HEAVY_ROW_MS,

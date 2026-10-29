@@ -48,11 +48,14 @@
 
 import { DOCKING_DAMAGE_SCALE, V_GATE_KMS } from "./docking";
 import {
-	buildSphereGrid,
+	type Bounds,
+	type BoxGrid,
+	boundsOfBox,
+	boundsOfSegment,
+	buildBoxGrid,
 	INDEX_CELL_KM,
 	INDEXED_ABOVE,
-	querySphereGrid,
-	type SphereGrid,
+	queryBoxGrid,
 } from "./sphere-grid";
 import type { HullBoxCentre, HullCutter, HullEnvelope } from "./hull";
 import {
@@ -1064,7 +1067,7 @@ function sweepMotion(
 
 const solidIndexes = new WeakMap<
 	readonly Primitive[],
-	{ reach: number; grid: SphereGrid | null }
+	{ reach: number; grid: BoxGrid | null }
 >();
 function solidIndex(primitives: readonly Primitive[]) {
 	let found = solidIndexes.get(primitives);
@@ -1073,13 +1076,7 @@ function solidIndex(primitives: readonly Primitive[]) {
 			reach: reachKm(primitives),
 			grid:
 				primitives.length > INDEXED_ABOVE
-					? buildSphereGrid(
-							primitives.map((p) => {
-								const { centre, radiusKm } = primitiveBound(p);
-								return { x: centre.x, y: centre.y, z: centre.z, r: radiusKm };
-							}),
-							INDEX_CELL_KM,
-						)
+					? buildBoxGrid(primitives.map(primitiveBox), INDEX_CELL_KM)
 					: null,
 		};
 		solidIndexes.set(primitives, found);
@@ -1120,7 +1117,7 @@ function nearPrimitives(
 		reach * (1 - Math.cos(spin.angle / 2)) +
 		(length(b) + reach) * turn;
 	const near: number[] = [];
-	querySphereGrid(
+	queryBoxGrid(
 		grid,
 		Math.min(a.x, b.x) - grow,
 		Math.min(a.y, b.y) - grow,
@@ -1134,6 +1131,21 @@ function nearPrimitives(
 	);
 	near.sort((x, y) => x - y);
 	return near.map((n) => solid.primitives[n]);
+}
+
+/** A primitive's axis-aligned bounds in its solid's frame: what the
+ *  collision grid indexes it by (node #1118). */
+export function primitiveBox(p: Primitive): Bounds {
+	if (p.kind === "sphere") {
+		const c = p.centre;
+		return boundsOfSegment(c.x, c.y, c.z, c.x, c.y, c.z, p.radiusKm);
+	}
+	if (p.kind === "capsule") {
+		const { a, b } = p;
+		return boundsOfSegment(a.x, a.y, a.z, b.x, b.y, b.z, p.radiusKm);
+	}
+	const c = p.centre;
+	return boundsOfBox(c.x, c.y, c.z, p.axes, p.half[0], p.half[1], p.half[2]);
 }
 
 /** A primitive's bounding sphere in its solid's frame. */
