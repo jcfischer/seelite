@@ -47,10 +47,6 @@ export const MINER_SEAT_OFFSET_M = 1.2;
 /** The review build's seat-swap key: `4`, beside the head-look keys 1–3 and unbound. */
 export const MINER_SEAT_KEY = "4";
 
-/**
- * The miner study's textures carry their own colour, so its materials keep a white
- * tint and a painted finish: the courier's tints and 0.65 metalness turned them black.
- */
 const MINER_FINISHES: Readonly<
 	Record<string, { metalness: number; roughness: number }>
 > = {

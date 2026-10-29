@@ -10740,7 +10740,6 @@ class Game {
 	cockpitSeat: THREE.Group | null = null;
 	minerSeat: "pilot" | "miner" = "pilot";
 
-	/** Review build (#1143): move the eye between the bridge's two seats. */
 	setMinerSeat(seat: "pilot" | "miner") {
 		this.minerSeat = seat;
 		if (this.cockpitSeat)

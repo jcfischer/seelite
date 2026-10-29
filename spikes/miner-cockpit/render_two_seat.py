@@ -68,14 +68,14 @@ rock = next(o for o in imported if o.name.startswith('rock_00_fractured-block_L0
 for o in imported:
     if o is not rock: bpy.data.objects.remove(o, do_unlink=True)
 rock.name = 'rock-face'; rock.parent = None
-rock.scale = (60, 60, 60); rock.rotation_euler = (math.radians(15), math.radians(25), math.radians(40))
-rock.location = B(-1, -8, -62)
+rock.scale = (120, 120, 120); rock.rotation_euler = (math.radians(15), math.radians(25), math.radians(40))
+rock.location = B(-4, -18, -112)
 for f in rock.data.polygons: f.use_smooth = True
 for m in rock.data.materials:
     nt = m.node_tree; bsdf = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
     src_link = next((l for l in nt.links if l.to_socket == bsdf.inputs['Base Color']), None)
     tint = nt.nodes.new('ShaderNodeMixRGB'); tint.blend_type = 'MULTIPLY'; tint.inputs[0].default_value = 1
-    tint.inputs[2].default_value = (2.3, 1.45, .62, 1)
+    tint.inputs[2].default_value = (2.5, 1.62, .55, 1)
     if src_link:
         nt.links.new(src_link.from_socket, tint.inputs[1])
     else:
@@ -131,7 +131,7 @@ sc.render.resolution_x, sc.render.resolution_y = 1536, 1024
 if view == 'pilot':
     cam.location = (0, 0, 0); cam.rotation_euler = (math.radians(90), 0, 0)
 else:
-    cam.location = B(.6, .12, 1.3); cam.rotation_euler = (math.radians(90 - 6), 0, 0); cam.data.angle = math.radians(74)
+    cam.location = B(.6, .4, 1.75); cam.rotation_euler = (math.radians(90 - 12), 0, 0); cam.data.angle = math.radians(70)
 engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
 sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in engines else 'BLENDER_EEVEE'
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = .95
