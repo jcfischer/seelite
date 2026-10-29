@@ -777,7 +777,9 @@ def drum_girder(theta,z0,z1,step=.9):
 
 approved_drum=drum
 def drum():
- info=approved_drum()
+ G.BACKING=True
+ try:info=approved_drum()
+ finally:G.BACKING=False
  for z in [-44,-42.8,-41.6,-24,-22.8,-21.6,-20.4,-16,-14.8,8,9.2,10.4,11.6,18,19.2,20.4,21.6]:drum_window_row(z)
  for k in range(8):
   theta=(2*k+1)*math.tau/16

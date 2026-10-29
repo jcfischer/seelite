@@ -147,6 +147,13 @@ SYSTEM=0 FORM=c TYPES=trade SCALES=1 CLEAN=1 \
   beacons on posts at the slot's corners, and a lit gallery round the raised
   rim. The four approved window bands at r 18 hung 20 m in front of the face
   (z 47 against a face at 45.18); they now sit on it.
+- Closed plate seams: `plate()` shrinks each plate to 98.2% about its
+  centre, and the flight export draws no seam strips, so the Drum's seams
+  opened onto the empty inside. With `geometry.BACKING` set for the Drum, each
+  plate gets a dark full-size backing behind it. Rays cast at the barrel from
+  outside that reach inside r 330 m: 9,708 of 576,000 before, 0 after; at the
+  entry face, 196 of 80,604 before, 0 after. Ring and Wheel use the same
+  plates and were not measured.
 - The key light and beacon gain came with the Ring commit (`src/trade-flight.ts`).
 - `src/trade-proxies.ts`: regenerated from the new model.
 
@@ -155,8 +162,8 @@ The rear rim sets the form's reach: 0.687 of the 0.70 km silhouette, unchanged.
 | | before | this branch |
 |---|---|---|
 | Triangles | 82,088 | 268,068 |
-| `src/models/trade-drum.glb` | 4.9 MB | 10.8 MB |
-| Drum proxy hull boxes | — | 4,218 |
+| `src/models/trade-drum.glb` | 4.9 MB | 10.9 MB |
+| Drum proxy hull boxes | — | 4,347 |
 
 `evidence/drum-before-after.png`: left before, right this branch; rows
 face-close, hero, wide, sun-side close, sun-side wide, taken before the
