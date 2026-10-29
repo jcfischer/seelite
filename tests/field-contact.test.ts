@@ -6,7 +6,11 @@ import {
 	rockPose,
 	systemFields,
 } from "../src/asteroid-field";
-import { fieldContactsAt } from "../src/field-contact";
+import {
+	fieldContactsAt,
+	nearestFieldPlan,
+	nearestIndexWithin,
+} from "../src/field-contact";
 import { projectScannerContacts } from "../src/cockpit";
 import { targetDesignation, isDisplayContact } from "../src/display-contact";
 import {
@@ -260,4 +264,30 @@ test("a jump replaces field contacts without changing the canonical arrival posi
 	expect(arrived.length).toBeGreaterThan(0);
 	expect(arrived.every((c: unknown) => !departed.includes(c))).toBe(true);
 	expect(g.world.ship.pos).toEqual(arrival);
+});
+
+test("the nearest point within range wins: not first, not last, first on a tie, none at the bound", () => {
+	const points = [v3(0, 0, 30), v3(0, 0, 10), v3(0, 0, -20), v3(0, 0, 40)];
+	expect(nearestIndexWithin(points, v3(), 100)).toBe(1);
+	expect(nearestIndexWithin(points, v3(0, 0, -15), 100)).toBe(2);
+	expect(nearestIndexWithin(points, v3(0, 0, 35), 100)).toBe(0);
+	expect(nearestIndexWithin([v3(0, 0, 5), v3(0, 0, -5)], v3(), 100)).toBe(0);
+	expect(nearestIndexWithin(points, v3(), 10)).toBe(-1);
+	expect(nearestIndexWithin(points, v3(), 10 + 1e-9)).toBe(1);
+	expect(nearestIndexWithin([], v3(), 100)).toBe(-1);
+});
+
+test("the nearest field plan is the one whose centre is nearest the ship, within the range", () => {
+	const record = systems.find(
+		(r) => systemFields(r, makeSystem(r, 0).contents).length === 2,
+	);
+	if (!record) throw new Error("no system with two fields");
+	const world = makeWorldAtSystem(47, record.index);
+	const plans = systemFields(record, world.system.contents);
+	const time = 4321;
+	for (const plan of plans) {
+		const at = add(fieldCentre(plan, time), v3(0, 0, 40));
+		expect(nearestFieldPlan(world.system, at, time, 100)?.id).toBe(plan.id);
+		expect(nearestFieldPlan(world.system, at, time, 30)).toBeNull();
+	}
 });
