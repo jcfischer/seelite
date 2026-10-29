@@ -13,18 +13,15 @@ import { makeWorld, makeWorldAtSystem, resetWorldToStart } from "../src/sim";
 
 test("derelict-tear's declared fixture selects a wreck with torn skin and exposed frame", () => {
 	const view = VIEWS.find((view) => view.name === "derelict-tear");
-	expect(view).toBeDefined();
-	const shot = view!.shot as {
-		seed?: number;
-		system?: number;
-		framing?: string;
-	};
+	if (!view) throw Error("derelict-tear view is missing");
+	const shot = view.shot;
 	expect(shot.framing).toBe("tear");
-	const seed = shot.seed ?? SEED;
+	const seed = ("seed" in shot ? shot.seed : undefined) ?? SEED;
+	const systemIndex = "system" in shot ? shot.system : undefined;
 	const world =
-		shot.system === undefined
+		systemIndex === undefined
 			? makeWorld(seed)
-			: makeWorldAtSystem(seed, shot.system);
+			: makeWorldAtSystem(seed, systemIndex);
 	resetWorldToStart(world);
 	const { system } = world;
 	const candidates = derelictSlots(
@@ -33,12 +30,13 @@ test("derelict-tear's declared fixture selects a wreck with torn skin and expose
 	).map(({ key }) => {
 		const at = derelictNextLossAt(system.record.seed, key) + 1;
 		const phase = derelictTimeline(system.record.seed, key, at);
-		expect(phase.condition).toBe("destroyed");
+		if (phase.condition !== "destroyed") throw Error("next loss drew no wreck");
 		return derelictPose(system, key, phase.instanceOrdinal, at);
 	});
 	const pose = candidates.find(({ hull }) => !isAuthoredHullModel(hull));
 	expect(pose).toBeDefined();
-	const wreck = buildDerelictMesh(pose!.hull);
+	if (!pose) throw Error("fixture has no tearable derelict slot");
+	const wreck = buildDerelictMesh(pose.hull);
 	try {
 		expect(wreck.userData.torn?.sites.length ?? 0).toBeGreaterThan(0);
 		expect(wreck.userData.torn?.frame ?? 0).toBeGreaterThan(0);
