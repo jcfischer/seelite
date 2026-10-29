@@ -83,3 +83,48 @@ test("under the flag NPC miners keep one laser, and two Mining Lasers fire as on
 	}
 	expect(HULL_SPECS.miner.hardpoints).toBe(1);
 });
+
+test("a second Mining Laser is bought on a station's Equipment tab and fits h3 (D-D12; the catalogue sells it at refineries)", async () => {
+	const { addPrototypeMinerHardpoints } = await import("../src/hull");
+	const { marketStationOf } = await import("../src/market");
+	const { newCommander, transactAtStation } = await import(
+		"../src/station-commerce"
+	);
+	const { TOP_RUNGS } = await import("../src/ladder");
+	const original = HULL_SPECS.miner;
+	try {
+		addPrototypeMinerHardpoints();
+		const loadout = {
+			...stockLoadout("miner"),
+			h2: makeModule("mining-laser", 3),
+		};
+		const out = transactAtStation({
+			commander: { ...newCommander("miner"), credits: 100_000, loadout },
+			deficits: {},
+			station: marketStationOf(
+				{
+					type: "refinery",
+					localCarrierId: "station-refinery",
+					blackMarket: false,
+				},
+				0x51a7_10,
+			),
+			stationKey: "1:station-refinery" as never,
+			economy: 3,
+			gameTimeMin: 0,
+			displayTL: 11,
+			entrustedT: 0,
+			rungs: TOP_RUNGS,
+			hullReach: () => ({ ok: true, systems: 1 }) as const,
+			action: { type: "buy-equipment", equipment: "Mining Laser" },
+		});
+		expect(out.accepted ? "ok" : (out as { reason: string }).reason).toBe("ok");
+		if (!out.accepted) return;
+		expect(out.commander.loadout.h1?.module).toBe("pulse-laser");
+		expect(out.commander.loadout.h2?.module).toBe("mining-laser");
+		expect(out.commander.loadout.h3?.module).toBe("mining-laser");
+		expect(out.commander.credits).toBeLessThan(100_000);
+	} finally {
+		(HULL_SPECS as Record<string, typeof original>).miner = original;
+	}
+});

@@ -71,6 +71,7 @@ import {
 	stepSpin,
 	strutPose,
 	strutReach,
+	miningBeamRays,
 	withoutPrototypeSlot,
 } from "./rock-drill";
 import { setLongwallPrototypeMounts } from "./prototype-mounts";
@@ -9626,6 +9627,10 @@ class Game {
 	miningBeam: {
 		hit: { rockId: string; offset: Vec3 } | null;
 		distKm: number;
+		rays: {
+			muzzleIndex: number;
+			hit: { rockId: string; offset: Vec3 } | null;
+		}[];
 	} | null = null;
 	private sparks: {
 		rockId: string;
@@ -9689,6 +9694,34 @@ class Game {
 		this.miningNotice = { text, left: 3 };
 	}
 
+	private miningRays() {
+		const group = this.armedFireGroup.current(this.fireGroups);
+		const hardpoints = HULL_SPECS[this.flownHull].slots
+			.filter((s) => s.kind === "hardpoint")
+			.map((s) => s.key);
+		const lasers = (group?.slots ?? []).flatMap((key) => {
+			const m = this.commander.loadout[key];
+			return m?.module === "mining-laser"
+				? [
+						{
+							grade: m.grade,
+							extractionTPerS: moduleRow(m).output.extractionTPerS,
+							muzzleIndex: hardpoints.indexOf(key),
+						},
+					]
+				: [];
+		});
+		return miningBeamRays(lasers, this.miningMuzzlesWorld(), this.nose());
+	}
+
+	private miningMuzzlesWorld(): Vec3[] {
+		return muzzlesWorld(
+			this.world.ship.pos,
+			this.orientation,
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant),
+		);
+	}
+
 	private firedExtraction(): { rate: number; grade: Grade } {
 		const group = this.armedFireGroup.current(this.fireGroups);
 		return firedExtraction(
@@ -9735,31 +9768,48 @@ class Game {
 		this.miningBeam = null;
 		this.sparks = this.sparks.filter((k) => now - k.bornAt < SPARK_LIFE_S);
 		if (fired && fired.rate > 0) {
-			this.miningBeam = { hit: null, distKm: PLAYER_LASER_RANGE_KM };
 			const near = nearRocks(
 				this.fieldRockSets(),
 				this.world.ship.pos,
 				now,
 				PLAYER_LASER_RANGE_KM,
 			);
-			const ray = this.weaponRay();
-			const hit = beamHit(
-				ray.origin,
-				ray.aim,
-				near.map((r) => ({
-					id: r.id,
-					pos: r.pos,
-					vel: r.vel,
-					radiusKm: r.rock.radiusKm,
-					shape: this.rockShape(r),
-				})),
-				PLAYER_LASER_RANGE_KM,
-			);
+			const targets = near.map((r) => ({
+				id: r.id,
+				pos: r.pos,
+				vel: r.vel,
+				radiusKm: r.rock.radiusKm,
+				shape: this.rockShape(r),
+			}));
+			const rays = this.miningRays().map((ray) => ({
+				...ray,
+				met: beamHit(ray.origin, ray.aim, targets, PLAYER_LASER_RANGE_KM),
+			}));
+			const first = rays.find((r) => r.met !== null) ?? null;
+			const hit = first?.met ?? null;
 			const ref = hit && near.find((r) => r.id === hit.id);
+			const cutting = firedExtraction(
+				rays.filter((r) => r.met && hit && r.met.id === hit.id),
+			);
+			this.miningBeam = {
+				hit: null,
+				distKm: PLAYER_LASER_RANGE_KM,
+				rays: rays.map((r) => {
+					const rock = r.met && near.find((n) => n.id === r.met?.id);
+					return {
+						muzzleIndex: r.muzzleIndex,
+						hit:
+							r.met && rock
+								? { rockId: rock.id, offset: sub(r.met.point, rock.pos) }
+								: null,
+					};
+				}),
+			};
 			if (hit && ref) {
 				this.miningLog.cutRockId = ref.id;
 				const offset = sub(hit.point, ref.pos);
 				this.miningBeam = {
+					...this.miningBeam,
 					hit: { rockId: ref.id, offset },
 					distKm: hit.distKm,
 				};
@@ -9788,8 +9838,8 @@ class Game {
 				const step = stepCut(
 					this.cut,
 					ref.id,
-					fired.rate,
-					oreShare(fired.grade),
+					cutting.rate,
+					oreShare(cutting.grade),
 					dt,
 					contents.surfaceT - taken,
 				);
@@ -13529,14 +13579,8 @@ class Game {
 		h: number,
 		beam: NonNullable<Game["miningBeam"]>,
 	) {
-		const muzzles = muzzlesWorld(
-			this.world.ship.pos,
-			this.orientation,
-			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
-			),
-		);
-		const rock = beam.hit && this.fragmentRock(beam.hit.rockId);
+		const all = this.miningMuzzlesWorld();
+		const nose = this.nose();
 		const camPos = this.cameraPos();
 		const camRot = this.cameraRotation();
 		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
@@ -13545,11 +13589,14 @@ class Game {
 		ctx.save();
 		ctx.globalCompositeOperation = "lighter";
 		ctx.lineCap = "round";
-		for (const muzzle of muzzles) {
+		for (const ray of beam.rays) {
+			const muzzle = all[ray.muzzleIndex];
+			if (!muzzle) continue;
+			const rock = ray.hit && this.fragmentRock(ray.hit.rockId);
 			const end =
-				beam.hit && rock
-					? add(rock.pos, beam.hit.offset)
-					: add(muzzle, scale(this.beamAim(), PLAYER_LASER_RANGE_KM));
+				ray.hit && rock
+					? add(rock.pos, ray.hit.offset)
+					: add(muzzle, scale(nose, PLAYER_LASER_RANGE_KM));
 			const at = (k: number) =>
 				add(muzzle, scale(sub(end, muzzle), (k / n) ** 2));
 			for (let k = 0; k < n; k++) {
@@ -13569,7 +13616,7 @@ class Game {
 				const width = miningBeamWidthPx(
 					length(sub(add(a, b), scale(camPos, 2))) / 2,
 				);
-				const alpha = miningBeamAlpha(k, n, t, beam.hit !== null);
+				const alpha = miningBeamAlpha(k, n, t, ray.hit !== null);
 				ctx.strokeStyle = `rgba(255, 140, 40, ${0.35 * alpha})`;
 				ctx.lineWidth = width * 2.5;
 				ctx.beginPath();
@@ -22789,7 +22836,7 @@ class Game {
 		this.cockpitRaiderBeam = null;
 		const raider = this.raiderFiring && this.raiderListed;
 		const rig = this.combatRig?.tracerStrokes(this.view) ?? NO_BEAM_STROKES;
-		const mining = MINING_ON ? this.miningBeam : null;
+		const mining = null as Game["miningBeam"];
 		const any =
 			this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0 || !!mining;
 		if (!(this.view === "cockpit" && any && this.flightGlassShown())) {
@@ -23225,7 +23272,7 @@ class Game {
 		}
 		// The cockpit's tracer is in the frame, behind the cabin
 		// (`drawCockpitBeams`, node #806); chase has no cabin and keeps its own.
-		const chaseMining = MINING_ON && this.view === "chase" && this.miningBeam;
+		const chaseMining = MINING_ON && this.miningBeam;
 		this.chaseMiningRender = 0;
 		if (chaseMining) this.drawChaseMiningBeam(ctx, w, h, chaseMining);
 		else if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {

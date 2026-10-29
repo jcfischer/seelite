@@ -524,3 +524,38 @@ export function withoutPrototypeSlot<L extends Record<string, unknown>>(
 	const { h2: _port, h3: _starboard, ...rest } = loadout;
 	return rest as L;
 }
+
+/** A mount's muzzle from the study's export metres to the ship mesh's frame in km (starboard +x, up +y, nose −z). */
+export function mountMuzzleKm(
+	exportM: readonly number[],
+	cutter: HullCutter,
+): Vec3 {
+	const p = longwallFrame(cutter).toShip(exportM);
+	return { x: p.starboard / 1000, y: p.up / 1000, z: -p.fore / 1000 };
+}
+
+/**
+ * Whether a beam from `muzzleKm` (ship mesh frame) along the nose stays clear
+ * of the deployed cutter's box (`HullCutter`), as D-D11 requires: a beam that
+ * starts on the bow centre runs through the drill.
+ */
+export function beamClearsCutter(muzzleKm: Vec3, cutter: HullCutter): boolean {
+	const inBeam = Math.abs(muzzleKm.x) <= cutter.radiusKm;
+	const inHeight =
+		muzzleKm.y >= -cutter.downKm - cutter.radiusKm &&
+		muzzleKm.y <= -cutter.downKm + cutter.radiusKm;
+	const ahead = -muzzleKm.z <= cutter.bowKm + cutter.feedTravelKm;
+	return !(inBeam && inHeight && ahead);
+}
+
+/** The Mining Laser beams of a fired group: one per fitted mining laser, from its own slot's muzzle, along the nose (D-D11). */
+export function miningBeamRays<T>(
+	lasers: readonly (T & { muzzleIndex: number })[],
+	muzzlesWorld: readonly Vec3[],
+	nose: Vec3,
+): (T & { origin: Vec3; aim: Vec3 })[] {
+	return lasers.flatMap((laser) => {
+		const origin = muzzlesWorld[laser.muzzleIndex];
+		return origin ? [{ ...laser, origin, aim: nose }] : [];
+	});
+}
