@@ -19,6 +19,12 @@ export const CORIOLIS_GLB_URL = new URL(
 	import.meta.url,
 ).href;
 
+/** Full authored Assembly kit, exported in kilometres (node #1073). */
+export const ASSEMBLY_GLB_URL = new URL(
+	"./models/trade-assembly.glb",
+	import.meta.url,
+).href;
+
 /** Flight exports of the approved trade studies, node #1033. */
 export const TRADE_GLB_URLS = {
 	b: new URL("./models/trade-ring.glb", import.meta.url).href,
@@ -105,3 +111,10 @@ export const OUTPOST_GLB_URLS = {
 	d: new URL("./models/outpost-cluster.glb", import.meta.url).href,
 	e: new URL("./models/outpost-salvage.glb", import.meta.url).href,
 } as const;
+
+/** The Lance, the interceptor's authored exterior (node #1034), prepared by
+ *  `spikes/seven-ships/prepare-game-asset.mjs`. */
+export const LANCE_INTERCEPTOR_GLB_URL = new URL(
+	"./models/lance-interceptor.glb",
+	import.meta.url,
+).href;

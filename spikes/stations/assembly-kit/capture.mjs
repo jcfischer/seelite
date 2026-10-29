@@ -12,7 +12,7 @@ import { assertPlayersRenderer } from "../../../scripts/lib/players-renderer.mjs
 import { holdProbeLockOrExit } from "../../../scripts/lib/probe-lock.mjs";
 
 const out = new URL("./evidence/", import.meta.url);
-const release = await holdProbeLockOrExit("Assembly authored blocks Phase 1");
+const release = await holdProbeLockOrExit("Assembly full authored kit node 1073");
 let server, browser;
 try {
 	server = await createServer({
@@ -83,6 +83,8 @@ try {
 					"../industrial-surface.png",
 					"joints.ts",
 					"assembly.ts",
+					"../../../src/assembly-flight.ts",
+					"../../../src/assembly-plan.ts",
 					"prepare.ts",
 					"viewer.ts",
 					"index.html",
@@ -121,12 +123,12 @@ try {
 			const after = rows.find(
 				(a) => a.authored && a.seed === r.seed && a.view === r.view,
 			);
-			return `<h2>Seed ${r.seed} · ${r.view}${r.framing.joint ? ` · ${r.framing.joint.kind}` : ""}</h2><div class="pair">${[r, after].map((a) => `<figure><a href="${a.file}"><img src="${a.file}" alt="Seed ${a.seed}, ${a.view}, ${a.authored ? "authored" : "procedural"}"></a><figcaption>${a.authored ? "Authored HUB / NODE / TUBE" : "Procedural baseline"} · ${a.calls} calls · ${a.triangles.toLocaleString()} triangles</figcaption></figure>`).join("")}</div>`;
+			return `<h2>Seed ${r.seed} · ${r.view}${r.framing.joint ? ` · ${r.framing.joint.kind}` : ""}</h2><div class="pair">${[r, after].map((a) => `<figure><a href="${a.file}"><img src="${a.file}" alt="Seed ${a.seed}, ${a.view}, ${a.authored ? "authored" : "procedural"}"></a><figcaption>${a.authored ? "Full authored kit" : "Procedural baseline"} · ${a.calls} calls · ${a.triangles.toLocaleString()} triangles</figcaption></figure>`).join("")}</div>`;
 		})
 		.join("\n");
 	await writeFile(
 		new URL("index.html", out),
-		`<!doctype html><html lang="en"><meta charset="utf-8"><title>Assembly block spike · node 1057</title><style>body{background:#091015;color:#d4dcde;font:15px system-ui;margin:28px}h1{font-weight:450}h2{font-size:18px;margin-top:36px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}figure{margin:0}img{width:100%}figcaption{margin:8px 0;color:#a8b8bc}a{color:#d7ad72}</style><h1>Assembly authored blocks · Phase 1</h1><p>Awaiting principal approval of the look and joints. HUB, NODE and TUBE authored; all other parts are the real procedural Assembly. Same WFC placements in both arms. Click an image for 1440 × 900 pixels.</p><p>${renderer} · <a href="metrics.json">Provenance and submitted draw counters</a> · <a href="../../target-assembly.png">Approved target</a></p>${sections}</html>\n`,
+		`<!doctype html><html lang="en"><meta charset="utf-8"><title>Assembly full kit · node 1073</title><style>body{background:#091015;color:#d4dcde;font:15px system-ui;margin:28px}h1{font-weight:450}h2{font-size:18px;margin-top:36px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}figure{margin:0}img{width:100%}figcaption{margin:8px 0;color:#a8b8bc}a{color:#d7ad72}</style><h1>Assembly authored blocks · full kit</h1><p>All nine module kinds use the production authored-block drawing seam. Production appearance awaits the principal’s flight approval. Same WFC placements in both arms. Click an image for 1440 × 900 pixels.</p><p>${renderer} · <a href="metrics.json">Provenance and submitted draw counters</a> · <a href="../../target-assembly.png">Approved target</a></p>${sections}</html>\n`,
 	);
 	console.log(`Captured ${rows.length} frames on ${renderer}`);
 } finally {

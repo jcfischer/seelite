@@ -45,6 +45,8 @@ import {
 	type DepositState,
 	canonicalDeposits,
 	compactDeposits,
+	type DepositKey,
+	type DepositRow,
 	emptyDeposits,
 	parseDeposits,
 } from "./deposit-state";
@@ -1726,6 +1728,19 @@ export const setDeficits = (
 	at: number,
 ): WorldState =>
 	withEnvelope(world, galaxyIndex, at, (env) => ({ ...env, deficits }));
+
+/** #951's deposit rows: one rock's row, written whole at `at` seconds. */
+export const setDepositRow = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: DepositKey,
+	row: DepositRow,
+	at: number,
+): WorldState =>
+	withEnvelope(world, galaxyIndex, at, (env) => ({
+		...env,
+		deposits: { rows: { ...env.deposits.rows, [key]: row } },
+	}));
 
 /**
  * §7's legal-status domain: the heat and its stamp. The standing label and the

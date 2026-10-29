@@ -33,7 +33,8 @@
  * this box and `BERTH_CELL` had been sized from the declaration: against the
  * meshes, `miner/a` and `miner/c` are 40.0 m and 47.5 m tall to a 40 m cell and
  * fit no berth in the game at all. `tests/hull.test.ts` rebuilds each selected
- * variant's mesh and compares.
+ * variant's mesh and compares. `RETAINED_ENVELOPE_HULLS` names authored
+ * replacements required to fit inside the established simulation box instead.
  *
  * **Mass is a density band, not a density table.** Each row's `massT` is its
  * selected variant's box volume against a role density — a freighter dense for
@@ -60,6 +61,11 @@ export const HULL_IDS = [
 	"voyager",
 ] as const;
 export type HullId = (typeof HULL_IDS)[number];
+
+/** Authored replacements constrained to the existing simulation envelope. https://github.com/jcfischer/seelite/issues/1034 */
+export const RETAINED_ENVELOPE_HULLS: ReadonlySet<HullId> = new Set([
+	"interceptor",
+]);
 
 export const HULL_VARIANT_IDS = ["a", "b", "c"] as const;
 export type HullVariantId = (typeof HULL_VARIANT_IDS)[number];
@@ -514,6 +520,8 @@ export interface FittedCapacity extends PlantOutput, DefenceCapacity {
 	scanChargeS: number;
 	/** The best fitted long-range scanner's `signalRangeKm`; 0 with none. */
 	signalRangeKm: number;
+	scoopRadiusKm: number;
+	scoopSpeedKms: number;
 	/** What the best fitted escape pod brings back from an eject (#977): the
 	 *  share of the pilot's own cargo, the tonnes of it the capsule takes
 	 *  (0 when the share is), and the carried modules. All 0 with no pod. */
@@ -907,15 +915,15 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			retro: 0.5,
 			strafe: 0.416667,
 			pitch: 0.00838067,
-			yaw: 0.00839002,
-			roll: 0.00593896,
+			yaw: 0.00840055,
+			roll: 0.00587882,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			yaw: { y: -0.025, fore: 0.995, aft: 0.9975 },
 			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.725, port: 0.9775, starboard: 0.9775 },
+			roll: { z: 0.55, port: 0.9875, starboard: 0.9875 },
 		},
 		holdT: 8,
 		hardpoints: 2,

@@ -14,6 +14,7 @@ import { newCommander, commanderHold } from "../src/station-commerce";
 import {
 	CANISTER_SCOOP_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
+	STOCK_SCOOP,
 } from "../src/raider-wreck";
 import { length, sub, v3, rotateAbout } from "../src/vec3";
 import { applyHoldEvent } from "../src/holdings";
@@ -38,20 +39,32 @@ const row = { instanceOrdinal: 0, lostAt: 0, containers: [container] };
 const pose = { pos: v3(), vel: v3() };
 test("the shared gate takes only what fits and returns the unchanged refusal", () => {
 	const hold = { ...newCommander("courier"), cargo: { Food: 18 } };
-	const took = scoopWreckContainer(row, 0, hold, 0, pose, pose, 1);
+	const took = scoopWreckContainer({
+		row,
+		index: 0,
+		commander: hold,
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 1,
+	});
 	expect(took.tonnes).toBe(2);
 	expect(took.row.containers[0].left).toBe(6);
 	expect(took.commander.cargo.Food).toBe(20);
 	expect(row.containers[0].left).toBe(8);
-	const refused = scoopWreckContainer(
-		took.row,
-		0,
-		took.commander,
-		0,
-		pose,
-		pose,
-		2,
-	);
+	const refused = scoopWreckContainer({
+		row: took.row,
+		index: 0,
+		commander: took.commander,
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 2,
+	});
 	expect(refused.row).toBe(took.row);
 	expect(refused.commander).toBe(took.commander);
 	expect(refused.refusal).toContain("0 t free");
@@ -59,7 +72,19 @@ test("the shared gate takes only what fits and returns the unchanged refusal", (
 		{ pos: v3(CANISTER_SCOOP_RADIUS_KM * 1.01, 0, 0), vel: v3() },
 		{ pos: v3(), vel: v3(CANISTER_SCOOP_SPEED_KMS * 1.01, 0, 0) },
 	])
-		expect(scoopWreckContainer(row, 0, hold, 0, pose, ship, 1).tonnes).toBe(0);
+		expect(
+			scoopWreckContainer({
+				row,
+				index: 0,
+				commander: hold,
+				entrustedT: 0,
+				container: pose,
+				ship,
+				gear: STOCK_SCOOP,
+				bankE: 100,
+				at: 1,
+			}).tonnes,
+		).toBe(0);
 });
 test("a recovered fitting is a hold item rather than fitted equipment", () => {
 	const r = {
@@ -68,15 +93,17 @@ test("a recovered fitting is a hold item rather than fitted equipment", () => {
 			{ kind: "fitting" as const, id: "Military Laser", tonnes: 1, left: 1 },
 		],
 	};
-	const out = scoopWreckContainer(
-		r,
-		0,
-		newCommander("courier"),
-		0,
-		pose,
-		pose,
-		1,
-	);
+	const out = scoopWreckContainer({
+		row: r,
+		index: 0,
+		commander: newCommander("courier"),
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 1,
+	});
 	expect(out.commander.recoveredFittings).toEqual([
 		{ id: "Military Laser", tonnes: 1 },
 	]);
@@ -92,36 +119,50 @@ test("a multi-tonne fitting refuses partial room and recovers exactly one whole 
 		],
 	};
 	const commander = { ...newCommander("courier"), cargo: { Food: 18 } };
-	const refused = scoopWreckContainer(
-		fittingRow,
-		0,
+	const refused = scoopWreckContainer({
+		row: fittingRow,
+		index: 0,
 		commander,
-		0,
-		pose,
-		pose,
-		1,
-	);
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 1,
+	});
 	expect(refused.tonnes).toBe(0);
 	expect(refused.row).toBe(fittingRow);
 	expect(refused.commander).toBe(commander);
 	expect(refused.refusal).toContain("2 t free");
 	expect(refused.refusal).toContain("3 t");
-	const took = scoopWreckContainer(
-		fittingRow,
-		0,
-		{ ...commander, cargo: { Food: 17 } },
-		0,
-		pose,
-		pose,
-		2,
-	);
+	const took = scoopWreckContainer({
+		row: fittingRow,
+		index: 0,
+		commander: { ...commander, cargo: { Food: 17 } },
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 2,
+	});
 	expect(took.tonnes).toBe(3);
 	expect(took.row.containers[0].left).toBe(0);
 	expect(took.commander.recoveredFittings).toEqual([
 		{ id: "Military Laser", tonnes: 3 },
 	]);
 	expect(
-		scoopWreckContainer(took.row, 0, took.commander, 0, pose, pose, 3).tonnes,
+		scoopWreckContainer({
+			row: took.row,
+			index: 0,
+			commander: took.commander,
+			entrustedT: 0,
+			container: pose,
+			ship: pose,
+			gear: STOCK_SCOOP,
+			bankE: 100,
+			at: 3,
+		}).tonnes,
 	).toBe(0);
 	const sale = transactAtStation({
 		...commerce,
@@ -153,6 +194,8 @@ test("Holdings reports adopted takes and refusals, while a stale wreck event has
 	};
 	const event = {
 		kind: "wreck-scoop" as const,
+		gear: STOCK_SCOOP,
+		bankE: 100,
 		key,
 		galaxyIndex: 0,
 		containerIndex: 0,
@@ -249,6 +292,8 @@ test("the hold event writes the row and reloads remainder with the same hold", (
 	};
 	const out = applyHoldEvent(hold, world, {
 		kind: "wreck-scoop",
+		gear: STOCK_SCOOP,
+		bankE: 100,
 		key,
 		galaxyIndex: 0,
 		containerIndex: 0,
@@ -408,6 +453,8 @@ test("a death loses goods and carried fittings while its world keeps the strip",
 	};
 	const out = applyHoldEvent(h, world, {
 		kind: "wreck-scoop",
+		gear: STOCK_SCOOP,
+		bankE: 100,
 		key,
 		galaxyIndex: 0,
 		containerIndex: 0,

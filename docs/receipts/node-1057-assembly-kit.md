@@ -1,5 +1,8 @@
 # Node #1057 — Assembly authored blocks, Phase 1 rework
 
+Phase 2 integration is recorded in [node #1073](node-1073-assembly-full-kit.md).
+This receipt preserves the Phase 1 evidence and scope at its own checkpoint.
+
 ## Current result
 
 **Ready for the supervisor to submit as `ranger:needs-eye`.** Phase 2 has not

@@ -40,6 +40,7 @@ const WRITERS = [
 	"observeScan",
 	"observeSystemRelay",
 	"setDeficits",
+	"setDepositRow",
 	"setLegalHeat",
 	// `legal.ts`'s lazy clear of the witnesses and the assault marks (H6),
 	// through `setLegalWitnesses` and `setLegalAssaulted`. A writer by
@@ -585,6 +586,7 @@ describe("the Game's world writes", () => {
 			"ladders = ladderAfterPlay(this.ladders, dt);",
 			// The probe handle's tank, which has never saved.
 			"commander = { ...this.commander, fuelLy: ly };",
+			"commander = { ...this.commander, loadout };",
 		];
 		expect(rhs.length).toBeGreaterThanOrEqual(allowed.length);
 		expect(rhs.filter((line) => !allowed.includes(line))).toEqual([]);

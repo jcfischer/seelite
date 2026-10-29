@@ -1,0 +1,78 @@
+[
+  {
+    "form": "b",
+    "name": "ring",
+    "procedural": {
+      "calls": 92,
+      "triangles": 71740
+    },
+    "authored": {
+      "calls": 57,
+      "triangles": 102416
+    },
+    "timing": {
+      "quality": "high",
+      "samples": 120,
+      "medianMs": 9.400000000001455,
+      "p95Ms": 74.60000000000036,
+      "maxInstallIntervalMs": 224.60000000000036
+    }
+  },
+  {
+    "form": "c",
+    "name": "drum",
+    "procedural": {
+      "calls": 78,
+      "triangles": 39832
+    },
+    "authored": {
+      "calls": 56,
+      "triangles": 80060
+    },
+    "timing": {
+      "quality": "high",
+      "samples": 120,
+      "medianMs": 17.69999999999891,
+      "p95Ms": 66.5,
+      "maxInstallIntervalMs": 258.40000000000055
+    }
+  },
+  {
+    "form": "d",
+    "name": "assembly",
+    "procedural": {
+      "calls": 77,
+      "triangles": 69660
+    },
+    "authored": {
+      "calls": 99,
+      "triangles": 391332
+    },
+    "timing": {
+      "quality": "high",
+      "samples": 120,
+      "medianMs": 17,
+      "p95Ms": 66.60000000000036,
+      "maxInstallIntervalMs": 250.20000000000073
+    }
+  },
+  {
+    "form": "e",
+    "name": "wheel",
+    "procedural": {
+      "calls": 105,
+      "triangles": 43000
+    },
+    "authored": {
+      "calls": 58,
+      "triangles": 123064
+    },
+    "timing": {
+      "quality": "high",
+      "samples": 120,
+      "medianMs": 16.899999999999636,
+      "p95Ms": 66.70000000000073,
+      "maxInstallIntervalMs": 200.20000000000073
+    }
+  }
+]

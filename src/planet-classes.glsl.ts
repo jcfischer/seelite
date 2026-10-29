@@ -1,4 +1,115 @@
 import type { SurfaceClass } from "./planet-appearance";
+import { PLANET_EXTRA_OCTAVES } from "./planet-footprint";
+
+/** Node #757: xyz is the derivative with respect to the input, w its value.
+ * Only terran's analytic program includes these helpers. Footprint and cap are
+ * held fixed while differentiating, just as in the four-tap height samples:
+ * they select a filtered field, rather than becoming terrain themselves.
+ * The browser probe compares helper values against the original scalar field. */
+export const TERRAN_GRADIENT_NOISE = `
+vec4 vnoiseAndGradient(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  vec3 df = 6.0 * f * (1.0 - f);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash31(i),               b = hash31(i + vec3(1,0,0));
+  float c = hash31(i + vec3(0,1,0)), d = hash31(i + vec3(1,1,0));
+  float e = hash31(i + vec3(0,0,1)), g = hash31(i + vec3(1,0,1));
+  float h = hash31(i + vec3(0,1,1)), k = hash31(i + vec3(1,1,1));
+  vec3 grad = df * vec3(
+    mix(mix(b-a, d-c, f.y), mix(g-e, k-h, f.y), f.z),
+    mix(mix(c-a, d-b, f.x), mix(h-e, k-g, f.x), f.z),
+    mix(mix(e-a, g-b, f.x), mix(h-c, k-d, f.x), f.y));
+  float value = mix(mix(mix(a,b,f.x), mix(c,d,f.x), f.y),
+                    mix(mix(e,g,f.x), mix(h,k,f.x), f.y), f.z);
+  return vec4(grad, value);
+}
+${[3, 5, "ridged" as const]
+	.map((kind) => {
+		const ridge = kind === "ridged";
+		const name = ridge ? "ridged" : `fbm${kind}`;
+		const count = ridge ? 4 : kind;
+		const lac = ridge ? "2.07" : "2.03";
+		const offset = ridge ? "9.2" : "17.1";
+		const sample = `
+    vec4 sampleVG = vnoiseAndGradient(p);
+    ${
+			ridge
+				? `sampleVG.xyz *= -2.0 * sign(2.0 * sampleVG.w - 1.0);
+    sampleVG.w = 1.0 - abs(2.0 * sampleVG.w - 1.0);`
+				: ""
+		}
+    s += a * weight * vec4(sampleVG.xyz * frequency, sampleVG.w);
+    n += a * weight;
+    p = p * ${lac} + ${offset}; a *= 0.5; frequency *= ${lac};`;
+		return `
+vec4 ${name}FootprintAndGradient(vec3 p, float footprint, float cap) {
+  float extra = clamp(log(0.5 / max(footprint * pow(${lac}, ${count}.0), 1e-12)) / log(${lac}), 0.0, cap);
+  vec4 s = vec4(0.0);
+  float a = 0.5, n = 0.0, frequency = 1.0;
+  for (int i = 0; i < ${count}; ++i) {
+    float weight = 1.0;
+${sample}
+  }
+  for (int i = 0; i < ${PLANET_EXTRA_OCTAVES}; ++i) {
+    float weight = clamp(extra - float(i), 0.0, 1.0);
+    if (weight <= 0.0) break;
+${sample}
+  }
+  return s / n;
+}
+vec4 ${name}AndGradient(vec3 p) {
+  return ${name}FootprintAndGradient(p, 1.0, 0.0);
+}`;
+	})
+	.join("\n")}
+
+float smoothstepSlope(float lo, float hi, float value) {
+  float t = clamp((value - lo) / (hi - lo), 0.0, 1.0);
+  return 6.0 * t * (1.0 - t) / (hi - lo);
+}
+`;
+
+/** The derivative of TERRAN.height, including the warp's full Jacobian.
+ * stretch and smoothstep are flat outside their transition. At the ridged
+ * cusp sign(0) chooses zero (the symmetric derivative); no finite differences
+ * or screen derivatives are mixed into this path. */
+export function terranHeightGradient(footprint: boolean): string {
+	return `
+vec4 heightAndGradient(vec3 p) {
+  vec3 q = ${footprint ? "terrainCoordinates(p)" : "p"} * 1.15 + seedOffset;
+  vec4 wx = fbm3AndGradient(q * 1.4 + 11.0);
+  vec4 wy = fbm3AndGradient(q * 1.4 + 37.0);
+  vec4 wz = fbm3AndGradient(q * 1.4 + 91.0);
+  vec3 warped = q + 0.85 * (vec3(wx.w, wy.w, wz.w) - 0.5);
+  vec4 c = ${footprint ? "fbm5FootprintAndGradient(warped, terrainFootprint * 1.15, terrainOctaveCap)" : "fbm5AndGradient(warped)"};
+  // J^T times the downstream gradient. The identity part is q itself.
+  c.xyz = 1.15 * (c.xyz + 0.85 * 1.4 *
+    (c.x * wx.xyz + c.y * wy.xyz + c.z * wz.xyz));
+  float stretched = 0.5 + (c.w - 0.5) / FBM_SPREAD;
+  c.xyz *= (stretched > 0.0 && stretched < 1.0) ? 1.0 / FBM_SPREAD : 0.0;
+  c.w = clamp(stretched, 0.0, 1.0);
+  float land = landMask(c.w);
+  vec3 landGrad = smoothstepSlope(seaLevel - 0.008, seaLevel + 0.028, c.w) * c.xyz;
+  float orogeny = smoothstep(seaLevel + 0.10, seaLevel + 0.34, c.w);
+  vec3 orogenyGrad = smoothstepSlope(seaLevel + 0.10, seaLevel + 0.34, c.w) * c.xyz;
+  vec4 ridge = ${footprint ? "ridgedFootprintAndGradient(terrainCoordinates(p) * 11.0 + seedOffset, terrainFootprint * 11.0, terrainOctaveCap)" : "ridgedAndGradient(p * 11.0 + seedOffset)"};
+  ridge.xyz *= 11.0;
+  return vec4(landGrad * (0.12 + 0.88 * ridge.w * orogeny)
+    + land * 0.88 * (ridge.xyz * orogeny + ridge.w * orogenyGrad),
+    land * (0.12 + 0.88 * ridge.w * orogeny));
+}
+`;
+}
+
+/** Inserted only for the analytic arm; legacy program source stays unchanged.
+ * The 0.007 matches four-tap's 2e convention. Projection differentiates the
+ * normalised sphere coordinate; its radial component cannot tilt the normal.
+ * Like four-tap, the perturbation uses the body's object-space tangent frame. */
+export const ANALYTIC_RELIEF = `#ifdef RELIEF_ANALYTIC_GRADIENT
+  vec3 grad = heightAndGradient(p).xyz;
+  vec3 tangentGrad = grad - p * dot(p, grad);
+  return normalize(N - strength * 0.007 * tangentGrad);
+#elif defined(RELIEF_SCREEN_SPACE)`;
 
 /**
  * One fragment body per surface class.

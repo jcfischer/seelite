@@ -8,6 +8,7 @@
 		"build": "tsc --noEmit && vite build && node scripts/check-dist-sizes.mjs",
 		"preview": "vite preview",
 		"test": "bun test tests/",
+		"test:timings": "node scripts/update-unit-timings.mjs",
 		"test:mutation:changed": "bun scripts/mutation-changed.ts",
 		"test:mutation:control": "bun test scripts/mutation-control.test.ts",
 		"format": "biome format --write src scripts tests index.html",

@@ -296,7 +296,7 @@
   },
   "scripts/lib/rock-mesh-distance.ts": {
     "seelite/no-comments": {
-      "count": 2
+      "count": 1
     }
   },
   "scripts/lib/rock-ray-exits.ts": {
@@ -1056,7 +1056,7 @@
   },
   "scripts/probe-model-queue.mjs": {
     "seelite/no-comments": {
-      "count": 3
+      "count": 2
     }
   },
   "scripts/probe-model-viewer.mjs": {
@@ -2391,7 +2391,7 @@
   },
   "src/music-voices.ts": {
     "seelite/no-comments": {
-      "count": 218
+      "count": 217
     }
   },
   "src/music-worklet.ts": {
@@ -2856,7 +2856,7 @@
   },
   "src/station-proxy.ts": {
     "seelite/no-comments": {
-      "count": 96
+      "count": 95
     }
   },
   "src/station-roster.ts": {
@@ -4146,7 +4146,7 @@
   },
   "tests/music-director.test.ts": {
     "seelite/no-comments": {
-      "count": 42
+      "count": 41
     }
   },
   "tests/music-engine.test.ts": {

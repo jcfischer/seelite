@@ -470,16 +470,29 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 			ventThroats(root, "courier")
 				.filter((t) => t.family === "main")
 				.map((t) => t.at.z);
-		let pairs = 0;
-		for (const built of HULL_FINISH_IDS)
-			for (const asked of HULL_FINISH_IDS) {
-				setHullFinish(built);
+		const finishes = new Map(
+			HULL_FINISH_IDS.map((finish) => {
+				setHullFinish(finish);
 				const root = courier();
 				const own = courier();
 				own.userData.authored = false;
-				const fresh = mainsOf(own);
+				return [finish, { root, fresh: mainsOf(own) }] as const;
+			}),
+		);
+		const builtUnder = (finish: (typeof HULL_FINISH_IDS)[number]) => {
+			const known = finishes.get(finish);
+			if (!known) throw new Error(`no courier built under ${finish}`);
+			return known;
+		};
+		let pairs = 0;
+		for (const built of HULL_FINISH_IDS)
+			for (const asked of HULL_FINISH_IDS) {
+				const { root, fresh } = builtUnder(built);
 				setHullFinish(asked);
-				if (courier().userData.authoredGlow === root.userData.authoredGlow)
+				if (
+					builtUnder(asked).root.userData.authoredGlow ===
+					root.userData.authoredGlow
+				)
 					continue;
 				pairs++;
 				expect([built, asked, mainsOf(root)]).toEqual([built, asked, fresh]);

@@ -1,39 +1,46 @@
 {
   "sources": {
     "blocks.mjs": "4fc35084ceb6c2fb9239e58d4095509d5ccdcea7d7d342fcf0423edb17a8e3fd",
-    "build_kit.py": "2e30fc6a9a34336bf4d180c647a473003e80d91a4cf43bc6b47b05d463542a6d",
+    "build_kit.py": "952d3466800572f3b6613e7ab792069e9ab14df36ebaa715f70dcb8de78751c3",
     "../build_model.py": "94f674ceeb55f4683b230537a8055ef9fd97fc97856e47594c736c98d38dbde8",
     "../geometry.py": "fcec145cc6564cdb379196830e7f466010f2036b1b001bd7a5c35cd2b448f148",
     "../final_shapes.py": "26967cd1207766211056e43c6febab3b97d3590f9cdbd9d83679b36516cef3e5",
     "../industrial-surface.png": "4589b25606011e41faf5b2951f37551bfd2a0918f5ce85f8ceee7adeba0d1cb5",
     "joints.ts": "080d69ad87c3abc2b040949b17eefd708dcd93cf3f4aab11a6b473291ff69719",
-    "assembly.ts": "b798f468888a1254c78499f53e217a56b5a2c4de8ebf3c617ba54257aa03ee1e",
-    "prepare.ts": "557383a0fe3f6c4414751a92b3414230786d6724aa928a205c1804acc61e3af3",
-    "viewer.ts": "5af031a0051c028442e8a345c149a49812047075f39fbab7a358a54c47931ee0",
+    "assembly.ts": "3da815fc30d23e497bb40ac86fff5dd2f3a456f88085bd8b6293efd3a187aeb9",
+    "../../../src/assembly-flight.ts": "f4e50ee9643f4d4a504a8c97eea1ba1b043e4ee22b1e3fa21932a41cb22f00c1",
+    "../../../src/assembly-plan.ts": "288f854b898658fbc4afe6757789afe276b6ce380679cfece204cddaf6ede0a2",
+    "prepare.ts": "3e77b421a950c1d80d9bca5f347fc4728b20bf5c1747af73d11e3ae403215727",
+    "viewer.ts": "2ef4140be8817848ea75f51d00d461faeae5fe3a10cd5f603c834d72f20b0704",
     "index.html": "dc7cfe03e1dc12b6108ea5542083538e2a352b7976337d029ed839f70ef7553e",
-    "capture.mjs": "265dbe23fe899a5e097e3045cd5d6bd2c1e3ec5ff3f98c427d505afb9c3c0886"
+    "capture.mjs": "4f9bdd9731c20b9488534e6c624e2217a9e2fac9a5a61afa04d11be07f86d947"
   },
-  "base": "78a583ad8b63f41c9ccd4f5b21fe591144ca361d",
-  "capturedAt": "2026-10-23T07:21:45.337Z",
+  "base": "bb2fd345fab3bccbf9fd321adb398abe86c3f842",
+  "capturedAt": "2026-10-23T18:04:21.769Z",
   "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
   "viewport": [
     1440,
     900
   ],
   "asset": {
-    "batches": 28,
-    "bytes": 13808236,
-    "sha256": "17431602723f3caf6a5eb0c50d1e8a9696c4133ac1f5a8591e4c20e5ef16d611",
+    "batches": 58,
+    "bytes": 15364144,
+    "sha256": "11161fc504a58722f5104fc442fdedc0e7f21526ec71532e98a7beb57e95f05d",
     "units": "km",
     "blocks": [
       "HUB",
       "HUB_STATIC",
       "NODE",
-      "TUBE"
+      "TUBE",
+      "TRUSS",
+      "RADIATOR",
+      "TANKS",
+      "DISH",
+      "LINK"
     ],
     "authoring": "Blender build_kit.py via stations/build_model.py and geometry.py",
     "source": "blocks.blend",
-    "sourceSha256": "e599190181a7fefe62fa21a84d82a60903def767e250d834e1ee02a3ee8ac906",
+    "sourceSha256": "299a9da10e988610a85d8d91df3ec449f6334a17d18f7bf705ba575b14d1597b",
     "texture": "../industrial-surface.png"
   },
   "lighting": "Station study rig: ACES 1.12, room environment 0.36; key 4.5, fill 1.1, rim 1.0. Phases 0 and quarter turn (hub-quarter), studio background; no frame-time claim.",
@@ -1958,180 +1965,1235 @@
   "authoredInstances": {
     "0": [
       {
-        "module": 4,
-        "dx": -2,
-        "dy": -1
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
       },
       {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": -2,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 4,
         "dx": 2,
-        "dy": -1
+        "dy": -1,
+        "turn": 1.5707963267948966
       },
       {
+        "block": "NODE",
         "module": 2,
         "dx": -2,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "TUBE",
         "module": 3,
         "dx": -1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB",
         "module": 1,
         "dx": 0,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": 1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "DISH",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": 3,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "NODE",
         "module": 2,
         "dx": 4,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "TUBE",
         "module": 4,
         "dx": -2,
-        "dy": 1
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
       }
     ],
     "1": [
       {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": -2,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "TUBE",
         "module": 3,
         "dx": -1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB",
         "module": 1,
         "dx": 0,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": 1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "NODE",
         "module": 2,
         "dx": 2,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 5,
+        "dx": 3,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 4,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": 3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
       }
     ],
     "47": [
       {
-        "module": 4,
-        "dx": -2,
-        "dy": -2
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
       },
       {
-        "module": 4,
-        "dx": -2,
-        "dy": -1
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
       },
       {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 2,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 4,
         "dx": 2,
-        "dy": -1
+        "dy": -1,
+        "turn": 1.5707963267948966
       },
       {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": -4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": -3,
+        "dy": 0,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": -1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB",
         "module": 1,
         "dx": 0,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": 1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "NODE",
         "module": 2,
         "dx": 2,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "TUBE",
         "module": 3,
         "dx": 3,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "NODE",
         "module": 2,
         "dx": 4,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 2,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 2,
+        "dy": 2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 2,
+        "dy": 2,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": 1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 1,
+        "dy": 3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
       }
     ],
     "1234": [
       {
-        "module": 2,
-        "dx": -2,
-        "dy": -2
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
       },
       {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": -2,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 4,
         "dx": -2,
-        "dy": -1
+        "dy": -1,
+        "turn": 1.5707963267948966
       },
       {
+        "block": "TANKS",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": 2,
-        "dy": -1
+        "dy": -1,
+        "turn": 0
       },
       {
+        "block": "TUBE",
         "module": 3,
         "dx": 3,
-        "dy": -1
+        "dy": -1,
+        "turn": 0
       },
       {
+        "block": "TUBE",
         "module": 3,
         "dx": -4,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "TUBE",
         "module": 3,
         "dx": -3,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "DISH",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": -1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB",
         "module": 1,
         "dx": 0,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": 1,
-        "dy": 0
+        "dy": 0,
+        "turn": 0
       },
       {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
         "module": 3,
         "dx": 2,
-        "dy": 1
+        "dy": 1,
+        "turn": 0
       },
       {
+        "block": "NODE",
         "module": 2,
         "dx": 3,
-        "dy": 1
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 2,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
       }
     ]
   },
@@ -2177,8 +3239,8 @@
         ],
         "joint": null
       },
-      "calls": 252,
-      "triangles": 361456
+      "calls": 268,
+      "triangles": 408344
     },
     {
       "file": "seed-0-hub-procedural.png",
@@ -2221,8 +3283,8 @@
         ],
         "joint": null
       },
-      "calls": 177,
-      "triangles": 360376
+      "calls": 200,
+      "triangles": 407792
     },
     {
       "file": "seed-0-hub-quarter-procedural.png",
@@ -2265,8 +3327,8 @@
         ],
         "joint": null
       },
-      "calls": 178,
-      "triangles": 360378
+      "calls": 201,
+      "triangles": 407794
     },
     {
       "file": "seed-0-joint-procedural.png",
@@ -2397,8 +3459,8 @@
           ]
         }
       },
-      "calls": 70,
-      "triangles": 358936
+      "calls": 94,
+      "triangles": 406520
     },
     {
       "file": "seed-0-rear-procedural.png",
@@ -2441,8 +3503,8 @@
         ],
         "joint": null
       },
-      "calls": 252,
-      "triangles": 361456
+      "calls": 268,
+      "triangles": 408344
     },
     {
       "file": "seed-1-overview-procedural.png",
@@ -2485,8 +3547,8 @@
         ],
         "joint": null
       },
-      "calls": 250,
-      "triangles": 247064
+      "calls": 259,
+      "triangles": 313352
     },
     {
       "file": "seed-1-hub-procedural.png",
@@ -2529,8 +3591,8 @@
         ],
         "joint": null
       },
-      "calls": 176,
-      "triangles": 246152
+      "calls": 191,
+      "triangles": 312800
     },
     {
       "file": "seed-1-hub-quarter-procedural.png",
@@ -2573,8 +3635,8 @@
         ],
         "joint": null
       },
-      "calls": 177,
-      "triangles": 246154
+      "calls": 192,
+      "triangles": 312802
     },
     {
       "file": "seed-1-joint-procedural.png",
@@ -2705,8 +3767,8 @@
           ]
         }
       },
-      "calls": 91,
-      "triangles": 225144
+      "calls": 106,
+      "triangles": 291792
     },
     {
       "file": "seed-1-rear-procedural.png",
@@ -2749,8 +3811,8 @@
         ],
         "joint": null
       },
-      "calls": 250,
-      "triangles": 247064
+      "calls": 259,
+      "triangles": 313352
     },
     {
       "file": "seed-47-overview-procedural.png",
@@ -2793,8 +3855,8 @@
         ],
         "joint": null
       },
-      "calls": 253,
-      "triangles": 383680
+      "calls": 268,
+      "triangles": 459208
     },
     {
       "file": "seed-47-hub-procedural.png",
@@ -2837,8 +3899,8 @@
         ],
         "joint": null
       },
-      "calls": 176,
-      "triangles": 382264
+      "calls": 200,
+      "triangles": 458656
     },
     {
       "file": "seed-47-hub-quarter-procedural.png",
@@ -2881,8 +3943,8 @@
         ],
         "joint": null
       },
-      "calls": 177,
-      "triangles": 382266
+      "calls": 201,
+      "triangles": 458658
     },
     {
       "file": "seed-47-joint-procedural.png",
@@ -3013,8 +4075,8 @@
           ]
         }
       },
-      "calls": 60,
-      "triangles": 380872
+      "calls": 84,
+      "triangles": 457264
     },
     {
       "file": "seed-47-rear-procedural.png",
@@ -3057,8 +4119,8 @@
         ],
         "joint": null
       },
-      "calls": 253,
-      "triangles": 383680
+      "calls": 268,
+      "triangles": 459208
     },
     {
       "file": "seed-1234-overview-procedural.png",
@@ -3101,8 +4163,8 @@
         ],
         "joint": null
       },
-      "calls": 251,
-      "triangles": 416192
+      "calls": 268,
+      "triangles": 469120
     },
     {
       "file": "seed-1234-hub-procedural.png",
@@ -3145,8 +4207,8 @@
         ],
         "joint": null
       },
-      "calls": 176,
-      "triangles": 415112
+      "calls": 193,
+      "triangles": 468220
     },
     {
       "file": "seed-1234-hub-quarter-procedural.png",
@@ -3189,8 +4251,8 @@
         ],
         "joint": null
       },
-      "calls": 177,
-      "triangles": 415114
+      "calls": 194,
+      "triangles": 468222
     },
     {
       "file": "seed-1234-joint-procedural.png",
@@ -3321,8 +4383,8 @@
           ]
         }
       },
-      "calls": 52,
-      "triangles": 413624
+      "calls": 67,
+      "triangles": 465724
     },
     {
       "file": "seed-1234-rear-procedural.png",
@@ -3365,8 +4427,8 @@
         ],
         "joint": null
       },
-      "calls": 251,
-      "triangles": 416192
+      "calls": 268,
+      "triangles": 469120
     }
   ],
   "errors": []

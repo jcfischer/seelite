@@ -183,12 +183,14 @@ function cut(tris: Tri[], axis: THREE.Vector3, at: number): [Tri[], Tri[]] {
  * and still kept out of the lane.
  */
 let keepOut: THREE.Box3[] = [];
+let permitPlaneRelocation = true;
 const KEEP_OUT_MARGIN_M = 0.05;
 function intrudes(o: Obb): boolean {
 	// A box along the axis starting at the plane is `offThePlane`'s to move
 	// clear of the bay; the lane in front it must keep clear of here.
 	const along = o.axes.findIndex((a) => Math.abs(a.z) > 0.9999);
 	const onThePlane =
+		permitPlaneRelocation &&
 		along >= 0 &&
 		keepOut.length > 0 &&
 		o.c.z - o.half[along] >= keepOut[0].max.z - 0.5;
@@ -1014,6 +1016,59 @@ function clipOutside(tris: Tri[], boxes: THREE.Box3[]): Tri[] {
 	return remaining;
 }
 
+export function assemblyBlockParts(
+	root: THREE.Object3D,
+	name: string,
+): Tri[][] {
+	return partsOf(root, name, 1);
+}
+
+export function fitAssemblyBlock(root: THREE.Object3D, name: string): Obb[] {
+	permitPlaneRelocation = false;
+	const bay = stationInterior("trade", STATION_GEOMETRY.trade.aperturePlaneKm);
+	keepOut =
+		name === "HUB"
+			? [
+					new THREE.Box3(
+						new THREE.Vector3(
+							-bay.halfAcrossKm * 1000,
+							-bay.halfUpKm * 1000,
+							bay.endAxialKm * 1000,
+						),
+						new THREE.Vector3(
+							bay.halfAcrossKm * 1000,
+							bay.halfUpKm * 1000,
+							bay.mouthAxialKm * 1000,
+						),
+					),
+					new THREE.Box3(
+						new THREE.Vector3(
+							-bay.laneHalfAcrossKm * 1000,
+							-bay.laneHalfUpKm * 1000,
+							bay.mouthAxialKm * 1000,
+						),
+						new THREE.Vector3(
+							bay.laneHalfAcrossKm * 1000,
+							bay.laneHalfUpKm * 1000,
+							4000,
+						),
+					),
+				]
+			: [];
+	fitLimitM = SAMPLE_LIMIT_M - 0.5;
+	try {
+		const parts = assemblyBlockParts(root, name)
+			.map((p) => clipOutside(p, keepOut))
+			.filter((p) => p.length);
+		return stage(name, parts, console.log);
+	} finally {
+		permitPlaneRelocation = true;
+		keepOut = [];
+		fitLimitM = SAMPLE_LIMIT_M;
+		nearModel = null;
+	}
+}
+
 /** Fit trade exteriors with the existing 10 m part fitter (node #1033).
  * The drawn coaming's front face gets a thin proxy 1.25 m outside the plane,
  * clear of the bay keep-out after packing; independent checks hold its
@@ -1202,6 +1257,7 @@ export class TriangleGrid {
 	private readonly cells = new Map<number, number[]>();
 	private readonly stamps: Uint32Array;
 	private stamp = 0;
+	private lastHit = -1;
 	private readonly triangle = new THREE.Triangle();
 	private readonly q = new THREE.Vector3();
 	constructor(
@@ -1225,21 +1281,31 @@ export class TriangleGrid {
 	private at(v: number) {
 		return Math.floor(v / this.cell);
 	}
-	/** True when some triangle lies within `limit` of `p`. */
+	/** True when some triangle lies within `limit` of `p`. The last triangle found is asked first. */
 	within(p: THREE.Vector3, limit: number): boolean {
 		const s = ++this.stamp;
 		const limitSq = limit * limit;
+		if (this.lastHit >= 0) {
+			if (this.near(this.lastHit, p, limitSq)) return true;
+			this.stamps[this.lastHit] = s;
+		}
 		for (let i = this.at(p.x - limit); i <= this.at(p.x + limit); i++)
 			for (let j = this.at(p.y - limit); j <= this.at(p.y + limit); j++)
 				for (let k = this.at(p.z - limit); k <= this.at(p.z + limit); k++)
 					for (const n of this.cells.get(cellKey(i, j, k)) ?? []) {
 						if (this.stamps[n] === s) continue;
 						this.stamps[n] = s;
-						const t = this.tris[n];
-						this.triangle.set(t[0], t[1], t[2]).closestPointToPoint(p, this.q);
-						if (this.q.distanceToSquared(p) <= limitSq) return true;
+						if (this.near(n, p, limitSq)) {
+							this.lastHit = n;
+							return true;
+						}
 					}
 		return false;
+	}
+	private near(n: number, p: THREE.Vector3, limitSq: number): boolean {
+		const t = this.tris[n];
+		this.triangle.set(t[0], t[1], t[2]).closestPointToPoint(p, this.q);
+		return this.q.distanceToSquared(p) <= limitSq;
 	}
 }
 

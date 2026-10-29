@@ -72,14 +72,22 @@ import { OUTPOST_PROXIES, OUTPOST_PROXY_PACK } from "./outpost-proxies";
 import { REFINERY_PROXIES, REFINERY_PROXY_PACK } from "./refinery-proxies";
 import { SHIPYARD_PROXIES, SHIPYARD_PROXY_PACK } from "./shipyard-proxies";
 import {
-	buildSphereGrid,
+	type Bounds as GridBounds,
+	type BoxGrid,
+	boundsOfBox,
+	boundsOfSegment,
+	buildBoxGrid,
 	INDEX_CELL_KM,
 	INDEXED_ABOVE,
-	querySphereGrid,
-	type Sphere,
-	type SphereGrid,
+	queryBoxGrid,
 } from "./sphere-grid";
 import { HUB, modularPlacements } from "./station-modular";
+import {
+	type AssemblyBlock,
+	assemblyInstances,
+	ASSEMBLY_CELL_KM,
+} from "./assembly-plan";
+import { ASSEMBLY_PROXIES } from "./assembly-proxies";
 import { type Vec3, cross, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
@@ -521,30 +529,95 @@ function tradeDrumProxy(): StationProxy {
 // ---------------------------------------------------------------------------
 
 function tradeAssemblyProxy(assemblySeed: number): StationProxy {
-	const r = STATION_GEOMETRY.trade.coreRadiusKm;
-	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
-	const spinning = cutAround(
-		[axial(r * 0.34, r * 0.34, -r * 0.3, plane + 0.016)],
-		bayHoles("trade"),
-	);
-	const bay = stationInterior("trade", plane);
-	const [end] = interiorAxialSpanKm(bay);
+	const cells = assemblyInstances(modularPlacements(assemblySeed).placements);
+	const statics: ProxyBox[] = [];
+	for (const p of cells) {
+		if (p.block === "HUB") continue;
+		const c = Math.cos(p.turn),
+			s = Math.sin(p.turn);
+		const rotate = (v: Vec3) => v3(c * v.x - s * v.y, s * v.x + c * v.y, v.z);
+		for (const b of assemblyProxyBoxes(p.block))
+			statics.push({
+				...b,
+				cx: p.dx * ASSEMBLY_CELL_KM + c * b.cx - s * b.cy,
+				cy: p.dy * ASSEMBLY_CELL_KM + s * b.cx + c * b.cy,
+				axes: b.axes?.map(rotate) as [Vec3, Vec3, Vec3],
+			});
+	}
+	const bay = stationInterior("trade", STATION_GEOMETRY.trade.aperturePlaneKm);
 	const swept = Math.hypot(bay.halfAcrossKm, bay.halfUpKm);
-	// Cut the swept bay, not its phase-zero rectangle, from static cells.
-	const holes = [axial(swept, swept, end, Infinity)];
-	const cells = modularPlacements(assemblySeed)
-		.placements.filter((p) => p.module !== HUB)
-		.map(
-			(p): Bounds => ({
-				x0: p.dx * 0.2 - 0.1,
-				x1: p.dx * 0.2 + 0.1,
-				y0: p.dy * 0.2 - 0.1,
-				y1: p.dy * 0.2 + 0.1,
-				z0: -0.06,
-				z1: 0.1,
-			}),
-		);
-	return proxyOf(spinning, cutAround(cells, holes));
+	const opening = axial(swept, swept, bay.endAxialKm, Infinity);
+	return proxyOf(
+		[
+			...outsideTheBay(assemblyProxyBoxes("HUB"), "trade"),
+			...bayWalls("trade", 0, false),
+		],
+		statics.flatMap((b) => cutAssemblyBay(b, opening)),
+	);
+}
+
+function cutAssemblyBay(b: ProxyBox, hole: Bounds): ProxyBox[] {
+	const axes = b.axes!;
+	const half = [b.hx, b.hy, b.hz];
+	const extent = ["x", "y", "z"].map((k) =>
+		axes.reduce((sum, a, i) => sum + Math.abs(a[k as keyof Vec3]) * half[i], 0),
+	);
+	const bounds = {
+		x0: b.cx - extent[0],
+		x1: b.cx + extent[0],
+		y0: b.cy - extent[1],
+		y1: b.cy + extent[1],
+		z0: b.cz - extent[2],
+		z1: b.cz + extent[2],
+	};
+	if (
+		bounds.x1 <= hole.x0 ||
+		bounds.x0 >= hole.x1 ||
+		bounds.y1 <= hole.y0 ||
+		bounds.y0 >= hole.y1 ||
+		bounds.z1 <= hole.z0 ||
+		bounds.z0 >= hole.z1
+	)
+		return [b];
+	if (
+		bounds.x0 >= hole.x0 &&
+		bounds.x1 <= hole.x1 &&
+		bounds.y0 >= hole.y0 &&
+		bounds.y1 <= hole.y1 &&
+		bounds.z0 >= hole.z0 &&
+		bounds.z1 <= hole.z1
+	)
+		return [];
+	const index = half.indexOf(Math.max(...half));
+	if (half[index] <= 0.001) return [];
+	const axis = axes[index];
+	const offset = half[index] / 2;
+	const childHalf = [...half];
+	childHalf[index] = offset;
+	return [-1, 1].flatMap((sign) =>
+		cutAssemblyBay(
+			{
+				...b,
+				cx: b.cx + axis.x * offset * sign,
+				cy: b.cy + axis.y * offset * sign,
+				cz: b.cz + axis.z * offset * sign,
+				hx: childHalf[0],
+				hy: childHalf[1],
+				hz: childHalf[2],
+			},
+			hole,
+		),
+	);
+}
+
+const assemblyBoxes = new Map<AssemblyBlock, ProxyBox[]>();
+export function assemblyProxyBoxes(block: AssemblyBlock): ProxyBox[] {
+	let boxes = assemblyBoxes.get(block);
+	if (!boxes) {
+		boxes = unpack(ASSEMBLY_PROXIES[block]);
+		assemblyBoxes.set(block, boxes);
+	}
+	return boxes;
 }
 
 // ---------------------------------------------------------------------------
@@ -1136,11 +1209,11 @@ export function proxyContains(
 	if (primitives.length <= INDEXED_ABOVE)
 		return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
 	// The authored shipyards' thousands of boxes (node #818): only the ones
-	// whose bounding sphere comes within the tolerance can hold the point.
+	// whose bounds come within the tolerance can hold the point.
 	const grid = indexOf(primitives);
 	const reach = Math.max(toleranceKm, 0);
 	let found = false;
-	querySphereGrid(
+	queryBoxGrid(
 		grid,
 		x - reach,
 		y - reach,
@@ -1175,11 +1248,11 @@ export function proxyListDistanceKm(
 	}
 	const grid = indexOf(primitives);
 	for (let r = INDEX_CELL_KM; ; r *= 2) {
-		querySphereGrid(grid, x - r, y - r, z - r, x + r, y + r, z + r, (n) => {
+		queryBoxGrid(grid, x - r, y - r, z - r, x + r, y + r, z + r, (n) => {
 			best = Math.min(best, proxyDistanceKm(primitives[n], x, y, z));
 		});
-		// Every primitive with a surface point within `r` has its bounding
-		// sphere in the box just searched.
+		// Every primitive with a surface point within `r` has its bounds
+		// touching the box just searched.
 		if (best <= r) return best;
 		if (r > 64) break;
 	}
@@ -1188,28 +1261,23 @@ export function proxyListDistanceKm(
 	return best;
 }
 
-const indexes = new WeakMap<readonly ProxyPrimitive[], SphereGrid>();
-function indexOf(primitives: readonly ProxyPrimitive[]): SphereGrid {
+const indexes = new WeakMap<readonly ProxyPrimitive[], BoxGrid>();
+function indexOf(primitives: readonly ProxyPrimitive[]): BoxGrid {
 	let grid = indexes.get(primitives);
 	if (!grid) {
-		grid = buildSphereGrid(primitives.map(boundOf), INDEX_CELL_KM);
+		grid = buildBoxGrid(primitives.map(boundOf), INDEX_CELL_KM);
 		indexes.set(primitives, grid);
 	}
 	return grid;
 }
-function boundOf(p: ProxyPrimitive): Sphere {
+function boundOf(p: ProxyPrimitive): GridBounds {
 	switch (p.kind) {
 		case "box":
-			return { x: p.cx, y: p.cy, z: p.cz, r: Math.hypot(p.hx, p.hy, p.hz) };
+			return boundsOfBox(p.cx, p.cy, p.cz, p.axes, p.hx, p.hy, p.hz);
 		case "sphere":
-			return { x: p.cx, y: p.cy, z: p.cz, r: p.radiusKm };
+			return boundsOfSegment(p.cx, p.cy, p.cz, p.cx, p.cy, p.cz, p.radiusKm);
 		case "capsule":
-			return {
-				x: (p.ax + p.bx) / 2,
-				y: (p.ay + p.by) / 2,
-				z: (p.az + p.bz) / 2,
-				r: Math.hypot(p.bx - p.ax, p.by - p.ay, p.bz - p.az) / 2 + p.radiusKm,
-			};
+			return boundsOfSegment(p.ax, p.ay, p.az, p.bx, p.by, p.bz, p.radiusKm);
 	}
 }
 

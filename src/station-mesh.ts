@@ -56,6 +56,7 @@ import {
 	type RefineryPadFrame,
 } from "./refinery-pad-frame";
 import * as THREE from "three";
+import { ASSEMBLY_CELL_KM } from "./assembly-plan";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
 	BLINKING_CORE_GAIN,
@@ -4258,7 +4259,7 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
  * the ISS's proportion at the scale the other trade forms are drawn to, and
  * makes the eleven-cell diamond 1.8 km across the spine.
  */
-const MODULAR_CELL_KM = 0.2;
+const MODULAR_CELL_KM = ASSEMBLY_CELL_KM;
 
 /**
  * The unit step of a `DIRECTIONS` index, in the plan's plane.
@@ -4352,21 +4353,22 @@ function buildTradeModular(
 	const hubR = r * 0.34;
 	const spun = new THREE.Group();
 	spun.name = "spun";
-	spun.add(
-		shell(
-			[
-				{ z: -r * 0.3, w: hubR * 0.78, h: hubR * 0.78, e: 2 },
-				{ z: -r * 0.2, w: hubR, h: hubR, e: 2, hard: true },
-				{ z: r * 0.6, w: hubR, h: hubR, e: 2, hard: true },
-				{ z: plane, w: hubR * 0.92, h: hubR * 0.92, e: 2 },
-			],
-			hullMaterial(color, "trade"),
-			"core",
-			12,
-			true,
-			apertureCut("trade"),
-		),
-	);
+	if (!assemblyBlocks)
+		spun.add(
+			shell(
+				[
+					{ z: -r * 0.3, w: hubR * 0.78, h: hubR * 0.78, e: 2 },
+					{ z: -r * 0.2, w: hubR, h: hubR, e: 2, hard: true },
+					{ z: r * 0.6, w: hubR, h: hubR, e: 2, hard: true },
+					{ z: plane, w: hubR * 0.92, h: hubR * 0.92, e: 2 },
+				],
+				hullMaterial(color, "trade"),
+				"core",
+				12,
+				true,
+				apertureCut("trade"),
+			),
+		);
 	spun.add(buildAperture("trade", fixtures, plane, berthSeed));
 	// The strobe pair on the hub's front cap, above and below the slot (§5,
 	// #300's review): the hub is what turns, and the spine's longerons the
@@ -4377,6 +4379,10 @@ function buildTradeModular(
 		}),
 	);
 	group.add(spun);
+	if (assemblyBlocks) {
+		assemblyBlocks(placements, group, spun);
+		return { group, fixtures, spinner: spun };
+	}
 
 	const pools = new Pools();
 	const tubeR = c * 0.24;
@@ -6606,6 +6612,15 @@ export function installCoriolisBuilder(
 }
 
 export type AuthoredTradeForm = "b" | "c" | "e";
+export type AssemblyBlocks = (
+	placements: readonly Placement[],
+	group: THREE.Group,
+	spinner: THREE.Group,
+) => void;
+let assemblyBlocks: AssemblyBlocks | null = null;
+export function installAssemblyBlocks(draw: AssemblyBlocks | null) {
+	assemblyBlocks = draw;
+}
 const tradeBuilders = new Map<
 	AuthoredTradeForm,
 	(berthSeed: number, color: number) => StationMesh
@@ -6860,7 +6875,10 @@ export function buildStationForm(
 	// whole turns its trusses with it; a shipyard's static frame is the group
 	// too, and its hub spins inside.
 	const finish = currentStationFinish();
-	if (finish.fixtures)
+	if (
+		finish.fixtures &&
+		!(type === "trade" && formId === "d" && assemblyBlocks)
+	)
 		built.group.add(
 			buildMacroFixtures({
 				type,

@@ -365,8 +365,11 @@ test("a rise just after a fresh variant is asked for still lands on the next bar
 	// line — up to a whole section of calm under a raider.
 	const SR = 48000;
 	const heard: { frame: number; part: string }[] = [];
-	const engine = new MusicEngine(SR, undefined, (_, frame, part) =>
-		heard.push({ frame, part }),
+	const engine = new MusicEngine(
+		SR,
+		undefined,
+		(_, frame, part) => heard.push({ frame, part }),
+		{ countOnly: true },
 	);
 	const out = new Float32Array(128);
 	let frame = 0;
@@ -394,7 +397,6 @@ test("a rise just after a fresh variant is asked for still lands on the next bar
 	expect((hat?.frame ?? Infinity) - riseAt).toBeLessThanOrEqual(
 		1.25 * barFrames + 128,
 	);
-	// Three minutes of the full engine, the reverb and the drone included.
 }, 30000);
 
 test("switching between two beds loads the other one", () => {
@@ -587,8 +589,11 @@ describe("the docking computer's waltz (#603)", () => {
 	test("through the real engine: the cadence is heard after the plane, and the station bed only after it", () => {
 		const SR = 48000;
 		const heard: { id: string; frame: number; part: string }[] = [];
-		const engine = new MusicEngine(SR, undefined, (id, frame, part) =>
-			heard.push({ id, frame, part }),
+		const engine = new MusicEngine(
+			SR,
+			undefined,
+			(id, frame, part) => heard.push({ id, frame, part }),
+			{ countOnly: true },
 		);
 		const out = new Float32Array(128);
 		let frame = 0;

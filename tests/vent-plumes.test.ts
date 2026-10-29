@@ -3,6 +3,7 @@
  * sits, and that a plume is the firing table and nothing else.
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { beforeAll, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
@@ -16,6 +17,8 @@ import {
 	plumeParticle,
 	ventThroats,
 } from "../src/vent-plumes";
+
+await useShippedInterceptorHull();
 
 const built = new Map<HullId, THREE.Group>();
 const rootOf = (id: HullId) => {

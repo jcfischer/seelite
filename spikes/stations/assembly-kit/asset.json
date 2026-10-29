@@ -1,16 +1,21 @@
 {
-  "batches": 28,
-  "bytes": 13808236,
-  "sha256": "17431602723f3caf6a5eb0c50d1e8a9696c4133ac1f5a8591e4c20e5ef16d611",
+  "batches": 58,
+  "bytes": 15364144,
+  "sha256": "11161fc504a58722f5104fc442fdedc0e7f21526ec71532e98a7beb57e95f05d",
   "units": "km",
   "blocks": [
     "HUB",
     "HUB_STATIC",
     "NODE",
-    "TUBE"
+    "TUBE",
+    "TRUSS",
+    "RADIATOR",
+    "TANKS",
+    "DISH",
+    "LINK"
   ],
   "authoring": "Blender build_kit.py via stations/build_model.py and geometry.py",
   "source": "blocks.blend",
-  "sourceSha256": "e599190181a7fefe62fa21a84d82a60903def767e250d834e1ee02a3ee8ac906",
+  "sourceSha256": "299a9da10e988610a85d8d91df3ec449f6334a17d18f7bf705ba575b14d1597b",
   "texture": "../industrial-surface.png"
 }

@@ -262,7 +262,7 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 	// On a procedural hull: the courier draws its authored model since node
 	// #812, which carries its own textures and none of #101's plating, so the
 	// plating is checked where it still ships — a fresh game's `?hull=`.
-	await page.goto(gameUrl(ORIGIN, { seed: 42, hull: "interceptor" }), {
+	await page.goto(gameUrl(ORIGIN, { seed: 42, hull: "prospector" }), {
 		waitUntil: "load",
 	});
 	await page.waitForFunction(() => window.__seelite?.frames > 1);
@@ -270,6 +270,13 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 	// for a plate to be more than one pixel across.
 	await page.keyboard.press("v");
 	await page.waitForFunction(() => window.__seelite?.view === "chase");
+
+	check(
+		"hull surface: the procedural prospector fixture is flown",
+		await page.evaluate(
+			() => window.__seelite.shipMesh.userData.hullId === "prospector",
+		),
+	);
 
 	const surface = await page.evaluate(() => {
 		const g = window.__seelite;

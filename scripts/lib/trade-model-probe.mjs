@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { bootedGame, installViewPlacement } from "../probe-guard.mjs";
 import { gameUrl } from "./game-url.mjs";
 import { installViewFraming } from "./view-placement.mjs";
+import { TRADE_MODEL_FIXTURES } from "./trade-model-fixtures.mjs";
 
 async function installTradeStation(page) {
 	await page.evaluate(() => {
@@ -27,6 +28,62 @@ async function frameTrade(page, distance, view) {
 	);
 }
 
+async function probeFailedDownload(
+	browser,
+	{ form, name, system, from },
+	{ origin, params, check, watch },
+) {
+	const failed = await browser.newPage();
+	watch(failed);
+	let attempts = 0;
+	const warnings = [];
+	failed.on("console", (m) => {
+		if (m.type() === "warning" && m.text().startsWith(`trade/${form}:`))
+			warnings.push(m.text());
+	});
+	await failed.route(new RegExp(`/trade-${name}[^/]*\\.glb`), (route) => {
+		attempts++;
+		return route.abort();
+	});
+	await failed.goto(
+		gameUrl(origin, {
+			...params,
+			seed: 42,
+			system: from,
+			"no-save": true,
+		}),
+	);
+	await bootedGame(failed, 120000);
+	await installTradeStation(failed);
+	await failed.evaluate((index) => {
+		const g = window.__seelite;
+		g.clockHeld = true;
+		g.performJump(g.world.galaxy.systems.find((s) => s.index === index));
+	}, system);
+	await failed.waitForFunction(
+		() => window.__seelite.modelsSettled(),
+		undefined,
+		{ timeout: 180000 },
+	);
+	const fallback = await failed.evaluate(() => {
+		const g = window.__seelite;
+		g.startModelQueue();
+		const station = window.__tradeStation();
+		return (
+			!g.stationVisuals
+				.get(station.id)
+				.root.getObjectByName("authored-exterior") &&
+			!document.querySelector("[data-model-retry]")
+		);
+	});
+	check(
+		`trade/${form}: failure keeps the procedural form and warns once`,
+		fallback && attempts === 1 && warnings.length === 1,
+		JSON.stringify({ attempts, warnings }),
+	);
+	await failed.close();
+}
+
 /** Held responses prove the authored trade forms' production installation (node #1033). */
 export async function probeTradeModels(
 	browser,
@@ -37,11 +94,7 @@ export async function probeTradeModels(
 	const out = "probe-shots/trade-models";
 	await mkdir(out, { recursive: true });
 	const measurements = [];
-	for (const [form, name, system, from] of [
-		["b", "ring", 1, 5],
-		["c", "drum", 0, 52],
-		["e", "wheel", 3, 26],
-	]) {
+	for (const { form, name, system, from } of TRADE_MODEL_FIXTURES) {
 		const page = await browser.newPage({
 			viewport: { width: 1440, height: 900 },
 		});
@@ -204,50 +257,16 @@ export async function probeTradeModels(
 		measurements.push({ form, name, procedural, authored, timing });
 		await page.close();
 	}
-	const failed = await browser.newPage();
-	watch(failed);
-	let attempts = 0;
-	const warnings = [];
-	failed.on("console", (m) => {
-		if (m.type() === "warning" && m.text().startsWith("trade/b:"))
-			warnings.push(m.text());
-	});
-	await failed.route(/\/trade-ring[^/]*\.glb/, (route) => {
-		attempts++;
-		return route.abort();
-	});
-	await failed.goto(
-		gameUrl(origin, { ...params, seed: 42, system: 5, "no-save": true }),
-	);
-	await bootedGame(failed, 120000);
-	await installTradeStation(failed);
-	await failed.evaluate(() => {
-		const g = window.__seelite;
-		g.clockHeld = true;
-		g.performJump(g.world.galaxy.systems.find((s) => s.index === 1));
-	});
-	await failed.waitForFunction(
-		() => window.__seelite.modelsSettled(),
-		undefined,
-		{ timeout: 180000 },
-	);
-	const fallback = await failed.evaluate(() => {
-		const g = window.__seelite;
-		g.startModelQueue();
-		const station = window.__tradeStation();
-		return (
-			!g.stationVisuals
-				.get(station.id)
-				.root.getObjectByName("authored-exterior") &&
-			!document.querySelector("[data-model-retry]")
-		);
-	});
-	check(
-		"trade failure keeps the procedural form and warns once",
-		fallback && attempts === 1 && warnings.length === 1,
-		JSON.stringify({ attempts, warnings }),
-	);
-	await failed.close();
+	for (const fixture of TRADE_MODEL_FIXTURES.filter(
+		(f) => f.form === "b" || f.form === "d",
+	))
+		await probeFailedDownload(browser, fixture, {
+			origin,
+			params,
+			check,
+			watch,
+		});
+
 	await writeFile(
 		`${out}/measurements.json`,
 		JSON.stringify(measurements, null, 2),
