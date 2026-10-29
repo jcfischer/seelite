@@ -12730,22 +12730,27 @@ class Game {
 				const surfaceKm =
 					length(sub(held.pos, this.world.ship.pos)) - held.radiusKm;
 				if (surfaceKm <= NEAR_FAR_KM) {
-					this.frameBody = held;
-					this.frameField = null;
+					this.setLocalFrame(held);
 					return;
 				}
 			}
 			this.proximityFrameBodyId = null;
 		}
-		this.frameBody = this.nearestBody();
-		this.frameField = nearestFieldPlan(
-			this.world.system,
-			this.world.ship.pos,
-			this.world.gameTime,
-			this.frameBody
-				? length(sub(this.frameBody.pos, this.world.ship.pos))
-				: NEAR_FAR_KM,
+		const body = this.nearestBody();
+		this.setLocalFrame(
+			body,
+			nearestFieldPlan(
+				this.world.system,
+				this.world.ship.pos,
+				this.world.gameTime,
+				body ? length(sub(body.pos, this.world.ship.pos)) : NEAR_FAR_KM,
+			),
 		);
+	}
+
+	private setLocalFrame(body: Body | null, field: FieldPlan | null = null) {
+		this.frameBody = body;
+		this.frameField = field;
 	}
 
 	/** The nearest body within `NEAR_FAR_KM`, centre to ship, or `null`. */
@@ -14429,8 +14434,7 @@ class Game {
 		this.detour = null;
 		this.cruiseTrackId = null;
 		this.faceTurnId = null;
-		this.frameBody = null;
-		this.frameField = null;
+		this.setLocalFrame(null);
 		this.proximityFrameBodyId = null;
 		this.dockingComputer.disengage();
 		this.dockingNotice = null;
@@ -16939,11 +16943,10 @@ class Game {
 			? frameVelocity
 			: exitVelocity(this.nose(), this.cruiseSpeedKms, frameVelocity);
 		this.proximityFrameBodyId = stopInBodyFrame ? matchBodyId : null;
-		if (this.proximityFrameBodyId) {
-			this.frameBody =
-				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
-			this.frameField = null;
-		}
+		if (this.proximityFrameBodyId)
+			this.setLocalFrame(
+				this.world.system.byId.get(this.proximityFrameBodyId) ?? null,
+			);
 		this.regime = "normal";
 		// The other end of the leg — see the note beside the engage.
 		markShipPlaced(this.world);

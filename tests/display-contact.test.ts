@@ -363,6 +363,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			methods(
 				[
 					"clearFlightSession",
+					"setLocalFrame",
 					"dropWreckContact",
 					"abortSystemSweep",
 					"dropPointer",

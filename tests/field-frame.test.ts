@@ -75,6 +75,7 @@ const METHODS = [
 	"localFrame",
 	"localFrameSource",
 	"bodyFrameSource",
+	"setLocalFrame",
 ];
 
 function subjectAt(galaxy: number, system: number) {
