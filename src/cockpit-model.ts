@@ -42,6 +42,25 @@ const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
 	: [0, 0.3, 1.15];
 const CABIN_PITCH_RAD = MINER_COCKPIT ? 0 : 0.242;
 
+/** The miner seat sits this far to starboard of the pilot seat, model metres. */
+export const MINER_SEAT_OFFSET_M = 1.2;
+/** The review build's seat-swap key: `4`, beside the head-look keys 1–3 and unbound. */
+export const MINER_SEAT_KEY = "4";
+
+/**
+ * The miner study's textures carry their own colour, so its materials keep a white
+ * tint and a painted finish: the courier's tints and 0.65 metalness turned them black.
+ */
+const MINER_FINISHES: Readonly<
+	Record<string, { metalness: number; roughness: number }>
+> = {
+	"graphite-housings": { metalness: 0.35, roughness: 0.5 },
+	"cabin-lining": { metalness: 0.2, roughness: 0.55 },
+	"seat-shell": { metalness: 0.3, roughness: 0.45 },
+	"seat-cushion": { metalness: 0, roughness: 0.8 },
+	"weathered-blue-steel": { metalness: 0.45, roughness: 0.42 },
+};
+
 const MINER_LAMP_POSITIONS_M: Readonly<Record<string, readonly number[]>> = {
 	"cockpit-light": [-0.3, -0.8, -0.95],
 	"cockpit-key-light": [1.5, -0.8, -0.95],
@@ -155,7 +174,6 @@ export const COCKPIT_MODEL_LAMPS = [
  * here (`spikes/courier-cockpit/assets.md`). Only mapped materials carry it.
  */
 export const COCKPIT_TINTS: Readonly<Record<string, number>> = {
-	"cabin-lining": 0x34495a,
 	"weathered-blue-steel": 0x405868,
 	"graphite-housings": 0x283842,
 	"exposed-machined-edges": 0x8d9395,
@@ -317,6 +335,18 @@ let template: THREE.Group | null = null;
  */
 export function adoptCockpitMaterial(m: THREE.MeshStandardMaterial): void {
 	if (!m.map) return;
+	const miner = MINER_COCKPIT ? MINER_FINISHES[m.name] : undefined;
+	if (miner) {
+		m.color.setHex(0xffffff);
+		m.metalness = miner.metalness;
+		m.roughness = miner.roughness;
+		m.envMapIntensity = 1.15;
+		m.map.anisotropy = 8;
+		m.bumpMap = m.map;
+		m.bumpScale = 0.004;
+		m.needsUpdate = true;
+		return;
+	}
 	m.color.setHex(COCKPIT_TINTS[m.name] ?? 0xffffff);
 	m.envMapIntensity = 1.15;
 	if (m.name !== "exposed-machined-edges") {
@@ -556,7 +586,7 @@ export function buildAuthoredCabin(): AuthoredCabin {
 		else extraScreens[name] = screenFrame(positions, uvs);
 	});
 	for (const name of COCKPIT_SCREENS)
-		if (!screens[name])
+		if (!screens[name] && !(MINER_COCKPIT && name === "systems"))
 			throw new Error(`buildAuthoredCabin: the model has no screen-${name}`);
 	return { root, screens, extraScreens, modelSpace };
 }

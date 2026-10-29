@@ -1046,8 +1046,11 @@ import {
 	carriedConsoleLamp,
 	type CockpitScreen,
 	containedFace,
+	COCKPIT_MODEL_KM_PER_M,
 	INSTRUMENT_FACE_KM,
 	MINER_COCKPIT,
+	MINER_SEAT_KEY,
+	MINER_SEAT_OFFSET_M,
 	SCANNER_FACE_KM,
 	type ScreenFrame,
 	screenMount,
@@ -10453,7 +10456,11 @@ class Game {
 		const cabin = buildAuthoredCabin();
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
-		cockpit.add(cabin.root);
+		const seat = new THREE.Group();
+		seat.name = "cockpit-seat";
+		cockpit.add(seat);
+		this.cockpitSeat = seat;
+		seat.add(cabin.root);
 		// The spike's under-console lamps, carried from model metres into the
 		// cabin's frame the way a world lamp is (`cabinLight`). Parented to the
 		// cockpit, so they light the cabin alone as the ship turns.
@@ -10506,7 +10513,7 @@ class Game {
 			const mount = screenMount(frame);
 			mount.name = name;
 			mount.scale.setScalar(fit.widthKm / faceWidthKm);
-			cockpit.add(mount);
+			seat.add(mount);
 			return mount;
 		};
 		const scannerMount = mountOn(
@@ -10528,7 +10535,7 @@ class Game {
 			"target-mount",
 		);
 		this.buildScannerAssembly(scannerMount, flightMount, targetMount, inset);
-		if (MINER_COCKPIT) this.buildMinerFaces(cabin.extraScreens, cockpit);
+		if (MINER_COCKPIT) this.buildMinerFaces(cabin.extraScreens, seat);
 		this.buildHologramSystem(scannerMount);
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
@@ -10728,6 +10735,17 @@ class Game {
 		ctx.fillStyle = shade;
 		ctx.fillRect(0, 0, w, h);
 		this.cockpit.scannerTexture.needsUpdate = true;
+	}
+
+	cockpitSeat: THREE.Group | null = null;
+	minerSeat: "pilot" | "miner" = "pilot";
+
+	/** Review build (#1143): move the eye between the bridge's two seats. */
+	setMinerSeat(seat: "pilot" | "miner") {
+		this.minerSeat = seat;
+		if (this.cockpitSeat)
+			this.cockpitSeat.position.x =
+				seat === "miner" ? -MINER_SEAT_OFFSET_M * COCKPIT_MODEL_KM_PER_M : 0;
 	}
 
 	minerFaces: {
@@ -11467,6 +11485,17 @@ class Game {
 	}
 
 	private onKey(e: KeyboardEvent, down: boolean) {
+		if (
+			MINER_COCKPIT &&
+			down &&
+			!e.repeat &&
+			e.key === MINER_SEAT_KEY &&
+			this.view === "cockpit" &&
+			!isEditable(e.target)
+		) {
+			this.setMinerSeat(this.minerSeat === "pilot" ? "miner" : "pilot");
+			return;
+		}
 		// #377's law: `keyDispatch` owns what an event may reach — releases,
 		// the Ctrl and Meta rules, Alt chords on the physical key, and which
 		// defaults the browser keeps — and it is asked first, so the Requests

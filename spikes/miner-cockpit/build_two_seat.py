@@ -260,6 +260,12 @@ def pod(xc, eye, width, screens, name):
         box(Vector((xc + s * (width / 2 + .03), (FLOOR_Y + base_top) / 2, zc - .12)), (.1, base_top - FLOOR_Y, .78), steel)
     box(Vector((xc, FLOOR_Y + .25, zc + .1)), (width - .3, .42, .05), hose)
     for s in [-1, 1]: box(Vector((xc + s * .15, FLOOR_Y + .05, zc + .25)), (.12, .04, .22), alloy)
+    for a in [-width / 2 + .035, width / 2 - .035]:
+        for b in [-h / 2 + .035, -h / 6, h / 6, h / 2 - .035]: tube(at(a, b, -.006), at(a, b, .01), .011, alloy, 8)
+    for b in [-h / 2 + .09]: box(at(0, b, -.004), (width - .2, .006, .01), black, frame=frame)
+    for k, yy in enumerate([FLOOR_Y + .16, FLOOR_Y + .34]):
+        box(Vector((xc, yy, zc - .09)), (width - .2, .008, .012), black)
+    box(Vector((xc, FLOOR_Y + .05, zc - .08)), (width - .1, .1, .04), steel)
     for sname, a, b, w, hh in screens:
         box(at(a, b, .012), (w + .03, hh + .03, .02), black, frame=frame)
         plane(sname, at(a, b, .024), w, hh, frame=frame)
@@ -271,7 +277,7 @@ pilot_at, pilot_frame = pod(-.3, Vector((0, 0, 0)), 1.34, [
     ('screen-flight', .45, .13, .3, .15),
     ('screen-target', .45, -.08, .3, .15),
     ('screen-status', -.04, -.22, .6, .045),
-    ('screen-systems', -.5, -.2, .1, .07),
+    ('screen-notices', -.5, -.2, .1, .07),
 ], 'pilot')
 for b in [.15, .05, -.05]:
     c = pilot_at(-.52, b, .02); tube(c, c + pilot_frame[2] * .045, .03, alloy, 14); tube(c + pilot_frame[2] * .045, c + pilot_frame[2] * .07, .022, black, 12)
@@ -303,42 +309,63 @@ def bucket_surface(xs, y0, y1, half, wing, z0, lean, depth, mat, flip=False, nx=
             q = [a[i], a[i + 1], b[i + 1], b[i]]
             poly(list(reversed(q)) if flip else q, mat)
     return rows
+# Sculpted seats (round 9): subdivided cages, so the shell, wings, headrest and cushions read as moulded
+# parts. Each part is its own object; `SCULPTED` is exported after the batches.
+import bmesh
+SCULPTED = []
+def cage(name, centre, size, cuts, shape, mat, level=2):
+    bm = bmesh.new(); bmesh.ops.create_cube(bm, size=1)
+    bmesh.ops.subdivide_edges(bm, edges=list(bm.edges), cuts=cuts, use_grid_fill=True)
+    for v in bm.verts:
+        x, y, z = v.co.x * size[0], v.co.y * size[1], v.co.z * size[2]
+        v.co = Vector(shape(x, y, z, v.co))
+    for v in bm.verts: v.co += Vector(centre)
+    SCULPTED.append((name, bm, mat, level))
+
+def shell_shape(half_w, wing, bulge, lean):
+    def f(x, y, z, n):
+        t = x / half_w
+        z += bulge * (1 - t * t) * (1 if n.z > 0 else .6)
+        z -= wing * max(0, abs(t) - .45) ** 1.6
+        z += lean * y
+        return (x, y, z)
+    return f
+
 for xs, aisle in [(0.0, 1), (1.2, -1)]:
     outer_side = -aisle
-    o = bucket_surface(xs, -.95, .02, .32, .2, .84, .14, 0, shell)
-    i = bucket_surface(xs, -.9, -.02, .26, .14, .84, .14, -.06, cushion, flip=True)
-    for row in o: pass
-    bucket_surface(xs, -.95, .02, .33, .21, .84, .14, .05, shell, flip=True, bulge=.07)
+    cage(f'seat-shell-back-{xs}', (xs, -.47, .9), (.64, .98, .14), 4, shell_shape(.32, .42, .05, -.14), shell)
+    cage(f'seat-cushion-back-{xs}', (xs, -.47, .8), (.5, .86, .1), 4, shell_shape(.25, .2, -.02, -.14), cushion)
+    cage(f'seat-shell-head-{xs}', (xs, .2, 1.0), (.4, .28, .14), 3, shell_shape(.2, .14, .04, -.1), shell)
+    cage(f'seat-cushion-head-{xs}', (xs, .2, .91), (.3, .22, .08), 3, shell_shape(.15, .05, -.01, -.1), cushion)
+    cage(f'seat-shell-pan-{xs}', (xs, -1.0, .45), (.62, .12, .62), 3, lambda x, y, z, n: (x, y + .05 * (abs(x) / .31) ** 2, z), shell)
+    cage(f'seat-cushion-pan-{xs}', (xs, -.92, .44), (.5, .1, .54), 3, lambda x, y, z, n: (x, y + .04 * (abs(x) / .25) ** 2 + .015 * (1 - (z / .27) ** 2), z), cushion)
     for t in [-1, 1]:
-        for y0, y1 in [(-.95, -.47), (-.47, .02)]:
-            a0 = Vector((xs + t * .32, y0, .84 + .14 * (y0 + .95) - .2)); a1 = Vector((xs + t * .32, y1, .84 + .14 * (y1 + .95) - .2))
-            poly([a0, a1, a1 + Vector((t * .01, 0, .25)), a0 + Vector((t * .01, 0, .25))], shell)
-    h_o = bucket_surface(xs, .05, .3, .17, .06, .98, .1, 0, shell, ny=3, nx=6)
-    bucket_surface(xs, .05, .3, .18, .07, .98, .1, .05, shell, flip=True, ny=3, nx=6, bulge=.05)
-    bucket_surface(xs, .07, .28, .14, .04, .98, .1, -.05, cushion, flip=True, ny=3, nx=6)
-    for t in [-1, 1]:
-        tube((xs + t * .1, -.02, .98), (xs + t * .1, .06, .985), .015, alloy, 8)
-    box((xs, -1.0, .45), (.6, .1, .6), shell)
-    box((xs, -.92, .43), (.5, .08, .52), cushion)
-    for t in [-1, 1]: box((xs + t * .27, -.86, .43), (.07, .1, .5), cushion)
+        tube((xs + t * .1, .02, 1.0), (xs + t * .1, .09, 1.0), .015, alloy, 8)
+        for y in [-.8, -.2]: tube((xs + t * .3, y, .985), (xs + t * .3, y, 1.0), .014, alloy, 8)
     tube((xs, FLOOR_Y, .45), (xs, -1.05, .45), .07, alloy, 12)
-    ribbed_hose([(xs + outer_side * .33, .0, .92), (xs + outer_side * .42, -.35, 1.0), (xs + outer_side * .44, -.8, .95), (xs + outer_side * .36, FLOOR_Y + .1, .75)], .045)
-    for y in [-.2, -.6]: tube((xs + outer_side * .36, y, .9), (xs + outer_side * .44, y, .96), .055, alloy, 12)
+    tube((xs, FLOOR_Y + .01, .45), (xs, FLOOR_Y + .03, .45), .2, dark, 16)
+    ribbed_hose([(xs + outer_side * .33, .0, .96), (xs + outer_side * .42, -.35, 1.02), (xs + outer_side * .44, -.8, .97), (xs + outer_side * .36, FLOOR_Y + .1, .75)], .045)
+    for y in [-.2, -.6]: tube((xs + outer_side * .36, y, .94), (xs + outer_side * .44, y, 1.0), .055, alloy, 12)
     arm = Vector((xs + aisle * .38, -.72, .1))
-    box(arm, (.14, .1, .62), shell)
-    box(arm + Vector((0, .06, 0)), (.12, .03, .56), dark)
+    cage(f'seat-armrest-{xs}', tuple(arm + Vector((0, .02, 0))), (.13, .1, .6), 2, lambda x, y, z, n: (x, y, z), cushion)
     box(Vector((arm.x, (FLOOR_Y - .72) / 2, .25)), (.12, -.72 - FLOOR_Y, .3), dark)
-    grip = arm + Vector((0, .07, -.22))
+    box(Vector((arm.x, -.74, -.12)), (.16, .08, .22), dark)
+    grip = arm + Vector((0, .04, -.14))
     if aisle > 0:
-        tube(grip, grip + Vector((0, .05, 0)), .05, black, 14)
-        tube(grip + Vector((0, .05, 0)), grip + Vector((0, .1, .01)), .032, black, 14)
-        tube(grip + Vector((0, .1, .01)), grip + Vector((0, .2, .02)), .016, black, 12)
-        curve_path([grip + Vector((0, .19, .02)), grip + Vector((0, .28, .0)), grip + Vector((0, .36, -.01))], .034, black, sides=14, steps=6)
-        box(grip + Vector((0, .3, -.045)), (.02, .04, .02), red)
-        box(grip + Vector((0, .38, -.01)), (.05, .02, .05), dark)
+        # Pilot's flight stick: a ribbed boot, a black shaft and a ball grip with a trigger and a hat.
+        for k in range(5):
+            r = .055 - k * .007
+            tube(grip + Vector((0, k * .018, 0)), grip + Vector((0, k * .018 + .016, 0)), r, black, 16)
+        tube(grip + Vector((0, .08, 0)), grip + Vector((0, .2, -.01)), .014, black, 12)
+        cage('stick-grip', tuple(grip + Vector((0, .25, -.015))), (.07, .1, .075), 2, lambda x, y, z, n: (x, y, z - .012 * (y / .05)), black, level=3)
+        box(grip + Vector((0, .27, -.055)), (.018, .03, .016), red)
+        tube(grip + Vector((0, .3, -.01)), grip + Vector((0, .315, -.01)), .012, alloy, 10)
     else:
-        for dx in [-.025, .025]: tube(grip + Vector((dx, 0, 0)), grip + Vector((dx, .14, -.04)), .013, alloy, 8)
-        box(grip + Vector((0, .16, -.05)), (.09, .035, .035), red)
+        # Miner's drill-feed lever, kept (principal): twin rods in a gated slot, a T handle.
+        box(grip + Vector((0, .005, 0)), (.05, .01, .18), black)
+        for dx in [-.022, .022]: tube(grip + Vector((dx, 0, 0)), grip + Vector((dx, .15, -.03)), .011, alloy, 10)
+        cage('feed-handle', tuple(grip + Vector((0, .165, -.032))), (.1, .035, .035), 2, lambda x, y, z, n: (x, y, z), red, level=2)
+
 
 # Amber lamps on the canopy's middle rib, facing down (#839: discrete lamps on the frame).
 for xs in [-.75, .75]:
@@ -372,13 +399,28 @@ for name, (verts, faces, uvs) in BATCH.items():
     if name == hose:
         for f in mesh.polygons: f.use_smooth = True
     if name not in [warm, cyan, black, hose]:
-        mod = obj.modifiers.new('Machined edge bevels', 'BEVEL'); mod.width = .012; mod.segments = 3
+        mod = obj.modifiers.new('Machined edge bevels', 'BEVEL'); mod.width = .022 if name == dark else .012; mod.segments = 3
         mod.affect = 'EDGES'; mod.harden_normals = True; mod.limit_method = 'ANGLE'
         for f in mesh.polygons: f.use_smooth = True
         bpy.context.view_layer.objects.active = obj
         bpy.ops.object.modifier_apply(modifier=mod.name)
         weighted = obj.modifiers.new('Weighted face normals', 'WEIGHTED_NORMAL'); weighted.keep_sharp = True
         bpy.ops.object.modifier_apply(modifier=weighted.name)
+
+for name, bm, mat, level in SCULPTED:
+    for v in bm.verts: v.co = Vector((v.co.x, -v.co.z, v.co.y))
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    uvl = bm.loops.layers.uv.new('surface-metres')
+    for f in bm.faces:
+        axis = max(range(3), key=lambda i: abs(f.normal[i])); ij = [i for i in range(3) if i != axis]
+        for l in f.loops: l[uvl].uv = (l.vert.co[ij[0]] * 1.5, l.vert.co[ij[1]] * 1.5)
+    mesh = bpy.data.meshes.new(name); bm.to_mesh(mesh); bm.free()
+    mesh.materials.append(MATS[mat])
+    obj = bpy.data.objects.new(name, mesh); bpy.context.collection.objects.link(obj)
+    sub = obj.modifiers.new('sculpt', 'SUBSURF'); sub.levels = level; sub.render_levels = level
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=sub.name)
+    for f in obj.data.polygons: f.use_smooth = True
 
 for image in bpy.data.images:
     if image.source == 'FILE': image.pack()
