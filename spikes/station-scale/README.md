@@ -88,3 +88,97 @@ have almost nothing to remove (`light-rig.ts`). Tested on the round-7 model:
 
 `tests/coriolis-flight.test.ts` asserts the splice lands in the compiled
 shader and that beacons exceed the bloom threshold.
+
+## Ring (trade form b)
+
+The same levers on the Ring, seed 42, system 1. No generated target and no
+judge this time: the evidence is the before/after sheet alone.
+
+```bash
+SYSTEM=1 FORM=b TYPES=trade SCALES=1 CLEAN=1 \
+  ONLY=03-face-close,04-wide,06-hero,07-sun-wide,08-sun-close \
+  SEELITE_PROBE_RENDERER=hardware node spikes/station-scale/capture.mjs <out-dir>
+```
+
+`07-sun-wide` and `08-sun-close` frame the station from the star's side; the
+approach face of the Ring often looks away from the star, so the key light
+alone darkens it (F22 again).
+
+- `spikes/stations/build_model.py`: after the approved Ring, nine rows of lit
+  1.7 × 1.15 m windows round the torus, three lattice girders, 16 rim masts
+  (23–30 m, inside the form's 0.75 km reach), 24 short front masts and eight
+  7 m red and green beacons. Its own seeded generator, so the approved parts
+  keep their random draws.
+- `src/trade-flight.ts`: the Coriolis key light and the beacon gain on the
+  Ring, Drum and Wheel materials.
+- `src/trade-proxies.ts`: regenerated from the new model.
+
+| | main | this branch |
+|---|---|---|
+| Triangles | 102,164 | 485,440 |
+| Draw calls | 12 | 16 |
+| `src/models/trade-ring.glb` | 5.6 MB | 19.0 MB |
+| Ring proxy hull boxes | — | 8,985 |
+
+`evidence/ring-before-after.png`: left main (row 4: key light only), right
+this branch; rows face-close, hero, wide, sun-side close.
+
+## Drum (trade form c)
+
+The same levers on the Drum, seed 42, system 0. The evidence is the
+before/after sheet alone.
+
+```bash
+SYSTEM=0 FORM=c TYPES=trade SCALES=1 CLEAN=1 \
+  ONLY=03-face-close,04-wide,06-hero,07-sun-wide,08-sun-close \
+  SEELITE_PROBE_RENDERER=hardware node spikes/station-scale/capture.mjs <out-dir>
+```
+
+- `spikes/stations/build_model.py`: after the approved Drum, 17 rows of lit
+  1.7 × 1.15 m windows round the barrel, clear of the trunks, pods and pipes;
+  eight lattice girders down the clear facet edges, broken at the middle end
+  ring; 16 radial masts (23–30 m) on the front shoulder, 24 short masts on the
+  front face outside the approach lane, 12 aft antennae inside the rear rim and
+  eight 7 m red and green beacons. Its own seeded generator, so the approved
+  parts keep their random draws.
+- The entry face, after the Coriolis face: eight lit lattice trusses between
+  the approved spines and vents, 70 panels of window strips, greebles and
+  grilles on the plating, six masts with arms, two dishes, red and green
+  beacons on posts at the slot's corners, and a lit gallery round the raised
+  rim. The four approved window bands at r 18 hung 20 m in front of the face
+  (z 47 against a face at 45.18); they now sit on it.
+- Closed plate seams: `plate()` shrinks each plate to 98.2% about its
+  centre, and the flight export draws no seam strips, so the Drum's seams
+  opened onto the empty inside. `geometry.BACKING`, set for every trade
+  flight export (Ring, Drum, Wheel), gives each plate a dark full-size backing
+  behind it. Rays cast at the barrel from
+  outside that reach inside r 330 m: 9,708 of 576,000 before, 0 after; at the
+  entry face, 196 of 80,604 before, 0 after. On an axis-aligned grid every
+  2.5 m from all six sides, the share of rays that went more than 2 m deeper
+  before the backing (through a seam): Drum 0.38%, Ring 0.65%, Wheel 0.72%.
+- The key light and beacon gain came with the Ring commit (`src/trade-flight.ts`).
+- `src/trade-proxies.ts`: regenerated from the new model.
+
+The rear rim sets the form's reach: 0.687 of the 0.70 km silhouette, unchanged.
+
+| | before | this branch |
+|---|---|---|
+| Triangles | 82,088 | 268,068 |
+| `src/models/trade-drum.glb` | 4.7 MB | 10.4 MB |
+| Drum proxy hull boxes | — | 4,347 |
+
+`evidence/drum-before-after.png`: left before, right this branch; rows
+face-close, hero, wide, sun-side close, sun-side wide, taken before the
+entry-face pass. The captures ran while
+another worktree's probe suite held the GPU lock; they are images, not timings.
+
+## Seams on the Ring and Wheel
+
+The same backing on the Ring and Wheel flight exports. Ring triangles 485,440
+-> 504,380 and `trade-ring.glb` 19.0 -> 19.7 MB; Wheel 122,812 -> 139,136
+and `trade-wheel.glb` 6.1 -> 6.7 MB (MiB, as the tables). Proxy hull boxes: Ring 8,676, Wheel
+5,033. The Drum export is byte-identical to its last commit. The outposts use
+the same plates and were not changed or measured.
+
+`viewer.ts`: `?flight=1` loads the game models (`src/models/trade-<name>.glb`,
+Ring, Drum and Wheel only) in place of the review files.

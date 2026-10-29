@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -202,7 +203,10 @@ async function selectModel(id: string) {
 	try {
 		let object = cache.get(id);
 		if (!object) {
-			const gltf = await new GLTFLoader().loadAsync(`./${id}.glb`);
+			const flight = new URLSearchParams(location.search).has("flight");
+			const gltf = await new GLTFLoader()
+				.setMeshoptDecoder(MeshoptDecoder)
+				.loadAsync(flight ? `/src/models/trade-${id}.glb` : `./${id}.glb`);
 			object = gltf.scene;
 			object.scale.setScalar(0.1);
 			object.traverse((o) => {
@@ -233,7 +237,11 @@ async function selectModel(id: string) {
 		radius = Math.max(extent.x, extent.y, extent.z) * 0.5;
 		stats.bounds = extent.toArray();
 		dock = object
-			.getObjectByName("docking-centre")!
+			.getObjectByName(
+				object.getObjectByName("docking-centre")
+					? "docking-centre"
+					: "aperture-plane",
+			)!
 			.getWorldPosition(new THREE.Vector3());
 		stats.modelTriangles = 0;
 		stats.meshCount = 0;

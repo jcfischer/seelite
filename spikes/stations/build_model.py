@@ -533,7 +533,7 @@ def drum():
   for off in [-1.1,0,1.1]:pipe(n*35.9+t*off-Z*47,n*35.9+t*off+Z*38,.25)
   for zz in [-40,-20,10,30]:machinery(n*36.2+Z*zz,5.5,8,n,t,k)
   if k%2==0:edge_trunk(n*13+Z*46,n*29+Z*46,Z,3.0)
-  if k%2==1:window_band(n*18+Z*47,4,.35,Z,t)
+  if k%2==1:window_band(n*18+Z*45.38,4,.35,Z,t)
  for z in [-48,-5,40]:
   for i in range(16):
    a=i*math.tau/16;n=Vector((math.cos(a),math.sin(a),0));t=Vector((-math.sin(a),math.cos(a),0));q=n*37.5+Z*z
@@ -643,6 +643,247 @@ def salvage():
  return info
 
 exec((OUT/'final_shapes.py').read_text(),globals())
+
+# Station-scale spike (F7): detail smaller than a ship on the Ring's torus.
+# A separate generator, so every approved part keeps its random draw.
+nav_red=material('navigation-red',(1,.07,.04),.1,.4,6,False)
+nav_green=material('navigation-green',(.12,1,.32),.1,.4,6,False)
+truss_paint=material('truss-paint',(.46,.41,.33),.3,.58)
+SR=random.Random(1007)
+RING_R,RING_W,RING_D=57,19,24
+
+def ring_profile():
+ out=[]
+ for j in range(16):
+  a=j*math.tau/16;c=math.cos(a);s=math.sin(a)
+  out.append((RING_W/2*math.copysign(abs(c)**.65,c),RING_D/2*math.copysign(abs(s)**.65,s)))
+ return out
+
+def ring_frame(theta,edge,f,lift):
+ """Point, outward normal and in-profile direction on torus plate `edge` at angle `theta`."""
+ prof=ring_profile();r,z=prof[edge];rr,zz=prof[(edge+1)%16]
+ n=Vector((math.cos(theta),math.sin(theta),0))
+ normal=(n*(zz-z)-Z*(rr-r)).normalized()
+ along=(n*(rr-r)+Z*(zz-z)).normalized()
+ p=n*(RING_R+r+(rr-r)*f)+Z*(z+(zz-z)*f)
+ return p+normal*lift,normal,along
+
+def chord(theta,edge,f,lift):
+ """The flat plate the torus draws: interpolate between its 64 segment corners."""
+ seg=math.tau/64;i=math.floor(theta/seg);t=theta/seg-i
+ a,na,_=ring_frame(i*seg,edge,f,lift);b,_,_=ring_frame((i+1)*seg,edge,f,lift)
+ tangent=(b-a).normalized();_,normal,along=ring_frame((i+.5)*seg,edge,f,lift)
+ return a.lerp(b,t),normal,along,tangent,i
+
+def window_rows(edge,f,height=.5,spacing=.32):
+ count=int(math.tau*(RING_R+ring_profile()[edge][0])/spacing)
+ run=0;lit=None
+ for k in range(count):
+  theta=k*math.tau/count
+  p,n,v,u,i=chord(theta,edge,f,.13)
+  if i%8==0:continue
+  box(p,(spacing*1.02,height,.05),black,(u,v,n))
+  if run<=0:run=SR.randint(4,14);lit=SR.random()<.78 and (white if SR.random()<.18 else warm)
+  run-=1
+  if lit:
+   for off in [-.11,.11]:box(p+v*off+n*.04,(.17,.115,.03),lit,(u,v,n))
+
+def ring_girder(edge,f,step=.9):
+ count=int(math.tau*(RING_R+ring_profile()[edge][0])/step)
+ pts=[chord(k*math.tau/count,edge,f,.14) for k in range(count+1)]
+ for k in range(count):
+  (a,n,v,u,_),(b,nb,vb,_,_)=pts[k],pts[k+1]
+  lo=[a+v*s*.45 for s in [-1,1]];hi=[x+n*.9 for x in lo]
+  lo2=[b+vb*s*.45 for s in [-1,1]];hi2=[x+nb*.9 for x in lo2]
+  for x,y in zip(lo+hi,lo2+hi2):tube(x,y,.08,truss_paint,4)
+  for s in [0,1]:tube(lo[s],hi2[s] if k%2 else hi[s],.05,truss_paint,4)
+  tube(hi[0],hi[1],.05,truss_paint,4)
+  if k%2:tube(lo[0],hi2[1],.04,truss_paint,4)
+  if k%12==6:box((hi[0]+hi[1])/2+n*.08,(.22,.22,.14),warm,(u,v,n))
+
+def radial_mast(base,d,height,tip=nav_red):
+ d=d.normalized();u=d.cross(Z if abs(d.z)<.9 else X).normalized();v=d.cross(u)
+ box(base,(.9,.9,.5),steel,(u,v,d))
+ tube(base,base+d*height,.12,truss_paint,6)
+ for k in range(3):
+  a=k*math.tau/3;foot=base+(u*math.cos(a)+v*math.sin(a))*.85
+  tube(foot,base+d*height*.45,.05,truss_paint,4)
+ for t in [.3,.55,.8]:
+  q=base+d*height*t;box(q,(.7*(1.1-t),.06,.06),truss_paint,(u,v,d))
+ box(base+d*(height+.12),(.24,.24,.24),tip,(u,v,d))
+
+approved_ring=ring
+def ring():
+ info=approved_ring()
+ for edge,f in [(15,.5),(0,.5),(2,.55),(3,.4),(4,.6),(5,.45),(6,.5),(7,.5),(8,.5)]:window_rows(edge,f)
+ for edge in [1,14,5]:ring_girder(edge,.5 if edge!=5 else .8)
+ for k in range(16):
+  theta=(k+.5)*math.tau/16;p,n,_,_,_=chord(theta,0,0,.12)
+  radial_mast(p,n,SR.uniform(2.3,3.0),nav_red if k%2 else white)
+ for k in range(24):
+  theta=(k+.3)*math.tau/24;p,n,_,_,_=chord(theta,4,.25,.12)
+  radial_mast(p,n,SR.uniform(1.2,2.4),nav_red)
+ for k in range(8):
+  theta=k*math.tau/8+math.tau/32;p,n,v,u,_=chord(theta,3,.2,.12)
+  box(p+n*.35,(.7,.7,.7),nav_green if k%2 else nav_red,(u,v,n))
+ return info
+
+# The same levers on the Drum (trade form c): a 16-facet barrel, radius 35,
+# z -52..43, its front shoulder out to r 39 at z 41..48.7. The even vertices
+# (k*tau/8) carry the trunks, pods and machinery; the odd ones are clear.
+SD=random.Random(1008)
+DRUM_R,DRUM_N=35,16
+
+def drum_facet(i,s,z,lift):
+ """Point, outward normal and tangent on barrel facet `i`, `s` 0..1 from its first vertex."""
+ a=i*math.tau/DRUM_N;b=(i+1)*math.tau/DRUM_N
+ A=Vector((DRUM_R*math.cos(a),DRUM_R*math.sin(a),0));B=Vector((DRUM_R*math.cos(b),DRUM_R*math.sin(b),0))
+ n=Vector((math.cos((a+b)/2),math.sin((a+b)/2),0));u=(B-A).normalized()
+ return A.lerp(B,s)+Z*z+n*lift,n,u
+
+def drum_window_row(z,spacing=.32,height=.5):
+ side=2*DRUM_R*math.sin(math.pi/DRUM_N)
+ for i in range(DRUM_N):
+  even_first=i%2==0
+  # Clear of the even vertex's clutter, the odd vertex's girder and, on the
+  # piped facets, the three pipes down the facet's middle.
+  lo,hi=(5.2,side-.8) if even_first else (.8,side-5.2)
+  spans=[(lo,hi)]
+  if i%4==0:spans=[(lo,3.6),(10.1,hi)] if even_first else [(lo,3.6),(10.1,hi)]
+  for s0,s1 in spans:
+   if s1-s0<spacing*3:continue
+   p,n,u=drum_facet(i,(s0+s1)/2/side,z,.18)
+   box(p,(s1-s0,height,.06),black,(u,Z,n))
+   count=int((s1-s0)/spacing);run=0;lit=None
+   for k in range(count):
+    if run<=0:run=SD.randint(4,14);lit=SD.random()<.78 and (white if SD.random()<.18 else warm)
+    run-=1
+    if not lit:continue
+    q,_,_=drum_facet(i,(s0+(k+.5)*spacing)/side,z,.22)
+    for off in [-.11,.11]:box(q+Z*off,(.17,.115,.03),lit,(u,Z,n))
+
+def drum_girder(theta,z0,z1,step=.9):
+ n=Vector((math.cos(theta),math.sin(theta),0));u=Vector((-math.sin(theta),math.cos(theta),0))
+ base=n*(DRUM_R+.14);count=max(1,round((z1-z0)/step))
+ for k in range(count):
+  a=base+Z*(z0+(z1-z0)*k/count);b=base+Z*(z0+(z1-z0)*(k+1)/count)
+  lo=[a+u*s*.45 for s in [-1,1]];hi=[x+n*.9 for x in lo]
+  lo2=[b+u*s*.45 for s in [-1,1]];hi2=[x+n*.9 for x in lo2]
+  for x,y in zip(lo+hi,lo2+hi2):tube(x,y,.08,truss_paint,4)
+  for s in [0,1]:tube(lo[s],hi2[s] if k%2 else hi[s],.05,truss_paint,4)
+  tube(hi[0],hi[1],.05,truss_paint,4)
+  if k%2:tube(lo[0],hi2[1],.04,truss_paint,4)
+  if k%12==6:box((hi[0]+hi[1])/2+n*.08,(.22,.22,.14),warm,(u,Z,n))
+
+approved_drum=drum
+def drum():
+ info=approved_drum()
+ for z in [-44,-42.8,-41.6,-24,-22.8,-21.6,-20.4,-16,-14.8,8,9.2,10.4,11.6,18,19.2,20.4,21.6]:drum_window_row(z)
+ for k in range(8):
+  theta=(2*k+1)*math.tau/16
+  drum_girder(theta,-45.5,-6.5);drum_girder(theta,-3.5,37.5)
+ # Radial masts off the front shoulder, between the end ring's boxes.
+ for k in range(16):
+  theta=(k+.5)*math.tau/16;n=Vector((math.cos(theta),math.sin(theta),0))
+  radial_mast(n*38.7+Z*41.6,n,SD.uniform(2.3,3.0),nav_red if k%2 else white)
+ # Short masts forward off the front face, outside the approach lane.
+ for k in range(24):
+  theta=(k+.3)*math.tau/24;n=Vector((math.cos(theta),math.sin(theta),0))
+  radial_mast(n*33.5+Z*(48.7-(33.5-30)/7*2.7),Z+n*.25,SD.uniform(1.2,2.4),nav_red)
+ # Antennae aft, well inside the rear rim, which sets the form's reach.
+ for k in range(12):
+  theta=(k+.5)*math.tau/12;n=Vector((math.cos(theta),math.sin(theta),0))
+  radial_mast(n*9-Z*54,-Z,SD.uniform(1.5,2.5),white if k%3 else nav_red)
+ for k in range(8):
+  theta=k*math.tau/8+math.tau/32;n=Vector((math.cos(theta),math.sin(theta),0));t=Vector((-math.sin(theta),math.cos(theta),0))
+  box(n*36.2+Z*46.2,(.7,.7,.7),nav_green if k%2 else nav_red,(t,Z,n))
+ drum_entry_face()
+ return info
+
+DRUM_FACE_Z=45.18
+def drum_face_clear(x,y,margin=0):
+ """True where the flat entry face (r < 28) carries no approved part."""
+ r=math.hypot(x,y);a=math.atan2(y,x)%(math.pi/4)
+ off_axis=min(abs(x),abs(y));off_diag=r*math.sin(min(a,math.pi/4-a)) if a else 0
+ return (r<27.4-margin and not (abs(x)<14.6+margin and abs(y)<12+margin)
+  and off_axis>3.6+margin and (abs(abs(x)-abs(y))/math.sqrt(2)>2.4+margin or r<12))
+
+def face_truss(theta,r0,r1,height=1.4,width=1.4,step=1.1):
+ n=Vector((math.cos(theta),math.sin(theta),0));u=Vector((-math.sin(theta),math.cos(theta),0))
+ count=max(2,round((r1-r0)/step));base=Z*(DRUM_FACE_Z+.05)
+ for k in range(count+1):
+  c=base+n*(r0+(r1-r0)*k/count)
+  feet=[c+u*s*width/2 for s in [-1,1]];tops=[f+Z*height for f in feet]
+  for f,t in zip(feet,tops):tube(f,t,.07,truss_paint,4)
+  tube(tops[0],tops[1],.05,truss_paint,4)
+  if k<count:
+   d=n*(r1-r0)/count
+   for f,t in zip(feet,tops):
+    tube(f,f+d,.08,truss_paint,4);tube(t,t+d,.08,truss_paint,4)
+    tube(f,t+d,.05,truss_paint,4) if k%2 else tube(t,f+d,.05,truss_paint,4)
+   if SD.random()<.6:box((tops[0]+tops[1])/2+d/2+Z*.1,(.22,.22,.14),white if SD.random()<.4 else warm,(n,u,Z))
+ box(base+n*(r0+r1)/2+Z*.1,(r1-r0,.5,.2),black,(n,u,Z))
+
+def face_mast(x,y,height,tip):
+ base=Vector((x,y,DRUM_FACE_Z+.25));box(base,(1.0,1.0,.5),steel)
+ tube(base,base+Z*height,.12,truss_paint,6)
+ for k in range(3):
+  a=k*math.tau/3;tube(base+Vector((math.cos(a),math.sin(a),0))*.9,base+Z*height*.4,.05,truss_paint,4)
+ for f in [.45,.7]:
+  arm=SD.uniform(.4,.8);q=base+Z*height*f
+  tube(q-X*arm,q+X*arm,.05,truss_paint,4);tube(q+X*arm,q+X*arm+Z*SD.uniform(.2,.5),.04,truss_paint,4)
+ box(base+Z*(height+.15),(.3,.3,.3),tip)
+
+def face_dish(x,y,r):
+ base=Vector((x,y,DRUM_FACE_Z));tube(base,base+Z*r*.9,.08,steel,6)
+ ring=[base+Vector((r*math.cos(i*math.pi/8),r*math.sin(i*math.pi/8),r*1.1)) for i in range(16)]
+ for a,b in zip(ring,ring[1:]+ring[:1]):tube(a,b,.04,alloy,4)
+ box(base+Z*r*1.05,(r*1.6,r*1.6,.08),alloy)
+
+def drum_entry_face():
+ # Lit lattice trusses between the approved spines and vents.
+ for k in range(8):face_truss((2*k+1)*math.tau/16,15.5,26.6)
+ # Panels on the plating: dark window strips with lit panes, greebles, grilles.
+ placed=0;tries=0
+ while placed<70 and tries<8000:
+  tries+=1;x=SD.uniform(-27,27);y=SD.uniform(-27,27)
+  w=SD.uniform(2.5,5);h=SD.uniform(.5,1.6)
+  if not all(drum_face_clear(x+sx*w/2,y+sy*1.2,.3) for sx in [-1,1] for sy in [-1,1]):continue
+  if abs(math.atan2(y,x)%(math.tau/8)-math.tau/16)*math.hypot(x,y)<1.6:continue
+  placed+=1;kind=SD.random()
+  if kind<.45:
+   box((x,y,DRUM_FACE_Z+.06),(w,.5,.1),black)
+   for i in range(int(w/.32)):
+    if SD.random()<.25:continue
+    box((x-w/2+(i+.5)*.32,y,DRUM_FACE_Z+.13),(.17,.115,.04),warm if SD.random()<.75 else white)
+  elif kind<.8:
+   for _ in range(SD.randint(2,5)):
+    sx=SD.uniform(.3,1.1);sy=SD.uniform(.3,1.0);sz=SD.uniform(.2,.8)
+    box((x+SD.uniform(-w/2,w/2)*.7,y+SD.uniform(-.5,.5),DRUM_FACE_Z+sz/2),(sx,sy,sz),SD.choice([steel,alloy,black]))
+  else:
+   box((x,y,DRUM_FACE_Z+.15),(w*.6,h,.3),black)
+   for i in range(6):box((x-w*.25+i*w*.1,y,DRUM_FACE_Z+.33),(.1,h*.85,.1),alloy)
+ # Masts and dishes on the open plating, clear of the approach lane.
+ for x,y in [(19,8.5),(-8.5,19.5),(-20,-7.5),(7.5,-20.5),(13.8,-15.5),(-15,13.6)]:
+  if drum_face_clear(x,y):face_mast(x,y,SD.uniform(1.6,2.6),nav_red if SD.random()<.6 else nav_green)
+ for x,y in [(-17.5,-11.8),(18,12.2)]:
+  if drum_face_clear(x,y):face_dish(x,y,SD.uniform(.6,.9))
+ # Docking beacons at the slot's corners: red to port, green to starboard.
+ for x,col in [(-12.4,nav_red),(12.4,nav_green)]:
+  for y in [-8.4,8.4]:
+   box((x,y,DRUM_FACE_Z+2.2),(.4,.4,4.4),steel);box((x,y,DRUM_FACE_Z+4.65),(.8,.8,.6),col)
+ # A lit gallery round the raised rim slope, r 28..31.
+ for i in range(96):
+  a=(i+.5)*math.tau/96
+  if abs((a+math.tau/16)%(math.tau/8)-math.tau/16)*29.5<2.2:continue
+  n=Vector((math.cos(a),math.sin(a),0));t=Vector((-math.sin(a),math.cos(a),0))
+  s=(-n+Z*3).normalized();up=(n*3+Z).normalized()
+  p=n*29.5+Z*(47.5+.15)
+  box(p,(29.5*math.tau/96*.98,.5,.06),black,(t,up,s))
+  if SD.random()<.8:
+   for off in [-.11,.11]:
+    box(p+up*off+s*.04,(.17,.115,.03),warm if SD.random()<.82 else white,(t,up,s))
+    box(p+up*off+s*.04+t*.4,(.17,.115,.03),warm,(t,up,s))
 
 # Flight export (`-- salvage --flight`, node #1031): Salvage's front, redrawn
 # to the sim's outpost pad (principal ruling, 2026-10-19, option 1). The
@@ -1051,6 +1292,9 @@ if FLIGHT and (not wanted or any(a!='salvage' and a not in FLIGHT_FRAMES and a n
 for name,fn in [('ring',ring),('drum',drum),('assembly',assembly),('wheel',wheel),('derrick',derrick),('buoy',buoy),('rig',rig),('cluster',cluster),('salvage',salvage)]:
  if wanted and name not in wanted:continue
  bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False);BATCH.clear();GROUP_MAT.clear();random.seed(810)
+ # The flight export draws no seam strips, so a trade form's seams would open
+ # onto its empty hull: back every plate (see geometry.BACKING).
+ G.BACKING=FLIGHT and name in TRADE_FLIGHT_NAMES
  print('BUILDING',name,flush=True);info=fn()
  if FLIGHT and name not in TRADE_FLIGHT_NAMES:
   if name in FLIGHT_FRAMES:

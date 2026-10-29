@@ -62,7 +62,7 @@ export function coriolisLightsChunk(
 }
 
 const keyLit = new WeakSet<THREE.Material>();
-function applyCoriolisKeyLight(m: THREE.MeshStandardMaterial) {
+export function applyCoriolisKeyLight(m: THREE.MeshStandardMaterial) {
 	if (keyLit.has(m) || m.emissive.getHex() !== 0) return;
 	keyLit.add(m);
 	m.userData.coriolisRim = CORIOLIS_RIM;
