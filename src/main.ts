@@ -72,6 +72,7 @@ import {
 	strutPose,
 	strutReach,
 } from "./rock-drill";
+import { type LocalFrame, localFrameAt } from "./field-frame";
 import {
 	impactRadiusPx,
 	MINING_BEAM,
@@ -13336,12 +13337,30 @@ class Game {
 					velocityAt: (t) => this.relayVelocityAt(view, t),
 				};
 		}
+		const field = this.fieldFrame();
+		if (field)
+			return {
+				frameId: field.id ?? this.world.system.contents.star.id,
+				label: "FIELD FRAME",
+				velocityAt: field.velocityAt,
+			};
 		const body = this.frameBody;
 		return {
 			frameId: body?.id ?? this.world.system.contents.star.id,
 			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
 			velocityAt: this.localFrameSource(),
 		};
+	}
+
+	private fieldFrame(): LocalFrame | null {
+		if (!MINING_ON) return null;
+		const frame = localFrameAt({
+			fields: this.fieldDraws.map((d) => d.plan),
+			shipPos: this.world.ship.pos,
+			gameTime: this.world.gameTime,
+			body: null,
+		});
+		return frame.kind === "field" ? frame : null;
 	}
 
 	/** A frame's velocity over the next `dt`, from one source at both ends. */
@@ -13379,6 +13398,8 @@ class Game {
 
 	/** `localFrame`'s body, fixed now, as a velocity at any game time. */
 	private localFrameSource(): (gameTime: number) => Vec3 {
+		const field = this.fieldFrame();
+		if (field) return field.velocityAt;
 		return this.bodyFrameSource(this.frameBody?.id ?? null);
 	}
 
@@ -17590,7 +17611,9 @@ class Game {
 		// 1 AU orbit moves at ~30 km/s, so an absolute clamp to the 2 km/s assist
 		// cap would drop the player next to a target already leaving at fifteen
 		// times the speed normal flight can manage.
-		const frameVelocity = matchBodyId ? this.velocityOf(matchBodyId) : v3();
+		const frameVelocity = matchBodyId
+			? this.velocityOf(matchBodyId)
+			: (this.fieldFrame()?.velocityAt(this.world.gameTime) ?? v3());
 		this.world.ship.vel = stopInBodyFrame
 			? frameVelocity
 			: exitVelocity(this.nose(), this.cruiseSpeedKms, frameVelocity);
