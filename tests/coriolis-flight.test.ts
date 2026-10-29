@@ -1,7 +1,14 @@
 import { test, expect } from "bun:test";
 import * as THREE from "three";
 import { makeWorldAtSystem } from "../src/sim";
-import { createIndustrialCoriolisBuilder } from "../src/coriolis-flight";
+import {
+	CORIOLIS_AMBIENT_GAIN,
+	CORIOLIS_KEY_GAIN,
+	CORIOLIS_RIM,
+	coriolisLightsChunk,
+	createIndustrialCoriolisBuilder,
+} from "../src/coriolis-flight";
+import { EXPOSURE } from "../src/light-rig";
 import { buildStationMesh, installCoriolisBuilder } from "../src/station-mesh";
 import { STATION_GEOMETRY } from "../src/station";
 
@@ -226,3 +233,42 @@ test("shipped flight asset and production bay obey collision, reach, detail and 
 		other.dispose();
 	}
 }, 30_000);
+
+test("Coriolis surfaces compile with the station key and ambient gains, and beacons clear the bloom threshold", async () => {
+	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
+	const station = createIndustrialCoriolisBuilder(template)(0, 0x9aa6b2);
+	const core = station.root.getObjectByName("core") as THREE.Mesh<
+		THREE.BufferGeometry,
+		THREE.MeshStandardMaterial
+	>;
+	const shader = {
+		fragmentShader: THREE.ShaderLib.standard.fragmentShader,
+		uniforms: {},
+	} as unknown as THREE.WebGLProgramParametersWithUniforms;
+	core.material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+	expect(shader.fragmentShader).not.toContain(
+		"#include <lights_fragment_begin>",
+	);
+	expect(shader.fragmentShader).toContain(
+		`directLight.color *= ${CORIOLIS_KEY_GAIN.toFixed(3)};`,
+	);
+	expect(shader.fragmentShader).toContain(
+		`irradiance += ${CORIOLIS_AMBIENT_GAIN.toFixed(3)} * getHemisphereLightIrradiance`,
+	);
+	expect(shader.fragmentShader).toContain("uniform float coriolisRim;");
+	expect(shader.fragmentShader).toContain("coriolisRim * pow(");
+	expect(shader.uniforms.coriolisRim).toBe(CORIOLIS_RIM);
+	expect(() => coriolisLightsChunk("void main() {}")).toThrow();
+	const beacons: THREE.MeshStandardMaterial[] = [];
+	station.root.traverse((o) => {
+		if (
+			o instanceof THREE.Mesh &&
+			/^navigation-(red|green)$/.test(o.material.name)
+		)
+			beacons.push(o.material);
+	});
+	expect(beacons.length).toBeGreaterThan(0);
+	for (const m of beacons)
+		expect(m.emissiveIntensity).toBeGreaterThan(EXPOSURE.bloom.threshold);
+	station.dispose();
+});

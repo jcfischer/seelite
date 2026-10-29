@@ -22,7 +22,7 @@ SYSTEM=4 TYPES=trade SCALES=1 CLEAN=1 ONLY=03-face-close,04-wide \
 |---|---|---|
 | 1 | 4.5 | Lit window rows, greebles, spine trusses |
 | 3 | 4.65 | Lighter truss paint, beacons |
-| 5 | 5.2 | Warm authored paint instead of the blue trade tint; station light lift |
+| 5 | 5.2 | Warm authored paint instead of the blue trade tint |
 | 6 | 5.5 | Lit girders in the trenches |
 | 7 | 5.75 | Lattice in the face plane; masts on the edge girders |
 
@@ -55,9 +55,36 @@ headroom.
 
 - `spikes/coriolis/build_model.py`: `panel_detail`, `spine_truss`, `mast`,
   `dish`, girder masts, slot beacons, warmer structural steel and recess.
-- `src/coriolis-flight.ts`: `CORIOLIS_PAINT_LIFT` and `CORIOLIS_ENV_LIFT`
-  replace the role tint on the Coriolis plates.
+- `src/coriolis-flight.ts`: `CORIOLIS_PAINT_LIFT` replaces the role tint on
+  the Coriolis plates. `CORIOLIS_ENV_LIFT` was inert in rounds 5–7: it tested
+  `emissiveIntensity === 0`, and three gives every standard material 1. The
+  round-5 gain came from the paint lift alone. The lighting pass fixed the test.
 - `tests/coriolis-flight.test.ts`: the two assertions on the role tint.
 
 The collision proxy is unchanged; every addition stays within
 `PROXY_VERTEX_TOLERANCE_KM` of it, and the Coriolis tests pass.
+
+## Lighting pass
+
+The game's rig is a broad hemisphere (3.425) over a weak sun (1.0), so shadows
+have almost nothing to remove (`light-rig.ts`). Tested on the round-7 model:
+
+- F20: Sun ×2–3 with hemisphere ×0.4–0.6 makes masts and trusses cast long
+  shadows across the plates. It is the strongest scale cue found. Implemented
+  for the Coriolis only, as a splice of its materials' lights chunk:
+  `CORIOLIS_KEY_GAIN` 2, `CORIOLIS_AMBIENT_GAIN` 0.6. Ships and cockpit keep
+  rig B.
+- F21: The builder normalised every emissive to the bloom threshold, so no
+  beacon could bloom. `CORIOLIS_BEACON_GAIN` 8 gives the navigation beacons
+  halos.
+- F22: A stronger key darkens the side away from the star, and in the wide
+  frame it merges with the sky. A grazing rim term (`CORIOLIS_RIM`) lifts that
+  face's mean luminance only from 0.093 to 0.114 at gain 1.5, measured in one
+  boot. A rim cannot light a face that looks at the camera. It is left at 0;
+  the open lever is the shade-side ambient or the backdrop.
+
+`evidence/lighting-before-after.png`: left today, right this branch (close and wide).
+`evidence/rim-sweep.png`: rim 0, 0.6, 1.5 in one boot.
+
+`tests/coriolis-flight.test.ts` asserts the splice lands in the compiled
+shader and that beacons exceed the bloom threshold.

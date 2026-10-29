@@ -55,6 +55,15 @@ const STATION_TYPES = (process.env.TYPES ?? "trade,refinery").split(",");
 const SYSTEM = Number(process.env.SYSTEM ?? 4);
 const ONLY = process.env.ONLY?.split(",");
 const CLEAN = process.env.CLEAN === "1";
+const LIGHT = Object.fromEntries(
+	(process.env.LIGHT ?? "")
+		.split(",")
+		.filter(Boolean)
+		.map((kv) => {
+			const [k, v] = kv.split(":");
+			return [k, Number(v)];
+		}),
+);
 
 const browser = await launchChromium({ headless: false });
 const report = [];
@@ -65,6 +74,10 @@ try {
 	});
 	const errors = [];
 	page.on("pageerror", (e) => errors.push(e.message));
+	page.on("console", (m) => {
+		if (m.type() === "error" && /shader|program/i.test(m.text()))
+			errors.push(m.text().slice(0, 300));
+	});
 	await page.goto(
 		gameUrl(origin, {
 			seed: 42,
@@ -91,6 +104,25 @@ try {
 	if (/swiftshader|llvmpipe|software/i.test(meta.renderer))
 		throw Error(`hardware renderer required, got ${meta.renderer}`);
 	console.log(JSON.stringify(meta));
+	await page.evaluate((light) => {
+		const g = window.__seelite;
+		for (const rig of g.layerLights) {
+			if (light.sun) rig.sun.intensity *= light.sun;
+			if (light.hemi) rig.hemisphere.intensity *= light.hemi;
+		}
+		if (light.rim !== undefined)
+			g.nearScene.traverse((o) => {
+				const r = o.material?.userData?.coriolisRim;
+				if (r) r.value = light.rim;
+			});
+		if (light.beacon)
+			for (const scene of [g.nearScene, g.approachScene])
+				scene.traverse((o) => {
+					const m = o.material;
+					if (m && /^navigation-(red|green)$/.test(m.name))
+						m.emissiveIntensity *= light.beacon;
+				});
+	}, LIGHT);
 	if (CLEAN)
 		await page.evaluate(() => {
 			for (const el of document.querySelectorAll("body *"))
@@ -199,6 +231,22 @@ try {
 				await page.evaluate(() => window.__seelite.render(0));
 				const file = `${OUT}/${type}-${shot.name}${scale === 1 ? "" : "-ship-quarter"}.png`;
 				await page.screenshot({ path: file });
+				for (const rim of (process.env.RIM_SWEEP ?? "")
+					.split(",")
+					.filter(Boolean)) {
+					await page.evaluate((value) => {
+						const g = window.__seelite;
+						g.nearScene.traverse((o) => {
+							const r = o.material?.userData?.coriolisRim;
+							if (r) r.value = value;
+						});
+						g.render(0);
+					}, Number(rim));
+					await page.waitForTimeout(300);
+					await page.screenshot({
+						path: file.replace(".png", `-rim${rim}.png`),
+					});
+				}
 				report.push({ file, type, scale, ...got });
 				console.log(file, JSON.stringify(got));
 			}

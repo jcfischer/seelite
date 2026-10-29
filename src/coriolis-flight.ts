@@ -23,6 +23,62 @@ export const CORIOLIS_PAINT_LIFT = 2.3;
 /** Spike (station-scale F7): station-scoped light lift instead of global exposure. */
 export const CORIOLIS_ENV_LIFT = 1.8;
 
+/** Spike (station-scale lighting F20): the sun's share on Coriolis surfaces. */
+export const CORIOLIS_KEY_GAIN = 2;
+/** Spike (station-scale lighting F20): the hemisphere's share on Coriolis surfaces. */
+export const CORIOLIS_AMBIENT_GAIN = 0.6;
+/** Spike (station-scale lighting F21): navigation beacons above the bloom threshold. */
+export const CORIOLIS_BEACON_GAIN = 8;
+
+/** Spike (station-scale lighting F22): grazing rim light that outlines the shaded side. */
+export const CORIOLIS_RIM = { value: 0 };
+const RIM_COLOR = "vec3( 0.55, 0.62, 0.8 )";
+
+const DIRECT_LINE = "getDirectionalLightInfo( directionalLight, directLight );";
+const HEMISPHERE_LINE =
+	"irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );";
+
+/** The lights chunk with the Coriolis key and ambient gains spliced in. */
+export function coriolisLightsChunk(
+	chunk = THREE.ShaderChunk.lights_fragment_begin,
+) {
+	if (!chunk.includes(DIRECT_LINE) || !chunk.includes(HEMISPHERE_LINE))
+		throw new Error(
+			"three's lights_fragment_begin no longer matches the Coriolis splice",
+		);
+	const rim = `\nreflectedLight.indirectDiffuse += coriolisRim * pow( 1.0 - saturate( dot( geometryNormal, geometryViewDir ) ), 3.0 ) * ${RIM_COLOR} * diffuseColor.rgb;\n`;
+	return `${chunk}${rim}`
+		.replace(
+			DIRECT_LINE,
+			`${DIRECT_LINE}\n\t\tdirectLight.color *= ${CORIOLIS_KEY_GAIN.toFixed(3)};`,
+		)
+		.replace(
+			HEMISPHERE_LINE,
+			HEMISPHERE_LINE.replace(
+				"irradiance += ",
+				`irradiance += ${CORIOLIS_AMBIENT_GAIN.toFixed(3)} * `,
+			),
+		);
+}
+
+const keyLit = new WeakSet<THREE.Material>();
+function applyCoriolisKeyLight(m: THREE.MeshStandardMaterial) {
+	if (keyLit.has(m) || m.emissive.getHex() !== 0) return;
+	keyLit.add(m);
+	m.userData.coriolisRim = CORIOLIS_RIM;
+	const previous = m.onBeforeCompile;
+	const previousKey = m.customProgramCacheKey;
+	m.onBeforeCompile = (shader, renderer) => {
+		previous.call(m, shader, renderer);
+		shader.uniforms.coriolisRim = CORIOLIS_RIM;
+		shader.fragmentShader = `uniform float coriolisRim;\n${shader.fragmentShader.replace(
+			"#include <lights_fragment_begin>",
+			coriolisLightsChunk(),
+		)}`;
+	};
+	m.customProgramCacheKey = () => `${previousKey.call(m)}|coriolis-key`;
+}
+
 export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	// The display export has brighter lamps than the game's exposure contract.
 	// Normalize once, preserving the authored relative strengths.
@@ -38,7 +94,9 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	);
 	for (const m of materials) {
 		m.emissiveIntensity /= divisor;
-		if (m.emissiveIntensity === 0) m.envMapIntensity = CORIOLIS_ENV_LIFT;
+		if (/^navigation-(red|green)$/.test(m.name))
+			m.emissiveIntensity *= CORIOLIS_BEACON_GAIN;
+		if (m.emissive.getHex() === 0) m.envMapIntensity = CORIOLIS_ENV_LIFT;
 	}
 	// A small palette per requested role colour, retained with the loaded asset.
 	const palettes = new Map<string, THREE.MeshStandardMaterial>();
@@ -58,6 +116,11 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 		const exterior = template.clone(true);
 		exterior.scale.setScalar(0.001);
 		exterior.traverse((o) => {
+			if (o instanceof THREE.Mesh)
+				for (const m of Array.isArray(o.material) ? o.material : [o.material])
+					if (m instanceof THREE.MeshStandardMaterial) applyCoriolisKeyLight(m);
+		});
+		exterior.traverse((o) => {
 			if (
 				!(o instanceof THREE.Mesh) ||
 				!(o.material instanceof THREE.MeshStandardMaterial) ||
@@ -72,6 +135,7 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 				paint.roughness = Math.max(paint.roughness, 0.82);
 				palettes.set(key, paint);
 			}
+			applyCoriolisKeyLight(paint);
 			o.material = paint;
 			if (o.name === "ceramic-steel-0") o.name = "core";
 		});
