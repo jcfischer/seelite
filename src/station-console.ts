@@ -487,6 +487,20 @@ export const universalReach = (displayTL: number): number =>
  * item is unavailable for exactly one of three reasons — the tech gate, or the
  * two type scopes — and each is named in the words §8.3 uses.
  */
+let prototypeScopes: ReadonlyMap<string, readonly string[]> = new Map();
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * Stations that sell an item beyond its own scope, for this page only: the
+ * drill prototype sells the Mining Laser at shipyards too (D-D18). Empty
+ * without `?mining=1`.
+ */
+export function setPrototypeEquipmentScopes(
+	scopes: ReadonlyMap<string, readonly string[]>,
+): void {
+	prototypeScopes = scopes;
+}
+
 /**
  * M8's reason for a type exclusive, in §8.3's words.
  *
@@ -548,7 +562,8 @@ export function stationEquipmentScreen(input: {
 			priceCr: item.priceCr,
 			per: "unit",
 		};
-		if (item.scope === type) available.push(gated(entry));
+		if (item.scope === type || prototypeScopes.get(item.name)?.includes(type))
+			available.push(gated(entry));
 		else unavailable.push({ name: item.name, reason: scopeReason(item.scope) });
 	}
 

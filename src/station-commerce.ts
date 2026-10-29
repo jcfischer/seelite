@@ -670,12 +670,16 @@ export function transactAtStation(
 		)
 			return rejected(input, "equipment-owned");
 		if (entry.locked) return rejected(input, "equipment-locked");
-		const module = {
+		const bought = {
 			...legacyModule(input.commander.hull, entry.name),
 			purchaseCostCr: entry.priceCr,
 		};
-		if (!slotFor(input.commander, module))
-			return rejected(input, "hull-mounts");
+		const slot = slotFor(input.commander, bought);
+		if (!slot) return rejected(input, "hull-mounts");
+		const module =
+			slot.kind === "hardpoint" && slot.prototype
+				? { ...bought, size: slot.size }
+				: bought;
 		const next = fitOne(input.commander, module);
 		if (
 			commanderHold(next, input.entrustedT).usedT >

@@ -122,9 +122,74 @@ test("a second Mining Laser is bought on a station's Equipment tab and fits h3 (
 		if (!out.accepted) return;
 		expect(out.commander.loadout.h1?.module).toBe("pulse-laser");
 		expect(out.commander.loadout.h2?.module).toBe("mining-laser");
-		expect(out.commander.loadout.h3?.module).toBe("mining-laser");
+		expect(out.commander.loadout.h3).toMatchObject({
+			module: "mining-laser",
+			size: 3,
+		});
 		expect(out.commander.credits).toBeLessThan(100_000);
 	} finally {
 		(HULL_SPECS as Record<string, typeof original>).miner = original;
 	}
+});
+
+test("with the flag a shipyard sells the Mining Laser, and the one bought for h3 is size 3 (D-D18)", async () => {
+	const { addPrototypeMinerHardpoints } = await import("../src/hull");
+	const { marketStationOf } = await import("../src/market");
+	const { newCommander, transactAtStation } = await import(
+		"../src/station-commerce"
+	);
+	const { setPrototypeEquipmentScopes, stationEquipmentScreen } = await import(
+		"../src/station-console"
+	);
+	const { TOP_RUNGS } = await import("../src/ladder");
+	const shipyardSells = () =>
+		stationEquipmentScreen({
+			type: "shipyard",
+			displayTL: 11,
+			rungs: TOP_RUNGS,
+		}).available.some((e) => e.name === "Mining Laser");
+	expect(shipyardSells()).toBe(false);
+	const original = HULL_SPECS.miner;
+	try {
+		addPrototypeMinerHardpoints();
+		setPrototypeEquipmentScopes(new Map([["Mining Laser", ["shipyard"]]]));
+		expect(shipyardSells()).toBe(true);
+		const out = transactAtStation({
+			commander: {
+				...newCommander("miner"),
+				credits: 100_000,
+				loadout: {
+					...stockLoadout("miner"),
+					h2: makeModule("mining-laser", 3),
+				},
+			},
+			deficits: {},
+			station: marketStationOf(
+				{
+					type: "shipyard",
+					localCarrierId: "station-shipyard",
+					blackMarket: false,
+				},
+				0x51a7_10,
+			),
+			stationKey: "1:station-shipyard" as never,
+			economy: 3,
+			gameTimeMin: 0,
+			displayTL: 11,
+			entrustedT: 0,
+			rungs: TOP_RUNGS,
+			hullReach: () => ({ ok: true, systems: 1 }) as const,
+			action: { type: "buy-equipment", equipment: "Mining Laser" },
+		});
+		expect(out.accepted ? "ok" : (out as { reason: string }).reason).toBe("ok");
+		if (!out.accepted) return;
+		expect(out.commander.loadout.h3).toMatchObject({
+			module: "mining-laser",
+			size: 3,
+		});
+	} finally {
+		setPrototypeEquipmentScopes(new Map());
+		(HULL_SPECS as Record<string, typeof original>).miner = original;
+	}
+	expect(shipyardSells()).toBe(false);
 });

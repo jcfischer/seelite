@@ -1360,6 +1360,7 @@ import {
 	type StationConsoleTab,
 	marketDisplayChanged,
 	refusalSentence,
+	setPrototypeEquipmentScopes,
 	stationEquipmentScreen,
 	stationMarketScreen,
 } from "./station-console";
@@ -1550,6 +1551,7 @@ const PROTOTYPE_BADGE = `PROTOTYPE 920-DRILL ${typeof __PROTOTYPE_SHA__ === "str
 if (MINING_ON) {
 	keepLongwallStrutsPosable();
 	addPrototypeMinerHardpoints();
+	setPrototypeEquipmentScopes(new Map([["Mining Laser", ["shipyard"]]]));
 	setLongwallPrototypeMounts(
 		new URL(
 			"../spikes/longwall-miner/mounts/longwall-mounts.glb",
