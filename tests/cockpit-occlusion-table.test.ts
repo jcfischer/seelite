@@ -9,7 +9,6 @@ import {
 	buildShipMesh,
 	cockpitOcclusion,
 	installLongwallModel,
-	shipMuzzlesKm,
 } from "../src/ship-mesh";
 import { v3 } from "../src/vec3";
 
@@ -45,7 +44,6 @@ function measured() {
 	const result = cockpitOcclusion(
 		buildShipMesh("miner", HULL_SPECS.miner.variant).root,
 		eyeKm,
-		shipMuzzlesKm("miner", HULL_SPECS.miner.variant),
 	);
 	return {
 		eyeKm,
@@ -53,8 +51,6 @@ function measured() {
 			.filter((p) => p.seen)
 			.map((p) => p.name)
 			.sort(),
-		muzzlesSeen: [...result.pointsSeen],
-		hullBoxKm: result.hullBoxKm,
 	};
 }
 
@@ -74,18 +70,9 @@ import type { Vec3 } from "./vec3";
 export const COCKPIT_OCCLUSION: {
 	readonly eyeKm: Vec3;
 	readonly seen: readonly string[];
-	readonly muzzlesSeen: readonly boolean[];
-	readonly hullBoxKm: { readonly min: Vec3; readonly max: Vec3 };
 } = ${JSON.stringify(now, null, "\t")};
 `,
 		);
 	expect(COCKPIT_OCCLUSION.eyeKm).toEqual(now.eyeKm);
 	expect([...COCKPIT_OCCLUSION.seen]).toEqual(now.seen);
-	expect([...COCKPIT_OCCLUSION.muzzlesSeen]).toEqual(now.muzzlesSeen);
-	for (const end of ["min", "max"] as const)
-		for (const axis of ["x", "y", "z"] as const)
-			expect(COCKPIT_OCCLUSION.hullBoxKm[end][axis]).toBeCloseTo(
-				now.hullBoxKm[end][axis],
-				12,
-			);
 });

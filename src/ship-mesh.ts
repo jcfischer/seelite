@@ -2887,8 +2887,6 @@ export interface CockpitOcclusion {
 		Record<"starboard" | "port" | "up" | "down" | "aft" | "fore", number | null>
 	>;
 	readonly parts: readonly { readonly name: string; readonly seen: boolean }[];
-	readonly hullBoxKm: { readonly min: Vec3; readonly max: Vec3 };
-	readonly pointsSeen: readonly boolean[];
 }
 
 /**
@@ -2902,10 +2900,9 @@ export interface CockpitOcclusion {
 export function cockpitOcclusion(
 	root: THREE.Object3D,
 	eyeKm: Vec3,
-	pointsKm: readonly Vec3[] = [],
 ): CockpitOcclusion {
 	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
-	const key = JSON.stringify([eyeKm, pointsKm]);
+	const key = JSON.stringify(eyeKm);
 	const held = root.userData.cockpitOcclusion as
 		| { full: THREE.Object3D | undefined; byKey: Map<string, CockpitOcclusion> }
 		| undefined;
@@ -2917,7 +2914,6 @@ export function cockpitOcclusion(
 	const kept = byKey.get(key);
 	if (kept) return kept;
 	root.updateMatrixWorld(true);
-	const toRoot = root.matrixWorld.clone().invert();
 	const parts = full?.children[0]?.children ?? [];
 	const hull: THREE.Mesh[] = [];
 	for (const p of parts)
@@ -2926,9 +2922,6 @@ export function cockpitOcclusion(
 				if ((o as THREE.Mesh).isMesh && !COCKPIT_GLASS.test(o.name))
 					hull.push(o as THREE.Mesh);
 			});
-	const box = new THREE.Box3();
-	for (const m of hull) box.expandByObject(m);
-	box.applyMatrix4(toRoot);
 	const sides = hull.map((m) => {
 		const list = Array.isArray(m.material) ? m.material : [m.material];
 		const before = list.map((x) => x.side);
@@ -2979,47 +2972,12 @@ export function cockpitOcclusion(
 					const points = all.filter((_, n) => n % step === 0);
 					return { name: p.name, seen: points.some((q) => !blocked(q)) };
 				}),
-			pointsSeen: pointsKm.map(
-				(p) =>
-					!blocked(
-						new THREE.Vector3(p.x, p.y, p.z).applyMatrix4(root.matrixWorld),
-					),
-			),
-			hullBoxKm: {
-				min: { x: box.min.x, y: box.min.y, z: box.min.z },
-				max: { x: box.max.x, y: box.max.y, z: box.max.z },
-			},
 		};
 		byKey.set(key, value);
 		return value;
 	} finally {
 		for (const put of sides) put();
 	}
-}
-
-/** Where a beam from `muzzleKm` along `aim` (ship frame) leaves the hull's box: what the cockpit can see of a beam whose mount the hull hides. */
-export function cockpitBeamStart(
-	muzzleKm: Vec3,
-	aim: Vec3,
-	box: { readonly min: Vec3; readonly max: Vec3 },
-): Vec3 {
-	if (!Number.isFinite(box.min.x)) return muzzleKm;
-	const along = Math.max(
-		0,
-		Math.min(
-			...(["x", "y", "z"] as const)
-				.filter((a) => aim[a] !== 0)
-				.map(
-					(a) =>
-						((aim[a] > 0 ? box.max[a] : box.min[a]) - muzzleKm[a]) / aim[a],
-				),
-		),
-	);
-	return {
-		x: muzzleKm.x + aim.x * along,
-		y: muzzleKm.y + aim.y * along,
-		z: muzzleKm.z + aim.z * along,
-	};
 }
 
 /**

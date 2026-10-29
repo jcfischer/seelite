@@ -956,7 +956,6 @@ import {
 	measureMuzzles,
 	shipMuzzlesKm,
 	updateShipVisuals,
-	cockpitBeamStart,
 	cockpitDrillView,
 } from "./ship-mesh";
 import { COCKPIT_OCCLUSION } from "./cockpit-occlusion-table";
@@ -13578,24 +13577,14 @@ class Game {
 	private miningBeamSpans(beam: NonNullable<Game["miningBeam"]>) {
 		const all = this.miningMuzzlesWorld();
 		const nose = this.nose();
-		const local = shipMuzzlesKm(
-			this.flownHull,
-			HULL_SPECS[this.flownHull].variant,
-		);
 		return beam.rays.flatMap((ray) => {
-			const at = local[ray.muzzleIndex];
-			const origin = all[ray.muzzleIndex];
-			if (!origin || !at) return [];
-			const [muzzle] = muzzlesWorld(this.world.ship.pos, this.orientation, [
-				COCKPIT_OCCLUSION.muzzlesSeen[ray.muzzleIndex]
-					? at
-					: cockpitBeamStart(at, v3(0, 0, -1), COCKPIT_OCCLUSION.hullBoxKm),
-			]);
+			const muzzle = all[ray.muzzleIndex];
+			if (!muzzle) return [];
 			const rock = ray.hit && this.fragmentRock(ray.hit.rockId);
 			const end =
 				ray.hit && rock
 					? add(rock.pos, ray.hit.offset)
-					: add(origin, scale(nose, PLAYER_LASER_RANGE_KM));
+					: add(muzzle, scale(nose, PLAYER_LASER_RANGE_KM));
 			return [{ muzzle, end, hit: ray.hit !== null }];
 		});
 	}

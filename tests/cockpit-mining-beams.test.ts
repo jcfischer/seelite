@@ -80,3 +80,39 @@ test("a mount's beam is drawn in the frame from its muzzle as the cockpit camera
 	expect(want.y).toBeLessThan(0.5);
 	for (const s of strokes) expect(s.rgb).toEqual(MINING_BEAM_RGB);
 });
+
+test("anchored, a mount's cockpit beam runs the whole way from its muzzle to the rock, not a stub at the bow (F7)", () => {
+	const cutter = HULL_SPECS.miner.cutter;
+	if (!cutter) throw new Error("the miner carries a cutter");
+	const faceZ = -(cutter.bowKm + cutter.feedTravelKm + 0.0003);
+	const pxOf = (fromZ: number) => {
+		const strokes = mountBeamStrokes(
+			[
+				{
+					muzzle: v3(0.0053, 0.00581, fromZ),
+					end: v3(0.0053, 0.00581, faceZ),
+					hit: true,
+				},
+			],
+			v3(0, 0, -0.008),
+			{ x: 0, y: 0, z: 0, w: 1 },
+			Math.PI / 3,
+			1280 / 800,
+			0,
+		).filter((_, i) => i % 2 === 1);
+		const seg = strokes.map((s) =>
+			Math.hypot((s.to.x - s.from.x) * 1280, (s.to.y - s.from.y) * 800),
+		);
+		return {
+			total: Math.hypot(
+				(strokes[strokes.length - 1].to.x - strokes[0].from.x) * 1280,
+				(strokes[strokes.length - 1].to.y - strokes[0].from.y) * 800,
+			),
+			visible: seg.filter((p) => p > 3).length,
+		};
+	};
+	const fromMuzzle = pxOf(-0.0228);
+	expect(fromMuzzle.total).toBeGreaterThan(200);
+	expect(fromMuzzle.visible).toBeGreaterThanOrEqual(12);
+	expect(pxOf(-0.0398).total).toBeLessThan(60);
+});

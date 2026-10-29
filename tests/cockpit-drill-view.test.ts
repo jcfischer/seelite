@@ -6,7 +6,6 @@ import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { HULL_SPECS } from "../src/hull";
 import {
 	buildShipMesh,
-	cockpitBeamStart,
 	cockpitDrillView,
 	cockpitOcclusion,
 	installLongwallModel,
@@ -86,15 +85,4 @@ test("the cockpit draws only the parts the hull leaves in view, and leaving puts
 	for (const d of shown) expect(d.chain.some((n) => PARTS.test(n))).toBe(true);
 	cockpitDrillView(root, null);
 	expect(drawn(root).map((d) => d.mesh)).toEqual(before);
-});
-
-test("a hidden mount's beam starts where it clears the hull's bow, on the mount's line (F5)", () => {
-	const root = miner();
-	const { hullBoxKm } = cockpitOcclusion(root, COCKPIT_EYE);
-	const muzzle = v3(-0.0053, 0.00581, -0.0228);
-	const start = cockpitBeamStart(muzzle, v3(0, 0, -1), hullBoxKm);
-	expect(start.x).toBeCloseTo(muzzle.x, 12);
-	expect(start.y).toBeCloseTo(muzzle.y, 12);
-	expect(start.z).toBeCloseTo(hullBoxKm.min.z, 12);
-	expect(start.z).toBeLessThan(muzzle.z);
 });
