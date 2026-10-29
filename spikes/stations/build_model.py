@@ -644,6 +644,90 @@ def salvage():
 
 exec((OUT/'final_shapes.py').read_text(),globals())
 
+# Station-scale spike (F7): detail smaller than a ship on the Ring's torus.
+# A separate generator, so every approved part keeps its random draw.
+nav_red=material('navigation-red',(1,.07,.04),.1,.4,6,False)
+nav_green=material('navigation-green',(.12,1,.32),.1,.4,6,False)
+truss_paint=material('truss-paint',(.46,.41,.33),.3,.58)
+SR=random.Random(1007)
+RING_R,RING_W,RING_D=57,19,24
+
+def ring_profile():
+ out=[]
+ for j in range(16):
+  a=j*math.tau/16;c=math.cos(a);s=math.sin(a)
+  out.append((RING_W/2*math.copysign(abs(c)**.65,c),RING_D/2*math.copysign(abs(s)**.65,s)))
+ return out
+
+def ring_frame(theta,edge,f,lift):
+ """Point, outward normal and in-profile direction on torus plate `edge` at angle `theta`."""
+ prof=ring_profile();r,z=prof[edge];rr,zz=prof[(edge+1)%16]
+ n=Vector((math.cos(theta),math.sin(theta),0))
+ normal=(n*(zz-z)-Z*(rr-r)).normalized()
+ along=(n*(rr-r)+Z*(zz-z)).normalized()
+ p=n*(RING_R+r+(rr-r)*f)+Z*(z+(zz-z)*f)
+ return p+normal*lift,normal,along
+
+def chord(theta,edge,f,lift):
+ """The flat plate the torus draws: interpolate between its 64 segment corners."""
+ seg=math.tau/64;i=math.floor(theta/seg);t=theta/seg-i
+ a,na,_=ring_frame(i*seg,edge,f,lift);b,_,_=ring_frame((i+1)*seg,edge,f,lift)
+ tangent=(b-a).normalized();_,normal,along=ring_frame((i+.5)*seg,edge,f,lift)
+ return a.lerp(b,t),normal,along,tangent,i
+
+def window_rows(edge,f,height=.5,spacing=.32):
+ count=int(math.tau*(RING_R+ring_profile()[edge][0])/spacing)
+ run=0;lit=None
+ for k in range(count):
+  theta=k*math.tau/count
+  p,n,v,u,i=chord(theta,edge,f,.13)
+  if i%8==0:continue
+  box(p,(spacing*1.02,height,.05),black,(u,v,n))
+  if run<=0:run=SR.randint(4,14);lit=SR.random()<.78 and (white if SR.random()<.18 else warm)
+  run-=1
+  if lit:
+   for off in [-.11,.11]:box(p+v*off+n*.04,(.17,.115,.03),lit,(u,v,n))
+
+def ring_girder(edge,f,step=.9):
+ count=int(math.tau*(RING_R+ring_profile()[edge][0])/step)
+ pts=[chord(k*math.tau/count,edge,f,.14) for k in range(count+1)]
+ for k in range(count):
+  (a,n,v,u,_),(b,nb,vb,_,_)=pts[k],pts[k+1]
+  lo=[a+v*s*.45 for s in [-1,1]];hi=[x+n*.9 for x in lo]
+  lo2=[b+vb*s*.45 for s in [-1,1]];hi2=[x+nb*.9 for x in lo2]
+  for x,y in zip(lo+hi,lo2+hi2):tube(x,y,.08,truss_paint,4)
+  for s in [0,1]:tube(lo[s],hi2[s] if k%2 else hi[s],.05,truss_paint,4)
+  tube(hi[0],hi[1],.05,truss_paint,4)
+  if k%2:tube(lo[0],hi2[1],.04,truss_paint,4)
+  if k%12==6:box((hi[0]+hi[1])/2+n*.08,(.22,.22,.14),warm,(u,v,n))
+
+def radial_mast(base,d,height,tip=nav_red):
+ d=d.normalized();u=d.cross(Z if abs(d.z)<.9 else X).normalized();v=d.cross(u)
+ box(base,(.9,.9,.5),steel,(u,v,d))
+ tube(base,base+d*height,.12,truss_paint,6)
+ for k in range(3):
+  a=k*math.tau/3;foot=base+(u*math.cos(a)+v*math.sin(a))*.85
+  tube(foot,base+d*height*.45,.05,truss_paint,4)
+ for t in [.3,.55,.8]:
+  q=base+d*height*t;box(q,(.7*(1.1-t),.06,.06),truss_paint,(u,v,d))
+ box(base+d*(height+.12),(.24,.24,.24),tip,(u,v,d))
+
+approved_ring=ring
+def ring():
+ info=approved_ring()
+ for edge,f in [(15,.5),(0,.5),(2,.55),(3,.4),(4,.6),(5,.45),(6,.5),(7,.5),(8,.5)]:window_rows(edge,f)
+ for edge in [1,14,5]:ring_girder(edge,.5 if edge!=5 else .8)
+ for k in range(16):
+  theta=(k+.5)*math.tau/16;p,n,_,_,_=chord(theta,0,0,.12)
+  radial_mast(p,n,SR.uniform(2.3,3.0),nav_red if k%2 else white)
+ for k in range(24):
+  theta=(k+.3)*math.tau/24;p,n,_,_,_=chord(theta,4,.25,.12)
+  radial_mast(p,n,SR.uniform(1.2,2.4),nav_red)
+ for k in range(8):
+  theta=k*math.tau/8+math.tau/32;p,n,v,u,_=chord(theta,3,.2,.12)
+  box(p+n*.35,(.7,.7,.7),nav_green if k%2 else nav_red,(u,v,n))
+ return info
+
 # Flight export (`-- salvage --flight`, node #1031): Salvage's front, redrawn
 # to the sim's outpost pad (principal ruling, 2026-10-19, option 1). The
 # approved pad is a 200 x 180 m slab; the sim's outpost is a deck 314 m square

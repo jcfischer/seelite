@@ -88,3 +88,37 @@ have almost nothing to remove (`light-rig.ts`). Tested on the round-7 model:
 
 `tests/coriolis-flight.test.ts` asserts the splice lands in the compiled
 shader and that beacons exceed the bloom threshold.
+
+## Ring (trade form b)
+
+The same levers on the Ring, seed 42, system 1. No generated target and no
+judge this time: the evidence is the before/after sheet alone.
+
+```bash
+SYSTEM=1 FORM=b TYPES=trade SCALES=1 CLEAN=1 \
+  ONLY=03-face-close,04-wide,06-hero,07-sun-wide,08-sun-close \
+  SEELITE_PROBE_RENDERER=hardware node spikes/station-scale/capture.mjs <out-dir>
+```
+
+`07-sun-wide` and `08-sun-close` frame the station from the star's side; the
+approach face of the Ring often looks away from the star, so the key light
+alone darkens it (F22 again).
+
+- `spikes/stations/build_model.py`: after the approved Ring, nine rows of lit
+  1.7 × 1.15 m windows round the torus, three lattice girders, 16 rim masts
+  (23–30 m, inside the form's 0.75 km reach), 24 short front masts and eight
+  7 m red and green beacons. Its own seeded generator, so the approved parts
+  keep their random draws.
+- `src/trade-flight.ts`: the Coriolis key light and the beacon gain on the
+  Ring, Drum and Wheel materials.
+- `src/trade-proxies.ts`: regenerated from the new model.
+
+| | main | this branch |
+|---|---|---|
+| Triangles | 102,164 | 485,440 |
+| Draw calls | 12 | 16 |
+| `src/models/trade-ring.glb` | 5.6 MB | 19.0 MB |
+| Ring proxy hull boxes | — | 8,985 |
+
+`evidence/ring-before-after.png`: left main (row 4: key light only), right
+this branch; rows face-close, hero, wide, sun-side close.

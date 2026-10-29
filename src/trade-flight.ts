@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { applyCoriolisKeyLight, CORIOLIS_BEACON_GAIN } from "./coriolis-flight";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
@@ -49,7 +50,12 @@ export function createTradeBuilder(
 		1,
 		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
-	for (const m of materials) m.emissiveIntensity /= divisor;
+	for (const m of materials) {
+		m.emissiveIntensity /= divisor;
+		if (/^navigation-(red|green)$/.test(m.name))
+			m.emissiveIntensity *= CORIOLIS_BEACON_GAIN;
+		applyCoriolisKeyLight(m);
+	}
 	template.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		shared(o.geometry);
