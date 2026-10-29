@@ -1907,7 +1907,7 @@ export class VoiceBank {
 
 /** One step of a Chamberlin state-variable filter whose state is row `i` of
  *  `lp` and `bp`: its lowpass output, or with `band` its bandpass. */
-function svfStep(
+export function svfStep(
 	lp: Float64Array,
 	bp: Float64Array,
 	i: number,
@@ -1916,10 +1916,22 @@ function svfStep(
 	damp: number,
 	band: boolean,
 ): number {
-	lp[i] += g * bp[i];
-	bp[i] += g * (x - lp[i] - damp * bp[i]);
+	const c = g * (g + 2 * damp) > SVF_STABLE ? svfLimit(damp) : g;
+	lp[i] += c * bp[i];
+	bp[i] += c * (x - lp[i] - damp * bp[i]);
 	return band ? bp[i] : lp[i];
 }
+
+/** The filter's poles stay inside the unit circle while `g² + 2·g·damp < 4`;
+ *  this keeps a margin under that edge, where a pole rings at Nyquist and
+ *  decays too slowly to hear before it has grown. */
+export const SVF_STABLE = 3;
+
+/** The largest coefficient the state-variable filter takes at `damp`. A
+ *  cutoff swept toward the rate (a low rate puts the same cutoff nearer it)
+ *  asks for more, and a coefficient past this grows without bound. */
+export const svfLimit = (damp: number) =>
+	Math.sqrt(damp * damp + SVF_STABLE) - damp;
 
 /** Where a part's slow sweep has the filter at frame `at`: a multiple of
  *  the cutoff, 1 at the bottom of the cycle and `2^sweepOct` at its top. */
