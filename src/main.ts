@@ -956,6 +956,7 @@ import {
 	measureMuzzles,
 	shipMuzzlesKm,
 	updateShipVisuals,
+	cockpitDrillView,
 } from "./ship-mesh";
 import {
 	beamSegments,
@@ -19323,13 +19324,24 @@ class Game {
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		// #535's prologue is empty space: the ship has not arrived yet.
-		this.shipMesh.visible =
-			this.view === "chase" && this.opening?.shot !== "forming";
+		const hullShown = this.view === "chase" && this.opening?.shot !== "forming";
+		const drillView =
+			MINING_ON &&
+			this.view === "cockpit" &&
+			!!HULL_SPECS[this.flownHull].cutter &&
+			this.opening?.shot !== "forming";
+		cockpitDrillView(
+			this.shipMesh,
+			drillView
+				? { drill: this.drill.extension > 0 || this.drillArmed() }
+				: null,
+		);
+		this.shipMesh.visible = hullShown || drillView;
 		// The plumes ride the hull and are seen when it is (#621).
 		const plumes = this.ventPlumes.object;
 		plumes.position.copy(this.shipMesh.position);
 		plumes.quaternion.copy(this.shipMesh.quaternion);
-		plumes.visible = this.shipMesh.visible;
+		plumes.visible = hullShown;
 		// Hidden, it draws nothing, so it is not written either.
 		if (plumes.visible)
 			this.ventPlumes.update(this.ventFiring, this.world.gameTime);

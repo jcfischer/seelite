@@ -2877,6 +2877,41 @@ export interface StrutJoints {
 
 const STRUT_FORWARD = new THREE.Vector3(0, 0, 1);
 
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * The Longwall as the cockpit sees it under `?mining=1` (round 9, F3): the
+ * full level's mounts, and its feed and struts while `drill` is set, with the
+ * hull and every other part hidden, since the eye is inside the hull. `null`
+ * puts back what each part drew before.
+ */
+export function cockpitDrillView(
+	root: THREE.Object3D,
+	view: { drill: boolean } | null,
+): void {
+	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
+	const parts = full?.children[0]?.children ?? [];
+	const others = root.children.filter((c) => c !== full);
+	const saved = root.userData.cockpitDrillSaved as
+		| Map<THREE.Object3D, boolean>
+		| undefined;
+	if (!view) {
+		if (saved) for (const [o, v] of saved) o.visible = v;
+		root.userData.cockpitDrillSaved = undefined;
+		return;
+	}
+	if (!full) return;
+	if (!saved)
+		root.userData.cockpitDrillSaved = new Map(
+			[...parts, ...others, full].map((o) => [o, o.visible]),
+		);
+	full.visible = true;
+	for (const o of others) o.visible = false;
+	for (const o of parts)
+		o.visible =
+			/^longwall-mount-/.test(o.name) ||
+			(view.drill && /^(feed|anchor-\d)/.test(o.name));
+}
+
 /** Pose strut `index` of a built Longwall's model level to `joints`, as the #803 study's viewer does. */
 export function poseLongwallStrut(
 	level: THREE.Object3D,
