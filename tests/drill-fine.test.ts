@@ -25,7 +25,6 @@ import {
 	flightPerformance,
 	type LinearDemand,
 	type Ship,
-	stepAngular,
 	stepHull,
 } from "../src/sim";
 import { dot, length, sub, v3 } from "../src/vec3";
@@ -196,11 +195,25 @@ describe("fine control on the turn keys (A and D yaw, S and W pitch, F faces)", 
 	const LEVER_KM = cutter.bowKm + cutter.feedTravelKm;
 	const tapPeak = (axis: "yaw" | "pitch", share: number, frames: number) => {
 		let rates = { pitch: 0, yaw: 0, roll: 0 };
+		let attitude = { nose: NOSE, up: UP };
 		let peak = 0;
+		const ship = { pos: v3(), vel: v3() };
 		for (let i = 0; i < 240; i++) {
-			const command = { pitch: 0, yaw: 0, roll: 0 };
-			if (i < frames) command[axis] = share;
-			rates = stepAngular(rates, command, STILL, true, DT, PERF).rates;
+			const stick = { pitch: 0, yaw: 0, roll: 0 };
+			if (i < frames) stick[axis] = share;
+			const step = stepHull(
+				ship,
+				{ ...attitude, rates },
+				{
+					stick,
+					turnAssist: true,
+					translation: { demand: lever(0), assist: true },
+				},
+				DT,
+				PERF,
+			);
+			rates = step.rates;
+			attitude = { nose: step.nose, up: step.up };
 			peak = Math.max(peak, Math.abs(rates[axis]));
 		}
 		return { peak, rest: Math.abs(rates[axis]) };

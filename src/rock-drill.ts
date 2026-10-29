@@ -515,3 +515,12 @@ export const shipFrameM = (
 		starboard: dot(d, starboard) * 1000,
 	};
 };
+
+/** A loadout as the prototype writes it to a save: without `h2`, which no save loads without `?mining=1` (Q12). */
+export function withoutPrototypeSlot<L extends Record<string, unknown>>(
+	loadout: L,
+): L {
+	if (!("h2" in loadout)) return loadout;
+	const { h2: _dropped, ...rest } = loadout;
+	return rest as L;
+}

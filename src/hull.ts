@@ -1462,3 +1462,31 @@ export const isCapital = (id: HullId): boolean =>
 export const DOCKABLE_HULL_IDS: readonly HullId[] = HULL_IDS.filter(
 	(id) => !isCapital(id),
 );
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * The principal's Q12 ruling for the drill prototype: the miner carries a
+ * second hardpoint, `h2`, the size of its first, so the Mining Laser no longer
+ * displaces the Pulse Laser. Every other figure of the spec is kept.
+ */
+export function withPrototypeSecondHardpoint(spec: HullSpec): HullSpec {
+	const first = spec.slots.find((s) => s.key === "h1");
+	if (!first || spec.slots.some((s) => s.key === "h2")) return spec;
+	const at = spec.slots.indexOf(first) + 1;
+	return {
+		...spec,
+		hardpoints: spec.hardpoints + 1,
+		slots: [
+			...spec.slots.slice(0, at),
+			{ key: "h2", kind: "hardpoint", size: first.size },
+			...spec.slots.slice(at),
+		],
+	};
+}
+
+/** Apply `withPrototypeSecondHardpoint` to the miner for this page, before anything is built from its spec. */
+export function addPrototypeMinerHardpoint(): void {
+	(HULL_SPECS as Record<HullId, HullSpec>).miner = withPrototypeSecondHardpoint(
+		HULL_SPECS.miner,
+	);
+}

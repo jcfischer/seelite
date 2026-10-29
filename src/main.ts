@@ -71,6 +71,7 @@ import {
 	stepSpin,
 	strutPose,
 	strutReach,
+	withoutPrototypeSlot,
 } from "./rock-drill";
 import { type LocalFrame, localFrameAt } from "./field-frame";
 import {
@@ -932,6 +933,7 @@ import {
 import {
 	HULL_IDS,
 	HULL_SPECS,
+	addPrototypeMinerHardpoint,
 	purchasableHullNamed,
 	type HullCutter,
 	type HullEnvelope,
@@ -1543,7 +1545,10 @@ const STRUT_ANCHOR: StrutAnchor = (STRUT_ANCHORS as readonly string[]).includes(
 	: "seat";
 declare const __PROTOTYPE_SHA__: string | undefined;
 const PROTOTYPE_BADGE = `PROTOTYPE 920-DRILL ${typeof __PROTOTYPE_SHA__ === "string" ? __PROTOTYPE_SHA__ : "UNKNOWN"}`;
-if (MINING_ON) keepLongwallStrutsPosable();
+if (MINING_ON) {
+	keepLongwallStrutsPosable();
+	addPrototypeMinerHardpoint();
+}
 const SURVEY_GRADE_SHORT = {
 	poor: "POOR",
 	standard: "STD",
@@ -9460,13 +9465,26 @@ class Game {
 		const hardpoints = HULL_SPECS[this.commander.hull].slots.filter(
 			(s) => s.kind === "hardpoint",
 		);
-		const key = prototypeMiningLaserSlot(hardpoints, this.commander.loadout);
+		let loadout = this.commander.loadout;
+		const [first, second] = hardpoints;
+		if (
+			first &&
+			second &&
+			loadout[first.key]?.module === "mining-laser" &&
+			!loadout[second.key]
+		)
+			loadout = {
+				...loadout,
+				[first.key]: makeModule("pulse-laser", first.size),
+				[second.key]: loadout[first.key],
+			};
+		const key = prototypeMiningLaserSlot(hardpoints, loadout);
 		const slot = hardpoints.find((s) => s.key === key);
-		if (!slot) return;
-		const loadout = {
-			...this.commander.loadout,
-			[slot.key]: makeModule("mining-laser", slot.size),
-		};
+		if (slot)
+			loadout = {
+				...loadout,
+				[slot.key]: makeModule("mining-laser", slot.size),
+			};
 		this.commander = { ...this.commander, loadout };
 	}
 
@@ -20669,7 +20687,12 @@ class Game {
 				: null;
 		return {
 			...base,
-			state: this.commander,
+			state: MINING_ON
+				? {
+						...this.commander,
+						loadout: withoutPrototypeSlot(this.commander.loadout),
+					}
+				: this.commander,
 			requests: this.requests,
 			sweepReadings: this.sweepReadings,
 			galaxyIndex: this.world.system.record.galaxy,
