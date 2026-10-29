@@ -45,9 +45,7 @@ import { gameMethods } from "./lib/game-methods";
 const WORLD_SEED = 47;
 const PERF = flightPerformance(PLAYER_BASELINE_HULL);
 const IDLE = { surge: 0, sway: 0, heave: 0 };
-/** The assist settles an idle ship to rest in its frame; what is left after
- *  a minute is float noise and the frame's own acceleration lag. */
-const IDLE_TOLERANCE_KMS = 1e-3;
+const ASSIST_IDLE_TOLERANCE_KMS = 1e-3;
 
 const FIXTURES: Record<PlacementKind, { galaxy: number; system: number }> = {
 	"refinery-orbit": { galaxy: 0, system: 0 },
@@ -141,8 +139,7 @@ function planOf(g: any, kind: PlacementKind): FieldPlan {
 	return plan;
 }
 
-/** Flies `g` in normal flight with its own frame choice, assist on. */
-function idle(g: any, seconds: number, nose = v3(0, 0, 1)) {
+function idleWithAssistInOwnFrame(g: any, seconds: number, nose = v3(0, 0, 1)) {
 	g.regime = "normal";
 	g.throttle = 0;
 	for (let t = 0; t < seconds; t += MAX_DT) {
@@ -188,8 +185,8 @@ describe("a ship dropped at a field flies in the field's frame (#1139)", () => {
 		test(`${kind}: the assist holds station on the field centre for 60 s`, () => {
 			const { g, plan } = dropAt(kind);
 			const before = offset(g, plan);
-			idle(g, 60);
-			expect(relativeSpeed(g, plan)).toBeLessThan(IDLE_TOLERANCE_KMS);
+			idleWithAssistInOwnFrame(g, 60);
+			expect(relativeSpeed(g, plan)).toBeLessThan(ASSIST_IDLE_TOLERANCE_KMS);
 			const smallestSemiKm = Math.min(...FIELD_PROFILE[plan.profile].semiKm);
 			expect(length(sub(offset(g, plan), before))).toBeLessThan(smallestSemiKm);
 			expect(g.assistFrame().label).toBe("FIELD FRAME");
