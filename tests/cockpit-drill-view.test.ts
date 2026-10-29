@@ -72,9 +72,15 @@ test("from above the mounts the same rule sees both mounts, so it is not blind (
 test("the cockpit draws only the parts the hull leaves in view, and leaving puts back what drew (F5)", () => {
 	const root = miner();
 	const before = drawn(root).map((d) => d.mesh);
-	cockpitDrillView(root, { drill: true, eyeKm: COCKPIT_EYE });
+	const at = (eye: typeof COCKPIT_EYE) =>
+		new Set(
+			cockpitOcclusion(root, eye)
+				.parts.filter((p) => p.seen)
+				.map((p) => p.name),
+		);
+	cockpitDrillView(root, { drill: true, seen: at(COCKPIT_EYE) });
 	expect(drawn(root)).toEqual([]);
-	cockpitDrillView(root, { drill: true, eyeKm: ABOVE_MOUNTS });
+	cockpitDrillView(root, { drill: true, seen: at(ABOVE_MOUNTS) });
 	const shown = drawn(root);
 	expect(shown.length).toBeGreaterThan(0);
 	for (const d of shown) expect(d.chain.some((n) => PARTS.test(n))).toBe(true);

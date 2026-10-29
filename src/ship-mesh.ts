@@ -3026,12 +3026,12 @@ export function cockpitBeamStart(
  * https://github.com/jcfischer/seelite/issues/920
  * The Longwall as the cockpit sees it under `?mining=1` (round 9 F3, round 10
  * F5): of the mounts, and of the feed and struts while `drill` is set, only the
- * parts `cockpitOcclusion` finds the hull leaves in view from `eyeKm`; the hull
+ * parts in `seen`, the ones `cockpitOcclusion` finds the hull leaves in view; the hull
  * and every other part hidden. `null` puts back what each part drew before.
  */
 export function cockpitDrillView(
 	root: THREE.Object3D,
-	view: { drill: boolean; eyeKm: Vec3; pointsKm?: readonly Vec3[] } | null,
+	view: { drill: boolean; seen: ReadonlySet<string> } | null,
 ): void {
 	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
 	const parts = full?.children[0]?.children ?? [];
@@ -3045,11 +3045,7 @@ export function cockpitDrillView(
 		return;
 	}
 	if (!full) return;
-	const seen = new Set(
-		cockpitOcclusion(root, view.eyeKm, view.pointsKm)
-			.parts.filter((p) => p.seen)
-			.map((p) => p.name),
-	);
+	const { seen } = view;
 	if (!saved)
 		root.userData.cockpitDrillSaved = new Map(
 			[...parts, ...others, full].map((o) => [o, o.visible]),

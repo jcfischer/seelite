@@ -958,8 +958,8 @@ import {
 	updateShipVisuals,
 	cockpitBeamStart,
 	cockpitDrillView,
-	cockpitOcclusion,
 } from "./ship-mesh";
+import { COCKPIT_OCCLUSION } from "./cockpit-occlusion-table";
 import {
 	beamSegments,
 	muzzlesWorld,
@@ -1793,7 +1793,7 @@ const browserPlatform = (): string =>
 /** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
  *  forward, so the view is from the nose rather than from inside the cube. */
 const COCKPIT_FORWARD_KM = 0.008;
-const COCKPIT_EYE_KM = v3(0, 0, -COCKPIT_FORWARD_KM);
+const COCKPIT_SEEN_PARTS: ReadonlySet<string> = new Set(COCKPIT_OCCLUSION.seen);
 /** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
@@ -13582,15 +13582,14 @@ class Game {
 			this.flownHull,
 			HULL_SPECS[this.flownHull].variant,
 		);
-		const hidden = cockpitOcclusion(this.shipMesh, COCKPIT_EYE_KM, local);
 		return beam.rays.flatMap((ray) => {
 			const at = local[ray.muzzleIndex];
 			const origin = all[ray.muzzleIndex];
 			if (!origin || !at) return [];
 			const [muzzle] = muzzlesWorld(this.world.ship.pos, this.orientation, [
-				hidden.pointsSeen[ray.muzzleIndex]
+				COCKPIT_OCCLUSION.muzzlesSeen[ray.muzzleIndex]
 					? at
-					: cockpitBeamStart(at, v3(0, 0, -1), hidden.hullBoxKm),
+					: cockpitBeamStart(at, v3(0, 0, -1), COCKPIT_OCCLUSION.hullBoxKm),
 			]);
 			const rock = ray.hit && this.fragmentRock(ray.hit.rockId);
 			const end =
@@ -19349,11 +19348,7 @@ class Game {
 			drillView
 				? {
 						drill: this.drill.extension > 0 || this.drillArmed(),
-						eyeKm: COCKPIT_EYE_KM,
-						pointsKm: shipMuzzlesKm(
-							this.flownHull,
-							HULL_SPECS[this.flownHull].variant,
-						),
+						seen: COCKPIT_SEEN_PARTS,
 					}
 				: null,
 		);
