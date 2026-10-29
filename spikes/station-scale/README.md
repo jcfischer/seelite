@@ -141,6 +141,12 @@ SYSTEM=0 FORM=c TYPES=trade SCALES=1 CLEAN=1 \
   front face outside the approach lane, 12 aft antennae inside the rear rim and
   eight 7 m red and green beacons. Its own seeded generator, so the approved
   parts keep their random draws.
+- The entry face, after the Coriolis face: eight lit lattice trusses between
+  the approved spines and vents, 70 panels of window strips, greebles and
+  grilles on the plating, six masts with arms, two dishes, red and green
+  beacons on posts at the slot's corners, and a lit gallery round the raised
+  rim. The four approved window bands at r 18 hung 20 m in front of the face
+  (z 47 against a face at 45.18); they now sit on it.
 - The key light and beacon gain came with the Ring commit (`src/trade-flight.ts`).
 - `src/trade-proxies.ts`: regenerated from the new model.
 
@@ -148,10 +154,11 @@ The rear rim sets the form's reach: 0.687 of the 0.70 km silhouette, unchanged.
 
 | | before | this branch |
 |---|---|---|
-| Triangles | 82,088 | 250,408 |
-| `src/models/trade-drum.glb` | 4.9 MB | 10.2 MB |
-| Drum proxy hull boxes | — | 3,687 |
+| Triangles | 82,088 | 268,068 |
+| `src/models/trade-drum.glb` | 4.9 MB | 10.8 MB |
+| Drum proxy hull boxes | — | 4,218 |
 
 `evidence/drum-before-after.png`: left before, right this branch; rows
-face-close, hero, wide, sun-side close, sun-side wide. The captures ran while
+face-close, hero, wide, sun-side close, sun-side wide, taken before the
+entry-face pass. The captures ran while
 another worktree's probe suite held the GPU lock; they are images, not timings.
