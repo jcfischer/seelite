@@ -3,7 +3,10 @@ import { fireGroups } from "../src/fire-group";
 import { HULL_SPECS, withPrototypeMountHardpoints } from "../src/hull";
 import { groupMuzzleIndices } from "../src/laser-modules";
 import { type Loadout, makeModule, stockLoadout } from "../src/loadout";
+import { ndcToPx, projectDirection } from "../src/hud";
+import { MINING_BEAM_RGB, mountBeamStrokes } from "../src/mining-beam";
 import { glassTracerIndices } from "../src/rock-drill";
+import { v3 } from "../src/vec3";
 
 const stock = HULL_SPECS.miner;
 const spec = withPrototypeMountHardpoints(stock);
@@ -51,4 +54,29 @@ for (const h3 of [false, true])
 test("without mounts a Mining Laser keeps its glass tracer", () => {
 	const lo = loadout(false);
 	expect(glassTracerIndices("miner", lo, [0, 1], false)).toEqual([0, 1]);
+});
+
+test("a mount's beam is drawn in the frame from its muzzle as the cockpit camera sees it (F2)", () => {
+	const muzzle = v3(0.0053, 0.00581, -0.0148);
+	const end = v3(0.0053, 0.00581, -2.5);
+	const fov = Math.PI / 3;
+	const strokes = mountBeamStrokes(
+		[{ muzzle, end, hit: false }],
+		v3(0, 0, 0),
+		{ x: 0, y: 0, z: 0, w: 1 },
+		fov,
+		16 / 10,
+		0,
+	);
+	expect(strokes.length).toBeGreaterThan(0);
+	const want = ndcToPx(
+		projectDirection(muzzle, { x: 0, y: 0, z: 0, w: 1 }, fov, 16 / 10),
+		1,
+		1,
+	);
+	expect(strokes[0].from.x).toBeCloseTo(want.x, 9);
+	expect(strokes[0].from.y).toBeCloseTo(want.y, 9);
+	expect(want.x).toBeGreaterThan(0.5);
+	expect(want.y).toBeLessThan(0.5);
+	for (const s of strokes) expect(s.rgb).toEqual(MINING_BEAM_RGB);
 });

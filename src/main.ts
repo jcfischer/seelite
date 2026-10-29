@@ -81,7 +81,7 @@ import {
 	impactRadiusPx,
 	MINING_BEAM,
 	miningBeamAlpha,
-	miningBeamStrokes,
+	mountBeamStrokes,
 	miningBeamWidthPx,
 } from "./mining-beam";
 import {
@@ -10525,17 +10525,6 @@ class Game {
 		}
 	}
 
-	private miningBeamEnd(
-		camPos: Vec3,
-		beam: NonNullable<Game["miningBeam"]>,
-	): FramePoint | null {
-		if (!beam.hit) return this.onFrame(this.beamAim());
-		const rock = this.fragmentRock(beam.hit.rockId);
-		return rock
-			? this.onFrame(directionTo(camPos, add(rock.pos, beam.hit.offset)))
-			: null;
-	}
-
 	private drawImpact(
 		ctx: CanvasRenderingContext2D,
 		camPos: Vec3,
@@ -13580,6 +13569,21 @@ class Game {
 			{ pos: this.world.ship.pos, nose: this.nose() },
 			{ pos: this.cameraPos(), forward: forwardOf(this.cameraRotation()) },
 		);
+	}
+
+	private miningBeamSpans(beam: NonNullable<Game["miningBeam"]>) {
+		const all = this.miningMuzzlesWorld();
+		const nose = this.nose();
+		return beam.rays.flatMap((ray) => {
+			const muzzle = all[ray.muzzleIndex];
+			if (!muzzle) return [];
+			const rock = ray.hit && this.fragmentRock(ray.hit.rockId);
+			const end =
+				ray.hit && rock
+					? add(rock.pos, ray.hit.offset)
+					: add(muzzle, scale(nose, PLAYER_LASER_RANGE_KM));
+			return [{ muzzle, end, hit: ray.hit !== null }];
+		});
 	}
 
 	private drawChaseMiningBeam(
@@ -22845,7 +22849,8 @@ class Game {
 		this.cockpitRaiderBeam = null;
 		const raider = this.raiderFiring && this.raiderListed;
 		const rig = this.combatRig?.tracerStrokes(this.view) ?? NO_BEAM_STROKES;
-		const mining = null as Game["miningBeam"];
+		const mining =
+			MINING_ON && this.view === "cockpit" ? this.miningBeam : null;
 		const any =
 			this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0 || !!mining;
 		if (!(this.view === "cockpit" && any && this.flightGlassShown())) {
@@ -22857,17 +22862,17 @@ class Game {
 		}
 		const strokes = this.cockpitStrokes;
 		strokes.length = 0;
-		const miningEnd = mining && this.miningBeamEnd(camPos, mining);
-		if (mining && miningEnd)
-			for (const stroke of miningBeamStrokes(
-				this.gunTracer.firedPorts,
-				miningEnd,
-				mining.distKm,
-				mining.hit !== null,
+		if (mining)
+			for (const stroke of mountBeamStrokes(
+				this.miningBeamSpans(mining),
+				camPos,
+				this.cameraRotation(),
+				(this.nearCamera.fov * Math.PI) / 180,
+				this.nearCamera.aspect,
 				this.world.gameTime,
 			))
 				strokes.push(stroke);
-		else if (this.gunFeedback.tracerLeftS > 0)
+		if (this.gunFeedback.tracerLeftS > 0)
 			for (const stroke of tracerStrokes(
 				this.gunTracer.firedPorts,
 				this.onFrame(this.beamAim()) ?? TRACER_AIM,
@@ -23281,7 +23286,7 @@ class Game {
 		}
 		// The cockpit's tracer is in the frame, behind the cabin
 		// (`drawCockpitBeams`, node #806); chase has no cabin and keeps its own.
-		const chaseMining = MINING_ON && this.miningBeam;
+		const chaseMining = MINING_ON && this.view === "chase" && this.miningBeam;
 		this.chaseMiningRender = 0;
 		if (chaseMining) this.drawChaseMiningBeam(ctx, w, h, chaseMining);
 		else if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
