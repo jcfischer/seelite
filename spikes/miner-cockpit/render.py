@@ -81,7 +81,7 @@ mod = rock.modifiers.new('relief', 'DISPLACE'); mod.texture = disp_tex; mod.stre
 
 # Light: a hard warm sun on the rock, warm lamps inside, cool bounce from the screens.
 w = sc.world or bpy.data.worlds.new('w'); sc.world = w; w.use_nodes = True
-w.node_tree.nodes['Background'].inputs[0].default_value = (.008, .014, .02, 1)
+w.node_tree.nodes['Background'].inputs[0].default_value = (.01, .022, .034, 1)
 def light(kind, name, energy, loc=None, rot_to=None, color=(1, 1, 1), size=None):
     l = bpy.data.lights.new(name, kind); l.energy = energy; l.color = color
     if size is not None: l.shadow_soft_size = size
@@ -101,9 +101,9 @@ for s in [-1, 1]:
     light('POINT', f'dash-lamp-{s}', 4, B(s * .75, -.45, -1.5), color=AMBER, size=.08)
 wn = Vector((0, .84, -.54)).normalized()
 for k, (dx, e) in enumerate([(-.9, 160), (.1, 160)]):
-    key = light('AREA', f'window-key-{k}', e, B(*(Vector((-.6 + dx, .29, -2.9)) + wn * 1.6)), rot_to=B(*(-wn + Vector((0, -.35, .25)))), color=(1, .8, .56))
+    key = light('AREA', f'window-key-{k}', e, B(*(Vector((-.6 + dx, .29, -2.9)) + wn * 1.6)), rot_to=B(*(-wn + Vector((0, -.35, .25)))), color=(.78, .88, 1))
     key.data.size = 1.6
-side = light('AREA', 'side-window-key', 60, B(3.0, .1, -1.0), rot_to=B(-1, -.15, -.2), color=(1, .82, .6)); side.data.size = 2.0
+side = light('AREA', 'side-window-key', 60, B(3.0, .1, -1.0), rot_to=B(-1, -.15, -.2), color=(.8, .9, 1)); side.data.size = 2.0
 light('POINT', 'overhead-spill', 4, B(0, .5, -1.45), color=(.4, .85, 1), size=.5)
 light('POINT', 'dash-spill', 6, B(0, -.5, -1.45), color=(.4, .85, 1), size=.5)
 
