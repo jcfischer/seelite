@@ -14,37 +14,18 @@
 export async function placeDerelict(page, shot = {}) {
 	return page.evaluate(async (framing) => {
 		const g = window.__seelite;
-		const { derelictNextLossAt, derelictSlots, derelictTimeline } =
-			await import("/src/derelict-slots.ts");
+		const { nextDerelictViewWreck } = await import(
+			"/scripts/lib/derelict-view-fixture.ts"
+		);
 		const { advanceTo } = await import("/src/world-state.ts");
 		const { advanceSystem } = await import("/src/sim.ts");
-		const { derelictPose, tetherPose } = await import("/src/derelict.ts");
-		const { isAuthoredHullModel } = await import("/src/model-catalog.ts");
+		const { tetherPose } = await import("/src/derelict.ts");
 		g.resetFlightToStart();
 		g.clockHeld = true;
 		g.photoMode = false;
 		g.keys.clear();
 		const system = g.world.system;
-		const slots = derelictSlots(system.record.index, system.record.government);
-		const lossAt = (slot) =>
-			derelictNextLossAt(system.record.seed, slot.key) + 1;
-		const tearable = (slot) => {
-			const at = lossAt(slot);
-			const phase = derelictTimeline(system.record.seed, slot.key, at);
-			if (phase.condition !== "destroyed")
-				throw Error("next loss drew no wreck");
-			const { hull } = derelictPose(
-				system,
-				slot.key,
-				phase.instanceOrdinal,
-				at,
-			);
-			return !isAuthoredHullModel(hull);
-		};
-		const slot = framing === "tear" ? slots.find(tearable) : slots[0];
-		if (!slot) throw Error("no derelict slot whose wreck the tear can cut");
-		const key = slot.key;
-		const at = lossAt(slot);
+		const { key, at } = nextDerelictViewWreck(system, framing);
 		g.world.gameTime = at;
 		advanceSystem(system, at);
 		g.commerceWorld = advanceTo(g.commerceWorld, at);

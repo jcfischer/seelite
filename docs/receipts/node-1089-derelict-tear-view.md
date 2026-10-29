@@ -35,16 +35,17 @@ changes neither choice nor its loss time; it did not introduce this failure.
 
 Only `derelict-tear` declares `seed: 4`; the ordinary `derelict` view keeps
 seed 47. Seed 4 starts in system 206, whose next-loss slot
-`206:derelict-00` holds a procedural explorer. The existing placer still
-selects and frames a natural next-loss wreck. Simulation, hull selection and
-the placer are unchanged. The caption names the exceptional seed.
+`206:derelict-00` holds a procedural explorer. The placer still selects and
+frames a natural next-loss wreck. Simulation and hull selection are unchanged.
+Review round 1 extracts the placer's selection into a shared fixture helper
+without changing its choice or framing. The caption names the exceptional seed.
 
 `tests/derelict-view-fixture.test.ts` reads the actual view declaration,
-constructs its world and applies the placer's reset, then follows the next-loss
-slot choice. It requires a procedural candidate and builds that candidate's
-production derelict mesh, asserting nonempty tear sites and exposed frame
-members. A future authored replacement or loss of procedural tear geometry
-therefore fails the test. It does not claim to judge the frame's appearance.
+constructs its world and applies the placer's reset, then calls
+`nextDerelictViewWreck`, the same helper the browser placer calls. It requires a
+procedural candidate and builds that candidate's production derelict mesh,
+asserting nonempty tear sites and exposed frame members. The guard checks slot
+selection and tear geometry; it does not judge the frame's appearance.
 
 The test was committed red before the fixture change:
 
@@ -213,3 +214,54 @@ During the full run, a host snapshot reported load averages
 71.59 / 83.56 / 67.32. That reading is context rather than proof of a cause.
 The probe-impact timeout also has a separate repair on newer main:
 `2d9380d8` (node #1128). No unrelated repair is included here.
+
+## Sage review round 1
+
+Both check findings are addressed by
+`scripts/lib/derelict-view-fixture.ts::nextDerelictViewWreck`. The browser placer
+imports this helper through Vite, and the regression test imports the same file.
+It owns enumeration, next-loss time, timeline ordinal, pose and the authored-hull
+filter. The test no longer copies those steps. It builds the selected pose's
+production mesh and requires torn skin and exposed framing.
+
+The original seed-47 fixture is a negative control: the helper refuses tear
+framing there, while plain framing still selects the freighter at
+`248:derelict-00`, 386297.2543988052 s. Temporarily removing the helper's
+authored-hull filter makes this test fail. Restoring the filter returns the
+focused fixture, view-set and tear-geometry run to **73 pass, 0 fail**.
+The original fixture test also passed before extraction. The initial shared-helper
+test run failed because the helper did not yet exist, before implementation.
+Logs are `/tmp/seelite-1089-review-before.log`,
+`/tmp/seelite-1089-review-red.log`, `/tmp/seelite-1089-review-mutation.log` and
+`/tmp/seelite-1089-review-focused.log`.
+
+Browser selection was inspected before capture. Diagnostic selection for this
+round's paths selects all 117 probes because `derelict-state.mjs` is shared
+harness infrastructure. The worker scope forbids that full suite. Only the two
+affected canonical views were captured:
+
+```sh
+PROBE_ORIGIN=http://127.0.0.1:5189 SEELITE_PROBE_RENDERER=hardware \
+  npm run views -- --only derelict,derelict-tear --label review-1 \
+  --out /tmp/seelite-1089-review-1-views
+```
+
+The wrapper used `node scripts/capture-views.mjs`, the script behind `npm run
+views`, and stopped its temporary Vite server after capture. The lock reclaimed
+the previous holder only after finding its process no longer running. Capture
+exited 0 on `ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified
+Version)`. Both views captured and the sheet built at
+`/tmp/seelite-1089-review-1-views/index.html`. The tear row remains an explorer,
+`206:derelict-00`, `explorer-port-nacelle`. Its full-size PNG was opened and
+shows missing nacelle skin and exposed frame members. This is affected-view
+evidence, not a new full-set run or the principal's visual approval.
+
+The reported glossary alias is already absent at the reviewed head, so that
+finding needs no further prose change.
+
+Final validation on this host passes: typecheck, formatting of changed code,
+script lint, comment lint, launcher wiring and production build. The single
+full `npm test` run for this round exits 0: **7,224 pass, 0 fail**, across
+436 files. Its raw output is `/tmp/seelite-1089-review-full-test.log`.
+The build log is `/tmp/seelite-1089-review-build.log`, and the capture log is
+`/tmp/seelite-1089-review-capture.log`.
