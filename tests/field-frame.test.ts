@@ -5,6 +5,7 @@ import {
 	fieldCentre,
 	fieldCentreVelocity,
 	FIELD_PROFILE,
+	fieldRocks,
 	systemFields,
 } from "../src/asteroid-field";
 import {
@@ -294,4 +295,47 @@ describe("leaving a field's frame (#1139)", () => {
 		expect(g.assistFrame().label).toBe("STATION FRAME");
 		expect(length(sub(g.localFrame(), fieldVel))).toBeLessThan(1e-3);
 	});
+});
+
+const outerExtentKm = (g: any, plan: FieldPlan) =>
+	Math.max(
+		...fieldRocks(g.world.system.record, plan).map(
+			(r) => length(r.anchor) + r.driftKm + r.radiusKm,
+		),
+	);
+
+describe("the field frame reaches past the cruise arrival point (#1139, principal)", () => {
+	for (const kind of Object.keys(FIXTURES) as PlacementKind[]) {
+		test(`${kind}: the ship at the 50 km arrival point is in the field frame at once`, () => {
+			const { g, plan } = dropAt(kind);
+			expect(length(offset(g, plan))).toBeCloseTo(
+				DEFAULT_CRUISE.dropRadiusKm,
+				2,
+			);
+			expect(DEFAULT_CRUISE.dropRadiusKm).toBeGreaterThan(
+				outerExtentKm(g, plan),
+			);
+			g.regime = "normal";
+			g.updateLocalFrameBody();
+			expect(g.frameField?.id).toBe(plan.id);
+			expect(g.assistFrame().label).toBe("FIELD FRAME");
+		});
+
+		test(`${kind}: 100 km outside the extent the frame is still the field's, so an idle ship at rest in it keeps that rest`, () => {
+			const { galaxy, system } = FIXTURES[kind];
+			const g = subjectAt(galaxy, system);
+			const plan = planOf(g, kind);
+			const edgeKm = outerExtentKm(g, plan) + 100;
+			const nose = v3(0, 0, 1);
+			placedAt(
+				g,
+				add(fieldCentre(plan, 0), scale(nose, edgeKm)),
+				fieldCentreVelocity(plan, 0),
+			);
+			expect(g.assistFrame().label).toBe("FIELD FRAME");
+			idleWithAssistInOwnFrame(g, 1, nose);
+			expect(g.assistFrame().label).toBe("FIELD FRAME");
+			expect(relativeSpeed(g, plan)).toBeLessThan(ASSIST_IDLE_TOLERANCE_KMS);
+		});
+	}
 });
