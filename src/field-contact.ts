@@ -62,6 +62,25 @@ export function fieldContactsAt(
 	return rowAt(system, gameTime).contacts;
 }
 
+/** The index of the point nearest `pos` and strictly closer than
+ *  `withinKm`, the first on a tie, or `-1`. */
+export function nearestIndexWithin(
+	points: readonly Vec3[],
+	pos: Vec3,
+	withinKm: number,
+): number {
+	let best = -1;
+	let bestKm = withinKm;
+	for (let i = 0; i < points.length; i++) {
+		const km = length(sub(points[i], pos));
+		if (km < bestKm) {
+			best = i;
+			bestKm = km;
+		}
+	}
+	return best;
+}
+
 /** The field whose centre is nearest `pos` and closer than `withinKm`, or
  *  `null` (#1139). The local frame's field: a frame is a velocity, so a field
  *  can be one and still never be a mass (#949 D6). */
@@ -72,14 +91,10 @@ export function nearestFieldPlan(
 	withinKm: number,
 ): FieldPlan | null {
 	const row = rowAt(system, gameTime);
-	let best: FieldPlan | null = null;
-	let bestKm = withinKm;
-	for (let i = 0; i < row.plans.length; i++) {
-		const km = length(sub(row.contacts[i].pos, pos));
-		if (km < bestKm) {
-			best = row.plans[i];
-			bestKm = km;
-		}
-	}
-	return best;
+	const i = nearestIndexWithin(
+		row.contacts.map((c) => c.pos),
+		pos,
+		withinKm,
+	);
+	return i < 0 ? null : row.plans[i];
 }

@@ -22,7 +22,6 @@ import { RELAY_LOCAL_CARRIER_ID } from "../src/relay-slot";
 import { isRockTargetId } from "../src/rock-target";
 import {
 	ASSIST_CAP_KMS,
-	NO_ATTITUDE,
 	advanceWorldClock,
 	bodyAccelerationBound,
 	bodyVelocity,
@@ -30,7 +29,7 @@ import {
 	markShipPlaced,
 	restoreWorld,
 	stationHostIdOf,
-	stepFlight,
+	stepHull,
 } from "../src/sim";
 import { MAX_DT, NEAR_FAR_KM } from "../src/units";
 import {
@@ -47,6 +46,7 @@ import { gameMethods } from "./lib/game-methods";
 const WORLD_SEED = 47;
 const PERF = flightPerformance(PLAYER_BASELINE_HULL);
 const IDLE = { surge: 0, sway: 0, heave: 0 };
+const STILL = { pitch: 0, yaw: 0, roll: 0 };
 const ASSIST_IDLE_TOLERANCE_KMS = 1e-3;
 
 const FIXTURES: Record<PlacementKind, { galaxy: number; system: number }> = {
@@ -143,15 +143,17 @@ function planOf(g: any, kind: PlacementKind): FieldPlan {
 }
 
 function idleStepInOwnFrame(g: any, assist: boolean, nose: Vec3) {
-	stepFlight(
+	stepHull(
 		g.world.ship,
+		{ nose, up: v3(0, 1, 0), rates: STILL },
 		{
-			nose,
-			up: v3(0, 1, 0),
-			demand: IDLE,
-			assist,
-			attitude: NO_ATTITUDE,
-			frame: g.assistFrameMotion(MAX_DT),
+			stick: STILL,
+			turnAssist: true,
+			translation: {
+				demand: IDLE,
+				assist,
+				frame: g.assistFrameMotion(MAX_DT),
+			},
 		},
 		MAX_DT,
 		PERF,
