@@ -122,3 +122,36 @@ alone darkens it (F22 again).
 
 `evidence/ring-before-after.png`: left main (row 4: key light only), right
 this branch; rows face-close, hero, wide, sun-side close.
+
+## Drum (trade form c)
+
+The same levers on the Drum, seed 42, system 0. The evidence is the
+before/after sheet alone.
+
+```bash
+SYSTEM=0 FORM=c TYPES=trade SCALES=1 CLEAN=1 \
+  ONLY=03-face-close,04-wide,06-hero,07-sun-wide,08-sun-close \
+  SEELITE_PROBE_RENDERER=hardware node spikes/station-scale/capture.mjs <out-dir>
+```
+
+- `spikes/stations/build_model.py`: after the approved Drum, 17 rows of lit
+  1.7 × 1.15 m windows round the barrel, clear of the trunks, pods and pipes;
+  eight lattice girders down the clear facet edges, broken at the middle end
+  ring; 16 radial masts (23–30 m) on the front shoulder, 24 short masts on the
+  front face outside the approach lane, 12 aft antennae inside the rear rim and
+  eight 7 m red and green beacons. Its own seeded generator, so the approved
+  parts keep their random draws.
+- The key light and beacon gain came with the Ring commit (`src/trade-flight.ts`).
+- `src/trade-proxies.ts`: regenerated from the new model.
+
+The rear rim sets the form's reach: 0.687 of the 0.70 km silhouette, unchanged.
+
+| | before | this branch |
+|---|---|---|
+| Triangles | 82,088 | 250,408 |
+| `src/models/trade-drum.glb` | 4.9 MB | 10.2 MB |
+| Drum proxy hull boxes | — | 3,687 |
+
+`evidence/drum-before-after.png`: left before, right this branch; rows
+face-close, hero, wide, sun-side close, sun-side wide. The captures ran while
+another worktree's probe suite held the GPU lock; they are images, not timings.

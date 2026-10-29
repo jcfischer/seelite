@@ -728,6 +728,77 @@ def ring():
   box(p+n*.35,(.7,.7,.7),nav_green if k%2 else nav_red,(u,v,n))
  return info
 
+# The same levers on the Drum (trade form c): a 16-facet barrel, radius 35,
+# z -52..43, its front shoulder out to r 39 at z 41..48.7. The even vertices
+# (k*tau/8) carry the trunks, pods and machinery; the odd ones are clear.
+SD=random.Random(1008)
+DRUM_R,DRUM_N=35,16
+
+def drum_facet(i,s,z,lift):
+ """Point, outward normal and tangent on barrel facet `i`, `s` 0..1 from its first vertex."""
+ a=i*math.tau/DRUM_N;b=(i+1)*math.tau/DRUM_N
+ A=Vector((DRUM_R*math.cos(a),DRUM_R*math.sin(a),0));B=Vector((DRUM_R*math.cos(b),DRUM_R*math.sin(b),0))
+ n=Vector((math.cos((a+b)/2),math.sin((a+b)/2),0));u=(B-A).normalized()
+ return A.lerp(B,s)+Z*z+n*lift,n,u
+
+def drum_window_row(z,spacing=.32,height=.5):
+ side=2*DRUM_R*math.sin(math.pi/DRUM_N)
+ for i in range(DRUM_N):
+  even_first=i%2==0
+  # Clear of the even vertex's clutter, the odd vertex's girder and, on the
+  # piped facets, the three pipes down the facet's middle.
+  lo,hi=(5.2,side-.8) if even_first else (.8,side-5.2)
+  spans=[(lo,hi)]
+  if i%4==0:spans=[(lo,3.6),(10.1,hi)] if even_first else [(lo,3.6),(10.1,hi)]
+  for s0,s1 in spans:
+   if s1-s0<spacing*3:continue
+   p,n,u=drum_facet(i,(s0+s1)/2/side,z,.18)
+   box(p,(s1-s0,height,.06),black,(u,Z,n))
+   count=int((s1-s0)/spacing);run=0;lit=None
+   for k in range(count):
+    if run<=0:run=SD.randint(4,14);lit=SD.random()<.78 and (white if SD.random()<.18 else warm)
+    run-=1
+    if not lit:continue
+    q,_,_=drum_facet(i,(s0+(k+.5)*spacing)/side,z,.22)
+    for off in [-.11,.11]:box(q+Z*off,(.17,.115,.03),lit,(u,Z,n))
+
+def drum_girder(theta,z0,z1,step=.9):
+ n=Vector((math.cos(theta),math.sin(theta),0));u=Vector((-math.sin(theta),math.cos(theta),0))
+ base=n*(DRUM_R+.14);count=max(1,round((z1-z0)/step))
+ for k in range(count):
+  a=base+Z*(z0+(z1-z0)*k/count);b=base+Z*(z0+(z1-z0)*(k+1)/count)
+  lo=[a+u*s*.45 for s in [-1,1]];hi=[x+n*.9 for x in lo]
+  lo2=[b+u*s*.45 for s in [-1,1]];hi2=[x+n*.9 for x in lo2]
+  for x,y in zip(lo+hi,lo2+hi2):tube(x,y,.08,truss_paint,4)
+  for s in [0,1]:tube(lo[s],hi2[s] if k%2 else hi[s],.05,truss_paint,4)
+  tube(hi[0],hi[1],.05,truss_paint,4)
+  if k%2:tube(lo[0],hi2[1],.04,truss_paint,4)
+  if k%12==6:box((hi[0]+hi[1])/2+n*.08,(.22,.22,.14),warm,(u,Z,n))
+
+approved_drum=drum
+def drum():
+ info=approved_drum()
+ for z in [-44,-42.8,-41.6,-24,-22.8,-21.6,-20.4,-16,-14.8,8,9.2,10.4,11.6,18,19.2,20.4,21.6]:drum_window_row(z)
+ for k in range(8):
+  theta=(2*k+1)*math.tau/16
+  drum_girder(theta,-45.5,-6.5);drum_girder(theta,-3.5,37.5)
+ # Radial masts off the front shoulder, between the end ring's boxes.
+ for k in range(16):
+  theta=(k+.5)*math.tau/16;n=Vector((math.cos(theta),math.sin(theta),0))
+  radial_mast(n*38.7+Z*41.6,n,SD.uniform(2.3,3.0),nav_red if k%2 else white)
+ # Short masts forward off the front face, outside the approach lane.
+ for k in range(24):
+  theta=(k+.3)*math.tau/24;n=Vector((math.cos(theta),math.sin(theta),0))
+  radial_mast(n*33.5+Z*(48.7-(33.5-30)/7*2.7),Z+n*.25,SD.uniform(1.2,2.4),nav_red)
+ # Antennae aft, well inside the rear rim, which sets the form's reach.
+ for k in range(12):
+  theta=(k+.5)*math.tau/12;n=Vector((math.cos(theta),math.sin(theta),0))
+  radial_mast(n*9-Z*54,-Z,SD.uniform(1.5,2.5),white if k%3 else nav_red)
+ for k in range(8):
+  theta=k*math.tau/8+math.tau/32;n=Vector((math.cos(theta),math.sin(theta),0));t=Vector((-math.sin(theta),math.cos(theta),0))
+  box(n*36.2+Z*46.2,(.7,.7,.7),nav_green if k%2 else nav_red,(t,Z,n))
+ return info
+
 # Flight export (`-- salvage --flight`, node #1031): Salvage's front, redrawn
 # to the sim's outpost pad (principal ruling, 2026-10-19, option 1). The
 # approved pad is a 200 x 180 m slab; the sim's outpost is a deck 314 m square
