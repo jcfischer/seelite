@@ -7,7 +7,7 @@ import {
 } from "./asteroid-field";
 import type { DisplayContact } from "./display-contact";
 import type { System } from "./sim";
-import { v3 } from "./vec3";
+import { type Vec3, length, sub, v3 } from "./vec3";
 
 const systems = new WeakMap<
 	System,
@@ -18,14 +18,7 @@ const systems = new WeakMap<
 	}
 >();
 
-/** Stable objects for the selection cache, evaluated at the current clock.
- * A new System (jump/restore) gets its own set; departed sets can be collected.
- * No rock generation, body mutation, or saved state is involved.
- */
-export function fieldContactsAt(
-	system: System,
-	gameTime: number,
-): DisplayContact[] {
+function rowAt(system: System, gameTime: number) {
 	let row = systems.get(system);
 	if (!row) {
 		const plans = systemFields(system.record, system.contents);
@@ -55,5 +48,38 @@ export function fieldContactsAt(
 		}
 		row.at = gameTime;
 	}
-	return row.contacts;
+	return row;
+}
+
+/** Stable objects for the selection cache, evaluated at the current clock.
+ * A new System (jump/restore) gets its own set; departed sets can be collected.
+ * No rock generation, body mutation, or saved state is involved.
+ */
+export function fieldContactsAt(
+	system: System,
+	gameTime: number,
+): DisplayContact[] {
+	return rowAt(system, gameTime).contacts;
+}
+
+/** The field whose centre is nearest `pos` and closer than `withinKm`, or
+ *  `null` (#1139). The local frame's field: a frame is a velocity, so a field
+ *  can be one and still never be a mass (#949 D6). */
+export function nearestFieldPlan(
+	system: System,
+	pos: Vec3,
+	gameTime: number,
+	withinKm: number,
+): FieldPlan | null {
+	const row = rowAt(system, gameTime);
+	let best: FieldPlan | null = null;
+	let bestKm = withinKm;
+	for (let i = 0; i < row.plans.length; i++) {
+		const km = length(sub(row.contacts[i].pos, pos));
+		if (km < bestKm) {
+			best = row.plans[i];
+			bestKm = km;
+		}
+	}
+	return best;
 }

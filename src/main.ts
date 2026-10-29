@@ -1,4 +1,4 @@
-import { fieldContactsAt } from "./field-contact";
+import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
 import {
 	type DepositKey,
 	type DepositRow,
@@ -65,7 +65,12 @@ import {
 	rockDirectionNow,
 	rockLocalVector,
 } from "./rock-target";
-import { fieldRocks, systemFields } from "./asteroid-field";
+import {
+	type FieldPlan,
+	fieldCentreVelocity,
+	fieldRocks,
+	systemFields,
+} from "./asteroid-field";
 import { FieldDraw } from "./field-draw";
 import { pxPerRadianFor, rockArchetype } from "./field-lod";
 import { radiusAt } from "./rock-heightfields";
@@ -2802,6 +2807,7 @@ class Game {
 	private padAudioNoticeSaid = false;
 	private throttle = 0;
 	private frameBody: Body | null = null;
+	private frameField: FieldPlan | null = null;
 	/** A surface stop can happen farther than `NEAR_FAR_KM` from a giant's
 	 * centre. Hold that one blocker's frame while the ship remains in its
 	 * near-surface band; ordinary nearest-centre selection is unchanged. */
@@ -12657,10 +12663,15 @@ class Game {
 					velocityAt: (t) => this.relayVelocityAt(view, t),
 				};
 		}
+		const field = this.frameField;
 		const body = this.frameBody;
 		return {
-			frameId: body?.id ?? this.world.system.contents.star.id,
-			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
+			frameId: field?.id ?? body?.id ?? this.world.system.contents.star.id,
+			label: field
+				? "FIELD FRAME"
+				: body
+					? `${body.kind.toUpperCase()} FRAME`
+					: "STAR FRAME",
 			velocityAt: this.localFrameSource(),
 		};
 	}
@@ -12700,6 +12711,8 @@ class Game {
 
 	/** `localFrame`'s body, fixed now, as a velocity at any game time. */
 	private localFrameSource(): (gameTime: number) => Vec3 {
+		const field = this.frameField;
+		if (field) return (t) => fieldCentreVelocity(field, t);
 		return this.bodyFrameSource(this.frameBody?.id ?? null);
 	}
 
@@ -12718,12 +12731,21 @@ class Game {
 					length(sub(held.pos, this.world.ship.pos)) - held.radiusKm;
 				if (surfaceKm <= NEAR_FAR_KM) {
 					this.frameBody = held;
+					this.frameField = null;
 					return;
 				}
 			}
 			this.proximityFrameBodyId = null;
 		}
 		this.frameBody = this.nearestBody();
+		this.frameField = nearestFieldPlan(
+			this.world.system,
+			this.world.ship.pos,
+			this.world.gameTime,
+			this.frameBody
+				? length(sub(this.frameBody.pos, this.world.ship.pos))
+				: NEAR_FAR_KM,
+		);
 	}
 
 	/** The nearest body within `NEAR_FAR_KM`, centre to ship, or `null`. */
@@ -14408,6 +14430,7 @@ class Game {
 		this.cruiseTrackId = null;
 		this.faceTurnId = null;
 		this.frameBody = null;
+		this.frameField = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputer.disengage();
 		this.dockingNotice = null;
@@ -16916,9 +16939,11 @@ class Game {
 			? frameVelocity
 			: exitVelocity(this.nose(), this.cruiseSpeedKms, frameVelocity);
 		this.proximityFrameBodyId = stopInBodyFrame ? matchBodyId : null;
-		if (this.proximityFrameBodyId)
+		if (this.proximityFrameBodyId) {
 			this.frameBody =
 				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
+			this.frameField = null;
+		}
 		this.regime = "normal";
 		// The other end of the leg — see the note beside the engage.
 		markShipPlaced(this.world);
