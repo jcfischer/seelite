@@ -7095,17 +7095,26 @@ export function shipMuzzlesKm(
 	root.updateMatrixWorld(true);
 	const count = HULL_SPECS[id].hardpoints;
 	const parts: THREE.Object3D[] = [];
+	const named = new Set<string>();
 	root.traverse((o) => {
-		if (GUN_PART.test(o.name)) parts.push(o);
+		if (GUN_PART.test(o.name) && !named.has(o.name)) {
+			named.add(o.name);
+			parts.push(o);
+		}
 	});
+	const tip = (part: THREE.Object3D): Vec3 => {
+		const b = new THREE.Box3().setFromObject(part);
+		const c = b.getCenter(new THREE.Vector3());
+		return { x: c.x, y: c.y, z: b.min.z };
+	};
 	let muzzles: Vec3[];
-	if (parts.length === count) {
-		muzzles = parts.map((part) => {
-			const b = new THREE.Box3().setFromObject(part);
-			const c = b.getCenter(new THREE.Vector3());
-			return { x: c.x, y: c.y, z: b.min.z };
-		});
-	} else muzzles = raycastMuzzles(root, count, key);
+	if (parts.length === count) muzzles = parts.map(tip);
+	else if (id === "miner" && parts.length > 0 && parts.length < count)
+		muzzles = [
+			...raycastMuzzles(root, count - parts.length, key),
+			...parts.sort((a, b) => a.name.localeCompare(b.name)).map(tip),
+		];
+	else muzzles = raycastMuzzles(root, count, key);
 	const frozen = Object.freeze(muzzles.map((m) => Object.freeze(m)));
 	muzzleCache.set(key, frozen);
 	return frozen;

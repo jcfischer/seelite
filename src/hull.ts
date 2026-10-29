@@ -398,6 +398,7 @@ export type HullSlot =
 			readonly key: string;
 			readonly kind: "hardpoint" | "utility";
 			readonly size: SlotSize;
+			readonly prototype?: true;
 	  }
 	| {
 			readonly key: string;
@@ -1465,28 +1466,39 @@ export const DOCKABLE_HULL_IDS: readonly HullId[] = HULL_IDS.filter(
 
 /**
  * https://github.com/jcfischer/seelite/issues/920
- * The principal's Q12 ruling for the drill prototype: the miner carries a
- * second hardpoint, `h2`, the size of its first, so the Mining Laser no longer
- * displaces the Pulse Laser. Every other figure of the spec is kept.
+ * The principal's rulings for the drill prototype (Q12, D-D7 to D-D10): the
+ * player's miner carries two more hardpoints, `h2` port and `h3` starboard,
+ * on mounts modelled on the Longwall's forebody, each the size of `h1`, for
+ * an optional Mining Laser. They are marked `prototype`, so NPC and Traffic
+ * miners keep one laser. Every other figure of the spec is kept.
  */
-export function withPrototypeSecondHardpoint(spec: HullSpec): HullSpec {
+export const PROTOTYPE_MOUNT_SLOTS = ["h2", "h3"] as const;
+
+export function withPrototypeMountHardpoints(spec: HullSpec): HullSpec {
 	const first = spec.slots.find((s) => s.key === "h1");
 	if (!first || spec.slots.some((s) => s.key === "h2")) return spec;
 	const at = spec.slots.indexOf(first) + 1;
 	return {
 		...spec,
-		hardpoints: spec.hardpoints + 1,
+		hardpoints: spec.hardpoints + PROTOTYPE_MOUNT_SLOTS.length,
 		slots: [
 			...spec.slots.slice(0, at),
-			{ key: "h2", kind: "hardpoint", size: first.size },
+			...PROTOTYPE_MOUNT_SLOTS.map(
+				(key): HullSlot => ({
+					key,
+					kind: "hardpoint",
+					size: first.size,
+					prototype: true,
+				}),
+			),
 			...spec.slots.slice(at),
 		],
 	};
 }
 
-/** Apply `withPrototypeSecondHardpoint` to the miner for this page, before anything is built from its spec. */
-export function addPrototypeMinerHardpoint(): void {
-	(HULL_SPECS as Record<HullId, HullSpec>).miner = withPrototypeSecondHardpoint(
+/** Apply `withPrototypeMountHardpoints` to the miner for this page, before anything is built from its spec. */
+export function addPrototypeMinerHardpoints(): void {
+	(HULL_SPECS as Record<HullId, HullSpec>).miner = withPrototypeMountHardpoints(
 		HULL_SPECS.miner,
 	);
 }

@@ -28,6 +28,9 @@ export function fireGroups(
 			kind: "lasers",
 			slots: [s.key],
 		}));
+	const mining = lasers.filter(
+		(g) => loadout[g.slots[0]]?.module === "mining-laser",
+	);
 	const result: FireGroup[] =
 		lasers.length > 1
 			? [
@@ -49,6 +52,13 @@ export function fireGroups(
 			trigger: "primary",
 			kind: "scanner",
 			slots: scanners,
+		});
+	if (drill && mining.length > 1)
+		result.splice(lasers.length > 1 ? 1 : 0, 0, {
+			label: "MINING LASERS",
+			trigger: "primary",
+			kind: "lasers",
+			slots: mining.flatMap((g) => g.slots),
 		});
 	if (drill && HULL_SPECS[hull].cutter)
 		result.push({

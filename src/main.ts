@@ -73,6 +73,7 @@ import {
 	strutReach,
 	withoutPrototypeSlot,
 } from "./rock-drill";
+import { setLongwallPrototypeMounts } from "./prototype-mounts";
 import { type LocalFrame, localFrameAt } from "./field-frame";
 import {
 	impactRadiusPx,
@@ -933,7 +934,7 @@ import {
 import {
 	HULL_IDS,
 	HULL_SPECS,
-	addPrototypeMinerHardpoint,
+	addPrototypeMinerHardpoints,
 	purchasableHullNamed,
 	type HullCutter,
 	type HullEnvelope,
@@ -1547,7 +1548,13 @@ declare const __PROTOTYPE_SHA__: string | undefined;
 const PROTOTYPE_BADGE = `PROTOTYPE 920-DRILL ${typeof __PROTOTYPE_SHA__ === "string" ? __PROTOTYPE_SHA__ : "UNKNOWN"}`;
 if (MINING_ON) {
 	keepLongwallStrutsPosable();
-	addPrototypeMinerHardpoint();
+	addPrototypeMinerHardpoints();
+	setLongwallPrototypeMounts(
+		new URL(
+			"../spikes/longwall-miner/mounts/longwall-mounts.glb",
+			import.meta.url,
+		).href,
+	);
 }
 const SURVEY_GRADE_SHORT = {
 	poor: "POOR",
