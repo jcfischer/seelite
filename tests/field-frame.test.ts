@@ -20,6 +20,7 @@ import { relayFrameHolds } from "../src/pirate-relay";
 import { RELAY_LOCAL_CARRIER_ID } from "../src/relay-slot";
 import { isRockTargetId } from "../src/rock-target";
 import {
+	ASSIST_CAP_KMS,
 	NO_ATTITUDE,
 	advanceWorldClock,
 	bodyAccelerationBound,
@@ -139,24 +140,28 @@ function planOf(g: any, kind: PlacementKind): FieldPlan {
 	return plan;
 }
 
+function idleStepInOwnFrame(g: any, assist: boolean, nose: Vec3) {
+	stepFlight(
+		g.world.ship,
+		{
+			nose,
+			up: v3(0, 1, 0),
+			demand: IDLE,
+			assist,
+			attitude: NO_ATTITUDE,
+			frame: g.assistFrameMotion(MAX_DT),
+		},
+		MAX_DT,
+		PERF,
+	);
+}
+
 function idleWithAssistInOwnFrame(g: any, seconds: number, nose = v3(0, 0, 1)) {
 	g.regime = "normal";
 	g.throttle = 0;
 	for (let t = 0; t < seconds; t += MAX_DT) {
 		g.updateLocalFrameBody();
-		stepFlight(
-			g.world.ship,
-			{
-				nose,
-				up: v3(0, 1, 0),
-				demand: IDLE,
-				assist: true,
-				attitude: NO_ATTITUDE,
-				frame: g.assistFrameMotion(MAX_DT),
-			},
-			MAX_DT,
-			PERF,
-		);
+		idleStepInOwnFrame(g, true, nose);
 		advanceWorldClock(g.world, MAX_DT);
 	}
 	g.updateLocalFrameBody();
@@ -242,29 +247,13 @@ describe("which frame wins beside a field (#1139)", () => {
 
 describe("leaving a field's frame (#1139)", () => {
 	const nose = v3(0, 0, 1);
-	const oneStep = (g: any) => {
+	const coastingStepKms = (g: any) => {
 		const before = { ...g.world.ship.vel };
-		stepFlight(
-			g.world.ship,
-			{
-				nose,
-				up: v3(0, 1, 0),
-				demand: IDLE,
-				assist: true,
-				attitude: NO_ATTITUDE,
-				frame: g.assistFrameMotion(MAX_DT),
-			},
-			MAX_DT,
-			PERF,
-		);
+		idleStepInOwnFrame(g, false, nose);
 		return length(sub(g.world.ship.vel, before));
 	};
-	const oneStepAuthority =
-		Math.hypot(Math.max(PERF.thrustKms2, PERF.retroKms2), PERF.strafeKms2) *
-		MAX_DT *
-		Math.SQRT2;
 
-	test("a rare field hands over to the star at the near layer's reach, and the switch only moves the ship by what its vents can", () => {
+	test("a rare field hands over to the star at the near layer's reach: the switch adds no impulse, and the assist then holds the star, as past a station", () => {
 		for (const kind of [
 			"belt",
 			"trojan",
@@ -283,7 +272,8 @@ describe("leaving a field's frame (#1139)", () => {
 			expect(g.assistFrame().label).toBe(
 				g.frameBody ? `${g.frameBody.kind.toUpperCase()} FRAME` : "STAR FRAME",
 			);
-			expect(oneStep(g)).toBeLessThanOrEqual(oneStepAuthority);
+			expect(coastingStepKms(g)).toBeLessThan(1e-5);
+			expect(length(sub(g.localFrame(), vel))).toBeGreaterThan(ASSIST_CAP_KMS);
 		}
 	});
 
