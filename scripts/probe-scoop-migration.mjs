@@ -1,12 +1,3 @@
-/**
- * Node #1097: a save from before the cargo scoop, loaded in the page.
- *
- * `tests/scoop-migration.test.ts` holds the law at `parseSave`. This holds the
- * wiring: a version 16 record seeded into the live slot, docked at the trade
- * station, with every cargo-accepting internal full, reloads docked with the
- * loadout unchanged and the station console saying the ship has no scoop, once;
- * the same record with a free internal reloads with a scoop and says nothing.
- */
 import {
 	bootedGame,
 	guardedOrigin,
