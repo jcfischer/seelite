@@ -72,6 +72,7 @@ import {
 	strutPose,
 	strutReach,
 	miningBeamRays,
+	glassTracerIndices,
 	withoutPrototypeSlot,
 } from "./rock-drill";
 import { setLongwallPrototypeMounts } from "./prototype-mounts";
@@ -3865,7 +3866,13 @@ class Game {
 		return {
 			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
 			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
+				(_, i) =>
+					glassTracerIndices(
+						this.flownHull,
+						this.commander.loadout,
+						this.firedMuzzleIndices,
+						MINING_ON,
+					).includes(i),
 			),
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,

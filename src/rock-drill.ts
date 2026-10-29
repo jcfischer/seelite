@@ -15,7 +15,8 @@ import {
 	anchorPose,
 	MINING as LONGWALL_STUDY,
 } from "../spikes/longwall-miner/kinematics";
-import type { HullCutter } from "./hull";
+import { HULL_SPECS, type HullCutter, type HullId } from "./hull";
+import type { Loadout } from "./loadout";
 import { stepCut } from "./rock-extraction";
 import { ASSIST_CAP_KMS, type LinearDemand } from "./sim";
 import type { LaserRates } from "./ship-condition";
@@ -558,4 +559,18 @@ export function miningBeamRays<T>(
 		const origin = muzzlesWorld[laser.muzzleIndex];
 		return origin ? [{ ...laser, origin, aim: nose }] : [];
 	});
+}
+
+/** The fired hardpoints that draw a tracer from the glass: with the mounts (`?mining=1`) a Mining Laser draws its beam from its mount instead (round 9, F1). */
+export function glassTracerIndices(
+	hull: HullId,
+	loadout: Loadout,
+	fired: readonly number[],
+	mounts: boolean,
+): number[] {
+	if (!mounts) return [...fired];
+	const slots = HULL_SPECS[hull].slots.filter((s) => s.kind === "hardpoint");
+	return fired.filter(
+		(i) => loadout[slots[i]?.key ?? ""]?.module !== "mining-laser",
+	);
 }
