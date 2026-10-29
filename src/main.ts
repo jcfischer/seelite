@@ -1042,12 +1042,14 @@ import {
 import {
 	buildAuthoredCabin,
 	buildPerimeterLamps,
-	COCKPIT_MODEL_LAMPS,
+	cabinConsoleLamps,
 	carriedConsoleLamp,
 	type CockpitScreen,
 	containedFace,
 	INSTRUMENT_FACE_KM,
+	MINER_COCKPIT,
 	SCANNER_FACE_KM,
+	type ScreenFrame,
 	screenMount,
 } from "./cockpit-model";
 import {
@@ -10456,7 +10458,7 @@ class Game {
 		// cabin's frame the way a world lamp is (`cabinLight`). Parented to the
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
-		for (const lamp of COCKPIT_MODEL_LAMPS) {
+		for (const lamp of cabinConsoleLamps()) {
 			// The composed carry — gain then carry, in one reachable function:
 			// see `COCKPIT_MODEL_LAMP_GAIN`.
 			const carried = carriedConsoleLamp(lamp);
@@ -10480,7 +10482,7 @@ class Game {
 		// already carries under its window sill is left alone — so there is nothing
 		// ungated to see at low quality, and the casts go through the same gate as the
 		// console's so they respond when the setting moves mid-flight.
-		for (const lamp of buildPerimeterLamps()) {
+		for (const lamp of MINER_COCKPIT ? [] : buildPerimeterLamps()) {
 			cabin.modelSpace.add(lamp);
 			const light = lamp.children.find((o) => o instanceof THREE.PointLight);
 			if (light instanceof THREE.PointLight) gated.push(light);
@@ -10526,6 +10528,7 @@ class Game {
 			"target-mount",
 		);
 		this.buildScannerAssembly(scannerMount, flightMount, targetMount, inset);
+		if (MINER_COCKPIT) this.buildMinerFaces(cabin.extraScreens, cockpit);
 		this.buildHologramSystem(scannerMount);
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
@@ -10725,6 +10728,102 @@ class Game {
 		ctx.fillStyle = shade;
 		ctx.fillRect(0, 0, w, h);
 		this.cockpit.scannerTexture.needsUpdate = true;
+	}
+
+	minerFaces: {
+		name: string;
+		ctx: CanvasRenderingContext2D;
+		texture: THREE.CanvasTexture;
+	}[] = [];
+	private minerFacesPaintedAt = -Infinity;
+
+	private buildMinerFaces(
+		frames: Record<string, ScreenFrame>,
+		cockpit: THREE.Group,
+	) {
+		for (const name of ["survey", "ore", "lasers"]) {
+			const frame = frames[name];
+			if (!frame) continue;
+			const fit = containedFace(frame, 1.5);
+			const canvas = document.createElement("canvas");
+			canvas.width = 480;
+			canvas.height = 320;
+			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+			const texture = new THREE.CanvasTexture(canvas);
+			texture.colorSpace = THREE.SRGBColorSpace;
+			const face = new THREE.Mesh(
+				new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+				new THREE.MeshBasicMaterial({
+					map: texture,
+					polygonOffset: true,
+					polygonOffsetFactor: -1,
+					polygonOffsetUnits: -1,
+				}),
+			);
+			face.name = `miner-${name}-face`;
+			face.rotation.x = -Math.PI / 2;
+			face.position.y = frame.widthKm * 0.01;
+			const mount = screenMount(frame);
+			mount.name = `miner-${name}-mount`;
+			mount.add(face);
+			cockpit.add(mount);
+			this.minerFaces.push({ name, ctx, texture });
+		}
+	}
+
+	private paintMinerFaces() {
+		if (!this.minerFaces.length) return;
+		const now = performance.now();
+		if (now - this.minerFacesPaintedAt < 200) return;
+		this.minerFacesPaintedAt = now;
+		const c = this.condition;
+		const hold = this.minedHold();
+		const survey = MINING_ON ? this.surveyState() : null;
+		const rows: Record<string, [string, string][]> = {
+			survey: survey
+				? survey.designation
+					? survey.designation
+							.split(" · ")
+							.slice(0, 3)
+							.map((part): [string, string] => [part, "#6dff9a"])
+					: [["NO ROCK TARGETED", "#9fb7c0"]]
+				: [["MINING OFF", "#9fb7c0"]],
+			ore: [
+				[`ORE ${this.minedT} T`, "#ffb347"],
+				[`HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`, "#ffb347"],
+			],
+			lasers: [
+				[`HEAT ${Math.round((c.heat / HEAT_LOCK) * 100)}%`, "#ffb347"],
+				[
+					`ENERGY ${Math.round((c.energy / Math.max(1, c.energyMax)) * 100)}%`,
+					"#6dff9a",
+				],
+			],
+		};
+		const titles: Record<string, string> = {
+			survey: "SURVEY",
+			ore: "ORE / HOLD",
+			lasers: "LASER",
+		};
+		for (const face of this.minerFaces) {
+			const { ctx } = face;
+			const { width: w, height: h } = ctx.canvas;
+			ctx.fillStyle = "#02080b";
+			ctx.fillRect(0, 0, w, h);
+			ctx.strokeStyle = "#5fe3ff";
+			ctx.lineWidth = 4;
+			ctx.strokeRect(10, 10, w - 20, h - 20);
+			ctx.textAlign = "center";
+			ctx.fillStyle = "#d8f6ff";
+			ctx.font = "34px ui-monospace, Menlo, monospace";
+			ctx.fillText(titles[face.name] ?? "", w / 2, 62);
+			ctx.font = "40px ui-monospace, Menlo, monospace";
+			(rows[face.name] ?? []).forEach(([text, colour], i) => {
+				ctx.fillStyle = colour;
+				ctx.fillText(text, w / 2, 140 + i * 62, w - 40);
+			});
+			face.texture.needsUpdate = true;
+		}
 	}
 
 	private updateHologramContacts(contacts: readonly ScannerContact[]) {
@@ -19298,6 +19397,7 @@ class Game {
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
+		this.paintMinerFaces();
 		const dockContext = this.dockedStationContext();
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).

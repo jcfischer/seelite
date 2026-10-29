@@ -27,6 +27,27 @@ import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
 import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 
+/**
+ * Review flag for node #1143 (https://github.com/jcfischer/seelite/issues/1143):
+ * `?cockpit=miner` flies the miner cockpit study in place of the courier cabin.
+ * The study is served from `spikes/` by the dev server only; its eye is the
+ * model origin and it is authored level, so it takes no eye offset or pitch.
+ */
+export const MINER_COCKPIT =
+	typeof location !== "undefined" &&
+	new URLSearchParams(location.search).get("cockpit") === "miner";
+const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit.glb";
+const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
+	? [0, 0, 0]
+	: [0, 0.3, 1.15];
+const CABIN_PITCH_RAD = MINER_COCKPIT ? 0 : 0.242;
+
+const MINER_LAMP_POSITIONS_M: Readonly<Record<string, readonly number[]>> = {
+	"cockpit-light": [-0.8, -0.95, -1.3],
+	"cockpit-key-light": [0.8, -0.95, -1.3],
+	"cockpit-centre-light": [0, -0.95, -1.3],
+};
+
 /** Cabin kilometres per model metre. */
 export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
 
@@ -134,6 +155,7 @@ export const COCKPIT_MODEL_LAMPS = [
  * here (`spikes/courier-cockpit/assets.md`). Only mapped materials carry it.
  */
 export const COCKPIT_TINTS: Readonly<Record<string, number>> = {
+	"cabin-lining": 0x34495a,
 	"weathered-blue-steel": 0x405868,
 	"graphite-housings": 0x283842,
 	"exposed-machined-edges": 0x8d9395,
@@ -281,6 +303,7 @@ export interface AuthoredCabin {
 	root: THREE.Group;
 	/** Each screen quad's frame, in `root`'s parent frame. */
 	screens: Record<CockpitScreen, ScreenFrame>;
+	extraScreens: Record<string, ScreenFrame>;
 	/** Model-metre placement, for lamps given in model metres. */
 	modelSpace: THREE.Group;
 }
@@ -492,18 +515,19 @@ export function buildAuthoredCabin(): AuthoredCabin {
 	modelSpace.name = "cockpit-model-space";
 	modelSpace.scale.setScalar(COCKPIT_MODEL_KM_PER_M);
 	modelSpace.position.set(
-		-COCKPIT_MODEL_EYE_M[0] * COCKPIT_MODEL_KM_PER_M,
-		-COCKPIT_MODEL_EYE_M[1] * COCKPIT_MODEL_KM_PER_M,
-		-COCKPIT_MODEL_EYE_M[2] * COCKPIT_MODEL_KM_PER_M,
+		-CABIN_EYE_M[0] * COCKPIT_MODEL_KM_PER_M,
+		-CABIN_EYE_M[1] * COCKPIT_MODEL_KM_PER_M,
+		-CABIN_EYE_M[2] * COCKPIT_MODEL_KM_PER_M,
 	);
 	modelSpace.add(model);
 	const root = new THREE.Group();
 	root.name = "cockpit-model";
-	root.rotation.x = COCKPIT_MODEL_PITCH_RAD;
+	root.rotation.x = CABIN_PITCH_RAD;
 	root.add(modelSpace);
 	root.updateMatrixWorld(true);
 	const unpowered = new THREE.MeshBasicMaterial({ color: 0x01090b });
 	const screens = {} as Record<CockpitScreen, ScreenFrame>;
+	const extraScreens: Record<string, ScreenFrame> = {};
 	model.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		if (o.name.startsWith("label-") || o.name.startsWith("key-")) {
@@ -513,7 +537,6 @@ export function buildAuthoredCabin(): AuthoredCabin {
 		}
 		if (!o.name.startsWith("screen-")) return;
 		const name = o.name.slice(7) as CockpitScreen;
-		if (!COCKPIT_SCREENS.includes(name)) return;
 		o.material = unpowered;
 		o.castShadow = false;
 		const position = o.geometry.getAttribute("position");
@@ -528,12 +551,14 @@ export function buildAuthoredCabin(): AuthoredCabin {
 			);
 			uvs.push(new THREE.Vector2().fromBufferAttribute(uv, i));
 		}
-		screens[name] = screenFrame(positions, uvs);
+		if (COCKPIT_SCREENS.includes(name))
+			screens[name] = screenFrame(positions, uvs);
+		else extraScreens[name] = screenFrame(positions, uvs);
 	});
 	for (const name of COCKPIT_SCREENS)
 		if (!screens[name])
 			throw new Error(`buildAuthoredCabin: the model has no screen-${name}`);
-	return { root, screens, modelSpace };
+	return { root, screens, extraScreens, modelSpace };
 }
 
 let ready: Promise<void> | undefined;
@@ -545,7 +570,10 @@ export function prepareCockpitModel(
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(COURIER_COCKPIT_GLB_URL, onProgress)
+		.loadAsync(
+			MINER_COCKPIT ? MINER_COCKPIT_GLB_URL : COURIER_COCKPIT_GLB_URL,
+			onProgress,
+		)
 		.then((gltf) => adoptCockpitTemplate(gltf.scene))
 		.catch((error) => {
 			ready = undefined;
@@ -761,3 +789,12 @@ export function buildPerimeterLamps(): THREE.Group[] {
 		return group;
 	});
 }
+
+/** The console lamps for the cabin being flown; the miner study's sit under its dash. */
+export const cabinConsoleLamps = (): typeof COCKPIT_MODEL_LAMPS =>
+	MINER_COCKPIT
+		? (COCKPIT_MODEL_LAMPS.map((lamp) => ({
+				...lamp,
+				positionM: MINER_LAMP_POSITIONS_M[lamp.name] ?? lamp.positionM,
+			})) as unknown as typeof COCKPIT_MODEL_LAMPS)
+		: COCKPIT_MODEL_LAMPS;
