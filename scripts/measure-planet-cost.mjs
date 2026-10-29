@@ -385,7 +385,7 @@ const SETTLE_TIMEOUT_MS = 8000;
  * millisecond and a median of five moves less on one interrupted window.
  */
 const TREND_ATTEMPTS = 3;
-const READINGS = process.argv.includes("--close-detail") ? 5 : 3;
+const READINGS = CLOSE_DETAIL ? 5 : 3;
 
 /**
  * One fresh reading of the meter.
@@ -1115,6 +1115,11 @@ for (const {
 	controlBefore,
 	controlAfter,
 } of runs.map((r, i) => ({ pixelRatio: PIXEL_RATIOS[i], ...r }))) {
+	/** How a cell is named in the lists below — by arm, or by class and path. */
+	const cellName = (r) =>
+		DECOMPOSE || CLOSE_DETAIL
+			? `${r.arm}@${r.radii}r`
+			: `${r.surfaceClass}/${r.relief}@${r.radii}r`;
 	console.log(`  pixel ratio ${pixelRatio}`);
 	if (CLOSE_DETAIL)
 		console.log(
@@ -1266,12 +1271,6 @@ for (const {
 	// Beside the table rather than in it: a stall is a property of a cell that
 	// the cell's own frame time deliberately excludes, so it reads as a list of
 	// exceptions and not as a column of zeroes.
-	/** How a cell is named in the lists below — by arm, or by class and path. */
-	const cellName = (r) =>
-		DECOMPOSE || CLOSE_DETAIL
-			? `${r.arm}@${r.radii}r`
-			: `${r.surfaceClass}/${r.relief}@${r.radii}r`;
-
 	/**
 	 * **The widest column is the run's own control, and it must not move.**
 	 *

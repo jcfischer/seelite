@@ -732,9 +732,10 @@ export function cellTrend(samplesMs) {
 }
 
 /**
- * The trend past which a cell is read again. Measured over the 160 cells of the
- * first four sweeps: every cell that was steady sat at 0.25 or below, and the
- * three that carried a predecessor's cost sat at 0.68, 0.97 and 1.62, so the
- * limit stands in a gap with no cell in it.
+ * The trend past which a cell is read again. Set from the first protocol's
+ * 160 cells: steady cells reached 0.25; three predecessor tails read 0.68,
+ * 0.97 and 1.62. Later runs overlap this initial gap: accepted trends reach
+ * 0.39, and a spike and a decay triggered re-reads at 0.46 and 0.49. This is a
+ * sampling heuristic, not a classifier of predecessor tails.
  */
 export const CELL_TREND_LIMIT = 0.4;

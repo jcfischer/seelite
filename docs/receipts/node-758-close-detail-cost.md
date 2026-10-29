@@ -4,7 +4,8 @@ A findings receipt. It prices the band of node #720 on terran at 2, 1.6, 1.5 and
 ratio 1 and 2, and chooses nothing: the ruling node owns the cap, the resolution of the ground, the relief
 path and the cloud footprint.
 
-**Every figure here is** `ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)`, headed,
+**The final sweeps and tables below use**
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)`, headed,
 on the GPU lane (`SEELITE_PROBE_RENDERER=hardware`), build `8a5903a1cec3c6887c41c3885a8dff333b973500`
 (the instrument commit; `src/` is `origin/main`'s at `adc63328`), 1440x900, at the pixel ratio its table
 names. Each row of each JSON file carries renderer, build and lane, and the instrument refuses a lane that
@@ -35,9 +36,11 @@ shuffled from a printed seed, with no arm twice in a row. The sweep ran twice pe
 the median of five readings of the `?fps` meter after a settle; the drift control (`interim` at 200R) is
 read before and after each run.
 
-**Every arm is read back from the page before its cell is accepted**: the ground's and the cloud shell's
-cap, whether the half-res target engaged, the relief path drawn, the clouds' pixel angle against the
-ground's, High quality and a render scale of 1. A cell whose state is not the arm's is a throw.
+**At the four in-band radii, every arm is read back from the page before its cell is accepted**: the
+ground's and the cloud shell's cap, whether the half-res target engaged, the relief path drawn, the clouds' pixel angle against the
+ground's, High quality and a render scale of 1. An in-band cell whose state is not the arm's is a throw.
+The 200R invariant column and the interim drift controls apply their arms but bypass this state readback;
+their timing checks do not verify that the requested arm landed.
 At 2, 1.6, 1.5 and 1.2 radii the unpinned game draws `screen-space`, half-res, cap 6 and the footprint
 program, so `interim` is the frame the player gets, and every cell inside the band except `cap-0` drew the
 footprint program.
@@ -110,7 +113,8 @@ they are not a measurement of zero. Full-res costs +0.9 to +2.2 ms here, which t
 ## Implausible readings, and what explained them
 
 **Three cells in the first protocol read the previous cell's cost for their opening readings.** The first
-four sweeps (the same build, median of five, no re-read) held `cap-6` at 1.5R in the first ratio-2 sweep at
+four sweeps (build `6393cf036f04e48b2a5e1d9bb26c649c0c7e9299`, median of five, no re-read,
+on the same renderer and GPU lane as the final sweeps) held `cap-6` at 1.5R in the first ratio-2 sweep at
 27.9, 27.2, 22.0, 14.0, 13.9 ms straight after `full-res` at 1.5R (25.8), `cap-2` at 1.6R at 30.7, 30.7, 16.5,
 11.7, 11.7 after `full-res` at 1.2R (29.2), and `cap-0` at 1.5R at 24.4, 14.1, 11.3, 11.5, 11.4 after
 `full-res` at 1.6R (22.5). In each the settle had passed on readings still at the old level, and the median
@@ -121,12 +125,15 @@ affected. An isolated repeat (seed 6, `full-res` then `cap-6` at 1.5R) did not r
 (25.4-25.8 then 14.1-14.4). **The mechanism is not established.** What is established is the shape (a tail
 at the predecessor's cost, then the cell's own cost, converging on what the other sweep reads) and that a
 median of five cannot recover it. The instrument now measures the trend (`cellTrend`, limit
-`CELL_TREND_LIMIT` = 0.4, in the gap between 0.25 and 0.68), reads such a cell again after a fresh settle up
-to three times, records what it discarded, and throws if the third read still moves. The first-protocol
+`CELL_TREND_LIMIT` = 0.4, chosen from that first protocol's gap between 0.25 and 0.68), reads such a cell
+again after a fresh settle up to three times, records what it discarded, and throws if the third read still moves. The first-protocol
 cells are in `node-758-first-protocol-anomalies.txt`; **no figure above comes from that protocol.** In the
 final five runs seven cells were read again (listed in `report.md` and each run's `.txt`): five at ratio 2
 with the same shape, and two at ratio 1 where the opening reading was a single spike (`full-res` at 200R,
 4.2, 8.2, 5.3, 4.2, 4.3) or a short decay (`cap-0` at 2R, 5.9, 5.6, 4.3, 3.8, 4.0).
+The final runs do not preserve the initial empty gap: ratio-2 S1 accepts 200R cells at trends 0.358
+and 0.391, while those ratio-1 spike and decay cells trigger re-reads at 0.460 and 0.486. The limit is
+a sampling heuristic that catches these shapes, not a measured separation of predecessor tails from noise.
 
 **One of the three ratio-2 sweeps (S1) has four cells 1.7 to 2.5 ms above the other two.** `cap-2` at 1.5R
 14.53 (12.76 and 12.85 in S2 and S3), `analytic-gradient` at 1.6R 17.36 (14.90 and 14.93), `cap-6` at 1.2R
