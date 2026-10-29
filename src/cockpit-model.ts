@@ -43,8 +43,8 @@ const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
 const CABIN_PITCH_RAD = MINER_COCKPIT ? 0 : 0.242;
 
 const MINER_LAMP_POSITIONS_M: Readonly<Record<string, readonly number[]>> = {
-	"cockpit-light": [-0.22, -0.8, -0.85],
-	"cockpit-key-light": [1.42, -0.8, -0.85],
+	"cockpit-light": [-0.3, -0.8, -0.95],
+	"cockpit-key-light": [1.5, -0.8, -0.95],
 	"cockpit-centre-light": [0.6, -0.2, -0.6],
 };
 

@@ -107,20 +107,20 @@ fill_sun.data.use_shadow = False
 cabin = bpy.data.collections.new('cabin'); sc.collection.children.link(cabin)
 for o in list(sc.collection.objects):
     if o.type == 'MESH' and o.name != 'rock-face': cabin.objects.link(o)
-inner_sun = light('SUN', 'cabin-sun', 9, rot_to=B(.35, -.85, .2), color=(1, .82, .58), size=.03)
+inner_sun = light('SUN', 'cabin-sun', 16, rot_to=B(.35, -.85, .2), color=(1, .82, .58), size=.03)
 inner_sun.light_linking.receiver_collection = cabin
 AMBER = (1, .5, .14)
 for p in [(-1.0, .45, -1.85), (2.2, .45, -1.85), (-.85, -.3, -2.5), (2.05, -.3, -2.5)]:
     light('POINT', f'pillar-lamp-{p[0]}-{p[1]}', 4, B(*p), color=AMBER, size=.04)
 wn = Vector((0, .84, -.54)).normalized()
 for k, dx in enumerate([-.6, .6]):
-    key = light('AREA', f'window-key-{k}', 170, B(*(Vector((.6 + dx, .29, -2.9)) + wn * 1.6)), rot_to=B(*(-wn + Vector((0, -.35, .25)))), color=(1, .9, .78))
+    key = light('AREA', f'window-key-{k}', 90, B(*(Vector((.6 + dx, .29, -2.9)) + wn * 1.6)), rot_to=B(*(-wn + Vector((0, -.35, .25)))), color=(1, .9, .78))
     key.data.size = 1.8
 chin = light('AREA', 'chin-key', 25, B(.6, -1.0, -5.5), rot_to=B(0, .35, 1), color=(1, .88, .72)); chin.data.size = 2.0
 for sx, d in [(-1.9, 1), (3.1, -1)]:
-    side = light('AREA', f'side-window-key-{sx}', 80, B(sx + d * -1.2, .1, -.5), rot_to=B(d, -.15, -.1), color=(1, .9, .8)); side.data.size = 2.4
-light('AREA', 'cabin-fill', 90, B(.6, .9, .3), rot_to=B(0, -1, -.3), color=(1, .9, .8)).data.size = 2.5
-light('AREA', 'floor-bounce', 80, B(.6, -1.1, -.6), rot_to=B(0, 1, 0), color=(1, .85, .66)).data.size = 2.5
+    side = light('AREA', f'side-window-key-{sx}', 40, B(sx + d * -1.2, .1, -.5), rot_to=B(d, -.15, -.1), color=(1, .9, .8)); side.data.size = 2.4
+light('AREA', 'cabin-fill', 35, B(.6, .9, .3), rot_to=B(0, -1, -.3), color=(1, .9, .8)).data.size = 2.5
+light('AREA', 'floor-bounce', 30, B(.6, -1.1, -.6), rot_to=B(0, 1, 0), color=(1, .85, .66)).data.size = 2.5
 for x in [0, 1.2]:
     light('POINT', f'pod-spill-{x}', 5, B(x, -.35, -.85), color=(.45, .85, 1), size=.4)
 
@@ -134,7 +134,7 @@ else:
     cam.location = B(.6, .12, 1.3); cam.rotation_euler = (math.radians(90 - 6), 0, 0); cam.data.angle = math.radians(74)
 engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
 sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in engines else 'BLENDER_EEVEE'
-sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = .55
+sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = .7
 try:
     sc.eevee.use_shadows = True; sc.eevee.use_raytracing = True
 except Exception: pass

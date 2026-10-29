@@ -18,7 +18,7 @@ def P(xs, ys, zs):
     """Longwall study metres to pilot-local metres."""
     return Vector((-xs + EYE_STUDY.x, ys - EYE_STUDY.y, -(zs - EYE_STUDY.z)))
 
-def material(name, color, metal=.6, rough=.48, emit=0, textured=True, texture=None):
+def material(name, color, metal=.6, rough=.48, emit=0, textured=True, texture=None, tint=(1, 1, 1)):
     m = bpy.data.materials.new(name); m.use_nodes = True
     p = m.node_tree.nodes.get('Principled BSDF')
     p.inputs['Base Color'].default_value = (*color, 1)
@@ -30,7 +30,7 @@ def material(name, color, metal=.6, rough=.48, emit=0, textured=True, texture=No
         t = m.node_tree.nodes.new('ShaderNodeTexImage')
         t.image = bpy.data.images.load(str(ROOT / (f'spikes/miner-cockpit/textures/{texture}.png' if texture else 'spikes/courier-cockpit/steel-wear.png')), check_existing=True)
         mix = m.node_tree.nodes.new('ShaderNodeMixRGB'); mix.blend_type = 'MULTIPLY'
-        mix.inputs[0].default_value = 1; mix.inputs[2].default_value = (1, 1, 1, 1) if texture else (*color, 1)
+        mix.inputs[0].default_value = 1; mix.inputs[2].default_value = (*tint, 1) if texture else (*color, 1)
         m.node_tree.links.new(t.outputs['Color'], mix.inputs[1])
         m.node_tree.links.new(mix.outputs[0], p.inputs['Base Color'])
         ramp = m.node_tree.nodes.new('ShaderNodeMapRange')
@@ -40,14 +40,14 @@ def material(name, color, metal=.6, rough=.48, emit=0, textured=True, texture=No
     return name
 
 steel = material('weathered-blue-steel', (.25, .38, .49), .75, .36)
-dark = material('graphite-housings', (.15, .21, .27), .6, .43, texture='console')
+dark = material('graphite-housings', (.15, .21, .27), .6, .43, texture='console', tint=(.5, .53, .58))
 alloy = material('exposed-machined-edges', (.32, .34, .33), .82, .32)
 black = material('rubber-and-recess', (.012, .018, .02), .12, .72, textured=False)
 ochre = material('service-ochre', (.68, .32, .045), .35, .52)
 red = material('guarded-red', (.4, .032, .02), .3, .45)
 warm = material('amber-work-lights', (1, .28, .01), .15, .28, .8)
 cyan = material('cyan-indicators', (.04, .6, .8), .1, .35, 2)
-lining = material('cabin-lining', (.40, .46, .50), .3, .5, texture='lining')
+lining = material('cabin-lining', (.40, .46, .50), .3, .5, texture='lining', tint=(.42, .44, .46))
 hose = material('hose-rubber', (.01, .011, .012), 0, .9, textured=False)
 MATS[hose].node_tree.nodes['Principled BSDF'].inputs['Specular IOR Level'].default_value = .15
 
@@ -239,12 +239,14 @@ for z in [-2.4, -1.6, -.8, 0, .8, 1.6]:
 
 def pod(xc, eye, width, screens, name):
     """A free-standing instrument pod on a plinth: a tilted face toward its eye under a hood."""
-    zc = -1.15
-    face_c = Vector((xc, -.42, zc))
-    u, v, n = facing(face_c, eye)
+    zc = -1.22
+    face_c = Vector((xc, -.44, zc))
+    to_eye = eye - face_c; to_eye.x = 0
+    n = to_eye.normalized(); u = Vector((1, 0, 0)); v = n.cross(u).normalized()
+    if v.y < 0: v = -v
     frame = (u, v, n)
     def at(a, b, d=0): return face_c + u * a + v * b + n * d
-    h = .64
+    h = .74
     box(at(0, 0, -.26), (width, h, .5), dark, frame=frame)
     box(at(0, 0, -.005), (width - .04, h - .04, .02), steel, frame=frame)
     box(at(0, h / 2 + .05, -.2), (width + .1, .1, .62), steel, frame=frame)
@@ -290,12 +292,12 @@ miner_at, miner_frame = pod(1.5, MINER_EYE, 1.34, [
 # down each outer edge. The pilot's flight stick and the miner's feed lever sit on the aisle armrests.
 shell = material('seat-shell', (.24, .38, .46), .45, .42, texture='shell')
 cushion = material('seat-cushion', (.55, .40, .24), .05, .78, texture='cushion')
-def bucket_surface(xs, y0, y1, half, wing, z0, lean, depth, mat, flip=False, nx=10, ny=8):
+def bucket_surface(xs, y0, y1, half, wing, z0, lean, depth, mat, flip=False, nx=10, ny=8, bulge=0):
     """A U-section shell: across the seat the surface curls forward into wings, and it leans back with height."""
     rows = []
     for j in range(ny + 1):
         y = y0 + (y1 - y0) * j / ny
-        rows.append([Vector((xs + t * half, y, z0 + lean * (y - y0) - wing * t ** 4 + depth)) for t in [-1 + 2 * i / nx for i in range(nx + 1)]])
+        rows.append([Vector((xs + t * half, y, z0 + lean * (y - y0) - wing * t ** 4 + depth + bulge * (1 - t * t))) for t in [-1 + 2 * i / nx for i in range(nx + 1)]])
     for a, b in zip(rows, rows[1:]):
         for i in range(nx):
             q = [a[i], a[i + 1], b[i + 1], b[i]]
@@ -306,7 +308,13 @@ for xs, aisle in [(0.0, 1), (1.2, -1)]:
     o = bucket_surface(xs, -.95, .02, .32, .2, .84, .14, 0, shell)
     i = bucket_surface(xs, -.9, -.02, .26, .14, .84, .14, -.06, cushion, flip=True)
     for row in o: pass
+    bucket_surface(xs, -.95, .02, .33, .21, .84, .14, .05, shell, flip=True, bulge=.07)
+    for t in [-1, 1]:
+        for y0, y1 in [(-.95, -.47), (-.47, .02)]:
+            a0 = Vector((xs + t * .32, y0, .84 + .14 * (y0 + .95) - .2)); a1 = Vector((xs + t * .32, y1, .84 + .14 * (y1 + .95) - .2))
+            poly([a0, a1, a1 + Vector((t * .01, 0, .25)), a0 + Vector((t * .01, 0, .25))], shell)
     h_o = bucket_surface(xs, .05, .3, .17, .06, .98, .1, 0, shell, ny=3, nx=6)
+    bucket_surface(xs, .05, .3, .18, .07, .98, .1, .05, shell, flip=True, ny=3, nx=6, bulge=.05)
     bucket_surface(xs, .07, .28, .14, .04, .98, .1, -.05, cushion, flip=True, ny=3, nx=6)
     for t in [-1, 1]:
         tube((xs + t * .1, -.02, .98), (xs + t * .1, .06, .985), .015, alloy, 8)
