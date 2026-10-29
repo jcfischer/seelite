@@ -7,7 +7,12 @@ import {
 	FINE,
 	fineDemand,
 	fineReadout,
-	holdAllowed,
+	ANCHOR,
+	anchorAllowed,
+	drillFaceKm,
+	FINE_STICK,
+	seatBlend,
+	seatPose,
 	longwallFrame,
 	rescaleThrottle,
 	shipPointKm,
@@ -20,6 +25,7 @@ import {
 	flightPerformance,
 	type LinearDemand,
 	type Ship,
+	stepAngular,
 	stepHull,
 } from "../src/sim";
 import { dot, length, sub, v3 } from "../src/vec3";
@@ -156,26 +162,65 @@ describe("the struts (D-D1)", () => {
 		}
 	});
 
-	test("the hold needs the feed out, every foot on rock and the speed window", () => {
-		const ok = {
-			extension: 1,
-			feetOnRock: 4,
-			feetNeeded: 4,
-			closingKms: 0,
-			slideKms: 0,
-		};
-		expect(holdAllowed(ok)).toBe("OK");
-		expect(holdAllowed({ ...ok, extension: 0.9 })).toBe("DEPLOYING");
-		expect(holdAllowed({ ...ok, feetOnRock: 3 })).toBe("FEET");
-		expect(holdAllowed({ ...ok, closingKms: DRILL.closingKms * 1.1 })).toBe(
-			"CLOSING",
+	test("key 4 anchors with the cutter or one foot in reach, below scrape speed", () => {
+		const ok = { extension: 1, faceGapKm: 0.01, feetOnRock: 0, relKms: 0.02 };
+		expect(anchorAllowed(ok)).toBe("OK");
+		expect(anchorAllowed({ ...ok, faceGapKm: null, feetOnRock: 1 })).toBe("OK");
+		expect(anchorAllowed({ ...ok, extension: 0.5 })).toBe("DEPLOYING");
+		expect(
+			anchorAllowed({ ...ok, faceGapKm: ANCHOR.reachKm * 1.1, feetOnRock: 0 }),
+		).toBe("NO ROCK IN REACH");
+		expect(anchorAllowed({ ...ok, relKms: ANCHOR.maxKms * 1.1 })).toBe(
+			"TOO FAST",
 		);
-		expect(holdAllowed({ ...ok, closingKms: -DRILL.closingKms * 1.1 })).toBe(
-			"CLOSING",
-		);
-		expect(holdAllowed({ ...ok, slideKms: DRILL.slideKms * 1.1 })).toBe(
-			"SLIDING",
-		);
+		expect(ANCHOR.maxKms).toBe(0.05);
+	});
+
+	test("the seat squares the nose into the surface with the cutter face gapKm off it", () => {
+		const n = { x: 0.6, y: 0, z: 0.8 };
+		const point = v3(1, 2, 3);
+		const seat = seatPose(point, n, v3(0, 1, 0), cutter);
+		expect(dot(seat.nose, n)).toBeCloseTo(-1, 12);
+		expect(dot(seat.up, seat.nose)).toBeCloseTo(0, 12);
+		const face = drillFaceKm(seat.pos, seat.nose, seat.up, cutter, 1);
+		const gap = sub(face, point);
+		expect(length(gap)).toBeCloseTo(ANCHOR.gapKm, 12);
+		expect(dot(gap, n)).toBeCloseTo(ANCHOR.gapKm, 12);
+		expect(seatBlend(0)).toBe(0);
+		expect(seatBlend(1)).toBe(1);
+		expect(seatBlend(0.5)).toBe(0.5);
+	});
+});
+
+describe("fine control on the turn keys (A and D yaw, S and W pitch, F faces)", () => {
+	const LEVER_KM = cutter.bowKm + cutter.feedTravelKm;
+	const tapPeak = (axis: "yaw" | "pitch", share: number, frames: number) => {
+		let rates = { pitch: 0, yaw: 0, roll: 0 };
+		let peak = 0;
+		for (let i = 0; i < 240; i++) {
+			const command = { pitch: 0, yaw: 0, roll: 0 };
+			if (i < frames) command[axis] = share;
+			rates = stepAngular(rates, command, STILL, true, DT, PERF).rates;
+			peak = Math.max(peak, Math.abs(rates[axis]));
+		}
+		return { peak, rest: Math.abs(rates[axis]) };
+	};
+
+	test("one frame of A, D or S peaks under 1 m/s at the cutter face with fine control, and stops", () => {
+		for (const axis of ["yaw", "pitch"] as const) {
+			const coarse = tapPeak(axis, 1, 1);
+			const fine = tapPeak(axis, FINE_STICK, 1);
+			expect(fine.peak * LEVER_KM * 1000).toBeLessThan(1);
+			expect(fine.peak).toBeLessThan(coarse.peak);
+			expect(fine.rest * LEVER_KM * 1000).toBeLessThan(0.01);
+		}
+	});
+
+	test("a held turn key, or the full-stick turn F flies, moves the face under the 3 m/s slide window", () => {
+		for (const axis of ["yaw", "pitch"] as const) {
+			const held = tapPeak(axis, FINE_STICK, 240);
+			expect(held.peak * LEVER_KM).toBeLessThan(DRILL.slideKms);
+		}
 	});
 });
 

@@ -420,20 +420,81 @@ export function strutPose(index: number, deployment: number, target: M3) {
 	return { deployment: t, base, foot, elbow };
 }
 
-/** What the hold needs (D-D1): every strut's foot on rock, the feed out and the ship inside the speed window. */
-export function holdAllowed(a: {
+/**
+ * The anchor (D-D1, refined after the second flight): key 4 anchors the ship
+ * once the cutter or a strut's foot has rock in reach, at any relative speed a
+ * strike would not damage (`V_SCRAPE_KMS`, 50 m/s). `seat` then draws the ship
+ * onto the rock over `seatS`, squared to the surface with the cutter face
+ * `gapKm` off it; `hold` locks it where it is. A rock no larger than
+ * `gripRadiusKm` is gripped: the feet close around it (O3).
+ */
+export const ANCHOR = {
+	maxKms: 0.05,
+	reachKm: 0.03,
+	seatS: 4,
+	gapKm: 0.0003,
+	gripRadiusKm: 0.06,
+} as const;
+
+export const STRUT_ANCHORS = ["seat", "hold"] as const;
+export type StrutAnchor = (typeof STRUT_ANCHORS)[number];
+
+/** Whether key 4 may anchor now, or the word the glass shows instead. */
+export function anchorAllowed(a: {
 	extension: number;
+	faceGapKm: number | null;
 	feetOnRock: number;
-	feetNeeded: number;
-	closingKms: number;
-	slideKms: number;
-}): "OK" | "DEPLOYING" | "FEET" | "CLOSING" | "SLIDING" {
+	relKms: number;
+}): "OK" | "DEPLOYING" | "NO ROCK IN REACH" | "TOO FAST" {
 	if (a.extension < 1) return "DEPLOYING";
-	if (a.feetOnRock < a.feetNeeded) return "FEET";
-	if (Math.abs(a.closingKms) > DRILL.closingKms) return "CLOSING";
-	if (a.slideKms > DRILL.slideKms) return "SLIDING";
+	if (
+		a.feetOnRock === 0 &&
+		(a.faceGapKm === null || a.faceGapKm > ANCHOR.reachKm)
+	)
+		return "NO ROCK IN REACH";
+	if (a.relKms > ANCHOR.maxKms) return "TOO FAST";
 	return "OK";
 }
+
+/** The seated ship: nose into the surface at `point`, cutter face `gapKm` off it, up kept as near as it can be. */
+export function seatPose(
+	point: Vec3,
+	normal: Vec3,
+	up: Vec3,
+	cutter: HullCutter,
+): { pos: Vec3; nose: Vec3; up: Vec3 } {
+	const nose = scale(normal, -1);
+	const across = sub(up, scale(nose, dot(up, nose)));
+	const seatedUp = normalizeOr(
+		across,
+		Math.abs(nose.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 },
+	);
+	const upOut = normalizeOr(
+		sub(seatedUp, scale(nose, dot(seatedUp, nose))),
+		seatedUp,
+	);
+	const face = add(point, scale(normal, ANCHOR.gapKm));
+	return {
+		pos: add(
+			face,
+			add(
+				scale(nose, -(cutter.bowKm + cutter.feedTravelKm)),
+				scale(upOut, cutter.downKm),
+			),
+		),
+		nose,
+		up: upOut,
+	};
+}
+
+/** The seat's progress at `s` of 0…1: eased in and out. */
+export const seatBlend = (s: number): number => {
+	const t = Math.min(1, Math.max(0, s));
+	return t * t * (3 - 2 * t);
+};
+
+/** Fine control's share of the stick: the turn keys and the mouse turn at this share of their rate. */
+export const FINE_STICK = 0.05;
 
 /** A world point in km to the ship's frame in metres (fore, up, starboard). */
 export const shipFrameM = (

@@ -54,7 +54,13 @@ import {
 	FINE,
 	fineDemand,
 	fineReadout,
-	holdAllowed,
+	ANCHOR,
+	anchorAllowed,
+	FINE_STICK,
+	STRUT_ANCHORS,
+	type StrutAnchor,
+	seatBlend,
+	seatPose,
 	longwallFrame,
 	rescaleThrottle,
 	shipFrameM,
@@ -1529,11 +1535,13 @@ const DRILL_FINE: DrillFine = (DRILL_FINES as readonly string[]).includes(
 )
 	? (MINING_QUERY.get("drill-fine") as DrillFine)
 	: "surface";
-const STRUT_FEET_NEEDED = [2, 3, 4].includes(
-	Number(MINING_QUERY.get("strut-feet")),
+const STRUT_ANCHOR: StrutAnchor = (STRUT_ANCHORS as readonly string[]).includes(
+	MINING_QUERY.get("strut-anchor") ?? "",
 )
-	? Number(MINING_QUERY.get("strut-feet"))
-	: 4;
+	? (MINING_QUERY.get("strut-anchor") as StrutAnchor)
+	: "seat";
+declare const __PROTOTYPE_SHA__: string | undefined;
+const PROTOTYPE_BADGE = `PROTOTYPE 920-DRILL ${typeof __PROTOTYPE_SHA__ === "string" ? __PROTOTYPE_SHA__ : "UNKNOWN"}`;
 if (MINING_ON) keepLongwallStrutsPosable();
 const SURVEY_GRADE_SHORT = {
 	poor: "POOR",
@@ -9445,8 +9453,9 @@ class Game {
 	private surveyHold: SurveyHold = beginSurveyHold();
 	deepCueRender: { x: number; y: number; facing: boolean } | null = null;
 
-	fitPrototypeMiningLaser(writesNothing: boolean) {
-		if (!writesNothing) return;
+	fitPrototypeMiningLaser(newOrUnsaved: boolean) {
+		if (!newOrUnsaved && HULL_SPECS[this.commander.hull].cutter === undefined)
+			return;
 		const hardpoints = HULL_SPECS[this.commander.hull].slots.filter(
 			(s) => s.kind === "hardpoint",
 		);
@@ -9839,17 +9848,19 @@ class Game {
 			reachM: number;
 			target: [number, number, number];
 		}[],
-		holdWhy: "DEPLOYING" as ReturnType<typeof holdAllowed>,
+		anchorWhy: "DEPLOYING" as ReturnType<typeof anchorAllowed>,
 		holdRockId: null as string | null,
+		grip: false,
 		held: null as {
 			rockId: string;
-			pos: Vec3;
-			nose: Vec3;
-			up: Vec3;
+			from: { pos: Vec3; nose: Vec3; up: Vec3 };
+			to: { pos: Vec3; nose: Vec3; up: Vec3 };
+			at: number;
 		} | null,
 		fine: null as ReturnType<typeof fineReadout> | null,
 	};
 	drillLineRender: { line: string; readout: string | null } | null = null;
+	prototypeBadgeRender: string | null = null;
 	private fineWas = false;
 	private fineCache: {
 		t: number;
@@ -9957,7 +9968,8 @@ class Game {
 	}
 
 	toggleDrillHold() {
-		if (!this.drillCutter()) return;
+		const cutter = this.drillCutter();
+		if (!cutter) return;
 		if (this.drill.held) {
 			this.drill.held = null;
 			this.sayMining("STRUTS RELEASED");
@@ -9966,19 +9978,45 @@ class Game {
 		const ref = this.drill.holdRockId
 			? this.rockRef(this.drill.holdRockId)
 			: null;
-		if (this.drill.holdWhy !== "OK" || !ref) {
-			this.sayMining(`STRUTS CANNOT HOLD · ${this.drill.holdWhy}`);
+		if (this.drill.anchorWhy !== "OK" || !ref) {
+			this.sayMining(`STRUTS CANNOT ANCHOR · ${this.drill.anchorWhy}`);
 			return;
 		}
 		const t = this.world.gameTime;
 		const ship = this.world.ship;
+		const local = (p: { pos: Vec3; nose: Vec3; up: Vec3 }) => ({
+			pos: rockLocalVector(ref, sub(p.pos, ref.pos), t),
+			nose: rockLocalVector(ref, p.nose, t),
+			up: rockLocalVector(ref, p.up, t),
+		});
+		const from = local({ pos: ship.pos, nose: this.nose(), up: this.shipUp() });
+		const seat = STRUT_ANCHOR === "seat" ? this.seatTarget(ref, cutter) : null;
 		this.drill.held = {
 			rockId: ref.id,
-			pos: rockLocalVector(ref, sub(ship.pos, ref.pos), t),
-			nose: rockLocalVector(ref, this.nose(), t),
-			up: rockLocalVector(ref, this.shipUp(), t),
+			from,
+			to: seat ? local(seat) : from,
+			at: t,
 		};
-		this.sayMining("STRUTS HOLD · LOCKED TO ROCK");
+		this.sayMining(
+			seat ? "STRUTS ANCHORING · DRAWING IN" : "STRUTS ANCHORED · HOLDING",
+		);
+	}
+
+	private seatTarget(ref: RockRef, cutter: HullCutter) {
+		const ship = this.world.ship;
+		const nose = this.nose();
+		const up = this.shipUp();
+		const face = drillFaceKm(ship.pos, nose, up, cutter, 1);
+		const target = this.rockTargets([ref]);
+		const hit =
+			beamHit(face, nose, target, ANCHOR.reachKm * 2) ??
+			beamHit(
+				face,
+				normalizeOr(sub(ref.pos, face), nose),
+				target,
+				length(sub(ref.pos, face)),
+			);
+		return hit ? seatPose(hit.point, hit.normal, up, cutter) : null;
 	}
 
 	private applyDrillHold(flying: boolean) {
@@ -9991,14 +10029,24 @@ class Game {
 			return;
 		}
 		const t = this.world.gameTime;
-		this.world.ship.pos = add(ref.pos, rockDirectionNow(ref, held.pos, t));
-		this.world.ship.vel = this.surfaceVelocityAt(ref, held.pos, t);
+		const s = seatBlend((t - held.at) / ANCHOR.seatS);
+		const mix = (a: Vec3, b: Vec3) => add(scale(a, 1 - s), scale(b, s));
+		const pos = mix(held.from.pos, held.to.pos);
+		this.world.ship.pos = add(ref.pos, rockDirectionNow(ref, pos, t));
+		this.world.ship.vel = this.surfaceVelocityAt(ref, pos, t);
 		this.setAttitude(
-			rockDirectionNow(ref, held.nose, t),
-			rockDirectionNow(ref, held.up, t),
+			rockDirectionNow(ref, mix(held.from.nose, held.to.nose), t),
+			rockDirectionNow(ref, mix(held.from.up, held.to.up), t),
 		);
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.throttle = 0;
+	}
+
+	private drillSeating(): number | null {
+		const held = this.drill.held;
+		if (!held || held.from === held.to) return null;
+		const s = (this.world.gameTime - held.at) / ANCHOR.seatS;
+		return s < 1 ? s : null;
 	}
 
 	private stepDrill(dt: number) {
@@ -10047,7 +10095,14 @@ class Game {
 			const dir = this.rockContentsOf(ref).deepDir;
 			deepMouth = dir ? rockDirectionNow(ref, dir, now) : null;
 		}
-		this.stepStruts(cutter, near, targets, ref, surfaceVel);
+		this.stepStruts(
+			cutter,
+			near,
+			targets,
+			ref,
+			surfaceVel,
+			hit?.distKm ?? null,
+		);
 		const fine = this.fineFrame();
 		this.drill.fine = fine
 			? fineReadout(nose, ship.vel, fine.velocityAt(now), fine.rangeKm)
@@ -10055,7 +10110,7 @@ class Game {
 		const contact = drillContact({
 			extension: this.drill.extension,
 			nose,
-			faceVel: ship.vel,
+			faceVel: this.drill.held ? surfaceVel : ship.vel,
 			hit: hit && { point: hit.point, normal: hit.normal, distKm: hit.distKm },
 			surfaceVel,
 			rockCentre: ref?.pos ?? ship.pos,
@@ -10195,14 +10250,22 @@ class Game {
 		targets: ReturnType<Game["rockTargets"]>,
 		cutRock: RockRef | null,
 		cutSurfaceVel: Vec3,
+		faceGapKm: number | null,
 	) {
 		const ship = this.world.ship;
 		const nose = this.nose();
 		const up = this.shipUp();
 		const frame = longwallFrame(cutter);
+		const nearest = cutRock ?? near[0] ?? null;
+		const grip =
+			nearest !== null && nearest.rock.radiusKm <= ANCHOR.gripRadiusKm
+				? nearest
+				: null;
+		this.drill.grip = grip !== null;
 		this.drill.feet = [0, 1, 2, 3].map((i) => {
 			const reach = strutReach(i);
 			const base = shipPointKm(ship.pos, nose, up, frame.toShip(reach.base));
+			const study = shipPointKm(ship.pos, nose, up, frame.toShip(reach.foot));
 			const column = shipPointKm(
 				ship.pos,
 				nose,
@@ -10210,9 +10273,16 @@ class Game {
 				frame.toShip([reach.foot[0], reach.foot[1], reach.base[2]]),
 			);
 			const seen =
-				this.drill.extension > 0
-					? beamHit(column, nose, targets, (reach.reachM * 2) / 1000)
-					: null;
+				this.drill.extension <= 0
+					? null
+					: grip
+						? beamHit(
+								study,
+								normalizeOr(sub(grip.pos, study), nose),
+								this.rockTargets([grip]),
+								length(sub(grip.pos, study)),
+							)
+						: beamHit(column, nose, targets, (reach.reachM * 2) / 1000);
 			const seenM = seen ? length(sub(seen.point, base)) * 1000 : null;
 			const met = seen && seenM !== null && seenM <= reach.reachM ? seen : null;
 			return {
@@ -10242,15 +10312,13 @@ class Game {
 						rockLocalVector(rock, sub(ship.pos, rock.pos), this.world.gameTime),
 						this.world.gameTime,
 					);
-		const speeds = fineReadout(nose, ship.vel, frameVel, null);
-		this.drill.holdWhy = this.drill.held
+		this.drill.anchorWhy = this.drill.held
 			? "OK"
-			: holdAllowed({
+			: anchorAllowed({
 					extension: this.drill.extension,
+					faceGapKm: rock && rock.id === cutRock?.id ? faceGapKm : null,
 					feetOnRock: rockId ? (counts.get(rockId) ?? 0) : 0,
-					feetNeeded: STRUT_FEET_NEEDED,
-					closingKms: speeds.closingKms,
-					slideKms: speeds.slideKms,
+					relKms: length(sub(ship.vel, frameVel)),
 				});
 	}
 
@@ -10261,10 +10329,13 @@ class Game {
 		const m = (km: number | null) =>
 			km === null ? "-" : (km * 1000).toFixed(1);
 		const feet = d.feet.filter((f) => f.onRock).length;
+		const seating = this.drillSeating();
 		const struts = d.held
-			? "STRUTS HOLDING"
+			? seating !== null
+				? `STRUTS DRAWING IN ${Math.round(seating * 100)}%`
+				: "ANCHORED · PRESS 4 TO RELEASE"
 			: d.extension >= 1
-				? `FEET ${feet}/4${d.holdWhy === "OK" ? " · PRESS 4 TO HOLD" : ""}`
+				? `${d.grip ? "GRIP" : "FEET"} ${feet}/4 · ${d.anchorWhy === "OK" ? "PRESS 4 TO ANCHOR" : d.anchorWhy}`
 				: "";
 		const fine = d.fine
 			? `FINE${d.fine.rangeKm === null ? "" : ` · RANGE ${m(d.fine.rangeKm)} M`} · CLOSE ${m(d.fine.closingKms)} · SLIDE ${m(d.fine.slideKms)} M/S`
@@ -17915,9 +17986,15 @@ class Game {
 				impulse.yaw !== 0 ||
 				Object.keys(direct).length > 0,
 		);
+		const turnShare = MINING_ON && this.fineFrame() !== null ? FINE_STICK : 1;
+		const fineTurn = (a: Angular): Angular => ({
+			pitch: a.pitch * turnShare,
+			yaw: a.yaw * turnShare,
+			roll: a.roll * turnShare,
+		});
 		const hands = {
-			stick: faceStick ?? { pitch, yaw, roll },
-			impulse,
+			stick: fineTurn(faceStick ?? { pitch, yaw, roll }),
+			impulse: fineTurn(impulse),
 			turnAssist: faceStick ? true : this.assist,
 			direct,
 		};
@@ -22848,6 +22925,15 @@ class Game {
 		if (MINING_ON) this.drawImpact(ctx, camPos, place, h);
 		if (MINING_ON) this.drawFragments(ctx, camPos, place, w, h);
 		if (MINING_ON) this.drawDrill(ctx, camPos, place, w, h);
+		if (MINING_ON) {
+			ctx.save();
+			ctx.font = "11px monospace";
+			ctx.textAlign = "left";
+			ctx.fillStyle = "rgba(255, 120, 220, .9)";
+			ctx.fillText(PROTOTYPE_BADGE, 12, h - 12);
+			ctx.restore();
+			this.prototypeBadgeRender = PROTOTYPE_BADGE;
+		}
 
 		// The attitude reference: a short level line rolled to the system's
 		// reference plane. Faint, because it is a background fact rather than

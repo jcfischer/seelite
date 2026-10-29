@@ -447,15 +447,15 @@ describe("the prototype's Mining Laser fit", () => {
 	});
 });
 
-test("Game fits the prototype laser on a new game or a boot that writes nothing, never into a loaded save", async () => {
+test("Game fits the prototype laser on a new game, a boot that writes nothing, or a loaded miner (Q11)", async () => {
 	const main = await Bun.file(
 		new URL("../src/main.ts", import.meta.url),
 	).text();
-	const at = main.indexOf(
-		"\tfitPrototypeMiningLaser(writesNothing: boolean) {",
-	);
+	const at = main.indexOf("\tfitPrototypeMiningLaser(newOrUnsaved: boolean) {");
 	expect(at).toBeGreaterThan(0);
-	expect(main.slice(at, at + 120)).toContain("if (!writesNothing) return;");
+	expect(main.slice(at, at + 200)).toContain(
+		"if (!newOrUnsaved && HULL_SPECS[this.commander.hull].cutter === undefined)",
+	);
 	expect(main).toContain(
 		"game.fitPrototypeMiningLaser(plan.writesNothing || plan.loaded === null);",
 	);

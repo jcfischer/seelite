@@ -3,6 +3,22 @@ import { resolve } from "node:path";
 import { treeDeclaration } from "./scripts/lib/tree-declaration.mjs";
 import { socialPreview } from "./src/social-preview";
 import { asyncImportGuard } from "./scripts/lib/async-import-guard.mjs";
+import { execFileSync } from "node:child_process";
+
+/** https://github.com/jcfischer/seelite/issues/920 The prototype branch names its commit on the glass. */
+const PROTOTYPE_SHA = (() => {
+	try {
+		const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"])
+			.toString()
+			.trim();
+		const dirty = execFileSync("git", ["status", "--porcelain", "--", "src"])
+			.toString()
+			.trim();
+		return dirty ? `${sha}+DIRTY` : sha;
+	} catch {
+		return "UNKNOWN";
+	}
+})();
 
 /**
  * Drop onnxruntime-web's own `.wasm` from the build (#604, the principal's
@@ -40,6 +56,7 @@ function dropRuntimeWasm(): Plugin {
 }
 
 export default defineConfig({
+	define: { __PROTOTYPE_SHA__: JSON.stringify(PROTOTYPE_SHA) },
 	/**
 	 * The dev server declares which working tree it serves.
 	 *
