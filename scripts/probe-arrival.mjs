@@ -475,5 +475,80 @@ check(
 		!fieldArrival.mass,
 	JSON.stringify(fieldArrival),
 );
+
+const rarePage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(rarePage);
+await rarePage.goto(gameUrl(ORIGIN, { seed: 47, system: 10, raider: "off" }), {
+	waitUntil: "load",
+});
+await bootedGame(rarePage);
+const rareHold = await rarePage.evaluate(() => {
+	const g = window.__seelite;
+	const field = g.selectable().find((c) => c.id === "field-01");
+	if (!field) return { missing: true };
+	const rel = () =>
+		Math.hypot(
+			g.world.ship.vel.x - field.velocity.x,
+			g.world.ship.vel.y - field.velocity.y,
+			g.world.ship.vel.z - field.velocity.z,
+		);
+	const off = () => ({
+		x: g.world.ship.pos.x - field.pos.x,
+		y: g.world.ship.pos.y - field.pos.y,
+		z: g.world.ship.pos.z - field.pos.z,
+	});
+	g.world.ship.pos = { x: field.pos.x, y: field.pos.y, z: field.pos.z + 2000 };
+	g.world.ship.vel = { ...field.velocity };
+	g.targetId = field.id;
+	g.faceTarget();
+	g.engageCruise();
+	let cruised = false;
+	for (let i = 0; i < 100 / g.units.MAX_DT; i++) {
+		g.faceTarget();
+		g.step(g.units.MAX_DT);
+		g.render(g.units.MAX_DT);
+		if (g.regime === "cruise") cruised = true;
+		if (cruised && g.regime === "normal") break;
+	}
+	g.assist = true;
+	g.setThrottle(0);
+	g.selectable();
+	const before = off();
+	for (let i = 0; i < 60 / g.units.MAX_DT; i++) {
+		g.step(g.units.MAX_DT);
+		g.selectable();
+	}
+	g.render(g.units.MAX_DT);
+	const after = off();
+	return {
+		cruised,
+		exit: g.lastExit,
+		label: g.assistFrame().label,
+		relativeKms: rel(),
+		inertialKms: Math.hypot(
+			field.velocity.x,
+			field.velocity.y,
+			field.velocity.z,
+		),
+		driftKm: Math.hypot(
+			after.x - before.x,
+			after.y - before.y,
+			after.z - before.z,
+		),
+	};
+});
+check(
+	"after a drop at a rare field the assist holds station on it for 60 s, in the field's frame",
+	!rareHold.missing &&
+		rareHold.cruised &&
+		rareHold.exit === "arrived at field-01" &&
+		rareHold.label === "FIELD FRAME" &&
+		rareHold.relativeKms < 1e-3 &&
+		rareHold.inertialKms > 5 &&
+		rareHold.driftKm < 6,
+	JSON.stringify(rareHold),
+);
 await browser.close();
 exit();
