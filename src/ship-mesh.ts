@@ -2877,16 +2877,161 @@ export interface StrutJoints {
 
 const STRUT_FORWARD = new THREE.Vector3(0, 0, 1);
 
+const COCKPIT_PARTS = /^(feed|anchor-\d|longwall-mount-)/;
+const COCKPIT_GLASS = /glazing|display/;
+const COCKPIT_SAMPLES = 12;
+
+/** What the Longwall's hull hides from an eye in the ship mesh's frame (km). */
+export interface CockpitOcclusion {
+	readonly axisHitKm: Readonly<
+		Record<"starboard" | "port" | "up" | "down" | "aft" | "fore", number | null>
+	>;
+	readonly parts: readonly { readonly name: string; readonly seen: boolean }[];
+	readonly hullBoxKm: { readonly min: Vec3; readonly max: Vec3 };
+	readonly pointsSeen: readonly boolean[];
+}
+
 /**
  * https://github.com/jcfischer/seelite/issues/920
- * The Longwall as the cockpit sees it under `?mining=1` (round 9, F3): the
- * full level's mounts, and its feed and struts while `drill` is set, with the
- * hull and every other part hidden, since the eye is inside the hull. `null`
- * puts back what each part drew before.
+ * Round 10, F4: whether the hull would hide each mount, strut and the feed from
+ * `eyeKm`. A part is seen when a ray from the eye reaches one of its sampled
+ * vertices without meeting the hull (glazing and displays excepted). The six
+ * axis hits say how the eye sits in the hull. Measured on the
+ * full level as posed now, and kept on the root per level and eye.
+ */
+export function cockpitOcclusion(
+	root: THREE.Object3D,
+	eyeKm: Vec3,
+	pointsKm: readonly Vec3[] = [],
+): CockpitOcclusion {
+	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
+	const key = JSON.stringify([eyeKm, pointsKm]);
+	const held = root.userData.cockpitOcclusion as
+		| { full: THREE.Object3D | undefined; byKey: Map<string, CockpitOcclusion> }
+		| undefined;
+	const byKey =
+		held && held.full === full
+			? held.byKey
+			: new Map<string, CockpitOcclusion>();
+	root.userData.cockpitOcclusion = { full, byKey };
+	const kept = byKey.get(key);
+	if (kept) return kept;
+	root.updateMatrixWorld(true);
+	const toRoot = root.matrixWorld.clone().invert();
+	const parts = full?.children[0]?.children ?? [];
+	const hull: THREE.Mesh[] = [];
+	for (const p of parts)
+		if (p.name === "hull")
+			p.traverse((o) => {
+				if ((o as THREE.Mesh).isMesh && !COCKPIT_GLASS.test(o.name))
+					hull.push(o as THREE.Mesh);
+			});
+	const box = new THREE.Box3();
+	for (const m of hull) box.expandByObject(m);
+	box.applyMatrix4(toRoot);
+	const sides = hull.map((m) => {
+		const list = Array.isArray(m.material) ? m.material : [m.material];
+		const before = list.map((x) => x.side);
+		for (const x of list) x.side = THREE.DoubleSide;
+		return () => list.forEach((x, n) => (x.side = before[n]));
+	});
+	const eye = new THREE.Vector3(eyeKm.x, eyeKm.y, eyeKm.z).applyMatrix4(
+		root.matrixWorld,
+	);
+	const caster = new THREE.Raycaster();
+	const blocked = (to: THREE.Vector3) => {
+		const d = to.clone().sub(eye);
+		caster.set(eye, d.clone().normalize());
+		caster.far = d.length();
+		return hull.some((m) => caster.intersectObject(m, false).length > 0);
+	};
+	try {
+		const axisHit = (x: number, y: number, z: number) => {
+			caster.set(eye, new THREE.Vector3(x, y, z));
+			caster.far = Number.POSITIVE_INFINITY;
+			const hit = caster.intersectObjects(hull, false)[0];
+			return hit ? hit.distance : null;
+		};
+		const value: CockpitOcclusion = {
+			axisHitKm: {
+				starboard: axisHit(1, 0, 0),
+				port: axisHit(-1, 0, 0),
+				up: axisHit(0, 1, 0),
+				down: axisHit(0, -1, 0),
+				aft: axisHit(0, 0, 1),
+				fore: axisHit(0, 0, -1),
+			},
+			parts: parts
+				.filter((p) => COCKPIT_PARTS.test(p.name))
+				.map((p) => {
+					const all: THREE.Vector3[] = [];
+					p.traverse((o) => {
+						const pos = (o as THREE.Mesh).geometry?.attributes?.position;
+						if (!(o as THREE.Mesh).isMesh || !pos) return;
+						for (let n = 0; n < pos.count; n++)
+							all.push(
+								new THREE.Vector3()
+									.fromBufferAttribute(pos, n)
+									.applyMatrix4(o.matrixWorld),
+							);
+					});
+					const step = Math.max(1, Math.floor(all.length / COCKPIT_SAMPLES));
+					const points = all.filter((_, n) => n % step === 0);
+					return { name: p.name, seen: points.some((q) => !blocked(q)) };
+				}),
+			pointsSeen: pointsKm.map(
+				(p) =>
+					!blocked(
+						new THREE.Vector3(p.x, p.y, p.z).applyMatrix4(root.matrixWorld),
+					),
+			),
+			hullBoxKm: {
+				min: { x: box.min.x, y: box.min.y, z: box.min.z },
+				max: { x: box.max.x, y: box.max.y, z: box.max.z },
+			},
+		};
+		byKey.set(key, value);
+		return value;
+	} finally {
+		for (const put of sides) put();
+	}
+}
+
+/** Where a beam from `muzzleKm` along `aim` (ship frame) leaves the hull's box: what the cockpit can see of a beam whose mount the hull hides. */
+export function cockpitBeamStart(
+	muzzleKm: Vec3,
+	aim: Vec3,
+	box: { readonly min: Vec3; readonly max: Vec3 },
+): Vec3 {
+	if (!Number.isFinite(box.min.x)) return muzzleKm;
+	const along = Math.max(
+		0,
+		Math.min(
+			...(["x", "y", "z"] as const)
+				.filter((a) => aim[a] !== 0)
+				.map(
+					(a) =>
+						((aim[a] > 0 ? box.max[a] : box.min[a]) - muzzleKm[a]) / aim[a],
+				),
+		),
+	);
+	return {
+		x: muzzleKm.x + aim.x * along,
+		y: muzzleKm.y + aim.y * along,
+		z: muzzleKm.z + aim.z * along,
+	};
+}
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * The Longwall as the cockpit sees it under `?mining=1` (round 9 F3, round 10
+ * F5): of the mounts, and of the feed and struts while `drill` is set, only the
+ * parts `cockpitOcclusion` finds the hull leaves in view from `eyeKm`; the hull
+ * and every other part hidden. `null` puts back what each part drew before.
  */
 export function cockpitDrillView(
 	root: THREE.Object3D,
-	view: { drill: boolean } | null,
+	view: { drill: boolean; eyeKm: Vec3; pointsKm?: readonly Vec3[] } | null,
 ): void {
 	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
 	const parts = full?.children[0]?.children ?? [];
@@ -2900,6 +3045,11 @@ export function cockpitDrillView(
 		return;
 	}
 	if (!full) return;
+	const seen = new Set(
+		cockpitOcclusion(root, view.eyeKm, view.pointsKm)
+			.parts.filter((p) => p.seen)
+			.map((p) => p.name),
+	);
 	if (!saved)
 		root.userData.cockpitDrillSaved = new Map(
 			[...parts, ...others, full].map((o) => [o, o.visible]),
@@ -2908,8 +3058,9 @@ export function cockpitDrillView(
 	for (const o of others) o.visible = false;
 	for (const o of parts)
 		o.visible =
-			/^longwall-mount-/.test(o.name) ||
-			(view.drill && /^(feed|anchor-\d)/.test(o.name));
+			seen.has(o.name) &&
+			(/^longwall-mount-/.test(o.name) ||
+				(view.drill && /^(feed|anchor-\d)/.test(o.name)));
 }
 
 /** Pose strut `index` of a built Longwall's model level to `joints`, as the #803 study's viewer does. */
