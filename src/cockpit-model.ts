@@ -36,16 +36,16 @@ import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 export const MINER_COCKPIT =
 	typeof location !== "undefined" &&
 	new URLSearchParams(location.search).get("cockpit") === "miner";
-const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit.glb";
+const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit-2seat.glb";
 const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
 	? [0, 0, 0]
 	: [0, 0.3, 1.15];
 const CABIN_PITCH_RAD = MINER_COCKPIT ? 0 : 0.242;
 
 const MINER_LAMP_POSITIONS_M: Readonly<Record<string, readonly number[]>> = {
-	"cockpit-light": [-0.8, -0.95, -1.3],
-	"cockpit-key-light": [0.8, -0.95, -1.3],
-	"cockpit-centre-light": [0, -0.95, -1.3],
+	"cockpit-light": [-0.22, -0.8, -0.85],
+	"cockpit-key-light": [1.42, -0.8, -0.85],
+	"cockpit-centre-light": [0.6, -0.2, -0.6],
 };
 
 /** Cabin kilometres per model metre. */
