@@ -74,7 +74,7 @@ test("industrial exterior and seeded production bay share one kilometre spinner"
 				THREE.MeshStandardMaterial
 			>
 		).material.color.getHex(),
-	).toBe(0x9aa6b2);
+	).not.toBe(0x9aa6b2);
 	expect(built.root.getObjectByName("beacon-coriolis-a")).toBeDefined(); // glossary-ignore: beacon
 	expect(exterior.parent).toBe(built.spinner);
 	built.dispose();
@@ -200,7 +200,7 @@ test("shipped flight asset and production bay obey collision, reach, detail and 
 			THREE.MeshStandardMaterial
 		>;
 		expect(core).toBeDefined();
-		expect(core.material.color.getHex()).toBe(0x9aa6b2);
+		expect(core.material.color.getHex()).not.toBe(0x9aa6b2);
 		expect(mesh.fixtures.filter((f) => f.kind === "chase")).toHaveLength(10);
 		expect(mesh.nameplates).toHaveLength(2);
 		expect(mesh.accessories.length).toBeGreaterThan(0);

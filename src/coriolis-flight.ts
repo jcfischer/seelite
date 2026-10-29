@@ -2,21 +2,26 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { disposeSubtree, shared } from "./gpu-teardown";
+import { EMISSIVE_CEILING } from "./light-rig";
 import { loadingPanel, loadRequiredModels } from "./model-load-view";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
+import { CORIOLIS_GLB_URL } from "./model-urls";
+import { STATION_GEOMETRY } from "./station";
+import { stationInterior } from "./station-interior";
+import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
 import {
 	buildCoriolisNavigation,
 	installCoriolisBuilder,
 	type StationFixture,
-	stationSilhouetteKm,
 	type StationMesh,
+	stationSilhouetteKm,
 } from "./station-mesh";
-import { STATION_GEOMETRY } from "./station";
-import { stationInterior } from "./station-interior";
-import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
-import { EMISSIVE_CEILING } from "./light-rig";
-import { shared, disposeSubtree } from "./gpu-teardown";
-import { CORIOLIS_GLB_URL } from "./model-urls";
+
+/** Spike (station-scale F7): warm authored paint, lifted, in place of the role tint. */
+export const CORIOLIS_PAINT_LIFT = 2.3;
+/** Spike (station-scale F7): station-scoped light lift instead of global exposure. */
+export const CORIOLIS_ENV_LIFT = 1.8;
 
 export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	// The display export has brighter lamps than the game's exposure contract.
@@ -31,10 +36,10 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 		1,
 		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
-	for (const m of materials) m.emissiveIntensity /= divisor;
-	const base =
-		[...materials].find((m) => m.name === "ceramic-steel-0")?.color.clone() ??
-		new THREE.Color(1, 1, 1);
+	for (const m of materials) {
+		m.emissiveIntensity /= divisor;
+		if (m.emissiveIntensity === 0) m.envMapIntensity = CORIOLIS_ENV_LIFT;
+	}
 	// A small palette per requested role colour, retained with the loaded asset.
 	const palettes = new Map<string, THREE.MeshStandardMaterial>();
 	// One loaded asset for this page, retained across system changes.
@@ -52,7 +57,6 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	return (berthSeed: number, color: number): StationMesh => {
 		const exterior = template.clone(true);
 		exterior.scale.setScalar(0.001);
-		const tint = new THREE.Color(color);
 		exterior.traverse((o) => {
 			if (
 				!(o instanceof THREE.Mesh) ||
@@ -64,12 +68,8 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			let paint = palettes.get(key);
 			if (!paint) {
 				paint = shared(o.material.clone());
-				// Keep panel-to-panel contrast while applying the station role's paint.
-				paint.color.setRGB(
-					(o.material.color.r * tint.r) / base.r,
-					(o.material.color.g * tint.g) / base.g,
-					(o.material.color.b * tint.b) / base.b,
-				);
+				paint.color.copy(o.material.color).multiplyScalar(CORIOLIS_PAINT_LIFT);
+				paint.roughness = Math.max(paint.roughness, 0.82);
 				palettes.set(key, paint);
 			}
 			o.material = paint;
