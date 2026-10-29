@@ -15,7 +15,7 @@ sc = bpy.context.scene
 STUDY_TO_COCKPIT = Matrix(((-1, 0, 0, .6), (0, 0, 1, -20.2), (0, 1, 0, -5.21), (0, 0, 0, 1)))
 def B(x, y, z): return Vector((x, -z, y))
 
-with bpy.data.libraries.load(str(ROOT / 'spikes/miner-cockpit/longwall-miner-v2.blend'), link=False) as (src, dst):
+with bpy.data.libraries.load(str(ROOT / 'spikes/miner-cockpit/longwall-miner-v3.blend'), link=False) as (src, dst):
     dst.objects = list(src.objects)
 hull = bpy.data.collections.new('longwall-exterior'); sc.collection.children.link(hull)
 rows = [(16.2, 2.2, 6.5), (19.2, 2.2, 6.5), (22, 2.0, 6.2), (24.2, 1.8, 4.8)]
@@ -39,6 +39,7 @@ for o in dst.objects:
     if o is not None and o.parent is None: o.matrix_world = STUDY_TO_COCKPIT @ o.matrix_world
 glass = bpy.data.materials.get('canopy-glass')
 if glass:
+    if hasattr(glass, 'use_transparent_shadow'): glass.use_transparent_shadow = True
     p = glass.node_tree.nodes.get('Principled BSDF')
     p.inputs['Alpha'].default_value = .12; p.inputs['Roughness'].default_value = .05
     glass.blend_method = 'BLEND' if hasattr(glass, 'blend_method') else None
@@ -106,7 +107,7 @@ fill_sun.data.use_shadow = False
 cabin = bpy.data.collections.new('cabin'); sc.collection.children.link(cabin)
 for o in list(sc.collection.objects):
     if o.type == 'MESH' and o.name != 'rock-face': cabin.objects.link(o)
-inner_sun = light('SUN', 'cabin-sun', 24, rot_to=B(.35, -.62, .7), color=(1, .82, .58), size=.03)
+inner_sun = light('SUN', 'cabin-sun', 9, rot_to=B(.35, -.85, .2), color=(1, .82, .58), size=.03)
 inner_sun.light_linking.receiver_collection = cabin
 AMBER = (1, .5, .14)
 for p in [(-1.0, .45, -1.85), (2.2, .45, -1.85), (-.85, -.3, -2.5), (2.05, -.3, -2.5)]:
@@ -130,10 +131,10 @@ sc.render.resolution_x, sc.render.resolution_y = 1536, 1024
 if view == 'pilot':
     cam.location = (0, 0, 0); cam.rotation_euler = (math.radians(90), 0, 0)
 else:
-    cam.location = B(.6, .08, 1.18); cam.rotation_euler = (math.radians(90 - 6), 0, 0); cam.data.angle = math.radians(72)
+    cam.location = B(.6, .12, 1.3); cam.rotation_euler = (math.radians(90 - 6), 0, 0); cam.data.angle = math.radians(74)
 engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
 sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in engines else 'BLENDER_EEVEE'
-sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = 1.1
+sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = .55
 try:
     sc.eevee.use_shadows = True; sc.eevee.use_raytracing = True
 except Exception: pass

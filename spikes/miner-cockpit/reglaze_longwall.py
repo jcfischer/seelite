@@ -1,6 +1,6 @@
 """Longwall B with the V2 bridge glazing (#1143), a proposed exterior change for review.
 Blender --background spikes/longwall-miner/longwall-miner.blend --python spikes/miner-cockpit/reglaze_longwall.py
-Reads the approved study and writes longwall-miner-v2.blend/.glb here; the approved files are untouched.
+Reads the approved study and writes longwall-miner-{VARIANT}.blend/.glb here; the approved files are untouched.
 The bridge is re-authored: each glazed facet carries glass at 90% of the facet in a slim frame, the
 windscreen keeps a slim centre bar, and the front cap below the windscreen is glazed (the chin window).
 """
@@ -9,6 +9,10 @@ from pathlib import Path
 from mathutils import Vector
 
 OUT = Path(__file__).resolve().parent
+import os
+VARIANT = os.environ.get('LONGWALL_VARIANT', 'v2')
+CANOPY = VARIANT == 'v3'
+ROOF_PANE = .88
 PANE = .90
 CHIN = .82
 MATS = {m.name: m for m in bpy.data.materials}
@@ -83,6 +87,8 @@ for seg in range(3):
         if n.dot(c - axis_c(c.z)) < 0: n = -n
         if (j in [1, 5]) or (j == 7 and seg == 2):
             glazed_panel(q, n, PANE, bar=(j == 7))
+        elif CANOPY and (j in [0, 6, 7]):
+            glazed_panel(q, n, ROOF_PANE)
         else:
             poly(q, 'dark-structure')
             pl = [c + (p - c) * .982 for p in q]
@@ -91,7 +97,8 @@ back = R[0]
 poly(list(reversed(back)), 'dark-structure')
 plate(list(reversed(back)), 'pale-steel-0', Vector((0, 0, -1)), .10)
 glazed_panel(R[-1], Vector((0, 0, 1)), CHIN)
-prism([Vector((x, y, z)) for x, y, z in [(-1.7, 6.58, 17.0), (1.7, 6.58, 17.0), (1.7, 6.58, 18.6), (-1.7, 6.58, 18.6)]], Vector((0, 1, 0)), .18, 'service-ochre')
+if not CANOPY:
+    prism([Vector((x, y, z)) for x, y, z in [(-1.7, 6.58, 17.0), (1.7, 6.58, 17.0), (1.7, 6.58, 18.6), (-1.7, 6.58, 18.6)]], Vector((0, 1, 0)), .18, 'service-ochre')
 
 # The approved study's two seats and lit consoles, which the face removal above also took out:
 # they are what made the approved panes glow cyan from outside.
@@ -122,6 +129,6 @@ for mat, (vs, fs, uvs) in BATCH.items():
     ob = bpy.data.objects.new(name, mesh); bpy.context.collection.objects.link(ob)
     if parent: ob.parent = parent
 bpy.ops.file.pack_all()
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'longwall-miner-v2.blend'))
-bpy.ops.export_scene.gltf(filepath=str(OUT / 'longwall-miner-v2.glb'), export_format='GLB', export_yup=False, export_apply=True, export_materials='EXPORT')
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT / f'longwall-miner-{VARIANT}.blend'))
+bpy.ops.export_scene.gltf(filepath=str(OUT / f'longwall-miner-{VARIANT}.glb'), export_format='GLB', export_yup=False, export_apply=True, export_materials='EXPORT')
 print('reglazed: removed', removed, 'faces; new batches', list(BATCH))

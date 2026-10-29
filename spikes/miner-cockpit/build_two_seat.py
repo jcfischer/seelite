@@ -18,7 +18,7 @@ def P(xs, ys, zs):
     """Longwall study metres to pilot-local metres."""
     return Vector((-xs + EYE_STUDY.x, ys - EYE_STUDY.y, -(zs - EYE_STUDY.z)))
 
-def material(name, color, metal=.6, rough=.48, emit=0, textured=True):
+def material(name, color, metal=.6, rough=.48, emit=0, textured=True, texture=None):
     m = bpy.data.materials.new(name); m.use_nodes = True
     p = m.node_tree.nodes.get('Principled BSDF')
     p.inputs['Base Color'].default_value = (*color, 1)
@@ -28,9 +28,9 @@ def material(name, color, metal=.6, rough=.48, emit=0, textured=True):
         p.inputs['Emission Strength'].default_value = emit
     elif textured:
         t = m.node_tree.nodes.new('ShaderNodeTexImage')
-        t.image = bpy.data.images.load(str(ROOT / 'spikes/courier-cockpit/steel-wear.png'), check_existing=True)
+        t.image = bpy.data.images.load(str(ROOT / (f'spikes/miner-cockpit/textures/{texture}.png' if texture else 'spikes/courier-cockpit/steel-wear.png')), check_existing=True)
         mix = m.node_tree.nodes.new('ShaderNodeMixRGB'); mix.blend_type = 'MULTIPLY'
-        mix.inputs[0].default_value = 1; mix.inputs[2].default_value = (*color, 1)
+        mix.inputs[0].default_value = 1; mix.inputs[2].default_value = (1, 1, 1, 1) if texture else (*color, 1)
         m.node_tree.links.new(t.outputs['Color'], mix.inputs[1])
         m.node_tree.links.new(mix.outputs[0], p.inputs['Base Color'])
         ramp = m.node_tree.nodes.new('ShaderNodeMapRange')
@@ -40,14 +40,14 @@ def material(name, color, metal=.6, rough=.48, emit=0, textured=True):
     return name
 
 steel = material('weathered-blue-steel', (.25, .38, .49), .75, .36)
-dark = material('graphite-housings', (.15, .21, .27), .6, .43)
+dark = material('graphite-housings', (.15, .21, .27), .6, .43, texture='console')
 alloy = material('exposed-machined-edges', (.32, .34, .33), .82, .32)
 black = material('rubber-and-recess', (.012, .018, .02), .12, .72, textured=False)
 ochre = material('service-ochre', (.68, .32, .045), .35, .52)
 red = material('guarded-red', (.4, .032, .02), .3, .45)
 warm = material('amber-work-lights', (1, .28, .01), .15, .28, .8)
 cyan = material('cyan-indicators', (.04, .6, .8), .1, .35, 2)
-lining = material('cabin-lining', (.40, .46, .50), .45, .5)
+lining = material('cabin-lining', (.40, .46, .50), .3, .5, texture='lining')
 hose = material('hose-rubber', (.01, .011, .012), 0, .9, textured=False)
 MATS[hose].node_tree.nodes['Principled BSDF'].inputs['Specular IOR Level'].default_value = .15
 
@@ -170,7 +170,7 @@ def mark():
 # Pilot-local metres with the PILOT eye (left seat) at the origin. The miner's eye is +1.2 m in X.
 MINER_EYE = Vector((1.2, 0, 0))
 CENTRE_X = .6
-PANE, CHIN = .90, .82
+PANE, CHIN, ROOF_PANE = .90, .82, .88
 FLOOR_Y = 4.0 - EYE_STUDY.y
 seatcloth = material('seat-cloth', (.34, .45, .54), .15, .55)
 bolster = material('seat-bolster', (.62, .42, .12), .2, .6)
@@ -215,6 +215,9 @@ for seg in range(3):
         if (j in [1, 5]) or (j == 7 and seg == 2):
             opening(o, q, PANE, bar=(j == 7))
             continue
+        if j in [0, 6, 7]:
+            opening(o, q, ROOF_PANE)
+            continue
         poly(list(reversed(q)), lining if j not in [2, 3, 4] else dark)
         if j != 3:
             cq = sum(q, Vector()) / 4; nq = (q[1] - q[0]).cross(q[3] - q[0]).normalized()
@@ -241,7 +244,7 @@ def pod(xc, eye, width, screens, name):
     u, v, n = facing(face_c, eye)
     frame = (u, v, n)
     def at(a, b, d=0): return face_c + u * a + v * b + n * d
-    h = .56
+    h = .64
     box(at(0, 0, -.26), (width, h, .5), dark, frame=frame)
     box(at(0, 0, -.005), (width - .04, h - .04, .02), steel, frame=frame)
     box(at(0, h / 2 + .05, -.2), (width + .1, .1, .62), steel, frame=frame)
@@ -261,7 +264,7 @@ def pod(xc, eye, width, screens, name):
         bezel(at(a, b, .036), w + .04, hh + .04, .022, black, frame=frame)
     return at, frame
 
-pilot_at, pilot_frame = pod(-.28, Vector((0, 0, 0)), 1.28, [
+pilot_at, pilot_frame = pod(-.3, Vector((0, 0, 0)), 1.34, [
     ('screen-radar', -.04, .03, .6, .38),
     ('screen-flight', .45, .13, .3, .15),
     ('screen-target', .45, -.08, .3, .15),
@@ -273,7 +276,7 @@ for b in [.15, .05, -.05]:
 plane('label-radar', pilot_at(-.04, -.185, .026), .3, .025, frame=pilot_frame)
 plane('label-flight', pilot_at(.45, .235, .026), .22, .022, frame=pilot_frame)
 plane('label-target', pilot_at(.45, -.175, .026), .22, .022, frame=pilot_frame)
-miner_at, miner_frame = pod(1.48, MINER_EYE, 1.28, [
+miner_at, miner_frame = pod(1.5, MINER_EYE, 1.34, [
     ('screen-survey', -.45, .19, .26, .13),
     ('screen-ore', -.15, .19, .26, .13),
     ('screen-drill', .15, .19, .26, .13),
@@ -285,8 +288,8 @@ miner_at, miner_frame = pod(1.48, MINER_EYE, 1.28, [
 
 # Two seats behind the eyes: painted shells with tan cushions, wings, headrests, and a ribbed hose
 # down each outer edge. The pilot's flight stick and the miner's feed lever sit on the aisle armrests.
-shell = material('seat-shell', (.24, .38, .46), .55, .42)
-cushion = material('seat-cushion', (.55, .40, .24), .05, .72, textured=False)
+shell = material('seat-shell', (.24, .38, .46), .45, .42, texture='shell')
+cushion = material('seat-cushion', (.55, .40, .24), .05, .78, texture='cushion')
 def bucket_surface(xs, y0, y1, half, wing, z0, lean, depth, mat, flip=False, nx=10, ny=8):
     """A U-section shell: across the seat the surface curls forward into wings, and it leans back with height."""
     rows = []
@@ -329,6 +332,10 @@ for xs, aisle in [(0.0, 1), (1.2, -1)]:
         for dx in [-.025, .025]: tube(grip + Vector((dx, 0, 0)), grip + Vector((dx, .14, -.04)), .013, alloy, 8)
         box(grip + Vector((0, .16, -.05)), (.09, .035, .035), red)
 
+# Amber lamps on the canopy's middle rib, facing down (#839: discrete lamps on the frame).
+for xs in [-.75, .75]:
+    c = P(xs, 6.5 - LINE - .03, 19.2); f = (Vector((1, 0, 0)), Vector((0, 0, 1)), Vector((0, -1, 0)))
+    box(c, (.16, .09, .04), black, frame=f); box(c + f[2] * .025, (.12, .06, .01), warm, frame=f)
 # Discrete amber lamps on the window pillars and the header (#839).
 for p in [(-1.05, .45, -1.95), (2.25, .45, -1.95), (-.95, .05, -2.25), (2.15, .05, -2.25), (-.9, -.3, -2.6), (2.1, -.3, -2.6)]:
     c = Vector(p); f = facing(c, Vector((CENTRE_X, 0, 0)))
