@@ -10756,7 +10756,7 @@ class Game {
 
 	private buildMinerFaces(
 		frames: Record<string, ScreenFrame>,
-		cockpit: THREE.Group,
+		seat: THREE.Group,
 	) {
 		for (const name of ["survey", "ore", "lasers"]) {
 			const frame = frames[name];
@@ -10783,7 +10783,7 @@ class Game {
 			const mount = screenMount(frame);
 			mount.name = `miner-${name}-mount`;
 			mount.add(face);
-			cockpit.add(mount);
+			seat.add(mount);
 			this.minerFaces.push({ name, ctx, texture });
 		}
 	}

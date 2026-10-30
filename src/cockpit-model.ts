@@ -34,6 +34,7 @@ import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
  * model origin and it is authored level, so it takes no eye offset or pitch.
  */
 export const MINER_COCKPIT =
+	import.meta.env?.DEV === true &&
 	typeof location !== "undefined" &&
 	new URLSearchParams(location.search).get("cockpit") === "miner";
 const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit-2seat.glb";
