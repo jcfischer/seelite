@@ -144,10 +144,13 @@ Use `--label after` on this branch. Both manifests record the served tree,
 dirty ref, renderer, shot fixtures and actual clock at each frame. Frames were
 opened at full size. No principal approval is inferred from their presence.
 
-The selector expands this diff to all 118 probes because the canonical
-view manifest is shared harness infrastructure. Under the worker contract,
-the supervisor runs that final reviewed-head gate; local targeted probes are
-reported separately from it.
+Path diagnostics on the runtime and harness changes select all 118 probes
+because the canonical view manifest is shared harness infrastructure.
+Git-based selection on implementation commit `f5847b4516796eec0b4b95304d07e535cfe8bf46`
+also selects all 118, reporting: “At least one changed path has no dependency
+owner; impact is unknown.” Under the worker contract, the supervisor runs that
+final reviewed-head gate. The two manually filtered local probes do not satisfy
+that gate.
 
 Worker checks before the full host suite:
 
