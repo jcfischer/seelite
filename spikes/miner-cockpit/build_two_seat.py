@@ -197,8 +197,8 @@ MINER_EYE = Vector((1.2, 0, 0))
 CENTRE_X = .6
 PANE, CHIN, ROOF_PANE = .90, .82, .88
 FLOOR_Y = 4.0 - EYE_STUDY.y
-strut = material('strut-paint', (.2, .24, .28), .3, .6, texture='strut-dark', tint=(.9, .92, .95))
-strut_edge = material('strut-edge', (.2, .21, .22), .7, .4, texture='strut-dark', tint=(.62, .62, .62))
+strut = material('strut-paint', (.2, .24, .28), .3, .6, texture='strut-fine', tint=(.9, .92, .95))
+strut_edge = material('strut-edge', (.2, .21, .22), .7, .4, texture='strut-fine', tint=(.62, .62, .62))
 hose_sleeve = material('hose-duct', (.014, .014, .015), 0, .48, textured=False)
 seatcloth = material('seat-cloth', (.34, .45, .54), .15, .55)
 bolster = material('seat-bolster', (.62, .42, .12), .2, .6)
@@ -216,6 +216,20 @@ def row(z, w, top, inset=0):
 outer = [row(*r) for r in rows_study]
 inner = [row(*r, inset=LINE) for r in rows_study]
 centre_axis = lambda p: Vector((CENTRE_X, .3, p.z))
+def strut_strip(a0, a1, b1, b0, mat):
+    """A quad a0-a1 (one long edge) to b0-b1 in strut paint, cut every 30 cm along its length for the
+    grime, with its own texture offset, scale and turn so no two strips share a mapping."""
+    L = max((a1 - a0).length, (b1 - b0).length); W = max((b0 - a0).length, (b1 - a1).length)
+    rate = random.uniform(.55, .8); ou, ov = random.random() * 7, random.random() * 7; turn = random.random() < .5
+    def T(x, y):
+        a_, b_ = x * rate + ou, y * rate + ov
+        return (b_, a_) if turn else (a_, b_)
+    n = max(1, math.ceil(L / .3))
+    for i in range(n):
+        t0, t1 = i / n, (i + 1) / n
+        poly([a0.lerp(a1, t0), a0.lerp(a1, t1), b0.lerp(b1, t1), b0.lerp(b1, t0)], mat,
+             uv=[T(L * t0, 0), T(L * t1, 0), T(L * t1, W), T(L * t0, W)])
+
 def opening(q_out, q_in, inset, bar=False, n_hint=None):
     c = sum(q_out, Vector()) / len(q_out)
     glass = [c + (p - c) * inset for p in q_out]
@@ -228,8 +242,8 @@ def opening(q_out, q_in, inset, bar=False, n_hint=None):
     cq = sum(q_in, Vector()) / len(q_in)
     for a in range(len(q_in)):
         b = (a + 1) % len(q_in)
-        poly([q_in[b], q_in[a], reveal[a], reveal[b]], strut)
-        poly([reveal[b], reveal[a], glass[a], glass[b]], strut)
+        strut_strip(q_in[b], q_in[a], reveal[a], reveal[b], strut)
+        strut_strip(reveal[b], reveal[a], glass[a], glass[b], strut)
         tube(reveal[a] - n * .012, reveal[b] - n * .012, .016, alloy, 6)
     if bar:
         m0 = reveal[0].lerp(reveal[1], .5); m1 = reveal[3].lerp(reveal[2], .5)
@@ -274,7 +288,7 @@ def rib(a, b, width=.1, depth=.05):
     hw, cw, r = width / 2 + .02, width * .38, .018
     prof = [(-cw, .012)] + [(-cw + r * (1 - math.cos(math.pi / 2 * k / 4)), depth - r + r * math.sin(math.pi / 2 * k / 4)) for k in range(5)] \
          + [(cw - r * (1 - math.cos(math.pi / 2 * k / 4)), depth - r + r * math.sin(math.pi / 2 * k / 4)) for k in range(4, -1, -1)] + [(cw, .012)]
-    rate = random.uniform(1.6, 2.6); ou, ov = random.random() * 7, random.random() * 7; turn = random.random() < .5
+    rate = random.uniform(.55, .8); ou, ov = random.random() * 7, random.random() * 7; turn = random.random() < .5
     def T(along, around):
         a_, b_ = along * rate + ou, around * rate + ov
         return (b_, a_) if turn else (a_, b_)
