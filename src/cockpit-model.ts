@@ -54,6 +54,7 @@ const MINER_FINISHES: Readonly<
 	"cabin-lining": { metalness: 0.2, roughness: 0.55 },
 	"seat-shell": { metalness: 0.3, roughness: 0.45 },
 	"seat-cushion": { metalness: 0, roughness: 0.8 },
+	"strut-paint": { metalness: 0.4, roughness: 0.5 },
 	"weathered-blue-steel": { metalness: 0.45, roughness: 0.42 },
 };
 

@@ -172,6 +172,7 @@ MINER_EYE = Vector((1.2, 0, 0))
 CENTRE_X = .6
 PANE, CHIN, ROOF_PANE = .90, .82, .88
 FLOOR_Y = 4.0 - EYE_STUDY.y
+strut = material('strut-paint', (.2, .24, .28), .55, .45, texture='strut', tint=(.85, .88, .92))
 seatcloth = material('seat-cloth', (.34, .45, .54), .15, .55)
 bolster = material('seat-bolster', (.62, .42, .12), .2, .6)
 
@@ -200,8 +201,8 @@ def opening(q_out, q_in, inset, bar=False, n_hint=None):
     cq = sum(q_in, Vector()) / len(q_in)
     for a in range(len(q_in)):
         b = (a + 1) % len(q_in)
-        poly([q_in[b], q_in[a], reveal[a], reveal[b]], lining)
-        poly([reveal[b], reveal[a], glass[a], glass[b]], dark)
+        poly([q_in[b], q_in[a], reveal[a], reveal[b]], strut)
+        poly([reveal[b], reveal[a], glass[a], glass[b]], strut)
         tube(reveal[a] - n * .012, reveal[b] - n * .012, .016, alloy, 6)
     if bar:
         m0 = reveal[0].lerp(reveal[1], .5); m1 = reveal[3].lerp(reveal[2], .5)
@@ -227,6 +228,52 @@ for seg in range(3):
             for p in pl: tube(cq + (p - cq) * .93, cq + (p - cq) * .93 + nq * .02, .016, alloy, 8)
 poly(list(inner[0]), lining)
 opening(list(reversed(outer[-1])), list(reversed(inner[-1])), CHIN, n_hint=Vector((0, 0, -1)))
+
+# Struts (round 11): a worn cap along every rib line between panes, bolted; lamps in housings on the
+# ribs facing the cabin; hoses clipped along some ribs. Everything stands inboard of the rib line.
+def inward(p):
+    d = centre_axis(p) - p
+    d.z = 0
+    return d.normalized()
+def rib_frame(a, b):
+    u = (b - a).normalized(); m = (a + b) / 2; n = inward(m)
+    n = (n - u * n.dot(u)).normalized(); v = n.cross(u).normalized()
+    return u, v, n
+def rib(a, b, width=.1, depth=.05):
+    u, v, n = rib_frame(a, b); m = (a + b) / 2; L = (b - a).length
+    box(m + n * depth / 2, (L, width, depth), strut, frame=(u, v, n))
+    count = max(2, int(L / .28))
+    for i in range(count + 1):
+        p = a.lerp(b, (i + .5) / (count + 1)) + n * depth
+        for s in [-1, 1]: tube(p + v * s * width * .32, p + v * s * width * .32 + n * .012, .011, alloy, 8)
+for k in range(8):
+    for r in range(3): rib(inner[r][k], inner[r + 1][k])
+for r in [0, 1, 2, 3]:
+    for k in range(8): rib(inner[r][k], inner[r][(k + 1) % 8], width=.12)
+LAMPS_M = []
+def rib_lamp(p, along):
+    n = inward(p); u = (along - (n * along.dot(n))).normalized(); v = n.cross(u).normalized()
+    c = p + n * .085
+    box(c, (.18, .1, .06), black, frame=(u, v, n))
+    box(c + n * .031, (.13, .06, .008), warm, frame=(u, v, n))
+    for s in [-1, 1]: tube(c + u * s * .1 - n * .03, c + u * s * .1 + n * .02, .012, alloy, 8)
+    LAMPS_M.append(tuple(round(x, 3) for x in (c.x, c.y, c.z)))
+for k in [1, 6]:
+    for r, t in [(1, .45), (2, .4)]:
+        a, b = inner[r][k], inner[r + 1][k]; rib_lamp(a.lerp(b, t), b - a)
+for t in [.3, .7]:
+    a, b = inner[2][7], inner[2][0]; rib_lamp(a.lerp(b, t), b - a)
+def rib_hose(points, r=.04):
+    pts = []
+    for i, p in enumerate(points):
+        n = inward(p); sag = .02 if 0 < i < len(points) - 1 else 0
+        pts.append(p + n * (.1 + sag))
+    ribbed_hose([tuple(p) for p in pts], r)
+    for p in pts[1:-1]: tube(p - Vector((0, 0, .03)), p + Vector((0, 0, .03)), r * 1.5, alloy, 12)
+for k in [0, 7]:
+    rib_hose([inner[0][k], inner[0][k].lerp(inner[1][k], .5), inner[1][k], inner[1][k].lerp(inner[2][k], .5), inner[2][k]])
+rib_hose([inner[1][6], inner[1][6].lerp(inner[2][6], .5), inner[2][6], inner[2][6].lerp(inner[3][6], .6)], .035)
+rib_hose([inner[1][1], inner[1][1].lerp(inner[2][1], .5), inner[2][1], inner[2][1].lerp(inner[3][1], .6)], .035)
 
 # Floor plates, an aisle tread down the centre, footwells under both pods.
 for x in [-1.0, -.3, 1.5, 2.2]:
@@ -258,7 +305,7 @@ def pod(xc, eye, width, screens, name):
     box(Vector((xc, (FLOOR_Y + base_top) / 2, zc - .3)), (width - .14, base_top - FLOOR_Y, .4), black)
     for s in [-1, 1]:
         box(Vector((xc + s * (width / 2 + .03), (FLOOR_Y + base_top) / 2, zc - .12)), (.1, base_top - FLOOR_Y, .78), steel)
-    box(Vector((xc, FLOOR_Y + .25, zc + .1)), (width - .3, .42, .05), hose)
+    box(Vector((xc, FLOOR_Y + .12, zc + .1)), (width - .3, .18, .05), hose)
     for s in [-1, 1]: box(Vector((xc + s * .15, FLOOR_Y + .05, zc + .25)), (.12, .04, .22), alloy)
     for a in [-width / 2 + .035, width / 2 - .035]:
         for b in [-h / 2 + .035, -h / 6, h / 6, h / 2 - .035]: tube(at(a, b, -.006), at(a, b, .01), .011, alloy, 8)
@@ -368,14 +415,6 @@ for xs, aisle in [(0.0, 1), (1.2, -1)]:
         cage('feed-handle', tuple(grip + Vector((0, .165, -.032))), (.1, .035, .035), 2, lambda x, y, z, n: (x, y, z), red, level=2)
 
 
-# Amber lamps on the canopy's middle rib, facing down (#839: discrete lamps on the frame).
-for xs in [-.75, .75]:
-    c = P(xs, 6.5 - LINE - .03, 19.2); f = (Vector((1, 0, 0)), Vector((0, 0, 1)), Vector((0, -1, 0)))
-    box(c, (.16, .09, .04), black, frame=f); box(c + f[2] * .025, (.12, .06, .01), warm, frame=f)
-# Discrete amber lamps on the window pillars and the header (#839).
-for p in [(-1.05, .45, -1.95), (2.25, .45, -1.95), (-.95, .05, -2.25), (2.15, .05, -2.25), (-.9, -.3, -2.6), (2.1, -.3, -2.6)]:
-    c = Vector(p); f = facing(c, Vector((CENTRE_X, 0, 0)))
-    box(c, (.09, .15, .05), black, frame=f); box(c + f[2] * .03, (.06, .11, .012), warm, frame=f)
 
 for name, (vs, fs, uvs) in BATCH.items():
     BATCH[name][0] = [(x, max(y, FLOOR_Y), z) for x, y, z in vs]
@@ -427,4 +466,5 @@ for image in bpy.data.images:
     if image.source == 'FILE': image.pack()
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'miner-cockpit-2seat.blend'))
 bpy.ops.export_scene.gltf(filepath=str(OUT / 'miner-cockpit-2seat.glb'), export_format='GLB', export_yup=True, export_apply=True)
+print('LAMPS_M', LAMPS_M)
 print('Cockpit exported', len(bpy.data.objects), 'objects', 'screens', [s[0] for s in SCREENS])
