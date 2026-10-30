@@ -5,6 +5,7 @@ import {
 	ASTEROIDS_GLB_URL,
 	ASSEMBLY_GLB_URL,
 	BOLLARD_TUG_GLB_URL,
+	CORIOLIS_DETAIL_GLB_URL,
 	CORIOLIS_GLB_URL,
 	COURIER_COCKPIT_GLB_URL,
 	COURIER_HULL_GLB_URL,
@@ -39,6 +40,7 @@ describe("models are served under hashed names (#834)", () => {
 			ASTEROIDS_GLB_URL,
 			ASSEMBLY_GLB_URL,
 			BOLLARD_TUG_GLB_URL,
+			CORIOLIS_DETAIL_GLB_URL,
 			CORIOLIS_GLB_URL,
 			COURIER_COCKPIT_GLB_URL,
 			COURIER_HULL_GLB_URL,
@@ -63,7 +65,7 @@ describe("models are served under hashed names (#834)", () => {
 		const literals = source.match(
 			/new URL\(\s*"\.\/models\/[\w-]+\.glb",\s*import\.meta\.url,?\s*\)/g,
 		);
-		expect(literals?.length).toBe(26);
+		expect(literals?.length).toBe(27);
 	});
 
 	test("no loader names a model by a fixed path", () => {

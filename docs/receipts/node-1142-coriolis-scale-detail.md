@@ -282,3 +282,15 @@ and `probe-station` pass, 5/5 in 437 s, peak load 159 on 10 cores. This is a
 partial run, not the `probe:pr` gate. The principal ruled out the full gate
 and a new before/after capture for this change.
 
+## Principal decisions, 2026-10-30
+
+- The detail ships in its own file (the section above), on Sage round 1's
+  download finding.
+- The changelog sentence is the principal's own wording: "Coriolis stations
+  show more details."
+- Review stops after Sage round 2, and the PR merges. No before/after capture
+  is taken again for the split, and the browser gate is the Coriolis probes
+  named above, not `probe:pr`.
+- The principal gave the merge after reading the frame-time and size figures
+  in this receipt. No separate frame-time budget was stated.
+
