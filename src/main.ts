@@ -697,9 +697,6 @@ import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
 	duelBandCells,
-	duelBandPlates,
-	duelBandWidestRows,
-	type DuelBandPlate,
 	HULL_TEMP_LABEL,
 	SCOOP_LABEL,
 	onTargetMark,
@@ -1040,12 +1037,10 @@ import {
 } from "./cockpit-surface";
 import {
 	buildAuthoredCabin,
+	type ScreenFrame,
 	buildPerimeterLamps,
 	COCKPIT_MODEL_LAMPS,
 	carriedConsoleLamp,
-	type CockpitScreen,
-	containedFace,
-	INSTRUMENT_FACE_KM,
 	SCANNER_FACE_KM,
 	screenMount,
 } from "./cockpit-model";
@@ -1912,6 +1907,13 @@ interface ProbeRayMath {
 	closestApproachKm: typeof closestApproachKm;
 }
 
+import {
+	CockpitReadouts,
+	paintCockpitInstrument,
+	cockpitCanvasFace,
+	routeCockpitSources,
+} from "./cockpit-text";
+
 interface Instrument {
 	ctx: CanvasRenderingContext2D;
 	texture: THREE.CanvasTexture;
@@ -1980,9 +1982,6 @@ const FLOOR_BANDS = DUEL_BAND;
  *  over a lit station face, and translucent so the slot stays visible. */
 const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
 const PROMPT_PLATE_PAD_PX = 8;
-/** How far the hull-temperature plate stands in from its band, top and
- *  bottom, as a share of the band (#931). */
-const FLOOR_TEMP_PLATE_INSET = 0.12;
 
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
@@ -2029,8 +2028,6 @@ const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
  */
 const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
-/** The duel band's widest rows, for the floor's fit (#932). */
-const DUEL_BAND_WIDEST_ROWS = duelBandWidestRows();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -2054,11 +2051,6 @@ const TARGET_CONDITION_WIDEST = targetConditionWidest();
  */
 const TARGET_CONDITION_DX = 20;
 const TARGET_CONDITION_DY = 18;
-/** Where the baseline sits inside the band, and how big the value type is —
- *  both fractions of it, so the band is the one thing to change. */
-const FLOOR_BASELINE_FRACTION = 0.35;
-const FLOOR_VALUE_FRACTION = 0.5;
-const FLOOR_LABEL_FRACTION = 0.385;
 
 /** §4's grammar, once. `cockpit.ts` decides which tone a reading earned; this
  *  is the only place a tone becomes a colour. */
@@ -2068,134 +2060,10 @@ const FLOOR_TONE_FILL: Record<FloorTone, string> = {
 	confirmed: "rgba(150, 255, 190, 0.95)",
 	refused: "rgba(255, 110, 96, 0.97)",
 };
-const FLOOR_LABEL_FILL = "rgba(120, 165, 195, 0.75)";
-const FLOOR_FONT_FAMILY = "ui-monospace, Menlo, monospace";
-/** Between a label and its value, and between one cell and the next. */
-const FLOOR_LABEL_GAP_PX = 5;
-const FLOOR_CELL_GAP_PX = 22;
-/** Clear of the glass edges at every viewport. */
-const FLOOR_MARGIN_PX = 14;
-/** How far the strip may be shrunk to fit. Below this it is not an instrument
- *  read at a glance, and the answer would have to be a different layout. */
-const FLOOR_MIN_SCALE = 0.62;
 
 /** How far past the tolerance ring the nose marker is allowed to sit before it
  *  stops moving. Beyond this the error is off-scale and the marker says so. */
 const MARKER_MAX_FRACTION = 1.3;
-
-/** The throat is the thing the ship goes through, so it is the brightest line
- *  in the corridor — and it carries the blocking state, because a refusal has
- *  to reach the part of the picture the pilot is aiming at. */
-/** A font at a scale, built rather than parsed back out of a declaration. */
-const floorFont = (fraction: number, scale: number): string =>
-	`${Math.max(7, Math.round(FLOOR_STRIP_HEIGHT_PX * fraction * scale))}px ${FLOOR_FONT_FAMILY}`;
-
-/**
- * One run's per-cell widths and their total.
- *
- * **The fit and the draw share this.** They each had their own copy of
- * `label + gap + value`, which is two spellings of the metric the fit exists to
- * guarantee — a change to the layout that landed in one would have made the fit
- * describe a run the draw does not produce. The pairs carry their own labels
- * rather than being indexed against `FLIGHT_FLOOR_LABELS`, so the two paths
- * also agree on where a label comes from.
- */
-function floorRunWidths(
-	ctx: CanvasRenderingContext2D,
-	cells: readonly { label: string; value: string }[],
-	scale: number,
-): { widths: number[]; total: number; labelWidths: number[] } {
-	const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
-	const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
-	const labelGap = FLOOR_LABEL_GAP_PX * scale;
-	const labelWidths: number[] = [];
-	const widths = cells.map((cell) => {
-		ctx.font = labelFont;
-		const label = ctx.measureText(cell.label).width;
-		labelWidths.push(label);
-		ctx.font = valueFont;
-		return label + labelGap + ctx.measureText(cell.value).width;
-	});
-	return {
-		widths,
-		labelWidths,
-		total:
-			widths.reduce((a, b) => a + b, 0) +
-			FLOOR_CELL_GAP_PX * scale * (cells.length - 1),
-	};
-}
-
-/**
- * Where one floor run landed, and the band it landed in.
- *
- * **One shape, because this PR proved what four copies cost**: adding `top` and
- * `height` so a sampler could stop keeping its own glyph height meant editing
- * the field's type, the local it is built into, and the course row's separate
- * literal. The course row has a label like any other cell (`COURSE_CUE_LABEL`),
- * so it is one of these rather than a second shape.
- */
-interface FloorBox {
-	label: string;
-	x: number;
-	y: number;
-	width: number;
-	/** The band the run occupies, so a sampler reads it rather than keeping a
-	 *  glyph height that goes lenient when the type is raised. */
-	height: number;
-	top: number;
-}
-
-/**
- * A floor box from its band, so the band→baseline rule is written once.
- *
- * The strip derived its baseline down from the glass bottom while the course
- * row derived its own up from `floorTopY` — the same rule from opposite ends,
- * in two six-field literals. That is "two runs on one floor authored two ways"
- * again, in the block whose comment argues against it.
- */
-function floorBox(
-	label: string,
-	x: number,
-	width: number,
-	top: number,
-): FloorBox {
-	return {
-		label,
-		x,
-		width,
-		top,
-		height: FLOOR_STRIP_HEIGHT_PX,
-		y: top + FLOOR_STRIP_HEIGHT_PX * (1 - FLOOR_BASELINE_FRACTION),
-	};
-}
-
-/**
- * Paint one floor cell: its label, then its value in §4's tone.
- *
- * **One painter, because the floor has two runs.** §5.2 says "two runs on one
- * floor authored two ways is how a floor comes to look like two instruments",
- * and the course row was authored the second way in the same change that wrote
- * the sentence — the strip's loop and the row each repeating the same
- * font/fill/label/value sequence, so a tone or gap change had to land twice.
- * Copying the block is also what dropped the strip's `ctx.restore()`: the
- * course block brought its own save/restore pair and read as the closing one.
- */
-function drawFloorCell(
-	ctx: CanvasRenderingContext2D,
-	cell: FloorCell,
-	at: { x: number; baselineY: number; labelWidth: number },
-	type: { labelGap: number; labelFont: string; valueFont: string },
-) {
-	ctx.font = type.labelFont;
-	ctx.fillStyle = FLOOR_LABEL_FILL;
-	ctx.fillText(cell.label, at.x, at.baselineY);
-	ctx.font = type.valueFont;
-	ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
-	// The label width comes from the measuring pass rather than a second
-	// `measureText` here — four labels re-measured every frame for a value that
-	// changes only with the viewport.
-	ctx.fillText(cell.value, at.x + at.labelWidth + type.labelGap, at.baselineY);
-}
 
 /** One cell's value by label. Throws rather than printing `undefined` on a
  *  label that does not exist — a blank readout is what this is fixing. */
@@ -2323,6 +2191,7 @@ interface HologramSystem {
 }
 
 interface CockpitHardware {
+	text: CockpitReadouts;
 	mesh: THREE.Group;
 	scannerTexture: THREE.CanvasTexture;
 	scannerCtx: CanvasRenderingContext2D;
@@ -3584,64 +3453,7 @@ class Game {
 		key: string;
 		chain: CourseChain | null;
 	} | null = null;
-	/**
-	 * What §5's flight-floor strip painted this frame, or `null` when it painted
-	 * nothing — a focused console has replaced the glass.
-	 *
-	 * **Written by the draw, from the values it drew**, the same pattern as
-	 * `directorRender`. A record assembled beside the draw from the same state
-	 * would let a probe assert a strip that was never painted, which is the
-	 * check-that-cannot-fail this repo has shipped once already.
-	 */
-	floorRender: {
-		cells: FloorCell[];
-		boxes: FloorBox[];
-		/** §8.3's course row as painted, or `null` where no course is set and
-		 *  the row was deliberately not drawn. */
-		courseRow: FloorCell | null;
-		courseBox: FloorBox | null;
-		baselineY: number;
-		glassBottomY: number;
-		/** What the strip was shrunk by to fit its widest reading in this
-		 *  viewport — 1 where it did not have to shrink at all. */
-		scale: number;
-		marginPx: number;
-		/**
-		 * How far the widest reading still overruns the margins at the fitted
-		 * scale — zero at both viewports `probe-live-cockpit.mjs` measures.
-		 *
-		 * **Two things can put it above zero**, and the check does not care
-		 * which: the legibility clamp binding on a viewport too narrow for the
-		 * widest run, or the type size rounding to a whole pixel above what the
-		 * linear solve predicted. The solve assumes width is linear in size,
-		 * which is close but not exact, so the confirming measurement is what
-		 * decides — and the residue is what it decides *with*.
-		 */
-		overflowPx: number;
-		/** #324's duel row as painted, or `null` where no fight is on and the
-		 *  row was deliberately not drawn. */
-		duelRow: FloorCell[] | null;
-		duelBox: FloorBox | null;
-		/** Every plate under the duel band as painted (#945), in row order: one
-		 *  per cell, but one for TEMP and SCOOPING together. Each carries its
-		 *  cell's label, or `ARMED_GROUP_PLATE` under the armed group. */
-		duelPlates: FloorBox[];
-		/** The plate under the hull-temperature cell as painted (#931), or
-		 *  `null` when the hull is at ambient and no cell was drawn. */
-		tempPlate: FloorBox | null;
-		/** The plate under the scoop's `SCOOPING` line as painted (#932), or
-		 *  `null` when the scoop is not filling. Beside the TEMP cell it is the
-		 *  same plate, drawn once under both. */
-		scoopPlate: FloorBox | null;
-		source: {
-			regime: string;
-			spoolLeftS: number;
-			jumpChargeLeftS: number;
-			throttle: number;
-			assist: boolean;
-			chargeAu: number;
-		};
-	} | null = null;
+	floorRender: null = null;
 	/**
 	 * What §3's docking director drew this frame, or `null` when it drew
 	 * nothing. The same pattern as `cockpitPrompt`: the record is written by the
@@ -9948,9 +9760,11 @@ class Game {
 		ctx.textAlign = "center";
 		ctx.fillStyle = "rgba(255, 210, 140, .9)";
 		const line = `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`;
-		ctx.fillText(line, w / 2, h * 0.7);
-		if (this.miningNotice.left > 0)
-			ctx.fillText(this.miningNotice.text, w / 2, h * 0.7 - 16);
+		if (this.view !== "cockpit") {
+			ctx.fillText(line, w / 2, h * 0.7);
+			if (this.miningNotice.left > 0)
+				ctx.fillText(this.miningNotice.text, w / 2, h * 0.7 - 16);
+		}
 		ctx.restore();
 		this.miningLineRender = {
 			line,
@@ -10486,43 +10300,37 @@ class Game {
 		// keeps the cool fill alone, as the procedural cabin did.
 		registerKeyLight(...gated);
 		const inset = cockpitMaterial("inset");
-		// Each live face fills its screen's width or height, whichever binds,
-		// and keeps its own aspect. The procedural mount's figures stay its
-		// own: one uniform scale per screen carries them onto the model.
-		const mountOn = (
-			screen: CockpitScreen,
-			faceWidthKm: number,
-			faceHeightKm: number,
-			name: string,
-		) => {
-			const frame = cabin.screens[screen];
-			const fit = containedFace(frame, faceWidthKm / faceHeightKm);
-			const mount = screenMount(frame);
-			mount.name = name;
-			mount.scale.setScalar(fit.widthKm / faceWidthKm);
-			cockpit.add(mount);
-			return mount;
-		};
-		const scannerMount = mountOn(
+
+		const routes = routeCockpitSources(cabin.screens, [
 			"radar",
-			SCANNER_FACE_KM[0],
-			SCANNER_FACE_KM[1],
-			"scanner-mount",
-		);
-		const flightMount = mountOn(
 			"flight",
-			INSTRUMENT_FACE_KM[0],
-			INSTRUMENT_FACE_KM[1],
-			"flight-mount",
-		);
-		const targetMount = mountOn(
 			"target",
-			INSTRUMENT_FACE_KM[0],
-			INSTRUMENT_FACE_KM[1],
-			"target-mount",
+			"fallback",
+		]);
+		const routeFrame = (name: string) => {
+			const route = routes.get(name);
+			if (!route) throw new Error(`Missing cockpit source route: ${name}`);
+			return route.frame;
+		};
+		this.cockpit.text = new CockpitReadouts(
+			cockpit,
+			cabin.screens,
+			routeFrame("fallback"),
 		);
-		this.buildScannerAssembly(scannerMount, flightMount, targetMount, inset);
-		this.buildHologramSystem(scannerMount);
+		const scannerFrame = routeFrame("radar");
+		const scannerMount = screenMount(scannerFrame);
+		scannerMount.name = "scanner-hardware-mount";
+		scannerMount.scale.setScalar(scannerFrame.widthKm / SCANNER_FACE_KM[0]);
+		cockpit.add(scannerMount);
+		this.buildScannerAssembly(scannerMount, inset, {
+			radar: scannerFrame,
+			flight: routeFrame("flight"),
+			target: routeFrame("target"),
+		});
+		this.buildHologramSystem(
+			scannerMount,
+			scannerFrame.widthKm / scannerFrame.heightKm,
+		);
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
 		// passes; the screens and labels are `MeshBasicMaterial` and fall out.
@@ -10545,60 +10353,46 @@ class Game {
 	/** Build the scanner face, the two readout faces and the throttle hardware. */
 	private buildScannerAssembly(
 		scannerMount: THREE.Group,
-		flightMount: THREE.Group,
-		targetMount: THREE.Group,
 		inset: THREE.MeshStandardMaterial,
+		frames: { radar: ScreenFrame; flight: ScreenFrame; target: ScreenFrame },
 	) {
-		const scannerCanvas = document.createElement("canvas");
-		scannerCanvas.width = 800;
-		scannerCanvas.height = 400;
-		this.cockpit.scannerCtx = scannerCanvas.getContext(
-			"2d",
-		) as CanvasRenderingContext2D;
-		this.cockpit.scannerTexture = new THREE.CanvasTexture(scannerCanvas);
-		this.cockpit.scannerTexture.colorSpace = THREE.SRGBColorSpace;
+		const scannerFace = cockpitCanvasFace({
+			frame: frames.radar,
+			name: "scanner",
+			width: 800,
+			height: Math.max(
+				1,
+				Math.round((800 * frames.radar.heightKm) / frames.radar.widthKm),
+			),
+		});
+		this.cockpit.scannerCtx = scannerFace.ctx;
+		this.cockpit.scannerTexture = scannerFace.texture;
 		this.paintScannerBackground();
-		const scanner = new THREE.Mesh(
-			new THREE.PlaneGeometry(...SCANNER_FACE_KM),
-			new THREE.MeshBasicMaterial({
-				map: this.cockpit.scannerTexture,
-				polygonOffset: true,
-				polygonOffsetFactor: -1,
-				polygonOffsetUnits: -1,
-			}),
-		);
-		scanner.name = "scanner";
-		scanner.position.y = 0.00108;
-		scanner.rotation.x = -Math.PI / 2;
-		scannerMount.add(scanner);
-		const makeInstrument = (name: string, mount: THREE.Group) => {
-			const canvas = document.createElement("canvas");
-			canvas.width = 512;
-			canvas.height = 256;
-			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-			const texture = new THREE.CanvasTexture(canvas);
-			texture.colorSpace = THREE.SRGBColorSpace;
-			const face = new THREE.Mesh(
-				new THREE.PlaneGeometry(...INSTRUMENT_FACE_KM),
-				new THREE.MeshBasicMaterial({
-					map: texture,
-					transparent: true,
-					depthWrite: false,
-				}),
-			);
-			face.name = name;
-			face.position.y = 0.001;
-			face.rotation.x = -Math.PI / 2;
-			mount.add(face);
+		this.cockpit.text.root.add(scannerFace.mount);
+		const makeInstrument = (
+			name: string,
+			frame: ScreenFrame,
+			mountName: string,
+		) => {
+			const { ctx, texture, mount } = cockpitCanvasFace({
+				frame,
+				name,
+				width: 512,
+				height: Math.max(1, Math.round((512 * frame.heightKm) / frame.widthKm)),
+			});
+			mount.name = mountName;
+			this.cockpit.text.root.add(mount);
 			return { ctx, texture, primaryText: "", secondaryText: new TextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument(
 			"flight-instrument",
-			flightMount,
+			frames.flight,
+			"flight-mount",
 		);
 		this.cockpit.targetInstrument = makeInstrument(
 			"target-instrument",
-			targetMount,
+			frames.target,
+			"target-mount",
 		);
 		const throttleTrack = new THREE.Mesh(
 			cockpitForm(0.0022, 0.0014, 0.014),
@@ -10622,9 +10416,10 @@ class Game {
 	}
 
 	/** Create the static radar geometry and the reusable live-contact pool. */
-	private buildHologramSystem(scannerMount: THREE.Group) {
+	private buildHologramSystem(scannerMount: THREE.Group, aspect: number) {
 		const root = new THREE.Group();
 		root.name = "scanner-hologram";
+		root.scale.z = SCANNER_FACE_KM[0] / SCANNER_FACE_KM[1] / aspect;
 		root.position.y = 0.0013;
 		scannerMount.add(root);
 		const hologramMaterial = new THREE.LineBasicMaterial({
@@ -10821,54 +10616,15 @@ class Game {
 		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${targetSecondary}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
-		const paint = (
-			instrument: Instrument,
-			title: string,
-			primary: string,
-			secondary: string,
-			accent: string,
-			designation = "",
-		) => {
-			const { ctx, secondaryText: raster } = instrument;
-			const { width, height } = ctx.canvas;
-			ctx.clearRect(0, 0, width, height);
-			ctx.fillStyle = "rgba(1, 8, 11, .9)";
-			ctx.fillRect(0, 0, width, height);
-			ctx.strokeStyle = accent;
-			ctx.globalAlpha = 0.72;
-			ctx.lineWidth = 4;
-			ctx.strokeRect(12, 12, width - 24, height - 24);
-			ctx.globalAlpha = 1;
-			ctx.fillStyle = accent;
-			ctx.font = "22px ui-monospace, monospace";
-			ctx.fillText(title, 28, 46);
-			if (designation) ctx.fillText(designation, 28, 78);
-			let primarySize = 42;
-			const primaryWidth = width - 56;
-			ctx.font = `${primarySize}px ui-monospace, monospace`;
-			while (
-				primarySize > 24 &&
-				ctx.measureText(primary).width > primaryWidth
-			) {
-				primarySize -= 1;
-				ctx.font = `${primarySize}px ui-monospace, monospace`;
-			}
-			ctx.fillStyle = "#e7f6ff";
-			ctx.fillText(primary, 28, 128);
-			instrument.primaryText = primary;
-			raster.setInstrumentSecondary(secondary, accent, width);
-			ctx.font = raster.font;
-			ctx.fillStyle = accent;
-			ctx.fillText(secondary, 28, 192);
-		};
-		paint(
+
+		paintCockpitInstrument(
 			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
 		);
-		paint(
+		paintCockpitInstrument(
 			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
@@ -18655,6 +18411,7 @@ class Game {
 				performance.now() - renderStartedAt,
 			);
 		this.drawMarkers(camPos);
+		this.cockpit.text.flush();
 		this.frames++;
 	}
 
@@ -20794,8 +20551,14 @@ class Game {
 		ctx.textAlign = "center";
 		ctx.fillStyle = FIRST_DAY_CONTROLS_FILL;
 		const top = Math.round(h * FIRST_DAY_CONTROLS_TOP);
-		for (const [i, text] of lines.entries())
-			ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
+		if (this.view === "cockpit")
+			this.cockpit.text.write(
+				"controls",
+				lines.map((text) => ({ text, fill: FIRST_DAY_CONTROLS_FILL })),
+			);
+		else
+			for (const [i, text] of lines.entries())
+				ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
 		ctx.restore();
 		this.firstDayControlsShown = lines;
 	}
@@ -21580,249 +21343,38 @@ class Game {
 		});
 	}
 
-	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
+	private drawFlightFloor() {
 		const cells = this.floorCells();
-		const courseRow = courseCue(this.courseCueState());
-
-		// **Fitted to the widest reading the strip can take, not to this one.**
-		// Sized to the live values it re-centred whenever a digit changed, and
-		// the fit taken on a full tank — where the regeneration suffix is
-		// absent — was a fifth too narrow for the run drawn a second later. At
-		// 390 px that clipped both ends, and the check measuring the incidental
-		// run passed.
-		const available = w - 2 * FLOOR_MARGIN_PX;
-		if (this.floorFit?.width !== w) {
-			// **Solved rather than searched.** The step-down loop ran up to
-			// nineteen full measurements on every distinct canvas width, and a
-			// resize drag missed on every frame and appended to a map nothing
-			// evicted. Text width is very nearly linear in the type size, so one
-			// measurement gives the ratio; the second confirms it, and the
-			// residue is recorded rather than drawn over.
-			// The handle's own copy, not a second derivation with the same
-			// arguments — a third parameter would otherwise have to be threaded
-			// to two call sites that must agree.
-			const widestCells = FLIGHT_FLOOR_LABELS.map((label) => ({
-				label,
-				value: this.floorWidest[label],
+		const line = (cells: readonly FloorCell[]) => {
+			const runs = cells.map((cell, i) => ({
+				text:
+					[cell.label, cell.value].filter(Boolean).join(" ") +
+					(i < cells.length - 1 ? "   " : ""),
+				fill: FLOOR_TONE_FILL[cell.tone],
 			}));
-			// **Both runs on the floor are fitted, not just the strip.** The
-			// course row is centred on the same axis and drawn at the same
-			// scale, so a solve that ignored it would fit one instrument and
-			// clip the other — which is #92's own failure with a second run
-			// added to the floor.
-			const widestCourse = [
-				{ label: COURSE_CUE_LABEL, value: this.courseWidest },
-			];
-			// And the duel row (#324), for the same reason: a third run on the
-			// same axis at the same scale.
-			// The duel band's widest rows, in combat and out of it (#932):
-			// `duelBandWidestRows` composes them by `duelBandCells`' own rule,
-			// so SHD, HEAT and SCOOPING are never fitted as one row.
-			const widestDuelRows = DUEL_BAND_WIDEST_ROWS;
-			const groups = this.fireGroups;
-			const widestGroup = groups.map((group, index) => ({
-				label: "",
-				value: group.label + " · " + (index + 1) + "/" + groups.length,
-			}));
-			if (!widestGroup.length)
-				widestGroup.push({ label: "", value: "NO WEAPONS" });
-			const runAt = (scale: number) =>
-				Math.max(
-					floorRunWidths(ctx, widestCells, scale).total,
-					floorRunWidths(ctx, widestCourse, scale).total,
-					...widestDuelRows.flatMap((row) =>
-						widestGroup.map(
-							(group) => floorRunWidths(ctx, [...row, group], scale).total,
-						),
-					),
-				);
-			const atOne = runAt(1);
-			const solved = Math.max(
-				FLOOR_MIN_SCALE,
-				Math.min(1, available / Math.max(1, atOne)),
-			);
-			// Rounded down to a step so a one-pixel viewport change does not
-			// re-lay the strip out at an imperceptibly different size.
-			const stepped = Math.max(FLOOR_MIN_SCALE, Math.floor(solved * 50) / 50);
-			const fitted = runAt(stepped);
-			this.floorFit = {
-				width: w,
-				scale: stepped,
-				// **The clamp fails open, and says so.** `FLOOR_MIN_SCALE` is a
-				// floor on legibility, so a viewport too narrow for the widest
-				// run at that size draws anyway — the alternative is a floor
-				// instrument that vanishes. What it must not do is fail open
-				// *silently*: the overflow is recorded, and the browser check
-				// requires it to be zero at every shipped viewport.
-				overflowPx: Math.max(0, fitted - available),
-			};
-		}
-		const { scale } = this.floorFit;
-		const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
-		const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
-		const labelGap = FLOOR_LABEL_GAP_PX * scale;
-		const cellGap = FLOOR_CELL_GAP_PX * scale;
-		const { widths, labelWidths, total } = floorRunWidths(ctx, cells, scale);
-		// The three typography arguments are identical at both call sites and
-		// come from one fit solve, so they travel together rather than as three
-		// of eight positionals a reader has to align.
-		const floorType = { labelGap, labelFont, valueFont };
-
-		const glassBottomY = h * GLASS_BOTTOM_FRACTION;
-		const baselineY =
-			glassBottomY - FLOOR_STRIP_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
-		let x = (w - total) / 2;
-		const boxes: FloorBox[] = [];
-		ctx.save();
-		ctx.textAlign = "left";
-		for (const [i, cell] of cells.entries()) {
-			// Every floor box states its own band, so nothing sampling one keeps
-			// a glyph height of its own.
-			boxes.push(
-				floorBox(
-					cell.label,
-					x,
-					widths[i],
-					glassBottomY - FLOOR_STRIP_HEIGHT_PX,
-				),
-			);
-			drawFloorCell(
-				ctx,
-				cell,
-				{ x, baselineY, labelWidth: labelWidths[i] },
-				floorType,
-			);
-			x += widths[i] + cellGap;
-		}
-		// §8.3's course row, above the strip and on the same centre axis.
-		//
-		// **Drawn from the same run-measuring pass as the strip**, so the two
-		// cannot come to be laid out two ways; it is one cell in the strip's own
-		// label/value/tone grammar, in its own band, rather than a fifth cell
-		// (#117 D1). With no course it is absent, and absence here moves nothing
-		// below it (#117 D2).
-		// One painter for every centred row above the strip: measure the run,
-		// centre it, box it in its band, paint each cell. The course row and
-		// #324's duel row were this block twice.
-		let tempPlate: FloorBox | null = null;
-		let scoopPlate: FloorBox | null = null;
-		const duelPlates: FloorBox[] = [];
-		const drawBandRow = (
-			rowCells: FloorCell[],
-			label: string,
-			band: number,
-			plates: readonly DuelBandPlate[] = [],
-		): FloorBox => {
-			const run = floorRunWidths(ctx, rowCells, scale);
-			let rowX = (w - run.total) / 2;
-			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
-			// **A plate behind each cell of the duel band** (#945, the principal's
-			// ruling): the hull-temperature cell's plate since #931, #597's
-			// docking-notice plate, now under SHD, HEAT and the armed group too, so
-			// the band reads over a star disc. Short of half a cell gap each side,
-			// so a plate never reaches the next cell's ink and two plates never
-			// touch, and the fit is the run's as before. TEMP and the scoop's line
-			// (#932) share one plate; `duelBandPlates` owns which cells go
-			// together. Drawn before any cell, so no ink is under a plate.
-			const cellX: number[] = [];
-			for (let i = 0, x = rowX; i < rowCells.length; i++) {
-				cellX.push(x);
-				x += run.widths[i] + cellGap;
-			}
-			const pad = (cellGap / 2) * 0.8;
-			for (const span of plates) {
-				const plateFrom = cellX[span.from];
-				const plateTo = cellX[span.to] + run.widths[span.to];
-				const plate = floorBox(
-					span.label,
-					plateFrom - pad,
-					plateTo - plateFrom + 2 * pad,
-					box.top + FLOOR_TEMP_PLATE_INSET * box.height,
-				);
-				plate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
-				ctx.fillStyle = PROMPT_PLATE_FILL;
-				ctx.fillRect(plate.x, plate.top, plate.width, plate.height);
-				duelPlates.push(plate);
-				const spanned = rowCells.slice(span.from, span.to + 1);
-				if (spanned.some((c) => c.label === HULL_TEMP_LABEL)) tempPlate = plate;
-				if (spanned.some((c) => c.label === SCOOP_LABEL)) scoopPlate = plate;
-			}
-			for (const [i, cell] of rowCells.entries()) {
-				drawFloorCell(
-					ctx,
-					cell,
-					{ x: rowX, baselineY: box.y, labelWidth: run.labelWidths[i] },
-					floorType,
-				);
-				rowX += run.widths[i] + cellGap;
-			}
-			return box;
+			return { text: runs.map((run) => run.text).join(""), runs };
 		};
-		const courseBox =
-			courseRow === null
-				? null
-				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
-		// The armed group stays readable in peace; combat adds shields and heat.
-		// The scoop's line shows only out of combat (#932): `duelBandCells`
-		// owns which, so the fit above takes the row as one or the other.
-		const duelRow: FloorCell[] = [
-			...duelBandCells({
-				fighting: this.duelRowShown(),
-				condition: this.condition,
-				scooping: this.scooping,
-				fuelLy: this.commander.fuelLy,
-			}),
-			{
-				label: "",
-				value: this.armedFireGroup.label(this.fireGroups),
-				tone: "passive",
-			},
-		];
-		const duelBox = drawBandRow(
-			duelRow,
-			DUEL_ROW_LABELS.join(" "),
-			DUEL_BAND,
-			duelBandPlates(duelRow),
-		);
-		// **The strip's own save, closed once for both runs.** It was closed at
-		// the end of the cell loop until the course block was pasted in there
-		// with a save/restore pair of its own, which read as the closing one —
-		// so `ctx.save()` ran every frame with no match, pushing an entry onto
-		// the 2D state stack and leaking `textAlign`, the value font and the
-		// last cell's fill into every later draw on the overlay.
-		ctx.restore();
-
-		this.floorRender = {
-			cells,
-			boxes,
-			// **Written by the draw, from what the draw drew.** `null` is the
-			// row that was not painted, which is the state #117 D2 chose — and
-			// a record assembled beside the draw would let a probe assert a
-			// course row that never landed.
-			courseRow,
-			courseBox,
-			duelRow,
-			duelBox,
-			duelPlates,
-			tempPlate,
-			scoopPlate,
-			baselineY,
-			glassBottomY,
-			scale,
-			marginPx: FLOOR_MARGIN_PX,
-			overflowPx: this.floorFit.overflowPx,
-			// The scalars the cells were built from, stamped by the draw — so a
-			// check can compare the instrument against the ship without
-			// restating the projection that maps one to the other.
-			source: {
-				regime: this.regime,
-				spoolLeftS: this.spoolLeftS,
-				jumpChargeLeftS: this.jumpCharge.leftS,
-				throttle: this.throttle,
-				assist: this.assist,
-				chargeAu: this.chargeAu,
-			},
-		};
+		this.cockpit.text.write("status", [
+			line(cells.slice(0, 2)),
+			line(cells.slice(2)),
+		]);
+		const course = courseCue(this.courseCueState());
+		if (course) this.cockpit.text.write("course", [line([course])]);
+		this.cockpit.text.write("combat", [
+			line(
+				duelBandCells({
+					fighting: this.duelRowShown(),
+					condition: this.condition,
+					scooping: this.scooping,
+					fuelLy: this.commander.fuelLy,
+				}),
+			),
+		]);
+		this.cockpit.text.write("lasers", [
+			{ text: this.armedFireGroup.label(this.fireGroups) },
+		]);
+		this.floorRender = null;
+		return;
 	}
 
 	/**
@@ -22014,7 +21566,12 @@ class Game {
 		// the strip — or the course row #117 put above it — cannot leave this
 		// line sitting on top of either. The course band is subtracted whether
 		// or not a course is set: see `FLOOR_BANDS`.
-		ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
+		if (this.view === "cockpit")
+			this.cockpit.text.write("clearance", [
+				{ text: clearanceText, fill: String(ctx.fillStyle) },
+			]);
+		else
+			ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -22118,6 +21675,111 @@ class Game {
 		return m.behind || !m.onScreen ? null : ndcToPx(m, 1, 1);
 	}
 
+	private presentCockpitReadouts(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+	) {
+		this.drawFlightFloor();
+		const target = this.targetBody();
+		const prompt = this.cruisePrompt(
+			target ? length(sub(target.pos, this.world.ship.pos)) : null,
+		);
+		const notice =
+			this.dockingNotice?.text === prompt ? this.dockingNotice : null;
+		this.cockpit.text.write("prompt", [
+			{
+				text: prompt,
+				fill: notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL,
+			},
+		]);
+		const notices: { text: string; fill: string; alpha?: number }[] = [];
+		const arming = ejectArming(this.ejectHold);
+		for (const [value, lifeS, fill] of [
+			[
+				this.scoop,
+				SCOOP_NOTICE_S,
+				this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
+			],
+			[this.charged, CHARGE_NOTICE_S, FLOOR_TONE_FILL.action],
+			[this.ejectRefused, EJECT_REFUSED_S, FLOOR_TONE_FILL.refused],
+		] as const) {
+			if (
+				value.left > 0 &&
+				value.text &&
+				!(value === this.ejectRefused && arming !== null)
+			)
+				notices.push({
+					text: value.text,
+					fill,
+					alpha: Math.min(1, value.left / (lifeS * 0.4)),
+				});
+		}
+
+		if (arming !== null)
+			notices.push({
+				text: ejectArmingText(arming),
+				fill: FLOOR_TONE_FILL.action,
+			});
+		else if (
+			this.ejectWarningDue &&
+			!(this.ejectRefused.left > 0 && this.ejectRefused.text)
+		)
+			notices.push({
+				text: ejectWarningText(ejectPrompt(this.bindings)),
+				fill: FLOOR_TONE_FILL.action,
+			});
+		if (MINING_ON) {
+			const hold = this.minedHold();
+			this.cockpit.text.write("ore", [
+				{
+					text: `ORE ${this.minedT} T ABOARD · ${this.fragments.filter((f) => f.ore).length} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`,
+					fill: "#ffd28c",
+				},
+			]);
+			if (isRockTargetId(this.targetId))
+				this.cockpit.text.write("survey", [
+					{ text: this.surveyDesignation(this.targetId), fill: "#ffd28c" },
+				]);
+			if (this.miningNotice.left > 0)
+				notices.push({ text: this.miningNotice.text, fill: "#ffd28c" });
+		}
+		this.cockpit.text.write("notices", notices);
+		this.drawFirstDayControls(ctx, w, h);
+		this.drawMissileHud(ctx, w, h, true);
+		const director = this.directorState();
+		if (director) {
+			const text =
+				director.blocking?.text ??
+				(director.laneWait
+					? laneWaitText(director.laneWait)
+					: director.grantRemainingS === null
+						? "NO GRANT"
+						: `CLEARED · ${duration(director.grantRemainingS)} left`);
+			this.cockpit.text.write("clearance", [
+				{
+					text,
+					fill: director.blocking
+						? FLOOR_TONE_FILL.refused
+						: director.laneWait
+							? FLOOR_TONE_FILL.action
+							: FLOOR_TONE_FILL.confirmed,
+				},
+			]);
+		}
+	}
+
+	private drawReadoutNotice(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		glassBottom: number,
+		notice: Parameters<typeof drawGlassNotice>[4],
+	) {
+		if (this.view !== "cockpit")
+			drawGlassNotice(ctx, w, h, glassBottom, notice);
+	}
+
 	/**
 	 * The eject control's row on the glass (node #703): the arming line while a
 	 * hold is filling, else a standing refusal.
@@ -22155,7 +21817,7 @@ class Game {
 			// still take.
 			if (!this.ejectWarningDue) return;
 			const text = ejectWarningText(ejectPrompt(this.bindings));
-			drawGlassNotice(ctx, w, h, glassBottom, {
+			this.drawReadoutNotice(ctx, w, h, glassBottom, {
 				text,
 				alpha: 1,
 				fill: FLOOR_TONE_FILL.action,
@@ -22164,7 +21826,7 @@ class Game {
 			this.ejectWarningRender = { text };
 			return;
 		}
-		drawGlassNotice(ctx, w, h, glassBottom, {
+		this.drawReadoutNotice(ctx, w, h, glassBottom, {
 			text: line.text,
 			alpha: line.alpha,
 			fill: line.refused ? FLOOR_TONE_FILL.refused : FLOOR_TONE_FILL.action,
@@ -22205,6 +21867,7 @@ class Game {
 	 * same place whichever layer rendered it — see that module's docstring.
 	 */
 	private drawMarkers(camPos: Vec3) {
+		this.cockpit.text.begin();
 		const ctx = this.overlayCtx;
 		if (!ctx) return;
 		const w = this.overlay.width;
@@ -22221,6 +21884,7 @@ class Game {
 		this.hostileFireRender = { beam: null, rim: 0 };
 		this.ejectRender = null;
 		this.ejectWarningRender = null;
+		if (this.view === "cockpit") this.presentCockpitReadouts(ctx, w, h);
 		if (!this.flightGlassShown()) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
@@ -22323,8 +21987,12 @@ class Game {
 		// within a few pixels of each other share one marker.** A kill drops them
 		// at one point, and at any range their labels printed over each other
 		// into an unreadable smear on the first captured frame.
-		const cargoMarks: { x: number; y: number; goods: string[]; km: number }[] =
-			[];
+		const cargoMarks: {
+			x: number;
+			y: number;
+			goods: string[];
+			km: number;
+		}[] = [];
 		for (const canister of this.canisters) {
 			// The selected canister is drawn by the marker loop below, with the
 			// ring and the label every selected target gets. Drawing it here too
@@ -22341,7 +22009,12 @@ class Game {
 				near.goods.push(canister.commodity);
 				near.km = Math.min(near.km, km);
 			} else
-				cargoMarks.push({ x: at.x, y: at.y, goods: [canister.commodity], km });
+				cargoMarks.push({
+					x: at.x,
+					y: at.y,
+					goods: [canister.commodity],
+					km,
+				});
 		}
 		ctx.strokeStyle = CARGO_CONTACT_CSS;
 		ctx.fillStyle = CARGO_CONTACT_CSS;
@@ -22418,7 +22091,7 @@ class Game {
 			// reads as one event even when three land within a few seconds of
 			// each other.
 			const alpha = Math.min(1, notice.left / (lifeS * 0.4));
-			drawGlassNotice(ctx, w, h, glassBottom, {
+			this.drawReadoutNotice(ctx, w, h, glassBottom, {
 				text: notice.text,
 				alpha,
 				fill,
@@ -22558,8 +22231,7 @@ class Game {
 			}
 		this.drawDockingDirector(ctx, w, h, camPos);
 		this.drawMissileHud(ctx, w, h, shipCues);
-		if (shipCues) this.drawFlightFloor(ctx, w, h);
-		else this.floorRender = null;
+		this.floorRender = null;
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of
@@ -22594,7 +22266,7 @@ class Game {
 			// One predicate for the plate and the tone, so the two cannot disagree.
 			const notice =
 				this.dockingNotice?.text === prompt ? this.dockingNotice : null;
-			if (notice) {
+			if (notice && this.view !== "cockpit") {
 				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
 				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
 				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;
@@ -22613,14 +22285,29 @@ class Game {
 			}
 			// §4's tone: the notice's own, else the prompt's amber.
 			ctx.fillStyle = notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL;
-			ctx.fillText(prompt, x, y);
+			if (this.view === "cockpit")
+				this.cockpit.text.write("prompt", [
+					{
+						text: prompt,
+						fill: notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL,
+					},
+				]);
+			else ctx.fillText(prompt, x, y);
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
 		} else {
 			this.cockpitPrompt.reset();
 		}
 		this.drawFirstDayControls(ctx, w, h);
-		this.combatRig?.drawOverlay(ctx, w, h, this.view, this.bindings);
+		this.combatRig?.drawOverlay(
+			ctx,
+			w,
+			h,
+			this.view,
+			this.bindings,
+			(text, fill) =>
+				this.cockpit.text.append("prototype-combat", [{ text, fill }]),
+		);
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
@@ -22930,6 +22617,14 @@ class Game {
 				: []),
 			...(control.noticeUntil > now ? [control.notice] : []),
 		];
+		if (this.view === "cockpit") {
+			this.cockpit.text.write(
+				"missiles",
+				lines.map((text) => ({ text, fill: incoming ? "#ff8068" : "#b8e9ef" })),
+			);
+			this.missileRender = null;
+			return;
+		}
 		ctx.save();
 		ctx.font = "13px monospace";
 		ctx.textAlign = "center";

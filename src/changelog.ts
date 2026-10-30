@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1151 — proposed sentence; principal approval required before merge.
+	{
+		date: "2026-10-30",
+		text: "Cockpit readouts now live on the cabin’s instrument panels.",
+		node: 1151,
+	},
 	// https://github.com/jcfischer/seelite/issues/969 — sentence approved by the principal, 2026-10-27.
 	{
 		date: "2026-10-27",

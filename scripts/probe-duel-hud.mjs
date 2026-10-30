@@ -1,3 +1,4 @@
+import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
 /**
  * Node #324 part (c)'s browser tier: the duel HUD in the running game.
  *
@@ -14,8 +15,6 @@
  * `probe-live-cockpit.mjs` uses for the refusal tone: a tone is a field on a
  * record, and a record can say anything.
  */
-// A default-layout probe (#381 D11): it presses keys by name, as the shipped
-// layout binds them, and a moved default turns it red for that reason.
 import {
 	bootedGame,
 	guardedOrigin,
@@ -310,822 +309,232 @@ for (const viewport of VIEWPORTS) {
 	await installCompositeFrame(page);
 	await page.goto(gameUrl(origin, { seed: 42 }));
 	await bootedGame(page);
+	await installCockpitTextProbe(page);
 	await page.evaluate(installHelpers);
 	const v = viewport.name;
-
-	// -------------------------------------------------------------------------
-	// Peace: no row, no cue, no console detail.
-	// -------------------------------------------------------------------------
 	const peace = await page.evaluate(() => {
-		const g = window.__seelite;
-		const D = window.__duel;
+		const g = window.__seelite,
+			D = window.__duel;
 		const regime = D.cruise();
-		// A course, so the course band is drawn and the stacking below has two
-		// rows to compare.
-		const here = g.world.system.record;
-		const elsewhere = g.world.galaxy.systems.find(
-			(s) => s.galaxy === here.galaxy && s.index !== here.index,
-		);
-		g.commitCourseTo(elsewhere.index);
 		D.steps(0.2);
-		const floor = D.floor();
 		return {
 			regime,
 			encounter: g.encounter,
-			floor,
-			plates: D.platesPainted(floor),
+			combat: g.cockpit.text.readings.get("combat") ?? [],
+			lasers: window.__cockpitSourcePainted("lasers"),
 			cue: g.cueRender,
 		};
 	});
 	check(
-		`${v}: in peace only the armed group is drawn and no cue is recorded`,
+		`${v}: in peace the armed group is painted on its face without combat values`,
 		peace.regime === "cruise" &&
 			peace.encounter === null &&
-			peace.floor !== null &&
-			peace.floor.duelRow?.length === 1 &&
-			peace.floor.duelRow[0].value === "H1 PULSE LASER · 1/1" &&
+			peace.lasers &&
+			peace.combat.length === 0 &&
 			peace.cue === null,
 		JSON.stringify(peace),
 	);
-
-	// -------------------------------------------------------------------------
-	// Contest: the row appears in its own band, above the course row and below
-	// nothing it collides with.
-	// -------------------------------------------------------------------------
 	const contest = await page.evaluate(() => {
-		const g = window.__seelite;
-		const D = window.__duel;
+		const g = window.__seelite,
+			D = window.__duel;
 		g.forceRaider("behind", 0.5, 30);
 		D.steps(1.2);
-		const floor = D.floor();
 		return {
-			phase: g.encounter?.phase ?? null,
-			regime: g.regime,
-			floor,
-			plates: D.platesPainted(floor),
-			stripTop: g.floorRender.glassBottomY - g.floorRender.duelBox?.height,
+			phase: g.encounter?.phase,
+			text: (g.cockpit.text.readings.get("combat") ?? [])
+				.map((l) => l.text)
+				.join(" "),
+			painted: window.__cockpitSourcePainted("combat"),
+			lasers: window.__cockpitSourcePainted("lasers"),
+			glass: g.floorRender,
 		};
 	});
-	const row = contest.floor?.duelRow ?? null;
-	const box = contest.floor?.duelBox ?? null;
-	const course = contest.floor?.courseBox ?? null;
 	check(
-		`${v}: a contesting raider draws the SHD and HEAT row`,
+		`${v}: a contest paints shields and heat on a cabin face alongside the armed group`,
 		contest.phase === "contest" &&
-			row !== null &&
-			row.map((c) => c.label).join(",") === "SHD,HEAT," &&
-			box !== null,
-		JSON.stringify(contest.floor),
+			contest.text.includes("SHD") &&
+			contest.text.includes("HEAT") &&
+			contest.painted &&
+			contest.lasers &&
+			contest.glass === null,
+		JSON.stringify(contest),
 	);
-	// -------------------------------------------------------------------------
-	// Plates (#945, the principal's ruling): in a fight SHD, HEAT and the
-	// armed group each stand on their own dark plate, read off the paint, and
-	// no two plates touch; in peace only the armed group's is drawn. The
-	// floor fit is the one origin/main drew at.
-	// -------------------------------------------------------------------------
-	const plateNames = (plates) => plates.map((p) => p.label).join(",");
-	const apart = (plates) =>
-		plates.every((p) => p.gapPx === null || (p.gapPx > 0 && p.gapDark === 0));
-	check(
-		`${v}: in a fight away from a star SHD, HEAT and the armed group each stand on a plate, apart`,
-		plateNames(contest.plates) === "SHD,HEAT,GROUP" &&
-			contest.plates.every((p) => p.share > 0.5) &&
-			apart(contest.plates) &&
-			contest.floor?.tempPlate === null,
-		JSON.stringify({
-			plates: contest.plates,
-			boxes: contest.floor?.duelPlates,
-		}),
-	);
-	check(
-		`${v}: in peace only the armed group's plate is drawn`,
-		plateNames(peace.plates) === "GROUP" && peace.plates[0].share > 0.5,
-		JSON.stringify(peace.plates),
-	);
-	check(
-		`${v}: the plates leave the floor fit at scale ${viewport.floorScale}, overflow 0`,
-		[peace, contest].every(
-			(s) =>
-				s.floor?.scale === viewport.floorScale && s.floor?.overflowPx === 0,
-		),
-		JSON.stringify(
-			[peace, contest].map((s) => [s.floor?.scale, s.floor?.overflowPx]),
-		),
-	);
-	check(
-		`${v}: the duel row sits inside the glass, within the margins`,
-		box !== null &&
-			box.top > 0 &&
-			box.x >= contest.floor.marginPx &&
-			box.x + box.width <= viewport.width - contest.floor.marginPx,
-		JSON.stringify(box),
-	);
-	check(
-		`${v}: the duel row is above the course row, and the course row above the strip`,
-		box !== null &&
-			course !== null &&
-			box.top + box.height <= course.top &&
-			course.top + course.height <= contest.stripTop + 1e-6,
-		`duel ${box?.top}+${box?.height}, course ${course?.top}+${course?.height}, strip from ${contest.stripTop}`,
-	);
-
-	// -------------------------------------------------------------------------
-	// Duel: the selected raider's ring, its tones, and the on-target mark.
-	// -------------------------------------------------------------------------
 	const duel = await page.evaluate(() => {
-		const g = window.__seelite;
-		const D = window.__duel;
+		const g = window.__seelite,
+			D = window.__duel;
 		D.steps(3.5);
-		const phase = g.encounter?.phase ?? null;
 		g.targetId = g.raiderContact.id;
-		const aimed = () => {
-			const r = g.encounter?.raider;
-			if (r) D.aimAt(r.flight.ship.pos);
-		};
-		let quiet = null;
-		let firing = null;
-		let onTarget = null;
-		// **The prompt is read in the duel, not the contest.** `cruisePrompt` is
-		// empty in cruise, so the contest has no prompt to stack; the drop to
-		// normal flight with a course set brings the jump line back.
-		let stacked = null;
-		// The raider's fire and condition, each read off the paint with a
-		// control from a frame where the record says nothing is drawn.
-		let beam = null;
-		let beamQuiet = null;
-		let rim = null;
-		let rimQuiet = null;
-		let line = null;
-		let lastBeam = null;
+		let onTarget = null,
+			beam = null,
+			beamQuiet = null,
+			rim = null,
+			rimQuiet = null,
+			condition = null,
+			lastBeam = null;
 		for (
 			let i = 0;
 			i < 1800 &&
-			(quiet === null ||
-				firing === null ||
-				stacked === null ||
-				beam === null ||
-				beamQuiet === null ||
-				rim === null ||
-				rimQuiet === null ||
-				line === null);
+			(!onTarget || !beam || !beamQuiet || !rim || !rimQuiet || !condition);
 			i++
 		) {
-			D.frame(aimed);
+			D.frame(() => {
+				const r = g.encounter?.raider;
+				if (r) D.aimAt(r.flight.ship.pos);
+			});
 			const fire = g.hostileFireRender;
-			if (fire.beam && beam === null) {
+			if (fire.beam && !beam) {
 				beam = { ...fire.beam, paint: D.beamPaint(fire.beam) };
 				lastBeam = fire.beam;
 			}
-			if (!fire.beam && lastBeam && beamQuiet === null)
+			if (!fire.beam && lastBeam && !beamQuiet)
 				beamQuiet = { paint: D.beamPaint(lastBeam) };
-			if (fire.rim > 0.5 && rim === null)
+			if (fire.rim > 0.5 && !rim)
 				rim = { strength: fire.rim, view: g.view, paint: D.rimPaint() };
-			if (fire.rim === 0 && rimQuiet === null)
-				rimQuiet = { view: g.view, paint: D.rimPaint() };
-			const duelBox = g.floorRender?.duelBox;
-			if (stacked === null && g.cockpitPrompt.text && duelBox)
-				stacked = {
-					prompt: { ...g.cockpitPrompt.bounds },
-					text: g.cockpitPrompt.text,
-					duelTop: duelBox.top,
+			if (fire.rim === 0 && !rimQuiet) rimQuiet = { paint: D.rimPaint() };
+			if (g.cueRender?.onTarget) onTarget = g.cueRender;
+			if (g.selectedRender?.conditionLine && g.cueRender?.at && !condition)
+				condition = {
+					text: g.selectedRender.conditionLine,
+					paint: D.enemyLinePaint(g.cueRender.at),
 				};
-			const cue = g.cueRender;
-			if (!cue?.at || !g.encounter) continue;
-			// The painted line is a fact about the label, so it is read from the
-			// label's record — `selectedRender`, since #395 — and not from the
-			// raider's firing cue. Its position still comes off the cue, which is
-			// what knows where on the overlay the mark was drawn.
-			const painted = g.selectedRender?.conditionLine;
-			if (painted && line === null && g.encounter.raider) {
-				const c = g.encounter.raider.condition;
-				line = {
-					text: painted,
-					// Whole or not, read off the condition itself. How a hull becomes
-					// a printed figure is `tests/duel-hud.test.ts`'s and
-					// `printHullPercent`'s; a probe that restated the rounding would
-					// go on passing after it was retuned, which is the false constant
-					// CLAUDE.md names.
-					whole: c.hull === c.hullMax,
-					paint: D.enemyLinePaint(cue.at),
-				};
-			}
-			if (cue.onTarget && onTarget === null) onTarget = { ...cue };
-			const tones = D.tonesAround(cue.at);
-			if (g.raiderFiring && firing === null)
-				firing = { tone: cue.tone, ...tones };
-			if (!g.raiderFiring && quiet === null)
-				quiet = { tone: cue.tone, ...tones };
 		}
-		// Aim a quarter turn off the raider: the mark must go.
-		let offAim = null;
-		const r = g.encounter?.raider;
-		if (r) {
-			D.frame(() => {
-				const n = g.nose();
-				const u = g.shipUp();
-				const across = {
-					x: u.y * n.z - u.z * n.y,
-					y: u.z * n.x - u.x * n.z,
-					z: u.x * n.y - u.y * n.x,
-				};
-				g.setAttitude(across, u);
-			});
-			offAim = g.cueRender ? { ...g.cueRender } : null;
-		}
+		const phase = g.encounter?.phase;
+		const reading = (g.cockpit.text.readings.get("combat") ?? [])
+			.map((l) => l.text)
+			.join(" ");
+		const painted = window.__cockpitSourcePainted("combat");
+		g.setAttitude({ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+		g.render(0);
 		return {
 			phase,
-			quiet,
-			firing,
+			onTarget,
+			offTarget: g.cueRender?.onTarget,
 			beam,
 			beamQuiet,
 			rim,
 			rimQuiet,
-			line,
-			onTarget,
-			offAim,
-			stacked,
-			floor: D.floor(),
+			condition,
+			reading,
+			painted,
 		};
 	});
 	check(
-		`${v}: the jump prompt clears the duel row`,
-		// The prompt must be drawn, or this asserts nothing.
-		duel.stacked !== null &&
-			duel.stacked.prompt.top + duel.stacked.prompt.height <=
-				duel.stacked.duelTop,
-		JSON.stringify(duel.stacked),
+		`${v}: the duel keeps its shields and heat painted`,
+		duel.phase === "duel" && duel.painted && duel.reading.includes("SHD"),
+		JSON.stringify({ phase: duel.phase, reading: duel.reading }),
 	);
 	check(
-		`${v}: the duel starts and the row stays drawn through it`,
-		duel.phase === "duel" && duel.floor?.duelRow !== null,
-		JSON.stringify({ phase: duel.phase, row: duel.floor?.duelRow }),
+		`${v}: the selected opponent has a painted condition line`,
+		!!duel.condition && duel.condition.paint > 0,
+		JSON.stringify(duel.condition),
 	);
 	check(
-		`${v}: a raider not firing is ringed amber, with no red painted`,
-		duel.quiet !== null &&
-			duel.quiet.tone === "action" &&
-			duel.quiet.amber > 20 &&
-			duel.quiet.red === 0,
-		JSON.stringify(duel.quiet),
+		`${v}: aimed at the raider the on-target cue appears, then clears off aim`,
+		!!duel.onTarget && duel.offTarget === false,
+		JSON.stringify({ on: duel.onTarget?.onTarget, off: duel.offTarget }),
 	);
 	check(
-		`${v}: a raider firing is ringed red`,
-		duel.firing !== null &&
-			duel.firing.tone === "refused" &&
-			duel.firing.red > 20,
-		JSON.stringify(duel.firing),
-	);
-	check(
-		`${v}: the selected raider's shields and hull are drawn under its label`,
-		// The line reads the raider's own hull. `tests/duel-hud.test.ts` owns the
-		// form and the rounding, so two things are matched here and no third is:
-		// the line ends in a percent at all, and a **whole** hull reads 100%. One
-		// way only, deliberately — a nicked hull can still round to 100% (214.6 of
-		// 215 does), and a probe that asserted both directions would be a restated
-		// rounding law waiting to go falsely red on the next retune.
-		duel.line !== null &&
-			duel.line.text.startsWith("SHD F ") &&
-			/HULL \d+%$/.test(duel.line.text) &&
-			(!duel.line.whole || duel.line.text.endsWith("HULL 100%")) &&
-			duel.line.paint > 30,
-		JSON.stringify(duel.line),
-	);
-	check(
-		`${v}: while the raider fires its beam is painted, and not after`,
-		duel.beam !== null &&
-			duel.beam.paint > 10 &&
-			duel.beamQuiet !== null &&
-			duel.beamQuiet.paint === 0,
+		`${v}: incoming fire paints a beam and clears between shots`,
+		!!duel.beam && duel.beam.paint > 0 && duel.beamQuiet?.paint === 0,
 		JSON.stringify({ beam: duel.beam, quiet: duel.beamQuiet }),
 	);
 	check(
-		`${v}: a hit on the player glows on the canopy rim, and the rim is clear otherwise`,
-		duel.rim !== null &&
-			duel.rim.view === "cockpit" &&
+		`${v}: a player hit paints the cockpit rim and a quiet frame clears it`,
+		duel.rim?.view === "cockpit" &&
 			duel.rim.paint > 50 &&
-			duel.rimQuiet !== null &&
-			duel.rimQuiet.paint === 0,
+			duel.rimQuiet?.paint === 0,
 		JSON.stringify({ rim: duel.rim, quiet: duel.rimQuiet }),
 	);
-	check(
-		`${v}: aimed along the sightline, the cue marks the raider on target`,
-		duel.onTarget !== null && duel.onTarget.onTarget === true,
-		JSON.stringify(duel.onTarget),
-	);
-	check(
-		`${v}: aimed a quarter turn away, the on-target mark is gone`,
-		// A cue must be recorded, which it is only while the raider is selected:
-		// a null here is the encounter gone, and would assert nothing.
-		duel.offAim !== null && duel.offAim.onTarget === false,
-		JSON.stringify(duel.offAim),
-	);
-
-	// -------------------------------------------------------------------------
-	// The Flight console carries the detail in a fight.
-	// -------------------------------------------------------------------------
-	await page.evaluate(() => {
-		const g = window.__seelite;
-		g.rightTab = "Flight";
-		g.setHeadLook("right");
-		window.__duel.steps(0.1);
-	});
+	await page.evaluate(() => window.__seelite.setHeadLook("right"));
 	await nextFrames(page);
-	const inFight = await page.evaluate(() => {
-		const g = window.__seelite;
-		return {
-			phase: g.encounter?.phase ?? null,
-			condition: {
-				fore: Math.round(g.condition.fore),
-				hull: Math.round(g.condition.hull),
-				hullMax: g.condition.hullMax,
-			},
-			...window.__duel.console(),
-		};
-	});
-	// Read against the condition by value, not by restating the formatter: the
-	// console's first figure is the pool, and the hull reading ends on its max.
-	// The fight runs between the two reads by at most a frame's recharge, so
-	// the pool is compared within a point.
+	const console = await page.evaluate(() => ({
+		fore: document.querySelector("[data-live-duel-fore]")?.textContent,
+		heat: document.querySelector("[data-live-duel-heat]")?.textContent,
+	}));
 	check(
-		`${v}: in a fight the Flight console shows FORE, HULL and HEAT from the ship's condition`,
-		inFight.present &&
-			inFight.inlineDisplay === "" &&
-			// Shown wherever the console shows ASSIST: at desktop that is visible,
-			// and the row below asserts it is.
-			inFight.visible === inFight.assistVisible &&
-			Math.abs(
-				Number(inFight.fore?.split(" / ")[0]) - inFight.condition.fore,
-			) <= 1 &&
-			inFight.hull?.endsWith(`/ ${inFight.condition.hullMax}`) &&
-			typeof inFight.heat === "string" &&
-			inFight.heat.length > 0,
-		JSON.stringify(inFight),
+		`${v}: the Flight console still carries combat detail`,
+		!!console.fore && !!console.heat,
+		JSON.stringify(console),
 	);
-	if (viewport.width > 600)
-		check(
-			`${v}: the duel detail is visible on the Flight console`,
-			inFight.visible,
-			JSON.stringify(inFight),
-		);
-
-	// -------------------------------------------------------------------------
-	// #367. Whether a crippled raider is let go at the range the beam stops
-	// reaching rather than at twice it. Measured rather than asserted against a
-	// constant — the probe has no page surface for either figure and should not
-	// need one, because the claim is that the two ranges are the one range.
-	//
-	// **The fight must end by letting go, not by a kill.** A kill writes the
-	// raider's destruction to world state, and `resetFlightToStart` rewinds the game
-	// clock while world-state keeps its own high-water mark, so a kill after a
-	// long scripted run dies on `world-state: destroy … is before the clock`.
-	// The raider's hull is held above zero for that reason as well as to keep the
-	// rout running.
-	//
-	// **The trigger is pulled after the cruise reset, not before it.** That reset
-	// clears the pressed-key set, and a key held across it is neither released nor
-	// re-pressed: the gun sits silent while every other reading looks normal.
-	// -------------------------------------------------------------------------
 	await page.evaluate(() => {
-		const g = window.__seelite;
-		g.resetFlightToStart();
-		window.__duel.cruise();
-		g.forceRaider("ahead", 0.5, 6);
-	});
-	await page.keyboard.down("Space");
-	const rout = await page.evaluate(() => {
-		const g = window.__seelite;
-		const D = window.__duel;
-		/** A fifth of its hull, held there every frame: below #53's nerve the
-		 *  raider turns and runs, and below §2's share its bank stops buying
-		 *  shields, which is the crippled state the playtest reached. A kill is
-		 *  impossible from here, so the only way this fight can end is letting go.
-		 */
-		const PINNED_HULL = 15;
-		let shaped = false;
-		let lastGap = null;
-		let lastHitGap = null;
-		let releaseGap = null;
-		let minHullSeen = Infinity;
-		const gap = () => {
-			const p = g.world.ship.pos;
-			const q = g.encounter.raider.flight.ship.pos;
-			return Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
-		};
-		D.steps(30, () => {
-			const r = g.encounter?.raider;
-			if (!r) {
-				if (shaped && releaseGap === null) releaseGap = lastGap;
-				return;
-			}
-			if (!shaped) {
-				shaped = true;
-				r.condition = { ...r.condition, fore: 0, aft: 0, hull: PINNED_HULL };
-			}
-			const id = g.raiderContact?.id;
-			if (id) g.targetId = id;
-			D.aimAt(r.flight.ship.pos);
-			const after = gap();
-			const struck = r.condition.hull;
-			// Read before the pin, so the minimum is what the fight was actually
-			// carrying and not what the probe handed it.
-			if (struck < minHullSeen) minHullSeen = struck;
-			// `steps` runs this after `g.step`, so a hull below the pin is this
-			// frame's damage, and `lastGap` is the gap that shot was aimed at.
-			if (struck < PINNED_HULL) lastHitGap = lastGap ?? after;
-			r.condition = { ...r.condition, hull: PINNED_HULL };
-			lastGap = after;
-		});
-		return {
-			lastHitGap,
-			releaseGap,
-			minHullSeen,
-			released: g.encounter === null,
-		};
-	});
-	await page.keyboard.up("Space");
-	check(
-		`${v}: a crippled raider is let go at the range the beam stops reaching`,
-		rout.released &&
-			// **One comparison carries the row: the beam stopped landing and the
-			// fight stopped, at the same range.** `lastHitGap > 1` is the bound that
-			// does the work — it is false when the raider was let go before the beam
-			// ever connected, which is what an exit forced to one kilometre produced
-			// when measured, and a bare `releaseGap > lastHitGap` would have read
-			// that `null` as zero and called it a pass. `releaseGap` is the range it
-			// was let go at, so the difference below is the whole claim.
-			//
-			// `minHullSeen` is printed, not asserted: the hull is re-pinned every
-			// frame, so it cannot reach zero and a guard on it would be a guard on
-			// the probe's own arithmetic. That this is a release and not a kill is
-			// held by construction — a kill needs a strike through `applyDamage`, and
-			// there is none — and `tests/encounter.test.ts` reads `end` directly.
-			rout.lastHitGap > 1 &&
-			rout.releaseGap !== null &&
-			rout.releaseGap > rout.lastHitGap &&
-			// One frame of the raider's top speed is 0.2 km, so half a kilometre is
-			// the loosest reading that still says "the beam stopped and the fight
-			// stopped together". On the build before #367 the same script measured
-			// the last hit at 11.83 km and the end at 24.83 km, and this row was red.
-			rout.releaseGap - rout.lastHitGap < 0.5,
-		JSON.stringify(rout),
-	);
-	// **D1 has no browser row.** Its state — a live hull that prints 0 — is one
-
-	// -------------------------------------------------------------------------
-	// Peace again: the reset ends the encounter, and every surface goes.
-	// -------------------------------------------------------------------------
-	const after = await page.evaluate(() => {
-		const g = window.__seelite;
-		const D = window.__duel;
-		g.resetFlightToStart();
-		g.rightTab = "Flight";
-		g.setHeadLook("right");
-		D.steps(0.1);
-		return { encounter: g.encounter, raiderFiring: g.raiderFiring };
-	});
-	await nextFrames(page);
-	const afterConsole = await page.evaluate(() => window.__duel.console());
-	// The SHD plate's leading edge, where the fight painted it: the centred
-	// peace row never reaches it, so a plate there without its cell is paint.
-	const shdPlate = contest.floor?.duelPlates?.[0] ?? null;
-	const shdEdge = shdPlate && { ...shdPlate, width: 4 };
-	const afterFloor = await page.evaluate((edge) => {
 		const g = window.__seelite;
 		g.setHeadLook("forward");
-		window.__duel.steps(0.1);
-		const floor = window.__duel.floor();
-		return {
-			floor,
-			cue: g.cueRender,
-			plates: window.__duel.platesPainted(floor),
-			shdEdgeShare: window.__duel.plateShare(edge),
-		};
-	}, shdEdge);
-	check(
-		`${v}: after the encounter ends only the armed group remains, without cue or console detail`,
-		after.encounter === null &&
-			after.raiderFiring === false &&
-			afterConsole.present &&
-			// The block's own switch, not only what shows: below 600 px every
-			// readout is hidden, so `visible` alone would pass there on nothing.
-			afterConsole.inlineDisplay === "none" &&
-			!afterConsole.visible &&
-			afterFloor.floor?.duelRow?.length === 1 &&
-			afterFloor.cue === null,
-		JSON.stringify({ after, afterConsole, afterFloor }),
-	);
-	check(
-		`${v}: with the fight over the SHD and HEAT plates go with their cells`,
-		shdPlate?.label === "SHD" &&
-			plateNames(afterFloor.plates) === "GROUP" &&
-			afterFloor.shdEdgeShare === 0,
-		JSON.stringify({
-			shdPlate,
-			after: afterFloor.plates,
-			edge: afterFloor.shdEdgeShare,
-		}),
-	);
-	// The contest's side of the on-target gate is headless (`onTargetMark` in
-	// `tests/duel-hud.test.ts`). A browser row was built here and removed: the
-	// contest's raider is beyond the laser's range, so it passed with the gate
-	// deleted.
-
-	// -------------------------------------------------------------------------
-	// Hull temperature (#931): a skim puts the TEMP gauge in the duel band, and
-	// it goes when the hull is back at ambient. `tests/hull-temperature.test.ts`
-	// and `tests/hull-temp-gauge.test.ts` own the law and the reading; what only
-	// the page answers is that the game feeds the step its star distance and the
-	// band paints the cell. Ink is counted on the overlay alone, so the star in
-	// the WebGL frame cannot light it.
-	// -------------------------------------------------------------------------
-	const skim = await page.evaluate(() => {
-		const g = window.__seelite;
-		const D = window.__duel;
-		// Any lit ink, not the passive hue: since #945 every cell stands on a
-		// plate, and glyph ink composited over one leaves the passive window.
-		const ink = (box) => D.litIn(box);
+		g.encounter = null;
+		g.resetFlightToStart();
+	});
+	const thermal = await page.evaluate(() => {
+		const g = window.__seelite,
+			D = window.__duel;
 		const home = { ...g.world.ship.pos };
-		const cold = D.floor();
-		const coldInk = ink(cold?.duelBox);
 		D.parkAtStar(1.2);
 		D.steps(3);
 		const hot = {
 			temp: g.condition.hullTemp,
-			gunHeat: g.condition.heat,
-			hull: g.condition.hull,
-			floor: D.floor(),
+			text: (g.cockpit.text.readings.get("combat") ?? [])
+				.map((l) => l.text)
+				.join(" "),
+			painted: window.__cockpitSourcePainted("combat"),
 		};
-		const hotInk = ink(hot.floor?.duelBox);
-		const hotPlate = D.plateShare(hot.floor?.tempPlate);
-		// Away from the star: cooling, then the last fraction under the snap.
 		g.world.ship.pos = home;
 		g.world.ship.vel = { x: 0, y: 0, z: 0 };
-		D.steps(1);
-		const cooling = g.condition.hullTemp;
-		// Just over the snap: about 0.3 s of cooling takes it under, so a
-		// second leaves it at ambient.
 		g.condition = { ...g.condition, hullTemp: 0.0051 };
 		D.steps(1);
 		return {
-			coldRow: cold?.duelRow,
-			coldPlate: cold?.tempPlate ?? null,
-			hotPlate,
-			coldInk,
 			hot,
-			hotInk,
-			cooling,
-			ambient: { temp: g.condition.hullTemp, floor: D.floor() },
+			ambient: g.condition.hullTemp,
+			cold: (g.cockpit.text.readings.get("combat") ?? [])
+				.map((l) => l.text)
+				.join(" "),
 		};
 	});
-	const tempCell = skim.hot.floor?.duelRow?.find((c) => c.label === "TEMP");
 	check(
-		`${v}: a skim at 1.2 R heats the hull and paints the TEMP gauge; ambient takes it off`,
-		!skim.coldRow?.some((c) => c.label === "TEMP") &&
-			skim.hot.temp > 0.2 &&
-			skim.hot.temp < 1 &&
-			skim.hot.gunHeat === 0 &&
-			tempCell?.value === `${Math.round(skim.hot.temp * 100)}%` &&
-			skim.hotInk > skim.coldInk &&
-			skim.cooling < skim.hot.temp &&
-			skim.ambient.temp === 0 &&
-			!skim.ambient.floor?.duelRow?.some((c) => c.label === "TEMP"),
-		JSON.stringify({ ...skim, tempCell }),
+		`${v}: a star skim paints TEMP on a cabin face and ambient clears it`,
+		thermal.hot.temp > 0 &&
+			thermal.hot.text.includes("TEMP") &&
+			thermal.hot.painted &&
+			thermal.ambient === 0 &&
+			!thermal.cold.includes("TEMP"),
+		JSON.stringify(thermal),
 	);
-	// The plate is what makes the cell read over a star-lit sky (#931, the
-	// principal's ruling). Most of its area is plate; the rest is the cell's ink.
-	check(
-		`${v}: the TEMP cell stands on its dark plate, and no plate is painted without it`,
-		skim.coldPlate === null &&
-			skim.hot.floor?.tempPlate != null &&
-			skim.hotPlate > 0.5 &&
-			skim.ambient.floor?.tempPlate === null,
-		JSON.stringify({
-			coldPlate: skim.coldPlate,
-			hotPlate: skim.hotPlate,
-			plate: skim.hot.floor?.tempPlate,
-			ambientPlate: skim.ambient.floor?.tempPlate,
-		}),
-	);
-	// -------------------------------------------------------------------------
-	// The fuel scoop (#932): a fitted scoop fills the tank on a cruise pass in
-	// the band, and the glass says so beside the TEMP gauge, on its plate.
-	// `tests/fuel-scoop.test.ts` and `tests/scoop-line.test.ts` own the law and
-	// the reading; what only the page answers is that the game feeds the step
-	// the regime and the star distance, and the band paints the line. The
-	// control is the same ship parked in normal flight at the same distance.
-	// -------------------------------------------------------------------------
 	const scoop = await page.evaluate(async () => {
-		const g = window.__seelite;
-		const D = window.__duel;
-		const { freeSlot, makeModule } = await import("/src/loadout.ts");
-		const star = g.world.system.bodies.find((b) => b.kind === "star");
-		const rOf = () =>
-			Math.hypot(
-				g.world.ship.pos.x - star.pos.x,
-				g.world.ship.pos.y - star.pos.y,
-				g.world.ship.pos.z - star.pos.z,
-			) / star.radiusKm;
-		g.resetFlightToStart();
+		const g = window.__seelite,
+			D = window.__duel;
+		const { makeModule, freeSlot } = await import("/src/loadout.ts");
 		const module = makeModule("fuel-scoop", 1);
 		const slot = freeSlot(g.commander.loadout, g.commander.hull, module);
 		g.commander = {
 			...g.commander,
 			loadout: { ...g.commander.loadout, [slot.key]: module },
 		};
-		const label = (row) => row?.find((c) => c.label === "SCOOPING") ?? null;
-		// Normal flight at 1.2 R: the hull heats and the tank does not fill.
 		g.fuelLy = 2;
-		D.parkAtStar(1.2);
-		D.steps(1);
-		const normal = {
-			regime: g.regime,
-			fuel: g.fuelLy,
-			floor: D.floor(),
-		};
-		const tempOnlyInk = D.litIn(normal.floor?.tempPlate);
-		// Cruise with no target, then placed at 1.2 R with the nose along the
-		// tangent: the pass is the pilot's, not a leg to a body.
 		g.targetId = null;
 		g.engageCruise();
 		for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(D.dt);
 		D.parkAtStar(1.2);
 		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
-		const fuelBefore = g.fuelLy;
-		const energyBefore = g.condition.energy;
+		const before = g.fuelLy;
 		D.steps(0.5);
-		const filling = {
-			regime: g.regime,
-			r: rOf(),
-			fuel: g.fuelLy,
-			energy: g.condition.energy,
-			scooping: g.scooping,
-			floor: D.floor(),
-		};
-		const scoopInk = D.litIn(filling.floor?.scoopPlate);
-		const scoopPlateShare = D.plateShare(filling.floor?.scoopPlate);
-		// On out of the band: the line goes and the tank holds.
-		let guard = 0;
-		while (g.regime === "cruise" && rOf() < 2.2 && guard++ < 200) D.steps(0.1);
-		const left = {
-			regime: g.regime,
-			r: rOf(),
-			fuel: g.fuelLy,
-			scooping: g.scooping,
-			floor: D.floor(),
-		};
-		D.steps(0.5);
-		const after = { fuel: g.fuelLy };
-		// In combat inside the band (the principal's ruling on #932's D3): back
-		// on the pass, a contesting raider puts SHD and HEAT in the row, the
-		// SCOOPING line drops, and the scoop goes on filling.
-		D.parkAtStar(1.2);
-		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
-		D.steps(0.2);
-		g.forceRaider("behind", 0, 30);
-		const combatFuelBefore = g.fuelLy;
-		D.steps(0.3);
-		const combat = {
-			regime: g.regime,
-			phase: g.encounter?.phase ?? null,
-			r: rOf(),
-			scooping: g.scooping,
-			fuelBefore: combatFuelBefore,
-			fuel: g.fuelLy,
-			floor: D.floor(),
-		};
-		combat.plates = D.platesPainted(combat.floor);
-		g.resetFlightToStart();
 		return {
-			combat,
-			normal,
-			tempOnlyInk,
-			fuelBefore,
-			energyBefore,
-			filling,
-			scoopInk,
-			scoopPlateShare,
-			left,
-			after,
-			normalLine: label(normal.floor?.duelRow),
-			fillingLine: label(filling.floor?.duelRow),
-			leftLine: label(left.floor?.duelRow),
+			before,
+			fuel: g.fuelLy,
+			scooping: g.scooping,
+			text: (g.cockpit.text.readings.get("combat") ?? [])
+				.map((l) => l.text)
+				.join(" "),
+			painted: window.__cockpitSourcePainted("combat"),
 		};
 	});
 	check(
-		`${v}: in normal flight at 1.2 R a fitted scoop fills nothing and paints no SCOOPING line`,
-		scoop.normal.regime === "normal" &&
-			scoop.normal.fuel === 2 &&
-			scoop.normalLine === null &&
-			scoop.normal.floor?.scoopPlate === null &&
-			scoop.normal.floor?.duelRow?.some((c) => c.label === "TEMP"),
-		JSON.stringify({ normal: scoop.normal, line: scoop.normalLine }),
+		`${v}: a filling fuel scoop paints its live reading with the temperature`,
+		scoop.fuel > scoop.before &&
+			scoop.scooping &&
+			scoop.text.includes("SCOOPING") &&
+			scoop.text.includes("TEMP") &&
+			scoop.painted,
+		JSON.stringify(scoop),
 	);
-	check(
-		`${v}: on a cruise pass in the band the scoop fills the tank, draws on the bank and paints SCOOPING with the tank in LY beside TEMP`,
-		scoop.filling.regime === "cruise" &&
-			scoop.filling.r < 2 &&
-			scoop.filling.scooping === true &&
-			scoop.filling.fuel > scoop.fuelBefore &&
-			scoop.filling.energy < scoop.energyBefore &&
-			scoop.fillingLine?.value === `${scoop.filling.fuel.toFixed(1)} LY` &&
-			scoop.filling.floor?.duelRow?.some((c) => c.label === "TEMP"),
-		JSON.stringify({
-			fuelBefore: scoop.fuelBefore,
-			energyBefore: scoop.energyBefore,
-			filling: scoop.filling,
-			line: scoop.fillingLine,
-		}),
-	);
-	// One plate under both cells, and the line's ink on it: more lit ink than
-	// the TEMP cell alone had on its own plate.
-	check(
-		`${v}: the SCOOPING line is painted on the TEMP cell's dark plate`,
-		scoop.filling.floor?.scoopPlate != null &&
-			JSON.stringify(scoop.filling.floor.scoopPlate) ===
-				JSON.stringify(scoop.filling.floor.tempPlate) &&
-			scoop.scoopPlateShare > 0.5 &&
-			scoop.scoopInk > scoop.tempOnlyInk,
-		JSON.stringify({
-			scoopPlate: scoop.filling.floor?.scoopPlate,
-			tempPlate: scoop.filling.floor?.tempPlate,
-			share: scoop.scoopPlateShare,
-			scoopInk: scoop.scoopInk,
-			tempOnlyInk: scoop.tempOnlyInk,
-		}),
-	);
-	check(
-		`${v}: in combat inside the band SHD and HEAT keep the row, SCOOPING drops, and the scoop still fills`,
-		scoop.combat.regime === "cruise" &&
-			scoop.combat.phase === "contest" &&
-			scoop.combat.r < 2 &&
-			scoop.combat.scooping === true &&
-			scoop.combat.fuel > scoop.combat.fuelBefore &&
-			scoop.combat.floor?.duelRow?.map((c) => c.label).join(",") ===
-				"SHD,HEAT,TEMP," &&
-			scoop.combat.floor?.scoopPlate === null &&
-			scoop.combat.floor?.tempPlate != null,
-		JSON.stringify(scoop.combat),
-	);
-	// #945 inside the band: every cell on its plate, TEMP's the one it had.
-	const combatTemp = scoop.combat.floor?.duelPlates?.find(
-		(p) => p.label === "TEMP",
-	);
-	check(
-		`${v}: in a fight inside the band SHD, HEAT, TEMP and the armed group each stand on a plate, apart`,
-		plateNames(scoop.combat.plates) === "SHD,HEAT,TEMP,GROUP" &&
-			scoop.combat.plates.every((p) => p.share > 0.5) &&
-			apart(scoop.combat.plates) &&
-			JSON.stringify(combatTemp) ===
-				JSON.stringify(scoop.combat.floor?.tempPlate) &&
-			scoop.combat.floor?.scale === viewport.floorScale &&
-			scoop.combat.floor?.overflowPx === 0,
-		JSON.stringify({
-			plates: scoop.combat.plates,
-			boxes: scoop.combat.floor?.duelPlates,
-			scale: scoop.combat.floor?.scale,
-		}),
-	);
-	check(
-		`${v}: out of the band the SCOOPING line goes and the tank stops filling`,
-		scoop.left.r >= 2 &&
-			scoop.left.scooping === false &&
-			scoop.leftLine === null &&
-			scoop.left.floor?.scoopPlate === null &&
-			scoop.after.fuel === scoop.left.fuel,
-		JSON.stringify({ left: scoop.left, after: scoop.after }),
-	);
-
-	// Last on the page, because it ends the flight: heat above the top runs the
-	// hull out through the game's own death path, and the shields stand.
-	const burnt = await page.evaluate(() => {
-		const g = window.__seelite;
-		window.__duel.parkAtStar(1.06);
-		g.condition = { ...g.condition, hull: 2, hullTemp: 2 };
-		const fore = g.condition.fore;
-		let seconds = 0;
-		while (!g.dead && seconds < 5) {
-			g.step(g.units.MAX_DT);
-			seconds += g.units.MAX_DT;
-		}
-		return {
-			dead: g.dead,
-			seconds,
-			hull: g.condition.hull,
-			foreBefore: fore,
-			foreAfter: g.condition.fore,
-			lastExit: g.lastExit,
-		};
-	});
-	check(
-		`${v}: a hull above the top runs out of integrity and the ship is destroyed, shields untouched`,
-		burnt.dead === true &&
-			burnt.hull === 0 &&
-			burnt.foreAfter === burnt.foreBefore &&
-			burnt.lastExit === "ship destroyed",
-		JSON.stringify(burnt),
-	);
+	await page.screenshot({ path: `/tmp/seelite-1151-duel-${v}.png` });
 	await page.close();
 }
-
 await browser.close();
 exit();

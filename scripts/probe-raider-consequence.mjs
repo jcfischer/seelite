@@ -516,13 +516,22 @@ const scoop = await page.evaluate(() => {
 	// Any lit text, not only green: the refusal is drawn in §4's red, and a
 	// filter tuned to the cargo green would call that "nothing drawn".
 	const band = (fraction) => {
-		const overlay = document.getElementById("overlay");
+		const overlay =
+			g.view === "cockpit"
+				? (g.cockpit.text.faces.get("notices")?.ctx.canvas ??
+					document.getElementById("overlay"))
+				: document.getElementById("overlay");
 		const c2d = overlay.getContext("2d", { willReadFrequently: true });
 		const y = Math.max(
 			0,
 			Math.min(overlay.height - 90, Math.round(overlay.height * fraction) - 60),
 		);
-		const data = c2d.getImageData(0, y, overlay.width, 90).data;
+		const data = c2d.getImageData(
+			0,
+			g.view === "cockpit" ? 0 : y,
+			overlay.width,
+			g.view === "cockpit" ? overlay.height : 90,
+		).data;
 		let lit = 0;
 		for (let i = 0; i < data.length; i += 4)
 			if (data[i + 3] > 40 && (data[i] > 150 || data[i + 1] > 150)) lit++;
@@ -644,7 +653,11 @@ const refusal = await page.evaluate(() => {
 	// control frame with the notice suppressed, this shows what reached the
 	// canvas and which hue it added.
 	const tone = () => {
-		const overlay = document.getElementById("overlay");
+		const overlay =
+			g.view === "cockpit"
+				? (g.cockpit.text.faces.get("notices")?.ctx.canvas ??
+					document.getElementById("overlay"))
+				: document.getElementById("overlay");
 		const c2d = overlay.getContext("2d", { willReadFrequently: true });
 		// The same clamp the other readback has: this copy had lost it, which is
 		// the drift sage's dedupe finding was pointing at.
@@ -652,7 +665,12 @@ const refusal = await page.evaluate(() => {
 			0,
 			Math.min(overlay.height - 90, Math.round(overlay.height * 0.62) - 60),
 		);
-		const data = c2d.getImageData(0, y, overlay.width, 90).data;
+		const data = c2d.getImageData(
+			0,
+			g.view === "cockpit" ? 0 : y,
+			overlay.width,
+			g.view === "cockpit" ? overlay.height : 90,
+		).data;
 		let red = 0;
 		let green = 0;
 		for (let i = 0; i < data.length; i += 4) {

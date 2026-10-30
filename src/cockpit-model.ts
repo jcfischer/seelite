@@ -12,7 +12,7 @@
  * pitched up about the eye by the same angle — the frame the principal saw,
  * with the reticle on the flight direction.
  *
- * The four `screen-*` quads are where the live instruments go. They are not
+ * The model’s `screen-*` quads are where the live instruments go. They are not
  * retextured: `main.ts` mounts its own scanner, hologram and readout faces on
  * the frame `screenFrame` derives from each quad, so their names, aspect and
  * hologram alignment stay theirs. `screen-systems` has no live source and is
@@ -60,14 +60,6 @@ export const COCKPIT_MODEL_PITCH_RAD = 0.242;
  */
 export const SCANNER_FACE_KM = [0.027, 0.0135] as const;
 export const INSTRUMENT_FACE_KM = [0.0118, 0.0059] as const;
-
-export const COCKPIT_SCREENS = [
-	"radar",
-	"flight",
-	"systems",
-	"target",
-] as const;
-export type CockpitScreen = (typeof COCKPIT_SCREENS)[number];
 
 /**
  * How much brighter the cabin's console lamps read than the spike struck them
@@ -280,7 +272,7 @@ export interface AuthoredCabin {
 	/** The model, already placed so the pilot eye is at the origin. */
 	root: THREE.Group;
 	/** Each screen quad's frame, in `root`'s parent frame. */
-	screens: Record<CockpitScreen, ScreenFrame>;
+	screens: Record<string, ScreenFrame>;
 	/** Model-metre placement, for lamps given in model metres. */
 	modelSpace: THREE.Group;
 }
@@ -484,10 +476,10 @@ export const cockpitModelReady = (): boolean => template !== null;
  * Screens and labels get materials of their own, which the cabin's teardown
  * frees; everything cloned from the template is shared and survives it.
  */
-export function buildAuthoredCabin(): AuthoredCabin {
-	if (!template)
+export function buildAuthoredCabin(source = template): AuthoredCabin {
+	if (!source)
 		throw new Error("buildAuthoredCabin: await prepareCockpitModel() first");
-	const model = template.clone(true);
+	const model = source.clone(true);
 	const modelSpace = new THREE.Group();
 	modelSpace.name = "cockpit-model-space";
 	modelSpace.scale.setScalar(COCKPIT_MODEL_KM_PER_M);
@@ -503,21 +495,35 @@ export function buildAuthoredCabin(): AuthoredCabin {
 	root.add(modelSpace);
 	root.updateMatrixWorld(true);
 	const unpowered = new THREE.MeshBasicMaterial({ color: 0x01090b });
-	const screens = {} as Record<CockpitScreen, ScreenFrame>;
+	const screens = cockpitScreenFrames(model);
 	model.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		if (o.name.startsWith("label-") || o.name.startsWith("key-")) {
 			o.material = labelMaterial(o.name);
 			o.castShadow = false;
-			return;
+		} else if (o.name.startsWith("screen-")) {
+			o.material = unpowered;
+			o.castShadow = false;
 		}
-		if (!o.name.startsWith("screen-")) return;
-		const name = o.name.slice(7) as CockpitScreen;
-		if (!COCKPIT_SCREENS.includes(name)) return;
-		o.material = unpowered;
-		o.castShadow = false;
+	});
+	return { root, screens, modelSpace };
+}
+
+/** Read every named screen after applying the model's node transforms. */
+export function cockpitScreenFrames(
+	model: THREE.Object3D,
+): Record<string, ScreenFrame> {
+	model.updateWorldMatrix(true, true);
+	const screens: Record<string, ScreenFrame> = Object.create(null);
+	model.traverse((o) => {
+		if (!(o instanceof THREE.Mesh) || !o.name.startsWith("screen-")) return;
+		const name = o.name.slice(7);
+		if (!name || screens[name])
+			throw new Error(`Invalid or duplicate cockpit screen: ${o.name}`);
 		const position = o.geometry.getAttribute("position");
 		const uv = o.geometry.getAttribute("uv");
+		if (!position || !uv)
+			throw new Error(`Cockpit screen requires positions and UVs: ${o.name}`);
 		const positions: THREE.Vector3[] = [];
 		const uvs: THREE.Vector2[] = [];
 		for (let i = 0; i < position.count; i++) {
@@ -528,12 +534,12 @@ export function buildAuthoredCabin(): AuthoredCabin {
 			);
 			uvs.push(new THREE.Vector2().fromBufferAttribute(uv, i));
 		}
-		screens[name] = screenFrame(positions, uvs);
+		const frame = screenFrame(positions, uvs);
+		if (!(frame.widthKm > 0 && frame.heightKm > 0))
+			throw new Error(`Empty cockpit screen: ${o.name}`);
+		screens[name] = frame;
 	});
-	for (const name of COCKPIT_SCREENS)
-		if (!screens[name])
-			throw new Error(`buildAuthoredCabin: the model has no screen-${name}`);
-	return { root, screens, modelSpace };
+	return screens;
 }
 
 let ready: Promise<void> | undefined;

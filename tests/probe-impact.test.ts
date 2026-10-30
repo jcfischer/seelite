@@ -13,7 +13,7 @@ import {
 	contractRoots,
 } from "../scripts/lib/probe-contract-roots.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
@@ -36,6 +36,11 @@ const impact = (paths: string[], before = sources, after = sources) =>
 	selectImpact(paths, { before, after }, inventory);
 
 describe("production contract ownership", () => {
+	test("the alternate cockpit asset selects its live rendering probe", () => {
+		expect(impact(["scripts/fixtures/cockpit-text-cabin.glb"]).probes).toEqual(
+			[...new Set([...SMOKE_PROBES, "probe-live-cockpit.mjs"])].sort(),
+		);
+	});
 	test("rock placement declares its Game placement paths as an owner", () => {
 		expect(PROBE_ROOTS["probe-rock-placement.mjs"]).toContain("src/main.ts");
 	});
@@ -90,7 +95,8 @@ describe("production contract ownership", () => {
 	test("owns every runner probe and roots exist", () => {
 		expect(Object.keys(PROBE_ROOTS).sort()).toEqual(inventory);
 		for (const roots of Object.values(PROBE_ROOTS))
-			for (const path of roots) expect(sources.has(path)).toBe(true);
+			for (const path of roots)
+				expect(existsSync(resolve(root, path))).toBe(true);
 	});
 	test("equipment display excludes music and cinematics but keeps its consumers and smoke", () => {
 		const selected = impact(["src/outfitting-view.ts"]).probes!;
