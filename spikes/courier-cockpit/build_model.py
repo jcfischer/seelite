@@ -306,8 +306,6 @@ for center,w,h in [((0,-.87,-2.35),1.62,1.20),((-1.53,-.81,-2.42),1.32,.72),((1.
 
 # Readout screens (node #1151), set into the structure in final pilot metres.
 # The game reads each screen's frame from its quad, so these placements are its layout.
-import os
-LAYOUT=os.environ.get('COCKPIT_READOUT_LAYOUT','o6')
 
 def oplane(name,c,w,h,u,v):
     pts=[c-u*w/2-v*h/2,c+u*w/2-v*h/2,c+u*w/2+v*h/2,c-u*w/2+v*h/2]
@@ -394,12 +392,8 @@ def pod_stack(base,w,units,a,label):
     obox(base-v*.015-n*.06,(w+.2,.04,.16),dark,u,v,n)
 
 brow_bank(0,1.72,[('fallback',.375)],'status')
-if LAYOUT=='o6':
-    pod_stack(Vector((-1.55,-1.62,-2.42)),1.0,[('notices+lasers',.37)],-.47,'notices')
-    pod_stack(Vector((1.55,-1.64,-2.49)),1.0,[('ore+survey',.278)],-.47,'ore')
-else:
-    brow_bank(-1.5,.9,[('notices',.2),('lasers',.11)],'notices')
-    brow_bank(1.5,.9,[('ore',.11),('survey',.11)],'ore')
+pod_stack(Vector((-1.55,-1.62,-2.42)),1.0,[('notices+lasers',.37)],-.47,'notices')
+pod_stack(Vector((1.55,-1.64,-2.49)),1.0,[('ore+survey',.278)],-.47,'ore')
 
 for name,(verts,faces,uvs) in BATCH.items():
     if not faces:continue
