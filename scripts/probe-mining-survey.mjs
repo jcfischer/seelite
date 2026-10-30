@@ -162,7 +162,75 @@ try {
 			glass.deep !== null,
 			JSON.stringify(glass.deep),
 		);
+		const surface = await page.evaluate(async () => {
+			const { rockLocalVector } = await import("/src/rock-target.ts");
+			const { rockArchetype } = await import("/src/field-lod.ts");
+			const { ROCK_ASSETS } = await import("/src/rock-assets.ts");
+			const g = window.__seelite;
+			const cue = g.deepCueRender;
+			const ref = g.rockRef(g.targetId);
+			if (!cue?.mouth || !ref) return null;
+			const local = rockLocalVector(
+				ref,
+				{
+					x: cue.mouth.x - ref.pos.x,
+					y: cue.mouth.y - ref.pos.y,
+					z: cue.mouth.z - ref.pos.z,
+				},
+				g.world.gameTime,
+			);
+			const radius = Math.hypot(local.x, local.y, local.z);
+			const mouthDir = g.surveyState().contents.deepDir;
+			const h = ROCK_ASSETS.heightfields.fields[rockArchetype(ref.rock)];
+			return {
+				errorKm: Math.abs(
+					radius - ref.rock.radiusKm * g.rockShape(ref).radiusAt(mouthDir),
+				),
+				cellKm: (2 * ref.rock.radiusKm) / h.res,
+				directionError: Math.hypot(
+					local.x / radius - mouthDir.x,
+					local.y / radius - mouthDir.y,
+					local.z / radius - mouthDir.z,
+				),
+			};
+		});
+		check(
+			"the DEEP mark lies on the laser-cut heightfield along the mouth direction",
+			surface !== null &&
+				surface.errorKm < surface.cellKm &&
+				surface.directionError < 1e-5,
+			JSON.stringify(surface),
+		);
 		await page.screenshot({ path: "probe-shots/mining-survey/reading.png" });
+		const distances = await page.evaluate(async () => {
+			const { range } = await import("/src/units.ts");
+			const g = window.__seelite;
+			const limit = g.surveyState().figures.rangeKm;
+			const rows = [];
+			for (const km of [2, limit - 0.01, limit + 0.01]) {
+				await window.__standOff(km);
+				const state = g.surveyState();
+				rows.push({
+					km: state.target.distKm,
+					limit,
+					text: g.cockpit.targetInstrument.primaryText,
+					expected: `Rock  ${range(state.target.distKm)}`,
+					block: state.block,
+				});
+			}
+			return rows;
+		});
+		check(
+			"the target instrument shows the survey surface distance on both sides of its range limit",
+			distances.every(
+				(r) =>
+					r.text === r.expected &&
+					(r.km <= r.limit
+						? r.block === null
+						: /^OUT OF RANGE/.test(r.block ?? "")),
+			),
+			JSON.stringify(distances),
+		);
 		const far = await page.evaluate(async () => {
 			await window.__standOff(30);
 			return window.__seelite.surveyState().block;
@@ -411,7 +479,60 @@ try {
 			scoop.lost >= 1 && scoop.surfaceAfter === scoop.surface,
 			JSON.stringify(scoop),
 		);
+		const navigation = await page.evaluate(() => {
+			const g = window.__seelite;
+			g.headLook = "left";
+			g.leftTab = "Navigation";
+			return g.navRows().map((r) => ({ id: r.id, kind: r.kind }));
+		});
+		check(
+			"Navigation leaves the selected and surveyed rocks absent pending the principal's list ruling",
+			navigation.length > 0 &&
+				navigation.every((r) => r.kind !== "rock" && !r.id.startsWith("rock:")),
+			JSON.stringify(navigation),
+		);
 	}
+	await page.goto(
+		gameUrl(origin, {
+			seed: CHARTED_FIELD_WORLD,
+			system: 173,
+			hull: "miner",
+			"no-save": "",
+			raider: "off",
+		}),
+	);
+	await bootedGame(page, 90000);
+	const flagOff = await page.evaluate(async () => {
+		const { range } = await import("/src/units.ts");
+		const g = window.__seelite;
+		g.clockHeld = true;
+		g.targetId = g.world.system.bodies.find((b) => b.kind === "station").id;
+		for (let i = 0; i < 2; i++)
+			await new Promise((r) => requestAnimationFrame(r));
+		const target = g.targetBody();
+		g.headLook = "left";
+		g.leftTab = "Navigation";
+		const rows = g.navRows();
+		return {
+			on: g.surveyState().on,
+			deep: g.deepCueRender,
+			text: g.cockpit.targetInstrument.primaryText,
+			expected: `${target.name}  ${range(g.targetRange())}`,
+			rows: rows.length,
+			rockRows: rows.filter(
+				(r) => r.kind === "rock" || r.id.startsWith("rock:"),
+			).length,
+		};
+	});
+	check(
+		"without mining=1 the ordinary instrument is unchanged and mining cues and rock navigation rows are absent",
+		!flagOff.on &&
+			flagOff.rows > 0 &&
+			flagOff.deep === null &&
+			flagOff.text === flagOff.expected &&
+			flagOff.rockRows === 0,
+		JSON.stringify(flagOff),
+	);
 } finally {
 	await browser.close();
 }
