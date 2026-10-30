@@ -1,6 +1,5 @@
 // Run after Blender's --flight export. No simplification, quantization or resize.
-// The scale-detail meshes ship in their own file, which the game loads the first
-// time a Coriolis is drawn at full detail: https://github.com/jcfischer/seelite/issues/1142
+// Scale detail ships in its own file: https://github.com/jcfischer/seelite/issues/1142
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { cloneDocument, dedup, prune, reorder, textureCompress } from '@gltf-transform/functions';
@@ -31,8 +30,6 @@ const beforeEncoding = attributes(document);
 const detail = cloneDocument(document);
 for (const node of document.getRoot().listNodes()) if (isDetail(node)) node.dispose();
 for (const node of detail.getRoot().listNodes()) if (!isDetail(node)) node.dispose();
-// The detail file carries no image: each textured material names the base
-// file's texture, which the game hands it at attach time.
 for (const material of detail.getRoot().listMaterials()) {
  const texture = material.getBaseColorTexture();
  if (!texture) continue;

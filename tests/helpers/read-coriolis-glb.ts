@@ -19,8 +19,6 @@ export async function readCoriolisGlb(name: keyof typeof CORIOLIS_GLBS) {
 	return scene;
 }
 
-/** The shipped Coriolis builder with its scale detail handed over, as a
- *  station near enough to draw at full detail has it. */
 export async function readShippedCoriolisBuilder() {
 	const { createIndustrialCoriolisBuilder } = await import(
 		"../../src/coriolis-flight"

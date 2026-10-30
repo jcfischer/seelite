@@ -282,12 +282,7 @@ export interface StationMesh {
 	 * trusting the marks.
 	 */
 	dispose(): void;
-	/**
-	 * Detail that ships in its own file and loads the first time this station
-	 * draws at `full`: https://github.com/jcfischer/seelite/issues/1142.
-	 * `updateStationVisuals` calls `request` on each full frame; a capture waits
-	 * on `attached` before it writes a frame.
-	 */
+	/** https://github.com/jcfischer/seelite/issues/1142 */
 	lateDetail?: { request(): void; readonly attached: boolean };
 }
 

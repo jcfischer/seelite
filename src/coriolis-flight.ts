@@ -88,7 +88,6 @@ function standardMaterials(root: THREE.Object3D) {
 	return materials;
 }
 
-/** The divisor that puts a set's brightest emissive at `EMISSIVE_CEILING`. */
 export function emissiveDivisor(
 	materials: Iterable<THREE.MeshStandardMaterial>,
 ) {

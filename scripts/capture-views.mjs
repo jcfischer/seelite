@@ -1592,8 +1592,6 @@ try {
 			undefined,
 			{ timeout: 60_000 },
 		);
-		// https://github.com/jcfischer/seelite/issues/1142: a Coriolis drawn at
-		// full fetches its scale detail on that frame; no frame is written before it lands.
 		await page.waitForFunction(
 			() => window.__seelite?.lateDetailSettled?.() ?? true,
 			undefined,
