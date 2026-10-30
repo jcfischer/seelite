@@ -79,6 +79,32 @@ artifacts). It contains courier before/after and alternate-fixture/mining
 frames, with full-resolution links and capture provenance. The second cabin
 is a screen-layout fixture, not an integration or approval of the miner art.
 
-The principal's courier before/after approval, proposed changelog sentence,
-Sage review and checkpoint `cp-seelite-cockpit-text-surfaces` remain pending.
-No graph closure or merge is claimed by this implementation worker.
+## Housed screens
+
+The principal flew the first branch build on 2026-10-30 and asked for a
+physical integration: the six readout strips had been injected into the
+shipped GLB as bare quads, some floating 0.6 m above the side pods, and
+`build_model.py` did not know them, so a rebuild would have dropped them.
+`build_model.py` now authors the readout screens, and the principal chose
+the layout from in-game captures of two variants:
+
+- one centre display set into the dashboard brow (`screen-fallback`), which
+  carries `status` and the other sources without a screen of their own;
+- on each side pod a housing with one shared screen: `screen-notices+lasers`
+  and `screen-ore+survey`.
+
+A screen named `screen-<a>+<b>` serves each source it names
+(`cockpitScreenFor`); sources on one screen share a face and stack in the
+order they are written. The brow variant hid `lasers` behind the duct batch
+and was not taken. The four original panels are unchanged to the millimetre.
+
+On `dd8b819c`, GPU lane, each alone with `npm run probe:one --show-output`:
+`probe-live-cockpit` 61 rows, `probe-duel-hud` 36, `probe-fire-groups` 14,
+`probe-missiles` 15, `probe-chase-view` 13, `probe-mining-survey` 24,
+`probe-raider-consequence` 21, all ok. A raycast check found all six readout
+screens visible from the eye with no obstruction.
+
+## Decisions
+
+The principal approved the courier cockpit after flying the housed layout,
+and the changelog sentence, on 2026-10-30.
