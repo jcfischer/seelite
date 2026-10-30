@@ -91,10 +91,7 @@ export async function installCockpitTextProbe(page) {
 			const face = text.faces.get(source) ?? text.faces.get("fallback");
 			if (!face || !text.readings.get(source)?.some((line) => line.text))
 				return false;
-			const expected = document.createElement("canvas");
-			expected.width = face.ctx.canvas.width;
-			expected.height = face.ctx.canvas.height;
-			const ctx = expected.getContext("2d");
+			const { width, height } = face.ctx.canvas;
 			const lines = [];
 			const without = [];
 			for (const [name, reading] of text.readings) {
@@ -103,39 +100,40 @@ export async function installCockpitTextProbe(page) {
 				lines.push(...reading);
 				if (name !== source) without.push(...reading);
 			}
-			const pixels = () =>
-				ctx.getImageData(0, 0, expected.width, expected.height).data;
-			paintCockpitText(ctx, lines);
-			const wanted = pixels();
-			paintCockpitText(ctx, without);
-			const control = pixels();
-			const actual = face.ctx.getImageData(
-				0,
-				0,
-				expected.width,
-				expected.height,
-			).data;
-			let ink = 0;
-			let mismatched = 0;
-			for (let i = 0; i < actual.length; i += 4) {
-				if (
-					Math.max(
-						Math.abs(wanted[i] - control[i]),
-						Math.abs(wanted[i + 1] - control[i + 1]),
-						Math.abs(wanted[i + 2] - control[i + 2]),
-					) > 8
-				)
-					ink++;
-				if (
-					Math.max(
-						Math.abs(wanted[i] - actual[i]),
-						Math.abs(wanted[i + 1] - actual[i + 1]),
-						Math.abs(wanted[i + 2] - actual[i + 2]),
-					) > 2
-				)
-					mismatched++;
-			}
-			return ink > 10 && mismatched === 0;
+			const actual = face.ctx.getImageData(0, 0, width, height).data;
+			const compare = (willReadFrequently) => {
+				const expected = document.createElement("canvas");
+				expected.width = width;
+				expected.height = height;
+				const ctx = expected.getContext("2d", { willReadFrequently });
+				const pixels = () => ctx.getImageData(0, 0, width, height).data;
+				paintCockpitText(ctx, lines);
+				const wanted = pixels();
+				paintCockpitText(ctx, without);
+				const control = pixels();
+				let ink = 0;
+				let mismatched = 0;
+				for (let i = 0; i < actual.length; i += 4) {
+					if (
+						Math.max(
+							Math.abs(wanted[i] - control[i]),
+							Math.abs(wanted[i + 1] - control[i + 1]),
+							Math.abs(wanted[i + 2] - control[i + 2]),
+						) > 8
+					)
+						ink++;
+					if (
+						Math.max(
+							Math.abs(wanted[i] - actual[i]),
+							Math.abs(wanted[i + 1] - actual[i + 1]),
+							Math.abs(wanted[i + 2] - actual[i + 2]),
+						) > 2
+					)
+						mismatched++;
+				}
+				return ink > 10 && mismatched === 0;
+			};
+			return compare(false) || compare(true);
 		};
 		window.__cockpitRefusalRed = (source) => {
 			const text = window.__seelite.cockpit.text;
