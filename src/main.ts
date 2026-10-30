@@ -5372,6 +5372,7 @@ class Game {
 		if (neuralWanted(applied.voice, VOICE_ARMS.engine))
 			void this.neural.start();
 		this.settings.subscribe((next) => {
+			if (next.cockpitFov !== applied.cockpitFov) this.applyViewFov();
 			if (next.voice !== applied.voice && VOICE_ARMS.engine === "setting")
 				this.applyVoice(next.voice);
 			for (const bus of BUSES) {
@@ -11738,6 +11739,13 @@ class Game {
 				}
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
+				return;
+			case "view.fov":
+				if (this.view === "cockpit")
+					this.settings.set(
+						"cockpitFov",
+						this.settings.value.cockpitFov === "normal" ? "wide" : "normal",
+					);
 				return;
 			case "tune.reset":
 				// Back to the spec's own figures, from wherever the tuning has got
@@ -18158,6 +18166,25 @@ class Game {
 		}
 	}
 
+	private applyViewFov() {
+		const fov =
+			this.view === "cockpit" && this.settings.value.cockpitFov === "wide"
+				? 80
+				: 60;
+		if (this.nearCamera.fov === fov) return;
+		for (const camera of [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+			this.nearCamera,
+			this.cabinCamera,
+		]) {
+			camera.fov = fov;
+			camera.updateProjectionMatrix();
+		}
+		this.focalPx = focalPx(this.renderer.getSize(new THREE.Vector2()).y, fov);
+	}
+
 	/**
 	 * Place everything relative to the camera, and draw.
 	 *
@@ -18167,6 +18194,7 @@ class Game {
 	 * position, which is not.
 	 */
 	render(dt = 0) {
+		this.applyViewFov();
 		// #535: the opening films the ship from outside, from a camera its shot
 		// places; everything else about the frame is the chase view's.
 		const shotCam = this.openingCamera();

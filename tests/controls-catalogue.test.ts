@@ -243,6 +243,8 @@ describe("the catalogue is complete against the source", () => {
 			"system.postcard": "this.openPostcardWithModels()",
 			"view.reference": "controlsKeyMove(",
 			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
+			"view.fov":
+				'this.settings.value.cockpitFov === "normal" ? "wide" : "normal"',
 			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",
 			"panel.tabPrevious": "this.liveCockpit.stepTab(-1)",
 			"panel.tabNext": "this.liveCockpit.stepTab(1)",

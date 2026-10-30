@@ -852,6 +852,13 @@ const AUTHORED = [
 		keys: ["v"],
 	},
 	{
+		id: "view.fov",
+		name: "Cockpit field of view: normal or wide",
+		group: "view",
+		views: COCKPIT,
+		keys: ["7"],
+	},
+	{
 		// Chase only, and held rather than pressed — which is why the same two
 		// digits are not a collision with head-look, twice over.
 		id: "view.orbitPort",

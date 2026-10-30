@@ -51,6 +51,13 @@ const volumeRow = (label: string, note: string) =>
 /** One place for the schema, because the default and the validator drift apart
  *  when they are written separately. */
 const SCHEMA = {
+	cockpitFov: {
+		fallback: "normal" as const,
+		allowed: ["normal", "wide"] as const,
+		label: "Cockpit field of view",
+		describe: (v: string) => (v === "wide" ? "Wide (80°)" : "Normal (60°)"),
+		note: "The vertical field of view in every cockpit cabin. Chase view keeps its own field of view.",
+	},
 	/**
 	 * A multiplier on the device pixel ratio, or `"auto"` to let the game pick.
 	 *
