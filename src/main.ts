@@ -1497,7 +1497,6 @@ const positiveParam = (name: string, fallback: number): number => {
 	const v = Number(MINING_QUERY.get(name));
 	return Number.isFinite(v) && v > 0 ? v : fallback;
 };
-const DEEP_MOUTH_RADIUS_SHARE = 0.85;
 const SURVEY_GRADE_SHORT = {
 	poor: "POOR",
 	standard: "STD",
@@ -9396,7 +9395,8 @@ class Game {
 	}
 
 	private surveyHold: SurveyHold = beginSurveyHold();
-	deepCueRender: { x: number; y: number; facing: boolean } | null = null;
+	deepCueRender: { x: number; y: number; facing: boolean; mouth: Vec3 } | null =
+		null;
 
 	fitPrototypeMiningLaser(writesNothing: boolean) {
 		if (!writesNothing) return;
@@ -9977,7 +9977,7 @@ class Game {
 		);
 		if (!reading?.deepDir) return;
 		const d = rockDirectionNow(ref, reading.deepDir, this.world.gameTime);
-		const r = ref.rock.radiusKm * DEEP_MOUTH_RADIUS_SHARE;
+		const r = ref.rock.radiusKm * this.rockShape(ref).radiusAt(reading.deepDir);
 		const mouth = {
 			x: ref.pos.x + d.x * r,
 			y: ref.pos.y + d.y * r,
@@ -10003,7 +10003,7 @@ class Game {
 		ctx.font = "11px monospace";
 		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x + 11, at.y + 4);
 		ctx.restore();
-		this.deepCueRender = { x: at.x, y: at.y, facing };
+		this.deepCueRender = { x: at.x, y: at.y, facing, mouth };
 	}
 
 	private surveyDesignation(id: string): string {
@@ -10797,7 +10797,13 @@ class Game {
 			scan.actor === undefined
 				? (target?.name ?? "")
 				: this.drawnName(scan.actor);
-		const targetText = target ? `${drawn}  ${range(targetKm)}` : "NO TARGET";
+		const instrumentKm =
+			MINING_ON && target?.kind === "rock"
+				? (this.rockRef(target.id)?.distKm ?? targetKm)
+				: targetKm;
+		const targetText = target
+			? `${drawn}  ${range(instrumentKm)}`
+			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		// REL rides this instrument and not only the left console, which is
 		// hidden unless the pilot turns their head (`hud-and-scanner.md` §3).
