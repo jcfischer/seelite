@@ -1,3 +1,4 @@
+// A default-layout probe (#381 D11), https://github.com/jcfischer/seelite/issues/381: it presses Space by name, as the shipped layout binds the trigger.
 import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
 /**
  * Node #324 part (c)'s browser tier: the duel HUD in the running game.
