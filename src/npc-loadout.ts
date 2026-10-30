@@ -45,7 +45,6 @@ export function npcLoadout(hull: HullId, seed: number): Loadout {
 	};
 	fit.plant = pickModule("plant", spec.plantSize, ["power-plant"]);
 	for (const slot of spec.slots) {
-		if (slot.kind === "hardpoint" && slot.mount) continue;
 		if (slot.kind === "hardpoint") {
 			if (
 				hull === "raider" &&

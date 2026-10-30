@@ -42,10 +42,11 @@ test("the miner has h1 and the size-3 mount slots h2 and h3, and no other slot m
 			).toBe(`${id} false`);
 });
 
-test("NPC and Traffic miners keep one laser and leave the mounts empty (D-D9)", () => {
+test("NPC and Traffic miners fly the stock fit: one laser, the mounts empty (D-D9)", () => {
 	for (let seed = 1; seed < 60; seed++) {
 		const fit = npcLoadout("miner", seed);
 		expect(Object.keys(fit).filter((k) => /^h\d$/.test(k))).toEqual(["h1"]);
+		expect(fit).toEqual(stockLoadout("miner"));
 	}
 });
 
