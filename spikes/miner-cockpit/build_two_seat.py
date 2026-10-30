@@ -355,62 +355,73 @@ for z in [-2.4, -1.6, -.8, 0, .8, 1.6]:
     for dx in [-.21, .21]:
         for dz in [-.33, 0, .33]: tube((CENTRE_X + dx, FLOOR_Y + .035, z + dz), (CENTRE_X + dx, FLOOR_Y + .045, z + dz), .012, alloy, 6)
 
-def pod(xc, eye, width, screens, name):
-    """A free-standing instrument pod on a plinth: a tilted face toward its eye under a hood."""
+def pod(xc, eye, width, screens, name, frame_mat=steel, h=.38, stripes=False):
+    """A working-machine console (#1143 r16): a thin bolted instrument plate on an open square-tube
+    frame, braced, with its cable loom and a junction box exposed. Open below, so the floor and the
+    chin window show through. The top edge stays level; the plate tilts only in pitch to its eye."""
     zc = -.98
-    face_c = Vector((xc, -.7, zc))
+    face_c = Vector((xc, -.79, zc))
     to_eye = eye - face_c; to_eye.x = 0
     n = to_eye.normalized(); u = Vector((1, 0, 0)); v = n.cross(u).normalized()
     if v.y < 0: v = -v
     frame = (u, v, n)
     def at(a, b, d=0): return face_c + u * a + v * b + n * d
-    h = .46
-    box(at(0, 0, -.16), (width, h, .3), dark, frame=frame)
-    box(at(0, 0, -.005), (width - .04, h - .04, .02), steel, frame=frame)
-    box(at(0, h / 2 + .03, -.12), (width + .06, .05, .36), steel, frame=frame)
-    box(at(0, h / 2 + .058, -.12), (width + .02, .008, .32), dark, frame=frame)
-    for s in [-1, 1]:
-        box(at(s * (width / 2 + .03), -.02, -.12), (.06, h + .08, .36), steel, frame=frame)
-        for k in range(3): box(at(s * (width / 2 + .061), -.08 + k * .045, -.15), (.004, .02, .2), black, frame=frame)
-    base_top = face_c.y - h / 2 * v.y
-    box(Vector((xc, (FLOOR_Y + base_top) / 2, zc - .3)), (width - .14, base_top - FLOOR_Y, .4), black)
-    for s in [-1, 1]:
-        box(Vector((xc + s * (width / 2 + .03), (FLOOR_Y + base_top) / 2, zc - .12)), (.1, base_top - FLOOR_Y, .78), steel)
-    box(Vector((xc, FLOOR_Y + .12, zc + .1)), (width - .3, .18, .05), hose)
-    for s in [-1, 1]: box(Vector((xc + s * .15, FLOOR_Y + .05, zc + .25)), (.12, .04, .22), alloy)
-    for a in [-width / 2 + .035, width / 2 - .035]:
-        for b in [-h / 2 + .035, -h / 6, h / 6, h / 2 - .035]: tube(at(a, b, -.006), at(a, b, .01), .011, alloy, 8)
-    for b in [-h / 2 + .09]: box(at(0, b, -.004), (width - .2, .006, .01), black, frame=frame)
-    for k, yy in enumerate([FLOOR_Y + .16, FLOOR_Y + .34]):
-        box(Vector((xc, yy, zc - .09)), (width - .2, .008, .012), black)
-    box(Vector((xc, FLOOR_Y + .05, zc - .08)), (width - .1, .1, .04), steel)
+    box(at(0, 0, -.03), (width, h, .045), dark, frame=frame)
+    box(at(0, h / 2 + .012, -.03), (width + .02, .024, .07), frame_mat, frame=frame)
+    box(at(0, -h / 2 - .012, -.03), (width + .02, .024, .07), frame_mat, frame=frame)
+    for s in [-1, 1]: box(at(s * (width / 2 + .012), 0, -.03), (.024, h + .05, .07), frame_mat, frame=frame)
+    for a in [-width / 2 + .03, -width / 6, width / 6, width / 2 - .03]:
+        for b in [-h / 2 + .022, h / 2 - .022]: tube(at(a, b, -.006), at(a, b, .01), .009, alloy, 8)
+    if stripes:
+        lip0, lip1 = at(-width / 2, -h / 2 - .02, .01), at(width / 2, -h / 2 - .02, .01)
+        for k in range(14):
+            t0, t1 = k / 14, (k + 1) / 14
+            box(lip0.lerp(lip1, (t0 + t1) / 2), ((width) / 14 - .006, .022, .008), ochre if k % 2 == 0 else black, frame=frame)
+    back = at(0, 0, -.06)
+    post_x = [xc - width / 2 + .07, xc + width / 2 - .07]
+    for px in post_x:
+        top = Vector((px, back.y - .05, back.z - .04)); foot = Vector((px, FLOOR_Y, back.z - .12))
+        tube(foot, top, .022, frame_mat, 4)
+        box(foot + Vector((0, .006, 0)), (.12, .012, .12), frame_mat)
+        for dx in [-.04, .04]:
+            for dz in [-.04, .04]: tube(foot + Vector((dx, .012, dz)), foot + Vector((dx, .024, dz)), .008, alloy, 6)
+    tube(Vector((post_x[0], FLOOR_Y + .08, back.z - .11)), Vector((post_x[1], back.y - .2, back.z - .06)), .014, frame_mat, 4)
+    tube(Vector((post_x[1], FLOOR_Y + .08, back.z - .11)), Vector((post_x[0], back.y - .2, back.z - .06)), .014, frame_mat, 4)
+    tube(Vector((post_x[0], back.y - .07, back.z - .05)), Vector((post_x[1], back.y - .07, back.z - .05)), .016, frame_mat, 4)
+    jb = Vector((post_x[1] - .02, back.y - .3, back.z - .04))
+    box(jb, (.12, .15, .07), dark)
+    for dx in [-.045, .045]:
+        for dy in [-.06, .06]: tube(jb + Vector((dx, dy, .035)), jb + Vector((dx, dy, .045)), .007, alloy, 6)
+    for k, dx in enumerate([-.014, 0, .014]):
+        curve_path([(post_x[1] + dx - .05, back.y - .05, back.z - .03), (jb.x + dx, jb.y + .08, jb.z), (jb.x + dx, jb.y - .08, jb.z), (post_x[1] + dx - .03, FLOOR_Y + .25, back.z - .1), (post_x[1] + dx - .02, FLOOR_Y + .02, back.z - .06)], .009, hose, sides=8, steps=6)
+    for yy in [back.y - .45, FLOOR_Y + .15]: tube(Vector((post_x[1] - .05, yy, back.z - .08)), Vector((post_x[1] - .05, yy + .02, back.z - .08)), .03, alloy, 8)
     for sname, a, b, w, hh in screens:
-        box(at(a, b, .012), (w + .03, hh + .03, .02), black, frame=frame)
-        plane(sname, at(a, b, .024), w, hh, frame=frame)
-        bezel(at(a, b, .036), w + .04, hh + .04, .022, black, frame=frame)
+        box(at(a, b, .006), (w + .02, hh + .02, .012), black, frame=frame)
+        plane(sname, at(a, b, .014), w, hh, frame=frame)
+        bezel(at(a, b, .022), w + .03, hh + .03, .014, black, frame=frame)
     return at, frame
 
-pilot_at, pilot_frame = pod(-.28, Vector((0, 0, 0)), 1.24, [
-    ('screen-radar', -.12, .03, .5, .3),
-    ('screen-flight', .4, .1, .3, .13),
-    ('screen-target', .4, -.07, .3, .13),
-    ('screen-status', -.12, -.165, .5, .04),
-    ('screen-notices', -.5, -.165, .1, .05),
+pilot_at, pilot_frame = pod(-.26, Vector((0, 0, 0)), 1.12, [
+    ('screen-radar', -.15, .0, .44, .27),
+    ('screen-flight', .33, .07, .28, .12),
+    ('screen-target', .33, -.07, .28, .12),
+    ('screen-status', -.15, -.165, .44, .035),
+    ('screen-notices', -.46, -.165, .08, .035),
 ], 'pilot')
-for b in [.12, .04, -.04]:
+for b in [.1, .03, -.04]:
     c = pilot_at(-.52, b, .02); tube(c, c + pilot_frame[2] * .045, .03, alloy, 14); tube(c + pilot_frame[2] * .045, c + pilot_frame[2] * .07, .022, black, 12)
-plane('label-radar', pilot_at(-.12, .2, .026), .3, .025, frame=pilot_frame)
-plane('label-flight', pilot_at(.4, .185, .026), .22, .022, frame=pilot_frame)
-plane('label-target', pilot_at(.4, -.15, .026), .22, .022, frame=pilot_frame)
-miner_at, miner_frame = pod(1.48, MINER_EYE, 1.24, [
-    ('screen-survey', -.45, .14, .26, .1),
-    ('screen-ore', -.15, .14, .26, .1),
-    ('screen-drill', .15, .14, .26, .1),
-    ('screen-anchor', .45, .14, .26, .1),
-    ('screen-stance', -.47, -.06, .2, .2),
-    ('screen-drillcam', -.04, -.06, .48, .2),
-    ('screen-lasers', .43, -.06, .24, .2),
-], 'miner')
+plane('label-radar', pilot_at(-.15, .162, .016), .3, .022, frame=pilot_frame)
+plane('label-flight', pilot_at(.33, .155, .016), .22, .02, frame=pilot_frame)
+plane('label-target', pilot_at(.33, -.155, .016), .22, .02, frame=pilot_frame)
+miner_at, miner_frame = pod(1.46, MINER_EYE, 1.12, [
+    ('screen-survey', -.39, .12, .24, .09),
+    ('screen-ore', -.13, .12, .24, .09),
+    ('screen-drill', .13, .12, .24, .09),
+    ('screen-anchor', .39, .12, .24, .09),
+    ('screen-stance', -.42, -.06, .18, .17),
+    ('screen-drillcam', -.04, -.06, .44, .17),
+    ('screen-lasers', .37, -.06, .22, .17),
+], 'miner', frame_mat=ochre, stripes=True)
 
 # Two seats behind the eyes: painted shells with tan cushions, wings, headrests, and a ribbed hose
 # down each outer edge. The pilot's flight stick and the miner's feed lever sit on the aisle armrests.

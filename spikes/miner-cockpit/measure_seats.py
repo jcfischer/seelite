@@ -1,6 +1,6 @@
 """Open glass from each bridge seat in the game frame (#1143): the share of the frame where a ray
 from the eye leaves through the V3 glazing without meeting the cockpit or the hull.
-Blender --background spikes/miner-cockpit/miner-cockpit-2seat.blend --python spikes/miner-cockpit/measure_seats.py -- <vfov deg> [label]
+Blender --background spikes/miner-cockpit/miner-cockpit-2seat.blend --python spikes/miner-cockpit/measure_seats.py -- <vfov deg> [label] [pitch rad, default the game's 0.12]
 """
 import bpy, bmesh, math, sys, json
 from pathlib import Path
@@ -8,6 +8,7 @@ from mathutils import Vector, Matrix
 
 args = sys.argv[sys.argv.index('--') + 1:]
 VFOV = float(args[0]); LABEL = args[1] if len(args) > 1 else ''
+PITCH = float(args[2]) if len(args) > 2 else 0.12
 ROOT = Path(bpy.data.filepath).resolve().parents[2]
 sc = bpy.context.scene
 cockpit = {o for o in sc.objects if o.type == 'MESH' and not o.name.startswith(('screen-', 'label-'))}
@@ -36,18 +37,29 @@ for o in dst.objects:
 bpy.context.view_layer.update()
 dg = bpy.context.evaluated_depsgraph_get()
 
+BLOCK = {}
+GLASS_SEEN = [0]
 def ray(eye, d):
-    origin = eye.copy(); glass = False
+    origin = eye.copy(); glass = False; first = None
     for _ in range(10):
         hit, loc, n, i, obj, m = sc.ray_cast(dg, origin, d, distance=300)
-        if not hit: return glass
+        if not hit: return glass and first is None
         if obj.name.endswith('bridge-glazing'):
+            if not glass and first is None: GLASS_SEEN[0] += 1
             glass = True; origin = loc + d * 1e-3; continue
-        if obj in cockpit or obj in hull: return False
+        if obj in cockpit:
+            first = first or obj.name; origin = loc + d * 1e-3; continue
+        if obj in hull:
+            if glass and first is None: return False
+            break
         origin = loc + d * 1e-3
+    if glass and first: BLOCK[first] = BLOCK.get(first, 0) + 1
     return False
 
-def B(x, y, z): return Vector((x, -z, y))
+def B(x, y, z):
+    c, s_ = math.cos(-PITCH), math.sin(-PITCH)
+    y, z = y * c - z * s_, y * s_ + z * c
+    return Vector((x, -z, y))
 def survey(eye):
     t = math.tan(math.radians(VFOV / 2)); aspect = 1.5
     nx, ny = 96, 64; open_ = 0; top_rows = 0; centre_col_open = []
@@ -58,7 +70,9 @@ def survey(eye):
             if ray(eye, B(u, v, -1).normalized()): open_ += 1
     return round(open_ / (nx * ny), 3)
 
-out = {'vfov': VFOV, 'label': LABEL,
+out = {'vfov': VFOV, 'label': LABEL, 'pitch': PITCH,
        'pilot open glass share of frame': survey(B(0, 0, 0)),
        'miner open glass share of frame': survey(B(1.2, 0, 0))}
+out['glass seen from the seats, share of both frames'] = round(GLASS_SEEN[0] / (2 * 96 * 64), 3)
+out['glass hidden by cockpit, rays by object (pilot+miner)'] = dict(sorted(BLOCK.items(), key=lambda kv: -kv[1])[:8])
 print('SEATS', json.dumps(out))
