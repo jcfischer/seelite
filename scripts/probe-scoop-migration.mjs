@@ -83,23 +83,31 @@ const redockTwice = (page) =>
 				]).loadout,
 			};
 		const phase = () => g.dockingSnapshot(id).dockPhase;
+		const shown = () => {
+			g.render(0);
+			g.updateCockpit();
+			return (
+				document.querySelector("[data-live-station-message]")?.textContent ??
+				null
+			);
+		};
 		const cycle = () => {
 			for (let t = 0; t < 200 && phase() !== "flying"; t += dt) {
 				if (phase() === "docked") g.launch();
 				g.step(dt);
 			}
 			const out = phase();
+			const shownOut = shown();
 			g.targetId = id;
 			g.requestDockingClearance();
 			if (!g.dockingComputer.engaged) g.toggleDockingComputer();
 			for (let t = 0; t < 400 && phase() !== "docked"; t += dt) g.step(dt);
-			g.render(0);
 			return {
 				out,
+				shownOut,
 				phase: phase(),
-				message:
-					document.querySelector("[data-live-station-message]")?.textContent ??
-					null,
+				message: shown(),
+				field: g.stationConsoleMessage,
 				owed: g.scoopNotice,
 			};
 		};
@@ -202,13 +210,18 @@ try {
 	check(
 		"a second dock after the notice was said shows no scoop notice",
 		full.docks.second.out === "flying" &&
+			!full.docks.second.shownOut &&
 			full.docks.second.phase === "docked" &&
+			full.docks.second.field !== full.notice &&
 			!full.docks.second.message?.includes(full.notice),
 		JSON.stringify(full.docks.second),
 	);
 	check(
 		"control: the same dock path shows the notice when one is owed",
-		full.docks.control.phase === "docked" &&
+		full.docks.control.out === "flying" &&
+			!full.docks.control.shownOut &&
+			full.docks.control.phase === "docked" &&
+			full.docks.control.field === full.notice &&
 			full.docks.control.message?.includes(full.notice) === true &&
 			full.docks.control.owed === false,
 		JSON.stringify(full.docks.control),
