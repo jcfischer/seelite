@@ -337,7 +337,7 @@ const expectSameBox = (built: THREE.Box3, before: THREE.Box3) => {
 };
 
 describe("the static hull draws one mesh per material (node #815)", () => {
-	test("the export's 19 hull meshes become 10, and the triangles do not move", async () => {
+	test("the export's 19 hull meshes and the six grafted mount parts (#1147) become 10, and the triangles do not move", async () => {
 		const root = buildShipMesh("miner", "b").root;
 		const hull = root.getObjectByName("hull") as THREE.Object3D;
 		const meshes = meshesOf(hull);
@@ -353,7 +353,7 @@ describe("the static hull draws one mesh per material (node #815)", () => {
 		// The same triangles as the export's hull group, nothing dropped.
 		const exported = EXPORTED;
 		const source = exported.getObjectByName("hull") as THREE.Object3D;
-		expect(meshesOf(source)).toHaveLength(19);
+		expect(meshesOf(source)).toHaveLength(25);
 		expect(triangles(meshes)).toBe(triangles(meshesOf(source)));
 		// And in the same place: each side's box in its own `hull` group's
 		// frame, which is the export's metres on both, corner for corner —
@@ -425,9 +425,9 @@ describe("every Traffic miner is the model, so the detail band switches it (node
 		expect(shown(traffic)).toEqual(["reduced"]);
 		// The whole model, and what a miner at a berth now draws instead.
 		expect(drawn(own)).toHaveLength(44);
-		expect(triangles(drawn(own))).toBe(283_576);
+		expect(triangles(drawn(own))).toBe(284_032);
 		expect(drawn(traffic)).toHaveLength(44);
-		expect(triangles(drawn(traffic))).toBe(22_778);
+		expect(triangles(drawn(traffic))).toBe(22_852);
 		// However near: inside a bay, a hull length away.
 		updateShipVisuals(traffic, reach, "high");
 		expect(shown(traffic)).toEqual(["reduced"]);
@@ -458,11 +458,11 @@ describe("every Traffic miner is the model, so the detail band switches it (node
 		const root = buildShipMesh("miner", "b").root;
 		root.updateMatrixWorld(true);
 		const { full, reduced, outline } = levelsOf(root);
-		expect(triangles(meshesOf(full))).toBe(283_528);
+		expect(triangles(meshesOf(full))).toBe(283_984);
 		// Pinned, because the receipt quotes them and the simplifier is
 		// deterministic: a change to the reduction is a red row rather than a
 		// silent re-weighting of every miner in the game.
-		expect(triangles(meshesOf(reduced))).toBe(22_730);
+		expect(triangles(meshesOf(reduced))).toBe(22_804);
 		expect(triangles(meshesOf(outline))).toBe(544);
 		const lamps = meshesOf(full).filter(isLamp);
 		expect(lamps.length).toBeGreaterThan(0);
@@ -588,8 +588,8 @@ describe("every Traffic miner is the model, so the detail band switches it (node
 		);
 		// Of the model's vertices, how many lie further than the target.
 		const modelPoints = usedVertices(model);
-		expect(modelPoints.length / 3).toBe(482_918);
-		expect(countBeyond(drawnGrid, modelPoints, 0.135)).toBe(83_855);
+		expect(modelPoints.length / 3).toBe(483_638);
+		expect(countBeyond(drawnGrid, modelPoints, 0.135)).toBe(83_520);
 	}, 60_000);
 
 	test("a wreck darkens every level", () => {

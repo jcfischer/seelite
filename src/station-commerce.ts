@@ -5,6 +5,7 @@ import {
 	fitted,
 	stockLoadout,
 	moduleRow,
+	boughtModule,
 	legacyModule,
 	moduleFits,
 	carriedModule,
@@ -243,6 +244,8 @@ export interface StationCommerceInput {
 	 * hull that can never leave, and no default can know the galaxy.
 	 */
 	hullReach: (hull: HullId) => HullReach;
+	/** `?mining=1`, for `stationEquipmentScreen`'s `mining`: https://github.com/jcfischer/seelite/issues/1147 */
+	mining?: boolean;
 	action: StationAction;
 }
 
@@ -445,8 +448,10 @@ const availableEquipment = (
 	stationEquipmentScreen({
 		type: input.station.type,
 		hull: input.commander.hull,
+		loadout: input.commander.loadout,
 		displayTL: input.displayTL,
 		rungs: input.rungs,
+		mining: input.mining,
 	}).available.filter((item) => item.per === "unit");
 
 /**
@@ -671,7 +676,11 @@ export function transactAtStation(
 			return rejected(input, "equipment-owned");
 		if (entry.locked) return rejected(input, "equipment-locked");
 		const module = {
-			...legacyModule(input.commander.hull, entry.name),
+			...boughtModule(
+				input.commander.hull,
+				input.commander.loadout,
+				entry.name,
+			),
 			purchaseCostCr: entry.priceCr,
 		};
 		if (!slotFor(input.commander, module))

@@ -5416,7 +5416,7 @@ class Game {
 	readonly armedFireGroup = new ArmedFireGroup();
 
 	get fireGroups() {
-		return fireGroups(this.commander.loadout, this.commander.hull);
+		return fireGroups(this.commander.loadout, this.commander.hull, MINING_ON);
 	}
 
 	cycleFireGroup() {
@@ -19768,6 +19768,7 @@ class Game {
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
+				mining: MINING_ON,
 			}),
 			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else.
 			shipyard:
@@ -20893,6 +20894,7 @@ class Game {
 			entrustedT: entrustedTonnesAboard(this.requests),
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
+			mining: MINING_ON,
 		};
 	}
 
