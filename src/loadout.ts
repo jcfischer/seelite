@@ -412,6 +412,24 @@ export function legacyModule(hull: HullId, name: string): FittedModule {
 	);
 	return makeModule(kind, r?.size ?? 1);
 }
+/**
+ * https://github.com/jcfischer/seelite/issues/1147
+ * The module a till sells under a legacy name to this loadout: `legacyModule`,
+ * except that a Mining Laser whose free slot is a mount takes the mount's size
+ * (#920 D-D18). Without a loadout it is `legacyModule`.
+ */
+export function boughtModule(
+	hull: HullId,
+	loadout: Loadout | undefined,
+	name: string,
+): FittedModule {
+	const m = legacyModule(hull, name);
+	if (m.module !== "mining-laser" || !loadout) return m;
+	const slot = freeSlot(loadout, hull, m);
+	return slot?.kind === "hardpoint" && slot.mount
+		? makeModule(m.module, slot.size, m.grade)
+		: m;
+}
 export function migrateEquipment(hull: HullId, names: readonly string[]) {
 	const stock = stockLoadout(hull);
 	const loadout: Record<string, FittedModule> = { plant: stock.plant };

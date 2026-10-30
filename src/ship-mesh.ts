@@ -6975,6 +6975,7 @@ function* navLightPositionSteps(
 
 /** A part this hull draws as a gun: a pod or a muzzle ring. */
 const GUN_PART = /-(hardpoint-[a-z]+|muzzle)$/;
+const SLOT_MUZZLE = /^muzzle-(h\d+)$/;
 
 const muzzleCache = new Map<string, readonly Vec3[]>();
 
@@ -7031,11 +7032,15 @@ export function shipMuzzlesKm(
 	root.updateMatrixWorld(true);
 	const count = HULL_SPECS[id].hardpoints;
 	const parts: THREE.Object3D[] = [];
+	const named = new Map<string, THREE.Object3D>();
 	root.traverse((o) => {
 		if (GUN_PART.test(o.name)) parts.push(o);
+		const slot = SLOT_MUZZLE.exec(o.name)?.[1];
+		if (slot && !named.has(slot)) named.set(slot, o);
 	});
 	let muzzles: Vec3[];
-	if (parts.length === count) {
+	if (named.size > 0) muzzles = slotMuzzles(root, id, named, key);
+	else if (parts.length === count) {
 		muzzles = parts.map((part) => {
 			const b = new THREE.Box3().setFromObject(part);
 			const c = b.getCenter(new THREE.Vector3());
@@ -7045,6 +7050,36 @@ export function shipMuzzlesKm(
 	const frozen = Object.freeze(muzzles.map((m) => Object.freeze(m)));
 	muzzleCache.set(key, frozen);
 	return frozen;
+}
+
+/**
+ * https://github.com/jcfischer/seelite/issues/1147
+ * A hull whose model marks a hardpoint's muzzle with an empty `muzzle-<slot>`
+ * node fires that slot from it; its other hardpoints, in key order, get
+ * `raycastMuzzles`'s mounts. The order is the slots', never a name sort.
+ */
+function slotMuzzles(
+	root: THREE.Group,
+	id: HullId,
+	named: ReadonlyMap<string, THREE.Object3D>,
+	key: string,
+): Vec3[] {
+	const slots = HULL_SPECS[id].slots.filter((s) => s.kind === "hardpoint");
+	for (const slot of named.keys())
+		if (!slots.some((s) => s.key === slot))
+			throw new Error(`${key}: muzzle-${slot} names no hardpoint`);
+	const rayed = raycastMuzzles(
+		root,
+		slots.filter((s) => !named.has(s.key)).length,
+		key,
+	);
+	let next = 0;
+	return slots.map((s) => {
+		const node = named.get(s.key);
+		if (!node) return rayed[next++];
+		const p = node.getWorldPosition(new THREE.Vector3());
+		return { x: p.x, y: p.y, z: p.z };
+	});
 }
 
 /** `shipMuzzlesKm`'s mounts for a hull with no gun parts. */

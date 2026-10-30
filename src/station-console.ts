@@ -1,5 +1,6 @@
 import { type HullId } from "./hull";
 import {
+	boughtModule,
 	legacyModule,
 	moduleRow,
 	LEGACY_MODULES,
@@ -520,6 +521,8 @@ export function stationEquipmentScreen(input: {
 	 * indistinguishable in a diff. `TOP_RUNGS` is the explicit open gate.
 	 */
 	rungs: Rungs;
+	/** `?mining=1`: each item's `miningScope` sells it too, https://github.com/jcfischer/seelite/issues/1147 */
+	mining?: boolean;
 }): ConsoleEquipmentScreen {
 	const { type, displayTL, rungs } = input;
 	const gated = (entry: ConsoleEquipmentEntry): ConsoleEquipmentEntry => {
@@ -548,7 +551,8 @@ export function stationEquipmentScreen(input: {
 			priceCr: item.priceCr,
 			per: "unit",
 		};
-		if (item.scope === type) available.push(gated(entry));
+		if (item.scope === type || (input.mining && item.miningScope === type))
+			available.push(gated(entry));
 		else unavailable.push({ name: item.name, reason: scopeReason(item.scope) });
 	}
 
@@ -562,7 +566,9 @@ export function stationEquipmentScreen(input: {
 						e.per === "unit"
 							? {
 									...e,
-									priceCr: moduleRow(legacyModule(input.hull!, e.name)).priceCr,
+									priceCr: moduleRow(
+										boughtModule(input.hull!, input.loadout, e.name),
+									).priceCr,
 									repeatable:
 										repeatableEquipment(e.name) &&
 										(!input.loadout ||

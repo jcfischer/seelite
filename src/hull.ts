@@ -398,6 +398,12 @@ export type HullSlot =
 			readonly key: string;
 			readonly kind: "hardpoint" | "utility";
 			readonly size: SlotSize;
+			/**
+			 * https://github.com/jcfischer/seelite/issues/1147
+			 * A hardpoint on a mount the hull's model draws (D-D10): NPCs leave it
+			 * empty (D-D9), and a Mining Laser bought into it takes its size (D-D18).
+			 */
+			readonly mount?: true;
 	  }
 	| {
 			readonly key: string;
@@ -415,12 +421,21 @@ type TaggedInternal = readonly [SlotSize, readonly InternalFamily[]];
  */
 const slotLayout = (layout: {
 	readonly hardpoint: readonly SlotSize[];
+	readonly mounts?: readonly SlotSize[];
 	readonly utility: readonly SlotSize[];
 	readonly internal: readonly TaggedInternal[];
 	readonly flex: SlotSize;
 }): readonly HullSlot[] => [
 	...layout.hardpoint.map(
 		(size, i): HullSlot => ({ key: `h${i + 1}`, kind: "hardpoint", size }),
+	),
+	...(layout.mounts ?? []).map(
+		(size, i): HullSlot => ({
+			key: `h${layout.hardpoint.length + i + 1}`,
+			kind: "hardpoint",
+			size,
+			mount: true,
+		}),
 	),
 	...layout.utility.map(
 		(size, i): HullSlot => ({ key: `u${i + 1}`, kind: "utility", size }),
@@ -1032,9 +1047,10 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			roll: { z: 0.925, port: 0.97, starboard: 0.97 },
 		},
 		holdT: 40,
-		hardpoints: 1,
+		hardpoints: 3,
 		slots: slotLayout({
 			hardpoint: [3],
+			mounts: [3, 3],
 			utility: [2, 1, 1],
 			internal: [
 				[3, ["cargo"]],
