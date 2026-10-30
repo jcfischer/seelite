@@ -49,8 +49,11 @@ and its parent round-trip this fabricated explorer. It did not introduce
 the failure. A headless serialization replay at `f9ce5052` and its parent
 reproduces the same valid/invalid boundary as the browser pair.
 
-Probe selection for `scripts/probe-shipyard.mjs` names only `probe-shipyard`.
-These runs establish that contract, not a full browser-suite pass.
+Diagnostic path selection names `probe-shipyard`. Git-based selection from
+`297e9c60` to the repair commit also adds the smoke probes `probe-boot`,
+`probe-live-cockpit` and `probe-production-boot`. This worker ran the changed
+shipyard contract as instructed; the supervisor owns the final browser gate.
+These runs establish that contract, not a selected-gate or full-suite pass.
 
 One repaired run reached the successful IndexedDB readback, then timed out
 at the reload's 20-second boot-readiness wait. The unchanged repeat passed
