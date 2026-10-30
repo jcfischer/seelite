@@ -207,20 +207,18 @@ try {
 		JSON.stringify(full.after.message),
 	);
 	check("and the notice is spent once it is said", full.after.owed === false);
+	const cycled = (dock) =>
+		dock.out === "flying" && !dock.shownOut && dock.phase === "docked";
 	check(
 		"a second dock after the notice was said shows no scoop notice",
-		full.docks.second.out === "flying" &&
-			!full.docks.second.shownOut &&
-			full.docks.second.phase === "docked" &&
+		cycled(full.docks.second) &&
 			full.docks.second.field !== full.notice &&
 			!full.docks.second.message?.includes(full.notice),
 		JSON.stringify(full.docks.second),
 	);
 	check(
 		"control: the same dock path shows the notice when one is owed",
-		full.docks.control.out === "flying" &&
-			!full.docks.control.shownOut &&
-			full.docks.control.phase === "docked" &&
+		cycled(full.docks.control) &&
 			full.docks.control.field === full.notice &&
 			full.docks.control.message?.includes(full.notice) === true &&
 			full.docks.control.owed === false,
