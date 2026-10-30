@@ -378,11 +378,10 @@ def face_kit(at, frame, width, h, miner):
         box(lip0.lerp(lip1, (k + .5) / 16), (width / 16 - .006, .02, .008), ochre if k % 2 == 0 else black, frame=frame)
 
 def pod(xc, eye, width, screens, name, frame_mat=steel, h=.38, stripes=False, plate_mat=None):
-    """A working-machine console (#1143 r16): a thin bolted instrument plate on an open square-tube
-    frame, braced, with its cable loom and a junction box exposed. Open below, so the floor and the
-    chin window show through. The top edge stays level; the plate tilts only in pitch to its eye."""
+    """A solid instrument pod (#1143 r18): a bolted face with a level top, a hood, deep side cheeks and
+    a closed pedestal with a recessed footwell. The face tilts only in pitch to its eye."""
     zc = -.98
-    face_c = Vector((xc, -.63, zc))
+    face_c = Vector((xc, -.75, zc))
     to_eye = eye - face_c; to_eye.x = 0
     n = to_eye.normalized(); u = Vector((1, 0, 0)); v = n.cross(u).normalized()
     if v.y < 0: v = -v
@@ -399,24 +398,32 @@ def pod(xc, eye, width, screens, name, frame_mat=steel, h=.38, stripes=False, pl
         for k in range(14):
             t0, t1 = k / 14, (k + 1) / 14
             box(lip0.lerp(lip1, (t0 + t1) / 2), ((width) / 14 - .006, .022, .008), ochre if k % 2 == 0 else black, frame=frame)
-    back = at(0, 0, -.06)
-    post_x = [xc - width / 2 - .05, xc + width / 2 + .05]
-    for px in post_x:
-        top = Vector((px, back.y + .17, back.z + .02)); foot = Vector((px, FLOOR_Y, back.z + .12))
-        tube(foot, top, .022, frame_mat, 4)
-        box(foot + Vector((0, .006, 0)), (.12, .012, .12), frame_mat)
-        for dx in [-.04, .04]:
-            for dz in [-.04, .04]: tube(foot + Vector((dx, .012, dz)), foot + Vector((dx, .024, dz)), .008, alloy, 6)
-    tube(Vector((post_x[0], FLOOR_Y + .08, back.z - .11)), Vector((post_x[1], back.y - .2, back.z - .06)), .014, frame_mat, 4)
-    tube(Vector((post_x[1], FLOOR_Y + .08, back.z - .11)), Vector((post_x[0], back.y - .2, back.z - .06)), .014, frame_mat, 4)
-    tube(Vector((post_x[0], back.y - .07, back.z - .05)), Vector((post_x[1], back.y - .07, back.z - .05)), .016, frame_mat, 4)
-    jb = Vector((post_x[1] - .02, back.y - .3, back.z - .04))
-    box(jb, (.12, .15, .07), dark)
-    for dx in [-.045, .045]:
-        for dy in [-.06, .06]: tube(jb + Vector((dx, dy, .035)), jb + Vector((dx, dy, .045)), .007, alloy, 6)
-    for k, dx in enumerate([-.014, 0, .014]):
-        curve_path([(post_x[1] + dx - .05, back.y - .05, back.z - .03), (jb.x + dx, jb.y + .08, jb.z), (jb.x + dx, jb.y - .08, jb.z), (post_x[1] + dx - .03, FLOOR_Y + .25, back.z - .1), (post_x[1] + dx - .02, FLOOR_Y + .02, back.z - .06)], .009, hose, sides=8, steps=6)
-    for yy in [back.y - .45, FLOOR_Y + .15]: tube(Vector((post_x[1] - .05, yy, back.z - .08)), Vector((post_x[1] - .05, yy + .02, back.z - .08)), .03, alloy, 8)
+    # Solid pod (#1143 r18): a hood behind the level top edge, deep side cheeks down to the deck, a
+    # closed pedestal under the face with a dark recessed footwell. No wider than the face.
+    top_edge = at(0, h / 2 + .024, -.03)
+    fwd = Vector((0, 0, -1)); hood_d = .34
+    box(top_edge + fwd * (hood_d / 2) + Vector((0, -.03, 0)), (width + .06, .06, hood_d), frame_mat)
+    box(top_edge + fwd * (hood_d / 2) + Vector((0, .002, 0)), (width + .02, .008, hood_d - .04), plate_mat or dark)
+    lo = at(0, -h / 2 - .03, -.03)
+    for sgn in [-1, 1]:
+        x = xc + sgn * (width / 2 + .035)
+        prof = [Vector((x, top_edge.y + .01, top_edge.z + .05)), Vector((x, top_edge.y + .01, top_edge.z - hood_d)),
+                Vector((x, FLOOR_Y, top_edge.z - hood_d - .05)), Vector((x, FLOOR_Y, lo.z + .14)),
+                Vector((x, lo.y - .06, lo.z + .1)), Vector((x, lo.y, lo.z + .02))]
+        off = Vector((sgn * .07, 0, 0)); outer = [q + off for q in prof]
+        poly(list(reversed(prof)) if sgn > 0 else prof, frame_mat); poly(outer if sgn > 0 else list(reversed(outer)), frame_mat)
+        for i in range(len(prof)):
+            j = (i + 1) % len(prof); poly([prof[i], prof[j], outer[j], outer[i]], frame_mat)
+        for k in range(4):
+            y = FLOOR_Y + .12 + k * (top_edge.y - FLOOR_Y - .2) / 3
+            tube(Vector((x + sgn * .072, y, lo.z - .1)), Vector((x + sgn * .085, y, lo.z - .1)), .011, alloy, 6)
+    ped_top = lo.y - .06
+    box(Vector((xc, (FLOOR_Y + ped_top) / 2, lo.z - .2)), (width, ped_top - FLOOR_Y, .36), plate_mat or dark)
+    well = Vector((xc, FLOOR_Y + .13, lo.z + .02))
+    box(well, (width - .16, .24, .1), black)
+    box(Vector((xc, FLOOR_Y + .015, lo.z + .03)), (width - .1, .03, .14), steel)
+    for sgn in [-1, 1]: box(Vector((xc + sgn * .16, FLOOR_Y + .05, lo.z - .02)), (.12, .04, .18), alloy)
+    box(Vector((xc, ped_top - .03, lo.z + .05)), (width - .06, .05, .06), frame_mat)
     for sname, a, b, w, hh in screens:
         box(at(a, b, .006), (w + .02, hh + .02, .012), black, frame=frame)
         plane(sname, at(a, b, .014), w, hh, frame=frame)
