@@ -45,6 +45,41 @@ export function gameMethodSource(name: string): string {
 	return member.getText(source);
 }
 
+/** Game.render statements from a named declaration through a for-of loop, inclusive. */
+export function renderStatementSlice(
+	startName: string,
+	loopExpr: string,
+): string {
+	const render = gameClass?.members.find(
+		(member) =>
+			ts.isMethodDeclaration(member) &&
+			member.name.getText(source) === "render",
+	);
+	if (!render || !ts.isMethodDeclaration(render) || !render.body)
+		throw new Error("Missing Game.render body");
+	const statements = [...render.body.statements];
+	const start = statements.findIndex(
+		(statement) =>
+			ts.isVariableStatement(statement) &&
+			statement.declarationList.declarations.some(
+				(declaration) => declaration.name.getText(source) === startName,
+			),
+	);
+	if (start < 0)
+		throw new Error(`Missing Game.render declaration: ${startName}`);
+	const end = statements.findIndex(
+		(statement) =>
+			ts.isForOfStatement(statement) &&
+			statement.expression.getText(source) === loopExpr,
+	);
+	if (end <= start)
+		throw new Error(`Missing Game.render loop after ${startName}: ${loopExpr}`);
+	return statements
+		.slice(start, end + 1)
+		.map((statement) => statement.getText(source))
+		.join("\n");
+}
+
 /** `Game`'s named methods and getters, on a prototype with no constructor. */
 export function gameMethods(
 	names: string[],
