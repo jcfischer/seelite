@@ -1049,6 +1049,7 @@ import {
 	COCKPIT_MODEL_KM_PER_M,
 	INSTRUMENT_FACE_KM,
 	MINER_COCKPIT,
+	MINER_COCKPIT_FOV_DEG,
 	MINER_SEAT_OFFSET_M,
 	SCANNER_FACE_KM,
 	type ScreenFrame,
@@ -4867,7 +4868,7 @@ class Game {
 		// One field of view across all three, and that is load-bearing rather than
 		// tidy: the layers composite into one image, so a body's projected size
 		// has to agree across the seam it crosses.
-		const fov = 60;
+		const fov = MINER_COCKPIT ? MINER_COCKPIT_FOV_DEG : 60;
 		// Its far plane just clears the star sphere; the layer writes no depth
 		// anyway, so the numbers only have to bracket the geometry.
 		this.backdropCamera = new THREE.PerspectiveCamera(

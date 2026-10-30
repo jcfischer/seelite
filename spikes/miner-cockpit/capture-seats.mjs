@@ -1,5 +1,5 @@
 // Review capture for #1143: the two-seat miner cabin (`?cockpit=miner`) in a no-save game near a
-// rock, from the pilot seat and from the miner seat (key 4). Needs a dev server serving this tree.
+// rock, from the pilot seat and from the miner seat (key 5, view.seatSwap), at 60 degrees and at the build FOV. Needs a dev server serving this tree.
 // Usage: node spikes/miner-cockpit/capture-seats.mjs [origin] [out-dir]
 import { mkdir, writeFile } from "node:fs/promises";
 import { gameUrl } from "../../scripts/lib/game-url.mjs";
@@ -70,20 +70,38 @@ try {
 			cabin: !!g.cabinScene.getObjectByName("authored-cockpit"),
 			seatGroup: !!g.cockpitSeat,
 			minerFaces: g.minerFaces.map((f) => f.name),
+			fov: g.cabinCamera.fov,
 		};
 	});
 	if (/swiftshader|llvmpipe|software/i.test(facts.renderer))
 		throw Error("hardware renderer required");
-	await page.waitForTimeout(1200);
-	await page.screenshot({ path: `${out}/pilot-seat.png` });
-	await page.keyboard.press("4");
-	await page.waitForTimeout(800);
-	const seat = await page.evaluate(() => window.__seelite.minerSeat);
-	await page.screenshot({ path: `${out}/miner-seat.png` });
-	await page.keyboard.press("4");
-	await page.waitForTimeout(400);
-	const back = await page.evaluate(() => window.__seelite.minerSeat);
-	const report = { ...facts, afterKey4: seat, afterSecondKey4: back, errors };
+	const seats = [];
+	for (const fov of [60, facts.fov]) {
+		await page.evaluate((fov) => {
+			const g = window.__seelite;
+			for (const c of [
+				g.backdropCamera,
+				g.farCamera,
+				g.approachCamera,
+				g.nearCamera,
+				g.cabinCamera,
+			]) {
+				c.fov = fov;
+				c.updateProjectionMatrix();
+			}
+		}, fov);
+		await page.waitForTimeout(1200);
+		await page.screenshot({ path: `${out}/pilot-seat-fov${fov}.png` });
+		await page.keyboard.press("5");
+		await page.waitForTimeout(800);
+		const miner = await page.evaluate(() => window.__seelite.minerSeat);
+		await page.screenshot({ path: `${out}/miner-seat-fov${fov}.png` });
+		await page.keyboard.press("5");
+		await page.waitForTimeout(400);
+		const back = await page.evaluate(() => window.__seelite.minerSeat);
+		seats.push({ fov, afterKey5: miner, afterSecondKey5: back });
+	}
+	const report = { ...facts, seats, errors };
 	await writeFile(`${out}/report.json`, `${JSON.stringify(report, null, 2)}\n`);
 	console.log(JSON.stringify(report));
 } finally {

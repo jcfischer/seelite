@@ -239,21 +239,21 @@ for z in [-2.4, -1.6, -.8, 0, .8, 1.6]:
 
 def pod(xc, eye, width, screens, name):
     """A free-standing instrument pod on a plinth: a tilted face toward its eye under a hood."""
-    zc = -1.22
-    face_c = Vector((xc, -.44, zc))
+    zc = -.98
+    face_c = Vector((xc, -.7, zc))
     to_eye = eye - face_c; to_eye.x = 0
     n = to_eye.normalized(); u = Vector((1, 0, 0)); v = n.cross(u).normalized()
     if v.y < 0: v = -v
     frame = (u, v, n)
     def at(a, b, d=0): return face_c + u * a + v * b + n * d
-    h = .74
-    box(at(0, 0, -.26), (width, h, .5), dark, frame=frame)
+    h = .46
+    box(at(0, 0, -.16), (width, h, .3), dark, frame=frame)
     box(at(0, 0, -.005), (width - .04, h - .04, .02), steel, frame=frame)
-    box(at(0, h / 2 + .05, -.2), (width + .1, .1, .62), steel, frame=frame)
-    box(at(0, h / 2 + .105, -.2), (width + .02, .012, .56), dark, frame=frame)
+    box(at(0, h / 2 + .03, -.12), (width + .06, .05, .36), steel, frame=frame)
+    box(at(0, h / 2 + .058, -.12), (width + .02, .008, .32), dark, frame=frame)
     for s in [-1, 1]:
-        box(at(s * (width / 2 + .05), -.04, -.2), (.1, h + .18, .62), steel, frame=frame)
-        for k in range(5): box(at(s * (width / 2 + .101), -.15 + k * .045, -.25), (.004, .02, .3), black, frame=frame)
+        box(at(s * (width / 2 + .03), -.02, -.12), (.06, h + .08, .36), steel, frame=frame)
+        for k in range(3): box(at(s * (width / 2 + .061), -.08 + k * .045, -.15), (.004, .02, .2), black, frame=frame)
     base_top = face_c.y - h / 2 * v.y
     box(Vector((xc, (FLOOR_Y + base_top) / 2, zc - .3)), (width - .14, base_top - FLOOR_Y, .4), black)
     for s in [-1, 1]:
@@ -272,26 +272,26 @@ def pod(xc, eye, width, screens, name):
         bezel(at(a, b, .036), w + .04, hh + .04, .022, black, frame=frame)
     return at, frame
 
-pilot_at, pilot_frame = pod(-.3, Vector((0, 0, 0)), 1.34, [
-    ('screen-radar', -.04, .03, .6, .38),
-    ('screen-flight', .45, .13, .3, .15),
-    ('screen-target', .45, -.08, .3, .15),
-    ('screen-status', -.04, -.22, .6, .045),
-    ('screen-notices', -.5, -.2, .1, .07),
+pilot_at, pilot_frame = pod(-.28, Vector((0, 0, 0)), 1.24, [
+    ('screen-radar', -.12, .03, .5, .3),
+    ('screen-flight', .4, .1, .3, .13),
+    ('screen-target', .4, -.07, .3, .13),
+    ('screen-status', -.12, -.165, .5, .04),
+    ('screen-notices', -.5, -.165, .1, .05),
 ], 'pilot')
-for b in [.15, .05, -.05]:
+for b in [.12, .04, -.04]:
     c = pilot_at(-.52, b, .02); tube(c, c + pilot_frame[2] * .045, .03, alloy, 14); tube(c + pilot_frame[2] * .045, c + pilot_frame[2] * .07, .022, black, 12)
-plane('label-radar', pilot_at(-.04, -.185, .026), .3, .025, frame=pilot_frame)
-plane('label-flight', pilot_at(.45, .235, .026), .22, .022, frame=pilot_frame)
-plane('label-target', pilot_at(.45, -.175, .026), .22, .022, frame=pilot_frame)
-miner_at, miner_frame = pod(1.5, MINER_EYE, 1.34, [
-    ('screen-survey', -.45, .19, .26, .13),
-    ('screen-ore', -.15, .19, .26, .13),
-    ('screen-drill', .15, .19, .26, .13),
-    ('screen-anchor', .45, .19, .26, .13),
-    ('screen-stance', -.47, -.07, .2, .3),
-    ('screen-drillcam', -.04, -.07, .52, .3),
-    ('screen-lasers', .44, -.07, .24, .3),
+plane('label-radar', pilot_at(-.12, .2, .026), .3, .025, frame=pilot_frame)
+plane('label-flight', pilot_at(.4, .185, .026), .22, .022, frame=pilot_frame)
+plane('label-target', pilot_at(.4, -.15, .026), .22, .022, frame=pilot_frame)
+miner_at, miner_frame = pod(1.48, MINER_EYE, 1.24, [
+    ('screen-survey', -.45, .14, .26, .1),
+    ('screen-ore', -.15, .14, .26, .1),
+    ('screen-drill', .15, .14, .26, .1),
+    ('screen-anchor', .45, .14, .26, .1),
+    ('screen-stance', -.47, -.06, .2, .2),
+    ('screen-drillcam', -.04, -.06, .48, .2),
+    ('screen-lasers', .43, -.06, .24, .2),
 ], 'miner')
 
 # Two seats behind the eyes: painted shells with tan cushions, wings, headrests, and a ribbed hose
