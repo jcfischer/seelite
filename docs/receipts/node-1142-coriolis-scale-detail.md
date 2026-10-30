@@ -45,7 +45,8 @@ gate belong to the supervisor. This receipt does not close the node.
 
 | Flight GLB | Main | This branch |
 | --- | ---: | ---: |
-| Bytes | 6,702,852 | 16,415,344 |
+| Bytes, `coriolis.glb` | 6,702,852 | 6,702,876 |
+| Bytes, `coriolis-detail.glb` | — | 9,715,144 |
 | Triangles | 139,948 | 478,286 |
 | Mesh primitives | 14 | 22 |
 | Added triangles visible below full | 0 | 0 |
@@ -56,10 +57,15 @@ whole-frame renderer counts below include shadows, interiors and other bodies.
 Reduced and outline retain the baseline geometry and draw count; no claim of
 identical elapsed frame cost at those levels is made.
 
-Shipping asset SHA-256:
-`214fc26dd140fe55c954d21021ab3913a88db087ff8cc4683d9a47bb8d77e846`.
-The preparation script verifies exact decoded vertex attributes and texture
-pixels after lossless Meshopt and WebP encoding. The asset remains below the
+Shipping asset SHA-256: `coriolis.glb`
+`f61bff1c5c91282f6919ba2af311eacb236d0b93e316958812e85693cdcad9da`,
+`coriolis-detail.glb`
+`1664ca895cbd5a993cbabb09983560e05d6ecbd0dcc9ae9e3be2d5e3f51e7473`.
+The frame-time figures below were measured on the earlier single file,
+`214fc26dd140fe55c954d21021ab3913a88db087ff8cc4683d9a47bb8d77e846`, which
+held the same meshes. The preparation script verifies that both files together
+decode to the exact vertex attributes of the Blender export, and that the
+texture pixels survive lossless Meshopt and WebP encoding. The asset remains below the
 repository's 25 MiB deployment guard. The authored texture is unchanged.
 
 Two baseline material factors also change from main to the study's warmer
@@ -238,3 +244,38 @@ of merge base `8aa96c1f6016b79660480e1a38af04de6a1788a3` on this host.
 The full-suite timeout is therefore not reproduced on the isolated base file;
 its cause remains unattributed. No timeout or route code is changed to work
 around it. The supervisor's full merge-base comparison remains pending.
+
+## Detail in its own file
+
+By the principal's ruling of 2026-10-30, on Sage round 1's download finding,
+the `scale-detail-*` meshes ship in `src/models/coriolis-detail.glb`.
+`prepare-flight-asset.mjs` splits the existing Blender intermediate; no
+Blender run was needed, because that intermediate rebuilt the previous shipping
+file byte for byte. The detail file holds no image: its textured materials
+name the base file's `industrial-surface` image, and the builder hands them
+that texture. Materials present in both files resolve to the base file's
+instance, so the beacon gain and key light are applied once.
+
+A Coriolis requests the detail the first time `updateStationVisuals` draws it
+at `full`. A player who never comes within the full band downloads 6.7 MB
+instead of 16.4 MB. Stations built before the file arrives receive it, at their
+current detail level; later builds carry it from the start. Until it arrives, a
+full-band station draws the baseline geometry, so near stations show the detail
+appear once, after the download. `modelsSettled()` and `npm run views` wait for
+it, so a measurement or capture never runs without it.
+
+Headless checks: `tests/coriolis-flight.test.ts` passes 13 tests. Two are new:
+no request before the full band and one after it, attachment to live and later
+stations, disposal of a station that was built before the detail arrived, and
+shared materials, image and exposure across the two files. With the request
+line removed, the lazy-load test fails. Typecheck, format, lint, comment lint,
+launcher wiring and production build pass; the build emits both files under
+content-hashed names.
+
+Hardware probes on head `a125c17c`, chosen by hand (the selector expands to
+all 118 because `src/main.ts` changed): `probe-model-queue`,
+`probe-station-interior-kit`, `probe-station-visuals`, `probe-station-mouth`
+and `probe-station` pass, 5/5 in 437 s, peak load 159 on 10 cores. This is a
+partial run, not the `probe:pr` gate. The principal ruled out the full gate
+and a new before/after capture for this change.
+
