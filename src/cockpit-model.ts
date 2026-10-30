@@ -44,8 +44,6 @@ const CABIN_PITCH_RAD = MINER_COCKPIT ? 0 : 0.242;
 
 /** The miner seat sits this far to starboard of the pilot seat, model metres. */
 export const MINER_SEAT_OFFSET_M = 1.2;
-/** The review build's seat-swap key: `4`, beside the head-look keys 1–3 and unbound. */
-export const MINER_SEAT_KEY = "4";
 
 const MINER_FINISHES: Readonly<
 	Record<string, { metalness: number; roughness: number }>

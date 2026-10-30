@@ -1049,7 +1049,6 @@ import {
 	COCKPIT_MODEL_KM_PER_M,
 	INSTRUMENT_FACE_KM,
 	MINER_COCKPIT,
-	MINER_SEAT_KEY,
 	MINER_SEAT_OFFSET_M,
 	SCANNER_FACE_KM,
 	type ScreenFrame,
@@ -11484,17 +11483,6 @@ class Game {
 	}
 
 	private onKey(e: KeyboardEvent, down: boolean) {
-		if (
-			MINER_COCKPIT &&
-			down &&
-			!e.repeat &&
-			e.key === MINER_SEAT_KEY &&
-			this.view === "cockpit" &&
-			!isEditable(e.target)
-		) {
-			this.setMinerSeat(this.minerSeat === "pilot" ? "miner" : "pilot");
-			return;
-		}
 		// #377's law: `keyDispatch` owns what an event may reach — releases,
 		// the Ctrl and Meta rules, Alt chords on the physical key, and which
 		// defaults the browser keeps — and it is asked first, so the Requests
@@ -11719,6 +11707,10 @@ class Game {
 				return;
 			case "view.headStarboard":
 				this.setHeadLook("right");
+				return;
+			case "view.seatSwap":
+				if (MINER_COCKPIT)
+					this.setMinerSeat(this.minerSeat === "pilot" ? "miner" : "pilot");
 				return;
 			// **The settings screen's own door, folded here in #381 S4.** It
 			// was `settings-panel.ts`'s window listener, which made `z` the

@@ -76,17 +76,17 @@ describe("b toggles bloom while the perf panel is open", () => {
 	});
 
 	test("the claim is the key's, so a cycle moved off b keeps working", () => {
-		// Onto `5`, one of the few characters the shipped layout leaves free;
+		// Onto `8`, one of the few characters the shipped layout leaves free;
 		// see `commands.test.ts`'s keyboard-rebind row for the list.
 		const layout = rebind(
 			DEFAULT_BINDINGS,
 			"fight.cycleFireGroup",
 			{ kind: "key", key: "b" },
-			{ kind: "key", key: "5" },
+			{ kind: "key", key: "8" },
 		);
 		for (const perfPanel of [false, true])
 			expect(
-				resolveKey(layout, { key: "5", view: "cockpit", perfPanel }),
+				resolveKey(layout, { key: "8", view: "cockpit", perfPanel }),
 			).toEqual(["fight.cycleFireGroup"]);
 		expect(resolveKey(layout, { key: "b", view: "cockpit" })).toEqual([]);
 	});

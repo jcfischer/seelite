@@ -840,6 +840,13 @@ const AUTHORED = [
 		chords: ["ArrowRight"],
 	},
 	{
+		id: "view.seatSwap",
+		name: "Switch bridge seat (miner review build)",
+		group: "view",
+		views: COCKPIT,
+		keys: ["5"],
+	},
+	{
 		id: "view.reference",
 		name: "This reference: open or close",
 		group: "view",
