@@ -66,7 +66,58 @@ const legacyBlob = async (page, { full }) =>
 		{ full },
 	);
 
-const arm = async (label, { full }) => {
+const redockTwice = (page) =>
+	page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+		const g = window.__seelite;
+		const dt = g.units.MAX_DT;
+		const id = g.dockedAt;
+		if (!g.hasDockingComputer)
+			g.commander = {
+				...g.commander,
+				loadout: migrateEquipment(g.commander.hull, [
+					...equipmentNames(g.commander.loadout ?? {}),
+					g.dockingComputerName,
+				]).loadout,
+			};
+		const phase = () => g.dockingSnapshot(id).dockPhase;
+		const shown = () => {
+			g.render(0);
+			g.updateCockpit();
+			return (
+				document.querySelector("[data-live-station-message]")?.textContent ??
+				null
+			);
+		};
+		const cycle = () => {
+			for (let t = 0; t < 200 && phase() !== "flying"; t += dt) {
+				if (phase() === "docked") g.launch();
+				g.step(dt);
+			}
+			const out = phase();
+			const shownOut = shown();
+			g.targetId = id;
+			g.requestDockingClearance();
+			if (!g.dockingComputer.engaged) g.toggleDockingComputer();
+			for (let t = 0; t < 400 && phase() !== "docked"; t += dt) g.step(dt);
+			return {
+				out,
+				shownOut,
+				phase: phase(),
+				message: shown(),
+				field: g.stationConsoleMessage,
+				owed: g.scoopNotice,
+			};
+		};
+		const second = cycle();
+		g.scoopNotice = true;
+		const control = cycle();
+		return { second, control };
+	});
+
+const arm = async (label, { full, redock = false }) => {
 	const context = await browser.newContext({
 		viewport: { width: 1280, height: 760 },
 	});
@@ -126,15 +177,16 @@ const arm = async (label, { full }) => {
 				owed: g.scoopNotice,
 			};
 		});
+		const docks = redock ? await redockTwice(page) : null;
 		await page.close();
-		return { fixture, after, notice };
+		return { fixture, after, notice, docks };
 	} finally {
 		await context.close();
 	}
 };
 
 try {
-	const full = await arm("full", { full: true });
+	const full = await arm("full", { full: true, redock: true });
 	check(
 		"a version 16 save with its cargo internals full loads without a fault, docked",
 		full.after.fault == null && full.after.phase === "docked",
@@ -155,6 +207,23 @@ try {
 		JSON.stringify(full.after.message),
 	);
 	check("and the notice is spent once it is said", full.after.owed === false);
+	const cycled = (dock) =>
+		dock.out === "flying" && !dock.shownOut && dock.phase === "docked";
+	check(
+		"a second dock after the notice was said shows no scoop notice",
+		cycled(full.docks.second) &&
+			full.docks.second.field !== full.notice &&
+			!full.docks.second.message?.includes(full.notice),
+		JSON.stringify(full.docks.second),
+	);
+	check(
+		"control: the same dock path shows the notice when one is owed",
+		cycled(full.docks.control) &&
+			full.docks.control.field === full.notice &&
+			full.docks.control.message?.includes(full.notice) === true &&
+			full.docks.control.owed === false,
+		JSON.stringify(full.docks.control),
+	);
 
 	const free = await arm("free", { full: false });
 	const scoops = Object.entries(free.after.loadout).filter(
