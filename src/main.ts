@@ -6894,6 +6894,12 @@ class Game {
 				return false;
 		return true;
 	}
+	lateDetailFailure(): string | undefined {
+		for (const station of this.stationVisuals.values())
+			if (station.lateDetail?.failure)
+				return String(station.lateDetail.failure);
+		return undefined;
+	}
 	private currentModelIds(): ModelId[] {
 		this.ensureTrafficActors();
 		return systemModelIds(

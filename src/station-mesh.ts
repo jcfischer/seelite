@@ -283,7 +283,11 @@ export interface StationMesh {
 	 */
 	dispose(): void;
 	/** https://github.com/jcfischer/seelite/issues/1142 */
-	lateDetail?: { request(): void; readonly attached: boolean };
+	lateDetail?: {
+		request(): void;
+		readonly attached: boolean;
+		readonly failure: unknown;
+	};
 }
 
 /** One clock-driven light. `base` is its lit intensity; the waveform scales it. */
@@ -7011,7 +7015,7 @@ export function updateStationVisuals(
 ): void {
 	const level = detailLevel(mesh.detail, distanceKm / mesh.silhouetteKm);
 	if (level !== mesh.detail) setStationDetail(mesh, level);
-	if (level === "full") mesh.lateDetail?.request();
+	if (level !== "outline") mesh.lateDetail?.request();
 
 	const drawGreebles = STATION_QUALITY[quality].greebles;
 	for (const instanced of mesh.greebles) instanced.visible = drawGreebles;

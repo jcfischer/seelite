@@ -78,7 +78,7 @@ function applyCoriolisKeyLight(material: THREE.MeshStandardMaterial) {
 		`${previousKey}|coriolis-key-${CORIOLIS_KEY_GAIN}-ambient-${CORIOLIS_AMBIENT_GAIN}`;
 }
 
-function standardMaterials(root: THREE.Object3D) {
+export function standardMaterials(root: THREE.Object3D) {
 	const materials = new Set<THREE.MeshStandardMaterial>();
 	root.traverse((o) => {
 		if (o instanceof THREE.Mesh)
@@ -113,9 +113,12 @@ export type IndustrialCoriolisBuilder = ((
 	addDetail(detail: THREE.Group): void;
 };
 
+export const DETAIL_RETRY_MS = 10_000;
+
 export function createIndustrialCoriolisBuilder(
 	template: THREE.Group,
-	requestDetail: () => void = () => {},
+	fetchDetail?: () => Promise<THREE.Group>,
+	now: () => number = () => performance.now(),
 ): IndustrialCoriolisBuilder {
 	const materials = standardMaterials(template);
 	const divisor = emissiveDivisor(materials);
@@ -124,6 +127,26 @@ export function createIndustrialCoriolisBuilder(
 	const maps = new Map<string, THREE.Texture>();
 	for (const m of materials) if (m.map) maps.set(m.map.name, m.map);
 	let detail: THREE.Group | undefined;
+	let pending = false;
+	let failure: unknown;
+	let retryAt = 0;
+	const requestDetail = () => {
+		if (detail || pending || !fetchDetail || now() < retryAt) return;
+		pending = true;
+		fetchDetail().then(
+			(scene) => {
+				pending = false;
+				failure = undefined;
+				addDetail(scene);
+			},
+			(error) => {
+				pending = false;
+				failure = error;
+				retryAt = now() + DETAIL_RETRY_MS;
+				console.warn("Coriolis scale detail failed to load", error);
+			},
+		);
+	};
 	const live = new Map<StationMesh, THREE.Object3D>();
 	const attach = (mesh: StationMesh, exterior: THREE.Object3D) => {
 		if (!detail) return;
@@ -222,11 +245,12 @@ export function createIndustrialCoriolisBuilder(
 				disposeSubtree(root);
 			},
 			lateDetail: {
-				request: () => {
-					if (!detail) requestDetail();
-				},
+				request: requestDetail,
 				get attached() {
 					return detail !== undefined;
+				},
+				get failure() {
+					return failure;
 				},
 			},
 		};
@@ -274,17 +298,12 @@ async function loadIndustrialStationBuilder(
 			o.receiveShadow = true;
 		}
 	});
-	let detail: Promise<void> | undefined;
-	const build = createIndustrialCoriolisBuilder(gltf.scene, () => {
-		detail ??= new GLTFLoader()
+	return createIndustrialCoriolisBuilder(gltf.scene, async () => {
+		const loaded = await new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
-			.loadAsync(CORIOLIS_DETAIL_GLB_URL)
-			.then((loaded) => build.addDetail(loaded.scene))
-			.catch((error) =>
-				console.warn("Coriolis scale detail failed to load", error),
-			);
+			.loadAsync(CORIOLIS_DETAIL_GLB_URL);
+		return loaded.scene;
 	});
-	return build;
 }
 
 let ready: Promise<void> | undefined;

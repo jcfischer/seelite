@@ -257,15 +257,18 @@ that texture. Materials present in both files resolve to the base file's
 instance, so the beacon gain and key light are applied once.
 
 A Coriolis requests the detail the first time `updateStationVisuals` draws it
-at `full`. A player who never comes within the full band downloads 6.7 MB
-instead of 16.4 MB. Stations built before the file arrives receive it, at their
+at `reduced` or `full` (Sage round 2 moved the request one band out, so the
+download runs during the approach). A player who only ever sees a Coriolis in
+the outline band downloads 6.7 MB instead of 16.4 MB. Stations built before the file arrives receive it, at their
 current detail level; later builds carry it from the start. Until it arrives, a
 full-band station draws the baseline geometry, so near stations show the detail
 appear once, after the download. `modelsSettled()` and `npm run views` wait for
-it, so a measurement or capture never runs without it.
+it. A failed fetch is logged, retried no sooner than ten seconds later, and
+stops a view capture with the error rather than a 60-second timeout.
 
 Headless checks: `tests/coriolis-flight.test.ts` passes 13 tests. Two are new:
-no request before the full band and one after it, attachment to live and later
+no request in the outline band and one in the reduced band, a failed fetch
+that is reported and retried after `DETAIL_RETRY_MS` but not before, attachment to live and later
 stations, disposal of a station that was built before the detail arrived, and
 shared materials, image and exposure across the two files. With the request
 line removed, the lazy-load test fails. Typecheck, format, lint, comment lint,

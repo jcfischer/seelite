@@ -197,15 +197,7 @@ test("only exact Coriolis navigation material names receive the ruled exposure e
 test("the shipped Coriolis exceeds the shared ceiling only on its two ruled navigation materials", async () => {
 	const { build } = await readShippedCoriolisBuilder();
 	const station = build(0, 0x9aa6b2);
-	const materials = new Set<THREE.MeshStandardMaterial>();
-	station.root.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return;
-		for (const material of Array.isArray(o.material)
-			? o.material
-			: [o.material])
-			if (material instanceof THREE.MeshStandardMaterial)
-				materials.add(material);
-	});
+	const materials = standardMaterials(station.root);
 	const exceptions: string[] = [];
 	let ordinary = 0;
 	for (const material of materials) {
@@ -462,7 +454,11 @@ test("every added scale-detail mesh draws only at full; baseline geometry and ga
 });
 
 import { updateStationVisuals } from "../src/station-mesh";
-import { emissiveDivisor } from "../src/coriolis-flight";
+import {
+	DETAIL_RETRY_MS,
+	emissiveDivisor,
+	standardMaterials,
+} from "../src/coriolis-flight";
 import { readFileSync } from "node:fs";
 
 const detailParts = (station: { root: THREE.Object3D }) => {
@@ -473,27 +469,52 @@ const detailParts = (station: { root: THREE.Object3D }) => {
 	return parts;
 };
 
-test("the scale detail loads only once a Coriolis draws at full, and reaches stations built before it", async () => {
+test("the scale detail loads once a Coriolis reaches the reduced band, retries after a failure, and reaches stations built before it", async () => {
 	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
 	const detail = await readCoriolisGlb("coriolis-detail.glb");
 	let requests = 0;
-	const build = createIndustrialCoriolisBuilder(template, () => requests++);
+	let fail = true;
+	let clock = 0;
+	const build = createIndustrialCoriolisBuilder(
+		template,
+		async () => {
+			requests++;
+			if (fail) throw new Error("offline");
+			return detail;
+		},
+		() => clock,
+	);
 	const far = build(0, 0x9aa6b2);
 	const near = build(1, 0x9aa6b2);
 	const gone = build(2, 0x9aa6b2);
+	const settle = () => new Promise((r) => setTimeout(r, 0));
 	expect(detailParts(far)).toEqual([]);
 	expect(far.lateDetail?.attached).toBe(false);
 	updateStationVisuals(far, 0, far.silhouetteKm * 1000, "high");
-	expect(far.detail).not.toBe("full");
+	expect(far.detail).toBe("outline");
 	expect(requests).toBe(0);
+	updateStationVisuals(near, 0, near.silhouetteKm * 200, "high");
+	expect(near.detail).toBe("reduced");
+	expect(requests).toBe(1);
+	updateStationVisuals(near, 0, near.silhouetteKm * 200, "high");
+	expect(requests).toBe(1);
+	await settle();
+	expect(near.lateDetail?.failure).toBeInstanceOf(Error);
+	expect(near.lateDetail?.attached).toBe(false);
+	clock = DETAIL_RETRY_MS - 1;
+	updateStationVisuals(near, 0, near.silhouetteKm, "high");
+	expect(requests).toBe(1);
+	fail = false;
+	clock = DETAIL_RETRY_MS;
+	gone.dispose();
 	updateStationVisuals(near, 0, near.silhouetteKm, "high");
 	expect(near.detail).toBe("full");
-	expect(requests).toBe(1);
-	gone.dispose();
-	build.addDetail(detail);
+	expect(requests).toBe(2);
+	await settle();
 	expect(near.lateDetail?.attached).toBe(true);
+	expect(near.lateDetail?.failure).toBeUndefined();
 	updateStationVisuals(near, 0, near.silhouetteKm, "high");
-	expect(requests).toBe(1);
+	expect(requests).toBe(2);
 	expect(detailParts(gone)).toEqual([]);
 	const later = build(3, 0x9aa6b2);
 	for (const station of [far, near, later]) {
@@ -519,13 +540,7 @@ test("the scale detail loads only once a Coriolis draws at full, and reaches sta
 test("the detail file shares the base file's materials, image and exposure", async () => {
 	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
 	const detail = await readCoriolisGlb("coriolis-detail.glb");
-	const materials = (root: THREE.Object3D) => {
-		const out = new Set<THREE.MeshStandardMaterial>();
-		root.traverse((o) => {
-			if (o instanceof THREE.Mesh) out.add(o.material);
-		});
-		return out;
-	};
+	const materials = standardMaterials;
 	expect(emissiveDivisor(materials(template))).toBe(
 		emissiveDivisor([...materials(template), ...materials(detail)]),
 	);

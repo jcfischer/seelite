@@ -1593,10 +1593,19 @@ try {
 			{ timeout: 60_000 },
 		);
 		await page.waitForFunction(
-			() => window.__seelite?.lateDetailSettled?.() ?? true,
+			() =>
+				(window.__seelite?.lateDetailSettled?.() ?? true) ||
+				window.__seelite?.lateDetailFailure?.() !== undefined,
 			undefined,
 			{ timeout: 60_000 },
 		);
+		const lateDetailFailure = await page.evaluate(() =>
+			window.__seelite?.lateDetailFailure?.(),
+		);
+		if (lateDetailFailure)
+			throw new Error(
+				`${view.name}: the Coriolis scale detail failed to load: ${lateDetailFailure}`,
+			);
 		/**
 		 * And every bakeable body in the world is actually drawn from its cube.
 		 *
