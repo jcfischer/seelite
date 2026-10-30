@@ -56,6 +56,7 @@ const MINER_FINISHES: Readonly<
 	"seat-cushion": { metalness: 0, roughness: 0.8 },
 	"strut-paint": { metalness: 0.25, roughness: 0.62 },
 	"strut-edge": { metalness: 0.5, roughness: 0.64 },
+	"pod-face": { metalness: 0.35, roughness: 0.55, color: 0x8c9196 },
 	"weathered-blue-steel": { metalness: 0.45, roughness: 0.42 },
 	"exposed-machined-edges": {
 		metalness: 0.55,
@@ -65,8 +66,8 @@ const MINER_FINISHES: Readonly<
 };
 
 const MINER_LAMP_POSITIONS_M: Readonly<Record<string, readonly number[]>> = {
-	"cockpit-light": [-0.28, -0.45, -0.55],
-	"cockpit-key-light": [1.48, -0.45, -0.55],
+	"cockpit-light": [-0.26, -1.2, -0.7],
+	"cockpit-key-light": [1.46, -1.2, -0.7],
 	"cockpit-centre-light": [0.6, -0.2, -0.6],
 };
 

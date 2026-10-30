@@ -122,7 +122,7 @@ for sx, d in [(-1.9, 1), (3.1, -1)]:
 light('AREA', 'cabin-fill', 55, B(.6, .9, .3), rot_to=B(0, -1, -.3), color=(1, .9, .8)).data.size = 2.5
 light('AREA', 'floor-bounce', 40, B(.6, -1.1, -.6), rot_to=B(0, 1, 0), color=(1, .85, .66)).data.size = 2.5
 for x in [0, 1.2]:
-    light('POINT', f'pod-spill-{x}', 5, B(x, -.35, -.85), color=(.45, .85, 1), size=.4)
+    light('POINT', f'pod-spill-{x}', 3, B(x, -1.25, -.75), color=(.45, .85, 1), size=.3)
 
 cam = bpy.data.objects.new('pilot-camera', bpy.data.cameras.new('pilot-camera')); sc.collection.objects.link(cam); sc.camera = cam
 cam.data.clip_start = .03; cam.data.clip_end = 2000

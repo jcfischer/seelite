@@ -200,6 +200,7 @@ FLOOR_Y = 4.0 - EYE_STUDY.y
 strut = material('strut-paint', (.2, .24, .28), .3, .6, texture='strut-fine', tint=(.9, .92, .95))
 strut_edge = material('strut-edge', (.2, .21, .22), .7, .4, texture='strut-fine', tint=(.62, .62, .62))
 hose_sleeve = material('hose-duct', (.014, .014, .015), 0, .48, textured=False)
+pod_face = material('pod-face', (.12, .14, .16), .35, .55, texture='strut-fine', tint=(.55, .57, .6))
 seatcloth = material('seat-cloth', (.34, .45, .54), .15, .55)
 bolster = material('seat-bolster', (.62, .42, .12), .2, .6)
 
@@ -377,17 +378,18 @@ def face_kit(at, frame, width, h, miner):
     for k in range(16):
         box(lip0.lerp(lip1, (k + .5) / 16), (width / 16 - .006, .02, .008), ochre if k % 2 == 0 else black, frame=frame)
 
-def pod(xc, eye, width, screens, name, frame_mat=steel, h=.38, stripes=False, plate_mat=None):
+def pod(xc, eye, width, screens, name, frame_mat=steel, h=.44, stripes=False, plate_mat=None, body=None):
     """A solid instrument pod (#1143 r18): a bolted face with a level top, a hood, deep side cheeks and
     a closed pedestal with a recessed footwell. The face tilts only in pitch to its eye."""
     zc = -.98
-    face_c = Vector((xc, -.75, zc))
+    face_c = Vector((xc, -.77, zc))
     to_eye = eye - face_c; to_eye.x = 0
     n = to_eye.normalized(); u = Vector((1, 0, 0)); v = n.cross(u).normalized()
     if v.y < 0: v = -v
     frame = (u, v, n)
     def at(a, b, d=0): return face_c + u * a + v * b + n * d
-    box(at(0, 0, -.03), (width, h, .045), plate_mat or dark, frame=frame)
+    body = body or steel
+    box(at(0, 0, -.03), (width, h, .045), plate_mat or pod_face, frame=frame)
     box(at(0, h / 2 + .012, -.03), (width + .02, .024, .07), frame_mat, frame=frame)
     box(at(0, -h / 2 - .012, -.03), (width + .02, .024, .07), frame_mat, frame=frame)
     for s in [-1, 1]: box(at(s * (width / 2 + .012), 0, -.03), (.024, h + .05, .07), frame_mat, frame=frame)
@@ -402,57 +404,71 @@ def pod(xc, eye, width, screens, name, frame_mat=steel, h=.38, stripes=False, pl
     # closed pedestal under the face with a dark recessed footwell. No wider than the face.
     top_edge = at(0, h / 2 + .024, -.03)
     fwd = Vector((0, 0, -1)); hood_d = .34
-    box(top_edge + fwd * (hood_d / 2) + Vector((0, -.03, 0)), (width + .06, .06, hood_d), frame_mat)
-    box(top_edge + fwd * (hood_d / 2) + Vector((0, .002, 0)), (width + .02, .008, hood_d - .04), plate_mat or dark)
+    box(top_edge + fwd * (hood_d / 2) + Vector((0, -.03, 0)), (width + .06, .06, hood_d), body)
+    box(top_edge + fwd * (hood_d / 2) + Vector((0, .002, 0)), (width + .02, .008, hood_d - .04), pod_face)
     lo = at(0, -h / 2 - .03, -.03)
     for sgn in [-1, 1]:
         x = xc + sgn * (width / 2 + .035)
-        prof = [Vector((x, top_edge.y + .01, top_edge.z + .05)), Vector((x, top_edge.y + .01, top_edge.z - hood_d)),
-                Vector((x, FLOOR_Y, top_edge.z - hood_d - .05)), Vector((x, FLOOR_Y, lo.z + .14)),
-                Vector((x, lo.y - .06, lo.z + .1)), Vector((x, lo.y, lo.z + .02))]
+        ty = top_edge.y + .01
+        prof = [Vector((x, ty - .05, top_edge.z + .2)), Vector((x, ty, top_edge.z + .1)), Vector((x, ty, top_edge.z - hood_d + .06)),
+                Vector((x, ty - .06, top_edge.z - hood_d)), Vector((x, FLOOR_Y + .08, top_edge.z - hood_d - .05)),
+                Vector((x, FLOOR_Y, top_edge.z - hood_d)), Vector((x, FLOOR_Y, lo.z + .1)),
+                Vector((x, lo.y - .1, lo.z + .14)), Vector((x, lo.y, lo.z + .04))]
         off = Vector((sgn * .07, 0, 0)); outer = [q + off for q in prof]
-        poly(list(reversed(prof)) if sgn > 0 else prof, frame_mat); poly(outer if sgn > 0 else list(reversed(outer)), frame_mat)
+        poly(list(reversed(prof)) if sgn > 0 else prof, body); poly(outer if sgn > 0 else list(reversed(outer)), body)
         for i in range(len(prof)):
-            j = (i + 1) % len(prof); poly([prof[i], prof[j], outer[j], outer[i]], frame_mat)
+            j = (i + 1) % len(prof); poly([prof[i], prof[j], outer[j], outer[i]], body)
+        for i in range(len(prof) - 1): tube(outer[i] + off * .02, outer[i + 1] + off * .02, .008, frame_mat, 6)
         for k in range(4):
             y = FLOOR_Y + .12 + k * (top_edge.y - FLOOR_Y - .2) / 3
             tube(Vector((x + sgn * .072, y, lo.z - .1)), Vector((x + sgn * .085, y, lo.z - .1)), .011, alloy, 6)
     ped_top = lo.y - .06
-    box(Vector((xc, (FLOOR_Y + ped_top) / 2, lo.z - .2)), (width, ped_top - FLOOR_Y, .36), plate_mat or dark)
+    box(Vector((xc, (FLOOR_Y + ped_top) / 2, lo.z - .2)), (width, ped_top - FLOOR_Y, .36), body)
     well = Vector((xc, FLOOR_Y + .13, lo.z + .02))
     box(well, (width - .16, .24, .1), black)
     box(Vector((xc, FLOOR_Y + .015, lo.z + .03)), (width - .1, .03, .14), steel)
     for sgn in [-1, 1]: box(Vector((xc + sgn * .16, FLOOR_Y + .05, lo.z - .02)), (.12, .04, .18), alloy)
     box(Vector((xc, ped_top - .03, lo.z + .05)), (width - .06, .05, .06), frame_mat)
+    visor = at(0, h / 2 + .035, .07)
+    box(visor, (width + .1, .03, .17), body, frame=frame)
+    box(visor + frame[1] * -.018, (width + .06, .006, .15), black, frame=frame)
+    for sgn in [-1, 1]: box(at(sgn * (width / 2 + .04), h / 2 + .01, .07), (.03, .07, .17), body, frame=frame)
     for sname, a, b, w, hh in screens:
-        box(at(a, b, .006), (w + .02, hh + .02, .012), black, frame=frame)
-        plane(sname, at(a, b, .014), w, hh, frame=frame)
-        bezel(at(a, b, .022), w + .03, hh + .03, .014, black, frame=frame)
+        box(at(a, b, -.004), (w + .03, hh + .03, .012), black, frame=frame)
+        plane(sname, at(a, b, .004), w, hh, frame=frame)
+        bezel(at(a, b, .03), w + .05, hh + .05, .024, dark, frame=frame)
+        bezel(at(a, b, .012), w + .02, hh + .02, .01, black, frame=frame)
     return at, frame
 
 pilot_at, pilot_frame = pod(-.26, Vector((0, 0, 0)), 1.12, [
-    ('screen-radar', -.15, .0, .44, .27),
-    ('screen-flight', .33, .07, .28, .12),
-    ('screen-target', .33, -.07, .28, .12),
-    ('screen-status', -.15, -.165, .44, .035),
-    ('screen-notices', -.46, -.165, .08, .035),
-], 'pilot', plate_mat=strut)
+    ('screen-radar', -.14, .01, .52, .33),
+    ('screen-flight', .35, .085, .33, .155),
+    ('screen-target', .35, -.085, .33, .155),
+    ('screen-status', -.14, -.19, .52, .04),
+    ('screen-notices', -.47, -.19, .1, .04),
+], 'pilot')
 for b in [.1, .03, -.04]:
     c = pilot_at(-.52, b, .02); tube(c, c + pilot_frame[2] * .045, .03, alloy, 14); tube(c + pilot_frame[2] * .045, c + pilot_frame[2] * .07, .022, black, 12)
-plane('label-radar', pilot_at(-.15, .162, .016), .3, .022, frame=pilot_frame)
-plane('label-flight', pilot_at(.33, .155, .016), .22, .02, frame=pilot_frame)
-plane('label-target', pilot_at(.33, -.155, .016), .22, .02, frame=pilot_frame)
+plane('label-radar', pilot_at(-.14, .197, .016), .3, .02, frame=pilot_frame)
+plane('label-flight', pilot_at(.35, .184, .016), .22, .018, frame=pilot_frame)
+plane('label-target', pilot_at(.35, -.184, .016), .22, .018, frame=pilot_frame)
 miner_at, miner_frame = pod(1.46, MINER_EYE, 1.12, [
-    ('screen-survey', -.39, .12, .24, .09),
-    ('screen-ore', -.13, .12, .24, .09),
-    ('screen-drill', .13, .12, .24, .09),
-    ('screen-anchor', .39, .12, .24, .09),
-    ('screen-stance', -.42, -.06, .18, .17),
-    ('screen-drillcam', -.04, -.06, .44, .17),
-    ('screen-lasers', .37, -.06, .22, .17),
+    ('screen-survey', -.405, .14, .255, .115),
+    ('screen-ore', -.135, .14, .255, .115),
+    ('screen-drill', .135, .14, .255, .115),
+    ('screen-anchor', .405, .14, .255, .115),
+    ('screen-stance', -.42, -.07, .21, .23),
+    ('screen-drillcam', -.04, -.07, .48, .23),
+    ('screen-lasers', .375, -.07, .25, .23),
 ], 'miner', frame_mat=ochre, stripes=True)
-face_kit(pilot_at, pilot_frame, 1.12, .38, False)
-face_kit(miner_at, miner_frame, 1.12, .38, True)
+face_kit(pilot_at, pilot_frame, 1.12, .44, False)
+face_kit(miner_at, miner_frame, 1.12, .44, True)
+# Pilot side console: an armrest from the pod's aisle cheek back toward the seat, beside the stick.
+arm0 = Vector((.345, -.82, -.55))
+box(arm0, (.12, .26, .5), steel)
+box(arm0 + Vector((0, .14, 0)), (.11, .03, .46), seatcloth)
+for k in range(4): box(arm0 + Vector((.061, -.06 + k * .03, .1)), (.004, .015, .2), black)
+
 
 # Deck fittings (#1143 r16b O1): a grated walkway between the consoles, floor conduit, a tool rack.
 for k in range(30):
