@@ -25,18 +25,16 @@ import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
+import { MINER_COCKPIT } from "./miner-cockpit-flag";
 import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 
+export { MINER_COCKPIT };
+
 /**
- * Review flag for node #1143 (https://github.com/jcfischer/seelite/issues/1143):
- * `?cockpit=miner` flies the miner cockpit study in place of the courier cabin.
- * The study is served from `spikes/` by the dev server only; its eye is the
- * model origin and it is authored level, so it takes no eye offset or pitch.
+ * The miner study (https://github.com/jcfischer/seelite/issues/1143) has its
+ * eye at the model origin and is authored level, so it takes no eye offset or
+ * pitch.
  */
-export const MINER_COCKPIT =
-	import.meta.env?.DEV === true &&
-	typeof location !== "undefined" &&
-	new URLSearchParams(location.search).get("cockpit") === "miner";
 const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit-2seat.glb";
 const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
 	? [0, 0, 0]

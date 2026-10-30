@@ -68,6 +68,7 @@
  */
 import { COMMANDER_KEY } from "./commander-overlay";
 import { VENT_SLOTS, type VentSlot } from "./hull";
+import { MINER_COCKPIT } from "./miner-cockpit-flag";
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import {
 	ANALOG_TRIGGERS,
@@ -1754,7 +1755,13 @@ function toCommand(a: Authored): Command {
 	};
 }
 
-export const COMMANDS: readonly Command[] = AUTHORED.map(toCommand);
+/** The registry for one build: `view.seatSwap` exists only behind the miner cockpit flag (principal, 2026-10-30, #1143). */
+export const commandsFor = (minerCockpit: boolean): readonly Command[] =>
+	AUTHORED.filter((a) => minerCockpit || a.id !== "view.seatSwap").map(
+		toCommand,
+	);
+
+export const COMMANDS: readonly Command[] = commandsFor(MINER_COCKPIT);
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));
 

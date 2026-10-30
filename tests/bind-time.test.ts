@@ -32,14 +32,14 @@ import { codeOf, srcFiles } from "./lib/source-scan";
 
 describe("a bind is warned about before it is taken, and taken anyway", () => {
 	test("a move onto a free key proposes a layout and says nothing", () => {
-		// `7` is one of the characters the shipped layout leaves alone.
+		// `5` is one of the five characters the shipped layout leaves alone.
 		const out = proposedRebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
 			shippedTrigger("fly.cruise"),
 			{
 				kind: "key",
-				key: "7",
+				key: "5",
 			},
 		);
 		expect("refused" in out).toBe(false);
@@ -53,7 +53,7 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 				(b) =>
 					b.command === "fly.cruise" &&
 					b.trigger.kind === "key" &&
-					b.trigger.key === "7",
+					b.trigger.key === "5",
 			),
 		).toBe(true);
 	});
