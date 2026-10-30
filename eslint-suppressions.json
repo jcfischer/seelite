@@ -921,7 +921,7 @@
   },
   "scripts/probe-duel-hud.mjs": {
     "seelite/no-comments": {
-      "count": 161
+      "count": 22
     }
   },
   "scripts/probe-eject.mjs": {
@@ -1036,7 +1036,7 @@
   },
   "scripts/probe-live-cockpit.mjs": {
     "seelite/no-comments": {
-      "count": 157
+      "count": 67
     }
   },
   "scripts/probe-market-shelf.mjs": {
@@ -2036,7 +2036,7 @@
   },
   "src/main.ts": {
     "seelite/no-comments": {
-      "count": 4303
+      "count": 4204
     }
   },
   "src/market-probe-hook.ts": {

@@ -1,3 +1,4 @@
+import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
 /**
  * Chase view's weapons and cues (#607), in the running game.
  *
@@ -68,6 +69,7 @@ watch(page);
 await installCamSim(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
+await installCockpitTextProbe(page);
 
 // Into flight, facing the selected target, then the view key.
 await page.evaluate(async () => {
@@ -306,12 +308,12 @@ const cockpit = await page.evaluate(() => {
 	const g = window.__seelite;
 	return {
 		view: g.view,
-		floor: g.floorRender !== null,
+		floor: window.__cockpitSourcePainted("status"),
 		pip: g.boresightRender,
 	};
 });
 check(
-	"back in the cockpit, the floor is drawn and there is no pip",
+	"back in the cockpit, status is painted on its face and there is no pip",
 	cockpit.view === "cockpit" && cockpit.floor && cockpit.pip === null,
 	JSON.stringify(cockpit),
 );

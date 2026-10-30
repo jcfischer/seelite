@@ -133,7 +133,16 @@ test("only the rig seam and production missile controller use combat vocabulary 
 		"missileCombat",
 		"stepMissileCombat",
 	]);
-	const all = main.match(/[A-Za-z_$]*combat[A-Za-z0-9_$]*/gi) ?? [];
+	const readoutCalls =
+		/this\.cockpit\.text\.(?:write|append)\("(combat|prototype-combat)"/g;
+	expect([...main.matchAll(readoutCalls)].map((match) => match[1])).toEqual([
+		"combat",
+		"prototype-combat",
+	]);
+	const all =
+		main
+			.replace(readoutCalls, "readout(")
+			.match(/[A-Za-z_$]*combat[A-Za-z0-9_$]*/gi) ?? [];
 	expect(all.filter((w) => !ALLOWED.has(w) && w !== "combat")).toEqual([]);
 	// Two import paths (rig and production missiles), and the rig query flag.
 	expect(all.filter((w) => w === "combat")).toHaveLength(3);

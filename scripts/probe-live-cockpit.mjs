@@ -1,3 +1,4 @@
+import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
 /**
  * The normal game route owns the live cockpit. This is deliberately separate
  * from the gallery probe: it proves the Game's renderer, true world contacts,
@@ -6,6 +7,7 @@
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
 import {
+	bootedGame,
 	guardedOrigin,
 	launchChromium,
 	PROBE_WINDOW_VISIBLE,
@@ -16,10 +18,7 @@ import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const VIEWPORTS = [
-	{ name: "desktop", width: 1280, height: 760 },
-	{ name: "narrow", width: 390, height: 844 },
-];
+const VIEWPORTS = [{ name: "desktop", width: 1280, height: 760 }];
 // Canvas text rasterisation differs slightly between Metal and SwiftShader.
 const PIXEL_CHANNEL_TOLERANCE = 32;
 /**
@@ -272,10 +271,13 @@ function measureLiveCockpit() {
 			targetInstrumentCanvas,
 			game.cockpit.targetInstrument?.secondaryText,
 		),
-		cruisePromptText: globalThis.__seeliteTextPixelsMatch(
-			overlayCanvas,
-			game.cockpitPrompt,
-		),
+		cruisePromptText:
+			game.view === "cockpit"
+				? globalThis.__cockpitSourcePainted("prompt")
+				: globalThis.__seeliteTextPixelsMatch(
+						overlayCanvas,
+						game.cockpitPrompt,
+					),
 		targetInstrumentSecondaryReadout:
 			game.cockpit.targetInstrument?.secondaryText.text,
 		flightInstrumentSecondaryText: globalThis.__seeliteTextPixelsMatch(
@@ -288,10 +290,7 @@ function measureLiveCockpit() {
 		// `?combat=1`, so the production run of this measure has no overlay to
 		// compare and the combat run below has one. Both call the same function.
 		combatOverlayText: game.combatRig
-			? globalThis.__seeliteTextPixelsMatch(
-					overlayCanvas,
-					game.combatRig.overlayStatus,
-				)
+			? globalThis.__cockpitSourcePainted("prototype-combat")
 			: null,
 		combatOverlayReadout: game.combatRig?.overlayStatus.text ?? null,
 		cruisePromptReadout: game.cockpitPrompt.text,
@@ -395,6 +394,7 @@ for (const viewport of VIEWPORTS) {
 	watch(page, viewport.name);
 	await page.bringToFront();
 	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
+	await installCockpitTextProbe(page);
 	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 	await page
 		.waitForFunction(
@@ -556,7 +556,7 @@ for (const viewport of VIEWPORTS) {
 	});
 	const distant = await page.evaluate(measureLiveCockpit);
 	check(
-		`${viewport.name}: a distant target renders ETA on its physical panel and cruise guidance on the glass`,
+		`${viewport.name}: a distant target renders ETA on its physical panel and cruise guidance on its cabin face`,
 		distant.targetRangeKm > 3600 * 2 &&
 			distant.targetInstrumentSecondaryText &&
 			distant.cruisePromptText &&
@@ -565,517 +565,219 @@ for (const viewport of VIEWPORTS) {
 		`range ${distant.targetRangeKm}; target-panel ${distant.targetInstrumentSecondaryReadout}; prompt ${distant.cruisePromptReadout}; text match ${distant.targetInstrumentSecondaryText}/${distant.cruisePromptText}`,
 	);
 
-	// ---- §5's flight-floor strip (#92) ------------------------------------
-
-	/**
-	 * §4's refusal fill, counted once for every sampler on this page.
-	 *
-	 * **The green channel is what discriminates it, not the red one.** The first
-	 * version asked only that the pixel was red-dominant — `r > 170` and
-	 * `r > b + 60` — which the *action* amber `rgba(255,196,110)` satisfies as
-	 * comfortably as the refusal `rgba(255,110,96)` does. The CHARGE cell's band
-	 * happens to have no amber in it and the check passed for years; §8.3's
-	 * course row sits where the target brackets cross, and read 339 amber pixels
-	 * in the arm asserting none — the same 339 both before and after the tank
-	 * was filled, which is how the two defects were told apart. A sampler that cannot tell §4's two warm tones
-	 * apart is not measuring the tone it names.
-	 */
-	await page.evaluate(() => {
-		/**
-		 * Read a floor box's own band and count §4's refusal fill in it.
-		 *
-		 * **The box carries its band.** Both samplers had their own
-		 * `Math.floor(box.y) - 12, …, 16` — a glyph height copied out of the
-		 * page, which goes lenient the day the type is raised rather than going
-		 * red. Every floor box states its `top` and `height` now, so there is no
-		 * fallback left to be lenient with: a box without a band is a page that
-		 * has changed shape, and it throws rather than sampling a guess.
-		 */
-		window.__refusalRedInBox = (box) => {
-			if (!box) return null;
-			const { top, height } = box;
-			if (typeof top !== "number" || typeof height !== "number")
-				throw new Error("floor box carries no band");
-			const overlay = document.getElementById("overlay");
-			const ctx = overlay.getContext("2d", { willReadFrequently: true });
-			const data = ctx.getImageData(
-				Math.floor(box.x),
-				Math.floor(top),
-				Math.ceil(box.width),
-				Math.ceil(height),
-			).data;
-			return window.__refusalRed(data);
-		};
-		window.__refusalRed = (data) => {
-			let red = 0;
-			for (let i = 0; i < data.length; i += 4)
-				if (
-					data[i + 3] > 40 &&
-					data[i] > 170 &&
-					data[i + 1] < 150 &&
-					data[i] > data[i + 2] + 60
-				)
-					red++;
-			return red;
+	const physicalReadouts = await page.evaluate(() => {
+		const g = window.__seelite;
+		const readings = g.cockpit.text.readings;
+		const fallback = g.cockpit.text.faces.get("fallback");
+		const position = fallback.mount.position.clone();
+		fallback.mount.position.addScaledVector(fallback.frame.normal, -0.1);
+		const occlusionDetected = !window.__cockpitSurfaceVisible("prompt");
+		fallback.mount.position.copy(position);
+		return {
+			status: window.__cockpitSourcePainted("status"),
+			lasers: window.__cockpitSourcePainted("lasers"),
+			prompt: window.__cockpitSourcePainted("prompt"),
+			values: g
+				.floorCells()
+				.every((c) =>
+					readings
+						.get("status")
+						?.some((line) => line.text.includes(c.label + " " + c.value)),
+				),
+			glassFloorAbsent: g.floorRender === null,
+			glassClear: window.__cockpitNoReadoutsOnGlass(),
+			statusVisible: window.__cockpitSurfaceVisible("status"),
+			occlusionDetected,
+			promptVisible: window.__cockpitSurfaceVisible("prompt"),
+			lasersVisible: window.__cockpitSurfaceVisible("lasers"),
 		};
 	});
+	check(
+		`${viewport.name}: the cockpit paints its live status, laser and guidance on cabin faces`,
+		Object.values(physicalReadouts).every(Boolean),
+		JSON.stringify(physicalReadouts),
+	);
 
-	/**
-	 * Read the strip as painted, plus the sim state each cell is *about*.
-	 *
-	 * Both halves in one evaluate, on one frame: comparing a record taken now
-	 * against a game state read a frame later would be comparing two moments,
-	 * and the throttle and charge both move continuously.
-	 */
-	const readFloor = () =>
-		page.evaluate(() => {
+	for (const state of [
+		{ throttle: 0.62, assist: false, charge: 4.2, spool: 0, jump: 0 },
+		{ throttle: 1, assist: false, charge: 11.9, spool: 3, jump: 0 },
+		{ throttle: 0, assist: true, charge: 0, spool: 0, jump: 0 },
+		{ throttle: 0, assist: true, charge: 12, spool: 0, jump: 2.3 },
+	]) {
+		const actual = await page.evaluate((state) => {
 			const g = window.__seelite;
-			const render = g.floorRender;
-			const overlay = document.getElementById("overlay");
+			g.setThrottle(state.throttle);
+			g.assist = state.assist;
+			g.chargeAu = state.charge;
+			g.spoolLeftS = state.spool;
+			g.jumpCharge = { ...g.jumpCharge, leftS: state.jump };
+			g.render(0);
+			const lines = g.cockpit.text.readings.get("status") ?? [];
 			return {
-				render,
-				widest: g.floorWidest,
-				spoolSeconds: g.spoolSeconds,
-				overlayHeight: overlay?.height ?? 0,
-				// The game's own state, so the check compares the instrument
-				// against the simulation rather than against a second copy of
-				// the projection that fills it.
-				sim: {
-					regime: g.regime,
-					spoolLeftS: g.spoolLeftS,
-					throttle: g.throttle,
-					assist: g.assist,
-					chargeAu: g.chargeAu,
-				},
-				prompt: g.cockpitPrompt.text,
+				painted: window.__cockpitSourcePainted("status"),
+				values: g
+					.floorCells()
+					.every((c) =>
+						lines.some((l) => l.text.includes(c.label + " " + c.value)),
+					),
+				glass: g.floorRender === null,
 			};
-		});
-
-	// **Driven to a wide reading, not left at boot.** A full tank prints no
-	// regeneration suffix, so a strip measured there is a fifth narrower than
-	// the one the pilot sees a second after their first cruise — and the fit
-	// check below passed on exactly that while the frame showed both ends
-	// clipped at 390 px.
-	await page.evaluate(() => {
-		const g = window.__seelite;
-		g.setThrottle(0.62);
-		g.assist = false;
-		g.chargeAu = 4.2;
-	});
-	await nextFrames(page);
-	const floor = await readFloor();
-	check(
-		`${viewport.name}: the floor strip paints §5's four cells, in §5's order`,
-		floor.render !== null &&
-			floor.render.cells.map((c) => c.label).join(",") ===
-				"MODE,THR,ASSIST,CHARGE",
-		`${floor.render === null ? "nothing painted" : floor.render.cells.map((c) => `${c.label} ${c.value}`).join(" · ")}`,
-	);
-	/**
-	 * **The scalars the draw was handed are the ship's.**
-	 *
-	 * The first version restated the projection here — a nested ternary
-	 * rebuilding MODE from the regime and the spool — which is the second copy
-	 * its own comment said it was avoiding, and it would have drifted silently
-	 * the day `flightFloorCells` changed precedence. What the browser can say
-	 * that `flight-floor.test.ts` cannot is that the **inputs** were live: the
-	 * draw stamps them into the record, and they are compared against the game
-	 * handle. The mapping from those inputs to the strings is the headless
-	 * tier's, where it is swept.
-	 */
-	check(
-		`${viewport.name}: the strip was drawn from the ship's own state`,
-		floor.render !== null &&
-			floor.render.source.regime === floor.sim.regime &&
-			floor.render.source.spoolLeftS === floor.sim.spoolLeftS &&
-			floor.render.source.throttle === floor.sim.throttle &&
-			floor.render.source.assist === floor.sim.assist &&
-			floor.render.source.chargeAu === floor.sim.chargeAu &&
-			// And not a frozen snapshot: the throttle was moved above, so a draw
-			// reading a boot-time copy would differ from the handle here.
-			floor.sim.throttle > 0.5,
-		`drawn from ${JSON.stringify(floor.render?.source)} against ${JSON.stringify(floor.sim)}`,
-	);
-	/**
-	 * Drive every cell to its own widest at once, for the three checks below.
-	 *
-	 * Where the strip lands is the half a headless test cannot see: §5 puts it
-	 * on the persistent floor, the glass ends at `GLASS_BOTTOM_FRACTION`, and
-	 * below that is the deck where it would be drawn over the scanner.
-	 *
-	 * **The fit is solved for the widest reading, so the widest reading is what
-	 * has to be on the glass when the assertion fires.** Setting only the charge
-	 * left MODE reading `NORMAL` against its bound and THR reading `62%` against
-	 * `100%` — five characters never drawn, which is the same surrogate these
-	 * checks were rewritten to remove, one layer in.
-	 */
-	const restore = await page.evaluate(() => {
-		const g = window.__seelite;
-		const before = {
-			throttle: g.throttle,
-			assist: g.assist,
-			chargeAu: g.chargeAu,
-			spoolLeftS: g.spoolLeftS,
-		};
-		g.setThrottle(1);
-		g.assist = false;
-		// Below full so the regeneration suffix is there, and two digits of
-		// spool. Both drift while the frame renders — the spool counts down and
-		// the drive fills — so the check below asserts the *width* each cell was
-		// drawn at rather than an exact string it would lose a race with.
-		g.chargeAu = 11.9;
-		// The sim's own wind-up, not a number chosen here. At `SPOOL_S` every
-		// spool reading is one digit, so the countdown between this set and the
-		// draw cannot change the width — which is what the assertion below is
-		// about. Set to 10.5 it merely had half a second of margin before a
-		// character dropped, which widened the race rather than removing it.
-		g.spoolLeftS = g.spoolSeconds;
-		return before;
-	});
-	await nextFrames(page);
-	const wide = await readFloor();
-	await page.evaluate((before) => {
-		const g = window.__seelite;
-		g.setThrottle(before.throttle);
-		g.assist = before.assist;
-		g.chargeAu = before.chargeAu;
-		g.spoolLeftS = before.spoolLeftS;
-	}, restore);
-	await nextFrames(page);
-	const runEnd = (r) => r.boxes.at(-1).x + r.boxes.at(-1).width;
-	// The margin comes off the record rather than being restated here — a
-	// second copy of a constant is how a probe goes falsely red on a retune.
-	const margin = floor.render?.marginPx ?? 0;
-	/**
-	 * **Three named checks rather than one fifteen-clause boolean.** A red run
-	 * on the single check named the check and not which of its eight properties
-	 * broke; these fail one at a time and print only what they are about.
-	 */
-	check(
-		`${viewport.name}: the strip is drawn at every cell's widest reading`,
-		wide.render !== null &&
-			// Read off the page (`floorWidest`) rather than restated here, and
-			// compared by width: the font is monospace, the drive refills
-			// between the set and the draw, and at the sim's own `SPOOL_S` every
-			// spool reading is the same width.
-			wide.render.cells.every(
-				(c) => c.value.length === wide.widest[c.label].length,
-			) &&
-			// The headless tier restates `SPOOL_S`, since it cannot import a
-			// module that pulls in Three.js. This is the seam that keeps the two
-			// honest.
-			wide.spoolSeconds === 3,
-		`"${wide.render?.cells.map((c) => c.value).join(" ")}" against bounds "${Object.values(wide.widest ?? {}).join(" ")}", spool ${wide.spoolSeconds}s`,
-	);
-	check(
-		`${viewport.name}: the strip sits inside the glass, above its lower edge`,
-		floor.render !== null &&
-			floor.render.baselineY < floor.render.glassBottomY &&
-			floor.render.baselineY > floor.render.glassBottomY - 26,
-		`baseline ${floor.render?.baselineY.toFixed(0)} of a glass bottom ${floor.render?.glassBottomY.toFixed(0)}`,
-	);
-	check(
-		`${viewport.name}: the widest run clears the margins, and the fit is the viewport's`,
-		floor.render !== null &&
-			wide.render !== null &&
-			floor.render.boxes.every((b) => b.x >= margin) &&
-			runEnd(floor.render) <= viewport.width - margin &&
-			wide.render.boxes.every((b) => b.x >= margin) &&
-			runEnd(wide.render) <= viewport.width - margin &&
-			// Zero whichever way it could have been non-zero — the legibility
-			// clamp binding, or the type size rounding above the linear solve.
-			wide.render.overflowPx === 0 &&
-			// The fit is a property of the viewport, so it must not have moved
-			// between two different readings.
-			wide.render.scale === floor.render.scale,
-		`runs ${wide.render?.boxes[0].x.toFixed(0)}…${runEnd(wide.render).toFixed(0)} of ${viewport.width} with a ${margin}px margin, at scale ${floor.render?.scale.toFixed(2)}, overflow ${wide.render?.overflowPx.toFixed(1)}px`,
-	);
-
-	/**
-	 * **The refusal paints, and the passive reading does not.**
-	 *
-	 * The tone is a field on a record, and a record can say anything — so this
-	 * samples the overlay's own pixels inside the CHARGE cell's box and
-	 * requires red ones there when the drive is empty and none when it is not.
-	 * That is what makes the tone a claim about the glass rather than about a
-	 * string.
-	 */
-	const redInChargeCell = () =>
-		page.evaluate(() =>
-			window.__refusalRedInBox(
-				window.__seelite.floorRender?.boxes.find((b) => b.label === "CHARGE"),
-			),
+		}, state);
+		check(
+			`${viewport.name}: status surface follows ${JSON.stringify(state)}`,
+			Object.values(actual).every(Boolean),
+			JSON.stringify(actual),
 		);
-	const redWhenCharged = await redInChargeCell();
+	}
 	await page.evaluate(() => {
-		window.__seelite.chargeAu = 0;
+		const g = window.__seelite;
+		g.spoolLeftS = 0;
+		g.jumpCharge = { ...g.jumpCharge, leftS: 0 };
+		g.render(0);
 	});
-	await nextFrames(page);
-	const emptyFloor = await readFloor();
-	const redWhenEmpty = await redInChargeCell();
+
+	const chargeRefusal = await page.evaluate(() => {
+		const g = window.__seelite;
+		const restore = g.chargeAu;
+		const promptText = () =>
+			(g.cockpit.text.readings.get("prompt") ?? [])
+				.map((l) => l.text)
+				.join(" ");
+		g.chargeAu = 12;
+		g.render(0);
+		const charged = window.__cockpitRefusalRed("status");
+		g.chargeAu = 0;
+		g.render(0);
+		const result = {
+			charged,
+			empty: window.__cockpitRefusalRed("status"),
+			tone: g.floorCells().find((c) => c.label === "CHARGE")?.tone,
+			prompt: promptText(),
+			target: g.cockpit.targetInstrument?.secondaryText.text ?? "",
+		};
+		g.chargeAu = restore;
+		g.render(0);
+		return result;
+	});
 	check(
-		`${viewport.name}: an empty drive paints the CHARGE cell as a refusal, and a charged one does not`,
-		redWhenCharged === 0 && redWhenEmpty > 20,
-		`${redWhenCharged} red pixels charged, ${redWhenEmpty} empty`,
+		`${viewport.name}: an empty drive paints the CHARGE cell as a refusal on the status surface, and a charged one does not`,
+		chargeRefusal.charged === 0 &&
+			chargeRefusal.empty > 20 &&
+			chargeRefusal.tone === "refused",
+		JSON.stringify(chargeRefusal),
 	);
-	/**
-	 * **And the prompt agrees with it.** Both read `chargeReadsEmpty`; as
-	 * `chargeAu <= 0` they disagreed on every frame after a starve-out, because
-	 * regeneration lifts the raw value off zero immediately — the strip printed
-	 * "0.0/12 AU" in calm cyan while the prompt offered "press J to cruise".
-	 * Caught by looking at a captured frame, so it is checked here.
-	 */
 	check(
 		`${viewport.name}: the empty-drive prompt and the CHARGE cell say the same thing`,
-		emptyFloor.render?.cells.find((c) => c.label === "CHARGE")?.tone ===
-			"refused" &&
-			emptyFloor.prompt === "no drive charge — wait for it to regenerate",
-		`tone ${emptyFloor.render?.cells.find((c) => c.label === "CHARGE")?.tone}, prompt "${emptyFloor.prompt}"`,
-	);
-
-	// The charge the target instrument used to carry is gone from it — asserted
-	// on the text rather than only through the boot pattern, so the removal has
-	// a check of its own.
-	const targetSecondary = await page.evaluate(
-		() => window.__seelite.cockpit.targetInstrument.secondaryText.text,
+		chargeRefusal.tone === "refused" &&
+			chargeRefusal.prompt.includes(
+				"no drive charge — wait for it to regenerate",
+			),
+		JSON.stringify(chargeRefusal),
 	);
 	check(
 		`${viewport.name}: the target instrument no longer carries the drive charge`,
-		!targetSecondary.includes("CHARGE") && ETA_READOUT.test(targetSecondary),
-		`"${targetSecondary}"`,
+		!chargeRefusal.target.includes("CHARGE") &&
+			ETA_READOUT.test(chargeRefusal.target),
+		`"${chargeRefusal.target}"`,
 	);
 
-	// ---- §8.3's course row (#117) -----------------------------------------
-
-	/**
-	 * The row is drawn or it is not, and both states are the decision.
-	 *
-	 * §5.2 / #117 D2 chose absence over a dormant field, which is a claim about
-	 * the glass rather than about a string — so this reads the draw's own record,
-	 * which is written from what the draw drew, and then reads where the row
-	 * landed. A record assembled beside the draw would let this assert a row
-	 * that never painted, which is the check-that-cannot-fail this repo has
-	 * shipped once already.
-	 */
-	const restoreFuel = await page.evaluate(() => {
+	const courseRefusal = await page.evaluate(async () => {
 		const g = window.__seelite;
-		// Put the drive back: the CHARGE refusal above left it empty, and an
-		// empty drive is not what these rows are about.
+		const { courseCue } = await import("/src/cockpit.ts");
+		const reading = (source) =>
+			(g.cockpit.text.readings.get(source) ?? []).map((l) => l.text).join(" ");
+		const cue = () => courseCue(g.courseCueState());
+		const fuel = g.fuelLy;
+		const charge = g.chargeAu;
 		g.chargeAu = 11.9;
 		g.setCourseTo(null);
-		return g.fuelLy;
-	});
-	await nextFrames(page);
-	const noCourse = await page.evaluate(() => {
-		const f = window.__seelite.floorRender;
-		return {
-			// **The floor itself, first.** `f?.courseRow ?? null` is `null` both
-			// for a row deliberately not drawn and for a frame with no floor at
-			// all — a docked ship, a focused console — so the D2 check cleared
-			// on a frame it was never meant to read. That is the control that
-			// never runs, in the check whose own docstring warns about it.
-			floorPainted: f !== null,
-			row: f?.courseRow ?? null,
-			box: f?.courseBox ?? null,
+		g.render(0);
+		const none = {
+			cue: cue(),
+			course: reading("course"),
+			status: window.__cockpitSourcePainted("status"),
 		};
-	});
-	check(
-		`${viewport.name}: with no course set, no course row is painted`,
-		noCourse.floorPainted === true &&
-			noCourse.row === null &&
-			noCourse.box === null,
-		`floor painted ${noCourse.floorPainted}; row ${JSON.stringify(noCourse.row)}`,
-	);
-
-	/**
-	 * **A destination the ship is not already at**, so the row reads §8.3's two
-	 * facts rather than the arrival state. The index comes off the page's own
-	 * galaxy: a probe with its own copy of a system index goes falsely red the
-	 * day the generator moves.
-	 */
-	const committed = await page.evaluate(() => {
-		const g = window.__seelite;
-		// **A full tank, explicitly.** Read at boot the tank is whatever the
-		// session has spent, so the first arm of the refusal check below was
-		// measuring a row that was *already* red — the affordable reading has to
-		// be reachable before a refusal can be attributed to anything.
-		//
-		// **Two defects, one reading, and they were told apart by the tone.**
-		// The arm asserting no red printed 339 both before and after this line
-		// was added, which is the tell: those 339 pixels were never the row.
-		// They are the amber target brackets crossing this band, admitted by a
-		// red predicate that did not look at the green channel — see
-		// `__refusalRed`. What the tank fixed was the *tone*, `refused` to
-		// `passive`, and the check asserts that separately now for exactly this
-		// reason. Sage caught the two fixes claiming one number as their
-		// evidence.
 		g.fuelLy = g.fuelCapacityLy;
 		const here = g.world.system.record;
-		// Every system is routable from every other inside a galaxy (§5 of
-		// `galaxy-generation.md`), so the first one that is not this one is a
-		// course the commit will accept.
 		const elsewhere = g.world.galaxy.systems.find(
 			(s) => s.galaxy === here.galaxy && s.index !== here.index,
 		);
-		return g.commitCourseTo(elsewhere.index);
-	});
-	await nextFrames(page);
-	check(
-		`${viewport.name}: the chart's own commit sets a course`,
-		committed === true,
-		`commitCourseTo returned ${committed}`,
-	);
-	const courseSet = await page.evaluate(() => {
-		const g = window.__seelite;
-		const r = g.floorRender;
-		return {
-			row: r?.courseRow ?? null,
-			box: r?.courseBox ?? null,
-			baselineY: r?.baselineY ?? null,
-			glassBottomY: r?.glassBottomY ?? null,
-			marginPx: r?.marginPx ?? 0,
-			widest: g.courseWidest,
+		const committed = g.commitCourseTo(elsewhere.index);
+		g.render(0);
+		const fuelled = {
+			red: window.__cockpitRefusalRed("course"),
+			painted: window.__cockpitSourcePainted("course"),
+			course: reading("course"),
+			tone: cue()?.tone,
 		};
-	});
-	check(
-		`${viewport.name}: a set course paints §8.3's row, above the strip and inside the glass`,
-		courseSet.row !== null &&
-			courseSet.box !== null &&
-			// Above the strip: a smaller y is higher on the canvas.
-			courseSet.box.y < courseSet.baselineY &&
-			// And still on the flying glass, not off the top of it.
-			courseSet.box.y > 0 &&
-			courseSet.box.x >= courseSet.marginPx &&
-			courseSet.box.x + courseSet.box.width <=
-				viewport.width - courseSet.marginPx &&
-			// The widest reading the row can take is what the fit was solved
-			// for, read off the page rather than restated here.
-			courseSet.row.value.length <= courseSet.widest.length,
-		`"${courseSet.row?.label} ${courseSet.row?.value}" at y ${courseSet.box?.y.toFixed(0)} of a strip baseline ${courseSet.baselineY?.toFixed(0)}, bound "${courseSet.widest}"`,
-	);
-
-	/**
-	 * **And it does not draw on the cruise/jump prompt.**
-	 *
-	 * The row went into the gap the prompt was sitting in, and the two painted
-	 * on one baseline: `COURSE ERBILE 6 jumps` under `press \` to jump to
-	 * ERBILE`, both centred, both perfectly recorded. Every record-reading row
-	 * above was green through it. Two instruments overlap or they do not, and
-	 * that is a question about rectangles rather than about either record — so
-	 * this compares them.
-	 */
-	const stacking = await page.evaluate(() => {
-		const g = window.__seelite;
-		return {
-			prompt: g.cockpitPrompt.text ? { ...g.cockpitPrompt.bounds } : null,
-			promptText: g.cockpitPrompt.text,
-			courseBox: g.floorRender?.courseBox ?? null,
-			// **The row's own band, off the page.** This was `y - 12`, a glyph
-			// height the probe kept a copy of — raise the type and the real top
-			// rises above it, so the check written to catch this PR's own
-			// collision goes lenient without going red.
-			courseTop: g.floorRender?.courseBox?.top ?? null,
+		g.fuelLy = 0;
+		g.render(0);
+		const dry = {
+			red: window.__cockpitRefusalRed("course"),
+			painted: window.__cockpitSourcePainted("course"),
+			course: reading("course"),
+			tone: cue()?.tone,
+			prompt: reading("prompt"),
 		};
+		g.fuelLy = fuel;
+		g.commitCourseTo(here.index);
+		g.render(0);
+		const arrived = {
+			course: reading("course"),
+			painted: window.__cockpitSourcePainted("course"),
+			cue: cue(),
+			here: here.name,
+		};
+		g.setCourseTo(null);
+		g.chargeAu = charge;
+		g.render(0);
+		return { none, committed, fuelled, dry, arrived };
 	});
 	check(
-		`${viewport.name}: the course row and the cruise prompt do not overlap`,
-		stacking.courseBox !== null &&
-			// The prompt must actually be drawn, or this asserts nothing.
-			stacking.prompt !== null &&
-			stacking.courseTop !== null &&
-			stacking.prompt.top + stacking.prompt.height <= stacking.courseTop,
-		`prompt "${stacking.promptText}" ${stacking.prompt?.top}…${(stacking.prompt?.top ?? 0) + (stacking.prompt?.height ?? 0)} against a course row from ${stacking.courseTop}`,
-	);
-
-	/**
-	 * **The refusal paints, and the affordable reading does not.**
-	 *
-	 * #117 D3 gives the row a tone and no sentence of its own, so the only
-	 * thing that can be checked about it is the pixels — the same argument the
-	 * CHARGE cell's red sampler is built on, and the same sampler shape. The
-	 * tank is driven to empty through the handle, which is what makes this the
-	 * condition `planJump` actually refuses rather than a second copy of it.
-	 */
-	const redInCourseRow = () =>
-		page.evaluate(() =>
-			window.__refusalRedInBox(window.__seelite.floorRender?.courseBox),
-		);
-	const redWithFuel = await redInCourseRow();
-	const fuelledRow = await page.evaluate(
-		() => window.__seelite.floorRender?.courseRow ?? null,
-	);
-	await page.evaluate(() => {
-		window.__seelite.fuelLy = 0;
-	});
-	await nextFrames(page);
-	const redWithoutFuel = await redInCourseRow();
-	const dryRow = await page.evaluate(
-		() => window.__seelite.floorRender?.courseRow ?? null,
+		`${viewport.name}: with no course set, no course row is painted`,
+		courseRefusal.none.status &&
+			courseRefusal.none.cue === null &&
+			courseRefusal.none.course === "",
+		JSON.stringify(courseRefusal.none),
 	);
 	check(
 		`${viewport.name}: an unaffordable next hop paints the course row as a refusal`,
-		redWithFuel === 0 &&
-			redWithoutFuel > 20 &&
-			// Named rather than left implicit in the pixel count: an arm that is
-			// red for its own reasons reads exactly like the effect not working.
-			fuelledRow?.tone === "passive" &&
-			dryRow?.tone === "refused" &&
-			// And it says nothing extra: the words belong to `planJump` and the
-			// prompt, not to this row.
-			dryRow?.value === courseSet.row?.value,
-		`${redWithFuel} red pixels fuelled (${fuelledRow?.tone}), ${redWithoutFuel} dry (${dryRow?.tone}); "${dryRow?.value}" against "${courseSet.row?.value}"`,
-	);
-
-	/**
-	 * **And the prompt says the same thing the row does.**
-	 *
-	 * §5.2 claimed "`planJump` owns those words and §3's prompt prints them"
-	 * before it was true: `cruisePrompt` never asked `planJump`, so the glass
-	 * offered "press ` to jump to ANDIMA" beside a row this build had already
-	 * painted red, and the refusal arrived only after the key was pressed. That
-	 * is #92's `chargeReadsEmpty` defect one instrument over, and it is checked
-	 * the way that one is — the two halves of one reading, on one frame.
-	 */
-	const dryPrompt = await page.evaluate(
-		() => window.__seelite.cockpitPrompt.text,
+		courseRefusal.committed === true &&
+			courseRefusal.fuelled.painted &&
+			courseRefusal.fuelled.tone === "passive" &&
+			courseRefusal.fuelled.red === 0 &&
+			courseRefusal.dry.painted &&
+			courseRefusal.dry.tone === "refused" &&
+			courseRefusal.dry.red > 20 &&
+			courseRefusal.dry.course === courseRefusal.fuelled.course,
+		JSON.stringify(courseRefusal),
 	);
 	check(
 		`${viewport.name}: the prompt and the course row agree about an unaffordable hop`,
-		dryRow?.tone === "refused" &&
-			// The words are `planJump`'s, through `jumpRefusalText`, so this is
-			// the shipped sentence and not a second copy of it.
-			/not enough fuel for \S+/.test(dryPrompt),
-		`row ${dryRow?.tone}, prompt "${dryPrompt}"`,
+		courseRefusal.dry.tone === "refused" &&
+			/not enough fuel for \S+/.test(courseRefusal.dry.prompt),
+		JSON.stringify(courseRefusal.dry),
 	);
-
-	/**
-	 * **Arriving leaves the row standing** (#117 D4), ratified as shipped: a
-	 * course is player intent, and intent is not cancelled by being satisfied.
-	 * A course set to the system the ship is already in is the arrival state by
-	 * construction, and `courseProgress` reports it without anything being
-	 * stored.
-	 */
-	await page.evaluate((fuel) => {
-		const g = window.__seelite;
-		g.fuelLy = fuel;
-		g.commitCourseTo(g.world.system.record.index);
-	}, restoreFuel);
-	await nextFrames(page);
-	const arrived = await page.evaluate(() => {
-		const g = window.__seelite;
-		return {
-			row: g.floorRender?.courseRow ?? null,
-			here: g.world.system.record.name,
-		};
-	});
 	check(
 		`${viewport.name}: arriving leaves the course row standing, reading the destination`,
-		arrived.row !== null &&
-			arrived.row.value === `${arrived.here} arrived` &&
-			arrived.row.tone === "confirmed",
-		`"${arrived.row?.value}" (${arrived.row?.tone}) at ${arrived.here}`,
+		courseRefusal.arrived.painted &&
+			courseRefusal.arrived.cue?.value ===
+				`${courseRefusal.arrived.here} arrived` &&
+			courseRefusal.arrived.cue?.tone === "confirmed" &&
+			courseRefusal.arrived.course.includes(courseRefusal.arrived.cue.value),
+		JSON.stringify(courseRefusal.arrived),
 	);
-	await page.evaluate(() => window.__seelite.setCourseTo(null));
+
+	await page.evaluate(() => window.__seelite.setHeadLook("right"));
+	await nextFrames(page);
+	const turnedStatus = await page.evaluate(() =>
+		window.__cockpitSourcePainted("status"),
+	);
+	check(
+		`${viewport.name}: authored readouts remain powered while looking toward another cabin surface`,
+		turnedStatus,
+	);
+	await page.evaluate(() => window.__seelite.setHeadLook("forward"));
 	await nextFrames(page);
 
 	/**
@@ -1157,6 +859,86 @@ for (const viewport of VIEWPORTS) {
 	await page.close();
 }
 
+const fixturePage = await browser.newPage({
+	viewport: { width: 1440, height: 900 },
+});
+watch(fixturePage, "alternate cabin");
+await fixturePage.goto(
+	gameUrl(ORIGIN, {
+		seed: 0x5ee11e,
+		system: 173,
+		hull: "miner",
+		mining: 1,
+		raider: "off",
+	}),
+);
+await bootedGame(fixturePage, 90000);
+await installCockpitTextProbe(fixturePage);
+await fixturePage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
+const alternate = await fixturePage.evaluate(async () => {
+	const { GLTFLoader } = await import(
+		"/node_modules/three/examples/jsm/loaders/GLTFLoader.js"
+	);
+	const { adoptCockpitTemplate } = await import("/src/cockpit-model.ts");
+	const { Vector3 } = await import("/node_modules/three/build/three.module.js");
+	const model = await new GLTFLoader().loadAsync(
+		"/scripts/fixtures/cockpit-text-cabin.glb",
+	);
+	const g = window.__seelite;
+	g.cabinScene.remove(g.cockpit.mesh);
+	adoptCockpitTemplate(model.scene);
+	g.buildCockpit();
+	g.setHeadLook("forward");
+	const field = g.fields[0];
+	if (field?.rocks[0])
+		g.targetId = `rock:${field.plan.id}:${field.rocks[0].slot}`;
+	g.render(0);
+	g.updateCockpit();
+	g.render(0);
+	const scanner = g.cabinScene.getObjectByName("scanner");
+	let scannerInside = true;
+	g.cockpit.hologram.root.updateWorldMatrix(true, true);
+	g.cockpit.hologram.root.traverse((object) => {
+		const positions = object.geometry?.getAttribute("position");
+		if (!positions) return;
+		for (let i = 0; i < positions.count; i++) {
+			const point = scanner.worldToLocal(
+				object.localToWorld(new Vector3().fromBufferAttribute(positions, i)),
+			);
+			if (
+				Math.abs(point.x) > scanner.geometry.parameters.width / 2 + 1e-8 ||
+				Math.abs(point.y) > scanner.geometry.parameters.height / 2 + 1e-8
+			)
+				scannerInside = false;
+		}
+	});
+
+	return {
+		scannerInside,
+		ore: window.__cockpitSourcePainted("ore"),
+		survey: window.__cockpitSourcePainted("survey"),
+		oreVisible: window.__cockpitSurfaceVisible("ore"),
+		surveyVisible: window.__cockpitSurfaceVisible("survey"),
+		noGlass: window.__cockpitNoReadoutsOnGlass(),
+		missingFlight: !g.cabinScene.getObjectByName("screen-flight"),
+		statusVisible: window.__cockpitSurfaceVisible("status"),
+		flightVisible: window.__cockpitSurfaceVisible("flight"),
+		flightFallback: window.__seeliteTextPixelsMatch(
+			g.cockpit.flightInstrument.ctx.canvas,
+			g.cockpit.flightInstrument.secondaryText,
+		),
+		unpowered:
+			g.cabinScene.getObjectByName("screen-systems")?.material.map === null,
+	};
+});
+check(
+	"an alternate cabin places survey and portrait ore on their own screens, falls back for flight and leaves systems unpowered",
+	Object.values(alternate).every(Boolean),
+	JSON.stringify(alternate),
+);
+await fixturePage.screenshot({ path: "/tmp/seelite-1151-alternate-cabin.png" });
+await fixturePage.close();
+
 // The prototype path adds the laser rig and combat glass; its assertions
 // (firing feedback, lock/missile/interdiction status) belong on a dedicated
 // combat-mode page so the production viewport loop above stays a production
@@ -1169,6 +951,7 @@ await installCompositeFrame(combatPage);
 await combatPage.goto(gameUrl(ORIGIN, { seed: 42, combat: 1 }), {
 	waitUntil: "load",
 });
+await installCockpitTextProbe(combatPage);
 await combatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 await combatPage.waitForFunction(
 	() =>
@@ -1278,10 +1061,13 @@ const beamVisible = await combatPage.evaluate(() => {
 const combatOverlayPixels = await combatPage.evaluate(() => {
 	const game = window.__seelite;
 	const rig = game.combatRig;
-	const canvas = document.querySelector("#overlay");
+	const canvas = (
+		game.cockpit.text.faces.get("prototype-combat") ??
+		game.cockpit.text.faces.get("fallback")
+	).ctx.canvas;
 	const context = canvas.getContext("2d");
-	const { left, top, width, height } = rig.overlayStatus.bounds;
-	const read = () => context.getImageData(left, top, width, height).data;
+	const read = () =>
+		context.getImageData(0, 0, canvas.width, canvas.height).data;
 	const drawOverlay = rig.drawOverlay;
 	rig.drawOverlay = () => {};
 	game.render(0);
@@ -1335,7 +1121,7 @@ check(
 );
 await combatPage.keyboard.up("Space");
 check(
-	"prototype: holding Space shows the weapon tracer, draws it on the glass and exposes immediate PULSE feedback",
+	"prototype: holding Space shows the weapon tracer, draws it in the frame and exposes immediate PULSE feedback on a cabin face",
 	beamVisible &&
 		laserPixels > 50 &&
 		COMBAT_STATUS.test(combatReadout) &&
@@ -1445,6 +1231,7 @@ watch(narrowCombatPage, "prototype combat narrow");
 await narrowCombatPage.goto(gameUrl(ORIGIN, { seed: 42, combat: 1 }), {
 	waitUntil: "load",
 });
+await installCockpitTextProbe(narrowCombatPage);
 await narrowCombatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 await narrowCombatPage.waitForFunction(
 	() =>

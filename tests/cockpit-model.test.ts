@@ -7,7 +7,6 @@ import {
 	buildAuthoredCabin,
 	COCKPIT_MODEL_KM_PER_M,
 	COCKPIT_MODEL_LAMPS,
-	COCKPIT_SCREENS,
 	carriedLamp,
 	COCKPIT_CREASE_DEG,
 	containedFace,
@@ -215,7 +214,7 @@ describe("the shipped cockpit model in the cabin pass", () => {
 	});
 
 	test("every screen faces the eye, up the screen is up the view", () => {
-		for (const name of COCKPIT_SCREENS) {
+		for (const name of Object.keys(cabin.screens)) {
 			const f = cabin.screens[name];
 			expect(f.normal.dot(f.center.clone().negate())).toBeGreaterThan(0);
 			expect(f.up.y).toBeGreaterThan(0);
@@ -422,7 +421,7 @@ describe("the cockpit's normals (node #839)", () => {
 					Array.from(was.getAttribute(name).array),
 				);
 		});
-		expect(quads).toBe(4 + 4 + 15);
+		expect(quads).toBe(7 + 7 + 15);
 	});
 });
 
