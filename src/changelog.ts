@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1142 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-30",
+		text: "Coriolis stations have warm plating, rows of lit windows, lattice service trenches and silhouette masts, with stronger shadows and glowing navigation beacons.",
+		node: 1142,
+	},
 	// https://github.com/jcfischer/seelite/issues/1151 — sentence approved by the principal, 2026-10-30.
 	{
 		date: "2026-10-30",

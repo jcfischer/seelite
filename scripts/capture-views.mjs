@@ -4,6 +4,7 @@
  *   npm run dev                                  # in one shell
  *   npm run views                                # in another
  *   npm run views -- --label before              # name the run yourself
+ *   npm run views -- --boot-timeout-ms 120000    # allow a cold full-model boot
  *   npm run views -- --only hull-chase,hull-chase-miner,hull-chase-bollard --out view-set/node-909
  *   open view-set/index.html
  *
@@ -125,6 +126,9 @@ const OUT = arg("out", ONLY === null ? "view-set" : "view-set/selected");
 const QUALITY = arg("quality", null);
 if (QUALITY !== null && QUALITY !== "high" && QUALITY !== "low")
 	throw new Error(`--quality must be high or low, got ${QUALITY}`);
+const BOOT_TIMEOUT_MS = Number(arg("boot-timeout-ms", "20000"));
+if (!Number.isSafeInteger(BOOT_TIMEOUT_MS) || BOOT_TIMEOUT_MS <= 0)
+	throw new Error("--boot-timeout-ms must be a positive integer");
 
 /** Apply an explicitly requested quality after every boot. The setting persists
  * across the refinery seed navigation, but writing it again there makes the
@@ -245,7 +249,7 @@ async function ensureFixture(page, seed, system = null, hull = "courier") {
 			waitUntil: "load",
 		},
 	);
-	await bootedGame(page);
+	await bootedGame(page, BOOT_TIMEOUT_MS);
 	// Node #909: a saved courier must not stand in for a requested tug/miner.
 	// Compare the flown state and the drawn hull, including its authored install.
 	const flown = await page.evaluate(() => {
@@ -1016,7 +1020,7 @@ const PLACERS = {
 			}),
 			{ waitUntil: "load" },
 		);
-		await bootedGame(page);
+		await bootedGame(page, BOOT_TIMEOUT_MS);
 		await applyCaptureQuality(page);
 		const result = await page.evaluate(
 			({ want, at }) => {
@@ -1461,7 +1465,7 @@ await page.goto(
 		waitUntil: "load",
 	},
 );
-await bootedGame(page);
+await bootedGame(page, BOOT_TIMEOUT_MS);
 await applyCaptureQuality(page);
 currentSeed = SEED;
 let renderer;

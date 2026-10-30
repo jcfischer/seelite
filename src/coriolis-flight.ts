@@ -18,6 +18,60 @@ import { EMISSIVE_CEILING } from "./light-rig";
 import { shared, disposeSubtree } from "./gpu-teardown";
 import { CORIOLIS_GLB_URL } from "./model-urls";
 
+/** Principal ruling: https://github.com/jcfischer/seelite/issues/1142 */
+export const CORIOLIS_PAINT_LIFT = 2.3;
+export const CORIOLIS_KEY_GAIN = 2;
+export const CORIOLIS_AMBIENT_GAIN = 0.6;
+export const CORIOLIS_BEACON_GAIN = 8;
+
+const DIRECT_LINE = "getDirectionalLightInfo( directionalLight, directLight );";
+const HEMISPHERE_LINE =
+	"irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );";
+const LIGHTS_INCLUDE = "#include <lights_fragment_begin>";
+
+export function coriolisLightsChunk(
+	chunk = THREE.ShaderChunk.lights_fragment_begin,
+) {
+	for (const marker of [DIRECT_LINE, HEMISPHERE_LINE])
+		if (chunk.split(marker).length !== 2)
+			throw new Error(
+				"three's lights_fragment_begin no longer matches the Coriolis splice",
+			);
+	return chunk
+		.replace(
+			DIRECT_LINE,
+			`${DIRECT_LINE}\n\t\tdirectLight.color *= ${CORIOLIS_KEY_GAIN.toFixed(3)};`,
+		)
+		.replace(
+			HEMISPHERE_LINE,
+			HEMISPHERE_LINE.replace(
+				"irradiance += ",
+				`irradiance += ${CORIOLIS_AMBIENT_GAIN.toFixed(3)} * `,
+			),
+		);
+}
+
+const keyLit = new WeakSet<THREE.MeshStandardMaterial>();
+function applyCoriolisKeyLight(material: THREE.MeshStandardMaterial) {
+	if (keyLit.has(material) || material.emissive.getHex() !== 0) return;
+	keyLit.add(material);
+	const previous = material.onBeforeCompile;
+	const previousKey = material.customProgramCacheKey();
+	material.onBeforeCompile = (shader, renderer) => {
+		previous.call(material, shader, renderer);
+		if (shader.fragmentShader.split(LIGHTS_INCLUDE).length !== 2)
+			throw new Error(
+				"Coriolis material no longer includes three's lights_fragment_begin",
+			);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			LIGHTS_INCLUDE,
+			coriolisLightsChunk(),
+		);
+	};
+	material.customProgramCacheKey = () =>
+		`${previousKey}|coriolis-key-${CORIOLIS_KEY_GAIN}-ambient-${CORIOLIS_AMBIENT_GAIN}`;
+}
+
 export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	// The display export has brighter lamps than the game's exposure contract.
 	// Normalize once, preserving the authored relative strengths.
@@ -31,11 +85,13 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 		1,
 		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
-	for (const m of materials) m.emissiveIntensity /= divisor;
-	const base =
-		[...materials].find((m) => m.name === "ceramic-steel-0")?.color.clone() ??
-		new THREE.Color(1, 1, 1);
-	// A small palette per requested role colour, retained with the loaded asset.
+	for (const m of materials) {
+		m.emissiveIntensity /= divisor;
+		if (/^navigation-(red|green)$/.test(m.name))
+			m.emissiveIntensity *= CORIOLIS_BEACON_GAIN;
+		applyCoriolisKeyLight(m);
+	}
+	// https://github.com/jcfischer/seelite/issues/1142
 	const palettes = new Map<string, THREE.MeshStandardMaterial>();
 	// One loaded asset for this page, retained across system changes.
 	template.name = "industrial-coriolis-exterior";
@@ -49,10 +105,9 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			}
 		}
 	});
-	return (berthSeed: number, color: number): StationMesh => {
+	return (berthSeed: number, _color: number): StationMesh => {
 		const exterior = template.clone(true);
 		exterior.scale.setScalar(0.001);
-		const tint = new THREE.Color(color);
 		exterior.traverse((o) => {
 			if (
 				!(o instanceof THREE.Mesh) ||
@@ -60,16 +115,13 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 				!o.name.startsWith("ceramic-steel-")
 			)
 				return;
-			const key = o.material.uuid + "/" + color;
+			const key = o.material.uuid;
 			let paint = palettes.get(key);
 			if (!paint) {
 				paint = shared(o.material.clone());
-				// Keep panel-to-panel contrast while applying the station role's paint.
-				paint.color.setRGB(
-					(o.material.color.r * tint.r) / base.r,
-					(o.material.color.g * tint.g) / base.g,
-					(o.material.color.b * tint.b) / base.b,
-				);
+				paint.color.multiplyScalar(CORIOLIS_PAINT_LIFT);
+				paint.roughness = Math.max(paint.roughness, 0.82);
+				applyCoriolisKeyLight(paint);
 				palettes.set(key, paint);
 			}
 			o.material = paint;

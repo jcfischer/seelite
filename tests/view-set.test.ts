@@ -1,3 +1,4 @@
+import { makeWorldAtSystem } from "../src/sim";
 /**
  * The canonical view set — #104's declaration half.
  *
@@ -216,6 +217,9 @@ describe("the view set itself", () => {
 			["assembly-approach", 42],
 			["assembly-flank", 42],
 			["assembly-second-layout", 42],
+			["coriolis-approach", 42],
+			["coriolis-flank", 42],
+			["coriolis-range", 42],
 			["station-refinery-axis", 2],
 			["ringed-giant", 5],
 			["giant-fill", 5],
@@ -253,7 +257,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(85);
+		expect(VIEWS.length).toBe(88);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -843,7 +847,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 85)");
+		expect(html).toContain("Selected canonical views (3 of 88)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -880,7 +884,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–34.2s");
+		expect(html).toContain("· clock 0.6–35.4s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1154,6 +1158,9 @@ describe("the rim look row #480 added", () => {
 			"assembly-approach",
 			"assembly-flank",
 			"assembly-second-layout",
+			"coriolis-approach",
+			"coriolis-flank",
+			"coriolis-range",
 			"cold-rocky-ice",
 			"sky-at-the-rim",
 			"npc-departure",
@@ -1187,4 +1194,20 @@ describe("the opening strip names the opening's shots (sage round 1 on #536)", (
 		};
 		expect(malformedShots([view]).length).toBe(1);
 	});
+});
+
+test("Coriolis scale detail has axis, flank and range views on the actual trade-A fixture", () => {
+	const world = makeWorldAtSystem(42, 4);
+	expect(
+		world.system.contents.stations.find((s) => s.type === "trade")?.formId,
+	).toBe("a");
+	for (const suffix of ["approach", "flank", "range"]) {
+		const view = VIEWS.find((v) => v.name === "coriolis-" + suffix);
+		expect(view).toBeDefined();
+		expect(view?.covers).toContain(1142);
+		if (!view || !("seed" in view.shot) || !("system" in view.shot))
+			throw new Error("missing Coriolis fixture");
+		expect(view.shot.seed).toBe(42);
+		expect(view.shot.system).toBe(4);
+	}
 });

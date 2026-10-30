@@ -1,0 +1,37 @@
+{
+  "sourceSha256": "285e2a5392e6d10923c972b238f0843b3946d419c206cbad50292a2d4faf77fd",
+  "results": [
+    {
+      "name": "paint",
+      "test": "principal paint ruling",
+      "status": 1,
+      "failed": [
+        "(fail) principal paint ruling retains authored warmth and contrast regardless of role colour [5.64ms]"
+      ]
+    },
+    {
+      "name": "key",
+      "test": "Coriolis shader compiles",
+      "status": 1,
+      "failed": [
+        "(fail) Coriolis shader compiles with the ruled station-only key and ambient gains and fails closed on chunk drift [203.43ms]"
+      ]
+    },
+    {
+      "name": "beacons",
+      "test": "every added scale-detail mesh",
+      "status": 1,
+      "failed": [
+        "(fail) every added scale-detail mesh draws only at full; baseline geometry and gameplay fixtures remain [208.15ms]"
+      ]
+    },
+    {
+      "name": "detail",
+      "test": "every added scale-detail mesh",
+      "status": 1,
+      "failed": [
+        "(fail) every added scale-detail mesh draws only at full; baseline geometry and gameplay fixtures remain [198.90ms]"
+      ]
+    }
+  ]
+}

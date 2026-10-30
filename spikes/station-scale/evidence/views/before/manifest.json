@@ -1,0 +1,74 @@
+{
+	"label": "before",
+	"gitRef": "8aa96c1f-dirty",
+	"served": {
+		"root": "/private/tmp/seelite-node-1142-main",
+		"head": "8aa96c1f6016b79660480e1a38af04de6a1788a3",
+		"branch": "HEAD",
+		"dirty": true
+	},
+	"capturedAt": "2026-10-30T15:57:34.449Z",
+	"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+	"seed": 47,
+	"quality": "default",
+	"selectedViews": [
+		"cockpit-backlit",
+		"coriolis-approach",
+		"coriolis-flank",
+		"coriolis-range",
+		"station-approach",
+		"station-flank",
+		"station-range",
+		"hull-chase"
+	],
+	"views": [
+		{
+			"name": "cockpit-backlit",
+			"file": "before/cockpit-backlit.png",
+			"subject": "station-trade",
+			"gameTime": 0.4308999999910593
+		},
+		{
+			"name": "coriolis-approach",
+			"file": "before/coriolis-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.6419999999999999
+		},
+		{
+			"name": "coriolis-flank",
+			"file": "before/coriolis-flank.png",
+			"subject": "station-trade",
+			"gameTime": 1.0903000000119207
+		},
+		{
+			"name": "coriolis-range",
+			"file": "before/coriolis-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.6074000000059603
+		},
+		{
+			"name": "station-approach",
+			"file": "before/station-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.7912999999970198
+		},
+		{
+			"name": "station-flank",
+			"file": "before/station-flank.png",
+			"subject": "station-trade",
+			"gameTime": 1.141
+		},
+		{
+			"name": "station-range",
+			"file": "before/station-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.457
+		},
+		{
+			"name": "hull-chase",
+			"file": "before/hull-chase.png",
+			"subject": "planet-5",
+			"gameTime": 1.7903999999910594
+		}
+	]
+}
