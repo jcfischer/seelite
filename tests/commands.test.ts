@@ -16,6 +16,7 @@ import {
 	collisions,
 	COMMANDS,
 	type CommandId,
+	commandsFor,
 	type Half,
 	commandById,
 	DEFAULT_BINDINGS,
@@ -149,6 +150,16 @@ const keyRows = (bindings: readonly Binding[]) =>
 		.sort();
 
 describe("the catalogue #369 ratified", () => {
+	test("the seat switch exists only behind the miner cockpit flag", () => {
+		expect(COMMANDS.some((c) => c.id === "view.seatSwap")).toBe(false);
+		expect(commandsFor(false).some((c) => c.id === "view.seatSwap")).toBe(
+			false,
+		);
+		const miner = commandsFor(true).find((c) => c.id === "view.seatSwap");
+		expect(miner?.defaultTriggers).toEqual([{ kind: "key", key: "5" }]);
+		expect(commandsFor(true).length).toBe(COMMANDS.length + 1);
+	});
+
 	test("every id is namespaced, unique, and not a key string", () => {
 		const ids = COMMANDS.map((c) => c.id);
 		expect(new Set(ids).size).toBe(ids.length);

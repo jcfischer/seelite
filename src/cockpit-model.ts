@@ -25,7 +25,50 @@ import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
+import { MINER_COCKPIT } from "./miner-cockpit-flag";
 import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
+
+export { MINER_COCKPIT };
+
+/**
+ * The miner study (https://github.com/jcfischer/seelite/issues/1143) has its
+ * eye at the model origin and is authored level, so it takes no eye offset or
+ * pitch.
+ */
+const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit-2seat.glb";
+const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
+	? [0, 0, 0]
+	: [0, 0.3, 1.15];
+const CABIN_PITCH_RAD = MINER_COCKPIT ? 0.12 : 0.242;
+
+/** The miner seat sits this far to starboard of the pilot seat, model metres. */
+export const MINER_SEAT_OFFSET_M = 1.2;
+/** The review build's vertical field of view, degrees: wide enough for the canopy and side windows. */
+export const MINER_COCKPIT_FOV_DEG = 80;
+
+const MINER_FINISHES: Readonly<
+	Record<string, { metalness: number; roughness: number; color?: number }>
+> = {
+	"graphite-housings": { metalness: 0.35, roughness: 0.5 },
+	"cabin-lining": { metalness: 0.2, roughness: 0.55 },
+	"seat-shell": { metalness: 0.3, roughness: 0.45 },
+	"seat-cushion": { metalness: 0, roughness: 0.8 },
+	"strut-paint": { metalness: 0.25, roughness: 0.62 },
+	"strut-edge": { metalness: 0.5, roughness: 0.64 },
+	"pod-face": { metalness: 0.35, roughness: 0.55, color: 0x8c9196 },
+	"weathered-blue-steel": { metalness: 0.45, roughness: 0.42 },
+	"exposed-machined-edges": {
+		metalness: 0.55,
+		roughness: 0.6,
+		color: 0x7a8084,
+	},
+};
+
+const MINER_LAMP_POSITIONS_M: Readonly<Record<string, readonly number[]>> = {
+	"cockpit-light": [-0.26, -1.2, -0.7],
+	"cockpit-key-light": [1.46, -1.2, -0.7],
+	"cockpit-centre-light": [0.6, -0.2, -0.6],
+};
 
 /** Cabin kilometres per model metre. */
 export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
@@ -281,6 +324,7 @@ export interface AuthoredCabin {
 	root: THREE.Group;
 	/** Each screen quad's frame, in `root`'s parent frame. */
 	screens: Record<CockpitScreen, ScreenFrame>;
+	extraScreens: Record<string, ScreenFrame>;
 	/** Model-metre placement, for lamps given in model metres. */
 	modelSpace: THREE.Group;
 }
@@ -294,6 +338,18 @@ let template: THREE.Group | null = null;
  */
 export function adoptCockpitMaterial(m: THREE.MeshStandardMaterial): void {
 	if (!m.map) return;
+	const miner = MINER_COCKPIT ? MINER_FINISHES[m.name] : undefined;
+	if (miner) {
+		m.color.setHex(miner.color ?? 0xffffff);
+		m.metalness = miner.metalness;
+		m.roughness = miner.roughness;
+		m.envMapIntensity = 1.15;
+		m.map.anisotropy = 8;
+		m.bumpMap = m.map;
+		m.bumpScale = 0.004;
+		m.needsUpdate = true;
+		return;
+	}
 	m.color.setHex(COCKPIT_TINTS[m.name] ?? 0xffffff);
 	m.envMapIntensity = 1.15;
 	if (m.name !== "exposed-machined-edges") {
@@ -492,18 +548,19 @@ export function buildAuthoredCabin(): AuthoredCabin {
 	modelSpace.name = "cockpit-model-space";
 	modelSpace.scale.setScalar(COCKPIT_MODEL_KM_PER_M);
 	modelSpace.position.set(
-		-COCKPIT_MODEL_EYE_M[0] * COCKPIT_MODEL_KM_PER_M,
-		-COCKPIT_MODEL_EYE_M[1] * COCKPIT_MODEL_KM_PER_M,
-		-COCKPIT_MODEL_EYE_M[2] * COCKPIT_MODEL_KM_PER_M,
+		-CABIN_EYE_M[0] * COCKPIT_MODEL_KM_PER_M,
+		-CABIN_EYE_M[1] * COCKPIT_MODEL_KM_PER_M,
+		-CABIN_EYE_M[2] * COCKPIT_MODEL_KM_PER_M,
 	);
 	modelSpace.add(model);
 	const root = new THREE.Group();
 	root.name = "cockpit-model";
-	root.rotation.x = COCKPIT_MODEL_PITCH_RAD;
+	root.rotation.x = CABIN_PITCH_RAD;
 	root.add(modelSpace);
 	root.updateMatrixWorld(true);
 	const unpowered = new THREE.MeshBasicMaterial({ color: 0x01090b });
 	const screens = {} as Record<CockpitScreen, ScreenFrame>;
+	const extraScreens: Record<string, ScreenFrame> = {};
 	model.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		if (o.name.startsWith("label-") || o.name.startsWith("key-")) {
@@ -513,7 +570,6 @@ export function buildAuthoredCabin(): AuthoredCabin {
 		}
 		if (!o.name.startsWith("screen-")) return;
 		const name = o.name.slice(7) as CockpitScreen;
-		if (!COCKPIT_SCREENS.includes(name)) return;
 		o.material = unpowered;
 		o.castShadow = false;
 		const position = o.geometry.getAttribute("position");
@@ -528,12 +584,14 @@ export function buildAuthoredCabin(): AuthoredCabin {
 			);
 			uvs.push(new THREE.Vector2().fromBufferAttribute(uv, i));
 		}
-		screens[name] = screenFrame(positions, uvs);
+		if (COCKPIT_SCREENS.includes(name))
+			screens[name] = screenFrame(positions, uvs);
+		else extraScreens[name] = screenFrame(positions, uvs);
 	});
 	for (const name of COCKPIT_SCREENS)
-		if (!screens[name])
+		if (!screens[name] && !(MINER_COCKPIT && name === "systems"))
 			throw new Error(`buildAuthoredCabin: the model has no screen-${name}`);
-	return { root, screens, modelSpace };
+	return { root, screens, extraScreens, modelSpace };
 }
 
 let ready: Promise<void> | undefined;
@@ -545,7 +603,10 @@ export function prepareCockpitModel(
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(COURIER_COCKPIT_GLB_URL, onProgress)
+		.loadAsync(
+			MINER_COCKPIT ? MINER_COCKPIT_GLB_URL : COURIER_COCKPIT_GLB_URL,
+			onProgress,
+		)
 		.then((gltf) => adoptCockpitTemplate(gltf.scene))
 		.catch((error) => {
 			ready = undefined;
@@ -761,3 +822,12 @@ export function buildPerimeterLamps(): THREE.Group[] {
 		return group;
 	});
 }
+
+/** The console lamps for the cabin being flown; the miner study's sit under its dash. */
+export const cabinConsoleLamps = (): typeof COCKPIT_MODEL_LAMPS =>
+	MINER_COCKPIT
+		? (COCKPIT_MODEL_LAMPS.map((lamp) => ({
+				...lamp,
+				positionM: MINER_LAMP_POSITIONS_M[lamp.name] ?? lamp.positionM,
+			})) as unknown as typeof COCKPIT_MODEL_LAMPS)
+		: COCKPIT_MODEL_LAMPS;
