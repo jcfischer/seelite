@@ -18,6 +18,11 @@ export const CORIOLIS_GLB_URL = new URL(
 	"./models/coriolis.glb",
 	import.meta.url,
 ).href;
+/** The Coriolis scale detail, fetched at its first full-detail frame (#1142). */
+export const CORIOLIS_DETAIL_GLB_URL = new URL(
+	"./models/coriolis-detail.glb",
+	import.meta.url,
+).href;
 
 /** Full authored Assembly kit, exported in kilometres (node #1073). */
 export const ASSEMBLY_GLB_URL = new URL(

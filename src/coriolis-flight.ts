@@ -7,6 +7,7 @@ import type { ModelLoader, ModelProgressListener } from "./model-progress";
 import {
 	buildCoriolisNavigation,
 	installCoriolisBuilder,
+	setStationDetail,
 	type StationFixture,
 	stationSilhouetteKm,
 	type StationMesh,
@@ -16,7 +17,7 @@ import { stationInterior } from "./station-interior";
 import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { shared, disposeSubtree } from "./gpu-teardown";
-import { CORIOLIS_GLB_URL } from "./model-urls";
+import { CORIOLIS_DETAIL_GLB_URL, CORIOLIS_GLB_URL } from "./model-urls";
 
 /** Principal ruling: https://github.com/jcfischer/seelite/issues/1142 */
 export const CORIOLIS_PAINT_LIFT = 2.3;
@@ -77,22 +78,66 @@ function applyCoriolisKeyLight(material: THREE.MeshStandardMaterial) {
 		`${previousKey}|coriolis-key-${CORIOLIS_KEY_GAIN}-ambient-${CORIOLIS_AMBIENT_GAIN}`;
 }
 
-export function createIndustrialCoriolisBuilder(template: THREE.Group) {
+function standardMaterials(root: THREE.Object3D) {
 	const materials = new Set<THREE.MeshStandardMaterial>();
-	template.traverse((o) => {
+	root.traverse((o) => {
 		if (o instanceof THREE.Mesh)
 			for (const m of Array.isArray(o.material) ? o.material : [o.material])
 				if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
 	});
-	const divisor = Math.max(
+	return materials;
+}
+
+/** The divisor that puts a set's brightest emissive at `EMISSIVE_CEILING`. */
+export function emissiveDivisor(
+	materials: Iterable<THREE.MeshStandardMaterial>,
+) {
+	return Math.max(
 		1,
 		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
-	for (const m of materials) {
-		m.emissiveIntensity /= divisor;
-		if (isCoriolisBeacon(m.name)) m.emissiveIntensity *= CORIOLIS_BEACON_GAIN;
-		applyCoriolisKeyLight(m);
-	}
+}
+
+function exposeCoriolisMaterial(
+	m: THREE.MeshStandardMaterial,
+	divisor: number,
+) {
+	m.emissiveIntensity /= divisor;
+	if (isCoriolisBeacon(m.name)) m.emissiveIntensity *= CORIOLIS_BEACON_GAIN;
+	applyCoriolisKeyLight(m);
+}
+
+export type IndustrialCoriolisBuilder = ((
+	berthSeed: number,
+	color: number,
+) => StationMesh) & {
+	addDetail(detail: THREE.Group): void;
+};
+
+export function createIndustrialCoriolisBuilder(
+	template: THREE.Group,
+	requestDetail: () => void = () => {},
+): IndustrialCoriolisBuilder {
+	const materials = standardMaterials(template);
+	const divisor = emissiveDivisor(materials);
+	for (const m of materials) exposeCoriolisMaterial(m, divisor);
+	const byName = new Map([...materials].map((m) => [m.name, m]));
+	const maps = new Map<string, THREE.Texture>();
+	for (const m of materials) if (m.map) maps.set(m.map.name, m.map);
+	let detail: THREE.Group | undefined;
+	const live = new Map<StationMesh, THREE.Object3D>();
+	const attach = (mesh: StationMesh, exterior: THREE.Object3D) => {
+		if (!detail) return;
+		for (const part of detail.children) {
+			const copy = part.clone(true);
+			exterior.add(copy);
+			copy.traverse((o) => {
+				if (o.userData.minDetail) mesh.accessories.push(o);
+			});
+		}
+		exterior.updateMatrixWorld(true);
+		setStationDetail(mesh, mesh.detail);
+	};
 	// https://github.com/jcfischer/seelite/issues/1142
 	const palettes = new Map<string, THREE.MeshStandardMaterial>();
 	// One loaded asset for this page, retained across system changes.
@@ -107,7 +152,7 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			}
 		}
 	});
-	return (berthSeed: number, _color: number): StationMesh => {
+	const build = (berthSeed: number, _color: number): StationMesh => {
 		const exterior = template.clone(true);
 		exterior.scale.setScalar(0.001);
 		exterior.traverse((o) => {
@@ -162,7 +207,7 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			if (o.name === NAMEPLATE_NAME && o instanceof THREE.Mesh)
 				nameplates.push(o);
 		});
-		return {
+		const mesh: StationMesh = {
 			root,
 			spinner,
 			type: "trade",
@@ -173,9 +218,49 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			accessories,
 			nameplates,
 			greebles: [],
-			dispose: () => disposeSubtree(root),
+			dispose: () => {
+				live.delete(mesh);
+				disposeSubtree(root);
+			},
+			lateDetail: {
+				request: () => {
+					if (!detail) requestDetail();
+				},
+				get attached() {
+					return detail !== undefined;
+				},
+			},
 		};
+		if (detail) attach(mesh, exterior);
+		else live.set(mesh, exterior);
+		return mesh;
 	};
+	const addDetail = (scene: THREE.Group) => {
+		if (detail) return;
+		scene.traverse((o) => {
+			if (!(o instanceof THREE.Mesh)) return;
+			o.castShadow = true;
+			o.receiveShadow = true;
+			shared(o.geometry);
+			const own = o.material as THREE.MeshStandardMaterial;
+			const base = byName.get(own.name);
+			if (base) {
+				o.material = base;
+				return;
+			}
+			exposeCoriolisMaterial(own, divisor);
+			const map = maps.get(own.userData.baseColorMap);
+			if (map) {
+				own.map = map;
+				own.needsUpdate = true;
+			}
+			byName.set(own.name, shared(own));
+		});
+		detail = scene;
+		for (const [mesh, exterior] of live) attach(mesh, exterior);
+		live.clear();
+	};
+	return Object.assign(build, { addDetail });
 }
 
 async function loadIndustrialStationBuilder(
@@ -190,7 +275,17 @@ async function loadIndustrialStationBuilder(
 			o.receiveShadow = true;
 		}
 	});
-	return createIndustrialCoriolisBuilder(gltf.scene);
+	let detail: Promise<void> | undefined;
+	const build = createIndustrialCoriolisBuilder(gltf.scene, () => {
+		detail ??= new GLTFLoader()
+			.setMeshoptDecoder(MeshoptDecoder)
+			.loadAsync(CORIOLIS_DETAIL_GLB_URL)
+			.then((loaded) => build.addDetail(loaded.scene))
+			.catch((error) =>
+				console.warn("Coriolis scale detail failed to load", error),
+			);
+	});
+	return build;
 }
 
 let ready: Promise<void> | undefined;
