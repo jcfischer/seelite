@@ -40,7 +40,7 @@ const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit-2seat.glb";
 const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
 	? [0, 0, 0]
 	: [0, 0.3, 1.15];
-const CABIN_PITCH_RAD = MINER_COCKPIT ? 0 : 0.242;
+const CABIN_PITCH_RAD = MINER_COCKPIT ? 0.12 : 0.242;
 
 /** The miner seat sits this far to starboard of the pilot seat, model metres. */
 export const MINER_SEAT_OFFSET_M = 1.2;
