@@ -37,6 +37,26 @@ export async function graftMounts(document, io) {
 		return found;
 	};
 	const buffer = root.listBuffers()[0];
+	const copyAccessor = (a) =>
+		document
+			.createAccessor()
+			.setType(a.getType())
+			.setArray(a.getArray().slice())
+			.setBuffer(buffer);
+	const copyMesh = (source) => {
+		const mesh = document.createMesh(source.getName());
+		for (const p of source.listPrimitives()) {
+			const primitive = document
+				.createPrimitive()
+				.setMode(p.getMode())
+				.setMaterial(material(p.getMaterial().getName()));
+			for (const semantic of p.listSemantics())
+				primitive.setAttribute(semantic, copyAccessor(p.getAttribute(semantic)));
+			if (p.getIndices()) primitive.setIndices(copyAccessor(p.getIndices()));
+			mesh.addPrimitive(primitive);
+		}
+		return mesh;
+	};
 	for (const mount of mounts.getRoot().listScenes()[0].listChildren()) {
 		if (!identity(mount))
 			throw new Error(`${mount.getName()}: the mount root is not at the frame`);
@@ -44,34 +64,7 @@ export async function graftMounts(document, io) {
 			const source = part.getMesh();
 			if (!source || part.listChildren().length)
 				throw new Error(`${part.getName()}: expected one mesh and no children`);
-			const mesh = document.createMesh(source.getName());
-			for (const p of source.listPrimitives()) {
-				const primitive = document
-					.createPrimitive()
-					.setMode(p.getMode())
-					.setMaterial(material(p.getMaterial().getName()));
-				for (const semantic of p.listSemantics()) {
-					const a = p.getAttribute(semantic);
-					primitive.setAttribute(
-						semantic,
-						document
-							.createAccessor()
-							.setType(a.getType())
-							.setArray(a.getArray().slice())
-							.setBuffer(buffer),
-					);
-				}
-				const index = p.getIndices();
-				if (index)
-					primitive.setIndices(
-						document
-							.createAccessor()
-							.setType(index.getType())
-							.setArray(index.getArray().slice())
-							.setBuffer(buffer),
-					);
-				mesh.addPrimitive(primitive);
-			}
+			const mesh = copyMesh(source);
 			hull.addChild(
 				document
 					.createNode(part.getName())

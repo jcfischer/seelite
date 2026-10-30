@@ -400,8 +400,9 @@ export type HullSlot =
 			readonly size: SlotSize;
 			/**
 			 * https://github.com/jcfischer/seelite/issues/1147
-			 * A hardpoint on a mount the hull's model draws (D-D10): NPCs leave it
-			 * empty (D-D9), and a Mining Laser bought into it takes its size (D-D18).
+			 * A hardpoint on a mount the hull's model draws (D-D10). A Mining Laser
+			 * bought into it takes its size (D-D18). Only the miner has one, and NPC
+			 * miners fly `stockLoadout`, which leaves it empty (D-D9).
 			 */
 			readonly mount?: true;
 	  }
