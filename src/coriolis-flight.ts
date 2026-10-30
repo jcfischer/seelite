@@ -22,7 +22,12 @@ import { CORIOLIS_GLB_URL } from "./model-urls";
 export const CORIOLIS_PAINT_LIFT = 2.3;
 export const CORIOLIS_KEY_GAIN = 2;
 export const CORIOLIS_AMBIENT_GAIN = 0.6;
+/** Navigation lamps alone exceed EMISSIVE_CEILING to bloom, at the principal's gain:
+ * https://github.com/jcfischer/seelite/issues/1142#issuecomment-6526047964 */
 export const CORIOLIS_BEACON_GAIN = 8;
+
+export const isCoriolisBeacon = (name: string) =>
+	name === "navigation-red" || name === "navigation-green";
 
 const DIRECT_LINE = "getDirectionalLightInfo( directionalLight, directLight );";
 const HEMISPHERE_LINE =
@@ -73,8 +78,6 @@ function applyCoriolisKeyLight(material: THREE.MeshStandardMaterial) {
 }
 
 export function createIndustrialCoriolisBuilder(template: THREE.Group) {
-	// The display export has brighter lamps than the game's exposure contract.
-	// Normalize once, preserving the authored relative strengths.
 	const materials = new Set<THREE.MeshStandardMaterial>();
 	template.traverse((o) => {
 		if (o instanceof THREE.Mesh)
@@ -87,8 +90,7 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	);
 	for (const m of materials) {
 		m.emissiveIntensity /= divisor;
-		if (/^navigation-(red|green)$/.test(m.name))
-			m.emissiveIntensity *= CORIOLIS_BEACON_GAIN;
+		if (isCoriolisBeacon(m.name)) m.emissiveIntensity *= CORIOLIS_BEACON_GAIN;
 		applyCoriolisKeyLight(m);
 	}
 	// https://github.com/jcfischer/seelite/issues/1142

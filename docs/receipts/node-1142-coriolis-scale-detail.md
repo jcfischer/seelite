@@ -11,13 +11,26 @@ the exported nodes. Production collects those nodes as accessories, so
 
 The [principal's ruling](https://github.com/jcfischer/seelite/issues/1142#issuecomment-6526047964)
 sets warm authored paint at ×2.3, directional key gain 2, hemisphere gain 0.6,
-and navigation-beacon gain 8. Trade role colour no longer repaints this form.
+and navigation-lamp gain 8. Trade role colour no longer repaints this form.
 The study's paint roughness floor of 0.82 remains. The shader patch applies to
 non-emissive Coriolis exterior materials, including cloned paints; it leaves
 the production bay, ship materials, cockpit and global rig unchanged.
 Missing or duplicate shader markers throw instead of silently retaining a
-stock shader. Red and green beacons exceed the bloom threshold in linear
+stock shader. Red and green navigation lamps exceed the bloom threshold in linear
 emissive luminance, not just intensity.
+
+The gain-8 ruling is a deliberate exception to `EMISSIVE_CEILING = 1` for
+the authored `navigation-red` and `navigation-green` materials. Normalisation
+first divides their authored intensity 3 by the asset's maximum intensity 5.
+The extra gain then raises 0.6 to **4.8**, above both the shared ceiling and
+the bloom threshold. This affects those materials wherever the exterior uses
+them, including retained baseline geometry. It does not raise the global
+ceiling or the intensities of windows, maintenance lamps, bay fixtures, ships
+or the cockpit. Loader-backed tests check every standard material in the
+production station: only those two named materials may exceed 1, and their
+intensities remain bounded by 8. A separate test rejects similar
+names. The existing linear-luminance assertion checks that both colours cross
+the bloom threshold.
 
 F22 is accepted as is. There is no shade-side ambient lift, backdrop change
 or rim shader term. The formerly inert `CORIOLIS_ENV_LIFT` is omitted;
@@ -48,6 +61,20 @@ Shipping asset SHA-256:
 The preparation script verifies exact decoded vertex attributes and texture
 pixels after lossless Meshopt and WebP encoding. The asset remains below the
 repository's 25 MiB deployment guard. The authored texture is unchanged.
+
+Two baseline material factors also change from main to the study's warmer
+palette. These changes affect reduced and outline as well as full detail,
+because baseline and added meshes share those materials. The unchanged
+baseline geometry and texture do not imply unchanged baseline paint:
+
+| Material | Main linear RGB; metalness; roughness | This branch linear RGB; metalness; roughness |
+| --- | --- | --- |
+| `structural-graphite` | (0.10, 0.12, 0.125); 0.75; 0.43 | (0.19, 0.17, 0.145); 0.55; 0.50 |
+| `recess-and-radiator` | (0.023, 0.032, 0.035); 0.65; 0.52 | (0.062, 0.05, 0.038); 0.60; 0.60 |
+
+These are authored inputs in `spikes/coriolis/build_model.py`, before texture
+multiplication and lighting. The before/after frames include both recolours.
+Acceptance of the final palette remains part of the pending visual ruling.
 
 Rebuild commands, from the repository root:
 
@@ -161,17 +188,53 @@ Worker checks before the full host suite:
 - Hardware `probe-light-rig` passes 12/12. `hull-chase` painted peak is 238.21,
   inside 131.016–255; lower quartile is 34.48 ≥ 29.392 and median 51.70 ≥ 44.608.
   The subject is the calibrated authored courier, model hash `6967208f3169`.
+  Its fixture contains no Coriolis navigation materials: the log's peak 1.00
+  against 1.00 does **not** validate the Coriolis exception or its bloom.
   [Probe log](../../spikes/station-scale/evidence/light-rig.log).
 - Hardware `probe-station-visuals` passes 92/92. Its Ring and Wheel fixtures
   retain their lighting and full → reduced → outline transitions. The Coriolis
   itself is checked by the loader-backed tests and the captured live frames.
   [Probe log](../../spikes/station-scale/evidence/station-visuals.log).
 - Four [deliberate defects](../../spikes/station-scale/evidence/mutations.json)
-  each fail the new assertions: paint lift disabled, key gain 1, beacon gain 1,
+  each fail the new assertions: paint lift disabled, key gain 1, navigation-lamp gain 1,
   and scale detail excluded from the accessory collection. The original source
   is restored byte for byte after each experiment.
 - The proposed public changelog sentence is in `src/changelog.ts`, awaiting the
   principal's approval and the actual merge date.
 
-The one full host `npm test` run before commit passes: **7,258 tests across
+The initial implementation's full host `npm test` run passes: **7,258 tests across
 437 files, zero failures** (1,061.62 seconds). No VM or container was used.
+
+## Sage round 1
+
+The review repair documents the ruled exposure exception in `light-rig.ts`
+and at `CORIOLIS_BEACON_GAIN`. `isCoriolisBeacon` owns the two exact material
+names for the production builder and its tests. The shipping GLB, gains,
+material factors and shader output are unchanged in this round, so the cost
+and visual captures above still describe the rendered result.
+
+The five affected test files pass **113 tests**, including the historical
+spike, exposure, proxy, shader, view declaration and capture-deadline checks.
+Applying gain 8 to every imported material deliberately fails the new
+shipping-asset ceiling assertion. The source is restored byte for byte and
+the same five files pass again. Typecheck, format, lint, comment lint, launcher
+wiring and production build pass. The comment baseline drops from five to
+three in `src/coriolis-flight.ts`.
+
+No browser probe or capture is rerun for this repair: it changes naming,
+documentation and tests, with the two exact authored materials retaining
+their previous intensities. The supervisor still owns the final reviewed-head
+`probe:pr` gate and the principal's visual, size and cost acceptances remain
+pending.
+
+This round's single full host `npm test` run finishes with **7,259 pass and
+one failure across 437 files** (998.69 seconds). The failure is
+`tests/station-route.test.ts`, "the actor returns physically and requests any
+fitting home berth": it times out at 5,442.65 ms against Bun's default
+5,000 ms limit. The same named test passes alone on this branch in 1,518.28 ms.
+All 32 tests in the unchanged route test file also pass on this branch
+(10.20 seconds) and from an extracted snapshot
+of merge base `8aa96c1f6016b79660480e1a38af04de6a1788a3` on this host.
+The full-suite timeout is therefore not reproduced on the isolated base file;
+its cause remains unattributed. No timeout or route code is changed to work
+around it. The supervisor's full merge-base comparison remains pending.

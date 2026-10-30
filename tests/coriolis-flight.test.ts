@@ -1,10 +1,11 @@
 import { test, expect } from "bun:test";
-import { EXPOSURE } from "../src/light-rig";
+import { EMISSIVE_CEILING, EXPOSURE } from "../src/light-rig";
 import * as THREE from "three";
 import { makeWorldAtSystem } from "../src/sim";
 import {
 	coriolisLightsChunk,
 	createIndustrialCoriolisBuilder,
+	isCoriolisBeacon,
 } from "../src/coriolis-flight";
 import { buildStationMesh, installCoriolisBuilder } from "../src/station-mesh";
 import { STATION_GEOMETRY } from "../src/station";
@@ -151,6 +152,73 @@ test("imported lights obey the live emissive ceiling while retaining their relat
 	const station = build(0, 0x9aa6b2);
 	expect(brightest.emissiveIntensity).toBe(1);
 	expect(warm.emissiveIntensity).toBe(0.8);
+	station.dispose();
+});
+
+test("only exact Coriolis navigation material names receive the ruled exposure exception", () => {
+	const template = new THREE.Group();
+	const names = [
+		"navigation-red",
+		"navigation-green",
+		"navigation-blue",
+		"navigation-red-extra",
+		"scale-detail-navigation-red",
+		"maintenance-white",
+		"habitation-amber",
+	];
+	const materials = names.map((name) => {
+		const material = new THREE.MeshStandardMaterial({
+			emissive: 0xffffff,
+			emissiveIntensity: 5,
+		});
+		material.name = name;
+		template.add(
+			new THREE.Mesh(new THREE.BoxGeometry(800, 800, 800), material),
+		);
+		return material;
+	});
+	const station = createIndustrialCoriolisBuilder(template)(0, 0xffffff);
+	for (const material of materials) {
+		const navigation = ["navigation-red", "navigation-green"].includes(
+			material.name,
+		);
+		expect(isCoriolisBeacon(material.name)).toBe(navigation);
+		expect(material.emissiveIntensity).toBe(navigation ? 8 : EMISSIVE_CEILING);
+	}
+	station.dispose();
+});
+
+test("the shipped Coriolis exceeds the shared ceiling only on its two ruled navigation materials", async () => {
+	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
+	const station = createIndustrialCoriolisBuilder(template)(0, 0x9aa6b2);
+	const materials = new Set<THREE.MeshStandardMaterial>();
+	station.root.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return;
+		for (const material of Array.isArray(o.material)
+			? o.material
+			: [o.material])
+			if (material instanceof THREE.MeshStandardMaterial)
+				materials.add(material);
+	});
+	const exceptions: string[] = [];
+	let ordinary = 0;
+	for (const material of materials) {
+		expect(Number.isFinite(material.emissiveIntensity)).toBe(true);
+		expect(material.emissiveIntensity).toBeGreaterThanOrEqual(0);
+		if (isCoriolisBeacon(material.name)) {
+			exceptions.push(material.name);
+			expect(material.emissiveIntensity).toBeCloseTo(4.8);
+			expect(material.emissiveIntensity).toBeLessThanOrEqual(8);
+		} else {
+			ordinary++;
+			expect([
+				material.name,
+				material.emissiveIntensity <= EMISSIVE_CEILING,
+			]).toEqual([material.name, true]);
+		}
+	}
+	expect(exceptions.sort()).toEqual(["navigation-green", "navigation-red"]);
+	expect(ordinary).toBeGreaterThan(10);
 	station.dispose();
 });
 
@@ -364,8 +432,7 @@ test("every added scale-detail mesh draws only at full; baseline geometry and ga
 			!(o.material instanceof THREE.MeshStandardMaterial)
 		)
 			return;
-		if (/^navigation-(red|green)$/.test(o.material.name))
-			beacons.add(o.material);
+		if (isCoriolisBeacon(o.material.name)) beacons.add(o.material);
 	});
 	expect([...beacons].map((m) => m.name).sort()).toEqual([
 		"navigation-green",

@@ -1,4 +1,3 @@
-import { makeWorldAtSystem } from "../src/sim";
 /**
  * The canonical view set — #104's declaration half.
  *
@@ -21,7 +20,7 @@ import { describe, expect, test } from "bun:test";
 import { Matrix4, Quaternion, Vector3 } from "three";
 import { setHorizonOrientation } from "../scripts/lib/horizon-framing.mjs";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
-import { makeWorld, restoreWorld } from "../src/sim.ts";
+import { makeWorld, makeWorldAtSystem, restoreWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
 import { CROSSING, npcRiftVisible } from "../src/witchspace-crossing";
 import {

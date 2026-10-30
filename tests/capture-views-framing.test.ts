@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 
 // Execute the production placer's callbacks with a fixture that records the
 // requested framing. Importing the capture entry point would launch Chromium.
@@ -43,7 +44,6 @@ test("NPC captures preserve the requested framing, with ring as the default", as
 		}
 	}
 });
-import { spawnSync } from "node:child_process";
 
 test("canonical capture refuses an invalid boot deadline before opening a browser", () => {
 	for (const value of ["0", "-1", "NaN", "20000.5"]) {
