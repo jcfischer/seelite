@@ -18,6 +18,8 @@
  */
 import type { Bus } from "./audio-cue";
 
+export const COCKPIT_FOV_DEG = { normal: 60, wide: 80 } as const;
+
 /**
  * The two values every on/off row takes.
  *
@@ -55,7 +57,8 @@ const SCHEMA = {
 		fallback: "normal" as const,
 		allowed: ["normal", "wide"] as const,
 		label: "Cockpit field of view",
-		describe: (v: string) => (v === "wide" ? "Wide (80°)" : "Normal (60°)"),
+		describe: (v: keyof typeof COCKPIT_FOV_DEG) =>
+			`${v === "wide" ? "Wide" : "Normal"} (${COCKPIT_FOV_DEG[v]}°)`,
 		note: "The vertical field of view in every cockpit cabin. Chase view keeps its own field of view.",
 	},
 	/**

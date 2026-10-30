@@ -90,6 +90,34 @@ The worker contract explicitly prohibits the full browser suite. The local
 browser evidence is therefore a manual affected subset, not a selected PR gate
 or a full-suite pass. The supervisor owns the final browser gate and Sage review.
 
+## Sage round 1
+
+`COCKPIT_FOV_DEG` in `settings.ts` now owns the normal and wide degree values.
+The settings descriptions, initial cameras, and live updates read that mapping.
+Chase uses its own named constant. `Game.layerCameras` supplies the FOV updater
+and the HUD probe; the probe also requires five cameras, and a headless test
+checks their identities.
+
+Both glossary nits were declined. [CONTEXT.md](../../CONTEXT.md) explicitly
+permits `command` for input dispatch and limits the avoided alias to carrier
+interventions. The receipt and tests use the input-dispatch meaning.
+
+This round's single full host run returned **7,248 passed and 2 failed** across
+437 files. One failure was reproduced in `tests/layer-depth.test.ts`: its source
+check required the constructor's old numeric literal. The test now imports the
+canonical mapping and checks that the constructor uses it. The final focused
+run passed **73/73 tests** across the FOV, settings, key-label, layer-depth, and
+exact-amount files. The other full-run failure remains unidentified: RTK filtered
+its diagnostic and wrote no new raw log under the sandbox. It is not claimed as
+a baseline failure. The full command was not repeated, per the worker SOP.
+
+On the M1 Pro hardware renderer, `probe-hud.mjs` passed **22/22** and
+`probe-duel-hud.mjs` passed **59/59** on the final code. The duel probe initially
+timed out during boot; it subsequently passed on both a temporary snapshot of
+the reviewed commit and the final code, without changing its timeout. Build,
+TypeScript, formatting, script lint, and comment lint passed. Browser coverage
+remains an affected subset; the supervisor owns the final selected gate.
+
 ## Merge handoff
 
 The proposed changelog sentence in `src/changelog.ts` needs principal approval
