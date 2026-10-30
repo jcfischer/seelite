@@ -516,7 +516,7 @@ for name, (verts, faces, uvs) in BATCH.items():
             for li in poly_.loop_indices:
                 co = mesh.vertices[mesh.loops[li].vertex_index].co
                 g = noise.noise(co * 1.3) * .55 + noise.noise(co * 4.1 + Vector((7, 3, 1))) * .25
-                k = max(.42, min(1.0, .8 + g * .45))
+                k = max(.36, min(1.0, .78 + g * .55))
                 col.data[li].color = (k, k * .985, k * .96, 1)
         mesh.color_attributes.active_color = col
     obj = bpy.data.objects.new(name, mesh); bpy.context.collection.objects.link(obj)
