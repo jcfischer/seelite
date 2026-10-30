@@ -135,6 +135,34 @@ def ribbed_hose(points, r, mat=hose, pitch=.024, sides=18):
             j = (i + 1) % sides; poly([a[i], a[j], b[j], b[i]], mat)
     poly(list(reversed(rings[0])), mat); poly(rings[-1], mat)
 
+def duct_hose(points, r, mat, pitch=.055, sides=12, per=4):
+    """A vacuum-cleaner duct: fat rounded rings with narrow grooves, as geometry."""
+    p = [Vector(points[0])] + [Vector(v) for v in points] + [Vector(points[-1])]
+    dense = []
+    for i in range(1, len(p) - 2):
+        a, b, c, d = p[i - 1:i + 3]
+        for j in range(40):
+            t = j / 40
+            dense.append(.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t))
+    dense.append(Vector(points[-1]))
+    step = pitch / per; samples = [dense[0]]; acc = 0
+    for a, b in zip(dense, dense[1:]):
+        acc += (b - a).length
+        if acc >= step: samples.append(b); acc = 0
+    t0 = (samples[1] - samples[0]).normalized()
+    u = t0.cross(Vector((0, 1, 0)) if abs(t0.y) < .9 else Vector((1, 0, 0))).normalized()
+    rings = []
+    for i, c in enumerate(samples):
+        t = (samples[min(i + 1, len(samples) - 1)] - samples[max(0, i - 1)]).normalized()
+        u = (u - t * u.dot(t)).normalized(); v = t.cross(u)
+        crest = (.5 + .5 * math.cos(math.tau * i / per)) ** .45
+        rr = r * (.78 + .26 * crest)
+        rings.append([c + rr * (u * math.cos(k * math.tau / sides) + v * math.sin(k * math.tau / sides)) for k in range(sides)])
+    for a, b in zip(rings, rings[1:]):
+        for i in range(sides):
+            j = (i + 1) % sides; poly([a[i], a[j], b[j], b[i]], mat)
+    poly(list(reversed(rings[0])), mat); poly(rings[-1], mat)
+
 def bezel(c, w, h, thickness, mat, a=0, frame=None):
     c = Vector(c); u, v, n = frame or basis(a)
     def ring(w, h):
@@ -171,7 +199,7 @@ PANE, CHIN, ROOF_PANE = .90, .82, .88
 FLOOR_Y = 4.0 - EYE_STUDY.y
 strut = material('strut-paint', (.2, .24, .28), .3, .6, texture='strut-dark', tint=(.9, .92, .95))
 strut_edge = material('strut-edge', (.2, .21, .22), .7, .4, texture='strut-dark', tint=(.62, .62, .62))
-hose_sleeve = material('hose-sleeve', (.14, .065, .018), 0, .7, textured=False)
+hose_sleeve = material('hose-duct', (.014, .014, .015), 0, .48, textured=False)
 seatcloth = material('seat-cloth', (.34, .45, .54), .15, .55)
 bolster = material('seat-bolster', (.62, .42, .12), .2, .6)
 
@@ -246,19 +274,28 @@ def rib(a, b, width=.1, depth=.05):
     hw, cw, r = width / 2 + .02, width * .38, .018
     prof = [(-cw, .012)] + [(-cw + r * (1 - math.cos(math.pi / 2 * k / 4)), depth - r + r * math.sin(math.pi / 2 * k / 4)) for k in range(5)] \
          + [(cw - r * (1 - math.cos(math.pi / 2 * k / 4)), depth - r + r * math.sin(math.pi / 2 * k / 4)) for k in range(4, -1, -1)] + [(cw, .012)]
-    def ring(p0): return [p0 + v * x + n * y for x, y in prof]
-    r0, r1 = ring(a), ring(b)
-    acc = 0
-    for i in range(len(prof) - 1):
-        seg = (Vector(prof[i + 1]) - Vector(prof[i])).length
-        corner = 1 <= i <= 4 or len(prof) - 6 <= i <= len(prof) - 3
-        mat = strut_edge if corner else strut
-        poly([r0[i], r1[i], r1[i + 1], r0[i + 1]], mat, uv=[(0, acc * 5), (L * 5, acc * 5), (L * 5, (acc + seg) * 5), (0, (acc + seg) * 5)])
-        acc += seg
-    for e, ring_ in ((a, r0), (b, r1)): poly(ring_ if e is a else list(reversed(ring_)), strut)
-    fl = [a + v * -hw, b + v * -hw, b + v * hw, a + v * hw]
-    poly(fl, strut, uv=[(0, 0), (L * 5, 0), (L * 5, width * 5), (0, width * 5)])
-    poly([q + n * .012 for q in reversed(fl)], strut, uv=[(0, 0), (0, width * 5), (L * 5, width * 5), (L * 5, 0)])
+    rate = random.uniform(1.6, 2.6); ou, ov = random.random() * 7, random.random() * 7; turn = random.random() < .5
+    def T(along, around):
+        a_, b_ = along * rate + ou, around * rate + ov
+        return (b_, a_) if turn else (a_, b_)
+    nseg = max(1, math.ceil(L / .3))
+    for sgi in range(nseg):
+        t0, t1 = sgi / nseg, (sgi + 1) / nseg
+        pa, pb = a.lerp(b, t0), a.lerp(b, t1)
+        r0 = [pa + v * x + n * y for x, y in prof]; r1 = [pb + v * x + n * y for x, y in prof]
+        acc = 0
+        for i in range(len(prof) - 1):
+            seg = (Vector(prof[i + 1]) - Vector(prof[i])).length
+            corner = 1 <= i <= 4 or len(prof) - 6 <= i <= len(prof) - 3
+            poly([r0[i], r1[i], r1[i + 1], r0[i + 1]], strut_edge if corner else strut,
+                 uv=[T(L * t0, acc), T(L * t1, acc), T(L * t1, acc + seg), T(L * t0, acc + seg)])
+            acc += seg
+        if sgi == 0: poly(r0, strut)
+        if sgi == nseg - 1: poly(list(reversed(r1)), strut)
+        fl = [pa + v * -hw, pb + v * -hw, pb + v * hw, pa + v * hw]
+        flu = [T(L * t0, 0), T(L * t1, 0), T(L * t1, width), T(L * t0, width)]
+        poly(fl, strut, uv=flu)
+        poly([q + n * .012 for q in reversed(fl)], strut, uv=list(reversed(flu)))
     count = max(2, int(L / .28))
     for i in range(count + 1):
         p = a.lerp(b, (i + .5) / (count + 1)) + n * .012
@@ -285,7 +322,7 @@ def rib_hose(points, r=.042):
     for i, p in enumerate(points):
         n = inward(p); sag = .025 if 0 < i < len(points) - 1 else 0
         pts.append(p + n * (.06 + r + sag))
-    ribbed_hose([tuple(p) for p in pts], r, mat=hose_sleeve)
+    duct_hose([tuple(p) for p in pts], r, hose_sleeve)
     for i in range(1, len(pts) - 1):
         d = (pts[i + 1] - pts[i - 1]).normalized(); p = pts[i]
         tube(p - d * .025, p + d * .025, r * 1.35, alloy, 14)
@@ -458,6 +495,16 @@ for name, (verts, faces, uvs) in BATCH.items():
     bmesh.ops.dissolve_degenerate(bm_, dist=1e-5, edges=bm_.edges[:])
     bmesh.ops.delete(bm_, geom=[f for f in bm_.faces if f.calc_area() < 1e-9], context='FACES')
     bm_.to_mesh(mesh); bm_.free(); mesh.update()
+    if name in [strut, strut_edge]:
+        from mathutils import noise
+        col = mesh.color_attributes.new('Color', 'BYTE_COLOR', 'CORNER')
+        for poly_ in mesh.polygons:
+            for li in poly_.loop_indices:
+                co = mesh.vertices[mesh.loops[li].vertex_index].co
+                g = noise.noise(co * 1.3) * .55 + noise.noise(co * 4.1 + Vector((7, 3, 1))) * .25
+                k = max(.42, min(1.0, .8 + g * .45))
+                col.data[li].color = (k, k * .985, k * .96, 1)
+        mesh.color_attributes.active_color = col
     obj = bpy.data.objects.new(name, mesh); bpy.context.collection.objects.link(obj)
     obj.data.materials.append(MATS[name])
     if name == hose:
@@ -492,6 +539,6 @@ for name, bm, mat, level in SCULPTED:
 for image in bpy.data.images:
     if image.source == 'FILE': image.pack()
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'miner-cockpit-2seat.blend'))
-bpy.ops.export_scene.gltf(filepath=str(OUT / 'miner-cockpit-2seat.glb'), export_format='GLB', export_yup=True, export_apply=True)
+bpy.ops.export_scene.gltf(filepath=str(OUT / 'miner-cockpit-2seat.glb'), export_format='GLB', export_yup=True, export_apply=True, export_vertex_color='ACTIVE')
 print('LAMPS_M', LAMPS_M)
 print('Cockpit exported', len(bpy.data.objects), 'objects', 'screens', [s[0] for s in SCREENS])
