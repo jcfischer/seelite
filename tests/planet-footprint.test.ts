@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { readFileSync } from "node:fs";
+import ts from "typescript";
 import { glslFunctionRange } from "../scripts/lib/glsl-function.mjs";
 import { appearanceFor } from "../src/planet-appearance";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
@@ -11,6 +11,16 @@ import {
 	fragmentFor,
 } from "../src/planet-shaders";
 import { buildBodyVisual } from "../src/planet-surface";
+import { useHalfResolution } from "../src/planet-half-res";
+import {
+	BAKE_FACE_SIZES,
+	bakeFacePxFor,
+	projectedRadiusPx,
+	surfacePathFor,
+} from "../src/relief-bands";
+import { isMassive, layerFor, massiveLayerFor, scaleFor } from "../src/units";
+import type { Body } from "../src/sim";
+import { gameClass, mainSource } from "./lib/game-methods";
 
 test("quality maps to the interim cap, with other classes staying at zero", () => {
 	expect(planetDetailCap("low", "terran")).toBe(0);
@@ -201,12 +211,94 @@ test("warm-up can compile the footprint variant without pinning or moving the bo
 	expect(body.prewarmFootprint()).toBeNull();
 });
 
-test("live game applies quality to each body before selecting its surface band", () => {
-	const source = readFileSync(
-		new URL("../src/main.ts", import.meta.url),
-		"utf8",
+test("live render body loop applies current quality to every visual before its surface band", () => {
+	const render = gameClass?.members.find(
+		(member) =>
+			ts.isMethodDeclaration(member) &&
+			member.name.getText(mainSource) === "render",
 	);
-	expect(source).toContain(
-		"visual.setDetailQuality(this.settings.value.quality)",
+	if (!render || !ts.isMethodDeclaration(render) || !render.body)
+		throw new Error("Missing Game.render body");
+	const statements = [...render.body.statements];
+	const start = statements.findIndex(
+		(statement) =>
+			ts.isVariableStatement(statement) &&
+			statement.declarationList.declarations.some(
+				(declaration) => declaration.name.getText(mainSource) === "star",
+			),
 	);
+	const end = statements.findIndex(
+		(statement) =>
+			ts.isForOfStatement(statement) &&
+			statement.expression.getText(mainSource) === "this.world.system.bodies",
+	);
+	expect(start).toBeGreaterThanOrEqual(0);
+	expect(end).toBeGreaterThan(start);
+	const bindings = {
+		ORIGIN: { x: 0, y: 0, z: 0 },
+		SUN_DIR: new THREE.Vector3(),
+		camPos: { x: 0, y: 0, z: 0 },
+		isMassive,
+		layerFor,
+		massiveLayerFor,
+		scaleFor,
+		projectedRadiusPx,
+		useHalfResolution,
+		bakeFacePxFor,
+		BAKE_FACE_SIZES,
+		surfacePathFor,
+	};
+	const js = ts.transpileModule(
+		statements
+			.slice(start, end + 1)
+			.map((statement) => statement.getText(mainSource))
+			.join("\n"),
+		{ compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+	).outputText;
+	const update = new Function(...Object.keys(bindings), js);
+	const bodies = [
+		{ id: "first", kind: "planet", pos: { x: 2, y: 0, z: 0 }, radiusKm: 1 },
+		{ id: "second", kind: "moon", pos: { x: 3, y: 0, z: 0 }, radiusKm: 1 },
+	] satisfies Pick<Body, "id" | "kind" | "pos" | "radiusKm">[];
+	const events: string[] = [];
+	const visuals = bodies.map((body) => {
+		const visual = buildBodyVisual(
+			body.kind === "planet"
+				? appearanceFor("planet", "footprint-47", 1, false)
+				: appearanceFor("moon", "footprint-47", 1),
+			new THREE.SphereGeometry(),
+		);
+		const setQuality = visual.setDetailQuality;
+		visual.setDetailQuality = (quality) => {
+			events.push(`${body.id}:quality:${quality}`);
+			setQuality(quality);
+		};
+		const applyBand = visual.applySurfaceBand;
+		visual.applySurfaceBand = (band) => {
+			events.push(`${body.id}:band:${visual.uniforms.extraOctaveCap.value}`);
+			return applyBand(band);
+		};
+		return visual;
+	});
+	const subject = {
+		world: { system: { bodies }, gameTime: 0 },
+		settings: { value: { quality: "low" } },
+		meshes: new Map(bodies.map((body) => [body.id, new THREE.Group()])),
+		layers: new Map(bodies.map((body) => [body.id, "approach"])),
+		bodyVisuals: new Map(bodies.map((body, i) => [body.id, visuals[i]])),
+		stationVisuals: new Map(),
+		bakeFacePx: new Map(bodies.map((body) => [body.id, BAKE_FACE_SIZES[0]])),
+		focalPx: 780,
+	};
+	for (const quality of ["low", "high", "low"]) {
+		subject.settings.value.quality = quality;
+		events.length = 0;
+		update.call(subject, ...Object.values(bindings));
+		expect(events).toEqual([
+			`first:quality:${quality}`,
+			`first:band:${quality === "high" ? 6 : 0}`,
+			`second:quality:${quality}`,
+			"second:band:0",
+		]);
+	}
 });
