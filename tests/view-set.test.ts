@@ -203,11 +203,6 @@ describe("the view set itself", () => {
 		expect(placers).not.toContain("shot.system");
 	});
 
-	/** Three views name their own seed, and every one does it because the
-	 *  fixture cannot supply its subject: seed 47 generates no refinery and no
-	 *  gas giant. Two of the three are the same gas giant at two ranges —
-	 *  `ringed-giant` at six radii for #210's pair of shadows, `giant-fill` at
-	 *  two for #209's band tones and limb. */
 	test("the views that declare a seed are the ones the fixture cannot frame", () => {
 		const declared = VIEWS.filter(
 			(v) => (v.shot as { seed?: number }).seed !== undefined,
@@ -216,6 +211,7 @@ describe("the view set itself", () => {
 			["assembly-approach", 42],
 			["assembly-flank", 42],
 			["assembly-second-layout", 42],
+			["derelict-tear", 4],
 			["station-refinery-axis", 2],
 			["ringed-giant", 5],
 			["giant-fill", 5],

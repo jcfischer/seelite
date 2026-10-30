@@ -361,7 +361,7 @@
   },
   "scripts/lib/view-set.mjs": {
     "seelite/no-comments": {
-      "count": 105
+      "count": 101
     }
   },
   "scripts/lib/voice-model.mjs": {
@@ -4916,7 +4916,7 @@
   },
   "tests/view-set.test.ts": {
     "seelite/no-comments": {
-      "count": 150
+      "count": 149
     }
   },
   "tests/visit-count.test.ts": {
