@@ -4,6 +4,8 @@ import { CABIN_FAR_KM, CABIN_NEAR_KM } from "../src/cabin-pass";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { buildAuthoredCabin, cockpitScreenFrames } from "../src/cockpit-model";
 import {
+	cockpitScreenFor,
+	emergencyConsoleFrame,
 	routeCockpitSources,
 	textSurfaceSize,
 	wrapCockpitText,
@@ -13,7 +15,7 @@ const fixture = () =>
 	decodeShippedGlb("scripts/fixtures/cockpit-text-cabin.glb");
 
 describe("model-owned cockpit text surfaces", () => {
-	test("the courier routes live sources while systems stays unpowered", async () => {
+	test("the courier routes live sources, status shares the centre display, and systems stays unpowered", async () => {
 		const model = await decodeShippedGlb("src/models/courier-cockpit.glb");
 		const screens = cockpitScreenFrames(model);
 		const routed = routeCockpitSources(screens, [
@@ -23,8 +25,25 @@ describe("model-owned cockpit text surfaces", () => {
 			"ore",
 			"notices",
 		]);
-		for (const source of ["flight", "target", "status", "ore", "notices"])
+		for (const source of ["flight", "target", "ore", "notices"])
 			expect(routed.get(source)?.kind).toBe("named");
+		expect(routed.get("status")?.kind).toBe("fallback");
+		expect(cockpitScreenFor(screens, "lasers")).toBe("notices+lasers");
+		expect(cockpitScreenFor(screens, "survey")).toBe("ore+survey");
+	});
+
+	test("a shared screen serves each source it names, and only those", () => {
+		const frame = emergencyConsoleFrame();
+		const screens = { "ore+survey": frame, radar: frame };
+		expect(cockpitScreenFor(screens, "ore")).toBe("ore+survey");
+		expect(cockpitScreenFor(screens, "survey")).toBe("ore+survey");
+		expect(cockpitScreenFor(screens, "radar")).toBe("radar");
+		expect(cockpitScreenFor(screens, "ore+survey")).toBe("ore+survey");
+		expect(cockpitScreenFor(screens, "or")).toBeUndefined();
+		const routed = routeCockpitSources(screens, ["ore", "survey", "notices"]);
+		expect(routed.get("ore")).toEqual({ kind: "named", frame });
+		expect(routed.get("survey")).toEqual({ kind: "named", frame });
+		expect(routed.get("notices")?.kind).toBe("fallback");
 		expect(routed.has("systems")).toBe(false);
 	});
 

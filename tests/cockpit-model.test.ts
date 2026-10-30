@@ -421,7 +421,7 @@ describe("the cockpit's normals (node #839)", () => {
 					Array.from(was.getAttribute(name).array),
 				);
 		});
-		expect(quads).toBe(9 + 4 + 15);
+		expect(quads).toBe(7 + 7 + 15);
 	});
 });
 

@@ -19,6 +19,15 @@ export const emergencyConsoleFrame = (): ScreenFrame => ({
 	heightKm: 0.045,
 });
 
+/** The screen a source draws on: `screen-<source>`, or a shared `screen-<a>+<b>` that names it; a shared screen stacks its sources in the order they are written. */
+export function cockpitScreenFor(
+	screens: Readonly<Record<string, ScreenFrame>>,
+	source: string,
+): string | undefined {
+	if (screens[source]) return source;
+	return Object.keys(screens).find((name) => name.split("+").includes(source));
+}
+
 /** Match live source names, and divide one physical fallback among missing sources. */
 export function routeCockpitSources(
 	screens: Readonly<Record<string, ScreenFrame>>,
@@ -30,11 +39,13 @@ export function routeCockpitSources(
 	>();
 	const unique = [...new Set(sources)];
 	const missing = unique.filter(
-		(name) => name === "fallback" || !screens[name],
+		(name) => name === "fallback" || !cockpitScreenFor(screens, name),
 	);
 	const fallback = screens.fallback ?? emergencyConsoleFrame();
 	for (const source of unique) {
-		const named = source === "fallback" ? undefined : screens[source];
+		const screen =
+			source === "fallback" ? undefined : cockpitScreenFor(screens, source);
+		const named = screen === undefined ? undefined : screens[screen];
 		if (named) result.set(source, { kind: "named", frame: named });
 		else {
 			const heightKm = fallback.heightKm / missing.length;
@@ -188,6 +199,7 @@ export type CockpitTextFace = ReturnType<typeof cockpitCanvasFace>;
 export class CockpitReadouts {
 	readonly faces = new Map<string, CockpitTextFace>();
 	readonly readings = new Map<string, readonly CockpitTextLine[]>();
+	private readonly shared = new Map<string, CockpitTextFace>();
 	private readonly reserved = new Set([
 		"radar",
 		"flight",
@@ -225,22 +237,43 @@ export class CockpitReadouts {
 	flush() {
 		const fallbackLines: CockpitTextLine[] = [];
 		for (const [source, lines] of this.readings) {
-			const frame = this.screens[source];
-			if (!frame || this.reserved.has(source)) {
+			const screen = cockpitScreenFor(this.screens, source);
+			if (screen === undefined || this.reserved.has(source)) {
 				fallbackLines.push(...lines);
 				continue;
 			}
 			if (!this.faces.has(source)) {
-				const face = cockpitCanvasFace({ frame, name: `readout-${source}` });
+				const shared = this.shared.get(screen);
+				const face =
+					shared ??
+					cockpitCanvasFace({
+						frame: this.screens[screen],
+						name: `readout-${screen}`,
+					});
+				if (!shared) {
+					this.shared.set(screen, face);
+					this.root.add(face.mount);
+				}
 				this.faces.set(source, face);
-				this.root.add(face.mount);
 			}
 		}
-		for (const [source, face] of this.faces) {
-			const lines =
-				source === "fallback"
-					? fallbackLines
-					: (this.readings.get(source) ?? []);
+		const screenLines = (screen: string) =>
+			[...this.readings].flatMap(([source, lines]) =>
+				!this.reserved.has(source) &&
+				cockpitScreenFor(this.screens, source) === screen
+					? lines
+					: [],
+			);
+		const faces: [CockpitTextFace, readonly CockpitTextLine[]][] = [
+			[this.faces.get("fallback") as CockpitTextFace, fallbackLines],
+			...[...this.shared].map(
+				([screen, face]): [CockpitTextFace, readonly CockpitTextLine[]] => [
+					face,
+					screenLines(screen),
+				],
+			),
+		];
+		for (const [face, lines] of faces) {
 			const key = JSON.stringify(lines);
 			if (key === face.key) continue;
 			paintCockpitText(face.ctx, lines);

@@ -304,6 +304,103 @@ for center,w,h in [((0,-.87,-2.35),1.62,1.20),((-1.53,-.81,-2.42),1.32,.72),((1.
         q.x*=1.12;q.y-=.25;q.z+=.20
         box(q,(random.uniform(.005,.024),.003,.002),alloy,A)
 
+# Readout screens (node #1151), set into the structure in final pilot metres.
+# The game reads each screen's frame from its quad, so these placements are its layout.
+import os
+LAYOUT=os.environ.get('COCKPIT_READOUT_LAYOUT','o6')
+
+def oplane(name,c,w,h,u,v):
+    pts=[c-u*w/2-v*h/2,c+u*w/2-v*h/2,c+u*w/2+v*h/2,c-u*w/2+v*h/2]
+    mesh=bpy.data.meshes.new(name)
+    mesh.from_pydata([(p.x,-p.z,p.y) for p in pts],[],[(0,1,2,3)])
+    uv=mesh.uv_layers.new()
+    for li,co in enumerate([(0,0),(1,0),(1,1),(0,1)]):uv.data[li].uv=co
+    obj=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(MATS[black]);return obj
+
+def obox(c,size,mat,u,v,n):
+    w,h,d=size
+    pts=[c+u*x*w/2+v*y*h/2+n*z*d/2 for x,y,z in [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),(-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)]]
+    for f in [(0,3,2,1),(4,5,6,7),(0,1,5,4),(3,7,6,2),(0,4,7,3),(1,2,6,5)]:poly([pts[i] for i in f],mat)
+
+def obezel(c,w,h,t,mat,u,v,n):
+    def ring(w,h):
+        cut=min(.03,h/4)
+        return [c+u*x+v*y for x,y in [(-w/2+cut,-h/2),(w/2-cut,-h/2),(w/2,-h/2+cut),(w/2,h/2-cut),(w/2-cut,h/2),(-w/2+cut,h/2),(-w/2,h/2-cut),(-w/2,-h/2+cut)]]
+    outer=ring(w,h);inner=ring(w-2*t,h-2*t)
+    for i in range(8):
+        j=(i+1)%8
+        poly([outer[i],outer[j],inner[j],inner[i]],mat)
+        poly([outer[i]-n*.02,outer[j]-n*.02,outer[j],outer[i]],mat)
+        poly([inner[i],inner[j],inner[j]-n*.02,inner[i]-n*.02],mat)
+
+def screen_unit(name,c,w,h,u,v,n):
+    obox(c-n*.008,(w+.03,h+.03,.008),black,u,v,n)
+    oplane('screen-'+name,c,w,h,u,v)
+    obezel(c+n*.008,w+.05,h+.05,.018,black,u,v,n)
+
+def tilt(a):
+    return Vector((1,0,0)),Vector((0,math.cos(a),math.sin(a))),Vector((0,-math.sin(a),math.cos(a)))
+
+BROW=sections
+FACE=Vector((0,-.24,.36))
+def brow_at(x):
+    for a,b in zip(BROW,BROW[1:]):
+        if a[0]<=x<=b[0]:
+            t=(x-a[0])/(b[0]-a[0]);return Vector(a).lerp(Vector(b),t)
+    return Vector(BROW[-1] if x>0 else BROW[0])
+
+def brow_bank(x,w,units,label):
+    """Screens set into the brow face, top to bottom; units are (name, height)."""
+    top=brow_at(x)
+    u=(brow_at(x+.1)-brow_at(x-.1)).normalized()
+    v=-FACE.normalized();n=u.cross(v).normalized()
+    span=FACE.length
+    gap=.025
+    used=sum(h for _,h in units)+gap*(len(units)+1)
+    s=(span-used)/2+gap
+    plate_c=top+FACE*.5+n*.022
+    obox(plate_c,(w+.16,span-.02,.05),dark,u,v,n)
+    obox(plate_c+n*.030,(w+.12,span-.05,.006),steel,u,v,n)
+    for name,h in units:
+        c=top-v*(s+h/2)+n*.068
+        screen_unit(name,c,w,h,u,v,n)
+        s+=h+gap
+    for side in [-1,1]:
+        for k in [.2,.8]:
+            p=top+FACE*k+u*side*(w/2+.055)+n*.05
+            tube(p-n*.01,p+n*.012,.016,alloy,8)
+    lip_v=Vector((0,.15,.03)).normalized();lip_n=u.cross(lip_v).normalized()
+    oplane('label-'+label,top+FACE+Vector((0,-.075,-.015))+lip_n*.012,min(w-.3,.8),.045,u,lip_v)
+
+def pod_stack(base,w,units,a,label):
+    """A housing standing on a pod's top edge, leaning back to face the pilot."""
+    u,v,n=tilt(a)
+    total=sum(h for _,h in units)+.05*(len(units)+1)+.07
+    c0=base+v*(total/2)
+    obox(c0-n*.075,(w+.14,total,.11),dark,u,v,n)
+    obox(c0-n*.016,(w+.10,total-.04,.01),steel,u,v,n)
+    s=total-.05
+    for name,h in units:
+        c=base+v*(s-h/2)
+        screen_unit(name,c,w,h,u,v,n)
+        s-=h+.05
+    oplane('label-'+label,base+v*.045+n*.002,min(w-.2,.75),.04,u,v)
+    for x in [-(w/2+.045),w/2+.045]:
+        obox(c0+u*x+n*.004,(.02,total-.08,.016),alloy,u,v,n)
+        for y in [-total/2+.04,total/2-.04]:
+            p=c0+u*x+v*y
+            tube(p,p+n*.02,.014,alloy,8)
+    obox(base-v*.015-n*.06,(w+.2,.04,.16),dark,u,v,n)
+
+brow_bank(0,1.72,[('fallback',.375)],'status')
+if LAYOUT=='o6':
+    pod_stack(Vector((-1.55,-1.62,-2.42)),1.0,[('notices+lasers',.37)],-.47,'notices')
+    pod_stack(Vector((1.55,-1.64,-2.49)),1.0,[('ore+survey',.278)],-.47,'ore')
+else:
+    brow_bank(-1.5,.9,[('notices',.2),('lasers',.11)],'notices')
+    brow_bank(1.5,.9,[('ore',.11),('survey',.11)],'ore')
+
 for name,(verts,faces,uvs) in BATCH.items():
     if not faces:continue
     mesh=bpy.data.meshes.new(name)

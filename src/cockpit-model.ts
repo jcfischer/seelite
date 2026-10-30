@@ -222,6 +222,12 @@ const LABELS: Readonly<Record<string, string>> = {
 	"label-flight": "FLIGHT  /  RELATIVE",
 	"label-systems": "POWER DISTRIBUTION",
 	"label-target": "NAVIGATION COMPUTER",
+	"label-status": "DRIVE  /  STATUS",
+	"label-lasers": "FIRE CONTROL",
+	"label-fallback": "AUXILIARY",
+	"label-notices": "ADVISORIES",
+	"label-ore": "ORE  /  HOLD",
+	"label-survey": "SURVEY",
 };
 const KEYS = [
 	"1",
