@@ -35,7 +35,7 @@ surface policy are in [cockpit-text-surfaces.md](../specs/cockpit-text-surfaces.
   gate. Probe selection expands to the full inventory for this runtime change;
   the worker contract leaves that full run to the supervisor.
 
-## Sage round 1
+## Sage rounds 1 and 2
 
 Round 1 found that the first commit deleted coverage the figures above do
 not show. `probe-duel-hud` had lost the rout-range row (#367) and the
@@ -45,9 +45,29 @@ prompt; four rows now check them as refusal ink on the cockpit face. So the
 47/47 figure above did not cover those readings. `presentCockpitReadouts` is
 now the only cockpit writer of the prompt and clearance sources.
 
-After the fix, on the GPU lane: `probe-live-cockpit` and `probe-duel-hud`
-passed alone (`npm run probe:one`). Static gates and the seven affected unit
-files (102 tests) passed.
+Those two rows were not all of it. Round 2 found more behaviour rows that the
+rewrite had dropped, and a comparison of row names against `main` listed
+them. Rows that measured layout on the old glass (plates, margins, floor fit,
+row order) are superseded by the faces. These behaviour rows are now ported
+to the faces:
+
+- `probe-duel-hud`: the raider's ring is red while it fires and amber while
+  it does not; the Flight console's FORE and HULL against the condition; only
+  the armed group after an encounter ends; the scoop in normal flight, on a
+  cruise pass (bank draw, tank in LY), in combat and out of the band.
+- `probe-live-cockpit`: no course row without a course; the course row on
+  arrival; the target instrument without the drive charge.
+
+`__cockpitSourcePainted` compares a face with an exact paint from both 2D
+rasterisers. Chrome moves a canvas to software after repeated readbacks,
+and a face read many times differed by one pixel from a fresh GPU paint.
+
+On `38bfd6bc`, on the GPU lane, each alone with `npm run probe:one
+--show-output`: `probe-live-cockpit` 61 rows, `probe-duel-hud` 36,
+`probe-fire-groups` 14, `probe-missiles` 15, `probe-chase-view` 13,
+`probe-mining-survey` 24, all ok. These are affected probes, not the
+selected PR gate, which selects all probes for this change. Static gates and
+the seven affected unit files (102 tests) passed.
 
 ## Human acceptance
 
