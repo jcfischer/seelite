@@ -66,6 +66,49 @@ const legacyBlob = async (page, { full }) =>
 		{ full },
 	);
 
+const redockTwice = (page) =>
+	page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+		const g = window.__seelite;
+		const dt = g.units.MAX_DT;
+		const id = g.dockedAt;
+		if (!g.hasDockingComputer)
+			g.commander = {
+				...g.commander,
+				loadout: migrateEquipment(g.commander.hull, [
+					...equipmentNames(g.commander.loadout ?? {}),
+					g.dockingComputerName,
+				]).loadout,
+			};
+		const phase = () => g.dockingSnapshot(id).dockPhase;
+		const cycle = () => {
+			for (let t = 0; t < 200 && phase() !== "flying"; t += dt) {
+				if (phase() === "docked") g.launch();
+				g.step(dt);
+			}
+			const out = phase();
+			g.targetId = id;
+			g.requestDockingClearance();
+			if (!g.dockingComputer.engaged) g.toggleDockingComputer();
+			for (let t = 0; t < 400 && phase() !== "docked"; t += dt) g.step(dt);
+			g.render(0);
+			return {
+				out,
+				phase: phase(),
+				message:
+					document.querySelector("[data-live-station-message]")?.textContent ??
+					null,
+				owed: g.scoopNotice,
+			};
+		};
+		const second = cycle();
+		g.scoopNotice = true;
+		const control = cycle();
+		return { second, control };
+	});
+
 const arm = async (label, { full, redock = false }) => {
 	const context = await browser.newContext({
 		viewport: { width: 1280, height: 760 },
@@ -126,50 +169,7 @@ const arm = async (label, { full, redock = false }) => {
 				owed: g.scoopNotice,
 			};
 		});
-		const docks = redock
-			? await page.evaluate(async () => {
-					const { migrateEquipment, equipmentNames } = await import(
-						"/src/loadout.ts"
-					);
-					const g = window.__seelite;
-					const dt = g.units.MAX_DT;
-					const id = g.dockedAt;
-					if (!g.hasDockingComputer)
-						g.commander = {
-							...g.commander,
-							loadout: migrateEquipment(g.commander.hull, [
-								...equipmentNames(g.commander.loadout ?? {}),
-								g.dockingComputerName,
-							]).loadout,
-						};
-					const phase = () => g.dockingSnapshot(id).dockPhase;
-					const cycle = () => {
-						for (let t = 0; t < 200 && phase() !== "flying"; t += dt) {
-							if (phase() === "docked") g.launch();
-							g.step(dt);
-						}
-						const out = phase();
-						g.targetId = id;
-						g.requestDockingClearance();
-						if (!g.dockingComputer.engaged) g.toggleDockingComputer();
-						for (let t = 0; t < 400 && phase() !== "docked"; t += dt)
-							g.step(dt);
-						g.render(0);
-						return {
-							out,
-							phase: phase(),
-							message:
-								document.querySelector("[data-live-station-message]")
-									?.textContent ?? null,
-							owed: g.scoopNotice,
-						};
-					};
-					const second = cycle();
-					g.scoopNotice = true;
-					const control = cycle();
-					return { second, control };
-				})
-			: null;
+		const docks = redock ? await redockTwice(page) : null;
 		await page.close();
 		return { fixture, after, notice, docks };
 	} finally {
