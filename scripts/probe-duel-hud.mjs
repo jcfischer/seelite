@@ -370,11 +370,20 @@ for (const viewport of VIEWPORTS) {
 			rim = null,
 			rimQuiet = null,
 			condition = null,
+			quiet = null,
+			firing = null,
 			lastBeam = null;
 		for (
 			let i = 0;
 			i < 1800 &&
-			(!onTarget || !beam || !beamQuiet || !rim || !rimQuiet || !condition);
+			(!onTarget ||
+				!beam ||
+				!beamQuiet ||
+				!rim ||
+				!rimQuiet ||
+				!condition ||
+				!quiet ||
+				!firing);
 			i++
 		) {
 			D.frame(() => {
@@ -392,6 +401,13 @@ for (const viewport of VIEWPORTS) {
 				rim = { strength: fire.rim, view: g.view, paint: D.rimPaint() };
 			if (fire.rim === 0 && !rimQuiet) rimQuiet = { paint: D.rimPaint() };
 			if (g.cueRender?.onTarget) onTarget = g.cueRender;
+			if (g.cueRender?.at && g.encounter) {
+				const tones = D.tonesAround(g.cueRender.at);
+				if (g.raiderFiring && !firing)
+					firing = { tone: g.cueRender.tone, ...tones };
+				if (!g.raiderFiring && !quiet)
+					quiet = { tone: g.cueRender.tone, ...tones };
+			}
 			if (g.selectedRender?.conditionLine && g.cueRender?.at && !condition)
 				condition = {
 					text: g.selectedRender.conditionLine,
@@ -414,6 +430,8 @@ for (const viewport of VIEWPORTS) {
 			rim,
 			rimQuiet,
 			condition,
+			quiet,
+			firing,
 			reading,
 			painted,
 		};
@@ -439,6 +457,21 @@ for (const viewport of VIEWPORTS) {
 		JSON.stringify({ beam: duel.beam, quiet: duel.beamQuiet }),
 	);
 	check(
+		`${v}: a raider not firing is ringed amber, with no red painted`,
+		duel.quiet !== null &&
+			duel.quiet.tone === "action" &&
+			duel.quiet.amber > 20 &&
+			duel.quiet.red === 0,
+		JSON.stringify(duel.quiet),
+	);
+	check(
+		`${v}: a raider firing is ringed red`,
+		duel.firing !== null &&
+			duel.firing.tone === "refused" &&
+			duel.firing.red > 20,
+		JSON.stringify(duel.firing),
+	);
+	check(
 		`${v}: a player hit paints the cockpit rim and a quiet frame clears it`,
 		duel.rim?.view === "cockpit" &&
 			duel.rim.paint > 50 &&
@@ -447,13 +480,25 @@ for (const viewport of VIEWPORTS) {
 	);
 	await page.evaluate(() => window.__seelite.setHeadLook("right"));
 	await nextFrames(page);
-	const flightConsole = await page.evaluate(() => ({
-		fore: document.querySelector("[data-live-duel-fore]")?.textContent,
-		heat: document.querySelector("[data-live-duel-heat]")?.textContent,
-	}));
+	const flightConsole = await page.evaluate(() => {
+		const g = window.__seelite;
+		return {
+			condition: { fore: g.condition.fore, hullMax: g.condition.hullMax },
+			...window.__duel.console(),
+		};
+	});
 	check(
-		`${v}: the Flight console still carries combat detail`,
-		!!flightConsole.fore && !!flightConsole.heat,
+		`${v}: in a fight the Flight console shows FORE, HULL and HEAT from the ship's condition`,
+		flightConsole.present &&
+			flightConsole.inlineDisplay === "" &&
+			flightConsole.visible === flightConsole.assistVisible &&
+			Math.abs(
+				Number(flightConsole.fore?.split(" / ")[0]) -
+					flightConsole.condition.fore,
+			) <= 1 &&
+			flightConsole.hull?.endsWith(`/ ${flightConsole.condition.hullMax}`) &&
+			typeof flightConsole.heat === "string" &&
+			flightConsole.heat.length > 0,
 		JSON.stringify(flightConsole),
 	);
 	await page.evaluate(() => {
@@ -520,6 +565,42 @@ for (const viewport of VIEWPORTS) {
 			rout.releaseGap - rout.lastHitGap < 0.5,
 		JSON.stringify(rout),
 	);
+	const ended = await page.evaluate(() => {
+		const g = window.__seelite;
+		g.resetFlightToStart();
+		g.rightTab = "Flight";
+		g.setHeadLook("right");
+		window.__duel.steps(0.1);
+		return { encounter: g.encounter, raiderFiring: g.raiderFiring };
+	});
+	await nextFrames(page);
+	const endedConsole = await page.evaluate(() => window.__duel.console());
+	const endedFace = await page.evaluate(() => {
+		const g = window.__seelite;
+		g.setHeadLook("forward");
+		window.__duel.steps(0.1);
+		const text = (source) =>
+			(g.cockpit.text.readings.get(source) ?? []).map((l) => l.text).join(" ");
+		return {
+			combat: text("combat"),
+			lasers: text("lasers"),
+			lasersPainted: window.__cockpitSourcePainted("lasers"),
+			cue: g.cueRender,
+		};
+	});
+	check(
+		`${v}: after the encounter ends only the armed group remains, without cue or console detail`,
+		ended.encounter === null &&
+			ended.raiderFiring === false &&
+			endedConsole.present &&
+			endedConsole.inlineDisplay === "none" &&
+			!endedConsole.visible &&
+			!/SHD|HEAT/.test(endedFace.combat) &&
+			endedFace.lasers.length > 0 &&
+			endedFace.lasersPainted &&
+			endedFace.cue === null,
+		JSON.stringify({ ended, endedConsole, endedFace }),
+	);
 	const thermal = await page.evaluate(() => {
 		const g = window.__seelite,
 			D = window.__duel;
@@ -558,6 +639,21 @@ for (const viewport of VIEWPORTS) {
 		const g = window.__seelite,
 			D = window.__duel;
 		const { makeModule, freeSlot } = await import("/src/loadout.ts");
+		const star = g.world.system.bodies.find((b) => b.kind === "star");
+		const rOf = () =>
+			Math.hypot(
+				g.world.ship.pos.x - star.pos.x,
+				g.world.ship.pos.y - star.pos.y,
+				g.world.ship.pos.z - star.pos.z,
+			) / star.radiusKm;
+		const cells = () =>
+			(g.cockpit.text.readings.get("combat")?.[0]?.runs ?? []).map((run) =>
+				run.text.trim(),
+			);
+		const labels = () => cells().map((cell) => cell.split(" ")[0]);
+		const scoopCell = () =>
+			cells().find((cell) => cell.startsWith("SCOOPING")) ?? null;
+		g.resetFlightToStart();
 		const module = makeModule("fuel-scoop", 1);
 		const slot = freeSlot(g.commander.loadout, g.commander.hull, module);
 		g.commander = {
@@ -565,31 +661,103 @@ for (const viewport of VIEWPORTS) {
 			loadout: { ...g.commander.loadout, [slot.key]: module },
 		};
 		g.fuelLy = 2;
+		D.parkAtStar(1.2);
+		D.steps(1);
+		const normal = {
+			regime: g.regime,
+			fuel: g.fuelLy,
+			labels: labels(),
+			scoop: scoopCell(),
+		};
 		g.targetId = null;
 		g.engageCruise();
 		for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(D.dt);
 		D.parkAtStar(1.2);
 		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
-		const before = g.fuelLy;
+		const fuelBefore = g.fuelLy;
+		const energyBefore = g.condition.energy;
 		D.steps(0.5);
-		return {
-			before,
+		const filling = {
+			regime: g.regime,
+			r: rOf(),
 			fuel: g.fuelLy,
+			energy: g.condition.energy,
 			scooping: g.scooping,
-			text: (g.cockpit.text.readings.get("combat") ?? [])
-				.map((l) => l.text)
-				.join(" "),
+			labels: labels(),
+			scoop: scoopCell(),
 			painted: window.__cockpitSourcePainted("combat"),
 		};
+		let guard = 0;
+		while (g.regime === "cruise" && rOf() < 2.2 && guard++ < 200) D.steps(0.1);
+		const left = {
+			r: rOf(),
+			fuel: g.fuelLy,
+			scooping: g.scooping,
+			scoop: scoopCell(),
+		};
+		D.steps(0.5);
+		const after = { fuel: g.fuelLy };
+		D.parkAtStar(1.2);
+		g.setAttitude({ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 });
+		D.steps(0.2);
+		g.forceRaider("behind", 0, 30);
+		const combatFuelBefore = g.fuelLy;
+		D.steps(0.3);
+		const combat = {
+			regime: g.regime,
+			phase: g.encounter?.phase ?? null,
+			r: rOf(),
+			scooping: g.scooping,
+			fuelBefore: combatFuelBefore,
+			fuel: g.fuelLy,
+			labels: labels(),
+			scoop: scoopCell(),
+		};
+		g.resetFlightToStart();
+		return { normal, fuelBefore, energyBefore, filling, left, after, combat };
 	});
 	check(
-		`${v}: a filling fuel scoop paints its live reading with the temperature`,
-		scoop.fuel > scoop.before &&
-			scoop.scooping &&
-			scoop.text.includes("SCOOPING") &&
-			scoop.text.includes("TEMP") &&
-			scoop.painted,
-		JSON.stringify(scoop),
+		`${v}: in normal flight at 1.2 R a fitted scoop fills nothing and paints no SCOOPING line`,
+		scoop.normal.regime === "normal" &&
+			scoop.normal.fuel === 2 &&
+			scoop.normal.scoop === null &&
+			scoop.normal.labels.includes("TEMP"),
+		JSON.stringify(scoop.normal),
+	);
+	check(
+		`${v}: on a cruise pass in the band the scoop fills the tank, draws on the bank and paints SCOOPING with the tank in LY beside TEMP`,
+		scoop.filling.regime === "cruise" &&
+			scoop.filling.r < 2 &&
+			scoop.filling.scooping === true &&
+			scoop.filling.fuel > scoop.fuelBefore &&
+			scoop.filling.energy < scoop.energyBefore &&
+			scoop.filling.scoop === `SCOOPING ${scoop.filling.fuel.toFixed(1)} LY` &&
+			scoop.filling.labels.includes("TEMP") &&
+			scoop.filling.painted,
+		JSON.stringify({
+			fuelBefore: scoop.fuelBefore,
+			energyBefore: scoop.energyBefore,
+			filling: scoop.filling,
+		}),
+	);
+	check(
+		`${v}: in combat inside the band SHD and HEAT keep the row, SCOOPING drops, and the scoop still fills`,
+		scoop.combat.regime === "cruise" &&
+			scoop.combat.phase === "contest" &&
+			scoop.combat.r < 2 &&
+			scoop.combat.scooping === true &&
+			scoop.combat.fuel > scoop.combat.fuelBefore &&
+			scoop.combat.labels.slice(0, 3).join(",") === "SHD,HEAT,TEMP" &&
+			scoop.combat.scoop === null,
+		JSON.stringify(scoop.combat),
+	);
+	check(
+		`${v}: out of the band the SCOOPING line goes and the tank stops filling`,
+		scoop.left.r >= 2 &&
+			scoop.left.scooping === false &&
+			scoop.left.scoop === null &&
+			scoop.after.fuel === scoop.left.fuel,
+		JSON.stringify({ left: scoop.left, after: scoop.after }),
 	);
 	await page.screenshot({ path: `/tmp/seelite-1151-duel-${v}.png` });
 	const burnt = await page.evaluate(() => {

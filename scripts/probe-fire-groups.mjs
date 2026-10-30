@@ -38,17 +38,13 @@ for (const width of [900, 390]) {
 		g.floorFit = null;
 		g.render(0);
 	});
-	const first = await page.evaluate(() => ({
-		duelRow: [
-			{
-				value: window.__seelite.cockpit.text.readings.get("lasers")?.[0]?.text,
-			},
-		],
-	}));
+	const first = await page.evaluate(
+		() => window.__seelite.cockpit.text.readings.get("lasers")?.[0]?.text,
+	);
 	check(
 		`${width}: all lasers named on its cabin face`,
-		first.duelRow.at(-1).value === "ALL LASERS · 1/4",
-		JSON.stringify(first.duelRow),
+		first === "ALL LASERS · 1/4",
+		JSON.stringify(first),
 	);
 	await page.keyboard.down(" ");
 	const shot = await page.evaluate(async () => {
@@ -117,15 +113,12 @@ for (const width of [900, 390]) {
 		return {
 			before,
 			heat: g.condition.heat,
-			row: {
-				duelRow: [{ value: g.cockpit.text.readings.get("lasers")?.[0]?.text }],
-			}.duelRow,
+			label: g.cockpit.text.readings.get("lasers")?.[0]?.text,
 		};
 	});
 	check(
 		`${width}: held trigger switches immediately to silent scanner`,
-		scanner.heat < scanner.before &&
-			scanner.row.at(-1).value === "IDENTITY SCANNER · 4/4",
+		scanner.heat < scanner.before && scanner.label === "IDENTITY SCANNER · 4/4",
 		JSON.stringify(scanner),
 	);
 	await page.keyboard.up(" ");

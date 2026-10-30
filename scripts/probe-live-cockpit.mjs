@@ -640,6 +640,7 @@ for (const viewport of VIEWPORTS) {
 
 	const chargeRefusal = await page.evaluate(() => {
 		const g = window.__seelite;
+		const restore = g.chargeAu;
 		const promptText = () =>
 			(g.cockpit.text.readings.get("prompt") ?? [])
 				.map((l) => l.text)
@@ -649,12 +650,16 @@ for (const viewport of VIEWPORTS) {
 		const charged = window.__cockpitRefusalRed("status");
 		g.chargeAu = 0;
 		g.render(0);
-		return {
+		const result = {
 			charged,
 			empty: window.__cockpitRefusalRed("status"),
 			tone: g.floorCells().find((c) => c.label === "CHARGE")?.tone,
 			prompt: promptText(),
+			target: g.cockpit.targetInstrument?.secondaryText.text ?? "",
 		};
+		g.chargeAu = restore;
+		g.render(0);
+		return result;
 	});
 	check(
 		`${viewport.name}: an empty drive paints the CHARGE cell as a refusal on the status surface, and a charged one does not`,
@@ -671,13 +676,29 @@ for (const viewport of VIEWPORTS) {
 			),
 		JSON.stringify(chargeRefusal),
 	);
+	check(
+		`${viewport.name}: the target instrument no longer carries the drive charge`,
+		!chargeRefusal.target.includes("CHARGE") &&
+			ETA_READOUT.test(chargeRefusal.target),
+		`"${chargeRefusal.target}"`,
+	);
 
-	const courseRefusal = await page.evaluate(() => {
+	const courseRefusal = await page.evaluate(async () => {
 		const g = window.__seelite;
+		const { courseCue } = await import("/src/cockpit.ts");
 		const reading = (source) =>
 			(g.cockpit.text.readings.get(source) ?? []).map((l) => l.text).join(" ");
+		const cue = () => courseCue(g.courseCueState());
 		const fuel = g.fuelLy;
+		const charge = g.chargeAu;
 		g.chargeAu = 11.9;
+		g.setCourseTo(null);
+		g.render(0);
+		const none = {
+			cue: cue(),
+			course: reading("course"),
+			status: window.__cockpitSourcePainted("status"),
+		};
 		g.fuelLy = g.fuelCapacityLy;
 		const here = g.world.system.record;
 		const elsewhere = g.world.galaxy.systems.find(
@@ -689,6 +710,7 @@ for (const viewport of VIEWPORTS) {
 			red: window.__cockpitRefusalRed("course"),
 			painted: window.__cockpitSourcePainted("course"),
 			course: reading("course"),
+			tone: cue()?.tone,
 		};
 		g.fuelLy = 0;
 		g.render(0);
@@ -696,28 +718,56 @@ for (const viewport of VIEWPORTS) {
 			red: window.__cockpitRefusalRed("course"),
 			painted: window.__cockpitSourcePainted("course"),
 			course: reading("course"),
+			tone: cue()?.tone,
 			prompt: reading("prompt"),
 		};
 		g.fuelLy = fuel;
-		g.setCourseTo(null);
+		g.commitCourseTo(here.index);
 		g.render(0);
-		return { committed, fuelled, dry };
+		const arrived = {
+			course: reading("course"),
+			painted: window.__cockpitSourcePainted("course"),
+			cue: cue(),
+			here: here.name,
+		};
+		g.setCourseTo(null);
+		g.chargeAu = charge;
+		g.render(0);
+		return { none, committed, fuelled, dry, arrived };
 	});
+	check(
+		`${viewport.name}: with no course set, no course row is painted`,
+		courseRefusal.none.status &&
+			courseRefusal.none.cue === null &&
+			courseRefusal.none.course === "",
+		JSON.stringify(courseRefusal.none),
+	);
 	check(
 		`${viewport.name}: an unaffordable next hop paints the course row as a refusal`,
 		courseRefusal.committed === true &&
 			courseRefusal.fuelled.painted &&
+			courseRefusal.fuelled.tone === "passive" &&
 			courseRefusal.fuelled.red === 0 &&
 			courseRefusal.dry.painted &&
+			courseRefusal.dry.tone === "refused" &&
 			courseRefusal.dry.red > 20 &&
 			courseRefusal.dry.course === courseRefusal.fuelled.course,
 		JSON.stringify(courseRefusal),
 	);
 	check(
 		`${viewport.name}: the prompt and the course row agree about an unaffordable hop`,
-		courseRefusal.dry.red > 20 &&
+		courseRefusal.dry.tone === "refused" &&
 			/not enough fuel for \S+/.test(courseRefusal.dry.prompt),
 		JSON.stringify(courseRefusal.dry),
+	);
+	check(
+		`${viewport.name}: arriving leaves the course row standing, reading the destination`,
+		courseRefusal.arrived.painted &&
+			courseRefusal.arrived.cue?.value ===
+				`${courseRefusal.arrived.here} arrived` &&
+			courseRefusal.arrived.cue?.tone === "confirmed" &&
+			courseRefusal.arrived.course.includes(courseRefusal.arrived.cue.value),
+		JSON.stringify(courseRefusal.arrived),
 	);
 
 	await page.evaluate(() => window.__seelite.setHeadLook("right"));

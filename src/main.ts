@@ -9755,11 +9755,9 @@ class Game {
 				);
 			}
 		}
-		const hold = this.minedHold();
-		const ore = this.fragments.filter((f) => f.ore).length;
 		ctx.textAlign = "center";
 		ctx.fillStyle = "rgba(255, 210, 140, .9)";
-		const line = `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`;
+		const line = this.oreLine();
 		if (this.view !== "cockpit") {
 			ctx.fillText(line, w / 2, h * 0.7);
 			if (this.miningNotice.left > 0)
@@ -21671,6 +21669,12 @@ class Game {
 		return m.behind || !m.onScreen ? null : ndcToPx(m, 1, 1);
 	}
 
+	private oreLine() {
+		const hold = this.minedHold();
+		const ore = this.fragments.filter((f) => f.ore).length;
+		return `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`;
+	}
+
 	private presentCockpitReadouts(
 		ctx: CanvasRenderingContext2D,
 		w: number,
@@ -21726,10 +21730,9 @@ class Game {
 				fill: FLOOR_TONE_FILL.action,
 			});
 		if (MINING_ON) {
-			const hold = this.minedHold();
 			this.cockpit.text.write("ore", [
 				{
-					text: `ORE ${this.minedT} T ABOARD · ${this.fragments.filter((f) => f.ore).length} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`,
+					text: this.oreLine(),
 					fill: "#ffd28c",
 				},
 			]);
