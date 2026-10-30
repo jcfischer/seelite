@@ -392,7 +392,7 @@ def pod_stack(base,w,units,a,label):
     obox(base-v*.015-n*.06,(w+.2,.04,.16),dark,u,v,n)
 
 brow_bank(0,1.72,[('fallback',.375)],'status')
-pod_stack(Vector((-1.55,-1.62,-2.42)),1.0,[('notices+lasers',.37)],-.47,'notices')
+pod_stack(Vector((-1.55,-1.72,-2.48)),1.0,[('notices+lasers',.37)],-.6,'notices')
 pod_stack(Vector((1.55,-1.64,-2.49)),1.0,[('ore+survey',.278)],-.47,'ore')
 
 for name,(verts,faces,uvs) in BATCH.items():
