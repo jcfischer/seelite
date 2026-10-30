@@ -573,7 +573,7 @@ describe("entrusted recovery Operational condition", () => {
 			commander,
 		});
 		expect(parseSave(saved).commander.requests).toEqual(took.holdings.requests);
-		expect(SAVE_SCHEMA_VERSION).toBe(16);
+		expect(SAVE_SCHEMA_VERSION).toBe(17);
 		const bad = structuredClone(took.holdings.requests);
 		(bad.byId[offer().id].terms.operand as any).item.priceCr = -1;
 		expect(() => parseRequests(bad, at)).toThrow("invalid Requests");

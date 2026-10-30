@@ -121,7 +121,9 @@ describe("the camera these cameras stand in for", () => {
 	 */
 	test("the field of view here is the one main.ts builds its cameras with", () => {
 		const source = codeOf("src/main.ts");
-		const declared = source.match(/const fov = (\d+(?:\.\d+)?);/);
+		const declared = source.match(
+			/const fov = (?:MINER_COCKPIT \? MINER_COCKPIT_FOV_DEG : )?(\d+(?:\.\d+)?);/,
+		);
 		expect(declared).not.toBeNull();
 		expect(Number(declared?.[1])).toBe(FOV);
 	});

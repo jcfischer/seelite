@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+	NO_SCOOP_DOCK_NOTICE,
 	SCOOP_NOTICE_S,
 	nextScoopNotice,
 	scoopExit,
@@ -26,6 +27,12 @@ test("a scoop names the tonnage and the good, and a refusal says why", () => {
 	// three scoops in a row read as three events.
 	expect(SCOOP_NOTICE_S).toBeGreaterThan(1.5);
 	expect(SCOOP_NOTICE_S).toBeLessThan(4);
+});
+
+test("the dock tells a pilot without a scoop that nothing can be taken from space (node #1156)", () => {
+	expect(NO_SCOOP_DOCK_NOTICE.trim()).not.toBe("");
+	expect(NO_SCOOP_DOCK_NOTICE).toMatch(/\bcargo scoop\b/i);
+	expect(NO_SCOOP_DOCK_NOTICE).toMatch(/\bfrom space\b/i);
 });
 
 test("the notice does not go to the element the page hides", () => {

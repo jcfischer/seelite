@@ -211,6 +211,11 @@ const OWNERS = Object.freeze({
 	],
 	"probe-duel-hud.mjs": ["scripts/probe-duel-hud.mjs", "src/duel-hud.ts"],
 	"probe-eject.mjs": ["scripts/probe-eject.mjs", "src/eject.ts"],
+	"probe-scoop-migration.mjs": [
+		"scripts/probe-scoop-migration.mjs",
+		"src/cargo-notice.ts",
+		"src/save-envelope.ts",
+	],
 	"probe-first-day.mjs": [
 		"scripts/probe-first-day.mjs",
 		"src/first-day.ts",
