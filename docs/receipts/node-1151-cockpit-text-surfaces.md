@@ -35,6 +35,20 @@ surface policy are in [cockpit-text-surfaces.md](../specs/cockpit-text-surfaces.
   gate. Probe selection expands to the full inventory for this runtime change;
   the worker contract leaves that full run to the supervisor.
 
+## Sage round 1
+
+Round 1 found that the first commit deleted coverage the figures above do
+not show. `probe-duel-hud` had lost the rout-range row (#367) and the
+heat-death row; both are restored from `main`. `probe-live-cockpit` had lost
+the CHARGE refusal, the empty-drive prompt, the course-row refusal and its
+prompt; four rows now check them as refusal ink on the cockpit face. So the
+47/47 figure above did not cover those readings. `presentCockpitReadouts` is
+now the only cockpit writer of the prompt and clearance sources.
+
+After the fix, on the GPU lane: `probe-live-cockpit` and `probe-duel-hud`
+passed alone (`npm run probe:one`). Static gates and the seven affected unit
+files (102 tests) passed.
+
 ## Human acceptance
 
 The local review sheet is `view-set/node-1151/index.html` (ignored capture
