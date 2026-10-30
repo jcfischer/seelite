@@ -411,6 +411,9 @@ for (const viewport of VIEWPORTS) {
 			if (g.selectedRender?.conditionLine && g.cueRender?.at && !condition)
 				condition = {
 					text: g.selectedRender.conditionLine,
+					whole:
+						g.encounter?.raider?.condition.hull ===
+						g.encounter?.raider?.condition.hullMax,
 					paint: D.enemyLinePaint(g.cueRender.at),
 				};
 		}
@@ -443,7 +446,11 @@ for (const viewport of VIEWPORTS) {
 	);
 	check(
 		`${v}: the selected opponent has a painted condition line`,
-		!!duel.condition && duel.condition.paint > 0,
+		!!duel.condition &&
+			duel.condition.text.startsWith("SHD F ") &&
+			/HULL \d+%$/.test(duel.condition.text) &&
+			(!duel.condition.whole || duel.condition.text.endsWith("HULL 100%")) &&
+			duel.condition.paint > 30,
 		JSON.stringify(duel.condition),
 	);
 	check(
@@ -609,6 +616,7 @@ for (const viewport of VIEWPORTS) {
 		D.steps(3);
 		const hot = {
 			temp: g.condition.hullTemp,
+			gunHeat: g.condition.heat,
 			text: (g.cockpit.text.readings.get("combat") ?? [])
 				.map((l) => l.text)
 				.join(" "),
@@ -628,8 +636,12 @@ for (const viewport of VIEWPORTS) {
 	});
 	check(
 		`${v}: a star skim paints TEMP on a cabin face and ambient clears it`,
-		thermal.hot.temp > 0 &&
-			thermal.hot.text.includes("TEMP") &&
+		thermal.hot.temp > 0.2 &&
+			thermal.hot.temp < 1 &&
+			thermal.hot.gunHeat === 0 &&
+			thermal.hot.text.includes(
+				`TEMP ${Math.round(thermal.hot.temp * 100)}%`,
+			) &&
 			thermal.hot.painted &&
 			thermal.ambient === 0 &&
 			!thermal.cold.includes("TEMP"),

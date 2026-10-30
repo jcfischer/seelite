@@ -54,7 +54,10 @@ to the faces:
 - `probe-duel-hud`: the raider's ring is red while it fires and amber while
   it does not; the Flight console's FORE and HULL against the condition; only
   the armed group after an encounter ends; the scoop in normal flight, on a
-  cruise pass (bank draw, tank in LY), in combat and out of the band.
+  cruise pass (bank draw, tank in LY), in combat and out of the band; and,
+  after round 3, the values on two kept rows: the selected raider's
+  condition line (`SHD F …`, `HULL n%`, `HULL 100%` on a whole hull) and the
+  TEMP percentage of the hull temperature with no gun heat.
 - `probe-live-cockpit`: no course row without a course; the course row on
   arrival; the target instrument without the drive charge.
 
