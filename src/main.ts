@@ -278,7 +278,7 @@ import {
 	restoreVisibility,
 	subjectOf,
 } from "./occlusion-mesh";
-import { SettingsStore, VOLUME_KEY } from "./settings";
+import { COCKPIT_FOV_DEG, SettingsStore, VOLUME_KEY } from "./settings";
 /**
  * Static, unlike `frame-attribution` below.
  *
@@ -1128,6 +1128,8 @@ Promise.resolve()
 	.catch((e) =>
 		console.warn("rock pieces: off-thread build failed, built on first use", e),
 	);
+
+const CHASE_FOV_DEG = 60;
 
 /**
  * The keys that are only ever half of a press, for the capture modal.
@@ -4863,7 +4865,7 @@ class Game {
 		// One field of view across all three, and that is load-bearing rather than
 		// tidy: the layers composite into one image, so a body's projected size
 		// has to agree across the seam it crosses.
-		const fov = 60;
+		const fov = COCKPIT_FOV_DEG.normal;
 		// Its far plane just clears the star sphere; the layer writes no depth
 		// anyway, so the numbers only have to bracket the geometry.
 		this.backdropCamera = new THREE.PerspectiveCamera(
@@ -5376,6 +5378,7 @@ class Game {
 		if (neuralWanted(applied.voice, VOICE_ARMS.engine))
 			void this.neural.start();
 		this.settings.subscribe((next) => {
+			if (next.cockpitFov !== applied.cockpitFov) this.applyViewFov();
 			if (next.voice !== applied.voice && VOICE_ARMS.engine === "setting")
 				this.applyVoice(next.voice);
 			for (const bus of BUSES) {
@@ -11742,6 +11745,13 @@ class Game {
 				}
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
+				return;
+			case "view.fov":
+				if (this.view === "cockpit")
+					this.settings.set(
+						"cockpitFov",
+						this.settings.value.cockpitFov === "normal" ? "wide" : "normal",
+					);
 				return;
 			case "tune.reset":
 				// Back to the spec's own figures, from wherever the tuning has got
@@ -18164,6 +18174,29 @@ class Game {
 		}
 	}
 
+	private get layerCameras() {
+		return [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+			this.nearCamera,
+			this.cabinCamera,
+		] as const;
+	}
+
+	private applyViewFov() {
+		const fov =
+			this.view === "cockpit"
+				? COCKPIT_FOV_DEG[this.settings.value.cockpitFov]
+				: CHASE_FOV_DEG;
+		if (this.nearCamera.fov === fov) return;
+		for (const camera of this.layerCameras) {
+			camera.fov = fov;
+			camera.updateProjectionMatrix();
+		}
+		this.focalPx = focalPx(this.renderer.getSize(new THREE.Vector2()).y, fov);
+	}
+
 	/**
 	 * Place everything relative to the camera, and draw.
 	 *
@@ -18173,6 +18206,7 @@ class Game {
 	 * position, which is not.
 	 */
 	render(dt = 0) {
+		this.applyViewFov();
 		// #535: the opening films the ship from outside, from a camera its shot
 		// places; everything else about the frame is the chase view's.
 		const shotCam = this.openingCamera();

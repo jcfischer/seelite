@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1155 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-30",
+		text: "Choose a normal or wide cockpit view, with your choice remembered between flights.",
+		node: 1155,
+	},
 	// https://github.com/jcfischer/seelite/issues/969 — sentence approved by the principal, 2026-10-27.
 	{
 		date: "2026-10-27",

@@ -78,6 +78,7 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:3::hold → view.orbitStarboard @ flight/instrument/console/modal chase -",
 	"key:3::press → view.headStarboard @ flight/instrument/console/modal cockpit -",
 	"key:6::press → system.postcard @ flight/instrument/console/modal cockpit/chase -",
+	"key:7::press → view.fov @ flight/instrument/console/modal cockpit -",
 	"key:9::press → system.commander @ flight/instrument/console/modal cockpit/chase -",
 	"key:;::press → tune.dropRadiusDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:=::press → tune.vMaxUp @ flight/instrument/console/modal cockpit/chase -",

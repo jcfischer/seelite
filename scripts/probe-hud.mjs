@@ -45,6 +45,7 @@
  *    pose built to put the two on one row, against a control at the same pose
  *    with nothing selected.
  */
+// A default-layout probe (#381 D11): https://github.com/jcfischer/seelite/issues/381
 import {
 	bootedGame,
 	guardedOrigin,
@@ -614,6 +615,87 @@ if (legacyEta.noTarget) {
 		`reads ${daysMatched?.[1] ?? "—"}d; crossing speed would say ${absoluteDays.toFixed(0)}d`,
 	);
 }
+
+await page.evaluate(() => {
+	const g = window.__seelite;
+	g.setHeadLook("forward");
+	g.faceTarget();
+});
+await page.keyboard.press("7");
+const wide = await page.evaluate(async () => {
+	const g = window.__seelite;
+	await new Promise((r) =>
+		requestAnimationFrame(() => requestAnimationFrame(r)),
+	);
+	const { Vector2, Vector3 } = await import(
+		"/node_modules/.vite/deps/three.js"
+	);
+	const direction = { x: 0.3, y: 0.2, z: -1 };
+	const forward = new Vector3(
+		direction.x,
+		direction.y,
+		direction.z,
+	).applyQuaternion(g.nearCamera.quaternion);
+	const marker = g.markerNdc(forward);
+	const projected = forward.clone().project(g.nearCamera);
+	const cameras = g.layerCameras;
+	const stored = JSON.parse(localStorage.getItem("seelite:settings:v1"));
+	return {
+		setting: g.settings.value.cockpitFov,
+		stored: stored.cockpitFov,
+		fovs: cameras.map((camera) => camera.fov),
+		error: Math.hypot(marker.ndcX - projected.x, marker.ndcY - projected.y),
+		focal: g.focalPx,
+		expectedFocal:
+			g.renderer.getSize(new Vector2()).y /
+			(2 * Math.tan((g.nearCamera.fov * Math.PI) / 360)),
+	};
+});
+check(
+	"7 persists wide FOV and updates all five layer cameras",
+	wide.setting === "wide" &&
+		wide.stored === "wide" &&
+		wide.fovs.length === 5 &&
+		wide.fovs.every((fov) => fov === 80),
+	JSON.stringify(wide),
+);
+check(
+	"wide FOV keeps off-axis target markers aligned and target sizing live",
+	wide.error < EPS_NDC && Math.abs(wide.focal - wide.expectedFocal) < 1e-6,
+	JSON.stringify(wide),
+);
+await page.keyboard.press("v");
+await page.keyboard.press("7");
+const chaseFov = await page.evaluate(async () => {
+	await new Promise((r) =>
+		requestAnimationFrame(() => requestAnimationFrame(r)),
+	);
+	const g = window.__seelite;
+	return {
+		view: g.view,
+		fov: g.nearCamera.fov,
+		setting: g.settings.value.cockpitFov,
+	};
+});
+check(
+	"chase keeps its own 60 degree FOV and ignores the cockpit toggle",
+	chaseFov.view === "chase" &&
+		chaseFov.fov === 60 &&
+		chaseFov.setting === "wide",
+	JSON.stringify(chaseFov),
+);
+await page.keyboard.press("v");
+await page.waitForFunction(() => window.__seelite.nearCamera.fov === 80);
+await page.keyboard.press("7");
+const normal = await page.evaluate(() => ({
+	fov: window.__seelite.nearCamera.fov,
+	setting: window.__seelite.settings.value.cockpitFov,
+}));
+check(
+	"returning to cockpit restores wide and 7 returns to normal live",
+	normal.fov === 60 && normal.setting === "normal",
+	JSON.stringify(normal),
+);
 
 await browser.close();
 exit();
