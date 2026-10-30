@@ -638,6 +638,88 @@ for (const viewport of VIEWPORTS) {
 		g.render(0);
 	});
 
+	const chargeRefusal = await page.evaluate(() => {
+		const g = window.__seelite;
+		const promptText = () =>
+			(g.cockpit.text.readings.get("prompt") ?? [])
+				.map((l) => l.text)
+				.join(" ");
+		g.chargeAu = 12;
+		g.render(0);
+		const charged = window.__cockpitRefusalRed("status");
+		g.chargeAu = 0;
+		g.render(0);
+		return {
+			charged,
+			empty: window.__cockpitRefusalRed("status"),
+			tone: g.floorCells().find((c) => c.label === "CHARGE")?.tone,
+			prompt: promptText(),
+		};
+	});
+	check(
+		`${viewport.name}: an empty drive paints the CHARGE cell as a refusal on the status surface, and a charged one does not`,
+		chargeRefusal.charged === 0 &&
+			chargeRefusal.empty > 20 &&
+			chargeRefusal.tone === "refused",
+		JSON.stringify(chargeRefusal),
+	);
+	check(
+		`${viewport.name}: the empty-drive prompt and the CHARGE cell say the same thing`,
+		chargeRefusal.tone === "refused" &&
+			chargeRefusal.prompt.includes(
+				"no drive charge — wait for it to regenerate",
+			),
+		JSON.stringify(chargeRefusal),
+	);
+
+	const courseRefusal = await page.evaluate(() => {
+		const g = window.__seelite;
+		const reading = (source) =>
+			(g.cockpit.text.readings.get(source) ?? []).map((l) => l.text).join(" ");
+		const fuel = g.fuelLy;
+		g.chargeAu = 11.9;
+		g.fuelLy = g.fuelCapacityLy;
+		const here = g.world.system.record;
+		const elsewhere = g.world.galaxy.systems.find(
+			(s) => s.galaxy === here.galaxy && s.index !== here.index,
+		);
+		const committed = g.commitCourseTo(elsewhere.index);
+		g.render(0);
+		const fuelled = {
+			red: window.__cockpitRefusalRed("course"),
+			painted: window.__cockpitSourcePainted("course"),
+			course: reading("course"),
+		};
+		g.fuelLy = 0;
+		g.render(0);
+		const dry = {
+			red: window.__cockpitRefusalRed("course"),
+			painted: window.__cockpitSourcePainted("course"),
+			course: reading("course"),
+			prompt: reading("prompt"),
+		};
+		g.fuelLy = fuel;
+		g.setCourseTo(null);
+		g.render(0);
+		return { committed, fuelled, dry };
+	});
+	check(
+		`${viewport.name}: an unaffordable next hop paints the course row as a refusal`,
+		courseRefusal.committed === true &&
+			courseRefusal.fuelled.painted &&
+			courseRefusal.fuelled.red === 0 &&
+			courseRefusal.dry.painted &&
+			courseRefusal.dry.red > 20 &&
+			courseRefusal.dry.course === courseRefusal.fuelled.course,
+		JSON.stringify(courseRefusal),
+	);
+	check(
+		`${viewport.name}: the prompt and the course row agree about an unaffordable hop`,
+		courseRefusal.dry.red > 20 &&
+			/not enough fuel for \S+/.test(courseRefusal.dry.prompt),
+		JSON.stringify(courseRefusal.dry),
+	);
+
 	await page.evaluate(() => window.__seelite.setHeadLook("right"));
 	await nextFrames(page);
 	const turnedStatus = await page.evaluate(() =>

@@ -21566,11 +21566,7 @@ class Game {
 		// the strip — or the course row #117 put above it — cannot leave this
 		// line sitting on top of either. The course band is subtracted whether
 		// or not a course is set: see `FLOOR_BANDS`.
-		if (this.view === "cockpit")
-			this.cockpit.text.write("clearance", [
-				{ text: clearanceText, fill: String(ctx.fillStyle) },
-			]);
-		else
+		if (this.view !== "cockpit")
 			ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
 		ctx.textAlign = "left";
 		ctx.restore();
@@ -22285,14 +22281,7 @@ class Game {
 			}
 			// §4's tone: the notice's own, else the prompt's amber.
 			ctx.fillStyle = notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL;
-			if (this.view === "cockpit")
-				this.cockpit.text.write("prompt", [
-					{
-						text: prompt,
-						fill: notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL,
-					},
-				]);
-			else ctx.fillText(prompt, x, y);
+			if (this.view !== "cockpit") ctx.fillText(prompt, x, y);
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
 		} else {

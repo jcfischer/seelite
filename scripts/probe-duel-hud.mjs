@@ -447,14 +447,14 @@ for (const viewport of VIEWPORTS) {
 	);
 	await page.evaluate(() => window.__seelite.setHeadLook("right"));
 	await nextFrames(page);
-	const console = await page.evaluate(() => ({
+	const flightConsole = await page.evaluate(() => ({
 		fore: document.querySelector("[data-live-duel-fore]")?.textContent,
 		heat: document.querySelector("[data-live-duel-heat]")?.textContent,
 	}));
 	check(
 		`${v}: the Flight console still carries combat detail`,
-		!!console.fore && !!console.heat,
-		JSON.stringify(console),
+		!!flightConsole.fore && !!flightConsole.heat,
+		JSON.stringify(flightConsole),
 	);
 	await page.evaluate(() => {
 		const g = window.__seelite;
@@ -462,6 +462,64 @@ for (const viewport of VIEWPORTS) {
 		g.encounter = null;
 		g.resetFlightToStart();
 	});
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.resetFlightToStart();
+		window.__duel.cruise();
+		g.forceRaider("ahead", 0.5, 6);
+	});
+	await page.keyboard.down("Space");
+	const rout = await page.evaluate(() => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		const PINNED_HULL = 15;
+		let shaped = false;
+		let lastGap = null;
+		let lastHitGap = null;
+		let releaseGap = null;
+		let minHullSeen = Infinity;
+		const gap = () => {
+			const p = g.world.ship.pos;
+			const q = g.encounter.raider.flight.ship.pos;
+			return Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+		};
+		D.steps(30, () => {
+			const r = g.encounter?.raider;
+			if (!r) {
+				if (shaped && releaseGap === null) releaseGap = lastGap;
+				return;
+			}
+			if (!shaped) {
+				shaped = true;
+				r.condition = { ...r.condition, fore: 0, aft: 0, hull: PINNED_HULL };
+			}
+			const id = g.raiderContact?.id;
+			if (id) g.targetId = id;
+			D.aimAt(r.flight.ship.pos);
+			const after = gap();
+			const struck = r.condition.hull;
+			if (struck < minHullSeen) minHullSeen = struck;
+			if (struck < PINNED_HULL) lastHitGap = lastGap ?? after;
+			r.condition = { ...r.condition, hull: PINNED_HULL };
+			lastGap = after;
+		});
+		return {
+			lastHitGap,
+			releaseGap,
+			minHullSeen,
+			released: g.encounter === null,
+		};
+	});
+	await page.keyboard.up("Space");
+	check(
+		`${v}: a crippled raider is let go at the range the beam stops reaching`,
+		rout.released &&
+			rout.lastHitGap > 1 &&
+			rout.releaseGap !== null &&
+			rout.releaseGap > rout.lastHitGap &&
+			rout.releaseGap - rout.lastHitGap < 0.5,
+		JSON.stringify(rout),
+	);
 	const thermal = await page.evaluate(() => {
 		const g = window.__seelite,
 			D = window.__duel;
@@ -534,6 +592,33 @@ for (const viewport of VIEWPORTS) {
 		JSON.stringify(scoop),
 	);
 	await page.screenshot({ path: `/tmp/seelite-1151-duel-${v}.png` });
+	const burnt = await page.evaluate(() => {
+		const g = window.__seelite;
+		window.__duel.parkAtStar(1.06);
+		g.condition = { ...g.condition, hull: 2, hullTemp: 2 };
+		const fore = g.condition.fore;
+		let seconds = 0;
+		while (!g.dead && seconds < 5) {
+			g.step(g.units.MAX_DT);
+			seconds += g.units.MAX_DT;
+		}
+		return {
+			dead: g.dead,
+			seconds,
+			hull: g.condition.hull,
+			foreBefore: fore,
+			foreAfter: g.condition.fore,
+			lastExit: g.lastExit,
+		};
+	});
+	check(
+		`${v}: a hull above the top runs out of integrity and the ship is destroyed, shields untouched`,
+		burnt.dead === true &&
+			burnt.hull === 0 &&
+			burnt.foreAfter === burnt.foreBefore &&
+			burnt.lastExit === "ship destroyed",
+		JSON.stringify(burnt),
+	);
 	await page.close();
 }
 await browser.close();

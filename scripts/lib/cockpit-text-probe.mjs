@@ -137,5 +137,22 @@ export async function installCockpitTextProbe(page) {
 			}
 			return ink > 10 && mismatched === 0;
 		};
+		window.__cockpitRefusalRed = (source) => {
+			const text = window.__seelite.cockpit.text;
+			const face = text.faces.get(source) ?? text.faces.get("fallback");
+			if (!face) return null;
+			const { width, height } = face.ctx.canvas;
+			const data = face.ctx.getImageData(0, 0, width, height).data;
+			let red = 0;
+			for (let i = 0; i < data.length; i += 4)
+				if (
+					data[i + 3] > 40 &&
+					data[i] > 170 &&
+					data[i + 1] < 150 &&
+					data[i] > data[i + 2] + 60
+				)
+					red++;
+			return red;
+		};
 	});
 }
