@@ -211,7 +211,7 @@ test("warm-up can compile the footprint variant without pinning or moving the bo
 	expect(body.prewarmFootprint()).toBeNull();
 });
 
-test("live render body loop applies current quality to every visual before its surface band", () => {
+function renderBodyQualityEvents(transform = (source: string) => source) {
 	const render = gameClass?.members.find(
 		(member) =>
 			ts.isMethodDeclaration(member) &&
@@ -255,7 +255,7 @@ test("live render body loop applies current quality to every visual before its s
 			.join("\n"),
 		{ compilerOptions: { target: ts.ScriptTarget.ES2022 } },
 	).outputText;
-	const update = new Function(...Object.keys(bindings), js);
+	const update = new Function(...Object.keys(bindings), transform(js));
 	const bodies = [
 		{ id: "first", kind: "planet", pos: { x: 2, y: 0, z: 0 }, radiusKm: 1 },
 		{ id: "second", kind: "moon", pos: { x: 3, y: 0, z: 0 }, radiusKm: 1 },
@@ -290,15 +290,58 @@ test("live render body loop applies current quality to every visual before its s
 		bakeFacePx: new Map(bodies.map((body) => [body.id, BAKE_FACE_SIZES[0]])),
 		focalPx: 780,
 	};
+	const frames: string[][] = [];
 	for (const quality of ["low", "high", "low"]) {
 		subject.settings.value.quality = quality;
 		events.length = 0;
 		update.call(subject, ...Object.values(bindings));
-		expect(events).toEqual([
-			`first:quality:${quality}`,
-			`first:band:${quality === "high" ? 6 : 0}`,
-			`second:quality:${quality}`,
-			"second:band:0",
-		]);
+		frames.push([...events]);
 	}
+	return frames;
+}
+
+const expectedQualityEvents = ["low", "high", "low"].map((quality) => [
+	`first:quality:${quality}`,
+	`first:band:${quality === "high" ? 6 : 0}`,
+	`second:quality:${quality}`,
+	"second:band:0",
+]);
+
+test("live render body loop applies current quality to every visual before its surface band", () => {
+	expect(renderBodyQualityEvents()).toEqual(expectedQualityEvents);
 });
+
+const qualityCall = "visual.setDetailQuality(this.settings.value.quality);";
+
+test.each([
+	[
+		"after band selection",
+		(source: string) =>
+			source
+				.replace(qualityCall, "")
+				.replace(
+					"const station = this.stationVisuals.get(body.id);",
+					`${qualityCall}\nconst station = this.stationVisuals.get(body.id);`,
+				),
+	],
+	[
+		"in dead code",
+		(source: string) =>
+			source.replace(qualityCall, `if (false) { ${qualityCall} }`),
+	],
+	[
+		"for only one body",
+		(source: string) =>
+			source.replace(
+				qualityCall,
+				`if (body.id === "first") { ${qualityCall} }`,
+			),
+	],
+] satisfies [string, (source: string) => string][])(
+	"quality ordering check rejects a call %s",
+	(_, transform) => {
+		expect(renderBodyQualityEvents(transform)).not.toEqual(
+			expectedQualityEvents,
+		);
+	},
+);
