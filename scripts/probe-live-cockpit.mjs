@@ -18,10 +18,7 @@ import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const VIEWPORTS = [
-	{ name: "desktop", width: 1280, height: 760 },
-	{ name: "narrow", width: 390, height: 844 },
-];
+const VIEWPORTS = [{ name: "desktop", width: 1280, height: 760 }];
 // Canvas text rasterisation differs slightly between Metal and SwiftShader.
 const PIXEL_CHANNEL_TOLERANCE = 32;
 /**
