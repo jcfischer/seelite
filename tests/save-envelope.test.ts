@@ -363,7 +363,7 @@ describe("#936 D4 — txSeq in the save envelope", () => {
 	const save = () => ({ world: world(), commander: commander() });
 
 	test("txSeq arrived at 16, which is read beside 15", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(16);
+		expect(SAVE_SCHEMA_VERSION).toBe(17);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(15);
 	});
 

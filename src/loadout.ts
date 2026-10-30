@@ -453,6 +453,27 @@ export function migrateEquipment(hull: HullId, names: readonly string[]) {
 	}
 	return { loadout, recoveredFittings, refundCr };
 }
+export function grantLegacyScoop(
+	hull: HullId,
+	loadout: Loadout,
+): { loadout: Loadout; granted: boolean; owed: boolean } {
+	if (Object.values(loadout).some((m) => m.module === "cargo-scoop"))
+		return { loadout, granted: false, owed: false };
+	const scoop = makeModule("cargo-scoop", 1);
+	const slot = HULL_SPECS[hull].slots
+		.filter(
+			(s) =>
+				s.kind === "internal" &&
+				s.accepts !== "any" &&
+				s.accepts.includes("cargo") &&
+				!loadout[s.key] &&
+				moduleFits(scoop, s),
+		)
+		.sort((a, b) => a.key.localeCompare(b.key))[0];
+	return slot
+		? { loadout: { ...loadout, [slot.key]: scoop }, granted: true, owed: false }
+		: { loadout, granted: false, owed: true };
+}
 /** Move the same modules, without resizing, repricing or rerolling them. */
 export function transferLoadout(loadout: Loadout, hull: HullId) {
 	const target: Record<string, FittedModule> = {},

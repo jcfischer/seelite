@@ -789,6 +789,7 @@ import {
 	stepCanisters,
 } from "./raider-wreck";
 import {
+	NO_SCOOP_DOCK_NOTICE,
 	SCOOP_NOTICE_S,
 	SCOOP_REFUSAL_TEXT,
 	type ScoopNotice,
@@ -3123,6 +3124,8 @@ class Game {
 	 * produced the refusal lives on this side.
 	 */
 	private stationConsoleMessage: string | null = null;
+	scoopNotice = false;
+	private restoringDocked = false;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -4718,6 +4721,7 @@ class Game {
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
+			this.scoopNotice = save.commander.scoopNotice;
 			this.ladders = save.commander.ladders;
 			// Explicit, though a restore builds a fresh `Game` and it is empty
 			// already: a death reloads the page into the last dock's commander,
@@ -13663,6 +13667,7 @@ class Game {
 		// caller's comment names what runs rather than implying the rest — it
 		// was missing, and nothing failed.
 		this.stepDockingProtocol();
+		if (wasArriving && this.dock.phase === "docked") this.sayScoopNotice();
 		if (!out.ship) return;
 		this.world.ship.pos = out.ship.pos;
 		this.world.ship.vel = out.ship.vel;
@@ -14087,6 +14092,7 @@ class Game {
 		const stationId = this.dock.stationId;
 		this.dock = skipTraversal(this.dock, this.world.gameTime);
 		if (stationId) this.closePlayerTrafficEvent(stationId, "lane");
+		this.sayScoopNotice();
 		return true;
 	}
 
@@ -19989,6 +19995,7 @@ class Game {
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
+			scoopNotice: this.scoopNotice,
 			// The record with its basis brought into line with the hold. **A
 			// guard, not a known path**: today the one non-sale removal is a job
 			// hand-over, which reconciles as it settles.
@@ -20151,11 +20158,17 @@ class Game {
 		if (!station) return false;
 		const id = station.id;
 		const t0 = this.world.gameTime;
-		const ok = this.dockByProtocol(id, () => {
-			// D2: a failed re-dock is not undone — the ship stays beside the
-			// station, not at the arrival point.
-			return false;
-		});
+		this.restoringDocked = true;
+		let ok: boolean;
+		try {
+			ok = this.dockByProtocol(id, () => {
+				// D2: a failed re-dock is not undone — the ship stays beside the
+				// station, not at the arrival point.
+				return false;
+			});
+		} finally {
+			this.restoringDocked = false;
+		}
 		// D3: the clock moved on by the run-in.
 		const elapsed = this.world.gameTime - t0;
 		console.log(
@@ -20173,6 +20186,20 @@ class Game {
 	 * a Wanted pilot whose launch station will not take them — is on the log
 	 * alone, since there is no console to say it on.
 	 */
+	sayScoopNotice(): void {
+		if (
+			!this.scoopNotice ||
+			this.restoringDocked ||
+			this.dockPhase !== "docked" ||
+			this.stationConsoleMessage !== null
+		)
+			return;
+		this.scoopNotice = false;
+		this.stationConsoleMessage = NO_SCOOP_DOCK_NOTICE;
+		this.updateCockpit();
+		this.saveDirty();
+	}
+
 	showWake(wake: DeathWake): void {
 		const text = wakeText(wake);
 		this.wakeShown = wake;
@@ -23789,6 +23816,7 @@ if (postcard) {
 				// What the death took, said where the pilot wakes (node #704).
 				// After the restore, so a docked wake is on the console.
 				if (plan.wake) game.showWake(plan.wake);
+				game.sayScoopNotice();
 				return;
 			}
 			if (plan.wake) game.showWake(plan.wake);
