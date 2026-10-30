@@ -427,7 +427,7 @@ export function boughtModule(
 	if (m.module !== "mining-laser" || !loadout) return m;
 	const slot = freeSlot(loadout, hull, m);
 	return slot?.kind === "hardpoint" && slot.mount
-		? makeModule(m.module, slot.size, m.grade)
+		? makeModule(m.module, slot.size)
 		: m;
 }
 export function migrateEquipment(hull: HullId, names: readonly string[]) {

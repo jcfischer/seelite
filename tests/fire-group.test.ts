@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fireGroups, ArmedFireGroup } from "../src/fire-group";
+import { fireGroups, ArmedFireGroup, type FireGroup } from "../src/fire-group";
 import { makeModule, stockLoadout, parseLoadout } from "../src/loadout";
 
 const patrol = {
@@ -65,4 +65,47 @@ test("one laser is one group; scanner, empty and non-primary devices", () => {
 	expect(armed.label(empty)).toBe("NO WEAPONS");
 	expect(armed.firesLaser(empty)).toBe(false);
 	expect(new ArmedFireGroup().label(groups)).toBe("H1 PULSE LASER · 1/2");
+});
+
+test("under ?mining=1 two or more Mining Lasers add MINING LASERS after ALL LASERS (#1147, #920 D-D11)", () => {
+	const miner = {
+		...stockLoadout("miner"),
+		h2: makeModule("mining-laser", 3),
+		h3: makeModule("mining-laser", 3),
+	};
+	const laser = (label: string, slots: string[]): FireGroup => ({
+		label,
+		trigger: "primary",
+		kind: "lasers",
+		slots,
+	});
+	expect(fireGroups(miner, "miner", true)).toEqual([
+		laser("ALL LASERS", ["h1", "h2", "h3"]),
+		laser("MINING LASERS", ["h2", "h3"]),
+		laser("H1 PULSE LASER", ["h1"]),
+		laser("H2 MINING LASER", ["h2"]),
+		laser("H3 MINING LASER", ["h3"]),
+	]);
+	const flagless = [
+		laser("ALL LASERS", ["h1", "h2", "h3"]),
+		laser("H1 PULSE LASER", ["h1"]),
+		laser("H2 MINING LASER", ["h2"]),
+		laser("H3 MINING LASER", ["h3"]),
+	];
+	expect(fireGroups(miner, "miner", false)).toEqual(flagless);
+	expect(fireGroups(miner, "miner")).toEqual(flagless);
+	const one = { ...stockLoadout("miner"), h2: makeModule("mining-laser", 3) };
+	expect(fireGroups(one, "miner", true)).toEqual([
+		laser("ALL LASERS", ["h1", "h2"]),
+		laser("H1 PULSE LASER", ["h1"]),
+		laser("H2 MINING LASER", ["h2"]),
+	]);
+	const pulses = {
+		...stockLoadout("miner"),
+		h2: makeModule("pulse-laser", 3),
+		h3: makeModule("pulse-laser", 3),
+	};
+	expect(fireGroups(pulses, "miner", true).map((g) => g.label)).not.toContain(
+		"MINING LASERS",
+	);
 });

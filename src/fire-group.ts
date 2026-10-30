@@ -49,7 +49,7 @@ export function fireGroups(
 		(g) => loadout[g.slots[0]].module === "mining-laser",
 	);
 	if (mining && miningLasers.length > 1)
-		result.splice(lasers.length > 1 ? 1 : 0, 0, {
+		result.splice(1, 0, {
 			label: "MINING LASERS",
 			trigger: "primary",
 			kind: "lasers",
