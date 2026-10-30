@@ -9,7 +9,13 @@ import {
 } from "../src/commands";
 import { focalPx } from "../src/relief-bands";
 import { projectDirection } from "../src/hud";
-import { DEFAULT_SETTINGS, loadSettings, SettingsStore } from "../src/settings";
+import {
+	COCKPIT_FOV_DEG,
+	DEFAULT_SETTINGS,
+	loadSettings,
+	SettingsStore,
+	settingSpec,
+} from "../src/settings";
 import { gameMethods } from "./lib/game-methods";
 
 const realWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -39,12 +45,17 @@ const cameraNames = [
 ] as const;
 
 function game() {
-	const proto = gameMethods(["command", "applyViewFov", "markerNdc"], {
-		PHOTO_MODE_COMMANDS: new Set(),
-		focalPx,
-		projectDirection,
-		THREE,
-	});
+	const proto = gameMethods(
+		["command", "applyViewFov", "layerCameras", "markerNdc"],
+		{
+			COCKPIT_FOV_DEG,
+			CHASE_FOV_DEG: 60,
+			PHOTO_MODE_COMMANDS: new Set(),
+			focalPx,
+			projectDirection,
+			THREE,
+		},
+	);
 	const g = Object.assign(Object.create(proto), {
 		settings: new SettingsStore(),
 		view: "cockpit",
@@ -56,6 +67,23 @@ function game() {
 		g[name] = new THREE.PerspectiveCamera(60, 1.6, 0.001, 10000);
 	return g;
 }
+
+test("the FOV settings describe the canonical degree mapping", () => {
+	expect(COCKPIT_FOV_DEG).toEqual({ normal: 60, wide: 80 });
+	const spec = settingSpec("cockpitFov");
+	if (spec.fallback !== "normal")
+		throw new Error("Expected cockpit FOV setting");
+	for (const mode of spec.allowed) {
+		expect(spec.describe(mode)).toBe(
+			`${mode === "normal" ? "Normal" : "Wide"} (${COCKPIT_FOV_DEG[mode]}°)`,
+		);
+	}
+});
+
+test("the layer camera getter exposes every composited camera", () => {
+	const g = game();
+	expect(g.layerCameras).toEqual(cameraNames.map((name) => g[name]));
+});
 
 test("FOV defaults to normal, including older or invalid preferences", () => {
 	expect(DEFAULT_SETTINGS.cockpitFov).toBe("normal");

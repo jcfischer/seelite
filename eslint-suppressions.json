@@ -3936,7 +3936,7 @@
   },
   "tests/layer-depth.test.ts": {
     "seelite/no-comments": {
-      "count": 32
+      "count": 30
     }
   },
   "tests/layout-notice.test.ts": {

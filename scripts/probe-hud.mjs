@@ -638,13 +638,7 @@ const wide = await page.evaluate(async () => {
 	).applyQuaternion(g.nearCamera.quaternion);
 	const marker = g.markerNdc(forward);
 	const projected = forward.clone().project(g.nearCamera);
-	const cameras = [
-		g.backdropCamera,
-		g.farCamera,
-		g.approachCamera,
-		g.nearCamera,
-		g.cabinCamera,
-	];
+	const cameras = g.layerCameras;
 	const stored = JSON.parse(localStorage.getItem("seelite:settings:v1"));
 	return {
 		setting: g.settings.value.cockpitFov,
@@ -661,6 +655,7 @@ check(
 	"7 persists wide FOV and updates all five layer cameras",
 	wide.setting === "wide" &&
 		wide.stored === "wide" &&
+		wide.fovs.length === 5 &&
 		wide.fovs.every((fov) => fov === 80),
 	JSON.stringify(wide),
 );
