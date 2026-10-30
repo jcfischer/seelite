@@ -101,8 +101,11 @@ and was not taken. The four original panels are unchanged to the millimetre.
 On `dd8b819c`, GPU lane, each alone with `npm run probe:one --show-output`:
 `probe-live-cockpit` 61 rows, `probe-duel-hud` 36, `probe-fire-groups` 14,
 `probe-missiles` 15, `probe-chase-view` 13, `probe-mining-survey` 24,
-`probe-raider-consequence` 21, all ok. A raycast check found all six readout
-screens visible from the eye with no obstruction.
+`probe-raider-consequence` 21, all ok. `probe-live-cockpit`'s cockpit row
+raycasts from the eye to the status, prompt and lasers faces and requires
+each to be unobstructed. A diagnostic run that was not kept found the
+notices and ore/survey faces unobstructed too; mining is off in that row, so
+they carry no reading there.
 
 ## Decisions
 

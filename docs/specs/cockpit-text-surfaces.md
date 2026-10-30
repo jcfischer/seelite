@@ -5,6 +5,11 @@ top-left `(0, 0)`, top-right `(1, 0)`, and bottom-left `(0, 1)`. Node transforms
 apply before the game derives the screen frame. Names must be unique. Empty
 screens, missing UV corners, and duplicate names fail at the model boundary.
 
+One screen can serve several sources: `screen-<a>+<b>` serves `a` and `b`
+(`cockpitScreenFor`). Its sources share one face and stack in the order the
+game writes them, as on the fallback. A source may be named by one screen
+only; two screens that name the same source fail at the model boundary.
+
 `cockpitScreenFrames` discovers all names. There is no required screen list.
 `cockpitCanvasFace` mounts faces directly on those frames at a fixed stand-off
 in cabin kilometres, and `cockpit-text.ts` owns their text
@@ -46,8 +51,11 @@ the fallback, the game supplies an opaque emergency console below the forward
 sightline, at `emergencyConsoleFrame()` in cabin coordinates. No missing source
 falls back to the glass.
 
-The courier GLB adds `status`, `notices`, `ore`, `survey`, and
-`fallback` quads on its coaming. Its original screens and static captions
+The courier GLB, authored in `spikes/courier-cockpit/build_model.py`, has
+one centre display set into the dashboard brow (`screen-fallback`, which
+carries `status` and every source without a screen) and a housing on each
+side pod with one shared screen: `screen-notices+lasers` and
+`screen-ore+survey`. Its original screens and static captions
 remain. World markers, target labels, the reticle and docking geometry keep
 their spatial positions; they are bearings rather than stationary readouts.
 Chase view retains its existing spatial cues and event notices.

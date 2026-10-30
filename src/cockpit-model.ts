@@ -545,6 +545,17 @@ export function cockpitScreenFrames(
 			throw new Error(`Empty cockpit screen: ${o.name}`);
 		screens[name] = frame;
 	});
+	const named = new Map<string, string>();
+	for (const name of Object.keys(screens))
+		for (const source of name.split("+")) {
+			if (!source) throw new Error(`Invalid cockpit screen: screen-${name}`);
+			const other = named.get(source);
+			if (other)
+				throw new Error(
+					`Cockpit screens screen-${other} and screen-${name} both name ${source}`,
+				);
+			named.set(source, name);
+		}
 	return screens;
 }
 

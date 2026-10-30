@@ -592,6 +592,7 @@ for (const viewport of VIEWPORTS) {
 			statusVisible: window.__cockpitSurfaceVisible("status"),
 			occlusionDetected,
 			promptVisible: window.__cockpitSurfaceVisible("prompt"),
+			lasersVisible: window.__cockpitSurfaceVisible("lasers"),
 		};
 	});
 	check(

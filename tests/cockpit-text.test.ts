@@ -30,6 +30,25 @@ describe("model-owned cockpit text surfaces", () => {
 		expect(routed.get("status")?.kind).toBe("fallback");
 		expect(cockpitScreenFor(screens, "lasers")).toBe("notices+lasers");
 		expect(cockpitScreenFor(screens, "survey")).toBe("ore+survey");
+		expect(screens.systems).toBeDefined();
+		for (const source of [
+			"radar",
+			"flight",
+			"target",
+			"status",
+			"lasers",
+			"combat",
+			"course",
+			"ore",
+			"survey",
+			"notices",
+			"prompt",
+			"clearance",
+			"missiles",
+			"controls",
+			"prototype-combat",
+		])
+			expect(cockpitScreenFor(screens, source)).not.toBe("systems");
 	});
 
 	test("a shared screen serves each source it names, and only those", () => {
@@ -44,7 +63,18 @@ describe("model-owned cockpit text surfaces", () => {
 		expect(routed.get("ore")).toEqual({ kind: "named", frame });
 		expect(routed.get("survey")).toEqual({ kind: "named", frame });
 		expect(routed.get("notices")?.kind).toBe("fallback");
-		expect(routed.has("systems")).toBe(false);
+	});
+
+	test("a source named by two screens fails at the model boundary", () => {
+		const model = new THREE.Group();
+		for (const name of ["screen-a+b", "screen-b+c"]) {
+			const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1));
+			mesh.name = name;
+			model.add(mesh);
+		}
+		expect(() => cockpitScreenFrames(model)).toThrow(
+			"screen-a+b and screen-b+c both name b",
+		);
 	});
 
 	test("a second cabin moves and resizes screens, adds sources and omits flight", async () => {
