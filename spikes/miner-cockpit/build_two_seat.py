@@ -33,9 +33,6 @@ def material(name, color, metal=.6, rough=.48, emit=0, textured=True, texture=No
         mix.inputs[0].default_value = 1; mix.inputs[2].default_value = (*tint, 1) if texture else (*color, 1)
         m.node_tree.links.new(t.outputs['Color'], mix.inputs[1])
         m.node_tree.links.new(mix.outputs[0], p.inputs['Base Color'])
-        ramp = m.node_tree.nodes.new('ShaderNodeMapRange')
-        ramp.inputs[3].default_value = rough + .22; ramp.inputs[4].default_value = rough - .18
-        m.node_tree.links.new(t.outputs['Color'], ramp.inputs[0]); m.node_tree.links.new(ramp.outputs[0], p.inputs['Roughness'])
     MATS[name] = m; BATCH[name] = [[], [], []]
     return name
 
@@ -172,7 +169,9 @@ MINER_EYE = Vector((1.2, 0, 0))
 CENTRE_X = .6
 PANE, CHIN, ROOF_PANE = .90, .82, .88
 FLOOR_Y = 4.0 - EYE_STUDY.y
-strut = material('strut-paint', (.2, .24, .28), .55, .45, texture='strut', tint=(.85, .88, .92))
+strut = material('strut-paint', (.2, .24, .28), .3, .6, texture='strut-dark', tint=(.9, .92, .95))
+strut_edge = material('strut-edge', (.2, .21, .22), .7, .4, texture='strut-dark', tint=(.62, .62, .62))
+hose_sleeve = material('hose-sleeve', (.14, .065, .018), 0, .7, textured=False)
 seatcloth = material('seat-cloth', (.34, .45, .54), .15, .55)
 bolster = material('seat-bolster', (.62, .42, .12), .2, .6)
 
@@ -240,12 +239,30 @@ def rib_frame(a, b):
     n = (n - u * n.dot(u)).normalized(); v = n.cross(u).normalized()
     return u, v, n
 def rib(a, b, width=.1, depth=.05):
-    u, v, n = rib_frame(a, b); m = (a + b) / 2; L = (b - a).length
-    box(m + n * depth / 2, (L, width, depth), strut, frame=(u, v, n))
+    """A hat-section strut cap: a thin flange on the rib line and a raised, rounded crown. The crown's
+    rounded corners are bare worn steel (strut-edge), so wear follows the edges, and its normals turn
+    smoothly so a reflection is a line along the strut rather than a lit rectangle (#839's class)."""
+    u, v, n = rib_frame(a, b); L = (b - a).length
+    hw, cw, r = width / 2 + .02, width * .38, .018
+    prof = [(-cw, .012)] + [(-cw + r * (1 - math.cos(math.pi / 2 * k / 4)), depth - r + r * math.sin(math.pi / 2 * k / 4)) for k in range(5)] \
+         + [(cw - r * (1 - math.cos(math.pi / 2 * k / 4)), depth - r + r * math.sin(math.pi / 2 * k / 4)) for k in range(4, -1, -1)] + [(cw, .012)]
+    def ring(p0): return [p0 + v * x + n * y for x, y in prof]
+    r0, r1 = ring(a), ring(b)
+    acc = 0
+    for i in range(len(prof) - 1):
+        seg = (Vector(prof[i + 1]) - Vector(prof[i])).length
+        corner = 1 <= i <= 4 or len(prof) - 6 <= i <= len(prof) - 3
+        mat = strut_edge if corner else strut
+        poly([r0[i], r1[i], r1[i + 1], r0[i + 1]], mat, uv=[(0, acc * 5), (L * 5, acc * 5), (L * 5, (acc + seg) * 5), (0, (acc + seg) * 5)])
+        acc += seg
+    for e, ring_ in ((a, r0), (b, r1)): poly(ring_ if e is a else list(reversed(ring_)), strut)
+    fl = [a + v * -hw, b + v * -hw, b + v * hw, a + v * hw]
+    poly(fl, strut, uv=[(0, 0), (L * 5, 0), (L * 5, width * 5), (0, width * 5)])
+    poly([q + n * .012 for q in reversed(fl)], strut, uv=[(0, 0), (0, width * 5), (L * 5, width * 5), (L * 5, 0)])
     count = max(2, int(L / .28))
     for i in range(count + 1):
-        p = a.lerp(b, (i + .5) / (count + 1)) + n * depth
-        for s in [-1, 1]: tube(p + v * s * width * .32, p + v * s * width * .32 + n * .012, .011, alloy, 8)
+        p = a.lerp(b, (i + .5) / (count + 1)) + n * .012
+        for sgn in [-1, 1]: tube(p + v * sgn * (cw + .012), p + v * sgn * (cw + .012) + n * .012, .009, alloy, 8)
 for k in range(8):
     for r in range(3): rib(inner[r][k], inner[r + 1][k])
 for r in [0, 1, 2, 3]:
@@ -263,17 +280,20 @@ for k in [1, 6]:
         a, b = inner[r][k], inner[r + 1][k]; rib_lamp(a.lerp(b, t), b - a)
 for t in [.3, .7]:
     a, b = inner[2][7], inner[2][0]; rib_lamp(a.lerp(b, t), b - a)
-def rib_hose(points, r=.04):
+def rib_hose(points, r=.042):
     pts = []
     for i, p in enumerate(points):
-        n = inward(p); sag = .02 if 0 < i < len(points) - 1 else 0
-        pts.append(p + n * (.1 + sag))
-    ribbed_hose([tuple(p) for p in pts], r)
-    for p in pts[1:-1]: tube(p - Vector((0, 0, .03)), p + Vector((0, 0, .03)), r * 1.5, alloy, 12)
+        n = inward(p); sag = .025 if 0 < i < len(points) - 1 else 0
+        pts.append(p + n * (.06 + r + sag))
+    ribbed_hose([tuple(p) for p in pts], r, mat=hose_sleeve)
+    for i in range(1, len(pts) - 1):
+        d = (pts[i + 1] - pts[i - 1]).normalized(); p = pts[i]
+        tube(p - d * .025, p + d * .025, r * 1.35, alloy, 14)
+        tube(p - inward(p) * (r + .05), p - inward(p) * r * .5, .012, alloy, 8)
 for k in [0, 7]:
     rib_hose([inner[0][k], inner[0][k].lerp(inner[1][k], .5), inner[1][k], inner[1][k].lerp(inner[2][k], .5), inner[2][k]])
-rib_hose([inner[1][6], inner[1][6].lerp(inner[2][6], .5), inner[2][6], inner[2][6].lerp(inner[3][6], .6)], .035)
-rib_hose([inner[1][1], inner[1][1].lerp(inner[2][1], .5), inner[2][1], inner[2][1].lerp(inner[3][1], .6)], .035)
+rib_hose([inner[1][6], inner[1][6].lerp(inner[2][6], .5), inner[2][6], inner[2][6].lerp(inner[3][6], .6)], .045)
+rib_hose([inner[1][1], inner[1][1].lerp(inner[2][1], .5), inner[2][1], inner[2][1].lerp(inner[3][1], .6)], .045)
 
 # Floor plates, an aisle tread down the centre, footwells under both pods.
 for x in [-1.0, -.3, 1.5, 2.2]:
@@ -434,10 +454,17 @@ for name, (verts, faces, uvs) in BATCH.items():
     uv = mesh.uv_layers.new(name='surface-metres')
     for f, coords in zip(mesh.polygons, uvs):
         for li, co in zip(f.loop_indices, coords): uv.data[li].uv = co
+    bm_ = bmesh.new(); bm_.from_mesh(mesh)
+    bmesh.ops.dissolve_degenerate(bm_, dist=1e-5, edges=bm_.edges[:])
+    bmesh.ops.delete(bm_, geom=[f for f in bm_.faces if f.calc_area() < 1e-9], context='FACES')
+    bm_.to_mesh(mesh); bm_.free(); mesh.update()
     obj = bpy.data.objects.new(name, mesh); bpy.context.collection.objects.link(obj)
     obj.data.materials.append(MATS[name])
     if name == hose:
         for f in mesh.polygons: f.use_smooth = True
+    if name in [strut, strut_edge, hose_sleeve]:
+        for f in mesh.polygons: f.use_smooth = True
+        continue
     if name not in [warm, cyan, black, hose]:
         mod = obj.modifiers.new('Machined edge bevels', 'BEVEL'); mod.width = .022 if name == dark else .012; mod.segments = 3
         mod.affect = 'EDGES'; mod.harden_normals = True; mod.limit_method = 'ANGLE'

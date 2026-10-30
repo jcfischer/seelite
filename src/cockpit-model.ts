@@ -48,14 +48,20 @@ export const MINER_SEAT_OFFSET_M = 1.2;
 export const MINER_COCKPIT_FOV_DEG = 80;
 
 const MINER_FINISHES: Readonly<
-	Record<string, { metalness: number; roughness: number }>
+	Record<string, { metalness: number; roughness: number; color?: number }>
 > = {
 	"graphite-housings": { metalness: 0.35, roughness: 0.5 },
 	"cabin-lining": { metalness: 0.2, roughness: 0.55 },
 	"seat-shell": { metalness: 0.3, roughness: 0.45 },
 	"seat-cushion": { metalness: 0, roughness: 0.8 },
-	"strut-paint": { metalness: 0.4, roughness: 0.5 },
+	"strut-paint": { metalness: 0.25, roughness: 0.62 },
+	"strut-edge": { metalness: 0.5, roughness: 0.64 },
 	"weathered-blue-steel": { metalness: 0.45, roughness: 0.42 },
+	"exposed-machined-edges": {
+		metalness: 0.55,
+		roughness: 0.6,
+		color: 0x7a8084,
+	},
 };
 
 const MINER_LAMP_POSITIONS_M: Readonly<Record<string, readonly number[]>> = {
@@ -334,7 +340,7 @@ export function adoptCockpitMaterial(m: THREE.MeshStandardMaterial): void {
 	if (!m.map) return;
 	const miner = MINER_COCKPIT ? MINER_FINISHES[m.name] : undefined;
 	if (miner) {
-		m.color.setHex(0xffffff);
+		m.color.setHex(miner.color ?? 0xffffff);
 		m.metalness = miner.metalness;
 		m.roughness = miner.roughness;
 		m.envMapIntensity = 1.15;
