@@ -146,10 +146,9 @@ export async function installCockpitTextProbe(page) {
 			let red = 0;
 			for (let i = 0; i < data.length; i += 4)
 				if (
-					data[i + 3] > 40 &&
-					data[i] > 170 &&
-					data[i + 1] < 150 &&
-					data[i] > data[i + 2] + 60
+					data[i] > 120 &&
+					data[i + 1] < 0.6 * data[i] &&
+					data[i + 2] < 0.6 * data[i]
 				)
 					red++;
 			return red;
