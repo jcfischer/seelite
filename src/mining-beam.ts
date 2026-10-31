@@ -92,6 +92,8 @@ export function miningBeamStrokes(
 	return out;
 }
 
+export type MountBeamStroke = BeamStroke & { readonly layer: "glow" | "core" };
+
 /**
  * Each mount beam from its world muzzle to its world end, projected through the
  * camera and cut at its plane, as frame fractions: a glow and a core per
@@ -106,9 +108,9 @@ export function mountBeamStrokes(
 	fovYRad: number,
 	aspect: number,
 	t: number,
-): BeamStroke[] {
+): MountBeamStroke[] {
 	const n = MINING_BEAM.segments;
-	const out: BeamStroke[] = [];
+	const out: MountBeamStroke[] = [];
 	for (const { muzzle, end, hit } of rays) {
 		const at = (k: number) =>
 			add(muzzle, scale(sub(end, muzzle), (k / n) ** 2));
@@ -124,13 +126,21 @@ export function mountBeamStrokes(
 			);
 			const alpha = miningBeamAlpha(k, n, t, hit);
 			out.push({
+				layer: "glow",
 				from,
 				to,
 				widthPx: widthPx * 2.5,
 				rgb: MINING_BEAM_RGB,
 				alpha: 0.35 * alpha,
 			});
-			out.push({ from, to, widthPx, rgb: MINING_BEAM_RGB, alpha });
+			out.push({
+				layer: "core",
+				from,
+				to,
+				widthPx,
+				rgb: MINING_BEAM_RGB,
+				alpha,
+			});
 		}
 	}
 	return out;

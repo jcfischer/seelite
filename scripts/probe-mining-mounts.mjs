@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { gameUrl } from "./lib/game-url.mjs";
-import { stopLoop } from "./lib/view-placement.mjs";
+import { installViewFraming, stopLoop } from "./lib/view-placement.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -16,18 +16,20 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 await mkdir("probe-shots/mining-mounts", { recursive: true });
 try {
-	for (const mining of [true, false]) {
+	for (const miningFlag of ["1", undefined, "0"]) {
+		const mining = miningFlag === "1";
 		const page = await browser.newPage({
 			viewport: { width: 1280, height: 800 },
 		});
 		watch(page);
 		await installViewPlacement(page);
+		await installViewFraming(page);
 		await page.goto(
 			gameUrl(origin, {
 				seed: 0x5ee11e,
 				system: 173,
 				hull: "miner",
-				...(mining ? { mining: "1" } : {}),
+				...(miningFlag === undefined ? {} : { mining: miningFlag }),
 				"no-save": "",
 				raider: "off",
 			}),
@@ -166,6 +168,54 @@ try {
 			);
 			await page.screenshot({ path: "probe-shots/mining-mounts/chase.png" });
 		}
+		await page.evaluate(async () => {
+			const g = window.__seelite;
+			const station = g.world.system.bodies.find((b) => b.kind === "station");
+			if (!station) throw Error("station missing");
+			await window.__parkInBerth(
+				station.id,
+				g.berthIdsOfStation(station.id)[0],
+			);
+			const { makeModule, carriedModule } = await import("/src/loadout.ts");
+			const { threshold } = await import("/src/ladder.ts");
+			g.commander = {
+				...g.commander,
+				loadout: {
+					...g.commander.loadout,
+					h2: makeModule("mining-laser", 3),
+					h3: makeModule("mining-laser", 3),
+				},
+				recoveredFittings: [carriedModule(makeModule("mining-laser", 3, "A"))],
+			};
+			g.ladders = {
+				...g.ladders,
+				banked: {
+					combat: threshold("combat", 8),
+					trade: threshold("trade", 8),
+					exploration: threshold("exploration", 8),
+				},
+			};
+			g.view = "cockpit";
+			g.setHeadLook("forward");
+			g.stationConsoleTab = "Equipment";
+			g.outfittingSlot = "h2";
+			g.outfittingCandidate = "hold:0";
+			g.stationConsoleRevision++;
+			g.updateCockpit();
+		});
+		const preview = page.locator("[data-live-outfitting]");
+		const extraction = preview.locator('[data-outfit-delta="EXTRACTION"]');
+		const row = (await extraction.count())
+			? await extraction.innerText()
+			: null;
+		check(
+			`Equipment extraction row follows URL mining=${miningFlag ?? "absent"}`,
+			(await preview.count()) === 1 &&
+				(mining
+					? row?.includes("+0.1125") && row.includes("t/s")
+					: row === null),
+			JSON.stringify({ miningFlag, row }),
+		);
 		await page.close();
 	}
 } finally {

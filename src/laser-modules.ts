@@ -5,15 +5,21 @@ import { HULL_SPECS, type HullId } from "./hull";
 import { moduleRow, type Loadout } from "./loadout";
 import type { LaserRates } from "./ship-condition";
 
+export function hardpointKeys(hull: HullId): string[] {
+	return HULL_SPECS[hull].slots
+		.filter((slot) => slot.kind === "hardpoint")
+		.map((slot) => slot.key);
+}
+
 /** Preserve the physical port: H2 alone must still fire from port 2. */
 export function groupMuzzleIndices(
 	hull: HullId,
 	group: FireGroup | undefined,
 ): number[] {
 	if (group?.kind !== "lasers") return [];
-	return HULL_SPECS[hull].slots
-		.filter((s) => s.kind === "hardpoint")
-		.flatMap((slot, index) => (group.slots.includes(slot.key) ? [index] : []));
+	return hardpointKeys(hull).flatMap((key, index) =>
+		group.slots.includes(key) ? [index] : [],
+	);
 }
 
 export function groupLaserRates(
@@ -53,8 +59,6 @@ export function glassTracerIndices(
 	mounts: boolean,
 ): number[] {
 	if (!mounts) return [...fired];
-	const slots = HULL_SPECS[hull].slots.filter((s) => s.kind === "hardpoint");
-	return fired.filter(
-		(i) => loadout[slots[i]?.key ?? ""]?.module !== "mining-laser",
-	);
+	const keys = hardpointKeys(hull);
+	return fired.filter((i) => loadout[keys[i] ?? ""]?.module !== "mining-laser");
 }
