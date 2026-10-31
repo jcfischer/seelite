@@ -14,6 +14,8 @@ export async function probeMinerVents(page, { check, label }) {
 	const pixels = await page.evaluate(async () => {
 		const { PLUME_PARTICLES } = await import("/src/vent-plumes.ts");
 		const g = window.__seelite;
+		const ATTITUDE = new Set(["pitch", "yaw", "roll"]);
+		const isAttitude = (t) => ATTITUDE.has(t.family);
 		g.view = "chase";
 		g.chaseYaw = 0.9;
 		const firing = { ...g.ventFiring };
@@ -41,10 +43,7 @@ export async function probeMinerVents(page, { check, label }) {
 				Object.entries(firing).filter(
 					([slot]) =>
 						slot !== "main" &&
-						g.ventPlumes.throats.some(
-							(t) =>
-								t.slot === slot && ["pitch", "yaw", "roll"].includes(t.family),
-						),
+						g.ventPlumes.throats.some((t) => t.slot === slot && isAttitude(t)),
 				),
 			),
 		);
@@ -81,10 +80,7 @@ export async function probeMinerVents(page, { check, label }) {
 			};
 		});
 		const vents = g.ventPlumes.throats
-			.filter(
-				(t) =>
-					["pitch", "yaw", "roll"].includes(t.family) && firing[t.slot] > 0,
-			)
+			.filter((t) => isAttitude(t) && firing[t.slot] > 0)
 			.map((t) => ({
 				slot: t.slot,
 				rise: riseNear(
@@ -96,11 +92,7 @@ export async function probeMinerVents(page, { check, label }) {
 		const positions = g.ventPlumes.object.geometry.getAttribute("position");
 		let particleRise = 0;
 		g.ventPlumes.throats.forEach((throat, n) => {
-			if (
-				!["pitch", "yaw", "roll"].includes(throat.family) ||
-				!firing[throat.slot]
-			)
-				return;
+			if (!isAttitude(throat) || !firing[throat.slot]) return;
 			for (let i = 1; i <= PLUME_PARTICLES; i++) {
 				const at = throat.at
 					.clone()
