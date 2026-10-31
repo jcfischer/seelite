@@ -250,15 +250,42 @@ test("shipped flight asset and production bay obey collision, reach, detail and 
 	for (const seed of [0, 1, 7]) {
 		const mesh = build(seed, 0x9aa6b2);
 		const other = build(seed + 1, 0x9aa6b2);
-		expect(
-			verticesOutsideProxy(
-				mesh,
-				"trade",
-				proxy,
-				opening,
-				PROXY_VERTEX_TOLERANCE_KM,
-			),
-		).toEqual([]);
+		const outside = verticesOutsideProxy(
+			mesh,
+			"trade",
+			proxy,
+			opening,
+			PROXY_VERTEX_TOLERANCE_KM,
+		);
+		if (outside.length > 0) {
+			const bad = (a: ArrayLike<number>) => {
+				let n = 0;
+				for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) n++;
+				return n;
+			};
+			mesh.root.traverse((o) => {
+				if (!(o instanceof THREE.Mesh)) return;
+				const arr = o.geometry.getAttribute("position").array as Float32Array;
+				console.log(
+					"DIAG3",
+					seed,
+					o.name,
+					"pos",
+					bad(arr),
+					"of",
+					arr.length,
+					"buffer",
+					arr.buffer.byteLength,
+					"offset",
+					arr.byteOffset,
+					"matrix",
+					bad(o.matrixWorld.elements),
+					"first",
+					[arr[0], arr[1], arr[2]].join(","),
+				);
+			});
+		}
+		expect(outside).toEqual([]);
 		const vertices = extractVertices(mesh, "trade");
 		expect(vertices.length).toBeGreaterThan(100_000);
 		expect(
