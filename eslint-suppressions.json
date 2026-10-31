@@ -1416,7 +1416,7 @@
   },
   "src/beam-layer.ts": {
     "seelite/no-comments": {
-      "count": 6
+      "count": 5
     }
   },
   "src/binding-store.ts": {

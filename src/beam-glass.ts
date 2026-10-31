@@ -29,6 +29,9 @@ export interface FramePoint {
 	readonly y: number;
 }
 
+/** The shared cockpit stroke capacity, including mining beams. */
+export const BEAM_CAPACITY = 128;
+
 /** One beam: a line across the frame, its width and its colour. */
 export interface BeamStroke {
 	readonly from: FramePoint;

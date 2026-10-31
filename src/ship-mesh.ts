@@ -2527,7 +2527,7 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * rotation, not a mirror, so its winding survives — scaled by 0.001, and
  * moved so its box is centred on the ship's origin (`prepareLongwall`).
  *
- * It is drawn **stowed** and nothing articulates it. The cutter keeps its
+ * It is stowed by default; the mining drill poses its feed and struts. The cutter keeps its
  * named groups, and each anchor's part groups stay named while its metal is
  * merged (`batchLongwallAnchors`), so a later node can pose them; what mining
  * is, and the deployed envelope it would need, are not this node's.
@@ -2643,9 +2643,10 @@ function publishLongwall(template: THREE.Group | null): void {
 function* prepareLongwallSteps(
 	scene: THREE.Group,
 ): Generator<void, THREE.Group> {
+	if (longwallStrutsPosable) separateLongwallMounts(scene);
 	batchLongwallHull(scene);
 	yield;
-	batchLongwallAnchors(scene);
+	if (!longwallStrutsPosable) batchLongwallAnchors(scene);
 	yield;
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
@@ -2841,6 +2842,212 @@ function mergeByMaterial(
 function batchLongwallHull(scene: THREE.Group): void {
 	const { hull, toHull, meshes } = hullPaintMeshes(scene);
 	for (const batch of mergeByMaterial(meshes, toHull, "hull")) hull.add(batch);
+}
+
+function separateLongwallMounts(scene: THREE.Group): void {
+	const hull = longwallHullGroup(scene);
+	scene.updateMatrixWorld(true);
+	for (const side of ["port", "starboard"]) {
+		const name = `longwall-mount-${side}`;
+		const parts = hull.children.filter((part) =>
+			part.name.startsWith(`${name}-`),
+		);
+		if (!parts.length) continue;
+		const group = new THREE.Group();
+		group.name = name;
+		scene.add(group);
+		group.updateMatrixWorld(true);
+		for (const part of parts) group.attach(part);
+	}
+}
+
+let longwallStrutsPosable = false;
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * Keep the four struts' part groups whole so the drill can pose them
+ * (D-D1). Called before the model installs; a miner then draws each strut as
+ * the export's 19 meshes rather than one batch per paint.
+ */
+export function keepLongwallStrutsPosable(on = true): void {
+	longwallStrutsPosable = on;
+}
+
+/** One strut's joints in the export's metres: base, elbow and foot, at `deployment` 0…1. */
+export interface StrutJoints {
+	deployment: number;
+	base: readonly number[];
+	elbow: readonly number[];
+	foot: readonly number[];
+}
+
+const STRUT_FORWARD = new THREE.Vector3(0, 0, 1);
+
+const COCKPIT_PARTS = /^(feed|anchor-\d|longwall-mount-)/;
+const COCKPIT_GLASS = /glazing|display/;
+const COCKPIT_SAMPLES = 12;
+
+/** What the Longwall's hull hides from an eye in the ship mesh's frame (km). */
+export interface CockpitOcclusion {
+	readonly axisHitKm: Readonly<
+		Record<"starboard" | "port" | "up" | "down" | "aft" | "fore", number | null>
+	>;
+	readonly parts: readonly { readonly name: string; readonly seen: boolean }[];
+}
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * Round 10, F4: whether the hull would hide each mount, strut and the feed from
+ * `eyeKm`. A part is seen when a ray from the eye reaches one of its sampled
+ * vertices without meeting the hull (glazing and displays excepted). The six
+ * axis hits say how the eye sits in the hull. Measured on the
+ * full level as posed now; measurement runs in headless tests only.
+ */
+export function cockpitOcclusion(
+	root: THREE.Object3D,
+	eyeKm: Vec3,
+): CockpitOcclusion {
+	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
+	root.updateMatrixWorld(true);
+	const parts = full?.children[0]?.children ?? [];
+	const hull: THREE.Mesh[] = [];
+	for (const p of parts)
+		if (p.name === "hull")
+			p.traverse((o) => {
+				if ((o as THREE.Mesh).isMesh && !COCKPIT_GLASS.test(o.name))
+					hull.push(o as THREE.Mesh);
+			});
+	const sides = hull.map((m) => {
+		const list = Array.isArray(m.material) ? m.material : [m.material];
+		const before = list.map((x) => x.side);
+		for (const x of list) x.side = THREE.DoubleSide;
+		return () => list.forEach((x, n) => (x.side = before[n]));
+	});
+	const eye = new THREE.Vector3(eyeKm.x, eyeKm.y, eyeKm.z).applyMatrix4(
+		root.matrixWorld,
+	);
+	const caster = new THREE.Raycaster();
+	const blocked = (to: THREE.Vector3) => {
+		const d = to.clone().sub(eye);
+		caster.set(eye, d.clone().normalize());
+		caster.far = d.length();
+		return hull.some((m) => caster.intersectObject(m, false).length > 0);
+	};
+	try {
+		const axisHit = (x: number, y: number, z: number) => {
+			caster.set(eye, new THREE.Vector3(x, y, z));
+			caster.far = Number.POSITIVE_INFINITY;
+			const hit = caster.intersectObjects(hull, false)[0];
+			return hit ? hit.distance : null;
+		};
+		const value: CockpitOcclusion = {
+			axisHitKm: {
+				starboard: axisHit(1, 0, 0),
+				port: axisHit(-1, 0, 0),
+				up: axisHit(0, 1, 0),
+				down: axisHit(0, -1, 0),
+				aft: axisHit(0, 0, 1),
+				fore: axisHit(0, 0, -1),
+			},
+			parts: parts
+				.filter((p) => COCKPIT_PARTS.test(p.name))
+				.map((p) => {
+					const all: THREE.Vector3[] = [];
+					p.traverse((o) => {
+						const pos = (o as THREE.Mesh).geometry?.attributes?.position;
+						if (!(o as THREE.Mesh).isMesh || !pos) return;
+						for (let n = 0; n < pos.count; n++)
+							all.push(
+								new THREE.Vector3()
+									.fromBufferAttribute(pos, n)
+									.applyMatrix4(o.matrixWorld),
+							);
+					});
+					const step = Math.max(1, Math.floor(all.length / COCKPIT_SAMPLES));
+					const points = all.filter((_, n) => n % step === 0);
+					return { name: p.name, seen: points.some((q) => !blocked(q)) };
+				}),
+		};
+		return value;
+	} finally {
+		for (const put of sides) put();
+	}
+}
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * The Longwall as the cockpit sees it under `?mining=1` (round 9 F3, round 10
+ * F5, round 11): of the mounts, the feed and the struts, only the parts in
+ * `seen`, the ones `cockpitOcclusion` finds the hull leaves in view; the hull
+ * and every other part hidden. `null` puts back what each part drew before.
+ */
+export function cockpitDrillView(
+	root: THREE.Object3D,
+	view: { seen: ReadonlySet<string> } | null,
+): void {
+	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
+	const parts = full?.children[0]?.children ?? [];
+	const others = root.children.filter((c) => c !== full);
+	const saved = root.userData.cockpitDrillSaved as
+		| Map<THREE.Object3D, boolean>
+		| undefined;
+	if (!view) {
+		if (saved) for (const [o, v] of saved) o.visible = v;
+		root.userData.cockpitDrillSaved = undefined;
+		return;
+	}
+	if (!full) return;
+	const { seen } = view;
+	if (!saved)
+		root.userData.cockpitDrillSaved = new Map(
+			[...parts, ...others, full].map((o) => [o, o.visible]),
+		);
+	full.visible = true;
+	for (const o of others) o.visible = false;
+	for (const o of parts)
+		o.visible = seen.has(o.name) && COCKPIT_PARTS.test(o.name);
+}
+
+/** Pose strut `index` of a built Longwall's model level to `joints`, as the #803 study's viewer does. */
+export function poseLongwallStrut(
+	level: THREE.Object3D,
+	index: number,
+	joints: StrutJoints,
+): void {
+	const part = (name: string) =>
+		level.getObjectByName(`anchor-${index}-${name}`);
+	const body = part("body");
+	const sleeve = part("sleeve");
+	const foot = part("foot");
+	const lower = part("lower");
+	const rod = part("lower-rod");
+	const joint = part("elbow");
+	if (!body || !sleeve || !foot || !lower || !rod || !joint) return;
+	const base = new THREE.Vector3().fromArray(joints.base as number[]);
+	const elbow = new THREE.Vector3().fromArray(joints.elbow as number[]);
+	const end = new THREE.Vector3().fromArray(joints.foot as number[]);
+	const upper = elbow.clone().sub(base);
+	const upperLength = upper.length();
+	const direction = upper.normalize();
+	const lowerVec = end.clone().sub(elbow);
+	const lowerLength = lowerVec.length();
+	const lowerDirection = lowerVec.normalize();
+	body.position.copy(base);
+	body.quaternion.setFromUnitVectors(STRUT_FORWARD, direction);
+	body.scale.set(1.25, 1.25, (upperLength - 3) / 9);
+	sleeve.position.copy(base).addScaledVector(direction, upperLength - 3);
+	sleeve.quaternion.copy(body.quaternion);
+	sleeve.scale.set(1, 1, 3);
+	lower.position.copy(elbow);
+	lower.quaternion.setFromUnitVectors(STRUT_FORWARD, lowerDirection);
+	lower.scale.set(1.25, 1.25, (lowerLength - 3) / 6);
+	rod.position.copy(elbow).addScaledVector(lowerDirection, lowerLength - 3);
+	rod.quaternion.copy(lower.quaternion);
+	rod.scale.set(1, 1, 3);
+	joint.position.copy(elbow);
+	joint.quaternion.copy(lower.quaternion);
+	foot.position.copy(end);
+	foot.quaternion.identity().slerp(lower.quaternion, joints.deployment);
 }
 
 /**
