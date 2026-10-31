@@ -5,7 +5,7 @@ import type { Loadout } from "./loadout";
 export interface FireGroup {
 	readonly label: string;
 	readonly trigger: "primary" | "secondary";
-	readonly kind: "lasers" | "scanner";
+	readonly kind: "lasers" | "scanner" | "drill";
 	readonly slots: readonly string[];
 }
 const LASERS = new Set([
@@ -16,7 +16,8 @@ const LASERS = new Set([
 ]);
 /**
  * The primary groups a loadout arms. `mining` is `?mining=1`: with two or more
- * Mining Lasers fitted it adds `MINING LASERS` after `ALL LASERS`
+ * Mining Lasers fitted it adds `MINING LASERS` after `ALL LASERS`, and
+ * a cutter hull adds `BUILT-IN DRILL`
  * (https://github.com/jcfischer/seelite/issues/1147, #920 D-D11).
  */
 export function fireGroups(
@@ -64,6 +65,13 @@ export function fireGroups(
 			trigger: "primary",
 			kind: "scanner",
 			slots: scanners,
+		});
+	if (mining && HULL_SPECS[hull].cutter)
+		result.push({
+			label: "BUILT-IN DRILL",
+			trigger: "primary",
+			kind: "drill",
+			slots: [],
 		});
 	return result;
 }

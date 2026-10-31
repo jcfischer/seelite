@@ -160,6 +160,7 @@ test("two size-3 E Mining Lasers fire as MINING LASERS under the flag and cut 0.
 		"H1 PULSE LASER",
 		"H2 MINING LASER",
 		"H3 MINING LASER",
+		"BUILT-IN DRILL",
 	]);
 	expect(groups.find((g) => g.label === "MINING LASERS")?.slots).toEqual([
 		"h2",

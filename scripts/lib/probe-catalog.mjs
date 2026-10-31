@@ -19,6 +19,19 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-mining-drill.mjs",
+			"Behind mining=1 the Longwall deploys, holds a rock surface frame, anchors, seats and drills a real deep mouth without a survey; hold gain equals deposit debit; feedback paints, five cockpit switches avoid long tasks, and releasing retracts. A flagless control keeps the old miner groups, collision and cockpit visibility.",
+			[
+				"drill",
+				"anchor",
+				"fine control",
+				"conservation",
+				"cockpit occlusion",
+				"long tasks",
+				"mining flag",
+			],
+		),
+		entry(
 			"probe-mining-survey.mjs",
 			"With ?mining=1 in a charted field: selects the rock in front, holds a survey to a reading with its deep-deposit mark, refuses past range, cuts the rock with the Mining Laser on its drawn surface, debits the deposit per released tonne, draws the beam with flare and sparks in cockpit and chase and no flare beside the surface, scoops a fragment into the Hold page, refuses a full hold and loses an expired fragment without restoring the deposit.",
 			[
