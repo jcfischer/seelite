@@ -1,7 +1,12 @@
 import { test, expect } from "bun:test";
+import { EMISSIVE_CEILING, EXPOSURE } from "../src/light-rig";
 import * as THREE from "three";
 import { makeWorldAtSystem } from "../src/sim";
-import { createIndustrialCoriolisBuilder } from "../src/coriolis-flight";
+import {
+	coriolisLightsChunk,
+	createIndustrialCoriolisBuilder,
+	isCoriolisBeacon,
+} from "../src/coriolis-flight";
 import { buildStationMesh, installCoriolisBuilder } from "../src/station-mesh";
 import { STATION_GEOMETRY } from "../src/station";
 
@@ -74,7 +79,7 @@ test("industrial exterior and seeded production bay share one kilometre spinner"
 				THREE.MeshStandardMaterial
 			>
 		).material.color.getHex(),
-	).toBe(0x9aa6b2);
+	).toEqual(new THREE.Color(1, 1, 1).multiplyScalar(2.3).getHex());
 	expect(built.root.getObjectByName("beacon-coriolis-a")).toBeDefined(); // glossary-ignore: beacon
 	expect(exterior.parent).toBe(built.spinner);
 	built.dispose();
@@ -96,9 +101,15 @@ test("other station forms retain their existing builder", () => {
 	built.dispose();
 });
 
-import { readCoriolisGlb } from "./helpers/read-coriolis-glb";
+import {
+	readCoriolisGlb,
+	readShippedCoriolisBuilder,
+} from "./helpers/read-coriolis-glb";
 test("flight export removes the display tunnel and its end cap across the whole slot", async () => {
 	const root = await readCoriolisGlb("coriolis-industrial-flight.glb");
+	const detail = await readCoriolisGlb("coriolis-detail.glb");
+	root.add(...detail.children);
+	root.updateMatrixWorld(true);
 	for (const x of [-0.0599, 0, 0.0599])
 		for (const y of [-0.0349, 0, 0.0349]) {
 			const hit = new THREE.Raycaster(
@@ -150,6 +161,65 @@ test("imported lights obey the live emissive ceiling while retaining their relat
 	station.dispose();
 });
 
+test("only exact Coriolis navigation material names receive the ruled exposure exception", () => {
+	const template = new THREE.Group();
+	const names = [
+		"navigation-red",
+		"navigation-green",
+		"navigation-blue",
+		"navigation-red-extra",
+		"scale-detail-navigation-red",
+		"maintenance-white",
+		"habitation-amber",
+	];
+	const materials = names.map((name) => {
+		const material = new THREE.MeshStandardMaterial({
+			emissive: 0xffffff,
+			emissiveIntensity: 5,
+		});
+		material.name = name;
+		template.add(
+			new THREE.Mesh(new THREE.BoxGeometry(800, 800, 800), material),
+		);
+		return material;
+	});
+	const station = createIndustrialCoriolisBuilder(template)(0, 0xffffff);
+	for (const material of materials) {
+		const navigation = ["navigation-red", "navigation-green"].includes(
+			material.name,
+		);
+		expect(isCoriolisBeacon(material.name)).toBe(navigation);
+		expect(material.emissiveIntensity).toBe(navigation ? 8 : EMISSIVE_CEILING);
+	}
+	station.dispose();
+});
+
+test("the shipped Coriolis exceeds the shared ceiling only on its two ruled navigation materials", async () => {
+	const { build } = await readShippedCoriolisBuilder();
+	const station = build(0, 0x9aa6b2);
+	const materials = standardMaterials(station.root);
+	const exceptions: string[] = [];
+	let ordinary = 0;
+	for (const material of materials) {
+		expect(Number.isFinite(material.emissiveIntensity)).toBe(true);
+		expect(material.emissiveIntensity).toBeGreaterThanOrEqual(0);
+		if (isCoriolisBeacon(material.name)) {
+			exceptions.push(material.name);
+			expect(material.emissiveIntensity).toBeCloseTo(4.8);
+			expect(material.emissiveIntensity).toBeLessThanOrEqual(8);
+		} else {
+			ordinary++;
+			expect([
+				material.name,
+				material.emissiveIntensity <= EMISSIVE_CEILING,
+			]).toEqual([material.name, true]);
+		}
+	}
+	expect(exceptions.sort()).toEqual(["navigation-green", "navigation-red"]);
+	expect(ordinary).toBeGreaterThan(10);
+	station.dispose();
+});
+
 import { setStationDetail, stationSilhouetteKm } from "../src/station-mesh";
 import { resourcesOf, isShared, type Disposable } from "../src/gpu-teardown";
 import {
@@ -166,8 +236,7 @@ import {
 } from "./helpers/station-proxy-measure";
 
 test("shipped flight asset and production bay obey collision, reach, detail and shared-resource contracts", async () => {
-	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
-	const build = createIndustrialCoriolisBuilder(template);
+	const { template, build } = await readShippedCoriolisBuilder();
 	const proxy = stationProxy("trade", "a", 0, 0)!;
 	const opening = openingOf("trade", "a");
 	expect(proxyReachKm(proxy)).toBeLessThanOrEqual(
@@ -200,7 +269,16 @@ test("shipped flight asset and production bay obey collision, reach, detail and 
 			THREE.MeshStandardMaterial
 		>;
 		expect(core).toBeDefined();
-		expect(core.material.color.getHex()).toBe(0x9aa6b2);
+		const source = template.getObjectByName("ceramic-steel-0");
+		expect(source).toBeInstanceOf(THREE.Mesh);
+		if (
+			!(source instanceof THREE.Mesh) ||
+			!(source.material instanceof THREE.MeshStandardMaterial)
+		)
+			throw new Error("missing authored ceramic paint");
+		expect(core.material.color).toEqual(
+			source.material.color.clone().multiplyScalar(2.3),
+		);
 		expect(mesh.fixtures.filter((f) => f.kind === "chase")).toHaveLength(10);
 		expect(mesh.nameplates).toHaveLength(2);
 		expect(mesh.accessories.length).toBeGreaterThan(0);
@@ -226,3 +304,271 @@ test("shipped flight asset and production bay obey collision, reach, detail and 
 		other.dispose();
 	}
 }, 30_000);
+
+test("principal paint ruling retains authored warmth and contrast regardless of role colour", () => {
+	const template = new THREE.Group();
+	for (const [i, color] of [
+		new THREE.Color(0.42, 0.43, 0.4),
+		new THREE.Color(0.475, 0.48, 0.445),
+	].entries()) {
+		const material = new THREE.MeshStandardMaterial({ color });
+		material.name = "ceramic-steel-" + i;
+		const mesh = new THREE.Mesh(new THREE.BoxGeometry(800, 800, 800), material);
+		mesh.name = material.name;
+		template.add(mesh);
+	}
+	const build = createIndustrialCoriolisBuilder(template);
+	const first = build(0, 0x123456);
+	const second = build(0, 0xff0000);
+	for (const [i, source] of template.children.entries()) {
+		if (!(source instanceof THREE.Mesh)) throw new Error("missing plate");
+		const name = i === 0 ? "core" : source.name;
+		for (const station of [first, second]) {
+			const plate = station.root.getObjectByName(name);
+			if (!(plate instanceof THREE.Mesh))
+				throw new Error("missing built plate");
+			expect(plate.material.color).toEqual(
+				source.material.color.clone().multiplyScalar(2.3),
+			);
+		}
+	}
+	first.dispose();
+	second.dispose();
+});
+
+test("Coriolis shader compiles with the ruled station-only key and ambient gains and fails closed on chunk drift", async () => {
+	const { build } = await readShippedCoriolisBuilder();
+	const station = build(0, 0x9aa6b2);
+	let surfaces = 0;
+	station.root
+		.getObjectByName("industrial-coriolis-exterior")!
+		.traverse((o) => {
+			if (
+				!(o instanceof THREE.Mesh) ||
+				!(o.material instanceof THREE.MeshStandardMaterial) ||
+				o.material.emissive.getHex() !== 0
+			)
+				return;
+			const shader = { ...THREE.ShaderLib.standard, uniforms: {} };
+			o.material.onBeforeCompile(
+				shader as THREE.WebGLProgramParametersWithUniforms,
+				{} as THREE.WebGLRenderer,
+			);
+			expect(shader.fragmentShader).not.toContain(
+				"#include <lights_fragment_begin>",
+			);
+			expect(shader.fragmentShader).toContain("directLight.color *= 2.000;");
+			expect(shader.fragmentShader).toContain(
+				"irradiance += 0.600 * getHemisphereLightIrradiance",
+			);
+			expect(shader.fragmentShader).not.toContain("coriolisRim");
+			expect(o.material.envMapIntensity).toBe(1);
+			surfaces++;
+		});
+	expect(surfaces).toBeGreaterThan(10);
+	for (const marker of [
+		"getDirectionalLightInfo( directionalLight, directLight );",
+		"irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );",
+	]) {
+		expect(() =>
+			coriolisLightsChunk(
+				THREE.ShaderChunk.lights_fragment_begin.replace(marker, ""),
+			),
+		).toThrow("Coriolis");
+	}
+	const unaffected = new THREE.MeshStandardMaterial();
+	const shader = { ...THREE.ShaderLib.standard, uniforms: {} };
+	unaffected.onBeforeCompile(
+		shader as THREE.WebGLProgramParametersWithUniforms,
+		{} as THREE.WebGLRenderer,
+	);
+	expect(shader.fragmentShader).toBe(THREE.ShaderLib.standard.fragmentShader);
+	station.dispose();
+	unaffected.dispose();
+});
+
+test("every added scale-detail mesh draws only at full; baseline geometry and gameplay fixtures remain", async () => {
+	const {
+		template,
+		detail: detailScene,
+		build,
+	} = await readShippedCoriolisBuilder();
+	const station = build(0, 0x9aa6b2);
+	const detail: THREE.Mesh[] = [];
+	const baseline: THREE.Mesh[] = [];
+	const beacons = new Set<THREE.MeshStandardMaterial>();
+	for (const [scene, list] of [
+		[template, baseline],
+		[detailScene, detail],
+	] as const)
+		scene.traverse((o) => {
+			if (o instanceof THREE.Mesh) list.push(o);
+		});
+	expect(detail.every((o) => o.name.startsWith("scale-detail-"))).toBe(true);
+	expect(baseline.some((o) => o.name.startsWith("scale-detail-"))).toBe(false);
+	expect(detail.length).toBeGreaterThanOrEqual(7);
+	const triangles = (meshes: THREE.Mesh[]) =>
+		meshes.reduce(
+			(n, o) =>
+				n +
+				(o.geometry.index?.count ?? o.geometry.getAttribute("position").count) /
+					3,
+			0,
+		);
+	expect(triangles(baseline)).toBe(139948);
+	expect(triangles(detail)).toBeGreaterThan(300000);
+	for (const level of ["full", "reduced", "outline"] as const) {
+		setStationDetail(station, level);
+		for (const mesh of detail) {
+			const built = station.root.getObjectByName(mesh.name)!;
+			expect(built.userData.minDetail).toBe("full");
+			expect(built.visible).toBe(level === "full");
+			expect(station.accessories.includes(built)).toBe(true);
+		}
+		expect(
+			station.fixtures.filter(
+				(f) => f.kind === "strobe-a" || f.kind === "strobe-b",
+			),
+		).toHaveLength(4);
+	}
+	station.root.traverse((o) => {
+		if (
+			!(o instanceof THREE.Mesh) ||
+			!(o.material instanceof THREE.MeshStandardMaterial)
+		)
+			return;
+		if (isCoriolisBeacon(o.material.name)) beacons.add(o.material);
+	});
+	expect([...beacons].map((m) => m.name).sort()).toEqual([
+		"navigation-green",
+		"navigation-red",
+	]);
+	for (const m of beacons) {
+		expect(m.emissiveIntensity).toBeCloseTo(4.8);
+		expect(
+			(0.2126 * m.emissive.r + 0.7152 * m.emissive.g + 0.0722 * m.emissive.b) *
+				m.emissiveIntensity,
+		).toBeGreaterThan(EXPOSURE.bloom.threshold);
+	}
+	station.dispose();
+});
+
+import { updateStationVisuals } from "../src/station-mesh";
+import {
+	DETAIL_RETRY_MS,
+	emissiveDivisor,
+	standardMaterials,
+} from "../src/coriolis-flight";
+import { readFileSync } from "node:fs";
+
+const detailParts = (station: { root: THREE.Object3D }) => {
+	const parts: THREE.Object3D[] = [];
+	station.root.traverse((o) => {
+		if (o.name.startsWith("scale-detail-")) parts.push(o);
+	});
+	return parts;
+};
+
+test("the scale detail loads once a Coriolis reaches the reduced band, retries after a failure, and reaches stations built before it", async () => {
+	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
+	const detail = await readCoriolisGlb("coriolis-detail.glb");
+	let requests = 0;
+	let fail = true;
+	let clock = 0;
+	const build = createIndustrialCoriolisBuilder(
+		template,
+		async () => {
+			requests++;
+			if (fail) throw new Error("offline");
+			return detail;
+		},
+		() => clock,
+	);
+	const far = build(0, 0x9aa6b2);
+	const near = build(1, 0x9aa6b2);
+	const gone = build(2, 0x9aa6b2);
+	const settle = () => new Promise((r) => setTimeout(r, 0));
+	expect(detailParts(far)).toEqual([]);
+	expect(far.lateDetail?.attached).toBe(false);
+	updateStationVisuals(far, 0, far.silhouetteKm * 1000, "high");
+	expect(far.detail).toBe("outline");
+	expect(requests).toBe(0);
+	updateStationVisuals(near, 0, near.silhouetteKm * 200, "high");
+	expect(near.detail).toBe("reduced");
+	expect(requests).toBe(1);
+	updateStationVisuals(near, 0, near.silhouetteKm * 200, "high");
+	expect(requests).toBe(1);
+	await settle();
+	expect(near.lateDetail?.failure).toBeInstanceOf(Error);
+	expect(near.lateDetail?.attached).toBe(false);
+	clock = DETAIL_RETRY_MS - 1;
+	updateStationVisuals(near, 0, near.silhouetteKm, "high");
+	expect(requests).toBe(1);
+	fail = false;
+	clock = DETAIL_RETRY_MS;
+	gone.dispose();
+	updateStationVisuals(near, 0, near.silhouetteKm, "high");
+	expect(near.detail).toBe("full");
+	expect(requests).toBe(2);
+	await settle();
+	expect(near.lateDetail?.attached).toBe(true);
+	expect(near.lateDetail?.failure).toBeUndefined();
+	updateStationVisuals(near, 0, near.silhouetteKm, "high");
+	expect(requests).toBe(2);
+	expect(detailParts(gone)).toEqual([]);
+	const later = build(3, 0x9aa6b2);
+	for (const station of [far, near, later]) {
+		const parts = detailParts(station);
+		expect(parts.map((o) => o.name).sort()).toEqual(
+			detail.children.map((o) => o.name).sort(),
+		);
+		for (const part of parts) {
+			expect(station.accessories.includes(part)).toBe(true);
+			expect(part.visible).toBe(station.detail === "full");
+		}
+	}
+	const stillLive = resourcesOf(near.root);
+	const freed = new Set<Disposable>();
+	for (const resource of resourcesOf(far.root))
+		resource.addEventListener("dispose", () => freed.add(resource));
+	far.dispose();
+	expect([...freed].some((r) => stillLive.has(r))).toBe(false);
+	near.dispose();
+	later.dispose();
+});
+
+test("the detail file shares the base file's materials, image and exposure", async () => {
+	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
+	const detail = await readCoriolisGlb("coriolis-detail.glb");
+	const materials = standardMaterials;
+	expect(emissiveDivisor(materials(template))).toBe(
+		emissiveDivisor([...materials(template), ...materials(detail)]),
+	);
+	const json = (file: string) => {
+		const bytes = readFileSync(file);
+		return JSON.parse(
+			bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8"),
+		);
+	};
+	const base = json("src/models/coriolis.glb");
+	const late = json("src/models/coriolis-detail.glb");
+	expect(late.images ?? []).toEqual([]);
+	const imageNames = base.images.map((i: { name: string }) => i.name);
+	const named = late.materials.filter(
+		(m: { extras?: { baseColorMap?: string } }) => m.extras?.baseColorMap,
+	);
+	expect(named.length).toBeGreaterThan(0);
+	for (const m of named) expect(imageNames).toContain(m.extras.baseColorMap);
+	const build = createIndustrialCoriolisBuilder(template);
+	build.addDetail(detail);
+	const station = build(0, 0x9aa6b2);
+	const baseByName = new Map([...materials(template)].map((m) => [m.name, m]));
+	for (const part of detailParts(station)) {
+		const material = (part as THREE.Mesh)
+			.material as THREE.MeshStandardMaterial;
+		const shared = baseByName.get(material.name);
+		if (shared) expect(material).toBe(shared);
+		else expect(isShared(material)).toBe(true);
+	}
+	station.dispose();
+});

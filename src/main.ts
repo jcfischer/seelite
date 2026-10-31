@@ -6884,8 +6884,21 @@ class Game {
 		return (
 			models.settled(this.currentModelIds()) &&
 			!this.interiorRefresh &&
-			!this.fieldRefresh
+			!this.fieldRefresh &&
+			this.lateDetailSettled()
 		);
+	}
+	lateDetailSettled(): boolean {
+		for (const station of this.stationVisuals.values())
+			if (station.detail === "full" && station.lateDetail?.attached === false)
+				return false;
+		return true;
+	}
+	lateDetailFailure(): string | undefined {
+		for (const station of this.stationVisuals.values())
+			if (station.lateDetail?.failure)
+				return String(station.lateDetail.failure);
+		return undefined;
 	}
 	private currentModelIds(): ModelId[] {
 		this.ensureTrafficActors();

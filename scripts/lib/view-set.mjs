@@ -123,6 +123,7 @@ export const FIXTURE = Object.freeze({
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
 	1094: "the miner drive glow and firing vent plumes on the installed Longwall",
+	1142: "the Coriolis scale detail, warm paint, station key light and blooming beacons",
 	1034: "the authored Lance interceptor in the game's chase camera",
 	1073: "the Assembly's authored blocks placed by its own seeded plan",
 	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
@@ -476,6 +477,47 @@ export const VIEWS = Object.freeze([
 			radii: 8,
 			sunAngleDeg: 175,
 			view: "cockpit",
+		},
+	},
+	{
+		name: "coriolis-approach",
+		covers: [1142],
+		what: "The trade-A Coriolis on its aperture axis at three silhouette radii, seed 42 system 4: surface scale, key shadows and slot beacons.",
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "coriolis-flank",
+		covers: [1142],
+		what: "The trade-A Coriolis flank at four silhouette radii, seed 42 system 4: window rows, lattice and silhouette masts under a 35 degree sun.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "coriolis-range",
+		covers: [1142],
+		what: "The trade-A Coriolis backlit at twenty silhouette radii, seed 42 system 4: the shade side, beacon halos and reduced-detail transition.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+			seed: 42,
+			system: 4,
 		},
 	},
 	{
