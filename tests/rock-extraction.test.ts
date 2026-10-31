@@ -472,3 +472,10 @@ test("a refused fragment's notice: the canister's no-scoop words, the low-bank c
 		"HOLD FULL · FRAGMENT LEFT",
 	);
 });
+
+test("A grade releases fewer waste fragments per tonne of ore than E", () => {
+	const e = cutFor(80, 0.3, oreShare("E"));
+	const a = cutFor(80, 0.3, oreShare("A"));
+	expect(a.ore).toBeGreaterThan(e.ore);
+	expect(a.waste / a.ore).toBeLessThan(e.waste / e.ore);
+});
