@@ -219,6 +219,9 @@ describe("the view set itself", () => {
 			["coriolis-approach", 42],
 			["coriolis-flank", 42],
 			["coriolis-range", 42],
+			["ring-approach", 42],
+			["ring-flank", 42],
+			["ring-range", 42],
 			["station-refinery-axis", 2],
 			["ringed-giant", 5],
 			["giant-fill", 5],
@@ -256,7 +259,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(88);
+		expect(VIEWS.length).toBe(91);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -846,7 +849,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 88)");
+		expect(html).toContain("Selected canonical views (3 of 91)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -883,7 +886,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–35.4s");
+		expect(html).toContain("· clock 0.6–36.6s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1160,6 +1163,9 @@ describe("the rim look row #480 added", () => {
 			"coriolis-approach",
 			"coriolis-flank",
 			"coriolis-range",
+			"ring-approach",
+			"ring-flank",
+			"ring-range",
 			"cold-rocky-ice",
 			"sky-at-the-rim",
 			"npc-departure",
@@ -1208,5 +1214,21 @@ test("Coriolis scale detail has axis, flank and range views on the actual trade-
 			throw new Error("missing Coriolis fixture");
 		expect(view.shot.seed).toBe(42);
 		expect(view.shot.system).toBe(4);
+	}
+});
+
+test("Ring scale detail has axis, flank and range views on a Ring home fixture", () => {
+	const world = makeWorldAtSystem(42, 1);
+	expect(
+		world.system.contents.stations.find((s) => s.type === "trade")?.formId,
+	).toBe("b");
+	for (const suffix of ["approach", "flank", "range"]) {
+		const view = VIEWS.find((v) => v.name === "ring-" + suffix);
+		expect(view).toBeDefined();
+		expect(view?.covers).toContain(1145);
+		if (!view || !("seed" in view.shot) || !("system" in view.shot))
+			throw new Error("missing Ring fixture");
+		expect(view.shot.seed).toBe(42);
+		expect(view.shot.system).toBe(1);
 	}
 });

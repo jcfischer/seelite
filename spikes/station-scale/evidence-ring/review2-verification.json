@@ -1,0 +1,115 @@
+{
+  "recordedAt": "2026-10-31T12:39:36.280Z",
+  "reviewedParent": "69395ee5d8ff6bab416dd9d3329ec189ba2b0c59",
+  "sourceSha256": {
+    "src/trade-flight.ts": "5a8e3dbbd701234bc1b610e20bb771f0b89488c0f6964aa721123dd5a27e8dcd",
+    "src/coriolis-flight.ts": "585b7c5243e8391aa811f403ce4cd50e40856cd938070e7790e56d3663e7368c",
+    "src/station-light.ts": "70047590328ab192c9f7acf0d48891fa200864598533cc4710f879068d022b05",
+    "scripts/lib/shipped-trades.ts": "4884d9a9aba275e3ca8751c7c57e09d1d7ec3b3b804c5af56bddd95254b90712",
+    "scripts/lib/station-detail.mjs": "4e7ec9301ab94f01b69ae2f249b25a1b92892faf2918d2883cedcd0f18953618",
+    "scripts/probe-station-visuals.mjs": "ec99d4ed8518c1a2422f4cabf17ff0b9525478a6da8ef54605e81ce7a1da8b9d",
+    "spikes/station-scale/capture.mjs": "b56c949815a0965303b279e9fa0715d617048b600c8a4e0443e22fb29f35a960",
+    "spikes/station-scale/measure-ring.mjs": "26eaa84730d035a7e50e9a9290a74938fbe2b64517e17a64ba3f6e85891561e7",
+    "spikes/station-scale/make-ring-sheet.mjs": "6fc1cf84f9355cf836eea73d5c3d668f86d399ac62d0bc18c3d64e002e0ef0eb"
+  },
+  "fullUnitRun": {
+    "command": "npm test",
+    "bun": "1.4.2 (744846f84)",
+    "exitCode": 1,
+    "passes": 7315,
+    "failures": 1,
+    "files": 446,
+    "elapsedSeconds": 973.75,
+    "runsInThisFixPass": 1,
+    "fullLogSha256": "7b3bdec7e2fb8fa02ee7167cbe9435409d50bfc47d6b7f1cb8717b737a3beb1e",
+    "summary": "review2-unit-summary.txt"
+  },
+  "affectedTests": {
+    "passes": 115,
+    "failures": 0,
+    "files": 9,
+    "directRunBun": "1.4.3",
+    "alsoPassedWithinFullBun142Run": true
+  },
+  "diagnostics": {
+    "unchangedTestSha256": "ef8dac10b1dbeef98e49ae508ef999bbfb569e6122ea96e48cea47c6dd70cbd8",
+    "baseRef": "ec561ec59834003da9e3a2164c440e82400dd9df",
+    "baseAndBranchBun142FileResults": "31 pass, 1 five-second timeout on the actor returns physically and requests any fitting home berth",
+    "fullBranchTimeout": "station-zone legs stay slow, clear the bubble, and visibly dwell: 5528.35 ms against default 5000 ms",
+    "isolatedBaseStationZoneMs": 4115.41,
+    "isolatedBranchStationZoneMs": 2138.72,
+    "baseBun143FileResults": "32 pass, 0 fail",
+    "conclusion": "The full suite is red. The unchanged main file and branch file reproduce the same timeout on a different row under Bun 1.4.2; no test or simulation source is changed to bypass it."
+  },
+  "gates": {
+    "typecheck": 0,
+    "format": 0,
+    "lint": 0,
+    "commentLint": 0,
+    "launcherWiring": 0,
+    "productionBuild": 0
+  },
+  "browser": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "failingBeforeReadiness": {
+      "checksPassed": 92,
+      "checksTotal": 94,
+      "ringMeshesAtRead": 0
+    },
+    "stationVisuals": {
+      "checksPassed": 100,
+      "checksTotal": 100,
+      "fullVisibleMeshes": 7,
+      "reducedVisibleMeshes": 0,
+      "outlineVisibleMeshes": 0
+    },
+    "lightRig": {
+      "checksPassed": 12,
+      "checksTotal": 12,
+      "hullPeak": 238.21,
+      "hullLowerQuartile": 34.48,
+      "hullMedian": 51.7
+    },
+    "liveFramesPerArm": 5,
+    "branchDetailMeshesOnEveryLiveFrame": 7,
+    "canonicalAfterViews": 8,
+    "scope": "Affected probes only. Supervisor owns the final selected PR browser gate; principal approvals remain pending."
+  },
+  "retainedEvidenceSha256": {
+    "review2-baseline.json": "7726ca66beaf336f97ae5820a54ee5a0cce0ec33e948490762914eb1a8a76d06",
+    "review2-before-wait.txt": "fcbf664d0f1557e80a3bdb0b4e2442b17bd95d36008149bf6802f87e9cb81ab2",
+    "review2-probe-station-visuals.txt": "9634e44d229106d23567377e3caf06b5f43ebf2838505bc5d6bb2a1c2313b7ff",
+    "review2-probe-light-rig.txt": "751b070dbe4726d95c9232b5d6bf6c8a8c28c231202c6cda91a265e8c5448f97",
+    "review2-cost.json": "7a3818351332bbdaf1357980056f7ebb9e637e5e7a69d92ad280a151bae72f7c",
+    "review2-cost-headed-unset.json": "b2485aa7ec14adf94dd151721ca4434da06975f228b11599936db60fa22832f6",
+    "review2-unit-summary.txt": "80574a3e1e6e4eb14bffd744ee73a07265691fd04458815a74a998b5b277c8ca",
+    "before/report.json": "9e0ec9c8ec19e21caab20fbf6eacb0140daed0f840e372d549f6431088de7e65",
+    "after/report.json": "d57612b80206d3765ce2acad7f16c7e258017ffe01a8bf57e09ba7ffb6c4c9c3",
+    "ring-before-after.png": "dae1c73f7b2cad6d311ef1197d9989700a68a27b69b822e197aed58b1cfe1029",
+    "views/before/manifest.json": "7d9e785261f45bedd07f781b201de6d0c1191d9887995ae9b0a94711360c64a3",
+    "views/after/manifest.json": "0eace73ad06dff2b48d805890a2a7ded1838d67e72124d1534398b2e78930f9d",
+    "review2-base-station-route-bun142.txt": "eead64bf481b908c7faa2bc92a0d727406f7fe4dcf34db3327ac7d22ef6c51be",
+    "review2-branch-station-route-bun142.txt": "597c1a33d373381c176b28ab6370dc8cc37914b8688f085098080c4212e416d4",
+    "review2-base-station-route-bun143.txt": "9f1df81f523ea95e278bf04242c434168d17fe3069e71143c096f43605c91961",
+    "review2-base-station-zone-bun143.txt": "b48595d1f1e576d2dcdbef480fb499cc720d3b274be2a29f73c435372c75f607",
+    "review2-full-timeout.txt": "cee2a589f28e89233e08aa463627a10ca129a625fa4ec40f7dbad76f6caf3fbe",
+    "before/trade-b-03-face-close.png": "5d097785481592978ce0668cbad5a95b3ed24791c89663264dc3255e608c7ffd",
+    "before/trade-b-04-wide.png": "56444cd117b71274f7c8ad9c66ceff3cf84b5833209261238c8f6aec202ea8d7",
+    "before/trade-b-06-hero.png": "44fa65ac90a0bb16cd3ab29932df86526e5941d921a9590527f9bf835d9219db",
+    "before/trade-b-07-sun-wide.png": "703394f616a2c836a8d589bd34bf76b0ccf71cb3e0a1497e4e392005c0cb353d",
+    "before/trade-b-08-sun-close.png": "cb4f19d5b76a609bd27c6866572b9c28f4b0ec8debfc57e20a8507393377712e",
+    "after/trade-b-03-face-close.png": "c1b96eab54824e283814e012bcd9bb9278dcdb56e55a60c5accab21c7b47e1e1",
+    "after/trade-b-04-wide.png": "8b5e48c8948ff83d6deedc2e6bdec65cd8dc963b658a95f0ac9faadf5be41680",
+    "after/trade-b-06-hero.png": "144dcec79a3c4dedbe01a8d1b68cafbeafeee4b05f3fca7201663663d7071771",
+    "after/trade-b-07-sun-wide.png": "7ecea163d5f88328a6251ba48fadf86ceb37de804f69b4b1c752be3d5e61102b",
+    "after/trade-b-08-sun-close.png": "d3fb99fc7081ff056c384afde1de625c5ff1d8bdc8d04e14254c05a1f07fabf1"
+  },
+  "notes": [
+    "No runtime or test source changed during the full unit run.",
+    "Full npm test: 7315 pass, 1 timeout. Do not describe this as a green suite. Main and branch file diagnostics both time out on the same unchanged Traffic route case under the suite binary.",
+    "Cost instrument refuses missing or hidden Ring detail before timing and records the seven mesh names and triangle counts.",
+    "The first post-split timing launch omitted the hardware flag; both pages still read ANGLE Metal. The separately retained repeat uses the explicit hardware flag and supplies the receipt table.",
+    "Historical logs retain technical glossary homonyms and their original bytes.",
+    "Broader loader-state-machine extraction is deferred; the loaders share DETAIL_RETRY_MS."
+  ]
+}

@@ -1,13 +1,17 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 import { gameUrl } from "../../scripts/lib/game-url.mjs";
+import { waitForStationDetail } from "../../scripts/lib/station-detail.mjs";
+import { holdProbeLockOrExit } from "../../scripts/lib/probe-lock.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 } from "../../scripts/probe-guard.mjs";
 
 const OUT = process.argv[2] ?? "spikes/station-scale/out";
+const release = await holdProbeLockOrExit("station-scale-capture");
 const PORT = 5191;
 const server = await createServer({
 	cacheDir: "node_modules/.vite-station-scale",
@@ -49,10 +53,13 @@ const SHOTS = [
 		look: "station",
 		fov: 16,
 	},
+	{ name: "07-sun-wide", sun: { ship: 0.75, cam: 2.4, off: 0.9 }, fov: 45 },
+	{ name: "08-sun-close", sun: { ship: 0.7, cam: 1.15, off: 0.35 }, fov: 50 },
 ];
 const SHIP_SCALES = (process.env.SCALES ?? "1,0.25").split(",").map(Number);
 const STATION_TYPES = (process.env.TYPES ?? "trade,refinery").split(",");
 const SYSTEM = Number(process.env.SYSTEM ?? 4);
+const FORM = process.env.FORM ?? "a";
 const ONLY = process.env.ONLY?.split(",");
 const CLEAN = process.env.CLEAN === "1";
 const LIGHT = Object.fromEntries(
@@ -78,9 +85,11 @@ try {
 		if (m.type() === "error" && /shader|program/i.test(m.text()))
 			errors.push(m.text().slice(0, 300));
 	});
+	await installViewPlacement(page);
 	await page.goto(
 		gameUrl(origin, {
 			seed: 42,
+ "models-full": true,
 			system: SYSTEM,
 			"no-save": true,
 			"coriolis-start": "approach",
@@ -88,7 +97,7 @@ try {
 		}),
 	);
 	await bootedGame(page, 120000);
-	await page.waitForTimeout(4000);
+	await page.waitForFunction(() => window.__seelite.modelsSettled());
 	const meta = await page.evaluate(() => {
 		const g = window.__seelite;
 		g.clockHeld = true;
@@ -133,13 +142,13 @@ try {
 	for (const type of STATION_TYPES)
 		for (const scale of SHIP_SCALES) {
 			for (const shot of SHOTS) {
-				if (!shot.cam && scale !== 1) continue;
+				if (!shot.cam && !shot.sun && scale !== 1) continue;
 				if (ONLY && !ONLY.includes(shot.name)) continue;
 				const got = await page.evaluate(
-					([shot, scale, type]) => {
+					([shot, scale, type, form]) => {
 						const g = window.__seelite;
 						const station = g.world.system.contents.stations.find(
-							(s) => s.type === type && (type !== "trade" || s.formId === "a"),
+							(s) => s.type === type && (type !== "trade" || s.formId === form),
 						);
 						if (!station) throw Error(`no ${type} station`);
 						const id = station.id;
@@ -178,7 +187,23 @@ try {
 						const up = norm(cross(side, a));
 						const at = ([ax, sd, u], from) =>
 							add(add(add(from, a, snap.planeKm + ax), side, sd), up, u);
-						g.world.ship.pos = at(shot.ship, body.pos);
+						const sp = g.layerLights[0].sun.position;
+						const toSun = norm({ x: sp.x, y: sp.y, z: sp.z });
+						const sunSide = norm(cross(toSun, up));
+						const sunCam = shot.sun
+							? add(
+									add(
+										add(body.pos, toSun, shot.sun.cam),
+										sunSide,
+										shot.sun.off,
+									),
+									up,
+									shot.sun.off * 0.5,
+								)
+							: null;
+						g.world.ship.pos = shot.sun
+							? add(add(body.pos, toSun, shot.sun.ship), sunSide, 0.08)
+							: at(shot.ship, body.pos);
 						g.world.ship.vel = g.stationVelocity(id);
 						g.setAttitude({ x: -a.x, y: -a.y, z: -a.z }, snap.basis.up);
 						g.shipMesh.scale.setScalar(scale);
@@ -193,11 +218,11 @@ try {
 							c.fov = fov;
 							c.updateProjectionMatrix();
 						}
-						if (shot.cam) {
+						if (shot.cam || shot.sun) {
 							g.view = "chase";
-							const pos = at(shot.cam, body.pos);
+							const pos = sunCam ?? at(shot.cam, body.pos);
 							const target =
-								shot.look === "station"
+								shot.look === "station" || shot.sun
 									? add(body.pos, a, snap.planeKm * 0.3)
 									: add(g.world.ship.pos, a, -0.25);
 							g.openingCamera = () => ({
@@ -211,7 +236,7 @@ try {
 						}
 						g.render(0);
 						g.render(0);
-						const cam = shot.cam ? at(shot.cam, body.pos) : null;
+						const cam = sunCam ?? (shot.cam ? at(shot.cam, body.pos) : null);
 						return {
 							shipToStationKm: Math.hypot(
 								...Object.values(sub(g.world.ship.pos, body.pos)),
@@ -225,11 +250,23 @@ try {
 							planeKm: snap.planeKm,
 						};
 					},
-					[shot, scale, type],
+					[shot, scale, type, FORM],
 				);
 				await page.waitForTimeout(600);
+				await waitForStationDetail(page);
+				got.detail = await page.evaluate((type) => {
+					const station = window.__seelite.world.system.contents.stations.find(s => s.type === type);
+					const parts = [];
+					window.__meshOfBody(station.id).traverse(o => {
+						if (o.isMesh && o.name.startsWith("scale-detail")) parts.push({ name: o.name, visible: o.visible });
+					});
+					return parts;
+				}, type);
+				if (process.env.EXPECT_RING_DETAIL !== undefined &&
+					(got.detail.length !== Number(process.env.EXPECT_RING_DETAIL) || got.detail.some(o => !o.visible)))
+					throw Error(`unsettled Ring capture: ${JSON.stringify(got.detail)}`);
 				await page.evaluate(() => window.__seelite.render(0));
-				const file = `${OUT}/${type}-${shot.name}${scale === 1 ? "" : "-ship-quarter"}.png`;
+				const file = `${OUT}/${type}${FORM === "a" ? "" : `-${FORM}`}-${shot.name}${scale === 1 ? "" : "-ship-quarter"}.png`;
 				await page.screenshot({ path: file });
 				for (const rim of (process.env.RIM_SWEEP ?? "")
 					.split(",")
@@ -259,4 +296,5 @@ try {
 } finally {
 	await browser.close();
 	await server.close();
+	release();
 }

@@ -1,0 +1,204 @@
+{
+  "meta": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "station": "station-trade",
+    "hull": "courier"
+  },
+  "report": [
+    {
+      "file": "spikes/station-scale/evidence-ring/after/trade-b-03-face-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.690350633481128,
+      "camToShipKm": 0.36373067519244767,
+      "camToStationKm": 1.036187244633889,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
+    },
+    {
+      "file": "spikes/station-scale/evidence-ring/after/trade-b-04-wide.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7761984256289514,
+      "camToShipKm": 2.7699278003831513,
+      "camToStationKm": 3.205679960027114,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
+    },
+    {
+      "file": "spikes/station-scale/evidence-ring/after/trade-b-06-hero.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.5799172338797058,
+      "camToShipKm": 0.5177837383965769,
+      "camToStationKm": 1.0690575266333902,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
+    },
+    {
+      "file": "spikes/station-scale/evidence-ring/after/trade-b-07-sun-wide.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7542545950703364,
+      "camToShipKm": 1.4540653548718612,
+      "camToStationKm": 2.1483185125117124,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
+    },
+    {
+      "file": "spikes/station-scale/evidence-ring/after/trade-b-08-sun-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7045565998708796,
+      "camToShipKm": 0.3856516019704478,
+      "camToStationKm": 1.0361667968698034,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
+    }
+  ]
+}

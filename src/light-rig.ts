@@ -88,8 +88,8 @@ export const ENV_HEIGHT = 128;
  * alone cannot guarantee bloom — material colour and the composite luminance
  * threshold also participate — but keeping these values at or below white
  * prevents an individual authoring dial from forcing a halo by itself.
- * Coriolis navigation-red and navigation-green deliberately exceed it under the
- * principal's gain-8 ruling. `coriolis-flight.ts` owns that scoped exception:
+ * Trade exterior navigation-red and navigation-green deliberately exceed it under the
+ * principal's gain-8 ruling. `station-light.ts` owns that scoped exception:
  * https://github.com/jcfischer/seelite/issues/1142#issuecomment-6526047964
  */
 export const EMISSIVE_CEILING = 1.0;
