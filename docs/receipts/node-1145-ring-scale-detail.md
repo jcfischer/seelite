@@ -32,29 +32,70 @@ The principal's acceptance of the visual result, frame cost, asset size and
 proposed changelog sentence remains pending. Review and the final PR browser
 gate belong to the supervisor. This receipt does not close the node.
 
+## Review round 1 correction
+
+The Ring now ships two files. The boot exterior is 5,875,120 bytes, the same
+byte count as main. The 14,027,844-byte detail file carries the seven full-only
+meshes and no image. It loads after boot when a Ring first leaves outline,
+using the existing station late-detail request and readiness contract. A failed
+download leaves the base visible, exposes the failure to capture readiness and
+retries after ten seconds. Live stations receive the detail in their current
+band; disposed stations receive nothing. Later stations reuse the shared asset.
+
+The preparation step checks exact vertex attributes, triangle attributes,
+material inputs and base texture pixels. An additional
+[comparison with the reviewed combined asset](../../spikes/station-scale/evidence-ring/split-equivalence.json)
+finds exact triangle attributes and material inputs across the two files.
+The regenerated proxies have byte-identical packed hulls for B, C and E;
+only B’s source fingerprint changes to cover both asset files. Ring stays at
+8,985 authored hull boxes.
+
+`station-light.ts` now owns the non-navigation exposure divisor and the
+per-material ceiling and navigation gain. Trade, Assembly and Coriolis use
+the same helper. A failing-before Assembly check measured a work lamp at 0.25
+instead of 1 when a bright navigation material entered the divisor; it now
+passes. The existing shipped Coriolis exposure and shader checks also pass.
+
+The unapproved node #1145 entry was removed from `CHANGELOG`. Its proposed
+sentence remains below for the principal to approve before the supervisor adds
+an entry with the actual merge date. Both strike fixtures in the collision
+instrument now require an impact. The missing historical probe logs are
+included with the hashes already recorded in `verification.json`.
+
+The spawn-and-await code remains local to the two study scripts. The glossary
+findings refer to navigation lamps, shell commands and `child_process.spawn`,
+not the fiction’s Pirate relay, Intervention or Traffic actor. Those technical
+terms are retained. No principal acceptance is inferred from these corrections.
+
+Round 1 headless checks pass: 84 tests in the four required trade/proxy files,
+and 31 in Ring detail, Coriolis, Assembly and model URL files. Typecheck, format,
+lint, comment lint, wiring and the production build pass. The build verifies
+every emitted file is below 25 MiB. The complete outcomes are recorded in the round 1 verification section below.
+
 ## Asset and geometry
 
-| Ring flight asset | Main | Branch |
+| Settled Ring exterior | Main | Base plus deferred detail |
 | --- | ---: | ---: |
-| Bytes | 5,875,120 | 19,901,304 |
-| MiB | 5.60 | 18.98 |
+| Bytes | 5,875,120 | 5,875,120 + 14,027,844 |
+| MiB | 5.60 | 5.60 + 13.38 |
 | Triangles | 102,164 | 485,440 |
 | Mesh primitives | 12 | 19 |
 | Added triangles drawn below full | 0 | 0 |
 | Authored proxy hull boxes | 3,503 | 8,985 |
 
-The separate detail adds 383,276 triangles and seven draws at full. The single
-GLB still follows the existing home-exterior boot and after-boot model queue;
-it adds no loader or asset kind. A Ring home therefore waits for the larger
-file. Cold download and installation latency were not measured in this node.
+The separate detail adds 383,276 triangles and seven draws at full. The base
+GLB follows the existing home-exterior boot and after-boot model queue. The
+detail file is outside that boot set, as on the Coriolis. Cold download and
+installation latency were not measured in this node.
 The production build's emitted-file guard passes the 25 MiB host limit.
 
 The detail generator resets its own seed 1007 after building the approved Ring;
 it consumes none of the approved parts' random draws. The shipping preparation
 checks exact triangle, vertex-attribute and texture-pixel round trips through
 Meshopt and lossless WebP. No simplification, quantisation or texture resize is
-added. The Ring's GLB SHA-256 is
-`ee2e7b79313df2d797c0a61c4c3c0a5db4e6c564cd3c8a9320dcb327c29188b1`;
+added. The Ring base GLB SHA-256 is
+`829f7a30198f0a2488ea27688f901c1f95120c859fb1a09a7333f48282c780c2`;
+the detail is `ab082d49de3b94ee62c9eeb76d226e160933b66640f0e6c3a0036cf351db013b`;
 main's is `16e59c914e5c9e229636f839a15fff616b40b0b10fc16613cec4f530521e2a05`.
 
 Rebuild from the repository root:
@@ -69,6 +110,12 @@ Blender 5.2.2 crashed before running the script inside the session sandbox; the
 same command completed on the host outside that sandbox. Tests run on the host.
 
 ## Frame-time receipt
+
+These measurements predate the asset split and apply to the combined-file
+implementation at `f1463396`. The full-detail geometry and material inputs are
+unchanged by the split, but loading and installation were not timed by this
+instrument. This is historical steady-render evidence, not a measurement of
+the final loading path.
 
 [Raw blocks and provenance](../../spikes/station-scale/evidence-ring/cost.json).
 The main arm is detached `origin/main` at `ec561ec5`; the branch arm is the
@@ -97,8 +144,8 @@ cancelled and the clock is held; simulation and loading are outside the timing.
 
 Submitted whole-frame counts confirm the work ran: approach 676 → 683 calls
 and 3,443,620 → 3,826,896 triangles; chase 1,634 → 1,655 calls and
-10,509,690 → 11,659,518 triangles. No page or shader errors were recorded. The runtime hash matches the final
-`src/trade-flight.ts`; per-block timestamps and load readings are retained.
+10,509,690 → 11,659,518 triangles. No page or shader errors were recorded. The runtime hash matches the reviewed combined-file
+`src/trade-flight.ts` at `f1463396`; per-block timestamps and load readings are retained.
 The initial post-correction attempt refused an invalid timing block and wrote
 no new receipt; the successful rerun is the one above. The
 [earlier pre-correction run](../../spikes/station-scale/evidence-ring/cost-before-lamp-normalisation.json)
@@ -183,7 +230,7 @@ node spikes/station-scale/capture-ring-views.mjs /path/to/main before
 node spikes/station-scale/capture-ring-views.mjs . after
 ```
 
-Worker verification:
+Initial implementation verification (before review round 1):
 
 - The four requested trade/proxy files pass, including the unchanged reach,
   loader-backed bay clearance, 10 m empty-space and 1.5 m containment checks.
@@ -203,7 +250,7 @@ Worker verification:
   not evidence for the new beacon exception. That exception is checked by the
   loader-backed luminance and material-name tests and the Ring captures.
 
-The one full host `npm test` invocation finishes at **7,312 pass, 1 fail across
+The initial implementation’s full host `npm test` invocation finishes at **7,312 pass, 1 fail across
 445 files** (933.03 seconds, bun 1.4.2). The failure is the new baseline-lamp
 regression: the runner had loaded the old trade module before the audit
 correction, then read the added test during its run. Editing that test while
@@ -221,8 +268,37 @@ run is not that gate. The proposed public sentence is: “Trade stations catch
 stronger light, and Ring stations show finer details.” It awaits the principal's
 approval and the actual merge date.
 
-Final gate command exits, log hashes and runtime-source hashes are recorded in
+Initial gate command exits, log hashes and runtime-source hashes are recorded in
 [verification.json](../../spikes/station-scale/evidence-ring/verification.json).
 The lint command is the repository's `biome lint scripts`; comment lint covers
 the repository separately. These are the named commands, not a claim that
 Biome linted all application source.
+
+## Review round 1 verification
+
+The one full host `npm test` run for this fix pass passes **7,316 tests,
+0 failures across 446 files**, in 874.40 seconds. Source and tests stayed
+unchanged during the run. [Summary](../../spikes/station-scale/evidence-ring/review1-unit-summary.txt).
+The [regression record](../../spikes/station-scale/evidence-ring/review1-regressions.txt)
+contains the failing-before asset-size, deferred-detail and Assembly-lamp
+checks, followed by 31 passing affected tests. The four required trade/proxy
+files separately pass 84 tests.
+
+The final isolated hardware run passes
+[station visuals 92/92](../../spikes/station-scale/evidence-ring/review1-probe-station-visuals.txt)
+and [hull lighting 12/12](../../spikes/station-scale/evidence-ring/review1-probe-light-rig.txt).
+The renderer is ANGLE Metal on the Apple M1 Pro. The calibrated hull readings
+remain peak 238.21, lower quartile 34.48 and median 51.70, inside their existing
+bands. No threshold changed. Two earlier host attempts timed out at different
+`bootedGame` calls: [final Wheel boot](../../spikes/station-scale/evidence-ring/review1-probe-station-visuals-first-timeout.txt)
+and [a viewport boot](../../spikes/station-scale/evidence-ring/review1-probe-station-visuals-second-timeout.txt).
+An untouched archive of base commit `ec561ec5`, with its source hashes checked,
+passes both probes. The final branch rerun ran without local tests or build
+jobs and also passes both; the timeout cause is not established.
+
+Typecheck, format, lint, comment lint, launcher wiring and production build
+pass. The emitted-file size guard passes. The selector still expands this PR
+to all 118 probes, so the supervisor retains the final selected PR browser
+gate. These two affected probes are not that gate. Final source and evidence
+hashes are in [review1-verification.json](../../spikes/station-scale/evidence-ring/review1-verification.json).
+Principal visual, frame-cost, asset-size and changelog approval remain pending.

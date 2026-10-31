@@ -47,7 +47,7 @@ for (const fixture of cases) {
 		for (let i = 0; i < 20; i++) result = run(fixture);
 		facts.push({ impacts: result.impacts.length, ghosts: result.ghosts.length, end: result.pos });
 		if (!Object.values(result.pos).every(Number.isFinite)) throw Error("non-finite collision result");
-		if (fixture.name === "outer-rim-strike" && result.impacts.length === 0) throw Error("strike fixture missed the hull");
+		if (fixture.name.endsWith("-strike") && result.impacts.length === 0) throw Error(`${fixture.name} missed the hull`);
 		if (fixture.name === "approach-clear" && result.impacts.length !== 0) throw Error("clear approach hit the hull");
 	}
 	for (let block = 0; block < report.blocks; block++)

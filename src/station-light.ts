@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { EMISSIVE_CEILING } from "./light-rig";
 
 export const STATION_KEY_GAIN = 2;
 export const STATION_AMBIENT_GAIN = 0.6;
@@ -8,6 +9,38 @@ export const STATION_BEACON_GAIN = 8;
 
 export const isStationBeacon = (name: string) =>
 	name === "navigation-red" || name === "navigation-green";
+
+export function stationEmissiveDivisor(
+	materials: Iterable<THREE.MeshStandardMaterial>,
+) {
+	return Math.max(
+		1,
+		...[...materials]
+			.filter((m) => !isStationBeacon(m.name))
+			.map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
+	);
+}
+
+export function exposeStationMaterial(
+	material: THREE.MeshStandardMaterial,
+	divisor: number,
+) {
+	const navigation = isStationBeacon(material.name);
+	material.emissiveIntensity /= navigation
+		? Math.max(divisor, material.emissiveIntensity / EMISSIVE_CEILING)
+		: divisor;
+	if (navigation) material.emissiveIntensity *= STATION_BEACON_GAIN;
+	applyStationKeyLight(material);
+}
+
+export function exposeStationMaterials(
+	materials: Iterable<THREE.MeshStandardMaterial>,
+) {
+	const list = [...materials];
+	const divisor = stationEmissiveDivisor(list);
+	for (const material of list) exposeStationMaterial(material, divisor);
+	return divisor;
+}
 
 const DIRECT_LINE = "getDirectionalLightInfo( directionalLight, directLight );";
 const HEMISPHERE_LINE =

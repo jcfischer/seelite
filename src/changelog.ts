@@ -28,11 +28,6 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	{
-		date: "2026-10-31",
-		text: "Trade stations catch stronger light, and Ring stations show finer details.",
-		node: 1145,
-	},
 	// https://github.com/jcfischer/seelite/issues/1142 — sentence approved by the principal, 2026-10-30.
 	{
 		date: "2026-10-30",

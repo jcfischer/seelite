@@ -22,6 +22,11 @@ export const SHIPPED_TRADE_FILES = Object.fromEntries(
 export const tradeModelHash = (form: AuthoredTradeForm) =>
 	createHash("sha256")
 		.update(readFileSync(SHIPPED_TRADE_FILES[form]))
+		.update(
+			form === "b"
+				? readFileSync("src/models/trade-ring-detail.glb")
+				: Buffer.alloc(0),
+		)
 		.digest("hex");
 const builders = new Map<
 	AuthoredTradeForm,
@@ -40,6 +45,10 @@ export async function installShippedTrades(): Promise<void> {
 				form,
 				await decodeShippedGlb(SHIPPED_TRADE_FILES[form]),
 			);
+			if (form === "b")
+				builder.addDetail(
+					await decodeShippedGlb("src/models/trade-ring-detail.glb"),
+				);
 			builders.set(form, builder);
 		}
 		installTradeBuilder(form, builder);

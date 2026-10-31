@@ -451,12 +451,9 @@ test("every added scale-detail mesh draws only at full; baseline geometry and ga
 });
 
 import { updateStationVisuals } from "../src/station-mesh";
-import {
-	DETAIL_RETRY_MS,
-	emissiveDivisor,
-	standardMaterials,
-} from "../src/coriolis-flight";
+import { DETAIL_RETRY_MS, standardMaterials } from "../src/coriolis-flight";
 import { readFileSync } from "node:fs";
+import { stationEmissiveDivisor as emissiveDivisor } from "../src/station-light";
 
 const detailParts = (station: { root: THREE.Object3D }) => {
 	const parts: THREE.Object3D[] = [];

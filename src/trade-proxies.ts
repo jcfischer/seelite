@@ -5,7 +5,7 @@ export const TRADE_PROXY_PACK = {
 	rot: 32767,
 } as const;
 export const TRADE_PROXY_SOURCES = {
-	b: "ee2e7b79313df2d797c0a61c4c3c0a5db4e6c564cd3c8a9320dcb327c29188b1",
+	b: "6e0118c65de2f0714233ad6947ecee773bbafc04028f82d3f2a3dabfc1ada5e5",
 	c: "c9a95bb2c0ea2c4abef69d0af0ea890df6c6b29f611a021c95c489cc47e5141a",
 	e: "9ea91aa845efb1ce05de14af68b1911a8c636788db574cef19d0c2526bcb0cd3",
 } as const;
