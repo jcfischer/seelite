@@ -1,4 +1,9 @@
 import * as THREE from "three";
+import {
+	STATION_BEACON_GAIN,
+	isStationBeacon,
+	applyStationKeyLight,
+} from "./station-light";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import {
@@ -44,7 +49,12 @@ export function createAssemblyBlocks(kit: THREE.Object3D): AssemblyBlocks {
 		1,
 		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
-	for (const material of materials) material.emissiveIntensity /= divisor;
+	for (const material of materials) {
+		material.emissiveIntensity /= divisor;
+		if (isStationBeacon(material.name))
+			material.emissiveIntensity *= STATION_BEACON_GAIN;
+		applyStationKeyLight(material);
+	}
 	return (placements, group, spinner) => {
 		const instances = assemblyInstances(placements);
 		for (const { name, meshes } of blocks) {

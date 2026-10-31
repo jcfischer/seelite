@@ -122,6 +122,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1145: "the Ring scale detail, station key light and blooming beacons",
 	1094: "the miner drive glow and firing vent plumes on the installed Longwall",
 	1142: "the Coriolis scale detail, warm paint, station key light and blooming beacons",
 	1034: "the authored Lance interceptor in the game's chase camera",
@@ -518,6 +519,47 @@ export const VIEWS = Object.freeze([
 			view: "chase",
 			seed: 42,
 			system: 4,
+		},
+	},
+	{
+		name: "ring-approach",
+		covers: [1145],
+		what: "The trade-B Ring on its aperture axis at three silhouette radii, seed 42 system 1: surface scale, key shadows and slot beacons.",
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 1,
+		},
+	},
+	{
+		name: "ring-flank",
+		covers: [1145],
+		what: "The trade-B Ring flank at four silhouette radii, seed 42 system 1: window rows, lattice and silhouette masts under a 35 degree sun.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+			seed: 42,
+			system: 1,
+		},
+	},
+	{
+		name: "ring-range",
+		covers: [1145],
+		what: "The trade-B Ring backlit at twenty silhouette radii, seed 42 system 1: the shade-side shape and baseline fittings at range.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+			seed: 42,
+			system: 1,
 		},
 	},
 	{
