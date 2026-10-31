@@ -1,9 +1,9 @@
 /** Default Coriolis: authored exterior with production berths and navigation fittings. */
 import * as THREE from "three";
 import {
-	STATION_BEACON_GAIN,
-	isStationBeacon,
 	applyStationKeyLight,
+	exposeStationMaterial,
+	exposeStationMaterials,
 } from "./station-light";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -20,7 +20,6 @@ import {
 import { STATION_GEOMETRY } from "./station";
 import { stationInterior } from "./station-interior";
 import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
-import { EMISSIVE_CEILING } from "./light-rig";
 import { shared, disposeSubtree } from "./gpu-teardown";
 import { CORIOLIS_DETAIL_GLB_URL, CORIOLIS_GLB_URL } from "./model-urls";
 
@@ -34,24 +33,6 @@ export function standardMaterials(root: THREE.Object3D) {
 				if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
 	});
 	return materials;
-}
-
-export function emissiveDivisor(
-	materials: Iterable<THREE.MeshStandardMaterial>,
-) {
-	return Math.max(
-		1,
-		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
-	);
-}
-
-function exposeCoriolisMaterial(
-	m: THREE.MeshStandardMaterial,
-	divisor: number,
-) {
-	m.emissiveIntensity /= divisor;
-	if (isStationBeacon(m.name)) m.emissiveIntensity *= STATION_BEACON_GAIN;
-	applyStationKeyLight(m);
 }
 
 export type IndustrialCoriolisBuilder = ((
@@ -69,8 +50,7 @@ export function createIndustrialCoriolisBuilder(
 	now: () => number = () => performance.now(),
 ): IndustrialCoriolisBuilder {
 	const materials = standardMaterials(template);
-	const divisor = emissiveDivisor(materials);
-	for (const m of materials) exposeCoriolisMaterial(m, divisor);
+	const divisor = exposeStationMaterials(materials);
 	const byName = new Map([...materials].map((m) => [m.name, m]));
 	const maps = new Map<string, THREE.Texture>();
 	for (const m of materials) if (m.map) maps.set(m.map.name, m.map);
@@ -219,7 +199,7 @@ export function createIndustrialCoriolisBuilder(
 				o.material = base;
 				return;
 			}
-			exposeCoriolisMaterial(own, divisor);
+			exposeStationMaterial(own, divisor);
 			const map = maps.get(own.userData.baseColorMap);
 			if (map) {
 				own.map = map;

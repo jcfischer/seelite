@@ -1,9 +1,5 @@
 import * as THREE from "three";
-import {
-	STATION_BEACON_GAIN,
-	isStationBeacon,
-	applyStationKeyLight,
-} from "./station-light";
+import { exposeStationMaterials } from "./station-light";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import {
@@ -12,7 +8,6 @@ import {
 	assemblyInstances,
 } from "./assembly-plan";
 import { shared } from "./gpu-teardown";
-import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
 import { ASSEMBLY_GLB_URL } from "./model-urls";
 import { installAssemblyBlocks, type AssemblyBlocks } from "./station-mesh";
@@ -45,16 +40,7 @@ export function createAssemblyBlocks(kit: THREE.Object3D): AssemblyBlocks {
 					if (value instanceof THREE.Texture) shared(value);
 			}
 		}
-	const divisor = Math.max(
-		1,
-		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
-	);
-	for (const material of materials) {
-		material.emissiveIntensity /= divisor;
-		if (isStationBeacon(material.name))
-			material.emissiveIntensity *= STATION_BEACON_GAIN;
-		applyStationKeyLight(material);
-	}
+	exposeStationMaterials(materials);
 	return (placements, group, spinner) => {
 		const instances = assemblyInstances(placements);
 		for (const { name, meshes } of blocks) {

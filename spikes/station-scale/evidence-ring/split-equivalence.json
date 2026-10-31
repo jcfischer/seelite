@@ -1,0 +1,10 @@
+{
+  "combinedSourceCommit": "f1463396137282e73189618296576ec305d865a3",
+  "combinedSourceSha256": "ee2e7b79313df2d797c0a61c4c3c0a5db4e6c564cd3c8a9320dcb327c29188b1",
+  "baseSha256": "829f7a30198f0a2488ea27688f901c1f95120c859fb1a09a7333f48282c780c2",
+  "detailSha256": "ab082d49de3b94ee62c9eeb76d226e160933b66640f0e6c3a0036cf351db013b",
+  "baseBytes": 5875120,
+  "detailBytes": 14027844,
+  "exactTriangleAttributesAndMaterialInputs": true,
+  "method": "NodeIO Meshopt decode; triangleSoup across both split documents with baseColorMap texture presence restored; deepStrictEqual against the reviewed combined file."
+}
