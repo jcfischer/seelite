@@ -19,12 +19,15 @@ export const SHIPPED_TRADE_FILES = Object.fromEntries(
 		`src/models/trade-${TRADE_MODEL_NAMES[form]}.glb`,
 	]),
 ) as Readonly<Record<AuthoredTradeForm, string>>;
+export const SHIPPED_TRADE_DETAIL_FILES: Readonly<
+	Partial<Record<AuthoredTradeForm, string>>
+> = { b: "src/models/trade-ring-detail.glb" };
 export const tradeModelHash = (form: AuthoredTradeForm) =>
 	createHash("sha256")
 		.update(readFileSync(SHIPPED_TRADE_FILES[form]))
 		.update(
-			form === "b"
-				? readFileSync("src/models/trade-ring-detail.glb")
+			SHIPPED_TRADE_DETAIL_FILES[form]
+				? readFileSync(SHIPPED_TRADE_DETAIL_FILES[form])
 				: Buffer.alloc(0),
 		)
 		.digest("hex");
@@ -45,10 +48,8 @@ export async function installShippedTrades(): Promise<void> {
 				form,
 				await decodeShippedGlb(SHIPPED_TRADE_FILES[form]),
 			);
-			if (form === "b")
-				builder.addDetail(
-					await decodeShippedGlb("src/models/trade-ring-detail.glb"),
-				);
+			const detailFile = SHIPPED_TRADE_DETAIL_FILES[form];
+			if (detailFile) builder.addDetail(await decodeShippedGlb(detailFile));
 			builders.set(form, builder);
 		}
 		installTradeBuilder(form, builder);

@@ -1,0 +1,10 @@
+bun test v1.4.3 (c6da4a4d3)
+
+tests/station-route.test.ts:
+(pass) terminal-to-terminal route projection > station-zone legs stay slow, clear the bubble, and visibly dwell [2692.33ms]
+
+ 1 pass
+ 31 filtered out
+ 0 fail
+ 4 expect() calls
+Ran 1 test across 1 file. [12.71s]

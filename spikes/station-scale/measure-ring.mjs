@@ -11,8 +11,14 @@ import { holdProbeLockOrExit } from "../../scripts/lib/probe-lock.mjs";
 import { assertPlayersRenderer } from "../../scripts/lib/players-renderer.mjs";
 import { installViewFraming } from "../../scripts/lib/view-placement.mjs";
 import { launchChromium } from "../../scripts/probe-guard.mjs";
+import { waitForStationDetail } from "../../scripts/lib/station-detail.mjs";
 
 const roots = [await realpath(process.argv[2]), await realpath(process.cwd())];
+const baselineRef = execFileSync("git", ["rev-parse", process.env.BASE_REF ?? "origin/main"], { encoding: "utf8" }).trim();
+for (const file of ["src/trade-flight.ts", "src/coriolis-flight.ts", "src/models/trade-ring.glb"]) {
+	const expected = execFileSync("git", ["show", `${baselineRef}:${file}`], { maxBuffer: 32 * 1024 * 1024 });
+	if (!expected.equals(await readFile(resolve(roots[0], file)))) throw Error(`baseline differs from ${baselineRef}: ${file}`);
+}
 const out = resolve(process.argv[3] ?? "spikes/station-scale/evidence-ring/cost.json");
 const release = await holdProbeLockOrExit("node-1145-interleaved-cost");
 const servers = [];
@@ -78,6 +84,7 @@ try {
 			g.step(0);
 		});
 		const bytes = await readFile(resolve(root, "src/models/trade-ring.glb"));
+		const detailBytes = i === 1 ? await readFile(resolve(root, "src/models/trade-ring-detail.glb")) : undefined;
 		report.arms.push({
 			name: i === 0 ? "main" : "branch",
 			root,
@@ -85,14 +92,16 @@ try {
 			renderer,
 			assetBytes: bytes.length,
 			assetSha256: createHash("sha256").update(bytes).digest("hex"),
+			detailAssetBytes: detailBytes?.length ?? 0,
+			detailAssetSha256: detailBytes ? createHash("sha256").update(detailBytes).digest("hex") : null,
 			lightingSha256: createHash("sha256").update(await readFile(resolve(root, i === 0 ? "src/coriolis-flight.ts" : "src/station-light.ts"))).digest("hex"),
  sourceSha256: createHash("sha256").update(await readFile(resolve(root, "src/trade-flight.ts"))).digest("hex"),
-			ref: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+			ref: i === 0 ? baselineRef : execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
 		});
 	}
 	for (const framing of ["station-approach", "chase"]) {
 		const facts = [];
-		for (const page of pages) {
+		for (const [arm, page] of pages.entries()) {
 			facts.push(await page.evaluate(async framing => {
 				const g = window.__seelite;
 				const id = "station-trade";
@@ -109,6 +118,20 @@ try {
 				window.__meshOfBody(id).traverse(o => { if (o.visible && o.name.startsWith("scale-detail")) detailMeshes++; });
 				return { rangeKm: range, placement, form: station.formId, detail: station.detail, detailMeshes, buffer: [gl.drawingBufferWidth, gl.drawingBufferHeight], quality: g.settings.value.quality };
 			}, framing));
+			await waitForStationDetail(page);
+			const settled = await page.evaluate(() => {
+				const g = window.__seelite;
+				g.render(0);
+				const parts = [];
+				window.__meshOfBody("station-trade").traverse(o => {
+					if (o.isMesh && o.name.startsWith("scale-detail"))
+						parts.push({ name: o.name, visible: o.visible, triangles: (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3 });
+				});
+				return parts;
+			});
+			if (settled.length !== (arm === 1 ? 7 : 0) || settled.some(o => !o.visible))
+				throw Error(`timing arm ${arm} lacks settled full detail: ${JSON.stringify(settled)}`);
+			Object.assign(facts[arm], { detailMeshes: settled.length, parts: settled });
 		}
 		const times = [[], []];
 		const order = [];

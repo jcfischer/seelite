@@ -32,6 +32,64 @@ The principal's acceptance of the visual result, frame cost, asset size and
 proposed changelog sentence remains pending. Review and the final PR browser
 gate belong to the supervisor. This receipt does not close the node.
 
+## Review round 2 browser correction
+
+The round 1 station-visuals result did not prove deferred Ring attachment.
+The probe measured immediately after entering docking range, while the detail
+download was still pending. An added mesh-count assertion fails on both Ring
+viewports before the readiness wait: zero of seven meshes were attached, even
+though all 92 older checks passed. The retained
+[failing-before run](../../spikes/station-scale/evidence-ring/review2-before-wait.txt)
+records that gap.
+
+The existing station-visuals probe now waits for the production late-detail
+readiness predicate after placement, refuses a load failure, and checks seven
+attached meshes. It also checks all seven remain attached and only draw at
+full detail. This runs through the game's `prepareTradeModel`, `GLTFLoader`
+and `RING_DETAIL_GLB_URL`, without a test decoder or injected builder.
+The hardware run passes
+[100/100 checks](../../spikes/station-scale/evidence-ring/review2-probe-station-visuals.txt):
+seven visible at full, zero visible at reduced and outline, in both viewports.
+The Ring's accessory contribution is 5,265 pixels on desktop and 12,309 on
+narrow. These are functional readings, not performance figures.
+
+The [hull lighting run](../../spikes/station-scale/evidence-ring/review2-probe-light-rig.txt)
+passes 12/12. Its painted-hull peak is 238.21, lower quartile 34.48 and median
+51.70, within the existing bands. No threshold changed.
+
+Trade now imports the Coriolis loader's `DETAIL_RETRY_MS`; the shipped-trade
+helper names the deferred asset in `SHIPPED_TRADE_DETAIL_FILES` for both hashing
+and installation. A shared loader state machine remains outside this correction:
+the two loaders retain their different attachment and material rules.
+Historical logs retain their original bytes. The glossary findings use
+technical homonyms for navigation lamps, process APIs and execution records;
+they do not name the fiction's Pirate relay, Traffic actor or Intervention.
+
+Round 2's 115 affected headless tests pass. Typecheck, format, lint, comment
+lint, wiring and build pass. The full host `npm test` ran once under Bun
+1.4.2: **7,315 pass and one timeout**, across 446 files in 973.75 seconds.
+It is not a green full-suite result. The
+[reported failure](../../spikes/station-scale/evidence-ring/review2-full-timeout.txt)
+is `station-zone legs stay slow, clear the bubble, and visibly dwell` in
+`tests/station-route.test.ts`, at 5,528.35 ms against the default 5,000 ms.
+
+That test file is byte-identical to main. With the same Bun 1.4.2 binary,
+the [main file run](../../spikes/station-scale/evidence-ring/review2-base-station-route-bun142.txt)
+and [branch file run](../../spikes/station-scale/evidence-ring/review2-branch-station-route-bun142.txt)
+both report 31 pass and one timeout on `the actor returns physically and
+requests any fitting home berth`, at 7,004.36 and 6,214.81 ms respectively.
+The original station-zone case passes in those runs at 4,115.41 and 2,138.72 ms;
+its exact full-suite timeout did not reproduce in isolation. The earlier
+[Bun 1.4.3 main file run](../../spikes/station-scale/evidence-ring/review2-base-station-route-bun143.txt)
+passes all 32, but uses a different binary from `npm test`. These results
+record the timeout-sensitive file on both refs, without changing its tests,
+simulation code or time limits. The supervisor retains the full-suite gate.
+
+[Round 2 verification](../../spikes/station-scale/evidence-ring/review2-verification.json)
+retains source and evidence hashes, the full-log hash, the single full-run
+summary and the diagnostic results. Runtime and test sources did not change
+during the full run. Principal acceptance remains pending.
+
 ## Review round 1 correction
 
 The Ring now ships two files. The boot exterior is 5,875,120 bytes, the same
@@ -111,53 +169,62 @@ same command completed on the host outside that sandbox. Tests run on the host.
 
 ## Frame-time receipt
 
-These measurements predate the asset split and apply to the combined-file
-implementation at `f1463396`. The full-detail geometry and material inputs are
-unchanged by the split, but loading and installation were not timed by this
-instrument. This is historical steady-render evidence, not a measurement of
-the final loading path.
+The [post-split hardware run](../../spikes/station-scale/evidence-ring/review2-cost.json)
+replaces the earlier combined-file timing table. It uses the current production
+loading path and refuses to time the branch unless all seven added meshes are
+attached and visible. Both framings record their names and triangle counts,
+not just the readiness flag. The two asset hashes cover the base and deferred
+files separately. Neither loading nor installation latency is timed.
 
-[Raw blocks and provenance](../../spikes/station-scale/evidence-ring/cost.json).
-The main arm is detached `origin/main` at `ec561ec5`; the branch arm is the
-working tree on that base. Asset and runtime-source hashes identify the changed
-arm. Both Vite servers declare their real roots and are guarded independently.
-The main tree has capture declarations overlaid, with no runtime changes.
+The baseline is an archive of `origin/main` at `ec561ec5`.
+[All 758 source, script and build-entry files match that ref](../../spikes/station-scale/evidence-ring/review2-baseline.json).
+The study capture and readiness helper are then copied into the archive; no
+runtime file changes. Both Vite servers declare their real roots and are
+guarded independently. The branch is the working tree on `69395ee5`; its
+recorded runtime hash matches the source committed by this correction.
 
-Apple M1 Pro, macOS arm64, ten CPU cores; ANGLE Metal renderer read back on both
-arms. Seed 42, system 1, real trade B home station, 1440×900 at device scale 1,
-quality high, render scale 100%, zero composer MSAA. Both framings read back
-`form: b`, `detail: full` and the requested range with zero off-axis angle.
-The branch reports seven visible added detail meshes, main zero.
+Apple M1 Pro, macOS arm64, ten CPU cores; ANGLE Metal read back on both arms.
+Seed 42, system 1, real trade B home station, 1440×900 at device scale 1,
+quality high, render scale 100%, zero composer MSAA. Both framings read
+`form: b`, `detail: full`, the requested range and zero off-axis angle.
+The branch has seven visible added meshes, main zero.
 
-The instrument acquires the machine-wide probe lock before opening Chromium
-and releases it after closing both servers. The worker runs neither another
-browser job nor Sage alongside this measurement. The host is busy: start load averages are
-12.71/11.87/14.25; the one-minute reading across timed blocks ranges from 19.05 to 23.90. Each of twelve blocks per arm renders 120 whole frames, after
-ten warm-up renders, with a readPixels drain before and after each timed block.
-Arm order is shuffled within each pair, seed 1145. Automatic frame loops are
-cancelled and the clock is held; simulation and loading are outside the timing.
+The instrument holds the machine-wide probe lock throughout. This worker runs
+no other job or Sage review alongside it. Host load starts at 9.78/7.53/8.60; one-minute
+load readings during blocks range from 10.66 to 11.33. Each of twelve blocks
+per arm renders 120 whole frames after ten warm-up renders, with a readPixels
+drain before and after the timed block. Arm order is shuffled within each
+pair, seed 1145. Automatic frame loops are cancelled and the clock is held;
+simulation and loading are outside the timing.
 
 | Framing | Main median; range (ms/frame) | Branch median; range | Median delta | Branch slower pairs |
 | --- | --- | --- | ---: | ---: |
-| Station approach, 2.25 km | 3.698; 3.381–4.081 | 3.783; 3.595–4.963 | +0.084 | 99/144 |
-| Close chase, 1.028 km | 6.712; 6.242–7.482 | 7.517; 7.214–8.588 | +0.805 | 140/144 |
+| Station approach, 2.25 km | 3.525; 3.403–3.706 | 3.499; 3.390–3.611 | −0.027 | 64/144 |
+| Close chase, 1.028 km | 6.328; 6.168–7.107 | 6.980; 6.916–7.246 | +0.652 | 133/144 |
 
-Submitted whole-frame counts confirm the work ran: approach 676 → 683 calls
-and 3,443,620 → 3,826,896 triangles; chase 1,634 → 1,655 calls and
-10,509,690 → 11,659,518 triangles. No page or shader errors were recorded. The runtime hash matches the reviewed combined-file
-`src/trade-flight.ts` at `f1463396`; per-block timestamps and load readings are retained.
-The initial post-correction attempt refused an invalid timing block and wrote
-no new receipt; the successful rerun is the one above. The
-[earlier pre-correction run](../../spikes/station-scale/evidence-ring/cost-before-lamp-normalisation.json)
-is historical evidence, not the final measurement. This is saturated render throughput through Vite, not player frame latency or
-an FPS promise. Both framing ranges overlap; 99/144 cross-arm approach pairs and 140/144
-chase comparisons put the branch slower. These are all 12×12 cross-arm
-comparisons, not 144 independent matched observations. The CPU/GPU limiter is not isolated, so the benchmark does not
-establish a general performance bound. Reduced/outline keep the geometry and
-draw counts, not a measured guarantee of equal elapsed time under new lighting.
+Submitted counts confirm actual rendering: approach 676 → 683 calls and
+3,443,620 → 3,826,896 triangles; chase 1,634 → 1,655 calls and
+10,509,690 → 11,659,518 triangles. No page, shader or WebGL errors were recorded.
+The approach difference is inside run variation. The close-chase branch is
+slower in 133 of 144 cross-arm comparisons; those are 12×12 comparisons,
+not 144 independent matched observations. This is saturated render throughput
+through Vite, not player frame latency or an FPS promise. The CPU/GPU limiter
+is not isolated, so these figures establish no general performance bound.
+Reduced/outline retain the geometry and draw counts, without an elapsed-time
+claim for their changed lighting.
+
+The [first post-split run](../../spikes/station-scale/evidence-ring/review2-cost-headed-unset.json)
+also read ANGLE Metal on both pages, but its launch environment omitted the
+hardware flag. Its approach delta is +0.402 ms/frame and chase +0.678;
+the approach result changes with the run, while both show a chase cost.
+It is retained separately and is not the table above.
+The [combined-file run](../../spikes/station-scale/evidence-ring/cost.json)
+and [pre-normalisation run](../../spikes/station-scale/evidence-ring/cost-before-lamp-normalisation.json)
+remain historical evidence. Acceptance of the cost and asset size remains
+the principal's decision.
 
 ```sh
-SEELITE_PROBE_RENDERER=hardware node spikes/station-scale/measure-ring.mjs /path/to/main
+SEELITE_PROBE_RENDERER=hardware node spikes/station-scale/measure-ring.mjs /path/to/main spikes/station-scale/evidence-ring/review2-cost.json
 ```
 
 ## Collision cost
@@ -205,9 +272,13 @@ puts main on the left and this branch on the right. It contains the requested
 close, wide, hero and two sun-side views. The capture starts with the study
 script from `spike/station-scale`, with the Ring selector and sun-side rows from
 `spike/ring-scale`; both arms use that identical copy, full-model readiness and
-the hardware lane. Both runs hold the machine probe lock. Their JSON reports
-retain the measured ranges and renderer. No generated target or judge score is
-claimed. These remain study files and add no PR probe.
+the hardware lane. Both were recaptured after review round 2 and hold the
+machine probe lock. The capture now waits for late detail after placement;
+`EXPECT_RING_DETAIL=0` on main and `EXPECT_RING_DETAIL=7` on the branch refuse
+an incomplete frame. Their JSON reports retain measured ranges, renderer and
+the seven visible mesh names on every branch frame. The reproducible sheet is
+built with `node spikes/station-scale/make-ring-sheet.mjs`. No generated target
+or judge score is claimed. These remain study files and add no PR probe.
 
 The [Drum and Assembly lighting controls](../../spikes/station-scale/evidence-ring/trade-light-controls/before-after.png)
 add close approach and sun-side before/after pairs on their real fixtures:
@@ -216,7 +287,9 @@ additional forms covered by the principal's ruling; they do not add geometry
 or stand in for principal acceptance.
 
 The [canonical sheet](../../spikes/station-scale/evidence-ring/views/index.html)
-contains eight before/after pairs. `ring-approach`, `ring-flank` and `ring-range`
+contains eight before/after pairs. The after arm was refreshed through
+`npm run views` after the split; the main before arm is retained.
+`ring-approach`, `ring-flank` and `ring-range`
 declare seed 42, system 1 and cover lever 1145. The existing station rows,
 `hull-chase` and `cockpit-backlit` remain controls. The new fixture and view
 declarations have a failing-before headless test. Both manifests retain actual

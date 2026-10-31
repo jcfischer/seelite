@@ -1,13 +1,13 @@
 {
 	"label": "after",
-	"gitRef": "ec561ec5-dirty",
+	"gitRef": "69395ee5-dirty",
 	"served": {
 		"root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145",
-		"head": "ec561ec59834003da9e3a2164c440e82400dd9df",
+		"head": "69395ee5d8ff6bab416dd9d3329ec189ba2b0c59",
 		"branch": "node/1145-bring-the-station-scale-detail-and-lighting-to-t",
 		"dirty": true
 	},
-	"capturedAt": "2026-10-31T10:11:03.501Z",
+	"capturedAt": "2026-10-31T12:17:24.085Z",
 	"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
 	"seed": 47,
 	"quality": "default",
@@ -26,49 +26,49 @@
 			"name": "cockpit-backlit",
 			"file": "after/cockpit-backlit.png",
 			"subject": "station-trade",
-			"gameTime": 0.4363000000417234
+			"gameTime": 0.42909999996423737
 		},
 		{
 			"name": "ring-approach",
 			"file": "after/ring-approach.png",
 			"subject": "station-trade",
-			"gameTime": 0.9137000000476836
+			"gameTime": 0.7923000000417231
 		},
 		{
 			"name": "ring-flank",
 			"file": "after/ring-flank.png",
 			"subject": "station-trade",
-			"gameTime": 1.269500000029802
+			"gameTime": 1.1558000000417228
 		},
 		{
 			"name": "ring-range",
 			"file": "after/ring-range.png",
 			"subject": "station-trade",
-			"gameTime": 1.5700000000298018
+			"gameTime": 1.4392000000476832
 		},
 		{
 			"name": "station-approach",
 			"file": "after/station-approach.png",
 			"subject": "station-trade",
-			"gameTime": 0.5641999999880791
+			"gameTime": 0.5983000000119207
 		},
 		{
 			"name": "station-flank",
 			"file": "after/station-flank.png",
 			"subject": "station-trade",
-			"gameTime": 0.8476999999880789
+			"gameTime": 0.8630999999940392
 		},
 		{
 			"name": "station-range",
 			"file": "after/station-range.png",
 			"subject": "station-trade",
-			"gameTime": 1.1809999999999996
+			"gameTime": 1.182099999994039
 		},
 		{
 			"name": "hull-chase",
 			"file": "after/hull-chase.png",
 			"subject": "planet-5",
-			"gameTime": 1.5142000000178812
+			"gameTime": 1.5153999999761578
 		}
 	]
 }

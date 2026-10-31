@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { DETAIL_RETRY_MS } from "./coriolis-flight";
 import { exposeStationMaterial, exposeStationMaterials } from "./station-light";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -102,7 +103,7 @@ export function createTradeBuilder(
 			})
 			.catch((error: unknown) => {
 				failure = error;
-				retryAt = now() + 10_000;
+				retryAt = now() + DETAIL_RETRY_MS;
 			})
 			.finally(() => {
 				pending = false;
