@@ -98,3 +98,39 @@ The following evidence checks merge commit `2a24bbd6` against `origin/main`
 The selector expands this branch to all 117 probes because of the catalog
 metadata change. The worker contract reserves that final gate for the
 supervisor; this recheck runs only the affected probe.
+
+## Plume size (2026-10-30, after the principal's review)
+
+The principal rejected the `node-1094-merged` capture: the plumes were too big.
+`PLUME_REACH` sized every plume as a share of the hull's length, so the main
+drive reached 0.45 of the hull per bell: 38.0 m from each of the miner's 3.8 m
+bells, with attitude puffs of 15.2 m. Reach is now counted in nozzle
+diameters: three of a main throat's own bell, and 1.2 to 1.6 of the hull's mean
+bell for every other vent. Every hull's plumes shrink except the tug's, whose
+9.3 m bells give a 27.8 m main plume against 25.5 m before.
+
+| Hull | Main plume, before → after | Attitude puff, before → after |
+| --- | --- | --- |
+| miner | 38.0 → 11.4 m | 15.2 → 4.6 m |
+| courier | 25.9 → 17.3 m | 10.3 → 6.9 m |
+| tug | 25.5 → 27.8 m | 10.2 → 11.1 m |
+| voyager | 86.0 → 20.2 m | 34.4 → 6.3 m |
+
+- A new row in `tests/vent-plumes.test.ts` fails on the old sizing and passes
+  now: the miner's main plume is under a sixth of its length, and no hull's
+  passes half.
+- The affected test files pass: 95 tests. Typecheck, formatting and comment lint
+  pass; one suppression the removed `bellCentres` comment held is pruned.
+- `npm run probe:one -- probe-model-queue` passes on the M1 Pro Metal GPU. This
+  is one affected probe, not the selected PR gate.
+- The capture `view-set/selected/node-1094-nozzle/miner-vent-plumes.png`
+  shows short jets at both bells and attitude puffs on the hull. **The
+  principal approved it on 2026-10-30.**
+
+On the installed Longwall every throat meets the metal (gap 0 m). The
+procedural stand-in, drawn until the model loads, keeps its fore and aft yaw and
+pitch throats up to 5 m off its hull, at the closest approach of their lines of
+action, as `flight-model.md` §3.8.1 rules. The principal chose to leave them so.
+
+The `/tmp` logs the sections above cite were removed by the host before this
+section was written.
