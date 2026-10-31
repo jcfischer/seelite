@@ -1,12 +1,9 @@
+import { stationLightsChunk, isStationBeacon } from "../src/station-light";
 import { test, expect } from "bun:test";
 import { EMISSIVE_CEILING, EXPOSURE } from "../src/light-rig";
 import * as THREE from "three";
 import { makeWorldAtSystem } from "../src/sim";
-import {
-	coriolisLightsChunk,
-	createIndustrialCoriolisBuilder,
-	isCoriolisBeacon,
-} from "../src/coriolis-flight";
+import { createIndustrialCoriolisBuilder } from "../src/coriolis-flight";
 import { buildStationMesh, installCoriolisBuilder } from "../src/station-mesh";
 import { STATION_GEOMETRY } from "../src/station";
 
@@ -188,7 +185,7 @@ test("only exact Coriolis navigation material names receive the ruled exposure e
 		const navigation = ["navigation-red", "navigation-green"].includes(
 			material.name,
 		);
-		expect(isCoriolisBeacon(material.name)).toBe(navigation);
+		expect(isStationBeacon(material.name)).toBe(navigation);
 		expect(material.emissiveIntensity).toBe(navigation ? 8 : EMISSIVE_CEILING);
 	}
 	station.dispose();
@@ -203,7 +200,7 @@ test("the shipped Coriolis exceeds the shared ceiling only on its two ruled navi
 	for (const material of materials) {
 		expect(Number.isFinite(material.emissiveIntensity)).toBe(true);
 		expect(material.emissiveIntensity).toBeGreaterThanOrEqual(0);
-		if (isCoriolisBeacon(material.name)) {
+		if (isStationBeacon(material.name)) {
 			exceptions.push(material.name);
 			expect(material.emissiveIntensity).toBeCloseTo(4.8);
 			expect(material.emissiveIntensity).toBeLessThanOrEqual(8);
@@ -371,10 +368,10 @@ test("Coriolis shader compiles with the ruled station-only key and ambient gains
 		"irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );",
 	]) {
 		expect(() =>
-			coriolisLightsChunk(
+			stationLightsChunk(
 				THREE.ShaderChunk.lights_fragment_begin.replace(marker, ""),
 			),
-		).toThrow("Coriolis");
+		).toThrow("Station");
 	}
 	const unaffected = new THREE.MeshStandardMaterial();
 	const shader = { ...THREE.ShaderLib.standard, uniforms: {} };
@@ -437,7 +434,7 @@ test("every added scale-detail mesh draws only at full; baseline geometry and ga
 			!(o.material instanceof THREE.MeshStandardMaterial)
 		)
 			return;
-		if (isCoriolisBeacon(o.material.name)) beacons.add(o.material);
+		if (isStationBeacon(o.material.name)) beacons.add(o.material);
 	});
 	expect([...beacons].map((m) => m.name).sort()).toEqual([
 		"navigation-green",

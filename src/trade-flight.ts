@@ -1,4 +1,9 @@
 import * as THREE from "three";
+import {
+	STATION_BEACON_GAIN,
+	isStationBeacon,
+	applyStationKeyLight,
+} from "./station-light";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { disposeSubtree, shared } from "./gpu-teardown";
@@ -47,9 +52,18 @@ export function createTradeBuilder(
 	});
 	const divisor = Math.max(
 		1,
-		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
+		...[...materials]
+			.filter((m) => !isStationBeacon(m.name))
+			.map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
-	for (const m of materials) m.emissiveIntensity /= divisor;
+	for (const m of materials) {
+		const beacon = isStationBeacon(m.name);
+		m.emissiveIntensity /= beacon
+			? Math.max(divisor, m.emissiveIntensity / EMISSIVE_CEILING)
+			: divisor;
+		if (beacon) m.emissiveIntensity *= STATION_BEACON_GAIN;
+		applyStationKeyLight(m);
+	}
 	template.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		shared(o.geometry);
@@ -69,7 +83,8 @@ export function createTradeBuilder(
 		model.scale.setScalar(0.001);
 		model.traverse((o) => {
 			if (!(o instanceof THREE.Mesh)) return;
-			if (o.name.includes("amber-lamp")) o.name = "windows";
+			if (o.name.includes("amber-lamp") && o.userData.minDetail !== "full")
+				o.name = "windows";
 			else if (o.name === "staticcladding-armour-0") o.name = "core";
 		});
 		exterior.add(model);

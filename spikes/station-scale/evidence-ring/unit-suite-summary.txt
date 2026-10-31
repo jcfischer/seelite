@@ -1,0 +1,44 @@
+One host npm test invocation; source was corrected while this runner was active.
+107 | 		for (const m of Array.isArray(o.material) ? o.material : [o.material])
+108 | 			if (m instanceof THREE.MeshStandardMaterial)
+109 | 				intensities.set(m.name, m.emissiveIntensity);
+110 | 	});
+111 | 	expect(intensities.get("amber-lamp")).toBe(1);
+                                             ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0.6666666666666666
+
+      at <anonymous> (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/tests/ring-scale-detail.test.ts:111:40)
+(fail) the new Ring beacons do not dim its approved amber lamps and work floods [314.42ms]
+
+tests/public-site.test.ts:
+(pass) the quiet public threshold > names exactly the approved static destinations [6.69ms]
+
+(pass) the excerpt runs between 40 and 100 seconds [0.03ms]
+
+1 tests failed:
+(fail) the new Ring beacons do not dim its approved amber lamps and work floods [314.42ms]
+
+ 7312 pass
+ 1 fail
+ 17073889 expect() calls
+Ran 7313 tests across 445 files. [933.03s]
+
+
+Fresh-process corrected-code check:
+
+tests/ring-scale-detail.test.ts:
+(pass) Ring scale detail is separate from the approved baseline and hidden below full [249.41ms]
+(pass) trade/b: the ruled station key light reaches the compiled exterior shader [217.68ms]
+(pass) trade/c: the ruled station key light reaches the compiled exterior shader [32.75ms]
+(pass) trade/d: the ruled station key light reaches the compiled exterior shader [1.98ms]
+(pass) trade/e: the ruled station key light reaches the compiled exterior shader [50.04ms]
+(pass) Ring red and green beacons cross the bloom threshold while its other lamps keep the ceiling [202.11ms]
+(pass) the new Ring beacons do not dim its approved amber lamps and work floods [204.74ms]
+
+ 30 pass
+ 0 fail
+ 504 expect() calls
+Ran 30 tests across 4 files. [18.66s]

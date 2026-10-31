@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "station": "station-trade",
+    "hull": "courier"
+  },
+  "report": [
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-03-face-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.6903506330712831,
+      "camToShipKm": 0.36373066888370476,
+      "camToStationKm": 1.036187238198465,
+      "planeKm": 0.428
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-04-wide.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7761984293913134,
+      "camToShipKm": 2.7699277932568913,
+      "camToStationKm": 3.2056799562444307,
+      "planeKm": 0.428
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-06-hero.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.5799172339024816,
+      "camToShipKm": 0.5177837423552352,
+      "camToStationKm": 1.0690575289740487,
+      "planeKm": 0.428
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-07-sun-wide.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7542545968341878,
+      "camToShipKm": 1.4540656450652196,
+      "camToStationKm": 2.1483187995490303,
+      "planeKm": 0.428
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-08-sun-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7045566009354518,
+      "camToShipKm": 0.3856517154661734,
+      "camToStationKm": 1.0361669045094526,
+      "planeKm": 0.428
+    }
+  ]
+}

@@ -1,0 +1,314 @@
+{
+  "startedAt": "2026-10-31T09:49:42.793Z",
+  "load": [
+    13.91650390625,
+    22.90087890625,
+    20.32421875
+  ],
+  "cpus": 10,
+  "frames": 120,
+  "blocks": 12,
+  "orderSeed": 1145,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 1,
+  "method": "Vite dev trees; synchronous whole-frame render throughput, one readPixels drain per 120 frames; no simulated step, both automatic frame loops cancelled after settled boot; hardware; high, 100%, no MSAA",
+  "arms": [
+    {
+      "name": "main",
+      "root": "/private/tmp/seelite-node-1145-main",
+      "served": {
+        "root": "/private/tmp/seelite-node-1145-main",
+        "head": "ec561ec59834003da9e3a2164c440e82400dd9df",
+        "branch": "HEAD",
+        "dirty": true
+      },
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "assetBytes": 5875120,
+      "assetSha256": "16e59c914e5c9e229636f839a15fff616b40b0b10fc16613cec4f530521e2a05",
+      "lightingSha256": "dc3c3c3ea4c02a37f648b7d893b195af2b80edea80a4702abd1897e7c370e8b4",
+      "sourceSha256": "a391ab455cf940c12d680c4d1b5dda22b118cf40fae4b768c9309bd798c3252c",
+      "ref": "ec561ec59834003da9e3a2164c440e82400dd9df"
+    },
+    {
+      "name": "branch",
+      "root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145",
+      "served": {
+        "root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145",
+        "head": "ec561ec59834003da9e3a2164c440e82400dd9df",
+        "branch": "node/1145-bring-the-station-scale-detail-and-lighting-to-t",
+        "dirty": true
+      },
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "assetBytes": 19901304,
+      "assetSha256": "ee2e7b79313df2d797c0a61c4c3c0a5db4e6c564cd3c8a9320dcb327c29188b1",
+      "lightingSha256": "6f6927df7641a678b94b71c7902b15e532c5963fc0d5c682a2f9cd244d8d5110",
+      "sourceSha256": "cf8631cf48227a8856a54980178c77a050c4ad3b9775d60b50ef3f27e8208590",
+      "ref": "ec561ec59834003da9e3a2164c440e82400dd9df"
+    }
+  ],
+  "results": [
+    {
+      "framing": "station-approach",
+      "facts": [
+        {
+          "rangeKm": 2.25,
+          "placement": {
+            "askedKm": 2.25,
+            "actualKm": 2.2500000001529252,
+            "offAxisDeg": 0
+          },
+          "form": "b",
+          "detail": "full",
+          "detailMeshes": 0,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high"
+        },
+        {
+          "rangeKm": 2.25,
+          "placement": {
+            "askedKm": 2.25,
+            "actualKm": 2.2500000001529252,
+            "offAxisDeg": 0
+          },
+          "form": "b",
+          "detail": "full",
+          "detailMeshes": 7,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high"
+        }
+      ],
+      "order": [
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1
+      ],
+      "times": [
+        [
+          3.5416666666666665,
+          3.5483333334326743,
+          3.485000000149012,
+          3.359999999900659,
+          3.495833333333333,
+          3.525,
+          3.415000000099341,
+          3.3924999999503296,
+          4.145833333333333,
+          3.5133333332836627,
+          3.4674999999503293,
+          3.267500000198682
+        ],
+        [
+          3.569166666517655,
+          9.944166666766007,
+          3.466666666666667,
+          3.500833333283663,
+          3.544166666766008,
+          4.593333333233992,
+          3.7608333334326742,
+          3.701666666815678,
+          3.6616666664679847,
+          3.703333333383004,
+          3.496666666616996,
+          3.478333333134651
+        ]
+      ],
+      "counters": [
+        {
+          "frame": 34252,
+          "calls": 676,
+          "triangles": 3443620,
+          "points": 4565,
+          "lines": 0
+        },
+        {
+          "frame": 34955,
+          "calls": 683,
+          "triangles": 3826896,
+          "points": 4565,
+          "lines": 0
+        }
+      ],
+      "medians": [
+        3.4904166667411722,
+        3.61541666649282
+      ],
+      "ranges": [
+        [
+          3.267500000198682,
+          4.145833333333333
+        ],
+        [
+          3.466666666666667,
+          9.944166666766007
+        ]
+      ],
+      "branchSlowerPairs": "112/144 (78%)"
+    },
+    {
+      "framing": "chase",
+      "facts": [
+        {
+          "rangeKm": 1.028,
+          "placement": {
+            "askedKm": 1.028,
+            "actualKm": 1.027999998494797,
+            "offAxisDeg": 0
+          },
+          "form": "b",
+          "detail": "full",
+          "detailMeshes": 0,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high"
+        },
+        {
+          "rangeKm": 1.028,
+          "placement": {
+            "askedKm": 1.028,
+            "actualKm": 1.027999998494797,
+            "offAxisDeg": 0
+          },
+          "form": "b",
+          "detail": "full",
+          "detailMeshes": 7,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high"
+        }
+      ],
+      "order": [
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "times": [
+        [
+          6.541666666666667,
+          6.258333333333334,
+          6.529166666666667,
+          6.581666666517655,
+          6.329166666666667,
+          6.215000000099341,
+          6.171666666616996,
+          6.290833333383004,
+          6.1908333333830035,
+          6.335833333184322,
+          6.224166666467984,
+          6.314999999850988
+        ],
+        [
+          7.272500000149011,
+          7.200833333283663,
+          7.446666666865349,
+          7.210000000149011,
+          7.053333333134651,
+          7.17000000004967,
+          7.061666666716337,
+          7.109166666616996,
+          7.070000000049671,
+          7.197499999900659,
+          7.241666666666666,
+          7.526666666567325
+        ]
+      ],
+      "counters": [
+        {
+          "frame": 72215,
+          "calls": 1634,
+          "triangles": 10509690,
+          "points": 4565,
+          "lines": 0
+        },
+        {
+          "frame": 72918,
+          "calls": 1655,
+          "triangles": 11659518,
+          "points": 4565,
+          "lines": 0
+        }
+      ],
+      "medians": [
+        6.302916666616996,
+        7.199166666592161
+      ],
+      "ranges": [
+        [
+          6.171666666616996,
+          6.581666666517655
+        ],
+        [
+          7.053333333134651,
+          7.526666666567325
+        ]
+      ],
+      "branchSlowerPairs": "144/144 (100%)"
+    }
+  ],
+  "hardware": {
+    "model": "Apple M1 Pro",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "errors": [],
+  "finishedAt": "2026-10-31T09:50:55.155Z",
+  "finalLoad": [
+    12.43603515625,
+    20.91943359375,
+    19.7978515625
+  ]
+}
