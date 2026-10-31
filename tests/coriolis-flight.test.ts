@@ -250,70 +250,15 @@ test("shipped flight asset and production bay obey collision, reach, detail and 
 	for (const seed of [0, 1, 7]) {
 		const mesh = build(seed, 0x9aa6b2);
 		const other = build(seed + 1, 0x9aa6b2);
-		const outside = verticesOutsideProxy(
-			mesh,
-			"trade",
-			proxy,
-			opening,
-			PROXY_VERTEX_TOLERANCE_KM,
-		);
-		if (outside.length > 0) {
-			const bad = (a: ArrayLike<number>) => {
-				let n = 0;
-				for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) n++;
-				return n;
-			};
-			for (let pass = 0; pass < 2; pass++) {
-				const again = extractVertices(mesh, "trade");
-				const nan = again.filter((x) => !Number.isFinite(x.v.x));
-				console.log(
-					"DIAG4 pass",
-					pass,
-					"vertices",
-					again.length,
-					"nan",
-					nan.length,
-					"names",
-					[...new Set(nan.map((x) => x.name))].join(","),
-					"firstIndex",
-					again.findIndex((x) => !Number.isFinite(x.v.x)),
-				);
-			}
-			mesh.root.traverse((o) => {
-				if (o.name !== "scale-detail-maintenance-white") return;
-				const m = (o as THREE.Mesh).matrixWorld.elements;
-				const arr = (o as THREE.Mesh).geometry.getAttribute("position").array;
-				let manual = 0;
-				for (let i = 0; i < arr.length; i += 3) {
-					const x =
-						arr[i] * m[0] + arr[i + 1] * m[4] + arr[i + 2] * m[8] + m[12];
-					if (!Number.isFinite(x)) manual++;
-				}
-				console.log("DIAG4 manual nan", manual);
-			});
-			mesh.root.traverse((o) => {
-				if (!(o instanceof THREE.Mesh)) return;
-				const arr = o.geometry.getAttribute("position").array as Float32Array;
-				console.log(
-					"DIAG3",
-					seed,
-					o.name,
-					"pos",
-					bad(arr),
-					"of",
-					arr.length,
-					"buffer",
-					arr.buffer.byteLength,
-					"offset",
-					arr.byteOffset,
-					"matrix",
-					bad(o.matrixWorld.elements),
-					"first",
-					[arr[0], arr[1], arr[2]].join(","),
-				);
-			});
-		}
-		expect(outside).toEqual([]);
+		expect(
+			verticesOutsideProxy(
+				mesh,
+				"trade",
+				proxy,
+				opening,
+				PROXY_VERTEX_TOLERANCE_KM,
+			),
+		).toEqual([]);
 		const vertices = extractVertices(mesh, "trade");
 		expect(vertices.length).toBeGreaterThan(100_000);
 		expect(
