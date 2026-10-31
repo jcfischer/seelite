@@ -263,6 +263,34 @@ test("shipped flight asset and production bay obey collision, reach, detail and 
 				for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) n++;
 				return n;
 			};
+			for (let pass = 0; pass < 2; pass++) {
+				const again = extractVertices(mesh, "trade");
+				const nan = again.filter((x) => !Number.isFinite(x.v.x));
+				console.log(
+					"DIAG4 pass",
+					pass,
+					"vertices",
+					again.length,
+					"nan",
+					nan.length,
+					"names",
+					[...new Set(nan.map((x) => x.name))].join(","),
+					"firstIndex",
+					again.findIndex((x) => !Number.isFinite(x.v.x)),
+				);
+			}
+			mesh.root.traverse((o) => {
+				if (o.name !== "scale-detail-maintenance-white") return;
+				const m = (o as THREE.Mesh).matrixWorld.elements;
+				const arr = (o as THREE.Mesh).geometry.getAttribute("position").array;
+				let manual = 0;
+				for (let i = 0; i < arr.length; i += 3) {
+					const x =
+						arr[i] * m[0] + arr[i + 1] * m[4] + arr[i + 2] * m[8] + m[12];
+					if (!Number.isFinite(x)) manual++;
+				}
+				console.log("DIAG4 manual nan", manual);
+			});
 			mesh.root.traverse((o) => {
 				if (!(o instanceof THREE.Mesh)) return;
 				const arr = o.geometry.getAttribute("position").array as Float32Array;
