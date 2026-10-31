@@ -27,31 +27,6 @@ const anyFiring = (firing: VentLevels): boolean => {
 	return false;
 };
 
-/**
- * `buildVentPlumes` for a root that may already be placed. The throats are
- * measured in the root's **own** frame (`ventThroats`), so the transform and
- * the parent are set aside for the measurement and put back after it.
- */
-function buildUnplaced(root: THREE.Object3D, hull: HullId): VentPlumes {
-	const parent = root.parent;
-	const position = root.position.clone();
-	const quaternion = root.quaternion.clone();
-	const scale = root.scale.clone();
-	parent?.remove(root);
-	root.position.set(0, 0, 0);
-	root.quaternion.identity();
-	root.scale.set(1, 1, 1);
-	try {
-		return buildVentPlumes(root, hull);
-	} finally {
-		root.position.copy(position);
-		root.quaternion.copy(quaternion);
-		root.scale.copy(scale);
-		parent?.add(root);
-		root.updateMatrixWorld(true);
-	}
-}
-
 export class NpcPlumes {
 	private readonly sets = new Map<THREE.Object3D, VentPlumes>();
 	private readonly drawn = new Set<THREE.Object3D>();
@@ -70,7 +45,7 @@ export class NpcPlumes {
 		let set = this.sets.get(root);
 		if (!set) {
 			if (!root.parent || !root.visible || !anyFiring(firing)) return 0;
-			set = buildUnplaced(root, hull);
+			set = buildVentPlumes(root, hull);
 			this.sets.set(root, set);
 		}
 		const object = set.object;

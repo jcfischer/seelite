@@ -192,3 +192,31 @@ describe("a puff leaves its throat and thins", () => {
 			expect(ages[i] - ages[i - 1]).toBeCloseTo(1 / PLUME_PARTICLES, 9);
 	});
 });
+
+describe("a plume is sized by its nozzle, not by its hull's length (node #1094)", () => {
+	test("the miner's main plume is shorter than a sixth of its hull, and no hull's passes half", () => {
+		for (const id of HULL_IDS) {
+			const lengthKm = HULL_SPECS[id].env.lengthKm;
+			const main = ventThroats(rootOf(id), id).filter(
+				(t) => t.family === "main",
+			);
+			expect(main.length).toBeGreaterThan(0);
+			for (const t of main)
+				expect([id, t.reachKm < lengthKm / 2]).toEqual([id, true]);
+			if (id === "miner")
+				for (const t of main) expect(t.reachKm).toBeLessThan(lengthKm / 6);
+		}
+	}, 60_000);
+
+	test("an attitude puff is shorter than its hull's main plume", () => {
+		for (const id of HULL_IDS) {
+			const throats = ventThroats(rootOf(id), id);
+			const main = Math.min(
+				...throats.filter((t) => t.family === "main").map((t) => t.reachKm),
+			);
+			for (const t of throats)
+				if (t.family !== "main")
+					expect([id, t.slot, t.reachKm < main]).toEqual([id, t.slot, true]);
+		}
+	}, 60_000);
+});

@@ -9,6 +9,7 @@ import {
 import { gameUrl } from "./lib/game-url.mjs";
 import { probeTradeModels } from "./lib/trade-model-probe.mjs";
 import { MODEL_QUEUE_HOME } from "./lib/trade-model-fixtures.mjs";
+import { probeMinerVents } from "./lib/miner-vent-probe.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
@@ -146,6 +147,10 @@ try {
 			);
 		}),
 	);
+	await probeMinerVents(miner, { check, label: "stand-in" });
+	await miner.screenshot({
+		path: "probe-shots/model-queue/miner-stand-in.png",
+	});
 	releaseMiner();
 	await miner.waitForFunction(
 		() => window.__seelite.modelsSettled(),
@@ -166,6 +171,10 @@ try {
 		}, minerRoot),
 	);
 	await minerRoot.dispose();
+	await probeMinerVents(miner, { check, label: "installed Longwall" });
+	await miner.screenshot({
+		path: "probe-shots/model-queue/miner-installed.png",
+	});
 	await miner.close();
 
 	const failed = await browser.newPage();

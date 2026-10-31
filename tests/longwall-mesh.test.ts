@@ -42,7 +42,8 @@ import {
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
-import { ventThroats } from "../src/vent-plumes";
+import { buildVentPlumes, ventThroats } from "../src/vent-plumes";
+import { NpcPlumes } from "../src/npc-plumes";
 import { installShippedLongwall } from "../scripts/lib/install-longwall";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import {
@@ -196,6 +197,71 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 });
 
 describe("the drives glow inside their own rings", () => {
+	test.each([false, true])(
+		"a placed miner keeps local drive and attitude throats (installed: %s)",
+		async (installed) => {
+			installLongwallModel(null);
+			try {
+				const root = buildShipMesh("miner", "b").root;
+				const scene = new THREE.Group();
+				scene.position.set(4, -3, 2);
+				scene.rotation.set(0.2, -0.3, 0.4);
+				scene.add(root);
+				const localThroats = () => {
+					const own = buildShipMesh("miner", "b").root;
+					try {
+						return ventThroats(own, "miner");
+					} finally {
+						disposeSubtree(own);
+					}
+				};
+				const npc = new NpcPlumes();
+				const firing = { main: 1, "fore-port-lateral": 1 };
+				const checkPlaced = () => {
+					const expected = localThroats();
+					root.position.set(0.11, -0.08, 0.04);
+					root.rotation.set(0.3, 2.8, -0.2);
+					root.scale.setScalar(0.7);
+					scene.updateMatrixWorld(true);
+					const matrix = root.matrixWorld.clone();
+					const plumes = buildVentPlumes(root, "miner");
+					expect(root.parent).toBe(scene);
+					expect(root.matrixWorld.equals(matrix)).toBe(true);
+					expect(plumes.throats).toHaveLength(expected.length);
+					for (const [i, throat] of plumes.throats.entries()) {
+						expect(throat.slot).toBe(expected[i].slot);
+						expect(throat.at.distanceTo(expected[i].at)).toBeLessThan(1e-9);
+						expect(throat.exhaust.distanceTo(expected[i].exhaust)).toBeLessThan(
+							1e-12,
+						);
+					}
+					const bells = meshesOf(root).filter(isDriveBell);
+					expect(bells.length).toBeGreaterThan(0);
+					expect(
+						plumes.throats.filter((t) => t.placed === "bell"),
+					).toHaveLength(bells.length);
+					expect(plumes.update(firing, 1.5)).toBe(bells.length + 1);
+					npc.draw(root, "miner", firing, 1.5);
+					expect(npc.of(root)?.throats).toEqual(plumes.throats);
+					npc.forget(root);
+					plumes.object.geometry.dispose();
+				};
+				if (installed) {
+					root.position.set(0.11, -0.08, 0.04);
+					root.rotation.set(0.3, 2.8, -0.2);
+					await installShippedLongwall();
+					expect(rebuildAuthoredStandIn(root)).toBe(true);
+					expect(root.userData.authored).toBe(true);
+				}
+				checkPlaced();
+				disposeSubtree(root);
+			} finally {
+				await installShippedLongwall();
+			}
+		},
+		60_000,
+	);
+
 	test("each glow is a disc in a bore the model leaves open", async () => {
 		// Measured off the export, model metres: the ring material near each
 		// drive's aft face stands at least `boreRadius` from the drive's axis,

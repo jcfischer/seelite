@@ -69,17 +69,21 @@ export interface Throat {
 	gapKm: number;
 }
 
-/** A plume's length at full level, as a fraction of the hull's length. The
- *  main drive throws the longest; a translation or attitude vent a short puff,
- *  which is what reads as a thruster rather than as a second drive. */
+/** A plume's length at full level, in nozzle diameters (node #1094). A main
+ *  throat's nozzle is its own bell; every other vent takes the hull's mean
+ *  bell, so a puff scales with the hardware that throws it, not with the hull's
+ *  length. The main drive throws the longest; a translation or attitude vent a
+ *  short puff, which is what reads as a thruster rather than as a second drive. */
 export const PLUME_REACH: Readonly<Record<VentFamily, number>> = {
-	main: 0.45,
-	retro: 0.22,
-	strafe: 0.2,
-	pitch: 0.18,
-	yaw: 0.18,
-	roll: 0.18,
+	main: 3,
+	retro: 1.6,
+	strafe: 1.4,
+	pitch: 1.2,
+	yaw: 1.2,
+	roll: 1.2,
 };
+
+const NOZZLE_OF_LENGTH = 0.08;
 
 /** How long one puff lives, seconds of game clock. */
 export const PLUME_LIFE_S: Readonly<Record<VentFamily, number>> = {
@@ -140,9 +144,10 @@ export function plumeParticle(
  * Every throat of a built hull. Read off the mesh once, at build: where each
  * vent's line of action leaves the metal, or where the drive bells are.
  *
- * `root` is the hull's own root as `buildShipMesh` returned it, with no
- * transform applied. Its box centre is the hull frame's origin — the table's
- * positions are measured from the envelope's centre (`hull.ts`), and the mesh
+ * `root` may already be placed: its pose and parent are set aside during
+ * measurement and restored afterwards. Its box centre is the hull frame's
+ * origin — the table's positions are measured from the envelope's centre
+ * (`hull.ts`), and the mesh
  * origin is not that centre on every hull.
  */
 export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
@@ -211,6 +216,29 @@ function* measureThroatSteps(
 	root: THREE.Object3D,
 	id: HullId,
 ): Generator<void, Throat[]> {
+	const parent = root.parent;
+	const position = root.position.clone();
+	const quaternion = root.quaternion.clone();
+	const scale = root.scale.clone();
+	root.removeFromParent();
+	root.position.set(0, 0, 0);
+	root.quaternion.identity();
+	root.scale.set(1, 1, 1);
+	try {
+		return yield* measureUnplacedThroatSteps(root, id);
+	} finally {
+		root.position.copy(position);
+		root.quaternion.copy(quaternion);
+		root.scale.copy(scale);
+		parent?.add(root);
+		root.updateWorldMatrix(true, true);
+	}
+}
+
+function* measureUnplacedThroatSteps(
+	root: THREE.Object3D,
+	id: HullId,
+): Generator<void, Throat[]> {
 	const spec = HULL_SPECS[id];
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
@@ -265,18 +293,23 @@ function* measureThroatSteps(
 
 	const caster = new THREE.Raycaster();
 	const throats: Throat[] = [];
+	const glows = bellGlows(bells);
+	const nozzleKm =
+		glows.length > 0
+			? glows.reduce((sum, g) => sum + g.diameterKm, 0) / glows.length
+			: NOZZLE_OF_LENGTH * lengthKm;
 	for (const vent of spec.vents) {
 		const dir = new THREE.Vector3(...vent.dir);
 		const exhaust = dir.clone().negate();
-		const reachKm = PLUME_REACH[vent.family] * lengthKm;
-		if (vent.family === "main" && bells.length > 0) {
-			for (const at of bellCentres(bells))
+		const reachKm = PLUME_REACH[vent.family] * nozzleKm;
+		if (vent.family === "main" && glows.length > 0) {
+			for (const { at, diameterKm } of glows)
 				throats.push({
 					slot: vent.slot,
 					family: vent.family,
 					at,
 					exhaust: exhaust.clone(),
-					reachKm,
+					reachKm: PLUME_REACH.main * diameterKm,
 					placed: "bell",
 					gapKm: 0,
 				});
@@ -305,14 +338,19 @@ function* measureThroatSteps(
 	return throats;
 }
 
-/** The centre of each drive bell's glow, in the root's frame. */
-function bellCentres(bells: readonly THREE.Mesh[]): THREE.Vector3[] {
+function bellGlows(
+	bells: readonly THREE.Mesh[],
+): { at: THREE.Vector3; diameterKm: number }[] {
 	return bells.map((bell) => {
 		bell.geometry.computeBoundingBox();
-		return (bell.geometry.boundingBox as THREE.Box3)
+		const box = (bell.geometry.boundingBox as THREE.Box3)
 			.clone()
-			.applyMatrix4(bell.matrixWorld)
-			.getCenter(new THREE.Vector3());
+			.applyMatrix4(bell.matrixWorld);
+		const size = box.getSize(new THREE.Vector3());
+		return {
+			at: box.getCenter(new THREE.Vector3()),
+			diameterKm: Math.max(size.x, size.y),
+		};
 	});
 }
 
@@ -414,7 +452,7 @@ function material(): THREE.ShaderMaterial {
 	return plumeMaterial;
 }
 
-/** Build the plume set for a hull whose root `buildShipMesh` just returned. */
+/** Build plumes in the hull's local frame, even if its root is already placed. */
 export function buildVentPlumes(root: THREE.Object3D, id: HullId): VentPlumes {
 	const throats = ventThroats(root, id);
 	const count = throats.length * PER_THROAT;
