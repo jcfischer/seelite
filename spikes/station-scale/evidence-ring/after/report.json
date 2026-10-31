@@ -9,46 +9,196 @@
       "file": "spikes/station-scale/evidence-ring/after/trade-b-03-face-close.png",
       "type": "trade",
       "scale": 1,
-      "shipToStationKm": 0.6903506367259873,
-      "camToShipKm": 0.3637306718853625,
-      "camToStationKm": 1.0361872452026388,
-      "planeKm": 0.428
+      "shipToStationKm": 0.690350633481128,
+      "camToShipKm": 0.36373067519244767,
+      "camToStationKm": 1.036187244633889,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
     },
     {
       "file": "spikes/station-scale/evidence-ring/after/trade-b-04-wide.png",
       "type": "trade",
       "scale": 1,
-      "shipToStationKm": 0.7761984280602909,
-      "camToShipKm": 2.769927794156906,
-      "camToStationKm": 3.205679955598663,
-      "planeKm": 0.428
+      "shipToStationKm": 0.7761984256289514,
+      "camToShipKm": 2.7699278003831513,
+      "camToStationKm": 3.205679960027114,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
     },
     {
       "file": "spikes/station-scale/evidence-ring/after/trade-b-06-hero.png",
       "type": "trade",
       "scale": 1,
-      "shipToStationKm": 0.5799172336319761,
-      "camToShipKm": 0.5177837407132106,
-      "camToStationKm": 1.0690575287625521,
-      "planeKm": 0.428
+      "shipToStationKm": 0.5799172338797058,
+      "camToShipKm": 0.5177837383965769,
+      "camToStationKm": 1.0690575266333902,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
     },
     {
       "file": "spikes/station-scale/evidence-ring/after/trade-b-07-sun-wide.png",
       "type": "trade",
       "scale": 1,
-      "shipToStationKm": 0.7542546001418673,
-      "camToShipKm": 1.4540650608674486,
-      "camToStationKm": 2.1483182268333323,
-      "planeKm": 0.428
+      "shipToStationKm": 0.7542545950703364,
+      "camToShipKm": 1.4540653548718612,
+      "camToStationKm": 2.1483185125117124,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
     },
     {
       "file": "spikes/station-scale/evidence-ring/after/trade-b-08-sun-close.png",
       "type": "trade",
       "scale": 1,
-      "shipToStationKm": 0.7045565980861468,
-      "camToShipKm": 0.3856514839817899,
-      "camToStationKm": 1.0361666816886577,
-      "planeKm": 0.428
+      "shipToStationKm": 0.7045565998708796,
+      "camToShipKm": 0.3856516019704478,
+      "camToStationKm": 1.0361667968698034,
+      "planeKm": 0.428,
+      "detail": [
+        {
+          "name": "scale-detailamber-lamp",
+          "visible": true
+        },
+        {
+          "name": "scale-detaildark-structure",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-green",
+          "visible": true
+        },
+        {
+          "name": "scale-detailnavigation-red",
+          "visible": true
+        },
+        {
+          "name": "scale-detailrecess-black",
+          "visible": true
+        },
+        {
+          "name": "scale-detailtruss-paint",
+          "visible": true
+        },
+        {
+          "name": "scale-detailwork-flood",
+          "visible": true
+        }
+      ]
     }
   ]
 }

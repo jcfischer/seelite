@@ -1,13 +1,17 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 import { gameUrl } from "../../scripts/lib/game-url.mjs";
+import { waitForStationDetail } from "../../scripts/lib/station-detail.mjs";
+import { holdProbeLockOrExit } from "../../scripts/lib/probe-lock.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 } from "../../scripts/probe-guard.mjs";
 
 const OUT = process.argv[2] ?? "spikes/station-scale/out";
+const release = await holdProbeLockOrExit("station-scale-capture");
 const PORT = 5191;
 const server = await createServer({
 	cacheDir: "node_modules/.vite-station-scale",
@@ -81,6 +85,7 @@ try {
 		if (m.type() === "error" && /shader|program/i.test(m.text()))
 			errors.push(m.text().slice(0, 300));
 	});
+	await installViewPlacement(page);
 	await page.goto(
 		gameUrl(origin, {
 			seed: 42,
@@ -248,6 +253,18 @@ try {
 					[shot, scale, type, FORM],
 				);
 				await page.waitForTimeout(600);
+				await waitForStationDetail(page);
+				got.detail = await page.evaluate((type) => {
+					const station = window.__seelite.world.system.contents.stations.find(s => s.type === type);
+					const parts = [];
+					window.__meshOfBody(station.id).traverse(o => {
+						if (o.isMesh && o.name.startsWith("scale-detail")) parts.push({ name: o.name, visible: o.visible });
+					});
+					return parts;
+				}, type);
+				if (process.env.EXPECT_RING_DETAIL !== undefined &&
+					(got.detail.length !== Number(process.env.EXPECT_RING_DETAIL) || got.detail.some(o => !o.visible)))
+					throw Error(`unsettled Ring capture: ${JSON.stringify(got.detail)}`);
 				await page.evaluate(() => window.__seelite.render(0));
 				const file = `${OUT}/${type}${FORM === "a" ? "" : `-${FORM}`}-${shot.name}${scale === 1 ? "" : "-ship-quarter"}.png`;
 				await page.screenshot({ path: file });
@@ -279,4 +296,5 @@ try {
 } finally {
 	await browser.close();
 	await server.close();
+	release();
 }
