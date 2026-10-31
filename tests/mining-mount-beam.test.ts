@@ -6,7 +6,11 @@ import { shipMuzzlesKm } from "../src/ship-mesh";
 
 import { miningBeamRays } from "../src/laser-modules";
 import { makeModule, moduleRow } from "../src/loadout";
-import { beamHit, firedExtraction } from "../src/rock-extraction";
+import {
+	beamHit,
+	firedExtraction,
+	firstHitExtraction,
+} from "../src/rock-extraction";
 import { v3 } from "../src/vec3";
 
 const cutter = HULL_SPECS.miner.cutter;
@@ -100,4 +104,32 @@ test("only rays meeting the same rock sum their fitted rate: two 3E give provisi
 	expect(firedExtraction(split.filter((r) => r.met?.id === "miss")).rate).toBe(
 		0,
 	);
+});
+
+test("the first hitting mount chooses the cut rock even when another mount hits a nearer rock", () => {
+	const rocks = [
+		{ id: "port", pos: v3(-0.0053, 0.00581, -1), vel: v3(), radiusKm: 0.002 },
+		{
+			id: "starboard",
+			pos: v3(0.0053, 0.00581, -0.5),
+			vel: v3(),
+			radiusKm: 0.002,
+		},
+	];
+	const rays = miningBeamRays(lasers, muzzles(), nose).map((ray) => ({
+		...ray,
+		met: beamHit(ray.origin, ray.aim, rocks, 10),
+	}));
+	expect(firstHitExtraction(rays).hit?.id).toBe("port");
+	expect(firstHitExtraction([...rays].reverse()).hit?.id).toBe("starboard");
+	expect(firstHitExtraction(rays).cutting.rate).toBeCloseTo(0.225, 12);
+	const miss = { ...rays[0], met: null };
+	expect(firstHitExtraction([miss, rays[1]]).hit?.id).toBe("starboard");
+	expect(firstHitExtraction([miss]).hit).toBeNull();
+	expect(firstHitExtraction([miss]).cutting.rate).toBe(0);
+	expect(firstHitExtraction([]).hit).toBeNull();
+	expect(
+		firstHitExtraction(rays.map((r) => ({ ...r, met: rays[0].met }))).cutting
+			.rate,
+	).toBeCloseTo(0.45, 12);
 });

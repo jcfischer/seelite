@@ -7,7 +7,11 @@ import {
 } from "../src/beam-glass";
 import { fireGroups } from "../src/fire-group";
 import { HULL_SPECS } from "../src/hull";
-import { glassTracerIndices, groupMuzzleIndices } from "../src/laser-modules";
+import {
+	glassTracerIndices,
+	groupMuzzleIndices,
+	hardpointKeys,
+} from "../src/laser-modules";
 import { type Loadout, makeModule, stockLoadout } from "../src/loadout";
 import { ndcToPx, projectDirection } from "../src/hud";
 import { MINING_BEAM_RGB, mountBeamStrokes } from "../src/mining-beam";
@@ -34,13 +38,13 @@ for (const h3 of [false, true])
 			const lo = loadout(h3);
 			const fired = groupMuzzleIndices("miner", group);
 			const glass = glassTracerIndices("miner", lo, fired, true);
-			const slots = spec.slots.filter((s) => s.kind === "hardpoint");
+			const keys = hardpointKeys("miner");
 			const mining = fired.filter(
-				(i) => lo[slots[i].key]?.module === "mining-laser",
+				(i) => lo[keys[i]]?.module === "mining-laser",
 			);
 			expect(glass.length + mining.length).toBe(group.slots.length);
 			for (const i of glass)
-				expect(lo[slots[i].key]?.module).not.toBe("mining-laser");
+				expect(lo[keys[i]]?.module).not.toBe("mining-laser");
 		});
 
 test("without mounts a Mining Laser keeps its glass tracer", () => {
@@ -71,6 +75,16 @@ test("a mount's beam is drawn in the frame from its muzzle as the cockpit camera
 	expect(want.x).toBeGreaterThan(0.5);
 	expect(want.y).toBeLessThan(0.5);
 	for (const s of strokes) expect(s.rgb).toEqual(MINING_BEAM_RGB);
+	const cores = strokes.filter((s) => s.layer === "core");
+	const glows = strokes.filter((s) => s.layer === "glow");
+	expect(cores).toHaveLength(16);
+	expect(glows).toHaveLength(16);
+	for (const [i, core] of cores.entries()) {
+		expect(glows[i].from).toEqual(core.from);
+		expect(glows[i].to).toEqual(core.to);
+		expect(glows[i].widthPx).toBeCloseTo(core.widthPx * 2.5, 12);
+		expect(glows[i].alpha).toBeCloseTo(core.alpha * 0.35, 12);
+	}
 });
 
 test("anchored, a mount's cockpit beam runs the whole way from its muzzle to the rock, not a stub at the bow (F7)", () => {
@@ -91,7 +105,7 @@ test("anchored, a mount's cockpit beam runs the whole way from its muzzle to the
 			Math.PI / 3,
 			1280 / 800,
 			0,
-		).filter((_, i) => i % 2 === 1);
+		).filter((s) => s.layer === "core");
 		const seg = strokes.map((s) =>
 			Math.hypot((s.to.x - s.from.x) * 1280, (s.to.y - s.from.y) * 800),
 		);

@@ -13,6 +13,8 @@ const OWNERS = Object.freeze({
 		"src/rock-extraction.ts",
 		"src/fire-group.ts",
 		"src/ship-mesh.ts",
+		"src/outfitting.ts",
+		"src/outfitting-view.ts",
 	],
 	"probe-mining-survey.mjs": [
 		"scripts/probe-mining-survey.mjs",

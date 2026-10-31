@@ -25,7 +25,7 @@ import {
 import {
 	beamHit,
 	beginCut,
-	firedExtraction,
+	firstHitExtraction,
 	prototypeMiningLaserSlot,
 	type Cut,
 	debitSurface,
@@ -90,6 +90,7 @@ import {
 } from "./missiles";
 import {
 	glassTracerIndices,
+	hardpointKeys,
 	miningBeamRays,
 	groupLaserRates,
 	groupMuzzleIndices,
@@ -3612,16 +3613,11 @@ class Game {
 	/** The tracer's geometry and pacing, for a probe to read rather than
 	 *  restate. The ports are the flown hull's, one per gun (#607). */
 	get gunTracer() {
+		const glass = this.glassFiredIndices();
 		return {
 			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
 			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
-				(_, i) =>
-					glassTracerIndices(
-						this.flownHull,
-						this.commander.loadout,
-						this.firedMuzzleIndices,
-						MINING_ON,
-					).includes(i),
+				(_, i) => glass.includes(i),
 			),
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
@@ -9441,9 +9437,7 @@ class Game {
 
 	private miningRays() {
 		const group = this.armedFireGroup.current(this.fireGroups);
-		const hardpoints = HULL_SPECS[this.flownHull].slots
-			.filter((s) => s.kind === "hardpoint")
-			.map((s) => s.key);
+		const hardpoints = hardpointKeys(this.flownHull);
 		const lasers = (group?.slots ?? []).flatMap((key) => {
 			const m = this.commander.loadout[key];
 			return m?.module === "mining-laser"
@@ -9513,11 +9507,8 @@ class Game {
 				...ray,
 				met: beamHit(ray.origin, ray.aim, targets, PLAYER_LASER_RANGE_KM),
 			}));
-			const hit = rays.find((r) => r.met !== null)?.met ?? null;
+			const { hit, cutting } = firstHitExtraction(rays);
 			const ref = hit && near.find((r) => r.id === hit.id);
-			const cutting = firedExtraction(
-				rays.filter((r) => r.met && hit && r.met.id === hit.id),
-			);
 			this.miningBeam = {
 				hit: null,
 				distKm: PLAYER_LASER_RANGE_KM,
@@ -12762,9 +12753,9 @@ class Game {
 		ctx.save();
 		ctx.globalCompositeOperation = "lighter";
 		ctx.lineCap = "round";
-		for (const [i, stroke] of strokes.entries()) {
+		for (const stroke of strokes) {
 			ctx.strokeStyle =
-				i % 2 === 0
+				stroke.layer === "glow"
 					? `rgba(255, 140, 40, ${stroke.alpha})`
 					: `rgba(255, 210, 120, ${stroke.alpha})`;
 			ctx.lineWidth = stroke.widthPx;
@@ -12773,8 +12764,17 @@ class Game {
 			ctx.lineTo(stroke.to.x * w, stroke.to.y * h);
 			ctx.stroke();
 		}
-		this.chaseMiningRender = strokes.length / 2;
+		this.chaseMiningRender = strokes.filter((s) => s.layer === "core").length;
 		ctx.restore();
+	}
+
+	private glassFiredIndices() {
+		return glassTracerIndices(
+			this.flownHull,
+			this.commander.loadout,
+			this.firedMuzzleIndices,
+			MINING_ON,
+		);
 	}
 
 	/**
@@ -12784,17 +12784,12 @@ class Game {
 	 * shipyard trade moves it with the hull.
 	 */
 	private chaseBeamPx(w: number, h: number) {
+		const glass = this.glassFiredIndices();
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
 			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) =>
-					glassTracerIndices(
-						this.flownHull,
-						this.commander.loadout,
-						this.firedMuzzleIndices,
-						MINING_ON,
-					).includes(i),
+				(_, i) => glass.includes(i),
 			),
 		);
 		const camPos = this.cameraPos();

@@ -8,9 +8,11 @@ Extraction figures remain provisional until node #922.
 ## Behavior
 
 With `?mining=1`, each fired Mining Laser casts from its slot's physical
-muzzle along the ship's nose. Only rays meeting the selected rock contribute
-to its cut. Two 3E lasers provide 0.45 t/s together; misses and rays meeting
-another rock do not add to that rock's rate. The existing best-ore-share
+muzzle along the ship's nose. The first ray that hits, in fired-slot order,
+chooses the cut rock, regardless of target selection or another ray's distance.
+Only rays meeting that rock contribute to its cut. Two 3E lasers provide
+0.45 t/s together; misses and rays meeting another rock do not add to that
+rock's rate. The existing best-ore-share
 rule still chooses the grade of the combined cut.
 
 The cockpit projects each mining beam from its muzzle into the beam pass
@@ -34,7 +36,9 @@ ore share produces fewer waste fragments per tonne of ore than E-grade.
   for both cockpit and chase.
 - `fitReadout` accepts a mining flag, defaulting to false. Its new extraction
   field stays zero without the flag, so `fitDeltas` emits no new row.
-  `outfittingScreen` passes through the existing station-commerce flag.
+  `main.ts` reads `MINING_ON` from URL `mining=1`; `consoleInput` passes it
+  as `ConsoleInput.mining` to `outfittingScreen`. An absent flag or `mining=0`
+  keeps the extraction row hidden.
 - The new browser probe is registered in the catalog and contract roots.
   Its roots cover laser groups, physical muzzles, extraction, beam strokes
   and the GPU layer. The comment-suppression count for `beam-layer.ts`
@@ -86,7 +90,7 @@ gate or a full browser-suite pass. The worker SOP reserves that final gate,
 review, push and PR creation for the supervisor.
 
 
-## Full host run and base comparison
+## Initial full host run and base comparison
 
 `npm test` ran once on this host: **7,297 pass, 16 fail**, across 445 files.
 Every failure exceeded Bun's default 5,000 ms test limit; none reported an
@@ -119,8 +123,8 @@ across nine files (the eight files above plus the unchanged Borodin score test).
 No timeout was raised and no production workaround was added.
 
 This does **not** prove the full suite passes, or reproduce the timeouts in a
-full base run. Their full-suite cause remains unproven. The worker ran the full
-command only once as required; the supervisor's full merge-base replay remains
+full base run. Their full-suite cause remains unproven. The worker invoked the
+full test suite once as required; the supervisor's full merge-base replay remains
 the deciding comparison for the base-red exception.
 
 `npm run build` (including typecheck and distribution size checks),
@@ -129,3 +133,39 @@ the deciding comparison for the base-red exception.
 Local logs: `/tmp/node1149-full-test.log`, `/tmp/node1149-base-test.log`,
 `/tmp/node1149-head-isolated.log`; hardware logs use
 `/tmp/node1149-{mounts-hardware,survey,cockpit-laser,fire-groups,outfitting}.log`.
+
+## Review round 1
+
+All six findings are addressed. `hardpointKeys` owns the slot-to-muzzle mapping
+for laser groups, glass filtering, mining rays and the cockpit tests.
+`glassFiredIndices` computes the fired glass indices once per cockpit or chase
+projection. Mount strokes carry an explicit `glow` or `core` layer; chase
+chooses its colour and counts segments by that field.
+
+`firstHitExtraction` preserves the existing cut policy. The new headless case
+puts a nearer rock under the second mount and verifies that the first hitting
+mount still chooses the cut rock. It also covers reversed order, a leading
+miss, no hits and a shared-rock rate sum. Target selection does not choose the
+cut rock.
+
+The Equipment browser check boots separate pages with `mining=1`, no mining
+flag and `mining=0`. It reads the rendered preview through the live console,
+without injecting `ConsoleInput.mining`. Contract roots now include outfitting
+and its view. The receipt names the URL-to-console wiring and uses “test run”
+for the verification invocation.
+
+The review's affected headless run passes 140 tests across ten files.
+Typecheck, build, distribution size checks, formatting and both linters pass.
+
+Four affected hardware probes pass: `mining-mounts` (14/14 checks),
+`mining-survey`, `cockpit-laser` and `fire-groups`. The renderer is ANGLE Metal
+on Apple M1 Pro. These are manual affected-probe runs; the supervisor owns the
+final PR gate. Logs are `/tmp/node1149-review1-mounts.log`,
+`/tmp/node1149-review1-mining-survey.log`,
+`/tmp/node1149-review1-cockpit-laser.log` and
+`/tmp/node1149-review1-fire-groups.log`.
+
+The final review-round `npm test` ran once on this host and passed:
+**7,314 tests, 0 failures**, across 445 files, with 17,073,178 assertions.
+The full log is `/tmp/node1149-review1-full-test.log`. This successful run
+supersedes the initial run's unresolved timeout result above.
