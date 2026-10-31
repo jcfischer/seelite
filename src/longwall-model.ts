@@ -10,7 +10,10 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { LONGWALL_MINER_GLB_URL } from "./model-urls";
 import type { ModelProgressListener } from "./model-progress";
-import { installLongwallModelSliced } from "./ship-mesh";
+import {
+	installLongwallModelSliced,
+	type LongwallModelOptions,
+} from "./ship-mesh";
 
 let ready: Promise<void> | undefined;
 
@@ -19,6 +22,7 @@ let ready: Promise<void> | undefined;
  *  download this call starts, as `prepareCoriolisModel`'s does. */
 export function prepareLongwallModel(
 	onProgress?: ModelProgressListener,
+	options: LongwallModelOptions = {},
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
@@ -26,7 +30,7 @@ export function prepareLongwallModel(
 		.then(async (gltf) => {
 			// The install simplifies the `reduced` hull (`ship-mesh.ts`).
 			await MeshoptSimplifier.ready;
-			await installLongwallModelSliced(gltf.scene);
+			await installLongwallModelSliced(gltf.scene, options);
 		})
 		.catch((error) => {
 			ready = undefined;

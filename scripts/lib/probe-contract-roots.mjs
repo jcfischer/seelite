@@ -10,6 +10,7 @@ const OWNERS = Object.freeze({
 		"src/drill-pose.ts",
 		"src/longwall-drill-rig.ts",
 		"src/cockpit-occlusion-table.ts",
+		"src/cockpit-eye.ts",
 		"src/fire-group.ts",
 		"src/ship-mesh.ts",
 		"src/deposit-state.ts",

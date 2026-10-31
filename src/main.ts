@@ -113,8 +113,9 @@ import {
 	strutReach,
 } from "./rock-drill";
 import { COCKPIT_OCCLUSION, cockpitSeenParts } from "./cockpit-occlusion-table";
+import { COCKPIT_FORWARD_KM } from "./cockpit-eye";
 import { poseLongwallDrill } from "./drill-pose";
-import { cockpitDrillView, keepLongwallStrutsPosable } from "./ship-mesh";
+import { cockpitDrillView } from "./ship-mesh";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { MissileCombat, missileVisible } from "./missile-combat";
 import {
@@ -1517,7 +1518,6 @@ const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 
 const MINING_QUERY = new URLSearchParams(window.location.search);
 const MINING_ON = MINING_QUERY.get("mining") === "1";
-if (MINING_ON) keepLongwallStrutsPosable();
 const COCKPIT_SEEN_PARTS = new Map(
 	COCKPIT_OCCLUSION.poses.map((pose) => [pose.seen, new Set(pose.seen)]),
 );
@@ -1763,9 +1763,6 @@ const browserPlatform = (): string =>
 	(navigator as Navigator & { userAgentData?: { platform?: string } })
 		.userAgentData?.platform || navigator.platform;
 
-/** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
- *  forward, so the view is from the nose rather than from inside the cube. */
-const COCKPIT_FORWARD_KM = 0.008;
 /** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
@@ -9700,6 +9697,29 @@ class Game {
 	};
 	drillLineRender: { line: string; readout: string | null } | null = null;
 	private fineWas = false;
+	private drillRocksCache: {
+		t: number;
+		pos: Vec3;
+		rocks: readonly RockRef[];
+	} | null = null;
+
+	private nearDrillRocks(): readonly RockRef[] {
+		const t = this.world.gameTime;
+		const pos = this.world.ship.pos;
+		const cache = this.drillRocksCache;
+		if (
+			cache &&
+			cache.t === t &&
+			cache.pos.x === pos.x &&
+			cache.pos.y === pos.y &&
+			cache.pos.z === pos.z
+		)
+			return cache.rocks;
+		const rocks = nearRocks(this.fieldRockSets(), pos, t, FINE.rangeKm);
+		this.drillRocksCache = { t, pos: { ...pos }, rocks };
+		return rocks;
+	}
+
 	private fineCache: {
 		t: number;
 		value: ReturnType<Game["computeFineFrame"]>;
@@ -9767,7 +9787,7 @@ class Game {
 			return null;
 		const t = this.world.gameTime;
 		const ship = this.world.ship;
-		const near = nearRocks(this.fieldRockSets(), ship.pos, t, FINE.rangeKm);
+		const near = this.nearDrillRocks();
 		if (near.length === 0) return null;
 		const nose = this.nose();
 		const face = drillFaceKm(
@@ -9891,10 +9911,19 @@ class Game {
 		const flying =
 			flightLive(this.dock.phase) && !collisionExempt(this.dock.phase);
 		const armed = this.drillArmed();
+		if (
+			!armed &&
+			this.drill.extension <= 0 &&
+			this.drill.spin <= 0 &&
+			!this.drill.held
+		) {
+			this.audio.drill(0, 0);
+			return;
+		}
 		this.applyDrillHold(flying);
 		const nose = this.nose();
 		const up = this.shipUp();
-		const near = nearRocks(this.fieldRockSets(), ship.pos, now, FINE.rangeKm);
+		const near = this.nearDrillRocks();
 		const targets = this.rockTargets(near);
 		const room = beamHit(
 			drillFaceKm(ship.pos, nose, up, cutter, 0),
@@ -9963,51 +9992,8 @@ class Game {
 			return;
 		}
 		const contents = this.rockContentsOf(touching);
-		const row = this.rockDepositRow(touching);
-		const debit = (kind: "deep" | "surface") => {
-			const n = row?.[kind];
-			return n === undefined ? 0 : debitAt(n, row?.at ?? 0, now);
-		};
-		const hold = this.minedHold();
-		const holdFreeT = hold.capacityT - hold.usedT;
 		const name = oreCargoName(contents.family, contents.grade);
-		const powered = this.drill.powered;
-		let tonnes = 0;
-		let waste = 0;
-		let stop: DrillStop | null;
-		if (contact.deposit === "deep") {
-			this.drill.surfaceCut = { key: null, oreT: 0, wasteT: 0 };
-			const step = stepDrillCut(this.drill.cut, {
-				key: touching.id,
-				powered,
-				spin: this.drill.spin,
-				rateTPerS: DRILL.rateTPerS,
-				dt,
-				holdFreeT,
-				reserveLeftT: contents.deepT - debit("deep"),
-			});
-			this.drill.cut = step.cut;
-			stop = step.stop;
-			tonnes = step.tonnes;
-			if (tonnes > 0) this.putDepositRow(touching, debitDeep(row, now, tonnes));
-		} else {
-			this.drill.cut = beginDrillCut();
-			const step = stepDrillSurface(this.drill.surfaceCut, {
-				key: touching.id,
-				powered,
-				spin: this.drill.spin,
-				rateTPerS: DRILL.rateTPerS,
-				dt,
-				holdFreeT,
-				reserveLeftT: contents.surfaceT - debit("surface"),
-			});
-			this.drill.surfaceCut = step.cut;
-			stop = step.stop;
-			tonnes = step.ore;
-			waste = step.waste;
-			if (tonnes > 0)
-				this.putDepositRow(touching, debitSurface(row, now, tonnes));
-		}
+		const { tonnes, waste, stop } = this.drillExtract(touching, contact, dt);
 		this.drill.stop = triggered ? stop : null;
 		if (tonnes > 0) {
 			this.minedOre = {
@@ -10050,12 +10036,67 @@ class Game {
 				this.condition.heatLocked ? "DRILL HEAT LOCKED" : "DRILL · NO ENERGY",
 			);
 		const cutting =
-			powered &&
+			this.drill.powered &&
 			this.drill.spin > 0 &&
 			stop !== "HOLD FULL" &&
 			stop !== "NO POWER";
 		this.audio.drill(this.drill.spin, cutting ? this.drill.spin : 0);
 		if (!cutting) return;
+		this.emitDrillSparks(touching, hit, surfaceVel, dt);
+	}
+
+	private drillExtract(touching: RockRef, contact: DrillContact, dt: number) {
+		const now = this.world.gameTime;
+		const row = this.rockDepositRow(touching);
+		const hold = this.minedHold();
+		const holdFreeT = hold.capacityT - hold.usedT;
+		const powered = this.drill.powered;
+		let tonnes = 0;
+		let waste = 0;
+		let stop: DrillStop | null;
+		if (contact.deposit === "deep") {
+			this.drill.surfaceCut = { key: null, oreT: 0, wasteT: 0 };
+			const step = stepDrillCut(this.drill.cut, {
+				key: touching.id,
+				powered,
+				spin: this.drill.spin,
+				rateTPerS: DRILL.rateTPerS,
+				dt,
+				holdFreeT,
+				reserveLeftT: this.reserveLeftT(touching, "deep"),
+			});
+			this.drill.cut = step.cut;
+			stop = step.stop;
+			tonnes = step.tonnes;
+			if (tonnes > 0) this.putDepositRow(touching, debitDeep(row, now, tonnes));
+		} else {
+			this.drill.cut = beginDrillCut();
+			const step = stepDrillSurface(this.drill.surfaceCut, {
+				key: touching.id,
+				powered,
+				spin: this.drill.spin,
+				rateTPerS: DRILL.rateTPerS,
+				dt,
+				holdFreeT,
+				reserveLeftT: this.reserveLeftT(touching, "surface"),
+			});
+			this.drill.surfaceCut = step.cut;
+			stop = step.stop;
+			tonnes = step.ore;
+			waste = step.waste;
+			if (tonnes > 0)
+				this.putDepositRow(touching, debitSurface(row, now, tonnes));
+		}
+		return { tonnes, waste, stop };
+	}
+
+	private emitDrillSparks(
+		touching: RockRef,
+		hit: NonNullable<ReturnType<typeof beamHit>>,
+		surfaceVel: Vec3,
+		dt: number,
+	) {
+		const now = this.world.gameTime;
 		const offset = sub(hit.point, touching.pos);
 		this.heatSpots.set(touching.id, { offset, at: now });
 		this.sparkDebt += SPARK_RATE_PER_S * this.drill.spin * dt;
@@ -10156,6 +10197,18 @@ class Game {
 				});
 	}
 
+	private reserveLeftT(ref: RockRef, kind: "deep" | "surface"): number {
+		const contents = this.rockContentsOf(ref);
+		const row = this.rockDepositRow(ref);
+		const debit = row?.[kind];
+		return (
+			(kind === "deep" ? contents.deepT : contents.surfaceT) -
+			(debit === undefined
+				? 0
+				: debitAt(debit, row?.at ?? 0, this.world.gameTime))
+		);
+	}
+
 	drillLine(): { line: string; readout: string | null; ok: boolean } {
 		const d = this.drill;
 		const c = d.contact;
@@ -10205,17 +10258,8 @@ class Game {
 			return { line: `DRILL DEPLOYED · ${why}${figure}`, readout, ok: false };
 		}
 		const ref = d.rockId ? this.rockRef(d.rockId) : null;
-		const row = ref ? this.rockDepositRow(ref) : undefined;
 		const deep = c.deposit === "deep";
-		const kind = deep ? "deep" : "surface";
-		const left = ref
-			? (deep
-					? this.rockContentsOf(ref).deepT
-					: this.rockContentsOf(ref).surfaceT) -
-				(row?.[kind] === undefined
-					? 0
-					: debitAt(row[kind] as number, row.at ?? 0, this.world.gameTime))
-			: 0;
+		const left = ref ? this.reserveLeftT(ref, deep ? "deep" : "surface") : 0;
 		const state = d.stop
 			? d.stop
 			: d.powered
@@ -23920,7 +23964,7 @@ if (postcard) {
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			prepareCourierHullModel,
 			prepareTugHullModel,
-			prepareLongwallModel,
+			(p) => prepareLongwallModel(p, { posableStruts: MINING_ON }),
 			preparePorterModel,
 			prepareVoyagerHullModel,
 			prepareInterceptorHullModel,

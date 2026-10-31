@@ -9,22 +9,20 @@ import {
 	cockpitDrillView,
 	cockpitOcclusion,
 	installLongwallModel,
-	keepLongwallStrutsPosable,
 } from "../src/ship-mesh";
+import { COCKPIT_FORWARD_KM } from "../src/cockpit-eye";
 import { v3 } from "../src/vec3";
 
-const COCKPIT_EYE = v3(0, 0, -0.008);
+const COCKPIT_EYE = v3(0, 0, -COCKPIT_FORWARD_KM);
 const ABOVE_MOUNTS = v3(0, 0.03, -0.022);
 const PARTS = /^(feed|anchor-\d|longwall-mount-)/;
 
 beforeAll(async () => {
-	keepLongwallStrutsPosable();
 	const scene = await decodeShippedGlb("src/models/longwall-miner.glb");
 	await MeshoptSimplifier.ready;
-	installLongwallModel(scene);
+	installLongwallModel(scene, { posableStruts: true });
 }, 60_000);
 afterAll(async () => {
-	keepLongwallStrutsPosable(false);
 	await installShippedLongwall();
 });
 

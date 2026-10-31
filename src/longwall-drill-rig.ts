@@ -11,7 +11,7 @@ const clamp = (x: number) => {
 	if (!Number.isFinite(x)) throw Error("Non-finite pose");
 	return Math.max(0, Math.min(1, x));
 };
-export function anchorPose(index: number, deployment: number) {
+export function anchorPose(index: number, deployment: number, target?: V) {
 	if (!Number.isInteger(index) || index < 0 || index > 3)
 		throw Error("Unknown anchor");
 	const t = clamp(deployment),
@@ -19,7 +19,7 @@ export function anchorPose(index: number, deployment: number) {
 		sy = index < 2 ? 1 : -1;
 	const base: V = [sx * 6, sy * 2, 13];
 	const stowed: V = [sx * 8, sy * 3, -5],
-		deployed: V = [
+		deployed: V = target ?? [
 			sx * 17,
 			MINING.cutterY + sy * 14,
 			rockContactZ(sx * 17, MINING.cutterY + sy * 14),
@@ -35,16 +35,9 @@ export function anchorPose(index: number, deployment: number) {
 	const foot = base.map((n, i) => n + direction[i] * length) as V;
 	return { base, foot: t === 1 ? deployed : foot, direction, length };
 }
-export function cutterPosition(extension: number) {
-	return (
-		MINING.stowedCutterZ +
-		(MINING.rockZ - MINING.toothReach - MINING.stowedCutterZ) * clamp(extension)
-	);
-}
-
-export function anchorAssembly(index: number, deployment: number) {
-	const p = anchorPose(index, deployment),
-		t = Math.max(0, Math.min(1, deployment));
+export function anchorAssembly(index: number, deployment: number, target?: V) {
+	const p = anchorPose(index, deployment, target),
+		t = clamp(deployment);
 	const elbow = p.base.map((v, i) => v + (p.foot[i] - v) * 0.48) as V;
 	elbow[0] += (index % 2 === 0 ? -1 : 1) * 5 * t;
 	elbow[1] += (index < 2 ? 1 : -1) * 3 * t;

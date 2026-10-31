@@ -191,7 +191,6 @@ try {
 		for (let run = 0; run < 5; run++) {
 			g.view = "chase";
 			await frames();
-			delete g.shipMesh.userData.cockpitOcclusion;
 			const tasks = [];
 			const observer = new PerformanceObserver((list) =>
 				tasks.push(...list.getEntries().map((e) => e.duration)),

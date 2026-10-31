@@ -29,7 +29,7 @@ export interface FramePoint {
 	readonly y: number;
 }
 
-/** The shared cockpit stroke capacity, including mining beams. */
+/** The shared cockpit stroke capacity reserved for the mining-laser port (node #1150). */
 export const BEAM_CAPACITY = 128;
 
 /** One beam: a line across the frame, its width and its colour. */

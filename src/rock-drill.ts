@@ -5,18 +5,31 @@
  * pilot flies the cutter face onto a rock; on a deep deposit's mouth whole tonnes
  * go straight into the hold, elsewhere the cutter takes surface ore at the laser's
  * waste share (D-D3), and each deposit is debited by exactly what the hold gains.
- * The struts unfold with the feed and, on the pilot's command, hold the ship to the
+ * The struts unfold with the feed and, on the pilot's intervention, hold the ship to the
  * rock's frame once the feet touch inside the speed window (D-D1). Every figure
  * here is a provisional candidate for #922's economic measurement, not a ratified
  * rate.
  */
 import { type DepositRow, debitAt } from "./deposit-state";
-import { anchorPose, MINING as LONGWALL_STUDY } from "./longwall-drill-rig";
+import {
+	anchorAssembly,
+	anchorPose,
+	MINING as LONGWALL_STUDY,
+} from "./longwall-drill-rig";
 import type { HullCutter } from "./hull";
 import { stepCut } from "./rock-extraction";
 import { ASSIST_CAP_KMS, type LinearDemand } from "./sim";
 import type { LaserRates } from "./ship-condition";
-import { add, dot, length, normalizeOr, scale, sub, type Vec3 } from "./vec3";
+import {
+	add,
+	cross,
+	dot,
+	length,
+	normalizeOr,
+	scale,
+	sub,
+	type Vec3,
+} from "./vec3";
 
 /** Candidate drill figures. Speeds km/s, distances km, times s. */
 export const DRILL = {
@@ -352,11 +365,7 @@ export const shipPointKm = (
 	up: Vec3,
 	p: { fore: number; up: number; starboard: number },
 ): Vec3 => {
-	const starboard = {
-		x: nose.y * up.z - nose.z * up.y,
-		y: nose.z * up.x - nose.x * up.z,
-		z: nose.x * up.y - nose.y * up.x,
-	};
+	const starboard = cross(nose, up);
 	return add(
 		pos,
 		add(
@@ -395,20 +404,7 @@ export function strutReach(index: number) {
  */
 export function strutPose(index: number, deployment: number, target: M3) {
 	const t = Math.min(1, Math.max(0, deployment));
-	const stowed = anchorPose(index, 0);
-	const base = stowed.base as M3;
-	const a = stowed.foot.map((n, i) => n - base[i]);
-	const b = target.map((n, i) => n - base[i]);
-	const la = Math.hypot(...a);
-	const lb = Math.hypot(...b);
-	const raw = a.map((n, i) => (n / la) * (1 - t) + (b[i] / lb) * t);
-	const norm = Math.hypot(...raw);
-	const length = la + (lb - la) * t;
-	const foot =
-		t === 1 ? target : (base.map((n, i) => n + (raw[i] / norm) * length) as M3);
-	const elbow = base.map((v, i) => v + (foot[i] - v) * 0.48) as M3;
-	elbow[0] += (index % 2 === 0 ? -1 : 1) * 5 * t;
-	elbow[1] += (index < 2 ? 1 : -1) * 3 * t;
+	const { base, foot, elbow } = anchorAssembly(index, t, target);
 	return { deployment: t, base, foot, elbow };
 }
 
@@ -493,11 +489,7 @@ export const shipFrameM = (
 	p: Vec3,
 ): { fore: number; up: number; starboard: number } => {
 	const d = sub(p, pos);
-	const starboard = {
-		x: nose.y * up.z - nose.z * up.y,
-		y: nose.z * up.x - nose.x * up.z,
-		z: nose.x * up.y - nose.y * up.x,
-	};
+	const starboard = cross(nose, up);
 	return {
 		fore: dot(d, nose) * 1000,
 		up: dot(d, up) * 1000,

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { installShippedLongwall } from "../scripts/lib/install-longwall";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
@@ -13,30 +13,24 @@ import {
 	buildShipMesh,
 	cockpitOcclusion,
 	installLongwallModel,
-	keepLongwallStrutsPosable,
 } from "../src/ship-mesh";
+import { COCKPIT_FORWARD_KM } from "../src/cockpit-eye";
 import { v3 } from "../src/vec3";
 
 const TABLE = "src/cockpit-occlusion-table.ts";
 const POSES = [0, 0.25, 0.5, 0.75, 1];
 
 beforeAll(async () => {
-	keepLongwallStrutsPosable();
 	const scene = await decodeShippedGlb("src/models/longwall-miner.glb");
 	await MeshoptSimplifier.ready;
-	installLongwallModel(scene);
+	installLongwallModel(scene, { posableStruts: true });
 });
 afterAll(async () => {
-	keepLongwallStrutsPosable(false);
 	await installShippedLongwall();
 });
 
 function cockpitEyeKm() {
-	const forward = /const COCKPIT_FORWARD_KM = ([\d.]+);/.exec(
-		readFileSync("src/main.ts", "utf8"),
-	);
-	if (!forward) throw new Error("main.ts no longer states COCKPIT_FORWARD_KM");
-	return v3(0, 0, -Number(forward[1]));
+	return v3(0, 0, -COCKPIT_FORWARD_KM);
 }
 
 function measured() {

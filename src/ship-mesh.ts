@@ -2614,24 +2614,34 @@ function longwallGlowDisc() {
 	return disc.scale(0.001, 0.001, 0.001);
 }
 
+export interface LongwallModelOptions {
+	posableStruts?: boolean;
+}
+
 /**
  * Install the decoded Longwall B scene (metres, as exported), or remove it.
  * Await `MeshoptSimplifier.ready` first: the two reduced levels are made
  * here, once, rather than per miner.
  */
-export function installLongwallModel(scene: THREE.Group | null): void {
+export function installLongwallModel(
+	scene: THREE.Group | null,
+	options: LongwallModelOptions = {},
+): void {
 	// Swapped only once the prepare has returned: a prepare that throws leaves
 	// the previous install whole (sage round 8).
-	publishLongwall(scene ? finishHullWork(prepareLongwallSteps(scene)) : null);
+	publishLongwall(
+		scene ? finishHullWork(prepareLongwallSteps(scene, options)) : null,
+	);
 }
 
 /** The browser loader's install: the same preparation in background-install
  *  slices, published once it has finished (node #907). */
 export async function installLongwallModelSliced(
 	scene: THREE.Group,
+	options: LongwallModelOptions = {},
 	run: <T>(work: Generator<void, T>) => Promise<T> = runHullSlices,
 ): Promise<void> {
-	publishLongwall(await run(prepareLongwallSteps(scene)));
+	publishLongwall(await run(prepareLongwallSteps(scene, options)));
 }
 
 function publishLongwall(template: THREE.Group | null): void {
@@ -2642,11 +2652,12 @@ function publishLongwall(template: THREE.Group | null): void {
 
 function* prepareLongwallSteps(
 	scene: THREE.Group,
+	{ posableStruts = false }: LongwallModelOptions,
 ): Generator<void, THREE.Group> {
-	if (longwallStrutsPosable) separateLongwallMounts(scene);
+	if (posableStruts) separateLongwallMounts(scene);
 	batchLongwallHull(scene);
 	yield;
-	if (!longwallStrutsPosable) batchLongwallAnchors(scene);
+	if (!posableStruts) batchLongwallAnchors(scene);
 	yield;
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
@@ -2859,18 +2870,6 @@ function separateLongwallMounts(scene: THREE.Group): void {
 		group.updateMatrixWorld(true);
 		for (const part of parts) group.attach(part);
 	}
-}
-
-let longwallStrutsPosable = false;
-
-/**
- * https://github.com/jcfischer/seelite/issues/920
- * Keep the four struts' part groups whole so the drill can pose them
- * (D-D1). Called before the model installs; a miner then draws each strut as
- * the export's 19 meshes rather than one batch per paint.
- */
-export function keepLongwallStrutsPosable(on = true): void {
-	longwallStrutsPosable = on;
 }
 
 /** One strut's joints in the export's metres: base, elbow and foot, at `deployment` 0…1. */
