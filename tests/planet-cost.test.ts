@@ -18,14 +18,29 @@ import { describe, expect, test } from "bun:test";
 import { fpsReadout } from "../src/fps-meter.ts";
 import { VIEWS } from "../scripts/lib/view-set.mjs";
 import {
+	CAP_LADDER,
+	CLOSE_DETAIL_ARMS,
+	CELL_TREND_LIMIT,
+	CLOSE_DETAIL_RADII,
 	FAR_COLUMN_OUTLIER_FACTOR,
 	RADII,
+	armDelta,
+	armLandedRefusal,
+	buildShaOf,
+	cellTrend,
+	closeDetailArmsRefusal,
+	controlPairGap,
 	farColumnVerdict,
 	finite,
 	flagExcursions,
+	identityLine,
+	laneOf,
 	narrow,
 	parseFpsReadout,
 	radiiRefusal,
+	stampRows,
+	sweepAgreement,
+	sweepOrder,
 	vsyncRefusal,
 } from "../scripts/lib/planet-cost.mjs";
 import { RELIEF_PATHS } from "../src/planet-shaders";
@@ -457,5 +472,349 @@ describe("flagging a run's rows with its verdict", () => {
 		expect(() =>
 			flagExcursions([row(4, 200, 2.0)], { 2: { excursion: false } }),
 		).toThrow(/pixel ratio 4/);
+	});
+});
+
+describe("the close-detail arms", () => {
+	test("price the four station-altitude radii", () => {
+		expect([...CLOSE_DETAIL_RADII]).toEqual([2, 1.6, 1.5, 1.2]);
+		for (const r of CLOSE_DETAIL_RADII) expect(RADII).toContain(r);
+		expect(radiiRefusal([...CLOSE_DETAIL_RADII])).toBeNull();
+	});
+
+	test("hold the four arms the node names, and the ladder 0, 2, 4, 6", () => {
+		expect(closeDetailArmsRefusal(CLOSE_DETAIL_ARMS)).toBeNull();
+		expect(CLOSE_DETAIL_ARMS.map((a) => a.name)).toEqual([
+			"interim",
+			"cap-0",
+			"cap-2",
+			"cap-4",
+			"cap-6",
+			"full-res",
+			"analytic-gradient",
+			"clouds-at-ground",
+		]);
+		expect(
+			CLOSE_DETAIL_ARMS.filter((a) => typeof a.cap === "number").map(
+				(a) => a.cap,
+			),
+		).toEqual([...CAP_LADDER]);
+	});
+
+	test("each arm differs from the interim arm in exactly one lever", () => {
+		const base = CLOSE_DETAIL_ARMS[0];
+		for (const arm of CLOSE_DETAIL_ARMS.slice(1)) {
+			const moved = (["cap", "halfRes", "relief", "clouds"] as const).filter(
+				(k) => arm[k] !== base[k],
+			);
+			expect({ arm: arm.name, moved: moved.length }).toEqual({
+				arm: arm.name,
+				moved: 1,
+			});
+		}
+	});
+
+	test("the refusal fires on each way the roster can go wrong", () => {
+		const without = (name: string) =>
+			CLOSE_DETAIL_ARMS.filter((a) => a.name !== name);
+		expect(closeDetailArmsRefusal(without("full-res"))).toMatch(/full-res/);
+		expect(closeDetailArmsRefusal(without("analytic-gradient"))).toMatch(
+			/analytic-gradient/,
+		);
+		expect(closeDetailArmsRefusal(without("clouds-at-ground"))).toMatch(
+			/clouds-at-ground/,
+		);
+		expect(closeDetailArmsRefusal(without("cap-4"))).toMatch(/cap 4/);
+		expect(closeDetailArmsRefusal(without("interim"))).toMatch(/interim/);
+		expect(
+			closeDetailArmsRefusal([...CLOSE_DETAIL_ARMS, CLOSE_DETAIL_ARMS[1]]),
+		).toMatch(/twice/);
+		const twoLevers = CLOSE_DETAIL_ARMS.map((a) =>
+			a.name === "full-res" ? { ...a, relief: "analytic-gradient" } : a,
+		);
+		expect(closeDetailArmsRefusal(twoLevers)).toMatch(/full-res/);
+	});
+});
+
+describe("the shuffled, interleaved sweep order", () => {
+	const radii = [200, ...CLOSE_DETAIL_RADII];
+	const key = (c: { arm: string; radii: number }) => `${c.arm}@${c.radii}`;
+
+	test("holds every arm at every radius exactly once", () => {
+		const order = sweepOrder(20261027, CLOSE_DETAIL_ARMS, radii);
+		expect(order).toHaveLength(CLOSE_DETAIL_ARMS.length * radii.length);
+		expect(new Set(order.map(key)).size).toBe(order.length);
+	});
+
+	test("never runs one arm twice in a row", () => {
+		for (const seed of [1, 2, 3, 20261027, 20261028]) {
+			const order = sweepOrder(seed, CLOSE_DETAIL_ARMS, radii);
+			for (let i = 1; i < order.length; i++)
+				expect(order[i].arm).not.toBe(order[i - 1].arm);
+		}
+	});
+
+	test("is the same for one seed and different for another", () => {
+		const a = sweepOrder(7, CLOSE_DETAIL_ARMS, radii).map(key);
+		expect(sweepOrder(7, CLOSE_DETAIL_ARMS, radii).map(key)).toEqual(a);
+		expect(sweepOrder(8, CLOSE_DETAIL_ARMS, radii).map(key)).not.toEqual(a);
+	});
+
+	test("is not the nested order a fixed sweep would run", () => {
+		const nested = CLOSE_DETAIL_ARMS.flatMap((arm) =>
+			radii.map((r) => `${arm.name}@${r}`),
+		);
+		expect(sweepOrder(20261027, CLOSE_DETAIL_ARMS, radii).map(key)).not.toEqual(
+			nested,
+		);
+	});
+
+	test("refuses a seed that is not an integer, and an arm list it cannot interleave", () => {
+		expect(() => sweepOrder(Number.NaN, CLOSE_DETAIL_ARMS, radii)).toThrow(
+			/seed/,
+		);
+		expect(() => sweepOrder(1.5, CLOSE_DETAIL_ARMS, radii)).toThrow(/seed/);
+		expect(() => sweepOrder(1, [CLOSE_DETAIL_ARMS[0]], radii)).toThrow(
+			/interleave/,
+		);
+	});
+});
+
+describe("an arm that did not land", () => {
+	const interim = CLOSE_DETAIL_ARMS[0];
+	const arm = (name: string) => {
+		const found = CLOSE_DETAIL_ARMS.find((a) => a.name === name);
+		if (!found) throw new Error(name);
+		return found;
+	};
+	const landed = {
+		quality: "high",
+		renderScale: 1,
+		interimCap: 6,
+		groundCap: 6,
+		cloudCap: 6,
+		halfResEngaged: true,
+		surfacePath: "screen-space",
+		hasCloudShell: true,
+		cloudAngleRatio: 1,
+		halfResRatio: 2,
+	};
+
+	test("passes an arm whose state was read back as asked", () => {
+		expect(armLandedRefusal(interim, landed)).toBeNull();
+		expect(
+			armLandedRefusal(arm("cap-2"), {
+				...landed,
+				groundCap: 2,
+				cloudCap: 2,
+			}),
+		).toBeNull();
+		expect(
+			armLandedRefusal(arm("full-res"), { ...landed, halfResEngaged: false }),
+		).toBeNull();
+		expect(
+			armLandedRefusal(arm("analytic-gradient"), {
+				...landed,
+				surfacePath: "analytic-gradient",
+			}),
+		).toBeNull();
+		expect(
+			armLandedRefusal(arm("clouds-at-ground"), {
+				...landed,
+				cloudAngleRatio: 2,
+			}),
+		).toBeNull();
+	});
+
+	test("refuses each lever that read back as something else", () => {
+		expect(armLandedRefusal(interim, { ...landed, quality: "low" })).toMatch(
+			/quality/,
+		);
+		expect(armLandedRefusal(arm("cap-4"), landed)).toMatch(/cap/);
+		expect(
+			armLandedRefusal(arm("cap-4"), { ...landed, groundCap: 4, cloudCap: 6 }),
+		).toMatch(/cloud/);
+		expect(
+			armLandedRefusal(interim, { ...landed, halfResEngaged: false }),
+		).toMatch(/half/);
+		expect(armLandedRefusal(arm("full-res"), landed)).toMatch(/full/);
+		expect(armLandedRefusal(arm("analytic-gradient"), landed)).toMatch(
+			/analytic-gradient/,
+		);
+		expect(
+			armLandedRefusal(interim, { ...landed, hasCloudShell: false }),
+		).toMatch(/cloud shell/);
+		expect(armLandedRefusal(arm("clouds-at-ground"), landed)).toMatch(
+			/ground's footprint/,
+		);
+		expect(
+			armLandedRefusal(interim, { ...landed, cloudAngleRatio: 2 }),
+		).toMatch(/extended/);
+	});
+
+	test("an Auto or reduced render scale is a refusal, because it moves the buffer inside a cell", () => {
+		expect(
+			armLandedRefusal(interim, { ...landed, renderScale: "auto" }),
+		).toMatch(/render scale/);
+		expect(armLandedRefusal(interim, { ...landed, renderScale: 0.75 })).toMatch(
+			/render scale/,
+		);
+	});
+
+	test("a cloud arm with no half-resolution ground is not an arm at all", () => {
+		expect(
+			armLandedRefusal(arm("clouds-at-ground"), {
+				...landed,
+				halfResEngaged: false,
+				cloudAngleRatio: 1,
+			}),
+		).toMatch(/half/);
+	});
+
+	test("a read-back that is not a number is a refusal, not a pass", () => {
+		expect(
+			armLandedRefusal(interim, { ...landed, groundCap: Number.NaN }),
+		).toMatch(/cap/);
+	});
+});
+
+describe("a figure's identity", () => {
+	const identity = {
+		renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro)",
+		pixelRatio: 2,
+		buildSha: "adc63328f632",
+		lane: "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+	};
+
+	test("names renderer, pixel ratio, build SHA and lane", () => {
+		const line = identityLine(identity);
+		for (const part of Object.values(identity))
+			expect(line).toContain(String(part));
+	});
+
+	test.each(["renderer", "pixelRatio", "buildSha", "lane"])(
+		"refuses a figure with no %s",
+		(field) => {
+			expect(() => identityLine({ ...identity, [field]: undefined })).toThrow(
+				new RegExp(field),
+			);
+			expect(() => identityLine({ ...identity, [field]: "" })).toThrow(
+				new RegExp(field),
+			);
+		},
+	);
+
+	test("refuses a lane that is not the GPU lane", () => {
+		expect(laneOf({ SEELITE_PROBE_RENDERER: "hardware" })).toMatch(/GPU lane/);
+		expect(() => laneOf({})).toThrow(/CPU figures do not price this/);
+	});
+
+	test("stamps every row, and refuses an identity it cannot stamp", () => {
+		const rows = stampRows([{ ms: 1 }, { ms: 2 }], identity);
+		expect(rows.every((r) => r.buildSha === "adc63328f632")).toBe(true);
+		expect(rows.every((r) => r.lane === identity.lane)).toBe(true);
+		expect(rows.every((r) => r.renderer === identity.renderer)).toBe(true);
+		expect(() => stampRows([{ ms: 1 }], { ...identity, buildSha: "" })).toThrow(
+			/buildSha/,
+		);
+	});
+
+	test("a build is its head, and a dirty tree says so", () => {
+		expect(buildShaOf({ head: "adc63328f632abc", dirty: false })).toBe(
+			"adc63328f632abc",
+		);
+		expect(buildShaOf({ head: "adc63328f632abc", dirty: true })).toBe(
+			"adc63328f632abc+dirty",
+		);
+		expect(() => buildShaOf({ dirty: false })).toThrow(/head/);
+		expect(() => buildShaOf(null)).toThrow(/head/);
+	});
+});
+
+describe("reading the arms against each other", () => {
+	const cell = (arm: string, radii: number, ms: number, pixelRatio = 1) => ({
+		arm,
+		radii,
+		ms,
+		pixelRatio,
+	});
+
+	test("an arm's delta is its cell minus the named arm's at the same radius", () => {
+		const rows = [
+			cell("interim", 1.5, 10),
+			cell("cap-0", 1.5, 6),
+			cell("interim", 1.2, 14),
+			cell("cap-0", 1.2, 8),
+		];
+		expect(armDelta(rows, "interim", "cap-0", 1.5)).toBe(4);
+		expect(armDelta(rows, "interim", "cap-0", 1.2)).toBe(6);
+	});
+
+	test("a missing cell throws rather than reading as zero", () => {
+		expect(() =>
+			armDelta([cell("interim", 1.5, 10)], "interim", "cap-0", 1.5),
+		).toThrow(/cap-0/);
+	});
+
+	test("the control pair reports how far two cells of one state disagree", () => {
+		const rows = [
+			cell("interim", 2, 10),
+			cell("cap-6", 2, 10.3),
+			cell("interim", 1.2, 14),
+			cell("cap-6", 1.2, 13.5),
+		];
+		expect(controlPairGap(rows, [2, 1.2])).toEqual({
+			2: expect.closeTo(-0.3, 10),
+			1.2: expect.closeTo(0.5, 10),
+		});
+	});
+
+	test("two sweeps of one cell agree or say by how much they do not", () => {
+		const a = [cell("interim", 2, 10), cell("cap-0", 2, 6)];
+		const b = [cell("interim", 2, 10.5), cell("cap-0", 2, 6)];
+		const gaps = sweepAgreement(a, b);
+		expect(gaps.find((g) => g.arm === "interim")?.gapMs).toBeCloseTo(0.5, 10);
+		expect(gaps.find((g) => g.arm === "cap-0")?.gapMs).toBe(0);
+	});
+
+	test("two sweeps that do not hold the same cells are refused", () => {
+		expect(() =>
+			sweepAgreement([cell("interim", 2, 10)], [cell("cap-0", 2, 10)]),
+		).toThrow(/same cells/);
+	});
+});
+
+describe("a cell whose readings are still moving", () => {
+	test("reads a steady cell as no trend", () => {
+		expect(cellTrend([5.3, 5.3, 5.2, 5.4, 5.3])).toBeCloseTo(0, 1);
+		expect(cellTrend([5.2, 4.3, 5.4, 5.2, 6.2])).toBeLessThan(CELL_TREND_LIMIT);
+	});
+
+	test("reads the decay of a cell that inherited its predecessor's cost", () => {
+		expect(cellTrend([27.9, 27.2, 22.0, 14.0, 13.9])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+		expect(cellTrend([30.7, 30.7, 16.5, 11.7, 11.7])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+		expect(cellTrend([24.4, 14.1, 11.3, 11.5, 11.4])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+	});
+
+	test("reads a rise as well as a fall", () => {
+		expect(cellTrend([11.7, 11.7, 16.5, 30.7, 30.7])).toBeGreaterThan(
+			CELL_TREND_LIMIT,
+		);
+	});
+
+	test("the limit sits between the noisiest steady cell measured and the quietest decay", () => {
+		expect(CELL_TREND_LIMIT).toBeGreaterThan(0.25);
+		expect(CELL_TREND_LIMIT).toBeLessThan(0.68);
+	});
+
+	test("refuses readings it cannot compare", () => {
+		expect(() => cellTrend([5, 5, 5])).toThrow(/five/);
+		expect(() => cellTrend([5, Number.NaN, 5, 5, 5])).toThrow(/trend/);
 	});
 });

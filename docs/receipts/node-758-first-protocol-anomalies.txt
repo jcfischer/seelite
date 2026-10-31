@@ -1,0 +1,10 @@
+Node #758 first protocol: cells whose readings were still moving (trend of 0.25 or more between the first two and last two of five readings)
+Build 6393cf036f04e48b2a5e1d9bb26c649c0c7e9299, ANGLE Metal / Apple M1 Pro, GPU lane, median of five, no re-read.
+Each line: sweep, cell, readings in order, the preceding cell in the same sweep and its readings.
+
+sweep1-ratio1 seq 27 cap-6@2R trend 0.25 median 5.5 readings 6.3, 6.5, 5.5, 5.4, 4.8; previous cap-2@200R readings 4.4, 5.1, 5.6, 5.7, 5.4
+sweep1-ratio2 seq 39 cap-6@1.5R trend 0.97 median 22.0 readings 27.9, 27.2, 22.0, 14.0, 13.9; previous full-res@1.5R readings 25.8, 26.0, 25.8, 25.6, 25.9
+sweep2-ratio2 seq 7 cap-2@1.6R trend 1.62 median 16.5 readings 30.7, 30.7, 16.5, 11.7, 11.7; previous full-res@1.2R readings 29.2, 29.2, 30.0, 29.7, 29.2
+sweep2-ratio2 seq 18 cap-0@1.5R trend 0.68 median 11.5 readings 24.4, 14.1, 11.3, 11.5, 11.4; previous full-res@1.6R readings 22.5, 24.0, 21.8, 24.1, 22.5
+
+Isolated repeat (seed 6, ratio 2, arms full-res and cap-6 at 1.5R): full-res then cap-6 read 25.4,25.8,25.4,25.6,25.8 then 14.3,14.1,14.3,14.4,14.3. The tail did not reproduce.
