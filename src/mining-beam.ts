@@ -6,6 +6,9 @@
  * it thins with distance, and bright pulses run along it toward the rock.
  */
 import type { BeamStroke, FramePoint } from "./beam-glass";
+import { ndcToPx, type Quat } from "./hud";
+import { projectSegment } from "./chase-view";
+import { add, length, scale, sub, type Vec3 } from "./vec3";
 
 /** Warm amber in linear working space, so a mining beam never reads as a combat shot. */
 export const MINING_BEAM_RGB = [1.25, 0.62, 0.12] as const;
@@ -84,6 +87,50 @@ export function miningBeamStrokes(
 				rgb: MINING_BEAM_RGB,
 				alpha: miningBeamAlpha(k, n, t, hit),
 			});
+		}
+	}
+	return out;
+}
+
+/**
+ * Each mount beam from its world muzzle to its world end, projected through the
+ * camera and cut at its plane, as frame fractions: a glow and a core per
+ * segment, segments packed toward the muzzle, which is where the beam is near.
+ * The cockpit draws these behind the cabin (round 9, F2); chase scales them to
+ * the overlay.
+ */
+export function mountBeamStrokes(
+	rays: readonly { muzzle: Vec3; end: Vec3; hit: boolean }[],
+	camPos: Vec3,
+	camRot: Quat,
+	fovYRad: number,
+	aspect: number,
+	t: number,
+): BeamStroke[] {
+	const n = MINING_BEAM.segments;
+	const out: BeamStroke[] = [];
+	for (const { muzzle, end, hit } of rays) {
+		const at = (k: number) =>
+			add(muzzle, scale(sub(end, muzzle), (k / n) ** 2));
+		for (let k = 0; k < n; k++) {
+			const a = at(k);
+			const b = at(k + 1);
+			const seg = projectSegment(a, b, camPos, camRot, fovYRad, aspect);
+			if (!seg) continue;
+			const from = ndcToPx(seg[0], 1, 1);
+			const to = ndcToPx(seg[1], 1, 1);
+			const widthPx = miningBeamWidthPx(
+				length(sub(add(a, b), scale(camPos, 2))) / 2,
+			);
+			const alpha = miningBeamAlpha(k, n, t, hit);
+			out.push({
+				from,
+				to,
+				widthPx: widthPx * 2.5,
+				rgb: MINING_BEAM_RGB,
+				alpha: 0.35 * alpha,
+			});
+			out.push({ from, to, widthPx, rgb: MINING_BEAM_RGB, alpha });
 		}
 	}
 	return out;
