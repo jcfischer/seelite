@@ -108,6 +108,9 @@ export function raiderBeamStroke(from: FramePoint): BeamStroke {
  *  for the one-pixel ramp that antialiases the edge. */
 export const BEAM_FEATHER_PX = 1;
 
+/** Capacity for two segmented mining beams, every hardpoint tracer and the raider. */
+export const BEAM_CAPACITY = 128;
+
 /** Vertices per stroke: two triangles, unindexed. */
 export const BEAM_VERTICES_PER_STROKE = 6;
 

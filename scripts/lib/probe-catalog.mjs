@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-mining-mounts.mjs",
+			"With ?mining=1 ALL LASERS fires h1 Pulse and h2+h3 Mining: per-mount nose rays cut one rock at their summed rate; one glass tracer and two complete mining beams reach the cockpit GPU layer, with chase overlay parity. Without the flag combat glass tracers are unchanged.",
+			[
+				"mining",
+				"mount muzzle",
+				"cockpit beams",
+				"beam capacity",
+				"extraction",
+				"fire groups",
+				"chase",
+				"flagless combat",
+			],
+		),
+		entry(
 			"probe-mining-survey.mjs",
 			"With ?mining=1 in a charted field: selects the rock in front, holds a survey to a reading with its deep-deposit mark, refuses past range, cuts the rock with the Mining Laser on its drawn surface, debits the deposit per released tonne, draws the beam with flare and sparks in cockpit and chase and no flare beside the surface, scoops a fragment into the Hold page, refuses a full hold and loses an expired fragment without restoring the deposit.",
 			[

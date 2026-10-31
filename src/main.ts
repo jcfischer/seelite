@@ -25,7 +25,7 @@ import {
 import {
 	beamHit,
 	beginCut,
-	firedExtraction,
+	firstHitExtraction,
 	prototypeMiningLaserSlot,
 	type Cut,
 	debitSurface,
@@ -40,13 +40,7 @@ import {
 	stepCut,
 	stepFragments,
 } from "./rock-extraction";
-import {
-	impactRadiusPx,
-	MINING_BEAM,
-	miningBeamAlpha,
-	miningBeamStrokes,
-	miningBeamWidthPx,
-} from "./mining-beam";
+import { impactRadiusPx, mountBeamStrokes } from "./mining-beam";
 import {
 	aimedRock,
 	cycleWithRocks,
@@ -94,7 +88,13 @@ import {
 	type MissileTarget,
 	type Missile,
 } from "./missiles";
-import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
+import {
+	glassTracerIndices,
+	hardpointKeys,
+	miningBeamRays,
+	groupLaserRates,
+	groupMuzzleIndices,
+} from "./laser-modules";
 import {
 	npcLoadout,
 	npcFitSeed,
@@ -3613,10 +3613,11 @@ class Game {
 	/** The tracer's geometry and pacing, for a probe to read rather than
 	 *  restate. The ports are the flown hull's, one per gun (#607). */
 	get gunTracer() {
+		const glass = this.glassFiredIndices();
 		return {
 			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
 			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
+				(_, i) => glass.includes(i),
 			),
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
@@ -9380,6 +9381,10 @@ class Game {
 	miningBeam: {
 		hit: { rockId: string; offset: Vec3 } | null;
 		distKm: number;
+		rays: {
+			muzzleIndex: number;
+			hit: { rockId: string; offset: Vec3 } | null;
+		}[];
 	} | null = null;
 	private sparks: {
 		rockId: string;
@@ -9443,20 +9448,29 @@ class Game {
 		this.miningNotice = { text, left: 3 };
 	}
 
-	private firedExtraction(): { rate: number; grade: Grade } {
+	private miningRays() {
 		const group = this.armedFireGroup.current(this.fireGroups);
-		return firedExtraction(
-			(group?.slots ?? []).flatMap((key) => {
-				const m = this.commander.loadout[key];
-				return m?.module === "mining-laser"
-					? [
-							{
-								grade: m.grade,
-								extractionTPerS: moduleRow(m).output.extractionTPerS,
-							},
-						]
-					: [];
-			}),
+		const hardpoints = hardpointKeys(this.flownHull);
+		const lasers = (group?.slots ?? []).flatMap((key) => {
+			const m = this.commander.loadout[key];
+			return m?.module === "mining-laser"
+				? [
+						{
+							grade: m.grade,
+							extractionTPerS: moduleRow(m).output.extractionTPerS,
+							muzzleIndex: hardpoints.indexOf(key),
+						},
+					]
+				: [];
+		});
+		return miningBeamRays(lasers, this.miningMuzzlesWorld(), this.nose());
+	}
+
+	private miningMuzzlesWorld(): Vec3[] {
+		return muzzlesWorld(
+			this.world.ship.pos,
+			this.orientation,
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant),
 		);
 	}
 
@@ -9484,36 +9498,49 @@ class Game {
 	private stepExtraction(dt: number) {
 		const now = this.world.gameTime;
 		this.miningNotice.left = Math.max(0, this.miningNotice.left - dt);
-		const fired = this.gunFiredNow ? this.firedExtraction() : null;
+		const fired = this.gunFiredNow ? this.miningRays() : [];
 		this.miningLog.cutRockId = null;
 		this.miningBeam = null;
 		this.sparks = this.sparks.filter((k) => now - k.bornAt < SPARK_LIFE_S);
-		if (fired && fired.rate > 0) {
-			this.miningBeam = { hit: null, distKm: PLAYER_LASER_RANGE_KM };
+		if (fired.length > 0) {
 			const near = nearRocks(
 				this.fieldRockSets(),
 				this.world.ship.pos,
 				now,
 				PLAYER_LASER_RANGE_KM,
 			);
-			const ray = this.weaponRay();
-			const hit = beamHit(
-				ray.origin,
-				ray.aim,
-				near.map((r) => ({
-					id: r.id,
-					pos: r.pos,
-					vel: r.vel,
-					radiusKm: r.rock.radiusKm,
-					shape: this.rockShape(r),
-				})),
-				PLAYER_LASER_RANGE_KM,
-			);
+			const targets = near.map((r) => ({
+				id: r.id,
+				pos: r.pos,
+				vel: r.vel,
+				radiusKm: r.rock.radiusKm,
+				shape: this.rockShape(r),
+			}));
+			const rays = fired.map((ray) => ({
+				...ray,
+				met: beamHit(ray.origin, ray.aim, targets, PLAYER_LASER_RANGE_KM),
+			}));
+			const { hit, cutting } = firstHitExtraction(rays);
 			const ref = hit && near.find((r) => r.id === hit.id);
+			this.miningBeam = {
+				hit: null,
+				distKm: PLAYER_LASER_RANGE_KM,
+				rays: rays.map((r) => {
+					const rock = r.met && near.find((n) => n.id === r.met?.id);
+					return {
+						muzzleIndex: r.muzzleIndex,
+						hit:
+							r.met && rock
+								? { rockId: rock.id, offset: sub(r.met.point, rock.pos) }
+								: null,
+					};
+				}),
+			};
 			if (hit && ref) {
 				this.miningLog.cutRockId = ref.id;
 				const offset = sub(hit.point, ref.pos);
 				this.miningBeam = {
+					...this.miningBeam,
 					hit: { rockId: ref.id, offset },
 					distKm: hit.distKm,
 				};
@@ -9542,8 +9569,8 @@ class Game {
 				const step = stepCut(
 					this.cut,
 					ref.id,
-					fired.rate,
-					oreShare(fired.grade),
+					cutting.rate,
+					oreShare(cutting.grade),
 					dt,
 					contents.surfaceT - taken,
 				);
@@ -9608,15 +9635,19 @@ class Game {
 			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
 	}
 
-	private miningBeamEnd(
-		camPos: Vec3,
-		beam: NonNullable<Game["miningBeam"]>,
-	): FramePoint | null {
-		if (!beam.hit) return this.onFrame(this.beamAim());
-		const rock = this.fragmentRock(beam.hit.rockId);
-		return rock
-			? this.onFrame(directionTo(camPos, add(rock.pos, beam.hit.offset)))
-			: null;
+	private miningBeamSegments(beam: NonNullable<Game["miningBeam"]>) {
+		const all = this.miningMuzzlesWorld();
+		const nose = this.nose();
+		return beam.rays.flatMap((ray) => {
+			const muzzle = all[ray.muzzleIndex];
+			if (!muzzle) return [];
+			const rock = ray.hit && this.fragmentRock(ray.hit.rockId);
+			const end =
+				ray.hit && rock
+					? add(rock.pos, ray.hit.offset)
+					: add(muzzle, scale(nose, PLAYER_LASER_RANGE_KM));
+			return [{ muzzle, end, hit: ray.hit !== null }];
+		});
 	}
 
 	private drawImpact(
@@ -12724,60 +12755,39 @@ class Game {
 		h: number,
 		beam: NonNullable<Game["miningBeam"]>,
 	) {
-		const muzzles = muzzlesWorld(
-			this.world.ship.pos,
-			this.orientation,
-			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
-			),
+		const strokes = mountBeamStrokes(
+			this.miningBeamSegments(beam),
+			this.cameraPos(),
+			this.cameraRotation(),
+			(this.nearCamera.fov * Math.PI) / 180,
+			this.nearCamera.aspect,
+			this.world.gameTime,
 		);
-		const rock = beam.hit && this.fragmentRock(beam.hit.rockId);
-		const camPos = this.cameraPos();
-		const camRot = this.cameraRotation();
-		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
-		const t = this.world.gameTime;
-		const n = MINING_BEAM.segments;
 		ctx.save();
 		ctx.globalCompositeOperation = "lighter";
 		ctx.lineCap = "round";
-		for (const muzzle of muzzles) {
-			const end =
-				beam.hit && rock
-					? add(rock.pos, beam.hit.offset)
-					: add(muzzle, scale(this.beamAim(), PLAYER_LASER_RANGE_KM));
-			const at = (k: number) =>
-				add(muzzle, scale(sub(end, muzzle), (k / n) ** 2));
-			for (let k = 0; k < n; k++) {
-				const a = at(k),
-					b = at(k + 1);
-				const seg = projectSegment(
-					a,
-					b,
-					camPos,
-					camRot,
-					fovYRad,
-					this.nearCamera.aspect,
-				);
-				if (!seg) continue;
-				const from = ndcToPx(seg[0], w, h),
-					to = ndcToPx(seg[1], w, h);
-				const width = miningBeamWidthPx(
-					length(sub(add(a, b), scale(camPos, 2))) / 2,
-				);
-				const alpha = miningBeamAlpha(k, n, t, beam.hit !== null);
-				ctx.strokeStyle = `rgba(255, 140, 40, ${0.35 * alpha})`;
-				ctx.lineWidth = width * 2.5;
-				ctx.beginPath();
-				ctx.moveTo(from.x, from.y);
-				ctx.lineTo(to.x, to.y);
-				ctx.stroke();
-				ctx.strokeStyle = `rgba(255, 210, 120, ${alpha})`;
-				ctx.lineWidth = width;
-				ctx.stroke();
-				this.chaseMiningRender++;
-			}
+		for (const stroke of strokes) {
+			ctx.strokeStyle =
+				stroke.layer === "glow"
+					? `rgba(255, 140, 40, ${stroke.alpha})`
+					: `rgba(255, 210, 120, ${stroke.alpha})`;
+			ctx.lineWidth = stroke.widthPx;
+			ctx.beginPath();
+			ctx.moveTo(stroke.from.x * w, stroke.from.y * h);
+			ctx.lineTo(stroke.to.x * w, stroke.to.y * h);
+			ctx.stroke();
 		}
+		this.chaseMiningRender = strokes.filter((s) => s.layer === "core").length;
 		ctx.restore();
+	}
+
+	private glassFiredIndices() {
+		return glassTracerIndices(
+			this.flownHull,
+			this.commander.loadout,
+			this.firedMuzzleIndices,
+			MINING_ON,
+		);
 	}
 
 	/**
@@ -12787,11 +12797,12 @@ class Game {
 	 * shipyard trade moves it with the hull.
 	 */
 	private chaseBeamPx(w: number, h: number) {
+		const glass = this.glassFiredIndices();
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
 			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
+				(_, i) => glass.includes(i),
 			),
 		);
 		const camPos = this.cameraPos();
@@ -21798,17 +21809,17 @@ class Game {
 		}
 		const strokes = this.cockpitStrokes;
 		strokes.length = 0;
-		const miningEnd = mining && this.miningBeamEnd(camPos, mining);
-		if (mining && miningEnd)
-			for (const stroke of miningBeamStrokes(
-				this.gunTracer.firedPorts,
-				miningEnd,
-				mining.distKm,
-				mining.hit !== null,
+		if (mining)
+			for (const stroke of mountBeamStrokes(
+				this.miningBeamSegments(mining),
+				camPos,
+				this.cameraRotation(),
+				(this.nearCamera.fov * Math.PI) / 180,
+				this.nearCamera.aspect,
 				this.world.gameTime,
 			))
 				strokes.push(stroke);
-		else if (this.gunFeedback.tracerLeftS > 0)
+		if (this.gunFeedback.tracerLeftS > 0)
 			for (const stroke of tracerStrokes(
 				this.gunTracer.firedPorts,
 				this.onFrame(this.beamAim()) ?? TRACER_AIM,
@@ -22336,7 +22347,7 @@ class Game {
 		const chaseMining = MINING_ON && this.view === "chase" && this.miningBeam;
 		this.chaseMiningRender = 0;
 		if (chaseMining) this.drawChaseMiningBeam(ctx, w, h, chaseMining);
-		else if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
+		if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
 			// From the hull's muzzles, its range along the beam, as the camera
 			// sees it (#607 D3). Not the cockpit's ports on a glass chase does
 			// not have.
