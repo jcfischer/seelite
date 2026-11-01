@@ -28,9 +28,9 @@ ore share produces fewer waste fragments per tonne of ore than E-grade.
 
 ## Shared changes and flagless behavior
 
-- `BEAM_CAPACITY` moves from `beam-layer.ts` to `beam-glass.ts` and grows
-  from 16 to 128 strokes. Every cockpit uses the larger buffer. The beam
-  material, pass order and empty-pass behavior stay the same.
+- Main already provides `BEAM_CAPACITY = 128` in `beam-glass.ts` through
+  #1150. This port reuses it. The beam material, pass order and empty-pass
+  behavior stay the same.
 - `laser-modules.ts` exports mount-ray and glass-tracer projections. The
   tracer filter returns the original fired indices without the mining flag,
   for both cockpit and chase.
@@ -169,3 +169,25 @@ The final review-round `npm test` ran once on this host and passed:
 **7,314 tests, 0 failures**, across 445 files, with 17,073,178 assertions.
 The full log is `/tmp/node1149-review1-full-test.log`. This successful run
 supersedes the initial run's unresolved timeout result above.
+
+## Recovery on current main, 2026-11-01
+
+Rebased onto `57ecfbd3`, including the production Coriolis and Longwall drill.
+Both mining probe registrations are retained. The automatic merge retained
+two declarations of `BEAM_CAPACITY`; the build rejected that merge with
+TS2451. Removing this port’s duplicate preserves main’s 128-stroke capacity.
+
+Git selection requests all 120 probes because `main.ts` changes Game wiring.
+The principal chose focused checks followed by scope review, rather than the
+full fallback. The focused results will be recorded after exact-head Sage
+review; no full-suite pass is claimed.
+
+The #1150 investigation already reproduced `probe-death` and
+`probe-display-contacts` on main `ec561ec5`; #1170 and #1171 own them. This
+recovery reuses that baseline evidence without repeating the main comparison.
+The previous four boot timeouts still need focused reruns on this branch.
+
+The prior `mutation-changed` job reported 59 survivors among 78 mutants in
+five files. It is advisory (`continue-on-error: true`), distinct from required
+CI. #1172 tracks mutation follow-through; this recovery changes no mutation
+policy or assertions to hide survivors.
