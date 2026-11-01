@@ -57,6 +57,8 @@ Sage then found that a clean baseline lacks the capture script's
 `scripts/lib/station-detail.mjs` dependency. Removing the previously copied
 helper reproduced `ERR_MODULE_NOT_FOUND` before capture. The wrapper now
 copies that dependency with the entry script before it launches the baseline.
+Starting with that helper absent, the zero-wait rerun at `f3b3b574` exits 0
+and produces all eight frames across the four hardware captures.
 
 Typecheck, formatting, script lint, comment lint and the capture script's
 syntax check pass. The principal explicitly instructed this recovery not to
