@@ -1,4 +1,9 @@
 export const MODEL_QUEUE_HOME = { seed: 42, system: 4 };
+/** @param {string} name */
+export function tradeExteriorRequestPattern(name) {
+	return new RegExp(`/trade-${name}[^/]*\\.glb`);
+}
+
 /** @type {ReadonlyArray<{form: "b" | "c" | "d" | "e", name: string, system: number, from: number}>} */
 export const TRADE_MODEL_FIXTURES = [
 	{ form: "b", name: "ring", system: 1, from: 5 },
