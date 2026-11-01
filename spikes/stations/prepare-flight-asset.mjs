@@ -16,7 +16,13 @@ import {
 	ALL_EXTENSIONS,
 	EXTMeshoptCompression,
 } from "@gltf-transform/extensions";
-import { dedup, reorder, textureCompress } from "@gltf-transform/functions";
+import {
+	cloneDocument,
+	dedup,
+	prune,
+	reorder,
+	textureCompress,
+} from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptDecoder } from "meshoptimizer";
 import sharp from "sharp";
 import { mkdir, readFile, stat } from "node:fs/promises";
@@ -91,30 +97,94 @@ for (const [id, name] of [
 		.setEncoderOptions({
 			method: EXTMeshoptCompression.EncoderMethod.QUANTIZE,
 		});
-	const beforeEncoding = attributes(document);
-	await io.write(target, document);
-	const decoded = await io.read(target);
-	assert.deepEqual(
-		attributes(decoded),
-		beforeEncoding,
-		`${target}: Meshopt changed vertex attributes`,
-	);
-	assert.deepEqual(
-		triangleSoup(decoded),
-		approved,
-		`${target}: the written file draws other triangles than the flight export`,
-	);
+	const outputs = [[target, document]];
+	if (id === "ring") {
+		const detail = cloneDocument(document);
+		const isDetail = (node) => node.getName().startsWith("scale-detail/");
+		for (const node of document.getRoot().listNodes())
+			if (isDetail(node)) node.dispose();
+		const scene = detail.getRoot().listScenes()[0];
+		for (const node of detail.getRoot().listNodes())
+			if (isDetail(node)) scene.addChild(node);
+		for (const node of detail.getRoot().listNodes())
+			if (!isDetail(node)) node.dispose();
+		for (const material of detail.getRoot().listMaterials()) {
+			const texture = material.getBaseColorTexture();
+			if (!texture) continue;
+			material.setExtras({
+				...material.getExtras(),
+				baseColorMap: texture.getName(),
+			});
+			material.setBaseColorTexture(null);
+		}
+		await document.transform(prune({ keepAttributes: true, keepLeaves: true }));
+		await detail.transform(prune({ keepAttributes: true, keepLeaves: true }));
+		assert.equal(
+			detail.getRoot().listTextures().length,
+			0,
+			"Ring detail carries an image",
+		);
+		detail
+			.createExtension(EXTMeshoptCompression)
+			.setRequired(true)
+			.setEncoderOptions({
+				method: EXTMeshoptCompression.EncoderMethod.QUANTIZE,
+			});
+		outputs.push(["src/models/trade-ring-detail.glb", detail]);
+	}
+	const decodedOutputs = [];
+	for (const [output, doc] of outputs) {
+		const beforeEncoding = attributes(doc);
+		await io.write(output, doc);
+		const decoded = await io.read(output);
+		decodedOutputs.push(decoded);
+		assert.deepEqual(
+			attributes(decoded),
+			beforeEncoding,
+			`${output}: Meshopt changed vertex attributes`,
+		);
+		const { size } = await stat(output);
+		assert(size < 25_000_000, `${output}: exceeds the flight asset budget`);
+		const sha256 = createHash("sha256")
+			.update(await readFile(output))
+			.digest("hex");
+		console.log(
+			`Verified ${output}: exact vertex attributes; ${size} bytes (${(size / 2 ** 20).toFixed(2)} MiB), sha256 ${sha256}.`,
+		);
+	}
+	const [decoded, detail] = decodedOutputs;
 	assert.deepEqual(
 		await pixels(decoded),
 		originalPixels,
 		`${target}: WebP changed texture pixels`,
 	);
-	const { size } = await stat(target);
-	assert(size < 25_000_000, `${target}: exceeds the flight asset budget`);
-	const sha256 = createHash("sha256")
-		.update(await readFile(target))
-		.digest("hex");
+	if (detail) {
+		const textures = new Map(
+			decoded
+				.getRoot()
+				.listTextures()
+				.map((texture) => [texture.getName(), texture]),
+		);
+		for (const material of detail.getRoot().listMaterials()) {
+			const name = material.getExtras().baseColorMap;
+			if (name) {
+				assert(textures.has(name), `Missing base texture ${name}`);
+				const texture = textures.get(name);
+				material.setBaseColorTexture(
+					detail
+						.createTexture(name)
+						.setImage(texture.getImage())
+						.setMimeType(texture.getMimeType()),
+				);
+			}
+		}
+	}
+	assert.deepEqual(
+		Object.assign({}, ...decodedOutputs.map(triangleSoup)),
+		approved,
+		`${target}: split or encoding changed triangles or material inputs`,
+	);
 	console.log(
-		`Verified ${target}: flight-export triangles, exact vertex attributes and texture pixels; ${size} bytes (${(size / 2 ** 20).toFixed(2)} MiB), sha256 ${sha256}.`,
+		`Verified ${target}: exact flight-export triangles, material inputs and texture pixels across ${outputs.length} file(s).`,
 	);
 }

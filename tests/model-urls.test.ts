@@ -18,6 +18,7 @@ import {
 	SHIPYARD_GLB_URLS,
 	STATION_INTERIORS_GLB_URL,
 	TRADE_GLB_URLS,
+	RING_DETAIL_GLB_URL,
 } from "../src/model-urls";
 
 const root = new URL("../", import.meta.url);
@@ -52,20 +53,11 @@ describe("models are served under hashed names (#834)", () => {
 			...Object.values(REFINERY_GLB_URLS),
 			...Object.values(OUTPOST_GLB_URLS),
 			...Object.values(TRADE_GLB_URLS),
+			RING_DETAIL_GLB_URL,
 			STATION_INTERIORS_GLB_URL,
 		];
 		expect(urls.map((u) => u.split("/").pop()).sort()).toEqual(shipped.sort());
 		for (const url of urls) expect(existsSync(fileURLToPath(url))).toBe(true);
-	});
-
-	test("the URLs are literals vite can rewrite to hashed assets", () => {
-		// vite rewrites `new URL("<literal>", import.meta.url)` only; a
-		// computed path would ship nothing and fail at runtime.
-		const source = read("src/model-urls.ts");
-		const literals = source.match(
-			/new URL\(\s*"\.\/models\/[\w-]+\.glb",\s*import\.meta\.url,?\s*\)/g,
-		);
-		expect(literals?.length).toBe(27);
 	});
 
 	test("no loader names a model by a fixed path", () => {

@@ -1,10 +1,11 @@
 import * as THREE from "three";
+import { DETAIL_RETRY_MS } from "./coriolis-flight";
+import { exposeStationMaterial, exposeStationMaterials } from "./station-light";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { disposeSubtree, shared } from "./gpu-teardown";
-import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
-import { TRADE_GLB_URLS } from "./model-urls";
+import { RING_DETAIL_GLB_URL, TRADE_GLB_URLS } from "./model-urls";
 import { STATION_GEOMETRY } from "./station";
 import { stationInterior } from "./station-interior";
 import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
@@ -12,6 +13,7 @@ import {
 	type AuthoredTradeForm,
 	buildCoriolisNavigation,
 	installTradeBuilder,
+	setStationDetail,
 	type StationFixture,
 	type StationMesh,
 	stationSilhouetteKm,
@@ -25,6 +27,8 @@ export const TRADE_MODEL_NAMES = { b: "ring", c: "drum", e: "wheel" } as const;
 export function createTradeBuilder(
 	form: AuthoredTradeForm,
 	template: THREE.Object3D,
+	fetchDetail?: () => Promise<THREE.Group>,
+	now: () => number = () => performance.now(),
 ) {
 	template.updateMatrixWorld(true);
 	const mark = template.getObjectByName("aperture-plane");
@@ -45,11 +49,66 @@ export function createTradeBuilder(
 		for (const m of Array.isArray(o.material) ? o.material : [o.material])
 			if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
 	});
-	const divisor = Math.max(
-		1,
-		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
-	);
-	for (const m of materials) m.emissiveIntensity /= divisor;
+	const divisor = exposeStationMaterials(materials);
+	const byName = new Map([...materials].map((m) => [m.name, m]));
+	const maps = new Map<string, THREE.Texture>();
+	for (const m of materials) if (m.map) maps.set(m.map.name, m.map);
+	let detail: THREE.Group | undefined;
+	let pending = false;
+	let failure: unknown;
+	let retryAt = 0;
+	const live = new Map<StationMesh, THREE.Object3D>();
+	const attach = (mesh: StationMesh, model: THREE.Object3D) => {
+		if (!detail) return;
+		const copy = detail.clone(true);
+		model.add(copy);
+		copy.traverse((o) => {
+			if (o.userData.minDetail) mesh.accessories.push(o);
+		});
+		model.updateMatrixWorld(true);
+		setStationDetail(mesh, mesh.detail);
+	};
+	const addDetail = (scene: THREE.Group) => {
+		if (detail) return;
+		const material = (m: THREE.Material) => {
+			if (!(m instanceof THREE.MeshStandardMaterial)) return shared(m);
+			const base = byName.get(m.name);
+			if (base) return base;
+			exposeStationMaterial(m, divisor);
+			const map = maps.get(m.userData.baseColorMap);
+			if (map) m.map = map;
+			byName.set(m.name, shared(m));
+			return m;
+		};
+		scene.traverse((o) => {
+			if (!(o instanceof THREE.Mesh)) return;
+			shared(o.geometry);
+			o.material = Array.isArray(o.material)
+				? o.material.map(material)
+				: material(o.material);
+			o.castShadow = true;
+			o.receiveShadow = true;
+		});
+		detail = scene;
+		for (const [mesh, model] of live) attach(mesh, model);
+		live.clear();
+	};
+	const requestDetail = () => {
+		if (detail || pending || !fetchDetail || now() < retryAt) return;
+		pending = true;
+		fetchDetail()
+			.then((scene) => {
+				addDetail(scene);
+				failure = undefined;
+			})
+			.catch((error: unknown) => {
+				failure = error;
+				retryAt = now() + DETAIL_RETRY_MS;
+			})
+			.finally(() => {
+				pending = false;
+			});
+	};
 	template.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		shared(o.geometry);
@@ -61,7 +120,7 @@ export function createTradeBuilder(
 		o.castShadow = true;
 		o.receiveShadow = true;
 	});
-	return (berthSeed: number, _color: number): StationMesh => {
+	const build = (berthSeed: number, _color: number): StationMesh => {
 		const exterior = new THREE.Group();
 		exterior.name = AUTHORED_EXTERIOR_NAME;
 		const model = template.clone(true);
@@ -69,7 +128,8 @@ export function createTradeBuilder(
 		model.scale.setScalar(0.001);
 		model.traverse((o) => {
 			if (!(o instanceof THREE.Mesh)) return;
-			if (o.name.includes("amber-lamp")) o.name = "windows";
+			if (o.name.includes("amber-lamp") && o.userData.minDetail !== "full")
+				o.name = "windows";
 			else if (o.name === "staticcladding-armour-0") o.name = "core";
 		});
 		exterior.add(model);
@@ -105,7 +165,7 @@ export function createTradeBuilder(
 			if (o.name === NAMEPLATE_NAME && o instanceof THREE.Mesh)
 				nameplates.push(o);
 		});
-		return {
+		const mesh: StationMesh = {
 			root,
 			spinner,
 			type: "trade",
@@ -116,9 +176,29 @@ export function createTradeBuilder(
 			accessories,
 			nameplates,
 			greebles: [],
-			dispose: () => disposeSubtree(root),
+			dispose: () => {
+				live.delete(mesh);
+				disposeSubtree(root);
+			},
+			...(fetchDetail
+				? {
+						lateDetail: {
+							request: requestDetail,
+							get attached() {
+								return detail !== undefined;
+							},
+							get failure() {
+								return failure;
+							},
+						},
+					}
+				: {}),
 		};
+		if (detail) attach(mesh, model);
+		else if (fetchDetail) live.set(mesh, model);
+		return mesh;
 	};
+	return Object.assign(build, { addDetail });
 }
 
 const ready = new Map<AuthoredTradeForm, Promise<void>>();
@@ -133,7 +213,21 @@ export function prepareTradeModel(
 			.setMeshoptDecoder(MeshoptDecoder)
 			.loadAsync(TRADE_GLB_URLS[form], onProgress)
 			.then((gltf) => {
-				installTradeBuilder(form, createTradeBuilder(form, gltf.scene));
+				installTradeBuilder(
+					form,
+					createTradeBuilder(
+						form,
+						gltf.scene,
+						form === "b"
+							? async () => {
+									const loaded = await new GLTFLoader()
+										.setMeshoptDecoder(MeshoptDecoder)
+										.loadAsync(RING_DETAIL_GLB_URL);
+									return loaded.scene;
+								}
+							: undefined,
+					),
+				);
 			})
 			.catch((error) => {
 				ready.delete(form);

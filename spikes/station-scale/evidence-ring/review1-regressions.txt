@@ -1,0 +1,115 @@
+bun test v1.4.2 (744846f84)
+
+tests/ring-late-detail.test.ts:
+14 | 	});
+15 | 	return result;
+16 | };
+17 | 
+18 | test("the Ring boot asset stays within the approved baseline byte budget", async () => {
+19 | 	expect(statSync("src/models/trade-ring.glb").size).toBeLessThanOrEqual(5_875_120);
+                                                         ^
+error: expect(received).toBeLessThanOrEqual(expected)
+
+Expected: <= 5875120
+Received: 19901304
+
+      at <anonymous> (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/tests/ring-late-detail.test.ts:19:53)
+(fail) the Ring boot asset stays within the approved baseline byte budget [0.27ms]
+32 | 		return decodeShippedGlb("src/models/trade-ring-detail.glb");
+33 | 	}, () => clock);
+34 | 	const far = build(7, 0x888888);
+35 | 	const near = build(8, 0x888888);
+36 | 	const gone = build(9, 0x888888);
+37 | 	expect(far.lateDetail?.attached).toBe(false);
+                                       ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: undefined
+
+      at <anonymous> (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/tests/ring-late-detail.test.ts:37:35)
+(fail) Ring detail defers its download, retries, attaches to live stations and respects their current band [647.51ms]
+
+ 0 pass
+ 2 fail
+ 2 expect() calls
+Ran 2 tests across 1 file. [3.26s]
+
+bun test v1.4.2 (744846f84)
+
+tests/assembly-flight.test.ts:
+26 | 		block.name = name;
+27 | 		block.add(new THREE.Mesh(new THREE.BoxGeometry(), lamp), new THREE.Mesh(new THREE.BoxGeometry(), navigation));
+28 | 		kit.add(block);
+29 | 	}
+30 | 	createAssemblyBlocks(kit);
+31 | 	expect(lamp.emissiveIntensity).toBe(1);
+                                     ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0.25
+
+      at <anonymous> (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/tests/assembly-flight.test.ts:31:33)
+(fail) bright navigation materials do not dim Assembly work lamps [0.81ms]
+
+ 0 pass
+ 3 filtered out
+ 1 fail
+ 1 expect() calls
+Ran 1 test across 1 file. [2.48s]
+
+Passing after correction:
+bun test v1.4.2 (744846f84)
+
+tests/assembly-flight.test.ts:
+(pass) bright navigation materials do not dim Assembly work lamps [1.12ms]
+(pass) authored Assembly production blocks > triangle measurements visit transformed instances rather than their source at the origin [0.72ms]
+(pass) authored Assembly production blocks > catalog registers the Assembly exterior [0.06ms]
+(pass) authored Assembly production blocks > every kind uses the seed's cells, with shared blocks and a separate hub [10405.19ms]
+
+tests/model-urls.test.ts:
+(pass) models are served under hashed names (#834) > no model is served from public/, at a fixed name [2.26ms]
+(pass) models are served under hashed names (#834) > every shipped model has a URL constant, and every constant a file [0.84ms]
+(pass) models are served under hashed names (#834) > the URLs are literals vite can rewrite to hashed assets [0.37ms]
+(pass) models are served under hashed names (#834) > no loader names a model by a fixed path [101.06ms]
+(pass) models are served under hashed names (#834) > /assets/* alone is immutable for a year [0.37ms]
+
+tests/coriolis-flight.test.ts:
+(pass) industrial exterior and seeded production bay share one kilometre spinner [14.64ms]
+(pass) other station forms retain their existing builder [70.93ms]
+(pass) flight export removes the display tunnel and its end cap across the whole slot [674.98ms]
+(pass) installed Coriolis is the canonical station builder without a URL flag [102.14ms]
+(pass) imported lights obey the live emissive ceiling while retaining their relative strengths [1.16ms]
+(pass) only exact Coriolis navigation material names receive the ruled exposure exception [1.17ms]
+(pass) the shipped Coriolis exceeds the shared ceiling only on its two ruled navigation materials [133.21ms]
+(pass) shipped flight asset and production bay obey collision, reach, detail and shared-resource contracts [2207.65ms]
+(pass) principal paint ruling retains authored warmth and contrast regardless of role colour [2.08ms]
+(pass) Coriolis shader compiles with the ruled station-only key and ambient gains and fails closed on chunk drift [120.78ms]
+(pass) every added scale-detail mesh draws only at full; baseline geometry and gameplay fixtures remain [115.77ms]
+Coriolis scale detail failed to load warn: offline
+      at <anonymous> (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/tests/coriolis-flight.test.ts:476:24)
+      at requestDetail (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/src/coriolis-flight.ts:64:3)
+      at updateStationVisuals (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/src/station-mesh.ts:7018:44)
+      at <anonymous> (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/tests/coriolis-flight.test.ts:490:2)
+
+(pass) the scale detail loads once a Coriolis reaches the reduced band, retries after a failure, and reaches stations built before it [370.43ms]
+(pass) the detail file shares the base file's materials, image and exposure [117.71ms]
+
+tests/ring-scale-detail.test.ts:
+(pass) Ring scale detail is separate from the approved baseline and hidden below full [62.80ms]
+(pass) trade/b: the ruled station key light reaches the compiled exterior shader [60.49ms]
+(pass) trade/c: the ruled station key light reaches the compiled exterior shader [47.22ms]
+(pass) trade/d: the ruled station key light reaches the compiled exterior shader [1.79ms]
+(pass) trade/e: the ruled station key light reaches the compiled exterior shader [81.56ms]
+(pass) Ring red and green beacons cross the bloom threshold while its other lamps keep the ceiling [68.71ms]
+(pass) the new Ring beacons do not dim its approved amber lamps and work floods [66.11ms]
+
+tests/ring-late-detail.test.ts:
+(pass) the Ring boot asset stays within the approved baseline byte budget [11.84ms]
+(pass) Ring detail defers its download, retries, attaches to live stations and respects their current band [317.29ms]
+
+ 31 pass
+ 0 fail
+ 57909 expect() calls
+Ran 31 tests across 5 files. [20.54s]

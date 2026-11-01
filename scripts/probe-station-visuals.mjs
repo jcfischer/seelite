@@ -79,6 +79,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { waitForStationDetail } from "./lib/station-detail.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -552,6 +553,22 @@ for (const viewport of FIXTURES.flatMap((fixture) =>
 			[id, silhouetteKm * CLOSE_RADII],
 		);
 		checkFraming(check, `${viewport.name}: ${type}`, framing);
+		await waitForStationDetail(page);
+		if (type === "trade" && viewport.formId === "b") {
+			const parts = await page.evaluate((bodyId) => {
+				const parts = [];
+				window.__meshOfBody(bodyId).traverse((o) => {
+					if (o.isMesh && o.name.startsWith("scale-detail"))
+						parts.push({ name: o.name, visible: o.visible });
+				});
+				return parts;
+			}, id);
+			check(
+				`${viewport.name}: the production Ring loader attaches all seven detail meshes`,
+				parts.length === 7 && parts.every((part) => part.visible),
+				`${parts.length}/7 attached, ${parts.filter((part) => part.visible).length} visible`,
+			);
+		}
 		const m = await measure(page, id, type);
 		const authored = await page.evaluate(
 			(bodyId) => window.__seelite.isAuthoredStationId(bodyId),
@@ -775,19 +792,38 @@ for (const viewport of FIXTURES.flatMap((fixture) =>
 				([bodyId, range]) => window.__viewAlongAxis(bodyId, range),
 				[id, silhouetteKm * radii],
 			);
-			return page.evaluate(
-				(bodyId) => window.__seelite.visualOfStation(bodyId).detail,
-				id,
-			);
+			return page.evaluate((bodyId) => {
+				const detail = window.__seelite.visualOfStation(bodyId).detail;
+				const parts = [];
+				window.__meshOfBody(bodyId).traverse((o) => {
+					if (o.isMesh && o.name.startsWith("scale-detail"))
+						parts.push({ visible: o.visible, minDetail: o.userData.minDetail });
+				});
+				return { detail, parts };
+			}, id);
 		};
 		const close = await levelAt(CLOSE_RADII);
 		const mid = await levelAt(REDUCED_RADII);
 		const far = await levelAt(OUTLINE_RADII);
 		check(
 			`${viewport.name}: ${type} drops detail as it recedes`,
-			close === "full" && mid === "reduced" && far === "outline",
-			`${close} → ${mid} → ${far}`,
+			close.detail === "full" &&
+				mid.detail === "reduced" &&
+				far.detail === "outline",
+			`${close.detail} → ${mid.detail} → ${far.detail}`,
 		);
+		if (type === "trade" && viewport.formId === "b")
+			for (const state of [close, mid, far])
+				check(
+					`${viewport.name}: all seven Ring details obey the ${state.detail} band`,
+					state.parts.length === 7 &&
+						state.parts.every(
+							(part) =>
+								part.minDetail === "full" &&
+								part.visible === (state.detail === "full"),
+						),
+					`${state.parts.length}/7 attached, ${state.parts.filter((part) => part.visible).length} visible`,
+				);
 	}
 	await page.close();
 }

@@ -4064,11 +4064,6 @@
       "count": 4
     }
   },
-  "tests/model-urls.test.ts": {
-    "seelite/no-comments": {
-      "count": 2
-    }
-  },
   "tests/module-pricing.test.ts": {
     "seelite/no-comments": {
       "count": 5
