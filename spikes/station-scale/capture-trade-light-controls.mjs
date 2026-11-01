@@ -6,6 +6,7 @@ const main = await realpath(process.argv[2]);
 const branch = await realpath(process.cwd());
 const outRoot = resolve(process.argv[3] ?? "spikes/station-scale/evidence-ring/trade-light-controls");
 await copyFile("spikes/station-scale/capture.mjs", resolve(main, "spikes/station-scale/capture.mjs"));
+await copyFile("scripts/lib/station-detail.mjs", resolve(main, "scripts/lib/station-detail.mjs"));
 for (const fixture of [{ form: "c", system: 0, name: "drum" }, { form: "d", system: 5, name: "assembly" }])
 	for (const [label, root] of [["before", main], ["after", branch]]) {
 		const out = resolve(outRoot, fixture.name, label);

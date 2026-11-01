@@ -53,6 +53,11 @@ The same zero-wait invocation completes all four Drum and Assembly runs and
 writes eight frames on ANGLE Metal / Apple M1 Pro. Its optional output path
 keeps this verification separate from the historical captures.
 
+Sage then found that a clean baseline lacks the capture script's
+`scripts/lib/station-detail.mjs` dependency. Removing the previously copied
+helper reproduced `ERR_MODULE_NOT_FOUND` before capture. The wrapper now
+copies that dependency with the entry script before it launches the baseline.
+
 Typecheck, formatting, script lint, comment lint and the capture script's
 syntax check pass. The principal explicitly instructed this recovery not to
 run the full browser gate. This focused verification does not claim that gate.
