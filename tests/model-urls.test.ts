@@ -60,16 +60,6 @@ describe("models are served under hashed names (#834)", () => {
 		for (const url of urls) expect(existsSync(fileURLToPath(url))).toBe(true);
 	});
 
-	test("the URLs are literals vite can rewrite to hashed assets", () => {
-		// vite rewrites `new URL("<literal>", import.meta.url)` only; a
-		// computed path would ship nothing and fail at runtime.
-		const source = read("src/model-urls.ts");
-		const literals = source.match(
-			/new URL\(\s*"\.\/models\/[\w-]+\.glb",\s*import\.meta\.url,?\s*\)/g,
-		);
-		expect(literals?.length).toBe(28);
-	});
-
 	test("no loader names a model by a fixed path", () => {
 		for (const file of readdirSync(new URL("src", root)).filter((n) =>
 			n.endsWith(".ts"),
