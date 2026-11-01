@@ -15,6 +15,18 @@ const OWNERS = Object.freeze({
 		"src/ship-mesh.ts",
 		"src/deposit-state.ts",
 	],
+	"probe-mining-mounts.mjs": [
+		"scripts/probe-mining-mounts.mjs",
+		"src/laser-modules.ts",
+		"src/mining-beam.ts",
+		"src/beam-glass.ts",
+		"src/beam-layer.ts",
+		"src/rock-extraction.ts",
+		"src/fire-group.ts",
+		"src/ship-mesh.ts",
+		"src/outfitting.ts",
+		"src/outfitting-view.ts",
+	],
 	"probe-mining-survey.mjs": [
 		"scripts/probe-mining-survey.mjs",
 		"src/rock-survey.ts",
