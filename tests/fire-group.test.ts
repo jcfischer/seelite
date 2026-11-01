@@ -85,6 +85,7 @@ test("under ?mining=1 two or more Mining Lasers add MINING LASERS after ALL LASE
 		laser("H1 PULSE LASER", ["h1"]),
 		laser("H2 MINING LASER", ["h2"]),
 		laser("H3 MINING LASER", ["h3"]),
+		{ label: "BUILT-IN DRILL", kind: "drill", trigger: "primary", slots: [] },
 	]);
 	const flagless = [
 		laser("ALL LASERS", ["h1", "h2", "h3"]),
@@ -99,6 +100,7 @@ test("under ?mining=1 two or more Mining Lasers add MINING LASERS after ALL LASE
 		laser("ALL LASERS", ["h1", "h2"]),
 		laser("H1 PULSE LASER", ["h1"]),
 		laser("H2 MINING LASER", ["h2"]),
+		{ label: "BUILT-IN DRILL", kind: "drill", trigger: "primary", slots: [] },
 	]);
 	const pulses = {
 		...stockLoadout("miner"),
@@ -108,4 +110,28 @@ test("under ?mining=1 two or more Mining Lasers add MINING LASERS after ALL LASE
 	expect(fireGroups(pulses, "miner", true).map((g) => g.label)).not.toContain(
 		"MINING LASERS",
 	);
+});
+
+test("the built-in drill needs both a cutter hull and the mining flag and never fires a laser", () => {
+	const groups = fireGroups(stockLoadout("miner"), "miner", true);
+	const drill = groups.find((g) => g.kind === "drill");
+	expect(drill).toEqual({
+		label: "BUILT-IN DRILL",
+		kind: "drill",
+		trigger: "primary",
+		slots: [],
+	});
+	for (const [hull, mining] of [
+		["courier", true],
+		["miner", false],
+	] as const)
+		expect(
+			fireGroups(stockLoadout(hull), hull, mining).some(
+				(g) => g.kind === "drill",
+			),
+		).toBe(false);
+	const armed = new ArmedFireGroup();
+	for (let i = 0; i < groups.length - 1; i++) armed.cycle(groups);
+	expect(armed.current(groups)).toEqual(drill);
+	expect(armed.firesLaser(groups)).toBe(false);
 });

@@ -32,7 +32,11 @@ export const modelLoaders = {
 	interceptor: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./interceptor-hull")).prepareInterceptorHullModel(p),
 	miner: async (p?: Parameters<ModelLoader>[0]) =>
-		(await import("./longwall-model")).prepareLongwallModel(p),
+		(await import("./longwall-model")).prepareLongwallModel(p, {
+			posableStruts:
+				new URLSearchParams(globalThis.location?.search ?? "").get("mining") ===
+				"1",
+		}),
 	freighter: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./porter-model")).preparePorterModel(p),
 	interiors: async (p?: Parameters<ModelLoader>[0]) =>

@@ -753,6 +753,12 @@ const AUTHORED = [
 		keys: ["b"],
 	},
 	{
+		id: "fight.drillHold",
+		name: "Anchor or release the drill struts",
+		group: "fight",
+		keys: ["4"],
+	},
+	{
 		id: "fight.rigIncoming",
 		name: "Call an incoming raider (combat rig)",
 		group: "fight",

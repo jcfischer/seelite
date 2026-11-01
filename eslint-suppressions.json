@@ -1416,7 +1416,7 @@
   },
   "src/beam-layer.ts": {
     "seelite/no-comments": {
-      "count": 6
+      "count": 5
     }
   },
   "src/binding-store.ts": {
@@ -2036,7 +2036,7 @@
   },
   "src/main.ts": {
     "seelite/no-comments": {
-      "count": 4204
+      "count": 4203
     }
   },
   "src/market-probe-hook.ts": {
