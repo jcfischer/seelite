@@ -26,11 +26,36 @@ dimming them by including the brighter new beacons in their divisor. The
 correction changes no authored material input. Coriolis paint and exposure stay
 as on main. Its beacons remain at 4.8; the equal gain of 8 on differently
 authored lamp values is not an equal final intensity. The Ring's beacon
-appearance remains part of the principal's pending visual acceptance.
+appearance was accepted by the principal on 2026-11-01.
 
-The principal's acceptance of the visual result, frame cost, asset size and
-proposed changelog sentence remains pending. Review and the final PR browser
-gate belong to the supervisor. This receipt does not close the node.
+The principal accepted the visual result on 2026-11-01, against main
+`743b1092` and PR head `8c629782`, and instructed this recovery not to run
+the full browser gate. Frame-cost, asset-size and proposed changelog
+acceptance remain pending. This receipt does not close the node.
+
+## Recovery verification on 2026-11-01
+
+`tradeExteriorRequestPattern` excludes deferred `-detail` assets from both
+the held-response and failed-download cases. It retains plain and hashed
+exterior URLs. The `attempts === 1` assertion is unchanged. A regression
+first failed because the Ring detail request matched the exterior pattern.
+After the fix, both fixture tests pass with 49 assertions, including a check
+that two exterior downloads still count twice.
+
+The hardware rerun of `npm run probe:one -- probe-model-queue.mjs --show-output`
+passes 32/32 checks at `1a3f176e`. The Ring reports one exterior request,
+an authored model and a stable scene root. The other 119 probes were not run.
+
+Sage's nested-lock finding reproduced with `PROBE_LOCK_WAIT_MS=0`: the
+capture helper's child waited on its own lock and exited 75. The helper now
+starts `capture.mjs` directly, leaving that script as the sole lock owner.
+The same zero-wait invocation completes all four Drum and Assembly runs and
+writes eight frames on ANGLE Metal / Apple M1 Pro. Its optional output path
+keeps this verification separate from the historical captures.
+
+Typecheck, formatting, script lint, comment lint and the capture script's
+syntax check pass. The principal explicitly instructed this recovery not to
+run the full browser gate. This focused verification does not claim that gate.
 
 ## Review round 2 browser correction
 
@@ -294,7 +319,7 @@ declare seed 42, system 1 and cover lever 1145. The existing station rows,
 `hull-chase` and `cockpit-backlit` remain controls. The new fixture and view
 declarations have a failing-before headless test. Both manifests retain actual
 clock, dirty ref, renderer and serving-tree provenance. The images were opened
-at full size; principal visual approval is still required.
+at full size; the principal accepted the visual result on 2026-11-01.
 
 Capture the canonical subset through `npm run views` on each guarded server:
 
@@ -374,4 +399,5 @@ pass. The emitted-file size guard passes. The selector still expands this PR
 to all 118 probes, so the supervisor retains the final selected PR browser
 gate. These two affected probes are not that gate. Final source and evidence
 hashes are in [review1-verification.json](../../spikes/station-scale/evidence-ring/review1-verification.json).
-Principal visual, frame-cost, asset-size and changelog approval remain pending.
+The principal accepted the visuals on 2026-11-01. Frame-cost, asset-size and
+changelog approval remain pending.
