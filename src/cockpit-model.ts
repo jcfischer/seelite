@@ -43,8 +43,6 @@ const CABIN_PITCH_RAD = MINER_COCKPIT ? 0.12 : 0.242;
 
 /** The miner seat sits this far to starboard of the pilot seat, model metres. */
 export const MINER_SEAT_OFFSET_M = 1.2;
-/** The review build's vertical field of view, degrees: wide enough for the canopy and side windows. */
-export const MINER_COCKPIT_FOV_DEG = 80;
 
 const MINER_FINISHES: Readonly<
 	Record<string, { metalness: number; roughness: number; color?: number }>

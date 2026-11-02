@@ -21,6 +21,13 @@ The courier retains its model-owned eye and pitch at both settings. No cabin
 transform or cabin-specific choice belongs to the toggle. The miner cabin art
 and cockpit text work are outside this node.
 
+The #1143 miner review build (`?cockpit=miner`, merged in #1159 after this
+branch was cut) opened at a fixed 80° from its own `MINER_COCKPIT_FOV_DEG`.
+On the rebase of 2026-11-02 the setting took over every cabin, as the node
+asks, and that constant was deleted. So the miner build now opens at normal
+(60°) and reaches its former 80° framing with the wide setting. Its cabin
+pitch (0.12 rad) is unchanged and was tuned at 80°.
+
 ## Visual evidence and approval
 
 The local contact sheet is `view-set/node-1155/index.html`. These ignored
