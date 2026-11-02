@@ -124,16 +124,21 @@ const ONLY = arg("only", null);
 const VIEWS = selectViews(ONLY);
 const OUT = arg("out", ONLY === null ? "view-set" : "view-set/selected");
 const QUALITY = arg("quality", null);
+const COCKPIT_FOV = arg("cockpit-fov", null);
+if (COCKPIT_FOV !== null && COCKPIT_FOV !== "normal" && COCKPIT_FOV !== "wide")
+	throw new Error(`--cockpit-fov must be normal or wide, got ${COCKPIT_FOV}`);
 if (QUALITY !== null && QUALITY !== "high" && QUALITY !== "low")
 	throw new Error(`--quality must be high or low, got ${QUALITY}`);
 const BOOT_TIMEOUT_MS = Number(arg("boot-timeout-ms", "20000"));
 if (!Number.isSafeInteger(BOOT_TIMEOUT_MS) || BOOT_TIMEOUT_MS <= 0)
 	throw new Error("--boot-timeout-ms must be a positive integer");
 
-/** Apply an explicitly requested quality after every boot. The setting persists
- * across the refinery seed navigation, but writing it again there makes the
- * capture's renderer state an observation rather than an assumption. */
-async function applyCaptureQuality(page) {
+/** Apply requested settings after each boot, including seed changes. */
+async function applyCaptureSettings(page) {
+	if (COCKPIT_FOV !== null)
+		await page.evaluate((mode) => {
+			window.__seelite.settings.set("cockpitFov", mode);
+		}, COCKPIT_FOV);
 	if (QUALITY === null) return;
 	await page.evaluate((quality) => {
 		window.__seelite.settings.set("quality", quality);
@@ -274,7 +279,7 @@ async function ensureFixture(page, seed, system = null, hull = "courier") {
 				`capture: ${seed ? `seed ${seed} ` : ""}system ${system} was asked for and system ${booted} booted — the page refuses an index it cannot use, quietly and for a person at a URL, so the capture is the one that has to refuse loudly`,
 			);
 	}
-	await applyCaptureQuality(page);
+	await applyCaptureSettings(page);
 	await page.evaluate(() => window.__rememberBootPosition());
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	currentSeed = seed;
@@ -1021,7 +1026,7 @@ const PLACERS = {
 			{ waitUntil: "load" },
 		);
 		await bootedGame(page, BOOT_TIMEOUT_MS);
-		await applyCaptureQuality(page);
+		await applyCaptureSettings(page);
 		const result = await page.evaluate(
 			({ want, at }) => {
 				const g = window.__seelite;
@@ -1466,7 +1471,7 @@ await page.goto(
 	},
 );
 await bootedGame(page, BOOT_TIMEOUT_MS);
-await applyCaptureQuality(page);
+await applyCaptureSettings(page);
 currentSeed = SEED;
 let renderer;
 const captured = [];
@@ -1646,6 +1651,9 @@ try {
 		const gameTime = await page.evaluate(
 			() => window.__seelite?.world.gameTime ?? null,
 		);
+		const fovDeg = await page.evaluate(
+			() => window.__seelite?.nearCamera.fov ?? null,
+		);
 		const horizonFacts =
 			view.shot.kind === "horizon"
 				? assertHorizonFacts(
@@ -1659,7 +1667,14 @@ try {
 		// PNG is on disk by now; the throw stops the manifest and the sheet.
 		if (view.shot.kind === "chart")
 			await assertChartHover(page, "after the shutter", view.shot, chartAimed);
-		captured.push({ name: view.name, file, subject, gameTime, horizonFacts });
+		captured.push({
+			name: view.name,
+			file,
+			subject,
+			gameTime,
+			fovDeg,
+			horizonFacts,
+		});
 		// A chart row says how many foreign pointer events the filter dropped, so
 		// a green run shows whether the physical cursor was in play at all. The
 		// log keeps the last sixteen, so the count is a floor.
@@ -1709,6 +1724,7 @@ const manifest = {
 	renderer,
 	seed: SEED,
 	quality: QUALITY ?? "default",
+	cockpitFov: COCKPIT_FOV ?? "default",
 	// The full-set tone report is deliberately absent from scoped captures.
 	levelsFile: ONLY === null ? levelsFile(LABEL) : undefined,
 	selectedViews: ONLY === null ? undefined : VIEWS.map((view) => view.name),
