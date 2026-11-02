@@ -49,8 +49,9 @@ stale module despite serving the correct tree.
 
 All eight PNGs were opened for inspection. The renderer reported
 `ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)`.
-The principal's visual approval is **pending**. The agent does not supply that
-approval or close checkpoint `cp-seelite-cockpit-fov-toggle`.
+The principal approved the views on 2026-11-02, from the `after-normal` and
+`after-wide` runs captured at the rebased head `d19a05a7`. The principal also
+approved, the same day, that the miner review build opens at normal (60°).
 
 Reproduce the after captures against this worktree's dev server:
 
@@ -127,6 +128,6 @@ remains an affected subset; the supervisor owns the final selected gate.
 
 ## Merge handoff
 
-The proposed changelog sentence in `src/changelog.ts` needs principal approval
-and a merge-date check. The supervisor pushes the worker branch and opens the
+The principal approved the changelog sentence in `src/changelog.ts` on
+2026-11-02, the merge date. The supervisor pushes the worker branch and opens the
 pull request. The principal owns the merge and visual approval.
