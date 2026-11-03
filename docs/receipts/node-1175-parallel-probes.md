@@ -199,6 +199,10 @@ because this changes the harness.
 | run | head | wall clock | gating | median slowdown | peak load |
 |---|---|---:|---|---:|---:|
 | 1 | `77cbd99` | 1034 s | 119/119 | ×1.26 | 16.5 |
+| 2 | `7249473` | 1072 s | 118/118 | ×1.32 | 21.2 |
+| 3 | `7249473` | 1083 s | 118/118 | ×1.33 | 27.4 |
+
+Runs 2 and 3 gate one probe fewer because `probe-duel-hud` is quarantined; it passed in both. In each run the only red was the quarantined `probe-output-stage` (#975). The peak loads of runs 2 and 3 are above run 1's. Each run started after the 1-minute load had stayed under 6 for two minutes, but nothing kept other load off the machine during a run.
 
 **A discarded attempt before run 1.** At the same head, a run ran beside a ranger
 worker's bun test suite (peak load 35.6, median slowdown ×1.34). It took 1063 s
