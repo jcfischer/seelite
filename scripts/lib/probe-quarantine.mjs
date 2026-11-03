@@ -23,4 +23,8 @@ export const QUARANTINED = new Map([
 		"probe-output-stage.mjs",
 		"#975 multisample lit-pixel disagreement: 1.21% on baseline, limit 1%",
 	],
+	[
+		"probe-duel-hud.mjs",
+		"#1178 armed group intermittently unpainted: red alone at main's commit in a worktree",
+	],
 ]);

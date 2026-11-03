@@ -191,7 +191,19 @@ longer sets the tail. The next serial log fed to
 `scripts/record-probe-durations.mjs` gives those six their place in the
 order. The remaining time is GPU throughput.
 
-## C5. Open
+## C5. Three green full runs at 6
 
-Three consecutive green full runs at concurrency 6, with `probe-planet-surfaces`
-in the exclusive group, have not been run yet.
+Each run is `npm run probe:pr` on the final head, which falls back to every probe
+because this changes the harness.
+
+| run | head | wall clock | gating | median slowdown | peak load |
+|---|---|---:|---|---:|---:|
+| 1 | `77cbd99` | 1034 s | 119/119 | ×1.26 | 16.5 |
+
+**A discarded attempt before run 1.** At the same head, a run ran beside a ranger
+worker's bun test suite (peak load 35.6, median slowdown ×1.34). It took 1063 s
+and had one red, `probe-duel-hud`. Run alone, that probe was also red at `main`'s
+commit in this worktree (2 of 4 green), at load as low as 3.6, and 3 of 3 green in
+the primary checkout. So the red came from neither the scheduler nor load alone.
+It is node #1178, and `probe-duel-hud` is quarantined against it from the commit
+after run 1. Run 1 still gated on it, and it passed.
