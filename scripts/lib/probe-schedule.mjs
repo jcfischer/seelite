@@ -20,6 +20,10 @@ export const EXCLUSIVE = new Map([
 		"GPU-bound: 2.9× slower beside another suite (#882 §0)",
 	],
 	[
+		"probe-planet-surfaces.mjs",
+		"its same-class repeat noise floor rises under load: red at concurrency 6, green alone (#1175)",
+	],
+	[
 		"probe-live-cockpit.mjs",
 		"the one visible-window probe: it needs the screen and the focus",
 	],

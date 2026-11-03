@@ -138,20 +138,17 @@ const REPORTERS = new Set([
 const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 600_000);
 
 /**
- * How many probes run at once. **One**, and the default is not timidity —
- * it was measured.
+ * How many probes run at once: six, measured on the Mac Mini (M5 Pro, 18 cores)
+ * in `docs/receipts/node-1175-parallel-probes.md`.
  *
- * The measurement is seekolous's and it carries: probes that assert on
- * *rendered pixels* over a pumped clock collapse when two browsers share a
- * machine. One of its probes failed reproducibly on a 1.64px gap that reads
- * ~30px when it has the machine to itself.
- *
- * That is not flakiness to be retried around: those probes are measuring
- * frames, and starving the renderer changes the thing being measured. A green
- * suite that got there by not looking properly is worth less than a slow one.
- * The cost is wall-clock, and CI has it.
+ * Probes that assert on rendered pixels over a pumped clock change what they
+ * measure when another browser shares the GPU, so those run alone after the
+ * pool (`EXCLUSIVE` in `scripts/lib/probe-schedule.mjs`). The rest share the
+ * machine at a measured per-probe slowdown and no load-induced red. Another
+ * machine re-measures before it trusts this number; `PROBE_CONCURRENCY=1`
+ * gives the serial run.
  */
-const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 1);
+const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 6);
 
 // Which probes to run: everything here, or the subset `resolveOnly` selects.
 // `probe-inventory.mjs` owns exclusions such as this runner and `probe-guard`,
