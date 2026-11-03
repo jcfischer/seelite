@@ -182,9 +182,14 @@ so the red belongs to load. It joins the exclusive group.
 Each added worker makes every probe slower, so the work grows with concurrency:
 4052, 4570, 4989 s. At 6 the pool's makespan is near its floor of work over
 workers (4989 / 6 ≈ 832 s), and the exclusive group adds ~200 s. `probe-music`
-starts in the first wave and is done by 285 s, so longest-first already removed the tail
-#882 §7 described; scheduling has nothing left to give. The remaining time is
-GPU throughput.
+did not start in the first wave: the six probes with no recorded duration (the
+five pre-#1176 reds and the quarantined `probe-output-stage`) took those slots.
+It started when the first of them, `probe-witchspace`, finished at 17.0 s, and
+ran 284.3 s, so it was done by about 300 s, a third of the way through a 953 s
+run. Its late start in the alphabetical order, which #882 §7 described, no
+longer sets the tail. The next serial log fed to
+`scripts/record-probe-durations.mjs` gives those six their place in the
+order. The remaining time is GPU throughput.
 
 ## C5. Open
 
