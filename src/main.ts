@@ -1385,6 +1385,7 @@ import {
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+import { compileWhenReady } from "./compile-when-ready";
 
 /** #408 D1: where a guided start asks for clearance — outside the docking
  *  computer's standoff on the aperture axis, the placement `__parkInBerth`
@@ -7099,7 +7100,12 @@ class Game {
 		}
 		try {
 			this.renderer.setRenderTarget(this.composer.renderTarget1);
-			await this.renderer.compileAsync(mesh, this.nearCamera, this.nearScene);
+			await compileWhenReady(
+				this.renderer,
+				mesh,
+				this.nearCamera,
+				this.nearScene,
+			);
 		} finally {
 			this.renderer.setRenderTarget(target);
 		}
@@ -7234,10 +7240,11 @@ class Game {
 		for (const mesh of meshes) {
 			if (!live()) return;
 			const target = this.renderer.getRenderTarget();
-			let compiled: Promise<THREE.Object3D>;
+			let compiled: Promise<void>;
 			try {
 				this.renderer.setRenderTarget(this.composer.renderTarget1);
-				compiled = this.renderer.compileAsync(
+				compiled = compileWhenReady(
+					this.renderer,
 					mesh,
 					this.nearCamera,
 					this.nearScene,
@@ -7345,7 +7352,7 @@ class Game {
 			let compiled: Promise<unknown>;
 			try {
 				this.renderer.setRenderTarget(this.composer.renderTarget1);
-				compiled = this.renderer.compileAsync(root, camera, scene);
+				compiled = compileWhenReady(this.renderer, root, camera, scene);
 			} finally {
 				this.renderer.setRenderTarget(target);
 			}
