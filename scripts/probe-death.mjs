@@ -681,21 +681,24 @@ const warned = await warnPage.evaluate(async () => {
 	const market = await import("/src/market.ts");
 	g.view = "cockpit";
 	g.setHeadLook("forward");
-	const overlay = document.getElementById("overlay");
-	const c2d = overlay.getContext("2d", { willReadFrequently: true });
 	const frames = (n) =>
 		new Promise((resolve) => {
 			let k = 0;
 			const tick = () => (++k >= n ? resolve() : requestAnimationFrame(tick));
 			requestAnimationFrame(tick);
 		});
-	const shot = () => c2d.getImageData(0, 0, overlay.width, overlay.height).data;
-	// Moved pixels, and the mean colour of what moved in the second shot.
+	const shot = () => {
+		const face = g.cockpit.text.faces.get("notices");
+		if (!face) return null;
+		const { width, height } = face.ctx.canvas;
+		return face.ctx.getImageData(0, 0, width, height).data;
+	};
+	// Moved pixels, and how many of them are amber in the second shot.
 	const diff = (before, after) => {
+		if (!before || !after || before.length !== after.length)
+			return { moved: 0, amber: 0, face: false };
 		let moved = 0;
-		let r = 0;
-		let gr = 0;
-		let b = 0;
+		let amber = 0;
 		for (let i = 0; i < before.length; i += 4) {
 			const d =
 				Math.abs(after[i] - before[i]) +
@@ -704,13 +707,9 @@ const warned = await warnPage.evaluate(async () => {
 				Math.abs(after[i + 3] - before[i + 3]);
 			if (d < 24) continue;
 			moved += 1;
-			r += after[i];
-			gr += after[i + 1];
-			b += after[i + 2];
+			if (after[i] > after[i + 2] + 60 && after[i] >= after[i + 1]) amber += 1;
 		}
-		return moved === 0
-			? { moved, r: 0, g: 0, b: 0 }
-			: { moved, r: r / moved, g: gr / moved, b: b / moved };
+		return { moved, amber };
 	};
 	const setHull = (hull) => {
 		g.condition = { ...g.condition, hull };
@@ -726,13 +725,12 @@ const warned = await warnPage.evaluate(async () => {
 	fit(true);
 	setHull(full);
 	await frames(4);
-	const control = shot();
-	await frames(1);
-	const jitter = diff(control, shot());
 	const saidBefore = g.ejectWarningsSaid;
 	setHull(cost.EJECT_WARNING_HULL - 1);
 	await frames(4);
-	const painted = diff(control, shot());
+	const warning = shot();
+	await frames(1);
+	const jitter = diff(warning, shot());
 	const render = g.ejectWarningRender ? { ...g.ejectWarningRender } : null;
 	const saidOnce = g.ejectWarningsSaid - saidBefore;
 	await frames(10);
@@ -746,6 +744,7 @@ const warned = await warnPage.evaluate(async () => {
 	setHull(full);
 	await frames(4);
 	const healed = { due: g.ejectWarningDue, render: g.ejectWarningRender };
+	const painted = diff(shot(), warning);
 	return {
 		want: cost.ejectWarningText(names.ejectPrompt(g.layoutInForce())),
 		threshold: cost.EJECT_WARNING_HULL,
@@ -766,8 +765,7 @@ check(
 );
 check(
 	"and the sentence is painted: amber pixels move against the whole-hull control",
-	warned.painted.moved > Math.max(200, warned.jitter.moved * 4) &&
-		warned.painted.r > warned.painted.b + 60,
+	warned.painted.amber > Math.max(200, warned.jitter.moved * 4),
 	JSON.stringify({ painted: warned.painted, jitter: warned.jitter }),
 );
 check(
