@@ -307,22 +307,25 @@ function designationFrames() {
 	return cases.map(([target, expected]) => {
 		let seen = false;
 		let fits = false;
+		let drawnY = 0;
 		try {
 			ctx.fillText = function (text, x, y, ...args) {
-				if (text === expected && y === 78) {
+				if (text === expected) {
 					seen = true;
+					drawnY = y;
 					fits = x + this.measureText(text).width <= this.canvas.width - 28;
 				}
 				return fillText.call(this, text, x, y, ...args);
 			};
 			g.updateInstruments(target, 100, g.velocityReadout());
-			const actual = ctx.getImageData(0, 54, ctx.canvas.width, 30).data;
+			const band = [0, Math.max(0, drawnY - 24), ctx.canvas.width, 30];
+			const actual = ctx.getImageData(...band).data;
 			ctx.fillText = function (text, x, y, ...args) {
-				if (y !== 78) return fillText.call(this, text, x, y, ...args);
+				if (text !== expected) return fillText.call(this, text, x, y, ...args);
 			};
 			g.cockpit.instrumentKey = "";
 			g.updateInstruments(target, 100, g.velocityReadout());
-			const control = ctx.getImageData(0, 54, ctx.canvas.width, 30).data;
+			const control = ctx.getImageData(...band).data;
 			let changed = 0;
 			for (let i = 0; i < actual.length; i += 4)
 				if (
