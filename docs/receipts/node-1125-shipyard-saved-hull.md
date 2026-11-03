@@ -29,6 +29,16 @@ hull authority; the new regression check belongs to the browser probe because
 the fault was in its fixture and its claim about persisted bytes.
 This is internal probe work under `src/changelog.ts`'s major-change definition.
 
+## Overlap with #1176
+
+PR #1176 (`dda0b64c`) landed the same diagnosis on `main` first and gave the
+waiting explorer `stockLoadout("explorer")`, on the premise that buying a hull
+installs the stock loadout. It does not: the `buy-hull` action takes
+`hullOffer`'s loadout, which `transferLoadout` builds. The rebase keeps this
+branch's fixture, which builds the explorer the way a purchase does, and its
+read of the stored `live` record, which #1176 did not change: the
+"the save records the explorer" row still read the live `saveEnvelope()`.
+
 ## Regression evidence
 
 All browser runs used ANGLE Metal on the host's Apple M1 Pro, serially, with
