@@ -87,6 +87,26 @@
  * and it can still read zero for a cell that stalled less than an earlier one
  * — a real limit of the figure, stated rather than left for a reader to find.
  *
+ * ## `--close-detail` (node #758)
+ *
+ * Prices the close-detail band of node #720 on terran, at 2, 1.6, 1.5 and 1.2
+ * radii, with the arms `CLOSE_DETAIL_ARMS` names: band off against the interim
+ * cap and a cap ladder, half-res against full-res ground, screen-space against
+ * analytic-gradient relief, and clouds on their own footprint against the
+ * ground's. It prices the view's native terran body with its own weather shell
+ * (default view `planet-terminator`), pins the subject's relief path, and reads
+ * every arm's state back from the page before it accepts the cell.
+ *
+ * Cells are not nested. The whole arm-by-radius set is shuffled from a printed
+ * seed (`--seed`) with no arm twice in a row, and the sweep is meant to be run
+ * twice, with `--label` naming each run's file and a different `--seed` for each;
+ * `node scripts/report-close-detail-cost.mjs <four files>` joins them, two sweeps
+ * per pixel ratio. A 200-radius column rides along as the run's own invariant. Every
+ * row names renderer, pixel ratio, build SHA and lane, and the lane must be the
+ * GPU lane (`SEELITE_PROBE_RENDERER=hardware`).
+ *
+ *   SEELITE_PROBE_RENDERER=hardware node scripts/measure-planet-cost.mjs --close-detail --ratios 1 --seed 20261027 --label sweep1
+ *
  * ## What it writes
  *
  * A table to stdout, and the same rows as JSON under `view-set/` — gitignored,
@@ -95,18 +115,27 @@
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { loadavg } from "node:os";
+import { reportPlanetCost } from "./lib/planet-cost-report.mjs";
 import {
+	CELL_TREND_LIMIT,
+	CLOSE_DETAIL_ARMS,
+	CLOSE_DETAIL_RADII,
 	RADII,
-	farColumnVerdict,
+	armLandedRefusal,
+	buildShaOf,
+	cellTrend,
+	closeDetailArmsRefusal,
 	finite,
-	flagExcursions,
+	laneOf,
 	narrow,
 	parseFpsReadout,
 	radiiRefusal,
+	stampRows,
+	sweepOrder,
 	vsyncRefusal,
 } from "./lib/planet-cost.mjs";
+import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { GAME_TIME_S, SEED, VIEWPORT, VIEWS } from "./lib/view-set.mjs";
@@ -150,9 +179,12 @@ const OUT = "view-set";
  *
  *   node scripts/measure-planet-cost.mjs --view ringed-giant --classes iceGiant
  */
+const CLOSE_DETAIL = process.argv.includes("--close-detail");
 const PRICED_VIEW = process.argv.includes("--view")
 	? (process.argv[process.argv.indexOf("--view") + 1] ?? "")
-	: "planet-fill";
+	: CLOSE_DETAIL
+		? "planet-terminator"
+		: "planet-fill";
 const priced = VIEWS.find((v) => v.name === PRICED_VIEW);
 if (!priced)
 	throw new Error(
@@ -168,17 +200,6 @@ const SUBJECT = priced.shot.body;
 const SUN_ANGLE_DEG = priced.shot.sunAngleDeg;
 /** The world the priced view is framed in — its own, or the fixture's. */
 const PRICED_SEED = priced.shot.seed ?? SEED;
-
-/**
- * The two drawing-buffer scales, as two runs.
- *
- * `measure-light-cost.mjs` argues the case for 2: the fill-rate-bound terms are
- * paid per fragment, and at the default 1 the buffer is a quarter of a retina
- * one. A planet surface is *entirely* a fill-rate term, so the ratio between
- * these two runs is close to the whole story of what it costs — which is why
- * both are swept here rather than one being picked.
- */
-const PIXEL_RATIOS = [1, 2];
 
 /**
  * `--decompose`: price the ladder instead of the class table.
@@ -226,6 +247,29 @@ const listArg = (name) => {
 		throw new Error(`--${name} requires a comma-separated value`);
 	return value.split(",").map((v) => v.trim());
 };
+/**
+ * The two drawing-buffer scales, as two runs.
+ *
+ * `measure-light-cost.mjs` argues the case for 2: the fill-rate-bound terms are
+ * paid per fragment, and at the default 1 the buffer is a quarter of a retina
+ * one. A planet surface is *entirely* a fill-rate term, so the ratio between
+ * these two runs is close to the whole story of what it costs — which is why
+ * both are swept here rather than one being picked. `--ratios` narrows to one,
+ * which the close-detail sweep uses to keep each run inside the foreground
+ * invocation's time limit.
+ */
+const PIXEL_RATIOS = (listArg("ratios") ?? ["1", "2"]).map(Number);
+if (PIXEL_RATIOS.some((r) => ![1, 2].includes(r)))
+	throw new Error(
+		"--ratios names 1 and 2, the two drawing-buffer scales swept",
+	);
+const scalarArg = (name, fallback) => {
+	const list = listArg(name);
+	return list ? list[0] : fallback;
+};
+const ORDER_SEED = Number(scalarArg("seed", "20261027"));
+const RUN_LABEL = scalarArg("label", "");
+const ONLY_ARMS = listArg("arms");
 const ONLY_CLASSES = listArg("classes");
 const ONLY_RADII = listArg("radii")?.map(Number);
 const ONLY_RELIEF = listArg("relief");
@@ -331,9 +375,11 @@ const SETTLE_TIMEOUT_MS = 8000;
  * the least that can honestly be called a spread — and it is what
  * `one-sample-is-not-a-measurement` asks for. It is still small: the honest
  * reading of a wide range here is "re-run this cell", not "the middle one is
- * right".
+ * right". The close-detail sweep takes five: its deltas are fractions of a
+ * millisecond and a median of five moves less on one interrupted window.
  */
-const READINGS = 3;
+const TREND_ATTEMPTS = 3;
+const READINGS = CLOSE_DETAIL ? 5 : 3;
 
 /**
  * One fresh reading of the meter.
@@ -417,8 +463,26 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 // four minutes in would waste four minutes.
 const buried = radiiRefusal(RADII);
 if (buried) throw new Error(buried);
+const LANE = CLOSE_DETAIL ? laneOf(process.env) : null;
+if (CLOSE_DETAIL && !ONLY_ARMS) {
+	const armsRefusal = closeDetailArmsRefusal(CLOSE_DETAIL_ARMS);
+	if (armsRefusal) throw new Error(armsRefusal);
+}
+if (CLOSE_DETAIL && (DECOMPOSE || ONLY_CLASSES || ONLY_RELIEF))
+	throw new Error(
+		"--close-detail prices terran with its own arms; --decompose, --classes and --relief belong to the other modes",
+	);
 
 const origin = await guardedOrigin(ORIGIN);
+const HOST_LOAD = loadavg()
+	.map((v) => v.toFixed(2))
+	.join(" / ");
+
+const declaredBuild = async () => {
+	const response = await fetch(`${origin}${TREE_ENDPOINT}`);
+	return buildShaOf(await response.json());
+};
+const BUILD_SHA = CLOSE_DETAIL ? await declaredBuild() : null;
 
 /**
  * One run at one pixel ratio: every class at every apparent size on both relief
@@ -440,6 +504,8 @@ async function run(pixelRatio) {
 	let renderer = "";
 	let controlBefore;
 	let controlAfter;
+	let unpinnedAtRadii = [];
+	let sweepSeq = [];
 	const browser = await launchChromium({
 		headless: false,
 		// The two flags the whole measurement rests on. Without them the meter
@@ -541,7 +607,7 @@ async function run(pixelRatio) {
 		 * four doubt fields — is the same measurement and must stay one copy of it,
 		 * or a guard added to one kind of cell would quietly not apply to the other.
 		 */
-		const sampleHere = async (label, meta) => {
+		const sampleOnce = async (label, meta) => {
 			const settled = await settle(page);
 			const samples = [];
 			let text = settled.text;
@@ -576,6 +642,23 @@ async function run(pixelRatio) {
 				// as "did not stall".
 				peakRiseMs: finite(label, Math.max(0, last.peakMs - settled.peak)),
 			};
+		};
+
+		const sampleHere = async (label, meta) => {
+			if (!CLOSE_DETAIL) return sampleOnce(label, meta);
+			const discarded = [];
+			for (let attempt = 1; attempt <= TREND_ATTEMPTS; attempt++) {
+				const row = await sampleOnce(label, meta);
+				const trend = cellTrend(row.samplesMs);
+				if (trend <= CELL_TREND_LIMIT)
+					return { ...row, trend, attempts: attempt, discarded };
+				discarded.push({ samplesMs: row.samplesMs, trend });
+			}
+			throw new Error(
+				`${label}: the readings were still moving on all ${TREND_ATTEMPTS} reads (${discarded
+					.map((d) => d.samplesMs.map((v) => v.toFixed(1)).join(","))
+					.join(" | ")}), so there is no steady cost to report`,
+			);
 		};
 
 		/**
@@ -720,6 +803,138 @@ async function run(pixelRatio) {
 			return sampleHere(label, { radii, arm });
 		};
 
+		const installCloseDetail = async () =>
+			page.evaluate(async (id) => {
+				const g = window.__seelite;
+				const v = g.bodyVisuals.get(id);
+				if (!v) throw new Error(`no body visual for ${id}`);
+				const cd = {
+					cap: null,
+					cloudAtGround: false,
+					groundAngles: [],
+					cloudRatio: 1,
+				};
+				window.__closeDetail = cd;
+				const setQuality = v.setDetailQuality;
+				v.setDetailQuality = (quality) => {
+					if (cd.cap === null) setQuality.call(v, quality);
+					else
+						v.uniforms.extraOctaveCap.value =
+							v.surfaceClass() === "terran" ? cd.cap : 0;
+				};
+				const ground = v.surfaceMesh;
+				const groundDraw = ground.onBeforeRender;
+				ground.onBeforeRender = function (...args) {
+					groundDraw.apply(this, args);
+					cd.groundAngles.push(v.uniforms.surfacePixelAngle.value);
+					if (cd.groundAngles.length > 8) cd.groundAngles.shift();
+				};
+				const cloud = v.group.children.find(
+					(c) => c.userData.shell === "cloud",
+				);
+				if (cloud) {
+					const cloudDraw = cloud.onBeforeRender;
+					cloud.onBeforeRender = function (...args) {
+						cloudDraw.apply(this, args);
+						const own = v.uniforms.cloudPixelAngle.value;
+						const halfResGround =
+							ground.material?.uniforms?.lowRes !== undefined;
+						if (cd.cloudAtGround && halfResGround) {
+							const coarsest = Math.max(...cd.groundAngles.slice(-2));
+							v.uniforms.cloudPixelAngle.value = coarsest;
+							cd.cloudRatio = coarsest / own;
+						} else cd.cloudRatio = 1;
+					};
+				}
+			}, SUBJECT);
+
+		const applyArm = async (arm) => {
+			await page.evaluate(
+				([id, spec]) => {
+					const g = window.__seelite;
+					const cd = window.__closeDetail;
+					cd.cap = spec.cap === "shipped" ? null : spec.cap;
+					cd.cloudAtGround = spec.clouds === "at-ground";
+					cd.groundAngles.length = 0;
+					g.setPlanetHalfResAllowed(spec.halfRes);
+					g.bodyVisuals.get(id).setSurfacePath(spec.relief);
+				},
+				[SUBJECT, arm],
+			);
+		};
+
+		const readArmState = () =>
+			page.evaluate(async (id) => {
+				const g = window.__seelite;
+				const v = g.bodyVisuals.get(id);
+				const cd = window.__closeDetail;
+				const { planetDetailCap } = await import("/src/planet-footprint.ts");
+				const cloud = v.group.children.find(
+					(c) => c.userData.shell === "cloud",
+				);
+				const half = g.planetHalfResState();
+				const angles = cd.groundAngles.slice(-4);
+				return {
+					quality: g.settings.value.quality,
+					renderScale: g.settings.value.renderScale,
+					interimCap: planetDetailCap("high", "terran"),
+					groundCap: v.uniforms.extraOctaveCap.value,
+					cloudCap: cloud?.material.uniforms.extraOctaveCap.value ?? Number.NaN,
+					halfResEngaged: half.engaged,
+					surfacePath: v.surfacePath(),
+					hasCloudShell: Boolean(cloud),
+					cloudAngleRatio: cd.cloudRatio,
+					halfResRatio: angles.length
+						? Math.max(...angles) / Math.min(...angles)
+						: Number.NaN,
+					footprintProgram:
+						v.surfaceMesh.material.fragmentShader.includes("terrainFootprint"),
+				};
+			}, SUBJECT);
+
+		const closeArms = narrow(
+			CLOSE_DETAIL_ARMS.map((a) => a.name),
+			ONLY_ARMS,
+			"arms",
+		).map((name) => CLOSE_DETAIL_ARMS.find((a) => a.name === name));
+		const closeRadii = narrow([...CLOSE_DETAIL_RADII], ONLY_RADII, "radii");
+
+		const closeCell = async (armName, radii) => {
+			const arm = CLOSE_DETAIL_ARMS.find((a) => a.name === armName);
+			const label = `${arm.name} at ${radii} radii, ratio ${pixelRatio}`;
+			await place(radii);
+			await applyArm(arm);
+			const row = await sampleHere(label, { radii, arm: arm.name });
+			if (!CLOSE_DETAIL_RADII.includes(radii)) return row;
+			const seen = await readArmState();
+			const refusal = armLandedRefusal(arm, seen);
+			if (refusal) throw new Error(`${label}: ${refusal}`);
+			return { ...row, footprintProgram: seen.footprintProgram };
+		};
+
+		const closeDetailPrelude = async () => {
+			await installCloseDetail();
+			const unpinned = [];
+			for (const radii of closeRadii) {
+				await place(radii);
+				await page.waitForTimeout(2000);
+				const seen = await readArmState();
+				unpinned.push({
+					radii,
+					surfacePath: seen.surfacePath,
+					halfResEngaged: seen.halfResEngaged,
+					groundCap: seen.groundCap,
+					footprintProgram: seen.footprintProgram,
+				});
+			}
+			for (const arm of closeArms) {
+				await place(closeRadii[closeRadii.length - 1]);
+				await applyArm(arm);
+				await page.waitForTimeout(2000);
+			}
+			return unpinned;
+		};
+
 		/**
 		 * **The drift control, and why a sweep this long needs one.**
 		 *
@@ -757,14 +972,24 @@ async function run(pixelRatio) {
 		// The control is the ladder's own denominator in decompose mode, because
 		// `CONTROL` forces a class and this mode deliberately does not force one.
 		// Same cell at both ends either way: that is what makes it a control.
-		const control = DECOMPOSE
-			? () => armCell("full", RADII[0])
-			: () => cell(...CONTROL);
+		const control = CLOSE_DETAIL
+			? () => closeCell("interim", RADII[0])
+			: DECOMPOSE
+				? () => armCell("full", RADII[0])
+				: () => cell(...CONTROL);
+
+		if (CLOSE_DETAIL) {
+			unpinnedAtRadii = await closeDetailPrelude();
+			sweepSeq = sweepOrder(ORDER_SEED, closeArms, [RADII[0], ...closeRadii]);
+		}
 
 		controlBefore = await control();
 
 		rows = [];
-		if (DECOMPOSE) {
+		if (CLOSE_DETAIL) {
+			for (const [seq, c] of sweepSeq.entries())
+				rows.push({ ...(await closeCell(c.arm, c.radii)), seq });
+		} else if (DECOMPOSE) {
 			// Arm outermost, radius innermost: an arm change recompiles (relief and
 			// the ablate level are both a `#define` or a uniform every material
 			// carries) and a radius change is only a camera move.
@@ -784,7 +1009,9 @@ async function run(pixelRatio) {
 		}
 
 		controlAfter = await control();
-		armPrices = arms;
+		armPrices = CLOSE_DETAIL
+			? closeArms.map((a) => ({ name: a.name, prices: a.prices }))
+			: arms;
 	} finally {
 		await browser.close();
 	}
@@ -798,283 +1025,50 @@ async function run(pixelRatio) {
 		controlAfter,
 		armPrices,
 		reliefPaths,
+		unpinnedAtRadii,
+		sweepSeq,
 	};
 }
 
 const runs = [];
 for (const ratio of PIXEL_RATIOS) runs.push(await run(ratio));
 
-const rows = runs.flatMap((r) => r.rows);
-
-/**
- * One verdict per run, computed before anything is printed or written, so the
- * console line and the JSON cannot disagree about whether a run is quotable.
- * Keyed by pixel ratio because each ratio is its own browser and its own run.
- */
-const verdicts = Object.fromEntries(
-	runs.map((r, i) => [PIXEL_RATIOS[i], farColumnVerdict(r.rows, RADII[0])]),
-);
-/**
- * The flag rides **every row of an affected run**, not only the run summary and
- * not only the column the excursion was detected in.
- *
- * The first version wrote it onto `radii >= RADII[0]`, which is the widest
- * column and nothing else — so the 30r cell of the same run, 44.6 ms beside a
- * 2.6 ms neighbour in #248's first run, came out carrying no doubt (sage,
- * PR #250, round 3). The invariant is read at one radius: it establishes that
- * the run had an excursion and says nothing about when, so there is no radius
- * at which a cutoff stops being arbitrary. A consumer that pulls one cell out
- * of `rows` gets the run's doubt with the cell and decides on evidence.
- *
- * In `lib/` and tested, because the three lines this replaced were three lines
- * that looked obviously right.
- */
-flagExcursions(rows, verdicts);
-const renderer = runs[0].renderer;
-
-console.log(`  renderer: ${renderer}`);
-console.log(
-	DECOMPOSE
-		? `  mode: decomposition — #248's ablation ladder on the subject as the view set frames it, its own class and its own shells`
-		: `  mode: class sweep — every class on both relief paths`,
-);
-console.log(
-	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${SUN_ANGLE_DEG}° from the star, seed ${PRICED_SEED} (${PRICED_VIEW})`,
-);
-console.log(
-	`  ms/frame off the ?fps readout — median of ${READINGS} readings, ±the full range across them`,
-);
-console.log(
-	`  a cell marked ? never settled: its rate was still moving when the settle timed out, so it is a reading and not a measurement`,
-);
-console.log(
-	`  a cell marked ! took a sample the meter had not refreshed — possibly a repeated line, possibly a stale one held over a stall`,
-);
-console.log("");
-
-for (const {
-	pixelRatio,
-	rows: runRows,
-	controlBefore,
-	controlAfter,
-} of runs.map((r, i) => ({ pixelRatio: PIXEL_RATIOS[i], ...r }))) {
-	console.log(`  pixel ratio ${pixelRatio}`);
-	const label = (row) =>
-		`${row.ms.toFixed(1)}±${row.spreadMs.toFixed(1)}${row.settled ? "" : "?"}${
-			row.staleSamples ? "!" : ""
-		}`.padStart(14);
-	if (DECOMPOSE) {
-		const arms = [...new Set(runRows.map((r) => r.arm))];
-		const at = (arm, radii) =>
-			runRows.find((r) => r.arm === arm && r.radii === radii);
-		console.log(
-			`      ${"arm".padEnd(14)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
+if (CLOSE_DETAIL) {
+	const buildAfter = await declaredBuild();
+	if (buildAfter !== BUILD_SHA)
+		throw new Error(
+			`the server's build moved during the run: ${BUILD_SHA} at the start, ${buildAfter} at the end`,
 		);
-		for (const arm of arms)
-			console.log(
-				`      ${arm.padEnd(14)}${RADII.map((r) => label(at(arm, r))).join("")}`,
-			);
-		/**
-		 * The deltas, printed rather than left for a reader to subtract.
-		 *
-		 * **A delta smaller than the drift control below is not a delta**, and the
-		 * same goes for one inside a cell's own spread. Both are printed beside it
-		 * for that reason; this table is what a term costs *at this framing on this
-		 * machine*, and #98's rule that a probe's millisecond is nobody's applies to
-		 * a headed one taken on a different GPU just as hard.
-		 */
-		console.log("");
-		console.log(
-			`      full minus each arm — what that arm's own \`prices\` line says it costs, ms. Read the arm's line for what is in it: \`flat\` carries the slope as well, so it is not the class body alone (that is flat minus no-relief). A figure inside the drift control below is not a difference.`,
-		);
-		console.log(
-			`      ${"term".padEnd(14)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
-		);
-		for (const arm of arms) {
-			if (arm === "full") continue;
-			const cells = RADII.map((radii) => {
-				const full = at("full", radii);
-				const other = at(arm, radii);
-				const d = full.ms - other.ms;
-				const share = full.ms > 0 ? (100 * d) / full.ms : 0;
-				return `${d >= 0 ? "+" : ""}${d.toFixed(1)} (${share.toFixed(0)}%)`.padStart(
-					14,
-				);
-			});
-			console.log(`      ${arm.padEnd(14)}${cells.join("")}`);
-		}
-	} else {
-		const classes = [...new Set(runRows.map((r) => r.surfaceClass))];
-		for (const relief of runs[0].reliefPaths) {
-			console.log(`    relief: ${relief}`);
-			console.log(
-				`      ${"class".padEnd(10)}${SWEPT_RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
-			);
-			for (const surfaceClass of classes) {
-				if (!supportsRelief(surfaceClass, relief)) continue;
-				const cells = SWEPT_RADII.map((radii) =>
-					label(
-						runRows.find(
-							(r) =>
-								r.surfaceClass === surfaceClass &&
-								r.relief === relief &&
-								r.radii === radii,
-						),
-					),
-				);
-				console.log(`      ${surfaceClass.padEnd(10)}${cells.join("")}`);
-			}
-		}
-	}
-	// Beside the table rather than in it: a stall is a property of a cell that
-	// the cell's own frame time deliberately excludes, so it reads as a list of
-	// exceptions and not as a column of zeroes.
-	/** How a cell is named in the lists below — by arm, or by class and path. */
-	const cellName = (r) =>
-		DECOMPOSE
-			? `${r.arm}@${r.radii}r`
-			: `${r.surfaceClass}/${r.relief}@${r.radii}r`;
-
-	/**
-	 * **The widest column is the run's own control, and it must not move.**
-	 *
-	 * The verdict itself lives in `lib/planet-cost.mjs` beside the other
-	 * refusals, so a test can watch it fire — and so the same object can be
-	 * printed here *and* written into the JSON. A qualification that exists only
-	 * on the console is one every later reader of the file is missing (sage,
-	 * PR #250).
-	 */
-	const far = verdicts[pixelRatio];
-	console.log(
-		`    widest column (${far.radii}r, where the subject is a few pixels and nothing should differ): ` +
-			`${far.cells} cells, floor ${far.floorMs.toFixed(1)} ms` +
-			(!far.excursion
-				? ` — every cell inside ${far.factor}x it, which is what this column should look like`
-				: ` — ${far.outliers.length} over ${far.factor}x it: ${far.outliers
-						.map((r) => `${cellName(r)} ${r.ms.toFixed(1)}ms`)
-						.join(
-							", ",
-						)}. THIS RUN HAD AN EXCURSION. Where is not established — detection is at one radius — so every row of it carries runExcursion in the JSON, and the far columns are the ones to drop first.`),
-	);
-
-	const stalls = runRows.filter((r) => r.peakRiseMs > 0);
-	console.log(
-		stalls.length
-			? `    stalls (session peak rose during the cell): ${stalls
-					.map((r) => `${cellName(r)} +${r.peakRiseMs.toFixed(0)}ms`)
-					.join(", ")}`
-			: "    stalls: none out-stalled an earlier cell in this run",
-	);
-	// The blocker sage raised on PR #214: before this, a cell that timed out came
-	// back the same shape as one that settled, and was sold downstream as a
-	// measurement. Named here and flagged in the table and the JSON.
-	const unsettled = runRows.filter((r) => !r.settled);
-	console.log(
-		unsettled.length
-			? `    unsettled (?): ${unsettled.length} of ${runRows.length} cells never held a steady rate — ${unsettled
-					.map(cellName)
-					.join(", ")}`
-			: `    unsettled: none — every one of the ${runRows.length} cells held a steady rate before it was read`,
-	);
-	// The other doubt, kept separate because it has a different cause: an
-	// unsettled cell was moving, a stale one may not have been re-read at all.
-	const stale = runRows.filter((r) => r.staleSamples > 0);
-	console.log(
-		stale.length
-			? `    stale reads (!): ${stale.length} of ${runRows.length} cells — ${stale
-					.map(cellName)
-					.join(", ")}`
-			: `    stale reads: none — every sample was taken on a line the meter had just written`,
-	);
-	// The drift control. Printed last because it qualifies everything above it:
-	// a column-to-column difference smaller than this is not a difference.
-	const drift = controlAfter.ms - controlBefore.ms;
-	// Settled *and* freshly read, at both ends. Checking only `settled` left a
-	// control that had taken an unrefreshed sample qualifying the whole table
-	// (sage, PR #214, round 3) — the same doubt every other cell is marked for,
-	// dropped on the one cell whose job is to qualify the others.
-	const controlsHeld =
-		controlBefore.settled &&
-		controlAfter.settled &&
-		!controlBefore.staleSamples &&
-		!controlAfter.staleSamples;
-	console.log(
-		`    drift control (${DECOMPOSE ? `full at ${RADII[0]}r` : CONTROL_LABEL}): ${controlBefore.ms.toFixed(1)} ms before, ` +
-			`${controlAfter.ms.toFixed(1)} ms after — the machine moved ` +
-			`${drift >= 0 ? "+" : ""}${drift.toFixed(1)} ms end to end` +
-			(controlsHeld
-				? ""
-				: " — BUT a control never settled or was read stale, so even this bound is unreliable"),
-	);
-	// Said every run, because the temptation is to read the endpoint figure as a
-	// warrant for the table and it is not one.
-	console.log(
-		`      net movement only: two endpoints cannot locate a mid-run sag that recovered, so a small figure here says the run began and ended alike and nothing about the columns between`,
-	);
-	console.log("");
+	for (const [i, r] of runs.entries())
+		r.rows = stampRows(r.rows, {
+			renderer: runs[0].renderer,
+			pixelRatio: PIXEL_RATIOS[i],
+			buildSha: BUILD_SHA,
+			lane: LANE,
+		});
 }
 
-await mkdir(OUT, { recursive: true });
-// A separate file, because the two modes answer different questions and a diff
-// of two runs must not silently compare a ladder against a class table.
-const path = join(
-	OUT,
-	DECOMPOSE ? "planet-decomposition.json" : "planet-cost.json",
-);
-await writeFile(
-	path,
-	`${JSON.stringify(
-		{
-			measuredAt: new Date().toISOString(),
-			renderer,
-			viewport: VIEWPORT,
-			seed: SEED,
-			subject: SUBJECT,
-			sunAngleDeg: SUN_ANGLE_DEG,
-			mode: DECOMPOSE ? "decomposition" : "class-sweep",
-			// The widest column's verdict, per run. `excursion: true`
-			// means that run had one the endpoint drift control cannot see. It
-			// is here and as `runExcursion` on every row of that run, because a
-			// consumer that
-			// pulls one cell out of `rows` would otherwise get a row marked
-			// settled, fresh and endpoint-controlled with nothing saying the run
-			// it came from is in doubt (sage, PR #250).
-			farColumns: PIXEL_RATIOS.map((ratio) => ({
-				pixelRatio: ratio,
-				...verdicts[ratio],
-				outliers: verdicts[ratio].outliers.map((r) => ({
-					arm: r.arm ?? null,
-					surfaceClass: r.surfaceClass ?? null,
-					relief: r.relief ?? null,
-					radii: r.radii,
-					ms: r.ms,
-				})),
-			})),
-			// What each arm's subtraction prices, carried out of `perf-panel.ts` so a
-			// reader of the JSON does not have to open the module to know what a
-			// column means. Empty in the class-sweep mode, which has no ladder.
-			arms: runs[0].armPrices,
-			// Per run, because each pixel ratio is its own browser and its own
-			// thermal history. A diff of two JSONs that ignored these would be
-			// comparing two machines as much as two builds.
-			driftControl: runs.map((r, i) => ({
-				pixelRatio: PIXEL_RATIOS[i],
-				cell: DECOMPOSE ? `full at ${RADII[0]}r` : CONTROL_LABEL,
-				beforeMs: r.controlBefore.ms,
-				afterMs: r.controlAfter.ms,
-				// Both ends, because a control that did not settle cannot qualify
-				// anything (sage, PR #214). Dropping these while the console said
-				// "the machine moved" was the drift figure claiming a confidence
-				// its own cells did not have.
-				beforeSettled: r.controlBefore.settled,
-				afterSettled: r.controlAfter.settled,
-				beforeStaleSamples: r.controlBefore.staleSamples,
-				afterStaleSamples: r.controlAfter.staleSamples,
-			})),
-			rows,
-		},
-		null,
-		2,
-	)}\n`,
-);
-console.log(`  wrote ${path} — ${rows.length} cells`);
+await reportPlanetCost(runs, {
+	mode: CLOSE_DETAIL
+		? "close-detail"
+		: DECOMPOSE
+			? "decomposition"
+			: "class-sweep",
+	pixelRatios: PIXEL_RATIOS,
+	buildSha: BUILD_SHA,
+	lane: LANE,
+	runLabel: RUN_LABEL,
+	orderSeed: ORDER_SEED,
+	hostLoad: HOST_LOAD,
+	viewport: VIEWPORT,
+	subject: SUBJECT,
+	sunAngleDeg: SUN_ANGLE_DEG,
+	pricedSeed: PRICED_SEED,
+	pricedView: PRICED_VIEW,
+	seed: SEED,
+	readings: READINGS,
+	narrowed: Boolean(ONLY_ARMS || ONLY_RADII),
+	sweptRadii: SWEPT_RADII,
+	controlLabel: CONTROL_LABEL,
+	out: OUT,
+});
