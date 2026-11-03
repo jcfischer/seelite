@@ -87,6 +87,7 @@ describe("the exclusive group", () => {
 			"probe-station-interior-kit.mjs",
 			"probe-occlusion.mjs",
 			"probe-live-cockpit.mjs",
+			"probe-planet-surfaces.mjs",
 		]) {
 			expect(EXCLUSIVE.get(file)?.length ?? 0).toBeGreaterThan(0);
 		}
@@ -109,7 +110,7 @@ describe("the exclusive group", () => {
 	});
 
 	test("the summary names each member that ran and why", () => {
-		const lines = exclusiveLines(["probe-occlusion.mjs"]);
+		const lines = exclusiveLines(["probe-b.mjs", "probe-occlusion.mjs"]);
 		expect(lines).toHaveLength(1);
 		expect(lines[0]).toContain("probe-occlusion.mjs");
 		expect(lines[0]).toContain(String(EXCLUSIVE.get("probe-occlusion.mjs")));

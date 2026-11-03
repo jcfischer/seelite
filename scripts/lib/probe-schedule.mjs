@@ -91,10 +91,12 @@ export function schedule(
 }
 
 /**
- * The summary's lines for the exclusive members that ran.
+ * The summary's lines for whichever of `files` are exclusive members.
  *
  * @param {string[]} files
  * @returns {string[]}
  */
 export const exclusiveLines = (files) =>
-	files.map((f) => `     ${f} ran alone — ${EXCLUSIVE.get(f)}`);
+	files
+		.filter((f) => EXCLUSIVE.has(f))
+		.map((f) => `     ${f} ran alone — ${EXCLUSIVE.get(f)}`);

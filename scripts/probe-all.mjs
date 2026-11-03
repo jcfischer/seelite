@@ -143,9 +143,11 @@ const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 600_000);
  *
  * Probes that assert on rendered pixels over a pumped clock change what they
  * measure when another browser shares the GPU, so those run alone after the
- * pool (`EXCLUSIVE` in `scripts/lib/probe-schedule.mjs`). The rest share the
- * machine at a measured per-probe slowdown and no load-induced red. Another
- * machine re-measures before it trusts this number; `PROBE_CONCURRENCY=1`
+ * pool (`EXCLUSIVE` in `scripts/lib/probe-schedule.mjs`); a probe joins it when
+ * it is red at this concurrency and green alone, as `probe-planet-surfaces`
+ * was. The rest share the machine at the per-probe slowdown the receipt
+ * measured. This default with that list has not yet had its three green runs
+ * (#1175 C5). Another machine re-measures before it trusts this number; `PROBE_CONCURRENCY=1`
  * gives the serial run.
  */
 const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 6);
@@ -394,9 +396,7 @@ console.log(
 // files out of a hundred (#882). Skipped for a run of one, where it would repeat
 // the line above it.
 if (results.length > 1) console.log(`     ${slowestLine(results)}`);
-for (const line of exclusiveLines(
-	schedule(results.map((r) => r.file)).exclusive,
-))
+for (const line of exclusiveLines(results.map((r) => r.file)))
 	console.log(line);
 if (failed.length) {
 	/** @type {Map<string, number>} */
