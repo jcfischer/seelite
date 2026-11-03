@@ -85,6 +85,7 @@ import { loadSampler } from "./lib/probe-load.mjs";
 import { holdProbeLockOrExit, stopChildren } from "./lib/probe-lock.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
 import { QUARANTINED } from "./lib/probe-quarantine.mjs";
+import { exclusiveLines, schedule } from "./lib/probe-schedule.mjs";
 import { lineSplitter, teeConsole } from "./lib/probe-output.mjs";
 import {
 	HARDWARE_RENDERER,
@@ -274,11 +275,14 @@ function run(file) {
 	});
 }
 
-/** Run the list `CONCURRENCY` at a time, in order, reporting as each lands. */
+/**
+ * Run the pooled probes `CONCURRENCY` at a time, longest first, then each
+ * exclusive one alone (`probe-schedule.mjs`), reporting as each lands.
+ */
 async function runAll(files) {
-	const queue = [...files];
+	const plan = schedule(files);
 	const results = [];
-	const worker = async () => {
+	const worker = async (queue) => {
 		for (;;) {
 			if (stopping) return;
 			const file = queue.shift();
@@ -311,9 +315,11 @@ async function runAll(files) {
 			}
 		}
 	};
+	const pool = [...plan.pooled];
 	await Promise.all(
-		Array.from({ length: Math.max(1, CONCURRENCY) }, () => worker()),
+		Array.from({ length: Math.max(1, CONCURRENCY) }, () => worker(pool)),
 	);
+	await worker([...plan.exclusive]);
 	return results;
 }
 
@@ -391,6 +397,10 @@ console.log(
 // files out of a hundred (#882). Skipped for a run of one, where it would repeat
 // the line above it.
 if (results.length > 1) console.log(`     ${slowestLine(results)}`);
+for (const line of exclusiveLines(
+	schedule(results.map((r) => r.file)).exclusive,
+))
+	console.log(line);
 if (failed.length) {
 	/** @type {Map<string, number>} */
 	const kinds = new Map();
