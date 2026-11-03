@@ -335,9 +335,14 @@ try {
 	// what this measures is the launch hook, and `deliverHull`'s choice of it
 	// is `tests/flown-hull.test.ts`'s.
 	// -------------------------------------------------------------------
-	const waiting = await page.evaluate(() => {
+	const waiting = await page.evaluate(async () => {
 		const g = window.__seelite;
-		g.commander = { ...g.commander, hull: "explorer" };
+		const { stockLoadout } = await import("/src/loadout.ts");
+		g.commander = {
+			...g.commander,
+			hull: "explorer",
+			loadout: stockLoadout("explorer"),
+		};
 		g.hullOnLaunch = "explorer";
 		g.setHeadLook("forward");
 		g.launch();
