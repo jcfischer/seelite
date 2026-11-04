@@ -85,6 +85,7 @@ import { loadSampler } from "./lib/probe-load.mjs";
 import { holdProbeLockOrExit, stopChildren } from "./lib/probe-lock.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
 import { QUARANTINED } from "./lib/probe-quarantine.mjs";
+import { exclusiveLines, schedule } from "./lib/probe-schedule.mjs";
 import { lineSplitter, teeConsole } from "./lib/probe-output.mjs";
 import {
 	HARDWARE_RENDERER,
@@ -137,20 +138,19 @@ const REPORTERS = new Set([
 const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 600_000);
 
 /**
- * How many probes run at once. **One**, and the default is not timidity —
- * it was measured.
+ * How many probes run at once: six, measured on the Mac Mini (M5 Pro, 18 cores)
+ * in `docs/receipts/node-1175-parallel-probes.md`.
  *
- * The measurement is seekolous's and it carries: probes that assert on
- * *rendered pixels* over a pumped clock collapse when two browsers share a
- * machine. One of its probes failed reproducibly on a 1.64px gap that reads
- * ~30px when it has the machine to itself.
- *
- * That is not flakiness to be retried around: those probes are measuring
- * frames, and starving the renderer changes the thing being measured. A green
- * suite that got there by not looking properly is worth less than a slow one.
- * The cost is wall-clock, and CI has it.
+ * Probes that assert on rendered pixels over a pumped clock change what they
+ * measure when another browser shares the GPU, so those run alone after the
+ * pool (`EXCLUSIVE` in `scripts/lib/probe-schedule.mjs`); a probe joins it when
+ * it is red at this concurrency and green alone, as `probe-planet-surfaces`
+ * was. The rest share the machine at the per-probe slowdown the receipt
+ * measured. This default with that list has not yet had its three green runs
+ * (#1175 C5). Another machine re-measures before it trusts this number; `PROBE_CONCURRENCY=1`
+ * gives the serial run.
  */
-const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 1);
+const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 6);
 
 // Which probes to run: everything here, or the subset `resolveOnly` selects.
 // `probe-inventory.mjs` owns exclusions such as this runner and `probe-guard`,
@@ -274,11 +274,14 @@ function run(file) {
 	});
 }
 
-/** Run the list `CONCURRENCY` at a time, in order, reporting as each lands. */
+/**
+ * Run the pooled probes `CONCURRENCY` at a time, longest first, then each
+ * exclusive one alone (`probe-schedule.mjs`), reporting as each lands.
+ */
 async function runAll(files) {
-	const queue = [...files];
+	const plan = schedule(files);
 	const results = [];
-	const worker = async () => {
+	const worker = async (queue) => {
 		for (;;) {
 			if (stopping) return;
 			const file = queue.shift();
@@ -311,9 +314,11 @@ async function runAll(files) {
 			}
 		}
 	};
+	const pool = [...plan.pooled];
 	await Promise.all(
-		Array.from({ length: Math.max(1, CONCURRENCY) }, () => worker()),
+		Array.from({ length: Math.max(1, CONCURRENCY) }, () => worker(pool)),
 	);
+	await worker([...plan.exclusive]);
 	return results;
 }
 
@@ -391,6 +396,8 @@ console.log(
 // files out of a hundred (#882). Skipped for a run of one, where it would repeat
 // the line above it.
 if (results.length > 1) console.log(`     ${slowestLine(results)}`);
+for (const line of exclusiveLines(results.map((r) => r.file)))
+	console.log(line);
 if (failed.length) {
 	/** @type {Map<string, number>} */
 	const kinds = new Map();
