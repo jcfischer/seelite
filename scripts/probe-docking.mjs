@@ -35,10 +35,13 @@ import {
 	bootedGame,
 	guardedOrigin,
 	installCamSim,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
+import { rememberFlightFixture } from "./lib/probe-flight-fixture.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -1564,12 +1567,13 @@ check(
 		`${pitched.belowSample.hits ? ` — at ${JSON.stringify(pitched.belowSample.where)}` : ""}`,
 );
 
-// Node #745: fly generated refineries in four systems, one page per case;
+// Node #745: fly generated refineries in four systems, one page per seed;
 // node #746 adds the shipyard's three forms, and nodes #747–#748 trade a–e,
 // each in its own start system.
 // Seeds pin every pooled form; never mutate a station's drawn form in place.
 // The approach, berth reservation and launch all go through Game's protocol.
-for (const [type, seed, formId] of [
+await page.close();
+const stationFixtures = [
 	["trade", 3, "a"],
 	["trade", 5, "b"],
 	["trade", 21, "c"],
@@ -1582,110 +1586,135 @@ for (const [type, seed, formId] of [
 	["shipyard", 3, "a"],
 	["shipyard", 2, "b"],
 	["shipyard", 8, "c"],
-]) {
+];
+for (const seed of new Set(stationFixtures.map(([, seed]) => seed))) {
 	const stationPage = await browser.newPage({
 		viewport: { width: 900, height: 620 },
 	});
 	watch(stationPage);
+	await installViewPlacement(stationPage);
+	await installViewFraming(stationPage);
 	await stationPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
 	await bootedGame(stationPage);
-	const run = await stationPage.evaluate(async (type) => {
-		const { migrateEquipment, equipmentNames } = await import(
-			"/src/loadout.ts"
-		);
+	const resetStation = await rememberFlightFixture(stationPage);
+	let used = false;
+	for (const [type, , formId] of stationFixtures.filter(
+		([, s]) => s === seed,
+	)) {
+		if (used) {
+			await resetStation();
+			const neutral = await stationPage.evaluate(() => {
+				const g = window.__seelite;
+				return (
+					g.dockPhase === "flying" &&
+					g.world.gameTime < 1 &&
+					g.condition.hull === g.condition.hullMax &&
+					g.collisionImpacts === 0 &&
+					!g.hasDockingComputer
+				);
+			});
+			check(`seed ${seed} reuses a neutral flight fixture`, neutral);
+		}
+		used = true;
+		const run = await stationPage.evaluate(async (type) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
 
-		const g = window.__seelite;
-		const station = g.world.system.contents.stations.find(
-			(s) => s.type === type,
-		);
-		if (!station) return { missing: true };
-		const id = station.id;
-		const snap = g.dockingSnapshot(id);
-		const body = g.world.system.byId.get(id);
-		const dt = g.units.MAX_DT;
-		g.resetDock();
-		g.regime = "normal";
-		g.rates = { pitch: 0, yaw: 0, roll: 0 };
-		g.setThrottle(0);
-		g.world.ship.pos = {
-			x: body.pos.x + snap.axis.x * (snap.planeKm + 3.2),
-			y: body.pos.y + snap.axis.y * (snap.planeKm + 3.2),
-			z: body.pos.z + snap.axis.z * (snap.planeKm + 3.2),
-		};
-		g.world.ship.vel = { ...g.stationVelocity(id) };
-		g.setAttitude(
-			{ x: -snap.axis.x, y: -snap.axis.y, z: -snap.axis.z },
-			snap.basis.up,
-		);
-		g.targetId = id;
-		g.step(dt);
-		g.render(0);
-		if (!g.hasDockingComputer)
-			g.commander = {
-				...g.commander,
-				loadout: migrateEquipment(g.commander.hull, [
-					...equipmentNames(g.commander.loadout ?? {}),
-					g.dockingComputerName,
-				]).loadout,
+			const g = window.__seelite;
+			const station = g.world.system.contents.stations.find(
+				(s) => s.type === type,
+			);
+			if (!station) return { missing: true };
+			const id = station.id;
+			const snap = g.dockingSnapshot(id);
+			const body = g.world.system.byId.get(id);
+			const dt = g.units.MAX_DT;
+			g.resetDock();
+			g.regime = "normal";
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			g.setThrottle(0);
+			g.world.ship.pos = {
+				x: body.pos.x + snap.axis.x * (snap.planeKm + 3.2),
+				y: body.pos.y + snap.axis.y * (snap.planeKm + 3.2),
+				z: body.pos.z + snap.axis.z * (snap.planeKm + 3.2),
 			};
-		const impacts = g.collisionImpacts;
-		g.requestDockingClearance();
-		g.toggleDockingComputer();
-		for (let t = 0; t < 200; t += dt) {
+			g.world.ship.vel = { ...g.stationVelocity(id) };
+			g.setAttitude(
+				{ x: -snap.axis.x, y: -snap.axis.y, z: -snap.axis.z },
+				snap.basis.up,
+			);
+			g.targetId = id;
 			g.step(dt);
-			if (g.dockingSnapshot(id).dockPhase === "docked") break;
-		}
-		const parked = g.dockingSnapshot(id);
-		g.render(0);
-		const docked = parked.dockPhase === "docked";
-		let launched = false;
-		if (docked) {
+			g.render(0);
+			if (!g.hasDockingComputer)
+				g.commander = {
+					...g.commander,
+					loadout: migrateEquipment(g.commander.hull, [
+						...equipmentNames(g.commander.loadout ?? {}),
+						g.dockingComputerName,
+					]).loadout,
+				};
+			const impacts = g.collisionImpacts;
+			g.requestDockingClearance();
+			g.toggleDockingComputer();
 			for (let t = 0; t < 200; t += dt) {
-				if (g.dockingSnapshot(id).dockPhase === "docked")
-					launched = g.launch() || launched;
 				g.step(dt);
-				// A held launch can be promoted by Game's retry during the step.
-				launched = g.dockingSnapshot(id).dockPhase === "launching" || launched;
-				if (g.dockingSnapshot(id).dockPhase === "flying") break;
+				if (g.dockingSnapshot(id).dockPhase === "docked") break;
 			}
-		}
-		const outside = g.dockingSnapshot(id);
-		const rangeBefore = outside.axialKm;
-		for (let t = 0; t < 10; t += dt) g.step(dt);
-		g.render(0);
-		const away = g.dockingSnapshot(id);
-		return {
-			formId: station.formId,
-			system: g.world.system.record.index,
-			docked,
-			berth: parked.berthId,
-			entry: parked.lastEntry?.docked,
-			launched,
-			phase: away.dockPhase,
-			planeKm: away.planeKm,
-			axialKm: away.axialKm,
-			distanceGainedKm: away.axialKm - rangeBefore,
-			impacts: g.collisionImpacts - impacts,
-			refusal: parked.computerRefusal,
-		};
-	}, type);
-	check(
-		`seed ${seed} generates ${type} ${formId} and docks at a berth`,
-		run.formId === formId &&
-			run.docked &&
-			run.entry === true &&
-			Boolean(run.berth),
-		JSON.stringify(run),
-	);
-	check(
-		`${type} ${formId} launches and flies clear without contact`,
-		run.launched &&
-			run.phase === "flying" &&
-			run.axialKm > run.planeKm &&
-			run.distanceGainedKm > 0 &&
-			run.impacts === 0,
-		JSON.stringify(run),
-	);
+			const parked = g.dockingSnapshot(id);
+			g.render(0);
+			const docked = parked.dockPhase === "docked";
+			let launched = false;
+			if (docked) {
+				for (let t = 0; t < 200; t += dt) {
+					if (g.dockingSnapshot(id).dockPhase === "docked")
+						launched = g.launch() || launched;
+					g.step(dt);
+					// A held launch can be promoted by Game's retry during the step.
+					launched =
+						g.dockingSnapshot(id).dockPhase === "launching" || launched;
+					if (g.dockingSnapshot(id).dockPhase === "flying") break;
+				}
+			}
+			const outside = g.dockingSnapshot(id);
+			const rangeBefore = outside.axialKm;
+			for (let t = 0; t < 10; t += dt) g.step(dt);
+			g.render(0);
+			const away = g.dockingSnapshot(id);
+			return {
+				formId: station.formId,
+				system: g.world.system.record.index,
+				docked,
+				berth: parked.berthId,
+				entry: parked.lastEntry?.docked,
+				launched,
+				phase: away.dockPhase,
+				planeKm: away.planeKm,
+				axialKm: away.axialKm,
+				distanceGainedKm: away.axialKm - rangeBefore,
+				impacts: g.collisionImpacts - impacts,
+				refusal: parked.computerRefusal,
+			};
+		}, type);
+		check(
+			`seed ${seed} generates ${type} ${formId} and docks at a berth`,
+			run.formId === formId &&
+				run.docked &&
+				run.entry === true &&
+				Boolean(run.berth),
+			JSON.stringify(run),
+		);
+		check(
+			`${type} ${formId} launches and flies clear without contact`,
+			run.launched &&
+				run.phase === "flying" &&
+				run.axialKm > run.planeKm &&
+				run.distanceGainedKm > 0 &&
+				run.impacts === 0,
+			JSON.stringify(run),
+		);
+	}
 	await stationPage.close();
 }
 

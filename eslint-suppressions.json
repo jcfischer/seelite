@@ -796,7 +796,7 @@
   },
   "scripts/probe-boot.mjs": {
     "seelite/no-comments": {
-      "count": 271
+      "count": 270
     }
   },
   "scripts/probe-bounty.mjs": {

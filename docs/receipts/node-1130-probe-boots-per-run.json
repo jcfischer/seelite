@@ -1,0 +1,423 @@
+{
+  "date": "2026-11-05",
+  "baseline": "cf4976d32991f4f6d4efc1ba65e38d3ea16d9d1f",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+  "cores": 18,
+  "node": "24.19.0",
+  "before": [
+    {
+      "probe": "probe-docking.mjs",
+      "totalSeconds": 164.51238191599998,
+      "bootSeconds": 153.49070812599996,
+      "boots": 13,
+      "rows": [
+        {
+          "seconds": 13.466238958,
+          "url": "http://127.0.0.1:60544/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.689184875000002,
+          "url": "http://127.0.0.1:60544/?seed=3&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.832349542000003,
+          "url": "http://127.0.0.1:60544/?seed=5&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.512014707999995,
+          "url": "http://127.0.0.1:60544/?seed=21&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.581712792000006,
+          "url": "http://127.0.0.1:60544/?seed=12&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.668830582999988,
+          "url": "http://127.0.0.1:60544/?seed=1&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.431781124999993,
+          "url": "http://127.0.0.1:60544/?seed=1&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.873754749999993,
+          "url": "http://127.0.0.1:60544/?seed=28&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.429736582999992,
+          "url": "http://127.0.0.1:60544/?seed=2&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.530698541999998,
+          "url": "http://127.0.0.1:60544/?seed=4&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.964533666999996,
+          "url": "http://127.0.0.1:60544/?seed=3&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.715158916999993,
+          "url": "http://127.0.0.1:60544/?seed=2&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.794713083999989,
+          "url": "http://127.0.0.1:60544/?seed=8&boot=direct&models-full"
+        }
+      ],
+      "checks": 73,
+      "peakLoad": 6,
+      "runnerSeconds": 164.5
+    },
+    {
+      "probe": "probe-death.mjs",
+      "totalSeconds": 155.910101625,
+      "bootSeconds": 135.010232457,
+      "boots": 12,
+      "rows": [
+        {
+          "seconds": 11.653356416,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.981848207999999,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.998335875,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 12.582735958000004,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.846620167000001,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.381676542000001,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.823300959,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.815353707999995,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.279624916000001,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.849568667000014,
+          "url": "http://127.0.0.1:61474/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.765247791000002,
+          "url": "http://127.0.0.1:61474/?seed=42&no-save&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.032563250000006,
+          "url": "http://127.0.0.1:61474/?seed=42&no-save&boot=direct&models-full"
+        }
+      ],
+      "checks": 37,
+      "peakLoad": 6,
+      "runnerSeconds": 155.9
+    },
+    {
+      "probe": "probe-binding-store.mjs",
+      "totalSeconds": 142.94019412499998,
+      "bootSeconds": 101.16530175000001,
+      "boots": 9,
+      "rows": [
+        {
+          "seconds": 11.753001625,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.361686000000002,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.230609083000003,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.146862374999998,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.263574875000005,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.080868084000002,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.092330040999993,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.059839959000005,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.176529708000002,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        }
+      ],
+      "checks": 33,
+      "peakLoad": 7.8,
+      "runnerSeconds": 143
+    },
+    {
+      "probe": "probe-boot.mjs",
+      "totalSeconds": 94.201698708,
+      "bootSeconds": 91.51955191699999,
+      "boots": 9,
+      "rows": [
+        {
+          "seconds": 10.992711584,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.238385416000002,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.966360417,
+          "url": "http://127.0.0.1:52851/?seed=20260818&boot=direct&models-full"
+        },
+        {
+          "seconds": 0.13516008300000248,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct",
+          "end": "close-after-route-return"
+        },
+        {
+          "seconds": 11.588875792,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.848618666000002,
+          "url": "http://127.0.0.1:52851/?seed=42&fps&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.733477332999994,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.580962333999997,
+          "url": "http://127.0.0.1:52851/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.435000291999996,
+          "url": "http://127.0.0.1:52851/?seed=42&combat=1&boot=direct&models-full"
+        }
+      ],
+      "checks": 58,
+      "peakLoad": 6.1,
+      "runnerSeconds": 94.2
+    }
+  ],
+  "after": [
+    {
+      "probe": "probe-docking.mjs",
+      "totalSeconds": 123.749461834,
+      "bootSeconds": 113.14347216699997,
+      "boots": 10,
+      "rows": [
+        {
+          "seconds": 11.576842583000001,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.321839375,
+          "url": "http://127.0.0.1:53815/?seed=3&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.077107666,
+          "url": "http://127.0.0.1:53815/?seed=5&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.408711167000002,
+          "url": "http://127.0.0.1:53815/?seed=21&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.383264209,
+          "url": "http://127.0.0.1:53815/?seed=12&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.090997958999994,
+          "url": "http://127.0.0.1:53815/?seed=1&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.36032875,
+          "url": "http://127.0.0.1:53815/?seed=28&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.051467665999997,
+          "url": "http://127.0.0.1:53815/?seed=2&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.350828374999997,
+          "url": "http://127.0.0.1:53815/?seed=4&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.522084416999991,
+          "url": "http://127.0.0.1:53815/?seed=8&boot=direct&models-full"
+        }
+      ],
+      "checks": 76,
+      "peakLoad": 4.8,
+      "runnerSeconds": 123.8
+    },
+    {
+      "probe": "probe-death.mjs",
+      "totalSeconds": 143.414246542,
+      "bootSeconds": 122.42261795800003,
+      "boots": 11,
+      "rows": [
+        {
+          "seconds": 11.268198624999998,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.762805792000002,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.963397374999996,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.397179166000003,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.983123833999999,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.179677250000008,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.918172542,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.812600458,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.737085707999999,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.228734042000012,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.171643166000024,
+          "url": "http://127.0.0.1:53815/?seed=42&no-save&boot=direct&models-full"
+        }
+      ],
+      "checks": 38,
+      "peakLoad": 5.8,
+      "runnerSeconds": 143.4
+    },
+    {
+      "probe": "probe-binding-store.mjs",
+      "totalSeconds": 130.4441215,
+      "bootSeconds": 87.361407874,
+      "boots": 8,
+      "rows": [
+        {
+          "seconds": 11.754410625,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.40970925,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.563211665999996,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.811546875,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.547517374999996,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.5814905,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.814334875,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.879186708000008,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        }
+      ],
+      "checks": 33,
+      "peakLoad": 5.4,
+      "runnerSeconds": 130.5
+    },
+    {
+      "probe": "probe-boot.mjs",
+      "totalSeconds": 70.758202833,
+      "bootSeconds": 67.914619583,
+      "boots": 7,
+      "rows": [
+        {
+          "seconds": 10.653843083,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.252831167,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 10.860466500000003,
+          "url": "http://127.0.0.1:53815/?seed=20260818&boot=direct&models-full"
+        },
+        {
+          "seconds": 0.12582675000000018,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct",
+          "end": "close-after-route-return"
+        },
+        {
+          "seconds": 12.212263917000003,
+          "url": "http://127.0.0.1:53815/?seed=42&fps&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.761305374999996,
+          "url": "http://127.0.0.1:53815/?seed=42&boot=direct&models-full"
+        },
+        {
+          "seconds": 11.048082790999993,
+          "url": "http://127.0.0.1:53815/?seed=42&combat=1&boot=direct&models-full"
+        }
+      ],
+      "checks": 58,
+      "peakLoad": 5.9,
+      "runnerSeconds": 70.8
+    }
+  ],
+  "retainedCheckCallSites": {
+    "probe-docking.mjs": 51,
+    "probe-death.mjs": 33,
+    "probe-binding-store.mjs": 34,
+    "probe-boot.mjs": 47
+  }
+}
