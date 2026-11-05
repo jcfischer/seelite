@@ -876,11 +876,10 @@ await bootedGame(fixturePage, 90000);
 await installCockpitTextProbe(fixturePage);
 await fixturePage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 const alternate = await fixturePage.evaluate(async () => {
-	const { GLTFLoader } = await import(
-		"/node_modules/three/examples/jsm/loaders/GLTFLoader.js"
+	const { GLTFLoader, Vector3 } = await import(
+		"/scripts/fixtures/cockpit-text-cabin.ts"
 	);
 	const { adoptCockpitTemplate } = await import("/src/cockpit-model.ts");
-	const { Vector3 } = await import("/node_modules/three/build/three.module.js");
 	const model = await new GLTFLoader().loadAsync(
 		"/scripts/fixtures/cockpit-text-cabin.glb",
 	);
