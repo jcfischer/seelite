@@ -87,7 +87,14 @@ try {
 			for (const d of await page.evaluate(designationFrames)) {
 				check(
 					`Target panel paints ${d.expected} within its bounds`,
-					d.seen && d.fits && d.changed > 50,
+					designationPainted(d),
+					JSON.stringify(d),
+				);
+			}
+			for (const d of await page.evaluate(designationFrames, true)) {
+				check(
+					`Target panel rejects absent ${d.expected} paint`,
+					d.seen && d.fits && d.changed === 0 && !designationPainted(d),
 					JSON.stringify(d),
 				);
 			}
@@ -281,8 +288,12 @@ try {
 }
 exit();
 
+function designationPainted(d) {
+	return d.seen && d.fits && d.changed > 50;
+}
+
 /** Read pixels as well as calls; equal names/ranges test cache invalidation. */
-function designationFrames() {
+function designationFrames(suppressPaint = false) {
 	const g = window.__seelite;
 	const ctx = g.cockpit.targetInstrument.ctx;
 	const fillText = ctx.fillText;
@@ -308,7 +319,14 @@ function designationFrames() {
 		let seen = false;
 		let fits = false;
 		let drawnY = 0;
+		ctx.save();
 		try {
+			if (suppressPaint) {
+				ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+				ctx.beginPath();
+				ctx.rect(0, 0, 0, 0);
+				ctx.clip();
+			}
 			ctx.fillText = function (text, x, y, ...args) {
 				if (text === expected) {
 					seen = true;
@@ -337,6 +355,7 @@ function designationFrames() {
 			return { expected, seen, fits, changed };
 		} finally {
 			ctx.fillText = fillText;
+			ctx.restore();
 		}
 	});
 }
