@@ -45,14 +45,22 @@ describe("monospace family stacks (#1178)", () => {
 		expect(bad).toEqual([]);
 	});
 
-	test("no font string names the generic monospace family alone, which resolves to Courier here", () => {
-		const bare = sources(SRC).flatMap((file) =>
-			[
-				...readFileSync(file, "utf8").matchAll(
-					/(?:\d|\}|\))(?:px|em|rem)?(?:\s*\/\s*[\d.]+)?\s+monospace\b/g,
+	test("outside comments, every generic monospace comes right after Menlo (and Consolas)", () => {
+		const code = (text: string) =>
+			text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+		const stray = sources(SRC).flatMap((file) =>
+			[...code(readFileSync(file, "utf8")).matchAll(/(?<!ui-)\bmonospace\b/g)]
+				.filter(
+					(m) =>
+						!/Menlo,\s*(?:Consolas,\s*)?$/.test(
+							m.input.slice(Math.max(0, (m.index ?? 0) - 40), m.index),
+						),
+				)
+				.map(
+					(m) =>
+						`${relative(ROOT, file)}: ${m.input.slice(Math.max(0, (m.index ?? 0) - 30), (m.index ?? 0) + 9).replace(/\s+/g, " ")}`,
 				),
-			].map((m) => `${relative(ROOT, file)}: ${m[0]}`),
 		);
-		expect(bare).toEqual([]);
+		expect(stray).toEqual([]);
 	});
 });
