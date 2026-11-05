@@ -155,5 +155,14 @@ check(
 );
 check("no production detour leg exhausts the frame budget", timeouts === 0);
 check("every selected corpus leg activates a detour", detours === rows.length);
+if (corpus.mode === "gate")
+	check(
+		"gate exercises both detour steering directions",
+		[-1, 1].every((side) =>
+			rows.some((row) =>
+				row.detourBodies.some((body) => body.endsWith(`:${side}`)),
+			),
+		),
+	);
 await browser.close();
 exit();

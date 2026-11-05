@@ -79,12 +79,14 @@ step-cost explanation is not supported by this run's attribution.
 
 ## C2 — reduced gate
 
-The default gate now uses **seeds 1, 2 and 17**. Seed 1 is an engaging leg
-(772 steps); seed 17 is the longest engaging leg in the baseline (1,477 steps)
-and retains the raider-off fixture that prevents interdiction from interrupting
-a detour measurement. Seed 2 exercises non-engagement accounting. Every existing
-assertion remains: seed accounting, at least one production leg, arrival at the
-selected station, no exhausted budget, and active detours for every chosen leg.
+The default gate now uses **seeds 1, 2, 7 and 17**. Seed 1 exercises a side −1
+detour (772 steps); seed 7 exercises side +1 (604 steps); seed 17 is the longest
+engaging leg in the baseline (1,477 steps, side −1). The raider-off fixture
+prevents interdiction from interrupting a detour measurement. Seed 2 exercises
+non-engagement accounting. All five existing assertions remain: seed accounting,
+at least one production leg, arrival at the selected station, no exhausted
+budget, and active detours for every chosen leg. A sixth gate-only assertion
+requires both detour directions to have been exercised in the actual flown legs.
 The 12,000-step ceiling is unchanged, and loops still stop only at a real exit
 or the ceiling. Each seed now gets a fresh page, in accordance with the repo's
 rule against navigating a page that has already measured something.
@@ -93,7 +95,14 @@ The script emits per-seed timing/step records and full successful-leg records,
 plus total boot and loop times, mode, seeds, budget, core count and peak load.
 Non-finite per-seed measurements throw instead of becoming a plausible figure.
 
-The first two low-load pairs provide the idle before/after: **209.893 →
+### Initial three-seed measurements (before review)
+
+The initial implementation used seeds 1, 2 and 17. It retained only side −1
+legs: the baseline's only side +1 legs were seeds 7 and 10. Review round 1
+identified that missing automatic coverage. The four-seed gate above restores
+it; the timings in this subsection describe the earlier three-seed gate only.
+
+The first two low-load pairs provided the idle before/after: **209.893 →
 32.256 s**, repeated at **208.259 → 32.249 s**. Over five alternating runs
 per side, median script wall is **209.893 → 32.249 s**, or **15.4% of the
 original cost (84.6% lower, 6.5× faster)**. Baseline range is 198.315–217.049 s;
@@ -132,15 +141,15 @@ PROBE_ORIGIN=http://localhost:5173 SEELITE_PROBE_RENDERER=hardware node scripts/
 
 This still uses **every seed 1–20**, the full **12,000 steps per leg**, the real
 Game steering loop and all five original assertions. The reduced gate no longer
-covers seeds 3–16 and 18–20; the manual command covers them. As before, each seed
-flies the first station that engages a detour, not every station in that seed.
+covers seeds 3–6, 8–16 and 18–20; the manual invocation covers them. As before,
+each seed flies the first station that engages a detour, not every station in that seed.
 Legacy custom runs remain available, for example:
 
 ```sh
 SEELITE_PROBE_RENDERER=hardware node scripts/measure-cruise-detour.mjs http://localhost:5173 3 16
 ```
 
-The shipped `--full` command was also run to completion: **20 accounted
+The shipped `--full` invocation was also run to completion: **20 accounted
 seeds, eight arrivals, zero timeouts, 6,563 steps, 5/5 checks**. Its peak host
 load was 34.05 and its script wall was 229.132 s, so that run proves the manual
 coverage and is excluded from the idle performance comparison.
@@ -156,9 +165,10 @@ major player-visible change. No changelog entry or visual acceptance is needed.
 
 - C1: the original 20-seed workload is attributed per seed above and in the raw
   data; the baseline patch preserves its workload and all five checks.
-- C2: both low-load pairs and the five-pair spread show a lower gate cost; all
-  five original checks passed in every run. No simulation or renderer source changed.
-- C3: the full manual command above retains and ran the original 20 seeds and
+- C2: the measurements above compare gate cost with the original workload;
+  the review follow-up below records the revised four-seed gate. No simulation
+  or renderer source changed.
+- C3: the full manual invocation above retains and ran the original 20 seeds and
   12,000-step ceiling.
 
 The corpus tests were written first and failed on the missing selector, then
@@ -173,7 +183,7 @@ under `scripts/lib/`; following the implement-worker SOP, only the affected
 `measure-cruise-detour` probe ran here. These are focused browser checks, not a
 selected PR-gate or full-suite browser pass. The supervisor owns that final gate.
 
-The required single full `npm test` run finished with **7,444 pass, 1 fail**
+The initial implementation's single full `npm test` run finished with **7,444 pass, 1 fail**
 (7,445 tests across 459 files, 639.26 s). The failure was
 `tests/field-flight-collision.test.ts:69`, the worker stall comparison:
 inline 257.718 ms, worker 231.814 ms, required worker < 128.859 ms. That file,
@@ -186,9 +196,58 @@ with the same preloads and unchanged model assets: **1 pass, 0 fail**, inline
 full-suite timing observation but does not establish its cause or reproduce a
 full-suite failure on the base. No collision code, assertion or threshold was
 changed, and the full suite was not repeated, per the implement-worker SOP.
-The supervisor's full base comparison remains necessary.
+At that stage, the supervisor's full base comparison remained necessary.
 
 Host logs for that follow-up: `/tmp/node-1129-full-tests.log`,
 `/tmp/node-1129-base-failure.log` (the isolated base run passed), and
 `/tmp/node-1129-worker-rerun.log`. The committed timing data above does not
 include any test or build running alongside a comparison measurement.
+
+## Review round 1 — both steering directions
+
+The revised four-seed gate was measured sequentially with the original C1
+workload on the same guarded dev server, using the hardware lane and holding
+the machine-wide probe lock. No review, test suite or build was launched
+alongside. A host sample showed Chromium as the main consumer (308% CPU),
+with the same persistent background bun process at about one core. Peak
+one-minute load was 12.82 for the baseline and 6.71 for the revised gate on
+18 logical cores; the earlier low-load C1 measurements remain recorded above.
+
+| Workload | Script wall (s) | Including teardown (s) | Boot (s) | Loop (s) | Steps | Checks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Original seeds 1–20 | 197.193 | 197.308 | 195.257 | 1.395 | 6,563 | 5/5 |
+| Revised gate 1, 2, 7, 17 | 43.109 | 43.205 | 41.200 | 0.701 | 2,853 | 6/6 |
+
+The revised gate costs **21.9% of this baseline (78.1% lower)**. Its script wall
+is also below the original low-load C1 baseline of 209.893 s. It accounts for
+four seeds, flies three legs to their selected stations, and has no timeouts.
+Seed 7 flies `planet-0:1`; seeds 1 and 17 fly `planet-2:-1` and `planet-5:-1`.
+It retains one non-engaging seed and the longest baseline leg. The sixteen
+omitted seeds remain covered by the unchanged `--full` mode documented above;
+they add world/body variation, including the second positive-side leg on seed 10.
+
+The new browser assertion was also tested against the defect: the revised
+script with only its selected seeds reverted to `[1, 2, 17]` passed every
+original assertion but failed `gate exercises both detour steering directions`,
+exiting 1 with **5/6 checks**. The normal four-seed invocation exited 0 with
+**6/6 checks**. The custom and full modes retain the original five checks and
+can still measure corpora that exercise only one direction.
+
+[Raw follow-up measurements and check verdicts](node-1129-cruise-detour-review-1.json)
+include the baseline, failing old-corpus control and revised gate. The new
+headless regression derives the selected directions from the committed full-run
+leg records: **4 pass, 1 fail** before adding seed 7; **5 pass, 0 fail** after.
+It protects the measured seed choice, while the live browser assertion checks
+the directions actually flown on each future gate run.
+
+The affected test run passed **99 tests across four files**. Typecheck/build,
+format, script lint, comment lint and launcher wiring passed. Browser selection
+was inspected before measurements and reported the infrastructure fallback;
+only the affected cruise-detour probe ran, following the implement-worker SOP.
+The receipt's CLI references use “invocation” to avoid the glossary alias.
+
+This review pass's required single full `npm test` run passed: **7,446 pass,
+0 fail**, across **459 files**, in **606.11 s**. The earlier field-collision
+stall check passed in this full run (230 ms inline, 24 ms on the worker).
+No collision implementation or threshold was changed. The host test log is
+`/tmp/node-1129-review-full-tests.log`.

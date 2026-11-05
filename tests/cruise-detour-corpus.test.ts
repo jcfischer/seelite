@@ -1,12 +1,27 @@
 import { describe, expect, test } from "bun:test";
 import { cruiseDetourCorpus } from "../scripts/lib/cruise-detour-corpus.mjs";
+import { manualFull } from "../docs/receipts/node-1129-cruise-detour-cost.json";
 
 describe("cruise detour measurement corpus", () => {
 	test("the default PR gate retains full-length legs on a small fixed corpus", () => {
 		const corpus = cruiseDetourCorpus([]);
 		expect(corpus.mode).toBe("gate");
-		expect(corpus.seeds).toEqual([1, 2, 17]);
+		expect(corpus.seeds).toEqual([1, 2, 7, 17]);
 		expect(corpus.maxSteps).toBe(12000);
+	});
+
+	test("the gate retains both detour directions from the measured full corpus", () => {
+		const { seeds } = cruiseDetourCorpus([]);
+		const legs = manualFull.legs.filter((leg) => seeds.includes(leg.seed));
+		const sides = new Set(
+			legs.flatMap((leg) =>
+				leg.detourBodies.map((body) => Number(body.split(":").at(-1))),
+			),
+		);
+		expect([...sides].sort()).toEqual([-1, 1]);
+		expect(
+			seeds.some((seed) => manualFull.nonEngagingSeeds.includes(seed)),
+		).toBe(true);
 	});
 
 	test("the manual full mode keeps every original seed and its step budget", () => {

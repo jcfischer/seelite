@@ -1,7 +1,8 @@
 /** Select the PR corpus or the original manual measurement, retaining the leg budget. */
 export function cruiseDetourCorpus(args) {
 	const maxSteps = 12000;
-	if (args.length === 0) return { mode: "gate", seeds: [1, 2, 17], maxSteps };
+	if (args.length === 0)
+		return { mode: "gate", seeds: [1, 2, 7, 17], maxSteps };
 	if (args.length === 1 && args[0] === "--full")
 		return {
 			mode: "full",
