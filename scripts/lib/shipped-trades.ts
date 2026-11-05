@@ -21,7 +21,10 @@ export const SHIPPED_TRADE_FILES = Object.fromEntries(
 ) as Readonly<Record<AuthoredTradeForm, string>>;
 export const SHIPPED_TRADE_DETAIL_FILES: Readonly<
 	Partial<Record<AuthoredTradeForm, string>>
-> = { b: "src/models/trade-ring-detail.glb" };
+> = {
+	b: "src/models/trade-ring-detail.glb",
+	c: "src/models/trade-drum-detail.glb",
+};
 export const tradeModelHash = (form: AuthoredTradeForm) =>
 	createHash("sha256")
 		.update(readFileSync(SHIPPED_TRADE_FILES[form]))

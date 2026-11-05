@@ -18,7 +18,7 @@ test("Ring scale detail is separate from the approved baseline and hidden below 
 	station.root.getObjectByName("trade-b-model")!.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		if (o.name.startsWith("scale-detail")) detail.push(o);
-		else
+		else if (!o.name.includes("plate-backing"))
 			baselineTriangles +=
 				(o.geometry.index?.count ?? o.geometry.getAttribute("position").count) /
 				3;

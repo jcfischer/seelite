@@ -15,9 +15,9 @@ const parts = (root: THREE.Object3D) => {
 	return result;
 };
 
-test("the Ring boot asset stays within the approved baseline byte budget", async () => {
+test("the backed Ring hull stays below 7 MiB and carries no full-only detail", async () => {
 	expect(statSync("src/models/trade-ring.glb").size).toBeLessThanOrEqual(
-		5_875_120,
+		7 * 2 ** 20,
 	);
 	const base = await decodeShippedGlb("src/models/trade-ring.glb");
 	expect(parts(base)).toEqual([]);

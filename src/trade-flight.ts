@@ -5,7 +5,11 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
-import { RING_DETAIL_GLB_URL, TRADE_GLB_URLS } from "./model-urls";
+import {
+	DRUM_DETAIL_GLB_URL,
+	RING_DETAIL_GLB_URL,
+	TRADE_GLB_URLS,
+} from "./model-urls";
 import { STATION_GEOMETRY } from "./station";
 import { stationInterior } from "./station-interior";
 import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
@@ -218,11 +222,13 @@ export function prepareTradeModel(
 					createTradeBuilder(
 						form,
 						gltf.scene,
-						form === "b"
+						form === "b" || form === "c"
 							? async () => {
 									const loaded = await new GLTFLoader()
 										.setMeshoptDecoder(MeshoptDecoder)
-										.loadAsync(RING_DETAIL_GLB_URL);
+										.loadAsync(
+											form === "b" ? RING_DETAIL_GLB_URL : DRUM_DETAIL_GLB_URL,
+										);
 									return loaded.scene;
 								}
 							: undefined,

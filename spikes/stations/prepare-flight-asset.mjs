@@ -98,7 +98,7 @@ for (const [id, name] of [
 			method: EXTMeshoptCompression.EncoderMethod.QUANTIZE,
 		});
 	const outputs = [[target, document]];
-	if (id === "ring") {
+	if (["ring", "drum"].includes(id)) {
 		const detail = cloneDocument(document);
 		const isDetail = (node) => node.getName().startsWith("scale-detail/");
 		for (const node of document.getRoot().listNodes())
@@ -122,7 +122,7 @@ for (const [id, name] of [
 		assert.equal(
 			detail.getRoot().listTextures().length,
 			0,
-			"Ring detail carries an image",
+			`${name} detail carries an image`,
 		);
 		detail
 			.createExtension(EXTMeshoptCompression)
@@ -130,7 +130,7 @@ for (const [id, name] of [
 			.setEncoderOptions({
 				method: EXTMeshoptCompression.EncoderMethod.QUANTIZE,
 			});
-		outputs.push(["src/models/trade-ring-detail.glb", detail]);
+		outputs.push([`src/models/trade-${name}-detail.glb`, detail]);
 	}
 	const decodedOutputs = [];
 	for (const [output, doc] of outputs) {
