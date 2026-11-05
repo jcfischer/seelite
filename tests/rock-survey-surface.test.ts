@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fieldRocks, systemFields } from "../src/asteroid-field";
+import { paintCockpitInstrument } from "../src/cockpit-text";
 import { SURVEY_LIFETIME_H } from "../src/deposit-state";
 import { rockArchetype } from "../src/field-lod";
 import { generateGalaxy } from "../src/galaxy";
@@ -33,6 +34,8 @@ const ctx = {
 	restore() {},
 	setLineDash() {},
 	beginPath() {},
+	rect() {},
+	clip() {},
 	arc() {},
 	stroke() {},
 	fillText() {},
@@ -55,6 +58,7 @@ const bindings = {
 	sub,
 	length,
 	SURVEY,
+	paintCockpitInstrument,
 	edgeAngleOff,
 	range,
 	duration: () => "CALC",
@@ -165,14 +169,14 @@ describe("survey surface and target instrument (node #1148)", () => {
 					texture: {},
 					primaryText: "",
 				});
-				let displayedKm: number | null = null;
+				const displayed: { km: number | null } = { km: null };
 				const subject = Object.assign(
 					Object.create(
 						gameMethods(["updateInstruments", "surveyBlock"], {
 							...bindings,
 							MINING_ON: mining,
 							range: (km: number) => {
-								displayedKm = km;
+								displayed.km = km;
 								return range(km);
 							},
 						}),
@@ -203,7 +207,7 @@ describe("survey surface and target instrument (node #1148)", () => {
 				expect(subject.cockpit.targetInstrument.primaryText).toBe(
 					`Rock  ${range(mining ? ref.distKm : centreKm)}`,
 				);
-				expect(displayedKm).toBe(mining ? ref.distKm : centreKm);
+				expect(displayed.km).toBe(mining ? ref.distKm : centreKm);
 				expect(subject.surveyBlock(ref) === null).toBe(ref.distKm <= 4);
 			}
 		});
