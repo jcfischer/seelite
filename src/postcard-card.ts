@@ -30,8 +30,7 @@ import {
 	postcardRecipe,
 } from "./postcard";
 
-const MONO =
-	'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace';
+const MONO = "Menlo, Consolas, monospace";
 const SANS =
 	'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
 

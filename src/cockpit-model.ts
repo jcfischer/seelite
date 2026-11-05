@@ -304,7 +304,7 @@ function labelMaterial(name: string): THREE.MeshBasicMaterial {
 	ctx.fillStyle = "#111719";
 	ctx.fillRect(0, 0, canvas.width, canvas.height);
 	ctx.fillStyle = key ? "#e4c896" : "#aebdc0";
-	ctx.font = `${key ? 52 : 46}px monospace`;
+	ctx.font = `${key ? 52 : 46}px Menlo, monospace`;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
 	ctx.fillText(cockpitLabelText(name), canvas.width / 2, canvas.height / 2);

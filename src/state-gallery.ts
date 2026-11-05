@@ -741,7 +741,7 @@ function mountCockpit3D(stage: HTMLElement, headLook: HeadLook): CockpitScene {
 }
 
 const STYLE = `
-#state-gallery { position: fixed; inset: 0; z-index: 20; overflow: auto; color: #d8eeff; background: #02080e; font: 13px/1.35 ui-monospace, "SF Mono", Menlo, monospace; }
+#state-gallery { position: fixed; inset: 0; z-index: 20; overflow: auto; color: #d8eeff; background: #02080e; font: 13px/1.35 Menlo, monospace; }
 #state-gallery * { box-sizing: border-box; }
 .sg-wrap { min-height: 100%; max-width: 1180px; margin: auto; padding: 20px; display: grid; gap: 14px; }
 .sg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid #355369; padding-bottom: 12px; }

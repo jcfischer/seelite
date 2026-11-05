@@ -154,7 +154,7 @@ export function paintCockpitText(
 	const fonts: string[] = [];
 	const pad = style.padding ?? Math.min(width, height) * 0.08;
 	if (height > width) {
-		ctx.font = "42px ui-monospace, monospace";
+		ctx.font = "42px Menlo, monospace";
 		lines = lines.flatMap((line) =>
 			line.at || line.runs
 				? [line]
@@ -170,10 +170,10 @@ export function paintCockpitText(
 	ctx.textAlign = "left";
 	for (const [i, line] of lines.entries()) {
 		let size = line.at?.size ?? Math.min(42, rowHeight * 0.85);
-		ctx.font = `${size}px ui-monospace, monospace`;
+		ctx.font = `${size}px Menlo, monospace`;
 		const measured = ctx.measureText(line.text).width;
 		size *= Math.min(1, (width - 2 * pad) / Math.max(1, measured));
-		ctx.font = `${size}px ui-monospace, monospace`;
+		ctx.font = `${size}px Menlo, monospace`;
 		ctx.fillStyle = line.fill ?? "#96cdf0";
 		ctx.globalAlpha = line.alpha ?? 1;
 		const y = line.at?.y ?? pad + (i + 0.5) * rowHeight;

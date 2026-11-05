@@ -184,10 +184,10 @@ export function fitLine(
 	const held = cache.get(cacheKey);
 	if (held) return held;
 	let size = startSize;
-	ctx.font = `${size}px ui-monospace, monospace`;
+	ctx.font = `${size}px Menlo, monospace`;
 	while (size > 8 && ctx.measureText(widest).width > w - 16) {
 		size -= 1;
-		ctx.font = `${size}px ui-monospace, monospace`;
+		ctx.font = `${size}px Menlo, monospace`;
 	}
 	const fitted = {
 		font: ctx.font,

@@ -92,7 +92,7 @@ const LABEL: Record<SurfaceClass, string> = {
 /** The page's own chrome. A module constant so the mount reads as scene setup. */
 const PROTOTYPE_CSS = `
 #planet-prototype{position:fixed;inset:0;background:#01030a;color:#dceeff;
-  font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;z-index:20}
+  font:13px/1.5 Menlo, monospace;z-index:20}
 #planet-prototype canvas{width:100%;height:100%;display:block}
 .pp-head{position:fixed;top:14px;left:0;right:0;text-align:center;pointer-events:none}
 .pp-head b{color:#f6c878;letter-spacing:.08em}

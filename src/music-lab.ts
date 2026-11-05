@@ -49,7 +49,7 @@ export function mountMusicLab() {
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>System</legend>
   <label>Seed <input id="seed" type="number" value="1234" style="width:9em"></label>
   <button id="random">Random system</button>
-  <span id="theme" style="margin-left:12px;font:13px ui-monospace,monospace;color:#8a96a3"></span>
+  <span id="theme" style="margin-left:12px;font:13px Menlo, monospace;color:#8a96a3"></span>
 </fieldset>
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Where</legend>
   <label><input type="radio" name="scene" value="flight" checked> Flight</label>
@@ -62,8 +62,8 @@ export function mountMusicLab() {
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Danger level</legend>
   ${FLIGHT_LEVELS.map((l, i) => `<label><input type="radio" name="level" value="${l}"${i === 0 ? " checked" : ""}> ${l}</label>`).join(" ")}
 </fieldset>
-<pre id="state" style="font:13px ui-monospace,monospace;color:#8a96a3;background:#12171d;padding:10px;margin:0"></pre>
-<pre id="errors" style="font:13px ui-monospace,monospace;color:#e0a040;margin:8px 0 0"></pre>`;
+<pre id="state" style="font:13px Menlo, monospace;color:#8a96a3;background:#12171d;padding:10px;margin:0"></pre>
+<pre id="errors" style="font:13px Menlo, monospace;color:#e0a040;margin:8px 0 0"></pre>`;
 	document.body.appendChild(root);
 	document.body.style.margin = "0";
 	document.body.style.background = "#0b0e12";
