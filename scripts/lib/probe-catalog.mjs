@@ -224,7 +224,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"measure-cruise-detour.mjs",
-			"Runs the corpus gate for automatic cruise detours through the real Game steering loop.",
+			"Runs seeds 1, 2 and 17 through the real Game steering loop for automatic cruise detours, with the full 12,000-step budget; --full retains the manual 20-seed corpus.",
 			["cruise routing", "detour geometry", "Game steering"],
 		),
 		entry(
