@@ -5,7 +5,9 @@ import {
 } from "../scripts/lib/death-warning-paint.mjs";
 
 const pixels = (rgb: number[], count = 300) =>
-	new Uint8ClampedArray(Array.from({ length: count }, () => [...rgb, 255]).flat());
+	new Uint8ClampedArray(
+		Array.from({ length: count }, () => [...rgb, 255]).flat(),
+	);
 const background = pixels([1, 8, 11]);
 const still = { moved: 0, amber: 0 };
 
@@ -36,5 +38,7 @@ test("an absent warning or missing or resized face fails closed", () => {
 		const paint = warningPaintDiff(background, after);
 		expect(warningIsPainted(paint, still)).toBe(false);
 	}
-	expect(warningIsPainted(warningPaintDiff(null, background), still)).toBe(false);
+	expect(warningIsPainted(warningPaintDiff(null, background), still)).toBe(
+		false,
+	);
 });

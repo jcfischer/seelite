@@ -12,7 +12,12 @@ export function warningPaintDiff(before, after) {
 			Math.abs(after[i + 3] - before[i + 3]);
 		if (d < 24) continue;
 		moved += 1;
-		if (after[i] > after[i + 2] + 60 && after[i] >= after[i + 1]) amber += 1;
+		if (
+			after[i] > after[i + 2] + 60 &&
+			after[i + 1] > after[i + 2] + 40 &&
+			after[i] >= after[i + 1]
+		)
+			amber += 1;
 	}
 	return { moved, amber };
 }
