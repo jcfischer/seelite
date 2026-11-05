@@ -76,3 +76,50 @@ The production-snapshot routing tests require exactly the six-probe set for a
 body-only edit to each member. They require all probes when a new
 `applyViewFov` caller appears, including caller drift already in the base, and
 pin the getter body's declaration/signature boundary.
+
+## Local evidence, 2026-11-05
+
+Implementation commit: `248170f081907ffeef6f8e9e00a3382c54d64f66`.
+Base: `0ac662f10629ab0066cda17654f90f366d0a7d30` (`origin/main`).
+
+`bun test tests/probe-impact.test.ts tests/probe-selection.test.ts`: 59 pass,
+0 fail. The new routing tests were first run without the ownership entries:
+four failed. The getter routing test also failed with entries alone, before
+getter-body extraction was implemented.
+
+Typecheck, format check, script lint, comment lint, launcher wiring and
+`npm run build` passed. This is internal probe work under the definition in
+`src/changelog.ts`, so it adds no public changelog entry.
+
+`npm run probe:select -- --base origin/main --head HEAD` at the implementation
+commit selected all 120 probes because `probe-contract-roots.mjs` is harness
+infrastructure. The reviewed policy exception used this exact scope:
+
+```sh
+SEELITE_PROBE_RENDERER=hardware PROBE_SELECTION=1 \
+PROBE_FILES=probe-hud.mjs,probe-chase-view.mjs,probe-cruise-light.mjs,probe-production-boot.mjs,probe-boot.mjs,probe-live-cockpit.mjs \
+node scripts/probe-all.mjs
+```
+
+The renderer was ANGLE Metal / Apple M5 Pro. This is focused browser evidence,
+not a full-suite pass or the automatic selection. An earlier invocation omitted
+`PROBE_SELECTION=1`; it was stopped after its full-inventory banner and provides
+no evidence.
+
+The six-probe run passed production-boot and live-cockpit. HUD, cruise-light
+and chase-view timed out at the initial 20-second readiness wait, then each
+passed alone with `npm run probe:one -- <name>.mjs` (33.4, 18.6 and 17.7 seconds,
+respectively). Boot first completed 57/58 checks, missing the first readiness
+deadline; isolated runs then timed out on later pages, one at peak load 62.0 on
+18 cores. An unmodified `origin/main` source archive passed boot twice (125.1
+and 123.5 seconds); the final isolated branch run passed all 58 checks in
+121.6 seconds at peak load 8.5. The failures do not establish a cause, and the
+passes do not establish repeatability. No waits or assertions were changed.
+
+All six focused probes have passing results across these runs; the initial
+combined run itself remains 2/6. This does not claim a green combined run or
+full regression run. Only the receipt changed after the implementation commit.
+
+The required single full host run, `npm test`, passed immediately before the
+final evidence commit: 7,454 tests across 460 files, 0 failures (1,010.37 seconds).
+`git merge-base --is-ancestor origin/main HEAD` and `git diff --check` also passed.
