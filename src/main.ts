@@ -11390,9 +11390,9 @@ class Game {
 			ctx.strokeRect(10, 10, w - 20, h - 20);
 			ctx.textAlign = "center";
 			ctx.fillStyle = "#d8f6ff";
-			ctx.font = "34px ui-monospace, Menlo, monospace";
+			ctx.font = "34px Menlo, monospace";
 			ctx.fillText(titles[face.name] ?? "", w / 2, 62);
-			ctx.font = "40px ui-monospace, Menlo, monospace";
+			ctx.font = "40px Menlo, monospace";
 			(rows[face.name] ?? []).forEach(([text, colour], i) => {
 				ctx.fillStyle = colour;
 				ctx.fillText(text, w / 2, 140 + i * 62, w - 40);
@@ -22983,7 +22983,7 @@ class Game {
 		ctx.strokeStyle = CARGO_CONTACT_CSS;
 		ctx.fillStyle = CARGO_CONTACT_CSS;
 		ctx.lineWidth = 1.5;
-		ctx.font = "11px ui-monospace, Menlo, monospace";
+		ctx.font = "11px Menlo, monospace";
 		for (const mark of cargoMarks) {
 			ctx.beginPath();
 			ctx.moveTo(mark.x, mark.y - 6);
@@ -23268,7 +23268,7 @@ class Game {
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
-		ctx.font = "11px ui-monospace, Menlo, monospace";
+		ctx.font = "11px Menlo, monospace";
 		this.markerLabels.beginFrame(this.world.gameTime);
 		const labelBounds = (
 			x: number,

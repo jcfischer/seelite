@@ -28,7 +28,7 @@ describe("monospace family stacks (#1178)", () => {
 		const bad = sources(SRC).flatMap((file) =>
 			[
 				...readFileSync(file, "utf8").matchAll(
-					/([\w"'-]+\s*,\s*)?Menlo((?:\s*,\s*[\w"'-]+)*)/g,
+					/([\w"'-]+\s*,\s*)?Menlo((?:\s*,\s*[\w-]+)*)/g,
 				),
 			]
 				.filter(

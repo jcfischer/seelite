@@ -12,8 +12,8 @@
  * contract rather than reading them back off a rescaled canvas.
  */
 
-const INSTRUMENT_SECONDARY_FONT = "20px ui-monospace, monospace";
-export const PROMPT_FONT = "13px ui-monospace, Menlo, monospace";
+const INSTRUMENT_SECONDARY_FONT = "20px Menlo, monospace";
+export const PROMPT_FONT = "13px Menlo, monospace";
 export const PROMPT_FILL = "rgba(255, 214, 120, 0.9)";
 const TEXT_RASTER_DEFAULTS: Readonly<{
 	text: string;
@@ -71,7 +71,7 @@ export class TextRaster {
 		this.font =
 			canvasHeight === 256
 				? INSTRUMENT_SECONDARY_FONT
-				: `${24 * scale}px ui-monospace, monospace`;
+				: `${24 * scale}px Menlo, monospace`;
 		this.fillStyle = accent;
 		this.textAlign = "left";
 		this.x = 28;
