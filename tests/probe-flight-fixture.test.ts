@@ -59,7 +59,7 @@ test("a reused fixture restores its commander and clears the old dock before any
 	for (let i = 0; i < 2; i++) {
 		g.commander.credits = 9999;
 		g.commander.cargo.Food = 20;
-		g.commerceWorld = { galaxies: new Map([[0, "wanted"]]) };
+		g.commerceWorld.galaxies.set(0, "wanted");
 		g.dock = "launching";
 		g.world.gameTime = 900;
 		g.world.ship.pos = { x: 0, y: 0, z: 0 };

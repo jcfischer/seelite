@@ -40,14 +40,15 @@ import {
 	bootedGame,
 	guardedOrigin,
 	installCamSim,
-	installViewPlacement,
 	launchChromium,
 	tally,
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
-import { rememberFlightFixture } from "./lib/probe-flight-fixture.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 
 /** Where the game is served. `PROBE_ORIGIN` replaces only the host, so this
  *  probe keeps the seed it chose; `PROBE_URL` replaces the whole thing. The
@@ -146,12 +147,12 @@ async function open({
 	override,
 	force,
 	checkBoot = false,
+	fixture = false,
 } = {}) {
 	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 	watch(page);
 	await installCamSim(page);
-	await installViewPlacement(page);
-	await installViewFraming(page);
+	if (fixture) await installFlightFixtureHooks(page);
 	const url = gameUrl(ORIGIN, params, probeOptions({ override, force }));
 	await page.goto(url, { waitUntil: "load" });
 	if (checkBoot) {
@@ -177,7 +178,7 @@ async function open({
 	return page;
 }
 
-const page = await open({ checkBoot: true });
+const page = await open({ checkBoot: true, fixture: true });
 const resetBootFlight = await rememberFlightFixture(page);
 
 const state = await page.evaluate(() => {
@@ -801,14 +802,15 @@ async function fpsGate() {
 	 * The saved boot was an argument; the flake is a number.
 	 */
 	await bench.close();
-	await resetBootFlight();
+	let metered = await open();
 	check(
-		"the unflagged flight fixture carries no readout before the flag control",
-		!(await page.evaluate(() =>
+		"the matched unflagged boot carries no readout",
+		!(await metered.evaluate(() =>
 			Boolean(document.querySelector("[data-fps-meter]")),
 		)),
 	);
-	const metered = await open({
+	await metered.close();
+	metered = await open({
 		params: { seed: SEED, fps: true },
 		force: ["fps"],
 	});

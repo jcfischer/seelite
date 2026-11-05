@@ -1,4 +1,12 @@
+import { installViewPlacement } from "../probe-guard.mjs";
+import { installViewFraming } from "./view-placement.mjs";
 import { resetToFixture } from "./fixture-reset.mjs";
+
+/** Install the placement and framing hooks required by a flight fixture before navigation. */
+export async function installFlightFixtureHooks(page) {
+	await installViewPlacement(page);
+	await installViewFraming(page);
+}
 
 /**
  * Remember a flight fixture after boot, with view placement/framing installed.
@@ -12,7 +20,7 @@ export async function rememberFlightFixture(page) {
 		const g = window.__seelite;
 		return {
 			commander: structuredClone(g.commander),
-			commerceWorld: g.commerceWorld,
+			commerceWorld: structuredClone(g.commerceWorld),
 			view: g.view,
 		};
 	});
@@ -20,7 +28,7 @@ export async function rememberFlightFixture(page) {
 		await page.evaluate((initial) => {
 			const g = window.__seelite;
 			g.commander = structuredClone(initial.commander);
-			g.commerceWorld = initial.commerceWorld;
+			g.commerceWorld = structuredClone(initial.commerceWorld);
 			g.resetDock();
 			g.clearSystemScopedState();
 			g.resetFlightToStart();
