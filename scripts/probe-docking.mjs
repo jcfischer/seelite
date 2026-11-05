@@ -39,6 +39,10 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -1564,32 +1568,14 @@ check(
 		`${pitched.belowSample.hits ? ` — at ${JSON.stringify(pitched.belowSample.where)}` : ""}`,
 );
 
-// Node #745: fly generated refineries in four systems, one page per case;
+// Node #745: fly generated refineries in four systems, one page per seed;
 // node #746 adds the shipyard's three forms, and nodes #747–#748 trade a–e,
 // each in its own start system.
 // Seeds pin every pooled form; never mutate a station's drawn form in place.
 // The approach, berth reservation and launch all go through Game's protocol.
-for (const [type, seed, formId] of [
-	["trade", 3, "a"],
-	["trade", 5, "b"],
-	["trade", 21, "c"],
-	["trade", 12, "d"],
-	["trade", 1, "e"],
-	["refinery", 1, "a"],
-	["refinery", 28, "b"],
-	["refinery", 2, "c"],
-	["refinery", 4, "d"],
-	["shipyard", 3, "a"],
-	["shipyard", 2, "b"],
-	["shipyard", 8, "c"],
-]) {
-	const stationPage = await browser.newPage({
-		viewport: { width: 900, height: 620 },
-	});
-	watch(stationPage);
-	await stationPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
-	await bootedGame(stationPage);
-	const run = await stationPage.evaluate(async (type) => {
+await page.close();
+async function flyStationCase(stationPage, type) {
+	return stationPage.evaluate(async (type) => {
 		const { migrateEquipment, equipmentNames } = await import(
 			"/src/loadout.ts"
 		);
@@ -1669,23 +1655,71 @@ for (const [type, seed, formId] of [
 			refusal: parked.computerRefusal,
 		};
 	}, type);
-	check(
-		`seed ${seed} generates ${type} ${formId} and docks at a berth`,
-		run.formId === formId &&
-			run.docked &&
-			run.entry === true &&
-			Boolean(run.berth),
-		JSON.stringify(run),
-	);
-	check(
-		`${type} ${formId} launches and flies clear without contact`,
-		run.launched &&
-			run.phase === "flying" &&
-			run.axialKm > run.planeKm &&
-			run.distanceGainedKm > 0 &&
-			run.impacts === 0,
-		JSON.stringify(run),
-	);
+}
+
+const stationFixtures = [
+	["trade", 3, "a"],
+	["trade", 5, "b"],
+	["trade", 21, "c"],
+	["trade", 12, "d"],
+	["trade", 1, "e"],
+	["refinery", 1, "a"],
+	["refinery", 28, "b"],
+	["refinery", 2, "c"],
+	["refinery", 4, "d"],
+	["shipyard", 3, "a"],
+	["shipyard", 2, "b"],
+	["shipyard", 8, "c"],
+];
+const casesBySeed = new Map();
+for (const fixture of stationFixtures) {
+	const seed = fixture[1];
+	if (!casesBySeed.has(seed)) casesBySeed.set(seed, []);
+	casesBySeed.get(seed).push(fixture);
+}
+for (const [seed, cases] of casesBySeed) {
+	const stationPage = await browser.newPage({
+		viewport: { width: 900, height: 620 },
+	});
+	watch(stationPage);
+	await installFlightFixtureHooks(stationPage);
+	await stationPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
+	await bootedGame(stationPage);
+	const resetStation = await rememberFlightFixture(stationPage);
+	for (const [index, [type, , formId]] of cases.entries()) {
+		if (index > 0) {
+			await resetStation();
+			const neutral = await stationPage.evaluate(() => {
+				const g = window.__seelite;
+				return (
+					g.dockPhase === "flying" &&
+					g.world.gameTime < 1 &&
+					g.condition.hull === g.condition.hullMax &&
+					g.collisionImpacts === 0 &&
+					!g.hasDockingComputer
+				);
+			});
+			check(`seed ${seed} reuses a neutral flight fixture`, neutral);
+		}
+		const run = await flyStationCase(stationPage, type);
+		check(
+			`seed ${seed} generates ${type} ${formId} and docks at a berth`,
+			run.formId === formId &&
+				run.docked &&
+				run.entry === true &&
+				Boolean(run.berth),
+			JSON.stringify(run),
+		);
+		check(
+			`${type} ${formId} launches and flies clear without contact`,
+			run.launched &&
+				run.phase === "flying" &&
+				run.axialKm > run.planeKm &&
+				run.distanceGainedKm > 0 &&
+				run.impacts === 0,
+			JSON.stringify(run),
+		);
+	}
 	await stationPage.close();
 }
 
