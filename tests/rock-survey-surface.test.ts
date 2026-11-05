@@ -7,7 +7,12 @@ import { rockArchetype } from "../src/field-lod";
 import { generateGalaxy } from "../src/galaxy";
 import { beamHit } from "../src/rock-extraction";
 import { decodeRockHeightfields, radiusAt } from "../src/rock-heightfields";
-import { rockContents, SURVEY, surveyReading } from "../src/rock-survey";
+import {
+	type RockContents,
+	rockContents,
+	SURVEY,
+	surveyReading,
+} from "../src/rock-survey";
 import {
 	edgeAngleOff,
 	isRockTargetId,
@@ -15,6 +20,7 @@ import {
 	rockDirectionNow,
 	rockLocalVector,
 	rockTargetId,
+	type RockRef,
 } from "../src/rock-target";
 import { generateContents } from "../src/system";
 import { range } from "../src/units";
@@ -66,6 +72,33 @@ const bindings = {
 	targetDesignation: () => "ROCK",
 };
 
+function drawCueAt(ref: RockRef, contents: RockContents, gameTime: number) {
+	const subject = Object.assign(
+		Object.create(gameMethods(["drawDeepDepositCue", "rockShape"], bindings)),
+		{
+			world: { gameTime },
+			targetId: ref.id,
+			rockRef: () => ref,
+			rockContentsOf: () => contents,
+			rockDepositRow: () => ({ surveyedAt: gameTime }),
+		},
+	);
+	const camera = add(
+		ref.pos,
+		v3(ref.rock.radiusKm * 2, ref.rock.radiusKm, ref.rock.radiusKm * 3),
+	);
+	let drawnDir = v3();
+	subject.drawDeepDepositCue(
+		ctx,
+		camera,
+		(direction: ReturnType<typeof v3>) => {
+			drawnDir = direction;
+			return { x: 100, y: 100, on: true };
+		},
+	);
+	return { subject, camera, drawnDir };
+}
+
 describe("survey surface and target instrument (node #1148)", () => {
 	test("DEEP lies on the laser-cut heightfield within one cell across archetypes and spin", () => {
 		const seen = new Set<number>();
@@ -82,32 +115,12 @@ describe("survey surface and target instrument (node #1148)", () => {
 					gameTime,
 				);
 				if (!ref) throw new Error("Missing fixture rock");
-				const subject = Object.assign(
-					Object.create(
-						gameMethods(["drawDeepDepositCue", "rockShape"], bindings),
-					),
-					{
-						world: { gameTime },
-						targetId: ref.id,
-						rockRef: () => ref,
-						rockContentsOf: () => contents,
-						rockDepositRow: () => ({ surveyedAt: gameTime }),
-					},
+				const { subject, camera, drawnDir } = drawCueAt(
+					ref,
+					contents,
+					gameTime,
 				);
 				const dir = rockDirectionNow(ref, contents.deepDir, gameTime);
-				const camera = add(
-					ref.pos,
-					v3(rock.radiusKm * 2, rock.radiusKm, rock.radiusKm * 3),
-				);
-				let drawnDir = v3();
-				subject.drawDeepDepositCue(
-					ctx,
-					camera,
-					(direction: ReturnType<typeof v3>) => {
-						drawnDir = direction;
-						return { x: 100, y: 100, on: true };
-					},
-				);
 				const h = heightfields.fields[archetype];
 				const expectedRadius = radiusAt(h, [
 					contents.deepDir.x,

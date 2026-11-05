@@ -7,7 +7,7 @@ mouth direction still follows the rock's spin and the field's rotation.
 The target instrument reads `RockRef.distKm`, the exact figure used by
 `surveyBlock`. This preserves the existing survey convention: the distance to
 the bounding surface, clamped at zero. It does not change survey range,
-target selection, the on-glass target bracket's centre distance, or ETA.
+target selection, the on-glass target bracket's centre distance, or Lane wait.
 
 ## Navigation remains deferred
 
