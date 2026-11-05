@@ -1,0 +1,2100 @@
+{
+  "base": "adbb365e092b0454e30e3ccd8f495056a536d42b",
+  "date": "2026-11-05",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+  "cores": 18,
+  "runs": [
+    {
+      "side": "baseline",
+      "run": 1,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "totalWallMs": 209893.423209,
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 10050.085917,
+          "evaluateMs": 134.4662499999995,
+          "wallMs": 10184.554209,
+          "cpuMs": 132.30000001192093,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10099.869417,
+          "evaluateMs": 1.259874999999738,
+          "wallMs": 10101.130292,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 3,
+          "bootMs": 10635.236624999998,
+          "evaluateMs": 2.60570799999914,
+          "wallMs": 10637.843874999999,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 4,
+          "bootMs": 10982.958624999996,
+          "evaluateMs": 1.3528330000044662,
+          "wallMs": 10984.312625000002,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 5,
+          "bootMs": 10849.840582999997,
+          "evaluateMs": 1.6689170000026934,
+          "wallMs": 10851.510125,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 6,
+          "bootMs": 10351.36075,
+          "evaluateMs": 1.7725829999981215,
+          "wallMs": 10353.134209000003,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 7,
+          "bootMs": 10116.008999999998,
+          "evaluateMs": 77.76091699999233,
+          "wallMs": 10193.770666999997,
+          "cpuMs": 75.90000000596046,
+          "steps": 604
+        },
+        {
+          "seed": 8,
+          "bootMs": 10291.938832999993,
+          "evaluateMs": 1.8337909999972908,
+          "wallMs": 10293.773457999996,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 9,
+          "bootMs": 10299.32091699999,
+          "evaluateMs": 1.9771659999969415,
+          "wallMs": 10301.299416999987,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 10,
+          "bootMs": 9834.283250000008,
+          "evaluateMs": 147.41145900000993,
+          "wallMs": 9981.695541000008,
+          "cpuMs": 145.5,
+          "steps": 719
+        },
+        {
+          "seed": 11,
+          "bootMs": 10104.61099999999,
+          "evaluateMs": 147.57549999999173,
+          "wallMs": 10252.187458,
+          "cpuMs": 145.80000001192093,
+          "steps": 658
+        },
+        {
+          "seed": 12,
+          "bootMs": 10203.651500000007,
+          "evaluateMs": 233.04108299998916,
+          "wallMs": 10436.693958000003,
+          "cpuMs": 230.59999999403954,
+          "steps": 1030
+        },
+        {
+          "seed": 13,
+          "bootMs": 10136.557833000013,
+          "evaluateMs": 104.62866599997506,
+          "wallMs": 10241.187292000002,
+          "cpuMs": 102.2000000178814,
+          "steps": 575
+        },
+        {
+          "seed": 14,
+          "bootMs": 10164.245124999987,
+          "evaluateMs": 1.6690409999864642,
+          "wallMs": 10165.915416999982,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 15,
+          "bootMs": 11067.358416000003,
+          "evaluateMs": 2.717833000002429,
+          "wallMs": 11070.077625000005,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 16,
+          "bootMs": 11282.675582999975,
+          "evaluateMs": 2.1679580000054557,
+          "wallMs": 11284.844207999995,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 10316.636582999985,
+          "evaluateMs": 433.7481250000128,
+          "wallMs": 10750.385624999995,
+          "cpuMs": 431.7000000178814,
+          "steps": 1477
+        },
+        {
+          "seed": 18,
+          "bootMs": 10502.06020800001,
+          "evaluateMs": 1.7205419999954756,
+          "wallMs": 10503.781625000003,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 19,
+          "bootMs": 10150.00562499999,
+          "evaluateMs": 189.2436250000028,
+          "wallMs": 10339.250084,
+          "cpuMs": 187.60000002384186,
+          "steps": 728
+        },
+        {
+          "seed": 20,
+          "bootMs": 10080.259833000018,
+          "evaluateMs": 1.4149580000084825,
+          "wallMs": 10081.675875000015,
+          "cpuMs": 0,
+          "steps": 0
+        }
+      ],
+      "requestedSeeds": 20,
+      "firstSeed": 1,
+      "detourLegs": 8,
+      "nonEngagingSeeds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        14,
+        15,
+        16,
+        18,
+        20
+      ],
+      "accountedSeeds": 20,
+      "arrivals": 8,
+      "timeouts": 0,
+      "detours": 8,
+      "meanCpuMs": 181.4500000104308,
+      "nonArrivals": [],
+      "peakLoadRounded": 4.9,
+      "runnerWallSecondsRounded": 210
+    },
+    {
+      "side": "gate",
+      "run": 1,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "measurementWallMs": 32256.256125,
+      "mode": "gate",
+      "seeds": [
+        1,
+        2,
+        17
+      ],
+      "maxSteps": 12000,
+      "cores": 18,
+      "peakLoad": 4.548828125,
+      "totalBootMs": 30717.453708,
+      "totalCpuMs": 566.4000000059605,
+      "legs": [
+        {
+          "seed": 1,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 771,
+          "detourBodies": [
+            "planet-2:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-2",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 255770229.6908508,
+            "y": 41485592.896886356,
+            "z": 559877.3795816529
+          },
+          "shipPos": {
+            "x": 255770221.67437834,
+            "y": 41485544.97161261,
+            "z": 559865.5938688053
+          },
+          "steps": 772,
+          "cpuMs": 139.19999998807907,
+          "charge": 10.269008501509916
+        },
+        {
+          "seed": 17,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 1476,
+          "detourBodies": [
+            "planet-5:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-5",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 646802128.7678912,
+            "y": -170543987.28814372,
+            "z": 12744484.564746853
+          },
+          "shipPos": {
+            "x": 646802108.4970813,
+            "y": -170544030.14177975,
+            "z": 12744468.669608666
+          },
+          "steps": 1477,
+          "cpuMs": 427.2000000178814,
+          "charge": 7.107095381849609
+        }
+      ],
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 10328.207875,
+          "evaluateMs": 141.4293749999997,
+          "wallMs": 10686.695,
+          "cpuMs": 139.19999998807907,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10210.340167,
+          "evaluateMs": 2.067665999999008,
+          "wallMs": 10216.075917,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 10178.905665999999,
+          "evaluateMs": 429.64650000000256,
+          "wallMs": 10836.239083,
+          "cpuMs": 427.2000000178814,
+          "steps": 1477
+        }
+      ],
+      "requestedSeeds": 3,
+      "detourLegs": 2,
+      "nonEngagingSeeds": [
+        2
+      ],
+      "accountedSeeds": 3,
+      "arrivals": 2,
+      "timeouts": 0,
+      "detours": 2,
+      "meanCpuMs": 283.20000000298023,
+      "nonArrivals": [],
+      "runnerWallSecondsRounded": 32.4
+    },
+    {
+      "side": "baseline",
+      "run": 2,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 208409.54379199998,
+      "peakLoad": 4.62451171875,
+      "cores": 18,
+      "totalWallMs": 208258.553125,
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 10788.819875,
+          "evaluateMs": 139.09108300000116,
+          "wallMs": 10927.912666,
+          "cpuMs": 137,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10478.563332999998,
+          "evaluateMs": 1.2235000000000582,
+          "wallMs": 10479.787708,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 3,
+          "bootMs": 10185.193417000002,
+          "evaluateMs": 1.8586660000000848,
+          "wallMs": 10187.053292,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 4,
+          "bootMs": 9799.499709,
+          "evaluateMs": 1.3965840000018943,
+          "wallMs": 9800.896959000002,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 5,
+          "bootMs": 10084.703875,
+          "evaluateMs": 2.2370000000009895,
+          "wallMs": 10086.941832999997,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 6,
+          "bootMs": 9632.902708000001,
+          "evaluateMs": 1.5609999999942374,
+          "wallMs": 9634.464500000002,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 7,
+          "bootMs": 9667.240375000001,
+          "evaluateMs": 78.03108300000895,
+          "wallMs": 9745.272707999997,
+          "cpuMs": 76.60000002384186,
+          "steps": 604
+        },
+        {
+          "seed": 8,
+          "bootMs": 10091.092375000007,
+          "evaluateMs": 2.0952090000064345,
+          "wallMs": 10093.189165999996,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 9,
+          "bootMs": 11166.348958999995,
+          "evaluateMs": 1.9508329999953276,
+          "wallMs": 11168.300833999994,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 10,
+          "bootMs": 10748.22466600001,
+          "evaluateMs": 152.20883299999696,
+          "wallMs": 10900.43458300001,
+          "cpuMs": 149.90000000596046,
+          "steps": 719
+        },
+        {
+          "seed": 11,
+          "bootMs": 10549.887375000006,
+          "evaluateMs": 157.32945800000743,
+          "wallMs": 10707.21779200001,
+          "cpuMs": 155.09999999403954,
+          "steps": 658
+        },
+        {
+          "seed": 12,
+          "bootMs": 11111.552458000006,
+          "evaluateMs": 248.56016599999566,
+          "wallMs": 11360.114042000001,
+          "cpuMs": 246.09999999403954,
+          "steps": 1030
+        },
+        {
+          "seed": 13,
+          "bootMs": 10736.74545799999,
+          "evaluateMs": 108.63341699997545,
+          "wallMs": 10845.379958000005,
+          "cpuMs": 106.90000000596046,
+          "steps": 575
+        },
+        {
+          "seed": 14,
+          "bootMs": 10376.834875,
+          "evaluateMs": 1.6489589999837335,
+          "wallMs": 10378.484457999992,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 15,
+          "bootMs": 10250.34604200002,
+          "evaluateMs": 1.8611669999954756,
+          "wallMs": 10252.208083000005,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 16,
+          "bootMs": 10183.41862500002,
+          "evaluateMs": 2.136957999988226,
+          "wallMs": 10185.556542000006,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 9833.350708999991,
+          "evaluateMs": 426.0994999999821,
+          "wallMs": 10259.451042,
+          "cpuMs": 424.19999998807907,
+          "steps": 1477
+        },
+        {
+          "seed": 18,
+          "bootMs": 10209.155583999993,
+          "evaluateMs": 1.845832999999402,
+          "wallMs": 10211.002124999999,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 19,
+          "bootMs": 10000.113375000015,
+          "evaluateMs": 197.58562499997788,
+          "wallMs": 10197.699667000008,
+          "cpuMs": 195.5,
+          "steps": 728
+        },
+        {
+          "seed": 20,
+          "bootMs": 10122.387125000008,
+          "evaluateMs": 1.2439590000140015,
+          "wallMs": 10123.631875000021,
+          "cpuMs": 0,
+          "steps": 0
+        }
+      ],
+      "requestedSeeds": 20,
+      "firstSeed": 1,
+      "detourLegs": 8,
+      "nonEngagingSeeds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        14,
+        15,
+        16,
+        18,
+        20
+      ],
+      "accountedSeeds": 20,
+      "arrivals": 8,
+      "timeouts": 0,
+      "detours": 8,
+      "meanCpuMs": 186.41250000149012,
+      "nonArrivals": []
+    },
+    {
+      "side": "gate",
+      "run": 2,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 32343.04483300002,
+      "peakLoad": 4.54443359375,
+      "cores": 18,
+      "measurementWallMs": 32248.527084,
+      "mode": "gate",
+      "seeds": [
+        1,
+        2,
+        17
+      ],
+      "maxSteps": 12000,
+      "totalBootMs": 30641.805458,
+      "totalCpuMs": 581.1000000238419,
+      "legs": [
+        {
+          "seed": 1,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 771,
+          "detourBodies": [
+            "planet-2:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-2",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 255770229.6908508,
+            "y": 41485592.896886356,
+            "z": 559877.3795816529
+          },
+          "shipPos": {
+            "x": 255770221.67437834,
+            "y": 41485544.97161261,
+            "z": 559865.5938688053
+          },
+          "steps": 772,
+          "cpuMs": 143.40000000596046,
+          "charge": 10.269008501509916
+        },
+        {
+          "seed": 17,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 1476,
+          "detourBodies": [
+            "planet-5:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-5",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 646802128.7678912,
+            "y": -170543987.28814372,
+            "z": 12744484.564746853
+          },
+          "shipPos": {
+            "x": 646802108.4970813,
+            "y": -170544030.14177975,
+            "z": 12744468.669608666
+          },
+          "steps": 1477,
+          "cpuMs": 437.7000000178814,
+          "charge": 7.107095381849609
+        }
+      ],
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 10150.706875,
+          "evaluateMs": 146.24879200000032,
+          "wallMs": 10523.182667000001,
+          "cpuMs": 143.40000000596046,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10178.78325,
+          "evaluateMs": 2.250207999997656,
+          "wallMs": 10185.105917,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 10312.315332999999,
+          "evaluateMs": 439.98666700000103,
+          "wallMs": 10971.219791,
+          "cpuMs": 437.7000000178814,
+          "steps": 1477
+        }
+      ],
+      "requestedSeeds": 3,
+      "detourLegs": 2,
+      "nonEngagingSeeds": [
+        2
+      ],
+      "accountedSeeds": 3,
+      "arrivals": 2,
+      "timeouts": 0,
+      "detours": 2,
+      "meanCpuMs": 290.55000001192093,
+      "nonArrivals": []
+    },
+    {
+      "side": "baseline",
+      "run": 3,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 217184.07762500003,
+      "peakLoad": 12.5078125,
+      "cores": 18,
+      "totalWallMs": 217048.882875,
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 10085.055625,
+          "evaluateMs": 147.93254200000047,
+          "wallMs": 10232.990208000001,
+          "cpuMs": 145.40000000596046,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10554.581583,
+          "evaluateMs": 2.187540999999328,
+          "wallMs": 10556.770457999999,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 3,
+          "bootMs": 11599.705582999999,
+          "evaluateMs": 2.420917000003101,
+          "wallMs": 11602.127582999998,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 4,
+          "bootMs": 10615.411457999995,
+          "evaluateMs": 1.7807909999974072,
+          "wallMs": 10617.193,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 5,
+          "bootMs": 10784.750417000003,
+          "evaluateMs": 1.9699580000014976,
+          "wallMs": 10786.721542,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 6,
+          "bootMs": 11216.858875000005,
+          "evaluateMs": 1.531791000001249,
+          "wallMs": 11218.391625000004,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 7,
+          "bootMs": 10616.44991699999,
+          "evaluateMs": 90.45241600000008,
+          "wallMs": 10706.903666999991,
+          "cpuMs": 88.19999998807907,
+          "steps": 604
+        },
+        {
+          "seed": 8,
+          "bootMs": 10729.249958,
+          "evaluateMs": 1.3742090000014286,
+          "wallMs": 10730.625333000004,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 9,
+          "bootMs": 10883.258333999998,
+          "evaluateMs": 2.08758300000045,
+          "wallMs": 10885.346791999997,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 10,
+          "bootMs": 10151.118208,
+          "evaluateMs": 166.82895799999824,
+          "wallMs": 10317.948625000005,
+          "cpuMs": 164.5,
+          "steps": 719
+        },
+        {
+          "seed": 11,
+          "bootMs": 11085.423834000001,
+          "evaluateMs": 174.45995799999218,
+          "wallMs": 11259.885834,
+          "cpuMs": 171.59999999403954,
+          "steps": 658
+        },
+        {
+          "seed": 12,
+          "bootMs": 11626.970291999998,
+          "evaluateMs": 260.3515420000185,
+          "wallMs": 11887.323292000001,
+          "cpuMs": 257.80000001192093,
+          "steps": 1030
+        },
+        {
+          "seed": 13,
+          "bootMs": 11358.854250000004,
+          "evaluateMs": 135.0715419999906,
+          "wallMs": 11493.927082999988,
+          "cpuMs": 131.59999999403954,
+          "steps": 575
+        },
+        {
+          "seed": 14,
+          "bootMs": 11951.506166000006,
+          "evaluateMs": 2.53683299999102,
+          "wallMs": 11954.043791000004,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 15,
+          "bootMs": 11216.388124999998,
+          "evaluateMs": 2.198167000024114,
+          "wallMs": 11218.587124999991,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 16,
+          "bootMs": 10615.721583000006,
+          "evaluateMs": 2.2378329999919515,
+          "wallMs": 10617.959999999992,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 9817.27691700001,
+          "evaluateMs": 428.1790420000034,
+          "wallMs": 10245.456542,
+          "cpuMs": 426.10000002384186,
+          "steps": 1477
+        },
+        {
+          "seed": 18,
+          "bootMs": 10256.829083000019,
+          "evaluateMs": 1.778083000011975,
+          "wallMs": 10258.607833000016,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 19,
+          "bootMs": 9767.32024999999,
+          "evaluateMs": 188.68899999998393,
+          "wallMs": 9956.010125,
+          "cpuMs": 186.2000000178814,
+          "steps": 728
+        },
+        {
+          "seed": 20,
+          "bootMs": 9864.979208000004,
+          "evaluateMs": 1.414208999980474,
+          "wallMs": 9866.394291000004,
+          "cpuMs": 0,
+          "steps": 0
+        }
+      ],
+      "requestedSeeds": 20,
+      "firstSeed": 1,
+      "detourLegs": 8,
+      "nonEngagingSeeds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        14,
+        15,
+        16,
+        18,
+        20
+      ],
+      "accountedSeeds": 20,
+      "arrivals": 8,
+      "timeouts": 0,
+      "detours": 8,
+      "meanCpuMs": 196.42500000447035,
+      "nonArrivals": []
+    },
+    {
+      "side": "gate",
+      "run": 3,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 31875.81558299996,
+      "peakLoad": 9.5029296875,
+      "cores": 18,
+      "measurementWallMs": 31775.801792000002,
+      "mode": "gate",
+      "seeds": [
+        1,
+        2,
+        17
+      ],
+      "maxSteps": 12000,
+      "totalBootMs": 30136.031292,
+      "totalCpuMs": 583.0999999940395,
+      "legs": [
+        {
+          "seed": 1,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 771,
+          "detourBodies": [
+            "planet-2:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-2",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 255770229.6908508,
+            "y": 41485592.896886356,
+            "z": 559877.3795816529
+          },
+          "shipPos": {
+            "x": 255770221.67437834,
+            "y": 41485544.97161261,
+            "z": 559865.5938688053
+          },
+          "steps": 772,
+          "cpuMs": 143.5,
+          "charge": 10.269008501509916
+        },
+        {
+          "seed": 17,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 1476,
+          "detourBodies": [
+            "planet-5:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-5",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 646802128.7678912,
+            "y": -170543987.28814372,
+            "z": 12744484.564746853
+          },
+          "shipPos": {
+            "x": 646802108.4970813,
+            "y": -170544030.14177975,
+            "z": 12744468.669608666
+          },
+          "steps": 1477,
+          "cpuMs": 439.59999999403954,
+          "charge": 7.107095381849609
+        }
+      ],
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 10047.697625,
+          "evaluateMs": 146.22779099999934,
+          "wallMs": 10422.655958,
+          "cpuMs": 143.5,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10110.669917000001,
+          "evaluateMs": 2.2808340000010503,
+          "wallMs": 10118.067792,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 9977.66375,
+          "evaluateMs": 442.38037500000064,
+          "wallMs": 10639.418291999998,
+          "cpuMs": 439.59999999403954,
+          "steps": 1477
+        }
+      ],
+      "requestedSeeds": 3,
+      "detourLegs": 2,
+      "nonEngagingSeeds": [
+        2
+      ],
+      "accountedSeeds": 3,
+      "arrivals": 2,
+      "timeouts": 0,
+      "detours": 2,
+      "meanCpuMs": 291.54999999701977,
+      "nonArrivals": []
+    },
+    {
+      "side": "baseline",
+      "run": 4,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 198422.65083299996,
+      "peakLoad": 9.8349609375,
+      "cores": 18,
+      "totalWallMs": 198314.535667,
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 9830.814,
+          "evaluateMs": 145.52820799999972,
+          "wallMs": 9976.344583,
+          "cpuMs": 143.09999999403954,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 9939.580957999999,
+          "evaluateMs": 1.838500000001659,
+          "wallMs": 9941.425,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 3,
+          "bootMs": 10000.41475,
+          "evaluateMs": 2.1619160000009288,
+          "wallMs": 10002.577375,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 4,
+          "bootMs": 9766.012959,
+          "evaluateMs": 1.7642500000001746,
+          "wallMs": 9767.777959,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 5,
+          "bootMs": 9967.841791000006,
+          "evaluateMs": 1.7974170000015874,
+          "wallMs": 9969.640333000003,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 6,
+          "bootMs": 9782.429707999996,
+          "evaluateMs": 1.9135419999947771,
+          "wallMs": 9784.344249999995,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 7,
+          "bootMs": 10268.096417000008,
+          "evaluateMs": 90.89104100000986,
+          "wallMs": 10358.989000000001,
+          "cpuMs": 87.5,
+          "steps": 604
+        },
+        {
+          "seed": 8,
+          "bootMs": 11077.628333,
+          "evaluateMs": 1.7632920000032755,
+          "wallMs": 11079.392749999999,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 9,
+          "bootMs": 10200.346125000011,
+          "evaluateMs": 1.9052499999961583,
+          "wallMs": 10202.25241700001,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 10,
+          "bootMs": 9515.649333000008,
+          "evaluateMs": 143.51625000000058,
+          "wallMs": 9659.166750000004,
+          "cpuMs": 141.59999999403954,
+          "steps": 719
+        },
+        {
+          "seed": 11,
+          "bootMs": 9692.793417000008,
+          "evaluateMs": 142.02862499999173,
+          "wallMs": 9834.823084000003,
+          "cpuMs": 139.59999999403954,
+          "steps": 658
+        },
+        {
+          "seed": 12,
+          "bootMs": 9826.559542000003,
+          "evaluateMs": 228.99425000000338,
+          "wallMs": 10055.554958000008,
+          "cpuMs": 226.59999999403954,
+          "steps": 1030
+        },
+        {
+          "seed": 13,
+          "bootMs": 9722.693709,
+          "evaluateMs": 102.62370799998462,
+          "wallMs": 9825.318000000014,
+          "cpuMs": 100.69999998807907,
+          "steps": 575
+        },
+        {
+          "seed": 14,
+          "bootMs": 9583.022375,
+          "evaluateMs": 1.4844169999996666,
+          "wallMs": 9584.50779199999,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 15,
+          "bootMs": 9366.998916000011,
+          "evaluateMs": 1.7169169999833684,
+          "wallMs": 9368.716625000001,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 16,
+          "bootMs": 9450.266499999998,
+          "evaluateMs": 1.723915999988094,
+          "wallMs": 9451.991000000009,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 9166.731750000006,
+          "evaluateMs": 384.14575000002515,
+          "wallMs": 9550.878375,
+          "cpuMs": 382.80000001192093,
+          "steps": 1477
+        },
+        {
+          "seed": 18,
+          "bootMs": 9933.647666000004,
+          "evaluateMs": 1.8072919999831356,
+          "wallMs": 9935.455583000003,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 19,
+          "bootMs": 9567.890124999976,
+          "evaluateMs": 196.22033300000476,
+          "wallMs": 9764.111291999987,
+          "cpuMs": 194.09999999403954,
+          "steps": 728
+        },
+        {
+          "seed": 20,
+          "bootMs": 9537.397541999992,
+          "evaluateMs": 1.2820000000065193,
+          "wallMs": 9538.68187500001,
+          "cpuMs": 0,
+          "steps": 0
+        }
+      ],
+      "requestedSeeds": 20,
+      "firstSeed": 1,
+      "detourLegs": 8,
+      "nonEngagingSeeds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        14,
+        15,
+        16,
+        18,
+        20
+      ],
+      "accountedSeeds": 20,
+      "arrivals": 8,
+      "timeouts": 0,
+      "detours": 8,
+      "meanCpuMs": 176.9999999962747,
+      "nonArrivals": []
+    },
+    {
+      "side": "gate",
+      "run": 4,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 30253.95637499995,
+      "peakLoad": 5.67919921875,
+      "cores": 18,
+      "measurementWallMs": 30161.586834,
+      "mode": "gate",
+      "seeds": [
+        1,
+        2,
+        17
+      ],
+      "maxSteps": 12000,
+      "totalBootMs": 28596.943958,
+      "totalCpuMs": 571.3000000119209,
+      "legs": [
+        {
+          "seed": 1,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 771,
+          "detourBodies": [
+            "planet-2:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-2",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 255770229.6908508,
+            "y": 41485592.896886356,
+            "z": 559877.3795816529
+          },
+          "shipPos": {
+            "x": 255770221.67437834,
+            "y": 41485544.97161261,
+            "z": 559865.5938688053
+          },
+          "steps": 772,
+          "cpuMs": 134.80000001192093,
+          "charge": 10.269008501509916
+        },
+        {
+          "seed": 17,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 1476,
+          "detourBodies": [
+            "planet-5:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-5",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 646802128.7678912,
+            "y": -170543987.28814372,
+            "z": 12744484.564746853
+          },
+          "shipPos": {
+            "x": 646802108.4970813,
+            "y": -170544030.14177975,
+            "z": 12744468.669608666
+          },
+          "steps": 1477,
+          "cpuMs": 436.5,
+          "charge": 7.107095381849609
+        }
+      ],
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 9507.396958,
+          "evaluateMs": 136.91549999999916,
+          "wallMs": 9849.466708,
+          "cpuMs": 134.80000001192093,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 9593.164125,
+          "evaluateMs": 2.1981249999989814,
+          "wallMs": 9598.754417,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 9496.382875,
+          "evaluateMs": 439.05191600000035,
+          "wallMs": 10176.218458,
+          "cpuMs": 436.5,
+          "steps": 1477
+        }
+      ],
+      "requestedSeeds": 3,
+      "detourLegs": 2,
+      "nonEngagingSeeds": [
+        2
+      ],
+      "accountedSeeds": 3,
+      "arrivals": 2,
+      "timeouts": 0,
+      "detours": 2,
+      "meanCpuMs": 285.65000000596046,
+      "nonArrivals": []
+    },
+    {
+      "side": "baseline",
+      "run": 5,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 210516.166709,
+      "peakLoad": 8.8076171875,
+      "cores": 18,
+      "totalWallMs": 210365.59429100002,
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 9718.166667,
+          "evaluateMs": 136.44016600000032,
+          "wallMs": 9854.609042,
+          "cpuMs": 134.19999998807907,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10216.700332999999,
+          "evaluateMs": 1.6604579999984708,
+          "wallMs": 10218.361665999999,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 3,
+          "bootMs": 11233.240417,
+          "evaluateMs": 3.5559590000011667,
+          "wallMs": 11236.798417000002,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 4,
+          "bootMs": 11298.163916000001,
+          "evaluateMs": 1.4798749999972642,
+          "wallMs": 11299.644416,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 5,
+          "bootMs": 10601.653208000003,
+          "evaluateMs": 1.3670419999980368,
+          "wallMs": 10603.021207999998,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 6,
+          "bootMs": 9784.220458999996,
+          "evaluateMs": 1.485584000001836,
+          "wallMs": 9785.706916999996,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 7,
+          "bootMs": 10017.017166000005,
+          "evaluateMs": 77.51874999998836,
+          "wallMs": 10094.537041000003,
+          "cpuMs": 75.69999998807907,
+          "steps": 604
+        },
+        {
+          "seed": 8,
+          "bootMs": 10307.971625000006,
+          "evaluateMs": 1.8189589999965392,
+          "wallMs": 10309.791708000004,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 9,
+          "bootMs": 10483.70087500001,
+          "evaluateMs": 2.0276250000024447,
+          "wallMs": 10485.72933300001,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 10,
+          "bootMs": 9983.257041000004,
+          "evaluateMs": 146.13566700000956,
+          "wallMs": 10129.393916,
+          "cpuMs": 143.80000001192093,
+          "steps": 719
+        },
+        {
+          "seed": 11,
+          "bootMs": 10389.272832999995,
+          "evaluateMs": 153.3677500000049,
+          "wallMs": 10542.641874999987,
+          "cpuMs": 151.09999999403954,
+          "steps": 658
+        },
+        {
+          "seed": 12,
+          "bootMs": 10398.012541999997,
+          "evaluateMs": 242.04725000000326,
+          "wallMs": 10640.061166999993,
+          "cpuMs": 239.7999999821186,
+          "steps": 1030
+        },
+        {
+          "seed": 13,
+          "bootMs": 10310.925334,
+          "evaluateMs": 113.04345900000772,
+          "wallMs": 10423.969750000018,
+          "cpuMs": 110.7999999821186,
+          "steps": 575
+        },
+        {
+          "seed": 14,
+          "bootMs": 10405.782916999975,
+          "evaluateMs": 1.8381250000093132,
+          "wallMs": 10407.622000000003,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 15,
+          "bootMs": 10332.59595800002,
+          "evaluateMs": 1.8080420000187587,
+          "wallMs": 10334.404792000016,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 16,
+          "bootMs": 10317.895292000001,
+          "evaluateMs": 2.4364580000110436,
+          "wallMs": 10320.33262500001,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 10098.546084000001,
+          "evaluateMs": 435.3375000000233,
+          "wallMs": 10533.884459000023,
+          "cpuMs": 433.40000000596046,
+          "steps": 1477
+        },
+        {
+          "seed": 18,
+          "bootMs": 10484.577500000014,
+          "evaluateMs": 1.9591670000227168,
+          "wallMs": 10486.537375000014,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 19,
+          "bootMs": 10300.222540999996,
+          "evaluateMs": 227.09149999998044,
+          "wallMs": 10527.314583,
+          "cpuMs": 224.2000000178814,
+          "steps": 728
+        },
+        {
+          "seed": 20,
+          "bootMs": 11435.969083000004,
+          "evaluateMs": 2.3347910000011325,
+          "wallMs": 11438.305332999997,
+          "cpuMs": 0,
+          "steps": 0
+        }
+      ],
+      "requestedSeeds": 20,
+      "firstSeed": 1,
+      "detourLegs": 8,
+      "nonEngagingSeeds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        14,
+        15,
+        16,
+        18,
+        20
+      ],
+      "accountedSeeds": 20,
+      "arrivals": 8,
+      "timeouts": 0,
+      "detours": 8,
+      "meanCpuMs": 189.1249999962747,
+      "nonArrivals": []
+    },
+    {
+      "side": "gate",
+      "run": 5,
+      "checksPassed": 5,
+      "checksTotal": 5,
+      "code": 0,
+      "wallMs": 34306.49762499996,
+      "peakLoad": 8.8076171875,
+      "cores": 18,
+      "measurementWallMs": 34206.366084,
+      "mode": "gate",
+      "seeds": [
+        1,
+        2,
+        17
+      ],
+      "maxSteps": 12000,
+      "totalBootMs": 32382.596374999997,
+      "totalCpuMs": 625.5999999940395,
+      "legs": [
+        {
+          "seed": 1,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 771,
+          "detourBodies": [
+            "planet-2:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-2",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 255770229.6908508,
+            "y": 41485592.896886356,
+            "z": 559877.3795816529
+          },
+          "shipPos": {
+            "x": 255770221.67437834,
+            "y": 41485544.97161261,
+            "z": 559865.5938688053
+          },
+          "steps": 772,
+          "cpuMs": 156.2999999821186,
+          "charge": 10.269008501509916
+        },
+        {
+          "seed": 17,
+          "stationId": "station-trade",
+          "exit": "arrived at station-trade",
+          "targetId": "station-trade",
+          "detourFrames": 1476,
+          "detourBodies": [
+            "planet-5:-1"
+          ],
+          "lastDetour": {
+            "bodyId": "planet-5",
+            "side": -1,
+            "waypoint": 2
+          },
+          "exitBodyPos": {
+            "x": 646802128.7678912,
+            "y": -170543987.28814372,
+            "z": 12744484.564746853
+          },
+          "shipPos": {
+            "x": 646802108.4970813,
+            "y": -170544030.14177975,
+            "z": 12744468.669608666
+          },
+          "steps": 1477,
+          "cpuMs": 469.30000001192093,
+          "charge": 7.107095381849609
+        }
+      ],
+      "timings": [
+        {
+          "seed": 1,
+          "bootMs": 10930.663666999999,
+          "evaluateMs": 158.96033399999942,
+          "wallMs": 11326.46875,
+          "cpuMs": 156.2999999821186,
+          "steps": 772
+        },
+        {
+          "seed": 2,
+          "bootMs": 10906.410416,
+          "evaluateMs": 2.5246250000018335,
+          "wallMs": 10912.999791,
+          "cpuMs": 0,
+          "steps": 0
+        },
+        {
+          "seed": 17,
+          "bootMs": 10545.522291999998,
+          "evaluateMs": 472.1314580000035,
+          "wallMs": 11247.891375000003,
+          "cpuMs": 469.30000001192093,
+          "steps": 1477
+        }
+      ],
+      "requestedSeeds": 3,
+      "detourLegs": 2,
+      "nonEngagingSeeds": [
+        2
+      ],
+      "accountedSeeds": 3,
+      "arrivals": 2,
+      "timeouts": 0,
+      "detours": 2,
+      "meanCpuMs": 312.79999999701977,
+      "nonArrivals": []
+    }
+  ],
+  "manualFull": {
+    "checksPassed": 5,
+    "checksTotal": 5,
+    "measurementWallMs": 229131.591334,
+    "mode": "full",
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "maxSteps": 12000,
+    "cores": 18,
+    "peakLoad": 34.0498046875,
+    "totalBootMs": 224823.10187499996,
+    "totalCpuMs": 1624.6999999582767,
+    "legs": [
+      {
+        "seed": 1,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 771,
+        "detourBodies": [
+          "planet-2:-1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-2",
+          "side": -1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": 255770229.6908508,
+          "y": 41485592.896886356,
+          "z": 559877.3795816529
+        },
+        "shipPos": {
+          "x": 255770221.67437834,
+          "y": 41485544.97161261,
+          "z": 559865.5938688053
+        },
+        "steps": 772,
+        "cpuMs": 156.7999999821186,
+        "charge": 10.269008501509916
+      },
+      {
+        "seed": 7,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 603,
+        "detourBodies": [
+          "planet-0:1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-0",
+          "side": 1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": -22532601.14013677,
+          "y": 38767621.358361326,
+          "z": 1988794.7115875203
+        },
+        "shipPos": {
+          "x": -22532562.784951,
+          "y": 38767653.3786634,
+          "z": 1988796.6025480954
+        },
+        "steps": 604,
+        "cpuMs": 126.7999999821186,
+        "charge": 11.016333359417166
+      },
+      {
+        "seed": 10,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 718,
+        "detourBodies": [
+          "planet-4:1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-4",
+          "side": 1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": -76799530.0941717,
+          "y": 128307898.2943449,
+          "z": 4460865.010714856
+        },
+        "shipPos": {
+          "x": -76799485.00443652,
+          "y": 128307919.90211837,
+          "z": 4460865.146458162
+        },
+        "steps": 719,
+        "cpuMs": 181.5,
+        "charge": 10.511415104559516
+      },
+      {
+        "seed": 11,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 657,
+        "detourBodies": [
+          "planet-4:-1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-4",
+          "side": -1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": 137193452.44290784,
+          "y": -59600033.54144709,
+          "z": -2255116.9694710174
+        },
+        "shipPos": {
+          "x": 137193439.0986363,
+          "y": -59600079.88478887,
+          "z": -2255103.7702824543
+        },
+        "steps": 658,
+        "cpuMs": 185,
+        "charge": 10.643304601578915
+      },
+      {
+        "seed": 12,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 1029,
+        "detourBodies": [
+          "planet-4:-1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-4",
+          "side": -1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": -248210360.55963567,
+          "y": 74389779.91868606,
+          "z": 585462.6945470906
+        },
+        "shipPos": {
+          "x": -248210347.99763882,
+          "y": 74389823.56441236,
+          "z": 585441.7841475621
+        },
+        "steps": 1030,
+        "cpuMs": 261.59999999403954,
+        "charge": 9.30125953964249
+      },
+      {
+        "seed": 13,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 574,
+        "detourBodies": [
+          "planet-2:-1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-2",
+          "side": -1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": -33334492.675376676,
+          "y": -30000726.493270583,
+          "z": -1738534.472248105
+        },
+        "shipPos": {
+          "x": -33334534.353615485,
+          "y": -30000698.893516555,
+          "z": -1738533.3892889218
+        },
+        "steps": 575,
+        "cpuMs": 127.7000000178814,
+        "charge": 11.001740437703237
+      },
+      {
+        "seed": 17,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 1476,
+        "detourBodies": [
+          "planet-5:-1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-5",
+          "side": -1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": 646802128.7678912,
+          "y": -170543987.28814372,
+          "z": 12744484.564746853
+        },
+        "shipPos": {
+          "x": 646802108.4970813,
+          "y": -170544030.14177975,
+          "z": 12744468.669608666
+        },
+        "steps": 1477,
+        "cpuMs": 392,
+        "charge": 7.107095381849609
+      },
+      {
+        "seed": 19,
+        "stationId": "station-trade",
+        "exit": "arrived at station-trade",
+        "targetId": "station-trade",
+        "detourFrames": 727,
+        "detourBodies": [
+          "planet-0:-1"
+        ],
+        "lastDetour": {
+          "bodyId": "planet-0",
+          "side": -1,
+          "waypoint": 2
+        },
+        "exitBodyPos": {
+          "x": -56600132.55729826,
+          "y": 138481169.92713678,
+          "z": 557389.3705971432
+        },
+        "shipPos": {
+          "x": -56600090.20927192,
+          "y": 138481194.42664367,
+          "z": 557399.6863852172
+        },
+        "steps": 728,
+        "cpuMs": 193.2999999821186,
+        "charge": 10.309523405811568
+      }
+    ],
+    "timings": [
+      {
+        "seed": 1,
+        "bootMs": 10621.0925,
+        "evaluateMs": 159.49266700000044,
+        "wallMs": 11041.253208,
+        "cpuMs": 156.7999999821186,
+        "steps": 772
+      },
+      {
+        "seed": 2,
+        "bootMs": 11098.905666999999,
+        "evaluateMs": 3.7282090000007884,
+        "wallMs": 11111.022583000002,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 3,
+        "bootMs": 12223.778583,
+        "evaluateMs": 2.955958999998984,
+        "wallMs": 12236.218165999999,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 4,
+        "bootMs": 12440.909165999998,
+        "evaluateMs": 3.708374999994703,
+        "wallMs": 12452.376665999996,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 5,
+        "bootMs": 12523.245458000005,
+        "evaluateMs": 3.899666999997862,
+        "wallMs": 12534.232625000004,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 6,
+        "bootMs": 13792.351209,
+        "evaluateMs": 3.0224159999925178,
+        "wallMs": 13802.490000000005,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 7,
+        "bootMs": 12408.648333000005,
+        "evaluateMs": 131.27433400000155,
+        "wallMs": 12778.669125,
+        "cpuMs": 126.7999999821186,
+        "steps": 604
+      },
+      {
+        "seed": 8,
+        "bootMs": 12116.043208000003,
+        "evaluateMs": 2.48145900000236,
+        "wallMs": 12128.838917000001,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 9,
+        "bootMs": 11623.515583,
+        "evaluateMs": 2.723416000008001,
+        "wallMs": 11633.778457999986,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 10,
+        "bootMs": 11340.301292000004,
+        "evaluateMs": 185.25279100000625,
+        "wallMs": 11813.362917000006,
+        "cpuMs": 181.5,
+        "steps": 719
+      },
+      {
+        "seed": 11,
+        "bootMs": 11413.430958000012,
+        "evaluateMs": 188.25758400000632,
+        "wallMs": 11852.927625000011,
+        "cpuMs": 185,
+        "steps": 658
+      },
+      {
+        "seed": 12,
+        "bootMs": 12613.868959000014,
+        "evaluateMs": 265.7609170000069,
+        "wallMs": 13154.607042000018,
+        "cpuMs": 261.59999999403954,
+        "steps": 1030
+      },
+      {
+        "seed": 13,
+        "bootMs": 12011.235541000002,
+        "evaluateMs": 130.62854199999128,
+        "wallMs": 12422.877540999994,
+        "cpuMs": 127.7000000178814,
+        "steps": 575
+      },
+      {
+        "seed": 14,
+        "bootMs": 11240.478083999973,
+        "evaluateMs": 2.537833000009414,
+        "wallMs": 11246.718916999991,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 15,
+        "bootMs": 9878.529542000004,
+        "evaluateMs": 2.190999999991618,
+        "wallMs": 9884.237792,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 16,
+        "bootMs": 9763.61599999998,
+        "evaluateMs": 2.661166999983834,
+        "wallMs": 9770.143249999994,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 17,
+        "bootMs": 9410.88741699999,
+        "evaluateMs": 394.6132079999952,
+        "wallMs": 10003.289999999979,
+        "cpuMs": 392,
+        "steps": 1477
+      },
+      {
+        "seed": 18,
+        "bootMs": 9476.349749999994,
+        "evaluateMs": 2.3433749999967404,
+        "wallMs": 9482.22104199999,
+        "cpuMs": 0,
+        "steps": 0
+      },
+      {
+        "seed": 19,
+        "bootMs": 9379.510416999983,
+        "evaluateMs": 196.24216699998942,
+        "wallMs": 9747.423624999996,
+        "cpuMs": 193.2999999821186,
+        "steps": 728
+      },
+      {
+        "seed": 20,
+        "bootMs": 9446.404207999993,
+        "evaluateMs": 1.9256249999743886,
+        "wallMs": 9452.027999999991,
+        "cpuMs": 0,
+        "steps": 0
+      }
+    ],
+    "requestedSeeds": 20,
+    "detourLegs": 8,
+    "nonEngagingSeeds": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      14,
+      15,
+      16,
+      18,
+      20
+    ],
+    "accountedSeeds": 20,
+    "arrivals": 8,
+    "timeouts": 0,
+    "detours": 8,
+    "meanCpuMs": 203.0874999947846,
+    "nonArrivals": []
+  },
+  "diagnosticBootProfile": {
+    "excludedFromTimingComparison": true,
+    "durationMs": 9498.721,
+    "samples": 8201,
+    "hotspots": [
+      {
+        "name": "(idle)",
+        "url": "",
+        "line": -1,
+        "sampledMs": 1967.183
+      },
+      {
+        "name": "worker.onmessage",
+        "url": "http://127.0.0.1:5189/src/rock-pieces-thread.ts",
+        "line": 10,
+        "sampledMs": 805.48
+      },
+      {
+        "name": "intersectTriangle",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 3431,
+        "sampledMs": 666.387
+      },
+      {
+        "name": "reducedGeometry",
+        "url": "http://127.0.0.1:5189/src/authored-levels.ts",
+        "line": 27,
+        "sampledMs": 537.159
+      },
+      {
+        "name": "getX",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 6282,
+        "sampledMs": 474.484
+      },
+      {
+        "name": "wasm-function[1]",
+        "url": "wasm://wasm/00027f5e",
+        "line": 0,
+        "sampledMs": 368.289
+      },
+      {
+        "name": "getVertexPosition",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 7114,
+        "sampledMs": 342.974
+      },
+      {
+        "name": "(program)",
+        "url": "",
+        "line": -1,
+        "sampledMs": 335.681
+      },
+      {
+        "name": "mergeVertices",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-ZUZIPJ32.js?v=35b85f49",
+        "line": 305,
+        "sampledMs": 289.088
+      },
+      {
+        "name": "getY",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 6292,
+        "sampledMs": 286.995
+      },
+      {
+        "name": "getZ",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 6302,
+        "sampledMs": 275.178
+      },
+      {
+        "name": "toCreasedNormals",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-ZUZIPJ32.js?v=35b85f49",
+        "line": 703,
+        "sampledMs": 272.556
+      },
+      {
+        "name": "_computeIntersections",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 7158,
+        "sampledMs": 186.676
+      },
+      {
+        "name": "fromBufferAttribute",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 2788,
+        "sampledMs": 184.99
+      },
+      {
+        "name": "subVectors",
+        "url": "http://127.0.0.1:5189/node_modules/.vite/deps/chunk-BQJMB3HC.js?v=35b85f49",
+        "line": 2507,
+        "sampledMs": 179.799
+      }
+    ]
+  }
+}

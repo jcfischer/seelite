@@ -496,7 +496,7 @@
   },
   "scripts/measure-cruise-detour.mjs": {
     "seelite/no-comments": {
-      "count": 3
+      "count": 1
     }
   },
   "scripts/measure-cruise-guard-cost.mjs": {
