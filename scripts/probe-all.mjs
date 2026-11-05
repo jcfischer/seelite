@@ -146,9 +146,9 @@ const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 600_000);
  * pool (`EXCLUSIVE` in `scripts/lib/probe-schedule.mjs`); a probe joins it when
  * it is red at this concurrency and green alone, as `probe-planet-surfaces`
  * was. The rest share the machine at the per-probe slowdown the receipt
- * measured. Six left a busy host too little room inside `bootedGame`'s 20 s
- * deadline (#1184). Another machine re-measures before it trusts this number;
- * `PROBE_CONCURRENCY=1` gives the serial run.
+ * measured. Three full runs at six failed on `bootedGame`'s 20 s deadline on
+ * 2026-11-05, with the cause open (#1184). Another machine re-measures before it
+ * trusts this number; `PROBE_CONCURRENCY=1` gives the serial run.
  */
 const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 4);
 
