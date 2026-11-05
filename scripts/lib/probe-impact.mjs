@@ -108,7 +108,8 @@ export function changedMethods(before, after) {
 		let last = 0;
 		for (const member of game.members) {
 			if (
-				!ts.isMethodDeclaration(member) ||
+				(!ts.isMethodDeclaration(member) &&
+					!ts.isGetAccessorDeclaration(member)) ||
 				!member.body ||
 				!ts.isIdentifier(member.name)
 			)

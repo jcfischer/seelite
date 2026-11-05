@@ -618,6 +618,16 @@ export const SMOKE_PROBES = Object.freeze([
  * this-members expand coverage, as do signatures, fields and boot wiring.
  */
 export const MAIN_METHOD_ROOTS = Object.freeze({
+	applyViewFov: [
+		"scripts/probe-hud.mjs",
+		"scripts/probe-chase-view.mjs",
+		"scripts/probe-cruise-light.mjs",
+	],
+	layerCameras: [
+		"scripts/probe-hud.mjs",
+		"scripts/probe-chase-view.mjs",
+		"scripts/probe-cruise-light.mjs",
+	],
 	navRows: ["src/station-console.ts", "src/galaxy-finder.ts"],
 	firstDayPanel: ["src/first-day.ts", "src/station-console.ts"],
 	firstDayGlassPrompt: ["src/first-day.ts", "src/hud.ts"],
@@ -628,6 +638,8 @@ export const MAIN_METHOD_ROOTS = Object.freeze({
 
 /** Reviewed callers: a new consumer invalidates the narrower ownership rule. */
 export const MAIN_METHOD_CALLERS = Object.freeze({
+	applyViewFov: ["constructor", "render"],
+	layerCameras: ["applyViewFov"],
 	navRows: ["updateCockpit"],
 	firstDayPanel: ["updateCockpit"],
 	firstDayGlassPrompt: ["cruisePrompt"],

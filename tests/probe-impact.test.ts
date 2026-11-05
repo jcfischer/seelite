@@ -92,6 +92,74 @@ describe("production contract ownership", () => {
 				callers,
 			);
 	});
+	test.each([
+		[
+			"applyViewFov",
+			"if (this.nearCamera.fov === fov) return;",
+			"if (this.nearCamera.fov !== fov) return;",
+		],
+		[
+			"layerCameras",
+			"private get layerCameras() {\n\t\treturn [\n\t\t\tthis.backdropCamera,",
+			"private get layerCameras() {\n\t\treturn [",
+		],
+	])(
+		"a body-only %s edit selects its reviewed FOV contracts and smoke",
+		async (method, from, to) => {
+			const main = sources.get("src/main.ts")!;
+			const edited = main.replace(from, to);
+			expect(changedMethods(main, edited)).toEqual([method]);
+			const after = new Map(sources);
+			after.set("src/main.ts", edited);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before: sources, after },
+			});
+			expect(result.mode).toBe("affected");
+			expect(result.probes).toEqual(
+				[
+					...SMOKE_PROBES,
+					"probe-hud.mjs",
+					"probe-chase-view.mjs",
+					"probe-cruise-light.mjs",
+				].sort(),
+			);
+		},
+	);
+	test.each([false, true])(
+		"a new applyViewFov caller expands to all probes (already in base: %s)",
+		async (alreadyInBase) => {
+			const main = sources.get("src/main.ts")!;
+			const withCaller = main.replace(
+				"private navRows(): NavRow[] {",
+				"private navRows(): NavRow[] { this.applyViewFov();",
+			);
+			expect(methodCallers(withCaller, "applyViewFov")).toEqual([
+				"constructor",
+				"navRows",
+				"render",
+			]);
+			const before = new Map(sources);
+			before.set("src/main.ts", alreadyInBase ? withCaller : main);
+			const after = new Map(sources);
+			after.set(
+				"src/main.ts",
+				withCaller.replace(
+					"if (this.nearCamera.fov === fov) return;",
+					"if (this.nearCamera.fov !== fov) return;",
+				),
+			);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before, after },
+			});
+			expect(result.mode).toBe("all");
+			expect(result.probes).toEqual(inventory);
+			expect(result.reason).toContain(
+				"method callers differ from reviewed ownership",
+			);
+		},
+	);
 	test("owns every runner probe and roots exist", () => {
 		expect(Object.keys(PROBE_ROOTS).sort()).toEqual(inventory);
 		for (const roots of Object.values(PROBE_ROOTS))
@@ -387,6 +455,20 @@ describe("deterministic browser impact", () => {
 		expect(
 			changedMethods(before, before.replace("panel()", "other()")),
 		).toBeNull();
+	});
+	test("existing getter bodies use the same body-only boundary", () => {
+		const before = "class Game { get cameras() { return [this.near]; } }";
+		expect(changedMethods(before, before.replace("[this.near]", "[]"))).toEqual(
+			["cameras"],
+		);
+		for (const after of [
+			before.replace("get cameras()", "get other()"),
+			before.replace("get cameras()", "get cameras(): Camera[]"),
+			before.replace("class Game {", "class Game { fov = 60;"),
+			before.replace("class Game {", "class Game { get extra() { return 1; }"),
+			"class Game {}",
+		])
+			expect(changedMethods(before, after)).toBeNull();
 	});
 
 	describe("spike rule: study files under spikes/", () => {
