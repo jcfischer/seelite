@@ -1,0 +1,498 @@
+{
+  "date": "2026-11-05",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+  "cores": 18,
+  "scope": "Sequential hardware runs under the machine-wide probe lock, with no test, build or review launched alongside. Baseline reproduces C1 instrumentation; control uses the revised script with only seeds reset to [1,2,17]. One persistent background bun process used about one core. Each record retains observed peak load.",
+  "runs": [
+    {
+      "label": "baseline",
+      "code": 0,
+      "expectedCode": 0,
+      "outerWallMs": 197307.512292,
+      "peakLoad": 12.82177734375,
+      "result": {
+        "totalWallMs": 197192.54633399998,
+        "timings": [
+          {
+            "seed": 1,
+            "bootMs": 9280.298499999999,
+            "evaluateMs": 127.32962499999849,
+            "wallMs": 9407.629792,
+            "cpuMs": 125.09999999403954,
+            "steps": 772
+          },
+          {
+            "seed": 2,
+            "bootMs": 9324.488124999998,
+            "evaluateMs": 1.8241669999988517,
+            "wallMs": 9326.313375,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 3,
+            "bootMs": 9648.726583,
+            "evaluateMs": 2.0859590000000026,
+            "wallMs": 9650.813374999998,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 4,
+            "bootMs": 9550.97075,
+            "evaluateMs": 1.3491659999999683,
+            "wallMs": 9552.320749999999,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 5,
+            "bootMs": 9600.669582999995,
+            "evaluateMs": 2.0083749999976135,
+            "wallMs": 9602.678915999997,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 6,
+            "bootMs": 9383.046333999999,
+            "evaluateMs": 1.2406249999985448,
+            "wallMs": 9384.287875000002,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 7,
+            "bootMs": 9586.931458,
+            "evaluateMs": 73.046875,
+            "wallMs": 9659.979165999997,
+            "cpuMs": 71.5,
+            "steps": 604
+          },
+          {
+            "seed": 8,
+            "bootMs": 9811.306582999998,
+            "evaluateMs": 1.5348329999978887,
+            "wallMs": 9812.842332999993,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 9,
+            "bootMs": 10034.878832999995,
+            "evaluateMs": 1.7857500000100117,
+            "wallMs": 10036.665582999995,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 10,
+            "bootMs": 9666.755375000008,
+            "evaluateMs": 140.27304200000071,
+            "wallMs": 9807.029125000001,
+            "cpuMs": 138.2999999821186,
+            "steps": 719
+          },
+          {
+            "seed": 11,
+            "bootMs": 10194.16354200001,
+            "evaluateMs": 146.08658399998967,
+            "wallMs": 10340.251250000001,
+            "cpuMs": 144.09999999403954,
+            "steps": 658
+          },
+          {
+            "seed": 12,
+            "bootMs": 10023.62225,
+            "evaluateMs": 224.91137499999604,
+            "wallMs": 10248.534709,
+            "cpuMs": 222.59999999403954,
+            "steps": 1030
+          },
+          {
+            "seed": 13,
+            "bootMs": 9910.352457999994,
+            "evaluateMs": 101.44937499999651,
+            "wallMs": 10011.802582999997,
+            "cpuMs": 99.59999999403954,
+            "steps": 575
+          },
+          {
+            "seed": 14,
+            "bootMs": 10017.233292000019,
+            "evaluateMs": 1.6472500000090804,
+            "wallMs": 10018.881208000006,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 15,
+            "bootMs": 10000.49225000001,
+            "evaluateMs": 1.3716249999997672,
+            "wallMs": 10001.864499999996,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 16,
+            "bootMs": 9850.597917000006,
+            "evaluateMs": 2.2961669999931473,
+            "wallMs": 9852.895084000018,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 17,
+            "bootMs": 9616.316334000003,
+            "evaluateMs": 413.4710419999901,
+            "wallMs": 10029.788166999992,
+            "cpuMs": 411.80000001192093,
+            "steps": 1477
+          },
+          {
+            "seed": 18,
+            "bootMs": 10088.659875000012,
+            "evaluateMs": 1.718791000021156,
+            "wallMs": 10090.379249999998,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 19,
+            "bootMs": 9766.570959000004,
+            "evaluateMs": 183.37870900001144,
+            "wallMs": 9949.950249999994,
+            "cpuMs": 181.59999999403954,
+            "steps": 728
+          },
+          {
+            "seed": 20,
+            "bootMs": 9900.561208,
+            "evaluateMs": 1.0686249999853317,
+            "wallMs": 9901.63058300002,
+            "cpuMs": 0,
+            "steps": 0
+          }
+        ],
+        "requestedSeeds": 20,
+        "firstSeed": 1,
+        "detourLegs": 8,
+        "nonEngagingSeeds": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          9,
+          14,
+          15,
+          16,
+          18,
+          20
+        ],
+        "accountedSeeds": 20,
+        "arrivals": 8,
+        "timeouts": 0,
+        "detours": 8,
+        "meanCpuMs": 174.32499999552965,
+        "nonArrivals": []
+      },
+      "checks": [
+        "  ok   every requested seed is accounted for as an engagement or a non-engagement",
+        "  ok   corpus contains at least one production detour leg",
+        "  ok   every production detour leg arrives at its selected station",
+        "  ok   no production detour leg exhausts the frame budget",
+        "  ok   every selected corpus leg activates a detour",
+        "5/5 checks passed"
+      ]
+    },
+    {
+      "label": "control",
+      "code": 1,
+      "expectedCode": 1,
+      "outerWallMs": 31833.223959000024,
+      "peakLoad": 6.70263671875,
+      "result": {
+        "measurementWallMs": 31741.441833,
+        "mode": "gate",
+        "seeds": [
+          1,
+          2,
+          17
+        ],
+        "maxSteps": 12000,
+        "cores": 18,
+        "peakLoad": 6.70263671875,
+        "totalBootMs": 30146.77375,
+        "totalCpuMs": 588.4000000059605,
+        "legs": [
+          {
+            "seed": 1,
+            "stationId": "station-trade",
+            "exit": "arrived at station-trade",
+            "targetId": "station-trade",
+            "detourFrames": 771,
+            "detourBodies": [
+              "planet-2:-1"
+            ],
+            "lastDetour": {
+              "bodyId": "planet-2",
+              "side": -1,
+              "waypoint": 2
+            },
+            "exitBodyPos": {
+              "x": 255770229.6908508,
+              "y": 41485592.896886356,
+              "z": 559877.3795816529
+            },
+            "shipPos": {
+              "x": 255770221.67437834,
+              "y": 41485544.97161261,
+              "z": 559865.5938688053
+            },
+            "steps": 772,
+            "cpuMs": 134,
+            "charge": 10.269008501509916
+          },
+          {
+            "seed": 17,
+            "stationId": "station-trade",
+            "exit": "arrived at station-trade",
+            "targetId": "station-trade",
+            "detourFrames": 1476,
+            "detourBodies": [
+              "planet-5:-1"
+            ],
+            "lastDetour": {
+              "bodyId": "planet-5",
+              "side": -1,
+              "waypoint": 2
+            },
+            "exitBodyPos": {
+              "x": 646802128.7678912,
+              "y": -170543987.28814372,
+              "z": 12744484.564746853
+            },
+            "shipPos": {
+              "x": 646802108.4970813,
+              "y": -170544030.14177975,
+              "z": 12744468.669608666
+            },
+            "steps": 1477,
+            "cpuMs": 454.40000000596046,
+            "charge": 7.107095381849609
+          }
+        ],
+        "timings": [
+          {
+            "seed": 1,
+            "bootMs": 9982.107542,
+            "evaluateMs": 136.20566700000018,
+            "wallMs": 10331.965959,
+            "cpuMs": 134,
+            "steps": 772
+          },
+          {
+            "seed": 2,
+            "bootMs": 10052.297875,
+            "evaluateMs": 1.8840000000018335,
+            "wallMs": 10057.849666000002,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 17,
+            "bootMs": 10112.368332999999,
+            "evaluateMs": 456.9970829999984,
+            "wallMs": 10796.907167000001,
+            "cpuMs": 454.40000000596046,
+            "steps": 1477
+          }
+        ],
+        "requestedSeeds": 3,
+        "detourLegs": 2,
+        "nonEngagingSeeds": [
+          2
+        ],
+        "accountedSeeds": 3,
+        "arrivals": 2,
+        "timeouts": 0,
+        "detours": 2,
+        "meanCpuMs": 294.20000000298023,
+        "nonArrivals": []
+      },
+      "checks": [
+        "  ok   every requested seed is accounted for as an engagement or a non-engagement",
+        "  ok   corpus contains at least one production detour leg",
+        "  ok   every production detour leg arrives at its selected station",
+        "  ok   no production detour leg exhausts the frame budget",
+        "  ok   every selected corpus leg activates a detour",
+        " FAIL  gate exercises both detour steering directions",
+        "5/6 checks passed"
+      ]
+    },
+    {
+      "label": "gate",
+      "code": 0,
+      "expectedCode": 0,
+      "outerWallMs": 43204.77775000001,
+      "peakLoad": 6.712890625,
+      "result": {
+        "measurementWallMs": 43109.467333,
+        "mode": "gate",
+        "seeds": [
+          1,
+          2,
+          7,
+          17
+        ],
+        "maxSteps": 12000,
+        "cores": 18,
+        "peakLoad": 6.712890625,
+        "totalBootMs": 41200.112666999994,
+        "totalCpuMs": 701.1999999880791,
+        "legs": [
+          {
+            "seed": 1,
+            "stationId": "station-trade",
+            "exit": "arrived at station-trade",
+            "targetId": "station-trade",
+            "detourFrames": 771,
+            "detourBodies": [
+              "planet-2:-1"
+            ],
+            "lastDetour": {
+              "bodyId": "planet-2",
+              "side": -1,
+              "waypoint": 2
+            },
+            "exitBodyPos": {
+              "x": 255770229.6908508,
+              "y": 41485592.896886356,
+              "z": 559877.3795816529
+            },
+            "shipPos": {
+              "x": 255770221.67437834,
+              "y": 41485544.97161261,
+              "z": 559865.5938688053
+            },
+            "steps": 772,
+            "cpuMs": 145.5,
+            "charge": 10.269008501509916
+          },
+          {
+            "seed": 7,
+            "stationId": "station-trade",
+            "exit": "arrived at station-trade",
+            "targetId": "station-trade",
+            "detourFrames": 603,
+            "detourBodies": [
+              "planet-0:1"
+            ],
+            "lastDetour": {
+              "bodyId": "planet-0",
+              "side": 1,
+              "waypoint": 2
+            },
+            "exitBodyPos": {
+              "x": -22532601.14013677,
+              "y": 38767621.358361326,
+              "z": 1988794.7115875203
+            },
+            "shipPos": {
+              "x": -22532562.784951,
+              "y": 38767653.3786634,
+              "z": 1988796.6025480954
+            },
+            "steps": 604,
+            "cpuMs": 103.59999999403954,
+            "charge": 11.016333359417166
+          },
+          {
+            "seed": 17,
+            "stationId": "station-trade",
+            "exit": "arrived at station-trade",
+            "targetId": "station-trade",
+            "detourFrames": 1476,
+            "detourBodies": [
+              "planet-5:-1"
+            ],
+            "lastDetour": {
+              "bodyId": "planet-5",
+              "side": -1,
+              "waypoint": 2
+            },
+            "exitBodyPos": {
+              "x": 646802128.7678912,
+              "y": -170543987.28814372,
+              "z": 12744484.564746853
+            },
+            "shipPos": {
+              "x": 646802108.4970813,
+              "y": -170544030.14177975,
+              "z": 12744468.669608666
+            },
+            "steps": 1477,
+            "cpuMs": 452.09999999403954,
+            "charge": 7.107095381849609
+          }
+        ],
+        "timings": [
+          {
+            "seed": 1,
+            "bootMs": 10003.654625,
+            "evaluateMs": 147.96495799999866,
+            "wallMs": 10372.02375,
+            "cpuMs": 145.5,
+            "steps": 772
+          },
+          {
+            "seed": 2,
+            "bootMs": 10017.254584,
+            "evaluateMs": 2.64429200000086,
+            "wallMs": 10023.907167,
+            "cpuMs": 0,
+            "steps": 0
+          },
+          {
+            "seed": 7,
+            "bootMs": 10562.023833,
+            "evaluateMs": 105.93958300000304,
+            "wallMs": 10846.99725,
+            "cpuMs": 103.59999999403954,
+            "steps": 604
+          },
+          {
+            "seed": 17,
+            "bootMs": 10617.179625,
+            "evaluateMs": 454.8912500000006,
+            "wallMs": 11311.264040999999,
+            "cpuMs": 452.09999999403954,
+            "steps": 1477
+          }
+        ],
+        "requestedSeeds": 4,
+        "detourLegs": 3,
+        "nonEngagingSeeds": [
+          2
+        ],
+        "accountedSeeds": 4,
+        "arrivals": 3,
+        "timeouts": 0,
+        "detours": 3,
+        "meanCpuMs": 233.73333332935968,
+        "nonArrivals": []
+      },
+      "checks": [
+        "  ok   every requested seed is accounted for as an engagement or a non-engagement",
+        "  ok   corpus contains at least one production detour leg",
+        "  ok   every production detour leg arrives at its selected station",
+        "  ok   no production detour leg exhausts the frame budget",
+        "  ok   every selected corpus leg activates a detour",
+        "  ok   gate exercises both detour steering directions",
+        "6/6 checks passed"
+      ]
+    }
+  ]
+}

@@ -184,10 +184,10 @@ export function fitLine(
 	const held = cache.get(cacheKey);
 	if (held) return held;
 	let size = startSize;
-	ctx.font = `${size}px ui-monospace, monospace`;
+	ctx.font = `${size}px Menlo, monospace`;
 	while (size > 8 && ctx.measureText(widest).width > w - 16) {
 		size -= 1;
-		ctx.font = `${size}px ui-monospace, monospace`;
+		ctx.font = `${size}px Menlo, monospace`;
 	}
 	const fitted = {
 		font: ctx.font,
@@ -982,6 +982,7 @@ export class CombatPrototypeRig {
 		view: CombatView,
 		/** The layout in force, which the legend names its keys from. */
 		layout: Layout,
+		readout?: (text: string, fill: string) => void,
 	): void {
 		if (view !== "cockpit") {
 			this.clearOverlay();
@@ -1008,7 +1009,8 @@ export class CombatPrototypeRig {
 			const width = ctx.measureText(text).width;
 			drawnLines.push({ text, font: fit.font, width });
 			ctx.fillStyle = fill;
-			ctx.fillText(text, w / 2, y);
+			if (readout) readout(text, fill);
+			else ctx.fillText(text, w / 2, y);
 			return fit;
 		};
 		const s = this.state;

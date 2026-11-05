@@ -68,6 +68,7 @@
  */
 import { COMMANDER_KEY } from "./commander-overlay";
 import { VENT_SLOTS, type VentSlot } from "./hull";
+import { MINER_COCKPIT } from "./miner-cockpit-flag";
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import {
 	ANALOG_TRIGGERS,
@@ -752,6 +753,12 @@ const AUTHORED = [
 		keys: ["b"],
 	},
 	{
+		id: "fight.drillHold",
+		name: "Anchor or release the drill struts",
+		group: "fight",
+		keys: ["4"],
+	},
+	{
 		id: "fight.rigIncoming",
 		name: "Call an incoming raider (combat rig)",
 		group: "fight",
@@ -840,6 +847,13 @@ const AUTHORED = [
 		chords: ["ArrowRight"],
 	},
 	{
+		id: "view.seatSwap",
+		name: "Switch bridge seat (miner review build)",
+		group: "view",
+		views: COCKPIT,
+		keys: ["5"],
+	},
+	{
 		id: "view.reference",
 		name: "This reference: open or close",
 		group: "view",
@@ -850,6 +864,13 @@ const AUTHORED = [
 		name: "Cockpit or chase view",
 		group: "view",
 		keys: ["v"],
+	},
+	{
+		id: "view.fov",
+		name: "Cockpit field of view: normal or wide",
+		group: "view",
+		views: COCKPIT,
+		keys: ["7"],
 	},
 	{
 		// Chase only, and held rather than pressed — which is why the same two
@@ -1747,7 +1768,13 @@ function toCommand(a: Authored): Command {
 	};
 }
 
-export const COMMANDS: readonly Command[] = AUTHORED.map(toCommand);
+/** The registry for one build: `view.seatSwap` exists only behind the miner cockpit flag (principal, 2026-10-30, #1143). */
+export const commandsFor = (minerCockpit: boolean): readonly Command[] =>
+	AUTHORED.filter((a) => minerCockpit || a.id !== "view.seatSwap").map(
+		toCommand,
+	);
+
+export const COMMANDS: readonly Command[] = commandsFor(MINER_COCKPIT);
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));
 

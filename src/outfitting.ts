@@ -60,7 +60,11 @@ export const moduleLabel = (m: FittedModule): string =>
  * the game does not do (`tests/outfit-deltas.test.ts`). A docking computer
  * has none either: its grades differ in price and mass alone (#977).
  */
-export function fitReadout(commander: CommanderState, entrustedT: number) {
+export function fitReadout(
+	commander: CommanderState,
+	entrustedT: number,
+	mining = false,
+) {
 	const ship = { hull: commander.hull, loadout: commander.loadout };
 	const capacity = fittedCapacity(commander.hull, commander.loadout);
 	const ecm = fittedEcm(commander.loadout);
@@ -75,6 +79,16 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 		bankE: capacity.bankE,
 		regenPerS: capacity.regenPerS,
 		dps: fittedDps(ship),
+		extractionTPerS: mining
+			? Object.values(commander.loadout).reduce(
+					(rate, m) =>
+						rate +
+						(m.module === "mining-laser"
+							? moduleRow(m).output.extractionTPerS
+							: 0),
+					0,
+				)
+			: 0,
 		missiles: capacity.missiles,
 		ecmRadiusKm: ecm.radiusKm,
 		ecmCooldownS: ecm.cooldownS,
@@ -116,6 +130,7 @@ const FIT_DELTA_ROWS: readonly {
 	{ key: "bankE", label: "BANK", unit: "E", digits: 1 },
 	{ key: "regenPerS", label: "REGEN", unit: "E/s", digits: 1 },
 	{ key: "dps", label: "DPS", unit: "/s", digits: 1 },
+	{ key: "extractionTPerS", label: "EXTRACTION", unit: "t/s", digits: 4 },
 	{ key: "missiles", label: "MISSILES", unit: "", digits: 0 },
 	{ key: "ecmRadiusKm", label: "ECM RADIUS", unit: "km", digits: 2 },
 	{ key: "ecmCooldownS", label: "ECM COOLDOWN", unit: "s", digits: 2 },
@@ -284,9 +299,9 @@ export function outfittingScreen(
 		candidate: candidate ?? null,
 		action,
 		offer,
-		before: fitReadout(input.commander, input.entrustedT),
+		before: fitReadout(input.commander, input.entrustedT, input.mining),
 		after: hypothetical?.accepted
-			? fitReadout(hypothetical.commander, input.entrustedT)
+			? fitReadout(hypothetical.commander, input.entrustedT, input.mining)
 			: null,
 		moved:
 			candidate && input.commander.loadout[slot]

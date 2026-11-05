@@ -648,7 +648,9 @@ try {
 			chargePixels() {
 				const wasView = g.view;
 				g.view = "cockpit";
-				const overlay = document.getElementById("overlay");
+				const overlay =
+					g.cockpit.text.faces.get("notices")?.ctx.canvas ??
+					document.getElementById("overlay");
 				const c2d = overlay.getContext("2d", { willReadFrequently: true });
 				const shot = () => {
 					g.render(dt);

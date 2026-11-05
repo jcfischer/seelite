@@ -1,0 +1,122 @@
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:52459 (dev server) — 1 probes, 1 at a time
+     filtered by --only station-visuals: 117 of 118 probes were not run.
+
+     │ [probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+     │   ok   Ring desktop: the system holds all three station types
+     │   ok   Ring desktop: the generated trade subject is the Ring
+     │   ok   Ring desktop: trade is framed where it asked — asked 2.250 km, landed 2.250 km (-0.00%), 0.00° off the axis
+     │   ok   Ring desktop: trade is on screen with its aperture lit — station 17919px, aperture 135px
+     │   ok   Ring desktop: trade's aperture is brighter than the hull around it — aperture 196.0 vs station 78.4
+     │   ok   Ring desktop: trade draws accessories at docking range — 668px of accessory
+     │   ok   Ring desktop: refinery is framed where it asked — asked 3.720 km, landed 3.720 km (-0.00%), 0.00° off the axis
+     │   ok   Ring desktop: refinery is on screen with its aperture lit — station 5056px, aperture 190px
+     │   ok   Ring desktop: refinery's aperture is brighter than the hull around it — aperture 195.1 vs station 61.2
+     │   ok   Ring desktop: refinery draws accessories at docking range — 391px of accessory
+     │   ok   Ring desktop: shipyard is framed where it asked — asked 4.980 km, landed 4.980 km (0.00%), 0.00° off the axis
+     │   ok   Ring desktop: shipyard is on screen with its aperture lit — station 1078px, aperture 12px
+     │   ok   Ring desktop: shipyard's aperture is brighter than the hull around it — aperture 143.0 vs station 64.9
+     │   ok   Ring desktop: shipyard draws accessories at docking range — 54px of accessory
+     │   ok   every shader program the renderer has built linked — 149/149 linked
+     │   report (authored refinery): the rock's own program is among them, and linked — 0/0 "station-rock" programs
+     │   report (authored refinery): the refinery carries a patched rock material — 0 patched material(s) under the refinery
+     │   report (authored refinery): every rock-surface splice found its marker — no patched rock material in the scene
+     │
+     │ [Ring desktop] warmth: trade 0.090, refinery 0.131, shipyard 0.067
+     │   ok   Ring desktop: every fixture §5 gives the trade reads from its own aperture axis — windows 250px (1 obj, 0 pools lit, 214.7px wide), strobe-a 140px (1 obj, 1 pools lit, 0.6px wide, drive 0.95 @ 0.05s), strobe-b 148px (1 obj, 1 pools lit, 0.6px wide, drive 0.95 @ 1.05s), mouth-strobe 70px (10 obj, 10 pools lit, 0.6px wide, drive 0.95 @ 0.00s)
+     │   ok   Ring desktop: every fixture §5 gives the shipyard reads from its own aperture axis — windows 1px (1 obj, 0 pools lit, 32.3px wide), mouth-strobe 13px (10 obj, 10 pools lit, 0.2px wide, drive 0.95 @ 0.00s)
+     │   ok   Ring desktop: every fixture §5 gives the refinery reads from its own aperture axis — windows 4px (1 obj, 0 pools lit, 116.2px wide), obstruction-beacon 267px (6 obj, 0 pools lit, 0.4px wide, drive 0.95 @ 0.05s), heat-glow 136px (1 obj, 0 pools lit, 0.0px wide, drive 0.63 @ 1.75s), flare 17px (8 obj, 0 pools lit, 1.3px wide, drive 0.87 @ 1.75s)
+     │   ok   Ring desktop: the three roles light differently, warm to cold — refinery 0.131 > trade 0.090 · shipyard 0.067 (authored, not ranked)
+     │   ok   Ring desktop: trade drops detail as it recedes — full → reduced → outline
+     │   ok   Ring desktop: refinery drops detail as it recedes — full → reduced → outline
+     │   ok   Ring desktop: shipyard drops detail as it recedes — full → reduced → outline
+     │   ok   Ring narrow: the system holds all three station types
+     │   ok   Ring narrow: the generated trade subject is the Ring
+     │   ok   Ring narrow: trade is framed where it asked — asked 2.250 km, landed 2.250 km (-0.00%), 0.00° off the axis
+     │   ok   Ring narrow: trade is on screen with its aperture lit — station 47077px, aperture 400px
+     │   ok   Ring narrow: trade's aperture is brighter than the hull around it — aperture 196.4 vs station 77.4
+     │   ok   Ring narrow: trade draws accessories at docking range — 2254px of accessory
+     │   ok   Ring narrow: refinery is framed where it asked — asked 3.720 km, landed 3.720 km (0.00%), 0.00° off the axis
+     │   ok   Ring narrow: refinery is on screen with its aperture lit — station 16746px, aperture 645px
+     │   ok   Ring narrow: refinery's aperture is brighter than the hull around it — aperture 194.9 vs station 58.7
+     │   ok   Ring narrow: refinery draws accessories at docking range — 1278px of accessory
+     │   ok   Ring narrow: shipyard is framed where it asked — asked 4.980 km, landed 4.980 km (0.00%), 0.00° off the axis
+     │   ok   Ring narrow: shipyard is on screen with its aperture lit — station 3528px, aperture 58px
+     │   ok   Ring narrow: shipyard's aperture is brighter than the hull around it — aperture 197.1 vs station 66.1
+     │   ok   Ring narrow: shipyard draws accessories at docking range — 220px of accessory
+     │
+     │ [Ring narrow] warmth: trade 0.079, refinery 0.116, shipyard 0.124
+     │   ok   Ring narrow: every fixture §5 gives the trade reads from its own aperture axis — windows 637px (1 obj, 0 pools lit, 214.7px wide), strobe-a 453px (1 obj, 1 pools lit, 0.6px wide, drive 0.95 @ 0.05s), strobe-b 465px (1 obj, 1 pools lit, 0.6px wide, drive 0.95 @ 1.05s), mouth-strobe 237px (10 obj, 10 pools lit, 0.6px wide, drive 0.95 @ 0.00s)
+     │   ok   Ring narrow: every fixture §5 gives the shipyard reads from its own aperture axis — windows 36px (1 obj, 0 pools lit, 32.3px wide), mouth-strobe 30px (10 obj, 10 pools lit, 0.2px wide, drive 0.95 @ 0.00s)
+     │   ok   Ring narrow: every fixture §5 gives the refinery reads from its own aperture axis — windows 3px (1 obj, 0 pools lit, 116.2px wide), obstruction-beacon 891px (6 obj, 0 pools lit, 0.4px wide, drive 0.95 @ 0.05s), heat-glow 436px (1 obj, 0 pools lit, 0.0px wide, drive 0.63 @ 1.75s), flare 54px (8 obj, 0 pools lit, 1.3px wide, drive 0.87 @ 1.75s)
+     │   ok   Ring narrow: the three roles light differently, warm to cold — refinery 0.116 > trade 0.079 · shipyard 0.124 (authored, not ranked)
+     │   ok   Ring narrow: trade drops detail as it recedes — full → reduced → outline
+     │   ok   Ring narrow: refinery drops detail as it recedes — full → reduced → outline
+     │   ok   Ring narrow: shipyard drops detail as it recedes — full → reduced → outline
+     │   ok   Wheel desktop: the system holds all three station types
+     │   ok   Wheel desktop: the generated trade subject is the Wheel
+     │   ok   Wheel desktop: trade is framed where it asked — asked 2.940 km, landed 2.940 km (-0.00%), 0.00° off the axis
+     │   ok   Wheel desktop: trade is on screen with its aperture lit — station 10221px, aperture 73px
+     │   ok   Wheel desktop: trade's aperture is brighter than the hull around it — aperture 195.4 vs station 37.9
+     │   ok   Wheel desktop: trade draws accessories at docking range — 344px of accessory
+     │   ok   Wheel desktop: refinery is framed where it asked — asked 3.720 km, landed 3.720 km (-0.00%), 0.00° off the axis
+     │   ok   Wheel desktop: refinery is on screen with its aperture lit — station 4987px, aperture 198px
+     │   ok   Wheel desktop: refinery's aperture is brighter than the hull around it — aperture 195.0 vs station 60.2
+     │   ok   Wheel desktop: refinery draws accessories at docking range — 397px of accessory
+     │   ok   Wheel desktop: shipyard is framed where it asked — asked 4.500 km, landed 4.500 km (0.00%), 0.00° off the axis
+     │   ok   Wheel desktop: shipyard is on screen with its aperture lit — station 3359px, aperture 36px
+     │   ok   Wheel desktop: shipyard's aperture is brighter than the hull around it — aperture 198.6 vs station 41.8
+     │   ok   Wheel desktop: shipyard draws accessories at docking range — 82px of accessory
+     │   ok   every shader program the renderer has built linked — 153/153 linked
+     │   report (authored refinery): the rock's own program is among them, and linked — 0/0 "station-rock" programs
+     │   report (authored refinery): the refinery carries a patched rock material — 0 patched material(s) under the refinery
+     │   report (authored refinery): every rock-surface splice found its marker — no patched rock material in the scene
+     │
+     │ [Wheel desktop] warmth: trade 0.077, refinery 0.124, shipyard 0.108
+     │   ok   Wheel desktop: every fixture §5 gives the trade reads from its own aperture axis — windows 178px (1 obj, 0 pools lit, 215.3px wide), strobe-a 73px (1 obj, 1 pools lit, 0.4px wide, drive 0.95 @ 0.05s), strobe-b 121px (1 obj, 1 pools lit, 0.4px wide, drive 0.95 @ 1.05s), mouth-strobe 51px (10 obj, 10 pools lit, 0.4px wide, drive 0.95 @ 0.00s)
+     │   ok   Wheel desktop: every fixture §5 gives the shipyard reads from its own aperture axis — windows 10px (1 obj, 0 pools lit, 36.0px wide), mouth-strobe 12px (10 obj, 10 pools lit, 0.3px wide, drive 0.95 @ 0.00s)
+     │   ok   Wheel desktop: every fixture §5 gives the refinery reads from its own aperture axis — windows 3px (1 obj, 0 pools lit, 116.2px wide), obstruction-beacon 270px (6 obj, 0 pools lit, 0.4px wide, drive 0.95 @ 0.05s), heat-glow 138px (1 obj, 0 pools lit, 0.0px wide, drive 0.63 @ 1.75s), flare 19px (8 obj, 0 pools lit, 1.3px wide, drive 0.87 @ 1.75s)
+     │   ok   Wheel desktop: the three roles light differently, warm to cold — refinery 0.124 > trade 0.077 · shipyard 0.108 (authored, not ranked)
+     │   ok   Wheel desktop: trade drops detail as it recedes — full → reduced → outline
+     │   ok   Wheel desktop: refinery drops detail as it recedes — full → reduced → outline
+     │   ok   Wheel desktop: shipyard drops detail as it recedes — full → reduced → outline
+     │   ok   Wheel narrow: the system holds all three station types
+     │   ok   Wheel narrow: the generated trade subject is the Wheel
+     │   ok   Wheel narrow: trade is framed where it asked — asked 2.940 km, landed 2.940 km (0.00%), 0.00° off the axis
+     │   ok   Wheel narrow: trade is on screen with its aperture lit — station 23338px, aperture 231px
+     │   ok   Wheel narrow: trade's aperture is brighter than the hull around it — aperture 195.8 vs station 36.4
+     │   ok   Wheel narrow: trade draws accessories at docking range — 1205px of accessory
+     │   ok   Wheel narrow: refinery is framed where it asked — asked 3.720 km, landed 3.720 km (-0.00%), 0.00° off the axis
+     │   ok   Wheel narrow: refinery is on screen with its aperture lit — station 16520px, aperture 634px
+     │   ok   Wheel narrow: refinery's aperture is brighter than the hull around it — aperture 195.0 vs station 59.0
+     │   ok   Wheel narrow: refinery draws accessories at docking range — 1411px of accessory
+     │   ok   Wheel narrow: shipyard is framed where it asked — asked 4.500 km, landed 4.500 km (-0.00%), 0.00° off the axis
+     │   ok   Wheel narrow: shipyard is on screen with its aperture lit — station 11278px, aperture 92px
+     │   ok   Wheel narrow: shipyard's aperture is brighter than the hull around it — aperture 200.2 vs station 38.9
+     │   ok   Wheel narrow: shipyard draws accessories at docking range — 260px of accessory
+     │
+     │ [Wheel narrow] warmth: trade 0.063, refinery 0.114, shipyard 0.077
+     │   ok   Wheel narrow: every fixture §5 gives the trade reads from its own aperture axis — windows 379px (1 obj, 0 pools lit, 215.3px wide), strobe-a 299px (1 obj, 1 pools lit, 0.4px wide, drive 0.95 @ 0.05s), strobe-b 301px (1 obj, 1 pools lit, 0.4px wide, drive 0.95 @ 1.05s), mouth-strobe 151px (10 obj, 10 pools lit, 0.4px wide, drive 0.95 @ 0.00s)
+     │   ok   Wheel narrow: every fixture §5 gives the shipyard reads from its own aperture axis — windows 24px (1 obj, 0 pools lit, 36.0px wide), mouth-strobe 37px (10 obj, 10 pools lit, 0.3px wide, drive 0.95 @ 0.00s)
+     │   ok   Wheel narrow: every fixture §5 gives the refinery reads from its own aperture axis — windows 9px (1 obj, 0 pools lit, 116.2px wide), obstruction-beacon 1011px (6 obj, 0 pools lit, 0.4px wide, drive 0.95 @ 0.05s), heat-glow 441px (1 obj, 0 pools lit, 0.0px wide, drive 0.63 @ 1.75s), flare 58px (8 obj, 0 pools lit, 1.3px wide, drive 0.87 @ 1.75s)
+     │   ok   Wheel narrow: the three roles light differently, warm to cold — refinery 0.114 > trade 0.063 · shipyard 0.077 (authored, not ranked)
+     │   ok   Wheel narrow: trade drops detail as it recedes — full → reduced → outline
+     │   ok   Wheel narrow: refinery drops detail as it recedes — full → reduced → outline
+     │   ok   Wheel narrow: shipyard drops detail as it recedes — full → reduced → outline
+     │
+     │ [Ring] strobe clock checks
+     │   ok   the trade strobes flash on the game clock — strobe-a 0.00–0.95
+     │   ok   the two strobe fixture drives alternate on the game clock — 4 a-only, 4 b-only
+     │   ok   the same clock value gives the same strobe state — sampled 20.05 s, 93.5 s, 20.05 s
+     │
+     │ [Wheel] strobe clock checks
+     │   ok   the trade strobes flash on the game clock — strobe-a 0.00–0.95
+     │   ok   the two strobe fixture drives alternate on the game clock — 4 a-only, 4 b-only
+     │   ok   the same clock value gives the same strobe state — sampled 20.05 s, 93.5 s, 20.05 s
+     │
+     │ 92/92 checks passed
+ok   probe-station-visuals.mjs (96.7s) · peak load 13.8
+
+1/1 gating probes passed in 97s · peak load 13.8 on 10 cores — PARTIAL RUN, --only station-visuals: 117 of 118 probes were not run.
+     This is selected coverage, not a full-suite pass. A repository-selected run satisfies the ordinary PR browser gate; manual filters do not.

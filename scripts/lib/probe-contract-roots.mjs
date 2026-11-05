@@ -4,6 +4,29 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-mining-drill.mjs": [
+		"scripts/probe-mining-drill.mjs",
+		"src/rock-drill.ts",
+		"src/drill-pose.ts",
+		"src/longwall-drill-rig.ts",
+		"src/cockpit-occlusion-table.ts",
+		"src/cockpit-eye.ts",
+		"src/fire-group.ts",
+		"src/ship-mesh.ts",
+		"src/deposit-state.ts",
+	],
+	"probe-mining-mounts.mjs": [
+		"scripts/probe-mining-mounts.mjs",
+		"src/laser-modules.ts",
+		"src/mining-beam.ts",
+		"src/beam-glass.ts",
+		"src/beam-layer.ts",
+		"src/rock-extraction.ts",
+		"src/fire-group.ts",
+		"src/ship-mesh.ts",
+		"src/outfitting.ts",
+		"src/outfitting-view.ts",
+	],
 	"probe-mining-survey.mjs": [
 		"scripts/probe-mining-survey.mjs",
 		"src/rock-survey.ts",
@@ -211,6 +234,11 @@ const OWNERS = Object.freeze({
 	],
 	"probe-duel-hud.mjs": ["scripts/probe-duel-hud.mjs", "src/duel-hud.ts"],
 	"probe-eject.mjs": ["scripts/probe-eject.mjs", "src/eject.ts"],
+	"probe-scoop-migration.mjs": [
+		"scripts/probe-scoop-migration.mjs",
+		"src/cargo-notice.ts",
+		"src/save-envelope.ts",
+	],
 	"probe-first-day.mjs": [
 		"scripts/probe-first-day.mjs",
 		"src/first-day.ts",
@@ -289,6 +317,7 @@ const OWNERS = Object.freeze({
 	"probe-light-rig.mjs": ["scripts/probe-light-rig.mjs", "src/light-rig.ts"],
 	"probe-live-cockpit.mjs": [
 		"scripts/probe-live-cockpit.mjs",
+		"scripts/fixtures/cockpit-text-cabin.glb",
 		"src/live-cockpit.ts",
 		"src/cockpit-surface.ts",
 		"src/scanner-view.ts",

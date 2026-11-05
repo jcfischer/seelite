@@ -47,6 +47,7 @@ test("the loader installs the miner in slices, publishing the synchronous templa
 		let authoredMidway = false;
 		await installLongwallModelSliced(
 			await decodeShippedGlb("src/models/longwall-miner.glb"),
+			{},
 			drainWith(() => {
 				if (++yields === 1)
 					authoredMidway = !!buildShipMesh("miner", HULL_SPECS.miner.variant)

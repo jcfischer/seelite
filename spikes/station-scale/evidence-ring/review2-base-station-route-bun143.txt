@@ -1,0 +1,40 @@
+bun test v1.4.3 (c6da4a4d3)
+
+tests/station-route.test.ts:
+(pass) Traffic destination selection > sorts station ids, excludes home/unfitting/unreachable, and cycles by away ordinal [0.16ms]
+(pass) Traffic destination selection > collection order cannot change the selected station [0.05ms]
+(pass) Traffic destination selection > traffic routes around the planet approach boundary [0.30ms]
+(pass) terminal-to-terminal route projection > a one-station actor stays abstract while away and returns to its home berth [2.83ms]
+(pass) terminal-to-terminal route projection > one home-owned Carrier traverses the specified phase order [534.28ms]
+(pass) terminal-to-terminal route projection > every visible moving phase carries a continuous complete attitude [2220.58ms]
+(pass) terminal-to-terminal route projection > station-zone legs stay slow, clear the bubble, and visibly dwell [513.20ms]
+(pass) terminal-to-terminal route projection > a player-input timeline delays the shared queues without changing identity [180.39ms]
+(pass) terminal-to-terminal route projection > a completed player clearance still delays a direct historical replay [463.01ms]
+(pass) terminal-to-terminal route projection > an older incompatible player request does not block a fitting Carrier [180.59ms]
+(pass) terminal-to-terminal route projection > shared lane arbitration honors ready time instead of privileging the player [206.92ms]
+(pass) terminal-to-terminal route projection > a committed traversal does not reset an older queued launch behind the player [0.31ms]
+(pass) terminal-to-terminal route projection > a committed lane traversal cannot retroactively block its own Carrier [190.36ms]
+(pass) terminal-to-terminal route projection > bunched departures retain the first launch as the committed lane owner [0.37ms]
+(pass) terminal-to-terminal route projection > a physical visit keeps its granted berth when current occupancy is replayed [453.98ms]
+(pass) terminal-to-terminal route projection > a parked schedule boundary remains pending until the outbound leg docks [5.66ms]
+(pass) terminal-to-terminal route projection > a long visit stays continuous across later schedule intent boundaries [75.19ms]
+(pass) terminal-to-terminal route projection > the actor returns physically and requests any fitting home berth [1103.20ms]
+(pass) terminal-to-terminal route projection > route projection is independent of query cadence [64.62ms]
+(pass) terminal-to-terminal route projection > a route gives the lane back when it said it would (#521) [72.82ms]
+(pass) terminal-to-terminal route projection > cold cache warm-up obeys a fixed canonical tick budget [3.13ms]
+(pass) terminal-to-terminal route projection > cold presentation parks only actors whose base schedule is parked [0.41ms]
+(pass) terminal-to-terminal route projection > phase-equivalent cold queries do work independent of epoch age [6.65ms]
+(pass) canonical Traffic cruise > direct evaluation equals repeated canonical stepping including a fractional tick [0.66ms]
+(pass) canonical Traffic cruise > render cadence is not an input to route progress [6.08ms]
+(pass) canonical Traffic cruise > detour guidance also replays from its physical-leg boundary [0.52ms]
+(pass) canonical Traffic cruise > work depends on active-leg age, not the absolute epoch [0.21ms]
+(pass) canonical Traffic cruise > an exhausted actor regenerates against its explicit hull capacity and retries [0.10ms]
+(pass) canonical Traffic cruise > an unavailable detour stops in the blocker frame instead of becoming an arrival [0.05ms]
+(pass) canonical Traffic cruise > replay preserves an initially blocked route until guidance replans it [0.04ms]
+(pass) node #491: Traffic stays on its own side of the line > no lawful station's carrier is routed to the outpost [102.94ms]
+(pass) node #491: Traffic stays on its own side of the line > the outpost's own carrier goes away abstractly and comes home [0.41ms]
+
+ 32 pass
+ 0 fail
+ 6052 expect() calls
+Ran 32 tests across 1 file. [8.52s]

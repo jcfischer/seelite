@@ -27,7 +27,7 @@ const STYLE = `
 #seelite-opening .bar.bottom {
   bottom: 0; display: flex; align-items: center; justify-content: space-between;
   padding: 0 4vw; box-sizing: border-box;
-  font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 500 13px/1.3 Menlo, monospace;
   letter-spacing: .14em; color: #cfd8e3;
 }
 #seelite-opening .skip {

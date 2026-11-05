@@ -863,6 +863,12 @@ export interface Equipment {
 	priceCr: number;
 	massT: number;
 	scope: "universal" | "refinery" | "shipyard";
+	/**
+	 * https://github.com/jcfischer/seelite/issues/1147
+	 * A second station type that sells the item behind `?mining=1` only
+	 * (#920 D-D18); #1149 decides whether it is listed there without the flag.
+	 */
+	miningScope?: "shipyard";
 	newToSeelite?: boolean;
 }
 
@@ -928,6 +934,7 @@ export const EQUIPMENT: readonly Equipment[] = [
 		priceCr: 800,
 		massT: 0,
 		scope: "refinery",
+		miningScope: "shipyard",
 		newToSeelite: true,
 	},
 	{ name: "Extra Energy Unit", priceCr: 1500, massT: 0, scope: "shipyard" },

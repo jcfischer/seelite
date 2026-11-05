@@ -49,7 +49,7 @@ const STYLE = `
   align-items: safe center; justify-content: center;
   overflow-y: auto; overscroll-behavior: contain; padding: 16px;
   background: rgba(2, 6, 12, 0.78);
-  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #cfe3ff;
+  font: 13px/1.6 Menlo, monospace; color: #cfe3ff;
 }
 #seelite-postcard .box {
   width: min(960px, 100%); padding: 20px 24px; box-sizing: border-box;
@@ -74,7 +74,7 @@ const STYLE = `
 #seelite-postcard button:hover, #seelite-postcard button:focus-visible { border-color: #ffd479; outline: none; }
 #seelite-postcard button[aria-pressed="true"] { border-color: #ffd479; color: #ffd479; background: rgba(255, 212, 121, .08); }
 #seelite-postcard input.link {
-  flex: 1; min-width: 12em; font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex: 1; min-width: 12em; font: 11.5px Menlo, monospace;
   color: #9fb4d0; background: rgba(0, 0, 0, .35); border: 1px solid rgba(120, 160, 220, .25);
   border-radius: 4px; padding: 6px 8px;
 }

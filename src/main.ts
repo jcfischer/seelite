@@ -25,7 +25,7 @@ import {
 import {
 	beamHit,
 	beginCut,
-	firedExtraction,
+	firstHitExtraction,
 	prototypeMiningLaserSlot,
 	type Cut,
 	debitSurface,
@@ -40,13 +40,7 @@ import {
 	stepCut,
 	stepFragments,
 } from "./rock-extraction";
-import {
-	impactRadiusPx,
-	MINING_BEAM,
-	miningBeamAlpha,
-	miningBeamStrokes,
-	miningBeamWidthPx,
-} from "./mining-beam";
+import { impactRadiusPx, mountBeamStrokes } from "./mining-beam";
 import {
 	aimedRock,
 	cycleWithRocks,
@@ -71,6 +65,7 @@ import {
 	fieldRocks,
 	systemFields,
 } from "./asteroid-field";
+import { rockPose } from "./asteroid-field";
 import { FieldDraw } from "./field-draw";
 import { pxPerRadianFor, rockArchetype } from "./field-lod";
 import { radiusAt } from "./rock-heightfields";
@@ -84,6 +79,37 @@ import {
 	nebulaOptions,
 	type NebulaBakeJob,
 } from "./nebula-bake";
+import {
+	beginDrillCut,
+	DRILL,
+	DRILL_RATES,
+	debitDeep,
+	type DrillContact,
+	type DrillStop,
+	drillContact,
+	drillFaceKm,
+	FINE,
+	fineDemand,
+	fineReadout,
+	ANCHOR,
+	anchorAllowed,
+	FINE_STICK,
+	seatBlend,
+	seatPose,
+	longwallFrame,
+	rescaleThrottle,
+	shipFrameM,
+	shipPointKm,
+	stepDrillCut,
+	stepDrillSurface,
+	stepFeed,
+	stepSpin,
+	strutReach,
+} from "./rock-drill";
+import { COCKPIT_OCCLUSION, cockpitSeenParts } from "./cockpit-occlusion-table";
+import { COCKPIT_FORWARD_KM } from "./cockpit-eye";
+import { poseLongwallDrill } from "./drill-pose";
+import { cockpitDrillView } from "./ship-mesh";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { MissileCombat, missileVisible } from "./missile-combat";
 import {
@@ -94,7 +120,13 @@ import {
 	type MissileTarget,
 	type Missile,
 } from "./missiles";
-import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
+import {
+	glassTracerIndices,
+	hardpointKeys,
+	miningBeamRays,
+	groupLaserRates,
+	groupMuzzleIndices,
+} from "./laser-modules";
 import {
 	npcLoadout,
 	npcFitSeed,
@@ -278,7 +310,7 @@ import {
 	restoreVisibility,
 	subjectOf,
 } from "./occlusion-mesh";
-import { SettingsStore, VOLUME_KEY } from "./settings";
+import { COCKPIT_FOV_DEG, SettingsStore, VOLUME_KEY } from "./settings";
 /**
  * Static, unlike `frame-attribution` below.
  *
@@ -697,9 +729,6 @@ import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
 	duelBandCells,
-	duelBandPlates,
-	duelBandWidestRows,
-	type DuelBandPlate,
 	HULL_TEMP_LABEL,
 	SCOOP_LABEL,
 	onTargetMark,
@@ -789,6 +818,7 @@ import {
 	stepCanisters,
 } from "./raider-wreck";
 import {
+	NO_SCOOP_DOCK_NOTICE,
 	SCOOP_NOTICE_S,
 	SCOOP_REFUSAL_TEXT,
 	type ScoopNotice,
@@ -860,6 +890,7 @@ import {
 	RESTITUTION,
 	SEPARATION_KM,
 	V_SCRAPE_KMS,
+	shipPrimitives,
 	hullBox,
 	impactDamage,
 	reachKm,
@@ -905,6 +936,7 @@ import {
 	HULL_SPECS,
 	purchasableHullNamed,
 	type HullEnvelope,
+	type HullCutter,
 	type HullId,
 } from "./hull";
 import {
@@ -1041,12 +1073,14 @@ import {
 import {
 	buildAuthoredCabin,
 	buildPerimeterLamps,
-	COCKPIT_MODEL_LAMPS,
+	cabinConsoleLamps,
 	carriedConsoleLamp,
-	type CockpitScreen,
 	containedFace,
-	INSTRUMENT_FACE_KM,
+	COCKPIT_MODEL_KM_PER_M,
+	MINER_COCKPIT,
+	MINER_SEAT_OFFSET_M,
 	SCANNER_FACE_KM,
+	type ScreenFrame,
 	screenMount,
 } from "./cockpit-model";
 import {
@@ -1127,6 +1161,8 @@ Promise.resolve()
 	.catch((e) =>
 		console.warn("rock pieces: off-thread build failed, built on first use", e),
 	);
+
+const CHASE_FOV_DEG = 60;
 
 /**
  * The keys that are only ever half of a press, for the capture modal.
@@ -1349,6 +1385,7 @@ import {
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+import { compileWhenReady } from "./compile-when-ready";
 
 /** #408 D1: where a guided start asks for clearance — outside the docking
  *  computer's standoff on the aperture axis, the placement `__parkInBerth`
@@ -1483,6 +1520,9 @@ const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 
 const MINING_QUERY = new URLSearchParams(window.location.search);
 const MINING_ON = MINING_QUERY.get("mining") === "1";
+const COCKPIT_SEEN_PARTS = new Map(
+	COCKPIT_OCCLUSION.poses.map((pose) => [pose.seen, new Set(pose.seen)]),
+);
 const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
 	MINING_QUERY.get("rock-pick") ?? "",
 )
@@ -1724,9 +1764,6 @@ const browserPlatform = (): string =>
 	(navigator as Navigator & { userAgentData?: { platform?: string } })
 		.userAgentData?.platform || navigator.platform;
 
-/** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
- *  forward, so the view is from the nose rather than from inside the cube. */
-const COCKPIT_FORWARD_KM = 0.008;
 /** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
@@ -1911,6 +1948,13 @@ interface ProbeRayMath {
 	closestApproachKm: typeof closestApproachKm;
 }
 
+import {
+	CockpitReadouts,
+	paintCockpitInstrument,
+	cockpitCanvasFace,
+	routeCockpitSources,
+} from "./cockpit-text";
+
 interface Instrument {
 	ctx: CanvasRenderingContext2D;
 	texture: THREE.CanvasTexture;
@@ -1979,9 +2023,6 @@ const FLOOR_BANDS = DUEL_BAND;
  *  over a lit station face, and translucent so the slot stays visible. */
 const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
 const PROMPT_PLATE_PAD_PX = 8;
-/** How far the hull-temperature plate stands in from its band, top and
- *  bottom, as a share of the band (#931). */
-const FLOOR_TEMP_PLATE_INSET = 0.12;
 
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
@@ -2028,8 +2069,6 @@ const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
  */
 const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
-/** The duel band's widest rows, for the floor's fit (#932). */
-const DUEL_BAND_WIDEST_ROWS = duelBandWidestRows();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -2053,11 +2092,8 @@ const TARGET_CONDITION_WIDEST = targetConditionWidest();
  */
 const TARGET_CONDITION_DX = 20;
 const TARGET_CONDITION_DY = 18;
-/** Where the baseline sits inside the band, and how big the value type is —
- *  both fractions of it, so the band is the one thing to change. */
-const FLOOR_BASELINE_FRACTION = 0.35;
-const FLOOR_VALUE_FRACTION = 0.5;
-const FLOOR_LABEL_FRACTION = 0.385;
+
+const MINER_FACE_SCREENS: readonly string[] = ["survey", "ore", "lasers"];
 
 /** §4's grammar, once. `cockpit.ts` decides which tone a reading earned; this
  *  is the only place a tone becomes a colour. */
@@ -2067,134 +2103,10 @@ const FLOOR_TONE_FILL: Record<FloorTone, string> = {
 	confirmed: "rgba(150, 255, 190, 0.95)",
 	refused: "rgba(255, 110, 96, 0.97)",
 };
-const FLOOR_LABEL_FILL = "rgba(120, 165, 195, 0.75)";
-const FLOOR_FONT_FAMILY = "ui-monospace, Menlo, monospace";
-/** Between a label and its value, and between one cell and the next. */
-const FLOOR_LABEL_GAP_PX = 5;
-const FLOOR_CELL_GAP_PX = 22;
-/** Clear of the glass edges at every viewport. */
-const FLOOR_MARGIN_PX = 14;
-/** How far the strip may be shrunk to fit. Below this it is not an instrument
- *  read at a glance, and the answer would have to be a different layout. */
-const FLOOR_MIN_SCALE = 0.62;
 
 /** How far past the tolerance ring the nose marker is allowed to sit before it
  *  stops moving. Beyond this the error is off-scale and the marker says so. */
 const MARKER_MAX_FRACTION = 1.3;
-
-/** The throat is the thing the ship goes through, so it is the brightest line
- *  in the corridor — and it carries the blocking state, because a refusal has
- *  to reach the part of the picture the pilot is aiming at. */
-/** A font at a scale, built rather than parsed back out of a declaration. */
-const floorFont = (fraction: number, scale: number): string =>
-	`${Math.max(7, Math.round(FLOOR_STRIP_HEIGHT_PX * fraction * scale))}px ${FLOOR_FONT_FAMILY}`;
-
-/**
- * One run's per-cell widths and their total.
- *
- * **The fit and the draw share this.** They each had their own copy of
- * `label + gap + value`, which is two spellings of the metric the fit exists to
- * guarantee — a change to the layout that landed in one would have made the fit
- * describe a run the draw does not produce. The pairs carry their own labels
- * rather than being indexed against `FLIGHT_FLOOR_LABELS`, so the two paths
- * also agree on where a label comes from.
- */
-function floorRunWidths(
-	ctx: CanvasRenderingContext2D,
-	cells: readonly { label: string; value: string }[],
-	scale: number,
-): { widths: number[]; total: number; labelWidths: number[] } {
-	const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
-	const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
-	const labelGap = FLOOR_LABEL_GAP_PX * scale;
-	const labelWidths: number[] = [];
-	const widths = cells.map((cell) => {
-		ctx.font = labelFont;
-		const label = ctx.measureText(cell.label).width;
-		labelWidths.push(label);
-		ctx.font = valueFont;
-		return label + labelGap + ctx.measureText(cell.value).width;
-	});
-	return {
-		widths,
-		labelWidths,
-		total:
-			widths.reduce((a, b) => a + b, 0) +
-			FLOOR_CELL_GAP_PX * scale * (cells.length - 1),
-	};
-}
-
-/**
- * Where one floor run landed, and the band it landed in.
- *
- * **One shape, because this PR proved what four copies cost**: adding `top` and
- * `height` so a sampler could stop keeping its own glyph height meant editing
- * the field's type, the local it is built into, and the course row's separate
- * literal. The course row has a label like any other cell (`COURSE_CUE_LABEL`),
- * so it is one of these rather than a second shape.
- */
-interface FloorBox {
-	label: string;
-	x: number;
-	y: number;
-	width: number;
-	/** The band the run occupies, so a sampler reads it rather than keeping a
-	 *  glyph height that goes lenient when the type is raised. */
-	height: number;
-	top: number;
-}
-
-/**
- * A floor box from its band, so the band→baseline rule is written once.
- *
- * The strip derived its baseline down from the glass bottom while the course
- * row derived its own up from `floorTopY` — the same rule from opposite ends,
- * in two six-field literals. That is "two runs on one floor authored two ways"
- * again, in the block whose comment argues against it.
- */
-function floorBox(
-	label: string,
-	x: number,
-	width: number,
-	top: number,
-): FloorBox {
-	return {
-		label,
-		x,
-		width,
-		top,
-		height: FLOOR_STRIP_HEIGHT_PX,
-		y: top + FLOOR_STRIP_HEIGHT_PX * (1 - FLOOR_BASELINE_FRACTION),
-	};
-}
-
-/**
- * Paint one floor cell: its label, then its value in §4's tone.
- *
- * **One painter, because the floor has two runs.** §5.2 says "two runs on one
- * floor authored two ways is how a floor comes to look like two instruments",
- * and the course row was authored the second way in the same change that wrote
- * the sentence — the strip's loop and the row each repeating the same
- * font/fill/label/value sequence, so a tone or gap change had to land twice.
- * Copying the block is also what dropped the strip's `ctx.restore()`: the
- * course block brought its own save/restore pair and read as the closing one.
- */
-function drawFloorCell(
-	ctx: CanvasRenderingContext2D,
-	cell: FloorCell,
-	at: { x: number; baselineY: number; labelWidth: number },
-	type: { labelGap: number; labelFont: string; valueFont: string },
-) {
-	ctx.font = type.labelFont;
-	ctx.fillStyle = FLOOR_LABEL_FILL;
-	ctx.fillText(cell.label, at.x, at.baselineY);
-	ctx.font = type.valueFont;
-	ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
-	// The label width comes from the measuring pass rather than a second
-	// `measureText` here — four labels re-measured every frame for a value that
-	// changes only with the viewport.
-	ctx.fillText(cell.value, at.x + at.labelWidth + type.labelGap, at.baselineY);
-}
 
 /** One cell's value by label. Throws rather than printing `undefined` on a
  *  label that does not exist — a blank readout is what this is fixing. */
@@ -2322,6 +2234,7 @@ interface HologramSystem {
 }
 
 interface CockpitHardware {
+	text: CockpitReadouts;
 	mesh: THREE.Group;
 	scannerTexture: THREE.CanvasTexture;
 	scannerCtx: CanvasRenderingContext2D;
@@ -2960,15 +2873,26 @@ class Game {
 
 	/** The flown hull's collision solid (`collision.md` §2.3, P1): its box,
 	 *  about its measured centre. Cached on the hull like the performance. */
-	private flownSolidOf: { hull: HullId; solid: readonly Primitive[] } | null =
-		null;
+	private flownSolidOf: {
+		hull: HullId;
+		deployed: boolean;
+		solid: readonly Primitive[];
+	} | null = null;
 
 	private get flownSolid(): readonly Primitive[] {
-		if (this.flownSolidOf?.hull !== this.flownHull) {
-			const spec = HULL_SPECS[this.flownHull];
+		const spec = HULL_SPECS[this.flownHull];
+		const deployed =
+			MINING_ON && spec.cutter !== undefined && this.drill?.extension >= 1;
+		if (
+			this.flownSolidOf?.hull !== this.flownHull ||
+			this.flownSolidOf.deployed !== deployed
+		) {
 			this.flownSolidOf = {
 				hull: this.flownHull,
-				solid: [hullBox(spec.env, spec.envCentre)],
+				deployed,
+				solid: deployed
+					? shipPrimitives(spec, true)
+					: [hullBox(spec.env, spec.envCentre)],
 			};
 		}
 		return this.flownSolidOf.solid;
@@ -3122,6 +3046,8 @@ class Game {
 	 * produced the refusal lives on this side.
 	 */
 	private stationConsoleMessage: string | null = null;
+	scoopNotice = false;
+	private restoringDocked = false;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -3583,64 +3509,7 @@ class Game {
 		key: string;
 		chain: CourseChain | null;
 	} | null = null;
-	/**
-	 * What §5's flight-floor strip painted this frame, or `null` when it painted
-	 * nothing — a focused console has replaced the glass.
-	 *
-	 * **Written by the draw, from the values it drew**, the same pattern as
-	 * `directorRender`. A record assembled beside the draw from the same state
-	 * would let a probe assert a strip that was never painted, which is the
-	 * check-that-cannot-fail this repo has shipped once already.
-	 */
-	floorRender: {
-		cells: FloorCell[];
-		boxes: FloorBox[];
-		/** §8.3's course row as painted, or `null` where no course is set and
-		 *  the row was deliberately not drawn. */
-		courseRow: FloorCell | null;
-		courseBox: FloorBox | null;
-		baselineY: number;
-		glassBottomY: number;
-		/** What the strip was shrunk by to fit its widest reading in this
-		 *  viewport — 1 where it did not have to shrink at all. */
-		scale: number;
-		marginPx: number;
-		/**
-		 * How far the widest reading still overruns the margins at the fitted
-		 * scale — zero at both viewports `probe-live-cockpit.mjs` measures.
-		 *
-		 * **Two things can put it above zero**, and the check does not care
-		 * which: the legibility clamp binding on a viewport too narrow for the
-		 * widest run, or the type size rounding to a whole pixel above what the
-		 * linear solve predicted. The solve assumes width is linear in size,
-		 * which is close but not exact, so the confirming measurement is what
-		 * decides — and the residue is what it decides *with*.
-		 */
-		overflowPx: number;
-		/** #324's duel row as painted, or `null` where no fight is on and the
-		 *  row was deliberately not drawn. */
-		duelRow: FloorCell[] | null;
-		duelBox: FloorBox | null;
-		/** Every plate under the duel band as painted (#945), in row order: one
-		 *  per cell, but one for TEMP and SCOOPING together. Each carries its
-		 *  cell's label, or `ARMED_GROUP_PLATE` under the armed group. */
-		duelPlates: FloorBox[];
-		/** The plate under the hull-temperature cell as painted (#931), or
-		 *  `null` when the hull is at ambient and no cell was drawn. */
-		tempPlate: FloorBox | null;
-		/** The plate under the scoop's `SCOOPING` line as painted (#932), or
-		 *  `null` when the scoop is not filling. Beside the TEMP cell it is the
-		 *  same plate, drawn once under both. */
-		scoopPlate: FloorBox | null;
-		source: {
-			regime: string;
-			spoolLeftS: number;
-			jumpChargeLeftS: number;
-			throttle: number;
-			assist: boolean;
-			chargeAu: number;
-		};
-	} | null = null;
+	floorRender: null = null;
 	/**
 	 * What §3's docking director drew this frame, or `null` when it drew
 	 * nothing. The same pattern as `cockpitPrompt`: the record is written by the
@@ -3790,10 +3659,11 @@ class Game {
 	/** The tracer's geometry and pacing, for a probe to read rather than
 	 *  restate. The ports are the flown hull's, one per gun (#607). */
 	get gunTracer() {
+		const glass = this.glassFiredIndices();
 		return {
 			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
 			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
+				(_, i) => glass.includes(i),
 			),
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
@@ -4717,6 +4587,7 @@ class Game {
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
+			this.scoopNotice = save.commander.scoopNotice;
 			this.ladders = save.commander.ladders;
 			// Explicit, though a restore builds a fresh `Game` and it is empty
 			// already: a death reloads the page into the last dock's commander,
@@ -4858,7 +4729,7 @@ class Game {
 		// One field of view across all three, and that is load-bearing rather than
 		// tidy: the layers composite into one image, so a body's projected size
 		// has to agree across the seam it crosses.
-		const fov = 60;
+		const fov = COCKPIT_FOV_DEG.normal;
 		// Its far plane just clears the star sphere; the layer writes no depth
 		// anyway, so the numbers only have to bracket the geometry.
 		this.backdropCamera = new THREE.PerspectiveCamera(
@@ -5371,6 +5242,7 @@ class Game {
 		if (neuralWanted(applied.voice, VOICE_ARMS.engine))
 			void this.neural.start();
 		this.settings.subscribe((next) => {
+			if (next.cockpitFov !== applied.cockpitFov) this.applyViewFov();
 			if (next.voice !== applied.voice && VOICE_ARMS.engine === "setting")
 				this.applyVoice(next.voice);
 			for (const bus of BUSES) {
@@ -5592,7 +5464,7 @@ class Game {
 	readonly armedFireGroup = new ArmedFireGroup();
 
 	get fireGroups() {
-		return fireGroups(this.commander.loadout, this.commander.hull);
+		return fireGroups(this.commander.loadout, this.commander.hull, MINING_ON);
 	}
 
 	cycleFireGroup() {
@@ -7060,8 +6932,21 @@ class Game {
 		return (
 			models.settled(this.currentModelIds()) &&
 			!this.interiorRefresh &&
-			!this.fieldRefresh
+			!this.fieldRefresh &&
+			this.lateDetailSettled()
 		);
+	}
+	lateDetailSettled(): boolean {
+		for (const station of this.stationVisuals.values())
+			if (station.detail === "full" && station.lateDetail?.attached === false)
+				return false;
+		return true;
+	}
+	lateDetailFailure(): string | undefined {
+		for (const station of this.stationVisuals.values())
+			if (station.lateDetail?.failure)
+				return String(station.lateDetail.failure);
+		return undefined;
 	}
 	private currentModelIds(): ModelId[] {
 		this.ensureTrafficActors();
@@ -7214,7 +7099,12 @@ class Game {
 		}
 		try {
 			this.renderer.setRenderTarget(this.composer.renderTarget1);
-			await this.renderer.compileAsync(mesh, this.nearCamera, this.nearScene);
+			await compileWhenReady(
+				this.renderer,
+				mesh,
+				this.nearCamera,
+				this.nearScene,
+			);
 		} finally {
 			this.renderer.setRenderTarget(target);
 		}
@@ -7349,10 +7239,11 @@ class Game {
 		for (const mesh of meshes) {
 			if (!live()) return;
 			const target = this.renderer.getRenderTarget();
-			let compiled: Promise<THREE.Object3D>;
+			let compiled: Promise<void>;
 			try {
 				this.renderer.setRenderTarget(this.composer.renderTarget1);
-				compiled = this.renderer.compileAsync(
+				compiled = compileWhenReady(
+					this.renderer,
 					mesh,
 					this.nearCamera,
 					this.nearScene,
@@ -7460,7 +7351,7 @@ class Game {
 			let compiled: Promise<unknown>;
 			try {
 				this.renderer.setRenderTarget(this.composer.renderTarget1);
-				compiled = this.renderer.compileAsync(root, camera, scene);
+				compiled = compileWhenReady(this.renderer, root, camera, scene);
 			} finally {
 				this.renderer.setRenderTarget(target);
 			}
@@ -9544,6 +9435,10 @@ class Game {
 	miningBeam: {
 		hit: { rockId: string; offset: Vec3 } | null;
 		distKm: number;
+		rays: {
+			muzzleIndex: number;
+			hit: { rockId: string; offset: Vec3 } | null;
+		}[];
 	} | null = null;
 	private sparks: {
 		rockId: string;
@@ -9607,20 +9502,29 @@ class Game {
 		this.miningNotice = { text, left: 3 };
 	}
 
-	private firedExtraction(): { rate: number; grade: Grade } {
+	private miningRays() {
 		const group = this.armedFireGroup.current(this.fireGroups);
-		return firedExtraction(
-			(group?.slots ?? []).flatMap((key) => {
-				const m = this.commander.loadout[key];
-				return m?.module === "mining-laser"
-					? [
-							{
-								grade: m.grade,
-								extractionTPerS: moduleRow(m).output.extractionTPerS,
-							},
-						]
-					: [];
-			}),
+		const hardpoints = hardpointKeys(this.flownHull);
+		const lasers = (group?.slots ?? []).flatMap((key) => {
+			const m = this.commander.loadout[key];
+			return m?.module === "mining-laser"
+				? [
+						{
+							grade: m.grade,
+							extractionTPerS: moduleRow(m).output.extractionTPerS,
+							muzzleIndex: hardpoints.indexOf(key),
+						},
+					]
+				: [];
+		});
+		return miningBeamRays(lasers, this.miningMuzzlesWorld(), this.nose());
+	}
+
+	private miningMuzzlesWorld(): Vec3[] {
+		return muzzlesWorld(
+			this.world.ship.pos,
+			this.orientation,
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant),
 		);
 	}
 
@@ -9648,36 +9552,49 @@ class Game {
 	private stepExtraction(dt: number) {
 		const now = this.world.gameTime;
 		this.miningNotice.left = Math.max(0, this.miningNotice.left - dt);
-		const fired = this.gunFiredNow ? this.firedExtraction() : null;
+		const fired = this.gunFiredNow ? this.miningRays() : [];
 		this.miningLog.cutRockId = null;
 		this.miningBeam = null;
 		this.sparks = this.sparks.filter((k) => now - k.bornAt < SPARK_LIFE_S);
-		if (fired && fired.rate > 0) {
-			this.miningBeam = { hit: null, distKm: PLAYER_LASER_RANGE_KM };
+		if (fired.length > 0) {
 			const near = nearRocks(
 				this.fieldRockSets(),
 				this.world.ship.pos,
 				now,
 				PLAYER_LASER_RANGE_KM,
 			);
-			const ray = this.weaponRay();
-			const hit = beamHit(
-				ray.origin,
-				ray.aim,
-				near.map((r) => ({
-					id: r.id,
-					pos: r.pos,
-					vel: r.vel,
-					radiusKm: r.rock.radiusKm,
-					shape: this.rockShape(r),
-				})),
-				PLAYER_LASER_RANGE_KM,
-			);
+			const targets = near.map((r) => ({
+				id: r.id,
+				pos: r.pos,
+				vel: r.vel,
+				radiusKm: r.rock.radiusKm,
+				shape: this.rockShape(r),
+			}));
+			const rays = fired.map((ray) => ({
+				...ray,
+				met: beamHit(ray.origin, ray.aim, targets, PLAYER_LASER_RANGE_KM),
+			}));
+			const { hit, cutting } = firstHitExtraction(rays);
 			const ref = hit && near.find((r) => r.id === hit.id);
+			this.miningBeam = {
+				hit: null,
+				distKm: PLAYER_LASER_RANGE_KM,
+				rays: rays.map((r) => {
+					const rock = r.met && near.find((n) => n.id === r.met?.id);
+					return {
+						muzzleIndex: r.muzzleIndex,
+						hit:
+							r.met && rock
+								? { rockId: rock.id, offset: sub(r.met.point, rock.pos) }
+								: null,
+					};
+				}),
+			};
 			if (hit && ref) {
 				this.miningLog.cutRockId = ref.id;
 				const offset = sub(hit.point, ref.pos);
 				this.miningBeam = {
+					...this.miningBeam,
 					hit: { rockId: ref.id, offset },
 					distKm: hit.distKm,
 				};
@@ -9706,8 +9623,8 @@ class Game {
 				const step = stepCut(
 					this.cut,
 					ref.id,
-					fired.rate,
-					oreShare(fired.grade),
+					cutting.rate,
+					oreShare(cutting.grade),
 					dt,
 					contents.surfaceT - taken,
 				);
@@ -9772,15 +9689,678 @@ class Game {
 			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
 	}
 
-	private miningBeamEnd(
-		camPos: Vec3,
-		beam: NonNullable<Game["miningBeam"]>,
-	): FramePoint | null {
-		if (!beam.hit) return this.onFrame(this.beamAim());
-		const rock = this.fragmentRock(beam.hit.rockId);
-		return rock
-			? this.onFrame(directionTo(camPos, add(rock.pos, beam.hit.offset)))
+	private miningBeamSegments(beam: NonNullable<Game["miningBeam"]>) {
+		const all = this.miningMuzzlesWorld();
+		const nose = this.nose();
+		return beam.rays.flatMap((ray) => {
+			const muzzle = all[ray.muzzleIndex];
+			if (!muzzle) return [];
+			const rock = ray.hit && this.fragmentRock(ray.hit.rockId);
+			const end =
+				ray.hit && rock
+					? add(rock.pos, ray.hit.offset)
+					: add(muzzle, scale(nose, PLAYER_LASER_RANGE_KM));
+			return [{ muzzle, end, hit: ray.hit !== null }];
+		});
+	}
+
+	drill = {
+		extension: 0,
+		spin: 0,
+		rotorRad: 0,
+		powered: false,
+		cut: beginDrillCut(),
+		surfaceCut: { key: null as string | null, oreT: 0, wasteT: 0 },
+		contact: null as DrillContact | null,
+		rockId: null as string | null,
+		stop: null as DrillStop | null,
+		delivered: 0,
+		face: null as Vec3 | null,
+		contactPoint: null as Vec3 | null,
+		feet: [] as {
+			onRock: boolean;
+			rockId: string | null;
+			rockM: number | null;
+			reachM: number;
+			target: [number, number, number];
+		}[],
+		anchorWhy: "DEPLOYING" as ReturnType<typeof anchorAllowed>,
+		holdRockId: null as string | null,
+		grip: false,
+		held: null as {
+			rockId: string;
+			from: { pos: Vec3; nose: Vec3; up: Vec3 };
+			to: { pos: Vec3; nose: Vec3; up: Vec3 };
+			at: number;
+		} | null,
+		fine: null as ReturnType<typeof fineReadout> | null,
+	};
+	drillLineRender: { line: string; readout: string | null } | null = null;
+	private fineWas = false;
+	private drillRocksCache: {
+		t: number;
+		pos: Vec3;
+		rocks: readonly RockRef[];
+	} | null = null;
+
+	private nearDrillRocks(): readonly RockRef[] {
+		const t = this.world.gameTime;
+		const pos = this.world.ship.pos;
+		const cache = this.drillRocksCache;
+		if (
+			cache &&
+			cache.t === t &&
+			cache.pos.x === pos.x &&
+			cache.pos.y === pos.y &&
+			cache.pos.z === pos.z
+		)
+			return cache.rocks;
+		const rocks = nearRocks(this.fieldRockSets(), pos, t, FINE.rangeKm);
+		this.drillRocksCache = { t, pos: { ...pos }, rocks };
+		return rocks;
+	}
+
+	private fineCache: {
+		t: number;
+		value: ReturnType<Game["computeFineFrame"]>;
+	} | null = null;
+
+	private drillCutter() {
+		return MINING_ON ? (HULL_SPECS[this.flownHull].cutter ?? null) : null;
+	}
+
+	private drillArmed(): boolean {
+		return (
+			this.drillCutter() !== null &&
+			this.armedFireGroup.current(this.fireGroups)?.kind === "drill"
+		);
+	}
+
+	private drillTriggerHeld(): boolean {
+		return this.drillArmed() && this.drill.extension >= 1 && this.triggerHeld();
+	}
+
+	private rockTargets(near: readonly RockRef[]) {
+		return near.map((r) => ({
+			id: r.id,
+			pos: r.pos,
+			vel: r.vel,
+			radiusKm: r.rock.radiusKm,
+			shape: this.rockShape(r),
+		}));
+	}
+
+	private surfaceVelocityAt(ref: RockRef, local: Vec3, t: number): Vec3 {
+		const h = 0.05;
+		return add(
+			rockPose(ref.plan, ref.rock, t).vel,
+			scale(
+				sub(
+					rockDirectionNow(ref, local, t + h),
+					rockDirectionNow(ref, local, t - h),
+				),
+				1 / (2 * h),
+			),
+		);
+	}
+
+	private fineFrame() {
+		const t = this.world.gameTime;
+		if (this.fineCache?.t !== t)
+			this.fineCache = { t, value: this.computeFineFrame() };
+		return this.fineCache.value;
+	}
+
+	private computeFineFrame(): {
+		frameId: string;
+		label: string;
+		velocityAt: (gameTime: number) => Vec3;
+		rangeKm: number | null;
+	} | null {
+		const cutter = this.drillCutter();
+		if (
+			!cutter ||
+			!this.drillArmed() ||
+			this.regime === "cruise" ||
+			this.drill.held
+		)
+			return null;
+		const t = this.world.gameTime;
+		const ship = this.world.ship;
+		const near = this.nearDrillRocks();
+		if (near.length === 0) return null;
+		const nose = this.nose();
+		const face = drillFaceKm(
+			ship.pos,
+			nose,
+			this.shipUp(),
+			cutter,
+			this.drill.extension,
+		);
+		const hit = beamHit(face, nose, this.rockTargets(near), FINE.rangeKm);
+		const ref = (hit && near.find((r) => r.id === hit.id)) || near[0];
+		const local = hit ? rockLocalVector(ref, sub(hit.point, ref.pos), t) : null;
+		return {
+			frameId: ref.id,
+			label: local ? "ROCK SURFACE FRAME" : "ROCK FRAME",
+			velocityAt: local
+				? (gt) => this.surfaceVelocityAt(ref, local, gt)
+				: (gt) => rockPose(ref.plan, ref.rock, gt).vel,
+			rangeKm: hit && hit.id === ref.id ? hit.distKm : null,
+		};
+	}
+
+	private syncFineThrottle(): boolean {
+		const fine = MINING_ON && this.fineFrame() !== null;
+		if (fine !== this.fineWas) {
+			this.throttle = fine
+				? rescaleThrottle(this.throttle, ASSIST_CAP_KMS, FINE.surgeCapKms)
+				: rescaleThrottle(this.throttle, FINE.surgeCapKms, ASSIST_CAP_KMS);
+			this.fineWas = fine;
+		}
+		return fine;
+	}
+
+	toggleDrillHold() {
+		const cutter = this.drillCutter();
+		if (!cutter) return;
+		if (this.drill.held) {
+			this.drill.held = null;
+			this.sayMining("STRUTS RELEASED");
+			return;
+		}
+		const ref = this.drill.holdRockId
+			? this.rockRef(this.drill.holdRockId)
 			: null;
+		if (this.drill.anchorWhy !== "OK" || !ref) {
+			this.sayMining(`STRUTS CANNOT ANCHOR · ${this.drill.anchorWhy}`);
+			return;
+		}
+		const t = this.world.gameTime;
+		const ship = this.world.ship;
+		const local = (p: { pos: Vec3; nose: Vec3; up: Vec3 }) => ({
+			pos: rockLocalVector(ref, sub(p.pos, ref.pos), t),
+			nose: rockLocalVector(ref, p.nose, t),
+			up: rockLocalVector(ref, p.up, t),
+		});
+		const from = local({ pos: ship.pos, nose: this.nose(), up: this.shipUp() });
+		const seat = this.seatTarget(ref, cutter);
+		this.drill.held = {
+			rockId: ref.id,
+			from,
+			to: seat ? local(seat) : from,
+			at: t,
+		};
+		this.sayMining(
+			seat ? "STRUTS ANCHORING · DRAWING IN" : "STRUTS ANCHORED · HOLDING",
+		);
+	}
+
+	private seatTarget(ref: RockRef, cutter: HullCutter) {
+		const ship = this.world.ship;
+		const nose = this.nose();
+		const up = this.shipUp();
+		const face = drillFaceKm(ship.pos, nose, up, cutter, 1);
+		const target = this.rockTargets([ref]);
+		const hit =
+			beamHit(face, nose, target, ANCHOR.reachKm * 2) ??
+			beamHit(
+				face,
+				normalizeOr(sub(ref.pos, face), nose),
+				target,
+				length(sub(ref.pos, face)),
+			);
+		return hit ? seatPose(hit.point, hit.normal, up, cutter) : null;
+	}
+
+	private applyDrillHold(flying: boolean) {
+		const held = this.drill.held;
+		if (!held) return;
+		const ref = this.rockRef(held.rockId);
+		if (!ref || !flying || !this.drillArmed()) {
+			this.drill.held = null;
+			this.sayMining("STRUTS RELEASED");
+			return;
+		}
+		const t = this.world.gameTime;
+		const s = seatBlend((t - held.at) / ANCHOR.seatS);
+		const mix = (a: Vec3, b: Vec3) => add(scale(a, 1 - s), scale(b, s));
+		const pos = mix(held.from.pos, held.to.pos);
+		this.world.ship.pos = add(ref.pos, rockDirectionNow(ref, pos, t));
+		this.world.ship.vel = this.surfaceVelocityAt(ref, pos, t);
+		this.setAttitude(
+			rockDirectionNow(ref, mix(held.from.nose, held.to.nose), t),
+			rockDirectionNow(ref, mix(held.from.up, held.to.up), t),
+		);
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.throttle = 0;
+	}
+
+	private drillSeating(): number | null {
+		const held = this.drill.held;
+		if (!held || held.from === held.to) return null;
+		const s = (this.world.gameTime - held.at) / ANCHOR.seatS;
+		return s < 1 ? s : null;
+	}
+
+	private stepDrill(dt: number) {
+		const cutter = this.drillCutter();
+		if (!cutter) return;
+		const now = this.world.gameTime;
+		const ship = this.world.ship;
+		const flying =
+			flightLive(this.dock.phase) && !collisionExempt(this.dock.phase);
+		const armed = this.drillArmed();
+		if (
+			!armed &&
+			this.drill.extension <= 0 &&
+			this.drill.spin <= 0 &&
+			!this.drill.held
+		) {
+			this.audio.drill(0, 0);
+			return;
+		}
+		this.applyDrillHold(flying);
+		const nose = this.nose();
+		const up = this.shipUp();
+		const near = this.nearDrillRocks();
+		const targets = this.rockTargets(near);
+		const room = beamHit(
+			drillFaceKm(ship.pos, nose, up, cutter, 0),
+			nose,
+			targets,
+			cutter.feedTravelKm + 0.01,
+		);
+		this.drill.extension = stepFeed(
+			this.drill.extension,
+			flying && armed,
+			dt,
+			room?.distKm ?? Number.POSITIVE_INFINITY,
+			cutter,
+		);
+		this.drill.spin = stepSpin(this.drill.spin, this.drill.powered, dt);
+		this.drill.rotorRad =
+			(this.drill.rotorRad + DRILL.rotorRadPerS * this.drill.spin * dt) %
+			(2 * Math.PI);
+		const face = drillFaceKm(ship.pos, nose, up, cutter, this.drill.extension);
+		this.drill.face = face;
+		const hit =
+			this.drill.extension > 0 ? beamHit(face, nose, targets, 0.05) : null;
+		const ref = hit ? (near.find((r) => r.id === hit.id) ?? null) : null;
+		let surfaceVel = ship.vel;
+		let deepMouth: Vec3 | null = null;
+		if (ref && hit) {
+			surfaceVel = this.surfaceVelocityAt(
+				ref,
+				rockLocalVector(ref, sub(hit.point, ref.pos), now),
+				now,
+			);
+			const dir = this.rockContentsOf(ref).deepDir;
+			deepMouth = dir ? rockDirectionNow(ref, dir, now) : null;
+		}
+		this.stepStruts(
+			cutter,
+			near,
+			targets,
+			ref,
+			surfaceVel,
+			hit?.distKm ?? null,
+		);
+		const fine = this.fineFrame();
+		this.drill.fine = fine
+			? fineReadout(nose, ship.vel, fine.velocityAt(now), fine.rangeKm)
+			: null;
+		const contact = drillContact({
+			extension: this.drill.extension,
+			nose,
+			faceVel: this.drill.held ? surfaceVel : ship.vel,
+			hit: hit && { point: hit.point, normal: hit.normal, distKm: hit.distKm },
+			surfaceVel,
+			rockCentre: ref?.pos ?? ship.pos,
+			deepMouth,
+		});
+		this.drill.contact = contact;
+		this.drill.rockId = ref?.id ?? null;
+		this.drill.contactPoint = hit?.point ?? null;
+		const triggered = this.drillTriggerHeld();
+		const touching = contact.block === null ? ref : null;
+		this.drill.stop = null;
+		if (!touching || !hit) {
+			this.drill.cut = beginDrillCut();
+			this.drill.surfaceCut = { key: null, oreT: 0, wasteT: 0 };
+			this.audio.drill(this.drill.spin, 0);
+			return;
+		}
+		const contents = this.rockContentsOf(touching);
+		const name = oreCargoName(contents.family, contents.grade);
+		const { tonnes, waste, stop } = this.drillExtract(touching, contact, dt);
+		this.drill.stop = triggered ? stop : null;
+		if (tonnes > 0) {
+			this.minedOre = {
+				...this.minedOre,
+				[name]: (this.minedOre[name] ?? 0) + tonnes,
+			};
+			this.drill.delivered += tonnes;
+			this.sayMining(
+				`DRILLED ${tonnes} T ${name.toUpperCase()} · ${contact.deposit === "deep" ? "DEEP" : "SURFACE"}`,
+			);
+		}
+		for (let i = 0; i < waste; i++) {
+			const n = this.fragmentSeq++;
+			this.fragments.push(
+				releaseFragment(
+					`frag:${n}`,
+					n,
+					null,
+					{
+						id: touching.id,
+						point: hit.point,
+						normal: hit.normal,
+						distKm: hit.distKm,
+					},
+					touching.pos,
+					now,
+				),
+			);
+		}
+		if (this.drill.stop === "HOLD FULL")
+			this.sayMining("HOLD FULL · DRILL STOPPED");
+		else if (this.drill.stop === "DEPLETED")
+			this.sayMining(
+				contact.deposit === "deep"
+					? "DEEP DEPOSIT EXHAUSTED · DRILL STOPPED"
+					: "SURFACE ORE EXHAUSTED · WASTE ONLY",
+			);
+		else if (this.drill.stop === "NO POWER")
+			this.sayMining(
+				this.condition.heatLocked ? "DRILL HEAT LOCKED" : "DRILL · NO ENERGY",
+			);
+		const cutting =
+			this.drill.powered &&
+			this.drill.spin > 0 &&
+			stop !== "HOLD FULL" &&
+			stop !== "NO POWER";
+		this.audio.drill(this.drill.spin, cutting ? this.drill.spin : 0);
+		if (!cutting) return;
+		this.emitDrillSparks(touching, hit, surfaceVel, dt);
+	}
+
+	private drillExtract(touching: RockRef, contact: DrillContact, dt: number) {
+		const now = this.world.gameTime;
+		const row = this.rockDepositRow(touching);
+		const hold = this.minedHold();
+		const holdFreeT = hold.capacityT - hold.usedT;
+		const powered = this.drill.powered;
+		let tonnes = 0;
+		let waste = 0;
+		let stop: DrillStop | null;
+		if (contact.deposit === "deep") {
+			this.drill.surfaceCut = { key: null, oreT: 0, wasteT: 0 };
+			const step = stepDrillCut(this.drill.cut, {
+				key: touching.id,
+				powered,
+				spin: this.drill.spin,
+				rateTPerS: DRILL.rateTPerS,
+				dt,
+				holdFreeT,
+				reserveLeftT: this.reserveLeftT(touching, "deep"),
+			});
+			this.drill.cut = step.cut;
+			stop = step.stop;
+			tonnes = step.tonnes;
+			if (tonnes > 0) this.putDepositRow(touching, debitDeep(row, now, tonnes));
+		} else {
+			this.drill.cut = beginDrillCut();
+			const step = stepDrillSurface(this.drill.surfaceCut, {
+				key: touching.id,
+				powered,
+				spin: this.drill.spin,
+				rateTPerS: DRILL.rateTPerS,
+				dt,
+				holdFreeT,
+				reserveLeftT: this.reserveLeftT(touching, "surface"),
+			});
+			this.drill.surfaceCut = step.cut;
+			stop = step.stop;
+			tonnes = step.ore;
+			waste = step.waste;
+			if (tonnes > 0)
+				this.putDepositRow(touching, debitSurface(row, now, tonnes));
+		}
+		return { tonnes, waste, stop };
+	}
+
+	private emitDrillSparks(
+		touching: RockRef,
+		hit: NonNullable<ReturnType<typeof beamHit>>,
+		surfaceVel: Vec3,
+		dt: number,
+	) {
+		const now = this.world.gameTime;
+		const offset = sub(hit.point, touching.pos);
+		this.heatSpots.set(touching.id, { offset, at: now });
+		this.sparkDebt += SPARK_RATE_PER_S * this.drill.spin * dt;
+		for (; this.sparkDebt >= 1; this.sparkDebt--) {
+			const n = hit.normal;
+			const r = () => Math.random() * 2 - 1;
+			const dir = normalizeOr(
+				{ x: n.x + r() * 1.2, y: n.y + r() * 1.2, z: n.z + r() * 1.2 },
+				n,
+			);
+			this.sparks.push({
+				rockId: touching.id,
+				offset,
+				vel: add(
+					sub(surfaceVel, touching.vel),
+					scale(dir, SPARK_KMS * 0.3 * (0.4 + Math.random() * 0.6)),
+				),
+				bornAt: now,
+			});
+		}
+	}
+
+	private stepStruts(
+		cutter: HullCutter,
+		near: readonly RockRef[],
+		targets: ReturnType<Game["rockTargets"]>,
+		cutRock: RockRef | null,
+		cutSurfaceVel: Vec3,
+		faceGapKm: number | null,
+	) {
+		const ship = this.world.ship;
+		const nose = this.nose();
+		const up = this.shipUp();
+		const frame = longwallFrame(cutter);
+		const nearest = cutRock ?? near[0] ?? null;
+		const grip =
+			nearest !== null && nearest.rock.radiusKm <= ANCHOR.gripRadiusKm
+				? nearest
+				: null;
+		this.drill.grip = grip !== null;
+		this.drill.feet = [0, 1, 2, 3].map((i) => {
+			const reach = strutReach(i);
+			const base = shipPointKm(ship.pos, nose, up, frame.toShip(reach.base));
+			const study = shipPointKm(ship.pos, nose, up, frame.toShip(reach.foot));
+			const column = shipPointKm(
+				ship.pos,
+				nose,
+				up,
+				frame.toShip([reach.foot[0], reach.foot[1], reach.base[2]]),
+			);
+			const seen =
+				this.drill.extension <= 0
+					? null
+					: grip
+						? beamHit(
+								study,
+								normalizeOr(sub(grip.pos, study), nose),
+								this.rockTargets([grip]),
+								length(sub(grip.pos, study)),
+							)
+						: beamHit(column, nose, targets, (reach.reachM * 2) / 1000);
+			const seenM = seen ? length(sub(seen.point, base)) * 1000 : null;
+			const met = seen && seenM !== null && seenM <= reach.reachM ? seen : null;
+			return {
+				onRock: met !== null && this.drill.extension >= 1,
+				rockId: met?.id ?? null,
+				rockM: seenM,
+				reachM: reach.reachM,
+				target: met
+					? frame.toExport(shipFrameM(ship.pos, nose, up, met.point))
+					: reach.foot,
+			};
+		});
+		const counts = new Map<string, number>();
+		for (const f of this.drill.feet)
+			if (f.onRock && f.rockId)
+				counts.set(f.rockId, (counts.get(f.rockId) ?? 0) + 1);
+		const rockId =
+			cutRock?.id ?? [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+		const rock = rockId ? (near.find((r) => r.id === rockId) ?? null) : null;
+		this.drill.holdRockId = rock?.id ?? null;
+		const frameVel = !rock
+			? ship.vel
+			: rock.id === cutRock?.id
+				? cutSurfaceVel
+				: this.surfaceVelocityAt(
+						rock,
+						rockLocalVector(rock, sub(ship.pos, rock.pos), this.world.gameTime),
+						this.world.gameTime,
+					);
+		this.drill.anchorWhy = this.drill.held
+			? "OK"
+			: anchorAllowed({
+					extension: this.drill.extension,
+					faceGapKm: rock && rock.id === cutRock?.id ? faceGapKm : null,
+					feetOnRock: rockId ? (counts.get(rockId) ?? 0) : 0,
+					relKms: length(sub(ship.vel, frameVel)),
+				});
+	}
+
+	private reserveLeftT(ref: RockRef, kind: "deep" | "surface"): number {
+		const contents = this.rockContentsOf(ref);
+		const row = this.rockDepositRow(ref);
+		const debit = row?.[kind];
+		return (
+			(kind === "deep" ? contents.deepT : contents.surfaceT) -
+			(debit === undefined
+				? 0
+				: debitAt(debit, row?.at ?? 0, this.world.gameTime))
+		);
+	}
+
+	drillLine(): { line: string; readout: string | null; ok: boolean } {
+		const d = this.drill;
+		const c = d.contact;
+		const pct = Math.round(d.extension * 100);
+		const m = (km: number | null) =>
+			km === null ? "-" : (km * 1000).toFixed(1);
+		const feet = d.feet.filter((f) => f.onRock).length;
+		const seating = this.drillSeating();
+		const struts = d.held
+			? seating !== null
+				? `STRUTS DRAWING IN ${Math.round(seating * 100)}%`
+				: "ANCHORED · PRESS 4 TO RELEASE"
+			: d.extension >= 1
+				? `${d.grip ? "GRIP" : "FEET"} ${feet}/4 · ${d.anchorWhy === "OK" ? "PRESS 4 TO ANCHOR" : d.anchorWhy}`
+				: "";
+		const fine = d.fine
+			? `FINE${d.fine.rangeKm === null ? "" : ` · RANGE ${m(d.fine.rangeKm)} M`} · CLOSE ${m(d.fine.closingKms)} · SLIDE ${m(d.fine.slideKms)} M/S`
+			: null;
+		const contactFigures =
+			c && c.gapKm !== null
+				? `GAP ${m(c.gapKm)} M · ${Math.round(c.alignDeg ?? 0)}°${c.mouthDeg === null ? "" : ` · MOUTH ${Math.round(c.mouthDeg)}°`}`
+				: null;
+		const readout =
+			[fine, contactFigures, struts].filter(Boolean).join(" · ") || null;
+		if (d.extension <= 0)
+			return {
+				line: !this.drillArmed()
+					? "DRILL STOWED · ARM BUILT-IN DRILL"
+					: "DRILL STOWED · NO ROOM AHEAD",
+				readout,
+				ok: false,
+			};
+		if (d.extension < 1)
+			return { line: `DRILL DEPLOYING ${pct}%`, readout, ok: false };
+		if (!c || c.block !== null) {
+			const why = c?.block ?? "NO ROCK";
+			const figure =
+				why === "OUT OF REACH"
+					? ` ${m(c?.gapKm ?? null)} M`
+					: why === "ALIGN"
+						? ` ${Math.round(c?.alignDeg ?? 0)}°`
+						: why === "CLOSING"
+							? ` ${m(c?.closingKms ?? null)} M/S`
+							: why === "SLIDING"
+								? ` ${m(c?.slideKms ?? null)} M/S`
+								: "";
+			return { line: `DRILL DEPLOYED · ${why}${figure}`, readout, ok: false };
+		}
+		const ref = d.rockId ? this.rockRef(d.rockId) : null;
+		const deep = c.deposit === "deep";
+		const left = ref ? this.reserveLeftT(ref, deep ? "deep" : "surface") : 0;
+		const state = d.stop
+			? d.stop
+			: d.powered
+				? `CUTTING ${(DRILL.rateTPerS * d.spin).toFixed(2)} T/S`
+				: "HOLD TRIGGER";
+		return {
+			line: `DRILL CONTACT ${deep ? "DEEP" : "SURFACE"} · ${state} · ${left} T LEFT · ${d.delivered} T DRILLED`,
+			readout,
+			ok: true,
+		};
+	}
+
+	private drawDrill(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+		w: number,
+		h: number,
+	) {
+		if (!this.drillCutter()) return;
+		const { line, readout, ok } = this.drillLine();
+		ctx.save();
+		ctx.textAlign = "center";
+		const y = h * 0.38;
+		const width = Math.min(
+			w - 20,
+			Math.max(
+				ctx.measureText(line).width,
+				ctx.measureText(readout ?? "").width,
+			) + 16,
+		);
+		ctx.fillStyle = "rgba(1, 5, 8, .85)";
+		ctx.fillRect((w - width) / 2, y - 12, width, readout ? 34 : 18);
+		ctx.fillStyle = ok ? "rgba(150, 255, 170, .95)" : "rgba(255, 210, 140, .9)";
+		ctx.fillText(line, w / 2, y, w - 36);
+		if (readout) ctx.fillText(readout, w / 2, y + 16, w - 36);
+		const point = this.drill.contactPoint;
+		if (point && this.drill.extension > 0) {
+			const at = place(normalizeOr(sub(point, camPos), { x: 0, y: 0, z: -1 }));
+			if (at?.on) {
+				ctx.strokeStyle = ctx.fillStyle;
+				ctx.lineWidth = ok ? 2.5 : 1.5;
+				ctx.beginPath();
+				ctx.arc(at.x, at.y, ok ? 12 : 8, 0, 2 * Math.PI);
+				ctx.stroke();
+			}
+		}
+		ctx.restore();
+		this.drillLineRender = { line, readout };
+	}
+
+	private poseDrillMesh() {
+		const cutter = HULL_SPECS[this.flownHull].cutter;
+		if (!cutter) return;
+		poseLongwallDrill(
+			this.shipMesh,
+			cutter,
+			this.drill.extension,
+			this.drill.rotorRad,
+			this.drill.feet.map((foot) => foot?.target),
+		);
 	}
 
 	private drawImpact(
@@ -9862,7 +10442,7 @@ class Game {
 				ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
 				ctx.fill();
 				ctx.globalCompositeOperation = "source-over";
-				ctx.font = "11px monospace";
+				ctx.font = "11px Menlo, monospace";
 				ctx.fillStyle = "rgba(255, 200, 120, .9)";
 				ctx.textAlign = "right";
 				ctx.fillText(
@@ -9925,7 +10505,7 @@ class Game {
 			if (f.ore && nearest?.f === f)
 				this.fragmentRender = { x: at.x, y: at.y, id: f.id };
 		}
-		ctx.font = "11px monospace";
+		ctx.font = "11px Menlo, monospace";
 		if (nearest) {
 			const at = place(
 				normalizeOr(sub(nearest.f.pos, camPos), { x: 0, y: 0, z: -1 }),
@@ -9943,14 +10523,14 @@ class Game {
 				);
 			}
 		}
-		const hold = this.minedHold();
-		const ore = this.fragments.filter((f) => f.ore).length;
 		ctx.textAlign = "center";
 		ctx.fillStyle = "rgba(255, 210, 140, .9)";
-		const line = `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`;
-		ctx.fillText(line, w / 2, h * 0.7);
-		if (this.miningNotice.left > 0)
-			ctx.fillText(this.miningNotice.text, w / 2, h * 0.7 - 16);
+		const line = this.oreLine();
+		if (this.view !== "cockpit") {
+			ctx.fillText(line, w / 2, h * 0.7);
+			if (this.miningNotice.left > 0)
+				ctx.fillText(this.miningNotice.text, w / 2, h * 0.7 - 16);
+		}
 		ctx.restore();
 		this.miningLineRender = {
 			line,
@@ -10000,7 +10580,7 @@ class Game {
 		ctx.beginPath();
 		ctx.arc(at.x, at.y, 7, 0, Math.PI * 2);
 		ctx.stroke();
-		ctx.font = "11px monospace";
+		ctx.font = "11px Menlo, monospace";
 		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x + 11, at.y + 4);
 		ctx.restore();
 		this.deepCueRender = { x: at.x, y: at.y, facing, mouth };
@@ -10447,12 +11027,16 @@ class Game {
 		const cabin = buildAuthoredCabin();
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
-		cockpit.add(cabin.root);
+		const seat = new THREE.Group();
+		seat.name = "cockpit-seat";
+		cockpit.add(seat);
+		this.cockpitSeat = seat;
+		seat.add(cabin.root);
 		// The spike's under-console lamps, carried from model metres into the
 		// cabin's frame the way a world lamp is (`cabinLight`). Parented to the
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
-		for (const lamp of COCKPIT_MODEL_LAMPS) {
+		for (const lamp of cabinConsoleLamps()) {
 			// The composed carry — gain then carry, in one reachable function:
 			// see `COCKPIT_MODEL_LAMP_GAIN`.
 			const carried = carriedConsoleLamp(lamp);
@@ -10476,7 +11060,7 @@ class Game {
 		// already carries under its window sill is left alone — so there is nothing
 		// ungated to see at low quality, and the casts go through the same gate as the
 		// console's so they respond when the setting moves mid-flight.
-		for (const lamp of buildPerimeterLamps()) {
+		for (const lamp of MINER_COCKPIT ? [] : buildPerimeterLamps()) {
 			cabin.modelSpace.add(lamp);
 			const light = lamp.children.find((o) => o instanceof THREE.PointLight);
 			if (light instanceof THREE.PointLight) gated.push(light);
@@ -10486,43 +11070,44 @@ class Game {
 		// keeps the cool fill alone, as the procedural cabin did.
 		registerKeyLight(...gated);
 		const inset = cockpitMaterial("inset");
-		// Each live face fills its screen's width or height, whichever binds,
-		// and keeps its own aspect. The procedural mount's figures stay its
-		// own: one uniform scale per screen carries them onto the model.
-		const mountOn = (
-			screen: CockpitScreen,
-			faceWidthKm: number,
-			faceHeightKm: number,
-			name: string,
-		) => {
-			const frame = cabin.screens[screen];
-			const fit = containedFace(frame, faceWidthKm / faceHeightKm);
-			const mount = screenMount(frame);
-			mount.name = name;
-			mount.scale.setScalar(fit.widthKm / faceWidthKm);
-			cockpit.add(mount);
-			return mount;
-		};
-		const scannerMount = mountOn(
+		const textScreens = MINER_COCKPIT
+			? Object.fromEntries(
+					Object.entries(cabin.screens).filter(
+						([name]) => !MINER_FACE_SCREENS.includes(name),
+					),
+				)
+			: cabin.screens;
+		const routes = routeCockpitSources(textScreens, [
 			"radar",
-			SCANNER_FACE_KM[0],
-			SCANNER_FACE_KM[1],
-			"scanner-mount",
-		);
-		const flightMount = mountOn(
 			"flight",
-			INSTRUMENT_FACE_KM[0],
-			INSTRUMENT_FACE_KM[1],
-			"flight-mount",
-		);
-		const targetMount = mountOn(
 			"target",
-			INSTRUMENT_FACE_KM[0],
-			INSTRUMENT_FACE_KM[1],
-			"target-mount",
+			"fallback",
+		]);
+		const routeFrame = (name: string) => {
+			const route = routes.get(name);
+			if (!route) throw new Error(`Missing cockpit source route: ${name}`);
+			return route.frame;
+		};
+		this.cockpit.text = new CockpitReadouts(
+			seat,
+			textScreens,
+			routeFrame("fallback"),
 		);
-		this.buildScannerAssembly(scannerMount, flightMount, targetMount, inset);
-		this.buildHologramSystem(scannerMount);
+		const scannerFrame = routeFrame("radar");
+		const scannerMount = screenMount(scannerFrame);
+		scannerMount.name = "scanner-hardware-mount";
+		scannerMount.scale.setScalar(scannerFrame.widthKm / SCANNER_FACE_KM[0]);
+		seat.add(scannerMount);
+		this.buildScannerAssembly(scannerMount, inset, {
+			radar: scannerFrame,
+			flight: routeFrame("flight"),
+			target: routeFrame("target"),
+		});
+		this.buildHologramSystem(
+			scannerMount,
+			scannerFrame.widthKm / scannerFrame.heightKm,
+		);
+		if (MINER_COCKPIT) this.buildMinerFaces(cabin.screens, seat);
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
 		// passes; the screens and labels are `MeshBasicMaterial` and fall out.
@@ -10545,60 +11130,46 @@ class Game {
 	/** Build the scanner face, the two readout faces and the throttle hardware. */
 	private buildScannerAssembly(
 		scannerMount: THREE.Group,
-		flightMount: THREE.Group,
-		targetMount: THREE.Group,
 		inset: THREE.MeshStandardMaterial,
+		frames: { radar: ScreenFrame; flight: ScreenFrame; target: ScreenFrame },
 	) {
-		const scannerCanvas = document.createElement("canvas");
-		scannerCanvas.width = 800;
-		scannerCanvas.height = 400;
-		this.cockpit.scannerCtx = scannerCanvas.getContext(
-			"2d",
-		) as CanvasRenderingContext2D;
-		this.cockpit.scannerTexture = new THREE.CanvasTexture(scannerCanvas);
-		this.cockpit.scannerTexture.colorSpace = THREE.SRGBColorSpace;
+		const scannerFace = cockpitCanvasFace({
+			frame: frames.radar,
+			name: "scanner",
+			width: 800,
+			height: Math.max(
+				1,
+				Math.round((800 * frames.radar.heightKm) / frames.radar.widthKm),
+			),
+		});
+		this.cockpit.scannerCtx = scannerFace.ctx;
+		this.cockpit.scannerTexture = scannerFace.texture;
 		this.paintScannerBackground();
-		const scanner = new THREE.Mesh(
-			new THREE.PlaneGeometry(...SCANNER_FACE_KM),
-			new THREE.MeshBasicMaterial({
-				map: this.cockpit.scannerTexture,
-				polygonOffset: true,
-				polygonOffsetFactor: -1,
-				polygonOffsetUnits: -1,
-			}),
-		);
-		scanner.name = "scanner";
-		scanner.position.y = 0.00108;
-		scanner.rotation.x = -Math.PI / 2;
-		scannerMount.add(scanner);
-		const makeInstrument = (name: string, mount: THREE.Group) => {
-			const canvas = document.createElement("canvas");
-			canvas.width = 512;
-			canvas.height = 256;
-			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-			const texture = new THREE.CanvasTexture(canvas);
-			texture.colorSpace = THREE.SRGBColorSpace;
-			const face = new THREE.Mesh(
-				new THREE.PlaneGeometry(...INSTRUMENT_FACE_KM),
-				new THREE.MeshBasicMaterial({
-					map: texture,
-					transparent: true,
-					depthWrite: false,
-				}),
-			);
-			face.name = name;
-			face.position.y = 0.001;
-			face.rotation.x = -Math.PI / 2;
-			mount.add(face);
+		this.cockpit.text.root.add(scannerFace.mount);
+		const makeInstrument = (
+			name: string,
+			frame: ScreenFrame,
+			mountName: string,
+		) => {
+			const { ctx, texture, mount } = cockpitCanvasFace({
+				frame,
+				name,
+				width: 512,
+				height: Math.max(1, Math.round((512 * frame.heightKm) / frame.widthKm)),
+			});
+			mount.name = mountName;
+			this.cockpit.text.root.add(mount);
 			return { ctx, texture, primaryText: "", secondaryText: new TextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument(
 			"flight-instrument",
-			flightMount,
+			frames.flight,
+			"flight-mount",
 		);
 		this.cockpit.targetInstrument = makeInstrument(
 			"target-instrument",
-			targetMount,
+			frames.target,
+			"target-mount",
 		);
 		const throttleTrack = new THREE.Mesh(
 			cockpitForm(0.0022, 0.0014, 0.014),
@@ -10622,9 +11193,10 @@ class Game {
 	}
 
 	/** Create the static radar geometry and the reusable live-contact pool. */
-	private buildHologramSystem(scannerMount: THREE.Group) {
+	private buildHologramSystem(scannerMount: THREE.Group, aspect: number) {
 		const root = new THREE.Group();
 		root.name = "scanner-hologram";
+		root.scale.z = SCANNER_FACE_KM[0] / SCANNER_FACE_KM[1] / aspect;
 		root.position.y = 0.0013;
 		scannerMount.add(root);
 		const hologramMaterial = new THREE.LineBasicMaterial({
@@ -10721,6 +11293,112 @@ class Game {
 		ctx.fillStyle = shade;
 		ctx.fillRect(0, 0, w, h);
 		this.cockpit.scannerTexture.needsUpdate = true;
+	}
+
+	cockpitSeat: THREE.Group | null = null;
+	minerSeat: "pilot" | "miner" = "pilot";
+
+	setMinerSeat(seat: "pilot" | "miner") {
+		this.minerSeat = seat;
+		if (this.cockpitSeat)
+			this.cockpitSeat.position.x =
+				seat === "miner" ? -MINER_SEAT_OFFSET_M * COCKPIT_MODEL_KM_PER_M : 0;
+	}
+
+	minerFaces: {
+		name: string;
+		ctx: CanvasRenderingContext2D;
+		texture: THREE.CanvasTexture;
+	}[] = [];
+	private minerFacesPaintedAt = -Infinity;
+
+	private buildMinerFaces(
+		frames: Record<string, ScreenFrame>,
+		seat: THREE.Group,
+	) {
+		for (const name of MINER_FACE_SCREENS) {
+			const frame = frames[name];
+			if (!frame) continue;
+			const fit = containedFace(frame, 1.5);
+			const canvas = document.createElement("canvas");
+			canvas.width = 480;
+			canvas.height = 320;
+			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+			const texture = new THREE.CanvasTexture(canvas);
+			texture.colorSpace = THREE.SRGBColorSpace;
+			const face = new THREE.Mesh(
+				new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+				new THREE.MeshBasicMaterial({
+					map: texture,
+					polygonOffset: true,
+					polygonOffsetFactor: -1,
+					polygonOffsetUnits: -1,
+				}),
+			);
+			face.name = `miner-${name}-face`;
+			face.rotation.x = -Math.PI / 2;
+			face.position.y = frame.widthKm * 0.01;
+			const mount = screenMount(frame);
+			mount.name = `miner-${name}-mount`;
+			mount.add(face);
+			seat.add(mount);
+			this.minerFaces.push({ name, ctx, texture });
+		}
+	}
+
+	private paintMinerFaces() {
+		if (!this.minerFaces.length) return;
+		const now = performance.now();
+		if (now - this.minerFacesPaintedAt < 200) return;
+		this.minerFacesPaintedAt = now;
+		const c = this.condition;
+		const hold = this.minedHold();
+		const survey = MINING_ON ? this.surveyState() : null;
+		const rows: Record<string, [string, string][]> = {
+			survey: survey
+				? survey.designation
+					? survey.designation
+							.split(" · ")
+							.slice(0, 3)
+							.map((part): [string, string] => [part, "#6dff9a"])
+					: [["NO ROCK TARGETED", "#9fb7c0"]]
+				: [["MINING OFF", "#9fb7c0"]],
+			ore: [
+				[`ORE ${this.minedT} T`, "#ffb347"],
+				[`HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`, "#ffb347"],
+			],
+			lasers: [
+				[`HEAT ${Math.round((c.heat / HEAT_LOCK) * 100)}%`, "#ffb347"],
+				[
+					`ENERGY ${Math.round((c.energy / Math.max(1, c.energyMax)) * 100)}%`,
+					"#6dff9a",
+				],
+			],
+		};
+		const titles: Record<string, string> = {
+			survey: "SURVEY",
+			ore: "ORE / HOLD",
+			lasers: "LASER",
+		};
+		for (const face of this.minerFaces) {
+			const { ctx } = face;
+			const { width: w, height: h } = ctx.canvas;
+			ctx.fillStyle = "#02080b";
+			ctx.fillRect(0, 0, w, h);
+			ctx.strokeStyle = "#5fe3ff";
+			ctx.lineWidth = 4;
+			ctx.strokeRect(10, 10, w - 20, h - 20);
+			ctx.textAlign = "center";
+			ctx.fillStyle = "#d8f6ff";
+			ctx.font = "34px Menlo, monospace";
+			ctx.fillText(titles[face.name] ?? "", w / 2, 62);
+			ctx.font = "40px Menlo, monospace";
+			(rows[face.name] ?? []).forEach(([text, colour], i) => {
+				ctx.fillStyle = colour;
+				ctx.fillText(text, w / 2, 140 + i * 62, w - 40);
+			});
+			face.texture.needsUpdate = true;
+		}
 	}
 
 	private updateHologramContacts(contacts: readonly ScannerContact[]) {
@@ -10827,54 +11505,15 @@ class Game {
 		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${targetSecondary}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
-		const paint = (
-			instrument: Instrument,
-			title: string,
-			primary: string,
-			secondary: string,
-			accent: string,
-			designation = "",
-		) => {
-			const { ctx, secondaryText: raster } = instrument;
-			const { width, height } = ctx.canvas;
-			ctx.clearRect(0, 0, width, height);
-			ctx.fillStyle = "rgba(1, 8, 11, .9)";
-			ctx.fillRect(0, 0, width, height);
-			ctx.strokeStyle = accent;
-			ctx.globalAlpha = 0.72;
-			ctx.lineWidth = 4;
-			ctx.strokeRect(12, 12, width - 24, height - 24);
-			ctx.globalAlpha = 1;
-			ctx.fillStyle = accent;
-			ctx.font = "22px ui-monospace, monospace";
-			ctx.fillText(title, 28, 46);
-			if (designation) ctx.fillText(designation, 28, 78);
-			let primarySize = 42;
-			const primaryWidth = width - 56;
-			ctx.font = `${primarySize}px ui-monospace, monospace`;
-			while (
-				primarySize > 24 &&
-				ctx.measureText(primary).width > primaryWidth
-			) {
-				primarySize -= 1;
-				ctx.font = `${primarySize}px ui-monospace, monospace`;
-			}
-			ctx.fillStyle = "#e7f6ff";
-			ctx.fillText(primary, 28, 128);
-			instrument.primaryText = primary;
-			raster.setInstrumentSecondary(secondary, accent, width);
-			ctx.font = raster.font;
-			ctx.fillStyle = accent;
-			ctx.fillText(secondary, 28, 192);
-		};
-		paint(
+
+		paintCockpitInstrument(
 			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
 		);
-		paint(
+		paintCockpitInstrument(
 			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
@@ -11595,6 +12234,10 @@ class Game {
 			case "view.headStarboard":
 				this.setHeadLook("right");
 				return;
+			case "view.seatSwap":
+				if (MINER_COCKPIT)
+					this.setMinerSeat(this.minerSeat === "pilot" ? "miner" : "pilot");
+				return;
 			// **The settings screen's own door, folded here in #381 S4.** It
 			// was `settings-panel.ts`'s window listener, which made `z` the
 			// panel's key rather than the registry's — so #369 D12's "`z` is
@@ -11697,6 +12340,9 @@ class Game {
 			case "fight.faceTarget":
 				this.beginFaceTurn();
 				return;
+			case "fight.drillHold":
+				if (MINING_ON) this.toggleDrillHold();
+				break;
 			case "fight.cycleFireGroup":
 				this.cycleFireGroup();
 				return;
@@ -11744,6 +12390,13 @@ class Game {
 				}
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
+				return;
+			case "view.fov":
+				if (this.view === "cockpit")
+					this.settings.set(
+						"cockpitFov",
+						this.settings.value.cockpitFov === "normal" ? "wide" : "normal",
+					);
 				return;
 			case "tune.reset":
 				// Back to the spec's own figures, from wherever the tuning has got
@@ -12654,6 +13307,8 @@ class Game {
 		label: string;
 		velocityAt: (gameTime: number) => Vec3;
 	} {
+		const fine = MINING_ON ? this.fineFrame() : null;
+		if (fine) return fine;
 		const view = this.relayView;
 		if (view && this.proximityFrameBodyId === null) {
 			const { pos } = this.relayNow(view);
@@ -12831,60 +13486,39 @@ class Game {
 		h: number,
 		beam: NonNullable<Game["miningBeam"]>,
 	) {
-		const muzzles = muzzlesWorld(
-			this.world.ship.pos,
-			this.orientation,
-			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
-			),
+		const strokes = mountBeamStrokes(
+			this.miningBeamSegments(beam),
+			this.cameraPos(),
+			this.cameraRotation(),
+			(this.nearCamera.fov * Math.PI) / 180,
+			this.nearCamera.aspect,
+			this.world.gameTime,
 		);
-		const rock = beam.hit && this.fragmentRock(beam.hit.rockId);
-		const camPos = this.cameraPos();
-		const camRot = this.cameraRotation();
-		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
-		const t = this.world.gameTime;
-		const n = MINING_BEAM.segments;
 		ctx.save();
 		ctx.globalCompositeOperation = "lighter";
 		ctx.lineCap = "round";
-		for (const muzzle of muzzles) {
-			const end =
-				beam.hit && rock
-					? add(rock.pos, beam.hit.offset)
-					: add(muzzle, scale(this.beamAim(), PLAYER_LASER_RANGE_KM));
-			const at = (k: number) =>
-				add(muzzle, scale(sub(end, muzzle), (k / n) ** 2));
-			for (let k = 0; k < n; k++) {
-				const a = at(k),
-					b = at(k + 1);
-				const seg = projectSegment(
-					a,
-					b,
-					camPos,
-					camRot,
-					fovYRad,
-					this.nearCamera.aspect,
-				);
-				if (!seg) continue;
-				const from = ndcToPx(seg[0], w, h),
-					to = ndcToPx(seg[1], w, h);
-				const width = miningBeamWidthPx(
-					length(sub(add(a, b), scale(camPos, 2))) / 2,
-				);
-				const alpha = miningBeamAlpha(k, n, t, beam.hit !== null);
-				ctx.strokeStyle = `rgba(255, 140, 40, ${0.35 * alpha})`;
-				ctx.lineWidth = width * 2.5;
-				ctx.beginPath();
-				ctx.moveTo(from.x, from.y);
-				ctx.lineTo(to.x, to.y);
-				ctx.stroke();
-				ctx.strokeStyle = `rgba(255, 210, 120, ${alpha})`;
-				ctx.lineWidth = width;
-				ctx.stroke();
-				this.chaseMiningRender++;
-			}
+		for (const stroke of strokes) {
+			ctx.strokeStyle =
+				stroke.layer === "glow"
+					? `rgba(255, 140, 40, ${stroke.alpha})`
+					: `rgba(255, 210, 120, ${stroke.alpha})`;
+			ctx.lineWidth = stroke.widthPx;
+			ctx.beginPath();
+			ctx.moveTo(stroke.from.x * w, stroke.from.y * h);
+			ctx.lineTo(stroke.to.x * w, stroke.to.y * h);
+			ctx.stroke();
 		}
+		this.chaseMiningRender = strokes.filter((s) => s.layer === "core").length;
 		ctx.restore();
+	}
+
+	private glassFiredIndices() {
+		return glassTracerIndices(
+			this.flownHull,
+			this.commander.loadout,
+			this.firedMuzzleIndices,
+			MINING_ON,
+		);
 	}
 
 	/**
@@ -12894,11 +13528,12 @@ class Game {
 	 * shipyard trade moves it with the hull.
 	 */
 	private chaseBeamPx(w: number, h: number) {
+		const glass = this.glassFiredIndices();
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
 			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
+				(_, i) => glass.includes(i),
 			),
 		);
 		const camPos = this.cameraPos();
@@ -13669,6 +14304,7 @@ class Game {
 		// caller's comment names what runs rather than implying the rest — it
 		// was missing, and nothing failed.
 		this.stepDockingProtocol();
+		if (wasArriving && this.dock.phase === "docked") this.sayScoopNotice();
 		if (!out.ship) return;
 		this.world.ship.pos = out.ship.pos;
 		this.world.ship.vel = out.ship.vel;
@@ -14093,6 +14729,7 @@ class Game {
 		const stationId = this.dock.stationId;
 		this.dock = skipTraversal(this.dock, this.world.gameTime);
 		if (stationId) this.closePlayerTrafficEvent(stationId, "lane");
+		this.sayScoopNotice();
 		return true;
 	}
 
@@ -17029,12 +17666,17 @@ class Game {
 		// on the sim clock wherever the ship is. The trigger is the pilot's
 		// (`triggerHeld`), and what the gun delivered is this frame's shot.
 		const armedGroup = this.armedFireGroup.current(this.fireGroups);
-		const gun = stepCondition(
+		const drilling = this.drillArmed();
+		const powered = stepCondition(
 			this.condition,
 			dt,
-			this.laserTriggerHeld(),
-			groupLaserRates(this.commander.loadout, armedGroup),
+			drilling ? this.drillTriggerHeld() : this.laserTriggerHeld(),
+			drilling
+				? DRILL_RATES
+				: groupLaserRates(this.commander.loadout, armedGroup),
 		);
+		this.drill.powered = drilling && powered.fired;
+		const gun = drilling ? { ...powered, fired: false, damage: 0 } : powered;
 		if (gun.fired)
 			this.firedMuzzleIndices = groupMuzzleIndices(this.flownHull, armedGroup);
 		this.gunFiredNow = gun.fired;
@@ -17336,9 +17978,16 @@ class Game {
 				impulse.yaw !== 0 ||
 				Object.keys(direct).length > 0,
 		);
+		const turnShare = MINING_ON && this.fineFrame() !== null ? FINE_STICK : 1;
+		const fineTurn = (a: Angular): Angular => ({
+			pitch: a.pitch * turnShare,
+			yaw: a.yaw * turnShare,
+			roll: a.roll * turnShare,
+		});
 		const hands = {
-			stick: faceStick ?? { pitch, yaw, roll },
-			impulse,
+			stick: fineTurn(faceStick ?? { pitch, yaw, roll }),
+			impulse: fineTurn(impulse),
+
 			turnAssist: faceStick ? true : this.assist,
 			direct,
 		};
@@ -17430,18 +18079,20 @@ class Game {
 			return;
 		}
 
+		const fine = this.syncFineThrottle();
+		const asked = pilotDemand(
+			pilotHands(pilotHeld, {
+				assist: this.assist,
+				throttle: this.throttle,
+				padTrim: handsHeld ? 0 : padAxes.throttleTrim,
+				padHeave: handsHeld ? 0 : padAxes.heave,
+			}),
+		);
 		const flown = this.advanceNormalFlight(
 			dt,
 			approaches,
 			hands,
-			pilotDemand(
-				pilotHands(pilotHeld, {
-					assist: this.assist,
-					throttle: this.throttle,
-					padTrim: handsHeld ? 0 : padAxes.throttleTrim,
-					padHeave: handsHeld ? 0 : padAxes.heave,
-				}),
-			),
+			fine ? fineDemand(asked) : asked,
 		);
 		meterFlick(flown);
 	}
@@ -17551,6 +18202,7 @@ class Game {
 		this.stepScan(dt);
 		if (MINING_ON) this.stepSurvey(dt);
 		if (MINING_ON) this.stepExtraction(dt);
+		if (MINING_ON) this.stepDrill(dt);
 		this.stepSystemSweep();
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
@@ -18164,6 +18816,29 @@ class Game {
 		}
 	}
 
+	private get layerCameras() {
+		return [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+			this.nearCamera,
+			this.cabinCamera,
+		] as const;
+	}
+
+	private applyViewFov() {
+		const fov =
+			this.view === "cockpit"
+				? COCKPIT_FOV_DEG[this.settings.value.cockpitFov]
+				: CHASE_FOV_DEG;
+		if (this.nearCamera.fov === fov) return;
+		for (const camera of this.layerCameras) {
+			camera.fov = fov;
+			camera.updateProjectionMatrix();
+		}
+		this.focalPx = focalPx(this.renderer.getSize(new THREE.Vector2()).y, fov);
+	}
+
 	/**
 	 * Place everything relative to the camera, and draw.
 	 *
@@ -18173,6 +18848,7 @@ class Game {
 	 * position, which is not.
 	 */
 	render(dt = 0) {
+		this.applyViewFov();
 		// #535: the opening films the ship from outside, from a camera its shot
 		// places; everything else about the frame is the chase view's.
 		const shotCam = this.openingCamera();
@@ -18509,6 +19185,7 @@ class Game {
 
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
+		if (MINING_ON) this.poseDrillMesh();
 		this.shipMesh.quaternion.copy(this.orientation);
 		this.anchorFleet();
 		for (const parked of this.fleet)
@@ -18549,13 +19226,28 @@ class Game {
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		// #535's prologue is empty space: the ship has not arrived yet.
-		this.shipMesh.visible =
-			this.view === "chase" && this.opening?.shot !== "forming";
+		const hullShown = this.view === "chase" && this.opening?.shot !== "forming";
+		const drillView =
+			MINING_ON &&
+			this.view === "cockpit" &&
+			!!HULL_SPECS[this.flownHull].cutter &&
+			this.opening?.shot !== "forming";
+		cockpitDrillView(
+			this.shipMesh,
+			drillView
+				? {
+						seen:
+							COCKPIT_SEEN_PARTS.get(cockpitSeenParts(this.drill.extension)) ??
+							new Set(),
+					}
+				: null,
+		);
+		this.shipMesh.visible = hullShown || drillView;
 		// The plumes ride the hull and are seen when it is (#621).
 		const plumes = this.ventPlumes.object;
 		plumes.position.copy(this.shipMesh.position);
 		plumes.quaternion.copy(this.shipMesh.quaternion);
-		plumes.visible = this.shipMesh.visible;
+		plumes.visible = hullShown;
 		// Hidden, it draws nothing, so it is not written either.
 		if (plumes.visible)
 			this.ventPlumes.update(this.ventFiring, this.world.gameTime);
@@ -18661,6 +19353,7 @@ class Game {
 				performance.now() - renderStartedAt,
 			);
 		this.drawMarkers(camPos);
+		this.cockpit.text.flush();
 		this.frames++;
 	}
 
@@ -18987,6 +19680,8 @@ class Game {
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
 		this.audio.weapons(this.simulationHeld ? SILENT_WEAPONS : this.weaponMix);
+		if (MINING_ON && (this.simulationHeld || !this.drillCutter()))
+			this.audio.drill(0, 0);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -19298,6 +19993,7 @@ class Game {
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
+		this.paintMinerFaces();
 		const dockContext = this.dockedStationContext();
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).
@@ -19884,6 +20580,7 @@ class Game {
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
+				mining: MINING_ON,
 			}),
 			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else.
 			shipyard:
@@ -19995,6 +20692,7 @@ class Game {
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
+			scoopNotice: this.scoopNotice,
 			// The record with its basis brought into line with the hold. **A
 			// guard, not a known path**: today the one non-sale removal is a job
 			// hand-over, which reconciles as it settles.
@@ -20157,11 +20855,17 @@ class Game {
 		if (!station) return false;
 		const id = station.id;
 		const t0 = this.world.gameTime;
-		const ok = this.dockByProtocol(id, () => {
-			// D2: a failed re-dock is not undone — the ship stays beside the
-			// station, not at the arrival point.
-			return false;
-		});
+		this.restoringDocked = true;
+		let ok: boolean;
+		try {
+			ok = this.dockByProtocol(id, () => {
+				// D2: a failed re-dock is not undone — the ship stays beside the
+				// station, not at the arrival point.
+				return false;
+			});
+		} finally {
+			this.restoringDocked = false;
+		}
 		// D3: the clock moved on by the run-in.
 		const elapsed = this.world.gameTime - t0;
 		console.log(
@@ -20179,6 +20883,20 @@ class Game {
 	 * a Wanted pilot whose launch station will not take them — is on the log
 	 * alone, since there is no console to say it on.
 	 */
+	sayScoopNotice(): void {
+		if (
+			!this.scoopNotice ||
+			this.restoringDocked ||
+			this.dockPhase !== "docked" ||
+			this.stationConsoleMessage !== null
+		)
+			return;
+		this.scoopNotice = false;
+		this.stationConsoleMessage = NO_SCOOP_DOCK_NOTICE;
+		this.updateCockpit();
+		this.saveDirty();
+	}
+
 	showWake(wake: DeathWake): void {
 		const text = wakeText(wake);
 		this.wakeShown = wake;
@@ -20800,8 +21518,14 @@ class Game {
 		ctx.textAlign = "center";
 		ctx.fillStyle = FIRST_DAY_CONTROLS_FILL;
 		const top = Math.round(h * FIRST_DAY_CONTROLS_TOP);
-		for (const [i, text] of lines.entries())
-			ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
+		if (this.view === "cockpit")
+			this.cockpit.text.write(
+				"controls",
+				lines.map((text) => ({ text, fill: FIRST_DAY_CONTROLS_FILL })),
+			);
+		else
+			for (const [i, text] of lines.entries())
+				ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
 		ctx.restore();
 		this.firstDayControlsShown = lines;
 	}
@@ -20982,6 +21706,7 @@ class Game {
 			entrustedT: entrustedTonnesAboard(this.requests),
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
+			mining: MINING_ON,
 		};
 	}
 
@@ -21586,249 +22311,38 @@ class Game {
 		});
 	}
 
-	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
+	private drawFlightFloor() {
 		const cells = this.floorCells();
-		const courseRow = courseCue(this.courseCueState());
-
-		// **Fitted to the widest reading the strip can take, not to this one.**
-		// Sized to the live values it re-centred whenever a digit changed, and
-		// the fit taken on a full tank — where the regeneration suffix is
-		// absent — was a fifth too narrow for the run drawn a second later. At
-		// 390 px that clipped both ends, and the check measuring the incidental
-		// run passed.
-		const available = w - 2 * FLOOR_MARGIN_PX;
-		if (this.floorFit?.width !== w) {
-			// **Solved rather than searched.** The step-down loop ran up to
-			// nineteen full measurements on every distinct canvas width, and a
-			// resize drag missed on every frame and appended to a map nothing
-			// evicted. Text width is very nearly linear in the type size, so one
-			// measurement gives the ratio; the second confirms it, and the
-			// residue is recorded rather than drawn over.
-			// The handle's own copy, not a second derivation with the same
-			// arguments — a third parameter would otherwise have to be threaded
-			// to two call sites that must agree.
-			const widestCells = FLIGHT_FLOOR_LABELS.map((label) => ({
-				label,
-				value: this.floorWidest[label],
+		const line = (cells: readonly FloorCell[]) => {
+			const runs = cells.map((cell, i) => ({
+				text:
+					[cell.label, cell.value].filter(Boolean).join(" ") +
+					(i < cells.length - 1 ? "   " : ""),
+				fill: FLOOR_TONE_FILL[cell.tone],
 			}));
-			// **Both runs on the floor are fitted, not just the strip.** The
-			// course row is centred on the same axis and drawn at the same
-			// scale, so a solve that ignored it would fit one instrument and
-			// clip the other — which is #92's own failure with a second run
-			// added to the floor.
-			const widestCourse = [
-				{ label: COURSE_CUE_LABEL, value: this.courseWidest },
-			];
-			// And the duel row (#324), for the same reason: a third run on the
-			// same axis at the same scale.
-			// The duel band's widest rows, in combat and out of it (#932):
-			// `duelBandWidestRows` composes them by `duelBandCells`' own rule,
-			// so SHD, HEAT and SCOOPING are never fitted as one row.
-			const widestDuelRows = DUEL_BAND_WIDEST_ROWS;
-			const groups = this.fireGroups;
-			const widestGroup = groups.map((group, index) => ({
-				label: "",
-				value: group.label + " · " + (index + 1) + "/" + groups.length,
-			}));
-			if (!widestGroup.length)
-				widestGroup.push({ label: "", value: "NO WEAPONS" });
-			const runAt = (scale: number) =>
-				Math.max(
-					floorRunWidths(ctx, widestCells, scale).total,
-					floorRunWidths(ctx, widestCourse, scale).total,
-					...widestDuelRows.flatMap((row) =>
-						widestGroup.map(
-							(group) => floorRunWidths(ctx, [...row, group], scale).total,
-						),
-					),
-				);
-			const atOne = runAt(1);
-			const solved = Math.max(
-				FLOOR_MIN_SCALE,
-				Math.min(1, available / Math.max(1, atOne)),
-			);
-			// Rounded down to a step so a one-pixel viewport change does not
-			// re-lay the strip out at an imperceptibly different size.
-			const stepped = Math.max(FLOOR_MIN_SCALE, Math.floor(solved * 50) / 50);
-			const fitted = runAt(stepped);
-			this.floorFit = {
-				width: w,
-				scale: stepped,
-				// **The clamp fails open, and says so.** `FLOOR_MIN_SCALE` is a
-				// floor on legibility, so a viewport too narrow for the widest
-				// run at that size draws anyway — the alternative is a floor
-				// instrument that vanishes. What it must not do is fail open
-				// *silently*: the overflow is recorded, and the browser check
-				// requires it to be zero at every shipped viewport.
-				overflowPx: Math.max(0, fitted - available),
-			};
-		}
-		const { scale } = this.floorFit;
-		const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
-		const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
-		const labelGap = FLOOR_LABEL_GAP_PX * scale;
-		const cellGap = FLOOR_CELL_GAP_PX * scale;
-		const { widths, labelWidths, total } = floorRunWidths(ctx, cells, scale);
-		// The three typography arguments are identical at both call sites and
-		// come from one fit solve, so they travel together rather than as three
-		// of eight positionals a reader has to align.
-		const floorType = { labelGap, labelFont, valueFont };
-
-		const glassBottomY = h * GLASS_BOTTOM_FRACTION;
-		const baselineY =
-			glassBottomY - FLOOR_STRIP_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
-		let x = (w - total) / 2;
-		const boxes: FloorBox[] = [];
-		ctx.save();
-		ctx.textAlign = "left";
-		for (const [i, cell] of cells.entries()) {
-			// Every floor box states its own band, so nothing sampling one keeps
-			// a glyph height of its own.
-			boxes.push(
-				floorBox(
-					cell.label,
-					x,
-					widths[i],
-					glassBottomY - FLOOR_STRIP_HEIGHT_PX,
-				),
-			);
-			drawFloorCell(
-				ctx,
-				cell,
-				{ x, baselineY, labelWidth: labelWidths[i] },
-				floorType,
-			);
-			x += widths[i] + cellGap;
-		}
-		// §8.3's course row, above the strip and on the same centre axis.
-		//
-		// **Drawn from the same run-measuring pass as the strip**, so the two
-		// cannot come to be laid out two ways; it is one cell in the strip's own
-		// label/value/tone grammar, in its own band, rather than a fifth cell
-		// (#117 D1). With no course it is absent, and absence here moves nothing
-		// below it (#117 D2).
-		// One painter for every centred row above the strip: measure the run,
-		// centre it, box it in its band, paint each cell. The course row and
-		// #324's duel row were this block twice.
-		let tempPlate: FloorBox | null = null;
-		let scoopPlate: FloorBox | null = null;
-		const duelPlates: FloorBox[] = [];
-		const drawBandRow = (
-			rowCells: FloorCell[],
-			label: string,
-			band: number,
-			plates: readonly DuelBandPlate[] = [],
-		): FloorBox => {
-			const run = floorRunWidths(ctx, rowCells, scale);
-			let rowX = (w - run.total) / 2;
-			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
-			// **A plate behind each cell of the duel band** (#945, the principal's
-			// ruling): the hull-temperature cell's plate since #931, #597's
-			// docking-notice plate, now under SHD, HEAT and the armed group too, so
-			// the band reads over a star disc. Short of half a cell gap each side,
-			// so a plate never reaches the next cell's ink and two plates never
-			// touch, and the fit is the run's as before. TEMP and the scoop's line
-			// (#932) share one plate; `duelBandPlates` owns which cells go
-			// together. Drawn before any cell, so no ink is under a plate.
-			const cellX: number[] = [];
-			for (let i = 0, x = rowX; i < rowCells.length; i++) {
-				cellX.push(x);
-				x += run.widths[i] + cellGap;
-			}
-			const pad = (cellGap / 2) * 0.8;
-			for (const span of plates) {
-				const plateFrom = cellX[span.from];
-				const plateTo = cellX[span.to] + run.widths[span.to];
-				const plate = floorBox(
-					span.label,
-					plateFrom - pad,
-					plateTo - plateFrom + 2 * pad,
-					box.top + FLOOR_TEMP_PLATE_INSET * box.height,
-				);
-				plate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
-				ctx.fillStyle = PROMPT_PLATE_FILL;
-				ctx.fillRect(plate.x, plate.top, plate.width, plate.height);
-				duelPlates.push(plate);
-				const spanned = rowCells.slice(span.from, span.to + 1);
-				if (spanned.some((c) => c.label === HULL_TEMP_LABEL)) tempPlate = plate;
-				if (spanned.some((c) => c.label === SCOOP_LABEL)) scoopPlate = plate;
-			}
-			for (const [i, cell] of rowCells.entries()) {
-				drawFloorCell(
-					ctx,
-					cell,
-					{ x: rowX, baselineY: box.y, labelWidth: run.labelWidths[i] },
-					floorType,
-				);
-				rowX += run.widths[i] + cellGap;
-			}
-			return box;
+			return { text: runs.map((run) => run.text).join(""), runs };
 		};
-		const courseBox =
-			courseRow === null
-				? null
-				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
-		// The armed group stays readable in peace; combat adds shields and heat.
-		// The scoop's line shows only out of combat (#932): `duelBandCells`
-		// owns which, so the fit above takes the row as one or the other.
-		const duelRow: FloorCell[] = [
-			...duelBandCells({
-				fighting: this.duelRowShown(),
-				condition: this.condition,
-				scooping: this.scooping,
-				fuelLy: this.commander.fuelLy,
-			}),
-			{
-				label: "",
-				value: this.armedFireGroup.label(this.fireGroups),
-				tone: "passive",
-			},
-		];
-		const duelBox = drawBandRow(
-			duelRow,
-			DUEL_ROW_LABELS.join(" "),
-			DUEL_BAND,
-			duelBandPlates(duelRow),
-		);
-		// **The strip's own save, closed once for both runs.** It was closed at
-		// the end of the cell loop until the course block was pasted in there
-		// with a save/restore pair of its own, which read as the closing one —
-		// so `ctx.save()` ran every frame with no match, pushing an entry onto
-		// the 2D state stack and leaking `textAlign`, the value font and the
-		// last cell's fill into every later draw on the overlay.
-		ctx.restore();
-
-		this.floorRender = {
-			cells,
-			boxes,
-			// **Written by the draw, from what the draw drew.** `null` is the
-			// row that was not painted, which is the state #117 D2 chose — and
-			// a record assembled beside the draw would let a probe assert a
-			// course row that never landed.
-			courseRow,
-			courseBox,
-			duelRow,
-			duelBox,
-			duelPlates,
-			tempPlate,
-			scoopPlate,
-			baselineY,
-			glassBottomY,
-			scale,
-			marginPx: FLOOR_MARGIN_PX,
-			overflowPx: this.floorFit.overflowPx,
-			// The scalars the cells were built from, stamped by the draw — so a
-			// check can compare the instrument against the ship without
-			// restating the projection that maps one to the other.
-			source: {
-				regime: this.regime,
-				spoolLeftS: this.spoolLeftS,
-				jumpChargeLeftS: this.jumpCharge.leftS,
-				throttle: this.throttle,
-				assist: this.assist,
-				chargeAu: this.chargeAu,
-			},
-		};
+		this.cockpit.text.write("status", [
+			line(cells.slice(0, 2)),
+			line(cells.slice(2)),
+		]);
+		const course = courseCue(this.courseCueState());
+		if (course) this.cockpit.text.write("course", [line([course])]);
+		this.cockpit.text.write("combat", [
+			line(
+				duelBandCells({
+					fighting: this.duelRowShown(),
+					condition: this.condition,
+					scooping: this.scooping,
+					fuelLy: this.commander.fuelLy,
+				}),
+			),
+		]);
+		this.cockpit.text.write("lasers", [
+			{ text: this.armedFireGroup.label(this.fireGroups) },
+		]);
+		this.floorRender = null;
+		return;
 	}
 
 	/**
@@ -22020,7 +22534,8 @@ class Game {
 		// the strip — or the course row #117 put above it — cannot leave this
 		// line sitting on top of either. The course band is subtracted whether
 		// or not a course is set: see `FLOOR_BANDS`.
-		ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
+		if (this.view !== "cockpit")
+			ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -22082,17 +22597,17 @@ class Game {
 		}
 		const strokes = this.cockpitStrokes;
 		strokes.length = 0;
-		const miningEnd = mining && this.miningBeamEnd(camPos, mining);
-		if (mining && miningEnd)
-			for (const stroke of miningBeamStrokes(
-				this.gunTracer.firedPorts,
-				miningEnd,
-				mining.distKm,
-				mining.hit !== null,
+		if (mining)
+			for (const stroke of mountBeamStrokes(
+				this.miningBeamSegments(mining),
+				camPos,
+				this.cameraRotation(),
+				(this.nearCamera.fov * Math.PI) / 180,
+				this.nearCamera.aspect,
 				this.world.gameTime,
 			))
 				strokes.push(stroke);
-		else if (this.gunFeedback.tracerLeftS > 0)
+		if (this.gunFeedback.tracerLeftS > 0)
 			for (const stroke of tracerStrokes(
 				this.gunTracer.firedPorts,
 				this.onFrame(this.beamAim()) ?? TRACER_AIM,
@@ -22122,6 +22637,116 @@ class Game {
 		if (!dir) return null;
 		const m = this.markerNdc(dir);
 		return m.behind || !m.onScreen ? null : ndcToPx(m, 1, 1);
+	}
+
+	private oreLine() {
+		const hold = this.minedHold();
+		const ore = this.fragments.filter((f) => f.ore).length;
+		return `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`;
+	}
+
+	private presentCockpitReadouts(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+	) {
+		this.drawFlightFloor();
+		const target = this.targetBody();
+		const prompt = this.cruisePrompt(
+			target ? length(sub(target.pos, this.world.ship.pos)) : null,
+		);
+		const notice =
+			this.dockingNotice?.text === prompt ? this.dockingNotice : null;
+		this.cockpit.text.write("prompt", [
+			{
+				text: prompt,
+				fill: notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL,
+			},
+		]);
+		const notices: { text: string; fill: string; alpha?: number }[] = [];
+		const arming = ejectArming(this.ejectHold);
+		for (const [value, lifeS, fill] of [
+			[
+				this.scoop,
+				SCOOP_NOTICE_S,
+				this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
+			],
+			[this.charged, CHARGE_NOTICE_S, FLOOR_TONE_FILL.action],
+			[this.ejectRefused, EJECT_REFUSED_S, FLOOR_TONE_FILL.refused],
+		] as const) {
+			if (
+				value.left > 0 &&
+				value.text &&
+				!(value === this.ejectRefused && arming !== null)
+			)
+				notices.push({
+					text: value.text,
+					fill,
+					alpha: Math.min(1, value.left / (lifeS * 0.4)),
+				});
+		}
+
+		if (arming !== null)
+			notices.push({
+				text: ejectArmingText(arming),
+				fill: FLOOR_TONE_FILL.action,
+			});
+		else if (
+			this.ejectWarningDue &&
+			!(this.ejectRefused.left > 0 && this.ejectRefused.text)
+		)
+			notices.push({
+				text: ejectWarningText(ejectPrompt(this.bindings)),
+				fill: FLOOR_TONE_FILL.action,
+			});
+		if (MINING_ON) {
+			this.cockpit.text.write("ore", [
+				{
+					text: this.oreLine(),
+					fill: "#ffd28c",
+				},
+			]);
+			if (isRockTargetId(this.targetId))
+				this.cockpit.text.write("survey", [
+					{ text: this.surveyDesignation(this.targetId), fill: "#ffd28c" },
+				]);
+			if (this.miningNotice.left > 0)
+				notices.push({ text: this.miningNotice.text, fill: "#ffd28c" });
+		}
+		this.cockpit.text.write("notices", notices);
+		this.drawFirstDayControls(ctx, w, h);
+		this.drawMissileHud(ctx, w, h, true);
+		const director = this.directorState();
+		if (director) {
+			const text =
+				director.blocking?.text ??
+				(director.laneWait
+					? laneWaitText(director.laneWait)
+					: director.grantRemainingS === null
+						? "NO GRANT"
+						: `CLEARED · ${duration(director.grantRemainingS)} left`);
+			this.cockpit.text.write("clearance", [
+				{
+					text,
+					fill: director.blocking
+						? FLOOR_TONE_FILL.refused
+						: director.laneWait
+							? FLOOR_TONE_FILL.action
+							: FLOOR_TONE_FILL.confirmed,
+				},
+			]);
+		}
+	}
+
+	private drawReadoutNotice(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		glassBottom: number,
+		notice: Parameters<typeof drawGlassNotice>[4],
+	) {
+		if (this.view !== "cockpit")
+			drawGlassNotice(ctx, w, h, glassBottom, notice);
 	}
 
 	/**
@@ -22161,7 +22786,7 @@ class Game {
 			// still take.
 			if (!this.ejectWarningDue) return;
 			const text = ejectWarningText(ejectPrompt(this.bindings));
-			drawGlassNotice(ctx, w, h, glassBottom, {
+			this.drawReadoutNotice(ctx, w, h, glassBottom, {
 				text,
 				alpha: 1,
 				fill: FLOOR_TONE_FILL.action,
@@ -22170,7 +22795,7 @@ class Game {
 			this.ejectWarningRender = { text };
 			return;
 		}
-		drawGlassNotice(ctx, w, h, glassBottom, {
+		this.drawReadoutNotice(ctx, w, h, glassBottom, {
 			text: line.text,
 			alpha: line.alpha,
 			fill: line.refused ? FLOOR_TONE_FILL.refused : FLOOR_TONE_FILL.action,
@@ -22211,6 +22836,7 @@ class Game {
 	 * same place whichever layer rendered it — see that module's docstring.
 	 */
 	private drawMarkers(camPos: Vec3) {
+		this.cockpit.text.begin();
 		const ctx = this.overlayCtx;
 		if (!ctx) return;
 		const w = this.overlay.width;
@@ -22227,6 +22853,7 @@ class Game {
 		this.hostileFireRender = { beam: null, rim: 0 };
 		this.ejectRender = null;
 		this.ejectWarningRender = null;
+		if (this.view === "cockpit") this.presentCockpitReadouts(ctx, w, h);
 		if (!this.flightGlassShown()) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
@@ -22264,6 +22891,7 @@ class Game {
 		if (MINING_ON) this.drawDeepDepositCue(ctx, camPos, place);
 		if (MINING_ON) this.drawImpact(ctx, camPos, place, h);
 		if (MINING_ON) this.drawFragments(ctx, camPos, place, w, h);
+		if (MINING_ON) this.drawDrill(ctx, camPos, place, w, h);
 
 		// The attitude reference: a short level line rolled to the system's
 		// reference plane. Faint, because it is a background fact rather than
@@ -22329,8 +22957,12 @@ class Game {
 		// within a few pixels of each other share one marker.** A kill drops them
 		// at one point, and at any range their labels printed over each other
 		// into an unreadable smear on the first captured frame.
-		const cargoMarks: { x: number; y: number; goods: string[]; km: number }[] =
-			[];
+		const cargoMarks: {
+			x: number;
+			y: number;
+			goods: string[];
+			km: number;
+		}[] = [];
 		for (const canister of this.canisters) {
 			// The selected canister is drawn by the marker loop below, with the
 			// ring and the label every selected target gets. Drawing it here too
@@ -22347,12 +22979,17 @@ class Game {
 				near.goods.push(canister.commodity);
 				near.km = Math.min(near.km, km);
 			} else
-				cargoMarks.push({ x: at.x, y: at.y, goods: [canister.commodity], km });
+				cargoMarks.push({
+					x: at.x,
+					y: at.y,
+					goods: [canister.commodity],
+					km,
+				});
 		}
 		ctx.strokeStyle = CARGO_CONTACT_CSS;
 		ctx.fillStyle = CARGO_CONTACT_CSS;
 		ctx.lineWidth = 1.5;
-		ctx.font = "11px ui-monospace, Menlo, monospace";
+		ctx.font = "11px Menlo, monospace";
 		for (const mark of cargoMarks) {
 			ctx.beginPath();
 			ctx.moveTo(mark.x, mark.y - 6);
@@ -22424,7 +23061,7 @@ class Game {
 			// reads as one event even when three land within a few seconds of
 			// each other.
 			const alpha = Math.min(1, notice.left / (lifeS * 0.4));
-			drawGlassNotice(ctx, w, h, glassBottom, {
+			this.drawReadoutNotice(ctx, w, h, glassBottom, {
 				text: notice.text,
 				alpha,
 				fill,
@@ -22499,7 +23136,7 @@ class Game {
 		const chaseMining = MINING_ON && this.view === "chase" && this.miningBeam;
 		this.chaseMiningRender = 0;
 		if (chaseMining) this.drawChaseMiningBeam(ctx, w, h, chaseMining);
-		else if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
+		if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
 			// From the hull's muzzles, its range along the beam, as the camera
 			// sees it (#607 D3). Not the cockpit's ports on a glass chase does
 			// not have.
@@ -22564,8 +23201,7 @@ class Game {
 			}
 		this.drawDockingDirector(ctx, w, h, camPos);
 		this.drawMissileHud(ctx, w, h, shipCues);
-		if (shipCues) this.drawFlightFloor(ctx, w, h);
-		else this.floorRender = null;
+		this.floorRender = null;
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of
@@ -22600,7 +23236,7 @@ class Game {
 			// One predicate for the plate and the tone, so the two cannot disagree.
 			const notice =
 				this.dockingNotice?.text === prompt ? this.dockingNotice : null;
-			if (notice) {
+			if (notice && this.view !== "cockpit") {
 				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
 				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
 				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;
@@ -22619,18 +23255,26 @@ class Game {
 			}
 			// §4's tone: the notice's own, else the prompt's amber.
 			ctx.fillStyle = notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL;
-			ctx.fillText(prompt, x, y);
+			if (this.view !== "cockpit") ctx.fillText(prompt, x, y);
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
 		} else {
 			this.cockpitPrompt.reset();
 		}
 		this.drawFirstDayControls(ctx, w, h);
-		this.combatRig?.drawOverlay(ctx, w, h, this.view, this.bindings);
+		this.combatRig?.drawOverlay(
+			ctx,
+			w,
+			h,
+			this.view,
+			this.bindings,
+			(text, fill) =>
+				this.cockpit.text.append("prototype-combat", [{ text, fill }]),
+		);
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
-		ctx.font = "11px ui-monospace, Menlo, monospace";
+		ctx.font = "11px Menlo, monospace";
 		this.markerLabels.beginFrame(this.world.gameTime);
 		const labelBounds = (
 			x: number,
@@ -22936,8 +23580,16 @@ class Game {
 				: []),
 			...(control.noticeUntil > now ? [control.notice] : []),
 		];
+		if (this.view === "cockpit") {
+			this.cockpit.text.write(
+				"missiles",
+				lines.map((text) => ({ text, fill: incoming ? "#ff8068" : "#b8e9ef" })),
+			);
+			this.missileRender = null;
+			return;
+		}
 		ctx.save();
-		ctx.font = "13px monospace";
+		ctx.font = "13px Menlo, monospace";
 		ctx.textAlign = "center";
 		const width = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 20;
 		const fit = Math.min(1, (w - 24) / width),
@@ -23164,11 +23816,11 @@ function paintNameplates(mesh: StationMesh, name: string) {
 	const text = name.toUpperCase();
 	const margin = canvas.width * 0.06;
 	let size = 132;
-	ctx.font = `bold ${size}px monospace`;
+	ctx.font = `bold ${size}px Menlo, monospace`;
 	const width = ctx.measureText(text).width;
 	if (width > canvas.width - margin * 2) {
 		size = Math.floor((size * (canvas.width - margin * 2)) / width);
-		ctx.font = `bold ${size}px monospace`;
+		ctx.font = `bold ${size}px Menlo, monospace`;
 	}
 	ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 	const texture = new THREE.CanvasTexture(canvas);
@@ -23369,7 +24021,7 @@ if (postcard) {
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			prepareCourierHullModel,
 			prepareTugHullModel,
-			prepareLongwallModel,
+			(p) => prepareLongwallModel(p, { posableStruts: MINING_ON }),
 			preparePorterModel,
 			prepareVoyagerHullModel,
 			prepareInterceptorHullModel,
@@ -23795,6 +24447,7 @@ if (postcard) {
 				// What the death took, said where the pilot wakes (node #704).
 				// After the restore, so a docked wake is on the console.
 				if (plan.wake) game.showWake(plan.wake);
+				game.sayScoopNotice();
 				return;
 			}
 			if (plan.wake) game.showWake(plan.wake);

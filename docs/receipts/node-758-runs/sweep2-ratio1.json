@@ -1,0 +1,1410 @@
+{
+  "measuredAt": "2026-10-27T02:10:20.997Z",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "seed": 47,
+  "subject": "planet-4",
+  "sunAngleDeg": 70,
+  "mode": "close-detail",
+  "closeDetail": {
+    "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+    "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+    "label": "sweep2-ratio1",
+    "orderSeed": 20261028,
+    "hostLoadAtStart": "4.52 / 5.53 / 5.90",
+    "narrowed": false,
+    "orders": [
+      {
+        "pixelRatio": 1,
+        "order": [
+          {
+            "arm": "cap-6",
+            "radii": 1.2
+          },
+          {
+            "arm": "analytic-gradient",
+            "radii": 1.2
+          },
+          {
+            "arm": "full-res",
+            "radii": 200
+          },
+          {
+            "arm": "cap-2",
+            "radii": 200
+          },
+          {
+            "arm": "cap-0",
+            "radii": 200
+          },
+          {
+            "arm": "analytic-gradient",
+            "radii": 2
+          },
+          {
+            "arm": "full-res",
+            "radii": 1.2
+          },
+          {
+            "arm": "cap-2",
+            "radii": 1.6
+          },
+          {
+            "arm": "clouds-at-ground",
+            "radii": 1.6
+          },
+          {
+            "arm": "cap-6",
+            "radii": 1.5
+          },
+          {
+            "arm": "clouds-at-ground",
+            "radii": 2
+          },
+          {
+            "arm": "analytic-gradient",
+            "radii": 1.6
+          },
+          {
+            "arm": "cap-2",
+            "radii": 2
+          },
+          {
+            "arm": "cap-4",
+            "radii": 2
+          },
+          {
+            "arm": "cap-6",
+            "radii": 2
+          },
+          {
+            "arm": "cap-4",
+            "radii": 1.5
+          },
+          {
+            "arm": "cap-2",
+            "radii": 1.5
+          },
+          {
+            "arm": "full-res",
+            "radii": 1.6
+          },
+          {
+            "arm": "cap-0",
+            "radii": 1.5
+          },
+          {
+            "arm": "analytic-gradient",
+            "radii": 1.5
+          },
+          {
+            "arm": "clouds-at-ground",
+            "radii": 200
+          },
+          {
+            "arm": "cap-0",
+            "radii": 1.6
+          },
+          {
+            "arm": "analytic-gradient",
+            "radii": 200
+          },
+          {
+            "arm": "cap-6",
+            "radii": 200
+          },
+          {
+            "arm": "clouds-at-ground",
+            "radii": 1.5
+          },
+          {
+            "arm": "cap-0",
+            "radii": 2
+          },
+          {
+            "arm": "cap-2",
+            "radii": 1.2
+          },
+          {
+            "arm": "interim",
+            "radii": 1.2
+          },
+          {
+            "arm": "cap-4",
+            "radii": 200
+          },
+          {
+            "arm": "interim",
+            "radii": 1.6
+          },
+          {
+            "arm": "clouds-at-ground",
+            "radii": 1.2
+          },
+          {
+            "arm": "full-res",
+            "radii": 2
+          },
+          {
+            "arm": "cap-4",
+            "radii": 1.2
+          },
+          {
+            "arm": "interim",
+            "radii": 200
+          },
+          {
+            "arm": "cap-4",
+            "radii": 1.6
+          },
+          {
+            "arm": "cap-6",
+            "radii": 1.6
+          },
+          {
+            "arm": "cap-0",
+            "radii": 1.2
+          },
+          {
+            "arm": "interim",
+            "radii": 1.5
+          },
+          {
+            "arm": "full-res",
+            "radii": 1.5
+          },
+          {
+            "arm": "interim",
+            "radii": 2
+          }
+        ],
+        "unpinned": [
+          {
+            "radii": 2,
+            "surfacePath": "screen-space",
+            "halfResEngaged": true,
+            "groundCap": 6,
+            "footprintProgram": true
+          },
+          {
+            "radii": 1.6,
+            "surfacePath": "screen-space",
+            "halfResEngaged": true,
+            "groundCap": 6,
+            "footprintProgram": true
+          },
+          {
+            "radii": 1.5,
+            "surfacePath": "screen-space",
+            "halfResEngaged": true,
+            "groundCap": 6,
+            "footprintProgram": true
+          },
+          {
+            "radii": 1.2,
+            "surfacePath": "screen-space",
+            "halfResEngaged": true,
+            "groundCap": 6,
+            "footprintProgram": true
+          }
+        ]
+      }
+    ]
+  },
+  "farColumns": [
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "cells": 8,
+      "floorMs": 3.924646781789639,
+      "factor": 2,
+      "outliers": [],
+      "excursion": false
+    }
+  ],
+  "arms": [
+    {
+      "name": "interim",
+      "prices": "the shipped frame: High, the interim cap, half-res ground"
+    },
+    {
+      "name": "cap-0",
+      "prices": "the band off; interim minus this is what the band costs"
+    },
+    {
+      "name": "cap-2",
+      "prices": "the cap ladder, 2 extra octaves"
+    },
+    {
+      "name": "cap-4",
+      "prices": "the cap ladder, 4 extra octaves"
+    },
+    {
+      "name": "cap-6",
+      "prices": "the cap ladder, 6 extra octaves; the interim state by override"
+    },
+    {
+      "name": "full-res",
+      "prices": "the ground drawn at full resolution inside the band (D11)"
+    },
+    {
+      "name": "analytic-gradient",
+      "prices": "the analytic relief against screen-space (D8)"
+    },
+    {
+      "name": "clouds-at-ground",
+      "prices": "the clouds on the ground's footprint, not their own (D9)"
+    }
+  ],
+  "driftControl": [
+    {
+      "pixelRatio": 1,
+      "cell": "interim at 200r",
+      "beforeMs": 4.3878894251864855,
+      "afterMs": 5.3276505061267985,
+      "beforeSettled": true,
+      "afterSettled": true,
+      "beforeStaleSamples": 0,
+      "afterStaleSamples": 0
+    }
+  ],
+  "rows": [
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "cap-6",
+      "ms": 6.105006105006105,
+      "spreadMs": 0.5892968415508104,
+      "samplesMs": [
+        6.0313630880579,
+        5.743825387708214,
+        6.105006105006105,
+        6.188118811881188,
+        6.333122229259025
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 157.9,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.06335801477059236,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 0,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "analytic-gradient",
+      "ms": 7.230657989877078,
+      "spreadMs": 2.3859515174651644,
+      "samplesMs": [
+        8.149959250203748,
+        8.960573476702509,
+        6.574621959237344,
+        7.230657989877078,
+        6.7842605156037985
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 147.4,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.2208799302125635,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 1,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "full-res",
+      "ms": 3.924646781789639,
+      "spreadMs": 0.5359829928088118,
+      "samplesMs": [
+        4.363001745200698,
+        3.924646781789639,
+        3.8270187523918864,
+        4.2283298097251585,
+        3.8669760247486464
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 258.6,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.023759780846999156,
+      "attempts": 2,
+      "discarded": [
+        {
+          "samplesMs": [
+            4.203446826397646,
+            8.237232289950576,
+            5.307855626326964,
+            4.203446826397646,
+            4.317789291882557
+          ],
+          "trend": 0.4599617876636258
+        }
+      ],
+      "seq": 2,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "cap-2",
+      "ms": 4.3122035360068995,
+      "spreadMs": 1.0746854736624556,
+      "samplesMs": [
+        4.040404040404041,
+        5.115089514066496,
+        4.071661237785016,
+        4.612546125461255,
+        4.3122035360068995
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 231.9,
+      "worstMs": 17,
+      "peakRiseMs": 0,
+      "trend": 0.025854382672334083,
+      "attempts": 1,
+      "discarded": [],
+      "seq": 3,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "cap-0",
+      "ms": 4.122011541632316,
+      "spreadMs": 0.6179797299396061,
+      "samplesMs": [
+        4.323389537397319,
+        4.030632809351069,
+        4.122011541632316,
+        4.3535045711798,
+        3.7355248412401942
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 267.7,
+      "worstMs": 16,
+      "peakRiseMs": 0,
+      "trend": 0.032759546395210094,
+      "attempts": 1,
+      "discarded": [],
+      "seq": 4,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "analytic-gradient",
+      "ms": 4.81000481000481,
+      "spreadMs": 0.9006555014674085,
+      "samplesMs": [
+        5.411255411255411,
+        4.761904761904762,
+        4.81000481000481,
+        4.510599909788002,
+        4.8169556840077075
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 207.6,
+      "worstMs": 25,
+      "peakRiseMs": 0,
+      "trend": 0.09065661103396946,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 5,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "full-res",
+      "ms": 9.285051067780872,
+      "spreadMs": 0.3104505413481302,
+      "samplesMs": [
+        9.285051067780872,
+        9.363295880149813,
+        9.285051067780872,
+        9.442870632672332,
+        9.132420091324201
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 109.5,
+      "worstMs": 24,
+      "peakRiseMs": 0,
+      "trend": 0.003932978763006627,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 6,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "cap-2",
+      "ms": 6.357279084551811,
+      "spreadMs": 1.4226692736119855,
+      "samplesMs": [
+        6.702412868632709,
+        7.680491551459294,
+        6.357279084551811,
+        6.313131313131313,
+        6.257822277847309
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 159.8,
+      "worstMs": 26,
+      "peakRiseMs": 0,
+      "trend": 0.14413789821113526,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 7,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "clouds-at-ground",
+      "ms": 6.176652254478073,
+      "spreadMs": 0.8416340359586396,
+      "samplesMs": [
+        5.760368663594471,
+        5.491488193300385,
+        6.176652254478073,
+        6.329113924050633,
+        6.333122229259025
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 157.9,
+      "worstMs": 17,
+      "peakRiseMs": 0,
+      "trend": 0.12534635965889984,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "cap-6",
+      "ms": 6.605019815059445,
+      "spreadMs": 0.39246467817896313,
+      "samplesMs": [
+        6.802721088435374,
+        6.605019815059445,
+        6.410256410256411,
+        6.618133686300464,
+        6.600660066006601
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 151.5,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.014293827010863056,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 9,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "clouds-at-ground",
+      "ms": 6.172839506172839,
+      "spreadMs": 1.647418593165411,
+      "samplesMs": [
+        6.321112515802782,
+        6.697923643670461,
+        6.097560975609756,
+        6.172839506172839,
+        5.05050505050505
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 198,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.15999612180906594,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 10,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "analytic-gradient",
+      "ms": 6.798096532970768,
+      "spreadMs": 0.3003341564029398,
+      "samplesMs": [
+        6.798096532970768,
+        6.648936170212766,
+        6.666666666666667,
+        6.887052341597797,
+        6.949270326615705
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 143.9,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.02894987865522212,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 11,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "cap-2",
+      "ms": 5.399568034557236,
+      "spreadMs": 0.5736466718932265,
+      "samplesMs": [
+        5.186721991701244,
+        5.558643690939411,
+        5.399568034557236,
+        5.341880341880342,
+        5.760368663594471
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 173.6,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.03321276663582619,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 12,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "cap-4",
+      "ms": 5.425935973955507,
+      "spreadMs": 1.1132606998608425,
+      "samplesMs": [
+        5.425935973955507,
+        5.7537399309551205,
+        4.68384074941452,
+        5.107252298263534,
+        5.797101449275362
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 172.5,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.025248828472193743,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 13,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "cap-6",
+      "ms": 5.117707267144319,
+      "spreadMs": 0.7726804817830777,
+      "samplesMs": [
+        4.918839153959666,
+        5.691519635742743,
+        5.50357732526142,
+        5.058168942842691,
+        5.117707267144319
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 195.4,
+      "worstMs": 17,
+      "peakRiseMs": 0,
+      "trend": 0.04269731379878439,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 14,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "cap-4",
+      "ms": 6.75219446320054,
+      "spreadMs": 0.794763908368397,
+      "samplesMs": [
+        6.587615283267457,
+        6.451612903225806,
+        6.75219446320054,
+        6.807351940095303,
+        7.246376811594203
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 138,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.07780372815678739,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 15,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "cap-2",
+      "ms": 6.583278472679394,
+      "spreadMs": 0.9323912728176866,
+      "samplesMs": [
+        6.583278472679394,
+        6.863417982155114,
+        6.920415224913495,
+        5.9880239520958085,
+        6.510416666666667
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 153.6,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.07586993169760112,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 16,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "full-res",
+      "ms": 7.776049766718508,
+      "spreadMs": 0.5817096387524385,
+      "samplesMs": [
+        7.776049766718508,
+        7.541478129713425,
+        7.380073800738008,
+        7.849293563579278,
+        7.961783439490446
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 125.6,
+      "worstMs": 20,
+      "peakRiseMs": 0,
+      "trend": 0.03222119848417298,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 17,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "cap-0",
+      "ms": 6.657789613848203,
+      "spreadMs": 0.7490034906073291,
+      "samplesMs": [
+        6.105006105006105,
+        6.854009595613434,
+        6.657789613848203,
+        6.527415143603133,
+        6.793478260869565
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 147.2,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.02792478319444122,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": false,
+      "seq": 18,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "analytic-gradient",
+      "ms": 6.949270326615705,
+      "spreadMs": 0.7068876029344553,
+      "samplesMs": [
+        7.320644216691069,
+        6.613756613756614,
+        7.204610951008645,
+        6.949270326615705,
+        6.798096532970768
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 147.1,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.013605075995392032,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 19,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "clouds-at-ground",
+      "ms": 4.681647940074907,
+      "spreadMs": 1.6662356187565965,
+      "samplesMs": [
+        4.681647940074907,
+        4.6360686138154845,
+        4.151100041511,
+        5.186721991701244,
+        5.817335660267597
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 171.9,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.18098222760107005,
+      "attempts": 1,
+      "discarded": [],
+      "seq": 20,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "cap-0",
+      "ms": 6.684491978609626,
+      "spreadMs": 0.8573205401563619,
+      "samplesMs": [
+        6.949270326615705,
+        6.25,
+        6.635700066357002,
+        7.107320540156362,
+        6.684491978609626
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 149.6,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.04489204156652872,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": false,
+      "seq": 21,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "analytic-gradient",
+      "ms": 4.948045522018803,
+      "spreadMs": 1.0976292028345043,
+      "samplesMs": [
+        5.107252298263534,
+        4.9603174603174605,
+        4.948045522018803,
+        4.0096230954290295,
+        4.8169556840077075
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 207.6,
+      "worstMs": 17,
+      "peakRiseMs": 0,
+      "trend": 0.14059705466351147,
+      "attempts": 1,
+      "discarded": [],
+      "seq": 22,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "cap-6",
+      "ms": 4.708097928436912,
+      "spreadMs": 1.1687596008857546,
+      "samplesMs": [
+        4.677268475210477,
+        4.708097928436912,
+        4.901960784313726,
+        3.9463299131807417,
+        5.115089514066496
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 195.5,
+      "worstMs": 17,
+      "peakRiseMs": 0,
+      "trend": 0.03575013594736149,
+      "attempts": 1,
+      "discarded": [],
+      "seq": 23,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "clouds-at-ground",
+      "ms": 6.613756613756614,
+      "spreadMs": 0.997080248028416,
+      "samplesMs": [
+        7.374631268436579,
+        6.414368184733804,
+        6.613756613756614,
+        6.377551020408163,
+        6.680026720106881
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 149.7,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.05601511453275789,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 24,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "cap-0",
+      "ms": 5.558643690939411,
+      "spreadMs": 0.7971732072567583,
+      "samplesMs": [
+        5.571030640668524,
+        4.868549172346641,
+        5.665722379603399,
+        5.558643690939411,
+        5.515719801434087
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 181.3,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.060805481707888145,
+      "attempts": 2,
+      "discarded": [
+        {
+          "samplesMs": [
+            5.9171597633136095,
+            5.640157924421883,
+            4.3478260869565215,
+            3.802281368821293,
+            3.972983710766786
+          ],
+          "trend": 0.4864210505280651
+        }
+      ],
+      "footprintProgram": false,
+      "seq": 25,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "cap-2",
+      "ms": 6.968641114982578,
+      "spreadMs": 1.1691042258727853,
+      "samplesMs": [
+        6.238303181534622,
+        7.407407407407407,
+        6.968641114982578,
+        7.067137809187279,
+        6.8493150684931505
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 146,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.019840834742442665,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 26,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "interim",
+      "ms": 6.949270326615705,
+      "spreadMs": 0.32611273618467784,
+      "samplesMs": [
+        6.906077348066297,
+        7.194244604316546,
+        6.949270326615705,
+        7.002801120448178,
+        6.868131868131869
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 145.6,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.016537385336058655,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 27,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "cap-4",
+      "ms": 5.268703898840885,
+      "spreadMs": 0.6798689995608624,
+      "samplesMs": [
+        5.274261603375527,
+        5.4945054945054945,
+        4.814636494944632,
+        5.243838489774515,
+        5.268703898840885
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 189.8,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.02437323910751595,
+      "attempts": 1,
+      "discarded": [],
+      "seq": 28,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "interim",
+      "ms": 6.901311249137335,
+      "spreadMs": 0.9494240460763139,
+      "samplesMs": [
+        6.724949562878279,
+        6.983240223463688,
+        6.25,
+        6.901311249137335,
+        7.199424046076314
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 138.9,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.028635838501651908,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 29,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "clouds-at-ground",
+      "ms": 6.963788300835655,
+      "spreadMs": 0.8384128027679889,
+      "samplesMs": [
+        7.58150113722517,
+        6.887052341597797,
+        6.743088334457181,
+        6.963788300835655,
+        7.58150113722517
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 131.9,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.005303637253729169,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 30,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "full-res",
+      "ms": 7.042253521126761,
+      "spreadMs": 0.9444578410095659,
+      "samplesMs": [
+        7.299270072992701,
+        7.042253521126761,
+        6.63129973474801,
+        6.7842605156037985,
+        7.575757575757576
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 132,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.0012895768793698657,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 31,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "cap-4",
+      "ms": 6.688963210702341,
+      "spreadMs": 0.13441998448793413,
+      "samplesMs": [
+        6.688963210702341,
+        6.626905235255135,
+        6.644518272425249,
+        6.70690811535882,
+        6.761325219743069
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 147.9,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.011442354643468095,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 32,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 200,
+      "arm": "interim",
+      "ms": 5.211047420531527,
+      "spreadMs": 0.38548919542622606,
+      "samplesMs": [
+        5.058168942842691,
+        5.091649694501018,
+        5.443658138268917,
+        5.324813631522896,
+        5.211047420531527
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 191.9,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.038034415047611354,
+      "attempts": 1,
+      "discarded": [],
+      "seq": 33,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "cap-4",
+      "ms": 6.896551724137931,
+      "spreadMs": 0.9912298889458757,
+      "samplesMs": [
+        6.397952655150352,
+        7.072135785007072,
+        6.265664160401003,
+        7.2568940493468785,
+        6.896551724137931
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 145,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.050731465970938944,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 34,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.6,
+      "arm": "cap-6",
+      "ms": 6.958942240779402,
+      "spreadMs": 0.5923792216034007,
+      "samplesMs": [
+        6.887052341597797,
+        7.077140835102618,
+        6.910850034554251,
+        7.479431563201198,
+        6.958942240779402
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 143.7,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.03395689398449209,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 35,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.2,
+      "arm": "cap-0",
+      "ms": 6.87757909215956,
+      "spreadMs": 1.1607213788228279,
+      "samplesMs": [
+        6.341154090044388,
+        6.949270326615705,
+        7.501875468867216,
+        6.761325219743069,
+        6.87757909215956
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 145.4,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.026220373730555944,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": false,
+      "seq": 36,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "interim",
+      "ms": 7.541478129713425,
+      "spreadMs": 1.408202781200493,
+      "samplesMs": [
+        6.793478260869565,
+        7.541478129713425,
+        6.688963210702341,
+        7.892659826361483,
+        8.097165991902834
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 123.5,
+      "worstMs": 18,
+      "peakRiseMs": 0,
+      "trend": 0.1154429342225593,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 37,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 1.5,
+      "arm": "full-res",
+      "ms": 8.539709649871904,
+      "spreadMs": 0.47470260236217676,
+      "samplesMs": [
+        8.55431993156544,
+        8.183306055646481,
+        8.4530853761623,
+        8.539709649871904,
+        8.658008658008658
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 115.5,
+      "worstMs": 20,
+      "peakRiseMs": 0,
+      "trend": 0.027488505300582552,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 38,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    },
+    {
+      "pixelRatio": 1,
+      "radii": 2,
+      "arm": "interim",
+      "ms": 5.115089514066496,
+      "spreadMs": 0.43782587587196,
+      "samplesMs": [
+        5.313496280552604,
+        5.271481286241434,
+        5.115089514066496,
+        5.058168942842691,
+        4.875670404680644
+      ],
+      "settled": true,
+      "staleSamples": 0,
+      "fps": 205.1,
+      "worstMs": 19,
+      "peakRiseMs": 0,
+      "trend": 0.06554748838705969,
+      "attempts": 1,
+      "discarded": [],
+      "footprintProgram": true,
+      "seq": 39,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "buildSha": "8a5903a1cec3c6887c41c3885a8dff333b973500",
+      "lane": "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)",
+      "runExcursion": false
+    }
+  ]
+}

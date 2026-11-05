@@ -55,6 +55,11 @@ except that this one script (with the `triangle-soup.mjs` it imports) and
 the source export it reads are the production asset's build step, as `spikes/coriolis/prepare-flight-asset.mjs`
 is the station's: removing either orphans the shipped file.
 
+**Since node #1147** the script first grafts the two Mining Laser mounts of
+`mounts/` into the export (`mounts/graft-mounts.mjs`), so the figures above
+are the hull before the mounts. The current figures and the shipped checksum
+are in `docs/receipts/node-1147-miner-mounts.md`.
+
 ```sh
 node spikes/longwall-miner/prepare-flight-asset.mjs
 node spikes/longwall-miner/verify-flight-asset.mjs    # checks, writes nothing

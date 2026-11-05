@@ -1,0 +1,30 @@
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:52360 (dev server) — 1 probes, 1 at a time
+     filtered by --only light-rig: 117 of 118 probes were not run.
+
+     │ [probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+     │   ok   every live scene emissive intensity stays inside the shared ceiling — 398 materials, peak 1.00 against 1.00
+     │   ok   the game baked a sky to predict the framings from — Game.skyBake is set
+     │   ok   the station is on screen in both framings — up 3329 px, down 3949 px
+     │   ok   the game ships with the environment on — default quality is high
+     │   ok   both framings mask the station and not something larger — up 3329 px against down 3949 px
+     │   ok   the system's own sky reaches the hull from both sides — Δ 0.29 and 0.26
+     │   ok   the probe's haze tells the two faces apart — the comparison below is about something — the model puts 4.89× the light on the bright face (premise 1.25×); the star 60° off both view axes, the up face 21° off +Y
+     │   ok   a haze baked toward a face lights it more than one baked away, from both sides — the bake is not flipped — up face Δ 0.87 haze toward against 0.36 away; down face 0.72 against 0.40
+     │   ok   the painted player hull is on screen in hull-chase — 25587 px against planet-5
+     │   ok   the hull on screen is the subject the band was calibrated against — measured courier (authored, model 6967208f3169), calibrated courier (authored, model 6967208f3169) at node-887
+     │   ok   the brightest painted hull pixel stays inside the post-tone-map band — 238.21–238.21 of 255, band 131.016–255
+     │   ok   the painted hull distribution is not under-lit beneath that highlight — lower quartile 34.48 ≥ 29.392, median 51.70 ≥ 44.608
+     │   hull-chase painted peak 238.21–238.21 of 255 (same-build noise 0.00, 25587 px, at 736,676 / 736,676 / 736,676 / 736,676 / 736,676)
+     │   hull spread lower quartile 34.48–34.48, median 51.70–51.70 of 255
+     │   finish     hull worn, station worn (not part of the key: the presets reach only the authored courier's glows)
+     │   exposure   bloom strength 0.35  radius 0.6  threshold 1
+     │   probe haze  predicted 4.89× toward over away from the sky model; measured 2.42× on the up face, 1.79× on the down face
+     │   own sky     Δ 0.29 up, 0.26 down (3329 / 3949 px); predicted 1.19× on this pair, at most 1.23× on any pair edge-on to the star — reported, not gated
+     │
+     │ 12/12 checks passed
+ok   probe-light-rig.mjs (17.3s)
+
+1/1 gating probes passed in 17s · peak load 14.3 on 10 cores — PARTIAL RUN, --only light-rig: 117 of 118 probes were not run.
+     This is selected coverage, not a full-suite pass. A repository-selected run satisfies the ordinary PR browser gate; manual filters do not.

@@ -84,6 +84,7 @@ function subjectAt(galaxy: number, system: number) {
 	return Object.assign(
 		Object.create(
 			gameMethods(METHODS, {
+				MINING_ON: false,
 				fieldContactsAt,
 				nearestFieldPlan,
 				fieldCentreVelocity,

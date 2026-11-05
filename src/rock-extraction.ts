@@ -56,6 +56,23 @@ export function firedExtraction(
 	return { rate, grade: grade ?? "E" };
 }
 
+/** The first hitting ray in fired-slot order chooses the cut rock; only rays hitting it contribute. */
+export function firstHitExtraction(
+	rays: readonly {
+		grade: Grade;
+		extractionTPerS: number;
+		met: BeamHit | null;
+	}[],
+) {
+	const hit = rays.find((ray) => ray.met !== null)?.met ?? null;
+	return {
+		hit,
+		cutting: firedExtraction(
+			rays.filter((ray) => hit && ray.met?.id === hit.id),
+		),
+	};
+}
+
 /**
  * The hardpoint `?mining=1` fits a Mining Laser on, on a boot that writes
  * nothing: `fitted` when one is fitted already, else the first free hardpoint,

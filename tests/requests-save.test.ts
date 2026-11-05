@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { migrateEquipment } from "../src/loadout";
+import { grantLegacyScoop, migrateEquipment } from "../src/loadout";
 import { carrierKey } from "../src/carrier-key";
 import type { JobOffer } from "../src/jobs";
 import { firstOffer } from "./helpers/job-board";
@@ -194,7 +194,7 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	// version 2 body out of a current one; if the two ever met, it would be
 	// asserting the migration path against no migration at all. It went red on
 	// #453's bump, which is the tripwire working.
-	expect(SAVE_SCHEMA_VERSION).toBe(16);
+	expect(SAVE_SCHEMA_VERSION).toBe(17);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
 	body.commander.state.ownedEquipment = [];
@@ -431,7 +431,10 @@ const paidTrialWithLead = () => {
 	trial.commander.requests = retained.state;
 	trial.commander.state = {
 		...trial.commander.state,
-		loadout: migrateEquipment(trial.commander.state.hull, []).loadout,
+		loadout: grantLegacyScoop(
+			trial.commander.state.hull,
+			migrateEquipment(trial.commander.state.hull, []).loadout,
+		).loadout,
 	};
 	return trial;
 };

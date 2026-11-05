@@ -122,6 +122,9 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1145: "the Ring scale detail, station key light and blooming beacons",
+	1094: "the miner drive glow and firing vent plumes on the installed Longwall",
+	1142: "the Coriolis scale detail, warm paint, station key light and blooming beacons",
 	1034: "the authored Lance interceptor in the game's chase camera",
 	1073: "the Assembly's authored blocks placed by its own seeded plan",
 	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
@@ -299,6 +302,7 @@ export const SHOT_KINDS = Object.freeze([
 	"shipyard-tab",
 	"docking-notice",
 	"vents",
+	"miner-vents",
 	"cruise-turn",
 	"npc-vents",
 ]);
@@ -313,14 +317,6 @@ export const SHOT_KINDS = Object.freeze([
 export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
 
 /**
- * One clock, and — with two declared exceptions — one seed.
- *
- * **The exceptions are `refinery-cradle-berth` and `ringed-giant`, and each
- * names its own.** `SEED` 47 generates no refinery and no gas giant, so those
- * two carry `seed: 2` and `seed: 5` and their captures navigate. Saying "one
- * seed" of this set would be the class of claim this file's own capture code
- * refuses: a caption asserting a fixture property the frames do not have.
- *
  * **One seed is not one place, and one place is not the whole cluster.** Every
  * row is framed in the system the game boots at, which is `startSystem` — the most
  * *central* well-stocked and orderly one — and a row may name a `system` to stand at
@@ -433,14 +429,10 @@ export const VIEWS = Object.freeze([
 		// frame member is under a pixel; this one stands 50 m off the tear that
 		// faces the star most. New with #735, so it has no "before" at an
 		// earlier ref: the derelict view above is the pair.
-		//
-		// Node #813: the view above's wreck is now the authored Porter, which
-		// the tear cannot cut, so this one stands at the first of the system's
-		// derelict slots whose wreck it can (`placeDerelict`).
 		name: "derelict-tear",
 		covers: [735],
-		what: "The system's first wreck the tear can cut, from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
-		shot: { kind: "derelict", framing: "tear", view: "cockpit" },
+		what: "Seed 4's first wreck the tear can cut, from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
+		shot: { kind: "derelict", framing: "tear", view: "cockpit", seed: 4 },
 	},
 	{
 		name: "cockpit-arrival",
@@ -474,6 +466,88 @@ export const VIEWS = Object.freeze([
 			radii: 8,
 			sunAngleDeg: 175,
 			view: "cockpit",
+		},
+	},
+	{
+		name: "coriolis-approach",
+		covers: [1142],
+		what: "The trade-A Coriolis on its aperture axis at three silhouette radii, seed 42 system 4: surface scale, key shadows and slot beacons.",
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "coriolis-flank",
+		covers: [1142],
+		what: "The trade-A Coriolis flank at four silhouette radii, seed 42 system 4: window rows, lattice and silhouette masts under a 35 degree sun.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "coriolis-range",
+		covers: [1142],
+		what: "The trade-A Coriolis backlit at twenty silhouette radii, seed 42 system 4: the shade side, beacon halos and reduced-detail transition.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "ring-approach",
+		covers: [1145],
+		what: "The trade-B Ring on its aperture axis at three silhouette radii, seed 42 system 1: surface scale, key shadows and slot beacons.",
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 1,
+		},
+	},
+	{
+		name: "ring-flank",
+		covers: [1145],
+		what: "The trade-B Ring flank at four silhouette radii, seed 42 system 1: window rows, lattice and silhouette masts under a 35 degree sun.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+			seed: 42,
+			system: 1,
+		},
+	},
+	{
+		name: "ring-range",
+		covers: [1145],
+		what: "The trade-B Ring backlit at twenty silhouette radii, seed 42 system 1: the shade-side shape and baseline fittings at range.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+			seed: 42,
+			system: 1,
 		},
 	},
 	{
@@ -1207,6 +1281,12 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "miner-vent-plumes",
+		covers: [1094],
+		what: "The installed Longwall in chase from its flank: throttle drives both aft nozzles while the assist brakes a yaw and roll, showing drive glow and the firing attitude vents.",
+		shot: { kind: "miner-vents", hull: "miner", view: "chase", orbit: 0.9 },
+	},
+	{
 		name: "vent-cue-cockpit",
 		covers: [621],
 		what: "Cockpit, the same state held at the pulse's trough: the prograde marker (the green ring) and the nose cross dimmed in their own tones while the assist cannot meet the speed or the spin. The retrograde marker pulses too, but it is behind the camera here.",
@@ -1801,6 +1881,8 @@ const SHOT_REQUIREMENTS = {
 		Number.isInteger(s.steps) &&
 		s.steps > 0 &&
 		(s.orbit === undefined || finite(s.orbit)),
+	"miner-vents": (s) =>
+		s.hull === "miner" && s.view === "chase" && finite(s.orbit),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||

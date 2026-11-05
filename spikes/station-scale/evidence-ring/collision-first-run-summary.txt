@@ -1,0 +1,5 @@
+Recovered from this run's tool output; the first run's raw blocks were overwritten.
+approach-clear [ 0.0035725049999999923, 0.003007295000000099 ]
+outer-rim-strike [ 0.0662281249999998, 0.09653208500000005 ]
+front-rim-strike [ 0.09922103999999962, 0.12994604000000037 ]
+rim-flyby [ 0.0010356250000000955, 0.0009502100000008794 ]

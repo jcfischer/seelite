@@ -129,8 +129,8 @@ export function mountStringsLab() {
   <button id="stop">Stop</button>
 </fieldset>
 <div id="sliders"></div>
-<textarea id="source" rows="10" style="width:100%;font:12px ui-monospace,monospace;background:#12171d;color:#dde3ea;border:1px solid #2a323c"></textarea>
-<pre id="errors" style="font:12px ui-monospace,monospace;color:#e0a040"></pre>`;
+<textarea id="source" rows="10" style="width:100%;font:12px Menlo, monospace;background:#12171d;color:#dde3ea;border:1px solid #2a323c"></textarea>
+<pre id="errors" style="font:12px Menlo, monospace;color:#e0a040"></pre>`;
 
 	const $ = <T extends HTMLElement>(id: string) =>
 		root.querySelector(`#${id}`) as T;

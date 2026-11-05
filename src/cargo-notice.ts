@@ -40,6 +40,11 @@ export const SCOOP_REFUSAL_TEXT = {
 	"low-bank": "Energy bank too low to scoop: pickup left in space.",
 } as const;
 
+/** What the dock says, once, to a pilot whose old save had no free slot for the
+ *  scoop it is granted (node #1097). */
+export const NO_SCOOP_DOCK_NOTICE =
+	"This ship has no cargo scoop and cannot take anything from space.";
+
 /**
  * The line for one scoop attempt. A refusal is not a failure to say something:
  * a full hold leaves the canister in space, and a pilot who is not told that
