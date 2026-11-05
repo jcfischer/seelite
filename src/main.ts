@@ -10442,7 +10442,7 @@ class Game {
 				ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
 				ctx.fill();
 				ctx.globalCompositeOperation = "source-over";
-				ctx.font = "11px monospace";
+				ctx.font = "11px Menlo, monospace";
 				ctx.fillStyle = "rgba(255, 200, 120, .9)";
 				ctx.textAlign = "right";
 				ctx.fillText(
@@ -10505,7 +10505,7 @@ class Game {
 			if (f.ore && nearest?.f === f)
 				this.fragmentRender = { x: at.x, y: at.y, id: f.id };
 		}
-		ctx.font = "11px monospace";
+		ctx.font = "11px Menlo, monospace";
 		if (nearest) {
 			const at = place(
 				normalizeOr(sub(nearest.f.pos, camPos), { x: 0, y: 0, z: -1 }),
@@ -10580,7 +10580,7 @@ class Game {
 		ctx.beginPath();
 		ctx.arc(at.x, at.y, 7, 0, Math.PI * 2);
 		ctx.stroke();
-		ctx.font = "11px monospace";
+		ctx.font = "11px Menlo, monospace";
 		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x + 11, at.y + 4);
 		ctx.restore();
 		this.deepCueRender = { x: at.x, y: at.y, facing };
@@ -23583,7 +23583,7 @@ class Game {
 			return;
 		}
 		ctx.save();
-		ctx.font = "13px monospace";
+		ctx.font = "13px Menlo, monospace";
 		ctx.textAlign = "center";
 		const width = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 20;
 		const fit = Math.min(1, (w - 24) / width),
@@ -23810,11 +23810,11 @@ function paintNameplates(mesh: StationMesh, name: string) {
 	const text = name.toUpperCase();
 	const margin = canvas.width * 0.06;
 	let size = 132;
-	ctx.font = `bold ${size}px monospace`;
+	ctx.font = `bold ${size}px Menlo, monospace`;
 	const width = ctx.measureText(text).width;
 	if (width > canvas.width - margin * 2) {
 		size = Math.floor((size * (canvas.width - margin * 2)) / width);
-		ctx.font = `bold ${size}px monospace`;
+		ctx.font = `bold ${size}px Menlo, monospace`;
 	}
 	ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 	const texture = new THREE.CanvasTexture(canvas);
