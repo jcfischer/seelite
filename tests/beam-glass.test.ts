@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+	BEAM_CAPACITY,
 	BEAM_FEATHER_PX,
 	BEAM_VERTICES_PER_STROKE,
 	newBeamQuads,
@@ -146,4 +147,14 @@ describe("a stroke's quad", () => {
 		const q = writeBeamQuads(many, W, H, 1, newBeamQuads(2));
 		expect(q.count).toBe(2 * BEAM_VERTICES_PER_STROKE);
 	});
+});
+
+test("the cockpit layer holds all 128 mining strokes", () => {
+	expect(BEAM_CAPACITY).toBe(128);
+	const strokes = Array.from({ length: BEAM_CAPACITY }, () =>
+		raiderBeamStroke({ x: 0.2, y: 0.3 }),
+	);
+	expect(
+		writeBeamQuads(strokes, 1280, 800, 1, newBeamQuads(BEAM_CAPACITY)).count,
+	).toBe(BEAM_CAPACITY * BEAM_VERTICES_PER_STROKE);
 });

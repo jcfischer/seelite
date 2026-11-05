@@ -167,12 +167,20 @@ describe("a hull's slots (#866, #867 D1 and D2)", () => {
 		}
 	});
 
-	test("the lighter authored Porter retains its slots; other heavier hulls never have less capacity", () => {
+	test("the lighter authored Porter retains its slots; other heavier hulls never have less capacity, the miner's two mounts (#1147 D-D10) aside", () => {
 		// Node #813 re-derived Porter mass from its smaller authored box. Keep
 		// the installed slot layout: shrinking it would invalidate saved fittings
 		// (#867 D14). This is the sole departure from the original mass ordering.
 		expect(HULL_SPECS.freighter.massT).toBe(92);
 		expect(slotCapacity("freighter")).toBe(16);
+		const mounted = (id: (typeof HULL_IDS)[number]) =>
+			HULL_SPECS[id].slots
+				.filter((s) => s.kind === "hardpoint" && s.mount)
+				.reduce((sum, s) => sum + s.size, 0);
+		expect(HULL_IDS.filter((id) => mounted(id) > 0)).toEqual(["miner"]);
+		expect(mounted("miner")).toBe(6);
+		const unmounted = (id: (typeof HULL_IDS)[number]) =>
+			slotCapacity(id) - mounted(id);
 		const byMass = HULL_IDS.filter((id) => id !== "freighter").sort(
 			(a, b) => HULL_SPECS[a].massT - HULL_SPECS[b].massT,
 		);
@@ -180,8 +188,8 @@ describe("a hull's slots (#866, #867 D1 and D2)", () => {
 			const lighter = byMass[i - 1];
 			const heavier = byMass[i];
 			expect([
-				`${lighter} ${slotCapacity(lighter)} <= ${heavier} ${slotCapacity(heavier)}`,
-				slotCapacity(lighter) <= slotCapacity(heavier),
+				`${lighter} ${unmounted(lighter)} <= ${heavier} ${unmounted(heavier)}`,
+				unmounted(lighter) <= unmounted(heavier),
 			]).toEqual([expect.any(String), true]);
 		}
 	});

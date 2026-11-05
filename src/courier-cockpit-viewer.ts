@@ -180,9 +180,9 @@ function makeDisplay(kind: string) {
 	ctx.lineWidth = 2;
 	ctx.shadowColor = color;
 	ctx.shadowBlur = 5;
-	ctx.font = "26px monospace";
+	ctx.font = "26px Menlo, monospace";
 	const text = (s: string, x: number, y: number, size = 26) => {
-		ctx.font = `${Math.round(size * 1.35)}px monospace`;
+		ctx.font = `${Math.round(size * 1.35)}px Menlo, monospace`;
 		ctx.fillText(s, x, y);
 	};
 	const line = (x: number, y: number, x1: number, y1: number) => {
@@ -285,7 +285,7 @@ function makeEquipmentLabel(name: string) {
 	ctx.fillRect(0, 0, canvas.width, canvas.height);
 	const key = name.startsWith("key-");
 	ctx.fillStyle = key ? "#e4c896" : "#aebdc0";
-	ctx.font = `${key ? 120 : 46}px monospace`;
+	ctx.font = `${key ? 120 : 46}px Menlo, monospace`;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
 	ctx.fillText(cockpitLabelText(name), canvas.width / 2, canvas.height / 2);

@@ -46,6 +46,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { warningIsPainted } from "./lib/death-warning-paint.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -674,6 +675,10 @@ await bootedGame(warnPage);
 await warnPage.waitForFunction(() => !window.__seelite.clockHeld);
 const warned = await warnPage.evaluate(async () => {
 	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+	// Moved pixels, and how many of them are amber in the second shot.
+	const { warningPaintDiff: diff } = await import(
+		"/scripts/lib/death-warning-paint.mjs"
+	);
 
 	const g = window.__seelite;
 	const cost = await import("/src/death-cost.ts");
@@ -681,36 +686,17 @@ const warned = await warnPage.evaluate(async () => {
 	const market = await import("/src/market.ts");
 	g.view = "cockpit";
 	g.setHeadLook("forward");
-	const overlay = document.getElementById("overlay");
-	const c2d = overlay.getContext("2d", { willReadFrequently: true });
 	const frames = (n) =>
 		new Promise((resolve) => {
 			let k = 0;
 			const tick = () => (++k >= n ? resolve() : requestAnimationFrame(tick));
 			requestAnimationFrame(tick);
 		});
-	const shot = () => c2d.getImageData(0, 0, overlay.width, overlay.height).data;
-	// Moved pixels, and the mean colour of what moved in the second shot.
-	const diff = (before, after) => {
-		let moved = 0;
-		let r = 0;
-		let gr = 0;
-		let b = 0;
-		for (let i = 0; i < before.length; i += 4) {
-			const d =
-				Math.abs(after[i] - before[i]) +
-				Math.abs(after[i + 1] - before[i + 1]) +
-				Math.abs(after[i + 2] - before[i + 2]) +
-				Math.abs(after[i + 3] - before[i + 3]);
-			if (d < 24) continue;
-			moved += 1;
-			r += after[i];
-			gr += after[i + 1];
-			b += after[i + 2];
-		}
-		return moved === 0
-			? { moved, r: 0, g: 0, b: 0 }
-			: { moved, r: r / moved, g: gr / moved, b: b / moved };
+	const shot = () => {
+		const face = g.cockpit.text.faces.get("notices");
+		if (!face) return null;
+		const { width, height } = face.ctx.canvas;
+		return face.ctx.getImageData(0, 0, width, height).data;
 	};
 	const setHull = (hull) => {
 		g.condition = { ...g.condition, hull };
@@ -726,13 +712,12 @@ const warned = await warnPage.evaluate(async () => {
 	fit(true);
 	setHull(full);
 	await frames(4);
-	const control = shot();
-	await frames(1);
-	const jitter = diff(control, shot());
 	const saidBefore = g.ejectWarningsSaid;
 	setHull(cost.EJECT_WARNING_HULL - 1);
 	await frames(4);
-	const painted = diff(control, shot());
+	const warning = shot();
+	await frames(1);
+	const jitter = diff(warning, shot());
 	const render = g.ejectWarningRender ? { ...g.ejectWarningRender } : null;
 	const saidOnce = g.ejectWarningsSaid - saidBefore;
 	await frames(10);
@@ -746,12 +731,41 @@ const warned = await warnPage.evaluate(async () => {
 	setHull(full);
 	await frames(4);
 	const healed = { due: g.ejectWarningDue, render: g.ejectWarningRender };
+	const control = shot();
+	const painted = diff(control, warning);
+	const want = cost.ejectWarningText(names.ejectPrompt(g.layoutInForce()));
+	const readouts = g.cockpit.text;
+	const write = readouts.write;
+	const controls = [];
+	setHull(cost.EJECT_WARNING_HULL - 1);
+	try {
+		for (const fill of [null, "rgba(255, 110, 96, 0.97)"]) {
+			let intercepted = 0;
+			readouts.write = function (source, lines) {
+				if (source === "notices")
+					lines = lines.flatMap((line) => {
+						if (line.text !== want) return [line];
+						intercepted += 1;
+						return fill === null ? [] : [{ ...line, fill }];
+					});
+				return write.call(this, source, lines);
+			};
+			await frames(4);
+			controls.push({ fill, intercepted, painted: diff(control, shot()) });
+		}
+	} finally {
+		readouts.write = write;
+	}
+	await frames(4);
+	const restored = diff(control, shot());
 	return {
-		want: cost.ejectWarningText(names.ejectPrompt(g.layoutInForce())),
+		want,
 		threshold: cost.EJECT_WARNING_HULL,
 		render,
 		jitter,
 		painted,
+		controls,
+		restored,
 		saidOnce,
 		saidStill,
 		noPod,
@@ -766,9 +780,22 @@ check(
 );
 check(
 	"and the sentence is painted: amber pixels move against the whole-hull control",
-	warned.painted.moved > Math.max(200, warned.jitter.moved * 4) &&
-		warned.painted.r > warned.painted.b + 60,
+	warningIsPainted(warned.painted, warned.jitter),
 	JSON.stringify({ painted: warned.painted, jitter: warned.jitter }),
+);
+check(
+	"removing the warning fails the paint gate on the same face",
+	warned.controls[0].intercepted > 0 &&
+		!warningIsPainted(warned.controls[0].painted, warned.jitter),
+	JSON.stringify(warned.controls[0]),
+);
+check(
+	"refusal-red warning strokes fail the paint gate; restoring amber passes",
+	warned.controls[1].intercepted > 0 &&
+		warned.controls[1].painted.moved > 200 &&
+		!warningIsPainted(warned.controls[1].painted, warned.jitter) &&
+		warningIsPainted(warned.restored, warned.jitter),
+	JSON.stringify({ red: warned.controls[1], restored: warned.restored }),
 );
 check(
 	"the voice says it once per crossing, and again after the warning lapsed",

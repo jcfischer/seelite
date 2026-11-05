@@ -2,7 +2,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { bootedGame, installViewPlacement } from "../probe-guard.mjs";
 import { gameUrl } from "./game-url.mjs";
 import { installViewFraming } from "./view-placement.mjs";
-import { TRADE_MODEL_FIXTURES } from "./trade-model-fixtures.mjs";
+import {
+	TRADE_MODEL_FIXTURES,
+	tradeExteriorRequestPattern,
+} from "./trade-model-fixtures.mjs";
 
 async function installTradeStation(page) {
 	await page.evaluate(() => {
@@ -41,7 +44,7 @@ async function probeFailedDownload(
 		if (m.type() === "warning" && m.text().startsWith(`trade/${form}:`))
 			warnings.push(m.text());
 	});
-	await failed.route(new RegExp(`/trade-${name}[^/]*\\.glb`), (route) => {
+	await failed.route(tradeExteriorRequestPattern(name), (route) => {
 		attempts++;
 		return route.abort();
 	});
@@ -106,7 +109,7 @@ export async function probeTradeModels(
 			release = resolve;
 		});
 		let attempts = 0;
-		await page.route(new RegExp(`/trade-${name}[^/]*\\.glb`), async (route) => {
+		await page.route(tradeExteriorRequestPattern(name), async (route) => {
 			attempts++;
 			await gate;
 			await route.continue();

@@ -427,7 +427,7 @@ function navEta(seconds: number | null) {
 }
 
 const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${WRECK_CUE_STYLE}
-#live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
+#live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
 #live-cockpit * { box-sizing: border-box; }
 .lc-director { position: absolute; top: 38%; left: 50%; width: 172px; transform: translate(-50%, -50%); color: #ffe0a2; text-align: center; }

@@ -1,0 +1,54 @@
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  build: 8a5903a1cec3c6887c41c3885a8dff333b973500 | lane: GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)
+  mode: close-detail — node #758, terran planet-4, arms shuffled from seed 20261027, no arm twice in a row, run "sweep1-ratio2"
+  host load average at start: 5.60 / 5.33 / 5.98
+  mode: class sweep — every class on both relief paths
+  viewport: 1440x900, planet-4 at 70° from the star, seed 47 (planet-terminator)
+  ms/frame off the ?fps readout — median of 5 readings, ±the full range across them
+  a cell marked ? never settled: its rate was still moving when the settle timed out, so it is a reading and not a measurement
+  a cell marked ! took a sample the meter had not refreshed — possibly a repeated line, possibly a stale one held over a stall
+
+  pixel ratio 2
+    figure: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) | pixel ratio 2 | build 8a5903a1cec3c6887c41c3885a8dff333b973500 | GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)
+      arm                         200r            2r          1.6r          1.5r          1.2r
+      interim                  3.7±0.4       8.6±0.3      12.6±0.4      14.1±0.5      15.7±0.1
+      cap-0                    5.2±1.3       8.2±0.3      10.7±0.5      11.6±0.7      11.8±0.5
+      cap-2                    4.1±1.5       9.1±0.4      11.8±0.6      14.5±0.4      13.4±0.6
+      cap-4                    3.8±2.0       8.8±0.4      12.6±2.6      13.9±1.1      15.0±0.4
+      cap-6                    5.7±1.4       8.6±0.4      12.9±0.7      16.5±0.9      18.0±0.5
+      full-res                 5.9±0.6      14.6±1.1      22.6±2.1      27.4±3.2      29.6±1.0
+      analytic-gradient        5.3±0.7      10.0±0.3      17.4±0.6      16.9±0.5      19.2±0.4
+      clouds-at-ground         5.5±1.7       8.6±0.4      12.2±0.4      13.5±0.4      15.4±0.5
+
+      ms against interim (the shipped frame), per arm — positive means the arm costs more
+      arm                           2r          1.6r          1.5r          1.2r
+      cap-0                      -0.37         -1.92         -2.50         -3.93
+      cap-2                      +0.57         -0.84         +0.43         -2.34
+      cap-4                      +0.22         +0.03         -0.20         -0.71
+      cap-6                      +0.01         +0.31         +2.37         +2.29
+      full-res                   +5.99         +9.98        +13.29        +13.86
+      analytic-gradient          +1.45         +4.77         +2.76         +3.47
+      clouds-at-ground           +0.06         -0.40         -0.59         -0.31
+
+      ms against cap-0 (the band off), per arm — what each cap costs over no band
+      arm                           2r          1.6r          1.5r          1.2r
+      interim                    +0.37         +1.92         +2.50         +3.93
+      cap-2                      +0.94         +1.08         +2.93         +1.59
+      cap-4                      +0.59         +1.95         +2.31         +3.22
+      cap-6                      +0.38         +2.23         +4.87         +6.23
+
+      control pair — interim minus cap-6, one state reached two ways, so the noise floor under every delta above: 2r -0.01, 1.6r -0.31, 1.5r -2.37, 1.2r -2.29 ms
+
+      what the unpinned game draws at each radius: 2r screen-space half-res cap 6 footprint-program; 1.6r screen-space half-res cap 6 footprint-program; 1.5r screen-space half-res cap 6 footprint-program; 1.2r screen-space half-res cap 6 footprint-program
+      every non-cap-0 cell inside the band drew the footprint program
+      sweep order: interim@1.6 cap-0@1.6 analytic-gradient@200 cap-0@1.2 interim@1.5 cap-4@1.6 clouds-at-ground@2 cap-0@2 clouds-at-ground@1.6 full-res@1.6 cap-6@1.6 analytic-gradient@1.5 cap-0@1.5 interim@1.2 cap-4@2 cap-2@1.6 full-res@2 cap-2@1.2 full-res@1.2 analytic-gradient@2 cap-4@1.2 full-res@200 interim@2 cap-4@200 interim@200 clouds-at-ground@1.2 cap-2@200 cap-6@2 clouds-at-ground@1.5 analytic-gradient@1.2 cap-2@1.5 analytic-gradient@1.6 cap-2@2 cap-6@1.2 clouds-at-ground@200 cap-0@200 cap-6@200 cap-4@1.5 full-res@1.5 cap-6@1.5
+    widest column (200r, where the subject is a few pixels and nothing should differ): 8 cells, floor 3.7 ms — every cell inside 2x it, which is what this column should look like
+    stalls: none out-stalled an earlier cell in this run
+    unsettled: none — every one of the 40 cells held a steady rate before it was read
+    stale reads: none — every sample was taken on a line the meter had just written
+    read again (trend over 0.4): 2 of 40 cells — cap-6@1.6r discarded 25.6,14.1,12.5,12.7,12.8; cap-6@1.5r discarded 29.6,19.4,13.8,14.1,14.3
+    drift control (interim at 200r): 5.3 ms before, 5.9 ms after — the machine moved +0.6 ms end to end
+      net movement only: two endpoints cannot locate a mid-run sag that recovered, so a small figure here says the run began and ended alike and nothing about the columns between
+
+  wrote view-set/planet-close-detail-sweep1-ratio2.json — 40 cells

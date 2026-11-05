@@ -1,3 +1,4 @@
+import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
 /** Default-layout live missile/ECM controls, carrier consequence and painted
  * lock/warning cues. Arithmetic and seeker tuning live in missiles.test.ts. */
 // A default-layout probe (#381 D11): F7 launches and F8 pulses the E.C.M.
@@ -23,6 +24,7 @@ try {
 		await installViewFraming(page);
 		await page.goto(gameUrl(origin, { seed: 42 }));
 		await bootedGame(page);
+		await installCockpitTextProbe(page);
 		await stopLoop(page);
 		const npc = await page.evaluate(async () => {
 			const g = window.__seelite;
@@ -75,13 +77,23 @@ try {
 			npc.ammo === 3 && npc.incoming === 1,
 			JSON.stringify(npc),
 		);
-		let reading = await page.evaluate(() => window.__seelite.missileRender);
+		let reading = await page.evaluate(() => {
+			const lines =
+				window.__seelite.cockpit.text.readings.get("missiles") ?? [];
+			return {
+				text: lines.map((l) => l.text).join("\n"),
+				incoming: lines.some((l) => l.text.includes("INCOMING MISSILE")),
+			};
+		});
 		check(
-			`${width}: locked rack is named on fitted glass`,
+			`${width}: locked rack is painted on a visible cabin face`,
 			reading?.text.includes("LOCKED") &&
 				reading.text.includes("4/4") &&
-				reading.x >= 0 &&
-				reading.x + reading.width <= width,
+				(await page.evaluate(
+					() =>
+						window.__cockpitSourcePainted("missiles") &&
+						window.__cockpitSurfaceVisible("missiles"),
+				)),
 			JSON.stringify(reading),
 		);
 		await page.keyboard.press("F7");
@@ -125,18 +137,22 @@ try {
 			];
 			g.render(0);
 		});
-		reading = await page.evaluate(() => window.__seelite.missileRender);
+		reading = await page.evaluate(() => {
+			const lines =
+				window.__seelite.cockpit.text.readings.get("missiles") ?? [];
+			return {
+				text: lines.map((l) => l.text).join("\n"),
+				incoming: lines.some((l) => l.text.includes("INCOMING MISSILE")),
+			};
+		});
 		const red = await page.evaluate(() => {
-			const g = window.__seelite,
-				r = g.missileRender;
-			const canvas = document.getElementById("overlay"),
+			const g = window.__seelite;
+			const canvas = (
+					g.cockpit.text.faces.get("missiles") ??
+					g.cockpit.text.faces.get("fallback")
+				).ctx.canvas,
 				ctx = canvas.getContext("2d");
-			const data = ctx.getImageData(
-				Math.floor(r.x),
-				Math.floor(r.y),
-				Math.ceil(r.width),
-				65,
-			).data;
+			const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 			let count = 0;
 			for (let i = 0; i < data.length; i += 4)
 				if (
@@ -150,7 +166,8 @@ try {
 		});
 		check(
 			`${width}: incoming warning paints red pixels`,
-			reading?.incoming &&
+			(await page.evaluate(() => window.__cockpitSourcePainted("missiles"))) &&
+				reading?.incoming &&
 				reading.text.includes("INCOMING MISSILE") &&
 				red > 15,
 			JSON.stringify({ reading, red }),
@@ -163,7 +180,9 @@ try {
 			return {
 				energy: g.condition.energy,
 				flying: g.missileCombat.missiles.length,
-				text: g.missileRender.text,
+				text: (g.cockpit.text.readings.get("missiles") ?? [])
+					.map((l) => l.text)
+					.join("\n"),
 			};
 		});
 		check(

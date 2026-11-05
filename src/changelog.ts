@@ -28,6 +28,24 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1155 — sentence approved by the principal, 2026-11-02.
+	{
+		date: "2026-11-02",
+		text: "Choose a normal or wide cockpit view, with your choice remembered between flights.",
+		node: 1155,
+	},
+	// https://github.com/jcfischer/seelite/issues/1142 — sentence approved by the principal, 2026-10-30.
+	{
+		date: "2026-10-30",
+		text: "Coriolis stations show more details.",
+		node: 1142,
+	},
+	// https://github.com/jcfischer/seelite/issues/1151 — sentence approved by the principal, 2026-10-30.
+	{
+		date: "2026-10-30",
+		text: "Cockpit text now draws on the cabin’s screens, not over the windscreen.",
+		node: 1151,
+	},
 	// https://github.com/jcfischer/seelite/issues/969 — sentence approved by the principal, 2026-10-27.
 	{
 		date: "2026-10-27",

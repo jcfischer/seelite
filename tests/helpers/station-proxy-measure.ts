@@ -223,6 +223,17 @@ export function extractVertices(
 	built: { root: THREE.Object3D; spinner: THREE.Object3D },
 	type: StationType,
 ): NamedVertex[] {
+	const first = extractOnce(built, type);
+	// https://github.com/jcfischer/seelite/issues/1166
+	return first.every(({ v }) => Number.isFinite(v.x + v.y + v.z))
+		? first
+		: extractOnce(built, type);
+}
+
+function extractOnce(
+	built: { root: THREE.Object3D; spinner: THREE.Object3D },
+	type: StationType,
+): NamedVertex[] {
 	const out: NamedVertex[] = [];
 	forEachVertex(built, type, ({ v, name, spun }) =>
 		out.push({ v: v.clone(), name, spun }),

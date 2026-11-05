@@ -12,8 +12,34 @@ import { corridorIntrusions, crossings } from "./helpers/aperture-opening";
 import { forEachWorldTriangle } from "./helpers/world-triangles";
 import { resourcesOf, isShared } from "../src/gpu-teardown";
 import { ASSEMBLY_SEEDS } from "./helpers/solved-forms";
+import { ASSEMBLY_BLOCKS } from "../src/assembly-plan";
 
 afterAll(() => installAssemblyBlocks(null));
+
+test("bright navigation materials do not dim Assembly work lamps", () => {
+	const kit = new THREE.Group();
+	const lamp = new THREE.MeshStandardMaterial({
+		emissive: 0xffaa22,
+		emissiveIntensity: 4,
+	});
+	const navigation = new THREE.MeshStandardMaterial({
+		emissive: 0xff0000,
+		emissiveIntensity: 16,
+	});
+	navigation.name = "navigation-red";
+	for (const name of ASSEMBLY_BLOCKS) {
+		const block = new THREE.Group();
+		block.name = name;
+		block.add(
+			new THREE.Mesh(new THREE.BoxGeometry(), lamp),
+			new THREE.Mesh(new THREE.BoxGeometry(), navigation),
+		);
+		kit.add(block);
+	}
+	createAssemblyBlocks(kit);
+	expect(lamp.emissiveIntensity).toBe(1);
+	expect(navigation.emissiveIntensity).toBe(8);
+});
 
 describe("authored Assembly production blocks", () => {
 	test("triangle measurements visit transformed instances rather than their source at the origin", () => {

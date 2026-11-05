@@ -62,7 +62,7 @@ const STYLE_ID = "seelite-perf-style";
 const STYLE = `
 #seelite-perf {
   position: fixed; top: 34px; right: 10px; z-index: 40;
-  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 11px/1.5 Menlo, monospace;
   color: #cfe3ff; background: rgba(6,10,18,0.82);
   border: 1px solid rgba(120,160,220,0.35); border-radius: 4px;
   padding: 6px 9px; pointer-events: none; white-space: pre;

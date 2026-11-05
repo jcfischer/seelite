@@ -1157,6 +1157,16 @@ describe("§7/§8 equipment prices and the fitting-out total", () => {
 		]);
 	});
 
+	test("only the Mining Laser has a second, flagged scope: shipyards (#1147, #920 D-D18)", () => {
+		expect(
+			EQUIPMENT.filter((e) => e.miningScope).map((e) => [
+				e.name,
+				e.scope,
+				e.miningScope,
+			]),
+		).toEqual([["Mining Laser", "refinery", "shipyard"]]);
+	});
+
 	test("#481's long-range scanner is a flat-priced shipyard exclusive", () => {
 		const row = EQUIPMENT.find((e) => e.name === LONG_RANGE_SCANNER);
 		if (!row) throw new Error("the long-range scanner is not in EQUIPMENT");

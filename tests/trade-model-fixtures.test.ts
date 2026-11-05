@@ -2,10 +2,36 @@ import { expect, test } from "bun:test";
 import {
 	MODEL_QUEUE_HOME,
 	TRADE_MODEL_FIXTURES,
+	tradeExteriorRequestPattern,
 } from "../scripts/lib/trade-model-fixtures.mjs";
 import { restoreWorld } from "../src/sim";
 import { bootModelIds } from "../src/system-models";
 import { HULL_SPECS } from "../src/hull";
+
+test("exterior request counts exclude deferred detail and retain duplicate base downloads", () => {
+	for (const { name } of TRADE_MODEL_FIXTURES) {
+		const pattern = tradeExteriorRequestPattern(name);
+		for (const path of [
+			`/src/models/trade-${name}.glb`,
+			`/assets/trade-${name}-B3_abc19.glb`,
+			`/src/models/trade-${name}.glb?version=2`,
+		])
+			expect(pattern.test(`http://127.0.0.1:5173${path}`)).toBe(true);
+		for (const path of [
+			`/src/models/trade-${name}-detail.glb`,
+			`/assets/trade-${name}-detail-B3_abc19.glb`,
+			`/src/models/trade-${name}-detail.glb?version=2`,
+			`/src/models/trade-${name}.glb.js`,
+		])
+			expect(pattern.test(`http://127.0.0.1:5173${path}`)).toBe(false);
+		const requests = [
+			`/src/models/trade-${name}.glb`,
+			`/src/models/trade-${name}-detail.glb`,
+			`/src/models/trade-${name}.glb`,
+		];
+		expect(requests.filter((url) => pattern.test(url))).toHaveLength(2);
+	}
+});
 
 test("held-response fixtures boot the permitted exterior and jump within the courier's tank", () => {
 	const home = restoreWorld(

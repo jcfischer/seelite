@@ -361,7 +361,7 @@
   },
   "scripts/lib/view-set.mjs": {
     "seelite/no-comments": {
-      "count": 105
+      "count": 101
     }
   },
   "scripts/lib/voice-model.mjs": {
@@ -496,7 +496,7 @@
   },
   "scripts/measure-cruise-detour.mjs": {
     "seelite/no-comments": {
-      "count": 3
+      "count": 1
     }
   },
   "scripts/measure-cruise-guard-cost.mjs": {
@@ -646,7 +646,7 @@
   },
   "scripts/measure-planet-cost.mjs": {
     "seelite/no-comments": {
-      "count": 128
+      "count": 88
     }
   },
   "scripts/measure-raider-duel.ts": {
@@ -921,7 +921,7 @@
   },
   "scripts/probe-duel-hud.mjs": {
     "seelite/no-comments": {
-      "count": 161
+      "count": 22
     }
   },
   "scripts/probe-eject.mjs": {
@@ -1036,7 +1036,7 @@
   },
   "scripts/probe-live-cockpit.mjs": {
     "seelite/no-comments": {
-      "count": 157
+      "count": 67
     }
   },
   "scripts/probe-market-shelf.mjs": {
@@ -1416,7 +1416,7 @@
   },
   "src/beam-layer.ts": {
     "seelite/no-comments": {
-      "count": 6
+      "count": 5
     }
   },
   "src/binding-store.ts": {
@@ -1581,7 +1581,7 @@
   },
   "src/coriolis-flight.ts": {
     "seelite/no-comments": {
-      "count": 7
+      "count": 3
     }
   },
   "src/coriolis-spike-viewer.ts": {
@@ -2036,7 +2036,7 @@
   },
   "src/main.ts": {
     "seelite/no-comments": {
-      "count": 4303
+      "count": 4203
     }
   },
   "src/market-probe-hook.ts": {
@@ -2441,7 +2441,7 @@
   },
   "src/npc-plumes.ts": {
     "seelite/no-comments": {
-      "count": 7
+      "count": 6
     }
   },
   "src/occlusion-mesh.ts": {
@@ -2951,7 +2951,7 @@
   },
   "src/vent-plumes.ts": {
     "seelite/no-comments": {
-      "count": 28
+      "count": 27
     }
   },
   "src/visit-count.ts": {
@@ -3936,7 +3936,7 @@
   },
   "tests/layer-depth.test.ts": {
     "seelite/no-comments": {
-      "count": 32
+      "count": 30
     }
   },
   "tests/layout-notice.test.ts": {
@@ -4062,11 +4062,6 @@
   "tests/model-progress.test.ts": {
     "seelite/no-comments": {
       "count": 4
-    }
-  },
-  "tests/model-urls.test.ts": {
-    "seelite/no-comments": {
-      "count": 2
     }
   },
   "tests/module-pricing.test.ts": {
@@ -4916,7 +4911,7 @@
   },
   "tests/view-set.test.ts": {
     "seelite/no-comments": {
-      "count": 150
+      "count": 149
     }
   },
   "tests/visit-count.test.ts": {

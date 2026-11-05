@@ -1,0 +1,40 @@
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  ok   Ring desktop: the system holds all three station types
+  ok   Ring desktop: the generated trade subject is the Ring
+  ok   Ring desktop: trade is framed where it asked — asked 2.250 km, landed 2.250 km (0.00%), 0.00° off the axis
+  ok   Ring desktop: trade is on screen with its aperture lit — station 18484px, aperture 135px
+  ok   Ring desktop: trade's aperture is brighter than the hull around it — aperture 195.9 vs station 79.6
+  ok   Ring desktop: trade draws accessories at docking range — 661px of accessory
+  ok   Ring desktop: refinery is framed where it asked — asked 3.720 km, landed 3.720 km (-0.00%), 0.00° off the axis
+  ok   Ring desktop: refinery is on screen with its aperture lit — station 5056px, aperture 190px
+  ok   Ring desktop: refinery's aperture is brighter than the hull around it — aperture 195.0 vs station 60.1
+  ok   Ring desktop: refinery draws accessories at docking range — 394px of accessory
+  ok   Ring desktop: shipyard is framed where it asked — asked 4.980 km, landed 4.980 km (-0.00%), 0.00° off the axis
+  ok   Ring desktop: shipyard is on screen with its aperture lit — station 1190px, aperture 12px
+  ok   Ring desktop: shipyard's aperture is brighter than the hull around it — aperture 143.0 vs station 65.0
+  ok   Ring desktop: shipyard draws accessories at docking range — 54px of accessory
+  ok   every shader program the renderer has built linked — 152/152 linked
+  report (authored refinery): the rock's own program is among them, and linked — 0/0 "station-rock" programs
+  report (authored refinery): the refinery carries a patched rock material — 0 patched material(s) under the refinery
+  report (authored refinery): every rock-surface splice found its marker — no patched rock material in the scene
+
+[Ring desktop] warmth: trade 0.090, refinery 0.127, shipyard 0.088
+  ok   Ring desktop: every fixture §5 gives the trade reads from its own aperture axis — windows 250px (1 obj, 0 pools lit, 214.7px wide), strobe-a 137px (1 obj, 1 pools lit, 0.6px wide, drive 0.95 @ 0.05s), strobe-b 147px (1 obj, 1 pools lit, 0.6px wide, drive 0.95 @ 1.05s), mouth-strobe 70px (10 obj, 10 pools lit, 0.6px wide, drive 0.95 @ 0.00s)
+  ok   Ring desktop: every fixture §5 gives the shipyard reads from its own aperture axis — windows 1px (1 obj, 0 pools lit, 32.3px wide), mouth-strobe 13px (10 obj, 10 pools lit, 0.2px wide, drive 0.95 @ 0.00s)
+  ok   Ring desktop: every fixture §5 gives the refinery reads from its own aperture axis — windows 4px (1 obj, 0 pools lit, 116.2px wide), obstruction-beacon 267px (6 obj, 0 pools lit, 0.4px wide, drive 0.95 @ 0.05s), heat-glow 136px (1 obj, 0 pools lit, 0.0px wide, drive 0.63 @ 1.75s), flare 18px (8 obj, 0 pools lit, 1.3px wide, drive 0.87 @ 1.75s)
+  ok   Ring desktop: the three roles light differently, warm to cold — refinery 0.127 > trade 0.090 · shipyard 0.088 (authored, not ranked)
+  ok   Ring desktop: trade drops detail as it recedes — full → reduced → outline
+  ok   Ring desktop: refinery drops detail as it recedes — full → reduced → outline
+  ok   Ring desktop: shipyard drops detail as it recedes — full → reduced → outline
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+page.waitForFunction: Timeout 20000ms exceeded.
+    at bootedGame (/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/scripts/probe-guard.mjs:605:13)
+    at /Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/scripts/probe-station-visuals.mjs:505:8 {
+  log: [],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

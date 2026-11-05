@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { EQUIPMENT } from "../src/market";
 import {
+	boughtModule,
+	legacyModule,
 	migrateEquipment,
 	loadoutValue,
 	fittingValue,
@@ -262,4 +264,32 @@ test("current saves write only loadout; mixed versions and unknown old ids are r
 	expect(migrated.commander.state.loadout.h1.module).toBe("beam-laser");
 	expect(JSON.stringify(old)).toBe(original);
 	expect(parseSave(serializeSave(migrated))).toEqual(migrated);
+});
+
+test("a Mining Laser sold into a free mount takes the mount's size; anything else is legacyModule (#1147, #920 D-D18)", () => {
+	const ml = "Mining Laser";
+	const stock = stockLoadout("miner");
+	expect(boughtModule("miner", stock, ml)).toEqual(
+		makeModule("mining-laser", 3),
+	);
+	expect(
+		boughtModule("miner", { ...stock, h2: makeModule("mining-laser", 3) }, ml),
+	).toEqual(makeModule("mining-laser", 3));
+	const full = {
+		...stock,
+		h2: makeModule("mining-laser", 3),
+		h3: makeModule("pulse-laser", 3),
+	};
+	expect(boughtModule("miner", full, ml)).toEqual(legacyModule("miner", ml));
+	expect(legacyModule("miner", ml)).toEqual(makeModule("mining-laser", 1));
+	expect(boughtModule("miner", undefined, ml)).toEqual(
+		legacyModule("miner", ml),
+	);
+	expect(boughtModule("miner", stock, "Extra Pulse Laser")).toEqual(
+		legacyModule("miner", "Extra Pulse Laser"),
+	);
+	const patrol = stockLoadout("patrol");
+	expect(boughtModule("patrol", patrol, ml)).toEqual(
+		legacyModule("patrol", ml),
+	);
 });

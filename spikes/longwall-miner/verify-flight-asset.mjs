@@ -13,13 +13,18 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { liftAuthoredHullPaint } from "../../scripts/lib/authored-hull-paint.mjs";
 import { baseColorLumaByMaterial } from "../../scripts/lib/texture-luma.mjs";
+import { graftMounts } from "./mounts/graft-mounts.mjs";
 import { triangleSoup } from "./triangle-soup.mjs";
 
 await MeshoptDecoder.ready;
 const io = new NodeIO()
 	.registerExtensions(ALL_EXTENSIONS)
 	.registerDependencies({ "meshopt.decoder": MeshoptDecoder });
-const study = await io.read("spikes/longwall-miner/longwall-miner.glb");
+// Node #1147: the shipped file carries the mounts study grafted in.
+const study = await graftMounts(
+	await io.read("spikes/longwall-miner/longwall-miner.glb"),
+	io,
+);
 // The same lift, from the same measured maps, that `prepare-flight-asset.mjs`
 // writes: `triangle-soup.mjs` keys a primitive by its material's factors, so
 // checking an unlifted study against a lifted file compares two paint jobs.

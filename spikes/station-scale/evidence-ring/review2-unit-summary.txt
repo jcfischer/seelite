@@ -1,0 +1,8 @@
+Command: npm test
+Runs in this fix pass: 1
+  ^ this test timed out after 5000ms.
+
+ 7315 pass
+ 1 fail
+ 17074004 expect() calls
+Ran 7316 tests across 446 files. [973.75s]

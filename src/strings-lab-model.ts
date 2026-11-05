@@ -50,7 +50,7 @@ export function slidersHtml(spec: PartSpec): string {
 				return `<label title="${p.help}" style="display:grid;grid-template-columns:13em 1fr 6em;gap:8px;align-items:center;margin:2px 0">
   <span>${p.label}</span>
   <input type="range" data-param="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${v}">
-  <output data-out="${p.key}" style="font:12px ui-monospace,monospace;color:#8a96a3">${fmt(p, v)}</output>
+  <output data-out="${p.key}" style="font:12px Menlo, monospace;color:#8a96a3">${fmt(p, v)}</output>
 </label>`;
 			})
 			.join("\n");

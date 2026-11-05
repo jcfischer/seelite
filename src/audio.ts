@@ -749,6 +749,80 @@ export class AudioFX {
 			g.sizzleAft.gain.setTargetAtTime(0.22 * mix.sizzleAft, t, 0.03);
 	}
 
+	private drillGraph: {
+		sources: AudioScheduledSourceNode[];
+		root: GainNode;
+		motor: OscillatorNode;
+		motorGain: GainNode;
+		grind: GainNode;
+		grindFilter: BiquadFilterNode;
+	} | null = null;
+	private drillLoudAt = 0;
+
+	drill(spin: number, grind: number) {
+		if (!this.ctx || !this.buses) return;
+		const t = this.ctx.currentTime;
+		const loud = spin > 0.001 || grind > 0.001;
+		if (!this.audible("ship")) return this.dropDrillGraph();
+		if (loud) this.drillLoudAt = t;
+		else if (t - this.drillLoudAt > 1) return this.dropDrillGraph();
+		if (!this.drillGraph) {
+			if (!loud) return;
+			const ctx = this.ctx;
+			const root = ctx.createGain();
+			root.connect(this.buses.ship);
+			const motor = ctx.createOscillator();
+			motor.type = "sawtooth";
+			const motorFilter = ctx.createBiquadFilter();
+			motorFilter.type = "lowpass";
+			motorFilter.frequency.value = 420;
+			const motorGain = ctx.createGain();
+			motorGain.gain.value = 0;
+			motor.connect(motorFilter).connect(motorGain).connect(root);
+			const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+			const data = noise.getChannelData(0);
+			for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+			const src = ctx.createBufferSource();
+			src.buffer = noise;
+			src.loop = true;
+			const grindFilter = ctx.createBiquadFilter();
+			grindFilter.type = "bandpass";
+			grindFilter.Q.value = 0.9;
+			const grindGain = ctx.createGain();
+			grindGain.gain.value = 0;
+			src.connect(grindFilter).connect(grindGain).connect(root);
+			const chatter = ctx.createOscillator();
+			chatter.frequency.value = 23;
+			const chatterDepth = ctx.createGain();
+			chatterDepth.gain.value = 0.35;
+			chatter.connect(chatterDepth).connect(grindGain.gain);
+			motor.start();
+			src.start();
+			chatter.start();
+			this.drillGraph = {
+				sources: [motor, src, chatter],
+				root,
+				motor,
+				motorGain,
+				grind: grindGain,
+				grindFilter,
+			};
+		}
+		const g = this.drillGraph;
+		g.motor.frequency.setTargetAtTime(28 + 62 * spin, t, 0.15);
+		g.motorGain.gain.setTargetAtTime(0.07 * spin, t, 0.1);
+		g.grind.gain.setTargetAtTime(0.16 * grind, t, 0.05);
+		g.grindFilter.frequency.setTargetAtTime(500 + 900 * grind, t, 0.1);
+	}
+
+	private dropDrillGraph() {
+		const g = this.drillGraph;
+		if (!g) return;
+		for (const src of g.sources) src.stop();
+		g.root.disconnect();
+		this.drillGraph = null;
+	}
+
 	/** When a weapon loop was last asked for, on the audio clock. */
 	private weaponLoudAt = 0;
 

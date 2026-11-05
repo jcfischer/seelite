@@ -11,6 +11,65 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { strykerConfig } from "./mutation-changed";
+
+test("Stryker keeps public metadata while excluding downloaded audio assets", () => {
+	const root = mkdtempSync(join(tmpdir(), "seelite-mutation-public-"));
+	try {
+		for (const dir of [
+			"src",
+			"tests",
+			"public/music-samples",
+			"public/voice-model",
+		])
+			mkdirSync(join(root, dir), { recursive: true });
+		symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir");
+		writeFileSync(join(root, "package.json"), '{"type":"module"}');
+		writeFileSync(join(root, "src/value.ts"), "export const value = 1;");
+		writeFileSync(join(root, "public/_headers"), "/assets/*\n");
+		for (const dir of ["music-samples", "voice-model"])
+			writeFileSync(join(root, "public", dir, "large.bin"), "not needed");
+		writeFileSync(
+			join(root, "tests/value.test.ts"),
+			`
+import { expect, test } from "bun:test";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { value } from "../src/value";
+test("public metadata survives sandbox assembly", () => {
+  expect(value).toBe(1);
+  expect(readdirSync("public")).toEqual(["_headers"]);
+  expect(readFileSync("public/_headers", "utf8")).toBe("/assets/*\\n");
+  expect(existsSync("public/music-samples/large.bin")).toBe(false);
+  expect(existsSync("public/voice-model/large.bin")).toBe(false);
+});
+`,
+		);
+		writeFileSync(
+			join(root, "stryker.json"),
+			JSON.stringify({
+				...strykerConfig(
+					"src/value.ts",
+					[{ start: 1, end: 1 }],
+					["tests/value.test.ts"],
+					"reports/value",
+				),
+				dryRunOnly: true,
+			}),
+		);
+		const result = spawnSync(
+			"node",
+			[
+				resolve("node_modules/@stryker-mutator/core/bin/stryker.js"),
+				"run",
+				"stryker.json",
+			],
+			{ cwd: root, encoding: "utf8" },
+		);
+		expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}, 60_000);
 
 test("real CLI reports a weak assertion's survivor, kills it with boundary assertions, and leaves source bytes alone", () => {
 	const root = mkdtempSync(join(tmpdir(), "seelite-mutation-control-"));

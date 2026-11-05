@@ -1,3 +1,4 @@
+import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
 // A default-layout probe (#381 D11): B cycles and Space fires.
 // Drives the bound cycle while holding the trigger; reads the row actually painted.
 import {
@@ -18,6 +19,7 @@ for (const width of [900, 390]) {
 	watch(page);
 	await page.goto(gameUrl(origin, { seed: 42 }));
 	await bootedGame(page);
+	await installCockpitTextProbe(page);
 	await stopLoop(page);
 	await page.evaluate(async () => {
 		const g = window.__seelite;
@@ -36,11 +38,13 @@ for (const width of [900, 390]) {
 		g.floorFit = null;
 		g.render(0);
 	});
-	const first = await page.evaluate(() => window.__seelite.floorRender);
+	const first = await page.evaluate(
+		() => window.__seelite.cockpit.text.readings.get("lasers")?.[0]?.text,
+	);
 	check(
-		`${width}: all lasers named on glass`,
-		first.duelRow.at(-1).value === "ALL LASERS · 1/4",
-		JSON.stringify(first.duelRow),
+		`${width}: all lasers named on its cabin face`,
+		first === "ALL LASERS · 1/4",
+		JSON.stringify(first),
 	);
 	await page.keyboard.down(" ");
 	const shot = await page.evaluate(async () => {
@@ -106,12 +110,15 @@ for (const width of [900, 390]) {
 		const before = g.condition.heat;
 		g.step(0.05);
 		g.render(0);
-		return { before, heat: g.condition.heat, row: g.floorRender.duelRow };
+		return {
+			before,
+			heat: g.condition.heat,
+			label: g.cockpit.text.readings.get("lasers")?.[0]?.text,
+		};
 	});
 	check(
 		`${width}: held trigger switches immediately to silent scanner`,
-		scanner.heat < scanner.before &&
-			scanner.row.at(-1).value === "IDENTITY SCANNER · 4/4",
+		scanner.heat < scanner.before && scanner.label === "IDENTITY SCANNER · 4/4",
 		JSON.stringify(scanner),
 	);
 	await page.keyboard.up(" ");
@@ -123,18 +130,16 @@ for (const width of [900, 390]) {
 		g.cycleFireGroup();
 		g.duelRowShown = () => true;
 		g.render(0);
-		return g.floorRender;
+		return {
+			laser: window.__cockpitSourcePainted("lasers"),
+			combat: window.__cockpitSourcePainted("combat"),
+			label: g.cockpit.text.readings.get("lasers")?.[0]?.text,
+		};
 	});
 	check(
-		`${width}: longest label and combat readings fit`,
-		fit.overflowPx === 0 &&
-			fit.duelBox.x >= fit.marginPx &&
-			fit.duelBox.x + fit.duelBox.width <= width - fit.marginPx,
-		JSON.stringify({
-			row: fit.duelRow,
-			box: fit.duelBox,
-			overflow: fit.overflowPx,
-		}),
+		`${width}: the longest armed-group label and combat values paint their own faces`,
+		fit.laser && fit.combat && fit.label.includes("MILITARY LASER"),
+		JSON.stringify(fit),
 	);
 	await page.screenshot({ path: `/tmp/seelite-893-${width}.png` });
 	const mining = await page.evaluate(async () => {

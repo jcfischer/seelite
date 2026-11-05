@@ -1,0 +1,16 @@
+(pass) terminal-to-terminal route projection > a one-station actor stays abstract while away and returns to its home berth [2.15ms]
+(pass) terminal-to-terminal route projection > one home-owned Carrier traverses the specified phase order [3371.93ms]
+(pass) terminal-to-terminal route projection > every visible moving phase carries a continuous complete attitude [30222.35ms]
+(fail) terminal-to-terminal route projection > station-zone legs stay slow, clear the bubble, and visibly dwell [5528.35ms]
+  ^ this test timed out after 5000ms.
+(pass) terminal-to-terminal route projection > a player-input timeline delays the shared queues without changing identity [1179.64ms]
+
+
+1 tests failed:
+(fail) terminal-to-terminal route projection > station-zone legs stay slow, clear the bubble, and visibly dwell [5528.35ms]
+  ^ this test timed out after 5000ms.
+
+ 7315 pass
+ 1 fail
+ 17074004 expect() calls
+Ran 7316 tests across 446 files. [973.75s]

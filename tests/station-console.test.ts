@@ -934,3 +934,26 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 		expect(marketDisplayChanged(before, screen(noDeficit, {}))).toBe(false);
 	});
 });
+
+test("?mining=1 lists the Mining Laser at shipyards too, and nowhere new without it (#1147, #920 D-D18)", () => {
+	const listed = (type: "refinery" | "shipyard" | "trade", mining?: boolean) =>
+		stationEquipmentScreen({ type, displayTL: 11, rungs: TOP_RUNGS, mining })
+			.available.map((e) => e.name)
+			.filter((n) => n === "Mining Laser").length;
+	expect(listed("shipyard", true)).toBe(1);
+	expect(listed("shipyard", false)).toBe(0);
+	expect(listed("shipyard")).toBe(0);
+	expect(listed("refinery", true)).toBe(1);
+	expect(listed("refinery", false)).toBe(1);
+	expect(listed("trade", true)).toBe(0);
+	const shipyard = stationEquipmentScreen({
+		type: "shipyard",
+		displayTL: 11,
+		rungs: TOP_RUNGS,
+		mining: true,
+	});
+	expect(shipyard.unavailable.map((e) => e.name)).not.toContain("Mining Laser");
+	expect(
+		shipyard.unavailable.find((e) => e.name === "Fuel Scoops")?.reason,
+	).toBe("refineries only");
+});

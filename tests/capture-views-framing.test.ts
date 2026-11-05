@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 
 // Execute the production placer's callbacks with a fixture that records the
 // requested framing. Importing the capture entry point would launch Chromium.
@@ -41,5 +42,20 @@ test("NPC captures preserve the requested framing, with ring as the default", as
 			);
 			expect(samples.at(-1)).toEqual([20.25, true, framing ?? "ring"]);
 		}
+	}
+});
+
+test("canonical capture refuses an invalid boot deadline before opening a browser", () => {
+	for (const value of ["0", "-1", "NaN", "20000.5"]) {
+		const result = spawnSync(
+			"node",
+			["scripts/capture-views.mjs", "--boot-timeout-ms", value],
+			{
+				encoding: "utf8",
+				env: { ...process.env, PROBE_ORIGIN: "http://127.0.0.1:1" },
+			},
+		);
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain("--boot-timeout-ms");
 	}
 });

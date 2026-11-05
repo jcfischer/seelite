@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "station": "station-trade",
+    "hull": "courier"
+  },
+  "report": [
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/trade-light-controls/assembly/after/trade-d-03-face-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.6903506385459705,
+      "camToShipKm": 0.3637306654439135,
+      "camToStationKm": 1.0361872402437142,
+      "planeKm": 0.428
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/trade-light-controls/assembly/after/trade-d-08-sun-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7045565979321997,
+      "camToShipKm": 0.6287719058292927,
+      "camToStationKm": 1.3053392282798255,
+      "planeKm": 0.428
+    }
+  ]
+}

@@ -31,7 +31,10 @@ function withModule(c: CommanderState, m: FittedModule): CommanderState {
 }
 
 const rowsFor = (m: FittedModule, from: CommanderState = base()) =>
-	fitDeltas(fitReadout(from, 0), fitReadout(withModule(from, m), 0));
+	fitDeltas(
+		fitReadout(from, 0, true),
+		fitReadout(withModule(from, m), 0, true),
+	);
 const row = (rows: ReturnType<typeof fitDeltas>, label: string) =>
 	rows.find((r) => r.label === label);
 
@@ -161,10 +164,7 @@ describe("fitDeltas", () => {
 	 * computer stays by ruling: its grades differ in price and mass alone
 	 * (principal, 2026-10-14, on #977).
 	 */
-	const PRESENCE_ONLY: readonly ModuleKind[] = [
-		"mining-laser",
-		"docking-computer",
-	];
+	const PRESENCE_ONLY: readonly ModuleKind[] = ["docking-computer"];
 
 	test("every other module kind moves at least one row beside ACCEL and CREDIT", () => {
 		// Into an empty slot, so a hardpoint kind is not read as the stock pulse
@@ -180,4 +180,27 @@ describe("fitDeltas", () => {
 			else expect([kind, effects.length > 0]).toEqual([kind, true]);
 		}
 	});
+});
+
+test("mining extraction preview is signed by size and grade, and absent without the flag", () => {
+	const miner = newCommander("miner");
+	const fit = (size: 1 | 3, grade: "E" | "A") => ({
+		...miner,
+		loadout: { ...miner.loadout, h2: makeModule("mining-laser", size, grade) },
+	});
+	const e1 = fit(1, "E");
+	const e3 = fit(3, "E");
+	const a3 = fit(3, "A");
+	const rows = (b: CommanderState, a: CommanderState, mining = true) =>
+		fitDeltas(fitReadout(b, 0, mining), fitReadout(a, 0, mining));
+	expect(row(rows(miner, e1), "EXTRACTION")).toMatchObject({
+		before: "0.0000",
+		after: "0.1000",
+		delta: "+0.1000",
+		unit: "t/s",
+	});
+	expect(row(rows(e1, e3), "EXTRACTION")?.delta).toBe("+0.1250");
+	expect(row(rows(e3, a3), "EXTRACTION")?.delta).toBe("+0.1125");
+	expect(row(rows(a3, e3), "EXTRACTION")?.delta).toBe("−0.1125");
+	expect(row(rows(base(), a3, false), "EXTRACTION")).toBeUndefined();
 });

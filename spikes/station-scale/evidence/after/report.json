@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "station": "station-trade",
+    "hull": "courier"
+  },
+  "report": [
+    {
+      "file": "spikes/station-scale/evidence/after/trade-03-face-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.6903506420685355,
+      "camToShipKm": 0.36373066740367793,
+      "camToStationKm": 1.0361872468868731,
+      "planeKm": 0.428
+    },
+    {
+      "file": "spikes/station-scale/evidence/after/trade-04-wide.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7761984317262718,
+      "camToShipKm": 2.7699277903525332,
+      "camToStationKm": 3.205679956972799,
+      "planeKm": 0.428
+    }
+  ]
+}
