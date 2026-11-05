@@ -123,3 +123,35 @@ full regression run. Only the receipt changed after the implementation commit.
 The required single full host run, `npm test`, passed immediately before the
 final evidence commit: 7,454 tests across 460 files, 0 failures (1,010.37 seconds).
 `git merge-base --is-ancestor origin/main HEAD` and `git diff --check` also passed.
+
+## Sage round 1 follow-up
+
+Both suggestions were taken. `FOV_CONTRACT_ROOTS` is one frozen list shared by
+`applyViewFov` and `layerCameras`; the reviewed probe set is unchanged.
+
+Four additional production-snapshot routing cases cover the getter expansion
+claims: a body-only edit to the unowned `drawsCabin` getter, a new
+`layerCameras` reader introduced in the diff or already present in the base,
+and a new `saveFlush()` collaborator inside `layerCameras`. Each requires the
+complete probe inventory and the applicable refusal reason. Bypassing the
+caller guard makes the already-present reader select only affected probes;
+bypassing the collaborator guard does the same for the new getter call. The
+new tests failed on both temporary defects, which were then removed.
+
+`bun test tests/probe-impact.test.ts tests/probe-selection.test.ts`: 63 pass,
+0 fail. Typecheck, format, script lint, comment lint, launcher wiring and build
+passed. No game source, probe assertions, selection guards or browser launch
+behavior changed in this review round.
+
+The six focused hardware probes passed together, serially, in 300 seconds on
+ANGLE Metal / Apple M5 Pro (`PROBE_CONCURRENCY=1`, with the same `PROBE_FILES`
+and `PROBE_SELECTION=1` command above). This is the reviewed selection-policy
+exception in `CLAUDE.md`; 114 of 120 probes were not run. Automatic selection
+still reports the infrastructure fallback. Chromium's sandboxed launch aborted
+before any probe ran; the successful run used the host outside that sandbox.
+
+The required single full host run for this review round, `npm test`, passed:
+7,458 tests across 460 files, 0 failures (980.51 seconds). The full log is at
+`/tmp/seelite-1160-review1-full-test.log`; the focused browser log is at
+`/tmp/seelite-1160-review1-probes.log`. `git diff --check` and the
+`origin/main` ancestor check passed before the commit.

@@ -614,20 +614,18 @@ export const SMOKE_PROBES = Object.freeze([
 	"probe-live-cockpit.mjs",
 ]);
 
+const FOV_CONTRACT_ROOTS = Object.freeze([
+	"scripts/probe-hud.mjs",
+	"scripts/probe-chase-view.mjs",
+	"scripts/probe-cruise-light.mjs",
+]);
+
 /** Body-only edits to these projections have reviewed consumers. New calls or
  * this-members expand coverage, as do signatures, fields and boot wiring.
  */
 export const MAIN_METHOD_ROOTS = Object.freeze({
-	applyViewFov: [
-		"scripts/probe-hud.mjs",
-		"scripts/probe-chase-view.mjs",
-		"scripts/probe-cruise-light.mjs",
-	],
-	layerCameras: [
-		"scripts/probe-hud.mjs",
-		"scripts/probe-chase-view.mjs",
-		"scripts/probe-cruise-light.mjs",
-	],
+	applyViewFov: FOV_CONTRACT_ROOTS,
+	layerCameras: FOV_CONTRACT_ROOTS,
 	navRows: ["src/station-console.ts", "src/galaxy-finder.ts"],
 	firstDayPanel: ["src/first-day.ts", "src/station-console.ts"],
 	firstDayGlassPrompt: ["src/first-day.ts", "src/hud.ts"],

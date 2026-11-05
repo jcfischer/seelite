@@ -126,6 +126,74 @@ describe("production contract ownership", () => {
 			);
 		},
 	);
+	test("a body-only unowned getter edit expands to all probes", async () => {
+		const main = sources.get("src/main.ts")!;
+		const edited = main.replace(
+			'this.view === "cockpit" && !this.cabinHidden',
+			'this.view === "cockpit" || !this.cabinHidden',
+		);
+		expect(changedMethods(main, edited)).toEqual(["drawsCabin"]);
+		const after = new Map(sources);
+		after.set("src/main.ts", edited);
+		const result = await selectProbes({
+			changedFiles: ["src/main.ts"],
+			impact: { before: sources, after },
+		});
+		expect(result.mode).toBe("all");
+		expect(result.probes).toEqual(inventory);
+		expect(result.reason).toContain("unowned methods");
+	});
+	test.each([false, true])(
+		"a new layerCameras reader expands to all probes (already in base: %s)",
+		async (alreadyInBase) => {
+			const main = sources.get("src/main.ts")!;
+			const withReader = main.replace(
+				"private navRows(): NavRow[] {",
+				"private navRows(): NavRow[] { void this.layerCameras;",
+			);
+			expect(methodCallers(withReader, "layerCameras")).toEqual([
+				"applyViewFov",
+				"navRows",
+			]);
+			const before = new Map(sources);
+			before.set("src/main.ts", alreadyInBase ? withReader : main);
+			const after = new Map(sources);
+			after.set(
+				"src/main.ts",
+				withReader.replace(
+					"private get layerCameras() {\n\t\treturn [\n\t\t\tthis.backdropCamera,",
+					"private get layerCameras() {\n\t\treturn [",
+				),
+			);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before, after },
+			});
+			expect(result.mode).toBe("all");
+			expect(result.probes).toEqual(inventory);
+			expect(result.reason).toContain(
+				"method callers differ from reviewed ownership",
+			);
+		},
+	);
+	test("a new layerCameras collaborator expands to all probes", async () => {
+		const main = sources.get("src/main.ts")!;
+		const edited = main.replace(
+			"private get layerCameras() {",
+			"private get layerCameras() { this.saveFlush();",
+		);
+		expect(changedMethods(main, edited)).toEqual(["layerCameras"]);
+		expect(methodCallers(edited, "layerCameras")).toEqual(["applyViewFov"]);
+		const after = new Map(sources);
+		after.set("src/main.ts", edited);
+		const result = await selectProbes({
+			changedFiles: ["src/main.ts"],
+			impact: { before: sources, after },
+		});
+		expect(result.mode).toBe("all");
+		expect(result.probes).toEqual(inventory);
+		expect(result.reason).toContain("introduces new calls/member access");
+	});
 	test.each([false, true])(
 		"a new applyViewFov caller expands to all probes (already in base: %s)",
 		async (alreadyInBase) => {
