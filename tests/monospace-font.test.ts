@@ -44,4 +44,15 @@ describe("monospace family stacks (#1178)", () => {
 		);
 		expect(bad).toEqual([]);
 	});
+
+	test("no font string names the generic monospace family alone, which resolves to Courier here", () => {
+		const bare = sources(SRC).flatMap((file) =>
+			[
+				...readFileSync(file, "utf8").matchAll(
+					/(?:\d|\}|\))(?:px|em|rem)?(?:\s*\/\s*[\d.]+)?\s+monospace\b/g,
+				),
+			].map((m) => `${relative(ROOT, file)}: ${m[0]}`),
+		);
+		expect(bare).toEqual([]);
+	});
 });
