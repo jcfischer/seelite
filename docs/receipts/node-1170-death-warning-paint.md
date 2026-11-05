@@ -109,10 +109,16 @@ changed pixels, both negative controls must fail the same colour gate, and the
 restored amber must pass. Other lines on the shared screen remain present.
 The original recovery, voice and no-save assertions remain intact.
 
-No death-probe quarantine was installed in the supplied main base. Its repaired
-warning passes there, so adding an obsolete quarantine would hide a working
-gate. The unrelated node #975 entry remains untouched. This is probe work,
-not a major player-visible change under `src/changelog.ts`.
+No death-probe quarantine was installed in the supplied main base. The base
+retry passed the original 37 assertions, but that does not establish a pass of
+the changed probe at the final head. Neither does the isolated arm-6 diagnostic
+below. The earlier receipt's claim of a working gate was unsupported by those
+results; acceptance requires the normal hardware invocation to complete.
+Review round 1 installs the node #1170 quarantine entry while that acceptance
+is outstanding. The probe still runs and reports its full result. Removal
+requires a normal hardware pass with the repair, not an isolated diagnostic.
+The unrelated node #975 entry remains untouched. This is probe work, not a
+major player-visible change under `src/changelog.ts`.
 
 ### Final-head evidence and remaining boot failure
 
@@ -120,7 +126,7 @@ At implementation commit `0d81dfb2`, the selector chose death plus the three
 standard smoke probes. Only death was run under the worker's focused-probe SOP.
 The full browser suite was not run.
 
-The normal final-head live command stopped before its first assertion at the
+The normal final-head live intervention stopped before its first assertion at the
 existing `bootedGame(page)` 20-second limit on three cold-server runs
 (22.2, 22.0 and 21.5 seconds total). A run against a guarded warm server also
 stopped there (21.8 seconds). No game source, boot helper or timeout was changed.
@@ -145,7 +151,7 @@ All six warning checks passed on hardware:
 Both negative controls intercepted four warning writes. The voice counts stayed
 1 / 1 / 2 across the original crossings, and the no-pod/healed records cleared.
 The separate diagnostic does not cover recovery arms and is **not** a pass of
-the normal live command. Final-head full-probe acceptance remains limited by
+the normal live intervention. Final-head full-probe acceptance remains limited by
 the boot timeout; no thresholds were weakened to report it green.
 
 The build (including typecheck and bundle-size checks), format, lint and
@@ -155,3 +161,39 @@ after first failing on the old refusal-red classification.
 The required single final `npm test` run passed on this host: **7,452 pass,
 0 fail**, 17,075,320 assertions across 461 files, in 1,177.37 seconds.
 No browser or other check from this worker ran alongside it.
+
+### Review round 1: quarantine installed until normal acceptance
+
+At reviewed head `2066cf71`, two normal hardware interventions used the
+unchanged probe, boot helper and 20-second timeout:
+
+```sh
+npm run probe:one -- probe-death.mjs --show-output --log /tmp/node-1170-review1-death.log
+npm run probe:one -- probe-death.mjs --show-output --log /tmp/node-1170-review1-death-retry.log
+```
+
+Both passed the initial boot, arm 1 and arm 1b, then stopped at the arm-3
+post-launch death reload's `bootedGame(launchPage)` call, before the warning arm.
+The first took 118.5 seconds (peak load 12.7), the retry 119.6 seconds (peak
+load 9.8), on ANGLE Metal / Apple M5 Pro. This is the same call site as the
+124.5-second main-base failure recorded above; it is unchanged from the base.
+Its cause remains undiagnosed. No warning-paint verdict follows from either
+run, and neither is a normal final-head pass.
+
+The prior isolated warning diagnostic remains evidence for its six checks
+only. The original 37/37 base retry remains evidence for that revision only.
+The node #1170 quarantine now tracks the outstanding normal acceptance; it
+does not skip the probe or suppress its output. The paint repair is retained,
+but the checkpoint must not close on these results. No boot timeout, recovery,
+voice, no-save or colour assertion was relaxed in this review round.
+
+Review-round checks on this host:
+
+- Focused paint, probe-impact and runner-argument tests: 62 passed, 0 failed.
+- Format, lint, comment lint and typecheck passed.
+- The runner's unfiltered selection still includes `probe-death.mjs` with its
+  issue-linked quarantine entry present.
+- The required single final `npm test` run passed: **7,452 pass, 0 fail**,
+  17,075,320 assertions across 461 files in 1,108.55 seconds. It ran after both
+  browser attempts finished; no other test or browser run from this worker
+  overlapped it.
