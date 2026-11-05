@@ -146,11 +146,11 @@ const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 600_000);
  * pool (`EXCLUSIVE` in `scripts/lib/probe-schedule.mjs`); a probe joins it when
  * it is red at this concurrency and green alone, as `probe-planet-surfaces`
  * was. The rest share the machine at the per-probe slowdown the receipt
- * measured. This default with that list has not yet had its three green runs
- * (#1175 C5). Another machine re-measures before it trusts this number; `PROBE_CONCURRENCY=1`
- * gives the serial run.
+ * measured. Three full runs at six failed on `bootedGame`'s 20 s deadline on
+ * 2026-11-05, with the cause open (#1184). Another machine re-measures before it
+ * trusts this number; `PROBE_CONCURRENCY=1` gives the serial run.
  */
-const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 6);
+const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 4);
 
 // Which probes to run: everything here, or the subset `resolveOnly` selects.
 // `probe-inventory.mjs` owns exclusions such as this runner and `probe-guard`,
