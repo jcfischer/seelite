@@ -27,12 +27,13 @@
 // layout binds them, and a moved default turns it red for that reason.
 import { flightHarness, HOLD_MS, NEW_KEY } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
-import { rememberFlightFixture } from "./lib/probe-flight-fixture.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
-	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -52,13 +53,19 @@ const browser = await launchChromium();
 const context = await browser.newContext({
 	viewport: { width: 1280, height: 760 },
 });
-let page = await context.newPage();
-watch(page);
-await installViewPlacement(page);
-await installViewFraming(page);
-await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
-await bootedGame(page);
-let resetFlightFixture = await rememberFlightFixture(page);
+async function bootPage() {
+	const page = await context.newPage();
+	watch(page);
+	await installFlightFixtureHooks(page);
+	await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
+	await bootedGame(page);
+	return {
+		page,
+		harness: flightHarness(page),
+		resetFlightFixture: await rememberFlightFixture(page),
+	};
+}
+let { page, harness, resetFlightFixture } = await bootPage();
 
 /**
  * The measurement, shared with `probe-rebind.mjs` since #381 S4 —
@@ -68,7 +75,6 @@ let resetFlightFixture = await rememberFlightFixture(page);
  * `HOLD_MS` moved with them. This file was the second copy; the capture
  * modal's rows would have been the third.
  */
-let harness = flightHarness(page);
 let previousRestFailed = false;
 const settle = () => harness.settle();
 const turnedWhileHolding = (key) => harness.turnedWhileHolding(key);
@@ -159,7 +165,7 @@ const settledTab = async () => {
  *  takes it. */
 const refuseStorage = () =>
 	page.evaluate(() => {
-		window.__bindingStoreSetItem = Storage.prototype.setItem;
+		window.__bindingStoreSetItem ??= Storage.prototype.setItem;
 		Storage.prototype.setItem = () => {
 			throw new Error("quota");
 		};
@@ -188,14 +194,7 @@ const REFUSED_ROW = {
 const reload = async () => {
 	previousRestFailed ||= harness.restFailed();
 	await page.close();
-	page = await context.newPage();
-	watch(page);
-	await installViewPlacement(page);
-	await installViewFraming(page);
-	await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
-	await bootedGame(page);
-	harness = flightHarness(page);
-	resetFlightFixture = await rememberFlightFixture(page);
+	({ page, harness, resetFlightFixture } = await bootPage());
 };
 
 // ---------------------------------------------------------------------------
@@ -604,10 +603,18 @@ check(
 // so one alone turns the nose by θ and both together by more; nothing at all
 // turns it by nothing. One scalar separates all three.
 // ---------------------------------------------------------------------------
+await refuseStorage();
 await page.evaluate(() => {
+	if (typeof window.__bindingStoreSetItem !== "function")
+		throw new Error("binding-store: no native storage writer was saved");
 	Storage.prototype.setItem = window.__bindingStoreSetItem;
 	window.__seelite.selectLayout("default");
 	localStorage.clear();
+	const key = "__bindingStoreRestoreCheck";
+	localStorage.setItem(key, "restored");
+	if (localStorage.getItem(key) !== "restored")
+		throw new Error("binding-store: restored storage writer did not write");
+	localStorage.removeItem(key);
 });
 await resetFlightFixture();
 // The discarded first hold, then `d` on the shipped layout, where it is yaw

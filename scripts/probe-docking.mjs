@@ -35,13 +35,14 @@ import {
 	bootedGame,
 	guardedOrigin,
 	installCamSim,
-	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
-import { rememberFlightFixture } from "./lib/probe-flight-fixture.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -1573,6 +1574,89 @@ check(
 // Seeds pin every pooled form; never mutate a station's drawn form in place.
 // The approach, berth reservation and launch all go through Game's protocol.
 await page.close();
+async function flyStationCase(stationPage, type) {
+	return stationPage.evaluate(async (type) => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
+		const g = window.__seelite;
+		const station = g.world.system.contents.stations.find(
+			(s) => s.type === type,
+		);
+		if (!station) return { missing: true };
+		const id = station.id;
+		const snap = g.dockingSnapshot(id);
+		const body = g.world.system.byId.get(id);
+		const dt = g.units.MAX_DT;
+		g.resetDock();
+		g.regime = "normal";
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setThrottle(0);
+		g.world.ship.pos = {
+			x: body.pos.x + snap.axis.x * (snap.planeKm + 3.2),
+			y: body.pos.y + snap.axis.y * (snap.planeKm + 3.2),
+			z: body.pos.z + snap.axis.z * (snap.planeKm + 3.2),
+		};
+		g.world.ship.vel = { ...g.stationVelocity(id) };
+		g.setAttitude(
+			{ x: -snap.axis.x, y: -snap.axis.y, z: -snap.axis.z },
+			snap.basis.up,
+		);
+		g.targetId = id;
+		g.step(dt);
+		g.render(0);
+		if (!g.hasDockingComputer)
+			g.commander = {
+				...g.commander,
+				loadout: migrateEquipment(g.commander.hull, [
+					...equipmentNames(g.commander.loadout ?? {}),
+					g.dockingComputerName,
+				]).loadout,
+			};
+		const impacts = g.collisionImpacts;
+		g.requestDockingClearance();
+		g.toggleDockingComputer();
+		for (let t = 0; t < 200; t += dt) {
+			g.step(dt);
+			if (g.dockingSnapshot(id).dockPhase === "docked") break;
+		}
+		const parked = g.dockingSnapshot(id);
+		g.render(0);
+		const docked = parked.dockPhase === "docked";
+		let launched = false;
+		if (docked) {
+			for (let t = 0; t < 200; t += dt) {
+				if (g.dockingSnapshot(id).dockPhase === "docked")
+					launched = g.launch() || launched;
+				g.step(dt);
+				// A held launch can be promoted by Game's retry during the step.
+				launched = g.dockingSnapshot(id).dockPhase === "launching" || launched;
+				if (g.dockingSnapshot(id).dockPhase === "flying") break;
+			}
+		}
+		const outside = g.dockingSnapshot(id);
+		const rangeBefore = outside.axialKm;
+		for (let t = 0; t < 10; t += dt) g.step(dt);
+		g.render(0);
+		const away = g.dockingSnapshot(id);
+		return {
+			formId: station.formId,
+			system: g.world.system.record.index,
+			docked,
+			berth: parked.berthId,
+			entry: parked.lastEntry?.docked,
+			launched,
+			phase: away.dockPhase,
+			planeKm: away.planeKm,
+			axialKm: away.axialKm,
+			distanceGainedKm: away.axialKm - rangeBefore,
+			impacts: g.collisionImpacts - impacts,
+			refusal: parked.computerRefusal,
+		};
+	}, type);
+}
+
 const stationFixtures = [
 	["trade", 3, "a"],
 	["trade", 5, "b"],
@@ -1587,21 +1671,23 @@ const stationFixtures = [
 	["shipyard", 2, "b"],
 	["shipyard", 8, "c"],
 ];
-for (const seed of new Set(stationFixtures.map(([, seed]) => seed))) {
+const casesBySeed = new Map();
+for (const fixture of stationFixtures) {
+	const seed = fixture[1];
+	if (!casesBySeed.has(seed)) casesBySeed.set(seed, []);
+	casesBySeed.get(seed).push(fixture);
+}
+for (const [seed, cases] of casesBySeed) {
 	const stationPage = await browser.newPage({
 		viewport: { width: 900, height: 620 },
 	});
 	watch(stationPage);
-	await installViewPlacement(stationPage);
-	await installViewFraming(stationPage);
+	await installFlightFixtureHooks(stationPage);
 	await stationPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
 	await bootedGame(stationPage);
 	const resetStation = await rememberFlightFixture(stationPage);
-	let used = false;
-	for (const [type, , formId] of stationFixtures.filter(
-		([, s]) => s === seed,
-	)) {
-		if (used) {
+	for (const [index, [type, , formId]] of cases.entries()) {
+		if (index > 0) {
 			await resetStation();
 			const neutral = await stationPage.evaluate(() => {
 				const g = window.__seelite;
@@ -1615,88 +1701,7 @@ for (const seed of new Set(stationFixtures.map(([, seed]) => seed))) {
 			});
 			check(`seed ${seed} reuses a neutral flight fixture`, neutral);
 		}
-		used = true;
-		const run = await stationPage.evaluate(async (type) => {
-			const { migrateEquipment, equipmentNames } = await import(
-				"/src/loadout.ts"
-			);
-
-			const g = window.__seelite;
-			const station = g.world.system.contents.stations.find(
-				(s) => s.type === type,
-			);
-			if (!station) return { missing: true };
-			const id = station.id;
-			const snap = g.dockingSnapshot(id);
-			const body = g.world.system.byId.get(id);
-			const dt = g.units.MAX_DT;
-			g.resetDock();
-			g.regime = "normal";
-			g.rates = { pitch: 0, yaw: 0, roll: 0 };
-			g.setThrottle(0);
-			g.world.ship.pos = {
-				x: body.pos.x + snap.axis.x * (snap.planeKm + 3.2),
-				y: body.pos.y + snap.axis.y * (snap.planeKm + 3.2),
-				z: body.pos.z + snap.axis.z * (snap.planeKm + 3.2),
-			};
-			g.world.ship.vel = { ...g.stationVelocity(id) };
-			g.setAttitude(
-				{ x: -snap.axis.x, y: -snap.axis.y, z: -snap.axis.z },
-				snap.basis.up,
-			);
-			g.targetId = id;
-			g.step(dt);
-			g.render(0);
-			if (!g.hasDockingComputer)
-				g.commander = {
-					...g.commander,
-					loadout: migrateEquipment(g.commander.hull, [
-						...equipmentNames(g.commander.loadout ?? {}),
-						g.dockingComputerName,
-					]).loadout,
-				};
-			const impacts = g.collisionImpacts;
-			g.requestDockingClearance();
-			g.toggleDockingComputer();
-			for (let t = 0; t < 200; t += dt) {
-				g.step(dt);
-				if (g.dockingSnapshot(id).dockPhase === "docked") break;
-			}
-			const parked = g.dockingSnapshot(id);
-			g.render(0);
-			const docked = parked.dockPhase === "docked";
-			let launched = false;
-			if (docked) {
-				for (let t = 0; t < 200; t += dt) {
-					if (g.dockingSnapshot(id).dockPhase === "docked")
-						launched = g.launch() || launched;
-					g.step(dt);
-					// A held launch can be promoted by Game's retry during the step.
-					launched =
-						g.dockingSnapshot(id).dockPhase === "launching" || launched;
-					if (g.dockingSnapshot(id).dockPhase === "flying") break;
-				}
-			}
-			const outside = g.dockingSnapshot(id);
-			const rangeBefore = outside.axialKm;
-			for (let t = 0; t < 10; t += dt) g.step(dt);
-			g.render(0);
-			const away = g.dockingSnapshot(id);
-			return {
-				formId: station.formId,
-				system: g.world.system.record.index,
-				docked,
-				berth: parked.berthId,
-				entry: parked.lastEntry?.docked,
-				launched,
-				phase: away.dockPhase,
-				planeKm: away.planeKm,
-				axialKm: away.axialKm,
-				distanceGainedKm: away.axialKm - rangeBefore,
-				impacts: g.collisionImpacts - impacts,
-				refusal: parked.computerRefusal,
-			};
-		}, type);
+		const run = await flyStationCase(stationPage, type);
 		check(
 			`seed ${seed} generates ${type} ${formId} and docks at a berth`,
 			run.formId === formId &&

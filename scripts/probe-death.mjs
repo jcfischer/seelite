@@ -42,13 +42,14 @@
 import {
 	bootedGame,
 	guardedOrigin,
-	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
-import { rememberFlightFixture } from "./lib/probe-flight-fixture.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -672,8 +673,7 @@ const warnPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
 watch(warnPage, "eject-warning");
-await installViewPlacement(warnPage);
-await installViewFraming(warnPage);
+await installFlightFixtureHooks(warnPage);
 await warnPage.goto(gameUrl(origin, { seed: 42, "no-save": true }));
 await bootedGame(warnPage);
 await warnPage.waitForFunction(() => !window.__seelite.clockHeld);
