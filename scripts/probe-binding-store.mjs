@@ -27,9 +27,12 @@
 // layout binds them, and a moved default turns it red for that reason.
 import { flightHarness, HOLD_MS, NEW_KEY } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
+import { rememberFlightFixture } from "./lib/probe-flight-fixture.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -46,10 +49,16 @@ const SEED = 42;
 const BAND = [0.8, 1.2];
 
 const browser = await launchChromium();
-const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
+const context = await browser.newContext({
+	viewport: { width: 1280, height: 760 },
+});
+let page = await context.newPage();
 watch(page);
+await installViewPlacement(page);
+await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 await bootedGame(page);
+let resetFlightFixture = await rememberFlightFixture(page);
 
 /**
  * The measurement, shared with `probe-rebind.mjs` since #381 S4 —
@@ -59,7 +68,11 @@ await bootedGame(page);
  * `HOLD_MS` moved with them. This file was the second copy; the capture
  * modal's rows would have been the third.
  */
-const { settle, turnedWhileHolding, restFailed } = flightHarness(page);
+let harness = flightHarness(page);
+let previousRestFailed = false;
+const settle = () => harness.settle();
+const turnedWhileHolding = (key) => harness.turnedWhileHolding(key);
+const restFailed = () => previousRestFailed || harness.restFailed();
 
 /**
  * Two keys held alternately, `n` times each, reported as medians.
@@ -146,6 +159,7 @@ const settledTab = async () => {
  *  takes it. */
 const refuseStorage = () =>
 	page.evaluate(() => {
+		window.__bindingStoreSetItem = Storage.prototype.setItem;
 		Storage.prototype.setItem = () => {
 			throw new Error("quota");
 		};
@@ -172,8 +186,16 @@ const REFUSED_ROW = {
 };
 
 const reload = async () => {
+	previousRestFailed ||= harness.restFailed();
+	await page.close();
+	page = await context.newPage();
+	watch(page);
+	await installViewPlacement(page);
+	await installViewFraming(page);
 	await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 	await bootedGame(page);
+	harness = flightHarness(page);
+	resetFlightFixture = await rememberFlightFixture(page);
 };
 
 // ---------------------------------------------------------------------------
@@ -582,8 +604,12 @@ check(
 // so one alone turns the nose by θ and both together by more; nothing at all
 // turns it by nothing. One scalar separates all three.
 // ---------------------------------------------------------------------------
-await page.evaluate(() => localStorage.clear());
-await reload();
+await page.evaluate(() => {
+	Storage.prototype.setItem = window.__bindingStoreSetItem;
+	window.__seelite.selectLayout("default");
+	localStorage.clear();
+});
+await resetFlightFixture();
 // The discarded first hold, then `d` on the shipped layout, where it is yaw
 // to starboard alone.
 // `d` is yaw to starboard, and `s` is pitch up. The pair is measured
