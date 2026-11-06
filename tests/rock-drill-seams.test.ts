@@ -616,3 +616,12 @@ describe("seatBlend", () => {
 		expect(seatBlend(3)).toBe(1);
 	});
 });
+
+describe("seatPose at the fallback axis threshold", () => {
+	test("a nose with |y| of exactly 0.9 falls back to the x axis, not the y axis", () => {
+		const s = seatPose(v3(), v3(0, -0.9, 0.3), v3(), C);
+		expect(s.nose.y).toBe(0.9);
+		near(s.up.x, 1);
+		near(s.up.y, 0);
+	});
+});
