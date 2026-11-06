@@ -58,7 +58,7 @@ done
 
 ### 1. Finish the survey: [#1148](https://github.com/jcfischer/seelite/issues/1148)
 
-A draft PR, #1154, is open. Items 1 and 2 stand alone. Item 3, the rocks in the Navigation console, needs the principal's ruling first. If there is no ruling, the PR says item 3 is absent, as the brief allows.
+A draft PR, #1154, is open. The principal ruled on item 3 on 2026-11-07; the ruling is on the node. Its last probe report shows mass crashes across unrelated probes, so rerun the gate before trusting that result.
 
 ### 2. Get two decisions: [#937](https://github.com/jcfischer/seelite/issues/937) and [#1190](https://github.com/jcfischer/seelite/issues/1190)
 
@@ -110,13 +110,6 @@ The principal ruled on 2026-11-07 that this lands before release. #1143 is assig
 ### 11. Release: [#1197](https://github.com/jcfischer/seelite/issues/1197)
 
 Remove the flag and run the whole loop as a fresh commander. This node's autonomy is `approve`, and the principal's yes on the canonical view set is required. The gate will expand to all probes. An unattended worker runs that fallback; in an interactive session, ask the principal before running the full suite.
-
-## Open calls for the principal
-
-| Code | Call | Recommendation |
-|---|---|---|
-| Q3 | Which rocks does the Navigation console list, and in what order (#1148 item 3)? | The principal's call |
-| Q4 | Can [#803](https://github.com/jcfischer/seelite/issues/803) close? #815 integrated the Longwall B and #1150 shipped the drill. | The principal's call |
 
 ## Working a node
 
