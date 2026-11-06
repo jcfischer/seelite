@@ -343,6 +343,10 @@ reads, listed in `.gitattributes`; CI pulls no spike objects.
 `tests/spike-binaries-lfs.test.ts` fails on a plain study binary and on an
 exemption without a reader. Shipped models under `src/models/` stay plain.
 
+**Spike evidence is not committed** (principal, 2026-11-06): any `spikes/`
+directory with `evidence` in its name is ignored. Keep captures, sheets and logs
+outside the repository, and put the figures and the file names in the receipt.
+
 **LFS objects reach GitHub only through the `pre-push` hook.** This
 repository installs no hooks of its own (`core.hooksPath` is global), and a
 push that skips hooks (`git push --no-verify`) sends the pointers without

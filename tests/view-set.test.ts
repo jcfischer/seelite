@@ -218,6 +218,9 @@ describe("the view set itself", () => {
 			["ring-approach", 42],
 			["ring-flank", 42],
 			["ring-range", 42],
+			["drum-approach", 42],
+			["drum-flank", 42],
+			["drum-range", 42],
 			["station-refinery-axis", 2],
 			["ringed-giant", 5],
 			["giant-fill", 5],
@@ -255,7 +258,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(91);
+		expect(VIEWS.length).toBe(94);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -845,7 +848,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 91)");
+		expect(html).toContain("Selected canonical views (3 of 94)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -882,7 +885,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–36.6s");
+		expect(html).toContain("· clock 0.6–37.8s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1162,6 +1165,9 @@ describe("the rim look row #480 added", () => {
 			"ring-approach",
 			"ring-flank",
 			"ring-range",
+			"drum-approach",
+			"drum-flank",
+			"drum-range",
 			"cold-rocky-ice",
 			"sky-at-the-rim",
 			"npc-departure",
@@ -1228,3 +1234,14 @@ test("Ring scale detail has axis, flank and range views on a Ring home fixture",
 		expect(view.shot.system).toBe(1);
 	}
 });
+
+for (const suffix of ["approach", "flank", "range"])
+	test(`Drum ${suffix} frames seed 42 system zero`, () => {
+		const view = VIEWS.find((v) => v.name === "drum-" + suffix);
+		expect(view).toBeDefined();
+		if (!view || !("seed" in view.shot) || !("system" in view.shot))
+			throw Error("missing Drum fixture");
+		expect(view.shot.seed).toBe(42);
+		expect(view?.shot.system).toBe(0);
+		expect(view?.covers).toContain(1152);
+	});

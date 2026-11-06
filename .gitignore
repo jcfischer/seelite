@@ -23,6 +23,11 @@ probe-shots/
 # two refs instead, which costs nothing and keeps the pair honest.
 view-set/
 
+# Spike evidence is never committed (principal, 2026-11-06): captures, sheets,
+# logs and measurement output. Receipts carry the figures. What main already
+# tracks stays tracked until someone removes it.
+spikes/**/*evidence*/
+
 # Claude Code scratch: agent worktrees are checkouts, not content.
 .claude/worktrees/
 .worktrees/

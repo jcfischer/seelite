@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1152 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-11-06",
+		text: "Drum stations show more detail, and plate seams on Ring, Drum and Wheel stations stay closed.",
+		node: 1152,
+	},
 	// https://github.com/jcfischer/seelite/issues/1155 — sentence approved by the principal, 2026-11-02.
 	{
 		date: "2026-11-02",

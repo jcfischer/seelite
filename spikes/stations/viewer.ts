@@ -1,24 +1,15 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
+import { stationModelNames as names, stationModelUrl } from "./model-paths";
 
-const names = [
-	"ring",
-	"drum",
-	"assembly",
-	"wheel",
-	"derrick",
-	"buoy",
-	"rig",
-	"cluster",
-	"salvage",
-];
 const renderer = new THREE.WebGLRenderer({
 	antialias: true,
 	preserveDrawingBuffer: true,
@@ -202,7 +193,13 @@ async function selectModel(id: string) {
 	try {
 		let object = cache.get(id);
 		if (!object) {
-			const gltf = await new GLTFLoader().loadAsync(`./${id}.glb`);
+			const flight = new URLSearchParams(location.search).has("flight");
+			const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+			const gltf = await loader.loadAsync(stationModelUrl(id, flight));
+			if (flight && ["ring", "drum"].includes(id)) {
+				const detail = await loader.loadAsync(`/src/models/trade-${id}-detail.glb`);
+				gltf.scene.add(detail.scene);
+			}
 			object = gltf.scene;
 			object.scale.setScalar(0.1);
 			object.traverse((o) => {
@@ -233,7 +230,7 @@ async function selectModel(id: string) {
 		radius = Math.max(extent.x, extent.y, extent.z) * 0.5;
 		stats.bounds = extent.toArray();
 		dock = object
-			.getObjectByName("docking-centre")!
+			.getObjectByName(object.getObjectByName("docking-centre") ? "docking-centre" : "aperture-plane")!
 			.getWorldPosition(new THREE.Vector3());
 		stats.modelTriangles = 0;
 		stats.meshCount = 0;

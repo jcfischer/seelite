@@ -10,6 +10,7 @@ bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=Fal
 MATS={}; BATCH={}; GROUP_MAT={}; RIG={}; OWNER="static"
 # Set by build_model.py for `--flight` (node #1031): the game's export.
 FLIGHT=False
+BACKING=False
 
 def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
  m=bpy.data.materials.new(name);m.use_nodes=True;m.diffuse_color=(*color,alpha)
@@ -71,6 +72,7 @@ def cable(points,r=.12,mat=alloy):
 
 def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
  pts=[Vector(p) for p in points];n=Vector(n).normalized();c=sum(pts,Vector())/len(pts)
+ if BACKING:prism([p-n*.06 for p in pts],n,.07,black,group="plate-backing")
  pts=[c+(p-c)*.982 for p in pts];prism(pts,n,depth,mat,group="cladding-"+mat)
  if bolts:
   # The flight export (node #1031) draws no fasteners, seam strips or wear
