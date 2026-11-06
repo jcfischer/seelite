@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { anchorPose } from "../spikes/longwall-miner/kinematics";
+import { anchorPose } from "../src/longwall-drill-rig";
 import { HULL_SPECS } from "../src/hull";
 import {
 	DRILL,

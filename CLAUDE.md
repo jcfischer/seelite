@@ -164,9 +164,9 @@ before a release, and as a weekly regression check on the hardware machine. The
 selector falls back to every probe on its own (the selector reports it); who runs
 that fallback follows the ruling above. This is a local hardware operation,
 not a GitHub-hosted browser job. The full suite retains every contract, including
-offline music bands and cinematic camera checks. Probes run six at a time,
-longest first, and the load-sensitive ones run alone afterwards (#1175;
-`scripts/lib/probe-schedule.mjs` owns the list and the receipt the numbers).
+offline music bands and cinematic camera checks. Probes run four at a time,
+longest first, and the load-sensitive ones run alone afterwards (#1175, #1184;
+`scripts/lib/probe-schedule.mjs` owns the list and the receipts the numbers).
 
 Music is two contracts: `probe-music` owns offline synth/bands and
 `probe-music-game` owns live unlock, beds and docking integration. Opening is

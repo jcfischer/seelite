@@ -22,6 +22,7 @@ export function anchorPose(index: number, deployment: number, target?: V) {
 		deployed: V = target ?? [
 			sx * 17,
 			MINING.cutterY + sy * 14,
+			// Stryker disable next-line ArithmeticOperator: |x| is 17, so r is at least 17, beyond the 12 m slope where z ignores y
 			rockContactZ(sx * 17, MINING.cutterY + sy * 14),
 		];
 	const a = stowed.map((n, i) => n - base[i]),

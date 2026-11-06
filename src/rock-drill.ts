@@ -85,6 +85,7 @@ export function stepFeed(
 		0,
 		Math.min(1, (roomKm - DRILL.feedMarginKm) / cutter.feedTravelKm),
 	);
+	// Stryker disable next-line EqualityOperator: at extension == limit the next line returns min(limit, extension + step), which is extension again
 	if (extension >= limit) return extension;
 	return Math.min(limit, extension + step);
 }
@@ -171,6 +172,7 @@ export function drillContact(i: DrillContactInput): DrillContact {
 		slideKms,
 		mouthDeg,
 		deposit:
+			// Stryker disable next-line EqualityOperator: no double dot product makes acos(c) * DEG exactly 12, so the boundary is unreachable
 			mouthDeg !== null && mouthDeg <= DRILL.mouthDeg
 				? ("deep" as const)
 				: ("surface" as const),
@@ -178,7 +180,8 @@ export function drillContact(i: DrillContactInput): DrillContact {
 	const block: DrillBlock | null =
 		i.hit.distKm > DRILL.contactKm
 			? "OUT OF REACH"
-			: alignDeg > DRILL.alignDeg
+			: // Stryker disable next-line EqualityOperator: no double dot product makes acos(c) * DEG exactly 20, so the boundary is unreachable
+				alignDeg > DRILL.alignDeg
 				? "ALIGN"
 				: closingKms > DRILL.closingKms
 					? "CLOSING"
