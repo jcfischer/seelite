@@ -8,18 +8,8 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
+import { stationModelNames as names, stationModelUrl } from "./model-paths";
 
-const names = [
-	"ring",
-	"drum",
-	"assembly",
-	"wheel",
-	"derrick",
-	"buoy",
-	"rig",
-	"cluster",
-	"salvage",
-];
 const renderer = new THREE.WebGLRenderer({
 	antialias: true,
 	preserveDrawingBuffer: true,
@@ -205,7 +195,7 @@ async function selectModel(id: string) {
 		if (!object) {
 			const flight = new URLSearchParams(location.search).has("flight");
 			const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-			const gltf = await loader.loadAsync(flight ? `/src/models/trade-${id}.glb` : `./${id}.glb`);
+			const gltf = await loader.loadAsync(stationModelUrl(id, flight));
 			if (flight && ["ring", "drum"].includes(id)) {
 				const detail = await loader.loadAsync(`/src/models/trade-${id}-detail.glb`);
 				gltf.scene.add(detail.scene);

@@ -186,3 +186,43 @@ Sage, the final PR browser gate, principal visual/cost/size acceptance and merge
 belong to the supervisor/principal. The same change adds proposed changelog copy for approval:
 “Drum stations show more detail, and plate seams on Ring, Drum and Wheel stations
 stay closed.” Its comment marks principal approval and the main date as pending.
+
+## Sage review round 1
+
+Flight mode now selects the shipped `trade-` or `outpost-` asset prefix for
+each station-study button. Before the correction, the hardware viewer requested
+`trade-derrick.glb`, received the Vite HTML fallback and failed JSON parsing.
+Afterward all five outposts load with no viewer errors, as do Ring, Drum and
+Wheel. The check used ANGLE Metal on the Apple M5 Pro, a guarded local Vite
+server and the machine probe lock. Its screenshots and network traces remain
+outside the repository (`/tmp/seelite-1152-viewer-after-*.png` and
+`/tmp/seelite-1152-viewer-after.log`).
+
+Assembly requests the correct shipped asset but its study viewer cannot find a
+docking marker. The same error reproduces with the viewer source from
+`e5b85346`, before these review corrections
+(`/tmp/seelite-1152-viewer-assembly-baseline.log`). Its kit-placement integration
+is outside this review fix; this receipt does not claim that selection loads.
+
+`tests/station-study-assets.test.ts` checks all nine buttons in both flight and
+review modes. Its five outpost cases fail before the URL correction and pass
+afterward. `tests/trade-late-detail.test.ts` replaces the separate Ring and Drum
+files with a parameterized scenario, retaining the download, retry, current
+detail-band, live attachment and shared-resource disposal assertions and each
+form's mesh, triangle and base-size pins. Together these suites pass 23 tests
+with 293 assertions. Typecheck, formatting, script lint, comment lint, launcher
+wiring and production build pass.
+
+The glossary nit is declined: “command-submission” describes GPU work in the
+frame measurement, not the game's Intervention mechanic. Substituting
+“Intervention” would misdescribe the measurement.
+
+The branch now contains the supplied `origin/main` ref (`d06f965d`), merged as
+`7d6ef9a2`. Probe selection still expands to all 120 probes because an impact
+path has no dependency owner. The supervisor owns that final PR browser gate;
+the focused study-viewer check above is not a selected-gate pass.
+
+This finish pass's single full host `npm test` run passes all 7,553 tests across
+467 files, with zero failures and 17,076,141 assertions, in 504.34 seconds
+(`/tmp/seelite-1152-full-host.log`). It ran after the code and test corrections
+and the merge of `origin/main`.
