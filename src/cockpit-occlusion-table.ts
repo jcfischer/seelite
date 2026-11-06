@@ -61,5 +61,6 @@ export function cockpitSeenParts(extension: number): readonly string[] {
 			Math.abs(best.extension - extension)
 		)
 			best = pose;
+	// Stryker disable next-line ArrayDeclaration,OptionalChaining: poses is a non-empty constant, so best is always defined and the fallback never runs
 	return best?.seen ?? [];
 }
