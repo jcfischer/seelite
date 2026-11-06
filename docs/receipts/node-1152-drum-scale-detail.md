@@ -2,6 +2,11 @@
 
 ## Current result
 
+Raw evidence is not committed, by the principal's ruling of 2026-11-06. The files
+named in backticks below are in `~/work/cyphr/spark/seelite-evidence/node-1152/`
+on the hardware machine, at those relative paths. Commit `a95c41d9` on this PR's
+branch held them until the ruling.
+
 Trade C carries the approved Drum barrel and entry-face pass from
 `origin/spike/ring-scale` (`2faf1f16`, following `57cf8980`, `2a845417` and
 `12f50683`). The principal approved the appearance and all three trade forms'
@@ -53,7 +58,7 @@ The Ring's separate detail asset is byte-identical to main.
 | trade-wheel.glb | 7,075,896 | 6.75 |
 
 Every file is below the preparation step's 25,000,000-byte limit. Production
-build validation passes the 25 MiB emitted-file guard. The [asset manifest](../../spikes/station-scale/evidence-drum/assets.json) records complete checksums and triangle counts. Drum full is 271,644 triangles: 83,384 in the base and 188,260 in deferred detail.
+build validation passes the 25 MiB emitted-file guard. The asset manifest (`assets.json`) records complete checksums and triangle counts. Drum full is 271,644 triangles: 83,384 in the base and 188,260 in deferred detail.
 The separate Drum generator resets seed 1008 only after the approved form has
 built; it consumes none of that form's random draws. Backing changes no plate
 face vertices or material. It adds a full-size dark prism under each shrunken
@@ -74,13 +79,13 @@ sampled tests; they do not claim a continuous surface proof.
 
 The final audit found that a fixed ±800 m grid missed the Wheel's outer
 67.5 m. A bounds-coverage assertion first failed at 867.5 m against 800 m
-([failure](../../spikes/station-scale/evidence-drum/wheel-grid-before.txt)). The
+(failure: `wheel-grid-before.txt`). The
 grid now spans each shipped model's measured bounds plus one grid step;
 all three seam tests pass with that coverage assertion
-([result](../../spikes/station-scale/evidence-drum/seams-final.txt)).
+(result: `seams-final.txt`).
 
 The new detail, backing and window tests first failed against the original
-assets; [the failing-before log](../../spikes/station-scale/evidence-drum/failing-before.txt)
+assets; the failing-before log (`failing-before.txt`)
 retains that result. A reconstructed full-size-plate reference was investigated
 and discarded: at grazing angles its shallow surface stand-off also moves the
 first hit along a ray, so that comparison was not a measure of empty-hull holes.
@@ -92,7 +97,7 @@ coverage, empty-space, reach and opening tests pass with these proxies.
 ## Hardware evidence
 
 The five requested live frames were captured on each ref with seed 42, system
-0, form C, at ship scale 1. The [before/after sheet](../../spikes/station-scale/evidence-drum/drum-before-after.png)
+0, form C, at ship scale 1. The before/after sheet (`drum-before-after.png`)
 shows the entry face and barrel; individual full-resolution frames and placement
 readbacks are retained beside it. All eight detail meshes are attached and
 visible in every branch frame. The renderer is ANGLE Metal / Apple M5 Pro.
@@ -101,13 +106,13 @@ remains consistent with the baseline. This inspection is not principal approval.
 
 The existing capture script already contains node #1145's copy of the
 station-scale study capture and its late-detail readiness wait; both baseline
-and branch use those bytes. The [canonical sheet](../../spikes/station-scale/evidence-drum/views/index.html) contains nine views per arm. All 435 baseline files under `src/` match main by Git blob hash ([verification](../../spikes/station-scale/evidence-drum/baseline.json)). The canonical wrapper adds Drum approach, flank
+and branch use those bytes. The canonical sheet (`views/index.html`) contains nine views per arm. All 435 baseline files under `src/` match main by Git blob hash (verification: `baseline.json`). The canonical wrapper adds Drum approach, flank
 and range rows on the same seed/system, alongside existing Ring, station,
 hull-chase and cockpit controls. It copies only the view declaration into the
 baseline archive so both arms offer the same framings. These are selected
 canonical captures, not all canonical views.
 
-The final [complete canonical sheet](../../spikes/station-scale/evidence-drum/views-full/index.html)
+The final complete canonical sheet (`views-full/index.html`)
 contains all 94 declared views in each arm, captured sequentially on the same
 hardware lane. Both manifests and every declared PNG were checked for
 completeness. The Drum rows use seed 42, system 0; the other rows retain their
@@ -116,7 +121,7 @@ capture. Run the wrapper with `<baseline-root> before --full` and `. after --ful
 to reproduce this full selection. The final Drum flank pair was opened and
 inspected; principal acceptance of the complete sheet is still pending.
 
-The [raw frame receipt](../../spikes/station-scale/evidence-drum/cost.json) compares main `0ac662f1` with runtime implementation `d65b5dbc`. It uses 12 paired blocks per framing, randomized arm order (seed 1152), 120 synchronous renders per block and a readPixels drain at each block boundary. Both automatic frame loops are stopped after settled boot. All eight added meshes must be attached and visible before timing. Both Vite roots are checked through their own tree declarations. The fixture is seed 42, system 0, 1440 × 900, DPR 1, high quality, scale 100%, no MSAA, hardware on an Apple M5 Pro with 18 logical CPUs. The probe lock was free before the run and held by this measurement throughout. Load average was 7.272/10.292/11.205 at start and 7.076/9.747/10.944 at finish. No local test/build/capture ran alongside the timing.
+The raw frame receipt (`cost.json`) compares main `0ac662f1` with runtime implementation `d65b5dbc`. It uses 12 paired blocks per framing, randomized arm order (seed 1152), 120 synchronous renders per block and a readPixels drain at each block boundary. Both automatic frame loops are stopped after settled boot. All eight added meshes must be attached and visible before timing. Both Vite roots are checked through their own tree declarations. The fixture is seed 42, system 0, 1440 × 900, DPR 1, high quality, scale 100%, no MSAA, hardware on an Apple M5 Pro with 18 logical CPUs. The probe lock was free before the run and held by this measurement throughout. Load average was 7.272/10.292/11.205 at start and 7.076/9.747/10.944 at finish. No local test/build/capture ran alongside the timing.
 
 | Framing | Main median (range), ms/frame | Branch median (range), ms/frame | Branch slower pairs | Calls main → branch | Submitted triangles main → branch |
 | --- | --- | --- | --- | --- | --- |
@@ -125,7 +130,7 @@ The [raw frame receipt](../../spikes/station-scale/evidence-drum/cost.json) comp
 
 The ranges overlap. This run supplies no causal attribution or speedup claim. It measures whole-frame command-submission and GPU-drain throughput, not rAF cadence, isolated GPU time, loading or installation latency. Extra render passes account for chase submitting the same geometry multiple times. Browser and WebGL error lists are empty. Two preliminary study-harness attempts stopped before any timing block because the copied script had invalid renamed methods; only the successful receipt above is used.
 
-The [collision receipt](../../spikes/station-scale/evidence-drum/collision.json) exercises the production `sweepShip` with a courier hull, dt 0.1 s and a 2 rpm rotating station, in four fixed station-relative paths. It retains all Drum fittings in the proxy, compares 1615 → 4347 hull boxes, warms each case and interleaves 12 blocks of 100 sweeps per arm. Both strike cases must actually register an impact; clear approach must remain clear.
+The collision receipt (`collision.json`) exercises the production `sweepShip` with a courier hull, dt 0.1 s and a 2 rpm rotating station, in four fixed station-relative paths. It retains all Drum fittings in the proxy, compares 1615 → 4347 hull boxes, warms each case and interleaves 12 blocks of 100 sweeps per arm. Both strike cases must actually register an impact; clear approach must remain clear.
 
 | Case | Main median (range), ms/sweep | Branch median (range), ms/sweep |
 | --- | --- | --- |
@@ -145,32 +150,33 @@ view and Drum detail checks separately pass 58 tests. Typecheck, formatting,
 script lint, comment lint, launcher wiring and production build pass. The final
 audit passes 161 tests across the required trade/proxy files, Drum and Ring
 detail, model URLs and view declarations
-([log](../../spikes/station-scale/evidence-drum/audit-focused-tests.txt)). The
+(log: `audit-focused-tests.txt`). The
 later grid-coverage change passes all three seam tests. The final production
 build also passes its emitted-file size guard
-([log](../../spikes/station-scale/evidence-drum/build-final.txt)).
+(log: `build-final.txt`).
 
 Probe selection against `origin/main` selects all 120 probes because an impact
 path has no dependency owner. Under the ranger implement-worker contract, the
 supervisor owns that final selected PR gate. This worker runs affected probes
 only and does not claim `probe:pr` green.
 
-Affected hardware browser probes pass [station visuals 100/100](../../spikes/station-scale/evidence-drum/probe-station-visuals.txt) and [hull lighting 12/12](../../spikes/station-scale/evidence-drum/probe-light-rig.txt). Hull-chase reads peak 238.21, lower quartile 34.48 and median 51.70 within the existing `hull-luma.mjs` band. The canonical controls also retain the unchanged cockpit and hull code.
+Affected hardware browser probes pass station visuals 100/100 (`probe-station-visuals.txt`) and hull lighting 12/12 (`probe-light-rig.txt`). Hull-chase reads peak 238.21, lower quartile 34.48 and median 51.70 within the existing `hull-luma.mjs` band. The canonical controls also retain the unchanged cockpit and hull code.
 
 The single full host `npm test` run completed 7,525 tests across 467 files in
 933.46 s: 7,523 passed and two failed
-([raw log](../../spikes/station-scale/evidence-drum/full-host-tests.txt)). Both
+(raw log: `full-host-tests.txt`). Both
 failures were corrected before delivery:
 
 - The new study PNGs had been staged as plain blobs without an active LFS
   filter. They were restaged through a command-local LFS filter, without
-  changing Git configuration. All 217 new study images are now indexed as LFS
-  objects; all three LFS tests pass
-  ([rerun](../../spikes/station-scale/evidence-drum/lfs-final.txt)).
+  changing Git configuration. All 217 new study images were then indexed as LFS
+  objects, before the ruling above took them out of the branch; all three LFS
+  tests passed
+  (rerun: `lfs-final.txt`).
 - `tests/model-url-source.test.ts` still pinned 28 literal model URLs. The new
   Drum detail asset makes 29. The inventory pin now includes it, and all five
   URL tests pass
-  ([rerun](../../spikes/station-scale/evidence-drum/model-urls-final.txt)).
+  (rerun: `model-urls-final.txt`).
 
 Only the affected tests were rerun after these corrections, following the
 worker's single-full-run contract. This is a full-run result plus green
