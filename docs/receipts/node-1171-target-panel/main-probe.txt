@@ -1,0 +1,51 @@
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)
+probing http://127.0.0.1:49267 (dev server) — 1 probes, 6 at a time
+     filtered by --only probe-display-contacts.mjs: 119 of 120 probes were not run.
+
+     │ [probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)
+     │   ok   default: producer count and neutral metadata
+     │   ok   default: contacts selectable and scannable, never generated bodies
+     │   ok   Target panel paints STAR within its bounds — {"expected":"STAR","seen":true,"fits":true,"changed":479}
+     │   ok   Target panel paints PLANET within its bounds — {"expected":"PLANET","seen":true,"fits":true,"changed":715}
+     │   ok   Target panel paints STATION · TRADE within its bounds — {"expected":"STATION · TRADE","seen":true,"fits":true,"changed":1465}
+     │   ok   Target panel paints STATION · REFINERY within its bounds — {"expected":"STATION · REFINERY","seen":true,"fits":true,"changed":1871}
+     │   ok   Target panel paints STATION · SHIPYARD within its bounds — {"expected":"STATION · SHIPYARD","seen":true,"fits":true,"changed":1798}
+     │   ok   Target panel paints STATION · OUTPOST within its bounds — {"expected":"STATION · OUTPOST","seen":true,"fits":true,"changed":1634}
+     │   ok   Target panel paints SHIP · INTERCEPTOR · UNKNOWN within its bounds — {"expected":"SHIP · INTERCEPTOR · UNKNOWN","seen":true,"fits":true,"changed":2872}
+     │   ok   Target panel paints SHIP · INTERCEPTOR · HOSTILE within its bounds — {"expected":"SHIP · INTERCEPTOR · HOSTILE","seen":true,"fits":true,"changed":2602}
+     │   ok   fleet: producer count and neutral metadata
+     │   ok   fleet: contacts selectable and scannable, never generated bodies
+     │   ok   fleet: unselected ship names paint visible pixels — {"namesDrawn":7,"changedPixels":2334}
+     │   ok   fleet: T selects the contact
+     │   ok   fleet: G cycles back
+     │   ok   fleet: selected contact has a visible scanner glyph
+     │   ok   fleet: Navigation prints the named ship and a finite ETA — {"value":0,"actual":0,"text":"AnvilSHIP21.7 km · 0s","name":"Anvil","speed":{"x":0,"y":0,"z":0},"velocity":{"x":0,"y":0,"z":0}}
+     │   ok   fleet: target velocity comes from the contact
+     │   ok   fleet: non-zero Navigation ETA uses the existing flight and cruise laws — {"normal":50,"expectedNormal":50,"cruise":2.0794212157065903,"expectedCruise":2.0794212157065903}
+     │   ok   fleet: Navigation row selects the contact
+     │   ok   combat: producer count and neutral metadata
+     │   ok   combat: contacts selectable and scannable, never generated bodies
+     │   ok   combat: T selects the contact
+     │   ok   combat: G cycles back
+     │   ok   combat: selected contact has a visible scanner glyph
+     │   ok   combat: Navigation prints the named ship and a finite ETA — {"value":0,"actual":0,"text":"ENEMY STRIKERSHIP10.0 km · 0s","name":"ENEMY STRIKER","speed":{"x":-0.14240404844267537,"y":1.0640944092970595,"z":-1.6874312356626204},"velocity":{"x":-0.14240404844267537,"y":1.0640944092970595,"z":-1.6874312356626204}}
+     │   ok   combat: target velocity comes from the contact
+     │   ok   combat: non-zero Navigation ETA uses the existing flight and cruise laws — {"normal":50,"expectedNormal":50,"cruise":1.914246341412016,"expectedCruise":1.914246341412016}
+     │   ok   combat: Navigation row selects the contact
+     │   ok   fleet+combat: producer count and neutral metadata
+     │   ok   fleet+combat: contacts selectable and scannable, never generated bodies
+     │   ok   fleet+combat: unselected ship names paint visible pixels — {"namesDrawn":8,"changedPixels":3002}
+     │   ok   fleet+combat: T selects the contact
+     │   ok   fleet+combat: G cycles back
+     │   ok   fleet+combat: selected contact has a visible scanner glyph
+     │   ok   fleet+combat: Navigation prints the named ship and a finite ETA — {"value":0,"actual":0,"text":"AnvilSHIP21.7 km · 0s","name":"Anvil","speed":{"x":0,"y":0,"z":0},"velocity":{"x":0,"y":0,"z":0}}
+     │   ok   fleet+combat: target velocity comes from the contact
+     │   ok   fleet+combat: non-zero Navigation ETA uses the existing flight and cruise laws — {"normal":50,"expectedNormal":50,"cruise":2.0794212157065903,"expectedCruise":2.0794212157065903}
+     │   ok   fleet+combat: Navigation row selects the contact
+     │
+     │ 39/39 checks passed
+ok   probe-display-contacts.mjs (75.2s) · peak load 9.9
+
+1/1 gating probes passed in 75s · peak load 9.9 on 18 cores — PARTIAL RUN, --only probe-display-contacts.mjs: 119 of 120 probes were not run.
+     This is selected coverage, not a full-suite pass. A repository-selected run satisfies the ordinary PR browser gate; manual filters do not.
