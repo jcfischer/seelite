@@ -42,11 +42,9 @@ Inspect these PNGs in `/tmp/seelite-node-1138/station`:
 Attach these captures with `station-docking-trade.log`. The probe writes
 additional request-lifecycle captures in the same directory.
 
-The seed run on 2026-10-30 did not reach this capture step. All three probe
-attempts timed out in `bootedGame` before any PNG was written.
-[F1 in the README](README.md#seed-run-on-2026-10-30) records the failed checks
-and the unverified acceptance. The filenames above are expected outputs,
-not evidence delivered by that run.
+The [2026-11-06 verification run](README.md#verification-run-on-2026-11-06)
+produced and inspected all three PNGs. The earlier 2026-10-30 boot timeout
+did not recur before these captures; no runtime code or timeout was changed.
 
 This is a scripted berth fixture, not a continuous hand-flown approach from
 the fresh arrival point. Some refusal cases set the commander's purse and

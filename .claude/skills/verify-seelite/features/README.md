@@ -9,7 +9,7 @@ renderer checks, session lifetime, and cleanup.
 | --- | --- | --- |
 | [Flight and cockpit](flight-cockpit.md) | Fresh direct-flight session, cockpit camera | `flight-cockpit.png` |
 | [Galaxy chart](galaxy-chart.md) | Existing chart workbench probe | **Gap G1:** no live cockpit chart navigation or PNG export through the CLI |
-| [Station, docking, and trade](station-docking-trade.md) | Existing Requests probe, starting with the shared berth fixture | **Unverified F1:** boot timeout before any station PNG; expected filenames are in the guide |
+| [Station, docking, and trade](station-docking-trade.md) | Existing Requests probe, starting with the shared berth fixture | `station/00-before-market.png`, `station/40-hold-line.png`, `station/41-refusal.png` |
 | [Witchspace and jump](witchspace-jump.md) | Existing real-jump probe | **Gap G2:** no jump input or held-phase PNG capture through the CLI |
 
 The probe routes run in their own fresh browser contexts. They do not operate
@@ -79,33 +79,51 @@ instead owns a berth fixture. Do not add a temporary Playwright script,
 substitute an unrelated cockpit PNG, or claim the workbench is the live
 chart. New control verbs are outside node #1138.
 
-## Seed run on 2026-10-30
+## Verification run on 2026-11-06
 
-All four documented routes were attempted on the Apple M1 Pro hardware lane.
-The cockpit capture passed and `flight-cockpit.png` was inspected. The
-galaxy-chart and witchspace probes each reported `1/1 gating probes passed`;
-their screenshot gaps remain G1 and G2.
+The doctor confirmed this checkout's server and the Apple M5 Pro hardware
+renderer. The cockpit route produced `flight-cockpit.png`; its JSON reports
+`view: "cockpit"`, `dockPhase: "flying"`, settled models, and an empty bake
+queue. The PNG was inspected for the cockpit and flight instruments.
 
-F1: the Requests probe failed at `bootedGame`'s 20-second readiness wait,
-before any station screenshot, on the first attempt, its isolated rerun,
-and a final unchanged attempt after the host unit suite. The existing Hold
-probe, checked as an alternative capture route,
-failed at the same readiness wait. The cause within boot readiness is
-unattributed; these runs do not prove a docking or trade failure. No tracked
-runtime or probe files differ from base commit `02084e636df1d9872d68f1970a9f39ce7a8d3da0`.
-The timeout was not changed. The station capture acceptance remains unverified.
+All four documented routes ran. Each delegated probe reported `1/1 gating
+probes passed`: galaxy chart in `galaxy-chart.log`, station in
+`station-docking-trade.log`, and jump in `witchspace-jump.log`. These are
+three separate single-probe runs, not a full-suite pass. Probe selection at
+`43dfd37b10b01260fb10f19faeb57e4a31524013` against
+`7a69e5b5e029a0f9d28702d0f3e94d1c99fee68d` selected no probes for the
+documentation-only diff; the three runs above verify the documented routes.
 
-The logs are `/tmp/seelite-node-1138/station-docking-trade-first-attempt.log`,
-`station-docking-trade-isolated-rerun.log`, `station-docking-trade.log`, and
-`station-hold-route.log` in that directory.
-There are no station PNGs to attach from this run. Rerun the documented
-station command after its existing boot failure is understood.
+Build, format, script lint, and comment lint passed. The required full host
+`npm test` ran once: 7,448 passed and four exceeded their five-second test
+limits across 461 files. The failures were the edited-geometry and instanced
+cast cases in `tests/aperture-raycast-memo.test.ts`, the deterministic visual
+archetype case in `tests/ship-mesh.test.ts`, and the sold-into market-cycle
+case in `tests/station-commerce.test.ts`. The full log is `npm-test.log` in
+the evidence directory. Runtime, scripts, tests, and package files match
+`origin/main`; no timeout was changed.
 
-The full host `npm test` ran once: 7,250 passed and two hit the five-second
-test timeout, in `tests/cockpit-model.test.ts` and `tests/exact-amount.test.ts`.
-A focused check of those files passed all 27 tests on both this branch and
-an archive of the unchanged base. The full-suite result remains red; its
-log is `/tmp/seelite-node-1138/npm-test.log`. No test limits were changed.
+Focused runs of those three files passed all 49 tests on this branch and on
+an archive of `origin/main` at `7a69e5b5`; their logs are
+`branch-focused-tests.log` and `base-focused-tests.log`. These isolated
+passes do not replace the red full-suite result or establish its cause.
+The supervisor's full base comparison remains the check for that result.
+
+The station route produced all three Market PNGs listed above. They were
+inspected: the initial market shows an empty 20 t hold; the next capture
+shows 8 t entrusted and 12 t free; the refusal capture says there is no room
+with 8 t entrusted to a job. These are the existing probe's controlled states,
+not a manual docking flight.
+
+The earlier 2026-10-30 run timed out in boot readiness before any station
+capture. This run reached the capture steps without changing runtime code,
+probe code, or timeouts. That establishes the current capture route; it does
+not identify the cause of the earlier timeout.
+
+Current command logs and captures are in `/tmp/seelite-node-1138` for the
+supervisor to attach to the PR. G1, G2, and G3 remain control gaps; the
+feature map does not claim four feature screenshots or a continuous flown
+docking route.
 
 When finished, run `node .claude/skills/verify-seelite/control-seelite.mjs close`
 and stop only the dev server you started. Captures remain outside Git for the
