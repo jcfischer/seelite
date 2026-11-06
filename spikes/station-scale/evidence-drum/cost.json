@@ -1,0 +1,1317 @@
+{
+  "startedAt": "2026-11-05T14:21:08.243Z",
+  "load": [
+    7.27197265625,
+    10.29248046875,
+    11.20458984375
+  ],
+  "cpus": 18,
+  "frames": 120,
+  "blocks": 12,
+  "orderSeed": 1152,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 1,
+  "method": "Vite dev trees; synchronous whole-frame render throughput, one readPixels drain per 120 frames; no simulated step, both automatic frame loops cancelled after settled boot; hardware; high, 100%, no MSAA",
+  "arms": [
+    {
+      "name": "main",
+      "root": "/private/tmp/seelite-1152-main",
+      "served": {
+        "root": "/private/tmp/seelite-1152-main"
+      },
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "assetBytes": 4894180,
+      "assetSha256": "c9a95bb2c0ea2c4abef69d0af0ea890df6c6b29f611a021c95c489cc47e5141a",
+      "detailAssetBytes": 0,
+      "detailAssetSha256": null,
+      "lightingSha256": "70047590328ab192c9f7acf0d48891fa200864598533cc4710f879068d022b05",
+      "sourceSha256": "5a8e3dbbd701234bc1b610e20bb771f0b89488c0f6964aa721123dd5a27e8dcd",
+      "ref": "0ac662f10629ab0066cda17654f90f366d0a7d30"
+    },
+    {
+      "name": "branch",
+      "root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152",
+      "served": {
+        "root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152",
+        "head": "d65b5dbcf41b1bf1764d277b111d1a88106a408f",
+        "branch": "node/1152-bring-the-station-scale-detail-to-the-production",
+        "dirty": true
+      },
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "assetBytes": 5001176,
+      "assetSha256": "977fc083c0be6e40c72d7dbdcc665010a932496a915d20b4a3ee6adb8835f591",
+      "detailAssetBytes": 5959832,
+      "detailAssetSha256": "3efd85054533fe7dc2e9aceeab7a8ff12e955ccbe46c10958ebc1210814b1841",
+      "lightingSha256": "70047590328ab192c9f7acf0d48891fa200864598533cc4710f879068d022b05",
+      "sourceSha256": "ad3d1d09ec05137c71a2bbb0b3dacc93cae474c403eb7d0c86a389f1e8b55816",
+      "ref": "d65b5dbcf41b1bf1764d277b111d1a88106a408f"
+    }
+  ],
+  "results": [
+    {
+      "framing": "station-approach",
+      "facts": [
+        {
+          "rangeKm": 2.0999999999999996,
+          "placement": {
+            "askedKm": 2.0999999999999996,
+            "actualKm": 2.099999997637658,
+            "offAxisDeg": 0
+          },
+          "form": "c",
+          "detail": "full",
+          "detailMeshes": 0,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high",
+          "parts": []
+        },
+        {
+          "rangeKm": 2.0999999999999996,
+          "placement": {
+            "askedKm": 2.0999999999999996,
+            "actualKm": 2.099999997637658,
+            "offAxisDeg": 0
+          },
+          "form": "c",
+          "detail": "full",
+          "detailMeshes": 8,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high",
+          "parts": [
+            {
+              "name": "scale-detailamber-lamp",
+              "visible": true,
+              "triangles": 87108
+            },
+            {
+              "name": "scale-detaildark-structure",
+              "visible": true,
+              "triangles": 1204
+            },
+            {
+              "name": "scale-detailmachined-alloy",
+              "visible": true,
+              "triangles": 2088
+            },
+            {
+              "name": "scale-detailnavigation-green",
+              "visible": true,
+              "triangles": 72
+            },
+            {
+              "name": "scale-detailnavigation-red",
+              "visible": true,
+              "triangles": 552
+            },
+            {
+              "name": "scale-detailrecess-black",
+              "visible": true,
+              "triangles": 5136
+            },
+            {
+              "name": "scale-detailtruss-paint",
+              "visible": true,
+              "triangles": 72336
+            },
+            {
+              "name": "scale-detailwork-flood",
+              "visible": true,
+              "triangles": 19764
+            }
+          ]
+        }
+      ],
+      "order": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1
+      ],
+      "blockRecords": [
+        {
+          "round": 0,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:37.233Z",
+          "finishedAt": "2026-11-05T14:21:37.551Z",
+          "load": [
+            7.26806640625,
+            10.00732421875,
+            11.06884765625
+          ],
+          "ms": 2.3174999999503294,
+          "counters": {
+            "frame": 9384,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 0,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:37.552Z",
+          "finishedAt": "2026-11-05T14:21:37.856Z",
+          "load": [
+            7.26806640625,
+            10.00732421875,
+            11.06884765625
+          ],
+          "ms": 2.2633333332836627,
+          "counters": {
+            "frame": 9232,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 1,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:37.856Z",
+          "finishedAt": "2026-11-05T14:21:38.164Z",
+          "load": [
+            7.26806640625,
+            10.00732421875,
+            11.06884765625
+          ],
+          "ms": 2.2883333332836626,
+          "counters": {
+            "frame": 11873,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 1,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:38.164Z",
+          "finishedAt": "2026-11-05T14:21:38.465Z",
+          "load": [
+            7.26806640625,
+            10.00732421875,
+            11.06884765625
+          ],
+          "ms": 2.2450000000496706,
+          "counters": {
+            "frame": 11721,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 2,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:38.466Z",
+          "finishedAt": "2026-11-05T14:21:38.773Z",
+          "load": [
+            7.26806640625,
+            10.00732421875,
+            11.06884765625
+          ],
+          "ms": 2.294166666517655,
+          "counters": {
+            "frame": 14362,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 2,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:38.773Z",
+          "finishedAt": "2026-11-05T14:21:39.073Z",
+          "load": [
+            7.26806640625,
+            10.00732421875,
+            11.06884765625
+          ],
+          "ms": 2.2233333334326746,
+          "counters": {
+            "frame": 14210,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 3,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:39.073Z",
+          "finishedAt": "2026-11-05T14:21:39.368Z",
+          "load": [
+            7.26806640625,
+            10.00732421875,
+            11.06884765625
+          ],
+          "ms": 2.202500000099341,
+          "counters": {
+            "frame": 16699,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 3,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:39.368Z",
+          "finishedAt": "2026-11-05T14:21:39.679Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.3066666667660076,
+          "counters": {
+            "frame": 16851,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 4,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:39.679Z",
+          "finishedAt": "2026-11-05T14:21:39.977Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.2191666667660077,
+          "counters": {
+            "frame": 19188,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 4,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:39.977Z",
+          "finishedAt": "2026-11-05T14:21:40.282Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.269166666517655,
+          "counters": {
+            "frame": 19340,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 5,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:40.282Z",
+          "finishedAt": "2026-11-05T14:21:40.587Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.2575000000496703,
+          "counters": {
+            "frame": 21829,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 5,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:40.587Z",
+          "finishedAt": "2026-11-05T14:21:40.885Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.209999999900659,
+          "counters": {
+            "frame": 21677,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 6,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:40.885Z",
+          "finishedAt": "2026-11-05T14:21:41.190Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.2816666665176553,
+          "counters": {
+            "frame": 24318,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 6,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:41.190Z",
+          "finishedAt": "2026-11-05T14:21:41.486Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.203333333383004,
+          "counters": {
+            "frame": 24166,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 7,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:41.487Z",
+          "finishedAt": "2026-11-05T14:21:41.797Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.330000000198682,
+          "counters": {
+            "frame": 26655,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 7,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:41.797Z",
+          "finishedAt": "2026-11-05T14:21:42.125Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.4291666666666667,
+          "counters": {
+            "frame": 26807,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 8,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:42.125Z",
+          "finishedAt": "2026-11-05T14:21:42.493Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.7825000000496707,
+          "counters": {
+            "frame": 29296,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 8,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:42.493Z",
+          "finishedAt": "2026-11-05T14:21:42.850Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.675,
+          "counters": {
+            "frame": 29144,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 9,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:42.850Z",
+          "finishedAt": "2026-11-05T14:21:43.203Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.6358333334326742,
+          "counters": {
+            "frame": 31785,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 9,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:43.203Z",
+          "finishedAt": "2026-11-05T14:21:43.576Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.7799999999503293,
+          "counters": {
+            "frame": 31633,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 10,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:43.576Z",
+          "finishedAt": "2026-11-05T14:21:43.946Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.7916666666666665,
+          "counters": {
+            "frame": 34122,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 10,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:43.947Z",
+          "finishedAt": "2026-11-05T14:21:44.290Z",
+          "load": [
+            7.08642578125,
+            9.923828125,
+            11.033203125
+          ],
+          "ms": 2.525,
+          "counters": {
+            "frame": 34274,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 11,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:44.290Z",
+          "finishedAt": "2026-11-05T14:21:44.676Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 2.828333333383004,
+          "counters": {
+            "frame": 36763,
+            "calls": 616,
+            "triangles": 3708306,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 11,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:44.676Z",
+          "finishedAt": "2026-11-05T14:21:44.995Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 2.3883333332836627,
+          "counters": {
+            "frame": 36611,
+            "calls": 625,
+            "triangles": 3900142,
+            "points": 4565,
+            "lines": 2
+          }
+        }
+      ],
+      "times": [
+        [
+          2.3174999999503294,
+          2.2883333332836626,
+          2.294166666517655,
+          2.3066666667660076,
+          2.269166666517655,
+          2.2575000000496703,
+          2.2816666665176553,
+          2.4291666666666667,
+          2.7825000000496707,
+          2.6358333334326742,
+          2.525,
+          2.828333333383004
+        ],
+        [
+          2.2633333332836627,
+          2.2450000000496706,
+          2.2233333334326746,
+          2.202500000099341,
+          2.2191666667660077,
+          2.209999999900659,
+          2.203333333383004,
+          2.330000000198682,
+          2.675,
+          2.7799999999503293,
+          2.7916666666666665,
+          2.3883333332836627
+        ]
+      ],
+      "counters": [
+        {
+          "frame": 36763,
+          "calls": 616,
+          "triangles": 3708306,
+          "points": 4565,
+          "lines": 2
+        },
+        {
+          "frame": 36611,
+          "calls": 625,
+          "triangles": 3900142,
+          "points": 4565,
+          "lines": 2
+        }
+      ],
+      "medians": [
+        2.3120833333581685,
+        2.2541666666666664
+      ],
+      "ranges": [
+        [
+          2.2575000000496703,
+          2.828333333383004
+        ],
+        [
+          2.202500000099341,
+          2.7916666666666665
+        ]
+      ],
+      "branchSlowerPairs": "46/144 (32%)"
+    },
+    {
+      "framing": "chase",
+      "facts": [
+        {
+          "rangeKm": 1.028,
+          "placement": {
+            "askedKm": 1.028,
+            "actualKm": 1.0280000019859528,
+            "offAxisDeg": 0
+          },
+          "form": "c",
+          "detail": "full",
+          "detailMeshes": 0,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high",
+          "parts": []
+        },
+        {
+          "rangeKm": 1.028,
+          "placement": {
+            "askedKm": 1.028,
+            "actualKm": 1.0280000019859528,
+            "offAxisDeg": 0
+          },
+          "form": "c",
+          "detail": "full",
+          "detailMeshes": 8,
+          "buffer": [
+            1440,
+            900
+          ],
+          "quality": "high",
+          "parts": [
+            {
+              "name": "scale-detailamber-lamp",
+              "visible": true,
+              "triangles": 87108
+            },
+            {
+              "name": "scale-detaildark-structure",
+              "visible": true,
+              "triangles": 1204
+            },
+            {
+              "name": "scale-detailmachined-alloy",
+              "visible": true,
+              "triangles": 2088
+            },
+            {
+              "name": "scale-detailnavigation-green",
+              "visible": true,
+              "triangles": 72
+            },
+            {
+              "name": "scale-detailnavigation-red",
+              "visible": true,
+              "triangles": 552
+            },
+            {
+              "name": "scale-detailrecess-black",
+              "visible": true,
+              "triangles": 5136
+            },
+            {
+              "name": "scale-detailtruss-paint",
+              "visible": true,
+              "triangles": 72336
+            },
+            {
+              "name": "scale-detailwork-flood",
+              "visible": true,
+              "triangles": 19764
+            }
+          ]
+        }
+      ],
+      "order": [
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1
+      ],
+      "blockRecords": [
+        {
+          "round": 0,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:45.950Z",
+          "finishedAt": "2026-11-05T14:21:46.519Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 4.254999999950329,
+          "counters": {
+            "frame": 40166,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 0,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:46.519Z",
+          "finishedAt": "2026-11-05T14:21:47.076Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 4.205833333482345,
+          "counters": {
+            "frame": 40014,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 1,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:47.077Z",
+          "finishedAt": "2026-11-05T14:21:47.624Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 4.125833333283663,
+          "counters": {
+            "frame": 43158,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 1,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:47.624Z",
+          "finishedAt": "2026-11-05T14:21:48.202Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 4.352499999850989,
+          "counters": {
+            "frame": 43310,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 2,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:48.202Z",
+          "finishedAt": "2026-11-05T14:21:48.754Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 4.149166666716337,
+          "counters": {
+            "frame": 46302,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 2,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:48.754Z",
+          "finishedAt": "2026-11-05T14:21:49.323Z",
+          "load": [
+            7.3994140625,
+            9.94140625,
+            11.03271484375
+          ],
+          "ms": 4.28250000004967,
+          "counters": {
+            "frame": 46454,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 3,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:49.323Z",
+          "finishedAt": "2026-11-05T14:21:49.874Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.150833333283662,
+          "counters": {
+            "frame": 49446,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 3,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:49.874Z",
+          "finishedAt": "2026-11-05T14:21:50.443Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.284166666865349,
+          "counters": {
+            "frame": 49598,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 4,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:50.443Z",
+          "finishedAt": "2026-11-05T14:21:50.989Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.110833333432675,
+          "counters": {
+            "frame": 52590,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 4,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:50.989Z",
+          "finishedAt": "2026-11-05T14:21:51.554Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.240833333383004,
+          "counters": {
+            "frame": 52742,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 5,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:51.554Z",
+          "finishedAt": "2026-11-05T14:21:52.121Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.279166666666667,
+          "counters": {
+            "frame": 55886,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 5,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:52.121Z",
+          "finishedAt": "2026-11-05T14:21:52.671Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.09500000004967,
+          "counters": {
+            "frame": 55734,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 6,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:52.671Z",
+          "finishedAt": "2026-11-05T14:21:53.220Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.134166666616996,
+          "counters": {
+            "frame": 58878,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 6,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:53.220Z",
+          "finishedAt": "2026-11-05T14:21:53.793Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.323333333184322,
+          "counters": {
+            "frame": 59030,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 7,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:53.793Z",
+          "finishedAt": "2026-11-05T14:21:54.339Z",
+          "load": [
+            7.3671875,
+            9.89208984375,
+            11.0087890625
+          ],
+          "ms": 4.100833333532015,
+          "counters": {
+            "frame": 62022,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 7,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:54.339Z",
+          "finishedAt": "2026-11-05T14:21:54.908Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 4.290833333383004,
+          "counters": {
+            "frame": 62174,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 8,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:54.908Z",
+          "finishedAt": "2026-11-05T14:21:55.475Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 4.264166666567325,
+          "counters": {
+            "frame": 65318,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 8,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:55.475Z",
+          "finishedAt": "2026-11-05T14:21:56.021Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 4.097499999900659,
+          "counters": {
+            "frame": 65166,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 9,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:56.021Z",
+          "finishedAt": "2026-11-05T14:21:56.588Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 4.241666666666666,
+          "counters": {
+            "frame": 68462,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 9,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:56.588Z",
+          "finishedAt": "2026-11-05T14:21:57.198Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 4.544166666517655,
+          "counters": {
+            "frame": 68310,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 10,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:57.199Z",
+          "finishedAt": "2026-11-05T14:21:57.765Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 4.234166666616996,
+          "counters": {
+            "frame": 71606,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 10,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:57.765Z",
+          "finishedAt": "2026-11-05T14:21:58.309Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 4.069999999801317,
+          "counters": {
+            "frame": 71454,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 11,
+          "arm": 0,
+          "startedAt": "2026-11-05T14:21:58.309Z",
+          "finishedAt": "2026-11-05T14:21:58.972Z",
+          "load": [
+            7.25732421875,
+            9.8271484375,
+            10.97900390625
+          ],
+          "ms": 5.102500000099341,
+          "counters": {
+            "frame": 74750,
+            "calls": 1493,
+            "triangles": 11832152,
+            "points": 4565,
+            "lines": 2
+          }
+        },
+        {
+          "round": 11,
+          "arm": 1,
+          "startedAt": "2026-11-05T14:21:58.972Z",
+          "finishedAt": "2026-11-05T14:21:59.558Z",
+          "load": [
+            7.076171875,
+            9.74658203125,
+            10.94384765625
+          ],
+          "ms": 4.390000000099341,
+          "counters": {
+            "frame": 74598,
+            "calls": 1520,
+            "triangles": 12407660,
+            "points": 4565,
+            "lines": 2
+          }
+        }
+      ],
+      "times": [
+        [
+          4.254999999950329,
+          4.352499999850989,
+          4.28250000004967,
+          4.284166666865349,
+          4.240833333383004,
+          4.279166666666667,
+          4.323333333184322,
+          4.290833333383004,
+          4.264166666567325,
+          4.241666666666666,
+          4.234166666616996,
+          5.102500000099341
+        ],
+        [
+          4.205833333482345,
+          4.125833333283663,
+          4.149166666716337,
+          4.150833333283662,
+          4.110833333432675,
+          4.09500000004967,
+          4.134166666616996,
+          4.100833333532015,
+          4.097499999900659,
+          4.544166666517655,
+          4.069999999801317,
+          4.390000000099341
+        ]
+      ],
+      "counters": [
+        {
+          "frame": 74750,
+          "calls": 1493,
+          "triangles": 11832152,
+          "points": 4565,
+          "lines": 2
+        },
+        {
+          "frame": 74598,
+          "calls": 1520,
+          "triangles": 12407660,
+          "points": 4565,
+          "lines": 2
+        }
+      ],
+      "medians": [
+        4.280833333358169,
+        4.129999999950329
+      ],
+      "ranges": [
+        [
+          4.234166666616996,
+          5.102500000099341
+        ],
+        [
+          4.069999999801317,
+          4.544166666517655
+        ]
+      ],
+      "branchSlowerPairs": "22/144 (15%)"
+    }
+  ],
+  "hardware": {
+    "model": "Apple M5 Pro",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "errors": [],
+  "finishedAt": "2026-11-05T14:21:59.558Z",
+  "finalLoad": [
+    7.076171875,
+    9.74658203125,
+    10.94384765625
+  ]
+}

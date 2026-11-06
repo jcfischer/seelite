@@ -1,0 +1,19 @@
+
+> seelite@0.1.0 views
+> node scripts/capture-views.mjs --only drum-approach,drum-flank,drum-range,ring-approach,station-approach,station-flank,station-range,hull-chase,cockpit-backlit --boot-timeout-ms 120000 --label before --out /Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152/spikes/station-scale/evidence-drum/views
+
+fatal: not a git repository (or any of the parent directories): .git
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)
+  cockpit-backlit      cockpit  station-trade
+  ring-approach        chase    station-trade
+  drum-approach        chase    station-trade
+  drum-flank           chase    station-trade
+  drum-range           chase    station-trade
+  station-approach     chase    station-trade
+  station-flank        chase    station-trade
+  station-range        chase    station-trade
+  hull-chase           chase    planet-5
+
+  9 views → /Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152/spikes/station-scale/evidence-drum/views/before
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)
+  sheet: /Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152/spikes/station-scale/evidence-drum/views/index.html (1 run)

@@ -9,7 +9,7 @@ import { median, seededShuffler, separation } from "../../scripts/lib/measuremen
 const roots = [await realpath(process.argv[2]), await realpath(process.cwd())];
 const output = process.argv[3] ?? "spikes/station-scale/evidence-drum/collision.json";
 const load = (root, name) => import(pathToFileURL(resolve(root, `src/${name}.ts`)).href);
-const report = { startedAt: new Date().toISOStdrum(), load: loadavg(), cpu: cpus()[0]?.model, cores: cpus().length, blocks: 12, iterations: 100, orderSeed: 1152, dt: 0.1, arms: [], results: [] };
+const report = { startedAt: new Date().toISOString(), load: loadavg(), cpu: cpus()[0]?.model, cores: cpus().length, blocks: 12, iterations: 100, orderSeed: 1152, dt: 0.1, arms: [], results: [] };
 const axes = { x: { x: 1, y: 0, z: 0 }, y: { x: 0, y: 1, z: 0 }, z: { x: 0, y: 0, z: 1 } };
 const pose = (xyz) => ({ origin: { x: xyz[0], y: xyz[1], z: xyz[2] }, ...axes });
 const zero = { x: 0, y: 0, z: 0 };
@@ -64,5 +64,5 @@ for (const fixture of cases) {
 	console.log(fixture.name, times.map(median));
 }
 report.finalLoad = loadavg();
-report.finishedAt = new Date().toISOStdrum();
-await writeFile(output, JSON.stdrumify(report, null, 2) + "\n");
+report.finishedAt = new Date().toISOString();
+await writeFile(output, JSON.stringify(report, null, 2) + "\n");

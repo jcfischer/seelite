@@ -1,0 +1,61 @@
+{
+  "startedAt": "2026-11-05T14:19:54.826Z",
+  "load": [
+    11.177734375,
+    11.52978515625,
+    11.68603515625
+  ],
+  "cpus": 18,
+  "frames": 120,
+  "blocks": 12,
+  "orderSeed": 1152,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 1,
+  "method": "Vite dev trees; synchronous whole-frame render throughput, one readPixels drain per 120 frames; no simulated step, both automatic frame loops cancelled after settled boot; hardware; high, 100%, no MSAA",
+  "arms": [
+    {
+      "name": "main",
+      "root": "/private/tmp/seelite-1152-main",
+      "served": {
+        "root": "/private/tmp/seelite-1152-main"
+      },
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "assetBytes": 4894180,
+      "assetSha256": "c9a95bb2c0ea2c4abef69d0af0ea890df6c6b29f611a021c95c489cc47e5141a",
+      "detailAssetBytes": 0,
+      "detailAssetSha256": null,
+      "lightingSha256": "70047590328ab192c9f7acf0d48891fa200864598533cc4710f879068d022b05",
+      "sourceSha256": "5a8e3dbbd701234bc1b610e20bb771f0b89488c0f6964aa721123dd5a27e8dcd",
+      "ref": "0ac662f10629ab0066cda17654f90f366d0a7d30"
+    },
+    {
+      "name": "branch",
+      "root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152",
+      "served": {
+        "root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152",
+        "head": "d65b5dbcf41b1bf1764d277b111d1a88106a408f",
+        "branch": "node/1152-bring-the-station-scale-detail-to-the-production",
+        "dirty": true
+      },
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "assetBytes": 5001176,
+      "assetSha256": "977fc083c0be6e40c72d7dbdcc665010a932496a915d20b4a3ee6adb8835f591",
+      "detailAssetBytes": 5959832,
+      "detailAssetSha256": "3efd85054533fe7dc2e9aceeab7a8ff12e955ccbe46c10958ebc1210814b1841",
+      "lightingSha256": "70047590328ab192c9f7acf0d48891fa200864598533cc4710f879068d022b05",
+      "sourceSha256": "ad3d1d09ec05137c71a2bbb0b3dacc93cae474c403eb7d0c86a389f1e8b55816",
+      "ref": "d65b5dbcf41b1bf1764d277b111d1a88106a408f"
+    }
+  ],
+  "results": [],
+  "hardware": {
+    "model": "Apple M5 Pro",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "errors": [],
+  "failure": "TypeError: pages[i].bdrumToFront is not a function"
+}

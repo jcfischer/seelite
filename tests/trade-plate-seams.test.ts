@@ -6,7 +6,16 @@ import { forEachWorldTriangle } from "./helpers/world-triangles";
 
 function firstSurfaces(root: THREE.Object3D, axis: number, backing: boolean) {
 	const step = 2.5;
-	const extent = 800;
+	const bounds = new THREE.Box3().setFromObject(root);
+	const extent =
+		step *
+		(1 +
+			Math.ceil(
+				Math.max(
+					...bounds.min.toArray().map(Math.abs),
+					...bounds.max.toArray().map(Math.abs),
+				) / step,
+			));
 	const n = (extent * 2) / step + 1;
 	const near = new Float64Array(n * n).fill(-Infinity);
 	const far = new Float64Array(n * n).fill(Infinity);
@@ -122,10 +131,16 @@ for (const form of ["b", "c", "e"] as const)
 				backingMeshes++;
 		});
 		expect(backingMeshes).toBe(1);
+		const bounds = new THREE.Box3().setFromObject(root);
+		const extent = Math.max(
+			...bounds.min.toArray().map(Math.abs),
+			...bounds.max.toArray().map(Math.abs),
+		);
 		let repaired = 0,
 			deeper = 0;
 		for (let axis = 0; axis < 3; axis++) {
 			const full = firstSurfaces(root, axis, true);
+			expect(full.extent).toBeGreaterThanOrEqual(extent);
 			const before = firstSurfaces(root, axis, false);
 			for (let i = 0; i < full.near.length; i++) {
 				if (

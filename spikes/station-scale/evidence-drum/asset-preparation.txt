@@ -1,0 +1,15 @@
+prune: Removed types... Accessor (80)
+prune: Removed types... Mesh (7), Primitive (7), TextureInfo (20), Material (4), Accessor (28)
+prune: Removed types... Mesh (13), Primitive (13), TextureInfo (30), Material (6), Texture (1), Accessor (52)
+Verified src/models/trade-ring.glb: exact vertex attributes; 6621444 bytes (6.31 MiB), sha256 9d46fd62bee7744ff5d21a719be009bff6a229724ce84bfb9cb24a33dc8e0a60.
+Verified src/models/trade-ring-detail.glb: exact vertex attributes; 14027844 bytes (13.38 MiB), sha256 ab082d49de3b94ee62c9eeb76d226e160933b66640f0e6c3a0036cf351db013b.
+Verified src/models/trade-ring.glb: exact flight-export triangles, material inputs and texture pixels across 2 file(s).
+prune: Removed types... Accessor (80)
+prune: Removed types... Mesh (8), Primitive (8), TextureInfo (15), Material (3), Accessor (32)
+prune: Removed types... Mesh (12), Primitive (12), TextureInfo (20), Material (4), Texture (1), Accessor (48)
+Verified src/models/trade-drum.glb: exact vertex attributes; 5001176 bytes (4.77 MiB), sha256 977fc083c0be6e40c72d7dbdcc665010a932496a915d20b4a3ee6adb8835f591.
+Verified src/models/trade-drum-detail.glb: exact vertex attributes; 5959832 bytes (5.68 MiB), sha256 3efd85054533fe7dc2e9aceeab7a8ff12e955ccbe46c10958ebc1210814b1841.
+Verified src/models/trade-drum.glb: exact flight-export triangles, material inputs and texture pixels across 2 file(s).
+prune: Removed types... Accessor (56)
+Verified src/models/trade-wheel.glb: exact vertex attributes; 7075896 bytes (6.75 MiB), sha256 47962b8039c27dab21730bb63a8c8a2df8e05281881bb156479cb37b2c7f8e08.
+Verified src/models/trade-wheel.glb: exact flight-export triangles, material inputs and texture pixels across 1 file(s).

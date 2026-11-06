@@ -1,0 +1,77 @@
+bun test v1.4.2 (744846f84)
+
+tests/view-set.test.ts:
+(pass) the view set itself > Assembly rows frame two generated Assembly plans [8.83ms]
+(pass) the view set itself > scoped capture names existing views in canonical order and refuses typos [0.47ms]
+(pass) the view set itself > the Lance view judges node 1034 on the interceptor in chase [0.07ms]
+(pass) the view set itself > the authored paint comparison puts miner and Bollard beside courier [0.12ms]
+(pass) the view set itself > every view is captured on the seed it declares, whatever its position [4.86ms]
+(pass) the view set itself > the views that declare a seed are the ones the fixture cannot frame [0.26ms]
+(pass) the view set itself > declares its views with unique kebab-case names [0.17ms]
+(pass) the view set itself > every view carries a caption and a known shot kind [0.12ms]
+(pass) the view set itself > every shot carries the payload its kind needs [0.33ms]
+(pass) the view set itself > the jump's three beats are each framed at their own phase [0.18ms]
+(pass) the view set itself > a shot missing its kind's payload is named [0.07ms]
+(pass) the view set itself > every covered id is a lever on the map [0.06ms]
+(pass) the view set itself > the two range views judge lit windows off the aperture axis [0.17ms]
+(pass) the view set itself > the two planet views judge a surface at two apparent sizes [8.70ms]
+(pass) the view set itself > every lever is covered by at least one view [0.22ms]
+(pass) the view set itself > coverage goes red when a lever loses its only views [0.11ms]
+(pass) the view set itself > coverage goes red for the hover label when both chart rows go [1.42ms]
+(pass) the view set itself > a chart row names which hover it frames, and nothing else passes [0.06ms]
+(pass) the view set itself > each chart caption says the probe holds hold, switch and release [0.11ms]
+(pass) the view set itself > the fixture is pinned: one seed, one clock, one viewport [0.06ms]
+(pass) the pinned seed's world > generates the system the fixture names [0.01ms]
+(pass) the pinned seed's world > generates the planets the fixture declares, largest first [0.20ms]
+(pass) the pinned seed's world > generates the station roles the fixture declares, both of them slots [0.06ms]
+(pass) node #754 horizon views > readback refuses missing, non-finite, out-of-band and clipped facts [0.22ms]
+(pass) node #754 horizon views > the horizon basis preserves forward at an antiparallel roll [0.33ms]
+(pass) node #754 horizon views > station containment measures the full silhouette rather than only its centre [1.73ms]
+(pass) node #754 horizon views > a station whose centre is behind the limb still counts while an edge shows [0.15ms]
+(pass) node #754 horizon views > both views cover 720, with a station only at its own orbit [0.07ms]
+(pass) node #754 horizon views > the fixture assumption remains terran planet-4 with trade at 1.500R [3.15ms]
+(pass) node #754 horizon views > invalid horizon payloads refuse rather than making a false sheet [0.09ms]
+(pass) node #754 horizon views > the measured limb moves with the camera attitude, independently of the request [0.24ms]
+(pass) the contact sheet > a scoped sheet declares its selection and still requires every selected frame [0.86ms]
+(pass) the contact sheet > renders every declared view of every run [12.84ms]
+(pass) the contact sheet > names the ref and the renderer each run was captured with [0.65ms]
+(pass) the contact sheet > prints the clock span the frames were taken across, not a pinned time [0.46ms]
+(pass) the contact sheet > omits the span for a run whose views carry no clock [0.65ms]
+(pass) the contact sheet > refuses a run that is missing a declared view [0.17ms]
+(pass) the contact sheet > refuses a run carrying a view the set does not declare [0.06ms]
+(pass) the contact sheet > names the tree the server declared, beside the ref the script ran at [1.12ms]
+(pass) the contact sheet > says a dirty served tree was dirty [0.42ms]
+(pass) the contact sheet > says so rather than refusing a run captured before the field existed [0.38ms]
+(pass) the contact sheet > falls back to the root path where the server could not read git [0.35ms]
+(pass) the contact sheet > refuses no runs at all rather than emitting an empty sheet [0.04ms]
+(pass) the contact sheet > judges completeness against the set it is given, not the module's [0.17ms]
+(pass) the rim sky row #432 built and removed > sky-only still stands at the arrival point and aims away from everything [0.06ms]
+(pass) the rim look row #480 added > it stands at the farthest system of the sheet's own seed, and aims by nothing else [0.03ms]
+(pass) the rim look row #480 added > the cluster still reaches §4's rim, so the word rim names a place [0.01ms]
+(pass) the rim look row #480 added > its caption avoids the words this row has already over-claimed with [0.17ms]
+(pass) the rim look row #480 added > the named-system rows stand at their declared systems [0.08ms]
+(pass) the opening strip names the opening's shots (sage round 1 on #536) > the validator's list is the source's list [6.95ms]
+(pass) the opening strip names the opening's shots (sage round 1 on #536) > a shot the opening does not have is refused [0.16ms]
+(pass) Coriolis scale detail has axis, flank and range views on the actual trade-A fixture [1.05ms]
+(pass) Ring scale detail has axis, flank and range views on a Ring home fixture [0.78ms]
+(pass) Drum approach frames seed 42 system zero [0.06ms]
+(pass) Drum flank frames seed 42 system zero
+(pass) Drum range frames seed 42 system zero
+
+tests/drum-late-detail.test.ts:
+(pass) the backed Drum hull stays below 6 MiB and carries no full-only detail [10.93ms]
+(pass) Drum detail defers its download, retries, attaches to live stations and respects their current band [274.39ms]
+
+tests/drum-scale-detail.test.ts:
+(pass) Drum fittings hide below full while the plate backing stays hull [73.25ms]
+(pass) the four original Drum window bands sit on the entry face [24.19ms]
+
+tests/trade-plate-seams.test.ts:
+(pass) trade/b: six-sided 2.5 m seam grid and unbacked control [406.36ms]
+(pass) trade/c: six-sided 2.5 m seam grid and unbacked control [798.20ms]
+(pass) trade/e: six-sided 2.5 m seam grid and unbacked control [341.27ms]
+
+ 63 pass
+ 0 fail
+ 1349 expect() calls
+Ran 63 tests across 4 files. [6.75s]

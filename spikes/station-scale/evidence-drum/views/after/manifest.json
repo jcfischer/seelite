@@ -1,0 +1,91 @@
+{
+	"label": "after",
+	"gitRef": "d65b5dbc-dirty",
+	"served": {
+		"root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152",
+		"head": "d65b5dbcf41b1bf1764d277b111d1a88106a408f",
+		"branch": "node/1152-bring-the-station-scale-detail-to-the-production",
+		"dirty": true
+	},
+	"capturedAt": "2026-11-05T14:27:37.110Z",
+	"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+	"seed": 47,
+	"quality": "default",
+	"cockpitFov": "default",
+	"selectedViews": [
+		"cockpit-backlit",
+		"ring-approach",
+		"drum-approach",
+		"drum-flank",
+		"drum-range",
+		"station-approach",
+		"station-flank",
+		"station-range",
+		"hull-chase"
+	],
+	"views": [
+		{
+			"name": "cockpit-backlit",
+			"file": "after/cockpit-backlit.png",
+			"subject": "station-trade",
+			"gameTime": 0.48879999998211876,
+			"fovDeg": 60
+		},
+		{
+			"name": "ring-approach",
+			"file": "after/ring-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.9180999999940396,
+			"fovDeg": 60
+		},
+		{
+			"name": "drum-approach",
+			"file": "after/drum-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.7927999999821185,
+			"fovDeg": 60
+		},
+		{
+			"name": "drum-flank",
+			"file": "after/drum-flank.png",
+			"subject": "station-trade",
+			"gameTime": 1.2571999999880787,
+			"fovDeg": 60
+		},
+		{
+			"name": "drum-range",
+			"file": "after/drum-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.7309999999701973,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-approach",
+			"file": "after/station-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.7972000000178815,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-flank",
+			"file": "after/station-flank.png",
+			"subject": "station-trade",
+			"gameTime": 1.329800000011921,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-range",
+			"file": "after/station-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.768900000035763,
+			"fovDeg": 60
+		},
+		{
+			"name": "hull-chase",
+			"file": "after/hull-chase.png",
+			"subject": "planet-5",
+			"gameTime": 2.204800000041723,
+			"fovDeg": 60
+		}
+	]
+}

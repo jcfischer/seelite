@@ -5,7 +5,9 @@ import { createServer } from "vite";
 
 const root = await realpath(process.argv[2] ?? process.cwd());
 const label = process.argv[3] ?? "after";
-const out = resolve(process.cwd(), "spikes/station-scale/evidence-drum/views");
+const full = process.argv.includes("--full");
+const out = resolve(process.cwd(), `spikes/station-scale/evidence-drum/${full ? "views-full" : "views"}`);
+const selection = full ? [] : ["--only", "drum-approach,drum-flank,drum-range,ring-approach,station-approach,station-flank,station-range,hull-chase,cockpit-backlit"];
 await mkdir(out, { recursive: true });
 if (root !== await realpath(process.cwd()))
 	await copyFile("scripts/lib/view-set.mjs", resolve(root, "scripts/lib/view-set.mjs"));
@@ -13,7 +15,7 @@ const server = await createServer({ root, configFile: resolve(root, "vite.config
 try {
 	await server.listen();
 	const code = await new Promise((done, fail) => {
-		const child = spawn("npm", ["run", "views", "--", "--only", "drum-approach,drum-flank,drum-range,ring-approach,station-approach,station-flank,station-range,hull-chase,cockpit-backlit", "--boot-timeout-ms", "120000", "--label", label, "--out", out], { cwd: root, env: { ...process.env, PROBE_ORIGIN: "http://127.0.0.1:5197", SEELITE_PROBE_RENDERER: "hardware" }, stdio: "inherit" });
+		const child = spawn("npm", ["run", "views", "--", ...selection, "--boot-timeout-ms", "120000", "--label", label, "--out", out], { cwd: root, env: { ...process.env, PROBE_ORIGIN: "http://127.0.0.1:5197", SEELITE_PROBE_RENDERER: "hardware" }, stdio: "inherit" });
 		child.on("error", fail);
 		child.on("exit", done);
 	});

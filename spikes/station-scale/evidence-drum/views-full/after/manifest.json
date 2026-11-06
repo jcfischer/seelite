@@ -1,0 +1,698 @@
+{
+	"label": "after",
+	"gitRef": "7940fba1-dirty",
+	"served": {
+		"root": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1152",
+		"head": "7940fba17748423d1f3416b4cfd5744ffec3f26d",
+		"branch": "node/1152-bring-the-station-scale-detail-to-the-production",
+		"dirty": true
+	},
+	"capturedAt": "2026-11-06T07:41:31.638Z",
+	"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+	"seed": 47,
+	"quality": "default",
+	"cockpitFov": "default",
+	"levelsFile": "after/levels.txt",
+	"views": [
+		{
+			"name": "assembly-approach",
+			"file": "after/assembly-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.6255000000298024,
+			"fovDeg": 60
+		},
+		{
+			"name": "assembly-flank",
+			"file": "after/assembly-flank.png",
+			"subject": "station-trade",
+			"gameTime": 0.9489000000357626,
+			"fovDeg": 60
+		},
+		{
+			"name": "assembly-second-layout",
+			"file": "after/assembly-second-layout.png",
+			"subject": "station-trade",
+			"gameTime": 0.5494999999701977,
+			"fovDeg": 60
+		},
+		{
+			"name": "derelict",
+			"file": "after/derelict.png",
+			"subject": "freighter · 248:derelict-00",
+			"gameTime": 386297.2543988052,
+			"fovDeg": 60
+		},
+		{
+			"name": "derelict-tear",
+			"file": "after/derelict-tear.png",
+			"subject": "explorer · 206:derelict-00 · explorer-port-nacelle",
+			"gameTime": 146182.16035260938,
+			"fovDeg": 60
+		},
+		{
+			"name": "cockpit-arrival",
+			"file": "after/cockpit-arrival.png",
+			"subject": "station-trade",
+			"gameTime": 0.41419999998807927,
+			"fovDeg": 60
+		},
+		{
+			"name": "cockpit-backlit",
+			"file": "after/cockpit-backlit.png",
+			"subject": "station-trade",
+			"gameTime": 0.7301999999880792,
+			"fovDeg": 60
+		},
+		{
+			"name": "coriolis-approach",
+			"file": "after/coriolis-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.5635999999642373,
+			"fovDeg": 60
+		},
+		{
+			"name": "coriolis-flank",
+			"file": "after/coriolis-flank.png",
+			"subject": "station-trade",
+			"gameTime": 1.1139999999701975,
+			"fovDeg": 60
+		},
+		{
+			"name": "coriolis-range",
+			"file": "after/coriolis-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.447099999964237,
+			"fovDeg": 60
+		},
+		{
+			"name": "ring-approach",
+			"file": "after/ring-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.7234999999999998,
+			"fovDeg": 60
+		},
+		{
+			"name": "ring-flank",
+			"file": "after/ring-flank.png",
+			"subject": "station-trade",
+			"gameTime": 1.1226999999880787,
+			"fovDeg": 60
+		},
+		{
+			"name": "ring-range",
+			"file": "after/ring-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.4055999999940392,
+			"fovDeg": 60
+		},
+		{
+			"name": "drum-approach",
+			"file": "after/drum-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.4073999999761583,
+			"fovDeg": 60
+		},
+		{
+			"name": "drum-flank",
+			"file": "after/drum-flank.png",
+			"subject": "station-trade",
+			"gameTime": 0.7504999999701977,
+			"fovDeg": 60
+		},
+		{
+			"name": "drum-range",
+			"file": "after/drum-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.0668999999761577,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-approach",
+			"file": "after/station-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.4494000000059606,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-shipyard-axis",
+			"file": "after/station-shipyard-axis.png",
+			"subject": "station-shipyard",
+			"gameTime": 0.9204000000059603,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-refinery-axis",
+			"file": "after/station-refinery-axis.png",
+			"subject": "station-refinery",
+			"gameTime": 0.40570000001788153,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-flank",
+			"file": "after/station-flank.png",
+			"subject": "station-trade",
+			"gameTime": 0.4638999999761583,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-outline",
+			"file": "after/station-outline.png",
+			"subject": "station-shipyard",
+			"gameTime": 0.8921999999880789,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-range",
+			"file": "after/station-range.png",
+			"subject": "station-trade",
+			"gameTime": 1.2422999999821185,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-shipyard-flank",
+			"file": "after/station-shipyard-flank.png",
+			"subject": "station-shipyard",
+			"gameTime": 1.4922999999821187,
+			"fovDeg": 60
+		},
+		{
+			"name": "hull-chase",
+			"file": "after/hull-chase.png",
+			"subject": "planet-5",
+			"gameTime": 1.9420999999940398,
+			"fovDeg": 60
+		},
+		{
+			"name": "hull-chase-miner",
+			"file": "after/hull-chase-miner.png",
+			"subject": "planet-5",
+			"gameTime": 0.2557000000178814,
+			"fovDeg": 60
+		},
+		{
+			"name": "hull-chase-bollard",
+			"file": "after/hull-chase-bollard.png",
+			"subject": "planet-5",
+			"gameTime": 0.25119999998807907,
+			"fovDeg": 60
+		},
+		{
+			"name": "hull-chase-lance",
+			"file": "after/hull-chase-lance.png",
+			"subject": "planet-5",
+			"gameTime": 0.249,
+			"fovDeg": 60
+		},
+		{
+			"name": "planet-terminator",
+			"file": "after/planet-terminator.png",
+			"subject": "planet-4",
+			"gameTime": 0.9319000000059606,
+			"fovDeg": 60
+		},
+		{
+			"name": "station-horizon",
+			"file": "after/station-horizon.png",
+			"subject": "station-trade",
+			"gameTime": 2.0004000000059605,
+			"fovDeg": 60,
+			"horizonFacts": {
+				"limbFraction": 0.31999999999999984,
+				"sunElevationDeg": 10.000000000000014,
+				"cameraRadii": 1.500926093836144,
+				"stationInFrame": true,
+				"stationRangeKm": 4.799999999960367,
+				"stationIntersectsFrame": true,
+				"shipRadii": 1.500894617188249,
+				"visibleStations": [
+					"station-trade"
+				]
+			}
+		},
+		{
+			"name": "planet-boundary",
+			"file": "after/planet-boundary.png",
+			"subject": "planet-4",
+			"gameTime": 2.5719999999999996,
+			"fovDeg": 60,
+			"horizonFacts": {
+				"limbFraction": 0.31999999999999973,
+				"sunElevationDeg": 9.999999999999998,
+				"cameraRadii": 1.199999999999625,
+				"stationInFrame": null,
+				"stationRangeKm": null,
+				"stationIntersectsFrame": null,
+				"shipRadii": 1.200001267416408,
+				"visibleStations": []
+			}
+		},
+		{
+			"name": "planet-fill",
+			"file": "after/planet-fill.png",
+			"subject": "planet-5",
+			"gameTime": 3.615299999982119,
+			"fovDeg": 60
+		},
+		{
+			"name": "airless-fill",
+			"file": "after/airless-fill.png",
+			"subject": "planet-5-moon-0",
+			"gameTime": 4.632999999970195,
+			"fovDeg": 60
+		},
+		{
+			"name": "cold-rocky-ice",
+			"file": "after/cold-rocky-ice.png",
+			"subject": "planet-1",
+			"gameTime": 0.38330000001192105,
+			"fovDeg": 60
+		},
+		{
+			"name": "ringed-giant",
+			"file": "after/ringed-giant.png",
+			"subject": "planet-6",
+			"gameTime": 0.28900000000000003,
+			"fovDeg": 60
+		},
+		{
+			"name": "giant-fill",
+			"file": "after/giant-fill.png",
+			"subject": "planet-6",
+			"gameTime": 0.6492000000178814,
+			"fovDeg": 60
+		},
+		{
+			"name": "sky-only",
+			"file": "after/sky-only.png",
+			"subject": "arrival point, empty sky",
+			"gameTime": 0.14989999997615816,
+			"fovDeg": 60
+		},
+		{
+			"name": "sky-at-the-rim",
+			"file": "after/sky-at-the-rim.png",
+			"subject": "arrival point, empty sky",
+			"gameTime": 0.1499000000059605,
+			"fovDeg": 60
+		},
+		{
+			"name": "controls-open",
+			"file": "after/controls-open.png",
+			"subject": "Controls tab",
+			"gameTime": 0.2324000000059605,
+			"fovDeg": 60
+		},
+		{
+			"name": "controls-folded",
+			"file": "after/controls-folded.png",
+			"subject": "Controls tab · folded fly, fight, dock, trade",
+			"gameTime": 0.5814000000059605,
+			"fovDeg": 60
+		},
+		{
+			"name": "controls-rebind",
+			"file": "after/controls-rebind.png",
+			"subject": "Rebinding fly.pitchUp · caught k",
+			"gameTime": 0.9142999999821184,
+			"fovDeg": 60
+		},
+		{
+			"name": "chart-hover-crowded",
+			"file": "after/chart-hover-crowded.png",
+			"subject": "Galaxy Map · crowded · system 44 (4 more)",
+			"gameTime": 1.2812999999821182,
+			"fovDeg": 60
+		},
+		{
+			"name": "chart-hover-isolated",
+			"file": "after/chart-hover-isolated.png",
+			"subject": "Galaxy Map · isolated · system 0",
+			"gameTime": 1.6146999999880784,
+			"fovDeg": 60
+		},
+		{
+			"name": "duel-glass",
+			"file": "after/duel-glass.png",
+			"subject": "duel · Raider 01 · forward",
+			"gameTime": 12.273400000005934,
+			"fovDeg": 60
+		},
+		{
+			"name": "duel-console",
+			"file": "after/duel-console.png",
+			"subject": "duel · Raider 01 · right",
+			"gameTime": 12.278699999988053,
+			"fovDeg": 60
+		},
+		{
+			"name": "raider-canisters",
+			"file": "after/raider-canisters.png",
+			"subject": "duel · Raider 01 · forward · canisters",
+			"gameTime": 12.362999999999971,
+			"fovDeg": 60
+		},
+		{
+			"name": "raider-log",
+			"file": "after/raider-log.png",
+			"subject": "duel · Raider 01 · left · log",
+			"gameTime": 613.3723999999761,
+			"fovDeg": 60
+		},
+		{
+			"name": "docking-notice-bounce",
+			"file": "after/docking-notice-bounce.png",
+			"subject": "station-trade · ENTRY FAILED · roll 90° of 50°",
+			"gameTime": 0.4755000000000001,
+			"fovDeg": 60
+		},
+		{
+			"name": "docking-notice-let-go",
+			"file": "after/docking-notice-let-go.png",
+			"subject": "station-trade · AUTOPILOT OFF · no live clearance",
+			"gameTime": 0.5042000000178815,
+			"fovDeg": 60
+		},
+		{
+			"name": "vent-plumes-chase",
+			"file": "after/vent-plumes-chase.png",
+			"subject": "courier at 1.90× the cap, spinning · 10 vents firing · markers at 0.74 (velocity) and 0.74 (nose) of their alpha",
+			"gameTime": 0.09999999999999999,
+			"fovDeg": 60
+		},
+		{
+			"name": "miner-vent-plumes",
+			"file": "after/miner-vent-plumes.png",
+			"subject": "miner · main drive and attitude vents firing · 9 slots",
+			"gameTime": 0.09999999999999999,
+			"fovDeg": 60
+		},
+		{
+			"name": "vent-cue-cockpit",
+			"file": "after/vent-cue-cockpit.png",
+			"subject": "courier at 1.77× the cap, spinning · 10 vents firing · markers at 0.30 (velocity) and 0.30 (nose) of their alpha",
+			"gameTime": 0.21666666666666665,
+			"fovDeg": 60
+		},
+		{
+			"name": "vent-plumes-cruise",
+			"file": "after/vent-plumes-cruise.png",
+			"subject": "courier in cruise, spinning · 2 attitude vents firing (fore-port-lateral, aft-starboard-lateral) · angular cue latched",
+			"gameTime": 3.1166666666666605,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-vent-plumes",
+			"file": "after/npc-vent-plumes.png",
+			"subject": "Raider 01 (raider) off its stern · 11 vents firing (fore-ventral-vertical, aft-dorsal-vertical, fore-port-lateral, aft-starboard-lateral, port-dorsal-roll, starboard-ventral-roll, main, strafe-fore-port, strafe-aft-port, strafe-fore-ventral, strafe-aft-ventral)",
+			"gameTime": 6.4333333333333265,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-windup",
+			"file": "after/witchspace-windup.png",
+			"subject": "-2.4 s · ANLEONOR → ABITI",
+			"gameTime": 0.03330000001192093,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-entry",
+			"file": "after/witchspace-entry.png",
+			"subject": "-1.5 s · ANLEONOR → ABITI",
+			"gameTime": 0.0332000000178814,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-entry-late",
+			"file": "after/witchspace-entry-late.png",
+			"subject": "-0.4 s · ANLEONOR → ABITI",
+			"gameTime": 0.03330000001192093,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-cut",
+			"file": "after/witchspace-cut.png",
+			"subject": "+0 s · ANLEONOR → ABITI",
+			"gameTime": 3.0333000000119226,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-exit",
+			"file": "after/witchspace-exit.png",
+			"subject": "+1.5 s · ANLEONOR → ABITI",
+			"gameTime": 3.033400000005962,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-exit-late",
+			"file": "after/witchspace-exit-late.png",
+			"subject": "+3.3 s · ANLEONOR → ABITI",
+			"gameTime": 3.0333000000119226,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-rift-chase",
+			"file": "after/witchspace-rift-chase.png",
+			"subject": "+4.3 s · ANLEONOR → ABITI",
+			"gameTime": 3.048699999988081,
+			"fovDeg": 60
+		},
+		{
+			"name": "witchspace-rift-closing",
+			"file": "after/witchspace-rift-closing.png",
+			"subject": "+6.5 s · ANLEONOR → ABITI",
+			"gameTime": 3.03329999998212,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-forming",
+			"file": "after/opening-forming.png",
+			"subject": "forming +2.00 s",
+			"gameTime": 1.9999999999999978,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-arrival",
+			"file": "after/opening-arrival.png",
+			"subject": "arrival +1.50 s",
+			"gameTime": 4.499999999999989,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-arrival-rift",
+			"file": "after/opening-arrival-rift.png",
+			"subject": "arrival +4.50 s",
+			"gameTime": 7.499999999999979,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-flypast",
+			"file": "after/opening-flypast.png",
+			"subject": "flypast +1.50 s",
+			"gameTime": 10.500000000000101,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-flypast-away",
+			"file": "after/opening-flypast-away.png",
+			"subject": "flypast +3.50 s",
+			"gameTime": 12.5000000000002,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-cruise",
+			"file": "after/opening-cruise.png",
+			"subject": "cruise +1.00 s",
+			"gameTime": 51.916666666665,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-cruise-late",
+			"file": "after/opening-cruise-late.png",
+			"subject": "cruise +7.00 s",
+			"gameTime": 60.91666666666449,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-approach",
+			"file": "after/opening-approach.png",
+			"subject": "approach +1.00 s",
+			"gameTime": 72.89999999999715,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-approach-late",
+			"file": "after/opening-approach-late.png",
+			"subject": "approach +5.00 s",
+			"gameTime": 80.8999999999967,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-dock",
+			"file": "after/opening-dock.png",
+			"subject": "dock +1.00 s",
+			"gameTime": 132.46666666666422,
+			"fovDeg": 60
+		},
+		{
+			"name": "opening-dock-late",
+			"file": "after/opening-dock-late.png",
+			"subject": "dock +7.00 s",
+			"gameTime": 144.46666666667377,
+			"fovDeg": 60
+		},
+		{
+			"name": "cruise-light-half",
+			"file": "after/cruise-light-half.png",
+			"subject": "to INBIAGE at 15.9 c · light shift held at 0.5",
+			"gameTime": 17.999999999999986,
+			"fovDeg": 60
+		},
+		{
+			"name": "cruise-light-full",
+			"file": "after/cruise-light-full.png",
+			"subject": "to INBIAGE at 15.9 c · light shift held at 1",
+			"gameTime": 17.999999999999986,
+			"fovDeg": 60
+		},
+		{
+			"name": "cruise-light-chase",
+			"file": "after/cruise-light-chase.png",
+			"subject": "to INBIAGE at 15.9 c · light shift held at 1",
+			"gameTime": 17.999999999999986,
+			"fovDeg": 60
+		},
+		{
+			"name": "berth-arrival",
+			"file": "after/berth-arrival.png",
+			"subject": "station-trade · overhead-deep",
+			"gameTime": 83.4438666666513,
+			"fovDeg": 60
+		},
+		{
+			"name": "berth-arrival-cabin",
+			"file": "after/berth-arrival-cabin.png",
+			"subject": "station-trade · overhead-deep",
+			"gameTime": 168.42460000004988,
+			"fovDeg": 60
+		},
+		{
+			"name": "berth-docked-forward",
+			"file": "after/berth-docked-forward.png",
+			"subject": "station-trade · overhead-deep",
+			"gameTime": 254.21790000009992,
+			"fovDeg": 60
+		},
+		{
+			"name": "berth-free-look",
+			"file": "after/berth-free-look.png",
+			"subject": "station-trade · overhead-near",
+			"gameTime": 337.50526666668185,
+			"fovDeg": 60
+		},
+		{
+			"name": "berth-launch-chase",
+			"file": "after/berth-launch-chase.png",
+			"subject": "station-trade · overhead-deep",
+			"gameTime": 425.57319999990017,
+			"fovDeg": 60
+		},
+		{
+			"name": "shipyard-wall-berth",
+			"file": "after/shipyard-wall-berth.png",
+			"subject": "station-shipyard · starboard-near",
+			"gameTime": 509.17686666652133,
+			"fovDeg": 60
+		},
+		{
+			"name": "refinery-cradle-berth",
+			"file": "after/refinery-cradle-berth.png",
+			"subject": "station-refinery · port-near",
+			"gameTime": 83.13999999999656,
+			"fovDeg": 60
+		},
+		{
+			"name": "shipyard-tab-new-game",
+			"file": "after/shipyard-tab-new-game.png",
+			"subject": "station-shipyard · Shipyard tab at new-game rungs",
+			"gameTime": 83.2340999999906,
+			"fovDeg": 60
+		},
+		{
+			"name": "shipyard-tab-open",
+			"file": "after/shipyard-tab-open.png",
+			"subject": "station-shipyard · Shipyard tab at top rungs",
+			"gameTime": 83.20940000000252,
+			"fovDeg": 60
+		},
+		{
+			"name": "outfitting-comparison",
+			"file": "after/outfitting-comparison.png",
+			"subject": "station-shipyard · Equipment tab at top rungs",
+			"gameTime": 83.20499999996674,
+			"fovDeg": 60
+		},
+		{
+			"name": "outpost-interior-workbench",
+			"file": "after/outpost-interior-workbench.png",
+			"subject": "workbench · outpost e interior",
+			"gameTime": null,
+			"fovDeg": null
+		},
+		{
+			"name": "npc-departure",
+			"file": "after/npc-departure.png",
+			"subject": "CEQULEUS · prospector · departure · +0.50 s from the crossing · ring 0.112 km across, strength 1.00, flare 0.12, no hull in this system any more · camera 0.195 km",
+			"gameTime": 580.9996920799751,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-arrival",
+			"file": "after/npc-arrival.png",
+			"subject": "CEQULEUS · prospector · arrival · +0.50 s from the crossing · ring 0.112 km across, strength 1.00, flare 0.12, hull origin -0.014 km from ring plane along nose · camera 0.247 km",
+			"gameTime": 580.9996920799751,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-departure-at-player-lane-point",
+			"file": "after/npc-departure-at-player-lane-point.png",
+			"subject": "CEQULEUS · prospector · departure · +0.50 s from the crossing · ring 0.112 km across, strength 1.00, flare 0.12, no hull in this system any more · camera 16.643 km",
+			"gameTime": 580.9996920799751,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-arrival-at-player-lane-point",
+			"file": "after/npc-arrival-at-player-lane-point.png",
+			"subject": "CEQULEUS · prospector · arrival · +0.50 s from the crossing · ring 0.112 km across, strength 1.00, flare 0.12, hull origin -0.014 km from ring plane along nose · camera 16.643 km",
+			"gameTime": 580.9996920799751,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-arrival-opening",
+			"file": "after/npc-arrival-opening.png",
+			"subject": "CEQULEUS · prospector · arrival · -0.90 s from the crossing · ring 0.066 km across, strength 0.35, flare 0.00, no hull in this system yet · camera 0.268 km",
+			"gameTime": 579.5996920799752,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-arrival-crossing",
+			"file": "after/npc-arrival-crossing.png",
+			"subject": "CEQULEUS · prospector · arrival · +0.05 s from the crossing · ring 0.112 km across, strength 1.00, flare 0.59, hull origin -0.042 km from ring plane along nose · camera 0.247 km",
+			"gameTime": 580.5496920799751,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-departure-swallow",
+			"file": "after/npc-departure-swallow.png",
+			"subject": "CEQULEUS · prospector · departure · -0.35 s from the crossing · ring 0.104 km across, strength 0.86, flare 0.00, hull origin 0.027 km from ring plane along nose · camera 0.195 km",
+			"gameTime": 580.1496920799751,
+			"fovDeg": 60
+		},
+		{
+			"name": "npc-departure-seal",
+			"file": "after/npc-departure-seal.png",
+			"subject": "CEQULEUS · prospector · departure · +4.55 s from the crossing · ring 0.038 km across, strength 0.11, flare 0.30, no hull in this system any more · camera 0.195 km",
+			"gameTime": 585.0496920799751,
+			"fovDeg": 60
+		}
+	]
+}

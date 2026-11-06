@@ -1,0 +1,11 @@
+bun test v1.4.4 (38afee6c8)
+
+tests/spike-binaries-lfs.test.ts:
+(pass) study binaries under spikes/ are in Git LFS > every tracked study binary is an LFS pointer, unless exempt [0.20ms]
+(pass) study binaries under spikes/ are in Git LFS > an exempt binary is stored plain, so CI reads the model [0.15ms]
+(pass) study binaries under spikes/ are in Git LFS > every exemption has a reader, and every reader's file is exempt [57.07ms]
+
+ 3 pass
+ 0 fail
+ 5 expect() calls
+Ran 3 tests across 1 file. [3.29s]

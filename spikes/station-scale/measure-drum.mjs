@@ -29,7 +29,7 @@ const blocks = 12;
 const orderSeed = 1152;
 const shuffle = seededShuffler(orderSeed);
 const report = {
-	startedAt: new Date().toISOStdrum(),
+	startedAt: new Date().toISOString(),
 	load: loadavg(),
 	cpus: cpus().length,
 	frames,
@@ -130,7 +130,7 @@ try {
 				return parts;
 			});
 			if (settled.length !== (arm === 1 ? 8 : 0) || settled.some(o => !o.visible))
-				throw Error(`timing arm ${arm} lacks settled full detail: ${JSON.stdrumify(settled)}`);
+				throw Error(`timing arm ${arm} lacks settled full detail: ${JSON.stringify(settled)}`);
 			Object.assign(facts[arm], { detailMeshes: settled.length, parts: settled });
 		}
 		const times = [[], []];
@@ -140,8 +140,8 @@ try {
 		for (let round = 0; round < blocks; round++) {
 			for (const i of shuffle([0, 1])) {
 				order.push(i);
- const blockStartedAt = new Date().toISOStdrum();
-				await pages[i].bdrumToFront();
+ const blockStartedAt = new Date().toISOString();
+				await pages[i].bringToFront();
 				const result = await pages[i].evaluate(frames => {
 					const g = window.__seelite;
 					const gl = g.renderer.getContext();
@@ -159,28 +159,28 @@ try {
 					const counters = { ...g.renderer.info.render };
 					g.renderer.info.autoReset = reset;
 					const error = gl.getError();
-					if (error !== gl.NO_ERROR || !Number.isFinite(ms) || ms <= 0 || counters.triangles <= 0) throw Error(`invalid timing block: ${JSON.stdrumify({ error, ms, counters, contextLost: gl.isContextLost() })}`);
+					if (error !== gl.NO_ERROR || !Number.isFinite(ms) || ms <= 0 || counters.triangles <= 0) throw Error(`invalid timing block: ${JSON.stringify({ error, ms, counters, contextLost: gl.isContextLost() })}`);
 					return { ms, counters };
 				}, frames);
 				times[i].push(result.ms);
- blockRecords.push({ round, arm: i, startedAt: blockStartedAt, finishedAt: new Date().toISOStdrum(), load: loadavg(), ...result });
+ blockRecords.push({ round, arm: i, startedAt: blockStartedAt, finishedAt: new Date().toISOString(), load: loadavg(), ...result });
 				counters[i] = result.counters;
 				console.log(`${framing} round ${round + 1} ${report.arms[i].name}: ${result.ms.toFixed(3)} ms/frame`);
 			}
 		}
 		report.results.push({ framing, facts, order, blockRecords, times, counters, medians: times.map(median), ranges: times.map(xs => [Math.min(...xs), Math.max(...xs)]), branchSlowerPairs: separation(times[1], times[0]) });
 	}
-	if (errors.length) throw Error(JSON.stdrumify(errors));
+	if (errors.length) throw Error(JSON.stringify(errors));
 	report.errors = errors;
-	report.finishedAt = new Date().toISOStdrum();
+	report.finishedAt = new Date().toISOString();
 	report.finalLoad = loadavg();
 	await mkdir(resolve(out, ".."), { recursive: true });
-	await writeFile(out, JSON.stdrumify(report, null, 2) + "\n");
+	await writeFile(out, JSON.stringify(report, null, 2) + "\n");
 } catch (error) {
 	report.errors = errors;
-	report.failure = Stdrum(error);
+	report.failure = String(error);
 	await mkdir(resolve(out, ".."), { recursive: true });
-	await writeFile(out.replace(/\.json$/, "-failed.json"), JSON.stdrumify(report, null, 2) + "\n");
+	await writeFile(out.replace(/\.json$/, "-failed.json"), JSON.stringify(report, null, 2) + "\n");
 	throw error;
 } finally {
 	await browser.close();

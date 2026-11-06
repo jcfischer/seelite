@@ -1,0 +1,15 @@
+bun test v1.4.4 (38afee6c8)
+
+tests/model-urls.test.ts:
+(pass) models are served under hashed names (#834) > no model is served from public/, at a fixed name [0.60ms]
+(pass) models are served under hashed names (#834) > every shipped model has a URL constant, and every constant a file [0.30ms]
+(pass) models are served under hashed names (#834) > no loader names a model by a fixed path [13.68ms]
+(pass) models are served under hashed names (#834) > /assets/* alone is immutable for a year [0.51ms]
+
+tests/model-url-source.test.ts:
+(pass) the model URLs are literals vite can rewrite to hashed assets [0.14ms]
+
+ 5 pass
+ 0 fail
+ 387 expect() calls
+Ran 5 tests across 2 files. [2.19s]

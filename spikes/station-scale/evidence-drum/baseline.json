@@ -1,0 +1,1748 @@
+{
+  "ref": "0ac662f10629ab0066cda17654f90f366d0a7d30",
+  "root": "/tmp/seelite-1152-main",
+  "method": "git archive origin/main; every src blob verified after canonical capture; only study capture and canonical view declarations copied into baseline",
+  "verifiedSourceFiles": 435,
+  "files": [
+    {
+      "file": "src/adaptive-resolution.ts",
+      "gitBlob": "4a01bdc96169083d8c0fc3a8ebd073fd5a7eab74"
+    },
+    {
+      "file": "src/airless-features.ts",
+      "gitBlob": "ca5f61209dc77713baf0394f2880290ed34734b2"
+    },
+    {
+      "file": "src/arrival-rift.ts",
+      "gitBlob": "86009e035824c0ed3fd172c4edf79b4d80c38bea"
+    },
+    {
+      "file": "src/arrival.ts",
+      "gitBlob": "671cd164c033583196b2ac61c2cdd8c55b3d17e8"
+    },
+    {
+      "file": "src/assembly-flight.ts",
+      "gitBlob": "104a1fe31b3e53a393e66ea84a1fb6a720db9046"
+    },
+    {
+      "file": "src/assembly-plan.ts",
+      "gitBlob": "d9d8d0389b7d321ef86cb05e94337e6ade172564"
+    },
+    {
+      "file": "src/assembly-proxies.ts",
+      "gitBlob": "ae3e8b8c7befbb95d81ea53f4e179cfcb1c6885b"
+    },
+    {
+      "file": "src/asteroid-field.ts",
+      "gitBlob": "af05b6b98157cb2cbd0d8b725a1f71ea61d4201d"
+    },
+    {
+      "file": "src/asteroid-model.ts",
+      "gitBlob": "29c4f3a18d95a8d6d93492ce6a3be3843f3ba919"
+    },
+    {
+      "file": "src/attitude-hold.ts",
+      "gitBlob": "df9bea4d7e20abf7b04941902bad98faf18f872d"
+    },
+    {
+      "file": "src/audio-cue.ts",
+      "gitBlob": "6f83e66141aff8257f3efd41b66d8ac4cdf57ac8"
+    },
+    {
+      "file": "src/audio-unlock.ts",
+      "gitBlob": "345daa5c78cb8cd780f3bcb48d541b4abc2c79c5"
+    },
+    {
+      "file": "src/audio.ts",
+      "gitBlob": "65a0bfc935ddbe98bd596bdf5111ade966dd1fd9"
+    },
+    {
+      "file": "src/authored-hull.ts",
+      "gitBlob": "04cdcfcfa592a17ca0b353e3e3654d4e4f8123cc"
+    },
+    {
+      "file": "src/authored-levels.ts",
+      "gitBlob": "60b95347b4163d50af83a667522d4f855ff73c90"
+    },
+    {
+      "file": "src/backdrop.ts",
+      "gitBlob": "cbf8266f5a148632ca04f9e903ae5d93b1a8edd5"
+    },
+    {
+      "file": "src/beam-glass.ts",
+      "gitBlob": "a04d6115aee21bc89dec44316a0ca5eb188e3508"
+    },
+    {
+      "file": "src/beam-layer.ts",
+      "gitBlob": "d7c35608aa93c9ebcc3c7b58047dffbd94e08f77"
+    },
+    {
+      "file": "src/binding-store.ts",
+      "gitBlob": "44d81ab418522f5e7aa77317f520c8d3ddba1ec1"
+    },
+    {
+      "file": "src/body-name.ts",
+      "gitBlob": "fe0b5a8df0bd367a1c1755dfbd39261c5b8495da"
+    },
+    {
+      "file": "src/boot-mode.ts",
+      "gitBlob": "4dc2be4f48df4efaabe2a90d4de28731bdf97582"
+    },
+    {
+      "file": "src/boot-system.ts",
+      "gitBlob": "7f940127bce895ce8ffaab1bc85a3aa2ffedab15"
+    },
+    {
+      "file": "src/bundle-fetch.ts",
+      "gitBlob": "0805260ea29d815ad9f1db9bf1a5a6d84cb1300f"
+    },
+    {
+      "file": "src/cabin-pass.ts",
+      "gitBlob": "19af7a2561e06c25b06dc51b2a12b920629353fa"
+    },
+    {
+      "file": "src/capture-modal.ts",
+      "gitBlob": "7ed511f46a957a9091001cde810e56857659332d"
+    },
+    {
+      "file": "src/cargo-notice.ts",
+      "gitBlob": "96b045ccca1d20b66483c014d992a4d5ccff241d"
+    },
+    {
+      "file": "src/carrier-key.ts",
+      "gitBlob": "a1ac417625c30fa3200492ee132d09ec7932b8e9"
+    },
+    {
+      "file": "src/carrier-manifest.ts",
+      "gitBlob": "3b62d97e7e7718ef0a54c8847dca23cdf79dbf1e"
+    },
+    {
+      "file": "src/carrier-name.ts",
+      "gitBlob": "6df1b562f2512f88759f8395afc1f25f373c3c2e"
+    },
+    {
+      "file": "src/carrier-scan.ts",
+      "gitBlob": "4df9ec3c5e0682e8a556765082d2d38f98b50480"
+    },
+    {
+      "file": "src/carrier-standing.ts",
+      "gitBlob": "05bebd875991d47b67327bb1ecfff553470c9cee"
+    },
+    {
+      "file": "src/chamfer-box.ts",
+      "gitBlob": "aef4f4625e2f9a070adb6a0d774fee843905250a"
+    },
+    {
+      "file": "src/changelog.ts",
+      "gitBlob": "e333cf70af58ebc25aa5bf8c8e0d86bc6f3f124b"
+    },
+    {
+      "file": "src/charge-notice.ts",
+      "gitBlob": "f1376607d4698d9e37a7e1af2d1fed6e450c45f8"
+    },
+    {
+      "file": "src/chase-orbit.ts",
+      "gitBlob": "e3b940d91680023012a4933e8f7f3a263bd6959f"
+    },
+    {
+      "file": "src/chase-view.ts",
+      "gitBlob": "8f5bcc6b878920fdd12dfb6e099ed68ac6bb2ce7"
+    },
+    {
+      "file": "src/cockpit-eye.ts",
+      "gitBlob": "32e92ded125eaf26f5e2d381487020247e1dfa07"
+    },
+    {
+      "file": "src/cockpit-model.ts",
+      "gitBlob": "bac55abfdb4e7936dd1f70b1b98376524ef5fba8"
+    },
+    {
+      "file": "src/cockpit-occlusion-table.ts",
+      "gitBlob": "b0fd6b565eb5b0060443e33d87dc16ab9a3d7276"
+    },
+    {
+      "file": "src/cockpit-surface.ts",
+      "gitBlob": "63fd6f3cb8b151a8ffad05fe65657be292a96de0"
+    },
+    {
+      "file": "src/cockpit-text.ts",
+      "gitBlob": "7afddac7adc275affc6efc21d04f0abfb7345d24"
+    },
+    {
+      "file": "src/cockpit.ts",
+      "gitBlob": "8e2cf672f548a562752d0d207c1c3328ee6217fe"
+    },
+    {
+      "file": "src/collision.ts",
+      "gitBlob": "df8fc42db8b9f849f78580472a9cbeeec34d023d"
+    },
+    {
+      "file": "src/combat-enemy.ts",
+      "gitBlob": "d186c49205e4a66a1da59152be6bd43983bb3fca"
+    },
+    {
+      "file": "src/combat-prototype.ts",
+      "gitBlob": "7ba4a4ade570ea3c8dc9a5b8579e8501aa3085a5"
+    },
+    {
+      "file": "src/combat-rig.ts",
+      "gitBlob": "d48c63248eb3fe2ffd35156730f7b4430045e869"
+    },
+    {
+      "file": "src/commander-flow.ts",
+      "gitBlob": "80099aee5af7995193effcbfa3e370cc4be30742"
+    },
+    {
+      "file": "src/commander-overlay.ts",
+      "gitBlob": "5795db9f4d547d937cb63c533394abbd8ca38c50"
+    },
+    {
+      "file": "src/commands.ts",
+      "gitBlob": "47204aec20f0affbb15e464048e29d193c426304"
+    },
+    {
+      "file": "src/comms-voice.ts",
+      "gitBlob": "28f6099178d3dedd156504f4339464118d48df92"
+    },
+    {
+      "file": "src/comms.ts",
+      "gitBlob": "28515f2f675caf9e992ee8f658779c79b1605f4c"
+    },
+    {
+      "file": "src/compile-when-ready.ts",
+      "gitBlob": "6b98a80073704081afffe7f24842bd8f60a489d2"
+    },
+    {
+      "file": "src/console-sound.ts",
+      "gitBlob": "e559f609839d6cc044c461f909678a82f9fbad79"
+    },
+    {
+      "file": "src/controls-catalogue.ts",
+      "gitBlob": "a5def931e6636f7df3dd2e8518c02948907037f9"
+    },
+    {
+      "file": "src/controls-reference.ts",
+      "gitBlob": "38e88878d89154476440e7ca80ab95d53d1c9154"
+    },
+    {
+      "file": "src/coriolis-flight.ts",
+      "gitBlob": "5c5542bd23d1d896da619154f50ce53a37a6da01"
+    },
+    {
+      "file": "src/coriolis-spike-viewer.ts",
+      "gitBlob": "55785c00b9d5934934ec67913305965ea8111656"
+    },
+    {
+      "file": "src/courier-cockpit-viewer.ts",
+      "gitBlob": "daffa4b1d83f5090bc67e0eb66654d9ad819e0d3"
+    },
+    {
+      "file": "src/courier-hull.ts",
+      "gitBlob": "6063495fbc02b7324b17098f49d629d295d7a301"
+    },
+    {
+      "file": "src/cruise-detour.ts",
+      "gitBlob": "f9e57ae145a508492fad05957ff25f4cd13e04a0"
+    },
+    {
+      "file": "src/cruise-guidance.ts",
+      "gitBlob": "82261e4355ff9d7655e0281518e7963817ae9b52"
+    },
+    {
+      "file": "src/cruise.ts",
+      "gitBlob": "950f9fd7e572f7f0105ec92a0d654ff017dde19d"
+    },
+    {
+      "file": "src/death-checkpoint.ts",
+      "gitBlob": "3727af0c0f3e3b9722842e6000553bde8e7070be"
+    },
+    {
+      "file": "src/death-cost.ts",
+      "gitBlob": "20e8de8b5b9d5a5923173321c57bbdb9303b4610"
+    },
+    {
+      "file": "src/death-wreck.ts",
+      "gitBlob": "b0b3d5f8e1ec7d719e1e93b45d1d407f9da6610f"
+    },
+    {
+      "file": "src/deficits.ts",
+      "gitBlob": "4f2fa67f460f606fd5dc2f21a929421bcd05b676"
+    },
+    {
+      "file": "src/deposit-state.ts",
+      "gitBlob": "90e0316c8ea55825a443418b99a0ecb0467db273"
+    },
+    {
+      "file": "src/derelict-mesh.ts",
+      "gitBlob": "1f31017f573a52b1c7b09894b21c8fdce03e8afa"
+    },
+    {
+      "file": "src/derelict-salvage.ts",
+      "gitBlob": "01333e813f268d6ebbcf7b0903d7e15dd2ac6b71"
+    },
+    {
+      "file": "src/derelict-slots.ts",
+      "gitBlob": "dad53dec43984a5bf1d083da6ec698ad0d01eec0"
+    },
+    {
+      "file": "src/derelict-tear.ts",
+      "gitBlob": "266a0be901a3a269d0217f81194a2e219ce44712"
+    },
+    {
+      "file": "src/derelict.ts",
+      "gitBlob": "b483e6b85b274f0e59ca96dcab9ae464412ff99c"
+    },
+    {
+      "file": "src/detail-level.ts",
+      "gitBlob": "97407dd48a4eb7e2d124d5700d1645666a63e1aa"
+    },
+    {
+      "file": "src/display-contact.ts",
+      "gitBlob": "810925fefe28e5994075c51f28fb866155fd1d98"
+    },
+    {
+      "file": "src/distress.ts",
+      "gitBlob": "fce421eed47efd3a2ee68d88d28c59ba18483921"
+    },
+    {
+      "file": "src/dock-session.ts",
+      "gitBlob": "ece421ce1d34d4f8c3db67908bb3f40136d22b7a"
+    },
+    {
+      "file": "src/docking-computer.ts",
+      "gitBlob": "8048dd0124a27db290ab621c6506f1c3df827333"
+    },
+    {
+      "file": "src/docking-director.ts",
+      "gitBlob": "aa200fcbe10d05798e31e0adaab1e6359027b473"
+    },
+    {
+      "file": "src/docking-notice.ts",
+      "gitBlob": "475df691ad63c256217370d4ba9aa344b61c6f1f"
+    },
+    {
+      "file": "src/docking-tunnel-mesh.ts",
+      "gitBlob": "1b4d078597c723ae5c61740312bd52121f945bd7"
+    },
+    {
+      "file": "src/docking-tunnel.ts",
+      "gitBlob": "95b54adea98afef648e82ad59c61ea8f2fd81a7b"
+    },
+    {
+      "file": "src/docking.ts",
+      "gitBlob": "e5b40ac953b2c201f9854d890c3b7f68ac0abe9e"
+    },
+    {
+      "file": "src/domains.ts",
+      "gitBlob": "bda56c7a70c5dbe093b8329801f5e1399833fd02"
+    },
+    {
+      "file": "src/drill-pose.ts",
+      "gitBlob": "0a37321e3daac4562062389aaf7c1d6494080ae3"
+    },
+    {
+      "file": "src/duel-hud.ts",
+      "gitBlob": "7c6ced76dc78909c0e649eae0bf813fc2e7cf166"
+    },
+    {
+      "file": "src/duel.ts",
+      "gitBlob": "1c7ff707b46f284d290f1811ccaa86eac09de607"
+    },
+    {
+      "file": "src/editable-target.ts",
+      "gitBlob": "bedb876ec343a910ba50db363fd6a612c3d8d77a"
+    },
+    {
+      "file": "src/eject.ts",
+      "gitBlob": "2ca6b7cd0e0a9ce963bf4ec9e3764cb763d54502"
+    },
+    {
+      "file": "src/encounter.ts",
+      "gitBlob": "8befc399e58d886f082e7c6a9df9c31f5104aa01"
+    },
+    {
+      "file": "src/entry.ts",
+      "gitBlob": "415ff4a80f0e20b879b72c776162af01b4be284c"
+    },
+    {
+      "file": "src/escape-html.ts",
+      "gitBlob": "2e3026ba68ad0d8769c428781830a671d368d26d"
+    },
+    {
+      "file": "src/exact-amount.ts",
+      "gitBlob": "ca4e1033aaba46223b2a35d3d777257824abc4ab"
+    },
+    {
+      "file": "src/face-cut.ts",
+      "gitBlob": "3f8a53756397eabd1c62244fcad445f9912fcebc"
+    },
+    {
+      "file": "src/field-collision.ts",
+      "gitBlob": "26677188585d434a467099472342fc833413cc55"
+    },
+    {
+      "file": "src/field-contact.ts",
+      "gitBlob": "53bb03d7ec98d1fc0d7e7fbf4d888bed97311763"
+    },
+    {
+      "file": "src/field-draw.ts",
+      "gitBlob": "b2773d5ea3d234ccb53a76ff4fb012630cf30f94"
+    },
+    {
+      "file": "src/field-lod.ts",
+      "gitBlob": "15204ccd7f62c7b5d948117525b67048d3cb855b"
+    },
+    {
+      "file": "src/fire-group.ts",
+      "gitBlob": "b440d5ab785ebb40836abd987c953c79ac2d6ce9"
+    },
+    {
+      "file": "src/first-day-choice.ts",
+      "gitBlob": "7445b4f82d0e19209758eb3e256c3c6e377fbc3c"
+    },
+    {
+      "file": "src/first-day.ts",
+      "gitBlob": "c4b35b701835ea2dd01d1914b14af01a028743aa"
+    },
+    {
+      "file": "src/flight-sound.ts",
+      "gitBlob": "9b0f341deac97421cf77d032dc46b17933232887"
+    },
+    {
+      "file": "src/flown-hull.ts",
+      "gitBlob": "57358e9b71ce0d5e9825864bd9e9d58e4f84c95c"
+    },
+    {
+      "file": "src/fps-meter.ts",
+      "gitBlob": "df92ee44fe3c388f5c4c740af6f55a51d18e1603"
+    },
+    {
+      "file": "src/frame-attribution.ts",
+      "gitBlob": "86de05d709c461028c8d7bbff86f91c765d48c32"
+    },
+    {
+      "file": "src/frame-statistics.js",
+      "gitBlob": "8049f572d2c9a1e38a6118308c9c57fb51c9f264"
+    },
+    {
+      "file": "src/galaxy-finder-panel.ts",
+      "gitBlob": "1fe5e3dd1d57f09cf48fe100e5ffdd593358ace5"
+    },
+    {
+      "file": "src/galaxy-finder.ts",
+      "gitBlob": "57beaa67acda9a71c1f1885d1c5f2d53447f3977"
+    },
+    {
+      "file": "src/galaxy-frame.ts",
+      "gitBlob": "1a929d08bc03bf3202d4f18f20b41eea75ee43c9"
+    },
+    {
+      "file": "src/galaxy-map.ts",
+      "gitBlob": "321264f734de37e41bbabf69077d575a6092c19f"
+    },
+    {
+      "file": "src/galaxy-route.ts",
+      "gitBlob": "fd09daf8e8b88f9a963a1dc54ed129ec6fe79fbe"
+    },
+    {
+      "file": "src/galaxy.ts",
+      "gitBlob": "761effa512da8fa612cda9eb05341011ef6c5b16"
+    },
+    {
+      "file": "src/gamepad.ts",
+      "gitBlob": "3bfab3b554f9dbb9c671858cbdb7f86e9f4695f4"
+    },
+    {
+      "file": "src/gimbal.ts",
+      "gitBlob": "7e6b136b00aec445f36ff8fda230aa7daeb25f86"
+    },
+    {
+      "file": "src/gpu-teardown.ts",
+      "gitBlob": "83841a0eb34a9c54944485f802f0f8c60f243797"
+    },
+    {
+      "file": "src/gpu-timing-status.js",
+      "gitBlob": "457f2537139060034fa2bdc873c97a1b2fb8f60b"
+    },
+    {
+      "file": "src/gun-feedback.ts",
+      "gitBlob": "51ba4d79c0428e36d953bcd3b222995f3427db90"
+    },
+    {
+      "file": "src/hold-view.ts",
+      "gitBlob": "a1736be38e6611f547d23688f24ec9c39a213010"
+    },
+    {
+      "file": "src/hold.ts",
+      "gitBlob": "fe0f55bc87e0dabfcd267eda69f9a892a9f05c9e"
+    },
+    {
+      "file": "src/holdings.ts",
+      "gitBlob": "b058e0ed0538e57352e38d8c49f437f6a4bbe8ef"
+    },
+    {
+      "file": "src/home-shipyard.ts",
+      "gitBlob": "01329d092b6fe83e9ed1a88a3bcc89934f137058"
+    },
+    {
+      "file": "src/hover-candidate.ts",
+      "gitBlob": "eaa82b57e7b109e126c1eb20a97d099ce684ce23"
+    },
+    {
+      "file": "src/hud.ts",
+      "gitBlob": "3cda2d0e430cea6c63e30c21cccde6525b95c5cf"
+    },
+    {
+      "file": "src/hull-install-work.ts",
+      "gitBlob": "54ee2fe3214f807301ff1ff321d8130d4007aa4d"
+    },
+    {
+      "file": "src/hull-reach.ts",
+      "gitBlob": "4f49ce15066db8e62ac4e5552d46aa2f56ebcc4f"
+    },
+    {
+      "file": "src/hull.ts",
+      "gitBlob": "e0f8c648c8032a3bc1c16d8104082ee8f33fa5b6"
+    },
+    {
+      "file": "src/hyperspace.ts",
+      "gitBlob": "6468f29d7ce61f737d83fee77a0a46eed10ab0c7"
+    },
+    {
+      "file": "src/install-slices.ts",
+      "gitBlob": "00d092039825c4f88fa2dd2cffa0c8c9037a860b"
+    },
+    {
+      "file": "src/inter-system-traffic.ts",
+      "gitBlob": "90029ef248d0531a947995a7448f41cfe452ba53"
+    },
+    {
+      "file": "src/interceptor-hull.ts",
+      "gitBlob": "2c2dc3527b630347472aa0d2677a65e59edd902f"
+    },
+    {
+      "file": "src/interdiction.ts",
+      "gitBlob": "7d0c794de386f7137535d6725e1897e86fa4bfa1"
+    },
+    {
+      "file": "src/interior-dequantize.ts",
+      "gitBlob": "456c42fcc32dde4ab6cdb2ce7fc245326437e347"
+    },
+    {
+      "file": "src/interior-install.ts",
+      "gitBlob": "5e9b50ee1fb4a02f8b1e7bffc148dea19672506e"
+    },
+    {
+      "file": "src/interior-kit.ts",
+      "gitBlob": "c4f44bc0e61e249ec8e0fb402d54c6091c37466c"
+    },
+    {
+      "file": "src/interior-layout.ts",
+      "gitBlob": "e2f62c96588ab5b3ebadfaf700fdf163a9d123dd"
+    },
+    {
+      "file": "src/interior-lod-policy.ts",
+      "gitBlob": "239e087a32a41eea71541ff09c9088a70d181a7e"
+    },
+    {
+      "file": "src/interior-lod-records.json",
+      "gitBlob": "867646c75d01a01dfeb409202ebb7dabe7cd3e5a"
+    },
+    {
+      "file": "src/interior-lod.ts",
+      "gitBlob": "26b4ad5548e3df173501304db94de1818f1a10bf"
+    },
+    {
+      "file": "src/interior-model.ts",
+      "gitBlob": "50a886c799eac1d9080e6a7067af4878066dec8f"
+    },
+    {
+      "file": "src/jobs.ts",
+      "gitBlob": "f01c0a06ba9a538d2481ab0186fc901712a2764d"
+    },
+    {
+      "file": "src/key-dispatch.ts",
+      "gitBlob": "cda542c1de7b8bdf0b94c5c68ff11db79402677a"
+    },
+    {
+      "file": "src/key-names.ts",
+      "gitBlob": "28aef431f5bcc8168606fb7adfda1a3aff853dbb"
+    },
+    {
+      "file": "src/kill-credit.ts",
+      "gitBlob": "655476dc3eb3c0be4eadbc7dcda2edfa88a87fbf"
+    },
+    {
+      "file": "src/knowledge-labels.ts",
+      "gitBlob": "d7ff60082adab04ee1ab36b2de616ce53bedee71"
+    },
+    {
+      "file": "src/ladder-view.ts",
+      "gitBlob": "c143407dd50b89c732fcc3de57a2b08f056b26ec"
+    },
+    {
+      "file": "src/ladder.ts",
+      "gitBlob": "0cb04223414fccc4426fa37d6bf62252f48fc075"
+    },
+    {
+      "file": "src/laser-modules.ts",
+      "gitBlob": "1436f56467a870a5d5f777f238b636f806770e79"
+    },
+    {
+      "file": "src/laser.ts",
+      "gitBlob": "adbae5e0019b8e623b98b05b5e484788153ddf71"
+    },
+    {
+      "file": "src/layout-choice.ts",
+      "gitBlob": "a47a837775fcfb1600cebe94cc09e97f5b5f1f6b"
+    },
+    {
+      "file": "src/layout-notice.ts",
+      "gitBlob": "235b6a8892f9b1e77e3f46f66aeccbc9f74fa6c9"
+    },
+    {
+      "file": "src/legal.ts",
+      "gitBlob": "247578cdc61efad3beca06c14f2464d0d8665dac"
+    },
+    {
+      "file": "src/light-rig.ts",
+      "gitBlob": "d1541c4d7d9a209ede4781e836c2a6e2175783af"
+    },
+    {
+      "file": "src/light-shift.ts",
+      "gitBlob": "f8746ba6ea93b6894b7175b140d07c4dc588543b"
+    },
+    {
+      "file": "src/live-cockpit.ts",
+      "gitBlob": "33146a5a55b7f512abd605f78643cd339cfdc03d"
+    },
+    {
+      "file": "src/loadout.ts",
+      "gitBlob": "0999c241d0c50cc0324d297308b5ad0216e0ac84"
+    },
+    {
+      "file": "src/loft.ts",
+      "gitBlob": "f3d2ac609c65a6afdf5d686efcb16469197a429f"
+    },
+    {
+      "file": "src/long-range-scanner.ts",
+      "gitBlob": "01f1ee816310041dfd3048b0ed48ec220795fa5a"
+    },
+    {
+      "file": "src/longwall-drill-rig.ts",
+      "gitBlob": "d835734288a5d50e012dd9349c91b5b5d9500c86"
+    },
+    {
+      "file": "src/longwall-model.ts",
+      "gitBlob": "4adb6e7b987038bd2765128bae9e87dfd2c92760"
+    },
+    {
+      "file": "src/main.ts",
+      "gitBlob": "9f76491f073335d8cdf9179135071299b7a9ba1a"
+    },
+    {
+      "file": "src/market-probe-hook.ts",
+      "gitBlob": "5c3f29ed304ba4948bacfeaf2be5ca3ad0a6d1ea"
+    },
+    {
+      "file": "src/market.ts",
+      "gitBlob": "7ac9ba45ed5c850b96c4c936a6442d3b11c6f0a9"
+    },
+    {
+      "file": "src/miner-cockpit-flag.ts",
+      "gitBlob": "c1aff2169f3948417b195fcca6c7737db7a8d9c5"
+    },
+    {
+      "file": "src/mining-beam.ts",
+      "gitBlob": "b85d8f580806619c1aa5aa9374a0bb21ce5f1bbe"
+    },
+    {
+      "file": "src/missile-combat.ts",
+      "gitBlob": "43dd0d57a5783c4cd0fea85f6dbb7bd78617baee"
+    },
+    {
+      "file": "src/missiles.ts",
+      "gitBlob": "17378f56ebeae7f8ab70959ac3fc2f2aa93785b5"
+    },
+    {
+      "file": "src/model-catalog.ts",
+      "gitBlob": "de5515b973f0eff1d12ba44c778e3047b26e50d3"
+    },
+    {
+      "file": "src/model-load-view.ts",
+      "gitBlob": "16b840e7e37ce3569b2bd5fe4615e9eb375f9958"
+    },
+    {
+      "file": "src/model-progress.ts",
+      "gitBlob": "38b5053da1e419d4e6e81e036d1e7004afea5bd5"
+    },
+    {
+      "file": "src/model-queue.ts",
+      "gitBlob": "afc592c641c2ed7ebc533c3f9786858d6dd4767d"
+    },
+    {
+      "file": "src/model-urls.ts",
+      "gitBlob": "a9694f922874d99b8f2af4c8d9496f547bd42022"
+    },
+    {
+      "file": "src/model-viewer.ts",
+      "gitBlob": "cb0ee7ed0d4853ac4295403caad9df8c38316bac"
+    },
+    {
+      "file": "src/models/asteroids.glb",
+      "gitBlob": "03114322ea165a2806e35171cc470482030d7e60"
+    },
+    {
+      "file": "src/models/bollard-tug.glb",
+      "gitBlob": "1e77708eebdc2e3225e7b3482765967e06d02305"
+    },
+    {
+      "file": "src/models/coriolis-detail.glb",
+      "gitBlob": "7dfc92d297e8e60bd3f742d1160b41381972e845"
+    },
+    {
+      "file": "src/models/coriolis.glb",
+      "gitBlob": "60e31eb7c10f9d6f0f295b282c680b1903e19157"
+    },
+    {
+      "file": "src/models/courier-cockpit.glb",
+      "gitBlob": "3a2816a470a2d267922dc352702c055ed6ef1cab"
+    },
+    {
+      "file": "src/models/courier-hull.glb",
+      "gitBlob": "961761fa5889a287f978e5155a02de212911cf18"
+    },
+    {
+      "file": "src/models/discovery-voyager.glb",
+      "gitBlob": "b4bf314a85cbf0feec0ed6f79c200dce7c7d1a21"
+    },
+    {
+      "file": "src/models/lance-interceptor.glb",
+      "gitBlob": "dfa084178c1e882baa79f7969a47f284848c83d8"
+    },
+    {
+      "file": "src/models/longwall-miner.glb",
+      "gitBlob": "e2bbac4637880be073c6834a6d36f7ba27677bda"
+    },
+    {
+      "file": "src/models/outpost-buoy.glb",
+      "gitBlob": "ae420a0d5f5fe056867933bd77372880bcbfed51"
+    },
+    {
+      "file": "src/models/outpost-cluster.glb",
+      "gitBlob": "cb4c6801170b5e2ed420e85b2d6cd2b1733ae5a2"
+    },
+    {
+      "file": "src/models/outpost-derrick.glb",
+      "gitBlob": "3010f9ca4f0befbc32aff7711f845cfa521940ef"
+    },
+    {
+      "file": "src/models/outpost-rig.glb",
+      "gitBlob": "53dd370e4996f37daa5ba48bed0f8c2495ba4a01"
+    },
+    {
+      "file": "src/models/outpost-salvage.glb",
+      "gitBlob": "5a2d0c47471223be32e0fea06d83ae2c24f12e9b"
+    },
+    {
+      "file": "src/models/porter.glb",
+      "gitBlob": "6293521148b055f6843d3c7d3b6799649a3d9cc3"
+    },
+    {
+      "file": "src/models/refinery-collar.glb",
+      "gitBlob": "cf1dc76a524aadb4a8338cc8dac2dadc0884b5a3"
+    },
+    {
+      "file": "src/models/refinery-spar.glb",
+      "gitBlob": "56774815f8bc502e33be7c0320483a52a58a4fa6"
+    },
+    {
+      "file": "src/models/refinery-warren.glb",
+      "gitBlob": "45af30b359810267b241fe4880edcfaafe8eecdc"
+    },
+    {
+      "file": "src/models/refinery-works.glb",
+      "gitBlob": "b6692d11e809d5f42413659f8151b0a3891e6b57"
+    },
+    {
+      "file": "src/models/rock-heightfields.bin",
+      "gitBlob": "d0a50a9f23d0d0bd35a81ea93889ddead957ced0"
+    },
+    {
+      "file": "src/models/shipyard-foundry-lightmap.webp",
+      "gitBlob": "25fc4acdc2cee6953bd557802c87179a92db79a0"
+    },
+    {
+      "file": "src/models/shipyard-foundry-probes.bin",
+      "gitBlob": "014ee4d24678b94a9da41cfa3b90408b62b79632"
+    },
+    {
+      "file": "src/models/shipyard-foundry.glb",
+      "gitBlob": "660fd0eb0821b7d814234641671d2ca61a4f5bb3"
+    },
+    {
+      "file": "src/models/shipyard-gantry-lightmap.webp",
+      "gitBlob": "54f56b35b10c56fe831f10edc402cf59a55f010d"
+    },
+    {
+      "file": "src/models/shipyard-gantry-probes.bin",
+      "gitBlob": "86b838f13addb0fbfe6d4cc5bcbc660a05961d5d"
+    },
+    {
+      "file": "src/models/shipyard-gantry.glb",
+      "gitBlob": "4f74eaa01ae493d3bde8232f06bf39da1ae68e93"
+    },
+    {
+      "file": "src/models/shipyard-slipway-lightmap.webp",
+      "gitBlob": "1710f7ff7880cbf43e27a7b7de18fc3e8148417c"
+    },
+    {
+      "file": "src/models/shipyard-slipway-probes.bin",
+      "gitBlob": "268168680e65e6174ef48174dcbd6a71c98907df"
+    },
+    {
+      "file": "src/models/shipyard-slipway.glb",
+      "gitBlob": "6c0503cf7407f4f99c49e2edf7c878b4f67169bf"
+    },
+    {
+      "file": "src/models/station-interiors.glb",
+      "gitBlob": "7c6b5f0eb7860e5b30ada2d7a292842aa13b30de"
+    },
+    {
+      "file": "src/models/trade-assembly.glb",
+      "gitBlob": "73cd2ba948644724882daf829670a71f0c95b610"
+    },
+    {
+      "file": "src/models/trade-drum.glb",
+      "gitBlob": "c2177f8889e2f64255ed4967a99f4d20747d127a"
+    },
+    {
+      "file": "src/models/trade-ring-detail.glb",
+      "gitBlob": "256017378d7a313a2ed16b9e85585d19493bf6f8"
+    },
+    {
+      "file": "src/models/trade-ring.glb",
+      "gitBlob": "653f13369ccf9c256fdfa9ce5b162c11bd2273a9"
+    },
+    {
+      "file": "src/models/trade-wheel.glb",
+      "gitBlob": "9ade4cffbd71810da56ed94b6a7429731d9052e8"
+    },
+    {
+      "file": "src/module-catalog.ts",
+      "gitBlob": "6431017f14f24f91e503d4cd808f98df8733b25c"
+    },
+    {
+      "file": "src/module-identities.ts",
+      "gitBlob": "073d14cbeb46864f0aefc6e9dfa7531d08bbaa56"
+    },
+    {
+      "file": "src/module-stock.ts",
+      "gitBlob": "b765423ae7d697a21d993adc0658e5f705777ee3"
+    },
+    {
+      "file": "src/module-variants.ts",
+      "gitBlob": "7483016f0048842a32eb1fa5929f630deb9927e2"
+    },
+    {
+      "file": "src/mount-beam.ts",
+      "gitBlob": "460488c09929086a8127f77fc20ba9dd34b30c02"
+    },
+    {
+      "file": "src/music-classical/bach-air.ts",
+      "gitBlob": "65b99171374a8fb2b8db815f72d2d71d0e65bdc6"
+    },
+    {
+      "file": "src/music-classical/bach-jesu-joy.ts",
+      "gitBlob": "7616d1004fb66d201517f7aa28894cb0d5f86692"
+    },
+    {
+      "file": "src/music-classical/bach-wachet-auf.ts",
+      "gitBlob": "558be10aeff4a26e2e94cdcc33d74c8ba45df4c9"
+    },
+    {
+      "file": "src/music-classical/borodin-steppes.ts",
+      "gitBlob": "186b6e35fb431bf4ac9dc847a1986e899e29a607"
+    },
+    {
+      "file": "src/music-classical/bruckner-7-adagio.ts",
+      "gitBlob": "74bfc3d9f9ed95784cab08d755bbcebd76241990"
+    },
+    {
+      "file": "src/music-classical/debussy-cathedrale-piano.ts",
+      "gitBlob": "7a4c9aa5aa6323abe0ec684dbc7ce64fc55f6bf5"
+    },
+    {
+      "file": "src/music-classical/debussy-cathedrale.ts",
+      "gitBlob": "30c658989a26e5f7ed6e550411981c69522d7373"
+    },
+    {
+      "file": "src/music-classical/debussy-clair-de-lune-piano.ts",
+      "gitBlob": "20328772a27f5a1f46ec586905e2545f708a9f26"
+    },
+    {
+      "file": "src/music-classical/debussy-clair-de-lune.ts",
+      "gitBlob": "ea51083fb5e903a6ebc7d22112711217d6b6cf69"
+    },
+    {
+      "file": "src/music-classical/debussy-nuages.ts",
+      "gitBlob": "ddb284c4559c3a7d550c549f1e37eab05534b60b"
+    },
+    {
+      "file": "src/music-classical/dvorak-largo.ts",
+      "gitBlob": "f3a03470d6fecdcabeeea484bccec99276e5b9e5"
+    },
+    {
+      "file": "src/music-classical/grieg-mountain-king.ts",
+      "gitBlob": "13feaf52449828b4af2c1e53f75cd7ea6c7935a0"
+    },
+    {
+      "file": "src/music-classical/holst-mars.ts",
+      "gitBlob": "5737295b6a2d8739ad20a1f475c0ff1da8fd943f"
+    },
+    {
+      "file": "src/music-classical/holst-neptune.ts",
+      "gitBlob": "23b9acb7101e94f3beb30d2a80cb12ac08a362de"
+    },
+    {
+      "file": "src/music-classical/holst-saturn.ts",
+      "gitBlob": "b410c534a100b0b5b1f45ce64dc5cfbbbcb65752"
+    },
+    {
+      "file": "src/music-classical/index.ts",
+      "gitBlob": "a4a2c5b2856395317b397b9271079fb67482a96f"
+    },
+    {
+      "file": "src/music-classical/notation.ts",
+      "gitBlob": "f5c154018fac4fdcec730b3ceb651e3b10413f59"
+    },
+    {
+      "file": "src/music-classical/piano.ts",
+      "gitBlob": "bd1bfbfba38d53c5271218210253c4073059b32f"
+    },
+    {
+      "file": "src/music-classical/rachmaninoff-isle-of-the-dead.ts",
+      "gitBlob": "7cacea3f45406c9650c8aa3107596a6fcb211576"
+    },
+    {
+      "file": "src/music-classical/saint-saens-aquarium.ts",
+      "gitBlob": "b390c37c139f1f22847927d6b703dc1150463713"
+    },
+    {
+      "file": "src/music-classical/satie-gnossienne-1-piano.ts",
+      "gitBlob": "450292373ad9d59da98a3f6d1759243ffb689d15"
+    },
+    {
+      "file": "src/music-classical/satie-gnossienne-1.ts",
+      "gitBlob": "ab08771ad6d160d1e7e63cdd3a5612bd601ffc71"
+    },
+    {
+      "file": "src/music-classical/satie-gymnopedie-1-piano.ts",
+      "gitBlob": "203c910237aa41e751efae6ea96fa8d2959ac98b"
+    },
+    {
+      "file": "src/music-classical/satie-gymnopedie-1.ts",
+      "gitBlob": "972ea5a6560e2b1011414449c707cc6c42233278"
+    },
+    {
+      "file": "src/music-classical/strauss-zarathustra.ts",
+      "gitBlob": "516885f06d3ab2ffb79ee0bf11e5ac5dff3d06d6"
+    },
+    {
+      "file": "src/music-danube-changes.ts",
+      "gitBlob": "841fee3742b4722812e0063978a4f35f9bed67b4"
+    },
+    {
+      "file": "src/music-danube-load.ts",
+      "gitBlob": "ba502a24a00412cd9e07dcfbb624f0c978142107"
+    },
+    {
+      "file": "src/music-danube-remeter.ts",
+      "gitBlob": "0b9a3446075e514645ad8173f051c07a17afe18f"
+    },
+    {
+      "file": "src/music-danube-variants.ts",
+      "gitBlob": "359c083545ddd5641a0a6bea863cb233b6606d23"
+    },
+    {
+      "file": "src/music-danube-variants/ambient-piano.ts",
+      "gitBlob": "96eb4a4f8b932eee0cdc422cfaf727ba8f18aa0a"
+    },
+    {
+      "file": "src/music-danube-variants/ambient.ts",
+      "gitBlob": "b0546dfea2e8fa14cd3cce17326e59723700abb4"
+    },
+    {
+      "file": "src/music-danube-variants/baroque.ts",
+      "gitBlob": "7af4e808c9e9d3c9094ef89d31448f9e22e8da1f"
+    },
+    {
+      "file": "src/music-danube-variants/berlin.ts",
+      "gitBlob": "d125805aaed0ffc29ecf322e533893e10c4df8c6"
+    },
+    {
+      "file": "src/music-danube-variants/bossa.ts",
+      "gitBlob": "33a99f78aa486de2385d95ba88f7ec326d0a833b"
+    },
+    {
+      "file": "src/music-danube-variants/dnb.ts",
+      "gitBlob": "8320f647fdd99211af17623ec1f6fdbd81095b2b"
+    },
+    {
+      "file": "src/music-danube-variants/doom.ts",
+      "gitBlob": "fcd5e3e139c1ca67effc5dc412b893dcea760832"
+    },
+    {
+      "file": "src/music-danube-variants/dub.ts",
+      "gitBlob": "5cce0db8dec12cc14fd109255725bb556ecc6ba6"
+    },
+    {
+      "file": "src/music-danube-variants/gamelan.ts",
+      "gitBlob": "cbbf6b8c38c589945e7ca5c19498f9bbfb19a55c"
+    },
+    {
+      "file": "src/music-danube-variants/industrial.ts",
+      "gitBlob": "8c09e8be2fe01e07b0eda1dd4c111332676bdf6e"
+    },
+    {
+      "file": "src/music-danube-variants/jazz-trio.ts",
+      "gitBlob": "0061cc4b639768568bb63734c5b0b3bcb22a9659"
+    },
+    {
+      "file": "src/music-danube-variants/jazz-upright.ts",
+      "gitBlob": "b0e80bdf7fee27cec664ab837ae871723191270d"
+    },
+    {
+      "file": "src/music-danube-variants/jazz.ts",
+      "gitBlob": "f3805d0a671373b93fcd0318e574e244690b6763"
+    },
+    {
+      "file": "src/music-danube-variants/minimal-piano.ts",
+      "gitBlob": "813091e70a44cfcc28c9dbcb830ff18c6167e8fe"
+    },
+    {
+      "file": "src/music-danube-variants/minimal.ts",
+      "gitBlob": "37dcabdbd934c10362ac31dab55d04479047515b"
+    },
+    {
+      "file": "src/music-danube-variants/musicbox.ts",
+      "gitBlob": "ad43db1d73e8aa6160605662eec9b4fe8821557e"
+    },
+    {
+      "file": "src/music-danube-variants/synthwave.ts",
+      "gitBlob": "9d65d7897342bc4e32caef51a35b9cfc5de06561"
+    },
+    {
+      "file": "src/music-danube-variants/techno.ts",
+      "gitBlob": "45ede074784dffda0053be2658fd9d5ad9d7bf0a"
+    },
+    {
+      "file": "src/music-danube.ts",
+      "gitBlob": "144e83f13ff34aa78ea75cacd1a880c3596937ee"
+    },
+    {
+      "file": "src/music-director.ts",
+      "gitBlob": "e9e26c73ae4e9ee19a9cff4cc9aeb0d49514bf58"
+    },
+    {
+      "file": "src/music-engine.ts",
+      "gitBlob": "719ab896047aa4e8640b00eb191607206d3cd669"
+    },
+    {
+      "file": "src/music-fragments.ts",
+      "gitBlob": "bbd0e30e44da7e2310b2c7b403cdc01d609b3689"
+    },
+    {
+      "file": "src/music-generate-berlin.ts",
+      "gitBlob": "ad0f0dbd5a65ca673cce358b4356c26cfe0a4a13"
+    },
+    {
+      "file": "src/music-generate-legacy.ts",
+      "gitBlob": "72d702f52208eac708a6157547055a858219179f"
+    },
+    {
+      "file": "src/music-generate-school.ts",
+      "gitBlob": "4c7b3912460c028b90b5d289eba650b720298b33"
+    },
+    {
+      "file": "src/music-generate-techno.ts",
+      "gitBlob": "fead9c500812fd60f930de1f757246bd6f60be02"
+    },
+    {
+      "file": "src/music-generate.ts",
+      "gitBlob": "3d66253fca5c5edc07d39b24fb96a21437898ee8"
+    },
+    {
+      "file": "src/music-lab.ts",
+      "gitBlob": "a1ba187d855f769ca35797312d4477dfa65717bf"
+    },
+    {
+      "file": "src/music-sample-pick.ts",
+      "gitBlob": "f6d13b18dd215f13b047264e32e4ab77e7e6cc18"
+    },
+    {
+      "file": "src/music-samples.ts",
+      "gitBlob": "32cad314e2101df2b6d62b936c85f75a8992dc83"
+    },
+    {
+      "file": "src/music-school-patterns.ts",
+      "gitBlob": "85a63390a2152f72a9795816483373fadbfa25dd"
+    },
+    {
+      "file": "src/music-score.ts",
+      "gitBlob": "c361b1142655d5ef5c5ea280570999f74d025363"
+    },
+    {
+      "file": "src/music-sequencer.ts",
+      "gitBlob": "015ad431f72ac39864be67a79f3a9d04e36bd761"
+    },
+    {
+      "file": "src/music-space.ts",
+      "gitBlob": "0ebf85c1ee63613eec1826e998fc5d08b11e6a3b"
+    },
+    {
+      "file": "src/music-techno-patterns.ts",
+      "gitBlob": "ac93c32e3cf9ca9ad827bc404847fc01c9056017"
+    },
+    {
+      "file": "src/music-test-score.ts",
+      "gitBlob": "879b6c813d44b35fe537a379e3062415c790eff2"
+    },
+    {
+      "file": "src/music-voice-demos.ts",
+      "gitBlob": "550a681c0ba8877c24c96163843f8ae3c6324df9"
+    },
+    {
+      "file": "src/music-voices.ts",
+      "gitBlob": "d0474623f67d33e5f032d8996682e402ea8465fa"
+    },
+    {
+      "file": "src/music-worklet.ts",
+      "gitBlob": "2db77d4f0fde909fd2a95d70156be50d045128e0"
+    },
+    {
+      "file": "src/music.ts",
+      "gitBlob": "e8b0f9747d0c52b9917d1725eebe9c8fbf4c9fb9"
+    },
+    {
+      "file": "src/names.ts",
+      "gitBlob": "d5d8a7178177c5dd250dc940290d9c258661ab8a"
+    },
+    {
+      "file": "src/nebula-bake.ts",
+      "gitBlob": "c4033076b8d8cf57e3755c65cd239fd103fc2d9f"
+    },
+    {
+      "file": "src/nebula.ts",
+      "gitBlob": "06b4adf981cb817bae12eb7437d0492908f6f04a"
+    },
+    {
+      "file": "src/neural-voice-core.ts",
+      "gitBlob": "899b9fce9d6c1e766cbab705c62f3700ef36847b"
+    },
+    {
+      "file": "src/neural-voice.ts",
+      "gitBlob": "6fe336e8d122e09dabee0ecb1442aba80d1e6623"
+    },
+    {
+      "file": "src/neural-voice.worker.ts",
+      "gitBlob": "919161fe709c2d34967841a3fa730413edb69aed"
+    },
+    {
+      "file": "src/noise.ts",
+      "gitBlob": "a6370afc872058fbceff9c28839b287e2bef5c3a"
+    },
+    {
+      "file": "src/npc-loadout.ts",
+      "gitBlob": "edbe9c0f36152732551f5ffa6367d9ee334a09dd"
+    },
+    {
+      "file": "src/npc-plumes.ts",
+      "gitBlob": "1f6d9b92d2790633bdf598aa4a8d78f54fc57efe"
+    },
+    {
+      "file": "src/occlusion-mesh.ts",
+      "gitBlob": "49ba895aac271572e61aaf33c99a833fcc1c1030"
+    },
+    {
+      "file": "src/occlusion.ts",
+      "gitBlob": "f119019b8d589d1d611e3c872336b2a7209179cb"
+    },
+    {
+      "file": "src/opening-camera.ts",
+      "gitBlob": "b09964c0d9df2b9f89f9f597468b5ed800032284"
+    },
+    {
+      "file": "src/opening-overlay.ts",
+      "gitBlob": "7c3f3583caf5189ba0a5fd36f23b8af81e744b1a"
+    },
+    {
+      "file": "src/opening.ts",
+      "gitBlob": "a02f4e359c27175960eeff9579c447991fc180d4"
+    },
+    {
+      "file": "src/outfitting-view.ts",
+      "gitBlob": "ee15239a40190d1f5ffca918b8a17da7e1bd55e3"
+    },
+    {
+      "file": "src/outfitting.ts",
+      "gitBlob": "a6f58195bb04affab1d1296fbecdc9a40c0bb958"
+    },
+    {
+      "file": "src/outpost-flight.ts",
+      "gitBlob": "b313822bea8edb696a4ded1f96600d917cb031e4"
+    },
+    {
+      "file": "src/outpost-proxies.ts",
+      "gitBlob": "85b1afe202d772883252462c18d2748f8c28d81e"
+    },
+    {
+      "file": "src/output-stage.ts",
+      "gitBlob": "7d477f3532fbee547867ef7cdfcd5d3c90757889"
+    },
+    {
+      "file": "src/pad-bindings.ts",
+      "gitBlob": "17baaa5c310dd00133a62c474819a8f5ab9e0f37"
+    },
+    {
+      "file": "src/page-routes.ts",
+      "gitBlob": "9b468f85ca0cd48bfae125222e0d585d9b49b428"
+    },
+    {
+      "file": "src/panel-focus.ts",
+      "gitBlob": "aa9b997c637ec8f5190ebf2ccaf5a8d4b6fbdeee"
+    },
+    {
+      "file": "src/perf-panel.ts",
+      "gitBlob": "7f86cc2393d66dc5c7fcb889fe695768e6a926f6"
+    },
+    {
+      "file": "src/pilot-demand.ts",
+      "gitBlob": "5f02b3c2b97d419acba198f80209a1e6c642e781"
+    },
+    {
+      "file": "src/pirate-relay.ts",
+      "gitBlob": "002ecd999832d7d4a515af130a4bd0230396a54f"
+    },
+    {
+      "file": "src/planet-appearance.ts",
+      "gitBlob": "f908caf51e77983cc496f6740e9d07d39544b32c"
+    },
+    {
+      "file": "src/planet-approach-boundary.ts",
+      "gitBlob": "c000aa68c3822f350dab89204a24355fc6f1fd6f"
+    },
+    {
+      "file": "src/planet-bake.ts",
+      "gitBlob": "38ade8e9b8b25cd564032352201deeec064947ff"
+    },
+    {
+      "file": "src/planet-classes.glsl.ts",
+      "gitBlob": "d2235df127433c56139fba874c56cec30a27f3e4"
+    },
+    {
+      "file": "src/planet-clouds.ts",
+      "gitBlob": "4774a25bb981956c42fbbcd6c1358c43f88e2b29"
+    },
+    {
+      "file": "src/planet-footprint.ts",
+      "gitBlob": "713cde3b622bdd1a570c1ecf86f1bc00024f702a"
+    },
+    {
+      "file": "src/planet-half-res.ts",
+      "gitBlob": "88f4edfacabdd040c0ef7fe643776a02ff7101b7"
+    },
+    {
+      "file": "src/planet-prototype.ts",
+      "gitBlob": "f3f2460a72e4f7203a6080f9d4ff4096f81674c6"
+    },
+    {
+      "file": "src/planet-shaders.ts",
+      "gitBlob": "7a674fea7e48c5e3e4a9510049731f5e600d2513"
+    },
+    {
+      "file": "src/planet-surface.ts",
+      "gitBlob": "547073bf813bb1451a6c7cb06c77805a05e4e3d9"
+    },
+    {
+      "file": "src/pointer.ts",
+      "gitBlob": "70efbd30a45d625e8bbf20af0e99a4d50590bb06"
+    },
+    {
+      "file": "src/porter-model.ts",
+      "gitBlob": "96bf3d7bff4842af465a2e973f1875b8039914fe"
+    },
+    {
+      "file": "src/postcard-card.ts",
+      "gitBlob": "6a69fd3b0b05a93f999115acf9e9408109e60295"
+    },
+    {
+      "file": "src/postcard-panel.ts",
+      "gitBlob": "187817adfbbdd88a5f40a60643aec6e99a87ee21"
+    },
+    {
+      "file": "src/postcard-refused.ts",
+      "gitBlob": "d18ea208316d3590a23868272dcb27b889ad3217"
+    },
+    {
+      "file": "src/postcard-viewer.ts",
+      "gitBlob": "2bd1bccc86d0e1ced45fbd9582c5acf2f6676101"
+    },
+    {
+      "file": "src/postcard.ts",
+      "gitBlob": "2d295eb09dbd554771a6199f251d262562dd9ed9"
+    },
+    {
+      "file": "src/public-entry.ts",
+      "gitBlob": "136e49c0f4f9b6d6c8136538b020893aaf564798"
+    },
+    {
+      "file": "src/public-site.css",
+      "gitBlob": "e35aa396cd55a6b0d82d8d6cbb1fb7eb4edabf42"
+    },
+    {
+      "file": "src/public-site.ts",
+      "gitBlob": "1128c1540f195b00ba0bd2a14066e1e7d37eaa84"
+    },
+    {
+      "file": "src/punch-sound.ts",
+      "gitBlob": "b49902c2d9517ee2988cba718aa739d6c5f4927e"
+    },
+    {
+      "file": "src/quat.ts",
+      "gitBlob": "a18f923ee494d490aac29197419a6ba123b995de"
+    },
+    {
+      "file": "src/radio.ts",
+      "gitBlob": "76560a2559a85412d850d3ebeb0fea874a7d52e4"
+    },
+    {
+      "file": "src/raider-log.ts",
+      "gitBlob": "423ecee322a367f1abe0aa531b6bc2075818c4c5"
+    },
+    {
+      "file": "src/raider-slots.ts",
+      "gitBlob": "384244465762b5b7331d8652b8ec0f5810d016eb"
+    },
+    {
+      "file": "src/raider-wreck.ts",
+      "gitBlob": "633821cdfdac74e0697f3ad18e5a45e9c0f82c2f"
+    },
+    {
+      "file": "src/rama-mesh.ts",
+      "gitBlob": "c0ed6b0af93a088dc4a120410a608bfc12a756d1"
+    },
+    {
+      "file": "src/refinery-flight.ts",
+      "gitBlob": "e3a41d9fe2c366523c62986ca4265567fe48e105"
+    },
+    {
+      "file": "src/refinery-pad-frame.ts",
+      "gitBlob": "d4cf51f920ca87af54624ecd99a01e4dd23642c0"
+    },
+    {
+      "file": "src/refinery-proxies.ts",
+      "gitBlob": "e4364da510cedb84bcaf893fd6baece97918548e"
+    },
+    {
+      "file": "src/relay-cue.ts",
+      "gitBlob": "97b93db30ea95cca757404acce59bcab1cf9247f"
+    },
+    {
+      "file": "src/relay-defender.ts",
+      "gitBlob": "9185fe91fea9d9c36ce3dd0500e91f74203a078e"
+    },
+    {
+      "file": "src/relay-measure.ts",
+      "gitBlob": "872dde7fcc4a78eb10d2dce8097dcc3d095451f5"
+    },
+    {
+      "file": "src/relay-mesh.ts",
+      "gitBlob": "e4a7a3a083b37547b6091b111c8060b1d13210f8"
+    },
+    {
+      "file": "src/relay-signal-range.ts",
+      "gitBlob": "4d6f3d7dabccf8a4a619065d0ec88d9014b7ac6c"
+    },
+    {
+      "file": "src/relay-slot.ts",
+      "gitBlob": "effee54883ab1d413a5c0f927b66c3dad81618ea"
+    },
+    {
+      "file": "src/relay-tender.ts",
+      "gitBlob": "20de8f01e98217c9cf5bdcb0f725eb851c159702"
+    },
+    {
+      "file": "src/relief-bands.ts",
+      "gitBlob": "6a7f9e7250f94896468e499c13e1c201c9b7ef82"
+    },
+    {
+      "file": "src/render-eligibility.ts",
+      "gitBlob": "8d9e21c3ab6cfb03ec5158f32b34f26582d04929"
+    },
+    {
+      "file": "src/requests-view.ts",
+      "gitBlob": "2ddd418d33bb64c62ba3232f7dfed72a5de034d7"
+    },
+    {
+      "file": "src/requests.ts",
+      "gitBlob": "e8389fead603b363b8d8f683ddd0ebb97472c047"
+    },
+    {
+      "file": "src/rng.ts",
+      "gitBlob": "779732965eaf2bc959dcfc0d0cc79c233c8e4ffa"
+    },
+    {
+      "file": "src/rock-assets.ts",
+      "gitBlob": "80b14d9d8de90cf419fc7098d4c0eb6ef9ca3779"
+    },
+    {
+      "file": "src/rock-drill.ts",
+      "gitBlob": "9b49b6af7a98357a8b1b19d9d2e9c057619f915d"
+    },
+    {
+      "file": "src/rock-extraction.ts",
+      "gitBlob": "ce8ea0817ee6cc36a3ed106f068061ff1f3ee80b"
+    },
+    {
+      "file": "src/rock-heightfields.ts",
+      "gitBlob": "1dc3f3df5629c6b368f67f405f36b55a17c0ce46"
+    },
+    {
+      "file": "src/rock-pieces-thread.ts",
+      "gitBlob": "ad1a8615ba39dcc720eb1de32a5f1b6b4215cfb5"
+    },
+    {
+      "file": "src/rock-pieces.ts",
+      "gitBlob": "90ff4e8af61b0052f5a8bffd9a5248a1ad148235"
+    },
+    {
+      "file": "src/rock-pieces.worker.ts",
+      "gitBlob": "e91b6ebc7f450cdd7840391db735ec683d830981"
+    },
+    {
+      "file": "src/rock-survey.ts",
+      "gitBlob": "e14bd234fd9e39f71e20b0ecfeae83b40ecf4ce6"
+    },
+    {
+      "file": "src/rock-target.ts",
+      "gitBlob": "b065fed2645eb5f9edd4f0fdefd9016716ad9048"
+    },
+    {
+      "file": "src/salvage-jobs.ts",
+      "gitBlob": "fcba2730dedbb6c8419fffa9d3f54229fd3ce0e3"
+    },
+    {
+      "file": "src/save-badge.ts",
+      "gitBlob": "0d09d28149facdbb7ed2645b65ca18667a1f7b1f"
+    },
+    {
+      "file": "src/save-envelope.ts",
+      "gitBlob": "556d023c125a7f9b9fce206d5e3452edf745d2b7"
+    },
+    {
+      "file": "src/save-store.ts",
+      "gitBlob": "1e9724e9fa4993fa5779c9732dc157e704bcecbd"
+    },
+    {
+      "file": "src/scanner-view.ts",
+      "gitBlob": "40fe6ac3e4260b528a7ad97dd34157a01dfc2078"
+    },
+    {
+      "file": "src/scoop-window.ts",
+      "gitBlob": "abce7214124ebcb57fc32abfe63aa71e754a2a65"
+    },
+    {
+      "file": "src/settings-panel.ts",
+      "gitBlob": "03cbe853c6c2458611e4cd32a2964827377712bb"
+    },
+    {
+      "file": "src/settings.ts",
+      "gitBlob": "43f4ef2ade55284858611e50fab0ea29bc98a1df"
+    },
+    {
+      "file": "src/shader-splice.ts",
+      "gitBlob": "451461b061edf76cb68403ea7939c67a626e8254"
+    },
+    {
+      "file": "src/ship-condition.ts",
+      "gitBlob": "06e64f184c42d7f50eb1ec82c7e667e50b023b3e"
+    },
+    {
+      "file": "src/ship-detail.ts",
+      "gitBlob": "d2ba66add491382947119a8859b6648b0b3fba53"
+    },
+    {
+      "file": "src/ship-mesh.ts",
+      "gitBlob": "385615140e76a4f4384775ed319cc95e5e3e3e34"
+    },
+    {
+      "file": "src/ship-surface.ts",
+      "gitBlob": "dfae57de01d9b933ce86eb83161e6905d78573b5"
+    },
+    {
+      "file": "src/ship-work-light.ts",
+      "gitBlob": "db7c6066bfc3182d459b51d5d49d4b59112a7760"
+    },
+    {
+      "file": "src/shipyard-flight.ts",
+      "gitBlob": "e4cebf34f347ffbc73ebc6e12a2dae2f6c353b5e"
+    },
+    {
+      "file": "src/shipyard-proxies.ts",
+      "gitBlob": "f91197c302f0663a01907a000c06136d66c6aa5c"
+    },
+    {
+      "file": "src/sim.ts",
+      "gitBlob": "5397018275fdf28e3e818ce62417e6d58f8bff71"
+    },
+    {
+      "file": "src/social-preview.ts",
+      "gitBlob": "6cf364841ecae207b2e89a7ffb6de325d42f8816"
+    },
+    {
+      "file": "src/speech-lexicon.ts",
+      "gitBlob": "57fbd8a498745e1a9bb544de6e2f3269ea9eafdc"
+    },
+    {
+      "file": "src/speech.ts",
+      "gitBlob": "0b621bfc2e0827f6a25940cbad0594c2f7abde4d"
+    },
+    {
+      "file": "src/sphere-grid.ts",
+      "gitBlob": "ee3bd84758995cbccf42cb61c41bc7f299dd82fd"
+    },
+    {
+      "file": "src/star-colour.ts",
+      "gitBlob": "82c923a0c82c65d74e5c7ba361471ec9581a3162"
+    },
+    {
+      "file": "src/state-gallery.ts",
+      "gitBlob": "b0b6290248c135969ce3edcb723c6daf07f30418"
+    },
+    {
+      "file": "src/station-commerce.ts",
+      "gitBlob": "02da4523677062b893eadc2778764acbe4a0762d"
+    },
+    {
+      "file": "src/station-console.ts",
+      "gitBlob": "793337a28c48dc4b748fd8ba83276f6be4774f2b"
+    },
+    {
+      "file": "src/station-fixtures.ts",
+      "gitBlob": "b24a8b16ebe05b137284e88dd8940f35363975c7"
+    },
+    {
+      "file": "src/station-form.ts",
+      "gitBlob": "7543bf1f399433be5599adbd8eede1ede8e4864c"
+    },
+    {
+      "file": "src/station-glow.ts",
+      "gitBlob": "01f139423f7e02f118cd513c9424015149dfe4dd"
+    },
+    {
+      "file": "src/station-greebles.ts",
+      "gitBlob": "31f6a0a0e10278ba90488d4a0865805834bfa9ce"
+    },
+    {
+      "file": "src/station-interior-mesh.ts",
+      "gitBlob": "707b7842170b12cb7248eaa63c56ae2eb452b016"
+    },
+    {
+      "file": "src/station-interior.ts",
+      "gitBlob": "89c9fc7104ccf0397d8bb2baec3df021d143fa28"
+    },
+    {
+      "file": "src/station-light.ts",
+      "gitBlob": "5fb375fcae0a20537f33bf3af24a4ce864f99d49"
+    },
+    {
+      "file": "src/station-mesh.ts",
+      "gitBlob": "df4367259fec47568412dba4f181b517356de88b"
+    },
+    {
+      "file": "src/station-modular.ts",
+      "gitBlob": "024cbdeabb6ed4d8ad8d8d23e84126cc2fbf42cf"
+    },
+    {
+      "file": "src/station-name.ts",
+      "gitBlob": "94140e3d6929b77eed804eefd82954a23f065625"
+    },
+    {
+      "file": "src/station-plant.ts",
+      "gitBlob": "7ad49aee19aab3fdf308e93fac8637a1faf55b13"
+    },
+    {
+      "file": "src/station-proxy.ts",
+      "gitBlob": "0c05ec6d65316f5633c9f368f9117770bb3b7345"
+    },
+    {
+      "file": "src/station-roster.ts",
+      "gitBlob": "520f4ed43f3e891d2bcec6d58f185290ca22b92e"
+    },
+    {
+      "file": "src/station-route.ts",
+      "gitBlob": "3dac21b2e5d8af1359099f9f586736ef4feec594"
+    },
+    {
+      "file": "src/station-surface.ts",
+      "gitBlob": "205a0059a7dfaf0c1f3a0a8f31c50d93bd48c1b1"
+    },
+    {
+      "file": "src/station-traffic.ts",
+      "gitBlob": "fee3b707826cea4936f3ca4fe764ed758ca6adcc"
+    },
+    {
+      "file": "src/station-visuals.ts",
+      "gitBlob": "d547964d99789675c7acbffbc84be71f9eb3e6b3"
+    },
+    {
+      "file": "src/station.ts",
+      "gitBlob": "82728b930148b30d6d3b75d726b12b048305c06d"
+    },
+    {
+      "file": "src/strings-lab-model.ts",
+      "gitBlob": "da8075815840f84a9eb1408ae65c173d004c91a7"
+    },
+    {
+      "file": "src/strings-lab.ts",
+      "gitBlob": "60abac86fdd57da10cee4d7668cd6651664aa9a6"
+    },
+    {
+      "file": "src/strings-params.ts",
+      "gitBlob": "ee39c715a6a148def14db91c7ec4ecc02795d4d2"
+    },
+    {
+      "file": "src/surface.ts",
+      "gitBlob": "2a6a3cafc3f17e9218b3f6b9b3ce09a5cda9e191"
+    },
+    {
+      "file": "src/system-models.ts",
+      "gitBlob": "9aa60a89685ffb0f61b000137b2c42bcd54355f1"
+    },
+    {
+      "file": "src/system-sweep-view.ts",
+      "gitBlob": "821ce7314843a07280b6634e2588cb476d377a8c"
+    },
+    {
+      "file": "src/system-sweep.ts",
+      "gitBlob": "69b84f714867cf8def07824f24662f2e3720e2e0"
+    },
+    {
+      "file": "src/system.ts",
+      "gitBlob": "f01aab7a550a47f44271919e66560d768704f5b8"
+    },
+    {
+      "file": "src/text-raster.ts",
+      "gitBlob": "0ee3e783c938401264d9c7be041e7a966a0834a4"
+    },
+    {
+      "file": "src/trade-flight.ts",
+      "gitBlob": "48fc92bd2e8fc1bdbe2a36bdaf323deacd9f278b"
+    },
+    {
+      "file": "src/trade-frame.ts",
+      "gitBlob": "18d15e918e530bdc59678393f891d72fe9fd6dc9"
+    },
+    {
+      "file": "src/trade-proxies.ts",
+      "gitBlob": "d143fae24d4d12785b52721f51f3b0f64d8cb165"
+    },
+    {
+      "file": "src/traffic-engagement.ts",
+      "gitBlob": "7912046817f5c70f32280ae995aa611fde3fb33d"
+    },
+    {
+      "file": "src/traffic-presentation.ts",
+      "gitBlob": "19144517e1960d4f3236449352b8602f9a7fafc7"
+    },
+    {
+      "file": "src/tug-hull.ts",
+      "gitBlob": "2ff17dc716aceb48934dad0f130d5706f2855ea2"
+    },
+    {
+      "file": "src/units.ts",
+      "gitBlob": "9608400f743bec4a8cc078cedf140700bc8f3e17"
+    },
+    {
+      "file": "src/vec3.ts",
+      "gitBlob": "af873b0680cd9498a79b61855b4ac70fd8e28ee6"
+    },
+    {
+      "file": "src/vent-cue.ts",
+      "gitBlob": "a04a255cb1170d1ae768f7e191ba23d45c36de72"
+    },
+    {
+      "file": "src/vent-plumes.ts",
+      "gitBlob": "055c2f8044b58eb6c06c661b4238626a31ba31c1"
+    },
+    {
+      "file": "src/visit-count.ts",
+      "gitBlob": "218af2ef14fd751fe65c46f4dd54e6c8c924a0f4"
+    },
+    {
+      "file": "src/voice-ipa.ts",
+      "gitBlob": "f64a9123909d534e5fb0a052b02d9e399041f890"
+    },
+    {
+      "file": "src/voice-lab.ts",
+      "gitBlob": "5222a0acae0901d224ba23ad01ff14080204cb91"
+    },
+    {
+      "file": "src/voice-pool.ts",
+      "gitBlob": "01a6b2f65a3176942dc6c9db1b6432f93dac1f08"
+    },
+    {
+      "file": "src/voice-store.ts",
+      "gitBlob": "0abda05cefd228273b3c60d3ef3a1ca643f8f470"
+    },
+    {
+      "file": "src/voyager-hull.ts",
+      "gitBlob": "dd05c0e9476d34f54427e25e3176910383b5155f"
+    },
+    {
+      "file": "src/warp.ts",
+      "gitBlob": "dad929306b9719c7525a41626f1323a3f338c79c"
+    },
+    {
+      "file": "src/weapon-sound.ts",
+      "gitBlob": "d0886c42b0bf52687c43a759d91ecb2c0ac50337"
+    },
+    {
+      "file": "src/wfc.ts",
+      "gitBlob": "98a7b60cbcd8008c69fc615ea262b3bc06048c0e"
+    },
+    {
+      "file": "src/witchspace-crossing.ts",
+      "gitBlob": "3ecea23820760ddc56f7f70d88f6246b87d40e1a"
+    },
+    {
+      "file": "src/witchspace-mist.ts",
+      "gitBlob": "709e942bee071fd2457ba7c2d94e1665f64840c9"
+    },
+    {
+      "file": "src/witchspace-pass.ts",
+      "gitBlob": "dbc3e7c2085b33abab6aec16250831a7458f7e7c"
+    },
+    {
+      "file": "src/witchspace-sound.ts",
+      "gitBlob": "7952975826cdd831833e8cb59e840266d8c4cba2"
+    },
+    {
+      "file": "src/witchspace.ts",
+      "gitBlob": "cd96827b18a4c6bf96bea7638d23a9bcde7d961a"
+    },
+    {
+      "file": "src/worklight-tuner.ts",
+      "gitBlob": "7527b62b1b245d158db84c083281814b15822c44"
+    },
+    {
+      "file": "src/world-state.ts",
+      "gitBlob": "4fb1c48aff149a0a2d5c444c72087670b7d2e809"
+    },
+    {
+      "file": "src/xorshift.ts",
+      "gitBlob": "7ec1209b92ba3e0428f4c59bed7b27c56ca367f9"
+    }
+  ]
+}

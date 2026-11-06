@@ -84,7 +84,7 @@ test("Drum detail defers its download, retries, attaches to live stations and re
 			for (const resource of resourcesOf(part))
 				expect(isShared(resource)).toBe(true);
 		}
-		expect(triangles).toBeGreaterThan(150000);
+		expect(triangles).toBe(188260);
 	}
 	const held = resourcesOf(near.root);
 	let freedShared = 0;

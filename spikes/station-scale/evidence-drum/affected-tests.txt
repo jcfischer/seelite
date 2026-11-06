@@ -1,0 +1,131 @@
+bun test v1.4.2 (744846f84)
+
+tests/trade-model-fixtures.test.ts:
+(pass) exterior request counts exclude deferred detail and retain duplicate base downloads [0.30ms]
+(pass) held-response fixtures boot the permitted exterior and jump within the courier's tank [12.16ms]
+
+tests/trade-flight-assets.test.ts:
+(pass) trade flight exports, node #1033 > ring: shipping loader preserves the frame and clears the bay [168.55ms]
+(pass) trade flight exports, node #1033 > drum: shipping loader preserves the frame and clears the bay [91.86ms]
+(pass) trade flight exports, node #1033 > wheel: shipping loader preserves the frame and clears the bay [168.58ms]
+
+tests/station-proxy.test.ts:
+(pass) station proxy budget (collision.md §9.1.11) > the Wheel turns both rims and its spokes, leaving the gaps between them open [16.12ms]
+(pass) station proxy budget (collision.md §9.1.11) > the trade Assembly's proxy reads the assembly seed, cell by cell [424.39ms]
+(pass) station proxy budget (collision.md §9.1.11) > every form in every pool has a proxy, and so has each outpost built ahead [49.20ms]
+(pass) station proxy budget (collision.md §9.1.11) > the outposts built ahead are the outpost forms no pool holds [0.08ms]
+(pass) station proxy budget (collision.md §9.1.11) > only a form in a pool, or an outpost built ahead, has a proxy [0.06ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: trade/a [269.60ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: trade/b [2432.94ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: trade/c [1148.82ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: trade/d [12943.27ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: trade/e [804.57ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: shipyard/a [671.02ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: shipyard/b [596.14ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: shipyard/c [408.03ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: refinery/a [391.01ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: refinery/b [278.77ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: refinery/c [538.58ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: refinery/d [608.11ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: outpost/e [145.90ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: outpost/a [200.44ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: outpost/b [149.29ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: outpost/c [278.01ms]
+(pass) station proxy budget (collision.md §9.1.11) > no drawn vertex outside the proxy, within tolerance: outpost/d [224.06ms]
+(pass) station proxy budget (collision.md §9.1.11) > no primitive outside reachKm [194.41ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: trade/a [1343.15ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: trade/b [83.76ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: trade/c [61.19ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: trade/d [3020.13ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: trade/e [127.00ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: shipyard/a [146.80ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: shipyard/b [138.84ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: shipyard/c [133.66ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: refinery/a [39.28ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: refinery/b [45.30ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: refinery/c [55.61ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: refinery/d [27.26ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: outpost/e [9.19ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: outpost/a [21.26ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: outpost/b [20.65ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: outpost/c [25.70ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening is clear: no primitive holds a point of it: outpost/d [11.41ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): trade/a [0.20ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): trade/b [1561.81ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): trade/c [747.16ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): trade/d [3710.25ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): trade/e [881.68ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): shipyard/a [576.35ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): shipyard/b [533.52ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): shipyard/c [584.62ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): refinery/a [1118.95ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): refinery/b [582.01ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): refinery/c [687.60ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): refinery/d [1619.35ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): outpost/e [182.00ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): outpost/a [241.41ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): outpost/b [156.39ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): outpost/c [436.96ms]
+(pass) station proxy budget (collision.md §9.1.11) > the grid answers every containment and distance as a walk of the list would (node #1118): outpost/d [291.57ms]
+(pass) station proxy budget (collision.md §9.1.11) > the opening row goes red on a proxy that closes the opening [384.26ms]
+(pass) station proxy budget (collision.md §9.1.11) > the thinnest primitive is the declared figure, at every seed pair [166.28ms]
+(pass) station proxy budget (collision.md §9.1.11) > the proxy does not read the berth seed [1098.24ms]
+(pass) station proxy budget (collision.md §9.1.11) > the proxy's value imports never reach three [22.67ms]
+
+tests/drum-late-detail.test.ts:
+(pass) the backed Drum hull stays below 6 MiB and carries no full-only detail [26.20ms]
+(pass) Drum detail defers its download, retries, attaches to live stations and respects their current band [265.89ms]
+
+tests/drum-scale-detail.test.ts:
+(pass) Drum fittings hide below full while the plate backing stays hull [57.13ms]
+(pass) the four original Drum window bands sit on the entry face [10.36ms]
+
+tests/trade-plate-seams.test.ts:
+(pass) trade/b: six-sided 2.5 m seam grid and unbacked control [297.37ms]
+(pass) trade/c: six-sided 2.5 m seam grid and unbacked control [664.34ms]
+(pass) trade/e: six-sided 2.5 m seam grid and unbacked control [316.81ms]
+
+tests/model-urls.test.ts:
+(pass) models are served under hashed names (#834) > no model is served from public/, at a fixed name [0.72ms]
+(pass) models are served under hashed names (#834) > every shipped model has a URL constant, and every constant a file [0.39ms]
+(pass) models are served under hashed names (#834) > no loader names a model by a fixed path [34.27ms]
+(pass) models are served under hashed names (#834) > /assets/* alone is immutable for a year [0.26ms]
+
+tests/trade-flight.test.ts:
+(pass) authored trade forms, node #1033 > b: model, bay and navigation turn together, within the declared reach [172.61ms]
+(pass) authored trade forms, node #1033 > b: the mouth nameplate is the first surface seen from the approach axis [902.97ms]
+(pass) authored trade forms, node #1033 > b: the sim uses the shipped authored proxy with its stand-in too [18.88ms]
+(pass) authored trade forms, node #1033 > b: every hull box meets the 10 m empty-space rule [2786.11ms]
+(pass) authored trade forms, node #1033 > b: every exterior vertex outside the sim opening is held within 1.5 m [1364.98ms]
+(pass) authored trade forms, node #1033 > b: the final composed proxy adds no wall more than 10 m from drawn surfaces [1897.62ms]
+(pass) authored trade forms, node #1033 > c: model, bay and navigation turn together, within the declared reach [100.36ms]
+(pass) authored trade forms, node #1033 > c: the mouth nameplate is the first surface seen from the approach axis [469.81ms]
+(pass) authored trade forms, node #1033 > c: the sim uses the shipped authored proxy with its stand-in too [6.93ms]
+(pass) authored trade forms, node #1033 > c: every hull box meets the 10 m empty-space rule [2434.69ms]
+(pass) authored trade forms, node #1033 > c: every exterior vertex outside the sim opening is held within 1.5 m [666.73ms]
+(pass) authored trade forms, node #1033 > c: the final composed proxy adds no wall more than 10 m from drawn surfaces [2255.87ms]
+(pass) authored trade forms, node #1033 > e: model, bay and navigation turn together, within the declared reach [124.31ms]
+(pass) authored trade forms, node #1033 > e: the mouth nameplate is the first surface seen from the approach axis [307.32ms]
+(pass) authored trade forms, node #1033 > e: the sim uses the shipped authored proxy with its stand-in too [8.24ms]
+(pass) authored trade forms, node #1033 > e: every hull box meets the 10 m empty-space rule [2040.93ms]
+(pass) authored trade forms, node #1033 > e: every exterior vertex outside the sim opening is held within 1.5 m [425.78ms]
+(pass) authored trade forms, node #1033 > e: the final composed proxy adds no wall more than 10 m from drawn surfaces [1907.51ms]
+(pass) authored trade forms, node #1033 > uninstalled trade forms, including Assembly, stay procedural until installed [189.68ms]
+
+tests/ring-scale-detail.test.ts:
+(pass) Ring scale detail is separate from the approved baseline and hidden below full [114.86ms]
+(pass) trade/b: the ruled station key light reaches the compiled exterior shader [82.88ms]
+(pass) trade/c: the ruled station key light reaches the compiled exterior shader [65.87ms]
+(pass) trade/d: the ruled station key light reaches the compiled exterior shader [1.33ms]
+(pass) trade/e: the ruled station key light reaches the compiled exterior shader [96.89ms]
+(pass) Ring red and green beacons cross the bloom threshold while its other lamps keep the ceiling [85.03ms]
+(pass) the new Ring beacons do not dim its approved amber lamps and work floods [84.69ms]
+
+tests/ring-late-detail.test.ts:
+(pass) the backed Ring hull stays below 7 MiB and carries no full-only detail [20.01ms]
+(pass) Ring detail defers its download, retries, attaches to live stations and respects their current band [385.47ms]
+
+ 105 pass
+ 0 fail
+ 2270 expect() calls
+Ran 105 tests across 10 files. [68.75s]
