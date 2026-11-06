@@ -66,6 +66,7 @@ These are grillings. The agent prepares the facts and options, and the principal
 
 - #937 is the bottleneck: it blocks #922, and so everything economic.
 - On closing #937, amend #1194's brief with the rulings. Split it if the carriers and the query can be judged apart.
+- The outage timing and settlement contract is [Station capability operational time](../specs/capability-operational-time.md); its instrument verifies the decision, while #1194 implements it.
 - On closing #1190, amend #1191's brief with the rulings.
 - Both builds tell their worker to stop if the rulings are absent. Use `soma graph edit` to amend them.
 
