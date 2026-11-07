@@ -54,10 +54,13 @@ geometry, time or radius refuses instead of granting knowledge.
   migration regression run had six passing tests and two failures, proving
   that today's field-occurrence validation rejected retained identities.
 - After implementing the domain and correcting that validation, the affected
-  discovery, deposit and field suites passed: 47 tests, 103204 assertions.
+  discovery, deposit and field suites passed: 47 tests, 103203 assertions.
 - Typecheck, format, script lint, comment lint, launcher wiring and build pass.
 - Browser selection is recorded on the draft PR. No browser run is claimed;
   this unfinished domain has no runtime entry point.
+- Sage round 1 had two suggestions and no blockers. Both were taken: named
+  proximity inputs prevent swapping time and radius, and unused test setup was
+  removed. Review stops at that suggestion-only round under the map's SOP.
 
 The production discovery radius still needs a principal ruling. No release,
 economy or survey figure was selected by this preparation.

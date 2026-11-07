@@ -53,46 +53,48 @@ test("caller-supplied radius discovers at the boundary and never before it", () 
 	const far = add(centre, v3(radiusKm + 1, 0, 0));
 	const boundary = add(centre, v3(0, 0, radiusKm));
 	expect(
-		discoverFieldsWithin([], first.record, first.contents, far, time, radiusKm),
+		discoverFieldsWithin([], {
+			record: first.record,
+			contents: first.contents,
+			shipPos: far,
+			gameTime: time,
+			radiusKm: radiusKm,
+		}),
 	).toEqual([]);
-	const discovered = discoverFieldsWithin(
-		[],
-		first.record,
-		first.contents,
-		boundary,
-		time,
-		radiusKm,
-	);
+	const discovered = discoverFieldsWithin([], {
+		record: first.record,
+		contents: first.contents,
+		shipPos: boundary,
+		gameTime: time,
+		radiusKm: radiusKm,
+	});
 	expect(discovered).toEqual([firstKey]);
 	expect(
-		discoverFieldsWithin(
-			discovered,
-			first.record,
-			first.contents,
-			centre,
-			time,
-			radiusKm,
-		),
+		discoverFieldsWithin(discovered, {
+			record: first.record,
+			contents: first.contents,
+			shipPos: centre,
+			gameTime: time,
+			radiusKm: radiusKm,
+		}),
 	).toEqual(discovered);
 	expect(
-		discoverFieldsWithin(
-			discovered,
-			first.record,
-			first.contents,
-			far,
-			time,
-			radiusKm,
-		),
+		discoverFieldsWithin(discovered, {
+			record: first.record,
+			contents: first.contents,
+			shipPos: far,
+			gameTime: time,
+			radiusKm: radiusKm,
+		}),
 	).toEqual(discovered);
 	expect(
-		discoverFieldsWithin(
-			[],
-			first.record,
-			first.contents,
-			boundary,
-			time,
-			radiusKm - 1,
-		),
+		discoverFieldsWithin([], {
+			record: first.record,
+			contents: first.contents,
+			shipPos: boundary,
+			gameTime: time,
+			radiusKm: radiusKm - 1,
+		}),
 	).toEqual([]);
 });
 
@@ -110,10 +112,6 @@ test("discovery round trips canonically without generator pins or deposit state"
 });
 
 test("saved discoveries reject malformed, duplicate, charted and unknown identities atomically", () => {
-	const absent = galaxy.systems.find(
-		(r) => !rareSystems.some((s) => s.record.index === r.index),
-	);
-	expect(absent).toBeDefined();
 	for (const raw of [
 		null,
 		{},
@@ -166,14 +164,32 @@ test("the whole stable-slot set is bounded by the generated system count", () =>
 test("discovery refuses invalid geometry and radius instead of granting knowledge", () => {
 	for (const radius of [NaN, Infinity, -1, 0])
 		expect(() =>
-			discoverFieldsWithin([], first.record, first.contents, v3(), 0, radius),
+			discoverFieldsWithin([], {
+				record: first.record,
+				contents: first.contents,
+				shipPos: v3(),
+				gameTime: 0,
+				radiusKm: radius,
+			}),
 		).toThrow();
 	for (const pos of [v3(NaN, 0, 0), v3(0, Infinity, 0)])
 		expect(() =>
-			discoverFieldsWithin([], first.record, first.contents, pos, 0, 7),
+			discoverFieldsWithin([], {
+				record: first.record,
+				contents: first.contents,
+				shipPos: pos,
+				gameTime: 0,
+				radiusKm: 7,
+			}),
 		).toThrow();
 	for (const time of [NaN, Infinity, -1])
 		expect(() =>
-			discoverFieldsWithin([], first.record, first.contents, v3(), time, 7),
+			discoverFieldsWithin([], {
+				record: first.record,
+				contents: first.contents,
+				shipPos: v3(),
+				gameTime: time,
+				radiusKm: 7,
+			}),
 		).toThrow();
 });

@@ -38,11 +38,19 @@ export function fieldIsKnown(
 /** The caller supplies the approved radius; this domain chooses no discovery distance. */
 export function discoverFieldsWithin(
 	known: FieldDiscoveries,
-	record: SystemRecord,
-	contents: SystemContents,
-	shipPos: Vec3,
-	gameTime: number,
-	radiusKm: number,
+	{
+		record,
+		contents,
+		shipPos,
+		gameTime,
+		radiusKm,
+	}: {
+		record: SystemRecord;
+		contents: SystemContents;
+		shipPos: Vec3;
+		gameTime: number;
+		radiusKm: number;
+	},
 ): FieldDiscoveries {
 	if (
 		![shipPos.x, shipPos.y, shipPos.z, gameTime, radiusKm].every(
