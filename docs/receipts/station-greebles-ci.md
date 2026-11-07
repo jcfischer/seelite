@@ -28,23 +28,42 @@ bun test tests/ --shard=3/4 --timeout=60000 --parallel=3 --no-isolate --timings=
 
 The pinned local run passes 2,531 tests and 6,721,210 assertions across 149
 files in 142.21 seconds, including both target assertions. Log:
-`/tmp/greeble1206-pinned-shard3.log`. This matches CI's Bun version, flags
-and committed timing file, but runs on Darwin arm64 rather than Linux x64.
+`/tmp/greeble1206-pinned-shard3.log`. That first command omitted CI's
+`--update-timings` flag. A second run at diagnostic head `d13dc1bf` included
+that flag as well and passed the same 2,531 tests and 6,721,210 assertions in
+141.51 seconds. Its original committed timing input was restored byte-for-byte
+afterward. Log: `/tmp/greeble1206-pinned-actual-flags.log`. Both runs report
+Bun build `744846f84`, matching the failed CI log. The second run matches CI's
+flags and timing input, but runs on Darwin arm64 rather than Linux x64.
 There is no available local Linux container runtime. The green run establishes
 neither a platform cause nor a global-state leak.
+
+Separately, seven related station/ship suites ran in one reused worker with
+`--parallel=1 --no-isolate --timings=tests/timings.json --timeout=60000`:
+station-mesh, station-finish, ship-finish, ship-mesh, ship-muzzles, station-glow
+and station-greebles. All 179 tests and 188,818 assertions pass in 23.62 seconds
+(`/tmp/greeble1206-one-worker-fixtures.log`). Combining these fixtures' registry
+history does not reproduce the defect locally; this is not a proof that all
+state leaks are absent.
 
 ## Failure-only observation
 
 The existing assertions and loops are unchanged. Once their failure condition
 is already known, a diagnostic reads current transforms, geometry samples,
-nonfinite component counts, material sides and raycast function text, together
-with runtime/platform/finish information. It keeps the first twelve encountered
+nonfinite component counts, material sides and the full current Mesh prototype
+raycast function text, together with runtime/platform/CPU/finish information.
+Cached bounds, normal samples and draw ranges are read without recomputing them.
+Each mesh reports whether its raycast matches that prototype. The first three
+missed instances also retain the actual verification ray vectors, instance
+transform, dimensions, range and hit count, including the initial origin and
+nudge axis needed to reconstruct the casts. It keeps the first twelve encountered
 meshes and all subsequent greeble meshes. Diagnostic exceptions are caught so
 the original assertion still reports the failure.
 
 The instrumented existing suite passes 13 tests and 266 assertions with pinned
 Bun, and typecheck passes. Logs: `/tmp/greeble1206-diagnostic-local.log` and
-`/tmp/greeble1206-diagnostic-tsc.log`.
+`/tmp/greeble1206-diagnostic-tsc.log`. After expanding the ray capture, the same
+suite and typecheck pass again in `/tmp/greeble1206-response-{local,tsc}.log`.
 
 A deliberately zero-length verification ray exercises the red logging path.
 This is synthetic, not a reproduction of the CI defect: the healthy fixture
@@ -53,10 +72,23 @@ components; the original mounting assertion still fails with exit 1. The
 diagnostic itself reports no exception. Log:
 `/tmp/greeble1206-diagnostic-forced-red.log`. The temporary mutation was
 restored before committing.
+The expanded logging path is exercised separately in
+`/tmp/greeble1206-response-forced-red.log`: three complete missed-ray snapshots,
+full prototype source and cached bounds are present; the diagnostic reports no
+exception and the original assertion still exits 1. This is also synthetic.
+
+Sage round 1 returned one suggestion and no blocker: a function prefix did not
+justify describing the raycast implementation, and the actual missed rays were
+absent. The response records the full current prototype source and missed-ray
+inputs above; neither those records nor a matching source string clear the
+entire ray path. Review stops under the suggestion-only rule.
 
 ## Remaining evidence
 
-The next normal Linux PR CI run will carry these diagnostics if the failure
-recurs. A green run alone is not a cure. Runtime source, configuration, browser
-probes, test tolerances and assertions remain unchanged. This diff is confined
+The first instrumented Linux PR CI run at `d13dc1bf` passes its four unit
+shards, including the two target assertions. Run: 42334550996; shard-3 job:
+128288427956. This supplies no failing state to interpret. The response head's
+normal CI remains pending; its diagnostics will carry the extra ray evidence
+if a failure recurs. A green run alone is not a cure. Runtime source,
+configuration, browser probes, test tolerances and assertions remain unchanged. This diff is confined
 to a headless test and prose, so no browser run is required by CLAUDE.md.

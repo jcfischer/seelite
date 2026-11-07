@@ -20,6 +20,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { cpus } from "node:os";
 import * as THREE from "three";
 import {
 	STATION_GEOMETRY,
@@ -121,6 +122,7 @@ function reportStationFailure(
 			const mesh = object as THREE.Mesh;
 			const position = mesh.geometry?.getAttribute("position");
 			if (!position || (meshes.length >= 12 && !isGreeble(object))) return;
+			const normal = mesh.geometry.getAttribute("normal");
 			const instance = new THREE.Matrix4();
 			const instanced = mesh as THREE.InstancedMesh;
 			if (instanced.isInstancedMesh && instanced.count > 0)
@@ -135,9 +137,22 @@ function reportStationFailure(
 				vertices: position.count,
 				nonfinite,
 				sample: Array.from(position.array).slice(0, 18),
+				normalNonfinite: normal
+					? Array.from(normal.array).filter((value) => !Number.isFinite(value))
+							.length
+					: null,
+				normalSample: normal ? Array.from(normal.array).slice(0, 9) : null,
+				boundingSphere: mesh.geometry.boundingSphere,
+				boundingBox: mesh.geometry.boundingBox,
+				indices: mesh.geometry.index?.count,
+				drawRange: {
+					start: mesh.geometry.drawRange.start,
+					count: String(mesh.geometry.drawRange.count),
+				},
 				matrixWorld: object.matrixWorld.elements,
 				matrixAutoUpdate: object.matrixAutoUpdate,
 				matrixWorldAutoUpdate: object.matrixWorldAutoUpdate,
+				raycastIsPrototype: mesh.raycast === THREE.Mesh.prototype.raycast,
 				instanceCount: instanced.isInstancedMesh ? instanced.count : null,
 				firstInstance: instanced.isInstancedMesh ? instance.elements : null,
 				sides: (Array.isArray(mesh.material)
@@ -153,13 +168,14 @@ function reportStationFailure(
 				bun: process.versions.bun,
 				platform: process.platform,
 				arch: process.arch,
+				cpu: cpus()[0]?.model,
 				finish: currentStationFinish(),
 				rootMatrixWorld: root.matrixWorld.elements,
 				children: root.children.map((child) => ({
 					name: child.name,
 					matrixWorld: child.matrixWorld.elements,
 				})),
-				raycast: THREE.Mesh.prototype.raycast.toString().slice(0, 180),
+				raycast: THREE.Mesh.prototype.raycast.toString(),
 				meshes,
 			}),
 		);
@@ -385,6 +401,7 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 					const scale = new THREE.Vector3();
 					const normal = new THREE.Vector3();
 					const floating: string[] = [];
+					const failedRays: unknown[] = [];
 					for (const mesh of greebles) {
 						for (let i = 0; i < mesh.count; i++) {
 							mesh.getMatrixAt(i, matrix);
@@ -432,7 +449,30 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 										.addScaledVector(across, side * 1e-6);
 									hit = ray.intersectObjects(structure, false);
 								}
-							if (!hit.length) floating.push(`${mesh.name}#${i}`);
+							if (!hit.length) {
+								floating.push(`${mesh.name}#${i}`);
+								if (failedRays.length < 3) {
+									try {
+										failedRays.push({
+											mesh: mesh.name,
+											instance: i,
+											matrix: matrix.toArray(),
+											centre: centre.toArray(),
+											normal: normal.toArray(),
+											scale: scale.toArray(),
+											initialOrigin: start.toArray(),
+											across: across.toArray(),
+											origin: ray.ray.origin.toArray(),
+											direction: ray.ray.direction.toArray(),
+											near: ray.near,
+											far: ray.far,
+											hits: hit.length,
+										});
+									} catch (error) {
+										failedRays.push({ unavailable: String(error) });
+									}
+								}
+							}
 						}
 					}
 					if (floating.length)
@@ -441,6 +481,7 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 							type,
 							form: form.id,
 							floating,
+							failedRays,
 						});
 					expect([finish, type, form.id, floating]).toEqual([
 						finish,
