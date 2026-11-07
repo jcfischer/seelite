@@ -145,3 +145,20 @@ first copies old normals into a new array, then replaces position and normal
 attributes; these observations distinguish invalid old data from an invalid
 copy. Failure records include position metadata and raw-versus-getter samples.
 The constructor control restores native attribute dispatch in a `try/finally`.
+
+The attribute-boundary arm at `3c9e6694` passes all required Linux CI gates in
+run 42339799878. Shard-3 job 128304765051 has 2,532 passes, zero failures and
+no invalid-stage report; raw log `/tmp/greeble1206-attribute-linux.log`.
+The native control takes 42.55 ms. No cause is established by these three
+negative observer experiments.
+
+A further temporary diagnostic arm removes every prototype observer. Private
+checkpoints immediately after the unchanged production polyhedron constructor
+and after the aperture ring report invalid normals with constructor parameters,
+raw position/normal values, attribute metadata and getter samples. They do not
+recompute or mutate geometry. Constructor internals retain native computation,
+normalization and attribute dispatch. These source diagnostics are experimental
+and will be removed after the observation; they are not a candidate correction
+or a final source change. The original assertion path remains intact. Local
+pinned target validation passes 14 cases and 2,314 assertions; typecheck passes.
+Logs: `/tmp/greeble1206-source-stage-{local,tsc}.log`.

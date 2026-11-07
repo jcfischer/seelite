@@ -1610,6 +1610,46 @@ function apertureCut(type: StationType, ends: "last" | "both" = "last") {
 	return { halfWidth: widthKm / 2, halfHeight: heightKm / 2, ends };
 }
 
+let cuboctahedronNormalReports = 0;
+function reportCuboctahedronNormals(
+	stage: string,
+	geometry: THREE.PolyhedronGeometry,
+) {
+	if (cuboctahedronNormalReports >= 12) return;
+	try {
+		const normal = geometry.getAttribute("normal");
+		const values = Array.from(normal.array);
+		if (values.every(Number.isFinite)) return;
+		cuboctahedronNormalReports++;
+		const position = geometry.getAttribute("position");
+		console.error(
+			"station-source-normal-stage",
+			JSON.stringify({
+				stage,
+				id: geometry.id,
+				parameters: geometry.parameters,
+				normalCount: normal.count,
+				normalItemSize: normal.itemSize,
+				normalNormalized: normal.normalized,
+				normalArrayType: normal.array.constructor.name,
+				normalSample: values.map(String),
+				positionCount: position.count,
+				positionItemSize: position.itemSize,
+				positionNormalized: position.normalized,
+				positionArrayType: position.array.constructor.name,
+				positionValues: Array.from(position.array).map(String),
+				positionGetterSample: Array.from(
+					{ length: Math.min(6, position.count) },
+					(_, i) =>
+						[position.getX(i), position.getY(i), position.getZ(i)].map(String),
+				),
+			}),
+		);
+	} catch (error) {
+		console.error("station-source-normal-stage unavailable", String(error));
+	}
+}
+
 function buildCuboctahedron(
 	radiusKm: number,
 	material: THREE.Material,
@@ -1664,6 +1704,7 @@ function buildCuboctahedron(
 		radiusKm,
 		0,
 	);
+	reportCuboctahedronNormals("after-constructor", geometry);
 	if (aperture) {
 		// **The face's own plane and its own corners**, not a box round the
 		// solid: for a cuboctahedron of radius R the square face planes sit at
@@ -1683,6 +1724,7 @@ function buildCuboctahedron(
 			aperture.halfHeight,
 		);
 		appendRing(geometry, ringTriangles(outer, inner, face), aperture);
+		reportCuboctahedronNormals("after-aperture-ring", geometry);
 	}
 	// Box-projected UVs, per face — see `boxProjectUVs`.
 	boxProjectUVs(geometry, stationPanelKm());

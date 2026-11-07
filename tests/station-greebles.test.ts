@@ -19,14 +19,7 @@
  * quality gate drops the geometry and keeps every light.
  */
 
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	describe,
-	expect,
-	test,
-} from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { cpus } from "node:os";
 import * as THREE from "three";
 import {
@@ -157,20 +150,6 @@ function reportNormalStage(stage: string, geometry: THREE.BufferGeometry) {
 		console.error("station-normal-stage unavailable", String(error));
 	}
 }
-
-const originalSetAttribute = THREE.BufferGeometry.prototype.setAttribute;
-beforeAll(() => {
-	THREE.BufferGeometry.prototype.setAttribute = function (name, attribute) {
-		if (name === "position" && this.getAttribute("normal"))
-			reportNormalStage("before-position-replacement", this);
-		const result = originalSetAttribute.call(this, name, attribute);
-		if (name === "normal") reportNormalStage("after-normal-replacement", this);
-		return result;
-	};
-});
-afterAll(() => {
-	THREE.BufferGeometry.prototype.setAttribute = originalSetAttribute;
-});
 
 function reportStationFailure(
 	root: THREE.Object3D,
@@ -704,8 +683,6 @@ test("the production polyhedron inputs retain finite normals across warmed const
 		"core",
 	) as THREE.Mesh<THREE.PolyhedronGeometry>;
 	const { vertices, indices, radius, detail } = core.geometry.parameters;
-	const setAttribute = THREE.BufferGeometry.prototype.setAttribute;
-	THREE.BufferGeometry.prototype.setAttribute = originalSetAttribute;
 	try {
 		for (let i = 0; i < 2048; i++) {
 			const geometry = new THREE.PolyhedronGeometry(
@@ -722,7 +699,6 @@ test("the production polyhedron inputs retain finite normals across warmed const
 			expect({ iteration: i, finite }).toEqual({ iteration: i, finite: true });
 		}
 	} finally {
-		THREE.BufferGeometry.prototype.setAttribute = setAttribute;
 		built.dispose();
 	}
 }, 60_000);
