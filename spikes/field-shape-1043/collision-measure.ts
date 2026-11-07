@@ -50,7 +50,7 @@ const output = {
 		encoding: "utf8",
 	}).trim(),
 	method:
-		"Unchanged production fieldRockSolids; process-isolated candidate dependency inputs. Fresh-System cold queries include generation and lattice construction with code/archetype pieces warm; actual heightfield-piece prebuild is separate. Warm figures are eleven 64-query batch means, not individual-query percentiles. Returned owner counts are consumed and checked: the cheap warm counter is inside elapsed time; cold counting and all hashes are outside. Clock is held fixed at 1000 seconds; this does not measure advancing frames. Common, candidate-targeted and synthetic-stress menus are distinguished. Two serial candidate passes in reverse order; native baseline once. No frame, CCD or affordability claim.",
+		"Unchanged production fieldRockSolids; process-isolated candidate dependency inputs. Fresh-System cold queries include generation and lattice construction after verification and sixteen preconditioning queries; actual heightfield-piece prebuild is separate. Warm means cached lattice, without a JIT-stabilization guarantee. Warm figures are eleven 64-query batch means, not individual-query percentiles. Returned owner counts are consumed and checked: the cheap warm counter is inside elapsed time; cold counting and all hashes are outside. Clock is held fixed at 1000 seconds; this does not measure advancing frames. Common, candidate-targeted and synthetic-stress menus are distinguished. Two serial candidate passes in reverse order; native baseline once. No frame, CCD or affordability claim.",
 	reports,
 	summary,
 };

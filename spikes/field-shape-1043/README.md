@@ -83,11 +83,12 @@ must return a hit on that shared menu. Separately labelled occupied-rock targets
 use each candidate's own rocks. Whole-field crossing and
 enclosing-sphere cases are synthetic stresses, not normal flight. The clock is
 held at 1000 seconds across a 0.1-second step. Timings are CPU query costs with
-warm code/archetype pieces: sixteen fresh-System preconditioning queries,
+prebuilt archetype pieces: sixteen fresh-System preconditioning queries,
 eleven fresh-System samples and eleven 64-query
 warm batch means, in two reversed candidate orders. Cheap returned-count
 accumulation is included in warm elapsed time; cold counting and hashes are
-outside it. These are not individual-query percentiles, advancing-frame costs,
+outside it. Cached-lattice warm queries do not promise stable JIT tiering.
+These are not individual-query percentiles, advancing-frame costs,
 CCD timings or an affordability guarantee. Integration must still make drawing
 and collision consume the same approved layout and measure actual flight.
 
