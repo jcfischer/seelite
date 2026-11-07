@@ -83,6 +83,34 @@ Affected headless verification after both display changes passes 185 tests and
 21,750 assertions across nine files, including the existing ordinary-contact
 Navigation fixture with its real collaborator. Typecheck passes.
 
+## Canonical baseline provenance and final review
+
+The existing complete 96-view baseline remains unmodified at
+`/tmp/seelite-capability-1194/views-after/after-5786c618`, with its actual
+`5786c618` label and served-checkout metadata. It is prior evidence at identical
+render inputs to rebased base `1951dd63`, not a newly captured `1951dd63` run.
+The root reviewer independently checked this equality, and the implementation
+worker repeated the checks:
+
+- Both revisions have `src` tree `0973c050a275a4699d51736a85bf0ed56e5c072a`.
+- Both have `public` tree `1aab83bc746708b5d2767eb29fceeddabdf84183`.
+- `git diff --exit-code 5786c618 1951dd63 -- src public` plus the capture script,
+  view catalogue, placement helper, outage fixture, probe guard, package files,
+  index and Vite config exits zero. The remaining diff contains only receipts,
+  tests and the earlier cockpit-probe support.
+- Local check outputs are `/tmp/survey1148-baseline-render-trees.txt`,
+  `/tmp/survey1148-baseline-render-diff.txt` and
+  `/tmp/survey1148-baseline-diff-paths.txt`.
+
+Refreshed Sage round 5 reviewed confirmed runtime head `6cf32311`; its returned
+reviewed-commit marker matches. It returned five suggestions and no important or
+blocker finding. The narrow check now requires the actual visible refusal span,
+without the old range-element fallback, and baseline provenance is recorded
+above. Optional ordering, span-sync and pose-resolution refactors are declined
+to retain the tested scope. Review stops under the repository's rule; final
+capture, selected browser gate and principal visual approval are reported on
+the PR before merge.
+
 ## Historical initial-worker verification
 
 - Headless: `tests/rock-survey-surface.test.ts` executes the shipped Game

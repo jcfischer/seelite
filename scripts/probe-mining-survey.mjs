@@ -557,15 +557,15 @@ try {
 				const near = buttons.find(
 					(button) => button.dataset.liveNavTarget === nearId,
 				);
-				const reason =
-					far.querySelector("[data-live-nav-disabled]") ??
-					far.querySelector("em");
-				const reasonBox = reason.getBoundingClientRect();
+				const reasonBox = far
+					.querySelector("[data-live-nav-disabled]")
+					?.getBoundingClientRect();
 				const buttonBox = far.getBoundingClientRect();
 				return {
 					nameHeight: far.firstElementChild.getBoundingClientRect().height,
 					nearNameHeight: near.firstElementChild.getBoundingClientRect().height,
 					reasonFits:
+						reasonBox !== undefined &&
 						reasonBox.left >= buttonBox.left &&
 						reasonBox.right <= buttonBox.right,
 				};
