@@ -176,6 +176,19 @@ try {
 			const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 			const pointAt = (rock) => A.rockLocal(rock, g.world.gameTime);
 			const studyTime = g.world.gameTime;
+			let countProjection = false,
+				projectionCalls = 0,
+				projectedRockRows = 0;
+			const actualNavRows = g.navRows.bind(g);
+			g.navRows = (...args) => {
+				const result = actualNavRows(...args);
+				if (countProjection) {
+					projectionCalls++;
+					for (const row of result)
+						if (row.kind === "rock") projectedRockRows++;
+				}
+				return result;
+			};
 			window.__organicView = (name, view) => {
 				g.world.gameTime = studyTime;
 				g.view = "chase";
@@ -187,13 +200,18 @@ try {
 					target = { x: 0, y: 0, z: 0 },
 					slot = null;
 				if (view === "close" || view === "sharedclose") {
-					const shared = draws.baseline.rocks
-						.filter((r) => draws.organic.rocks.some((o) => o.slot === r.slot))
-						.sort((a, b) => b.radiusKm - a.radiusKm || a.slot - b.slot)[0];
 					const rock =
 						view === "sharedclose"
-							? rocks.find((r) => r.slot === shared.slot)
+							? rocks
+									.filter((r) =>
+										Object.values(draws).every((d) =>
+											d.rocks.some((o) => o.slot === r.slot),
+										),
+									)
+									.sort((a, b) => b.radiusKm - a.radiusKm || a.slot - b.slot)[0]
 							: rocks.reduce((a, b) => (b.radiusKm > a.radiusKm ? b : a));
+					if (!rock)
+						throw Error("selected candidates have no common close-up slot");
 					target = pointAt(rock);
 					slot = rock.slot;
 					local = { ...target, x: target.x - 1.2 * rock.radiusKm };
@@ -380,11 +398,47 @@ try {
 				)
 					throw Error("populated live Navigation projection mismatch");
 				window.__organicNavRefresh = () => {
-					g.render(0);
-					return rows.length;
+					projectionCalls = 0;
+					projectedRockRows = 0;
+					countProjection = true;
+					try {
+						g.render(0);
+						g.updateCockpit();
+					} finally {
+						countProjection = false;
+					}
+					if (
+						projectionCalls !== 1 ||
+						projectedRockRows !== rows.length ||
+						projectedRockRows === 0
+					)
+						throw Error(
+							"production Navigation projection did not run exactly once with every occupied row",
+						);
+					return projectedRockRows;
 				};
+				const refresh = g.updateCockpit;
+				let missedRefreshDetected = false;
+				try {
+					g.updateCockpit = () => {};
+					try {
+						window.__organicNavRefresh();
+					} catch (e) {
+						if (!String(e).includes("production Navigation projection"))
+							throw e;
+						missedRefreshDetected = true;
+					}
+				} finally {
+					g.updateCockpit = refresh;
+				}
+				if (!missedRefreshDetected)
+					throw Error("Navigation work oracle accepted a missing refresh");
+				window.__organicNavRefresh();
 				return {
 					mining: g.surveyState().on,
+					actualProjectionCallsPerFrame: projectionCalls,
+					actualProjectedRockRowsPerFrame: projectedRockRows,
+					missedRefreshDetected,
 					occlusion: false,
 					fieldFrame: g.frameField.id,
 					rows: rows.length,
@@ -509,7 +563,7 @@ try {
 				}
 		manifest.timing.loadEnd = loadavg();
 		manifest.navigationMethod =
-			"Held-clock stationary cockpit: exactly one production render (includes updateCockpit), plus cheap recorded row-count consumption; no extra refresh or projection. High, occlusion off, actual AA. Six alternating blocks.";
+			"Held-clock stationary render()+updateCockpit(), matching animate ownership; actual navRows calls and returned rock rows counted inside each timed frame, exactly one nonempty projection required. Missing-refresh mutant rejected outside timing. Synchronous render and cockpit update excludes deferred browser style/layout/paint. High, occlusion off, actual AA; six alternating blocks.";
 		manifest.navigation = names.map((name) => ({ name, samples: [] }));
 		for (let block = 0; block < blocks; block++)
 			for (const name of block % 2 ? [...names].reverse() : names) {
