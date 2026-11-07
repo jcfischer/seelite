@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { loadavg, cpus } from "node:os";
 import { createHash } from "node:crypto";
+import { median } from "../../scripts/lib/measurement.mjs";
 import {
 	systemFields,
 	rockPose,
@@ -36,8 +37,6 @@ const shapes = decodeRockHeightfields(
 );
 setRockShapeSource(() => shapes);
 await prebuildRockPieces(async (_i, shape) => buildRockPieces(shape));
-const median = (a: number[]) =>
-	[...a].sort((a, b) => a - b)[Math.floor(a.length / 2)];
 const signature = (r: ReturnType<typeof linearAnchorQuery>) =>
 	JSON.stringify(
 		r.owner

@@ -13,13 +13,13 @@ principal appearance approval, merge, closure or next mining slice is implied.
 Review `/tmp/seelite-field-shape-1043-organic/index.html`. It links all three
 world seeds (47, 7, 0x5ee11e), charted and rare paired views, actual dense peaks,
 full-resolution images and directly captured detail crops. Broad detail crops
-use CSS rectangle [480,290,480,320] in the same 1440×900 DPR2 page. They do not
-change the viewing distance. The original far camera is (-224,0,0)km, side is
-(0,-160,0)km, overview is (-110,-90,70)km, inside is (1.8,1.8,1.8)km; dense is
+use CSS rectangle [480,290,480,320] in the same 1440×900 DPR 2 page. They do not
+change the viewing distance. The original far camera is (-224,0,0) km, side is
+(0,-160,0) km, overview is (-110,-90,70) km, inside is (1.8,1.8,1.8) km; dense is
 candidate-targeted and labelled separately. The selected charted organic peak
-has 256 rocks within8km of the camera, versus52 baseline; rare has83 versus29.
+has 256 rocks within 8 km of the camera, versus 52 baseline; rare has 83 versus 29.
 Actual camera errors, field clock, clearance and occupied content are recorded
-in each manifest. The main charted dense camera has >1km surface clearance.
+in each manifest. The main charted dense camera has >1 km surface clearance.
 
 The four world-cost sets (`cost-{charted,rare}-aa{0,2}`) are clean source
 `4fcc3de6db5fcef6d0d02be287518b4f76347ca1`. Every set records hashes of generator,
@@ -34,13 +34,13 @@ No claim that camera teleportation discovers a rare field is made.
 
 Placement draws use their own seeded stream. Source metadata still comes from
 the original fifteen per-slot physical draws. Anchors never come from layout
-cells. A metadata bank with original cell size and semi-axes×1.6 supplies2081
-charted/945rare numeric slots, then independent selection and full-drift-envelope
+cells. A metadata bank with original cell size and semi-axes×1.6 supplies 2081
+charted / 945 rare numeric slots, then independent selection and full-drift-envelope
 thinning retain the rocks. Spatial buckets hold arrays and accelerate rejection;
 they never supply the anchors. Conservative candidate-profile semi-axes are
 bounds only; layout-cell count is N/A for these continuous candidates.
 
-The full three-seed corpus covers292charted and147rare fields. Counts are
+The full three-seed corpus covers 292 charted and 147 rare fields. Counts are
 min / median / p99 / max:
 
 | Kind | Baseline | Organic | Braided |
@@ -58,24 +58,24 @@ attributes and slot identities agree with the original stream, including when
 the metadata input order is reversed. Pairwise anchor distance includes both
 radii, both complete drift radii and the unchanged surface margin, proving the
 gap for every clock, rather than only sampled static positions. Bounds and
-sampled closed-form positions remain inside49km on explicit charted/rare tests,
-so this candidate does not require an arrival-policy change to50km clearance.
+sampled closed-form positions remain inside 49 km on explicit charted/rare tests,
+so this candidate does not require an arrival-policy change to 50 km clearance.
 The construction also supplies a universal geometric bound: lobe centres are
-within31/25km, warped offsets within1.28×9.5/9km, and radius+drift within1.1/1.2km,
-giving44.26km charted/37.72km rare. Curved bridges are tighter. These bounds hold
+within 31/25 km, warped offsets within 1.28×9.5/9 km, and radius+drift within 1.1/1.2 km,
+giving 44.26 km charted / 37.72 km rare. Curved bridges are tighter. These bounds hold
 for every seed and clock, independently of the sampled tests. No corpus-wide
 worst-case renderer guarantee is inferred from sampled views.
 
 ## Synchronous hardware-render costs
 
-Apple M5 Pro / ANGLE Metal, 1440×900 DPR2, render scale1; actual settings and
+Apple M5 Pro / ANGLE Metal, 1440×900 DPR 2, render scale 1; actual settings and
 shadow-map state are in each row. Both quality levels, AA0/AA2 and pinned shadow/
-AO off/on are measured. Each arm has six reordered blocks of48frames after a
+AO off/on are measured. Each arm has six reordered blocks of 48 frames after a
 warm pass. Timings use performance.now plus readPixels drains: synchronous
 hardware-render frame cost including CPU and GPU, not pure GPU timer elapsed
 time. The clock advances manually over two seconds; no flight or CCD step runs.
 
-There are160 world-cost rows. Each field arm has a matched no-field control.
+There are 160 world-cost rows. Each field arm has a matched no-field control.
 Common far/inside cameras isolate the same world pose. `sharedclose` uses the
 same numeric slot and physical shape/radius/spin/drift at the same relative
 close distance, moved to each layout's anchor. Background workload still differs.
@@ -89,7 +89,7 @@ Those targeted stresses are not a layout-only speedup comparison.
 | rare / 0 | 1.609 / 0.430 | 1.590 / 0.423 | 4 / 3 |
 | rare / 2 | 2.426 / 0.967 | 2.377 / 0.964 | 4 / 3 |
 
-Historical budgets remain high≤1ms/+12calls and low≤0.4ms/+6calls. The organic
+Historical budgets remain high ≤1 ms / +12 calls and low ≤0.4 ms / +6 calls. The organic
 AA2 and rare close rows fail the elapsed-time limits; their raw failures are
 retained. Dense-peak rows pass these sampled limits, but that does not waive the
 close failures or certify production readiness. Rejected variants were not
@@ -104,34 +104,49 @@ largest individual sample group, followed by Three instance-buffer and matrix
 updates. This supports a mixed synchronous graphics workload; it does not
 identify pure GPU stages or justify a shader/geometry optimization claim.
 
-## Live Navigation: corrected single-frame scope
+## Live Navigation: verified production work
 
-The four corrected sets are `nav-{charted,rare}-aa{0,2}`, clean source
-`b1e62e7a`. Their timer calls exactly one production render (which already
-updates the cockpit) and consumes a cheap recorded row count. Geometry, query
-and world-render timing code are unchanged from4fcc. The previous world-set
-Navigation entries explicitly called an additional cockpit refresh and projected
-rows again for counting; retain them as duplicate-refresh diagnostics, not a
-production one-frame cost or a measured large-population penalty.
+The final sets are `nav-verified-{charted,rare}-aa{0,2}`, all clean source
+`2c9b7e9e371da9e940487612803e1243bd1da7ad`. Geometry, profiles and the arbitrary
+anchor query remain byte-identical to 4fcc. The actual ownership is
+`animate() → render(dt); updateCockpit()`; `render()` does not refresh the
+cockpit. The timer now calls those two production methods in that order.
+A wrapper counts the actual production `navRows()` calls and returned rock
+rows inside every timed frame. Exactly one nonempty projection containing every
+expected rock is required. A deliberately omitted cockpit refresh must fail
+that guard before timing starts; all eight arms detect it.
 
-Each corrected arm has six alternating blocks of24frames, high quality,
-occlusion off, actual AA and a held stationary clock. Numeric mining flag1 is
-asserted on. Actual field-frame acquisition, live survey rows, selected row and
-DOM counts are asserted. Charted baseline/organic has193/676rock rows; the
-organic panel includes83disabled rows beyond40km. Rare has76/320rows.
+Each arm has six alternating blocks of 24 frames, high quality, occlusion off,
+actual AA and a held stationary clock. Numeric mining flag 1, actual acquired
+field frame, selected row, fresh survey facts and DOM counts are asserted.
+Charted baseline/organic contains 193/676 rock rows; organic includes 83 disabled
+rows beyond 40 km. Rare contains 76/320 rows.
 
 | Fixture / AA | Baseline median [min,max] ms | Organic median [min,max] ms |
 |---|---|---|
-| charted / 0 | 1.352 [1.229,2.792] | 1.296 [1.283,4.583] |
-| charted / 2 | 3.056 [1.983,8.796] | 2.046 [2.021,2.050] |
-| rare / 0 | 1.235 [1.221,2.833] | 1.287 [1.271,1.683] |
-| rare / 2 | 1.944 [1.925,3.200] | 1.981 [1.979,2.029] |
+| charted / 0 | 2.942 [1.558, 4.412] | 3.206 [2.913, 3.642] |
+| charted / 2 | 9.171 [6.429, 9.992] | 5.179 [2.721, 10.471] |
+| rare / 0 | 1.262 [1.229, 4.954] | 1.696 [1.538, 1.879] |
+| rare / 2 | 2.819 [1.996, 9.754] | 7.650 [2.708, 13.875] |
 
-Raw blocks are in each manifest and `navigation-summary.json`. Dispersion
-precludes a reliable speedup or row-count penalty conclusion. This is stationary
-full cockpit rendering, not pure projection cost, moving/advancing flight,
-large-list interaction latency or a UI affordability guarantee. No UI
-optimization or rendering threshold was changed to obtain these samples.
+Raw blocks and actual work guards are in each manifest and
+`navigation-summary.json`. Dispersion leaves Navigation affordability
+inconclusive; no speedup or population-penalty conclusion is drawn. These are
+synchronous production rendering and cockpit-update costs, excluding deferred
+browser style/layout/paint, moving flight and large-list interaction latency.
+No UI optimization or threshold was changed to obtain the samples.
+
+**Correction of earlier claims:** Sage found that the supposed duplicate
+refresh was a mistaken source trace. The original 4fcc world-set Navigation
+entries time one explicit refresh plus render plus an additional navRows
+projection for counting. They remain extra-projection diagnostics. The later
+`nav-{charted,rare}-aa{0,2}` sets at b1e62e7a omit the refresh entirely; their
+render-only numbers do not measure live Navigation work and are invalid for
+that claim. Their earlier flat timings do not establish low row cost.
+Original manifests remain unchanged; `NAVIGATION-CORRECTION.txt` labels the
+superseded scope, and `navigation-summary-render-only-invalid.json` preserves
+the former summary. The verified sets above supersede both series. World-render
+cost rows and field images are unaffected by this correction.
 
 ## Arbitrary-anchor query prototype
 
@@ -145,15 +160,18 @@ Widths1.7/4/9km, clocks0/1000/1e6, occupied points, crossings, enclosing reach,
 multiple fields and a deliberately omitted occupied rock are covered. The
 oracle validates reach sets and motions, not the settled predicate or full CCD.
 
-`query-cost.json` has48rows, six alternating-order blocks, cold generation/index
-costs and64-query warm batch means, with output signatures/counts checked.
+`query-cost.json` has 48 rows, six alternating-order blocks, cold generation/index
+costs and 64-query warm batch means, with output signatures/counts checked.
 Nonempty rock-centred high-speed crossings are guarded independently; the
 centreline crossing may be empty and remains a labelled synthetic stress.
 Generic cold construction eagerly indexes all fields, whereas native production
 lazily builds nearby fields. These costs are implementation-specific and cannot
-prove an isolated index speedup. Organic occupied warm batch means are around
-0.005–0.006ms; eager cold generation/index costs are roughly3–4ms on these
-fixtures, excluding the separately prebuilt authored collision pieces. Full
+prove an isolated index speedup. Organic occupied warm batch means are about
+0.004–0.005 ms; eager cold generation/index costs are roughly 3–5 ms on these
+fixtures, excluding the separately prebuilt authored collision pieces. The latest
+run reuses the shared median helper; the original upper-middle aggregation is
+retained as query-cost-upper-median-original.json. Per-file source hashes
+identify the exact measured input. Full
 flight, collision CCD and first-frame hitch handling remain production work.
 
 ## Remaining integration gates
@@ -166,18 +184,24 @@ preserving discovery knowledge and independent world identity. It must resolve
 close-view budgets, measure moving/advancing flight and full CCD, and reassess
 larger ore availability against the approved economy. Principal approval and
 the canonical production view set remain required before shipping. The queue
-stays paused; #1043 and draft PR#1203 stay open.
+stays paused; #1043 and draft PR #1203 stay open.
 
 ## Verification at the reviewed study revision
 
-Affected headless suite:15passed,0failed,547375assertions across all four study
+Affected headless suite: 15 passed, 0 failed, 547375 assertions across all four study
 test files (`/tmp/field1043-study-tests-final.log`). Repo TypeScript and strict
 spike TypeScript, both format scopes, script lint and comment lint passed.
-The broad unrelated `npm test` pass was interrupted cleanly (exit130) after356
+The broad unrelated `npm test` pass was interrupted cleanly (exit 130) after 356
 files started; `/tmp/field1043-unit-final.log` is partial and is not a full-suite
 pass. No unrelated tests were changed or debugged.
 
-Build, Sage review and the mandatory final clean-head selector result are
-recorded in the follow-up verification entry after the review round. No browser
+Production build passed (`/tmp/field1043-build-final.log`), with only the existing
+large-chunk warning and the distribution-size check green. Sage round 1 reviewed
+cc292230 and requested changes: the actual Navigation work guard is now fixed,
+with missing-refresh detection and clean 2c9b verified measurements. Shared-close
+selection now intersects every selected candidate and refuses an empty common
+slot. report.mjs regenerates the gallery and summaries from retained manifests.
+Sage follow-up and the final clean-head selector are pending; they are not
+represented as passed by this entry. No browser
 or performance coverage is inferred from a selector returning zero for isolated
 study files. Canonical production views and principal approval remain open.

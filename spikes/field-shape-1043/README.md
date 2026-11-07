@@ -143,3 +143,15 @@ live Navigation uses numeric mining flag 1, actual candidate field draws,
 recorded survey rows and actual acquired field frame, and asserts rendered row
 counts. These are study measurements rather than an advancing-flight release
 regression or a production-affordability claim.
+
+Regenerate the multi-seed landing page and summaries from the retained run
+manifests with `node spikes/field-shape-1043/report.mjs /tmp/seelite-field-shape-1043-organic`.
+The final Navigation folders are `nav-verified-{charted,rare}-aa{0,2}`. Their
+work guard wraps the actual production navRows call inside render()+updateCockpit(),
+matching animate ownership, and rejects a deliberately omitted refresh. Earlier
+Nav series remain superseded diagnostics, with exact reasons in the receipt.
+The final runs use six blocks of24frames with COST=1 and NAV_ONLY=1; the world
+sets use six blocks of48frames. Seed47 fixtures are charted system0/rare4; seed7
+fixtures are charted1/rare6. WORLD=0x5ee11e uses charted173/rare0. Select the kind,
+system and AA with the environment variables described above and retain each
+folder name for report.mjs. No source generator refactor is needed to reproduce.
