@@ -31,7 +31,7 @@ ANGLE Metal / Apple M5 Pro, 1440×900, device scale2, render scale1. Each run ha
 
 Far uses the same224km centre distance across candidates. Inside uses the same field-frame coordinate(1.8,1.8,1.8)km. Edge stands2km outside each candidate's own long semi-axis. Close uses each candidate's own largest rock at1.2 bounding radii, so close is not a same-rock comparison. The no-field control is matched to each candidate's own framing. Camera range, position error, axis error, levels, calls and raw blocks are in each manifest; empty close/inside arms refuse.
 
-| Fixture and AA | Candidate | Worst high Δms | Worst low Δms | Max added calls high / low |
+| Fixture and AA | Candidate | Highest sampled high Δms | Highest sampled low Δms | Max added calls high / low |
 |---|---|---:|---:|---|
 | s173 charted, AA0 | baseline | 0.973 | 0.280 | 4 / 3 |
 | s173 charted, AA0 | expanded | 0.541 | 0.161 | 5 / 3 |
@@ -42,11 +42,11 @@ Far uses the same224km centre distance across candidates. Inside uses the same f
 | s173 charted, AA2 | clusters | 0.742 | 0.193 | 5 / 3 |
 | s173 charted, AA2 | broken | 0.750 | 0.201 | 5 / 3 |
 
-The baseline AA2 close/shadow+AO-on row exceeds the historical high≤1.0ms and low≤0.4ms budgets. This is retained as a measured limitation, not tuned away. The three candidate charted fixtures stay below both timing budgets in these samples. The closer surfaces differ between profiles, so this does not rank an abstract rendering scheme independently of its subject.
+The baseline AA2 close/shadow+AO-on row exceeds the historical high≤1.0ms and low≤0.4ms budgets. This is retained as a measured limitation, not tuned away. The three candidate charted fixtures stay below both timing budgets only at the sampled poses. The inside coordinate lies between the cluster peaks; neither dense peak has an inside GPU sample. These are sampled-pose maxima, not profile-wide worst cases or a dense-region affordability result. The closer surfaces differ between profiles, so this does not rank an abstract rendering scheme independently of its subject.
 
 Rare-field AA0 counterexample: all four profiles exceed the high-quality 1.0ms budget at close/shadow+AO-on.
 
-| Rare s0 candidate | Worst high Δms | Worst low Δms | Max added calls high / low |
+| Rare s0 candidate | Highest sampled high Δms | Highest sampled low Δms | Max added calls high / low |
 |---|---:|---:|---|
 | baseline | 1.539 | 0.381 | 4 / 3 |
 | expanded | 1.358 | 0.310 | 5 / 3 |
@@ -159,4 +159,10 @@ adapter parity, all-rock reach oracles, identical shared menus and nonempty
 coverage. Log: `/tmp/field1043-collision-affected.log`. Strict spike TypeScript
 and the standard static/build gates pass. The study remains isolated.
 
-Still owed before close: principal visual choice, canonical view-set acceptance, a measured resolution of the rare close-view budget counterexample, and advancing-flight/full-CCD validation when the selected layout is wired. Any separate integration build must block release1197. No aesthetic approval or release completion is claimed.
+Sage's collision follow-up returned one suggestion and one nit, with no
+blocker or important finding. Unused worker imports/fixture fields are removed.
+The earlier GPU claims above now explicitly name sampled poses and the missing
+cluster-peak coverage. No new dense-peak or GPU-budget result is invented.
+Review stops under the map's suggestion/nit rule.
+
+Still owed before close: principal visual choice, canonical view-set acceptance, dense-peak GPU coverage and a measured resolution of the rare close-view budget counterexample, and advancing-flight/full-CCD validation when the selected layout is wired. Any separate integration build must block release1197. No aesthetic approval or release completion is claimed.

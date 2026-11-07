@@ -15,7 +15,7 @@ import {
 } from "../../src/collision";
 import { decodeRockHeightfields } from "../../src/rock-heightfields";
 import { buildRockPieces } from "../../src/rock-pieces";
-import { add, length, scale, type Vec3 } from "../../src/vec3";
+import { add, length, type Vec3 } from "../../src/vec3";
 import {
 	CANDIDATES,
 	candidateProfile,
@@ -60,7 +60,7 @@ const fixtures = [
 		if (!rock) throw new Error("empty shared occupied point");
 		return { candidate, rock };
 	});
-	return { index, kind, record, contents, plans, plan, rows, commonRocks };
+	return { index, kind, record, plan, rows, commonRocks };
 });
 
 if (mode === "adapted")

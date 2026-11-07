@@ -38,7 +38,9 @@ a matched no-field control.
 The far view is a common 224km from the centre; inside is the same field-frame
 coordinate; edge is 2km beyond each candidate's long semi-axis. Close uses the
 largest rock of each candidate at 1.2 bounding radii, so that view compares
-worst-case subjects rather than the same rock. The manifest records camera
+different subjects rather than the same rock. Inside does not sample either
+cluster peak; dense-region GPU cost and profile-wide maxima remain unmeasured.
+The manifest records camera
 miss, asked/actual range, axis error, per-level counts and raw frame blocks.
 
 `SYSTEM` and `KIND` can select another fixture (for example `SYSTEM=0 KIND=rare`).
@@ -68,7 +70,7 @@ lattice. This is a study input adapter, not production integration.
 
 ```sh
 bun test spikes/field-shape-1043/collision-study.test.ts
-bun spikes/field-shape-1043/collision-measure.ts /tmp/field1043-collision.json
+bun spikes/field-shape-1043/collision-measure.ts /tmp/field1043-collision-matched.json
 ```
 
 Native and adapted baseline outputs must agree exactly. Each query is also
