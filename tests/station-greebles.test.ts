@@ -111,6 +111,63 @@ const isGreeble = (object: THREE.Object3D) => {
 	return false;
 };
 
+function reportStationFailure(
+	root: THREE.Object3D,
+	details: Record<string, unknown>,
+) {
+	try {
+		const meshes: unknown[] = [];
+		root.traverse((object) => {
+			const mesh = object as THREE.Mesh;
+			const position = mesh.geometry?.getAttribute("position");
+			if (!position || (meshes.length >= 12 && !isGreeble(object))) return;
+			const instance = new THREE.Matrix4();
+			const instanced = mesh as THREE.InstancedMesh;
+			if (instanced.isInstancedMesh && instanced.count > 0)
+				instanced.getMatrixAt(0, instance);
+			let nonfinite = 0;
+			for (let i = 0; i < position.array.length; i++)
+				if (!Number.isFinite(position.array[i])) nonfinite++;
+			meshes.push({
+				name: object.name,
+				parent: object.parent?.name,
+				geometry: mesh.geometry.type,
+				vertices: position.count,
+				nonfinite,
+				sample: Array.from(position.array).slice(0, 18),
+				matrixWorld: object.matrixWorld.elements,
+				matrixAutoUpdate: object.matrixAutoUpdate,
+				matrixWorldAutoUpdate: object.matrixWorldAutoUpdate,
+				instanceCount: instanced.isInstancedMesh ? instanced.count : null,
+				firstInstance: instanced.isInstancedMesh ? instance.elements : null,
+				sides: (Array.isArray(mesh.material)
+					? mesh.material
+					: [mesh.material]
+				).map((material) => ({ name: material.name, side: material.side })),
+			});
+		});
+		console.error(
+			"station-greebles diagnostic",
+			JSON.stringify({
+				...details,
+				bun: process.versions.bun,
+				platform: process.platform,
+				arch: process.arch,
+				finish: currentStationFinish(),
+				rootMatrixWorld: root.matrixWorld.elements,
+				children: root.children.map((child) => ({
+					name: child.name,
+					matrixWorld: child.matrixWorld.elements,
+				})),
+				raycast: THREE.Mesh.prototype.raycast.toString().slice(0, 180),
+				meshes,
+			}),
+		);
+	} catch (error) {
+		console.error("station-greebles diagnostic unavailable", String(error));
+	}
+}
+
 describe("every form carries clutter, and the density figure is what puts it there", () => {
 	test("every form of every role builds greebles, and the handle holds them", () => {
 		for (const type of TYPES) {
@@ -378,6 +435,13 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 							if (!hit.length) floating.push(`${mesh.name}#${i}`);
 						}
 					}
+					if (floating.length)
+						reportStationFailure(root, {
+							finishId: finish,
+							type,
+							form: form.id,
+							floating,
+						});
 					expect([finish, type, form.id, floating]).toEqual([
 						finish,
 						type,
@@ -406,6 +470,13 @@ describe("#102 §2 — no greeble may be a station's farthest vertex", () => {
 				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				const clutter = reachOf(root, type, isGreeble);
 				const structure = reachOf(root, type, (o) => !isGreeble(o));
+				if (!(clutter < structure))
+					reportStationFailure(root, {
+						type,
+						form: form.id,
+						clutter,
+						structure,
+					});
 				expect([type, form.id, clutter < structure]).toEqual([
 					type,
 					form.id,
