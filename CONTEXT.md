@@ -445,6 +445,9 @@ The stable sequence number distinguishing the original carrier instance from its
 What a carrier enables while it has a particular operational condition.
 _Avoid_: Bonus, percentage effect
 
+**Capability carrier**:
+A generated station child representing one independently available service: market, equipment or the station type's exclusive service. Its `capability` carrier kind and `/capability/` persistence-key segment name this carrier, while its operational condition determines whether that service is available. `docs/specs/capability-operational-time.md` owns its timing contract.
+
 **Intervention**:
 A player action that changes a carrier's operational condition or recovery process.
 _Avoid_: Command, influence spend

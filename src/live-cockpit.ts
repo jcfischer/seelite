@@ -280,6 +280,7 @@ export interface LiveCockpitState {
 		hold: HoldSummary;
 		/** The till's last refusal, in the console's words, or `null`. */
 		message: string | null;
+		serviceNotice?: string | null;
 		cargo: readonly string[];
 		ownedEquipment: readonly string[];
 		recoveredFittings?: readonly {
@@ -1790,7 +1791,7 @@ export class LiveCockpit {
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.stationControl(state.firstDay?.stationLine ?? null)}${this.holdLine(stationConsole.hold)}${this.stationMessage(stationConsole.message)}${
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.stationControl(state.firstDay?.stationLine ?? null)}${this.holdLine(stationConsole.hold)}${stationConsole.serviceNotice ? `<div data-live-service-status>${this.stationMessage(stationConsole.serviceNotice)}</div>` : ""}${this.stationMessage(stationConsole.message)}${
 			stationConsole.tab === "Requests"
 				? requestsBody(state.requests)
 				: stationConsole.tab === "Market"
@@ -2101,6 +2102,10 @@ function firstDayBody(panel: FirstDayPanel | undefined): string {
  */
 function hullRefusalNote(offer: HullOffer, credits: number): string {
 	switch (offer.reason) {
+		case "exclusive-damaged":
+			return "EXCLUSIVE SERVICE DAMAGED";
+		case "market-damaged":
+			return "MARKET SERVICE DAMAGED";
 		case "hull-owned":
 			return "THE HULL YOU FLY";
 		case "hull-locked":

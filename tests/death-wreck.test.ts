@@ -6,6 +6,7 @@ import {
 	moduleRow,
 } from "../src/loadout";
 import { expect, test } from "bun:test";
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import {
 	deathWreckContents,
 	deathWreckRow,
@@ -612,6 +613,7 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 	raw.commander.state.ownedEquipment = [];
 	delete raw.commander.state.loadout;
 	delete raw.commander.txSeq;
+	pairLegacyWorldFixture(raw);
 	const { integrity, ...body } = raw;
 	raw.integrity = fnv1a(JSON.stringify(body));
 	expect(parseSave(raw).world.galaxies.every((g) => !g.deathWreck)).toBe(true);

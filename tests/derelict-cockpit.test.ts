@@ -5,6 +5,7 @@ import {
 	moduleRow,
 } from "../src/loadout";
 import { expect, test, spyOn } from "bun:test";
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import { derelictPose, tetherOffset } from "../src/derelict";
 import { scoopWreckContainer } from "../src/derelict-salvage";
 import { derelictNextLossAt, derelictSlots } from "../src/derelict-slots";
@@ -412,6 +413,7 @@ test("fitting items survive reload and legacy or malformed fitting rows refuse",
 	const corrupt = (mutate: (r: any) => void) => {
 		const copy = structuredClone(raw);
 		mutate(copy);
+		pairLegacyWorldFixture(copy);
 		delete copy.integrity;
 		copy.integrity = fnv1a(JSON.stringify(copy));
 		return copy;
@@ -597,6 +599,7 @@ test("a schema 9 save with a partially stripped derelict loads its world remaind
 		.state;
 	legacyState.ownedEquipment = [];
 	delete legacyState.loadout;
+	pairLegacyWorldFixture(legacy);
 
 	const loaded = parseSave({
 		...legacy,

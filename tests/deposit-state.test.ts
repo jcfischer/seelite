@@ -29,6 +29,7 @@ import {
 	WORLD_SCHEMA_VERSION,
 } from "../src/world-state";
 import { fnv1a } from "../src/rng";
+import { legacyWorldFixture } from "./legacy-world-fixture";
 import {
 	newCommanderRecord,
 	parseSave,
@@ -161,12 +162,12 @@ const rehash = (raw: ReturnType<typeof saved>) => {
 };
 
 describe("world deposit envelope", () => {
-	test("a pre-deposit save loads untouched and re-saves to exactly its old bytes", () => {
+	test("a pre-deposit save preserves its received bytes and explicitly migrates world timing", () => {
 		const world = newWorld(1);
-		const raw = saved(world);
+		const raw = legacyWorldFixture(saved(world));
 		// Captured before the optional domain landed, including its integrity.
 		expect(fnv1a(JSON.stringify(raw))).toBe(1302952874);
-		expect(WORLD_SCHEMA_VERSION).toBe(3);
+		expect(WORLD_SCHEMA_VERSION).toBe(4);
 		expect(
 			raw.galaxies.every(
 				(g: Record<string, unknown>) => !Object.hasOwn(g, "deposits"),
@@ -176,7 +177,8 @@ describe("world deposit envelope", () => {
 		expect(
 			loaded.galaxies.every((g) => Object.keys(g.deposits.rows).length === 0),
 		).toBe(true);
-		expect(JSON.stringify(serializeWorld(loaded))).toBe(JSON.stringify(raw));
+		expect(fnv1a(JSON.stringify(raw))).toBe(1302952874);
+		expect(serializeWorld(loaded)).toEqual(serializeWorld(world));
 	});
 	test("debits and readings round trip separately in each galaxy; keys canonicalize", () => {
 		const { key } = fixture();

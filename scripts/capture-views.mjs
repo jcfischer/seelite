@@ -45,6 +45,7 @@
  * rule for the same reason it exempts `shot-ships.mjs`.
  */
 import { installHaulerFixture } from "./lib/hauler-fixture.mjs";
+import { placeCapabilityOutage } from "./lib/capability-outage-fixture.mjs";
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
 import { execFileSync } from "node:child_process";
@@ -199,6 +200,7 @@ let currentSeed = null;
  */
 let currentSystem = null;
 let currentHull = "courier";
+let currentMining = false;
 /**
  * Set by a placer that writes world state — the duel's kill (#324 part d) — so
  * the next view boots on a world with no save, as the first boot does.
@@ -211,11 +213,18 @@ let currentHull = "courier";
  * route, which opens no save store, and only then is the game loaded.
  */
 let worldWritten = false;
-async function ensureFixture(page, seed, system = null, hull = "courier") {
+async function ensureFixture(
+	page,
+	seed,
+	system = null,
+	hull = "courier",
+	mining = false,
+) {
 	if (
 		currentSeed === seed &&
 		currentSystem === system &&
 		currentHull === hull &&
+		currentMining === mining &&
 		!worldWritten
 	)
 		return;
@@ -245,6 +254,7 @@ async function ensureFixture(page, seed, system = null, hull = "courier") {
 		gameUrl(SERVING, {
 			seed,
 			hull,
+			mining: mining ? 1 : undefined,
 			raider: "off",
 			system,
 			...MODEL_BOOT_PARAMS,
@@ -283,6 +293,7 @@ async function ensureFixture(page, seed, system = null, hull = "courier") {
 	await page.evaluate(() => window.__rememberBootPosition());
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	currentSeed = seed;
+	currentMining = mining;
 	currentSystem = system;
 	currentHull = hull;
 }
@@ -377,6 +388,11 @@ async function assertChartHover(page, where, shot, aimed) {
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
+	"capability-outage": async (page, shot) => {
+		worldWritten = true;
+		const result = await placeCapabilityOutage(page, shot.recovered);
+		return `${result.stationId} · market ${result.availability.operational ? "operational" : "damaged"} at ${result.at.toFixed(3)}s`;
+	},
 	horizon: async (page, shot) => {
 		assertHorizonFacts(
 			await page.evaluate((s) => window.__horizonView(s), shot),
@@ -1539,6 +1555,7 @@ try {
 			// earlier row flushed, its clock ahead of the one `__startClockAt`
 			// puts back, and the dock's first write throws (#583).
 			if (view.shot.kind === "shipyard-tab") worldWritten = true;
+			if (view.shot.kind === "capability-outage") worldWritten = true;
 			// A follow jump saves its new system. Every NPC row needs a fresh home
 			// boot, including the first one after the docked Shipyard fixtures.
 			if (view.shot.kind === "npc-jump") worldWritten = true;
@@ -1549,6 +1566,7 @@ try {
 				view.shot.seed ?? SEED,
 				view.shot.system ?? null,
 				view.shot.hull ?? "courier",
+				view.shot.kind === "capability-outage",
 			);
 			await setView(page, view.shot.view);
 		} else {

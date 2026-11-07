@@ -174,6 +174,7 @@ Each galaxy owns separate typed domains for:
 - player knowledge and visited state;
 - sparse market stock deficits;
 - player legal status;
+- bounded causal capability timing, approved by #937;
 - later explicitly approved domains.
 
 The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain stores the envelope-relative pair `(systemIndex, localCarrierId)`; combining it with the containing `galaxyIndex` reconstructs the full `CarrierKey`. `economy-trade.md` §5.5 records the same pair without inventing a second key name. A bare `Station.id` is not persistent identity. Any serialized embedded galaxy index must match its containing envelope or fail loudly. Sparse absence is meaningful, so the save format must carry domain integrity validation and reject a truncated or partially written snapshot atomically; the model must not reinterpret corruption as an untouched healthy carrier.
@@ -256,9 +257,29 @@ amounts and remaining amounts between zero and that initial amount, loss on
 the world clock and the matching own-loss knowledge. `salvage.md` owns the
 recovery and placement details.
 
+**Capability timing (#937, built by #1194)** is a required `capabilityTime`
+domain at world schema 4 / generator 11 / save envelope 18. It stores a timing
+genesis and at most one causal anchor per generated capability carrier. It does
+not store generated service tables, pressure counts, availability projections or
+outage history. Before a raider mutation or lazy recovery discards prior facts,
+an explicitly supplied dependent-settlement callback runs and affected
+capability anchors are replaced. The callback is optional while no production
+dependent exists. The #1195 refinery build must integrate it centrally through
+all fact-replacing production paths before retaining queue work across them.
+Queries before retained anchors refuse. Received legacy schema-3 integrity is
+checked before initialization at the migration clock; old work is not invented.
+The structural authority is `capability-operational-time.md`.
+
 ## 8. Derived effects
 
 Capabilities and consequences are projections of generated carrier definitions plus effective objective condition at `gameTime`. Route safety, services, traffic, enemy capabilities, prices, and map presentation are never persisted merely because they can be derived from those facts.
+
+Independent station service outages also read their bounded causal timing domain
+from §7. Their current availability is still derived rather than persisted;
+timing anchors retain the causal information the seed and current raider state
+alone cannot reconstruct. `capability-operational-time.md` supersedes a stateless
+current-raider projection and unrestricted historical-query promise for these
+capability carriers.
 
 A wider effect still requires a carrier whose fiction defines that consequence area. This representation does not create territory ownership, influence bars, fleet command, or autonomous faction simulation.
 

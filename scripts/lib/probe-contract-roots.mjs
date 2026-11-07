@@ -4,6 +4,15 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-capability-outage.mjs": [
+		"scripts/probe-capability-outage.mjs",
+		"scripts/lib/capability-outage-fixture.mjs",
+		"src/capability-slots.ts",
+		"src/capability-time.ts",
+		"src/world-state.ts",
+		"src/station-commerce.ts",
+		"src/station-console.ts",
+	],
 	"probe-mining-drill.mjs": [
 		"scripts/probe-mining-drill.mjs",
 		"src/rock-drill.ts",

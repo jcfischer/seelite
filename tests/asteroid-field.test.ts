@@ -454,8 +454,8 @@ describe("slot stability (#948 D2)", () => {
 });
 
 describe("identity and versions (#948 D6)", () => {
-	test("fields are not carriers, and the world generator stays at 10", () => {
-		expect(WORLD_GENERATOR_VERSION).toBe(10);
+	test("fields are not carriers, and the world generator is 11", () => {
+		expect(WORLD_GENERATOR_VERSION).toBe(11);
 		expect(FIELD_GENERATOR_VERSION).toBe(1);
 		for (const c of enumerateCarriers(FINGERPRINT_WORLD, 0))
 			expect(c.localCarrierId.startsWith("field-")).toBe(false);

@@ -32,6 +32,15 @@ import {
 	WORLD_GENERATOR_VERSION,
 } from "../src/world-state";
 
+function legacySaveFixture(raw: unknown): any {
+	const o = structuredClone(raw) as any;
+	o.world.worldSchemaVersion = 3;
+	for (const env of o.world.galaxies) delete env.capabilityTime;
+	const { integrity: old, ...worldBody } = o.world;
+	o.world = { ...worldBody, integrity: fnv1a(JSON.stringify(worldBody)) };
+	const { integrity, ...body } = o;
+	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+}
 const SEED = 0x5ee11e;
 const KEY = carrierKey(3, LOCAL_CARRIER_ID.trade);
 
@@ -170,13 +179,21 @@ describe("#89 D5 — the save envelope", () => {
 		// over the version-6 body as stored, and the relabel happens on a copy.
 		const w = world();
 		w.worldGeneratorVersion = 6;
-		const raw = serializeSave({ world: w, commander: commander() }) as {
-			world: { worldGeneratorVersion: number };
-		};
+		const raw = legacySaveFixture({
+			...serializeSave({ world: w, commander: commander() }),
+			saveSchemaVersion: 17,
+		});
 		const before = structuredClone(raw);
 		const loaded = parseSave(raw);
 		expect(loaded.world.worldGeneratorVersion).toBe(WORLD_GENERATOR_VERSION);
-		expect(loaded.world.galaxies).toEqual(w.galaxies);
+		expect(
+			loaded.world.galaxies.map(({ capabilityTime, ...env }) => env),
+		).toEqual(w.galaxies.map(({ capabilityTime, ...env }) => env));
+		expect(
+			loaded.world.galaxies.every(
+				(env) => env.capabilityTime.genesisAt === w.gameTime,
+			),
+		).toBe(true);
 		expect(raw).toEqual(before);
 		expect(raw.world.worldGeneratorVersion).toBe(6);
 	});
@@ -355,6 +372,10 @@ const resealed = (
 ): unknown => {
 	const { integrity: _, ...body } = JSON.parse(JSON.stringify(raw));
 	edit(body);
+	if (body.saveSchemaVersion < 18) {
+		body.world.worldGeneratorVersion = 10;
+		return legacySaveFixture(body);
+	}
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
 
@@ -363,7 +384,7 @@ describe("#936 D4 — txSeq in the save envelope", () => {
 	const save = () => ({ world: world(), commander: commander() });
 
 	test("txSeq arrived at 16, which is read beside 15", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(17);
+		expect(SAVE_SCHEMA_VERSION).toBe(18);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(15);
 	});
 

@@ -172,6 +172,7 @@ export const LEVERS = Object.freeze({
 	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
 	869: "the outfitting console: slots beside stock and the change shown before purchase",
+	1194: "the docked service status beside unrelated notices, and its natural recovery",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
@@ -301,6 +302,7 @@ export const SHOT_KINDS = Object.freeze([
 	"cruise",
 	"chart",
 	"shipyard-tab",
+	"capability-outage",
 	"docking-notice",
 	"vents",
 	"miner-vents",
@@ -1686,6 +1688,28 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "capability-market-damaged",
+		covers: [1194],
+		what: "Mining enabled at the generated refinery: natural market damage remains visible alongside an unrelated cargo-scoop notice, before any purchase.",
+		shot: {
+			kind: "capability-outage",
+			system: 2,
+			view: "cockpit",
+			recovered: false,
+		},
+	},
+	{
+		name: "capability-market-recovered",
+		covers: [1194],
+		what: "The same generated refinery market at its natural recovery, with the unrelated notice retained and no stale market-damage status.",
+		shot: {
+			kind: "capability-outage",
+			system: 2,
+			view: "cockpit",
+			recovered: true,
+		},
+	},
+	{
 		name: "outpost-interior-workbench",
 		covers: [165, 147, 257],
 		/**
@@ -1895,6 +1919,7 @@ const SHOT_REQUIREMENTS = {
 	"shipyard-tab": (s) =>
 		(s.rungs === "new-game" || s.rungs === "top") &&
 		(s.tab === undefined || s.tab === "Equipment"),
+	"capability-outage": (s) => typeof s.recovered === "boolean",
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	// #647: above the envelope, or the attitude vents fire nothing past the
