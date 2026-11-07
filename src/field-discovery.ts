@@ -8,10 +8,11 @@ import {
 import type { FieldKey } from "./deposit-state";
 import { SYSTEMS_PER_GALAXY, type SystemRecord } from "./galaxy";
 import type { SystemContents } from "./system";
-import { length, sub, type Vec3 } from "./vec3";
+import { add, dot, length, scale, sub, type Vec3 } from "./vec3";
 
 /** Per-galaxy discovered field identities, independent of deposits and their generator pins. */
 export type FieldDiscoveries = readonly FieldKey[];
+export const FIELD_DISCOVERY_RADIUS_KM = 1000;
 
 const keyFor = (systemIndex: number, fieldId: string): FieldKey =>
 	`${systemIndex}:${fieldId}` as FieldKey;
@@ -44,12 +45,14 @@ export function discoverFieldsWithin(
 		shipPos,
 		gameTime,
 		radiusKm,
+		previous,
 	}: {
 		record: SystemRecord;
 		contents: SystemContents;
 		shipPos: Vec3;
 		gameTime: number;
 		radiusKm: number;
+		previous?: { shipPos: Vec3; gameTime: number };
 	},
 ): FieldDiscoveries {
 	if (
@@ -60,12 +63,36 @@ export function discoverFieldsWithin(
 		radiusKm <= 0
 	)
 		return fail();
+	if (
+		previous &&
+		(![
+			previous.shipPos.x,
+			previous.shipPos.y,
+			previous.shipPos.z,
+			previous.gameTime,
+		].every(Number.isFinite) ||
+			previous.gameTime < 0 ||
+			previous.gameTime > gameTime)
+	)
+		return fail();
+	const distance = (plan: FieldPlan) => {
+		const end = sub(shipPos, fieldCentre(plan, gameTime));
+		if (!previous) return length(end);
+		const start = sub(previous.shipPos, fieldCentre(plan, previous.gameTime));
+		const delta = sub(end, start);
+		const squared = dot(delta, delta);
+		const t =
+			squared === 0
+				? 0
+				: Math.max(0, Math.min(1, -dot(start, delta) / squared));
+		return length(add(start, scale(delta, t)));
+	};
 	const found = systemFields(record, contents)
 		.filter(
 			(plan) =>
 				plan.profile === "rare" &&
 				!fieldIsKnown(known, record.index, plan) &&
-				length(sub(fieldCentre(plan, gameTime), shipPos)) <= radiusKm,
+				distance(plan) <= radiusKm,
 		)
 		.map((plan) => keyFor(record.index, plan.id));
 	return found.length ? [...known, ...found].sort(compareKeys) : known;

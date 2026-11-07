@@ -68,7 +68,7 @@ const HULLS = Object.keys(HULL_SPECS) as HullId[];
 
 describe("node #1097 — the one-time cargo scoop grant", () => {
 	test("the schema moved from 16 to 17 and 16 is legacy", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(18);
+		expect(SAVE_SCHEMA_VERSION).toBe(19);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toContain(16);
 	});
 
@@ -158,7 +158,7 @@ describe("node #1097 — the one-time cargo scoop grant", () => {
 	test("a version that is neither current nor legacy is refused", () => {
 		const raw = serializeSave(record("courier", baseLoadout("courier")));
 		expect(() =>
-			parseSave(resealed(raw, (b) => (b.saveSchemaVersion = 19))),
+			parseSave(resealed(raw, (b) => (b.saveSchemaVersion = 20))),
 		).toThrow(/unsupported/);
 		expect(() =>
 			parseSave(resealed(raw, (b) => (b.saveSchemaVersion = 1))),

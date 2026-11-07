@@ -183,7 +183,7 @@ import {
  * may not carry `scoopNotice`, and a 17 record carries it only as `true`
  * (`LEGACY_SCHEMA_FORBIDS`).
  */
-export const SAVE_SCHEMA_VERSION = 18;
+export const SAVE_SCHEMA_VERSION = 19;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -225,7 +225,7 @@ export const SAVE_SCHEMA_VERSION = 18;
  * the cargo-scoop grant.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
 ] as const;
 
 /**
@@ -1003,6 +1003,13 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	)
 		fail("world schema is incompatible with saveSchemaVersion");
 	const world = parseWorld(o.world);
+	if (
+		(version as number) < 19 &&
+		(asObject(o.world, "world").galaxies as unknown[]).some(
+			(g) => asObject(g, "galaxy").fieldDiscoveries !== undefined,
+		)
+	)
+		fail("legacy world contains field discoveries");
 	if ((version as number) < 14) {
 		for (const g of world.galaxies)
 			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])

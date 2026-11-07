@@ -42,6 +42,7 @@ import {
 	v3,
 } from "../src/vec3";
 import { gameMethods } from "./lib/game-methods";
+import { newWorld, discoverNearbyFields } from "../src/world-state";
 
 const WORLD_SEED = 47;
 const PERF = flightPerformance(PLAYER_BASELINE_HULL);
@@ -66,6 +67,7 @@ const METHODS = [
 	"velocityOf",
 	"targetParentId",
 	"stepCruise",
+	"stepFieldDiscovery",
 	"dropOut",
 	"updateLocalFrameBody",
 	"nearestBody",
@@ -81,11 +83,14 @@ const METHODS = [
 
 function subjectAt(galaxy: number, system: number) {
 	const world = restoreWorld(WORLD_SEED, galaxy, system, 0);
+	const commerceWorld = newWorld(WORLD_SEED);
+	commerceWorld.galaxies[galaxy].fieldDiscoveries = [`${system}:field-01`];
 	return Object.assign(
 		Object.create(
 			gameMethods(METHODS, {
 				MINING_ON: false,
 				fieldContactsAt,
+				discoverNearbyFields,
 				nearestFieldPlan,
 				fieldCentreVelocity,
 				isRockTargetId,
@@ -109,6 +114,10 @@ function subjectAt(galaxy: number, system: number) {
 		),
 		{
 			world,
+			commerceWorld,
+			adoptWorld(this: any, world: any) {
+				this.commerceWorld = world;
+			},
 			contacts: [],
 			selectableCache: null,
 			massesCache: null,

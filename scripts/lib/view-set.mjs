@@ -174,6 +174,7 @@ export const LEVERS = Object.freeze({
 	869: "the outfitting console: slots beside stock and the change shown before purchase",
 	1194: "the docked service status beside unrelated notices, and its natural recovery",
 	1148: "the surface DEEP cue, the survey's instrument range and current-field rock readings in Navigation",
+	1191: "unknown and discovered rare-field Navigation and the sourced regional scanner lead",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
@@ -305,6 +306,7 @@ export const SHOT_KINDS = Object.freeze([
 	"shipyard-tab",
 	"capability-outage",
 	"mining-survey",
+	"field-discovery",
 	"docking-notice",
 	"vents",
 	"miner-vents",
@@ -1714,6 +1716,42 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "field-discovery-unknown",
+		covers: [1191],
+		what: "Navigation and scope before proximity discovery, with the physical field left present.",
+		shot: {
+			kind: "field-discovery",
+			mode: "unknown",
+			seed: 47,
+			system: 4,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "field-discovery-lead",
+		covers: [1191],
+		what: "The existing regional sweep reports an aged own-sensors field signal without a target or point geometry.",
+		shot: {
+			kind: "field-discovery",
+			mode: "lead",
+			seed: 47,
+			system: 4,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "field-discovery-known",
+		covers: [1191],
+		what: "Navigation after scanner-free proximity discovery, with the rare field available as a contact.",
+		shot: {
+			kind: "field-discovery",
+			mode: "known",
+			seed: 47,
+			system: 4,
+			view: "cockpit",
+		},
+	},
+	{
 		name: "mining-survey-navigation",
 		covers: [1148],
 		what: "Current-field readings in nearest-first Navigation, with a selected rock and a readable distant rock beyond the unchanged 40 km targeting limit.",
@@ -1949,6 +1987,7 @@ const SHOT_REQUIREMENTS = {
 		(s.tab === undefined || s.tab === "Equipment"),
 	"capability-outage": (s) => typeof s.recovered === "boolean",
 	"mining-survey": (s) => s.mode === "surface" || s.mode === "navigation",
+	"field-discovery": (s) => ["unknown", "lead", "known"].includes(s.mode),
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	// #647: above the envelope, or the attitude vents fire nothing past the

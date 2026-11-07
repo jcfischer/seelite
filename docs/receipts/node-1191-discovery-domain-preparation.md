@@ -1,5 +1,8 @@
 # Field discovery domain preparation — node #1191
 
+Historical parked-draft receipt. The later implementation and settled 1,000 km
+radius are recorded in [the implementation receipt](node-1191-discovery-implementation.md).
+
 This is an incomplete build, prepared unattended on 2026-11-07. It does not
 change play. `src/field-discovery.ts` is imported only by its headless test;
 neither the game nor the world save envelope uses it yet.

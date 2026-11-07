@@ -35,9 +35,15 @@ import { arrivalPoint } from "../src/system";
 import { MAX_DT } from "../src/units";
 import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import { gameMethods } from "./lib/game-methods";
+import { newWorld, discoverNearbyFields } from "../src/world-state";
 
 function subjectAt(index: number) {
 	const world = makeWorldAtSystem(47, index);
+	const commerceWorld = newWorld(47);
+	commerceWorld.galaxies[0].fieldDiscoveries = Array.from(
+		{ length: 256 },
+		(_, i) => `${i}:field-01` as const,
+	);
 	return Object.assign(
 		Object.create(
 			gameMethods(
@@ -50,10 +56,12 @@ function subjectAt(index: number) {
 					"velocityOf",
 					"targetParentId",
 					"stepCruise",
+					"stepFieldDiscovery",
 					"dropOut",
 				],
 				{
 					fieldContactsAt,
+					discoverNearbyFields,
 					isRockTargetId,
 					bodyVelocity,
 					bodyAccelerationBound,
@@ -71,6 +79,10 @@ function subjectAt(index: number) {
 		),
 		{
 			world,
+			commerceWorld,
+			adoptWorld(this: any, world: any) {
+				this.commerceWorld = world;
+			},
 			contacts: [],
 			selectableCache: null,
 			massesCache: null,
@@ -100,6 +112,39 @@ const fixture = makeWorldAtSystem(47, 0);
 const systems = fixture.galaxy.systems.filter(
 	(record) => systemFields(record, makeSystem(record, 0).contents).length > 0,
 );
+
+test("discovering during real cruise invalidates cached selection and permits targeting", () => {
+	const record = systems.find((r) =>
+		systemFields(r, makeSystem(r, 0).contents).some(
+			(p) => p.profile === "rare",
+		),
+	)!;
+	const g = subjectAt(record.index);
+	g.commerceWorld.galaxies[0].fieldDiscoveries = [];
+	const plan = systemFields(record, g.world.system.contents).find(
+		(p) => p.profile === "rare",
+	)!;
+	const before = g.selectable();
+	expect(before.some((c: any) => c.id === plan.id)).toBe(false);
+	g.world.ship.pos = add(fieldCentre(plan, 0), v3(0, 0, -2000));
+	g.nose = () => v3(0, 0, 1);
+	g.cruiseParams = {
+		...DEFAULT_CRUISE,
+		vMinKms: 100000,
+		vMaxKms: 100000,
+		vicinityKm: 0,
+		dropSpeedKms: 100000,
+	};
+	g.stepCruise(MAX_DT, null);
+	expect(g.commerceWorld.galaxies[0].fieldDiscoveries).toContain(
+		`${record.index}:${plan.id}`,
+	);
+	const after = g.selectable();
+	expect(after).not.toBe(before);
+	expect(after.some((c: any) => c.id === plan.id)).toBe(true);
+	g.targetId = plan.id;
+	expect(g.targetBody().id).toBe(plan.id);
+});
 
 test("each generated field is selectable at its current centre, never a body or mass", () => {
 	expect(systems.length).toBeGreaterThan(0);
@@ -231,7 +276,11 @@ test("the scanner reads the same field contacts at the current clock", () => {
 	g.scannerContactBuffer = [];
 	g.orientation = { x: 0, y: 0, z: 0, w: 1 };
 	g.world.gameTime = 23456;
-	const field = fieldContactsAt(g.world.system, g.world.gameTime)[0];
+	const field = fieldContactsAt(
+		g.world.system,
+		g.world.gameTime,
+		g.commerceWorld.galaxies[0].fieldDiscoveries,
+	)[0];
 	g.world.ship.pos = add(field.pos, v3(0, 0, 50));
 	g.targetId = field.id;
 	g.refreshScannerContacts();

@@ -175,6 +175,7 @@ Each galaxy owns separate typed domains for:
 - sparse market stock deficits;
 - player legal status;
 - bounded causal capability timing, approved by #937;
+- discovered rare-field identities, approved by #1190 and built by #1191;
 - later explicitly approved domains.
 
 The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain stores the envelope-relative pair `(systemIndex, localCarrierId)`; combining it with the containing `galaxyIndex` reconstructs the full `CarrierKey`. `economy-trade.md` §5.5 records the same pair without inventing a second key name. A bare `Station.id` is not persistent identity. Any serialized embedded galaxy index must match its containing envelope or fail loudly. Sparse absence is meaningful, so the save format must carry domain integrity validation and reject a truncated or partially written snapshot atomically; the model must not reinterpret corruption as an untouched healthy carrier.
@@ -269,6 +270,16 @@ all fact-replacing production paths before retaining queue work across them.
 Queries before retained anchors refuse. Received legacy schema-3 integrity is
 checked before initialization at the migration clock; old work is not invented.
 The structural authority is `capability-operational-time.md`.
+
+**Rare-field discoveries (#1191)** are a bounded per-galaxy set of stable
+`systemIndex:field-01` identities. A missing set means empty; an empty set is
+omitted so existing world-schema-4 integrity bytes remain unchanged. Save
+envelope 19 admits this domain and the regional field sweep reading. Older
+envelopes load empty and refuse assembled discovery data. Discoveries survive
+field-generator and deposit migrations, including stable slots which no longer
+generate a field. Historical field sweep provenance likewise validates the
+stable rare slot rather than requiring a field to remain generated. Neither
+domain stores point geometry, survey facts or rock contents.
 
 ## 8. Derived effects
 

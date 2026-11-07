@@ -41,6 +41,7 @@ const WRITERS = [
 	"observeSystemRelay",
 	"setDeficits",
 	"setDepositRow",
+	"discoverNearbyFields",
 	"setLegalHeat",
 	// `legal.ts`'s lazy clear of the witnesses and the assault marks (H6),
 	// through `setLegalWitnesses` and `setLegalAssaulted`. A writer by

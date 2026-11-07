@@ -226,6 +226,9 @@ describe("the view set itself", () => {
 			["giant-fill", 5],
 			["refinery-cradle-berth", 2],
 			["mining-survey-surface", 0x5ee11e],
+			["field-discovery-unknown", 47],
+			["field-discovery-lead", 47],
+			["field-discovery-known", 47],
 			["mining-survey-navigation", 0x5ee11e],
 		]);
 		// Half the reason, held here. The other half — that the fixture has no
@@ -260,7 +263,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(98);
+		expect(VIEWS.length).toBe(101);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -850,7 +853,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 98)");
+		expect(html).toContain("Selected canonical views (3 of 101)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -887,7 +890,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–39.4s");
+		expect(html).toContain("· clock 0.6–40.6s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1174,6 +1177,9 @@ describe("the rim look row #480 added", () => {
 			"sky-at-the-rim",
 			"capability-market-damaged",
 			"mining-survey-surface",
+			"field-discovery-unknown",
+			"field-discovery-lead",
+			"field-discovery-known",
 			"mining-survey-navigation",
 			"capability-market-recovered",
 			"npc-departure",

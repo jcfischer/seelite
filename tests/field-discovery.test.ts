@@ -14,6 +14,29 @@ import {
 import { generateGalaxy, SYSTEMS_PER_GALAXY } from "../src/galaxy";
 import { generateContents } from "../src/system";
 import { add, v3 } from "../src/vec3";
+import {
+	newWorld,
+	parseWorld,
+	serializeWorld,
+	discoverNearbyFields,
+} from "../src/world-state";
+import { fieldContactsAt } from "../src/field-contact";
+import { makeWorldAtSystem } from "../src/sim";
+import { parseSweepReadings, sweepSources } from "../src/system-sweep";
+import {
+	newCommanderRecord,
+	parseSave,
+	serializeSave,
+	SAVE_SCHEMA_VERSION,
+} from "../src/save-envelope";
+import { fnv1a } from "../src/rng";
+import { readFileSync } from "node:fs";
+import {
+	SaveStore,
+	CommanderCatalog,
+	memorySaveBackend,
+	memorySlotLocks,
+} from "../src/save-store";
 
 const seed = 47;
 const galaxyIndex = 0;
@@ -28,6 +51,242 @@ const firstKey =
 	`${first.record.index}:${first.plan.id}` as `${number}:field-${string}`;
 const secondKey =
 	`${second.record.index}:${second.plan.id}` as `${number}:field-${string}`;
+
+test("production discovery uses exactly 1000 km without a scanner and persists by galaxy", () => {
+	const world = newWorld(seed);
+	const centre = fieldCentre(first.plan, 0);
+	const args = { record: first.record, contents: first.contents, gameTime: 0 };
+	expect(
+		discoverNearbyFields(world, {
+			...args,
+			shipPos: add(centre, v3(1000.01, 0, 0)),
+		}),
+	).toBe(world);
+	const discovered = discoverNearbyFields(world, {
+		...args,
+		shipPos: add(centre, v3(0, 0, 1000)),
+	});
+	expect(discovered.galaxies[0].fieldDiscoveries).toEqual([firstKey]);
+	expect(discovered.galaxies[1].fieldDiscoveries).toEqual([]);
+	expect(discoverNearbyFields(discovered, { ...args, shipPos: centre })).toBe(
+		discovered,
+	);
+	const restored = parseWorld(serializeWorld(discovered));
+	expect(restored.galaxies[0].fieldDiscoveries).toEqual([firstKey]);
+	expect(restored.galaxies[0].deposits).toEqual(world.galaxies[0].deposits);
+});
+
+test("unknown rare contacts are hidden while charted contacts and physical plans remain", () => {
+	const sim = makeWorldAtSystem(seed, first.record.index);
+	expect(
+		fieldContactsAt(sim.system, 0, []).some((c) => c.id === first.plan.id),
+	).toBe(false);
+	expect(systemFields(sim.system.record, sim.system.contents)).toContainEqual(
+		first.plan,
+	);
+	expect(
+		fieldContactsAt(sim.system, 0, [firstKey]).some(
+			(c) => c.id === first.plan.id,
+		),
+	).toBe(true);
+	const charted = galaxy.systems.find((r) =>
+		systemFields(r, generateContents(r)).some((p) => p.profile === "charted"),
+	)!;
+	expect(
+		fieldContactsAt(makeWorldAtSystem(seed, charted.index).system, 0, []).some(
+			(c) => c.id === "field-00",
+		),
+	).toBe(true);
+});
+
+test("a fast flight frame discovers across the radius and rejects a near miss", () => {
+	const world = newWorld(seed);
+	const centre = fieldCentre(first.plan, 0);
+	const context = {
+		record: first.record,
+		contents: first.contents,
+		gameTime: 0,
+	};
+	const crossed = discoverNearbyFields(world, {
+		...context,
+		previous: { shipPos: add(centre, v3(-2000, 0, 0)), gameTime: 0 },
+		shipPos: add(centre, v3(2000, 0, 0)),
+	});
+	expect(crossed.galaxies[0].fieldDiscoveries).toEqual([firstKey]);
+	const missed = discoverNearbyFields(world, {
+		...context,
+		previous: { shipPos: add(centre, v3(-2000, 1001, 0)), gameTime: 0 },
+		shipPos: add(centre, v3(2000, 1001, 0)),
+	});
+	expect(missed).toBe(world);
+});
+
+test("field sweep provenance is regional, aged independently, and cannot identify or discover", () => {
+	const world = newWorld(seed);
+	const rows = sweepSources(world, 0, first.record.index);
+	const row = rows.find((r) => r.kind === "field")!;
+	expect(row).toBeDefined();
+	expect(row.region).toEqual({ kind: "system-space" });
+	expect(row.observedAt).toBe(0);
+	expect(world.galaxies[0].fieldDiscoveries).toEqual([]);
+	expect(
+		parseSweepReadings(rows, { ...world, gameTime: 7200 }, SAVE_SCHEMA_VERSION),
+	).toEqual(rows);
+	expect(() => parseSweepReadings([row], world, 18)).toThrow();
+	expect(() =>
+		parseSweepReadings(
+			[
+				{
+					...row,
+					region: {
+						kind: "station-surrounds",
+						stationId: first.contents.stations[0].id,
+					},
+				},
+			],
+			world,
+			SAVE_SCHEMA_VERSION,
+		),
+	).toThrow();
+	expect(() =>
+		parseSweepReadings([{ ...row, pos: v3() }], world, SAVE_SCHEMA_VERSION),
+	).toThrow();
+});
+
+test("historical discovery and source survive a generator no longer populating the stable rare slot", () => {
+	const absent = galaxy.systems.find(
+		(r) =>
+			!systemFields(r, generateContents(r)).some((p) => p.profile === "rare"),
+	)!;
+	const world = { ...newWorld(seed), gameTime: 7200 };
+	world.galaxies[0].fieldDiscoveries = [`${absent.index}:field-01`];
+	const row = {
+		id: `sweep:0:${absent.index}:field-01`,
+		kind: "field" as const,
+		galaxyIndex: 0,
+		systemIndex: absent.index,
+		source: "own-sensors" as const,
+		observedAt: 0,
+		region: { kind: "system-space" as const },
+	};
+	const commander = { ...newCommanderRecord("courier"), sweepReadings: [row] };
+	const loaded = parseSave(
+		JSON.parse(JSON.stringify(serializeSave({ world, commander }))),
+	);
+	expect(loaded.world.galaxies[0].fieldDiscoveries).toEqual([
+		`${absent.index}:field-01`,
+	]);
+	expect(loaded.commander.sweepReadings).toEqual([row]);
+	expect(
+		sweepSources(loaded.world, 0, absent.index).some((r) => r.kind === "field"),
+	).toBe(false);
+	expect(() =>
+		parseSweepReadings(
+			[{ ...row, id: `sweep:0:${absent.index}:field-00` }],
+			world,
+			SAVE_SCHEMA_VERSION,
+		),
+	).toThrow();
+});
+
+test("save19 round trips discoveries; authentic save18 begins unknown and refuses assembled discoveries", () => {
+	const world = discoverNearbyFields(newWorld(seed), {
+		record: first.record,
+		contents: first.contents,
+		shipPos: fieldCentre(first.plan, 0),
+		gameTime: 0,
+	});
+	const saved = serializeSave({
+		world,
+		commander: newCommanderRecord("courier"),
+	});
+	expect(parseSave(saved).world.galaxies[0].fieldDiscoveries).toEqual([
+		firstKey,
+	]);
+	const raw = serializeSave({
+		world: newWorld(seed),
+		commander: newCommanderRecord("courier"),
+	}) as any;
+	raw.saveSchemaVersion = 18;
+	const rehash = () => {
+		const { integrity, ...body } = raw;
+		raw.integrity = fnv1a(JSON.stringify(body));
+	};
+	rehash();
+	expect(
+		parseSave(raw).world.galaxies.every((g) => g.fieldDiscoveries.length === 0),
+	).toBe(true);
+	raw.world = serializeWorld(world);
+	rehash();
+	expect(() => parseSave(raw)).toThrow(
+		"legacy world contains field discoveries",
+	);
+	const malformed = structuredClone(saved) as any;
+	malformed.world.galaxies[0].fieldDiscoveries.push("bad");
+	const { integrity: wi, ...wb } = malformed.world;
+	malformed.world.integrity = fnv1a(JSON.stringify(wb));
+	const { integrity: si, ...sb } = malformed;
+	malformed.integrity = fnv1a(JSON.stringify(sb));
+	expect(() => parseSave(malformed)).toThrow("field discovery");
+});
+
+test("immutable main c8a9f3c0 save18 migrates unknown without changing its source", () => {
+	const bytes = readFileSync(
+		new URL(
+			"./fixtures/discovery-legacy-save18-c8a9f3c0.json",
+			import.meta.url,
+		),
+		"utf8",
+	);
+	const raw = JSON.parse(bytes);
+	expect(raw.saveSchemaVersion).toBe(18);
+	const loaded = parseSave(raw);
+	expect(
+		loaded.world.galaxies.every((g) => g.fieldDiscoveries.length === 0),
+	).toBe(true);
+	expect(raw.world.galaxies[0].visited).toContain(4);
+	expect(loaded.world.galaxies[0].visited).toContain(4);
+	expect(JSON.stringify(raw)).toBe(JSON.stringify(JSON.parse(bytes)));
+});
+
+test("refused discovery bytes remain readable through real store export", async () => {
+	const backend = memorySaveBackend();
+	const locks = memorySlotLocks();
+	const raw = JSON.parse(
+		readFileSync(
+			new URL(
+				"./fixtures/discovery-legacy-save18-c8a9f3c0.json",
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+	raw.world.galaxies[0].fieldDiscoveries = [firstKey];
+	const { integrity: wi, ...wb } = raw.world;
+	raw.world.integrity = fnv1a(JSON.stringify(wb));
+	const { integrity: si, ...sb } = raw;
+	raw.integrity = fnv1a(JSON.stringify(sb));
+	const bytes = JSON.stringify(raw);
+	await backend.write("discovery", "live", raw);
+	const store = new SaveStore({
+		backend,
+		locks,
+		schedule: () => () => {},
+		current: () => ({
+			world: newWorld(seed),
+			commander: newCommanderRecord("courier"),
+		}),
+		slot: "discovery",
+	});
+	await expect(store.load("discovery")).rejects.toThrow(
+		"legacy world contains field discoveries",
+	);
+	expect(JSON.stringify(await backend.read("discovery", "live"))).toBe(bytes);
+	const exported = JSON.parse(
+		await new CommanderCatalog({ backend, locks }).exportSlot("discovery"),
+	);
+	expect(JSON.stringify(exported.live)).toBe(bytes);
+});
 
 test("old saves and empty discovery state write no new bytes", () => {
 	expect(parseFieldDiscoveries(undefined)).toEqual([]);

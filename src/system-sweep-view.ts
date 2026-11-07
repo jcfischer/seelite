@@ -17,6 +17,7 @@ export const SWEEP_KIND_LABEL: Record<SweepReading["kind"], string> = {
 	relay: "Pirate relay signal",
 	wreck: "Salvage wreck signal",
 	pressure: "Raider pressure",
+	field: "Rare asteroid field signal",
 };
 /** A pressure row names its strength in words and never in digits (node #769).
  * A row from a save older than strengths says so rather than guessing. */

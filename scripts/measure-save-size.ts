@@ -36,11 +36,6 @@ import { generateGalaxy } from "../src/galaxy";
 import { fieldRocks, systemFields } from "../src/asteroid-field";
 import { depositKey } from "../src/deposit-state";
 import { generateContents } from "../src/system";
-import {
-	newCommanderRecord,
-	serializeSave,
-	parseSave,
-} from "../src/save-envelope";
 import { advanceTo, capabilityAvailability } from "../src/world-state";
 import { COMMODITIES } from "../src/market";
 import {
@@ -554,63 +549,10 @@ priceDeposits(
 );
 priceDeposits("T6", 1, 3, true, "P3 typical: 3 fields worked, survey on row");
 
-/** Real timing-domain and complete-envelope cases; the refinery build supplies its actual payload fill here. */
-export function capabilitySaveCase(
-	seed: number,
-	coverage: "untouched" | "partly" | "all",
-	fillRefineryPayload?: (world: WorldState) => WorldState,
-) {
-	let world = advanceTo(newWorld(seed), 5000);
-	let generated = 0,
-		anchors = 0;
-	for (let galaxy = 0; galaxy < GALAXY_COUNT; galaxy++) {
-		const slots = [...enumerateCarriers(seed, galaxy)].filter(
-			(c) => c.kind === "capability",
-		);
-		generated += slots.length;
-		const selected =
-			coverage === "untouched"
-				? []
-				: coverage === "partly"
-					? slots.slice(0, 5)
-					: slots;
-		for (const c of selected) {
-			world.galaxies[galaxy].capabilityTime.anchors[c.key] =
-				capabilityAvailability(world, galaxy, c.key).state;
-			anchors++;
-		}
-	}
-	if (fillRefineryPayload) world = fillRefineryPayload(world);
-	const save = serializeSave({
-		world,
-		commander: newCommanderRecord("courier"),
-	});
-	const json = JSON.stringify(save);
-	const loaded = parseSave(JSON.parse(json));
-	const restored = loaded.world.galaxies.reduce(
-		(n, g) => n + Object.keys(g.capabilityTime.anchors).length,
-		0,
-	);
-	if (restored !== anchors)
-		throw new Error(
-			"capability anchors changed across complete-envelope readback",
-		);
-	const domains = JSON.stringify(world.galaxies.map((g) => g.capabilityTime));
-	return {
-		seed,
-		coverage,
-		galaxies: GALAXY_COUNT,
-		generated,
-		anchors,
-		timingPayloadUtf8: new TextEncoder().encode(domains).length,
-		timingPayloadUtf16: domains.length * 2,
-		completeEnvelopeUtf8: new TextEncoder().encode(json).length,
-		completeEnvelopeUtf16: json.length * 2,
-		refineryPayloadIncluded: !!fillRefineryPayload,
-	};
-}
+import { capabilitySaveCase } from "./lib/capability-save-case";
+export { capabilitySaveCase } from "./lib/capability-save-case";
 console.log(
-	"\nCapability timing: actual generated carriers, all eight galaxies, real complete-envelope round trips. Ordinary-domain saturation tables above omit capability observations/repairs but retain timing anchors required by their real raider causal rows; the following rows measure timing alone with other domains untouched and include every current envelope field. No production refinery queue or custody footprint is claimed; capabilitySaveCase accepts the later build's real eight-job/custody/maximum-payload fill hook.",
+	"\nCapability timing: actual generated carriers, all eight galaxies, real complete-envelope round trips. Ordinary-domain saturation tables above omit capability observations/repairs but retain timing anchors required by their real raider causal rows; the following rows measure timing alone with other domains untouched and include every current envelope field. No production refinery queue or custody footprint is claimed; capabilitySaveCase accepts a complete-envelope payload hook for independently measured additional domains.",
 );
 for (const seed of [1, 47, 0x5ee11e])
 	for (const coverage of ["untouched", "partly", "all"] as const) {

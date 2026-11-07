@@ -1,4 +1,5 @@
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
+import { discoverNearbyFields } from "./world-state";
 import {
 	type DepositKey,
 	type DepositRow,
@@ -3202,6 +3203,7 @@ class Game {
 	 *  which is why this is a field rather than a `readonly` built in the
 	 *  constructor — `performJump` clears it (#187). */
 	private selectableCache: Body[] | null = null;
+	private selectableDiscoveries: readonly string[] | null = null;
 	/** Producers register stable objects; only selection and scanner merge them. */
 	private readonly contacts: DisplayContact[] = [];
 	private registerContact(contact: DisplayContact) {
@@ -9165,6 +9167,18 @@ class Game {
 		this.sweepCharge = null;
 	}
 
+	private stepFieldDiscovery(previous: { shipPos: Vec3; gameTime: number }) {
+		this.adoptWorld(
+			discoverNearbyFields(this.commerceWorld, {
+				record: this.world.system.record,
+				contents: this.world.system.contents,
+				shipPos: this.world.ship.pos,
+				gameTime: this.world.gameTime,
+				previous,
+			}),
+		);
+	}
+
 	private stepSystemSweep() {
 		const before = this.sweepCharge;
 		if (!before) return;
@@ -13004,19 +13018,19 @@ class Game {
 		return this.massesCache;
 	}
 
-	/**
-	 * Everything selectable, in a stable order — stations first, then planets,
-	 * each by id. Stable so that cycling is a walk rather than a reshuffle as the
-	 * ship moves.
-	 *
-	 * Built **once**. The marker overlay walks this every frame and the set it
-	 * walks changes only when the system does; the sort is the expensive half,
-	 * because `localeCompare` is ICU collation rather than a comparison. The
-	 * order is position-independent, which is what makes one build enough.
-	 */
 	private selectable(): Body[] {
-		// Refresh even when membership is cached: fields orbit on the game clock.
-		const fields = fieldContactsAt(this.world.system, this.world.gameTime);
+		const known =
+			this.commerceWorld.galaxies[this.world.system.record.galaxy]
+				.fieldDiscoveries;
+		const fields = fieldContactsAt(
+			this.world.system,
+			this.world.gameTime,
+			known,
+		);
+		if (this.selectableDiscoveries !== known) {
+			this.selectableCache = null;
+			this.selectableDiscoveries = known;
+		}
 		if (!this.selectableCache) {
 			const order = {
 				station: 0,
@@ -18110,6 +18124,10 @@ class Game {
 		hands: HullHands,
 		demand: LinearDemand,
 	): HullStep {
+		const previous = {
+			shipPos: { ...this.world.ship.pos },
+			gameTime: this.world.gameTime,
+		};
 		// `before` is the approaches from the top of the step, for every station
 		// close enough to be flown into: a plane crossing is a property of the
 		// pair of frames, and the "before" half stops existing the moment the
@@ -18204,6 +18222,7 @@ class Game {
 		if (MINING_ON) this.stepExtraction(dt);
 		if (MINING_ON) this.stepDrill(dt);
 		this.stepSystemSweep();
+		this.stepFieldDiscovery(previous);
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
@@ -18627,6 +18646,10 @@ class Game {
 	 */
 	private stepCruise(dt: number, contactTargetAtFrameStart: Mass | null) {
 		if (!this.stepDetour(dt)) return;
+		const previous = {
+			shipPos: { ...this.world.ship.pos },
+			gameTime: this.world.gameTime,
+		};
 		const nose = this.nose();
 		const target = this.targetBody();
 		const targetMotion = target
@@ -18657,6 +18680,7 @@ class Game {
 		// stop with its blocker through the unconsumed interval.
 		advanceWorldClock(this.world, dt);
 		this.world.ship.pos = step.pos;
+		this.stepFieldDiscovery(previous);
 		this.cruiseSpeedKms = step.speedKms;
 		this.closingKms = step.closingKms;
 		this.world.ship.vel = scale(nose, step.speedKms);
@@ -21949,7 +21973,12 @@ class Game {
 				output: this.scannerContactBuffer,
 				flooredContacts: [
 					...this.contacts,
-					...fieldContactsAt(this.world.system, this.world.gameTime),
+					...fieldContactsAt(
+						this.world.system,
+						this.world.gameTime,
+						this.commerceWorld.galaxies[this.world.system.record.galaxy]
+							.fieldDiscoveries,
+					),
 				],
 			},
 		);

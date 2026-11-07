@@ -135,6 +135,9 @@ test("selection includes contacts without putting them in generated bodies or ma
 		{
 			world,
 			contacts: [contact],
+			commerceWorld: {
+				galaxies: Array.from({ length: 8 }, () => ({ fieldDiscoveries: [] })),
+			},
 			selectableCache: null,
 			massesCache: null,
 			massesAt: NaN,
