@@ -544,6 +544,42 @@ try {
 				distant.reason.includes(String(fixture.dropKm)),
 			JSON.stringify(distant),
 		);
+		await page.setViewportSize({ width: 640, height: 800 });
+		const narrow = await page.evaluate(
+			({ farId, nearId }) => {
+				const buttons = [
+					...document.querySelectorAll("[data-live-nav-target]"),
+				];
+				const far = buttons.find(
+					(button) => button.dataset.liveNavTarget === farId,
+				);
+				const near = buttons.find(
+					(button) => button.dataset.liveNavTarget === nearId,
+				);
+				const reason =
+					far.querySelector("[data-live-nav-disabled]") ??
+					far.querySelector("em");
+				const reasonBox = reason.getBoundingClientRect();
+				const buttonBox = far.getBoundingClientRect();
+				return {
+					nameHeight: far.firstElementChild.getBoundingClientRect().height,
+					nearNameHeight: near.firstElementChild.getBoundingClientRect().height,
+					reasonFits:
+						reasonBox.left >= buttonBox.left &&
+						reasonBox.right <= buttonBox.right,
+				};
+			},
+			{ farId: fixture.farId, nearId: fixture.nearIds[0] },
+		);
+		check(
+			"at narrow width the range refusal fits without squeezing the rock name",
+			narrow.nameHeight === narrow.nearNameHeight && narrow.reasonFits,
+			JSON.stringify(narrow),
+		);
+		await page.screenshot({
+			path: "probe-shots/mining-survey/navigation-narrow.png",
+		});
+		await page.setViewportSize({ width: 1280, height: 800 });
 		await page.screenshot({ path: "probe-shots/mining-survey/navigation.png" });
 		const chosen = fixture.nearIds[0];
 		await page.locator(`[data-live-nav-target="${chosen}"]`).click();
