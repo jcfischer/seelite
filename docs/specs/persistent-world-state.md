@@ -262,7 +262,10 @@ domain at world schema 4 / generator 11 / save envelope 18. It stores a timing
 genesis and at most one causal anchor per generated capability carrier. It does
 not store generated service tables, pressure counts, availability projections or
 outage history. Before a raider mutation or lazy recovery discards prior facts,
-the dependent-settlement seam runs and affected capability anchors are replaced.
+an explicitly supplied dependent-settlement callback runs and affected
+capability anchors are replaced. The callback is optional while no production
+dependent exists. The #1195 refinery build must integrate it centrally through
+all fact-replacing production paths before retaining queue work across them.
 Queries before retained anchors refuse. Received legacy schema-3 integrity is
 checked before initialization at the migration clock; old work is not invented.
 The structural authority is `capability-operational-time.md`.

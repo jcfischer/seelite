@@ -48,6 +48,12 @@ objective rows, and are not a saturated combined-world storage ceiling.
 
 Sage round 1 returned 12 suggestions and 3 nits, no blocker or important finding. Its verdict is posted verbatim on PR #1205; the response takes shared helpers, documentation corrections and explicit scope boundaries. Independent review also added missing/stale retained-anchor validation and switched the persistence probe from an intentionally read-only pinned location to a genuine unpinned seed-1 boot (actual start system 90).
 
+Round 2 returned 3 suggestions and 1 nit, no blocker or important finding. The
+spec now states the same optional-callback contract as the receipt. Remaining
+suggestions concern helper extraction, the pure query helper's export and named
+historical version constants; they are declined as maintenance preferences.
+Review stops under the map's suggestion/nit-only stopping rule.
+
 Final-HEAD browser selection and gate, and canonical before/after capture are pending. The new registered `probe-capability-outage` uses the actual page, world APIs, real console clicks, repair transition and browser save/reload. It buys fuel while the natural market outage is confirmed, checks a persistent notice beside an unrelated notice, refuses a damaged purchase, checks recovery with an actually stocked buy, and checks flag-off compatibility after reload.
 
 The canonical set adds owned `capability-market-damaged` and `capability-market-recovered` views on the mining flag. Principal visual approval remains required; an agent's probes and captures cannot provide that approval. This node remains open until its actual gates and required approval are complete.
