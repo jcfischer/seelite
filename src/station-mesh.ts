@@ -1723,6 +1723,7 @@ function buildCuboctahedron(
 			aperture.halfWidth,
 			aperture.halfHeight,
 		);
+		reportCuboctahedronNormals("before-aperture-ring", geometry);
 		appendRing(geometry, ringTriangles(outer, inner, face), aperture);
 		reportCuboctahedronNormals("after-aperture-ring", geometry);
 	}
