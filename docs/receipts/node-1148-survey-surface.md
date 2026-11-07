@@ -111,6 +111,32 @@ to retain the tested scope. Review stops under the repository's rule; final
 capture, selected browser gate and principal visual approval are reported on
 the PR before merge.
 
+## Capture pointer ownership correction
+
+The first complete after attempt at clean `0c478b4c` stopped after the crowded
+chart: the isolated chart's unchanged precondition still read system 44 after
+pointer parking. The exact consecutive pair also failed on clean base
+`1951dd63`. The isolated chart passed alone, so that run did not cover the
+failing transition. All failed and partial runs remain labelled as such.
+
+An external trace established that a foreign native pointerleave was filtered
+while the crowded point was owned. Chromium still changed its internal hit
+target. A subsequent real move to the park therefore emitted no chart leave,
+leaving the application's remembered hover intact. The correction is confined
+to the capture harness: re-enter the previous owned point with `page.mouse`
+before declaring the park and moving there. This restores a real trusted
+pointerleave at `(0, 0)`, accepted under park ownership. The original
+precondition, text and before/after shutter assertions remain unchanged; there
+are no synthetic events or runtime edits.
+
+Evidence: `/tmp/survey1148-chart-sequence-base.log` and
+`/tmp/survey1148-chart-sequence.log` retain the repeated failure;
+`/tmp/seelite-survey-1148/chart-event-trace.json` records the ingestion mismatch;
+`/tmp/survey1148-chart-roundtrip.log` records both original views passing with
+the real owned round trip and trusted leave event. The consecutive browser
+pair is the regression seam; existing headless capture tests inspect catalogue
+and wiring rather than browser hit-target behavior.
+
 ## Historical initial-worker verification
 
 - Headless: `tests/rock-survey-surface.test.ts` executes the shipped Game

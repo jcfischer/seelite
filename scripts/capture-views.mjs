@@ -1543,6 +1543,9 @@ try {
 		// while the chart may be mounted: released first, the physical cursor got
 		// in between the park and the placer and left another system labelled.
 		// Every other row is released.
+		const previousPointer = await page.evaluate(() => window.__capturePointer);
+		if (previousPointer)
+			await page.mouse.move(previousPointer.x, previousPointer.y);
 		await page.evaluate(
 			(own) => {
 				window.__capturePointer = own;
