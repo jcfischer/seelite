@@ -74,6 +74,14 @@ test("capability identity accepts supported namespace endpoints and refuses inva
 		expect(() => capabilitySlots(systemIndex, station)).toThrow();
 });
 
+test("world capability queries preserve empty intervals and refuse reversed work", () => {
+	const world = advanceTo(newWorld(seed), 100);
+	expect(operationalDuration(world, 0, key, 0, 0)).toBe(0);
+	expect(operationalDuration(world, 0, key, 50, 50)).toBe(0);
+	expect(() => operationalDuration(world, 0, key, 100, 99)).toThrow();
+	expect(() => operationalDuration(world, 0, key, 0, 101)).toThrow();
+});
+
 test("real remote raider recovery boundaries settle FIFO work before replacement", () => {
 	let w = newWorld(seed);
 	const raiders = raiderSlots(record.index, record.government);

@@ -172,21 +172,34 @@ stream. Approved odds fixtures independently pin zero, partial and full
 pressure and an empty roster. The earlier statistical test obtained its
 expected odds from the same production function, so changing that function
 could change both sides. Added cases also check zero-length retained intervals,
-refusal of reversed intervals and unsupported identity/time values, and
+refusal of reversed intervals at both the pure and production-world query
+seams, unsupported identity/time values, and
 supported namespace endpoints. Console tests cover each independent service,
 healthy/absent projections, unrelated notices and healing only the matching
 refusal while other damage remains.
 
-Ten explicit temporary mutants fail their named targeted tests: low-32-bit
+Eleven explicit temporary mutants fail their named targeted tests: low-32-bit
 cycle alias, incorrect government base, incorrect odds, ignored partial
-pressure, rejected empty roster, rejected zero-length interval, accepted invalid
+pressure, rejected empty roster, rejected zero-length intervals at both query
+seams, accepted invalid
 initial clock, rejected maximum world seed, hidden non-market damage and
 prematurely cleared damage refusal. All production files are restored
 byte-for-byte. Logs are
-`/tmp/outages1194-followup-{cycle-high-bits,approved-base,approved-odds,partial-pressure,empty-roster,zero-interval,initial-clock,seed-endpoint,independent-notice,premature-healing}-mutant.log`.
+`/tmp/outages1194-followup-{cycle-high-bits,approved-base,approved-odds,partial-pressure,empty-roster,zero-interval,world-zero-interval,initial-clock,seed-endpoint,independent-notice,premature-healing}-mutant.log`.
 
-Affected tests pass **250 tests / 125,804 assertions across nine files** in
+Affected tests pass **251 tests / 125,808 assertions across nine files** in
 `/tmp/outages1194-followup-affected.log`. This is not a new whole-instrument
 mutation score or a complete full-suite rerun. Remaining advisory survivors
 require individual interpretation; exact error-text assertions or removal of a
 redundant refusal guard are not automatically meaningful coverage targets.
+
+The follow-up Sage round returned three suggestions and no blocker or important
+finding. The description now explicitly names commodity sales as gated, and the
+interval tests reach `operationalDuration` as well as the pure helper. Removal
+of the future refinery fill hook is declined: the brief requests a real-payload
+extension point, and the instrument calls `capabilitySaveCase` for its nine
+current cases. The unused callback is for the later production payload; its
+integration, including how to import an instrument with top-level measurement
+effects, belongs to the refinery build. This amendment claims no reusable
+side-effect-free library or measured future queue. Review stops under the map's
+suggestion-only rule.
