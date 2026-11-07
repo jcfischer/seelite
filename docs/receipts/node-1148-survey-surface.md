@@ -92,6 +92,11 @@ render inputs to rebased base `1951dd63`, not a newly captured `1951dd63` run.
 The root reviewer independently checked this equality, and the implementation
 worker repeated the checks:
 
+This equality is for source, assets and capture configuration. It does not
+assert identical native-input history between runs. The earlier complete
+baseline and the later failing pair can therefore coexist without a source
+change.
+
 - Both revisions have `src` tree `0973c050a275a4699d51736a85bf0ed56e5c072a`.
 - Both have `public` tree `1aab83bc746708b5d2767eb29fceeddabdf84183`.
 - `git diff --exit-code 5786c618 1951dd63 -- src public` plus the capture script,
@@ -119,12 +124,13 @@ pointer parking. The exact consecutive pair also failed on clean base
 `1951dd63`. The isolated chart passed alone, so that run did not cover the
 failing transition. All failed and partial runs remain labelled as such.
 
-An external trace established that a foreign native pointerleave was filtered
+An external trace established that an unowned trusted pointerleave was filtered
 while the crowded point was owned. Chromium still changed its internal hit
 target. A subsequent real move to the park therefore emitted no chart leave,
 leaving the application's remembered hover intact. A real owned round trip
 initially passed but then failed the committed pair again; its synchronization
-premise was unreliable while foreign native input continued. That attempted
+premise was unreliable while unowned trusted input continued. The trace does
+not identify which human or process generated those events. That attempted
 pointer compensation is discarded.
 
 The final correction is confined to the capture harness: each independent
@@ -140,10 +146,21 @@ Evidence: `/tmp/survey1148-chart-sequence-base.log` and
 `/tmp/seelite-survey-1148/chart-event-trace.json` records the ingestion mismatch;
 `/tmp/survey1148-chart-roundtrip.log` retains the initial experimental pass;
 `/tmp/survey1148-chart-fixed-check.log` records its later failure;
-`/tmp/survey1148-chart-lifecycle.log` records both original views passing through
-the actual Navigation/Galaxy Map lifecycle with null initial hover. The consecutive browser
-pair is the regression seam; existing headless capture tests inspect catalogue
-and wiring rather than browser hit-target behavior.
+`/tmp/survey1148-chart-lifecycle.log` records the external chart-remount pair;
+`/tmp/survey1148-chart-lifecycle-committed.log` records the actual committed pair
+passing with null initial hover. This pair is a regression for independent
+shot setup, not a claim that a suppressed leave now reaches an existing chart.
+The Navigation console browser probe covers the running chart's ordinary real
+hover, release-distance, drag-clear and tab-disposal contracts, not
+capture-filter interference or a dedicated outside-canvas leave check. Existing headless
+capture tests inspect catalogue and wiring rather than browser hit targets.
+
+Scoped Sage round 6 reviewed confirmed `ebde469a`, and its returned marker
+matches. It returned one suggestion and three nits, with no important or blocker
+finding. Provenance and coverage wording are clarified above. The fixture's
+returned field, cue and row metadata is retained for the external focused
+capture artifacts. Optional unused-import cleanup is declined. Review stops
+under the repository rule; no further prose-review round is required.
 
 ## Historical initial-worker verification
 
