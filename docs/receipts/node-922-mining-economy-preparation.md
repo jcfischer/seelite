@@ -50,8 +50,24 @@ production recovery enumeration, saved queue integration or world-state proof.
 
 ```sh
 bun scripts/measure-mining-economy.ts --inventory
-bun scripts/measure-mining-economy.ts --batch /tmp/explicit-batch.json
 bun test tests/mining-economy.test.ts tests/exact-amount.test.ts
+```
+
+Create and run the explicitly labelled regression fixture:
+
+```sh
+cat > /tmp/explicit-batch.json <<'JSON'
+{
+  "kind": "fixture",
+  "provenance": "node 922 regression numbers only; no candidate approval",
+  "batch": {
+    "family": "platinum", "grade": "poor", "inputT": 4,
+    "purchaseCrPerT": 10, "rawBidCrPerT": 15, "feeCrPerT": 2,
+    "productBidCrPerNativeUnit": 100, "freeHoldT": 0, "collectUnits": 1
+  }
+}
+JSON
+bun scripts/measure-mining-economy.ts --batch /tmp/explicit-batch.json
 ```
 
 A batch JSON object requires `kind` (`fixture` or `candidate`), explicit
@@ -61,6 +77,9 @@ collectUnits. An optional `productMarket` supplies seed, galaxy, system,
 stationId, gameTimeS, holdT and deficit instead of a supplied product bid; giving
 both refuses. All cash output uses the canonical #940 signed-money encoding,
 without display rounding. Every report remains explicitly incomplete.
+Market-derived reports preserve the full productMarket input alongside the
+resolved bid. Tests compare nonzero game-clock bids against the actual console
+projection and exercise both the generated-price CLI path and ambiguous inputs.
 
 The CLI regression uses test numbers only: four tonnes poor platinum ore,
 10 Cr/t purchase, 15 Cr/t raw bid, 2 Cr/t fee and 100 Cr/kg product bid. Raw
@@ -75,6 +94,8 @@ venue gating and deficit sensitivity; and CLI provenance/output behavior.
 Logs: /tmp/mining922-{red,headless,tsc,format,lint,comments,wiring,build}.log.
 Readiness JSON: /tmp/mining922-inventory.json. Sage and final git-based browser
 selection evidence are recorded on the draft PR.
+These logs are machine-local evidence pointers; the source, tests and full
+fixture above make the checks portable without relying on those files.
 
 ## Still owed
 

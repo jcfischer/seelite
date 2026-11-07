@@ -28,6 +28,8 @@ import {
 } from "../src/rock-survey";
 import { generateContents } from "../src/system";
 
+const GRAMS_PER_TONNE = 1_000_000;
+
 const PRODUCTS = {
 	silicate: "Minerals",
 	metallic: "Alloys",
@@ -64,7 +66,8 @@ export function recipeFor(family: OreFamily, grade: OreGrade) {
 	return {
 		product,
 		yieldGPerT: YIELD_G[family][ORE_GRADES.indexOf(grade)],
-		nativeUnitG: good.unit === "t" ? 1000000 : good.unit === "kg" ? 1000 : 1,
+		nativeUnitG:
+			good.unit === "t" ? GRAMS_PER_TONNE : good.unit === "kg" ? 1000 : 1,
 		occupiesHold: good.unit === "t",
 	};
 }
@@ -86,7 +89,7 @@ export function analyzeBatch(candidate: BatchCandidate) {
 	const recipe = recipeFor(candidate.family, candidate.grade);
 	const tonnes = whole("input tonnes", candidate.inputT);
 	if (tonnes === 0) throw new Error("mining economy: empty batch");
-	const inputG = whole("input grams", tonnes * 1000000);
+	const inputG = whole("input grams", tonnes * GRAMS_PER_TONNE);
 	const productG = whole("product grams", tonnes * recipe.yieldGPerT);
 	const units = whole("collection units", candidate.collectUnits);
 	const freeHoldT = nonnegative("free hold tonnes", candidate.freeHoldT);
@@ -96,23 +99,13 @@ export function analyzeBatch(candidate: BatchCandidate) {
 		throw new Error("mining economy: collection exceeds capacity");
 	const price = (name: string, value: number) =>
 		quoteFromNumber(nonnegative(name, value));
-	const inputMass = massFromNative(tonnes, 1000000);
-	const purchaseCost = quoteMass(
-		price("purchase quote", candidate.purchaseCrPerT),
-		inputMass,
-		1000000,
-	);
-	const fee = quoteMass(
-		price("fee quote", candidate.feeCrPerT),
-		inputMass,
-		1000000,
-	);
+	const inputMass = massFromNative(tonnes, GRAMS_PER_TONNE);
+	const perTonne = (name: string, value: number) =>
+		quoteMass(price(name, value), inputMass, GRAMS_PER_TONNE);
+	const purchaseCost = perTonne("purchase quote", candidate.purchaseCrPerT);
+	const fee = perTonne("fee quote", candidate.feeCrPerT);
 	const committedCost = money.add(purchaseCost, fee);
-	const rawProceeds = quoteMass(
-		price("raw bid", candidate.rawBidCrPerT),
-		inputMass,
-		1000000,
-	);
+	const rawProceeds = perTonne("raw bid", candidate.rawBidCrPerT);
 	const collectedG = whole("collected grams", units * recipe.nativeUnitG);
 	const productProceeds = quoteMass(
 		price("product bid", candidate.productBidCrPerNativeUnit),
@@ -298,6 +291,7 @@ if (import.meta.main) {
 			kind: input.kind,
 			provenance: input.provenance,
 			inputs: batch,
+			productMarket: input.productMarket,
 			productQuoteSource,
 			batch: analyzeBatch(batch),
 			moneyEncoding:

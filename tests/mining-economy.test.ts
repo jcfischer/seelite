@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { money, signedMoney } from "../src/exact-amount";
 import { generateGalaxy } from "../src/galaxy";
 import { generateContents } from "../src/system";
+import { marketStationOf } from "../src/market";
+import { stationMarketScreen } from "../src/station-console";
 import {
 	analyzeBatch,
 	advanceCandidateQueue,
@@ -237,6 +239,22 @@ test("generated product bids keep current market venue gates and stock-memory se
 	expect(productBidAt({ ...fixture, deficit: 40 }, "Gold")).toBeGreaterThan(
 		bid,
 	);
+	const observed = new Set<number>();
+	for (const gameTimeS of [0, 1847, 3601, 7207, 12345]) {
+		const row = stationMarketScreen({
+			station: marketStationOf(station, record.seed),
+			economy: record.economy,
+			gameTimeMin: gameTimeS / 60,
+			displayTL: record.displayTL,
+			deficitOf: () => 20,
+			holdT: 20,
+			cargo: {},
+		}).find((r) => r.commodity.name === "Gold")!;
+		const quote = productBidAt({ ...fixture, gameTimeS, deficit: 20 }, "Gold");
+		expect(quote).toBe(row.sellCr!);
+		observed.add(quote);
+	}
+	expect(observed.size).toBeGreaterThan(1);
 	const outpostRecord = records.find((r) =>
 		generateContents(r).stations.some((s) => s.type === "outpost"),
 	)!;
@@ -279,6 +297,51 @@ test("the CLI labels fixture output incomplete and refuses an unprovenanced cand
 			signedMoney.fromNumber(52),
 		);
 		expect(report.limitations.length).toBeGreaterThan(0);
+		const record = generateGalaxy(47, 0).systems.find((r) =>
+			generateContents(r).stations.some((s) => s.type === "trade"),
+		)!;
+		const productMarket = {
+			seed: 47,
+			galaxy: 0,
+			system: record.index,
+			stationId: generateContents(record).stations.find(
+				(s) => s.type === "trade",
+			)!.id,
+			gameTimeS: 3601,
+			holdT: 20,
+			deficit: 20,
+		};
+		const { productBidCrPerNativeUnit: _suppliedBid, ...withoutBid } = batch;
+		writeFileSync(
+			path,
+			JSON.stringify({
+				kind: "fixture",
+				provenance: "generated fixture at a stated clock",
+				batch: withoutBid,
+				productMarket,
+			}),
+		);
+		const quoted = invoke();
+		expect(quoted.status).toBe(0);
+		const quotedReport = JSON.parse(quoted.stdout);
+		expect(quotedReport.inputs.productBidCrPerNativeUnit).toBe(
+			productBidAt(productMarket, "Platinum"),
+		);
+		expect(quotedReport.productMarket).toEqual(productMarket);
+		expect(quotedReport.productQuoteSource).toContain("shipped marketRow");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				kind: "fixture",
+				provenance: "ambiguous fixture",
+				batch,
+				productMarket,
+			}),
+		);
+		const ambiguous = invoke();
+		expect(ambiguous.status).not.toBe(0);
+		expect(ambiguous.stdout).toBe("");
+		expect(ambiguous.stderr).toContain("not both");
 		writeFileSync(path, JSON.stringify({ kind: "candidate", batch }));
 		const bad = invoke();
 		expect(bad.status).not.toBe(0);
