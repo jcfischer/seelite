@@ -420,6 +420,7 @@ import {
 	type FloorTone,
 	type HeadLook,
 	type NavFilter,
+	type NavBody,
 	type NavRow,
 	type ScannerContact,
 	flightFloorCells,
@@ -1539,7 +1540,6 @@ const positiveParam = (name: string, fallback: number): number => {
 	const v = Number(MINING_QUERY.get(name));
 	return Number.isFinite(v) && v > 0 ? v : fallback;
 };
-const DEEP_MOUTH_RADIUS_SHARE = 0.85;
 const SURVEY_GRADE_SHORT = {
 	poor: "POOR",
 	standard: "STD",
@@ -5099,18 +5099,7 @@ class Game {
 				this.updateCockpit();
 			},
 			onSelectTarget: (id) => {
-				// **Through `selectable()`, not through `byId`.** `byId` holds
-				// moons, which the list deliberately omits and `cycleTarget`
-				// cannot reach — accepting one here would make the list's stated
-				// reason for omitting them false, and give the player a target
-				// `T` could never return to.
-				if (!this.selectable().some((body) => body.id === id)) {
-					this.consolePress(false);
-					return;
-				}
-				this.targetId = id;
-				this.consolePress(true);
-				this.updateCockpit();
+				this.selectNavigationTarget(id);
 			},
 			onStationTab: (tab) => {
 				if (tab === "Requests" && this.stationConsoleTab !== "Requests")
@@ -9290,7 +9279,8 @@ class Game {
 	}
 
 	private surveyHold: SurveyHold = beginSurveyHold();
-	deepCueRender: { x: number; y: number; facing: boolean } | null = null;
+	deepCueRender: { x: number; y: number; facing: boolean; mouth: Vec3 } | null =
+		null;
 
 	fitPrototypeMiningLaser(writesNothing: boolean) {
 		if (!writesNothing) return;
@@ -10560,7 +10550,7 @@ class Game {
 		);
 		if (!reading?.deepDir) return;
 		const d = rockDirectionNow(ref, reading.deepDir, this.world.gameTime);
-		const r = ref.rock.radiusKm * DEEP_MOUTH_RADIUS_SHARE;
+		const r = ref.rock.radiusKm * this.rockShape(ref).radiusAt(reading.deepDir);
 		const mouth = {
 			x: ref.pos.x + d.x * r,
 			y: ref.pos.y + d.y * r,
@@ -10584,13 +10574,17 @@ class Game {
 		ctx.arc(at.x, at.y, 7, 0, Math.PI * 2);
 		ctx.stroke();
 		ctx.font = "11px Menlo, monospace";
-		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x + 11, at.y + 4);
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x, at.y + 18);
 		ctx.restore();
-		this.deepCueRender = { x: at.x, y: at.y, facing };
+		this.deepCueRender = { x: at.x, y: at.y, facing, mouth };
 	}
 
-	private surveyDesignation(id: string): string {
-		const ref = this.rockRef(id);
+	private surveyDesignation(
+		id: string,
+		ref: RockRef | null = this.rockRef(id),
+	): string {
 		if (!ref) return "ROCK · OUT OF RANGE";
 		const reading = surveyReading(
 			this.rockContentsOf(ref),
@@ -11461,6 +11455,12 @@ class Game {
 		this.etaAt = this.world.gameTime;
 	}
 
+	private displayTargetKm(target: Body | null, centreKm: number): number {
+		return MINING_ON && target?.kind === "rock"
+			? (this.rockRef(target.id)?.distKm ?? centreKm)
+			: centreKm;
+	}
+
 	private updateInstruments(
 		target: Body | null,
 		targetKm: number,
@@ -11478,7 +11478,10 @@ class Game {
 			scan.actor === undefined
 				? (target?.name ?? "")
 				: this.drawnName(scan.actor);
-		const targetText = target ? `${drawn}  ${range(targetKm)}` : "NO TARGET";
+		const instrumentKm = this.displayTargetKm(target, targetKm);
+		const targetText = target
+			? `${drawn}  ${range(instrumentKm)}`
+			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		// REL rides this instrument and not only the left console, which is
 		// hidden unless the pilot turns their head (`hud-and-scanner.md` §3).
@@ -19985,7 +19988,8 @@ class Game {
 			return;
 		}
 		const target = this.targetBody();
-		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const centreKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const targetKm = this.displayTargetKm(target, centreKm);
 		const velocity = this.velocityReadout();
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
@@ -21832,6 +21836,62 @@ class Game {
 		};
 	}
 
+	private navigationTargets(): NavBody[] {
+		const ordinary = this.selectable();
+		if (!MINING_ON) return ordinary;
+		const rocks = nearRocks(
+			this.fieldRockSets().filter(
+				({ plan }) => plan.id === this.frameField?.id,
+			),
+			this.world.ship.pos,
+			this.world.gameTime,
+			Infinity,
+		);
+		const selected = isRockTargetId(this.targetId)
+			? this.rockRef(this.targetId)
+			: null;
+		if (selected && !rocks.some(({ id }) => id === selected.id))
+			rocks.push(selected);
+		return [
+			...ordinary,
+			...rocks
+				.filter((ref) => {
+					if (ref.id === selected?.id) return true;
+					const row = this.rockDepositRow(ref);
+					return (
+						row?.surveyedAt !== undefined &&
+						surveyReading(
+							this.rockContentsOf(ref),
+							row,
+							this.world.gameTime,
+							SURVEY_LIFETIME_H,
+						) !== null
+					);
+				})
+				.map((ref) => ({
+					...rockContact(ref),
+					name: `Rock ${ref.rock.slot}`,
+					distanceKm: ref.distKm,
+					detail: this.surveyDesignation(ref.id, ref),
+					...(ref.distKm > ROCK_DROP_KM
+						? { disabledReason: `OUT OF RANGE · ${ROCK_DROP_KM} KM LIMIT` }
+						: {}),
+				})),
+		];
+	}
+
+	private selectNavigationTarget(id: string): boolean {
+		const row = this.navigationTargets().find((body) => body.id === id);
+		if (!row || row.disabledReason !== undefined) {
+			this.consolePress(false);
+			return false;
+		}
+		this.targetId = id;
+		this.consolePress(true);
+		this.updateCockpit();
+		return true;
+	}
+
 	/**
 	 * The Navigation console's target list.
 	 *
@@ -21855,18 +21915,13 @@ class Game {
 		}
 		const rows = projectNavTargets(
 			this.world.ship.pos,
-			// **`selectable()`, not `system.bodies`.** It is the one list that
-			// decides what can be targeted at all — `cycleTarget` walks it and
-			// `onSelectTarget` validates against it — so the list shows exactly
-			// what a click on it can do. Handing the projection every body and
-			// letting it hold its own kind rule would be a second owner, and the
-			// day a body kind is added the two answers diverge silently.
-			this.selectable(),
+			this.navigationTargets(),
 			this.targetId,
 			{
 				filter: this.navFilter,
 				previousOrder: this.navOrder,
 				etaFor: ({ id }) => {
+					if (isRockTargetId(id)) return null;
 					const cached = this.navEtaCache.get(id);
 					if (cached !== undefined) return cached;
 					const body = this.bodyFor(id);
@@ -21876,6 +21931,10 @@ class Game {
 				},
 			},
 		);
+		if (rows.some(({ kind }) => kind === "rock"))
+			rows.sort(
+				(a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id),
+			);
 		this.navOrder = rows.map(({ id }) => id);
 		return rows;
 	}
@@ -23366,7 +23425,7 @@ class Game {
 		// labels' order against it is unchanged by node #478.
 		let edgeLabel: MarkerLabelBounds | null = null;
 		const selectedLabel = (name: string, km: number) =>
-			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
+			`${name}  ${range(this.displayTargetKm(selectedBody, km))}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
 			}`;
 		if (raiderSelected)

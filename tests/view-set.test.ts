@@ -188,7 +188,7 @@ describe("the view set itself", () => {
 		// formatter decides to wrap, and whitespace after `(` is exactly the kind
 		// of change this row must stay silent about.
 		expect(loop).toMatch(
-			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",\s*view\.shot\.kind\s*===\s*"capability-outage",?\s*\);/,
+			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",\s*\["capability-outage", "mining-survey"\]\.includes\(view\.shot\.kind\),?\s*\);/,
 		);
 		// And no placer navigates on a fixture of its own any more. `PLACERS` is
 		// the object the loop dispatches through, so a `shot.seed` read inside it
@@ -225,6 +225,8 @@ describe("the view set itself", () => {
 			["ringed-giant", 5],
 			["giant-fill", 5],
 			["refinery-cradle-berth", 2],
+			["mining-survey-surface", 0x5ee11e],
+			["mining-survey-navigation", 0x5ee11e],
 		]);
 		// Half the reason, held here. The other half — that the fixture has no
 		// refinery — is already stronger than an assertion: `FIXTURE.stations`
@@ -258,7 +260,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(96);
+		expect(VIEWS.length).toBe(98);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -848,7 +850,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 96)");
+		expect(html).toContain("Selected canonical views (3 of 98)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -885,7 +887,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–38.6s");
+		expect(html).toContain("· clock 0.6–39.4s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1171,6 +1173,8 @@ describe("the rim look row #480 added", () => {
 			"cold-rocky-ice",
 			"sky-at-the-rim",
 			"capability-market-damaged",
+			"mining-survey-surface",
+			"mining-survey-navigation",
 			"capability-market-recovered",
 			"npc-departure",
 			"npc-arrival",
@@ -1247,3 +1251,21 @@ for (const suffix of ["approach", "flank", "range"])
 		expect(view?.shot.system).toBe(0);
 		expect(view?.covers).toContain(1152);
 	});
+
+test("the survey views show the surface cue and the owned rock Navigation readings", () => {
+	const survey = VIEWS.filter((view) => view.covers.includes(1148));
+	expect(survey.map((view) => view.name)).toEqual([
+		"mining-survey-surface",
+		"mining-survey-navigation",
+	]);
+	for (const view of survey) {
+		expect(view.shot.kind).toBe("mining-survey");
+		expect(view.shot.seed).toBe(0x5ee11e);
+		expect(view.shot.system).toBe(173);
+		expect(view.shot.hull).toBe("miner");
+	}
+	expect(survey.map((view) => view.shot.mode)).toEqual([
+		"surface",
+		"navigation",
+	]);
+});

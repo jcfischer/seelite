@@ -83,7 +83,12 @@ test("Navigation evaluates ETA for a selectable contact absent from the generate
 	};
 	const subject = Object.assign(
 		Object.create(
-			methods(["navRows"], { projectNavTargets, ETA_INTERVAL_S: 1 }),
+			methods(["navRows", "navigationTargets"], {
+				projectNavTargets,
+				isRockTargetId,
+				ETA_INTERVAL_S: 1,
+				MINING_ON: false,
+			}),
 		),
 		{
 			world,

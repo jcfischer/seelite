@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { gameUrl } from "./lib/game-url.mjs";
+import { placeMiningSurvey } from "./lib/mining-survey-fixture.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -143,10 +144,23 @@ try {
 			),
 			done.state.designation,
 		);
-		const glass = await page.evaluate(() => ({
-			selected: window.__seelite.selectedRender?.id ?? null,
-			deep: window.__seelite.deepCueRender,
-		}));
+		const glass = await page.evaluate(async () => {
+			const { range } = await import("/src/units.ts");
+			const g = window.__seelite;
+			return {
+				selected: g.selectedRender?.id ?? null,
+				selectedText: g.selectedRender?.text ?? "",
+				instrument: g.cockpit.targetInstrument.primaryText,
+				expected: range(g.surveyState().target.distKm),
+				deep: g.deepCueRender,
+			};
+		});
+		check(
+			"the actual glass label and target instrument agree on the close survey surface range",
+			glass.selectedText.includes(glass.expected) &&
+				glass.instrument.endsWith(glass.expected),
+			JSON.stringify(glass),
+		);
 		check(
 			"the glass brackets the selected rock",
 			glass.selected === done.state.target?.id,
@@ -162,7 +176,75 @@ try {
 			glass.deep !== null,
 			JSON.stringify(glass.deep),
 		);
+		const surface = await page.evaluate(async () => {
+			const { rockLocalVector } = await import("/src/rock-target.ts");
+			const { rockArchetype } = await import("/src/field-lod.ts");
+			const { ROCK_ASSETS } = await import("/src/rock-assets.ts");
+			const g = window.__seelite;
+			const cue = g.deepCueRender;
+			const ref = g.rockRef(g.targetId);
+			if (!cue?.mouth || !ref) return null;
+			const local = rockLocalVector(
+				ref,
+				{
+					x: cue.mouth.x - ref.pos.x,
+					y: cue.mouth.y - ref.pos.y,
+					z: cue.mouth.z - ref.pos.z,
+				},
+				g.world.gameTime,
+			);
+			const radius = Math.hypot(local.x, local.y, local.z);
+			const mouthDir = g.surveyState().contents.deepDir;
+			const h = ROCK_ASSETS.heightfields.fields[rockArchetype(ref.rock)];
+			return {
+				errorKm: Math.abs(
+					radius - ref.rock.radiusKm * g.rockShape(ref).radiusAt(mouthDir),
+				),
+				cellKm: (2 * ref.rock.radiusKm) / h.res,
+				directionError: Math.hypot(
+					local.x / radius - mouthDir.x,
+					local.y / radius - mouthDir.y,
+					local.z / radius - mouthDir.z,
+				),
+			};
+		});
+		check(
+			"the DEEP mark lies on the laser-cut heightfield along the mouth direction",
+			surface !== null &&
+				surface.errorKm < surface.cellKm &&
+				surface.directionError < 1e-5,
+			JSON.stringify(surface),
+		);
 		await page.screenshot({ path: "probe-shots/mining-survey/reading.png" });
+		const distances = await page.evaluate(async () => {
+			const { range } = await import("/src/units.ts");
+			const g = window.__seelite;
+			const limit = g.surveyState().figures.rangeKm;
+			const rows = [];
+			for (const km of [2, limit - 0.01, limit + 0.01]) {
+				await window.__standOff(km);
+				const state = g.surveyState();
+				rows.push({
+					km: state.target.distKm,
+					limit,
+					text: g.cockpit.targetInstrument.primaryText,
+					expected: `Rock  ${range(state.target.distKm)}`,
+					block: state.block,
+				});
+			}
+			return rows;
+		});
+		check(
+			"the target instrument shows the survey surface distance on both sides of its range limit",
+			distances.every(
+				(r) =>
+					r.text === r.expected &&
+					(r.km <= r.limit
+						? r.block === null
+						: /^OUT OF RANGE/.test(r.block ?? "")),
+			),
+			JSON.stringify(distances),
+		);
 		const far = await page.evaluate(async () => {
 			await window.__standOff(30);
 			return window.__seelite.surveyState().block;
@@ -411,7 +493,244 @@ try {
 			scoop.lost >= 1 && scoop.surfaceAfter === scoop.surface,
 			JSON.stringify(scoop),
 		);
+		const fixture = await placeMiningSurvey(page);
+		const navigation = await page.evaluate(() => {
+			const g = window.__seelite;
+			return g
+				.navRows()
+				.filter((row) => row.kind === "rock")
+				.map((row) => {
+					const button = [
+						...document.querySelectorAll("[data-live-nav-target]"),
+					].find((button) => button.dataset.liveNavTarget === row.id);
+					return {
+						...row,
+						text: button?.querySelector(".lc-nav-detail")?.textContent,
+						disabled: button?.disabled,
+						reason: button?.querySelector("[data-live-nav-disabled]")
+							?.textContent,
+					};
+				});
+		});
+		const expectedIds = [
+			fixture.selectedId,
+			...fixture.nearIds,
+			fixture.farId,
+		].sort();
+		const displayedRange = await page.evaluate(async () => {
+			const { range } = await import("/src/units.ts");
+			const g = window.__seelite;
+			const selected = g.navRows().find((row) => row.selected);
+			return {
+				expected: range(selected.distanceKm),
+				target: document.querySelector("[data-live-left-copy]")?.textContent,
+				instrument: g.cockpit.targetInstrument.primaryText,
+			};
+		});
+		check(
+			"Selected Target and the target instrument agree with the selected rock row's surface range",
+			displayedRange.target.includes(`Rock · ${displayedRange.expected}`) &&
+				displayedRange.instrument.endsWith(displayedRange.expected),
+			JSON.stringify(displayedRange),
+		);
+		check(
+			"Navigation lists the selected and current-field surveyed rocks only",
+			JSON.stringify(navigation.map((row) => row.id).sort()) ===
+				JSON.stringify(expectedIds) &&
+				!navigation.some((row) => row.id === fixture.expiredId),
+			JSON.stringify(navigation),
+		);
+		check(
+			"rock rows are nearest first and show the actual existing readings",
+			navigation.every(
+				(row, index) =>
+					row.text === row.detail &&
+					(index === 0 || navigation[index - 1].distanceKm <= row.distanceKm),
+			),
+			JSON.stringify(navigation),
+		);
+		const distant = navigation.find((row) => row.id === fixture.farId);
+		check(
+			"a known rock beyond targeting range remains readable with a disabled reason",
+			distant?.disabled &&
+				distant.distanceKm > fixture.dropKm &&
+				/OUT OF RANGE/.test(distant.reason) &&
+				distant.reason.includes(String(fixture.dropKm)),
+			JSON.stringify(distant),
+		);
+		await page.setViewportSize({ width: 640, height: 800 });
+		const narrow = await page.evaluate(
+			({ farId, nearId }) => {
+				const buttons = [
+					...document.querySelectorAll("[data-live-nav-target]"),
+				];
+				const far = buttons.find(
+					(button) => button.dataset.liveNavTarget === farId,
+				);
+				const near = buttons.find(
+					(button) => button.dataset.liveNavTarget === nearId,
+				);
+				const reasonBox = far
+					.querySelector("[data-live-nav-disabled]")
+					?.getBoundingClientRect();
+				const buttonBox = far.getBoundingClientRect();
+				return {
+					nameHeight: far.firstElementChild.getBoundingClientRect().height,
+					nearNameHeight: near.firstElementChild.getBoundingClientRect().height,
+					reasonFits:
+						reasonBox !== undefined &&
+						reasonBox.left >= buttonBox.left &&
+						reasonBox.right <= buttonBox.right,
+				};
+			},
+			{ farId: fixture.farId, nearId: fixture.nearIds[0] },
+		);
+		check(
+			"at narrow width the range refusal fits without squeezing the rock name",
+			narrow.nameHeight === narrow.nearNameHeight && narrow.reasonFits,
+			JSON.stringify(narrow),
+		);
+		await page.screenshot({
+			path: "probe-shots/mining-survey/navigation-narrow.png",
+		});
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await page.screenshot({ path: "probe-shots/mining-survey/navigation.png" });
+		const chosen = fixture.nearIds[0];
+		await page.locator(`[data-live-nav-target="${chosen}"]`).click();
+		const selected = await page.evaluate(() => ({
+			id: window.__seelite.targetId,
+			pointerLocked: document.pointerLockElement !== null,
+		}));
+		check(
+			"a real pointer click selects the nearby surveyed rock with pointer lock released",
+			selected.id === chosen && !selected.pointerLocked,
+			JSON.stringify(selected),
+		);
+		const refused = await page.evaluate((id) => {
+			const g = window.__seelite;
+			const before = g.targetId;
+			const accepted = g.selectNavigationTarget(id);
+			return { accepted, unchanged: g.targetId === before };
+		}, fixture.farId);
+		check(
+			"selection revalidation refuses the distant reading without changing the target",
+			refused.accepted === false && refused.unchanged,
+			JSON.stringify(refused),
+		);
+		const refreshed = await page.evaluate(async (id) => {
+			const g = window.__seelite;
+			const button = [
+				...document.querySelectorAll("[data-live-nav-target]"),
+			].find((button) => button.dataset.liveNavTarget === id);
+			const before = button.querySelector(".lc-nav-detail").textContent;
+			const at = g.world.gameTime;
+			const pos = { ...g.world.ship.pos };
+			const ref = g.rockRef(id);
+			g.putDepositRow(ref, { ...g.rockDepositRow(ref), surface: 1, at });
+			g.updateCockpit();
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			return {
+				before,
+				after: button.querySelector(".lc-nav-detail").textContent,
+				expected: g.navRows().find((row) => row.id === id).detail,
+				stationary:
+					at === g.world.gameTime &&
+					JSON.stringify(pos) === JSON.stringify(g.world.ship.pos),
+			};
+		}, chosen);
+		check(
+			"a changed reading repaints while the ship and clock remain still",
+			refreshed.stationary &&
+				refreshed.before !== refreshed.after &&
+				refreshed.after === refreshed.expected,
+			JSON.stringify(refreshed),
+		);
+		const expired = await page.evaluate(async (ids) => {
+			const D = await import("/src/deposit-state.ts");
+			const T = await import("/src/rock-target.ts");
+			const g = window.__seelite;
+			for (const id of ids) {
+				const ref = T.resolveRock(
+					g.fields,
+					id,
+					g.world.ship.pos,
+					g.world.gameTime,
+				);
+				g.putDepositRow(ref, {
+					...g.rockDepositRow(ref),
+					surveyedAt: g.world.gameTime - D.SURVEY_LIFETIME_H * 3600,
+				});
+			}
+			g.updateCockpit();
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			return {
+				selected: g.targetId,
+				rows: g
+					.navRows()
+					.filter((row) => row.kind === "rock")
+					.map((row) => row.id),
+				drawn: [...document.querySelectorAll("[data-live-nav-target]")]
+					.map((button) => button.dataset.liveNavTarget)
+					.filter((id) => id.startsWith("rock:")),
+			};
+		}, expectedIds);
+		check(
+			"at expiry only the selected rock stays in Navigation",
+			expired.selected === chosen &&
+				JSON.stringify(expired.rows) === JSON.stringify([chosen]) &&
+				JSON.stringify(expired.drawn) === JSON.stringify([chosen]),
+			JSON.stringify(expired),
+		);
+		await page.screenshot({
+			path: "probe-shots/mining-survey/navigation-expired.png",
+		});
 	}
+	await page.close();
+	const flagOffPage = await browser.newPage({
+		viewport: { width: 1280, height: 800 },
+	});
+	watch(flagOffPage);
+	await flagOffPage.goto(
+		gameUrl(origin, {
+			seed: CHARTED_FIELD_WORLD,
+			system: 173,
+			hull: "miner",
+			"no-save": "",
+			raider: "off",
+		}),
+	);
+	await bootedGame(flagOffPage, 90000);
+	const flagOff = await flagOffPage.evaluate(async () => {
+		const { range } = await import("/src/units.ts");
+		const g = window.__seelite;
+		g.clockHeld = true;
+		g.targetId = g.world.system.bodies.find((b) => b.kind === "station").id;
+		for (let i = 0; i < 2; i++)
+			await new Promise((r) => requestAnimationFrame(r));
+		const target = g.targetBody();
+		g.headLook = "left";
+		g.leftTab = "Navigation";
+		const rows = g.navRows();
+		return {
+			on: g.surveyState().on,
+			deep: g.deepCueRender,
+			text: g.cockpit.targetInstrument.primaryText,
+			expected: `${target.name}  ${range(g.targetRange())}`,
+			rows: rows.length,
+			rockRows: rows.filter(
+				(r) => r.kind === "rock" || r.id.startsWith("rock:"),
+			).length,
+		};
+	});
+	check(
+		"without mining=1 the ordinary instrument is unchanged and mining cues and rock navigation rows are absent",
+		!flagOff.on &&
+			flagOff.rows > 0 &&
+			flagOff.deep === null &&
+			flagOff.text === flagOff.expected &&
+			flagOff.rockRows === 0,
+		JSON.stringify(flagOff),
+	);
 } finally {
 	await browser.close();
 }

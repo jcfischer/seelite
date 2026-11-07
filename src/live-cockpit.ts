@@ -503,8 +503,10 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-sweep-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-height: 280px; overflow: auto; }
 .lc-sweep-list li { padding: 10px 12px; border-left: 3px solid #c39a60; background: #a0743012; }
 .lc-sweep-list small { color: #bfa57c; }
-.lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
-.lc-nav-row:hover { background: rgba(223, 122, 20, .14); }
+.lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 3px 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
+.lc-nav-row:not(:disabled):hover { background: rgba(223, 122, 20, .14); }
+.lc-nav-row:disabled { cursor: default; opacity: .65; }
+.lc-nav-detail { grid-column: 1 / -1; color: #e7b77d; font-size: 10px; line-height: 1.4; }
 .lc-nav-row[aria-current="true"] { background: rgba(223, 122, 20, .3); color: #fff0c9; }
 /* The pad's cursor. A ring *and* a wash rather than a ring alone: a 2px amber
    outline on an amber console was the principal's first finding on the flown
@@ -645,6 +647,8 @@ export class LiveCockpit {
 			name: HTMLSpanElement;
 			kind: HTMLElement;
 			range: HTMLElement;
+			detail?: HTMLSpanElement;
+			disabledReason?: HTMLSpanElement;
 		}
 	>();
 	private elements: CockpitElements | null = null;
@@ -916,7 +920,7 @@ export class LiveCockpit {
 		"[data-live-launch]",
 		"[data-live-launch-cancel]",
 		"[data-live-nav-kind]",
-		"[data-live-nav-target]",
+		"[data-live-nav-target]:not(:disabled)",
 		// **The rail's GALAXY MAP button, which is not a tab.** It carries
 		// `data-live-left-tab` and no `lc-tab` class, so dropping that attribute
 		// wholesale took it out of the walk *and* out of `stepTab`'s reach — a
@@ -1634,7 +1638,18 @@ export class LiveCockpit {
 			eta: navEta(row.etaSeconds),
 		}));
 		const key = cells
-			.map(({ row, range, eta }) => `${row.id}:${row.selected}:${range}:${eta}`)
+			.map(({ row, range, eta }) =>
+				JSON.stringify([
+					row.id,
+					row.selected,
+					row.name,
+					row.displayKind,
+					range,
+					eta,
+					row.detail,
+					row.disabledReason,
+				]),
+			)
 			.join("|");
 		if (key === this.lastNavKey) return;
 		this.lastNavKey = key;
@@ -1674,9 +1689,34 @@ export class LiveCockpit {
 				this.navRowsById.set(row.id, rowElements);
 			}
 			rowElements.button.setAttribute("aria-current", String(row.selected));
+			rowElements.button.disabled = row.disabledReason !== undefined;
+			rowElements.button.title = row.disabledReason ?? "";
 			rowElements.name.textContent = row.name;
 			rowElements.kind.textContent = row.displayKind.toUpperCase();
 			rowElements.range.textContent = `${rangeText} · ${eta}`;
+			if (row.detail !== undefined) {
+				if (!rowElements.detail) {
+					rowElements.detail = document.createElement("span");
+					rowElements.detail.className = "lc-nav-detail";
+					rowElements.button.append(rowElements.detail);
+				}
+				rowElements.detail.textContent = row.detail;
+			} else if (rowElements.detail) {
+				rowElements.detail.remove();
+				delete rowElements.detail;
+			}
+			if (row.disabledReason !== undefined) {
+				if (!rowElements.disabledReason) {
+					rowElements.disabledReason = document.createElement("span");
+					rowElements.disabledReason.className = "lc-nav-detail";
+					rowElements.disabledReason.dataset.liveNavDisabled = "";
+					rowElements.button.append(rowElements.disabledReason);
+				}
+				rowElements.disabledReason.textContent = row.disabledReason;
+			} else if (rowElements.disabledReason) {
+				rowElements.disabledReason.remove();
+				delete rowElements.disabledReason;
+			}
 			const current = navList.children.item(index);
 			if (current !== rowElements.item)
 				navList.insertBefore(rowElements.item, current);
