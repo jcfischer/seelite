@@ -13,6 +13,7 @@ export interface CapabilityTimeAnchor {
 	cycle: number;
 	phase: "up" | "down";
 	left: number;
+	endsAt?: number;
 	repaired: boolean;
 }
 
@@ -72,13 +73,16 @@ export function initialCapabilityTime(
 	const r = capabilityRates(c);
 	time(at);
 	const down = unit(c.seed, 0, "phase") < r.share;
+	const left =
+		(capabilityDuration(c.seed, 0) * (1 - unit(c.seed, 0, "remaining"))) /
+		(down ? 1 : r.odds);
+	const endsAt = down ? time(at + left) : undefined;
 	return {
 		at,
 		cycle: 0,
 		phase: down ? "down" : "up",
-		left:
-			(capabilityDuration(c.seed, 0) * (1 - unit(c.seed, 0, "remaining"))) /
-			(down ? 1 : r.odds),
+		left: down ? endsAt! - at : left,
+		...(down ? { endsAt } : {}),
 		repaired: false,
 	};
 }
@@ -94,7 +98,8 @@ export function validateCapabilityTime(
 	const a = value as CapabilityTimeAnchor;
 	if (
 		Object.keys(a).some(
-			(k) => !["at", "cycle", "phase", "left", "repaired"].includes(k),
+			(k) =>
+				!["at", "cycle", "phase", "left", "endsAt", "repaired"].includes(k),
 		) ||
 		!Number.isSafeInteger(a.cycle) ||
 		a.cycle < 0 ||
@@ -102,15 +107,19 @@ export function validateCapabilityTime(
 		a.left <= 0 ||
 		!["up", "down"].includes(a.phase) ||
 		typeof a.repaired !== "boolean" ||
-		(a.phase === "up" && a.repaired)
+		(a.phase === "up" && (a.repaired || a.endsAt !== undefined))
 	)
 		return fail();
 	time(a.at);
-	if (
-		a.left >
-		capabilityDuration(c.seed, a.cycle) / (a.phase === "up" ? r.odds : 1)
-	)
-		return fail();
+	const duration = capabilityDuration(c.seed, a.cycle);
+	if (a.phase === "down") {
+		if (
+			time(a.endsAt!) <= a.at ||
+			a.endsAt! > a.at + duration ||
+			a.left !== a.endsAt! - a.at
+		)
+			return fail();
+	} else if (a.left > duration / r.odds) return fail();
 	return { ...a };
 }
 
@@ -128,20 +137,25 @@ export function projectCapabilityTime(
 	while (a.at < to) {
 		const speed = a.phase === "up" ? multiplier : 1;
 		const span = a.left / speed;
-		const take = Math.min(span, to - a.at);
+		const end = a.phase === "down" ? a.endsAt! : a.at + span;
+		const completed = to >= end;
+		const next = Math.min(end, to);
+		const take = next - a.at;
 		if (a.phase === "up" || a.repaired) operational += take;
-		const next = a.at + take;
 		if (next === a.at) return fail();
 		a.at = next;
-		if (take < span) a.left -= take * speed;
+		if (!completed)
+			a.left = a.phase === "down" ? end - a.at : a.left - take * speed;
 		else if (a.phase === "up") {
 			a.phase = "down";
-			a.left = capabilityDuration(c.seed, a.cycle);
+			a.endsAt = time(a.at + capabilityDuration(c.seed, a.cycle));
+			a.left = a.endsAt - a.at;
 		} else {
 			a.phase = "up";
 			a.cycle++;
 			a.left = capabilityDuration(c.seed, a.cycle) / odds;
 			a.repaired = false;
+			delete a.endsAt;
 		}
 	}
 	return { state: a, operational };

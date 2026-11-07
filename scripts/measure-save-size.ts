@@ -180,7 +180,8 @@ interface Row {
 }
 
 function build(tier: Tier, fill?: (world: WorldState) => void): Row {
-	const world: WorldState = newWorld(SEED);
+	const baseline = advanceTo(newWorld(SEED), 123456.789);
+	const world = advanceTo(newWorld(SEED), baseline.gameTime);
 	let carriers = 0;
 	let witnesses = 0;
 	let charges = 0;
@@ -202,7 +203,15 @@ function build(tier: Tier, fill?: (world: WorldState) => void): Row {
 		// #324 and #351 because this loop listed kinds by hand.
 		const keys: ReturnType<typeof carrierKey>[] = [];
 		for (const c of enumerateCarriers(SEED, g)) {
-			if (c.kind === "capability") continue;
+			if (c.kind === "capability") {
+				if (tier.objective && tier.everyCarrier && c.systemIndex < tier.systems)
+					env.capabilityTime.anchors[c.key] = capabilityAvailability(
+						baseline,
+						g,
+						c.key,
+					).state;
+				continue;
+			}
 			if (c.systemIndex >= tier.systems) continue;
 			if (c.kind === "station") berths.push(c.key);
 			else if (!tier.everyCarrier) continue;
@@ -601,7 +610,7 @@ export function capabilitySaveCase(
 	};
 }
 console.log(
-	"\nCapability timing: actual generated carriers, all eight galaxies, real complete-envelope round trips. Ordinary-domain saturation tables above exclude capability records; the following rows measure timing payloads separately and include every current envelope field. No production refinery queue or custody footprint is claimed; capabilitySaveCase accepts the later build's real eight-job/custody/maximum-payload fill hook.",
+	"\nCapability timing: actual generated carriers, all eight galaxies, real complete-envelope round trips. Ordinary-domain saturation tables above omit capability observations/repairs but retain timing anchors required by their real raider causal rows; the following rows measure timing alone with other domains untouched and include every current envelope field. No production refinery queue or custody footprint is claimed; capabilitySaveCase accepts the later build's real eight-job/custody/maximum-payload fill hook.",
 );
 for (const seed of [1, 47, 0x5ee11e])
 	for (const coverage of ["untouched", "partly", "all"] as const) {

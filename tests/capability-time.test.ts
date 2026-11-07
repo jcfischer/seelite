@@ -15,6 +15,7 @@ test("fixed outage excludes disabled seconds and retained history refuses", () =
 		cycle: 0,
 		phase: "down" as const,
 		left: 900,
+		endsAt: 900,
 		repaired: false,
 	};
 	expect(queryCapabilityTime(context, anchor, 0, 1200)).toBe(300);
@@ -74,6 +75,7 @@ test("projection partitions, pressure preserves a fixed outage and malformed inp
 		cycle: 1,
 		phase: "down" as const,
 		left: 500,
+		endsAt: 600,
 		repaired: true,
 	};
 	expect(
@@ -98,6 +100,13 @@ test("projection partitions, pressure preserves a fixed outage and malformed inp
 		expect(() =>
 			projectCapabilityTime(context, bad as typeof a, 1000),
 		).toThrow();
+	for (const bad of [
+		{ ...down, endsAt: undefined },
+		{ ...down, endsAt: Infinity },
+		{ ...down, endsAt: 100 },
+		{ ...down, endsAt: 601 },
+	])
+		expect(() => projectCapabilityTime(context, bad, 599)).toThrow();
 });
 
 test("initial duration is length biased, later duration is uniform and remaining position is independent", () => {
@@ -152,4 +161,18 @@ test("initial duration is length biased, later duration is uniform and remaining
 	}
 	expect(() => capabilityDuration(1, Number.MAX_SAFE_INTEGER + 1)).toThrow();
 	expect(capabilityDuration(1, 2 ** 32)).not.toBe(capabilityDuration(1, 0));
+});
+
+test("a natural end is retained exactly when subtraction would round its reconstruction", () => {
+	const c = { seed: 33, government: 0, active: 1, total: 2 };
+	const a = initialCapabilityTime(c, 0);
+	expect(a.phase).toBe("down");
+	const end = a.at + a.left;
+	const first = projectCapabilityTime(c, a, 65.51451133490579).state;
+	expect(first.endsAt).toBe(end);
+	for (let i = 1; i < 20; i++) {
+		const next = projectCapabilityTime(c, first, first.at + i * 0.137).state;
+		expect(next.endsAt).toBe(end);
+		expect(projectCapabilityTime(c, next, end).state.phase).toBe("up");
+	}
 });

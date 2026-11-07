@@ -295,3 +295,56 @@ test("repeated remote pressure events replace a bounded anchor set", () => {
 		"genesisAt",
 	]);
 });
+
+test("reported natural end is half-open after arbitrary projection and pressure reanchor", () => {
+	const c = carrierKey(90, "station-refinery/capability/market");
+	const at = 12184.266499999996;
+	let w = advanceTo(newWorld(1), at);
+	for (const reanchor of [false, true]) {
+		if (reanchor) {
+			const record = generateGalaxy(1, 0).systems[90];
+			w = applyTransition(w, 0, raiderSlots(90, record.government)[0].key, {
+				kind: "disable",
+				occurredAt: at + 1,
+				cause,
+			});
+		}
+		const a = capabilityAvailability(w, 0, c);
+		expect(a.operational).toBe(false);
+		const end = a.naturalEnd!;
+		expect(capabilityAvailability(w, 0, c, end - 1e-6).operational).toBe(false);
+		expect(capabilityAvailability(w, 0, c, end).operational).toBe(true);
+		expect(capabilityAvailability(w, 0, c, end + 1e-6).operational).toBe(true);
+		const full = advanceTo(w, end + 1);
+		const from = w.gameTime;
+		const split =
+			operationalDuration(full, 0, c, from, end) +
+			operationalDuration(full, 0, c, end, end + 1);
+		expect(split).toBeCloseTo(
+			operationalDuration(full, 0, c, from, end + 1),
+			9,
+		);
+		expect(operationalDuration(full, 0, c, end, end + 1)).toBeCloseTo(1, 9);
+		expect(() => repairCapability(w, 0, c, end, cause)).toThrow();
+	}
+});
+
+test("a captured natural end stays exact through fractional projections and reanchors", () => {
+	const c = carrierKey(90, "station-refinery/capability/market");
+	const at = 12184.266499999996;
+	let w = advanceTo(newWorld(1), at);
+	const end = capabilityAvailability(w, 0, c).naturalEnd!;
+	const record = generateGalaxy(1, 0).systems[90];
+	const raider = raiderSlots(90, record.government)[0];
+	for (let i = 1; i <= 32; i++) {
+		const next = at + i * 0.137;
+		expect(capabilityAvailability(w, 0, c, next).naturalEnd).toBe(end);
+		w = applyTransition(w, 0, raider.key, {
+			kind: i % 2 ? "disable" : "restore",
+			occurredAt: next,
+			cause,
+		});
+		expect(capabilityAvailability(w, 0, c).naturalEnd).toBe(end);
+		expect(capabilityAvailability(w, 0, c, end).operational).toBe(true);
+	}
+});

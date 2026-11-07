@@ -1155,7 +1155,7 @@ export function capabilityAvailability(
 	const state = projectRetainedCapability(world, galaxy, key, at).state;
 	return {
 		operational: state.phase === "up" || state.repaired,
-		naturalEnd: state.phase === "down" ? state.at + state.left : null,
+		naturalEnd: state.phase === "down" ? state.endsAt! : null,
 		state,
 	};
 }
@@ -2580,6 +2580,7 @@ const canonicalEnvelope = (
 			cycle: a.cycle,
 			phase: a.phase,
 			left: a.left,
+			...(a.endsAt === undefined ? {} : { endsAt: a.endsAt }),
 			repaired: a.repaired,
 		})),
 	},

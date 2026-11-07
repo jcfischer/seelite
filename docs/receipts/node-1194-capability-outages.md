@@ -16,7 +16,7 @@ No serialized callback or placeholder queue domain is introduced here.
 
 ## Headless evidence
 
-The affected test invocation passes 504 tests and 145,019 assertions across 16 files:
+The affected test invocation passes 507 tests and 145,173 assertions across 16 files:
 
 ```sh
 rtk test bun test tests/capability-*.test.ts tests/world-state.test.ts tests/save-*.test.ts tests/station-commerce.test.ts tests/station-console.test.ts tests/outfitting.test.ts tests/market-state.test.ts tests/view-set.test.ts tests/holdings.test.ts tests/probe-selection.test.ts
@@ -26,19 +26,19 @@ The capability tests exercise the actual production world, commerce and save sea
 
 The initial duration oracle distinguishes the approved length-biased distribution from uniform later phases. Remaining fractions are checked jointly within low/high duration bins. A temporary mutation aliasing the remaining-fraction RNG channel to the duration channel failed that oracle; restoring the independent channel passed. TDD logs are `/tmp/outages1194-{time,world,commerce,status,observation,migration,provenance,alias,channel-alias}-*.log`.
 
-Typecheck, format, lint, the shrinking comment guard, launcher wiring (157 scripts), and production build pass. The latest affected test log is `/tmp/outages1194-headless-r1.log`; the other gate logs use `/tmp/outages1194-{tsc,format,lint,comments,wiring,build}.log` with `-r1` for the review response checks.
+Typecheck, format, lint, the shrinking comment guard, launcher wiring (157 scripts), and production build pass. The latest affected test log is `/tmp/outages1194-headless-fixed-end.log`; the other gate logs use `/tmp/outages1194-{tsc,format,lint,comments,wiring,build}.log` with `-r1` or `-fixed-end` for subsequent checks.
 
 ## Actual save-size measurement
 
-`bun scripts/measure-save-size.ts` exercises real complete-envelope serialization and parsing across all eight galaxies. Timing rows leave other domains untouched. The existing ordinary-carrier saturation rows now explicitly exclude capability records. The exported `capabilitySaveCase` accepts a later production refinery payload hook; these figures claim no future eight-job, custody or maximum-payload footprint.
+`bun scripts/measure-save-size.ts` exercises real complete-envelope serialization and parsing across all eight galaxies. Timing rows leave other domains untouched. The existing ordinary-carrier saturation rows omit capability knowledge and repair records, while retaining the timing anchors required by their raider causal rows. Those fixtures now use their actual event clock and project anchors from an independent pre-mutation world. The exported `capabilitySaveCase` accepts a later production refinery payload hook; these figures claim no future eight-job, custody or maximum-payload footprint.
 
 | Seed | Generated capabilities | Untouched UTF-8 envelope | 40-anchor UTF-8 envelope | All-anchor UTF-8 timing payload | All-anchor UTF-8 envelope |
 |---|---:|---:|---:|---:|---:|
-| 1 | 7,447 | 2,272 B | 6,894 B | 880,589 B | 882,629 B |
-| 47 | 7,501 | 2,274 B | 6,910 B | 887,071 B | 889,111 B |
-| 6,218,014 | 7,540 | 2,279 B | 6,924 B | 892,061 B | 894,107 B |
+| 1 | 7,447 | 2,272 B | 7,032 B | 912,283 B | 914,323 B |
+| 47 | 7,501 | 2,274 B | 7,071 B | 918,969 B | 921,010 B |
+| 6,218,014 | 7,540 | 2,279 B | 7,111 B | 924,840 B | 926,886 B |
 
-Untouched timing payloads are 233 UTF-8 bytes. These ASCII fixture saves occupy twice the UTF-8 figures when counted as UTF-16 bytes. Actual measurement log: `/tmp/outages1194-save-size.log`.
+Untouched timing payloads are 233 UTF-8 bytes. These ASCII fixture saves occupy twice the UTF-8 figures when counted as UTF-16 bytes. Latest actual measurement log: `/tmp/outages1194-save-size-fixed-end.log`.
 
 These all-anchor rows are timing-only measurements with other domains untouched.
 They do not include capability observations or attributable repair episodes and
@@ -55,5 +55,22 @@ historical version constants; they are declined as maintenance preferences.
 Review stops under the map's suggestion/nit-only stopping rule.
 
 Final-HEAD browser selection and gate, and canonical before/after capture are pending. The new registered `probe-capability-outage` uses the actual page, world APIs, real console clicks, repair transition and browser save/reload. It buys fuel while the natural market outage is confirmed, checks a persistent notice beside an unrelated notice, refuses a damaged purchase, checks recovery with an actually stocked buy, and checks flag-off compatibility after reload.
+
+The initial selector chose all 121 probes for `a107a16...92f943d4`. That hardware
+run was interrupted after the new probe exposed an exact-endpoint defect; it
+provides no whole-gate result. The probe repeated red alone (8/10 assertions).
+Its actual writable save/reload path passed. The outage could retain subtraction
+residue at its reported end. The fix compares clock-space endpoints and retains
+an explicit `endsAt` for down phases; strict tests also pin a seed-33 fractional
+projection that otherwise moved the captured end by one ULP. No epsilon or time
+nudge is used to recover. The domain remains the unmerged 11/4/18 shape; transient
+draft snapshots receive no invented migration. Exact endpoint, before/after,
+partition and repeated fractional-pressure regressions pass. Relevant logs:
+`/tmp/outages1194-capability-alone-red-runner.log`,
+`/tmp/outages1194-endpoint-red.log`, and
+`/tmp/outages1194-fixed-end-precision-{red,green}.log`.
+
+The interrupted run also printed the existing quarantined output-stage warning
+(13/14 assertions, #975); it is not a gating failure or a change in this node.
 
 The canonical set adds owned `capability-market-damaged` and `capability-market-recovered` views on the mining flag. Principal visual approval remains required; an agent's probes and captures cannot provide that approval. This node remains open until its actual gates and required approval are complete.
