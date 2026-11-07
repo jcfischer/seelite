@@ -16,6 +16,8 @@ export async function placeMiningSurvey(page, mode = "navigation") {
 		g.view = "cockpit";
 		g.setHeadLook("forward");
 		g.fitPrototypeMiningLaser(true);
+		g.targetId = null;
+		g.stepSurvey(g.surveyFiguresFitted().dwellS);
 		const draw = g.fields.find((field) => field.plan.profile === "charted");
 		if (!draw) throw new Error("survey review requires a charted field");
 		const contents = (rock) =>
