@@ -17,7 +17,9 @@ use CSS rectangle [480,290,480,320] in the same 1440×900 DPR 2 page. They do no
 change the viewing distance. The original far camera is (-224,0,0) km, side is
 (0,-160,0) km, overview is (-110,-90,70) km, inside is (1.8,1.8,1.8) km; dense is
 candidate-targeted and labelled separately. The selected charted organic peak
-has 256 rocks within 8 km of the camera, versus 52 baseline; rare has 83 versus 29.
+has 256 rocks within 8 km of the chase camera, versus 52 baseline; rare has 83
+versus 29. These local-density counts belong to the recorded world-view cameras,
+not to a separately recorded Navigation camera.
 Actual camera errors, field clock, clearance and occupied content are recorded
 in each manifest. The main charted dense camera has >1 km surface clearance.
 
@@ -29,6 +31,18 @@ clean-head gates. World images hide the player hull's children to expose the
 field; actual production FieldDraw, authored rock shapes/materials and LODs are
 unchanged. Rare images demonstrate rocks, not newly discovered scope contacts.
 No claim that camera teleportation discovers a rare field is made.
+
+## Provisional density: not an approved production change
+
+The selected charted fixture increases from 193 to 676 total rocks, and its
+recorded chase dense view increases from 52 to 256 rocks within 8 km. These
+population and density increases are provisional study inputs, not an approved
+economy, yield, radius-distribution or performance change. Feedback on the
+arrangement must not be interpreted as approval of those figures. The 83
+out-of-range Navigation rows are an observed consequence of this provisional
+population, not an approved UI or performance outcome. The existing 40 km
+targeting limit is unchanged. Production must separately resolve population,
+local density, resource availability and the resulting Navigation workload.
 
 ## Geometry, identity and counts
 
@@ -116,6 +130,21 @@ rows inside every timed frame. Exactly one nonempty projection containing every
 expected rock is required. A deliberately omitted cockpit refresh must fail
 that guard before timing starts; all eight arms detect it.
 
+**Navigation pose provenance and gap:** the immutable harness at 2c9b7e9e
+(source copy in each verified set under source/organic-views.mjs) calls
+`__organicView(name, "dense")` before switching to cockpit view and left look.
+That function selects the candidate's peak by counting anchors within 8 km and
+settles a clear chase-camera pose. The Navigation setup then records the actual
+field frame, selected target, row counts, disabled rows and settings, with a
+cockpit screenshot. It discarded the dense-view return value and did not record
+the Navigation camera position/orientation or its local rock density. The later
+manifest.rows dense entry is a separately captured chase view, not a measurement
+of the earlier Navigation camera. Therefore no precise Navigation camera values
+or 52/256 local-density claim is inferred for the timed Navigation frames. The
+work counters prove populated production row projection; exact Navigation-pose
+and local-density provenance remains an unrecorded gap for a future production
+measurement. No new benchmark is run to fill it in this bounded revision.
+
 Each arm has six alternating blocks of 24 frames, high quality, occlusion off,
 actual AA and a held stationary clock. Numeric mining flag 1, actual acquired
 field frame, selected row, fresh survey facts and DOM counts are asserted.
@@ -186,33 +215,59 @@ larger ore availability against the approved economy. Principal approval and
 the canonical production view set remain required before shipping. The queue
 stays paused; #1043 and draft PR #1203 stay open.
 
-## Verification at the reviewed study revision
+## Verification revisions and input equality
 
-Affected headless suite: 15 passed, 0 failed, 547375 assertions across all four study
-test files (`/tmp/field1043-study-tests-final.log`). Repo TypeScript and strict
-spike TypeScript, both format scopes, script lint and comment lint passed.
-The broad unrelated `npm test` pass was interrupted cleanly (exit 130) after 356
-files started; `/tmp/field1043-unit-final.log` is partial and is not a full-suite
-pass. No unrelated tests were changed or debugged.
+Verification is recorded at its actual input revision, rather than represented
+as a fresh whole-tree test at the final report revision:
 
-Production build passed (`/tmp/field1043-build-final.log`), with only the existing
-large-chunk warning and the distribution-size check green. Sage round 1 reviewed
-cc292230 and requested changes: the actual Navigation work guard is now fixed,
-with missing-refresh detection and clean 2c9b verified measurements. Shared-close
-selection now intersects every selected candidate and refuses an empty common
-slot. report.mjs regenerates the gallery and summaries from retained manifests.
-Sage round 2 reviewed ea7ecbce and returned commented: four suggestions, zero
-blocker/important findings. The report now computes and requires 160 raw timing
-rows and refuses dirty, mismatched-head or mismatched-hash sources. Actual input
-manifests pass; deliberate dirty/head/hash/missing-row controls all reject
-(`/tmp/field1043-report-guard-results.txt`). Optional oracle/browser-bootstrap
-refactors are deferred to preserve independent historical evidence and measured
-source provenance. The map stop rule does not require another review round for
-these guard/prose responses.
+| Evidence | Actual tested/measured input | Scope |
+|---|---|---|
+| 15 affected tests, 547375 assertions | b1e62e7a plus in-progress receipt-only edits | Four study test files and their production/study dependencies; /tmp/field1043-study-tests-final.log |
+| Production build, distribution-size check | b1e62e7a plus receipt-only edits, before cc292230 was committed | TypeScript/Vite build inputs; /tmp/field1043-build-final.log |
+| World images and 160 timing rows | Clean 4fcc3de6 | Actual renderer arms and per-file hashes in cost-* manifests |
+| Verified Navigation work | Clean 2c9b7e9e | Four nav-verified-* manifests; actual in-timer calls/rows and missing-refresh control |
+| Later strict spike TypeScript check | ea7ecbce TypeScript input contents | Includes the shared-median instrument edit; /tmp/field1043-review-spike-tsc.log |
+| Final report guards and selected PR gate | d7e3a3f2 report-guard revision | Report-only guards and prose; /tmp/field1043-final-clean-gate.log, zero selected probes |
 
-After Sage, the actual selector at clean ea7ecbce selected zero probes under its
-isolated-study rule (`/tmp/field1043-selector-after-sage.log`). The final response
-tip rechecks that same rule with the hardware-lane PR gate; its exact revision
-and outcome are retained in `/tmp/field1043-final-clean-gate.log`. No browser
-or performance coverage is inferred from a selector returning zero for isolated
-study files. Canonical production views and principal approval remain open.
+No new 15-test suite or production build ran at d7e3a3f2. Their reuse is justified
+by tracked-input equality, not by claiming a fresh final-tip full-suite pass.
+cc292230 contains the receipt following the b1 tests/build; Sage round 1 reviewed
+that later receipt revision. Repository TypeScript, both format scopes, script
+lint and comment lint passed at the recorded local checks. The unrelated full
+unit run was interrupted cleanly (exit 130) after 356 files started and is not
+a pass; /tmp/field1043-unit-final.log remains partial.
+
+Replay the report guards and tracked-input comparison independently:
+
+```sh
+node spikes/field-shape-1043/verify-report.mjs /tmp/seelite-field-shape-1043-organic d7e3a3f2
+```
+
+The script copies the eight immutable input manifests into a fresh scratch
+directory, first verifies the valid case, then independently introduces dirty
+source, mismatched head, mismatched file hash and missing timing-row mutants.
+Each must exit nonzero with its specific expected error. Originals are never
+mutated. It writes the actual outcomes and Git tree digests to
+report-verification.json beside the gallery; the scratch path is retained.
+
+The same script proves equality through d7e3a3f2: 1713 tracked production-build
+input identities match b1e62e7a and cc292230; 1723 affected headless input
+identities match b1e62e7a; organic.ts, profiles.ts and anchor-query.ts match
+measured 4fcc3de6. It also compares every strict spike TypeScript input with
+ea7ecbce. The build scope conservatively includes all tracked files outside
+docs/ and spikes/. The affected-test scope adds study TypeScript except the
+separate anchor-measure.ts CPU instrument, which no affected test imports.
+These are exact Git blob/mode/path comparisons including asset references, not
+an installed-dependency or operating-system snapshot. Passing HEAD as the final
+argument repeats these comparisons through a later documentation/verification
+tip without relabelling earlier test executions.
+
+Build had only the existing large-chunk warning. Sage round 1 reviewed cc292230
+and found the Navigation work-guard defect; corrected claims and immutable
+negative-control evidence are retained above. Sage round 2 reviewed ea7ecbce:
+four suggestions, zero blocker/important findings. The d7 response enforces
+160 actual timing rows and clean/common heads plus matching hashes; optional
+oracle/browser-bootstrap refactors were deferred for independence/provenance.
+The map stop rule does not require another review loop for bounded report and
+prose responses. Canonical production views and principal approval remain open.
+No browser or performance coverage is inferred from a selector returning zero.
