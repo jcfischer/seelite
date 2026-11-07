@@ -16,6 +16,12 @@ No serialized callback or placeholder queue domain is introduced here.
 
 ## Headless evidence
 
+After CI exposed broader historical fixture assumptions, the full local
+`rtk test npm test` run passes **7,583 tests / 17,151,622 assertions across 471
+files**, with zero failures and exit 0 (501 seconds). Log:
+`/tmp/outages1194-full-headless.log`. Its filter echoes a passing failure-kind
+test whose name contains `FAIL`; the actual Bun summary is zero failures.
+
 The affected test invocation passes 507 tests and 145,173 assertions across 16 files:
 
 ```sh
@@ -78,6 +84,10 @@ The compatibility follow-up adds the shared historical fixture support above;
 the older generator-6 fixture cases retain their explicit historical version.
 FIFO fixtures retain their distinct settlement assertions. The postcard and CI
 compatibility follow-up is submitted for another review before browser work.
+
+Round 4 returned one prose-only nit, no behavior or check request. The existing
+transaction documentation is restored to its function. Review stops under the
+map's stopping rule; final browser selection follows on the clean response HEAD.
 
 Final-HEAD browser selection and gate, and canonical before/after capture are pending. The new registered `probe-capability-outage` uses the actual page, world APIs, real console clicks, repair transition and browser save/reload. It buys fuel while the natural market outage is confirmed, checks a persistent notice beside an unrelated notice, refuses a damaged purchase, checks recovery with an actually stocked buy, and checks flag-off compatibility after reload.
 

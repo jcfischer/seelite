@@ -459,18 +459,6 @@ const availableEquipment = (
 		mining: input.mining,
 	}).available.filter((item) => item.per === "unit");
 
-/**
- * One transaction at one console, priced end to end. Returns either untouched
- * input references or one complete replacement.
- *
- * **`quote` is the second parameter and the game never passes it**, for the same
- * reason `marketRowAt` takes a `ByteClose` and §8.6's screen takes a `MarketRowFn`:
- * the law #7 ratified — no wedge, one price, both directions — was *ratified*, and
- * a rejected arm that cannot be flown is a claim rather than a measurement. The
- * control row in `tests/station-commerce.test.ts` flies this same sweep with
- * `NO_WEDGE` and must still net a profit, or the closure row above it reports the
- * shape of its own instrument.
- */
 /** Existing type-scoped modules use exclusive service; unscoped kinds use equipment. */
 export function purchaseService(kind: string): CapabilityService {
 	const legacy = EQUIPMENT.find((entry) => LEGACY_MODULES[entry.name] === kind);
@@ -492,6 +480,18 @@ function damagedPurchase(
 	}
 }
 
+/**
+ * One transaction at one console, priced end to end. Returns either untouched
+ * input references or one complete replacement.
+ *
+ * **`quote` is the second parameter and the game never passes it**, for the same
+ * reason `marketRowAt` takes a `ByteClose` and §8.6's screen takes a `MarketRowFn`:
+ * the law #7 ratified — no wedge, one price, both directions — was *ratified*, and
+ * a rejected arm that cannot be flown is a claim rather than a measurement. The
+ * control row in `tests/station-commerce.test.ts` flies this same sweep with
+ * `NO_WEDGE` and must still net a profit, or the closure row above it reports the
+ * shape of its own instrument.
+ */
 export function transactAtStation(
 	input: StationCommerceInput,
 	quote: QuoteFn = marketQuote,
