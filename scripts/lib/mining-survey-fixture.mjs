@@ -58,13 +58,24 @@ export async function placeMiningSurvey(page, mode = "navigation") {
 		);
 		g.targetId = selectedId;
 		const dwell = g.surveyFiguresFitted().dwellS;
+		const surveyStartedAt = g.world.gameTime;
 		for (
 			let elapsed = 0;
 			elapsed < dwell + g.units.MAX_DT;
 			elapsed += g.units.MAX_DT
 		)
 			g.step(g.units.MAX_DT);
-		if (g.surveyState().row?.surveyedAt === undefined)
+		const surveyed = g.surveyState();
+		if (
+			surveyed.row?.surveyedAt === undefined ||
+			surveyed.row.surveyedAt < surveyStartedAt ||
+			!S.surveyReading(
+				surveyed.contents,
+				surveyed.row,
+				g.world.gameTime,
+				D.SURVEY_LIFETIME_H,
+			)
+		)
 			throw new Error("survey review did not complete the held survey");
 		const result = {
 			selectedId,
