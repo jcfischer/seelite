@@ -6,6 +6,13 @@ principal-approved merge recorded in the linked decision's resolution.
 Decision node: [What breaks, how often, and what a broken thing stops being
 able to do](https://github.com/jcfischer/seelite/issues/358).
 
+**Operational-time amendment (node #937, principal-approved 2026-11-07):**
+[Station capability operational time](capability-operational-time.md) owns the
+precise timing, current catalogue mapping, bounded causal anchors and migration.
+It supersedes E3's initial-only interpretation, E4's stateless function, E5's
+pointwise compaction and E7's shared generator-7 sequencing below. The original
+decisions remain here as their dated record; use the amendment for production.
+
 This spec owns **what breaks in the world, how often, and what a broken thing
 stops being able to do**. It is the prerequisite
 [Ordinary work](https://github.com/jcfischer/seelite/issues/356) named: that
