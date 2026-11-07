@@ -56,10 +56,37 @@ representation needs its own approved design.
 
 The headless containment test proves each rock's bound, drift and margin stay
 inside its indexed cell, separately on charted and rare fixtures. This preserves
-the mathematical premise of #969's lattice broadphase. Production `buildLattice`
-still reads `FIELD_PROFILE` and `fieldRocks` directly: this study does not wire
-candidate collision or claim a production collision-query timing measurement.
-An integration must move drawing and broadphase to the same chosen profile.
+the mathematical premise of #969's lattice broadphase.
+
+The isolated CPU instrument now drives the unchanged production
+`fieldRockSolids` with candidate profile and generator inputs. Each candidate
+runs in a separate Bun process; its in-memory dependency overrides cannot reach
+the game or another measurement. Generation remains inside each fresh-System
+query, followed by the real lattice construction. Actual authored heightfield
+pieces are prebuilt and measured separately. Warm queries use the cached
+lattice. This is a study input adapter, not production integration.
+
+```sh
+bun test spikes/field-shape-1043/collision-study.test.ts
+bun spikes/field-shape-1043/collision-measure.ts /tmp/field1043-collision.json
+```
+
+Native and adapted baseline outputs must agree exactly. Each query is also
+checked against a complete linear traversal that reuses the settled per-rock
+solid/reach predicate but never uses the lattice. It validates the reach set
+and motion outputs, not that predicate or full CCD independently. A deliberately
+omitted rock must fail this oracle before any timing report is emitted.
+
+Common world-space menus are identical across candidates; separately labelled
+occupied-rock targets use each candidate's own rocks. Whole-field crossing and
+enclosing-sphere cases are synthetic stresses, not normal flight. The clock is
+held at 1000 seconds across a 0.1-second step. Timings are CPU query costs with
+warm code/archetype pieces: eleven fresh-System samples and eleven 64-query
+warm batch means, in two reversed candidate orders. Cheap returned-count
+accumulation is included in warm elapsed time; cold counting and hashes are
+outside it. These are not individual-query percentiles, advancing-frame costs,
+CCD timings or an affordability guarantee. Integration must still make drawing
+and collision consume the same approved layout and measure actual flight.
 
 ## Version consequences
 

@@ -54,9 +54,13 @@ export function candidateRocks(
 	record: SystemRecord,
 	plan: FieldPlan,
 	name: Candidate,
+	input: { profile: FieldProfile; generate: typeof fieldRocks } = {
+		profile: candidateProfile(plan.profile, name),
+		generate: fieldRocks,
+	},
 ): Rock[] {
-	const profile = candidateProfile(plan.profile, name);
-	const rocks = fieldRocks(record, plan, profile);
+	const profile = input.profile;
+	const rocks = input.generate(record, plan, profile);
 	if (name === "baseline" || name === "expanded") return rocks;
 	const cells = fieldCells(profile);
 	return rocks
