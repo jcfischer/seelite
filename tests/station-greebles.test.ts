@@ -138,6 +138,15 @@ function reportNormalStage(stage: string, geometry: THREE.BufferGeometry) {
 				normalized: normal.normalized,
 				normalArrayType: normal.array.constructor.name,
 				positionCount: position.count,
+				positionItemSize: position.itemSize,
+				positionNormalized: position.normalized,
+				positionArrayType: position.array.constructor.name,
+				positionSample: Array.from(position.array).slice(0, 18).map(String),
+				positionGetterSample: Array.from(
+					{ length: Math.min(6, position.count) },
+					(_, i) =>
+						[position.getX(i), position.getY(i), position.getZ(i)].map(String),
+				),
 				positionNonfinite: Array.from(position.array).filter(
 					(n) => !Number.isFinite(n),
 				).length,
@@ -149,20 +158,18 @@ function reportNormalStage(stage: string, geometry: THREE.BufferGeometry) {
 	}
 }
 
-const originalComputeNormals =
-	THREE.BufferGeometry.prototype.computeVertexNormals;
-const originalNormalizeNormals =
-	THREE.BufferGeometry.prototype.normalizeNormals;
+const originalSetAttribute = THREE.BufferGeometry.prototype.setAttribute;
 beforeAll(() => {
-	THREE.BufferGeometry.prototype.normalizeNormals = function () {
-		reportNormalStage("before-normalize", this);
-		originalNormalizeNormals.call(this);
-		reportNormalStage("after-normalize", this);
+	THREE.BufferGeometry.prototype.setAttribute = function (name, attribute) {
+		if (name === "position" && this.getAttribute("normal"))
+			reportNormalStage("before-position-replacement", this);
+		const result = originalSetAttribute.call(this, name, attribute);
+		if (name === "normal") reportNormalStage("after-normal-replacement", this);
+		return result;
 	};
 });
 afterAll(() => {
-	THREE.BufferGeometry.prototype.computeVertexNormals = originalComputeNormals;
-	THREE.BufferGeometry.prototype.normalizeNormals = originalNormalizeNormals;
+	THREE.BufferGeometry.prototype.setAttribute = originalSetAttribute;
 });
 
 function reportStationFailure(
@@ -697,10 +704,8 @@ test("the production polyhedron inputs retain finite normals across warmed const
 		"core",
 	) as THREE.Mesh<THREE.PolyhedronGeometry>;
 	const { vertices, indices, radius, detail } = core.geometry.parameters;
-	const compute = THREE.BufferGeometry.prototype.computeVertexNormals;
-	const normalize = THREE.BufferGeometry.prototype.normalizeNormals;
-	THREE.BufferGeometry.prototype.computeVertexNormals = originalComputeNormals;
-	THREE.BufferGeometry.prototype.normalizeNormals = originalNormalizeNormals;
+	const setAttribute = THREE.BufferGeometry.prototype.setAttribute;
+	THREE.BufferGeometry.prototype.setAttribute = originalSetAttribute;
 	try {
 		for (let i = 0; i < 2048; i++) {
 			const geometry = new THREE.PolyhedronGeometry(
@@ -717,8 +722,7 @@ test("the production polyhedron inputs retain finite normals across warmed const
 			expect({ iteration: i, finite }).toEqual({ iteration: i, finite: true });
 		}
 	} finally {
-		THREE.BufferGeometry.prototype.computeVertexNormals = compute;
-		THREE.BufferGeometry.prototype.normalizeNormals = normalize;
+		THREE.BufferGeometry.prototype.setAttribute = setAttribute;
 		built.dispose();
 	}
 }, 60_000);

@@ -130,3 +130,18 @@ tests, so its warmup cannot change the original cases preceding it. A failing
 pre-normalization record would locate corruption before normalization; a
 newly invalid post-normalization record would locate it inside that stage.
 A green result still cannot rule out optimization effects from the observer.
+
+The native-compute arm at `7862288d` also passes Linux shard 3 (run
+42339247549, job 128303053159): 2,532 passes, zero failures, no invalid-stage
+report. Its local full log verifies all thirteen original cases precede the
+constructor control: `/tmp/greeble1206-native-compute-order.log`. Linux raw
+log: `/tmp/greeble1206-native-compute-linux.log`. This is another negative
+observation, not an explanation.
+
+The next arm leaves both computation and normalization methods untouched. A
+test-only `setAttribute` observer checks the existing normals before position
+replacement and the new normals after normal replacement. The aperture ring
+first copies old normals into a new array, then replaces position and normal
+attributes; these observations distinguish invalid old data from an invalid
+copy. Failure records include position metadata and raw-versus-getter samples.
+The constructor control restores native attribute dispatch in a `try/finally`.
