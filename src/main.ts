@@ -15058,6 +15058,7 @@ class Game {
 		for (const [key, contact] of this.wreckContacts)
 			this.dropWreckContact(key, contact);
 		this.selectableCache = null;
+		this.selectableDiscoveries = null;
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
 		// otherwise carry the old system's canister blips — and a reset while
