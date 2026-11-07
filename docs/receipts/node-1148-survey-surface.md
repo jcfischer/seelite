@@ -8,6 +8,12 @@ now completes item 3. Fresh review, hardware and canonical-view evidence will
 be recorded on the PR at its final clean head; the older measurements below
 remain historical.
 
+The first resumed Sage invocation reviewed remote head `54a79d9f` because a
+stale lease rejected the preceding push. Its three findings correctly identified
+the missing Navigation code at that old head. The completed implementation and
+fixtures are now published, with the remote SHA checked explicitly before the
+next review. This invocation is not evidence of reviewing the resumed code.
+
 With `?mining=1`, the DEEP mark uses `Game.rockShape(ref).radiusAt(deepDir)`,
 the same archetype heightfield sampler used by the Mining Laser's cut. The
 mouth direction still follows the rock's spin and the field's rotation.
