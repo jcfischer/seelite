@@ -4,6 +4,7 @@ import { systemIndexOfKey } from "../src/carrier-key";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
+import { isRockTargetId } from "../src/rock-target";
 import { AttitudeFollower } from "../src/attitude-hold";
 import { ORBIT_ASTERN } from "../src/chase-orbit";
 import { DockingComputer } from "../src/docking-computer";
@@ -83,7 +84,12 @@ test("Navigation evaluates ETA for a selectable contact absent from the generate
 	};
 	const subject = Object.assign(
 		Object.create(
-			methods(["navRows"], { projectNavTargets, ETA_INTERVAL_S: 1 }),
+			methods(["navRows", "navigationTargets"], {
+				projectNavTargets,
+				isRockTargetId,
+				ETA_INTERVAL_S: 1,
+				MINING_ON: false,
+			}),
 		),
 		{
 			world,

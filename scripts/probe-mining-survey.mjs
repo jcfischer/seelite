@@ -503,6 +503,22 @@ try {
 			...fixture.nearIds,
 			fixture.farId,
 		].sort();
+		const displayedRange = await page.evaluate(async () => {
+			const { range } = await import("/src/units.ts");
+			const g = window.__seelite;
+			const selected = g.navRows().find((row) => row.selected);
+			return {
+				expected: range(selected.distanceKm),
+				target: document.querySelector("[data-live-left-copy]")?.textContent,
+				instrument: g.cockpit.targetInstrument.primaryText,
+			};
+		});
+		check(
+			"Selected Target and the target instrument agree with the selected rock row's surface range",
+			displayedRange.target.includes(`Rock · ${displayedRange.expected}`) &&
+				displayedRange.instrument.endsWith(displayedRange.expected),
+			JSON.stringify(displayedRange),
+		);
 		check(
 			"Navigation lists the selected and current-field surveyed rocks only",
 			JSON.stringify(navigation.map((row) => row.id).sort()) ===
