@@ -9,7 +9,6 @@ import {
 	type StationCommerceInput,
 } from "../src/station-commerce";
 import { makeModule } from "../src/loadout";
-import { refusalSentence } from "../src/station-console";
 const input = (
 	patch: Partial<StationCommerceInput> = {},
 ): StationCommerceInput => ({
@@ -78,30 +77,6 @@ test("hull rung refusal precedes damage and owned fitting operations remain outs
 		input({ action: { type: "remove-module", slot: "h1" } }),
 	);
 	expect(remove.accepted).toBe(true);
-	for (const service of ["market", "equipment", "exclusive"] as const)
-		expect(
-			refusalSentence(`${service}-damaged`, {
-				freeT: 20,
-				capacityT: 20,
-				entrustedT: 0,
-			}),
-		).toContain(service);
-});
-
-test("live service status is independent of an unrelated notice and expires a healed damage refusal", async () => {
-	const { stationServiceStatus } = await import("../src/station-console");
-	expect(
-		stationServiceStatus(
-			{ market: false, equipment: true },
-			"Cargo scoop fitted.",
-		),
-	).toEqual({
-		notice: "Damaged service: market.",
-		message: "Cargo scoop fitted.",
-	});
-	expect(
-		stationServiceStatus({ market: true }, "The market service is damaged."),
-	).toEqual({ notice: null, message: null });
 });
 
 test("type-scoped purchases consult exclusive service without changing existing catalogue scope or grades", async () => {

@@ -53,6 +53,27 @@ test("fixed service slots have generated identity and independent stable seeds",
 	).toThrow();
 });
 
+test("capability identity accepts supported namespace endpoints and refuses invalid namespaces", () => {
+	for (const worldSeed of [0, 0xffffffff])
+		for (const galaxyIndex of [0, 7]) {
+			const system = generateGalaxy(worldSeed, galaxyIndex).systems[255];
+			const parent = generateContents(system).stations.find(
+				(s) => s.type !== "outpost",
+			)!;
+			expect(parent).toBeDefined();
+			const slot = capabilitySlots(system.index, parent)[0];
+			expect(capabilityIdentity(worldSeed, galaxyIndex, slot.key).key).toBe(
+				slot.key,
+			);
+		}
+	for (const worldSeed of [-1, 1.5, NaN, Infinity, 0x100000000])
+		expect(() => capabilityIdentity(worldSeed, 0, key)).toThrow();
+	for (const galaxyIndex of [-1, 1.5, NaN, Infinity, 8])
+		expect(() => capabilityIdentity(seed, galaxyIndex, key)).toThrow();
+	for (const systemIndex of [-1, 1.5, NaN, Infinity, 256])
+		expect(() => capabilitySlots(systemIndex, station)).toThrow();
+});
+
 test("real remote raider recovery boundaries settle FIFO work before replacement", () => {
 	let w = newWorld(seed);
 	const raiders = raiderSlots(record.index, record.government);

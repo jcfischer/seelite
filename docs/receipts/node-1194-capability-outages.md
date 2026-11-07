@@ -90,7 +90,25 @@ Round 4 returned one prose-only nit, no behavior or check request. The existing
 transaction documentation is restored to its function. Review stops under the
 map's stopping rule; final browser selection follows on the clean response HEAD.
 
-Final-HEAD browser selection and gate, and canonical before/after capture are pending. The new registered `probe-capability-outage` uses the actual page, world APIs, real console clicks, repair transition and browser save/reload. It buys fuel while the natural market outage is confirmed, checks a persistent notice beside an unrelated notice, refuses a damaged purchase, checks recovery with an actually stocked buy, and checks flag-off compatibility after reload.
+At runtime HEAD `5786c618`, the mandatory selector chose all 121 probes against
+base `a107a16`. The hardware run passed **118/119 gating probes** in 1,216
+seconds. Its only gating failure is the unchanged live-cockpit bare `three`
+import at line 878, repeated alone in 17.7 seconds. This is a failed browser
+merge gate. The existing output-stage quarantine remains a warning, and the
+quarantined death probe passed; neither gates. The owned capability probe passes
+10/10 and scoop migration 8/8, alone and within the broad run. Logs:
+`/tmp/outages1194-probe-pr-5786c618.log` and
+`/tmp/outages1194-live-cockpit-alone-runner.log`.
+
+Complete canonical captures contain **94 base / 96 after views**, both clean
+source manifests on ANGLE Metal Apple M5 Pro. The review surface is
+`/tmp/seelite-capability-1194/index.html`, linking the two complete sheets and
+manifests. The new canonical views demonstrate service UI, while separate
+transaction captures demonstrate an actual buy. Principal visual approval is
+still pending. The exact-head final evidence is also recorded in
+[the PR comment](https://github.com/jcfischer/seelite/pull/1205#issuecomment-6701408512).
+
+The registered `probe-capability-outage` uses the actual page, world APIs, real console clicks, repair transition and browser save/reload. It buys fuel while the natural market outage is confirmed, checks a persistent notice beside an unrelated notice, refuses a damaged purchase, checks recovery with an actually stocked buy, and checks flag-off compatibility after reload.
 
 The initial selector chose all 121 probes for `a107a16...92f943d4`. That hardware
 run was interrupted after the new probe exposed an exact-endpoint defect; it
@@ -129,3 +147,46 @@ before the outer body. Production version validation is unchanged. Independent
 review confirmed no other explicit version stamp in the probe closure.
 
 The canonical set adds owned `capability-market-damaged` and `capability-market-recovered` views on the mining flag. Principal visual approval remains required; an agent's probes and captures cannot provide that approval. This node remains open until its actual gates and required approval are complete.
+
+## Test ownership and oracle follow-up
+
+This amendment changes only headless tests and this receipt. Runtime, browser
+probes, canonical views and mutation-runner policy are unchanged from
+`5786c618`. The earlier browser and visual evidence belongs to that runtime
+HEAD; the amendment does not claim a new 121-probe pass.
+
+The changed-line mutation advisory at `5786c618` reported 857 mutants and 454
+survivors. Its source-stem selection omitted the capability tests for four
+shared modules. Renaming the world, save and commerce suites to their source
+families, and moving the console cases into a console-owned suite, makes the
+shipped `testsFor` select both the original and capability suites for
+`world-state`, `save-envelope`, `station-commerce` and `station-console`.
+Capability slots retain both world/save capability suites through the existing
+nearest-importer fallback. Evidence:
+`/tmp/outages1194-followup-mutation-selection.log`. No policy is widened or
+survivor suppressed.
+
+The large-cycle oracle now compares two later cycles, 1 and 2^32+1; comparing
+against the differently transformed initial cycle could conceal a wrapped
+stream. Approved odds fixtures independently pin zero, partial and full
+pressure and an empty roster. The earlier statistical test obtained its
+expected odds from the same production function, so changing that function
+could change both sides. Added cases also check zero-length retained intervals,
+refusal of reversed intervals and unsupported identity/time values, and
+supported namespace endpoints. Console tests cover each independent service,
+healthy/absent projections, unrelated notices and healing only the matching
+refusal while other damage remains.
+
+Ten explicit temporary mutants fail their named targeted tests: low-32-bit
+cycle alias, incorrect government base, incorrect odds, ignored partial
+pressure, rejected empty roster, rejected zero-length interval, accepted invalid
+initial clock, rejected maximum world seed, hidden non-market damage and
+prematurely cleared damage refusal. All production files are restored
+byte-for-byte. Logs are
+`/tmp/outages1194-followup-{cycle-high-bits,approved-base,approved-odds,partial-pressure,empty-roster,zero-interval,initial-clock,seed-endpoint,independent-notice,premature-healing}-mutant.log`.
+
+Affected tests pass **250 tests / 125,804 assertions across nine files** in
+`/tmp/outages1194-followup-affected.log`. This is not a new whole-instrument
+mutation score or a complete full-suite rerun. Remaining advisory survivors
+require individual interpretation; exact error-text assertions or removal of a
+redundant refusal guard are not automatically meaningful coverage targets.

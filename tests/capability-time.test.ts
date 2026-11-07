@@ -9,6 +9,39 @@ import {
 
 const context = { seed: 1, government: 0, active: 0, total: 4 };
 
+test("approved odds fixtures include partial pressure and an empty roster", () => {
+	for (const [government, active, total, base, odds, multiplier, share] of [
+		[0, 0, 4, 0.12, 3 / 22, 1, 0.12],
+		[7, 0, 4, 0.03, 3 / 97, 1, 0.03],
+		[0, 2, 4, 0.12, 3 / 22, 1.5, 9 / 53],
+		[7, 1, 4, 0.03, 3 / 97, 1.25, 15 / 403],
+		[0, 4, 4, 0.12, 3 / 22, 2, 3 / 14],
+		[7, 0, 0, 0.03, 3 / 97, 1, 0.03],
+	]) {
+		const rates = capabilityRates({ ...context, government, active, total });
+		expect(rates.base).toBeCloseTo(base, 12);
+		expect(rates.odds).toBeCloseTo(odds, 12);
+		expect(rates.multiplier).toBe(multiplier);
+		expect(rates.share).toBeCloseTo(share, 12);
+	}
+});
+
+test("zero-length retained intervals grant no work and reversed intervals refuse", () => {
+	const anchor = initialCapabilityTime(context, 0);
+	expect(queryCapabilityTime(context, anchor, 0, 0)).toBe(0);
+	expect(queryCapabilityTime(context, anchor, 5, 5)).toBe(0);
+	expect(() => queryCapabilityTime(context, anchor, 100, 99)).toThrow();
+});
+
+test("supported seed endpoints work and invalid seeds or initial clocks refuse", () => {
+	for (const seed of [0, 0xffffffff])
+		expect(capabilityDuration(seed, 1)).toBeGreaterThanOrEqual(600);
+	for (const seed of [-1, 1.5, NaN, Infinity, 0x100000000])
+		expect(() => capabilityDuration(seed, 1)).toThrow();
+	for (const at of [-1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
+		expect(() => initialCapabilityTime(context, at)).toThrow();
+});
+
 test("fixed outage excludes disabled seconds and retained history refuses", () => {
 	const anchor = {
 		at: 0,
@@ -160,7 +193,10 @@ test("initial duration is length biased, later duration is uniform and remaining
 		).toBeLessThan(0.025);
 	}
 	expect(() => capabilityDuration(1, Number.MAX_SAFE_INTEGER + 1)).toThrow();
-	expect(capabilityDuration(1, 2 ** 32)).not.toBe(capabilityDuration(1, 0));
+});
+
+test("later cycle identities retain their high bits in the duration stream", () => {
+	expect(capabilityDuration(1, 2 ** 32 + 1)).not.toBe(capabilityDuration(1, 1));
 });
 
 test("a natural end is retained exactly when subtraction would round its reconstruction", () => {
