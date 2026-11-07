@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
 /**
  * The normal game route owns the live cockpit. This is deliberately separate
@@ -873,6 +874,20 @@ await fixturePage.goto(
 	}),
 );
 await bootedGame(fixturePage, 90000);
+await fixturePage.route(
+	"**/node_modules/three/examples/jsm/loaders/GLTFLoader.js",
+	(route) =>
+		route.fulfill({
+			contentType: "text/javascript",
+			body: readFileSync(
+				new URL(
+					"../node_modules/three/examples/jsm/loaders/GLTFLoader.js",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		}),
+);
 await installCockpitTextProbe(fixturePage);
 await fixturePage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 const alternate = await fixturePage.evaluate(async () => {

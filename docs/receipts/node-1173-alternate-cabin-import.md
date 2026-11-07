@@ -57,11 +57,14 @@ probe naming Three's physical installation paths. No application module,
 server configuration, assertion, fixture GLB or tolerance changed.
 
 Under the same raw-response replay, importing the new entry passed on hardware
-and SwiftShader. The existing alternate-cabin browser row remains the behavioral
-regression check: scanner containment, painted and visible ore/survey screens,
+and SwiftShader. The existing alternate-cabin browser row verifies cabin
+behavior: scanner containment, painted and visible ore/survey screens,
 clear glass, absent flight screen, visible status and flight fallback, matching
 flight pixels, and unpowered systems. A headless loader mock would not exercise
 Chromium's import resolution, so no substitute unit assertion was added.
+The original row alone is not a deterministic import regression because some
+normal Vite states transform the old physical URL successfully. The Sage
+response below adds the unresolved-response replay to the row itself.
 
 The replay can be repeated from a blank same-origin Playwright page by routing
 `**/node_modules/three/examples/jsm/loaders/GLTFLoader.js` to
@@ -147,3 +150,20 @@ guard, launcher wiring and build pass; their logs are
 The original full-run failures above remain historical; no full-suite pass is
 inferred from affected checks. Final Sage, exact-head selected browser evidence
 and CI results will be recorded on the PR before merge.
+
+## Sage response
+
+Round 1 at `6578d01a` returned one suggestion, with no blocker or major: the
+existing cabin row could pass after restoring the old physical import on a
+Vite server that rewrites that dependency. The response adds the exact old
+loader URL's untransformed-response replay to the alternate-cabin page after
+boot. It does not intercept the game's initial loading, the Vite source entry
+or optimized dependencies, and retains every existing cabin assertion.
+
+Temporarily restoring the old loader and Vector3 import paths with that replay
+present fails with the exact bare-`three` crash in 18.9 seconds on the hardware
+lane. Log: `/tmp/seelite-1173-old-import-mutant.log`. The old imports were
+restored to the repair before the response commit. This replay makes that
+import-path regression deterministic; it is separate from the native,
+unintercepted server diagnosis recorded above. Review stops under the map's
+suggestion-only rule. The final selected gate will verify the restored code.
