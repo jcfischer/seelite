@@ -1,6 +1,6 @@
 # Field-shape study for node #1043
 
-Four isolated layout candidates reuse the production field generator's radius,
+The four historical isolated layout candidates reuse the production field generator's radius,
 shape, spin and drift draws, then render through production `FieldDraw` and the
 installed authored rock model. Nothing under `src/` changes. These inputs are
 study candidates, awaiting the principal's choice, rather than approved tuning.

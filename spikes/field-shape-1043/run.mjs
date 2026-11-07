@@ -118,7 +118,7 @@ try {
 			for (const draw of original) draw.root.visible = false;
 			const draws = {};
 			const profiles = {};
-			for (const name of S.CANDIDATES) {
+			for (const name of S.LATTICE_CANDIDATES) {
 				const draw = new D.FieldDraw(
 					plan,
 					S.candidateRocks(g.world.system.record, plan, name),
@@ -248,7 +248,7 @@ try {
 				plan: plan.id,
 				clock: t0,
 				profiles: Object.fromEntries(
-					S.CANDIDATES.map((n) => [
+					S.LATTICE_CANDIDATES.map((n) => [
 						n,
 						{ ...profiles[n], rocks: draws[n].rocks.length },
 					]),

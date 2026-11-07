@@ -380,9 +380,8 @@ try {
 				)
 					throw Error("populated live Navigation projection mismatch");
 				window.__organicNavRefresh = () => {
-					g.updateCockpit();
 					g.render(0);
-					return g.navRows().filter((r) => r.kind === "rock").length;
+					return rows.length;
 				};
 				return {
 					mining: g.surveyState().on,
@@ -509,6 +508,8 @@ try {
 					}
 				}
 		manifest.timing.loadEnd = loadavg();
+		manifest.navigationMethod =
+			"Held-clock stationary cockpit: exactly one production render (includes updateCockpit), plus cheap recorded row-count consumption; no extra refresh or projection. High, occlusion off, actual AA. Six alternating blocks.";
 		manifest.navigation = names.map((name) => ({ name, samples: [] }));
 		for (let block = 0; block < blocks; block++)
 			for (const name of block % 2 ? [...names].reverse() : names) {
