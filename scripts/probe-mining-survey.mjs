@@ -144,10 +144,23 @@ try {
 			),
 			done.state.designation,
 		);
-		const glass = await page.evaluate(() => ({
-			selected: window.__seelite.selectedRender?.id ?? null,
-			deep: window.__seelite.deepCueRender,
-		}));
+		const glass = await page.evaluate(async () => {
+			const { range } = await import("/src/units.ts");
+			const g = window.__seelite;
+			return {
+				selected: g.selectedRender?.id ?? null,
+				selectedText: g.selectedRender?.text ?? "",
+				instrument: g.cockpit.targetInstrument.primaryText,
+				expected: range(g.surveyState().target.distKm),
+				deep: g.deepCueRender,
+			};
+		});
+		check(
+			"the actual glass label and target instrument agree on the close survey surface range",
+			glass.selectedText.includes(glass.expected) &&
+				glass.instrument.endsWith(glass.expected),
+			JSON.stringify(glass),
+		);
 		check(
 			"the glass brackets the selected rock",
 			glass.selected === done.state.target?.id,
