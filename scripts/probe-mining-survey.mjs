@@ -494,7 +494,8 @@ try {
 						...row,
 						text: button?.querySelector(".lc-nav-detail")?.textContent,
 						disabled: button?.disabled,
-						reason: button?.querySelector("em")?.textContent,
+						reason: button?.querySelector("[data-live-nav-disabled]")
+							?.textContent,
 					};
 				});
 		});

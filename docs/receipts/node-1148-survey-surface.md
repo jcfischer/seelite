@@ -18,7 +18,8 @@ With `?mining=1`, the DEEP mark uses `Game.rockShape(ref).radiusAt(deepDir)`,
 the same archetype heightfield sampler used by the Mining Laser's cut. The
 mouth direction still follows the rock's spin and the field's rotation.
 
-The target instrument reads `RockRef.distKm`, the exact figure used by
+The target instrument and Navigation's Selected Target summary read
+`RockRef.distKm`, the exact figure used by
 `surveyBlock`. This preserves the existing survey convention: the distance to
 the bounding surface, clamped at zero. It does not change survey range,
 target selection, the on-glass target bracket's centre distance, or Lane wait.
@@ -33,7 +34,8 @@ is the owned `RockRef.distKm` surface distance, including zero.
 
 The existing 40 km target limit remains unchanged. A surveyed current-field
 rock beyond that limit stays readable with a disabled button and a visible
-range-limit reason. The Game also revalidates selection against current rows
+range-limit reason on its own full-width line, separate from the reading.
+The Game also revalidates selection against current rows
 and the limit, so stale or synthetic input cannot select a disabled row.
 Nearby listed rocks can be selected with a real pointer click.
 
@@ -60,6 +62,26 @@ distance, detail and refusal fields; ordinary callers retain their previous
 row shape and behavior. Its query can match a supplied reading. The shared
 DOM cache also notices changed row names/kinds, and disabled Navigation rows
 are excluded from the pad cursor. Ordinary rows keep their three cells.
+
+## Resumed display verification
+
+The actual browser consistency check first failed with a 23.9 km Selected Target
+summary against the selected row and instrument's 23.5 km surface distance.
+The corrected summary uses the same mining-gated distance owner, with the
+unchanged centre distance retained for ordinary and flag-off displays. This
+does not change cruise or physical geometry. The check then passed in the
+35-check hardware diagnostic at `7e5f3aef`.
+
+A separate 640 px check first failed because the far row's name took 29.6875 px
+of height while an ordinary rock name took 14.84375 px. The long refusal was
+squeezing the name. The refusal now has its own full-width detail line, keeping
+the actual reading separate. The final diagnostic and canonical evidence are
+recorded on the PR after refreshed review. The interrupted `837053ed` canonical
+run is partial historical diagnostics, not the final 98-view evidence.
+
+Affected headless verification after both display changes passes 185 tests and
+21,750 assertions across nine files, including the existing ordinary-contact
+Navigation fixture with its real collaborator. Typecheck passes.
 
 ## Historical initial-worker verification
 

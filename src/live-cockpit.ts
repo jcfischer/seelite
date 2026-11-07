@@ -648,6 +648,7 @@ export class LiveCockpit {
 			kind: HTMLElement;
 			range: HTMLElement;
 			detail?: HTMLSpanElement;
+			disabledReason?: HTMLSpanElement;
 		}
 	>();
 	private elements: CockpitElements | null = null;
@@ -1692,7 +1693,7 @@ export class LiveCockpit {
 			rowElements.button.title = row.disabledReason ?? "";
 			rowElements.name.textContent = row.name;
 			rowElements.kind.textContent = row.displayKind.toUpperCase();
-			rowElements.range.textContent = `${rangeText} · ${row.disabledReason ?? eta}`;
+			rowElements.range.textContent = `${rangeText} · ${eta}`;
 			if (row.detail !== undefined) {
 				if (!rowElements.detail) {
 					rowElements.detail = document.createElement("span");
@@ -1703,6 +1704,18 @@ export class LiveCockpit {
 			} else if (rowElements.detail) {
 				rowElements.detail.remove();
 				delete rowElements.detail;
+			}
+			if (row.disabledReason !== undefined) {
+				if (!rowElements.disabledReason) {
+					rowElements.disabledReason = document.createElement("span");
+					rowElements.disabledReason.className = "lc-nav-detail";
+					rowElements.disabledReason.dataset.liveNavDisabled = "";
+					rowElements.button.append(rowElements.disabledReason);
+				}
+				rowElements.disabledReason.textContent = row.disabledReason;
+			} else if (rowElements.disabledReason) {
+				rowElements.disabledReason.remove();
+				delete rowElements.disabledReason;
 			}
 			const current = navList.children.item(index);
 			if (current !== rowElements.item)
