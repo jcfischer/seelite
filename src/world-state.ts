@@ -6,7 +6,7 @@ import { parseModule, carriedModule, type FittedModule } from "./loadout";
  * game clock, then overlays *only* what a seed cannot produce: what the player
  * knows, how carriers currently deviate from their generated condition, why,
  * and the other typed per-galaxy domains (§7). This module is that overlay and
- * nothing else — no geometry, no positions, no capability projections. §8's
+ * its bounded capability timing — no geometry or positions. §8's
  * rule is a rule about this file: if it can be derived from the baseline plus
  * the clock, it does not live here.
  *
@@ -89,6 +89,19 @@ import {
 	type TrafficActor,
 } from "./station-traffic";
 import { generateContents } from "./system";
+import {
+	capabilitySlots,
+	capabilityIdentity,
+	type CapabilityService,
+} from "./capability-slots";
+import {
+	initialCapabilityTime,
+	projectCapabilityTime,
+	queryCapabilityTime,
+	validateCapabilityTime,
+	type CapabilityTimeAnchor,
+	type CapabilityTimeContext,
+} from "./capability-time";
 
 // **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
 // same names is the coupling it was extracted to prevent. Import from there.
@@ -97,14 +110,16 @@ import { generateContents } from "./system";
  * The mutable-state schema version (§2). Bump when the shape of anything in a
  * `GalaxyEnvelope` changes; the save/load node owns migration and rejection.
  *
- * **3 is #364's scan record.** A `KnowledgeRow` gained a `scan` member and
+ * **4 adds capability timing, with explicit hash-checked migration from 3.**
+ *
+ * **3 was #364's scan record.** A `KnowledgeRow` gained a `scan` member and
  * relaxed its condition triple from required to optional, and §9.6's rule is
  * that a mismatch refuses with a named message and leaves the record on disk
  * rather than reading an old body as though the new member had always been
  * there — which is how §9.10 handled the black-market marker's arrival, and the
  * reason a v2 save is refused here rather than interpreted.
  */
-export const WORLD_SCHEMA_VERSION = 3;
+export const WORLD_SCHEMA_VERSION = 4;
 
 /**
  * The seeded-baseline version (§2). Bump on **any** generator change that can
@@ -112,9 +127,12 @@ export const WORLD_SCHEMA_VERSION = 3;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 10;
+export const WORLD_GENERATOR_VERSION = 11;
 
 /**
+ * Generator 11 adds capability carriers without moving an older carrier.
+ * Schema-3 snapshots validate their original hashes before the timing-domain lift.
+ *
  * Generator versions a snapshot may still carry. Version 6 → 7 was a pure
  * relabel (#351). Version 8 changes the generated parent and position of some
  * shipyards (#590), so 6/7 now migrate by rebasing their overlays onto the new
@@ -140,7 +158,9 @@ export const WORLD_GENERATOR_VERSION = 10;
  * schema check refuses it first.
  */
 // glossary-ignore: slot
-export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [9, 8, 7, 6];
+export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [
+	10, 9, 8, 7, 6,
+];
 
 export const GALAXY_COUNT = 8;
 
@@ -515,6 +535,10 @@ export function withDeathWreck(
  * `(systemIndex, localCarrierId)` pair and gets its galaxy from the container.
  */
 export interface GalaxyEnvelope {
+	capabilityTime: {
+		genesisAt: number;
+		anchors: Record<CarrierKey, CapabilityTimeAnchor>;
+	};
 	/** Sparse rock debits and expiring survey facts; absent on disk means untouched. */
 	deposits: DepositState;
 	deathWreck?: DeathWreckRow;
@@ -546,6 +570,7 @@ export interface WorldState {
  * serialized envelope is rejected (§9.2) — a save is not an open bag.
  */
 const ENVELOPE_DOMAINS = [
+	"capabilityTime",
 	"galaxyIndex",
 	"objective",
 	"episodes",
@@ -580,6 +605,7 @@ const WORLD_FIELDS = [
 ] as const;
 
 export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
+	capabilityTime: { genesisAt: 0, anchors: {} },
 	galaxyIndex,
 	deposits: emptyDeposits(),
 	objective: {},
@@ -647,6 +673,7 @@ export type GeneratedCarrier = GeneratedCarrierBase &
 		 *  parent. Its hull and its seeded offset are the drawing build's
 		 *  (`salvage.md` S11, S26), so it has no generated placement yet. */
 		| { kind: "derelict" }
+		| { kind: "capability"; service: CapabilityService }
 	);
 
 /**
@@ -691,6 +718,8 @@ export function* enumerateCarriers(
 					orbitRadiusKm: station.orbit.radiusKm,
 					orbitTheta0: station.orbit.theta0,
 				};
+			for (const slot of capabilitySlots(systemIndex, station))
+				yield { ...slot, kind: "capability" };
 		}
 		for (const slot of raiderSlots(systemIndex, record.government))
 			yield {
@@ -751,6 +780,8 @@ const fingerprintType = (c: GeneratedCarrier): string => {
 			return `relay-tender:${c.hullId}`;
 		case "derelict":
 			return "derelict";
+		case "capability":
+			return `capability:${c.service}`;
 	}
 };
 
@@ -771,6 +802,7 @@ const fingerprintPlacement = (c: GeneratedCarrier): string => {
 		case "raider":
 		case "relay-tender":
 		case "derelict":
+		case "capability":
 			return "";
 	}
 };
@@ -894,7 +926,23 @@ export const effectiveCarrier = (
 	env: GalaxyEnvelope,
 	key: CarrierKey,
 	gameTime: number,
+	world?: WorldState,
 ): EffectiveCarrier => {
+	if (localCarrierIdOfKey(key).includes("/capability/")) {
+		if (!world) fail("capability condition requires world context");
+		const context = {
+			...world,
+			galaxies: world.galaxies.map((g, i) => (i === env.galaxyIndex ? env : g)),
+		};
+		return {
+			instanceOrdinal: 0,
+			condition: capabilityAvailability(context, env.galaxyIndex, key, gameTime)
+				.operational
+				? "operational"
+				: "disabled",
+			recovery: undefined,
+		};
+	}
 	const delta = env.objective[key];
 	if (!delta)
 		return {
@@ -1007,19 +1055,253 @@ export function materializeDue(
 	return { envelope: { ...env, objective, episodes }, order: due };
 }
 
+/** A pure dependent settlement hook; returned world state is adopted before old facts are replaced. */
+export type CapabilitySettler = (world: WorldState, to: number) => WorldState;
+
+function capabilityContext(
+	world: WorldState,
+	galaxy: number,
+	key: CarrierKey,
+	at: number,
+): CapabilityTimeContext {
+	const identity = capabilityIdentity(world.seed, galaxy, key);
+	const slots = raiderSlots(identity.systemIndex, identity.government);
+	const env = world.galaxies[galaxy];
+	return {
+		seed: identity.seed,
+		government: identity.government,
+		total: slots.length,
+		active: slots.filter(
+			(s) => effectiveCarrier(env, s.key, at).condition === "operational",
+		).length,
+	};
+}
+
+function retainedCapability(
+	world: WorldState,
+	galaxy: number,
+	key: CarrierKey,
+): CapabilityTimeAnchor {
+	assertGalaxy(galaxy);
+	const domain = world.galaxies[galaxy].capabilityTime;
+	const anchor = domain.anchors[key];
+	return (
+		anchor ??
+		initialCapabilityTime(
+			capabilityContext(world, galaxy, key, domain.genesisAt),
+			domain.genesisAt,
+		)
+	);
+}
+
+function raiderBoundaryTimes(
+	world: WorldState,
+	galaxy: number,
+	systemIndex: number,
+	from: number,
+	to: number,
+): number[] {
+	const record = systemAt(world.seed, galaxy, systemIndex);
+	const env = world.galaxies[galaxy];
+	return [
+		...new Set(
+			raiderSlots(systemIndex, record.government).flatMap((slot) => {
+				const row = env.objective[slot.key];
+				return [
+					row?.recovery?.completesAt,
+					row?.scheduled?.startsAt,
+					row?.scheduled?.completesAt,
+				].filter((t): t is number => t !== undefined && t > from && t < to);
+			}),
+		),
+	].sort((a, b) => a - b);
+}
+
+function projectRetainedCapability(
+	world: WorldState,
+	galaxy: number,
+	key: CarrierKey,
+	to: number,
+) {
+	let anchor = retainedCapability(world, galaxy, key);
+	const identity = capabilityIdentity(world.seed, galaxy, key);
+	let operational = 0;
+	for (const t of [
+		...raiderBoundaryTimes(world, galaxy, identity.systemIndex, anchor.at, to),
+		to,
+	]) {
+		const projection = projectCapabilityTime(
+			capabilityContext(world, galaxy, key, anchor.at),
+			anchor,
+			t,
+		);
+		operational += projection.operational;
+		anchor = projection.state;
+	}
+	return { state: anchor, operational };
+}
+
+/** Read a generated service without creating contact knowledge or changing its causal state. */
+export function capabilityAvailability(
+	world: WorldState,
+	galaxy: number,
+	key: CarrierKey,
+	at = world.gameTime,
+) {
+	const state = projectRetainedCapability(world, galaxy, key, at).state;
+	return {
+		operational: state.phase === "up" || state.repaired,
+		naturalEnd: state.phase === "down" ? state.at + state.left : null,
+		state,
+	};
+}
+
+/** Retained service seconds are bounded by the authoritative world clock and causal anchor. */
+export function operationalDuration(
+	world: WorldState,
+	galaxy: number,
+	key: CarrierKey,
+	from: number,
+	to: number,
+): number {
+	if (
+		!Number.isFinite(from) ||
+		!Number.isFinite(to) ||
+		from < 0 ||
+		to < from ||
+		to > world.gameTime
+	)
+		fail("capability query outside authoritative clock");
+	const anchor = retainedCapability(world, galaxy, key);
+	if (from < anchor.at) fail("capability query before retained anchor");
+	return (
+		projectRetainedCapability(world, galaxy, key, to).operational -
+		projectRetainedCapability(world, galaxy, key, from).operational
+	);
+}
+
+function reanchorCapabilitySystem(
+	world: WorldState,
+	galaxy: number,
+	systemIndex: number,
+	at: number,
+): WorldState {
+	const record = systemAt(world.seed, galaxy, systemIndex);
+	const env = world.galaxies[galaxy];
+	const anchors = { ...env.capabilityTime.anchors };
+	for (const station of generateContents(record).stations)
+		for (const slot of capabilitySlots(systemIndex, station))
+			anchors[slot.key] = projectRetainedCapability(
+				world,
+				galaxy,
+				slot.key,
+				at,
+			).state;
+	const galaxies = world.galaxies.slice();
+	galaxies[galaxy] = {
+		...env,
+		capabilityTime: { ...env.capabilityTime, anchors },
+	};
+	return { ...world, galaxies };
+}
+
+function raiderMutationSystem(
+	world: WorldState,
+	galaxy: number,
+	key: CarrierKey,
+): number | null {
+	if (!localCarrierIdOfKey(key).startsWith("raider-")) return null;
+	const system = systemIndexOfKey(key);
+	if (!isSystemIndex(system)) return null;
+	const record = systemAt(world.seed, galaxy, system);
+	return raiderSlots(system, record.government).some((s) => s.key === key)
+		? system
+		: null;
+}
+
+/** Repair only the current natural outage; its completion cannot suppress a later cycle. */
+export function repairCapability(
+	world: WorldState,
+	galaxy: number,
+	key: CarrierKey,
+	at: number,
+	cause: Provenance,
+	settler?: CapabilitySettler,
+): WorldState {
+	return applyTransition(
+		world,
+		galaxy,
+		key,
+		{ kind: "restore", occurredAt: at, cause },
+		settler,
+	);
+}
+
+/** Project the three station services through the same authority the transaction gate reads. */
+export function stationServices(
+	world: WorldState,
+	galaxy: number,
+	stationKey: CarrierKey,
+	at = world.gameTime,
+): Partial<Record<CapabilityService, boolean>> {
+	assertGalaxy(galaxy);
+	const record = systemAt(world.seed, galaxy, systemIndexOfKey(stationKey));
+	const station = generateContents(record).stations.find(
+		(s) => s.localCarrierId === localCarrierIdOfKey(stationKey),
+	);
+	if (!station) fail("capability: unknown station");
+	return Object.fromEntries(
+		capabilitySlots(record.index, station!).map((slot) => [
+			slot.service,
+			capabilityAvailability(world, galaxy, slot.key, at).operational,
+		]),
+	);
+}
+
 /** Every galaxy materialized up to `gameTime`, and the clock moved to it.
  *  Idempotent: running it twice, or late, gives the same snapshot. */
-export const advanceTo = (world: WorldState, gameTime: number): WorldState => {
-	// **One clock, used twice.** Clamping the stored time while materializing
-	// against the raw argument let `advanceTo(w, 5)` on a world at t = 100
-	// record a clock of 100 and leave a completion due at t = 50 unmaterialized
-	// — two worlds on one timeline serializing to different bytes.
+export const advanceTo = (
+	world: WorldState,
+	gameTime: number,
+	settler?: CapabilitySettler,
+): WorldState => {
+	if (!Number.isFinite(gameTime)) fail("nonfinite world clock");
 	const t = Math.max(world.gameTime, gameTime);
-	return {
-		...world,
-		gameTime: t,
-		galaxies: world.galaxies.map((g) => materializeDue(g, t).envelope),
-	};
+	const boundaries = new Set<number>([t]);
+	for (const env of world.galaxies)
+		for (const row of Object.values(env.objective))
+			for (const due of [
+				row.recovery?.completesAt,
+				row.scheduled?.startsAt,
+				row.scheduled?.completesAt,
+			])
+				if (due !== undefined && due > world.gameTime && due <= t)
+					boundaries.add(due);
+	let current = world;
+	for (const at of [...boundaries].sort((a, b) => a - b)) {
+		current = { ...current, gameTime: at };
+		if (settler) current = settler(current, at);
+		for (const env of current.galaxies) {
+			const systems = new Set<number>();
+			for (const key of sortedKeys(env.objective))
+				if (isDue(env.objective[key], at)) {
+					const system = raiderMutationSystem(current, env.galaxyIndex, key);
+					if (system !== null) systems.add(system);
+				}
+			for (const system of systems)
+				current = reanchorCapabilitySystem(
+					current,
+					env.galaxyIndex,
+					system,
+					at,
+				);
+		}
+		current = {
+			...current,
+			galaxies: current.galaxies.map((env) => materializeDue(env, at).envelope),
+		};
+	}
+	return current;
 };
 
 // ---------------------------------------------------------------------------
@@ -1355,6 +1637,7 @@ export function applyTransition(
 	galaxyIndex: number,
 	key: CarrierKey,
 	event: TransitionEvent,
+	settler?: CapabilitySettler,
 ): WorldState {
 	assertGalaxy(galaxyIndex);
 	assertCarrierKey(key);
@@ -1365,12 +1648,37 @@ export function applyTransition(
 			`${event.kind} at ${event.occurredAt} is before the clock (${world.gameTime})`,
 		);
 
-	const advanced = advanceTo(world, event.occurredAt);
+	let advanced = advanceTo(world, event.occurredAt, settler);
+	const system = raiderMutationSystem(advanced, galaxyIndex, key);
+	if (system !== null)
+		advanced = reanchorCapabilitySystem(
+			advanced,
+			galaxyIndex,
+			system,
+			event.occurredAt,
+		);
 	const env = advanced.galaxies[galaxyIndex];
-	const current = env.objective[key] ?? {
-		instanceOrdinal: 0,
-		condition: "operational" as OperationalCondition,
-	};
+	const capability = localCarrierIdOfKey(key).includes("/capability/")
+		? capabilityIdentity(world.seed, galaxyIndex, key)
+		: null;
+	if (capability && event.kind !== "restore")
+		fail("capability interventions use the restore transition");
+	const current = capability
+		? {
+				instanceOrdinal: 0,
+				condition: capabilityAvailability(
+					advanced,
+					galaxyIndex,
+					key,
+					event.occurredAt,
+				).operational
+					? ("operational" as const)
+					: ("disabled" as const),
+			}
+		: (env.objective[key] ?? {
+				instanceOrdinal: 0,
+				condition: "operational" as OperationalCondition,
+			});
 	const open = env.episodes[key];
 
 	const { next, episodeOrdinal, opensEpisode } = nextDelta(
@@ -1415,6 +1723,24 @@ export function applyTransition(
 		objective: { ...env.objective, [key]: next },
 		episodes: { ...env.episodes, [key]: episode },
 	};
+	if (capability) {
+		const state = projectRetainedCapability(
+			advanced,
+			galaxyIndex,
+			key,
+			event.occurredAt,
+		).state;
+		envelope = {
+			...envelope,
+			capabilityTime: {
+				...env.capabilityTime,
+				anchors: {
+					...env.capabilityTime.anchors,
+					[key]: { ...state, repaired: true },
+				},
+			},
+		};
+	}
 
 	// §3.1: a player-caused explicit transition is witnessed by definition.
 	// A cause with role `none` happened out of sight and leaves knowledge alone.
@@ -1564,7 +1890,7 @@ export const observe = (
 			knowledgeRowFor(
 				env,
 				key,
-				effectiveCarrier(env, key, gameTime),
+				effectiveCarrier(env, key, gameTime, world),
 				gameTime,
 				source,
 			),
@@ -1594,7 +1920,7 @@ export const observeSystemRelay = (
 			rows[key] = knowledgeRowFor(
 				env,
 				key,
-				effectiveCarrier(env, key, gameTime),
+				effectiveCarrier(env, key, gameTime, world),
 				gameTime,
 				"system-relay",
 			);
@@ -2131,15 +2457,20 @@ export const scoopDerelict = (
 export const compactWorld = (
 	world: WorldState,
 	gameTime: number,
+	settler?: CapabilitySettler,
 ): WorldState => {
-	const advanced = advanceTo(world, gameTime);
+	const advanced = advanceTo(world, gameTime, settler);
 	return {
 		...advanced,
 		galaxies: advanced.galaxies.map((env) => {
 			const objective: Record<CarrierKey, ObjectiveDelta> = {};
 			for (const key of sortedKeys(env.objective)) {
 				const delta = env.objective[key];
+				const suppression =
+					localCarrierIdOfKey(key).includes("/capability/") &&
+					capabilityAvailability(advanced, env.galaxyIndex, key).state.repaired;
 				const derivable =
+					!suppression &&
 					delta.condition === "operational" &&
 					delta.instanceOrdinal === 0 &&
 					delta.recovery === undefined &&
@@ -2243,6 +2574,16 @@ const canonicalEnvelope = (
 	gameTime: number,
 ) => ({
 	galaxyIndex: env.galaxyIndex,
+	capabilityTime: {
+		genesisAt: env.capabilityTime.genesisAt,
+		anchors: canonicalMap(env.capabilityTime.anchors, (a) => ({
+			at: a.at,
+			cycle: a.cycle,
+			phase: a.phase,
+			left: a.left,
+			repaired: a.repaired,
+		})),
+	},
 	...(env.deathWreck
 		? {
 				deathWreck: {
@@ -2934,18 +3275,46 @@ const parseLegalKeyList = (
 
 /** One envelope: the declared-field check, then six named domain parsers, then
  *  the one invariant that spans two of them. */
+function parseCapabilityTimeDomain(
+	raw: unknown,
+	gameTime: number,
+): GalaxyEnvelope["capabilityTime"] {
+	const value = asObject(raw, "capability timing");
+	if (Object.keys(value).some((k) => !["genesisAt", "anchors"].includes(k)))
+		fail("capability timing has an undeclared field");
+	const genesisAt = num(value, "genesisAt", "capability timing");
+	if (genesisAt < 0 || genesisAt > gameTime)
+		fail("capability timing genesis outside clock");
+	const rawAnchors = asObject(value.anchors, "capability anchors");
+	const anchors: Record<CarrierKey, CapabilityTimeAnchor> = {};
+	for (const [key, anchor] of Object.entries(rawAnchors)) {
+		assertCarrierKey(key as CarrierKey);
+		anchors[key as CarrierKey] = {
+			...asObject(anchor, "capability anchor"),
+		} as unknown as CapabilityTimeAnchor;
+	}
+	return { genesisAt, anchors };
+}
+
 const parseEnvelope = (
 	raw: unknown,
 	slot: number,
 	seed: number,
 	gameTime: number,
+	legacy = false,
 ): GalaxyEnvelope => {
 	const o = asObject(raw, `galaxy ${slot}`);
+	if (legacy && o.capabilityTime !== undefined)
+		fail("legacy world contains capability timing");
 	for (const field of Object.keys(o))
 		if (!(ENVELOPE_DOMAINS as readonly string[]).includes(field))
 			fail(`galaxy ${slot}: ${field} is not a declared state domain`);
 	for (const field of ENVELOPE_DOMAINS)
-		if (o[field] === undefined && !OPTIONAL_ENVELOPE_DOMAINS.has(field))
+		if (
+			o[field] === undefined &&
+			!OPTIONAL_ENVELOPE_DOMAINS.has(field) &&
+			!(legacy && field === "capabilityTime")
+		)
 			fail(`galaxy ${slot}: the ${field} domain is missing`);
 
 	const galaxyIndex = num(o, "galaxyIndex", `galaxy ${slot}`);
@@ -2977,6 +3346,9 @@ const parseEnvelope = (
 
 	return {
 		galaxyIndex,
+		capabilityTime: legacy
+			? { genesisAt: gameTime, anchors: {} }
+			: parseCapabilityTimeDomain(o.capabilityTime, gameTime),
 		deposits: parseDeposits(o.deposits, seed, galaxyIndex, gameTime),
 		...(o.deathWreck === undefined
 			? {}
@@ -3017,7 +3389,7 @@ export function parseWorld(raw: unknown): WorldState {
 	// top-level field died as "is not a declared field" — exactly the useless
 	// error the move was meant to stop.
 	const worldSchemaVersion = num(o, "worldSchemaVersion", "snapshot");
-	if (worldSchemaVersion !== WORLD_SCHEMA_VERSION)
+	if (worldSchemaVersion !== WORLD_SCHEMA_VERSION && worldSchemaVersion !== 3)
 		fail(
 			`snapshot: worldSchemaVersion ${worldSchemaVersion} needs a migration`,
 		);
@@ -3029,6 +3401,22 @@ export function parseWorld(raw: unknown): WorldState {
 		fail(
 			`snapshot: worldGeneratorVersion ${savedGeneratorVersion} needs a migration`,
 		);
+	if (
+		(worldSchemaVersion === 3 &&
+			savedGeneratorVersion === WORLD_GENERATOR_VERSION) ||
+		(worldSchemaVersion === WORLD_SCHEMA_VERSION &&
+			savedGeneratorVersion !== WORLD_GENERATOR_VERSION)
+	)
+		fail("snapshot: incompatible schema and generator versions");
+	const { integrity: receivedIntegrity, ...receivedBody } = o;
+	if (worldSchemaVersion === 3) {
+		if (typeof receivedIntegrity !== "number")
+			fail("snapshot: the integrity field is missing");
+		if (receivedIntegrity !== fnv1a(JSON.stringify(receivedBody)))
+			fail(
+				"snapshot: integrity check failed — the body does not match its hash",
+			);
+	}
 	for (const field of Object.keys(o))
 		if (!(WORLD_FIELDS as readonly string[]).includes(field))
 			fail(`snapshot: ${field} is not a declared field`);
@@ -3038,7 +3426,7 @@ export function parseWorld(raw: unknown): WorldState {
 	const seed = num(o, "seed", "snapshot");
 	const gameTime = num(o, "gameTime", "snapshot");
 	const world: WorldState = {
-		worldSchemaVersion,
+		worldSchemaVersion: WORLD_SCHEMA_VERSION,
 		// Rebase old overlays onto the generated current catalog. The integrity
 		// hash below still checks the body that arrived; the next write hashes one
 		// stamped with the current version. Old physical placements are not stored.
@@ -3046,9 +3434,44 @@ export function parseWorld(raw: unknown): WorldState {
 		seed,
 		gameTime,
 		galaxies: (o.galaxies as unknown[]).map((g, i) =>
-			parseEnvelope(g, i, seed, gameTime),
+			parseEnvelope(g, i, seed, gameTime, worldSchemaVersion === 3),
 		),
 	};
+	for (const env of world.galaxies)
+		for (const [key, anchor] of Object.entries(env.capabilityTime.anchors) as [
+			CarrierKey,
+			CapabilityTimeAnchor,
+		][]) {
+			const context = capabilityContext(world, env.galaxyIndex, key, anchor.at);
+			validateCapabilityTime(context, anchor);
+			if (anchor.at < env.capabilityTime.genesisAt || anchor.at > gameTime)
+				fail("capability anchor outside retained clock");
+			const restored = env.episodes[key]?.latest;
+			if (
+				anchor.repaired &&
+				(!restored ||
+					restored.kind !== "restore" ||
+					restored.occurredAt > anchor.at)
+			)
+				fail("capability suppression has no attributable restore");
+		}
+	for (const env of world.galaxies)
+		for (const [key, delta] of Object.entries(env.objective) as [
+			CarrierKey,
+			ObjectiveDelta,
+		][])
+			if (localCarrierIdOfKey(key).includes("/capability/")) {
+				capabilityIdentity(seed, env.galaxyIndex, key);
+				if (
+					delta.instanceOrdinal !== 0 ||
+					delta.condition !== "operational" ||
+					delta.recovery ||
+					delta.scheduled ||
+					!env.capabilityTime.anchors[key] ||
+					env.episodes[key]?.latest.kind !== "restore"
+				)
+					fail("capability objective is not an attributable restore override");
+			}
 	if (world.galaxies.filter((g) => g.deathWreck).length > 1)
 		fail("death wreck: more than one commander wreck");
 	for (const env of world.galaxies) {

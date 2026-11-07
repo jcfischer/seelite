@@ -1343,6 +1343,7 @@ import {
 	observeScan,
 	setDepositRow,
 	advanceTo,
+	stationServices,
 	effectiveCarrier,
 	type EffectiveCarrier,
 	haulerAvailability,
@@ -1358,6 +1359,7 @@ import {
 import {
 	type StationConsoleTab,
 	marketDisplayChanged,
+	stationServiceStatus,
 	refusalSentence,
 	stationEquipmentScreen,
 	stationMarketScreen,
@@ -3037,6 +3039,7 @@ class Game {
 	private holdBidsCache: HoldBids = null;
 	private holdBidsCacheKey: string | null | undefined = undefined;
 	private stationConsoleRevision = 0;
+	private stationServicesKey = "";
 	/**
 	 * What the till last said when it said no (#443).
 	 *
@@ -20463,6 +20466,19 @@ class Game {
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
+		const services = this.consoleInput(context).services;
+		const serviceKey = services
+			? `${stationKey}|${JSON.stringify(services)}`
+			: "";
+		if (this.stationServicesKey !== serviceKey) {
+			this.stationServicesKey = serviceKey;
+			this.stationConsoleRevision++;
+		}
+		const serviceStatus = stationServiceStatus(
+			services,
+			this.stationConsoleMessage,
+		);
+		this.stationConsoleMessage = serviceStatus.message;
 		// One projection for the whole console (#443) — see the key below for
 		// why it is built before the memo is consulted. Built first now because
 		// the market's HELD column reads it too.
@@ -20587,6 +20603,7 @@ class Game {
 			credits: this.commander.credits,
 			hold,
 			message: this.stationConsoleMessage,
+			serviceNotice: serviceStatus.notice,
 			// The pilot's own goods, off the same projection rather than off
 			// `commander.cargo` a second time. The footer lists what can be
 			// sold; the hold line above it says what the ship is carrying, and
@@ -21592,6 +21609,7 @@ class Game {
 			this.commerceWorld.galaxies[this.world.system.record.galaxy],
 			key,
 			this.world.gameTime,
+			this.commerceWorld,
 		);
 	}
 
@@ -21701,6 +21719,13 @@ class Game {
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
 			mining: MINING_ON,
+			services: MINING_ON
+				? stationServices(
+						advanceTo(this.commerceWorld, this.world.gameTime),
+						context.galaxyIndex,
+						context.stationKey,
+					)
+				: undefined,
 		};
 	}
 

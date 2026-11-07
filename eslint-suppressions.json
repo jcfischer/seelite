@@ -3021,7 +3021,7 @@
   },
   "src/world-state.ts": {
     "seelite/no-comments": {
-      "count": 235
+      "count": 231
     }
   },
   "tests/adaptive-resolution.test.ts": {

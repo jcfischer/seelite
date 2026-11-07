@@ -191,6 +191,7 @@ export const DOMAIN = {
 	MODULE_VARIANT: 44,
 	NPC_LOADOUT: 45,
 	NPC_FITTING_DROP: 46,
+	CAPABILITY_TIME: 47,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

@@ -32,6 +32,7 @@ import { moduleStock, moduleLocked } from "./module-stock";
  * never agreed to, so the two go through one function rather than one rule each.
  */
 import type { CarrierKey } from "./carrier-key";
+import type { CapabilityService } from "./capability-slots";
 import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
 import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "./hull";
 import type { HullReach } from "./hull-reach";
@@ -213,6 +214,7 @@ export type StationAction =
 	| { type: "buy-hull"; hull: HullId };
 
 export interface StationCommerceInput {
+	services?: Partial<Record<CapabilityService, boolean>>;
 	commander: CommanderState;
 	deficits: DeficitMap;
 	station: MarketStation;
@@ -270,6 +272,9 @@ export type ConsoleInput = Omit<StationCommerceInput, "action">;
  * nobody will ever read, and no type says so.
  */
 export type CommerceRefusal =
+	| "market-damaged"
+	| "equipment-damaged"
+	| "exclusive-damaged"
 	| "module-slot"
 	| "missiles-full"
 	| "core-required"
@@ -466,6 +471,27 @@ const availableEquipment = (
  * `NO_WEDGE` and must still net a profit, or the closure row above it reports the
  * shape of its own instrument.
  */
+/** Existing type-scoped modules use exclusive service; unscoped kinds use equipment. */
+export function purchaseService(kind: string): CapabilityService {
+	const legacy = EQUIPMENT.find((entry) => LEGACY_MODULES[entry.name] === kind);
+	return legacy && legacy.scope !== "universal" ? "exclusive" : "equipment";
+}
+
+function damagedPurchase(
+	input: ConsoleInput,
+	service: CapabilityService,
+): StationCommerceResult | null {
+	if (!input.mining || input.services?.[service] !== false) return null;
+	switch (service) {
+		case "market":
+			return rejected(input, "market-damaged");
+		case "equipment":
+			return rejected(input, "equipment-damaged");
+		case "exclusive":
+			return rejected(input, "exclusive-damaged");
+	}
+}
+
 export function transactAtStation(
 	input: StationCommerceInput,
 	quote: QuoteFn = marketQuote,
@@ -485,6 +511,8 @@ export function transactAtStation(
 		};
 		if (moduleLocked(module, input.rungs))
 			return rejected(input, "equipment-locked");
+		const damage = damagedPurchase(input, purchaseService(module.module));
+		if (damage) return damage;
 		if (input.commander.credits < row.priceCr)
 			return rejected(input, "insufficient-credits");
 		const out = fitModuleAt(input, module, action.slot);
@@ -499,6 +527,8 @@ export function transactAtStation(
 			: out;
 	}
 	if (action.type === "buy-missiles") {
+		const damage = damagedPurchase(input, "equipment");
+		if (damage) return damage;
 		const rack = input.commander.loadout[action.slot];
 		if (!rack || rack.module !== "missile-rack")
 			return rejected(input, "module-slot");
@@ -675,6 +705,11 @@ export function transactAtStation(
 		)
 			return rejected(input, "equipment-owned");
 		if (entry.locked) return rejected(input, "equipment-locked");
+		const damage = damagedPurchase(
+			input,
+			purchaseService(LEGACY_MODULES[entry.name]),
+		);
+		if (damage) return damage;
 		const module = {
 			...boughtModule(
 				input.commander.hull,
@@ -715,6 +750,8 @@ export function transactAtStation(
 	}
 	if (!listsCommodity(good, input.station))
 		return rejected(input, "commodity-unavailable");
+	const damage = damagedPurchase(input, "market");
+	if (damage) return damage;
 	const { base, deficit, holdT, q } = priceAt(input, good, quote);
 	// **The two directions are two prices now**, and picking between them here —
 	// rather than letting each branch read the figure it wants — is what keeps a
@@ -903,6 +940,8 @@ export function hullOffer(
 		return { ...rejected(input, "hull-owned"), ...base };
 	const locked = gateRefusal(hull, input.rungs);
 	if (locked) return { ...rejected(input, "hull-locked"), ...base, locked };
+	const damage = damagedPurchase(input, "exclusive");
+	if (damage) return { ...damage, ...base };
 	const reach = input.hullReach(hull);
 	if (!reach.ok) return { ...rejected(input, "no-reach"), ...base, reach };
 	const reached = { ...base, reach };
@@ -936,6 +975,10 @@ export function hullOffer(
 	const sellableT = sellable.reduce((sum, lot) => sum + lot.units, 0);
 	if (overflowT > sellableT)
 		return { ...rejected(input, "hull-hold"), ...reached };
+	if (overflowT > 0) {
+		const damage = damagedPurchase(input, "market");
+		if (damage) return { ...damage, ...reached };
+	}
 
 	let state = { commander, deficits: input.deficits };
 	const lots: SoldLot[] = [];

@@ -188,7 +188,7 @@ describe("the view set itself", () => {
 		// formatter decides to wrap, and whitespace after `(` is exactly the kind
 		// of change this row must stay silent about.
 		expect(loop).toMatch(
-			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",?\s*\);/,
+			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",\s*view\.shot\.kind\s*===\s*"capability-outage",?\s*\);/,
 		);
 		// And no placer navigates on a fixture of its own any more. `PLACERS` is
 		// the object the loop dispatches through, so a `shot.seed` read inside it
@@ -258,7 +258,7 @@ describe("the view set itself", () => {
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
 		// it, one frame each.
-		expect(VIEWS.length).toBe(94);
+		expect(VIEWS.length).toBe(96);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -848,7 +848,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 94)");
+		expect(html).toContain("Selected canonical views (3 of 96)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -885,7 +885,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–37.8s");
+		expect(html).toContain("· clock 0.6–38.6s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1170,6 +1170,8 @@ describe("the rim look row #480 added", () => {
 			"drum-range",
 			"cold-rocky-ice",
 			"sky-at-the-rim",
+			"capability-market-damaged",
+			"capability-market-recovered",
 			"npc-departure",
 			"npc-arrival",
 			"npc-departure-at-player-lane-point",

@@ -171,6 +171,9 @@ import {
  * bound is fixed (#936 D4).
  */
 /**
+ * **18 adds world capability timing.** Version 17 and earlier keep their original
+ * outer and nested hashes until validation, then migrate the world to schema 4.
+ *
  * **17 grants the cargo scoop once (node #1097, settled by #1095 D8).** A
  * record older than 17 loads with a size-1 grade-E cargo scoop in the first
  * empty cargo-accepting internal slot in key order, the flex slot never; where
@@ -180,7 +183,7 @@ import {
  * may not carry `scoopNotice`, and a 17 record carries it only as `true`
  * (`LEGACY_SCHEMA_FORBIDS`).
  */
-export const SAVE_SCHEMA_VERSION = 17;
+export const SAVE_SCHEMA_VERSION = 18;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -222,7 +225,7 @@ export const SAVE_SCHEMA_VERSION = 17;
  * the cargo-scoop grant.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
 ] as const;
 
 /**
@@ -993,6 +996,12 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	// old world's bytes equal to its hash; this is where the version that may
 	// carry one is enforced, as `flight.rates` is one level down.
 	if ((version as number) < 9) refuseDerelicts(o.world, version as number);
+	const worldVersion = asObject(o.world, "world").worldSchemaVersion;
+	if (
+		((version as number) < 18 && worldVersion !== 3) ||
+		((version as number) >= 18 && worldVersion !== 4)
+	)
+		fail("world schema is incompatible with saveSchemaVersion");
 	const world = parseWorld(o.world);
 	if ((version as number) < 14) {
 		for (const g of world.galaxies)

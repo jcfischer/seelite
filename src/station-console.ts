@@ -54,6 +54,10 @@ import {
 	stockResponse,
 } from "./market";
 import type { DockPhase } from "./dock-session";
+import {
+	CAPABILITY_SERVICES,
+	type CapabilityService,
+} from "./capability-slots";
 // **Type-only, and it has to stay that way.** `station-commerce.ts` imports
 // `stationEquipmentScreen` from here, so a value import back would be a cycle;
 // a type import is erased at build and cannot be one. `relief-bands.ts` and
@@ -667,6 +671,9 @@ const REFUSAL_SENTENCES: Record<
 	"equipment-locked": () => "Locked — the row names the rung it needs.",
 	"equipment-unavailable": () => "This station does not fit that.",
 	"fuel-full": () => "The tank is full.",
+	"market-damaged": () => "The market service is damaged.",
+	"equipment-damaged": () => "The equipment service is damaged.",
+	"exclusive-damaged": () => "The exclusive service is damaged.",
 	"hull-hold": () =>
 		"Too much would stay aboard for that hold — the entrusted lot and contraband are never sold.",
 	"hull-locked": () => "Locked — the row names the rung it needs.",
@@ -691,3 +698,22 @@ export const refusalSentence = (
 export const REFUSAL_REASONS = Object.keys(
 	REFUSAL_SENTENCES,
 ) as readonly CommerceRefusal[];
+
+/** Persistent service status remains visible alongside unrelated notices; healed damage refusals expire. */
+export function stationServiceStatus(
+	services: Partial<Record<CapabilityService, boolean>> | undefined,
+	message: string | null,
+) {
+	const damaged = CAPABILITY_SERVICES.filter(
+		(service) => services?.[service] === false,
+	);
+	const healed = CAPABILITY_SERVICES.some(
+		(service) =>
+			message === `The ${service} service is damaged.` &&
+			services?.[service] !== false,
+	);
+	return {
+		notice: damaged.length ? `Damaged service: ${damaged.join(", ")}.` : null,
+		message: healed ? null : message,
+	};
+}

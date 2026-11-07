@@ -19,6 +19,19 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-capability-outage.mjs",
+			"Natural service outages gate actual docked commerce only with mining enabled, heal on the game clock, retain attributable repairs across raider pressure changes, show live status beside other notices and keep fuel available.",
+			[
+				"capability timing",
+				"commerce refusal",
+				"recovery",
+				"repair provenance",
+				"pressure",
+				"fuel",
+				"mining flag",
+			],
+		),
+		entry(
 			"probe-mining-drill.mjs",
 			"Behind mining=1 the Longwall deploys, holds a rock surface frame, anchors, seats and drills a real deep mouth without a survey; hold gain equals deposit debit; feedback paints, five cockpit switches avoid long tasks, and releasing retracts. A flagless control keeps the old miner groups, collision and cockpit visibility.",
 			[
