@@ -77,11 +77,14 @@ solid/reach predicate but never uses the lattice. It validates the reach set
 and motion outputs, not that predicate or full CCD independently. A deliberately
 omitted rock must fail this oracle before any timing report is emitted.
 
-Common world-space menus are identical across candidates; separately labelled
-occupied-rock targets use each candidate's own rocks. Whole-field crossing and
+Common world-space menus are identical across candidates, including the union
+of one occupied point from each of the four layouts. Every candidate/fixture
+must return a hit on that shared menu. Separately labelled occupied-rock targets
+use each candidate's own rocks. Whole-field crossing and
 enclosing-sphere cases are synthetic stresses, not normal flight. The clock is
 held at 1000 seconds across a 0.1-second step. Timings are CPU query costs with
-warm code/archetype pieces: eleven fresh-System samples and eleven 64-query
+warm code/archetype pieces: sixteen fresh-System preconditioning queries,
+eleven fresh-System samples and eleven 64-query
 warm batch means, in two reversed candidate orders. Cheap returned-count
 accumulation is included in warm elapsed time; cold counting and hashes are
 outside it. These are not individual-query percentiles, advancing-frame costs,

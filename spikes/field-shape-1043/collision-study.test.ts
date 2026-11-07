@@ -47,6 +47,12 @@ test("all candidate queries agree with a complete all-rock traversal", () => {
 		for (const fixture of data.verification.fixtures) {
 			expect(fixture.rocks).toBeGreaterThan(0);
 			expect(
+				fixture.queries.some(
+					(q: { group: string; count: number }) =>
+						q.group === "common" && q.count > 0,
+				),
+			).toBe(true);
+			expect(
 				fixture.queries.find((q: { name: string }) => q.name === "occupied")
 					.count,
 			).toBeGreaterThan(0);

@@ -55,7 +55,12 @@ const fixtures = [
 		plan,
 		rocks: candidateRocks(record, plan, name),
 	}));
-	return { index, kind, record, contents, plans, plan, rows };
+	const commonRocks = CANDIDATES.map((candidate) => {
+		const rock = candidateRocks(record, plan, candidate)[0];
+		if (!rock) throw new Error("empty shared occupied point");
+		return { candidate, rock };
+	});
+	return { index, kind, record, contents, plans, plan, rows, commonRocks };
 });
 
 if (mode === "adapted")
@@ -117,7 +122,7 @@ const blocks = 11;
 const iterations = 64;
 
 for (const fixture of fixtures) {
-	const { plan, record, rows, kind, index } = fixture;
+	const { plan, record, rows, kind, index, commonRocks } = fixture;
 	const rocks = rows.find((r) => r.plan.id === plan.id)!.rocks;
 	if (!rocks.length) throw new Error("empty candidate fixture");
 	const system = makeSystem(record, clock.fromTime);
@@ -166,6 +171,11 @@ for (const fixture of fixtures) {
 				{ x: maximum * 4 + 10 + step.x, y: 0, z: 0 },
 			),
 		},
+		...commonRocks.map(({ candidate, rock }) => ({
+			name: `shared-occupied-${candidate}`,
+			group: "common",
+			ship: atRock(rock),
+		})),
 		{ name: "occupied", group: "candidate-targeted", ship: atRock(rocks[0]) },
 		{
 			name: "occupied-edge",
