@@ -6,6 +6,7 @@ import {
 	systemFields,
 } from "./asteroid-field";
 import type { DisplayContact } from "./display-contact";
+import { type FieldDiscoveries, fieldIsKnown } from "./field-discovery";
 import type { System } from "./sim";
 import { type Vec3, length, sub, v3 } from "./vec3";
 
@@ -58,8 +59,12 @@ function rowAt(system: System, gameTime: number) {
 export function fieldContactsAt(
 	system: System,
 	gameTime: number,
+	known: FieldDiscoveries,
 ): DisplayContact[] {
-	return rowAt(system, gameTime).contacts;
+	const row = rowAt(system, gameTime);
+	return row.contacts.filter((_, i) =>
+		fieldIsKnown(known, system.record.index, row.plans[i]),
+	);
 }
 
 /** The index of the point nearest `pos` and strictly closer than

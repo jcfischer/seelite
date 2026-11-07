@@ -124,6 +124,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["asteroid field", "rock collision", "rotating frame", "placement ghost"],
 		),
 		entry(
+			"probe-field-discovery.mjs",
+			"Rare-field regional sweep leads, hidden unknown contacts, scanner-free proximity discovery, selection and real save/reload with both mining-flag settings.",
+			["field discovery", "system sweep", "proximity", "Navigation", "save"],
+		),
+		entry(
 			"probe-missiles.mjs",
 			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
 			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],

@@ -1,6 +1,7 @@
 /** System-scale sensor provenance (node #482). No knowledge writer, position,
  * contact or target is exposed by this module. */
 import { carrierKey } from "./carrier-key";
+import { FIELD_SLOT, fieldId, systemFields } from "./asteroid-field";
 import { derelictSlots } from "./derelict-slots";
 import { type SystemRecord, generateGalaxy } from "./galaxy";
 import { relayActive } from "./pirate-relay";
@@ -100,7 +101,7 @@ export interface SweepReading {
 	id: string;
 	galaxyIndex: number;
 	systemIndex: number;
-	kind: "relay" | "wreck" | "pressure";
+	kind: "relay" | "wreck" | "pressure" | "field";
 	source: "own-sensors";
 	observedAt: number;
 	region: SweepRegion;
@@ -112,17 +113,30 @@ const readingId = (galaxy: number, system: number, subject: string) =>
 
 /** Generated subjects and the region each reports in this build.
  * Their carrier identities are persistence rows, never docking berths. */
-interface SweepSubject {
-	kind: SweepReading["kind"];
-	subject: string;
-	region: SweepRegion;
-	carriers: ReturnType<typeof raiderSlots>;
-}
+type SweepSubject =
+	| {
+			kind: "field";
+			subject: string;
+			region: { kind: "system-space" };
+	  }
+	| {
+			kind: Exclude<SweepReading["kind"], "field">;
+			subject: string;
+			region: SweepRegion;
+			carriers: ReturnType<typeof raiderSlots>;
+	  };
 function sweepSubjects(
 	record: SystemRecord,
 	contents: SystemContents,
 ): SweepSubject[] {
 	const subjects: SweepSubject[] = [];
+	for (const field of systemFields(record, contents))
+		if (field.profile === "rare")
+			subjects.push({
+				kind: "field",
+				subject: field.id,
+				region: { kind: "system-space" },
+			});
 	const plan = relayActive(record) ? relayPlan(contents, record.seed) : null;
 	if (plan)
 		subjects.push({
@@ -179,12 +193,15 @@ export function sweepSources(
 	const now = world.gameTime;
 	const readings: SweepReading[] = [];
 	for (const s of sweepSubjects(record, contents)) {
-		const live = s.carriers.filter((c) =>
-			s.kind === "wreck"
-				? effectiveDerelict(world, galaxyIndex, c.key, now).condition ===
-					"destroyed"
-				: effectiveCarrier(env, c.key, now).condition === "operational",
-		).length;
+		const live =
+			s.kind === "field"
+				? 1
+				: s.carriers.filter((c) =>
+						s.kind === "wreck"
+							? effectiveDerelict(world, galaxyIndex, c.key, now).condition ===
+								"destroyed"
+							: effectiveCarrier(env, c.key, now).condition === "operational",
+					).length;
 		if (live === 0) continue;
 		const reading: SweepReading = {
 			id: readingId(galaxyIndex, systemIndex, s.subject),
@@ -278,12 +295,17 @@ export function parseSweepReadings(
 			"save: invalid system sweep provenance, region, identity or clock",
 		);
 	};
-	if (!Array.isArray(value) || value.length > 8 * 256 * 6) return fail();
+	if (!Array.isArray(value) || value.length > 8 * 256 * 7) return fail();
 	const seen = new Set<string>();
 	const galaxies = new Map<number, ReturnType<typeof generateGalaxy>>();
 	return value.map((v) => {
 		if (!v || typeof v !== "object" || Array.isArray(v)) return fail();
 		const r = v as SweepReading;
+		if (
+			r.kind === "field" &&
+			(version < 19 || r.region?.kind !== "system-space")
+		)
+			return fail();
 		const strengthKey = strengthRecorded && r.kind === "pressure";
 		if (
 			Object.keys(r).sort().join() !==
@@ -313,9 +335,12 @@ export function parseSweepReadings(
 		const subject = r.id.slice(
 			readingId(r.galaxyIndex, r.systemIndex, "").length,
 		);
-		const generated = sweepSubjects(record, contents).find(
-			(s) => s.kind === r.kind && s.subject === subject,
-		);
+		const generated =
+			r.kind === "field"
+				? subject === fieldId(FIELD_SLOT.rare)
+				: sweepSubjects(record, contents).find(
+						(s) => s.kind === r.kind && s.subject === subject,
+					);
 		if (!generated || r.id !== readingId(r.galaxyIndex, r.systemIndex, subject))
 			return fail();
 		if (!validRegion(r.region, contents, strengthKey)) return fail();

@@ -4,6 +4,17 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-field-discovery.mjs": [
+		"scripts/probe-field-discovery.mjs",
+		"scripts/lib/field-discovery-fixture.mjs",
+		"src/field-discovery.ts",
+		"src/field-contact.ts",
+		"src/asteroid-field.ts",
+		"src/world-state.ts",
+		"src/save-envelope.ts",
+		"src/system-sweep.ts",
+		"src/system-sweep-view.ts",
+	],
 	"probe-capability-outage.mjs": [
 		"scripts/probe-capability-outage.mjs",
 		"scripts/lib/capability-outage-fixture.mjs",

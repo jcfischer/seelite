@@ -1,4 +1,12 @@
 import { parseModule, carriedModule, type FittedModule } from "./loadout";
+import {
+	type FieldDiscoveries,
+	type FieldDiscoveryInput,
+	canonicalFieldDiscoveries,
+	parseFieldDiscoveries,
+	discoverFieldsWithin,
+	FIELD_DISCOVERY_RADIUS_KM,
+} from "./field-discovery";
 /**
  * The persistent world state model — `docs/specs/persistent-world-state.md`.
  *
@@ -541,6 +549,7 @@ export interface GalaxyEnvelope {
 	};
 	/** Sparse rock debits and expiring survey facts; absent on disk means untouched. */
 	deposits: DepositState;
+	fieldDiscoveries: FieldDiscoveries;
 	deathWreck?: DeathWreckRow;
 	galaxyIndex: number;
 	objective: Record<CarrierKey, ObjectiveDelta>;
@@ -581,6 +590,7 @@ const ENVELOPE_DOMAINS = [
 	"derelicts",
 	"deathWreck",
 	"deposits",
+	"fieldDiscoveries",
 ] as const;
 
 /**
@@ -593,6 +603,7 @@ const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set([
 	"derelicts",
 	"deathWreck",
 	"deposits",
+	"fieldDiscoveries",
 ]);
 
 const WORLD_FIELDS = [
@@ -608,6 +619,7 @@ export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
 	capabilityTime: { genesisAt: 0, anchors: {} },
 	galaxyIndex,
 	deposits: emptyDeposits(),
+	fieldDiscoveries: [],
 	objective: {},
 	episodes: {},
 	knowledge: {},
@@ -624,6 +636,26 @@ export const newWorld = (seed: number): WorldState => ({
 	gameTime: 0,
 	galaxies: Array.from({ length: GALAXY_COUNT }, (_, i) => emptyEnvelope(i)),
 });
+
+/** Discover physical fields in the current galaxy without changing deposit or survey state. */
+export function discoverNearbyFields(
+	world: WorldState,
+	context: Omit<FieldDiscoveryInput, "radiusKm">,
+): WorldState {
+	const galaxy = context.record.galaxy;
+	const env = world.galaxies[galaxy];
+	const fieldDiscoveries = discoverFieldsWithin(env.fieldDiscoveries, {
+		...context,
+		radiusKm: FIELD_DISCOVERY_RADIUS_KM,
+	});
+	if (fieldDiscoveries === env.fieldDiscoveries) return world;
+	return {
+		...world,
+		galaxies: world.galaxies.map((g, i) =>
+			i === galaxy ? { ...g, fieldDiscoveries } : g,
+		),
+	};
+}
 
 // ---------------------------------------------------------------------------
 // §2 — identity, and the baseline it is pinned against
@@ -2684,6 +2716,7 @@ const canonicalEnvelope = (
 		seed,
 		env.galaxyIndex,
 	),
+	fieldDiscoveries: canonicalFieldDiscoveries(env.fieldDiscoveries),
 });
 
 const canonicalBody = (world: WorldState) => ({
@@ -3305,6 +3338,8 @@ const parseEnvelope = (
 	const o = asObject(raw, `galaxy ${slot}`);
 	if (legacy && o.capabilityTime !== undefined)
 		fail("legacy world contains capability timing");
+	if (legacy && o.fieldDiscoveries !== undefined)
+		fail("legacy world contains field discoveries");
 	for (const field of Object.keys(o))
 		if (!(ENVELOPE_DOMAINS as readonly string[]).includes(field))
 			fail(`galaxy ${slot}: ${field} is not a declared state domain`);
@@ -3349,6 +3384,7 @@ const parseEnvelope = (
 			? { genesisAt: gameTime, anchors: {} }
 			: parseCapabilityTimeDomain(o.capabilityTime, gameTime),
 		deposits: parseDeposits(o.deposits, seed, galaxyIndex, gameTime),
+		fieldDiscoveries: parseFieldDiscoveries(o.fieldDiscoveries),
 		...(o.deathWreck === undefined
 			? {}
 			: { deathWreck: parseDeathWreck(o.deathWreck) }),

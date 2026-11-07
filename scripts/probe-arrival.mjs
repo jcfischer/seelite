@@ -484,8 +484,20 @@ await rarePage.goto(gameUrl(ORIGIN, { seed: 47, system: 10, raider: "off" }), {
 	waitUntil: "load",
 });
 await bootedGame(rarePage);
-const rareHold = await rarePage.evaluate(() => {
+const rareHold = await rarePage.evaluate(async () => {
+	const A = await import("/src/asteroid-field.ts");
 	const g = window.__seelite;
+	const draw = g.fields.find((field) => field.plan.profile === "rare");
+	if (!draw) return { missing: true };
+	const centre = A.fieldCentre(draw.plan, g.world.gameTime);
+	const velocity = A.fieldCentreVelocity(draw.plan, g.world.gameTime);
+	const assist = g.assist;
+	g.assist = false;
+	g.setThrottle(0);
+	g.world.ship.pos = { ...centre, z: centre.z + 1001 };
+	g.world.ship.vel = { ...velocity, z: velocity.z - 60 };
+	g.step(g.units.MAX_DT);
+	g.assist = assist;
 	const field = g.selectable().find((c) => c.id === "field-01");
 	if (!field) return { missing: true };
 	const rel = () =>

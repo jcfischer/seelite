@@ -1,5 +1,18 @@
 # System sweep — node #482
 
+Rare fields (node #1191) also emit a system-space sweep reading through this same sweep.
+The stable field slot in its source ID is provenance, never a selectable target;
+the row carries own-sensors source and the original observation time, without
+coordinates or a named field contact. A sweep does not discover the field.
+Discovery instead occurs within 1,000 km of its centre, with or without a scanner,
+for all pilots. The per-galaxy discovered-ID set is independent of surveys,
+deposits and field-generator versions. Charted fields remain public contacts.
+Save schema 19 admits the new field reading and discovery domain; older saves
+load unknown rare fields and refuse assembled discovery data or field readings.
+The Navigation SYSTEM MAP caption is currently static, and the galaxy chart
+plots systems only; rare contact visibility belongs to the shared selection
+projection used by Navigation, scope and target markers.
+
 The Long-Range Scanner has a **Sweep** tab beside Navigation on the left
 console. The tab appears only while the module is fitted. One explicit press
 starts a ten-second charge on the game clock; release, changing tabs and looking

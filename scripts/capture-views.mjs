@@ -47,6 +47,7 @@
 import { installHaulerFixture } from "./lib/hauler-fixture.mjs";
 import { placeCapabilityOutage } from "./lib/capability-outage-fixture.mjs";
 import { placeMiningSurvey } from "./lib/mining-survey-fixture.mjs";
+import { placeFieldDiscovery } from "./lib/field-discovery-fixture.mjs";
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
 import { execFileSync } from "node:child_process";
@@ -389,6 +390,11 @@ async function assertChartHover(page, where, shot, aimed) {
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
+	"field-discovery": async (page, shot) => {
+		worldWritten = true;
+		const result = await placeFieldDiscovery(page, shot.mode);
+		return `${result.fieldId} · ${result.mode} at ${result.at.toFixed(3)}s`;
+	},
 	"mining-survey": async (page, shot) => {
 		worldWritten = true;
 		const result = await placeMiningSurvey(page, shot.mode);
@@ -1567,7 +1573,11 @@ try {
 			// earlier row flushed, its clock ahead of the one `__startClockAt`
 			// puts back, and the dock's first write throws (#583).
 			if (view.shot.kind === "shipyard-tab") worldWritten = true;
-			if (["capability-outage", "mining-survey"].includes(view.shot.kind))
+			if (
+				["capability-outage", "mining-survey", "field-discovery"].includes(
+					view.shot.kind,
+				)
+			)
 				worldWritten = true;
 			// A follow jump saves its new system. Every NPC row needs a fresh home
 			// boot, including the first one after the docked Shipyard fixtures.

@@ -28,6 +28,11 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	{
+		date: "2026-11-07",
+		text: "Rare asteroid fields appear on your instruments once you fly within 1,000 km of their centres, with regional Long-Range Scanner leads helping you find them.",
+		node: 1191,
+	},
 	// https://github.com/jcfischer/seelite/issues/1152 — sentence approved by the principal, 2026-11-06.
 	{
 		date: "2026-11-06",
