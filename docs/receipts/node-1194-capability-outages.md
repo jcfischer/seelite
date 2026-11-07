@@ -22,7 +22,8 @@ files**, with zero failures and exit 0 (501 seconds). Log:
 `/tmp/outages1194-full-headless.log`. Its filter echoes a passing failure-kind
 test whose name contains `FAIL`; the actual Bun summary is zero failures.
 
-The affected test invocation passes 507 tests and 145,173 assertions across 16 files:
+Before the broader compatibility follow-up, the affected test invocation passed
+507 tests and 145,173 assertions across 16 files:
 
 ```sh
 rtk test bun test tests/capability-*.test.ts tests/world-state.test.ts tests/save-*.test.ts tests/station-commerce.test.ts tests/station-console.test.ts tests/outfitting.test.ts tests/market-state.test.ts tests/view-set.test.ts tests/holdings.test.ts tests/probe-selection.test.ts
@@ -107,5 +108,14 @@ partition and repeated fractional-pressure regressions pass. Relevant logs:
 
 The interrupted run also printed the existing quarantined output-stage warning
 (13/14 assertions, #975); it is not a gating failure or a change in this node.
+
+At `159f0e06`, the post-fix solo probe passes the exact endpoint recovery and
+real purchase, but reports 9/10 on the reload oracle. A direct production
+round-trip proves all anchor values equal while object insertion order differs:
+projection appends `endsAt` after `repaired`, and canonical serialization orders
+it before `repaired`. The probe now compares the canonical serialized timing
+domains across all eight galaxies, retaining every value and genesis rather
+than comparing incidental in-memory property order. This check-only correction
+is reviewed before rerunning the live probe and broad gate.
 
 The canonical set adds owned `capability-market-damaged` and `capability-market-recovered` views on the mining flag. Principal visual approval remains required; an agent's probes and captures cannot provide that approval. This node remains open until its actual gates and required approval are complete.

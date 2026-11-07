@@ -197,12 +197,13 @@ try {
 
 	const savedTiming = await page.evaluate(async () => {
 		const g = window.__seelite;
+		const W = await import("/src/world-state.ts");
 		if (!g.saveStore) throw new Error("outage reload needs a real save store");
 		g.saveFlush("quit");
 		await g.saveStore.settled();
 		return JSON.stringify(
-			Object.entries(g.commerceWorld.galaxies[0].capabilityTime.anchors).sort(
-				([a], [b]) => a.localeCompare(b),
+			W.serializeWorld(g.commerceWorld).galaxies.map(
+				(env) => env.capabilityTime,
 			),
 		);
 	});
@@ -215,15 +216,16 @@ try {
 	await bootedGame(page, 180000);
 	check(
 		"a mining-on saved timing domain survives real flag-off reload",
-		await page.evaluate(
-			(expected) =>
+		await page.evaluate(async (expected) => {
+			const W = await import("/src/world-state.ts");
+			return (
 				JSON.stringify(
-					Object.entries(
-						window.__seelite.commerceWorld.galaxies[0].capabilityTime.anchors,
-					).sort(([a], [b]) => a.localeCompare(b)),
-				) === expected,
-			savedTiming,
-		),
+					W.serializeWorld(window.__seelite.commerceWorld).galaxies.map(
+						(env) => env.capabilityTime,
+					),
+				) === expected
+			);
+		}, savedTiming),
 	);
 	const off = await placeCapabilityOutage(page);
 	const offBuy = await stockedBuy(page);
