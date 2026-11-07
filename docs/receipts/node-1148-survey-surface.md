@@ -122,18 +122,26 @@ failing transition. All failed and partial runs remain labelled as such.
 An external trace established that a foreign native pointerleave was filtered
 while the crowded point was owned. Chromium still changed its internal hit
 target. A subsequent real move to the park therefore emitted no chart leave,
-leaving the application's remembered hover intact. The correction is confined
-to the capture harness: re-enter the previous owned point with `page.mouse`
-before declaring the park and moving there. This restores a real trusted
-pointerleave at `(0, 0)`, accepted under park ownership. The original
-precondition, text and before/after shutter assertions remain unchanged; there
-are no synthetic events or runtime edits.
+leaving the application's remembered hover intact. A real owned round trip
+initially passed but then failed the committed pair again; its synchronization
+premise was unreliable while foreign native input continued. That attempted
+pointer compensation is discarded.
+
+The final correction is confined to the capture harness: each independent
+chart shot clicks the existing Navigation tab, then the Galaxy Map tab. The
+existing chart owner disposes the old chart on tab exit and mounts a fresh one
+on entry. This removes cross-shot hover state through actual controls before
+the unchanged unlabelled precondition and real `page.mouse` hover. The original
+text and before/after shutter assertions remain unchanged; there are no
+synthetic events or runtime edits.
 
 Evidence: `/tmp/survey1148-chart-sequence-base.log` and
 `/tmp/survey1148-chart-sequence.log` retain the repeated failure;
 `/tmp/seelite-survey-1148/chart-event-trace.json` records the ingestion mismatch;
-`/tmp/survey1148-chart-roundtrip.log` records both original views passing with
-the real owned round trip and trusted leave event. The consecutive browser
+`/tmp/survey1148-chart-roundtrip.log` retains the initial experimental pass;
+`/tmp/survey1148-chart-fixed-check.log` records its later failure;
+`/tmp/survey1148-chart-lifecycle.log` records both original views passing through
+the actual Navigation/Galaxy Map lifecycle with null initial hover. The consecutive browser
 pair is the regression seam; existing headless capture tests inspect catalogue
 and wiring rather than browser hit-target behavior.
 

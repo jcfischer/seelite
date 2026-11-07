@@ -924,6 +924,12 @@ const PLACERS = {
 		// The Galaxy Map tab of the Navigation console, clicked as the probe
 		// clicks it. Not a field assignment: the tab mounts the chart.
 		await page.evaluate(() => {
+			const navigation = document.querySelector(
+				'[data-live-left-tab="Navigation"]',
+			);
+			if (!(navigation instanceof HTMLElement))
+				throw new Error("chart placer: no Navigation tab on this build");
+			navigation.click();
 			const tab = document.querySelector('[data-live-left-tab="Galaxy Map"]');
 			if (!(tab instanceof HTMLElement))
 				throw new Error("chart placer: no Galaxy Map tab on this build");
@@ -1543,9 +1549,6 @@ try {
 		// while the chart may be mounted: released first, the physical cursor got
 		// in between the park and the placer and left another system labelled.
 		// Every other row is released.
-		const previousPointer = await page.evaluate(() => window.__capturePointer);
-		if (previousPointer)
-			await page.mouse.move(previousPointer.x, previousPointer.y);
 		await page.evaluate(
 			(own) => {
 				window.__capturePointer = own;
