@@ -302,6 +302,7 @@ try {
 			const relative = V.sub(to, from);
 			return {
 				startAt: at,
+				fieldId: plan.id,
 				endAt: g.world.gameTime,
 				startKm: V.length(from),
 				endKm: V.length(to),
@@ -334,7 +335,7 @@ try {
 			JSON.stringify(flown),
 		);
 		if (!miss) {
-			const transition = await page.evaluate(async () => {
+			const transition = await page.evaluate(async (originId) => {
 				const A = await import("/src/asteroid-field.ts");
 				const S = await import("/src/system.ts");
 				const C = await import("/src/cruise.ts");
@@ -360,7 +361,7 @@ try {
 				g.world.ship.vel = V.v3();
 				g.step(g.units.MAX_DT);
 				const departure = { ...g.world.ship.pos };
-				g.targetId = "field-01";
+				g.targetId = originId;
 				if (!g.jumpDecision(to).ok)
 					throw new Error("discovery jump fixture is not affordable");
 				g.performJump(to);
@@ -378,16 +379,17 @@ try {
 				await g.saveStore.settled();
 				return {
 					system: g.world.system.record.index,
+					destinationId: plan.id,
 					at: g.world.gameTime,
 					jumpedAt,
 					syntheticClosestKm,
 					departureKm: V.length(V.sub(departure, centre)),
 					arrivalKm: V.length(V.sub(arrived, centre)),
 					known: g.commerceWorld.galaxies[0].fieldDiscoveries,
-					selectable: g.selectableIds().includes("field-01"),
+					selectable: g.selectableIds().includes(plan.id),
 					target: g.targetBody()?.kind ?? null,
 				};
-			});
+			}, flown.fieldId);
 			check(
 				"actual jump/rebuild discards a would-be old-system segment through the destination field",
 				transition.system === 230 &&
@@ -395,8 +397,8 @@ try {
 					transition.syntheticClosestKm < 1000 &&
 					transition.departureKm > 1000 &&
 					transition.arrivalKm > 1000 &&
-					transition.known.includes("10:field-01") &&
-					!transition.known.includes("230:field-01") &&
+					transition.known.includes(`10:${flown.fieldId}`) &&
+					!transition.known.includes(`230:${transition.destinationId}`) &&
 					!transition.selectable &&
 					transition.target !== "field",
 				JSON.stringify(transition),
@@ -406,22 +408,22 @@ try {
 			watch(page);
 			await page.goto(gameUrl(origin, { voices: "formant" }));
 			await bootedGame(page);
-			const restored = await page.evaluate(() => {
+			const restored = await page.evaluate((destinationId) => {
 				const g = window.__seelite;
 				g.clockHeld = true;
 				g.step(g.units.MAX_DT);
 				return {
 					system: g.world.system.record.index,
 					known: g.commerceWorld.galaxies[0].fieldDiscoveries,
-					selectable: g.selectableIds().includes("field-01"),
+					selectable: g.selectableIds().includes(destinationId),
 					target: g.targetBody()?.kind ?? null,
 				};
-			});
+			}, transition.destinationId);
 			check(
 				"reload retains only the old discovery and exposes no stale destination target",
 				restored.system === 230 &&
-					restored.known.includes("10:field-01") &&
-					!restored.known.includes("230:field-01") &&
+					restored.known.includes(`10:${flown.fieldId}`) &&
+					!restored.known.includes(`230:${transition.destinationId}`) &&
 					!restored.selectable &&
 					restored.target !== "field",
 				JSON.stringify(restored),
