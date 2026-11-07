@@ -19983,7 +19983,11 @@ class Game {
 			return;
 		}
 		const target = this.targetBody();
-		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const centreKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const targetKm =
+			MINING_ON && target?.kind === "rock"
+				? (this.rockRef(target.id)?.distKm ?? centreKm)
+				: centreKm;
 		const velocity = this.velocityReadout();
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);

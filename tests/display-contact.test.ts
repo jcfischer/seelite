@@ -4,7 +4,6 @@ import { systemIndexOfKey } from "../src/carrier-key";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
-import { isRockTargetId } from "../src/rock-target";
 import { AttitudeFollower } from "../src/attitude-hold";
 import { ORBIT_ASTERN } from "../src/chase-orbit";
 import { DockingComputer } from "../src/docking-computer";
