@@ -76,7 +76,7 @@ test("density has separated peaks, a lower centre and an empty outer edge", () =
 			}
 });
 
-test("expanded candidates increase extent; density filtering leaves voids", () => {
+test("expanded candidates increase extent and filter occupancy", () => {
 	for (const name of CANDIDATES.filter((n) => n !== "baseline")) {
 		const profile = candidateProfile(plan.profile, name);
 		expect(profile.semiKm[0]).toBeGreaterThan(
@@ -89,4 +89,53 @@ test("expanded candidates increase extent; density filtering leaves voids", () =
 			);
 		}
 	}
+});
+
+test("realised density favours the peaks over sparse regions", () => {
+	const profile = candidateProfile(plan.profile, "clusters");
+	const cells = fieldCells(profile);
+	const occupied = new Set(
+		candidateRocks(record, plan, "clusters").map((r) => r.slot),
+	);
+	const groups = {
+		dense: { cells: 0, rocks: 0 },
+		sparse: { cells: 0, rocks: 0 },
+	};
+	for (let slot = 0; slot < cells.length; slot++) {
+		const c = cells[slot];
+		const d = densityAt(
+			c.x / profile.semiKm[0],
+			c.y / profile.semiKm[1],
+			c.z / profile.semiKm[2],
+		);
+		const group = d > 0.5 ? groups.dense : d < 0.1 ? groups.sparse : null;
+		if (group) {
+			group.cells++;
+			if (occupied.has(slot)) group.rocks++;
+		}
+	}
+	expect(groups.dense.cells).toBeGreaterThan(0);
+	expect(groups.sparse.cells).toBeGreaterThan(0);
+	expect(groups.dense.rocks / groups.dense.cells).toBeGreaterThan(
+		(3 * groups.sparse.rocks) / groups.sparse.cells,
+	);
+});
+
+test("box jitter has larger realised RMS anchor displacement on the comparison field", () => {
+	const cells = fieldCells(candidateProfile(plan.profile, "clusters"));
+	const rms = (name: "clusters" | "broken") => {
+		const rocks = candidateRocks(record, plan, name);
+		return Math.sqrt(
+			rocks.reduce((sum, r) => {
+				const c = cells[r.slot];
+				return (
+					sum +
+					(r.anchor.x - c.x) ** 2 +
+					(r.anchor.y - c.y) ** 2 +
+					(r.anchor.z - c.z) ** 2
+				);
+			}, 0) / rocks.length,
+		);
+	};
+	expect(rms("broken")).toBeGreaterThan(rms("clusters"));
 });

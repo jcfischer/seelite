@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { loadavg } from "node:os";
 import { resolve, join } from "node:path";
 import { createServer } from "vite";
@@ -50,6 +51,9 @@ const server = await createServer({
 });
 let browser;
 const manifest = {
+	gitHead: execFileSync("git", ["rev-parse", "HEAD"], {
+		encoding: "utf8",
+	}).trim(),
 	world: 0x5ee11e,
 	system,
 	kind,
@@ -232,6 +236,7 @@ try {
 			return g.scannerContacts.filter((c) => c.id === plan.id);
 		};
 		return {
+			settings: { ...g.settings.value },
 			plan: plan.id,
 			clock: t0,
 			profiles: Object.fromEntries(
@@ -302,6 +307,14 @@ try {
 					const yes = samples[`${chosen}:true`],
 						no = samples[`${chosen}:false`];
 					const deltaMs = median(yes) - median(no);
+					if (
+						(view === "inside" || view === "close") &&
+						(stats.true.calls <= stats.false.calls ||
+							stats.true.levels.reduce((a, b) => a + b, 0) === 0)
+					)
+						throw new Error(
+							`Candidate field arm drew nothing: ${chosen} ${view} ${quality}`,
+						);
 					const row = {
 						chosen,
 						view,
