@@ -112,45 +112,6 @@ const isGreeble = (object: THREE.Object3D) => {
 	return false;
 };
 
-let normalReports = 0;
-function reportNormalStage(stage: string, geometry: THREE.BufferGeometry) {
-	if (geometry.type !== "PolyhedronGeometry" || normalReports >= 12) return;
-	try {
-		const normal = geometry.getAttribute("normal");
-		const values = Array.from(normal.array);
-		if (values.every(Number.isFinite)) return;
-		normalReports++;
-		const position = geometry.getAttribute("position");
-		console.error(
-			"station-normal-stage",
-			JSON.stringify({
-				stage,
-				id: geometry.id,
-				normalCount: normal.count,
-				normalItemSize: normal.itemSize,
-				normalized: normal.normalized,
-				normalArrayType: normal.array.constructor.name,
-				positionCount: position.count,
-				positionItemSize: position.itemSize,
-				positionNormalized: position.normalized,
-				positionArrayType: position.array.constructor.name,
-				positionSample: Array.from(position.array).slice(0, 18).map(String),
-				positionGetterSample: Array.from(
-					{ length: Math.min(6, position.count) },
-					(_, i) =>
-						[position.getX(i), position.getY(i), position.getZ(i)].map(String),
-				),
-				positionNonfinite: Array.from(position.array).filter(
-					(n) => !Number.isFinite(n),
-				).length,
-				normals: values.map(String),
-			}),
-		);
-	} catch (error) {
-		console.error("station-normal-stage unavailable", String(error));
-	}
-}
-
 function reportStationFailure(
 	root: THREE.Object3D,
 	details: Record<string, unknown>,
@@ -180,7 +141,9 @@ function reportStationFailure(
 					? Array.from(normal.array).filter((value) => !Number.isFinite(value))
 							.length
 					: null,
-				normalSample: normal ? Array.from(normal.array).slice(0, 9) : null,
+				normalSample: normal
+					? Array.from(normal.array).slice(0, 9).map(String)
+					: null,
 				boundingSphere: mesh.geometry.boundingSphere,
 				boundingBox: mesh.geometry.boundingBox,
 				indices: mesh.geometry.index?.count,
@@ -694,7 +657,6 @@ test("the production polyhedron inputs retain finite normals across warmed const
 			const finite = Array.from(geometry.getAttribute("normal").array).every(
 				Number.isFinite,
 			);
-			if (!finite) reportNormalStage("unwrapped-constructor", geometry);
 			geometry.dispose();
 			expect({ iteration: i, finite }).toEqual({ iteration: i, finite: true });
 		}

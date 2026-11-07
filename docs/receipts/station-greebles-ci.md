@@ -162,3 +162,33 @@ and will be removed after the observation; they are not a candidate correction
 or a final source change. The original assertion path remains intact. Local
 pinned target validation passes 14 cases and 2,314 assertions; typecheck passes.
 Logs: `/tmp/greeble1206-source-stage-{local,tsc}.log`.
+
+## Final diagnostic scope and limits
+
+The final temporary source arm was `189c44859744c4cb4fee06155fa9bbff00c16ce6`
+(run 42340543467, shard-3 job 128307061154). It observed the native constructor,
+the exact pre-append boundary and the post-append boundary without patching any
+Three method. Shard 3 passes 2,532 tests in 412.11 seconds, with zero failures
+and no invalid-normal report; the native control takes 75.13 ms. Raw log:
+`/tmp/greeble1206-source-stage-linux.log`. Exact experimental source is retained
+at `/tmp/greeble1206-source-stage-189c4485-station-mesh.ts` and in that commit.
+The extra reads and allocations can still affect execution; this fourth green
+arm is negative evidence, not a cure.
+
+All experimental source checkpoints and prototype observers are removed.
+`src/station-mesh.ts` is byte-identical to its pre-experiment baseline and has
+no diff against `a107a16`. No production source or CI/runtime configuration
+remains changed. The final headless test retains the original oracles and
+failure-only state capture, plus the trailing native constructor control.
+The captured normal sample now uses strings to distinguish NaN and positive or
+negative infinity on a future failure. The old `7e55ca87` JSON-null samples
+remain ambiguous and are not retroactively classified.
+
+The final local pinned target suite, format, lint, comment guard, launcher
+wiring and build pass. Logs: `/tmp/greeble1206-final-{local,format,lint,comments,wiring,build}.log`.
+Four distinct observational arms failed to reproduce the origin. The actual
+invalid assembled state at `7e55ca87` remains the positive evidence. There is
+no demonstrated cause, correction or version-specific claim; node #1206 remains
+open and PR #1207 remains a diagnostic draft. Darwin arm64 cannot stand in for
+Linux x64, and local x64 execution is also unavailable (`arch -x86_64` reports
+`Bad CPU type in executable`). No system runtime installation was attempted.
