@@ -1,10 +1,12 @@
-# Asteroid field-shape study — node #1043
+# Historical geometric field-shape study — node #1043
+
+The principal rejected these geometric arrangements on 2026-11-07. The current organic proposal and its retained performance limits are in [the organic revision receipt](node-1043-organic-revision.md). These earlier measurements remain historical evidence.
 
 This is a reviewable prototype, not an approved field profile. No production source or runtime behavior changes; node #1043 remains open for principal visual judgment and its remaining integration measurements.
 
 ## Implementation and reproducibility
 
-The branch contains four study profiles, arithmetic tests, a three-world count instrument and a GPU capture/cost instrument under `spikes/field-shape-1043/`. Its README gives the commands. Captures, raw samples and contact sheets live outside the repository. Production `FieldDraw`, the authored asteroid model, `fieldRocks`, shape/radius draws, motion and LOD selection are reused. No field shape, material or level threshold is retuned.
+The branch contains four study profiles, arithmetic tests, a three-world count instrument and a hardware browser capture/frame-cost instrument under `spikes/field-shape-1043/`. Its README gives the commands. Captures, raw samples and contact sheets live outside the repository. Production `FieldDraw`, the authored asteroid model, `fieldRocks`, shape/radius draws, motion and LOD selection are reused. No field shape, material or level threshold is retuned.
 
 The candidates are baseline; 2.5x semi-axes with sparse occupancy; 3x semi-axes with two smooth clusters, voids and a soft edge; and the clustered layout with cell-contained box jitter. These are comparison inputs, not policy rulings.
 
@@ -25,7 +27,7 @@ Count corpus: worlds 47, 7 and 0x5ee11e, galaxy0. The charted bucket contains 29
 
 The original heightfield file remains 786,480 bytes and the sixteen archetypes are reused. Higher rock count increases instance and lattice-row counts, not heightfield-archetype storage. The largest candidate lattice index magnitude is at most 21, inside the current signed lattice-key range. Headless tests prove the bound, drift and half-margin remain inside every indexed cell, including explicit rare fixtures. Production `buildLattice` reads the shipped profile directly. The isolated CPU study below exercises that unchanged query with candidate dependency inputs; a production integration must still make drawing and collision consume the same chosen layout.
 
-## GPU method and measured scope
+## Historical synchronous hardware-render frame-cost method
 
 ANGLE Metal / Apple M5 Pro, 1440×900, device scale2, render scale1. Each run has twelve shuffled blocks ×120 frames per field/control arm, one warm pass and readPixels drains; the shared median, shuffler and pair-separation functions are imported. Every timed frame advances the held clock by1/60s within a two-second window and re-stands the camera. Both quality sides, both pinned shadow+AO states, and close/inside/edge/far are included. Antialias conditions are separate runs, not same-condition repeats. No corpus-wide worst-case guarantee is claimed.
 
