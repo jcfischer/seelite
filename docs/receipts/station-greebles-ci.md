@@ -88,7 +88,32 @@ entire ray path. Review stops under the suggestion-only rule.
 The first instrumented Linux PR CI run at `d13dc1bf` passes its four unit
 shards, including the two target assertions. Run: 42334550996; shard-3 job:
 128288427956. This supplies no failing state to interpret. The response head's
-normal CI remains pending; its diagnostics will carry the extra ray evidence
-if a failure recurs. A green run alone is not a cure. Runtime source,
+normal CI at `7e55ca87` subsequently reproduces both original failures. Its
+assembled core has finite positions and 108 nonfinite normal components;
+greeble instance transforms and missed-ray inputs are nonfinite. The material
+side and object world transforms are ordinary. Raw evidence:
+`/tmp/seelite-pr1207-final-shard3.log`, with complete parsed snapshots at
+`/tmp/seelite-greeble-diagnostic-{mount,outline}.json`. This locates invalid data
+upstream of the verification rays, but does not establish its origin.
+A green run alone is not a cure. Runtime source,
 configuration, browser probes, test tolerances and assertions remain unchanged. This diff is confined
 to a headless test and prose, so no browser run is required by CLAUDE.md.
+
+## Construction-stage experiment
+
+Test-only checkpoints wrap the existing `computeVertexNormals` and
+`normalizeNormals` methods and restore both after the file. They report only
+invalid Polyhedron normal arrays, before and after each stage. Numeric values
+are encoded as strings so NaN and infinities remain distinguishable. Counts,
+item size, normalization flag and array type accompany the values. Reports
+are bounded and diagnostic exceptions retain the original failure path.
+
+A separate bounded case constructs 2,048 raw polyhedra using the actual
+production core's `parameters`, without copying its geometry literals. The
+pinned local target suite passes 14 tests and 2,314 assertions in 4.03 seconds;
+typecheck and the standard static/build gates pass. Logs use
+`/tmp/greeble1206-cause-{local,tsc,format,lint,comments,wiring,build}.log`.
+No production source, normal calculation, tolerance or CI setting changes.
+The next Linux observation will distinguish computation/normalization from
+later assembly; wrapping methods can change optimization, so another green
+result alone would not exonerate those stages.

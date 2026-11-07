@@ -19,7 +19,14 @@
  * quality gate drops the geometry and keeps every light.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	describe,
+	expect,
+	test,
+} from "bun:test";
 import { cpus } from "node:os";
 import * as THREE from "three";
 import {
@@ -111,6 +118,80 @@ const isGreeble = (object: THREE.Object3D) => {
 		if (node.name.startsWith("greebles")) return true;
 	return false;
 };
+
+let normalReports = 0;
+function reportNormalStage(stage: string, geometry: THREE.BufferGeometry) {
+	if (geometry.type !== "PolyhedronGeometry" || normalReports >= 12) return;
+	try {
+		const normal = geometry.getAttribute("normal");
+		const values = Array.from(normal.array);
+		if (values.every(Number.isFinite)) return;
+		normalReports++;
+		const position = geometry.getAttribute("position");
+		console.error(
+			"station-normal-stage",
+			JSON.stringify({
+				stage,
+				id: geometry.id,
+				normalCount: normal.count,
+				normalItemSize: normal.itemSize,
+				normalized: normal.normalized,
+				normalArrayType: normal.array.constructor.name,
+				positionCount: position.count,
+				positionNonfinite: Array.from(position.array).filter(
+					(n) => !Number.isFinite(n),
+				).length,
+				normals: values.map(String),
+			}),
+		);
+	} catch (error) {
+		console.error("station-normal-stage unavailable", String(error));
+	}
+}
+
+const originalComputeNormals =
+	THREE.BufferGeometry.prototype.computeVertexNormals;
+const originalNormalizeNormals =
+	THREE.BufferGeometry.prototype.normalizeNormals;
+beforeAll(() => {
+	THREE.BufferGeometry.prototype.computeVertexNormals = function () {
+		reportNormalStage("before-compute", this);
+		originalComputeNormals.call(this);
+		reportNormalStage("after-compute", this);
+	};
+	THREE.BufferGeometry.prototype.normalizeNormals = function () {
+		reportNormalStage("before-normalize", this);
+		originalNormalizeNormals.call(this);
+		reportNormalStage("after-normalize", this);
+	};
+});
+afterAll(() => {
+	THREE.BufferGeometry.prototype.computeVertexNormals = originalComputeNormals;
+	THREE.BufferGeometry.prototype.normalizeNormals = originalNormalizeNormals;
+});
+
+test("the production polyhedron inputs retain finite normals across warmed construction", () => {
+	const built = buildStationForm("trade", "a", GREY, 0, 0);
+	const core = built.root.getObjectByName(
+		"core",
+	) as THREE.Mesh<THREE.PolyhedronGeometry>;
+	const { vertices, indices, radius, detail } = core.geometry.parameters;
+	for (let i = 0; i < 2048; i++) {
+		const geometry = new THREE.PolyhedronGeometry(
+			vertices,
+			indices,
+			radius,
+			detail,
+		);
+		const normals = Array.from(geometry.getAttribute("normal").array);
+		expect({ iteration: i, finite: normals.every(Number.isFinite) }).toEqual({
+			iteration: i,
+			finite: true,
+		});
+		geometry.dispose();
+	}
+	built.dispose();
+}, 60_000);
 
 function reportStationFailure(
 	root: THREE.Object3D,
