@@ -40,7 +40,7 @@ Nearby listed rocks can be selected with a real pointer click.
 When visible rock rows are present, the list uses strict nearest-first order
 for all its visible rows. Lists without rock rows retain the existing two
 kilometre ordering deadband. This change is limited to the mining context;
-flag-off ordering remains unchanged. Rock rows do not run ordinary cruise ETA
+flag-off ordering remains unchanged. Rock rows do not run ordinary cruise time
 integration. Reading details and refusal states participate in the DOM cache
 key, so a reserve update repaints even with the ship and clock held still.
 

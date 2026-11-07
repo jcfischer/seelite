@@ -21849,16 +21849,19 @@ class Game {
 		return [
 			...ordinary,
 			...rocks
-				.filter(
-					(ref) =>
-						ref.id === selected?.id ||
+				.filter((ref) => {
+					if (ref.id === selected?.id) return true;
+					const row = this.rockDepositRow(ref);
+					return (
+						row?.surveyedAt !== undefined &&
 						surveyReading(
 							this.rockContentsOf(ref),
-							this.rockDepositRow(ref),
+							row,
 							this.world.gameTime,
 							SURVEY_LIFETIME_H,
-						) !== null,
-				)
+						) !== null
+					);
+				})
 				.map((ref) => ({
 					...rockContact(ref),
 					name: `Rock ${ref.rock.slot}`,

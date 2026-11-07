@@ -111,6 +111,19 @@ function subject(mining = true) {
 }
 
 describe("surveyed rocks in Navigation (node #1148)", () => {
+	test("does not generate contents for unsurveyed unselected rocks", () => {
+		const { g } = subject();
+		const contentsOf = g.rockContentsOf;
+		g.rockContentsOf = (ref: RockRef) => {
+			if (ref.id !== g.targetId)
+				throw new Error("unsurveyed rock contents should not be generated");
+			return contentsOf(ref);
+		};
+		expect(
+			g.navigationTargets().filter((row: any) => row.kind === "rock"),
+		).toHaveLength(1);
+	});
+
 	test("only current-field readings and the selected rock appear, nearest first", () => {
 		const { g, rows } = subject();
 		rows.set(near[0].id, { surveyedAt: now });
