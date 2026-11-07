@@ -100,6 +100,66 @@ function drawCueAt(ref: RockRef, contents: RockContents, gameTime: number) {
 }
 
 describe("survey surface and target instrument (node #1148)", () => {
+	test("DEEP text clears coincident cue and selected-target rings on either side", () => {
+		const rock = rocks.find(
+			(rock) =>
+				rockContents(record.seed, plan.slot, plan.profile, rock).deepDir,
+		);
+		if (!rock) throw new Error("Missing deep-deposit fixture");
+		const contents = rockContents(record.seed, plan.slot, plan.profile, rock);
+		const ref = resolveRock(fields, rockTargetId(plan, rock.slot), v3(), 37.5);
+		if (!ref || !contents.deepDir) throw new Error("Missing deep-deposit pose");
+		const { subject } = drawCueAt(ref, contents, 37.5);
+		const direction = rockDirectionNow(ref, contents.deepDir, 37.5);
+		for (const facing of [true, false]) {
+			const circles: number[][] = [];
+			let dash: number[] = [];
+			const labels: {
+				text: string;
+				x: number;
+				y: number;
+				align: string;
+				baseline: string;
+			}[] = [];
+			const paint = {
+				...ctx,
+				textAlign: "start",
+				textBaseline: "alphabetic",
+				arc(x: number, y: number, radius: number) {
+					circles.push([x, y, radius]);
+				},
+				setLineDash(value: number[]) {
+					dash = value;
+				},
+				fillText(text: string, x: number, y: number) {
+					labels.push({
+						text,
+						x,
+						y,
+						align: this.textAlign,
+						baseline: this.textBaseline,
+					});
+				},
+			};
+			subject.drawDeepDepositCue(
+				paint,
+				add(ref.pos, scale(direction, ref.rock.radiusKm * (facing ? 3 : -3))),
+				() => ({ x: 100, y: 100, on: true }),
+			);
+			expect(subject.deepCueRender.facing).toBe(facing);
+			expect(circles).toEqual([[100, 100, 7]]);
+			expect(dash).toEqual(facing ? [] : [3, 3]);
+			expect(labels).toHaveLength(1);
+			expect(labels[0]).toMatchObject({
+				text: facing ? "DEEP" : "DEEP · FAR SIDE",
+				x: 100,
+				align: "center",
+				baseline: "top",
+			});
+			expect(labels[0].y).toBeGreaterThan(114);
+		}
+	});
+
 	test("DEEP lies on the laser-cut heightfield within one cell across archetypes and spin", () => {
 		const seen = new Set<number>();
 		for (const rock of rocks) {
@@ -185,14 +245,17 @@ describe("survey surface and target instrument (node #1148)", () => {
 				const displayed: { km: number | null } = { km: null };
 				const subject = Object.assign(
 					Object.create(
-						gameMethods(["updateInstruments", "surveyBlock"], {
-							...bindings,
-							MINING_ON: mining,
-							range: (km: number) => {
-								displayed.km = km;
-								return range(km);
+						gameMethods(
+							["updateInstruments", "displayTargetKm", "surveyBlock"],
+							{
+								...bindings,
+								MINING_ON: mining,
+								range: (km: number) => {
+									displayed.km = km;
+									return range(km);
+								},
 							},
-						}),
+						),
 					),
 					{
 						world: { ship: { pos } },
@@ -200,7 +263,10 @@ describe("survey surface and target instrument (node #1148)", () => {
 							flightInstrument: instrument(),
 							targetInstrument: instrument(),
 						},
-						rockRef: () => ref,
+						rockRef: () => {
+							if (!mining) throw new Error("Flag-off rock lookup");
+							return ref;
+						},
 						surveyFiguresFitted: () => ({ rangeKm: 4, dwellS: 4 }),
 						triggerHeld: () => false,
 						weaponAim: () => v3(0, 0, -1),

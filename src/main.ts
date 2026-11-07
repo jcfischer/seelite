@@ -10574,7 +10574,9 @@ class Game {
 		ctx.arc(at.x, at.y, 7, 0, Math.PI * 2);
 		ctx.stroke();
 		ctx.font = "11px Menlo, monospace";
-		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x + 11, at.y + 4);
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x, at.y + 18);
 		ctx.restore();
 		this.deepCueRender = { x: at.x, y: at.y, facing, mouth };
 	}
@@ -11453,6 +11455,12 @@ class Game {
 		this.etaAt = this.world.gameTime;
 	}
 
+	private displayTargetKm(target: Body | null, centreKm: number): number {
+		return MINING_ON && target?.kind === "rock"
+			? (this.rockRef(target.id)?.distKm ?? centreKm)
+			: centreKm;
+	}
+
 	private updateInstruments(
 		target: Body | null,
 		targetKm: number,
@@ -11470,10 +11478,7 @@ class Game {
 			scan.actor === undefined
 				? (target?.name ?? "")
 				: this.drawnName(scan.actor);
-		const instrumentKm =
-			MINING_ON && target?.kind === "rock"
-				? (this.rockRef(target.id)?.distKm ?? targetKm)
-				: targetKm;
+		const instrumentKm = this.displayTargetKm(target, targetKm);
 		const targetText = target
 			? `${drawn}  ${range(instrumentKm)}`
 			: "NO TARGET";
@@ -19984,10 +19989,7 @@ class Game {
 		}
 		const target = this.targetBody();
 		const centreKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
-		const targetKm =
-			MINING_ON && target?.kind === "rock"
-				? (this.rockRef(target.id)?.distKm ?? centreKm)
-				: centreKm;
+		const targetKm = this.displayTargetKm(target, centreKm);
 		const velocity = this.velocityReadout();
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
@@ -23423,7 +23425,7 @@ class Game {
 		// labels' order against it is unchanged by node #478.
 		let edgeLabel: MarkerLabelBounds | null = null;
 		const selectedLabel = (name: string, km: number) =>
-			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
+			`${name}  ${range(this.displayTargetKm(selectedBody, km))}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
 			}`;
 		if (raiderSelected)

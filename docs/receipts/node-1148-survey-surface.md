@@ -18,11 +18,12 @@ With `?mining=1`, the DEEP mark uses `Game.rockShape(ref).radiusAt(deepDir)`,
 the same archetype heightfield sampler used by the Mining Laser's cut. The
 mouth direction still follows the rock's spin and the field's rotation.
 
-The target instrument and Navigation's Selected Target summary read
+The target instrument, selected on-glass label and Navigation's Selected Target summary read
 `RockRef.distKm`, the exact figure used by
 `surveyBlock`. This preserves the existing survey convention: the distance to
 the bounding surface, clamped at zero. It does not change survey range,
-target selection, the on-glass target bracket's centre distance, or Lane wait.
+target selection, marker projection or Lane wait. The earlier receipt's
+unchanged on-glass centre-distance limit is superseded by this correction.
 
 ## Navigation
 
@@ -48,10 +49,12 @@ key, so a reserve update repaints even with the ship and clock held still.
 
 ## Shared changes that run without the mining flag
 
-`Game.updateInstruments` runs in ordinary play. Its new distance branch checks
-`MINING_ON` before resolving a rock. With the flag off, it passes the original
-`targetKm` to the original formatter. Non-rock targets also keep that figure
-with mining enabled.
+`Game.displayTargetKm` is the single display adapter used by the target
+instrument, Navigation summary and selected-label reservation and paint. It
+checks `MINING_ON` before resolving a rock. With the flag off, and for ordinary
+targets, each caller retains its original centre-distance argument and formatter.
+The surface distance uses a nullish fallback, preserving zero. Marker geometry,
+physical range and cruise ownership remain unchanged.
 
 `deepCueRender` remains initialized and cleared to `null` in ordinary play.
 Its added `mouth` field is populated only by the existing mining-gated cue
@@ -64,6 +67,21 @@ DOM cache also notices changed row names/kinds, and disabled Navigation rows
 are excluded from the pad cursor. Ordinary rows keep their three cells.
 
 ## Resumed display verification
+
+The close-pose glass consistency check first failed with actual
+`selectedRender.text` reading `Rock 2.4 km` against the instrument and survey
+owner's `2.0 km`. All selected mining-rock distance displays now share the
+adapter above. The previously complete 98-view capture at `0e5bb424` and its
+cancelled partial full gate remain historical evidence; the final corrected
+source receives fresh focused/canonical captures and the full selected gate.
+
+The front view also exposed DEEP text colliding with the selected-label
+baseline. Only that text is now centred below its ring with a top baseline,
+clearing the larger 14 px selected-target ring when the projections coincide.
+A paint-level test failed on the old placement, then passed for both facing
+and far-side cues, pinning unchanged ring position/radius, dash, facing and text.
+The mouth's actual surface point is unchanged. Affected tests now pass 186 tests
+and 21,762 assertions across nine files, and typecheck passes.
 
 The actual browser consistency check first failed with a 23.9 km Selected Target
 summary against the selected row and instrument's 23.5 km surface distance.
