@@ -45,7 +45,7 @@ for (const seed of [0, 42, 2026]) {
 						total: 4,
 					}),
 					at: Number.MAX_SAFE_INTEGER,
-					episode: Number.MAX_SAFE_INTEGER,
+					cycle: Number.MAX_SAFE_INTEGER,
 					phase: "down",
 					left: durationFor(0xffffffff, Number.MAX_SAFE_INTEGER),
 					repaired: true,

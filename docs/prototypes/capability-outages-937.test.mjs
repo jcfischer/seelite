@@ -60,7 +60,7 @@ test("higher pressure consumes only remaining operational budget faster", () => 
 	near(h.queue[0], 1600);
 });
 
-test("repair is immediately serviceable but cannot advance or resurrect its baseline episode", () => {
+test("repair is immediately serviceable but cannot advance or resurrect its baseline cycle", () => {
 	const h = new Harness(fixture(), [2000]);
 	h.repair(200);
 	h.changePressure(400, 4);
@@ -73,10 +73,7 @@ test("repair is immediately serviceable but cannot advance or resurrect its base
 	const state = project(h.anchor, 900).state;
 	assert.equal(state.phase, "up");
 	assert.equal(state.repaired, false);
-	near(
-		state.left,
-		durationFor(state.seed, state.episode) / rates(0, 0, 4).odds,
-	);
+	near(state.left, durationFor(state.seed, state.cycle) / rates(0, 0, 4).odds);
 });
 
 test("whole and partitioned queries agree over seeded cycles", () => {
@@ -95,9 +92,9 @@ test("whole and partitioned queries agree over seeded cycles", () => {
 	}
 });
 
-test("remote recoveries, visits and reloads produce equal FIFO completion", () => {
-	const run = (visits) => {
-		const h = new Harness(fixture(), [200, 1000, 3000]);
+test("explicit remote boundaries agree with visits and complete harness-state reloads", () => {
+	const run = (visits, reload) => {
+		let h = new Harness(fixture(), [200, 1000, 30000]);
 		for (const [at, active] of [
 			[300, 4],
 			[1500, 2],
@@ -106,18 +103,34 @@ test("remote recoveries, visits and reloads produce equal FIFO completion", () =
 		]) {
 			if (visits)
 				for (let t = h.accountedThrough + 31; t < at; t += 31) h.settle(t);
+			if (reload) {
+				const saved = JSON.parse(JSON.stringify(h));
+				h = new Harness(validateAnchor(saved.anchor), saved.queue);
+				h.accountedThrough = saved.accountedThrough;
+				h.completed = saved.completed;
+				h.totalWork = saved.totalWork;
+			}
 			h.changePressure(at, active);
-			h.anchor = validateAnchor(JSON.parse(JSON.stringify(h.anchor)));
 		}
 		h.settle(10000);
 		return h;
 	};
-	const a = run(false);
-	const b = run(true);
-	near(a.totalWork, b.totalWork);
-	assert.equal(a.completed, b.completed);
-	a.queue.forEach((left, i) => near(left, b.queue[i]));
-	assert.deepEqual(a.anchor, b.anchor);
+	const a = run(false, false);
+	for (const b of [run(true, false), run(true, true)]) {
+		near(a.totalWork, b.totalWork);
+		near(a.accountedThrough, b.accountedThrough);
+		assert.equal(a.completed, b.completed);
+		a.queue.forEach((left, i) => near(left, b.queue[i]));
+		assert.deepEqual(a.anchor, b.anchor);
+	}
+});
+
+test("service seconds complete the oldest job before touching later jobs", () => {
+	const h = new Harness(fixture(), [100, 400, 1000]);
+	h.settle(1200);
+	assert.deepEqual(h.queue, [0, 200, 1000]);
+	assert.equal(h.completed, 1);
+	near(h.totalWork, 300);
 });
 
 test("FIFO splitting changes no total work, and late submission earns no old time", () => {
@@ -148,7 +161,7 @@ test("discarded history and malformed causal anchors refuse explicitly", () => {
 		{ left: -1 },
 		{ at: NaN },
 		{ phase: "maybe" },
-		{ episode: 1.5 },
+		{ cycle: 1.5 },
 		{ active: 5 },
 		{ repaired: true, phase: "up" },
 	]) {
@@ -170,8 +183,8 @@ test("bounded anchors replace causal history, regardless of event count", () => 
 
 test("natural outage durations remain in range and complete cycles match target shares", () => {
 	for (let seed = 0; seed < 64; seed++) {
-		for (let episode = 0; episode < 64; episode++) {
-			const d = durationFor(seed, episode);
+		for (let cycle = 0; cycle < 64; cycle++) {
+			const d = durationFor(seed, cycle);
 			assert.ok(d >= 600 && d <= 1200);
 			for (let gov = 0; gov < 8; gov++) {
 				for (let active = 0; active <= 4; active++) {

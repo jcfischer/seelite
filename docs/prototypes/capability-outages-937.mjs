@@ -24,9 +24,9 @@ export function rates(government, active, total) {
 	};
 }
 
-function unit(seed, episode, domain) {
+function unit(seed, cycle, domain) {
 	let h = 2166136261;
-	for (const c of JSON.stringify([seed, episode, domain]))
+	for (const c of JSON.stringify([seed, cycle, domain]))
 		h = Math.imul(h ^ c.charCodeAt(0), 16777619);
 	h ^= h >>> 16;
 	h = Math.imul(h, 0x7feb352d);
@@ -36,9 +36,9 @@ function unit(seed, episode, domain) {
 	return (h >>> 0) / 0x100000000;
 }
 
-export function durationFor(seed, episode) {
-	const u = unit(seed, episode, "duration");
-	return episode === 0
+export function durationFor(seed, cycle) {
+	const u = unit(seed, cycle, "duration");
+	return cycle === 0
 		? Math.sqrt(600 ** 2 + u * (1200 ** 2 - 600 ** 2))
 		: 600 + 600 * u;
 }
@@ -61,7 +61,7 @@ export function createAnchor({
 		active,
 		total,
 		at: 0,
-		episode: 0,
+		cycle: 0,
 		phase: down ? "down" : "up",
 		left: (durationFor(seed, 0) * remaining) / (down ? 1 : r.odds),
 		repaired: false,
@@ -74,8 +74,8 @@ export function validateAnchor(a) {
 		!Number.isInteger(a.seed) ||
 		a.seed < 0 ||
 		a.seed > 0xffffffff ||
-		!Number.isSafeInteger(a.episode) ||
-		a.episode < 0 ||
+		!Number.isSafeInteger(a.cycle) ||
+		a.cycle < 0 ||
 		!Number.isFinite(a.at) ||
 		a.at < 0 ||
 		a.at > Number.MAX_SAFE_INTEGER ||
@@ -86,8 +86,8 @@ export function validateAnchor(a) {
 		(a.phase === "up" && a.repaired)
 	)
 		throw Error("invalid causal anchor");
-	const limit = durationFor(a.seed, a.episode) / (a.phase === "up" ? odds : 1);
-	if (a.left > limit) throw Error("invalid episode budget");
+	const limit = durationFor(a.seed, a.cycle) / (a.phase === "up" ? odds : 1);
+	if (a.left > limit) throw Error("invalid cycle budget");
 	return { ...a };
 }
 
@@ -107,12 +107,12 @@ export function project(anchor, to) {
 			a.left -= take * speed;
 		} else if (a.phase === "up") {
 			a.phase = "down";
-			a.left = durationFor(a.seed, a.episode);
+			a.left = durationFor(a.seed, a.cycle);
 		} else {
 			a.phase = "up";
-			a.episode++;
-			if (!Number.isSafeInteger(a.episode)) throw Error("episode overflow");
-			a.left = durationFor(a.seed, a.episode) / odds;
+			a.cycle++;
+			if (!Number.isSafeInteger(a.cycle)) throw Error("cycle overflow");
+			a.left = durationFor(a.seed, a.cycle) / odds;
 			a.repaired = false;
 		}
 	}
@@ -188,8 +188,8 @@ export function distributionReport(samples = 32768) {
 					});
 					const r = rates(government, active, 4);
 					let down = 0;
-					for (let episode = 0; episode < 128; episode++)
-						down += durationFor(seed, episode);
+					for (let cycle = 0; cycle < 128; cycle++)
+						down += durationFor(seed, cycle);
 					const end = down * (1 + 1 / (r.odds * r.multiplier));
 					const observed = 1 - query(a, 0, end) / end;
 					maxLongRunError = Math.max(

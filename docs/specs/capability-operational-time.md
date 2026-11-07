@@ -9,7 +9,7 @@ E4's stateless projection, E5's pointwise compaction and E7's obsolete versions.
 ## Gameplay and rates
 
 Natural outages last 600–1,200 seconds of **game time**, drawn per capability
-and episode. A pilot can leave, do other work and return. Refinery processing
+and cycle. A pilot can leave, do other work and return. Refinery processing
 pauses; new submissions refuse, but completed output remains collectable.
 Fuel remains available wherever the pilot can dock. Capabilities fail
 independently; an absent capability is not a disabled one.
@@ -34,29 +34,31 @@ changes. Repair interventions can also reduce actual disabled time.
 Clearing raiders reduces future outage frequency. An ongoing outage keeps its
 original natural end, whatever the raiders subsequently do. A repair restores
 service immediately through that original end, without advancing the underlying
-episode or protecting against later outages. Pressure changes cannot resurrect
-the repaired episode. Repair rewards and refinery custody after destruction or
+cycle or protecting against later outages. Pressure changes cannot resurrect
+the repaired cycle. Repair rewards and refinery custody after destruction or
 relocation remain outside this decision.
 
 ## Deterministic alternating intervals
 
-An episode has a duration `D` and an operational-work budget `B = D / o0`.
+An outage cycle has a duration `D` and an operational-work budget `B = D / o0`.
+Its cycle ordinal is distinct from the world's provenance-bearing Causal-episode
+ordinal; it does not replace or increment that existing state.
 While naturally operational, consume remaining budget at `m` units per second.
 On exhaustion, the service is disabled for exactly `D` seconds. At its natural
-end, start the next episode's full budget. A repaired outage supplies service
+end, start the next cycle's full budget. A repaired outage supplies service
 while its original disabled clock continues; it does not consume the next
 budget early. At constant pressure the cycle's operational time is
 `D / (m * o0)`, so its disabled share is exactly `p`.
 
 Production adds an independent append-only RNG domain for capability timing.
 Derive each capability seed from world seed, galaxy, stable station carrier key
-and fixed slot name, then split phase, remaining position and episode-duration
+and fixed slot name, then split phase, remaining position and cycle-duration
 draws. The decision instrument uses a local independent hash, not a production
 domain allocation. Adding an absent slot or another capability consumes no
-sibling draw. For later episodes draw `D = 600 + 600*u`, `u` in [0,1).
-Require a safe episode ordinal; never wrap its high bits into an earlier episode.
+sibling draw. For later cycles draw `D = 600 + 600*u`, `u` in [0,1).
+Require a safe cycle ordinal; never wrap its high bits into an earlier cycle.
 
-The initial episode is length-biased because a random observation is more
+The initial cycle is length-biased because a random observation is more
 likely to fall in a longer cycle:
 
 ```text
@@ -72,13 +74,13 @@ Subsequent causal changes advance the phase; visits, reads and save frequency
 never reseed it. Intervals are half-open `[start,end)`. At a shared timestamp,
 settle the elapsed interval and natural completions before applying external
 mutations in the world's deterministic order. A repair exactly at natural
-completion cannot suppress the following episode.
+completion cannot suppress the following cycle.
 
 ## Causal anchors and retained queries
 
 Seed, current raiders and the clock cannot reconstruct discarded pressure
 history. Retain at most one causal timing anchor per generated capability:
-anchor time, episode ordinal, natural phase, remaining operational budget or
+anchor time, cycle ordinal, natural phase, remaining operational budget or
 fixed outage end, and live repair suppression. Read government, seed, roster
 and parent from generated identity; do not duplicate them as authoritative save
 values. Untouched capabilities derive their phase from genesis. Reads project

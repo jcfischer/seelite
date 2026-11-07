@@ -79,7 +79,7 @@ TypeOK == /\ clock \in 0..Horizon
 OriginalEndPreserved == phase \in {"Disabled", "Repaired"} => outageEnd = originalEnd
 RepairNotResurrected == repairedUntil > clock => phase = "Repaired"
 NoDisabledProgress == processed = expected
-SettleBeforeReplace == anchor <= accountedThrough /\ accountedThrough <= clock
+CursorBeforeReplace == anchor <= accountedThrough /\ accountedThrough <= clock
 
 Spec == Init /\ [][Next]_vars
 =============================================================================

@@ -13,14 +13,17 @@ node docs/prototypes/capability-outages-937.mjs
 bun docs/prototypes/capability-outages-937-corpus.ts
 ```
 
-The first command passed 11 cases: odds and endpoints; exact exclusion of disabled
+The first command passed 12 cases: odds and endpoints; exact exclusion of disabled
 seconds; pressure changes in both phases; repair through its original outage;
 whole versus partitioned queries; remote recovery boundaries with visits and
-reloads; FIFO splitting and late submission; rejected discarded history and
+full harness-state reloads against a no-reload baseline; exact oldest-job-first
+allocation; FIFO splitting and late submission; rejected discarded history and
 malformed anchors; bounded fields after 10,000 causal changes; and duration bounds.
 Partition checks cover 64 seeds over 100,000 seconds with 137-second subdivisions.
 The remote case explicitly supplies the ordered recovery timeline; the
-instrument does not discover lazy recoveries in production world state.
+instrument does not discover lazy recoveries in production world state. A
+controlled newest-job-first mutation fails the allocation case. Dropping the
+restored accounting cursor fails the reload case.
 
 The distribution command checks 32,768 initialized seeds per government at zero
 and full raider pressure (16 populations). The largest sampled initial-share
@@ -43,9 +46,9 @@ measurements, not the production format or a mathematical byte ceiling.
 
 | World seed | Capabilities, eight galaxies | Refineries | Candidate anchor JSON bytes | Maximum eight-job work rows |
 | --- | ---: | ---: | ---: | ---: |
-| 0 | 7,522 | 783 | 1,524,503 | 6,264 |
-| 42 | 7,564 | 802 | 1,532,969 | 6,416 |
-| 2026 | 7,423 | 769 | 1,504,235 | 6,152 |
+| 0 | 7,522 | 783 | 1,509,459 | 6,264 |
+| 42 | 7,564 | 802 | 1,517,841 | 6,416 |
+| 2026 | 7,423 | 769 | 1,489,389 | 6,152 |
 
 The final column is a count, not a serialized job/custody measurement. The
 standalone harness retains its input job list; it does not implement the
@@ -61,14 +64,16 @@ count and play duration do not add rows.
 
 [The model and configs](../prototypes/capability-outages-937-formal/README.md)
 checked **376 states and 898 steps**, with type bounds, preserved natural ends,
-no repaired-outage resurrection, no disabled processing, settle-before-replace
+no repaired-outage resurrection, no disabled processing, cursor-before-replace
 and deadlock checking all passing. Three deliberate negative configs fail:
 
 - Reset end: time passes → service fails → pressure changes.
 - Resurrection: time passes → service fails → repair → pressure changes.
 - Replace before settlement: time passes → pressure changes.
 
-This finite four-tick protocol model does not prove continuous arithmetic,
+The model accrues work on ticks and checks settlement cursor ordering; it does
+not prove that replacement waits for work to be consumed under old availability.
+This finite four-tick protocol model also does not prove continuous arithmetic,
 population rates, FIFO, serialization, migration or code that does not exist.
 The separate executable instrument tests the continuous arithmetic. Production
 must replay these counterexamples against its own module and world mutations.
