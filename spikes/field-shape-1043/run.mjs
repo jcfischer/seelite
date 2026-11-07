@@ -25,6 +25,9 @@ const system = Number(process.env.SYSTEM ?? 173);
 const kind = process.env.KIND ?? "charted";
 const port = Number(process.env.PORT ?? 5213);
 const captures = process.env.CAPTURES !== "0";
+const antialias = Number(process.env.ANTIALIAS ?? 0);
+if (![0, 2, 4].includes(antialias))
+	throw new Error("Invalid antialias samples");
 for (const [key, n] of Object.entries({
 	blocks,
 	frames,
@@ -54,6 +57,7 @@ const manifest = {
 	gitHead: execFileSync("git", ["rev-parse", "HEAD"], {
 		encoding: "utf8",
 	}).trim(),
+	antialias,
 	world: 0x5ee11e,
 	system,
 	kind,
@@ -91,162 +95,168 @@ try {
 		{ timeout: 180000 },
 	);
 	manifest.renderer = await assertPlayersRenderer(page, "field shape1043");
-	manifest.setup = await page.evaluate(async (kind) => {
-		const g = window.__seelite;
-		g.clockHeld = true;
-		g.view = "chase";
-		g.chaseYaw = 0;
-		g.chaseElevation = 0;
-		const A = await import("/src/asteroid-field.ts");
-		const S = await import("/spikes/field-shape-1043/profiles.ts");
-		const D = await import("/src/field-draw.ts");
-		const M = await import("/src/asteroid-model.ts");
-		const plan = A.systemFields(
-			g.world.system.record,
-			g.world.system.contents,
-		).find((p) => p.profile === kind);
-		if (!plan) throw new Error(`No ${kind} field`);
-		const shapes = M.authoredRockShapes();
-		if (!shapes) throw new Error("Authored shapes missing");
-		const original = g.fields;
-		for (const draw of original) draw.root.visible = false;
-		const draws = {};
-		const profiles = {};
-		for (const name of S.CANDIDATES) {
-			const draw = new D.FieldDraw(
-				plan,
-				S.candidateRocks(g.world.system.record, plan, name),
+	manifest.setup = await page.evaluate(
+		async ([kind, antialias]) => {
+			const g = window.__seelite;
+			g.clockHeld = true;
+			g.settings.set("antialias", antialias);
+			g.view = "chase";
+			g.chaseYaw = 0;
+			g.chaseElevation = 0;
+			const A = await import("/src/asteroid-field.ts");
+			const S = await import("/spikes/field-shape-1043/profiles.ts");
+			const D = await import("/src/field-draw.ts");
+			const M = await import("/src/asteroid-model.ts");
+			const plan = A.systemFields(
+				g.world.system.record,
+				g.world.system.contents,
+			).find((p) => p.profile === kind);
+			if (!plan) throw new Error(`No ${kind} field`);
+			const shapes = M.authoredRockShapes();
+			if (!shapes) throw new Error("Authored shapes missing");
+			const original = g.fields;
+			for (const draw of original) draw.root.visible = false;
+			const draws = {};
+			const profiles = {};
+			for (const name of S.CANDIDATES) {
+				const draw = new D.FieldDraw(
+					plan,
+					S.candidateRocks(g.world.system.record, plan, name),
+				);
+				g.nearScene.add(draw.root);
+				await draw.install(
+					shapes,
+					"authored",
+					async () => {},
+					() => true,
+					(mesh) => g.warmFieldBatch(mesh, shapes, () => true),
+				);
+				draw.root.visible = false;
+				draws[name] = draw;
+				profiles[name] = S.candidateProfile(plan.profile, name);
+			}
+			const t0 = g.world.gameTime;
+			const axis = A.rotateByQuat(plan.rotation, { x: 1, y: 0, z: 0 });
+			const V3 = g.nearScene.position.constructor;
+			g.orientation.setFromUnitVectors(
+				new V3(0, 0, -1),
+				new V3(axis.x, axis.y, axis.z),
 			);
-			g.nearScene.add(draw.root);
-			await draw.install(
-				shapes,
-				"authored",
-				async () => {},
-				() => true,
-				(mesh) => g.warmFieldBatch(mesh, shapes, () => true),
-			);
-			draw.root.visible = false;
-			draws[name] = draw;
-			profiles[name] = S.candidateProfile(plan.profile, name);
-		}
-		const t0 = g.world.gameTime;
-		const axis = A.rotateByQuat(plan.rotation, { x: 1, y: 0, z: 0 });
-		const V3 = g.nearScene.position.constructor;
-		g.orientation.setFromUnitVectors(
-			new V3(0, 0, -1),
-			new V3(axis.x, axis.y, axis.z),
-		);
-		let chosen = "baseline",
-			view = "inside",
-			quality = "high",
-			field = true,
-			t = 0;
-		const point = () => {
-			const rocks = draws[chosen].rocks;
-			const largest = rocks.reduce((a, b) => (b.radiusKm > a.radiusKm ? b : a));
-			const close = A.rockLocal(largest, g.world.gameTime);
-			return view === "close"
-				? { x: close.x - 1.2 * largest.radiusKm, y: close.y, z: close.z }
-				: view === "inside"
-					? { x: 1.8, y: 1.8, z: 1.8 }
-					: view === "edge"
-						? { x: -profiles[chosen].semiKm[0] - 2, y: 0, z: 0 }
-						: { x: -224, y: 0, z: 0 };
-		};
-		const stand = () => {
-			const centre = A.fieldCentre(plan, g.world.gameTime);
-			const p = A.rotateByQuat(plan.rotation, point());
-			const have = g.cameraPos();
-			const ship = g.world.ship.pos;
-			g.world.ship.pos = {
-				x: ship.x + centre.x + p.x - have.x,
-				y: ship.y + centre.y + p.y - have.y,
-				z: ship.z + centre.z + p.z - have.z,
+			let chosen = "baseline",
+				view = "inside",
+				quality = "high",
+				field = true,
+				t = 0;
+			const point = () => {
+				const rocks = draws[chosen].rocks;
+				const largest = rocks.reduce((a, b) =>
+					b.radiusKm > a.radiusKm ? b : a,
+				);
+				const close = A.rockLocal(largest, g.world.gameTime);
+				return view === "close"
+					? { x: close.x - 1.2 * largest.radiusKm, y: close.y, z: close.z }
+					: view === "inside"
+						? { x: 1.8, y: 1.8, z: 1.8 }
+						: view === "edge"
+							? { x: -profiles[chosen].semiKm[0] - 2, y: 0, z: 0 }
+							: { x: -224, y: 0, z: 0 };
 			};
-		};
-		window.__studyArm = (cfg) => {
-			({ chosen, view, quality, field } = cfg);
-			g.settings.set("quality", quality);
-			for (const draw of Object.values(draws)) draw.root.visible = false;
-			g.fieldDraws = field ? [draws[chosen]] : [];
-			g.world.gameTime = t0;
-			t = 0;
-			for (let i = 0; i < 3; i++) {
+			const stand = () => {
+				const centre = A.fieldCentre(plan, g.world.gameTime);
+				const p = A.rotateByQuat(plan.rotation, point());
+				const have = g.cameraPos();
+				const ship = g.world.ship.pos;
+				g.world.ship.pos = {
+					x: ship.x + centre.x + p.x - have.x,
+					y: ship.y + centre.y + p.y - have.y,
+					z: ship.z + centre.z + p.z - have.z,
+				};
+			};
+			window.__studyArm = (cfg) => {
+				({ chosen, view, quality, field } = cfg);
+				g.settings.set("quality", quality);
+				for (const draw of Object.values(draws)) draw.root.visible = false;
+				g.fieldDraws = field ? [draws[chosen]] : [];
+				g.world.gameTime = t0;
+				t = 0;
+				for (let i = 0; i < 3; i++) {
+					stand();
+					g.render(0);
+				}
+			};
+			window.__studyStep = () => {
+				t = (t + 1 / 60) % 2;
+				g.world.gameTime = t0 + t;
 				stand();
 				g.render(0);
-			}
-		};
-		window.__studyStep = () => {
-			t = (t + 1 / 60) % 2;
-			g.world.gameTime = t0 + t;
-			stand();
-			g.render(0);
-		};
-		window.__studyInfo = () => {
-			const centre = A.fieldCentre(plan, g.world.gameTime);
-			const local = A.rotateByQuat(plan.rotation, point());
-			const have = g.cameraPos();
-			const actual = {
-				x: have.x - centre.x,
-				y: have.y - centre.y,
-				z: have.z - centre.z,
 			};
-			const missKm = Math.hypot(
-				actual.x - local.x,
-				actual.y - local.y,
-				actual.z - local.z,
-			);
-			const direction = g.nearCamera.getWorldDirection(new V3());
-			const offAxisDeg =
-				(Math.acos(
-					Math.max(
-						-1,
-						Math.min(
-							1,
-							direction.x * axis.x +
-								direction.y * axis.y +
-								direction.z * axis.z,
+			window.__studyInfo = () => {
+				const centre = A.fieldCentre(plan, g.world.gameTime);
+				const local = A.rotateByQuat(plan.rotation, point());
+				const have = g.cameraPos();
+				const actual = {
+					x: have.x - centre.x,
+					y: have.y - centre.y,
+					z: have.z - centre.z,
+				};
+				const missKm = Math.hypot(
+					actual.x - local.x,
+					actual.y - local.y,
+					actual.z - local.z,
+				);
+				const direction = g.nearCamera.getWorldDirection(new V3());
+				const offAxisDeg =
+					(Math.acos(
+						Math.max(
+							-1,
+							Math.min(
+								1,
+								direction.x * axis.x +
+									direction.y * axis.y +
+									direction.z * axis.z,
+							),
 						),
-					),
-				) *
-					180) /
-				Math.PI;
-			const r = g.renderer;
-			const auto = r.info.autoReset;
-			r.info.autoReset = false;
-			r.info.reset();
-			g.render(0);
-			const stats = {
-				calls: r.info.render.calls,
-				triangles: r.info.render.triangles,
-				levels: [...draws[chosen].perLevel],
-				rocks: draws[chosen].rocks.length,
-				missKm,
-				offAxisDeg,
-				askedKm: Math.hypot(local.x, local.y, local.z),
-				actualKm: Math.hypot(actual.x, actual.y, actual.z),
+					) *
+						180) /
+					Math.PI;
+				const r = g.renderer;
+				const auto = r.info.autoReset;
+				r.info.autoReset = false;
+				r.info.reset();
+				g.render(0);
+				const stats = {
+					calls: r.info.render.calls,
+					triangles: r.info.render.triangles,
+					levels: [...draws[chosen].perLevel],
+					rocks: draws[chosen].rocks.length,
+					missKm,
+					offAxisDeg,
+					askedKm: Math.hypot(local.x, local.y, local.z),
+					actualKm: Math.hypot(actual.x, actual.y, actual.z),
+				};
+				r.info.autoReset = auto;
+				return stats;
 			};
-			r.info.autoReset = auto;
-			return stats;
-		};
-		window.__studyScope = () => {
-			g.view = "cockpit";
-			g.render(0);
-			g.updateCockpit();
-			return g.scannerContacts.filter((c) => c.id === plan.id);
-		};
-		return {
-			settings: { ...g.settings.value },
-			plan: plan.id,
-			clock: t0,
-			profiles: Object.fromEntries(
-				S.CANDIDATES.map((n) => [
-					n,
-					{ ...profiles[n], rocks: draws[n].rocks.length },
-				]),
-			),
-		};
-	}, kind);
+			window.__studyScope = () => {
+				g.view = "cockpit";
+				g.render(0);
+				g.updateCockpit();
+				return g.scannerContacts.filter((c) => c.id === plan.id);
+			};
+			return {
+				settings: { ...g.settings.value },
+				plan: plan.id,
+				clock: t0,
+				profiles: Object.fromEntries(
+					S.CANDIDATES.map((n) => [
+						n,
+						{ ...profiles[n], rocks: draws[n].rocks.length },
+					]),
+				),
+			};
+		},
+		[kind, antialias],
+	);
 	console.log(
 		JSON.stringify({
 			renderer: manifest.renderer,

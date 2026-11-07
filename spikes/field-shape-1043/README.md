@@ -24,7 +24,7 @@ Run production-renderer comparisons and frame measurements:
 
 ```sh
 SEELITE_PROBE_RENDERER=hardware OUT=/tmp/seelite-field-shape-1043 node spikes/field-shape-1043/run.mjs
-SEELITE_PROBE_RENDERER=hardware ORDER_SEED=20261019 CAPTURES=0 OUT=/tmp/seelite-field-shape-1043-repeat node spikes/field-shape-1043/run.mjs
+SEELITE_PROBE_RENDERER=hardware ORDER_SEED=20261019 ANTIALIAS=2 CAPTURES=0 OUT=/tmp/seelite-field-shape-1043-repeat node spikes/field-shape-1043/run.mjs
 ```
 
 The instrument takes the machine probe lock, guards its own Vite server, asserts
@@ -41,7 +41,7 @@ largest rock of each candidate at 1.2 bounding radii, so that view compares
 worst-case subjects rather than the same rock. The manifest records camera
 miss, asked/actual range, axis error, per-level counts and raw frame blocks.
 
-`SYSTEM` and `KIND` can select another fixture (for example `SYSTEM=84 KIND=rare`).
+`SYSTEM` and `KIND` can select another fixture (for example `SYSTEM=0 KIND=rare`).
 The default is world0x5ee11e system173 charted. The corpus separately includes
 charted and rare fields across three worlds. A fixture's frame cost is not a
 corpus-wide worst-case guarantee.
