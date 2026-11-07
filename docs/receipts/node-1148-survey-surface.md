@@ -83,6 +83,16 @@ and far-side cues, pinning unchanged ring position/radius, dash, facing and text
 The mouth's actual surface point is unchanged. Affected tests now pass 186 tests
 and 21,762 assertions across nine files, and typecheck passes.
 
+Scoped Sage round 7 reviewed confirmed `49e688b2`; its returned marker matches.
+It approved with zero findings. The actual hardware diagnostic passes 37/37,
+including the painted glass label and instrument both reading 2.0 km. Format,
+lint, comment lint, wiring and build pass. Refreshed front, 25-degree oblique,
+Navigation and narrow images are preserved under
+`/tmp/seelite-survey-1148/quality-49e688b2` with their actual clean served-head
+metadata. Root quality review clears both surface views; principal visual
+approval and fresh final-head canonical/full gates remain required. Review
+stops; the following response changes prose only.
+
 The actual browser consistency check first failed with a 23.9 km Selected Target
 summary against the selected row and instrument's 23.5 km surface distance.
 The corrected summary uses the same mining-gated distance owner, with the
