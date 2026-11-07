@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { fnv1a } from "../src/rng";
 import {
 	newWorld,
@@ -162,4 +163,40 @@ test("retained raider causality requires complete current capability anchors", a
 	expect(lifted.galaxies[0].capabilityTime.anchors).toEqual({});
 	expect(() => W.operationalDuration(lifted, 0, cap.key, 0, 1000)).toThrow();
 	expect(W.parseWorld(W.serializeWorld(w))).toEqual(w);
+});
+
+test("an immutable actual a107a16 save preserves its ordinary state through migration", () => {
+	const bytes = readFileSync(
+		new URL("./fixtures/capability-legacy-save-a107a16.json", import.meta.url),
+		"utf8",
+	);
+	expect(fnv1a(bytes)).toBe(4146703671);
+	const raw = JSON.parse(bytes);
+	const original = JSON.stringify(raw);
+	expect([
+		raw.saveSchemaVersion,
+		raw.world.worldSchemaVersion,
+		raw.world.worldGeneratorVersion,
+	]).toEqual([17, 3, 10]);
+	const loaded = parseSave(raw);
+	expect(JSON.stringify(raw)).toBe(original);
+	expect(loaded.commander.state.credits).toBe(4321);
+	expect(loaded.commander.state.cargo).toEqual({ Food: 3 });
+	expect(loaded.world.galaxies[0].objective).toEqual(
+		raw.world.galaxies[0].objective,
+	);
+	expect(loaded.world.galaxies[0].episodes).toEqual(
+		raw.world.galaxies[0].episodes,
+	);
+	expect(loaded.world.galaxies[0].knowledge).toEqual(
+		raw.world.galaxies[0].knowledge,
+	);
+	expect(
+		loaded.world.galaxies.every(
+			(g) =>
+				g.capabilityTime.genesisAt === 1000 &&
+				Object.keys(g.capabilityTime.anchors).length === 0,
+		),
+	).toBe(true);
+	expect(parseSave(serializeSave(loaded))).toEqual(loaded);
 });

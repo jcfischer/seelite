@@ -1,3 +1,4 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import { expect, test } from "bun:test";
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { EQUIPMENT } from "../src/market";
@@ -210,6 +211,7 @@ test("invalid slots, grades, missing plants and impossible ammunition are refuse
 });
 function seal(o: any) {
 	const { integrity: _, ...body } = o;
+	pairLegacyWorldFixture(body);
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 }
 test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the new field", () => {
@@ -237,7 +239,7 @@ test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the n
 });
 test("current saves write only loadout; mixed versions and unknown old ids are refused", () => {
 	const current = fixture();
-	expect(current.saveSchemaVersion).toBe(17);
+	expect(current.saveSchemaVersion).toBe(18);
 	expect(current.commander.state.ownedEquipment).toBeUndefined();
 	expect(() =>
 		parseSave(

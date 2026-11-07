@@ -1,3 +1,4 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 /**
  * #408 D4: a new game's guided/free choice is saved on the commander.
  *
@@ -33,15 +34,16 @@ const resealed = (
 ): unknown => {
 	const { integrity: _, ...body } = JSON.parse(JSON.stringify(raw));
 	edit(body);
+	pairLegacyWorldFixture(body);
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
 
 describe("#408 D4 — the saved first-day choice", () => {
-	test("the schema is 16, and 6 is the first version that carries the key", () => {
+	test("the schema is 18, and 6 is the first version that carries the key", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(17);
+		expect(SAVE_SCHEMA_VERSION).toBe(18);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
 		]);
 	});
 

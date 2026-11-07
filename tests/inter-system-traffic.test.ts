@@ -382,7 +382,7 @@ describe("identity persistence and query cost", () => {
 		const before = canonicalSnapshot(newWorld(47), 1000);
 		routeVoyages(galaxy, p, home.index, 1000, getContents);
 		expect(canonicalSnapshot(newWorld(47), 1000)).toBe(before);
-		expect(WORLD_GENERATOR_VERSION).toBe(10);
+		expect(WORLD_GENERATOR_VERSION).toBe(11);
 		const fixture = JSON.parse(
 			readFileSync(
 				new URL("./fixtures/inter-system-old-repair.json", import.meta.url),
@@ -390,7 +390,7 @@ describe("identity persistence and query cost", () => {
 			),
 		);
 		const loaded = parseWorld(fixture);
-		expect(loaded.worldGeneratorVersion).toBe(10);
+		expect(loaded.worldGeneratorVersion).toBe(11);
 		const plan = buildHaulerPlans(galaxy, 0, getContents).find(
 			(p) => p.actor.key === "0:station-refinery/traffic-01",
 		)!;

@@ -1,3 +1,4 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import {
 	migrateEquipment,
 	equipmentNames,
@@ -76,7 +77,7 @@ const WRECK_AT = (() => {
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(17);
+		expect(SAVE_SCHEMA_VERSION).toBe(18);
 		const world = newWorld(56);
 		const raw = serializeSave({
 			world,
@@ -92,6 +93,7 @@ describe("node #482 system sweep", () => {
 		const rehash = (edit: (body: any) => void) => {
 			const { integrity: _, ...body } = JSON.parse(JSON.stringify(current));
 			edit(body);
+			pairLegacyWorldFixture(body);
 			return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		};
 		const old = rehash((body) => {
@@ -566,6 +568,7 @@ describe("node #769 raider pressure strength and cruise lanes", () => {
 						delete (fitting as { purchaseCostCr?: number }).purchaseCostCr;
 			}
 			body.commander.sweepReadings = legacy;
+			pairLegacyWorldFixture(body);
 			const raw = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 			const original = JSON.stringify(raw);
 			const loaded = parseSave(raw).commander.sweepReadings;

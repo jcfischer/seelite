@@ -1,3 +1,4 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import { describe, expect, test } from "bun:test";
 import { HULL_SPECS, type HullId } from "../src/hull";
 import { makeModule, moduleFits, type Loadout } from "../src/loadout";
@@ -53,6 +54,7 @@ const resealed = (
 ): unknown => {
 	const { integrity: _, ...body } = JSON.parse(JSON.stringify(raw));
 	edit(body);
+	pairLegacyWorldFixture(body);
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
 
@@ -66,7 +68,7 @@ const HULLS = Object.keys(HULL_SPECS) as HullId[];
 
 describe("node #1097 — the one-time cargo scoop grant", () => {
 	test("the schema moved from 16 to 17 and 16 is legacy", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(17);
+		expect(SAVE_SCHEMA_VERSION).toBe(18);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toContain(16);
 	});
 
@@ -156,7 +158,7 @@ describe("node #1097 — the one-time cargo scoop grant", () => {
 	test("a version that is neither current nor legacy is refused", () => {
 		const raw = serializeSave(record("courier", baseLoadout("courier")));
 		expect(() =>
-			parseSave(resealed(raw, (b) => (b.saveSchemaVersion = 18))),
+			parseSave(resealed(raw, (b) => (b.saveSchemaVersion = 19))),
 		).toThrow(/unsupported/);
 		expect(() =>
 			parseSave(resealed(raw, (b) => (b.saveSchemaVersion = 1))),

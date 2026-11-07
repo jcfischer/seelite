@@ -1,3 +1,4 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 /**
  * #619: save schema 7 → 8, the ship's rates on the flight record.
  *
@@ -23,6 +24,7 @@ const resealed = (
 ): unknown => {
 	const { integrity: _, ...body } = JSON.parse(JSON.stringify(raw));
 	edit(body);
+	pairLegacyWorldFixture(body);
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
 
@@ -39,7 +41,7 @@ describe("#619 — the rates in the save", () => {
 	test("rates arrived at 8, which is still read beside 7", () => {
 		// Derelicts took 9, salvage 10, sweep 11, death wreck 12, loadout 13,
 		// purchase cost 14, sweep strength 15 and txSeq 16.
-		expect(SAVE_SCHEMA_VERSION).toBe(17);
+		expect(SAVE_SCHEMA_VERSION).toBe(18);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(7);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(8);
 	});
