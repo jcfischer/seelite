@@ -201,7 +201,18 @@ cc292230 and requested changes: the actual Navigation work guard is now fixed,
 with missing-refresh detection and clean 2c9b verified measurements. Shared-close
 selection now intersects every selected candidate and refuses an empty common
 slot. report.mjs regenerates the gallery and summaries from retained manifests.
-Sage follow-up and the final clean-head selector are pending; they are not
-represented as passed by this entry. No browser
+Sage round 2 reviewed ea7ecbce and returned commented: four suggestions, zero
+blocker/important findings. The report now computes and requires 160 raw timing
+rows and refuses dirty, mismatched-head or mismatched-hash sources. Actual input
+manifests pass; deliberate dirty/head/hash/missing-row controls all reject
+(`/tmp/field1043-report-guard-results.txt`). Optional oracle/browser-bootstrap
+refactors are deferred to preserve independent historical evidence and measured
+source provenance. The map stop rule does not require another review round for
+these guard/prose responses.
+
+After Sage, the actual selector at clean ea7ecbce selected zero probes under its
+isolated-study rule (`/tmp/field1043-selector-after-sage.log`). The final response
+tip rechecks that same rule with the hardware-lane PR gate; its exact revision
+and outcome are retained in `/tmp/field1043-final-clean-gate.log`. No browser
 or performance coverage is inferred from a selector returning zero for isolated
 study files. Canonical production views and principal approval remain open.

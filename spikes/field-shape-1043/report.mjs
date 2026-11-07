@@ -10,6 +10,23 @@ const read = (directory) => {
 	if (manifest.errors.length) throw Error(`capture errors in ${directory}`);
 	return manifest;
 };
+let rawWorldTimingRows = 0;
+const sourceByKind = new Map();
+const verifySource = (kind, directory, manifest) => {
+	const hashes = manifest.sources;
+	if (
+		manifest.dirty !== false ||
+		!/^[a-f0-9]{40}$/.test(manifest.head) ||
+		!hashes ||
+		Object.keys(hashes).length === 0 ||
+		Object.values(hashes).some((hash) => !/^[a-f0-9]{64}$/.test(hash))
+	)
+		throw Error(`unclean or missing source provenance in ${directory}`);
+	const signature = JSON.stringify({ head: manifest.head, hashes });
+	if (sourceByKind.has(kind) && sourceByKind.get(kind) !== signature)
+		throw Error(`mismatched ${kind} source head or hashes in ${directory}`);
+	sourceByKind.set(kind, signature);
+};
 const world = [],
 	navigation = [],
 	sources = [];
@@ -17,6 +34,8 @@ for (const kind of ["charted", "rare"])
 	for (const aa of [0, 2]) {
 		const directory = `cost-${kind}-aa${aa}`,
 			m = read(directory);
+		verifySource("world", directory, m);
+		rawWorldTimingRows += m.timing.rows.length;
 		sources.push({
 			directory,
 			head: m.head,
@@ -50,6 +69,7 @@ for (const kind of ["charted", "rare"])
 			}
 		const navDirectory = `nav-verified-${kind}-aa${aa}`,
 			n = read(navDirectory);
+		verifySource("Navigation", navDirectory, n);
 		sources.push({
 			directory: navDirectory,
 			head: n.head,
@@ -87,6 +107,8 @@ for (const kind of ["charted", "rare"])
 			});
 		}
 	}
+if (rawWorldTimingRows !== 160)
+	throw Error(`expected 160 world timing rows, got ${rawWorldTimingRows}`);
 writeFileSync(join(out, "world-summary.json"), JSON.stringify(world, null, 2));
 writeFileSync(
 	join(out, "navigation-summary.json"),
@@ -162,7 +184,7 @@ console.log(
 	JSON.stringify({
 		out,
 		worldSummaryRows: world.length,
-		rawWorldTimingRows: 160,
+		rawWorldTimingRows,
 		navigationArms: navigation.length,
 		sources: sources.length,
 	}),
