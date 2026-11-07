@@ -127,7 +127,9 @@ test("saved discoveries reject malformed, duplicate, charted and unknown identit
 	for (const raw of [
 		null,
 		{},
+		"",
 		"field-01",
+		[[firstKey]],
 		[firstKey, firstKey],
 		[firstKey, null],
 		[`${first.record.index}:${fieldId(FIELD_SLOT.charted)}`],

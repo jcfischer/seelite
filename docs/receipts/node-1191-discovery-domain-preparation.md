@@ -70,7 +70,7 @@ economy or survey figure was selected by this preparation.
 The draft was rebased onto main `a107a16` before this test-only amendment.
 Discovery at a valid game clock of zero now has a positive test, and a saved
 identity with trailing junk is refused even after a valid preceding row. The
-ten discovery tests pass with 44 assertions. Temporary mutations changing the
+ten discovery tests pass with 46 assertions. Temporary mutations changing the
 time guard to `gameTime <= 0` and removing the identity pattern's end anchor
 each fail exactly the corresponding new test; production source is restored
 unchanged. Logs: `/tmp/discovery1191-followup-baseline.log`,
@@ -78,17 +78,32 @@ unchanged. Logs: `/tmp/discovery1191-followup-baseline.log`,
 `/tmp/discovery1191-followup-identity-suffix-mutant.log`.
 
 The affected discovery, asteroid-field, deposit-state and field-contact suites
-pass 57 tests with 132,060 assertions after the rebase. Log:
+pass 57 tests with 132,062 assertions after the rebase. Log:
 `/tmp/discovery1191-followup-affected.log`. Typecheck, format, script lint,
 comment lint, launcher wiring and build pass; corresponding gate logs use
 `/tmp/discovery1191-followup-{tsc,format,lint,comments,wiring,build}.log`.
 
-The remaining advisory survivors are not a claimed runtime defect count.
-Removing redundant type/array/match guards still refuses malformed input,
-duplicate rejection already bounds the supported stable-slot set, and charted
-fields remain known through `fieldIsKnown` even without the rare-only filter.
-The set's insertion order is not the persistence contract; its codec sorts on
-write. No exact exception-text assertions were added to force a mutation score.
+Sage caught an overbroad initial claim that the guard survivors were redundant.
+Two are meaningful JSON-shape gaps: an empty string can read as an empty set
+without the array guard, and a nested array containing a valid key can be
+coerced to that key without the string guard. Both inputs now have rejection
+tests. Removing either guard fails the malformed-identity test; source is
+restored unchanged. Logs:
+`/tmp/discovery1191-followup-array-shape-mutant.log` and
+`/tmp/discovery1191-followup-string-shape-mutant.log`.
+
+The other advisory survivors are not a claimed runtime defect count. Duplicate
+rejection already bounds the supported stable-slot set, charted fields remain
+known through `fieldIsKnown` even without the rare-only filter, and removing
+the match guard still refuses malformed identities. The set's insertion order
+is not the persistence contract; its codec sorts on write. No exact
+exception-text assertions were added to force a mutation score, and no new
+whole-instrument score is claimed.
+
+Sage's follow-up round had one suggestion and one nit, with no blocker. The
+JSON-shape suggestion is addressed above. A helper for repeated discovery-call
+fixtures is declined as maintenance-only churn; the explicit inputs keep each
+boundary assertion local. Review stops under the map's suggestion/nit rule.
 
 This amendment changes only headless tests and this receipt, so it needs no
 additional browser run under `CLAUDE.md`. The complete unfinished draft still
