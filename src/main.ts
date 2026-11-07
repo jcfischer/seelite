@@ -420,6 +420,7 @@ import {
 	type FloorTone,
 	type HeadLook,
 	type NavFilter,
+	type NavBody,
 	type NavRow,
 	type ScannerContact,
 	flightFloorCells,
@@ -5098,18 +5099,7 @@ class Game {
 				this.updateCockpit();
 			},
 			onSelectTarget: (id) => {
-				// **Through `selectable()`, not through `byId`.** `byId` holds
-				// moons, which the list deliberately omits and `cycleTarget`
-				// cannot reach — accepting one here would make the list's stated
-				// reason for omitting them false, and give the player a target
-				// `T` could never return to.
-				if (!this.selectable().some((body) => body.id === id)) {
-					this.consolePress(false);
-					return;
-				}
-				this.targetId = id;
-				this.consolePress(true);
-				this.updateCockpit();
+				this.selectNavigationTarget(id);
 			},
 			onStationTab: (tab) => {
 				if (tab === "Requests" && this.stationConsoleTab !== "Requests")
@@ -10589,8 +10579,10 @@ class Game {
 		this.deepCueRender = { x: at.x, y: at.y, facing, mouth };
 	}
 
-	private surveyDesignation(id: string): string {
-		const ref = this.rockRef(id);
+	private surveyDesignation(
+		id: string,
+		ref: RockRef | null = this.rockRef(id),
+	): string {
 		if (!ref) return "ROCK · OUT OF RANGE";
 		const reading = surveyReading(
 			this.rockContentsOf(ref),
@@ -21838,6 +21830,59 @@ class Game {
 		};
 	}
 
+	private navigationTargets(): NavBody[] {
+		const ordinary = this.selectable();
+		if (!MINING_ON) return ordinary;
+		const rocks = nearRocks(
+			this.fieldRockSets().filter(
+				({ plan }) => plan.id === this.frameField?.id,
+			),
+			this.world.ship.pos,
+			this.world.gameTime,
+			Infinity,
+		);
+		const selected = isRockTargetId(this.targetId)
+			? this.rockRef(this.targetId)
+			: null;
+		if (selected && !rocks.some(({ id }) => id === selected.id))
+			rocks.push(selected);
+		return [
+			...ordinary,
+			...rocks
+				.filter(
+					(ref) =>
+						ref.id === selected?.id ||
+						surveyReading(
+							this.rockContentsOf(ref),
+							this.rockDepositRow(ref),
+							this.world.gameTime,
+							SURVEY_LIFETIME_H,
+						) !== null,
+				)
+				.map((ref) => ({
+					...rockContact(ref),
+					name: `Rock ${ref.rock.slot}`,
+					distanceKm: ref.distKm,
+					detail: this.surveyDesignation(ref.id, ref),
+					...(ref.distKm > ROCK_DROP_KM
+						? { disabledReason: `OUT OF RANGE · ${ROCK_DROP_KM} KM LIMIT` }
+						: {}),
+				})),
+		];
+	}
+
+	private selectNavigationTarget(id: string): boolean {
+		const row = this.navigationTargets().find((body) => body.id === id);
+		if (!row || row.disabledReason !== undefined) {
+			this.consolePress(false);
+			return false;
+		}
+		this.targetId = id;
+		this.consolePress(true);
+		this.updateCockpit();
+		return true;
+	}
+
 	/**
 	 * The Navigation console's target list.
 	 *
@@ -21861,18 +21906,13 @@ class Game {
 		}
 		const rows = projectNavTargets(
 			this.world.ship.pos,
-			// **`selectable()`, not `system.bodies`.** It is the one list that
-			// decides what can be targeted at all — `cycleTarget` walks it and
-			// `onSelectTarget` validates against it — so the list shows exactly
-			// what a click on it can do. Handing the projection every body and
-			// letting it hold its own kind rule would be a second owner, and the
-			// day a body kind is added the two answers diverge silently.
-			this.selectable(),
+			this.navigationTargets(),
 			this.targetId,
 			{
 				filter: this.navFilter,
 				previousOrder: this.navOrder,
 				etaFor: ({ id }) => {
+					if (isRockTargetId(id)) return null;
 					const cached = this.navEtaCache.get(id);
 					if (cached !== undefined) return cached;
 					const body = this.bodyFor(id);
@@ -21882,6 +21922,10 @@ class Game {
 				},
 			},
 		);
+		if (rows.some(({ kind }) => kind === "rock"))
+			rows.sort(
+				(a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id),
+			);
 		this.navOrder = rows.map(({ id }) => id);
 		return rows;
 	}

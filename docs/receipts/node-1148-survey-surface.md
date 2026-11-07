@@ -1,4 +1,12 @@
-# Node #1148: survey surface and instrument range
+# Node #1148: survey surface, instrument range and Navigation
+
+## Current implementation
+
+The parked PR is rebased onto main `1951dd63`, which contains the repaired
+live-cockpit probe and capability outages. The principal's recorded list ruling
+now completes item 3. Fresh review, hardware and canonical-view evidence will
+be recorded on the PR at its final clean head; the older measurements below
+remain historical.
 
 With `?mining=1`, the DEEP mark uses `Game.rockShape(ref).radiusAt(deepDir)`,
 the same archetype heightfield sampler used by the Mining Laser's cut. The
@@ -9,12 +17,26 @@ The target instrument reads `RockRef.distKm`, the exact figure used by
 the bounding surface, clamped at zero. It does not change survey range,
 target selection, the on-glass target bracket's centre distance, or Lane wait.
 
-## Navigation remains deferred
+## Navigation
 
-Item 3 is absent. The principal has not ruled which rocks Navigation lists or
-how it orders them. This change adds no rock rows and makes no list-policy
-decision. The survey probe checks a populated Navigation list while a
-surveyed rock is selected and confirms that rocks remain absent.
+With mining enabled, Navigation lists valid current-field readings and the
+selected rock, including a selected rock whose reading expired. The current
+field is the existing `frameField` owner. Other expired and unsurveyed rocks
+are absent. The existing survey designation supplies each reading; distance
+is the owned `RockRef.distKm` surface distance, including zero.
+
+The existing 40 km target limit remains unchanged. A surveyed current-field
+rock beyond that limit stays readable with a disabled button and a visible
+range-limit reason. The Game also revalidates selection against current rows
+and the limit, so stale or synthetic input cannot select a disabled row.
+Nearby listed rocks can be selected with a real pointer click.
+
+When visible rock rows are present, the list uses strict nearest-first order
+for all its visible rows. Lists without rock rows retain the existing two
+kilometre ordering deadband. This change is limited to the mining context;
+flag-off ordering remains unchanged. Rock rows do not run ordinary cruise ETA
+integration. Reading details and refusal states participate in the DOM cache
+key, so a reserve update repaints even with the ship and clock held still.
 
 ## Shared changes that run without the mining flag
 
@@ -26,10 +48,14 @@ with mining enabled.
 `deepCueRender` remains initialized and cleared to `null` in ordinary play.
 Its added `mouth` field is populated only by the existing mining-gated cue
 draw. The obsolete `DEEP_MOUTH_RADIUS_SHARE` constant is removed. There are
-no new runtime imports or changes to the shared heightfield sampler, save
-schema, survey rules, field frame, or Navigation projection.
+no changes to the shared heightfield sampler, save schema, survey rules or
+field frame. The shared Navigation projection accepts optional owner-supplied
+distance, detail and refusal fields; ordinary callers retain their previous
+row shape and behavior. Its query can match a supplied reading. The shared
+DOM cache also notices changed row names/kinds, and disabled Navigation rows
+are excluded from the pad cursor. Ordinary rows keep their three cells.
 
-## Verification
+## Historical initial-worker verification
 
 - Headless: `tests/rock-survey-surface.test.ts` executes the shipped Game
   methods without WebGL. It checks the mouth against the shipped heightfields
@@ -56,3 +82,24 @@ The principal's visual approval is not supplied by these probes.
 
 This is a correction to the provisional mining feature, not a public major
 change under `src/changelog.ts`.
+
+## Resumed test-first evidence
+
+Six new Navigation tests first failed on absent Game behavior and the missing
+owned-distance projection. They then passed, covering current-field membership,
+exact expiry, selected retention, a near pair inside the old ordering deadband,
+far-row readability/refusal, nearby selection, null field, flag-off behavior,
+reading search and a zero surface distance. Existing surface/instrument tests
+remain intact. The initial affected six-file run passes 65 tests and 21,076
+assertions. The Navigation plus canonical-view checks pass 63 tests and 1,144
+assertions after adding the two declared survey views. Logs:
+`/tmp/survey1148-nav-red.log`, `/tmp/survey1148-nav-green.log`,
+`/tmp/survey1148-affected.log`, `/tmp/survey1148-nav-views-green2.log`.
+
+The canonical set adds `mining-survey-surface` and
+`mining-survey-navigation`, both on the existing survey probe's world/system
+fixture. The shared placement completes a real held survey for the cue, and
+adds explicit reading-history fixtures for Navigation's ordering, distant-row
+and expiry cases. Browser regression also checks a real pointer click and a
+stationary reading repaint. Flag-off control uses a new page rather than
+navigating an already measured page.

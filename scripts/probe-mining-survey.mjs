@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { gameUrl } from "./lib/game-url.mjs";
+import { placeMiningSurvey } from "./lib/mining-survey-fixture.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -479,20 +480,151 @@ try {
 			scoop.lost >= 1 && scoop.surfaceAfter === scoop.surface,
 			JSON.stringify(scoop),
 		);
+		const fixture = await placeMiningSurvey(page);
 		const navigation = await page.evaluate(() => {
 			const g = window.__seelite;
-			g.headLook = "left";
-			g.leftTab = "Navigation";
-			return g.navRows().map((r) => ({ id: r.id, kind: r.kind }));
+			return g
+				.navRows()
+				.filter((row) => row.kind === "rock")
+				.map((row) => {
+					const button = [
+						...document.querySelectorAll("[data-live-nav-target]"),
+					].find((button) => button.dataset.liveNavTarget === row.id);
+					return {
+						...row,
+						text: button?.querySelector(".lc-nav-detail")?.textContent,
+						disabled: button?.disabled,
+						reason: button?.querySelector("em")?.textContent,
+					};
+				});
 		});
+		const expectedIds = [
+			fixture.selectedId,
+			...fixture.nearIds,
+			fixture.farId,
+		].sort();
 		check(
-			"Navigation leaves the selected and surveyed rocks absent pending the principal's list ruling",
-			navigation.length > 0 &&
-				navigation.every((r) => r.kind !== "rock" && !r.id.startsWith("rock:")),
+			"Navigation lists the selected and current-field surveyed rocks only",
+			JSON.stringify(navigation.map((row) => row.id).sort()) ===
+				JSON.stringify(expectedIds) &&
+				!navigation.some((row) => row.id === fixture.expiredId),
 			JSON.stringify(navigation),
 		);
+		check(
+			"rock rows are nearest first and show the actual existing readings",
+			navigation.every(
+				(row, index) =>
+					row.text === row.detail &&
+					(index === 0 || navigation[index - 1].distanceKm <= row.distanceKm),
+			),
+			JSON.stringify(navigation),
+		);
+		const distant = navigation.find((row) => row.id === fixture.farId);
+		check(
+			"a known rock beyond targeting range remains readable with a disabled reason",
+			distant?.disabled &&
+				distant.distanceKm > fixture.dropKm &&
+				/OUT OF RANGE/.test(distant.reason) &&
+				distant.reason.includes(String(fixture.dropKm)),
+			JSON.stringify(distant),
+		);
+		await page.screenshot({ path: "probe-shots/mining-survey/navigation.png" });
+		const chosen = fixture.nearIds[0];
+		await page.locator(`[data-live-nav-target="${chosen}"]`).click();
+		const selected = await page.evaluate(() => ({
+			id: window.__seelite.targetId,
+			pointerLocked: document.pointerLockElement !== null,
+		}));
+		check(
+			"a real pointer click selects the nearby surveyed rock with pointer lock released",
+			selected.id === chosen && !selected.pointerLocked,
+			JSON.stringify(selected),
+		);
+		const refused = await page.evaluate((id) => {
+			const g = window.__seelite;
+			const before = g.targetId;
+			const accepted = g.selectNavigationTarget(id);
+			return { accepted, unchanged: g.targetId === before };
+		}, fixture.farId);
+		check(
+			"selection revalidation refuses the distant reading without changing the target",
+			refused.accepted === false && refused.unchanged,
+			JSON.stringify(refused),
+		);
+		const refreshed = await page.evaluate(async (id) => {
+			const g = window.__seelite;
+			const button = [
+				...document.querySelectorAll("[data-live-nav-target]"),
+			].find((button) => button.dataset.liveNavTarget === id);
+			const before = button.querySelector(".lc-nav-detail").textContent;
+			const at = g.world.gameTime;
+			const pos = { ...g.world.ship.pos };
+			const ref = g.rockRef(id);
+			g.putDepositRow(ref, { ...g.rockDepositRow(ref), surface: 1, at });
+			g.updateCockpit();
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			return {
+				before,
+				after: button.querySelector(".lc-nav-detail").textContent,
+				expected: g.navRows().find((row) => row.id === id).detail,
+				stationary:
+					at === g.world.gameTime &&
+					JSON.stringify(pos) === JSON.stringify(g.world.ship.pos),
+			};
+		}, chosen);
+		check(
+			"a changed reading repaints while the ship and clock remain still",
+			refreshed.stationary &&
+				refreshed.before !== refreshed.after &&
+				refreshed.after === refreshed.expected,
+			JSON.stringify(refreshed),
+		);
+		const expired = await page.evaluate(async (ids) => {
+			const D = await import("/src/deposit-state.ts");
+			const T = await import("/src/rock-target.ts");
+			const g = window.__seelite;
+			for (const id of ids) {
+				const ref = T.resolveRock(
+					g.fields,
+					id,
+					g.world.ship.pos,
+					g.world.gameTime,
+				);
+				g.putDepositRow(ref, {
+					...g.rockDepositRow(ref),
+					surveyedAt: g.world.gameTime - D.SURVEY_LIFETIME_H * 3600,
+				});
+			}
+			g.updateCockpit();
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			return {
+				selected: g.targetId,
+				rows: g
+					.navRows()
+					.filter((row) => row.kind === "rock")
+					.map((row) => row.id),
+				drawn: [...document.querySelectorAll("[data-live-nav-target]")]
+					.map((button) => button.dataset.liveNavTarget)
+					.filter((id) => id.startsWith("rock:")),
+			};
+		}, expectedIds);
+		check(
+			"at expiry only the selected rock stays in Navigation",
+			expired.selected === chosen &&
+				JSON.stringify(expired.rows) === JSON.stringify([chosen]) &&
+				JSON.stringify(expired.drawn) === JSON.stringify([chosen]),
+			JSON.stringify(expired),
+		);
+		await page.screenshot({
+			path: "probe-shots/mining-survey/navigation-expired.png",
+		});
 	}
-	await page.goto(
+	await page.close();
+	const flagOffPage = await browser.newPage({
+		viewport: { width: 1280, height: 800 },
+	});
+	watch(flagOffPage);
+	await flagOffPage.goto(
 		gameUrl(origin, {
 			seed: CHARTED_FIELD_WORLD,
 			system: 173,
@@ -501,8 +633,8 @@ try {
 			raider: "off",
 		}),
 	);
-	await bootedGame(page, 90000);
-	const flagOff = await page.evaluate(async () => {
+	await bootedGame(flagOffPage, 90000);
+	const flagOff = await flagOffPage.evaluate(async () => {
 		const { range } = await import("/src/units.ts");
 		const g = window.__seelite;
 		g.clockHeld = true;

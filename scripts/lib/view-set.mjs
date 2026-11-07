@@ -173,6 +173,7 @@ export const LEVERS = Object.freeze({
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
 	869: "the outfitting console: slots beside stock and the change shown before purchase",
 	1194: "the docked service status beside unrelated notices, and its natural recovery",
+	1148: "the surface DEEP cue, the survey's instrument range and current-field rock readings in Navigation",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
@@ -303,6 +304,7 @@ export const SHOT_KINDS = Object.freeze([
 	"chart",
 	"shipyard-tab",
 	"capability-outage",
+	"mining-survey",
 	"docking-notice",
 	"vents",
 	"miner-vents",
@@ -1699,6 +1701,32 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "mining-survey-surface",
+		covers: [1148],
+		what: "A completed held survey on a generated rock: the DEEP cue follows the drawn heightfield and the target instrument reads surface range.",
+		shot: {
+			kind: "mining-survey",
+			mode: "surface",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "mining-survey-navigation",
+		covers: [1148],
+		what: "Current-field readings in nearest-first Navigation, with a selected rock and a readable distant rock beyond the unchanged 40 km targeting limit.",
+		shot: {
+			kind: "mining-survey",
+			mode: "navigation",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
 		name: "capability-market-recovered",
 		covers: [1194],
 		what: "The same generated refinery market at its natural recovery, with the unrelated notice retained and no stale market-damage status.",
@@ -1920,6 +1948,7 @@ const SHOT_REQUIREMENTS = {
 		(s.rungs === "new-game" || s.rungs === "top") &&
 		(s.tab === undefined || s.tab === "Equipment"),
 	"capability-outage": (s) => typeof s.recovered === "boolean",
+	"mining-survey": (s) => s.mode === "surface" || s.mode === "navigation",
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	// #647: above the envelope, or the attitude vents fire nothing past the
