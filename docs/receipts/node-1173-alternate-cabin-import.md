@@ -105,3 +105,45 @@ at 3,167.63 ms. The repaired tree also passed the file alone; its row took
 This demonstrates a full-run timing failure, not a reproduced deterministic
 base failure; the supervisor's full base comparison remains authoritative.
 No miner code, test timeout or suite setting was changed to accommodate it.
+
+## Resumed delivery on current main
+
+On 2026-11-07, the principal requested completion of mining in this run.
+`ranger journal --repo jcfischer/seelite --node 1173` showed generation 2 failed
+since 2026-11-05T23:01:24Z, with null process/group IDs and no PR. Its clean
+worktree held `9569261d`. The stale assignment was released through
+`soma graph release 1173 --identity ivy-agent --repo jcfischer/seelite`, then
+claimed as jcfischer. That repair was preserved and cherry-picked onto current
+main `a107a16` in `.worktrees/seelite-1173`; no active worker was interrupted.
+
+The untouched current base reproduces the exact bare-`three` crash alone on
+ANGLE Metal / Apple M5 Pro in 19.9 seconds, at peak load 8.1 on 18 cores.
+Log: `/tmp/seelite-1173-before-live.log`. An initial sandbox launch failed before
+the renderer guard; the measured run used the normal external browser lane.
+
+An actual Vite server for this worktree at port 5183 supplies the physical
+loader URL with its bare `from 'three'` import intact. The new source entry
+instead re-exports both names through optimized `/node_modules/.vite/deps/`
+URLs. Saved response bodies are
+`/tmp/seelite-1173-served-{physical-loader,source-entry}.js`. Native dynamic
+imports on fresh hardware-browser pages fail with the exact error for the old
+URL and return the two functions for the new entry. No request interception or
+response rewriting was used in this experiment. Its script and output are
+`/tmp/seelite-1173-import-check.mjs` and
+`/tmp/seelite-1173-native-import-check.log`.
+
+This server uses the existing shared dependency directory through the normal
+worktree symlink. That is an observed state, not a proved cause of Vite's
+different response from the earlier matrix. The repair needs no cache or
+server configuration assumption: its source entry uses Vite's module graph.
+
+The ownership regression was rerun without its declaration: 40 passes and one
+failure, specifically the alternate-cockpit selection case. Restoring ownership
+gives 41 passes and 2,092 assertions. Logs:
+`/tmp/seelite-1173-routing{,-red}.log`. Typecheck, format, script lint, comment
+guard, launcher wiring and build pass; their logs are
+`/tmp/seelite-1173-{tsc,format,lint,comments,wiring,build}.log`.
+
+The original full-run failures above remain historical; no full-suite pass is
+inferred from affected checks. Final Sage, exact-head selected browser evidence
+and CI results will be recorded on the PR before merge.
