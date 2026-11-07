@@ -4,6 +4,7 @@ import { generateGalaxy } from "../../src/galaxy";
 import { generateContents } from "../../src/system";
 import {
 	CANDIDATES,
+	LATTICE_CANDIDATES,
 	candidateProfile,
 	candidateRocks,
 	densityAt,
@@ -34,7 +35,7 @@ test("candidate identity and shape stay independent of filtering order", () => {
 	}
 });
 
-test("all candidate rocks remain inside their indexed cells throughout drift", () => {
+test("lattice candidate rocks remain inside their indexed cells throughout drift", () => {
 	const observed = new Set<string>();
 	for (const seed of [47, 0x5ee11e, 7]) {
 		const systems = generateGalaxy(seed, 0).systems;
@@ -45,7 +46,7 @@ test("all candidate rocks remain inside their indexed cells throughout drift", (
 		for (const record of [systems[173], rare!]) {
 			for (const plan of systemFields(record, generateContents(record))) {
 				observed.add(plan.profile);
-				for (const name of CANDIDATES) {
+				for (const name of LATTICE_CANDIDATES) {
 					const profile = candidateProfile(plan.profile, name);
 					const cells = fieldCells(profile);
 					for (const rock of candidateRocks(record, plan, name))

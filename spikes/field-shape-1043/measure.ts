@@ -1,4 +1,8 @@
-import { fieldCells, systemFields } from "../../src/asteroid-field";
+import {
+	FIELD_PROFILE,
+	fieldCells,
+	systemFields,
+} from "../../src/asteroid-field";
 import { generateGalaxy } from "../../src/galaxy";
 import { generateContents } from "../../src/system";
 import {
@@ -30,7 +34,14 @@ const rows = [...buckets].map(([key, counts]) => {
 		(typeof CANDIDATES)[number],
 	];
 	const profile = candidateProfile(kind, candidate);
-	const cellCount = fieldCells(profile).length;
+	const continuous = candidate === "organic" || candidate === "braided";
+	const base = FIELD_PROFILE[kind];
+	const bankProfile = {
+		...base,
+		occupancy: 1,
+		semiKm: base.semiKm.map((n) => n * 1.6) as [number, number, number],
+	};
+	const cellCount = continuous ? null : fieldCells(profile).length;
 	const row = {
 		kind,
 		candidate,
@@ -39,7 +50,12 @@ const rows = [...buckets].map(([key, counts]) => {
 		p50: quantile(counts, 0.5),
 		p99: quantile(counts, 0.99),
 		max: Math.max(...counts),
-		cells: cellCount,
+		layoutCells: cellCount,
+		placement: continuous ? "continuous independent anchors" : "lattice slots",
+		metadataBankSlots: continuous ? fieldCells(bankProfile).length : cellCount,
+		semiKmRole: continuous
+			? "conservative display bound only"
+			: "layout ellipsoid",
 		semiKm: profile.semiKm,
 		cellKm: profile.cellKm,
 	};

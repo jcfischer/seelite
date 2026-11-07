@@ -17,14 +17,15 @@ import { decodeRockHeightfields } from "../../src/rock-heightfields";
 import { buildRockPieces } from "../../src/rock-pieces";
 import { add, length, type Vec3 } from "../../src/vec3";
 import {
-	CANDIDATES,
+	LATTICE_CANDIDATES,
 	candidateProfile,
 	candidateRocks,
 	type Candidate,
 } from "./profiles";
 
 const name = process.argv[2] as Candidate;
-if (!CANDIDATES.includes(name)) throw new Error("unknown candidate");
+if (!(LATTICE_CANDIDATES as readonly string[]).includes(name))
+	throw new Error("unknown lattice candidate");
 const mode = process.argv[3];
 if (mode !== "native" && mode !== "adapted") throw new Error("unknown mode");
 if (mode === "native" && name !== "baseline")
@@ -55,7 +56,7 @@ const fixtures = [
 		plan,
 		rocks: candidateRocks(record, plan, name),
 	}));
-	const commonRocks = CANDIDATES.map((candidate) => {
+	const commonRocks = LATTICE_CANDIDATES.map((candidate) => {
 		const rock = candidateRocks(record, plan, candidate)[0];
 		if (!rock) throw new Error("empty shared occupied point");
 		return { candidate, rock };

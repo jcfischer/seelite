@@ -9,13 +9,15 @@ import {
 } from "../../src/asteroid-field";
 import type { SystemRecord } from "../../src/galaxy";
 import { mix, seededRand } from "../../src/rng";
+import { organicRocks, ORGANIC_VARIANTS } from "./organic";
 
-export const CANDIDATES = [
+export const LATTICE_CANDIDATES = [
 	"baseline",
 	"expanded",
 	"clusters",
 	"broken",
 ] as const;
+export const CANDIDATES = [...LATTICE_CANDIDATES, ...ORGANIC_VARIANTS] as const;
 export type Candidate = (typeof CANDIDATES)[number];
 
 /** Study inputs only; the production profiles and generator version stay unchanged. */
@@ -25,6 +27,12 @@ export function candidateProfile(
 ): FieldProfile {
 	const base = FIELD_PROFILE[kind];
 	if (name === "baseline") return base;
+	if (name === "organic" || name === "braided")
+		return {
+			...base,
+			semiKm: kind === "charted" ? [48, 38, 28] : [40, 32, 24],
+			occupancy: 0.72,
+		};
 	const scale = name === "expanded" ? 2.5 : 3;
 	return {
 		...base,
@@ -59,6 +67,8 @@ export function candidateRocks(
 		generate: fieldRocks,
 	},
 ): Rock[] {
+	if (name === "organic" || name === "braided")
+		return organicRocks(record, plan, name, input.generate);
 	const profile = input.profile;
 	const rocks = input.generate(record, plan, profile);
 	if (name === "baseline" || name === "expanded") return rocks;

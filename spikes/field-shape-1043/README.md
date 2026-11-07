@@ -105,3 +105,41 @@ fingerprints change, as #951 requires. World carrier identities and
 The node remains open until the principal judges the comparisons, the canonical
 view-set requirement is met, and any approved production integration is linked
 as a release blocker. No principal approval is represented by this study.
+
+## Organic revision (2026-11-07)
+
+The principal rejected the geometric appearance of the four historical profiles.
+`organic` is the new primary proposal; `braided` is a secondary exploration.
+Both use continuous, independent seeded anchors in unequal asymmetric lobes,
+warped soft density and sparse curved bridges. A later spatial hash thins full
+drift envelopes; it never supplies placement cells. Numeric source slots retain
+unchanged production radius, shape, spin and drift draws. A larger metadata bank
+supplies slots, not positions. Conservative profile semi-axes are display bounds,
+not the actual occupied footprint or a layout lattice.
+
+`anchor-query.ts` separately prototypes a bucket index for arbitrary anchors,
+with multiple rocks per bucket and ranges derived from actual anchor bounds.
+The independent complete traversal oracle and native baseline parity checks
+cover reach sets and motion outputs. They do not independently validate the
+settled reach predicate or full CCD. No production consumer, generator version,
+save state or default profile changes in this study.
+
+```sh
+bun test spikes/field-shape-1043/organic.test.ts spikes/field-shape-1043/anchor-query.test.ts
+bun spikes/field-shape-1043/anchor-measure.ts /tmp/field1043-query-cost.json
+SEELITE_PROBE_RENDERER=hardware CANDIDATES=baseline,organic OUT=/tmp/field1043-organic node spikes/field-shape-1043/organic-views.mjs
+SEELITE_PROBE_RENDERER=hardware CANDIDATES=baseline,organic COST=1 BLOCKS=6 FRAMES=48 OUT=/tmp/field1043-organic-cost node spikes/field-shape-1043/organic-views.mjs
+```
+
+`WORLD`, `SYSTEM`, `KIND` and `ANTIALIAS` select fixtures and AA. `PROFILE=1`
+records a separate nonreported renderer CPU profile. The instrument retains
+source hashes and source copies, actual camera/clock/occupied-content metadata,
+full broad images and directly captured detail crops. The player hull children
+are hidden for world-only comparisons; authored asteroid meshes are unchanged.
+Cost rows distinguish common cameras, a common physical close-up slot, and
+candidate-targeted largest-rock/dense views. Frame cost is synchronous hardware
+render cost including CPU and GPU, not GPU timer-query elapsed time. Populated
+live Navigation uses numeric mining flag 1, actual candidate field draws,
+recorded survey rows and actual acquired field frame, and asserts rendered row
+counts. These are study measurements rather than an advancing-flight release
+regression or a production-affordability claim.
