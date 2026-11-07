@@ -1,6 +1,6 @@
 # System sweep — node #482
 
-Rare fields (node #1191) also emit a system-space lead through this same sweep.
+Rare fields (node #1191) also emit a system-space sweep reading through this same sweep.
 The stable field slot in its source ID is provenance, never a selectable target;
 the row carries own-sensors source and the original observation time, without
 coordinates or a named field contact. A sweep does not discover the field.

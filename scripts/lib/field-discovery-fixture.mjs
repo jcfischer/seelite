@@ -46,10 +46,6 @@ export async function placeFieldDiscovery(page, mode = "unknown") {
 		return {
 			fieldId: plan.id,
 			at: g.world.gameTime,
-			known: [
-				...(g.commerceWorld.galaxies[g.world.system.record.galaxy]
-					.fieldDiscoveries ?? []),
-			],
 			mode,
 		};
 	}, mode);
@@ -73,5 +69,8 @@ export async function placeFieldDiscovery(page, mode = "unknown") {
 				requestAnimationFrame(() => requestAnimationFrame(resolve)),
 			),
 	);
-	return facts;
+	return {
+		...facts,
+		at: await page.evaluate(() => window.__seelite.world.gameTime),
+	};
 }

@@ -12,8 +12,8 @@ import {
 	parseFieldDiscoveries,
 } from "../src/field-discovery";
 import { generateGalaxy, SYSTEMS_PER_GALAXY } from "../src/galaxy";
-import { generateContents } from "../src/system";
-import { add, v3 } from "../src/vec3";
+import { generateContents, orbitNormal } from "../src/system";
+import { add, scale, length, sub, v3 } from "../src/vec3";
 import {
 	newWorld,
 	parseWorld,
@@ -39,6 +39,21 @@ import {
 } from "../src/save-store";
 
 const seed = 47;
+const legacyBytes = () =>
+	readFileSync(
+		new URL(
+			"./fixtures/discovery-legacy-save18-c8a9f3c0.json",
+			import.meta.url,
+		),
+		"utf8",
+	);
+const reseal = (raw: any) => {
+	const { integrity: wi, ...wb } = raw.world;
+	raw.world.integrity = fnv1a(JSON.stringify(wb));
+	const { integrity: si, ...sb } = raw;
+	raw.integrity = fnv1a(JSON.stringify(sb));
+	return raw;
+};
 const galaxyIndex = 0;
 const galaxy = generateGalaxy(seed, galaxyIndex);
 const rareSystems = galaxy.systems.flatMap((record) => {
@@ -119,6 +134,46 @@ test("a fast flight frame discovers across the radius and rejects a near miss", 
 		shipPos: add(centre, v3(2000, 1001, 0)),
 	});
 	expect(missed).toBe(world);
+});
+
+test("a swept crossing evaluates both field centres at their own clocks", () => {
+	const startAt = 100;
+	const endAt = startAt + first.plan.orbit.periodS / 4;
+	const startCentre = fieldCentre(first.plan, startAt);
+	const endCentre = fieldCentre(first.plan, endAt);
+	expect(length(sub(endCentre, startCentre))).toBeGreaterThan(100000);
+	const normal = orbitNormal(first.plan.orbit);
+	const result = discoverNearbyFields(newWorld(seed), {
+		record: first.record,
+		contents: first.contents,
+		previous: {
+			shipPos: add(startCentre, scale(normal, -2000)),
+			gameTime: startAt,
+		},
+		shipPos: add(endCentre, scale(normal, 2000)),
+		gameTime: endAt,
+	});
+	expect(result.galaxies[0].fieldDiscoveries).toEqual([firstKey]);
+});
+
+test("invalid previous motion refuses instead of manufacturing a discovery", () => {
+	for (const previous of [
+		{ shipPos: v3(NaN, 0, 0), gameTime: 0 },
+		{ shipPos: v3(0, Infinity, 0), gameTime: 0 },
+		{ shipPos: v3(), gameTime: NaN },
+		{ shipPos: v3(), gameTime: Infinity },
+		{ shipPos: v3(), gameTime: -1 },
+		{ shipPos: v3(), gameTime: 11 },
+	])
+		expect(() =>
+			discoverNearbyFields(newWorld(seed), {
+				record: first.record,
+				contents: first.contents,
+				previous,
+				shipPos: fieldCentre(first.plan, 10),
+				gameTime: 10,
+			}),
+		).toThrow();
 });
 
 test("field sweep provenance is regional, aged independently, and cannot identify or discover", () => {
@@ -208,36 +263,24 @@ test("save19 round trips discoveries; authentic save18 begins unknown and refuse
 		commander: newCommanderRecord("courier"),
 	}) as any;
 	raw.saveSchemaVersion = 18;
-	const rehash = () => {
-		const { integrity, ...body } = raw;
-		raw.integrity = fnv1a(JSON.stringify(body));
-	};
-	rehash();
+	reseal(raw);
 	expect(
 		parseSave(raw).world.galaxies.every((g) => g.fieldDiscoveries.length === 0),
 	).toBe(true);
 	raw.world = serializeWorld(world);
-	rehash();
+	reseal(raw);
 	expect(() => parseSave(raw)).toThrow(
 		"legacy world contains field discoveries",
 	);
 	const malformed = structuredClone(saved) as any;
 	malformed.world.galaxies[0].fieldDiscoveries.push("bad");
-	const { integrity: wi, ...wb } = malformed.world;
-	malformed.world.integrity = fnv1a(JSON.stringify(wb));
-	const { integrity: si, ...sb } = malformed;
-	malformed.integrity = fnv1a(JSON.stringify(sb));
+	reseal(malformed);
 	expect(() => parseSave(malformed)).toThrow("field discovery");
 });
 
 test("immutable main c8a9f3c0 save18 migrates unknown without changing its source", () => {
-	const bytes = readFileSync(
-		new URL(
-			"./fixtures/discovery-legacy-save18-c8a9f3c0.json",
-			import.meta.url,
-		),
-		"utf8",
-	);
+	const bytes = legacyBytes();
+	expect(fnv1a(bytes)).toBe(2883759867);
 	const raw = JSON.parse(bytes);
 	expect(raw.saveSchemaVersion).toBe(18);
 	const loaded = parseSave(raw);
@@ -252,20 +295,9 @@ test("immutable main c8a9f3c0 save18 migrates unknown without changing its sourc
 test("refused discovery bytes remain readable through real store export", async () => {
 	const backend = memorySaveBackend();
 	const locks = memorySlotLocks();
-	const raw = JSON.parse(
-		readFileSync(
-			new URL(
-				"./fixtures/discovery-legacy-save18-c8a9f3c0.json",
-				import.meta.url,
-			),
-			"utf8",
-		),
-	);
+	const raw = JSON.parse(legacyBytes());
 	raw.world.galaxies[0].fieldDiscoveries = [firstKey];
-	const { integrity: wi, ...wb } = raw.world;
-	raw.world.integrity = fnv1a(JSON.stringify(wb));
-	const { integrity: si, ...sb } = raw;
-	raw.integrity = fnv1a(JSON.stringify(sb));
+	reseal(raw);
 	const bytes = JSON.stringify(raw);
 	await backend.write("discovery", "live", raw);
 	const store = new SaveStore({

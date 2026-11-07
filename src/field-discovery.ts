@@ -13,6 +13,16 @@ import { add, dot, length, scale, sub, type Vec3 } from "./vec3";
 /** Per-galaxy discovered field identities, independent of deposits and their generator pins. */
 export type FieldDiscoveries = readonly FieldKey[];
 export const FIELD_DISCOVERY_RADIUS_KM = 1000;
+export interface FieldDiscoveryMotion {
+	shipPos: Vec3;
+	gameTime: number;
+}
+export interface FieldDiscoveryInput extends FieldDiscoveryMotion {
+	record: SystemRecord;
+	contents: SystemContents;
+	radiusKm: number;
+	previous?: FieldDiscoveryMotion;
+}
 
 const keyFor = (systemIndex: number, fieldId: string): FieldKey =>
 	`${systemIndex}:${fieldId}` as FieldKey;
@@ -36,7 +46,7 @@ export function fieldIsKnown(
 	);
 }
 
-/** The caller supplies the approved radius; this domain chooses no discovery distance. */
+/** Discover within the caller's radius; the production radius is FIELD_DISCOVERY_RADIUS_KM. */
 export function discoverFieldsWithin(
 	known: FieldDiscoveries,
 	{
@@ -46,14 +56,7 @@ export function discoverFieldsWithin(
 		gameTime,
 		radiusKm,
 		previous,
-	}: {
-		record: SystemRecord;
-		contents: SystemContents;
-		shipPos: Vec3;
-		gameTime: number;
-		radiusKm: number;
-		previous?: { shipPos: Vec3; gameTime: number };
-	},
+	}: FieldDiscoveryInput,
 ): FieldDiscoveries {
 	if (
 		![shipPos.x, shipPos.y, shipPos.z, gameTime, radiusKm].every(

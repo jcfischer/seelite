@@ -1,4 +1,5 @@
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
+import type { FieldDiscoveryMotion } from "./field-discovery";
 import { discoverNearbyFields } from "./world-state";
 import {
 	type DepositKey,
@@ -9167,7 +9168,7 @@ class Game {
 		this.sweepCharge = null;
 	}
 
-	private stepFieldDiscovery(previous: { shipPos: Vec3; gameTime: number }) {
+	private stepFieldDiscovery(previous: FieldDiscoveryMotion) {
 		this.adoptWorld(
 			discoverNearbyFields(this.commerceWorld, {
 				record: this.world.system.record,

@@ -31,23 +31,39 @@ save18 fixture was serialized by unmodified main c8a9f3c0, with system 4 already
 visited; it loads with unknown rare fields. A real SaveStore refusal/export test
 proves unsupported discovery bytes remain intact and exportable.
 
-Pre-review verification on the implementation included 599 affected tests and
-108,566 assertions across 22 files, typecheck, format, script/comment lint,
+Review-response verification included 705 affected and harness tests and
+111,156 assertions across 25 files, typecheck, format, script/comment lint,
 launcher wiring and production build. The registered live discovery probe
 drives both mining-flag settings, actual points rendering while unknown,
 scanner-free flight across the threshold, a real Sweep press, selection,
-IndexedDB save/reload and the original lead's stale display.
+IndexedDB save/reload and the original reading's stale display.
+
+The first 16-check diagnostic encoded the mining query as a boolean and
+exercised flagless behavior only. It is historical partial evidence and did
+not prove painted field pixels. The review response uses numeric flag values,
+asserts live state on boot/reload, fits a scanner in both arms, compares stable
+rendered frames with the unknown field present/removed/restored, and flies real
+cruise crossings/near misses plus a jump/reload discontinuity case.
+The corrected hardware diagnostic passed 34/34: each live flag arm changed 53
+rendered pixels with the unknown field removed, with zero unstable pixels on
+restoration. Actual cruise endpoints stayed 2,000 km out across a hit, while a
+1,001 km miss remained unknown. An actual affordable jump from system 10 to 230
+left the destination unknown even though reusing the old position would make
+a segment through its centre; reload retained only the system-10 discovery.
+These remain partial diagnostic results, not a full-suite pass. Two temporary
+clock mutations, using the start clock for the end centre and vice versa, each
+failed the new differing-clock test; production source was restored exactly.
 
 The side-effect-free `scripts/lib/capability-save-case.ts` extraction keeps the
 existing timing measurement reusable. `scripts/measure-field-discovery-save.ts`
 measures all eight galaxies, all generated timing anchors, all 2,048 retained
-rare-slot IDs and every currently generated field lead, with the other live
+rare-slot IDs and every currently generated field sweep reading, with the other live
 sweep sources held equal for the incremental comparison. It round-trips the
 complete envelope; it does not claim a future refinery queue/custody payload or
 simultaneous saturation of every other persistence domain.
 
 Three discovery views extend the canonical set to 101: unknown Navigation,
-the regional sweep lead, and discovered Navigation. Capture manifests identify
+the regional sweep reading, and discovered Navigation. Capture manifests identify
 their real source tree, renderer, camera and fixture. Exact-head Sage responses,
 final browser results, complete canonical comparison and actual principal visual
 approval are recorded on PR #1202 and the canonical node closure; this receipt

@@ -1,12 +1,12 @@
 import { parseModule, carriedModule, type FittedModule } from "./loadout";
 import {
 	type FieldDiscoveries,
+	type FieldDiscoveryInput,
 	canonicalFieldDiscoveries,
 	parseFieldDiscoveries,
 	discoverFieldsWithin,
 	FIELD_DISCOVERY_RADIUS_KM,
 } from "./field-discovery";
-import type { SystemContents } from "./system";
 /**
  * The persistent world state model — `docs/specs/persistent-world-state.md`.
  *
@@ -640,13 +640,7 @@ export const newWorld = (seed: number): WorldState => ({
 /** Discover physical fields in the current galaxy without changing deposit or survey state. */
 export function discoverNearbyFields(
 	world: WorldState,
-	context: {
-		record: SystemRecord;
-		contents: SystemContents;
-		shipPos: Vec3;
-		gameTime: number;
-		previous?: { shipPos: Vec3; gameTime: number };
-	},
+	context: Omit<FieldDiscoveryInput, "radiusKm">,
 ): WorldState {
 	const galaxy = context.record.galaxy;
 	const env = world.galaxies[galaxy];
