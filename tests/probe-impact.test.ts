@@ -41,6 +41,11 @@ describe("production contract ownership", () => {
 			[...new Set([...SMOKE_PROBES, "probe-live-cockpit.mjs"])].sort(),
 		);
 	});
+	test("the alternate cockpit module selects its live rendering probe", () => {
+		expect(impact(["scripts/fixtures/cockpit-text-cabin.ts"]).probes).toEqual(
+			[...new Set([...SMOKE_PROBES, "probe-live-cockpit.mjs"])].sort(),
+		);
+	});
 	test("rock placement declares its Game placement paths as an owner", () => {
 		expect(PROBE_ROOTS["probe-rock-placement.mjs"]).toContain("src/main.ts");
 	});

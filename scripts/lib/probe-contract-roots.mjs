@@ -318,6 +318,7 @@ const OWNERS = Object.freeze({
 	"probe-live-cockpit.mjs": [
 		"scripts/probe-live-cockpit.mjs",
 		"scripts/fixtures/cockpit-text-cabin.glb",
+		"scripts/fixtures/cockpit-text-cabin.ts",
 		"src/live-cockpit.ts",
 		"src/cockpit-surface.ts",
 		"src/scanner-view.ts",
