@@ -118,4 +118,14 @@ domains across all eight galaxies, retaining every value and genesis rather
 than comparing incidental in-memory property order. This check-only correction
 is reviewed before rerunning the live probe and broad gate.
 
+At `9543add9` the actual capability probe passes **10/10** hardware checks alone
+(20.7 seconds, peak load 2.0). The next broad run was interrupted during
+preflight discovery of one remaining synthetic legacy browser fixture, and is
+also not a complete gate. `probe-scoop-migration` stamps outer version 16, so
+its nested world must be historical schema 3 / generator 10 without timing.
+The unchanged probe reproduced the named incompatible-pair refusal alone
+(2/8 checks, 87.5 seconds). Its fixture now reseals that historical inner world
+before the outer body. Production version validation is unchanged. Independent
+review confirmed no other explicit version stamp in the probe closure.
+
 The canonical set adds owned `capability-market-damaged` and `capability-market-recovered` views on the mining flag. Principal visual approval remains required; an agent's probes and captures cannot provide that approval. This node remains open until its actual gates and required approval are complete.

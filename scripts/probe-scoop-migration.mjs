@@ -58,6 +58,14 @@ const legacyBlob = async (page, { full }) =>
 			const { integrity: _, ...body } = blob;
 			body.saveSchemaVersion = 16;
 			delete body.commander.scoopNotice;
+			const { integrity: worldIntegrity, ...worldBody } = body.world;
+			worldBody.worldSchemaVersion = 3;
+			worldBody.worldGeneratorVersion = 10;
+			for (const env of worldBody.galaxies) delete env.capabilityTime;
+			body.world = {
+				...worldBody,
+				integrity: fnv1a(JSON.stringify(worldBody)),
+			};
 			return {
 				loadout,
 				blob: { ...body, integrity: fnv1a(JSON.stringify(body)) },
