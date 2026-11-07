@@ -156,6 +156,32 @@ test("a swept crossing evaluates both field centres at their own clocks", () => 
 	expect(result.galaxies[0].fieldDiscoveries).toEqual([firstKey]);
 });
 
+test("stationary previous motion discovers inside the radius and stays unknown outside", () => {
+	const world = newWorld(seed);
+	const centre = fieldCentre(first.plan, 0);
+	const inside = add(centre, v3(0, 0, 900));
+	const outside = add(centre, v3(0, 0, 1001));
+	const context = {
+		record: first.record,
+		contents: first.contents,
+		gameTime: 0,
+	};
+	expect(
+		discoverNearbyFields(world, {
+			...context,
+			shipPos: inside,
+			previous: { shipPos: inside, gameTime: 0 },
+		}).galaxies[0].fieldDiscoveries,
+	).toEqual([firstKey]);
+	expect(
+		discoverNearbyFields(world, {
+			...context,
+			shipPos: outside,
+			previous: { shipPos: outside, gameTime: 0 },
+		}),
+	).toBe(world);
+});
+
 test("invalid previous motion refuses instead of manufacturing a discovery", () => {
 	for (const previous of [
 		{ shipPos: v3(NaN, 0, 0), gameTime: 0 },
