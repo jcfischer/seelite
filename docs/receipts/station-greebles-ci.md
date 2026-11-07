@@ -109,8 +109,11 @@ item size, normalization flag and array type accompany the values. Reports
 are bounded and diagnostic exceptions retain the original failure path.
 
 A separate bounded case constructs 2,048 raw polyhedra using the actual
-production core's `parameters`, without copying its geometry literals. The
-pinned local target suite passes 14 tests and 2,314 assertions in 4.03 seconds;
+production core's `parameters`, without copying its geometry literals. During
+that loop both methods are restored to their original unwrapped versions;
+invalid arrays are observed only after construction. A `finally` restores the
+checkpoints for the original target tests and disposes the source mesh. The
+pinned local target suite passes 14 tests and 2,314 assertions in 3.65 seconds;
 typecheck and the standard static/build gates pass. Logs use
 `/tmp/greeble1206-cause-{local,tsc,format,lint,comments,wiring,build}.log`.
 No production source, normal calculation, tolerance or CI setting changes.

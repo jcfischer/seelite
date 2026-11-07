@@ -176,21 +176,30 @@ test("the production polyhedron inputs retain finite normals across warmed const
 		"core",
 	) as THREE.Mesh<THREE.PolyhedronGeometry>;
 	const { vertices, indices, radius, detail } = core.geometry.parameters;
-	for (let i = 0; i < 2048; i++) {
-		const geometry = new THREE.PolyhedronGeometry(
-			vertices,
-			indices,
-			radius,
-			detail,
-		);
-		const normals = Array.from(geometry.getAttribute("normal").array);
-		expect({ iteration: i, finite: normals.every(Number.isFinite) }).toEqual({
-			iteration: i,
-			finite: true,
-		});
-		geometry.dispose();
+	const compute = THREE.BufferGeometry.prototype.computeVertexNormals;
+	const normalize = THREE.BufferGeometry.prototype.normalizeNormals;
+	THREE.BufferGeometry.prototype.computeVertexNormals = originalComputeNormals;
+	THREE.BufferGeometry.prototype.normalizeNormals = originalNormalizeNormals;
+	try {
+		for (let i = 0; i < 2048; i++) {
+			const geometry = new THREE.PolyhedronGeometry(
+				vertices,
+				indices,
+				radius,
+				detail,
+			);
+			const finite = Array.from(geometry.getAttribute("normal").array).every(
+				Number.isFinite,
+			);
+			if (!finite) reportNormalStage("unwrapped-constructor", geometry);
+			geometry.dispose();
+			expect({ iteration: i, finite }).toEqual({ iteration: i, finite: true });
+		}
+	} finally {
+		THREE.BufferGeometry.prototype.computeVertexNormals = compute;
+		THREE.BufferGeometry.prototype.normalizeNormals = normalize;
+		built.dispose();
 	}
-	built.dispose();
 }, 60_000);
 
 function reportStationFailure(
