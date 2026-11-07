@@ -1,5 +1,17 @@
 # #1194: production capability outages
 
+## Current delivery status
+
+The principal approved the damaged/recovered service views in the live
+implementation-finish conversation on 2026-11-07 (Q5), recorded on node #1194.
+Those complete 94-base/96-after captures remain tied to runtime `5786c618`.
+The branch is now rebased onto main `7f50396a`, which includes the #1173
+live-cockpit import repair; outage runtime source remains byte-identical to
+the approved captured runtime. A fresh clean-head selected hardware gate is
+still pending. Its exact head, scope and result will be recorded on PR #1205
+before merge. Earlier browser failures and pending-approval statements below
+are historical evidence, not the current approval status or a fresh gate pass.
+
 ## Scope
 
 Implements the #937 contract in production: fixed generated market, equipment and exclusive-service carriers; stationary alternating outage timing; pressure changes at real raider transitions; an attributable repair transition API preserving the original outage end; retained-anchor operational-duration queries and an explicit dependent-settlement seam. This adds no new player repair activity. Commerce refusals and the persistent console service notice run only with `?mining=1`. Fuel and owned fitting actions retain their existing behavior.
