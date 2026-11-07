@@ -25,14 +25,16 @@ try {
 	await installViewFraming(page);
 	await page.goto(
 		gameUrl(origin, {
-			seed: 47,
-			system: 2,
+			seed: 1,
 			mining: 1,
-
 			"models-full": true,
 		}),
 	);
 	await bootedGame(page, 180000);
+	check(
+		"the unpinned player boot has a real writable save store",
+		await page.evaluate(() => window.__seelite.saveStore !== null),
+	);
 	const fixture = await placeCapabilityOutage(page);
 	check(
 		"actual generated market is naturally disabled",
@@ -206,9 +208,7 @@ try {
 	});
 	await page.goto(
 		gameUrl(origin, {
-			seed: 47,
-			system: 2,
-
+			seed: 1,
 			"models-full": true,
 		}),
 	);

@@ -631,6 +631,9 @@ export const entrustedClause = (
 ): string =>
 	entrustedT > 0 ? `${lead}${Number(entrustedT)} t entrusted${tail}` : "";
 
+const serviceDamagedSentence = (service: CapabilityService): string =>
+	`The ${service} service is damaged.`;
+
 /**
  * One sentence per refusal, keyed by the union itself.
  *
@@ -671,9 +674,9 @@ const REFUSAL_SENTENCES: Record<
 	"equipment-locked": () => "Locked — the row names the rung it needs.",
 	"equipment-unavailable": () => "This station does not fit that.",
 	"fuel-full": () => "The tank is full.",
-	"market-damaged": () => "The market service is damaged.",
-	"equipment-damaged": () => "The equipment service is damaged.",
-	"exclusive-damaged": () => "The exclusive service is damaged.",
+	"market-damaged": () => serviceDamagedSentence("market"),
+	"equipment-damaged": () => serviceDamagedSentence("equipment"),
+	"exclusive-damaged": () => serviceDamagedSentence("exclusive"),
 	"hull-hold": () =>
 		"Too much would stay aboard for that hold — the entrusted lot and contraband are never sold.",
 	"hull-locked": () => "Locked — the row names the rung it needs.",
@@ -709,7 +712,7 @@ export function stationServiceStatus(
 	);
 	const healed = CAPABILITY_SERVICES.some(
 		(service) =>
-			message === `The ${service} service is damaged.` &&
+			message === serviceDamagedSentence(service) &&
 			services?.[service] !== false,
 	);
 	return {

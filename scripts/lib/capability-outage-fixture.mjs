@@ -1,6 +1,6 @@
 /** Place the real docked console at a naturally disabled market, retaining an unrelated notice. */
 export async function placeCapabilityOutage(page, recovered = false) {
-	return page.evaluate(async (recovered) => {
+	const fixture = await page.evaluate(async (recovered) => {
 		const g = window.__seelite;
 		const W = await import("/src/world-state.ts");
 		const C = await import("/src/capability-slots.ts");
@@ -49,7 +49,6 @@ export async function placeCapabilityOutage(page, recovered = false) {
 		g.stationConsoleMessage = "Cargo scoop fitted.";
 		g.stationConsoleTab = "Market";
 		g.stationConsoleRevision++;
-		g.setHeadLook("forward");
 		g.updateCockpit();
 		return {
 			key,
@@ -63,4 +62,14 @@ export async function placeCapabilityOutage(page, recovered = false) {
 			),
 		};
 	}, recovered);
+	await page.waitForFunction(
+		() => (window.__seelite?.bakeQueue?.length ?? 0) === 0,
+		undefined,
+		{ timeout: 60_000 },
+	);
+	await page.evaluate(() => {
+		window.__seelite.setHeadLook("forward");
+		window.__seelite.updateCockpit();
+	});
+	return fixture;
 }

@@ -92,12 +92,12 @@ import { generateContents } from "./system";
 import {
 	capabilitySlots,
 	capabilityIdentity,
+	isCapabilityKey,
 	type CapabilityService,
 } from "./capability-slots";
 import {
 	initialCapabilityTime,
 	projectCapabilityTime,
-	queryCapabilityTime,
 	validateCapabilityTime,
 	type CapabilityTimeAnchor,
 	type CapabilityTimeContext,
@@ -928,7 +928,7 @@ export const effectiveCarrier = (
 	gameTime: number,
 	world?: WorldState,
 ): EffectiveCarrier => {
-	if (localCarrierIdOfKey(key).includes("/capability/")) {
+	if (isCapabilityKey(key)) {
 		if (!world) fail("capability condition requires world context");
 		const context = {
 			...world,
@@ -1107,14 +1107,18 @@ function raiderBoundaryTimes(
 		...new Set(
 			raiderSlots(systemIndex, record.government).flatMap((slot) => {
 				const row = env.objective[slot.key];
-				return [
-					row?.recovery?.completesAt,
-					row?.scheduled?.startsAt,
-					row?.scheduled?.completesAt,
-				].filter((t): t is number => t !== undefined && t > from && t < to);
+				return objectiveBoundaryTimes(row).filter((t) => t > from && t < to);
 			}),
 		),
 	].sort((a, b) => a - b);
+}
+
+function objectiveBoundaryTimes(row: ObjectiveDelta | undefined): number[] {
+	return [
+		row?.recovery?.completesAt,
+		row?.scheduled?.startsAt,
+		row?.scheduled?.completesAt,
+	].filter((t): t is number => t !== undefined);
 }
 
 function projectRetainedCapability(
@@ -1270,13 +1274,8 @@ export const advanceTo = (
 	const boundaries = new Set<number>([t]);
 	for (const env of world.galaxies)
 		for (const row of Object.values(env.objective))
-			for (const due of [
-				row.recovery?.completesAt,
-				row.scheduled?.startsAt,
-				row.scheduled?.completesAt,
-			])
-				if (due !== undefined && due > world.gameTime && due <= t)
-					boundaries.add(due);
+			for (const due of objectiveBoundaryTimes(row))
+				if (due > world.gameTime && due <= t) boundaries.add(due);
 	let current = world;
 	for (const at of [...boundaries].sort((a, b) => a - b)) {
 		current = { ...current, gameTime: at };
@@ -1658,7 +1657,7 @@ export function applyTransition(
 			event.occurredAt,
 		);
 	const env = advanced.galaxies[galaxyIndex];
-	const capability = localCarrierIdOfKey(key).includes("/capability/")
+	const capability = isCapabilityKey(key)
 		? capabilityIdentity(world.seed, galaxyIndex, key)
 		: null;
 	if (capability && event.kind !== "restore")
@@ -2467,7 +2466,7 @@ export const compactWorld = (
 			for (const key of sortedKeys(env.objective)) {
 				const delta = env.objective[key];
 				const suppression =
-					localCarrierIdOfKey(key).includes("/capability/") &&
+					isCapabilityKey(key) &&
 					capabilityAvailability(advanced, env.galaxyIndex, key).state.repaired;
 				const derivable =
 					!suppression &&
@@ -3273,8 +3272,6 @@ const parseLegalKeyList = (
 	});
 };
 
-/** One envelope: the declared-field check, then six named domain parsers, then
- *  the one invariant that spans two of them. */
 function parseCapabilityTimeDomain(
 	raw: unknown,
 	gameTime: number,
@@ -3296,6 +3293,7 @@ function parseCapabilityTimeDomain(
 	return { genesisAt, anchors };
 }
 
+/** One envelope: declared fields, typed domain parsers and shared invariants. */
 const parseEnvelope = (
 	raw: unknown,
 	slot: number,
@@ -3455,12 +3453,35 @@ export function parseWorld(raw: unknown): WorldState {
 			)
 				fail("capability suppression has no attributable restore");
 		}
+	for (const env of world.galaxies) {
+		const retained = new Map<number, number>();
+		for (const [key, episode] of Object.entries(env.episodes) as [
+			CarrierKey,
+			CausalEpisode,
+		][]) {
+			const system = raiderMutationSystem(world, env.galaxyIndex, key);
+			const at = episode.latest.occurredAt;
+			if (system !== null && at > env.capabilityTime.genesisAt)
+				retained.set(system, Math.max(retained.get(system) ?? 0, at));
+		}
+		for (const [system, at] of retained) {
+			const record = systemAt(seed, env.galaxyIndex, system);
+			for (const station of generateContents(record).stations)
+				for (const slot of capabilitySlots(system, station)) {
+					const anchor = env.capabilityTime.anchors[slot.key];
+					if (!anchor || anchor.at < at)
+						fail(
+							"capability retained anchor missing or stale after raider causality",
+						);
+				}
+		}
+	}
 	for (const env of world.galaxies)
 		for (const [key, delta] of Object.entries(env.objective) as [
 			CarrierKey,
 			ObjectiveDelta,
 		][])
-			if (localCarrierIdOfKey(key).includes("/capability/")) {
+			if (isCapabilityKey(key)) {
 				capabilityIdentity(seed, env.galaxyIndex, key);
 				if (
 					delta.instanceOrdinal !== 0 ||

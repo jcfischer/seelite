@@ -15,6 +15,11 @@ export const CAPABILITY_SERVICES = [
 	"exclusive",
 ] as const;
 export type CapabilityService = (typeof CAPABILITY_SERVICES)[number];
+
+/** Recognize the reserved capability-carrier segment; generated identity still requires resolution. */
+export const isCapabilityKey = (key: CarrierKey): boolean =>
+	localCarrierIdOfKey(key).includes("/capability/");
+
 export interface CapabilitySlot {
 	key: CarrierKey;
 	localCarrierId: string;

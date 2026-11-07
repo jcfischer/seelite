@@ -129,3 +129,37 @@ test("zero-prefixed aliases cannot create a second anchor for one generated capa
 	raw.galaxies[0].capabilityTime.anchors = { [c.key]: state, [alias]: state };
 	expect(() => W.parseWorld(hash(raw))).toThrow();
 });
+
+test("retained raider causality requires complete current capability anchors", async () => {
+	const W = await import("../src/world-state");
+	const carriers = [...W.enumerateCarriers(47, 0)];
+	const raider = carriers.find((c) => c.kind === "raider")!;
+	const cap = carriers.find(
+		(c) => c.kind === "capability" && c.systemIndex === raider.systemIndex,
+	)!;
+	const w = W.applyTransition(W.newWorld(47), 0, raider.key, {
+		kind: "disable",
+		occurredAt: 1000,
+		cause: { causeKind: "test", actorId: "test", playerRole: "direct" },
+	});
+	expect(() => W.operationalDuration(w, 0, cap.key, 0, 1000)).toThrow();
+	const missing = W.serializeWorld(w) as any;
+	delete missing.galaxies[0].capabilityTime.anchors[cap.key];
+	expect(() => W.parseWorld(hash(missing))).toThrow("retained");
+	const stale = W.serializeWorld(w) as any;
+	stale.galaxies[0].capabilityTime.anchors[cap.key] = W.capabilityAvailability(
+		W.newWorld(47),
+		0,
+		cap.key,
+	).state;
+	expect(() => W.parseWorld(hash(stale))).toThrow("retained");
+	const legacy = W.serializeWorld(w) as any;
+	legacy.worldSchemaVersion = 3;
+	legacy.worldGeneratorVersion = 10;
+	for (const env of legacy.galaxies) delete env.capabilityTime;
+	const lifted = W.parseWorld(hash(legacy));
+	expect(lifted.galaxies[0].capabilityTime.genesisAt).toBe(1000);
+	expect(lifted.galaxies[0].capabilityTime.anchors).toEqual({});
+	expect(() => W.operationalDuration(lifted, 0, cap.key, 0, 1000)).toThrow();
+	expect(W.parseWorld(W.serializeWorld(w))).toEqual(w);
+});

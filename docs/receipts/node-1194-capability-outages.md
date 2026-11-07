@@ -2,15 +2,21 @@
 
 ## Scope
 
-Implements the #937 contract in production: fixed generated market, equipment and exclusive-service carriers; stationary alternating outage timing; pressure changes at real raider transitions; attributable repair suppression through the original outage end; retained-anchor operational-duration queries and an explicit dependent-settlement seam. Commerce refusals and the persistent console service notice run only with `?mining=1`. Fuel and owned fitting actions retain their existing behavior.
+Implements the #937 contract in production: fixed generated market, equipment and exclusive-service carriers; stationary alternating outage timing; pressure changes at real raider transitions; an attributable repair transition API preserving the original outage end; retained-anchor operational-duration queries and an explicit dependent-settlement seam. This adds no new player repair activity. Commerce refusals and the persistent console service notice run only with `?mining=1`. Fuel and owned fitting actions retain their existing behavior.
 
 The shared world domain is generator 11 / world schema 4 / save envelope 18. Legacy received outer and nested hashes are checked before migration. Impossible partial version pairings and noncanonical capability identities are refused. Existing generator-10 carrier identities, positions and catalogue keys are pinned independently of the newly appended carriers.
 
 This remains a pre-release mining feature. The public changelog's returning-player-visible definition does not apply until the mining release exposes it; no public changelog entry is added here. The shared save migration is included and verified here rather than hidden behind the runtime flag.
 
+The pure settlement callback is explicit and optional while no production queue
+exists. The #1195 refinery build must connect its consumer centrally through
+every production advancement, mutation, repair, compaction and migration path
+that could replace a retained interval; it must not opt in only at submission.
+No serialized callback or placeholder queue domain is introduced here.
+
 ## Headless evidence
 
-The affected command passes 503 tests and 145,012 assertions across 16 files:
+The affected test invocation passes 504 tests and 145,019 assertions across 16 files:
 
 ```sh
 rtk test bun test tests/capability-*.test.ts tests/world-state.test.ts tests/save-*.test.ts tests/station-commerce.test.ts tests/station-console.test.ts tests/outfitting.test.ts tests/market-state.test.ts tests/view-set.test.ts tests/holdings.test.ts tests/probe-selection.test.ts
@@ -20,7 +26,7 @@ The capability tests exercise the actual production world, commerce and save sea
 
 The initial duration oracle distinguishes the approved length-biased distribution from uniform later phases. Remaining fractions are checked jointly within low/high duration bins. A temporary mutation aliasing the remaining-fraction RNG channel to the duration channel failed that oracle; restoring the independent channel passed. TDD logs are `/tmp/outages1194-{time,world,commerce,status,observation,migration,provenance,alias,channel-alias}-*.log`.
 
-Typecheck, format, lint, the shrinking comment guard, launcher wiring (157 scripts), and production build pass. The affected test log is `/tmp/outages1194-headless.log`; the other gate logs use `/tmp/outages1194-{tsc,format,lint,comments,wiring,build}.log`.
+Typecheck, format, lint, the shrinking comment guard, launcher wiring (157 scripts), and production build pass. The latest affected test log is `/tmp/outages1194-headless-r1.log`; the other gate logs use `/tmp/outages1194-{tsc,format,lint,comments,wiring,build}.log` with `-r1` for the review response checks.
 
 ## Actual save-size measurement
 
@@ -34,8 +40,14 @@ Typecheck, format, lint, the shrinking comment guard, launcher wiring (157 scrip
 
 Untouched timing payloads are 233 UTF-8 bytes. These ASCII fixture saves occupy twice the UTF-8 figures when counted as UTF-16 bytes. Actual measurement log: `/tmp/outages1194-save-size.log`.
 
+These all-anchor rows are timing-only measurements with other domains untouched.
+They do not include capability observations or attributable repair episodes and
+objective rows, and are not a saturated combined-world storage ceiling.
+
 ## Review and browser evidence
 
-Pending Sage, final-HEAD browser selection and gate, and canonical before/after capture. The new registered `probe-capability-outage` uses the actual page, world APIs, real console clicks, repair transition and browser save/reload. It buys fuel while the natural market outage is confirmed, checks a persistent notice beside an unrelated notice, refuses a damaged purchase, checks recovery with an actually stocked buy, and checks flag-off compatibility after reload.
+Sage round 1 returned 12 suggestions and 3 nits, no blocker or important finding. Its verdict is posted verbatim on PR #1205; the response takes shared helpers, documentation corrections and explicit scope boundaries. Independent review also added missing/stale retained-anchor validation and switched the persistence probe from an intentionally read-only pinned location to a genuine unpinned seed-1 boot (actual start system 90).
+
+Final-HEAD browser selection and gate, and canonical before/after capture are pending. The new registered `probe-capability-outage` uses the actual page, world APIs, real console clicks, repair transition and browser save/reload. It buys fuel while the natural market outage is confirmed, checks a persistent notice beside an unrelated notice, refuses a damaged purchase, checks recovery with an actually stocked buy, and checks flag-off compatibility after reload.
 
 The canonical set adds owned `capability-market-damaged` and `capability-market-recovered` views on the mining flag. Principal visual approval remains required; an agent's probes and captures cannot provide that approval. This node remains open until its actual gates and required approval are complete.
