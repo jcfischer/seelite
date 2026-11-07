@@ -28,7 +28,7 @@ bun test tests/ --shard=3/4 --timeout=60000 --parallel=3 --no-isolate --timings=
 
 The pinned local run passes 2,531 tests and 6,721,210 assertions across 149
 files in 142.21 seconds, including both target assertions. Log:
-`/tmp/greeble1206-pinned-shard3.log`. That first command omitted CI's
+`/tmp/greeble1206-pinned-shard3.log`. That first invocation omitted CI's
 `--update-timings` flag. A second run at diagnostic head `d13dc1bf` included
 that flag as well and passed the same 2,531 tests and 6,721,210 assertions in
 141.51 seconds. Its original committed timing input was restored byte-for-byte
@@ -101,31 +101,32 @@ to a headless test and prose, so no browser run is required by CLAUDE.md.
 
 ## Construction-stage experiment
 
-Test-only checkpoints wrap the existing `computeVertexNormals` and
-`normalizeNormals` methods and restore both after the file. They report only
+The first experimental arm used test-only checkpoints around the existing
+`computeVertexNormals` and `normalizeNormals` methods, restoring both after the
+file. Those temporary checkpoints reported only
 invalid Polyhedron normal arrays, before and after each stage. Numeric values
 are encoded as strings so NaN and infinities remain distinguishable. Counts,
 item size, normalization flag and array type accompany the values. Reports
 are bounded and diagnostic exceptions retain the original failure path.
 
-A separate bounded case constructs 2,048 raw polyhedra using the actual
+That arm added a separate bounded case constructing 2,048 raw polyhedra using the actual
 production core's `parameters`, without copying its geometry literals. During
-that loop both methods are restored to their original unwrapped versions;
-invalid arrays are observed only after construction. A `finally` restores the
-checkpoints for the original target tests and disposes the source mesh. The
+that loop both methods were restored to their original unwrapped versions;
+invalid arrays were observed only after construction. A `finally` restored the
+checkpoints for the original target tests and disposed the source mesh. The
 pinned local target suite passes 14 tests and 2,314 assertions in 3.65 seconds;
 typecheck and the standard static/build gates pass. Logs use
 `/tmp/greeble1206-cause-{local,tsc,format,lint,comments,wiring,build}.log`.
 No production source, normal calculation, tolerance or CI setting changes.
-The next Linux observation will distinguish computation/normalization from
-later assembly; wrapping methods can change optimization, so another green
-result alone would not exonerate those stages.
+That arm was intended to distinguish computation/normalization from later
+assembly. Wrapping methods can change optimization, so its green result alone
+does not exonerate those stages.
 
 The `c8394ff5` Linux observation (run 42338582287, shard-3 job
 128301070274) passes all gates: shard 3 has 2,532 passes and no failures, and
 no invalid-stage report appears. This establishes a negative control only.
-The next arm leaves `computeVertexNormals` unwrapped and observes only the
-normalization boundary. Its raw-constructor control runs after the original
+The second experimental arm left `computeVertexNormals` unwrapped and observed
+only the normalization boundary. Its raw-constructor control ran after the original
 tests, so its warmup cannot change the original cases preceding it. A failing
 pre-normalization record would locate corruption before normalization; a
 newly invalid post-normalization record would locate it inside that stage.
@@ -138,13 +139,14 @@ constructor control: `/tmp/greeble1206-native-compute-order.log`. Linux raw
 log: `/tmp/greeble1206-native-compute-linux.log`. This is another negative
 observation, not an explanation.
 
-The next arm leaves both computation and normalization methods untouched. A
-test-only `setAttribute` observer checks the existing normals before position
+The third experimental arm left both computation and normalization untouched.
+A temporary test-only `setAttribute` observer checked the existing normals before position
 replacement and the new normals after normal replacement. The aperture ring
 first copies old normals into a new array, then replaces position and normal
-attributes; these observations distinguish invalid old data from an invalid
-copy. Failure records include position metadata and raw-versus-getter samples.
-The constructor control restores native attribute dispatch in a `try/finally`.
+attributes; those observations were intended to distinguish invalid old data from an
+invalid copy. Failure records included position metadata and raw-versus-getter
+samples. The constructor control restored native attribute dispatch in a
+`try/finally`.
 
 The attribute-boundary arm at `3c9e6694` passes all required Linux CI gates in
 run 42339799878. Shard-3 job 128304765051 has 2,532 passes, zero failures and
@@ -152,14 +154,14 @@ no invalid-stage report; raw log `/tmp/greeble1206-attribute-linux.log`.
 The native control takes 42.55 ms. No cause is established by these three
 negative observer experiments.
 
-A further temporary diagnostic arm removes every prototype observer. Private
+The fourth temporary diagnostic arm removed every prototype observer. Private
 checkpoints immediately after the unchanged production polyhedron constructor
-and after the aperture ring report invalid normals with constructor parameters,
-raw position/normal values, attribute metadata and getter samples. They do not
-recompute or mutate geometry. Constructor internals retain native computation,
-normalization and attribute dispatch. These source diagnostics are experimental
-and will be removed after the observation; they are not a candidate correction
-or a final source change. The original assertion path remains intact. Local
+and before/after the aperture ring reported invalid normals with constructor parameters,
+raw position/normal values, attribute metadata and getter samples. They did not
+recompute or mutate geometry. Constructor internals retained native computation,
+normalization and attribute dispatch. Those source diagnostics were experimental
+and are now removed; they were not a candidate correction or a final source
+change. The original assertion path remains intact. Local
 pinned target validation passes 14 cases and 2,314 assertions; typecheck passes.
 Logs: `/tmp/greeble1206-source-stage-{local,tsc}.log`.
 
@@ -192,3 +194,19 @@ no demonstrated cause, correction or version-specific claim; node #1206 remains
 open and PR #1207 remains a diagnostic draft. Darwin arm64 cannot stand in for
 Linux x64, and local x64 execution is also unavailable (`arch -x86_64` reports
 `Bad CPU type in executable`). No system runtime installation was attempted.
+
+Final Sage review at `dcba68e1` returns two suggestions and one nit, with no
+blocker or major finding. Both suggestions concern invalid components beyond
+the nine-value normal sample: the response adds whole-array NaN, positive
+infinity and negative infinity counts. Transform arrays still use JSON-null
+encoding for nonfinite values; no complete transform classification is claimed.
+The glossary nit refers to a CLI invocation, so the prose now uses that term.
+The earlier observer descriptions are explicitly historical. Review stops
+under the suggestion/nit-only rule. Raw verdict:
+`/tmp/greeble1206-final-sage/jcfischer-seelite-1207.md`.
+A synthetic response check writes NaN, positive infinity and negative infinity
+at normal indices 30–32, beyond the sample. The diagnostic reports exactly
+1/1/1 while the first nine values remain finite strings; an explicit synthetic
+assertion exits 1. This validates classification, not the original defect.
+The temporary case and values are restored before committing. Log:
+`/tmp/greeble1206-final-response-forced-red.log`.

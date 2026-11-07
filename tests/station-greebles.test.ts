@@ -123,6 +123,7 @@ function reportStationFailure(
 			const position = mesh.geometry?.getAttribute("position");
 			if (!position || (meshes.length >= 12 && !isGreeble(object))) return;
 			const normal = mesh.geometry.getAttribute("normal");
+			const normalValues = normal ? Array.from(normal.array) : null;
 			const instance = new THREE.Matrix4();
 			const instanced = mesh as THREE.InstancedMesh;
 			if (instanced.isInstancedMesh && instanced.count > 0)
@@ -137,13 +138,15 @@ function reportStationFailure(
 				vertices: position.count,
 				nonfinite,
 				sample: Array.from(position.array).slice(0, 18),
-				normalNonfinite: normal
-					? Array.from(normal.array).filter((value) => !Number.isFinite(value))
-							.length
-					: null,
-				normalSample: normal
-					? Array.from(normal.array).slice(0, 9).map(String)
-					: null,
+				normalNonfinite:
+					normalValues?.filter((value) => !Number.isFinite(value)).length ??
+					null,
+				normalNaN: normalValues?.filter(Number.isNaN).length ?? null,
+				normalPositiveInfinity:
+					normalValues?.filter((value) => value === Infinity).length ?? null,
+				normalNegativeInfinity:
+					normalValues?.filter((value) => value === -Infinity).length ?? null,
+				normalSample: normalValues?.slice(0, 9).map(String) ?? null,
 				boundingSphere: mesh.geometry.boundingSphere,
 				boundingBox: mesh.geometry.boundingBox,
 				indices: mesh.geometry.index?.count,
