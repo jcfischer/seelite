@@ -98,6 +98,18 @@ test("caller-supplied radius discovers at the boundary and never before it", () 
 	).toEqual([]);
 });
 
+test("a fresh game can discover a rare field at time zero", () => {
+	expect(
+		discoverFieldsWithin([], {
+			record: first.record,
+			contents: first.contents,
+			shipPos: fieldCentre(first.plan, 0),
+			gameTime: 0,
+			radiusKm: 7,
+		}),
+	).toEqual([firstKey]);
+});
+
 test("discovery round trips canonically without generator pins or deposit state", () => {
 	const state = parseFieldDiscoveries([secondKey, firstKey]);
 	expect(canonicalFieldDiscoveries(state)).toEqual([firstKey, secondKey]);
@@ -127,6 +139,13 @@ test("saved discoveries reject malformed, duplicate, charted and unknown identit
 	]) {
 		expect(() => parseFieldDiscoveries(raw)).toThrow();
 	}
+});
+
+test("a valid field identity cannot carry a trailing suffix", () => {
+	for (const suffix of ["-junk", ":extra"])
+		expect(() =>
+			parseFieldDiscoveries([firstKey, `${secondKey}${suffix}`]),
+		).toThrow();
 });
 
 test("stable discovery identities survive field occurrence and geometry migrations", () => {

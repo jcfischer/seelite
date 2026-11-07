@@ -64,3 +64,33 @@ geometry, time or radius refuses instead of granting knowledge.
 
 The production discovery radius still needs a principal ruling. No release,
 economy or survey figure was selected by this preparation.
+
+## Boundary-test follow-up
+
+The draft was rebased onto main `a107a16` before this test-only amendment.
+Discovery at a valid game clock of zero now has a positive test, and a saved
+identity with trailing junk is refused even after a valid preceding row. The
+ten discovery tests pass with 44 assertions. Temporary mutations changing the
+time guard to `gameTime <= 0` and removing the identity pattern's end anchor
+each fail exactly the corresponding new test; production source is restored
+unchanged. Logs: `/tmp/discovery1191-followup-baseline.log`,
+`/tmp/discovery1191-followup-time-zero-mutant.log` and
+`/tmp/discovery1191-followup-identity-suffix-mutant.log`.
+
+The affected discovery, asteroid-field, deposit-state and field-contact suites
+pass 57 tests with 132,060 assertions after the rebase. Log:
+`/tmp/discovery1191-followup-affected.log`. Typecheck, format, script lint,
+comment lint, launcher wiring and build pass; corresponding gate logs use
+`/tmp/discovery1191-followup-{tsc,format,lint,comments,wiring,build}.log`.
+
+The remaining advisory survivors are not a claimed runtime defect count.
+Removing redundant type/array/match guards still refuses malformed input,
+duplicate rejection already bounds the supported stable-slot set, and charted
+fields remain known through `fieldIsKnown` even without the rare-only filter.
+The set's insertion order is not the persistence contract; its codec sorts on
+write. No exact exception-text assertions were added to force a mutation score.
+
+This amendment changes only headless tests and this receipt, so it needs no
+additional browser run under `CLAUDE.md`. The complete unfinished draft still
+owes runtime integration, its final selected browser gate and principal visual
+acceptance after a numeric discovery-radius ruling.
