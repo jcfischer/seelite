@@ -120,3 +120,13 @@ No production source, normal calculation, tolerance or CI setting changes.
 The next Linux observation will distinguish computation/normalization from
 later assembly; wrapping methods can change optimization, so another green
 result alone would not exonerate those stages.
+
+The `c8394ff5` Linux observation (run 42338582287, shard-3 job
+128301070274) passes all gates: shard 3 has 2,532 passes and no failures, and
+no invalid-stage report appears. This establishes a negative control only.
+The next arm leaves `computeVertexNormals` unwrapped and observes only the
+normalization boundary. Its raw-constructor control runs after the original
+tests, so its warmup cannot change the original cases preceding it. A failing
+pre-normalization record would locate corruption before normalization; a
+newly invalid post-normalization record would locate it inside that stage.
+A green result still cannot rule out optimization effects from the observer.

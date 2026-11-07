@@ -154,11 +154,6 @@ const originalComputeNormals =
 const originalNormalizeNormals =
 	THREE.BufferGeometry.prototype.normalizeNormals;
 beforeAll(() => {
-	THREE.BufferGeometry.prototype.computeVertexNormals = function () {
-		reportNormalStage("before-compute", this);
-		originalComputeNormals.call(this);
-		reportNormalStage("after-compute", this);
-	};
 	THREE.BufferGeometry.prototype.normalizeNormals = function () {
 		reportNormalStage("before-normalize", this);
 		originalNormalizeNormals.call(this);
@@ -169,38 +164,6 @@ afterAll(() => {
 	THREE.BufferGeometry.prototype.computeVertexNormals = originalComputeNormals;
 	THREE.BufferGeometry.prototype.normalizeNormals = originalNormalizeNormals;
 });
-
-test("the production polyhedron inputs retain finite normals across warmed construction", () => {
-	const built = buildStationForm("trade", "a", GREY, 0, 0);
-	const core = built.root.getObjectByName(
-		"core",
-	) as THREE.Mesh<THREE.PolyhedronGeometry>;
-	const { vertices, indices, radius, detail } = core.geometry.parameters;
-	const compute = THREE.BufferGeometry.prototype.computeVertexNormals;
-	const normalize = THREE.BufferGeometry.prototype.normalizeNormals;
-	THREE.BufferGeometry.prototype.computeVertexNormals = originalComputeNormals;
-	THREE.BufferGeometry.prototype.normalizeNormals = originalNormalizeNormals;
-	try {
-		for (let i = 0; i < 2048; i++) {
-			const geometry = new THREE.PolyhedronGeometry(
-				vertices,
-				indices,
-				radius,
-				detail,
-			);
-			const finite = Array.from(geometry.getAttribute("normal").array).every(
-				Number.isFinite,
-			);
-			if (!finite) reportNormalStage("unwrapped-constructor", geometry);
-			geometry.dispose();
-			expect({ iteration: i, finite }).toEqual({ iteration: i, finite: true });
-		}
-	} finally {
-		THREE.BufferGeometry.prototype.computeVertexNormals = compute;
-		THREE.BufferGeometry.prototype.normalizeNormals = normalize;
-		built.dispose();
-	}
-}, 60_000);
 
 function reportStationFailure(
 	root: THREE.Object3D,
@@ -727,3 +690,35 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 		}
 	});
 });
+
+test("the production polyhedron inputs retain finite normals across warmed construction", () => {
+	const built = buildStationForm("trade", "a", GREY, 0, 0);
+	const core = built.root.getObjectByName(
+		"core",
+	) as THREE.Mesh<THREE.PolyhedronGeometry>;
+	const { vertices, indices, radius, detail } = core.geometry.parameters;
+	const compute = THREE.BufferGeometry.prototype.computeVertexNormals;
+	const normalize = THREE.BufferGeometry.prototype.normalizeNormals;
+	THREE.BufferGeometry.prototype.computeVertexNormals = originalComputeNormals;
+	THREE.BufferGeometry.prototype.normalizeNormals = originalNormalizeNormals;
+	try {
+		for (let i = 0; i < 2048; i++) {
+			const geometry = new THREE.PolyhedronGeometry(
+				vertices,
+				indices,
+				radius,
+				detail,
+			);
+			const finite = Array.from(geometry.getAttribute("normal").array).every(
+				Number.isFinite,
+			);
+			if (!finite) reportNormalStage("unwrapped-constructor", geometry);
+			geometry.dispose();
+			expect({ iteration: i, finite }).toEqual({ iteration: i, finite: true });
+		}
+	} finally {
+		THREE.BufferGeometry.prototype.computeVertexNormals = compute;
+		THREE.BufferGeometry.prototype.normalizeNormals = normalize;
+		built.dispose();
+	}
+}, 60_000);
