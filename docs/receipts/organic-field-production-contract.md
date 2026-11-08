@@ -48,7 +48,7 @@ Population did not change, so these moves are a new instance of the same arrange
 
 **Which run.** Every figure below comes from the run started at 22:39 CET on 2026-11-08 on clean head `930a22a6`, after the coordinator force-stopped two orphaned browsers, except the "before" column, which is the run started at 22:23 CET the same evening, also after that stop, on clean base `625e2227` with the updated instrument. Earlier samples were discarded and are not cited, which says nothing about whether they were wrong. Apple M5 Pro, ANGLE Metal, 1440×900 at device scale 2, six shuffled blocks of 48 frames, against a no-field control, quality side stated. Load stayed between 2.6 and 4.6 except the rare AA2 run 2, which ran at 13–15 from other work.
 
-**Why it failed.** The study's +2.377 / +0.964 ms were pinned-on arms. The pinned decomposition on the base attributed about 1.5 ms of the high figure to the ambient occlusion over a rock filling the frame. Population cannot touch that: one rock is the subject, and a smaller rock at 1.2 radii fills the same frame. Low never opens the gate for rocks, so its +0.964 ms measured a state a rock cannot reach.
+**Why it failed.** The study's +2.377 / +0.964 ms were pinned-on arms. A pinned decomposition on the base, rare AA2 `close` at load 5–10 from other work, added +0.712 ms with the pair off, +0.903 with shadow alone and +2.632 with AO alone: about 1.9 ms of the high figure is the ambient occlusion over a rock filling the frame. Population cannot touch that: one rock is the subject, and a smaller rock at 1.2 radii fills the same frame. Low never opens the gate for rocks, so its +0.964 ms measured a state a rock cannot reach.
 
 **What changed, none of it the rock's shape or material:**
 
