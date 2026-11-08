@@ -719,16 +719,24 @@ function scenario({
 		submitCargo();
 		collectOutput();
 	}
+	function feeBudget() {
+		if (!other) return cash;
+		const reserve = money.fromNumber(
+			2 * distanceLy(port.record.pos, other.record.pos) * FUEL_CR_PER_LY,
+		);
+		return cash > reserve ? money.subtract(cash, reserve) : money.fromNumber(0);
+	}
 	function affordableLot(item: Cargo, retained: Cargo[]) {
 		if (c.feeShareOfProduct === undefined) return item;
+		const budget = feeBudget();
 		const whole = feeFor(item.family, item.grade, item.tonnes);
-		if (whole <= cash) return item;
+		if (whole <= budget) return item;
 		let tonnes = Math.floor(
-			(item.tonnes * approximate(cash)) / approximate(whole),
+			(item.tonnes * approximate(budget)) / approximate(whole),
 		);
-		while (tonnes > 0 && feeFor(item.family, item.grade, tonnes) > cash)
+		while (tonnes > 0 && feeFor(item.family, item.grade, tonnes) > budget)
 			tonnes--;
-		if (tonnes < 1) return item;
+		if (tonnes < 1) return null;
 		const split = transferCost(
 			item.basis,
 			massFromNative(tonnes, 1),
@@ -745,6 +753,11 @@ function scenario({
 		const retained: Cargo[] = [];
 		for (const whole of cargo) {
 			const item = affordableLot(whole, retained);
+			if (!item) {
+				retained.push(whole);
+				refusedFee++;
+				continue;
+			}
 			const recipe = recipeFor(item.family, item.grade);
 			const fee = feeFor(item.family, item.grade, item.tonnes);
 			if (
