@@ -2,15 +2,8 @@
 	"id": "mining-longwall-skips-v2-unratified",
 	"rockLimit": 100000,
 	"provenance": "node1210 principal approves dedicated 3000t raw ore; 37.5t/s provisional drilling; final economic balance unratified",
-	"seeds": [
-		1,
-		47,
-		1234
-	],
-	"galaxies": [
-		0,
-		1
-	],
+	"seeds": [1, 47, 1234],
+	"galaxies": [0, 1],
 	"systemsPerWorld": 4,
 	"hours": 1,
 	"startCr": 10000,

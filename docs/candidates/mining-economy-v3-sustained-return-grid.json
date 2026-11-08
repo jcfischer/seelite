@@ -1,0 +1,6 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3-sustained.json",
+	"axes": {
+		"routeRevisitLoadT": [100, 250, 500, 1000]
+	}
+}

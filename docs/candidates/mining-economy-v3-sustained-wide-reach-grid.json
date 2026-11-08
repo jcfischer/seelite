@@ -1,0 +1,9 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3-sustained.json",
+	"overrides": {
+		"systemsPerWorld": 24
+	},
+	"axes": {
+		"routeFields": [6]
+	}
+}

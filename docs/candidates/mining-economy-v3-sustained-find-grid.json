@@ -1,0 +1,7 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3-sustained.json",
+	"axes": {
+		"searchRareS": [600, 1800, 3600],
+		"routeChartedFindS": [0, 300]
+	}
+}
