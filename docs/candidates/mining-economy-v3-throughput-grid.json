@@ -1,0 +1,15 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3.json",
+	"overrides": {
+		"loadouts": [
+			{
+				"hull": "miner",
+				"size": 3,
+				"grade": "A"
+			}
+		]
+	},
+	"axes": {
+		"serviceSPerT": [30, 3, 1, 0.3, 0.1]
+	}
+}

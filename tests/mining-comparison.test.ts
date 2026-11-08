@@ -9,11 +9,14 @@ import { expect, test } from "bun:test";
 import {
 	candidateDefaults,
 	comparison,
+	grid,
+	type Candidate,
 	candidateDebit,
 	serviceQueue,
 	makeMiningFit,
 	rawQuote,
 } from "../scripts/lib/mining-comparison";
+import { recordTrade } from "../src/deficits";
 import { debitAt } from "../src/deposit-state";
 import { money, signedMoney } from "../src/exact-amount";
 import { worldFor, portsOf, run } from "../scripts/lib/greedy-trader";
@@ -382,4 +385,263 @@ test("measured scenario jobs agree with an independent cumulative-service FIFO o
 		}
 	}
 	expect(compared).toBeGreaterThan(0);
+});
+
+const rulingCandidate = (patch: Partial<Candidate> = {}): Candidate => ({
+	...candidateDefaults(),
+	id: "ruled-pilot-test",
+	seeds: [47],
+	galaxies: [0],
+	systemsPerWorld: 1,
+	loadouts: [{ hull: "miner", size: 3, grade: "A" }],
+	drillTPerS: 37.5,
+	returnLoadT: 1000,
+	visitLargestShare: 0.25,
+	fieldLayout: "organic",
+	onePass: true,
+	...patch,
+});
+const chartedRow = (c: Candidate, path: string) => {
+	const row = comparison(c).rows.find(
+		(r) => r.path === path && r.profile === "charted",
+	);
+	if (!row) throw new Error(`no charted ${path} row`);
+	return row;
+};
+
+test("one pass sells everything it mined instead of holding ore to the horizon", () => {
+	const row = chartedRow(rulingCandidate(), "raw");
+	expect(row.inputG).toBeGreaterThan(0);
+	expect(row.soldRawG).toBe(row.inputG);
+	expect(row.heldRawG).toBe(0);
+	expect(row.trips).toBeGreaterThan(0);
+});
+
+test("the pilot returns at the declared load, not at the full skips", () => {
+	const row = chartedRow(rulingCandidate({ returnLoadT: 100 }), "raw");
+	expect(row.trips).toBeGreaterThan(
+		chartedRow(rulingCandidate({ returnLoadT: 3000 }), "raw").trips,
+	);
+});
+
+test("a candidate without the ruled fields keeps the wait-for-full pilot", () => {
+	const {
+		returnLoadT: _load,
+		visitLargestShare: _share,
+		fieldLayout: _layout,
+		onePass: _pass,
+		...historical
+	} = rulingCandidate();
+	const row = chartedRow(historical, "raw");
+	expect(row.trips).toBe(0);
+	expect(row.soldRawG).toBe(0);
+});
+
+test("the largest share limits surveys and the organic layout supplies more rocks", () => {
+	const all = rulingCandidate({ visitLargestShare: 1, hours: 8 });
+	const quarter = rulingCandidate({ visitLargestShare: 0.25, hours: 8 });
+	const baseline = rulingCandidate({
+		visitLargestShare: 1,
+		hours: 8,
+		fieldLayout: "baseline",
+	});
+	const allSurveys = chartedRow(all, "raw").surveys;
+	expect(chartedRow(quarter, "raw").surveys).toBe(Math.ceil(allSurveys * 0.25));
+	expect(allSurveys).toBeGreaterThan(chartedRow(baseline, "raw").surveys);
+});
+
+test("a docked pilot collects and sells a fast refinery's whole output through the general hold", () => {
+	const row = chartedRow(
+		rulingCandidate({ serviceSPerT: 0.1, collectS: 5 }),
+		"refine",
+	);
+	expect(row.pendingJobs).toBe(0);
+	expect(row.heldRawG).toBe(0);
+	expect(row.refineryInputG).toBe(row.inputG);
+	expect(row.partialCollections).toBeGreaterThan(0);
+	expect(row.productG - row.soldProductG - row.custodyG).toBe(0);
+	expect(row.custodyG).toBeLessThan(5_000_000);
+	expect(signedMoney.parse(row.cashDelta)).toBeGreaterThan(0n);
+});
+
+test("a slow refinery leaves output pending and unpriced at the horizon", () => {
+	const row = chartedRow(
+		rulingCandidate({ serviceSPerT: 30, collectS: 5 }),
+		"refine",
+	);
+	expect(row.pendingJobs).toBeGreaterThan(0);
+	expect(row.inProcessG).toBeGreaterThan(0);
+});
+
+test("raw elasticity scales only the ore's mark response", () => {
+	const world = worldFor(47, 0);
+	const port = world.systems
+		.flatMap((r) => portsOf(r, world.contentsFor(r)))
+		.find((p) => p.station.type === "refinery")!;
+	const marked = recordTrade({}, port.key, {
+		goodName: "ore:silicate:standard",
+		units: -3000,
+		gameTimeMin: 0,
+		holdT: 40,
+	});
+	const quote = (rawElasticityScale?: number, deficits = marked) =>
+		rawQuote(port, "silicate", "standard", 0, deficits, 40, {
+			...candidateDefaults(),
+			rawElasticityScale,
+		}).sellCr;
+	expect(quote(1)).toBe(quote());
+	expect(quote(0)).toBe(quote(undefined, {}));
+	expect(quote(0)).toBeGreaterThan(quote(1));
+	expect(quote(0.5)).toBeGreaterThan(quote(1));
+	expect(quote(0.5)).toBeLessThan(quote(0));
+	expect(() =>
+		comparison(rulingCandidate({ rawElasticityScale: -1 })),
+	).toThrow();
+});
+
+test("the ruled fields refuse values outside their range", () => {
+	for (const patch of [
+		{ returnLoadT: 0 },
+		{ visitLargestShare: 0 },
+		{ visitLargestShare: 1.5 },
+		{ collectS: -1 },
+		{ fieldLayout: "lattice" as "organic" },
+	])
+		expect(() => comparison(rulingCandidate(patch))).toThrow();
+});
+
+test("a grid names every variant's inputs and keeps failed targets visible", () => {
+	const report = grid({
+		candidate: rulingCandidate(),
+		axes: { serviceSPerT: [0.1, 30], rawValueShare: [0.25, 0.55] },
+	});
+	expect(report.approvedBalance).toBe(false);
+	expect(report.variants).toHaveLength(4);
+	const first = report.variants[0];
+	expect(first.inputs).toEqual({ serviceSPerT: 0.1, rawValueShare: 0.25 });
+	expect(first.summaries["miner/3/A/charted/raw"].tradeRatio.n).toBeGreaterThan(
+		0,
+	);
+	expect(
+		report.variants.some((v) =>
+			Object.values(v.summaries).some((s) => s.failedSamples > 0),
+		),
+	).toBe(true);
+	expect(() =>
+		grid({ candidate: rulingCandidate(), axes: { nonsense: [1] } }),
+	).toThrow();
+	expect(() =>
+		grid({ candidate: rulingCandidate(), axes: { serviceSPerT: [] } }),
+	).toThrow();
+});
+
+test("a proportional fee follows the product's value and a zero share charges nothing", () => {
+	const fast = { serviceSPerT: 1, feeCrPerT: 0, collectS: 5 };
+	const fees = (feeShareOfProduct: number) =>
+		chartedRow(rulingCandidate({ ...fast, feeShareOfProduct }), "refine");
+	const none = fees(0);
+	const quarter = fees(0.25);
+	const half = fees(0.5);
+	expect(money.parse(none.fees)).toBe(money.fromNumber(0));
+	expect(money.parse(quarter.fees)).toBeGreaterThan(money.fromNumber(0));
+	expect(money.parse(half.fees)).toBeGreaterThan(money.parse(quarter.fees));
+	expect(signedMoney.parse(quarter.cashDelta)).toBeLessThan(
+		signedMoney.parse(none.cashDelta),
+	);
+	expect(() =>
+		comparison(rulingCandidate({ feeShareOfProduct: 1.5 })),
+	).toThrow();
+	expect(() =>
+		comparison(rulingCandidate({ feeShareOfProduct: -0.1 })),
+	).toThrow();
+});
+
+test("a proportional fee charges dearer ore more per tonne than cheap ore", () => {
+	const row = (buyFamily: "silicate" | "gem") =>
+		comparison(
+			rulingCandidate({
+				serviceSPerT: 1,
+				feeCrPerT: 0,
+				feeShareOfProduct: 0.25,
+				hours: 0.2,
+			}),
+		).rows.find(
+			(r) =>
+				r.path === "buy-refine" &&
+				r.buyOre?.family === buyFamily &&
+				r.buyOre?.grade === "standard",
+		)!;
+	const gem = row("gem");
+	const silicate = row("silicate");
+	const gemFee: bigint = money.parse(gem.fees);
+	const silicateFee: bigint = money.parse(silicate.fees);
+	expect(silicateFee).toBeGreaterThan(0n);
+	expect(gemFee * BigInt(silicate.refineryInputG)).toBeGreaterThan(
+		silicateFee * BigInt(gem.refineryInputG),
+	);
+});
+
+test("a fee beyond the pilot's cash splits the lot instead of stranding it", () => {
+	const c = rulingCandidate({
+		serviceSPerT: 1,
+		feeCrPerT: 0,
+		feeShareOfProduct: 0.3,
+		collectS: 5,
+		hours: 8,
+		rawElasticityScale: 0.5,
+		rawValueShare: 0.35,
+		systemsPerWorld: 5,
+	});
+	const rows = comparison(c).rows.filter(
+		(r) => r.path === "refine" && r.profile === "charted",
+	);
+	expect(rows.length).toBeGreaterThan(0);
+	for (const row of rows) {
+		expect(row.pendingJobs).toBe(0);
+		expect(row.heldRawG).toBe(0);
+		expect(row.refineryInputG).toBe(row.inputG);
+		expect(row.maxOutstandingSlots).toBeLessThanOrEqual(8);
+	}
+}, 60_000);
+
+test("proportional fees leave a two-refinery pilot the fuel to reach the second refinery", () => {
+	const rows = comparison(
+		rulingCandidate({
+			serviceSPerT: 1,
+			feeCrPerT: 0,
+			feeShareOfProduct: 0.3,
+			collectS: 5,
+			hours: 2,
+			galaxies: [1],
+			systemsPerWorld: 2,
+		}),
+	).rows.filter((r) => r.path === "refine-parallel");
+	expect(rows.length).toBeGreaterThan(0);
+	for (const row of rows) expect(row.refusedFuel).toBe(0);
+});
+
+test("a pilot empty at the end of a pass still flies home to collect", () => {
+	const c = rulingCandidate({
+		serviceSPerT: 1,
+		collectS: 5,
+		feeCrPerT: 0,
+		feeShareOfProduct: 0.35,
+		returnLoadT: 1,
+		rockLimit: 3,
+		hours: 2,
+	});
+	const rows = comparison(c).rows;
+	const pick = (path: string) =>
+		rows.find((r) => r.path === path && r.profile === "charted")!;
+	const raw = pick("raw");
+	const refine = pick("refine");
+	expect(raw.heldRawG).toBe(0);
+	expect(raw.inputG).toBeGreaterThan(0);
+	expect(refine.trips).toBe(raw.trips + 1);
+}, 60_000);
+
+test("onePass must be a boolean", () => {
+	expect(() =>
+		comparison(rulingCandidate({ onePass: "false" as unknown as boolean })),
+	).toThrow();
 });
