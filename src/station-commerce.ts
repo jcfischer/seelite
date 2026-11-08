@@ -1,3 +1,4 @@
+import { miningHold } from "./mining-capacity";
 import {
 	type Loadout,
 	type FittedModule,
@@ -214,6 +215,7 @@ export type StationAction =
 	| { type: "buy-hull"; hull: HullId };
 
 export interface StationCommerceInput {
+	rawOreT?: number;
 	services?: Partial<Record<CapabilityService, boolean>>;
 	commander: CommanderState;
 	deficits: DeficitMap;
@@ -495,6 +497,25 @@ function damagedPurchase(
 export function transactAtStation(
 	input: StationCommerceInput,
 	quote: QuoteFn = marketQuote,
+): StationCommerceResult {
+	const result = stationTransaction(input, quote);
+	if (!result.accepted || !input.rawOreT) return result;
+	const hold = miningHold(
+		result.commander.hull,
+		commanderHold(result.commander, input.entrustedT),
+		input.rawOreT,
+	);
+	return hold.usedT > hold.capacityT
+		? rejected(
+				input,
+				input.action.type === "buy-hull" ? "hull-hold" : "cargo-full",
+			)
+		: result;
+}
+
+function stationTransaction(
+	input: StationCommerceInput,
+	quote: QuoteFn,
 ): StationCommerceResult {
 	const { action } = input;
 	if (action.type === "buy-module") {
@@ -955,8 +976,20 @@ export function hullOffer(
 		],
 	};
 	const capacityT = holdCapacityT({ ...transferred, hull });
+	const oreHold = miningHold(
+		hull,
+		{ usedT: commanderHold(transferred, input.entrustedT).usedT, capacityT },
+		input.rawOreT ?? 0,
+	);
+	if (
+		oreHold.usedT > oreHold.capacityT &&
+		HULL_SPECS[hull].oreHoldT !== undefined
+	)
+		return { ...rejected(input, "hull-hold"), ...reached };
 	let overflowT = Math.ceil(
-		commanderHold(transferred, input.entrustedT).usedT - capacityT,
+		commanderHold(transferred, input.entrustedT).usedT +
+			(HULL_SPECS[hull].oreHoldT === undefined ? (input.rawOreT ?? 0) : 0) -
+			capacityT,
 	);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))

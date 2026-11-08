@@ -1,4 +1,4 @@
-import { miningHold } from "../../src/mining-capacity";
+import { miningHold, hasOreBay } from "../../src/mining-capacity";
 import {
 	fieldCentre,
 	fieldRocks,
@@ -449,7 +449,7 @@ function scenario({
 		{ usedT: 0, capacityT: holdT },
 		0,
 	).capacityT;
-	const dedicatedOre = oreHoldT !== holdT;
+	const dedicatedOre = hasOreBay(fitInput.hull);
 	const record = port.record,
 		contents = port.contents;
 	const rocks = fieldRocks(record, plan).slice(0, c.rockLimit);

@@ -228,6 +228,12 @@ owns the projection and `commanderHold` in `station-commerce.ts` owns the
 capacity rule it reads; the station console draws it above the market rows and
 the till refuses against the same figures (#443).
 
+The mining preview adds a separate **raw ore** projection, `oreBay`, through
+`src/mining-capacity.ts`. The Longwall has 3,000 t of dedicated raw-ore skips;
+its ordinary hold remains 40 t. Other hulls share their general hold with ore.
+The glass labels dedicated capacity `RAW ORE`. Session ore contributes flown
+mass and is passed to the till as `rawOreT`; it is not persisted commander cargo.
+
 It is the *player's* hold and nothing else's. **Manifest** above is what an
 ordinary carrier carries, **Traffic hold** is a place a carrier waits, `ScanHold`
 is a charge, and a **held launch** is Traffic refusing one — four senses the same

@@ -1,6 +1,12 @@
 import { HULL_SPECS, type HullId } from "./hull";
 import type { HoldSummary } from "./hold";
 
+export const hasOreBay = (hull: HullId): boolean =>
+	HULL_SPECS[hull].oreHoldT !== undefined;
+
+export const oreCapacityLabel = (hull: HullId): string =>
+	hasOreBay(hull) ? "RAW ORE" : "HOLD";
+
 export function miningHold(
 	hull: HullId,
 	hold: { usedT: number; capacityT: number },

@@ -1,4 +1,4 @@
-import { miningHold, withOre } from "./mining-capacity";
+import { miningHold, withOre, oreCapacityLabel } from "./mining-capacity";
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
 import type { FieldDiscoveryMotion } from "./field-discovery";
 import { discoverNearbyFields } from "./world-state";
@@ -11364,7 +11364,7 @@ class Game {
 			ore: [
 				[`ORE ${this.minedT} T`, "#ffb347"],
 				[
-					`${HULL_SPECS[this.flownHull].oreHoldT ? "ORE BAY" : "HOLD"} ${Math.round(hold.usedT)}/${hold.capacityT} T`,
+					`${oreCapacityLabel(this.flownHull)} ${Math.round(hold.usedT)}/${hold.capacityT} T`,
 					"#ffb347",
 				],
 			],
@@ -21738,6 +21738,7 @@ class Game {
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
 			mining: MINING_ON,
+			rawOreT: this.minedT,
 			services: MINING_ON
 				? stationServices(
 						advanceTo(this.commerceWorld, this.world.gameTime),
@@ -21816,18 +21817,6 @@ class Game {
 				capacityT: hold.capacityT,
 				entrustedT: hold.entrustedT,
 			});
-			this.stationConsoleRevision += 1;
-			this.updateCockpit();
-			return false;
-		}
-		const nextHold = commanderHold(
-			result.commander,
-			entrustedTonnesAboard(this.requests),
-		);
-		const oreHold = miningHold(result.commander.hull, nextHold, this.minedT);
-		if (oreHold.usedT > oreHold.capacityT) {
-			this.stationConsoleMessage =
-				"Raw ore will not fit aboard. Unload it before changing the hold or hull.";
 			this.stationConsoleRevision += 1;
 			this.updateCockpit();
 			return false;
@@ -22752,7 +22741,7 @@ class Game {
 	private oreLine() {
 		const hold = this.minedHold();
 		const ore = this.fragments.filter((f) => f.ore).length;
-		return `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · ${HULL_SPECS[this.flownHull].oreHoldT ? "ORE BAY" : "HOLD"} ${Math.round(hold.usedT)}/${hold.capacityT} T`;
+		return `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · ${oreCapacityLabel(this.flownHull)} ${Math.round(hold.usedT)}/${hold.capacityT} T`;
 	}
 
 	private presentCockpitReadouts(

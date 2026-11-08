@@ -18,7 +18,7 @@ The measured Longwall skips have roughly 3,142 m³ of backing-mesh volume, while
 
 C1: Exactly 3,000 t of raw ore fits independently of general cargo. Unit boundaries exercise 2,999 t, full skips and reserve exhaustion; the mining-drill browser contract exercises real Game extraction and the Hold-page readout.
 
-C2: Ore contributes flown mass and cannot silently overfill a replacement hull. The browser contract measures the 3,000 t mass increment; existing general-hold tests retain their stock/fitted capacity assertions. `transactStation` checks the resulting capacity before adopting its immutable result.
+C2: Ore contributes flown mass and cannot silently overfill a replacement hull. The browser contract measures the 3,000 t mass increment; existing general-hold tests retain their stock/fitted capacity assertions. `transactAtStation` checks the resulting capacity before returning its immutable result; shipyard offers include the same ore fact.
 
 C3: Faster extraction retains exact deposit/cargo accounting. Affected headless tests: 130 passed across seven files. TypeScript, formatting, script lint, comment lint and build passed before independent review. Final browser/CI/review evidence is recorded on the PR before merge.
 
