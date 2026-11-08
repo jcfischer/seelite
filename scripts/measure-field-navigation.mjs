@@ -178,7 +178,7 @@ const SETUP = async ({ kind, aa }) => {
 		}
 		throw new Error(`pressing ${wanted} did not select it`);
 	};
-	return { rocks: rocks.length, plan: plan.id, atTime: t0 };
+	return { rocks: rocks.length, plan: plan.id };
 };
 
 const pageErrors = [];
