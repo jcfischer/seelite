@@ -580,3 +580,26 @@ test("a proportional fee charges dearer ore more per tonne than cheap ore", () =
 		silicateFee * BigInt(gem.refineryInputG),
 	);
 });
+
+test("a fee beyond the pilot's cash splits the lot instead of stranding it", () => {
+	const c = rulingCandidate({
+		serviceSPerT: 1,
+		feeCrPerT: 0,
+		feeShareOfProduct: 0.3,
+		collectS: 5,
+		hours: 8,
+		rawElasticityScale: 0.5,
+		rawValueShare: 0.35,
+		systemsPerWorld: 5,
+	});
+	const rows = comparison(c).rows.filter(
+		(r) => r.path === "refine" && r.profile === "charted",
+	);
+	expect(rows.length).toBeGreaterThan(0);
+	for (const row of rows) {
+		expect(row.pendingJobs).toBe(0);
+		expect(row.heldRawG).toBe(0);
+		expect(row.refineryInputG).toBe(row.inputG);
+		expect(row.maxOutstandingSlots).toBeLessThanOrEqual(8);
+	}
+});
