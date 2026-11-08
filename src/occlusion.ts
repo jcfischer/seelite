@@ -368,6 +368,14 @@ export const CLOSED_GATES: OcclusionGates = {
 	ao: CLOSED_GATE,
 };
 
+/**
+ * Rocks alone hold the shadow open. Their shadow falls on the hull, so the hull
+ * keeps receiving, but its own casting is thirty-odd draws a frame (#950 D1's
+ * budget is twelve) for a self-shadow open space does not draw either (#1209).
+ */
+export const rockShadowOnly = (gates: OcclusionGates): boolean =>
+	gates.shadow.open && !gates.ao.open;
+
 /** Advance both gates by one frame, each on what may open it. */
 export function stepOcclusionGates(
 	gates: OcclusionGates,

@@ -31,6 +31,7 @@ import {
 	shadowBox,
 	shadowFit,
 	CLOSED_GATES,
+	rockShadowOnly,
 	type ShadowSubject,
 	stepOcclusionGate,
 	stepOcclusionGates,
@@ -486,4 +487,11 @@ test("a station opens both halves, with or without a rock (#1209)", () => {
 		});
 	expect(gates.shadow.open).toBe(true);
 	expect(gates.ao.open).toBe(true);
+});
+
+test("the hull stops casting only while rocks alone hold the shadow open (#1209)", () => {
+	const open = { open: true, pending: 0 };
+	expect(rockShadowOnly(CLOSED_GATES)).toBe(false);
+	expect(rockShadowOnly({ shadow: open, ao: CLOSED_GATES.ao })).toBe(true);
+	expect(rockShadowOnly({ shadow: open, ao: open })).toBe(false);
 });

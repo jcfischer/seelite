@@ -305,6 +305,7 @@ import {
 	type ShadowSubject,
 	shadowBox,
 	shadowFit,
+	rockShadowOnly,
 	stepOcclusionGates,
 } from "./occlusion";
 import {
@@ -6706,6 +6707,22 @@ class Game {
 		if (this.gtaoPass)
 			this.gtaoPass.enabled =
 				this.occlusionWanted.ao && (pinned || this.occlusionGate.ao.open);
+		this.holdHullCasters(!pinned && rockShadowOnly(this.occlusionGate));
+	}
+
+	private heldHullCasters: THREE.Object3D[] | null = null;
+	private holdHullCasters(hold: boolean) {
+		if (hold && !this.heldHullCasters) {
+			const casters: THREE.Object3D[] = [];
+			this.shipMesh?.traverse((o) => {
+				if (o.castShadow) casters.push(o);
+			});
+			for (const o of casters) o.castShadow = false;
+			this.heldHullCasters = casters;
+		} else if (!hold && this.heldHullCasters) {
+			for (const o of this.heldHullCasters) o.castShadow = true;
+			this.heldHullCasters = null;
+		}
 	}
 
 	/**
@@ -6863,6 +6880,7 @@ class Game {
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
 		this.shipMesh.name = "ship";
+		this.heldHullCasters = null;
 		// #201. Once at build, not per frame: a hull's materials do not change
 		// class after it is built, and the walk is a full traverse.
 		this.markedOcclusion.push(["ship", markOcclusion(this.shipMesh)]);

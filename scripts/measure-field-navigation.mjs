@@ -26,7 +26,12 @@ import { gameUrl } from "./lib/game-url.mjs";
 import { median, seededShuffler } from "./lib/measurement.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
-import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	installViewPlacement,
+	launchChromium,
+} from "./probe-guard.mjs";
 
 const FRAMES = Number(process.env.FRAMES ?? 120);
 const BLOCKS = Number(process.env.BLOCKS ?? 6);
@@ -96,7 +101,10 @@ const SETUP = async ({ kind, aa }) => {
 		g.leftTab = "Navigation";
 		g.setHeadLook(arm === "forward-field" ? "forward" : "left");
 		if (arm === "nav-open")
-			await place(world({ x: 0, y: 0, z: 400 }, g.world.gameTime), moving());
+			await place(
+				world({ x: 0, y: 0, z: 2 * g.units.NEAR_FAR_KM }, g.world.gameTime),
+				moving(),
+			);
 		else await place(world(stand, g.world.gameTime), moving());
 		g.updateLocalFrameBody();
 		if (arm !== "nav-open") {
@@ -107,7 +115,7 @@ const SETUP = async ({ kind, aa }) => {
 				Number.POSITIVE_INFINITY,
 			);
 			for (const ref of refs)
-				if (g.rockDepositRow(ref).surveyedAt === undefined)
+				if (g.rockDepositRow(ref)?.surveyedAt === undefined)
 					g.putDepositRow(ref, {
 						...g.rockDepositRow(ref),
 						surveyedAt: g.world.gameTime,
@@ -186,6 +194,7 @@ try {
 		deviceScaleFactor: 2,
 	});
 	page.on("pageerror", (e) => console.error("  pageerror:", e.message));
+	await installViewPlacement(page);
 	await page.goto(
 		gameUrl(origin, {
 			seed: WORLD,
