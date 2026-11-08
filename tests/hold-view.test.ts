@@ -27,6 +27,25 @@ const summary = (over: Partial<HoldSummary> = {}): HoldSummary => ({
 	...over,
 });
 
+test("dedicated raw ore has its own painted capacity line alongside general cargo", () => {
+	const html = holdBody(
+		summary({
+			capacityT: 40,
+			freeT: 40,
+			oreBay: { usedT: 3000, capacityT: 3000, freeT: 0 },
+		}),
+		null,
+	);
+	expect(html).toContain(
+		"data-live-ore-capacity>RAW ORE 3000 / 3000 t · 0 t free</p>",
+	);
+	expect(html).toContain("data-live-hold-capacity>0 / 40 t · 40 t free");
+	expect(holdBody(summary(), null)).not.toContain("data-live-ore-capacity");
+	expect(holdBody(summary(), null).replace(/<[^>]+>/g, "")).toBe(
+		"0 / 20 t · 20 t freeNothing aboard. The hold takes 20 t.",
+	);
+});
+
 /** A hold carrying one 8 t consignment and nothing of the pilot's. */
 const entrustedHold = (jobOver: Partial<HoldJob> = {}) =>
 	summary({

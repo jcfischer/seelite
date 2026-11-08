@@ -164,7 +164,7 @@ const run = (
 	let cut = beginDrillCut();
 	let tonnes = 0;
 	const stops = new Set<string>();
-	const dt = 1 / 60;
+	const dt = Math.min(1 / 60, 0.1 / DRILL.rateTPerS);
 	for (let s = 0; s < seconds - 1e-9; s += dt) {
 		const a = at(s);
 		const step = stepDrillCut(cut, {
@@ -185,7 +185,7 @@ const run = (
 
 describe("extraction and conservation", () => {
 	test("held contact delivers whole tonnes at the rate", () => {
-		const { tonnes } = run(10.1, () => ({ key: "rock:a:1" }));
+		const { tonnes } = run(10, () => ({ key: "rock:a:1" }));
 		expect(tonnes).toBe(Math.floor(10 * DRILL.rateTPerS));
 	});
 

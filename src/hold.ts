@@ -76,6 +76,7 @@ export interface HoldJob {
 }
 
 export interface HoldSummary {
+	oreBay?: { usedT: number; capacityT: number; freeT: number };
 	usedT: number;
 	capacityT: number;
 	/**
@@ -225,6 +226,7 @@ export const aboardForOffer = (
 					? line.owner === "requester" && line.job?.offerId === offer.id
 					: line.owner === "pilot" &&
 						line.kind !== "fitting" &&
+						line.kind !== "ore" &&
 						line.goodName === offer.goodName),
 		)
 		.reduce((sum, line) => sum + line.amount, 0);
@@ -242,7 +244,12 @@ export const pilotGoods = (
 ): Readonly<Record<string, number>> =>
 	Object.fromEntries(
 		hold.lines
-			.filter((line) => line.owner === "pilot" && line.kind !== "fitting")
+			.filter(
+				(line) =>
+					line.owner === "pilot" &&
+					line.kind !== "fitting" &&
+					line.kind !== "ore",
+			)
 			.map((line) => [line.goodName, line.amount]),
 	);
 

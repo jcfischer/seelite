@@ -122,7 +122,7 @@ export function holdBody(hold: HoldSummary, bids: HoldBids): string {
 		hold.lines.length === 0
 			? ""
 			: `<small>${bids ? "Values are this station's bid." : "Values need a station."}</small>`;
-	const capacity = `<p class="lc-hold-capacity" data-live-hold-capacity>${hold.usedT} / ${hold.capacityT} t · ${hold.freeT} t free${entrusted}${note}</p>`;
+	const capacity = `<p class="lc-hold-capacity" data-live-hold-capacity>${hold.usedT} / ${hold.capacityT} t · ${hold.freeT} t free${entrusted}${note}</p>${hold.oreBay ? `<p class="lc-hold-capacity" data-live-ore-capacity>RAW ORE ${hold.oreBay.usedT} / ${hold.oreBay.capacityT} t · ${hold.oreBay.freeT} t free</p>` : ""}`;
 	if (hold.lines.length === 0)
 		// **A sentence, not a blank.** An empty page reads as a page that failed
 		// to load; the capacity is exactly what a pilot wants at that moment.

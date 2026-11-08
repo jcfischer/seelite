@@ -262,7 +262,7 @@ describe("surface drilling (D-D3)", () => {
 	};
 
 	test("it cuts at the drill's rate at the laser's grade-E share", () => {
-		const r = run(20.1, 1e9, 1e9);
+		const r = run(20, 1e9, 1e9);
 		expect(DRILL_SURFACE_SHARE).toBe(0.5);
 		expect(r.ore).toBe(Math.floor(20 * DRILL.rateTPerS * DRILL_SURFACE_SHARE));
 		expect(r.waste).toBe(r.ore);

@@ -1,3 +1,4 @@
+import { miningHold, hasOreBay } from "../../src/mining-capacity";
 import {
 	fieldCentre,
 	fieldRocks,
@@ -443,6 +444,12 @@ function scenario({
 }: ScenarioInput) {
 	const fit = makeMiningFit(fitInput.hull, fitInput.size, fitInput.grade);
 	const holdT = Math.floor(fit.capacity.holdT);
+	const oreHoldT = miningHold(
+		fitInput.hull,
+		{ usedT: 0, capacityT: holdT },
+		0,
+	).capacityT;
+	const dedicatedOre = hasOreBay(fitInput.hull);
 	const record = port.record,
 		contents = port.contents;
 	const rocks = fieldRocks(record, plan).slice(0, c.rockLimit);
@@ -629,7 +636,7 @@ function scenario({
 		if (path === "buy-refine") {
 			const best = buyOre!;
 			const q = rawQuote(port, best.family, best.grade, t, deficits, holdT, c);
-			let n = Math.min(holdT - heldT(), q.stockT);
+			let n = Math.min(oreHoldT - heldT(), q.stockT);
 			while (
 				n > 0 &&
 				money.add(price(q.buyCr, n), price(c.feeCrPerT, n)) > cash
@@ -681,7 +688,7 @@ function scenario({
 			maxOutstandingSlots = Math.max(maxOutstandingSlots, outstanding());
 		}
 		cargo = retained;
-		let free = holdT - heldT();
+		let free = holdT - (dedicatedOre ? 0 : heldT());
 		const ready = jobs.filter(
 			(j) =>
 				j.workLeftS === 0 &&
@@ -833,7 +840,7 @@ function scenario({
 			} else {
 				if (debit.taken > 0) remined++;
 				emptyVisits = 0;
-				const perf = flightPerformance(fitInput.hull, {}, fit.massT + holdT);
+				const perf = flightPerformance(fitInput.hull, {}, fit.massT + heldT());
 				const positioning =
 					Math.max(
 						c.positioningFloorS,
@@ -865,7 +872,7 @@ function scenario({
 							label: "mining",
 							trigger: "primary",
 						});
-				while (t < elapsedS - 1e-8 && heldT() < holdT) {
+				while (t < elapsedS - 1e-8 && heldT() < oreHoldT) {
 					const left =
 						reserve - candidateDebit(debit.taken, debit.at, t, c.recoveryTPerH);
 					if (left < 1) {
@@ -886,7 +893,7 @@ function scenario({
 							spin: 1,
 							rateTPerS: c.drillTPerS,
 							dt,
-							holdFreeT: holdT - heldT(),
+							holdFreeT: oreHoldT - heldT(),
 							reserveLeftT: left,
 						});
 						drill = step.cut;
@@ -956,7 +963,7 @@ function scenario({
 				if (takenThisVisit === 0) emptyVisits++;
 			}
 		}
-		const full = heldT() >= holdT;
+		const full = heldT() >= oreHoldT;
 		if (full || (emptyVisits >= rocks.length && cargo.length)) {
 			travel(false);
 			unload();
@@ -1010,6 +1017,8 @@ function scenario({
 		field: plan.id,
 		profile: plan.profile,
 		fit: fitInput,
+		generalHoldT: holdT,
+		oreHoldT,
 		path,
 		buyOre,
 		trade,

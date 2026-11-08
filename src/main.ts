@@ -1,3 +1,4 @@
+import { miningHold, withOre, oreCapacityLabel } from "./mining-capacity";
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
 import type { FieldDiscoveryMotion } from "./field-discovery";
 import { discoverNearbyFields } from "./world-state";
@@ -2906,10 +2907,12 @@ class Game {
 	/** What the flown ship weighs now, tonnes: `flownMassT` over the flown
 	 *  hull, the commander's hold and the entrusted lots aboard. */
 	get flownShipMassT(): number {
-		return flownMassT(
-			this.flownHull,
-			this.commander,
-			entrustedTonnesAboard(this.requests),
+		return (
+			flownMassT(
+				this.flownHull,
+				this.commander,
+				entrustedTonnesAboard(this.requests),
+			) + this.minedT
 		);
 	}
 
@@ -9474,24 +9477,7 @@ class Game {
 	};
 
 	private withMinedOre(hold: HoldSummary): HoldSummary {
-		const ore = Object.entries(this.minedOre).filter(([, t]) => t > 0);
-		if (ore.length === 0) return hold;
-		const t = this.minedT;
-		return {
-			...hold,
-			usedT: hold.usedT + t,
-			freeT: hold.freeT - t,
-			lines: [
-				...hold.lines,
-				...ore.map(([goodName, amount]) => ({
-					goodName,
-					amount,
-					unit: "t" as const,
-					owner: "pilot" as const,
-					kind: "ore" as const,
-				})),
-			],
-		};
+		return MINING_ON ? withOre(this.flownHull, hold, this.minedOre) : hold;
 	}
 
 	private minedHold(): { usedT: number; capacityT: number } {
@@ -9499,7 +9485,7 @@ class Game {
 			this.commander,
 			entrustedTonnesAboard(this.requests),
 		);
-		return { usedT: hold.usedT + this.minedT, capacityT: hold.capacityT };
+		return miningHold(this.flownHull, hold, this.minedT);
 	}
 
 	private get minedT(): number {
@@ -11377,7 +11363,10 @@ class Game {
 				: [["MINING OFF", "#9fb7c0"]],
 			ore: [
 				[`ORE ${this.minedT} T`, "#ffb347"],
-				[`HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`, "#ffb347"],
+				[
+					`${oreCapacityLabel(this.flownHull)} ${Math.round(hold.usedT)}/${hold.capacityT} T`,
+					"#ffb347",
+				],
 			],
 			lasers: [
 				[`HEAT ${Math.round((c.heat / HEAT_LOCK) * 100)}%`, "#ffb347"],
@@ -21749,6 +21738,7 @@ class Game {
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
 			mining: MINING_ON,
+			rawOreT: this.minedT,
 			services: MINING_ON
 				? stationServices(
 						advanceTo(this.commerceWorld, this.world.gameTime),
@@ -22751,7 +22741,7 @@ class Game {
 	private oreLine() {
 		const hold = this.minedHold();
 		const ore = this.fragments.filter((f) => f.ore).length;
-		return `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · HOLD ${Math.round(hold.usedT)}/${hold.capacityT} T`;
+		return `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · ${oreCapacityLabel(this.flownHull)} ${Math.round(hold.usedT)}/${hold.capacityT} T`;
 	}
 
 	private presentCockpitReadouts(

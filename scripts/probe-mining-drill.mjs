@@ -151,7 +151,7 @@ try {
 	await page.keyboard.down("Space");
 	const cut = await page.evaluate(async () => {
 		const g = window.__seelite;
-		for (let t = 0; t < 12; t += g.units.MAX_DT) g.step(g.units.MAX_DT);
+		for (let t = 0; t < 1; t += g.units.MAX_DT) g.step(g.units.MAX_DT);
 		for (let i = 0; i < 2; i++)
 			await new Promise((r) => requestAnimationFrame(r));
 		const ref = g.rockRef(window.__drillRock);
@@ -183,6 +183,73 @@ try {
 		JSON.stringify(cut),
 	);
 	await page.screenshot({ path: "probe-shots/mining-drill/cutting.png" });
+	await page.keyboard.down("Space");
+	const skips = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const ref = g.rockRef(window.__drillRock);
+		window.__skipFixture = {
+			ore: { ...g.minedOre },
+			delivered: g.drill.delivered,
+			row: g.rockDepositRow(ref),
+		};
+		g.minedOre = {};
+		const emptyMass = g.flownShipMassT;
+		g.minedOre = { "Boundary ore": 2999 };
+		g.drill.cut = { key: null, progressT: 0 };
+		g.putDepositRow(ref, { surface: 0, deep: 0, at: g.world.gameTime });
+		g.condition = { ...g.condition, energy: g.condition.energyMax, heat: 0 };
+		for (let t = 0; t < 1; t += g.units.MAX_DT) g.step(g.units.MAX_DT);
+		const after = g.rockDepositRow(ref)?.deep ?? 0;
+		const full = g.drillExtract(
+			g.rockRef(window.__drillRock),
+			g.drill.contact,
+			1,
+		);
+		g.view = "cockpit";
+		g.setHeadLook("right");
+		g.rightTab = "Hold";
+		g.updateCockpit();
+		for (let i = 0; i < 2; i++)
+			await new Promise((r) => requestAnimationFrame(r));
+		const result = {
+			full,
+			gained: g.minedT - 2999,
+			debit: after,
+			mass: g.flownShipMassT - emptyMass,
+			ore: document.querySelector("[data-live-ore-capacity]")?.textContent,
+			general: g.withMinedOre({
+				usedT: 40,
+				capacityT: 40,
+				freeT: 0,
+				entrustedT: 0,
+				lines: [],
+			}).freeT,
+		};
+		return result;
+	});
+	await page.keyboard.up("Space");
+	check(
+		"dedicated skips stop at 3000 t, conserve reserve and add flown mass",
+		skips.gained === 1 &&
+			skips.debit === 1 &&
+			skips.full.tonnes === 0 &&
+			skips.mass === 3000 &&
+			skips.general === 0,
+		JSON.stringify(skips),
+	);
+	check(
+		"the Hold page paints raw-ore capacity separately",
+		skips.ore?.includes("RAW ORE 3000 / 3000 t"),
+		JSON.stringify(skips),
+	);
+	await page.screenshot({ path: "probe-shots/mining-drill/ore-skips.png" });
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.minedOre = window.__skipFixture.ore;
+		g.drill.delivered = window.__skipFixture.delivered;
+		g.putDepositRow(g.rockRef(window.__drillRock), window.__skipFixture.row);
+		g.setHeadLook("forward");
+	});
 	const switches = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const rows = [];
