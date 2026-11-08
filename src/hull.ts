@@ -646,6 +646,7 @@ export interface HullSpec {
 	 *  is the reference the stock deficit's response is stated against — #26's D6
 	 *  defers the *multiplier* to the pricing node, not the capacities. */
 	readonly holdT: number;
+	readonly oreHoldT?: number;
 	/** Forward weapon mounts. `combat-model.md` §2 fires one forward weapon
 	 *  today, so a second mount is a property #8's build will read rather than
 	 *  one anything reads now. */
@@ -1048,6 +1049,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			roll: { z: 0.925, port: 0.97, starboard: 0.97 },
 		},
 		holdT: 40,
+		oreHoldT: 3000,
 		hardpoints: 3,
 		slots: slotLayout({
 			hardpoint: [3],

@@ -135,12 +135,15 @@ test("full trips actually settle cash and preserve all raw and output mass with 
 		systemsPerWorld: 1,
 		hours: 1,
 		loadouts: [{ hull: "miner", size: 1, grade: "E" }],
+		drillTPerS: 37.5,
+		rockLimit: 10,
+		recoveryTPerH: 0,
 	});
 	expect(report.rows.some((r) => r.soldRawG > 0)).toBe(true);
 	expect(report.rows.some((r) => r.soldProductG > 0)).toBe(true);
 	expect(report.rows.some((r) => r.pendingJobs > 0)).toBe(true);
 	for (const r of report.rows) {
-		expect(r.heldRawG).toBeLessThanOrEqual(40_000_000);
+		expect(r.heldRawG).toBeLessThanOrEqual(3_000_000_000);
 		expect(r.inputG).toBe(r.soldRawG + r.refineryInputG + r.heldRawG);
 		expect(r.productG).toBe(r.soldProductG + r.custodyG + r.inProcessG);
 	}
@@ -206,7 +209,7 @@ test("exhaustion is visible at zero recovery, with nonzero unsold custody and no
 		galaxies: [0],
 		systemsPerWorld: 1,
 		hours: 0.5,
-		rockLimit: 1,
+		rockLimit: 10,
 		recoveryTPerH: 0,
 		loadouts: [{ hull: "courier", size: 1, grade: "A" }],
 	});
@@ -328,8 +331,11 @@ test("measured scenario jobs agree with an independent cumulative-service FIFO o
 		...candidateDefaults(),
 		seeds: [47],
 		galaxies: [0],
-		systemsPerWorld: 1,
-		hours: 0.5,
+		systemsPerWorld: 4,
+		hours: 1,
+		drillTPerS: 37.5,
+		rockLimit: 10,
+		recoveryTPerH: 0,
 		loadouts: [
 			{ hull: "miner" as const, size: 1 as const, grade: "E" as const },
 		],

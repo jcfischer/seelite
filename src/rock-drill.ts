@@ -41,7 +41,7 @@ export const DRILL = {
 	closingKms: 0.002,
 	slideKms: 0.003,
 	mouthDeg: 12,
-	rateTPerS: 0.5,
+	rateTPerS: 37.5,
 	energyPerS: 6,
 	heatPerS: 2.5,
 	feedMarginKm: 0.0005,
