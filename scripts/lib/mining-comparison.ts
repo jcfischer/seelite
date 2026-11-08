@@ -125,6 +125,7 @@ export interface Candidate {
 	onePass?: boolean;
 	rawElasticityScale?: number;
 	collectS?: number;
+	feeShareOfProduct?: number;
 }
 
 const OPTIONAL_FIELDS = [
@@ -134,6 +135,7 @@ const OPTIONAL_FIELDS = [
 	"onePass",
 	"rawElasticityScale",
 	"collectS",
+	"feeShareOfProduct",
 ];
 
 /** Unratified design inputs authorized by https://github.com/jcfischer/seelite/issues/922 */
@@ -218,6 +220,8 @@ function validate(c: Candidate) {
 	if (c.rawElasticityScale !== undefined)
 		valid("raw elasticity scale", c.rawElasticityScale, 0, 1);
 	if (c.collectS !== undefined) valid("collection seconds", c.collectS, 0.01);
+	if (c.feeShareOfProduct !== undefined)
+		valid("fee share", c.feeShareOfProduct, 0, 1);
 	if (
 		c.fieldLayout !== undefined &&
 		c.fieldLayout !== "baseline" &&
@@ -634,6 +638,17 @@ function scenario({
 			deficit: readDeficit(deficits, venue.key, recipe.product, t / 60),
 		});
 	}
+	function feeFor(family: OreFamily, grade: OreGrade, tonnes: number) {
+		const recipe = recipeFor(family, grade);
+		const share = c.feeShareOfProduct ?? 0;
+		const perT =
+			c.feeCrPerT +
+			(share > 0
+				? (share * productPrice(family, grade) * recipe.yieldGPerT) /
+					recipe.nativeUnitG
+				: 0);
+		return price(perT, tonnes);
+	}
 	function idle(dt: number, active: boolean) {
 		const start = t;
 		advance(dt, active);
@@ -683,7 +698,7 @@ function scenario({
 			let n = Math.min(oreHoldT - heldT(), q.stockT);
 			while (
 				n > 0 &&
-				money.add(price(q.buyCr, n), price(c.feeCrPerT, n)) > cash
+				money.add(price(q.buyCr, n), feeFor(best.family, best.grade, n)) > cash
 			)
 				n--;
 			if (n > 0) {
@@ -708,7 +723,7 @@ function scenario({
 		const retained: Cargo[] = [];
 		for (const item of cargo) {
 			const recipe = recipeFor(item.family, item.grade);
-			const fee = price(c.feeCrPerT, item.tonnes);
+			const fee = feeFor(item.family, item.grade, item.tonnes);
 			if (
 				outstanding() >= 8 ||
 				services.get(venue.key)!(t, Math.min(elapsedS, t + 1e-6)) === 0 ||
@@ -1516,6 +1531,7 @@ const GRID_AXES = [
 	"rawValueShare",
 	"rawElasticityScale",
 	"feeCrPerT",
+	"feeShareOfProduct",
 	"returnLoadT",
 	"visitLargestShare",
 	"collectS",

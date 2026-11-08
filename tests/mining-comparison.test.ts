@@ -534,3 +534,44 @@ test("a grid names every variant's inputs and keeps failed targets visible", () 
 		grid({ candidate: rulingCandidate(), axes: { serviceSPerT: [] } }),
 	).toThrow();
 });
+
+test("a proportional fee follows the product's value and a zero share charges nothing", () => {
+	const fast = { serviceSPerT: 1, feeCrPerT: 0, collectS: 5 };
+	const fees = (feeShareOfProduct: number) =>
+		chartedRow(rulingCandidate({ ...fast, feeShareOfProduct }), "refine");
+	const none = fees(0);
+	const quarter = fees(0.25);
+	const half = fees(0.5);
+	expect(money.parse(none.fees)).toBe(0n);
+	expect(money.parse(quarter.fees)).toBeGreaterThan(0n);
+	expect(money.parse(half.fees)).toBeGreaterThan(money.parse(quarter.fees));
+	expect(signedMoney.parse(quarter.cashDelta)).toBeLessThan(
+		signedMoney.parse(none.cashDelta),
+	);
+	expect(() =>
+		comparison(rulingCandidate({ feeShareOfProduct: 1.5 })),
+	).toThrow();
+	expect(() =>
+		comparison(rulingCandidate({ feeShareOfProduct: -0.1 })),
+	).toThrow();
+});
+
+test("a proportional fee charges dearer ore more per tonne than cheap ore", () => {
+	const row = (buyFamily: "silicate" | "gem") =>
+		comparison(
+			rulingCandidate({
+				serviceSPerT: 1,
+				feeCrPerT: 0,
+				feeShareOfProduct: 0.25,
+				hours: 0.2,
+			}),
+		).rows.find(
+			(r) =>
+				r.path === "buy-refine" &&
+				r.buyOre?.family === buyFamily &&
+				r.buyOre?.grade === "standard",
+		)!;
+	const perTonne = (r: ReturnType<typeof row>) =>
+		Number(money.parse(r.fees)) / (r.refineryInputG / 1_000_000);
+	expect(perTonne(row("gem"))).toBeGreaterThan(perTonne(row("silicate")));
+});
