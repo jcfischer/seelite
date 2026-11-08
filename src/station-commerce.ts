@@ -1,4 +1,4 @@
-import { miningHold } from "./mining-capacity";
+import { hasOreBay, miningHold } from "./mining-capacity";
 import {
 	type Loadout,
 	type FittedModule,
@@ -976,21 +976,13 @@ export function hullOffer(
 		],
 	};
 	const capacityT = holdCapacityT({ ...transferred, hull });
-	const oreHold = miningHold(
-		hull,
-		{ usedT: commanderHold(transferred, input.entrustedT).usedT, capacityT },
-		input.rawOreT ?? 0,
-	);
-	if (
-		oreHold.usedT > oreHold.capacityT &&
-		HULL_SPECS[hull].oreHoldT !== undefined
-	)
+	const dedicated = hasOreBay(hull);
+	const usedT = commanderHold(transferred, input.entrustedT).usedT;
+	const rawOreT = input.rawOreT ?? 0;
+	const oreHold = miningHold(hull, { usedT, capacityT }, rawOreT);
+	if (dedicated && oreHold.usedT > oreHold.capacityT)
 		return { ...rejected(input, "hull-hold"), ...reached };
-	let overflowT = Math.ceil(
-		commanderHold(transferred, input.entrustedT).usedT +
-			(HULL_SPECS[hull].oreHoldT === undefined ? (input.rawOreT ?? 0) : 0) -
-			capacityT,
-	);
+	let overflowT = Math.ceil(usedT + (dedicated ? 0 : rawOreT) - capacityT);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))
 		// Contraband is never auto-sold (the principal's ruling): legal goods go
