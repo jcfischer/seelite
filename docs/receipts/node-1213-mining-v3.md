@@ -69,7 +69,7 @@ Compared with the flat fee, the proportional fee lifts the weakest fields, narro
 
 ## Consequences
 
-- Throughput stops limiting charted returns at about 3 s/t under the candidate fee: the refined median is 1.11 at 3 s/t, 1.09 at 1 s/t, 1.09 at 0.3 s/t and 1.08 at 0.1 s/t. At 30 s/t it is −0.18, with eight jobs pending and their fees paid. Rare refined is 2.91 at 3 s/t and 3.59 at 1 s/t.
+- Under the candidate fee, the active rate stops responding to throughput at about 3 s/t: the charted refined median is 1.11 at 3 s/t, 1.09 at 1 s/t, 1.09 at 0.3 s/t and 1.08 at 0.1 s/t. At 30 s/t it is −0.18, with eight jobs pending and their fees paid. Rare refined is 2.91 at 3 s/t and 3.59 at 1 s/t. This rate does not charge waiting, so it does not say how long a pilot should have to wait, and there are no grid points between 3 and 30 s/t. At 1 s/t the last job finishes about 62 minutes into the clock (median), which is the reason for proposing 1 s/t over 3 s/t.
 - Elasticity moved the charted raw median only from 0.73 at scale 0 to 0.71 at scale 1 in the flat-fee grid. That is weak evidence, because each sale uses one quote and a one-pass pilot makes few later sales. Stated as a ruling to honour, not a measured need.
 - Raw share does not change a refined run that mines its own ore; it sets the raw return and the buy-and-refine margin.
 - The fee takes a large sum up front on valuable ore. Pilots with little cash stage a lot through several submissions.
