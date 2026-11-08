@@ -19,6 +19,26 @@ import {
 if (import.meta.main) {
 	const [mode = "--inventory", path] = process.argv.slice(2);
 	let result: unknown;
+	const instrumentStamp = () => ({
+		instrumentRevision: execFileSync("git", ["rev-parse", "HEAD"], {
+			cwd: import.meta.dir,
+			encoding: "utf8",
+		}).trim(),
+		workingTree: execFileSync(
+			"git",
+			[
+				"status",
+				"--porcelain",
+				"--",
+				"scripts",
+				"src",
+				"spikes/field-shape-1043",
+			],
+			{ cwd: `${import.meta.dir}/..`, encoding: "utf8" },
+		).trim()
+			? "modified"
+			: "clean",
+	});
 	if (mode === "--grid" && path && process.argv.length === 4) {
 		const input = JSON.parse(readFileSync(path, "utf8"));
 		if (
@@ -30,17 +50,7 @@ if (import.meta.main) {
 		)
 			throw new Error("A grid requires candidatePath and axes");
 		result = {
-			instrumentRevision: execFileSync("git", ["rev-parse", "HEAD"], {
-				cwd: import.meta.dir,
-				encoding: "utf8",
-			}).trim(),
-			workingTree: execFileSync(
-				"git",
-				["status", "--porcelain", "--", "scripts", "src"],
-				{ cwd: `${import.meta.dir}/..`, encoding: "utf8" },
-			).trim()
-				? "modified"
-				: "clean",
+			...instrumentStamp(),
 			...grid({
 				candidate: {
 					...JSON.parse(readFileSync(input.candidatePath, "utf8")),
@@ -59,17 +69,7 @@ if (import.meta.main) {
 		const report =
 			mode === "--compare" ? comparison(candidate) : sensitivity(candidate);
 		result = {
-			instrumentRevision: execFileSync("git", ["rev-parse", "HEAD"], {
-				cwd: import.meta.dir,
-				encoding: "utf8",
-			}).trim(),
-			workingTree: execFileSync(
-				"git",
-				["status", "--porcelain", "--", "scripts", "src"],
-				{ cwd: `${import.meta.dir}/..`, encoding: "utf8" },
-			).trim()
-				? "modified"
-				: "clean",
+			...instrumentStamp(),
 			...report,
 		};
 	} else if (mode === "--candidate" && path === undefined) {

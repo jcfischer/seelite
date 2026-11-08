@@ -621,3 +621,29 @@ test("proportional fees leave a two-refinery pilot the fuel to reach the second 
 	expect(rows.length).toBeGreaterThan(0);
 	for (const row of rows) expect(row.refusedFuel).toBe(0);
 }, 120_000);
+
+test("a pilot empty at the end of a pass still flies home to collect", () => {
+	const c = rulingCandidate({
+		serviceSPerT: 1,
+		collectS: 5,
+		feeCrPerT: 0,
+		feeShareOfProduct: 0.35,
+		returnLoadT: 1,
+		rockLimit: 3,
+		hours: 2,
+	});
+	const rows = comparison(c).rows;
+	const pick = (path: string) =>
+		rows.find((r) => r.path === path && r.profile === "charted")!;
+	const raw = pick("raw");
+	const refine = pick("refine");
+	expect(raw.heldRawG).toBe(0);
+	expect(raw.inputG).toBeGreaterThan(0);
+	expect(refine.trips).toBe(raw.trips + 1);
+}, 60_000);
+
+test("onePass must be a boolean", () => {
+	expect(() =>
+		comparison(rulingCandidate({ onePass: "false" as unknown as boolean })),
+	).toThrow();
+});

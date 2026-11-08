@@ -136,7 +136,7 @@ const OPTIONAL_FIELDS = [
 	"rawElasticityScale",
 	"collectS",
 	"feeShareOfProduct",
-];
+] as const satisfies readonly (keyof Candidate)[];
 
 /** Unratified design inputs authorized by https://github.com/jcfischer/seelite/issues/922 */
 export function candidateDefaults(): Candidate {
@@ -206,7 +206,8 @@ function validate(c: Candidate) {
 	const required = Object.keys(candidateDefaults());
 	if (
 		Object.keys(c).some(
-			(k) => !required.includes(k) && !OPTIONAL_FIELDS.includes(k),
+			(k) =>
+				!required.includes(k) && !OPTIONAL_FIELDS.some((name) => name === k),
 		) ||
 		required.some((k) => !(k in c))
 	)
@@ -214,6 +215,8 @@ function validate(c: Candidate) {
 			"mining comparison: unsupported or missing candidate field",
 		);
 	integer("rock selection limit", c.rockLimit, 1, 100000);
+	if (c.onePass !== undefined && typeof c.onePass !== "boolean")
+		throw new Error("mining comparison: onePass must be a boolean");
 	if (c.returnLoadT !== undefined) valid("return load", c.returnLoadT, 1);
 	if (c.visitLargestShare !== undefined)
 		valid("visited rock share", c.visitLargestShare, 0.001, 1);
@@ -942,10 +945,8 @@ function scenario({
 		if (!rocks.length) break;
 		if (c.onePass && (cursor >= rocks.length || t > elapsedS - c.dockS * 2)) {
 			if (cargo.length || jobs.length) {
-				if (cargo.length) {
-					travel(false);
-					unload();
-				}
+				travel(false);
+				unload();
 				settleAtRefineries();
 			}
 			break;
