@@ -19,6 +19,6 @@ native edge between nodes and knows nothing about membership, so it crosses the
 split and holds the blocked node off its own map's frontier until the blocker
 closes. Record the dependency; do not move a node to keep an edge local.
 
-This file exists because it is **tracked**, so it is present in every git
+`CLAUDE.md` exists because it is **tracked**, so it is present in every git
 worktree the SOP tells you to create. Per-agent memory is not: a worktree is its
 own project scope and loads none of it.
