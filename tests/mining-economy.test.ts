@@ -204,11 +204,11 @@ test("malformed units, identity, prices and unsafe quantities refuse before repo
 	).toThrow();
 });
 
-test("input audit distinguishes available contracts from absent raw price and stock candidates", () => {
+test("input audit distinguishes candidate availability from principal balance approval", () => {
 	const inventory = candidateInventory();
-	expect(inventory.status).toBe("incomplete");
+	expect(inventory.status).toBe("candidate-model-available");
 	expect(inventory.missingInputs).toContain(
-		"raw-ore price and generated-stock candidate model",
+		"principal ratification of an exact measured table and instrument revision on #923",
 	);
 	expect(inventory.refineryDemonstration).toEqual({
 		feeCrPerT: 10,
