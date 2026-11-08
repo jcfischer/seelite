@@ -76,7 +76,7 @@ import { flightPerformance, ASSIST_CAP_KMS } from "../../src/sim";
 import { placeBodies } from "../../src/system";
 import { length, sub } from "../../src/vec3";
 import { serviceCalendar } from "./mining-service";
-import { recipeFor } from "./mining-batch";
+import { recipeFor, productMarketBid } from "./mining-batch";
 import {
 	DOCK_SECONDS,
 	jumpSeconds,
@@ -273,6 +273,22 @@ export function candidateDebit(
 		: Math.max(0, taken - Math.floor(((t - at) / 3600) * rate));
 }
 
+function completionTime(
+	service: (to: number) => number,
+	work: number,
+	from: number,
+	to: number,
+) {
+	let lo = from,
+		hi = to;
+	for (let i = 0; i < 48; i++) {
+		const mid = (lo + hi) / 2;
+		if (service(mid) >= work) hi = mid;
+		else lo = mid;
+	}
+	return hi;
+}
+
 export function serviceQueue(
 	context: CapabilityTimeContext,
 	jobs: readonly { workS: number; submittedAt: number }[],
@@ -295,14 +311,12 @@ export function serviceQueue(
 			cursor = total;
 			return { ...job, workLeftS, completedAt: null as number | null };
 		}
-		let lo = job.submittedAt,
-			hi = to;
-		for (let i = 0; i < 48; i++) {
-			const mid = (lo + hi) / 2;
-			if (queryCapabilityTime(context, anchor, 0, mid) >= start + job.workS)
-				hi = mid;
-			else lo = mid;
-		}
+		const hi = completionTime(
+			(mid) => queryCapabilityTime(context, anchor, 0, mid),
+			start + job.workS,
+			job.submittedAt,
+			to,
+		);
 		cursor = start + job.workS;
 		return { ...job, workLeftS, completedAt: hi };
 	});
@@ -516,13 +530,12 @@ function scenario({
 				available -= use;
 				if (job.workLeftS <= 1e-9) {
 					job.workLeftS = 0;
-					let lo = cursor,
-						hi = next;
-					for (let i = 0; i < 36; i++) {
-						const mid = (lo + hi) / 2;
-						if (services.get(p.key)!(cursor, mid) >= work) hi = mid;
-						else lo = mid;
-					}
+					const hi = completionTime(
+						(mid) => services.get(p.key)!(cursor, mid),
+						work,
+						cursor,
+						next,
+					);
 					job.doneAt = hi;
 					cursor = hi;
 				}
@@ -560,26 +573,22 @@ function scenario({
 	}
 	function productPrice(family: OreFamily, grade: OreGrade) {
 		const recipe = recipeFor(family, grade);
-		const row = marketRow(
-			commodity(recipe.product),
-			venue.record.economy,
-			venue.market,
-			t / 60,
-		);
-		return marketQuote(
-			stockResponse(
-				row.priceCr,
-				readDeficit(deficits, venue.key, recipe.product, t / 60),
-				holdT,
-			),
-			venue.record.displayTL,
-		).sellCr;
+		return productMarketBid({
+			product: recipe.product,
+			economy: venue.record.economy,
+			station: venue.market,
+			gameTimeS: t,
+			holdT,
+			displayTL: venue.record.displayTL,
+			deficit: readDeficit(deficits, venue.key, recipe.product, t / 60),
+		});
 	}
 	function idle(dt: number, active: boolean) {
 		const start = t;
 		advance(dt, active);
 		condition = stepCondition(condition, t - start, false).condition;
 	}
+	const heldT = () => cargo.reduce((n, item) => n + item.tonnes, 0);
 	function outstanding() {
 		return jobs.filter(
 			(j) =>
@@ -620,10 +629,7 @@ function scenario({
 		if (path === "buy-refine") {
 			const best = buyOre!;
 			const q = rawQuote(port, best.family, best.grade, t, deficits, holdT, c);
-			let n = Math.min(
-				holdT - cargo.reduce((sum, item) => sum + item.tonnes, 0),
-				q.stockT,
-			);
+			let n = Math.min(holdT - heldT(), q.stockT);
 			while (
 				n > 0 &&
 				money.add(price(q.buyCr, n), price(c.feeCrPerT, n)) > cash
@@ -675,7 +681,7 @@ function scenario({
 			maxOutstandingSlots = Math.max(maxOutstandingSlots, outstanding());
 		}
 		cargo = retained;
-		let free = holdT - cargo.reduce((n, i) => n + i.tonnes, 0);
+		let free = holdT - heldT();
 		const ready = jobs.filter(
 			(j) =>
 				j.workLeftS === 0 &&
@@ -859,10 +865,7 @@ function scenario({
 							label: "mining",
 							trigger: "primary",
 						});
-				while (
-					t < elapsedS - 1e-8 &&
-					cargo.reduce((n, item) => n + item.tonnes, 0) < holdT
-				) {
+				while (t < elapsedS - 1e-8 && heldT() < holdT) {
 					const left =
 						reserve - candidateDebit(debit.taken, debit.at, t, c.recoveryTPerH);
 					if (left < 1) {
@@ -883,7 +886,7 @@ function scenario({
 							spin: 1,
 							rateTPerS: c.drillTPerS,
 							dt,
-							holdFreeT: holdT - cargo.reduce((n, x) => n + x.tonnes, 0),
+							holdFreeT: holdT - heldT(),
 							reserveLeftT: left,
 						});
 						drill = step.cut;
@@ -953,7 +956,7 @@ function scenario({
 				if (takenThisVisit === 0) emptyVisits++;
 			}
 		}
-		const full = cargo.reduce((n, i) => n + i.tonnes, 0) >= holdT;
+		const full = heldT() >= holdT;
 		if (full || (emptyVisits >= rocks.length && cargo.length)) {
 			travel(false);
 			unload();
@@ -965,7 +968,7 @@ function scenario({
 		}
 	}
 	if (t < elapsedS) idle(elapsedS - t, false);
-	const heldRawT = cargo.reduce((n, i) => n + i.tonnes, 0);
+	const heldRawT = heldT();
 	const completed = jobs.filter((j) => j.workLeftS === 0);
 	const inProcess = jobs.filter((j) => j.workLeftS > 0);
 	const custodyG = completed.reduce((n, j) => n + j.productG - j.collectedG, 0);

@@ -309,3 +309,71 @@ test("a known initial outage contributes zero service and independent queues eac
 	expect(independent[0].completedAt).toBe(serial[0].completedAt);
 	expect(independent[0].completedAt).toBeLessThan(serial[1].completedAt!);
 });
+
+test("committed default candidate equals its public generator", () => {
+	const { readFileSync } = require("node:fs");
+	expect(
+		JSON.parse(readFileSync("docs/candidates/mining-economy-v1.json", "utf8")),
+	).toEqual(candidateDefaults());
+});
+
+test("measured scenario jobs agree with an independent cumulative-service FIFO oracle at each real refinery", () => {
+	const {
+		capabilityIdentity,
+		capabilitySlots,
+	} = require("../src/capability-slots");
+	const { raiderSlots } = require("../src/raider-slots");
+	const { carrierKey } = require("../src/carrier-key");
+	const c = {
+		...candidateDefaults(),
+		seeds: [47],
+		galaxies: [0],
+		systemsPerWorld: 1,
+		hours: 0.5,
+		loadouts: [
+			{ hull: "miner" as const, size: 1 as const, grade: "E" as const },
+		],
+	};
+	const report = comparison(c);
+	const world = worldFor(47, 0);
+	let compared = 0;
+	for (const row of report.rows.filter(
+		(r) => r.path === "refine" || r.path === "refine-parallel",
+	)) {
+		for (const key of new Set(row.jobRecords.map((j) => j.refineryKey))) {
+			const record = world.systems[Number(key.split(":")[0])];
+			const station = world
+				.contentsFor(record)
+				.stations.find(
+					(s) => carrierKey(record.index, s.localCarrierId) === key,
+				)!;
+			const slot = capabilitySlots(record.index, station).find(
+				(s) => s.service === "exclusive",
+			)!;
+			const identity = capabilityIdentity(47, 0, slot.key);
+			const total = raiderSlots(record.index, record.government).length;
+			const jobs = row.jobRecords.filter((j) => j.refineryKey === key);
+			const expected = serviceQueue(
+				{
+					seed: identity.seed,
+					government: record.government,
+					active: total,
+					total,
+				},
+				jobs.map((j) => ({
+					workS: j.inputT * c.serviceSPerT,
+					submittedAt: j.submittedAt,
+				})),
+				row.elapsedS,
+			);
+			for (let i = 0; i < jobs.length; i++) {
+				expect(jobs[i].workLeftS).toBeCloseTo(expected[i].workLeftS, 5);
+				if (expected[i].completedAt !== null)
+					expect(jobs[i].doneAt).toBeCloseTo(expected[i].completedAt!, 5);
+				else expect(jobs[i].doneAt).toBe(null);
+				compared++;
+			}
+		}
+	}
+	expect(compared).toBeGreaterThan(0);
+});

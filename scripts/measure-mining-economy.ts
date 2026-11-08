@@ -34,17 +34,7 @@ if (import.meta.main) {
 			}).trim(),
 			workingTree: execFileSync(
 				"git",
-				[
-					"status",
-					"--porcelain",
-					"--",
-					"scripts/measure-mining-economy.ts",
-					"scripts/lib/mining-batch.ts",
-					"scripts/lib/mining-comparison.ts",
-					"scripts/lib/mining-service.ts",
-					"src",
-					"scripts/lib/greedy-trader.ts",
-				],
+				["status", "--porcelain", "--", "scripts", "src"],
 				{ cwd: `${import.meta.dir}/..`, encoding: "utf8" },
 			).trim()
 				? "modified"

@@ -18,6 +18,7 @@ import {
 	marketRow,
 	marketStationOf,
 	stockResponse,
+	type MarketStation,
 } from "../../src/market";
 import {
 	ORE_FAMILIES,
@@ -146,6 +147,36 @@ export interface MarketFixture {
 	deficit: number;
 }
 
+/** Shared generated product-bid chain for route and single-batch measurements. */
+export function productMarketBid(input: {
+	product: string;
+	economy: number;
+	station: MarketStation;
+	gameTimeS: number;
+	holdT: number;
+	displayTL: number;
+	deficit: number;
+}) {
+	const good = COMMODITIES.find((g) => g.name === input.product);
+	if (
+		!good ||
+		!Number.isFinite(input.deficit) ||
+		!Number.isFinite(input.gameTimeS) ||
+		input.gameTimeS < 0
+	)
+		throw new Error("mining economy: unsupported product market input");
+	const row = marketRow(
+		good,
+		input.economy,
+		input.station,
+		input.gameTimeS / 60,
+	);
+	return marketQuote(
+		stockResponse(row.priceCr, input.deficit, input.holdT),
+		input.displayTL,
+	).sellCr;
+}
+
 /** Read the actual generated product bid at a stated clock and supplied current deficit. */
 export function productBidAt(fixture: MarketFixture, product: string): number {
 	whole("world seed", fixture.seed);
@@ -172,16 +203,15 @@ export function productBidAt(fixture: MarketFixture, product: string): number {
 	const commodity = COMMODITIES.find((g) => g.name === product);
 	if (!station || !commodity || !hasMarket(station))
 		throw new Error("mining economy: unsupported station or product");
-	const row = marketRow(
-		commodity,
-		record.economy,
-		marketStationOf(station, record.seed),
-		fixture.gameTimeS / 60,
-	);
-	return marketQuote(
-		stockResponse(row.priceCr, fixture.deficit, fixture.holdT),
-		record.displayTL,
-	).sellCr;
+	return productMarketBid({
+		product,
+		economy: record.economy,
+		station: marketStationOf(station, record.seed),
+		gameTimeS: fixture.gameTimeS,
+		holdT: fixture.holdT,
+		displayTL: record.displayTL,
+		deficit: fixture.deficit,
+	});
 }
 
 /** Explicit-context diagnostic using production service arithmetic; full routes use world-checked calendars. */
