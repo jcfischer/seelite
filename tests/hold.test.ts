@@ -16,7 +16,7 @@ import {
  * the hold itself is a second authority, and the till is the one that refuses.
  */
 import { describe, expect, test } from "bun:test";
-import { holdSummary, pilotGoods } from "../src/hold";
+import { aboardForOffer, holdSummary, pilotGoods } from "../src/hold";
 import { LARGE_CARGO_BAY_BONUS_T, newCommander } from "../src/station-commerce";
 import { generateGalaxy } from "../src/galaxy";
 import type { JobOffer } from "../src/jobs";
@@ -32,6 +32,41 @@ const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;
 const { offers, offer: courier } = firstOffer(SYSTEMS, "courier");
 
 const COURIER_HOLD_T = 20;
+
+test("raw ore and carried fittings never satisfy ordinary commodity offers", () => {
+	const hold = {
+		usedT: 3,
+		capacityT: 20,
+		freeT: 17,
+		entrustedT: 0,
+		lines: [
+			{
+				goodName: "Food",
+				amount: 3,
+				unit: "t" as const,
+				owner: "pilot" as const,
+			},
+			{
+				goodName: "Food",
+				amount: 10,
+				unit: "t" as const,
+				owner: "pilot" as const,
+				kind: "ore" as const,
+			},
+			{
+				goodName: "Food",
+				amount: 1,
+				unit: "t" as const,
+				owner: "pilot" as const,
+				kind: "fitting" as const,
+			},
+		],
+	};
+	expect(pilotGoods(hold)).toEqual({ Food: 3 });
+	expect(
+		aboardForOffer(hold, { id: "offer", goodName: "Food", entrusted: false }),
+	).toBe(3);
+});
 
 const at = (ref: JobOffer["requester"]) => ({
 	galaxyIndex: ref.galaxyIndex,

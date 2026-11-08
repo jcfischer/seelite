@@ -129,6 +129,49 @@ test("ordinary cargo purchases respect raw ore in a shared hold", () => {
 	expect(transactAtStation({ ...request, rawOreT: 19 }).accepted).toBe(true);
 });
 
+test("shipyard admits exact dedicated ore capacity and refuses excess without selling it", () => {
+	const commander = { ...newCommander("freighter"), credits: 1e9 };
+	const request = input({
+		commander,
+		rawOreT: 3000,
+		station: { ...STATION, type: "shipyard" },
+		action: { type: "buy-hull", hull: "miner" },
+	});
+	expect(transactAtStation(request).accepted).toBe(true);
+	const refused = transactAtStation({ ...request, rawOreT: 3001 });
+	expect(refused.accepted).toBe(false);
+	expect(refused.reason).toBe("hull-hold");
+	expect(refused.commander).toBe(commander);
+});
+
+test("shipyard auto-sale leaves room for shared raw ore and never sells that ore", () => {
+	const commander = {
+		...newCommander("freighter"),
+		credits: 1e9,
+		loadout: stockLoadout("courier"),
+		cargo: { Food: 20 },
+	};
+	const result = transactAtStation(
+		input({
+			commander,
+			rawOreT: 15,
+			station: { ...STATION, type: "shipyard" },
+			action: { type: "buy-hull", hull: "courier" },
+		}),
+	);
+	expect(result.accepted).toBe(true);
+	expect(result.commander.cargo.Food).toBe(5);
+	expect(commander.cargo.Food).toBe(20);
+});
+
+test("an earlier commerce refusal retains its reason even with an oversized ore fact", () => {
+	const request = input({ rawOreT: 21, action: { type: "buy-fuel" } });
+	const result = transactAtStation(request);
+	expect(result.accepted).toBe(false);
+	expect(result.reason).toBe("fuel-full");
+	expect(result.commander).toBe(request.commander);
+});
+
 /** What one leg of a cycle carries forward: what the till returned, not what it refused. */
 interface CycleState {
 	commander: Parameters<typeof transactAtStation>[0]["commander"];

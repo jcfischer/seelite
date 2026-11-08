@@ -499,18 +499,13 @@ export function transactAtStation(
 	quote: QuoteFn = marketQuote,
 ): StationCommerceResult {
 	const result = stationTransaction(input, quote);
-	if (!result.accepted || !input.rawOreT) return result;
+	if (!result.accepted) return result;
 	const hold = miningHold(
 		result.commander.hull,
 		commanderHold(result.commander, input.entrustedT),
-		input.rawOreT,
+		input.rawOreT ?? 0,
 	);
-	return hold.usedT > hold.capacityT
-		? rejected(
-				input,
-				input.action.type === "buy-hull" ? "hull-hold" : "cargo-full",
-			)
-		: result;
+	return hold.usedT > hold.capacityT ? rejected(input, "cargo-full") : result;
 }
 
 function stationTransaction(
@@ -975,11 +970,11 @@ export function hullOffer(
 			...moved.overflow,
 		],
 	};
-	const capacityT = holdCapacityT({ ...transferred, hull });
+	const hold = commanderHold({ ...transferred, hull }, input.entrustedT);
+	const { capacityT, usedT } = hold;
 	const dedicated = hasOreBay(hull);
-	const usedT = commanderHold(transferred, input.entrustedT).usedT;
 	const rawOreT = input.rawOreT ?? 0;
-	const oreHold = miningHold(hull, { usedT, capacityT }, rawOreT);
+	const oreHold = miningHold(hull, hold, rawOreT);
 	if (dedicated && oreHold.usedT > oreHold.capacityT)
 		return { ...rejected(input, "hull-hold"), ...reached };
 	let overflowT = Math.ceil(usedT + (dedicated ? 0 : rawOreT) - capacityT);
