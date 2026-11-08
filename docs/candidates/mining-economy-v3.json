@@ -1,7 +1,7 @@
 {
 	"id": "mining-v3-unratified",
 	"rockLimit": 100000,
-	"provenance": "#923 principal rulings 2026-11-08: largest quarter of organic rocks, about 1000t or end of pass, ore less elastic, high refinery throughput; figures proposed by #1213, final balance unratified",
+	"provenance": "#923 principal rulings 2026-11-08: largest quarter of organic rocks, about 1000t or end of pass, ore less elastic, high refinery throughput, fee proportional to product value; figures proposed by #1213, final balance unratified",
 	"seeds": [1, 47, 1234],
 	"galaxies": [0, 1],
 	"systemsPerWorld": 4,
@@ -75,7 +75,7 @@
 	"rawValueShare": 0.35,
 	"rawStockMinT": 8,
 	"rawStockMaxT": 63,
-	"feeCrPerT": 5,
+	"feeCrPerT": 0,
 	"serviceSPerT": 1,
 	"drillTPerS": 37.5,
 	"positioningKm": 0.1,
@@ -89,5 +89,6 @@
 	"fieldLayout": "organic",
 	"onePass": true,
 	"collectS": 5,
-	"rawElasticityScale": 0.5
+	"rawElasticityScale": 0.5,
+	"feeShareOfProduct": 0.3
 }

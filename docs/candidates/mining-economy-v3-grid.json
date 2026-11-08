@@ -1,24 +1,17 @@
 {
 	"candidatePath": "docs/candidates/mining-economy-v3.json",
 	"overrides": {
-		"hours": 8,
+		"feeCrPerT": 0,
 		"loadouts": [
 			{
 				"hull": "miner",
 				"size": 3,
 				"grade": "A"
-			},
-			{
-				"hull": "courier",
-				"size": 1,
-				"grade": "E"
 			}
 		]
 	},
 	"axes": {
-		"serviceSPerT": [30, 3, 1, 0.3],
-		"rawValueShare": [0.15, 0.25, 0.35, 0.55],
-		"rawElasticityScale": [0, 0.5, 1],
-		"feeCrPerT": [1, 5]
+		"rawValueShare": [0.35, 0.45],
+		"feeShareOfProduct": [0.1, 0.2, 0.25, 0.3, 0.35, 0.4]
 	}
 }
