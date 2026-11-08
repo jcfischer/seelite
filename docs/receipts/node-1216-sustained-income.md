@@ -14,9 +14,9 @@ bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-s
 bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-sustained-wide-reach-grid.json
 ```
 
-All figures come from clean `e3285b9adbf8afae60a7d7b134e373bf04f745c1`: Longwall 3/A, seeds 1/47/1234, galaxies 0/1, 24 refinery systems, 24 charted and 5 rare starting fields, 58 samples. The report's `routeSummaries` and `routeComparison` carry the tables below. The percentiles were recounted from the raw rows and agree.
+All figures come from clean `081a754f9050d7cdd1354384c5534c35510c9bde`: Longwall 3/A, seeds 1/47/1234, galaxies 0/1, 24 refinery systems, 24 charted and 5 rare starting fields, 58 samples. The report's `routeSummaries` and `routeComparison` carry the tables below. The percentiles were recounted from the raw rows and agree.
 
-Rows are unchanged for candidates that do not name a route. SHA-256 prefixes of the `rows` array, before and after this change: v1 `fd61e348b0542bd8`, v2 `4baacf6feb98a104`, v3 `344d19a88ed12977` (v3 measured on both `dd331e73` and `e3285b9adbf8afae60a7d7b134e373bf04f745c1`).
+Rows are unchanged for candidates that do not name a route. SHA-256 prefixes of the `rows` array, before and after this change: v1 `fd61e348b0542bd8`, v2 `4baacf6feb98a104`, v3 `344d19a88ed12977` (v3 measured on both `dd331e73` and `081a754f9050d7cdd1354384c5534c35510c9bde`).
 
 ## What changed in the instrument
 
