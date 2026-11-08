@@ -20,6 +20,9 @@ import { recordTrade } from "../src/deficits";
 import { debitAt } from "../src/deposit-state";
 import { money, signedMoney } from "../src/exact-amount";
 import { worldFor, portsOf, run } from "../scripts/lib/greedy-trader";
+import { recipeFor } from "../scripts/lib/mining-batch";
+import { commodity, listsCommodity } from "../src/market";
+import { ORE_FAMILIES } from "../src/rock-survey";
 
 test("candidate recovery retains whole-tonne clock semantics and refuses invalid clocks", () => {
 	for (const t of [0, 3599, 3600, 7200, 36000])
@@ -645,3 +648,315 @@ test("onePass must be a boolean", () => {
 		comparison(rulingCandidate({ onePass: "false" as unknown as boolean })),
 	).toThrow();
 });
+
+const routeCandidate = (patch: Partial<Candidate> = {}): Candidate => ({
+	...rulingCandidate(),
+	serviceSPerT: 1,
+	feeCrPerT: 0,
+	feeShareOfProduct: 0.35,
+	collectS: 5,
+	rawValueShare: 0.35,
+	rawElasticityScale: 0.5,
+	hours: 2,
+	routeFields: 3,
+	routeRevisitLoadT: 100,
+	routeChartedFindS: 0,
+	routeReferenceHours: 2,
+	...patch,
+});
+const routeRow = (c: Candidate, path: string) => {
+	const row = comparison(c).rows.find(
+		(r) => r.path === path && r.profile === "charted",
+	);
+	if (!row?.route) throw new Error(`no charted ${path} route row`);
+	return row as typeof row & { route: NonNullable<typeof row.route> };
+};
+
+test("a one-field route that never returns earns exactly what one pass earns", () => {
+	const onePass = routeCandidate({
+		routeFields: undefined,
+		routeRevisitLoadT: undefined,
+		routeChartedFindS: undefined,
+		routeReferenceHours: undefined,
+	});
+	const route = routeCandidate({
+		routeFields: 1,
+		routeRevisitLoadT: 1_000_000,
+	});
+	for (const path of ["raw", "refine"]) {
+		const a = chartedRow(onePass, path);
+		const b = routeRow(route, path);
+		expect(b.cashDelta).toBe(a.cashDelta);
+		expect(b.activeS).toBeCloseTo(a.activeS, 6);
+		expect(b.inputG).toBe(a.inputG);
+		expect(b.trips).toBe(a.trips);
+		expect(b.route.fields).toHaveLength(1);
+	}
+}, 30_000);
+
+test("a candidate without a route produces the historical paths and no route data", () => {
+	const report = comparison(
+		rulingCandidate({
+			hours: 0.2,
+			serviceSPerT: 1,
+			feeCrPerT: 0,
+			feeShareOfProduct: 0.35,
+			collectS: 5,
+		}),
+	);
+	expect(report.rows.every((r) => !("route" in r))).toBe(true);
+	expect("routeSummaries" in report).toBe(false);
+	expect("routeComparison" in report).toBe(false);
+	expect(report.rows.some((r) => r.path === "buy-refine")).toBe(true);
+});
+
+test("a route names distinct same-profile fields, nearest first, and charges their jumps and fuel", () => {
+	const row = routeRow(routeCandidate({ hours: 4 }), "raw");
+	const names = row.route.fields.map((f) => `${f.system}/${f.field}`);
+	expect(row.route.fields.length).toBeGreaterThan(1);
+	expect(new Set(names).size).toBe(names.length);
+	expect(row.route.fields.every((f) => f.profile === "charted")).toBe(true);
+	expect(row.route.fields[0].fromHomeLy).toBe(0);
+	expect(row.route.fieldsVisited).toBeGreaterThan(1);
+	expect(row.route.moveS).toBeGreaterThan(0);
+	expect(money.parse(row.fuelPaid)).toBeGreaterThan(0n);
+	expect(row.refusedFuel).toBe(0);
+	expect(new Set(row.route.visits.map((v) => v.system)).size).toBeGreaterThan(
+		1,
+	);
+	expect(row.route.moveS).toBeLessThanOrEqual(row.travelS);
+}, 30_000);
+
+test("a route's market law carries each refinery's own marks between fields", () => {
+	const row = routeRow(routeCandidate({ hours: 4 }), "refine");
+	expect(row.jobRecords.length).toBeGreaterThan(0);
+	expect(
+		new Set(row.jobRecords.map((j) => j.refineryKey)).size,
+	).toBeGreaterThan(1);
+	expect(row.inputG).toBe(row.soldRawG + row.refineryInputG + row.heldRawG);
+	expect(row.productG).toBe(row.soldProductG + row.custodyG + row.inProcessG);
+}, 30_000);
+
+test("depletion carries between passes and a return finds only what recovery restored", () => {
+	const withRecovery = (recoveryTPerH: number) =>
+		routeRow(
+			routeCandidate({
+				routeFields: 1,
+				routeRevisitLoadT: 5,
+				recoveryTPerH,
+				hours: 3,
+			}),
+			"raw",
+		);
+	const none = withRecovery(0);
+	const some = withRecovery(1);
+	const fast = withRecovery(60);
+	expect(none.route.reachExhaustedAtS).not.toBeNull();
+	expect(none.route.restoredMinedT).toBe(0);
+	expect(none.inputG).toBeGreaterThan((none.route.reserveT - 5) * 1_000_000);
+	expect(none.inputG).toBeLessThanOrEqual(none.route.reserveT * 1_000_000);
+	expect(none.route.recoveryWaitS).toBeGreaterThan(0);
+	expect(some.route.restoredMinedT).toBeGreaterThan(0);
+	expect(some.route.restoredMinedT).toBeLessThanOrEqual(
+		(some.route.goodRocks * some.elapsedS) / 3600,
+	);
+	expect(fast.route.restoredMinedT).toBeGreaterThan(some.route.restoredMinedT);
+	expect(some.route.visits.length).toBeGreaterThan(1);
+}, 30_000);
+
+test("a return skips rocks the pilot's live survey shows are empty or below grade", () => {
+	const row = routeRow(
+		routeCandidate({
+			routeFields: 1,
+			routeRevisitLoadT: 5,
+			hours: 3,
+		}),
+		"raw",
+	);
+	const first = row.route.visits[0];
+	const returned = row.route.visits.filter((v) => v.kind === "restored");
+	expect(returned.length).toBeGreaterThan(0);
+	for (const visit of returned)
+		expect(visit.activeS).toBeLessThan(first.activeS);
+	expect(row.surveys).toBe(row.route.rocksSurveyed);
+	expect(row.resurveys).toBe(0);
+}, 30_000);
+
+test("rare fields cost their search on the first visit only", () => {
+	const row = comparison(
+		routeCandidate({
+			routeFields: 2,
+			routeRevisitLoadT: 5,
+			searchRareS: 123,
+			hours: 5,
+			systemsPerWorld: 8,
+		}),
+	).rows.find((r) => r.path === "raw" && r.profile === "rare");
+	if (!row?.route) throw new Error("no rare route row");
+	expect(row.route.fields.every((f) => f.profile === "rare")).toBe(true);
+	expect(row.route.fields).toHaveLength(2);
+	expect(row.searchS).toBeCloseTo(123 * row.route.fieldsVisited, 6);
+	expect(row.route.visits.length).toBeGreaterThan(row.route.fieldsVisited);
+}, 30_000);
+
+test("charted finding time is a declared input charged once per field", () => {
+	const row = (routeChartedFindS: number) =>
+		routeRow(routeCandidate({ routeChartedFindS, hours: 3 }), "raw");
+	const free = row(0);
+	const costly = row(240);
+	expect(free.searchS).toBe(0);
+	expect(costly.searchS).toBeCloseTo(240 * costly.route.fieldsVisited, 6);
+}, 30_000);
+
+test("every passive second of a route is refinery waiting, recovery waiting or the clock's tail", () => {
+	const report = comparison(routeCandidate({ hours: 4, routeRevisitLoadT: 5 }));
+	for (const row of report.rows) {
+		if (!row.route) throw new Error("route row expected");
+		expect(
+			row.route.refineryWaitS +
+				row.route.recoveryWaitS +
+				row.route.otherPassiveS,
+		).toBeCloseTo(row.passiveS, 6);
+		expect(
+			row.route.beforeExhaustion.activeS + row.route.afterExhaustion.activeS,
+		).toBeCloseTo(row.activeS, 6);
+		expect(
+			signedMoney.fromNumber(
+				row.route.beforeExhaustion.cr + row.route.afterExhaustion.cr,
+			) - signedMoney.parse(row.cashDelta),
+		).toBeLessThan(signedMoney.fromNumber(0.01));
+		const ranOut = row.route.reachExhaustedAtS;
+		expect(ranOut === null || ranOut <= row.elapsedS).toBe(true);
+	}
+	expect(
+		report.rows.some((r) => r.path === "refine" && r.route!.refineryWaitS > 0),
+	).toBe(true);
+}, 30_000);
+
+test("a route report summarises against trade and against the same candidate's one pass", () => {
+	const c = routeCandidate();
+	const report = comparison(c);
+	const summary = report.routeSummaries!["miner/3/A/charted/refine"];
+	expect(summary.tradeRatio.n).toBe(1);
+	expect(summary.tradeRatio.p50).toBe(
+		report.summaries["miner/3/A/charted/refine"].tradeRatio.p50,
+	);
+	expect(summary.refineryWaitMinutes.n).toBe(1);
+	expect(summary.elapsedTradeRatio.n).toBe(1);
+	const line = report.routeComparison!["miner/3/A/charted/refine"];
+	const {
+		routeFields: _f,
+		routeRevisitLoadT: _l,
+		routeChartedFindS: _s,
+		routeReferenceHours: _h,
+		...plain
+	} = c;
+	const reference = comparison(plain).rows.find(
+		(r) => r.path === "refine" && r.profile === "charted",
+	)!;
+	expect(line.onePass.p50).toBeCloseTo(
+		reference.crPerActiveMinute / reference.trade.crPerMinute,
+		9,
+	);
+	expect(line.sustained.p50).toBe(summary.tradeRatio.p50);
+	expect(line.p50Change).toBeCloseTo(
+		summary.tradeRatio.p50! - line.onePass.p50!,
+		9,
+	);
+	expect(
+		report.rows.every((r) => r.path === "raw" || r.path === "refine"),
+	).toBe(true);
+}, 30_000);
+
+test("route inputs refuse an incomplete or unsupported route", () => {
+	for (const patch of [
+		{ routeFields: 0 },
+		{ routeFields: 1.5 },
+		{ routeRevisitLoadT: 0 },
+		{ routeRevisitLoadT: undefined },
+		{ routeChartedFindS: -1 },
+		{ routeReferenceHours: 0 },
+		{ onePass: false },
+		{
+			loadouts: [
+				{ hull: "courier" as const, size: 1 as const, grade: "E" as const },
+			],
+		},
+	])
+		expect(() =>
+			comparison(routeCandidate({ hours: 0.01, ...patch })),
+		).toThrow();
+	expect(() =>
+		comparison(rulingCandidate({ hours: 0.01, routeRevisitLoadT: 100 })),
+	).toThrow();
+});
+
+test("a grid can sweep the route's inputs and keeps the one-pass comparison", () => {
+	const report = grid({
+		candidate: routeCandidate({ hours: 1, routeReferenceHours: 1 }),
+		axes: { routeFields: [1, 2], recoveryTPerH: [1], searchRareS: [600] },
+	});
+	expect(report.variants).toHaveLength(2);
+	expect(report.variants[1].inputs.routeFields).toBe(2);
+	expect(
+		report.variants[1].routeComparison!["miner/3/A/charted/refine"].sustained.n,
+	).toBe(1);
+	expect(report.variants[1].routeSummaries).toBeDefined();
+}, 30_000);
+
+test("every refinery in a galaxy lists every refined product", () => {
+	const world = worldFor(47, 0);
+	const refineries = world.systems
+		.flatMap((r) => portsOf(r, world.contentsFor(r)))
+		.filter((p) => p.station.type === "refinery");
+	expect(refineries.length).toBeGreaterThan(0);
+	for (const family of ORE_FAMILIES) {
+		const good = commodity(recipeFor(family, "standard").product);
+		for (const port of refineries)
+			expect(listsCommodity(good, port.market)).toBe(true);
+	}
+});
+
+test("the sustained candidate changes nothing in v3 but its clock, fit list and route", () => {
+	const { readFileSync } = require("node:fs");
+	const read = (name: string) =>
+		JSON.parse(readFileSync(`docs/candidates/${name}.json`, "utf8"));
+	const v3 = read("mining-economy-v3");
+	const route = read("mining-economy-v3-sustained");
+	expect(v3.routeFields).toBeUndefined();
+	const changed = Object.keys(route).filter(
+		(k) => JSON.stringify(route[k]) !== JSON.stringify(v3[k]),
+	);
+	expect(changed.sort()).toEqual(
+		[
+			"id",
+			"provenance",
+			"hours",
+			"loadouts",
+			"routeFields",
+			"routeRevisitLoadT",
+			"routeChartedFindS",
+			"routeReferenceHours",
+		].sort(),
+	);
+	expect(route.loadouts).toEqual([{ hull: "miner", size: 3, grade: "A" }]);
+	expect(route.routeReferenceHours).toBe(v3.hours);
+	expect(Object.keys(v3).every((k) => k in route)).toBe(true);
+});
+
+test("a world whose trader stalls ends the route at the matched clock and says so", () => {
+	const report = comparison(
+		routeCandidate({
+			seeds: [1],
+			galaxies: [1],
+			hours: 8,
+			routeFields: 1,
+			routeReferenceHours: 8,
+			routeRevisitLoadT: 1_000_000,
+		}),
+	);
+	const summary = report.routeSummaries!["miner/3/A/charted/raw"];
+	expect(summary.tradeStalled).toBe(summary.tradeRatio.n);
+	expect(summary.clockHours.p50!).toBeLessThan(8);
+	for (const row of report.rows) expect(row.elapsedS).toBe(row.trade.elapsedS);
+}, 30_000);

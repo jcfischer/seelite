@@ -5,6 +5,7 @@ import {
 	rockLocal,
 	systemFields,
 	type FieldPlan,
+	type Rock,
 } from "../../src/asteroid-field";
 import {
 	initialCapabilityTime,
@@ -29,7 +30,7 @@ import {
 	FIELD_DISCOVERY_RADIUS_KM,
 } from "../../src/field-discovery";
 import { HULL_SPECS, type SlotSize } from "../../src/hull";
-import { distanceLy } from "../../src/galaxy";
+import { distanceLy, type SystemRecord } from "../../src/galaxy";
 import {
 	fittedCapacity,
 	fittedMassT,
@@ -70,6 +71,7 @@ import {
 	surveyReading,
 	type OreFamily,
 	type OreGrade,
+	type RockContents,
 } from "../../src/rock-survey";
 import { fullCondition, stepCondition } from "../../src/ship-condition";
 import { CANISTER_SCOOP_CHARGE_E } from "../../src/scoop-window";
@@ -126,6 +128,10 @@ export interface Candidate {
 	rawElasticityScale?: number;
 	collectS?: number;
 	feeShareOfProduct?: number;
+	routeFields?: number;
+	routeRevisitLoadT?: number;
+	routeChartedFindS?: number;
+	routeReferenceHours?: number;
 }
 
 const OPTIONAL_FIELDS = [
@@ -136,6 +142,10 @@ const OPTIONAL_FIELDS = [
 	"rawElasticityScale",
 	"collectS",
 	"feeShareOfProduct",
+	"routeFields",
+	"routeRevisitLoadT",
+	"routeChartedFindS",
+	"routeReferenceHours",
 ] as const satisfies readonly (keyof Candidate)[];
 
 /** Unratified design inputs authorized by https://github.com/jcfischer/seelite/issues/922 */
@@ -231,6 +241,25 @@ function validate(c: Candidate) {
 		c.fieldLayout !== "organic"
 	)
 		throw new Error("mining comparison: unsupported field layout");
+	if (c.routeFields === undefined) {
+		if (
+			c.routeRevisitLoadT !== undefined ||
+			c.routeChartedFindS !== undefined ||
+			c.routeReferenceHours !== undefined
+		)
+			throw new Error("mining comparison: route inputs need routeFields");
+	} else {
+		integer("route fields", c.routeFields, 1, 64);
+		valid("route revisit load", c.routeRevisitLoadT ?? Number.NaN, 1);
+		if (c.routeChartedFindS !== undefined)
+			valid("charted finding seconds", c.routeChartedFindS);
+		if (c.routeReferenceHours !== undefined)
+			valid("reference hours", c.routeReferenceHours, 0.01, 24);
+		if (c.onePass !== true || c.loadouts?.some((fit) => fit.hull !== "miner"))
+			throw new Error(
+				"mining comparison: a route flies the one-pass miner pilot",
+			);
+	}
 	if (!c.id?.trim() || !c.provenance?.trim())
 		throw new Error(
 			"mining comparison: candidate identity and provenance required",
@@ -425,14 +454,160 @@ interface Debit {
 	surveyedAt?: number;
 }
 
+interface FieldStock {
+	rocks: Rock[];
+	deposits: RockContents[];
+}
+interface ReachMap {
+	distanceLy: number[];
+	previous: (number | null)[];
+}
 interface ComparisonCache {
 	baselines: Map<string, ReturnType<typeof run>>;
 	services: Map<string, ReturnType<typeof serviceCalendar>>;
+	stocks: Map<string, FieldStock>;
+	reach: Map<string, ReachMap>;
+	references: Map<string, Record<string, Distribution>>;
 }
 const comparisonCache = (): ComparisonCache => ({
 	baselines: new Map(),
 	services: new Map(),
+	stocks: new Map(),
+	reach: new Map(),
+	references: new Map(),
 });
+function chosenRocks(record: SystemRecord, plan: FieldPlan, c: Candidate) {
+	const layout =
+		c.fieldLayout === "organic"
+			? organicRocks(record, plan, "organic")
+			: fieldRocks(record, plan);
+	const visited =
+		c.visitLargestShare === undefined
+			? layout
+			: [...layout]
+					.sort((a, b) => b.radiusKm - a.radiusKm)
+					.slice(0, Math.ceil(layout.length * c.visitLargestShare));
+	return visited.slice(0, c.rockLimit);
+}
+function marketPort(world: World, record: SystemRecord): Port | undefined {
+	const ports = portsOf(record, world.contentsFor(record));
+	return ports.find((p) => p.station.type === "refinery") ?? ports[0];
+}
+function reachFrom(
+	world: World,
+	origin: number,
+	tankLy: number,
+	key: string,
+	cache: ComparisonCache,
+): ReachMap {
+	const cacheKey = JSON.stringify([key, origin, tankLy]);
+	const known = cache.reach.get(cacheKey);
+	if (known) return known;
+	const count = world.systems.length;
+	const distance = new Array<number>(count).fill(Infinity);
+	const previous = new Array<number | null>(count).fill(null);
+	const settled = new Array<boolean>(count).fill(false);
+	distance[origin] = 0;
+	for (;;) {
+		let here = -1;
+		for (let i = 0; i < count; i++)
+			if (
+				!settled[i] &&
+				Number.isFinite(distance[i]) &&
+				(here < 0 || distance[i] < distance[here])
+			)
+				here = i;
+		if (here < 0) break;
+		settled[here] = true;
+		for (const record of world.systems) {
+			const i = record.index;
+			if (settled[i] || !marketPort(world, record)) continue;
+			const hop = distanceLy(world.systems[here].pos, record.pos);
+			if (hop > tankLy) continue;
+			if (distance[here] + hop < distance[i]) {
+				distance[i] = distance[here] + hop;
+				previous[i] = here;
+			}
+		}
+	}
+	const reach = { distanceLy: distance, previous };
+	cache.reach.set(cacheKey, reach);
+	return reach;
+}
+function hopsBetween(
+	world: World,
+	from: number,
+	to: number,
+	tankLy: number,
+	key: string,
+	cache: ComparisonCache,
+): Port[] {
+	const { previous } = reachFrom(world, from, tankLy, key, cache);
+	const hops: Port[] = [];
+	for (let at = to; at !== from; at = previous[at]!) {
+		const stop = marketPort(world, world.systems[at]);
+		if (!stop || previous[at] === null)
+			throw new Error("mining comparison: route leg has no path");
+		hops.unshift(stop);
+	}
+	return hops;
+}
+export interface RouteStop {
+	port: Port;
+	plan: FieldPlan;
+	fromHomeLy: number;
+}
+/** The nearest fields of the starting field's profile by refuelled path length, in nearest-neighbour order. */
+export function fieldRoute(
+	world: World,
+	home: Port,
+	start: FieldPlan,
+	count: number,
+	tankLy: number,
+	key: string,
+	cache: ComparisonCache = comparisonCache(),
+): RouteStop[] {
+	const fromHome = reachFrom(world, home.record.index, tankLy, key, cache);
+	const others = world.systems
+		.filter(
+			(record) =>
+				record.index !== home.record.index &&
+				Number.isFinite(fromHome.distanceLy[record.index]),
+		)
+		.flatMap((record) => {
+			const contents = world.contentsFor(record);
+			const port = portsOf(record, contents).find(
+				(p) => p.station.type === "refinery",
+			);
+			if (!port) return [];
+			return systemFields(record, contents)
+				.filter((plan) => plan.profile === start.profile)
+				.map((plan) => ({
+					port,
+					plan,
+					fromHomeLy: fromHome.distanceLy[record.index],
+				}));
+		})
+		.sort(
+			(a, b) =>
+				a.fromHomeLy - b.fromHomeLy ||
+				a.port.record.index - b.port.record.index,
+		)
+		.slice(0, count - 1);
+	const route: RouteStop[] = [{ port: home, plan: start, fromHomeLy: 0 }];
+	while (others.length) {
+		const at = route[route.length - 1].port.record.index;
+		const { distanceLy: from } = reachFrom(world, at, tankLy, key, cache);
+		let best = 0;
+		for (let i = 1; i < others.length; i++)
+			if (
+				from[others[i].port.record.index] < from[others[best].port.record.index]
+			)
+				best = i;
+		route.push(others.splice(best, 1)[0]);
+	}
+	return route;
+}
 function secondRefinery(world: World, port: Port, tankLy: number) {
 	const record = port.record;
 	return world.systems
@@ -466,6 +641,13 @@ interface ScenarioInput {
 	path: "raw" | "refine" | "buy-refine" | "refine-parallel";
 	buyOre?: { family: OreFamily; grade: OreGrade };
 	other?: Port;
+	route?: {
+		stops: RouteStop[];
+		world: World;
+		key: string;
+		tankLy: number;
+		tradeStalled: boolean;
+	};
 	cache: ComparisonCache;
 }
 function scenario({
@@ -480,6 +662,7 @@ function scenario({
 	path,
 	buyOre,
 	other,
+	route,
 	cache,
 }: ScenarioInput) {
 	const fit = makeMiningFit(fitInput.hull, fitInput.size, fitInput.grade);
@@ -491,28 +674,61 @@ function scenario({
 	).capacityT;
 	const dedicatedOre = hasOreBay(fitInput.hull);
 	const loadLimitT = Math.min(oreHoldT, c.returnLoadT ?? oreHoldT);
-	const record = port.record,
+	let record = port.record,
 		contents = port.contents;
-	const layout =
-		c.fieldLayout === "organic"
-			? organicRocks(record, plan, "organic")
-			: fieldRocks(record, plan);
-	const visited =
-		c.visitLargestShare === undefined
-			? layout
-			: [...layout]
-					.sort((a, b) => b.radiusKm - a.radiusKm)
-					.slice(0, Math.ceil(layout.length * c.visitLargestShare));
-	const rocks = visited.slice(0, c.rockLimit);
+	let rocks = chosenRocks(record, plan, c);
 	if (path === "refine-parallel" && !other)
 		throw new Error(
 			"mining comparison: parallel scenario needs a second reachable refinery",
 		);
 	let venue = port;
-	const deposits = rocks.map((rock) =>
+	let deposits = rocks.map((rock) =>
 		rockContents(record.seed, plan.slot, plan.profile, rock),
 	);
-	const debits: Debit[] = rocks.map(() => ({ taken: 0, at: 0 }));
+	let debits: Debit[] = rocks.map(() => ({ taken: 0, at: 0 }));
+	const drillingFit = fitInput.hull === "miner";
+	const worthMining = (deposit: RockContents) =>
+		deposit.deepT > 0 &&
+		ORE_GRADES.indexOf(deposit.grade) >= ORE_GRADES.indexOf(c.goodMinimumGrade);
+	const legs = route?.stops.map((stop, i) => {
+		const key = JSON.stringify([
+			seed,
+			galaxy,
+			stop.port.key,
+			stop.plan.id,
+			c.fieldLayout,
+			c.visitLargestShare,
+			c.rockLimit,
+		]);
+		let stock = cache.stocks.get(key);
+		if (!stock) {
+			const chosen = chosenRocks(stop.port.record, stop.plan, c);
+			stock = {
+				rocks: chosen,
+				deposits: chosen.map((rock) =>
+					rockContents(
+						stop.port.record.seed,
+						stop.plan.slot,
+						stop.plan.profile,
+						rock,
+					),
+				),
+			};
+			cache.stocks.set(key, stock);
+		}
+		return {
+			...stop,
+			rocks: stock.rocks,
+			deposits: stock.deposits,
+			debits:
+				i === 0 ? debits : stock.rocks.map((): Debit => ({ taken: 0, at: 0 })),
+			reached: false,
+			passes: 0,
+			minedT: 0,
+		};
+	});
+	type Leg = NonNullable<typeof legs>[number];
+	let leg: Leg | undefined = legs?.[0];
 	const capacity = fit.capacity;
 	let condition = fullCondition(fitInput.hull, capacity);
 	let t = 0,
@@ -554,7 +770,29 @@ function scenario({
 		maxOutstandingSlots = 0;
 	const poolDebt: Record<string, Money> = {};
 	let banked = money.fromNumber(0);
-	const venues = [port, ...(other ? [other] : [])];
+	const venues = legs
+		? [...new Map(legs.map((l) => [l.port.key, l.port])).values()]
+		: [port, ...(other ? [other] : [])];
+	let moveS = 0,
+		refineryWaitS = 0,
+		recoveryWaitS = 0,
+		reachExhaustedAtS: number | null = null,
+		lastVisited: Rock | null = null;
+	let exhaustionCr = 0,
+		exhaustionActiveS = 0;
+	const visits: {
+		system: number;
+		field: string;
+		kind: "first" | "remainder" | "restored";
+		startS: number;
+		endS: number;
+		activeS: number;
+		minedT: number;
+		cr: number;
+	}[] = [];
+	let visitStart = { t: 0, activeS: 0, mined: 0, cr: 0 };
+	let visitKind: "first" | "remainder" | "restored" = "first";
+	let visitOpen = legs !== undefined;
 	const services = new Map(venues.map((p) => [p.key, cachedService(p)]));
 	function cachedService(p: Port) {
 		const key = JSON.stringify([seed, galaxy, p.key, elapsedS]);
@@ -848,7 +1086,9 @@ function scenario({
 		}
 	}
 	function settleAtRefineries() {
-		const stations = [venue, ...venues.filter((p) => p.key !== venue.key)];
+		const stations = route
+			? [venue]
+			: [venue, ...venues.filter((p) => p.key !== venue.key)];
 		for (const station of stations) {
 			if (!jobs.some((j) => j.port.key === station.key)) continue;
 			if (station.key !== venue.key) {
@@ -866,7 +1106,9 @@ function scenario({
 					cargo.length > 0 ||
 					jobs.some((j) => j.port.key === venue.key && j.workLeftS > 0);
 				if (!waiting) break;
+				const before = t;
 				idle(Math.min(60, elapsedS - t), false);
+				refineryWaitS += t - before;
 			}
 		}
 	}
@@ -914,21 +1156,143 @@ function scenario({
 		fuelPaid = money.add(fuelPaid, cost);
 		idle(jumpSeconds(from, to, t, c.dockS), true);
 	}
-	if (plan.profile === "rare") {
-		const start = t;
-		idle(c.searchRareS, true);
-		searchS += t - start;
-		const known = discoverFieldsWithin([], {
-			record,
-			contents,
-			shipPos: fieldCentre(plan, t),
-			gameTime: t,
-			radiusKm: FIELD_DISCOVERY_RADIUS_KM,
+	function findField() {
+		if (plan.profile === "rare") {
+			const start = t;
+			idle(c.searchRareS, true);
+			searchS += t - start;
+			const known = discoverFieldsWithin([], {
+				record,
+				contents,
+				shipPos: fieldCentre(plan, t),
+				gameTime: t,
+				radiusKm: FIELD_DISCOVERY_RADIUS_KM,
+			});
+			if (!fieldIsKnown(known, record.index, plan))
+				throw new Error(
+					"mining comparison: candidate search did not discover field",
+				);
+		} else if (route) {
+			const start = t;
+			idle(c.routeChartedFindS ?? 0, true);
+			searchS += t - start;
+		}
+	}
+	const netCr = () => approximate(signedMoney.fromTicks(proceeds - paid));
+	const restoredT = (l: Leg) =>
+		l.deposits.reduce(
+			(n, deposit, i) =>
+				n +
+				(worthMining(deposit)
+					? Math.max(
+							0,
+							deposit.deepT -
+								candidateDebit(
+									l.debits[i].taken,
+									l.debits[i].at,
+									t,
+									c.recoveryTPerH,
+								),
+						)
+					: 0),
+			0,
+		);
+	function openVisit(kind: typeof visitKind) {
+		visitKind = kind;
+		visitOpen = true;
+		visitStart = { t, activeS, mined: unitsMined, cr: netCr() };
+	}
+	function closeVisit() {
+		if (!visitOpen) return;
+		visitOpen = false;
+		leg!.minedT += unitsMined - visitStart.mined;
+		visits.push({
+			system: record.index,
+			field: plan.id,
+			kind: visitKind,
+			startS: visitStart.t,
+			endS: t,
+			activeS: activeS - visitStart.activeS,
+			minedT: unitsMined - visitStart.mined,
+			cr: netCr() - visitStart.cr,
 		});
-		if (!fieldIsKnown(known, record.index, plan))
-			throw new Error(
-				"mining comparison: candidate search did not discover field",
-			);
+	}
+	function chooseLeg(): Leg | undefined {
+		const current = leg!;
+		const load = c.routeRevisitLoadT!;
+		if (restoredT(current) >= load) return current;
+		const fresh = legs!.find((l) => !l.reached);
+		if (fresh) return fresh;
+		if (reachExhaustedAtS === null) {
+			reachExhaustedAtS = t;
+			exhaustionCr = netCr();
+			exhaustionActiveS = activeS;
+		}
+		const at = legs!.indexOf(current);
+		for (let i = 1; i <= legs!.length; i++) {
+			const candidate = legs![(at + i) % legs!.length];
+			if (restoredT(candidate) >= load) return candidate;
+		}
+		return undefined;
+	}
+	function moveTo(next: Leg) {
+		const start = t;
+		for (const hop of hopsBetween(
+			route!.world,
+			venue.record.index,
+			next.port.record.index,
+			route!.tankLy,
+			route!.key,
+			cache,
+		)) {
+			jump(venue, hop);
+			venue = hop;
+			if (t >= elapsedS) break;
+		}
+		travelS += t - start;
+		moveS += t - start;
+		leg = next;
+		port = next.port;
+		venue = next.port;
+		plan = next.plan;
+		record = port.record;
+		contents = port.contents;
+		rocks = next.rocks;
+		deposits = next.deposits;
+		debits = next.debits;
+		lastVisited = null;
+	}
+	function nextPass() {
+		closeVisit();
+		while (t < elapsedS - c.dockS * 2) {
+			const next = chooseLeg();
+			if (next) {
+				const stayed = next === leg;
+				const kind = !next.reached
+					? "first"
+					: stayed && reachExhaustedAtS === null
+						? "remainder"
+						: "restored";
+				openVisit(kind);
+				if (!stayed) moveTo(next);
+				if (t >= elapsedS) return false;
+				if (!next.reached) findField();
+				next.reached = true;
+				next.passes++;
+				travel(true);
+				lastVisited = null;
+				return t < elapsedS;
+			}
+			const before = t;
+			idle(Math.min(60, elapsedS - t), false);
+			recoveryWaitS += t - before;
+		}
+		return false;
+	}
+	findField();
+	if (leg) {
+		leg.reached = true;
+		leg.passes++;
 	}
 	if (path !== "buy-refine") travel(true);
 	let cursor = 0,
@@ -944,17 +1308,36 @@ function scenario({
 		}
 		if (!rocks.length) break;
 		if (c.onePass && (cursor >= rocks.length || t > elapsedS - c.dockS * 2)) {
-			if (cargo.length || jobs.length) {
+			if (cargo.length || jobs.length || route) {
 				travel(false);
 				unload();
 				settleAtRefineries();
 			}
-			break;
+			if (!route || !nextPass()) break;
+			cursor = 0;
+			emptyVisits = 0;
+			continue;
 		}
 		const i = cursor++ % rocks.length,
 			rock = rocks[i],
 			deposit = deposits[i],
 			debit = debits[i];
+		if (route && debit.surveyedAt !== undefined) {
+			const reading = surveyReading(
+				deposit,
+				{ surveyedAt: debit.surveyedAt },
+				t,
+				c.surveyLifetimeH,
+			);
+			if (
+				reading &&
+				(!worthMining(deposit) ||
+					deposit.deepT -
+						candidateDebit(debit.taken, debit.at, t, c.recoveryTPerH) <
+						1)
+			)
+				continue;
+		}
 		const lifetimeLive = surveyReading(
 			deposit,
 			{ surveyedAt: debit.surveyedAt },
@@ -969,7 +1352,7 @@ function scenario({
 			positionS += t - before;
 			debit.surveyedAt = t;
 		}
-		const drilling = fitInput.hull === "miner";
+		const drilling = drillingFit;
 		const gradeIndex = ORE_GRADES.indexOf(deposit.grade);
 		const minimum = ORE_GRADES.indexOf(c.goodMinimumGrade);
 		if (drilling && (deposit.deepT === 0 || gradeIndex < minimum)) {
@@ -996,9 +1379,13 @@ function scenario({
 							length(
 								sub(
 									rockLocal(rock, t),
-									cursor > 1
-										? rockLocal(rocks[(cursor - 2) % rocks.length], t)
-										: { x: 0, y: 0, z: 0 },
+									route
+										? lastVisited
+											? rockLocal(lastVisited, t)
+											: { x: 0, y: 0, z: 0 }
+										: cursor > 1
+											? rockLocal(rocks[(cursor - 2) % rocks.length], t)
+											: { x: 0, y: 0, z: 0 },
 								),
 							),
 						) / ASSIST_CAP_KMS,
@@ -1109,6 +1496,7 @@ function scenario({
 				if (takenThisVisit === 0) emptyVisits++;
 			}
 		}
+		lastVisited = rock;
 		const full = heldT() >= loadLimitT;
 		if (full || (emptyVisits >= rocks.length && cargo.length)) {
 			travel(false);
@@ -1120,6 +1508,7 @@ function scenario({
 			emptyVisits = 0;
 		}
 	}
+	if (route) closeVisit();
 	if (t < elapsedS) idle(elapsedS - t, false);
 	const heldRawT = heldT();
 	const completed = jobs.filter((j) => j.workLeftS === 0);
@@ -1241,10 +1630,85 @@ function scenario({
 		pendingJobs: inProcess.length,
 		targetFailures,
 		productionBalanceChanged: false as const,
+		...(legs
+			? {
+					route: {
+						fields: legs.map((l) => ({
+							system: l.port.record.index,
+							field: l.plan.id,
+							profile: l.plan.profile,
+							fromHomeLy: l.fromHomeLy,
+							passes: l.passes,
+						})),
+						tradeStalled: route!.tradeStalled,
+						fieldsVisited: legs.filter((l) => l.reached).length,
+						reserveT: legs.reduce(
+							(n, l) =>
+								n +
+								l.deposits.reduce(
+									(sum, d) => sum + (worthMining(d) ? d.deepT : 0),
+									0,
+								),
+							0,
+						),
+						goodRocks: legs.reduce(
+							(n, l) => n + l.deposits.filter(worthMining).length,
+							0,
+						),
+						rocksSurveyed: legs.reduce(
+							(n, l) =>
+								n +
+								(l.reached
+									? l.debits.filter((d) => d.surveyedAt !== undefined).length
+									: 0),
+							0,
+						),
+						visits,
+						moveS,
+						refineryWaitS,
+						recoveryWaitS,
+						otherPassiveS: elapsedS - activeS - refineryWaitS - recoveryWaitS,
+						restoredMinedT: legs.reduce(
+							(n, l) =>
+								n +
+								Math.max(
+									0,
+									l.minedT -
+										l.deposits.reduce(
+											(sum, d) => sum + (worthMining(d) ? d.deepT : 0),
+											0,
+										),
+								),
+							0,
+						),
+						reachExhaustedAtS,
+						beforeExhaustion:
+							reachExhaustedAtS === null
+								? { activeS, cr }
+								: { activeS: exhaustionActiveS, cr: exhaustionCr },
+						afterExhaustion:
+							reachExhaustedAtS === null
+								? { activeS: 0, cr: 0 }
+								: {
+										activeS: activeS - exhaustionActiveS,
+										cr: cr - exhaustionCr,
+									},
+					},
+				}
+			: {}),
 	};
 }
 
-function distribution(values: number[]) {
+interface Distribution {
+	n: number;
+	min: number | null;
+	p10: number | null;
+	p50: number | null;
+	p90: number | null;
+	p99: number | null;
+	max: number | null;
+}
+function distribution(values: number[]): Distribution {
 	const sorted = [...values].sort((a, b) => a - b);
 	if (!sorted.length)
 		return {
@@ -1268,12 +1732,133 @@ function distribution(values: number[]) {
 	};
 }
 
+const ROUTE_ASSUMPTIONS = [
+	"Route: the nearest routeFields fields of the starting field's profile by shortest refuelled jump path, visited in nearest-neighbour order; not an optimal route and not a chosen rich route",
+	"Route: every leg jumps through market systems within one fitted tank, each hop paying fuel, the jump, the cruise to its station and a dock",
+	"Route: a charted field costs routeChartedFindS on first arrival and a rare field costs searchRareS on first arrival; a known field costs nothing to find again",
+	"Route: the pilot sells or refines at the refinery in the field's own system and settles every job there before moving on",
+	"Route: the pilot stays while the field holds routeRevisitLoadT of known good ore, otherwise goes to the next unvisited field, otherwise to the next field that has restored that much, otherwise waits passively",
+	"Route: the mining clock stays the matched trader's realised clock, so a world whose trader stalls ends its route early; tradeStalled counts those rows",
+	"Route: on a return a live survey lets the pilot skip empty and below-grade rocks without flying to them; each pass otherwise follows the one-pass rock order",
+];
+type RouteRow = ReturnType<typeof scenario> & {
+	route: NonNullable<ReturnType<typeof scenario>["route"]>;
+};
+function onePassRatios(
+	c: Candidate,
+	cache: ComparisonCache,
+): Record<string, Distribution> {
+	const {
+		routeFields: _fields,
+		routeRevisitLoadT: _load,
+		routeChartedFindS: _find,
+		routeReferenceHours: _hours,
+		...plain
+	} = c;
+	const onePassCandidate = {
+		...plain,
+		hours: c.routeReferenceHours ?? c.hours,
+	};
+	const referenceKey = JSON.stringify(onePassCandidate);
+	let reference = cache.references.get(referenceKey);
+	if (!reference) {
+		reference = Object.fromEntries(
+			Object.entries(compare(onePassCandidate, cache, true).summaries).map(
+				([key, summary]) => [key, summary.tradeRatio],
+			),
+		);
+		cache.references.set(referenceKey, reference);
+	}
+	return reference;
+}
+function routeReporting(
+	c: Candidate,
+	rows: ReturnType<typeof scenario>[],
+	reference: Record<string, Distribution>,
+) {
+	const grouped = new Map<string, RouteRow[]>();
+	for (const row of rows as RouteRow[]) {
+		const key = `${row.fit.hull}/${row.fit.size}/${row.fit.grade}/${row.profile}/${row.path}`;
+		grouped.set(key, [...(grouped.get(key) ?? []), row]);
+	}
+	const of = (group: RouteRow[], read: (r: RouteRow) => number) =>
+		distribution(group.map(read));
+	const rateAgainstTrade = (
+		part: { activeS: number; cr: number },
+		r: RouteRow,
+	) => part.cr / (part.activeS / 60) / r.trade.crPerMinute;
+	const routeSummaries = Object.fromEntries(
+		[...grouped].map(([key, group]) => [
+			key,
+			{
+				tradeRatio: of(group, (r) => r.crPerActiveMinute / r.trade.crPerMinute),
+				elapsedTradeRatio: of(
+					group,
+					(r) => r.crPerElapsedMinute / r.trade.crPerElapsedMinute,
+				),
+				beforeExhaustionTradeRatio: of(group, (r) =>
+					rateAgainstTrade(r.route.beforeExhaustion, r),
+				),
+				afterExhaustionTradeRatio: distribution(
+					group
+						.filter((r) => r.route.afterExhaustion.activeS > 0)
+						.map((r) => rateAgainstTrade(r.route.afterExhaustion, r)),
+				),
+				activeMinutes: of(group, (r) => r.activeS / 60),
+				moveMinutes: of(group, (r) => r.route.moveS / 60),
+				findMinutes: of(group, (r) => r.searchS / 60),
+				refineryWaitMinutes: of(group, (r) => r.route.refineryWaitS / 60),
+				recoveryWaitMinutes: of(group, (r) => r.route.recoveryWaitS / 60),
+				fieldsNamed: of(group, (r) => r.route.fields.length),
+				fieldsVisited: of(group, (r) => r.route.fieldsVisited),
+				reserveT: of(group, (r) => r.route.reserveT),
+				inputT: of(group, (r) => r.inputG / 1_000_000),
+				restoredMinedT: of(group, (r) => r.route.restoredMinedT),
+				earnedCr: of(group, (r) => approximate(signedMoney.parse(r.cashDelta))),
+				tradeEarnedCr: of(group, (r) => r.trade.earnedCr),
+				reachExhausted: group.filter((r) => r.route.reachExhaustedAtS !== null)
+					.length,
+				reachExhaustedHours: distribution(
+					group.flatMap((r) =>
+						r.route.reachExhaustedAtS === null
+							? []
+							: [r.route.reachExhaustedAtS / 3600],
+					),
+				),
+				refusedFuel: group.reduce((n, r) => n + r.refusedFuel, 0),
+				clockHours: of(group, (r) => r.elapsedS / 3600),
+				tradeStalled: group.filter((r) => r.route.tradeStalled).length,
+			},
+		]),
+	);
+	const routeComparison = Object.fromEntries(
+		Object.entries(routeSummaries).map(([key, summary]) => {
+			const onePass = reference[key] ?? distribution([]);
+			return [
+				key,
+				{
+					onePassHours: c.routeReferenceHours ?? c.hours,
+					sustainedHours: c.hours,
+					sustained: summary.tradeRatio,
+					onePass,
+					p50Change:
+						summary.tradeRatio.p50 === null || onePass.p50 === null
+							? null
+							: summary.tradeRatio.p50 - onePass.p50,
+				},
+			];
+		}),
+	);
+	return { routeSummaries, routeComparison };
+}
+
 /** Deterministic model predictions, with all candidate inputs distinct from consequences. */
 export function comparison(c: Candidate) {
 	return compare(c, comparisonCache());
 }
-function compare(c: Candidate, cache: ComparisonCache) {
+function compare(c: Candidate, cache: ComparisonCache, minedOnly = false) {
 	validate(c);
+	const routed = c.routeFields !== undefined;
 	const rows: ReturnType<typeof scenario>[] = [];
 	const refusedScenarios: {
 		seed: number;
@@ -1343,7 +1928,10 @@ function compare(c: Candidate, cache: ComparisonCache) {
 						(p) => p.station.type === "refinery",
 					)!;
 					const fields = systemFields(record, contents);
-					const other = secondRefinery(world, port, capacity.fuelCapacityLy);
+					const other =
+						routed || minedOnly
+							? undefined
+							: secondRefinery(world, port, capacity.fuelCapacityLy);
 					if (fit === c.loadouts[0]) {
 						systemsSeen++;
 						rarePresent += Number(fields.some((f) => f.profile === "rare"));
@@ -1353,6 +1941,7 @@ function compare(c: Candidate, cache: ComparisonCache) {
 					}
 					for (const plan of fields)
 						for (const path of ["raw", "refine", "refine-parallel"] as const) {
+							if (path === "refine-parallel" && (routed || minedOnly)) continue;
 							if (path === "refine-parallel" && !other) {
 								refusedScenarios.push({
 									seed,
@@ -1376,11 +1965,28 @@ function compare(c: Candidate, cache: ComparisonCache) {
 									trade,
 									path,
 									other: path === "refine-parallel" ? other : undefined,
+									route: routed
+										? {
+												stops: fieldRoute(
+													world,
+													port,
+													plan,
+													c.routeFields!,
+													capacity.fuelCapacityLy,
+													JSON.stringify([seed, galaxy]),
+													cache,
+												),
+												world,
+												key: JSON.stringify([seed, galaxy]),
+												tankLy: capacity.fuelCapacityLy,
+												tradeStalled: baseline.stalled,
+											}
+										: undefined,
 									cache,
 								}),
 							);
 						}
-					if (fit === c.loadouts[0]) {
+					if (fit === c.loadouts[0] && !routed && !minedOnly) {
 						const charted = fields.find((f) => f.profile === "charted");
 						if (!charted) {
 							refusedScenarios.push({
@@ -1463,6 +2069,9 @@ function compare(c: Candidate, cache: ComparisonCache) {
 			g.ratios.push(row.crPerActiveMinute / row.trade.crPerMinute);
 		g.failures += Number(row.targetFailures.length > 0);
 	}
+	const routeReport: Partial<ReturnType<typeof routeReporting>> = routed
+		? routeReporting(c, rows, onePassRatios(c, cache))
+		: {};
 	const report = {
 		status: "candidate-comparison" as const,
 		approvedBalance: false as const,
@@ -1495,6 +2104,7 @@ function compare(c: Candidate, cache: ComparisonCache) {
 			"Raw ore market is a proposed product-equivalent mid times rawValueShare, seeded per-ore epoch shelf and shipped spread/deficit response; no runtime prices changed",
 			"Cr rates are presentation projections truncated to millionths before division; exact money wire values own settlement; 0.8–1.2 trade target band is an explicit instrument interpretation, not a ratified numeric band",
 			"Cruise uses geometric legSeconds and shared default cruise parameters; traffic, combat, finite-charge path planning and player mistakes are not simulated",
+			...(routed ? ROUTE_ASSUMPTIONS : []),
 		],
 		provenance: {
 			recipes: "#917; recipeFor fixed fifteen yields",
@@ -1508,6 +2118,7 @@ function compare(c: Candidate, cache: ComparisonCache) {
 			accounting:
 				"src/exact-amount.ts; #935 known-zero-cost mining and cost-debt policy",
 		},
+		...routeReport,
 	};
 	JSON.stringify(report, (_key, value) => {
 		if (typeof value === "number" && !Number.isFinite(value))
@@ -1573,6 +2184,11 @@ const GRID_AXES = [
 	"visitLargestShare",
 	"collectS",
 	"hours",
+	"routeFields",
+	"routeRevisitLoadT",
+	"routeChartedFindS",
+	"searchRareS",
+	"recoveryTPerH",
 ] as const;
 type GridAxis = (typeof GRID_AXES)[number];
 const isGridAxis = (name: string): name is GridAxis =>
@@ -1617,6 +2233,8 @@ export function grid({
 				corpus: report.corpus,
 				refusedScenarios: report.refusedScenarios.length,
 				summaries: report.summaries,
+				routeSummaries: report.routeSummaries,
+				routeComparison: report.routeComparison,
 			};
 		}),
 	};
