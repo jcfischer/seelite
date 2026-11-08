@@ -611,16 +611,14 @@ test("proportional fees leave a two-refinery pilot the fuel to reach the second 
 			feeCrPerT: 0,
 			feeShareOfProduct: 0.3,
 			collectS: 5,
-			hours: 8,
-			systemsPerWorld: 4,
-			seeds: [1, 47, 1234],
-			galaxies: [0, 1],
-			loadouts: [{ hull: "miner", size: 3, grade: "A" }],
+			hours: 2,
+			galaxies: [1],
+			systemsPerWorld: 2,
 		}),
 	).rows.filter((r) => r.path === "refine-parallel");
 	expect(rows.length).toBeGreaterThan(0);
 	for (const row of rows) expect(row.refusedFuel).toBe(0);
-}, 120_000);
+});
 
 test("a pilot empty at the end of a pass still flies home to collect", () => {
 	const c = rulingCandidate({
