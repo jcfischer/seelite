@@ -90,5 +90,5 @@
 	"onePass": true,
 	"collectS": 5,
 	"rawElasticityScale": 0.5,
-	"feeShareOfProduct": 0.3
+	"feeShareOfProduct": 0.35
 }
