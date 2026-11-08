@@ -76,6 +76,7 @@ import { CANISTER_SCOOP_CHARGE_E } from "../../src/scoop-window";
 import { flightPerformance, ASSIST_CAP_KMS } from "../../src/sim";
 import { placeBodies } from "../../src/system";
 import { length, sub } from "../../src/vec3";
+import { organicRocks } from "../../spikes/field-shape-1043/organic";
 import { serviceCalendar } from "./mining-service";
 import { recipeFor, productMarketBid } from "./mining-batch";
 import {
@@ -118,7 +119,22 @@ export interface Candidate {
 	fragmentKeepShare: number;
 	goodMinimumGrade: OreGrade;
 	rockLimit: number;
+	returnLoadT?: number;
+	visitLargestShare?: number;
+	fieldLayout?: "baseline" | "organic";
+	onePass?: boolean;
+	rawElasticityScale?: number;
+	collectS?: number;
 }
+
+const OPTIONAL_FIELDS = [
+	"returnLoadT",
+	"visitLargestShare",
+	"fieldLayout",
+	"onePass",
+	"rawElasticityScale",
+	"collectS",
+];
 
 /** Unratified design inputs authorized by https://github.com/jcfischer/seelite/issues/922 */
 export function candidateDefaults(): Candidate {
@@ -185,15 +201,29 @@ const integer = (
 	return n;
 };
 function validate(c: Candidate) {
-	const allowed = Object.keys(candidateDefaults());
+	const required = Object.keys(candidateDefaults());
 	if (
-		Object.keys(c).some((k) => !allowed.includes(k)) ||
-		allowed.some((k) => !(k in c))
+		Object.keys(c).some(
+			(k) => !required.includes(k) && !OPTIONAL_FIELDS.includes(k),
+		) ||
+		required.some((k) => !(k in c))
 	)
 		throw new Error(
 			"mining comparison: unsupported or missing candidate field",
 		);
 	integer("rock selection limit", c.rockLimit, 1, 100000);
+	if (c.returnLoadT !== undefined) valid("return load", c.returnLoadT, 1);
+	if (c.visitLargestShare !== undefined)
+		valid("visited rock share", c.visitLargestShare, 0.001, 1);
+	if (c.rawElasticityScale !== undefined)
+		valid("raw elasticity scale", c.rawElasticityScale, 0, 1);
+	if (c.collectS !== undefined) valid("collection seconds", c.collectS, 0.01);
+	if (
+		c.fieldLayout !== undefined &&
+		c.fieldLayout !== "baseline" &&
+		c.fieldLayout !== "organic"
+	)
+		throw new Error("mining comparison: unsupported field layout");
 	if (!c.id?.trim() || !c.provenance?.trim())
 		throw new Error(
 			"mining comparison: candidate identity and provenance required",
@@ -349,8 +379,11 @@ export function rawQuote(
 	const mark = readDeficit(deficits, port.key, rawName(family, grade), t / 60);
 	const mid =
 		((row.priceCr * recipe.yieldGPerT) / recipe.nativeUnitG) * c.rawValueShare;
+	const responded = stockResponse(mid, mark, holdT);
 	const quote = marketQuote(
-		stockResponse(mid, mark, holdT),
+		c.rawElasticityScale === undefined
+			? responded
+			: mid + (responded - mid) * c.rawElasticityScale,
 		port.record.displayTL,
 	);
 	const epoch = Math.floor((t / 60 + port.market.phaseMin) / 30);
@@ -450,9 +483,20 @@ function scenario({
 		0,
 	).capacityT;
 	const dedicatedOre = hasOreBay(fitInput.hull);
+	const loadLimitT = Math.min(oreHoldT, c.returnLoadT ?? oreHoldT);
 	const record = port.record,
 		contents = port.contents;
-	const rocks = fieldRocks(record, plan).slice(0, c.rockLimit);
+	const layout =
+		c.fieldLayout === "organic"
+			? organicRocks(record, plan, "organic")
+			: fieldRocks(record, plan);
+	const visited =
+		c.visitLargestShare === undefined
+			? layout
+			: [...layout]
+					.sort((a, b) => b.radiusKm - a.radiusKm)
+					.slice(0, Math.ceil(layout.length * c.visitLargestShare));
+	const rocks = visited.slice(0, c.rockLimit);
 	if (path === "refine-parallel" && !other)
 		throw new Error(
 			"mining comparison: parallel scenario needs a second reachable refinery",
@@ -657,6 +701,10 @@ function scenario({
 				}
 			}
 		}
+		submitCargo();
+		collectOutput();
+	}
+	function submitCargo() {
 		const retained: Cargo[] = [];
 		for (const item of cargo) {
 			const recipe = recipeFor(item.family, item.grade);
@@ -688,13 +736,26 @@ function scenario({
 			maxOutstandingSlots = Math.max(maxOutstandingSlots, outstanding());
 		}
 		cargo = retained;
-		let free = holdT - (dedicatedOre ? 0 : heldT());
-		const ready = jobs.filter(
+	}
+	function readyOutput() {
+		return jobs.filter(
 			(j) =>
 				j.workLeftS === 0 &&
 				j.port.key === venue.key &&
 				j.productG > j.collectedG,
 		);
+	}
+	function hasWholeOutput() {
+		const ready = readyOutput();
+		return [...new Set(ready.map((j) => j.family))].some((family) => {
+			const group = ready.filter((j) => j.family === family);
+			const unitG = recipeFor(group[0].family, group[0].grade).nativeUnitG;
+			return group.reduce((n, j) => n + j.productG - j.collectedG, 0) >= unitG;
+		});
+	}
+	function collectOutput() {
+		let free = holdT - (dedicatedOre ? 0 : heldT());
+		const ready = readyOutput();
 		for (const family of [...new Set(ready.map((j) => j.family))]) {
 			const group = ready.filter((j) => j.family === family);
 			const job = group[0];
@@ -729,6 +790,29 @@ function scenario({
 				);
 				mark(recipe.product, -n);
 				if (recipe.occupiesHold) free -= n;
+			}
+		}
+	}
+	function settleAtRefineries() {
+		const stations = [venue, ...venues.filter((p) => p.key !== venue.key)];
+		for (const station of stations) {
+			if (!jobs.some((j) => j.port.key === station.key)) continue;
+			if (station.key !== venue.key) {
+				jump(venue, station);
+				venue = station;
+			}
+			while (t < elapsedS - 1e-8) {
+				if (cargo.length) submitCargo();
+				if (hasWholeOutput()) {
+					idle(c.collectS ?? c.dockS, true);
+					if (t < elapsedS) collectOutput();
+					continue;
+				}
+				const waiting =
+					cargo.length > 0 ||
+					jobs.some((j) => j.port.key === venue.key && j.workLeftS > 0);
+				if (!waiting) break;
+				idle(Math.min(60, elapsedS - t), false);
 			}
 		}
 	}
@@ -805,6 +889,16 @@ function scenario({
 			continue;
 		}
 		if (!rocks.length) break;
+		if (c.onePass && (cursor >= rocks.length || t > elapsedS - c.dockS * 2)) {
+			if (cargo.length || jobs.length) {
+				if (cargo.length) {
+					travel(false);
+					unload();
+				}
+				settleAtRefineries();
+			}
+			break;
+		}
 		const i = cursor++ % rocks.length,
 			rock = rocks[i],
 			deposit = deposits[i],
@@ -872,7 +966,7 @@ function scenario({
 							label: "mining",
 							trigger: "primary",
 						});
-				while (t < elapsedS - 1e-8 && heldT() < oreHoldT) {
+				while (t < elapsedS - 1e-8 && heldT() < loadLimitT) {
 					const left =
 						reserve - candidateDebit(debit.taken, debit.at, t, c.recoveryTPerH);
 					if (left < 1) {
@@ -893,7 +987,7 @@ function scenario({
 							spin: 1,
 							rateTPerS: c.drillTPerS,
 							dt,
-							holdFreeT: oreHoldT - heldT(),
+							holdFreeT: loadLimitT - heldT(),
 							reserveLeftT: left,
 						});
 						drill = step.cut;
@@ -963,7 +1057,7 @@ function scenario({
 				if (takenThisVisit === 0) emptyVisits++;
 			}
 		}
-		const full = heldT() >= oreHoldT;
+		const full = heldT() >= loadLimitT;
 		if (full || (emptyVisits >= rocks.length && cargo.length)) {
 			travel(false);
 			unload();
@@ -1275,6 +1369,9 @@ function compare(c: Candidate, cache: ComparisonCache) {
 			elapsedRates: number[];
 			ratios: number[];
 			failures: number;
+			activeMinutes: number[];
+			pendingJobs: number[];
+			unsoldRawT: number[];
 		}
 	> = {};
 	for (const row of rows) {
@@ -1301,7 +1398,13 @@ function compare(c: Candidate, cache: ComparisonCache) {
 			elapsedRates: [],
 			ratios: [],
 			failures: 0,
+			activeMinutes: [],
+			pendingJobs: [],
+			unsoldRawT: [],
 		});
+		g.activeMinutes.push(row.activeS / 60);
+		g.pendingJobs.push(row.pendingJobs);
+		g.unsoldRawT.push(row.heldRawG / 1_000_000);
 		g.rates.push(row.crPerActiveMinute);
 		g.elapsedRates.push(row.crPerElapsedMinute);
 		if (row.trade.crPerMinute > 0)
@@ -1321,6 +1424,9 @@ function compare(c: Candidate, cache: ComparisonCache) {
 					elapsedCrPerMinute: distribution(g.elapsedRates),
 					tradeRatio: distribution(g.ratios),
 					failedSamples: g.failures,
+					activeMinutes: distribution(g.activeMinutes),
+					pendingJobs: distribution(g.pendingJobs),
+					unsoldRawT: distribution(g.unsoldRawT),
 				},
 			]),
 		),
@@ -1402,5 +1508,63 @@ export function sensitivity(c: Candidate) {
 				compare({ ...c, ...patch, id: `${c.id}/${name}` }, cache),
 			]),
 		),
+	};
+}
+
+const GRID_AXES = [
+	"serviceSPerT",
+	"rawValueShare",
+	"rawElasticityScale",
+	"feeCrPerT",
+	"returnLoadT",
+	"visitLargestShare",
+	"collectS",
+	"hours",
+] as const;
+type GridAxis = (typeof GRID_AXES)[number];
+const isGridAxis = (name: string): name is GridAxis =>
+	GRID_AXES.some((axis) => axis === name);
+
+/** Full-factorial candidate grid: per-variant summaries with their inputs and failures; rows are omitted for size. */
+export function grid({
+	candidate,
+	axes,
+}: {
+	candidate: Candidate;
+	axes: Record<string, readonly number[]>;
+}) {
+	const combinations = Object.entries(axes).reduce<Record<string, number>[]>(
+		(partial, [name, values]) => {
+			if (!isGridAxis(name) || !values.length)
+				throw new Error(`mining comparison: unsupported grid axis ${name}`);
+			return partial.flatMap((inputs) =>
+				values.map((value) => ({ ...inputs, [name]: value })),
+			);
+		},
+		[{}],
+	);
+	const cache = comparisonCache();
+	return {
+		status: "candidate-grid" as const,
+		approvedBalance: false as const,
+		candidate,
+		axes,
+		method: "full factorial; samples retained only as distributions",
+		variants: combinations.map((inputs) => {
+			const report = compare(
+				{
+					...candidate,
+					...inputs,
+					id: `${candidate.id}/${JSON.stringify(inputs)}`,
+				},
+				cache,
+			);
+			return {
+				inputs,
+				corpus: report.corpus,
+				refusedScenarios: report.refusedScenarios.length,
+				summaries: report.summaries,
+			};
+		}),
 	};
 }

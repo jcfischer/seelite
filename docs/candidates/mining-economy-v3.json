@@ -1,0 +1,92 @@
+{
+	"id": "mining-v3-unratified",
+	"rockLimit": 100000,
+	"provenance": "#923 principal rulings 2026-11-08: largest quarter of organic rocks, about 1000t or end of pass; 30s/t kept only as the sweep's slow end; final balance unratified",
+	"seeds": [1, 47, 1234],
+	"galaxies": [0, 1],
+	"systemsPerWorld": 4,
+	"hours": 1,
+	"startCr": 10000,
+	"dockS": 45,
+	"loadouts": [
+		{
+			"hull": "courier",
+			"size": 1,
+			"grade": "E"
+		},
+		{
+			"hull": "courier",
+			"size": 1,
+			"grade": "D"
+		},
+		{
+			"hull": "courier",
+			"size": 1,
+			"grade": "A"
+		},
+		{
+			"hull": "miner",
+			"size": 1,
+			"grade": "E"
+		},
+		{
+			"hull": "miner",
+			"size": 1,
+			"grade": "D"
+		},
+		{
+			"hull": "miner",
+			"size": 1,
+			"grade": "A"
+		},
+		{
+			"hull": "miner",
+			"size": 2,
+			"grade": "E"
+		},
+		{
+			"hull": "miner",
+			"size": 2,
+			"grade": "D"
+		},
+		{
+			"hull": "miner",
+			"size": 2,
+			"grade": "A"
+		},
+		{
+			"hull": "miner",
+			"size": 3,
+			"grade": "E"
+		},
+		{
+			"hull": "miner",
+			"size": 3,
+			"grade": "D"
+		},
+		{
+			"hull": "miner",
+			"size": 3,
+			"grade": "A"
+		}
+	],
+	"recoveryTPerH": 1,
+	"surveyLifetimeH": 24,
+	"rawValueShare": 0.55,
+	"rawStockMinT": 8,
+	"rawStockMaxT": 63,
+	"feeCrPerT": 1,
+	"serviceSPerT": 30,
+	"drillTPerS": 37.5,
+	"positioningKm": 0.1,
+	"positioningFloorS": 12,
+	"searchRareS": 600,
+	"fragmentS": 3,
+	"fragmentKeepShare": 0.9,
+	"goodMinimumGrade": "standard",
+	"returnLoadT": 1000,
+	"visitLargestShare": 0.25,
+	"fieldLayout": "organic",
+	"onePass": true,
+	"collectS": 5
+}

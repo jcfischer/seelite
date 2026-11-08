@@ -13,12 +13,43 @@ export * from "./lib/mining-batch";
 import {
 	candidateDefaults,
 	comparison,
+	grid,
 	sensitivity,
 } from "./lib/mining-comparison";
 if (import.meta.main) {
 	const [mode = "--inventory", path] = process.argv.slice(2);
 	let result: unknown;
-	if (
+	if (mode === "--grid" && path && process.argv.length === 4) {
+		const input = JSON.parse(readFileSync(path, "utf8"));
+		if (
+			!input ||
+			typeof input.candidatePath !== "string" ||
+			!input.axes ||
+			typeof input.axes !== "object" ||
+			Array.isArray(input.axes)
+		)
+			throw new Error("A grid requires candidatePath and axes");
+		result = {
+			instrumentRevision: execFileSync("git", ["rev-parse", "HEAD"], {
+				cwd: import.meta.dir,
+				encoding: "utf8",
+			}).trim(),
+			workingTree: execFileSync(
+				"git",
+				["status", "--porcelain", "--", "scripts", "src"],
+				{ cwd: `${import.meta.dir}/..`, encoding: "utf8" },
+			).trim()
+				? "modified"
+				: "clean",
+			...grid({
+				candidate: {
+					...JSON.parse(readFileSync(input.candidatePath, "utf8")),
+					...(input.overrides ?? {}),
+				},
+				axes: input.axes,
+			}),
+		};
+	} else if (
 		(mode === "--compare" || mode === "--sweep") &&
 		process.argv.length <= 4
 	) {
@@ -93,7 +124,7 @@ if (import.meta.main) {
 		};
 	} else {
 		throw new Error(
-			"Usage: bun scripts/measure-mining-economy.ts [--inventory | --candidate | --batch <explicit-input.json> | --compare [candidate.json] | --sweep [candidate.json]]",
+			"Usage: bun scripts/measure-mining-economy.ts [--inventory | --candidate | --batch <explicit-input.json> | --compare [candidate.json] | --sweep [candidate.json] | --grid <grid.json>]",
 		);
 	}
 	console.log(

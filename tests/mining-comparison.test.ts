@@ -9,11 +9,14 @@ import { expect, test } from "bun:test";
 import {
 	candidateDefaults,
 	comparison,
+	grid,
+	type Candidate,
 	candidateDebit,
 	serviceQueue,
 	makeMiningFit,
 	rawQuote,
 } from "../scripts/lib/mining-comparison";
+import { recordTrade } from "../src/deficits";
 import { debitAt } from "../src/deposit-state";
 import { money, signedMoney } from "../src/exact-amount";
 import { worldFor, portsOf, run } from "../scripts/lib/greedy-trader";
@@ -382,4 +385,152 @@ test("measured scenario jobs agree with an independent cumulative-service FIFO o
 		}
 	}
 	expect(compared).toBeGreaterThan(0);
+});
+
+const rulingCandidate = (patch: Partial<Candidate> = {}): Candidate => ({
+	...candidateDefaults(),
+	id: "ruled-pilot-test",
+	seeds: [47],
+	galaxies: [0],
+	systemsPerWorld: 1,
+	loadouts: [{ hull: "miner", size: 3, grade: "A" }],
+	drillTPerS: 37.5,
+	returnLoadT: 1000,
+	visitLargestShare: 0.25,
+	fieldLayout: "organic",
+	onePass: true,
+	...patch,
+});
+const chartedRow = (c: Candidate, path: string) => {
+	const row = comparison(c).rows.find(
+		(r) => r.path === path && r.profile === "charted",
+	);
+	if (!row) throw new Error(`no charted ${path} row`);
+	return row;
+};
+
+test("one pass sells everything it mined instead of holding ore to the horizon", () => {
+	const row = chartedRow(rulingCandidate(), "raw");
+	expect(row.inputG).toBeGreaterThan(0);
+	expect(row.soldRawG).toBe(row.inputG);
+	expect(row.heldRawG).toBe(0);
+	expect(row.trips).toBeGreaterThan(0);
+});
+
+test("the pilot returns at the declared load, not at the full skips", () => {
+	const row = chartedRow(rulingCandidate({ returnLoadT: 100 }), "raw");
+	expect(row.trips).toBeGreaterThan(
+		chartedRow(rulingCandidate({ returnLoadT: 3000 }), "raw").trips,
+	);
+});
+
+test("a candidate without the ruled fields keeps the wait-for-full pilot", () => {
+	const {
+		returnLoadT: _load,
+		visitLargestShare: _share,
+		fieldLayout: _layout,
+		onePass: _pass,
+		...historical
+	} = rulingCandidate();
+	const row = chartedRow(historical, "raw");
+	expect(row.trips).toBe(0);
+	expect(row.soldRawG).toBe(0);
+});
+
+test("the largest share limits surveys and the organic layout supplies more rocks", () => {
+	const all = rulingCandidate({ visitLargestShare: 1, hours: 8 });
+	const quarter = rulingCandidate({ visitLargestShare: 0.25, hours: 8 });
+	const baseline = rulingCandidate({
+		visitLargestShare: 1,
+		hours: 8,
+		fieldLayout: "baseline",
+	});
+	const allSurveys = chartedRow(all, "raw").surveys;
+	expect(chartedRow(quarter, "raw").surveys).toBe(Math.ceil(allSurveys * 0.25));
+	expect(allSurveys).toBeGreaterThan(chartedRow(baseline, "raw").surveys);
+});
+
+test("a docked pilot collects and sells a fast refinery's whole output through the general hold", () => {
+	const row = chartedRow(
+		rulingCandidate({ serviceSPerT: 0.1, collectS: 5 }),
+		"refine",
+	);
+	expect(row.pendingJobs).toBe(0);
+	expect(row.heldRawG).toBe(0);
+	expect(row.refineryInputG).toBe(row.inputG);
+	expect(row.partialCollections).toBeGreaterThan(0);
+	expect(row.productG - row.soldProductG - row.custodyG).toBe(0);
+	expect(row.custodyG).toBeLessThan(5_000_000);
+	expect(signedMoney.parse(row.cashDelta)).toBeGreaterThan(0n);
+});
+
+test("a slow refinery leaves output pending and unpriced at the horizon", () => {
+	const row = chartedRow(
+		rulingCandidate({ serviceSPerT: 30, collectS: 5 }),
+		"refine",
+	);
+	expect(row.pendingJobs).toBeGreaterThan(0);
+	expect(row.inProcessG).toBeGreaterThan(0);
+});
+
+test("raw elasticity scales only the ore's mark response", () => {
+	const world = worldFor(47, 0);
+	const port = world.systems
+		.flatMap((r) => portsOf(r, world.contentsFor(r)))
+		.find((p) => p.station.type === "refinery")!;
+	const marked = recordTrade({}, port.key, {
+		goodName: "ore:silicate:standard",
+		units: -3000,
+		gameTimeMin: 0,
+		holdT: 40,
+	});
+	const quote = (rawElasticityScale?: number, deficits = marked) =>
+		rawQuote(port, "silicate", "standard", 0, deficits, 40, {
+			...candidateDefaults(),
+			rawElasticityScale,
+		}).sellCr;
+	expect(quote(1)).toBe(quote());
+	expect(quote(0)).toBe(quote(undefined, {}));
+	expect(quote(0)).toBeGreaterThan(quote(1));
+	expect(quote(0.5)).toBeGreaterThan(quote(1));
+	expect(quote(0.5)).toBeLessThan(quote(0));
+	expect(() =>
+		comparison(rulingCandidate({ rawElasticityScale: -1 })),
+	).toThrow();
+});
+
+test("the ruled fields refuse values outside their range", () => {
+	for (const patch of [
+		{ returnLoadT: 0 },
+		{ visitLargestShare: 0 },
+		{ visitLargestShare: 1.5 },
+		{ collectS: -1 },
+		{ fieldLayout: "lattice" as "organic" },
+	])
+		expect(() => comparison(rulingCandidate(patch))).toThrow();
+});
+
+test("a grid names every variant's inputs and keeps failed targets visible", () => {
+	const report = grid({
+		candidate: rulingCandidate(),
+		axes: { serviceSPerT: [0.1, 30], rawValueShare: [0.25, 0.55] },
+	});
+	expect(report.approvedBalance).toBe(false);
+	expect(report.variants).toHaveLength(4);
+	const first = report.variants[0];
+	expect(first.inputs).toEqual({ serviceSPerT: 0.1, rawValueShare: 0.25 });
+	expect(first.summaries["miner/3/A/charted/raw"].tradeRatio.n).toBeGreaterThan(
+		0,
+	);
+	expect(
+		report.variants.some((v) =>
+			Object.values(v.summaries).some((s) => s.failedSamples > 0),
+		),
+	).toBe(true);
+	expect(() =>
+		grid({ candidate: rulingCandidate(), axes: { nonsense: [1] } }),
+	).toThrow();
+	expect(() =>
+		grid({ candidate: rulingCandidate(), axes: { serviceSPerT: [] } }),
+	).toThrow();
 });
