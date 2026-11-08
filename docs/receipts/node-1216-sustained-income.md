@@ -31,7 +31,7 @@ Each of these is an assumption of the model, not a game rule and not a ruling.
 | Assumption | Value |
 | --- | --- |
 | Fields in reach | The 6 nearest of the starting field's profile, by shortest refuelled jump path |
-| Order | Nearest-neighbour from the start; not an optimal route |
+| Order | Always the nearest field left, from the start; not an optimal route |
 | Jump | Through market systems within one 6 ly tank; every hop pays fuel, the jump, the cruise and a dock |
 | Finding a charted field | 0 s, because it is public and the cruise is charged separately |
 | Finding a rare field | The candidate's 600 s, on first arrival only |
@@ -39,7 +39,7 @@ Each of these is an assumption of the model, not a game rule and not a ruling.
 | Moving on | Stay while the field holds 100 t of known good ore; then the next unvisited field; then the next field restored to 100 t; otherwise wait passively |
 | Returning | A live survey lets the pilot skip empty and below-grade rocks without flying to them |
 
-The 100 t threshold is the assumption that moves the headline most, so the return-load table below varies it. "Exhausted" means that no route field holds 100 t of known good ore in its largest quarter of rocks. The other three quarters are outside the ruled pilot.
+The 100 t threshold is the assumption that moves the headline most, so the return-load table below varies it. "Exhausted" means that the pilot has reached every route field and worked the one it is on below 100 t of known good ore. Fields left earlier may have restored more by then, and that restored ore is what the "After" column mines. Only the largest quarter of rocks counts; the other three quarters are outside the ruled pilot.
 
 ## Results
 
@@ -63,7 +63,7 @@ Medians per sample, in minutes, with passive time outside the active rate:
 | Rare, raw | 718 | 208 | 60 | 0 | 723 | 4.7 h | 329,863 Cr | 429,416 Cr |
 | Rare, refined | 700 | 183 | 60 | 189 | 553 | 6.9 h | 532,642 Cr | 429,416 Cr |
 
-The clock exhausts the reach in 56 of 58 samples. The other two are charted refined rows in the world whose clock is 7.1 hours, described under Limits. A route holds about 12,000 t of good ore on charted fields and 14,000 t on rare ones.
+The clock reaches that point in 56 of 58 samples. The other two are charted refined rows in the world whose clock is 7.1 hours, described under Limits. A route holds about 12,000 t of good ore on charted fields and 14,000 t on rare ones.
 
 ## What explains the difference
 
@@ -129,8 +129,8 @@ The charted refined one-pass median there is 0.84×, below the 0.8–1.2 band's 
 - **A refinery's market lists what it sells.** This limit from #1213 is closed. A market lists every legal good, `marketRow` throws on an unlisted one, and all five products are legal. A test checks each product at every refinery in one galaxy.
 - **One world's clock is short.** The greedy trader stalls at 7.1 hours in seed 1, galaxy 1, and the mining arm keeps the trader's clock. That covers 4 of the 24 charted samples and none of the 5 rare ones, and it applies to #1213's "8-hour" figures too. Without those rows charted refined is 0.73× whole-clock and 1.31× until exhausted.
 - A sale of any tonnage still uses one quote; only later sales see the mark. Sale depth is otherwise unlimited.
-- Rare results rest on N=5 in the main corpus and N=21 in the wide one. Starting fields share neighbours: the 144 charted route slots cover 128 distinct fields. The 30 rare slots are all distinct.
-- The nearest-neighbour route, the 100 t return and the survey skip are assumptions. The pilot does not choose rich fields, and does not stop returning when a return pays less than trade.
+- Rare results rest on N=5 in the main corpus and N=21 in the wide one. Routes from nearby starts overlap: the 144 charted route slots cover 128 distinct fields. The 30 rare slots are all distinct.
+- The nearest-first route, the 100 t return and the survey skip are assumptions. The pilot does not choose rich fields, and does not stop returning when a return pays less than trade.
 - The largest-rock pilot and loaded handling remain assumptions, not flown evidence. Results use the study layout at `spikes/field-shape-1043/organic.ts`, not production fields (#1209).
 - Waiting is passive and not charged to the active rate, so the elapsed ratio is reported beside it. The 0.8–1.2 band remains the instrument's reading of D12.
 - Courier surface mining is left for #1214.

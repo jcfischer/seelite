@@ -493,17 +493,23 @@ function marketPort(world: World, record: SystemRecord): Port | undefined {
 	const ports = portsOf(record, world.contentsFor(record));
 	return ports.find((p) => p.station.type === "refinery") ?? ports[0];
 }
+interface RouteContext {
+	world: World;
+	key: string;
+	tankLy: number;
+	cache: ComparisonCache;
+}
 function reachFrom(
-	world: World,
+	{ world, key, tankLy, cache }: RouteContext,
 	origin: number,
-	tankLy: number,
-	key: string,
-	cache: ComparisonCache,
 ): ReachMap {
 	const cacheKey = JSON.stringify([key, origin, tankLy]);
 	const known = cache.reach.get(cacheKey);
 	if (known) return known;
 	const count = world.systems.length;
+	const hasMarketPort = world.systems.map(
+		(record) => marketPort(world, record) !== undefined,
+	);
 	const distance = new Array<number>(count).fill(Infinity);
 	const previous = new Array<number | null>(count).fill(null);
 	const settled = new Array<boolean>(count).fill(false);
@@ -521,7 +527,7 @@ function reachFrom(
 		settled[here] = true;
 		for (const record of world.systems) {
 			const i = record.index;
-			if (settled[i] || !marketPort(world, record)) continue;
+			if (settled[i] || !hasMarketPort[i]) continue;
 			const hop = distanceLy(world.systems[here].pos, record.pos);
 			if (hop > tankLy) continue;
 			if (distance[here] + hop < distance[i]) {
@@ -534,15 +540,9 @@ function reachFrom(
 	cache.reach.set(cacheKey, reach);
 	return reach;
 }
-function hopsBetween(
-	world: World,
-	from: number,
-	to: number,
-	tankLy: number,
-	key: string,
-	cache: ComparisonCache,
-): Port[] {
-	const { previous } = reachFrom(world, from, tankLy, key, cache);
+function hopsBetween(context: RouteContext, from: number, to: number): Port[] {
+	const { world } = context;
+	const { previous } = reachFrom(context, from);
 	const hops: Port[] = [];
 	for (let at = to; at !== from; at = previous[at]!) {
 		const stop = marketPort(world, world.systems[at]);
@@ -552,22 +552,19 @@ function hopsBetween(
 	}
 	return hops;
 }
-export interface RouteStop {
+interface RouteStop {
 	port: Port;
 	plan: FieldPlan;
 	fromHomeLy: number;
 }
-/** The nearest fields of the starting field's profile by refuelled path length, in nearest-neighbour order. */
-export function fieldRoute(
-	world: World,
+function fieldRoute(
+	context: RouteContext,
 	home: Port,
 	start: FieldPlan,
 	count: number,
-	tankLy: number,
-	key: string,
-	cache: ComparisonCache = comparisonCache(),
 ): RouteStop[] {
-	const fromHome = reachFrom(world, home.record.index, tankLy, key, cache);
+	const { world } = context;
+	const fromHome = reachFrom(context, home.record.index);
 	const others = world.systems
 		.filter(
 			(record) =>
@@ -597,7 +594,7 @@ export function fieldRoute(
 	const route: RouteStop[] = [{ port: home, plan: start, fromHomeLy: 0 }];
 	while (others.length) {
 		const at = route[route.length - 1].port.record.index;
-		const { distanceLy: from } = reachFrom(world, at, tankLy, key, cache);
+		const { distanceLy: from } = reachFrom(context, at);
 		let best = 0;
 		for (let i = 1; i < others.length; i++)
 			if (
@@ -643,9 +640,7 @@ interface ScenarioInput {
 	other?: Port;
 	route?: {
 		stops: RouteStop[];
-		world: World;
-		key: string;
-		tankLy: number;
+		context: RouteContext;
 		tradeStalled: boolean;
 	};
 	cache: ComparisonCache;
@@ -686,7 +681,6 @@ function scenario({
 		rockContents(record.seed, plan.slot, plan.profile, rock),
 	);
 	let debits: Debit[] = rocks.map(() => ({ taken: 0, at: 0 }));
-	const drillingFit = fitInput.hull === "miner";
 	const worthMining = (deposit: RockContents) =>
 		deposit.deepT > 0 &&
 		ORE_GRADES.indexOf(deposit.grade) >= ORE_GRADES.indexOf(c.goodMinimumGrade);
@@ -728,6 +722,8 @@ function scenario({
 		};
 	});
 	type Leg = NonNullable<typeof legs>[number];
+	const legReserveT = (l: Leg) =>
+		l.deposits.reduce((sum, d) => sum + (worthMining(d) ? d.deepT : 0), 0);
 	let leg: Leg | undefined = legs?.[0];
 	const capacity = fit.capacity;
 	let condition = fullCondition(fitInput.hull, capacity);
@@ -1238,12 +1234,9 @@ function scenario({
 	function moveTo(next: Leg) {
 		const start = t;
 		for (const hop of hopsBetween(
-			route!.world,
+			route!.context,
 			venue.record.index,
 			next.port.record.index,
-			route!.tankLy,
-			route!.key,
-			cache,
 		)) {
 			jump(venue, hop);
 			venue = hop;
@@ -1352,10 +1345,8 @@ function scenario({
 			positionS += t - before;
 			debit.surveyedAt = t;
 		}
-		const drilling = drillingFit;
-		const gradeIndex = ORE_GRADES.indexOf(deposit.grade);
-		const minimum = ORE_GRADES.indexOf(c.goodMinimumGrade);
-		if (drilling && (deposit.deepT === 0 || gradeIndex < minimum)) {
+		const drilling = fitInput.hull === "miner";
+		if (drilling && !worthMining(deposit)) {
 			idle(c.positioningFloorS, true);
 			emptyVisits++;
 		} else {
@@ -1641,16 +1632,13 @@ function scenario({
 							passes: l.passes,
 						})),
 						tradeStalled: route!.tradeStalled,
-						fieldsVisited: legs.filter((l) => l.reached).length,
-						reserveT: legs.reduce(
-							(n, l) =>
-								n +
-								l.deposits.reduce(
-									(sum, d) => sum + (worthMining(d) ? d.deepT : 0),
-									0,
-								),
-							0,
+						marketMarks: Object.fromEntries(
+							legs
+								.filter((l) => deficits[l.port.key])
+								.map((l) => [l.port.key, deficits[l.port.key]]),
 						),
+						fieldsVisited: legs.filter((l) => l.reached).length,
+						reserveT: legs.reduce((n, l) => n + legReserveT(l), 0),
 						goodRocks: legs.reduce(
 							(n, l) => n + l.deposits.filter(worthMining).length,
 							0,
@@ -1669,16 +1657,7 @@ function scenario({
 						recoveryWaitS,
 						otherPassiveS: elapsedS - activeS - refineryWaitS - recoveryWaitS,
 						restoredMinedT: legs.reduce(
-							(n, l) =>
-								n +
-								Math.max(
-									0,
-									l.minedT -
-										l.deposits.reduce(
-											(sum, d) => sum + (worthMining(d) ? d.deepT : 0),
-											0,
-										),
-								),
+							(n, l) => n + Math.max(0, l.minedT - legReserveT(l)),
 							0,
 						),
 						reachExhaustedAtS,
@@ -1733,10 +1712,11 @@ function distribution(values: number[]): Distribution {
 }
 
 const ROUTE_ASSUMPTIONS = [
-	"Route: the nearest routeFields fields of the starting field's profile by shortest refuelled jump path, visited in nearest-neighbour order; not an optimal route and not a chosen rich route",
+	"Route: the nearest routeFields fields of the starting field's profile by shortest refuelled jump path, visited in nearest-first order; not an optimal route and not a chosen rich route",
 	"Route: every leg jumps through market systems within one fitted tank, each hop paying fuel, the jump, the cruise to its station and a dock",
 	"Route: a charted field costs routeChartedFindS on first arrival and a rare field costs searchRareS on first arrival; a known field costs nothing to find again",
 	"Route: the pilot sells or refines at the refinery in the field's own system and settles every job there before moving on",
+	"Route: reachExhaustedAtS is the moment every field has been reached and the pilot's own field holds under routeRevisitLoadT; fields left earlier may already have restored that much",
 	"Route: the pilot stays while the field holds routeRevisitLoadT of known good ore, otherwise goes to the next unvisited field, otherwise to the next field that has restored that much, otherwise waits passively",
 	"Route: the mining clock stays the matched trader's realised clock, so a world whose trader stalls ends its route early; tradeStalled counts those rows",
 	"Route: on a return a live survey lets the pilot skip empty and below-grade rocks without flying to them; each pass otherwise follows the one-pass rock order",
@@ -1922,6 +1902,14 @@ function compare(c: Candidate, cache: ComparisonCache, minedOnly = false) {
 					earnedCr: baseline.earnedCr,
 					hops: baseline.hops,
 				};
+				const routeContext = routed
+					? {
+							world,
+							key: JSON.stringify([seed, galaxy]),
+							tankLy: capacity.fuelCapacityLy,
+							cache,
+						}
+					: undefined;
 				for (const record of systems) {
 					const contents = world.contentsFor(record);
 					const port = portsOf(record, contents).find(
@@ -1965,20 +1953,15 @@ function compare(c: Candidate, cache: ComparisonCache, minedOnly = false) {
 									trade,
 									path,
 									other: path === "refine-parallel" ? other : undefined,
-									route: routed
+									route: routeContext
 										? {
 												stops: fieldRoute(
-													world,
+													routeContext,
 													port,
 													plan,
 													c.routeFields!,
-													capacity.fuelCapacityLy,
-													JSON.stringify([seed, galaxy]),
-													cache,
 												),
-												world,
-												key: JSON.stringify([seed, galaxy]),
-												tankLy: capacity.fuelCapacityLy,
+												context: routeContext,
 												tradeStalled: baseline.stalled,
 											}
 										: undefined,

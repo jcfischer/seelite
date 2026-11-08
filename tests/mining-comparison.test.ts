@@ -664,6 +664,9 @@ const routeCandidate = (patch: Partial<Candidate> = {}): Candidate => ({
 	routeReferenceHours: 2,
 	...patch,
 });
+const approximateCr = (encoded: string) =>
+	Number((signedMoney.parse(encoded) * 1_000_000n) / money.fromNumber(1)) /
+	1_000_000;
 const routeRow = (c: Candidate, path: string) => {
 	const row = comparison(c).rows.find(
 		(r) => r.path === path && r.profile === "charted",
@@ -727,8 +730,23 @@ test("a route names distinct same-profile fields, nearest first, and charges the
 	expect(row.route.moveS).toBeLessThanOrEqual(row.travelS);
 }, 30_000);
 
-test("a route's market law carries each refinery's own marks between fields", () => {
-	const row = routeRow(routeCandidate({ hours: 4 }), "refine");
+test("each refinery on a route keeps its own market marks after the pilot leaves", () => {
+	const row = routeRow(
+		routeCandidate({ hours: 4, routeRevisitLoadT: 1_000_000 }),
+		"refine",
+	);
+	const firstKey = row.jobRecords[0].refineryKey;
+	const visited = new Set(row.jobRecords.map((j) => j.refineryKey));
+	expect(visited.size).toBeGreaterThan(1);
+	const firstVisit = row.route.visits[0];
+	const firstMark = row.route.marketMarks[firstKey];
+	expect(Object.keys(row.route.marketMarks).sort()).toEqual(
+		[...visited].sort(),
+	);
+	expect(Object.values(firstMark.goods).some((mark) => mark !== 0)).toBe(true);
+	expect(firstMark.updatedAt * 60).toBeLessThanOrEqual(firstVisit.endS + 1e-6);
+	const later = row.route.marketMarks[row.jobRecords.at(-1)!.refineryKey];
+	expect(later.updatedAt).toBeGreaterThan(firstMark.updatedAt);
 	expect(row.jobRecords.length).toBeGreaterThan(0);
 	expect(
 		new Set(row.jobRecords.map((j) => j.refineryKey)).size,
@@ -817,16 +835,35 @@ test("every passive second of a route is refinery waiting, recovery waiting or t
 				row.route.recoveryWaitS +
 				row.route.otherPassiveS,
 		).toBeCloseTo(row.passiveS, 6);
-		expect(
-			row.route.beforeExhaustion.activeS + row.route.afterExhaustion.activeS,
-		).toBeCloseTo(row.activeS, 6);
-		expect(
-			signedMoney.fromNumber(
-				row.route.beforeExhaustion.cr + row.route.afterExhaustion.cr,
-			) - signedMoney.parse(row.cashDelta),
-		).toBeLessThan(signedMoney.fromNumber(0.01));
+		expect(row.route.otherPassiveS).toBeGreaterThanOrEqual(-1e-6);
+		expect(row.route.otherPassiveS).toBeLessThanOrEqual(
+			2 * row.route.visits.length * 60,
+		);
 		const ranOut = row.route.reachExhaustedAtS;
-		expect(ranOut === null || ranOut <= row.elapsedS).toBe(true);
+		if (ranOut === null) {
+			expect(row.route.visits.every((v) => v.kind !== "restored")).toBe(true);
+			continue;
+		}
+		expect(ranOut).toBeLessThanOrEqual(row.elapsedS);
+		expect(row.route.fieldsVisited).toBe(row.route.fields.length);
+		const returned = row.route.visits.filter((v) => v.startS >= ranOut);
+		expect(returned.every((v) => v.kind === "restored")).toBe(true);
+		const sum = (read: (v: (typeof returned)[number]) => number) =>
+			returned.reduce((n, v) => n + read(v), 0);
+		expect(row.route.afterExhaustion.activeS).toBeCloseTo(
+			sum((v) => v.activeS),
+			6,
+		);
+		expect(row.route.afterExhaustion.cr).toBeCloseTo(
+			sum((v) => v.cr),
+			3,
+		);
+		expect(
+			Math.abs(
+				approximateCr(row.cashDelta) -
+					(row.route.beforeExhaustion.cr + row.route.afterExhaustion.cr),
+			),
+		).toBeLessThan(0.01);
 	}
 	expect(
 		report.rows.some((r) => r.path === "refine" && r.route!.refineryWaitS > 0),
@@ -869,6 +906,7 @@ test("a route report summarises against trade and against the same candidate's o
 }, 30_000);
 
 test("route inputs refuse an incomplete or unsupported route", () => {
+	expect(() => comparison(routeCandidate({ hours: 0.01 }))).not.toThrow();
 	for (const patch of [
 		{ routeFields: 0 },
 		{ routeFields: 1.5 },
@@ -883,12 +921,12 @@ test("route inputs refuse an incomplete or unsupported route", () => {
 			],
 		},
 	])
-		expect(() =>
-			comparison(routeCandidate({ hours: 0.01, ...patch })),
-		).toThrow();
+		expect(() => comparison(routeCandidate({ hours: 0.01, ...patch }))).toThrow(
+			/route|charted finding|reference hours|one-pass/,
+		);
 	expect(() =>
 		comparison(rulingCandidate({ hours: 0.01, routeRevisitLoadT: 100 })),
-	).toThrow();
+	).toThrow(/route inputs need routeFields/);
 });
 
 test("a grid can sweep the route's inputs and keeps the one-pass comparison", () => {
