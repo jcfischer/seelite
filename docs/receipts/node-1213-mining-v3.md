@@ -7,11 +7,12 @@ Refs #1213 and #923. No balance is approved. These are model predictions, not fl
 ```sh
 bun scripts/measure-mining-economy.ts --compare docs/candidates/mining-economy-v3.json
 bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-grid.json
+bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-throughput-grid.json
 ```
 
-Candidate figures come from clean `0da6d85b54258422289d232d04cb0f90bb2243c3`: seeds 1/47/1234, galaxies 0/1, 24 refinery systems, 5 rare fields, 1,341 samples and 63 refused parallel scenarios. The fee-share grid ran at clean `843f908c199930696564ed78ff4f482db3c7cbdf`; only the candidate file differs between the two revisions.
+All three reports come from clean `3de152b6083a34fdba633e067c7283350df3ca12`: seeds 1/47/1234, galaxies 0/1, 24 refinery systems, 5 rare fields, 1,341 samples and 63 refused parallel scenarios.
 
-The first exploratory grid, 96 variants of throughput, raw share, elasticity and flat fee, ran before the rebase at clean `c3c8087e7df21f0a02e85bbb78f48bd06974cd53`. That commit is not on this branch after the rebase, and the committed grid file now holds the fee-share axes. A later instrument fix changes refined results under a proportional fee, not under the flat-fee variants quoted from that grid.
+The flat-fee figures quoted below come from an earlier exploratory grid that ran before the branch was rebased, so its commit is no longer on this branch. It is not reproducible from the committed grid files, and it serves only as the comparison for the fee shape.
 
 ## What changed in the instrument
 
@@ -68,8 +69,8 @@ Compared with the flat fee, the proportional fee lifts the weakest fields, narro
 
 ## Consequences
 
-- Throughput stops limiting returns at about 3 s/t: with a 1 Cr/t flat fee, the refined median is 1.69 at 3 s/t, 1.67 at 1 s/t and 1.67 at 0.3 s/t. At 30 s/t it is 0.34, with eight jobs pending.
-- Ore elasticity barely matters: at share 0.35, the charted raw median is 0.73 at scale 0 and 0.71 at scale 1.
+- Throughput stops limiting charted returns at about 3 s/t under the candidate fee: the refined median is 1.11 at 3 s/t, 1.09 at 1 s/t, 1.09 at 0.3 s/t and 1.08 at 0.1 s/t. At 30 s/t it is −0.18, with eight jobs pending and their fees paid. Rare refined is 2.91 at 3 s/t and 3.59 at 1 s/t.
+- Elasticity moved the charted raw median only from 0.73 at scale 0 to 0.71 at scale 1 in the flat-fee grid. That is weak evidence, because each sale uses one quote and a one-pass pilot makes few later sales. Stated as a ruling to honour, not a measured need.
 - Raw share does not change a refined run that mines its own ore; it sets the raw return and the buy-and-refine margin.
 - The fee takes a large sum up front on valuable ore. Pilots with little cash stage a lot through several submissions.
 
