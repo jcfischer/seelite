@@ -1,3 +1,10 @@
+import { capabilityIdentity, capabilitySlots } from "../src/capability-slots";
+import { raiderSlots } from "../src/raider-slots";
+import { carrierKey, systemIndexOfKey } from "../src/carrier-key";
+import {
+	initialCapabilityTime,
+	queryCapabilityTime,
+} from "../src/capability-time";
 import { expect, test } from "bun:test";
 import {
 	candidateDefaults,
@@ -275,21 +282,20 @@ test("CLI compares explicit candidates, labels exact revision, and refuses unsup
 });
 
 test("a known initial outage contributes zero service and independent queues each receive their own uptime", () => {
-	const {
-		initialCapabilityTime,
-		queryCapabilityTime,
-	} = require("../src/capability-time");
 	let seed = 0;
 	let context = { seed, government: 0, active: 1, total: 1 };
 	while (initialCapabilityTime(context, 0).phase !== "down" && seed < 1000)
 		context = { ...context, seed: ++seed };
 	const anchor = initialCapabilityTime(context, 0);
 	expect(anchor.phase).toBe("down");
-	const during = anchor.endsAt / 2;
+	const outageEnd = anchor.endsAt;
+	if (outageEnd === undefined)
+		throw new Error("fixture must start in a real outage");
+	const during = outageEnd / 2;
 	expect(
 		serviceQueue(context, [{ workS: 50, submittedAt: 0 }], during)[0].workLeftS,
 	).toBe(50);
-	const end = anchor.endsAt + 100;
+	const end = outageEnd + 100;
 	expect(queryCapabilityTime(context, anchor, 0, end)).toBeCloseTo(100, 6);
 	const serial = serviceQueue(
 		context,
@@ -304,8 +310,8 @@ test("a known initial outage contributes zero service and independent queues eac
 		[{ workS: 50, submittedAt: 0 }],
 		end,
 	);
-	expect(serial[0].completedAt).toBeCloseTo(anchor.endsAt + 50, 5);
-	expect(serial[1].completedAt).toBeCloseTo(anchor.endsAt + 100, 5);
+	expect(serial[0].completedAt).toBeCloseTo(outageEnd + 50, 5);
+	expect(serial[1].completedAt).toBeCloseTo(outageEnd + 100, 5);
 	expect(independent[0].completedAt).toBe(serial[0].completedAt);
 	expect(independent[0].completedAt).toBeLessThan(serial[1].completedAt!);
 });
@@ -318,12 +324,6 @@ test("committed default candidate equals its public generator", () => {
 });
 
 test("measured scenario jobs agree with an independent cumulative-service FIFO oracle at each real refinery", () => {
-	const {
-		capabilityIdentity,
-		capabilitySlots,
-	} = require("../src/capability-slots");
-	const { raiderSlots } = require("../src/raider-slots");
-	const { carrierKey } = require("../src/carrier-key");
 	const c = {
 		...candidateDefaults(),
 		seeds: [47],
@@ -341,7 +341,7 @@ test("measured scenario jobs agree with an independent cumulative-service FIFO o
 		(r) => r.path === "refine" || r.path === "refine-parallel",
 	)) {
 		for (const key of new Set(row.jobRecords.map((j) => j.refineryKey))) {
-			const record = world.systems[Number(key.split(":")[0])];
+			const record = world.systems[systemIndexOfKey(key)];
 			const station = world
 				.contentsFor(record)
 				.stations.find(
