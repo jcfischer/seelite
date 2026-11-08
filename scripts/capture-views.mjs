@@ -399,6 +399,13 @@ const PLACERS = {
 			shot.stand,
 			shot.view,
 		);
+		if (
+			shot.stand === "close" &&
+			(!result.shadowGate || result.aoGate || result.levels[0] === 0)
+		)
+			throw new Error(
+				`${shot.profile} close row is not the rocks-only shadow state: ${JSON.stringify(result)}`,
+			);
 		return `${result.fieldId} · ${result.rocks} rocks, ${result.within8Km} within 8 km`;
 	},
 	"field-discovery": async (page, shot) => {

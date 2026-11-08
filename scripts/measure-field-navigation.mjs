@@ -62,6 +62,7 @@ const browser = await launchChromium({ headless: false });
 const SETUP = async ({ kind, aa }) => {
 	const A = await import("/src/asteroid-field.ts");
 	const F = await import("/scripts/lib/field-stands.mjs");
+	const L = await import("/src/field-lod.ts");
 	const T = await import("/src/rock-target.ts");
 	const g = window.__seelite;
 	g.settings.set("quality", "high");
@@ -117,20 +118,7 @@ const SETUP = async ({ kind, aa }) => {
 		} else g.targetId = null;
 		g.updateCockpit();
 		const camera = g.cameraPos();
-		const centre = A.fieldCentre(plan, g.world.gameTime);
-		const local = A.rotateByQuat(
-			{
-				x: -plan.rotation.x,
-				y: -plan.rotation.y,
-				z: -plan.rotation.z,
-				w: plan.rotation.w,
-			},
-			{
-				x: camera.x - centre.x,
-				y: camera.y - centre.y,
-				z: camera.z - centre.z,
-			},
-		);
+		const local = L.fieldCameraLocal(plan, g.world.gameTime, camera);
 		const rows = g.navRows().filter((r) => r.kind === "rock");
 		return {
 			arm,
