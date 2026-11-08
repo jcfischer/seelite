@@ -175,7 +175,7 @@ export const LEVERS = Object.freeze({
 	1194: "the docked service status beside unrelated notices, and its natural recovery",
 	1148: "the surface DEEP cue, the survey's instrument range and current-field rock readings in Navigation",
 	1191: "unknown and discovered rare-field Navigation and the sourced regional scanner lead",
-	1209: "the organic arrangement of charted and rare fields from far, from above and inside their densest cluster",
+	1209: "the organic arrangement of charted and rare fields from far, from above and inside their densest cluster, and hull and cabin beside a rock with the shadow pass alone",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
@@ -1858,6 +1858,58 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "asteroid-field-charted-close-chase",
+		covers: [1209],
+		what: "The hull beside the charted field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-charted-close-cockpit",
+		covers: [1209],
+		what: "The cockpit cabin beside the charted field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "asteroid-field-rare-close-chase",
+		covers: [1209],
+		what: "The hull beside the rare field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-rare-close-cockpit",
+		covers: [1209],
+		what: "The cockpit cabin beside the rare field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
 		name: "mining-survey-navigation",
 		covers: [1148],
 		what: "Current-field readings in nearest-first Navigation, with a selected rock and a readable distant rock beyond the unchanged 40 km targeting limit.",
@@ -2096,7 +2148,7 @@ const SHOT_REQUIREMENTS = {
 	"field-discovery": (s) => ["unknown", "lead", "known"].includes(s.mode),
 	"asteroid-field": (s) =>
 		["charted", "rare"].includes(s.profile) &&
-		["far", "side", "overview", "dense"].includes(s.stand),
+		["far", "side", "overview", "dense", "close"].includes(s.stand),
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	// #647: above the envelope, or the attitude vents fire nothing past the

@@ -60,7 +60,7 @@ const KIND = process.env.KIND ?? "charted";
 const CAMERA = process.env.CAMERA ?? "chase";
 const QUALITIES = ["high", "low"];
 const ARMS = QUALITIES.flatMap((q) => [`none@${q}`, `field@${q}`]);
-const WORLD = 0x5ee11e;
+const WORLD = Number(process.env.WORLD ?? 0x5ee11e);
 const SYSTEM = Number(process.env.SYSTEM ?? 173);
 
 const releaseLock = await holdProbeLockOrExit("asteroid field cost");
@@ -85,6 +85,7 @@ const SETUP = async (kind) => {
 	const g = window.__seelite;
 	g.clockHeld = true;
 	const A = await import("/src/asteroid-field.ts");
+	const F = await import("/scripts/lib/field-stands.mjs");
 	const draw = g.fields.find((d) => d.plan.profile === kind);
 	if (!draw) throw new Error(`system has no ${kind} field`);
 	const plan = draw.plan;
@@ -100,18 +101,11 @@ const SETUP = async (kind) => {
 	);
 	const semi = Math.max(...draw.rocks.map((r) => Math.abs(r.anchor.x)));
 	const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-	const densest = draw.rocks
-		.map((rock) => ({
-			rock,
-			n: draw.rocks.filter((o) => dist(rock.anchor, o.anchor) < 8).length,
-		}))
-		.sort((a, b) => b.n - a.n || a.rock.slot - b.rock.slot)[0];
+	const densest = F.densestRock(draw.rocks);
 	const denseAt = A.rockLocal(densest.rock, T0);
-	const dense = [2.5, 4, 6, 8]
-		.map((d) => ({ ...denseAt, x: denseAt.x - d }))
-		.find((p) =>
-			draw.rocks.every((r) => dist(p, A.rockLocal(r, T0)) > r.radiusKm + 0.1),
-		);
+	const dense = F.clearStandBeside(denseAt, (p) =>
+		draw.rocks.every((r) => dist(p, A.rockLocal(r, T0)) > r.radiusKm + 0.1),
+	);
 	const STAND = {
 		inside: { x: 1.2, y: 1.2, z: 1.2 },
 		edge: { x: -semi - 2, y: 0, z: 0 },

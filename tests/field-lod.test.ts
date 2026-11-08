@@ -235,6 +235,35 @@ test("past the level-0 cap the rocks that project smallest draw at level 1, and 
 	}
 });
 
+test("a rock behind the camera gives way at the level-0 cap to one in front", () => {
+	const { rocks } = fieldOf(173);
+	const place = (x: number, i: number) => ({
+		...rocks[i],
+		radiusKm: x < 0 ? 0.2 : 0.1,
+		driftKm: 0,
+		anchor: { x, y: 0, z: 0 },
+	});
+	const crowd = [
+		...Array.from({ length: MAX_LEVEL0_ROCKS }, (_, i) => place(-1, i)),
+		place(1, MAX_LEVEL0_ROCKS),
+	];
+	const levels = new Int8Array(crowd.length).fill(POINT_LEVEL);
+	selectFieldLevels(
+		crowd,
+		0,
+		{ x: 0, y: 0, z: 0 },
+		PX_PER_RADIAN,
+		"high",
+		levels,
+		new Float32Array(crowd.length * 3),
+		new Float32Array(crowd.length * 3),
+		true,
+		{ x: 1, y: 0, z: 0 },
+	);
+	expect(levels[MAX_LEVEL0_ROCKS]).toBe(0);
+	expect([...levels].filter((l) => l === 0)).toHaveLength(MAX_LEVEL0_ROCKS);
+});
+
 test("with no shapes installed every rock is a point, packed first", () => {
 	const { rocks } = fieldOf(173);
 	const levels = new Int8Array(rocks.length).fill(0);

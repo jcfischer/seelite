@@ -7038,6 +7038,7 @@ class Game {
 	 *  already left installs nothing into the next one. */
 	private fieldEpoch = 0;
 	private readonly fieldBuffer = new THREE.Vector2();
+	private readonly fieldLook = new THREE.Vector3();
 	private buildFields(): void {
 		this.disposeFields();
 		const { record, contents } = this.world.system;
@@ -7147,11 +7148,14 @@ class Game {
 			this.renderer.getDrawingBufferSize(this.fieldBuffer).y,
 			this.nearCamera.fov,
 		);
+		const look = this.nearCamera.getWorldDirection(this.fieldLook);
+		const forward = { x: look.x, y: look.y, z: look.z };
 		for (const draw of this.fieldDraws)
 			draw.update({
 				gameTime: this.world.gameTime,
 				camera: camPos,
 				pxPerRadian,
+				forward,
 				quality,
 				shadows: LIGHT_RIG.quality[quality].shadows,
 			});

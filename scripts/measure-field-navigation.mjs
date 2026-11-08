@@ -35,7 +35,7 @@ import {
 
 const FRAMES = Number(process.env.FRAMES ?? 120);
 const BLOCKS = Number(process.env.BLOCKS ?? 6);
-const WORLD = 0x5ee11e;
+const WORLD = Number(process.env.WORLD ?? 0x5ee11e);
 const SYSTEM = Number(process.env.SYSTEM ?? 173);
 const KIND = process.env.KIND ?? "charted";
 const ANTIALIAS = Number(process.env.ANTIALIAS ?? 0);
@@ -61,6 +61,7 @@ const browser = await launchChromium({ headless: false });
 
 const SETUP = async ({ kind, aa }) => {
 	const A = await import("/src/asteroid-field.ts");
+	const F = await import("/scripts/lib/field-stands.mjs");
 	const T = await import("/src/rock-target.ts");
 	const g = window.__seelite;
 	g.settings.set("quality", "high");
@@ -72,18 +73,10 @@ const SETUP = async ({ kind, aa }) => {
 	if (!draw) throw new Error(`system has no ${kind} field`);
 	const { plan, rocks } = draw;
 	const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-	const peak = rocks
-		.map((rock) => ({
-			rock,
-			n: rocks.filter((o) => dist(rock.anchor, o.anchor) < 8).length,
-		}))
-		.sort((a, b) => b.n - a.n || a.rock.slot - b.rock.slot)[0].rock;
-	const t0 = g.world.gameTime;
-	const stand = [2.5, 4, 6, 8]
-		.map((d) => ({ ...peak.anchor, x: peak.anchor.x - d }))
-		.find((p) =>
-			rocks.every((r) => dist(p, r.anchor) > r.radiusKm + r.driftKm + 0.2),
-		);
+	const peak = F.densestRock(rocks).rock;
+	const stand = F.clearStandBeside(peak.anchor, (p) =>
+		rocks.every((r) => dist(p, r.anchor) > r.radiusKm + r.driftKm + 0.2),
+	);
 	if (!stand) throw new Error("no clear dense stand");
 	const world = (local, t) => {
 		const c = A.fieldCentre(plan, t);
@@ -188,12 +181,13 @@ const SETUP = async ({ kind, aa }) => {
 	return { rocks: rocks.length, plan: plan.id, atTime: t0 };
 };
 
+const pageErrors = [];
 try {
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
 		deviceScaleFactor: 2,
 	});
-	page.on("pageerror", (e) => console.error("  pageerror:", e.message));
+	page.on("pageerror", (e) => pageErrors.push(e.message));
 	await installViewPlacement(page);
 	await page.goto(
 		gameUrl(origin, {
@@ -272,6 +266,8 @@ try {
 	const presses = [];
 	for (let i = 0; i < 24; i++)
 		presses.push(await page.evaluate(() => window.__press()));
+	if (pageErrors.length)
+		throw new Error(`page errors: ${pageErrors.join("; ")}`);
 	console.log(
 		`  row press to the frame showing it: median ${median(presses).toFixed(1)} ms, max ${Math.max(...presses).toFixed(1)} ms over ${presses.length}`,
 	);

@@ -393,7 +393,12 @@ async function assertChartHover(page, where, shot, aimed) {
 const PLACERS = {
 	"asteroid-field": async (page, shot) => {
 		worldWritten = true;
-		const result = await placeAsteroidField(page, shot.profile, shot.stand);
+		const result = await placeAsteroidField(
+			page,
+			shot.profile,
+			shot.stand,
+			shot.view,
+		);
 		return `${result.fieldId} · ${result.rocks} rocks, ${result.within8Km} within 8 km`;
 	},
 	"field-discovery": async (page, shot) => {

@@ -270,8 +270,8 @@ describe("the view set itself", () => {
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
-		// it, one frame each. Node #1209 adds eight organic field stands.
-		expect(VIEWS.length).toBe(109);
+		// it, one frame each. Node #1209 adds twelve organic field stands.
+		expect(VIEWS.length).toBe(113);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -861,7 +861,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 109)");
+		expect(html).toContain("Selected canonical views (3 of 113)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -898,7 +898,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–43.8s");
+		expect(html).toContain("· clock 0.6–45.4s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1196,6 +1196,10 @@ describe("the rim look row #480 added", () => {
 			"asteroid-field-rare-overview",
 			"asteroid-field-charted-dense",
 			"asteroid-field-rare-dense",
+			"asteroid-field-charted-close-chase",
+			"asteroid-field-charted-close-cockpit",
+			"asteroid-field-rare-close-chase",
+			"asteroid-field-rare-close-cockpit",
 			"mining-survey-navigation",
 			"capability-market-recovered",
 			"npc-departure",

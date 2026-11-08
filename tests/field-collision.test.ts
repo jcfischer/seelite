@@ -2,6 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as asteroidField from "../src/asteroid-field";
 import {
+	FIELD_EXTENT_KM,
 	fieldCentre,
 	fieldRocks,
 	type Rock,
@@ -367,14 +368,18 @@ describe("the flown ship against field rocks (node #969)", () => {
 			for (const rock of rocks.slice(0, 24)) {
 				const at = rockPose(plan, rock, clock.fromTime).pos;
 				const toCentre = sub(fieldCentre(plan, clock.fromTime), at);
+				const clear = (2 * FIELD_EXTENT_KM[profile] + 10) / length(toCentre);
 				const ship = {
-					start: add(at, scale(toCentre, -0.2)),
+					start: add(at, scale(toCentre, -clear)),
 					end: add(
 						rockPose(plan, rock, clock.toTime).pos,
-						scale(toCentre, 0.2),
+						scale(toCentre, clear),
 					),
 					reachKm: HULL_REACH_KM,
 				};
+				expect(length(sub(ship.start, ship.end))).toBeGreaterThan(
+					2 * FIELD_EXTENT_KM[profile],
+				);
 				const got = fieldRockSolids(world.system, ship, clock);
 				const owners = (others: readonly Rock[]) =>
 					others

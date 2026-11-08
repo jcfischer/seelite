@@ -14,7 +14,7 @@ import {
 	FIELD_PROFILE,
 	type FieldPlan,
 	type FieldProfile,
-	ORGANIC_BANK_SCALE,
+	organicBankProfile,
 	OUTER_ORBIT_FACTOR,
 	RARE_BELT_MIN_PHASE,
 	type Rock,
@@ -368,15 +368,7 @@ describe("rocks: size, arrangement and margin (#948 D5, #1209)", () => {
 		for (const { row, plan } of sampled.slice(0, 32)) {
 			const seed = mix(mix(row.record.seed, plan.slot), 0x10430c1d);
 			const base = FIELD_PROFILE[plan.profile];
-			const bank = latticeRocks(row.record, plan, {
-				...base,
-				semiKm: [
-					base.semiKm[0] * ORGANIC_BANK_SCALE,
-					base.semiKm[1] * ORGANIC_BANK_SCALE,
-					base.semiKm[2] * ORGANIC_BANK_SCALE,
-				],
-				occupancy: 1,
-			});
+			const bank = latticeRocks(row.record, plan, organicBankProfile(base));
 			const arranged = arrangeRocks(plan, bank, {
 				lobes: seededRand(seed),
 				anchor: (slot) => seededRand(mix(seed, slot)),
@@ -394,15 +386,10 @@ describe("rocks: size, arrangement and margin (#948 D5, #1209)", () => {
 		for (const { row, plan, rocks } of sampled.slice(0, 8)) {
 			const base = FIELD_PROFILE[plan.profile];
 			const bank = new Map(
-				latticeRocks(row.record, plan, {
-					...base,
-					semiKm: [
-						base.semiKm[0] * ORGANIC_BANK_SCALE,
-						base.semiKm[1] * ORGANIC_BANK_SCALE,
-						base.semiKm[2] * ORGANIC_BANK_SCALE,
-					],
-					occupancy: 1,
-				}).map((r) => [r.slot, r]),
+				latticeRocks(row.record, plan, organicBankProfile(base)).map((r) => [
+					r.slot,
+					r,
+				]),
 			);
 			expect(rocks.map((r) => r.slot)).toEqual(
 				[...rocks.map((r) => r.slot)].sort((a, b) => a - b),

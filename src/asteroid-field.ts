@@ -600,6 +600,18 @@ function drawAnchor(rand: () => number, lobes: readonly Lobe[]): Vec3 {
 	);
 }
 
+/** The lattice the metadata bank numbers: wider than the profile's, every slot
+ *  filled, so every physical draw exists before the arrangement chooses. */
+export const organicBankProfile = (base: FieldProfile): FieldProfile => ({
+	...base,
+	semiKm: [
+		base.semiKm[0] * ORGANIC_BANK_SCALE,
+		base.semiKm[1] * ORGANIC_BANK_SCALE,
+		base.semiKm[2] * ORGANIC_BANK_SCALE,
+	],
+	occupancy: 1,
+});
+
 /** Where the arrangement's randomness comes from: the production tags, or a
  *  study's own seeds when a test holds the two generators together. */
 export interface ArrangementDraws {
@@ -628,16 +640,16 @@ export function arrangeRocks(
 	const out: Rock[] = [];
 	const key = (i: number, j: number, k: number): number =>
 		((i + 512) * 1024 + j + 512) * 1024 + k + 512;
-	for (const rock of bank) {
-		if (draws.keep(rock.slot) > ORGANIC_KEEP) continue;
-		const anchor = drawAnchor(draws.anchor(rock.slot), lobes);
-		const ci = Math.floor(anchor.x / width);
-		const cj = Math.floor(anchor.y / width);
-		const ck = Math.floor(anchor.z / width);
-		let clear = true;
-		for (let i = ci - 1; i <= ci + 1 && clear; i++)
-			for (let j = cj - 1; j <= cj + 1 && clear; j++)
-				for (let k = ck - 1; k <= ck + 1 && clear; k++)
+	const isClear = (
+		anchor: Vec3,
+		rock: Rock,
+		ci: number,
+		cj: number,
+		ck: number,
+	): boolean => {
+		for (let i = ci - 1; i <= ci + 1; i++)
+			for (let j = cj - 1; j <= cj + 1; j++)
+				for (let k = ck - 1; k <= ck + 1; k++)
 					for (const prior of buckets.get(key(i, j, k)) ?? [])
 						if (
 							distance(anchor, prior.anchor) <
@@ -646,11 +658,17 @@ export function arrangeRocks(
 								prior.radiusKm +
 								prior.driftKm +
 								marginKm
-						) {
-							clear = false;
-							break;
-						}
-		if (!clear) continue;
+						)
+							return false;
+		return true;
+	};
+	for (const rock of bank) {
+		if (draws.keep(rock.slot) > ORGANIC_KEEP) continue;
+		const anchor = drawAnchor(draws.anchor(rock.slot), lobes);
+		const ci = Math.floor(anchor.x / width);
+		const cj = Math.floor(anchor.y / width);
+		const ck = Math.floor(anchor.z / width);
+		if (!isClear(anchor, rock, ci, cj, ck)) continue;
 		const placed = { ...rock, anchor };
 		out.push(placed);
 		const code = key(ci, cj, ck);
@@ -667,19 +685,10 @@ export function arrangeRocks(
  * radius mix it yields are provisional pending #923.
  */
 export function fieldRocks(record: SystemRecord, plan: FieldPlan): Rock[] {
-	const base = FIELD_PROFILE[plan.profile];
 	const fieldSeed = mix(record.seed, plan.slot);
 	return arrangeRocks(
 		plan,
-		latticeRocks(record, plan, {
-			...base,
-			semiKm: [
-				base.semiKm[0] * ORGANIC_BANK_SCALE,
-				base.semiKm[1] * ORGANIC_BANK_SCALE,
-				base.semiKm[2] * ORGANIC_BANK_SCALE,
-			],
-			occupancy: 1,
-		}),
+		latticeRocks(record, plan, organicBankProfile(FIELD_PROFILE[plan.profile])),
 		{
 			lobes: stream(fieldSeed, DOMAIN.ASTEROID_LOBES),
 			anchor: (slot) => stream(mix(fieldSeed, slot), DOMAIN.ASTEROID_ANCHOR),

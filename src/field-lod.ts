@@ -41,7 +41,7 @@ export const LEVEL_PX: Readonly<
 	low: [80, 20, 3],
 };
 /** Rocks a field may draw at level 0 at once (#950's budget of five, now a limit
- *  because a dense cluster passes it): the largest on screen keep the level and
+ *  because a dense cluster passes it): the largest in front of the camera keep the level and
  *  the rest draw at level 1. Only level 0 casts, so this bounds the shadow pass. */
 export const MAX_LEVEL0_ROCKS = 5;
 
@@ -79,7 +79,13 @@ export const pxPerRadianFor = (
 	fovDegrees: number,
 ): number => bufferHeightPx / 2 / Math.tan(((fovDegrees / 2) * Math.PI) / 180);
 
-const conjugate = (q: Quat): Quat => ({ x: -q.x, y: -q.y, z: -q.z, w: q.w });
+/** A unit quaternion's inverse. */
+export const conjugateQuat = (q: Quat): Quat => ({
+	x: -q.x,
+	y: -q.y,
+	z: -q.z,
+	w: q.w,
+});
 
 /**
  * The camera in the field frame: `R⁻¹ (camera − centre(t))`, with `camera` the
@@ -91,7 +97,7 @@ export function fieldCameraLocal(
 	camera: Vec3,
 ): Vec3 {
 	const c = fieldCentre(plan, gameTime);
-	return rotateByQuat(conjugate(plan.rotation), {
+	return rotateByQuat(conjugateQuat(plan.rotation), {
 		x: camera.x - c.x,
 		y: camera.y - c.y,
 		z: camera.z - c.z,
@@ -108,6 +114,7 @@ export function fieldOffsetFromCamera(
 	return { x: c.x - camera.x, y: c.y - camera.y, z: c.z - camera.z };
 }
 
+const BEHIND_RANK = 1e-3;
 const level0Index = new Int32Array(MAX_LEVEL0_ROCKS);
 const level0Px = new Float64Array(MAX_LEVEL0_ROCKS);
 
@@ -130,6 +137,7 @@ export function selectFieldLevels(
 	pos: Float32Array,
 	points: Float32Array,
 	meshesAllowed = true,
+	forward?: Vec3,
 ): number {
 	let np = 0;
 	let held = 0;
@@ -146,17 +154,21 @@ export function selectFieldLevels(
 		);
 		let level = meshesAllowed ? levelFor(px, levels[i], quality) : POINT_LEVEL;
 		if (level === 0) {
+			const behind =
+				forward !== undefined &&
+				dx * forward.x + dy * forward.y + dz * forward.z < -rock.radiusKm;
+			const rank = behind ? px * BEHIND_RANK : px;
 			if (held < MAX_LEVEL0_ROCKS) {
 				level0Index[held] = i;
-				level0Px[held++] = px;
+				level0Px[held++] = rank;
 			} else {
 				let smallest = 0;
 				for (let n = 1; n < held; n++)
 					if (level0Px[n] < level0Px[smallest]) smallest = n;
-				if (level0Px[smallest] < px) {
+				if (level0Px[smallest] < rank) {
 					levels[level0Index[smallest]] = 1;
 					level0Index[smallest] = i;
-					level0Px[smallest] = px;
+					level0Px[smallest] = rank;
 				} else level = 1;
 			}
 		}

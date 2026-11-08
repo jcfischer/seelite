@@ -21,11 +21,17 @@
  * scene; until it resolves the field is points alone.
  */
 import * as THREE from "three";
-import { type FieldPlan, type Rock, rockSpinAngle } from "./asteroid-field";
+import {
+	type FieldPlan,
+	type Rock,
+	rockSpinAngle,
+	rotateByQuat,
+} from "./asteroid-field";
 import {
 	type FieldLevel,
 	POINT_LEVEL,
 	type QualitySide,
+	conjugateQuat,
 	fieldCameraLocal,
 	fieldOffsetFromCamera,
 	rockArchetype,
@@ -47,6 +53,7 @@ export interface FieldFrame {
 	/** The camera, star-centric km. */
 	camera: Vec3;
 	pxPerRadian: number;
+	forward?: Vec3;
 	quality: QualitySide;
 	/** The shadow gate's answer; level 0 casts only when this and `high`. */
 	shadows: boolean;
@@ -225,6 +232,8 @@ export class FieldDraw {
 			this.pos,
 			this.pointPos,
 			meshes,
+			frame.forward &&
+				rotateByQuat(conjugateQuat(this.plan.rotation), frame.forward),
 		);
 		const perLevel = this.perLevel;
 		perLevel.fill(0);
