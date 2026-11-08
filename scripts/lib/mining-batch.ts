@@ -1,7 +1,7 @@
 import {
-	query,
-	validateAnchor,
-} from "../../docs/prototypes/capability-outages-937.mjs";
+	queryCapabilityTime,
+	validateCapabilityTime,
+} from "../../src/capability-time";
 import {
 	money,
 	massFromNative,
@@ -184,7 +184,7 @@ export function productBidAt(fixture: MarketFixture, product: string): number {
 	).sellCr;
 }
 
-/** Reuse the approved decision model; this is not production world-state recovery enumeration. */
+/** Explicit-context diagnostic using production service arithmetic; full routes use world-checked calendars. */
 export function advanceCandidateQueue({
 	anchor,
 	fromS,
@@ -196,7 +196,19 @@ export function advanceCandidateQueue({
 	toS: number;
 	workS: readonly number[];
 }) {
-	const checkedAnchor = validateAnchor(anchor);
+	if (!anchor || typeof anchor !== "object" || Array.isArray(anchor))
+		throw new Error("mining economy: invalid queue anchor");
+	const a = anchor as Record<string, unknown>;
+	const { seed, government, active, total, ...state } = a;
+	const context = {
+		seed: seed as number,
+		government: government as number,
+		active: active as number,
+		total: total as number,
+	};
+	if (state.phase === "down" && state.endsAt === undefined)
+		state.endsAt = (state.at as number) + (state.left as number);
+	const checkedAnchor = validateCapabilityTime(context, state);
 	nonnegative("queue from time", fromS);
 	nonnegative("queue to time", toS);
 	if (toS < fromS || workS.length > 8)
@@ -204,7 +216,7 @@ export function advanceCandidateQueue({
 	const remainingWorkS = workS.map((work) =>
 		nonnegative("remaining work", work),
 	);
-	const serviceS = query(checkedAnchor, fromS, toS);
+	const serviceS = queryCapabilityTime(context, checkedAnchor, fromS, toS);
 	let availableS = serviceS;
 	for (let i = 0; i < remainingWorkS.length; i++) {
 		const consumed = Math.min(availableS, remainingWorkS[i]);

@@ -1,6 +1,9 @@
 # Mining economy instrument preparation — node #922
 
-This is an incomplete, offline instrument checkpoint. It changes no production
+Historical checkpoint at a19b4e36, before the principal authorized candidate design.
+Current instrument and reproduction: [Mining and refining candidate comparison](node-922-mining-economy.md).
+
+This was an incomplete, offline instrument checkpoint. It changes no production
 source, balance, save format or mining flag behavior. It does not compare full
 mining routes with trading and cannot justify balance ratification in #923.
 
@@ -22,8 +25,8 @@ price/stock candidate contract was found among the named blockers. The brief's
 Assumptions require stopping rather than silently choosing missing policy.
 
 The implementation therefore exposes explicit-input financial arithmetic and a
-readiness inventory. It chooses no raw price or stock law. The default command
-reports `status: incomplete` with missing inputs and remaining comparisons.
+readiness inventory. It chooses no raw price or stock law. At that revision, the default CLI
+reported `status: incomplete` with missing inputs and remaining comparisons.
 
 ## What is implemented
 

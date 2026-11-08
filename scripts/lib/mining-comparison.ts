@@ -210,7 +210,7 @@ function validate(c: Candidate) {
 	integer("raw stock min", c.rawStockMinT, 0, 63);
 	integer("raw stock max", c.rawStockMaxT, c.rawStockMinT, 63);
 	if (
-		!["poor", "standard", "rich"].includes(c.goodMinimumGrade) ||
+		!ORE_GRADES.includes(c.goodMinimumGrade) ||
 		!c.seeds?.length ||
 		!c.galaxies?.length ||
 		!c.loadouts?.length
@@ -281,25 +281,29 @@ export function serviceQueue(
 	valid("queue time", to);
 	const anchor = initialCapabilityTime(context, 0);
 	let cursor = 0;
+	const total = queryCapabilityTime(context, anchor, 0, to);
 	return jobs.map((job) => {
 		valid("job work", job.workS);
 		valid("submission", job.submittedAt, 0, to);
-		const start = Math.max(cursor, job.submittedAt);
-		const available = queryCapabilityTime(context, anchor, start, to);
+		const start = Math.max(
+			cursor,
+			queryCapabilityTime(context, anchor, 0, job.submittedAt),
+		);
+		const available = total - start;
 		const workLeftS = Math.max(0, job.workS - available);
 		if (workLeftS > 0) {
-			cursor = to;
+			cursor = total;
 			return { ...job, workLeftS, completedAt: null as number | null };
 		}
-		let lo = start,
+		let lo = job.submittedAt,
 			hi = to;
 		for (let i = 0; i < 48; i++) {
 			const mid = (lo + hi) / 2;
-			if (queryCapabilityTime(context, anchor, start, mid) >= job.workS)
+			if (queryCapabilityTime(context, anchor, 0, mid) >= start + job.workS)
 				hi = mid;
 			else lo = mid;
 		}
-		cursor = hi;
+		cursor = start + job.workS;
 		return { ...job, workLeftS, completedAt: hi };
 	});
 }
@@ -366,15 +370,35 @@ interface Debit {
 	surveyedAt?: number;
 }
 
-function scenario(
-	world: World,
-	seed: number,
-	galaxy: number,
-	port: Port,
-	plan: FieldPlan,
-	fitInput: FitInput,
-	c: Candidate,
-	elapsedS: number,
+interface ComparisonCache {
+	baselines: Map<string, ReturnType<typeof run>>;
+	services: Map<string, ReturnType<typeof serviceCalendar>>;
+}
+const comparisonCache = (): ComparisonCache => ({
+	baselines: new Map(),
+	services: new Map(),
+});
+function secondRefinery(world: World, port: Port, tankLy: number) {
+	const record = port.record;
+	return world.systems
+		.filter(
+			(r) =>
+				r.index !== record.index && distanceLy(record.pos, r.pos) <= tankLy,
+		)
+		.sort(
+			(a, b) => distanceLy(record.pos, a.pos) - distanceLy(record.pos, b.pos),
+		)
+		.flatMap((r) => portsOf(r, world.contentsFor(r)))
+		.find((p) => p.station.type === "refinery");
+}
+interface ScenarioInput {
+	seed: number;
+	galaxy: number;
+	port: Port;
+	plan: FieldPlan;
+	fitInput: FitInput;
+	c: Candidate;
+	elapsedS: number;
 	trade: {
 		elapsedS: number;
 		activeS: number;
@@ -383,30 +407,31 @@ function scenario(
 		crPerMinute: number;
 		earnedCr: number;
 		hops: number;
-	},
-	path: "raw" | "refine" | "buy-refine" | "refine-parallel",
-	buyOre?: { family: OreFamily; grade: OreGrade },
-) {
+	};
+	path: "raw" | "refine" | "buy-refine" | "refine-parallel";
+	buyOre?: { family: OreFamily; grade: OreGrade };
+	other?: Port;
+	cache: ComparisonCache;
+}
+function scenario({
+	seed,
+	galaxy,
+	port,
+	plan,
+	fitInput,
+	c,
+	elapsedS,
+	trade,
+	path,
+	buyOre,
+	other,
+	cache,
+}: ScenarioInput) {
 	const fit = makeMiningFit(fitInput.hull, fitInput.size, fitInput.grade);
 	const holdT = Math.floor(fit.capacity.holdT);
 	const record = port.record,
 		contents = port.contents;
 	const rocks = fieldRocks(record, plan).slice(0, c.rockLimit);
-	const other =
-		path === "refine-parallel"
-			? world.systems
-					.filter(
-						(r) =>
-							r.index !== record.index &&
-							distanceLy(record.pos, r.pos) <= fit.capacity.fuelCapacityLy,
-					)
-					.sort(
-						(a, b) =>
-							distanceLy(record.pos, a.pos) - distanceLy(record.pos, b.pos),
-					)
-					.flatMap((r) => portsOf(r, world.contentsFor(r)))
-					.find((p) => p.station.type === "refinery")
-			: undefined;
 	if (path === "refine-parallel" && !other)
 		throw new Error(
 			"mining comparison: parallel scenario needs a second reachable refinery",
@@ -458,9 +483,16 @@ function scenario(
 	const poolDebt: Record<string, Money> = {};
 	let banked = money.fromNumber(0);
 	const venues = [port, ...(other ? [other] : [])];
-	const services = new Map(
-		venues.map((p) => [p.key, serviceCalendar(seed, galaxy, p, elapsedS)]),
-	);
+	const services = new Map(venues.map((p) => [p.key, cachedService(p)]));
+	function cachedService(p: Port) {
+		const key = JSON.stringify([seed, galaxy, p.key, elapsedS]);
+		let service = cache.services.get(key);
+		if (!service) {
+			service = serviceCalendar(seed, galaxy, p, elapsedS);
+			cache.services.set(key, service);
+		}
+		return service;
+	}
 	function advance(dt: number, active: boolean) {
 		const next = Math.min(elapsedS, t + valid("time step", dt));
 		const basis = approximate(
@@ -548,6 +580,15 @@ function scenario(
 		advance(dt, active);
 		condition = stepCondition(condition, t - start, false).condition;
 	}
+	function outstanding() {
+		return jobs.filter(
+			(j) =>
+				j.port.key === venue.key &&
+				(j.workLeftS > 0 ||
+					j.productG - j.collectedG >=
+						recipeFor(j.family, j.grade).nativeUnitG),
+		).length;
+	}
 	function unload() {
 		if (t >= elapsedS) return;
 		trips++;
@@ -608,13 +649,7 @@ function scenario(
 			const recipe = recipeFor(item.family, item.grade);
 			const fee = price(c.feeCrPerT, item.tonnes);
 			if (
-				jobs.filter(
-					(j) =>
-						j.port.key === venue.key &&
-						(j.workLeftS > 0 ||
-							j.productG - j.collectedG >=
-								recipeFor(j.family, j.grade).nativeUnitG),
-				).length >= 8 ||
+				outstanding() >= 8 ||
 				services.get(venue.key)!(t, Math.min(elapsedS, t + 1e-6)) === 0 ||
 				!spend(fee, recipe.product)
 			) {
@@ -637,16 +672,7 @@ function scenario(
 				submittedAt: t,
 				doneAt: null,
 			});
-			maxOutstandingSlots = Math.max(
-				maxOutstandingSlots,
-				jobs.filter(
-					(j) =>
-						j.port.key === venue.key &&
-						(j.workLeftS > 0 ||
-							j.productG - j.collectedG >=
-								recipeFor(j.family, j.grade).nativeUnitG),
-				).length,
-			);
+			maxOutstandingSlots = Math.max(maxOutstandingSlots, outstanding());
 		}
 		cargo = retained;
 		let free = holdT - cargo.reduce((n, i) => n + i.tonnes, 0);
@@ -785,8 +811,8 @@ function scenario(
 			debit.surveyedAt = t;
 		}
 		const drilling = fitInput.hull === "miner";
-		const gradeIndex = ["poor", "standard", "rich"].indexOf(deposit.grade);
-		const minimum = ["poor", "standard", "rich"].indexOf(c.goodMinimumGrade);
+		const gradeIndex = ORE_GRADES.indexOf(deposit.grade);
+		const minimum = ORE_GRADES.indexOf(c.goodMinimumGrade);
 		if (drilling && (deposit.deepT === 0 || gradeIndex < minimum)) {
 			idle(c.positioningFloorS, true);
 			emptyVisits++;
@@ -1086,6 +1112,9 @@ function distribution(values: number[]) {
 
 /** Deterministic model predictions, with all candidate inputs distinct from consequences. */
 export function comparison(c: Candidate) {
+	return compare(c, comparisonCache());
+}
+function compare(c: Candidate, cache: ComparisonCache) {
 	validate(c);
 	const rows: ReturnType<typeof scenario>[] = [];
 	const refusedScenarios: {
@@ -1111,16 +1140,28 @@ export function comparison(c: Candidate) {
 				.slice(0, c.systemsPerWorld);
 			for (const fit of c.loadouts) {
 				const capacity = makeMiningFit(fit.hull, fit.size, fit.grade).capacity;
-				const baseline = run(world, c.hours, {
-					holdT: capacity.holdT,
-					tankLy: capacity.fuelCapacityLy,
-					startCr: c.startCr,
-					shop: false,
-					stopAtKit: false,
-					remembers: true,
-					dockSeconds: c.dockS,
-					startPolicy: "developed",
-				});
+				const baselineKey = JSON.stringify([
+					seed,
+					galaxy,
+					capacity.holdT,
+					capacity.fuelCapacityLy,
+					c.hours,
+					c.startCr,
+					c.dockS,
+				]);
+				const baseline =
+					cache.baselines.get(baselineKey) ??
+					run(world, c.hours, {
+						holdT: capacity.holdT,
+						tankLy: capacity.fuelCapacityLy,
+						startCr: c.startCr,
+						shop: false,
+						stopAtKit: false,
+						remembers: true,
+						dockSeconds: c.dockS,
+						startPolicy: "developed",
+					});
+				cache.baselines.set(baselineKey, baseline);
 				const elapsedS = valid(
 					"realised trader clock",
 					baseline.minutes * 60,
@@ -1144,6 +1185,7 @@ export function comparison(c: Candidate) {
 						(p) => p.station.type === "refinery",
 					)!;
 					const fields = systemFields(record, contents);
+					const other = secondRefinery(world, port, capacity.fuelCapacityLy);
 					if (fit === c.loadouts[0]) {
 						systemsSeen++;
 						rarePresent += Number(fields.some((f) => f.profile === "rare"));
@@ -1153,17 +1195,7 @@ export function comparison(c: Candidate) {
 					}
 					for (const plan of fields)
 						for (const path of ["raw", "refine", "refine-parallel"] as const) {
-							if (
-								path === "refine-parallel" &&
-								!world.systems.some(
-									(r) =>
-										r.index !== record.index &&
-										distanceLy(record.pos, r.pos) <= capacity.fuelCapacityLy &&
-										world
-											.contentsFor(r)
-											.stations.some((s) => s.type === "refinery"),
-								)
-							) {
+							if (path === "refine-parallel" && !other) {
 								refusedScenarios.push({
 									seed,
 									galaxy,
@@ -1175,38 +1207,50 @@ export function comparison(c: Candidate) {
 								continue;
 							}
 							rows.push(
-								scenario(
-									world,
+								scenario({
 									seed,
 									galaxy,
 									port,
 									plan,
-									fit,
+									fitInput: fit,
 									c,
 									elapsedS,
 									trade,
 									path,
-								),
+									other: path === "refine-parallel" ? other : undefined,
+									cache,
+								}),
 							);
 						}
 					if (fit === c.loadouts[0]) {
-						const charted = fields.find((f) => f.profile === "charted")!;
+						const charted = fields.find((f) => f.profile === "charted");
+						if (!charted) {
+							refusedScenarios.push({
+								seed,
+								galaxy,
+								system: record.index,
+								fit,
+								path: "buy-refine",
+								reason: "no charted field for comparison fixture",
+							});
+							continue;
+						}
 						for (const family of ORE_FAMILIES)
 							for (const grade of ORE_GRADES)
 								rows.push(
-									scenario(
-										world,
+									scenario({
 										seed,
 										galaxy,
 										port,
-										charted,
-										fit,
+										plan: charted,
+										fitInput: fit,
 										c,
 										elapsedS,
 										trade,
-										"buy-refine",
-										{ family, grade },
-									),
+										path: "buy-refine",
+										buyOre: { family, grade },
+										cache,
+									}),
 								);
 					}
 				}
@@ -1305,6 +1349,7 @@ export function comparison(c: Candidate) {
 
 /** One-factor sensitivity retains each comparison, including failed targets and profitable cycles. */
 export function sensitivity(c: Candidate) {
+	const cache = comparisonCache();
 	const variants: [string, Partial<Candidate>][] = [
 		["base", {}],
 		...[0, 0.1, 10, 3600].map(
@@ -1342,7 +1387,7 @@ export function sensitivity(c: Candidate) {
 		variants: Object.fromEntries(
 			variants.map(([name, patch]) => [
 				name,
-				comparison({ ...c, ...patch, id: `${c.id}/${name}` }),
+				compare({ ...c, ...patch, id: `${c.id}/${name}` }, cache),
 			]),
 		),
 	};

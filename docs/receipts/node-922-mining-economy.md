@@ -90,3 +90,63 @@ not an automatic assertion that ordinary paid processing must lose money.
 Final measurement and review evidence is appended after the reviewed instrument
 revision is established. The initial candidate is not a recommendation: its
 failures must remain visible when the principal judges the exact table on #923.
+
+### Candidate v1 at instrument revision cc27e3d9
+
+The clean instrument at `cc27e3d9d3b5eed6c1608e19d58e74f1add8227b`
+produced 1,341 full-route samples on seeds 1/47/1234, galaxies 0/1,
+24 refinery systems and twelve compatible fits. Five systems had rare fields.
+Another 63 two-refinery scenarios were refused because no second refinery was
+reachable with the fitted tank. Those are absent from return distributions.
+
+| Scenario | N | Active Cr/min, median | Range | Median active return / matched good trade |
+| --- | ---: | ---: | ---: | ---: |
+| Courier 1/E, charted, raw | 24 | 9.54 | 5.50–19.31 | 0.022 |
+| Courier 1/E, charted, refine | 24 | 8.28 | 1.96–26.63 | 0.019 |
+| Miner 3/A, charted, raw | 24 | 18.90 | 8.97–68.96 | 0.049 |
+| Miner 3/A, charted, refine | 24 | 5.87 | -0.42–96.62 | 0.015 |
+| Miner 3/A, rare, raw | 5 | 56.52 | 16.13–205.19 | 0.163 |
+| Miner 3/A, rare, refine | 5 | 30.37 | -1.32–217.13 | 0.088 |
+
+The initial proposal **fails the mining target** under this sequential-survey
+policy. Its charted miner samples are all outside the instrument's explicit
+0.8–1.2 trade band. Refining does not reliably improve cash within one hour;
+that statement prices actual sold output, fees and pending custody rather than
+valuing custody as cash. The 360 fifteen-recipe purchase/refine scenarios expose
+75 profitable cash cycles. They are printed with exact identity and settlement,
+not hidden by a target clamp. There were 147 capacity-limited partial collection
+events; the outstanding-job count reached eight and never exceeded it.
+
+The sensitivity corpus uses seeds 1/47/1234, galaxy 0, the first two refinery
+systems per world and Courier 1/E / Miner 3/A: six systems, one rare field,
+132 samples per variant. Twelve variants retain their full input and output.
+The base scenario never returns to a previous rock within its one-hour window,
+so low recovery and ordinary lifetime changes have no effect there. The
+one-rock-loop stress does exercise the omitted boundary: 998 expired readings
+are re-surveyed and 152 visits re-mine a recovering rock. No swept mining sample
+beats its matched good-trade active return; raising recovery does not magically
+meet the target. Fast processing exposes more profitable purchase/refine cycles;
+slow processing ties up capital and leaves more pending output. These are
+model consequences, not approvals or observed human behavior.
+
+Machine-local full reports: `/tmp/mining922-reviewed-comparison.json` and
+`/tmp/mining922-reviewed-sensitivity.json`. The two committed candidate files and
+commands above reproduce them; their embedded revision and dirty-state marker
+are part of the evidence. The reports intentionally stay outside Git.
+
+### Capacity question raised during measurement
+
+The current base miner hold is **40 t** (`src/hull.ts`); the principal asked
+whether the hull's scale warrants much more. Re-running
+`node spikes/longwall-miner/measure-capacity.mjs` measured three closed skip
+shells at 1,047.22 m³ each, 3,141.66 m³ total. The study's stated 60–70% usable
+volume and assumed 1.5–2 t/m³ broken-ore density imply 2,827–4,398 t. This is a
+volume estimate, not structural or propulsion certification. A proposed 3,000 t
+study is physically motivated, but no new capacity, mass, thrust, price or module
+parameter was approved in that exchange. The comparison above uses current
+production capacities; it cannot settle the economics of that larger miner.
+
+That hull-scale decision and a more selective definition of a good deposit
+should precede any recommendation that the principal ratify a final balance
+on #923. Candidate v1 is evidence of failure and a reusable instrument, not a
+recommended final table.

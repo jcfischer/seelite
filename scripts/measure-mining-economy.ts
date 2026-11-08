@@ -41,6 +41,8 @@ if (import.meta.main) {
 					"scripts/measure-mining-economy.ts",
 					"scripts/lib/mining-batch.ts",
 					"scripts/lib/mining-comparison.ts",
+					"scripts/lib/mining-service.ts",
+					"src",
 					"scripts/lib/greedy-trader.ts",
 				],
 				{ cwd: `${import.meta.dir}/..`, encoding: "utf8" },

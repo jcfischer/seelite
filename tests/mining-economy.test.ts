@@ -108,7 +108,7 @@ test("partitioned input preserves exact material and committed costs", () => {
 
 test("queue uses approved outage service seconds and never banks idle service", () => {
 	const anchor = {
-		seed: 0,
+		seed: 1,
 		government: 0,
 		active: 0,
 		total: 0,

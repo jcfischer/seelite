@@ -273,3 +273,39 @@ test("CLI compares explicit candidates, labels exact revision, and refuses unsup
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("a known initial outage contributes zero service and independent queues each receive their own uptime", () => {
+	const {
+		initialCapabilityTime,
+		queryCapabilityTime,
+	} = require("../src/capability-time");
+	let seed = 0;
+	let context = { seed, government: 0, active: 1, total: 1 };
+	while (initialCapabilityTime(context, 0).phase !== "down" && seed < 1000)
+		context = { ...context, seed: ++seed };
+	const anchor = initialCapabilityTime(context, 0);
+	expect(anchor.phase).toBe("down");
+	const during = anchor.endsAt / 2;
+	expect(
+		serviceQueue(context, [{ workS: 50, submittedAt: 0 }], during)[0].workLeftS,
+	).toBe(50);
+	const end = anchor.endsAt + 100;
+	expect(queryCapabilityTime(context, anchor, 0, end)).toBeCloseTo(100, 6);
+	const serial = serviceQueue(
+		context,
+		[
+			{ workS: 50, submittedAt: 0 },
+			{ workS: 50, submittedAt: 0 },
+		],
+		end,
+	);
+	const independent = serviceQueue(
+		context,
+		[{ workS: 50, submittedAt: 0 }],
+		end,
+	);
+	expect(serial[0].completedAt).toBeCloseTo(anchor.endsAt + 50, 5);
+	expect(serial[1].completedAt).toBeCloseTo(anchor.endsAt + 100, 5);
+	expect(independent[0].completedAt).toBe(serial[0].completedAt);
+	expect(independent[0].completedAt).toBeLessThan(serial[1].completedAt!);
+});
