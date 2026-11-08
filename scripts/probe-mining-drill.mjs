@@ -187,7 +187,11 @@ try {
 	const skips = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const ref = g.rockRef(window.__drillRock);
-		const saved = { ...g.minedOre };
+		window.__skipFixture = {
+			ore: { ...g.minedOre },
+			delivered: g.drill.delivered,
+			row: g.rockDepositRow(ref),
+		};
 		g.minedOre = {};
 		const emptyMass = g.flownShipMassT;
 		g.minedOre = { "Boundary ore": 2999 };
@@ -201,6 +205,8 @@ try {
 			g.drill.contact,
 			1,
 		);
+		g.view = "cockpit";
+		g.setHeadLook("right");
 		g.rightTab = "Hold";
 		g.updateCockpit();
 		for (let i = 0; i < 2; i++)
@@ -219,7 +225,6 @@ try {
 				lines: [],
 			}).freeT,
 		};
-		g.minedOre = saved;
 		return result;
 	});
 	await page.keyboard.up("Space");
@@ -237,6 +242,14 @@ try {
 		skips.ore?.includes("RAW ORE 3000 / 3000 t"),
 		JSON.stringify(skips),
 	);
+	await page.screenshot({ path: "probe-shots/mining-drill/ore-skips.png" });
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.minedOre = window.__skipFixture.ore;
+		g.drill.delivered = window.__skipFixture.delivered;
+		g.putDepositRow(g.rockRef(window.__drillRock), window.__skipFixture.row);
+		g.setHeadLook("forward");
+	});
 	const switches = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const rows = [];
