@@ -5,6 +5,7 @@
  *   SEELITE_PROBE_RENDERER=hardware node scripts/measure-asteroid-field-cost.mjs
  *   VIEWS=close,inside,edge,far BLOCKS=12 ORDER_SEED=7 node scripts/measure-asteroid-field-cost.mjs
  *   INSTALL=1 node scripts/measure-asteroid-field-cost.mjs      # cold install stalls
+ *   SYSTEM=0 KIND=rare ANTIALIAS=2 OCCLUSION=actual,off,on,shadow,ao node scripts/measure-asteroid-field-cost.mjs
  *
  * The method is `spikes/asteroid-lod-950/measure.mjs`'s: its own dev server,
  * headed, the player's renderer asserted, 1440x900 at device scale 2, chase
@@ -18,6 +19,11 @@
  * (a 2 s window) and re-stands the camera at the same field-frame point, so the
  * field's orbit does not carry the view away; that re-standing is in both arms.
  * The control arm hides the field and skips its update.
+ *
+ * Occlusion arms: `off` and `on` pin the pair, `shadow` and `ao` pin one half,
+ * and `actual` un-pins it so each arm reads the state the gate gives that arm:
+ * a field arm with a level-0 rock on high opens it while the no-field control
+ * stays shut. `actual` is the state a pilot flies in.
  *
  * `INSTALL=1` measures instead the swap from points to rocks on a cold boot:
  * the longest frame interval while the rocks fetch, decode, build and warm,
@@ -39,13 +45,23 @@ const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20261019);
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5201);
 const VIEWS = (process.env.VIEWS ?? "close,inside,edge,far").split(",");
-const OCCLUSION = (process.env.OCCLUSION ?? "off,on")
-	.split(",")
-	.map((s) => s === "on");
+const OCCLUSION_PINS = {
+	off: [false, false],
+	on: [true, true],
+	shadow: [true, false],
+	ao: [false, true],
+	actual: [],
+};
+const OCCLUSION = (process.env.OCCLUSION ?? "actual,off,on").split(",");
+for (const name of OCCLUSION)
+	if (!OCCLUSION_PINS[name]) throw new Error(`unknown occlusion arm ${name}`);
+const ANTIALIAS = Number(process.env.ANTIALIAS ?? 0);
+const KIND = process.env.KIND ?? "charted";
+const CAMERA = process.env.CAMERA ?? "chase";
 const QUALITIES = ["high", "low"];
 const ARMS = QUALITIES.flatMap((q) => [`none@${q}`, `field@${q}`]);
 const WORLD = 0x5ee11e;
-const SYSTEM = 173;
+const SYSTEM = Number(process.env.SYSTEM ?? 173);
 
 const releaseLock = await holdProbeLockOrExit("asteroid field cost");
 console.log("  host load average at start:", loadavg().join(" / "));
@@ -65,11 +81,12 @@ await guardedOrigin(origin);
 const browser = await launchChromium({ headless: false });
 
 /** In the page: stand the camera at a field-frame point looking along field +x. */
-const SETUP = async (install) => {
+const SETUP = async (kind) => {
 	const g = window.__seelite;
 	g.clockHeld = true;
 	const A = await import("/src/asteroid-field.ts");
-	const draw = g.fields[0];
+	const draw = g.fields.find((d) => d.plan.profile === kind);
+	if (!draw) throw new Error(`system has no ${kind} field`);
 	const plan = draw.plan;
 	const T0 = g.world.gameTime;
 	const Q = plan.rotation;
@@ -81,11 +98,25 @@ const SETUP = async (install) => {
 		(best, r, i, all) => (r.radiusKm > all[best].radiusKm ? i : best),
 		0,
 	);
-	const semi = 24;
+	const semi = Math.max(...draw.rocks.map((r) => Math.abs(r.anchor.x)));
+	const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+	const densest = draw.rocks
+		.map((rock) => ({
+			rock,
+			n: draw.rocks.filter((o) => dist(rock.anchor, o.anchor) < 8).length,
+		}))
+		.sort((a, b) => b.n - a.n || a.rock.slot - b.rock.slot)[0];
+	const denseAt = A.rockLocal(densest.rock, T0);
+	const dense = [2.5, 4, 6, 8]
+		.map((d) => ({ ...denseAt, x: denseAt.x - d }))
+		.find((p) =>
+			draw.rocks.every((r) => dist(p, A.rockLocal(r, T0)) > r.radiusKm + 0.1),
+		);
 	const STAND = {
 		inside: { x: 1.2, y: 1.2, z: 1.2 },
 		edge: { x: -semi - 2, y: 0, z: 0 },
 		far: { x: -semi - 200, y: 0, z: 0 },
+		dense,
 		close: (() => {
 			const r = draw.rocks[big];
 			const at = A.rockLocal(r, T0);
@@ -113,6 +144,10 @@ const SETUP = async (install) => {
 		g.fieldDraws = arm === "none" ? [] : saved;
 		for (const d of saved) d.root.visible = arm !== "none";
 	};
+	window.__occlusion = (name, pins) => {
+		if (name === "actual") g.setOcclusion();
+		else g.setOcclusion(pins[0], pins[1]);
+	};
 	window.__view = (v) => {
 		view = v;
 		g.world.gameTime = T0;
@@ -125,7 +160,13 @@ const SETUP = async (install) => {
 		g.render(0);
 	};
 	window.__levels = () => [...draw.perLevel];
-	return { rocks: draw.rocks.length, shapes: draw.shapes, plan: plan.id };
+	return {
+		rocks: draw.rocks.length,
+		shapes: draw.shapes,
+		plan: plan.id,
+		biggestKm: draw.rocks[big].radiusKm,
+		densest: densest.n,
+	};
 };
 
 try {
@@ -154,8 +195,10 @@ async function frameCost(page) {
 	);
 	await bootedGame(page, 180000);
 	const renderer = await assertPlayersRenderer(page, "measure");
-	await page.keyboard.press("v");
-	await page.waitForFunction(() => window.__seelite.view === "chase");
+	if (CAMERA === "chase") {
+		await page.keyboard.press("v");
+		await page.waitForFunction(() => window.__seelite.view === "chase");
+	}
 	await page.waitForFunction(
 		() => window.__seelite.modelsSettled(),
 		undefined,
@@ -163,34 +206,37 @@ async function frameCost(page) {
 			timeout: 180000,
 		},
 	);
-	const setup = await page.evaluate(SETUP);
+	await page.evaluate((aa) => {
+		window.__seelite.settings.set("antialias", aa);
+	}, ANTIALIAS);
+	const setup = await page.evaluate(SETUP, KIND);
 	if (setup.shapes !== "authored")
 		throw new Error(`field is not drawing the authored rocks: ${setup.shapes}`);
 
 	const timed = (arm, occlusion) =>
 		page.evaluate(
-			([a, occ, frames]) => {
+			([a, name, pins, frames]) => {
 				const g = window.__seelite;
 				const gl = g.renderer.getContext();
 				window.__arm(a);
-				g.setOcclusion(occ, occ);
+				window.__occlusion(name, pins);
 				const sync = new Uint8Array(4);
-				window.__step();
+				for (let i = 0; i < 40; i++) window.__step();
 				gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
 				const started = performance.now();
 				for (let i = 0; i < frames; i++) window.__step();
 				gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
 				return (performance.now() - started) / frames;
 			},
-			[arm, occlusion, FRAMES],
+			[arm, occlusion, OCCLUSION_PINS[occlusion], FRAMES],
 		);
 	const info = (arm, occlusion) =>
 		page.evaluate(
-			([a, occ]) => {
+			([a, name, pins]) => {
 				const g = window.__seelite;
 				window.__arm(a);
-				g.setOcclusion(occ, occ);
-				window.__step();
+				window.__occlusion(name, pins);
+				for (let i = 0; i < 40; i++) window.__step();
 				const r = g.renderer;
 				const auto = r.info.autoReset;
 				r.info.autoReset = false;
@@ -200,19 +246,21 @@ async function frameCost(page) {
 					calls: r.info.render.calls,
 					triangles: r.info.render.triangles,
 					levels: window.__levels(),
+					gate: g.occlusionState?.open ?? null,
+					aoGate: g.occlusionState?.aoOpen ?? null,
 				};
 				r.info.autoReset = auto;
 				return out;
 			},
-			[arm, occlusion],
+			[arm, occlusion, OCCLUSION_PINS[occlusion]],
 		);
 
 	console.log(`  renderer: ${renderer}`);
 	console.log(
-		`  viewport: ${VIEWPORT.width}x${VIEWPORT.height} at device scale 2, chase, clock held`,
+		`  viewport: ${VIEWPORT.width}x${VIEWPORT.height} at device scale 2, ${CAMERA}, clock held`,
 	);
 	console.log(
-		`  field: world 0x${WORLD.toString(16)} system ${SYSTEM} ${setup.plan}, ${setup.rocks} rocks, the shipped path (${setup.shapes})`,
+		`  field: world 0x${WORLD.toString(16)} system ${SYSTEM} ${setup.plan}, ${setup.rocks} rocks, biggest ${setup.biggestKm.toFixed(3)} km, densest ${setup.densest} within 8 km, the shipped path (${setup.shapes}), antialias ${ANTIALIAS}`,
 	);
 	console.log(
 		`  ${BLOCKS} blocks per arm, ${FRAMES} frames per block, arm order shuffled from seed ${ORDER_SEED}`,
@@ -229,9 +277,7 @@ async function frameCost(page) {
 					blocks[arm].push(await timed(arm, occlusion));
 			const counts = {};
 			for (const arm of ARMS) counts[arm] = await info(arm, occlusion);
-			console.log(
-				`\n  view ${view}, occlusion ${occlusion ? "on (shadow + AO, pinned)" : "off (pinned)"}`,
-			);
+			console.log(`\n  view ${view}, occlusion ${occlusion}`);
 			console.log(
 				"  arm                 ms/frame   Δ vs none           calls  triangles  levels L0/L1/L2/pt",
 			);
@@ -247,7 +293,7 @@ async function frameCost(page) {
 						occlusion,
 						calls: counts[arm].calls - counts[base].calls,
 					};
-				const lv = arm === base ? "" : counts[arm].levels.join("/");
+				const lv = `${arm === base ? "" : counts[arm].levels.join("/")} shadow gate ${counts[arm].gate ? "open" : "shut"}, ao gate ${counts[arm].aoGate ? "open" : "shut"}`;
 				console.log(
 					`  ${arm.padEnd(18)} ${median(blocks[arm]).toFixed(3).padStart(8)}  ${arm === base ? "".padEnd(18) : `${d >= 0 ? "+" : ""}${d.toFixed(3)} ${sep}`.padEnd(18)}  ${String(counts[arm].calls - counts[base].calls).padStart(5)}  ${String(counts[arm].triangles - counts[base].triangles).padStart(9)}  ${lv}`,
 				);
@@ -259,7 +305,7 @@ async function frameCost(page) {
 	);
 	for (const q of QUALITIES)
 		console.log(
-			`    ${q.padEnd(5)} +${worst[q].ms.toFixed(3)} ms at ${worst[q].view}, occlusion ${worst[q].occlusion ? "on" : "off"}, +${worst[q].calls} calls`,
+			`    ${q.padEnd(5)} +${worst[q].ms.toFixed(3)} ms at ${worst[q].view}, occlusion ${worst[q].occlusion}, +${worst[q].calls} calls`,
 		);
 }
 
@@ -297,7 +343,7 @@ async function installCold(page) {
 		undefined,
 		{ timeout: 60000 },
 	);
-	const setup = await page.evaluate(SETUP);
+	const setup = await page.evaluate(SETUP, KIND);
 	console.log("  field built, camera stood");
 	await page.evaluate(() => window.__view("inside"));
 	// The queue is serial and the rocks are the last of this system's models:

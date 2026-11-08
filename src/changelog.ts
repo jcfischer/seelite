@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1043 — sentence approved by the principal, 2026-11-07.
+	{
+		date: "2026-11-08",
+		text: "Asteroid fields spread into irregular clusters and gaps.",
+		node: 1209,
+	},
 	{
 		date: "2026-11-07",
 		text: "Rare asteroid fields appear on your instruments once you fly within 1,000 km of their centres, with regional Long-Range Scanner leads helping you find them.",

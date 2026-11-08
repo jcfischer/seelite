@@ -1,0 +1,151 @@
+{
+	"saveSchemaVersion": 19,
+	"world": {
+		"worldSchemaVersion": 4,
+		"worldGeneratorVersion": 11,
+		"seed": 47,
+		"gameTime": 7200,
+		"galaxies": [
+			{
+				"galaxyIndex": 0,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 },
+				"deposits": {
+					"fieldGeneratorVersion": 1,
+					"fingerprints": {
+						"0:field-00": 2255719209,
+						"4:field-01": 3221121959
+					},
+					"rows": {
+						"0:field-00:11": { "surface": 40, "at": 7000, "surveyedAt": 7000 },
+						"0:field-00:12": { "deep": 12, "at": 7100 },
+						"0:field-00:13": { "surveyedAt": 7150 },
+						"4:field-01:2": { "surface": 40, "at": 7000, "surveyedAt": 7000 },
+						"4:field-01:6": { "deep": 12, "at": 7100 },
+						"4:field-01:7": { "surveyedAt": 7150 }
+					}
+				},
+				"fieldDiscoveries": ["4:field-01"]
+			},
+			{
+				"galaxyIndex": 1,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 2,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 3,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 4,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 5,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 6,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 7,
+				"capabilityTime": { "genesisAt": 0, "anchors": {} },
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			}
+		],
+		"integrity": 717311955
+	},
+	"commander": {
+		"sweepReadings": [],
+		"requests": {
+			"byId": {},
+			"leadsById": {},
+			"entrustedByLotId": {},
+			"trackedRequestId": null
+		},
+		"state": {
+			"credits": 54321,
+			"cargo": {},
+			"loadout": {
+				"h1": { "module": "pulse-laser", "size": 3, "grade": "E" },
+				"i1": { "module": "cargo-scoop", "size": 1, "grade": "E" },
+				"plant": { "module": "power-plant", "size": 2, "grade": "E" }
+			},
+			"fuelLy": 6,
+			"hull": "miner"
+		},
+		"galaxyIndex": 0,
+		"systemIndex": 0,
+		"dockedAt": null,
+		"chargeAu": 0,
+		"permadeath": false,
+		"firstDay": "free",
+		"txSeq": 0,
+		"ladders": {
+			"banked": { "combat": 0, "trade": 0, "exploration": 0 },
+			"visited": { "0": { "systems": [0], "stations": [] } },
+			"basis": {},
+			"playedS": 0,
+			"capstoneAt": null
+		},
+		"flight": {
+			"pos": [0, 0, 0],
+			"vel": [0, 0, 0],
+			"orientation": [0, 0, 0, 1],
+			"regime": "normal",
+			"throttle": 0,
+			"rates": [0, 0, 0]
+		}
+	},
+	"integrity": 4249020032
+}

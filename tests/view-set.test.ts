@@ -229,6 +229,14 @@ describe("the view set itself", () => {
 			["field-discovery-unknown", 47],
 			["field-discovery-lead", 47],
 			["field-discovery-known", 47],
+			["asteroid-field-charted-far", 0x5ee11e],
+			["asteroid-field-rare-far", 0x5ee11e],
+			["asteroid-field-charted-side", 0x5ee11e],
+			["asteroid-field-rare-side", 0x5ee11e],
+			["asteroid-field-charted-overview", 0x5ee11e],
+			["asteroid-field-rare-overview", 0x5ee11e],
+			["asteroid-field-charted-dense", 0x5ee11e],
+			["asteroid-field-rare-dense", 0x5ee11e],
 			["mining-survey-navigation", 0x5ee11e],
 		]);
 		// Half the reason, held here. The other half — that the fixture has no
@@ -262,8 +270,8 @@ describe("the view set itself", () => {
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
-		// it, one frame each.
-		expect(VIEWS.length).toBe(101);
+		// it, one frame each. Node #1209 adds eight organic field stands.
+		expect(VIEWS.length).toBe(109);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -853,7 +861,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 101)");
+		expect(html).toContain("Selected canonical views (3 of 109)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -890,7 +898,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–40.6s");
+		expect(html).toContain("· clock 0.6–43.8s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1180,6 +1188,14 @@ describe("the rim look row #480 added", () => {
 			"field-discovery-unknown",
 			"field-discovery-lead",
 			"field-discovery-known",
+			"asteroid-field-charted-far",
+			"asteroid-field-rare-far",
+			"asteroid-field-charted-side",
+			"asteroid-field-rare-side",
+			"asteroid-field-charted-overview",
+			"asteroid-field-rare-overview",
+			"asteroid-field-charted-dense",
+			"asteroid-field-rare-dense",
 			"mining-survey-navigation",
 			"capability-market-recovered",
 			"npc-departure",

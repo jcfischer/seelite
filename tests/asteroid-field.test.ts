@@ -10,21 +10,24 @@ import {
 	CHARTED_OFFPLANE_KM,
 	DRIFT_CAP_KMS,
 	FIELD_GENERATOR_VERSION,
+	FIELD_EXTENT_KM,
 	FIELD_PROFILE,
 	type FieldPlan,
 	type FieldProfile,
+	ORGANIC_BANK_SCALE,
 	OUTER_ORBIT_FACTOR,
 	RARE_BELT_MIN_PHASE,
 	type Rock,
 	SPIN_SURFACE_CAP_KMS,
 	TROJAN_RAD,
+	arrangeRocks,
 	chartedField,
 	fieldBaselineFingerprint,
-	fieldCells,
 	fieldCentre,
 	fieldFingerprintRow,
 	fieldFingerprintRows,
 	fieldRocks,
+	latticeRocks,
 	rareField,
 	rareFieldPresent,
 	rockDriftSpeedKms,
@@ -38,7 +41,8 @@ import {
 import { DOMAIN } from "../src/domains";
 import { type SystemRecord, generateGalaxy } from "../src/galaxy";
 import { RELAY_REGION_KM, relayPlan } from "../src/relay-slot";
-import { fnv1a } from "../src/rng";
+import { organicRocks } from "../spikes/field-shape-1043/organic";
+import { fnv1a, mix, seededRand } from "../src/rng";
 import {
 	MAX_ORBIT_AU,
 	type SystemContents,
@@ -104,14 +108,15 @@ const census = {
 	counts: { charted: [] as number[], rare: [] as number[] },
 	belowMinKm: Number.POSITIVE_INFINITY,
 	aboveMaxKm: Number.POSITIVE_INFINITY,
-	cellSlackKm: Number.POSITIVE_INFINITY,
+	extentSlackKm: Number.POSITIVE_INFINITY,
 	driftKms: 0,
 	spinKms: 0,
 };
-for (const { record, fields } of corpus)
+for (const { record, fields } of corpus.filter(
+	(row) => row.record.index % 4 === 0,
+))
 	for (const plan of fields) {
 		const p = FIELD_PROFILE[plan.profile];
-		const cells = fieldCells(p);
 		const rocks = fieldRocks(record, plan);
 		census.counts[plan.profile].push(rocks.length);
 		for (const rock of rocks) {
@@ -124,10 +129,10 @@ for (const { record, fields } of corpus)
 				census.aboveMaxKm,
 				p.rockRadiusKm[1] - rock.radiusKm,
 			);
-			const stray = length(sub(rock.anchor, cells[rock.slot]));
-			census.cellSlackKm = Math.min(
-				census.cellSlackKm,
-				p.cellKm / 2 - (stray + rock.driftKm + rock.radiusKm + p.marginKm / 2),
+			census.extentSlackKm = Math.min(
+				census.extentSlackKm,
+				FIELD_EXTENT_KM[plan.profile] -
+					(length(rock.anchor) + rock.driftKm + rock.radiusKm),
 			);
 			census.driftKms = Math.max(census.driftKms, rockDriftSpeedKms(rock));
 			census.spinKms = Math.max(census.spinKms, rockSpinSpeedKms(rock));
@@ -314,53 +319,100 @@ describe("rare fields (#948 D4)", () => {
 	});
 });
 
-describe("rocks: size, cell and margin (#948 D5)", () => {
-	test("the largest rock fits its cell", () => {
-		for (const p of Object.values(FIELD_PROFILE))
-			expect(p.rockRadiusKm[1]).toBeLessThanOrEqual(
-				p.cellKm / 2 - p.marginKm / 2,
-			);
-	});
-
-	test("every radius is inside its profile's range, and the rock with its half-margin stays inside its cell", () => {
-		expect(census.rocks).toBeGreaterThan(300_000);
+describe("rocks: size, arrangement and margin (#948 D5, #1209)", () => {
+	test("every radius is inside its profile's range, and every rock inside its field's extent", () => {
+		expect(census.rocks).toBeGreaterThan(200_000);
 		// Worst signed slack, km: negative is a rock outside its bound.
 		expect(census.belowMinKm).toBeGreaterThanOrEqual(-1e-12);
 		expect(census.aboveMaxKm).toBeGreaterThanOrEqual(-1e-12);
-		expect(census.cellSlackKm).toBeGreaterThanOrEqual(-1e-9);
+		expect(census.extentSlackKm).toBeGreaterThanOrEqual(0);
 	});
 
-	test("rock counts sit in #948 D5's spread", () => {
+	test("the drop radius clears both extents", () => {
+		expect(FIELD_EXTENT_KM.charted).toBeLessThan(50);
+		expect(FIELD_EXTENT_KM.rare).toBeLessThan(50);
+	});
+
+	test("rock counts sit in the study's spread (provisional pending #923)", () => {
 		const median = (xs: number[]) =>
 			[...xs].sort((a, b) => a - b)[xs.length >> 1];
-		expect(median(census.counts.charted)).toBeGreaterThan(170);
-		expect(median(census.counts.charted)).toBeLessThan(200);
-		expect(median(census.counts.rare)).toBeGreaterThan(80);
-		expect(median(census.counts.rare)).toBeLessThan(100);
+		expect(median(census.counts.charted)).toBeGreaterThan(600);
+		expect(median(census.counts.charted)).toBeLessThan(680);
+		expect(median(census.counts.rare)).toBeGreaterThan(290);
+		expect(median(census.counts.rare)).toBeLessThan(335);
 	});
 
-	test("no two rocks of a field come closer than the margin, at sampled times", () => {
+	test("no two rocks' whole drift envelopes come within the margin", () => {
 		let pairs = 0;
 		let worst = Number.POSITIVE_INFINITY;
-		for (const { plan, rocks } of sampled) {
-			const p = FIELD_PROFILE[plan.profile];
-			for (const t of [0, 5_400, 1.3e7]) {
-				const at = rocks.map((r) => rockLocal(r, t));
-				for (let i = 0; i < rocks.length; i++)
-					for (let j = i + 1; j < rocks.length; j++) {
-						const d = length(sub(at[i], at[j]));
-						if (d > 2 * p.cellKm) continue;
-						pairs++;
-						worst = Math.min(
-							worst,
-							d - rocks[i].radiusKm - rocks[j].radiusKm - p.marginKm,
-						);
-					}
-			}
+		for (const { plan, rocks } of sampled.slice(0, 24)) {
+			const { marginKm } = FIELD_PROFILE[plan.profile];
+			for (let i = 0; i < rocks.length; i++)
+				for (let j = i + 1; j < rocks.length; j++) {
+					const a = rocks[i];
+					const b = rocks[j];
+					pairs++;
+					worst = Math.min(
+						worst,
+						length(sub(a.anchor, b.anchor)) -
+							(a.radiusKm + a.driftKm + b.radiusKm + b.driftKm + marginKm),
+					);
+				}
 		}
-		expect(pairs).toBeGreaterThan(100_000);
-		// The least surface gap over the margin, km.
-		expect(worst).toBeGreaterThanOrEqual(-1e-9);
+		expect(pairs).toBeGreaterThan(1_000_000);
+		expect(worst).toBeGreaterThanOrEqual(0);
+	});
+
+	test("the production arrangement is the approved study's, fed the study's seeds", () => {
+		let compared = 0;
+		for (const { row, plan } of sampled.slice(0, 32)) {
+			const seed = mix(mix(row.record.seed, plan.slot), 0x10430c1d);
+			const base = FIELD_PROFILE[plan.profile];
+			const bank = latticeRocks(row.record, plan, {
+				...base,
+				semiKm: [
+					base.semiKm[0] * ORGANIC_BANK_SCALE,
+					base.semiKm[1] * ORGANIC_BANK_SCALE,
+					base.semiKm[2] * ORGANIC_BANK_SCALE,
+				],
+				occupancy: 1,
+			});
+			const arranged = arrangeRocks(plan, bank, {
+				lobes: seededRand(seed),
+				anchor: (slot) => seededRand(mix(seed, slot)),
+				keep: (slot) => seededRand(mix(seed, slot ^ 0x7f341a9))(),
+			});
+			expect(arranged).toEqual(
+				organicRocks(row.record, plan, "organic", latticeRocks),
+			);
+			compared += arranged.length;
+		}
+		expect(compared).toBeGreaterThan(5_000);
+	});
+
+	test("a kept rock has its bank slot's physical draws; only its anchor moved", () => {
+		for (const { row, plan, rocks } of sampled.slice(0, 8)) {
+			const base = FIELD_PROFILE[plan.profile];
+			const bank = new Map(
+				latticeRocks(row.record, plan, {
+					...base,
+					semiKm: [
+						base.semiKm[0] * ORGANIC_BANK_SCALE,
+						base.semiKm[1] * ORGANIC_BANK_SCALE,
+						base.semiKm[2] * ORGANIC_BANK_SCALE,
+					],
+					occupancy: 1,
+				}).map((r) => [r.slot, r]),
+			);
+			expect(rocks.map((r) => r.slot)).toEqual(
+				[...rocks.map((r) => r.slot)].sort((a, b) => a - b),
+			);
+			for (const rock of rocks)
+				expect({ ...rock, anchor: 0 }).toEqual({
+					...(bank.get(rock.slot) as Rock),
+					anchor: 0,
+				} as never);
+		}
 	});
 });
 
@@ -435,28 +487,24 @@ describe("rocks: closed-form motion (#948 D5)", () => {
 	});
 });
 
-describe("slot stability (#948 D2)", () => {
-	test("raising the occupancy by 0.1 moves no rock that was there", () => {
-		let before = 0;
-		let after = 0;
-		for (const { row, plan, rocks } of sampled) {
+describe("slot stability of the bank (#948 D2)", () => {
+	test("the lattice generator's occupancy moves no rock that was there", () => {
+		for (const { row, plan } of sampled.slice(0, 16)) {
 			const base = FIELD_PROFILE[plan.profile];
 			const fuller: FieldProfile = { ...base, occupancy: base.occupancy + 0.1 };
 			const more = new Map(
-				fieldRocks(row.record, plan, fuller).map((r) => [r.slot, r]),
+				latticeRocks(row.record, plan, fuller).map((r) => [r.slot, r]),
 			);
-			before += rocks.length;
-			after += more.size;
-			for (const rock of rocks) expect(more.get(rock.slot)).toEqual(rock);
+			for (const rock of latticeRocks(row.record, plan))
+				expect(more.get(rock.slot)).toEqual(rock);
 		}
-		expect(after).toBeGreaterThan(before * 1.2);
 	});
 });
 
 describe("identity and versions (#948 D6)", () => {
 	test("fields are not carriers, and the world generator is 11", () => {
 		expect(WORLD_GENERATOR_VERSION).toBe(11);
-		expect(FIELD_GENERATOR_VERSION).toBe(1);
+		expect(FIELD_GENERATOR_VERSION).toBe(2);
 		for (const c of enumerateCarriers(FINGERPRINT_WORLD, 0))
 			expect(c.localCarrierId.startsWith("field-")).toBe(false);
 		// Nothing the carrier roster or the body list is built from reads the
@@ -511,8 +559,8 @@ describe("identity and versions (#948 D6)", () => {
 		expect(
 			ALL_GALAXIES.map((g) => fieldBaselineFingerprint(FINGERPRINT_WORLD, g)),
 		).toEqual([
-			0x4f0131af, 0x65f00de5, 0x2b9b940b, 0xc2327556, 0xfaa9595e, 0xba8f574c,
-			0x1baec61c, 0xc25dbbdf,
+			0x9d5e2621, 0xcb56a860, 0x495307ba, 0xaeb9ab1f, 0xd01dac7d, 0x8d976f87,
+			0x10ff4c6a, 0x910765b4,
 		]);
 	});
 

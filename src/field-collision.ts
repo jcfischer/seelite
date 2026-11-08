@@ -1,10 +1,9 @@
 import {
 	type FieldPlan,
 	type Rock,
-	fieldCells,
 	fieldCentre,
 	fieldCentreVelocity,
-	FIELD_PROFILE,
+	FIELD_EXTENT_KM,
 	fieldRocks,
 	rockPose,
 	rotateByQuat,
@@ -80,63 +79,64 @@ export async function prebuildRockPieces(
 
 const KEY_OFFSET = 128;
 const KEY_WIDTH = 256;
-const latticeKey = (i: number, j: number, k: number): number =>
+const bucketKey = (i: number, j: number, k: number): number =>
 	((i + KEY_OFFSET) * KEY_WIDTH + (j + KEY_OFFSET)) * KEY_WIDTH +
 	(k + KEY_OFFSET);
 
-interface FieldLattice {
+/** The broadphase bucket edge, km: an index, never a placement rule. */
+export const ROCK_BUCKET_KM = 2.5;
+
+interface FieldIndex {
 	readonly plan: FieldPlan;
-	readonly cellKm: number;
-	readonly extent: readonly [number, number, number];
-	readonly byCell: ReadonlyMap<number, Rock>;
+	readonly buckets: ReadonlyMap<number, Rock[]>;
+	readonly lo: readonly [number, number, number];
+	readonly hi: readonly [number, number, number];
+	readonly envelopeKm: number;
 }
 
-function buildLattice(system: System, plan: FieldPlan): FieldLattice {
-	const profile = FIELD_PROFILE[plan.profile];
-	const cells = fieldCells(profile);
-	const byCell = new Map<number, Rock>();
+function buildIndex(system: System, plan: FieldPlan): FieldIndex {
+	const buckets = new Map<number, Rock[]>();
+	const lo: [number, number, number] = [Infinity, Infinity, Infinity];
+	const hi: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+	let envelopeKm = 0;
 	for (const rock of fieldRocks(system.record, plan)) {
-		const c = cells[rock.slot];
-		byCell.set(
-			latticeKey(
-				Math.round(c.x / profile.cellKm),
-				Math.round(c.y / profile.cellKm),
-				Math.round(c.z / profile.cellKm),
-			),
-			rock,
+		const c = [rock.anchor.x, rock.anchor.y, rock.anchor.z].map((v) =>
+			Math.floor(v / ROCK_BUCKET_KM),
 		);
+		const key = bucketKey(c[0], c[1], c[2]);
+		const bucket = buckets.get(key);
+		if (bucket) bucket.push(rock);
+		else buckets.set(key, [rock]);
+		for (let axis = 0; axis < 3; axis++) {
+			lo[axis] = Math.min(lo[axis], c[axis]);
+			hi[axis] = Math.max(hi[axis], c[axis]);
+		}
+		envelopeKm = Math.max(envelopeKm, rock.radiusKm + rock.driftKm);
 	}
-	const n = (s: number): number => Math.ceil(s / profile.cellKm);
-	return {
-		plan,
-		cellKm: profile.cellKm,
-		extent: [n(profile.semiKm[0]), n(profile.semiKm[1]), n(profile.semiKm[2])],
-		byCell,
-	};
+	return { plan, buckets, lo, hi, envelopeKm };
 }
 
-function latticeRange(
-	lattice: FieldLattice,
+function bucketRange(
+	index: FieldIndex,
 	a: Vec3,
 	b: Vec3,
 	grow: number,
 ): [number, number][] {
-	const half = lattice.cellKm / 2;
 	return (["x", "y", "z"] as const).map((axis, n) => [
 		Math.max(
-			-lattice.extent[n],
-			Math.ceil((Math.min(a[axis], b[axis]) - grow - half) / lattice.cellKm),
+			index.lo[n],
+			Math.floor((Math.min(a[axis], b[axis]) - grow) / ROCK_BUCKET_KM),
 		),
 		Math.min(
-			lattice.extent[n],
-			Math.floor((Math.max(a[axis], b[axis]) + grow + half) / lattice.cellKm),
+			index.hi[n],
+			Math.floor((Math.max(a[axis], b[axis]) + grow) / ROCK_BUCKET_KM),
 		),
 	]);
 }
 
 interface SystemFields {
 	readonly plans: FieldPlan[];
-	readonly lattices: Map<string, FieldLattice>;
+	readonly indexes: Map<string, FieldIndex>;
 }
 
 const systems = new WeakMap<System, SystemFields>();
@@ -146,7 +146,7 @@ function fieldsOf(system: System): SystemFields {
 	if (!row) {
 		row = {
 			plans: systemFields(system.record, system.contents),
-			lattices: new Map(),
+			indexes: new Map(),
 		};
 		systems.set(system, row);
 	}
@@ -215,13 +215,12 @@ export function rockSolid(
  * exact derivative, so the closing speed `sweepShip` reads is relative to the
  * rock, spin included (#75).
  *
- * **The reach set is a lattice query.** A rock never leaves its cell
- * (`fieldRocks`: anchor offset plus drift plus half the margin stay inside the
- * cell's inscribed sphere), so the rocks a step can touch are those whose cell
- * lies within the ship's reach of its path. The path is taken into the field
- * frame at both ends, grown by the ship's reach and the field centre's own
- * bend over the step, and turned into a range of lattice indexes; no rock is
- * posed that the range does not name.
+ * **The reach set is a bucket query.** Anchors are continuous, so a bucket may
+ * hold several rocks and each lies within its radius and drift of its anchor.
+ * The path is taken into the field frame at both ends, grown by the ship's reach,
+ * the rocks' envelope and the field centre's own bend over the step, and turned
+ * into a range of buckets; no rock is posed that the range does not name, and
+ * what it names is sorted by slot so the result never depends on bucket order.
  *
  * **The shapes are injected** (`setRockShapeSource`): the authored heightfields
  * arrive through a Vite-only inline import a headless module cannot take. A
@@ -235,7 +234,7 @@ export function fieldRockSolids(
 ): { owner: string[]; motions: RockSolid[] } {
 	const owner: string[] = [];
 	const motions: RockSolid[] = [];
-	const { plans, lattices } = fieldsOf(system);
+	const { plans, indexes } = fieldsOf(system);
 	const dt = clock.toTime - clock.fromTime;
 	for (const plan of plans) {
 		const bend =
@@ -250,32 +249,40 @@ export function fieldRockSolids(
 		const grow = ship.reachKm + 2 * RESTING_KM + bend;
 		const a = fieldLocal(plan, ship.start, clock.fromTime);
 		const b = fieldLocal(plan, ship.end, clock.toTime);
-		const bound = FIELD_PROFILE[plan.profile];
-		const reach = Math.max(...bound.semiKm) + bound.cellKm + grow;
+		const reach = FIELD_EXTENT_KM[plan.profile] + grow;
 		if (Math.min(length(a), length(b)) > reach + length(sub(a, b))) continue;
-		let lattice = lattices.get(plan.id);
-		if (!lattice) {
-			lattice = buildLattice(system, plan);
-			lattices.set(plan.id, lattice);
+		let index = indexes.get(plan.id);
+		if (!index) {
+			index = buildIndex(system, plan);
+			indexes.set(plan.id, index);
 		}
-		const [[i0, i1], [j0, j1], [k0, k1]] = latticeRange(lattice, a, b, grow);
+		const [[i0, i1], [j0, j1], [k0, k1]] = bucketRange(
+			index,
+			a,
+			b,
+			grow + index.envelopeKm,
+		);
+		const named: Rock[] = [];
 		for (let i = i0; i <= i1; i++)
 			for (let j = j0; j <= j1; j++)
 				for (let k = k0; k <= k1; k++) {
-					const rock = lattice.byCell.get(latticeKey(i, j, k));
-					if (!rock) continue;
-					const solid = rockSolid(plan, rock, clock);
-					if (
-						!mayMeet(ship, {
-							start: solid.start.origin,
-							end: solid.end.origin,
-							reachKm: solidReach(solid),
-						})
-					)
-						continue;
-					owner.push(rockId(plan, rock));
-					motions.push(solid);
+					const bucket = index.buckets.get(bucketKey(i, j, k));
+					if (bucket) named.push(...bucket);
 				}
+		named.sort((p, q) => p.slot - q.slot);
+		for (const rock of named) {
+			const solid = rockSolid(plan, rock, clock);
+			if (
+				!mayMeet(ship, {
+					start: solid.start.origin,
+					end: solid.end.origin,
+					reachKm: solidReach(solid),
+				})
+			)
+				continue;
+			owner.push(rockId(plan, rock));
+			motions.push(solid);
+		}
 	}
 	return { owner, motions };
 }

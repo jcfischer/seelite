@@ -192,6 +192,10 @@ export const DOMAIN = {
 	NPC_LOADOUT: 45,
 	NPC_FITTING_DROP: 46,
 	CAPABILITY_TIME: 47,
+	// https://github.com/jcfischer/seelite/issues/1209 — lobes split by field slot; anchor and keep by rock slot too.
+	ASTEROID_LOBES: 48,
+	ASTEROID_ANCHOR: 49,
+	ASTEROID_KEEP: 50,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

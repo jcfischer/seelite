@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { fieldCells, fieldRocks, systemFields } from "../../src/asteroid-field";
+import {
+	fieldCells,
+	latticeRocks,
+	systemFields,
+} from "../../src/asteroid-field";
 import { generateGalaxy } from "../../src/galaxy";
 import { generateContents } from "../../src/system";
 import {
@@ -15,14 +19,14 @@ const plan = systemFields(record, generateContents(record))[0];
 
 test("baseline reproduces the shipped rocks without mutation", () => {
 	expect(candidateRocks(record, plan, "baseline")).toEqual(
-		fieldRocks(record, plan),
+		latticeRocks(record, plan),
 	);
 });
 
 test("candidate identity and shape stay independent of filtering order", () => {
 	for (const name of CANDIDATES) {
 		const profile = candidateProfile(plan.profile, name);
-		const all = fieldRocks(record, plan, { ...profile, occupancy: 1 });
+		const all = latticeRocks(record, plan, { ...profile, occupancy: 1 });
 		const bySlot = new Map(all.map((r) => [r.slot, r]));
 		const rocks = candidateRocks(record, plan, name);
 		expect(rocks.length).toBeGreaterThan(0);
@@ -84,7 +88,7 @@ test("expanded candidates increase extent and filter occupancy", () => {
 			candidateProfile(plan.profile, "baseline").semiKm[0],
 		);
 		if (name !== "expanded") {
-			const candidates = fieldRocks(record, plan, profile);
+			const candidates = latticeRocks(record, plan, profile);
 			expect(candidateRocks(record, plan, name).length).toBeLessThan(
 				candidates.length,
 			);

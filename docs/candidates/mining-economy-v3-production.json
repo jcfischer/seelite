@@ -1,0 +1,94 @@
+{
+	"id": "mining-v3-production-unratified",
+	"rockLimit": 100000,
+	"provenance": "#1209 measures mining-economy-v3 on the production layout, every other value unchanged; final balance unratified (#923)",
+	"seeds": [1, 47, 1234],
+	"galaxies": [0, 1],
+	"systemsPerWorld": 4,
+	"hours": 8,
+	"startCr": 10000,
+	"dockS": 45,
+	"loadouts": [
+		{
+			"hull": "courier",
+			"size": 1,
+			"grade": "E"
+		},
+		{
+			"hull": "courier",
+			"size": 1,
+			"grade": "D"
+		},
+		{
+			"hull": "courier",
+			"size": 1,
+			"grade": "A"
+		},
+		{
+			"hull": "miner",
+			"size": 1,
+			"grade": "E"
+		},
+		{
+			"hull": "miner",
+			"size": 1,
+			"grade": "D"
+		},
+		{
+			"hull": "miner",
+			"size": 1,
+			"grade": "A"
+		},
+		{
+			"hull": "miner",
+			"size": 2,
+			"grade": "E"
+		},
+		{
+			"hull": "miner",
+			"size": 2,
+			"grade": "D"
+		},
+		{
+			"hull": "miner",
+			"size": 2,
+			"grade": "A"
+		},
+		{
+			"hull": "miner",
+			"size": 3,
+			"grade": "E"
+		},
+		{
+			"hull": "miner",
+			"size": 3,
+			"grade": "D"
+		},
+		{
+			"hull": "miner",
+			"size": 3,
+			"grade": "A"
+		}
+	],
+	"recoveryTPerH": 1,
+	"surveyLifetimeH": 24,
+	"rawValueShare": 0.35,
+	"rawStockMinT": 8,
+	"rawStockMaxT": 63,
+	"feeCrPerT": 0,
+	"serviceSPerT": 1,
+	"drillTPerS": 37.5,
+	"positioningKm": 0.1,
+	"positioningFloorS": 12,
+	"searchRareS": 600,
+	"fragmentS": 3,
+	"fragmentKeepShare": 0.9,
+	"goodMinimumGrade": "standard",
+	"returnLoadT": 1000,
+	"visitLargestShare": 0.25,
+	"fieldLayout": "production",
+	"onePass": true,
+	"collectS": 5,
+	"rawElasticityScale": 0.5,
+	"feeShareOfProduct": 0.35
+}

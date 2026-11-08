@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
 	fieldCentre,
 	fieldCentreVelocity,
+	FIELD_EXTENT_KM,
 	fieldRocks,
 	rockPose,
 	systemFields,
@@ -218,7 +219,7 @@ test("real cruise arrivals to both field profiles drop at 50 km outside every ro
 test("the 50 km drop radius clears the whole field at every rock drift phase", () => {
 	for (const record of systems) {
 		for (const plan of systemFields(record, makeSystem(record, 0).contents)) {
-			const extentKm = plan.profile === "charted" ? 26.5 : 18.9;
+			const extentKm = FIELD_EXTENT_KM[plan.profile];
 			expect(DEFAULT_CRUISE.dropRadiusKm).toBeGreaterThan(extentKm);
 			for (const rock of fieldRocks(record, plan))
 				expect(

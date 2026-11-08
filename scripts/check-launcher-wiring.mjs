@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"measure-field-navigation.mjs",
+		"an instrument that prints figures, like measure-asteroid-field-cost; a page error stops the run",
+	],
+	[
 		"lib/trade-model-probe.mjs",
 		"probe-model-queue passes its own tally's check and watch into the trade installation cases",
 	],

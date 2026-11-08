@@ -12,6 +12,7 @@ import {
 import {
 	HYSTERESIS,
 	LEVEL_PX,
+	MAX_LEVEL0_ROCKS,
 	POINT_LEVEL,
 	fieldCameraLocal,
 	fieldOffsetFromCamera,
@@ -170,17 +171,20 @@ test("spin is a rotation about the rock's own axis by its angle at the clock", (
 	}
 });
 
-// `close` is left out on purpose: it stands beside the biggest rock and puts 6
-// at level 0 on high (receipt, "D2 re-measure"). Calls stay in budget there
-// because a batch is one call whatever it holds; the principal ruled on its cost.
-test("level counts at #950's inside, edge and far stands hold ≤ 5 rocks at level 0", () => {
+test("level counts at #950's inside, edge and far stands, and beside the biggest rock, hold ≤ 5 rocks at level 0", () => {
 	for (const index of FIELD_SYSTEMS) {
 		const { rocks } = fieldOf(index);
+		const big = rocks.reduce((a, b) => (b.radiusKm > a.radiusKm ? b : a));
 		for (const quality of ["high", "low"] as const) {
 			for (const cam of [
 				{ x: 1.2, y: 1.2, z: 1.2 },
 				{ x: -26, y: 0, z: 0 },
 				{ x: -224, y: 0, z: 0 },
+				{
+					x: big.anchor.x - 1.2 * big.radiusKm,
+					y: big.anchor.y,
+					z: big.anchor.z,
+				},
 			]) {
 				const levels = new Int8Array(rocks.length).fill(POINT_LEVEL);
 				const pos = new Float32Array(rocks.length * 3);
@@ -199,6 +203,35 @@ test("level counts at #950's inside, edge and far stands hold ≤ 5 rocks at lev
 				expect(levels.filter((l) => l === 0).length).toBeLessThanOrEqual(5);
 			}
 		}
+	}
+});
+
+test("past the level-0 cap the rocks that project smallest draw at level 1, and the cap holds across frames", () => {
+	const { rocks } = fieldOf(173);
+	const crowd = rocks.slice(0, MAX_LEVEL0_ROCKS + 4).map((rock, i) => ({
+		...rock,
+		radiusKm: 0.1 + i * 0.01,
+		driftKm: 0,
+		anchor: { x: 1, y: 0, z: 0 },
+	}));
+	const levels = new Int8Array(crowd.length).fill(POINT_LEVEL);
+	const pos = new Float32Array(crowd.length * 3);
+	const points = new Float32Array(crowd.length * 3);
+	for (let frame = 0; frame < 3; frame++) {
+		selectFieldLevels(
+			crowd,
+			frame / 60,
+			{ x: 0, y: 0, z: 0 },
+			PX_PER_RADIAN,
+			"high",
+			levels,
+			pos,
+			points,
+		);
+		expect([...levels]).toEqual([
+			...Array(crowd.length - MAX_LEVEL0_ROCKS).fill(1),
+			...Array(MAX_LEVEL0_ROCKS).fill(0),
+		]);
 	}
 });
 

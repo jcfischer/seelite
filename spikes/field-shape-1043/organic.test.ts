@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	FIELD_PROFILE,
-	fieldRocks,
+	latticeRocks,
 	rockLocal,
 	systemFields,
 } from "../../src/asteroid-field";
@@ -22,7 +22,7 @@ test("organic anchors are deterministic slot identities with unchanged physical 
 		for (const variant of ORGANIC_VARIANTS) {
 			const base = FIELD_PROFILE[plan.profile];
 			const reference = new Map(
-				fieldRocks(record, plan, {
+				latticeRocks(record, plan, {
 					...base,
 					occupancy: 1,
 					semiKm: base.semiKm.map((x) => x * 2) as [number, number, number],
@@ -33,7 +33,7 @@ test("organic anchors are deterministic slot identities with unchanged physical 
 			expect(organicRocks(record, plan, variant)).toEqual(rocks);
 			expect(
 				organicRocks(record, plan, variant, (...args) =>
-					fieldRocks(...args).reverse(),
+					latticeRocks(...args).reverse(),
 				),
 			).toEqual(rocks);
 			expect(new Set(rocks.map((r) => r.slot)).size).toBe(rocks.length);

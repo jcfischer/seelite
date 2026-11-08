@@ -513,6 +513,31 @@ test("the ruled fields refuse values outside their range", () => {
 		expect(() => comparison(rulingCandidate(patch))).toThrow();
 });
 
+test("the three field layouts are distinct inputs, and production reads the shipped rocks (#1209)", () => {
+	const reserve = (fieldLayout: Candidate["fieldLayout"]) =>
+		comparison(rulingCandidate({ fieldLayout })).rows.map(
+			(r) => r.crPerActiveMinute,
+		);
+	const { readFileSync } = require("node:fs");
+	const production = reserve("production");
+	expect(production.length).toBeGreaterThan(0);
+	expect(production).not.toEqual(reserve("organic"));
+	expect(production).not.toEqual(reserve("baseline"));
+	for (const file of ["mining-economy-v3", "mining-economy-v3-sustained"]) {
+		const read = (name: string) =>
+			JSON.parse(readFileSync(`docs/candidates/${name}.json`, "utf8"));
+		const study = read(file);
+		const shipped = read(`${file}-production`);
+		expect(shipped.fieldLayout).toBe("production");
+		expect({ ...shipped, id: 0, provenance: 0, fieldLayout: 0 }).toEqual({
+			...study,
+			id: 0,
+			provenance: 0,
+			fieldLayout: 0,
+		});
+	}
+});
+
 test("a grid names every variant's inputs and keeps failed targets visible", () => {
 	const report = grid({
 		candidate: rulingCandidate(),

@@ -46,6 +46,7 @@
  */
 import { installHaulerFixture } from "./lib/hauler-fixture.mjs";
 import { placeCapabilityOutage } from "./lib/capability-outage-fixture.mjs";
+import { placeAsteroidField } from "./lib/asteroid-field-fixture.mjs";
 import { placeMiningSurvey } from "./lib/mining-survey-fixture.mjs";
 import { placeFieldDiscovery } from "./lib/field-discovery-fixture.mjs";
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
@@ -390,6 +391,11 @@ async function assertChartHover(page, where, shot, aimed) {
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
+	"asteroid-field": async (page, shot) => {
+		worldWritten = true;
+		const result = await placeAsteroidField(page, shot.profile, shot.stand);
+		return `${result.fieldId} · ${result.rocks} rocks, ${result.within8Km} within 8 km`;
+	},
 	"field-discovery": async (page, shot) => {
 		worldWritten = true;
 		const result = await placeFieldDiscovery(page, shot.mode);
@@ -1574,9 +1580,12 @@ try {
 			// puts back, and the dock's first write throws (#583).
 			if (view.shot.kind === "shipyard-tab") worldWritten = true;
 			if (
-				["capability-outage", "mining-survey", "field-discovery"].includes(
-					view.shot.kind,
-				)
+				[
+					"capability-outage",
+					"mining-survey",
+					"field-discovery",
+					"asteroid-field",
+				].includes(view.shot.kind)
 			)
 				worldWritten = true;
 			// A follow jump saves its new system. Every NPC row needs a fresh home
