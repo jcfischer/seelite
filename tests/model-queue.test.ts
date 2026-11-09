@@ -246,3 +246,20 @@ test("a queue that was never prioritized leaves an on-demand model out", async (
 	await queue.wait(["a"]);
 	expect(loaded).toEqual(["a"]);
 });
+
+test("a never-prioritized queue still sweeps every other model in catalog order", async () => {
+	const loaded: string[] = [];
+	const queue = new ModelQueue(
+		{
+			a: async () => void loaded.push("a"),
+			bridge: async () => void loaded.push("bridge"),
+			b: async () => void loaded.push("b"),
+		},
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	await queue.wait(["b"]);
+	expect(loaded).toEqual(["a", "b"]);
+});
