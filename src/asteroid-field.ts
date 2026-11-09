@@ -537,11 +537,13 @@ function drawLobes(profile: FieldProfileName, rand: () => number): Lobe[] {
 			attempts++;
 		} while (
 			attempts < 64 &&
+			// Stryker disable next-line EqualityOperator: a centre exactly at the spacing is a float tie no draw produces, and either answer is a clear lobe
 			lobes.some((l) => distance(l.centre, centre) < spanKm * 0.26)
 		);
 		const axis = unitVector(rand);
 		const perpendicular = cross(
 			axis,
+			// Stryker disable next-line EqualityOperator: a unit vector's x is never exactly 0.9 from these draws, and either reference axis gives a valid basis
 			Math.abs(axis.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 },
 		);
 		const across = scale(perpendicular, 1 / length(perpendicular));
@@ -553,6 +555,7 @@ function drawLobes(profile: FieldProfileName, rand: () => number): Lobe[] {
 			up: cross(axis, across),
 			weight: 0.3 + rand() ** 2 * 1.8,
 			bend: rand() * 2 - 1,
+			// Stryker disable next-line ArrayDeclaration: every lobe's list is replaced straight after the loop
 			nearestFirst: [],
 		});
 	}
@@ -571,11 +574,13 @@ function drawAnchor(rand: () => number, lobes: readonly Lobe[]): Vec3 {
 	let lobe = lobes[0];
 	for (const l of lobes) {
 		choice -= l.weight;
+		// Stryker disable next-line EqualityOperator: choice lands on exactly zero only by a float tie, where the next lobe is as valid
 		if (choice <= 0) {
 			lobe = l;
 			break;
 		}
 	}
+	// Stryker disable next-line EqualityOperator: the generator yields multiples of 2^-32, and 0.16 is not one
 	if (rand() < 0.16) {
 		const other = lobe.nearestFirst[Math.floor(rand() * 2)];
 		const t = betaDraw(rand);
@@ -634,11 +639,13 @@ export function arrangeRocks(
 	const { marginKm } = FIELD_PROFILE[plan.profile];
 	const lobes = drawLobes(plan.profile, draws.lobes);
 	const width =
+		// Stryker disable next-line ArithmeticOperator: a bucket only has to be as wide as the widest pair's reach, under 2.6 km, and 2/x stays wider for every radius the profiles allow
 		2 * bank.reduce((m, r) => Math.max(m, r.radiusKm + r.driftKm), 0) +
 		marginKm;
 	const buckets = new Map<number, Rock[]>();
 	const out: Rock[] = [];
 	const key = (i: number, j: number, k: number): number =>
+		// Stryker disable next-line ArithmeticOperator: a colliding key only makes a bucket hold more rocks; every candidate still meets the distance test
 		((i + 512) * 1024 + j + 512) * 1024 + k + 512;
 	const isClear = (
 		anchor: Vec3,
@@ -652,6 +659,7 @@ export function arrangeRocks(
 				for (let k = ck - 1; k <= ck + 1; k++)
 					for (const prior of buckets.get(key(i, j, k)) ?? [])
 						if (
+							// Stryker disable next-line EqualityOperator: envelopes exactly tangent are a float tie no draw produces
 							distance(anchor, prior.anchor) <
 							rock.radiusKm +
 								rock.driftKm +
@@ -663,6 +671,7 @@ export function arrangeRocks(
 		return true;
 	};
 	for (const rock of bank) {
+		// Stryker disable next-line EqualityOperator: the generator yields multiples of 2^-32, and the keep chance is not one
 		if (draws.keep(rock.slot) > ORGANIC_KEEP) continue;
 		const anchor = drawAnchor(draws.anchor(rock.slot), lobes);
 		const ci = Math.floor(anchor.x / width);

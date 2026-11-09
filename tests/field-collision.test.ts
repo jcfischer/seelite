@@ -468,7 +468,7 @@ describe("the flown ship against field rocks (node #969)", () => {
 		}
 	}, 60_000);
 
-	test("a step a hundred thousand km long stays bounded by the occupied buckets", () => {
+	test("a step a billion km long stays bounded by the occupied buckets", () => {
 		const { world, plan } = fieldWorld();
 		const clock = { fromTime: 1000, toTime: 1000 };
 		const c = fieldCentre(plan, 1000);
@@ -476,8 +476,8 @@ describe("the flown ship against field rocks (node #969)", () => {
 		fieldRockSolids(
 			world.system,
 			{
-				start: add(c, v3(-5e4, -5e4, -5e4)),
-				end: add(c, v3(5e4, 5e4, 5e4)),
+				start: add(c, v3(-5e8, -5e8, -5e8)),
+				end: add(c, v3(5e8, 5e8, 5e8)),
 				reachKm: HULL_REACH_KM,
 			},
 			clock,

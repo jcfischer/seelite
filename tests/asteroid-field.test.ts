@@ -20,6 +20,7 @@ import {
 	type Rock,
 	SPIN_SURFACE_CAP_KMS,
 	TROJAN_RAD,
+	arrangeRocks,
 	chartedField,
 	fieldBaselineFingerprint,
 	fieldCentre,
@@ -359,6 +360,26 @@ describe("rocks: size, arrangement and margin (#948 D5, #1209)", () => {
 		}
 		expect(pairs).toBeGreaterThan(1_000_000);
 		expect(worst).toBeGreaterThanOrEqual(0);
+	});
+
+	test("a lobe that can find no clear place stops looking after 64 tries", () => {
+		const { row, plan } = sampled[0];
+		let draws = 0;
+		const arranged = arrangeRocks(plan, latticeRocks(row.record, plan), {
+			lobes: () => {
+				draws++;
+				return 0.5;
+			},
+			anchor: () => () => 0.5,
+			keep: () => 2,
+		});
+		expect(arranged).toEqual([]);
+		const count = 1;
+		const perTry = 3;
+		const afterPlace = 5;
+		const firstLobe = perTry + afterPlace;
+		const blockedLobes = 5 * (64 * perTry + afterPlace);
+		expect(draws).toBe(count + firstLobe + blockedLobes);
 	});
 
 	test("a kept rock has its bank slot's physical draws; only its anchor moved", () => {
