@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
@@ -15,6 +16,7 @@ import {
 } from "../src/station-interior-mesh";
 import { disposeSubtree, shared } from "../src/gpu-teardown";
 import records from "../src/interior-lod-records.json";
+import { withoutTextures } from "../scripts/lib/shipped-glb";
 import type { InteriorLods } from "../src/interior-lod";
 import { bakeQuantisedNodes } from "../src/interior-dequantize";
 // Decode the actual shipping file; no synthetic fitting geometry in these rows.
@@ -22,8 +24,14 @@ await MeshoptDecoder.ready;
 const io = new NodeIO()
 	.registerExtensions(ALL_EXTENSIONS)
 	.registerDependencies({ "meshopt.decoder": MeshoptDecoder });
-const document = await io.read(
-	new URL("../src/models/station-interiors.glb", import.meta.url).pathname,
+const document = await io.readBinary(
+	new Uint8Array(
+		withoutTextures(
+			readFileSync(
+				new URL("../src/models/station-interiors.glb", import.meta.url),
+			),
+		),
+	),
 );
 const assets = new Map<string, THREE.Group>();
 for (const scene of document.getRoot().listScenes()) {

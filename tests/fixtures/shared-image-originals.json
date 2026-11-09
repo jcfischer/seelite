@@ -1,0 +1,72 @@
+{
+	"coriolis": {
+		"bytes": 6702876,
+		"attributes": "265cecb13fcc37d427e9a568d38560ed9b8a64ac52bc7b00097b700c24e6a945",
+		"document": "a43fc297f4becc4d9587da60027b3c6d66ffe34e9e823265980dc9a19d22b16e"
+	},
+	"outpost-buoy": {
+		"bytes": 4049556,
+		"attributes": "119285c81db2e21dda722d5c00e9e3a272a20dfde68ccd475a48c5fe85906d7d",
+		"document": "5de1eea384ba2e93e4fdd7e2cb0165b3bb5c4f7f8258d8bc068efb69d46e063a"
+	},
+	"outpost-cluster": {
+		"bytes": 4996508,
+		"attributes": "127f33f55ffc50bf415814cee2d40c116018d173e3d12d93553f0d07ca9470fd",
+		"document": "699a6a779a3ad6b8e46ea43f3602266ae261d6b8bd964cbb5e063b6477291ce4"
+	},
+	"outpost-derrick": {
+		"bytes": 4889508,
+		"attributes": "d6bf9b241f9ec0c099ca7e377cc6abfdd50289eac5de18a8c2997262dff45686",
+		"document": "cb7f12c6d4d26a024447a5c6833808a97df65863f4db8d45cf49004464c0a001"
+	},
+	"outpost-rig": {
+		"bytes": 5202512,
+		"attributes": "308b46ce50646679045b6ee34de2f430f62f38815b6bb5a1f8ae222edb9dfcca",
+		"document": "57fae9154612a936d26620ceb8c5b21252574d9fbed20ed3bbb023bf732babe0"
+	},
+	"outpost-salvage": {
+		"bytes": 4213892,
+		"attributes": "5c16a9639387ea7b2e1c0441cc0d0da614aaf74a98e5ce0679ac848cc0bfd453",
+		"document": "100fa3f05f75287fb452db90006e440dac6385d26dfc357f690fd87ff4da36f3"
+	},
+	"shipyard-foundry": {
+		"bytes": 10819548,
+		"attributes": "921c06164446aebcd8def16f01d3976122f659e203b16947079de3ab0852702b",
+		"document": "9b836b2028021cd368b0ae0c6b88c984e1bb497aef6be4e36a422c7472e761d0"
+	},
+	"shipyard-gantry": {
+		"bytes": 10494100,
+		"attributes": "fb1887d7414e12c7ddb5396f14595aa92d8137df54d475bbb88b9867a025193b",
+		"document": "b5273211acb6d62615545fee7e1f4ab1cd241caf1719362ed0bc3ff9cc567f2a"
+	},
+	"shipyard-slipway": {
+		"bytes": 7992896,
+		"attributes": "b812b2bb8a0b2501f3e53de7e099a74d0b90ffd25df716dfc625709ee8c0acaa",
+		"document": "b82bb9bcbf2fea87791523effd7d4d23b9b147d3b2043dc24d78962c00d3c816"
+	},
+	"station-interiors": {
+		"bytes": 22297536,
+		"attributes": "c8245f463962f2cdd081eeefae687cd4e717da7827e482ddf59562d5141768e9",
+		"document": "befe6474a62e41f67e159bd57ae210964f9dd794207a67668b75900e93613339"
+	},
+	"trade-assembly": {
+		"bytes": 8284476,
+		"attributes": "a3e5b175a78bb8c4212c503590044ea41ae8ddd6f19c22b5646706390cc47a63",
+		"document": "ff35f7cb8dd1e93d1f27509e179f4df123ea6181af1bfbb39578d28983ca8333"
+	},
+	"trade-drum": {
+		"bytes": 5001176,
+		"attributes": "0fa0fd196d6c831d7ec6e931ec375c66af856e29830aec3cf9c8811dc5f53615",
+		"document": "702e2e870fd8adbf56105270d5409b88d0ef38bcb5a4a4537b6d748f86a9bd73"
+	},
+	"trade-ring": {
+		"bytes": 6621444,
+		"attributes": "2b88eee070addb85602e17af19ba8b2cea0dc89e83668e30458d1e478ea94d99",
+		"document": "7270aea5fdae5b0a9f6ceda4fb6144c978478311513a4d7c47277d9102af84db"
+	},
+	"trade-wheel": {
+		"bytes": 7075896,
+		"attributes": "ea525b37a70695923498d99e4c418d1aae1932582d83ed0cf6e61a86e33cedab",
+		"document": "47e2fcf4943312ab1e21f481e0cd61ed8dd0dbe57c6ed49c0ab2a27215099258"
+	}
+}

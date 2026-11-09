@@ -13,11 +13,11 @@ export const OUTPOST_PROXY_PACK = {
 	rot: 32767,
 } as const;
 export const OUTPOST_PROXY_SOURCES = {
-	a: "7f7a70a29b6a292292ac3f33fc2a1ad78899bb7d5a767e00cdf6a41b0e7abc20",
-	b: "54ff8d7f41a753357734bbeb1e72304f863dcdaa9a0fc5c8d5ca34b3238f6628",
-	c: "ea2ce49965dc7f48bb9c8ca31219a86424a1201b6feae328326af040e705c879",
-	d: "8ca948046ffe94c9597a7994d6bc8f0ed0b17677e2fb91d8c0aef8a892adbd00",
-	e: "36a3ada8b9b0216ccc7e7443923841083a44d2f960757e961fcc4e78893f1efd",
+	a: "aa12f1725b2330a429b59c146bb5da88d4ea4487ed04c6a98c1e483707af485d",
+	b: "43ecbd428d967bdb3897f6f3041b25b0c9ffacb99ff7f6812e514ee72be7ae1b",
+	c: "e706b48c2709f5e1adfbf5458e7fddb7aa2356b8dbf5c24a23b05293ac807783",
+	d: "ed92a42edcb9d4792d128c2cbfcca8859fe439fe7406f322f6cf76379df778d3",
+	e: "36ff96182fda9a41f4353723d22c770fd9b3860eccf43ace00a4908f1f140288",
 } as const;
 export const OUTPOST_PROXIES = {
 	a: {

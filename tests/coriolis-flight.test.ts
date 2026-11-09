@@ -1,3 +1,4 @@
+import { SHARED_IMAGES } from "../src/model-urls";
 import { stationLightsChunk, isStationBeacon } from "../src/station-light";
 import { test, expect } from "bun:test";
 import { EMISSIVE_CEILING, EXPOSURE } from "../src/light-rig";
@@ -547,7 +548,10 @@ test("the detail file shares the base file's materials, image and exposure", asy
 	const base = json("src/models/coriolis.glb");
 	const late = json("src/models/coriolis-detail.glb");
 	expect(late.images ?? []).toEqual([]);
-	const imageNames = base.images.map((i: { name: string }) => i.name);
+	const imageNames = base.textures.map(
+		(t: { extensions: { SEELITE_shared_image: { sha256: string } } }) =>
+			SHARED_IMAGES[t.extensions.SEELITE_shared_image.sha256]?.name,
+	);
 	const named = late.materials.filter(
 		(m: { extras?: { baseColorMap?: string } }) => m.extras?.baseColorMap,
 	);

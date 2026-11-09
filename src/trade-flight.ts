@@ -3,6 +3,7 @@ import { DETAIL_RETRY_MS } from "./coriolis-flight";
 import { exposeStationMaterial, exposeStationMaterials } from "./station-light";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
 import {
@@ -215,6 +216,7 @@ export function prepareTradeModel(
 	if (!pending) {
 		pending = new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
+			.register(sharedImagePlugin())
 			.loadAsync(TRADE_GLB_URLS[form], onProgress)
 			.then((gltf) => {
 				installTradeBuilder(
