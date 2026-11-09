@@ -3,6 +3,7 @@ import {
 	chartedField,
 	fieldCentre,
 	fieldRocks,
+	type Rock,
 	rockPose,
 	rockLocal,
 	rockSpinAngle,
@@ -235,18 +236,10 @@ test("past the level-0 cap the rocks that project smallest draw at level 1, and 
 	}
 });
 
-test("a rock behind the camera gives way at the level-0 cap to one in front", () => {
-	const { rocks } = fieldOf(173);
-	const place = (x: number, i: number) => ({
-		...rocks[i],
-		radiusKm: x < 0 ? 0.2 : 0.1,
-		driftKm: 0,
-		anchor: { x, y: 0, z: 0 },
-	});
-	const crowd = [
-		...Array.from({ length: MAX_LEVEL0_ROCKS }, (_, i) => place(-1, i)),
-		place(1, MAX_LEVEL0_ROCKS),
-	];
+const levelsOf = (
+	crowd: readonly Rock[],
+	forward?: { x: number; y: number; z: number },
+) => {
 	const levels = new Int8Array(crowd.length).fill(POINT_LEVEL);
 	selectFieldLevels(
 		crowd,
@@ -258,10 +251,70 @@ test("a rock behind the camera gives way at the level-0 cap to one in front", ()
 		new Float32Array(crowd.length * 3),
 		new Float32Array(crowd.length * 3),
 		true,
-		{ x: 1, y: 0, z: 0 },
+		forward,
 	);
-	expect(levels[MAX_LEVEL0_ROCKS]).toBe(0);
-	expect([...levels].filter((l) => l === 0)).toHaveLength(MAX_LEVEL0_ROCKS);
+	return [...levels];
+};
+const rockAt = (
+	i: number,
+	radiusKm: number,
+	x: number,
+	y = 0,
+	z = 0,
+): Rock => ({
+	...fieldOf(173).rocks[i],
+	radiusKm,
+	driftKm: 0,
+	anchor: { x, y, z },
+});
+
+test("a rock behind the camera gives way at the level-0 cap to one in front, on any view axis", () => {
+	for (const f of [
+		{ x: 1, y: 0, z: 0 },
+		{ x: 0, y: 1, z: 0 },
+		{ x: 0, y: 0, z: 1 },
+		{ x: 0.48, y: 0.6, z: 0.64 },
+	]) {
+		const crowd = [
+			...Array.from({ length: MAX_LEVEL0_ROCKS }, (_, i) =>
+				rockAt(i, 0.2, -f.x, -f.y, -f.z),
+			),
+			rockAt(MAX_LEVEL0_ROCKS, 0.1, f.x, f.y, f.z),
+		];
+		const levels = levelsOf(crowd, f);
+		expect(levels[MAX_LEVEL0_ROCKS]).toBe(0);
+		expect(levels.filter((l) => l === 0)).toHaveLength(MAX_LEVEL0_ROCKS);
+	}
+});
+
+test("a rock the camera stands beside is not behind it, however far its centre is back", () => {
+	const f = { x: 1, y: 0, z: 0 };
+	const crowd = [
+		...Array.from({ length: MAX_LEVEL0_ROCKS - 1 }, (_, i) =>
+			rockAt(i, 0.1, 1),
+		),
+		rockAt(MAX_LEVEL0_ROCKS - 1, 0.5, -0.4),
+		rockAt(MAX_LEVEL0_ROCKS, 0.11, 1),
+	];
+	expect(levelsOf(crowd, f)[MAX_LEVEL0_ROCKS - 1]).toBe(0);
+	const exact = [
+		...crowd.slice(0, MAX_LEVEL0_ROCKS - 1),
+		rockAt(MAX_LEVEL0_ROCKS - 1, 0.5, -0.5),
+		rockAt(MAX_LEVEL0_ROCKS, 0.11, 1),
+	];
+	expect(levelsOf(exact, f)[MAX_LEVEL0_ROCKS - 1]).toBe(0);
+});
+
+test("at the cap a smaller newcomer stays at level 1, a tie keeps what is held, and a bigger one evicts the oldest smallest", () => {
+	const five = Array.from({ length: MAX_LEVEL0_ROCKS }, (_, i) =>
+		rockAt(i, 0.2, 1),
+	);
+	const smaller = levelsOf([...five, rockAt(MAX_LEVEL0_ROCKS, 0.1, 1)]);
+	expect(smaller[MAX_LEVEL0_ROCKS]).toBe(1);
+	const tied = levelsOf([...five, rockAt(MAX_LEVEL0_ROCKS, 0.2, 1)]);
+	expect(tied[MAX_LEVEL0_ROCKS]).toBe(1);
+	const bigger = levelsOf([...five, rockAt(MAX_LEVEL0_ROCKS, 0.3, 1)]);
+	expect(bigger).toEqual([1, 0, 0, 0, 0, 0]);
 });
 
 test("with no shapes installed every rock is a point, packed first", () => {

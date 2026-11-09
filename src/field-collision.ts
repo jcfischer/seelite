@@ -107,10 +107,10 @@ function buildIndex(system: System, plan: FieldPlan): FieldIndex {
 		const bucket = buckets.get(key);
 		if (bucket) bucket.push(rock);
 		else buckets.set(key, [rock]);
-		for (let axis = 0; axis < 3; axis++) {
-			lo[axis] = Math.min(lo[axis], c[axis]);
-			hi[axis] = Math.max(hi[axis], c[axis]);
-		}
+		c.forEach((cell, axis) => {
+			lo[axis] = Math.min(lo[axis], cell);
+			hi[axis] = Math.max(hi[axis], cell);
+		});
 		envelopeKm = Math.max(envelopeKm, rock.radiusKm + rock.driftKm);
 	}
 	return { plan, buckets, lo, hi, envelopeKm };

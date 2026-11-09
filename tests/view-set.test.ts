@@ -237,6 +237,10 @@ describe("the view set itself", () => {
 			["asteroid-field-rare-overview", 0x5ee11e],
 			["asteroid-field-charted-dense", 0x5ee11e],
 			["asteroid-field-rare-dense", 0x5ee11e],
+			["asteroid-field-charted-close-chase", 0x5ee11e],
+			["asteroid-field-charted-close-cockpit", 0x5ee11e],
+			["asteroid-field-rare-close-chase", 0x5ee11e],
+			["asteroid-field-rare-close-cockpit", 0x5ee11e],
 			["mining-survey-navigation", 0x5ee11e],
 		]);
 		// Half the reason, held here. The other half — that the fixture has no

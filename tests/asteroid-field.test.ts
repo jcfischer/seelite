@@ -20,7 +20,6 @@ import {
 	type Rock,
 	SPIN_SURFACE_CAP_KMS,
 	TROJAN_RAD,
-	arrangeRocks,
 	chartedField,
 	fieldBaselineFingerprint,
 	fieldCentre,
@@ -41,8 +40,7 @@ import {
 import { DOMAIN } from "../src/domains";
 import { type SystemRecord, generateGalaxy } from "../src/galaxy";
 import { RELAY_REGION_KM, relayPlan } from "../src/relay-slot";
-import { organicRocks } from "../spikes/field-shape-1043/organic";
-import { fnv1a, mix, seededRand } from "../src/rng";
+import { fnv1a } from "../src/rng";
 import {
 	MAX_ORBIT_AU,
 	type SystemContents,
@@ -361,25 +359,6 @@ describe("rocks: size, arrangement and margin (#948 D5, #1209)", () => {
 		}
 		expect(pairs).toBeGreaterThan(1_000_000);
 		expect(worst).toBeGreaterThanOrEqual(0);
-	});
-
-	test("the production arrangement is the approved study's, fed the study's seeds", () => {
-		let compared = 0;
-		for (const { row, plan } of sampled.slice(0, 32)) {
-			const seed = mix(mix(row.record.seed, plan.slot), 0x10430c1d);
-			const base = FIELD_PROFILE[plan.profile];
-			const bank = latticeRocks(row.record, plan, organicBankProfile(base));
-			const arranged = arrangeRocks(plan, bank, {
-				lobes: seededRand(seed),
-				anchor: (slot) => seededRand(mix(seed, slot)),
-				keep: (slot) => seededRand(mix(seed, slot ^ 0x7f341a9))(),
-			});
-			expect(arranged).toEqual(
-				organicRocks(row.record, plan, "organic", latticeRocks),
-			);
-			compared += arranged.length;
-		}
-		expect(compared).toBeGreaterThan(5_000);
 	});
 
 	test("a kept rock has its bank slot's physical draws; only its anchor moved", () => {

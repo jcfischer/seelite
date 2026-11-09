@@ -163,6 +163,7 @@ export function selectFieldLevels(
 				level0Px[held++] = rank;
 			} else {
 				let smallest = 0;
+				// Stryker disable next-line EqualityOperator: held is the array's length here, and reading past a typed array's end compares false
 				for (let n = 1; n < held; n++)
 					if (level0Px[n] < level0Px[smallest]) smallest = n;
 				if (level0Px[smallest] < rank) {

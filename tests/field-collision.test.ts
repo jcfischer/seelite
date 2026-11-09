@@ -443,6 +443,69 @@ describe("the flown ship against field rocks (node #969)", () => {
 		expect(ghosted.has(rockId(plan, rock))).toBe(true);
 	});
 
+	test("a step reaching a rock's surface at its farthest drift still names it, across buckets", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const t = world.gameTime;
+		const clock = { fromTime: t, toTime: t };
+		for (const rock of rocks) {
+			const at = rockPose(plan, rock, t).pos;
+			const c = fieldCentre(plan, t);
+			const out = sub(at, c);
+			const ship = add(
+				at,
+				scale(
+					out,
+					(solidReach(rockSolid(plan, rock, clock)) + HULL_REACH_KM * 0.9) /
+						length(out),
+				),
+			);
+			const got = fieldRockSolids(
+				world.system,
+				{ start: ship, end: ship, reachKm: HULL_REACH_KM },
+				clock,
+			);
+			expect(got.owner).toContain(rockId(plan, rock));
+		}
+	}, 60_000);
+
+	test("a step a hundred thousand km long stays bounded by the occupied buckets", () => {
+		const { world, plan } = fieldWorld();
+		const clock = { fromTime: 1000, toTime: 1000 };
+		const c = fieldCentre(plan, 1000);
+		const started = performance.now();
+		fieldRockSolids(
+			world.system,
+			{
+				start: add(c, v3(-5e4, -5e4, -5e4)),
+				end: add(c, v3(5e4, 5e4, 5e4)),
+				reachKm: HULL_REACH_KM,
+			},
+			clock,
+		);
+		expect(performance.now() - started).toBeLessThan(2_000);
+	}, 20_000);
+
+	test("the field's cull grows by the ship's reach: a wide reach beyond the extent still finds the outermost rock", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const clock = { fromTime: 1000, toTime: 1000 };
+		const outer = rocks.reduce((a, b) =>
+			length(b.anchor) > length(a.anchor) ? b : a,
+		);
+		const at = rockPose(plan, outer, 1000).pos;
+		const c = fieldCentre(plan, 1000);
+		const out = sub(at, c);
+		const reachKm = 60;
+		const ship = add(
+			c,
+			scale(out, (FIELD_EXTENT_KM[plan.profile] + 40) / length(out)),
+		);
+		expect(length(sub(ship, at))).toBeLessThan(reachKm);
+		expect(
+			fieldRockSolids(world.system, { start: ship, end: ship, reachKm }, clock)
+				.owner,
+		).toContain(rockId(plan, outer));
+	});
+
 	test("a step poses only the rocks in buckets its reach names", () => {
 		const { world, plan, rocks } = fieldWorld();
 		const rock = rocks[Math.floor(rocks.length / 2)];
