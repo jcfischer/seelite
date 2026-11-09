@@ -10,7 +10,11 @@ bun scripts/measure-mining-economy.ts --compare docs/candidates/mining-economy-v
 bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-ratification-grid.json
 bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-ratification-sustained-grid.json
 bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-ratification-funded-grid.json
+bun scripts/measure-mining-economy.ts --compare docs/candidates/mining-economy-v3-ratification-funded.json
+bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-ratification-plateau-grid.json
 ```
+
+The last two commands add evidence after ratification and were measured at `f847caab18739e98f7f2d3408a264782e6b09444`. That commit adds candidate files only, so the instrument is the same. Their candidate is the ratified one with more cash or a 15 t/h comparison, and the table is unchanged.
 
 Base corpus: seeds 1/47/1234, galaxies 0/1, 24 charted and 5 rare fields. Wide corpus: 24 refinery systems per world, 144 charted and 21 rare fields. Pilot: Longwall 3/A with 10,000 Cr unless stated.
 
@@ -59,7 +63,8 @@ Other readings, base corpus unless stated:
 - **Two refineries:** charted p50 1.06× (N=20), rare 3.10× (N=3). 63 scenarios were refused for lack of a reachable second refinery.
 - **Queue:** no Longwall job is pending at the end of a pass. Refinery waiting over 24 hours is about 524 minutes in the wide corpus.
 - **Recovery sweep, charted refined, 24 h, wide:** 1 t/h 0.66×, 5 t/h 0.92×, 10 t/h 1.12×. Rare refined 2.14×, 2.61×, 3.25×.
-- **Starting cash, 24 h:** 100,000 Cr still reads 1.14× and 3.84× at the median. The cash limit bites early: on one-pass figures at 1 t/h, the rare field where refining lost moves from ×0.67 to ×0.98 with more cash.
+- **Starting cash, 24 h:** 100,000 Cr still reads 1.14× and 3.84× at the median. The cash limit bites early: on one-pass figures, the rare field where refining lost moves from ×0.67 to ×0.98 of raw cash with 100,000 Cr.
+- **Above 10 t/h, 24 h, wide:** charted refined stays flat (10 t/h 1.12×, 15 t/h 1.11×), while charted raw keeps rising (0.63×, 0.82×). At 15 t/h raw earns more cash than refined (367,759 Cr against 313,407 Cr). At 10 t/h refined still earns more (318,247 Cr against 271,062 Cr).
 
 ## Rulings at ratification
 
@@ -68,7 +73,7 @@ Other readings, base corpus unless stated:
 
 ## Accepted limits
 
-- **Scarcity.** At about 29 good rocks per field, a study-layout count from #1216, a field gives back roughly 290 t/h. Fields still run dry in 121 of 144 charted refined runs, but they no longer limit income; the refinery queue does.
+- **Scarcity.** At about 29 good rocks per field, a study-layout count from #1216, a field gives back roughly 290 t/h. Fields still run dry in 121 of 144 charted refined runs. Recovery still limits income below 10 t/h, as the sweep shows. From 10 t/h refined income stops rising, which fits the refinery queue becoming the limit, though the split between the two was not measured.
 - **Not flown.** The largest-rock pilot, nearest-first route, 100 t return threshold and loaded handling are assumptions.
 - **Market depth.** One quote covers a sale of any tonnage.
 - **Rare sample.** The wide corpus has 21 rare fields, and the base corpus 5.
