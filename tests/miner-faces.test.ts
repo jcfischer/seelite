@@ -83,7 +83,10 @@ test("the anchor and stance faces read the feet on the rock and the hold", () =>
 		}),
 	);
 	expect(texts(free.anchor)).toEqual(["TWO FEET GRIPPED", "ALIGN"]);
-	expect(texts(free.stance)).toEqual(["2/4 FEET GRIPPED"]);
+	expect(free.stance).toEqual([["2/4 FEET GRIPPED", "#ffb347"]]);
+	expect(minerFaceRows(state()).stance).toEqual([
+		["4/4 FEET GRIPPED", "#6dff9a"],
+	]);
 	const held = minerFaceRows(
 		state({ drill: { ...state().drill, anchored: true } }),
 	);

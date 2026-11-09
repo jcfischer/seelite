@@ -1091,7 +1091,6 @@ import {
 import {
 	buildAuthoredCabin,
 	buildPerimeterLamps,
-	cabinTemplate,
 	cockpitModelReady,
 	cabinConsoleLamps,
 	carriedConsoleLamp,
@@ -11064,7 +11063,7 @@ class Game {
 		// owns its placement — the pilot eye at the origin, at `CABIN_SCALE`
 		// times life size — and where each screen is; what is mounted on the
 		// screens is still this class's, so the instruments keep their names.
-		const cabin = buildAuthoredCabin(cabinTemplate(cabinId), cabinId);
+		const cabin = buildAuthoredCabin(cabinId);
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
 		const seat = new THREE.Group();

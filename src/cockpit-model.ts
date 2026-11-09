@@ -535,10 +535,6 @@ export function adoptCockpitTemplate(
 export const cockpitModelReady = (cabin: CabinId = "courier"): boolean =>
 	templates[cabin] !== null;
 
-/** The adopted model of `cabin`, once its load has finished. */
-export const cabinTemplate = (cabin: CabinId): THREE.Group | null =>
-	templates[cabin];
-
 /**
  * One cabin's copy of the model, placed in the cabin's frame.
  *
@@ -546,8 +542,8 @@ export const cabinTemplate = (cabin: CabinId): THREE.Group | null =>
  * frees; everything cloned from the template is shared and survives it.
  */
 export function buildAuthoredCabin(
-	source = templates.courier,
 	cabin: CabinId = "courier",
+	source = templates[cabin],
 ): AuthoredCabin {
 	if (!source)
 		throw new Error("buildAuthoredCabin: await prepareCockpitModel() first");

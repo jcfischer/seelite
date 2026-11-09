@@ -92,7 +92,14 @@ export function minerFaceRows(
 					[`${GRIPPED[d.feetOnRock]} GRIPPED`, AMBER],
 					d.anchored ? ["ANCHORED", GREEN] : [d.anchorWhy, QUIET],
 				],
-		stance: !s.mining ? OFF : [[`${d.feetOnRock}/4 FEET GRIPPED`, GREEN]],
+		stance: !s.mining
+			? OFF
+			: [
+					[
+						`${d.feetOnRock}/4 FEET GRIPPED`,
+						d.feetOnRock === 4 ? GREEN : AMBER,
+					],
+				],
 		lasers: [
 			[s.fireGroup, PALE],
 			[`HEAT ${s.heatPercent}%`, AMBER],

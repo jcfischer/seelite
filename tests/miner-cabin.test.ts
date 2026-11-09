@@ -125,7 +125,7 @@ describe("the installed bridge", () => {
 		expect(cockpitModelReady("miner")).toBe(false);
 		adoptCockpitTemplate(scene, "miner");
 		expect(cockpitModelReady("miner")).toBe(true);
-		const cabin = withCanvasStub(() => buildAuthoredCabin(scene, "miner"));
+		const cabin = withCanvasStub(() => buildAuthoredCabin("miner", scene));
 		expect(cabin.modelSpace.position.length()).toBe(0);
 		expect(cabin.root.rotation.x).toBeCloseTo(0.12, 6);
 		expect(cabin.modelSpace.scale.x).toBe(COCKPIT_MODEL_KM_PER_M);

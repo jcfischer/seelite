@@ -105,7 +105,10 @@ try {
 			g.minerFacesPaintedAt = -Infinity;
 			g.updateCockpit();
 			g.render(0);
-			return g.minerFaceReadings;
+			return {
+				...g.minerFaceReadings,
+				feet: g.drill.feet.filter((f) => f.onRock).length,
+			};
 		});
 	const stowed = await readFaces();
 	await deployDrill(page, set);
@@ -165,7 +168,9 @@ try {
 			held.block === null &&
 			anchored.drill[0][0] === "CONTACT" &&
 			anchored.anchor.some(([text]) => text === "ANCHORED") &&
-			anchored.stance[0][0].endsWith("/4 FEET GRIPPED"),
+			anchored.stance[0][0] === `${anchored.feet}/4 FEET GRIPPED` &&
+			anchored.feet > 0 &&
+			stowed.stance[0][0] === "0/4 FEET GRIPPED",
 		JSON.stringify({ held, anchored }),
 	);
 	const painted = await page.evaluate(() => {
@@ -252,20 +257,14 @@ try {
 	);
 	await swap.close();
 
-	const courier = await browser.newPage({
-		viewport: { width: 1280, height: 800 },
-	});
-	watch(courier);
 	const fetched = [];
-	courier.on("request", (r) => {
-		if (CABIN_GLB.test(r.url())) fetched.push(r.url());
-	});
-	await installViewPlacement(courier);
-	await installViewFraming(courier);
-	await courier.goto(
-		gameUrl(origin, { ...FIXTURE, hull: "courier", "models-full": false }),
+	const courier = await open(
+		{ hull: "courier", "models-full": false },
+		(page) =>
+			page.on("request", (r) => {
+				if (CABIN_GLB.test(r.url())) fetched.push(r.url());
+			}),
 	);
-	await bootedGame(courier, 90000);
 	await courier.waitForFunction(
 		() => window.__seelite.modelsSettled(),
 		undefined,
@@ -325,15 +324,46 @@ try {
 	);
 	await courier.close();
 
-	const late = await open({ hull: "miner", "models-full": false });
+	let releaseBridge;
+	const bridgeHeld = new Promise((resolve) => {
+		releaseBridge = resolve;
+	});
+	const late = await open({ hull: "miner", "models-full": false }, (page) =>
+		page.route(CABIN_GLB, async (route) => {
+			await bridgeHeld;
+			await route.continue();
+		}),
+	);
+	const standIn = await cabinFacts(late);
+	releaseBridge();
 	await late.waitForFunction(
 		() => window.__seelite.cabinId === "miner",
 		undefined,
 		{ timeout: 90000 },
 	);
+	const installed = await cabinFacts(late);
 	check(
-		"a player boot starts on the courier cabin and the bridge installs after it",
-		(await cabinFacts(late)).secondSeat,
+		"a player boot flies the courier cabin until the bridge's bytes arrive, then swaps",
+		standIn.cabinId === "courier" &&
+			standIn.perimeter &&
+			standIn.eye.y === 0 &&
+			installed.secondSeat &&
+			near(installed.eye, installed.want),
+		JSON.stringify({ standIn, installed }),
+	);
+	const offRows = await late.evaluate(() => {
+		const g = window.__seelite;
+		g.minerFacesPaintedAt = -Infinity;
+		g.updateCockpit();
+		g.render(0);
+		return g.minerFaceReadings;
+	});
+	check(
+		"without the flag the shipped bridge's mining faces read MINING OFF",
+		["survey", "drill", "anchor", "stance"].every(
+			(name) => offRows[name][0][0] === "MINING OFF",
+		) && offRows.ore[0][0].startsWith("ORE "),
+		JSON.stringify(offRows),
 	);
 	await late.close();
 
