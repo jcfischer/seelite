@@ -203,3 +203,30 @@ test("waiting on an on-demand model no one prioritized still fetches it", async 
 	await queue.wait(["bridge"]);
 	expect(loaded).toEqual(["bridge"]);
 });
+
+test("a later reprioritisation does not strand a wait on an on-demand model", async () => {
+	const loaded: string[] = [];
+	let release = () => {};
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const queue = new ModelQueue(
+		{
+			a: async () => {
+				await held;
+				loaded.push("a");
+			},
+			bridge: async () => void loaded.push("bridge"),
+		},
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	queue.prioritize(["a"]);
+	const waited = queue.wait(["bridge"]);
+	queue.prioritize(["a"]);
+	release();
+	await waited;
+	expect(loaded).toEqual(["a", "bridge"]);
+});

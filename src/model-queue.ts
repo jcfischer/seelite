@@ -8,6 +8,7 @@ export class ModelQueue {
 	private readonly refreshing = new Set<string>();
 	private order: string[];
 	private running?: Promise<void>;
+	private readonly waitedOn = new Set<string>();
 	private readonly waiters = new Set<() => void>();
 	constructor(
 		private readonly loaders: Readonly<Record<string, () => Promise<void>>>,
@@ -57,7 +58,9 @@ export class ModelQueue {
 			...new Set([
 				...current,
 				...next,
-				...Object.keys(this.loaders).filter((id) => !this.onDemand.has(id)),
+				...Object.keys(this.loaders).filter(
+					(id) => !this.onDemand.has(id) || this.waitedOn.has(id),
+				),
 			]),
 		];
 		for (const id of this.order) this.state(id);
@@ -65,6 +68,7 @@ export class ModelQueue {
 	}
 	wait(ids: readonly string[]): Promise<void> {
 		if (this.settled(ids)) return Promise.resolve();
+		for (const id of ids) this.waitedOn.add(id);
 		this.order = [...new Set([...this.order, ...ids])];
 		const done = new Promise<void>((resolve) => {
 			const check = () => {
