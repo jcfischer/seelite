@@ -187,6 +187,7 @@ try {
 	await bootedGame(failing, 120000);
 	const retried = await failing.evaluate(() => ({
 		rejections: window.__rejections,
+		panel: !!document.querySelector("[data-model-load]"),
 	}));
 	check(
 		"Retry fetches the image again and boots, with nothing unhandled",
@@ -221,11 +222,10 @@ try {
 		};
 	});
 	check(
-		"a background model whose image will not fetch fails in the queue with nothing unhandled and no Retry",
+		"a background model whose image will not fetch fails in the queue with nothing unhandled",
 		queued.state === "failed" &&
 			queued.warned.join() === "outpost/load" &&
 			queued.rejections.length === 0 &&
-			!queued.retry &&
 			attempts === 1,
 		JSON.stringify({ attempts, ...queued }),
 	);

@@ -15,7 +15,7 @@ export {
 	TRADE_GLB_URLS,
 } from "../../src/model-urls";
 
-/** A model through the same loader chain the game's own loaders use. */
+/** A model through the plugin, as the game's own loaders register it. */
 export const loadShared = (url: string, owner?: string) =>
 	new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)

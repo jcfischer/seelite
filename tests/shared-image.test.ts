@@ -15,10 +15,13 @@ import originals from "./fixtures/shared-image-originals.json";
 import {
 	INDUSTRIAL_SURFACE,
 	shareImage,
+	writeGlb,
 	SHARED_IMAGE_EXTENSION,
 } from "../scripts/share-model-image.mjs";
 import { glbDigest } from "../scripts/lib/glb-digest";
 import { disposeSubtree, isShared } from "../src/gpu-teardown";
+import { restoreWorld } from "../src/sim";
+import { bootModelIds } from "../src/system-models";
 import { SHARED_IMAGES } from "../src/model-urls";
 import {
 	createSharedImages,
@@ -35,22 +38,6 @@ const documentOf = (bytes: Uint8Array) => {
 	return JSON.parse(
 		buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString(),
 	);
-};
-
-const fileOf = (json: unknown, bin: Uint8Array) => {
-	const text = Buffer.from(JSON.stringify(json));
-	const padded = Buffer.alloc(Math.ceil(text.length / 4) * 4, 0x20);
-	text.copy(padded);
-	const header = Buffer.alloc(20);
-	header.write("glTF");
-	header.writeUInt32LE(2, 4);
-	header.writeUInt32LE(28 + padded.length + bin.length, 8);
-	header.writeUInt32LE(padded.length, 12);
-	header.writeUInt32LE(0x4e4f534a, 16);
-	const binHeader = Buffer.alloc(8);
-	binHeader.writeUInt32LE(bin.length, 0);
-	binHeader.writeUInt32LE(0x004e4942, 4);
-	return Buffer.concat([header, padded, binHeader, Buffer.from(bin)]);
 };
 
 const IMAGE = Buffer.from("not really a webp!!!");
@@ -90,7 +77,7 @@ const binOf = () => {
 
 describe("shareImage", () => {
 	const prepared = () => {
-		const { bytes, image } = shareImage(fileOf(embedded(), binOf()), SHA);
+		const { bytes, image } = shareImage(writeGlb(embedded(), binOf()), SHA);
 		return { bytes, image, json: documentOf(bytes) };
 	};
 
@@ -171,7 +158,7 @@ describe("shareImage", () => {
 	])("refuses %s", (_, change, sha) => {
 		const json = embedded();
 		change(json);
-		expect(() => shareImage(fileOf(json, binOf()), sha as string)).toThrow();
+		expect(() => shareImage(writeGlb(json, binOf()), sha as string)).toThrow();
 	});
 
 	test("the extension's spelling is the one the plugin reads", () => {
@@ -264,6 +251,18 @@ describe("the prepared shipping models", () => {
 		).rejects.toThrow();
 	});
 });
+
+test("a fresh pilot's boot always needs a model that uses the image", () => {
+	const usesTheImage = /^(coriolis|trade\/[bcde])$/;
+	for (let index = 0; index < 256; index++) {
+		const { system } = restoreWorld(42, 0, index, 0);
+		const exterior = bootModelIds(system, null).filter(
+			(id) => id !== "cockpit",
+		);
+		if (system.contents.stations.length)
+			expect(exterior.join()).toMatch(usesTheImage);
+	}
+}, 30_000);
 
 describe("the shared image registry", () => {
 	const HASH = "a".repeat(64);

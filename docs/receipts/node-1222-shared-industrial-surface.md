@@ -14,7 +14,7 @@
   texture has no `source`, so the failure is an error and not an untextured model.
 - No visual approval was spent: the view set did not move (below).
 - **A fresh pilot always needs this image at boot.** Every trade station form uses
-  it, and 0 of 1,536 systems over six seeds booted without it. So a failed fetch
+  it, and `tests/shared-image.test.ts` holds that over all 256 systems of seed 42. So a failed fetch
   normally reaches the Retry panel, and the background path is reached only by a
   save docked at a station that does not use the image.
 - **Known limitation: the boot bar.** It counts GLB bytes, so on a cold boot it
@@ -32,7 +32,7 @@ Measured against `625e2227`, the commit that holds the embedded originals.
   `shipyard-slipway`, `station-interiors`, `trade-assembly`, `trade-drum`,
   `trade-ring`, `trade-wheel`.
 - **Sizes:** 108,641,924 bytes before and 72,572,112 after, plus the one image: 33,493,618
-  bytes smaller on disk. Each model is smaller by 2,576,200 or a few bytes either side of it.
+  bytes smaller on disk. Each model is smaller by 2,576,304 to 2,576,560 bytes.
 - **Host limit:** `npm run build` runs `scripts/check-dist-sizes.mjs`, which passed.
   `dist/assets` lists `industrial-surface-C-EtNNC-.webp` once.
 - **Attributes:** `tests/shared-image.test.ts` decodes every prepared model through
@@ -53,7 +53,7 @@ Measured against `625e2227`, the commit that holds the embedded originals.
 
 ## Runtime and performance evidence
 
-| Lifecycle path | Result |
+| Path | Result |
 | --- | --- |
 | Boot and cold download | Boot set unchanged. The image adds one request after the home GLB. Bar: see the limitation above. |
 | Background installation | Unchanged path; one fewer decode for each model after the first. |
@@ -70,8 +70,7 @@ models, 2 with the interiors, and 1 image request for all three.
 **Docked Coriolis, cold**, `scripts/measure-docked-coriolis-cold.mjs`, seed 42 system 4:
 5 runs of each arm alternating in the order base, head, head, base, base, head, head, base,
 head, base, each in a new browser against that checkout's dev server. Renderer ANGLE Metal, Apple
-M5 Pro, 1440x900 at scale 2. Load average about 6.5 to 7.3: another session's unit tests ran
-throughout, so the machine was not idle.
+M5 Pro, 1440x900 at scale 2. Load average about 4.3 to 5 with no suite running.
 
 | | Base `625e2227` | Head |
 | --- | --- | --- |
@@ -79,17 +78,18 @@ throughout, so the machine was not idle.
 | Requests for those files | 16 | 17 |
 | Renderer textures, whole page | 62 | 61 |
 | Station maps holding the image | 3 (anisotropy 1, 1, 8) | 2 (1, 8) |
-| Longest frame gap, median of 5 (range) | 233 ms (218 to 235) | 233 ms (217 to 233) |
+| Longest frame gap, median of 5 (range) | 217 ms (217 to 250) | 201 ms (200 to 217) |
 | Frames over 100 ms, median | 2 | 2 |
 
 - Bytes fall by 15,458,242, which is six copies of the image: this system loads seven models
-  that use it. These figures were identical in all ten runs.
+  that use it. These figures were identical in every run.
 - The texture count falls by one because this framing draws two exteriors and one interior.
   The saving grows with the exteriors a session has drawn; this fixture does not measure more.
-- **No stall change was detected, and that is not a bound.** The arms overlap at a 60 Hz
-  frame quantum on a loaded machine. The longest gap is not the frame in which the instrument saw
-  the texture count rise, which read 15 to 33 ms, so the image's upload is not what limits this
-  figure. What does was not identified.
+- **The stall is one 60 Hz frame apart at most, and I do not claim it as a saving.** An
+  earlier pair of 5 runs, with another session's unit tests loading the machine to about 6.5 to
+  7.3, read 233 ms against 233 ms. What sets this figure was not identified. Within the window
+  the instrument saw one texture rise per run, with 15 to 33 ms gaps on both sides of it, so that
+  upload is not the longest gap; uploads before the window, at boot, are outside it.
 
 ## Delivery evidence
 

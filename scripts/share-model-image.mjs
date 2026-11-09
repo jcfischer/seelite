@@ -5,7 +5,7 @@
  *
  *   node scripts/share-model-image.mjs
  *
- * Reproducible: a re-exported model is prepared again by the same command, and
+ * Reproducible: a re-exported model is prepared again by this script, and
  * a prepared one is left byte for byte. The bytes of every other buffer view
  * are moved, never re-encoded.
  */
@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 export const SHARED_IMAGE_EXTENSION = "SEELITE_shared_image";
 
-/** The image this command shares, and every model that embeds it. */
+/** The image this script shares, and every model that embeds it. */
 export const INDUSTRIAL_SURFACE = Object.freeze({
 	sha256: "10d4d0776274448b52fc3191941d09dc0a74f1967854f23f86406188bf1eedd7",
 	name: "industrial-surface",
@@ -78,6 +78,23 @@ function remapBufferViews(value, removed) {
 	}
 }
 
+/** A glTF 2 binary holding `json` and the binary chunk `bin`. */
+export function writeGlb(json, bin) {
+	const text = Buffer.from(JSON.stringify(json));
+	const padded = Buffer.alloc(Math.ceil(text.length / 4) * 4, 0x20);
+	text.copy(padded);
+	const header = Buffer.alloc(20);
+	header.write("glTF");
+	header.writeUInt32LE(2, 4);
+	header.writeUInt32LE(28 + padded.length + bin.length, 8);
+	header.writeUInt32LE(padded.length, 12);
+	header.writeUInt32LE(0x4e4f534a, 16);
+	const binHeader = Buffer.alloc(8);
+	binHeader.writeUInt32LE(bin.length, 0);
+	binHeader.writeUInt32LE(0x004e4942, 4);
+	return Buffer.concat([header, padded, binHeader, bin]);
+}
+
 /**
  * `bytes` without the embedded image whose sha256 is `sha256`, its texture
  * naming that hash instead. `image` is the removed bytes; `null` when the file
@@ -136,21 +153,11 @@ export function shareImage(bytes, sha256) {
 		(name) => name !== WEBP,
 	);
 
-	const text = Buffer.from(JSON.stringify(json));
-	const padded = Buffer.alloc(Math.ceil(text.length / 4) * 4, 0x20);
-	text.copy(padded);
-	const kept = Buffer.concat([bin.subarray(0, start), bin.subarray(end)]);
-	const header = Buffer.alloc(20);
-	header.write("glTF");
-	header.writeUInt32LE(2, 4);
-	header.writeUInt32LE(28 + padded.length + kept.length, 8);
-	header.writeUInt32LE(padded.length, 12);
-	header.writeUInt32LE(0x4e4f534a, 16);
-	const binHeader = Buffer.alloc(8);
-	binHeader.writeUInt32LE(kept.length, 0);
-	binHeader.writeUInt32LE(0x004e4942, 4);
 	return {
-		bytes: Buffer.concat([header, padded, binHeader, kept]),
+		bytes: writeGlb(
+			json,
+			Buffer.concat([bin.subarray(0, start), bin.subarray(end)]),
+		),
 		image: Buffer.from(image),
 	};
 }

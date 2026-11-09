@@ -11,8 +11,8 @@
  * exterior and the interior both draw; and waits for the system's models to
  * settle. It prints one JSON line. `stallMs` is the longest gap between two
  * animation frames from the first frame after boot until 120 frames after
- * settling; `uploads` pairs each frame's gap with the textures it added, so a
- * stall can be told from an upload. `bytes` is every model, image and binary
+ * settling; `uploads` holds the textures a frame added and the gaps on both sides
+ * of it, because which of the two an upload lands in depends on callback order. `bytes` is every model, image and binary
  * response of the page, read from the requests rather than the resource timing
  * buffer, which a dev server's modules overflow.
  */
@@ -75,15 +75,19 @@ try {
 		window.__uploads = [];
 		let last = performance.now();
 		let textures = g.renderer.info.memory.textures;
+		let pendingUpload = null;
 		const tick = (now) => {
 			window.__gaps.push(now - last);
 			last = now;
+			if (pendingUpload) {
+				pendingUpload.push(Math.round(window.__gaps.at(-1)));
+				pendingUpload = null;
+			}
 			const live = g.renderer.info.memory.textures;
-			if (live !== textures)
-				window.__uploads.push([
-					Math.round(window.__gaps.at(-1)),
-					live - textures,
-				]);
+			if (live !== textures) {
+				pendingUpload = [live - textures, Math.round(window.__gaps.at(-1))];
+				window.__uploads.push(pendingUpload);
+			}
 			textures = live;
 			window.__tick = requestAnimationFrame(tick);
 		};
