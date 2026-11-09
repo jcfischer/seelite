@@ -56,8 +56,8 @@ principal decisions are explicit, not hidden inside adapter code.
   re-exporting one, run `node scripts/share-model-image.mjs`;
   `tests/shared-image.test.ts` names the model that still embeds the image. If
   the geometry or materials changed on purpose, run
-  `bun scripts/pin-shared-image-models.ts` first, which is what makes that test
-  accept them. Then regenerate that form's collision proxies, whose pinned hash is
+  `bun scripts/pin-shared-image-models.ts <model>` first, on the file that still
+  embeds the image, which is what makes that test accept them. Then regenerate that form's collision proxies, whose pinned hash is
   of the file.
 - Do not globally scale a model to repair a local docking-opening mismatch.
   Adapt the flight export to authoritative geometry or obtain an explicit ruling
