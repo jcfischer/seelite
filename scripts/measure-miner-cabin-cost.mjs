@@ -61,6 +61,13 @@ await installViewPlacement(page);
 
 async function install() {
 	const started = Date.now();
+	await page.route(/miner-cockpit[^/]*\.glb/, async (route) => {
+		await new Promise((done) => setTimeout(done, 5000));
+		await page.evaluate(() => {
+			window.__released = window.__gaps.length;
+		});
+		await route.continue();
+	});
 	await page.goto(
 		gameUrl(origin, {
 			seed: 0x5ee11e,
@@ -106,11 +113,28 @@ async function install() {
 			beforeSwapMedianMs: settled.sort((a, b) => a - b)[settled.length >> 1],
 			swapIntervalMs: gaps[swapped][0],
 			firstFramesAfterMs: gaps.slice(swapped + 1, swapped + 6).map(([d]) => d),
-			worstAfterBootMs: gaps
-				.slice(Math.max(0, swapped - 200))
+			bootFramesBeforeGame: gaps.filter(([, id]) => id === "boot").length,
+			worstBeforeBytesMs: gaps
+				.slice(0, window.__released)
+				.map(([d]) => d)
+				.sort((a, b) => b - a)
+				.slice(0, 3),
+			worstFromBytesToSwapMs: gaps
+				.slice(window.__released, swapped)
+				.map(([d]) => d)
+				.sort((a, b) => b - a)
+				.slice(0, 3),
+			worstWithGameBeforeSwapMs: gaps
+				.slice(0, swapped)
+				.filter(([, id]) => id === "courier")
 				.map(([d]) => d)
 				.sort((a, b) => b - a)
 				.slice(0, 5),
+			worstAfterSwapMs: gaps
+				.slice(swapped)
+				.map(([d]) => d)
+				.sort((a, b) => b - a)
+				.slice(0, 3),
 		};
 	});
 	console.log(`  cold install, ${Date.now() - started} ms from navigation:`);
