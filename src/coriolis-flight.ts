@@ -7,6 +7,7 @@ import {
 } from "./station-light";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { loadingPanel, loadRequiredModels } from "./model-load-view";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
 import {
@@ -219,6 +220,7 @@ async function loadIndustrialStationBuilder(
 ) {
 	const gltf = await new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin())
 		.loadAsync(CORIOLIS_GLB_URL, onProgress);
 	gltf.scene.traverse((o) => {
 		if (o instanceof THREE.Mesh) {

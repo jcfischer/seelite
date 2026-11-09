@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "../../src/shared-image";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -194,7 +195,9 @@ async function selectModel(id: string) {
 		let object = cache.get(id);
 		if (!object) {
 			const flight = new URLSearchParams(location.search).has("flight");
-			const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+			const loader = new GLTFLoader()
+				.setMeshoptDecoder(MeshoptDecoder)
+				.register(sharedImagePlugin());
 			const gltf = await loader.loadAsync(stationModelUrl(id, flight));
 			if (flight && ["ring", "drum"].includes(id)) {
 				const detail = await loader.loadAsync(`/src/models/trade-${id}-detail.glb`);

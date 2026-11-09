@@ -879,6 +879,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-shared-image.mjs",
+			"The models that embed no image share one fetch, decode and GPU texture; interiors keep their own settings; teardown keeps the survivor; a failed fetch offers Retry at boot, fails quietly in the background and refetches later.",
+			[
+				"shared image",
+				"GLB models",
+				"texture sharing",
+				"teardown",
+				"Retry",
+				"model queue",
+			],
+		),
+		entry(
 			"probe-model-viewer.mjs",
 			"Checks that the procedural model workbench renders models while remaining isolated from Game.",
 			["model viewer", "workbench", "procedural models", "Game isolation"],

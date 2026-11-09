@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { exposeStationMaterials } from "./station-light";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import {
 	ASSEMBLY_BLOCKS,
@@ -87,6 +88,7 @@ export function prepareAssemblyModel(
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin())
 		.loadAsync(ASSEMBLY_GLB_URL, onProgress)
 		.then((gltf) => {
 			installAssemblyBlocks(createAssemblyBlocks(gltf.scene));

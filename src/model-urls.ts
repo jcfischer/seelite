@@ -68,6 +68,19 @@ export const LONGWALL_MINER_GLB_URL = new URL(
 	import.meta.url,
 ).href;
 
+/** An image several models share, by the sha256 their prepared GLBs name
+ *  (`src/shared-image.ts`, node #1222). */
+export interface SharedImage {
+	url: string;
+	name: string;
+}
+export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
+	"10d4d0776274448b52fc3191941d09dc0a74f1967854f23f86406188bf1eedd7": {
+		url: new URL("./models/industrial-surface.webp", import.meta.url).href,
+		name: "industrial-surface",
+	},
+};
+
 /** Accepted per-fitting station interiors, node #843. */
 export const STATION_INTERIORS_GLB_URL = new URL(
 	"./models/station-interiors.glb",

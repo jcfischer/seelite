@@ -19,6 +19,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { fetchBundled } from "./bundle-fetch";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
@@ -381,6 +382,7 @@ export async function loadShipyardAssets(
 		: Promise.resolve(null);
 	const gltf = await new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin())
 		.loadAsync(SHIPYARD_GLB_URLS[form], onProgress);
 	const map = await lightmap;
 	const bytes = await probes;
