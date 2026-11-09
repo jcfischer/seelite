@@ -1,3 +1,4 @@
+// A default-layout probe (#381 D11): B cycles the armed group. https://github.com/jcfischer/seelite/issues/1198
 /**
  * The Longwall in the view it mines from, for the bridge's probe and views
  * (https://github.com/jcfischer/seelite/issues/1198): a large deep-deposit

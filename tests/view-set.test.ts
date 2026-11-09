@@ -279,8 +279,7 @@ describe("the view set itself", () => {
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
-		// it, one frame each. Node #1209 adds twelve organic field stands. Node #1198 adds five of the
-		// Longwall bridge.
+		// it, one frame each. Node #1209 adds twelve organic field stands, #1198 five bridge rows.
 		expect(VIEWS.length).toBe(118);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
