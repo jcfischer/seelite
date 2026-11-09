@@ -5,6 +5,7 @@ import { HULL_SPECS } from "../../src/hull";
 import { applyShipyardLightmap } from "../../src/shipyard-flight";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "../../src/shared-image";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -266,6 +267,7 @@ async function selectModel(id: string) {
 	if (!object) {
 		const gltf = await new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
+			.register(sharedImagePlugin())
 			.loadAsync(
 				flight
 					? `../../src/models/shipyard-${flightAsset[id]}.glb`

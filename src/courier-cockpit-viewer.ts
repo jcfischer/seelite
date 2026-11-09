@@ -3,6 +3,7 @@
  * which the dev server serves at the same path and the production build omits. */
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -295,7 +296,9 @@ function makeEquipmentLabel(name: string) {
 	map.anisotropy = 8;
 	return new THREE.MeshBasicMaterial({ map, toneMapped: false });
 }
-const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+const loader = new GLTFLoader()
+	.setMeshoptDecoder(MeshoptDecoder)
+	.register(sharedImagePlugin());
 let cockpit: THREE.Group, station: THREE.Group;
 let fit = false,
 	view = "pilot",

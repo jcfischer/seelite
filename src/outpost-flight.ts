@@ -26,6 +26,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
@@ -255,6 +256,7 @@ export function prepareOutpostModel(
 	if (!promise) {
 		promise = new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
+			.register(sharedImagePlugin())
 			.loadAsync(OUTPOST_GLB_URLS[form], onProgress)
 			.then((gltf) => {
 				installOutpostBuilder(form, createOutpostBuilder(form, gltf.scene));

@@ -3539,11 +3539,6 @@
       "count": 7
     }
   },
-  "tests/field-generator-corpus.test.ts": {
-    "seelite/no-comments": {
-      "count": 34
-    }
-  },
   "tests/field-lod.test.ts": {
     "seelite/no-comments": {
       "count": 9

@@ -111,6 +111,14 @@ const EXEMPT = new Map([
 		"an instrument that prints figures, like measure-asteroid-field-cost; a page error stops the run",
 	],
 	[
+		"measure-docked-coriolis-cold.mjs",
+		"A manual instrument: prints one run as JSON for a harness to compare, and has nothing to pass or fail.",
+	],
+	[
+		"verify-shared-image-decode.mjs",
+		"A manual check against a git ref: prints a row per model, exits non-zero on a difference and needs no tally.",
+	],
+	[
 		"lib/trade-model-probe.mjs",
 		"probe-model-queue passes its own tally's check and watch into the trade installation cases",
 	],

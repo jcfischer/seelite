@@ -356,6 +356,14 @@ const OWNERS = Object.freeze({
 		"src/model-progress.ts",
 		"src/interior-install.ts",
 	],
+	"probe-shared-image.mjs": [
+		"scripts/probe-shared-image.mjs",
+		"scripts/fixtures/shared-image-page.ts",
+		"src/shared-image.ts",
+		"src/gpu-teardown.ts",
+		"src/model-urls.ts",
+		"src/model-queue.ts",
+	],
 	"probe-model-viewer.mjs": [
 		"scripts/probe-model-viewer.mjs",
 		"src/model-viewer.ts",

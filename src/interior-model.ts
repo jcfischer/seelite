@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "meshoptimizer/decoder";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { STATION_INTERIORS_GLB_URL } from "./model-urls";
 import { shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
@@ -28,6 +29,7 @@ export function prepareInteriorModel(
 	if (!ready) MeshoptDecoder.useWorkers(2);
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin("interior"))
 		.loadAsync(STATION_INTERIORS_GLB_URL, onProgress)
 		.then(async (gltf) => {
 			// In 4 ms slices: in one go the fold held a frame for 75-92 ms.

@@ -1,8 +1,3 @@
-/**
- * Asteroid fields and rocks in the sim (node #965), held to #948 D1–D6 over
- * the corpus worlds. Headless: nothing here draws or collides.
- */
-
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
@@ -52,7 +47,6 @@ import { type Vec3, dot, length, sub } from "../src/vec3";
 import { WORLD_GENERATOR_VERSION, enumerateCarriers } from "../src/world-state";
 import { ALL_GALAXIES, forEachSystem } from "./helpers/station-rows";
 
-/** The view set's world and the fingerprint world (#948's own corpus pair). */
 const WORLDS = [47, 0x5ee11e] as const;
 const FINGERPRINT_WORLD = 0x5ee11e;
 
@@ -77,14 +71,11 @@ for (const world of WORLDS)
 	);
 
 const TAU = Math.PI * 2;
-/** An angle folded into (−π, π]. */
 const wrap = (a: number): number => {
 	const r = (((a + Math.PI) % TAU) + TAU) % TAU;
 	return r - Math.PI;
 };
 
-/** Every eighth system's fields with their rocks: the sampled set the
- *  pairwise and motion rows walk, so the suite stays inside its budget. */
 const sampled = corpus
 	.filter((row) => row.record.index % 8 === 0)
 	.flatMap((row) =>
@@ -95,11 +86,6 @@ const sampled = corpus
 		})),
 	);
 
-/**
- * One pass over every rock in the corpus, keeping the worst case of each bound
- * rather than asserting per rock: 360,000 rocks at several `expect`s each is
- * most of the file's run time for no extra evidence.
- */
 const census = {
 	rocks: 0,
 	counts: { charted: [] as number[], rare: [] as number[] },
@@ -138,8 +124,6 @@ for (const { record, fields } of corpus.filter(
 
 describe("domain tags (#948 D1)", () => {
 	test("the four asteroid tags are appended after every existing one", () => {
-		// #948 numbered them 38–41; `NEBULA` (#685) took 38 first. Appending
-		// after it is the only order that changes no existing tag.
 		expect([
 			DOMAIN.ASTEROID_FIELD_ROLL,
 			DOMAIN.ASTEROID_FIELD,
@@ -148,8 +132,6 @@ describe("domain tags (#948 D1)", () => {
 		]).toEqual([39, 40, 41, 42]);
 		expect(DOMAIN.MODULE_STOCK).toBe(37);
 		expect(DOMAIN.NEBULA).toBe(38);
-		// Later appended domains are valid. "Older" is the prefix before
-		// the first asteroid tag, not every non-asteroid tag ever added.
 		const older = Object.values(DOMAIN).slice(
 			0,
 			Object.keys(DOMAIN).indexOf("ASTEROID_FIELD_ROLL"),
@@ -179,7 +161,6 @@ describe("charted fields (#948 D3)", () => {
 			expect(plan.kind).toBe("refinery-orbit");
 			expect(plan.hostId).toBe(refinery.id);
 			expect(refinery.parentId).toBeNull();
-			// The same orbit, phase-shifted: co-periodic, so the gap is forever.
 			expect({ ...plan.orbit, theta0: 0 }).toEqual({
 				...refinery.orbit,
 				theta0: 0,
@@ -200,8 +181,6 @@ describe("charted fields (#948 D3)", () => {
 				const off = dot(gap, orbitNormal(refinery.orbit));
 				expect(off).toBeCloseTo(plan.offPlaneKm, 4);
 				const along = Math.sqrt(length(gap) ** 2 - off ** 2);
-				// A chord of the arc: at an AU's radius it is the arc to well under
-				// a metre.
 				expect(along).toBeGreaterThan(CHARTED_LEAD_KM[0] - 0.01);
 				expect(along).toBeLessThan(CHARTED_LEAD_KM[1] + 0.01);
 			}
@@ -210,9 +189,6 @@ describe("charted fields (#948 D3)", () => {
 	});
 
 	test("the relay never watches a refinery, so no charted field sits in its region", () => {
-		// #948 D3: the lead band (≥ 150 km) does not clear `RELAY_REGION_KM`, so
-		// what keeps the two apart is that every system has a trade station and
-		// the relay watches it first (`relay-slot.ts`'s watch order).
 		expect(CHARTED_LEAD_KM[0]).toBeLessThan(RELAY_REGION_KM);
 		let watchedRefinery = 0;
 		for (const { record, contents } of corpus) {
@@ -234,7 +210,6 @@ describe("rare fields (#948 D4)", () => {
 			expect(rareField(record, contents) !== null).toBe(roll);
 			expect(fields.some((f) => f.id === "field-01")).toBe(roll);
 		}
-		// 4,096 systems: one standard error is 0.006, so this band is five.
 		const rate = present / corpus.length;
 		expect(rate).toBeGreaterThan(0.17);
 		expect(rate).toBeLessThan(0.23);
@@ -271,7 +246,6 @@ describe("rare fields (#948 D4)", () => {
 				expect(aAu / outer).toBeLessThanOrEqual(OUTER_ORBIT_FACTOR[1] + 1e-12);
 				continue;
 			}
-			// A Trojan: a giant's where one exists, else the outermost planet's.
 			expect(plan.kind).toBe(giants.length > 0 ? "trojan" : "outer-trojan");
 			const host = contents.planets.find((p) => p.id === plan.hostId);
 			if (!host) throw new Error(`no host ${plan.hostId}`);
@@ -284,7 +258,6 @@ describe("rare fields (#948 D4)", () => {
 					Math.abs(wrap(plan.orbit.theta0 - host.orbit.theta0)) - TROJAN_RAD,
 				),
 			).toBeLessThan(1e-9);
-			// Never on the outpost's own Trojan point.
 			const outpost = contents.stations.find((s) => s.type === "outpost");
 			if (outpost && outpost.orbit.radiusKm === host.orbit.radiusKm)
 				expect(
@@ -319,7 +292,6 @@ describe("rare fields (#948 D4)", () => {
 describe("rocks: size, arrangement and margin (#948 D5, #1209)", () => {
 	test("every radius is inside its profile's range, and every rock inside its field's extent", () => {
 		expect(census.rocks).toBeGreaterThan(200_000);
-		// Worst signed slack, km: negative is a rock outside its bound.
 		expect(census.belowMinKm).toBeGreaterThanOrEqual(-1e-12);
 		expect(census.aboveMaxKm).toBeGreaterThanOrEqual(-1e-12);
 		expect(census.extentSlackKm).toBeGreaterThanOrEqual(0);
@@ -381,19 +353,15 @@ describe("rocks: closed-form motion (#948 D5)", () => {
 		for (const { plan, rocks } of sampled.slice(0, 60))
 			for (const rock of rocks.slice(0, 10))
 				for (const t of [100, 9_999, 3.3e6]) {
-					// Field frame: small numbers, so the difference is sharp.
 					const exact = rockLocalVelocity(rock, t);
 					const approx = fd((s) => rockLocal(rock, s), t);
 					worstLocal = Math.max(worstLocal, length(sub(exact, approx)));
-					// Star-centric: ~10⁸ km positions, so rounding sets the floor.
 					const pose = rockPose(plan, rock, t);
 					const world = fd((s) => rockPose(plan, rock, s).pos, t);
 					worstWorld = Math.max(worstWorld, length(sub(pose.vel, world)));
 				}
-		// km/s: 1 µm/s, three orders under the 2 m/s cap; the floor is the
-		// phase argument's rounding at large t, not the derivative.
 		expect(worstLocal).toBeLessThan(1e-9);
-		expect(worstWorld).toBeLessThan(1e-6); // km/s: 1 mm/s
+		expect(worstWorld).toBeLessThan(1e-6);
 	});
 
 	test("nothing is integrated: a pose is the same whatever was asked before it", () => {
@@ -426,8 +394,6 @@ describe("identity and versions (#948 D6)", () => {
 		expect(FIELD_GENERATOR_VERSION).toBe(2);
 		for (const c of enumerateCarriers(FINGERPRINT_WORLD, 0))
 			expect(c.localCarrierId.startsWith("field-")).toBe(false);
-		// Nothing the carrier roster or the body list is built from reads the
-		// field module.
 		for (const file of ["src/system.ts", "src/world-state.ts", "src/sim.ts"])
 			expect(readFileSync(file, "utf8")).not.toContain("asteroid-field");
 	});
@@ -460,7 +426,6 @@ describe("identity and versions (#948 D6)", () => {
 		expect(columns[18]).toBe(String(rock.shapeSeed));
 		for (const column of [...columns.slice(4, 18), ...columns.slice(19)])
 			expect(column).toMatch(/^-?\d+\.\d{6}$/);
-		// Last-bit noise from platform sin/cos must not change the row.
 		expect(
 			fieldFingerprintRow(row.record.index, plan, {
 				...rock,
@@ -473,8 +438,6 @@ describe("identity and versions (#948 D6)", () => {
 	});
 
 	test("the field fingerprint is pinned per galaxy", () => {
-		// A change that moves, resizes or re-slots any rock turns this red; it
-		// owes a FIELD_GENERATOR_VERSION bump and #951's deposit migration.
 		expect(
 			ALL_GALAXIES.map((g) => fieldBaselineFingerprint(FINGERPRINT_WORLD, g)),
 		).toEqual([
@@ -505,7 +468,6 @@ describe("identity and versions (#948 D6)", () => {
 			}
 			return rows.join("\n");
 		};
-		// The unmoved rows are the pin, so the row builder is the one the pin uses.
 		expect(fnv1a(lines((r) => r))).toBe(pinned);
 		const nudged = fnv1a(
 			lines((r) => ({
@@ -526,8 +488,6 @@ describe("identity and versions (#948 D6)", () => {
 			for (const plan of systemFields(record, generateContents(record))) {
 				for (const rock of fieldRocks(record, plan)) {
 					if (changedLine < 0 && plan.kind === "refinery-orbit") {
-						// The result of increasing the charted lead by 50 km:
-						// placement moves while every rock-local input stays fixed.
 						const moved: FieldPlan = {
 							...plan,
 							orbit: {
@@ -556,8 +516,6 @@ describe("identity and versions (#948 D6)", () => {
 	});
 
 	test("every placement, shape and motion input affects the fingerprint", () => {
-		// Principal's node #965 ruling: all float inputs use six decimals.
-		// Exercise every input at that precision, including angular inputs.
 		const nudge = (n: number): number =>
 			n + Math.max(1e-6, Math.abs(n) * Number.EPSILON * 2);
 		for (const { row, plan, rocks } of sampled.slice(0, 5)) {

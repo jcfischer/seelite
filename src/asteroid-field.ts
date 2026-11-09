@@ -639,7 +639,7 @@ export function arrangeRocks(
 	const { marginKm } = FIELD_PROFILE[plan.profile];
 	const lobes = drawLobes(plan.profile, draws.lobes);
 	const width =
-		// Stryker disable next-line ArithmeticOperator: a bucket only has to be as wide as the widest pair's reach, under 2.6 km, and 2/x stays wider for every radius the profiles allow
+		// Stryker disable next-line ArithmeticOperator: radius plus drift peaks at 0.96 km by the drift law, below 1 km 2/x exceeds 2x, and a bucket only has to be as wide as the widest pair's reach
 		2 * bank.reduce((m, r) => Math.max(m, r.radiusKm + r.driftKm), 0) +
 		marginKm;
 	const buckets = new Map<number, Rock[]>();
