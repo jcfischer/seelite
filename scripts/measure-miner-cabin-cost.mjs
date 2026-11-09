@@ -100,7 +100,7 @@ async function install() {
 			swapIntervalMs: gaps[swapped][0],
 			firstFramesAfterMs: gaps.slice(swapped + 1, swapped + 6).map(([d]) => d),
 			worstAfterBootMs: gaps
-				.slice(swapped - 200)
+				.slice(Math.max(0, swapped - 200))
 				.map(([d]) => d)
 				.sort((a, b) => b - a)
 				.slice(0, 5),
