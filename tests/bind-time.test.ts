@@ -39,7 +39,7 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 			shippedTrigger("fly.cruise"),
 			{
 				kind: "key",
-				key: "5",
+				key: "8",
 			},
 		);
 		expect("refused" in out).toBe(false);
@@ -53,7 +53,7 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 				(b) =>
 					b.command === "fly.cruise" &&
 					b.trigger.kind === "key" &&
-					b.trigger.key === "5",
+					b.trigger.key === "8",
 			),
 		).toBe(true);
 	});
@@ -171,7 +171,7 @@ describe("the door cannot be shut", () => {
 			shippedTrigger("view.headStarboard"),
 			{
 				kind: "key",
-				key: "5",
+				key: "8",
 			},
 		);
 		const after = new Map<string, number>();

@@ -201,6 +201,5 @@ export function cockpitSeenParts(
 			Math.abs(best.extension - extension)
 		)
 			best = pose;
-	// Stryker disable next-line ArrayDeclaration,OptionalChaining: every cabin and seat the game flies has a row, so best is defined and the fallback never runs
 	return best?.seen ?? [];
 }

@@ -263,9 +263,9 @@ describe("what a rebind may move onto", () => {
 		const from = shippedTrigger("fly.cruise", "pad-button");
 		const layout = rebind(DEFAULT_BINDINGS, "fly.cruise", from, {
 			kind: "key",
-			key: "5",
+			key: "8",
 		});
-		expect(resolveKey(layout, { key: "5", view: "cockpit" })).toEqual([
+		expect(resolveKey(layout, { key: "8", view: "cockpit" })).toEqual([
 			"fly.cruise",
 		]);
 		expect(
@@ -317,7 +317,7 @@ describe("what a rebind may move onto", () => {
 		// that dropped `hold` would store and fly nothing.
 		const from = shippedTrigger("fly.pitchUp", "key");
 		expect(() =>
-			rebind(DEFAULT_BINDINGS, "fly.pitchUp", from, { kind: "key", key: "5" }),
+			rebind(DEFAULT_BINDINGS, "fly.pitchUp", from, { kind: "key", key: "8" }),
 		).toThrow(/qualifiers/);
 	});
 

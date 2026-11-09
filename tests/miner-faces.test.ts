@@ -84,3 +84,18 @@ test("the anchor and stance faces read the feet on the rock and the hold", () =>
 	);
 	expect(texts(held.anchor)).toEqual(["FOUR FEET GRIPPED", "ANCHORED"]);
 });
+
+test("the anchor face names each count of feet, and each face's tones hold", () => {
+	const at = (feetOnRock: number) =>
+		minerFaceRows(state({ drill: { ...state().drill, feetOnRock } }));
+	expect([0, 1, 2, 3, 4].map((n) => at(n).anchor[0][0])).toEqual([
+		"NO FEET GRIPPED",
+		"ONE FOOT GRIPPED",
+		"TWO FEET GRIPPED",
+		"THREE FEET GRIPPED",
+		"FOUR FEET GRIPPED",
+	]);
+	const rows = minerFaceRows(state({ mining: false }));
+	expect(rows.ore[0][1]).toBe("#ffb347");
+	expect(rows.survey[0][1]).toBe("#9fb7c0");
+});

@@ -1,4 +1,4 @@
-// The Longwall's own cabin by flown hull, https://github.com/jcfischer/seelite/issues/1198
+// A default-layout probe (#381 D11): 5 swaps seats, B cycles, 4 anchors. The Longwall's own cabin by flown hull, https://github.com/jcfischer/seelite/issues/1198
 import { mkdir } from "node:fs/promises";
 import { gameUrl } from "./lib/game-url.mjs";
 import { deployDrill, placeAtRockFace } from "./lib/miner-bridge-fixture.mjs";
@@ -18,14 +18,12 @@ const { check, watch, exit } = tally();
 const shots = "probe-shots/miner-cockpit";
 await mkdir(shots, { recursive: true });
 const CABIN_GLB = /miner-cockpit[^/]*\.glb/;
-const url = (extra) =>
-	gameUrl(origin, {
-		seed: 0x5ee11e,
-		system: 173,
-		"no-save": "",
-		raider: "off",
-		...extra,
-	});
+const FIXTURE = {
+	seed: 0x5ee11e,
+	system: 173,
+	"no-save": "",
+	raider: "off",
+};
 const open = async (extra, prepare) => {
 	const page = await browser.newPage({
 		viewport: { width: 1280, height: 800 },
@@ -33,7 +31,7 @@ const open = async (extra, prepare) => {
 	watch(page);
 	await installViewPlacement(page);
 	await prepare?.(page);
-	await page.goto(url(extra));
+	await page.goto(gameUrl(origin, { ...FIXTURE, ...extra }));
 	await bootedGame(page, 90000);
 	return page;
 };
@@ -259,7 +257,9 @@ try {
 		if (CABIN_GLB.test(r.url())) fetched.push(r.url());
 	});
 	await installViewPlacement(courier);
-	await courier.goto(url({ hull: "courier", "models-full": false }));
+	await courier.goto(
+		gameUrl(origin, { ...FIXTURE, hull: "courier", "models-full": false }),
+	);
 	await bootedGame(courier, 90000);
 	const plain = await cabinFacts(courier);
 	check(
