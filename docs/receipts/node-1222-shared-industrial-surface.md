@@ -12,7 +12,8 @@
   No anisotropy, bump or material setting changed.
 - A loader without the plugin rejects a prepared file. That is deliberate: its
   texture has no `source`, so the failure is an error and not an untextured model.
-- No visual approval was spent: the view set did not move (below).
+- No visual approval was spent: the view set shows no change beyond its noise, and the decoded
+  inputs to the frame are identical (below).
 - **A fresh pilot always needs this image at boot.** Every trade station form uses
   it, and `tests/shared-image.test.ts` holds that over all 256 systems of seed 42. So a failed fetch
   normally reaches the Retry panel, and the background path is reached only by a
@@ -110,8 +111,10 @@ every pairing diffed, which separates them:
 | `duel-console` | 0.00 to 0.01% | 0.00 to 0.01% |
 | `planet-terminator` | 0.00 to 0.07% | 0.01 to 0.07% |
 
-The ranges overlap, so none of the four moved. This tool is no gate, and this node asks only
-whether the frames match; no appearance changed for the principal to judge.
+The ranges overlap, so none of the four separates from noise, which is not proof of equality: a
+small shift could hide inside a spinning view's range. The stronger evidence is the mechanism: the
+decoded image matches to the byte, every texture setting matches, and every attribute digest matches.
+No appearance change was found for the principal to judge.
 
 No changelog entry: `src/changelog.ts` excludes performance tuning and internal changes.
 
