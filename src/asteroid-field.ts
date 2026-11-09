@@ -644,6 +644,7 @@ export function arrangeRocks(
 		marginKm;
 	const buckets = new Map<number, Rock[]>();
 	const out: Rock[] = [];
+	// Stryker disable next-line ArrowFunction: one shared bucket checks every rock and gives the same answer, only slower
 	const key = (i: number, j: number, k: number): number =>
 		// Stryker disable next-line ArithmeticOperator: a colliding key only makes a bucket hold more rocks; every candidate still meets the distance test
 		((i + 512) * 1024 + j + 512) * 1024 + k + 512;
