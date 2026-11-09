@@ -1,0 +1,5 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3-ratification-sustained.json",
+	"overrides": { "startCr": 100000 },
+	"axes": { "recoveryTPerH": [10] }
+}

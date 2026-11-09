@@ -1,0 +1,9 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3-ratification-sustained.json",
+	"overrides": {
+		"systemsPerWorld": 24
+	},
+	"axes": {
+		"recoveryTPerH": [10, 15]
+	}
+}
