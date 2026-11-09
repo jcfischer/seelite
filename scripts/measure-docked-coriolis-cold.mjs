@@ -11,11 +11,14 @@
  * exterior and the interior both draw; and waits for the system's models to
  * settle. It prints one JSON line. `stallMs` is the longest gap between two
  * animation frames from the first frame after boot until 120 frames after
- * settling, which holds every upload; a dev server's module transforms are in
- * the boot, not in that window.
+ * settling; `uploads` pairs each frame's gap with the textures it added, so a
+ * stall can be told from an upload. `bytes` is every model, image and binary
+ * response of the page, read from the requests rather than the resource timing
+ * buffer, which a dev server's modules overflow.
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
 import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
 import {
 	bootedGame,
@@ -38,6 +41,17 @@ try {
 	).newPage();
 	page.on("pageerror", (e) => console.error("pageerror:", e.message));
 	await installViewPlacement(page);
+	await installViewFraming(page);
+	const fetched = [];
+	page.on("requestfinished", async (request) => {
+		const url = new URL(request.url());
+		if (!/\.(glb|webp|bin)$/.test(url.pathname)) return;
+		const { responseBodySize } = await request.sizes();
+		fetched.push({
+			file: url.pathname.split("/").pop(),
+			bytes: responseBodySize,
+		});
+	});
 	await page.goto(
 		gameUrl(origin, {
 			seed: 42,
@@ -57,16 +71,25 @@ try {
 	const renderer = await assertPlayersRenderer(page, "measure");
 	await page.evaluate(async () => {
 		const g = window.__seelite;
-		g.skipOpening();
-		await window.__parkInBerth("station-trade", "port-deep");
 		window.__gaps = [];
+		window.__uploads = [];
 		let last = performance.now();
+		let textures = g.renderer.info.memory.textures;
 		const tick = (now) => {
 			window.__gaps.push(now - last);
 			last = now;
+			const live = g.renderer.info.memory.textures;
+			if (live !== textures)
+				window.__uploads.push([
+					Math.round(window.__gaps.at(-1)),
+					live - textures,
+				]);
+			textures = live;
 			window.__tick = requestAnimationFrame(tick);
 		};
 		requestAnimationFrame(tick);
+		g.skipOpening();
+		await window.__parkInBerth("station-trade", "port-deep");
 	});
 	await page.waitForFunction(
 		() =>
@@ -80,13 +103,6 @@ try {
 			await new Promise((resolve) => requestAnimationFrame(resolve));
 		cancelAnimationFrame(window.__tick);
 		const g = window.__seelite;
-		const files = performance
-			.getEntriesByType("resource")
-			.filter((e) => /\.(glb|webp|bin)(\?|$)/.test(e.name))
-			.map((e) => ({
-				file: new URL(e.name).pathname.split("/").pop(),
-				bytes: e.encodedBodySize,
-			}));
 		const maps = new Set();
 		for (const station of g.stationVisuals.values())
 			station.root.traverse((o) => {
@@ -95,7 +111,7 @@ try {
 			});
 		const sorted = [...window.__gaps].sort((a, b) => b - a);
 		return {
-			files,
+			uploads: window.__uploads,
 			textures: g.renderer.info.memory.textures,
 			industrialMaps: maps.size,
 			anisotropies: [...maps].map((m) => m.anisotropy).sort(),
@@ -110,10 +126,11 @@ try {
 	console.log(
 		JSON.stringify({
 			renderer,
-			bytes: report.files.reduce((sum, f) => sum + f.bytes, 0),
-			requests: report.files.length,
-			images: report.files.filter((f) => f.file.includes("industrial-surface"))
+			bytes: fetched.reduce((sum, f) => sum + f.bytes, 0),
+			requests: fetched.length,
+			images: fetched.filter((f) => f.file.includes("industrial-surface"))
 				.length,
+			files: fetched,
 			...report,
 		}),
 	);
