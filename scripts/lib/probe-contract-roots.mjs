@@ -24,6 +24,14 @@ const OWNERS = Object.freeze({
 		"src/station-commerce.ts",
 		"src/station-console.ts",
 	],
+	"probe-miner-cockpit.mjs": [
+		"scripts/probe-miner-cockpit.mjs",
+		"src/cockpit-eye.ts",
+		"src/cockpit-model.ts",
+		"src/cockpit-occlusion-table.ts",
+		"src/miner-faces.ts",
+		"src/models/miner-cockpit.glb",
+	],
 	"probe-mining-drill.mjs": [
 		"scripts/probe-mining-drill.mjs",
 		"src/rock-drill.ts",

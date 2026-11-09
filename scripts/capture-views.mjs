@@ -47,6 +47,7 @@
 import { installHaulerFixture } from "./lib/hauler-fixture.mjs";
 import { placeCapabilityOutage } from "./lib/capability-outage-fixture.mjs";
 import { placeAsteroidField } from "./lib/asteroid-field-fixture.mjs";
+import { deployDrill, placeAtRockFace } from "./lib/miner-bridge-fixture.mjs";
 import { placeMiningSurvey } from "./lib/mining-survey-fixture.mjs";
 import { placeFieldDiscovery } from "./lib/field-discovery-fixture.mjs";
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
@@ -215,6 +216,11 @@ let currentMining = false;
  * before the saved clock and threw. So the saves are deleted from a workbench
  * route, which opens no save store, and only then is the game loaded.
  */
+const MINING_BOOT_SHOTS = [
+	"capability-outage",
+	"mining-survey",
+	"miner-bridge",
+];
 let worldWritten = false;
 async function ensureFixture(
 	page,
@@ -412,6 +418,21 @@ const PLACERS = {
 		worldWritten = true;
 		const result = await placeFieldDiscovery(page, shot.mode);
 		return `${result.fieldId} · ${result.mode} at ${result.at.toFixed(3)}s`;
+	},
+	"miner-bridge": async (page, shot) => {
+		worldWritten = true;
+		if (shot.stage !== "open") {
+			const groups = await placeAtRockFace(page);
+			if (shot.stage === "drill") await deployDrill(page, groups);
+		}
+		await page.evaluate((seat) => {
+			const g = window.__seelite;
+			g.view = "cockpit";
+			g.setHeadLook("forward");
+			g.setMinerSeat(seat);
+			g.updateCockpit();
+		}, shot.seat);
+		return `${shot.stage} · ${shot.seat} seat`;
 	},
 	"mining-survey": async (page, shot) => {
 		worldWritten = true;
@@ -1595,6 +1616,7 @@ try {
 				[
 					"capability-outage",
 					"mining-survey",
+					"miner-bridge",
 					"field-discovery",
 					"asteroid-field",
 				].includes(view.shot.kind)
@@ -1610,7 +1632,7 @@ try {
 				view.shot.seed ?? SEED,
 				view.shot.system ?? null,
 				view.shot.hull ?? "courier",
-				["capability-outage", "mining-survey"].includes(view.shot.kind),
+				MINING_BOOT_SHOTS.includes(view.shot.kind),
 			);
 			await setView(page, view.shot.view);
 		} else {

@@ -1,3 +1,4 @@
+import { cabinForHull } from "./cockpit-eye";
 import { carrierKey } from "./carrier-key";
 import type { HullId } from "./hull";
 import type { Galaxy } from "./galaxy";
@@ -53,6 +54,7 @@ export function systemModelIds(
 		const id = stationModel(station);
 		if (id) ids.add(id);
 	}
+	if (cabinForHull(flownHull) === "miner") ids.add("cockpit/miner");
 	for (const hull of [flownHull, ...trafficHulls])
 		if (isAuthoredHullModel(hull)) ids.add(hull);
 	if (system.contents.stations.length) ids.add("interiors");

@@ -48,6 +48,11 @@ export const COURIER_COCKPIT_GLB_URL = new URL(
 	"./models/courier-cockpit.glb",
 	import.meta.url,
 ).href;
+/** The Longwall bridge, prepared by `spikes/miner-cockpit/prepare-game-asset.mjs` (node #1198). */
+export const MINER_COCKPIT_GLB_URL = new URL(
+	"./models/miner-cockpit.glb",
+	import.meta.url,
+).href;
 /** Prepared by `spikes/courier-hull/prepare-game-asset.mjs` (node #812). */
 export const COURIER_HULL_GLB_URL = new URL(
 	"./models/courier-hull.glb",

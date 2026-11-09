@@ -16,6 +16,8 @@ export const modelLoaders = {
 	// become an import of main's own unfinished top-level await in the bundle.
 	// Importing the function does not fetch the GLB; calling it still does.
 	cockpit: prepareCockpitModel,
+	"cockpit/miner": (p?: Parameters<ModelLoader>[0]) =>
+		prepareCockpitModel(p, "miner"),
 	coriolis: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./coriolis-flight")).prepareCoriolisModel(p),
 	"trade/b": tradeLoader("b"),

@@ -36,10 +36,20 @@ at another console. Static `label-*` and `key-*` meshes remain equipment labels.
 | `controls` | First-day flight controls |
 | `prototype-combat` | The optional combat study's readings |
 
-The current base has no live drill or anchor producer. A model may already
-name `screen-drill` and `screen-anchor`; they stay dark until such producers
-exist. Any other screen without a live producer also stays unpowered,
-including the courier's `screen-systems`.
+Any screen without a live producer stays unpowered, including the courier's
+`screen-systems` and the Longwall bridge's `screen-drillcam`.
+
+## The Longwall bridge
+
+The cabin is chosen by flown hull (`cabinForHull`, #1198); every hull without
+a row flies the courier's. The bridge's mining console has its own painted
+faces: `survey`, `ore`, `drill`, `anchor`, `stance` and `lasers`
+(`src/miner-faces.ts`). They own those sources, so `CockpitReadouts` keeps the
+reading and paints nothing for it on the fallback console. `radar`, `flight`,
+`target`, `status` and `notices` use the ordinary text path on the pilot's
+console. With no `screen-fallback`, the remaining sources share the emergency
+console. Without `?mining=1` the survey, drill, anchor and stance faces read
+`MINING OFF`.
 
 ## Missing surfaces
 
@@ -66,7 +76,7 @@ Chase view retains its existing spatial cues and event notices.
 `scripts/fixtures/cockpit-text-cabin.glb` through the GLTF loader. The second
 fixture has moved, differently sized survey and ore screens, no flight screen,
 an unpowered systems screen and a fallback. It represents a different cabin
-contract without integrating the miner study or seat switching.
+contract; `probe-miner-cockpit.mjs` checks the bridge itself.
 
 `probe-live-cockpit.mjs` compares actual face pixels with the complete reading
 and a source-omitted control. The status checks vary live flight state at both

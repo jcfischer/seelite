@@ -16,7 +16,6 @@ import {
 	collisions,
 	COMMANDS,
 	type CommandId,
-	commandsFor,
 	type Half,
 	commandById,
 	DEFAULT_BINDINGS,
@@ -79,6 +78,7 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:3::hold → view.orbitStarboard @ flight/instrument/console/modal chase -",
 	"key:3::press → view.headStarboard @ flight/instrument/console/modal cockpit -",
 	"key:4::press → fight.drillHold @ flight/instrument/console/modal cockpit/chase -",
+	"key:5::press → view.seatSwap @ flight/instrument/console/modal cockpit -",
 	"key:6::press → system.postcard @ flight/instrument/console/modal cockpit/chase -",
 	"key:7::press → view.fov @ flight/instrument/console/modal cockpit -",
 	"key:9::press → system.commander @ flight/instrument/console/modal cockpit/chase -",
@@ -152,14 +152,9 @@ const keyRows = (bindings: readonly Binding[]) =>
 		.sort();
 
 describe("the catalogue #369 ratified", () => {
-	test("the seat switch exists only behind the miner cockpit flag", () => {
-		expect(COMMANDS.some((c) => c.id === "view.seatSwap")).toBe(false);
-		expect(commandsFor(false).some((c) => c.id === "view.seatSwap")).toBe(
-			false,
-		);
-		const miner = commandsFor(true).find((c) => c.id === "view.seatSwap");
-		expect(miner?.defaultTriggers).toEqual([{ kind: "key", key: "5" }]);
-		expect(commandsFor(true).length).toBe(COMMANDS.length + 1);
+	test("the seat switch ships on 5 in the cockpit (#1198)", () => {
+		const swap = COMMANDS.find((c) => c.id === "view.seatSwap");
+		expect(swap?.defaultTriggers).toEqual([{ kind: "key", key: "5" }]);
 	});
 
 	test("every id is namespaced, unique, and not a key string", () => {
@@ -526,18 +521,18 @@ describe("the pad and the chord are resolved through the layout", () => {
 		// bought by the pad row being a row of its own. Cruise moves off `j`
 		// and Triangle keeps engaging it.
 		//
-		// **Onto `5`, because every letter in this game is already bound** —
-		// `4`, `5`, `7`, `8` and the backslash are the only free characters
+		// **Onto `8`, because every letter in this game is already bound** —
+		// `8` and the backslash are the only free characters
 		// the shipped layout leaves (`6` is the Postcard screen's, #406). A letter target would be a legal D5 collision
 		// and this row would then be measuring that instead.
 		const layout = rebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
 			{ kind: "key", key: "j" },
-			{ kind: "key", key: "5" },
+			{ kind: "key", key: "8" },
 		);
 		expect(resolveKey(layout, { key: "j", view: "cockpit" })).toEqual([]);
-		expect(resolveKey(layout, { key: "5", view: "cockpit" })).toEqual([
+		expect(resolveKey(layout, { key: "8", view: "cockpit" })).toEqual([
 			"fly.cruise",
 		]);
 		expect(

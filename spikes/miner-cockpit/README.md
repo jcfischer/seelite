@@ -25,4 +25,4 @@ $B --background spikes/miner-cockpit/miner-cockpit-2seat.blend --python spikes/m
 
 ## In the game
 
-`?boot=overlay&hull=miner&mining=1&cockpit=miner`. The pilot sits on the left with the courier instruments, and the miner on the right with the mining instruments. Key `5` (`view.seatSwap`) moves the eye between the seats. Four miner screens (drill, anchor, stance, drill camera) stay dark until their data exists on main.
+Node #1198 ships this cabin for the flown Longwall: `prepare-game-asset.mjs` writes `src/models/miner-cockpit.glb` from `miner-cockpit-2seat.glb`, and `docs/receipts/node-1198-miner-cockpit.md` carries the figures. The pilot sits on the left with the courier instruments, and the miner on the right with the mining instruments. Key `5` (`view.seatSwap`) moves the eye between the seats. The drill camera has no data source and stays dark.
