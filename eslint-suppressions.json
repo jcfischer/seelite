@@ -3059,11 +3059,6 @@
       "count": 92
     }
   },
-  "tests/asteroid-field.test.ts": {
-    "seelite/no-comments": {
-      "count": 34
-    }
-  },
   "tests/asteroid-model.test.ts": {
     "seelite/no-comments": {
       "count": 5
@@ -3542,6 +3537,11 @@
   "tests/field-draw.test.ts": {
     "seelite/no-comments": {
       "count": 7
+    }
+  },
+  "tests/field-generator-corpus.test.ts": {
+    "seelite/no-comments": {
+      "count": 34
     }
   },
   "tests/field-lod.test.ts": {

@@ -1,7 +1,7 @@
 /**
  * https://github.com/jcfischer/seelite/issues/1209 — the arrangement on a few
  * fields, fast enough for a mutant to run it hundreds of times. The whole corpus
- * is `asteroid-field-corpus.test.ts`.
+ * is `field-generator-corpus.test.ts`.
  */
 import { describe, expect, test } from "bun:test";
 import {

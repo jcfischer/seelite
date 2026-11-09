@@ -656,8 +656,10 @@ export function arrangeRocks(
 	): boolean => {
 		for (let i = ci - 1; i <= ci + 1; i++)
 			for (let j = cj - 1; j <= cj + 1; j++)
-				for (let k = ck - 1; k <= ck + 1; k++)
-					for (const prior of buckets.get(key(i, j, k)) ?? [])
+				for (let k = ck - 1; k <= ck + 1; k++) {
+					const bucket = buckets.get(key(i, j, k));
+					if (!bucket) continue;
+					for (const prior of bucket)
 						if (
 							// Stryker disable next-line EqualityOperator: envelopes exactly tangent are a float tie no draw produces
 							distance(anchor, prior.anchor) <
@@ -668,6 +670,7 @@ export function arrangeRocks(
 								marginKm
 						)
 							return false;
+				}
 		return true;
 	};
 	for (const rock of bank) {
