@@ -190,6 +190,11 @@ async function applyCaptureSettings(page) {
  * that says half of what the function guarantees is a name that misleads exactly
  * where a reader is deciding whether they can trust it.
  */
+const MINING_BOOT_SHOTS = [
+	"capability-outage",
+	"mining-survey",
+	"miner-bridge",
+];
 let currentSeed = null;
 /**
  * The system the loaded page was asked to boot at, or `null` for the start
@@ -216,11 +221,6 @@ let currentMining = false;
  * before the saved clock and threw. So the saves are deleted from a workbench
  * route, which opens no save store, and only then is the game loaded.
  */
-const MINING_BOOT_SHOTS = [
-	"capability-outage",
-	"mining-survey",
-	"miner-bridge",
-];
 let worldWritten = false;
 async function ensureFixture(
 	page,

@@ -69,6 +69,11 @@ test("the drill face reads contact and gap, or what blocks it", () => {
 		}),
 	).drill;
 	expect(blocked).toEqual([["OUT OF REACH", "#ff4a3a"]]);
+	for (const block of ["STOWED", "DEPLOYING"])
+		expect(
+			minerFaceRows(state({ drill: { ...state().drill, block, gapM: null } }))
+				.drill,
+		).toEqual([[block, "#9fb7c0"]]);
 });
 
 test("the anchor and stance faces read the feet on the rock and the hold", () => {

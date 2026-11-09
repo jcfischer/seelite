@@ -131,19 +131,12 @@ async function cost() {
 			timeout: 180000,
 		},
 	);
-	await page.evaluate(async () => {
-		const { releaseAuthoredCabin } = await import("/src/cockpit-model.ts");
+	await page.evaluate(() => {
 		const g = window.__seelite;
 		g.clockHeld = true;
 		window.__arm = (arm) => {
 			const cabin = arm === "courier" ? "courier" : "miner";
-			if (g.cabinId !== cabin) {
-				const old = g.cockpit.mesh;
-				old.removeFromParent();
-				releaseAuthoredCabin(old);
-				g.minerSeat = "pilot";
-				g.buildCockpit(cabin);
-			}
+			if (g.cabinId !== cabin) g.replaceCabin(cabin);
 			g.setMinerSeat(arm === "miner-seat" ? "miner" : "pilot");
 		};
 		window.__stand = () => {

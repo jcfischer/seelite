@@ -61,6 +61,7 @@ export function minerFaceRows(
 ): Readonly<Record<MinerFaceScreen, readonly MinerFaceRow[]>> {
 	const d = s.drill;
 	const contact = d.block === null;
+	const idle = d.block === "STOWED" || d.block === "DEPLOYING";
 	const gap: MinerFaceRow[] =
 		d.gapM === null ? [] : [[`GAP ${d.gapM.toFixed(1)} M`, PALE]];
 	return {
@@ -81,7 +82,7 @@ export function minerFaceRows(
 			: [
 					[
 						contact ? "CONTACT" : (d.block as string),
-						contact ? GREEN : REFUSAL,
+						contact ? GREEN : idle ? QUIET : REFUSAL,
 					],
 					...gap,
 				],

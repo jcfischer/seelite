@@ -74,6 +74,10 @@ export const modelLoaders = {
 } satisfies Record<string, ModelLoader>;
 export type ModelId = keyof typeof modelLoaders;
 export const ALL_MODELS = Object.keys(modelLoaders) as ModelId[];
+/** Only the pilot flying the hull needs its cabin, so the session sweep leaves it out, https://github.com/jcfischer/seelite/issues/1198 */
+export const ON_DEMAND_MODELS: ReadonlySet<string> = new Set<ModelId>([
+	"cockpit/miner",
+]);
 export const AUTHORED_HULL_MODELS = [
 	"courier",
 	"tug",

@@ -26,9 +26,11 @@ export class ModelQueue {
 		/** Runs once a load has failed for good, so a consumer can draw its
 		 *  stand-in; like `installed`, the model is not settled until it ends. */
 		private readonly failed: (id: string) => Promise<void> = async () => {},
+		/** Fetched only when named, never by the sweep, https://github.com/jcfischer/seelite/issues/1198 */
+		private readonly onDemand: ReadonlySet<string> = new Set(),
 	) {
-		this.order = Object.keys(loaders);
-		for (const id of this.order) this.states.set(id, "pending");
+		this.order = Object.keys(loaders).filter((id) => !onDemand.has(id));
+		for (const id of Object.keys(loaders)) this.states.set(id, "pending");
 	}
 	state(id: string): ModelState {
 		const state = this.states.get(id);
@@ -52,13 +54,18 @@ export class ModelQueue {
 	}
 	prioritize(current: readonly string[], next: readonly string[] = []): void {
 		this.order = [
-			...new Set([...current, ...next, ...Object.keys(this.loaders)]),
+			...new Set([
+				...current,
+				...next,
+				...Object.keys(this.loaders).filter((id) => !this.onDemand.has(id)),
+			]),
 		];
 		for (const id of this.order) this.state(id);
 		this.start();
 	}
 	wait(ids: readonly string[]): Promise<void> {
 		if (this.settled(ids)) return Promise.resolve();
+		this.order = [...new Set([...this.order, ...ids])];
 		const done = new Promise<void>((resolve) => {
 			const check = () => {
 				if (this.settled(ids)) {

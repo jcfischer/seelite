@@ -27,8 +27,10 @@ import { makeWorld } from "../src/sim";
 const ASSET = "src/models/miner-cockpit.glb";
 const HOST_LIMIT_BYTES = 25 * 1024 * 1024;
 
-function withCanvasStub<T>(body: () => T): T {
-	const ctx = { fillRect: () => {}, fillText: () => {} };
+function withCanvasStub<T>(
+	body: () => T,
+	ctx: object = { fillRect: () => {}, fillText: () => {} },
+): T {
 	const previous = (globalThis as { document?: unknown }).document;
 	(globalThis as { document?: unknown }).document = {
 		createElement: () => ({ width: 0, height: 0, getContext: () => ctx }),
@@ -158,11 +160,7 @@ describe("the installed bridge", () => {
 			measureText: () => ({ width: 1 }),
 			fillText: (text: string) => painted.push(text),
 		};
-		const previous = (globalThis as { document?: unknown }).document;
-		(globalThis as { document?: unknown }).document = {
-			createElement: () => ({ width: 0, height: 0, getContext: () => ctx }),
-		};
-		try {
+		withCanvasStub(() => {
 			const readouts = new CockpitReadouts(root, {}, frame, new Set(["ore"]));
 			readouts.write("ore", [{ text: "ORE LINE" }]);
 			readouts.write("course", [{ text: "COURSE LINE" }]);
@@ -170,9 +168,7 @@ describe("the installed bridge", () => {
 			expect(painted).toContain("COURSE LINE");
 			expect(painted).not.toContain("ORE LINE");
 			expect(readouts.readings.get("ore")?.[0].text).toBe("ORE LINE");
-		} finally {
-			(globalThis as { document?: unknown }).document = previous;
-		}
+		}, ctx);
 	});
 });
 

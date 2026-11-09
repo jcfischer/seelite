@@ -250,21 +250,6 @@ try {
 			courierAfter.eye.y === 0,
 		JSON.stringify(courierAfter),
 	);
-	const launch = await swap.evaluate(async () => {
-		const g = window.__seelite;
-		g.setFlownHull("courier");
-		g.hullOnLaunch = "miner";
-		const docked = g.cabinId;
-		g.setFlownHull(g.hullOnLaunch);
-		g.hullOnLaunch = null;
-		g.render(0);
-		return { docked, launched: g.cabinId };
-	});
-	check(
-		"a hull waiting for the launch shows its cabin when it takes over",
-		launch.docked === "courier" && launch.launched === "miner",
-		JSON.stringify(launch),
-	);
 	await swap.close();
 
 	const courier = await browser.newPage({
@@ -276,10 +261,16 @@ try {
 		if (CABIN_GLB.test(r.url())) fetched.push(r.url());
 	});
 	await installViewPlacement(courier);
+	await installViewFraming(courier);
 	await courier.goto(
 		gameUrl(origin, { ...FIXTURE, hull: "courier", "models-full": false }),
 	);
 	await bootedGame(courier, 90000);
+	await courier.waitForFunction(
+		() => window.__seelite.modelsSettled(),
+		undefined,
+		{ timeout: 120000 },
+	);
 	const plain = await cabinFacts(courier);
 	check(
 		"a courier pilot neither fetches nor draws the bridge",
@@ -295,6 +286,42 @@ try {
 		"key 5 does nothing in the courier's cabin",
 		noSeat === "pilot",
 		noSeat,
+	);
+	await courier.evaluate(() =>
+		window.__parkInBerth("station-trade", "overhead-near", {}),
+	);
+	const beforeLaunch = await courier.evaluate(() => {
+		const g = window.__seelite;
+		g.hullOnLaunch = "miner";
+		return { phase: g.dockPhase, cabin: g.cabinId };
+	});
+	await courier.evaluate(() => {
+		const g = window.__seelite;
+		g.launch();
+		for (let i = 0; i < 60 * 60 && g.flownHull !== "miner"; i++) {
+			g.skipDockTraversal();
+			g.step(1 / 60);
+		}
+	});
+	const atLaunch = await courier.evaluate(() => ({
+		hull: window.__seelite.flownHull,
+		cabin: window.__seelite.cabinId,
+	}));
+	await courier.waitForFunction(
+		() => window.__seelite.cabinId === "miner",
+		undefined,
+		{ timeout: 120000 },
+	);
+	const bought = await cabinFacts(courier);
+	check(
+		"a real launch hands over a bought Longwall: the bridge is fetched then, and installs",
+		beforeLaunch.phase === "docked" &&
+			beforeLaunch.cabin === "courier" &&
+			atLaunch.hull === "miner" &&
+			fetched.length === 1 &&
+			bought.secondSeat &&
+			near(bought.eye, bought.want),
+		JSON.stringify({ beforeLaunch, atLaunch, fetched, want: bought.want }),
 	);
 	await courier.close();
 

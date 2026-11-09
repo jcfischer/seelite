@@ -168,3 +168,38 @@ test("a failed load runs the stand-in hook, and the model is not settled until i
 	expect(queue.settled(["bad"])).toBe(true);
 	expect(events).toEqual(["failed:bad", "stand-in built"]);
 });
+
+test("an on-demand model stays out of the sweep until something names it", async () => {
+	const loaded: string[] = [];
+	const loaders = {
+		a: async () => void loaded.push("a"),
+		bridge: async () => void loaded.push("bridge"),
+	};
+	const queue = new ModelQueue(
+		loaders,
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	queue.prioritize([]);
+	await queue.wait(["a"]);
+	expect(loaded).toEqual(["a"]);
+	expect(queue.state("bridge")).toBe("pending");
+	queue.prioritize(["bridge"]);
+	await queue.wait(["bridge"]);
+	expect(loaded).toEqual(["a", "bridge"]);
+});
+
+test("waiting on an on-demand model no one prioritized still fetches it", async () => {
+	const loaded: string[] = [];
+	const queue = new ModelQueue(
+		{ bridge: async () => void loaded.push("bridge") },
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	await queue.wait(["bridge"]);
+	expect(loaded).toEqual(["bridge"]);
+});

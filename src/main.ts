@@ -173,6 +173,7 @@ import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { ModelQueue } from "./model-queue";
 import {
 	ALL_MODELS,
+	ON_DEMAND_MODELS,
 	modelLoaders,
 	type ModelId,
 	isAuthoredHullModel,
@@ -2352,6 +2353,7 @@ const models = new ModelQueue(
 	async (id) => {
 		await installedGame?.modelFailed(id as ModelId);
 	},
+	ON_DEMAND_MODELS,
 );
 async function requireModels(
 	ids: readonly ModelId[],
@@ -7450,13 +7452,7 @@ class Game {
 		old.removeFromParent();
 		disposeSubtree(old);
 		this.shipMesh = mesh;
-		const marked = this.markedOcclusion.findIndex(([name]) => name === "ship");
-		const record: (typeof this.markedOcclusion)[number] = [
-			"ship",
-			markOcclusion(mesh),
-		];
-		if (marked >= 0) this.markedOcclusion[marked] = record;
-		else this.markedOcclusion.push(record);
+		this.recordOcclusion("ship", markOcclusion(mesh));
 		this.nearScene.add(mesh);
 		this.syncCabin();
 		if (installedGame === this) this.startModelQueue();
@@ -11156,15 +11152,7 @@ class Game {
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
 		// passes; the screens and labels are `MeshBasicMaterial` and fall out.
-		const marked = this.markedOcclusion.findIndex(
-			([name]) => name === "cockpit",
-		);
-		const record: (typeof this.markedOcclusion)[number] = [
-			"cockpit",
-			markOcclusion(cockpit),
-		];
-		if (marked >= 0) this.markedOcclusion[marked] = record;
-		else this.markedOcclusion.push(record);
+		this.recordOcclusion("cockpit", markOcclusion(cockpit));
 		// Into its own scene (#651), and `cabin-pass.ts` has why. The tunnel
 		// lines are not the cabin's and stay in the near layer.
 		this.cabinScene.add(cockpit);
@@ -11180,11 +11168,25 @@ class Game {
 	private syncCabin(): void {
 		const next = this.cabinToDraw();
 		if (next === this.cabinId) return;
+		this.replaceCabin(next);
+	}
+
+	private replaceCabin(next: CabinId): void {
 		const old = this.cockpit.mesh;
 		old.removeFromParent();
 		releaseAuthoredCabin(old);
 		this.minerSeat = "pilot";
 		this.buildCockpit(next);
+	}
+
+	private recordOcclusion(
+		name: string,
+		marked: ReturnType<typeof markOcclusion>,
+	) {
+		const at = this.markedOcclusion.findIndex(([n]) => n === name);
+		const record: (typeof this.markedOcclusion)[number] = [name, marked];
+		if (at >= 0) this.markedOcclusion[at] = record;
+		else this.markedOcclusion.push(record);
 	}
 
 	/** What each occlusion walk marked, kept for `probe-occlusion.mjs` to read
@@ -11379,6 +11381,7 @@ class Game {
 		name: MinerFaceScreen;
 		ctx: CanvasRenderingContext2D;
 		texture: THREE.CanvasTexture;
+		key: string;
 	}[] = [];
 	minerFaceReadings: ReturnType<typeof minerFaceRows> | null = null;
 	private minerFacesPaintedAt = -Infinity;
@@ -11414,7 +11417,7 @@ class Game {
 			mount.name = `miner-${name}-mount`;
 			mount.add(face);
 			seat.add(mount);
-			this.minerFaces.push({ name, ctx, texture });
+			this.minerFaces.push({ name, ctx, texture, key: "" });
 		}
 	}
 
@@ -11482,7 +11485,14 @@ class Game {
 		this.minerFacesPaintedAt = now;
 		const rows = minerFaceRows(this.minerFaceState());
 		this.minerFaceReadings = rows;
+		const feet = this.drill.feet.map((f) => f.onRock);
 		for (const face of this.minerFaces) {
+			const key = JSON.stringify([
+				rows[face.name],
+				face.name === "stance" && feet,
+			]);
+			if (key === face.key) continue;
+			face.key = key;
 			const { ctx } = face;
 			const { width: w, height: h } = ctx.canvas;
 			ctx.fillStyle = "#02080b";
