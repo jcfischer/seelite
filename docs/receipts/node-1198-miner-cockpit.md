@@ -55,7 +55,7 @@ Parts the production hull leaves in view through its glazing, by drill extension
 
 The drill feed is hidden in every row. The drawn set is behind `?mining=1`.
 
-## Lifecycle
+## Runtime paths
 
 | SOP path | Evidence |
 | --- | --- |
@@ -124,7 +124,14 @@ loader-backed checks are in `tests/miner-cabin.test.ts`; `npm run build` runs
 
 ## Delivery evidence
 
-Non-miner rows: the before/after diff is below 1.0% moved in every row but the
-mid-traversal and approach rows named in the PR; a same-build control at the base
-moves those approach rows more (1.51 to 3.20%) than the change does (0.59 to 1.26%).
+Before/after at 24/255 on the 113 rows the base has: 100 rows moved under 1.0%.
+Over it: `mining-survey-surface` 44.25% and `mining-survey-navigation` 12.17%, the
+two rows flown from the new cabin; `controls-folded` 2.04%, the new key row;
+`berth-launch-chase` 22.91%, `berth-arrival` 4.79%, `docking-notice-bounce` 4.42%,
+`berth-arrival-cabin` 1.20% and `berth-free-look` 1.04%, which are wall-clock
+traversals (`docs/pitfalls.md`, View-set comparisons); `ring-approach` 2.07%,
+`coriolis-approach` 1.83%, `coriolis-flank` 1.42%, `cruise-light-chase` 1.28% and
+`ring-flank` 1.03%, where a same-build control at the base moves more (1.51 to
+3.20%) than the change does on the same measure (0.59 to 1.26%). No control was run
+for the traversal rows, so those five rest on the pitfall's record.
 Review, gate and principal approval are recorded on the PR.
