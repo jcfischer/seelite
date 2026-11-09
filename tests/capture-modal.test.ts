@@ -31,7 +31,7 @@ describe("a session listens, catches, and commits once", () => {
 	test("a free trigger is caught with no warning", () => {
 		const session = offered(open(), DEFAULT_BINDINGS, {
 			kind: "key",
-			key: "5",
+			key: "8",
 		});
 		expect(session.stage.kind).toBe("caught");
 		if (session.stage.kind !== "caught") return;
@@ -73,7 +73,7 @@ describe("a session listens, catches, and commits once", () => {
 		// is what would be committed. A version that latched the first press
 		// would make a mistyped capture unrecoverable without cancelling.
 		const first = offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "k" });
-		const second = offered(first, DEFAULT_BINDINGS, { kind: "key", key: "5" });
+		const second = offered(first, DEFAULT_BINDINGS, { kind: "key", key: "8" });
 		if (second.stage.kind !== "caught") throw new Error(second.stage.kind);
 		expect(second.stage.warnings).toEqual([]);
 	});
@@ -82,7 +82,7 @@ describe("a session listens, catches, and commits once", () => {
 		// The dangerous ordering: catch something legal, then press a stick.
 		// A modal that kept the earlier candidate would commit a trigger the
 		// player had already moved on from.
-		const caught = offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "5" });
+		const caught = offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "8" });
 		const then = offered(caught, DEFAULT_BINDINGS, {
 			kind: "pad-trigger",
 			trigger: "r2",
@@ -120,10 +120,10 @@ describe("what the modal says", () => {
 
 	test("a catch shows the trigger in the player's words, and offers it", () => {
 		const html = captureModalMarkup(
-			offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "5" }),
+			offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "8" }),
 			catalogue,
 		);
-		expect(html).toContain("5");
+		expect(html).toContain("8");
 		expect(html).toMatch(/data-capture-confirm/);
 	});
 
@@ -168,7 +168,7 @@ describe("what the modal says", () => {
 		// a guarantee rather than a hope.
 		for (const session of [
 			open(),
-			offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "5" }),
+			offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "8" }),
 			offered(open(), DEFAULT_BINDINGS, {
 				kind: "pad-trigger",
 				trigger: "r2",
@@ -218,10 +218,10 @@ describe("the capture says which key and the command says the rest", () => {
 		const session = offered(
 			openCapture("fly.pitchUp", PITCH),
 			DEFAULT_BINDINGS,
-			{ kind: "key", key: "5" },
+			{ kind: "key", key: "8" },
 		);
 		if (session.stage.kind !== "caught") throw new Error(session.stage.kind);
-		expect(session.stage.to).toEqual({ kind: "key", key: "5", hold: true });
+		expect(session.stage.to).toEqual({ kind: "key", key: "8", hold: true });
 	});
 
 	test("and it flies: the new key is held, the old one is not", () => {
@@ -231,11 +231,11 @@ describe("the capture says which key and the command says the rest", () => {
 		const session = offered(
 			openCapture("fly.pitchUp", PITCH),
 			DEFAULT_BINDINGS,
-			{ kind: "key", key: "5" },
+			{ kind: "key", key: "8" },
 		);
 		const layout = committable(session);
 		if (!layout) throw new Error("nothing to commit");
-		const held = new Set(["5"]);
+		const held = new Set(["8"]);
 		expect(isHeld(layout, "fly.pitchUp", held, "cockpit")).toBe(true);
 		expect(isHeld(layout, "fly.pitchUp", new Set(["s"]), "cockpit")).toBe(
 			false,

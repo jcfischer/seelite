@@ -122,6 +122,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1198: "the Longwall's two-seat bridge, its mining faces, and each seat's eye",
 	1152: "the Drum scale detail and trade plate seam backing",
 	1145: "the Ring scale detail, station key light and blooming beacons",
 	1094: "the miner drive glow and firing vent plumes on the installed Longwall",
@@ -307,6 +308,7 @@ export const SHOT_KINDS = Object.freeze([
 	"shipyard-tab",
 	"capability-outage",
 	"mining-survey",
+	"miner-bridge",
 	"field-discovery",
 	"asteroid-field",
 	"docking-notice",
@@ -1923,6 +1925,76 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "miner-bridge-open-pilot",
+		covers: [1198],
+		what: "The Longwall's bridge in open space from the pilot's left seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "open",
+			seat: "pilot",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-open-miner",
+		covers: [1198],
+		what: "The Longwall's bridge in open space from the miner's right seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "open",
+			seat: "miner",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-rock-pilot",
+		covers: [1198],
+		what: "The Longwall's bridge at a rock face from the pilot's seat, drill stowed: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "rock",
+			seat: "pilot",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-drill-pilot",
+		covers: [1198],
+		what: "The Longwall's bridge with the drill out at the rock, from the pilot's seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "drill",
+			seat: "pilot",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-drill-miner",
+		covers: [1198],
+		what: "The Longwall's bridge with the drill out at the rock, from the miner's seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "drill",
+			seat: "miner",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
 		name: "capability-market-recovered",
 		covers: [1194],
 		what: "The same generated refinery market at its natural recovery, with the unrelated notice retained and no stale market-damage status.",
@@ -2145,6 +2217,11 @@ const SHOT_REQUIREMENTS = {
 		(s.tab === undefined || s.tab === "Equipment"),
 	"capability-outage": (s) => typeof s.recovered === "boolean",
 	"mining-survey": (s) => s.mode === "surface" || s.mode === "navigation",
+	"miner-bridge": (s) =>
+		s.hull === "miner" &&
+		s.view === "cockpit" &&
+		(s.seat === "pilot" || s.seat === "miner") &&
+		["open", "rock", "drill"].includes(s.stage),
 	"field-discovery": (s) => ["unknown", "lead", "known"].includes(s.mode),
 	"asteroid-field": (s) =>
 		["charted", "rare"].includes(s.profile) &&

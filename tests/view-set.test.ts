@@ -188,7 +188,7 @@ describe("the view set itself", () => {
 		// formatter decides to wrap, and whitespace after `(` is exactly the kind
 		// of change this row must stay silent about.
 		expect(loop).toMatch(
-			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",\s*\["capability-outage", "mining-survey"\]\.includes\(view\.shot\.kind\),?\s*\);/,
+			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,\s*view\.shot\.hull \?\? "courier",\s*MINING_BOOT_SHOTS\.includes\(view\.shot\.kind\),?\s*\);/,
 		);
 		// And no placer navigates on a fixture of its own any more. `PLACERS` is
 		// the object the loop dispatches through, so a `shot.seed` read inside it
@@ -242,6 +242,11 @@ describe("the view set itself", () => {
 			["asteroid-field-rare-close-chase", 0x5ee11e],
 			["asteroid-field-rare-close-cockpit", 0x5ee11e],
 			["mining-survey-navigation", 0x5ee11e],
+			["miner-bridge-open-pilot", 0x5ee11e],
+			["miner-bridge-open-miner", 0x5ee11e],
+			["miner-bridge-rock-pilot", 0x5ee11e],
+			["miner-bridge-drill-pilot", 0x5ee11e],
+			["miner-bridge-drill-miner", 0x5ee11e],
 		]);
 		// Half the reason, held here. The other half — that the fixture has no
 		// refinery — is already stronger than an assertion: `FIXTURE.stations`
@@ -274,8 +279,8 @@ describe("the view set itself", () => {
 		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
 		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
 		// the crossing, the swallow and the seal of a jump seen by someone watching
-		// it, one frame each. Node #1209 adds twelve organic field stands.
-		expect(VIEWS.length).toBe(113);
+		// it, one frame each. Node #1209 adds twelve organic field stands, #1198 five bridge rows.
+		expect(VIEWS.length).toBe(118);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -865,7 +870,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 113)");
+		expect(html).toContain("Selected canonical views (3 of 118)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -902,7 +907,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–45.4s");
+		expect(html).toContain("· clock 0.6–47.4s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -1205,6 +1210,11 @@ describe("the rim look row #480 added", () => {
 			"asteroid-field-rare-close-chase",
 			"asteroid-field-rare-close-cockpit",
 			"mining-survey-navigation",
+			"miner-bridge-open-pilot",
+			"miner-bridge-open-miner",
+			"miner-bridge-rock-pilot",
+			"miner-bridge-drill-pilot",
+			"miner-bridge-drill-miner",
 			"capability-market-recovered",
 			"npc-departure",
 			"npc-arrival",

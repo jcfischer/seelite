@@ -1,3 +1,4 @@
+import { type CabinId, cabinForHull } from "./cockpit-eye";
 import { carrierKey } from "./carrier-key";
 import type { HullId } from "./hull";
 import type { Galaxy } from "./galaxy";
@@ -41,6 +42,11 @@ export function bootModelIds(
 	return exterior ? ["cockpit", exterior] : ["cockpit"];
 }
 
+const CABIN_MODELS: Readonly<Record<CabinId, ModelId | null>> = {
+	courier: null,
+	miner: "cockpit/miner",
+};
+
 /** Traffic comes from the game's complete home + inbound candidate roster,
  * not merely the contacts materialised near the pilot this frame. */
 export function systemModelIds(
@@ -53,6 +59,8 @@ export function systemModelIds(
 		const id = stationModel(station);
 		if (id) ids.add(id);
 	}
+	const cabinModel = CABIN_MODELS[cabinForHull(flownHull)];
+	if (cabinModel) ids.add(cabinModel);
 	for (const hull of [flownHull, ...trafficHulls])
 		if (isAuthoredHullModel(hull)) ids.add(hull);
 	if (system.contents.stations.length) ids.add("interiors");

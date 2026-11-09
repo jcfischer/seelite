@@ -901,7 +901,7 @@ const alternate = await fixturePage.evaluate(async () => {
 	const g = window.__seelite;
 	g.cabinScene.remove(g.cockpit.mesh);
 	adoptCockpitTemplate(model.scene);
-	g.buildCockpit();
+	g.buildCockpit("courier");
 	g.setHeadLook("forward");
 	const field = g.fields[0];
 	if (field?.rocks[0])

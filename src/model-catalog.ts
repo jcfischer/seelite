@@ -16,6 +16,8 @@ export const modelLoaders = {
 	// become an import of main's own unfinished top-level await in the bundle.
 	// Importing the function does not fetch the GLB; calling it still does.
 	cockpit: prepareCockpitModel,
+	"cockpit/miner": (p?: Parameters<ModelLoader>[0]) =>
+		prepareCockpitModel(p, "miner"),
 	coriolis: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./coriolis-flight")).prepareCoriolisModel(p),
 	"trade/b": tradeLoader("b"),
@@ -72,6 +74,10 @@ export const modelLoaders = {
 } satisfies Record<string, ModelLoader>;
 export type ModelId = keyof typeof modelLoaders;
 export const ALL_MODELS = Object.keys(modelLoaders) as ModelId[];
+/** Only the pilot flying the hull needs its cabin, so the session sweep leaves it out, https://github.com/jcfischer/seelite/issues/1198 */
+export const ON_DEMAND_MODELS: ReadonlySet<string> = new Set<ModelId>([
+	"cockpit/miner",
+]);
 export const AUTHORED_HULL_MODELS = [
 	"courier",
 	"tug",

@@ -32,6 +32,17 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-miner-cockpit.mjs",
+			"The flown Longwall draws its own bridge, the eye at the study's seat, the live mining faces and the measured occlusion row; a hull change swaps the cabin and frees the old one; a failed load keeps the courier cabin; other hulls never fetch it.",
+			[
+				"miner cockpit",
+				"cabin selection",
+				"seat swap",
+				"cockpit occlusion",
+				"fallback",
+			],
+		),
+		entry(
 			"probe-mining-drill.mjs",
 			"Behind mining=1 the Longwall deploys, holds a rock surface frame, anchors, seats and drills a real deep mouth without a survey; hold gain equals deposit debit; feedback paints, five cockpit switches avoid long tasks, and releasing retracts. A flagless control keeps the old miner groups, collision and cockpit visibility.",
 			[

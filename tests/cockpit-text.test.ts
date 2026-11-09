@@ -117,7 +117,7 @@ describe("model-owned cockpit text surfaces", () => {
 	});
 
 	test("the real cabin builder accepts the alternate GLB without any courier screens", async () => {
-		const cabin = buildAuthoredCabin(await fixture());
+		const cabin = buildAuthoredCabin("courier", await fixture());
 		const routed = routeCockpitSources(cabin.screens, [
 			"survey",
 			"ore",

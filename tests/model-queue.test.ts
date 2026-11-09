@@ -168,3 +168,98 @@ test("a failed load runs the stand-in hook, and the model is not settled until i
 	expect(queue.settled(["bad"])).toBe(true);
 	expect(events).toEqual(["failed:bad", "stand-in built"]);
 });
+
+test("an on-demand model stays out of the sweep until something names it", async () => {
+	const loaded: string[] = [];
+	const loaders = {
+		a: async () => void loaded.push("a"),
+		bridge: async () => void loaded.push("bridge"),
+	};
+	const queue = new ModelQueue(
+		loaders,
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	queue.prioritize([]);
+	await queue.wait(["a"]);
+	expect(loaded).toEqual(["a"]);
+	expect(queue.state("bridge")).toBe("pending");
+	queue.prioritize(["bridge"]);
+	await queue.wait(["bridge"]);
+	expect(loaded).toEqual(["a", "bridge"]);
+});
+
+test("waiting on an on-demand model no one prioritized still fetches it", async () => {
+	const loaded: string[] = [];
+	const queue = new ModelQueue(
+		{ bridge: async () => void loaded.push("bridge") },
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	await queue.wait(["bridge"]);
+	expect(loaded).toEqual(["bridge"]);
+});
+
+test("a later reprioritisation does not strand a wait on an on-demand model", async () => {
+	const loaded: string[] = [];
+	let release = () => {};
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const queue = new ModelQueue(
+		{
+			a: async () => {
+				await held;
+				loaded.push("a");
+			},
+			bridge: async () => void loaded.push("bridge"),
+		},
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	queue.prioritize(["a"]);
+	const waited = queue.wait(["bridge"]);
+	queue.prioritize(["a"]);
+	release();
+	await waited;
+	expect(loaded).toEqual(["a", "bridge"]);
+});
+
+test("a queue that was never prioritized leaves an on-demand model out", async () => {
+	const loaded: string[] = [];
+	const queue = new ModelQueue(
+		{
+			bridge: async () => void loaded.push("bridge"),
+			a: async () => void loaded.push("a"),
+		},
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	await queue.wait(["a"]);
+	expect(loaded).toEqual(["a"]);
+});
+
+test("a never-prioritized queue still sweeps every other model in catalog order", async () => {
+	const loaded: string[] = [];
+	const queue = new ModelQueue(
+		{
+			a: async () => void loaded.push("a"),
+			bridge: async () => void loaded.push("bridge"),
+			b: async () => void loaded.push("b"),
+		},
+		undefined,
+		() => {},
+		undefined,
+		new Set(["bridge"]),
+	);
+	await queue.wait(["b"]);
+	expect(loaded).toEqual(["a", "b"]);
+});

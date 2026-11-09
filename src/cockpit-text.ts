@@ -211,6 +211,7 @@ export class CockpitReadouts {
 		readonly root: THREE.Group,
 		readonly screens: Readonly<Record<string, ScreenFrame>>,
 		fallbackFrame: ScreenFrame,
+		readonly ownedByFaces: ReadonlySet<string> = new Set(),
 	) {
 		const fallback = cockpitCanvasFace({
 			frame: fallbackFrame,
@@ -237,6 +238,7 @@ export class CockpitReadouts {
 	flush() {
 		const fallbackLines: CockpitTextLine[] = [];
 		for (const [source, lines] of this.readings) {
+			if (this.ownedByFaces.has(source)) continue;
 			const screen = cockpitScreenFor(this.screens, source);
 			if (screen === undefined || this.reserved.has(source)) {
 				fallbackLines.push(...lines);

@@ -110,7 +110,19 @@ import {
 	strutReach,
 } from "./rock-drill";
 import { COCKPIT_OCCLUSION, cockpitSeenParts } from "./cockpit-occlusion-table";
-import { COCKPIT_FORWARD_KM } from "./cockpit-eye";
+import {
+	type BridgeSeat,
+	type CabinId,
+	cabinForHull,
+	cockpitEyeKm,
+} from "./cockpit-eye";
+import {
+	MINER_FACE_SCREENS,
+	MINER_FACE_TITLES,
+	type MinerFaceScreen,
+	type MinerFaceState,
+	minerFaceRows,
+} from "./miner-faces";
 import { poseLongwallDrill } from "./drill-pose";
 import { cockpitDrillView } from "./ship-mesh";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
@@ -161,6 +173,7 @@ import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { ModelQueue } from "./model-queue";
 import {
 	ALL_MODELS,
+	ON_DEMAND_MODELS,
 	modelLoaders,
 	type ModelId,
 	isAuthoredHullModel,
@@ -1078,12 +1091,13 @@ import {
 import {
 	buildAuthoredCabin,
 	buildPerimeterLamps,
+	cockpitModelReady,
 	cabinConsoleLamps,
 	carriedConsoleLamp,
 	containedFace,
 	COCKPIT_MODEL_KM_PER_M,
-	MINER_COCKPIT,
 	MINER_SEAT_OFFSET_M,
+	releaseAuthoredCabin,
 	SCANNER_FACE_KM,
 	type ScreenFrame,
 	screenMount,
@@ -1528,7 +1542,9 @@ const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 const MINING_QUERY = new URLSearchParams(window.location.search);
 const MINING_ON = MINING_QUERY.get("mining") === "1";
 const COCKPIT_SEEN_PARTS = new Map(
-	COCKPIT_OCCLUSION.poses.map((pose) => [pose.seen, new Set(pose.seen)]),
+	COCKPIT_OCCLUSION.flatMap((row) =>
+		row.poses.map((pose) => [pose.seen, new Set(pose.seen)] as const),
+	),
 );
 const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
 	MINING_QUERY.get("rock-pick") ?? "",
@@ -2100,8 +2116,6 @@ const TARGET_CONDITION_WIDEST = targetConditionWidest();
 const TARGET_CONDITION_DX = 20;
 const TARGET_CONDITION_DY = 18;
 
-const MINER_FACE_SCREENS: readonly string[] = ["survey", "ore", "lasers"];
-
 /** §4's grammar, once. `cockpit.ts` decides which tone a reading earned; this
  *  is the only place a tone becomes a colour. */
 const FLOOR_TONE_FILL: Record<FloorTone, string> = {
@@ -2338,6 +2352,7 @@ const models = new ModelQueue(
 	async (id) => {
 		await installedGame?.modelFailed(id as ModelId);
 	},
+	ON_DEMAND_MODELS,
 );
 async function requireModels(
 	ids: readonly ModelId[],
@@ -7004,7 +7019,8 @@ class Game {
 	}
 	/** Install callbacks always inspect live caches; a jump never waits for them. */
 	async modelInstalled(id: ModelId): Promise<void> {
-		if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
+		if (id === "cockpit/miner") this.syncCabin();
+		else if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
 		else if (id === "interiors") await this.refreshInteriorMeshes();
 		else if (id === "asteroids") await this.refreshFields();
 		else if (id === "coriolis")
@@ -7435,14 +7451,9 @@ class Game {
 		old.removeFromParent();
 		disposeSubtree(old);
 		this.shipMesh = mesh;
-		const marked = this.markedOcclusion.findIndex(([name]) => name === "ship");
-		const record: (typeof this.markedOcclusion)[number] = [
-			"ship",
-			markOcclusion(mesh),
-		];
-		if (marked >= 0) this.markedOcclusion[marked] = record;
-		else this.markedOcclusion.push(record);
+		this.recordOcclusion("ship", markOcclusion(mesh));
 		this.nearScene.add(mesh);
+		this.syncCabin();
 		if (installedGame === this) this.startModelQueue();
 	}
 
@@ -11044,13 +11055,15 @@ class Game {
 	}
 
 	/** The physical cockpit: the authored courier cabin and its live instruments. */
-	private buildCockpit() {
+	private buildCockpit(cabinId: CabinId = this.cabinToDraw()) {
+		this.cabinId = cabinId;
+		this.minerFaces = [];
 		this.cockpit = {} as CockpitHardware;
 		// #792's authored cabin replaces the procedural one. `cockpit-model.ts`
 		// owns its placement — the pilot eye at the origin, at `CABIN_SCALE`
 		// times life size — and where each screen is; what is mounted on the
 		// screens is still this class's, so the instruments keep their names.
-		const cabin = buildAuthoredCabin();
+		const cabin = buildAuthoredCabin(cabinId);
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
 		const seat = new THREE.Group();
@@ -11062,7 +11075,7 @@ class Game {
 		// cabin's frame the way a world lamp is (`cabinLight`). Parented to the
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
-		for (const lamp of cabinConsoleLamps()) {
+		for (const lamp of cabinConsoleLamps(cabinId)) {
 			// The composed carry — gain then carry, in one reachable function:
 			// see `COCKPIT_MODEL_LAMP_GAIN`.
 			const carried = carriedConsoleLamp(lamp);
@@ -11086,7 +11099,7 @@ class Game {
 		// already carries under its window sill is left alone — so there is nothing
 		// ungated to see at low quality, and the casts go through the same gate as the
 		// console's so they respond when the setting moves mid-flight.
-		for (const lamp of MINER_COCKPIT ? [] : buildPerimeterLamps()) {
+		for (const lamp of cabinId === "miner" ? [] : buildPerimeterLamps()) {
 			cabin.modelSpace.add(lamp);
 			const light = lamp.children.find((o) => o instanceof THREE.PointLight);
 			if (light instanceof THREE.PointLight) gated.push(light);
@@ -11096,13 +11109,13 @@ class Game {
 		// keeps the cool fill alone, as the procedural cabin did.
 		registerKeyLight(...gated);
 		const inset = cockpitMaterial("inset");
-		const textScreens = MINER_COCKPIT
-			? Object.fromEntries(
-					Object.entries(cabin.screens).filter(
-						([name]) => !MINER_FACE_SCREENS.includes(name),
-					),
-				)
-			: cabin.screens;
+		const faceScreens: readonly string[] =
+			cabinId === "miner" ? MINER_FACE_SCREENS : [];
+		const textScreens = Object.fromEntries(
+			Object.entries(cabin.screens).filter(
+				([name]) => !faceScreens.includes(name),
+			),
+		);
 		const routes = routeCockpitSources(textScreens, [
 			"radar",
 			"flight",
@@ -11118,6 +11131,7 @@ class Game {
 			seat,
 			textScreens,
 			routeFrame("fallback"),
+			new Set(faceScreens),
 		);
 		const scannerFrame = routeFrame("radar");
 		const scannerMount = screenMount(scannerFrame);
@@ -11133,15 +11147,45 @@ class Game {
 			scannerMount,
 			scannerFrame.widthKm / scannerFrame.heightKm,
 		);
-		if (MINER_COCKPIT) this.buildMinerFaces(cabin.screens, seat);
+		if (cabinId === "miner") this.buildMinerFaces(cabin.screens, seat);
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
 		// passes; the screens and labels are `MeshBasicMaterial` and fall out.
-		this.markedOcclusion.push(["cockpit", markOcclusion(cockpit)]);
+		this.recordOcclusion("cockpit", markOcclusion(cockpit));
 		// Into its own scene (#651), and `cabin-pass.ts` has why. The tunnel
 		// lines are not the cabin's and stay in the near layer.
 		this.cabinScene.add(cockpit);
 		this.nearScene.add(this.tunnelLines.root);
+	}
+
+	private cabinToDraw(): CabinId {
+		const wanted = cabinForHull(this.flownHull);
+		return cockpitModelReady(wanted) ? wanted : "courier";
+	}
+
+	/** Replace the drawn cabin when the flown hull or a finished load asks for another, https://github.com/jcfischer/seelite/issues/1198 */
+	private syncCabin(): void {
+		const next = this.cabinToDraw();
+		if (next === this.cabinId) return;
+		this.replaceCabin(next);
+	}
+
+	private replaceCabin(next: CabinId): void {
+		const old = this.cockpit.mesh;
+		old.removeFromParent();
+		releaseAuthoredCabin(old);
+		this.minerSeat = "pilot";
+		this.buildCockpit(next);
+	}
+
+	private recordOcclusion(
+		name: string,
+		marked: ReturnType<typeof markOcclusion>,
+	) {
+		const at = this.markedOcclusion.findIndex(([n]) => n === name);
+		const record: (typeof this.markedOcclusion)[number] = [name, marked];
+		if (at >= 0) this.markedOcclusion[at] = record;
+		else this.markedOcclusion.push(record);
 	}
 
 	/** What each occlusion walk marked, kept for `probe-occlusion.mjs` to read
@@ -11322,9 +11366,10 @@ class Game {
 	}
 
 	cockpitSeat: THREE.Group | null = null;
-	minerSeat: "pilot" | "miner" = "pilot";
+	cabinId: CabinId = "courier";
+	minerSeat: BridgeSeat = "pilot";
 
-	setMinerSeat(seat: "pilot" | "miner") {
+	setMinerSeat(seat: BridgeSeat) {
 		this.minerSeat = seat;
 		if (this.cockpitSeat)
 			this.cockpitSeat.position.x =
@@ -11332,10 +11377,12 @@ class Game {
 	}
 
 	minerFaces: {
-		name: string;
+		name: MinerFaceScreen;
 		ctx: CanvasRenderingContext2D;
 		texture: THREE.CanvasTexture;
+		key: string;
 	}[] = [];
+	minerFaceReadings: ReturnType<typeof minerFaceRows> | null = null;
 	private minerFacesPaintedAt = -Infinity;
 
 	private buildMinerFaces(
@@ -11345,10 +11392,11 @@ class Game {
 		for (const name of MINER_FACE_SCREENS) {
 			const frame = frames[name];
 			if (!frame) continue;
-			const fit = containedFace(frame, 1.5);
+			const aspect = name === "stance" ? frame.widthKm / frame.heightKm : 1.5;
+			const fit = containedFace(frame, aspect);
 			const canvas = document.createElement("canvas");
-			canvas.width = 480;
-			canvas.height = 320;
+			canvas.height = name === "stance" ? 540 : 320;
+			canvas.width = Math.round(canvas.height * aspect);
 			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
 			const texture = new THREE.CanvasTexture(canvas);
 			texture.colorSpace = THREE.SRGBColorSpace;
@@ -11368,8 +11416,64 @@ class Game {
 			mount.name = `miner-${name}-mount`;
 			mount.add(face);
 			seat.add(mount);
-			this.minerFaces.push({ name, ctx, texture });
+			this.minerFaces.push({ name, ctx, texture, key: "" });
 		}
+	}
+
+	private minerFaceState(): MinerFaceState {
+		const c = this.condition;
+		const hold = this.minedHold();
+		const d = this.drill;
+		const survey = MINING_ON ? this.surveyState() : null;
+		return {
+			mining: MINING_ON,
+			surveyDesignation: survey?.designation || null,
+			minedT: this.minedT,
+			holdLabel: oreCapacityLabel(this.flownHull),
+			holdUsedT: hold.usedT,
+			holdCapacityT: hold.capacityT,
+			fireGroup: this.armedFireGroup.label(this.fireGroups),
+			heatPercent: Math.round((c.heat / HEAT_LOCK) * 100),
+			energyPercent: Math.round((c.energy / Math.max(1, c.energyMax)) * 100),
+			drill: {
+				block: d.contact ? d.contact.block : "STOWED",
+				gapM: d.contact?.gapKm == null ? null : d.contact.gapKm * 1000,
+				anchored: d.held !== null,
+				anchorWhy: d.anchorWhy,
+				feetOnRock: d.feet.filter((f) => f.onRock).length,
+			},
+		};
+	}
+
+	private paintStanceFigure(ctx: CanvasRenderingContext2D) {
+		const { width: w, height: h } = ctx.canvas;
+		const cyan = "#5fe3ff";
+		const x = w / 2;
+		ctx.strokeStyle = cyan;
+		ctx.lineWidth = 5;
+		ctx.strokeRect(x - 30, h * 0.2, 60, h * 0.61);
+		ctx.lineWidth = 3;
+		for (const y of [0.28, 0.44, 0.61])
+			ctx.strokeRect(x - 50, h * y, 100, h * 0.11);
+		const reach = Math.min(w * 0.33, 130);
+		[
+			[-25, 0.26, -reach, 0.17],
+			[25, 0.26, reach, 0.17],
+			[-25, 0.35, -reach - 10, 0.43],
+			[25, 0.35, reach + 10, 0.43],
+		].forEach(([x0, y0, x1, y1], i) => {
+			const gripped = this.drill.feet[i]?.onRock === true;
+			ctx.strokeStyle = cyan;
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.moveTo(x + x0, h * y0);
+			ctx.lineTo(x + x1, h * y1);
+			ctx.stroke();
+			ctx.fillStyle = gripped ? "#6dff9a" : "#2c4650";
+			ctx.beginPath();
+			ctx.arc(x + x1, h * y1, 12, 0, Math.PI * 2);
+			ctx.fill();
+		});
 	}
 
 	private paintMinerFaces() {
@@ -11377,39 +11481,16 @@ class Game {
 		const now = performance.now();
 		if (now - this.minerFacesPaintedAt < 200) return;
 		this.minerFacesPaintedAt = now;
-		const c = this.condition;
-		const hold = this.minedHold();
-		const survey = MINING_ON ? this.surveyState() : null;
-		const rows: Record<string, [string, string][]> = {
-			survey: survey
-				? survey.designation
-					? survey.designation
-							.split(" · ")
-							.slice(0, 3)
-							.map((part): [string, string] => [part, "#6dff9a"])
-					: [["NO ROCK TARGETED", "#9fb7c0"]]
-				: [["MINING OFF", "#9fb7c0"]],
-			ore: [
-				[`ORE ${this.minedT} T`, "#ffb347"],
-				[
-					`${oreCapacityLabel(this.flownHull)} ${Math.round(hold.usedT)}/${hold.capacityT} T`,
-					"#ffb347",
-				],
-			],
-			lasers: [
-				[`HEAT ${Math.round((c.heat / HEAT_LOCK) * 100)}%`, "#ffb347"],
-				[
-					`ENERGY ${Math.round((c.energy / Math.max(1, c.energyMax)) * 100)}%`,
-					"#6dff9a",
-				],
-			],
-		};
-		const titles: Record<string, string> = {
-			survey: "SURVEY",
-			ore: "ORE / HOLD",
-			lasers: "LASER",
-		};
+		const rows = minerFaceRows(this.minerFaceState());
+		this.minerFaceReadings = rows;
+		const feet = this.drill.feet.map((f) => f.onRock);
 		for (const face of this.minerFaces) {
+			const key = JSON.stringify([
+				rows[face.name],
+				face.name === "stance" && feet,
+			]);
+			if (key === face.key) continue;
+			face.key = key;
 			const { ctx } = face;
 			const { width: w, height: h } = ctx.canvas;
 			ctx.fillStyle = "#02080b";
@@ -11420,12 +11501,21 @@ class Game {
 			ctx.textAlign = "center";
 			ctx.fillStyle = "#d8f6ff";
 			ctx.font = "34px Menlo, monospace";
-			ctx.fillText(titles[face.name] ?? "", w / 2, 62);
-			ctx.font = "40px Menlo, monospace";
-			(rows[face.name] ?? []).forEach(([text, colour], i) => {
-				ctx.fillStyle = colour;
-				ctx.fillText(text, w / 2, 140 + i * 62, w - 40);
-			});
+			ctx.fillText(MINER_FACE_TITLES[face.name], w / 2, 62);
+			if (face.name === "stance") {
+				this.paintStanceFigure(ctx);
+				ctx.font = "28px Menlo, monospace";
+				for (const [text, colour] of rows.stance) {
+					ctx.fillStyle = colour;
+					ctx.fillText(text, w / 2, h - 34, w - 40);
+				}
+			} else {
+				ctx.font = "40px Menlo, monospace";
+				rows[face.name].forEach(([text, colour], i) => {
+					ctx.fillStyle = colour;
+					ctx.fillText(text, w / 2, 140 + i * 62, w - 40);
+				});
+			}
 			face.texture.needsUpdate = true;
 		}
 	}
@@ -12267,7 +12357,7 @@ class Game {
 				this.setHeadLook("right");
 				return;
 			case "view.seatSwap":
-				if (MINER_COCKPIT)
+				if (this.cabinId === "miner")
 					this.setMinerSeat(this.minerSeat === "pilot" ? "miner" : "pilot");
 				return;
 			// **The settings screen's own door, folded here in #381 S4.** It
@@ -18815,14 +18905,12 @@ class Game {
 	 * keeps the offsets the scaffold tuned by eye.
 	 */
 	private cameraPos() {
-		const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-			this.orientation,
-		);
 		if (this.view === "cockpit") {
-			return add(
-				this.world.ship.pos,
-				scale(v3(forward.x, forward.y, forward.z), COCKPIT_FORWARD_KM),
+			const eye = cockpitEyeKm(this.cabinId, this.minerSeat);
+			const world = new THREE.Vector3(eye.x, eye.y, eye.z).applyQuaternion(
+				this.orientation,
 			);
+			return add(this.world.ship.pos, v3(world.x, world.y, world.z));
 		}
 		// Behind and above in the ship's own frame, turned by the orbit's one
 		// rotation (`chase-orbit.ts`). `cameraRotation` applies the same
@@ -19280,8 +19368,13 @@ class Game {
 			drillView
 				? {
 						seen:
-							COCKPIT_SEEN_PARTS.get(cockpitSeenParts(this.drill.extension)) ??
-							new Set(),
+							COCKPIT_SEEN_PARTS.get(
+								cockpitSeenParts(
+									this.drill.extension,
+									this.cabinId,
+									this.minerSeat,
+								),
+							) ?? new Set(),
 					}
 				: null,
 		);

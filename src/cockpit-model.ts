@@ -22,27 +22,23 @@ import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
-import { shared } from "./gpu-teardown";
+import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
-import { MINER_COCKPIT } from "./miner-cockpit-flag";
-import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
+import type { CabinId } from "./cockpit-eye";
+import { COURIER_COCKPIT_GLB_URL, MINER_COCKPIT_GLB_URL } from "./model-urls";
 
-export { MINER_COCKPIT };
-
-/**
- * The miner study (https://github.com/jcfischer/seelite/issues/1143) has its
- * eye at the model origin and is authored level, so it takes no eye offset or
- * pitch.
- */
-const MINER_COCKPIT_GLB_URL = "/spikes/miner-cockpit/miner-cockpit-2seat.glb";
-const CABIN_EYE_M: readonly number[] = MINER_COCKPIT
-	? [0, 0, 0]
-	: [0, 0.3, 1.15];
-const CABIN_PITCH_RAD = MINER_COCKPIT ? 0.12 : 0.242;
+const CABIN_GLB_URLS: Readonly<Record<CabinId, string>> = {
+	courier: COURIER_COCKPIT_GLB_URL,
+	miner: MINER_COCKPIT_GLB_URL,
+};
 
 /** The miner seat sits this far to starboard of the pilot seat, model metres. */
 export const MINER_SEAT_OFFSET_M = 1.2;
+
+/** The bridge has its eye at the model origin and is authored level, https://github.com/jcfischer/seelite/issues/1143 */
+const MINER_CABIN_EYE_M = [0, 0, 0] as const;
+const MINER_CABIN_PITCH_RAD = 0.12;
 
 const MINER_FINISHES: Readonly<
 	Record<string, { metalness: number; roughness: number; color?: number }>
@@ -324,16 +320,22 @@ export interface AuthoredCabin {
 	modelSpace: THREE.Group;
 }
 
-let template: THREE.Group | null = null;
+const templates: Record<CabinId, THREE.Group | null> = {
+	courier: null,
+	miner: null,
+};
 
 /**
  * The tuning a mapped model material gets: the exporter-dropped tint, its
  * finish and the albedo as a faint bump. One function so the review viewer
  * shows the materials the game ships. Unmapped materials are left alone.
  */
-export function adoptCockpitMaterial(m: THREE.MeshStandardMaterial): void {
+export function adoptCockpitMaterial(
+	m: THREE.MeshStandardMaterial,
+	cabin: CabinId = "courier",
+): void {
 	if (!m.map) return;
-	const miner = MINER_COCKPIT ? MINER_FINISHES[m.name] : undefined;
+	const miner = cabin === "miner" ? MINER_FINISHES[m.name] : undefined;
 	if (miner) {
 		m.color.setHex(miner.color ?? 0xffffff);
 		m.metalness = miner.metalness;
@@ -494,7 +496,10 @@ export function smoothCockpitScene(root: THREE.Object3D): number {
 }
 
 /** Normalise and share a loaded model once, so every cabin clones it. */
-export function adoptCockpitTemplate(scene: THREE.Group): void {
+export function adoptCockpitTemplate(
+	scene: THREE.Group,
+	cabin: CabinId = "courier",
+): void {
 	const materials = new Set<THREE.MeshStandardMaterial>();
 	scene.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
@@ -510,7 +515,7 @@ export function adoptCockpitTemplate(scene: THREE.Group): void {
 	);
 	for (const m of materials) {
 		m.emissiveIntensity /= divisor;
-		adoptCockpitMaterial(m);
+		adoptCockpitMaterial(m, cabin);
 	}
 	smoothCockpitScene(scene);
 	scene.name = "authored-cockpit";
@@ -523,11 +528,12 @@ export function adoptCockpitTemplate(scene: THREE.Group): void {
 				if (value instanceof THREE.Texture) shared(value);
 		}
 	});
-	template = scene;
+	templates[cabin] = scene;
 }
 
 /** Whether `prepareCockpitModel` has finished on this page. */
-export const cockpitModelReady = (): boolean => template !== null;
+export const cockpitModelReady = (cabin: CabinId = "courier"): boolean =>
+	templates[cabin] !== null;
 
 /**
  * One cabin's copy of the model, placed in the cabin's frame.
@@ -535,22 +541,27 @@ export const cockpitModelReady = (): boolean => template !== null;
  * Screens and labels get materials of their own, which the cabin's teardown
  * frees; everything cloned from the template is shared and survives it.
  */
-export function buildAuthoredCabin(source = template): AuthoredCabin {
+export function buildAuthoredCabin(
+	cabin: CabinId = "courier",
+	source = templates[cabin],
+): AuthoredCabin {
 	if (!source)
 		throw new Error("buildAuthoredCabin: await prepareCockpitModel() first");
 	const model = source.clone(true);
+	const eye = cabin === "miner" ? MINER_CABIN_EYE_M : COCKPIT_MODEL_EYE_M;
 	const modelSpace = new THREE.Group();
 	modelSpace.name = "cockpit-model-space";
 	modelSpace.scale.setScalar(COCKPIT_MODEL_KM_PER_M);
 	modelSpace.position.set(
-		-CABIN_EYE_M[0] * COCKPIT_MODEL_KM_PER_M,
-		-CABIN_EYE_M[1] * COCKPIT_MODEL_KM_PER_M,
-		-CABIN_EYE_M[2] * COCKPIT_MODEL_KM_PER_M,
+		-eye[0] * COCKPIT_MODEL_KM_PER_M,
+		-eye[1] * COCKPIT_MODEL_KM_PER_M,
+		-eye[2] * COCKPIT_MODEL_KM_PER_M,
 	);
 	modelSpace.add(model);
 	const root = new THREE.Group();
 	root.name = "cockpit-model";
-	root.rotation.x = CABIN_PITCH_RAD;
+	root.rotation.x =
+		cabin === "miner" ? MINER_CABIN_PITCH_RAD : COCKPIT_MODEL_PITCH_RAD;
 	root.add(modelSpace);
 	root.updateMatrixWorld(true);
 	const unpowered = new THREE.MeshBasicMaterial({ color: 0x01090b });
@@ -566,6 +577,17 @@ export function buildAuthoredCabin(source = template): AuthoredCabin {
 		}
 	});
 	return { root, screens, modelSpace };
+}
+
+/**
+ * Free a replaced cabin, https://github.com/jcfischer/seelite/issues/1198: its
+ * own screens and labels for good, and the GPU copies of the shared template's
+ * geometry, materials and textures, which three uploads again if the cabin
+ * returns. The template itself stays in memory (#835).
+ */
+export function releaseAuthoredCabin(root: THREE.Object3D): void {
+	const { kept } = disposeSubtree(root);
+	for (const resource of kept) resource.dispose();
 }
 
 /** Read every named screen after applying the model's node transforms. */
@@ -612,22 +634,21 @@ export function cockpitScreenFrames(
 	return screens;
 }
 
-let ready: Promise<void> | undefined;
+const ready: Partial<Record<CabinId, Promise<void>>> = {};
 
-/** Await before any Game constructs its cabin. `onProgress` hears the
- *  download this call starts (#833), as `prepareCoriolisModel`'s does. */
+/** The courier cabin is awaited before any Game constructs its cabin; every
+ *  other cabin installs after boot. `onProgress` hears the download this call
+ *  starts (#833), as `prepareCoriolisModel`'s does. */
 export function prepareCockpitModel(
 	onProgress?: ModelProgressListener,
+	cabin: CabinId = "courier",
 ): Promise<void> {
-	return (ready ??= new GLTFLoader()
+	return (ready[cabin] ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(
-			MINER_COCKPIT ? MINER_COCKPIT_GLB_URL : COURIER_COCKPIT_GLB_URL,
-			onProgress,
-		)
-		.then((gltf) => adoptCockpitTemplate(gltf.scene))
+		.loadAsync(CABIN_GLB_URLS[cabin], onProgress)
+		.then((gltf) => adoptCockpitTemplate(gltf.scene, cabin))
 		.catch((error) => {
-			ready = undefined;
+			ready[cabin] = undefined;
 			throw error;
 		}));
 }
@@ -841,9 +862,11 @@ export function buildPerimeterLamps(): THREE.Group[] {
 	});
 }
 
-/** The console lamps for the cabin being flown; the miner study's sit under its dash. */
-export const cabinConsoleLamps = (): typeof COCKPIT_MODEL_LAMPS =>
-	MINER_COCKPIT
+/** The console lamps for the cabin being built; the miner study's sit under its dash. */
+export const cabinConsoleLamps = (
+	cabin: CabinId,
+): typeof COCKPIT_MODEL_LAMPS =>
+	cabin === "miner"
 		? (COCKPIT_MODEL_LAMPS.map((lamp) => ({
 				...lamp,
 				positionM: MINER_LAMP_POSITIONS_M[lamp.name] ?? lamp.positionM,
