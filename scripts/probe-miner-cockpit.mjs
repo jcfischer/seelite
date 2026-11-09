@@ -2,6 +2,7 @@
 import { mkdir } from "node:fs/promises";
 import { gameUrl } from "./lib/game-url.mjs";
 import { deployDrill, placeAtRockFace } from "./lib/miner-bridge-fixture.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -30,6 +31,7 @@ const open = async (extra, prepare) => {
 	});
 	watch(page);
 	await installViewPlacement(page);
+	await installViewFraming(page);
 	await prepare?.(page);
 	await page.goto(gameUrl(origin, { ...FIXTURE, ...extra }));
 	await bootedGame(page, 90000);
@@ -192,6 +194,23 @@ try {
 	);
 	await page.screenshot({ path: `${shots}/anchored-pilot.png` });
 	await page.close();
+
+	const berth = await open({ hull: "miner", seed: 47, system: undefined });
+	await berth.evaluate(() =>
+		window.__parkInBerth("station-trade", "overhead-deep", {}),
+	);
+	await berth.waitForTimeout(1500);
+	const docked = await cabinFacts(berth);
+	await berth.screenshot({ path: `${shots}/docked-pilot.png` });
+	const dockPhase = await berth.evaluate(() => window.__seelite.dock.phase);
+	check(
+		"docked, the bridge and its eye stay in place",
+		dockPhase === "docked" &&
+			docked.cabinId === "miner" &&
+			near(docked.eye, docked.want),
+		JSON.stringify({ dockPhase, docked }),
+	);
+	await berth.close();
 
 	const swap = await open({ hull: "miner" });
 	const cycle = await swap.evaluate(async () => {
