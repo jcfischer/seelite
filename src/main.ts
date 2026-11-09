@@ -11436,7 +11436,6 @@ class Game {
 			heatPercent: Math.round((c.heat / HEAT_LOCK) * 100),
 			energyPercent: Math.round((c.energy / Math.max(1, c.energyMax)) * 100),
 			drill: {
-				extension: d.extension,
 				block: d.contact ? d.contact.block : "STOWED",
 				gapM: d.contact?.gapKm == null ? null : d.contact.gapKm * 1000,
 				anchored: d.held !== null,

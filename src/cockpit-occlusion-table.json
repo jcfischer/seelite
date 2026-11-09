@@ -10,16 +10,11 @@
 		"poses": [
 			{
 				"extension": 0,
-				"seen": [
-					"anchor-3-elbow"
-				]
+				"seen": ["anchor-3-elbow"]
 			},
 			{
 				"extension": 0.25,
-				"seen": [
-					"anchor-2-elbow",
-					"anchor-3-elbow"
-				]
+				"seen": ["anchor-2-elbow", "anchor-3-elbow"]
 			},
 			{
 				"extension": 0.5,
@@ -55,10 +50,7 @@
 		"poses": [
 			{
 				"extension": 0,
-				"seen": [
-					"anchor-1-body",
-					"longwall-mount-port"
-				]
+				"seen": ["anchor-1-body", "longwall-mount-port"]
 			},
 			{
 				"extension": 0.25,
@@ -119,9 +111,7 @@
 		"poses": [
 			{
 				"extension": 0,
-				"seen": [
-					"longwall-mount-starboard"
-				]
+				"seen": ["longwall-mount-starboard"]
 			},
 			{
 				"extension": 0.25,

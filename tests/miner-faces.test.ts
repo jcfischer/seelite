@@ -17,7 +17,6 @@ const state = (over: Partial<MinerFaceState> = {}): MinerFaceState => ({
 	heatPercent: 20,
 	energyPercent: 80,
 	drill: {
-		extension: 1,
 		block: null,
 		gapM: 0.3,
 		anchored: false,

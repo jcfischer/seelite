@@ -42,7 +42,6 @@ export interface MinerFaceState {
 	readonly heatPercent: number;
 	readonly energyPercent: number;
 	readonly drill: {
-		readonly extension: number;
 		readonly block: string | null;
 		readonly gapM: number | null;
 		readonly anchored: boolean;
