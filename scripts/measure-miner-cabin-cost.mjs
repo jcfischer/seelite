@@ -103,6 +103,11 @@ async function install() {
 	await page.waitForTimeout(2000);
 	const out = await page.evaluate(() => {
 		const gaps = window.__gaps;
+		const worst = (rows, n) =>
+			rows
+				.map(([d]) => d)
+				.sort((a, b) => b - a)
+				.slice(0, n);
 		const swapped = gaps.findIndex(([, id]) => id === "miner");
 		const settled = gaps
 			.slice(Math.max(0, swapped - 200), swapped)
@@ -114,27 +119,13 @@ async function install() {
 			swapIntervalMs: gaps[swapped][0],
 			firstFramesAfterMs: gaps.slice(swapped + 1, swapped + 6).map(([d]) => d),
 			bootFramesBeforeGame: gaps.filter(([, id]) => id === "boot").length,
-			worstBeforeBytesMs: gaps
-				.slice(0, window.__released)
-				.map(([d]) => d)
-				.sort((a, b) => b - a)
-				.slice(0, 3),
-			worstFromBytesToSwapMs: gaps
-				.slice(window.__released, swapped)
-				.map(([d]) => d)
-				.sort((a, b) => b - a)
-				.slice(0, 3),
-			worstWithGameBeforeSwapMs: gaps
-				.slice(0, swapped)
-				.filter(([, id]) => id === "courier")
-				.map(([d]) => d)
-				.sort((a, b) => b - a)
-				.slice(0, 5),
-			worstAfterSwapMs: gaps
-				.slice(swapped)
-				.map(([d]) => d)
-				.sort((a, b) => b - a)
-				.slice(0, 3),
+			worstBeforeBytesMs: worst(gaps.slice(0, window.__released), 3),
+			worstFromBytesToSwapMs: worst(gaps.slice(window.__released, swapped), 3),
+			worstWithGameBeforeSwapMs: worst(
+				gaps.slice(0, swapped).filter(([, id]) => id === "courier"),
+				5,
+			),
+			worstAfterSwapMs: worst(gaps.slice(swapped), 3),
 		};
 	});
 	console.log(`  cold install, ${Date.now() - started} ms from navigation:`);

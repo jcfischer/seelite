@@ -145,7 +145,9 @@ two rows flown from the new cabin; `controls-folded` 2.04%, the new key row;
 | `cruise-light-chase` | 1.52 | 1.26 | not run |
 | `ring-flank` | 1.90 | 0.59 | not run |
 
-Nine rows sit inside what one build does to itself. `berth-launch-chase` reads
-above its one control, and `docs/pitfalls.md` records that row as not repeatable, so
-it is judged by eye. These are single recaptures, not distributions.
+Seven rows read no further from the base than the base reads from itself.
+`berth-arrival` and `docking-notice-bounce` read further, within what the head reads
+from itself, and those two recaptures are not distributions. They and
+`berth-launch-chase`, which `docs/pitfalls.md` records as not repeatable, are unproved
+either way and are left to the eye.
 Review, gate and principal approval are recorded on the PR.

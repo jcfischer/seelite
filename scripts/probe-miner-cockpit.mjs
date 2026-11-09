@@ -59,6 +59,17 @@ const cabinFacts = (page) =>
 			marked: g.markedOcclusion.filter(([n]) => n === "cockpit").length,
 		};
 	});
+const readFaces = (page) =>
+	page.evaluate(async () => {
+		const g = window.__seelite;
+		g.minerFacesPaintedAt = -Infinity;
+		g.updateCockpit();
+		g.render(0);
+		return {
+			...g.minerFaceReadings,
+			feet: g.drill.feet.filter((f) => f.onRock).length,
+		};
+	});
 const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-7;
 
 try {
@@ -99,18 +110,7 @@ try {
 	await page.keyboard.press("5");
 
 	const set = await placeAtRockFace(page);
-	const readFaces = () =>
-		page.evaluate(async () => {
-			const g = window.__seelite;
-			g.minerFacesPaintedAt = -Infinity;
-			g.updateCockpit();
-			g.render(0);
-			return {
-				...g.minerFaceReadings,
-				feet: g.drill.feet.filter((f) => f.onRock).length,
-			};
-		});
-	const stowed = await readFaces();
+	const stowed = await readFaces(page);
 	await deployDrill(page, set);
 	const out = await page.evaluate(async () => {
 		const { cockpitSeenParts } = await import(
@@ -141,7 +141,7 @@ try {
 			out.hidden.length > 0,
 		JSON.stringify(out),
 	);
-	const deployed = await readFaces();
+	const deployed = await readFaces(page);
 	check(
 		"drill, anchor and stance read the live drill, not a fixture",
 		JSON.stringify(deployed.drill) !== JSON.stringify(stowed.drill) ||
@@ -161,7 +161,7 @@ try {
 		g.render(0);
 		return { held: !!g.drill.held, block: g.drill.contact?.block };
 	});
-	const anchored = await readFaces();
+	const anchored = await readFaces(page);
 	check(
 		"anchored on the face, the drill and anchor screens say so",
 		held.held &&
@@ -351,13 +351,7 @@ try {
 			near(installed.eye, installed.want),
 		JSON.stringify({ standIn, installed }),
 	);
-	const offRows = await late.evaluate(() => {
-		const g = window.__seelite;
-		g.minerFacesPaintedAt = -Infinity;
-		g.updateCockpit();
-		g.render(0);
-		return g.minerFaceReadings;
-	});
+	const offRows = await readFaces(late);
 	check(
 		"without the flag the shipped bridge's mining faces read MINING OFF",
 		["survey", "drill", "anchor", "stance"].every(
