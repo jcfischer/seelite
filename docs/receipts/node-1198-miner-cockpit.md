@@ -151,3 +151,10 @@ from itself, and those two recaptures are not distributions. They and
 `berth-launch-chase`, which `docs/pitfalls.md` records as not repeatable, are unproved
 either way and are left to the eye.
 Review, gate and principal approval are recorded on the PR.
+
+## Principal rulings of 2026-11-09
+
+- The changelog sentence is "The Longwall has its own two-seat bridge."
+- Field of view stays on 7 and the seat switch stays on 5. A command a player has saved on 5 keeps that key: only that command answers and no clash is reported. The seat switch can then be reached by rebinding it. Moved to any other key, the seat switch is an ordinary row, and a clash warns and fires both.
+- The drill camera stays dark here and has its own node, #1229.
+- The mount and struts outside the side glass under `?mining=1` are accepted for now.

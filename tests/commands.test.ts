@@ -157,6 +157,50 @@ describe("the catalogue #369 ratified", () => {
 		expect(swap?.defaultTriggers).toEqual([{ kind: "key", key: "5" }]);
 	});
 
+	describe("a saved binding on 5 keeps the key from the seat switch (#1198)", () => {
+		const facts = {
+			key: "5",
+			code: "Digit5",
+			context: "flight",
+			view: "cockpit",
+			perfPanel: false,
+		} as const;
+		const toggle = DEFAULT_BINDINGS.find((b) => b.command === "view.toggle");
+		if (toggle === undefined) throw new Error("view.toggle is not shipped");
+		const onFive = rebind(DEFAULT_BINDINGS, "view.toggle", toggle.trigger, {
+			kind: "key",
+			key: "5",
+		});
+
+		test("the default layout's 5 switches seats", () => {
+			expect(resolveKey(DEFAULT_BINDINGS, facts)).toEqual(["view.seatSwap"]);
+		});
+
+		test("only the player's command answers, and no clash is reported", () => {
+			expect(resolveKey(onFive, facts)).toEqual(["view.toggle"]);
+			expect(
+				collisions(onFive).filter((c) => c.commands.includes("view.seatSwap")),
+			).toEqual([]);
+		});
+
+		test("the seat switch moved onto a taken key still warns and fires both", () => {
+			const swap = DEFAULT_BINDINGS.find((b) => b.command === "view.seatSwap");
+			if (swap === undefined) throw new Error("view.seatSwap is not shipped");
+			const moved = rebind(DEFAULT_BINDINGS, "view.seatSwap", swap.trigger, {
+				kind: "key",
+				key: "7",
+			});
+			const seven = { ...facts, key: "7", code: "Digit7" };
+			expect([...resolveKey(moved, seven)].sort()).toEqual([
+				"view.fov",
+				"view.seatSwap",
+			]);
+			expect(
+				collisions(moved).filter((c) => c.commands.includes("view.seatSwap")),
+			).toHaveLength(1);
+		});
+	});
+
 	test("every id is namespaced, unique, and not a key string", () => {
 		const ids = COMMANDS.map((c) => c.id);
 		expect(new Set(ids).size).toBe(ids.length);

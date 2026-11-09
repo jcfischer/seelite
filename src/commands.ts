@@ -2091,6 +2091,7 @@ export function collisions(bindings: readonly Binding[]): Collision[] {
 				const b = group[j];
 				if (a === undefined || b === undefined) continue;
 				if (a.command === b.command) continue;
+				if (yieldsItsKey(a) || yieldsItsKey(b)) continue;
 				const scope = overlapScope(a.scope, b.scope);
 				if (scope === null) continue;
 				out.push({ trigger, commands: [a.command, b.command], scope });
@@ -2181,6 +2182,16 @@ const liveFor = (b: Binding, facts: KeyFacts): boolean => {
 };
 
 /**
+ * Whether a row is the seat switch on its shipped 5, which gives that key up to
+ * any other command a player has saved on it (principal, 2026-11-09,
+ * https://github.com/jcfischer/seelite/issues/1198). Moved anywhere else it is
+ * an ordinary row, and a clash there warns and fires both.
+ */
+export const yieldsItsKey = (b: Binding): boolean =>
+	b.command === "view.seatSwap" &&
+	triggerKey(b.trigger) === triggerKey({ kind: "key", key: "5" });
+
+/**
  * The commands this key event reaches, in `bindings`.
  *
  * **The physical key wins, and the character is the fallback** — which is D7's
@@ -2216,7 +2227,10 @@ export function resolveKey(bindings: Layout, facts: KeyFacts): CommandId[] {
 	// While the panel is open its key is its own (`Scope.perfPanel`): `b`
 	// toggles bloom there and does not also cycle the fire group.
 	const panel = hits.filter((b) => b.scope.perfPanel === true);
-	return [...new Set((panel.length > 0 ? panel : hits).map((b) => b.command))];
+	const answering = panel.length > 0 ? panel : hits;
+	const kept = answering.filter((b) => !yieldsItsKey(b));
+	const rows = kept.length > 0 ? kept : answering;
+	return [...new Set(rows.map((b) => b.command))];
 }
 
 /**
