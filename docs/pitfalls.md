@@ -269,6 +269,11 @@ was written in; the history it tells is still this text's history.
   inline in `buildCockpit`: a finish declared at the call site is one the
   calibration cannot see.
 
+- **A cabin sets the eye, and the eye sets what the hull hides.** `cockpitEyeKm` is
+  per cabin and seat, so the occlusion table has a row for each, and the mining
+  muzzles sit aft of the bridge eye (#1198). A courier cabin standing in on a miner
+  keeps the courier eye and its row.
+
 ## View-set comparisons
 
 - **`berth-arrival` cannot carry a before/after reading of a *performance*
