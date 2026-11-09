@@ -68,10 +68,10 @@ if (mode === "adapted")
 	mock.module(import.meta.resolve("../../src/asteroid-field"), () => ({
 		...original,
 		FIELD_PROFILE: profiles,
-		fieldRocks: (record: SystemRecord, plan: field.FieldPlan) => {
+		latticeRocks: (record: SystemRecord, plan: field.FieldPlan) => {
 			const rocks = candidateRocks(record, plan, name, {
 				profile: profiles[plan.profile],
-				generate: original.fieldRocks,
+				generate: original.latticeRocks,
 			});
 			return drop ? rocks.slice(1) : rocks;
 		},

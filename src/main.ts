@@ -296,16 +296,17 @@ import {
 	type SkyBakeParams,
 } from "./light-rig";
 import {
-	CLOSED_GATE,
+	CLOSED_GATES,
 	enclosureRad,
 	OCCLUSION,
 	type FieldGateInput,
-	type OcclusionGate,
+	type OcclusionGates,
 	SHADOW_MAP_TEXELS,
 	type ShadowSubject,
 	shadowBox,
 	shadowFit,
-	stepOcclusionGate,
+	rockShadowOnly,
+	stepOcclusionGates,
 } from "./occlusion";
 import {
 	hideNonOccluders,
@@ -6688,7 +6689,6 @@ class Game {
 	 * `quality: high` would otherwise pay for nothing.
 	 */
 	private applyOcclusion() {
-		const gated = this.occlusionPinned || this.occlusionGate.open;
 		const casting = this.shadowSun;
 		for (const sun of [this.nearShadowSun, this.cabinShadowSun]) {
 			if (!sun || sun === casting) continue;
@@ -6699,8 +6699,30 @@ class Game {
 			sun.castShadow = false;
 			sun.target.position.set(0, 0, 0);
 		}
-		if (casting) casting.castShadow = this.occlusionWanted.shadows && gated;
-		if (this.gtaoPass) this.gtaoPass.enabled = this.occlusionWanted.ao && gated;
+		const pinned = this.occlusionPinned;
+		if (casting)
+			casting.castShadow =
+				this.occlusionWanted.shadows &&
+				(pinned || this.occlusionGate.shadow.open);
+		if (this.gtaoPass)
+			this.gtaoPass.enabled =
+				this.occlusionWanted.ao && (pinned || this.occlusionGate.ao.open);
+		this.holdHullCasters(!pinned && rockShadowOnly(this.occlusionGate));
+	}
+
+	private heldHullCasters: THREE.Object3D[] | null = null;
+	private holdHullCasters(hold: boolean) {
+		if (hold && !this.heldHullCasters) {
+			const casters: THREE.Object3D[] = [];
+			this.shipMesh?.traverse((o) => {
+				if (o.castShadow) casters.push(o);
+			});
+			for (const o of casters) o.castShadow = false;
+			this.heldHullCasters = casters;
+		} else if (!hold && this.heldHullCasters) {
+			for (const o of this.heldHullCasters) o.castShadow = true;
+			this.heldHullCasters = null;
+		}
 	}
 
 	/**
@@ -6718,8 +6740,9 @@ class Game {
 		return {
 			wanted: this.occlusionWanted,
 			pinned: this.occlusionPinned,
-			open: this.occlusionGate.open,
-			pending: this.occlusionGate.pending,
+			open: this.occlusionGate.shadow.open,
+			aoOpen: this.occlusionGate.ao.open,
+			pending: this.occlusionGate.shadow.pending,
 			enclosureRad: enclosureRad(this.stationSubjects),
 		};
 	}
@@ -6731,7 +6754,7 @@ class Game {
 	 *  gate for as long as it is held. */
 	private occlusionPinned = false;
 	/** #241's gate, advanced once per frame in `render`. */
-	private occlusionGate: OcclusionGate = CLOSED_GATE;
+	private occlusionGate: OcclusionGates = CLOSED_GATES;
 	/** This frame's near-layer stations, as shadow subjects. Built once at the
 	 *  top of the shadow work and read by both the gate and `fitShadowCamera`,
 	 *  because `subjectOf` walks a mesh's world matrix and doing it twice a
@@ -6857,6 +6880,7 @@ class Game {
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
 		this.shipMesh.name = "ship";
+		this.heldHullCasters = null;
 		// #201. Once at build, not per frame: a hull's materials do not change
 		// class after it is built, and the walk is a full traverse.
 		this.markedOcclusion.push(["ship", markOcclusion(this.shipMesh)]);
@@ -7014,6 +7038,7 @@ class Game {
 	 *  already left installs nothing into the next one. */
 	private fieldEpoch = 0;
 	private readonly fieldBuffer = new THREE.Vector2();
+	private readonly fieldLook = new THREE.Vector3();
 	private buildFields(): void {
 		this.disposeFields();
 		const { record, contents } = this.world.system;
@@ -7123,11 +7148,14 @@ class Game {
 			this.renderer.getDrawingBufferSize(this.fieldBuffer).y,
 			this.nearCamera.fov,
 		);
+		const look = this.nearCamera.getWorldDirection(this.fieldLook);
+		const forward = { x: look.x, y: look.y, z: look.z };
 		for (const draw of this.fieldDraws)
 			draw.update({
 				gameTime: this.world.gameTime,
 				camera: camPos,
 				pxPerRadian,
+				forward,
 				quality,
 				shadows: LIGHT_RIG.quality[quality].shadows,
 			});
@@ -15144,7 +15172,7 @@ class Game {
 		// where they darken 0.002% of it. `applyOcclusion` writes the two flags
 		// straight away rather than waiting for the next `render`, so a probe
 		// that resets and reads them back sees the reset state.
-		this.occlusionGate = CLOSED_GATE;
+		this.occlusionGate = CLOSED_GATES;
 		this.applyOcclusion();
 
 		// #544's thrust shares: a reset is a ship at rest, and the flight sound
@@ -19317,7 +19345,7 @@ class Game {
 		this.syncCabinMirrors();
 		this.syncInteriorFloods();
 
-		this.occlusionGate = stepOcclusionGate(
+		this.occlusionGate = stepOcclusionGates(
 			this.occlusionGate,
 			this.buildStationSubjects(),
 			this.fieldGateInput(),

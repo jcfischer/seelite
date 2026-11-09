@@ -30,7 +30,11 @@ import {
 	participatesInShadow,
 	shadowBox,
 	shadowFit,
+	CLOSED_GATES,
+	rockShadowOnly,
+	type ShadowSubject,
 	stepOcclusionGate,
+	stepOcclusionGates,
 	unionOfSubjects,
 } from "../src/occlusion";
 
@@ -461,4 +465,33 @@ test("stations open the gate as before whatever the field says", () => {
 	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
 		gate = stepOcclusionGate(gate, [inside], rocks(0, "low"));
 	expect(gate.open).toBe(true);
+});
+
+test("a level-0 rock on high opens the shadow half and leaves the ambient occlusion shut (#1209)", () => {
+	const rock: FieldGateInput = { level0Rocks: 1, quality: "high" };
+	let gates = CLOSED_GATES;
+	for (let i = 0; i < 60; i++) gates = stepOcclusionGates(gates, [], rock);
+	expect(gates.shadow.open).toBe(true);
+	expect(gates.ao.open).toBe(false);
+	for (let i = 0; i < 60; i++) gates = stepOcclusionGates(gates, []);
+	expect(gates.shadow.open).toBe(false);
+});
+
+test("a station opens both halves, with or without a rock (#1209)", () => {
+	const station: ShadowSubject = { center: [1, 0, 0], radiusKm: 1 };
+	let gates = CLOSED_GATES;
+	for (let i = 0; i < 60; i++)
+		gates = stepOcclusionGates(gates, [station], {
+			level0Rocks: 1,
+			quality: "high",
+		});
+	expect(gates.shadow.open).toBe(true);
+	expect(gates.ao.open).toBe(true);
+});
+
+test("the hull stops casting only while rocks alone hold the shadow open (#1209)", () => {
+	const open = { open: true, pending: 0 };
+	expect(rockShadowOnly(CLOSED_GATES)).toBe(false);
+	expect(rockShadowOnly({ shadow: open, ao: CLOSED_GATES.ao })).toBe(true);
+	expect(rockShadowOnly({ shadow: open, ao: open })).toBe(false);
 });

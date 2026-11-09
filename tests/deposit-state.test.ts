@@ -204,19 +204,43 @@ describe("world deposit envelope", () => {
 		expect(saved(world).galaxies[0].deposits).toBeUndefined();
 		expect(world.galaxies[0].deposits.rows[key]).toBeDefined();
 	});
-	test("v1 per-field fingerprints are historical pins, not recomputed expectations", () => {
-		// World seed 1, galaxy 0, captured from field generator v1. Keep this
-		// fixture when the generator changes: these are the previous pins D5 needs.
+	test("v1 per-field fingerprints are historical pins: every field moved, so every v1 row drops", () => {
+		// World seed 1, galaxy 0, captured from field generator v1 (#1209).
 		const domain = JSON.parse(
 			readFileSync(
 				new URL("./fixtures/deposits-v1.json", import.meta.url),
 				"utf8",
 			),
 		);
-		expect(
-			canonicalDeposits({ rows: domain.rows }, 1, 0)?.fingerprints,
-		).toEqual(domain.fingerprints);
-		expect(parseDeposits(domain, 1, 0, 0).rows).toEqual(domain.rows);
+		expect(domain.fieldGeneratorVersion).toBe(1);
+		expect(Object.keys(domain.rows).length).toBeGreaterThan(0);
+		expect(parseDeposits(domain, 1, 0, 0).rows).toEqual({});
+	});
+	test("a real save from field generator 1 loses only its deposits and survives a round trip (#1209)", () => {
+		const old = JSON.parse(
+			readFileSync(
+				new URL("./fixtures/save-field-generator-v1.json", import.meta.url),
+				"utf8",
+			),
+		);
+		const domain = old.world.galaxies[0].deposits;
+		expect(domain.fieldGeneratorVersion).toBe(1);
+		expect(Object.keys(domain.rows)).toHaveLength(6);
+		const loaded = parseSave(old);
+		expect(loaded.world.galaxies[0].deposits).toEqual(emptyDeposits());
+		expect(loaded.world.galaxies[0].fieldDiscoveries).toEqual(["4:field-01"]);
+		expect(loaded.world.gameTime).toBe(7200);
+		expect(loaded.commander.state.credits).toBe(54321);
+		expect(loaded.commander.state.hull).toBe("miner");
+		expect(loaded.commander.state.loadout).toEqual(old.commander.state.loadout);
+		expect(loaded.commander.ladders).toEqual(old.commander.ladders);
+		expect(loaded.commander.flight).toEqual(old.commander.flight);
+		const again = JSON.parse(JSON.stringify(serializeSave(loaded)));
+		expect(again.world.galaxies[0].deposits).toBeUndefined();
+		expect(again.world.galaxies[0].fieldDiscoveries).toEqual(["4:field-01"]);
+		expect(serializeSave(parseSave(again))).toEqual(again);
+		for (let g = 1; g < old.world.galaxies.length; g++)
+			expect(again.world.galaxies[g]).toEqual(old.world.galaxies[g]);
 	});
 	test("version mismatch drops just changed fields and restamps unchanged rows", () => {
 		const world = newWorld(1);
@@ -274,26 +298,34 @@ describe("world deposit envelope", () => {
 			expect(() => parseWorld(rehash(copy))).toThrow(/deposits/);
 		}
 	});
-	test("v1 save migrates against a bumped generator with one changed field", () => {
+	test("a save migrates against a bumped generator with one changed field", () => {
 		// Isolate the mocked new generator from the rest of the suite. The save's
-		// v1 pins stay fixed while the running version and one field's pin move.
+		// pins stay fixed while the running version and one field's pin move.
+		const live = newWorld(1);
+		for (const index of [0, 2]) {
+			const record = generateGalaxy(1, 0).systems[index];
+			const plan = systemFields(record, generateContents(record))[0];
+			live.galaxies[0].deposits.rows[
+				depositKey(index, plan.id, fieldRocks(record, plan)[0].slot)
+			] = { surveyedAt: 0 };
+		}
+		const stamp = saved(live).galaxies[0].deposits;
 		const script = `
 			import { mock } from "bun:test";
-			import { readFileSync } from "node:fs";
 			import assert from "node:assert/strict";
 			const url = ${JSON.stringify(new URL("../src/asteroid-field.ts", import.meta.url).href)};
 			const original = {...await import(url)};
-			mock.module(url, () => ({...original, FIELD_GENERATOR_VERSION: 2,
+			mock.module(url, () => ({...original, FIELD_GENERATOR_VERSION: original.FIELD_GENERATOR_VERSION + 1,
 				fieldFingerprintRow: (s, p, r) => original.fieldFingerprintRow(s, p, r) + (s === 0 ? "|moved" : "")
 			}));
 			const W = await import(${JSON.stringify(new URL("../src/world-state.ts", import.meta.url).href)});
 			const {fnv1a} = await import(${JSON.stringify(new URL("../src/rng.ts", import.meta.url).href)});
 			const raw = W.serializeWorld(W.newWorld(1));
-			raw.galaxies[0].deposits = JSON.parse(readFileSync(${JSON.stringify(new URL("./fixtures/deposits-v1.json", import.meta.url).pathname)}, "utf8"));
+			raw.galaxies[0].deposits = ${JSON.stringify(stamp)};
 			const {integrity, ...body} = raw;
 			const loaded = W.parseWorld({...body, integrity: fnv1a(JSON.stringify(body))});
-			assert.deepEqual(Object.keys(loaded.galaxies[0].deposits.rows), ["2:field-00:2"]);
-			assert.equal(W.serializeWorld(loaded).galaxies[0].deposits.fieldGeneratorVersion, 2);
+			assert.deepEqual(Object.keys(loaded.galaxies[0].deposits.rows).map((k) => k.split(":")[0]), ["2"]);
+			assert.equal(W.serializeWorld(loaded).galaxies[0].deposits.fieldGeneratorVersion, original.FIELD_GENERATOR_VERSION + 1);
 		`;
 		const result = Bun.spawnSync([process.execPath, "--eval", script]);
 		expect(result.stderr.toString()).toBe("");

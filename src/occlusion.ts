@@ -352,6 +352,43 @@ export type FieldGateInput = {
 export const NO_FIELD: FieldGateInput = { level0Rocks: 0, quality: "high" };
 
 /**
+ * The gate per pass (#1209). Stations open both. A level-0 rock opens only the
+ * shadow, which is what #950 D2 and #918 Q2 ruled: the ambient occlusion over a
+ * rock filling the frame costs more than the field's whole budget, and every
+ * look the principal approved for the rocks was drawn without it.
+ */
+export type OcclusionGates = {
+	readonly shadow: OcclusionGate;
+	readonly ao: OcclusionGate;
+};
+
+/** The state a frame starts in: both gates shut. */
+export const CLOSED_GATES: OcclusionGates = {
+	shadow: CLOSED_GATE,
+	ao: CLOSED_GATE,
+};
+
+/**
+ * Rocks alone hold the shadow open. Their shadow falls on the hull, so the hull
+ * keeps receiving, but its own casting is thirty-odd draws a frame (#950 D1's
+ * budget is twelve) for a self-shadow open space does not draw either (#1209).
+ */
+export const rockShadowOnly = (gates: OcclusionGates): boolean =>
+	gates.shadow.open && !gates.ao.open;
+
+/** Advance both gates by one frame, each on what may open it. */
+export function stepOcclusionGates(
+	gates: OcclusionGates,
+	stations: readonly ShadowSubject[],
+	field: FieldGateInput = NO_FIELD,
+): OcclusionGates {
+	return {
+		shadow: stepOcclusionGate(gates.shadow, stations, field),
+		ao: stepOcclusionGate(gates.ao, stations),
+	};
+}
+
+/**
  * Whether the fields ask for the gate to be open: a level-0 rock is in view on
  * quality high. It asks as a station at the opening threshold does, so the
  * same two thresholds and frame counts hold it open and shut.

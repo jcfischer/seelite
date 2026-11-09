@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"measure-field-navigation.mjs",
+		"an instrument that prints figures, like measure-asteroid-field-cost; a page error stops the run",
+	],
+	[
 		"measure-docked-coriolis-cold.mjs",
 		"A manual instrument: prints one run as JSON for a harness to compare, and has nothing to pass or fail.",
 	],

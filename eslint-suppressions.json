@@ -3059,11 +3059,6 @@
       "count": 92
     }
   },
-  "tests/asteroid-field.test.ts": {
-    "seelite/no-comments": {
-      "count": 35
-    }
-  },
   "tests/asteroid-model.test.ts": {
     "seelite/no-comments": {
       "count": 5
@@ -3401,7 +3396,7 @@
   },
   "tests/deposit-state.test.ts": {
     "seelite/no-comments": {
-      "count": 6
+      "count": 5
     }
   },
   "tests/derelict-cockpit.test.ts": {
@@ -3546,7 +3541,7 @@
   },
   "tests/field-lod.test.ts": {
     "seelite/no-comments": {
-      "count": 12
+      "count": 9
     }
   },
   "tests/first-day-save.test.ts": {

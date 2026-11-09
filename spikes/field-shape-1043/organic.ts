@@ -1,6 +1,6 @@
 import {
 	FIELD_PROFILE,
-	fieldRocks,
+	latticeRocks,
 	type FieldPlan,
 	type Rock,
 } from "../../src/asteroid-field";
@@ -142,7 +142,7 @@ export function organicRocks(
 	record: SystemRecord,
 	plan: FieldPlan,
 	variant: OrganicVariant,
-	generate: typeof fieldRocks = fieldRocks,
+	generate: typeof latticeRocks = latticeRocks,
 ): Rock[] {
 	const base = FIELD_PROFILE[plan.profile];
 	const bank = generate(record, plan, {

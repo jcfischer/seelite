@@ -2,6 +2,7 @@ import { miningHold, hasOreBay } from "../../src/mining-capacity";
 import {
 	fieldCentre,
 	fieldRocks,
+	latticeRocks,
 	rockLocal,
 	systemFields,
 	type FieldPlan,
@@ -123,7 +124,7 @@ export interface Candidate {
 	rockLimit: number;
 	returnLoadT?: number;
 	visitLargestShare?: number;
-	fieldLayout?: "baseline" | "organic";
+	fieldLayout?: "baseline" | "organic" | "production";
 	onePass?: boolean;
 	rawElasticityScale?: number;
 	collectS?: number;
@@ -238,7 +239,8 @@ function validate(c: Candidate) {
 	if (
 		c.fieldLayout !== undefined &&
 		c.fieldLayout !== "baseline" &&
-		c.fieldLayout !== "organic"
+		c.fieldLayout !== "organic" &&
+		c.fieldLayout !== "production"
 	)
 		throw new Error("mining comparison: unsupported field layout");
 	if (c.routeFields === undefined) {
@@ -480,7 +482,9 @@ function chosenRocks(record: SystemRecord, plan: FieldPlan, c: Candidate) {
 	const layout =
 		c.fieldLayout === "organic"
 			? organicRocks(record, plan, "organic")
-			: fieldRocks(record, plan);
+			: c.fieldLayout === "production"
+				? fieldRocks(record, plan)
+				: latticeRocks(record, plan);
 	const visited =
 		c.visitLargestShare === undefined
 			? layout

@@ -296,6 +296,14 @@ was written in; the history it tells is still this text's history.
 
 ## Measuring a frame: occlusion, cost and GPU timing
 
+- **A pinned occlusion arm is not the state a pilot flies in (#1209).** A field
+  cost run that pins the pair on in both arms subtracts the pair's own cost from
+  the answer, and a run that pins it on low measures a state rocks cannot open.
+  `scripts/measure-asteroid-field-cost.mjs`'s `actual` arm lets the gate decide
+  each arm. **The rocks' cost at `close` was the ambient occlusion over a rock
+  filling the frame**, which is why a level-0 rock now opens only the shadow half
+  (`stepOcclusionGates`). `docs/receipts/organic-field-production-contract.md`
+  has the figures.
 - **The occlusion passes are gated on enclosure, and a frame-cost claim owes
   the antialias arm.** #241. The pair **doubles** the open-space frame. **The
   figures are not restated here** — `occlusion.ts` owns the table and

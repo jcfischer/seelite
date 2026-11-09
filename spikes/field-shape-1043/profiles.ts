@@ -1,7 +1,7 @@
 import {
 	FIELD_PROFILE,
 	fieldCells,
-	fieldRocks,
+	latticeRocks,
 	type FieldPlan,
 	type FieldProfile,
 	type FieldProfileName,
@@ -62,9 +62,9 @@ export function candidateRocks(
 	record: SystemRecord,
 	plan: FieldPlan,
 	name: Candidate,
-	input: { profile: FieldProfile; generate: typeof fieldRocks } = {
+	input: { profile: FieldProfile; generate: typeof latticeRocks } = {
 		profile: candidateProfile(plan.profile, name),
-		generate: fieldRocks,
+		generate: latticeRocks,
 	},
 ): Rock[] {
 	if (name === "organic" || name === "braided")

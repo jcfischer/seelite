@@ -16,13 +16,17 @@
  * **Ids are slots, never push order (#109).** `field-00` is the charted field
  * (iff the system has a refinery), `field-01` the rare one; a later field type
  * takes a new number and never reuses one. A rock is `(fieldId, rockSlot)`,
- * where the rock slot is a lattice cell in a fixed enumeration of the field's
- * ellipsoid with its own sub-stream, so a rock is a function of its slot alone
- * and an occupancy retune adds or removes rocks without moving any.
+ * where the rock slot numbers a metadata bank with its own sub-stream for each
+ * slot, so a rock's physical draws are a function of its slot alone.
+ *
+ * **The arrangement is organic (#1043, #1209).** The approved study's clusters,
+ * gaps and bridges decide where a slot's rock sits; the bank's lattice supplies
+ * identity and physical draws but no position. Keep and anchor draws have their
+ * own tags, so a retune of one moves nothing drawn from the other.
  *
  * **Motion is closed form.** A field's centre rides a star-centric orbit; its
  * frame orientation is fixed in inertial space; each rock circles an anchor
- * inside its own cell and spins about its own axis. Position, velocity and spin
+ * and spins about its own axis. Position, velocity and spin
  * angle are all functions of `(seed, gameTime)` — nothing is integrated and
  * nothing is saved.
  */
@@ -42,7 +46,7 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { AU_KM } from "./units";
-import { type Vec3, cross } from "./vec3";
+import { type Vec3, add, cross, length, scale } from "./vec3";
 
 const TAU = Math.PI * 2;
 
@@ -53,7 +57,7 @@ const TAU = Math.PI * 2;
  * Independent of `WORLD_GENERATOR_VERSION`: a carrier change rebases no
  * deposit, and a rock retune migrates no world.
  */
-export const FIELD_GENERATOR_VERSION = 1;
+export const FIELD_GENERATOR_VERSION = 2;
 
 /** Fixed field slots (#948 D2). */
 export const FIELD_SLOT = { charted: 0, rare: 1 } as const;
@@ -86,11 +90,13 @@ const RARE_DRAW_BUDGET = 8;
 // --- rocks (#948 D5) ----------------------------------------------------------
 
 export interface FieldProfile {
-	/** Ellipsoid semi-axes, km, in the field frame. */
+	/** Ellipsoid semi-axes, km, of the lattice that `latticeRocks` numbers. */
 	semiKm: readonly [number, number, number];
-	/** Lattice cell edge, km. One rock slot per cell. */
+	/** Lattice cell edge, km. One rock slot per cell; also what a rock's drift
+	 *  is sized from. */
 	cellKm: number;
-	/** Chance a cell holds a rock. */
+	/** Chance `latticeRocks` keeps a cell. The production arrangement keeps by
+	 *  `ORGANIC_ARRANGEMENT`. */
 	occupancy: number;
 	/** Bounding radius range, km. */
 	rockRadiusKm: readonly [number, number];
@@ -117,6 +123,28 @@ export const FIELD_PROFILE: Readonly<Record<FieldProfileName, FieldProfile>> = {
 		alpha: 2.0,
 		marginKm: 0.2,
 	},
+};
+
+/** How the approved arrangement spreads each profile (#1043, #1209). Rock counts
+ *  and density that follow from it are provisional pending #923. */
+export const ORGANIC_ARRANGEMENT: Readonly<
+	Record<FieldProfileName, { spanKm: number; lobeRadiusKm: number }>
+> = {
+	charted: { spanKm: 31, lobeRadiusKm: 5.5 },
+	rare: { spanKm: 25, lobeRadiusKm: 5 },
+};
+/** The metadata bank's semi-axes, × the profile's. */
+export const ORGANIC_BANK_SCALE = 1.6;
+/** Chance a bank slot is offered a place in the arrangement. */
+export const ORGANIC_KEEP = 0.72;
+/**
+ * The farthest any rock's surface can be from its field's centre, km, at any
+ * seed and clock: lobe centre + 1.28 × the widest lobe + radius + drift. Bridges
+ * reach less. Inside `DEFAULT_CRUISE.dropRadiusKm`, so a drop clears the field.
+ */
+export const FIELD_EXTENT_KM: Readonly<Record<FieldProfileName, number>> = {
+	charted: 44.26,
+	rare: 37.72,
 };
 
 /** Spin period, log-uniform, s. */
@@ -303,7 +331,7 @@ export function systemFields(
 // --- rocks --------------------------------------------------------------------
 
 export interface Rock {
-	/** The lattice cell's index: the rock's identity within its field. */
+	/** The metadata bank's index: the rock's identity within its field. */
 	slot: number;
 	/** Bounding radius, km: no drawn or collision vertex lies outside it. */
 	radiusKm: number;
@@ -365,15 +393,16 @@ export const rockDepositStream = (
 	stream(mix(mix(systemSeed, fieldSlot), rockSlot), DOMAIN.ASTEROID_DEPOSIT);
 
 /**
- * A field's rocks, in slot order; `profile` defaults to the plan's own and is a
- * parameter so a retune can be measured against the shipped one.
+ * The lattice generator, in slot order: the production layout through field
+ * generator 1 and now the source of every rock's physical draws (`fieldRocks`).
+ * `profile` defaults to the plan's own, so a retune can be measured.
  *
  * Every slot makes the same fifteen draws in #948 D5's order whether or not it
  * is occupied — occupancy, radius, anchor ×3, shape seed, spin axis ×2, spin
  * period, spin phase, drift fraction, drift plane ×2, drift period, drift
  * phase — and a new draw goes at the end.
  */
-export function fieldRocks(
+export function latticeRocks(
 	record: SystemRecord,
 	plan: FieldPlan,
 	profile: FieldProfile = FIELD_PROFILE[plan.profile],
@@ -462,6 +491,224 @@ export function fieldRocks(
 
 const logUniform = (u: number, [lo, hi]: readonly [number, number]): number =>
 	Math.exp(Math.log(lo) + u * Math.log(hi / lo));
+
+interface Lobe {
+	centre: Vec3;
+	radius: number;
+	axis: Vec3;
+	across: Vec3;
+	up: Vec3;
+	weight: number;
+	bend: number;
+	nearestFirst: Lobe[];
+}
+
+const unitVector = (rand: () => number): Vec3 => {
+	const z = rand() * 2 - 1;
+	const angle = rand() * TAU;
+	const r = Math.sqrt(1 - z * z);
+	return { x: r * Math.cos(angle), y: r * Math.sin(angle), z };
+};
+
+const distance = (a: Vec3, b: Vec3): number =>
+	Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
+const betaDraw = (rand: () => number): number => {
+	const a = -Math.log(Math.max(Number.MIN_VALUE, rand() * rand() * rand()));
+	const b = -Math.log(Math.max(Number.MIN_VALUE, rand() * rand() * rand()));
+	return a / (a + b);
+};
+
+function drawLobes(profile: FieldProfileName, rand: () => number): Lobe[] {
+	const { spanKm, lobeRadiusKm } = ORGANIC_ARRANGEMENT[profile];
+	const count = 5 + Math.floor(rand() * 3);
+	const lobes: Lobe[] = [];
+	for (let i = 0; i < count; i++) {
+		let centre: Vec3;
+		let attempts = 0;
+		do {
+			const direction = unitVector(rand);
+			const r = spanKm * Math.cbrt(rand());
+			centre = {
+				x: direction.x * r,
+				y: direction.y * r * 0.7,
+				z: direction.z * r * 0.42,
+			};
+			attempts++;
+		} while (
+			attempts < 64 &&
+			// Stryker disable next-line EqualityOperator: a centre exactly at the spacing is a float tie no draw produces, and either answer is a clear lobe
+			lobes.some((l) => distance(l.centre, centre) < spanKm * 0.26)
+		);
+		const axis = unitVector(rand);
+		const perpendicular = cross(
+			axis,
+			// Stryker disable next-line EqualityOperator: a unit vector's x is never exactly 0.9 from these draws, and either reference axis gives a valid basis
+			Math.abs(axis.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 },
+		);
+		const across = scale(perpendicular, 1 / length(perpendicular));
+		lobes.push({
+			centre,
+			radius: lobeRadiusKm + rand() * 4,
+			axis,
+			across,
+			up: cross(axis, across),
+			weight: 0.3 + rand() ** 2 * 1.8,
+			bend: rand() * 2 - 1,
+			// Stryker disable next-line ArrayDeclaration: every lobe's list is replaced straight after the loop
+			nearestFirst: [],
+		});
+	}
+	for (const lobe of lobes)
+		lobe.nearestFirst = lobes
+			.filter((l) => l !== lobe)
+			.sort(
+				(a, b) =>
+					distance(a.centre, lobe.centre) - distance(b.centre, lobe.centre),
+			);
+	return lobes;
+}
+
+function drawAnchor(rand: () => number, lobes: readonly Lobe[]): Vec3 {
+	let choice = rand() * lobes.reduce((sum, l) => sum + l.weight, 0);
+	let lobe = lobes[0];
+	for (const l of lobes) {
+		choice -= l.weight;
+		// Stryker disable next-line EqualityOperator: choice lands on exactly zero only by a float tie, where the next lobe is as valid
+		if (choice <= 0) {
+			lobe = l;
+			break;
+		}
+	}
+	// Stryker disable next-line EqualityOperator: the generator yields multiples of 2^-32, and 0.16 is not one
+	if (rand() < 0.16) {
+		const other = lobe.nearestFirst[Math.floor(rand() * 2)];
+		const t = betaDraw(rand);
+		const ripple = Math.sin(t * Math.PI) * lobe.bend * 2.5;
+		const offset = scale(unitVector(rand), betaDraw(rand) * 2.7);
+		return add(
+			add(
+				add(scale(lobe.centre, 1 - t), scale(other.centre, t)),
+				scale(lobe.up, ripple),
+			),
+			offset,
+		);
+	}
+	const p = scale(unitVector(rand), betaDraw(rand) * lobe.radius);
+	const warp = ((lobe.bend * (p.y * p.y - p.z * p.z)) / lobe.radius) * 0.28;
+	return add(
+		lobe.centre,
+		add(
+			add(scale(lobe.axis, p.x + warp), scale(lobe.across, p.y * 0.9)),
+			scale(lobe.up, p.z * 0.65),
+		),
+	);
+}
+
+/** The lattice the metadata bank numbers: wider than the profile's, every slot
+ *  filled, so every physical draw exists before the arrangement chooses. */
+export const organicBankProfile = (base: FieldProfile): FieldProfile => ({
+	...base,
+	semiKm: [
+		base.semiKm[0] * ORGANIC_BANK_SCALE,
+		base.semiKm[1] * ORGANIC_BANK_SCALE,
+		base.semiKm[2] * ORGANIC_BANK_SCALE,
+	],
+	occupancy: 1,
+});
+
+/** Where the arrangement's randomness comes from: the production tags, or a
+ *  study's own seeds when a test holds the two generators together. */
+export interface ArrangementDraws {
+	lobes: () => number;
+	anchor: (slot: number) => () => number;
+	keep: (slot: number) => number;
+}
+
+/**
+ * Place a bank's rocks in clusters, gaps and bridges, in slot order. A rock
+ * keeps every physical draw of its slot, and only the anchor moves. A slot gives
+ * way when its whole drift envelope would come within the margin of a kept
+ * rock's at any clock, so the least-gap guarantee holds without lattice cells.
+ */
+export function arrangeRocks(
+	plan: Pick<FieldPlan, "profile">,
+	bank: readonly Rock[],
+	draws: ArrangementDraws,
+): Rock[] {
+	const { marginKm } = FIELD_PROFILE[plan.profile];
+	const lobes = drawLobes(plan.profile, draws.lobes);
+	const width =
+		// Stryker disable next-line ArithmeticOperator: radius plus drift peaks at 0.96 km by the drift law, below 1 km 2/x exceeds 2x, and a bucket only has to be as wide as the widest pair's reach
+		2 * bank.reduce((m, r) => Math.max(m, r.radiusKm + r.driftKm), 0) +
+		marginKm;
+	const buckets = new Map<number, Rock[]>();
+	const out: Rock[] = [];
+	// Stryker disable next-line ArrowFunction: one shared bucket checks every rock and gives the same answer, only slower
+	const key = (i: number, j: number, k: number): number =>
+		// Stryker disable next-line ArithmeticOperator: a colliding key only makes a bucket hold more rocks; every candidate still meets the distance test
+		((i + 512) * 1024 + j + 512) * 1024 + k + 512;
+	const isClear = (
+		anchor: Vec3,
+		rock: Rock,
+		ci: number,
+		cj: number,
+		ck: number,
+	): boolean => {
+		for (let i = ci - 1; i <= ci + 1; i++)
+			for (let j = cj - 1; j <= cj + 1; j++)
+				for (let k = ck - 1; k <= ck + 1; k++) {
+					const bucket = buckets.get(key(i, j, k));
+					if (!bucket) continue;
+					for (const prior of bucket)
+						if (
+							// Stryker disable next-line EqualityOperator: envelopes exactly tangent are a float tie no draw produces
+							distance(anchor, prior.anchor) <
+							rock.radiusKm +
+								rock.driftKm +
+								prior.radiusKm +
+								prior.driftKm +
+								marginKm
+						)
+							return false;
+				}
+		return true;
+	};
+	for (const rock of bank) {
+		// Stryker disable next-line EqualityOperator: the generator yields multiples of 2^-32, and the keep chance is not one
+		if (draws.keep(rock.slot) > ORGANIC_KEEP) continue;
+		const anchor = drawAnchor(draws.anchor(rock.slot), lobes);
+		const ci = Math.floor(anchor.x / width);
+		const cj = Math.floor(anchor.y / width);
+		const ck = Math.floor(anchor.z / width);
+		if (!isClear(anchor, rock, ci, cj, ck)) continue;
+		const placed = { ...rock, anchor };
+		out.push(placed);
+		const code = key(ci, cj, ck);
+		const bucket = buckets.get(code);
+		if (bucket) bucket.push(placed);
+		else buckets.set(code, [placed]);
+	}
+	return out;
+}
+
+/**
+ * A field's rocks, in slot order: the one production layout that drawing,
+ * collision, targeting, surveys and saved deposits all read. The count and
+ * radius mix it yields are provisional pending #923.
+ */
+export function fieldRocks(record: SystemRecord, plan: FieldPlan): Rock[] {
+	const fieldSeed = mix(record.seed, plan.slot);
+	return arrangeRocks(
+		plan,
+		latticeRocks(record, plan, organicBankProfile(FIELD_PROFILE[plan.profile])),
+		{
+			lobes: stream(fieldSeed, DOMAIN.ASTEROID_LOBES),
+			anchor: (slot) => stream(mix(fieldSeed, slot), DOMAIN.ASTEROID_ANCHOR),
+			keep: (slot) => stream(mix(fieldSeed, slot), DOMAIN.ASTEROID_KEEP)(),
+		},
+	);
+}
 
 // --- motion -------------------------------------------------------------------
 

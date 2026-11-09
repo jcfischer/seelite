@@ -2,18 +2,21 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as asteroidField from "../src/asteroid-field";
 import {
-	FIELD_PROFILE,
-	fieldCells,
+	FIELD_EXTENT_KM,
 	fieldCentre,
+	fieldRocks,
+	type Rock,
 	rockLocal,
 	rockPose,
 	rotateByQuat,
+	systemFields,
 } from "../src/asteroid-field";
 import { mayMeet, shipPrimitives, solidReach } from "../src/collision";
 import {
 	archetypePieces,
 	fieldRockSolids,
 	prebuildRockPieces,
+	ROCK_BUCKET_KM,
 	rockFrameAt,
 	rockId,
 	rockSolid,
@@ -23,7 +26,12 @@ import { ROCK_ARCHETYPES, spinQuat } from "../src/field-lod";
 import { HULL_SPECS } from "../src/hull";
 import { decodeRockHeightfields } from "../src/rock-heightfields";
 import type { RockPieces } from "../src/rock-pieces";
-import { markShipPlaced, speedDemand, stepWorld } from "../src/sim";
+import {
+	makeWorldAtSystem,
+	markShipPlaced,
+	speedDemand,
+	stepWorld,
+} from "../src/sim";
 import { add, length, scale, sub, v3 } from "../src/vec3";
 import {
 	biggest,
@@ -36,22 +44,16 @@ import {
 } from "./lib/field-rock-fixtures";
 
 describe("the flown ship against field rocks (node #969)", () => {
-	test("a rock never leaves its lattice cell", () => {
-		const { plan, rocks } = fieldWorld();
-		const profile = FIELD_PROFILE[plan.profile];
-		const cells = fieldCells(profile);
+	test("a rock stays within its drift of its anchor at every clock", () => {
+		const { rocks } = fieldWorld();
 		for (const rock of rocks)
-			for (let t = 0; t < 8 * 3600; t += 1731) {
-				const local = rockLocal(rock, t);
-				const cell = cells[rock.slot];
-				for (const axis of ["x", "y", "z"] as const)
-					expect(Math.abs(local[axis] - cell[axis])).toBeLessThanOrEqual(
-						profile.cellKm / 2 - rock.radiusKm,
-					);
-			}
+			for (let t = 0; t < 8 * 3600; t += 1731)
+				expect(
+					length(sub(rockLocal(rock, t), rock.anchor)),
+				).toBeLessThanOrEqual(rock.driftKm + 1e-9);
 	});
 
-	test("only rocks in cells within reach of the step are swept, and none a step can meet is missed", () => {
+	test("only rocks in buckets within reach of the step are swept, and none a step can meet is missed", () => {
 		const { world, plan, rocks } = fieldWorld();
 		const clock = { fromTime: 1000, toTime: 1000 + DT };
 		let rand = 12345;
@@ -319,30 +321,212 @@ describe("the flown ship against field rocks (node #969)", () => {
 		expect(reads).toBe(before);
 	});
 
-	test("a step inside one occupied cell poses only that cell's rock", () => {
+	test("a bucket holds several rocks, and a step reaching one reaches them all", () => {
 		const { world, plan, rocks } = fieldWorld();
-		const cells = fieldCells(FIELD_PROFILE[plan.profile]);
-		const rock = rocks.reduce((a, b) =>
-			length(cells[b.slot]) < length(cells[a.slot]) ? b : a,
-		);
 		const clock = { fromTime: world.gameTime, toTime: world.gameTime + DT };
-		const centreAt = (time: number) =>
-			add(
-				fieldCentre(plan, time),
-				rotateByQuat(plan.rotation, cells[rock.slot]),
+		const bucketOf = (rock: Rock) =>
+			[rock.anchor.x, rock.anchor.y, rock.anchor.z]
+				.map((v) => Math.floor(v / ROCK_BUCKET_KM))
+				.join();
+		const sharers = new Map<string, Rock[]>();
+		for (const rock of rocks)
+			sharers.set(bucketOf(rock), [
+				...(sharers.get(bucketOf(rock)) ?? []),
+				rock,
+			]);
+		const crowded = [...sharers.values()].sort(
+			(p, q) => q.length - p.length,
+		)[0];
+		expect(crowded.length).toBeGreaterThan(1);
+		for (const rock of crowded) {
+			const at = rockPose(plan, rock, clock.fromTime).pos;
+			const got = fieldRockSolids(
+				world.system,
+				{ start: at, end: at, reachKm: HULL_REACH_KM },
+				clock,
 			);
-		const ship = {
-			start: centreAt(clock.fromTime),
-			end: centreAt(clock.toTime),
-			reachKm: HULL_REACH_KM,
-		};
+			expect(got.owner).toContain(rockId(plan, rock));
+		}
+	});
+
+	test("a high-speed crossing of the whole field, on both profiles, finds what a full traversal finds", () => {
+		let crossed = 0;
+		for (const profile of ["charted", "rare"] as const) {
+			const found = [47, 0x5ee11e].flatMap((seed) =>
+				Array.from({ length: 64 }, (_, index) => {
+					const world = makeWorldAtSystem(seed, index);
+					const plan = systemFields(
+						world.system.record,
+						world.system.contents,
+					).find((f) => f.profile === profile);
+					return plan ? { world, plan } : [];
+				}).flat(),
+			)[0];
+			const { world, plan } = found;
+			const rocks = fieldRocks(world.system.record, plan);
+			const clock = { fromTime: 2000, toTime: 2000 + DT };
+			for (const rock of rocks.slice(0, 24)) {
+				const at = rockPose(plan, rock, clock.fromTime).pos;
+				const toCentre = sub(fieldCentre(plan, clock.fromTime), at);
+				const clear = (2 * FIELD_EXTENT_KM[profile] + 10) / length(toCentre);
+				const ship = {
+					start: add(at, scale(toCentre, -clear)),
+					end: add(
+						rockPose(plan, rock, clock.toTime).pos,
+						scale(toCentre, clear),
+					),
+					reachKm: HULL_REACH_KM,
+				};
+				expect(length(sub(ship.start, ship.end))).toBeGreaterThan(
+					2 * FIELD_EXTENT_KM[profile],
+				);
+				const got = fieldRockSolids(world.system, ship, clock);
+				const owners = (others: readonly Rock[]) =>
+					others
+						.filter((other) => {
+							const solid = rockSolid(plan, other, clock);
+							return mayMeet(ship, {
+								start: solid.start.origin,
+								end: solid.end.origin,
+								reachKm: solidReach(solid),
+							});
+						})
+						.map((other) => rockId(plan, other));
+				const expected = owners(rocks);
+				expect(got.owner).toEqual(expected);
+				expect(expected).toContain(rockId(plan, rock));
+				crossed += expected.length;
+			}
+		}
+		expect(crossed).toBeGreaterThan(48);
+	}, 60_000);
+
+	test("flown in steps through the densest cluster, a ship aimed at a rock strikes a rock at every speed", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const near = (rock: Rock) =>
+			rocks.filter((o) => length(sub(rock.anchor, o.anchor)) < 8).length;
+		const peak = rocks.reduce((a, b) => (near(b) > near(a) ? b : a));
+		expect(near(peak)).toBeGreaterThan(80);
+		const t0 = world.gameTime;
+		for (const closingKms of [0.2, 2, 20, 200]) {
+			world.gameTime = t0;
+			const here = rockPose(plan, peak, t0);
+			const from = v3(1, 0, 0);
+			const standoff = peak.radiusKm + Math.max(1.5, closingKms * DT * 3);
+			world.ship.pos = add(here.pos, scale(from, standoff));
+			world.ship.vel = sub(here.vel, scale(from, closingKms));
+			world.rockPlacement = { placed: false, rocks: new Set() };
+			let struck: string | undefined;
+			for (let i = 0; i < 200 && !struck; i++)
+				struck = fly(world).impacts.find((hit) =>
+					hit.bodyId.startsWith(`${plan.id}:rock-`),
+				)?.bodyId;
+			expect(struck).toBeDefined();
+		}
+	});
+
+	test("a ship left inside a moved rock by an older save ghosts it, and strikes nothing on the way out", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const rock = biggest(rocks);
+		const here = rockPose(plan, rock, world.gameTime);
+		world.ship.pos = here.pos;
+		world.ship.vel = add(here.vel, v3(0, 0, 0.1));
+		markShipPlaced(world);
+		const ghosted = new Set<string>();
+		for (let i = 0; i < 120; i++) {
+			const step = fly(world);
+			for (const id of step.ghosts) ghosted.add(id);
+			expect(step.impacts.map((hit) => hit.bodyId)).not.toContain(
+				rockId(plan, rock),
+			);
+		}
+		expect(ghosted.has(rockId(plan, rock))).toBe(true);
+	});
+
+	test("a step reaching a rock's surface at its farthest drift still names it, across buckets", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const t = world.gameTime;
+		const clock = { fromTime: t, toTime: t };
+		for (const rock of rocks) {
+			const at = rockPose(plan, rock, t).pos;
+			const c = fieldCentre(plan, t);
+			const out = sub(at, c);
+			const ship = add(
+				at,
+				scale(
+					out,
+					(solidReach(rockSolid(plan, rock, clock)) + HULL_REACH_KM * 0.9) /
+						length(out),
+				),
+			);
+			const got = fieldRockSolids(
+				world.system,
+				{ start: ship, end: ship, reachKm: HULL_REACH_KM },
+				clock,
+			);
+			expect(got.owner).toContain(rockId(plan, rock));
+		}
+	}, 60_000);
+
+	test("a step a billion km long stays bounded by the occupied buckets", () => {
+		const { world, plan } = fieldWorld();
+		const clock = { fromTime: 1000, toTime: 1000 };
+		const c = fieldCentre(plan, 1000);
+		const started = performance.now();
+		fieldRockSolids(
+			world.system,
+			{
+				start: add(c, v3(-5e8, -5e8, -5e8)),
+				end: add(c, v3(5e8, 5e8, 5e8)),
+				reachKm: HULL_REACH_KM,
+			},
+			clock,
+		);
+		expect(performance.now() - started).toBeLessThan(2_000);
+	}, 20_000);
+
+	test("the field's cull grows by the ship's reach: a wide reach beyond the extent still finds the outermost rock", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const clock = { fromTime: 1000, toTime: 1000 };
+		const outer = rocks.reduce((a, b) =>
+			length(b.anchor) > length(a.anchor) ? b : a,
+		);
+		const at = rockPose(plan, outer, 1000).pos;
+		const c = fieldCentre(plan, 1000);
+		const out = sub(at, c);
+		const reachKm = 60;
+		const ship = add(
+			c,
+			scale(out, (FIELD_EXTENT_KM[plan.profile] + 40) / length(out)),
+		);
+		expect(length(sub(ship, at))).toBeLessThan(reachKm);
+		expect(
+			fieldRockSolids(world.system, { start: ship, end: ship, reachKm }, clock)
+				.owner,
+		).toContain(rockId(plan, outer));
+	});
+
+	test("a step poses only the rocks in buckets its reach names", () => {
+		const { world, plan, rocks } = fieldWorld();
+		const rock = rocks[Math.floor(rocks.length / 2)];
+		const clock = { fromTime: world.gameTime, toTime: world.gameTime + DT };
+		const at = rockPose(plan, rock, clock.fromTime).pos;
+		const ship = { start: at, end: at, reachKm: HULL_REACH_KM };
 		const pose = spyOn(asteroidField, "rockPose");
 		try {
 			fieldRockSolids(world.system, ship, clock);
-			expect(pose.mock.calls.map(([p, r, t]) => [p.id, r.slot, t])).toEqual([
-				[plan.id, rock.slot, clock.fromTime],
-				[plan.id, rock.slot, clock.toTime],
-			]);
+			const posed = new Set(pose.mock.calls.map(([, r]) => r.slot));
+			expect(posed.has(rock.slot)).toBe(true);
+			expect(posed.size).toBeLessThan(rocks.length / 8);
+			const envelope = Math.max(...rocks.map((r) => r.radiusKm + r.driftKm));
+			const named = HULL_REACH_KM + envelope + 2 * ROCK_BUCKET_KM + 0.1;
+			const local = rockLocal(rock, clock.fromTime);
+			for (const other of rocks)
+				if (posed.has(other.slot))
+					for (const axis of ["x", "y", "z"] as const)
+						expect(
+							Math.abs(other.anchor[axis] - local[axis]),
+						).toBeLessThanOrEqual(named);
 		} finally {
 			pose.mockRestore();
 		}

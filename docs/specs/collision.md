@@ -423,10 +423,11 @@ through `worldSolids`' `rocks` option (`src/field-collision.ts`); a fleet ship's
 sweep does not ask for them, because `avoidanceSolids` carries no rock. A rock
 is a `RockSolid` posed at both ends of the step from the clock (#43) by
 `rockPose`, its velocity the pose's derivative, so a contact is read in the
-rock's frame, spin included (#75). The reach set is a lattice query: a rock
-never leaves its cell, so the ship's path is taken into the field frame at both
-ends, grown by the hull's reach and the field centre's bend over the step, and
-only the occupied cells in that index range are posed. A rock's id is
+rock's frame, spin included (#75). The reach set is a bucket query (#1209):
+anchors are continuous and a bucket may hold several rocks, so the ship's path
+is taken into the field frame at both ends, grown by the hull's reach, the
+rocks' radius and drift and the field centre's bend over the step, and only the
+rocks in that bucket range are posed, in slot order. A rock's id is
 `<field id>:rock-<slot>`, and a ghost or an impact names it. The cone pieces
 of all 16 archetypes are built from the heightfields the game registers with
 `setRockShapeSource`, one archetype at a time on a module Worker from boot
