@@ -128,10 +128,24 @@ Before/after at 24/255 on the 113 rows the base has: 100 rows moved under 1.0%.
 Over it: `mining-survey-surface` 44.25% and `mining-survey-navigation` 12.17%, the
 two rows flown from the new cabin; `controls-folded` 2.04%, the new key row;
 `berth-launch-chase` 22.91%, `berth-arrival` 4.79%, `docking-notice-bounce` 4.42%,
-`berth-arrival-cabin` 1.20% and `berth-free-look` 1.04%, which are wall-clock
-traversals (`docs/pitfalls.md`, View-set comparisons); `ring-approach` 2.07%,
+`berth-arrival-cabin` 1.20%, `berth-free-look` 1.04%, `ring-approach` 2.07%,
 `coriolis-approach` 1.83%, `coriolis-flank` 1.42%, `cruise-light-chase` 1.28% and
-`ring-flank` 1.03%, where a same-build control at the base moves more (1.51 to
-3.20%) than the change does on the same measure (0.59 to 1.26%). No control was run
-for the traversal rows, so those five rest on the pitfall's record.
+`ring-flank` 1.03%. For these ten, same-build recaptures bound the noise:
+
+| Row | Base against base | Base against head | Head against head |
+| --- | ---: | ---: | ---: |
+| `berth-launch-chase` | 8.07 | 14.66 | not run |
+| `berth-arrival` | 0.00 | 2.96, 0.31, 3.53 | 3.71 |
+| `docking-notice-bounce` | 1.94 | 2.95, 2.16, 0.57 | 1.85 |
+| `berth-arrival-cabin` | 0.79 | 0.74 | not run |
+| `berth-free-look` | 1.12 | 0.11 | not run |
+| `ring-approach` | 3.20 | 1.24 | not run |
+| `coriolis-approach` | 2.21 | 1.01 | not run |
+| `coriolis-flank` | 1.51 | 0.94 | not run |
+| `cruise-light-chase` | 1.52 | 1.26 | not run |
+| `ring-flank` | 1.90 | 0.59 | not run |
+
+Nine rows sit inside what one build does to itself. `berth-launch-chase` reads
+above its one control, and `docs/pitfalls.md` records that row as not repeatable, so
+it is judged by eye. These are single recaptures, not distributions.
 Review, gate and principal approval are recorded on the PR.

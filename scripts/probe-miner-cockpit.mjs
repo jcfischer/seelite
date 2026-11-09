@@ -367,8 +367,12 @@ try {
 	);
 	await late.close();
 
+	let aborted = 0;
 	const failed = await open({ hull: "miner", "models-full": false }, (page) =>
-		page.route(CABIN_GLB, (route) => route.abort()),
+		page.route(CABIN_GLB, (route) => {
+			aborted += 1;
+			return route.abort();
+		}),
 	);
 	await failed.waitForFunction(
 		() => window.__seelite.modelsSettled(),
@@ -385,13 +389,14 @@ try {
 	const stood = await cabinFacts(failed);
 	check(
 		"a failed load keeps the whole courier cabin and its eye, with no crash",
-		stood.cabinId === "courier" &&
+		aborted > 0 &&
+			stood.cabinId === "courier" &&
 			stood.cabins === 1 &&
 			stood.perimeter &&
 			!stood.secondSeat &&
 			stood.eye.y === 0 &&
 			stood.faces.length === 0,
-		JSON.stringify(stood),
+		JSON.stringify({ aborted, stood }),
 	);
 	await failed.close();
 } finally {
