@@ -30,7 +30,7 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	// https://github.com/jcfischer/seelite/issues/1043 — sentence approved by the principal, 2026-11-07.
 	{
-		date: "2026-11-08",
+		date: "2026-11-09",
 		text: "Asteroid fields spread into irregular clusters and gaps.",
 		node: 1209,
 	},
