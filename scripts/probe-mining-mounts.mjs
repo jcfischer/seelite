@@ -74,6 +74,29 @@ try {
 			g.step(0.05);
 			g.render(0);
 			const sameRgb = (a, b) => a.every((v, i) => v === b[i]);
+			const eye = g.cameraPos();
+			const aheadOfEye = (p) =>
+				(p.x - eye.x) * g.nose().x +
+					(p.y - eye.y) * g.nose().y +
+					(p.z - eye.z) * g.nose().z >
+				0;
+			const n = MINING_BEAM.segments;
+			const miningStrokesAhead = g.miningBeam
+				? g.miningBeamSegments(g.miningBeam).reduce((strokes, ray) => {
+						for (let k = 0; k < n; k++) {
+							const at = (j) => {
+								const f = (j / n) ** 2;
+								return {
+									x: ray.muzzle.x + (ray.end.x - ray.muzzle.x) * f,
+									y: ray.muzzle.y + (ray.end.y - ray.muzzle.y) * f,
+									z: ray.muzzle.z + (ray.end.z - ray.muzzle.z) * f,
+								};
+							};
+							if (aheadOfEye(at(k)) || aheadOfEye(at(k + 1))) strokes += 2;
+						}
+						return strokes;
+					}, 0)
+				: 0;
 			const out = {
 				group: g.armedFireGroup.current(g.fireGroups)?.label,
 				ports: g.gunTracer.firedPorts.length,
@@ -82,7 +105,8 @@ try {
 				pulse: g.cockpitStrokes.filter((s) => sameRgb(s.rgb, PLAYER_BEAM_RGB))
 					.length,
 				vertices: g.beamLayer.vertexCount,
-				expected: (2 * MINING_BEAM.segments * 2 + 1) * BEAM_VERTICES_PER_STROKE,
+				expected: (miningStrokesAhead + 1) * BEAM_VERTICES_PER_STROKE,
+				miningAhead: miningStrokesAhead,
 				expectedPlain: 3 * BEAM_VERTICES_PER_STROKE,
 				hit: g.miningBeam?.hit?.rockId,
 				hits: g.miningBeam?.rays.map((r) => r.hit?.rockId),
@@ -108,8 +132,10 @@ try {
 				JSON.stringify(state),
 			);
 			check(
-				"two complete mining beams reach the cockpit GPU layer beside the Pulse tracer",
-				state.mining === 64 && state.vertices === state.expected,
+				"both mining beams reach the cockpit GPU layer, whole from the bridge eye forward, beside the Pulse tracer",
+				state.mining === state.miningAhead &&
+					state.miningAhead >= 56 &&
+					state.vertices === state.expected,
 				JSON.stringify(state),
 			);
 			check(
