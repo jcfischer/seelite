@@ -16,15 +16,15 @@ the player presses its poster (click-to-play, 2026-10-03, `src/public-site.ts`)
 — and the music's instrument samples, from this site's own origin: a set's
 manifest and only the recordings a loaded song plays, each once a session
 (2026-10-06, `src/music-samples.ts`). The voice is
-the one trained asset and the samples the one recorded one; the map's
-Constraints carry the rulings.
+the one trained model the game runs and the samples the one recorded asset; the
+map's Constraints carry the rulings.
 
 ## Stack and asset exceptions
 
 TypeScript, bun for tests, npm-compatible lockfile, biome for formatting,
 Playwright for probes. No Python. Procedural everything — no downloaded assets;
-audio synthesised via WebAudio, textures generated at load. The one exception
-is the natural voice (#604), by the principal's ruling in the map's
+audio synthesised via WebAudio, procedural surfaces generated at load. The first
+exception is the natural voice (#604), by the principal's ruling in the map's
 Constraints: `node scripts/fetch-voice-model.mjs` puts it in
 `public/voice-model/` (git-ignored), and `scripts/measure-neural-voice.mjs`
 — manual, by the principal's ruling — needs it there; `probe-neural-voice`
@@ -38,6 +38,10 @@ ear in blind auditions: `scripts/fetch-music-samples.mjs` prepares them into
 `public/music-samples/` and records each file's source and checksum, and the
 chosen sets are **tracked in Git LFS** (`.gitattributes`). The deploy pulls
 them only when it publishes.
+
+**Imagegen textures may ship inside authored GLBs** (principal, 2026-11-08, in
+the map's Rulings). Each study's `assets.md` records where its textures came
+from, and visual work still closes on the principal's yes.
 
 **Study binaries under `spikes/` are in Git LFS too** (principal,
 2026-10-19): every `.blend`, `.glb`, `.png`, `.jpg`, `.webp` and `.bin`
