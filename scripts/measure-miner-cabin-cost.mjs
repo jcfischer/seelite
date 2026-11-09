@@ -19,7 +19,12 @@ import { median, seededShuffler, separation } from "./lib/measurement.mjs";
 import { placeAtRockFace } from "./lib/miner-bridge-fixture.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
-import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	installViewPlacement,
+	launchChromium,
+} from "./probe-guard.mjs";
 
 const FRAMES = Number(process.env.FRAMES ?? 120);
 const BLOCKS = Number(process.env.BLOCKS ?? 8);
@@ -51,6 +56,8 @@ const page = await browser.newPage({
 	viewport: VIEWPORT,
 	deviceScaleFactor: 2,
 });
+
+await installViewPlacement(page);
 
 async function install() {
 	const started = Date.now();
