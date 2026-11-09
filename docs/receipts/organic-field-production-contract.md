@@ -44,7 +44,7 @@ Elapsed against trade, sustained p50: charted raw 0.26 to 0.25, charted refined 
 
 Population did not change, so these moves are a new instance of the same arrangement, not a different density; rare rests on N=5. No population alternative was run because none was adopted. Row hashes did not move: v1 `fd61e348b0542bd8`, v2 `4baacf6feb98a104`, v3 `344d19a88ed12977`. No ruled candidate value changed, and #1216's F1 on recovery remains a finding for #923. The instrument's figures are model predictions, not flown results.
 
-## Close-view cost: resolved, with one limit
+## Close-view cost: within budget on these runs, with one limit
 
 **Which run.** Every figure below comes from the run started at 23:15 CET on 2026-11-08 on clean head `c2bed654`, after the coordinator force-stopped two orphaned browsers, with each script starting only below a 1-minute load of 5 (recorded 3.2–4.8), unless a line says otherwise. The "before" column and the decomposition are on clean base `625e2227`, also after that stop. Samples before the stop were discarded, which says nothing about whether they were wrong. So was a run on `91838bb6` at load 5–16 from other work, which read up to +5.851 ms at 75% separation. Apple M5 Pro, ANGLE Metal, 1440×900 at device scale 2, six shuffled blocks of 48 frames, against a no-field control.
 
@@ -69,7 +69,7 @@ Added ms against budget on the state a pilot flies in (the gate decides each arm
 | Rare 298, 0, chase | 0.599 | 3 | 0.350 | 3 |
 | Rare 298, 0, cockpit | 0.667 | 11 | **0.421** | 3 |
 | Rare 298, 2, chase | 0.660, run 2 0.748 | 3 | **0.415**, run 2 0.357 | 3 |
-| Rare 298, 2, cockpit | 0.916 | 11 | **0.555** | 3 |
+| Rare 298, 2, cockpit | 0.916, repeats 0.857, 0.847 | 11 | **0.555**, repeats 0.492, 0.514 | 3 |
 | Charted 783, 0, chase | 0.417 | 4 | 0.244 | 3 |
 | Charted 783, 0, cockpit | 0.561 | 12 | 0.332 | 3 |
 | Charted 783, 2, chase | 0.370 | 4 | 0.246 | 3 |
@@ -78,6 +78,8 @@ Added ms against budget on the state a pilot flies in (the gate decides each arm
 | Rare 391, 0, cockpit | 0.554 | 11 | 0.301 | 3 |
 | Rare 391, 2, chase | 0.669 | 3 | 0.309 | 3 |
 | Rare 391, 2, cockpit | 0.784, run 2 0.810 | 11 | **0.454**, run 2 0.460 | 3 |
+
+**The margin is thin.** The worst row clears high by 0.084 ms, and repeats of one row differ by up to 0.142 ms, so a further run could read just over 1.0. This is one machine, on fixed stands. It is a passing measurement, not a guarantee.
 
 **The limit.** Low at `close` is above +0.4 ms in the bold rows, at most +0.555 ms. That stays inside the principal's existing allowance for that one view (#968 D3, 2026-10-19: accepted as the fill-bound worst case up to about +0.6 ms at `close` only). No budget was changed. Low at `inside`, `edge`, `far` and `dense` is at most +0.147 ms. The worst case is one rock's fill through its approved material, which population, LOD and radius do not reduce, and the field's rock count does not order it: the largest fields here read lower than the fixtures, because each `close` frames a different rock.
 
