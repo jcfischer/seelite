@@ -47,6 +47,10 @@ import {
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { warningIsPainted } from "./lib/death-warning-paint.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -670,9 +674,11 @@ const warnPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
 watch(warnPage, "eject-warning");
+await installFlightFixtureHooks(warnPage);
 await warnPage.goto(gameUrl(origin, { seed: 42, "no-save": true }));
 await bootedGame(warnPage);
 await warnPage.waitForFunction(() => !window.__seelite.clockHeld);
+const resetNoSaveFlight = await rememberFlightFixture(warnPage);
 const warned = await warnPage.evaluate(async () => {
 	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
 	// Moved pixels, and how many of them are amber in the second shot.
@@ -810,16 +816,27 @@ check(
 		warned.healed.render === null,
 	JSON.stringify({ noPod: warned.noPod, healed: warned.healed }),
 );
-await warnPage.close();
 
 // ---------------------------------------------------------------------------
 // Arm 2: ?no-save. Nothing to restore: destroyed, held, overlay open.
 // ---------------------------------------------------------------------------
 
-const bare = await browser.newPage({ viewport: { width: 900, height: 620 } });
-watch(bare);
-await bare.goto(gameUrl(origin, { seed: 42, "no-save": true }));
-await bootedGame(bare);
+const bare = warnPage;
+await bare.setViewportSize({ width: 900, height: 620 });
+await resetNoSaveFlight();
+check(
+	"the no-save death starts from a whole, living flight fixture",
+	await bare.evaluate(() => {
+		const g = window.__seelite;
+		return (
+			!g.dead &&
+			!g.clockHeld &&
+			g.dockPhase === "flying" &&
+			g.condition.hull === g.condition.hullMax &&
+			g.collisionImpacts === 0
+		);
+	}),
+);
 const ended = await bare.evaluate(async () => {
 	const g = window.__seelite;
 	const before = g.commanderOverlay?.isOpen() ?? null;

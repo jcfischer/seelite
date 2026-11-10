@@ -1,0 +1,36 @@
+{
+  "base": "cf4976d32991f4f6d4efc1ba65e38d3ea16d9d1f",
+  "head": "working-tree",
+  "results": {
+    "death": {
+      "matched": 33,
+      "missing": [],
+      "added": [
+        {
+          "label": "\"the no-save death starts from a whole, living flight fixture\"",
+          "predicate": "await bare.evaluate(() => {\n\t\tconst g = window.__seelite;\n\t\treturn (\n\t\t\t!g.dead &&\n\t\t\t!g.clockHeld &&\n\t\t\tg.dockPhase === \"flying\" &&\n\t\t\tg.condition.hull === g.condition.hullMax &&\n\t\t\tg.collisionImpacts === 0\n\t\t);\n\t})"
+        }
+      ]
+    },
+    "docking": {
+      "matched": 51,
+      "missing": [],
+      "added": [
+        {
+          "label": "`seed ${seed} reuses a neutral flight fixture`",
+          "predicate": "neutral"
+        }
+      ]
+    },
+    "binding-store": {
+      "matched": 34,
+      "missing": [],
+      "added": []
+    },
+    "boot": {
+      "matched": 47,
+      "missing": [],
+      "added": []
+    }
+  }
+}

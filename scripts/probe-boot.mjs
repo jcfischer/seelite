@@ -45,6 +45,10 @@ import {
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 
 /** Where the game is served. `PROBE_ORIGIN` replaces only the host, so this
  *  probe keeps the seed it chose; `PROBE_URL` replaces the whole thing. The
@@ -143,10 +147,12 @@ async function open({
 	override,
 	force,
 	checkBoot = false,
+	fixture = false,
 } = {}) {
 	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 	watch(page);
 	await installCamSim(page);
+	if (fixture) await installFlightFixtureHooks(page);
 	const url = gameUrl(ORIGIN, params, probeOptions({ override, force }));
 	await page.goto(url, { waitUntil: "load" });
 	if (checkBoot) {
@@ -172,7 +178,8 @@ async function open({
 	return page;
 }
 
-const page = await open({ checkBoot: true });
+const page = await open({ checkBoot: true, fixture: true });
+const resetBootFlight = await rememberFlightFixture(page);
 
 const state = await page.evaluate(() => {
 	const g = window.__seelite;
@@ -723,9 +730,7 @@ check(
 );
 
 /**
- * Both sides of the `?fps` gate, in one function because it is one subject and
- * because everything below opens a page of its own — the boot page the rest of
- * this file asserts on is not touched here.
+ * Both sides of the `?fps` gate.
  */
 async function fpsGate() {
 	/**
@@ -733,9 +738,7 @@ async function fpsGate() {
 	 *
 	 * Which page carries which side, since "both sides" is loose: the default is
 	 * asserted on the boot page the rest of this file uses, and again on the page
-	 * that comes back from the workbench; the positive is asserted on that same
-	 * page after a `goto` to `&fps`. One page, three states, rather than one page
-	 * per claim.
+	 * that comes back from the workbench; the positive boots its own flagged page.
 	 * The workbench mounts a meter *unconditionally*, and the only reason one does
 	 * not survive the return to flight is that `[data-model-close]` navigates.
 	 * Rewrite it as an in-place teardown and the readout is on the flight floor
@@ -799,33 +802,18 @@ async function fpsGate() {
 	 * The saved boot was an argument; the flake is a number.
 	 */
 	await bench.close();
-	/**
-	 * The gate as an A/B on one page, which is the only form of it that means
-	 * anything.
-	 *
-	 * The absence check at the top of this file passes identically whether the
-	 * gate works or `mountFpsMeter` is never called at all — it asserts absence
-	 * where absence was never in question, and its justification ("the page has
-	 * been open for the whole of this file") argues for the wrong thing. Here
-	 * one page is loaded without the flag and then with it, so the only
-	 * difference between the two readings is the flag.
-	 */
-	const metered = await open();
+	let metered = await open();
 	check(
-		"the same page carries no readout before the flag",
+		"the matched unflagged boot carries no readout",
 		!(await metered.evaluate(() =>
 			Boolean(document.querySelector("[data-fps-meter]")),
 		)),
 	);
-	await metered.goto(
-		gameUrl(
-			ORIGIN,
-			{ seed: SEED, fps: true },
-			probeOptions({ force: ["fps"] }),
-		),
-		{ waitUntil: "load" },
-	);
-	await bootedGame(metered);
+	await metered.close();
+	metered = await open({
+		params: { seed: SEED, fps: true },
+		force: ["fps"],
+	});
 	// Wait for a *rate*, not for the element. The meter mounts showing "- fps",
 	// so waiting on text containing "fps" is satisfied the instant it appears and
 	// gates on nothing: whether the read below saw a measured figure or the
@@ -1024,8 +1012,8 @@ await settingsGate();
  * is being claimed. Without that second page this gate would pass on a build
  * where the rig had simply been deleted.
  */
-async function combatRigAbsentInNormalFlight() {
-	const page = await open();
+async function combatRigAbsentInNormalFlight(page) {
+	await resetBootFlight();
 	const plain = await page.evaluate(() => ({
 		// Coerced in the page, not returned. On the regression this row exists to
 		// catch, `combatRig` is a live rig holding Three.js meshes with parent
@@ -1157,7 +1145,7 @@ async function combatRigAbsentInNormalFlight() {
 	);
 	await combatPage.close();
 }
-await combatRigAbsentInNormalFlight();
+await combatRigAbsentInNormalFlight(page);
 
 await browser.close();
 exit();
