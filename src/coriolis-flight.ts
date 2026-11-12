@@ -26,6 +26,22 @@ import { CORIOLIS_DETAIL_GLB_URL, CORIOLIS_GLB_URL } from "./model-urls";
 
 /** Principal ruling: https://github.com/jcfischer/seelite/issues/1142 */
 export const CORIOLIS_PAINT_LIFT = 2.3;
+/** https://github.com/jcfischer/seelite/issues/1219, https://github.com/jcfischer/seelite/issues/1231 */
+export const CORIOLIS_BUMP_SCALE = 0.022;
+
+/** The principal's ruling of 2026-11-09 keeps the prototype's albedo bump on the
+ * authored Coriolis at Porter's scale; three normalises the surface derivatives,
+ * so the figure carries from the authored model's metres into the world units the
+ * station is drawn in. */
+export function applyAlbedoBump(material: THREE.MeshStandardMaterial) {
+	const map = material.map;
+	if (!map) return;
+	if (material.bumpMap === map && material.bumpScale === CORIOLIS_BUMP_SCALE)
+		return;
+	material.bumpMap = map;
+	material.bumpScale = CORIOLIS_BUMP_SCALE;
+	material.needsUpdate = true;
+}
 export function standardMaterials(root: THREE.Object3D) {
 	const materials = new Set<THREE.MeshStandardMaterial>();
 	root.traverse((o) => {
@@ -52,6 +68,7 @@ export function createIndustrialCoriolisBuilder(
 ): IndustrialCoriolisBuilder {
 	const materials = standardMaterials(template);
 	const divisor = exposeStationMaterials(materials);
+	for (const m of materials) applyAlbedoBump(m);
 	const byName = new Map([...materials].map((m) => [m.name, m]));
 	const maps = new Map<string, THREE.Texture>();
 	for (const m of materials) if (m.map) maps.set(m.map.name, m.map);
@@ -206,6 +223,7 @@ export function createIndustrialCoriolisBuilder(
 				own.map = map;
 				own.needsUpdate = true;
 			}
+			applyAlbedoBump(own);
 			byName.set(own.name, shared(own));
 		});
 		detail = scene;
