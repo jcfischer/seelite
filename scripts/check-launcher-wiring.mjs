@@ -211,6 +211,10 @@ const EXEMPT = new Map([
 		"node #1198's headed instrument pricing the Longwall's bridge against the courier cabin on the player's GPU",
 	],
 	[
+		"measure-drill-camera-cost.mjs",
+		"node #1229's headed instrument pricing the Longwall bridge's drill camera against the same bridge with the feed switched off, on both quality sides; like #1198's it prints medians, a separation count and draw figures for a receipt and gates on nothing — the budget is the receipt's, and a software rasteriser, or an arm whose feed is not the feed, throws out of the run",
+	],
+	[
 		"measure-asteroid-field-cost.mjs",
 		"node #968's headed instrument pricing the shipped asteroid field against a no-field control by #950's method (and, with INSTALL=1, the cold swap from points to rocks); like #201's it prints medians, a separation count and the worst view per side for a receipt and gates on nothing — the budget is a ruling the receipt checks, not a threshold a run can derive — and a software rasteriser, a page whose field is not drawing the authored rocks or a held install that never starts throws out of the run",
 	],

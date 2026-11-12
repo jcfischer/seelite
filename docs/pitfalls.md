@@ -273,6 +273,13 @@ was written in; the history it tells is still this text's history.
   per cabin and seat, so the occlusion table has a row for each, and the mining
   muzzles sit aft of the bridge eye (#1198). A courier cabin standing in on a miner
   keeps the courier eye and its row.
+- **A screen just below the frame passes a frustum test.** The Longwall bridge's
+  drill camera (#1229) gates its render pass on the readout being on screen, and
+  `THREE.Frustum.intersectsObject` tests the plane's *bounding sphere* — so at the
+  normal 60° field of view, with the whole quad projected below the canvas and the
+  picture unreadable, the sphere still grazed the frustum and the pass ran. The
+  gate projects the screen's centre. Anything else asking "is this readout on
+  screen" inherits the question.
 
 ## View-set comparisons
 

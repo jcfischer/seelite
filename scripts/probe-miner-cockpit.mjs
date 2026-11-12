@@ -70,10 +70,102 @@ const readFaces = (page) =>
 			feet: g.drill.feet.filter((f) => f.onRock).length,
 		};
 	});
+const installDrillCamReader = (page) =>
+	page.evaluate(() => {
+		window.__readDrillCam = () => {
+			const g = window.__seelite;
+			g.render(0);
+			const report = g.drillCameraReport();
+			const face = g.cabinScene.getObjectByName("miner-drillcam-feed");
+			if (!face) return { report, pixels: null };
+			face.updateWorldMatrix(true, false);
+			g.cabinCamera.updateMatrixWorld(true);
+			const V = face.position.constructor;
+			const at = face.geometry.getAttribute("position");
+			const canvas = g.renderer.domElement;
+			const ndc = [];
+			let x0 = Infinity;
+			let y0 = Infinity;
+			let x1 = -Infinity;
+			let y1 = -Infinity;
+			for (let i = 0; i < at.count; i++) {
+				const q = new V()
+					.fromBufferAttribute(at, i)
+					.applyMatrix4(face.matrixWorld)
+					.project(g.cabinCamera);
+				if (i < 4)
+					ndc.push([+q.x.toFixed(3), +q.y.toFixed(3), +q.z.toFixed(3)]);
+				const x = (q.x * 0.5 + 0.5) * canvas.width;
+				const y = (q.y * 0.5 + 0.5) * canvas.height;
+				x0 = Math.min(x0, x);
+				x1 = Math.max(x1, x);
+				y0 = Math.min(y0, y);
+				y1 = Math.max(y1, y);
+			}
+			const inset = 0.12;
+			const box = {
+				x0: Math.round(x0 + (x1 - x0) * inset),
+				y0: Math.round(y0 + (y1 - y0) * inset),
+				x1: Math.round(x1 - (x1 - x0) * inset),
+				y1: Math.round(y1 - (y1 - y0) * inset),
+			};
+			const sx = Math.max(0, box.x0);
+			const sy = Math.max(0, box.y0);
+			const ex = Math.min(canvas.width, box.x1);
+			const ey = Math.min(canvas.height, box.y1);
+			const w = ex - sx;
+			const h = ey - sy;
+			if (w < 20 || h < 10)
+				return {
+					report,
+					camera: {
+						fov: g.cabinCamera.fov,
+						setting: g.settings.value.cockpitFov,
+						ndc,
+					},
+					pixels: { clipped: true, box, canvas: [canvas.width, canvas.height] },
+				};
+			const buffer = new Uint8Array(w * h * 4);
+			const gl = g.renderer.getContext();
+			gl.readPixels(sx, sy, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
+			let lit = 0;
+			let sum = 0;
+			let hash = 0;
+			for (let i = 0; i < buffer.length; i += 4) {
+				const luma = (buffer[i] + buffer[i + 1] + buffer[i + 2]) / 3;
+				sum += luma;
+				if (luma > 28) lit++;
+				hash =
+					(Math.imul(hash, 31) +
+						buffer[i] * 3 +
+						buffer[i + 1] * 5 +
+						buffer[i + 2] * 7) |
+					0;
+			}
+			return {
+				report,
+				camera: {
+					fov: g.cabinCamera.fov,
+					setting: g.settings.value.cockpitFov,
+					ndc,
+				},
+				pixels: {
+					width: w,
+					height: h,
+					box,
+					lit,
+					litShare: lit / (w * h),
+					mean: sum / (w * h),
+					hash,
+				},
+			};
+		};
+	});
 const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-7;
 
 try {
 	const page = await open({ hull: "miner", mining: "1" });
+	await installDrillCamReader(page);
 	const bridge = await cabinFacts(page);
 	check(
 		"the flown miner draws the bridge with the eye where the study puts it",
@@ -152,6 +244,103 @@ try {
 	await page.keyboard.press("5");
 	await page.evaluate(() => window.__seelite.render(0));
 	await page.screenshot({ path: `${shots}/drill-out-miner.png` });
+	const narrow = await page.evaluate(() => window.__readDrillCam());
+	check(
+		"at the normal field of view the console is below the frame, so the pass does not run",
+		narrow.report?.active === false &&
+			narrow.report.overlay.line === "FEED OFF" &&
+			narrow.pixels !== null,
+		JSON.stringify({
+			report: narrow.report,
+			camera: narrow.camera,
+			pixels: narrow.pixels,
+		}),
+	);
+	await page.keyboard.press("7");
+	const feedOn = await page.evaluate(() => window.__readDrillCam());
+	await page.screenshot({ path: `${shots}/drill-cam.png` });
+	check(
+		"from the miner's seat with the console in frame, the screen carries a live picture",
+		feedOn.report?.active === true &&
+			feedOn.report.frames > 0 &&
+			feedOn.report.overlay.title === "DRILL CAM" &&
+			feedOn.report.overlay.line.startsWith("TCR ") &&
+			feedOn.pixels &&
+			!feedOn.pixels.clipped &&
+			feedOn.pixels.litShare > 0.15 &&
+			feedOn.pixels.mean > 20,
+		JSON.stringify(feedOn),
+	);
+	const turned = await page.evaluate(() => {
+		window.__seelite.drill.rotorRad = 1.1;
+		return window.__readDrillCam();
+	});
+	check(
+		"the picture is of the drill: turning its rotor changes the feed",
+		turned.report.active === true &&
+			turned.pixels.hash !== feedOn.pixels.hash &&
+			turned.pixels.litShare > 0.15,
+		JSON.stringify({ on: feedOn.pixels, turned: turned.pixels }),
+	);
+	const lookedAway = await page.evaluate(() => {
+		const g = window.__seelite;
+		const back = window.__readDrillCam();
+		g.setHeadLook("left");
+		window.__readDrillCam();
+		const away = window.__readDrillCam();
+		g.setHeadLook("forward");
+		return { back, away };
+	});
+	check(
+		"looking away from the console stops the pass; the screen it left reads off",
+		lookedAway.back.report.active === true &&
+			lookedAway.away.report.active === false &&
+			lookedAway.away.report.overlay.line === "FEED OFF" &&
+			lookedAway.away.report.frames === lookedAway.back.report.frames,
+		JSON.stringify({
+			back: lookedAway.back.report,
+			away: lookedAway.away.report,
+		}),
+	);
+	const qualityOff = await page.evaluate(() => {
+		window.__seelite.settings.set("quality", "low");
+		window.__readDrillCam();
+		const first = window.__readDrillCam();
+		const second = window.__readDrillCam();
+		return { first, second };
+	});
+	check(
+		"on low quality the feed is excluded, and the screen reads off rather than frozen",
+		qualityOff.first.report.active === false &&
+			qualityOff.second.report.active === false &&
+			qualityOff.first.report.overlay.line === "FEED OFF" &&
+			qualityOff.second.report.frames === qualityOff.first.report.frames,
+		JSON.stringify({
+			first: qualityOff.first.report,
+			second: qualityOff.second.report,
+		}),
+	);
+	const switchedOff = await page.evaluate(() => {
+		const g = window.__seelite;
+		g.settings.set("quality", "high");
+		const before = window.__readDrillCam();
+		g.drillCameraEnabled = false;
+		const off = window.__readDrillCam();
+		g.drillCameraEnabled = true;
+		return { before, off };
+	});
+	check(
+		"the pass is the measurement's to switch off, and off the screen says so",
+		switchedOff.before.report.active === true &&
+			switchedOff.off.report.active === false &&
+			switchedOff.off.report.overlay.line === "FEED OFF" &&
+			switchedOff.off.report.frames === switchedOff.before.report.frames,
+		JSON.stringify({
+			before: switchedOff.before.report,
+			off: switchedOff.off.report,
+		}),
+	);
+	await page.keyboard.press("7");
 	await page.keyboard.press("5");
 	await page.keyboard.press("4");
 	const held = await page.evaluate(async () => {
@@ -184,17 +373,11 @@ try {
 				if (pixels[i] + pixels[i + 1] + pixels[i + 2] > 120) lit++;
 			out[face.name] = lit;
 		}
-		const cam = g.cabinScene.getObjectByName("screen-drillcam");
-		return {
-			out,
-			drillcamUnpowered:
-				cam?.material?.color?.getHex() === 0x01090b && !cam.material.map,
-		};
+		return { out };
 	});
 	check(
-		"every live face has paint on it and the drill camera stays unpowered",
-		Object.values(painted.out).every((n) => n > 500) &&
-			painted.drillcamUnpowered,
+		"every live face has paint on it",
+		Object.values(painted.out).every((n) => n > 500),
 		JSON.stringify(painted),
 	);
 	await page.screenshot({ path: `${shots}/anchored-pilot.png` });
@@ -228,11 +411,13 @@ try {
 		const start = { id: g.cabinId, ...memory() };
 		g.setFlownHull("courier");
 		const courier1 = { id: g.cabinId, ...memory() };
+		const courierCamera = g.drillCameraReport();
 		g.setFlownHull("miner");
 		const miner = { id: g.cabinId, ...memory() };
+		const minerCamera = g.drillCameraReport();
 		g.setFlownHull("courier");
 		const courier2 = { id: g.cabinId, ...memory() };
-		return { start, courier1, miner, courier2 };
+		return { start, courier1, miner, courier2, courierCamera, minerCamera };
 	});
 	check(
 		"a hull change swaps the cabin and the old cabin's GPU resources come back",
@@ -241,7 +426,9 @@ try {
 			cycle.miner.id === "miner" &&
 			cycle.courier2.id === "courier" &&
 			cycle.courier2.geometries === cycle.courier1.geometries &&
-			cycle.courier2.textures === cycle.courier1.textures,
+			cycle.courier2.textures === cycle.courier1.textures &&
+			cycle.courierCamera === null &&
+			cycle.minerCamera?.active === false,
 		JSON.stringify(cycle),
 	);
 	const courierAfter = await cabinFacts(swap);

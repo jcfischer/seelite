@@ -37,7 +37,8 @@ at another console. Static `label-*` and `key-*` meshes remain equipment labels.
 | `prototype-combat` | The optional combat study's readings |
 
 Any screen without a live producer stays unpowered, including the courier's
-`screen-systems` and the Longwall bridge's `screen-drillcam`.
+`screen-systems`. The Longwall bridge's `screen-drillcam` has one now: see
+below.
 
 ## The Longwall bridge
 
@@ -50,6 +51,34 @@ reading and paints nothing for it on the fallback console. `radar`, `flight`,
 console. With no `screen-fallback`, the remaining sources share the emergency
 console. Without `?mining=1` the survey, drill, anchor and stance faces read
 `MINING OFF`.
+
+## The Longwall bridge's drill camera
+
+`screen-drillcam` is a live feed rather than a text source (#1229). A second
+camera (`src/drill-camera-pass.ts`) draws the near scene into a 640 x 307
+off-screen target, and the screen shows that target under an overlay canvas.
+The overlay reads `DRILL CAM` and the pass's own frame clock (`TCR
+hh:mm:ss:ff`), so a picture that stops advancing cannot pass for a live one;
+when the pass is not drawn the same line reads `FEED OFF` over the dark screen.
+
+The mount and lens are `src/drill-camera.ts`'s: 1.5 m aft of the cutter's bow
+plane, 4.8 m below the keel line and 7 m to port, outside the rotor's ±5.5 m
+square, aimed four metres past the rotor's face. That is the study's contact
+close-up (`spikes/miner-cockpit/screens/drillcam.png`) derived from the hull's
+cutter box, because the study authored the fixture as an image and no numeric
+mount.
+
+The pass runs only when all of these hold: the flown hull's cabin is the
+bridge, the view is the cockpit, the drill is out, the screen's own centre is
+inside the camera's frame, the quality side is high, and the caller asks for
+it. It shows the rotor's `feed` part, which the cockpit's hull occlusion hides,
+for its own render only, and pins the shadow map while it draws (the same
+second-render argument #241 records for the GTAO pass).
+
+**At the normal 60° field of view the mining console's lower row, drill camera
+included, is below the frame.** The feed is seen at the wide 80° field of view
+(key 7); until then the screen's centre is not in frame and the pass does not
+run. The screen's position is #1198's design and this node did not move it.
 
 ## Missing surfaces
 
