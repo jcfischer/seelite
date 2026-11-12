@@ -13,6 +13,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { createTugHullBuilder } from "../src/tug-hull";
 import { buildDerelictMesh } from "../src/derelict-mesh";
 import { DETAIL_RADII } from "../src/detail-level";
 import {
@@ -28,6 +31,7 @@ import {
 	COURIER_LEVEL_NAMES,
 	FIXTURE_SCREEN_PREFIX,
 	courierLevelErrorKm,
+	createCourierHullBuilder,
 } from "../src/courier-hull";
 import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
@@ -736,3 +740,67 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 			});
 	});
 });
+
+async function loadWithFakeImages(file: string) {
+	const bytes = readFileSync(file);
+	return (
+		await new GLTFLoader()
+			.setMeshoptDecoder(MeshoptDecoder)
+			.register(() => ({
+				name: "EXT_texture_webp",
+				loadTexture: async () => new THREE.Texture(),
+			}))
+			.parseAsync(
+				bytes.buffer.slice(
+					bytes.byteOffset,
+					bytes.byteOffset + bytes.byteLength,
+				) as ArrayBuffer,
+				"",
+			)
+	).scene;
+}
+
+function mappedMaterials(root: THREE.Object3D) {
+	const found: [string, THREE.Texture][] = [];
+	root.traverse((object) => {
+		if (!(object instanceof THREE.Mesh)) return;
+		for (const material of [
+			object.material,
+		].flat() as THREE.MeshStandardMaterial[])
+			if (material.map) found.push([material.name, material.map]);
+	});
+	return found;
+}
+
+test("the built shipped courier uses anisotropy 8 on every exterior map", async () => {
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const cockpit = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+	cockpit.name = "cockpit-test";
+	const exterior = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+	exterior.name = "exterior-test";
+	template.add(new THREE.Mesh(new THREE.BoxGeometry(), [cockpit, exterior]));
+	const builder = await createCourierHullBuilder(template);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	const painted = mappedMaterials(root);
+	expect(painted.length).toBeGreaterThan(2);
+	expect(
+		painted.find(([name]) => name === "cockpit-test")?.[1].anisotropy,
+	).toBe(1);
+	for (const [name, map] of painted)
+		expect([name, map.anisotropy]).toEqual([
+			name,
+			name.startsWith("cockpit-") ? 1 : 8,
+		]);
+}, 30_000);
+
+test("another authored hull keeps three's default map anisotropy", async () => {
+	const template = await loadWithFakeImages("src/models/bollard-tug.glb");
+	const builder = await createTugHullBuilder(template);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	const painted = mappedMaterials(root);
+	expect(painted.length).toBeGreaterThan(0);
+	for (const [name, map] of painted)
+		expect([name, map.anisotropy]).toEqual([name, 1]);
+}, 30_000);

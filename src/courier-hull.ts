@@ -125,6 +125,11 @@ export function createCourierHullBuilder(
 		prepareMesh: (mesh) => {
 			const screen = mesh.name.startsWith(FIXTURE_SCREEN_PREFIX);
 			if (screen) mesh.material = unpowered;
+			for (const material of [
+				mesh.material,
+			].flat() as THREE.MeshStandardMaterial[])
+				if (material.map && !material.name.startsWith("cockpit-"))
+					material.map.anisotropy = 8;
 			// The cabin and the pilot sit inside the closed hull: nothing they
 			// would shade is lit through it, so they stay out of the shadow pass.
 			mesh.castShadow = !screen && !BEHIND_THE_CANOPY.test(mesh.name);

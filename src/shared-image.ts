@@ -8,10 +8,10 @@
  * so the model's next load fetches again, and rejects the load, because three's
  * own texture path answers a failed image with an untextured model.
  *
- * Models keep the one texture object, so the renderer keeps one upload.
- * `interior-kit.ts` writes anisotropy onto the map it is handed, and that key
- * is part of three's upload key, so the interiors load under an `owner` of
- * their own: another texture over the same decoded `Source`.
+ * Models keep one texture object. An `owner` isolates its settings on another
+ * texture over the same decoded `Source`. The registry applies an image's
+ * optional anisotropy before cloning; matching sampler settings share one GPU
+ * upload even across owner copies, including the interiors at anisotropy 8.
  */
 import * as THREE from "three";
 import type {
@@ -65,6 +65,7 @@ export function createSharedImages(
 			texture.minFilter = THREE.LinearMipmapLinearFilter;
 			texture.wrapS = THREE.RepeatWrapping;
 			texture.wrapT = THREE.RepeatWrapping;
+			if (image.anisotropy !== undefined) texture.anisotropy = image.anisotropy;
 			return shared(texture);
 		});
 		bases.set(sha256, loading);
