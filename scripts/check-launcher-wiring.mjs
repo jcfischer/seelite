@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"measure-station-rock-ao.mjs",
+		"Manual paired timing instrument; page errors and invalid flight/replay states stop the run, while budget gaps are reported for the principal.",
+	],
+	[
 		"measure-field-navigation.mjs",
 		"an instrument that prints figures, like measure-asteroid-field-cost; a page error stops the run",
 	],
