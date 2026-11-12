@@ -83,6 +83,7 @@ import {
 } from "./lib/probe-contention.mjs";
 import { loadSampler } from "./lib/probe-load.mjs";
 import { holdProbeLockOrExit, stopChildren } from "./lib/probe-lock.mjs";
+import { reapOrphanBrowsers } from "./lib/orphan-browsers.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
 import { QUARANTINED } from "./lib/probe-quarantine.mjs";
 import { exclusiveLines, schedule } from "./lib/probe-schedule.mjs";
@@ -197,6 +198,12 @@ await holdProbeLockOrExit(
 		},
 	},
 );
+
+const reapedBrowsers = reapOrphanBrowsers();
+if (reapedBrowsers.length > 0)
+	console.log(
+		`reaped ${reapedBrowsers.length} orphaned browser${reapedBrowsers.length === 1 ? "" : "s"} left by a killed probe: process group ${reapedBrowsers.join(", ")}`,
+	);
 
 /**
  * The machine's load through the run, reported beside every red and in the

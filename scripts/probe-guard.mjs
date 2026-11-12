@@ -60,6 +60,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
 import { directRunNotice, isSuiteChild } from "./lib/probe-contention.mjs";
+import { watchLaunchedBrowsers } from "./lib/orphan-browsers.mjs";
 
 /** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
@@ -540,6 +541,7 @@ export async function launchChromium(options = {}) {
 	// shipped, which is the whole reason the check below exists).
 	printCondition("machine", directRunNotice());
 	const browser = await chromium.launch(launchOptions);
+	watchLaunchedBrowsers();
 	// **What this launch actually was, recorded on the browser it opened.** A
 	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row
 	// names the launch when the lock is refused — otherwise re-runs the resolver
