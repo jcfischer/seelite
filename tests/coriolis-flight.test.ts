@@ -452,7 +452,11 @@ test("every added scale-detail mesh draws only at full; baseline geometry and ga
 });
 
 import { updateStationVisuals } from "../src/station-mesh";
-import { DETAIL_RETRY_MS, standardMaterials } from "../src/coriolis-flight";
+import {
+	CORIOLIS_BUMP_SCALE,
+	DETAIL_RETRY_MS,
+	standardMaterials,
+} from "../src/coriolis-flight";
 import { readFileSync } from "node:fs";
 import { stationEmissiveDivisor as emissiveDivisor } from "../src/station-light";
 
@@ -569,4 +573,129 @@ test("the detail file shares the base file's materials, image and exposure", asy
 		else expect(isShared(material)).toBe(true);
 	}
 	station.dispose();
+});
+
+const texturedMaterial = (name: string, mapName = "industrial-surface") => {
+	const material = new THREE.MeshStandardMaterial();
+	material.name = name;
+	material.map = new THREE.Texture();
+	material.map.name = mapName;
+	return material;
+};
+
+const exteriorMaterials = (station: { root: THREE.Object3D }) => {
+	const materials = new Set<THREE.MeshStandardMaterial>();
+	station.root
+		.getObjectByName("industrial-coriolis-exterior")!
+		.traverse((o) => {
+			if (!(o instanceof THREE.Mesh)) return;
+			for (const m of Array.isArray(o.material) ? o.material : [o.material])
+				if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
+		});
+	return materials;
+};
+
+const expectAlbedoBump = (station: { root: THREE.Object3D }) => {
+	let textured = 0;
+	let untextured = 0;
+	for (const material of exteriorMaterials(station)) {
+		if (material.map) {
+			expect(material.bumpMap).toBe(material.map);
+			expect(material.bumpScale).toBe(CORIOLIS_BUMP_SCALE);
+			textured++;
+		} else {
+			expect(material.bumpMap).toBeNull();
+			untextured++;
+		}
+	}
+	return { textured, untextured };
+};
+
+test("every textured authored Coriolis material reads its albedo map as a bump at Porter's scale, and an untextured one takes none", () => {
+	const template = new THREE.Group();
+	const painted = texturedMaterial("ceramic-steel-0");
+	const plating = texturedMaterial("plating");
+	const untextured = new THREE.MeshStandardMaterial();
+	untextured.name = "navigation-red";
+	for (const material of [painted, plating, untextured]) {
+		const mesh = new THREE.Mesh(new THREE.BoxGeometry(800, 800, 800), material);
+		mesh.name = material.name;
+		template.add(mesh);
+	}
+	const detail = new THREE.Group();
+	const latePlating = new THREE.MeshStandardMaterial();
+	latePlating.name = "scale-detail-plating";
+	latePlating.userData.baseColorMap = "industrial-surface";
+	const lateMesh = new THREE.Mesh(
+		new THREE.BoxGeometry(800, 800, 800),
+		latePlating,
+	);
+	lateMesh.name = "scale-detail-plating";
+	const lateReuse = new THREE.Mesh(
+		new THREE.BoxGeometry(800, 800, 800),
+		painted,
+	);
+	lateReuse.name = "scale-detail-reused";
+	detail.add(lateMesh, lateReuse);
+	const build = createIndustrialCoriolisBuilder(template);
+	build.addDetail(detail);
+	const station = build(0, 0x9aa6b2);
+	const counts = expectAlbedoBump(station);
+	expect(counts.textured).toBeGreaterThanOrEqual(3);
+	expect(counts.untextured).toBeGreaterThanOrEqual(1);
+	const core = station.root.getObjectByName("core") as THREE.Mesh<
+		THREE.BufferGeometry,
+		THREE.MeshStandardMaterial
+	>;
+	expect(core.material).not.toBe(painted);
+	expect(core.material.bumpMap).toBe(core.material.map);
+	expect(core.material.bumpScale).toBe(CORIOLIS_BUMP_SCALE);
+	station.dispose();
+});
+
+test("a failed scale-detail load leaves the exterior's albedo bump in place and the retry unchanged", async () => {
+	const template = new THREE.Group();
+	const plate = texturedMaterial("plating");
+	const plateMesh = new THREE.Mesh(new THREE.BoxGeometry(800, 800, 800), plate);
+	plateMesh.name = plate.name;
+	template.add(plateMesh);
+	let requests = 0;
+	let clock = 0;
+	const build = createIndustrialCoriolisBuilder(
+		template,
+		async () => {
+			requests++;
+			throw new Error("offline");
+		},
+		() => clock,
+	);
+	const station = build(0, 0x9aa6b2);
+	updateStationVisuals(station, 0, station.silhouetteKm * 200, "high");
+	expect(requests).toBe(1);
+	await new Promise((r) => setTimeout(r, 0));
+	expect(station.lateDetail?.failure).toBeInstanceOf(Error);
+	expect(station.lateDetail?.attached).toBe(false);
+	const counts = expectAlbedoBump(station);
+	expect(counts.textured).toBeGreaterThanOrEqual(1);
+	clock = DETAIL_RETRY_MS - 1;
+	updateStationVisuals(station, 0, station.silhouetteKm * 200, "high");
+	expect(requests).toBe(1);
+	expectAlbedoBump(station);
+	station.dispose();
+});
+
+test("no other station form takes the Coriolis albedo bump", () => {
+	let textured = 0;
+	for (const seed of [42, 7]) {
+		const stations = makeWorldAtSystem(seed, 0).system.contents.stations;
+		for (const s of stations) {
+			const built = buildStationMesh(s, 0xffffff);
+			for (const material of standardMaterials(built.root)) {
+				expect(material.bumpMap).toBeNull();
+				if (material.map) textured++;
+			}
+			built.dispose();
+		}
+	}
+	expect(textured).toBeGreaterThan(0);
 });
