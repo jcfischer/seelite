@@ -43,8 +43,9 @@ import {
 } from "./authored-hull";
 import { levelErrorKm } from "./authored-levels";
 import { shared } from "./gpu-teardown";
-import { COURIER_HULL_GLB_URL } from "./model-urls";
+import { COURIER_HULL_GLB_URL, EXTERIOR_MAP_ANISOTROPY } from "./model-urls";
 import { HULL_SPECS } from "./hull";
+import { isSharedImage } from "./shared-image";
 import { type AuthoredHullBuilder, HULL_REACH_KM } from "./ship-mesh";
 
 /** The frame every authored courier's levels and glows hang under. */
@@ -128,8 +129,12 @@ export function createCourierHullBuilder(
 			for (const material of [
 				mesh.material,
 			].flat() as THREE.MeshStandardMaterial[])
-				if (material.map && !material.name.startsWith("cockpit-"))
-					material.map.anisotropy = 8;
+				if (
+					material.map &&
+					!material.name.startsWith("cockpit-") &&
+					!isSharedImage(material.map)
+				)
+					material.map.anisotropy = EXTERIOR_MAP_ANISOTROPY;
 			// The cabin and the pilot sit inside the closed hull: nothing they
 			// would shade is lit through it, so they stay out of the shadow pass.
 			mesh.castShadow = !screen && !BEHIND_THE_CANOPY.test(mesh.name);

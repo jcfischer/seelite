@@ -5,16 +5,34 @@
 `industrial-surface` resolves at anisotropy 8 through its optional `SharedImage`
 entry, before owner copies are cloned. Entries without the field keep the loader's
 setting (three's default is 1). The courier sets every non-`cockpit-` material's
-base-colour map to 8 in its own preparation callback. Other authored hull builders,
+base-colour map to 8 in its own preparation callback, except maps owned by the
+shared registry: those retain their entry's settings. Other authored hull builders,
 normal/bump maps and the interiors' owner copy are unchanged.
 
 The interiors still set exactly 8 (`src/interior-kit.ts`). Their owner copy and
-the exterior now share one GPU upload. Production code is commit `5b683f19`,
-against base `535fe0d7`; the final handoff commit adds this receipt and strengthens
-the positive shipped-map assertion; production code remains unchanged.
-No model or image bytes changed; SHA-256 pins for the courier, Coriolis, shared
-image and interior kit are in `/tmp/node-1230-asset-hashes.txt`.
-No changelog entry is required: `src/changelog.ts` excludes performance tuning.
+the exterior now share one GPU upload. The measurements below describe production
+code at `5b683f19`, against base `535fe0d7`. The round-1 changes use one
+`EXTERIOR_MAP_ANISOTROPY` constant in the registry entry, courier and interior kit,
+and prevent the courier from mutating registry maps. Source identity recognizes
+both owner copies and texture clones. The shipped courier has no registry map,
+so these changes preserve its measured settings.
+
+No model or image bytes changed. `git diff 535fe0d7 HEAD -- src/models` is empty.
+SHA-256 pins, rechecked during round 1 with
+`shasum -a 256 src/models/{courier-hull.glb,coriolis.glb,industrial-surface.webp,station-interiors.glb}`:
+
+```text
+6967208f3169dcb900f24e6164ac09023db5d6b6ee5495a92b157ce20c310c30  src/models/courier-hull.glb
+e220ff240675f202642f9a71e2e9674a5f458bc94a88eb143c1da4bda8e9fdd1  src/models/coriolis.glb
+10d4d0776274448b52fc3191941d09dc0a74f1967854f23f86406188bf1eedd7  src/models/industrial-surface.webp
+29b48cde0d18c5a7c8e663e91b190c8d4190906834215c71036f6d8ae3638e16  src/models/station-interiors.glb
+```
+
+No changelog entry is proposed under `src/changelog.ts`'s major-change rule:
+this is a texture-sampling adjustment to existing surfaces, with no new ship,
+system, mechanic or screen. It changes appearance, but the comparisons below do
+not establish a noticeable visual difference. This is a minor visual change;
+the earlier receipt's performance-tuning rationale was incorrect.
 The accepted appearance comes from node #1219; fresh principal approval remains
 required on the production captures before the checkpoint can close.
 
@@ -35,9 +53,51 @@ value so a hardcoded global 8 fails.
 
 Affected tests: 93 passed, zero failed. Build (including typecheck and deployment
 file-size guard), format, script lint, comment lint and launcher wiring passed.
-Full unit suite: `npm test` ran once on this host immediately before the final
-commit: 7,821 passed, zero failed, across 488 files in 558.76 seconds. The log is
-`/tmp/node-1230-full-test.log`.
+Before round 1, `npm test` ran once on this host immediately before `994b0a9e`:
+7,821 passed, zero failed, across 488 files in 558.76 seconds. The original log
+was re-read during round 1; its summary is preserved here:
+
+```text
+ 7821 pass
+ 0 fail
+ 17227790 expect() calls
+Ran 7821 tests across 488 files. [558.76s]
+```
+
+Reproduce with `npm test` on that commit. Raw logs, captures and measurements
+remain outside git under the principal's 2026-11-06 evidence ruling; `/tmp`
+paths below identify this host's supporting files, not PR-accessible attachments.
+The hashes, fixture recipes, counts and summaries in this receipt are the
+versioned evidence.
+
+## Sage review round 1
+
+Both sampler-policy suggestions are addressed together: the constant remains 8,
+and courier preparation skips registry-owned sources. A new regression on the
+shipped courier checks maps from entries with omitted anisotropy (1) and explicit
+anisotropy (4), their owner copies and their clones. Before the fix it failed
+with expected 1, received 8; the other 93 affected tests passed.
+
+The two receipt suggestions are also addressed: the asset pins and historical
+unit summary are now inline, with commands to reproduce them, and the changelog
+decision uses the major-change definition rather than a performance exemption.
+
+Round-1 validation on this host: 112 affected tests across five files passed.
+Build (including typecheck and deployment size checks), format, script lint,
+comment lint and launcher wiring passed. The required single full `npm test`
+run immediately before the round-1 commit exited 0:
+
+```text
+ 7822 pass
+ 0 fail
+ 17227815 expect() calls
+Ran 7822 tests across 488 files. [558.63s]
+```
+
+Its supporting host-local log is `/tmp/node-1230-r1-full-test.log`. Fresh focused
+hardware probes follow the clean commit; the supervisor owns the final PR gate.
+The hardware measurements and captures below remain the earlier implementation's
+evidence; they are not relabelled as fresh round-1 runs.
 
 ## Hardware measurement
 

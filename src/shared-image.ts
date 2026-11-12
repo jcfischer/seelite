@@ -12,6 +12,8 @@
  * texture over the same decoded `Source`. The registry applies an image's
  * optional anisotropy before cloning; matching sampler settings share one GPU
  * upload even across owner copies, including the interiors at anisotropy 8.
+ * Consumers identify registry maps by Source, including owner copies and clones,
+ * and leave their sampler policy to the registry.
  */
 import * as THREE from "three";
 import type {
@@ -27,6 +29,12 @@ export const EXTENSION = "SEELITE_shared_image";
 
 /** `GLTFParser.textureLoader`: whichever loader three chose for this browser. */
 export type ImageLoader = THREE.TextureLoader | THREE.ImageBitmapLoader;
+
+const registrySources = new WeakSet<THREE.Source>();
+
+/** Whether a texture uses a registry-owned image, including owner copies and clones. */
+export const isSharedImage = (texture: THREE.Texture): boolean =>
+	registrySources.has(texture.source);
 
 const decode = (url: string, loader: ImageLoader): Promise<THREE.Texture> =>
 	new Promise((resolve, reject) => {
@@ -66,6 +74,7 @@ export function createSharedImages(
 			texture.wrapS = THREE.RepeatWrapping;
 			texture.wrapT = THREE.RepeatWrapping;
 			if (image.anisotropy !== undefined) texture.anisotropy = image.anisotropy;
+			registrySources.add(texture.source);
 			return shared(texture);
 		});
 		bases.set(sha256, loading);

@@ -15,6 +15,7 @@ import {
 } from "./interior-layout";
 import { InteriorLods, type LodRecord } from "./interior-lod";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { EXTERIOR_MAP_ANISOTROPY } from "./model-urls";
 import type { InteriorFace, StationInterior } from "./station-interior";
 
 const materials = new Map<string, THREE.Material>();
@@ -70,7 +71,7 @@ export function interiorMaterial(
 	}
 	if (m.map) {
 		// The shipping GLB embeds the shared lossless paint.
-		m.map.anisotropy = 8;
+		m.map.anisotropy = EXTERIOR_MAP_ANISOTROPY;
 		m.bumpMap = m.map;
 		m.bumpScale = 0.09;
 	}

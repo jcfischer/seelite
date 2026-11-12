@@ -35,6 +35,7 @@ import {
 } from "../src/courier-hull";
 import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
+import { createSharedImages } from "../src/shared-image";
 import {
 	HULL_REACH_KM,
 	authoredHullBuilder,
@@ -806,4 +807,47 @@ test("another authored hull keeps three's default map anisotropy", async () => {
 	expect(painted.length).toBeGreaterThan(0);
 	for (const [name, map] of painted)
 		expect([name, map.anisotropy]).toEqual([name, 1]);
+}, 30_000);
+
+test("the courier leaves registry maps, owner copies and clones at their declared settings", async () => {
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const registry = createSharedImages(
+		{
+			plain: { url: "/plain.webp", name: "plain" },
+			filtered: { url: "/filtered.webp", name: "filtered", anisotropy: 4 },
+		},
+		async () => new THREE.Texture(),
+	);
+	const expected = new Map<THREE.Texture, number>();
+	for (const [hash, anisotropy] of [
+		["plain", 1],
+		["filtered", 4],
+	] as const) {
+		for (const owner of [undefined, "interior"]) {
+			const base = await registry.texture(
+				hash,
+				owner,
+				new THREE.TextureLoader(),
+			);
+			for (const map of [base, base.clone()]) {
+				expected.set(map, anisotropy);
+				const material = new THREE.MeshStandardMaterial({ map });
+				material.name = `registry-${hash}-${owner}-${map.uuid}`;
+				template.add(new THREE.Mesh(new THREE.BoxGeometry(), material));
+			}
+		}
+	}
+	const builder = await createCourierHullBuilder(template);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	const painted = mappedMaterials(root).filter(([name]) =>
+		name.startsWith("registry-"),
+	);
+	expect(new Set(painted.map(([, map]) => map))).toEqual(
+		new Set(expected.keys()),
+	);
+	for (const [, map] of painted)
+		expect(map.anisotropy).toBe(expected.get(map)!);
+	for (const [map, anisotropy] of expected)
+		expect(map.anisotropy).toBe(anisotropy);
 }, 30_000);
