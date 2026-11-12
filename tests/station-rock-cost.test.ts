@@ -1,5 +1,48 @@
 import { expect, test } from "bun:test";
-import { summarizeStationRockCost } from "../scripts/lib/station-rock-cost.mjs";
+import {
+	assertStationRockFlight,
+	summarizeStationRockCost,
+} from "../scripts/lib/station-rock-cost.mjs";
+
+test("free-cruise requires a reached, enabled and unpinned AO arrival", () => {
+	const reached = {
+		qualifyingFrames: 1,
+		final: {
+			filling: true,
+			aoEnabled: true,
+			gate: { aoOpen: true, pinned: false },
+		},
+	};
+	expect(() => assertStationRockFlight("free-cruise", reached)).not.toThrow();
+	for (const qualifyingFrames of [0, undefined, NaN, -1])
+		expect(() =>
+			assertStationRockFlight("free-cruise", { ...reached, qualifyingFrames }),
+		).toThrow("required station-held AO state not reached");
+	for (const final of [
+		undefined,
+		{ ...reached.final, filling: false },
+		{ ...reached.final, aoEnabled: false },
+		{ ...reached.final, gate: { aoOpen: false, pinned: false } },
+		{ ...reached.final, gate: { aoOpen: true, pinned: true } },
+	])
+		expect(() =>
+			assertStationRockFlight("free-cruise", { ...reached, final }),
+		).toThrow("required station-held AO state not reached");
+});
+
+test("normal flight remains an explicit diagnostic when AO closes", () => {
+	expect(() =>
+		assertStationRockFlight("normal", {
+			qualifyingFrames: 0,
+			final: {
+				filling: true,
+				aoEnabled: false,
+				gate: { aoOpen: false, pinned: false },
+			},
+		}),
+	).not.toThrow();
+	expect(() => assertStationRockFlight("typo", {})).toThrow("unknown route");
+});
 
 test("a measured low-side gap cannot be reported as within budget", () => {
 	const times = { field: [3.2, 3.1, 3.3], none: [2.4, 2.3, 2.5] };

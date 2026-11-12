@@ -6,7 +6,10 @@ import { cpus, loadavg } from "node:os";
 import { resolve } from "node:path";
 import { createServer } from "vite";
 import { seededShuffler } from "./lib/measurement.mjs";
-import { summarizeStationRockCost } from "./lib/station-rock-cost.mjs";
+import {
+	assertStationRockFlight,
+	summarizeStationRockCost,
+} from "./lib/station-rock-cost.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
@@ -144,6 +147,7 @@ try {
 			const { samples, ...summary } = flight;
 			results.push({ fixture, quality, renderer, ...summary });
 			console.log(JSON.stringify(results.at(-1)));
+			assertStationRockFlight(route, flight);
 			await page.close();
 		}
 	}
@@ -232,37 +236,34 @@ async function fly({ kind, quality, aa, dt, route, burstFrames }) {
 		if (filling && gate.aoOpen && g.gtaoPass.enabled) qualifyingFrames++;
 		return sample;
 	};
-	let departure = null;
-	if (kind === "charted") {
-		const station = g.world.system.byId.get(draw.plan.hostId);
-		const mesh = g.stationVisuals.get(station.id).root;
-		const subject = M.subjectOf(mesh);
-		const ref = current();
-		const d = distance(station.pos, ref.pos);
-		const radiusKm = (subject.radiusKm / mesh.scale.x) * station.radiusKm;
-		const offset = radiusKm * 1.9;
-		g.world.ship.pos = {
-			x: station.pos.x + ((ref.pos.x - station.pos.x) / d) * offset,
-			y: station.pos.y + ((ref.pos.y - station.pos.y) / d) * offset,
-			z: station.pos.z + ((ref.pos.z - station.pos.z) / d) * offset,
-		};
-		g.world.ship.vel = g.velocityOf(station.id);
-		const V = g.nearScene.position.constructor;
-		const aim = A.rockPose(draw.plan, rock, g.world.gameTime + dt).pos;
-		g.orientation.setFromUnitVectors(
-			new V(0, 0, -1),
-			new V(
-				aim.x - g.world.ship.pos.x,
-				aim.y - g.world.ship.pos.y,
-				aim.z - g.world.ship.pos.z,
-			).normalize(),
-		);
-		g.updateLocalFrameBody();
-		for (let i = 0; i < O.OCCLUSION.gate.openFrames + 1; i++) g.render(0);
-		departure = record();
-		if (!departure.gate.aoOpen)
-			throw new Error("station departure did not open AO");
-	}
+	const station = g.world.system.byId.get(draw.plan.hostId);
+	const mesh = g.stationVisuals.get(station.id).root;
+	const subject = M.subjectOf(mesh);
+	const ref = current();
+	const d = distance(station.pos, ref.pos);
+	const radiusKm = (subject.radiusKm / mesh.scale.x) * station.radiusKm;
+	const offset = radiusKm * 1.9;
+	g.world.ship.pos = {
+		x: station.pos.x + ((ref.pos.x - station.pos.x) / d) * offset,
+		y: station.pos.y + ((ref.pos.y - station.pos.y) / d) * offset,
+		z: station.pos.z + ((ref.pos.z - station.pos.z) / d) * offset,
+	};
+	g.world.ship.vel = g.velocityOf(station.id);
+	const V = g.nearScene.position.constructor;
+	const aim = A.rockPose(draw.plan, rock, g.world.gameTime + dt).pos;
+	g.orientation.setFromUnitVectors(
+		new V(0, 0, -1),
+		new V(
+			aim.x - g.world.ship.pos.x,
+			aim.y - g.world.ship.pos.y,
+			aim.z - g.world.ship.pos.z,
+		).normalize(),
+	);
+	g.updateLocalFrameBody();
+	for (let i = 0; i < O.OCCLUSION.gate.openFrames + 1; i++) g.render(0);
+	const departure = record();
+	if (!departure.gate.aoOpen)
+		throw new Error("station departure did not open AO");
 	const initial = {
 		world: structuredClone(g.world),
 		commerceWorld: g.commerceWorld,
@@ -271,12 +272,11 @@ async function fly({ kind, quality, aa, dt, route, burstFrames }) {
 		chargeAu: g.chargeAu,
 	};
 	const tape = [];
-	if (kind === "charted" && route === "free-cruise") {
+	if (route === "free-cruise") {
 		g.targetId = draw.plan.id;
 		g.engageCruise();
 	}
 	const approachStart = record();
-	const V = g.nearScene.position.constructor;
 	let settled = 0;
 	let largestTurnRad = 0;
 	for (let t = 0; t < 600; t += dt) {
@@ -350,59 +350,67 @@ async function fly({ kind, quality, aa, dt, route, burstFrames }) {
 			`approach never held a frame-filling rock: ${JSON.stringify(samples.slice(-3))}`,
 		);
 	if (qualifyingFrames) {
-		if (kind !== "charted" || route !== "free-cruise")
-			throw new Error("replay requires charted departure");
+		if (route !== "free-cruise")
+			throw new Error("replay requires free-cruise departure");
 		const savedFields = g.fields;
-		window.__flightReplays = { field: 0, none: 0 };
-		window.__timeFlight = (arm, count) => {
+		const aoHeld = () => g.occlusionState.aoOpen && !g.occlusionState.pinned;
+		const restoreDeparture = (arm) => {
+			g.world = structuredClone(initial.world);
+			g.selectableCache = null;
+			g.massesAt = NaN;
+			g.commerceWorld = initial.commerceWorld;
+			g.condition = structuredClone(initial.condition);
+			g.orientation.copy(initial.orientation);
+			g.chargeAu = initial.chargeAu;
+			g.regime = "normal";
+			g.spoolLeftS = 0;
+			g.proximityFrameBodyId = null;
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			g.occlusionGate = O.CLOSED_GATES;
+			const fields = arm === "field" ? savedFields : [];
+			g.fieldDraws = fields;
+			if (g.fields !== fields)
+				throw new Error("field control did not replace the render update list");
+			for (const field of savedFields) field.root.visible = arm === "field";
+			g.render(0);
+			for (let i = 0; i < O.OCCLUSION.gate.openFrames; i++) g.render(0);
+			if (!aoHeld()) throw new Error("replay departure gate invalid");
+			g.targetId = draw.plan.id;
+			g.engageCruise();
+		};
+		const replayTape = () => {
 			const gl = g.renderer.getContext();
 			const pixel = new Uint8Array(4);
 			let ms = 0;
+			for (let i = 0; i < tape.length; i++) {
+				if (g.regime === "cruise") g.targetId = g.world.system.contents.star.id;
+				g.orientation.fromArray(tape[i].orientation);
+				g.setThrottle(tape[i].throttle);
+				g.step(dt);
+				if (i === tape.length - 1) {
+					gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+					const start = performance.now();
+					for (let burst = 0; burst < burstFrames; burst++) {
+						g.render(0);
+						if (!aoHeld()) throw new Error("AO closed in timed burst");
+					}
+					gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+					ms = performance.now() - start;
+				} else g.render(dt);
+			}
+			return ms;
+		};
+		window.__flightReplays = { field: 0, none: 0 };
+		window.__timeFlight = (arm, count) => {
+			let ms = 0;
 			for (let repeat = 0; repeat < count; repeat++) {
 				const impacts = g.collisionImpacts;
-				g.world = structuredClone(initial.world);
-				g.selectableCache = null;
-				g.massesAt = NaN;
-				g.commerceWorld = initial.commerceWorld;
-				g.condition = structuredClone(initial.condition);
-				g.orientation.copy(initial.orientation);
-				g.chargeAu = initial.chargeAu;
-				g.regime = "normal";
-				g.spoolLeftS = 0;
-				g.proximityFrameBodyId = null;
-				g.rates = { pitch: 0, yaw: 0, roll: 0 };
-				g.occlusionGate = O.CLOSED_GATES;
-				g.fieldDraws = arm === "field" ? savedFields : [];
-				for (const field of savedFields) field.root.visible = arm === "field";
-				g.render(0);
-				for (let i = 0; i < O.OCCLUSION.gate.openFrames; i++) g.render(0);
-				if (!g.occlusionState.aoOpen || g.occlusionState.pinned)
-					throw new Error("replay departure gate invalid");
-				g.targetId = draw.plan.id;
-				g.engageCruise();
-				for (let i = 0; i < tape.length; i++) {
-					if (g.regime === "cruise")
-						g.targetId = g.world.system.contents.star.id;
-					g.orientation.fromArray(tape[i].orientation);
-					g.setThrottle(tape[i].throttle);
-					g.step(dt);
-					if (i === tape.length - 1) {
-						gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-						const start = performance.now();
-						for (let burst = 0; burst < burstFrames; burst++) {
-							g.render(0);
-							if (!g.occlusionState.aoOpen || g.occlusionState.pinned)
-								throw new Error("AO closed in timed burst");
-						}
-						gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-						ms += performance.now() - start;
-					} else g.render(dt);
-				}
+				restoreDeparture(arm);
+				ms += replayTape();
 				if (
 					g.collisionImpacts !== impacts ||
 					distance(g.cameraPos(), samples.at(-1).camera) > 0.001 ||
-					!g.occlusionState.aoOpen ||
-					g.occlusionState.pinned
+					!aoHeld()
 				)
 					throw new Error(
 						`flight replay diverged: ${JSON.stringify({ impacts: g.collisionImpacts - impacts, camera: g.cameraPos(), expected: samples.at(-1), gate: g.occlusionState })}`,
