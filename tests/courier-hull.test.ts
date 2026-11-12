@@ -784,6 +784,9 @@ test("the built shipped courier uses anisotropy 8 on every exterior map", async 
 	builder(root, new THREE.MeshStandardMaterial());
 	const painted = mappedMaterials(root);
 	expect(painted.length).toBeGreaterThan(2);
+	expect(painted.find(([name]) => name === "blue-grey-0")?.[1].anisotropy).toBe(
+		8,
+	);
 	expect(
 		painted.find(([name]) => name === "cockpit-test")?.[1].anisotropy,
 	).toBe(1);

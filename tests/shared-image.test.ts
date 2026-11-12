@@ -302,7 +302,7 @@ describe("the prepared shipping models", () => {
 	);
 
 	test.each(MODELS)(
-		"%s loads through the plugin with the embedded texture's settings",
+		"%s loads through the plugin with the shared texture settings",
 		async (model) => {
 			const image = new THREE.Texture();
 			const registry = createSharedImages(SHARED_IMAGES, async () => image);
