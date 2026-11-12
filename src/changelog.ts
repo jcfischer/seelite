@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1229
+	{
+		date: "2026-11-12",
+		text: "The Longwall's drill camera shows a live view of the drill.",
+		node: 1229,
+	},
 	// https://github.com/jcfischer/seelite/issues/1198
 	{
 		date: "2026-11-09",

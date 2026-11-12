@@ -29,6 +29,8 @@ const OWNERS = Object.freeze({
 		"src/cockpit-eye.ts",
 		"src/cockpit-model.ts",
 		"src/cockpit-occlusion-table.ts",
+		"src/drill-camera.ts",
+		"src/drill-camera-pass.ts",
 		"src/miner-faces.ts",
 		"src/models/miner-cockpit.glb",
 	],
