@@ -98,6 +98,8 @@ The before layout's largest rock is not the same subject as the after layout's o
 
 Pinned arms, for the paired control the body asks for, chase at `close`: pair on, high +1.047 / +1.566 charted and +1.196 / +1.689 rare at AA0 / AA2, low +0.315 / +0.603 and +0.342 / +0.642; pair off, high +0.339 / +0.499 and +0.396 / +0.465, low +0.294 / +0.345 and +0.301 / +0.358. Pair-on at `close` now needs a station opening the gate beside a rock filling the frame. Charted fields sit 150–300 km from their refinery, but this was not measured in flight, so it is an unmeasured corner rather than a guarantee.
 
+Follow-up: [node #1235's flown measurement](node-1235-station-rock-ao.md) reaches the station-held AO tail beside a close rock and records both quality sides, AA0/AA2 and the remaining low-side gap. Those flown figures are a different workload from the pinned rare-field stress figures above.
+
 Cold install on system 173: longest frame before the swap 40.6 ms, swap frame 20.9 ms.
 
 ## Navigation: measured, no budget exists

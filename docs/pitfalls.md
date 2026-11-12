@@ -301,6 +301,13 @@ was written in; the history it tells is still this text's history.
 
 ## Measuring a frame: occlusion, cost and GPU timing
 
+- **A station can leave AO open after cruise carries it out of view (#1235).**
+  Spatial separation alone does not prove that station-held AO beside a close
+  rock is unreachable: the gate closes after 30 rendered frames. Fly the
+  spool and retarget transition, and reject a reference pilot that overshoots
+  then reverses instantly. `scripts/measure-station-rock-ao.mjs` replays the
+  full approach before each short, unpinned timing burst; its receipt is
+  `docs/receipts/node-1235-station-rock-ao.md`.
 - **A pinned occlusion arm is not the state a pilot flies in (#1209).** A field
   cost run that pins the pair on in both arms subtracts the pair's own cost from
   the answer, and a run that pins it on low measures a state rocks cannot open.
