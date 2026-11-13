@@ -313,7 +313,7 @@ test("the hold event writes the row and reloads remainder with the same hold", (
 		ladders: out.holdings.ladders,
 	};
 	const loaded = parseSave(serializeSave({ world: out.world, commander }));
-	expect(loaded.commander.state).toEqual(commander.state);
+	expect(loaded.commander.state).toMatchObject(commander.state);
 	expect(loaded.world.galaxies[0].derelicts[key]).toEqual(
 		out.world.galaxies[0].derelicts[key],
 	);

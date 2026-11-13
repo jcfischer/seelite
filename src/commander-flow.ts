@@ -248,7 +248,7 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 	// §11.2 step 2: a pending new game's Commander has no record by design.
 	if (!plan.pending) {
 		try {
-			const raw = await backend.read(plan.slot, "live");
+			const raw = await catalog.prepareForBoot(plan.slot);
 			plan.record = recordText(raw);
 			if (raw !== null) plan.loaded = catalog.parseRecord(raw);
 		} catch (error) {

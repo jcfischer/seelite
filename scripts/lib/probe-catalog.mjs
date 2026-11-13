@@ -19,6 +19,18 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-accounting.mjs",
+			"Measures complete schema20 envelopes and distinct live/launch atomic IndexedDB commits, with quota refusal without adoption, for migrated, typical, actual-generator saturation and widest accounting/recovery saves.",
+			[
+				"exact wallet",
+				"commodity pools",
+				"IndexedDB",
+				"quota refusal",
+				"checkpoint migration",
+				"save size",
+			],
+		),
+		entry(
 			"probe-capability-outage.mjs",
 			"Natural service outages gate actual docked commerce only with mining enabled, heal on the game clock, retain attributable repairs across raider pressure changes, show live status beside other notices and keep fuel available.",
 			[
@@ -860,7 +872,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-market-shelf.mjs",
-			"Docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment, and with an accepted consignment aboard the hold line's entrusted tonnes on Market and no HELD cell moved by it.",
+			"Migrates distinct schema19 live/launch records before play, banks exact credit through a real market sale, proves refused negative legacy cargo remains exportable through the overlay, then docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment, and with an accepted consignment aboard the hold line's entrusted tonnes on Market and no HELD cell moved by it.",
 			[
 				"station market",
 				"shelf cap",

@@ -1,3 +1,4 @@
+import { buildSaveSizeWorld, type Tier } from "./lib/save-size-world";
 /**
  * Worst-case save size, measured rather than guessed (#89, shipped by #90).
  *
@@ -48,42 +49,6 @@ import {
 
 const SEED = 1;
 const GOODS = COMMODITIES.map((c) => c.name);
-
-interface Tier {
-	name: string;
-	systems: number;
-	galaxies: number;
-	/** Every carrier, not only the stations: the Traffic roster and the system's
-	 *  own slots (raiders, the relay and its tender). */
-	everyCarrier: boolean;
-	knowledge: boolean;
-	objective: boolean;
-	deficitGoods: number;
-	/**
-	 * Whether this tier holds the **witness bound** (H6): every station in the
-	 * galaxy listed as having seen an offence.
-	 *
-	 * That is the list's entire possible size — it holds each station once per
-	 * galaxy, so nothing a pilot does can lengthen it past that. The saturated
-	 * tiers carry it because they are ceilings. The play tiers carry none, and
-	 * that is not an omission: `canonicalEnvelope` drops an empty list, so a
-	 * pilot who has not offended beside a station pays **nothing** for the member
-	 * existing. `witnessCost` below is what prices the difference.
-	 */
-	witnesses: boolean;
-	/**
-	 * Whether this tier holds the **charge bound** (#396): every ordinary
-	 * carrier in the galaxy listed as already charged with sustained fire.
-	 *
-	 * The sibling of `witnesses` above, and it needs saying because the two
-	 * bounds are not the same size. A galaxy's berths are few; its Traffic is a
-	 * roster per berth, so the charge list's ceiling is an order of magnitude
-	 * longer than H6's. What keeps it off an ordinary pilot's save is the same
-	 * thing that keeps the witness list off one — `canonicalEnvelope` omits an
-	 * empty list — and `chargeCost` below prices the saturated case.
-	 */
-	charges: boolean;
-}
 
 const TIERS: Tier[] = [
 	{
@@ -175,142 +140,7 @@ interface Row {
 }
 
 function build(tier: Tier, fill?: (world: WorldState) => void): Row {
-	const baseline = advanceTo(newWorld(SEED), 123456.789);
-	const world = advanceTo(newWorld(SEED), baseline.gameTime);
-	let carriers = 0;
-	let witnesses = 0;
-	let charges = 0;
-	for (let g = 0; g < tier.galaxies && g < GALAXY_COUNT; g++) {
-		const galaxy = generateGalaxy(SEED, g);
-		const env: GalaxyEnvelope = world.galaxies[g];
-		const records = galaxy.systems.slice(0, tier.systems);
-		let inGalaxy = 0;
-		env.visited = records.map((_, i) => i);
-		// Every berth in the galaxy, for the witness bound. Traffic carriers are
-		// not in it: H6 lists the *station* an offence happened beside.
-		const berths: ReturnType<typeof carrierKey>[] = [];
-		// Every Traffic carrier in the galaxy, for #396's charge bound. The
-		// berths above are not in it: a sustained-fire charge is filed against
-		// the ship, not the station.
-		const flown: ReturnType<typeof carrierKey>[] = [];
-		// Every carrier the generator enumerates, so a kind added there reaches this
-		// ceiling without a copy here: the raiders were missing from it between
-		// #324 and #351 because this loop listed kinds by hand.
-		const keys: ReturnType<typeof carrierKey>[] = [];
-		for (const c of enumerateCarriers(SEED, g)) {
-			if (c.kind === "capability") {
-				if (tier.objective && tier.everyCarrier && c.systemIndex < tier.systems)
-					env.capabilityTime.anchors[c.key] = capabilityAvailability(
-						baseline,
-						g,
-						c.key,
-					).state;
-				continue;
-			}
-			if (c.systemIndex >= tier.systems) continue;
-			if (c.kind === "station") berths.push(c.key);
-			else if (!tier.everyCarrier) continue;
-			else if (c.kind === "traffic") flown.push(c.key);
-			keys.push(c.key);
-		}
-		for (const key of keys) {
-			carriers++;
-			inGalaxy++;
-			if (tier.objective) {
-				env.objective[key] = {
-					instanceOrdinal: 3,
-					condition: "repairing",
-					recovery: {
-						kind: "replacement",
-						processId: `${key}#e7#replacement`,
-						consequenceArea: "station-services",
-						startedAt: 123456.789,
-						completesAt: 234567.891,
-						initiatedBy: {
-							causeKind: "player-attack",
-							actorId: "player",
-							playerRole: "direct",
-						},
-					},
-				};
-				const fact = (kind: "destroy" | "replacement-start" | "interrupt") =>
-					({
-						key,
-						instanceOrdinal: 3,
-						episodeOrdinal: 7,
-						kind,
-						occurredAt: 123456.789,
-						cause: {
-							causeKind: "player-attack",
-							actorId: "player",
-							playerRole: "direct",
-						},
-						processId: `${key}#e7#replacement`,
-					}) as const;
-				env.episodes[key] = {
-					ordinal: 7,
-					initiating: fact("destroy"),
-					intervention: fact("replacement-start"),
-					latest: fact("interrupt"),
-					closed: false,
-				};
-			}
-			if (tier.knowledge)
-				env.knowledge[key] = {
-					observedInstanceOrdinal: 1,
-					observedCondition: "operational",
-					observedAt: 123456.789,
-					source: "system-relay",
-					knownPrivateFacts: {
-						blackMarket: { learnedAt: 123456.789, source: "docking" },
-					},
-				};
-			if (tier.deficitGoods > 0) {
-				const goods: Record<string, number> = {};
-				for (const name of GOODS.slice(0, tier.deficitGoods))
-					goods[name] = -63.4;
-				env.deficits[key] = { goods, updatedAt: 123456.789 };
-			}
-		}
-		// **Keys must be distinct per carrier**, or the counter and the store
-		// disagree and every size below is understated. `parseWorld` cannot see
-		// this: a colliding key is a perfectly well-formed row that happens to
-		// have overwritten another.
-		const check = (domain: string, count: number) => {
-			if (count !== inGalaxy)
-				throw new Error(
-					`galaxy ${g}: ${inGalaxy} carriers but ${count} ${domain} rows — colliding keys`,
-				);
-		};
-		if (tier.objective) check("objective", Object.keys(env.objective).length);
-		if (tier.knowledge) check("knowledge", Object.keys(env.knowledge).length);
-		if (tier.deficitGoods > 0)
-			check("deficit", Object.keys(env.deficits).length);
-		if (tier.charges && new Set(flown).size !== flown.length)
-			throw new Error(`galaxy ${g}: ${flown.length} carriers collide`);
-		if (tier.witnesses || tier.charges) {
-			env.legalStatus = {
-				heat: 100,
-				updatedAt: 123456.789,
-				witnesses: [],
-				assaulted: [],
-			};
-		}
-		if (tier.witnesses) {
-			// The same collision check the domains get: a repeated berth would
-			// understate the ceiling, and `parseWorld` refuses a duplicate — so a
-			// silent one here would take the whole run down far from its cause.
-			if (new Set(berths).size !== berths.length)
-				throw new Error(`galaxy ${g}: ${berths.length} berths collide`);
-			env.legalStatus.witnesses = berths;
-			witnesses += berths.length;
-		}
-		if (tier.charges) {
-			// The same ceiling the witness list gets, on the list #396 added.
-			env.legalStatus.assaulted = flown;
-			charges += flown.length;
-		}
-	}
+	const { world, carriers, witnesses, charges } = buildSaveSizeWorld(tier);
 	fill?.(world);
 	const t0 = performance.now();
 	const json = JSON.stringify(serializeWorld(world));

@@ -1,3 +1,16 @@
+import { ExactAmountError, mass, massFromNative } from "./exact-amount";
+import { ladderFromAccount } from "./ladder";
+import {
+	CommodityAccountingError,
+	accountOf,
+	withAccount,
+	migrateAccount,
+	changeCash,
+	remove,
+	removeMass,
+	nativeGrams,
+	projectBasis,
+} from "./commodity-pools";
 import {
 	carriedModule,
 	equipmentNames,
@@ -153,9 +166,25 @@ export const commanderAfterDeath = (
 				}
 			: dock.requests,
 	).state;
+	let accounting = dying.state.accounting;
+	const keptCargo = cause === "eject" ? ejectSurvivors(dying.state).cargo : {};
+	if (accounting) {
+		for (const good of Object.keys(dying.state.cargo).sort()) {
+			const lost = mass.subtract(
+				accounting.basis[good].heldMass,
+				massFromNative(keptCargo[good] ?? 0, nativeGrams(good)),
+			);
+			if (lost > 0n) accounting = removeMass(accounting, good, lost).account;
+		}
+		accounting = {
+			...accounting,
+			cash: accountOf(dock.state).cash,
+			bankedTrade: accountOf(dock.state).bankedTrade,
+		};
+	}
 	const ladders = {
 		...ladderAfterDeath(dock.ladders, dying.ladders),
-		basis: {},
+		basis: accounting ? projectBasis(accounting) : {},
 	};
 	if (cause === "eject") {
 		const kept = ejectSurvivors(dying.state);
@@ -164,7 +193,7 @@ export const commanderAfterDeath = (
 			requests,
 			ladders,
 			state: {
-				...dock.state,
+				...(accounting ? withAccount(dock.state, accounting) : dock.state),
 				cargo: kept.cargo,
 				recoveredFittings: kept.carried.length ? kept.carried : undefined,
 				loadout: withoutModule(dock.state.loadout, ESCAPE_POD),
@@ -176,8 +205,12 @@ export const commanderAfterDeath = (
 		requests,
 		ladders,
 		state: {
-			...newCommander(PLAYER_BASELINE_HULL),
-			credits: dock.state.credits,
+			...(accounting
+				? withAccount(newCommander(PLAYER_BASELINE_HULL), accounting)
+				: {
+						...newCommander(PLAYER_BASELINE_HULL),
+						credits: dock.state.credits,
+					}),
 		},
 		chargeAu: HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu,
 	};
@@ -343,13 +376,19 @@ const withCargoDelta = (
 	delta: Readonly<Record<string, number>>,
 ): CommanderState => {
 	if (Object.keys(delta).length === 0) return commander;
-	const cargo = { ...commander.cargo };
-	for (const [good, change] of Object.entries(delta)) {
-		const amount = (cargo[good] ?? 0) + change;
-		if (amount <= 0) delete cargo[good];
-		else cargo[good] = amount;
+	let accounting =
+		commander.accounting ??
+		migrateAccount(commander.credits, 0, commander.cargo, {});
+	for (const [good, change] of Object.entries(delta).sort(([a], [b]) =>
+		a.localeCompare(b),
+	)) {
+		if (change > 0)
+			throw new CommodityAccountingError(
+				"owned request cargo cannot increase without acquisition",
+			);
+		if (change < 0) accounting = remove(accounting, good, -change).account;
 	}
-	return { ...commander, cargo };
+	return withAccount(commander, accounting);
 };
 
 function settle(
@@ -403,8 +442,7 @@ function settle(
 	const commander = withCargoDelta(
 		result.rewardCr
 			? {
-					...holdings.commander,
-					credits: holdings.commander.credits + result.rewardCr,
+					...changeCash(holdings.commander, result.rewardCr, result.rewardCr),
 				}
 			: holdings.commander,
 		result.cargoDelta,
@@ -412,11 +450,13 @@ function settle(
 	// #183 D3: a settlement's pay banks at once — a report happens docked —
 	// and goods a job took take their basis with them.
 	const ladders = withCapstone(
-		ladderAfterSettlement(
-			holdings.ladders,
-			result.rewardCr ?? 0,
-			commander.cargo,
-		),
+		commander.accounting && holdings.commander.accounting
+			? ladderFromAccount(holdings.ladders, commander.accounting)
+			: ladderAfterSettlement(
+					holdings.ladders,
+					result.rewardCr ?? 0,
+					commander.cargo,
+				),
 		event.at,
 	);
 	const next: Holdings = {
@@ -455,18 +495,20 @@ function trade(
 	// #183 D3: a buy records its basis, a sale banks its margin at once. Both
 	// read the hold as it stood before the press.
 	const ladders = withCapstone(
-		action.type === "buy-hull"
-			? ladderAfterHullSale(
-					holdings.ladders,
-					holdings.commander.cargo,
-					result.sold ?? [],
-				)
-			: ladderAfterMarket(
-					holdings.ladders,
-					action,
-					holdings.commander,
-					result.commander,
-				),
+		holdings.commander.accounting && result.commander.accounting
+			? ladderFromAccount(holdings.ladders, result.commander.accounting)
+			: action.type === "buy-hull"
+				? ladderAfterHullSale(
+						holdings.ladders,
+						holdings.commander.cargo,
+						result.sold ?? [],
+					)
+				: ladderAfterMarket(
+						holdings.ladders,
+						action,
+						holdings.commander,
+						result.commander,
+					),
 		event.at,
 	);
 	return {
@@ -773,7 +815,22 @@ export function applyHoldEvent(
 	world: WorldState,
 	event: HoldEvent,
 ): HoldOutcome {
-	return { kind: event.kind, ...applied(holdings, world, event) };
+	try {
+		return { kind: event.kind, ...applied(holdings, world, event) };
+	} catch (error) {
+		if (
+			error instanceof ExactAmountError ||
+			error instanceof CommodityAccountingError
+		)
+			return {
+				kind: event.kind,
+				...unchanged(holdings, world, {
+					...QUIET,
+					message: error.message + "; nothing changed.",
+				}),
+			};
+		throw error;
+	}
 }
 
 /**

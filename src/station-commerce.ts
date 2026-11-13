@@ -1,3 +1,23 @@
+import { fittingCost } from "./loadout";
+import {
+	accountOf,
+	withAccount,
+	acquire,
+	sell,
+	walletChange,
+	changeCash,
+	displayAmount,
+	nativeGrams,
+	type CommodityAccount,
+} from "./commodity-pools";
+import {
+	signedMoney,
+	money,
+	massFromNative,
+	quoteFromNumber,
+	quoteMass,
+	ExactAmountError,
+} from "./exact-amount";
 import { hasOreBay, miningHold } from "./mining-capacity";
 import {
 	type Loadout,
@@ -90,6 +110,7 @@ export const recoveredLocked = (
 		: moduleLocked(recoveredModule(item, hull), rungs);
 
 export interface CommanderState {
+	accounting?: CommodityAccount;
 	credits: number;
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;
@@ -282,6 +303,7 @@ export type CommerceRefusal =
 	| "core-required"
 	| "fuel-full"
 	| "insufficient-credits"
+	| "accounting-overflow"
 	| "equipment-unavailable"
 	| "equipment-owned"
 	| "equipment-locked"
@@ -425,7 +447,10 @@ export function scoopCargo(
 	return {
 		accepted: true,
 		tonnes: took,
-		commander: withCargo(commander, good, took),
+		commander: withAccount(
+			commander,
+			acquire(accountOf(commander), good.name, took),
+		),
 	};
 }
 
@@ -445,7 +470,10 @@ export function recoverWreckCargo(
 	return {
 		accepted: true,
 		tonnes: took,
-		commander: withCargo(commander, good, took),
+		commander: withAccount(
+			commander,
+			acquire(accountOf(commander), good.name, took),
+		),
 	};
 }
 
@@ -498,7 +526,14 @@ export function transactAtStation(
 	input: StationCommerceInput,
 	quote: QuoteFn = marketQuote,
 ): StationCommerceResult {
-	const result = stationTransaction(input, quote);
+	let result: StationCommerceResult;
+	try {
+		result = stationTransaction(input, quote);
+	} catch (error) {
+		if (error instanceof ExactAmountError)
+			return rejected(input, "accounting-overflow");
+		throw error;
+	}
 	if (!result.accepted) return result;
 	const hold = miningHold(
 		result.commander.hull,
@@ -529,15 +564,14 @@ function stationTransaction(
 			return rejected(input, "equipment-locked");
 		const damage = damagedPurchase(input, purchaseService(module.module));
 		if (damage) return damage;
-		if (input.commander.credits < row.priceCr)
+		if (accountOf(input.commander).cash < money.fromNumber(row.priceCr))
 			return rejected(input, "insufficient-credits");
 		const out = fitModuleAt(input, module, action.slot);
 		return out.accepted
 			? {
 					...out,
 					commander: {
-						...out.commander,
-						credits: out.commander.credits - row.priceCr,
+						...changeCash(out.commander, -row.priceCr),
 					},
 				}
 			: out;
@@ -551,15 +585,21 @@ function stationTransaction(
 		const space = moduleRow(rack).output.missiles - (rack.ammo ?? 0);
 		if (space <= 0) return rejected(input, "missiles-full");
 		const price = EQUIPMENT.find((e) => e.name === "Missile")!.priceCr;
-		const count = Math.min(space, Math.floor(input.commander.credits / price));
+		const count = Math.min(
+			space,
+			Number(
+				accountOf(input.commander).cash > 0n
+					? accountOf(input.commander).cash / money.fromNumber(price)
+					: 0n,
+			),
+		);
 		if (!count) return rejected(input, "insufficient-credits");
 		return {
 			accepted: true,
 			reason: null,
 			deficits: input.deficits,
 			commander: {
-				...input.commander,
-				credits: input.commander.credits - count * price,
+				...changeCash(input.commander, -count * price),
 				loadout: {
 					...input.commander.loadout,
 					[action.slot]: { ...rack, ammo: (rack.ammo ?? 0) + count },
@@ -608,14 +648,23 @@ function stationTransaction(
 		// To the fitted capacity: the hull's tank plus any fitted tank (#926).
 		const wanted =
 			commanderFuelCapacityLy(input.commander) - input.commander.fuelLy;
-		const affordable = input.commander.credits / FUEL_CR_PER_LY;
+		const cash = accountOf(input.commander).cash;
+		const affordable = displayAmount(cash) / FUEL_CR_PER_LY;
 		// **Neither figure is rounded, and the first version rounded both.** A
 		// jump costs the distance flown, which is not a multiple of anything, so
 		// flooring the shortfall to the tenth §6.1 *prices* in left a residue the
 		// tank could never take back — and the next fill then asked for less than
 		// 0.1 LY, got zero, and was refused as a money problem on a full purse.
 		// The price is per light year; a fraction of one costs its fraction.
-		const ly = Math.min(wanted, affordable);
+		let ly = Math.min(wanted, affordable);
+		const costOf = (amount: number) =>
+			quoteMass(quoteFromNumber(FUEL_CR_PER_LY), massFromNative(amount, 1), 1);
+		if (ly > 0 && costOf(ly) > cash) {
+			const view = new DataView(new ArrayBuffer(8));
+			view.setFloat64(0, ly);
+			view.setBigUint64(0, view.getBigUint64(0) - 1n);
+			ly = view.getFloat64(0);
+		}
 		// Two refusals rather than one, because they send the player to
 		// different places — and each is read off the quantity it is about
 		// rather than off the minimum of the two.
@@ -625,8 +674,10 @@ function stationTransaction(
 			accepted: true,
 			reason: null,
 			commander: {
-				...input.commander,
-				credits: input.commander.credits - ly * FUEL_CR_PER_LY,
+				...withAccount(input.commander, {
+					...accountOf(input.commander),
+					cash: signedMoney.subtract(cash, costOf(ly)),
+				}),
 				fuelLy: input.commander.fuelLy + ly,
 			},
 			deficits: input.deficits,
@@ -682,13 +733,17 @@ function stationTransaction(
 		const commander = { ...input.commander };
 		if (kept.length) commander.recoveredFittings = kept;
 		else delete commander.recoveredFittings;
+		const proceeds = money.fromNumber(fittingSaleValue(item));
+		const paid = money.fromNumber(fittingCost(item));
+		const margin =
+			proceeds > paid ? money.subtract(proceeds, paid) : money.fromTicks(0n);
 		const next =
 			action.type === "fit-recovered"
 				? fitOne(commander, recoveredModule(item, commander.hull))
-				: {
-						...commander,
-						credits: commander.credits + fittingSaleValue(item),
-					};
+				: withAccount(
+						commander,
+						walletChange(accountOf(commander), proceeds, margin),
+					);
 		if (
 			action.type === "fit-recovered" &&
 			commanderHold(next, input.entrustedT).usedT >
@@ -742,14 +797,13 @@ function stationTransaction(
 			commanderHold(next, input.entrustedT).capacityT
 		)
 			return rejected(input, "hull-hold");
-		if (input.commander.credits < entry.priceCr)
+		if (accountOf(input.commander).cash < money.fromNumber(entry.priceCr))
 			return rejected(input, "insufficient-credits");
 		return {
 			accepted: true,
 			reason: null,
 			commander: {
-				...next,
-				credits: input.commander.credits - entry.priceCr,
+				...changeCash(next, -entry.priceCr),
 			},
 			deficits: input.deficits,
 		};
@@ -777,7 +831,14 @@ function stationTransaction(
 	if (action.type === "buy-commodity") {
 		if (good.sellOnly) return rejected(input, "commodity-sell-only");
 		if (shelf < quantity) return rejected(input, "insufficient-shelf");
-		if (input.commander.credits < priceCr * quantity)
+		if (
+			accountOf(input.commander).cash <
+			quoteMass(
+				quoteFromNumber(priceCr),
+				massFromNative(quantity, nativeGrams(good.name)),
+				nativeGrams(good.name),
+			)
+		)
 			return rejected(input, "insufficient-credits");
 		if (
 			good.unit === "t" &&
@@ -789,8 +850,19 @@ function stationTransaction(
 			accepted: true,
 			reason: null,
 			commander: {
-				...withCargo(input.commander, good, quantity),
-				credits: input.commander.credits - priceCr * quantity,
+				...withAccount(
+					input.commander,
+					acquire(
+						accountOf(input.commander),
+						good.name,
+						quantity,
+						quoteMass(
+							quoteFromNumber(priceCr),
+							massFromNative(quantity, nativeGrams(good.name)),
+							nativeGrams(good.name),
+						),
+					),
+				),
 			},
 			deficits: recordTrade(input.deficits, input.stationKey, {
 				goodName: good.name,
@@ -800,14 +872,24 @@ function stationTransaction(
 			}),
 		};
 	}
-	if ((input.commander.cargo[good.name] ?? 0) < quantity)
+	if (
+		(accountOf(input.commander).basis[good.name]?.heldMass ?? 0n) <
+		massFromNative(quantity, nativeGrams(good.name))
+	)
 		return rejected(input, "cargo-missing");
 	return {
 		accepted: true,
 		reason: null,
 		commander: {
-			...withCargo(input.commander, good, -quantity),
-			credits: input.commander.credits + priceCr * quantity,
+			...withAccount(
+				input.commander,
+				sell(
+					accountOf(input.commander),
+					good.name,
+					quantity,
+					quoteFromNumber(priceCr),
+				),
+			),
 		},
 		deficits: recordTrade(input.deficits, input.stationKey, {
 			goodName: good.name,
@@ -1032,14 +1114,13 @@ export function hullOffer(
 	}
 	const saleCr = lots.reduce((sum, lot) => sum + lot.proceedsCr, 0);
 	const offer = { ...reached, sold: lots, saleCr };
-	if (commander.credits + saleCr < offer.netCr)
+	if (accountOf(state.commander).cash < signedMoney.fromNumber(offer.netCr))
 		return { ...rejected(input, "insufficient-credits"), ...offer };
 	const nextCommander = {
-		...state.commander,
+		...changeCash(state.commander, -offer.netCr),
 		loadout: moved.loadout,
 		recoveredFittings: transferred.recoveredFittings,
 		hull,
-		credits: state.commander.credits - offer.netCr,
 	};
 	if (!nextCommander.recoveredFittings?.length)
 		delete nextCommander.recoveredFittings;

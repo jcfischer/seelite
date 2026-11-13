@@ -80,7 +80,7 @@ try {
 	// Launch, clear the berth and face forward: node #690's two flight checks
 	// enter flight the same way, so they share it.
 	const launchToForwardFlight = (target) =>
-		target.evaluate(() => {
+		target.evaluate(async () => {
 			const g = window.__seelite;
 			g.launch();
 			g.skipDockTraversal();
@@ -142,7 +142,7 @@ try {
 		"every term is visible before acceptance",
 		await page
 			.locator("[data-live-station-console] [data-live-request-details]")
-			.evaluate((el) => {
+			.evaluate(async (el) => {
 				const visible = (field) => {
 					const r = field.getBoundingClientRect();
 					const style = getComputedStyle(field);
@@ -219,7 +219,7 @@ try {
 	const ageBefore = await page
 		.locator("[data-live-station-console] [data-live-request-age]")
 		.innerText();
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		window.__seelite.step(2);
 		window.__seelite.updateCockpit();
 	});
@@ -302,7 +302,7 @@ try {
 	// module in a running game.
 	check(
 		"an entrusted consignment is aboard, and it costs hold",
-		await page.evaluate(() => {
+		await page.evaluate(async () => {
 			const g = window.__seelite;
 			const lots = Object.values(g.commanderRecord().requests.entrustedByLotId);
 			return (
@@ -383,7 +383,7 @@ try {
 	check(
 		"native Space reaccepts a focused request without changing tracking",
 		await page.evaluate(
-			([i, was]) => {
+			async ([i, was]) => {
 				const s = window.__seelite.commanderRecord().requests;
 				return (
 					s.byId[i].status === "accepted" &&
@@ -477,10 +477,16 @@ try {
 	 */
 	const setCommander = (credits, cargo) =>
 		page.evaluate(
-			([c, m]) => {
+			async ([c, m]) => {
 				const g = window.__seelite;
-				g.commander.credits = c;
-				g.commander.cargo = m;
+				(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+					g,
+					{ credits: c },
+				);
+				(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+					g,
+					{ cargo: m },
+				);
 				g.stationConsoleRevision += 1;
 				g.updateCockpit();
 			},
@@ -493,7 +499,7 @@ try {
 	// sees, and the one the node says must name the consignment. The sentence
 	// itself carries whatever `freeT` is, negative included, and
 	// `tests/station-console.test.ts` pins that arm.
-	const filled = await page.evaluate(() => {
+	const filled = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const was = {
 			credits: g.commander.credits,
@@ -599,7 +605,7 @@ try {
 	// reward or destination would leave it equal. The cache key is cleared and
 	// every term is compared.
 	const termsOfBoard = () =>
-		page.evaluate(() => {
+		page.evaluate(async () => {
 			const g = window.__seelite;
 			g.requestOffersCacheKey = null;
 			// **The operand whole, not two of its fields** (#508). A Bounty's
@@ -615,7 +621,7 @@ try {
 			}));
 		});
 	const before = await termsOfBoard();
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.launch();
 		g.skipDockTraversal();
@@ -668,7 +674,7 @@ try {
 
 	// Fly it. The delivery station may be in this system or one jump away; the
 	// binder decides, so the probe reads the offer rather than assuming.
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.launch();
 		g.skipDockTraversal();
@@ -746,7 +752,7 @@ try {
 	// One jump, used by both legs of the flight. The second copy of this block
 	// had dropped the missing-system guard, which is what a copy does.
 	const jumpToSystemOf = (carrierKey) =>
-		page.evaluate((key) => {
+		page.evaluate(async (key) => {
 			const g = window.__seelite;
 			const systemIndex = Number(key.split(":")[0]);
 			if (systemIndex === g.world.system.record.index) return "same system";
@@ -914,7 +920,7 @@ try {
 			)
 			.count()) === 0,
 	);
-	const marked = await page.evaluate((o) => {
+	const marked = await page.evaluate(async (o) => {
 		const g = window.__seelite;
 		const gi = g.world.system.record.galaxy;
 		const row = g.commerceWorld.galaxies[gi].deficits[o.reportAt.carrierKey];
@@ -988,7 +994,7 @@ try {
 	check(
 		"a restored envelope carries the settlement rather than repaying it",
 		await page.evaluate(
-			([i, c, r]) => {
+			async ([i, c, r]) => {
 				const g = window.__seelite;
 				const row = g.commanderRecord().requests.byId[i];
 				return (
@@ -1026,7 +1032,7 @@ try {
 	const PAST_N = 30;
 	const NOW_N = 3;
 	await page.evaluate(
-		([i, pastN, nowN]) => {
+		async ([i, pastN, nowN]) => {
 			const g = window.__seelite;
 			const done = g.requests.byId[i];
 			const byId = { ...g.requests.byId };
@@ -1279,7 +1285,7 @@ try {
 		.click();
 	check(
 		"no scanner locks Salvage and acceptance loads no phantom cargo",
-		await salvagePage.evaluate((id) => {
+		await salvagePage.evaluate(async (id) => {
 			const s = window.__seelite.commanderRecord().requests;
 			return (
 				s.byId[id]?.status === "accepted" &&
@@ -1289,7 +1295,7 @@ try {
 	);
 	check(
 		"acceptance states the payment pinned in the Salvage journal",
-		await salvagePage.evaluate((id) => {
+		await salvagePage.evaluate(async (id) => {
 			const g = window.__seelite;
 			return g.requestMessage.includes(
 				`Payment: ${g.requests.byId[id].terms.rewardCr} Cr`,
@@ -1330,7 +1336,7 @@ try {
 	check(
 		"Deliver pays the accepted snapshot once and moves Salvage to Past",
 		await salvagePage.evaluate(
-			({ id, credits }) => {
+			async ({ id, credits }) => {
 				const g = window.__seelite,
 					r = g.requests.byId[id];
 				return (

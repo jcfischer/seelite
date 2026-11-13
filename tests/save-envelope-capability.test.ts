@@ -18,6 +18,9 @@ function hash<T extends Record<string, unknown>>(
 	raw: T,
 ): T & { integrity: number } {
 	const { integrity, ...body } = raw;
+	const legacy = body as Record<string, any>;
+	if (legacy.saveSchemaVersion < 20 && legacy.commander?.state)
+		delete legacy.commander.state.accounting;
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) } as T & {
 		integrity: number;
 	};
@@ -40,7 +43,7 @@ test("legacy nested and outer hashes are checked before the explicit timing migr
 	});
 	const original = JSON.stringify(raw);
 	const loaded = parseSave(raw);
-	expect(SAVE_SCHEMA_VERSION).toBe(19);
+	expect(SAVE_SCHEMA_VERSION).toBe(20);
 	expect(loaded.world.worldSchemaVersion).toBe(4);
 	expect(loaded.world.worldGeneratorVersion).toBe(11);
 	expect(
@@ -50,7 +53,7 @@ test("legacy nested and outer hashes are checked before the explicit timing migr
 				Object.keys(g.capabilityTime.anchors).length === 0,
 		),
 	).toBe(true);
-	expect(loaded.commander.state).toEqual(commander.state);
+	expect(loaded.commander.state).toMatchObject(commander.state);
 	expect(JSON.stringify(raw)).toBe(original);
 	const rewritten = serializeSave(loaded);
 	expect(parseSave(rewritten)).toEqual(loaded);

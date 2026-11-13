@@ -581,7 +581,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		h.store.markDirty();
 		await h.store.flush("jump");
 		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
-		expect(restored?.commander.state).toEqual({
+		expect(restored?.commander.state).toMatchObject({
 			...newCommander(PLAYER_BASELINE_HULL),
 			credits: 40,
 		});
@@ -712,7 +712,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			);
 			expect(c?.galaxyIndex).toBe(START_GALAXY);
 			expect(c?.systemIndex).toBe(start.index);
-			expect(c?.state).toEqual(newCommander(PLAYER_BASELINE_HULL));
+			expect(c?.state).toMatchObject(newCommander(PLAYER_BASELINE_HULL));
 			expect(c?.state.credits).toBe(STARTING_CREDITS);
 			expect(c?.requests).toEqual(newCommanderRecord("courier").requests);
 			expect(c?.firstDay).toBe("guided");
@@ -734,7 +734,9 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			);
 		}
 		// The record that went to disk is one the parser accepts.
-		expect(parseSave(await h.backend.raw("default", "live"))).toEqual(live);
+		expect(parseSave(await h.backend.raw("default", "live"))).toMatchObject(
+			live,
+		);
 		// And the wake reads what the dying commander lost, as a first life.
 		const wake = await h.catalog.takeWake();
 		expect(wake?.firstLife).toBe(true);

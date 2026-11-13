@@ -211,7 +211,7 @@ await page.evaluate(async () => {
 // The stations this system actually has
 // ---------------------------------------------------------------------------
 
-const roster = await page.evaluate(() => {
+const roster = await page.evaluate(async () => {
 	const g = window.__seelite;
 	return g.world.system.contents.stations.map((s) => {
 		const snap = g.dockingSnapshot(s.id);
@@ -286,7 +286,7 @@ if (slotId === undefined) {
 // against `slotBasis(frameAtPhase(frame, 0))` and the axis, both off the page.
 
 console.log("\n#126 the drawn slot mirrors slotBasis:");
-const rolls = await page.evaluate(() => {
+const rolls = await page.evaluate(async () => {
 	const g = window.__seelite;
 	const unit = (x, y, z) => {
 		const l = Math.hypot(x, y, z);
@@ -359,7 +359,7 @@ for (const r of rolls) {
  */
 const shieldInk = (id, which) =>
 	page.evaluate(
-		([stationId, part]) => {
+		async ([stationId, part]) => {
 			const g = window.__seelite;
 			// **Through the game's own accessor**, not a traversal of this file's
 			// own. `nameplatesOfStation` returns the list `station-mesh.ts` collected
@@ -457,7 +457,7 @@ for (const station of roster) {
  * station spins and its orbit carries it, so two captures taken across separate
  * calls differ by more than the effect being measured.
  */
-const interiorInk = await page.evaluate((id) => {
+const interiorInk = await page.evaluate(async (id) => {
 	const g = window.__seelite;
 	const snap = g.dockingSnapshot(id);
 	// **Measured from inside the throat, not from outside it.** From outside, a
@@ -562,7 +562,7 @@ console.log("\n§13.5 browser row 3 — the approach ends inside:");
  */
 const dock = (id, opts = {}) =>
 	page.evaluate(
-		([stationId, standoffKm, skip]) => {
+		async ([stationId, standoffKm, skip]) => {
 			const g = window.__seelite;
 			// Outside §7's computer standoff, on the axis, at rest in the station's
 			// frame, with clearance granted and the autopilot flying — all of which
@@ -685,7 +685,7 @@ console.log("\n§13.5 browser row 2 — the name shield is drawn:");
 // rectangle of space in a wall of station — not the open field a throat left,
 // and not the sealed door #138 closed behind them. Both halves are asserted,
 // because either alone is satisfied by the failure the other names.
-const parked = await page.evaluate((stationId) => {
+const parked = await page.evaluate(async (stationId) => {
 	const g = window.__seelite;
 	const snap = g.dockingSnapshot(stationId);
 	// **Aimed at the mouth, which is a free look rather than the parked gaze.**
@@ -786,7 +786,7 @@ console.log(
 // The end of E3 is a docked cockpit, not merely a parked ship. The live
 // station console must replace the forward flight glass after the scripted
 // arrival has completed; the gallery is a fixture and cannot prove this join.
-const liveConsole = await page.evaluate(() => {
+const liveConsole = await page.evaluate(async () => {
 	const g = window.__seelite;
 	g.setHeadLook("forward");
 	g.render(0);
@@ -830,7 +830,7 @@ check(
 const FOOD_ACTION =
 	'[data-live-station-action="%s"][data-live-station-name="Food"]';
 
-const liveTrade = await page.evaluate((foodAction) => {
+const liveTrade = await page.evaluate(async (foodAction) => {
 	const read = () => ({
 		commander:
 			document.querySelector("[data-live-commander]")?.textContent ?? "",
@@ -872,7 +872,7 @@ check(
 // #316, `economy-trade.md` §5.2: a shelf read between trades must be whole.
 // Ten seconds of game time and not minutes: the launch checks below read the
 // grant off the same clock, and a seven-minute jump expired it under them.
-const shelfTrade = await page.evaluate((foodAction) => {
+const shelfTrade = await page.evaluate(async (foodAction) => {
 	const g = window.__seelite;
 	// The Food row's HELD cell (#473 D10); the Market tab's bottom line no
 	// longer lists goods (D11).
@@ -921,7 +921,7 @@ check(
 	`hold ${JSON.stringify([shelfTrade.afterBuys, shelfTrade.afterSell, shelfTrade.afterAll])}, cells=${shelfTrade.cells.length}, not whole=${JSON.stringify(fractionalShelves)}`,
 );
 
-const liveEquipment = await page.evaluate(() => {
+const liveEquipment = await page.evaluate(async () => {
 	const tab = document.querySelector('[data-live-station-tab="Equipment"]');
 	if (!(tab instanceof HTMLElement)) return { switched: false, rows: 0 };
 	tab.click();
@@ -945,7 +945,7 @@ check(
 // The one way the held-launch and launch rows refuse the lane, defined on its
 // own so either row can run without the other. The warm index is the
 // authority's own gate: zeroing it refuses the lane without inventing a ship.
-await page.evaluate(() => {
+await page.evaluate(async () => {
 	window.__refuseLaneWhile = (fn) => {
 		const g = window.__seelite;
 		const warmIndex = g.trafficWarmIndex;
@@ -958,7 +958,7 @@ await page.evaluate(() => {
 	};
 });
 
-const heldLaunch = await page.evaluate((stationId) => {
+const heldLaunch = await page.evaluate(async (stationId) => {
 	const g = window.__seelite;
 	// `checkVisibility`, not `hidden`: an id rule with `display` beats it.
 	const visibleNotice = () =>
@@ -1029,7 +1029,7 @@ check(
 // set up again — deliberately, and after the dock rather than before: putting
 // the ship back outside would leave the session docked while the ship is
 // kilometres away, which is not a state §12 creates.
-const approach = await page.evaluate((stationId) => {
+const approach = await page.evaluate(async (stationId) => {
 	const g = window.__seelite;
 	// Out of the dock through the real Flight-console control, not a direct
 	// `g.launch()` call. The DOM event must reach the same requestLaunch seam a
@@ -1139,7 +1139,7 @@ check(
 // clock this file has not advanced.
 
 console.log("\nthe clearance protocol runs while docked:");
-const grant = await page.evaluate((stationId) => {
+const grant = await page.evaluate(async (stationId) => {
 	const g = window.__seelite;
 	const before = g.dockingSnapshot(stationId);
 	// The expiry off the page, not a restated `GRANT_WINDOW_S`.
@@ -1392,7 +1392,7 @@ if (epochTurn.before && epochTurn.after) {
 			() => true,
 			() => false,
 		);
-	await page.evaluate((afterS) => {
+	await page.evaluate(async (afterS) => {
 		window.__seelite.world.gameTime = afterS;
 	}, epochTurn.afterS);
 	epochRedrawn = await page
@@ -1465,7 +1465,10 @@ const unitShelf = await page.evaluate(async (foodAction) => {
 	delete context.envelope.deficits[context.stationKey];
 	const cargo = { ...g.commander.cargo };
 	delete cargo.Food;
-	g.commander = { ...g.commander, cargo, credits: 100_000 };
+	(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+		cargo,
+		credits: 100_000,
+	});
 	g.stationConsoleRevision += 1;
 	const tick = () => new Promise((resolve) => requestAnimationFrame(resolve));
 	const settle = async () => {
@@ -1499,7 +1502,9 @@ const unitShelf = await page.evaluate(async (foodAction) => {
 		samples.push({ type: "sell", n, shelf: shelf(), held: held() });
 	}
 	// A fresh sale must also leave a negative unit mark, not merely cancel buys.
-	g.commander = { ...g.commander, cargo: { ...g.commander.cargo, Food: 3 } };
+	(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+		cargo: { ...g.commander.cargo, Food: 3 },
+	});
 	g.stationConsoleRevision += 1;
 	await settle();
 	for (let n = 1; n <= 3; n++) {

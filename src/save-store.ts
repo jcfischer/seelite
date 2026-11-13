@@ -75,6 +75,7 @@ import {
 import { holdingsAfterDeath } from "./holdings";
 import {
 	type CommanderRecord,
+	SAVE_SCHEMA_VERSION,
 	parseSave,
 	type SaveEnvelope,
 	type SaveRecordBody,
@@ -238,6 +239,7 @@ export interface SaveBackend {
 		slot: string,
 		kinds: readonly SaveRecordKind[],
 		blob: unknown,
+		replacements?: Partial<Record<SaveRecordKind, unknown>>,
 	): Promise<void>;
 	slots(): Promise<string[]>;
 	deleteSlot(slot: string): Promise<void>;
@@ -350,6 +352,7 @@ export interface SaveCommitOp {
 	 * commander's own `dockedAt`, the same way the dock and undock flushes
 	 * pick their kinds.
 	 */
+	readonly replacementCheckpoint?: SaveEnvelope;
 	readonly checkpoint?: boolean;
 	/**
 	 * The candidate: the envelope it is handed, with the op applied (D1).
@@ -397,6 +400,7 @@ type CommitTransaction = {
 	/** The sequence this transaction stamps onto its candidate (D4). */
 	readonly candidateTxSeq: number;
 	readonly stamped: SaveEnvelope;
+	readonly checkpointBlob?: SaveRecordBody;
 	readonly kinds: readonly SaveRecordKind[];
 };
 
@@ -698,23 +702,38 @@ export class SaveStore {
 		const live = this.current();
 		const base = live.commander.txSeq;
 		if (op.txSeq !== base) return "stale";
+		if (base >= Number.MAX_SAFE_INTEGER)
+			fail("transaction sequence exhausted; export this Commander");
 		const applied = op.apply(live);
 		const stamped: SaveEnvelope = {
 			world: applied.world,
 			commander: { ...applied.commander, txSeq: base + 1 },
 		};
 		const blob = serializeSave(stamped);
-		const kinds: SaveRecordKind[] = op.checkpoint
-			? ["live", "lastDocked"]
-			: ["live"];
+		parseSave(blob);
+		const checkpointBlob = op.replacementCheckpoint
+			? serializeSave({
+					...op.replacementCheckpoint,
+					commander: { ...op.replacementCheckpoint.commander, txSeq: base + 1 },
+				})
+			: undefined;
+		if (checkpointBlob) parseSave(checkpointBlob);
+		const kinds: SaveRecordKind[] =
+			op.checkpoint || checkpointBlob ? ["live", "lastDocked"] : ["live"];
 		let decided: SaveCommitOutcome | null = null;
 		const tx: CommitTransaction = {
 			op,
 			candidateTxSeq: base + 1,
 			stamped,
+			checkpointBlob,
 			kinds,
 		};
-		const work = this.backend.writeMany(this.slot, kinds, blob);
+		const work = this.backend.writeMany(
+			this.slot,
+			kinds,
+			blob,
+			checkpointBlob ? { lastDocked: checkpointBlob } : undefined,
+		);
 		// **Adoption runs inside the in-flight chain, before `inFlight`
 		// clears.** A debounced write waiting on that chain resumes only after
 		// the adopt, so it serializes the state that includes the commit —
@@ -942,6 +961,23 @@ export class SaveStore {
 			return "uncertain";
 		}
 		if (record.commander.txSeq === tx.candidateTxSeq) {
+			if (tx.checkpointBlob) {
+				try {
+					const checkpoint = await this.backend.read(this.slot, "lastDocked");
+					if (this.liveCarries(tx)) return this.obsoleteAnswer(tx);
+					if (
+						JSON.stringify(checkpoint) !== JSON.stringify(tx.checkpointBlob) ||
+						JSON.stringify(raw) !== JSON.stringify(serializeSave(tx.stamped))
+					) {
+						this.uncertainCommit = tx;
+						return "uncertain";
+					}
+				} catch {
+					if (this.liveCarries(tx)) return this.obsoleteAnswer(tx);
+					this.uncertainCommit = tx;
+					return "uncertain";
+				}
+			}
 			this.uncertainCommit = null;
 			this.adoptCommitted(tx, record);
 			return "committed";
@@ -1292,6 +1328,60 @@ export class CommanderCatalog {
 	constructor(options: { backend: SaveBackend; locks: SlotLocks }) {
 		this.backend = options.backend;
 		this.locks = options.locks;
+	}
+
+	async prepareForBoot(slot: string): Promise<unknown | null> {
+		let live = await this.backend.read(slot, "live");
+		const checkpoint = await this.backend.read(slot, "lastDocked");
+		const legacy = (raw: unknown) =>
+			raw !== null &&
+			raw !== undefined &&
+			(raw as SaveRecordBody).saveSchemaVersion !== SAVE_SCHEMA_VERSION;
+		if (!legacy(live) && !legacy(checkpoint)) return live;
+		const release = await this.locks.tryHold(slot);
+		if (!release)
+			return fail(
+				"migration: Commander is open in another tab; Export remains available",
+			);
+		let keepLock = false;
+		try {
+			live = await this.backend.read(slot, "live");
+			if (live === null) return null;
+			let candidate = parseSave(live);
+			const docked = await this.backend.read(slot, "lastDocked");
+			const replacement = docked === null ? undefined : parseSave(docked);
+			if (!legacy(live) && !legacy(docked)) return live;
+			const store = new SaveStore({
+				backend: this.backend,
+				locks: this.locks,
+				slot,
+				current: () => candidate,
+				schedule: (fn, ms) => {
+					const timer = setTimeout(fn, ms);
+					return () => clearTimeout(timer);
+				},
+			});
+			const outcome = await store.commit({
+				txSeq: candidate.commander.txSeq,
+				replacementCheckpoint: replacement,
+				apply: (e) => e,
+				adopt: (e) => {
+					candidate = e;
+				},
+			});
+			if (outcome !== "committed") {
+				keepLock = true;
+				if (keepLock) void store.settled().finally(release);
+				return fail(
+					"migration: " +
+						outcome +
+						"; original records retained unless the atomic write landed. Export or reload to recover.",
+				);
+			}
+			return serializeSave(candidate);
+		} finally {
+			if (!keepLock) release();
+		}
 	}
 
 	/** Boot and import parse through one seam; #437 left it with no policy of
@@ -1731,7 +1821,7 @@ export function memorySaveBackend(): MemorySaveBackend {
 		async write(slot, kind, blob) {
 			return this.writeMany(slot, [kind], blob);
 		},
-		async writeMany(slot, kinds, blob) {
+		async writeMany(slot, kinds, blob, replacements) {
 			inFlight += 1;
 			maxInFlight = Math.max(maxInFlight, inFlight);
 			calls.push({ slot, kinds: [...kinds], blob: copy(blob) });
@@ -1741,7 +1831,8 @@ export function memorySaveBackend(): MemorySaveBackend {
 			const hungNext = hangNext > 0;
 			if (appliedNow) {
 				hangAppliedNext -= 1;
-				for (const kind of kinds) rows.set(recordKey(slot, kind), copy(blob));
+				for (const kind of kinds)
+					rows.set(recordKey(slot, kind), copy(replacements?.[kind] ?? blob));
 				writes += 1;
 			}
 			try {
@@ -1756,7 +1847,8 @@ export function memorySaveBackend(): MemorySaveBackend {
 				// One transaction, so either every key lands or none does — the
 				// same all-or-nothing the IndexedDB backend gets for free.
 				if (!appliedNow) {
-					for (const kind of kinds) rows.set(recordKey(slot, kind), copy(blob));
+					for (const kind of kinds)
+						rows.set(recordKey(slot, kind), copy(replacements?.[kind] ?? blob));
 					writes += 1;
 				}
 			} finally {
@@ -2012,12 +2104,13 @@ export function indexedDbSaveBackend(
 		async write(slot, kind, blob) {
 			return this.writeMany(slot, [kind], blob);
 		},
-		async writeMany(slot, kinds, blob) {
+		async writeMany(slot, kinds, blob, replacements) {
 			const handle = await open();
 			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
 			const done = transactionDone(tx);
 			const store = tx.objectStore(SAVE_STORE_NAME);
-			for (const kind of kinds) store.put(blob, recordKey(slot, kind));
+			for (const kind of kinds)
+				store.put(replacements?.[kind] ?? blob, recordKey(slot, kind));
 			await done;
 		},
 		async slots() {

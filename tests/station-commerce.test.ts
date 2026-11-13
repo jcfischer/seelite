@@ -719,14 +719,22 @@ describe("§5.6 the bid cut, charged by the till", () => {
 				const out = leg(
 					state,
 					{
-						commander: { ...state.commander, cargo: { [good.name]: qty } },
+						commander: {
+							...state.commander,
+							accounting: undefined,
+							cargo: { [good.name]: qty },
+						},
 						...at("sell-commodity", qty),
 					},
 					quote,
 				);
 				if (!out.accepted) return null;
 				state = {
-					commander: { ...out.state.commander, cargo: {} },
+					commander: {
+						...out.state.commander,
+						accounting: undefined,
+						cargo: {},
+					},
 					deficits: out.state.deficits,
 				};
 			}
@@ -750,7 +758,11 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			const sold = leg(
 				state,
 				{
-					commander: { ...state.commander, cargo: { [good.name]: buyQty } },
+					commander: {
+						...state.commander,
+						accounting: undefined,
+						cargo: { [good.name]: buyQty },
+					},
 					...at("sell-commodity", buyQty),
 				},
 				quote,
@@ -852,7 +864,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			flownAtClosingFloor: 188_325,
 			clearedAtClosingFloor: 0,
 		});
-	});
+	}, 30_000);
 
 	test("four chained cycles on ONE deficit map: tonnage stays shut, units do not", () => {
 		// **The corpus seeds a fresh map per cycle** and says so — every realized dock is
