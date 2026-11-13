@@ -8,6 +8,7 @@
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { LONGWALL_MINER_GLB_URL } from "./model-urls";
 import type { ModelProgressListener } from "./model-progress";
 import {
@@ -26,6 +27,7 @@ export function prepareLongwallModel(
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin())
 		.loadAsync(LONGWALL_MINER_GLB_URL, onProgress)
 		.then(async (gltf) => {
 			// The install simplifies the `reduced` hull (`ship-mesh.ts`).

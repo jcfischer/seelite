@@ -2,71 +2,115 @@
 	"coriolis": {
 		"bytes": 6702876,
 		"attributes": "265cecb13fcc37d427e9a568d38560ed9b8a64ac52bc7b00097b700c24e6a945",
-		"document": "a43fc297f4becc4d9587da60027b3c6d66ffe34e9e823265980dc9a19d22b16e"
+		"document": "a43fc297f4becc4d9587da60027b3c6d66ffe34e9e823265980dc9a19d22b16e",
+		"preparedSha256": "e220ff240675f202642f9a71e2e9674a5f458bc94a88eb143c1da4bda8e9fdd1"
 	},
 	"outpost-buoy": {
 		"bytes": 4049556,
 		"attributes": "119285c81db2e21dda722d5c00e9e3a272a20dfde68ccd475a48c5fe85906d7d",
-		"document": "5de1eea384ba2e93e4fdd7e2cb0165b3bb5c4f7f8258d8bc068efb69d46e063a"
+		"document": "5de1eea384ba2e93e4fdd7e2cb0165b3bb5c4f7f8258d8bc068efb69d46e063a",
+		"preparedSha256": "43ecbd428d967bdb3897f6f3041b25b0c9ffacb99ff7f6812e514ee72be7ae1b"
 	},
 	"outpost-cluster": {
 		"bytes": 4996508,
 		"attributes": "127f33f55ffc50bf415814cee2d40c116018d173e3d12d93553f0d07ca9470fd",
-		"document": "699a6a779a3ad6b8e46ea43f3602266ae261d6b8bd964cbb5e063b6477291ce4"
+		"document": "699a6a779a3ad6b8e46ea43f3602266ae261d6b8bd964cbb5e063b6477291ce4",
+		"preparedSha256": "ed92a42edcb9d4792d128c2cbfcca8859fe439fe7406f322f6cf76379df778d3"
 	},
 	"outpost-derrick": {
 		"bytes": 4889508,
 		"attributes": "d6bf9b241f9ec0c099ca7e377cc6abfdd50289eac5de18a8c2997262dff45686",
-		"document": "cb7f12c6d4d26a024447a5c6833808a97df65863f4db8d45cf49004464c0a001"
+		"document": "cb7f12c6d4d26a024447a5c6833808a97df65863f4db8d45cf49004464c0a001",
+		"preparedSha256": "aa12f1725b2330a429b59c146bb5da88d4ea4487ed04c6a98c1e483707af485d"
 	},
 	"outpost-rig": {
 		"bytes": 5202512,
 		"attributes": "308b46ce50646679045b6ee34de2f430f62f38815b6bb5a1f8ae222edb9dfcca",
-		"document": "57fae9154612a936d26620ceb8c5b21252574d9fbed20ed3bbb023bf732babe0"
+		"document": "57fae9154612a936d26620ceb8c5b21252574d9fbed20ed3bbb023bf732babe0",
+		"preparedSha256": "e706b48c2709f5e1adfbf5458e7fddb7aa2356b8dbf5c24a23b05293ac807783"
 	},
 	"outpost-salvage": {
 		"bytes": 4213892,
 		"attributes": "5c16a9639387ea7b2e1c0441cc0d0da614aaf74a98e5ce0679ac848cc0bfd453",
-		"document": "100fa3f05f75287fb452db90006e440dac6385d26dfc357f690fd87ff4da36f3"
+		"document": "100fa3f05f75287fb452db90006e440dac6385d26dfc357f690fd87ff4da36f3",
+		"preparedSha256": "36ff96182fda9a41f4353723d22c770fd9b3860eccf43ace00a4908f1f140288"
 	},
 	"shipyard-foundry": {
 		"bytes": 10819548,
 		"attributes": "921c06164446aebcd8def16f01d3976122f659e203b16947079de3ab0852702b",
-		"document": "9b836b2028021cd368b0ae0c6b88c984e1bb497aef6be4e36a422c7472e761d0"
+		"document": "9b836b2028021cd368b0ae0c6b88c984e1bb497aef6be4e36a422c7472e761d0",
+		"preparedSha256": "3d5af322e16fd38e901367e445367646c3e5d5d55793e0388d0e075e6f64e075"
 	},
 	"shipyard-gantry": {
 		"bytes": 10494100,
 		"attributes": "fb1887d7414e12c7ddb5396f14595aa92d8137df54d475bbb88b9867a025193b",
-		"document": "b5273211acb6d62615545fee7e1f4ab1cd241caf1719362ed0bc3ff9cc567f2a"
+		"document": "b5273211acb6d62615545fee7e1f4ab1cd241caf1719362ed0bc3ff9cc567f2a",
+		"preparedSha256": "fb8a7a43408c2570b9116055f5857b20c43d2def68dc8ac7789b4883046a532f"
 	},
 	"shipyard-slipway": {
 		"bytes": 7992896,
 		"attributes": "b812b2bb8a0b2501f3e53de7e099a74d0b90ffd25df716dfc625709ee8c0acaa",
-		"document": "b82bb9bcbf2fea87791523effd7d4d23b9b147d3b2043dc24d78962c00d3c816"
+		"document": "b82bb9bcbf2fea87791523effd7d4d23b9b147d3b2043dc24d78962c00d3c816",
+		"preparedSha256": "9a8d92d900c7702eb28139446f7731afbf7c4af41a5631a089c573b9b871bf9c"
 	},
 	"station-interiors": {
 		"bytes": 22297536,
 		"attributes": "c8245f463962f2cdd081eeefae687cd4e717da7827e482ddf59562d5141768e9",
-		"document": "befe6474a62e41f67e159bd57ae210964f9dd794207a67668b75900e93613339"
+		"document": "befe6474a62e41f67e159bd57ae210964f9dd794207a67668b75900e93613339",
+		"preparedSha256": "29b48cde0d18c5a7c8e663e91b190c8d4190906834215c71036f6d8ae3638e16"
 	},
 	"trade-assembly": {
 		"bytes": 8284476,
 		"attributes": "a3e5b175a78bb8c4212c503590044ea41ae8ddd6f19c22b5646706390cc47a63",
-		"document": "ff35f7cb8dd1e93d1f27509e179f4df123ea6181af1bfbb39578d28983ca8333"
+		"document": "ff35f7cb8dd1e93d1f27509e179f4df123ea6181af1bfbb39578d28983ca8333",
+		"preparedSha256": "1444c52e07b02e06ab4dbc36c32321854433def1b28d627211653a1037cc4d92"
 	},
 	"trade-drum": {
 		"bytes": 5001176,
 		"attributes": "0fa0fd196d6c831d7ec6e931ec375c66af856e29830aec3cf9c8811dc5f53615",
-		"document": "702e2e870fd8adbf56105270d5409b88d0ef38bcb5a4a4537b6d748f86a9bd73"
+		"document": "702e2e870fd8adbf56105270d5409b88d0ef38bcb5a4a4537b6d748f86a9bd73",
+		"preparedSha256": "9f041266ae7d3717fc4254a9d74e9c547018743793cf25e4efc74fe24fa1da52"
 	},
 	"trade-ring": {
 		"bytes": 6621444,
 		"attributes": "2b88eee070addb85602e17af19ba8b2cea0dc89e83668e30458d1e478ea94d99",
-		"document": "7270aea5fdae5b0a9f6ceda4fb6144c978478311513a4d7c47277d9102af84db"
+		"document": "7270aea5fdae5b0a9f6ceda4fb6144c978478311513a4d7c47277d9102af84db",
+		"preparedSha256": "996c363439c673921959e0f0c18ea4b2c321b361f38a6e66700490eb45de93b9"
 	},
 	"trade-wheel": {
 		"bytes": 7075896,
 		"attributes": "ea525b37a70695923498d99e4c418d1aae1932582d83ed0cf6e61a86e33cedab",
-		"document": "47e2fcf4943312ab1e21f481e0cd61ed8dd0dbe57c6ed49c0ab2a27215099258"
+		"document": "47e2fcf4943312ab1e21f481e0cd61ed8dd0dbe57c6ed49c0ab2a27215099258",
+		"preparedSha256": "a50aaa5679c529148f079fd39b2b31521380c5482dcba6d453ae5f2cc5fd2c73"
+	},
+	"bollard-tug": {
+		"bytes": 17461196,
+		"attributes": "e67b375d1f89fa759233d633e90887896a9b20c9177362d7a8a81629c38b7757",
+		"document": "6b3c5e4165de7988121fce23e077cf9a1058f1409bb5c2a8015bde5b841b243e"
+	},
+	"longwall-miner": {
+		"bytes": 11680724,
+		"attributes": "5c607e88cfcb57c014637b0ecde800474bd7fb01da4db89b09bd0b9474240cd6",
+		"document": "48618e1a4fef6d534a6e525897d1ab64543175b4dd1454a3ba5fc062ccb5cfd0"
+	},
+	"refinery-warren": {
+		"bytes": 8495924,
+		"attributes": "5d2fc430d4080f92884daed605b6e9b0ec13a749d9e011d8d736c46df5372b81",
+		"document": "1624c06d3fe76050a92c00615b5efee3e35160cc613c7dea9bf8e883a886c60a"
+	},
+	"refinery-collar": {
+		"bytes": 8058512,
+		"attributes": "3c6cfb78982b42954ed75987514207918d4610216bc46add3907e22d72baa099",
+		"document": "316f91a006a06e65b068c37b76879b618950bfd0157153dc6d48512cabc682de"
+	},
+	"refinery-spar": {
+		"bytes": 9865112,
+		"attributes": "69a3263f802cb420bf3b3dae35fe75d77a564ac0b498084356799a566c0457c4",
+		"document": "76baf46ab76db315aacda7b5f11c1203dd527a2af0cbe3fdd25e6843f2db5603"
+	},
+	"refinery-works": {
+		"bytes": 9597240,
+		"attributes": "bc1ca4509275a482faa9694f4dcfd049e78ff11f1c9c89b6df18b58dd28f4f5c",
+		"document": "eb0bbe351d95bb88de88d7a48cd053b3fd094a395a136c9f4bb7ccef354246ff"
 	}
 }
