@@ -80,6 +80,10 @@ export interface SharedImage {
 	name: string;
 }
 export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
+	"54aabd254dce4e6a9c78e5beb6320c14e7c4506dc39f2329a6c34f11bbfafc1d": {
+		url: new URL("./models/paint-wear.webp", import.meta.url).href,
+		name: "paint-wear",
+	},
 	"10d4d0776274448b52fc3191941d09dc0a74f1967854f23f86406188bf1eedd7": {
 		url: new URL("./models/industrial-surface.webp", import.meta.url).href,
 		name: "industrial-surface",

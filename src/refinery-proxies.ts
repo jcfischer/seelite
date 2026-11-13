@@ -14,10 +14,10 @@ export const REFINERY_PROXY_PACK = {
 	rot: 32767,
 } as const;
 export const REFINERY_PROXY_SOURCES = {
-	a: "f65bdbf9b4f3bfde8804caf4eebd806678ce50e8cc023b8b7d09b14f81076f55",
-	b: "5bdbfc726ef51ab9c29218b27936a2201c1210f41abf95ba9f7ccb53a0d59a54",
-	c: "0866f1e690a358857346a8d8a11eb8df8eabf9cb5d36f6c028787cd154eeca8c",
-	d: "c49b69ecb07f8ee50dd48a9698d17b7c7bad36fb4395b78fc4e45e03d03d9551",
+	a: "c985e07f72d53f2361b50ffa7449592e5ce41406903833c78d2494046184598b",
+	b: "73320cf4c64cfbf85ec4cb365fbda17a79b66fa19bf6d783999613eb79dd9c5f",
+	c: "abe06b143d7bff8fecff5e96a0d7d5c5a4d6c96f2c280d29ad88d5d1560d59d9",
+	d: "79138e07f397bc6f501b96813c3a2bc6c307efc48158b6009a9c9a522e11ae6e",
 } as const;
 export const REFINERY_PROXIES = {
 	a: {

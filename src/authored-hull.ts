@@ -24,6 +24,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { levelErrorKm, reducedLevelSteps } from "./authored-levels";
 import { disposeSubtree, shared } from "./gpu-teardown";
@@ -330,6 +331,7 @@ export function authoredHullLoader(
 	return (onProgress) =>
 		(ready ??= new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
+			.register(sharedImagePlugin())
 			.loadAsync(url, onProgress)
 			.then(async (gltf) => {
 				await yieldTask();

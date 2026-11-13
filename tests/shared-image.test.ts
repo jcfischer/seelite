@@ -8,12 +8,16 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { NodeIO, type Texture as GltfTexture } from "@gltf-transform/core";
+import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { readSharedModel } from "../scripts/lib/shared-image-io.mjs";
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import originals from "./fixtures/shared-image-originals.json";
 import {
 	INDUSTRIAL_SURFACE,
+	PAINT_WEAR,
 	shareImage,
 	writeGlb,
 	SHARED_IMAGE_EXTENSION,
@@ -30,7 +34,7 @@ import {
 	type ImageLoader,
 } from "../src/shared-image";
 
-const MODELS = Object.keys(originals) as (keyof typeof originals)[];
+const MODELS = [...INDUSTRIAL_SURFACE.models] as (keyof typeof originals)[];
 const pathOf = (model: string) => `src/models/${model}.glb`;
 
 const documentOf = (bytes: Uint8Array) => {
@@ -121,11 +125,6 @@ describe("shareImage", () => {
 	test.each([
 		["another image", (d: any) => d, "0".repeat(64)],
 		[
-			"a second image",
-			(d: any) => d.images.push({ bufferView: 2, mimeType: "image/webp" }),
-			SHA,
-		],
-		[
 			"a slot other than base colour",
 			(d: any) => {
 				d.materials[0] = { normalTexture: { index: 0 } };
@@ -159,6 +158,104 @@ describe("shareImage", () => {
 		const json = embedded();
 		change(json);
 		expect(() => shareImage(writeGlb(json, binOf()), sha as string)).toThrow();
+	});
+
+	test.each([0, 1])(
+		"preserves a second embedded image when removing image %i",
+		(selected) => {
+			const json: any = embedded();
+			json.images.push({
+				bufferView: 2,
+				mimeType: "image/webp",
+				name: "other",
+			});
+			json.textures.push({ source: 1, sampler: 0 });
+			json.materials.push({ normalTexture: { index: 1, texCoord: 1 } });
+			if (selected === 1) {
+				json.images.reverse();
+				json.textures[0].extensions.EXT_texture_webp.source = 1;
+				json.textures[1].source = 0;
+			}
+			const { bytes } = shareImage(writeGlb(json, binOf()), SHA);
+			const got = documentOf(bytes);
+			expect(got.images).toEqual([
+				{ bufferView: 1, mimeType: "image/webp", name: "other" },
+			]);
+			expect(got.textures[1]).toEqual({ source: 0, sampler: 0 });
+			expect(got.materials).toEqual(json.materials);
+			expect(Buffer.from(shareImage(bytes, SHA).bytes)).toEqual(
+				Buffer.from(bytes),
+			);
+		},
+	);
+
+	test("retains WebP support and remaps another WebP source", () => {
+		const json: any = embedded();
+		json.images.push({ bufferView: 2, mimeType: "image/webp" });
+		json.textures.push({
+			sampler: 0,
+			extensions: { EXT_texture_webp: { source: 1 } },
+		});
+		const got = documentOf(shareImage(writeGlb(json, binOf()), SHA).bytes);
+		expect(got.textures[1].extensions.EXT_texture_webp.source).toBe(0);
+		expect(got.extensionsRequired).toContain("EXT_texture_webp");
+		expect(got.extensionsUsed).toContain("EXT_texture_webp");
+	});
+
+	test("prepares two different shared images in either order", () => {
+		const json: any = embedded();
+		json.images.push({ bufferView: 3, mimeType: "image/webp" });
+		json.bufferViews.push({ buffer: 0, byteOffset: 32, byteLength: 4 });
+		json.buffers[0].byteLength = 40;
+		const bin = Buffer.concat([binOf(), Buffer.alloc(8, 9)]);
+		json.textures.push({ source: 1, sampler: 0 });
+		json.materials.push({
+			pbrMetallicRoughness: { baseColorTexture: { index: 1 } },
+		});
+		const second = createHash("sha256")
+			.update(bin.subarray(32, 36))
+			.digest("hex");
+		for (const order of [
+			[SHA, second],
+			[second, SHA],
+		]) {
+			let bytes = writeGlb(json, bin);
+			for (const sha of order)
+				bytes = Buffer.from(shareImage(bytes, sha).bytes);
+			const got = documentOf(bytes);
+			expect(got.images).toBeUndefined();
+			expect(
+				got.textures.map((t: any) => t.extensions.SEELITE_shared_image.sha256),
+			).toEqual([SHA, second]);
+			expect(
+				got.extensionsUsed.filter((e: string) => e === SHARED_IMAGE_EXTENSION),
+			).toHaveLength(1);
+		}
+	});
+
+	test.each([...INDUSTRIAL_SURFACE.models])(
+		"%s stays byte-identical after generalization",
+		(model) => {
+			const file = readFileSync(pathOf(model));
+			expect(
+				createHash("sha256")
+					.update(shareImage(file, INDUSTRIAL_SURFACE.sha256).bytes)
+					.digest("hex"),
+			).toBe((originals as any)[model].preparedSha256);
+		},
+	);
+
+	test("refuses conflicting fallback and WebP image sources", () => {
+		const json: any = embedded();
+		json.images.push({ bufferView: 2, mimeType: "image/webp" });
+		json.textures[0].source = 1;
+		expect(() => shareImage(writeGlb(json, binOf()), SHA)).toThrow("fallback");
+	});
+
+	test("refuses an image outside the GLB binary", () => {
+		const json: any = embedded();
+		json.bufferViews[0].buffer = 1;
+		expect(() => shareImage(writeGlb(json, binOf()), SHA)).toThrow("binary");
 	});
 
 	test("the extension's spelling is the one the plugin reads", () => {
@@ -346,3 +443,60 @@ describe("the shared image registry", () => {
 		).rejects.toThrow("b".repeat(64));
 	});
 });
+
+describe("paint-wear shipping models", () => {
+	test.each([...PAINT_WEAR.models])(
+		"%s preserves original attributes and materials and removes only paint-wear",
+		async (model) => {
+			const file = readFileSync(pathOf(model));
+			const json = documentOf(file);
+			expect(json.textures[0].extensions).toEqual({
+				[EXTENSION]: { sha256: PAINT_WEAR.sha256 },
+			});
+			expect(json.images?.map((i: any) => i.name) ?? []).toEqual(
+				model.startsWith("refinery-") ? ["rock-albedo"] : [],
+			);
+			const now = await glbDigest(pathOf(model));
+			const was = (originals as any)[model];
+			expect(now.attributes).toBe(was.attributes);
+			expect(now.document).toBe(was.document);
+			expect(was.bytes - now.bytes).toBeGreaterThan(2_167_324 - 4096);
+			expect(was.bytes - now.bytes).toBeLessThan(2_167_324 + 4096);
+			expect(Buffer.from(shareImage(file, PAINT_WEAR.sha256).bytes)).toEqual(
+				file,
+			);
+		},
+	);
+
+	test("the registered shared file is exactly the original image", () => {
+		const bytes = readFileSync(PAINT_WEAR.file);
+		expect(bytes.length).toBe(2_167_324);
+		expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+			PAINT_WEAR.sha256,
+		);
+		expect(SHARED_IMAGES[PAINT_WEAR.sha256]?.name).toBe("paint-wear");
+	});
+});
+
+test.each(["bollard-tug", "refinery-warren", "trade-drum"])(
+	"glTF-Transform instruments resolve %s with its exact image bytes",
+	async (model) => {
+		const io = new NodeIO()
+			.registerExtensions(ALL_EXTENSIONS)
+			.registerDependencies({ "meshopt.decoder": MeshoptDecoder });
+		const doc = await readSharedModel(io, pathOf(model));
+		const hashes = doc
+			.getRoot()
+			.listTextures()
+			.map((texture: GltfTexture) =>
+				createHash("sha256").update(texture.getImage()!).digest("hex"),
+			);
+		expect(hashes).toContain(
+			model === "trade-drum" ? INDUSTRIAL_SURFACE.sha256 : PAINT_WEAR.sha256,
+		);
+		if (model === "refinery-warren")
+			expect(hashes).toContain(
+				"7e3dc547c074ca91cf500ce8075b935be53fd84d5f0bf733fb5b0594cceb9014",
+			);
+	},
+);
