@@ -90,7 +90,7 @@ try {
 				texture.distinct > 8;
 			if (!ok) failed++;
 			console.log(
-				`${ok ? "ok  " : "FAIL"} ${model}: ${texture.size}, ${texture.differing} of ${texture.bytes} bytes differ; settings ${settings ? "match" : `differ ${JSON.stringify(result)}`}`,
+				`${ok ? "ok  " : "FAIL"} ${model}: ${texture.size}, ${texture.differing} of ${texture.bytes} bytes differ; settings ${settings ? "match" : `differ ${JSON.stringify(texture)}`}`,
 			);
 		}
 	}

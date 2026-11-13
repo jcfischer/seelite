@@ -199,3 +199,35 @@ reserves the full browser suite for the supervisor, so `probe:pr` was not run;
 its repository-selected gate remains pending with the supervisor. No selection
 policy or threshold was changed to narrow it. Sage review and merge also remain
 with the supervisor and principal.
+
+## Sage round 1: Ready to report
+
+The shared-image probe now keeps per-image URLs, preparation arguments, boot
+flags and request-count predicates in a case table. Boot, queued-background and
+live-Bollard failures use one `blockedPage` harness for request counting,
+unblocking and unhandled-rejection collection. All 20 existing checks pass both
+before and after the refactor on ANGLE Metal / Apple M5 Pro. Logs:
+`/tmp/node-1226-review1-probe-{before,after}.log`.
+
+The cold instrument retains the framed refinery's id and uses one `paintMaps`
+traversal for both subjects. Its hardware compatibility run still records
+226,919,941 asset bytes, 35 requests, one paint-wear fetch and one paint map
+across the refinery and Bollard. The run is recorded in
+`/tmp/node-1226-review1-cold.log`; it adds no performance claim to the comparison.
+
+The decode diagnostic prints only the failing texture. The six-model browser
+comparison still reports exact pixels and matching settings for all ten maps,
+in `/tmp/node-1226-review1-decode.log`.
+
+The glossary alias cited by the review is absent from the receipt at reviewed
+commit `e084b959` and from the current text; no alias replacement is needed.
+
+The focused headless run passes 163 tests across four files. Build, TypeScript,
+the 25 MiB host-size check, format, lint, comment lint and launcher wiring pass.
+Their logs use `/tmp/node-1226-review1-*.log`. The full browser gate remains with
+the supervisor, as above; this pass reran only the changed browser contract and
+instruments.
+
+The single full host `npm test` run for this review pass reports 7,857 passing
+tests across 489 files, zero failures, in 556.83 seconds. Its log is
+`/tmp/node-1226-review1-full-test.log`.

@@ -106,6 +106,7 @@ try {
 			(b) => b.kind === "station" && b.stationType === "refinery",
 		);
 		if (!refinery) throw new Error("fixture has no refinery");
+		window.__refineryId = refinery.id;
 		g.view = "chase";
 		await window.__viewAlongAxis(
 			refinery.id,
@@ -124,25 +125,20 @@ try {
 			await new Promise((resolve) => requestAnimationFrame(resolve));
 		cancelAnimationFrame(window.__tick);
 		const g = window.__seelite;
-		const maps = new Set();
-		const refinery = g.world.system.bodies.find(
-			(b) => b.kind === "station" && b.stationType === "refinery",
-		);
-		const station = g.stationVisuals.get(refinery.id);
+		const paintMaps = (root) => {
+			const maps = new Set();
+			root.traverse((o) => {
+				for (const m of [o.material ?? []].flat())
+					if (m.map?.name === "paint-wear") maps.add(m.map);
+			});
+			return maps;
+		};
+		const station = g.stationVisuals.get(window.__refineryId);
 		if (!station) throw new Error("fixture refinery has no visual");
-		station.root.traverse((o) => {
-			for (const m of [o.material ?? []].flat())
-				if (m.map?.name === "paint-wear") maps.add(m.map);
-		});
-		const stationPaintMaps = maps.size;
-		const hullMaps = new Set();
-		g.shipMesh.traverse((o) => {
-			for (const m of [o.material ?? []].flat())
-				if (m.map?.name === "paint-wear") {
-					maps.add(m.map);
-					hullMaps.add(m.map);
-				}
-		});
+		const stationMaps = paintMaps(station.root);
+		const hullMaps = paintMaps(g.shipMesh);
+		const stationPaintMaps = stationMaps.size;
+		const maps = new Set([...stationMaps, ...hullMaps]);
 		if (!g.shipMesh.userData.authored || !stationPaintMaps || !hullMaps.size)
 			throw new Error("authored refinery and Bollard have not both installed");
 		const sorted = [...window.__gaps].sort((a, b) => b - a);

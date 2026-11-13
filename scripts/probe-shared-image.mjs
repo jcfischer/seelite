@@ -48,18 +48,75 @@ const benchPage = async () => {
 	return page;
 };
 
+const blockedPage = async (pattern) => {
+	const page = await browser.newPage();
+	watch(page);
+	let requests = 0;
+	let blocked = true;
+	await page.route(pattern, (route) => {
+		requests++;
+		return blocked ? route.abort() : route.continue();
+	});
+	await page.addInitScript(() => {
+		window.__rejections = [];
+		window.addEventListener("unhandledrejection", (event) =>
+			window.__rejections.push(String(event.reason)),
+		);
+	});
+	return {
+		page,
+		requests: () => requests,
+		unblock: () => {
+			blocked = false;
+		},
+	};
+};
+
 try {
-	for (const PAINT of [false, true]) {
-		const IMAGE = PAINT
-			? /\/paint-wear[^/]*\.webp/
-			: /\/industrial-surface[^/]*\.webp/;
-		console.log(`Checking ${PAINT ? "paint-wear" : "industrial-surface"}`);
+	const config = await benchPage();
+	const urls = await config.evaluate(async () => {
+		const p = await import("/scripts/fixtures/shared-image-page.ts");
+		return {
+			bollard: p.BOLLARD_TUG_GLB_URL,
+			refinery: p.REFINERY_GLB_URLS.a,
+			outpost: p.OUTPOST_GLB_URLS.a,
+			trade: p.TRADE_GLB_URLS.b,
+			interior: p.STATION_INTERIORS_GLB_URL,
+		};
+	});
+	await config.close();
+	const cases = [
+		{
+			name: "industrial-surface",
+			image: /\/industrial-surface[^/]*\.webp/,
+			a: urls.outpost,
+			b: urls.trade,
+			owner: urls.interior,
+			prepare: "prepareOutpostModel",
+			prepareArgs: ["a"],
+			modelsFull: false,
+			bootAttempts: (n) => n === 1,
+		},
+		{
+			name: "paint-wear",
+			image: /\/paint-wear[^/]*\.webp/,
+			a: urls.bollard,
+			b: urls.refinery,
+			owner: urls.bollard,
+			prepare: "prepareTugHullModel",
+			prepareArgs: [],
+			modelsFull: true,
+			bootAttempts: (n) => n >= 1,
+		},
+	];
+	for (const { image, bootAttempts, ...modelCase } of cases) {
+		console.log(`Checking ${modelCase.name}`);
 		const bench = await benchPage();
 		const requests = [];
 		bench.on("request", (r) => {
-			if (IMAGE.test(r.url())) requests.push(r.url());
+			if (image.test(r.url())) requests.push(r.url());
 		});
-		const drawn = await bench.evaluate(async (paint) => {
+		const drawn = await bench.evaluate(async (modelCase) => {
 			const page = await import("/scripts/fixtures/shared-image-page.ts");
 			const { THREE } = page;
 			const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
@@ -85,25 +142,17 @@ try {
 			};
 			const count = () => renderer.info.memory.textures;
 			const empty = count();
-			const a = await page.loadShared(
-				paint ? page.BOLLARD_TUG_GLB_URL : page.OUTPOST_GLB_URLS.a,
-			);
-			const b = await page.loadShared(
-				paint ? page.REFINERY_GLB_URLS.a : page.TRADE_GLB_URLS.b,
-			);
-			const name = paint ? "paint-wear" : undefined;
-			const mapA = page.mapOf(a.scene, name);
-			const mapB = page.mapOf(b.scene, name);
+			const a = await page.loadShared(modelCase.a);
+			const b = await page.loadShared(modelCase.b);
+			const mapA = page.mapOf(a.scene, modelCase.name);
+			const mapB = page.mapOf(b.scene, modelCase.name);
 			frame(quad(mapA));
 			const afterA = count();
 			const scene = quad(mapB);
 			const survivor = frame(scene);
 			const afterB = count();
-			const interior = await page.loadShared(
-				paint ? page.BOLLARD_TUG_GLB_URL : page.STATION_INTERIORS_GLB_URL,
-				"interior",
-			);
-			const mapInterior = page.mapOf(interior.scene, name);
+			const interior = await page.loadShared(modelCase.owner, "interior");
+			const mapInterior = page.mapOf(interior.scene, modelCase.name);
 			mapInterior.anisotropy = 8;
 			frame(quad(mapInterior));
 			const afterInterior = count();
@@ -125,7 +174,7 @@ try {
 				frameKept: survivor.every((v, i) => v === again[i]),
 				frameLit: new Set(survivor).size > 8,
 			};
-		}, PAINT);
+		}, modelCase);
 		check(
 			"two exteriors use one texture object and one GPU texture",
 			drawn.sameMap &&
@@ -157,20 +206,8 @@ try {
 		);
 		await bench.close();
 
-		const failing = await browser.newPage();
-		watch(failing);
-		let bootAttempts = 0;
-		let refuse = true;
-		await failing.route(IMAGE, (route) => {
-			bootAttempts++;
-			return refuse ? route.abort() : route.continue();
-		});
-		await failing.addInitScript(() => {
-			window.__rejections = [];
-			window.addEventListener("unhandledrejection", (e) =>
-				window.__rejections.push(String(e.reason)),
-			);
-		});
+		const boot = await blockedPage(image);
+		const failing = boot.page;
 		await failing.goto(
 			gameUrl(ORIGIN, {
 				seed: 42,
@@ -178,7 +215,7 @@ try {
 				"no-save": true,
 				voices: "formant",
 				raider: "off",
-				"models-full": PAINT,
+				"models-full": modelCase.modelsFull,
 				"interiors-full": false,
 				"shipyards-full": false,
 				"refineries-full": false,
@@ -188,12 +225,12 @@ try {
 		await failing.waitForSelector(RETRY, { timeout: 120000 });
 		check(
 			"a boot model whose image will not fetch offers Retry and builds no Game",
-			(PAINT ? bootAttempts >= 1 : bootAttempts === 1) &&
+			bootAttempts(boot.requests()) &&
 				(await failing.evaluate(() => !window.__seelite)),
-			`${bootAttempts} request(s)`,
+			`${boot.requests()} request(s)`,
 		);
-		const failedBootAttempts = bootAttempts;
-		refuse = false;
+		const failedBootAttempts = boot.requests();
+		boot.unblock();
 		await failing.click(RETRY);
 		await bootedGame(failing, 120000);
 		const retried = await failing.evaluate(() => ({
@@ -202,25 +239,20 @@ try {
 		}));
 		check(
 			"Retry fetches the image again and boots, with nothing unhandled",
-			bootAttempts === failedBootAttempts + 1 &&
+			boot.requests() === failedBootAttempts + 1 &&
 				!retried.panel &&
 				retried.rejections.length === 0,
-			JSON.stringify({ bootAttempts, ...retried }),
+			JSON.stringify({ bootAttempts: boot.requests(), ...retried }),
 		);
 		await failing.close();
 
-		const background = await benchPage();
-		let attempts = 0;
-		let refused = true;
-		await background.route(IMAGE, (route) => {
-			attempts++;
-			return refused ? route.abort() : route.continue();
-		});
-		const queued = await background.evaluate(async (paint) => {
+		const backgroundLoad = await blockedPage(image);
+		const background = backgroundLoad.page;
+		await background.goto(publicUrl(ORIGIN, "about"));
+		const queued = await background.evaluate(async (modelCase) => {
 			const page = await import("/scripts/fixtures/shared-image-page.ts");
-			window.__prepare = paint
-				? page.prepareTugHullModel
-				: () => page.prepareOutpostModel("a");
+			window.__prepare = () =>
+				page[modelCase.prepare](...modelCase.prepareArgs);
 			const warned = [];
 			const queue = new page.ModelQueue(
 				{ outpost: window.__prepare },
@@ -235,38 +267,26 @@ try {
 				warned,
 				rejections: window.__rejections,
 			};
-		}, PAINT);
+		}, modelCase);
 		check(
 			"a background model whose image will not fetch fails in the queue with nothing unhandled",
 			queued.state === "failed" &&
 				queued.warned.join() === "outpost/load" &&
 				queued.rejections.length === 0 &&
-				attempts === 1,
-			JSON.stringify({ attempts, ...queued }),
+				backgroundLoad.requests() === 1,
+			JSON.stringify({ attempts: backgroundLoad.requests(), ...queued }),
 		);
-		refused = false;
+		backgroundLoad.unblock();
 		await background.evaluate(() => window.__prepare());
 		check(
 			"a later load refetches rather than reusing the failed promise",
-			attempts === 2,
-			`${attempts} request(s)`,
+			backgroundLoad.requests() === 2,
+			`${backgroundLoad.requests()} request(s)`,
 		);
 		await background.close();
 	}
-	const live = await browser.newPage();
-	watch(live);
-	let blocked = true;
-	let requests = 0;
-	await live.route(/\/paint-wear[^/]*\.webp/, (route) => {
-		requests++;
-		return blocked ? route.abort() : route.continue();
-	});
-	await live.addInitScript(() => {
-		window.__rejections = [];
-		window.addEventListener("unhandledrejection", (event) =>
-			window.__rejections.push(String(event.reason)),
-		);
-	});
+	const liveLoad = await blockedPage(/\/paint-wear[^/]*\.webp/);
+	const live = liveLoad.page;
 	await live.goto(
 		gameUrl(ORIGIN, {
 			seed: 42,
@@ -290,11 +310,13 @@ try {
 	}));
 	check(
 		"a live background Bollard keeps its procedural stand-in after an image failure",
-		requests > 0 && !standin.authored && standin.rejections.length === 0,
-		JSON.stringify({ requests, ...standin }),
+		liveLoad.requests() > 0 &&
+			!standin.authored &&
+			standin.rejections.length === 0,
+		JSON.stringify({ requests: liveLoad.requests(), ...standin }),
 	);
-	const failedRequests = requests;
-	blocked = false;
+	const failedRequests = liveLoad.requests();
+	liveLoad.unblock();
 	await live.evaluate(async () => {
 		const { prepareTugHullModel } = await import("/src/tug-hull.ts");
 		await prepareTugHullModel();
@@ -302,7 +324,7 @@ try {
 	});
 	check(
 		"a later live load refetches and installs the authored Bollard",
-		requests === failedRequests + 1 &&
+		liveLoad.requests() === failedRequests + 1 &&
 			(await live.evaluate(
 				() =>
 					!!window.__seelite.shipMesh.userData.authored &&
