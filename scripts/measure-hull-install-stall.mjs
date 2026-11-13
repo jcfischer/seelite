@@ -151,6 +151,7 @@ try {
 						"/src/authored-hull.ts"
 					);
 					const urls = await import("/src/model-urls.ts");
+					const { sharedImagePlugin } = await import("/src/shared-image.ts");
 					const made = await import(h.module);
 					// The loader and decoder the game itself imports: their URLs read
 					// off vite's transform of `authored-hull.ts`, which loads every
@@ -188,6 +189,7 @@ try {
 					const t0 = performance.now();
 					const gltf = await new GLTFLoader()
 						.setMeshoptDecoder(MeshoptDecoder)
+						.register(sharedImagePlugin())
 						.parseAsync(bytes.slice(0), "");
 					const t1 = performance.now();
 					const builder = await made[h.create](gltf.scene);
