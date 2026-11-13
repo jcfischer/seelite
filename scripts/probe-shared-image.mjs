@@ -7,8 +7,9 @@
  * 1. **Two exteriors, one image.** Two models drawn in one renderer use one
  *    texture object and one GPU texture, from one request.
  * 2. **The interiors keep their own settings.** A third model under the
- *    interior owner adds one GPU texture and no request, and writing anisotropy
- *    on its map, as `interior-kit.ts` does, leaves the exteriors' alone.
+ *    interior owner adds no request. Where the exteriors draw at the
+ *    interiors' anisotropy of 8 it shares their upload, and changing it adds one;
+ *    otherwise it adds one GPU texture and the exteriors keep their own.
  * 3. **Tearing one down keeps the other.** The survivor's frame reads the same
  *    bytes and the renderer still counts its texture.
  * 4. **A boot that needs the image and cannot fetch it offers Retry**, and the
@@ -95,6 +96,7 @@ try {
 			prepare: "prepareOutpostModel",
 			prepareArgs: ["a"],
 			modelsFull: false,
+			anisotropy: 8,
 			bootAttempts: (n) => n === 1,
 		},
 		{
@@ -106,6 +108,7 @@ try {
 			prepare: "prepareTugHullModel",
 			prepareArgs: [],
 			modelsFull: true,
+			anisotropy: 1,
 			bootAttempts: (n) => n >= 1,
 		},
 	];
@@ -153,9 +156,16 @@ try {
 			const afterB = count();
 			const interior = await page.loadShared(modelCase.owner, "interior");
 			const mapInterior = page.mapOf(interior.scene, modelCase.name);
+			const interiorAnisotropy = mapInterior.anisotropy;
 			mapInterior.anisotropy = 8;
 			frame(quad(mapInterior));
 			const afterInterior = count();
+			if (modelCase.anisotropy === 8) {
+				mapInterior.anisotropy = 4;
+				mapInterior.needsUpdate = true;
+				frame(quad(mapInterior));
+			}
+			const afterOwnerChange = count();
 			const report = page.disposeSubtree(a.scene);
 			const again = frame(scene);
 			return {
@@ -163,6 +173,8 @@ try {
 				afterA,
 				afterB,
 				afterInterior,
+				afterOwnerChange,
+				interiorAnisotropy,
 				sameMap: mapA === mapB,
 				sharedSource: mapInterior.source === mapA.source,
 				ownMap: mapInterior !== mapA,
@@ -182,15 +194,22 @@ try {
 				drawn.afterB === drawn.afterA,
 			JSON.stringify(drawn),
 		);
+		const shared = modelCase.anisotropy === 8;
 		check(
-			"a named owner adds one GPU texture over the same decoded image",
+			shared
+				? "the interior owner shares the GPU upload at anisotropy 8"
+				: "a named owner adds one GPU texture over the same decoded image",
 			drawn.ownMap &&
 				drawn.sharedSource &&
-				drawn.afterInterior === drawn.afterB + 1,
+				(!shared || drawn.interiorAnisotropy === 8) &&
+				drawn.afterInterior === drawn.afterB + (shared ? 0 : 1),
 		);
 		check(
-			"writing an owner's anisotropy leaves the exteriors' alone",
-			drawn.exteriorAnisotropy === 1,
+			shared
+				? "changing the owner's anisotropy adds an upload and leaves the exteriors at 8"
+				: "writing an owner's anisotropy leaves the exteriors' alone",
+			drawn.exteriorAnisotropy === modelCase.anisotropy &&
+				drawn.afterOwnerChange === drawn.afterInterior + (shared ? 1 : 0),
 		);
 		check(
 			"three models fetched the image once",
@@ -200,7 +219,7 @@ try {
 		check(
 			"tearing one model down keeps the other's texture and its frame",
 			drawn.kept &&
-				drawn.afterTeardown === drawn.afterInterior &&
+				drawn.afterTeardown === drawn.afterOwnerChange &&
 				drawn.frameKept &&
 				drawn.frameLit,
 		);

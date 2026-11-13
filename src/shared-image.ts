@@ -8,10 +8,12 @@
  * so the model's next load fetches again, and rejects the load, because three's
  * own texture path answers a failed image with an untextured model.
  *
- * Models keep the one texture object, so the renderer keeps one upload.
- * `interior-kit.ts` writes anisotropy onto the map it is handed, and that key
- * is part of three's upload key, so the interiors load under an `owner` of
- * their own: another texture over the same decoded `Source`.
+ * Models keep one texture object. An `owner` isolates its settings on another
+ * texture over the same decoded `Source`. The registry applies an image's
+ * optional anisotropy before cloning; matching sampler settings share one GPU
+ * upload even across owner copies, including the interiors at anisotropy 8.
+ * Consumers identify registry maps by Source, including owner copies and clones,
+ * and leave their sampler policy to the registry.
  */
 import * as THREE from "three";
 import type {
@@ -27,6 +29,12 @@ export const EXTENSION = "SEELITE_shared_image";
 
 /** `GLTFParser.textureLoader`: whichever loader three chose for this browser. */
 export type ImageLoader = THREE.TextureLoader | THREE.ImageBitmapLoader;
+
+const registrySources = new WeakSet<THREE.Source>();
+
+/** Whether a texture uses a registry-owned image, including owner copies and clones. */
+export const isSharedImage = (texture: THREE.Texture): boolean =>
+	registrySources.has(texture.source);
 
 const decode = (url: string, loader: ImageLoader): Promise<THREE.Texture> =>
 	new Promise((resolve, reject) => {
@@ -65,6 +73,8 @@ export function createSharedImages(
 			texture.minFilter = THREE.LinearMipmapLinearFilter;
 			texture.wrapS = THREE.RepeatWrapping;
 			texture.wrapT = THREE.RepeatWrapping;
+			if (image.anisotropy !== undefined) texture.anisotropy = image.anisotropy;
+			registrySources.add(texture.source);
 			return shared(texture);
 		});
 		bases.set(sha256, loading);

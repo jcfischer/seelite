@@ -302,7 +302,7 @@ describe("the prepared shipping models", () => {
 	);
 
 	test.each(MODELS)(
-		"%s loads through the plugin with the embedded texture's settings",
+		"%s loads through the plugin with the shared texture settings",
 		async (model) => {
 			const image = new THREE.Texture();
 			const registry = createSharedImages(SHARED_IMAGES, async () => image);
@@ -332,7 +332,7 @@ describe("the prepared shipping models", () => {
 			expect(image.magFilter).toBe(THREE.LinearFilter);
 			expect(image.minFilter).toBe(THREE.LinearMipmapLinearFilter);
 			expect(image.generateMipmaps).toBe(true);
-			expect(image.anisotropy).toBe(1);
+			expect(image.anisotropy).toBe(8);
 			expect(image.name).toBe(INDUSTRIAL_SURFACE.name);
 		},
 	);
@@ -375,6 +375,44 @@ describe("the shared image registry", () => {
 			},
 		};
 	};
+
+	test("industrial-surface and its owner copy resolve at anisotropy 8", async () => {
+		const { load } = counting();
+		const images = createSharedImages(SHARED_IMAGES, load);
+		const own = await images.texture(
+			INDUSTRIAL_SURFACE.sha256,
+			"interior",
+			LOADER,
+		);
+		const base = await images.texture(
+			INDUSTRIAL_SURFACE.sha256,
+			undefined,
+			LOADER,
+		);
+		expect(base.anisotropy).toBe(8);
+		expect(own.anisotropy).toBe(8);
+		expect(own.source).toBe(base.source);
+	});
+
+	test("an image without anisotropy keeps three's default on every owner", async () => {
+		const { load } = counting();
+		const images = createSharedImages(
+			{ [HASH]: { url: "/paint-wear.webp", name: "paint-wear" } },
+			load,
+		);
+		for (const owner of [undefined, "interior"])
+			expect((await images.texture(HASH, owner, LOADER)).anisotropy).toBe(1);
+	});
+
+	test("anisotropy is read from each entry rather than applied globally", async () => {
+		const { load } = counting();
+		const images = createSharedImages(
+			{ [HASH]: { ...TABLE[HASH], anisotropy: 4 } },
+			load,
+		);
+		for (const owner of [undefined, "interior"])
+			expect((await images.texture(HASH, owner, LOADER)).anisotropy).toBe(4);
+	});
 
 	test("fetches once and hands two exterior callers one texture", async () => {
 		const { calls, load } = counting();
