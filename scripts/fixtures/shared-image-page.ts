@@ -9,6 +9,7 @@ export { disposeSubtree } from "../../src/gpu-teardown";
 export { ModelQueue } from "../../src/model-queue";
 export { prepareTugHullModel } from "../../src/tug-hull";
 export { prepareOutpostModel } from "../../src/outpost-flight";
+export { prepareRefineryModel } from "../../src/refinery-flight";
 export {
 	ASSEMBLY_GLB_URL,
 	BOLLARD_TUG_GLB_URL,

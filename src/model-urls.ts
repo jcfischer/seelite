@@ -88,6 +88,10 @@ export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
 		url: new URL("./models/paint-wear.webp", import.meta.url).href,
 		name: "paint-wear",
 	},
+	"7e3dc547c074ca91cf500ce8075b935be53fd84d5f0bf733fb5b0594cceb9014": {
+		url: new URL("./models/rock-albedo.webp", import.meta.url).href,
+		name: "rock-albedo",
+	},
 	"10d4d0776274448b52fc3191941d09dc0a74f1967854f23f86406188bf1eedd7": {
 		url: new URL("./models/industrial-surface.webp", import.meta.url).href,
 		name: "industrial-surface",

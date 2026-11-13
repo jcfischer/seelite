@@ -5,7 +5,9 @@
  *   npm run probe:one probe-shared-image
  *
  * 1. **Two exteriors, one image.** Two models drawn in one renderer use one
- *    texture object and one GPU texture, from one request.
+ *    texture object and one GPU texture, from one request. Checked for each
+ *    image: `industrial-surface`, `paint-wear` and the refineries' `rock-albedo`
+ *    (node #1227), whose two drawn models are two of its four prepared forms.
  * 2. **The interiors keep their own settings.** A third model under the
  *    interior owner adds no request. Where the exteriors draw at the
  *    interiors' anisotropy of 8 it shares their upload, and changing it adds one;
@@ -13,8 +15,9 @@
  * 3. **Tearing one down keeps the other.** The survivor's frame reads the same
  *    bytes and the renderer still counts its texture.
  * 4. **A boot that needs the image and cannot fetch it offers Retry**, and the
- *    retry fetches it again and boots. A fresh pilot's home is always a model
- *    that uses it, so this is the failure a player meets.
+ *    retry fetches it again and boots. A fresh pilot's home is a model that uses
+ *    `industrial-surface`; `paint-wear` and `rock-albedo` reach a boot only
+ *    through the full-model flag, which is the arm each of those cases takes.
  * 5. **A background model keeps its stand-in.** On the queue's seam with the real
  *    outpost loader: the entry fails, nothing goes unhandled, and a later load
  *    fetches again. A live `Game` cannot reach this without a save docked at a
@@ -80,6 +83,8 @@ try {
 		return {
 			bollard: p.BOLLARD_TUG_GLB_URL,
 			refinery: p.REFINERY_GLB_URLS.a,
+			refinerySpar: p.REFINERY_GLB_URLS.c,
+			refineryWorks: p.REFINERY_GLB_URLS.d,
 			outpost: p.OUTPOST_GLB_URLS.a,
 			trade: p.TRADE_GLB_URLS.b,
 			interior: p.STATION_INTERIORS_GLB_URL,
@@ -109,6 +114,17 @@ try {
 			prepareArgs: [],
 			modelsFull: true,
 			anisotropy: 1,
+			bootAttempts: (n) => n >= 1,
+		},
+		{
+			name: "rock-albedo",
+			image: /\/rock-albedo[^/]*\.webp/,
+			a: urls.refinery,
+			b: urls.refinerySpar,
+			owner: urls.refineryWorks,
+			prepare: "prepareRefineryModel",
+			prepareArgs: ["a"],
+			modelsFull: true,
 			bootAttempts: (n) => n >= 1,
 		},
 	];
@@ -351,6 +367,74 @@ try {
 			)),
 	);
 	await live.close();
+
+	const liveRefineryLoad = await blockedPage(/\/rock-albedo[^/]*\.webp/);
+	const liveRefinery = liveRefineryLoad.page;
+	await liveRefinery.goto(
+		gameUrl(ORIGIN, {
+			seed: 42,
+			system: 0,
+			"no-save": true,
+			voices: "formant",
+			raider: "off",
+			"models-full": false,
+		}),
+	);
+	await bootedGame(liveRefinery, 120000);
+	await liveRefinery.waitForFunction(
+		() => window.__seelite.modelsSettled(),
+		undefined,
+		{ timeout: 120000 },
+	);
+	const refineryStandin = await liveRefinery.evaluate(async () => {
+		const { isAuthoredStation } = await import("/src/station-visuals.ts");
+		const g = window.__seelite;
+		const body = g.world.system.bodies.find(
+			(b) => b.kind === "station" && b.stationType === "refinery",
+		);
+		if (!body) throw new Error("fixture has no refinery");
+		window.__refineryId = body.id;
+		return {
+			authored: isAuthoredStation(g.stationVisuals.get(body.id).root),
+			rejections: window.__rejections,
+		};
+	});
+	check(
+		"a live background refinery keeps its procedural stand-in after an image failure",
+		liveRefineryLoad.requests() > 0 &&
+			!refineryStandin.authored &&
+			refineryStandin.rejections.length === 0,
+		JSON.stringify({
+			requests: liveRefineryLoad.requests(),
+			...refineryStandin,
+		}),
+	);
+	const failedRefineryRequests = liveRefineryLoad.requests();
+	liveRefineryLoad.unblock();
+	await liveRefinery.evaluate(async () => {
+		const { prepareRefineryModel } = await import("/src/refinery-flight.ts");
+		const { stationModel } = await import("/src/model-catalog.ts");
+		const g = window.__seelite;
+		const station = g.world.system.contents.stations.find(
+			(s) => s.id === window.__refineryId,
+		);
+		await prepareRefineryModel(station.formId);
+		await g.modelInstalled(stationModel(station));
+	});
+	check(
+		"a later live load refetches and installs the authored refinery",
+		liveRefineryLoad.requests() === failedRefineryRequests + 1 &&
+			(await liveRefinery.evaluate(async () => {
+				const { isAuthoredStation } = await import("/src/station-visuals.ts");
+				const g = window.__seelite;
+				return (
+					isAuthoredStation(g.stationVisuals.get(window.__refineryId).root) &&
+					g.renderer.info.memory.textures > 0 &&
+					window.__rejections.length === 0
+				);
+			})),
+	);
+	await liveRefinery.close();
 } finally {
 	await browser.close();
 }
