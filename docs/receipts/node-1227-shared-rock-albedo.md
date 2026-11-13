@@ -146,8 +146,12 @@ its default arm is #1226's and is unchanged). Three new-browser loads per build,
 alternating base and head against the two Vite dev servers, seed 2, High,
 1440×900 at device scale 2 (buffer 2880×1800), ANGLE Metal / Apple M5 Pro. The
 generator puts at most one refinery in a system, so the fixture draws the
-system's own refinery and then a second form built by the same production
-`buildStationForm` and drawn at the same body; the second phase is timed
+system's own refinery and then a second authored form through the same
+production `buildStationForm`. The instrument waits for the four-form install
+queue, asserts the second form's authored model is the one it built, swaps it
+into `stationVisuals` and `meshes` through the renderer's own `setLayer` rule,
+and draws 60 frames — the same swap `measure-shipyard-lod.mjs` uses. The build
+is timed around the call alone, and the second form's frames are timed
 separately so the cold-install stall still belongs to the model install.
 
 | Measurement | Base 58a5c2a2 | Head |
@@ -156,20 +160,24 @@ separately so the cold-install stall still belongs to the model install.
 | Asset requests | 35 | 36 |
 | `rock-albedo` requests | 0 | 1 |
 | The four refinery GLBs' bytes | 27,347,376 | 16,466,548 |
-| rock-albedo textures across the two drawn forms | 2 | 1 |
-| Longest frame gap (cold install) | 250, 250, 250 ms | 267, 233, 250 ms |
-| Frames over 100 ms | 1, 2, 2 | 2, 2, 2 |
-| Second form's build (instrument, not install) | 1,097 ms ×3 | 1,097 ms ×3 |
+| rock-albedo texture objects across the two drawn forms | 2 | 1 |
+| GPU textures added by drawing the second form | 1 | 0 |
+| Longest frame gap (cold install, four runs) | 300, 283, 267, 315 ms | 267, 300, 317, 317 ms |
+| Frames over 100 ms | 2, 2, 2, 3 | 3, 3, 3, 4 |
+| Second form's build (instrument, not install) | 1 ms ×3 | 1 ms ×3 |
+| Second form's longest frame gap | 18.7, 18.5, 18.3 ms | 18.5, 18.7, 18.5 ms |
 
 Bytes fall by exactly 8,160,908, matching the four prepared models plus the
-shared image. The two drawn forms keep one albedo texture instead of two. Frame
-gaps are vsync-quantised and the ranges overlap; these three runs do not
-establish a stall saving, and the whole-page `renderer.info.memory.textures`
-delta for the second form (7 on both builds) is not attributed to the image —
-the per-image GPU count is the isolated-renderer probe's evidence, not this
-one's.
+shared image. Both roots are drawn: on the base build the second form's own
+embedded albedo is the one GPU texture its draw adds (`77 → 78`), and on this
+head it adds none (`77 → 77`), which is the shared image. Painting the second
+form is 1 ms on both builds before its 60 frames. Frame gaps are
+vsync-quantised and the ranges overlap; these four runs do not establish a
+stall saving, and the head's longest gaps sit slightly higher in this sample.
 
-Logs: `/tmp/node1227-{base,head}-forms-{1,2,3}.json` and the single
+Logs: `/tmp/node1227-fix-{base,head}-forms-{1,2,3}.json` and the fourth run of
+the final instrument in `/tmp/node1227-fix-{base,head}-forms-final.json`, which
+reproduced both builds' texture figures; plus the single
 `/tmp/node1227-head-default.json`, which re-ran #1226's own arm on the prepared
 assets and reported its `paint-wear` map counts unchanged.
 

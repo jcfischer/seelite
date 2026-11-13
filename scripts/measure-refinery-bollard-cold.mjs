@@ -6,10 +6,12 @@
  * observes boot/sky readiness and end after 120 settled frames; earlier work is excluded.
  *
  * `--refinery-forms` (node #1227) draws the fixture's own refinery and then a
- * second form through the same production builder, because the generator puts
- * at most one refinery in a system and the shared rock-albedo's claim is about
- * two drawn forms. Its second phase is timed separately, so the cold-install
- * stall still belongs to the model install and not to the instrument's build.
+ * second authored form through the same production builder and the renderer's
+ * own swap, because the generator puts at most one refinery in a system and the
+ * shared rock-albedo's claim is about two drawn forms. The build is timed around
+ * the build alone and the second form's frames are timed separately, so the
+ * cold-install stall still belongs to the model install and not to the
+ * instrument.
  */
 import { loadavg } from "node:os";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -189,10 +191,12 @@ try {
 		const record = g.world.system.contents.stations.find(
 			(s) => s.id === window.__refineryId,
 		);
-		const first = station;
-		const texturesAfterFirst = g.renderer.info.memory.textures;
 		const { buildStationForm } = await import("/src/station-mesh.ts");
+		await g.loadRefineriesAfterBoot();
+		const first = g.stationVisuals.get(window.__refineryId);
+		if (!first) throw new Error("fixture refinery has no visual");
 		const other = ["a", "b", "c", "d"].find((f) => f !== record.formId);
+		const buildStartedAt = performance.now();
 		const second = buildStationForm(
 			"refinery",
 			other,
@@ -200,8 +204,17 @@ try {
 			record.berthSeed,
 			record.assemblySeed,
 		);
-		const builtAt = performance.now();
+		const secondBuildMs = Math.round(performance.now() - buildStartedAt);
+		if (!second.root.getObjectByName(`refinery-${other}-model`))
+			throw new Error(
+				`second refinery form ${other} is not the authored model`,
+			);
+		const texturesAfterFirst = g.renderer.info.memory.textures;
+		second.root.name = body.id;
+		first.root.removeFromParent();
 		g.stationVisuals.set(window.__refineryId, second);
+		g.meshes.set(window.__refineryId, second.root);
+		g.setLayer(body, g.layers.get(body.id) ?? "far");
 		const secondGaps = [];
 		let last;
 		await new Promise((resolve) => {
@@ -214,23 +227,34 @@ try {
 			requestAnimationFrame(tick);
 		});
 		const sortedSecond = secondGaps.sort((a, b) => b - a);
+		const texturesAfterSecond = g.renderer.info.memory.textures;
 		const mineral = new Set([
 			...mineralMaps(first.root),
 			...mineralMaps(second.root),
 		]);
+		const paint = new Set([
+			...mapsNamed(first.root, "paint-wear"),
+			...mapsNamed(second.root, "paint-wear"),
+		]);
+		const secondDrawn =
+			g.meshes.get(window.__refineryId) === second.root &&
+			second.root.parent !== null &&
+			second.root.position.lengthSq() > 0;
+		second.root.removeFromParent();
+		g.stationVisuals.set(window.__refineryId, first);
+		g.meshes.set(window.__refineryId, first.root);
+		g.setLayer(body, g.layers.get(body.id) ?? "far");
 		return {
 			...shared,
 			formDrawn: record.formId,
 			formSecond: other,
+			secondDrawn,
 			texturesAfterFirst,
-			textures: g.renderer.info.memory.textures,
-			textureDelta: g.renderer.info.memory.textures - texturesAfterFirst,
+			textures: texturesAfterSecond,
+			textureDelta: texturesAfterSecond - texturesAfterFirst,
 			rockMaps: mineral.size,
-			paintMaps: new Set([
-				...mapsNamed(first.root, "paint-wear"),
-				...mapsNamed(second.root, "paint-wear"),
-			]).size,
-			secondBuildMs: Math.round(performance.now() - builtAt),
+			paintMaps: paint.size,
+			secondBuildMs,
 			secondStallMs: sortedSecond[0],
 			secondFrames: sortedSecond.length,
 		};
@@ -238,11 +262,17 @@ try {
 	await Promise.all(pendingSizes);
 	if (failures.length) throw new Error(failures.join("\n"));
 	if (
-		![report.stallMs, report.textures, ...fetched.map((f) => f.bytes)].every(
-			Number.isFinite,
-		)
+		![
+			report.stallMs,
+			report.textures,
+			report.secondBuildMs ?? 0,
+			report.secondStallMs ?? 0,
+			...fetched.map((f) => f.bytes),
+		].every(Number.isFinite)
 	)
 		throw new Error("non-finite cold-load measurement");
+	if (FORMS && !report.secondDrawn)
+		throw new Error("the second refinery form was not drawn");
 	console.log(
 		JSON.stringify({
 			renderer,
