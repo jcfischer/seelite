@@ -201,10 +201,21 @@ try {
 	});
 	await placeNear(page, fixture, 9.9, { step: true, look: "left" });
 	await page.locator('[data-live-left-tab="Navigation"]').click();
-	const nav = page.locator('[data-live-nav-target="' + fixture.key + '"]');
+	const navSelector = '[data-live-nav-target="' + fixture.key + '"]';
+	const nav = page.locator(navSelector);
+	const paintedRowText = (selector) =>
+		page.evaluate(async (s) => {
+			for (let frame = 0; frame < 10; frame++) {
+				const painted = document.querySelector(s)?.innerText;
+				if (painted) return painted;
+				await new Promise((done) => requestAnimationFrame(done));
+			}
+			return "";
+		}, selector);
+	const navText = await paintedRowText(navSelector);
 	check(
 		"visual floor writes knowledge and paints selectable Navigation wreck",
-		(await nav.count()) === 1 && (await nav.innerText()).includes("Derelict"),
+		(await nav.count()) === 1 && navText.includes("Derelict"),
 	);
 	await nav.click();
 	const found = await page.evaluate((f) => {

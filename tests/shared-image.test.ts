@@ -493,6 +493,11 @@ const SHARED_BY_MODEL = [
 ]
 	.filter((model) => (originals as Record<string, unknown>)[model])
 	.sort();
+const ANISOTROPY_BY_IMAGE: Record<string, number> = {
+	[INDUSTRIAL_SURFACE.name]: 8,
+	[PAINT_WEAR.name]: 1,
+	[ROCK_ALBEDO.name]: 1,
+};
 
 describe("a model sharing one or more images", () => {
 	test.each(SHARED_BY_MODEL)(
@@ -560,7 +565,8 @@ describe("a model sharing one or more images", () => {
 				expect(map.magFilter).toBe(THREE.LinearFilter);
 				expect(map.minFilter).toBe(THREE.LinearMipmapLinearFilter);
 				expect(map.generateMipmaps).toBe(true);
-				expect(map.anisotropy).toBe(1);
+				expect(ANISOTROPY_BY_IMAGE[map.name]).toBeDefined();
+				expect(map.anisotropy).toBe(ANISOTROPY_BY_IMAGE[map.name]);
 			}
 		},
 	);
