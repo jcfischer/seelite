@@ -53,10 +53,26 @@ export const PAINT_WEAR = Object.freeze({
 	]),
 });
 
+/** The refinery asteroid's albedo (node #1227), embedded by the four models
+ *  whose `mineral-*` materials sample it. Not the field rock tile:
+ *  `asteroids.glb` carries its own albedo and normal. */
+export const ROCK_ALBEDO = Object.freeze({
+	sha256: "7e3dc547c074ca91cf500ce8075b935be53fd84d5f0bf733fb5b0594cceb9014",
+	name: "rock-albedo",
+	file: "src/models/rock-albedo.webp",
+	models: Object.freeze([
+		"refinery-collar",
+		"refinery-spar",
+		"refinery-warren",
+		"refinery-works",
+	]),
+});
+
 /** Preparation table shared by instruments and future image-sharing nodes. */
 export const SHARED_MODEL_IMAGES = Object.freeze([
 	INDUSTRIAL_SURFACE,
 	PAINT_WEAR,
+	ROCK_ALBEDO,
 ]);
 
 const WEBP = "EXT_texture_webp";

@@ -18,6 +18,8 @@ import originals from "./fixtures/shared-image-originals.json";
 import {
 	INDUSTRIAL_SURFACE,
 	PAINT_WEAR,
+	ROCK_ALBEDO,
+	SHARED_MODEL_IMAGES,
 	shareImage,
 	writeGlb,
 	SHARED_IMAGE_EXTENSION,
@@ -444,37 +446,106 @@ describe("the shared image registry", () => {
 	});
 });
 
-describe("paint-wear shipping models", () => {
-	test.each([...PAINT_WEAR.models])(
-		"%s preserves original attributes and materials and removes only paint-wear",
+const sharedImagesOf = (model: string) =>
+	SHARED_MODEL_IMAGES.filter((image) =>
+		(image.models as readonly string[]).includes(model),
+	);
+const SHARED_BY_MODEL = [
+	...new Set(SHARED_MODEL_IMAGES.flatMap((image) => image.models)),
+]
+	.filter((model) => (originals as Record<string, unknown>)[model])
+	.sort();
+
+describe("a model sharing one or more images", () => {
+	test.each(SHARED_BY_MODEL)(
+		"%s embeds none of them, decodes to the original and is smaller by each",
 		async (model) => {
 			const file = readFileSync(pathOf(model));
 			const json = documentOf(file);
-			expect(json.textures[0].extensions).toEqual({
-				[EXTENSION]: { sha256: PAINT_WEAR.sha256 },
-			});
-			expect(json.images?.map((i: any) => i.name) ?? []).toEqual(
-				model.startsWith("refinery-") ? ["rock-albedo"] : [],
+			const images = sharedImagesOf(model);
+			expect(json.textures.map((texture: any) => texture.extensions)).toEqual(
+				images.map((image) => ({ [EXTENSION]: { sha256: image.sha256 } })),
 			);
+			expect(json.images).toBeUndefined();
 			const now = await glbDigest(pathOf(model));
 			const was = (originals as any)[model];
 			expect(now.attributes).toBe(was.attributes);
 			expect(now.document).toBe(was.document);
-			expect(was.bytes - now.bytes).toBeGreaterThan(2_167_324 - 4096);
-			expect(was.bytes - now.bytes).toBeLessThan(2_167_324 + 4096);
-			expect(Buffer.from(shareImage(file, PAINT_WEAR.sha256).bytes)).toEqual(
-				file,
+			const shared = images.reduce(
+				(sum, image) => sum + readFileSync(image.file).length,
+				0,
 			);
+			expect(was.bytes - now.bytes).toBeGreaterThan(shared - 4096);
+			expect(was.bytes - now.bytes).toBeLessThan(shared + 4096);
+			for (const image of images)
+				expect(Buffer.from(shareImage(file, image.sha256).bytes)).toEqual(file);
 		},
 	);
 
-	test("the registered shared file is exactly the original image", () => {
-		const bytes = readFileSync(PAINT_WEAR.file);
-		expect(bytes.length).toBe(2_167_324);
-		expect(createHash("sha256").update(bytes).digest("hex")).toBe(
-			PAINT_WEAR.sha256,
+	test.each(SHARED_BY_MODEL)(
+		"%s resolves every texture to its shared image with the embedded settings",
+		async (model) => {
+			const fetched: string[] = [];
+			const registry = createSharedImages(SHARED_IMAGES, async (url) => {
+				fetched.push(url);
+				return new THREE.Texture();
+			});
+			const bytes = readFileSync(pathOf(model));
+			const gltf = await new GLTFLoader()
+				.setMeshoptDecoder(MeshoptDecoder)
+				.register(sharedImagePlugin(undefined, registry))
+				.parseAsync(
+					bytes.buffer.slice(
+						bytes.byteOffset,
+						bytes.byteOffset + bytes.byteLength,
+					) as ArrayBuffer,
+					"",
+				);
+			const maps = new Set<THREE.Texture>();
+			gltf.scene.traverse((o) => {
+				const { material } = o as THREE.Mesh;
+				for (const m of [material ?? []].flat())
+					if ((m as THREE.MeshStandardMaterial).map)
+						maps.add((m as THREE.MeshStandardMaterial).map!);
+			});
+			expect([...maps].map((map) => map.name).sort()).toEqual(
+				sharedImagesOf(model)
+					.map((image) => image.name)
+					.sort(),
+			);
+			expect(fetched).toHaveLength(maps.size);
+			for (const map of maps) {
+				expect(map.flipY).toBe(false);
+				expect(map.colorSpace).toBe(THREE.SRGBColorSpace);
+				expect(map.wrapS).toBe(THREE.RepeatWrapping);
+				expect(map.wrapT).toBe(THREE.RepeatWrapping);
+				expect(map.magFilter).toBe(THREE.LinearFilter);
+				expect(map.minFilter).toBe(THREE.LinearMipmapLinearFilter);
+				expect(map.generateMipmaps).toBe(true);
+				expect(map.anisotropy).toBe(1);
+			}
+		},
+	);
+});
+
+describe("the shared files hold the images the models embedded", () => {
+	test.each([...SHARED_MODEL_IMAGES])("$name", ({ sha256, name, file }) => {
+		const bytes = readFileSync(file);
+		expect(createHash("sha256").update(bytes).digest("hex")).toBe(sha256);
+		expect(SHARED_IMAGES[sha256]?.name).toBe(name);
+	});
+
+	test("rock-albedo is the refinery asteroid's own image, not the field tile", () => {
+		expect(readFileSync(ROCK_ALBEDO.file).length).toBe(2_719_920);
+		expect(SHARED_IMAGES[ROCK_ALBEDO.sha256]?.name).toBe("rock-albedo");
+		expect([...ROCK_ALBEDO.models].sort()).toEqual(
+			[
+				"refinery-collar",
+				"refinery-spar",
+				"refinery-warren",
+				"refinery-works",
+			].sort(),
 		);
-		expect(SHARED_IMAGES[PAINT_WEAR.sha256]?.name).toBe("paint-wear");
 	});
 });
 
@@ -495,8 +566,6 @@ test.each(["bollard-tug", "refinery-warren", "trade-drum"])(
 			model === "trade-drum" ? INDUSTRIAL_SURFACE.sha256 : PAINT_WEAR.sha256,
 		);
 		if (model === "refinery-warren")
-			expect(hashes).toContain(
-				"7e3dc547c074ca91cf500ce8075b935be53fd84d5f0bf733fb5b0594cceb9014",
-			);
+			expect(hashes).toContain(ROCK_ALBEDO.sha256);
 	},
 );
