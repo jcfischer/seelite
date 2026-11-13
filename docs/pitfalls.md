@@ -340,6 +340,17 @@ was written in; the history it tells is still this text's history.
   `bringToFront` (736 frames inside one arm), so the arm that is not being
   measured has its `requestAnimationFrame` replaced with a recorder and the run
   asserts both its frame counter and its **game clock** hold still.
+- **A contained row paints after the tick it is written (#1234).**
+  `content-visibility: auto` lays a row out and paints it at the next rendering
+  opportunity, not synchronously, so a DOM read on the tick the Navigation list
+  is built sees a row with a box in the scrollport and no rendered text:
+  `probe-derelict.mjs` read `innerText` there and got `""`, two frames before
+  the same read returned the row. An assertion about paint reads a settled row.
+  Exempting the six rows the panel shows from the containment does not buy that
+  paint back for free: on the populated path it cost **3 ms of task and the
+  dropped intervals** (9.66 ms of task and 30 late of 357 against 6.67 ms and 1
+  of 357), because the visible rows' paint then invalidates the panel around
+  them.
 - **A station can leave AO open after cruise carries it out of view (#1235).**
   Spatial separation alone does not prove that station-held AO beside a close
   rock is unreachable: the gate closes after 30 rendered frames. Fly the

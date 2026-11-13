@@ -54,6 +54,25 @@ rasterised. Captures: `/tmp/nav-identity-cv-top.png`,
 `/tmp/nav-identity-diff.png`. **The principal's yes on that difference is owed**,
 and it is the only visible consequence of this node.
 
+**A contained row paints on the panel's second frame, not on the tick it is
+written.** Skipping the layout and paint of a row means it is laid out and
+painted at the next rendering opportunity, so a DOM read on the tick the list is
+built sees the row's box inside the scrollport with no rendered text. Measured
+on this path's own list: `innerText` was `""` on that tick and after one
+`requestAnimationFrame`, carried the row after the second, and still carried it
+200 ms later. `probe-derelict.mjs` read the row on that tick, so its `visual
+floor writes knowledge and paints selectable Navigation wreck` check failed
+against the empty string; the probe now waits for the row to have painted, which
+is what that check always meant.
+
+**The declaration is not scoped to the rows below the scrollport, and that is
+measured, not assumed.** `li:nth-child(n + 7)` leaves the six rows the 234 px
+panel can show out of the containment, and on this path that costs 3 ms of task
+and the dropped intervals back: 9.66 ms of task with 30 late of 357 intervals,
+against 6.67 ms with 1 of 357 for the whole list. Paint containment is what keeps
+the visible rows' redraw from invalidating the panel around them, so exempting
+them gives up most of the win.
+
 ## Workload and method
 
 `scripts/measure-mining-nav-budget.mjs`, run on 2026-11-13 (four runs, all on
@@ -223,6 +242,14 @@ each pass read rather than by the number of passes.
 
 Headless: `tests/mining-nav-budget.test.ts` (27 tests). Browser: the change is
 in the cockpit's Navigation list, so `probe-navigation-console.mjs` covers it —
-74/74 checks passed on the branch. A same-mode capture pair 1.5 s apart is
+74/74 checks passed on the branch, and `probe-derelict.mjs` 23/23 with its
+Navigation row read once painted. A same-mode capture pair 1.5 s apart is
 identical pixel for pixel, which is what makes the 0.392% mode difference an
 attributable difference and not camera noise.
+
+Re-ran the documented smoke pass on the reviewed head after the probe fix
+(`BLOCKS=2 FRAMES=120`, AA off, hardware lane): `nav-mining` 16.60 ms period, 1
+late of 357 intervals, 6.67 ms of task; `nav-off` 2.77 ms; `forward-mining` 3.26
+ms; added over the flag off 3.90 ms of task in 9 of 9 block pairs, verdict
+"within the 16.7 ms budget by 0.10 ms, 0.3% of frames late"
+(`/tmp/seelite-mining-nav-1234-uncond`).

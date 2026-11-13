@@ -503,7 +503,10 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 /* https://github.com/jcfischer/seelite/issues/1234 - a populated charted field
    puts 596 rows in this list and the panel shows six. Skipping the layout and
    paint of the rows outside it is 4.7 ms of frame the list used to spend on
-   rows no pilot can see. */
+   rows no pilot can see.
+   A contained row paints at the second rendering opportunity after it is
+   inserted, not on the tick its text is written: the panel's first painted
+   frame carries the rows, a same-tick DOM read of it does not. */
 .lc-nav-list > li { content-visibility: auto; contain-intrinsic-size: auto 45px; }
 .lc-sweep-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-height: 280px; overflow: auto; }
 .lc-sweep-list li { padding: 10px 12px; border-left: 3px solid #c39a60; background: #a0743012; }
