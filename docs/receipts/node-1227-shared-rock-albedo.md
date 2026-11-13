@@ -175,10 +175,24 @@ assets and reported its `paint-wear` map counts unchanged.
 
 ## Live probe and gates
 
-`npm run probe:pr -- --base origin/main --head HEAD` selects and runs the probes
-this diff can affect; the supervisor runs it on the final head. Headless:
-`npx tsc --noEmit`, `npm test`, `npm run build`, `npm run lint:comments`,
-`npm run format:check`, `npm run lint` and the wiring check.
+`node scripts/select-probes.mjs --base origin/main --head HEAD` falls back to the
+whole suite for this diff (`probe selection: all`, 124 probes) because the
+prepared `.glb` and new `.webp` paths have no dependency owner, so impact is
+unknown. The full run is the supervisor's; here the probes that cover the
+change were run on the committed head, GPU lane, ANGLE Metal / Apple M5 Pro:
+
+- `probe-shared-image.mjs` ok (43.2 s) — the new rock-albedo case included.
+- `probe-model-queue.mjs` ok (103.3 s) — a failed background install keeps its
+  stand-in.
+- `probe-station.mjs`, `probe-station-visuals.mjs`,
+  `probe-station-interior-kit.mjs`, `probe-station-mouth.mjs`,
+  `probe-station-console.mjs`, `probe-station-route-traffic.mjs` ok (136 s) —
+  every probe whose subject is a drawn station.
+
+Headless: `npx tsc --noEmit` clean, `npm test` 7,895 pass and 0 fail across 489
+files, `npm run build` with the 25 MiB guard ok, `npm run format:check`,
+`npm run lint`, `npm run lint:comments` and `node scripts/check-launcher-wiring.mjs`
+all clean.
 
 ## Review and delivery
 
