@@ -22,7 +22,10 @@
  * view a frame cost has that carries paint and compositing: a frame that fits
  * is presented on its refresh, and one that does not is presented late or
  * skipped, so a missed frame shows up as an interval past `LATE_FRAME_MS`
- * rather than as a number nobody can see. `--disable-gpu-vsync` was tried and
+ * rather than as a number nobody can see. Each pass records how many of its
+ * intervals were late and how many it read, and the share the budget is judged
+ * on is those counts summed, never a median of the passes' shares — see
+ * `lib/mining-nav-budget.mjs`. `--disable-gpu-vsync` was tried and
  * withdrawn: with the pacing lifted, `requestAnimationFrame` runs ahead of the
  * presented frame and the interval stops containing the frame's own cost at
  * all, which read 14.2 ms of period beside 15.0 ms of main-thread work in one
@@ -93,6 +96,10 @@ if (![0, 2, 4].includes(ANTIALIAS))
 	throw new Error(`invalid ANTIALIAS: ${ANTIALIAS}`);
 if (!Number.isFinite(MAX_LOAD) || MAX_LOAD <= 0)
 	throw new Error(`invalid MAX_LOAD: ${MAX_LOAD}`);
+if (FRAMES < 120)
+	console.warn(
+		`  warning: FRAMES=${FRAMES} is a plumbing run, not a reading. A pass that short is dominated by the frames just after its ship is re-stood: the same scene at FRAMES=60 read 8.5% late and 10.17 ms of task, where 119-interval passes read none and 6.63 ms.`,
+	);
 
 const releaseLock = await holdProbeLockOrExit("mining navigation frame budget");
 const host = { cores: cpus().length, before: loadavg(), samples: [] };
@@ -116,6 +123,7 @@ const provenance = {
 
 const SETUP = async ({ kind, aa, worldSeed, systemIndex }) => {
 	const A = await import("/src/asteroid-field.ts");
+	const C = await import("/scripts/lib/frame-control.mjs");
 	const F = await import("/scripts/lib/field-stands.mjs");
 	const L = await import("/src/field-lod.ts");
 	const T = await import("/src/rock-target.ts");
@@ -144,39 +152,7 @@ const SETUP = async ({ kind, aa, worldSeed, systemIndex }) => {
 		const v = A.fieldCentreVelocity(plan, g.world.gameTime);
 		return { x: v.x + drift.x, y: v.y + drift.y, z: v.z + drift.z };
 	};
-	window.__framesSoFar = 0;
-	const raf = window.requestAnimationFrame.bind(window);
-	let generation = 0;
-	let pending = [];
-	const countFrame = (gen) => {
-		if (gen !== generation) return;
-		window.__framesSoFar++;
-		raf(() => countFrame(gen));
-	};
-	raf(() => countFrame(generation));
-	window.__hold = () => {
-		generation++;
-		window.requestAnimationFrame = (callback) => {
-			pending.push(callback);
-			return 0;
-		};
-		return { pending: pending.length };
-	};
-	window.__holdState = () => ({
-		generation,
-		pending: pending.length,
-		frames: window.__framesSoFar,
-		gameTime: g.world.gameTime,
-		held: window.requestAnimationFrame.name === "",
-	});
-	window.__resume = () => {
-		window.requestAnimationFrame = raf;
-		const held = pending;
-		pending = [];
-		for (const callback of held) raf(callback);
-		generation++;
-		raf(() => countFrame(generation));
-	};
+	C.installFrameControl(window);
 	const place = (p, v) => window.__placeShipAt(p, v);
 	window.__arm = async (arm) => {
 		g.view = "cockpit";
@@ -370,7 +346,15 @@ const openPage = async (mining) => {
 const samples = Object.fromEntries(
 	["nav-mining", "nav-off", "forward-mining"].map((arm) => [
 		arm,
-		{ period: [], task: [], script: [], style: [], layout: [], late: [] },
+		{
+			period: [],
+			task: [],
+			script: [],
+			style: [],
+			layout: [],
+			late: [],
+			frames: [],
+		},
 	]),
 );
 const fastest = [];
@@ -444,9 +428,8 @@ try {
 			((after[name] - counters[name]) * 1000) / deltas.length;
 		fastest.push(Math.min(...deltas));
 		samples[arm].period.push(median(deltas));
-		samples[arm].late.push(
-			deltas.filter((ms) => ms > LATE_FRAME_MS).length / deltas.length,
-		);
+		samples[arm].late.push(deltas.filter((ms) => ms > LATE_FRAME_MS).length);
+		samples[arm].frames.push(deltas.length);
 		samples[arm].task.push(per("TaskDuration"));
 		samples[arm].script.push(per("ScriptDuration"));
 		samples[arm].style.push(per("RecalcStyleDuration"));
@@ -482,12 +465,12 @@ try {
 		`  display: fastest interval seen this run ${Math.min(...fastest).toFixed(2)} ms; a frame past ${LATE_FRAME_MS} ms is late`,
 	);
 	console.log(
-		"  arm             period    late    task  script   style  layout  (ms per frame and late share, medians of blocks)",
+		"  arm             period    late    task  script   style  layout  (ms per frame and late share, medians of block periods and pooled late frames)",
 	);
 	for (const row of summary.rows) {
 		const meter = (ms) => ms.toFixed(2).padStart(7);
 		console.log(
-			`  ${row.arm.padEnd(15)} ${meter(row.period)} ${`${(row.lateShare * 100).toFixed(1)}%`.padStart(7)} ${meter(row.task)} ${meter(row.script)} ${meter(row.style)} ${meter(row.layout)}   ${JSON.stringify(facts[row.arm])}`,
+			`  ${row.arm.padEnd(15)} ${meter(row.period)} ${`${(row.lateShare * 100).toFixed(1)}%`.padStart(7)} ${meter(row.task)} ${meter(row.script)} ${meter(row.style)} ${meter(row.layout)}   ${row.lateFrames} late of ${row.frames} frames   ${JSON.stringify(facts[row.arm])}`,
 		);
 	}
 	const pair = (label, key) => {

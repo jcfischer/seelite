@@ -116,7 +116,7 @@ const EXEMPT = new Map([
 	],
 	[
 		"measure-mining-nav-budget.mjs",
-		"node #1234's instrument for the ruled Navigation frame budget: it prints the whole-frame interval, the late-frame share and the main-thread split for the flag on, the flag off and the head-forward control, plus the row-press latency, and gates on nothing itself — the budget is a ruling the receipt checks. It refuses a page that will not hold still while another arm is measured, a pair of pages that are not the same field, an arm whose readings are missing or not costs, a control that dropped its own frames, and a software rasteriser, each by throwing out of the run",
+		"node #1234's instrument for the ruled Navigation frame budget: it prints the whole-frame interval, the late-frame share and the main-thread split for the flag on, the flag off and the head-forward control, plus the row-press latency, and gates on nothing itself — the budget is a ruling the receipt checks. It refuses a page that will not hold still while another arm is measured, a pair of pages that are not the same field, an arm whose readings are missing or not costs, a late count that is not a count or exceeds its pass's interval count, a control that dropped its own frames, and a software rasteriser, each by throwing out of the run",
 	],
 	[
 		"measure-docked-coriolis-cold.mjs",

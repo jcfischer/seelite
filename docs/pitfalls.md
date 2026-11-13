@@ -308,6 +308,25 @@ was written in; the history it tells is still this text's history.
 
 ## Measuring a frame: occlusion, cost and GPU timing
 
+- **A measurement pass shorter than its settle tail measures the settle
+  (#1234).** `scripts/measure-mining-nav-budget.mjs` re-stands the ship and
+  re-arms the cockpit at the start of every pass, and the frames just after
+  that carry the re-stand. Over 119-interval passes those cost nothing the
+  budget can see: 0 late intervals of 357 and 6.63 ms of task at the documented
+  `FRAMES=120`. Halving the pass to `FRAMES=60` in the same scene read **8.5%
+  late and 10.17 ms of task**, because the same fixed tail is now spread over
+  half as many intervals. Pass length is not a free knob: shorten it for
+  plumbing, never for a figure.
+- **A median of per-block late shares certifies a run that dropped frames
+  (#1234).** `scripts/lib/mining-nav-budget.mjs` judged the late share with
+  `median(blocks.late)` and reported **0%** for seven equal blocks reading
+  `0, 0, 0, 0, 50%, 50%, 50%`, which dropped 21.4% of the intervals it sampled;
+  the same aggregation on the control passed a control that should have
+  invalidated the run's attribution. A share of shares is not a share: a block
+  of frames is a sample, so record the late-interval **count** and the
+  interval count per block, and divide the sums. A mean of the shares is only
+  right when every block read the same number of frames, which nothing but the
+  count can tell you.
 - **A lifted vsync stops the `requestAnimationFrame` interval being a frame
   (#1234).** `--disable-gpu-vsync --disable-frame-rate-limit` is the right lever
   for pricing one term against another inside a frame, and the wrong one for

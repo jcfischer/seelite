@@ -19,10 +19,20 @@
  * panel half the frames can sit exactly on two refreshes of 8.3 ms and read
  * 16.7 ms while the other half are dropped.
  *
+ * **The late share is pooled, never a median of the blocks.** A run whose six
+ * equal blocks read `0, 0, 0, 0, 50%, 50%, 50%` dropped one interval in five;
+ * the median of those shares is 0% and would certify it. The verdict is about
+ * the frames that were actually sampled, so it counts them: every block
+ * records how many intervals it read and how many of them ran past
+ * `LATE_FRAME_MS`, and the share is the sum of the first over the sum of the
+ * second. The control's guard reads the same pooled figure, because a control
+ * that dropped a seventh of its frames cannot attribute anything either.
+ *
  * Kept here rather than in the instrument so a headless test can watch the
  * refusals fire: an arm with no readings, a reading that is not a cost, a
- * missing arm, a late share that is not a share, and a budget comparison that
- * has to say which side of 16.7 ms the figure lands on.
+ * missing arm, a late count that is not a count or exceeds its own frame
+ * count, and a budget comparison that has to say which side of 16.7 ms the
+ * figure lands on.
  */
 import { median, separation } from "./measurement.mjs";
 
@@ -73,12 +83,41 @@ function assertArm(raw, arm) {
 				throw new Error(`invalid ${meter} reading in arm ${arm}: ${ms}`);
 	}
 	const late = blocks.late;
+	const frames = blocks.frames;
 	if (!Array.isArray(late) || late.length !== blocks.period.length)
-		throw new Error(`no late-frame share per block in arm ${arm}`);
-	for (const share of late)
-		if (!Number.isFinite(share) || share < 0 || share > 1)
-			throw new Error(`invalid late-frame share in arm ${arm}: ${share}`);
+		throw new Error(`no late-frame count per block in arm ${arm}`);
+	if (!Array.isArray(frames) || frames.length !== blocks.period.length)
+		throw new Error(`no sampled-frame count per block in arm ${arm}`);
+	for (let i = 0; i < late.length; i++) {
+		const count = late[i];
+		if (!Number.isSafeInteger(count) || count < 0)
+			throw new Error(`invalid late-frame count in arm ${arm}: ${count}`);
+		const sampled = frames[i];
+		if (!Number.isSafeInteger(sampled) || sampled < 1)
+			throw new Error(`invalid sampled-frame count in arm ${arm}: ${sampled}`);
+		if (count > sampled)
+			throw new Error(
+				`more late frames than frames in arm ${arm}: ${count} of ${sampled}`,
+			);
+	}
 	return blocks;
+}
+
+/**
+ * The share of a run's sampled frames that were late, over all of them.
+ *
+ * Summed over blocks rather than averaged over blocks, so a long block cannot
+ * be outvoted by a short one, and a single late block cannot be hidden behind
+ * a majority of quiet ones.
+ */
+export function lateShareOf(blocks) {
+	let late = 0;
+	let frames = 0;
+	for (let i = 0; i < blocks.late.length; i++) {
+		late += blocks.late[i];
+		frames += blocks.frames[i];
+	}
+	return { lateShare: late / frames, lateFrames: late, frames };
 }
 
 function compare(a, b, meter) {
@@ -116,13 +155,13 @@ export function summarizeMiningNavBudget(raw) {
 		...Object.fromEntries(
 			NAV_METERS.map((meter) => [meter, median(arms[arm][meter])]),
 		),
-		lateShare: median(arms[arm].late),
+		...lateShareOf(arms[arm]),
 	}));
 	const nav = arms["nav-mining"];
 	const off = arms["nav-off"];
 	const control = arms[NAV_CONTROL];
 	const wholeFrameMs = median(nav.period);
-	const lateShare = median(nav.late);
+	const { lateShare, lateFrames, frames } = lateShareOf(nav);
 	const overMs = wholeFrameMs - NAV_FRAME_BUDGET_MS;
 	const onTime = wholeFrameMs <= NAV_FRAME_BUDGET_MS;
 	const holding = lateShare <= LATE_SHARE_TOLERANCE;
@@ -132,7 +171,7 @@ export function summarizeMiningNavBudget(raw) {
 		lateFrameMs: LATE_FRAME_MS,
 		lateShareTolerance: LATE_SHARE_TOLERANCE,
 		rows,
-		control: { arm: NAV_CONTROL, lateShare: median(control.late) },
+		control: { arm: NAV_CONTROL, ...lateShareOf(control) },
 		added: {
 			overOff: Object.fromEntries(
 				NAV_METERS.map((meter) => [meter, compare(nav, off, meter)]),
@@ -144,6 +183,8 @@ export function summarizeMiningNavBudget(raw) {
 		verdict: {
 			wholeFrameMs,
 			lateShare,
+			lateFrames,
+			frames,
 			withinBudget,
 			headroomMs: Math.max(0, -overMs),
 			overMs: Math.max(0, overMs),

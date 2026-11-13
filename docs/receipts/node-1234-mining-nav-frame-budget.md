@@ -9,11 +9,12 @@ lane against a paired run of the same path with the flag off. Interaction
 latency was not ruled on and is measured below.
 
 On that path at the **shipped antialiasing default (off)**, the frame now holds
-60 fps with zero late frames in 720 timed frames. Before this change it dropped
-8.4% of its frames. Two runs of the same change agree.
+60 fps with one late interval in 833. Before this change it dropped 8.2% of its
+intervals (68 of 833). Two runs of the same change agree.
 
 At **2x antialiasing**, the frame still spends 9.43 ms of main thread on the
-list and drops 7.6% of frames. That is **over the budget**, and the gap is
+list and drops 7.8% of intervals (65 of 833). That is **over the budget**, and
+the gap is
 returned to the principal rather than closed: 2x is a player-chosen lever the
 game ships off, `settings.ts` prices it at about four times the frame, and the
 remaining cost is the projection and formatting of 596 rows per frame, which
@@ -67,8 +68,10 @@ clean head `48d5fd4f1cd2615a04e1e0e768c5d2441cb6b6cb`, instrument SHA-256
 - The densest cleared stand beside the densest rock, the cockpit looking left at
   the Navigation tab, drifting 50 m/s through the cluster as the field's own
   centre velocity carries it. Every rock surveyed, so every row is populated.
-- Three arms, shuffled from seed 1234 over 6 blocks of 120 frames after 20 warm
-  frames each:
+- Three arms, shuffled from seed 1234 over 6 blocks after 20 warm frames each,
+  plus one unshuffled pass of all three before the blocks. `FRAMES=120` records
+  119 intervals per pass (the first is spent opening the loop), so every arm
+  reads **833 intervals**:
   - `nav-mining` — `?mining=1`, the tab on screen;
   - `nav-off` — the same path, camera and tab with the flag off (10 rows);
   - `forward-mining` — `?mining=1`, head forward, so no rows are built. **The
@@ -79,8 +82,14 @@ clean head `48d5fd4f1cd2615a04e1e0e768c5d2441cb6b6cb`, instrument SHA-256
   A frame is **late** when its interval exceeds 25 ms — one and a half budgets,
   because a display can only present on a refresh and a 120 Hz panel's
   two-refresh frame jitters either side of 16.7.
-- The median alone is not the verdict: an arm can sit exactly on the budget and
-  drop a tenth of its frames, which is what the shipped list did.
+- The late share is **pooled over every interval the arm sampled**: late
+  intervals counted over intervals read, summed across the passes. It is never a
+  median, mean or mode of the passes' shares, because those are shares of shares
+  and a run can drop a tenth of its frames from one pass of three while the
+  median pass reads 0% — which is exactly the run this budget exists to catch.
+  Each pass in `summary.json` therefore records `late` (how many of its
+  intervals ran past 25 ms) and `frames` (how many intervals it read), and the
+  control's guard reads the same pooled figure.
 - Chrome's own counters give the main-thread split over the same frames: task,
   script, recalc-style and layout. Paint *recording* is inside the task; raster
   and compositing are inside the interval.
@@ -103,25 +112,30 @@ the wrong one for asking whether the frame fits.
 
 ## Measurements
 
-Per-frame medians of six blocks. `late` is the share of intervals past 25 ms.
+Per-frame medians of the passes for period, task, script, style and layout.
+`late` is the **pooled** share — late intervals over intervals sampled, with the
+count it came from. The four runs archived under `/tmp` recorded the per-pass
+shares rather than the counts; every pass read the same 119 intervals, so the
+pool of those shares is their mean and the counts below are exact.
 
 ### At the shipped default, antialias off
 
 | Arm | period ms | late | task ms | script | style | layout |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `nav-mining` before | 16.60 | **8.4%** | 12.95 | 4.33 | 0.64 | 4.89 |
-| `nav-mining` after | 16.70 | **0.0%** | 6.46 | 4.33 | 0.13 | 1.09 |
-| `nav-off` (flag off) | 16.60 / 16.70 | 0.0% | 2.64 / 2.68 | 2.12 | 0.05 | 0.12 |
-| `forward-mining` (control) | 16.60 / 16.50 | 0.0% | 2.99 / 3.07 | 2.74 / 2.83 | 0 | 0 |
+| `nav-mining` before | 16.60 | **8.2%** (68/833) | 12.95 | 4.33 | 0.64 | 4.89 |
+| `nav-mining` after | 16.70 | **0.1%** (1/833) | 6.46 | 4.33 | 0.13 | 1.09 |
+| `nav-off` (flag off) | 16.60 / 16.70 | 0.1% / 0.0% | 2.64 / 2.68 | 2.12 | 0.05 | 0.12 |
+| `forward-mining` (control) | 16.60 / 16.50 | 0.0% / 0.1% | 2.99 / 3.07 | 2.74 / 2.83 | 0 | 0 |
 
 Added main-thread time, `nav-mining` over the flag-off run: **+10.32 ms**
 before (49/49 block pairings) and **+3.78 ms** after (49/49), of which `layout`
 is +4.77 before and +0.97 after, and `style` +0.59 before and +0.08 after. Over
 the head-forward control the same delta is +9.96 before and +3.39 after.
 
-So the change takes 6.5 ms of main-thread work and the dropped frames with it:
-the frame goes from a median of 16.60 ms with a tenth of its frames late to
-16.70 ms with none. The task figure also carries the list's own scenario
+So the change takes 6.5 ms of main-thread work and the dropped intervals with
+it: the frame goes from a median of 16.60 ms with 8.2% of its intervals late
+(one in twelve) to 16.70 ms with one late interval in 833. The task figure also
+carries the list's own scenario
 variance between runs (the pre-change runs read 12.95 and 13.99 ms at the two
 antialias settings), which is why the paired deltas are the figures to quote.
 
@@ -129,10 +143,10 @@ antialias settings), which is why the paired deltas are the figures to quote.
 
 | Arm | period ms | late | task ms | script | style | layout |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `nav-mining` before | 16.50 | **8.4%** | 13.99 | 4.57 | 0.69 | 4.88 |
-| `nav-mining` after | **16.60** | **7.6%** | 9.43 | 4.42 | 0.75 | 1.62 |
-| `nav-off` (flag off) | 16.60 / 16.70 | 0.0% | 2.72 / 2.57 | 2.11 / 1.98 | 0.05 | 0.12 |
-| `forward-mining` (control) | 16.60 / 16.70 | 0.0% | 2.85 / 2.47 | 2.63 / 2.27 | 0 | 0 |
+| `nav-mining` before | 16.50 | **8.3%** (69/833) | 13.99 | 4.57 | 0.69 | 4.88 |
+| `nav-mining` after | **16.60** | **7.8%** (65/833) | 9.43 | 4.42 | 0.75 | 1.62 |
+| `nav-off` (flag off) | 16.60 / 16.70 | 0.0% / 0.1% | 2.72 / 2.57 | 2.11 / 1.98 | 0.05 | 0.12 |
+| `forward-mining` (control) | 16.60 / 16.70 | 0.0% / 0.0% | 2.85 / 2.47 | 2.63 / 2.27 | 0 | 0 |
 
 Added over the flag-off run: +11.27 ms before, +6.85 ms after. **The budget is
 not met here.** The control holds every frame while the list is on screen and
@@ -142,7 +156,7 @@ attributable rather than noise: the frame's own work at 2x plus the list's
 `script` — the per-frame projection and formatting of 596 rows — which this
 change does not touch and which reads 4.4 ms at both antialias settings.
 
-**Decision owed:** accept the 2x gap (7.6% of frames late, 9.43 ms of main
+**Decision owed:** accept the 2x gap (7.8% of intervals late, 9.43 ms of main
 thread) or set the budget as applying to the shipped default and treat 2x like
 every other affordability lever in `settings.ts`. A further slice could virtualise
 the list so only the rows in the scrollport are projected and formatted, which is
@@ -174,25 +188,40 @@ SEELITE_PROBE_RENDERER=hardware ANTIALIAS=2 node scripts/measure-mining-nav-budg
 ```
 
 `BLOCKS`, `FRAMES`, `PRESSES`, `ORDER_SEED`, `OUTPUT`, `WORLD`, `SYSTEM`,
-`KIND`, `ANTIALIAS` and `MAX_LOAD` are overridable. Each run writes
-`summary.json` (provenance, host samples, every block's readings, per-arm facts,
+`KIND`, `ANTIALIAS` and `MAX_LOAD` are overridable. `FRAMES` is not free below
+the documented 120: a pass of 59 intervals is dominated by the frames just after
+its ship is re-stood. The same scene read 8.5% late and 10.17 ms of task at
+`FRAMES=60`, where 119-interval passes read 0 late of 357 and 6.63 ms, and the
+instrument warns when it is run that short. Each run writes
+`summary.json` (provenance, host samples, every pass's readings — a median
+period and a main-thread share per meter, plus the late-interval count and the
+interval count that the pooled late share is computed from — per-arm facts,
 presses and the summarized table) under `OUTPUT`, which defaults to
 `/tmp/seelite-mining-nav-budget-1234`. The four runs behind the tables are at
 `/tmp/seelite-mining-nav-1234-aa0-before`, `-aa0`, `-aa2-before` and `-aa2`.
 
+Re-read after the pooled-late fix, at the documented pass length and 2 blocks:
+`nav-mining` 16.70 ms period, 0 late of 357 intervals, 6.63 ms of task;
+`nav-off` 2.78 ms; `forward-mining` 3.16 ms (`/tmp/seelite-mining-nav-1234-smoke120`).
+That reproduces the after column of the table below.
+
 The instrument refuses, rather than reports: a software rasteriser; two pages
 that are not the same field; a page that will not hold still while another arm is
 measured; an arm with missing readings or readings that are not costs; a control
-that dropped its own frames; a late share that is not a share; and a page error.
+that dropped its own frames; a late count that is not a count or that exceeds
+its pass's interval count; and a page error.
 
 The arithmetic — the budget, the late-frame rule, the paired deltas and the
 verdict — is `scripts/lib/mining-nav-budget.mjs`, and
 `tests/mining-nav-budget.test.ts` covers the refusals, the exactly-at-budget
-boundary and the "median inside the budget but frames dropped" case.
+boundary, the "median inside the budget but frames dropped" case, and the
+pooled-late rule: one late pass of three, a late minority outvoted by four quiet
+passes, a control that late pass refuses, and a pool weighted by the intervals
+each pass read rather than by the number of passes.
 
 ## Verification
 
-Headless: `tests/mining-nav-budget.test.ts` (19 tests). Browser: the change is
+Headless: `tests/mining-nav-budget.test.ts` (27 tests). Browser: the change is
 in the cockpit's Navigation list, so `probe-navigation-console.mjs` covers it —
 74/74 checks passed on the branch. A same-mode capture pair 1.5 s apart is
 identical pixel for pixel, which is what makes the 0.392% mode difference an

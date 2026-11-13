@@ -10,7 +10,7 @@ import {
 } from "../scripts/lib/mining-nav-budget.mjs";
 
 type ArmReadings = Record<
-	"period" | "task" | "script" | "style" | "layout" | "late",
+	"period" | "task" | "script" | "style" | "layout" | "late" | "frames",
 	number[]
 >;
 
@@ -18,6 +18,8 @@ type Row = {
 	arm: string;
 	blocks: number;
 	lateShare: number;
+	lateFrames: number;
+	frames: number;
 	period: number;
 	task: number;
 	script: number;
@@ -30,7 +32,12 @@ type Summary = {
 	lateFrameMs: number;
 	lateShareTolerance: number;
 	rows: Row[];
-	control: { arm: string; lateShare: number };
+	control: {
+		arm: string;
+		lateShare: number;
+		lateFrames: number;
+		frames: number;
+	};
 	added: Record<
 		"overOff" | "overControl",
 		Record<string, { addedMs: number; separation: string }>
@@ -38,6 +45,8 @@ type Summary = {
 	verdict: {
 		wholeFrameMs: number;
 		lateShare: number;
+		lateFrames: number;
+		frames: number;
 		withinBudget: boolean;
 		headroomMs: number;
 		overMs: number;
@@ -50,7 +59,11 @@ const summarize = (raw: unknown): Summary =>
 
 const blocks = (
 	ms: number,
-	{ count = 3, late = [0] }: { count?: number; late?: number[] } = {},
+	{
+		count = 3,
+		late = [0],
+		frames = [100],
+	}: { count?: number; late?: number[]; frames?: number[] } = {},
 ): ArmReadings => ({
 	period: Array.from({ length: count }, () => ms),
 	task: Array.from({ length: count }, () => ms * 0.8),
@@ -58,6 +71,7 @@ const blocks = (
 	style: Array.from({ length: count }, () => ms * 0.02),
 	layout: Array.from({ length: count }, () => ms * 0.05),
 	late: Array.from({ length: count }, (_, i) => late[i % late.length]),
+	frames: Array.from({ length: count }, (_, i) => frames[i % frames.length]),
 });
 
 const arms = (
@@ -113,7 +127,7 @@ describe("a median inside the budget is not the whole answer", () => {
 	});
 
 	test("an arm on the budget that drops frames is not within it", () => {
-		const dropping = summarize(arms(16, 4, 3, [0.09, 0.1, 0.08]));
+		const dropping = summarize(arms(16, 4, 3, [9, 10, 8]));
 		expect(dropping.verdict.withinBudget).toBe(false);
 		expect(dropping.verdict.overMs).toBe(0);
 		expect(dropping.verdict.lateShare).toBeCloseTo(0.09, 5);
@@ -124,10 +138,59 @@ describe("a median inside the budget is not the whole answer", () => {
 
 	test("the tolerance is a share of frames, and it is small", () => {
 		expect(LATE_SHARE_TOLERANCE).toBe(0.01);
-		const atTolerance = summarize(arms(12, 4, 3, [0.01]));
+		const atTolerance = summarize(arms(12, 4, 3, [1]));
 		expect(atTolerance.verdict.withinBudget).toBe(true);
-		const overTolerance = summarize(arms(12, 4, 3, [0.02]));
+		const overTolerance = summarize(arms(12, 4, 3, [2]));
 		expect(overTolerance.verdict.withinBudget).toBe(false);
+	});
+});
+
+describe("the late share is counted over frames, never taken as a median", () => {
+	test("one late block in three is a tenth of the frames, not the median block", () => {
+		const summary = summarize(arms(16, 4, 3, [0, 0, 30]));
+		expect(summary.verdict.lateShare).toBeCloseTo(0.1, 6);
+		expect(summary.verdict.lateFrames).toBe(30);
+		expect(summary.verdict.frames).toBe(300);
+		expect(summary.verdict.withinBudget).toBe(false);
+	});
+
+	test("a majority of quiet blocks does not hide the late ones", () => {
+		const late = [0, 0, 0, 0, 50, 50, 50];
+		const raw = {
+			"nav-mining": blocks(16, { count: 7, late }),
+			"nav-off": blocks(16, { count: 7 }),
+			"forward-mining": blocks(16, { count: 7 }),
+		};
+		const summary = summarize(raw);
+		expect(summary.verdict.lateFrames).toBe(150);
+		expect(summary.verdict.frames).toBe(700);
+		expect(summary.verdict.lateShare).toBeCloseTo(150 / 700, 6);
+		expect(summary.verdict.line).toBe(
+			"at the 16.7 ms budget, but 21.4% of frames late",
+		);
+		expect(summary.verdict.withinBudget).toBe(false);
+	});
+
+	test("the share is weighted by the frames each block read", () => {
+		const raw = {
+			"nav-mining": blocks(12, {
+				count: 2,
+				late: [1, 0],
+				frames: [10, 90],
+			}),
+			"nav-off": blocks(4, { count: 2 }),
+			"forward-mining": blocks(3, { count: 2 }),
+		};
+		const summary = summarize(raw);
+		expect(summary.verdict.lateShare).toBeCloseTo(0.01, 6);
+		expect(summary.verdict.withinBudget).toBe(true);
+	});
+
+	test("the reported row share is the pooled one too", () => {
+		const summary = summarize(arms(12, 4, 3, [0, 0, 30]));
+		expect(summary.rows[0].lateShare).toBeCloseTo(0.1, 6);
+		expect(summary.rows[0].lateFrames).toBe(30);
+		expect(summary.rows[0].frames).toBe(300);
 	});
 });
 
@@ -140,10 +203,26 @@ describe("the control has to hold, or the run attributes nothing", () => {
 		);
 	});
 
+	test("a control whose late frames are pooled out of one block refuses the run", () => {
+		const raw = {
+			"nav-mining": blocks(12),
+			"nav-off": blocks(4),
+			"forward-mining": blocks(3, { late: [0, 0, 30] }),
+		};
+		expect(() => assertControlHeld(summarize(raw))).toThrow(
+			"the forward-mining control dropped 10.0% of its frames",
+		);
+	});
+
 	test("the control is the arm with no list on screen", () => {
 		expect(NAV_CONTROL).toBe("forward-mining");
 		const summary = assertControlHeld(summarize(arms(12, 4, 3, [0])));
-		expect(summary.control).toEqual({ arm: "forward-mining", lateShare: 0 });
+		expect(summary.control).toEqual({
+			arm: "forward-mining",
+			lateShare: 0,
+			lateFrames: 0,
+			frames: 300,
+		});
 	});
 });
 
@@ -212,20 +291,45 @@ describe("the refusals", () => {
 		);
 	});
 
-	test("a late share that is not a share is refused", () => {
-		for (const bad of [-0.1, 1.2, Number.NaN])
+	test("a late count that is not a count is refused", () => {
+		for (const bad of [-1, 0.5, 100.5, Number.NaN])
 			expect(() => {
 				const raw = arms(12);
 				raw["nav-mining"].late = [0, bad, 0];
 				summarize(raw);
-			}).toThrow("invalid late-frame share in arm nav-mining");
+			}).toThrow("invalid late-frame count in arm nav-mining");
 	});
 
-	test("an arm with no late share per block is refused", () => {
+	test("more late frames than frames is refused", () => {
+		const raw = arms(12);
+		raw["nav-mining"].late = [0, 101, 0];
+		expect(() => summarize(raw)).toThrow(
+			"more late frames than frames in arm nav-mining: 101 of 100",
+		);
+	});
+
+	test("a frame count that is not a count is refused", () => {
+		for (const bad of [0, -10, 12.5, Number.NaN])
+			expect(() => {
+				const raw = arms(12);
+				raw["forward-mining"].frames = [100, bad, 100];
+				summarize(raw);
+			}).toThrow("invalid sampled-frame count in arm forward-mining");
+	});
+
+	test("an arm with no late count per block is refused", () => {
 		const raw = arms(12);
 		raw["nav-off"].late = [0];
 		expect(() => summarize(raw)).toThrow(
-			"no late-frame share per block in arm nav-off",
+			"no late-frame count per block in arm nav-off",
+		);
+	});
+
+	test("an arm with no frame count per block is refused", () => {
+		const raw = arms(12);
+		raw["nav-off"].frames = [100];
+		expect(() => summarize(raw)).toThrow(
+			"no sampled-frame count per block in arm nav-off",
 		);
 	});
 
