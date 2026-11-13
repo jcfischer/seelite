@@ -308,6 +308,19 @@ was written in; the history it tells is still this text's history.
 
 ## Measuring a frame: occlusion, cost and GPU timing
 
+- **A lifted vsync stops the `requestAnimationFrame` interval being a frame
+  (#1234).** `--disable-gpu-vsync --disable-frame-rate-limit` is the right lever
+  for pricing one term against another inside a frame, and the wrong one for
+  asking whether the frame fits: with the pacing lifted, `rAF` runs ahead of the
+  presented frame, and one arm of
+  `scripts/measure-mining-nav-budget.mjs` read **14.20 ms of interval beside
+  15.03 ms of main-thread work** — an interval shorter than the work in it. The
+  budget instrument leaves the display's pacing on and reads the share of
+  intervals past 25 ms instead, because a frame that does not fit is presented
+  late. Sealing it, two pages in one browser both keep drawing after a
+  `bringToFront` (736 frames inside one arm), so the arm that is not being
+  measured has its `requestAnimationFrame` replaced with a recorder and the run
+  asserts both its frame counter and its **game clock** hold still.
 - **A station can leave AO open after cruise carries it out of view (#1235).**
   Spatial separation alone does not prove that station-held AO beside a close
   rock is unreachable: the gate closes after 30 rendered frames. Fly the

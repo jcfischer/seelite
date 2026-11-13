@@ -500,6 +500,11 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-chip[aria-pressed="true"] { border-color: #ffe0a2; background: rgba(223, 122, 20, .26); color: #fff0c9; }
 .lc-nav-query { flex: 1 1 96px; min-width: 84px; border: 1px solid rgba(229, 170, 82, .5); border-radius: 3px; padding: 4px 7px; background: rgba(8, 5, 3, .6); color: #ffe1a9; font: inherit; font-size: 11px; }
 .lc-nav-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; max-height: 234px; overflow: auto; }
+/* https://github.com/jcfischer/seelite/issues/1234 - a populated charted field
+   puts 596 rows in this list and the panel shows six. Skipping the layout and
+   paint of the rows outside it is 4.7 ms of frame the list used to spend on
+   rows no pilot can see. */
+.lc-nav-list > li { content-visibility: auto; contain-intrinsic-size: auto 45px; }
 .lc-sweep-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-height: 280px; overflow: auto; }
 .lc-sweep-list li { padding: 10px 12px; border-left: 3px solid #c39a60; background: #a0743012; }
 .lc-sweep-list small { color: #bfa57c; }
