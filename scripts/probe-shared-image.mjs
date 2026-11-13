@@ -88,6 +88,12 @@ try {
 			outpost: p.OUTPOST_GLB_URLS.a,
 			trade: p.TRADE_GLB_URLS.b,
 			interior: p.STATION_INTERIORS_GLB_URL,
+			anisotropy: Object.fromEntries(
+				Object.values(p.SHARED_IMAGES).map((image) => [
+					image.name,
+					image.anisotropy ?? p.THREE.Texture.DEFAULT_ANISOTROPY,
+				]),
+			),
 		};
 	});
 	await config.close();
@@ -101,7 +107,6 @@ try {
 			prepare: "prepareOutpostModel",
 			prepareArgs: ["a"],
 			modelsFull: false,
-			anisotropy: 8,
 			bootAttempts: (n) => n === 1,
 		},
 		{
@@ -113,7 +118,6 @@ try {
 			prepare: "prepareTugHullModel",
 			prepareArgs: [],
 			modelsFull: true,
-			anisotropy: 1,
 			bootAttempts: (n) => n >= 1,
 		},
 		{
@@ -128,7 +132,8 @@ try {
 			bootAttempts: (n) => n >= 1,
 		},
 	];
-	for (const { image, bootAttempts, ...modelCase } of cases) {
+	for (const { image, bootAttempts, ...named } of cases) {
+		const modelCase = { ...named, anisotropy: urls.anisotropy[named.name] };
 		console.log(`Checking ${modelCase.name}`);
 		const bench = await benchPage();
 		const requests = [];
