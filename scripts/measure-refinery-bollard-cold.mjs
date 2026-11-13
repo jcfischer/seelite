@@ -2,9 +2,10 @@
  * A cold session drawing a refinery and Bollard:
  * https://github.com/jcfischer/seelite/issues/1226
  * Run once per process, alternating base and head servers with an empty browser cache.
- * Asset bytes come from completed requests. Frame gaps span the first post-boot
- * frame through 120 settled frames; boot work before that window is excluded.
+ * Asset bytes come from completed requests. Frame gaps start after the driver
+ * observes boot/sky readiness and end after 120 settled frames; earlier work is excluded.
  */
+import { loadavg } from "node:os";
 import { gameUrl } from "./lib/game-url.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
@@ -18,6 +19,7 @@ import {
 } from "./probe-guard.mjs";
 
 const { watch, exit } = tally();
+const loadBefore = loadavg();
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? "http://localhost:5173",
 );
@@ -31,17 +33,33 @@ try {
 		})
 	).newPage();
 	watch(page);
+	const failures = [];
+	page.on("console", (message) => {
+		if (
+			/background load failed|mesh refresh failed|Model download failed|Multiple instances of Three/.test(
+				message.text(),
+			)
+		)
+			failures.push(message.text());
+	});
 	await installViewPlacement(page);
 	await installViewFraming(page);
 	const fetched = [];
-	page.on("requestfinished", async (request) => {
+	const pendingSizes = [];
+	page.on("requestfinished", (request) => {
 		const url = new URL(request.url());
 		if (!/\.(glb|webp|bin)$/.test(url.pathname)) return;
-		const { responseBodySize } = await request.sizes();
-		fetched.push({
-			file: url.pathname.split("/").pop(),
-			bytes: responseBodySize,
-		});
+		pendingSizes.push(
+			request.sizes().then(
+				({ responseBodySize }) => {
+					fetched.push({
+						file: url.pathname.split("/").pop(),
+						bytes: responseBodySize,
+					});
+				},
+				(error) => failures.push(`request size failed: ${error}`),
+			),
+		);
 	});
 	await page.goto(
 		gameUrl(origin, {
@@ -107,23 +125,39 @@ try {
 		cancelAnimationFrame(window.__tick);
 		const g = window.__seelite;
 		const maps = new Set();
-		for (const station of g.stationVisuals.values())
-			station.root.traverse((o) => {
-				for (const m of [o.material ?? []].flat())
-					if (m.map?.name === "paint-wear") maps.add(m.map);
-			});
-		g.shipMesh.traverse((o) => {
+		const refinery = g.world.system.bodies.find(
+			(b) => b.kind === "station" && b.stationType === "refinery",
+		);
+		const station = g.stationVisuals.get(refinery.id);
+		if (!station) throw new Error("fixture refinery has no visual");
+		station.root.traverse((o) => {
 			for (const m of [o.material ?? []].flat())
 				if (m.map?.name === "paint-wear") maps.add(m.map);
 		});
-		if (!g.shipMesh.userData.authored || maps.size === 0)
-			throw new Error("authored Bollard has not installed");
+		const stationPaintMaps = maps.size;
+		const hullMaps = new Set();
+		g.shipMesh.traverse((o) => {
+			for (const m of [o.material ?? []].flat())
+				if (m.map?.name === "paint-wear") {
+					maps.add(m.map);
+					hullMaps.add(m.map);
+				}
+		});
+		if (!g.shipMesh.userData.authored || !stationPaintMaps || !hullMaps.size)
+			throw new Error("authored refinery and Bollard have not both installed");
 		const sorted = [...window.__gaps].sort((a, b) => b - a);
+		if (g.settings.value.quality !== "high")
+			throw new Error("cold fixture expects high quality");
 		return {
+			quality: g.settings.value.quality,
+			viewport: [innerWidth, innerHeight],
+			buffer: [g.renderer.domElement.width, g.renderer.domElement.height],
 			uploads: window.__uploads,
 			textures: g.renderer.info.memory.textures,
 			paintMaps: maps.size,
-			anisotropies: [...maps].map((m) => m.anisotropy).sort(),
+			stationPaintMaps,
+			hullPaintMaps: hullMaps.size,
+			anisotropies: [...maps].map((m) => m.anisotropy).sort((a, b) => a - b),
 			frames: sorted.length,
 			stallMs: sorted[0],
 			top: sorted.slice(0, 3).map((v) => Math.round(v)),
@@ -132,6 +166,8 @@ try {
 			heap: performance.memory?.usedJSHeapSize,
 		};
 	});
+	await Promise.all(pendingSizes);
+	if (failures.length) throw new Error(failures.join("\n"));
 	if (
 		![report.stallMs, report.textures, ...fetched.map((f) => f.bytes)].every(
 			Number.isFinite,
@@ -141,6 +177,7 @@ try {
 	console.log(
 		JSON.stringify({
 			renderer,
+			load: { before: loadBefore, after: loadavg() },
 			bytes: fetched.reduce((sum, f) => sum + f.bytes, 0),
 			requests: fetched.length,
 			images: fetched.filter((f) => f.file.includes("paint-wear")).length,
