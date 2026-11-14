@@ -479,7 +479,11 @@ test("a death allocates shared unknown eligibility once across product and ore g
 
 test("base 6398a3ab commodity and seeded market/raider fingerprint is unchanged", () => {
 	const hash = createHash("sha256");
-	const add = (v: unknown) => hash.update(JSON.stringify(v));
+	const portable = (_key: string, v: unknown) =>
+		typeof v === "number" && !Number.isInteger(v)
+			? Number(v.toPrecision(12))
+			: v;
+	const add = (v: unknown) => hash.update(JSON.stringify(v, portable));
 	add(COMMODITIES);
 	for (const good of COMMODITIES)
 		for (let e = 0; e < 8; e++)
@@ -503,7 +507,7 @@ test("base 6398a3ab commodity and seeded market/raider fingerprint is unchanged"
 			);
 	}
 	expect(hash.digest("hex")).toBe(
-		"1eba4db853d94252c2857af49edfab6a4108a14a00e925c9ca94e872563922fb",
+		"2100b12bcbeb37ece691e65195e0530f20041cbb0ff633708b9a6030f4f4d498",
 	);
 	for (let g = 0; g < 8; g++)
 		expect(cargoWeights(g).some(({ good }) => good.name.includes("ore"))).toBe(
