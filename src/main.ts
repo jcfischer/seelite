@@ -1,4 +1,4 @@
-import { oreCargoName, oreTonnes } from "./ore-goods";
+import { GRADE_NAME, oreCargoName, oreTonnes } from "./ore-goods";
 import { withAccount, accountOf } from "./commodity-pools";
 import { oreCapacityLabel } from "./mining-capacity";
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
@@ -1357,6 +1357,7 @@ import {
 import { BeamLayer } from "./beam-layer";
 import {
 	commanderHold,
+	commanderOreBay,
 	flownMassT,
 	newCommander,
 	shipyardScreen,
@@ -1569,11 +1570,6 @@ const positiveParam = (name: string, fallback: number): number => {
 	const v = Number(MINING_QUERY.get(name));
 	return Number.isFinite(v) && v > 0 ? v : fallback;
 };
-const SURVEY_GRADE_SHORT = {
-	poor: "POOR",
-	standard: "STD",
-	rich: "RICH",
-} as const;
 const SPARK_RATE_PER_S = 70;
 const SPARK_KMS = 0.12;
 const SPARK_LIFE_S = 0.6;
@@ -9523,13 +9519,10 @@ class Game {
 	};
 
 	private minedHold(): { usedT: number; capacityT: number } {
-		const hold = commanderHold(
-			this.commander,
-			entrustedTonnesAboard(this.requests),
+		return (
+			commanderOreBay(this.commander) ??
+			commanderHold(this.commander, entrustedTonnesAboard(this.requests))
 		);
-		return HULL_SPECS[this.flownHull].oreHoldT === undefined
-			? hold
-			: { usedT: this.minedT, capacityT: HULL_SPECS[this.flownHull].oreHoldT! };
 	}
 
 	private get minedT(): number {
@@ -9711,10 +9704,11 @@ class Game {
 			this.flownCapacity(),
 			() => this.condition.energy,
 			(f) => {
+				if (!f.ore) throw new Error("mining: scoop callback requires ore");
 				const hold = this.minedHold();
 				if (hold.usedT + 1 > hold.capacityT) return "hold-full";
 				this.spendScoopCharge();
-				const name = f.ore ? oreCargoName(f.ore.family, f.ore.grade) : "";
+				const name = oreCargoName(f.ore.family, f.ore.grade);
 				this.takeMinedOre(name, 1);
 				return "taken";
 			},
@@ -10643,7 +10637,7 @@ class Game {
 		);
 		if (reading) {
 			const deep = reading.deepDir ? ` · DEEP ${reading.deepLeftT} T` : "";
-			return `${reading.family.toUpperCase()} ${SURVEY_GRADE_SHORT[reading.grade]} · ${reading.surfaceLeftT} T${deep}`;
+			return `${reading.family.toUpperCase()} ${GRADE_NAME[reading.grade]} · ${reading.surfaceLeftT} T${deep}`;
 		}
 		const figures = this.surveyFiguresFitted();
 		if (this.surveyHold.key === id && figures && this.surveyHold.chargeS > 0)

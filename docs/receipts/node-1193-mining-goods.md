@@ -14,7 +14,7 @@ they refuse a swap that cannot keep it aboard.
 `CARGO_COMMODITIES` is the complete durable cargo catalogue. The existing
 `COMMODITIES` registry retains the 17 legacy rows, order and generation pool;
 existing seeded consumers continue using it. Raider weights additionally
-exclude raw ore explicitly. This avoids expanding random loot, carrier
+exclude raw ore explicitly. This avoids expanding random cargo canisters, carrier
 manifests, ordinary requests or the historical trading instrument by accident.
 
 The price/stock authority is the table ratified on node #923 at
@@ -67,7 +67,38 @@ read schema 21. Refinery processing and collection are outside this change.
   requires. Full log: `/tmp/seelite-1193-full-test.log`; corrected-label log:
   `/tmp/seelite-1193-key-labels.log`.
 
-Probe selection reported all 126 probes because shared Game declarations changed.
+Probe selection reported all 126 probes because the diff includes shared
+`scripts/lib/probe-catalog.mjs` infrastructure.
 The worker contract forbids the full probe suite and assigns it to the supervisor;
 the local runs are affected-contract coverage, not a full browser-suite pass.
 The public changelog is unchanged because this remains behind `?mining=1`.
+
+## Review round 1
+
+All seven findings are addressed. Mining, trade, recovery and the Hold now read
+the shared `commanderOreBay` projection. Ore grade labels and native-unit gram
+scales each have one exported authority. The Hold glossary describes persisted
+ore cargo, and the receipt uses the canonical cargo-canister term.
+
+`stepFragments` never offers waste to its acceptance callback; the existing
+headless test proves this. The callback now asserts that invariant before
+spending scoop energy and has no empty commodity-name fallback.
+
+Flagless Hold lines retain ore but say `raw sales unavailable`; mining-enabled
+lines still say `sellable`. The new regression failed before the change
+(13 passed, one failed) and passes afterward. The mining-goods GPU probe now
+checks that flagless page text after reloading actual drilled cargo.
+
+The affected headless run passed 182 tests across nine files. Typecheck,
+production build, formatting, script lint and comment lint passed.
+The mining-goods, survey, drill and Hold GPU probes all passed on the Apple M5
+Pro hardware lane. Logs: `/tmp/seelite-1193-review-probe-*.log`. This is affected
+coverage only; the supervisor owns the full browser gate.
+
+The single full `npm test` run completed 7,977 tests: 7,975 passed, two failed.
+Both failures were the Navigation test harness injecting the removed
+`SURVEY_GRADE_SHORT` name into extracted Game methods. Its bindings now import
+the shared `GRADE_NAME`; all seven tests in `rock-survey-navigation.test.ts`
+pass afterward, and typecheck passes again. The full suite was not repeated,
+per the worker contract. Logs: `/tmp/seelite-1193-review-full-test.log` and
+`/tmp/seelite-1193-review-navigation.log`.

@@ -162,6 +162,23 @@ try {
 		JSON.stringify(flagless) === JSON.stringify(mined.cargo),
 		JSON.stringify(flagless),
 	);
+	const flaglessHold = await page.evaluate(async (name) => {
+		const g = window.__seelite;
+		g.rightTab = "Hold";
+		g.setHeadLook("right");
+		g.updateCockpit();
+		await new Promise((r) =>
+			requestAnimationFrame(() => requestAnimationFrame(r)),
+		);
+		return document.querySelector(`[data-live-hold-row="${name}"]`)
+			?.textContent;
+	}, setup.name);
+	check(
+		"the flagless Hold says raw sales are unavailable",
+		flaglessHold?.includes("raw sales unavailable") &&
+			!flaglessHold.includes("sellable"),
+		flaglessHold,
+	);
 	await page.goto(
 		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
 	);

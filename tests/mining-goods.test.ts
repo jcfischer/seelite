@@ -31,6 +31,7 @@ import { holdBody } from "../src/hold-view";
 import { TOP_RUNGS } from "../src/ladder";
 import {
 	COMMODITIES,
+	NATIVE_GRAMS,
 	CARGO_COMMODITIES,
 	commodity,
 	marketRow,
@@ -104,11 +105,25 @@ test("fifteen whole-tonne cargo identities preserve the current Hold names and g
 	expect(commanderHold(commander, 0).usedT).toBe(6);
 	for (const n of [-1, 0.5, 1.5])
 		expect(scoopCargo(commander, poor, n, 0).accepted).toBe(false);
-	const hold = holdSummary(commander, emptyRequests());
+	const hold = holdSummary(commander, emptyRequests(), true);
 	expect(pilotGoods(hold)).toEqual(commander.cargo);
 	expect(holdBody(hold, new Map([[poor, 2]]))).toContain("sellable");
 	expect(holdBody(hold, null)).not.toContain("no market yet");
 	expect(oreCargoName("gold", "standard")).toBe("Gold-bearing ore STD");
+});
+
+test("flagless Hold keeps ore visible without promising a raw sale", () => {
+	const commander = scoopCargo(newCommander("miner"), poor, 3, 0).commander;
+	const hold = holdSummary(commander, emptyRequests(), false);
+	expect(pilotGoods(hold)).toEqual({ [poor]: 3 });
+	expect(hold.oreBay).toEqual({ usedT: 3, capacityT: 3000, freeT: 2997 });
+	const html = holdBody(hold, null);
+	expect(html).toContain(`data-live-hold-row="${poor}"`);
+	expect(html).toContain("yours · raw ore · raw sales unavailable");
+	expect(html).not.toContain("sellable");
+	expect(
+		holdBody(holdSummary(commander, emptyRequests(), true), null),
+	).toContain("yours · raw ore · sellable");
 });
 
 test("the Longwall carries ore in its skips while ordinary ships share their hold", () => {
@@ -174,7 +189,7 @@ test("raw markets use the table, grade-specific stock memory, shelf cap and the 
 	for (const ore of ORE_GOODS) {
 		const row = marketRow(commodity(ore.name), 3, station, 0);
 		const product = commodity(ore.product);
-		const native = { t: 1e6, kg: 1000, g: 1 }[product.unit];
+		const native = NATIVE_GRAMS[product.unit];
 		expect(row.priceCr).toBeCloseTo(
 			((marketRow(product, 3, station, 0).priceCr * ore.yieldGPerT) / native) *
 				0.35,

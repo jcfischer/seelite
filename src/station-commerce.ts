@@ -920,18 +920,23 @@ export const commanderHold = (
 	capacityT: holdCapacityT(commander),
 });
 
+/** Dedicated raw ore capacity and occupancy, when the hull has ore skips. */
+export const commanderOreBay = (commander: CommanderState) =>
+	hasOreBay(commander.hull)
+		? {
+				usedT: oreTonnes(commander.cargo),
+				capacityT: HULL_SPECS[commander.hull].oreHoldT!,
+			}
+		: undefined;
+
 /** The compartment admitting this good, shared by mining, markets and recovery. */
 export const cargoHold = (
 	commander: CommanderState,
 	entrustedT: number,
 	good: string,
 ) =>
-	oreGood(good) && hasOreBay(commander.hull)
-		? {
-				usedT: oreTonnes(commander.cargo),
-				capacityT: HULL_SPECS[commander.hull].oreHoldT!,
-			}
-		: commanderHold(commander, entrustedT);
+	(oreGood(good) ? commanderOreBay(commander) : undefined) ??
+	commanderHold(commander, entrustedT);
 
 /** Tonnes in one unit of each `CommodityUnit`. */
 const TONNES_PER_UNIT = { t: 1, kg: 1e-3, g: 1e-6 } as const;

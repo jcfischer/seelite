@@ -15,7 +15,11 @@ export const ORE_FAMILY_NAME: Readonly<Record<OreFamily, string>> = {
 	platinum: "Platinum-bearing ore",
 	gem: "Gem-bearing ore",
 };
-const GRADE_NAME = { poor: "POOR", standard: "STD", rich: "RICH" } as const;
+export const GRADE_NAME = {
+	poor: "POOR",
+	standard: "STD",
+	rich: "RICH",
+} as const;
 export const oreCargoName = (family: OreFamily, grade: OreGrade): string =>
 	`${ORE_FAMILY_NAME[family]} ${GRADE_NAME[grade]}`;
 const PRODUCTS = {

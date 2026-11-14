@@ -1,5 +1,4 @@
-import { oreGood, oreTonnes } from "./ore-goods";
-import { HULL_SPECS } from "./hull";
+import { oreGood } from "./ore-goods";
 /**
  * What is aboard, who owns it, and how much room is left — one projection.
  *
@@ -31,7 +30,11 @@ import { HULL_SPECS } from "./hull";
 import { type CommodityUnit, commodity } from "./market";
 import { type RequestsState, entrustedTonnesAboard } from "./requests";
 import type { RequestStation, RequestStatus } from "./requests";
-import { type CommanderState, commanderHold } from "./station-commerce";
+import {
+	type CommanderState,
+	commanderHold,
+	commanderOreBay,
+} from "./station-commerce";
 
 /** Whose goods a line is. The requester's are excluded from sale (§4). */
 export type HoldOwner = "pilot" | "requester";
@@ -63,6 +66,7 @@ export interface HoldLine {
 	 */
 	job?: HoldJob;
 	kind?: "fitting" | "ore";
+	sellable?: boolean;
 }
 
 /** Where a consignment has to end up, and which end applies. */
@@ -140,7 +144,7 @@ export function holdSummary(
 			amount,
 			unit: commodity(goodName).unit,
 			owner: "pilot",
-			...(oreGood(goodName) ? { kind: "ore" as const } : {}),
+			...(oreGood(goodName) ? { kind: "ore" as const, sellable: mining } : {}),
 		});
 	}
 	for (const item of commander.recoveredFittings ?? [])
@@ -199,20 +203,18 @@ export function holdSummary(
 		});
 	}
 	lines.sort(compareLines);
-	const ore = oreTonnes(commander.cargo);
-	const oreCapacity = HULL_SPECS[commander.hull].oreHoldT;
+	const oreBay = commanderOreBay(commander);
 	return {
 		usedT,
 		capacityT,
 		freeT: capacityT - usedT,
 		entrustedT,
 		lines,
-		...(oreCapacity !== undefined && (mining || ore > 0)
+		...(oreBay && (mining || oreBay.usedT > 0)
 			? {
 					oreBay: {
-						usedT: ore,
-						capacityT: oreCapacity,
-						freeT: oreCapacity - ore,
+						...oreBay,
+						freeT: oreBay.capacityT - oreBay.usedT,
 					},
 				}
 			: {}),

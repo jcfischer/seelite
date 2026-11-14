@@ -1,5 +1,5 @@
 import { oreGood } from "./ore-goods";
-import { CARGO_COMMODITIES } from "./market";
+import { CARGO_COMMODITIES, NATIVE_GRAMS } from "./market";
 import {
 	mass,
 	money,
@@ -68,7 +68,7 @@ const equivalentMass = (good: string, amount: Mass): Mass => {
 	return mass.fromTicks((amount / tonne) * massFromNative(ore.yieldGPerT, 1));
 };
 export const nativeGrams = (good: string): number =>
-	({ t: 1000000, kg: 1000, g: 1 })[knownGood(good).unit];
+	NATIVE_GRAMS[knownGood(good).unit];
 const zeroMass = mass.fromTicks(0n);
 const zeroMoney = money.fromTicks(0n);
 const emptyPool = (): CommodityPool => ({

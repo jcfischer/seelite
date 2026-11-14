@@ -71,6 +71,7 @@ export const ECONOMY_MAX = 7;
 /** The three units the table uses. Exported since #443: the hold projection
  *  carries a line's unit so a renderer prints it rather than re-deriving it. */
 export type CommodityUnit = "t" | "kg" | "g";
+export const NATIVE_GRAMS = { t: 1000000, kg: 1000, g: 1 } as const;
 
 export interface Commodity {
 	name: string;
@@ -857,7 +858,7 @@ export function marketRow(
 	if (ore) {
 		const product = CARGO_COMMODITIES.find((g) => g.name === ore.product)!;
 		const row = marketRow(product, economy, station, gameTimeMin, close);
-		const nativeG = { t: 1000000, kg: 1000, g: 1 }[product.unit];
+		const nativeG = NATIVE_GRAMS[product.unit];
 		const priceCr =
 			((row.priceCr * ore.yieldGPerT) / nativeG) * RAW_VALUE_SHARE;
 		const quantity =
