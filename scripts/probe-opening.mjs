@@ -1,7 +1,12 @@
 /** Opening state contract: skip, save/resume, bypass, fallback and held repeatability.
  * Watched shots and camera geometry live in probe-opening-cinematic.mjs. */
 // A default-layout probe (#381 D11): Enter is the shipped opening-skip key.
-import { bootedGame, launchChromium, tally } from "./probe-guard.mjs";
+import {
+	bootBudgetMs,
+	bootedGame,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { openingFixture } from "./lib/opening-probe.mjs";
 const browser = await launchChromium();
@@ -108,7 +113,7 @@ try {
 		// The same save, booted again: a loaded commander, not a new game.
 		await quit.page.goto(gameUrl(origin, { seed: SEED, raider: "off" }));
 		// Read the opening outcome immediately; sky completion advances live flight.
-		await bootedGame(quit.page, 20000, { sky: false });
+		await bootedGame(quit.page, bootBudgetMs(quit.page), { sky: false });
 		const resumed = await quit.page.evaluate(() => {
 			const g = window.__seelite;
 			return {

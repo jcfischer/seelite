@@ -20,6 +20,7 @@ import {
 	PAINT_WEAR,
 	ROCK_ALBEDO,
 	SHARED_MODEL_IMAGES,
+	STEEL_WEAR,
 	shareImage,
 	writeGlb,
 	SHARED_IMAGE_EXTENSION,
@@ -497,6 +498,7 @@ const ANISOTROPY_BY_IMAGE: Record<string, number> = {
 	[INDUSTRIAL_SURFACE.name]: 8,
 	[PAINT_WEAR.name]: 1,
 	[ROCK_ALBEDO.name]: 1,
+	[STEEL_WEAR.name]: 1,
 };
 
 describe("a model sharing one or more images", () => {
