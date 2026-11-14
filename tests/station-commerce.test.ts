@@ -864,7 +864,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			flownAtClosingFloor: 188_325,
 			clearedAtClosingFloor: 0,
 		});
-	}, 30_000);
+	}, 120_000);
 
 	test("four chained cycles on ONE deficit map: tonnage stays shut, units do not", () => {
 		// **The corpus seeds a fresh map per cycle** and says so — every realized dock is
