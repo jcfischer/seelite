@@ -5433,11 +5433,6 @@
       "count": 65
     }
   },
-  "tests/save-store.test.ts": {
-    "seelite/no-comments": {
-      "count": 148
-    }
-  },
   "tests/scoop-line.test.ts": {
     "seelite/no-comments": {
       "count": 6
