@@ -199,11 +199,10 @@ try {
 			L.LADDERS.map((l) => [l, L.threshold(l, L.TOP_RUNG)]),
 		);
 		g.ladders = { ...g.ladders, banked };
-		g.commander = {
-			...g.commander,
-			credits: 100_000,
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: 100000,
 			cargo: { Food: foodT },
-		};
+		});
 		g.stationConsoleRevision += 1;
 		g.updateCockpit();
 	}, FOOD_T);
@@ -259,7 +258,7 @@ try {
 	// -------------------------------------------------------------------
 	// Damage the courier first, so a whole condition afterwards is the
 	// purchase resetting it rather than a ship that was never struck.
-	const purse = await page.evaluate(() => {
+	const purse = await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.condition = { ...g.condition, hull: 10 };
 		return g.commander.credits;

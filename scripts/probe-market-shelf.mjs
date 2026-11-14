@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 /**
  * Node 696, #473's ruling on the live Market tab: `MAX` on a capped shelf and
  * a HELD column, with the per-good list taken off the Market tab's bottom line.
@@ -19,7 +20,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
-import { gameUrl } from "./lib/game-url.mjs";
+import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
 
 const origin = process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5343";
 const headed = process.env.HEADED === "1";
@@ -42,8 +43,63 @@ try {
 	});
 	await installViewPlacement(page);
 	await installViewFraming(page);
+	await page.goto(gameUrl(origin, { seed: 42, "no-save": true }), {
+		waitUntil: "load",
+	});
+	await bootedGame(page);
+
+	const migration = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { serializeSave } = await import("/src/save-envelope.ts");
+		const { indexedDbSaveBackend, DEFAULT_SLOT } = await import(
+			"/src/save-store.ts"
+		);
+		const { fnv1a } = await import("/src/rng.ts");
+		const env = g.saveEnvelope();
+		const legacy = (credits) => {
+			const raw = serializeSave({
+				...env,
+				commander: {
+					...env.commander,
+					state: { ...env.commander.state, credits, accounting: undefined },
+				},
+			});
+			const { integrity, ...body } = raw;
+			body.saveSchemaVersion = 19;
+			delete body.commander.state.accounting;
+			return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+		};
+		const backend = indexedDbSaveBackend();
+		await backend.writeMany(
+			DEFAULT_SLOT,
+			["live", "lastDocked"],
+			legacy(100000),
+			{ lastDocked: legacy(99999) },
+		);
+		return true;
+	});
 	await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 	await bootedGame(page);
+	const migrated = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const live = await g.save.backend.read("default", "live"),
+			dock = await g.save.backend.read("default", "lastDocked");
+		return {
+			liveVersion: live.saveSchemaVersion,
+			dockVersion: dock.saveSchemaVersion,
+			liveCash: live.commander.state.credits,
+			dockCash: dock.commander.state.credits,
+		};
+	});
+	check(
+		"schema19 migrates live and distinct launch before gameplay",
+		migration &&
+			migrated.liveVersion === 20 &&
+			migrated.dockVersion === 20 &&
+			migrated.liveCash === 100000 &&
+			migrated.dockCash === 99999,
+		JSON.stringify(migrated),
+	);
 
 	const station = await page.evaluate(async () => {
 		const g = window.__seelite;
@@ -160,7 +216,7 @@ try {
 		);
 		const good = row?.getAttribute("data-live-market-row") ?? null;
 		if (!good) return null;
-		window.__seelite.commander.credits = 100_000;
+
 		window.__seelite.stationConsoleRevision += 1;
 		window.__seelite.updateCockpit();
 		return good;
@@ -260,6 +316,85 @@ try {
 		/^\d+\.\d Cr$/.test(lotLine),
 		lotLine,
 	);
+
+	const creditBefore = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { recoverWreckCargo } = await import("/src/station-commerce.ts");
+		const result = recoverWreckCargo(g.commander, "Gold", 1, 0);
+		if (!result.accepted) throw Error("known-zero recovery refused");
+		g.commander = result.commander;
+		g.stationConsoleRevision++;
+		g.updateCockpit();
+		return g.commander.accounting.bankedTrade.toString();
+	});
+	await page.locator('[data-live-station-tab="Market"]').click();
+	await page
+		.locator(
+			'[data-live-station-action="sell-commodity"][data-live-station-name="Gold"]',
+		)
+		.click();
+	const credited = await page.evaluate(
+		(before) =>
+			window.__seelite.commander.accounting.bankedTrade > BigInt(before),
+		creditBefore,
+	);
+	check(
+		"a real market sale banks exact trading credit after migration",
+		credited,
+	);
+	const refusedContext = await browser.newContext({ acceptDownloads: true });
+	try {
+		const seed = await refusedContext.newPage();
+		t.watchShaders(seed, "refused-save seed");
+		await seed.goto(workbenchUrl(origin, { "galaxy-map": true }), {
+			waitUntil: "load",
+		});
+		const expectedExport = await seed.evaluate(async () => {
+			const { newWorld } = await import("/src/world-state.ts");
+			const { serializeSave, newCommanderRecord } = await import(
+				"/src/save-envelope.ts"
+			);
+			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
+			const { fnv1a } = await import("/src/rng.ts");
+			const raw = serializeSave({
+				world: newWorld(42),
+				commander: newCommanderRecord("courier"),
+			});
+			const { integrity, ...body } = raw;
+			body.saveSchemaVersion = 19;
+			delete body.commander.state.accounting;
+			body.commander.state.cargo = { Food: -1 };
+			const refused = { ...body, integrity: fnv1a(JSON.stringify(body)) };
+			const backend = indexedDbSaveBackend();
+			await backend.write("default", "live", refused);
+			return JSON.stringify({ live: refused, lastDocked: null }, null, "\t");
+		});
+		await seed.close();
+		const refused = await refusedContext.newPage();
+		t.watchShaders(refused, "refused-save export");
+		await refused.goto(gameUrl(origin, { seed: 42 }, { boot: null }), {
+			waitUntil: "load",
+		});
+		await refused
+			.locator('[data-kind="export-fault"]')
+			.waitFor({ state: "visible", timeout: 90000 });
+		const reason = await refused.locator("[data-commander-fault]").innerText();
+		check(
+			"invalid legacy cargo gets a named refusal and an Export action",
+			reason.includes("nonnegative") && reason.includes("Export"),
+			reason,
+		);
+		const download = refused.waitForEvent("download");
+		await refused.locator('[data-kind="export-fault"]').click();
+		const file = await download;
+		const path = await file.path();
+		check(
+			"the real refusal Export downloads the original record byte-for-byte",
+			(await readFile(path, "utf8")) === expectedExport,
+		);
+	} finally {
+		await refusedContext.close();
+	}
 
 	await page.close();
 } finally {

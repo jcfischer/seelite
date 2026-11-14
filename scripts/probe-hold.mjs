@@ -62,7 +62,7 @@ try {
 	 *  reading a hidden element (#405's two-surfaces lesson). */
 	const openHold = async () => {
 		await page.evaluate(() => window.__seelite.setHeadLook("right"));
-		await page.evaluate(() => {
+		await page.evaluate(async () => {
 			const tab = document.querySelector('[data-live-right-tab="Hold"]');
 			if (!(tab instanceof HTMLElement)) throw new Error("no Hold tab");
 			tab.click();
@@ -154,7 +154,7 @@ try {
 	// One tonne of the pilot's own, through the till, so the page has a line of
 	// each ownership and the value column has something to price.
 	await page.locator('[data-live-station-tab="Market"]').click();
-	const mine = await page.evaluate(() => {
+	const mine = await page.evaluate(async () => {
 		const row = [...document.querySelectorAll("[data-live-market-row]")].find(
 			(el) =>
 				el.getAttribute("data-live-listed") === "true" &&
@@ -165,7 +165,10 @@ try {
 		);
 		const good = row?.getAttribute("data-live-market-row") ?? null;
 		if (!good) return null;
-		window.__seelite.commander.credits = 100_000;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+			window.__seelite,
+			{ credits: 100_000 },
+		);
 		window.__seelite.stationConsoleRevision += 1;
 		window.__seelite.updateCockpit();
 		return good;

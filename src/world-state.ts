@@ -1,3 +1,12 @@
+import {
+	parseShare,
+	encodeShare,
+	recover,
+	emptyAccount,
+	type RecoveryWire,
+	displayAmount,
+} from "./commodity-pools";
+import { nativeGrams } from "./commodity-pools";
 import { parseModule, carriedModule, type FittedModule } from "./loadout";
 import {
 	type FieldDiscoveries,
@@ -441,6 +450,7 @@ export interface LegalStatus {
  * touch, not at the loss (`persistent-world-state.md` §7).
  */
 export interface DerelictContainer {
+	ownedShare?: RecoveryWire;
 	fitting?: FittedModule;
 	kind: DerelictContainerKind;
 	/** A commodity name for a good, an `EQUIPMENT` name for a fitting. */
@@ -2424,14 +2434,26 @@ export const scoopDerelict = (
 					: undefined;
 			if (
 				!item ||
-				!Number.isInteger(tonnes) ||
+				!Number.isFinite(tonnes) ||
 				tonnes <= 0 ||
 				tonnes > item.left
 			)
 				fail("death wreck: invalid scoop");
-			const containers = row!.containers.map((c, i) =>
-				i === containerIndex ? { ...c, left: c.left - tonnes } : c,
-			);
+			const containers = row!.containers.map((c, i) => {
+				if (i !== containerIndex) return c;
+				if (!c.ownedShare) return { ...c, left: c.left - tonnes };
+				const remaining = recover(
+					emptyAccount(),
+					c.id,
+					parseShare(c.ownedShare),
+					tonnes,
+				).remaining;
+				return {
+					...c,
+					left: displayAmount(remaining.totalMass, "mass", nativeGrams(c.id)),
+					ownedShare: encodeShare(remaining),
+				};
+			});
 			if (containers.every((c) => c.left === 0)) return withoutDeathWreck(env);
 			return { ...env, deathWreck: { ...row!, containers } };
 		});
@@ -2586,6 +2608,7 @@ const canonicalDerelict = (
 				left: c.left,
 				...(c.unit === undefined ? {} : { unit: c.unit }),
 				...(c.fitting ? { fitting: parseModule(c.fitting) } : {}),
+				...(c.ownedShare ? { ownedShare: c.ownedShare } : {}),
 			},
 		]),
 	),
@@ -3139,17 +3162,28 @@ const parseDerelictContainer = (
 		fail(`${what}: unit ${unit} does not match ${id} (${expectedUnit})`);
 	// A death container's line is `amount`, in `unit`; a derelict's is `tonnes`.
 	const quantity = death ? "amount" : "tonnes";
-	const tonnes = ordinal(o, quantity, what);
+	const tonnes = death ? num(o, quantity, what) : ordinal(o, quantity, what);
+	if (tonnes < 0) fail(`${what}: negative death cargo`);
 	if (tonnes === 0) fail(`${what}: a container drawn with no ${quantity}`);
 	if (fitting && tonnes !== 1)
 		fail(`${what}: a module fitting occupies one tonne`);
-	const left = ordinal(o, "left", what);
+	const left = death ? num(o, "left", what) : ordinal(o, "left", what);
+	if (left < 0) fail(`${what}: negative death cargo`);
+	let ownedShare: RecoveryWire | undefined;
+	if (o.ownedShare !== undefined) {
+		if (!death || kind !== "good") fail(`${what}: invalid recovery owner`);
+		const share = parseShare(o.ownedShare);
+		if (displayAmount(share.totalMass, "mass", nativeGrams(id)) !== left)
+			fail(`${what}: recovery quantity mismatch`);
+		ownedShare = encodeShare(share);
+	}
 	if (left > tonnes)
 		fail(
 			`${what}: ${left} ${unit} left is above the ${tonnes} ${unit} line it was drawn with`,
 		);
 	return {
 		kind: kind as DerelictContainerKind,
+		...(ownedShare ? { ownedShare } : {}),
 		...(fitting ? { fitting } : {}),
 		id,
 		tonnes,

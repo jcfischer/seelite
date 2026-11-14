@@ -53,7 +53,7 @@ try {
 	await bootedGame(page);
 
 	const openCommander = async () => {
-		await page.evaluate(() => {
+		await page.evaluate(async () => {
 			window.__seelite.setHeadLook("right");
 			const tab = document.querySelector('[data-live-right-tab="Commander"]');
 			if (!(tab instanceof HTMLElement)) throw new Error("no Commander tab");
@@ -140,10 +140,12 @@ try {
 	// ---------------------------------------------------------------------
 	// The shipyard's Equipment tab: a locked row, and the rung that opens it.
 	// ---------------------------------------------------------------------
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.setHeadLook("forward");
-		g.commander = { ...g.commander, credits: 100_000 };
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: 100_000,
+		});
 		g.stationConsoleRevision += 1;
 		g.updateCockpit();
 	});
@@ -199,7 +201,7 @@ try {
 	await buy.click();
 	check(
 		"purchase reaches the slot and leaves the displaced module in the hold",
-		await page.evaluate(() => {
+		await page.evaluate(async () => {
 			const c = window.__seelite.commander;
 			return (
 				c.loadout.h1.module === "pulse-laser" &&
@@ -212,12 +214,11 @@ try {
 	await page.evaluate(async () => {
 		const { stockLoadout } = await import("/src/loadout.ts");
 		const g = window.__seelite;
-		g.commander = {
-			...g.commander,
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
 			hull: "interceptor",
 			loadout: stockLoadout("interceptor"),
 			credits: 100000,
-		};
+		});
 		g.stationConsoleRevision += 1;
 		g.updateCockpit();
 	});

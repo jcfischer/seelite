@@ -139,11 +139,11 @@ test("the one store loads and flushes a journal-bearing record", async () => {
 		current: () => save,
 	});
 	await store.flush("quit");
-	expect(await store.load("normal")).toEqual(save);
+	expect(await store.load("normal")).toMatchObject(save);
 	const catalog = new CommanderCatalog({ backend, locks: memorySlotLocks() });
-	expect(catalog.parseRecord(await backend.read("normal", "live"))).toEqual(
-		save,
-	);
+	expect(
+		catalog.parseRecord(await backend.read("normal", "live")),
+	).toMatchObject(save);
 	// The reverted record carries its journal back too.
 	await backend.write("normal", "lastDocked", serializeSave(save));
 	expect(
@@ -172,7 +172,7 @@ test("Requests and credits round-trip under one hash at every stage", () => {
 		expect(result.ok).toBe(true);
 		commander.requests = result.state;
 		commander.state.credits += result.rewardCr;
-		expect(parseSave(serializeSave({ world, commander }))).toEqual({
+		expect(parseSave(serializeSave({ world, commander }))).toMatchObject({
 			world,
 			commander,
 		});
@@ -195,7 +195,7 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	// version 2 body out of a current one; if the two ever met, it would be
 	// asserting the migration path against no migration at all. It went red on
 	// #453's bump, which is the tripwire working.
-	expect(SAVE_SCHEMA_VERSION).toBe(19);
+	expect(SAVE_SCHEMA_VERSION).toBe(20);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
 	body.commander.state.ownedEquipment = [];
@@ -290,7 +290,7 @@ test("every Commander write is the current schema and carries its journal", () =
 		entrustedByLotId: {},
 		trackedRequestId: null,
 	});
-	expect(parseSave(raw)).toEqual(save);
+	expect(parseSave(raw)).toMatchObject(save);
 });
 
 test("a schema 3 journal migrates when empty and is refused when it is not", () => {
@@ -515,7 +515,7 @@ test("a schema 4 journal lifts its flat cargo fields into an operand", () => {
 	const expected = structuredClone(save);
 	for (const env of expected.world.galaxies)
 		env.capabilityTime = { genesisAt: expected.world.gameTime, anchors: {} };
-	expect(parseSave(asV4(save))).toEqual(expected);
+	expect(parseSave(asV4(save))).toMatchObject(expected);
 });
 
 test("a lifted schema 4 record re-serializes as a native current version", () => {

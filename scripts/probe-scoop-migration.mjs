@@ -57,6 +57,7 @@ const legacyBlob = async (page, { full }) =>
 			);
 			const { integrity: _, ...body } = blob;
 			body.saveSchemaVersion = 16;
+			delete body.commander.state.accounting;
 			delete body.commander.scoopNotice;
 			const { integrity: worldIntegrity, ...worldBody } = body.world;
 			worldBody.worldSchemaVersion = 3;

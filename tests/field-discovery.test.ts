@@ -270,7 +270,7 @@ test("historical discovery and source survive a generator no longer populating t
 	).toThrow();
 });
 
-test("save19 round trips discoveries; authentic save18 begins unknown and refuses assembled discoveries", () => {
+test("save20 round trips discoveries; authentic save18 begins unknown and refuses assembled discoveries", () => {
 	const world = discoverNearbyFields(newWorld(seed), {
 		record: first.record,
 		contents: first.contents,
@@ -289,6 +289,7 @@ test("save19 round trips discoveries; authentic save18 begins unknown and refuse
 		commander: newCommanderRecord("courier"),
 	}) as any;
 	raw.saveSchemaVersion = 18;
+	delete raw.commander.state.accounting;
 	reseal(raw);
 	expect(
 		parseSave(raw).world.galaxies.every((g) => g.fieldDiscoveries.length === 0),

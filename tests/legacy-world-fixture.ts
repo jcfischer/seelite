@@ -11,6 +11,8 @@ export function legacyWorldFixture(raw: any): any {
 
 /** Stamp the historical nested world before an edited legacy outer fixture is hashed. */
 export function pairLegacyWorldFixture(body: Record<string, any>): void {
+	if (body.saveSchemaVersion < 20 && body.commander?.state)
+		delete body.commander.state.accounting;
 	if (body.saveSchemaVersion >= 2 && body.saveSchemaVersion <= 17)
 		body.world = legacyWorldFixture(body.world);
 }

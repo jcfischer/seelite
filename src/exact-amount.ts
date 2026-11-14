@@ -66,8 +66,9 @@ function binaryTicks(value: number): bigint {
 }
 
 function oddParts(value: bigint): { coefficient: bigint; shift: number } {
-	let coefficient = value;
-	let shift = 0;
+	const text = value.toString(16);
+	let shift = (text.length - text.replace(/0+$/, "").length) * 4;
+	let coefficient = value >> BigInt(shift);
 	while (coefficient !== 0n && (coefficient & 1n) === 0n) {
 		coefficient >>= 1n;
 		shift++;

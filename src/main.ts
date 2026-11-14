@@ -1,3 +1,4 @@
+import { withAccount, accountOf } from "./commodity-pools";
 import { miningHold, withOre, oreCapacityLabel } from "./mining-capacity";
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
 import type { FieldDiscoveryMotion } from "./field-discovery";
@@ -2825,7 +2826,10 @@ class Game {
 	 *  the one statement of what it is made of. */
 	private layoutNotices: readonly LayoutNotice[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
-	private commander = newCommander(bootHull(ASKED_HULL, null).hull);
+	private commander = (() => {
+		const c = newCommander(bootHull(ASKED_HULL, null).hull);
+		return withAccount(c, accountOf(c));
+	})();
 
 	/**
 	 * The hull being flown — handling, mesh, condition capacity and berth

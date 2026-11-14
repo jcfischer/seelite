@@ -685,6 +685,8 @@ const REFUSAL_SENTENCES: Record<
 	"hull-unavailable": () => "This station does not sell that hull.",
 	"no-reach": () =>
 		"No system is within that hull's tank from here — it could never leave.",
+	"accounting-overflow": () =>
+		"Transaction exceeds the exact accounting limit; nothing changed.",
 	"insufficient-credits": () => "Not enough credits.",
 	"insufficient-shelf": () => "The shelf is short.",
 	"invalid-quantity": () => "That is not a quantity.",

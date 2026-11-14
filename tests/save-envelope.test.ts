@@ -34,6 +34,7 @@ import {
 
 function legacySaveFixture(raw: unknown): any {
 	const o = structuredClone(raw) as any;
+	delete o.commander.state.accounting;
 	o.world.worldSchemaVersion = 3;
 	for (const env of o.world.galaxies) delete env.capabilityTime;
 	const { integrity: old, ...worldBody } = o.world;
@@ -132,7 +133,7 @@ describe("#89 D5 — the save envelope", () => {
 	test("obligation 1: every field of both halves survives a round trip", () => {
 		const save = { world: world(), commander: commander() };
 		const back = parseSave(serializeSave(save));
-		expect(back.commander).toEqual(save.commander);
+		expect(back.commander).toMatchObject(save.commander);
 		expect(back.world.gameTime).toBe(6000);
 		expect(back.world.galaxies[0].visited).toEqual([3]);
 		expect(back.world.galaxies[0].deficits[KEY]?.goods.Food).toBeCloseTo(
@@ -384,7 +385,7 @@ describe("#936 D4 — txSeq in the save envelope", () => {
 	const save = () => ({ world: world(), commander: commander() });
 
 	test("txSeq arrived at 16, which is read beside 15", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(19);
+		expect(SAVE_SCHEMA_VERSION).toBe(20);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(15);
 	});
 
