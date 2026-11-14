@@ -1,8 +1,11 @@
 import tsParser from "@typescript-eslint/parser";
 import { noComments } from "./no-comments.mjs";
+import { noStackedDocs } from "./no-stacked-docs.mjs";
 
 /** @type {import("eslint").ESLint.Plugin} */
-export const seelite = { rules: { "no-comments": noComments } };
+export const seelite = {
+	rules: { "no-comments": noComments, "no-stacked-docs": noStackedDocs },
+};
 
 /**
  * The lint settings for every source file, shared by `eslint.config.mjs` and
@@ -13,5 +16,10 @@ export const seeliteLint = {
 	linterOptions: { noInlineConfig: true },
 	languageOptions: { parser: tsParser },
 	plugins: { seelite },
-	rules: { "seelite/no-comments": "error" },
+	rules: {
+		"seelite/no-comments": "error",
+		"seelite/no-stacked-docs": "error",
+		"max-params": ["error", 5],
+		"no-nested-ternary": "error",
+	},
 };
