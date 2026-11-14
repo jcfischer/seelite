@@ -1167,6 +1167,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "outlaw",
 		variant: "a",
 		env: { lengthKm: 0.0564, beamKm: 0.0339, heightKm: 0.0117 },
+		// Stryker disable next-line UnaryOperator: envCentre is where the builder re-centres the authored model, so the sign slides the hull and the box it collides through together; this hull's display reach is its procedural loft's, and nothing else reads the slide
 		envCentre: { rightKm: 0, upKm: 0.0016, foreKm: -0.0011 },
 		massT: 42,
 		thrustMN: 113,
@@ -1299,6 +1300,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "prospect",
 		variant: "a",
 		env: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
+		// Stryker disable next-line UnaryOperator: envCentre is where the builder re-centres the authored model, so the sign slides the hull and the box it collides through together; this hull's display reach is its procedural loft's, and nothing else reads the slide
 		envCentre: { rightKm: 0, upKm: 0.0005, foreKm: -0.0011 },
 		massT: 58,
 		thrustMN: 110,

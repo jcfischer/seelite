@@ -48,14 +48,14 @@ import {
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
 	RETAINED_ENVELOPE_HULLS,
-	type HullBoxCentre,
 	type HullEnvelope,
 	type HullId,
 	type HullVariantId,
 } from "../src/hull";
 import { SEVEN_SHIP_FILES } from "../scripts/lib/shipped-seven-ships";
 import { measureVentPlacement } from "../scripts/measure-vent-placement";
-import { buildShipMesh } from "../src/ship-mesh";
+import { HULL_REACH_KM, buildShipMesh } from "../src/ship-mesh";
+import { isLevelStandIn } from "../src/ship-detail";
 import {
 	REFERENCE_ANGULAR_ACCEL,
 	REFERENCE_ANGULAR_DAMP_TAU_S,
@@ -122,13 +122,29 @@ const declarableEnvelope = (
 // https://github.com/jcfischer/seelite/issues/1035
 const AUTHORED_ROWS = Object.keys(SEVEN_SHIP_FILES) as HullId[];
 
-const builtCentre = (id: HullId, variant: HullVariantId): HullBoxCentre => {
-	const root = buildShipMesh(id, variant).root;
+const farthestVertexKm = (root: THREE.Object3D) => {
 	root.updateMatrixWorld(true);
-	const centre = new THREE.Box3()
-		.setFromObject(root)
-		.getCenter(new THREE.Vector3());
-	return { rightKm: centre.x, upKm: centre.y, foreKm: -centre.z };
+	const v = new THREE.Vector3();
+	let out = 0;
+	root.traverse((object) => {
+		if (
+			!(object instanceof THREE.Mesh) ||
+			(object as THREE.InstancedMesh).isInstancedMesh ||
+			isLevelStandIn(object) ||
+			object.name.startsWith("ship-")
+		)
+			return;
+		const position = object.geometry.getAttribute("position");
+		for (let i = 0; i < position.count; i++)
+			out = Math.max(
+				out,
+				v
+					.fromBufferAttribute(position, i)
+					.applyMatrix4(object.matrixWorld)
+					.length(),
+			);
+	});
+	return out;
 };
 
 const interiorOf = (type: (typeof STATION_TYPES)[number]) =>
@@ -193,13 +209,16 @@ describe("envelopes measure the mesh or retain an approved simulation box", () =
 	);
 
 	test.each(AUTHORED_ROWS)(
-		"%s's box sits on its model's own centre, not on the origin",
+		"%s's display reach is its model's and its loft's farthest vertex, rounded up",
 		(id) => {
-			const spec = HULL_SPECS[id];
-			const centre = builtCentre(id, spec.variant);
-			expect(centre.rightKm).toBeCloseTo(spec.envCentre.rightKm, 6);
-			expect(centre.upKm).toBeCloseTo(spec.envCentre.upKm, 6);
-			expect(centre.foreKm).toBeCloseTo(spec.envCentre.foreKm, 6);
+			const model = farthestVertexKm(
+				buildShipMesh(id, HULL_SPECS[id].variant).root,
+			);
+			const loft = withProceduralHulls(() =>
+				farthestVertexKm(buildShipMesh(id, HULL_SPECS[id].variant).root),
+			);
+			const reach = Math.ceil(Math.max(model, loft) * 10_000 - 1e-9) / 10_000;
+			expect({ id, reach: HULL_REACH_KM[id] }).toEqual({ id, reach });
 		},
 	);
 
