@@ -854,7 +854,9 @@ describe("#89 D8/D9 — refusal, and never overwriting the bad record", () => {
 		h.store.markDirty();
 		await h.store.flush("dock", "alpha");
 		await h.backend.corruptVersion("alpha", "live");
+		const writesBeforeLoad = h.backend.writes;
 		await expect(h.store.load("alpha")).rejects.toThrow(/saveSchemaVersion/);
+		expect(h.backend.writes).toBe(writesBeforeLoad);
 		expect(await h.backend.has("alpha", "live")).toBe(true);
 		expect(typeof (await h.catalog.exportSlot("alpha"))).toBe("string");
 	});
