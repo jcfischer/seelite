@@ -162,6 +162,9 @@
   "scripts/lib/greedy-trader.ts": {
     "seelite/no-comments": {
       "count": 132
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/lib/hauler-fixture.mjs": {
@@ -212,6 +215,9 @@
   "scripts/lib/planet-cost.mjs": {
     "seelite/no-comments": {
       "count": 5
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "scripts/lib/players-renderer.mjs": {
@@ -322,6 +328,9 @@
   "scripts/lib/sound-set.mjs": {
     "seelite/no-comments": {
       "count": 118
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/lib/texture-luma.mjs": {
@@ -352,11 +361,17 @@
   "scripts/lib/view-placement.mjs": {
     "seelite/no-comments": {
       "count": 58
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/lib/view-set.mjs": {
     "seelite/no-comments": {
       "count": 97
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/lib/voice-model.mjs": {
@@ -372,6 +387,9 @@
   "scripts/measure-adaptive-resolution.mjs": {
     "seelite/no-comments": {
       "count": 24
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/measure-airless-albedo.mjs": {
@@ -417,6 +435,9 @@
   "scripts/measure-bay-frame-cost.mjs": {
     "seelite/no-comments": {
       "count": 162
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/measure-boot-cost.mjs": {
@@ -487,6 +508,9 @@
   "scripts/measure-cruise-arrival.ts": {
     "seelite/no-comments": {
       "count": 137
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/measure-cruise-detour.mjs": {
@@ -552,6 +576,9 @@
   "scripts/measure-greedy-trader.ts": {
     "seelite/no-comments": {
       "count": 162
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "scripts/measure-guard-motion.ts": {
@@ -617,6 +644,9 @@
   "scripts/measure-mouth-flicker.mjs": {
     "seelite/no-comments": {
       "count": 83
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "scripts/measure-neural-voice.mjs": {
@@ -632,6 +662,9 @@
   "scripts/measure-occlusion-cost.mjs": {
     "seelite/no-comments": {
       "count": 36
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/measure-open-space-repro.mjs": {
@@ -642,6 +675,9 @@
   "scripts/measure-planet-cost.mjs": {
     "seelite/no-comments": {
       "count": 88
+    },
+    "seelite/no-stacked-docs": {
+      "count": 4
     }
   },
   "scripts/measure-raider-duel.ts": {
@@ -682,6 +718,9 @@
   "scripts/measure-sky-density.ts": {
     "seelite/no-comments": {
       "count": 205
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/measure-speech-contrast.ts": {
@@ -772,6 +811,9 @@
   "scripts/probe-arrival.mjs": {
     "seelite/no-comments": {
       "count": 64
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/probe-asteroid-field.mjs": {
@@ -872,6 +914,9 @@
   "scripts/probe-cruise.mjs": {
     "seelite/no-comments": {
       "count": 73
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/probe-death-wreck.mjs": {
@@ -972,6 +1017,9 @@
   "scripts/probe-guard.mjs": {
     "seelite/no-comments": {
       "count": 82
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/probe-gun-feedback.mjs": {
@@ -1107,6 +1155,9 @@
   "scripts/probe-occlusion.mjs": {
     "seelite/no-comments": {
       "count": 94
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/probe-opening-cinematic.mjs": {
@@ -1147,11 +1198,17 @@
   "scripts/probe-planet-surfaces.mjs": {
     "seelite/no-comments": {
       "count": 292
+    },
+    "seelite/no-stacked-docs": {
+      "count": 4
     }
   },
   "scripts/probe-planets.mjs": {
     "seelite/no-comments": {
       "count": 91
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/probe-pointer-lock.mjs": {
@@ -1262,6 +1319,9 @@
   "scripts/probe-station.mjs": {
     "seelite/no-comments": {
       "count": 113
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/probe-system-sweep.mjs": {
@@ -1277,6 +1337,9 @@
   "scripts/probe-traffic-engagement.mjs": {
     "seelite/no-comments": {
       "count": 246
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "scripts/probe-traffic-mouth.mjs": {
@@ -1312,6 +1375,9 @@
   "scripts/probe-witnesses.mjs": {
     "seelite/no-comments": {
       "count": 375
+    },
+    "seelite/no-stacked-docs": {
+      "count": 3
     }
   },
   "scripts/shot-finishes.mjs": {
@@ -1372,6 +1438,9 @@
   "src/attitude-hold.ts": {
     "seelite/no-comments": {
       "count": 10
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/audio-cue.ts": {
@@ -1497,11 +1566,17 @@
   "src/cockpit-model.ts": {
     "seelite/no-comments": {
       "count": 11
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/cockpit-surface.ts": {
     "seelite/no-comments": {
       "count": 45
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/cockpit.ts": {
@@ -1542,6 +1617,9 @@
   "src/commands.ts": {
     "seelite/no-comments": {
       "count": 280
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "src/comms-voice.ts": {
@@ -1702,6 +1780,9 @@
   "src/docking.ts": {
     "seelite/no-comments": {
       "count": 222
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/domains.ts": {
@@ -1792,11 +1873,17 @@
   "src/frame-attribution.ts": {
     "seelite/no-comments": {
       "count": 44
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "src/galaxy-finder-panel.ts": {
     "seelite/no-comments": {
       "count": 116
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/galaxy-finder.ts": {
@@ -1812,16 +1899,25 @@
   "src/galaxy-map.ts": {
     "seelite/no-comments": {
       "count": 269
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "src/galaxy-route.ts": {
     "seelite/no-comments": {
       "count": 43
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/galaxy.ts": {
     "seelite/no-comments": {
       "count": 44
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "src/gamepad.ts": {
@@ -1937,6 +2033,9 @@
   "src/jobs.ts": {
     "seelite/no-comments": {
       "count": 79
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/key-dispatch.ts": {
@@ -1992,6 +2091,9 @@
   "src/light-rig.ts": {
     "seelite/no-comments": {
       "count": 41
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "src/light-shift.ts": {
@@ -2002,6 +2104,9 @@
   "src/live-cockpit.ts": {
     "seelite/no-comments": {
       "count": 315
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "src/loadout.ts": {
@@ -2027,6 +2132,9 @@
   "src/main.ts": {
     "seelite/no-comments": {
       "count": 4189
+    },
+    "seelite/no-stacked-docs": {
+      "count": 20
     }
   },
   "src/market-probe-hook.ts": {
@@ -2482,11 +2590,17 @@
   "src/pad-bindings.ts": {
     "seelite/no-comments": {
       "count": 59
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/perf-panel.ts": {
     "seelite/no-comments": {
       "count": 91
+    },
+    "seelite/no-stacked-docs": {
+      "count": 3
     }
   },
   "src/pilot-demand.ts": {
@@ -2512,11 +2626,17 @@
   "src/planet-bake.ts": {
     "seelite/no-comments": {
       "count": 25
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/planet-classes.glsl.ts": {
     "seelite/no-comments": {
       "count": 14
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/planet-clouds.ts": {
@@ -2532,16 +2652,25 @@
   "src/planet-prototype.ts": {
     "seelite/no-comments": {
       "count": 60
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/planet-shaders.ts": {
     "seelite/no-comments": {
       "count": 33
+    },
+    "seelite/no-stacked-docs": {
+      "count": 4
     }
   },
   "src/planet-surface.ts": {
     "seelite/no-comments": {
       "count": 199
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "src/pointer.ts": {
@@ -2684,6 +2813,11 @@
       "count": 3
     }
   },
+  "src/rock-drill.ts": {
+    "seelite/no-stacked-docs": {
+      "count": 1
+    }
+  },
   "src/rock-heightfields.ts": {
     "seelite/no-comments": {
       "count": 1
@@ -2702,6 +2836,9 @@
   "src/save-envelope.ts": {
     "seelite/no-comments": {
       "count": 122
+    },
+    "seelite/no-stacked-docs": {
+      "count": 6
     }
   },
   "src/save-store.ts": {
@@ -2732,6 +2869,9 @@
   "src/ship-mesh.ts": {
     "seelite/no-comments": {
       "count": 237
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/ship-surface.ts": {
@@ -2747,11 +2887,17 @@
   "src/shipyard-flight.ts": {
     "seelite/no-comments": {
       "count": 23
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/sim.ts": {
     "seelite/no-comments": {
       "count": 223
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/social-preview.ts": {
@@ -2792,11 +2938,17 @@
   "src/station-console.ts": {
     "seelite/no-comments": {
       "count": 59
+    },
+    "seelite/no-stacked-docs": {
+      "count": 3
     }
   },
   "src/station-fixtures.ts": {
     "seelite/no-comments": {
       "count": 162
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/station-form.ts": {
@@ -2822,11 +2974,17 @@
   "src/station-interior.ts": {
     "seelite/no-comments": {
       "count": 56
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/station-mesh.ts": {
     "seelite/no-comments": {
       "count": 1075
+    },
+    "seelite/no-stacked-docs": {
+      "count": 3
     }
   },
   "src/station-modular.ts": {
@@ -2867,16 +3025,25 @@
   "src/station-traffic.ts": {
     "seelite/no-comments": {
       "count": 14
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/station-visuals.ts": {
     "seelite/no-comments": {
       "count": 77
+    },
+    "seelite/no-stacked-docs": {
+      "count": 3
     }
   },
   "src/station.ts": {
     "seelite/no-comments": {
       "count": 32
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/strings-lab-model.ts": {
@@ -2912,6 +3079,9 @@
   "src/system.ts": {
     "seelite/no-comments": {
       "count": 94
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "src/text-raster.ts": {
@@ -3012,6 +3182,9 @@
   "src/world-state.ts": {
     "seelite/no-comments": {
       "count": 231
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/adaptive-resolution.test.ts": {
@@ -3212,6 +3385,9 @@
   "tests/chart-hover-spot.test.ts": {
     "seelite/no-comments": {
       "count": 11
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/chase-orbit.test.ts": {
@@ -3262,6 +3438,9 @@
   "tests/collision-stations.test.ts": {
     "seelite/no-comments": {
       "count": 162
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/collision-traffic.test.ts": {
@@ -3357,6 +3536,9 @@
   "tests/cruise.test.ts": {
     "seelite/no-comments": {
       "count": 325
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/cycle-key.test.ts": {
@@ -3462,6 +3644,9 @@
   "tests/docking-director.test.ts": {
     "seelite/no-comments": {
       "count": 42
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/docking-notice.test.ts": {
@@ -3582,6 +3767,9 @@
   "tests/frame-attribution.test.ts": {
     "seelite/no-comments": {
       "count": 84
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/fuel-scoop.test.ts": {
@@ -3702,6 +3890,9 @@
   "tests/helpers/market-math.ts": {
     "seelite/no-comments": {
       "count": 21
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/helpers/orbiting-frame.ts": {
@@ -3714,6 +3905,11 @@
       "count": 1
     }
   },
+  "tests/helpers/procedural-hulls.ts": {
+    "seelite/no-stacked-docs": {
+      "count": 1
+    }
+  },
   "tests/helpers/pulse-walk.ts": {
     "seelite/no-comments": {
       "count": 2
@@ -3722,6 +3918,9 @@
   "tests/helpers/read-coriolis-glb.ts": {
     "seelite/no-comments": {
       "count": 2
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/helpers/rolled-envelope.ts": {
@@ -3937,6 +4136,9 @@
   "tests/leg-reset-coverage.test.ts": {
     "seelite/no-comments": {
       "count": 53
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/legal.test.ts": {
@@ -4322,6 +4524,9 @@
   "tests/planet-cost.test.ts": {
     "seelite/no-comments": {
       "count": 48
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/planet-footprint.test.ts": {
@@ -4497,6 +4702,9 @@
   "tests/relief-bands.test.ts": {
     "seelite/no-comments": {
       "count": 78
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/render-eligibility.test.ts": {
@@ -4712,6 +4920,9 @@
   "tests/station-commerce.test.ts": {
     "seelite/no-comments": {
       "count": 244
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/station-console-tabs.types.ts": {
@@ -4752,6 +4963,9 @@
   "tests/station-interior-mesh.test.ts": {
     "seelite/no-comments": {
       "count": 82
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "tests/station-interior.test.ts": {
@@ -4762,11 +4976,17 @@
   "tests/station-mesh.test.ts": {
     "seelite/no-comments": {
       "count": 281
+    },
+    "seelite/no-stacked-docs": {
+      "count": 2
     }
   },
   "tests/station-orbits.test.ts": {
     "seelite/no-comments": {
       "count": 79
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/station-outpost-salvage.test.ts": {
@@ -4782,6 +5002,9 @@
   "tests/station-proxy.test.ts": {
     "seelite/no-comments": {
       "count": 57
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/station-route.test.ts": {
@@ -4797,6 +5020,9 @@
   "tests/station-visuals.test.ts": {
     "seelite/no-comments": {
       "count": 138
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/station-wheel.test.ts": {
@@ -4807,6 +5033,9 @@
   "tests/station.test.ts": {
     "seelite/no-comments": {
       "count": 73
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/strings-lab.test.ts": {
@@ -4857,6 +5086,9 @@
   "tests/traffic-engagement.test.ts": {
     "seelite/no-comments": {
       "count": 131
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/tug-hull.test.ts": {
@@ -4947,6 +5179,9 @@
   "tests/workflow-scan.test.ts": {
     "seelite/no-comments": {
       "count": 51
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "tests/worktree-new.test.ts": {
@@ -4977,6 +5212,9 @@
   "tests/world-state.test.ts": {
     "seelite/no-comments": {
       "count": 278
+    },
+    "seelite/no-stacked-docs": {
+      "count": 1
     }
   },
   "vite.config.ts": {
