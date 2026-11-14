@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { interiorOfStation } from "../src/dock-session";
 import { generateGalaxy } from "../src/galaxy";
-import { HULL_SPECS } from "../src/hull";
+import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import {
 	clearancePromotion,
 	compareStationTurns,
@@ -14,6 +14,8 @@ import {
 	materializeTrafficContact,
 	stationTrafficRoster,
 	TRAFFIC_HULL_POOLS,
+	TRAFFIC_IDENTITY_ENV,
+	TRAFFIC_IDENTITY_ENV_VERSION,
 	TRAFFIC_ROLE,
 	trafficScheduleAt,
 } from "../src/station-traffic";
@@ -37,6 +39,22 @@ const stations = () => {
 };
 
 describe("station Traffic roster", () => {
+	test("the frozen identity table carries a complete envelope for every hull", () => {
+		expect(TRAFFIC_IDENTITY_ENV_VERSION).toBe(11);
+		expect(Object.keys(TRAFFIC_IDENTITY_ENV).sort()).toEqual(
+			[...HULL_IDS].sort(),
+		);
+		for (const id of HULL_IDS) {
+			const env = required(TRAFFIC_IDENTITY_ENV[id], `${id} identity envelope`);
+			for (const dim of ["lengthKm", "beamKm", "heightKm"] as const)
+				expect({
+					id,
+					dim,
+					usable: Number.isFinite(env[dim]) && env[dim] > 0,
+				}).toEqual({ id, dim, usable: true });
+		}
+	});
+
 	test("Traffic slots join the version-11 persistence Carrier namespace", () => {
 		expect(WORLD_GENERATOR_VERSION).toBe(11);
 		const generated = [...enumerateCarriers(WORLD, 0)];
