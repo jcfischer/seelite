@@ -49,6 +49,7 @@ import {
 	EXTERIOR_MAP_ANISOTROPY,
 } from "./model-urls";
 import { HULL_SPECS } from "./hull";
+import type { ModelProgressListener } from "./model-progress";
 import { isSharedImage } from "./shared-image";
 import { type AuthoredHullBuilder, HULL_REACH_KM } from "./ship-mesh";
 
@@ -106,6 +107,7 @@ export const COURIER_NOZZLES_M = {
  *  floor is `authored-hull.ts`'s, shared with the tug. */
 export const COURIER_ALLOY_MATERIAL = AUTHORED_ALLOY_MATERIAL;
 export const COURIER_ALLOY_ROUGHNESS = AUTHORED_ALLOY_ROUGHNESS;
+export const COURIER_NORMAL_STRENGTH = 0.15;
 
 /**
  * Prepare a loaded study scene once and return the builder `buildShipMesh`
@@ -145,7 +147,10 @@ export function createCourierHullBuilder(
 						material.map.anisotropy = EXTERIOR_MAP_ANISOTROPY;
 					if (normalMap) {
 						material.normalMap = normalMap;
-						material.normalScale.set(0.15, -0.15);
+						material.normalScale.set(
+							COURIER_NORMAL_STRENGTH,
+							-COURIER_NORMAL_STRENGTH,
+						);
 						material.bumpMap = null;
 						material.roughnessMap = null;
 					}
@@ -158,15 +163,25 @@ export function createCourierHullBuilder(
 	});
 }
 
+let ready: Promise<void> | undefined;
+
 /** The session queue starts this after construction and refreshes cached couriers on
  *  resolution (node #831). The postcard viewer waits before drawing; the ship
  *  workbench waits before building its review hulls (`authoredHullLoader`). */
-export const prepareCourierHullModel = authoredHullLoader(
-	"courier",
-	COURIER_HULL_GLB_URL,
-	async (template) =>
-		createCourierHullBuilder(
-			template,
-			await new THREE.TextureLoader().loadAsync(COURIER_NORMAL_MAP_URL),
-		),
-);
+export function prepareCourierHullModel(
+	onProgress?: ModelProgressListener,
+): Promise<void> {
+	if (ready) return ready;
+	const normal = new THREE.TextureLoader().loadAsync(COURIER_NORMAL_MAP_URL);
+	const load = authoredHullLoader(
+		"courier",
+		COURIER_HULL_GLB_URL,
+		async (template) => createCourierHullBuilder(template, await normal),
+	);
+	return (ready = Promise.all([normal, load(onProgress)])
+		.then(() => {})
+		.catch((error) => {
+			ready = undefined;
+			throw error;
+		}));
+}

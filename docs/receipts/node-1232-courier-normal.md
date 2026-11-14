@@ -7,9 +7,11 @@ on node #1219 on 2026-11-09. Its existing scalar roughness remains in force;
 exterior bump and roughness maps are cleared. Cockpit materials and other authored
 hull builders are unchanged. The normal applies on both quality settings.
 
-Implementation is `75079117`, merged with base `b496c9ab` at `5ed3f803` before
-verification. The final delivery commit adds this receipt only. No GLB, geometry,
-envelope, vent placement, LOD policy, collision data or boot-set owner changed.
+Initial implementation is `75079117`, merged with base `b496c9ab` at `5ed3f803`
+before its initial verification; `dde23fd6` recorded that evidence. Review round 1
+changes CLI output selection and courier request scheduling as described below.
+No GLB, geometry, envelope, vent placement, LOD policy, collision data or boot-set
+owner changed.
 This is a minor finish adjustment to an existing hull, with no major changelog
 entry under `src/changelog.ts`'s definition.
 
@@ -45,13 +47,53 @@ outside `src/`. No height is committed or emitted by Vite. There is no derived
 roughness output. `spikes/courier-hull/assets.md` holds the source provenance and
 complete recipe. The normal tile was opened and inspected.
 
-The browser fetch is inside the callback supplied to `authoredHullLoader`, after
-the GLB loads. A rejected texture request rejects preparation and clears the same
-memo as a failed GLB. `createCourierHullBuilder(template, normalMap?)` itself
-fetches nothing. Its texture is shared by the exterior materials and reduced
+The browser preparation starts the normal request alongside the GLB request and
+awaits it in the callback supplied to `authoredHullLoader`. Both requests are held
+by one courier preparation memo; a rejection of either clears it, and a retry
+starts fresh requests for both. `createCourierHullBuilder(template, normalMap?)`
+itself fetches nothing. Its texture is shared by the exterior materials and reduced
 levels, with `flipY=false`, repeat wrapping, `NoColorSpace` and anisotropy 8.
 
-## Headless and build checks
+The optional `--normal-out <path>` CLI argument redirects the normal output from
+its default shipping path. The integration test uses a temporary normal path and
+compares that file with the committed asset, so even a WebP encoder mismatch
+cannot rewrite the tracked asset. The approved strength has one exported owner,
+`COURIER_NORMAL_STRENGTH`, pinned to 0.15 in the material test.
+
+## Review round 1 verification (2026-11-15)
+
+All three Sage findings on `dde23fd6` were addressed: isolated CLI output,
+concurrent courier requests, and a named strength. The two new regressions failed
+before implementation: the CLI rejected `--normal-out`, and the texture request
+count remained zero while the GLB request was pending. After implementation the
+38 affected tests passed with 4,020 assertions, including early normal failure,
+GLB failure followed by late normal failure, GLB failure after normal success,
+fresh requests on retry, and shared pending/successful preparation.
+
+The required full host `npm test` ran once before the review-fix commit:
+**8,148 passed, zero failed** across 498 files in 733.44 seconds. Its raw log is
+`/tmp/seelite-1232-review1-full-test.log`.
+
+Build/typecheck, deployment size guard, format, script lint, comment lint and
+launcher wiring passed. The shipping normal remains unchanged. Hardware probes
+`probe-station-mouth` and `probe-model-download` each passed alone on ANGLE Metal,
+Apple M5 Pro. These are partial runs; selection still falls back to all 126
+probes, which the worker SOP reserves for the supervisor.
+
+The existing cold-install instrument ran five fresh contexts on the same hardware
+renderer. In every run, GLB and normal resource start times were equal; the normal
+finished before the GLB response ended, demonstrating the requests overlap.
+Each normal download was 210,796 bytes. Worst install frame gaps were 98.2,
+117.0, 116.7, 99.8 and 100.1 ms (median 100.1 ms). Median install window was
+1,752.1 ms. This is a later head-only run, not a shuffled comparison with the
+earlier baseline; it establishes request overlap, not an overall install speedup.
+No steady rendering or appearance changes were made in this review pass.
+
+New host-local evidence is `/tmp/seelite-1232-review1-*.log`, plus
+`/tmp/seelite-1232/cold-review1.json`. The earlier measurements below describe the
+initial integration, whose normal request was serialized after the GLB.
+
+## Initial headless and build checks
 
 Tests were written first. The initial pure test could not import the missing
 deriver. The material test subsequently observed a null normal, and the failed

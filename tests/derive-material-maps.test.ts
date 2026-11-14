@@ -136,9 +136,18 @@ test("CLI reproduces the shipped half-size normal and writes only a full-size he
 	const directory = await mkdtemp(join(tmpdir(), "seelite-derive-"));
 	try {
 		const path = "src/models/courier-steel-wear-normal.webp";
+		const normalPath = join(directory, "normal.webp");
+		const heightDirectory = join(directory, "height");
 		const before = await Bun.file(path).bytes();
 		const child = Bun.spawn(
-			["bun", "scripts/derive-material-maps.ts", "--out", directory],
+			[
+				"bun",
+				"scripts/derive-material-maps.ts",
+				"--out",
+				heightDirectory,
+				"--normal-out",
+				normalPath,
+			],
 			{ stdout: "pipe", stderr: "pipe" },
 		);
 		const stdout = await new Response(child.stdout).text();
@@ -146,15 +155,22 @@ test("CLI reproduces the shipped half-size normal and writes only a full-size he
 		expect([await child.exited, stderr]).toEqual([0, ""]);
 		expect(JSON.parse(stdout).tile).toEqual([1254, 1254]);
 		expect(await Bun.file(path).bytes()).toEqual(before);
-		const normal = await sharp(path).metadata();
+		expect(await Bun.file(normalPath).bytes()).toEqual(before);
+		const normal = await sharp(normalPath).metadata();
 		expect([normal.width, normal.height, normal.format]).toEqual([
 			627,
 			627,
 			"webp",
 		]);
-		expect(await readdir(directory)).toEqual(["courier-steel-wear-height.png"]);
+		expect((await readdir(directory)).sort()).toEqual([
+			"height",
+			"normal.webp",
+		]);
+		expect(await readdir(heightDirectory)).toEqual([
+			"courier-steel-wear-height.png",
+		]);
 		const height = await sharp(
-			join(directory, "courier-steel-wear-height.png"),
+			join(heightDirectory, "courier-steel-wear-height.png"),
 		).metadata();
 		expect([height.width, height.height, height.format]).toEqual([
 			1254,

@@ -1,16 +1,23 @@
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import sharp from "sharp";
 import { deriveMaterialMaps } from "./lib/derive-material-maps";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const args = process.argv.slice(2);
-if (args.length !== 2 || args[0] !== "--out")
+const { values } = parseArgs({
+	args: process.argv.slice(2),
+	options: {
+		out: { type: "string" },
+		"normal-out": { type: "string" },
+	},
+});
+if (!values.out)
 	throw new Error(
-		"Usage: bun scripts/derive-material-maps.ts --out <height-output-directory>",
+		"Usage: bun scripts/derive-material-maps.ts --out <height-output-directory> [--normal-out <path>]",
 	);
-const output = resolve(args[1]);
+const output = resolve(values.out);
 await mkdir(output, { recursive: true });
 const actual = await realpath(output);
 const sourceDirectory = await realpath(join(root, "src"));
@@ -40,7 +47,10 @@ const { data, info } = await sharp(image)
 	.raw()
 	.toBuffer({ resolveWithObject: true });
 const maps = deriveMaterialMaps(data, info.width, info.height);
-const normalPath = join(root, "src/models/courier-steel-wear-normal.webp");
+const normalPath = resolve(
+	values["normal-out"] ??
+		join(root, "src/models/courier-steel-wear-normal.webp"),
+);
 await sharp(maps.normal, {
 	raw: { width: info.width, height: info.height, channels: 3 },
 })

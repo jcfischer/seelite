@@ -26,6 +26,7 @@ import {
 import {
 	COURIER_ALLOY_MATERIAL,
 	COURIER_ALLOY_ROUGHNESS,
+	COURIER_NORMAL_STRENGTH,
 	COURIER_LENGTH_INSET_KM,
 	COURIER_FRAME_NAME,
 	COURIER_LEVEL_NAMES,
@@ -875,6 +876,7 @@ test("optional courier normal covers all exterior levels, preserves cockpit and 
 		.filter((m) => m.name.startsWith("cockpit-"))
 		.map((m) => [m, m.bumpMap, m.roughnessMap] as const);
 	const normal = new THREE.Texture();
+	expect(COURIER_NORMAL_STRENGTH).toBe(0.15);
 	const before = courier();
 	const builder = await createCourierHullBuilder(template, normal);
 	const root = new THREE.Group();
@@ -888,7 +890,10 @@ test("optional courier normal covers all exterior levels, preserves cockpit and 
 				if (!m.map || m.name.startsWith("cockpit-")) continue;
 				mapped++;
 				expect(m.normalMap).toBe(normal);
-				expect(m.normalScale.toArray()).toEqual([0.15, -0.15]);
+				expect(m.normalScale.toArray()).toEqual([
+					COURIER_NORMAL_STRENGTH,
+					-COURIER_NORMAL_STRENGTH,
+				]);
 				expect(m.bumpMap).toBeNull();
 				expect(m.roughnessMap).toBeNull();
 			}
@@ -913,30 +918,69 @@ test("optional courier normal covers all exterior levels, preserves cockpit and 
 	expect(box.max.distanceTo(oldBox.max)).toBeLessThan(1e-10);
 }, 30_000);
 
-test("courier browser preparation rejects a failed normal fetch, retries it and shares the successful load", async () => {
+test("courier browser preparation fetches both assets concurrently, retries either failure and shares success", async () => {
 	const previous = authoredHullBuilder("courier");
 	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const deferred = <T>() => {
+		let resolve!: (value: T) => void;
+		let reject!: (reason: Error) => void;
+		const promise = new Promise<T>((yes, no) => {
+			resolve = yes;
+			reject = no;
+		});
+		return { promise, resolve, reject };
+	};
+	const attempts = Array.from({ length: 4 }, () => ({
+		glb: deferred<{ scene: THREE.Object3D }>(),
+		normal: deferred<THREE.Texture>(),
+	}));
+	let glbFetches = 0;
 	const glb = spyOn(GLTFLoader.prototype, "loadAsync").mockImplementation(
-		async () => ({ scene: template.clone(true) }) as never,
+		() => attempts[glbFetches++].glb.promise as never,
 	);
 	let fetches = 0;
 	const texture = spyOn(
 		THREE.TextureLoader.prototype,
 		"loadAsync",
-	).mockImplementation(async (url) => {
+	).mockImplementation((url) => {
 		expect(url).toBe(COURIER_NORMAL_MAP_URL);
-		if (++fetches === 1) throw new Error("normal fetch failed");
-		return new THREE.Texture();
+		return attempts[fetches++].normal.promise;
 	});
+	const start = (index: number) => {
+		const promise = prepareCourierHullModel();
+		expect(prepareCourierHullModel()).toBe(promise);
+		expect(glbFetches).toBe(index + 1);
+		expect(fetches).toBe(index + 1);
+		return promise;
+	};
 	try {
-		const failed = prepareCourierHullModel();
-		expect(prepareCourierHullModel()).toBe(failed);
-		await expect(failed).rejects.toThrow("normal fetch failed");
+		const normalFailed = start(0);
+		attempts[0].normal.reject(new Error("normal fetch failed"));
+		await expect(normalFailed).rejects.toThrow("normal fetch failed");
 		expect(authoredHullBuilder("courier")).toBe(previous);
+
+		const glbFailed = start(1);
+		attempts[0].glb.resolve({ scene: template.clone(true) });
+		attempts[1].glb.reject(new Error("GLB fetch failed"));
+		await expect(glbFailed).rejects.toThrow("GLB fetch failed");
+		attempts[1].normal.reject(new Error("late normal failure"));
+		expect(authoredHullBuilder("courier")).toBe(previous);
+
+		const glbFailedAfterNormal = start(2);
+		attempts[2].normal.resolve(new THREE.Texture());
+		attempts[2].glb.reject(new Error("GLB failed after normal loaded"));
+		await expect(glbFailedAfterNormal).rejects.toThrow(
+			"GLB failed after normal loaded",
+		);
+		expect(authoredHullBuilder("courier")).toBe(previous);
+
+		const succeeded = start(3);
+		attempts[3].glb.resolve({ scene: template.clone(true) });
+		attempts[3].normal.resolve(new THREE.Texture());
+		await succeeded;
 		await prepareCourierHullModel();
-		await prepareCourierHullModel();
-		expect(fetches).toBe(2);
-		expect(glb).toHaveBeenCalledTimes(2);
+		expect(fetches).toBe(4);
+		expect(glb).toHaveBeenCalledTimes(4);
 		expect(authoredHullBuilder("courier")).not.toBe(previous);
 	} finally {
 		glb.mockRestore();
