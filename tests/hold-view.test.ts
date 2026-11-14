@@ -308,7 +308,7 @@ describe("the page's own markup carries what the first sheet lacked", () => {
 });
 
 describe("mined ore on the hold page", () => {
-	test("an ore line is the pilot's, names itself mined ore and says it has no market", () => {
+	test("an ore line is the pilot's and names its raw sale", () => {
 		const html = holdBody(
 			summary({
 				usedT: 2,
@@ -320,7 +320,7 @@ describe("mined ore on the hold page", () => {
 		expect(html).toContain('data-live-hold-row="Gold-bearing ore STD"');
 		expect(html).toContain('data-live-hold-owner="pilot"');
 		expect(html).toContain("2 t");
-		expect(html).toContain("mined ore · no market yet");
-		expect(html).not.toContain("sellable");
+		expect(html).toContain("raw ore · sellable");
+		expect(html).not.toContain("no market yet");
 	});
 });

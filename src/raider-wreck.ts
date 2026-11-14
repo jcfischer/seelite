@@ -25,6 +25,7 @@ import { carrierKeySeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
+import { oreGood } from "./ore-goods";
 import { mix } from "./rng";
 import { type FrameMotion, frameMean } from "./sim";
 import {
@@ -192,9 +193,9 @@ export function cargoWeights(
 	government: number,
 ): { good: Commodity; weight: number }[] {
 	const g = Math.max(0, Math.min(7, Math.round(government)));
-	return COMMODITIES.filter((c) => c.unit === "t" && !c.sellOnly).map(
-		(good) => ({ good, weight: good.illegal ? (7 - g) / 7 : 1 }),
-	);
+	return COMMODITIES.filter(
+		(c) => c.unit === "t" && !c.sellOnly && !oreGood(c.name),
+	).map((good) => ({ good, weight: good.illegal ? (7 - g) / 7 : 1 }));
 }
 
 /**

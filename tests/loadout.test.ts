@@ -239,7 +239,7 @@ test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the n
 });
 test("current saves write only loadout; mixed versions and unknown old ids are refused", () => {
 	const current = fixture();
-	expect(current.saveSchemaVersion).toBe(20);
+	expect(current.saveSchemaVersion).toBe(21);
 	expect(current.commander.state.ownedEquipment).toBeUndefined();
 	expect(() =>
 		parseSave(

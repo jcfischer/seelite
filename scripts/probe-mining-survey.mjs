@@ -422,7 +422,7 @@ try {
 				await visit(ore[0]);
 				noScoop.refitTaken = g.minedT - hadMined;
 			}
-			const took = { ...g.miningLog, mined: { ...g.minedOre } };
+			const took = { ...g.miningLog, mined: { ...g.commander.cargo } };
 			g.rightTab = "Hold";
 			g.step(dt);
 			for (let i = 0; i < 2; i++)
@@ -432,15 +432,21 @@ try {
 			].map((row) => ({
 				good: row.getAttribute("data-live-hold-row"),
 				amount: row.querySelector("[data-live-hold-amount]")?.textContent,
-				ore: /mined ore/.test(row.textContent ?? ""),
+				ore: /raw ore/.test(row.textContent ?? ""),
 			}));
 			const hold = g.commander;
-			g.minedOre = { "Prototype fill": 10000 };
+			const { withAccount, accountOf, acquire } = await import(
+				"/src/commodity-pools.ts"
+			);
+			g.commander = withAccount(
+				g.commander,
+				acquire(accountOf(g.commander), Object.keys(took.mined)[0], 10000),
+			);
 			if (ore[1]) await visit(ore[1]);
 			for (let i = 0; i < 2; i++)
 				await new Promise((r) => requestAnimationFrame(r));
 			const full = { ...g.miningLog, notice: g.miningLineRender?.notice };
-			g.minedOre = {};
+			g.commander = hold;
 			await window.__standOff(5);
 			const surface = g.surveyState().row?.surface ?? 0;
 			for (let s = 0; s < 125; s += dt) g.step(dt);

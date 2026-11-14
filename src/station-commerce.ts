@@ -19,6 +19,7 @@ import {
 	ExactAmountError,
 } from "./exact-amount";
 import { hasOreBay, miningHold } from "./mining-capacity";
+import { oreGood, oreTonnes } from "./ore-goods";
 import {
 	type Loadout,
 	type FittedModule,
@@ -70,6 +71,7 @@ import {
 	marketRow,
 	shelfQuantity,
 	stockResponse,
+	commodityStockResponse,
 } from "./market";
 import { type GateRefusal, type Rungs, gateRefusal } from "./ladder";
 import {
@@ -236,7 +238,6 @@ export type StationAction =
 	| { type: "buy-hull"; hull: HullId };
 
 export interface StationCommerceInput {
-	rawOreT?: number;
 	services?: Partial<Record<CapabilityService, boolean>>;
 	commander: CommanderState;
 	deficits: DeficitMap;
@@ -438,9 +439,11 @@ export function scoopCargo(
 ): { accepted: boolean; tonnes: number; commander: CommanderState } {
 	const good = commodity(commodityName);
 	if (good.unit !== "t") return { accepted: false, tonnes: 0, commander };
+	if (oreGood(good.name) && (!Number.isSafeInteger(tonnes) || tonnes < 0))
+		return { accepted: false, tonnes: 0, commander };
 	// What fits, in whole tonnes: a canister of a manifest line can hold more
 	// than the hold has room for, and the rest stays in it (civilian-combat H11).
-	const hold = commanderHold(commander, entrustedT);
+	const hold = cargoHold(commander, entrustedT, good.name);
 	const room = Math.floor(hold.capacityT - hold.usedT);
 	const took = Math.max(0, Math.min(tonnes, room));
 	if (took <= 0) return { accepted: false, tonnes: 0, commander };
@@ -538,7 +541,7 @@ export function transactAtStation(
 	const hold = miningHold(
 		result.commander.hull,
 		commanderHold(result.commander, input.entrustedT),
-		input.rawOreT ?? 0,
+		hasOreBay(result.commander.hull) ? oreTonnes(result.commander.cargo) : 0,
 	);
 	return hold.usedT > hold.capacityT ? rejected(input, "cargo-full") : result;
 }
@@ -820,6 +823,8 @@ function stationTransaction(
 	}
 	if (!listsCommodity(good, input.station))
 		return rejected(input, "commodity-unavailable");
+	if (oreGood(good.name) && !input.mining)
+		return rejected(input, "commodity-unavailable");
 	const damage = damagedPurchase(input, "market");
 	if (damage) return damage;
 	const { base, deficit, holdT, q } = priceAt(input, good, quote);
@@ -840,11 +845,8 @@ function stationTransaction(
 			)
 		)
 			return rejected(input, "insufficient-credits");
-		if (
-			good.unit === "t" &&
-			commanderHold(input.commander, input.entrustedT).usedT + quantity >
-				holdCapacityT(input.commander)
-		)
+		const hold = cargoHold(input.commander, input.entrustedT, good.name);
+		if (good.unit === "t" && hold.usedT + quantity > hold.capacityT)
 			return rejected(input, "cargo-full");
 		return {
 			accepted: true,
@@ -910,9 +912,31 @@ export const commanderHold = (
 	commander: CommanderState,
 	entrustedT: number,
 ) => ({
-	usedT: heldTonnes(commander.cargo) + recoveredTonnes(commander) + entrustedT,
+	usedT:
+		heldTonnes(commander.cargo) -
+		(hasOreBay(commander.hull) ? oreTonnes(commander.cargo) : 0) +
+		recoveredTonnes(commander) +
+		entrustedT,
 	capacityT: holdCapacityT(commander),
 });
+
+/** Dedicated raw ore capacity and occupancy, when the hull has ore skips. */
+export const commanderOreBay = (commander: CommanderState) =>
+	hasOreBay(commander.hull)
+		? {
+				usedT: oreTonnes(commander.cargo),
+				capacityT: HULL_SPECS[commander.hull].oreHoldT!,
+			}
+		: undefined;
+
+/** The compartment admitting this good, shared by mining, markets and recovery. */
+export const cargoHold = (
+	commander: CommanderState,
+	entrustedT: number,
+	good: string,
+) =>
+	(oreGood(good) ? commanderOreBay(commander) : undefined) ??
+	commanderHold(commander, entrustedT);
 
 /** Tonnes in one unit of each `CommodityUnit`. */
 const TONNES_PER_UNIT = { t: 1, kg: 1e-3, g: 1e-6 } as const;
@@ -1055,11 +1079,11 @@ export function hullOffer(
 	const hold = commanderHold({ ...transferred, hull }, input.entrustedT);
 	const { capacityT, usedT } = hold;
 	const dedicated = hasOreBay(hull);
-	const rawOreT = input.rawOreT ?? 0;
+	const rawOreT = oreTonnes(commander.cargo);
 	const oreHold = miningHold(hull, hold, rawOreT);
 	if (dedicated && oreHold.usedT > oreHold.capacityT)
 		return { ...rejected(input, "hull-hold"), ...reached };
-	let overflowT = Math.ceil(usedT + (dedicated ? 0 : rawOreT) - capacityT);
+	let overflowT = Math.ceil(usedT - capacityT);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))
 		// Contraband is never auto-sold (the principal's ruling): legal goods go
@@ -1067,7 +1091,11 @@ export function hullOffer(
 		// Every legal good is listed everywhere (`listsCommodity`), so a legal
 		// lot always has a bid here.
 		.filter(
-			({ good, units }) => good.unit === "t" && units > 0 && !good.illegal,
+			({ good, units }) =>
+				good.unit === "t" &&
+				units > 0 &&
+				!good.illegal &&
+				(!oreGood(good.name) || (input.mining && !dedicated)),
 		)
 		.map((lot) => ({
 			...lot,
@@ -1149,7 +1177,10 @@ const priceAt = (input: ConsoleInput, good: Commodity, quote: QuoteFn) => {
 		input.gameTimeMin,
 	);
 	const holdT = holdCapacityT(input.commander);
-	const q = quote(stockResponse(base.priceCr, deficit, holdT), input.displayTL);
+	const q = quote(
+		commodityStockResponse(good, base.priceCr, deficit, holdT),
+		input.displayTL,
+	);
 	return { base, deficit, holdT, q };
 };
 

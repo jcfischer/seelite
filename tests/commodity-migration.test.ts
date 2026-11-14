@@ -47,7 +47,7 @@ test("migration writes distinct live and launch records atomically before return
 	const raw = await catalog.prepareForBoot("pilot");
 	const live = parseSave(raw),
 		checkpoint = parseSave(await backend.read("pilot", "lastDocked"));
-	expect((raw as any).saveSchemaVersion).toBe(20);
+	expect((raw as any).saveSchemaVersion).toBe(21);
 	expect(live.commander.state.accounting!.cash).toBe(
 		signedMoney.fromNumber(0.1),
 	);

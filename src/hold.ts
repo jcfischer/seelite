@@ -1,3 +1,4 @@
+import { oreGood } from "./ore-goods";
 /**
  * What is aboard, who owns it, and how much room is left — one projection.
  *
@@ -29,7 +30,11 @@
 import { type CommodityUnit, commodity } from "./market";
 import { type RequestsState, entrustedTonnesAboard } from "./requests";
 import type { RequestStation, RequestStatus } from "./requests";
-import { type CommanderState, commanderHold } from "./station-commerce";
+import {
+	type CommanderState,
+	commanderHold,
+	commanderOreBay,
+} from "./station-commerce";
 
 /** Whose goods a line is. The requester's are excluded from sale (§4). */
 export type HoldOwner = "pilot" | "requester";
@@ -61,6 +66,7 @@ export interface HoldLine {
 	 */
 	job?: HoldJob;
 	kind?: "fitting" | "ore";
+	sellable?: boolean;
 }
 
 /** Where a consignment has to end up, and which end applies. */
@@ -122,6 +128,7 @@ const compareLines = (a: HoldLine, b: HoldLine): number => {
 export function holdSummary(
 	commander: CommanderState,
 	requests: RequestsState,
+	mining = false,
 ): HoldSummary {
 	const entrustedT = entrustedTonnesAboard(requests);
 	const { usedT, capacityT } = commanderHold(commander, entrustedT);
@@ -137,6 +144,7 @@ export function holdSummary(
 			amount,
 			unit: commodity(goodName).unit,
 			owner: "pilot",
+			...(oreGood(goodName) ? { kind: "ore" as const, sellable: mining } : {}),
 		});
 	}
 	for (const item of commander.recoveredFittings ?? [])
@@ -195,7 +203,22 @@ export function holdSummary(
 		});
 	}
 	lines.sort(compareLines);
-	return { usedT, capacityT, freeT: capacityT - usedT, entrustedT, lines };
+	const oreBay = commanderOreBay(commander);
+	return {
+		usedT,
+		capacityT,
+		freeT: capacityT - usedT,
+		entrustedT,
+		lines,
+		...(oreBay && (mining || oreBay.usedT > 0)
+			? {
+					oreBay: {
+						...oreBay,
+						freeT: oreBay.capacityT - oreBay.usedT,
+					},
+				}
+			: {}),
+	};
 }
 
 /**
@@ -244,12 +267,7 @@ export const pilotGoods = (
 ): Readonly<Record<string, number>> =>
 	Object.fromEntries(
 		hold.lines
-			.filter(
-				(line) =>
-					line.owner === "pilot" &&
-					line.kind !== "fitting" &&
-					line.kind !== "ore",
-			)
+			.filter((line) => line.owner === "pilot" && line.kind !== "fitting")
 			.map((line) => [line.goodName, line.amount]),
 	);
 
