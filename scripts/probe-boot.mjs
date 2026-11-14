@@ -37,6 +37,7 @@
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
 import {
+	bootBudgetMs,
 	bootedGame,
 	guardedOrigin,
 	installCamSim,
@@ -157,7 +158,9 @@ async function open({
 	await page.goto(url, { waitUntil: "load" });
 	if (checkBoot) {
 		const boot = await page
-			.waitForFunction(() => window.__seelite?.boot, null, { timeout: 20000 })
+			.waitForFunction(() => window.__seelite?.boot, null, {
+				timeout: bootBudgetMs(page),
+			})
 			.then((handle) => handle.jsonValue())
 			.catch(() => null);
 		check("a probe page boots direct", boot === "direct", `boot mode ${boot}`);
