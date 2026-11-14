@@ -67,7 +67,12 @@ const unshippedKey = (key: string): string => {
 	return key;
 };
 const SPARE_KEY = unshippedKey("8");
-const TO: Trigger = { kind: "key", key: SPARE_KEY, hold: true, code: "Digit8" };
+const TO: Trigger = {
+	kind: "key",
+	key: SPARE_KEY,
+	hold: true,
+	code: `Digit${SPARE_KEY}`,
+};
 
 const ONTO_PITCH_DOWN = shipped(PITCH_DOWN, "w");
 
@@ -280,17 +285,17 @@ describe("a rejected row costs that row and says which", () => {
 		],
 		[
 			"a surface that is not one",
-			{ to: { kind: "key", key: "8", hold: true, surface: "hold" } },
+			{ to: { kind: "key", key: SPARE_KEY, hold: true, surface: "hold" } },
 			"unreadable-trigger",
 		],
 		[
 			"a qualifier that is not `true`",
-			{ to: { kind: "key", key: "8", hold: "yes" } },
+			{ to: { kind: "key", key: SPARE_KEY, hold: "yes" } },
 			"unreadable-trigger",
 		],
 		[
 			"a `to` that drops the command's own hold",
-			{ to: { kind: "key", key: "8" } },
+			{ to: { kind: "key", key: SPARE_KEY } },
 			"refused-by-registry",
 		],
 	] as const)("%s is rejected by name", (_name, patch, reason) => {
@@ -380,11 +385,11 @@ describe("the validator answers what the registry's law cannot", () => {
 	const legal = {
 		command: PITCH_UP,
 		from: FROM,
-		to: { kind: "key", key: "8", hold: true },
+		to: { kind: "key", key: SPARE_KEY, hold: true },
 	};
 	const moved8 = rebind(DEFAULT_BINDINGS, PITCH_UP, FROM, {
 		kind: "key",
-		key: "8",
+		key: SPARE_KEY,
 		hold: true,
 	});
 
