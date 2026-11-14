@@ -50,26 +50,22 @@ describe("node #1239: what the swept Pilgrim does to Traffic identity", () => {
 		).toEqual(GOLDEN);
 	});
 
-	test("a live compatibility filter reshuffles 3,641 hulls and moves all eight fingerprints", () => {
+	test("the frozen identity baseline keeps every hull and fingerprint when the Pilgrim's envelope grows", () => {
 		setExplorer(OLD);
 		const before = hulls();
 		setExplorer(PILGRIM_SWEPT);
 		const after = hulls();
 		expect(after.size).toBe(before.size);
 		let moved = 0;
-		let collateral = 0;
-		for (const [k, h] of before)
-			if (after.get(k) !== h) {
-				moved++;
-				if (h !== "explorer") collateral++;
-			}
-		expect(moved).toBe(3641);
-		expect(collateral).toBe(1642);
-		expect([...after.values()].includes("explorer")).toBe(false);
+		for (const [k, h] of before) if (after.get(k) !== h) moved++;
+		expect(moved).toBe(0);
+		expect([...after.values()].filter((h) => h === "explorer").length).toBe(
+			1999,
+		);
 		const fp = Array.from({ length: GALAXY_COUNT }, (_, g) =>
 			carrierBaselineFingerprint(SEED, g),
 		);
-		expect(fp.filter((v, i) => v !== GOLDEN[i]).length).toBe(8);
+		expect(fp).toEqual(GOLDEN);
 		setExplorer(OLD);
 	});
 });

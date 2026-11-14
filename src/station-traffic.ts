@@ -23,6 +23,26 @@ import {
 import type { Station } from "./system";
 import { add, length, scale, sub, type Vec3 } from "./vec3";
 
+export const TRAFFIC_IDENTITY_ENV_VERSION = 11;
+
+/** Envelopes Traffic draws its hulls against, frozen at generator 11 so a hull's
+ *  live envelope growing never redraws a carrier's hull. Physical fit reads
+ *  `HULL_SPECS[id].env`, never this table. */
+export const TRAFFIC_IDENTITY_ENV: Readonly<Record<HullId, HullEnvelope>> = {
+	courier: { lengthKm: 0.0575, beamKm: 0.0524, heightKm: 0.0096 },
+	interceptor: { lengthKm: 0.0624, beamKm: 0.0253, heightKm: 0.0252 },
+	freighter: { lengthKm: 0.0672, beamKm: 0.0424, heightKm: 0.0147 },
+	miner: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
+	patrol: { lengthKm: 0.0586, beamKm: 0.0385, heightKm: 0.011 },
+	explorer: { lengthKm: 0.0738, beamKm: 0.0385, heightKm: 0.0397 },
+	raider: { lengthKm: 0.0635, beamKm: 0.0344, heightKm: 0.0109 },
+	carrier: { lengthKm: 0.3797, beamKm: 0.1764, heightKm: 0.145 },
+	tug: { lengthKm: 0.0566, beamKm: 0.0484, heightKm: 0.0212 },
+	prospector: { lengthKm: 0.0665, beamKm: 0.0253, heightKm: 0.0192 },
+	dreadnought: { lengthKm: 0.4066, beamKm: 0.1331, heightKm: 0.1111 },
+	voyager: { lengthKm: 0.191, beamKm: 0.0329, heightKm: 0.0361 },
+};
+
 export const TRAFFIC_HULL_POOLS: Readonly<
 	Record<StationType, readonly HullId[]>
 > = {
@@ -128,7 +148,7 @@ export function stationTrafficRoster(
 	const cycleS = Math.max(2 * count * cadence, TRAFFIC_MIN_CYCLE_S);
 	const sharedPhase = unit(`${station.id}|phase|${station.berthSeed}`) * cycleS;
 	const compatible = TRAFFIC_HULL_POOLS[station.type].filter((id) =>
-		interior.berths.some((berth) => berthFits(berth, HULL_SPECS[id].env)),
+		interior.berths.some((berth) => berthFits(berth, TRAFFIC_IDENTITY_ENV[id])),
 	);
 	if (!compatible.includes(role.signature))
 		throw new Error(
