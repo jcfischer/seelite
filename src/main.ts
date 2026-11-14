@@ -3690,18 +3690,16 @@ class Game {
 	 *  restate. The ports are the flown hull's, one per gun (#607). */
 	get gunTracer() {
 		const glass = this.glassFiredIndices();
-		const segments = this.playerBeamPx(
-			1,
-			1,
+		const segments = this.playerBeamFrame(
 			Array.from(
 				{ length: HULL_SPECS[this.flownHull].hardpoints },
 				(_, i) => i,
 			),
 		);
-		const ports = segments.map((segment) => segment.from);
 		return {
-			ports,
-			firedPorts: ports.filter((_, i) => glass.includes(i)),
+			firedPorts: segments
+				.filter(({ muzzleIndex }) => glass.includes(muzzleIndex))
+				.map(({ from }) => from),
 			segments,
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
@@ -13834,23 +13832,26 @@ class Game {
 	}
 
 	private playerBeamPx(w: number, h: number, fired = this.glassFiredIndices()) {
+		const mounts = shipMuzzlesKm(
+			this.flownHull,
+			HULL_SPECS[this.flownHull].variant,
+		);
+		const indices = mounts.flatMap((_, i) => (fired.includes(i) ? [i] : []));
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
-			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => fired.includes(i),
-			),
+			indices.map((i) => mounts[i]),
 		);
 		const camPos = this.cameraPos();
 		const camRot = this.cameraRotation();
 		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
 		const px = (m: { ndcX: number; ndcY: number }) => ndcToPx(m, w, h);
-		const out: TracerSegment[] = [];
-		for (const [a, b] of beamSegments(
+		const out: (TracerSegment & { muzzleIndex: number })[] = [];
+		for (const [i, [a, b]] of beamSegments(
 			muzzles,
 			this.beamAim(),
 			PLAYER_LASER_RANGE_KM,
-		)) {
+		).entries()) {
 			const seg = projectSegment(
 				a,
 				b,
@@ -13859,9 +13860,14 @@ class Game {
 				fovYRad,
 				this.nearCamera.aspect,
 			);
-			if (seg) out.push({ from: px(seg[0]), to: px(seg[1]) });
+			if (seg)
+				out.push({ muzzleIndex: indices[i], from: px(seg[0]), to: px(seg[1]) });
 		}
 		return out;
+	}
+
+	private playerBeamFrame(fired = this.glassFiredIndices()) {
+		return this.playerBeamPx(1, 1, fired);
 	}
 
 	/** Where the gimballed beam points (#324): the boresight turned toward the
@@ -23020,7 +23026,7 @@ class Game {
 			))
 				strokes.push(stroke);
 		if (this.gunFeedback.tracerLeftS > 0)
-			for (const { from, to } of this.playerBeamPx(1, 1))
+			for (const { from, to } of this.playerBeamFrame())
 				strokes.push(...tracerStrokes([from], to));
 		if (raider) {
 			const from = this.onFrame(directionTo(camPos, this.raiderContact.pos));

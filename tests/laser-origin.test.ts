@@ -27,7 +27,13 @@ await useShippedInterceptorHull();
 await useShippedSevenShips();
 
 const prototype = gameMethods(
-	["drawCockpitBeams", "playerBeamPx", "glassFiredIndices", "gunTracer"],
+	[
+		"drawCockpitBeams",
+		"playerBeamPx",
+		"playerBeamFrame",
+		"glassFiredIndices",
+		"gunTracer",
+	],
 	{
 		HULL_SPECS,
 		shipMuzzlesKm,
@@ -136,6 +142,59 @@ for (const hull of HULL_IDS) {
 					});
 				});
 			}
+		});
+	}
+}
+
+for (const view of ["cockpit", "chase"] as const) {
+	for (const selected of [[0], [1], [0, 1]]) {
+		test(`${view}: culled first muzzle retains selected identity ${selected}`, () => {
+			const culledPrototype = gameMethods(
+				["playerBeamPx", "playerBeamFrame", "glassFiredIndices", "gunTracer"],
+				{
+					HULL_SPECS,
+					shipMuzzlesKm: () => [
+						{ x: -1, y: 0, z: 1 },
+						{ x: 1, y: 0, z: -1 },
+					],
+					muzzlesWorld,
+					beamSegments,
+					projectSegment,
+					ndcToPx,
+					PLAYER_LASER_RANGE_KM,
+					glassTracerIndices,
+					TRACER_AIM,
+					TRACER_HOLD_S,
+					SHOT_SOUND_GAP_S,
+					MINING_ON: false,
+				},
+			);
+			const camera = new THREE.PerspectiveCamera(60, 1.6, NEAR_KM, 100);
+			const subject = Object.assign(Object.create(culledPrototype), {
+				view,
+				flownHull: "interceptor",
+				orientation: new THREE.Quaternion(),
+				world: { ship: { pos: new THREE.Vector3() } },
+				commander: { loadout: stockLoadout("interceptor") },
+				firedMuzzleIndices: selected,
+				nearCamera: camera,
+				cameraPos: () => camera.position,
+				cameraRotation: () => camera.quaternion,
+				beamAim: () => new THREE.Vector3(0, 0, 1),
+			});
+			const visible = selected.includes(1) ? [1] : [];
+			const drawn = subject.playerBeamPx(1, 1);
+			expect(
+				drawn.map((beam: { muzzleIndex: number }) => beam.muzzleIndex),
+			).toEqual(visible);
+			expect(
+				subject.gunTracer.segments.map(
+					(beam: { muzzleIndex: number }) => beam.muzzleIndex,
+				),
+			).toEqual([1]);
+			expect(subject.gunTracer.firedPorts).toEqual(
+				drawn.map((beam: BeamStroke) => beam.from),
+			);
 		});
 	}
 }

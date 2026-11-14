@@ -91,7 +91,9 @@ for (const width of [900, 390]) {
 				expectedHeat: row.heatPerS * 0.05,
 				expectedEnergy: row.drawPerS * 0.05,
 				ports: g.gunTracer.firedPorts,
-				expectedPort: g.gunTracer.ports[slot - 1],
+				expectedPort: g.gunTracer.segments.find(
+					(segment) => segment.muzzleIndex === slot - 1,
+				)?.from,
 			};
 		}, i);
 		check(

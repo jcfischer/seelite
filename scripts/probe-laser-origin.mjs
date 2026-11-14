@@ -34,6 +34,84 @@ try {
 			const g = window.__seelite;
 			const { HULL_SPECS } = await import("/src/hull.ts");
 			const { makeModule } = await import("/src/loadout.ts");
+			const { shipMuzzlesKm } = await import("/src/ship-mesh.ts");
+			const { fullCondition } = await import("/src/ship-condition.ts");
+			const { PLAYER_BEAM_RGB, BEAM_VERTICES_PER_STROKE } = await import(
+				"/src/beam-glass.ts"
+			);
+			const { NEAR_KM } = await import("/src/chase-view.ts");
+			const { PLAYER_LASER_RANGE_KM } = await import("/src/laser.ts");
+
+			function fireGroup(group, view) {
+				g.armedFireGroup.reset();
+				for (let n = 0; n < group; n++) g.armedFireGroup.cycle(g.fireGroups);
+				g.view = view;
+				g.setHeadLook("forward");
+				g.condition = fullCondition(g.flownHull);
+				g.keys.add(" ");
+				g.step(g.units.MAX_DT);
+				g.render(0);
+				g.keys.delete(" ");
+
+				return g.armedFireGroup.current(g.fireGroups);
+			}
+			function expectedBeams() {
+				const armed = g.armedFireGroup.current(g.fireGroups);
+				const keys = HULL_SPECS[g.flownHull].slots
+					.filter((s) => s.kind === "hardpoint")
+					.map((s) => s.key);
+				const mounts = shipMuzzlesKm(
+					g.flownHull,
+					HULL_SPECS[g.flownHull].variant,
+				);
+				const V = g.nearCamera.position.constructor;
+				const eye = g.cameraPos();
+				const inverse = g.cameraRotation().clone().invert();
+				const aim = g.beamAim();
+				const frame = (p) => {
+					const ndc = p.clone().applyMatrix4(g.nearCamera.projectionMatrix);
+					return { x: (ndc.x + 1) / 2, y: (1 - ndc.y) / 2 };
+				};
+				return keys.flatMap((slot, index) => {
+					if (!armed.slots.includes(slot)) return [];
+					const m = mounts[index];
+					const mount = new V(m.x, m.y, m.z)
+						.applyQuaternion(g.orientation)
+						.add(g.world.ship.pos);
+					const from = mount.clone().sub(eye).applyQuaternion(inverse);
+					const to = mount
+						.clone()
+						.addScaledVector(aim, PLAYER_LASER_RANGE_KM)
+						.sub(eye)
+						.applyQuaternion(inverse);
+					if (-from.z < NEAR_KM)
+						from.lerp(to, (NEAR_KM + from.z) / (from.z - to.z));
+					return [{ slot, index, mount, from: frame(from), to: frame(to) }];
+				});
+			}
+			function drawnBeams(view) {
+				return view === "cockpit"
+					? g.cockpitStrokes
+							.filter((s) => s.rgb.every((v, i) => v === PLAYER_BEAM_RGB[i]))
+							.map(({ from, to }) => ({ from, to }))
+					: (g.beamRender ?? []).map(({ from, to }) => ({
+							from: {
+								x: from.x / g.overlay.width,
+								y: from.y / g.overlay.height,
+							},
+							to: {
+								x: to.x / g.overlay.width,
+								y: to.y / g.overlay.height,
+							},
+						}));
+			}
+			window.__laserOriginProbe = {
+				fireGroup,
+				expectedBeams,
+				drawnBeams,
+				verticesPerStroke: BEAM_VERTICES_PER_STROKE,
+			};
+
 			const loadout = { ...g.commander.loadout };
 			for (const slot of HULL_SPECS[g.flownHull].slots)
 				if (slot.kind === "hardpoint")
@@ -53,83 +131,18 @@ try {
 		for (let group = 0; group < setup.groups; group++) {
 			for (const view of ["cockpit", "chase"]) {
 				const row = await page.evaluate(
-					async ({ group, view }) => {
+					({ group, view }) => {
 						const g = window.__seelite;
-						const { shipMuzzlesKm } = await import("/src/ship-mesh.ts");
-						const { HULL_SPECS } = await import("/src/hull.ts");
-						const { fullCondition } = await import("/src/ship-condition.ts");
-						const { PLAYER_BEAM_RGB, BEAM_VERTICES_PER_STROKE } = await import(
-							"/src/beam-glass.ts"
-						);
-						const { NEAR_KM } = await import("/src/chase-view.ts");
-						const { PLAYER_LASER_RANGE_KM } = await import("/src/laser.ts");
-						g.armedFireGroup.reset();
-						for (let n = 0; n < group; n++)
-							g.armedFireGroup.cycle(g.fireGroups);
-						g.view = view;
-						g.setHeadLook("forward");
-						g.condition = fullCondition(g.flownHull);
-						g.keys.add(" ");
-						g.step(g.units.MAX_DT);
-						g.render(0);
-						g.keys.delete(" ");
-						const armed = g.armedFireGroup.current(g.fireGroups);
-						const keys = HULL_SPECS[g.flownHull].slots
-							.filter((s) => s.kind === "hardpoint")
-							.map((s) => s.key);
-						const mounts = shipMuzzlesKm(
-							g.flownHull,
-							HULL_SPECS[g.flownHull].variant,
-						);
-						const V = g.nearCamera.position.constructor;
-						const eye = g.cameraPos();
-						const inverse = g.cameraRotation().clone().invert();
-						const aim = g.beamAim();
-						const frame = (p) => {
-							const ndc = p.clone().applyMatrix4(g.nearCamera.projectionMatrix);
-							return { x: (ndc.x + 1) / 2, y: (1 - ndc.y) / 2 };
-						};
-						const expected = keys.flatMap((slot, index) => {
-							if (!armed.slots.includes(slot)) return [];
-							const m = mounts[index];
-							const mount = new V(m.x, m.y, m.z)
-								.applyQuaternion(g.orientation)
-								.add(g.world.ship.pos);
-							const from = mount.clone().sub(eye).applyQuaternion(inverse);
-							const to = mount
-								.clone()
-								.addScaledVector(aim, PLAYER_LASER_RANGE_KM)
-								.sub(eye)
-								.applyQuaternion(inverse);
-							if (-from.z < NEAR_KM)
-								from.lerp(to, (NEAR_KM + from.z) / (from.z - to.z));
-							return [{ slot, index, mount, from: frame(from), to: frame(to) }];
-						});
-						const actual =
-							view === "cockpit"
-								? g.cockpitStrokes
-										.filter((s) =>
-											s.rgb.every((v, i) => v === PLAYER_BEAM_RGB[i]),
-										)
-										.map(({ from, to }) => ({ from, to }))
-								: (g.beamRender ?? []).map(({ from, to }) => ({
-										from: {
-											x: from.x / g.overlay.width,
-											y: from.y / g.overlay.height,
-										},
-										to: {
-											x: to.x / g.overlay.width,
-											y: to.y / g.overlay.height,
-										},
-									}));
+						const probe = window.__laserOriginProbe;
+						const armed = probe.fireGroup(group, view);
 						return {
 							view,
 							label: armed.label,
 							fired: g.firedMuzzleIndices,
-							expected,
-							actual,
+							expected: probe.expectedBeams(),
+							actual: probe.drawnBeams(view),
 							vertices: g.beamLayer.vertexCount,
-							verticesPerStroke: BEAM_VERTICES_PER_STROKE,
+							verticesPerStroke: probe.verticesPerStroke,
 						};
 					},
 					{ group, view },
