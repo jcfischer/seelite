@@ -20,6 +20,11 @@ import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import { stockLoadout } from "../src/loadout";
 import { shipMuzzlesKm } from "../src/ship-mesh";
 import { gameMethods } from "./lib/game-methods";
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { useShippedSevenShips } from "./setup/seven-ships-hull";
+
+await useShippedInterceptorHull();
+await useShippedSevenShips();
 
 const prototype = gameMethods(
 	["drawCockpitBeams", "playerBeamPx", "glassFiredIndices", "gunTracer"],
