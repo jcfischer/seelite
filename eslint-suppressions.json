@@ -4799,11 +4799,6 @@
       "count": 1
     }
   },
-  "tests/legal.test.ts": {
-    "seelite/no-comments": {
-      "count": 145
-    }
-  },
   "tests/legend-memo.test.ts": {
     "seelite/no-comments": {
       "count": 2
