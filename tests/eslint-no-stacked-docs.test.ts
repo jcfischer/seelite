@@ -42,6 +42,16 @@ describe("seelite/no-stacked-docs", () => {
 		expect(stacked(code, "x.mjs")).toEqual([]);
 	});
 
+	test("flags a stale doc above a tag-only @param block", () => {
+		const code = [
+			"export const a = 1;",
+			"/** Stale. */",
+			"/** @param {number} x Input. */",
+			"export function f(x: number) { return x; }",
+		].join("\n");
+		expect(stacked(code)).toEqual([2]);
+	});
+
 	test("ignores a line comment between two declarations", () => {
 		expect(
 			stacked("/** a */\nexport const x = 1;\n/** b */\nexport const y = 2;"),

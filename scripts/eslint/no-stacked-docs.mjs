@@ -1,5 +1,5 @@
 const DECLARES = /@(typedef|callback|import)\b/;
-const TAGS_ONLY = /^[\s*]*@/;
+const TYPE_ONLY = /^[\s*]*@type\b[^@]*$/;
 
 function isDoc(comment) {
 	return comment.type === "Block" && comment.value.startsWith("*");
@@ -14,7 +14,7 @@ function documentsSomething(source, comment) {
 		next &&
 		isDoc(next) &&
 		!DECLARES.test(next.value) &&
-		!TAGS_ONLY.test(next.value)
+		!TYPE_ONLY.test(next.value)
 	);
 }
 
