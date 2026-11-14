@@ -354,8 +354,7 @@ try {
 			const { serializeSave, newCommanderRecord } = await import(
 				"/src/save-envelope.ts"
 			);
-			const { indexedDbSaveBackend, CommanderCatalog, memorySlotLocks } =
-				await import("/src/save-store.ts");
+			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
 			const { fnv1a } = await import("/src/rng.ts");
 			const raw = serializeSave({
 				world: newWorld(42),
@@ -368,10 +367,7 @@ try {
 			const refused = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 			const backend = indexedDbSaveBackend();
 			await backend.write("default", "live", refused);
-			return new CommanderCatalog({
-				backend,
-				locks: memorySlotLocks(),
-			}).exportSlot("default");
+			return JSON.stringify({ live: refused, lastDocked: null }, null, "\t");
 		});
 		await seed.close();
 		const refused = await refusedContext.newPage();

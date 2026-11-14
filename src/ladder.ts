@@ -108,17 +108,12 @@ export const TOP_RUNGS: Rungs = {
 };
 
 /** The three rungs a record stands on. */
+export const rungInput = (record: LadderRecord, l: Ladder) =>
+	l === "trade" ? (record.tradeExact ?? record.banked.trade) : record.banked[l];
+
 export const rungsOf = (record: LadderRecord): Rungs =>
 	Object.fromEntries(
-		LADDERS.map((l) => [
-			l,
-			rungOf(
-				l,
-				l === "trade"
-					? (record.tradeExact ?? record.banked.trade)
-					: record.banked[l],
-			),
-		]),
+		LADDERS.map((l) => [l, rungOf(l, rungInput(record, l))]),
 	) as Record<Ladder, number>;
 
 /**
@@ -458,15 +453,7 @@ export const withCapstone = (
 	gameTime: number,
 ): LadderRecord =>
 	record.capstoneAt === null &&
-	LADDERS.every(
-		(l) =>
-			rungOf(
-				l,
-				l === "trade"
-					? (record.tradeExact ?? record.banked.trade)
-					: record.banked[l],
-			) >= CAPSTONE_RUNG,
-	)
+	LADDERS.every((l) => rungOf(l, rungInput(record, l)) >= CAPSTONE_RUNG)
 		? { ...record, capstoneAt: gameTime }
 		: record;
 

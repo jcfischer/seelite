@@ -22,6 +22,7 @@ import {
 	type PendingCredit,
 	RUNG_NAMES,
 	TOP_RUNG,
+	rungInput,
 	rungOf,
 	threshold,
 } from "./ladder";
@@ -78,10 +79,7 @@ export function ladderView(
 	return {
 		rows: LADDERS.map((ladder) => {
 			const banked = record.banked[ladder];
-			const rung = rungOf(
-				ladder,
-				ladder === "trade" ? (record.tradeExact ?? banked) : banked,
-			);
+			const rung = rungOf(ladder, rungInput(record, ladder));
 			return {
 				ladder,
 				rung,

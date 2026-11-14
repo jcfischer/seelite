@@ -1332,12 +1332,14 @@ export class CommanderCatalog {
 
 	async prepareForBoot(slot: string): Promise<unknown | null> {
 		let live = await this.backend.read(slot, "live");
-		const checkpoint = await this.backend.read(slot, "lastDocked");
 		const legacy = (raw: unknown) =>
 			raw !== null &&
 			raw !== undefined &&
 			(raw as SaveRecordBody).saveSchemaVersion !== SAVE_SCHEMA_VERSION;
-		if (!legacy(live) && !legacy(checkpoint)) return live;
+		if (!legacy(live)) {
+			const checkpoint = await this.backend.read(slot, "lastDocked");
+			if (!legacy(checkpoint)) return live;
+		}
 		const release = await this.locks.tryHold(slot);
 		if (!release)
 			return fail(
@@ -1371,7 +1373,7 @@ export class CommanderCatalog {
 			});
 			if (outcome !== "committed") {
 				keepLock = true;
-				if (keepLock) void store.settled().finally(release);
+				void store.settled().finally(release);
 				return fail(
 					"migration: " +
 						outcome +

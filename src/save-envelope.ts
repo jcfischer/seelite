@@ -919,16 +919,11 @@ const parseCommander = (
 		if (line.units > (cargo[good] ?? 0))
 			fail(`commander.ladders.basis: ${good} covers more than is aboard`);
 	}
-	num(state, "credits", "commander.state");
+	const credits = num(state, "credits", "commander.state");
 	let accounting =
 		version >= 20
 			? parseAccount(state.accounting)
-			: migrateAccount(
-					num(state, "credits", "commander.state"),
-					ladders.banked.trade,
-					cargo,
-					ladders.basis,
-				);
+			: migrateAccount(credits, ladders.banked.trade, cargo, ladders.basis);
 	if (version >= 20) {
 		if (
 			state.credits !== displayAmount(accounting.cash) ||
