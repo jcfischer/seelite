@@ -171,6 +171,15 @@ describe("the ring's own timeline (node #1006 C1, C3)", () => {
 			expect(Number.isFinite(radius)).toBe(true);
 		}
 	});
+
+	test("the crossing radius rounds up to the display reach's 0.1 m precision", () => {
+		expect(
+			crossingDistanceKm(
+				{ lengthKm: 0.02, beamKm: 0.02, heightKm: 0.02 },
+				{ rightKm: 0, upKm: 0, foreKm: 0 },
+			),
+		).toBe(0.0348);
+	});
 });
 
 describe("the ship's own motion through the plane (node #1006 C2, C3)", () => {

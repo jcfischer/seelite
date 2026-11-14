@@ -124,11 +124,6 @@
       "count": 1
     }
   },
-  "scripts/lib/derelict-state.mjs": {
-    "seelite/no-comments": {
-      "count": 4
-    }
-  },
   "scripts/lib/fake-pad.mjs": {
     "seelite/no-comments": {
       "count": 5
@@ -361,7 +356,7 @@
   },
   "scripts/lib/view-set.mjs": {
     "seelite/no-comments": {
-      "count": 101
+      "count": 97
     }
   },
   "scripts/lib/voice-model.mjs": {
@@ -1222,11 +1217,6 @@
   "scripts/probe-save.mjs": {
     "seelite/no-comments": {
       "count": 281
-    }
-  },
-  "scripts/probe-ship-visuals.mjs": {
-    "seelite/no-comments": {
-      "count": 70
     }
   },
   "scripts/probe-shipyard.mjs": {
@@ -3856,7 +3846,7 @@
   },
   "tests/hull.test.ts": {
     "seelite/no-comments": {
-      "count": 173
+      "count": 167
     }
   },
   "tests/hyperspace.test.ts": {
@@ -4646,7 +4636,7 @@
   },
   "tests/ship-mesh.test.ts": {
     "seelite/no-comments": {
-      "count": 138
+      "count": 135
     }
   },
   "tests/ship-muzzles.test.ts": {
@@ -4906,7 +4896,7 @@
   },
   "tests/view-set.test.ts": {
     "seelite/no-comments": {
-      "count": 149
+      "count": 125
     }
   },
   "tests/visit-count.test.ts": {

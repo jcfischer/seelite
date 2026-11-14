@@ -112,5 +112,20 @@
 		"bytes": 9597240,
 		"attributes": "bc1ca4509275a482faa9694f4dcfd049e78ff11f1c9c89b6df18b58dd28f4f5c",
 		"document": "eb0bbe351d95bb88de88d7a48cd053b3fd094a395a136c9f4bb7ccef354246ff"
+	},
+	"warden-patrol": {
+		"bytes": 17174796,
+		"attributes": "8a8176a04800dd14978c22f690e61bf05cfbd0a3e7f782d5e56280af263d5a2c",
+		"document": "77e54cbef78e48ebd73104f668df4288f32bb9507e7234be0203d6736ac9aece"
+	},
+	"shiv-raider": {
+		"bytes": 17756072,
+		"attributes": "4a9c8929b13e5d1e768243d94a85a84a2612ac9f98a37352c00d4e9f1d0a9fa7",
+		"document": "5f0f6b98e4ccb73b8fdab056656d408d2c9fa3aa8433f5882d9bca221e89e1fd"
+	},
+	"sluice-prospector": {
+		"bytes": 10287388,
+		"attributes": "934520ce6a86358f6479557c3420b4efa725c836adae2c761712550b9068fa51",
+		"document": "a9359da42e6b4a157bdc3beb9e47a93eb94497c5a580e0c1be9fe46879f7d1f6"
 	}
 }

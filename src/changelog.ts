@@ -29,6 +29,11 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
+		date: "2026-11-14",
+		text: "The Warden, Shiv, Sluice, Bastion and Rampart fly their authored hulls, with turning habitats on the two capitals.",
+		node: 1035,
+	},
+	{
 		date: "2026-11-13",
 		text: "Commodity trading rank now reflects profit after purchase and processing costs, with unrecovered costs carried forward.",
 		node: 1192,

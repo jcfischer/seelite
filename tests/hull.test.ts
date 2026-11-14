@@ -22,6 +22,8 @@
  */
 
 import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { useShippedSevenShips } from "./setup/seven-ships-hull";
+import { withProceduralHulls } from "./helpers/procedural-hulls";
 import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -75,6 +77,7 @@ import {
 } from "./helpers/hull-math";
 
 await useShippedInterceptorHull();
+await useShippedSevenShips();
 
 /** 0.1 m, in kilometres — the quantum the table's envelopes are rounded **up**
  *  to, and the tolerance the row below allows. */
@@ -198,34 +201,38 @@ describe("envelopes measure the mesh or retain an approved simulation box", () =
 		// as a rule so the row can be checked; the principal may overrule any of
 		// them on how it looks, and the day one is overruled this goes red and
 		// says so rather than the override being invisible.
-		for (const id of HULL_IDS) {
-			const spec = HULL_SPECS[id];
-			const scored = HULL_VARIANT_IDS.map((v) => ({
-				v,
-				roles: rolesAdmitting(declarableEnvelope(id, v)),
-			}));
-			const best = Math.max(...scored.map((s) => s.roles));
-			const chosen = scored.find((s) => s.v === spec.variant);
-			expect([id, chosen?.roles]).toEqual([id, best]);
-			// `a` on a tie: nothing earlier in the list may match the best score.
-			const first = scored.find((s) => s.roles === best);
-			expect([id, first?.v]).toEqual([id, spec.variant]);
-			console.log(
-				`${id}: ${scored.map((s) => `${s.v}=${s.roles}`).join(" ")} → ${spec.variant}`,
-			);
-		}
+		withProceduralHulls(() => {
+			for (const id of HULL_IDS) {
+				const spec = HULL_SPECS[id];
+				const scored = HULL_VARIANT_IDS.map((v) => ({
+					v,
+					roles: rolesAdmitting(declarableEnvelope(id, v)),
+				}));
+				const best = Math.max(...scored.map((s) => s.roles));
+				const chosen = scored.find((s) => s.v === spec.variant);
+				expect([id, chosen?.roles]).toEqual([id, best]);
+				// `a` on a tie: nothing earlier in the list may match the best score.
+				const first = scored.find((s) => s.roles === best);
+				expect([id, first?.v]).toEqual([id, spec.variant]);
+				console.log(
+					`${id}: ${scored.map((s) => `${s.v}=${s.roles}`).join(" ")} → ${spec.variant}`,
+				);
+			}
+		});
 	});
 
 	test("the rule had something to decide — the variants are not interchangeable", () => {
 		// The control for the row above. If every variant of every hull fitted
 		// every role, the selection rule would be satisfied by any choice at all
 		// and the previous test would pass on a build that picked at random.
-		const contested = HULL_IDS.filter((id) => {
-			const scores = HULL_VARIANT_IDS.map((v) =>
-				rolesAdmitting(declarableEnvelope(id, v)),
-			);
-			return Math.min(...scores) < Math.max(...scores);
-		});
+		const contested = withProceduralHulls(() =>
+			HULL_IDS.filter((id) => {
+				const scores = HULL_VARIANT_IDS.map((v) =>
+					rolesAdmitting(declarableEnvelope(id, v)),
+				);
+				return Math.min(...scores) < Math.max(...scores);
+			}),
+		);
 		expect(contested.length).toBeGreaterThan(0);
 		console.log(
 			`variants that disagree about where they fit: ${contested.join(", ")}`,
@@ -333,26 +340,40 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		// cargo structure is, an interceptor light because it is mostly engine,
 		// and neither is off by a factor. A mass typed in without looking at the
 		// hull lands outside it.
+
+		const PINNED: Partial<
+			Record<HullId, { massT: number; env: HullEnvelope }>
+		> = {
+			miner: {
+				massT: 215,
+				env: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
+			},
+			carrier: {
+				massT: 14000,
+				env: { lengthKm: 0.4068, beamKm: 0.1895, heightKm: 0.1895 },
+			},
+			prospector: {
+				massT: 58,
+				env: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
+			},
+			dreadnought: {
+				massT: 12000,
+				env: { lengthKm: 0.432, beamKm: 0.1895, heightKm: 0.1895 },
+			},
+		};
 		const MIN_T_PER_1000M3 = 1.2;
 		const MAX_T_PER_1000M3 = 2.4;
 		for (const id of HULL_IDS) {
 			const env = HULL_SPECS[id].env;
 			const volumeM3 = env.lengthKm * env.beamKm * env.heightKm * 1e9;
 			const density = (HULL_SPECS[id].massT * 1000) / volumeM3;
-			if (id === "miner") {
-				// **The one named exemption, and it is pinned rather than banded**
-				// (node #815). Longwall B's box replaced the loft's, and the mass
-				// it would re-derive to is a stat change the principal has not
-				// made, so the old 215 t stands in a box it was not derived from.
-				// Pinned to both figures, so re-deriving the mass or moving the
-				// box makes this row red and somebody deletes the exemption.
-				expect([HULL_SPECS.miner.massT, env]).toEqual([
-					215,
-					{ lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
-				]);
-				expect(density).toBeGreaterThan(MAX_T_PER_1000M3);
+			const pinned = PINNED[id];
+			if (pinned) {
+				// https://github.com/jcfischer/seelite/issues/815
+				// Four authored boxes keep their approved masses: https://github.com/jcfischer/seelite/issues/1035
+				expect({ massT: HULL_SPECS[id].massT, env }).toEqual(pinned);
 				console.log(
-					`${id.padEnd(12)} ${density.toFixed(2)} t per 1000 m³ (exempt, node #815)`,
+					`${id.padEnd(12)} ${density.toFixed(2)} t per 1000 m³ (pinned, an authored box)`,
 				);
 				continue;
 			}
@@ -425,7 +446,8 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		// D5 as a measurement rather than as an adjective. The ordering is the
 		// claim — an interceptor sharper than a courier sharper than a freighter —
 		// and the ratio is what a pilot would have to be able to feel.
-		const byAgility = [...DOCKABLE_HULL_IDS].sort(
+		const handled = HULL_IDS.filter((id) => !isCapital(id));
+		const byAgility = [...handled].sort(
 			(a, b) =>
 				flightPerformance(b).angularMax.pitch -
 				flightPerformance(a).angularMax.pitch,

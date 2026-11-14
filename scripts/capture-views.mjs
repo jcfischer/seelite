@@ -451,16 +451,11 @@ const PLACERS = {
 		);
 		return shot.station ?? shot.body;
 	},
-	derelict: async (page, shot) => {
+	derelict: async (page) => {
 		worldWritten = true;
 		const { placeDerelict } = await import("./lib/derelict-state.mjs");
-		const result = await placeDerelict(page, shot);
-		return (
-			result.hull +
-			" · " +
-			result.key +
-			(result.tear ? " · " + result.tear : "")
-		);
+		const result = await placeDerelict(page);
+		return result.hull + " · " + result.key;
 	},
 	"npc-jump": async (page, shot) => {
 		await page.evaluate(installHaulerFixture);
@@ -504,6 +499,32 @@ const PLACERS = {
 		return id;
 	},
 	"body-offset": async (page, shot) => {
+		if (shot.inspectHull) {
+			worldWritten = true;
+			const installed = await page.evaluate(
+				async ({ hull, zoom }) => {
+					const { isAuthoredHullModel } = await import("/src/model-catalog.ts");
+					const g = window.__seelite;
+					g.setFlownHull(hull);
+					g.chaseOrbit = { ...g.chaseOrbit, zoomScale: zoom };
+					return {
+						flown: g.flownHull,
+						drawn: g.shipMesh.userData.hullId,
+						authored: Boolean(g.shipMesh.userData.authored),
+						expected: isAuthoredHullModel(hull),
+					};
+				},
+				{ hull: shot.inspectHull, zoom: shot.inspectZoom ?? 1 },
+			);
+			if (
+				installed.flown !== shot.inspectHull ||
+				installed.drawn !== shot.inspectHull ||
+				installed.authored !== installed.expected
+			)
+				throw new Error(
+					`capture: inspection hull mismatch ${JSON.stringify(installed)}`,
+				);
+		}
 		const id = await page.evaluate((name) => {
 			if (name !== "largest-planet") return name;
 			const planets = window.__seelite.world.system.bodies.filter(
