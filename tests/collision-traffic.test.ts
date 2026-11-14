@@ -328,15 +328,26 @@ describe("collision.md §9.1.13: ship against ship (C4b)", () => {
 
 	test("the same law holds with the heavy ship as the swept one", () => {
 		const dt = 0.1;
-		const carrierHalf = HULL_SPECS.carrier.env.lengthKm / 2;
-		const courierHalf = HULL_SPECS.courier.env.lengthKm / 2;
+		const carrierForeKm =
+			HULL_SPECS.carrier.env.lengthKm / 2 + HULL_SPECS.carrier.envCentre.foreKm;
+		const courierForeKm =
+			HULL_SPECS.courier.env.lengthKm / 2 + HULL_SPECS.courier.envCentre.foreKm;
+		const gapKm = 0.02;
 		const a = flying(
 			"carrier",
-			v3(0, 0, -(carrierHalf + courierHalf + 0.02)),
+			v3(0, 0, -(carrierForeKm + courierForeKm + gapKm)),
 			v3(0, 0, 0.6),
 			dt,
 		);
 		const b = flying("courier", v3(), v3(), dt, v3(0, 0, -1));
+		const gap = pairSeparation(
+			a.primitives[0],
+			a.start,
+			b.primitives[0],
+			b.start,
+		);
+		if (gap.overlap) throw new Error("the collision fixture starts overlapped");
+		expect(gap.distanceKm).toBeCloseTo(gapKm, 10);
 		const pair = sweepShipPair(a, b, dt);
 		expect(pair.impacts).toHaveLength(1);
 		const before = add(

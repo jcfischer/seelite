@@ -601,7 +601,19 @@ export function rendererLaneNotice({ mode, direct }) {
  * callback, so a probe that stopped there would read a world whose meshes have
  * never been positioned.
  */
-export async function bootedGame(page, timeout = 20000, { sky = true } = {}) {
+/**
+ * How long a boot may take on this page: a `models-full` boot installs every
+ * model before the game exists, so it gets the full-set budget.
+ */
+export function bootBudgetMs(page) {
+	return new URL(page.url()).searchParams.has("models-full") ? 120000 : 20000;
+}
+
+export async function bootedGame(
+	page,
+	timeout = bootBudgetMs(page),
+	{ sky = true } = {},
+) {
 	// Readiness is one observation: a reload may replace the game between waits.
 	// The game draws immediately; measurements wait for its progressive sky.
 	await page.waitForFunction(

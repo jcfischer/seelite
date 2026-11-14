@@ -232,13 +232,12 @@ export const STRIKER_HULL_ID: HullId = "raider";
  * which meant the beam scored on shots that visibly missed, and the one skill
  * #53 is trying to make matter is keeping a sight on a moving ship.
  *
- * **It does not contain the hull, and the honest version says so.** `raider/a`
- * runs -0.0345 to +0.0290 about its own origin, so drawn it reaches 0.1035 km
- * forward — 8 m of nose outside this sphere — and the far box corner is at
- * 0.117 km. A sphere large enough to contain the box would be 0.117 km, and
- * **90 % of it would be empty**: 0.0067 km³ of sphere around a drawn box of
- * 0.1905 x 0.1032 x 0.0327 = 0.00064 km³, beside a hull five times longer than
- * it is tall. The half-length is the figure a fixed forward gun
+ * **It does not contain the hull, and the honest version says so.** The drawn
+ * raider is the authored Shiv (node #1035): its box runs -0.0271 to +0.0282 km
+ * about the ship's origin, so the half-length does hold the nose, and what
+ * leaves the sphere is the far box corner, about 0.097 km out. A sphere large
+ * enough to contain that corner would be mostly empty beside a hull five times
+ * longer than it is tall. The half-length is the figure a fixed forward gun
  * wants: generous down the axis you are aiming along, tight across it.
  *
  * The figure moved by 3.6 % under #181, which replaced a *declared* 0.066 with

@@ -190,14 +190,12 @@ export function crossingDistanceKm(
 	env: HullEnvelope,
 	centre: HullBoxCentre,
 ): number {
-	return (
-		CROSSING.emergeRadii *
-		Math.sqrt(
-			(Math.abs(centre.rightKm) + env.beamKm / 2) ** 2 +
-				(Math.abs(centre.upKm) + env.heightKm / 2) ** 2 +
-				(Math.abs(centre.foreKm) + env.lengthKm / 2) ** 2,
-		)
+	const radiusKm = Math.sqrt(
+		(Math.abs(centre.rightKm) + env.beamKm / 2) ** 2 +
+			(Math.abs(centre.upKm) + env.heightKm / 2) ** 2 +
+			(Math.abs(centre.foreKm) + env.lengthKm / 2) ** 2,
 	);
+	return CROSSING.emergeRadii * (Math.ceil(radiusKm * 10000) / 10000);
 }
 
 /**

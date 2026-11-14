@@ -1113,11 +1113,6 @@ export const PROBE_CATALOG = Object.freeze(
 			["save", "IndexedDB", "migration", "autosave", "storage failure"],
 		),
 		entry(
-			"probe-ship-visuals.mjs",
-			"Checks procedural hull identity in the live chase renderer while keeping cockpit flight instrument-first.",
-			["ship visuals", "hull mesh", "chase view", "cockpit view"],
-		),
-		entry(
 			"probe-sky.mjs",
 			"Proves the derived star layer sits in the backdrop, paired point to system, and is re-drawn on a jump while the invented population's geometry is never swapped.",
 			["star field", "derived sky", "witchspace arrival", "backdrop layer"],

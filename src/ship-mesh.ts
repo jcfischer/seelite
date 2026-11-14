@@ -62,6 +62,7 @@ import {
 export {
 	HABITABLE_HULLS,
 	SHIP_QUALITY,
+	advanceAuthoredHabitat,
 	setShipDetail,
 	updateShipVisuals,
 } from "./ship-detail";
@@ -327,21 +328,21 @@ export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	interceptor: 0.0328,
 	freighter: 0.04,
 	miner: 0.0422,
-	patrol: 0.034,
+	patrol: 0.0327,
 	explorer: 0.044,
-	raider: 0.038,
+	raider: 0.0347,
 	// A capital hull is roughly seven couriers long. Nothing else in the pool
 	// needs a second glance to work out which of two ships is the bigger; this
 	// one has to answer that at a distance, which is why its detail is many
 	// small repeated parts rather than a few large smooth ones.
-	carrier: 0.2,
+	carrier: 0.2284,
 	// Bollard O4 at 1:1 (node #814): its farthest vertex, 36.03 m, rounded up.
 	tug: 0.0361,
-	prospector: 0.035,
+	prospector: 0.0357,
 	// Longer and narrower than the carrier, and it wears its armour outside.
 	// Two capital classes only earn their places if they cannot be mistaken for
 	// each other at the range a capital ship is first seen.
-	dreadnought: 0.22,
+	dreadnought: 0.2356,
 	// Half the carrier's reach and far thinner than either capital: a sphere and
 	// a spine, which reads as nothing else in the pool at any range. The
 	// authored model's (node #820) farthest vertex, 97.48 m, rounded up.
