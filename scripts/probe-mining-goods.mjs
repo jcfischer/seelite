@@ -1,3 +1,4 @@
+// A default-layout probe (#381 D11): B cycles, 4 anchors and Space fires. https://github.com/jcfischer/seelite/issues/381
 import { mkdir } from "node:fs/promises";
 import { gameUrl } from "./lib/game-url.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
@@ -32,6 +33,19 @@ try {
 			mining: "1",
 			raider: "off",
 		}),
+	);
+	await bootedGame(page, 90000);
+	await page.evaluate(async () => {
+		const g = window.__seelite;
+		const empty = g.save.serialize(g.saveEnvelope());
+		await g.save.backend.writeMany(
+			g.save.defaultSlot,
+			["live", "lastDocked"],
+			empty,
+		);
+	});
+	await page.goto(
+		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
 	);
 	await bootedGame(page, 90000);
 	const setup = await page.evaluate(async () => {
@@ -193,6 +207,13 @@ try {
 		`${setup.name}: ${held}, bid ${bid}`,
 	);
 	await row.locator('[data-live-station-action="sell-commodity"]').click();
+	await page.waitForFunction(
+		(before) =>
+			Number.parseFloat(
+				document.querySelector("[data-live-commander]")?.textContent ?? "",
+			) > before,
+		before,
+	);
 	const after = Number.parseFloat(
 		await page.locator("[data-live-commander]").innerText(),
 	);
@@ -211,6 +232,11 @@ try {
 		JSON.stringify({ before, bid, after, ...sale }),
 	);
 	await page.screenshot({ path: `${shots}/sold.png` });
+	await page.evaluate(async () => {
+		const g = window.__seelite;
+		g.saveFlush("quit");
+		await g.saveStore.settled();
+	});
 	await page.goto(gameUrl(origin, { seed: 0x5ee11e, raider: "off" }));
 	await bootedGame(page, 90000);
 	await page.evaluate(() => {

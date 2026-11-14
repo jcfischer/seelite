@@ -34,7 +34,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-accounting.mjs",
-			"Measures complete schema20 envelopes and distinct live/launch atomic IndexedDB commits, with quota refusal without adoption, for migrated, typical, actual-generator saturation and widest accounting/recovery saves.",
+			"Measures complete current save envelopes and distinct live/launch atomic IndexedDB commits, with quota refusal without adoption, for migrated, typical, actual-generator saturation and widest accounting/recovery saves.",
 			[
 				"exact wallet",
 				"commodity pools",

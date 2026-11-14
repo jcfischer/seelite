@@ -440,7 +440,7 @@ try {
 			);
 			g.commander = withAccount(
 				g.commander,
-				acquire(accountOf(g.commander), "Food", 10000),
+				acquire(accountOf(g.commander), Object.keys(took.mined)[0], 10000),
 			);
 			if (ore[1]) await visit(ore[1]);
 			for (let i = 0; i < 2; i++)

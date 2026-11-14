@@ -13,9 +13,18 @@ import {
 	recover,
 	encodeAccount,
 	parseAccount,
+	parseShare,
 } from "../src/commodity-pools";
-import { massFromNative, money, quoteFromNumber } from "../src/exact-amount";
-import { readDeficit } from "../src/deficits";
+import {
+	mass,
+	massFromNative,
+	money,
+	quoteFromNumber,
+} from "../src/exact-amount";
+import { readDeficit, recordTrade } from "../src/deficits";
+import { rawQuote, candidateDefaults } from "../scripts/lib/mining-comparison";
+import { worldFor, portsOf } from "../scripts/lib/greedy-trader";
+import ratified from "../docs/candidates/mining-economy-v3-ratification.json";
 import { deathWreckContents } from "../src/death-wreck";
 import { holdSummary, pilotGoods } from "../src/hold";
 import { holdBody } from "../src/hold-view";
@@ -81,6 +90,9 @@ const screen = (i: ConsoleInput) =>
 test("fifteen whole-tonne cargo identities preserve the current Hold names and grades", () => {
 	expect(ORE_GOODS).toHaveLength(15);
 	expect(CARGO_COMMODITIES).toHaveLength(32);
+	expect(CARGO_COMMODITIES.slice(0, COMMODITIES.length)).toEqual([
+		...COMMODITIES,
+	]);
 	let commander = newCommander("courier");
 	for (const [name, n] of [
 		[poor, 2],
@@ -108,6 +120,31 @@ test("the Longwall carries ore in its skips while ordinary ships share their hol
 	expect(commanderHold(miner, 0).usedT).toBe(40);
 	expect(holdSummary(miner, emptyRequests()).oreBay?.usedT).toBe(3000);
 	expect(scoopCargo(newCommander("courier"), poor, 21, 0).tonnes).toBe(20);
+});
+
+test("hull auto-sales use real ore cargo and refuse to discard it without the mining flag", () => {
+	const commander = scoopCargo(
+		{ ...newCommander("miner"), credits: 1e9 },
+		poor,
+		3000,
+		0,
+	).commander;
+	const request = {
+		...input(commander),
+		station: { ...station, type: "shipyard" as const },
+		action: { type: "buy-hull" as const, hull: "freighter" as const },
+	};
+	const refused = transactAtStation({ ...request, mining: false });
+	expect(refused.accepted).toBe(false);
+	expect(refused.commander).toBe(commander);
+	const bought = transactAtStation(request);
+	expect(bought.accepted).toBe(true);
+	expect(bought.commander.hull).toBe("freighter");
+	const hold = commanderHold(bought.commander, 0);
+	expect(hold.usedT).toBeLessThanOrEqual(hold.capacityT);
+	expect(bought.commander.cargo[poor]).toBeGreaterThan(0);
+	expect(bought.commander.cargo[poor]).toBeLessThan(3000);
+	expect(accountOf(bought.commander).bankedTrade > 0n).toBe(true);
 });
 
 test("ore survives the save envelope and invalid quantities are refused without rounding", () => {
@@ -218,6 +255,59 @@ test("mined ore has known zero cost and raw sales recover the shared product deb
 			}),
 		).commander.state.cargo,
 	).toEqual(commander.cargo);
+});
+
+test("production ore quotes and shelves match the ratified instrument across stations, epochs and stock marks", () => {
+	const candidate = {
+		...candidateDefaults(),
+		rawValueShare: ratified.rawValueShare,
+		rawElasticityScale: ratified.rawElasticityScale,
+		rawStockMinT: ratified.rawStockMinT,
+		rawStockMaxT: ratified.rawStockMaxT,
+	};
+	const world = worldFor(0x5ee11e, 0);
+	const record = world.systems[173];
+	for (const port of portsOf(record, world.contentsFor(record)))
+		for (const t of [0, 1800, 7200])
+			for (const units of [-1000, 0, 20, 1000])
+				for (const ore of ORE_GOODS) {
+					const deficits = recordTrade({}, port.key, {
+						goodName: `ore:${ore.family}:${ore.grade}`,
+						units,
+						gameTimeMin: t / 60,
+						holdT: 40,
+					});
+					const expected = rawQuote(
+						port,
+						ore.family,
+						ore.grade,
+						t,
+						deficits,
+						40,
+						candidate,
+					);
+					const mark = readDeficit(
+						deficits,
+						port.key,
+						`ore:${ore.family}:${ore.grade}`,
+						t / 60,
+					);
+					const row = stationMarketScreen({
+						station: port.market,
+						economy: record.economy,
+						displayTL: record.displayTL,
+						gameTimeMin: t / 60,
+						deficitOf: () => mark,
+						holdT: 40,
+						cargo: {},
+						mining: true,
+					}).find((r) => r.commodity.name === ore.name)!;
+					expect(row).toMatchObject({
+						buyCr: expected.buyCr,
+						sellCr: expected.sellCr,
+						quantity: expected.stockT,
+					});
+				}
 });
 
 test("death wrecks retain the actual ore identities and quantities", () => {
@@ -350,6 +440,26 @@ test("schema20 remains readable and cannot claim schema21 ore", () => {
 	expect(() =>
 		parseSave({ ...oreBody, integrity: fnv1a(JSON.stringify(oreBody)) }),
 	).toThrow("schema 21");
+});
+
+test("a death allocates shared unknown eligibility once across product and ore grades", () => {
+	let a = migrateAccount(100, 0, { Alloys: 0.4 }, {});
+	a = acquire(acquire(a, poor, 1), rich, 1);
+	const dying = withAccount(newCommander("miner"), a);
+	let contents;
+	for (let at = 1; at < 1000; at++) {
+		const rows = deathWreckContents(47, at, dying, "destroyed");
+		if (rows.length === 3) {
+			contents = rows;
+			break;
+		}
+	}
+	if (!contents) throw Error("no all-surviving fixture");
+	const unknown = contents.reduce(
+		(n, c) => mass.add(n, parseShare(c.ownedShare, c.id).unknownMass),
+		mass.fromTicks(0n),
+	);
+	expect(unknown).toBe(a.pools.Alloys.unknownMass);
 });
 
 test("base 6398a3ab commodity and seeded market/raider fingerprint is unchanged", () => {

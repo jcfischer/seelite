@@ -57,7 +57,7 @@ describe("#183 D9 — the ladders in the save", () => {
 		// A literal, so the next bump has to come through here.
 		expect(SAVE_SCHEMA_VERSION).toBe(21);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 		]);
 	});
 
