@@ -4,6 +4,16 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-laser-origin.mjs": [
+		"scripts/probe-laser-origin.mjs",
+		"src/ship-mesh.ts",
+		"src/chase-view.ts",
+		"src/beam-glass.ts",
+		"src/beam-layer.ts",
+		"src/cockpit-eye.ts",
+		"src/fire-group.ts",
+		"src/laser-modules.ts",
+	],
 	"probe-accounting.mjs": [
 		"scripts/probe-accounting.mjs",
 		"scripts/lib/accounting-save-cases.ts",

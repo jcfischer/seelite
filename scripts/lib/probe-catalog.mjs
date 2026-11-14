@@ -19,6 +19,18 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-laser-origin.mjs",
+			"Fires every laser group on the off-centre Longwall bridge and a centred interceptor cockpit in both views; compares each drawn beam endpoint with the physical mount projected by Three.js, including mining-flag parity and cockpit GPU vertices.",
+			[
+				"laser origin",
+				"mount muzzle",
+				"fire groups",
+				"cockpit beams",
+				"chase",
+				"mining flag",
+			],
+		),
+		entry(
 			"probe-accounting.mjs",
 			"Measures complete schema20 envelopes and distinct live/launch atomic IndexedDB commits, with quota refusal without adoption, for migrated, typical, actual-generator saturation and widest accounting/recovery saves.",
 			[

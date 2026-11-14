@@ -12,7 +12,6 @@ import {
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	SHOT_SOUND_GAP_S,
-	tracerPorts,
 } from "../src/gun-feedback";
 import { ndcToPx } from "../src/hud";
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
@@ -23,7 +22,7 @@ import { shipMuzzlesKm } from "../src/ship-mesh";
 import { gameMethods } from "./lib/game-methods";
 
 const prototype = gameMethods(
-	["drawCockpitBeams", "chaseBeamPx", "glassFiredIndices", "gunTracer"],
+	["drawCockpitBeams", "playerBeamPx", "glassFiredIndices", "gunTracer"],
 	{
 		HULL_SPECS,
 		shipMuzzlesKm,
@@ -33,7 +32,6 @@ const prototype = gameMethods(
 		ndcToPx,
 		PLAYER_LASER_RANGE_KM,
 		glassTracerIndices,
-		tracerPorts,
 		tracerStrokes,
 		TRACER_AIM,
 		TRACER_HOLD_S,
@@ -55,7 +53,8 @@ for (const hull of HULL_IDS) {
 			const mounts = shipMuzzlesKm(hull, spec.variant);
 			const selections = [
 				mounts.map((_, i) => i),
-				...mounts.map((_, i) => [i]),
+				...(mounts.length > 1 ? mounts.map((_, i) => [i]) : []),
+				[],
 			];
 			for (const selected of selections) {
 				test(`selected mounts ${selected.join(",") || "none"}`, () => {
@@ -99,8 +98,11 @@ for (const hull of HULL_IDS) {
 						flightGlassShown: () => true,
 					});
 					if (view === "cockpit") subject.drawCockpitBeams(camera.position);
-					else drawn = subject.chaseBeamPx(1, 1);
+					else drawn = subject.playerBeamPx(1, 1);
 					expect(drawn).toHaveLength(selected.length);
+					expect(subject.gunTracer.firedPorts).toEqual(
+						drawn.map((beam) => beam.from),
+					);
 					selected.forEach((index, beam) => {
 						const mount = mounts[index];
 						const from = new THREE.Vector3(mount.x, mount.y, mount.z);

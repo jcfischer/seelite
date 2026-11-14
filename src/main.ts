@@ -777,7 +777,6 @@ import {
 	drawTracerSegments,
 	stepGunFeedback,
 	type TracerSegment,
-	tracerPorts,
 } from "./gun-feedback";
 import {
 	GIMBAL_CONE_RAD,
@@ -3697,11 +3696,19 @@ class Game {
 	 *  restate. The ports are the flown hull's, one per gun (#607). */
 	get gunTracer() {
 		const glass = this.glassFiredIndices();
-		return {
-			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
-			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
-				(_, i) => glass.includes(i),
+		const segments = this.playerBeamPx(
+			1,
+			1,
+			Array.from(
+				{ length: HULL_SPECS[this.flownHull].hardpoints },
+				(_, i) => i,
 			),
+		);
+		const ports = segments.map((segment) => segment.from);
+		return {
+			ports,
+			firedPorts: ports.filter((_, i) => glass.includes(i)),
+			segments,
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
 			soundGapS: SHOT_SOUND_GAP_S,
@@ -13833,19 +13840,12 @@ class Game {
 		);
 	}
 
-	/**
-	 * The chase beams on the canvas (#607 D3): from each of the flown hull's
-	 * muzzles, `PLAYER_LASER_RANGE_KM` along the gimballed beam, projected
-	 * through the camera and cut at its plane. A muzzle is the hull's own, so a
-	 * shipyard trade moves it with the hull.
-	 */
-	private chaseBeamPx(w: number, h: number) {
-		const glass = this.glassFiredIndices();
+	private playerBeamPx(w: number, h: number, fired = this.glassFiredIndices()) {
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
 			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => glass.includes(i),
+				(_, i) => fired.includes(i),
 			),
 		);
 		const camPos = this.cameraPos();
@@ -23019,11 +23019,8 @@ class Game {
 			))
 				strokes.push(stroke);
 		if (this.gunFeedback.tracerLeftS > 0)
-			for (const stroke of tracerStrokes(
-				this.gunTracer.firedPorts,
-				this.onFrame(this.beamAim()) ?? TRACER_AIM,
-			))
-				strokes.push(stroke);
+			for (const { from, to } of this.playerBeamPx(1, 1))
+				strokes.push(...tracerStrokes([from], to));
 		if (raider) {
 			const from = this.onFrame(directionTo(camPos, this.raiderContact.pos));
 			if (from) {
@@ -23551,7 +23548,7 @@ class Game {
 			// From the hull's muzzles, its range along the beam, as the camera
 			// sees it (#607 D3). Not the cockpit's ports on a glass chase does
 			// not have.
-			const segments = this.chaseBeamPx(w, h);
+			const segments = this.playerBeamPx(w, h);
 			drawTracerSegments(ctx, segments);
 			this.beamRender = segments;
 		}
