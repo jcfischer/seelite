@@ -7,15 +7,17 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { glbDigest } from "./lib/glb-digest";
-import { INDUSTRIAL_SURFACE } from "./share-model-image.mjs";
+import { INDUSTRIAL_SURFACE, STEEL_WEAR } from "./share-model-image.mjs";
 
 const FILE = "tests/fixtures/shared-image-originals.json";
 const models = process.argv.slice(2);
 if (!models.length) throw new Error("name the models to pin");
 const pinned = JSON.parse(readFileSync(FILE, "utf8"));
 for (const model of models) {
-	if (!INDUSTRIAL_SURFACE.models.includes(model))
-		throw new Error(`${model} does not use the shared image`);
+	const shared = [INDUSTRIAL_SURFACE, STEEL_WEAR].find((image) =>
+		image.models.includes(model),
+	);
+	if (!shared) throw new Error(`${model} does not use a shared image`);
 	const path = `src/models/${model}.glb`;
 	const file = readFileSync(path);
 	const json = JSON.parse(

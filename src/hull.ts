@@ -1073,8 +1073,8 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	patrol: {
 		role: "security",
 		variant: "a",
-		env: { lengthKm: 0.0586, beamKm: 0.0385, heightKm: 0.011 },
-		envCentre: { rightKm: 0, upKm: 0.0009, foreKm: 0.0002 },
+		env: { lengthKm: 0.0554, beamKm: 0.0339, heightKm: 0.0122 },
+		envCentre: { rightKm: 0, upKm: 0.0018, foreKm: -0.0006 },
 		massT: 46,
 		// Under the interceptor's 2.800 km/s², deliberately: **the `fast` role
 		// accelerates hardest**, and a police hull that out-accelerated it would
@@ -1089,16 +1089,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00745941,
-			yaw: 0.0103157,
-			roll: 0.00519862,
+			pitch: 0.0077194,
+			yaw: 0.00992841,
+			roll: 0.0049802,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: -0.025, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.625, port: 0.9825, starboard: 0.9825 },
+			yaw: { y: -0.175, fore: 0.9925, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9925, aft: 0.96 },
+			roll: { z: 0.4, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 6,
 		hardpoints: 2,
@@ -1122,24 +1122,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	explorer: {
 		role: "survey",
 		variant: "a",
-		env: { lengthKm: 0.0738, beamKm: 0.0385, heightKm: 0.0397 },
-		envCentre: { rightKm: 0, upKm: 0.0008, foreKm: -0.0044 },
+		env: { lengthKm: 0.0739, beamKm: 0.0846, heightKm: 0.0846 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.0007 },
 		massT: 165,
 		thrustMN: 248,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00929064,
-			yaw: 0.0091665,
-			roll: 0.00777541,
+			pitch: 0.0174352,
+			yaw: 0.0166487,
+			roll: 0.0164976,
 		},
 		ventPlacement: {
-			retroX: 0.5,
+			retroX: 0.255,
 			strafeZ: 0.25,
 			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: -0.125, port: 0.995, starboard: 0.995 },
+			pitch: { x: -0.1, fore: 0.9075, aft: 0.9975 },
+			roll: { z: -0.025, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 30,
 		hardpoints: 1,
@@ -1166,24 +1166,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	raider: {
 		role: "outlaw",
 		variant: "a",
-		env: { lengthKm: 0.0635, beamKm: 0.0344, heightKm: 0.0109 },
-		envCentre: { rightKm: 0, upKm: 0.0005, foreKm: 0.0027 },
+		env: { lengthKm: 0.0564, beamKm: 0.0339, heightKm: 0.0117 },
+		envCentre: { rightKm: 0, upKm: 0.0016, foreKm: -0.0011 },
 		massT: 42,
 		thrustMN: 113,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00741782,
-			yaw: 0.00932014,
-			roll: 0.00429537,
+			pitch: 0.00765957,
+			yaw: 0.00983335,
+			roll: 0.00484686,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0.075, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.7, port: 0.9975, starboard: 0.9975 },
+			yaw: { y: -0.25, fore: 0.9925, aft: 0.9975 },
+			pitch: { x: 0.075, fore: 0.9925, aft: 0.965 },
+			roll: { z: 0.4, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 10,
 		hardpoints: 2,
@@ -1207,24 +1207,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	carrier: {
 		role: "capital",
 		variant: "a",
-		env: { lengthKm: 0.3797, beamKm: 0.1764, heightKm: 0.145 },
-		envCentre: { rightKm: 0, upKm: 0.0135, foreKm: -0.0048 },
+		env: { lengthKm: 0.4068, beamKm: 0.1895, heightKm: 0.1895 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.019 },
 		massT: 14000,
 		thrustMN: 8400,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00825631,
-			yaw: 0.00876069,
-			roll: 0.00568054,
+			pitch: 0.00880219,
+			yaw: 0.0087691,
+			roll: 0.00672997,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: -0.05, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.775, port: 0.985, starboard: 0.985 },
+			yaw: { y: -0.15, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: -0.2, fore: 0.99, aft: 0.9975 },
+			roll: { z: 0.425, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 400,
 		hardpoints: 6,
@@ -1298,24 +1298,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	prospector: {
 		role: "prospect",
 		variant: "a",
-		env: { lengthKm: 0.0665, beamKm: 0.0253, heightKm: 0.0192 },
-		envCentre: { rightKm: 0, upKm: -0.0023, foreKm: 0.0013 },
+		env: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
+		envCentre: { rightKm: 0, upKm: 0.0005, foreKm: -0.0011 },
 		massT: 58,
 		thrustMN: 110,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00810055,
-			yaw: 0.00899218,
-			roll: 0.00433099,
+			pitch: 0.00799396,
+			yaw: 0.00835805,
+			roll: 0.00340446,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0.075, fore: 0.8325, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.925 },
-			roll: { z: 0.5, port: 0.995, starboard: 0.995 },
+			yaw: { y: -0.5, fore: 0.88, aft: 0.9975 },
+			pitch: { x: -0.275, fore: 0.9025, aft: 0.9875 },
+			roll: { z: 0.65, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 12,
 		hardpoints: 1,
@@ -1340,24 +1340,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	dreadnought: {
 		role: "battle-line",
 		variant: "a",
-		env: { lengthKm: 0.4066, beamKm: 0.1331, heightKm: 0.1111 },
-		envCentre: { rightKm: 0, upKm: 0.0091, foreKm: 0.0007 },
+		env: { lengthKm: 0.432, beamKm: 0.1895, heightKm: 0.1895 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.0184 },
 		massT: 12000,
 		thrustMN: 8400,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00774348,
-			yaw: 0.00797764,
-			roll: 0.00406323,
+			pitch: 0.00863529,
+			yaw: 0.008592,
+			roll: 0.00633739,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.775, port: 0.9825, starboard: 0.9825 },
+			yaw: { y: -0.1, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: -0.2, fore: 0.9925, aft: 0.9925 },
+			roll: { z: 0.4, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 200,
 		hardpoints: 8,
@@ -1475,9 +1475,31 @@ export const CAPITAL_HULL_IDS = [
 export const isCapital = (id: HullId): boolean =>
 	(CAPITAL_HULL_IDS as readonly HullId[]).includes(id);
 
+/**
+ * The hulls no berth in the game admits, and so the hulls that cannot dock
+ * inside a station: the capitals, and the **explorer** since its authored
+ * Pilgrim brought its 84.5 m habitat ring to an 80 m walking floor (node #1035).
+ *
+ * The principal's ruling of 2026-11-10 keeps the authored dimensions and the
+ * truthful envelope, and answers the consequence as policy rather than as a
+ * shape: an oversized ship docks at an external shipyard berth and never enters
+ * a station interior, it may still arrive at any role and hold outside, and a
+ * small shuttle ferries between the two. That work is #1239's, so nothing here
+ * makes an external berth exist; what this set says is which hulls a berth can
+ * objectively not admit today.
+ */
+export const NO_INTERNAL_BERTH_HULL_IDS = [
+	...CAPITAL_HULL_IDS,
+	"explorer",
+] as const satisfies readonly HullId[];
+
+/** Membership in the set a berth cannot admit. */
+export const hasNoInternalBerth = (id: HullId): boolean =>
+	(NO_INTERNAL_BERTH_HULL_IDS as readonly HullId[]).includes(id);
+
 /** Every hull that is meant to fit through an aperture — the complement of the
- *  capitals, and the set `tests/aperture-fit.test.ts` and the docking sweep
- *  both run over. */
+ *  hulls no berth admits, and the set `tests/aperture-fit.test.ts` and the
+ *  docking sweep both run over. */
 export const DOCKABLE_HULL_IDS: readonly HullId[] = HULL_IDS.filter(
-	(id) => !isCapital(id),
+	(id) => !hasNoInternalBerth(id),
 );

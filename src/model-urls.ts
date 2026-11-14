@@ -84,6 +84,10 @@ export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
 		url: new URL("./models/industrial-surface.webp", import.meta.url).href,
 		name: "industrial-surface",
 	},
+	b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f: {
+		url: new URL("./models/steel-wear.webp", import.meta.url).href,
+		name: "steel-wear",
+	},
 };
 
 /** Accepted per-fitting station interiors, node #843. */
@@ -147,5 +151,34 @@ export const OUTPOST_GLB_URLS = {
  *  `spikes/seven-ships/prepare-game-asset.mjs`. */
 export const LANCE_INTERCEPTOR_GLB_URL = new URL(
 	"./models/lance-interceptor.glb",
+	import.meta.url,
+).href;
+
+/** The other six of design PR #829 (node #1035), prepared by the same script:
+ *  the Warden patrol, the Pilgrim explorer, the Shiv raider, the Bastion
+ *  carrier, the Sluice prospector and the Rampart dreadnought. Each names one
+ *  `steel-wear` image (`SHARED_IMAGES`), not a copy of it. */
+export const WARDEN_PATROL_GLB_URL = new URL(
+	"./models/warden-patrol.glb",
+	import.meta.url,
+).href;
+export const PILGRIM_EXPLORER_GLB_URL = new URL(
+	"./models/pilgrim-explorer.glb",
+	import.meta.url,
+).href;
+export const SHIV_RAIDER_GLB_URL = new URL(
+	"./models/shiv-raider.glb",
+	import.meta.url,
+).href;
+export const BASTION_CARRIER_GLB_URL = new URL(
+	"./models/bastion-carrier.glb",
+	import.meta.url,
+).href;
+export const SLUICE_PROSPECTOR_GLB_URL = new URL(
+	"./models/sluice-prospector.glb",
+	import.meta.url,
+).href;
+export const RAMPART_DREADNOUGHT_GLB_URL = new URL(
+	"./models/rampart-dreadnought.glb",
 	import.meta.url,
 ).href;

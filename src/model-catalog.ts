@@ -33,6 +33,18 @@ export const modelLoaders = {
 		(await import("./voyager-hull")).prepareVoyagerHullModel(p),
 	interceptor: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./interceptor-hull")).prepareInterceptorHullModel(p),
+	patrol: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareWardenHullModel(p),
+	explorer: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).preparePilgrimHullModel(p),
+	raider: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareShivHullModel(p),
+	carrier: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareBastionHullModel(p),
+	prospector: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareSluiceHullModel(p),
+	dreadnought: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareRampartHullModel(p),
 	miner: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./longwall-model")).prepareLongwallModel(p, {
 			posableStruts:
@@ -85,6 +97,12 @@ export const AUTHORED_HULL_MODELS = [
 	"freighter",
 	"voyager",
 	"interceptor",
+	"patrol",
+	"explorer",
+	"raider",
+	"carrier",
+	"prospector",
+	"dreadnought",
 ] as const satisfies readonly (HullId & ModelId)[];
 export type AuthoredHullModelId = (typeof AUTHORED_HULL_MODELS)[number];
 export const isAuthoredHullModel = (id: unknown): id is AuthoredHullModelId =>

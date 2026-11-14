@@ -20,15 +20,18 @@ test("derelict-tear's declared fixture selects a wreck with torn skin and expose
 			? makeWorld(seed)
 			: makeWorldAtSystem(seed, systemIndex);
 	resetWorldToStart(world);
-	const { pose } = nextDerelictViewWreck(world.system, shot.framing);
-	expect(isAuthoredHullModel(pose.hull)).toBe(false);
-	const wreck = buildDerelictMesh(pose.hull);
-	try {
-		expect(wreck.userData.torn?.sites.length ?? 0).toBeGreaterThan(0);
-		expect(wreck.userData.torn?.frame ?? 0).toBeGreaterThan(0);
-	} finally {
-		disposeDerelict(wreck);
-	}
+	// **The subject is gone (node #1035).** A tear cuts a loft's ring-and-segment
+	// grid, and every hull in the roster now draws an authored model, so no
+	// wreck of this view can carry torn skin. The fixture refuses rather than
+	// capturing a whole-looking hull under a tear's name, and this row states
+	// that refusal: what is left is the principal's decision — extend the tear
+	// to authored geometry, keep one hull's loft for wrecks, or retire the view.
+	expect(() => nextDerelictViewWreck(world.system, "tear")).toThrow(
+		"no derelict slot whose wreck the tear can cut",
+	);
+	const plain = nextDerelictViewWreck(world.system);
+	expect(isAuthoredHullModel(plain.pose.hull)).toBe(true);
+	disposeDerelict(buildDerelictMesh(plain.pose.hull));
 });
 
 test("the original fixture refuses tear framing but keeps its plain first-slot wreck", () => {

@@ -1,9 +1,9 @@
 /**
- * One decoded `industrial-surface` for the fourteen models that use it:
- * https://github.com/jcfischer/seelite/issues/1222
- * The prepared files decode through the production loader, with the image
- * loader stubbed because Bun has no image decoder; the browser half is
- * `scripts/probe-shared-image.mjs`.
+ * One decoded image per texture many models embed: `industrial-surface`
+ * (https://github.com/jcfischer/seelite/issues/1222) and the seven-ship wear map
+ * (nodes #1034/#1035). The prepared files decode through the production loader,
+ * with the image loader stubbed because Bun has no image decoder; the browser
+ * half is `scripts/probe-shared-image.mjs`.
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
@@ -14,6 +14,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import originals from "./fixtures/shared-image-originals.json";
 import {
 	INDUSTRIAL_SURFACE,
+	STEEL_WEAR,
 	shareImage,
 	writeGlb,
 	SHARED_IMAGE_EXTENSION,
@@ -30,7 +31,14 @@ import {
 	type ImageLoader,
 } from "../src/shared-image";
 
+const IMAGES = [INDUSTRIAL_SURFACE, STEEL_WEAR] as const;
 const MODELS = Object.keys(originals) as (keyof typeof originals)[];
+/** The image a model names, from whichever registry lists it. */
+const imageOf = (model: string) => {
+	const image = IMAGES.find((one) => one.models.includes(model));
+	if (!image) throw new Error(`${model} names no shared image`);
+	return image;
+};
 const pathOf = (model: string) => `src/models/${model}.glb`;
 
 const documentOf = (bytes: Uint8Array) => {
@@ -167,16 +175,20 @@ describe("shareImage", () => {
 });
 
 describe("the prepared shipping models", () => {
-	test("the shared file holds the image the models embedded", () => {
-		const bytes = readFileSync(INDUSTRIAL_SURFACE.file);
-		expect(createHash("sha256").update(bytes).digest("hex")).toBe(
-			INDUSTRIAL_SURFACE.sha256,
-		);
-		expect(bytes.length).toBe(2_576_194);
-		expect(SHARED_IMAGES[INDUSTRIAL_SURFACE.sha256]?.name).toBe(
-			INDUSTRIAL_SURFACE.name,
-		);
-		expect([...INDUSTRIAL_SURFACE.models].sort()).toEqual([...MODELS].sort());
+	test.each(IMAGES.map((one) => [one.file, one] as const))(
+		"%s holds the image its models embedded",
+		(_file, shared) => {
+			const bytes = readFileSync(shared.file);
+			expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+				shared.sha256,
+			);
+			expect(SHARED_IMAGES[shared.sha256]?.name).toBe(shared.name);
+		},
+	);
+
+	test("every model in the fixture is listed by exactly one image", () => {
+		const listed = IMAGES.flatMap((one) => [...one.models]).sort();
+		expect(listed).toEqual([...MODELS].sort());
 	});
 
 	test.each(MODELS)(
@@ -186,7 +198,7 @@ describe("the prepared shipping models", () => {
 			expect(json.images).toBeUndefined();
 			expect(json.textures).toHaveLength(1);
 			expect(json.textures[0].extensions).toEqual({
-				[SHARED_IMAGE_EXTENSION]: { sha256: INDUSTRIAL_SURFACE.sha256 },
+				[SHARED_IMAGE_EXTENSION]: { sha256: imageOf(model).sha256 },
 			});
 		},
 	);
@@ -199,8 +211,9 @@ describe("the prepared shipping models", () => {
 			expect(now.attributes).toBe(was.attributes);
 			expect(now.document).toBe(was.document);
 			const removed = was.bytes - now.bytes;
-			expect(removed).toBeGreaterThan(2_576_194 - 4096);
-			expect(removed).toBeLessThan(2_576_194 + 4096);
+			const shared = readFileSync(imageOf(model).file).length;
+			expect(removed).toBeGreaterThan(shared - 4096);
+			expect(removed).toBeLessThan(shared + 4096);
 		},
 	);
 
@@ -236,7 +249,7 @@ describe("the prepared shipping models", () => {
 			expect(image.minFilter).toBe(THREE.LinearMipmapLinearFilter);
 			expect(image.generateMipmaps).toBe(true);
 			expect(image.anisotropy).toBe(1);
-			expect(image.name).toBe(INDUSTRIAL_SURFACE.name);
+			expect(image.name).toBe(imageOf(model).name);
 		},
 	);
 

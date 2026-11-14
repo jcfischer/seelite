@@ -17,6 +17,8 @@
  */
 
 import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { useShippedSevenShips } from "./setup/seven-ships-hull";
+import { withProceduralHulls } from "./helpers/procedural-hulls";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { buildDerelictMesh, disposeDerelict } from "../src/derelict-mesh";
@@ -25,6 +27,7 @@ import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
 
 await useShippedInterceptorHull();
+await useShippedSevenShips();
 
 /** The hulls a derelict is drawn from (`derelict.ts`), at their flown variant. */
 const live = (id: HullId) => buildShipMesh(id, HULL_SPECS[id].variant).root;
@@ -137,27 +140,28 @@ describe("a derelict's envelope is the intact hull's", () => {
 			disposeDerelict(wreck);
 		});
 
-	test("the measure sees a cut that the bounding box cannot", () => {
-		// The instrument's own control: delete every fuselage triangle touching
-		// the nose's plane — which is the hull's foremost — and `drawnHullBox`
-		// moves while `Box3.setFromObject` does not.
-		const root = live("patrol");
-		const fuselage = root.getObjectByName("patrol-fuselage") as THREE.Mesh;
-		const before = drawnHullBox(root);
-		const cut = fuselage.geometry.clone();
-		const position = cut.getAttribute("position");
-		const index = Array.from(cut.index?.array ?? []);
-		const nose = (i: number) => position.getZ(i) < before.min.z + 1e-6;
-		const kept: number[] = [];
-		for (let k = 0; k < index.length; k += 3)
-			if (![0, 1, 2].some((n) => nose(index[k + n])))
-				kept.push(index[k], index[k + 1], index[k + 2]);
-		cut.setIndex(kept);
-		const stale = new THREE.Box3().setFromObject(root);
-		fuselage.geometry = cut;
-		expect(new THREE.Box3().setFromObject(root).equals(stale)).toBe(true);
-		expect(drawnHullBox(root).min.z).toBeGreaterThan(before.min.z);
-	});
+	test("the measure sees a cut that the bounding box cannot", () =>
+		withProceduralHulls(() => {
+			// The instrument's own control: delete every fuselage triangle touching
+			// the nose's plane — which is the hull's foremost — and `drawnHullBox`
+			// moves while `Box3.setFromObject` does not.
+			const root = live("patrol");
+			const fuselage = root.getObjectByName("patrol-fuselage") as THREE.Mesh;
+			const before = drawnHullBox(root);
+			const cut = fuselage.geometry.clone();
+			const position = cut.getAttribute("position");
+			const index = Array.from(cut.index?.array ?? []);
+			const nose = (i: number) => position.getZ(i) < before.min.z + 1e-6;
+			const kept: number[] = [];
+			for (let k = 0; k < index.length; k += 3)
+				if (![0, 1, 2].some((n) => nose(index[k + n])))
+					kept.push(index[k], index[k + 1], index[k + 2]);
+			cut.setIndex(kept);
+			const stale = new THREE.Box3().setFromObject(root);
+			fuselage.geometry = cut;
+			expect(new THREE.Box3().setFromObject(root).equals(stale)).toBe(true);
+			expect(drawnHullBox(root).min.z).toBeGreaterThan(before.min.z);
+		}));
 
 	test("the measure is the hull's own frame, however the wreck is placed and turned", () => {
 		// A wreck in the scene is moved, scaled by its layer and tumbling. Boxing
@@ -443,22 +447,23 @@ describe("the live ship is untouched", () => {
 		}
 	});
 
-	test("a wreck disposes the tear's geometry and not the roster's", () => {
-		const wreck = buildDerelictMesh(TEARABLE[0]);
-		const owned = new Set<THREE.BufferGeometry>();
-		const shared = new Set<THREE.BufferGeometry>();
-		wreck.traverse((o) => {
-			if (!(o instanceof THREE.Mesh)) return;
-			(o.geometry.userData.derelictOwned ? owned : shared).add(o.geometry);
-		});
-		expect(owned.size).toBeGreaterThan(0);
-		const disposed = new Set<THREE.BufferGeometry>();
-		for (const g of [...owned, ...shared])
-			g.addEventListener("dispose", () => disposed.add(g));
-		disposeDerelict(wreck);
-		for (const g of owned) expect(disposed.has(g)).toBe(true);
-		for (const g of shared) expect(disposed.has(g)).toBe(false);
-	});
+	test("a wreck disposes the tear's geometry and not the roster's", () =>
+		withProceduralHulls(() => {
+			const wreck = buildDerelictMesh("patrol");
+			const owned = new Set<THREE.BufferGeometry>();
+			const shared = new Set<THREE.BufferGeometry>();
+			wreck.traverse((o) => {
+				if (!(o instanceof THREE.Mesh)) return;
+				(o.geometry.userData.derelictOwned ? owned : shared).add(o.geometry);
+			});
+			expect(owned.size).toBeGreaterThan(0);
+			const disposed = new Set<THREE.BufferGeometry>();
+			for (const g of [...owned, ...shared])
+				g.addEventListener("dispose", () => disposed.add(g));
+			disposeDerelict(wreck);
+			for (const g of owned) expect(disposed.has(g)).toBe(true);
+			for (const g of shared) expect(disposed.has(g)).toBe(false);
+		}));
 
 	test("two wrecks of one hull draw the same torn geometry", () => {
 		for (const id of PURCHASABLE_HULL_IDS) {
@@ -473,23 +478,24 @@ describe("the live ship is untouched", () => {
 });
 
 describe("the broken look goes dark with the rest", () => {
-	test("the frame, the liner and the scorched skin carry no light of their own", () => {
-		const wreck = buildDerelictMesh("patrol");
-		let frame = 0;
-		let liners = 0;
-		wreck.traverse((o) => {
-			if (!(o instanceof THREE.Mesh)) return;
-			const m = o.material as THREE.MeshStandardMaterial;
-			if (o.userData.derelictFrame) frame += 1;
-			if (o.name.endsWith("-liner")) {
-				liners += 1;
-				expect(m.side).toBe(THREE.BackSide);
-			}
-			if (m instanceof THREE.MeshStandardMaterial)
-				expect(m.emissiveIntensity).toBe(0);
-		});
-		expect(frame).toBeGreaterThan(0);
-		expect(liners).toBe(wreck.userData.torn.sites.length);
-		disposeDerelict(wreck);
-	});
+	test("the frame, the liner and the scorched skin carry no light of their own", () =>
+		withProceduralHulls(() => {
+			const wreck = buildDerelictMesh("patrol");
+			let frame = 0;
+			let liners = 0;
+			wreck.traverse((o) => {
+				if (!(o instanceof THREE.Mesh)) return;
+				const m = o.material as THREE.MeshStandardMaterial;
+				if (o.userData.derelictFrame) frame += 1;
+				if (o.name.endsWith("-liner")) {
+					liners += 1;
+					expect(m.side).toBe(THREE.BackSide);
+				}
+				if (m instanceof THREE.MeshStandardMaterial)
+					expect(m.emissiveIntensity).toBe(0);
+			});
+			expect(frame).toBeGreaterThan(0);
+			expect(liners).toBe(wreck.userData.torn.sites.length);
+			disposeDerelict(wreck);
+		}));
 });

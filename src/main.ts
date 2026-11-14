@@ -965,6 +965,7 @@ import {
 	buildShipMesh,
 	rebuildAuthoredStandIn,
 	fleetLayout,
+	advanceAuthoredHabitat,
 	measureMuzzles,
 	shipMuzzlesKm,
 	updateShipVisuals,
@@ -19354,6 +19355,14 @@ class Game {
 				parked.mesh.position.length(),
 				shipQuality,
 			);
+		const shipClock = this.world.gameTime;
+		advanceAuthoredHabitat(this.shipMesh, shipClock);
+		if (this.raiderMesh.parent)
+			advanceAuthoredHabitat(this.raiderMesh, shipClock);
+		for (const mesh of this.trafficMeshes.values())
+			if (mesh.parent) advanceAuthoredHabitat(mesh, shipClock);
+		for (const parked of this.fleet)
+			advanceAuthoredHabitat(parked.mesh, shipClock);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		// #535's prologue is empty space: the ship has not arrived yet.

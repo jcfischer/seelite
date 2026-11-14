@@ -38,6 +38,8 @@ import {
 	installAuthoredHull,
 	prepareAuthoredHull,
 } from "./ship-mesh";
+import { sharedImagePlugin } from "./shared-image";
+import { HABITAT_ROTOR_NAME } from "./ship-detail";
 import { prepareAuthoredThroats } from "./vent-plumes";
 
 /** One drive nozzle pair, study metres: the throat's centre on the starboard
@@ -75,6 +77,10 @@ export interface AuthoredHullDesign {
 	readonly prepareMesh?: (mesh: THREE.Mesh) => void;
 	/** Meshes left out of both reduced levels. */
 	readonly skipInLevels?: (mesh: THREE.Mesh) => boolean;
+	/** The study carries a turning habitat ring (node #1035): each level holds
+	 *  one `habitat-rotor`, whose `rotationRPM` is the rate the accepted design
+	 *  was judged at. */
+	readonly habitat?: boolean;
 }
 
 /**
@@ -265,6 +271,13 @@ export async function createAuthoredHullBuilder(
 		// What this root carries, for `ventThroats`: the finish in force when
 		// it is asked need not be the one it was built under.
 		root.userData.authoredGlow = glow === bowl ? "bowl" : "disc";
+		if (design.habitat) {
+			const rotors = [full, reduced, outline]
+				.map((level) => level.getObjectByName(HABITAT_ROTOR_NAME))
+				.filter((node): node is THREE.Object3D => node !== undefined)
+				.map((node) => ({ node, rpm: Number(node.userData.rotationRPM) }));
+			root.userData.habitats = rotors;
+		}
 		// Named by the ship's sides, starboard being the mesh's +x: the
 		// half-turn puts the study's +x nozzle there on the port side.
 		for (const mount of mounts) {
@@ -330,6 +343,7 @@ export function authoredHullLoader(
 	return (onProgress) =>
 		(ready ??= new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
+			.register(sharedImagePlugin())
 			.loadAsync(url, onProgress)
 			.then(async (gltf) => {
 				await yieldTask();

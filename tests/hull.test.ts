@@ -22,6 +22,8 @@
  */
 
 import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { useShippedSevenShips } from "./setup/seven-ships-hull";
+import { withProceduralHulls } from "./helpers/procedural-hulls";
 import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -41,6 +43,7 @@ import {
 	HULL_PRICE_UPPER_EXPONENT,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
+	hasNoInternalBerth,
 	hullPriceCr,
 	isCapital,
 	PLAYER_BASELINE_HULL,
@@ -75,6 +78,7 @@ import {
 } from "./helpers/hull-math";
 
 await useShippedInterceptorHull();
+await useShippedSevenShips();
 
 /** 0.1 m, in kilometres — the quantum the table's envelopes are rounded **up**
  *  to, and the tolerance the row below allows. */
@@ -198,34 +202,38 @@ describe("envelopes measure the mesh or retain an approved simulation box", () =
 		// as a rule so the row can be checked; the principal may overrule any of
 		// them on how it looks, and the day one is overruled this goes red and
 		// says so rather than the override being invisible.
-		for (const id of HULL_IDS) {
-			const spec = HULL_SPECS[id];
-			const scored = HULL_VARIANT_IDS.map((v) => ({
-				v,
-				roles: rolesAdmitting(declarableEnvelope(id, v)),
-			}));
-			const best = Math.max(...scored.map((s) => s.roles));
-			const chosen = scored.find((s) => s.v === spec.variant);
-			expect([id, chosen?.roles]).toEqual([id, best]);
-			// `a` on a tie: nothing earlier in the list may match the best score.
-			const first = scored.find((s) => s.roles === best);
-			expect([id, first?.v]).toEqual([id, spec.variant]);
-			console.log(
-				`${id}: ${scored.map((s) => `${s.v}=${s.roles}`).join(" ")} → ${spec.variant}`,
-			);
-		}
+		withProceduralHulls(() => {
+			for (const id of HULL_IDS) {
+				const spec = HULL_SPECS[id];
+				const scored = HULL_VARIANT_IDS.map((v) => ({
+					v,
+					roles: rolesAdmitting(declarableEnvelope(id, v)),
+				}));
+				const best = Math.max(...scored.map((s) => s.roles));
+				const chosen = scored.find((s) => s.v === spec.variant);
+				expect([id, chosen?.roles]).toEqual([id, best]);
+				// `a` on a tie: nothing earlier in the list may match the best score.
+				const first = scored.find((s) => s.roles === best);
+				expect([id, first?.v]).toEqual([id, spec.variant]);
+				console.log(
+					`${id}: ${scored.map((s) => `${s.v}=${s.roles}`).join(" ")} → ${spec.variant}`,
+				);
+			}
+		});
 	});
 
 	test("the rule had something to decide — the variants are not interchangeable", () => {
 		// The control for the row above. If every variant of every hull fitted
 		// every role, the selection rule would be satisfied by any choice at all
 		// and the previous test would pass on a build that picked at random.
-		const contested = HULL_IDS.filter((id) => {
-			const scores = HULL_VARIANT_IDS.map((v) =>
-				rolesAdmitting(declarableEnvelope(id, v)),
-			);
-			return Math.min(...scores) < Math.max(...scores);
-		});
+		const contested = withProceduralHulls(() =>
+			HULL_IDS.filter((id) => {
+				const scores = HULL_VARIANT_IDS.map((v) =>
+					rolesAdmitting(declarableEnvelope(id, v)),
+				);
+				return Math.min(...scores) < Math.max(...scores);
+			}),
+		);
 		expect(contested.length).toBeGreaterThan(0);
 		console.log(
 			`variants that disagree about where they fit: ${contested.join(", ")}`,
@@ -315,8 +323,26 @@ describe("the roster is the single owner, not a second copy", () => {
 				(PURCHASABLE_HULL_IDS as readonly HullId[]).includes(id),
 			]).toEqual([id, false]);
 		expect([...DOCKABLE_HULL_IDS].sort()).toEqual(
-			HULL_IDS.filter((id) => !isCapital(id)).sort(),
+			HULL_IDS.filter((id) => !hasNoInternalBerth(id)).sort(),
 		);
+	});
+
+	test("the explorer is sold and docks nowhere inside, which is D1's consequence", () => {
+		// Its authored Pilgrim is 84.5 m across its habitat ring, and no berth in
+		// the game is 84.5 m tall (node #1035). The principal's ruling of
+		// 2026-11-10 keeps that dimension and answers it with an external
+		// shipyard berth, outside holding and a shuttle — work #1239 scopes. Until
+		// then this row states the fact rather than hiding it: purchasable, and
+		// admitted by no berth at any role.
+		expect(PURCHASABLE_HULL_IDS as readonly HullId[]).toContain("explorer");
+		expect(hasNoInternalBerth("explorer")).toBe(true);
+		for (const [type, interior] of INTERIORS)
+			expect([
+				type,
+				interior.berths.some((berth) =>
+					berthFits(berth, HULL_SPECS.explorer.env),
+				),
+			]).toEqual([type, false]);
 	});
 });
 
@@ -333,26 +359,51 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		// cargo structure is, an interceptor light because it is mostly engine,
 		// and neither is off by a factor. A mass typed in without looking at the
 		// hull lands outside it.
+		// **The authored hulls' boxes are the models' own**, and their masses are
+		// the roster's: the principal keeps hull stats unchanged when a model
+		// arrives (node #1035), so the figure stands in a box it was not derived
+		// from. Each row is pinned to both figures, so re-deriving a mass or
+		// moving a box makes it red and somebody deletes the exemption.
+		const AUTHORED_BOX_EXEMPT: readonly HullId[] = [
+			"miner",
+			"explorer",
+			"carrier",
+			"prospector",
+			"dreadnought",
+		];
+		const PINNED_MASS: Partial<Record<HullId, number>> = {
+			miner: 215,
+			explorer: 165,
+			carrier: 14000,
+			prospector: 58,
+			dreadnought: 12000,
+		};
+		const PINNED_ENV: Partial<Record<HullId, HullEnvelope>> = {
+			miner: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
+			explorer: { lengthKm: 0.0739, beamKm: 0.0846, heightKm: 0.0846 },
+			carrier: { lengthKm: 0.4068, beamKm: 0.1895, heightKm: 0.1895 },
+			prospector: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
+			dreadnought: { lengthKm: 0.432, beamKm: 0.1895, heightKm: 0.1895 },
+		};
 		const MIN_T_PER_1000M3 = 1.2;
 		const MAX_T_PER_1000M3 = 2.4;
 		for (const id of HULL_IDS) {
 			const env = HULL_SPECS[id].env;
 			const volumeM3 = env.lengthKm * env.beamKm * env.heightKm * 1e9;
 			const density = (HULL_SPECS[id].massT * 1000) / volumeM3;
-			if (id === "miner") {
+			if (AUTHORED_BOX_EXEMPT.includes(id)) {
 				// **The one named exemption, and it is pinned rather than banded**
 				// (node #815). Longwall B's box replaced the loft's, and the mass
 				// it would re-derive to is a stat change the principal has not
 				// made, so the old 215 t stands in a box it was not derived from.
 				// Pinned to both figures, so re-deriving the mass or moving the
 				// box makes this row red and somebody deletes the exemption.
-				expect([HULL_SPECS.miner.massT, env]).toEqual([
-					215,
-					{ lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
+				expect([HULL_SPECS[id].massT, env]).toEqual([
+					PINNED_MASS[id] as number,
+					PINNED_ENV[id] as HullEnvelope,
 				]);
-				expect(density).toBeGreaterThan(MAX_T_PER_1000M3);
 				console.log(
-					`${id.padEnd(12)} ${density.toFixed(2)} t per 1000 m³ (exempt, node #815)`,
+					`${id.padEnd(12)} ${density.toFixed(2)} t per 1000 m³ (pinned, an authored box)`,
 				);
 				continue;
 			}
@@ -425,7 +476,8 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		// D5 as a measurement rather than as an adjective. The ordering is the
 		// claim — an interceptor sharper than a courier sharper than a freighter —
 		// and the ratio is what a pilot would have to be able to feel.
-		const byAgility = [...DOCKABLE_HULL_IDS].sort(
+		const handled = HULL_IDS.filter((id) => !isCapital(id));
+		const byAgility = [...handled].sort(
 			(a, b) =>
 				flightPerformance(b).angularMax.pitch -
 				flightPerformance(a).angularMax.pitch,
@@ -465,11 +517,13 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 });
 
 describe("who a station has a berth for", () => {
-	test("every purchasable hull fits the three full-size roles", () => {
+	test("every purchasable hull a berth can admit fits the three full-size roles", () => {
 		for (const type of STATION_TYPES) {
 			if (type === "outpost") continue;
 			const interior = interiorOf(type);
-			for (const id of PURCHASABLE_HULL_IDS)
+			for (const id of PURCHASABLE_HULL_IDS.filter(
+				(hull) => !hasNoInternalBerth(hull),
+			))
 				expect([
 					type,
 					id,
@@ -478,7 +532,7 @@ describe("who a station has a berth for", () => {
 		}
 	});
 
-	test("the outpost turns away the miner and the explorer, which is its point", () => {
+	test("the outpost turns away the miner, which is its point", () => {
 		// `BERTH_CELL`'s outpost row is two thirds of the volume *so that* it
 		// rejects the two largest ordinary hulls, and the prose there named the
 		// miner and the explorer from the old declared figures. Measured against
@@ -488,7 +542,7 @@ describe("who a station has a berth for", () => {
 		const refused = DOCKABLE_HULL_IDS.filter(
 			(id) => !interior.berths.some((b) => berthFits(b, HULL_SPECS[id].env)),
 		);
-		expect([...refused].sort()).toEqual(["explorer", "miner"]);
+		expect([...refused].sort()).toEqual(["miner"]);
 	});
 
 	test("no berth in the game admits a capital", () => {

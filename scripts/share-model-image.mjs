@@ -38,6 +38,24 @@ export const INDUSTRIAL_SURFACE = Object.freeze({
 	]),
 });
 
+/** The wear map the seven-ship exteriors share (nodes #1034/#1035): one file a
+ *  session fetches and decodes once, whichever hulls it draws. The Rampart
+ *  and the Bastion are not here: their lossy exports carry a
+ *  `KHR_texture_transform`, which this script refuses by design. */
+export const STEEL_WEAR = Object.freeze({
+	sha256: "b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f",
+	name: "steel-wear",
+	file: "src/models/steel-wear.webp",
+	models: Object.freeze([
+		"warden-patrol",
+		"pilgrim-explorer",
+		"shiv-raider",
+		"sluice-prospector",
+	]),
+});
+
+const SHARED = [INDUSTRIAL_SURFACE, STEEL_WEAR];
+
 const WEBP = "EXT_texture_webp";
 const MESHOPT = "EXT_meshopt_compression";
 const REGISTRY_SAMPLER = {
@@ -163,7 +181,10 @@ export function shareImage(bytes, sha256) {
 }
 
 function main() {
-	const { sha256, file, models } = INDUSTRIAL_SURFACE;
+	for (const image of SHARED) share(image);
+}
+
+function share({ sha256, file, models }) {
 	for (const model of models) {
 		const path = `src/models/${model}.glb`;
 		const before = readFileSync(path);

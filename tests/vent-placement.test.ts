@@ -10,6 +10,7 @@
  */
 
 import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { useShippedSevenShips } from "./setup/seven-ships-hull";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
@@ -27,6 +28,7 @@ import { ventThroats } from "../src/vent-plumes";
 import { measureVentPlacement } from "../scripts/measure-vent-placement";
 
 await useShippedInterceptorHull();
+await useShippedSevenShips();
 
 const built = new Map<HullId, THREE.Group>();
 const rootOf = (id: HullId) => {

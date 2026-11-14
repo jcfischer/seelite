@@ -9,5 +9,5 @@ test("the model URLs are literals vite can rewrite to hashed assets", () => {
 	const literals = source.match(
 		/new URL\(\s*"\.\/models\/[\w-]+\.glb",\s*import\.meta\.url,?\s*\)/g,
 	);
-	expect(literals?.length).toBe(30);
+	expect(literals?.length).toBe(36);
 });
