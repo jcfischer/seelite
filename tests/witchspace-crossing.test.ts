@@ -13,7 +13,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { ARRIVAL_RIFT } from "../src/arrival-rift";
-import type { HullId } from "../src/hull";
+import type { HullBoxCentre, HullEnvelope, HullId } from "../src/hull";
 import { HULL_SPECS } from "../src/hull";
 import { JUMP_CHARGE_S } from "../src/hyperspace";
 import { HULL_REACH_KM } from "../src/ship-mesh";
@@ -169,6 +169,34 @@ describe("the ring's own timeline (node #1006 C1, C3)", () => {
 			expect(radius).toBeGreaterThanOrEqual(HULL_REACH_KM[id]);
 			expect(radius).toBeLessThanOrEqual(1.25 * HULL_REACH_KM[id]);
 			expect(Number.isFinite(radius)).toBe(true);
+		}
+	});
+
+	test("the radius covers the whole box, offset centre and all, and rounds up to 0.1 m", () => {
+		// https://github.com/jcfischer/seelite/issues/1035
+		const cornerReachKm = (env: HullEnvelope, centre: HullBoxCentre) => {
+			let out = 0;
+			for (const side of [-1, 1])
+				for (const up of [-1, 1])
+					for (const fore of [-1, 1])
+						out = Math.max(
+							out,
+							length(
+								v3(
+									centre.rightKm + (side * env.beamKm) / 2,
+									centre.upKm + (up * env.heightKm) / 2,
+									centre.foreKm + (fore * env.lengthKm) / 2,
+								),
+							),
+						);
+			return out;
+		};
+		for (const id of Object.keys(HULL_SPECS) as HullId[]) {
+			const { env, envCentre } = HULL_SPECS[id];
+			const corner = cornerReachKm(env, envCentre);
+			const radius = crossingDistanceKm(env, envCentre) / CROSSING.emergeRadii;
+			expect([id, radius >= corner - 1e-12]).toEqual([id, true]);
+			expect([id, radius - corner <= 1e-4]).toEqual([id, true]);
 		}
 	});
 
