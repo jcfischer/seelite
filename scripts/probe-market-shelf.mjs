@@ -82,9 +82,11 @@ try {
 	await bootedGame(page);
 	const migrated = await page.evaluate(async () => {
 		const g = window.__seelite;
+		const { SAVE_SCHEMA_VERSION } = await import("/src/save-envelope.ts");
 		const live = await g.save.backend.read("default", "live"),
 			dock = await g.save.backend.read("default", "lastDocked");
 		return {
+			currentVersion: SAVE_SCHEMA_VERSION,
 			liveVersion: live.saveSchemaVersion,
 			dockVersion: dock.saveSchemaVersion,
 			liveCash: live.commander.state.credits,
@@ -94,8 +96,8 @@ try {
 	check(
 		"schema19 migrates live and distinct launch before gameplay",
 		migration &&
-			migrated.liveVersion === 20 &&
-			migrated.dockVersion === 20 &&
+			migrated.liveVersion === migrated.currentVersion &&
+			migrated.dockVersion === migrated.currentVersion &&
 			migrated.liveCash === 100000 &&
 			migrated.dockCash === 99999,
 		JSON.stringify(migrated),

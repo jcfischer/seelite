@@ -43,7 +43,7 @@ test("legacy nested and outer hashes are checked before the explicit timing migr
 	});
 	const original = JSON.stringify(raw);
 	const loaded = parseSave(raw);
-	expect(SAVE_SCHEMA_VERSION).toBe(20);
+	expect(SAVE_SCHEMA_VERSION).toBe(21);
 	expect(loaded.world.worldSchemaVersion).toBe(4);
 	expect(loaded.world.worldGeneratorVersion).toBe(11);
 	expect(

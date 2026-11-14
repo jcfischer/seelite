@@ -3,6 +3,7 @@ import { fieldCentre, fieldRocks, systemFields } from "../src/asteroid-field";
 import { projectNavTargets } from "../src/cockpit";
 import { type DepositRow, SURVEY_LIFETIME_H } from "../src/deposit-state";
 import { generateGalaxy } from "../src/galaxy";
+import { GRADE_NAME } from "../src/ore-goods";
 import { rockContents, surveyReading } from "../src/rock-survey";
 import {
 	isRockTargetId,
@@ -69,11 +70,7 @@ function subject(mining = true) {
 					ROCK_DROP_KM,
 					surveyReading,
 					SURVEY_LIFETIME_H,
-					SURVEY_GRADE_SHORT: {
-						poor: "POOR",
-						standard: "STD",
-						rich: "RICH",
-					},
+					GRADE_NAME,
 					projectNavTargets,
 					ETA_INTERVAL_S: 1,
 				},

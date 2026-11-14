@@ -7,6 +7,7 @@ import {
 	displayAmount,
 } from "./commodity-pools";
 import { nativeGrams } from "./commodity-pools";
+import { oreGood } from "./ore-goods";
 import { parseModule, carriedModule, type FittedModule } from "./loadout";
 import {
 	type FieldDiscoveries,
@@ -82,6 +83,7 @@ import {
 import { generateGalaxy, type SystemRecord, systemAt } from "./galaxy";
 import {
 	COMMODITIES,
+	CARGO_COMMODITIES,
 	EQUIPMENT,
 	ESCAPE_POD,
 	commodity,
@@ -2445,7 +2447,7 @@ export const scoopDerelict = (
 				const remaining = recover(
 					emptyAccount(),
 					c.id,
-					parseShare(c.ownedShare),
+					parseShare(c.ownedShare, c.id),
 					tonnes,
 				).remaining;
 				return {
@@ -3123,7 +3125,7 @@ const DERELICT_GOOD_IDS: ReadonlySet<string> = new Set(
 );
 const DERELICT_FITTING_IDS: ReadonlySet<string> = new Set(DERELICT_FITTINGS);
 const DEATH_GOOD_IDS: ReadonlySet<string> = new Set(
-	COMMODITIES.map((c) => c.name),
+	CARGO_COMMODITIES.map((c) => c.name),
 );
 const DEATH_FITTING_IDS: ReadonlySet<string> = new Set(
 	EQUIPMENT.filter((e) => e.name !== ESCAPE_POD).map((e) => e.name),
@@ -3169,10 +3171,16 @@ const parseDerelictContainer = (
 		fail(`${what}: a module fitting occupies one tonne`);
 	const left = death ? num(o, "left", what) : ordinal(o, "left", what);
 	if (left < 0) fail(`${what}: negative death cargo`);
+	if (
+		kind === "good" &&
+		oreGood(id) &&
+		(!Number.isSafeInteger(tonnes) || !Number.isSafeInteger(left))
+	)
+		fail(`${what}: ore requires whole tonnes`);
 	let ownedShare: RecoveryWire | undefined;
 	if (o.ownedShare !== undefined) {
 		if (!death || kind !== "good") fail(`${what}: invalid recovery owner`);
-		const share = parseShare(o.ownedShare);
+		const share = parseShare(o.ownedShare, id);
 		if (displayAmount(share.totalMass, "mass", nativeGrams(id)) !== left)
 			fail(`${what}: recovery quantity mismatch`);
 		ownedShare = encodeShare(share);

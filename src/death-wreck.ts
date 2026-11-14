@@ -46,6 +46,7 @@ export function deathWreckContents(
 		DEATH_WRECK_SURVIVAL_SHARE;
 	const containers: DerelictContainer[] = [];
 	const kept = cause === "eject" ? ejectSurvivors(dying).cargo : {};
+	let accounting = dying.accounting;
 	const put = (
 		kind: "good" | "fitting",
 		id: string,
@@ -53,18 +54,20 @@ export function deathWreckContents(
 		token: string,
 		fitting?: FittedModule,
 	) => {
+		const removed =
+			kind === "good" && accounting
+				? removeMass(
+						accounting,
+						id,
+						mass.subtract(
+							accounting.basis[id].heldMass,
+							massFromNative(kept[id] ?? 0, nativeGrams(id)),
+						),
+					)
+				: null;
+		if (removed) accounting = removed.account;
 		if (tonnes > 0 && survives(token)) {
-			const share =
-				kind === "good" && dying.accounting
-					? removeMass(
-							dying.accounting,
-							id,
-							mass.subtract(
-								dying.accounting.basis[id].heldMass,
-								massFromNative(kept[id] ?? 0, nativeGrams(id)),
-							),
-						).share
-					: null;
+			const share = removed?.share ?? null;
 			const amount = share
 				? displayAmount(share.totalMass, "mass", nativeGrams(id))
 				: tonnes;

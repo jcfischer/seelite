@@ -77,7 +77,7 @@ const WRECK_AT = (() => {
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(20);
+		expect(SAVE_SCHEMA_VERSION).toBe(21);
 		const world = newWorld(56);
 		const raw = serializeSave({
 			world,

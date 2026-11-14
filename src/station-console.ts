@@ -36,6 +36,8 @@ import {
 import {
 	PRICE_DISPLAY_STEP_CR,
 	COMMODITIES,
+	CARGO_COMMODITIES,
+	commodityStockResponse,
 	type Commodity,
 	EQUIPMENT,
 	type Equipment,
@@ -199,6 +201,7 @@ export type MarketRowFn = (
 ) => MarketRow;
 
 export interface StationMarketScreenInput {
+	mining?: boolean;
 	station: MarketStation;
 	/** The system's economy, 0…7. */
 	economy: number;
@@ -259,40 +262,47 @@ export function stationMarketScreen(
 ): readonly ConsoleMarketRow[] {
 	const { station, economy, gameTimeMin, deficitOf, holdT, displayTL, cargo } =
 		input;
-	return COMMODITIES.map((commodity): ConsoleMarketRow => {
-		const held = cargo[commodity.name] ?? 0;
-		// §8.5.1: the test comes first. Asking for a price so the row can be
-		// greyed out throws at every non-fence station in the galaxy.
-		if (!listsCommodity(commodity, station))
-			return { commodity, listed: false, held };
-		const base = row(commodity, economy, station, gameTimeMin);
-		const deficit = deficitOf(commodity.name);
-		const midCr = stockResponse(base.priceCr, deficit, holdT);
-		// **One call, two columns.** The till calls the same function with the same
-		// two arguments, which is the only thing that keeps this screen from being
-		// the #193 defect again: a quote the player reads and a figure the till
-		// charges, drifting apart.
-		const { buyCr, sellCr } = quote(midCr, displayTL);
-		const quantity = shelfQuantity(base.quantity, deficit);
-		if (deficit === 0)
-			return { commodity, listed: true, buyCr, sellCr, quantity, held };
-		return {
-			commodity,
-			listed: true,
-			buyCr,
-			sellCr,
-			quantity,
-			held,
-			// Against *this* epoch's base, which is what `base` is: it was derived
-			// from the station's identity and the clock a line ago rather than
-			// remembered from the last visit. And measured on the column it is drawn
-			// beside, not on the mid before the quote quantized it — an arrow whose
-			// arithmetic starts from a figure the row does not print is a #193 drift
-			// with an arrow on it.
-			priceDeltaCr: buyCr - base.priceCr,
-			quantityDelta: quantity - base.quantity,
-		};
-	});
+	return (input.mining ? CARGO_COMMODITIES : COMMODITIES).map(
+		(commodity): ConsoleMarketRow => {
+			const held = cargo[commodity.name] ?? 0;
+			// §8.5.1: the test comes first. Asking for a price so the row can be
+			// greyed out throws at every non-fence station in the galaxy.
+			if (!listsCommodity(commodity, station))
+				return { commodity, listed: false, held };
+			const base = row(commodity, economy, station, gameTimeMin);
+			const deficit = deficitOf(commodity.name);
+			const midCr = commodityStockResponse(
+				commodity,
+				base.priceCr,
+				deficit,
+				holdT,
+			);
+			// **One call, two columns.** The till calls the same function with the same
+			// two arguments, which is the only thing that keeps this screen from being
+			// the #193 defect again: a quote the player reads and a figure the till
+			// charges, drifting apart.
+			const { buyCr, sellCr } = quote(midCr, displayTL);
+			const quantity = shelfQuantity(base.quantity, deficit);
+			if (deficit === 0)
+				return { commodity, listed: true, buyCr, sellCr, quantity, held };
+			return {
+				commodity,
+				listed: true,
+				buyCr,
+				sellCr,
+				quantity,
+				held,
+				// Against *this* epoch's base, which is what `base` is: it was derived
+				// from the station's identity and the clock a line ago rather than
+				// remembered from the last visit. And measured on the column it is drawn
+				// beside, not on the mid before the quote quantized it — an arrow whose
+				// arithmetic starts from a figure the row does not print is a #193 drift
+				// with an arrow on it.
+				priceDeltaCr: buyCr - base.priceCr,
+				quantityDelta: quantity - base.quantity,
+			};
+		},
+	);
 }
 
 /**

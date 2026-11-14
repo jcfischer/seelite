@@ -33,7 +33,7 @@ const { offers, offer: courier } = firstOffer(SYSTEMS, "courier");
 
 const COURIER_HOLD_T = 20;
 
-test("raw ore and carried fittings never satisfy ordinary commodity offers", () => {
+test("raw ore is listed as pilot goods while fittings and other goods do not satisfy an offer", () => {
 	const hold = {
 		usedT: 3,
 		capacityT: 20,
@@ -47,7 +47,7 @@ test("raw ore and carried fittings never satisfy ordinary commodity offers", () 
 				owner: "pilot" as const,
 			},
 			{
-				goodName: "Food",
+				goodName: "Metallic ore POOR",
 				amount: 10,
 				unit: "t" as const,
 				owner: "pilot" as const,
@@ -62,7 +62,7 @@ test("raw ore and carried fittings never satisfy ordinary commodity offers", () 
 			},
 		],
 	};
-	expect(pilotGoods(hold)).toEqual({ Food: 3 });
+	expect(pilotGoods(hold)).toEqual({ Food: 3, "Metallic ore POOR": 10 });
 	expect(
 		aboardForOffer(hold, { id: "offer", goodName: "Food", entrusted: false }),
 	).toBe(3);

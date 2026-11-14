@@ -84,7 +84,7 @@ export function scoopWreckContainer({
 			? recover(
 					accountOf(commander),
 					item.id,
-					parseShare(item.ownedShare),
+					parseShare(item.ownedShare, item.id),
 					took,
 				)
 			: null;

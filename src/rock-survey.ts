@@ -15,27 +15,20 @@ import type { SlotSize } from "./hull";
 import { type Grade, gradeOutputScale, POLICY } from "./module-catalog";
 import type { Vec3 } from "./vec3";
 
-/** #917 D2's five ore families, in catalogue order. */
-export const ORE_FAMILIES = [
-	"silicate",
-	"metallic",
-	"gold",
-	"platinum",
-	"gem",
-] as const;
-export type OreFamily = (typeof ORE_FAMILIES)[number];
-/** #917 D1's three discrete grades. */
-export const ORE_GRADES = ["poor", "standard", "rich"] as const;
-export type OreGrade = (typeof ORE_GRADES)[number];
-
-/** #917 D2's cargo names, one good per family and grade. */
-export const ORE_FAMILY_NAME: Readonly<Record<OreFamily, string>> = {
-	silicate: "Silicate ore",
-	metallic: "Metallic ore",
-	gold: "Gold-bearing ore",
-	platinum: "Platinum-bearing ore",
-	gem: "Gem-bearing ore",
-};
+import {
+	ORE_FAMILIES,
+	ORE_GRADES,
+	ORE_FAMILY_NAME,
+	type OreFamily,
+	type OreGrade,
+} from "./ore-goods";
+export {
+	ORE_FAMILIES,
+	ORE_GRADES,
+	ORE_FAMILY_NAME,
+	type OreFamily,
+	type OreGrade,
+} from "./ore-goods";
 
 /** Candidate family weights per field profile: charted is common ore, rare is richer in precious ore (#872 D6). */
 export const FAMILY_WEIGHTS: Readonly<

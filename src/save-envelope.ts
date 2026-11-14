@@ -1,3 +1,4 @@
+import { oreGood } from "./ore-goods";
 import { signedMoney, mass, money, massFromNative } from "./exact-amount";
 import {
 	migrateAccount,
@@ -67,7 +68,7 @@ import {
 	seededLadderRecord,
 	serializeLadders,
 } from "./ladder";
-import { COMMODITIES, EQUIPMENT } from "./market";
+import { CARGO_COMMODITIES, EQUIPMENT } from "./market";
 import { fnv1a } from "./rng";
 import {
 	GALAXY_COUNT,
@@ -194,7 +195,8 @@ import {
  * may not carry `scoopNotice`, and a 17 record carries it only as `true`
  * (`LEGACY_SCHEMA_FORBIDS`).
  */
-export const SAVE_SCHEMA_VERSION = 20;
+/** Schema21 admits whole-tonne raw ore; older envelopes retain their original catalogue. */
+export const SAVE_SCHEMA_VERSION = 21;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -236,7 +238,7 @@ export const SAVE_SCHEMA_VERSION = 20;
  * the cargo-scoop grant.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 ] as const;
 
 /**
@@ -752,7 +754,7 @@ const parseCommander = (
 	// since #443 is the hold projection, on every console update while docked.
 	// A save boundary that admits a name nothing can price is the same class as
 	// a hull that is not in the roster, two checks above.
-	const goodNames = new Set(COMMODITIES.map((good) => good.name));
+	const goodNames = new Set(CARGO_COMMODITIES.map((good) => good.name));
 	for (const name of Object.keys(cargoRaw).sort()) {
 		const amount = cargoRaw[name];
 		if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0)
@@ -761,6 +763,8 @@ const parseCommander = (
 			);
 		if (!goodNames.has(name))
 			fail(`commander.state.cargo: ${name} is not a commodity`);
+		if (oreGood(name) && (version < 21 || !Number.isSafeInteger(amount)))
+			fail(`commander.state.cargo: ${name} requires whole tonnes in schema 21`);
 		cargo[name] = amount as number;
 	}
 	const recovered = state.recoveredFittings;
@@ -924,6 +928,11 @@ const parseCommander = (
 		version >= 20
 			? parseAccount(state.accounting)
 			: migrateAccount(credits, ladders.banked.trade, cargo, ladders.basis);
+	if (
+		version < 21 &&
+		Object.keys(accounting.basis).some((name) => oreGood(name))
+	)
+		fail("legacy accounting contains raw ore");
 	if (version >= 20) {
 		if (
 			state.credits !== displayAmount(accounting.cash) ||
@@ -1070,6 +1079,13 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	)
 		fail("world schema is incompatible with saveSchemaVersion");
 	const world = parseWorld(o.world);
+	if (
+		(version as number) < 21 &&
+		world.galaxies.some((g) =>
+			g.deathWreck?.containers.some((c) => c.kind === "good" && oreGood(c.id)),
+		)
+	)
+		fail("legacy world contains raw ore");
 	if (
 		(version as number) < 19 &&
 		(asObject(o.world, "world").galaxies as unknown[]).some(

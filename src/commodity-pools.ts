@@ -1,4 +1,5 @@
-import { COMMODITIES } from "./market";
+import { oreGood } from "./ore-goods";
+import { CARGO_COMMODITIES, NATIVE_GRAMS } from "./market";
 import {
 	mass,
 	money,
@@ -31,6 +32,7 @@ export interface CommodityAccount {
 }
 export interface RemovedShare {
 	readonly totalMass: Mass;
+	/** Product-equivalent eligibility mass: https://github.com/jcfischer/seelite/issues/935 */
 	readonly unknownMass: Mass;
 	readonly knownMass: Mass;
 	readonly cost: Money;
@@ -55,11 +57,18 @@ export const COMMODITY_POOL_IDS = [
 	"Alien Items",
 ] as const;
 const knownGood = (good: string) =>
-	(COMMODITY_POOL_IDS.some((id) => id === good)
-		? COMMODITIES.find((g) => g.name === good)
-		: undefined) ?? refuse(`${good} is not a commodity`);
+	CARGO_COMMODITIES.find((g) => g.name === good) ??
+	refuse(`${good} is not a commodity`);
+const poolId = (good: string): string => oreGood(good)?.product ?? good;
+const equivalentMass = (good: string, amount: Mass): Mass => {
+	const ore = oreGood(good);
+	if (!ore) return amount;
+	const tonne = massFromNative(1, 1000000);
+	if (amount % tonne !== 0n) refuse(`${good}: ore requires whole tonnes`);
+	return mass.fromTicks((amount / tonne) * massFromNative(ore.yieldGPerT, 1));
+};
 export const nativeGrams = (good: string): number =>
-	({ t: 1000000, kg: 1000, g: 1 })[knownGood(good).unit];
+	NATIVE_GRAMS[knownGood(good).unit];
 const zeroMass = mass.fromTicks(0n);
 const zeroMoney = money.fromTicks(0n);
 const emptyPool = (): CommodityPool => ({
@@ -151,10 +160,14 @@ export function migrateAccount(
 		const known = quantity(good, recorded[good]?.units ?? 0);
 		const cost = money.fromNumber(recorded[good]?.cr ?? 0);
 		if (known > held) refuse(`${good}: basis exceeds held quantity`);
-		pools[good] = {
-			totalMass: held,
-			unknownMass: mass.subtract(held, known),
-			unrecoveredCost: cost,
+		const previous = pools[poolId(good)];
+		pools[poolId(good)] = {
+			totalMass: mass.add(previous.totalMass, equivalentMass(good, held)),
+			unknownMass: mass.add(
+				previous.unknownMass,
+				equivalentMass(good, mass.subtract(held, known)),
+			),
+			unrecoveredCost: money.add(previous.unrecoveredCost, cost),
 		};
 		basis[good] = {
 			heldMass: held,
@@ -174,7 +187,7 @@ export function acquire(
 	cost: Money = zeroMoney,
 ): CommodityAccount {
 	const amount = quantity(good, units),
-		p = a.pools[good],
+		p = a.pools[poolId(good)],
 		b = a.basis[good] ?? emptyBasis();
 	money.fromTicks(cost);
 	return {
@@ -182,9 +195,9 @@ export function acquire(
 		cash: signedMoney.subtract(a.cash, cost),
 		pools: {
 			...a.pools,
-			[good]: {
+			[poolId(good)]: {
 				...p,
-				totalMass: mass.add(p.totalMass, amount),
+				totalMass: mass.add(p.totalMass, equivalentMass(good, amount)),
 				unrecoveredCost: money.add(p.unrecoveredCost, cost),
 			},
 		},
@@ -207,14 +220,17 @@ export function charge(
 	fee: Money,
 ): CommodityAccount {
 	knownGood(good);
-	const p = a.pools[good],
+	const p = a.pools[poolId(good)],
 		b = a.basis[good] ?? emptyBasis();
 	return {
 		...a,
 		cash: signedMoney.subtract(a.cash, fee),
 		pools: {
 			...a.pools,
-			[good]: { ...p, unrecoveredCost: money.add(p.unrecoveredCost, fee) },
+			[poolId(good)]: {
+				...p,
+				unrecoveredCost: money.add(p.unrecoveredCost, fee),
+			},
 		},
 		basis: {
 			...a.basis,
@@ -238,11 +254,12 @@ export function removeMass(
 ): { account: CommodityAccount; share: RemovedShare } {
 	mass.fromTicks(amount);
 	knownGood(good);
-	const p = a.pools[good],
+	const p = a.pools[poolId(good)],
 		b = a.basis[good] ?? emptyBasis();
-	if (amount > p.totalMass || amount > b.heldMass)
+	const equivalent = equivalentMass(good, amount);
+	if (equivalent > p.totalMass || amount > b.heldMass)
 		refuse(`${good}: removal exceeds owned quantity`);
-	const unknown = minimum(p.unknownMass, amount);
+	const unknown = minimum(p.unknownMass, equivalent);
 	const physicalUnknown = mass.subtract(b.heldMass, b.knownMass);
 	const known = mass.subtract(amount, minimum(physicalUnknown, amount));
 	const allocation =
@@ -254,9 +271,9 @@ export function removeMass(
 			...a,
 			pools: {
 				...a.pools,
-				[good]: {
+				[poolId(good)]: {
 					...p,
-					totalMass: mass.subtract(p.totalMass, amount),
+					totalMass: mass.subtract(p.totalMass, equivalent),
 					unknownMass: mass.subtract(p.unknownMass, unknown),
 				},
 			},
@@ -289,13 +306,19 @@ export function sell(
 	quote: PriceQuote,
 ): CommodityAccount {
 	const { account, share } = remove(a, good, units);
-	const p = account.pools[good];
+	const p = account.pools[poolId(good)];
 	const proceeds = quoteMass(quote, share.totalMass, nativeGrams(good));
-	const eligible = quoteMass(
-		quote,
-		mass.subtract(share.totalMass, share.unknownMass),
-		nativeGrams(good),
-	);
+	const eligible = oreGood(good)
+		? transferCost(
+				proceeds,
+				mass.subtract(equivalentMass(good, share.totalMass), share.unknownMass),
+				equivalentMass(good, share.totalMass),
+			).moved
+		: quoteMass(
+				quote,
+				mass.subtract(share.totalMass, share.unknownMass),
+				nativeGrams(good),
+			);
 	const recovered = minimum(p.unrecoveredCost, eligible);
 	return {
 		...account,
@@ -303,7 +326,7 @@ export function sell(
 		bankedTrade: money.add(a.bankedTrade, money.subtract(eligible, recovered)),
 		pools: {
 			...account.pools,
-			[good]: {
+			[poolId(good)]: {
 				...p,
 				unrecoveredCost: money.subtract(p.unrecoveredCost, recovered),
 			},
@@ -321,19 +344,19 @@ export function recover(
 			units === displayAmount(share.totalMass, "mass", nativeGrams(good))
 				? share.totalMass
 				: quantity(good, units),
-		p = a.pools[good],
+		p = a.pools[poolId(good)],
 		b = a.basis[good] ?? emptyBasis();
 	mass.fromTicks(share.totalMass);
 	mass.fromTicks(share.unknownMass);
 	mass.fromTicks(share.knownMass);
 	money.fromTicks(share.cost);
 	if (
-		share.unknownMass > share.totalMass ||
+		share.unknownMass > equivalentMass(good, share.totalMass) ||
 		share.knownMass > share.totalMass ||
 		amount > share.totalMass
 	)
 		refuse("invalid recovery share");
-	const unknown = minimum(share.unknownMass, amount);
+	const unknown = minimum(share.unknownMass, equivalentMass(good, amount));
 	const physicalUnknown = mass.subtract(share.totalMass, share.knownMass);
 	const known = mass.subtract(amount, minimum(physicalUnknown, amount));
 	const allocation =
@@ -348,9 +371,9 @@ export function recover(
 			...a,
 			pools: {
 				...a.pools,
-				[good]: {
+				[poolId(good)]: {
 					...p,
-					totalMass: mass.add(p.totalMass, amount),
+					totalMass: mass.add(p.totalMass, equivalentMass(good, amount)),
 					unknownMass: mass.add(p.unknownMass, unknown),
 				},
 			},
@@ -465,7 +488,7 @@ export function parseAccount(raw: unknown): CommodityAccount {
 	keys(a, ["cash", "bankedTrade", "pools", "basis"]);
 	const ps = object(a.pools),
 		bs = object(a.basis);
-	if (Object.keys(bs).length > COMMODITY_POOL_IDS.length)
+	if (Object.keys(bs).length > CARGO_COMMODITIES.length)
 		refuse("basis catalogue mismatch");
 	if (Object.keys(ps).length !== COMMODITY_POOL_IDS.length)
 		refuse("pool catalogue mismatch");
@@ -489,12 +512,26 @@ export function parseAccount(raw: unknown): CommodityAccount {
 		keys(b, ["heldMass", "knownMass", "cost", "legacyCost"]);
 		const heldMass = mass.parse(b.heldMass),
 			knownMass = mass.parse(b.knownMass);
-		if (knownMass > heldMass || heldMass > pools[good].totalMass)
+		equivalentMass(good, knownMass);
+		if (
+			knownMass > heldMass ||
+			equivalentMass(good, heldMass) > pools[poolId(good)].totalMass
+		)
 			refuse(`${good}: invalid held basis`);
 		const cost = money.parse(b.cost),
 			legacyCost = money.parse(b.legacyCost);
 		if (legacyCost > cost) refuse(`${good}: legacy cost exceeds basis`);
 		basis[good] = { heldMass, knownMass, cost, legacyCost };
+	}
+	const heldByPool: Record<string, Mass> = {};
+	for (const [good, b] of Object.entries(basis)) {
+		const id = poolId(good);
+		heldByPool[id] = mass.add(
+			heldByPool[id] ?? zeroMass,
+			equivalentMass(good, b.heldMass),
+		);
+		if (heldByPool[id] > pools[id].totalMass)
+			refuse(`${id}: held basis exceeds pool`);
 	}
 	return {
 		cash: signedMoney.parse(a.cash),
@@ -529,7 +566,7 @@ export const encodeShare = (share: RemovedShare): RecoveryWire => ({
 	knownMass: mass.encode(share.knownMass),
 	cost: money.encode(share.cost),
 });
-export function parseShare(raw: unknown): RemovedShare {
+export function parseShare(raw: unknown, good?: string): RemovedShare {
 	const s = object(raw);
 	keys(s, ["totalMass", "unknownMass", "knownMass", "cost"]);
 	const share = {
@@ -540,6 +577,11 @@ export function parseShare(raw: unknown): RemovedShare {
 	};
 	if (share.unknownMass > share.totalMass || share.knownMass > share.totalMass)
 		refuse("invalid recovery share");
+	if (good !== undefined) {
+		if (share.unknownMass > equivalentMass(good, share.totalMass))
+			refuse("invalid recovery eligibility");
+		equivalentMass(good, share.knownMass);
+	}
 	return share;
 }
 
