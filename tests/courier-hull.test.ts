@@ -10,7 +10,7 @@
  * needs that the study did not have.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
@@ -32,7 +32,9 @@ import {
 	FIXTURE_SCREEN_PREFIX,
 	courierLevelErrorKm,
 	createCourierHullBuilder,
+	prepareCourierHullModel,
 } from "../src/courier-hull";
+import { COURIER_NORMAL_MAP_URL } from "../src/model-urls";
 import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
 import { createSharedImages } from "../src/shared-image";
@@ -807,6 +809,11 @@ test("another authored hull keeps three's default map anisotropy", async () => {
 	expect(painted.length).toBeGreaterThan(0);
 	for (const [name, map] of painted)
 		expect([name, map.anisotropy]).toEqual([name, 1]);
+	root.traverse((o) => {
+		if (o instanceof THREE.Mesh)
+			for (const m of [o.material].flat() as THREE.MeshStandardMaterial[])
+				expect(m.normalMap).toBeNull();
+	});
 }, 30_000);
 
 test("the courier leaves registry maps, owner copies and clones at their declared settings", async () => {
@@ -850,4 +857,90 @@ test("the courier leaves registry maps, owner copies and clones at their declare
 		expect(map.anisotropy).toBe(expected.get(map)!);
 	for (const [map, anisotropy] of expected)
 		expect(map.anisotropy).toBe(anisotropy);
+}, 30_000);
+
+test("optional courier normal covers all exterior levels, preserves cockpit and envelope, and removes bump and roughness maps", async () => {
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const materials = new Set<THREE.MeshStandardMaterial>();
+	template.traverse((o) => {
+		if (o instanceof THREE.Mesh)
+			for (const m of [o.material].flat())
+				if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
+	});
+	for (const m of materials) {
+		m.bumpMap = new THREE.Texture();
+		m.roughnessMap = new THREE.Texture();
+	}
+	const cockpitMaps = [...materials]
+		.filter((m) => m.name.startsWith("cockpit-"))
+		.map((m) => [m, m.bumpMap, m.roughnessMap] as const);
+	const normal = new THREE.Texture();
+	const before = courier();
+	const builder = await createCourierHullBuilder(template, normal);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	let exteriors = 0;
+	for (const level of Object.values(COURIER_LEVEL_NAMES)) {
+		let mapped = 0;
+		root.getObjectByName(level)!.traverse((o) => {
+			if (!(o instanceof THREE.Mesh)) return;
+			for (const m of [o.material].flat() as THREE.MeshStandardMaterial[]) {
+				if (!m.map || m.name.startsWith("cockpit-")) continue;
+				mapped++;
+				expect(m.normalMap).toBe(normal);
+				expect(m.normalScale.toArray()).toEqual([0.15, -0.15]);
+				expect(m.bumpMap).toBeNull();
+				expect(m.roughnessMap).toBeNull();
+			}
+		});
+		expect(mapped).toBeGreaterThan(0);
+		exteriors += mapped;
+	}
+	expect(exteriors).toBeGreaterThan(10);
+	for (const [m, bump, roughness] of cockpitMaps) {
+		expect(m.normalMap).toBeNull();
+		expect(m.bumpMap).toBe(bump);
+		expect(m.roughnessMap).toBe(roughness);
+	}
+	expect(normal.flipY).toBe(false);
+	expect(normal.wrapS).toBe(THREE.RepeatWrapping);
+	expect(normal.wrapT).toBe(THREE.RepeatWrapping);
+	expect(normal.colorSpace).toBe(THREE.NoColorSpace);
+	expect(normal.anisotropy).toBe(8);
+	const box = new THREE.Box3().setFromObject(root);
+	const oldBox = new THREE.Box3().setFromObject(before);
+	expect(box.min.distanceTo(oldBox.min)).toBeLessThan(1e-10);
+	expect(box.max.distanceTo(oldBox.max)).toBeLessThan(1e-10);
+}, 30_000);
+
+test("courier browser preparation rejects a failed normal fetch, retries it and shares the successful load", async () => {
+	const previous = authoredHullBuilder("courier");
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const glb = spyOn(GLTFLoader.prototype, "loadAsync").mockImplementation(
+		async () => ({ scene: template.clone(true) }) as never,
+	);
+	let fetches = 0;
+	const texture = spyOn(
+		THREE.TextureLoader.prototype,
+		"loadAsync",
+	).mockImplementation(async (url) => {
+		expect(url).toBe(COURIER_NORMAL_MAP_URL);
+		if (++fetches === 1) throw new Error("normal fetch failed");
+		return new THREE.Texture();
+	});
+	try {
+		const failed = prepareCourierHullModel();
+		expect(prepareCourierHullModel()).toBe(failed);
+		await expect(failed).rejects.toThrow("normal fetch failed");
+		expect(authoredHullBuilder("courier")).toBe(previous);
+		await prepareCourierHullModel();
+		await prepareCourierHullModel();
+		expect(fetches).toBe(2);
+		expect(glb).toHaveBeenCalledTimes(2);
+		expect(authoredHullBuilder("courier")).not.toBe(previous);
+	} finally {
+		glb.mockRestore();
+		texture.mockRestore();
+		installAuthoredHull("courier", previous);
+	}
 }, 30_000);

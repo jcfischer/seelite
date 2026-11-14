@@ -58,6 +58,11 @@ export const COURIER_HULL_GLB_URL = new URL(
 	"./models/courier-hull.glb",
 	import.meta.url,
 ).href;
+/** Derived from the courier's exterior tile: https://github.com/jcfischer/seelite/issues/1232 */
+export const COURIER_NORMAL_MAP_URL = new URL(
+	"./models/courier-steel-wear-normal.webp",
+	import.meta.url,
+).href;
 /** Prepared by `spikes/bollard-hull/prepare-flight-asset.mjs` (node #814). */
 export const BOLLARD_TUG_GLB_URL = new URL(
 	"./models/bollard-tug.glb",
