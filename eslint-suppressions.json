@@ -20,6 +20,9 @@
     }
   },
   "scripts/capture-views.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 252
     }
@@ -30,6 +33,9 @@
     }
   },
   "scripts/check-launcher-wiring.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 58
     }
@@ -42,6 +48,11 @@
   "scripts/diff-view-set.mjs": {
     "seelite/no-comments": {
       "count": 2
+    }
+  },
+  "scripts/evaluate-probe-selection.mjs": {
+    "no-nested-ternary": {
+      "count": 1
     }
   },
   "scripts/fetch-music-samples.mjs": {
@@ -114,6 +125,11 @@
       "count": 11
     }
   },
+  "scripts/lib/capability-save-case.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
   "scripts/lib/chart-hover-spot.mjs": {
     "seelite/no-comments": {
       "count": 3
@@ -160,6 +176,12 @@
     }
   },
   "scripts/lib/greedy-trader.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 132
     },
@@ -173,6 +195,9 @@
     }
   },
   "scripts/lib/horizon-framing.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 12
     }
@@ -188,12 +213,33 @@
     }
   },
   "scripts/lib/legacy-flight.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 1
     }
   },
   "scripts/lib/levels-report.mjs": {
     "seelite/no-comments": {
+      "count": 1
+    }
+  },
+  "scripts/lib/mining-batch.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "scripts/lib/mining-comparison.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 3
+    }
+  },
+  "scripts/lib/mining-nav-budget.mjs": {
+    "no-nested-ternary": {
       "count": 1
     }
   },
@@ -212,6 +258,11 @@
       "count": 18
     }
   },
+  "scripts/lib/planet-cost-report.mjs": {
+    "no-nested-ternary": {
+      "count": 4
+    }
+  },
   "scripts/lib/planet-cost.mjs": {
     "seelite/no-comments": {
       "count": 5
@@ -221,6 +272,9 @@
     }
   },
   "scripts/lib/players-renderer.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 4
     }
@@ -285,6 +339,11 @@
       "count": 3
     }
   },
+  "scripts/lib/probe-schedule.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
   "scripts/lib/probe-selection.mjs": {
     "seelite/no-comments": {
       "count": 4
@@ -296,7 +355,15 @@
     }
   },
   "scripts/lib/rock-mesh-distance.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
+      "count": 1
+    }
+  },
+  "scripts/lib/rock-pieces-fit.ts": {
+    "max-params": {
       "count": 1
     }
   },
@@ -316,6 +383,9 @@
     }
   },
   "scripts/lib/shipyard-proxies.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 47
     }
@@ -413,6 +483,12 @@
     }
   },
   "scripts/measure-audio.mjs": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 27
     }
@@ -423,6 +499,9 @@
     }
   },
   "scripts/measure-authored-hull-paint.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 6
     }
@@ -574,6 +653,9 @@
     }
   },
   "scripts/measure-greedy-trader.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 162
     },
@@ -668,11 +750,17 @@
     }
   },
   "scripts/measure-open-space-repro.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 10
     }
   },
   "scripts/measure-planet-cost.mjs": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 88
     },
@@ -700,6 +788,11 @@
       "count": 3
     }
   },
+  "scripts/measure-rock-sweep.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
   "scripts/measure-save-size.ts": {
     "seelite/no-comments": {
       "count": 25
@@ -710,12 +803,20 @@
       "count": 46
     }
   },
+  "scripts/measure-shipyard-lod.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
   "scripts/measure-sky-clearance.mjs": {
     "seelite/no-comments": {
       "count": 10
     }
   },
   "scripts/measure-sky-density.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 205
     },
@@ -729,6 +830,12 @@
     }
   },
   "scripts/measure-star-skim.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 61
     }
@@ -799,11 +906,17 @@
     }
   },
   "scripts/probe-all.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 70
     }
   },
   "scripts/probe-approach-handoff.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 9
     }
@@ -822,6 +935,9 @@
     }
   },
   "scripts/probe-audio-cues.mjs": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 81
     }
@@ -945,6 +1061,9 @@
     }
   },
   "scripts/probe-dock-arrival.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 315
     }
@@ -1043,6 +1162,9 @@
     }
   },
   "scripts/probe-hud.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 87
     }
@@ -1176,6 +1298,9 @@
     }
   },
   "scripts/probe-output-stage.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 95
     }
@@ -1196,6 +1321,9 @@
     }
   },
   "scripts/probe-planet-surfaces.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 292
     },
@@ -1204,6 +1332,9 @@
     }
   },
   "scripts/probe-planets.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 91
     },
@@ -1317,6 +1448,9 @@
     }
   },
   "scripts/probe-station.mjs": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 113
     },
@@ -1368,6 +1502,9 @@
     }
   },
   "scripts/probe-witchspace.mjs": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 50
     }
@@ -1421,6 +1558,12 @@
     }
   },
   "src/arrival.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 56
     }
@@ -1449,6 +1592,12 @@
     }
   },
   "src/audio.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 237
     }
@@ -1464,6 +1613,9 @@
     }
   },
   "src/backdrop.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 29
     }
@@ -1479,6 +1631,9 @@
     }
   },
   "src/binding-store.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 82
     }
@@ -1514,6 +1669,9 @@
     }
   },
   "src/carrier-key.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 1
     }
@@ -1529,6 +1687,9 @@
     }
   },
   "src/carrier-scan.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 8
     }
@@ -1539,6 +1700,9 @@
     }
   },
   "src/chamfer-box.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 21
     }
@@ -1559,6 +1723,9 @@
     }
   },
   "src/chase-view.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 5
     }
@@ -1579,17 +1746,34 @@
       "count": 1
     }
   },
+  "src/cockpit-text.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
   "src/cockpit.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 92
     }
   },
   "src/collision.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 113
     }
   },
   "src/combat-enemy.ts": {
+    "max-params": {
+      "count": 4
+    },
+    "no-nested-ternary": {
+      "count": 4
+    },
     "seelite/no-comments": {
       "count": 154
     }
@@ -1600,21 +1784,36 @@
     }
   },
   "src/combat-rig.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 155
     }
   },
   "src/commander-flow.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 51
     }
   },
   "src/commander-overlay.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 87
     }
   },
   "src/commands.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 280
     },
@@ -1628,6 +1827,9 @@
     }
   },
   "src/comms.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 8
     }
@@ -1643,6 +1845,9 @@
     }
   },
   "src/controls-reference.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 53
     }
@@ -1673,11 +1878,20 @@
     }
   },
   "src/cruise-guidance.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 1
     }
   },
   "src/cruise.ts": {
+    "max-params": {
+      "count": 3
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 127
     }
@@ -1713,6 +1927,9 @@
     }
   },
   "src/derelict-salvage.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 2
     }
@@ -1723,6 +1940,12 @@
     }
   },
   "src/derelict-tear.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 68
     }
@@ -1738,6 +1961,9 @@
     }
   },
   "src/display-contact.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 23
     }
@@ -1748,6 +1974,9 @@
     }
   },
   "src/dock-session.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 39
     }
@@ -1758,6 +1987,9 @@
     }
   },
   "src/docking-director.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 27
     }
@@ -1778,6 +2010,9 @@
     }
   },
   "src/docking.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 222
     },
@@ -1791,6 +2026,9 @@
     }
   },
   "src/duel-hud.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 22
     }
@@ -1806,6 +2044,9 @@
     }
   },
   "src/encounter.ts": {
+    "max-params": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 54
     }
@@ -1836,11 +2077,17 @@
     }
   },
   "src/field-draw.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 13
     }
   },
   "src/field-lod.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 1
     }
@@ -1879,6 +2126,9 @@
     }
   },
   "src/galaxy-finder-panel.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 116
     },
@@ -1887,6 +2137,9 @@
     }
   },
   "src/galaxy-finder.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 45
     }
@@ -1897,6 +2150,9 @@
     }
   },
   "src/galaxy-map.ts": {
+    "no-nested-ternary": {
+      "count": 5
+    },
     "seelite/no-comments": {
       "count": 269
     },
@@ -1921,6 +2177,9 @@
     }
   },
   "src/gamepad.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 160
     }
@@ -1956,6 +2215,9 @@
     }
   },
   "src/holdings.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 45
     }
@@ -1991,6 +2253,12 @@
     }
   },
   "src/inter-system-traffic.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 11
     }
@@ -2006,11 +2274,23 @@
     }
   },
   "src/interior-kit.ts": {
+    "max-params": {
+      "count": 5
+    },
+    "no-nested-ternary": {
+      "count": 8
+    },
     "seelite/no-comments": {
       "count": 14
     }
   },
   "src/interior-layout.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 3
     }
@@ -2054,6 +2334,9 @@
     }
   },
   "src/knowledge-labels.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 17
     }
@@ -2084,11 +2367,17 @@
     }
   },
   "src/legal.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 21
     }
   },
   "src/light-rig.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 41
     },
@@ -2102,6 +2391,9 @@
     }
   },
   "src/live-cockpit.ts": {
+    "no-nested-ternary": {
+      "count": 8
+    },
     "seelite/no-comments": {
       "count": 315
     },
@@ -2115,11 +2407,17 @@
     }
   },
   "src/loft.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 53
     }
   },
   "src/long-range-scanner.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 3
     }
@@ -2130,6 +2428,12 @@
     }
   },
   "src/main.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 30
+    },
     "seelite/no-comments": {
       "count": 4189
     },
@@ -2142,12 +2446,33 @@
       "count": 8
     }
   },
+  "src/market.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/miner-faces.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    }
+  },
+  "src/mining-beam.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
   "src/missile-combat.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 2
     }
   },
   "src/missiles.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 2
     }
@@ -2188,6 +2513,9 @@
     }
   },
   "src/module-stock.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 5
     }
@@ -2223,6 +2551,12 @@
     }
   },
   "src/music-classical/debussy-cathedrale.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 53
     }
@@ -2243,6 +2577,9 @@
     }
   },
   "src/music-classical/dvorak-largo.ts": {
+    "no-nested-ternary": {
+      "count": 7
+    },
     "seelite/no-comments": {
       "count": 23
     }
@@ -2253,6 +2590,12 @@
     }
   },
   "src/music-classical/holst-mars.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 5
+    },
     "seelite/no-comments": {
       "count": 42
     }
@@ -2273,11 +2616,17 @@
     }
   },
   "src/music-classical/notation.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 1
     }
   },
   "src/music-classical/rachmaninoff-isle-of-the-dead.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 37
     }
@@ -2293,6 +2642,9 @@
     }
   },
   "src/music-classical/satie-gnossienne-1.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 32
     }
@@ -2303,11 +2655,20 @@
     }
   },
   "src/music-classical/satie-gymnopedie-1.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 41
     }
   },
   "src/music-classical/strauss-zarathustra.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 30
     }
@@ -2323,6 +2684,9 @@
     }
   },
   "src/music-danube-remeter.ts": {
+    "max-params": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 1
     }
@@ -2338,26 +2702,47 @@
     }
   },
   "src/music-danube-variants/ambient.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 8
     }
   },
   "src/music-danube-variants/baroque.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 17
     }
   },
   "src/music-danube-variants/berlin.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 23
     }
   },
   "src/music-danube-variants/bossa.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 17
     }
   },
   "src/music-danube-variants/dnb.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 12
     }
@@ -2368,16 +2753,25 @@
     }
   },
   "src/music-danube-variants/dub.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 12
     }
   },
   "src/music-danube-variants/gamelan.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 22
     }
   },
   "src/music-danube-variants/industrial.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 12
     }
@@ -2393,6 +2787,9 @@
     }
   },
   "src/music-danube-variants/jazz.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 19
     }
@@ -2403,26 +2800,47 @@
     }
   },
   "src/music-danube-variants/minimal.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 21
     }
   },
   "src/music-danube-variants/musicbox.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 11
     }
   },
   "src/music-danube-variants/synthwave.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 13
     }
   },
   "src/music-danube-variants/techno.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 20
     }
   },
   "src/music-danube.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 63
     }
@@ -2438,16 +2856,41 @@
     }
   },
   "src/music-generate-berlin.ts": {
+    "max-params": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 42
     }
   },
   "src/music-generate-legacy.ts": {
+    "max-params": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 15
     }
   },
+  "src/music-generate-school.ts": {
+    "max-params": {
+      "count": 3
+    },
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "src/music-generate-techno.ts": {
+    "max-params": {
+      "count": 3
+    },
+    "no-nested-ternary": {
+      "count": 6
+    }
+  },
   "src/music-generate.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 24
     }
@@ -2477,7 +2920,15 @@
       "count": 25
     }
   },
+  "src/music-techno-patterns.ts": {
+    "no-nested-ternary": {
+      "count": 5
+    }
+  },
   "src/music-test-score.ts": {
+    "max-params": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 10
     }
@@ -2488,6 +2939,12 @@
     }
   },
   "src/music-voices.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 217
     }
@@ -2563,16 +3020,25 @@
     }
   },
   "src/opening.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 51
     }
   },
   "src/outfitting-view.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 4
     }
   },
   "src/outfitting.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 8
     }
@@ -2595,7 +3061,15 @@
       "count": 1
     }
   },
+  "src/panel-focus.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
   "src/perf-panel.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 91
     },
@@ -2614,6 +3088,9 @@
     }
   },
   "src/planet-appearance.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 38
     }
@@ -2658,6 +3135,9 @@
     }
   },
   "src/planet-shaders.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 33
     },
@@ -2674,6 +3154,9 @@
     }
   },
   "src/pointer.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 23
     }
@@ -2684,11 +3167,17 @@
     }
   },
   "src/postcard-card.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 6
     }
   },
   "src/postcard-panel.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 17
     }
@@ -2719,6 +3208,9 @@
     }
   },
   "src/quat.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 15
     }
@@ -2774,6 +3266,9 @@
     }
   },
   "src/relay-mesh.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 17
     }
@@ -2794,11 +3289,17 @@
     }
   },
   "src/requests-view.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 57
     }
   },
   "src/requests.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 96
     }
@@ -2814,12 +3315,28 @@
     }
   },
   "src/rock-drill.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-stacked-docs": {
       "count": 1
     }
   },
+  "src/rock-extraction.ts": {
+    "max-params": {
+      "count": 3
+    }
+  },
   "src/rock-heightfields.ts": {
     "seelite/no-comments": {
+      "count": 1
+    }
+  },
+  "src/rock-pieces.ts": {
+    "max-params": {
+      "count": 3
+    },
+    "no-nested-ternary": {
       "count": 1
     }
   },
@@ -2834,6 +3351,9 @@
     }
   },
   "src/save-envelope.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 122
     },
@@ -2852,6 +3372,9 @@
     }
   },
   "src/settings.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 35
     }
@@ -2867,6 +3390,12 @@
     }
   },
   "src/ship-mesh.ts": {
+    "max-params": {
+      "count": 10
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 237
     },
@@ -2880,6 +3409,9 @@
     }
   },
   "src/ship-work-light.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 10
     }
@@ -2893,6 +3425,12 @@
     }
   },
   "src/sim.ts": {
+    "max-params": {
+      "count": 6
+    },
+    "no-nested-ternary": {
+      "count": 4
+    },
     "seelite/no-comments": {
       "count": 223
     },
@@ -2911,11 +3449,20 @@
     }
   },
   "src/speech.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 69
     }
   },
   "src/sphere-grid.ts": {
+    "max-params": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 3
     }
@@ -2957,6 +3504,9 @@
     }
   },
   "src/station-glow.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 16
     }
@@ -2967,6 +3517,9 @@
     }
   },
   "src/station-interior-mesh.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 199
     }
@@ -2980,6 +3533,12 @@
     }
   },
   "src/station-mesh.ts": {
+    "max-params": {
+      "count": 6
+    },
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 1075
     },
@@ -2998,6 +3557,9 @@
     }
   },
   "src/station-plant.ts": {
+    "no-nested-ternary": {
+      "count": 4
+    },
     "seelite/no-comments": {
       "count": 35
     }
@@ -3013,6 +3575,9 @@
     }
   },
   "src/station-route.ts": {
+    "no-nested-ternary": {
+      "count": 6
+    },
     "seelite/no-comments": {
       "count": 75
     }
@@ -3023,6 +3588,12 @@
     }
   },
   "src/station-traffic.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 4
+    },
     "seelite/no-comments": {
       "count": 14
     },
@@ -3047,11 +3618,17 @@
     }
   },
   "src/strings-lab-model.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 1
     }
   },
   "src/strings-lab.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 8
     }
@@ -3062,6 +3639,9 @@
     }
   },
   "src/surface.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 68
     }
@@ -3072,11 +3652,17 @@
     }
   },
   "src/system-sweep.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 10
     }
   },
   "src/system.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 94
     },
@@ -3090,6 +3676,9 @@
     }
   },
   "src/traffic-engagement.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 30
     }
@@ -3105,6 +3694,9 @@
     }
   },
   "src/units.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 1
     }
@@ -3145,6 +3737,9 @@
     }
   },
   "src/weapon-sound.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 33
     }
@@ -3170,16 +3765,25 @@
     }
   },
   "src/witchspace.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 48
     }
   },
   "src/worklight-tuner.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 2
     }
   },
   "src/world-state.ts": {
+    "max-params": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 231
     },
@@ -3188,6 +3792,9 @@
     }
   },
   "tests/adaptive-resolution.test.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 225
     }
@@ -3436,6 +4043,9 @@
     }
   },
   "tests/collision-stations.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 162
     },
@@ -3444,11 +4054,17 @@
     }
   },
   "tests/collision-traffic.test.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 161
     }
   },
   "tests/collision.test.ts": {
+    "max-params": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 74
     }
@@ -3504,6 +4120,9 @@
     }
   },
   "tests/controls-reference.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 79
     }
@@ -3524,6 +4143,9 @@
     }
   },
   "tests/crater-profile.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 92
     }
@@ -3587,6 +4209,9 @@
     }
   },
   "tests/derelict-tear.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 43
     }
@@ -3739,6 +4364,24 @@
       "count": 11
     }
   },
+  "tests/fixtures/rock-sweep-956/pieces.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 2
+    }
+  },
+  "tests/fixtures/rock-sweep-956/rock-sweep.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
+  "tests/fixtures/rock-sweep.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
   "tests/flight-controls.test.ts": {
     "seelite/no-comments": {
       "count": 1
@@ -3798,6 +4441,9 @@
     }
   },
   "tests/galaxy.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 257
     }
@@ -3828,6 +4474,9 @@
     }
   },
   "tests/gpu-teardown.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 76
     }
@@ -3853,6 +4502,9 @@
     }
   },
   "tests/helpers/aperture-physical-fit.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 5
     }
@@ -3959,6 +4611,9 @@
     }
   },
   "tests/helpers/surface-distance.ts": {
+    "max-params": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 6
     }
@@ -4004,6 +4659,9 @@
     }
   },
   "tests/hull-docking.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 61
     }
@@ -4157,6 +4815,9 @@
     }
   },
   "tests/lib/audio-measure.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 2
     }
@@ -4868,6 +5529,12 @@
     }
   },
   "tests/sim.test.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 202
     }
@@ -4878,6 +5545,9 @@
     }
   },
   "tests/sound-set.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 24
     }
@@ -4918,6 +5588,9 @@
     }
   },
   "tests/station-commerce.test.ts": {
+    "max-params": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 244
     },
@@ -4956,6 +5629,9 @@
     }
   },
   "tests/station-interior-kit.test.ts": {
+    "no-nested-ternary": {
+      "count": 2
+    },
     "seelite/no-comments": {
       "count": 12
     }
@@ -5044,6 +5720,9 @@
     }
   },
   "tests/surface.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 112
     }
@@ -5059,6 +5738,9 @@
     }
   },
   "tests/system-sweep.test.ts": {
+    "no-nested-ternary": {
+      "count": 1
+    },
     "seelite/no-comments": {
       "count": 17
     }
@@ -5210,6 +5892,9 @@
     }
   },
   "tests/world-state.test.ts": {
+    "no-nested-ternary": {
+      "count": 3
+    },
     "seelite/no-comments": {
       "count": 278
     },

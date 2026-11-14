@@ -19,5 +19,7 @@ export const seeliteLint = {
 	rules: {
 		"seelite/no-comments": "error",
 		"seelite/no-stacked-docs": "error",
+		"max-params": ["error", 5],
+		"no-nested-ternary": "error",
 	},
 };
