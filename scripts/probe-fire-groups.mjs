@@ -80,7 +80,6 @@ for (const width of [900, 390]) {
 			const g = window.__seelite;
 			const { fullCondition } = await import("/src/ship-condition.ts");
 			const { moduleRow } = await import("/src/loadout.ts");
-			const { tracerPorts } = await import("/src/gun-feedback.ts");
 			g.condition = fullCondition("patrol");
 			const before = g.condition.energy,
 				row = moduleRow(g.commander.loadout[`h${slot}`]);
@@ -92,7 +91,9 @@ for (const width of [900, 390]) {
 				expectedHeat: row.heatPerS * 0.05,
 				expectedEnergy: row.drawPerS * 0.05,
 				ports: g.gunTracer.firedPorts,
-				expectedPort: tracerPorts(2)[slot - 1],
+				expectedPort: g.gunTracer.segments.find(
+					(segment) => segment.muzzleIndex === slot - 1,
+				)?.from,
 			};
 		}, i);
 		check(

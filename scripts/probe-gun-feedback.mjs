@@ -120,8 +120,7 @@ const sample = () =>
 	page.evaluate(
 		([w, h]) => {
 			const g = window.__seelite;
-			const [port] = g.gunTracer.ports;
-			const aim = g.gunTracer.aim;
+			const { from: port, to: aim } = g.gunTracer.segments[0];
 			const x = Math.round(w * (port.x + (aim.x - port.x) * 0.75));
 			const y = Math.round(h * (port.y + (aim.y - port.y) * 0.75));
 			const data = window.__compositeFrame(w, h, {
