@@ -148,6 +148,7 @@ export function stationTrafficRoster(
 	const cycleS = Math.max(2 * count * cadence, TRAFFIC_MIN_CYCLE_S);
 	const sharedPhase = unit(`${station.id}|phase|${station.berthSeed}`) * cycleS;
 	const compatible = TRAFFIC_HULL_POOLS[station.type].filter((id) =>
+		// Stryker disable next-line MethodExpression: every berth a role's catalogue generates carries the one BERTH_CELL of that role, and the catalogue is never empty, so some berth fitting and every berth fitting are the same test here
 		interior.berths.some((berth) => berthFits(berth, TRAFFIC_IDENTITY_ENV[id])),
 	);
 	if (!compatible.includes(role.signature))
