@@ -662,18 +662,12 @@ describe("procedural ship visual language", () => {
 	 * whose name a reader could not have falsified.
 	 */
 	test("the prototype striker's hit sphere is its drawn raider's half-length", async () => {
-		// The raider on the glass is the authored Shiv (node #1035), so the
-		// witness is that model's box rather than the loft this file otherwise
-		// builds. The mesh is still the independent measurement it was.
 		const loft = authoredHullBuilder(STRIKER_HULL_ID);
 		await installShippedSevenShip("raider");
 		try {
 			const box = bounds(STRIKER_HULL_ID, HULL_SPECS[STRIKER_HULL_ID].variant);
 			const size = box.getSize(new THREE.Vector3());
-			// And the sphere is not sold as containment. The authored Shiv's box is
-			// off-centre and its nose now sits inside half its length, so what leaves
-			// the sphere is the far box corner, not the nose: no sphere smaller than
-			// that contains the hull, and 90 % of one that size would be empty.
+
 			const drawnNoseKm = Math.abs(box.min.z) * ENEMY_VISUAL_SCALE;
 			expect(drawnNoseKm).toBeLessThanOrEqual(ENEMY_COLLISION_RADIUS_KM);
 			const cornerKm =
@@ -693,7 +687,7 @@ describe("procedural ship visual language", () => {
 			expect(size.z).toBeGreaterThan(size.x);
 			expect(size.z).toBeGreaterThan(size.y);
 		} finally {
-			installAuthoredHull(STRIKER_HULL_ID, loft);
+			installAuthoredHull("raider", loft);
 		}
 	});
 });

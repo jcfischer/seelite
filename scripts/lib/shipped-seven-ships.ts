@@ -7,10 +7,9 @@ import type { AuthoredHullBuilder } from "../../src/ship-mesh";
 import { installAuthoredHull } from "../../src/ship-mesh";
 import { decodeShippedGlb } from "./shipped-glb";
 
-/** The six of design PR #829 (node #1035), with the file each ships. */
+/** The five of design PR #829 (node #1035), with the file each ships. */
 export const SEVEN_SHIP_FILES = {
 	patrol: "src/models/warden-patrol.glb",
-	explorer: "src/models/pilgrim-explorer.glb",
 	raider: "src/models/shiv-raider.glb",
 	carrier: "src/models/bastion-carrier.glb",
 	prospector: "src/models/sluice-prospector.glb",
@@ -41,7 +40,7 @@ export async function installShippedSevenShip(
 	installAuthoredHull(hull, builder);
 }
 
-/** Install all six. A script measuring placements across the roster awaits it. */
+/** Install all five. A script measuring placements across the roster awaits it. */
 export async function installShippedSevenShips(): Promise<void> {
 	for (const hull of Object.keys(SEVEN_SHIP_FILES) as SevenShipHull[])
 		await installShippedSevenShip(hull);

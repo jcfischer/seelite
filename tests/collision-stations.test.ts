@@ -984,19 +984,17 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch in every poo
 });
 
 describe("collision.md §9.1.8: what the open bay does not cover — a box that overhangs its berth", () => {
-	test("no hull's box overhangs the berth cell it parks in", () => {
+	test("one hull's box overhangs a slot's berth cell: the explorer by 0.6 m", () => {
 		// glossary-ignore: slot
 		// A finding, handed on (`collision.md` §11): the berth places the
-		// ship's origin, not its box, so a hull whose box sits off its origin —
-		// and whose height fills the 40 m cell — parks into the wall its berth
-		// stands on. The miner did, by 2.8 m, until node #815 replaced its loft
-		// with Longwall B, whose box is centred on its origin and fits; the
-		// explorer did, by 0.6 m, until node #1035's authored Pilgrim grew past
-		// every berth and stopped being admitted at all. Nothing overhangs now,
-		// and this is the tripwire: another hull, or a berth whose placement
-		// changes, brings a figure back. Arrival, parking and launch are exempt,
-		// so nothing is met while it holds. The fix if one returns is the berth
-		// placement's (carry `envCentre`), not the proxy's.
+		// ship's origin, not its box, so the explorer — 39.7 m tall about a
+		// centre 0.8 m off, in a 40 m cell — parks 0.6 m into the wall its berth
+		// stands on. The miner did too, by 2.8 m, until node #815 replaced its
+		// loft with Longwall B, whose box is centred on its origin and fits.
+		// Arrival, parking and launch are exempt, so nothing is met; unexempt,
+		// the traversal above meets the wall. The fix is the berth
+		// placement's (carry `envCentre`), not the proxy's. This row is the
+		// tripwire: another hull, or the fix, changes it.
 		const over: string[] = [];
 		for (const type of STATION_TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue; // glossary-ignore: slot
@@ -1006,7 +1004,7 @@ describe("collision.md §9.1.8: what the open bay does not cover — a box that 
 			}
 		}
 		console.log(`overhanging a slot's berth cell: ${over.join(", ")}`); // glossary-ignore: slot
-		expect(over).toEqual([]);
+		expect(over).toEqual(["trade:explorer:0.6 m", "shipyard:explorer:0.6 m"]);
 	});
 });
 

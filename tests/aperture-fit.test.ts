@@ -37,24 +37,17 @@
  * to admit one — which would be a decision reversed by accident.
  */
 
-import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { useShippedSevenShips } from "./setup/seven-ships-hull";
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { describe, expect, test } from "bun:test";
 import { ROLL_TOLERANCE_DEG } from "../src/docking";
-import {
-	CAPITAL_HULL_IDS,
-	HULL_IDS,
-	HULL_SPECS,
-	type HullId,
-	hasNoInternalBerth,
-} from "../src/hull";
+import { CAPITAL_HULL_IDS, HULL_IDS, type HullId } from "../src/hull";
 import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
-import { berthFits, stationInterior } from "../src/station-interior";
 
 await useShippedInterceptorHull();
 await useShippedSevenShips();
@@ -65,16 +58,10 @@ await useShippedSevenShips();
  *  the check instead of joining the exemption. */
 const CAPITALS: readonly HullId[] = CAPITAL_HULL_IDS;
 
-/** The hulls a *section* refuses: wider or taller than every aperture.
+/** The capitals a *section* refuses: wider or taller than every aperture.
  *  `voyager` (#331) is not one of them — at the film's proportions its section
  *  passes a slot, and what refuses it is its length against every berth, which
- *  `tests/hull.test.ts`' `no berth in the game admits a capital` holds.
- *
- *  The explorer is *not* here and is refused all the same: its authored
- *  Pilgrim (node #1035) carries an 84.5 m habitat ring, which a bay's 70 m slot
- *  refuses but a pad's opening does not. A pad still admits no berth for it —
- *  the clear envelope on a pad is 30 m high — so its refusal is the berth's,
- *  and #1239 owes the external one the principal decided on 2026-11-10. */
+ *  `tests/hull.test.ts`' `no berth in the game admits a capital` holds. */
 const WIDER_THAN_EVERY_APERTURE: HullId[] = ["carrier", "dreadnought"];
 
 /** The capitals a berth refuses by length while a slot would pass their
@@ -102,9 +89,6 @@ if (Math.abs(ROLL_LIMIT - (ROLL_TOLERANCE_DEG * Math.PI) / 180) > 1e-12)
  *  so the `across` term's `w` is the beam in exactly one place (#158). */
 const rolled = (id: HullId) => rolledEnvelope(id, ROLL_LIMIT);
 
-const interiorOf = (type: StationType) =>
-	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, 1);
-
 /** The opening one type offers, metres. Read from the table, never restated. */
 const APERTURE = (type: StationType) => ({
 	width: STATION_GEOMETRY[type].aperture.widthKm * 1000,
@@ -112,8 +96,8 @@ const APERTURE = (type: StationType) => ({
 });
 
 describe("the aperture admits the hulls that have to fly through it", () => {
-	test("every hull a berth can admit fits every aperture at the roll limit", () => {
-		const ordinary = HULL_IDS.filter((id) => !hasNoInternalBerth(id));
+	test("every non-capital hull fits every aperture at the roll limit", () => {
+		const ordinary = HULL_IDS.filter((id) => !CAPITALS.includes(id));
 		for (const type of STATION_TYPES) {
 			const gap = APERTURE(type);
 			let tightest = Number.POSITIVE_INFINITY;
@@ -145,7 +129,7 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		// height is where a slot runs out first — and it is the dimension a
 		// narrowing must not touch.
 		const gap = APERTURE("trade");
-		const ordinary = HULL_IDS.filter((id) => !hasNoInternalBerth(id));
+		const ordinary = HULL_IDS.filter((id) => !CAPITALS.includes(id));
 		const needAcross = Math.max(...ordinary.map((id) => rolled(id).across));
 		const needUp = Math.max(...ordinary.map((id) => rolled(id).up));
 		const widthMargin = gap.width - needAcross;
@@ -158,7 +142,7 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		expect(heightMargin).toBeGreaterThan(0);
 	});
 
-	test("a section no aperture admits is refused by every one, by design", () => {
+	test("the carrier and the dreadnought fit no aperture, and that is the intended answer", () => {
 		// The separate-class decision, held as an assertion. Both capital classes
 		// need more than every slot and pad in the game and are supposed to;
 		// what #26 owes them is an outfitting route that is not a station. This
@@ -178,21 +162,6 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 			console.log(
 				`${id}: needs ${hull.across.toFixed(0)}×${hull.up.toFixed(0)} m rolled`,
 			);
-		}
-	});
-
-	test("the explorer's ring is refused by a bay's slot, and its berths refuse it everywhere", () => {
-		const hull = rolled("explorer");
-		const slot = APERTURE("trade");
-		expect(hull.up > slot.height || hull.across > slot.width).toBe(true);
-		for (const type of STATION_TYPES) {
-			const interior = interiorOf(type);
-			expect({
-				type,
-				admits: interior.berths.some((berth) =>
-					berthFits(berth, HULL_SPECS.explorer.env),
-				),
-			}).toEqual({ type, admits: false });
 		}
 	});
 
@@ -222,8 +191,6 @@ describe("every capital is refused, and by exactly one named rule", () => {
 			].filter(Boolean).length;
 			expect([id, tiers]).toEqual([id, 1]);
 		}
-		for (const id of [...WIDER_THAN_EVERY_APERTURE, ...LONGER_THAN_EVERY_BERTH])
-			expect([id, CAPITALS.includes(id)]).toEqual([id, true]);
 		for (const id of [...WIDER_THAN_EVERY_APERTURE, ...LONGER_THAN_EVERY_BERTH])
 			expect([id, CAPITALS.includes(id)]).toEqual([id, true]);
 	});

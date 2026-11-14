@@ -43,7 +43,6 @@ import sharp from "sharp";
 const SHIPPED = {
 	interceptor: "src/models/lance-interceptor.glb",
 	patrol: "src/models/warden-patrol.glb",
-	explorer: "src/models/pilgrim-explorer.glb",
 	raider: "src/models/shiv-raider.glb",
 	carrier: "src/models/bastion-carrier.glb",
 	prospector: "src/models/sluice-prospector.glb",

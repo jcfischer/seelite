@@ -43,7 +43,6 @@ import {
 	HULL_PRICE_UPPER_EXPONENT,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
-	hasNoInternalBerth,
 	hullPriceCr,
 	isCapital,
 	PLAYER_BASELINE_HULL,
@@ -323,26 +322,8 @@ describe("the roster is the single owner, not a second copy", () => {
 				(PURCHASABLE_HULL_IDS as readonly HullId[]).includes(id),
 			]).toEqual([id, false]);
 		expect([...DOCKABLE_HULL_IDS].sort()).toEqual(
-			HULL_IDS.filter((id) => !hasNoInternalBerth(id)).sort(),
+			HULL_IDS.filter((id) => !isCapital(id)).sort(),
 		);
-	});
-
-	test("the explorer is sold and docks nowhere inside, which is D1's consequence", () => {
-		// Its authored Pilgrim is 84.5 m across its habitat ring, and no berth in
-		// the game is 84.5 m tall (node #1035). The principal's ruling of
-		// 2026-11-10 keeps that dimension and answers it with an external
-		// shipyard berth, outside holding and a shuttle — work #1239 scopes. Until
-		// then this row states the fact rather than hiding it: purchasable, and
-		// admitted by no berth at any role.
-		expect(PURCHASABLE_HULL_IDS as readonly HullId[]).toContain("explorer");
-		expect(hasNoInternalBerth("explorer")).toBe(true);
-		for (const [type, interior] of INTERIORS)
-			expect([
-				type,
-				interior.berths.some((berth) =>
-					berthFits(berth, HULL_SPECS.explorer.env),
-				),
-			]).toEqual([type, false]);
 	});
 });
 
@@ -359,28 +340,21 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		// cargo structure is, an interceptor light because it is mostly engine,
 		// and neither is off by a factor. A mass typed in without looking at the
 		// hull lands outside it.
-		// **The authored hulls' boxes are the models' own**, and their masses are
-		// the roster's: the principal keeps hull stats unchanged when a model
-		// arrives (node #1035), so the figure stands in a box it was not derived
-		// from. Each row is pinned to both figures, so re-deriving a mass or
-		// moving a box makes it red and somebody deletes the exemption.
+
 		const AUTHORED_BOX_EXEMPT: readonly HullId[] = [
 			"miner",
-			"explorer",
 			"carrier",
 			"prospector",
 			"dreadnought",
 		];
 		const PINNED_MASS: Partial<Record<HullId, number>> = {
 			miner: 215,
-			explorer: 165,
 			carrier: 14000,
 			prospector: 58,
 			dreadnought: 12000,
 		};
 		const PINNED_ENV: Partial<Record<HullId, HullEnvelope>> = {
 			miner: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
-			explorer: { lengthKm: 0.0739, beamKm: 0.0846, heightKm: 0.0846 },
 			carrier: { lengthKm: 0.4068, beamKm: 0.1895, heightKm: 0.1895 },
 			prospector: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
 			dreadnought: { lengthKm: 0.432, beamKm: 0.1895, heightKm: 0.1895 },
@@ -517,13 +491,11 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 });
 
 describe("who a station has a berth for", () => {
-	test("every purchasable hull a berth can admit fits the three full-size roles", () => {
+	test("every purchasable hull fits the three full-size roles", () => {
 		for (const type of STATION_TYPES) {
 			if (type === "outpost") continue;
 			const interior = interiorOf(type);
-			for (const id of PURCHASABLE_HULL_IDS.filter(
-				(hull) => !hasNoInternalBerth(hull),
-			))
+			for (const id of PURCHASABLE_HULL_IDS)
 				expect([
 					type,
 					id,
@@ -532,7 +504,7 @@ describe("who a station has a berth for", () => {
 		}
 	});
 
-	test("the outpost turns away the miner, which is its point", () => {
+	test("the outpost turns away the miner and the explorer, which is its point", () => {
 		// `BERTH_CELL`'s outpost row is two thirds of the volume *so that* it
 		// rejects the two largest ordinary hulls, and the prose there named the
 		// miner and the explorer from the old declared figures. Measured against
@@ -542,7 +514,7 @@ describe("who a station has a berth for", () => {
 		const refused = DOCKABLE_HULL_IDS.filter(
 			(id) => !interior.berths.some((b) => berthFits(b, HULL_SPECS[id].env)),
 		);
-		expect([...refused].sort()).toEqual(["miner"]);
+		expect([...refused].sort()).toEqual(["explorer", "miner"]);
 	});
 
 	test("no berth in the game admits a capital", () => {

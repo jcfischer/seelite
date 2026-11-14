@@ -35,8 +35,6 @@ export const modelLoaders = {
 		(await import("./interceptor-hull")).prepareInterceptorHullModel(p),
 	patrol: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./seven-ships-hulls")).prepareWardenHullModel(p),
-	explorer: async (p?: Parameters<ModelLoader>[0]) =>
-		(await import("./seven-ships-hulls")).preparePilgrimHullModel(p),
 	raider: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./seven-ships-hulls")).prepareShivHullModel(p),
 	carrier: async (p?: Parameters<ModelLoader>[0]) =>
@@ -98,7 +96,6 @@ export const AUTHORED_HULL_MODELS = [
 	"voyager",
 	"interceptor",
 	"patrol",
-	"explorer",
 	"raider",
 	"carrier",
 	"prospector",

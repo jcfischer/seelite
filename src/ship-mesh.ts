@@ -329,7 +329,7 @@ export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	freighter: 0.04,
 	miner: 0.0422,
 	patrol: 0.0327,
-	explorer: 0.0442,
+	explorer: 0.044,
 	raider: 0.0347,
 	// A capital hull is roughly seven couriers long. Nothing else in the pool
 	// needs a second glance to work out which of two ships is the bigger; this

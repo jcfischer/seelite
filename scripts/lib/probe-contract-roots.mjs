@@ -550,12 +550,6 @@ const OWNERS = Object.freeze({
 		"src/save-store.ts",
 		"src/save-envelope.ts",
 	],
-	"probe-ship-visuals.mjs": [
-		"scripts/probe-ship-visuals.mjs",
-		"src/ship-mesh.ts",
-		"src/ship-surface.ts",
-		"src/ship-detail.ts",
-	],
 	"probe-shipyard.mjs": [
 		"scripts/probe-shipyard.mjs",
 		"src/station-console.ts",

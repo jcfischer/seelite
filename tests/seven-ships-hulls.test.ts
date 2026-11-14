@@ -1,19 +1,3 @@
-/**
- * The six exteriors of design PR #829 (node #1035): the Warden patrol, the
- * Pilgrim explorer, the Shiv raider, the Bastion carrier, the Sluice prospector
- * and the Rampart dreadnought, decoded through the production loader and drawn
- * through the game's own builder.
- *
- * The asset rows pin each shipping file by bytes and sha256, because the study
- * that produced it is a Git-LFS object no headless run pulls; the geometry rows
- * decode the shipped file rather than read a table, so a re-export that moved a
- * vertex shows here. The envelope row holds the box a berth fits against; the
- * berth row asks every role's catalogue the same question it asks the table.
- *
- * The habitat rows are the node's third criterion: one phase per ship, shared
- * by every level, turning on the game clock at the rate the principal accepted
- * (80 m at 3 RPM, 180 m at 2.5 RPM).
- */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
@@ -44,6 +28,7 @@ import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 import { ventThroats } from "../src/vent-plumes";
 import {
 	SEVEN_SHIP_STUDIES,
+	type SevenShipRole,
 	sevenShipFrameName,
 	sevenShipLevelNames,
 } from "../src/seven-ships-hulls";
@@ -53,7 +38,6 @@ import { withProceduralHulls } from "./helpers/procedural-hulls";
 
 await useShippedSevenShips();
 
-/** The shipped file of each hull, its bytes and its sha256, as prepared. */
 const SHIPPED: Partial<
 	Record<HullId, { file: string; bytes: number; sha256: string }>
 > = {
@@ -61,11 +45,6 @@ const SHIPPED: Partial<
 		file: "src/models/warden-patrol.glb",
 		bytes: 15_139_996,
 		sha256: "19a88c432afba5f672cae5d03866bed503dae973630af062befdc3c86b41ed2d",
-	},
-	explorer: {
-		file: "src/models/pilgrim-explorer.glb",
-		bytes: 16_798_472,
-		sha256: "491678a096ad32b1e8ddb2ffda5f100c04a39a12001823da71be50250aab016e",
 	},
 	raider: {
 		file: "src/models/shiv-raider.glb",
@@ -88,24 +67,17 @@ const SHIPPED: Partial<
 		sha256: "8dc04e9da656e17d1d3e8c406764fead88453bd3d8c387dcf42591285fcced57",
 	},
 };
-const HULLS = Object.keys(SHIPPED) as HullId[];
+const HULLS = Object.keys(SHIPPED) as SevenShipRole[];
 
-/** The study's own box, metres, in the game's axes: length on z, beam on x,
- *  height on y. Read off `spikes/seven-ships/<role>/model-report.json`, and the
- *  authored export is the same metal. */
 const STUDY_METRES: Record<string, [number, number, number]> = {
 	patrol: [33.82, 12.108, 55.308],
-	explorer: [84.545, 84.516, 73.808],
 	raider: [33.82, 11.678, 56.308],
 	carrier: [189.492, 189.492, 406.76],
 	prospector: [20.008, 15, 66.4],
 	dreadnought: [189.492, 189.492, 432],
 };
 
-/** The accepted habitats: the walking floor and the rate the design was judged
- *  at, and the gravity that follows from them (`design/model-report.json`). */
 const HABITATS: Partial<Record<HullId, { floorM: number; rpm: number }>> = {
-	explorer: { floorM: 40, rpm: 3 },
 	carrier: { floorM: 90, rpm: 2.5 },
 	dreadnought: { floorM: 90, rpm: 2.5 },
 };
@@ -254,8 +226,7 @@ describe("the shipped assets (node #1035)", () => {
 				}
 			}
 		}
-		// The ordinary hulls among the six are admitted somewhere, so the row
-		// above is a comparison rather than a list of noes.
+
 		expect(admitted).toBeGreaterThan(0);
 	}, 120_000);
 
@@ -274,10 +245,6 @@ describe("the shipped assets (node #1035)", () => {
 	});
 
 	test("the display reach covers the model and the stand-in, rounded up to 0.1 m", () => {
-		// A hull is drawn two ways: its model once that installs, its loft until
-		// then. The reach spaces galleries, sizes a contact and sets the detail
-		// bands, so it is the larger of the two forms' farthest vertices — a ship
-		// that shrinks into its model does not shrink its own marker with it.
 		const farthest = (root: THREE.Object3D) => {
 			root.updateMatrixWorld(true);
 			const v = new THREE.Vector3();
@@ -429,7 +396,7 @@ describe("the authored exteriors are what the game draws", () => {
 });
 
 describe("the habitats turn on the game clock (node #1035)", () => {
-	test("only the three accepted rings turn, at their accepted rate", () => {
+	test("only the two accepted rings turn, at their accepted rate", () => {
 		for (const id of HULLS) {
 			const root = hullOf(id);
 			const { full } = levelsOf(root, id);
@@ -448,7 +415,7 @@ describe("the habitats turn on the game clock (node #1035)", () => {
 		}
 	});
 
-	test.each(["explorer", "carrier", "dreadnought"] as const)(
+	test.each(["carrier", "dreadnought"] as const)(
 		"%s's ring turns at the accepted rate, and a level switch cannot reset it",
 		(id) => {
 			const root = hullOf(id);
@@ -469,7 +436,7 @@ describe("the habitats turn on the game clock (node #1035)", () => {
 						expected,
 					]);
 			}
-			// A switch changes which level is drawn and leaves every phase alone.
+
 			updateShipVisuals(
 				root,
 				DETAIL_RADII.full * 1.1 * HULL_REACH_KM[id],
@@ -481,7 +448,7 @@ describe("the habitats turn on the game clock (node #1035)", () => {
 					level,
 					slotPhaseRad(rpm, 3_600),
 				]);
-			// …and a minute at 2.5 RPM is 150 degrees, not a wrapped zero.
+
 			advanceAuthoredHabitat(root, 3_660);
 			expect(phase("full")).toBeCloseTo(slotPhaseRad(rpm, 3_660), 12);
 			expect(phase("full")).not.toBeCloseTo(slotPhaseRad(rpm, 3_600), 3);
@@ -500,12 +467,12 @@ describe("the habitats turn on the game clock (node #1035)", () => {
 	});
 
 	test("a procedural stand-in answers the clock with nothing to turn", () => {
-		const builder = authoredHullBuilder("explorer");
-		installAuthoredHull("explorer", undefined);
-		const loft = buildShipMesh("explorer", HULL_SPECS.explorer.variant).root;
+		const builder = authoredHullBuilder("carrier");
+		installAuthoredHull("carrier", undefined);
+		const loft = buildShipMesh("carrier", HULL_SPECS.explorer.variant).root;
 		expect(() => advanceAuthoredHabitat(loft, 60)).not.toThrow();
 		expect(loft.userData.habitats).toBeUndefined();
-		installAuthoredHull("explorer", builder);
+		installAuthoredHull("carrier", builder);
 	});
 });
 
@@ -513,7 +480,6 @@ describe("the roster kept what the models did not come to change", () => {
 	test("every hull keeps its mass, thrust, hold and economy", () => {
 		const pinned: Partial<Record<HullId, [number, number, number]>> = {
 			patrol: [46, 126, 6],
-			explorer: [165, 248, 30],
 			raider: [42, 113, 10],
 			carrier: [14_000, 8_400, 400],
 			prospector: [58, 110, 12],
@@ -528,7 +494,7 @@ describe("the roster kept what the models did not come to change", () => {
 		}
 	});
 
-	test("every hull in the roster builds, and each one is one of the six or a loft", () => {
+	test("every hull in the roster builds, and each one is one of the five or a loft", () => {
 		for (const id of HULL_IDS) {
 			const root = buildShipMesh(id, HULL_SPECS[id].variant).root;
 			expect([id, root.children.length > 0]).toEqual([id, true]);

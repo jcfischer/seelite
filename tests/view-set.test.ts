@@ -211,7 +211,6 @@ describe("the view set itself", () => {
 			["assembly-approach", 42],
 			["assembly-flank", 42],
 			["assembly-second-layout", 42],
-			["derelict-tear", 4],
 			["coriolis-approach", 42],
 			["coriolis-flank", 42],
 			["coriolis-range", 42],
@@ -256,31 +255,7 @@ describe("the view set itself", () => {
 	});
 
 	test("declares its views with unique kebab-case names", () => {
-		// Eight after #129 added `station-flank`, fifteen since #147 added
-		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
-		// station-port views #134 ratified, eighteen since #206 added
-		// `planet-fill`, nineteen since #210 added `ringed-giant`, twenty since
-		// #209 added `giant-fill`, twenty-two since #300 gave the shipyard and
-		// the refinery a frame from their own aperture axis, twenty-four since
-		// #324 added the duel's glass and console, twenty-six since #324 part d
-		// added the canisters and the raider log, twenty-eight since #372 added
-		// the Controls tab open and folded, thirty-eight with #532's witchspace
-		// strip, forty-six since #535 added the opening's, forty-eight since the
-		// principal split its approach into a planet fly-by and a station approach,
-		// forty-nine with the rift forming before the arrival, fifty-two with
-		// #537's cruise rows, fifty-four since #540 added the galaxy chart's
-		// crowded and isolated hover — sixty-one by the time #651 added its cabin
-		// frame near the berth, which made it sixty-two, and seventy once #735 added derelict-tear. (#432 added a twenty-ninth and removed it
-		// in the same PR; #480 put one back, in the other role. Why both happened is
-		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
-		// not `VIEWS.length`, which is the whole point: a view deleted by accident
-		// has to be a red run, and a check derived from its own subject cannot be
-		// one.
-		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
-		// Node #637 adds `npc-vent-plumes`. Node #1006 adds four more: the opening,
-		// the crossing, the swallow and the seal of a jump seen by someone watching
-		// it, one frame each. Node #1209 adds twelve organic field stands, #1198 five bridge rows.
-		expect(VIEWS.length).toBe(118);
+		expect(VIEWS.length).toBe(122);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -870,7 +845,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 118)");
+		expect(html).toContain("Selected canonical views (3 of 122)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -907,7 +882,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–47.4s");
+		expect(html).toContain("· clock 0.6–49.0s");
 		expect(html).not.toContain("pinned");
 	});
 

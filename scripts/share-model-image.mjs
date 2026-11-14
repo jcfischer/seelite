@@ -76,12 +76,7 @@ export const STEEL_WEAR = Object.freeze({
 	sha256: "b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f",
 	name: "steel-wear",
 	file: "src/models/steel-wear.webp",
-	models: Object.freeze([
-		"warden-patrol",
-		"pilgrim-explorer",
-		"shiv-raider",
-		"sluice-prospector",
-	]),
+	models: Object.freeze(["warden-patrol", "shiv-raider", "sluice-prospector"]),
 });
 
 /** Preparation table shared by instruments and future image-sharing nodes. */

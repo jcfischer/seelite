@@ -77,9 +77,7 @@ export interface AuthoredHullDesign {
 	readonly prepareMesh?: (mesh: THREE.Mesh) => void;
 	/** Meshes left out of both reduced levels. */
 	readonly skipInLevels?: (mesh: THREE.Mesh) => boolean;
-	/** The study carries a turning habitat ring (node #1035): each level holds
-	 *  one `habitat-rotor`, whose `rotationRPM` is the rate the accepted design
-	 *  was judged at. */
+
 	readonly habitat?: boolean;
 }
 

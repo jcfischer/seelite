@@ -10,6 +10,7 @@ import { gameUrl } from "./lib/game-url.mjs";
 import { probeTradeModels } from "./lib/trade-model-probe.mjs";
 import { MODEL_QUEUE_HOME } from "./lib/trade-model-fixtures.mjs";
 import { probeMinerVents } from "./lib/miner-vent-probe.mjs";
+import { probeSevenShips } from "./lib/seven-ships-probe.mjs";
 
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
@@ -30,6 +31,13 @@ const params = {
 };
 await mkdir("probe-shots/model-queue", { recursive: true });
 try {
+	const ships = await browser.newPage();
+	watch(ships);
+	try {
+		await probeSevenShips(ships, origin, params, { check });
+	} finally {
+		await ships.close();
+	}
 	await probeTradeModels(browser, origin, params, { check, watch });
 	const held = await browser.newPage();
 	watch(held);

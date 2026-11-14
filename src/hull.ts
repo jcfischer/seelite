@@ -1122,24 +1122,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	explorer: {
 		role: "survey",
 		variant: "a",
-		env: { lengthKm: 0.0739, beamKm: 0.0846, heightKm: 0.0846 },
-		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.0007 },
+		env: { lengthKm: 0.0738, beamKm: 0.0385, heightKm: 0.0397 },
+		envCentre: { rightKm: 0, upKm: 0.0008, foreKm: -0.0044 },
 		massT: 165,
 		thrustMN: 248,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.0174352,
-			yaw: 0.0166487,
-			roll: 0.0164976,
+			pitch: 0.00929064,
+			yaw: 0.0091665,
+			roll: 0.00777541,
 		},
 		ventPlacement: {
-			retroX: 0.255,
+			retroX: 0.5,
 			strafeZ: 0.25,
 			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: -0.1, fore: 0.9075, aft: 0.9975 },
-			roll: { z: -0.025, port: 0.9975, starboard: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.125, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 30,
 		hardpoints: 1,
@@ -1475,31 +1475,9 @@ export const CAPITAL_HULL_IDS = [
 export const isCapital = (id: HullId): boolean =>
 	(CAPITAL_HULL_IDS as readonly HullId[]).includes(id);
 
-/**
- * The hulls no berth in the game admits, and so the hulls that cannot dock
- * inside a station: the capitals, and the **explorer** since its authored
- * Pilgrim brought its 84.5 m habitat ring to an 80 m walking floor (node #1035).
- *
- * The principal's ruling of 2026-11-10 keeps the authored dimensions and the
- * truthful envelope, and answers the consequence as policy rather than as a
- * shape: an oversized ship docks at an external shipyard berth and never enters
- * a station interior, it may still arrive at any role and hold outside, and a
- * small shuttle ferries between the two. That work is #1239's, so nothing here
- * makes an external berth exist; what this set says is which hulls a berth can
- * objectively not admit today.
- */
-export const NO_INTERNAL_BERTH_HULL_IDS = [
-	...CAPITAL_HULL_IDS,
-	"explorer",
-] as const satisfies readonly HullId[];
-
-/** Membership in the set a berth cannot admit. */
-export const hasNoInternalBerth = (id: HullId): boolean =>
-	(NO_INTERNAL_BERTH_HULL_IDS as readonly HullId[]).includes(id);
-
 /** Every hull that is meant to fit through an aperture — the complement of the
- *  hulls no berth admits, and the set `tests/aperture-fit.test.ts` and the
- *  docking sweep both run over. */
+ *  capitals, and the set `tests/aperture-fit.test.ts` and the docking sweep
+ *  both run over. */
 export const DOCKABLE_HULL_IDS: readonly HullId[] = HULL_IDS.filter(
-	(id) => !hasNoInternalBerth(id),
+	(id) => !isCapital(id),
 );

@@ -1,26 +1,7 @@
-/**
- * The six authored exteriors of design PR #829 (node #1035): the Warden patrol,
- * the Pilgrim explorer, the Shiv raider, the Bastion carrier, the Sluice
- * prospector and the Rampart dreadnought, beside the Lance interceptor that
- * node #1034 installed.
- *
- * Each is the study's full model, metres with +Z forward, drawn at its own size
- * through `createAuthoredHullBuilder`, which applies the one conversion to the
- * game's kilometres and -Z nose. The drive mouths below are the study's, not the
- * drawn hull's: `build_model.py` places each engine and its nozzle, and
- * `tests/seven-ships-hulls.test.ts` measures every glow against the triangles
- * that surround it.
- *
- * The three habitats (Pilgrim, Bastion, Rampart) keep the accepted rings: an
- * 80 m walking floor at 3 RPM and 180 m at 2.5 RPM, carried by the model's
- * `habitat-rotor` node and its `rotationRPM`. They turn on the game clock
- * (`advanceAuthoredHabitat`), so a level switch cannot reset a phase.
- */
 import * as THREE from "three";
 import { authoredHullLoader, createAuthoredHullBuilder } from "./authored-hull";
 import {
 	BASTION_CARRIER_GLB_URL,
-	PILGRIM_EXPLORER_GLB_URL,
 	RAMPART_DREADNOUGHT_GLB_URL,
 	SHIV_RAIDER_GLB_URL,
 	SLUICE_PROSPECTOR_GLB_URL,
@@ -28,7 +9,6 @@ import {
 } from "./model-urls";
 import type { AuthoredHullBuilder } from "./ship-mesh";
 
-/** One study metre in kilometres: the model is drawn at its own size. */
 const KM_PER_M = 0.001;
 
 const ships = {
@@ -44,19 +24,6 @@ const ships = {
 			lipRadius: 3.83,
 		},
 		habitat: false,
-	},
-	explorer: {
-		url: PILGRIM_EXPLORER_GLB_URL,
-		what: "the Pilgrim",
-		nozzles: {
-			x: 7,
-			y: 0,
-			throatZ: -35.2,
-			lipZ: -37.6,
-			throatRadius: 2.4,
-			lipRadius: 3.44,
-		},
-		habitat: true,
 	},
 	raider: {
 		url: SHIV_RAIDER_GLB_URL,
@@ -159,11 +126,6 @@ export const prepareWardenHullModel = authoredHullLoader(
 	"patrol",
 	ships.patrol.url,
 	(template) => createSevenShipBuilder("patrol", template),
-);
-export const preparePilgrimHullModel = authoredHullLoader(
-	"explorer",
-	ships.explorer.url,
-	(template) => createSevenShipBuilder("explorer", template),
 );
 export const prepareShivHullModel = authoredHullLoader(
 	"raider",

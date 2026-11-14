@@ -167,16 +167,10 @@ export const LANCE_INTERCEPTOR_GLB_URL = new URL(
 	import.meta.url,
 ).href;
 
-/** The other six of design PR #829 (node #1035), prepared by the same script:
- *  the Warden patrol, the Pilgrim explorer, the Shiv raider, the Bastion
- *  carrier, the Sluice prospector and the Rampart dreadnought. Each names one
- *  `steel-wear` image (`SHARED_IMAGES`), not a copy of it. */
+/** Five exteriors of design PR #829 (node #1035). The Bastion and Rampart
+ * embed lossy textures; the other three share the steel-wear image. */
 export const WARDEN_PATROL_GLB_URL = new URL(
 	"./models/warden-patrol.glb",
-	import.meta.url,
-).href;
-export const PILGRIM_EXPLORER_GLB_URL = new URL(
-	"./models/pilgrim-explorer.glb",
 	import.meta.url,
 ).href;
 export const SHIV_RAIDER_GLB_URL = new URL(

@@ -7,7 +7,7 @@ import {
 import { authoredHullBuilder, installAuthoredHull } from "../../src/ship-mesh";
 
 /**
- * Install the six shipped exteriors of design PR #829 (node #1035) the way the
+ * Install the five shipped exteriors of design PR #829 (node #1035) the way the
  * game does, and put back whatever was installed before. A file that measures a
  * hull's metal — vents, muzzles, envelopes, levels — opts in; unrelated files
  * keep the procedural lofts.
