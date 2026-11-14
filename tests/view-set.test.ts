@@ -1274,13 +1274,14 @@ test("the survey views show the surface cue and the owned rock Navigation readin
 		"mining-survey-navigation",
 	]);
 	for (const view of survey) {
-		expect(view.shot.kind).toBe("mining-survey");
-		expect(view.shot.seed).toBe(0x5ee11e);
-		expect(view.shot.system).toBe(173);
-		expect(view.shot.hull).toBe("miner");
+		expect(view.shot).toMatchObject({
+			kind: "mining-survey",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+		});
 	}
-	expect(survey.map((view) => view.shot.mode)).toEqual([
-		"surface",
-		"navigation",
-	]);
+	expect(
+		survey.map((view) => ("mode" in view.shot ? view.shot.mode : undefined)),
+	).toEqual(["surface", "navigation"]);
 });

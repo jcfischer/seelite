@@ -1,6 +1,14 @@
 /** Captures build their Game only after the entire model catalog is installed. */
 export const MODEL_BOOT_PARAMS = Object.freeze({ "models-full": true });
 
+const LANCE_FRAMING = {
+	kind: "body-offset",
+	body: "largest-planet",
+	radii: 6,
+	sunAngleDeg: 150,
+	view: "chase",
+};
+
 /**
  * The canonical view set: what a visual node is judged on.
  *
@@ -887,81 +895,26 @@ export const VIEWS = Object.freeze([
 		covers: [1034],
 		what: "The authored Lance interceptor in the game's chase camera, beside the other hulls at the same light and planet framing.",
 		shot: {
-			kind: "body-offset",
-			body: "largest-planet",
-			radii: 6,
-			sunAngleDeg: 150,
-			view: "chase",
+			...LANCE_FRAMING,
 			hull: "interceptor",
 		},
 	},
-	{
-		name: "hull-chase-warden",
+	...[
+		{ name: "Warden", hull: "patrol" },
+		{ name: "Shiv", hull: "raider" },
+		{ name: "Sluice", hull: "prospector" },
+		{ name: "Bastion", hull: "carrier", zoom: 4 },
+		{ name: "Rampart", hull: "dreadnought", zoom: 4 },
+	].map(({ name, hull, zoom }) => ({
+		name: `hull-chase-${name.toLowerCase()}`,
 		covers: [1035],
-		what: "The Warden in the game's chase camera under the same light and planet framing as the Lance.",
+		what: `The ${name} in the game's chase camera under the same light and planet framing as the Lance.`,
 		shot: {
-			kind: "body-offset",
-			body: "largest-planet",
-			radii: 6,
-			sunAngleDeg: 150,
-			view: "chase",
-			inspectHull: "patrol",
+			...LANCE_FRAMING,
+			inspectHull: hull,
+			...(zoom && { inspectZoom: zoom }),
 		},
-	},
-	{
-		name: "hull-chase-shiv",
-		covers: [1035],
-		what: "The Shiv in the game's chase camera under the same light and planet framing as the Lance.",
-		shot: {
-			kind: "body-offset",
-			body: "largest-planet",
-			radii: 6,
-			sunAngleDeg: 150,
-			view: "chase",
-			inspectHull: "raider",
-		},
-	},
-	{
-		name: "hull-chase-sluice",
-		covers: [1035],
-		what: "The Sluice in the game's chase camera under the same light and planet framing as the Lance.",
-		shot: {
-			kind: "body-offset",
-			body: "largest-planet",
-			radii: 6,
-			sunAngleDeg: 150,
-			view: "chase",
-			inspectHull: "prospector",
-		},
-	},
-	{
-		name: "hull-chase-bastion",
-		covers: [1035],
-		what: "The Bastion in the game's chase camera under the same light and planet framing as the Lance.",
-		shot: {
-			kind: "body-offset",
-			body: "largest-planet",
-			radii: 6,
-			sunAngleDeg: 150,
-			view: "chase",
-			inspectHull: "carrier",
-			inspectZoom: 4,
-		},
-	},
-	{
-		name: "hull-chase-rampart",
-		covers: [1035],
-		what: "The Rampart in the game's chase camera under the same light and planet framing as the Lance.",
-		shot: {
-			kind: "body-offset",
-			body: "largest-planet",
-			radii: 6,
-			sunAngleDeg: 150,
-			view: "chase",
-			inspectHull: "dreadnought",
-			inspectZoom: 4,
-		},
-	},
+	})),
 	{
 		name: "planet-terminator",
 		covers: [208, 211, 212, 99, 206, 200, 207],

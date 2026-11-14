@@ -47,16 +47,16 @@ test("node #1035 ships five hulls and leaves Pilgrim for oversized visits", () =
 
 test("each shipped hull has its own canonical chase inspection", () => {
 	const views = VIEWS.filter((view) => view.covers.includes(1035));
-	expect(views.map((view) => view.shot.inspectHull)).toEqual([
-		"patrol",
-		"raider",
-		"prospector",
-		"carrier",
-		"dreadnought",
-	]);
+	expect(
+		views.map((view) =>
+			"inspectHull" in view.shot ? view.shot.inspectHull : undefined,
+		),
+	).toEqual(["patrol", "raider", "prospector", "carrier", "dreadnought"]);
 	for (const view of views) {
+		if (!("inspectHull" in view.shot))
+			throw new Error(`missing inspection hull for ${view.name}`);
 		expect(view.shot.view).toBe("chase");
-		expect(view.shot.hull).toBeUndefined();
+		expect("hull" in view.shot).toBe(false);
 		expect(view.shot.inspectZoom ?? 1).toBe(
 			["carrier", "dreadnought"].includes(view.shot.inspectHull ?? "") ? 4 : 1,
 		);
