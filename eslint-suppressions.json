@@ -3846,7 +3846,7 @@
   },
   "tests/hull.test.ts": {
     "seelite/no-comments": {
-      "count": 173
+      "count": 167
     }
   },
   "tests/hyperspace.test.ts": {

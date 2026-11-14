@@ -341,23 +341,25 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		// and neither is off by a factor. A mass typed in without looking at the
 		// hull lands outside it.
 
-		const AUTHORED_BOX_EXEMPT: readonly HullId[] = [
-			"miner",
-			"carrier",
-			"prospector",
-			"dreadnought",
-		];
-		const PINNED_MASS: Partial<Record<HullId, number>> = {
-			miner: 215,
-			carrier: 14000,
-			prospector: 58,
-			dreadnought: 12000,
-		};
-		const PINNED_ENV: Partial<Record<HullId, HullEnvelope>> = {
-			miner: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
-			carrier: { lengthKm: 0.4068, beamKm: 0.1895, heightKm: 0.1895 },
-			prospector: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
-			dreadnought: { lengthKm: 0.432, beamKm: 0.1895, heightKm: 0.1895 },
+		const PINNED: Partial<
+			Record<HullId, { massT: number; env: HullEnvelope }>
+		> = {
+			miner: {
+				massT: 215,
+				env: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
+			},
+			carrier: {
+				massT: 14000,
+				env: { lengthKm: 0.4068, beamKm: 0.1895, heightKm: 0.1895 },
+			},
+			prospector: {
+				massT: 58,
+				env: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
+			},
+			dreadnought: {
+				massT: 12000,
+				env: { lengthKm: 0.432, beamKm: 0.1895, heightKm: 0.1895 },
+			},
 		};
 		const MIN_T_PER_1000M3 = 1.2;
 		const MAX_T_PER_1000M3 = 2.4;
@@ -365,17 +367,11 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 			const env = HULL_SPECS[id].env;
 			const volumeM3 = env.lengthKm * env.beamKm * env.heightKm * 1e9;
 			const density = (HULL_SPECS[id].massT * 1000) / volumeM3;
-			if (AUTHORED_BOX_EXEMPT.includes(id)) {
-				// **The one named exemption, and it is pinned rather than banded**
-				// (node #815). Longwall B's box replaced the loft's, and the mass
-				// it would re-derive to is a stat change the principal has not
-				// made, so the old 215 t stands in a box it was not derived from.
-				// Pinned to both figures, so re-deriving the mass or moving the
-				// box makes this row red and somebody deletes the exemption.
-				expect([HULL_SPECS[id].massT, env]).toEqual([
-					PINNED_MASS[id] as number,
-					PINNED_ENV[id] as HullEnvelope,
-				]);
+			const pinned = PINNED[id];
+			if (pinned) {
+				// https://github.com/jcfischer/seelite/issues/815
+				// Four authored boxes keep their approved masses: https://github.com/jcfischer/seelite/issues/1035
+				expect({ massT: HULL_SPECS[id].massT, env }).toEqual(pinned);
 				console.log(
 					`${id.padEnd(12)} ${density.toFixed(2)} t per 1000 m³ (pinned, an authored box)`,
 				);

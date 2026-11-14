@@ -32,42 +32,38 @@ import {
 	sevenShipFrameName,
 	sevenShipLevelNames,
 } from "../src/seven-ships-hulls";
-import { installShippedSevenShip } from "../scripts/lib/shipped-seven-ships";
+import {
+	SEVEN_SHIP_FILES,
+	installShippedSevenShip,
+} from "../scripts/lib/shipped-seven-ships";
 import { useShippedSevenShips } from "./setup/seven-ships-hull";
 import { withProceduralHulls } from "./helpers/procedural-hulls";
 
 await useShippedSevenShips();
 
-const SHIPPED: Partial<
-	Record<HullId, { file: string; bytes: number; sha256: string }>
-> = {
+const SHIPPED: Record<SevenShipRole, { bytes: number; sha256: string }> = {
 	patrol: {
-		file: "src/models/warden-patrol.glb",
 		bytes: 15_139_996,
 		sha256: "19a88c432afba5f672cae5d03866bed503dae973630af062befdc3c86b41ed2d",
 	},
 	raider: {
-		file: "src/models/shiv-raider.glb",
 		bytes: 15_721_260,
 		sha256: "7787a3ce045d0e67f4311db9cfd86b430c2b211bb9ecdd0642691dd46b65b70c",
 	},
 	carrier: {
-		file: "src/models/bastion-carrier.glb",
 		bytes: 21_950_512,
 		sha256: "ca747b400f84bf0e3f040c6d136ffd20373d13e41931faae7407ccd573056a0a",
 	},
 	prospector: {
-		file: "src/models/sluice-prospector.glb",
 		bytes: 8_252_584,
 		sha256: "b28283533018020548974f4975bcc75918dbc359060d10b13b7746d16a522fdb",
 	},
 	dreadnought: {
-		file: "src/models/rampart-dreadnought.glb",
 		bytes: 20_167_256,
 		sha256: "8dc04e9da656e17d1d3e8c406764fead88453bd3d8c387dcf42591285fcced57",
 	},
 };
-const HULLS = Object.keys(SHIPPED) as SevenShipRole[];
+const HULLS = Object.keys(SEVEN_SHIP_FILES) as SevenShipRole[];
 
 const STUDY_METRES: Record<string, [number, number, number]> = {
 	patrol: [33.82, 12.108, 55.308],
@@ -82,7 +78,7 @@ const HABITATS: Partial<Record<HullId, { floorM: number; rpm: number }>> = {
 	dreadnought: { floorM: 90, rpm: 2.5 },
 };
 
-const fileOf = (id: HullId) => (SHIPPED[id] as { file: string }).file;
+const fileOf = (id: SevenShipRole) => SEVEN_SHIP_FILES[id];
 
 const hullOf = (id: HullId) => {
 	const root = buildShipMesh(id, HULL_SPECS[id].variant).root;
@@ -115,16 +111,18 @@ const boxOf = (object: THREE.Object3D) =>
 
 describe("the shipped assets (node #1035)", () => {
 	test.each(HULLS)("%s ships the file its receipt records", (id) => {
-		const row = SHIPPED[id] as { file: string; bytes: number; sha256: string };
-		expect(statSync(row.file).size).toBe(row.bytes);
+		const row = SHIPPED[id];
+		expect(statSync(fileOf(id)).size).toBe(row.bytes);
 		expect(
-			createHash("sha256").update(readFileSync(row.file)).digest("hex"),
+			createHash("sha256")
+				.update(readFileSync(fileOf(id)))
+				.digest("hex"),
 		).toBe(row.sha256);
 	});
 
 	test("every shipped file is under the node's 25,000,000 bytes", () => {
 		for (const id of HULLS) {
-			const row = SHIPPED[id] as { bytes: number };
+			const row = SHIPPED[id];
 			expect([id, row.bytes < 25_000_000]).toEqual([id, true]);
 		}
 	});
@@ -381,15 +379,19 @@ describe("the authored exteriors are what the game draws", () => {
 		(id) => {
 			const builder = authoredHullBuilder(id);
 			installAuthoredHull(id, undefined);
-			const root = buildShipMesh(id, HULL_SPECS[id].variant).root;
-			expect(root.userData.authored).not.toBe(true);
-			expect(rebuildAuthoredStandIn(root)).toBe(false);
-			installAuthoredHull(id, builder);
-			expect(rebuildAuthoredStandIn(root)).toBe(true);
-			expect(root.userData.authored).toBe(true);
-			expect(
-				root.getObjectByName(sevenShipFrameName(id as never)),
-			).toBeDefined();
+			try {
+				const root = buildShipMesh(id, HULL_SPECS[id].variant).root;
+				expect(root.userData.authored).not.toBe(true);
+				expect(rebuildAuthoredStandIn(root)).toBe(false);
+				installAuthoredHull(id, builder);
+				expect(rebuildAuthoredStandIn(root)).toBe(true);
+				expect(root.userData.authored).toBe(true);
+				expect(
+					root.getObjectByName(sevenShipFrameName(id as never)),
+				).toBeDefined();
+			} finally {
+				installAuthoredHull(id, builder);
+			}
 		},
 		120_000,
 	);
@@ -469,10 +471,13 @@ describe("the habitats turn on the game clock (node #1035)", () => {
 	test("a procedural stand-in answers the clock with nothing to turn", () => {
 		const builder = authoredHullBuilder("carrier");
 		installAuthoredHull("carrier", undefined);
-		const loft = buildShipMesh("carrier", HULL_SPECS.explorer.variant).root;
-		expect(() => advanceAuthoredHabitat(loft, 60)).not.toThrow();
-		expect(loft.userData.habitats).toBeUndefined();
-		installAuthoredHull("carrier", builder);
+		try {
+			const loft = buildShipMesh("carrier", HULL_SPECS.carrier.variant).root;
+			expect(() => advanceAuthoredHabitat(loft, 60)).not.toThrow();
+			expect(loft.userData.habitats).toBeUndefined();
+		} finally {
+			installAuthoredHull("carrier", builder);
+		}
 	});
 });
 
@@ -494,7 +499,7 @@ describe("the roster kept what the models did not come to change", () => {
 		}
 	});
 
-	test("every hull in the roster builds, and each one is one of the five or a loft", () => {
+	test("every hull in the roster builds a non-empty mesh", () => {
 		for (const id of HULL_IDS) {
 			const root = buildShipMesh(id, HULL_SPECS[id].variant).root;
 			expect([id, root.children.length > 0]).toEqual([id, true]);

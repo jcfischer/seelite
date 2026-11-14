@@ -14,14 +14,23 @@
   selected with `ShipLevels` hysteresis. Study LODs remain reference assets.
 - `src/seven-ships-hulls.ts` installs through the shared background queue. A
   procedural hull stands in until its model installs; shared failure handling
-  retains it and warns once. This runtime policy is distinct from the retired
-  generated-plating probe and tear-view fixtures, which have been removed.
+  retains it and warns once. The generated-plating assertions and tear-view
+  fixtures are retired. The deleted `probe-ship-visuals` also contained
+  independent cockpit, chase controls and fleet-gate checks; these are retained
+  in `probe-chase-view`, at both original viewport sizes where applicable.
 - Truthful geometric/collision envelopes and measured vent placements replace
   the five hulls' previous rows. Mass, thrust, hold, fuel, slots and prices stay
   unchanged. Bastion and Rampart remain non-purchasable capitals without internal
   berths. No external-visit, shuttle or player purchase policy is added here.
 - Traffic carrier identities and saved baselines stay unchanged on top of #1250;
   no Traffic golden is re-pinned and no save/generator version is bumped.
+- The density-band test exempts four authored boxes, pinning each mass and
+  envelope together: Longwall plus Bastion, Sluice and Rampart. Their measured
+  densities are 3.97, 0.96, 2.90 and 0.77 t per 1,000 m³ respectively, against
+  the procedural band's 1.2–2.4. The old assertion that every exemption exceeds
+  the upper bound was removed because the two capitals are below the lower
+  bound. This implements the rulings to keep mass unchanged as geometry grows;
+  it does not re-derive physical stats from the new boxes.
 
 | Shipping Full file | Bytes | sha256 |
 | --- | ---: | --- |
@@ -70,6 +79,47 @@
   steady-state frame-cost or cold-install stall measurement is claimed.
 
 ## Delivery evidence
+
+### Sage round 1 follow-up (2026-11-14)
+
+- The independent camera and fleet checks from the deleted probe now run in
+  `probe-chase-view`: cockpit visibility and instruments, authored courier,
+  orbit at fixed range, astern reset (yaw and elevation), inert cockpit orbit
+  keys, and absent/default versus gated fleet. Desktop and narrow camera cases
+  keep their original assertions. The two fleet cases use separate pages.
+- Both stand-in tests restore the shared builder in `finally`. The non-empty
+  roster smoke test now names only what it asserts. Shipping paths come from
+  `SEVEN_SHIP_FILES`; byte/hash expectations remain independent pins. The four
+  authored mass/envelope exemptions use one typed table; the obsolete
+  single-exemption comment is replaced and the density effects disclosed above.
+- Deferred optional changes: loader-map generation, shared nozzle/mount literals
+  and UV-accessor extraction. These are code deduplication suggestions without
+  a reported behavioral defect; this follow-up leaves runtime loaders and the
+  approved asset recipe unchanged.
+- Deferred optional timing work: per-hull install/simplify instrumentation and
+  a tighter forced-full boot budget. The existing 120 s deadline remains a
+  readiness timeout, not a performance guarantee. The earlier 34.6 s probe
+  duration includes the entire probe and cannot establish a 35 s boot budget.
+  No cold-install performance acceptance is added by this follow-up.
+- The worker cannot edit the PR title under its operating contract. Supervisor:
+  use “Draw five authored hulls: Warden, Shiv, Sluice, Bastion and Rampart
+  (node #1035)” for the PR/squash title; Pilgrim does not ship here.
+- Follow-up verification on the working tree above `8427df8c`: focused hull,
+  seven-ship and chase arithmetic tests 90/90; standalone typecheck, build,
+  explicit `check-dist-sizes dist`, format, script lint, comment lint and
+  launcher wiring pass. The comment baseline shrinks by six entries.
+- Hardware `probe-chase-view` passes 27/27 checks in 137.5 s on ANGLE Metal,
+  Apple M5 Pro (peak load 4.0). This is one manually filtered probe, not the PR
+  gate or a full-suite run; 123 probes were not run. Log:
+  `/tmp/node-1035-review1-chase-runner.log`. The selector still requests all
+  probes for the integration diff, reserved for the supervisor by this worker's
+  contract. No renderer or shipping asset changed during this follow-up.
+- The follow-up's single full `npm test` run passes: 8,016 tests, zero failures,
+  495 files, 646.80 s. Log: `/tmp/node-1035-review1-full-test.log`. This
+  supersedes the earlier full-unit failures below. Supervisor review/browser
+  gates and principal visual/changelog approval remain pending.
+
+### Earlier implementation verification
 
 - Split regression observed red with six production hulls, then green after
   removing Pilgrim. Affected geometry/docking/vent/save checks: 391 passed.
