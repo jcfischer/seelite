@@ -3899,11 +3899,6 @@
       "count": 61
     }
   },
-  "tests/binding-store.test.ts": {
-    "seelite/no-comments": {
-      "count": 135
-    }
-  },
   "tests/body-name.test.ts": {
     "seelite/no-comments": {
       "count": 2
