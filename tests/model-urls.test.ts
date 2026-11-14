@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	ASTEROIDS_GLB_URL,
@@ -23,6 +25,7 @@ import {
 	OUTPOST_GLB_URLS,
 	PORTER_GLB_URL,
 	REFINERY_GLB_URLS,
+	SHARED_IMAGES,
 	SHIPYARD_GLB_URLS,
 	STATION_INTERIORS_GLB_URL,
 	TRADE_GLB_URLS,
@@ -74,6 +77,19 @@ describe("models are served under hashed names (#834)", () => {
 		];
 		expect(urls.map((u) => u.split("/").pop()).sort()).toEqual(shipped.sort());
 		for (const url of urls) expect(existsSync(fileURLToPath(url))).toBe(true);
+	});
+
+	test("every shared image names its file and the hash it is registered under", () => {
+		const entries = Object.entries(SHARED_IMAGES);
+		expect(entries.length).toBeGreaterThan(0);
+		for (const [sha, image] of entries) {
+			const path = fileURLToPath(image.url);
+			expect(basename(path, ".webp")).toBe(image.name);
+			expect(existsSync(path)).toBe(true);
+			expect(
+				createHash("sha256").update(readFileSync(path)).digest("hex"),
+			).toBe(sha);
+		}
 	});
 
 	test("no loader names a model by a fixed path", () => {

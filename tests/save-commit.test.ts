@@ -1,3 +1,4 @@
+import { changeCash } from "../src/commodity-pools";
 /**
  * #936 D1–D5 as a state machine, built by node #943.
  *
@@ -125,8 +126,7 @@ const harness = () => {
 					commander: {
 						...env.commander,
 						state: {
-							...env.commander.state,
-							credits: env.commander.state.credits - tonnes,
+							...changeCash(env.commander.state, -tonnes),
 						},
 					},
 				}),
@@ -139,6 +139,7 @@ const harness = () => {
 							state: {
 								...state.commander.state,
 								credits: committed.commander.state.credits,
+								accounting: committed.commander.state.accounting,
 							},
 						},
 					};

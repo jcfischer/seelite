@@ -221,6 +221,10 @@ try {
 					exploration: threshold("exploration", 8),
 				},
 			};
+			(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+				g,
+				{},
+			);
 			g.view = "cockpit";
 			g.setHeadLook("forward");
 			g.stationConsoleTab = "Equipment";

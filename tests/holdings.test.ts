@@ -1181,3 +1181,31 @@ describe("#654 — the commander record a death restores", () => {
 		});
 	});
 });
+
+test("exact procurement consumes unknown shares first while reward leaves debt unchanged", async () => {
+	const { migrateAccount, withAccount } = await import(
+		"../src/commodity-pools"
+	);
+	const { money, massFromNative } = await import("../src/exact-amount");
+	const base = holdings({ cargo: { [GOOD]: TONNES + 2 } });
+	const start = {
+		...base,
+		commander: withAccount(
+			base.commander,
+			migrateAccount(base.commander.credits, 0, base.commander.cargo, {
+				[GOOD]: { units: TONNES, cr: TONNES * 10 },
+			}),
+		),
+	};
+	const [, delivered, reported] = flyProcurement(start, newWorld(1));
+	const pool = delivered.holdings.commander.accounting!.pools[GOOD];
+	expect(pool.totalMass).toBe(massFromNative(2, 1000000));
+	expect(pool.unknownMass).toBe(massFromNative(0, 1000000));
+	expect(pool.unrecoveredCost).toBe(money.fromNumber(TONNES * 10));
+	expect(
+		reported.holdings.commander.accounting!.pools[GOOD].unrecoveredCost,
+	).toBe(pool.unrecoveredCost);
+	expect(reported.holdings.commander.accounting!.bankedTrade).toBe(
+		money.fromNumber(purchase.rewardCr),
+	);
+});

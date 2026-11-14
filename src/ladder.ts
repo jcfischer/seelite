@@ -1,3 +1,9 @@
+import { money, type Money } from "./exact-amount";
+import {
+	displayAmount,
+	projectBasis,
+	type CommodityAccount,
+} from "./commodity-pools";
 /**
  * The three ladders (#183), their credit, their gates and their saved record.
  *
@@ -78,10 +84,15 @@ export const threshold = (ladder: Ladder, rung: number): number =>
 	rung <= 0 ? 0 : LADDER_TOP[ladder] / RUNG_RATIO ** (TOP_RUNG - rung);
 
 /** The highest rung a banked total reaches. */
-export const rungOf = (ladder: Ladder, banked: number): number => {
+export const rungOf = (ladder: Ladder, banked: number | Money): number => {
 	let rung = 0;
 	for (let n = 1; n <= TOP_RUNG; n++)
-		if (banked >= threshold(ladder, n)) rung = n;
+		if (
+			typeof banked === "bigint"
+				? banked >= money.fromNumber(threshold(ladder, n))
+				: banked >= threshold(ladder, n)
+		)
+			rung = n;
 	return rung;
 };
 
@@ -97,9 +108,12 @@ export const TOP_RUNGS: Rungs = {
 };
 
 /** The three rungs a record stands on. */
+export const rungInput = (record: LadderRecord, l: Ladder) =>
+	l === "trade" ? (record.tradeExact ?? record.banked.trade) : record.banked[l];
+
 export const rungsOf = (record: LadderRecord): Rungs =>
 	Object.fromEntries(
-		LADDERS.map((l) => [l, rungOf(l, record.banked[l])]),
+		LADDERS.map((l) => [l, rungOf(l, rungInput(record, l))]),
 	) as Record<Ladder, number>;
 
 /**
@@ -235,6 +249,7 @@ export interface BasisLine {
 export type CargoBasis = Readonly<Record<string, BasisLine>>;
 
 export interface LadderRecord {
+	tradeExact?: Money;
 	/** Commander-wide first-time verbs, banked on dock. Absent in older saves. */
 	kinds?: readonly ExplorationKind[];
 	/** Banked credit per ladder. Never falls (#183 D7). Exploration's is not
@@ -438,7 +453,7 @@ export const withCapstone = (
 	gameTime: number,
 ): LadderRecord =>
 	record.capstoneAt === null &&
-	LADDERS.every((l) => rungOf(l, record.banked[l]) >= CAPSTONE_RUNG)
+	LADDERS.every((l) => rungOf(l, rungInput(record, l)) >= CAPSTONE_RUNG)
 		? { ...record, capstoneAt: gameTime }
 		: record;
 
@@ -447,7 +462,18 @@ export const bankTrade = (record: LadderRecord, cr: number): LadderRecord =>
 	cr > 0
 		? {
 				...record,
-				banked: { ...record.banked, trade: record.banked.trade + cr },
+				banked: {
+					...record.banked,
+					trade:
+						record.tradeExact !== undefined
+							? displayAmount(
+									money.add(record.tradeExact, money.fromNumber(cr)),
+								)
+							: record.banked.trade + cr,
+				},
+				...(record.tradeExact !== undefined
+					? { tradeExact: money.add(record.tradeExact, money.fromNumber(cr)) }
+					: {}),
 			}
 		: record;
 
@@ -678,6 +704,7 @@ export const ladderAfterPlay = (
 
 /** The two commander fields a market transaction moves. */
 interface Purse {
+	accounting?: CommodityAccount;
 	recoveredFittings?: readonly RecoveredFitting[];
 	credits: number;
 	cargo: Readonly<Record<string, number>>;
@@ -698,6 +725,8 @@ export const ladderAfterMarket = (
 	before: Purse,
 	after: Purse,
 ): LadderRecord => {
+	if (before.accounting && after.accounting)
+		return ladderFromAccount(record, after.accounting);
 	if (action.type === "sell-recovered") {
 		const item = before.recoveredFittings?.[action.index];
 		return bankTrade(
@@ -777,3 +806,16 @@ export const ladderAfterHullSale = (
 	}
 	return next;
 };
+
+/** Trade projections and rung input come from the account that settled the action. */
+export function ladderFromAccount(
+	record: LadderRecord,
+	account: CommodityAccount,
+): LadderRecord {
+	return {
+		...record,
+		tradeExact: account.bankedTrade,
+		banked: { ...record.banked, trade: displayAmount(account.bankedTrade) },
+		basis: projectBasis(account),
+	};
+}

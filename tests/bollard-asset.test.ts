@@ -9,6 +9,10 @@
  * and berths) is the hull's to hold, not this file's.
  */
 import { describe, expect, test } from "bun:test";
+import {
+	PAINT_WEAR,
+	SHARED_IMAGE_EXTENSION,
+} from "../scripts/share-model-image.mjs";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import {
@@ -81,7 +85,7 @@ function materials(path: string) {
 			if (!map) return material;
 			const texture = json.textures[map.index];
 			const source =
-				texture.source ?? texture.extensions.EXT_texture_webp.source;
+				texture.source ?? texture.extensions?.EXT_texture_webp?.source;
 			const { index: _index, ...settings } = map;
 			return {
 				...material,
@@ -89,7 +93,11 @@ function materials(path: string) {
 					...material.pbrMetallicRoughness,
 					baseColorTexture: {
 						...settings,
-						image: json.images[source].name,
+						image:
+							texture.extensions?.[SHARED_IMAGE_EXTENSION]?.sha256 ===
+							PAINT_WEAR.sha256
+								? PAINT_WEAR.name
+								: json.images[source].name,
 						sampler: {
 							wrapS: 10497,
 							wrapT: 10497,
@@ -143,9 +151,10 @@ describe("the shipped file is the approved study", () => {
 		const json = glbJson(SHIPPED);
 		expect(json.extensionsRequired).toContain("EXT_meshopt_compression");
 		expect(json.extensionsUsed).not.toContain("KHR_mesh_quantization");
-		expect(json.images.map((i: { mimeType: string }) => i.mimeType)).toEqual([
-			"image/webp",
-		]);
+		expect(json.images).toBeUndefined();
+		expect(json.textures[0].extensions[SHARED_IMAGE_EXTENSION].sha256).toBe(
+			PAINT_WEAR.sha256,
+		);
 	});
 
 	test("every triangle of every mesh is the study's, every attribute exact", async () => {

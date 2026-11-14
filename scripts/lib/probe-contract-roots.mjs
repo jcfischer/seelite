@@ -4,6 +4,13 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-accounting.mjs": [
+		"scripts/probe-accounting.mjs",
+		"scripts/lib/accounting-save-cases.ts",
+		"src/commodity-pools.ts",
+		"src/save-envelope.ts",
+		"src/save-store.ts",
+	],
 	"probe-field-discovery.mjs": [
 		"scripts/probe-field-discovery.mjs",
 		"scripts/lib/field-discovery-fixture.mjs",
@@ -29,6 +36,8 @@ const OWNERS = Object.freeze({
 		"src/cockpit-eye.ts",
 		"src/cockpit-model.ts",
 		"src/cockpit-occlusion-table.ts",
+		"src/drill-camera.ts",
+		"src/drill-camera-pass.ts",
 		"src/miner-faces.ts",
 		"src/models/miner-cockpit.glb",
 	],

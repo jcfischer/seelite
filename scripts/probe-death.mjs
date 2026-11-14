@@ -78,7 +78,9 @@ const armed = await page.evaluate(
 		const legal = await import("/src/legal.ts");
 		// The dock checkpoint, then a leg that moved on from it — in the
 		// commander (credits) and in the world (Wanted heat, #654).
-		g.commander.credits = dock;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: dock,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("dock");
 		await g.saveStore.settled();
@@ -89,7 +91,9 @@ const armed = await page.evaluate(
 			(legal.WANTED_HEAT + legal.FUGITIVE_HEAT) / 2,
 			g.world.gameTime,
 		);
-		g.commander.credits = leg;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: leg,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("jump");
 		await g.saveStore.settled();
@@ -118,7 +122,7 @@ check(
 );
 
 const reloaded = page.waitForEvent("load", { timeout: 20000 });
-const killed = await page.evaluate(() => {
+const killed = await page.evaluate(async () => {
 	const g = window.__seelite;
 	setTimeout(() => g.takeDamage(1e6, "fore", "probe"), 0);
 	return true;
@@ -199,13 +203,17 @@ const dockArmed = await dockPage.evaluate(
 		if (!station) return { store: true, station: false };
 		const key = `${g.world.system.record.index}:${station.localCarrierId}`;
 		// Write a dock checkpoint with `dockedAt` set, as a real dock flush would.
-		g.commander.credits = dock;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: dock,
+		});
 		const env = g.saveEnvelope();
 		const record = { ...env.commander, dockedAt: key };
 		const blob = g.save.serialize({ world: env.world, commander: record });
 		await g.save.backend.write(g.save.defaultSlot, "lastDocked", blob);
 		// Move credits on for the leg, then flush `live`.
-		g.commander.credits = dock + 1000;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: dock + 1000,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("jump");
 		await g.saveStore.settled();
@@ -222,7 +230,7 @@ check(
 
 if (dockArmed.store && dockArmed.station) {
 	const dockReloaded = dockPage.waitForEvent("load", { timeout: 20000 });
-	await dockPage.evaluate(() => {
+	await dockPage.evaluate(async () => {
 		setTimeout(() => window.__seelite.takeDamage(1e6, "fore", "probe"), 0);
 	});
 	let dockReloadSeen = false;
@@ -236,7 +244,7 @@ if (dockArmed.store && dockArmed.station) {
 
 	if (dockReloadSeen) {
 		await bootedGame(dockPage);
-		const dockAfter = await dockPage.evaluate(() => {
+		const dockAfter = await dockPage.evaluate(async () => {
 			const g = window.__seelite;
 			return {
 				credits: g.commander.credits,
@@ -277,7 +285,7 @@ await dockPage.close();
  *  reports whether the reload came. */
 const killAndReload = async (p) => {
 	const reloaded = p.waitForEvent("load", { timeout: 20000 });
-	await p.evaluate(() => {
+	await p.evaluate(async () => {
 		setTimeout(() => window.__seelite.takeDamage(1e6, "fore", "probe"), 0);
 	});
 	try {
@@ -351,7 +359,10 @@ const dockBuyLaunch = async (p, label) => {
 						sum + moduleRow(legacyModule(g.commander.hull, name)).priceCr,
 					0,
 				);
-			g.commander.credits = funded;
+			(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+				g,
+				{ credits: funded },
+			);
 			const bought = [
 				...fitted.map((equipment) =>
 					g.transactStation({ type: "buy-equipment", equipment }),
@@ -425,7 +436,9 @@ const dockBuyLaunch = async (p, label) => {
 		const g = window.__seelite;
 		await g.saveStore.settled();
 		const record = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
-		g.commander.credits = leg;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: leg,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("jump");
 		await g.saveStore.settled();
@@ -586,8 +599,12 @@ const flown = await firstPage.evaluate(async (leg) => {
 	const galaxy = g.world.system.record.galaxy;
 	const elsewhere = (g.world.system.record.index + 1) % 256;
 	g.commerceWorld = ws.visit(g.commerceWorld, galaxy, elsewhere);
-	g.commander.credits = leg;
-	g.commander.cargo = { ...g.commander.cargo, Food: 2 };
+	(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+		credits: leg,
+	});
+	(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+		cargo: { ...g.commander.cargo, Food: 2 },
+	});
 	g.saveStore.markDirty();
 	g.saveFlush("jump");
 	await g.saveStore.settled();
@@ -826,7 +843,7 @@ await bare.setViewportSize({ width: 900, height: 620 });
 await resetNoSaveFlight();
 check(
 	"the no-save death starts from a whole, living flight fixture",
-	await bare.evaluate(() => {
+	await bare.evaluate(async () => {
 		const g = window.__seelite;
 		return (
 			!g.dead &&

@@ -1,3 +1,14 @@
+import { signedMoney, mass, money, massFromNative } from "./exact-amount";
+import {
+	migrateAccount,
+	encodeAccount,
+	parseAccount,
+	displayAmount,
+	projectBasis,
+	walletChange,
+	encodeShare,
+	nativeGrams,
+} from "./commodity-pools";
 import {
 	carriedModule,
 	parseLoadout,
@@ -183,7 +194,7 @@ import {
  * may not carry `scoopNotice`, and a 17 record carries it only as `true`
  * (`LEGACY_SCHEMA_FORBIDS`).
  */
-export const SAVE_SCHEMA_VERSION = 19;
+export const SAVE_SCHEMA_VERSION = 20;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -225,7 +236,7 @@ export const SAVE_SCHEMA_VERSION = 19;
  * the cargo-scoop grant.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 ] as const;
 
 /**
@@ -532,6 +543,14 @@ export const newCommanderRecord = (
  *  equal saves would then hash differently. This is `world-state.ts`'s
  *  `canonicalEnvelope` rule applied across the boundary. */
 const canonicalCommander = (record: CommanderRecord) => {
+	const accounting =
+		record.state.accounting ??
+		migrateAccount(
+			record.state.credits,
+			record.ladders.banked.trade,
+			record.state.cargo,
+			record.ladders.basis,
+		);
 	const cargo: Record<string, number> = {};
 	for (const name of Object.keys(record.state.cargo).sort())
 		cargo[name] = record.state.cargo[name];
@@ -561,7 +580,8 @@ const canonicalCommander = (record: CommanderRecord) => {
 			trackedRequestId: record.requests.trackedRequestId,
 		},
 		state: {
-			credits: record.state.credits,
+			credits: displayAmount(accounting.cash),
+			accounting: encodeAccount(accounting),
 			cargo,
 			loadout: Object.fromEntries(
 				Object.entries(
@@ -586,7 +606,14 @@ const canonicalCommander = (record: CommanderRecord) => {
 		firstDay: record.firstDay,
 		txSeq: record.txSeq,
 		...(record.scoopNotice ? { scoopNotice: true } : {}),
-		ladders: serializeLadders(record.ladders),
+		ladders: serializeLadders({
+			...record.ladders,
+			banked: {
+				...record.ladders.banked,
+				trade: displayAmount(accounting.bankedTrade),
+			},
+			basis: projectBasis(accounting),
+		}),
 		flight: {
 			pos: [...record.flight.pos],
 			vel: [...record.flight.vel],
@@ -709,6 +736,8 @@ const parseCommander = (
 			// in the table would otherwise print a sentence about the first.
 			fail(`saveSchemaVersion ${version} cannot contain "${key}"`);
 	const state = asObject(o.state, "commander.state");
+	if (version < 20 && state.accounting !== undefined)
+		fail("legacy commander contains accounting");
 	const hull = state.hull;
 	if (
 		typeof hull !== "string" ||
@@ -726,8 +755,10 @@ const parseCommander = (
 	const goodNames = new Set(COMMODITIES.map((good) => good.name));
 	for (const name of Object.keys(cargoRaw).sort()) {
 		const amount = cargoRaw[name];
-		if (typeof amount !== "number" || !Number.isFinite(amount))
-			fail(`commander.state.cargo: ${name} is not a finite quantity`);
+		if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0)
+			fail(
+				`commander.state.cargo: ${name} is not a finite nonnegative quantity`,
+			);
 		if (!goodNames.has(name))
 			fail(`commander.state.cargo: ${name} is not a commodity`);
 		cargo[name] = amount as number;
@@ -888,6 +919,33 @@ const parseCommander = (
 		if (line.units > (cargo[good] ?? 0))
 			fail(`commander.ladders.basis: ${good} covers more than is aboard`);
 	}
+	const credits = num(state, "credits", "commander.state");
+	let accounting =
+		version >= 20
+			? parseAccount(state.accounting)
+			: migrateAccount(credits, ladders.banked.trade, cargo, ladders.basis);
+	if (version >= 20) {
+		if (
+			state.credits !== displayAmount(accounting.cash) ||
+			ladders.banked.trade !== displayAmount(accounting.bankedTrade)
+		)
+			fail("commander accounting projection mismatch");
+		for (const good of new Set([
+			...Object.keys(cargo),
+			...Object.keys(accounting.basis),
+		])) {
+			const expected = displayAmount(
+				accounting.basis[good]?.heldMass ?? 0n,
+				"mass",
+				nativeGrams(good),
+			);
+			if ((cargo[good] ?? 0) !== expected)
+				fail("commander cargo accounting mismatch: " + good);
+		}
+	}
+	if (refundCr !== 0)
+		accounting = walletChange(accounting, signedMoney.fromNumber(refundCr));
+
 	return {
 		sweepReadings: [], // Cross-galaxy provenance validation follows world parsing.
 		requests:
@@ -904,7 +962,8 @@ const parseCommander = (
 							now,
 						),
 		state: {
-			credits: num(state, "credits", "commander.state") + refundCr,
+			credits: displayAmount(accounting.cash),
+			accounting,
 			cargo,
 			loadout,
 			...(carried.length ? { recoveredFittings: carried } : {}),
@@ -934,7 +993,15 @@ const parseCommander = (
 		firstDay,
 		txSeq,
 		scoopNotice,
-		ladders,
+		ladders: {
+			...ladders,
+			tradeExact: accounting.bankedTrade,
+			banked: {
+				...ladders.banked,
+				trade: displayAmount(accounting.bankedTrade),
+			},
+			basis: projectBasis(accounting),
+		},
 		flight: parseFlight(o.flight, version),
 	};
 };
@@ -1010,6 +1077,25 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		)
 	)
 		fail("legacy world contains field discoveries");
+	if ((version as number) < 20) {
+		for (const g of world.galaxies)
+			for (const container of g.deathWreck?.containers ?? [])
+				if (container.ownedShare)
+					fail("legacy world contains recovery accounting");
+	}
+	if ((version as number) < 20) {
+		for (const g of world.galaxies)
+			for (const c of g.deathWreck?.containers ?? [])
+				if (c.kind === "good") {
+					const totalMass = massFromNative(c.left, nativeGrams(c.id));
+					c.ownedShare = encodeShare({
+						totalMass,
+						unknownMass: totalMass,
+						knownMass: mass.fromTicks(0n),
+						cost: money.fromTicks(0n),
+					});
+				}
+	}
 	if ((version as number) < 14) {
 		for (const g of world.galaxies)
 			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])

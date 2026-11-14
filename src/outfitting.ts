@@ -278,6 +278,7 @@ export function outfittingScreen(
 				rungs: TOP_RUNGS,
 				commander: {
 					...input.commander,
+					accounting: undefined,
 					credits: Math.max(input.commander.credits, candidate!.row.priceCr),
 				},
 				action,

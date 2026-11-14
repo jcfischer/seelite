@@ -28,6 +28,17 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	{
+		date: "2026-11-13",
+		text: "Commodity trading rank now reflects profit after purchase and processing costs, with unrecovered costs carried forward.",
+		node: 1192,
+	},
+	// https://github.com/jcfischer/seelite/issues/1229
+	{
+		date: "2026-11-12",
+		text: "The Longwall's drill camera shows a live view of the drill.",
+		node: 1229,
+	},
 	// https://github.com/jcfischer/seelite/issues/1198
 	{
 		date: "2026-11-09",

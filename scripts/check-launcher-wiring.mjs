@@ -115,6 +115,10 @@ const EXEMPT = new Map([
 		"an instrument that prints figures, like measure-asteroid-field-cost; a page error stops the run",
 	],
 	[
+		"measure-mining-nav-budget.mjs",
+		"node #1234's instrument for the ruled Navigation frame budget: it prints the whole-frame interval, the late-frame share and the main-thread split for the flag on, the flag off and the head-forward control, plus the row-press latency, and gates on nothing itself — the budget is a ruling the receipt checks. It refuses a page that will not hold still while another arm is measured, a pair of pages that are not the same field, an arm whose readings are missing or not costs, a late count that is not a count or exceeds its pass's interval count, a control that dropped its own frames, and a software rasteriser, each by throwing out of the run",
+	],
+	[
 		"measure-docked-coriolis-cold.mjs",
 		"A manual instrument: prints one run as JSON for a harness to compare, and has nothing to pass or fail.",
 	],
@@ -209,6 +213,10 @@ const EXEMPT = new Map([
 	[
 		"measure-miner-cabin-cost.mjs",
 		"node #1198's headed instrument pricing the Longwall's bridge against the courier cabin on the player's GPU",
+	],
+	[
+		"measure-drill-camera-cost.mjs",
+		"node #1229's headed instrument pricing the Longwall bridge's drill camera against the same bridge with the feed switched off, on both quality sides; like #1198's it prints medians, a separation count and draw figures for a receipt and gates on nothing — the budget is the receipt's, and a software rasteriser, or an arm whose feed is not the feed, throws out of the run",
 	],
 	[
 		"measure-asteroid-field-cost.mjs",

@@ -1,3 +1,4 @@
+import { money } from "../src/exact-amount";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
@@ -233,7 +234,11 @@ describe("world deposit envelope", () => {
 		expect(loaded.commander.state.credits).toBe(54321);
 		expect(loaded.commander.state.hull).toBe("miner");
 		expect(loaded.commander.state.loadout).toEqual(old.commander.state.loadout);
-		expect(loaded.commander.ladders).toEqual(old.commander.ladders);
+		const { tradeExact, ...legacyLadders } = loaded.commander.ladders;
+		expect(legacyLadders).toEqual(old.commander.ladders);
+		expect(tradeExact).toBe(
+			money.fromNumber(old.commander.ladders.banked.trade),
+		);
 		expect(loaded.commander.flight).toEqual(old.commander.flight);
 		const again = JSON.parse(JSON.stringify(serializeSave(loaded)));
 		expect(again.world.galaxies[0].deposits).toBeUndefined();

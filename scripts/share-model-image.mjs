@@ -38,9 +38,39 @@ export const INDUSTRIAL_SURFACE = Object.freeze({
 	]),
 });
 
+/** The second shared image and its shipping consumers (node #1226). */
+export const PAINT_WEAR = Object.freeze({
+	sha256: "54aabd254dce4e6a9c78e5beb6320c14e7c4506dc39f2329a6c34f11bbfafc1d",
+	name: "paint-wear",
+	file: "src/models/paint-wear.webp",
+	models: Object.freeze([
+		"bollard-tug",
+		"longwall-miner",
+		"refinery-collar",
+		"refinery-spar",
+		"refinery-warren",
+		"refinery-works",
+	]),
+});
+
+/** The refinery asteroid's albedo (node #1227), embedded by the four models
+ *  whose `mineral-*` materials sample it. Not the field rock tile:
+ *  `asteroids.glb` carries its own albedo and normal. */
+export const ROCK_ALBEDO = Object.freeze({
+	sha256: "7e3dc547c074ca91cf500ce8075b935be53fd84d5f0bf733fb5b0594cceb9014",
+	name: "rock-albedo",
+	file: "src/models/rock-albedo.webp",
+	models: Object.freeze([
+		"refinery-collar",
+		"refinery-spar",
+		"refinery-warren",
+		"refinery-works",
+	]),
+});
+
 /** The wear map the seven-ship exteriors share (nodes #1034/#1035): one file a
- *  session fetches and decodes once, whichever hulls it draws. The Rampart
- *  and the Bastion are not here: their lossy exports carry a
+ *  session fetches and decodes once, whichever hulls it draws. The Rampart and
+ *  the Bastion are not here: their lossy exports carry a
  *  `KHR_texture_transform`, which this script refuses by design. */
 export const STEEL_WEAR = Object.freeze({
 	sha256: "b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f",
@@ -54,7 +84,13 @@ export const STEEL_WEAR = Object.freeze({
 	]),
 });
 
-const SHARED = [INDUSTRIAL_SURFACE, STEEL_WEAR];
+/** Preparation table shared by instruments and future image-sharing nodes. */
+export const SHARED_MODEL_IMAGES = Object.freeze([
+	INDUSTRIAL_SURFACE,
+	PAINT_WEAR,
+	ROCK_ALBEDO,
+	STEEL_WEAR,
+]);
 
 const WEBP = "EXT_texture_webp";
 const MESHOPT = "EXT_meshopt_compression";
@@ -65,17 +101,32 @@ const REGISTRY_SAMPLER = {
 	wrapT: 10497,
 };
 
-function checkUses(json) {
-	if (json.images.length !== 1 || json.textures?.length !== 1)
-		throw new Error("expected one image and one texture");
-	const sampler = json.samplers?.[json.textures[0].sampler] ?? {};
-	for (const [key, value] of Object.entries(REGISTRY_SAMPLER))
-		if (sampler[key] !== value)
-			throw new Error(`sampler ${key} is not what the registry applies`);
+function checkUses(json, imageIndex) {
+	const textures = new Set(
+		(json.textures ?? []).flatMap((texture, index) => {
+			const webp = texture.extensions?.[WEBP]?.source;
+			if (texture.source !== imageIndex && webp !== imageIndex) return [];
+			if (
+				texture.source !== undefined &&
+				webp !== undefined &&
+				texture.source !== webp
+			)
+				throw new Error("conflicting fallback and WebP image sources");
+			return [index];
+		}),
+	);
+	if (!textures.size) throw new Error("the image has no texture");
+	for (const index of textures) {
+		const sampler = json.samplers?.[json.textures[index].sampler] ?? {};
+		for (const [key, value] of Object.entries(REGISTRY_SAMPLER))
+			if (sampler[key] !== value)
+				throw new Error(`sampler ${key} is not what the registry applies`);
+	}
 	const walk = (value, inBaseColor) => {
 		for (const [key, child] of Object.entries(value)) {
 			if (!child || typeof child !== "object") continue;
 			if (key.endsWith("Texture")) {
+				if (!textures.has(child.index)) continue;
 				if (key !== "baseColorTexture" || !inBaseColor)
 					throw new Error(`the image is used by ${key}`);
 				if (child.texCoord || child.extensions)
@@ -84,6 +135,7 @@ function checkUses(json) {
 		}
 	};
 	for (const material of json.materials ?? []) walk(material, false);
+	return textures;
 }
 
 function remapBufferViews(value, removed) {
@@ -116,7 +168,7 @@ export function writeGlb(json, bin) {
 /**
  * `bytes` without the embedded image whose sha256 is `sha256`, its texture
  * naming that hash instead. `image` is the removed bytes; `null` when the file
- * holds no image, in which case `bytes` is returned as it came.
+ * already names that shared image, in which case `bytes` is returned as it came.
  */
 export function shareImage(bytes, sha256) {
 	const file = Buffer.from(bytes);
@@ -124,17 +176,42 @@ export function shareImage(bytes, sha256) {
 		throw new Error("expected a glTF 2 binary");
 	const jsonLength = file.readUInt32LE(12);
 	const json = JSON.parse(file.subarray(20, 20 + jsonLength).toString());
-	if (!json.images) return { bytes, image: null };
-	checkUses(json);
+
 	const binStart = 28 + jsonLength;
 	const binLength = file.readUInt32LE(20 + jsonLength);
 	const bin = file.subarray(binStart, binStart + binLength);
-	const removed = json.images[0].bufferView;
+	const matches = (json.images ?? []).flatMap((image, index) => {
+		if (image.bufferView === undefined) return [];
+		const view = json.bufferViews[image.bufferView];
+		if (view.buffer !== 0 || json.buffers[0].uri)
+			throw new Error("image must be in the GLB binary");
+		return createHash("sha256")
+			.update(
+				bin.subarray(
+					view.byteOffset ?? 0,
+					(view.byteOffset ?? 0) + view.byteLength,
+				),
+			)
+			.digest("hex") === sha256
+			? [index]
+			: [];
+	});
+	if (matches.length > 1) throw new Error("duplicate embedded shared image");
+	const selected = matches[0] ?? -1;
+	if (selected < 0) {
+		if (
+			json.textures?.some(
+				(t) => t.extensions?.[SHARED_IMAGE_EXTENSION]?.sha256 === sha256,
+			)
+		)
+			return { bytes, image: null };
+		throw new Error("the embedded image is not the one being shared");
+	}
+	const textures = checkUses(json, selected);
+	const removed = json.images[selected].bufferView;
 	const view = json.bufferViews[removed];
 	const start = view.byteOffset ?? 0;
 	const image = bin.subarray(start, start + view.byteLength);
-	if (createHash("sha256").update(image).digest("hex") !== sha256)
-		throw new Error("the embedded image is not the one being shared");
 
 	const owner = view.buffer;
 	const ranges = json.bufferViews.flatMap((v) => {
@@ -154,21 +231,36 @@ export function shareImage(bytes, sha256) {
 	for (const range of ranges)
 		if ((range.byteOffset ?? 0) >= end) range.byteOffset -= cut;
 
-	delete json.images;
+	json.images.splice(selected, 1);
+	if (!json.images.length) delete json.images;
 	json.bufferViews.splice(removed, 1);
 	remapBufferViews(json, removed);
 	json.buffers[owner].byteLength -= cut;
-	const { sampler } = json.textures[0];
-	json.textures[0] = {
-		sampler,
-		extensions: { [SHARED_IMAGE_EXTENSION]: { sha256 } },
-	};
+	for (const [index, texture] of json.textures.entries()) {
+		if (textures.has(index)) {
+			delete texture.source;
+			delete texture.extensions?.[WEBP];
+			texture.extensions = {
+				...texture.extensions,
+				[SHARED_IMAGE_EXTENSION]: { sha256 },
+			};
+		} else {
+			if (texture.source > selected) texture.source--;
+			const webp = texture.extensions?.[WEBP];
+			if (webp?.source > selected) webp.source--;
+		}
+	}
+	const webpUsed = json.textures.some((t) => t.extensions?.[WEBP]);
 	json.extensionsUsed = [
-		...json.extensionsUsed.filter((name) => name !== WEBP),
-		SHARED_IMAGE_EXTENSION,
+		...new Set([
+			...(json.extensionsUsed ?? []).filter(
+				(name) => name !== WEBP || webpUsed,
+			),
+			SHARED_IMAGE_EXTENSION,
+		]),
 	];
-	json.extensionsRequired = json.extensionsRequired.filter(
-		(name) => name !== WEBP,
+	json.extensionsRequired = (json.extensionsRequired ?? []).filter(
+		(name) => name !== WEBP || webpUsed,
 	);
 
 	return {
@@ -181,27 +273,25 @@ export function shareImage(bytes, sha256) {
 }
 
 function main() {
-	for (const image of SHARED) share(image);
-}
-
-function share({ sha256, file, models }) {
-	for (const model of models) {
-		const path = `src/models/${model}.glb`;
-		const before = readFileSync(path);
-		const { bytes, image } = shareImage(before, sha256);
-		if (!image) {
-			console.log(`${model}: already prepared, ${before.length} bytes`);
-			continue;
+	for (const { sha256, file, models } of SHARED_MODEL_IMAGES) {
+		for (const model of models) {
+			const path = `src/models/${model}.glb`;
+			const before = readFileSync(path);
+			const { bytes, image } = shareImage(before, sha256);
+			if (!image) {
+				console.log(`${model}: already prepared, ${before.length} bytes`);
+				continue;
+			}
+			writeFileSync(file, image);
+			writeFileSync(path, bytes);
+			console.log(`${model}: ${before.length} -> ${bytes.length} bytes`);
 		}
-		writeFileSync(file, image);
-		writeFileSync(path, bytes);
-		console.log(`${model}: ${before.length} -> ${bytes.length} bytes`);
+		if (!existsSync(file)) throw new Error(`${file} is missing`);
+		const shared = readFileSync(file);
+		if (createHash("sha256").update(shared).digest("hex") !== sha256)
+			throw new Error(`${file} does not hold ${sha256}`);
+		console.log(`${file}: ${statSync(file).size} bytes, sha256 ${sha256}`);
 	}
-	if (!existsSync(file)) throw new Error(`${file} is missing`);
-	const shared = readFileSync(file);
-	if (createHash("sha256").update(shared).digest("hex") !== sha256)
-		throw new Error(`${file} does not hold ${sha256}`);
-	console.log(`${file}: ${statSync(file).size} bytes, sha256 ${sha256}`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

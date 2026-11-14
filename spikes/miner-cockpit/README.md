@@ -25,4 +25,4 @@ $B --background spikes/miner-cockpit/miner-cockpit-2seat.blend --python spikes/m
 
 ## In the game
 
-Node #1198 ships this cabin for the flown Longwall: `prepare-game-asset.mjs` writes `src/models/miner-cockpit.glb` from `miner-cockpit-2seat.glb`, and `docs/receipts/node-1198-miner-cockpit.md` carries the figures. The pilot sits on the left with the courier instruments, and the miner on the right with the mining instruments. Key `5` (`view.seatSwap`) moves the eye between the seats. The drill camera has no data source and stays dark.
+Node #1198 ships this cabin for the flown Longwall: `prepare-game-asset.mjs` writes `src/models/miner-cockpit.glb` from `miner-cockpit-2seat.glb`, and `docs/receipts/node-1198-miner-cockpit.md` carries the figures. The pilot sits on the left with the courier instruments, and the miner on the right with the mining instruments. Key `5` (`view.seatSwap`) moves the eye between the seats. The drill camera screen carries the game's live feed of the drill (node #1229); the console's lower row, that screen included, is below the frame at the normal field of view, so it is seen at the wide 80° one (key `7`).

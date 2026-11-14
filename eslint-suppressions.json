@@ -671,7 +671,7 @@
   },
   "scripts/measure-save-size.ts": {
     "seelite/no-comments": {
-      "count": 44
+      "count": 25
     }
   },
   "scripts/measure-shadow-enclosure.mjs": {

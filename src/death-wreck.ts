@@ -1,9 +1,16 @@
+import { mass, massFromNative } from "./exact-amount";
+import {
+	removeMass,
+	encodeShare,
+	displayAmount,
+	nativeGrams,
+} from "./commodity-pools";
 import { carriedModule, stockModuleAt, type FittedModule } from "./loadout";
 /** Node #705: one own-loss wreck, a share of the inventory aboard at death.
  * Contents are fixed once, before the commander is restored. Entrusted lots
  * live in Requests and are deliberately never read here. */
 import { carrierKey } from "./carrier-key";
-import { type DeathCause, leftByEject } from "./death-cost";
+import { type DeathCause, leftByEject, ejectSurvivors } from "./death-cost";
 import { DOMAIN } from "./domains";
 import { fnv1a, seededRand } from "./rng";
 import { EQUIPMENT, ESCAPE_POD, commodity } from "./market";
@@ -38,6 +45,7 @@ export function deathWreckContents(
 		seededRand(fnv1a(`${seed}:${DOMAIN.DEATH_WRECK}:${at}:${id}`))() <
 		DEATH_WRECK_SURVIVAL_SHARE;
 	const containers: DerelictContainer[] = [];
+	const kept = cause === "eject" ? ejectSurvivors(dying).cargo : {};
 	const put = (
 		kind: "good" | "fitting",
 		id: string,
@@ -45,15 +53,35 @@ export function deathWreckContents(
 		token: string,
 		fitting?: FittedModule,
 	) => {
-		if (tonnes > 0 && survives(token))
+		if (tonnes > 0 && survives(token)) {
+			const share =
+				kind === "good" && dying.accounting
+					? removeMass(
+							dying.accounting,
+							id,
+							mass.subtract(
+								dying.accounting.basis[id].heldMass,
+								massFromNative(kept[id] ?? 0, nativeGrams(id)),
+							),
+						).share
+					: null;
+			const amount = share
+				? displayAmount(share.totalMass, "mass", nativeGrams(id))
+				: tonnes;
 			containers.push({
 				kind,
 				id,
-				tonnes,
-				left: tonnes,
+				tonnes: amount,
+				left: amount,
 				unit: kind === "good" ? commodity(id).unit : "t",
 				...(fitting ? { fitting } : {}),
+				...(kind === "good" && dying.accounting
+					? {
+							ownedShare: encodeShare(share!),
+						}
+					: {}),
 			});
+		}
 	};
 	for (const [id, amount] of Object.entries(state.cargo).sort(([a], [b]) =>
 		a.localeCompare(b),

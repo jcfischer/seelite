@@ -7,10 +7,15 @@ import { sharedImagePlugin } from "../../src/shared-image";
 export { THREE, GLTFLoader, MeshoptDecoder };
 export { disposeSubtree } from "../../src/gpu-teardown";
 export { ModelQueue } from "../../src/model-queue";
+export { prepareTugHullModel } from "../../src/tug-hull";
 export { prepareOutpostModel } from "../../src/outpost-flight";
+export { prepareRefineryModel } from "../../src/refinery-flight";
 export {
 	ASSEMBLY_GLB_URL,
+	BOLLARD_TUG_GLB_URL,
+	REFINERY_GLB_URLS,
 	OUTPOST_GLB_URLS,
+	SHARED_IMAGES,
 	STATION_INTERIORS_GLB_URL,
 	TRADE_GLB_URLS,
 } from "../../src/model-urls";
@@ -23,13 +28,22 @@ export const loadShared = (url: string, owner?: string) =>
 		.loadAsync(url);
 
 /** The one base-colour map a loaded model uses. */
-export function mapOf(scene: THREE.Object3D): THREE.Texture {
+export function mapsOf(scene: THREE.Object3D): THREE.Texture[] {
 	const maps = new Set<THREE.Texture>();
 	scene.traverse((o) => {
 		const { material } = o as THREE.Mesh;
 		for (const m of [material ?? []].flat() as THREE.MeshStandardMaterial[])
 			if (m.map) maps.add(m.map);
 	});
-	if (maps.size !== 1) throw new Error(`expected one map, found ${maps.size}`);
-	return [...maps][0] as THREE.Texture;
+	return [...maps];
+}
+
+/** A model's base-colour map, optionally selected by image name. */
+export function mapOf(scene: THREE.Object3D, name?: string): THREE.Texture {
+	const maps = mapsOf(scene).filter(
+		(t) => name === undefined || t.name === name,
+	);
+	if (maps.length !== 1)
+		throw new Error(`expected one map, found ${maps.length}`);
+	return maps[0] as THREE.Texture;
 }

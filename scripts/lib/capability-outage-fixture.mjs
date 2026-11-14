@@ -40,12 +40,11 @@ export async function placeCapabilityOutage(page, recovered = false) {
 			g.world.gameTime = at;
 			g.commerceWorld = W.advanceTo(g.commerceWorld, at);
 		}
-		g.commander = {
-			...g.commander,
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
 			credits: 100000,
 			cargo: { Food: 1 },
 			fuelLy: 0,
-		};
+		});
 		g.stationConsoleMessage = "Cargo scoop fitted.";
 		g.stationConsoleTab = "Market";
 		g.stationConsoleRevision++;

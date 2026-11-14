@@ -73,6 +73,9 @@ try {
 				i1: makeModule("cargo-scoop", 1),
 			},
 		};
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			cargo: g.commander.cargo,
+		});
 		let at = Math.ceil(g.world.gameTime);
 		for (; at < 10000; at++) {
 			const items = deathWreckContents(

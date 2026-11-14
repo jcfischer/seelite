@@ -78,11 +78,24 @@ export const LONGWALL_MINER_GLB_URL = new URL(
 export interface SharedImage {
 	url: string;
 	name: string;
+	anisotropy?: number;
 }
+/** Approved sampler value shared by courier paint, industrial surfaces and interior owners: https://github.com/jcfischer/seelite/issues/1230 */
+export const EXTERIOR_MAP_ANISOTROPY = 8;
+
 export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
+	"54aabd254dce4e6a9c78e5beb6320c14e7c4506dc39f2329a6c34f11bbfafc1d": {
+		url: new URL("./models/paint-wear.webp", import.meta.url).href,
+		name: "paint-wear",
+	},
+	"7e3dc547c074ca91cf500ce8075b935be53fd84d5f0bf733fb5b0594cceb9014": {
+		url: new URL("./models/rock-albedo.webp", import.meta.url).href,
+		name: "rock-albedo",
+	},
 	"10d4d0776274448b52fc3191941d09dc0a74f1967854f23f86406188bf1eedd7": {
 		url: new URL("./models/industrial-surface.webp", import.meta.url).href,
 		name: "industrial-surface",
+		anisotropy: EXTERIOR_MAP_ANISOTROPY,
 	},
 	b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f: {
 		url: new URL("./models/steel-wear.webp", import.meta.url).href,

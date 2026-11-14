@@ -1,3 +1,12 @@
+import {
+	accountOf,
+	withAccount,
+	recover,
+	parseShare,
+	encodeShare,
+	displayAmount,
+	nativeGrams,
+} from "./commodity-pools";
 /** Owned wreck recovery: one row and hold change through the shared scoop gate. */
 import { scoopAttempt, type ScoopGear } from "./raider-wreck";
 import { SCOOP_REFUSAL_TEXT } from "./cargo-notice";
@@ -70,8 +79,31 @@ export function scoopWreckContainer({
 		return unchanged(
 			"Hold full: " + freeT + " t free; " + item.id + " left in space.",
 		);
+	const ownRecovery =
+		item.ownedShare && !entrusted
+			? recover(
+					accountOf(commander),
+					item.id,
+					parseShare(item.ownedShare),
+					took,
+				)
+			: null;
 	const containers = row.containers.map((c, i) =>
-		i === index ? { ...c, left: c.left - took } : { ...c },
+		i === index
+			? {
+					...c,
+					left: ownRecovery
+						? displayAmount(
+								ownRecovery.remaining.totalMass,
+								"mass",
+								nativeGrams(item.id),
+							)
+						: c.left - took,
+					...(ownRecovery
+						? { ownedShare: encodeShare(ownRecovery.remaining) }
+						: {}),
+				}
+			: { ...c },
 	);
 	return {
 		row: {
@@ -81,7 +113,9 @@ export function scoopWreckContainer({
 				? { salvaged: { at, cause: PLAYER_SALVAGE } }
 				: {}),
 		},
-		commander: recovery.commander,
+		commander: ownRecovery
+			? withAccount(commander, ownRecovery.account)
+			: recovery.commander,
 		tonnes: took,
 		freeT,
 		refusal: null,

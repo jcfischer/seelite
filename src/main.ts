@@ -1,3 +1,4 @@
+import { withAccount, accountOf } from "./commodity-pools";
 import { miningHold, withOre, oreCapacityLabel } from "./mining-capacity";
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
 import type { FieldDiscoveryMotion } from "./field-discovery";
@@ -124,6 +125,13 @@ import {
 	minerFaceRows,
 } from "./miner-faces";
 import { poseLongwallDrill } from "./drill-pose";
+import {
+	DRILL_CAMERA,
+	drillCameraActive,
+	drillCameraOverlay,
+	drillCameraPose,
+} from "./drill-camera";
+import { DrillCameraFeed } from "./drill-camera-pass";
 import { cockpitDrillView } from "./ship-mesh";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { MissileCombat, missileVisible } from "./missile-combat";
@@ -2819,7 +2827,10 @@ class Game {
 	 *  the one statement of what it is made of. */
 	private layoutNotices: readonly LayoutNotice[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
-	private commander = newCommander(bootHull(ASKED_HULL, null).hull);
+	private commander = (() => {
+		const c = newCommander(bootHull(ASKED_HULL, null).hull);
+		return withAccount(c, accountOf(c));
+	})();
 
 	/**
 	 * The hull being flown — handling, mesh, condition capacity and berth
@@ -11059,6 +11070,8 @@ class Game {
 	private buildCockpit(cabinId: CabinId = this.cabinToDraw()) {
 		this.cabinId = cabinId;
 		this.minerFaces = [];
+		this.drillCamera?.feed.dispose();
+		this.drillCamera = null;
 		this.cockpit = {} as CockpitHardware;
 		// #792's authored cabin replaces the procedural one. `cockpit-model.ts`
 		// owns its placement — the pilot eye at the origin, at `CABIN_SCALE`
@@ -11149,6 +11162,7 @@ class Game {
 			scannerFrame.widthKm / scannerFrame.heightKm,
 		);
 		if (cabinId === "miner") this.buildMinerFaces(cabin.screens, seat);
+		if (cabinId === "miner") this.buildDrillCamera(cabin.screens, seat);
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
 		// passes; the screens and labels are `MeshBasicMaterial` and fall out.
@@ -11385,6 +11399,15 @@ class Game {
 	}[] = [];
 	minerFaceReadings: ReturnType<typeof minerFaceRows> | null = null;
 	private minerFacesPaintedAt = -Infinity;
+	drillCameraEnabled = true;
+	private drillCamera: {
+		feed: DrillCameraFeed;
+		plane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+		overlay: { ctx: CanvasRenderingContext2D; texture: THREE.CanvasTexture };
+		active: boolean;
+		frames: number;
+		overlayKey: string;
+	} | null = null;
 
 	private buildMinerFaces(
 		frames: Record<string, ScreenFrame>,
@@ -11419,6 +11442,173 @@ class Game {
 			seat.add(mount);
 			this.minerFaces.push({ name, ctx, texture, key: "" });
 		}
+	}
+
+	private orientDrillCameraFace(
+		face: THREE.Mesh,
+		frame: ScreenFrame,
+		step: number,
+	) {
+		face.rotation.x = -Math.PI / 2;
+		face.position.y = frame.widthKm * 0.01 * step;
+	}
+
+	private buildDrillCamera(
+		frames: Record<string, ScreenFrame>,
+		seat: THREE.Group,
+	) {
+		const frame = frames.drillcam;
+		if (!frame) return;
+		const aspect = frame.widthKm / frame.heightKm;
+		const fit = containedFace(frame, aspect);
+		const height = Math.max(1, Math.round(DRILL_CAMERA.widthTexels / aspect));
+		const feed = new DrillCameraFeed(
+			DRILL_CAMERA.widthTexels,
+			height,
+			DRILL_CAMERA.fovDeg,
+		);
+		const mount = screenMount(frame);
+		mount.name = "miner-drillcam-mount";
+		const plate = new THREE.Mesh(
+			new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+			new THREE.MeshBasicMaterial({ color: 0x01090b, toneMapped: false }),
+		);
+		plate.name = "miner-drillcam-plate";
+		this.orientDrillCameraFace(plate, frame, 1);
+		mount.add(plate);
+		const plane = new THREE.Mesh(
+			new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+			new THREE.MeshBasicMaterial({
+				map: feed.target.texture,
+				toneMapped: false,
+			}),
+		);
+		plane.name = "miner-drillcam-feed";
+		plane.visible = false;
+		this.orientDrillCameraFace(plane, frame, 1.04);
+		mount.add(plane);
+		const canvas = document.createElement("canvas");
+		canvas.width = DRILL_CAMERA.widthTexels;
+		canvas.height = height;
+		const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const overlay = new THREE.Mesh(
+			new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+			new THREE.MeshBasicMaterial({
+				map: texture,
+				transparent: true,
+				depthWrite: false,
+				toneMapped: false,
+			}),
+		);
+		overlay.name = "miner-drillcam-overlay";
+		this.orientDrillCameraFace(overlay, frame, 1.08);
+		mount.add(overlay);
+		seat.add(mount);
+		this.drillCamera = {
+			feed,
+			plane,
+			overlay: { ctx, texture },
+			active: false,
+			frames: -1,
+			overlayKey: "",
+		};
+		this.paintDrillCameraOverlay();
+	}
+
+	private paintDrillCameraOverlay() {
+		const d = this.drillCamera;
+		if (!d) return;
+		const shown = d.active ? Math.floor(d.frames / 30) * 30 : 0;
+		const overlay = drillCameraOverlay(d.active, shown);
+		const key = `${d.active}:${shown}`;
+		if (key === d.overlayKey) return;
+		d.overlayKey = key;
+		const { ctx, texture } = d.overlay;
+		const { width: w, height: h } = ctx.canvas;
+		ctx.clearRect(0, 0, w, h);
+		ctx.textAlign = "left";
+		ctx.fillStyle = "#d8f6ff";
+		ctx.font = "26px Menlo, monospace";
+		ctx.fillText(overlay.title, 20, 40);
+		if (d.active) {
+			ctx.textAlign = "right";
+			ctx.fillStyle = "#9fb7c0";
+			ctx.font = "22px Menlo, monospace";
+			ctx.fillText(overlay.line, w - 20, h - 18);
+		} else {
+			ctx.textAlign = "center";
+			ctx.fillStyle = "#ffb347";
+			ctx.font = "46px Menlo, monospace";
+			ctx.fillText(overlay.line, w / 2, h / 2 + 16);
+		}
+		texture.needsUpdate = true;
+	}
+
+	private readonly drillCameraCorner = new THREE.Vector3();
+
+	private drillCameraScreenVisible(face: THREE.Object3D): boolean {
+		this.cockpit.mesh.updateMatrixWorld(true);
+		this.cabinCamera.updateMatrixWorld(true);
+		const p = face
+			.getWorldPosition(this.drillCameraCorner)
+			.project(this.cabinCamera);
+		return Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1 && p.z >= -1 && p.z <= 1;
+	}
+
+	private updateDrillCamera() {
+		const d = this.drillCamera;
+		if (!d) return;
+		const cutter = HULL_SPECS[this.flownHull].cutter;
+		const active =
+			cutter !== undefined &&
+			drillCameraActive({
+				view: this.view,
+				cabin: this.cabinId,
+				quality: this.settings.value.quality,
+				extension: MINING_ON ? this.drill.extension : 0,
+				screenVisible: this.drillCameraScreenVisible(d.plane),
+				enabled: this.drillCameraEnabled,
+			});
+		if (active && cutter)
+			d.feed.render(
+				this.renderer,
+				this.nearScene,
+				this.shipMesh,
+				drillCameraPose(
+					this.shipMesh.position,
+					this.nose(),
+					this.shipUp(),
+					cutter,
+					this.drill.extension,
+				),
+			);
+		d.active = active;
+		d.frames = d.feed.frames;
+		d.plane.visible = active;
+		this.paintDrillCameraOverlay();
+	}
+
+	drillCameraReport() {
+		const d = this.drillCamera;
+		if (!d) return null;
+		return {
+			active: d.active,
+			frames: d.frames,
+			enabled: this.drillCameraEnabled,
+			quality: this.settings.value.quality,
+			view: this.view,
+			fov: this.cabinCamera.fov,
+			cabin: this.cabinId,
+			extension: this.drill.extension,
+			screenVisible: this.drillCameraScreenVisible(d.plane),
+			overlay: drillCameraOverlay(
+				d.active,
+				d.active ? Math.floor(d.frames / 30) * 30 : 0,
+			),
+			target: { width: d.feed.target.width, height: d.feed.target.height },
+		};
 	}
 
 	private minerFaceState(): MinerFaceState {
@@ -19470,6 +19660,7 @@ class Game {
 		// After the cameras are aimed and the raider placed, so the beams land
 		// where this frame's overlay puts its marks.
 		this.drawCockpitBeams(camPos);
+		this.updateDrillCamera();
 
 		const attribution = this.frameAttribution;
 		if (attribution?.snapshotMode === "full") this.renderer.info.reset();

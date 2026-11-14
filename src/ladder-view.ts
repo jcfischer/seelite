@@ -22,6 +22,7 @@ import {
 	type PendingCredit,
 	RUNG_NAMES,
 	TOP_RUNG,
+	rungInput,
 	rungOf,
 	threshold,
 } from "./ladder";
@@ -78,7 +79,7 @@ export function ladderView(
 	return {
 		rows: LADDERS.map((ladder) => {
 			const banked = record.banked[ladder];
-			const rung = rungOf(ladder, banked);
+			const rung = rungOf(ladder, rungInput(record, ladder));
 			return {
 				ladder,
 				rung,
@@ -141,7 +142,7 @@ export const ladderInputKey = (
 	record: LadderRecord,
 	pending: PendingCredit,
 ): string =>
-	`${LADDERS.map((l) => record.banked[l]).join(",")}|${pending.combat}|${pending.systems.length}|${pending.kinds?.length ?? 0}|${Math.floor(record.playedS / 360)}|${record.capstoneAt}`;
+	`${LADDERS.map((l) => record.banked[l]).join(",")}|${record.tradeExact ?? ""}|${pending.combat}|${pending.systems.length}|${pending.kinds?.length ?? 0}|${Math.floor(record.playedS / 360)}|${record.capstoneAt}`;
 
 export function commanderBody(view: LadderView): string {
 	const rows = view.rows

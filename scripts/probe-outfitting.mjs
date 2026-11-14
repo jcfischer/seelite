@@ -42,7 +42,10 @@ try {
 		await window.__parkInBerth(s.id, g.berthIdsOfStation(s.id)[0]);
 		const { threshold } = await import("/src/ladder.ts");
 		g.clockHeld = true;
-		g.commander = { ...g.commander, credits: 100000, cargo: {} };
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: 100000,
+			cargo: {},
+		});
 		g.ladders = {
 			...g.ladders,
 			banked: {
@@ -51,6 +54,10 @@ try {
 				exploration: threshold("exploration", 8),
 			},
 		};
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+			g,
+			{},
+		);
 		g.stationConsoleRevision++;
 		g.setHeadLook("forward");
 		g.updateCockpit();
@@ -65,7 +72,7 @@ try {
 			.count()) === 2,
 	);
 	// Fuel is the first ship row (hotfix after #869): it was a 9 px footnote.
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.commander = { ...g.commander, fuelLy: 1 };
 		g.stationConsoleRevision++;
@@ -132,7 +139,7 @@ try {
 		tank.rangeLy === tank.hullLy,
 		JSON.stringify(tank),
 	);
-	await page.evaluate((saved) => {
+	await page.evaluate(async (saved) => {
 		const g = window.__seelite;
 		g.commander = saved;
 		g.stationConsoleRevision++;
@@ -200,7 +207,7 @@ try {
 		),
 	);
 	// Repaint the comparison after the fixture added the scanner.
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.stationConsoleRevision++;
 		g.updateCockpit();
@@ -222,7 +229,7 @@ try {
 	);
 	check(
 		"Equipment refit resets the armed group",
-		await page.evaluate(() => {
+		await page.evaluate(async () => {
 			const g = window.__seelite;
 			return g.armedFireGroup.label(g.fireGroups) === "H1 PULSE LASER · 1/2";
 		}),
@@ -275,7 +282,7 @@ try {
 	await page.screenshot({ path: `${out}/core.png` });
 	check(
 		"controller navigation includes uniquely named slot and stock controls",
-		await page.evaluate(() => {
+		await page.evaluate(async () => {
 			const c = window.__seelite.liveCockpit;
 			const els = c.focusElements();
 			const ids = c.focusIds(els);
