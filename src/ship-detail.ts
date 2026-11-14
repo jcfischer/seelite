@@ -5,6 +5,7 @@ import { shared } from "./gpu-teardown";
 import type { HullId, HullVariantId } from "./hull";
 import { uvUnitsOf } from "./loft";
 import { fnv1a, mix, seededRand } from "./rng";
+import { slotPhaseRad } from "./station";
 import type { DetailLevel } from "./detail-level";
 import { detailLevel } from "./detail-level";
 
@@ -350,6 +351,29 @@ function applyVisibility(state: VisualState) {
 	if (state.levels)
 		for (const [level, object] of Object.entries(state.levels))
 			object.visible = level === state.detail;
+}
+
+/** The node a study's turning habitat hangs on, and the rate it turns at in its
+ *  `rotationRPM` (node #1035). One per level. */
+export const HABITAT_ROTOR_NAME = "habitat-rotor";
+
+/**
+ * Turn every habitat of one drawn hull to where the game clock puts it. The
+ * phase is a function of the clock, not an accumulator, so switching a level
+ * cannot reset it and two levels of one ship are always in step — and it is a
+ * station's own law (`slotPhaseRad`), so a ring and a station turn alike.
+ * A procedural stand-in carries no habitats, and nothing happens.
+ */
+export function advanceAuthoredHabitat(
+	root: THREE.Object3D,
+	gameTimeS: number,
+): void {
+	const habitats = root.userData.habitats as
+		| { node: THREE.Object3D; rpm: number }[]
+		| undefined;
+	if (!habitats) return;
+	for (const habitat of habitats)
+		habitat.node.rotation.z = slotPhaseRad(habitat.rpm, gameTimeS);
 }
 
 export function setShipDetail(root: THREE.Object3D, level: DetailLevel): void {

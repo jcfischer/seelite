@@ -68,11 +68,23 @@ export const ROCK_ALBEDO = Object.freeze({
 	]),
 });
 
+/** The wear map the seven-ship exteriors share (nodes #1034/#1035): one file a
+ *  session fetches and decodes once, whichever hulls it draws. The Rampart and
+ *  the Bastion are not here: their lossy exports carry a
+ *  `KHR_texture_transform`, which this script refuses by design. */
+export const STEEL_WEAR = Object.freeze({
+	sha256: "b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f",
+	name: "steel-wear",
+	file: "src/models/steel-wear.webp",
+	models: Object.freeze(["warden-patrol", "shiv-raider", "sluice-prospector"]),
+});
+
 /** Preparation table shared by instruments and future image-sharing nodes. */
 export const SHARED_MODEL_IMAGES = Object.freeze([
 	INDUSTRIAL_SURFACE,
 	PAINT_WEAR,
 	ROCK_ALBEDO,
+	STEEL_WEAR,
 ]);
 
 const WEBP = "EXT_texture_webp";

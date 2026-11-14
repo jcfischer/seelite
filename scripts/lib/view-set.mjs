@@ -1,6 +1,14 @@
 /** Captures build their Game only after the entire model catalog is installed. */
 export const MODEL_BOOT_PARAMS = Object.freeze({ "models-full": true });
 
+const LANCE_FRAMING = {
+	kind: "body-offset",
+	body: "largest-planet",
+	radii: 6,
+	sunAngleDeg: 150,
+	view: "chase",
+};
+
 /**
  * The canonical view set: what a visual node is judged on.
  *
@@ -127,11 +135,11 @@ export const LEVERS = Object.freeze({
 	1145: "the Ring scale detail, station key light and blooming beacons",
 	1094: "the miner drive glow and firing vent plumes on the installed Longwall",
 	1142: "the Coriolis scale detail, warm paint, station key light and blooming beacons",
+	1035: "the Warden, Shiv, Sluice, Bastion and Rampart authored hulls",
 	1034: "the authored Lance interceptor in the game's chase camera",
 	1073: "the Assembly's authored blocks placed by its own seeded plan",
 	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
 	720: "the terran ground and clouds across the horizon at station altitude and the flight boundary",
-	735: "a derelict's torn sections and exposed frame",
 	732: "dark derelict roster hull and tethered salvage",
 	684: "hauler lane points and hyperspace rings",
 	99: "the light rig",
@@ -431,19 +439,9 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "derelict",
-		covers: [732, 735],
+		covers: [732],
 		what: "A seeded dark roster hull, lamps off, with containers tethered clear of its envelope, in the cockpit at its first loss.",
 		shot: { kind: "derelict", view: "cockpit" },
-	},
-	{
-		// Node #735. The view above stands 0.87 km off a hull 60 m long, where a
-		// frame member is under a pixel; this one stands 50 m off the tear that
-		// faces the star most. New with #735, so it has no "before" at an
-		// earlier ref: the derelict view above is the pair.
-		name: "derelict-tear",
-		covers: [735],
-		what: "Seed 4's first wreck the tear can cut, from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
-		shot: { kind: "derelict", framing: "tear", view: "cockpit", seed: 4 },
 	},
 	{
 		name: "cockpit-arrival",
@@ -897,14 +895,26 @@ export const VIEWS = Object.freeze([
 		covers: [1034],
 		what: "The authored Lance interceptor in the game's chase camera, beside the other hulls at the same light and planet framing.",
 		shot: {
-			kind: "body-offset",
-			body: "largest-planet",
-			radii: 6,
-			sunAngleDeg: 150,
-			view: "chase",
+			...LANCE_FRAMING,
 			hull: "interceptor",
 		},
 	},
+	...[
+		{ name: "Warden", hull: "patrol" },
+		{ name: "Shiv", hull: "raider" },
+		{ name: "Sluice", hull: "prospector" },
+		{ name: "Bastion", hull: "carrier", zoom: 4 },
+		{ name: "Rampart", hull: "dreadnought", zoom: 4 },
+	].map(({ name, hull, zoom }) => ({
+		name: `hull-chase-${name.toLowerCase()}`,
+		covers: [1035],
+		what: `The ${name} in the game's chase camera under the same light and planet framing as the Lance.`,
+		shot: {
+			...LANCE_FRAMING,
+			inspectHull: hull,
+			...(zoom && { inspectZoom: zoom }),
+		},
+	})),
 	{
 		name: "planet-terminator",
 		covers: [208, 211, 212, 99, 206, 200, 207],
@@ -2175,7 +2185,7 @@ export const OPENING_SHOT_NAMES = Object.freeze([
 ]);
 
 const SHOT_REQUIREMENTS = {
-	derelict: (s) => s.framing === undefined || s.framing === "tear",
+	derelict: (s) => s.framing === undefined,
 	"npc-jump": (s) =>
 		(s.event === "arrival" || s.event === "departure") &&
 		(s.framing === undefined ||

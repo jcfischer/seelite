@@ -97,6 +97,10 @@ export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
 		name: "industrial-surface",
 		anisotropy: EXTERIOR_MAP_ANISOTROPY,
 	},
+	b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f: {
+		url: new URL("./models/steel-wear.webp", import.meta.url).href,
+		name: "steel-wear",
+	},
 };
 
 /** Accepted per-fitting station interiors, node #843. */
@@ -160,5 +164,28 @@ export const OUTPOST_GLB_URLS = {
  *  `spikes/seven-ships/prepare-game-asset.mjs`. */
 export const LANCE_INTERCEPTOR_GLB_URL = new URL(
 	"./models/lance-interceptor.glb",
+	import.meta.url,
+).href;
+
+/** Five exteriors of design PR #829 (node #1035). The Bastion and Rampart
+ * embed lossy textures; the other three share the steel-wear image. */
+export const WARDEN_PATROL_GLB_URL = new URL(
+	"./models/warden-patrol.glb",
+	import.meta.url,
+).href;
+export const SHIV_RAIDER_GLB_URL = new URL(
+	"./models/shiv-raider.glb",
+	import.meta.url,
+).href;
+export const BASTION_CARRIER_GLB_URL = new URL(
+	"./models/bastion-carrier.glb",
+	import.meta.url,
+).href;
+export const SLUICE_PROSPECTOR_GLB_URL = new URL(
+	"./models/sluice-prospector.glb",
+	import.meta.url,
+).href;
+export const RAMPART_DREADNOUGHT_GLB_URL = new URL(
+	"./models/rampart-dreadnought.glb",
 	import.meta.url,
 ).href;
