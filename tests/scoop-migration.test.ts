@@ -68,7 +68,7 @@ const HULLS = Object.keys(HULL_SPECS) as HullId[];
 
 describe("node #1097 — the one-time cargo scoop grant", () => {
 	test("the schema moved from 16 to 17 and 16 is legacy", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(20);
+		expect(SAVE_SCHEMA_VERSION).toBe(21);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toContain(16);
 	});
 

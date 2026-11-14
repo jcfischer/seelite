@@ -1,3 +1,5 @@
+import { oreGood, oreTonnes } from "./ore-goods";
+import { HULL_SPECS } from "./hull";
 /**
  * What is aboard, who owns it, and how much room is left — one projection.
  *
@@ -122,6 +124,7 @@ const compareLines = (a: HoldLine, b: HoldLine): number => {
 export function holdSummary(
 	commander: CommanderState,
 	requests: RequestsState,
+	mining = false,
 ): HoldSummary {
 	const entrustedT = entrustedTonnesAboard(requests);
 	const { usedT, capacityT } = commanderHold(commander, entrustedT);
@@ -137,6 +140,7 @@ export function holdSummary(
 			amount,
 			unit: commodity(goodName).unit,
 			owner: "pilot",
+			...(oreGood(goodName) ? { kind: "ore" as const } : {}),
 		});
 	}
 	for (const item of commander.recoveredFittings ?? [])
@@ -195,7 +199,24 @@ export function holdSummary(
 		});
 	}
 	lines.sort(compareLines);
-	return { usedT, capacityT, freeT: capacityT - usedT, entrustedT, lines };
+	const ore = oreTonnes(commander.cargo);
+	const oreCapacity = HULL_SPECS[commander.hull].oreHoldT;
+	return {
+		usedT,
+		capacityT,
+		freeT: capacityT - usedT,
+		entrustedT,
+		lines,
+		...(oreCapacity !== undefined && (mining || ore > 0)
+			? {
+					oreBay: {
+						usedT: ore,
+						capacityT: oreCapacity,
+						freeT: oreCapacity - ore,
+					},
+				}
+			: {}),
+	};
 }
 
 /**
@@ -244,12 +265,7 @@ export const pilotGoods = (
 ): Readonly<Record<string, number>> =>
 	Object.fromEntries(
 		hold.lines
-			.filter(
-				(line) =>
-					line.owner === "pilot" &&
-					line.kind !== "fitting" &&
-					line.kind !== "ore",
-			)
+			.filter((line) => line.owner === "pilot" && line.kind !== "fitting")
 			.map((line) => [line.goodName, line.amount]),
 	);
 

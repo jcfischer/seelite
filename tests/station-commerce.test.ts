@@ -103,11 +103,11 @@ const input = (
 
 test("commerce preserves dedicated ore and refuses to strand it during a hull change", () => {
 	const commander = { ...newCommander("miner"), credits: 1e9 };
-	const request = input({ commander, rawOreT: 3000 });
+	commander.cargo = { "Metallic ore STD": 3000 };
+	const request = input({ commander });
 	expect(transactAtStation(request).accepted).toBe(true);
 	const sale = input({
 		commander,
-		rawOreT: 3000,
 		station: { ...STATION, type: "shipyard" },
 		action: { type: "buy-hull", hull: "freighter" },
 	});
@@ -116,32 +116,47 @@ test("commerce preserves dedicated ore and refuses to strand it during a hull ch
 	expect(refused.reason).toBe("hull-hold");
 	expect(refused.commander).toBe(commander);
 	expect(refused.deficits).toBe(sale.deficits);
-	expect(transactAtStation({ ...sale, rawOreT: 0 }).accepted).toBe(true);
+	expect(
+		transactAtStation({ ...sale, commander: { ...commander, cargo: {} } })
+			.accepted,
+	).toBe(true);
 });
 
 test("ordinary cargo purchases respect raw ore in a shared hold", () => {
 	const commander = { ...newCommander("courier"), credits: 1e9 };
-	const request = input({ commander, rawOreT: 20 });
+	commander.cargo = { "Metallic ore STD": 20 };
+	const request = input({ commander });
 	const refused = transactAtStation(request);
 	expect(refused.accepted).toBe(false);
 	expect(refused.reason).toBe("cargo-full");
 	expect(refused.commander).toBe(commander);
-	expect(transactAtStation({ ...request, rawOreT: 19 }).accepted).toBe(true);
+	expect(
+		transactAtStation({
+			...request,
+			commander: { ...commander, cargo: { "Metallic ore STD": 19 } },
+		}).accepted,
+	).toBe(true);
 });
 
 test("shipyard admits exact dedicated ore capacity and refuses excess without selling it", () => {
-	const commander = { ...newCommander("freighter"), credits: 1e9 };
+	const commander = {
+		...newCommander("freighter"),
+		credits: 1e9,
+		cargo: { "Metallic ore STD": 3000 },
+	};
 	const request = input({
 		commander,
-		rawOreT: 3000,
 		station: { ...STATION, type: "shipyard" },
 		action: { type: "buy-hull", hull: "miner" },
 	});
 	expect(transactAtStation(request).accepted).toBe(true);
-	const refused = transactAtStation({ ...request, rawOreT: 3001 });
+	const refused = transactAtStation({
+		...request,
+		commander: { ...commander, cargo: { "Metallic ore STD": 3001 } },
+	});
 	expect(refused.accepted).toBe(false);
 	expect(refused.reason).toBe("hull-hold");
-	expect(refused.commander).toBe(commander);
+	expect(refused.commander.cargo["Metallic ore STD"]).toBe(3001);
 });
 
 test("shipyard auto-sale leaves room for shared raw ore and never sells that ore", () => {
@@ -149,12 +164,11 @@ test("shipyard auto-sale leaves room for shared raw ore and never sells that ore
 		...newCommander("freighter"),
 		credits: 1e9,
 		loadout: stockLoadout("courier"),
-		cargo: { Food: 20 },
+		cargo: { Food: 20, "Metallic ore STD": 15 },
 	};
 	const result = transactAtStation(
 		input({
 			commander,
-			rawOreT: 15,
 			station: { ...STATION, type: "shipyard" },
 			action: { type: "buy-hull", hull: "courier" },
 		}),
@@ -165,7 +179,13 @@ test("shipyard auto-sale leaves room for shared raw ore and never sells that ore
 });
 
 test("an earlier commerce refusal retains its reason even with an oversized ore fact", () => {
-	const request = input({ rawOreT: 21, action: { type: "buy-fuel" } });
+	const request = input({
+		commander: {
+			...newCommander("courier"),
+			cargo: { "Metallic ore STD": 21 },
+		},
+		action: { type: "buy-fuel" },
+	});
 	const result = transactAtStation(request);
 	expect(result.accepted).toBe(false);
 	expect(result.reason).toBe("fuel-full");

@@ -188,13 +188,26 @@ try {
 		const g = window.__seelite;
 		const ref = g.rockRef(window.__drillRock);
 		window.__skipFixture = {
-			ore: { ...g.minedOre },
+			commander: g.commander,
 			delivered: g.drill.delivered,
 			row: g.rockDepositRow(ref),
 		};
-		g.minedOre = {};
+		const { withAccount, emptyAccount, acquire, accountOf } = await import(
+			"/src/commodity-pools.ts"
+		);
+		const { holdSummary } = await import("/src/hold.ts");
+		const { oreCargoName } = await import("/src/ore-goods.ts");
+		g.commander = withAccount(g.commander, emptyAccount(g.commander.credits));
 		const emptyMass = g.flownShipMassT;
-		g.minedOre = { "Boundary ore": 2999 };
+		const contents = g.rockContentsOf(ref);
+		g.commander = withAccount(
+			g.commander,
+			acquire(
+				accountOf(g.commander),
+				oreCargoName(contents.family, contents.grade),
+				2999,
+			),
+		);
 		g.drill.cut = { key: null, progressT: 0 };
 		g.putDepositRow(ref, { surface: 0, deep: 0, at: g.world.gameTime });
 		g.condition = { ...g.condition, energy: g.condition.energyMax, heat: 0 };
@@ -217,13 +230,11 @@ try {
 			debit: after,
 			mass: g.flownShipMassT - emptyMass,
 			ore: document.querySelector("[data-live-ore-capacity]")?.textContent,
-			general: g.withMinedOre({
-				usedT: 40,
-				capacityT: 40,
-				freeT: 0,
-				entrustedT: 0,
-				lines: [],
-			}).freeT,
+			general: holdSummary(
+				{ ...g.commander, cargo: { ...g.commander.cargo, Food: 40 } },
+				g.requests,
+				true,
+			).freeT,
 		};
 		return result;
 	});
@@ -245,7 +256,7 @@ try {
 	await page.screenshot({ path: "probe-shots/mining-drill/ore-skips.png" });
 	await page.evaluate(() => {
 		const g = window.__seelite;
-		g.minedOre = window.__skipFixture.ore;
+		g.commander = window.__skipFixture.commander;
 		g.drill.delivered = window.__skipFixture.delivered;
 		g.putDepositRow(g.rockRef(window.__drillRock), window.__skipFixture.row);
 		g.setHeadLook("forward");

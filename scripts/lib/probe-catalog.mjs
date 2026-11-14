@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-mining-goods.mjs",
+			"Mines whole graded commander cargo in a real field, persists through mining and flagless reloads, docks through clearance and sells raw using the page's quoted bid and credited wallet; flagless markets retain seventeen goods.",
+			[
+				"mining",
+				"ore cargo",
+				"save",
+				"grade",
+				"market",
+				"raw sale",
+				"commodity pools",
+				"mining flag",
+			],
+		),
+		entry(
 			"probe-accounting.mjs",
 			"Measures complete schema20 envelopes and distinct live/launch atomic IndexedDB commits, with quota refusal without adoption, for migrated, typical, actual-generator saturation and widest accounting/recovery saves.",
 			[

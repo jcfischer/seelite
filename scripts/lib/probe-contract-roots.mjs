@@ -4,6 +4,16 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-mining-goods.mjs": [
+		"scripts/probe-mining-goods.mjs",
+		"src/ore-goods.ts",
+		"src/station-commerce.ts",
+		"src/station-console.ts",
+		"src/commodity-pools.ts",
+		"src/save-envelope.ts",
+		"src/hold.ts",
+		"src/hold-view.ts",
+	],
 	"probe-accounting.mjs": [
 		"scripts/probe-accounting.mjs",
 		"scripts/lib/accounting-save-cases.ts",

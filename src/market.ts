@@ -47,6 +47,14 @@
  */
 
 import { DOMAIN } from "./domains";
+import {
+	ORE_GOODS,
+	oreGood,
+	RAW_VALUE_SHARE,
+	RAW_ELASTICITY_SCALE,
+	RAW_STOCK_MIN_T,
+	RAW_STOCK_MAX_T,
+} from "./ore-goods";
 import { HULL_SPECS, PLAYER_BASELINE_HULL, requirePositiveHold } from "./hull";
 import { fnv1a, mix, seededRand } from "./rng";
 
@@ -124,6 +132,12 @@ export const COMMODITIES: readonly Commodity[] = [
 	good("Alien Items", 0x35, 15, 0xc0, 0x07, { sellOnly: true }),
 ];
 
+/** The durable cargo catalogue; COMMODITIES retains the seeded legacy generation pool. */
+export const CARGO_COMMODITIES: readonly Commodity[] = [
+	...COMMODITIES,
+	...ORE_GOODS.map((ore) => good(ore.name, 0, 0, 0, 0)),
+];
+
 /**
  * What the retune has to hold, asserted in `tests/market.test.ts` so a later
  * edit to the row cannot quietly reintroduce the collapse Bell's own constants
@@ -147,7 +161,7 @@ export const clamp = (v: number, lo: number, hi: number): number =>
 
 /** One good by name. Both consumers had their own copy of this lookup. */
 export const commodity = (name: string): Commodity => {
-	const found = COMMODITIES.find((c) => c.name === name);
+	const found = CARGO_COMMODITIES.find((c) => c.name === name);
 	if (!found) throw new Error(`no commodity named ${name}`);
 	return found;
 };
@@ -814,8 +828,11 @@ export function marketStationOf(
  *  and the one place §4's scope has to be applied. */
 export const stationCommodities = (
 	station: MarketStation,
+	mining = false,
 ): readonly Commodity[] =>
-	COMMODITIES.filter((c) => listsCommodity(c, station));
+	(mining ? CARGO_COMMODITIES : COMMODITIES).filter((c) =>
+		listsCommodity(c, station),
+	);
 
 /**
  * The game's entry point: one good at one station at one moment.
@@ -836,6 +853,26 @@ export function marketRow(
 			`${station.type} does not list ${commodity.name} (economy-trade.md §4)`,
 		);
 	const epoch = marketEpoch(station.phaseMin, gameTimeMin);
+	const ore = oreGood(commodity.name);
+	if (ore) {
+		const product = CARGO_COMMODITIES.find((g) => g.name === ore.product)!;
+		const row = marketRow(product, economy, station, gameTimeMin, close);
+		const nativeG = { t: 1000000, kg: 1000, g: 1 }[product.unit];
+		const priceCr =
+			((row.priceCr * ore.yieldGPerT) / nativeG) * RAW_VALUE_SHARE;
+		const quantity =
+			RAW_STOCK_MIN_T +
+			(fnv1a(`${station.seed}/${ore.family}/${ore.grade}/${epoch}/922-stock`) %
+				(RAW_STOCK_MAX_T - RAW_STOCK_MIN_T + 1));
+		return {
+			commodity,
+			priceCr,
+			unflooredPriceCr: priceCr,
+			quantity,
+			priceOverflowed: false,
+			floorFired: false,
+		};
+	}
 	return marketRowAt(
 		commodity,
 		economy,
@@ -844,6 +881,19 @@ export function marketRow(
 		close,
 	);
 }
+
+/** Ratified raw-ore elasticity: https://github.com/jcfischer/seelite/issues/923 */
+export const commodityStockResponse = (
+	good: Commodity,
+	midCr: number,
+	deficit: number,
+	holdT: number,
+): number => {
+	const responded = stockResponse(midCr, deficit, holdT);
+	return oreGood(good.name)
+		? midCr + (responded - midCr) * RAW_ELASTICITY_SCALE
+		: responded;
+};
 
 /**
  * §7's equipment list.

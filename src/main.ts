@@ -1,5 +1,6 @@
+import { oreCargoName, oreTonnes } from "./ore-goods";
 import { withAccount, accountOf } from "./commodity-pools";
-import { miningHold, withOre, oreCapacityLabel } from "./mining-capacity";
+import { oreCapacityLabel } from "./mining-capacity";
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
 import type { FieldDiscoveryMotion } from "./field-discovery";
 import { discoverNearbyFields } from "./world-state";
@@ -1573,8 +1574,6 @@ const SURVEY_GRADE_SHORT = {
 	standard: "STD",
 	rich: "RICH",
 } as const;
-const oreCargoName = (family: OreFamily, grade: OreGrade): string =>
-	`${ORE_FAMILY_NAME[family]} ${SURVEY_GRADE_SHORT[grade]}`;
 const SPARK_RATE_PER_S = 70;
 const SPARK_KMS = 0.12;
 const SPARK_LIFE_S = 0.6;
@@ -2934,12 +2933,10 @@ class Game {
 	/** What the flown ship weighs now, tonnes: `flownMassT` over the flown
 	 *  hull, the commander's hold and the entrusted lots aboard. */
 	get flownShipMassT(): number {
-		return (
-			flownMassT(
-				this.flownHull,
-				this.commander,
-				entrustedTonnesAboard(this.requests),
-			) + this.minedT
+		return flownMassT(
+			this.flownHull,
+			this.commander,
+			entrustedTonnesAboard(this.requests),
 		);
 	}
 
@@ -9515,7 +9512,6 @@ class Game {
 	private cut: Cut = beginCut();
 	fragments: Fragment[] = [];
 	private fragmentSeq = 0;
-	minedOre: Record<string, number> = {};
 	private miningNotice = { text: "", left: 0 };
 	miningLog = {
 		cutRockId: null as string | null,
@@ -9526,20 +9522,28 @@ class Game {
 		refused: 0,
 	};
 
-	private withMinedOre(hold: HoldSummary): HoldSummary {
-		return MINING_ON ? withOre(this.flownHull, hold, this.minedOre) : hold;
-	}
-
 	private minedHold(): { usedT: number; capacityT: number } {
 		const hold = commanderHold(
 			this.commander,
 			entrustedTonnesAboard(this.requests),
 		);
-		return miningHold(this.flownHull, hold, this.minedT);
+		return HULL_SPECS[this.flownHull].oreHoldT === undefined
+			? hold
+			: { usedT: this.minedT, capacityT: HULL_SPECS[this.flownHull].oreHoldT! };
 	}
 
 	private get minedT(): number {
-		return Object.values(this.minedOre).reduce((a, b) => a + b, 0);
+		return oreTonnes(this.commander.cargo);
+	}
+
+	private takeMinedOre(name: string, tonnes: number): void {
+		this.adoptHoldings(
+			applyHoldEvent(this.holdings(), this.commerceWorld, {
+				kind: "scoop",
+				commodity: name,
+				tonnes,
+			}),
+		);
 	}
 
 	private sayMining(text: string) {
@@ -9711,10 +9715,7 @@ class Game {
 				if (hold.usedT + 1 > hold.capacityT) return "hold-full";
 				this.spendScoopCharge();
 				const name = f.ore ? oreCargoName(f.ore.family, f.ore.grade) : "";
-				this.minedOre = {
-					...this.minedOre,
-					[name]: (this.minedOre[name] ?? 0) + 1,
-				};
+				this.takeMinedOre(name, 1);
 				return "taken";
 			},
 		);
@@ -10080,10 +10081,7 @@ class Game {
 		const { tonnes, waste, stop } = this.drillExtract(touching, contact, dt);
 		this.drill.stop = triggered ? stop : null;
 		if (tonnes > 0) {
-			this.minedOre = {
-				...this.minedOre,
-				[name]: (this.minedOre[name] ?? 0) + tonnes,
-			};
+			this.takeMinedOre(name, tonnes);
 			this.drill.delivered += tonnes;
 			this.sayMining(
 				`DRILLED ${tonnes} T ${name.toUpperCase()} · ${contact.deposit === "deep" ? "DEEP" : "SURFACE"}`,
@@ -20325,7 +20323,7 @@ class Game {
 		const dockContext = this.dockedStationContext();
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).
-		const hold = this.withMinedOre(holdSummary(this.commander, this.requests));
+		const hold = holdSummary(this.commander, this.requests, MINING_ON);
 		// One board per update: the console draws it and the first day asks it
 		// whether a Local run is posted (#408). Station control's log is written
 		// here, once, before the panel reads it.
@@ -20467,7 +20465,7 @@ class Game {
 	 */
 	private requestsView(
 		context = this.dockedStationContext(),
-		hold = holdSummary(this.commander, this.requests),
+		hold = holdSummary(this.commander, this.requests, MINING_ON),
 	): RequestsView {
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
@@ -20813,9 +20811,10 @@ class Game {
 		// One projection for the whole console (#443) — see the key below for
 		// why it is built before the memo is consulted. Built first now because
 		// the market's HELD column reads it too.
-		const hold = holdSummary(this.commander, this.requests);
+		const hold = holdSummary(this.commander, this.requests, MINING_ON);
 		const readMarket = () =>
 			stationMarketScreen({
+				mining: MINING_ON,
 				station: market,
 				economy,
 				gameTimeMin,
@@ -22050,7 +22049,6 @@ class Game {
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
 			mining: MINING_ON,
-			rawOreT: this.minedT,
 			services: MINING_ON
 				? stationServices(
 						advanceTo(this.commerceWorld, this.world.gameTime),
@@ -22123,7 +22121,7 @@ class Game {
 			// `?? "invalid-quantity"` this replaced was a default arm in all but
 			// name — it would have printed "That is not a quantity." over a full
 			// hold, which is #443's own failure one turn later.
-			const hold = holdSummary(this.commander, this.requests);
+			const hold = holdSummary(this.commander, this.requests, MINING_ON);
 			this.stationConsoleMessage = refusalSentence(result.reason, {
 				freeT: hold.freeT,
 				capacityT: hold.capacityT,
