@@ -103,16 +103,16 @@ describe("a detail level may not change the outline", () => {
 
 describe("a fixture is on the station it is mounted on", () => {
 	test("both strobes sit out on the hull, on every form that has them", () => {
-		const isLamp = (o: THREE.Object3D) =>
+		const isStrobe = (o: THREE.Object3D) =>
 			o.name === "strobe-a" || o.name === "strobe-b";
-		const memberReachWithoutLampsKm = (member: THREE.Object3D) => {
+		const memberReachWithoutStrobesKm = (member: THREE.Object3D) => {
 			let reach = 0;
 			const at = new THREE.Vector3();
 			member.updateMatrixWorld(true);
 			const worldToMemberFrame = member.matrixWorld.clone().invert();
 			const corner = new THREE.Vector3();
 			member.traverse((child) => {
-				if (isLamp(child)) return;
+				if (isStrobe(child)) return;
 				const mesh = child as THREE.Mesh;
 				if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
 					for (const box of instanceBoxes(mesh as THREE.InstancedMesh))
@@ -160,7 +160,7 @@ describe("a fixture is on the station it is mounted on", () => {
 					const p = (lamp as THREE.Object3D).position;
 					const strobePairGroup = lamp.parent;
 					const member = strobePairGroup?.parent ?? root;
-					const memberKm = memberReachWithoutLampsKm(member);
+					const memberKm = memberReachWithoutStrobesKm(member);
 					expect([
 						type,
 						form.id,
@@ -394,8 +394,8 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		const world = new THREE.Matrix4();
 		const instance = new THREE.Matrix4();
 		object.traverse((child) => {
-			const lightPoolReachesPastItsLamp = child.userData.pool;
-			if (lightPoolReachesPastItsLamp) return;
+			const isLightPool = child.userData.pool;
+			if (isLightPool) return;
 			const mesh = child as THREE.Mesh;
 			const positions = mesh.geometry?.getAttribute("position");
 			const normals = mesh.geometry?.getAttribute("normal");
