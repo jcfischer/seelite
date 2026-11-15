@@ -4,21 +4,6 @@ import {
 	stockLoadout,
 	moduleRow,
 } from "../src/loadout";
-/**
- * `hud-and-scanner.md` §8.6's four headless obligations — 3, 4, 6 and 8.
- *
- * Each of the four is written against a way the obvious implementation passes
- * on a broken build, and §8.5 names the three defects that ship green. They are
- * asserted here as the spec words them rather than as the easier check beside
- * each one:
- *
- * - **3** is a construction check, not an absence-of-throw check. Both the
- *   correct build and the broken one throw nothing at a fence, where every good
- *   lists, so a test that only visits a fence cannot fail.
- * - **8** asserts the universal-item *set*, not its count. §8.6 measured that a
- *   count check is blind from `displayTL` 0 through 6 — exactly the half a
- *   reader thinking about frontier stations would write against.
- */
 import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -73,13 +58,6 @@ import {
 } from "../src/station-console";
 
 const ECONOMY = 3;
-/**
- * The tech level this file draws its screens at.
- *
- * Named rather than inlined at six call sites because §5.6's cut is a function of
- * it, and a test that quotes a price and a test that quotes a cut have to agree
- * on which market they are talking about.
- */
 const SCREEN_TL = 8;
 
 const stationOf = (
@@ -124,13 +102,7 @@ test("a market redraw is needed only when a printed row changes", () => {
 	expect(marketDisplayChanged(before, subDigit)).toBe(false);
 });
 
-// ---------------------------------------------------------------------------
-// Obligation 3 — the row builder never asks for a price it cannot have
-// ---------------------------------------------------------------------------
-
 test("obligation 3: the builder calls marketRow only where listsCommodity is true", () => {
-	// By construction: the injected row function records who it was asked about,
-	// so the check reads the *calls* rather than the absence of a throw.
 	for (const station of [TRADE, FENCE]) {
 		const asked: string[] = [];
 		stationMarketScreen(
@@ -156,8 +128,6 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 });
 
 test("obligation 3: a non-fence station is the case that separates the builds", () => {
-	// The guard on the guard. If both stations listed every good, the assertion
-	// above would hold on a builder that ignored `listsCommodity` entirely.
 	const tradeListed = COMMODITIES.filter((c) => listsCommodity(c, TRADE));
 	const fenceListed = COMMODITIES.filter((c) => listsCommodity(c, FENCE));
 	expect(tradeListed.length).toBe(14);
@@ -180,7 +150,6 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			COMMODITIES.map((c) => c.name),
 		);
 		for (const row of rows) {
-			// The biconditional §8.6 obligation 2 asks for, not the constant 14.
 			expect(row.listed).toBe(listsCommodity(row.commodity, station));
 			expect(row.buyCr !== undefined).toBe(row.listed);
 			expect(row.sellCr !== undefined).toBe(row.listed);
@@ -189,15 +158,9 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 	}
 });
 
-// ---------------------------------------------------------------------------
-// Obligation 4 — the delta is against this epoch's base, and absent at zero
-// ---------------------------------------------------------------------------
-
 const moved = (goodName: string, units: number) => (name: string) =>
 	name === goodName ? units : 0;
 
-/** A good the trade station lists whose price the floor does not pin, so the
- *  delta the obligation is about is a real number rather than a floored zero. */
 const priceyGood = (station: MarketStation): Commodity => {
 	const found = COMMODITIES.find(
 		(c) =>
@@ -224,7 +187,6 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 	if (!movedRow) throw new Error("the moved good is not on the screen");
 	expect(movedRow.priceDeltaCr).toBeDefined();
 	expect(movedRow.quantityDelta).toBeDefined();
-	// The player bought: dearer, and a thinner shelf.
 	expect(movedRow.priceDeltaCr as number).toBeGreaterThan(0);
 	expect(movedRow.quantityDelta as number).toBeLessThan(0);
 
@@ -237,9 +199,6 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 
 test("obligation 4: the delta is measured against this epoch's base, not the last one", () => {
 	const good = priceyGood(TRADE);
-	// Two moments inside different epochs. The base moves between them, and the
-	// delta must move with it — a delta held against a remembered price would
-	// keep the old base and drift.
 	const twoEpochs = [0, MARKET_PERIOD_MIN * 3];
 	for (const gameTimeMin of twoEpochs) {
 		const base = marketRow(good, ECONOMY, TRADE, gameTimeMin);
@@ -260,10 +219,6 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			),
 			9,
 		);
-		// The delta the commander reads is between two *quoted* prices, since a
-		// quote is the only figure the console has. The obligation this row exists
-		// for — which epoch's base the delta is measured against — is untouched by
-		// that; only the domain both terms live in moved.
 		expect(row.priceDeltaCr as number).toBeCloseTo(
 			quantizeToDisplayStepCr(
 				stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
@@ -275,28 +230,12 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			shelfQuantity(base.quantity, 12) - base.quantity,
 		);
 	}
-	// The guard: the two epochs must actually differ, or the loop above proves
-	// nothing about which base was used.
 	const [firstEpochBase, laterEpochBase] = twoEpochs.map(
 		(t) => marketRow(good, ECONOMY, TRADE, t).priceCr,
 	);
 	expect(firstEpochBase).not.toBeCloseTo(laterEpochBase, 6);
 });
 
-// ---------------------------------------------------------------------------
-// Obligation 8 — the universal set, Fuel included, at every displayTL
-// ---------------------------------------------------------------------------
-
-/**
- * `economy-trade.md` §7's table order — **read out of the spec**, not typed here
- * and not derived from `EQUIPMENT`.
- *
- * Derived from the array under test it could not catch that array's missing
- * first element, which is the whole of §8.5.3. Typed here it is a second copy
- * of the spec's order with nothing tying it back, and the entire tech-gate
- * mapping — `requiredDisplayTL(9) === 7` — rests on that order. Parsed, a retune
- * of §7 that does not reach `UNIVERSAL_ITEMS` turns this file red.
- */
 const UNIVERSAL_ORDER_FROM_SPEC = (() => {
 	const spec = readFileSync(
 		new URL("../docs/specs/economy-trade.md", import.meta.url),
@@ -305,9 +244,6 @@ const UNIVERSAL_ORDER_FROM_SPEC = (() => {
 	const names: string[] = [];
 	for (const line of spec.split("\n")) {
 		const cells = line.split("|").map((cell) => cell.trim());
-		// `| Item | Price | Where |` — the universal rows of §7's table, in the
-		// order they appear. `Missile (max 4)` carries a parenthetical the item
-		// list does not.
 		const isUniversalTableRow = cells.length === 5 && cells[3] === "universal";
 		if (!isUniversalTableRow) continue;
 		const withoutParenthetical = cells[1].replace(/\s*\(.*\)$/, "");
@@ -317,8 +253,6 @@ const UNIVERSAL_ORDER_FROM_SPEC = (() => {
 })();
 
 test("the §7 order this file checks against was read out of the spec", () => {
-	// The guard on the parser. A selector that matched nothing would leave every
-	// assertion below comparing two empty lists and agreeing.
 	expect(UNIVERSAL_ORDER_FROM_SPEC.length).toBe(10);
 	expect(UNIVERSAL_ORDER_FROM_SPEC[0]).toBe("Fuel");
 	expect(UNIVERSAL_ORDER_FROM_SPEC.at(-1)).toBe("Galactic Hyperdrive");
@@ -338,9 +272,6 @@ test("obligation 8: the universal set at displayTL d is §7's order truncated to
 	for (let d = 0; d <= 12; d += 1) {
 		const expected = UNIVERSAL_ORDER_FROM_SPEC.slice(0, Math.min(d + 3, 10));
 		expect(universalItemsAt(d).map((e) => e.name)).toEqual(expected);
-		// Membership, not length: §8.6 measured that a count check is blind from
-		// d = 0 to 6, which is where the frontier stations a reader has in mind
-		// live.
 		expect(new Set(universalItemsAt(d).map((e) => e.name))).toEqual(
 			new Set(expected),
 		);
@@ -348,8 +279,6 @@ test("obligation 8: the universal set at displayTL d is §7's order truncated to
 });
 
 test("obligation 8: the slice off EQUIPMENT is the trap, and it differs at every d", () => {
-	// The broken build §8.5.3 describes, run here so the obligation is measured
-	// against a real rival rather than against a description of one.
 	const universalRows = EQUIPMENT.filter((e) => e.scope === "universal");
 	for (let d = 0; d <= 12; d += 1) {
 		const buggy = universalRows
@@ -357,18 +286,13 @@ test("obligation 8: the slice off EQUIPMENT is the trap, and it differs at every
 			.map((e) => e.name);
 		const correct = universalItemsAt(d).map((e) => e.name);
 		expect(new Set(buggy)).not.toEqual(new Set(correct));
-		// Fuel is hidden at every tech level …
 		expect(buggy).not.toContain("Fuel");
-		// … and below saturation the count agrees, which is why the set is what
-		// is asserted.
 		if (d <= 6) expect(buggy.length).toBe(correct.length);
 		else expect(buggy.length).toBe(9);
 	}
 });
 
 test("obligation 8: the gate puts the galactic hyperdrive at displayTL 7", () => {
-	// §8.5.3's named consequence of the missing first element: the broken slice
-	// sells it one tech level early.
 	expect(requiredDisplayTL(9)).toBe(7);
 	expect(universalItemsAt(6).map((e) => e.name)).not.toContain(
 		"Galactic Hyperdrive",
@@ -377,10 +301,6 @@ test("obligation 8: the gate puts the galactic hyperdrive at displayTL 7", () =>
 		"Galactic Hyperdrive",
 	);
 });
-
-// ---------------------------------------------------------------------------
-// Obligation 6 — the equipment screen names what is missing, and why
-// ---------------------------------------------------------------------------
 
 test("obligation 6: a low-TL trade station lists what it sells and names what it does not", () => {
 	const screen = stationEquipmentScreen({
@@ -394,13 +314,10 @@ test("obligation 6: a low-TL trade station lists what it sells and names what it
 		expect(entry.reason.length).toBeGreaterThan(0);
 		expect(entry.name.length).toBeGreaterThan(0);
 	}
-	// M8's three reason shapes, all three reachable at one frontier trade station.
 	const reasons = new Set(screen.unavailable.map((e) => e.reason));
 	expect(reasons).toContain("requires TL 7");
 	expect(reasons).toContain("refineries only");
 	expect(reasons).toContain("shipyards only");
-	// The two sets are disjoint and together cover the whole catalogue —
-	// `station-types.md` §4's disjointness, asserted rather than assumed.
 	const shown = [
 		...screen.available.map((e) => e.name),
 		...screen.unavailable.map((e) => e.name),
@@ -433,9 +350,6 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 	expect(shipyard.unavailable.map((e) => e.reason)).toContain(
 		"refineries only",
 	);
-	// Saturated: every universal item is on the shelf. Asserted as the positive,
-	// because the negative it replaced — no reason reads "requires TL 10" —
-	// names a string `requiredDisplayTL` maxes out below and so cannot fail.
 	expect(shipyard.available.map((e) => e.name)).toEqual([
 		...UNIVERSAL_ORDER_FROM_SPEC,
 		"Extra Energy Unit",
@@ -447,10 +361,6 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 		shipyard.unavailable.filter((e) => e.reason.startsWith("requires TL")),
 	).toEqual([]);
 
-	// #481's checkpoint, on the screen rather than on the row: the other two
-	// station types name the module and refuse to sell it. A refinery is
-	// checked above through the shared reason string; the trade station is the
-	// type with no exclusive of its own, so nothing else covers it.
 	const trade = stationEquipmentScreen({
 		type: "trade",
 		displayTL: 11,
@@ -467,8 +377,6 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 });
 
 test("§8.3 as #556 D1 amends it: the Equipment tab carries no hull heading", () => {
-	// Hulls are sold on the Shipyard tab now; a hull section here would be a
-	// second place to buy one, priced by nothing.
 	expect(
 		Object.keys(
 			stationEquipmentScreen({
@@ -479,10 +387,6 @@ test("§8.3 as #556 D1 amends it: the Equipment tab carries no hull heading", ()
 		).sort(),
 	).toEqual(["available", "unavailable"]);
 });
-
-// ---------------------------------------------------------------------------
-// M4 and M10 — the two negatives, as laws rather than as pixels
-// ---------------------------------------------------------------------------
 
 test("M4: the console is not up during the arrival", () => {
 	expect(stationConsoleVisible("arriving")).toBe(false);
@@ -496,24 +400,16 @@ test("M10: the persistent flight floor is hidden the moment flight is suspended"
 });
 
 test("the traversal bounds here are the ones docking.md ratified", () => {
-	// Not a tautology, and **anchored to the section rather than to the file**:
-	// a whole-file `toContain` would stay green on a retune that changed the
-	// bounds while any other sentence still carried the phrase.
 	const prose = readFileSync(
 		new URL("../docs/specs/docking.md", import.meta.url),
 		"utf8",
 	).replace(/\s+/g, " ");
-	// §13.3 re-fixed E3's band, so the ratified figures are read from there.
 	const sectionStart = prose.indexOf(
 		"**Traversal duration scales with route length**",
 	);
 	const sectionEnd = prose.indexOf(
 		"**Both traversals are unconditionally skippable.**",
 	);
-	// **Both** indices guarded, not only the first. With the closing sentence
-	// renamed, `indexOf` returns -1 and `slice(start, -1)` yields everything to
-	// the end of the file — restoring exactly the whole-file match this slice
-	// exists to close, on a green test.
 	expect(sectionStart).toBeGreaterThan(0);
 	expect(sectionEnd).toBeGreaterThan(sectionStart);
 	const traversalSection = prose.slice(sectionStart, sectionEnd);
@@ -525,28 +421,15 @@ test("the traversal bounds here are the ones docking.md ratified", () => {
 });
 
 test("M6: a delta that rounds to zero gets no arrow", () => {
-	// **Measured on `signed` itself**, because the gallery's own moved row is
-	// well above §3's floor and therefore cannot produce the case. The first
-	// version of this test rendered the default view and asserted the absence of
-	// "↑0.0" — which held on a build that emitted it, since no row could.
 	expect(signedDelta(0.04, 1)).toBe("·0.0");
 	expect(signedDelta(-0.04, 1)).toBe("·0.0");
 	expect(signedDelta(0, 1)).toBe("·0.0");
 	expect(signedDelta(-0, 0)).toBe("·0");
-	// And the two live cases keep their arrows, or the rule above would be a
-	// screen with no deltas on it at all.
 	expect(signedDelta(4.83, 1)).toBe("↑4.8");
 	expect(signedDelta(-12, 0)).toBe("↓12");
 });
 
 test("#182: the screen's prices follow the flown hold, bay included", () => {
-	// **The rendered consequence of §5.2's change, covered headlessly.**
-	// `main.ts` feeds `stationMarketScreen` the flown hold through
-	// `commanderHold(...).capacityT`, so a Large Cargo Bay changes what a marked
-	// station *draws* — and nothing else in this repo asserts that pair. The
-	// browser tier is where the wiring itself is checked; what is checkable here
-	// is that the two functions `main.ts` composes disagree in the direction the
-	// spec says.
 	const good = priceyGood(TRADE);
 	const bare = newCommander(PLAYER_BASELINE_HULL);
 	const withBay = {
@@ -570,13 +453,9 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 		if (!row) throw new Error("the moved good is not on the screen");
 		return row.buyCr as number;
 	};
-	// A bigger hold divides the same mark by more, so the same 12 t deficit moves
-	// the price less — the response is scale-free in the hold since #182.
 	expect(priceAt(commanderHold(withBay, 0).capacityT)).toBeLessThan(
 		priceAt(commanderHold(bare, 0).capacityT),
 	);
-	// …and with no mark at all the hold makes no difference, which is what stops
-	// the row above passing on a build that simply scaled every price by hold.
 	const unmarked = (holdT: number) =>
 		(
 			stationMarketScreen({
@@ -592,35 +471,13 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 	expect(unmarked(20)).toBe(unmarked(60));
 });
 
-/**
- * §8's price column, and the row the principal found in playtest.
- *
- * A refinery listed Food at **`0 Cr`** and charged 0.4. `live-cockpit.ts`
- * rendered the price with `Math.round`, while `station-commerce.ts` charges the
- * unrounded `priceCr * quantity` — so a hundred tonnes of "free" Food cost
- * 40 Cr.
- *
- * The floor is ordinary rather than an edge: `PRICE_STEP_CR` is enforced twice,
- * by `marketRowAt` and again by `stockResponse`, so no shelf price in the game
- * can be below it — and a refinery is industrial while Food has a positive
- * gradient, which puts Food there on the floor at a whole station role.
- *
- * **The formatter is here rather than in the renderer** so a headless tier can
- * hold it at all. That is what the defect turned on: the tests read `priceCr`
- * and nothing read the string the player sees.
- */
 describe("the price column says what the player is charged", () => {
 	test("the cheapest possible row does not read as free", () => {
-		// The floor, not a literal: this is the row that shipped as `0 Cr`.
 		expect(priceLabel(PRICE_STEP_CR)).toBe("0.4 Cr");
 		expect(priceLabel(PRICE_STEP_CR)).not.toContain("0 Cr");
 	});
 
 	test("a whole-credit render loses every base price, not only the floor", () => {
-		// The argument for one decimal beyond the floor case. A base price is
-		// `closedPrice × PRICE_STEP_CR + offset × gradient × PRICE_STEP_CR`, so
-		// **every base price is a multiple of 0.4** and no whole number can
-		// represent one exactly. Rounding is lossy on every row.
 		for (const steps of [1, 2, 3, 7, 34]) {
 			const priceCr = steps * PRICE_STEP_CR;
 			expect([steps, priceLabel(priceCr)]).toEqual([
@@ -631,21 +488,12 @@ describe("the price column says what the player is charged", () => {
 	});
 
 	test("it agrees with the two figures drawn beside it", () => {
-		// The credits line renders `toFixed(1)` and the delta column asks
-		// `signedDelta(..., 1)`. The price column was the only one of the three
-		// rounding to whole credits, which is how it read as free next to a
-		// delta that did not.
 		expect(priceLabel(12.6)).toBe("12.6 Cr");
 		expect(signedDelta(0.4, 1)).toBe("↑0.4");
 	});
 });
 
-// ---------------------------------------------------------------------------
-// §5.6 — the row carries two prices, and the cut is the tech level's
-// ---------------------------------------------------------------------------
-
 describe("§5.6 the market row shows what the station pays as well as what it asks", () => {
-	/** One row, at one tech level, with no mark on the market. */
 	const rowAt = (name: string, displayTL: number, station = TRADE) => {
 		const rows = stationMarketScreen({
 			station,
@@ -665,26 +513,16 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 		const good = priceyGood(TRADE);
 		const row = rowAt(good.name, SCREEN_TL);
 		const mid = marketRow(good, ECONOMY, TRADE, 0).priceCr;
-		// The buy column is the market's own figure, unchanged — #191 D1's
-		// asymmetry, and the cheapest closure measured.
-		// Both sides of the pair are quotes, and the row says so rather than
-		// asserting the product: a quote is the figure on the glass, so the expected
-		// number has to pass through the same tenth-credit step the law applies.
 		expect(row.buyCr).toBe(quantizeToDisplayStepCr(mid));
 		expect(row.sellCr).toBe(
 			quantizeToDisplayStepCr(
 				Math.max(PRICE_STEP_CR, mid * (1 - bidCutAtTl(SCREEN_TL))),
 			),
 		);
-		// And they are two numbers rather than one printed twice, which is what
-		// makes the spread a thing the commander reads (#191 D3).
 		expect(row.sellCr).toBeLessThan(row.buyCr as number);
 	});
 
 	test("a frontier station cuts less than a core one, at the same console", () => {
-		// The direction #191 D4 handed to a measurement, asserted where the player
-		// sees it. A row the floor pins would read equal in both, so this uses the
-		// good `priceyGood` exists to find.
 		const good = priceyGood(TRADE);
 		expect(rowAt(good.name, DISPLAY_TL_MIN).sellCr).toBeGreaterThan(
 			rowAt(good.name, DISPLAY_TL_MAX).sellCr as number,
@@ -692,10 +530,6 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 	});
 
 	test("both columns survive the floor as numbers, never as a rounded whole", () => {
-		// #193's obligation, widened to the column it did not cover: a base price
-		// is a multiple of `PRICE_STEP_CR` and a cut of one is a multiple of
-		// nothing, so the SELL column is the one most likely to be rendered as a
-		// tidy figure that no till would honour.
 		for (const displayTL of [DISPLAY_TL_MIN, SCREEN_TL, DISPLAY_TL_MAX])
 			for (const good of COMMODITIES) {
 				if (!listsCommodity(good, FENCE)) continue;
@@ -707,37 +541,17 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 				}
 			}
 	});
-
-	// The screen-vs-till contract is held in `station-commerce.test.ts` §5.6, at the
-	// console where the deficit and the printed label are checked beside the till. It
-	// lived here too, as a second copy of the same three-tech-level round trip, and a
-	// change to that contract meant editing two files.
 });
 
-/**
- * #443 — the refusals the till computed and the screen dropped.
- *
- * The union makes the sentence map exhaustive at compile time, and `rejected`
- * takes a `CommerceRefusal`, so a stray literal is already a type error. What
- * the source scan below adds is the direction no type can see: a member with no
- * caller is a sentence nobody will ever read.
- */
 describe("#443 — every refusal has a sentence", () => {
 	test("no member of the union is a sentence nothing can reach", () => {
 		const source = codeOf("src/station-commerce.ts");
 		const passed = [
 			...source.matchAll(/rejected\(\s*input\s*,\s*"([^"]+)"/g),
 		].map((m) => m[1]);
-		// The control: a scan that found nothing would agree with any build.
 		expect(passed.length).toBeGreaterThan(8);
 		const listed = new Set<string>(REFUSAL_REASONS);
-		// The forward direction is `tsc`'s — `rejected` takes a
-		// `CommerceRefusal` — and it is asserted anyway so a failure of the
-		// scan itself shows up as a mismatch rather than as silence.
 		for (const reason of passed) expect(listed.has(reason), reason).toBe(true);
-		// **This is the half no type can hold.** A member nothing passes is a
-		// sentence that cannot be printed, and the compiler is perfectly happy
-		// with one.
 		expect([...new Set(passed)].sort()).toEqual([...listed].sort());
 	});
 
@@ -754,7 +568,6 @@ describe("#443 — every refusal has a sentence", () => {
 	});
 
 	test("`cargo-full` names the room that is missing and what is holding it", () => {
-		// #443's own arithmetic: a 20 t hull, an 8 t consignment, 1 t aboard.
 		expect(
 			refusalSentence("cargo-full", {
 				freeT: 11,
@@ -765,10 +578,6 @@ describe("#443 — every refusal has a sentence", () => {
 	});
 
 	test("an over-capacity hold says so rather than reading as zero", () => {
-		// `HoldSummary.freeT` is unfloored on purpose, so this sentence has to
-		// be able to carry a negative. The PR body claimed for a round that the
-		// refusal is "only ever reachable at zero free", which is true of the
-		// till's one-tonne press and not of the projection.
 		expect(
 			refusalSentence("cargo-full", {
 				freeT: -10,
@@ -779,8 +588,6 @@ describe("#443 — every refusal has a sentence", () => {
 	});
 
 	test("with nothing entrusted the clause is absent, not zeroed", () => {
-		// `0 t entrusted to a job` would be a sentence about a job that does not
-		// exist, which is the refusal reading as a bug all over again.
 		expect(
 			refusalSentence("cargo-full", {
 				freeT: 0,
@@ -790,10 +597,6 @@ describe("#443 — every refusal has a sentence", () => {
 		).toBe("No room — 0 t free of 35.");
 	});
 });
-
-// ---------------------------------------------------------------------------
-// #473 D2, D3, D5, D10 — `MAX` on a capped shelf, and what the hold carries
-// ---------------------------------------------------------------------------
 
 describe("a capped shelf reads MAX and every row says what is held (#473)", () => {
 	const screen = (
@@ -816,28 +619,20 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 	};
 
 	test("the mark is keyed on the cap and nothing below it", () => {
-		// One listed row with its shelf set either side of the cap, so the rule is
-		// read off the quantity alone rather than off whichever good happens to sit
-		// there at this seed.
 		const food = rowOf(screen(noDeficit), "Food");
 		expect(food.listed).toBe(true);
 		const at = (quantity: number) => marketDisplayValues({ ...food, quantity });
 		expect(at(QUANTITY_CAP).shelfMark).toBe(SHELF_MAX_MARK);
 		expect(at(QUANTITY_CAP - 1).shelfMark).toBeNull();
 		expect(at(0).shelfMark).toBeNull();
-		// The count keeps its own field and its own form: the mark sits after it,
-		// not inside it, so a reader of the shelf figure reads the same string.
 		expect(at(QUANTITY_CAP).shelf).toBe(
 			`${QUANTITY_CAP} ${food.commodity.unit}`,
 		);
-		// It is `MAX` and never `FULL` — "full" is a till refusal in this console.
 		expect(SHELF_MAX_MARK).toBe("MAX");
 	});
 
 	test("Gold, untraded, shows MAX — its generated shelf is always the cap", () => {
 		const gold = rowOf(screen(noDeficit), "Gold");
-		// Listed first, so the row below cannot pass on an unlisted Gold whose
-		// mark is null for the other reason.
 		expect(gold.listed).toBe(true);
 		expect(gold.quantity).toBe(QUANTITY_CAP);
 		expect(gold.quantityDelta).toBeUndefined();
@@ -847,9 +642,6 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 	});
 
 	test("a sale into a capped shelf keeps the mark", () => {
-		// A negative mark is the pilot selling. It goes through `shelfQuantity`'s
-		// clamp, which is what holds the shelf at the cap — a hand-set 63 would
-		// test the display rule and not the state a sale actually leaves.
 		const sold = rowOf(screen(moved("Gold", -5)), "Gold");
 		expect(sold.listed).toBe(true);
 		expect(sold.quantity).toBe(QUANTITY_CAP);
@@ -858,9 +650,6 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 	});
 
 	test("a sale into a capped shelf lowers the price while the market is below saturation", () => {
-		// The sentence's second clause is a claim about the market, not about the
-		// glass: the shelf stays at the cap and the price still moves. Gold is
-		// at the cap untouched, so the sale is into a full shelf from the start.
 		const before = rowOf(screen(noDeficit), "Gold");
 		const sold = rowOf(screen(moved("Gold", -5)), "Gold");
 		expect(before.listed && sold.listed).toBe(true);
@@ -871,10 +660,6 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 	});
 
 	test("past saturation a sale into a capped shelf leaves the price where it was", () => {
-		// The floor the hover text names. `stockResponse` clamps the deficit at
-		// `DEFICIT_SATURATION_RUNS` of the hold, so a sale one unit past it is still
-		// accepted, still reads MAX, and quotes exactly what the saturated row did —
-		// which is why the sentence cannot say "each sale lowers the price".
 		const saturated = -DEFICIT_SATURATION_RUNS * HOLD_REFERENCE_T;
 		const at = rowOf(screen(moved("Gold", saturated)), "Gold");
 		const past = rowOf(screen(moved("Gold", saturated - 1)), "Gold");
@@ -884,8 +669,6 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 		expect(marketDisplayValues(past).shelfMark).toBe(SHELF_MAX_MARK);
 		expect(past.buyCr).toBe(at.buyCr as number);
 		expect(past.sellCr).toBe(at.sellCr as number);
-		// And the floor is a real one, not a row that never moved: the saturated
-		// quote is below the untouched shelf's.
 		const untouched = rowOf(screen(noDeficit), "Gold");
 		expect(at.buyCr as number).toBeLessThan(untouched.buyCr as number);
 	});
@@ -902,8 +685,6 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 		expect(SHELF_MAX_TITLE).toBe(
 			`Shelf at its ${QUANTITY_CAP}-unit limit. The station still buys; sales lower the price, down to a floor.`,
 		);
-		// Source-level: the sentence interpolates the constant, so #689 moving the
-		// cap moves the sentence. A literal 63 in it would pass the row above.
 		const source = readFileSync("src/station-console.ts", "utf8");
 		const declaration = /export const SHELF_MAX_TITLE = `([^`]*)`/.exec(source);
 		expect(declaration?.[1]).toContain("${QUANTITY_CAP}");
@@ -916,15 +697,11 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 		const rows = screen(noDeficit, { Food: 5, Gold: 3, [illegal.name]: 2 });
 		expect(marketDisplayValues(rowOf(rows, "Food")).held).toBe("5 t");
 		expect(marketDisplayValues(rowOf(rows, "Gold")).held).toBe("3 kg");
-		// A good this station does not trade still has a row, and the row still
-		// says it is aboard.
 		const unlisted = rowOf(rows, illegal.name);
 		expect(unlisted.listed).toBe(false);
 		expect(marketDisplayValues(unlisted).held).toBe(`2 ${illegal.unit}`);
-		// Not carried: blank, not `0 t`, so the rows that hold cargo stand out.
 		expect(marketDisplayValues(rowOf(rows, "Textiles")).held).toBeNull();
 		expect(rowOf(rows, "Textiles").held).toBe(0);
-		// A key at zero is a good sold out of the hold, and reads as none.
 		expect(
 			marketDisplayValues(rowOf(screen(noDeficit, { Food: 0 }), "Food")).held,
 		).toBeNull();

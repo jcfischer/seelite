@@ -5588,11 +5588,6 @@
       "count": 4
     }
   },
-  "tests/station-console.test.ts": {
-    "seelite/no-comments": {
-      "count": 162
-    }
-  },
   "tests/station-finish.test.ts": {
     "seelite/no-comments": {
       "count": 20
