@@ -754,6 +754,10 @@ async function loadWithFakeImages(file: string) {
 				name: "EXT_texture_webp",
 				loadTexture: async () => new THREE.Texture(),
 			}))
+			.register(() => ({
+				name: "SEELITE_shared_image",
+				loadTexture: async () => new THREE.Texture(),
+			}))
 			.parseAsync(
 				bytes.buffer.slice(
 					bytes.byteOffset,

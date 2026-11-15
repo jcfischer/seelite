@@ -9,9 +9,9 @@ import { berthFits, stationInterior } from "../src/station-interior";
 
 const SHIPPED = "src/models/lance-interceptor.glb";
 const STUDY = "spikes/seven-ships/interceptor/model.glb";
-const SHIPPED_BYTES = 13_116_788;
+const SHIPPED_BYTES = 11081992;
 const SHIPPED_SHA256 =
-	"cff8d0393e276fcfaca1851ba4da1723a16c6e54bc9d6723f8a03b3367ec7923";
+	"42c0a5007d46bdd211b762a266e3dd060f9e8091458243c008d365dee5b07686";
 
 const glbJson = (path: string) => {
 	const file = readFileSync(path);
@@ -40,7 +40,8 @@ describe("the shipped file", () => {
 		const json = glbJson(SHIPPED);
 		expect(json.extensionsRequired).toContain("EXT_meshopt_compression");
 		expect(json.extensionsRequired).toContain("KHR_mesh_quantization");
-		for (const image of json.images) expect(image.mimeType).toBe("image/webp");
+		for (const image of json.images ?? [])
+			expect(image.mimeType).toBe("image/webp");
 		for (const mesh of json.meshes)
 			for (const primitive of mesh.primitives) {
 				expect(

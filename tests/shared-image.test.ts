@@ -21,6 +21,7 @@ import {
 	ROCK_ALBEDO,
 	SHARED_MODEL_IMAGES,
 	STEEL_WEAR,
+	COCKPIT_STEEL_WEAR,
 	shareImage,
 	writeGlb,
 	SHARED_IMAGE_EXTENSION,
@@ -34,6 +35,7 @@ import {
 	createSharedImages,
 	EXTENSION,
 	sharedImagePlugin,
+	isSharedImage,
 	type ImageLoader,
 } from "../src/shared-image";
 
@@ -46,6 +48,57 @@ const documentOf = (bytes: Uint8Array) => {
 		buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString(),
 	);
 };
+
+const STEEL_MODELS = [
+	"courier-hull",
+	"courier-cockpit",
+	"discovery-voyager",
+	"lance-interceptor",
+	"porter",
+];
+test.each(STEEL_MODELS)("%s uses the steel registry", (model) => {
+	const file = readFileSync(pathOf(model));
+	expect(createHash("sha256").update(file).digest("hex")).toBe(
+		(originals as any)[model].preparedSha256,
+	);
+	const json = documentOf(file);
+	expect(
+		sharedImagesOf(model).every((image) =>
+			json.textures.some(
+				(texture: any) =>
+					texture.extensions?.[EXTENSION]?.sha256 === image.sha256,
+			),
+		),
+	).toBe(true);
+});
+
+test("courier sampler ownership preserves its later anisotropy approval", async () => {
+	const images = createSharedImages(
+		SHARED_IMAGES,
+		async () => new THREE.Texture(),
+	);
+	const base = await images.texture(
+		STEEL_WEAR.sha256,
+		undefined,
+		{} as ImageLoader,
+	);
+	const own = await images.texture(
+		STEEL_WEAR.sha256,
+		"courier",
+		{} as ImageLoader,
+	);
+	const voyager = await images.texture(
+		STEEL_WEAR.sha256,
+		"voyager",
+		{} as ImageLoader,
+	);
+	expect(base.anisotropy).toBe(1);
+	expect(own.anisotropy).toBe(8);
+	expect(own.source).toBe(base.source);
+	expect(own).not.toBe(base);
+	expect(voyager.anisotropy).toBe(1);
+	expect(voyager.source).toBe(base.source);
+});
 
 const IMAGE = Buffer.from("not really a webp!!!");
 const SHA = createHash("sha256").update(IMAGE).digest("hex");
@@ -499,6 +552,12 @@ const ANISOTROPY_BY_IMAGE: Record<string, number> = {
 	[PAINT_WEAR.name]: 1,
 	[ROCK_ALBEDO.name]: 1,
 	[STEEL_WEAR.name]: 1,
+	[COCKPIT_STEEL_WEAR.name]: 1,
+};
+const EMBEDDED_IMAGE_COUNTS: Record<string, number> = {
+	"courier-hull": 0,
+	"discovery-voyager": 2,
+	porter: 1,
 };
 
 describe("a model sharing one or more images", () => {
@@ -508,10 +567,16 @@ describe("a model sharing one or more images", () => {
 			const file = readFileSync(pathOf(model));
 			const json = documentOf(file);
 			const images = sharedImagesOf(model);
-			expect(json.textures.map((texture: any) => texture.extensions)).toEqual(
-				images.map((image) => ({ [EXTENSION]: { sha256: image.sha256 } })),
-			);
-			expect(json.images).toBeUndefined();
+			const embeddedCount = EMBEDDED_IMAGE_COUNTS[model] ?? 0;
+			if (embeddedCount === 0) expect(json.images).toBeUndefined();
+			else expect(json.images).toHaveLength(embeddedCount);
+			expect(
+				json.textures
+					.flatMap(
+						(texture: any) => texture.extensions?.[EXTENSION]?.sha256 ?? [],
+					)
+					.sort(),
+			).toEqual(images.map((image) => image.sha256).sort());
 			const now = await glbDigest(pathOf(model));
 			const was = (originals as any)[model];
 			expect(now.attributes).toBe(was.attributes);
@@ -536,8 +601,19 @@ describe("a model sharing one or more images", () => {
 				return new THREE.Texture();
 			});
 			const bytes = readFileSync(pathOf(model));
+			const json = documentOf(bytes);
+			const jsonTexture = (index: number) => {
+				if (json.textures[index].extensions?.[EXTENSION]) return null;
+				return Promise.resolve(new THREE.Texture());
+			};
 			const gltf = await new GLTFLoader()
 				.setMeshoptDecoder(MeshoptDecoder)
+				.register(() => ({
+					name: "EXT_texture_webp",
+					loadTexture(index: number) {
+						return jsonTexture(index);
+					},
+				}))
 				.register(sharedImagePlugin(undefined, registry))
 				.parseAsync(
 					bytes.buffer.slice(
@@ -550,7 +626,10 @@ describe("a model sharing one or more images", () => {
 			gltf.scene.traverse((o) => {
 				const { material } = o as THREE.Mesh;
 				for (const m of [material ?? []].flat())
-					if ((m as THREE.MeshStandardMaterial).map)
+					if (
+						(m as THREE.MeshStandardMaterial).map &&
+						isSharedImage((m as THREE.MeshStandardMaterial).map!)
+					)
 						maps.add((m as THREE.MeshStandardMaterial).map!);
 			});
 			expect([...maps].map((map) => map.name).sort()).toEqual(
@@ -595,7 +674,16 @@ describe("the shared files hold the images the models embedded", () => {
 	});
 });
 
-test.each(["bollard-tug", "refinery-warren", "trade-drum"])(
+test.each([
+	"bollard-tug",
+	"refinery-warren",
+	"trade-drum",
+	"courier-hull",
+	"courier-cockpit",
+	"discovery-voyager",
+	"lance-interceptor",
+	"porter",
+])(
 	"glTF-Transform instruments resolve %s with its exact image bytes",
 	async (model) => {
 		const io = new NodeIO()
@@ -608,9 +696,7 @@ test.each(["bollard-tug", "refinery-warren", "trade-drum"])(
 			.map((texture: GltfTexture) =>
 				createHash("sha256").update(texture.getImage()!).digest("hex"),
 			);
-		expect(hashes).toContain(
-			model === "trade-drum" ? INDUSTRIAL_SURFACE.sha256 : PAINT_WEAR.sha256,
-		);
+		expect(hashes).toContain(sharedImagesOf(model)[0].sha256);
 		if (model === "refinery-warren")
 			expect(hashes).toContain(ROCK_ALBEDO.sha256);
 	},

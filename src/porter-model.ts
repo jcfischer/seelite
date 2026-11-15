@@ -22,6 +22,7 @@
  */
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { sharedImagePlugin } from "./shared-image";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
@@ -132,6 +133,7 @@ export function preparePorterModel(
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin("porter"))
 		.loadAsync(PORTER_MODEL_URL, onProgress)
 		.then((gltf) => adoptPorterTemplate(gltf.scene))
 		.catch((error) => {

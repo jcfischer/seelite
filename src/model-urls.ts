@@ -84,6 +84,7 @@ export interface SharedImage {
 	url: string;
 	name: string;
 	anisotropy?: number;
+	ownerAnisotropy?: Readonly<Record<string, number>>;
 }
 /** Approved sampler value shared by courier paint, industrial surfaces and interior owners: https://github.com/jcfischer/seelite/issues/1230 */
 export const EXTERIOR_MAP_ANISOTROPY = 8;
@@ -105,6 +106,11 @@ export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
 	b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f: {
 		url: new URL("./models/steel-wear.webp", import.meta.url).href,
 		name: "steel-wear",
+		ownerAnisotropy: { courier: EXTERIOR_MAP_ANISOTROPY },
+	},
+	ddf48529978a25b3cd43fa716426797afbafad33811747ce32bd7a9fc8886293: {
+		url: new URL("./models/cockpit-steel-wear.webp", import.meta.url).href,
+		name: "cockpit-steel-wear",
 	},
 };
 

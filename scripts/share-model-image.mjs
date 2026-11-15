@@ -68,15 +68,28 @@ export const ROCK_ALBEDO = Object.freeze({
 	]),
 });
 
-/** The wear map the seven-ship exteriors share (nodes #1034/#1035): one file a
- *  session fetches and decodes once, whichever hulls it draws. The Rampart and
- *  the Bastion are not here: their lossy exports carry a
- *  `KHR_texture_transform`, which this script refuses by design. */
+/** The exterior steel image shared by the ship models (node #1228). */
 export const STEEL_WEAR = Object.freeze({
 	sha256: "b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f",
 	name: "steel-wear",
 	file: "src/models/steel-wear.webp",
-	models: Object.freeze(["warden-patrol", "shiv-raider", "sluice-prospector"]),
+	models: Object.freeze([
+		"warden-patrol",
+		"shiv-raider",
+		"sluice-prospector",
+		"courier-hull",
+		"discovery-voyager",
+		"lance-interceptor",
+		"porter",
+	]),
+});
+
+/** The courier cabin's distinct steel image, also used inside its hull (node #1228). */
+export const COCKPIT_STEEL_WEAR = Object.freeze({
+	sha256: "ddf48529978a25b3cd43fa716426797afbafad33811747ce32bd7a9fc8886293",
+	name: "cockpit-steel-wear",
+	file: "src/models/cockpit-steel-wear.webp",
+	models: Object.freeze(["courier-cockpit", "courier-hull"]),
 });
 
 /** Preparation table shared by instruments and future image-sharing nodes. */
@@ -85,6 +98,7 @@ export const SHARED_MODEL_IMAGES = Object.freeze([
 	PAINT_WEAR,
 	ROCK_ALBEDO,
 	STEEL_WEAR,
+	COCKPIT_STEEL_WEAR,
 ]);
 
 const WEBP = "EXT_texture_webp";

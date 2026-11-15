@@ -20,6 +20,7 @@
  */
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { sharedImagePlugin } from "./shared-image";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { disposeSubtree, shared } from "./gpu-teardown";
@@ -645,6 +646,7 @@ export function prepareCockpitModel(
 ): Promise<void> {
 	return (ready[cabin] ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin("cockpit"))
 		.loadAsync(CABIN_GLB_URLS[cabin], onProgress)
 		.then((gltf) => adoptCockpitTemplate(gltf.scene, cabin))
 		.catch((error) => {
