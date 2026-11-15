@@ -2392,7 +2392,7 @@
   },
   "src/live-cockpit.ts": {
     "no-nested-ternary": {
-      "count": 8
+      "count": 5
     },
     "seelite/no-comments": {
       "count": 315

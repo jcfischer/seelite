@@ -121,6 +121,14 @@ import {
 	type CapabilityTimeAnchor,
 	type CapabilityTimeContext,
 } from "./capability-time";
+import {
+	encodeRefineries,
+	exclusiveCapabilityKey,
+	parseRefineries,
+	settleRefineryQueue,
+	type RefineryState,
+	type RefineryQueue,
+} from "./refinery";
 
 // **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
 // same names is the coupling it was extracted to prevent. Import from there.
@@ -128,6 +136,12 @@ import {
 /**
  * The mutable-state schema version (§2). Bump when the shape of anything in a
  * `GalaxyEnvelope` changes; the save/load node owns migration and rejection.
+ *
+ * **5 adds refinery queues (node #1195), with migration from 4 and 3.** A
+ * queue is world custody: a paid job survives a ship loss because the world
+ * does, and `advanceTo` settles it before a raider boundary replaces the
+ * retained service interval. A 4 or 3 world carried no queue and loads with
+ * every refinery empty.
  *
  * **4 adds capability timing, with explicit hash-checked migration from 3.**
  *
@@ -138,7 +152,7 @@ import {
  * there — which is how §9.10 handled the black-market marker's arrival, and the
  * reason a v2 save is refused here rather than interpreted.
  */
-export const WORLD_SCHEMA_VERSION = 4;
+export const WORLD_SCHEMA_VERSION = 5;
 
 /**
  * The seeded-baseline version (§2). Bump on **any** generator change that can
@@ -574,6 +588,7 @@ export interface GalaxyEnvelope {
 	/** Derelict slots the pilot has touched (`salvage.md`, node #731). Empty // glossary-ignore: slot
 	 *  means every slot is on its derived schedule, untouched. */
 	derelicts: Record<CarrierKey, DerelictRow>;
+	refineries: RefineryState;
 }
 
 export interface WorldState {
@@ -603,6 +618,7 @@ const ENVELOPE_DOMAINS = [
 	"deathWreck",
 	"deposits",
 	"fieldDiscoveries",
+	"refineries",
 ] as const;
 
 /**
@@ -616,6 +632,7 @@ const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set([
 	"deathWreck",
 	"deposits",
 	"fieldDiscoveries",
+	"refineries",
 ]);
 
 const WORLD_FIELDS = [
@@ -639,6 +656,7 @@ export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
 	visited: [],
 	legalStatus: { heat: 0, updatedAt: 0, witnesses: [], assaulted: [] },
 	derelicts: {},
+	refineries: {},
 });
 
 export const newWorld = (seed: number): WorldState => ({
@@ -1306,6 +1324,55 @@ export function stationServices(
 	);
 }
 
+function settleRefineriesTo(world: WorldState, at: number): WorldState {
+	const galaxies = world.galaxies.map((env) => {
+		const keys = Object.keys(env.refineries) as CarrierKey[];
+		let refineries: Record<CarrierKey, RefineryQueue> | null = null;
+		for (const key of keys) {
+			const queue = env.refineries[key];
+			if (queue.accountedThrough >= at) continue;
+			const settled =
+				queue.jobs.length === 0
+					? { ...queue, accountedThrough: at }
+					: settleRefineryQueue(
+							queue,
+							operationalDuration(
+								world,
+								env.galaxyIndex,
+								exclusiveCapabilityKey(key),
+								queue.accountedThrough,
+								at,
+							),
+							at,
+						);
+			refineries ??= { ...env.refineries };
+			refineries[key] = settled;
+		}
+		if (refineries === null) return env;
+		return { ...env, refineries };
+	});
+	return { ...world, galaxies };
+}
+
+/** Write one refinery queue without moving the clock; the commit's adopt uses it. */
+export function withRefineryQueue(
+	world: WorldState,
+	galaxyIndex: number,
+	stationKey: CarrierKey,
+	queue: RefineryQueue,
+): WorldState {
+	assertGalaxy(galaxyIndex);
+	assertCarrierKey(stationKey);
+	return {
+		...world,
+		galaxies: world.galaxies.map((env, index) =>
+			index === galaxyIndex
+				? { ...env, refineries: { ...env.refineries, [stationKey]: queue } }
+				: env,
+		),
+	};
+}
+
 /** Every galaxy materialized up to `gameTime`, and the clock moved to it.
  *  Idempotent: running it twice, or late, gives the same snapshot. */
 export const advanceTo = (
@@ -1323,6 +1390,7 @@ export const advanceTo = (
 	let current = world;
 	for (const at of [...boundaries].sort((a, b) => a - b)) {
 		current = { ...current, gameTime: at };
+		current = settleRefineriesTo(current, at);
 		if (settler) current = settler(current, at);
 		for (const env of current.galaxies) {
 			const systems = new Set<number>();
@@ -2734,6 +2802,9 @@ const canonicalEnvelope = (
 	...(Object.keys(env.derelicts).length
 		? { derelicts: canonicalMap(env.derelicts, canonicalDerelict) }
 		: {}),
+	...(Object.keys(env.refineries).length
+		? { refineries: encodeRefineries(env.refineries) }
+		: {}),
 	// Lazy expiry reaches ordinary saves too; callers need not compact first.
 	// JSON omits undefined, so an empty domain still writes no bytes.
 	deposits: canonicalDeposits(
@@ -3375,13 +3446,17 @@ const parseEnvelope = (
 	slot: number,
 	seed: number,
 	gameTime: number,
-	legacy = false,
+	savedVersion = WORLD_SCHEMA_VERSION,
 ): GalaxyEnvelope => {
+	const legacy = savedVersion === 3;
+	const legacyRefineries = savedVersion < 5;
 	const o = asObject(raw, `galaxy ${slot}`);
 	if (legacy && o.capabilityTime !== undefined)
 		fail("legacy world contains capability timing");
 	if (legacy && o.fieldDiscoveries !== undefined)
 		fail("legacy world contains field discoveries");
+	if (legacyRefineries && o.refineries !== undefined)
+		fail("legacy world contains refinery queues");
 	for (const field of Object.keys(o))
 		if (!(ENVELOPE_DOMAINS as readonly string[]).includes(field))
 			fail(`galaxy ${slot}: ${field} is not a declared state domain`);
@@ -3445,6 +3520,7 @@ const parseEnvelope = (
 			o.derelicts === undefined
 				? {}
 				: parseCarrierMap(o.derelicts, "derelicts", parseDerelictRow),
+		refineries: o.refineries === undefined ? {} : parseRefineries(o.refineries),
 	};
 };
 
@@ -3466,7 +3542,7 @@ export function parseWorld(raw: unknown): WorldState {
 	// top-level field died as "is not a declared field" — exactly the useless
 	// error the move was meant to stop.
 	const worldSchemaVersion = num(o, "worldSchemaVersion", "snapshot");
-	if (worldSchemaVersion !== WORLD_SCHEMA_VERSION && worldSchemaVersion !== 3)
+	if (![3, 4, WORLD_SCHEMA_VERSION].includes(worldSchemaVersion))
 		fail(
 			`snapshot: worldSchemaVersion ${worldSchemaVersion} needs a migration`,
 		);
@@ -3481,7 +3557,7 @@ export function parseWorld(raw: unknown): WorldState {
 	if (
 		(worldSchemaVersion === 3 &&
 			savedGeneratorVersion === WORLD_GENERATOR_VERSION) ||
-		(worldSchemaVersion === WORLD_SCHEMA_VERSION &&
+		(worldSchemaVersion !== 3 &&
 			savedGeneratorVersion !== WORLD_GENERATOR_VERSION)
 	)
 		fail("snapshot: incompatible schema and generator versions");
@@ -3511,7 +3587,7 @@ export function parseWorld(raw: unknown): WorldState {
 		seed,
 		gameTime,
 		galaxies: (o.galaxies as unknown[]).map((g, i) =>
-			parseEnvelope(g, i, seed, gameTime, worldSchemaVersion === 3),
+			parseEnvelope(g, i, seed, gameTime, worldSchemaVersion),
 		),
 	};
 	for (const env of world.galaxies)
@@ -3555,6 +3631,33 @@ export function parseWorld(raw: unknown): WorldState {
 				}
 		}
 	}
+	for (const env of world.galaxies)
+		for (const [key, queue] of Object.entries(env.refineries) as [
+			CarrierKey,
+			RefineryQueue,
+		][]) {
+			const record = systemAt(seed, env.galaxyIndex, systemIndexOfKey(key));
+			const station = generateContents(record).stations.find(
+				(candidate) =>
+					carrierKey(record.index, candidate.localCarrierId) === key,
+			);
+			if (!station || station.type !== "refinery")
+				fail(`refinery ${key} is not a generated refinery station`);
+			if (queue.accountedThrough > world.gameTime)
+				fail(`refinery ${key} is settled beyond the clock`);
+			if (queue.accountedThrough < env.capabilityTime.genesisAt)
+				fail(`refinery ${key} is settled before capability genesis`);
+			if (
+				queue.jobs.length > 0 &&
+				queue.accountedThrough <
+					retainedCapability(
+						world,
+						env.galaxyIndex,
+						exclusiveCapabilityKey(key),
+					).at
+			)
+				fail(`refinery ${key} lost settled service before its retained anchor`);
+		}
 	for (const env of world.galaxies)
 		for (const [key, delta] of Object.entries(env.objective) as [
 			CarrierKey,

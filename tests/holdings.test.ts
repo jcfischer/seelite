@@ -932,6 +932,24 @@ describe("the figures the probes used to pin", () => {
  * a fresh world, so there is none).
  */
 describe("the adopt point (#631)", () => {
+	test("refinery presses repaint and accepted custody invalidates the console", () => {
+		const world = newWorld(47);
+		const before = { holdings: holdings(), world };
+		expect(adoptEffects("refinery", before, before)).toEqual({
+			save: false,
+			consoleRevision: false,
+			requestRevision: false,
+			redraw: true,
+		});
+		expect(
+			adoptEffects("refinery", before, { ...before, world: { ...world } }),
+		).toEqual({
+			save: true,
+			consoleRevision: true,
+			requestRevision: false,
+			redraw: true,
+		});
+	});
 	const effectsOf = (before: Holdings, world: WorldState, out: HoldOutcome) =>
 		adoptEffects(out.kind, { holdings: before, world }, out);
 	/** The effects that fire, by name, so a red row says which. */
