@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+	NO_DOCKING_COMPUTER_TEXT,
 	NO_SCOOP_DOCK_NOTICE,
 	SCOOP_NOTICE_S,
 	nextScoopNotice,
@@ -131,4 +132,16 @@ describe("a partial take (civilian-combat H11)", () => {
 		expect(refused.notice.accepted).toBe(false);
 		expect(refused.cue?.kind).toBe("alert");
 	});
+});
+
+test("the docking computer's key without one is refused on the scoop row", () => {
+	expect(NO_DOCKING_COMPUTER_TEXT).toBe(
+		"No docking computer fitted. Buy one at the Equipment tab.",
+	);
+	const main = readFileSync(repoPath("src/main.ts"), "utf8");
+	const body = main.slice(main.indexOf("toggleDockingComputer() {"));
+	const refusal = body.slice(0, body.indexOf("this.engageDockingComputer()"));
+	expect(refusal).toContain("if (!this.hasDockingComputer)");
+	expect(refusal).toContain("text: NO_DOCKING_COMPUTER_TEXT");
+	expect(refusal).toContain("left: SCOOP_NOTICE_S");
 });

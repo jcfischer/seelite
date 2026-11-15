@@ -40,6 +40,11 @@ export const SCOOP_REFUSAL_TEXT = {
 	"low-bank": "Energy bank too low to scoop: pickup left in space.",
 } as const;
 
+/** What the glass says to a pilot who presses the docking computer's key
+ *  without one fitted (node #1289). */
+export const NO_DOCKING_COMPUTER_TEXT =
+	"No docking computer fitted. Buy one at the Equipment tab.";
+
 /** What the dock says, once, to a pilot whose old save had no free slot for the
  *  scoop it is granted (node #1097). */
 export const NO_SCOOP_DOCK_NOTICE =

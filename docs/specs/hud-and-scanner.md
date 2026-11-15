@@ -837,6 +837,10 @@ housings. The laser tracer shared that line until node #806. The authored cabin
 before the cabin pass, and the cabin's own fittings hide them
 (`src/beam-glass.ts`).
 
+**The docking computer's key without a computer says so (node #1289).** The
+refusal is "No docking computer fitted. Buy one at the Equipment tab.", drawn
+red on the scoop's glass row for the scoop's notice time.
+
 **The director, the flight-floor strip and the glass notices still overpaint
 the dash, and that is open.** They are on the overlay and clipped at
 `GLASS_BOTTOM_FRACTION`, 0.66 of the height, while the authored dash top on
