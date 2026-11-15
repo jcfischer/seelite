@@ -1072,7 +1072,7 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 		for (const seed of PLACEMENT_SEEDS) {
 			const world = makeWorld(seed);
 			count(world, counts.spawn);
-			advanceWorldClock(world, 120);
+			advanceWorldClock(world, nonzeroClockBeforeJumpS);
 			const target = world.galaxy.systems.find(
 				(s) => s.index !== world.system.record.index,
 			);
