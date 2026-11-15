@@ -4040,20 +4040,11 @@
   "tests/collision-stations.test.ts": {
     "no-nested-ternary": {
       "count": 1
-    },
-    "seelite/no-comments": {
-      "count": 162
-    },
-    "seelite/no-stacked-docs": {
-      "count": 1
     }
   },
   "tests/collision-traffic.test.ts": {
     "max-params": {
       "count": 1
-    },
-    "seelite/no-comments": {
-      "count": 161
     }
   },
   "tests/collision.test.ts": {
@@ -5661,14 +5652,6 @@
   "tests/station-traffic.test.ts": {
     "seelite/no-comments": {
       "count": 16
-    }
-  },
-  "tests/station-visuals.test.ts": {
-    "seelite/no-comments": {
-      "count": 138
-    },
-    "seelite/no-stacked-docs": {
-      "count": 1
     }
   },
   "tests/station-wheel.test.ts": {
