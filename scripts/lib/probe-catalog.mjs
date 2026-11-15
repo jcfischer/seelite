@@ -1107,6 +1107,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-refinery-jobs.mjs",
+			"At a generated refinery with mining on, quotes and submits mined ore through the live console, checks the ore and fee are in both saved records with the job, advances only operational service, reloads to the docked queue and checks the flagless console has no Refinery tab.",
+			[
+				"refinery",
+				"ore custody",
+				"FIFO queue",
+				"SaveStore.commit",
+				"dock checkpoint",
+				"mining flag",
+			],
+		),
+		entry(
 			"probe-relay.mjs",
 			"Exercises the pirate relay discovery, targeting, intervention, persistence, and revisit loop.",
 			[

@@ -289,12 +289,16 @@ test("save20 round trips discoveries; authentic save18 begins unknown and refuse
 		commander: newCommanderRecord("courier"),
 	}) as any;
 	raw.saveSchemaVersion = 18;
+	raw.world.worldSchemaVersion = 4;
 	delete raw.commander.state.accounting;
 	reseal(raw);
 	expect(
 		parseSave(raw).world.galaxies.every((g) => g.fieldDiscoveries.length === 0),
 	).toBe(true);
-	raw.world = serializeWorld(world);
+	raw.world = {
+		...(serializeWorld(world) as Record<string, unknown>),
+		worldSchemaVersion: 4,
+	};
 	reseal(raw);
 	expect(() => parseSave(raw)).toThrow(
 		"legacy world contains field discoveries",

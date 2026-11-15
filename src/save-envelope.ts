@@ -195,8 +195,17 @@ import {
  * may not carry `scoopNotice`, and a 17 record carries it only as `true`
  * (`LEGACY_SCHEMA_FORBIDS`).
  */
-/** Schema21 admits whole-tonne raw ore; older envelopes retain their original catalogue. */
-export const SAVE_SCHEMA_VERSION = 21;
+/**
+ * **22 admits the world's refinery queues (node #1195).** The queue lives in
+ * the world rather than the commander, so the commander's shape does not move;
+ * the envelope version is what says a record may carry a world schema 5. A 21
+ * record loads with every refinery empty and keeps its world's original hashes
+ * until `parseWorld` validates and lifts them.
+ *
+ * Schema21 admits whole-tonne raw ore; older envelopes retain their original
+ * catalogue.
+ */
+export const SAVE_SCHEMA_VERSION = 22;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -238,7 +247,7 @@ export const SAVE_SCHEMA_VERSION = 21;
  * the cargo-scoop grant.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
 ] as const;
 
 /**
@@ -1073,10 +1082,10 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	// carry one is enforced, as `flight.rates` is one level down.
 	if ((version as number) < 9) refuseDerelicts(o.world, version as number);
 	const worldVersion = asObject(o.world, "world").worldSchemaVersion;
-	if (
-		((version as number) < 18 && worldVersion !== 3) ||
-		((version as number) >= 18 && worldVersion !== 4)
-	)
+	let expectedWorldVersion = 5;
+	if ((version as number) < 18) expectedWorldVersion = 3;
+	else if ((version as number) < 22) expectedWorldVersion = 4;
+	if (worldVersion !== expectedWorldVersion)
 		fail("world schema is incompatible with saveSchemaVersion");
 	const world = parseWorld(o.world);
 	if (

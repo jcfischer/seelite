@@ -435,7 +435,13 @@ test("schema20 remains readable and cannot claim schema21 ore", () => {
 		world: newWorld(47),
 		commander: newCommanderRecord("courier"),
 	});
-	const legacy = { ...raw, saveSchemaVersion: 20 };
+	const legacy = {
+		...raw,
+		saveSchemaVersion: 20,
+		world: { ...(raw.world as Record<string, unknown>), worldSchemaVersion: 4 },
+	} as any;
+	const { integrity: wi, ...wb } = legacy.world;
+	legacy.world.integrity = fnv1a(JSON.stringify(wb));
 	const { integrity, ...body } = legacy;
 	expect(
 		parseSave({ ...body, integrity: fnv1a(JSON.stringify(body)) }).commander
@@ -448,10 +454,17 @@ test("schema20 remains readable and cannot claim schema21 ore", () => {
 			state: scoopCargo(newCommander("courier"), poor, 1, 0).commander,
 		},
 	});
-	const { integrity: previous, ...oreBody } = {
+	const legacyOre = {
 		...withOre,
 		saveSchemaVersion: 20,
-	};
+		world: {
+			...(withOre.world as Record<string, unknown>),
+			worldSchemaVersion: 4,
+		},
+	} as any;
+	const { integrity: _wi, ...oreWorld } = legacyOre.world;
+	legacyOre.world.integrity = fnv1a(JSON.stringify(oreWorld));
+	const { integrity: previous, ...oreBody } = legacyOre;
 	expect(() =>
 		parseSave({ ...oreBody, integrity: fnv1a(JSON.stringify(oreBody)) }),
 	).toThrow("schema 21");

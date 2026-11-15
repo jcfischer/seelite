@@ -77,7 +77,8 @@ export type StationConsoleTab =
 	| "Market"
 	| "Equipment"
 	| "Shipyard"
-	| "Requests";
+	| "Requests"
+	| "Refinery";
 
 /**
  * Where a dock is, as far as the console is concerned.
