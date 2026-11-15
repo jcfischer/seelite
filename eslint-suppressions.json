@@ -4696,11 +4696,6 @@
       "count": 15
     }
   },
-  "tests/hull.test.ts": {
-    "seelite/no-comments": {
-      "count": 167
-    }
-  },
   "tests/hyperspace.test.ts": {
     "seelite/no-comments": {
       "count": 18
