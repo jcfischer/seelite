@@ -4045,9 +4045,6 @@
   "tests/collision-traffic.test.ts": {
     "max-params": {
       "count": 1
-    },
-    "seelite/no-comments": {
-      "count": 161
     }
   },
   "tests/collision.test.ts": {
