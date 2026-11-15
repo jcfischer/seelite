@@ -341,7 +341,7 @@ export function authoredHullLoader(
 	return (onProgress) =>
 		(ready ??= new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
-			.register(sharedImagePlugin())
+			.register(sharedImagePlugin(id === "courier" ? "courier" : undefined))
 			.loadAsync(url, onProgress)
 			.then(async (gltf) => {
 				await yieldTask();

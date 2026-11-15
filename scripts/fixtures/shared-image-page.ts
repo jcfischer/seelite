@@ -5,6 +5,17 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { sharedImagePlugin } from "../../src/shared-image";
 
 export { THREE, GLTFLoader, MeshoptDecoder };
+export {
+	prepareCockpitModel,
+	buildAuthoredCabin,
+	adoptCockpitTemplate,
+} from "../../src/cockpit-model";
+export {
+	preparePorterModel,
+	adoptPorterTemplate,
+} from "../../src/porter-model";
+export { prepareInterceptorHullModel } from "../../src/interceptor-hull";
+export { createCourierHullBuilder } from "../../src/courier-hull";
 export { disposeSubtree } from "../../src/gpu-teardown";
 export { ModelQueue } from "../../src/model-queue";
 export { prepareTugHullModel } from "../../src/tug-hull";
@@ -12,6 +23,9 @@ export { prepareOutpostModel } from "../../src/outpost-flight";
 export { prepareRefineryModel } from "../../src/refinery-flight";
 export {
 	ASSEMBLY_GLB_URL,
+	COURIER_HULL_GLB_URL,
+	COURIER_COCKPIT_GLB_URL,
+	DISCOVERY_VOYAGER_GLB_URL,
 	BOLLARD_TUG_GLB_URL,
 	REFINERY_GLB_URLS,
 	OUTPOST_GLB_URLS,
@@ -47,3 +61,7 @@ export function mapOf(scene: THREE.Object3D, name?: string): THREE.Texture {
 		throw new Error(`expected one map, found ${maps.length}`);
 	return maps[0] as THREE.Texture;
 }
+
+export { prepareCourierHullModel } from "../../src/courier-hull";
+export { prepareVoyagerHullModel } from "../../src/voyager-hull";
+export { buildShipMesh } from "../../src/ship-mesh";

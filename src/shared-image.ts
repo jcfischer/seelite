@@ -10,7 +10,8 @@
  *
  * Models keep one texture object. An `owner` isolates its settings on another
  * texture over the same decoded `Source`. The registry applies an image's
- * optional anisotropy before cloning; matching sampler settings share one GPU
+ * optional anisotropy before cloning and any owner-specific value on its copy;
+ * matching sampler settings share one GPU
  * upload even across owner copies, including the interiors at anisotropy 8.
  * Consumers identify registry maps by Source, including owner copies and clones,
  * and leave their sampler policy to the registry.
@@ -93,6 +94,8 @@ export function createSharedImages(
 			let copy = copies.get(key);
 			if (!copy) {
 				copy = shared(texture.clone());
+				const anisotropy = images[sha256].ownerAnisotropy?.[owner];
+				if (anisotropy !== undefined) copy.anisotropy = anisotropy;
 				copies.set(key, copy);
 			}
 			return copy;

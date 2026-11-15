@@ -35,9 +35,7 @@ try {
 	).flatMap((image) => image.models)) {
 		const result = await page.evaluate(async (model) => {
 			const p = await import("/scripts/fixtures/shared-image-page.ts");
-			const original = await new p.GLTFLoader()
-				.setMeshoptDecoder(p.MeshoptDecoder)
-				.loadAsync(`/__original/${model}.glb`);
+			const original = await p.loadShared(`/__original/${model}.glb`);
 			const prepared = await p.loadShared(`/src/models/${model}.glb`);
 			const facts = (t) => ({
 				flipY: t.flipY,

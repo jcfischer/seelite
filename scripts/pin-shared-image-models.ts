@@ -15,25 +15,32 @@ const models = process.argv.slice(2);
 if (!models.length) throw new Error("name the models to pin");
 const pinned = JSON.parse(readFileSync(FILE, "utf8"));
 for (const model of models) {
-	const image = SHARED_MODEL_IMAGES.find((image) =>
+	const images = SHARED_MODEL_IMAGES.filter((image) =>
 		image.models.includes(model),
 	);
-	if (!image) throw new Error(`${model} does not use the shared image`);
+	if (!images.length) throw new Error(`${model} does not use the shared image`);
 	const path = `src/models/${model}.glb`;
 	const file = readFileSync(path);
 	const json = JSON.parse(
 		file.subarray(20, 20 + file.readUInt32LE(12)).toString(),
 	);
 	if (
-		json.textures?.some(
-			(t: any) => t.extensions?.SEELITE_shared_image?.sha256 === image.sha256,
+		json.textures?.some((t: any) =>
+			images.some(
+				(image) => t.extensions?.SEELITE_shared_image?.sha256 === image.sha256,
+			),
 		)
 	)
 		throw new Error(`${model} is already prepared; pin it before preparing it`);
 	pinned[model] = {
 		...(await glbDigest(path)),
 		preparedSha256: createHash("sha256")
-			.update(shareImage(file, image.sha256).bytes)
+			.update(
+				images.reduce(
+					(bytes, image) => Buffer.from(shareImage(bytes, image.sha256).bytes),
+					file,
+				),
+			)
 			.digest("hex"),
 	};
 }

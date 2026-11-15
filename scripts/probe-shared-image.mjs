@@ -82,6 +82,11 @@ try {
 		const p = await import("/scripts/fixtures/shared-image-page.ts");
 		return {
 			bollard: p.BOLLARD_TUG_GLB_URL,
+			courier: p.COURIER_HULL_GLB_URL,
+			cockpit: p.COURIER_COCKPIT_GLB_URL,
+			voyager: p.DISCOVERY_VOYAGER_GLB_URL,
+			lance: "/src/models/lance-interceptor.glb",
+			porter: "/src/models/porter.glb",
 			refinery: p.REFINERY_GLB_URLS.a,
 			refinerySpar: p.REFINERY_GLB_URLS.c,
 			refineryWorks: p.REFINERY_GLB_URLS.d,
@@ -98,6 +103,28 @@ try {
 	});
 	await config.close();
 	const cases = [
+		{
+			name: "steel-wear",
+			image: /\/steel-wear[^/]*\.webp/,
+			a: urls.lance,
+			b: urls.voyager,
+			owner: urls.porter,
+			prepare: "prepareInterceptorHullModel",
+			prepareArgs: [],
+			modelsFull: true,
+			bootAttempts: (n) => n >= 1,
+		},
+		{
+			name: "cockpit-steel-wear",
+			image: /\/cockpit-steel-wear[^/]*\.webp/,
+			a: urls.cockpit,
+			b: urls.courier,
+			owner: urls.cockpit,
+			prepare: "prepareCockpitModel",
+			prepareArgs: [],
+			modelsFull: false,
+			bootAttempts: (n) => n >= 1,
+		},
 		{
 			name: "industrial-surface",
 			image: /\/industrial-surface[^/]*\.webp/,
@@ -325,6 +352,82 @@ try {
 		);
 		await background.close();
 	}
+
+	const owners = await benchPage();
+	const policy = await owners.evaluate(async (urls) => {
+		const p = await import("/scripts/fixtures/shared-image-page.ts");
+		const lance = await p.loadShared(urls.lance);
+		const porter = await p.loadShared(urls.porter, "porter");
+		const cockpit = await p.loadShared(urls.cockpit, "cockpit");
+		const courier = await p.loadShared(urls.courier, "courier");
+		const base = p.mapOf(lance.scene, "steel-wear");
+		const port = p.mapOf(porter.scene, "steel-wear");
+		const cabin = p.mapOf(cockpit.scene, "cockpit-steel-wear");
+		const hull = p.mapOf(courier.scene, "steel-wear");
+		const inside = p.mapOf(courier.scene, "cockpit-steel-wear");
+		p.adoptPorterTemplate(porter.scene);
+		p.adoptCockpitTemplate(cockpit.scene);
+		const builder = await p.createCourierHullBuilder(courier.scene);
+		const root = new p.THREE.Group();
+		builder(root, new p.THREE.MeshStandardMaterial());
+		const bumped = (root) => {
+			const materials = [];
+			root.traverse((o) => {
+				for (const m of [o.material ?? []].flat()) if (m.map) materials.push(m);
+			});
+			return (
+				materials.length > 0 &&
+				materials.every((m) => m.map.anisotropy === 8 && m.bumpMap === m.map)
+			);
+		};
+		const renderer = new p.THREE.WebGLRenderer();
+		renderer.setSize(32, 32, false);
+		const camera = new p.THREE.OrthographicCamera(-1, 1, 1, -1, 0, 2);
+		camera.position.z = 1;
+		const uploads = [];
+		for (const map of [base, hull, port, cabin, inside]) {
+			const scene = new p.THREE.Scene();
+			scene.add(
+				new p.THREE.Mesh(
+					new p.THREE.PlaneGeometry(2, 2),
+					new p.THREE.MeshBasicMaterial({ map }),
+				),
+			);
+			renderer.render(scene, camera);
+			uploads.push(renderer.info.memory.textures);
+		}
+		renderer.dispose();
+		return {
+			uploads,
+			base: base.anisotropy,
+			porter: port.anisotropy,
+			cockpit: cabin.anisotropy,
+			courier: hull.anisotropy,
+			inside: inside.anisotropy,
+			isolated: port !== base && hull !== base && cabin !== inside,
+			sources:
+				port.source === base.source &&
+				hull.source === base.source &&
+				cabin.source === inside.source,
+			porterBump: bumped(porter.scene),
+			cockpitBump: bumped(cockpit.scene),
+		};
+	}, urls);
+	check(
+		"production adoption retains owner anisotropy and bump maps without changing other hulls",
+		policy.uploads.join() === "1,2,2,3,4" &&
+			policy.base === 1 &&
+			policy.porter === 8 &&
+			policy.cockpit === 8 &&
+			policy.courier === 8 &&
+			policy.inside === 1 &&
+			policy.isolated &&
+			policy.sources &&
+			policy.porterBump &&
+			policy.cockpitBump,
+		JSON.stringify(policy),
+	);
+	await owners.close();
 	const liveLoad = await blockedPage(/\/paint-wear[^/]*\.webp/);
 	const live = liveLoad.page;
 	await live.goto(
