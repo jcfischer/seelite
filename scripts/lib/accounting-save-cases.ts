@@ -152,6 +152,9 @@ export function accountingSaveCases(): { name: string; save: SaveEnvelope }[] {
 	const legacy = serializeSave(typical) as any;
 	delete legacy.commander.state.accounting;
 	legacy.saveSchemaVersion = 19;
+	legacy.world.worldSchemaVersion = 4;
+	const { integrity: _worldIntegrity, ...worldBody } = legacy.world;
+	legacy.world.integrity = fnv1a(JSON.stringify(worldBody));
 	const { integrity, ...body } = legacy;
 
 	const migration = parseSave({

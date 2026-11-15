@@ -168,7 +168,7 @@ describe("world deposit envelope", () => {
 		const raw = legacyWorldFixture(saved(world));
 		// Captured before the optional domain landed, including its integrity.
 		expect(fnv1a(JSON.stringify(raw))).toBe(1302952874);
-		expect(WORLD_SCHEMA_VERSION).toBe(4);
+		expect(WORLD_SCHEMA_VERSION).toBe(5);
 		expect(
 			raw.galaxies.every(
 				(g: Record<string, unknown>) => !Object.hasOwn(g, "deposits"),

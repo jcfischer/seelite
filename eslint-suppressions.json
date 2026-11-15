@@ -2392,7 +2392,7 @@
   },
   "src/live-cockpit.ts": {
     "no-nested-ternary": {
-      "count": 8
+      "count": 5
     },
     "seelite/no-comments": {
       "count": 315
@@ -4040,20 +4040,11 @@
   "tests/collision-stations.test.ts": {
     "no-nested-ternary": {
       "count": 1
-    },
-    "seelite/no-comments": {
-      "count": 162
-    },
-    "seelite/no-stacked-docs": {
-      "count": 1
     }
   },
   "tests/collision-traffic.test.ts": {
     "max-params": {
       "count": 1
-    },
-    "seelite/no-comments": {
-      "count": 161
     }
   },
   "tests/collision.test.ts": {
@@ -4696,11 +4687,6 @@
       "count": 15
     }
   },
-  "tests/hull.test.ts": {
-    "seelite/no-comments": {
-      "count": 167
-    }
-  },
   "tests/hyperspace.test.ts": {
     "seelite/no-comments": {
       "count": 18
@@ -4855,11 +4841,6 @@
   "tests/lib/workflow-scan.ts": {
     "seelite/no-comments": {
       "count": 21
-    }
-  },
-  "tests/light-rig.test.ts": {
-    "seelite/no-comments": {
-      "count": 140
     }
   },
   "tests/light-shift.test.ts": {
@@ -5588,11 +5569,6 @@
       "count": 4
     }
   },
-  "tests/station-console.test.ts": {
-    "seelite/no-comments": {
-      "count": 162
-    }
-  },
   "tests/station-finish.test.ts": {
     "seelite/no-comments": {
       "count": 20
@@ -5676,14 +5652,6 @@
   "tests/station-traffic.test.ts": {
     "seelite/no-comments": {
       "count": 16
-    }
-  },
-  "tests/station-visuals.test.ts": {
-    "seelite/no-comments": {
-      "count": 138
-    },
-    "seelite/no-stacked-docs": {
-      "count": 1
     }
   },
   "tests/station-wheel.test.ts": {

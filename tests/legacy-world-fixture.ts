@@ -15,4 +15,9 @@ export function pairLegacyWorldFixture(body: Record<string, any>): void {
 		delete body.commander.state.accounting;
 	if (body.saveSchemaVersion >= 2 && body.saveSchemaVersion <= 17)
 		body.world = legacyWorldFixture(body.world);
+	if (body.saveSchemaVersion >= 18 && body.saveSchemaVersion <= 21) {
+		body.world.worldSchemaVersion = 4;
+		const { integrity: _, ...world } = body.world;
+		body.world.integrity = fnv1a(JSON.stringify(world));
+	}
 }
