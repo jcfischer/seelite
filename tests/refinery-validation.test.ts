@@ -98,6 +98,20 @@ describe("refinery refusals and boundaries", () => {
 			}),
 		).toEqual(refineryRefusal("insufficient-ore"));
 	});
+	test("quote refuses a non-ore commodity", () => {
+		expect(
+			refineryQuote({
+				station: key,
+				queue: undefined,
+				oreAboard: 2,
+				cash: signedMoney.fromNumber(5),
+				offline: false,
+				good: "Food",
+				tonnes: 2,
+				feePerTonne: money.fromNumber(2.5),
+			}),
+		).toEqual(refineryRefusal("unknown-good"));
+	});
 
 	test.each([-1, NaN, Infinity])("invalid submission time %s throws", (at) => {
 		expect(() =>
@@ -283,6 +297,18 @@ describe("refinery saved-state validation", () => {
 	test("invalid station identity is refused before its queue", () => {
 		expect(() => parseRefineries({ wrong: queue() })).toThrow(
 			"refinery: wrong is not a carrier key",
+		);
+	});
+
+	test("missing queue fields and nonobject jobs name their malformed boundary", () => {
+		expect(() =>
+			parseRefineryQueue({ accountedThrough: 0, nextJobId: 2 }),
+		).toThrow("refinery: malformed refinery fields");
+		expect(() => parseRefineryQueue({ ...queue(), jobs: [null] })).toThrow(
+			"refinery: refinery job is not an object",
+		);
+		expect(() => parseRefineries(null)).toThrow(
+			"refinery: refineries is not an object",
 		);
 	});
 });

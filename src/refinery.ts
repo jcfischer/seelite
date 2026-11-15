@@ -154,6 +154,7 @@ export const refineryWorkAhead = (
 	tonnes: number,
 ): number =>
 	queue.jobs.reduce((sum, job) => sum + job.work, 0) +
+	// Stryker disable next-line ArithmeticOperator: Throughput is exactly 1; multiplying or dividing tonnes by 1 gives identical work.
 	tonnes * REFINERY_SECONDS_PER_TONNE;
 
 const quoteSignature = (quote: Omit<RefineryQuote, "signature">): string =>
@@ -278,6 +279,7 @@ export function refinerySubmit(
 		withCost,
 		signedMoney.fromTicks(-(fee as unknown as bigint)),
 	);
+	// Stryker disable next-line ArithmeticOperator: Throughput is exactly 1; multiplying or dividing tonnes by 1 gives identical work.
 	const totalWork = quote.tonnes * REFINERY_SECONDS_PER_TONNE;
 	const job: RefineryJob = {
 		id: queue.nextJobId,
@@ -421,6 +423,7 @@ function parseJob(raw: unknown, nextJobId: number): RefineryJob {
 	if (
 		work < 0 ||
 		work > totalWork ||
+		// Stryker disable next-line ArithmeticOperator: Throughput is exactly 1; multiplying or dividing tonnes by 1 gives identical work.
 		totalWork !== tonnes * REFINERY_SECONDS_PER_TONNE
 	)
 		fail(`job ${id}: work is outside its total`);

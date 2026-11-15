@@ -1325,10 +1325,8 @@ export function stationServices(
 }
 
 function settleRefineriesTo(world: WorldState, at: number): WorldState {
-	let changed = false;
 	const galaxies = world.galaxies.map((env) => {
 		const keys = Object.keys(env.refineries) as CarrierKey[];
-		if (keys.length === 0) return env;
 		let refineries: Record<CarrierKey, RefineryQueue> | null = null;
 		for (const key of keys) {
 			const queue = env.refineries[key];
@@ -1351,10 +1349,9 @@ function settleRefineriesTo(world: WorldState, at: number): WorldState {
 			refineries[key] = settled;
 		}
 		if (refineries === null) return env;
-		changed = true;
 		return { ...env, refineries };
 	});
-	return changed ? { ...world, galaxies } : world;
+	return { ...world, galaxies };
 }
 
 /** Write one refinery queue without moving the clock; the commit's adopt uses it. */

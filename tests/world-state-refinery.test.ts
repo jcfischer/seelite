@@ -16,12 +16,15 @@ import {
 } from "../src/world-state";
 
 const seed = 47;
-const stations = (type: "refinery" | "trade") => {
+const stations = (type: "refinery" | "trade", except?: CarrierKey) => {
 	for (let index = 0; index < 256; index++) {
 		const station = generateContents(systemAt(seed, 0, index)).stations.find(
 			(s) => s.type === type,
 		);
-		if (station) return carrierKey(index, station.localCarrierId);
+		if (station) {
+			const candidate = carrierKey(index, station.localCarrierId);
+			if (candidate !== except) return candidate;
+		}
 	}
 	throw new Error(`Missing ${type}`);
 };
@@ -71,19 +74,28 @@ test("advancing settles every station only once and preserves untouched galaxies
 	const world = advanceTo(newWorld(seed), 100);
 	const initial = withRefineryQueue(world, 0, key, queue(100));
 	expect(advanceTo(initial, 100)).toEqual(initial);
-	const next = advanceTo(initial, 500);
+	expect(advanceTo(initial, 100).galaxies[0].refineries[key]).toBe(
+		initial.galaxies[0].refineries[key],
+	);
+	const next = advanceTo(initial, 2000);
 	const elapsed = operationalDuration(
 		next,
 		0,
 		exclusiveCapabilityKey(key),
 		100,
-		500,
+		2000,
 	);
+	expect(elapsed).toBeGreaterThan(0);
 	expect(next.galaxies[0].refineries[key].jobs[0].work).toBe(2000 - elapsed);
-	expect(next.galaxies[0].refineries[key].accountedThrough).toBe(500);
+	expect(next.galaxies[0].refineries[key].accountedThrough).toBe(2000);
 	expect(next.galaxies[0].visited).toEqual(initial.galaxies[0].visited);
 	expect(next.seed).toBe(seed);
-	expect(advanceTo(next, 500)).toEqual(next);
+	expect(advanceTo(next, 2000)).toEqual(next);
+	const second = stations("refinery", key);
+	const mixed = withRefineryQueue(initial, 0, second, queue(3000));
+	expect(advanceTo(mixed, 2000).galaxies[0].refineries[second]).toBe(
+		mixed.galaxies[0].refineries[second],
+	);
 	const future = withRefineryQueue(initial, 0, key, queue(600));
 	expect(advanceTo(future, 500).galaxies[0].refineries[key]).toBe(
 		future.galaxies[0].refineries[key],
@@ -152,7 +164,12 @@ test("saved refinery identity, genesis, clock and retained anchors are enforced"
 	expect(() => parseWorld(seal(stale))).toThrow(
 		`refinery ${key} lost settled service before its retained anchor`,
 	);
-	const noJobs = raw();
+	const anchored = structuredClone(stale);
+	anchored.galaxies[0].refineries[key].accountedThrough = 100;
+	expect(parseWorld(seal(anchored)).galaxies[0].refineries[key]).toEqual(
+		queue(100),
+	);
+	const noJobs = structuredClone(stale);
 	noJobs.galaxies[0].refineries[key].jobs = [];
 	noJobs.galaxies[0].refineries[key].accountedThrough = 0;
 	expect(parseWorld(seal(noJobs)).galaxies[0].refineries[key].jobs).toEqual([]);
