@@ -85,6 +85,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { createStationRows } from "./lib/station-rows.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -153,13 +154,10 @@ const GRID = 24;
  * trade/refinery reads 0.271 rather than 0.35 — 8% above this floor, not 40%.
  * So the figure to restore is not this one: re-arming the gate means
  * re-measuring the spread first, and 0.25 is now close enough to the closest
- * pair that it would be asserting a margin it does not have. What the control
- * itself now reads is `MAX_CONTROL_DIFFERENCE`'s to state, below.
+ * pair that it would be asserting a margin it does not have. The control's reference
+ * figure is explained in `scripts/lib/station-rows.mjs`.
  */
 const MIN_DIFFERENCE = 0.25;
-
-// https://github.com/jcfischer/seelite/issues/1287 — report-only until re-measured.
-const MAX_CONTROL_DIFFERENCE = 0.05;
 
 /** Tolerance on the measured spin rate, relative. Loose because the station is
  *  also moving along its orbit between the two samples, and because the frame
@@ -472,94 +470,16 @@ const iou = (a, b) => {
 const isAuthored = (id) =>
 	page.evaluate((bodyId) => window.__seelite.isAuthoredStationId(bodyId), id);
 
-/**
- * Capture all three silhouettes at one range and compare them pairwise.
- *
- * Run at two ranges, because §7's standard has two halves and desaturation only
- * answers one: identity must hold *before colour* and *before detail resolves*.
- * A single close range answers the first and quietly assumes the second.
- */
-async function silhouettesAt(rangeKm, floor, gate) {
-	const shapes = new Map();
-	/** The control capture, kept beside the map rather than inside it: a type-keyed
-	 *  map holding one entry that is not a type makes every consumer filter it
-	 *  back out. */
-	let control = null;
-	for (const station of setup.stations) {
-		// Gated on the placement, not on its downstream symptom. #263 read a
-		// refinery at 0 lit aperture pixels and that looks like a defect in the
-		// form; it was a framing that landed somewhere else, and only a check on
-		// the framing itself says so.
-		framedWhereItAsked(
-			`${rangeKm} km — ${station.type}`,
-			await viewAlongAxis(station.id, rangeKm),
-		);
-		// The trade station is captured *twice from one evaluate*, and the second
-		// copy is the control. Two evaluates cannot measure this metric's noise:
-		// real frames run in the gap and carry the station along its orbit, which
-		// is a genuine change of apparent size rather than instability — and a
-		// squared hull's mask, being mostly long straight edges, is where the
-		// crop-and-resample absorbs it least.
-		const captured = await silhouette(station.id, station.type === "trade");
-		const shape = captured.again ? captured.shape : captured;
-		if (captured.again) {
-			control = captured.again;
-			check(
-				rangeKm + " km — both control captures use the same pinned clock",
-				captured.measuredClocks.length === 4 &&
-					captured.measuredClocks.every((t) => t === 0),
-				JSON.stringify(captured.measuredClocks),
-			);
-		}
-		const authored = await isAuthored(station.id);
-		check(
-			`${rangeKm} km — ${station.type}: the station is drawn and has a silhouette`,
-			!shape.missing && !shape.empty && (authored || shape.pixels > 20),
-			shape.missing
-				? "no mesh"
-				: shape.empty
-					? "no pixels changed"
-					: `${shape.pixels} px, box ${shape.box.w}×${shape.box.h}, ` +
-						`fill ${(100 * shape.coverage).toFixed(0)}%`,
-		);
-		if (shape.cells) shapes.set(station.type, shape);
-	}
-
-	const types = [...shapes.keys()];
-	console.log(
-		`\nsilhouettes at ${rangeKm} km, desaturated, ${GRID}×${GRID} after crop:`,
-	);
-	for (let i = 0; i < types.length; i++) {
-		for (let j = i + 1; j < types.length; j++) {
-			const difference =
-				1 - iou(shapes.get(types[i]).cells, shapes.get(types[j]).cells);
-			console.log(
-				`  ${types[i]} vs ${types[j]}: 1 − IoU = ${difference.toFixed(3)}`,
-			);
-			if (gate.pairs)
-				check(
-					`${rangeKm} km — ${types[i]} and ${types[j]} differ by outline alone`,
-					difference > floor,
-					`1 − IoU = ${difference.toFixed(3)} (floor ${floor})`,
-				);
-		}
-	}
-
-	const first = shapes.get("trade");
-	if (!first?.cells || !control?.cells) {
-		console.log(
-			`  report-only: ${rangeKm} km — re-measuring one station reproduces its silhouette — ` +
-				`no second silhouette to compare (ceiling ${MAX_CONTROL_DIFFERENCE})`,
-		);
-	} else {
-		const drift = 1 - iou(first.cells, control.cells);
-		console.log(
-			`  report-only: ${rangeKm} km — re-measuring one station reproduces its silhouette — ` +
-				`1 − IoU = ${drift.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
-		);
-	}
-	return shapes;
-}
+const silhouettesAt = createStationRows({
+	stations: setup.stations,
+	grid: GRID,
+	check,
+	viewAlongAxis,
+	framedWhereItAsked,
+	silhouette,
+	isAuthored,
+	iou,
+});
 
 const near = await silhouettesAt(RANGE_KM, MIN_DIFFERENCE, {
 	pairs: false,

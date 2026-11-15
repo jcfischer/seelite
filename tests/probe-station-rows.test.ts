@@ -1,28 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
-import { parse } from "@typescript-eslint/parser";
 import { tally } from "../scripts/probe-guard.mjs";
-
-const source = readFileSync("scripts/probe-station.mjs", "utf8");
-const program = parse(source, { range: true, sourceType: "module" });
-const evaluator = program.body.find(
-	(node) =>
-		node.type === "FunctionDeclaration" && node.id?.name === "silhouettesAt",
-);
-if (!evaluator?.range) throw new Error("No station row evaluator");
-const ceiling = program.body.find(
-	(node) =>
-		node.type === "VariableDeclaration" &&
-		node.declarations.some(
-			(declaration) =>
-				declaration.id.type === "Identifier" &&
-				declaration.id.name === "MAX_CONTROL_DIFFERENCE",
-		),
-);
-if (!ceiling?.range) throw new Error("No control reference ceiling");
-const evaluationSource =
-	source.slice(...ceiling.range) + source.slice(...evaluator.range);
+import { createStationRows } from "../scripts/lib/station-rows.mjs";
 
 async function replay({
 	drift = 0,
@@ -42,16 +20,13 @@ async function replay({
 		box: { w: 10, h: 10 },
 		coverage: 1,
 	});
-	const context = {
-		console,
+	const silhouettesAt = createStationRows({
 		check: result.check,
-		GRID: 24,
-		setup: {
-			stations: ["trade", "refinery", "shipyard"].map((type) => ({
-				id: type,
-				type,
-			})),
-		},
+		grid: 24,
+		stations: ["trade", "refinery", "shipyard"].map((type) => ({
+			id: type,
+			type,
+		})),
 		viewAlongAxis: async () => ({}),
 		framedWhereItAsked: () => {},
 		isAuthored: async () => false,
@@ -68,14 +43,9 @@ async function replay({
 			if (a === "trade" && b === "refinery") return 1 - pair;
 			return b === "shipyard" && a === "trade" ? 1 - 0.565 : 1 - 0.412;
 		},
-		rangeKm,
-		pairs,
-	};
+	});
 	try {
-		await runInNewContext(
-			`${evaluationSource}; silhouettesAt(rangeKm, 0.25, { pairs, control: true })`,
-			context,
-		);
+		await silhouettesAt(rangeKm, 0.25, { pairs });
 		return { lines, failures: result.failures };
 	} finally {
 		log.mockRestore();

@@ -1449,10 +1449,10 @@
   },
   "scripts/probe-station.mjs": {
     "no-nested-ternary": {
-      "count": 2
+      "count": 1
     },
     "seelite/no-comments": {
-      "count": 92
+      "count": 80
     },
     "seelite/no-stacked-docs": {
       "count": 1
