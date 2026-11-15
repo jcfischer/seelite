@@ -153,6 +153,9 @@ test("CLI reproduces the shipped half-size normal and writes only a full-size he
 		const stdout = await new Response(child.stdout).text();
 		const stderr = await new Response(child.stderr).text();
 		expect([await child.exited, stderr]).toEqual([0, ""]);
+		expect(JSON.parse(stdout).source).toBe(
+			"src/models/courier-hull.glb steel-wear",
+		);
 		expect(JSON.parse(stdout).tile).toEqual([1254, 1254]);
 		expect(await Bun.file(path).bytes()).toEqual(before);
 		expect(await Bun.file(normalPath).bytes()).toEqual(before);

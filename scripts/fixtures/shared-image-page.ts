@@ -15,7 +15,12 @@ export {
 	adoptPorterTemplate,
 } from "../../src/porter-model";
 export { prepareInterceptorHullModel } from "../../src/interceptor-hull";
-export { createCourierHullBuilder } from "../../src/courier-hull";
+export {
+	createCourierHullBuilder,
+	prepareCourierHullModel,
+} from "../../src/courier-hull";
+export { prepareVoyagerHullModel } from "../../src/voyager-hull";
+export { buildShipMesh } from "../../src/ship-mesh";
 export { disposeSubtree } from "../../src/gpu-teardown";
 export { ModelQueue } from "../../src/model-queue";
 export { prepareTugHullModel } from "../../src/tug-hull";
@@ -61,7 +66,3 @@ export function mapOf(scene: THREE.Object3D, name?: string): THREE.Texture {
 		throw new Error(`expected one map, found ${maps.length}`);
 	return maps[0] as THREE.Texture;
 }
-
-export { prepareCourierHullModel } from "../../src/courier-hull";
-export { prepareVoyagerHullModel } from "../../src/voyager-hull";
-export { buildShipMesh } from "../../src/ship-mesh";

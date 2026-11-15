@@ -21,6 +21,7 @@ import {
 	ROCK_ALBEDO,
 	SHARED_MODEL_IMAGES,
 	STEEL_WEAR,
+	COCKPIT_STEEL_WEAR,
 	shareImage,
 	writeGlb,
 	SHARED_IMAGE_EXTENSION,
@@ -62,9 +63,10 @@ test.each(STEEL_MODELS)("%s uses the steel registry", (model) => {
 	);
 	const json = documentOf(file);
 	expect(
-		json.textures.some((t: any) =>
-			t.extensions?.[EXTENSION]?.sha256?.startsWith(
-				model === "courier-cockpit" ? "ddf4852997" : "b8cf237523",
+		sharedImagesOf(model).every((image) =>
+			json.textures.some(
+				(texture: any) =>
+					texture.extensions?.[EXTENSION]?.sha256 === image.sha256,
 			),
 		),
 	).toBe(true);
@@ -85,10 +87,17 @@ test("courier sampler ownership preserves its later anisotropy approval", async 
 		"courier",
 		{} as ImageLoader,
 	);
+	const voyager = await images.texture(
+		STEEL_WEAR.sha256,
+		"voyager",
+		{} as ImageLoader,
+	);
 	expect(base.anisotropy).toBe(1);
 	expect(own.anisotropy).toBe(8);
 	expect(own.source).toBe(base.source);
 	expect(own).not.toBe(base);
+	expect(voyager.anisotropy).toBe(1);
+	expect(voyager.source).toBe(base.source);
 });
 
 const IMAGE = Buffer.from("not really a webp!!!");
@@ -543,7 +552,12 @@ const ANISOTROPY_BY_IMAGE: Record<string, number> = {
 	[PAINT_WEAR.name]: 1,
 	[ROCK_ALBEDO.name]: 1,
 	[STEEL_WEAR.name]: 1,
-	"cockpit-steel-wear": 1,
+	[COCKPIT_STEEL_WEAR.name]: 1,
+};
+const EMBEDDED_IMAGE_COUNTS: Record<string, number> = {
+	"courier-hull": 0,
+	"discovery-voyager": 2,
+	porter: 1,
 };
 
 describe("a model sharing one or more images", () => {
@@ -553,6 +567,9 @@ describe("a model sharing one or more images", () => {
 			const file = readFileSync(pathOf(model));
 			const json = documentOf(file);
 			const images = sharedImagesOf(model);
+			const embeddedCount = EMBEDDED_IMAGE_COUNTS[model] ?? 0;
+			if (embeddedCount === 0) expect(json.images).toBeUndefined();
+			else expect(json.images).toHaveLength(embeddedCount);
 			expect(
 				json.textures
 					.flatMap(

@@ -1,9 +1,14 @@
-import { mkdir, readFile, realpath } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { type Document, NodeIO } from "@gltf-transform/core";
+import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { MeshoptDecoder } from "meshoptimizer";
 import sharp from "sharp";
 import { deriveMaterialMaps } from "./lib/derive-material-maps";
+import { readSharedModel } from "./lib/shared-image-io.mjs";
+import { STEEL_WEAR } from "./share-model-image.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const { values } = parseArgs({
@@ -24,23 +29,27 @@ const sourceDirectory = await realpath(join(root, "src"));
 if (actual === sourceDirectory || actual.startsWith(sourceDirectory + "/"))
 	throw new Error("Height output must be outside src so it cannot be bundled");
 
-const glb = await readFile(join(root, "src/models/courier-hull.glb"));
-if (glb.readUInt32LE(0) !== 0x46546c67 || glb.readUInt32LE(4) !== 2)
-	throw new Error("Expected a glTF 2 binary");
-const jsonLength = glb.readUInt32LE(12);
-const gltf = JSON.parse(glb.subarray(20, 20 + jsonLength).toString());
-for (const material of gltf.materials) {
-	const index = material.pbrMetallicRoughness?.baseColorTexture?.index;
-	if (index === undefined || material.name?.startsWith("cockpit-")) continue;
-	const texture = gltf.textures[index];
-	if ((texture.extensions?.EXT_texture_webp?.source ?? texture.source) !== 0)
+const io = new NodeIO()
+	.registerExtensions(ALL_EXTENSIONS)
+	.registerDependencies({ "meshopt.decoder": MeshoptDecoder });
+const document: Document = await readSharedModel(
+	io,
+	join(root, "src/models/courier-hull.glb"),
+);
+const texture = document
+	.getRoot()
+	.listTextures()
+	.find((texture) => texture.getName() === STEEL_WEAR.name);
+const image = texture?.getImage();
+if (!image) throw new Error("Courier exterior steel image is missing");
+for (const material of document.getRoot().listMaterials()) {
+	const map = material.getBaseColorTexture();
+	if (!map || material.getName().startsWith("cockpit-")) continue;
+	if (map !== texture)
 		throw new Error(
-			`Exterior material ${material.name} does not use image 0; stop and escalate`,
+			`Exterior material ${material.getName()} does not use ${STEEL_WEAR.name}; stop and escalate`,
 		);
 }
-const view = gltf.bufferViews[gltf.images[0].bufferView];
-const start = 20 + jsonLength + 8 + (view.byteOffset ?? 0);
-const image = glb.subarray(start, start + view.byteLength);
 const { data, info } = await sharp(image)
 	.removeAlpha()
 	.toColourspace("srgb")
@@ -65,7 +74,7 @@ await sharp(maps.height, {
 	.toFile(heightPath);
 console.log(
 	JSON.stringify({
-		source: "src/models/courier-hull.glb image 0",
+		source: `src/models/courier-hull.glb ${STEEL_WEAR.name}`,
 		tile: [info.width, info.height],
 		normal: normalPath,
 		height: heightPath,

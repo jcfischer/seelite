@@ -189,3 +189,37 @@ Its complete output is `/tmp/node1228-full-test.log`. The branch contains
 This is an internal asset refactor, outside `src/changelog.ts`'s major-change
 definition. The supervisor owns push, PR, Sage review and the principal's merge.
 No graph node or map was edited.
+
+## Sage review round 1
+
+All four findings were taken. Prepared-model checks again require no embedded
+images except Voyager's two panel images and Porter's coarse steel image; the
+courier hull explicitly expects zero. A negative control adding an extra image
+entry to each parsed model fails all 28 cases. Steel registry checks use every
+registered image's full hash, including both courier-hull images, and the
+anisotropy table uses the cockpit image's registered name.
+
+The generic hull loader passes each hull's id as its texture owner. Registry
+settings still decide anisotropy, and owner copies retain the shared decoded
+Source. Fixture re-exports are grouped by module at the top of the file.
+
+Merged `origin/main` at `3f4e9e49` before final verification. Build, typecheck,
+25 MiB host-size guard, formatting, lint and comment-ratchet checks pass. The
+hardware `probe-shared-image` passes 52/52 on ANGLE Metal / Apple M5 Pro,
+including sampler isolation, bump maps and live failure/retry behavior. This
+is one manually scoped probe, not a passing full PR browser gate. Logs are
+`/tmp/node1228-review1-{build-final,probe-run,negative-control}.log`.
+
+The merged courier-normal integration added a CLI that read embedded image 0.
+The full host test run exposed its incompatibility with the prepared courier.
+The CLI now uses the existing shared-model reader and checks that every
+exterior material samples the named steel image. Its five targeted tests pass,
+including byte-identical reproduction of the shipped normal and unchanged
+height dimensions. Log: `/tmp/node1228-review1-derived.log`.
+
+The single full run finishes at 8,266 passed and that one CLI failure across
+503 files in 713.39 seconds (`/tmp/node1228-review1-full-test.log`). After the
+repair, all four affected files pass together: 202 tests, zero failures
+(`/tmp/node1228-review1-affected-final.log`). The full suite was not repeated,
+under the worker's once-only rule; the supervisor reruns it on the committed
+tree. Build and lint checks were rerun after the CLI repair and pass.
