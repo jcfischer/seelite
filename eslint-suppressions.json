@@ -4857,11 +4857,6 @@
       "count": 21
     }
   },
-  "tests/light-rig.test.ts": {
-    "seelite/no-comments": {
-      "count": 140
-    }
-  },
   "tests/light-shift.test.ts": {
     "seelite/no-comments": {
       "count": 2
