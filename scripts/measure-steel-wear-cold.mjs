@@ -119,6 +119,17 @@ try {
 		].every(Number.isFinite)
 	)
 		throw new Error("non-finite cold measurement");
+	const steelSettings = report.maps.map((maps) =>
+		maps
+			.filter((map) => map.name.includes("steel-wear"))
+			.map((map) => map.anisotropy)
+			.sort((a, b) => a - b)
+			.join(),
+	);
+	if (steelSettings.join("/") !== "1,8/8/1")
+		throw new Error(
+			"production sampler settings changed: " + steelSettings.join("/"),
+		);
 	console.log(
 		JSON.stringify(
 			{

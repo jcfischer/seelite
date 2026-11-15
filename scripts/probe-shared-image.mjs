@@ -428,53 +428,68 @@ try {
 		JSON.stringify(policy),
 	);
 	await owners.close();
-	const liveLoad = await blockedPage(/\/paint-wear[^/]*\.webp/);
-	const live = liveLoad.page;
-	await live.goto(
-		gameUrl(ORIGIN, {
-			seed: 42,
-			system: 4,
+	for (const liveCase of [
+		{
+			image: /\/paint-wear[^/]*\.webp/,
 			hull: "tug",
-			"no-save": true,
-			voices: "formant",
-			raider: "off",
-			"models-full": false,
-		}),
-	);
-	await bootedGame(live, 120000);
-	await live.waitForFunction(
-		() => window.__seelite.modelsSettled(),
-		undefined,
-		{ timeout: 120000 },
-	);
-	const standin = await live.evaluate(() => ({
-		authored: !!window.__seelite.shipMesh.userData.authored,
-		rejections: window.__rejections,
-	}));
-	check(
-		"a live background Bollard keeps its procedural stand-in after an image failure",
-		liveLoad.requests() > 0 &&
-			!standin.authored &&
-			standin.rejections.length === 0,
-		JSON.stringify({ requests: liveLoad.requests(), ...standin }),
-	);
-	const failedRequests = liveLoad.requests();
-	liveLoad.unblock();
-	await live.evaluate(async () => {
-		const { prepareTugHullModel } = await import("/src/tug-hull.ts");
-		await prepareTugHullModel();
-		window.__seelite.refreshAuthoredHulls();
-	});
-	check(
-		"a later live load refetches and installs the authored Bollard",
-		liveLoad.requests() === failedRequests + 1 &&
-			(await live.evaluate(
-				() =>
-					!!window.__seelite.shipMesh.userData.authored &&
-					window.__rejections.length === 0,
-			)),
-	);
-	await live.close();
+			name: "Bollard",
+			prepare: "prepareTugHullModel",
+		},
+		{
+			image: /\/steel-wear[^/]*\.webp/,
+			hull: "courier",
+			name: "courier",
+			prepare: "prepareCourierHullModel",
+		},
+	]) {
+		const liveLoad = await blockedPage(liveCase.image);
+		const live = liveLoad.page;
+		await live.goto(
+			gameUrl(ORIGIN, {
+				seed: 42,
+				system: 4,
+				hull: liveCase.hull,
+				"no-save": true,
+				voices: "formant",
+				raider: "off",
+				"models-full": false,
+			}),
+		);
+		await bootedGame(live, 120000);
+		await live.waitForFunction(
+			() => window.__seelite.modelsSettled(),
+			undefined,
+			{ timeout: 120000 },
+		);
+		const standin = await live.evaluate(() => ({
+			authored: !!window.__seelite.shipMesh.userData.authored,
+			rejections: window.__rejections,
+		}));
+		check(
+			`a live background ${liveCase.name} keeps its procedural stand-in after an image failure`,
+			liveLoad.requests() > 0 &&
+				!standin.authored &&
+				standin.rejections.length === 0,
+			JSON.stringify({ requests: liveLoad.requests(), ...standin }),
+		);
+		const failedRequests = liveLoad.requests();
+		liveLoad.unblock();
+		await live.evaluate(async (prepare) => {
+			const p = await import("/scripts/fixtures/shared-image-page.ts");
+			await p[prepare]();
+			window.__seelite.refreshAuthoredHulls();
+		}, liveCase.prepare);
+		check(
+			`a later live load refetches and installs the authored ${liveCase.name}`,
+			liveLoad.requests() === failedRequests + 1 &&
+				(await live.evaluate(
+					() =>
+						!!window.__seelite.shipMesh.userData.authored &&
+						window.__rejections.length === 0,
+				)),
+		);
+		await live.close();
+	}
 
 	const liveRefineryLoad = await blockedPage(/\/rock-albedo[^/]*\.webp/);
 	const liveRefinery = liveRefineryLoad.page;
