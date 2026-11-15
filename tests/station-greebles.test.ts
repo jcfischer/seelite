@@ -20,6 +20,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { cpus } from "node:os";
 import * as THREE from "three";
 import {
 	STATION_GEOMETRY,
@@ -110,6 +111,83 @@ const isGreeble = (object: THREE.Object3D) => {
 		if (node.name.startsWith("greebles")) return true;
 	return false;
 };
+
+function reportStationFailure(
+	root: THREE.Object3D,
+	details: Record<string, unknown>,
+) {
+	try {
+		const meshes: unknown[] = [];
+		root.traverse((object) => {
+			const mesh = object as THREE.Mesh;
+			const position = mesh.geometry?.getAttribute("position");
+			if (!position || (meshes.length >= 12 && !isGreeble(object))) return;
+			const normal = mesh.geometry.getAttribute("normal");
+			const normalValues = normal ? Array.from(normal.array) : null;
+			const instance = new THREE.Matrix4();
+			const instanced = mesh as THREE.InstancedMesh;
+			if (instanced.isInstancedMesh && instanced.count > 0)
+				instanced.getMatrixAt(0, instance);
+			let nonfinite = 0;
+			for (let i = 0; i < position.array.length; i++)
+				if (!Number.isFinite(position.array[i])) nonfinite++;
+			meshes.push({
+				name: object.name,
+				parent: object.parent?.name,
+				geometry: mesh.geometry.type,
+				vertices: position.count,
+				nonfinite,
+				sample: Array.from(position.array).slice(0, 18),
+				normalNonfinite:
+					normalValues?.filter((value) => !Number.isFinite(value)).length ??
+					null,
+				normalNaN: normalValues?.filter(Number.isNaN).length ?? null,
+				normalPositiveInfinity:
+					normalValues?.filter((value) => value === Infinity).length ?? null,
+				normalNegativeInfinity:
+					normalValues?.filter((value) => value === -Infinity).length ?? null,
+				normalSample: normalValues?.slice(0, 9).map(String) ?? null,
+				boundingSphere: mesh.geometry.boundingSphere,
+				boundingBox: mesh.geometry.boundingBox,
+				indices: mesh.geometry.index?.count,
+				drawRange: {
+					start: mesh.geometry.drawRange.start,
+					count: String(mesh.geometry.drawRange.count),
+				},
+				matrixWorld: object.matrixWorld.elements,
+				matrixAutoUpdate: object.matrixAutoUpdate,
+				matrixWorldAutoUpdate: object.matrixWorldAutoUpdate,
+				raycastIsPrototype: mesh.raycast === THREE.Mesh.prototype.raycast,
+				instanceCount: instanced.isInstancedMesh ? instanced.count : null,
+				firstInstance: instanced.isInstancedMesh ? instance.elements : null,
+				sides: (Array.isArray(mesh.material)
+					? mesh.material
+					: [mesh.material]
+				).map((material) => ({ name: material.name, side: material.side })),
+			});
+		});
+		console.error(
+			"station-greebles diagnostic",
+			JSON.stringify({
+				...details,
+				bun: process.versions.bun,
+				platform: process.platform,
+				arch: process.arch,
+				cpu: cpus()[0]?.model,
+				finish: currentStationFinish(),
+				rootMatrixWorld: root.matrixWorld.elements,
+				children: root.children.map((child) => ({
+					name: child.name,
+					matrixWorld: child.matrixWorld.elements,
+				})),
+				raycast: THREE.Mesh.prototype.raycast.toString(),
+				meshes,
+			}),
+		);
+	} catch (error) {
+		console.error("station-greebles diagnostic unavailable", String(error));
+	}
+}
 
 describe("every form carries clutter, and the density figure is what puts it there", () => {
 	test("every form of every role builds greebles, and the handle holds them", () => {
@@ -328,6 +406,7 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 					const scale = new THREE.Vector3();
 					const normal = new THREE.Vector3();
 					const floating: string[] = [];
+					const failedRays: unknown[] = [];
 					for (const mesh of greebles) {
 						for (let i = 0; i < mesh.count; i++) {
 							mesh.getMatrixAt(i, matrix);
@@ -375,9 +454,40 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 										.addScaledVector(across, side * 1e-6);
 									hit = ray.intersectObjects(structure, false);
 								}
-							if (!hit.length) floating.push(`${mesh.name}#${i}`);
+							if (!hit.length) {
+								floating.push(`${mesh.name}#${i}`);
+								if (failedRays.length < 3) {
+									try {
+										failedRays.push({
+											mesh: mesh.name,
+											instance: i,
+											matrix: matrix.toArray(),
+											centre: centre.toArray(),
+											normal: normal.toArray(),
+											scale: scale.toArray(),
+											initialOrigin: start.toArray(),
+											across: across.toArray(),
+											origin: ray.ray.origin.toArray(),
+											direction: ray.ray.direction.toArray(),
+											near: ray.near,
+											far: ray.far,
+											hits: hit.length,
+										});
+									} catch (error) {
+										failedRays.push({ unavailable: String(error) });
+									}
+								}
+							}
 						}
 					}
+					if (floating.length)
+						reportStationFailure(root, {
+							finishId: finish,
+							type,
+							form: form.id,
+							floating,
+							failedRays,
+						});
 					expect([finish, type, form.id, floating]).toEqual([
 						finish,
 						type,
@@ -406,6 +516,13 @@ describe("#102 §2 — no greeble may be a station's farthest vertex", () => {
 				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				const clutter = reachOf(root, type, isGreeble);
 				const structure = reachOf(root, type, (o) => !isGreeble(o));
+				if (!(clutter < structure))
+					reportStationFailure(root, {
+						type,
+						form: form.id,
+						clutter,
+						structure,
+					});
 				expect([type, form.id, clutter < structure]).toEqual([
 					type,
 					form.id,
@@ -525,3 +642,28 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 		}
 	});
 });
+
+test("the production polyhedron inputs retain finite normals across warmed construction", () => {
+	const built = buildStationForm("trade", "a", GREY, 0, 0);
+	const core = built.root.getObjectByName(
+		"core",
+	) as THREE.Mesh<THREE.PolyhedronGeometry>;
+	const { vertices, indices, radius, detail } = core.geometry.parameters;
+	try {
+		for (let i = 0; i < 2048; i++) {
+			const geometry = new THREE.PolyhedronGeometry(
+				vertices,
+				indices,
+				radius,
+				detail,
+			);
+			const finite = Array.from(geometry.getAttribute("normal").array).every(
+				Number.isFinite,
+			);
+			geometry.dispose();
+			expect({ iteration: i, finite }).toEqual({ iteration: i, finite: true });
+		}
+	} finally {
+		built.dispose();
+	}
+}, 60_000);
