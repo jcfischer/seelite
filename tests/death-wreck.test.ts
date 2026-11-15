@@ -966,11 +966,8 @@ test("legacy own-wreck material migrates as unknown-cost and stays ineligible on
 		world,
 		commander: newCommanderRecord("courier"),
 	}) as any;
-	delete raw.commander.state.accounting;
 	raw.saveSchemaVersion = 19;
-	raw.world.worldSchemaVersion = 4;
-	const { integrity: wi, ...wb } = raw.world;
-	raw.world.integrity = fnv1a(JSON.stringify(wb));
+	pairLegacyWorldFixture(raw);
 	const { integrity, ...body } = raw;
 	raw.integrity = fnv1a(JSON.stringify(body));
 	const original = JSON.stringify(raw),

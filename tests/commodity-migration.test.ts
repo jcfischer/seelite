@@ -16,6 +16,7 @@ import {
 } from "../src/save-store";
 import { fnv1a } from "../src/rng";
 import { money, signedMoney } from "../src/exact-amount";
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 const legacy = (cash: number) => {
 	const e: SaveEnvelope = {
 		world: newWorld(47),
@@ -32,11 +33,8 @@ const legacy = (cash: number) => {
 		basis: { Alloys: { units: 0.25, cr: 0.1 }, Gold: { units: 0, cr: 3 } },
 	};
 	const blob = serializeSave(e) as any;
-	delete blob.commander.state.accounting;
 	blob.saveSchemaVersion = 19;
-	blob.world.worldSchemaVersion = 4;
-	const { integrity: wi, ...wb } = blob.world;
-	blob.world.integrity = fnv1a(JSON.stringify(wb));
+	pairLegacyWorldFixture(blob);
 	const { integrity, ...body } = blob;
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
