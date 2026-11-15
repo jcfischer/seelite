@@ -240,8 +240,8 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 	// Two moments inside different epochs. The base moves between them, and the
 	// delta must move with it — a delta held against a remembered price would
 	// keep the old base and drift.
-	const times = [0, MARKET_PERIOD_MIN * 3];
-	for (const gameTimeMin of times) {
+	const twoEpochs = [0, MARKET_PERIOD_MIN * 3];
+	for (const gameTimeMin of twoEpochs) {
 		const base = marketRow(good, ECONOMY, TRADE, gameTimeMin);
 		const rows = stationMarketScreen({
 			station: TRADE,
@@ -277,8 +277,10 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 	}
 	// The guard: the two epochs must actually differ, or the loop above proves
 	// nothing about which base was used.
-	const bases = times.map((t) => marketRow(good, ECONOMY, TRADE, t).priceCr);
-	expect(bases[0]).not.toBeCloseTo(bases[1], 6);
+	const [firstEpochBase, laterEpochBase] = twoEpochs.map(
+		(t) => marketRow(good, ECONOMY, TRADE, t).priceCr,
+	);
+	expect(firstEpochBase).not.toBeCloseTo(laterEpochBase, 6);
 });
 
 // ---------------------------------------------------------------------------
@@ -295,7 +297,7 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
  * mapping — `requiredDisplayTL(9) === 7` — rests on that order. Parsed, a retune
  * of §7 that does not reach `UNIVERSAL_ITEMS` turns this file red.
  */
-const ECONOMY_TRADE_7 = (() => {
+const UNIVERSAL_ORDER_FROM_SPEC = (() => {
 	const spec = readFileSync(
 		new URL("../docs/specs/economy-trade.md", import.meta.url),
 		"utf8",
@@ -306,8 +308,10 @@ const ECONOMY_TRADE_7 = (() => {
 		// `| Item | Price | Where |` — the universal rows of §7's table, in the
 		// order they appear. `Missile (max 4)` carries a parenthetical the item
 		// list does not.
-		if (cells.length !== 5 || cells[3] !== "universal") continue;
-		names.push(cells[1].replace(/\s*\(.*\)$/, ""));
+		const isUniversalTableRow = cells.length === 5 && cells[3] === "universal";
+		if (!isUniversalTableRow) continue;
+		const withoutParenthetical = cells[1].replace(/\s*\(.*\)$/, "");
+		names.push(withoutParenthetical);
 	}
 	return names;
 })();
@@ -315,13 +319,13 @@ const ECONOMY_TRADE_7 = (() => {
 test("the §7 order this file checks against was read out of the spec", () => {
 	// The guard on the parser. A selector that matched nothing would leave every
 	// assertion below comparing two empty lists and agreeing.
-	expect(ECONOMY_TRADE_7.length).toBe(10);
-	expect(ECONOMY_TRADE_7[0]).toBe("Fuel");
-	expect(ECONOMY_TRADE_7.at(-1)).toBe("Galactic Hyperdrive");
+	expect(UNIVERSAL_ORDER_FROM_SPEC.length).toBe(10);
+	expect(UNIVERSAL_ORDER_FROM_SPEC[0]).toBe("Fuel");
+	expect(UNIVERSAL_ORDER_FROM_SPEC.at(-1)).toBe("Galactic Hyperdrive");
 });
 
 test("obligation 8: Fuel is the first universal item and the one absent from EQUIPMENT", () => {
-	expect(UNIVERSAL_ITEMS.map((e) => e.name)).toEqual(ECONOMY_TRADE_7);
+	expect(UNIVERSAL_ITEMS.map((e) => e.name)).toEqual(UNIVERSAL_ORDER_FROM_SPEC);
 	expect(UNIVERSAL_ITEMS.length).toBe(UNIVERSAL_GATE_CAP);
 	expect(EQUIPMENT.some((e) => e.name === "Fuel")).toBe(false);
 	expect(EQUIPMENT.filter((e) => e.scope === "universal").length).toBe(9);
@@ -332,7 +336,7 @@ test("obligation 8: Fuel is the first universal item and the one absent from EQU
 
 test("obligation 8: the universal set at displayTL d is §7's order truncated to min(d + 3, 10)", () => {
 	for (let d = 0; d <= 12; d += 1) {
-		const expected = ECONOMY_TRADE_7.slice(0, Math.min(d + 3, 10));
+		const expected = UNIVERSAL_ORDER_FROM_SPEC.slice(0, Math.min(d + 3, 10));
 		expect(universalItemsAt(d).map((e) => e.name)).toEqual(expected);
 		// Membership, not length: §8.6 measured that a count check is blind from
 		// d = 0 to 6, which is where the frontier stations a reader has in mind
@@ -404,7 +408,7 @@ test("obligation 6: a low-TL trade station lists what it sells and names what it
 	expect(new Set(shown).size).toBe(shown.length);
 	expect(new Set(shown)).toEqual(
 		new Set([
-			...ECONOMY_TRADE_7,
+			...UNIVERSAL_ORDER_FROM_SPEC,
 			...EQUIPMENT.filter((e) => e.scope !== "universal").map((e) => e.name),
 		]),
 	);
@@ -433,7 +437,7 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 	// because the negative it replaced — no reason reads "requires TL 10" —
 	// names a string `requiredDisplayTL` maxes out below and so cannot fail.
 	expect(shipyard.available.map((e) => e.name)).toEqual([
-		...ECONOMY_TRADE_7,
+		...UNIVERSAL_ORDER_FROM_SPEC,
 		"Extra Energy Unit",
 		"Military Laser",
 		"Identity Scanner",
@@ -500,22 +504,22 @@ test("the traversal bounds here are the ones docking.md ratified", () => {
 		"utf8",
 	).replace(/\s+/g, " ");
 	// §13.3 re-fixed E3's band, so the ratified figures are read from there.
-	const start = prose.indexOf(
+	const sectionStart = prose.indexOf(
 		"**Traversal duration scales with route length**",
 	);
-	const end = prose.indexOf(
+	const sectionEnd = prose.indexOf(
 		"**Both traversals are unconditionally skippable.**",
 	);
 	// **Both** indices guarded, not only the first. With the closing sentence
 	// renamed, `indexOf` returns -1 and `slice(start, -1)` yields everything to
 	// the end of the file — restoring exactly the whole-file match this slice
 	// exists to close, on a green test.
-	expect(start).toBeGreaterThan(0);
-	expect(end).toBeGreaterThan(start);
-	const e3 = prose.slice(start, end);
-	expect(e3.length).toBeGreaterThan(100);
-	expect(e3).toContain("about six seconds for a near");
-	expect(e3).toContain("nine seconds for a deep");
+	expect(sectionStart).toBeGreaterThan(0);
+	expect(sectionEnd).toBeGreaterThan(sectionStart);
+	const traversalSection = prose.slice(sectionStart, sectionEnd);
+	expect(traversalSection.length).toBeGreaterThan(100);
+	expect(traversalSection).toContain("about six seconds for a near");
+	expect(traversalSection).toContain("nine seconds for a deep");
 	expect(TRAVERSAL_SECONDS_NEAR).toBe(6);
 	expect(TRAVERSAL_SECONDS_DEEP).toBe(9);
 });
