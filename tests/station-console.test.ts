@@ -456,7 +456,7 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 	expect(priceAt(commanderHold(withBay, 0).capacityT)).toBeLessThan(
 		priceAt(commanderHold(bare, 0).capacityT),
 	);
-	const unmarked = (holdT: number) =>
+	const unmarkedPriceAt = (holdT: number) =>
 		(
 			stationMarketScreen({
 				station: TRADE,
@@ -468,7 +468,7 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 				displayTL: SCREEN_TL,
 			}).find((r) => r.commodity.name === good.name) as { buyCr: number }
 		).buyCr;
-	expect(unmarked(20)).toBe(unmarked(60));
+	expect(unmarkedPriceAt(20)).toBe(unmarkedPriceAt(60));
 });
 
 describe("the price column says what the player is charged", () => {
