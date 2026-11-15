@@ -5663,14 +5663,6 @@
       "count": 16
     }
   },
-  "tests/station-visuals.test.ts": {
-    "seelite/no-comments": {
-      "count": 138
-    },
-    "seelite/no-stacked-docs": {
-      "count": 1
-    }
-  },
   "tests/station-wheel.test.ts": {
     "seelite/no-comments": {
       "count": 30
