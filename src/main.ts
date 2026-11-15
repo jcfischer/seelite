@@ -853,6 +853,7 @@ import {
 } from "./raider-wreck";
 import {
 	NO_SCOOP_DOCK_NOTICE,
+	NO_DOCKING_COMPUTER_TEXT,
 	SCOOP_NOTICE_S,
 	SCOOP_REFUSAL_TEXT,
 	type ScoopNotice,
@@ -14312,7 +14313,15 @@ class Game {
 	/** §7's toggle. Refused without the equipment, and it never bypasses a
 	 *  check — `dockingComputerStep` refuses the same conditions a pilot fails. */
 	toggleDockingComputer() {
-		if (!this.hasDockingComputer) return;
+		if (!this.hasDockingComputer) {
+			this.scoop = {
+				text: NO_DOCKING_COMPUTER_TEXT,
+				left: SCOOP_NOTICE_S,
+				accepted: false,
+				canisterId: null,
+			};
+			return;
+		}
 		if (!this.dockingComputer.engaged) {
 			this.engageDockingComputer();
 			return;
