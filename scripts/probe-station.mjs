@@ -27,10 +27,10 @@
  *
  *    So the figures are measured and printed at both ranges and asserted at
  *    neither. What is still gated is that each station **is drawn and has a
- *    silhouette at all** — at both ranges — and, **at the near range only**,
- *    that re-measuring one reproduces it. That control is about whether the
- *    measurement works rather than about what it finds, and it is near-range
- *    only because at 60 km the mask is a few dozen pixels and the control is of
+ *    silhouette at all** — at both ranges. Re-measuring one station is a
+ *    report-only control until re-measured (node #1287, following #120's triage).
+ *    Its value and reference ceiling are printed at both ranges. At 60 km the
+ *    mask is a few dozen pixels and the control is of
  *    the same order as the thing it would be separating. **The figure moved
  *    under #290** — parked it read 0.028, co-moving it reads 0.200-0.300 over
  *    three runs — so the number is not restated here: the run prints it, and
@@ -85,6 +85,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { createStationRows } from "./lib/station-rows.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -111,26 +112,6 @@ const ORIGIN =
  * attributed solely to rasterisation. Both pairs now retain the pinned clock,
  * and a separate assertion reads their actual timestamps. Thresholds are unchanged.
  *
- * ## Historical 5 km control and its ceiling
- *
- * Trade measured twice against a `1 − IoU ≤ 0.05` ceiling landed red often — on
- * `main` before #118 as well as here, and on every fixture tried. This section
- * used to say the ceiling was deliberately not widened, on the ground that
- * loosening a margin so an unrelated change goes green is how a check stops
- * discriminating. That reasoning is sound and it was being applied to the wrong
- * quantity: the readings were never near what the control exists to separate.
- *
- * Measured over seven runs, the control sits at 0.046–0.064 while the *closest*
- * pair of different stations reads 0.398 — a factor of six. A ceiling at 0.05
- * was not discriminating finely, it was sitting inside its own noise, and it
- * fired on any change that resampled a hull's outline differently. #128 was
- * one: it moved every station's drawn roll by tens of degrees, which is a
- * different picture of the same shape.
- *
- * So the ceiling is 0.12 (see `MAX_CONTROL_DIFFERENCE`), bracketed above the
- * noise and below `MIN_DIFFERENCE`, on the principal's call. The per-seed run
- * table belongs to node #84 ("is probe-station's margin too tight?") and the
- * finer-grid alternative to #120, where they are posted.
  */
 const URL = gameUrl(ORIGIN, { seed: 54 }, { override: process.env.PROBE_URL });
 
@@ -173,56 +154,10 @@ const GRID = 24;
  * trade/refinery reads 0.271 rather than 0.35 — 8% above this floor, not 40%.
  * So the figure to restore is not this one: re-arming the gate means
  * re-measuring the spread first, and 0.25 is now close enough to the closest
- * pair that it would be asserting a margin it does not have. What the control
- * itself now reads is `MAX_CONTROL_DIFFERENCE`'s to state, below.
+ * pair that it would be asserting a margin it does not have. The control's reference
+ * figure is explained in `scripts/lib/station-rows.mjs`.
  */
 const MIN_DIFFERENCE = 0.25;
-
-/**
- * What re-measuring one station back to back may differ by.
- *
- * Not zero: the clock advances between the two captures, so a boundary cell or
- * two moves on the 24 × 24 grid.
- *
- * **Bracketed, and the two sides are not equally well measured.** Seven
- * consecutive runs at 5 km, **parked**, put the control at 0.046, 0.047, 0.051,
- * 0.053, 0.058, 0.060 and 0.064 — seven samples, and 0.12 sat **1.9×** above
- * the worst of them.
- *
- * **#290 spent most of that headroom, and the figure above is no longer this
- * branch's.** Framed co-moving the same control reads 0.088, 0.088, 0.088 —
- * three samples, not seven — so 0.12 sits **1.35×** above it rather than 1.9×.
- * Still a threshold, and a far steadier one: the parked series was a fresh draw
- * of the drift each run and this one is not. But anyone sizing or re-arming this
- * gate should read 1.35× and three samples, not 1.9× and seven.
- *
- * The upper side is weaker and should be read as such. `MIN_DIFFERENCE` above
- * is this file's own reference for how far two *different* stations must read
- * apart — **0.25**, chosen when the comparison was still a gate — and 0.12 is
- * 2.1× below it. Observed pairs read higher than that (0.398 for the closest
- * pair in one run), but a single unreplicated reading is not the number to
- * divide by, and quoting it would flatter the relaxation this branch wants.
- * Against the declared floor the headroom is 2.1×, not 3.3×.
- *
- * A ceiling with headroom on both sides is a threshold; one sitting inside its
- * own noise, as 0.05 was, is a coin toss.
- *
- * **Raised from 0.05 on the principal's call** (2026-08-29): *"You can relax
- * that requirement a lot. It doesn't matter for gameplay that much."* It is
- * worth being plain about what that trades away, because the file's own header
- * used to argue the other way. This control asks whether the **measurement**
- * works — whether a mask is reproducible at all — and not what it finds; the
- * shape comparison it protects has not been asserted since #56 withdrew it.
- * What a tighter ceiling would buy is early warning of the metric drifting, and
- * what it cost was a red run on changes that had nothing to do with it: #128
- * moved every station's drawn roll by tens of degrees, which resamples a hull's
- * outline differently and moved this figure from about 0.04 to about 0.055
- * without anything becoming less repeatable.
- *
- * `#120` is where the alternative lives — a finer grid, which would cut the
- * quantisation this is measuring rather than tolerate it.
- */
-const MAX_CONTROL_DIFFERENCE = 0.12;
 
 /** Tolerance on the measured spin rate, relative. Loose because the station is
  *  also moving along its orbit between the two samples, and because the frame
@@ -535,129 +470,22 @@ const iou = (a, b) => {
 const isAuthored = (id) =>
 	page.evaluate((bodyId) => window.__seelite.isAuthoredStationId(bodyId), id);
 
-/**
- * Capture all three silhouettes at one range and compare them pairwise.
- *
- * Run at two ranges, because §7's standard has two halves and desaturation only
- * answers one: identity must hold *before colour* and *before detail resolves*.
- * A single close range answers the first and quietly assumes the second.
- */
-async function silhouettesAt(rangeKm, floor, gate) {
-	// `gate.pairs` asserts the pairwise outline comparison; `gate.control`
-	// asserts that re-measuring one station reproduces it. Two flags because
-	// they answer different questions and only one of them was relaxed: the
-	// control is about whether the *measurement* works at all, which is worth
-	// gating even where its subject is not.
-	const shapes = new Map();
-	/** The control capture, kept beside the map rather than inside it: a type-keyed
-	 *  map holding one entry that is not a type makes every consumer filter it
-	 *  back out. */
-	let control = null;
-	for (const station of setup.stations) {
-		// Gated on the placement, not on its downstream symptom. #263 read a
-		// refinery at 0 lit aperture pixels and that looks like a defect in the
-		// form; it was a framing that landed somewhere else, and only a check on
-		// the framing itself says so.
-		framedWhereItAsked(
-			`${rangeKm} km — ${station.type}`,
-			await viewAlongAxis(station.id, rangeKm),
-		);
-		// The trade station is captured *twice from one evaluate*, and the second
-		// copy is the control. Two evaluates cannot measure this metric's noise:
-		// real frames run in the gap and carry the station along its orbit, which
-		// is a genuine change of apparent size rather than instability — and a
-		// squared hull's mask, being mostly long straight edges, is where the
-		// crop-and-resample absorbs it least.
-		const captured = await silhouette(station.id, station.type === "trade");
-		const shape = captured.again ? captured.shape : captured;
-		if (captured.again) {
-			control = captured.again;
-			check(
-				rangeKm + " km — both control captures use the same pinned clock",
-				captured.measuredClocks.length === 4 &&
-					captured.measuredClocks.every((t) => t === 0),
-				JSON.stringify(captured.measuredClocks),
-			);
-		}
-		const authored = await isAuthored(station.id);
-		check(
-			`${rangeKm} km — ${station.type}: the station is drawn and has a silhouette`,
-			!shape.missing && !shape.empty && (authored || shape.pixels > 20),
-			shape.missing
-				? "no mesh"
-				: shape.empty
-					? "no pixels changed"
-					: `${shape.pixels} px, box ${shape.box.w}×${shape.box.h}, ` +
-						`fill ${(100 * shape.coverage).toFixed(0)}%`,
-		);
-		if (shape.cells) shapes.set(station.type, shape);
-	}
-
-	const types = [...shapes.keys()];
-	console.log(
-		`\nsilhouettes at ${rangeKm} km, desaturated, ${GRID}×${GRID} after crop:`,
-	);
-	for (let i = 0; i < types.length; i++) {
-		for (let j = i + 1; j < types.length; j++) {
-			const difference =
-				1 - iou(shapes.get(types[i]).cells, shapes.get(types[j]).cells);
-			console.log(
-				`  ${types[i]} vs ${types[j]}: 1 − IoU = ${difference.toFixed(3)}`,
-			);
-			if (gate.pairs)
-				check(
-					`${rangeKm} km — ${types[i]} and ${types[j]} differ by outline alone`,
-					difference > floor,
-					`1 − IoU = ${difference.toFixed(3)} (floor ${floor})`,
-				);
-		}
-	}
-
-	const first = shapes.get("trade");
-	if (!first?.cells || !control?.cells) {
-		// Reported rather than thrown: an empty second capture would otherwise
-		// dereference `undefined` inside `iou` and kill the run before a single
-		// FAIL line was printed.
-		if (gate.control)
-			check(
-				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
-				false,
-				"no second silhouette to compare",
-			);
-	} else {
-		const drift = 1 - iou(first.cells, control.cells);
-		console.log(
-			`  control (trade measured twice): 1 − IoU = ${drift.toFixed(3)}`,
-		);
-		// Gated only where the shape comparison is, and the far control is the
-		// reason the far-range pairwise figures above are reported rather than
-		// asserted: a metric whose noise is of the same order as its signal is
-		// not evidence, and the honest far-range claim is the extent one below.
-		// The figure and the arm it moved under are in the module docstring; it
-		// is printed on the line above, and this file has already carried one
-		// copy of it into staleness.
-		//
-		// #790 found that the old "identical scene" claim was false: the clock
-		// was restored before the second pair. Those historic far-range readings
-		// do not isolate rasteriser noise. The capture now pins all four renders
-		// and reports their timestamps, without relaxing the existing gates.
-		if (gate.control)
-			check(
-				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
-				drift < MAX_CONTROL_DIFFERENCE,
-				`1 − IoU = ${drift.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
-			);
-	}
-	return shapes;
-}
+const silhouettesAt = createStationRows({
+	stations: setup.stations,
+	grid: GRID,
+	check,
+	viewAlongAxis,
+	framedWhereItAsked,
+	silhouette,
+	isAuthored,
+	iou,
+});
 
 const near = await silhouettesAt(RANGE_KM, MIN_DIFFERENCE, {
 	pairs: false,
-	control: true,
 });
 const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, {
 	pairs: false,
-	control: false,
 });
 
 /**
