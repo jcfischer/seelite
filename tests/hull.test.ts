@@ -518,11 +518,12 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		expect(PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].holdT)).toContain(
 			HULL_PRICE_KNEE_HOLD_T,
 		);
+		const spanWideEnoughToDwarfRounding = 3;
 		const elasticity = (lo: number, hi: number) =>
 			Math.log((hullPriceCr(hi) as number) / (hullPriceCr(lo) as number)) /
 			Math.log(hi / lo);
 		const below = elasticity(
-			HULL_PRICE_KNEE_HOLD_T / 3,
+			HULL_PRICE_KNEE_HOLD_T / spanWideEnoughToDwarfRounding,
 			HULL_PRICE_KNEE_HOLD_T,
 		);
 		const above = elasticity(HULL_PRICE_KNEE_HOLD_T, HULL_CEILING_HOLD_T);
