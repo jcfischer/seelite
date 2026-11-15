@@ -124,10 +124,10 @@ describe("a detail level may not change the outline", () => {
 					expect(part).toBeDefined();
 					// `visible` is per-object, so an ancestor switched off would leave
 					// this true while nothing is drawn. Walk up to the root.
-					let node: THREE.Object3D | null = part as THREE.Object3D;
-					while (node) {
-						expect(node.visible).toBe(true);
-						node = node.parent;
+					let selfOrAncestor: THREE.Object3D | null = part as THREE.Object3D;
+					while (selfOrAncestor) {
+						expect(selfOrAncestor.visible).toBe(true);
+						selfOrAncestor = selfOrAncestor.parent;
 					}
 				}
 			}
@@ -160,7 +160,9 @@ describe("a fixture is on the station it is mounted on", () => {
 		/** How far the subtree a lamp hangs from reaches, ignoring the lamps —
 		 *  a lamp that reached further than its own member would otherwise raise
 		 *  the floor it is being measured against. */
-		const memberReachKm = (member: THREE.Object3D) => {
+		const isLamp = (o: THREE.Object3D) =>
+			o.name === "strobe-a" || o.name === "strobe-b";
+		const memberReachWithoutLampsKm = (member: THREE.Object3D) => {
 			let reach = 0;
 			const at = new THREE.Vector3();
 			member.updateMatrixWorld(true);
@@ -169,10 +171,10 @@ describe("a fixture is on the station it is mounted on", () => {
 			// and then divided by its core radius on an inner group, so world
 			// space here is normalised radii and comparing the two would be
 			// comparing a kilometre against a radius.
-			const toMember = member.matrixWorld.clone().invert();
+			const worldToMemberFrame = member.matrixWorld.clone().invert();
 			const corner = new THREE.Vector3();
 			member.traverse((child) => {
-				if (child.name === "strobe-a" || child.name === "strobe-b") return;
+				if (isLamp(child)) return;
 				const mesh = child as THREE.Mesh;
 				// **An instanced pool is read through its instances**, which is
 				// the whole of `instanceBoxes`' reason for existing: the base
@@ -187,7 +189,10 @@ describe("a fixture is on the station it is mounted on", () => {
 								for (const z of [box.min.z, box.max.z])
 									reach = Math.max(
 										reach,
-										corner.set(x, y, z).applyMatrix4(toMember).length(),
+										corner
+											.set(x, y, z)
+											.applyMatrix4(worldToMemberFrame)
+											.length(),
 									);
 					return;
 				}
@@ -199,12 +204,13 @@ describe("a fixture is on the station it is mounted on", () => {
 						at
 							.fromBufferAttribute(position, i)
 							.applyMatrix4(mesh.matrixWorld)
-							.applyMatrix4(toMember)
+							.applyMatrix4(worldToMemberFrame)
 							.length(),
 					);
 			});
 			return reach;
 		};
+		const floorJustAboveBuriedLampShare = 0.68;
 		for (const type of TYPES) {
 			const hasStrobes = STATION_VISUALS[type].activity.strobePeriodS > 0;
 			for (const form of STATION_FORMS[type]) {
@@ -224,12 +230,14 @@ describe("a fixture is on the station it is mounted on", () => {
 					const p = (lamp as THREE.Object3D).position;
 					// The member is the lamp's grandparent: `strobePair` returns a
 					// group of its own, which is what a form adds.
-					const member = lamp.parent?.parent ?? root;
-					const memberKm = memberReachKm(member);
+					const strobePairGroup = lamp.parent;
+					const member = strobePairGroup?.parent ?? root;
+					const memberKm = memberReachWithoutLampsKm(member);
 					expect([
 						type,
 						form.id,
-						memberKm > 0 && p.length() > memberKm * 0.68,
+						memberKm > 0 &&
+							p.length() > memberKm * floorJustAboveBuriedLampShare,
 					]).toEqual([type, form.id, true]);
 					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
 				}
@@ -307,7 +315,7 @@ describe("detail is chosen by apparent size, with the render layer's hysteresis"
 		// Not a rule the two functions share by construction — they are separate
 		// decisions — but they must not fight. The smallest silhouette gives the
 		// largest apparent radii, so checking the largest one is the binding case.
-		const largest = Math.max(
+		const largestSilhouetteKm = Math.max(
 			...FORMS_IN_PLAY.map(([type, formId]) =>
 				stationSilhouetteKm(type, formId),
 			),
@@ -315,7 +323,8 @@ describe("detail is chosen by apparent size, with the render layer's hysteresis"
 		// `HANDOFF_KM` imported, not restated: retuned downward, a literal 1e4
 		// here would keep asserting the old range and this invariant would stop
 		// being checked while staying green.
-		expect(stationDetailLevel("full", HANDOFF_KM / largest)).toBe("outline");
+		const fewestRadiiAtHandoff = HANDOFF_KM / largestSilhouetteKm;
+		expect(stationDetailLevel("full", fewestRadiiAtHandoff)).toBe("outline");
 	});
 });
 
@@ -325,10 +334,10 @@ describe("the plating is generated, not downloaded, and sized for RGBAFormat", (
 		// the end and renders as garbage — the failure this assertion exists for.
 		// The map side is the finish's (`worn` doubles it), so the size is
 		// read off the finish in force rather than off the base constant.
-		const n = stationMapSize() * stationMapSize() * 4;
+		const rgbaBytesPerMap = stationMapSize() * stationMapSize() * 4;
 		for (const type of TYPES) {
-			expect(platingTexels(type).length).toBe(n);
-			expect(surfaceTexels(type).length).toBe(n);
+			expect(platingTexels(type).length).toBe(rgbaBytesPerMap);
+			expect(surfaceTexels(type).length).toBe(rgbaBytesPerMap);
 		}
 	});
 
@@ -417,8 +426,9 @@ describe("activity is a pure function of the game clock", () => {
 		// exact fraction would be asserting the ramp's shape. A looser upper
 		// bound would let the duty cycle grow by half before this noticed, which
 		// is the failure a duty-cycle test exists to catch.
-		expect(lit / n).toBeGreaterThan(strobeDuty * 0.9);
-		expect(lit / n).toBeLessThan(strobeDuty * 1.1);
+		const rampSlackEitherWay = 0.1;
+		expect(lit / n).toBeGreaterThan(strobeDuty * (1 - rampSlackEitherWay));
+		expect(lit / n).toBeLessThan(strobeDuty * (1 + rampSlackEitherWay));
 	});
 
 	test("the two strobes are out of phase", () => {
@@ -547,13 +557,15 @@ describe("what the renderer drives, at every range", () => {
  */
 describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 	/** The probe's `CLOSE_RADII`: docking range, in the station's own radii. */
-	const CLOSE_RADII = 3;
+	const PROBE_CLOSE_RADII = 3;
 	/** Eighths of a turn. A fixture visible at all of them is visible at any. */
-	const PHASES = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (i * Math.PI) / 4);
+	const EIGHTH_TURN_PHASES = [0, 1, 2, 3, 4, 5, 6, 7].map(
+		(i) => (i * Math.PI) / 4,
+	);
 	/** How many surface points a fixture is sampled at. Enough that a sliver of
 	 *  a lamp is represented and few enough that eight phases of three forms
 	 *  stay under a second. */
-	const SAMPLE_CAP = 48;
+	const FACING_SAMPLES_PER_FIXTURE = 48;
 
 	/**
 	 * Points on a fixture's own surface that face the eye, in world space.
@@ -563,7 +575,7 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 	 * origin, and sampling that would ask about a pane the station does not
 	 * have.
 	 */
-	const facingPoints = (object: THREE.Object3D, eye: THREE.Vector3) => {
+	const facingSurfacePoints = (object: THREE.Object3D, eye: THREE.Vector3) => {
 		const found: { at: THREE.Vector3; out: THREE.Vector3 }[] = [];
 		const normalMatrix = new THREE.Matrix3();
 		const world = new THREE.Matrix4();
@@ -571,7 +583,8 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		object.traverse((child) => {
 			// A light pool lies on the surface round its lamp and reaches past
 			// it: sampling it would let a hidden lamp read as reachable (#300).
-			if (child.userData.pool) return;
+			const lightPoolReachesPastItsLamp = child.userData.pool;
+			if (lightPoolReachesPastItsLamp) return;
 			const mesh = child as THREE.Mesh;
 			const positions = mesh.geometry?.getAttribute("position");
 			const normals = mesh.geometry?.getAttribute("normal");
@@ -601,7 +614,10 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		const front = found.filter(
 			({ at, out }) => out.dot(toEye.copy(eye).sub(at).normalize()) > 0.05,
 		);
-		const stride = Math.max(1, Math.ceil(front.length / SAMPLE_CAP));
+		const stride = Math.max(
+			1,
+			Math.ceil(front.length / FACING_SAMPLES_PER_FIXTURE),
+		);
 		const sampled: THREE.Vector3[] = [];
 		for (let i = 0; i < front.length; i += stride) sampled.push(front[i].at);
 		return sampled;
@@ -617,14 +633,15 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		const raycaster = new THREE.Raycaster();
 		const own = new Set<THREE.Object3D>();
 		fixture.traverse((child) => own.add(child));
-		for (const point of facingPoints(fixture, eye)) {
+		for (const point of facingSurfacePoints(fixture, eye)) {
 			const toPoint = point.clone().sub(eye);
 			const range = toPoint.length();
 			if (range === 0) continue;
 			raycaster.set(eye, toPoint.divideScalar(range));
 			// Just short of the point itself, so the fixture's own far side
 			// cannot be counted as a blocker of its near side.
-			raycaster.far = range * 0.9999;
+			const justShortOfThePoint = 0.9999;
+			raycaster.far = range * justShortOfThePoint;
 			const blocked = raycaster
 				.intersectObject(root, true)
 				.some((hit) => !own.has(hit.object));
@@ -661,14 +678,12 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		// radii**, because that is what the built tree is in (`normalise`). In
 		// kilometres it put each role at its own unstated range: the trade
 		// station at 1.8 silhouette radii, the refinery at 1.2.
-		const eye = new THREE.Vector3(
-			0,
-			0,
-			(stationSilhouetteKm(station, formId) * CLOSE_RADII) /
-				STATION_GEOMETRY[station].coreRadiusKm,
-		);
+		const eyeRangeInCoreRadii =
+			(stationSilhouetteKm(station, formId) * PROBE_CLOSE_RADII) /
+			STATION_GEOMETRY[station].coreRadiusKm;
+		const eyeOnApertureAxis = new THREE.Vector3(0, 0, eyeRangeInCoreRadii);
 		const dead: string[] = [];
-		for (const phase of spinner ? PHASES : [0]) {
+		for (const phase of spinner ? EIGHTH_TURN_PHASES : [0]) {
 			if (spinner) spinner.rotation.z = phase;
 			root.updateMatrixWorld(true);
 			for (const name of names) {
@@ -682,7 +697,7 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 					dead.push(`${name} (no object of that name)`);
 					continue;
 				}
-				if (!objects.some((o) => readsFromAxis(root, o, eye)))
+				if (!objects.some((o) => readsFromAxis(root, o, eyeOnApertureAxis)))
 					dead.push(`${name} @ ${((phase * 180) / Math.PI).toFixed(0)}°`);
 			}
 		}
@@ -764,13 +779,17 @@ const SLOT_FORMS = FORMS_IN_PLAY.filter(
 
 describe("the mouth chase and the refinery's beacons", () => {
 	test("every slot role rings its mouth with lamps an equal step of the period apart", () => {
+		const fewestLampsThatReadAsRunning = 8;
 		for (const [type, formId] of SLOT_FORMS) {
 			const mesh = buildStationForm(type, formId, GREY, 0, 0);
 			const chase = mesh.fixtures.filter((f) => f.kind === "chase");
 			const { strobePeriodS } = STATION_VISUALS[type].activity;
 			const label = formLabel(type, formId);
 			// Enough that the flash reads as running round, not as a few blinks.
-			expect([label, chase.length >= 8]).toEqual([label, true]);
+			expect([label, chase.length >= fewestLampsThatReadAsRunning]).toEqual([
+				label,
+				true,
+			]);
 			const offsets = chase.map((f) => f.offsetS).sort((a, b) => a - b);
 			offsets.forEach((offset, i) =>
 				expect(offset).toBeCloseTo((i / chase.length) * strobePeriodS, 9),
