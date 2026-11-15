@@ -97,9 +97,8 @@ function builtEnvelope(id: HullId, variant: HullVariantId): HullEnvelope {
 	const size = new THREE.Box3()
 		.setFromObject(root)
 		.getSize(new THREE.Vector3());
-	// `x` is the beam and `y` the height — the mesh's own local axes, which
-	// `Ship.setAttitude` puts on `cross(nose, up)` and `up`; `z` is the length.
-	return { lengthKm: size.z, beamKm: size.x, heightKm: size.y };
+	const { x: beamKm, y: heightKm, z: lengthKm } = size;
+	return { lengthKm, beamKm, heightKm };
 }
 
 /** The box **as the roster would declare it** — rounded up, exactly as the
@@ -257,8 +256,8 @@ describe("envelopes measure the mesh or retain an approved simulation box", () =
 				const chosen = scored.find((s) => s.v === spec.variant);
 				expect([id, chosen?.roles]).toEqual([id, best]);
 				// `a` on a tie: nothing earlier in the list may match the best score.
-				const first = scored.find((s) => s.roles === best);
-				expect([id, first?.v]).toEqual([id, spec.variant]);
+				const earliestAtBest = scored.find((s) => s.roles === best);
+				expect([id, earliestAtBest?.v]).toEqual([id, spec.variant]);
 				console.log(
 					`${id}: ${scored.map((s) => `${s.v}=${s.roles}`).join(" ")} → ${spec.variant}`,
 				);
@@ -458,12 +457,17 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		const MAX_T_PER_1000M3 = 2.4;
 		const densityOf = (massT: number, env: HullEnvelope) =>
 			(massT * 1000) / (env.lengthKm * env.beamKm * env.heightKm * 1e9);
-		const swapped = densityOf(HULL_SPECS.courier.massT, HULL_SPECS.miner.env);
-		expect(swapped).toBeLessThan(MIN_T_PER_1000M3);
+		const courierMassOnMinerBox = densityOf(
+			HULL_SPECS.courier.massT,
+			HULL_SPECS.miner.env,
+		);
+		const minerMassOnCourierBox = densityOf(
+			HULL_SPECS.miner.massT,
+			HULL_SPECS.courier.env,
+		);
+		expect(courierMassOnMinerBox).toBeLessThan(MIN_T_PER_1000M3);
 		// And the other direction: the miner's mass on the courier's box.
-		expect(
-			densityOf(HULL_SPECS.miner.massT, HULL_SPECS.courier.env),
-		).toBeGreaterThan(MAX_T_PER_1000M3);
+		expect(minerMassOnCourierBox).toBeGreaterThan(MAX_T_PER_1000M3);
 	});
 
 	test("the baseline hull reproduces #5's tuning exactly", () => {
@@ -477,7 +481,11 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		// The one figure that is the vents' rather than a ratio against the
 		// baseline (#619): what the courier's attitude couples deliver, solved to
 		// #5's 3 rad/s² at the six figures `hull.ts` stores its shares to.
-		expect(perf.angularAccel).toBeCloseTo(REFERENCE_ANGULAR_ACCEL, 5);
+		const ventShareSolvedDigits = 5;
+		expect(perf.angularAccel).toBeCloseTo(
+			REFERENCE_ANGULAR_ACCEL,
+			ventShareSolvedDigits,
+		);
 		expect(perf.angularDampTauS).toBe(REFERENCE_ANGULAR_DAMP_TAU_S);
 	});
 
@@ -628,8 +636,9 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			// A rounded price is off the law by up to half a step, so a tonne's
 			// share of it can wobble by that much over the hold.
 			const perTonne = price / holdT;
+			const perTonneRoundingSlack = HULL_PRICE_STEP_CR / holdT;
 			expect(perTonne).toBeLessThanOrEqual(
-				lastPerTonne + HULL_PRICE_STEP_CR / holdT,
+				lastPerTonne + perTonneRoundingSlack,
 			);
 			lastPerTonne = perTonne;
 		}
@@ -732,12 +741,12 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		// is nothing there to go stale — which is the fix for the round where
 		// CLAUDE.md carried a superseded pair with every gate green. The trap moved
 		// to docs/pitfalls.md with the rest of them.
-		const claudeMd = read("docs/pitfalls.md");
-		expect(claudeMd).toContain("HULL_PRICE_BASELINE_CR");
-		expect(claudeMd).toContain("HULL_PRICE_EXPONENT");
-		const hullTrap = claudeMd.slice(
-			claudeMd.indexOf("A hull's price is a law"),
-			claudeMd.indexOf("`src/hull.ts` is the third leaf"),
+		const pitfalls = read("docs/pitfalls.md");
+		expect(pitfalls).toContain("HULL_PRICE_BASELINE_CR");
+		expect(pitfalls).toContain("HULL_PRICE_EXPONENT");
+		const hullTrap = pitfalls.slice(
+			pitfalls.indexOf("A hull's price is a law"),
+			pitfalls.indexOf("`src/hull.ts` is the third leaf"),
 		);
 		expect(hullTrap.length).toBeGreaterThan(200);
 		expect(hullTrap).not.toMatch(/\d{1,3}(?:,\d{3})+ Cr/);
