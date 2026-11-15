@@ -4696,11 +4696,6 @@
       "count": 15
     }
   },
-  "tests/hull.test.ts": {
-    "seelite/no-comments": {
-      "count": 167
-    }
-  },
   "tests/hyperspace.test.ts": {
     "seelite/no-comments": {
       "count": 18
@@ -4855,11 +4850,6 @@
   "tests/lib/workflow-scan.ts": {
     "seelite/no-comments": {
       "count": 21
-    }
-  },
-  "tests/light-rig.test.ts": {
-    "seelite/no-comments": {
-      "count": 140
     }
   },
   "tests/light-shift.test.ts": {
@@ -5586,11 +5576,6 @@
   "tests/station-console-tabs.types.ts": {
     "seelite/no-comments": {
       "count": 4
-    }
-  },
-  "tests/station-console.test.ts": {
-    "seelite/no-comments": {
-      "count": 162
     }
   },
   "tests/station-finish.test.ts": {

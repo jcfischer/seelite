@@ -26,6 +26,23 @@ import { useShippedSevenShips } from "./setup/seven-ships-hull";
 await useShippedInterceptorHull();
 await useShippedSevenShips();
 
+const deps = {
+	HULL_SPECS,
+	shipMuzzlesKm,
+	muzzlesWorld,
+	beamSegments,
+	projectSegment,
+	ndcToPx,
+	PLAYER_LASER_RANGE_KM,
+	glassTracerIndices,
+	tracerStrokes,
+	TRACER_AIM,
+	TRACER_HOLD_S,
+	SHOT_SOUND_GAP_S,
+	MINING_ON: false,
+	NO_BEAM_STROKES: [],
+};
+
 const prototype = gameMethods(
 	[
 		"drawCockpitBeams",
@@ -34,22 +51,7 @@ const prototype = gameMethods(
 		"glassFiredIndices",
 		"gunTracer",
 	],
-	{
-		HULL_SPECS,
-		shipMuzzlesKm,
-		muzzlesWorld,
-		beamSegments,
-		projectSegment,
-		ndcToPx,
-		PLAYER_LASER_RANGE_KM,
-		glassTracerIndices,
-		tracerStrokes,
-		TRACER_AIM,
-		TRACER_HOLD_S,
-		SHOT_SOUND_GAP_S,
-		MINING_ON: false,
-		NO_BEAM_STROKES: [],
-	},
+	deps,
 );
 
 const framePoint = (p: THREE.Vector3, camera: THREE.PerspectiveCamera) => {
@@ -152,21 +154,11 @@ for (const view of ["cockpit", "chase"] as const) {
 			const culledPrototype = gameMethods(
 				["playerBeamPx", "playerBeamFrame", "glassFiredIndices", "gunTracer"],
 				{
-					HULL_SPECS,
+					...deps,
 					shipMuzzlesKm: () => [
 						{ x: -1, y: 0, z: 1 },
 						{ x: 1, y: 0, z: -1 },
 					],
-					muzzlesWorld,
-					beamSegments,
-					projectSegment,
-					ndcToPx,
-					PLAYER_LASER_RANGE_KM,
-					glassTracerIndices,
-					TRACER_AIM,
-					TRACER_HOLD_S,
-					SHOT_SOUND_GAP_S,
-					MINING_ON: false,
 				},
 			);
 			const camera = new THREE.PerspectiveCamera(60, 1.6, NEAR_KM, 100);
