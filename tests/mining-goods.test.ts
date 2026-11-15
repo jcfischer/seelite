@@ -54,6 +54,7 @@ import {
 	scoopCargo,
 	transactAtStation,
 	type ConsoleInput,
+	FIRST_ORE_NOTICE,
 } from "../src/station-commerce";
 import { stationMarketScreen } from "../src/station-console";
 import { newWorld, withDeathWreck } from "../src/world-state";
@@ -90,8 +91,7 @@ const screen = (i: ConsoleInput) =>
 		deficitOf: (name) => readDeficit(i.deficits, key, name, i.gameTimeMin),
 	});
 
-const firstOreNotice =
-	"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.";
+const firstOreNotice = FIRST_ORE_NOTICE;
 const rawSale = (
 	commander = scoopCargo(newCommander("courier"), poor, 3, 0).commander,
 ) =>

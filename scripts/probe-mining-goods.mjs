@@ -277,6 +277,19 @@ try {
 		off.length === 17 && !off.some((name) => name.includes("ore")),
 		JSON.stringify(off),
 	);
+	const reloadToMarket = async ({ holdClock }) => {
+		await page.goto(
+			gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
+		);
+		await bootedGame(page, 90000);
+		await page.evaluate((hold) => {
+			const g = window.__seelite;
+			if (hold) g.clockHeld = true;
+			g.setHeadLook("forward");
+			g.stationConsoleTab = "Market";
+			g.updateCockpit();
+		}, holdClock);
+	};
 	const notice =
 		"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.";
 	const firstSaleGood = "Metallic ore POOR";
@@ -301,17 +314,7 @@ try {
 			oldSave,
 		);
 	}, firstSaleGood);
-	await page.goto(
-		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
-	);
-	await bootedGame(page, 90000);
-	await page.evaluate(() => {
-		const g = window.__seelite;
-		g.clockHeld = true;
-		g.setHeadLook("forward");
-		g.stationConsoleTab = "Market";
-		g.updateCockpit();
-	});
+	await reloadToMarket({ holdClock: true });
 	const sellOre = () =>
 		page
 			.locator(
@@ -350,16 +353,7 @@ try {
 		return saved?.commander.state.firstOreNoticeSeen;
 	});
 	check("the seen record is written to IndexedDB", seen === true, String(seen));
-	await page.goto(
-		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
-	);
-	await bootedGame(page, 90000);
-	await page.evaluate(() => {
-		const g = window.__seelite;
-		g.setHeadLook("forward");
-		g.stationConsoleTab = "Market";
-		g.updateCockpit();
-	});
+	await reloadToMarket({ holdClock: false });
 	await sellOre();
 	check(
 		"a raw ore sale after save and reload succeeds without the notice",

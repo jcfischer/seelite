@@ -79,6 +79,9 @@ import {
 	stationEquipmentScreen,
 } from "./station-console";
 
+export const FIRST_ORE_NOTICE =
+	"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.";
+
 export interface RecoveredFitting extends Partial<FittedModule> {
 	id: string;
 	tonnes: number;
@@ -891,8 +894,7 @@ function stationTransaction(
 		reason: null,
 		...(firstOreNotice
 			? {
-					notice:
-						"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.",
+					notice: FIRST_ORE_NOTICE,
 				}
 			: {}),
 		commander: {
