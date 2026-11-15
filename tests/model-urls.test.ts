@@ -11,6 +11,7 @@ import {
 	CORIOLIS_GLB_URL,
 	COURIER_COCKPIT_GLB_URL,
 	COURIER_HULL_GLB_URL,
+	COURIER_NORMAL_MAP_URL,
 	DISCOVERY_VOYAGER_GLB_URL,
 	DRUM_DETAIL_GLB_URL,
 	LANCE_INTERCEPTOR_GLB_URL,
@@ -75,6 +76,13 @@ describe("models are served under hashed names (#834)", () => {
 		];
 		expect(urls.map((u) => u.split("/").pop()).sort()).toEqual(shipped.sort());
 		for (const url of urls) expect(existsSync(fileURLToPath(url))).toBe(true);
+	});
+
+	test("the courier normal map URL points to its shipped texture", () => {
+		expect(COURIER_NORMAL_MAP_URL).toBe(
+			new URL("src/models/courier-steel-wear-normal.webp", root).href,
+		);
+		expect(existsSync(fileURLToPath(COURIER_NORMAL_MAP_URL))).toBe(true);
 	});
 
 	test("every shared image names its file and the hash it is registered under", () => {
