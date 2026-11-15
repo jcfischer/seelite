@@ -540,6 +540,22 @@ describe("save", () => {
 		const raw = serializeWorld(withQueue) as Record<string, any>;
 		expect(() => parseWorld(raw)).toThrow("beyond the clock");
 	});
+
+	test("a job part-way through processing saves its fractional work", () => {
+		const world = advanceTo(newWorld(SEED), 1000.25);
+		const partial = settleRefineryQueue(
+			queue([job(1, 2)], 1000),
+			0.25,
+			1000.25,
+		);
+		const seeded = withRefineryQueue(world, 0, refineryHere.key, partial);
+		const raw = serializeWorld(seeded) as Record<string, any>;
+		const loaded = parseWorld(raw);
+		expect(loaded.galaxies[0].refineries[refineryHere.key]?.jobs[0].work).toBe(
+			1.75,
+		);
+		expect(loaded.galaxies[0].refineries[refineryHere.key]).toEqual(partial);
+	});
 });
 
 describe("pricing and the commit path", () => {
@@ -567,6 +583,60 @@ describe("pricing and the commit path", () => {
 		),
 		commander: commander(1000, 4),
 	});
+
+	const commitFixture = (
+		slot: string,
+		schedule: Scheduler = () => () => {},
+	) => {
+		const backend = memorySaveBackend();
+		let live = envelope();
+		const quoted = refineryQuoteAt(live, 0, refineryHere.key, GOOD, 2);
+		if (!quoted.ok) throw new Error(quoted.sentence);
+		const store = new SaveStore({
+			backend,
+			locks: { tryHold: async () => () => {}, release: () => {} } as never,
+			schedule,
+			slot,
+			current: () => live,
+		});
+		const op = (txSeq: number) => ({
+			txSeq,
+			checkpoint: true,
+			apply: (env: SaveEnvelope) => {
+				const submitted = submitRefineryEnvelope(
+					env,
+					0,
+					quoted.quote,
+					env.world.gameTime,
+				);
+				if (!submitted.ok) throw new Error(submitted.sentence);
+				return submitted.envelope;
+			},
+			adopt: (committed: SaveEnvelope) => {
+				live = {
+					world: withRefineryQueue(
+						live.world,
+						0,
+						refineryHere.key,
+						committed.world.galaxies[0].refineries[refineryHere.key]!,
+					),
+					commander: {
+						...live.commander,
+						state: committed.commander.state,
+						txSeq: committed.commander.txSeq,
+					},
+				};
+			},
+		});
+		return {
+			backend,
+			store,
+			op,
+			get live() {
+				return live;
+			},
+		};
+	};
 
 	test("prices a real refinery from the envelope alone and submits through it", () => {
 		const live = envelope();
@@ -609,55 +679,18 @@ describe("pricing and the commit path", () => {
 	});
 
 	test("a commit lands both halves, and a repeat is stale", async () => {
-		let live = envelope();
-		const quoted = refineryQuoteAt(live, 0, refineryHere.key, GOOD, 2);
-		if (!quoted.ok) throw new Error(quoted.sentence);
-		const backend = memorySaveBackend();
-		const store = new SaveStore({
-			backend,
-			locks: { tryHold: async () => () => {}, release: () => {} } as never,
-			schedule: () => () => {},
-			slot: "refinery-test",
-			current: () => live,
-		});
-		const op = (txSeq: number) => ({
-			txSeq,
-			checkpoint: true,
-			apply: (env: SaveEnvelope) => {
-				const submitted = submitRefineryEnvelope(
-					env,
-					0,
-					quoted.quote,
-					env.world.gameTime,
-				);
-				if (!submitted.ok) throw new Error(submitted.sentence);
-				return submitted.envelope;
-			},
-			adopt: (committed: SaveEnvelope) => {
-				live = {
-					world: withRefineryQueue(
-						live.world,
-						0,
-						refineryHere.key,
-						committed.world.galaxies[0].refineries[refineryHere.key]!,
-					),
-					commander: {
-						...live.commander,
-						state: committed.commander.state,
-						txSeq: committed.commander.txSeq,
-					},
-				};
-			},
-		});
-		expect(await store.commit(op(live.commander.txSeq))).toBe("committed");
-		expect(live.commander.state.cargo[GOOD]).toBe(2);
+		const fixture = commitFixture("refinery-test");
 		expect(
-			live.world.galaxies[0].refineries[refineryHere.key]?.jobs,
+			await fixture.store.commit(fixture.op(fixture.live.commander.txSeq)),
+		).toBe("committed");
+		expect(fixture.live.commander.state.cargo[GOOD]).toBe(2);
+		expect(
+			fixture.live.world.galaxies[0].refineries[refineryHere.key]?.jobs,
 		).toHaveLength(1);
-		const landed = (await backend.raw("refinery-test", "lastDocked")) as Record<
-			string,
-			any
-		>;
+		const landed = (await fixture.backend.raw(
+			"refinery-test",
+			"lastDocked",
+		)) as Record<string, any>;
 		expect(landed.commander.state.cargo[GOOD]).toBe(2);
 		expect(
 			Object.values(
@@ -665,119 +698,52 @@ describe("pricing and the commit path", () => {
 			)[0].jobs,
 		).toHaveLength(1);
 		expect(landed.commander.state.accounting.cash).toBe(
-			signedMoney.encode(live.commander.state.accounting!.cash),
+			signedMoney.encode(fixture.live.commander.state.accounting!.cash),
 		);
 		expect(landed.commander.state.credits).toBeLessThan(1000);
-		expect(await store.commit(op(0))).toBe("stale");
+		expect(await fixture.store.commit(fixture.op(0))).toBe("stale");
 	});
 
 	test("a failed write consumes nothing, and the same op can then land", async () => {
-		let live = envelope();
-		const quoted = refineryQuoteAt(live, 0, refineryHere.key, GOOD, 2);
-		if (!quoted.ok) throw new Error(quoted.sentence);
-		const backend = memorySaveBackend();
-		const store = new SaveStore({
-			backend,
-			locks: { tryHold: async () => () => {}, release: () => {} } as never,
-			schedule: () => () => {},
-			slot: "refinery-fail",
-			current: () => live,
-		});
-		const op = (txSeq: number) => ({
-			txSeq,
-			checkpoint: true,
-			apply: (env: SaveEnvelope) => {
-				const submitted = submitRefineryEnvelope(
-					env,
-					0,
-					quoted.quote,
-					env.world.gameTime,
-				);
-				if (!submitted.ok) throw new Error(submitted.sentence);
-				return submitted.envelope;
-			},
-			adopt: (committed: SaveEnvelope) => {
-				live = {
-					world: withRefineryQueue(
-						live.world,
-						0,
-						refineryHere.key,
-						committed.world.galaxies[0].refineries[refineryHere.key]!,
-					),
-					commander: {
-						...live.commander,
-						state: committed.commander.state,
-						txSeq: committed.commander.txSeq,
-					},
-				};
-			},
-		});
-		backend.failNextWrite();
-		expect(await store.commit(op(live.commander.txSeq))).toBe("failed");
-		expect(live.commander.state.cargo[GOOD]).toBe(4);
-		expect(live.world.galaxies[0].refineries[refineryHere.key]).toBeUndefined();
-		expect(await backend.has("refinery-fail", "live")).toBe(false);
-		expect(await backend.has("refinery-fail", "lastDocked")).toBe(false);
-		expect(await store.commit(op(live.commander.txSeq))).toBe("committed");
-		expect(live.commander.state.cargo[GOOD]).toBe(2);
+		const fixture = commitFixture("refinery-fail");
+		fixture.backend.failNextWrite();
+		expect(
+			await fixture.store.commit(fixture.op(fixture.live.commander.txSeq)),
+		).toBe("failed");
+		expect(fixture.live.commander.state.cargo[GOOD]).toBe(4);
+		expect(
+			fixture.live.world.galaxies[0].refineries[refineryHere.key],
+		).toBeUndefined();
+		expect(await fixture.backend.has("refinery-fail", "live")).toBe(false);
+		expect(await fixture.backend.has("refinery-fail", "lastDocked")).toBe(
+			false,
+		);
+		expect(
+			await fixture.store.commit(fixture.op(fixture.live.commander.txSeq)),
+		).toBe("committed");
+		expect(fixture.live.commander.state.cargo[GOOD]).toBe(2);
 	});
 
 	test("a write that landed without its acknowledgement is decided by a read-back", async () => {
-		let live = envelope();
-		const quoted = refineryQuoteAt(live, 0, refineryHere.key, GOOD, 2);
-		if (!quoted.ok) throw new Error(quoted.sentence);
-		const backend = memorySaveBackend();
 		const armed: { timeout?: () => void } = {};
 		const scheduler: Scheduler = (fn, ms) => {
 			if (ms === SAVE_COMMIT_TIMEOUT_MS) armed.timeout = fn;
 			return () => {};
 		};
-		const store = new SaveStore({
-			backend,
-			locks: { tryHold: async () => () => {}, release: () => {} } as never,
-			schedule: scheduler,
-			slot: "refinery-uncertain",
-			current: () => live,
-		});
-		const op = (txSeq: number) => ({
-			txSeq,
-			checkpoint: true,
-			apply: (env: SaveEnvelope) => {
-				const submitted = submitRefineryEnvelope(
-					env,
-					0,
-					quoted.quote,
-					env.world.gameTime,
-				);
-				if (!submitted.ok) throw new Error(submitted.sentence);
-				return submitted.envelope;
-			},
-			adopt: (committed: SaveEnvelope) => {
-				live = {
-					world: withRefineryQueue(
-						live.world,
-						0,
-						refineryHere.key,
-						committed.world.galaxies[0].refineries[refineryHere.key]!,
-					),
-					commander: {
-						...live.commander,
-						state: committed.commander.state,
-						txSeq: committed.commander.txSeq,
-					},
-				};
-			},
-		});
-		backend.hangNextWriteApplied();
-		const pending = store.commit(op(live.commander.txSeq));
+		const fixture = commitFixture("refinery-uncertain", scheduler);
+		fixture.backend.hangNextWriteApplied();
+		const pending = fixture.store.commit(
+			fixture.op(fixture.live.commander.txSeq),
+		);
 		if (!armed.timeout) throw new Error("the commit armed no timeout");
-		armed.timeout();
+		const timeout = armed.timeout;
+		timeout();
 		expect(await pending).toBe("committed");
-		expect(live.commander.state.cargo[GOOD]).toBe(2);
-		expect(live.commander.txSeq).toBe(1);
-		expect(store.hasUncertainCommit).toBe(false);
-		backend.release();
-		await store.settled();
+		expect(fixture.live.commander.state.cargo[GOOD]).toBe(2);
+		expect(fixture.live.commander.txSeq).toBe(1);
+		expect(fixture.store.hasUncertainCommit).toBe(false);
+		fixture.backend.release();
+		await fixture.store.settled();
 	});
 });
 

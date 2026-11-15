@@ -421,7 +421,6 @@ function parseJob(raw: unknown, nextJobId: number): RefineryJob {
 	const work = finite(o, "work");
 	const totalWork = finite(o, "totalWork");
 	if (
-		!Number.isSafeInteger(work) ||
 		work < 0 ||
 		work > totalWork ||
 		totalWork !== tonnes * REFINERY_SECONDS_PER_TONNE
