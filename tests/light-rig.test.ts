@@ -514,10 +514,11 @@ describe("the world-frame bake carries no star (node #433, decision 2026-10-04)"
 
 	test("its brightest texel is the haze and gas peak, not a star", () => {
 		const { data } = equirectEnvironment({ haze, gas });
+		const belowAnyStarLobe = 1;
 		let peak = 0;
 		for (let i = 0; i < data.length; i += 4)
 			peak = Math.max(peak, data[i], data[i + 1], data[i + 2]);
-		expect(peak).toBeLessThan(1);
+		expect(peak).toBeLessThan(belowAnyStarLobe);
 	});
 
 	test("the parameters cannot carry a star", () => {
@@ -529,11 +530,13 @@ describe("the world-frame bake carries no star (node #433, decision 2026-10-04)"
 	test("the bake is the sky model at the texel the mapping names", () => {
 		const { data, width, height } = equirectEnvironment({ haze, gas });
 		const i = ((height / 2) * width + width / 2) * 4;
+		const centreTexelLon = Math.PI / width;
+		const centreTexelLat = Math.PI / (2 * height);
 		const mid = skyRadiance(
 			[
-				Math.cos(Math.PI / width) * Math.cos(Math.PI / (2 * height)),
-				Math.sin(Math.PI / (2 * height)),
-				Math.sin(Math.PI / width) * Math.cos(Math.PI / (2 * height)),
+				Math.cos(centreTexelLon) * Math.cos(centreTexelLat),
+				Math.sin(centreTexelLat),
+				Math.sin(centreTexelLon) * Math.cos(centreTexelLat),
 			],
 			{ haze, gas },
 		);
