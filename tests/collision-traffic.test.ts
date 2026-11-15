@@ -195,9 +195,11 @@ function starFixture(world: ReturnType<typeof makeWorld>, dir: Vec3) {
 
 const momentum = (m: number, v: Vec3) => scale(v, m);
 
+const STILL_NOSE = v3(0, 0, -1);
+
 /** The player at rest, nose along −z. */
 const still = (): HullAttitude => ({
-	nose: v3(0, 0, -1),
+	nose: STILL_NOSE,
 	up: v3(0, 1, 0),
 	rates: { pitch: 0, yaw: 0, roll: 0 },
 });
@@ -554,10 +556,12 @@ describe("stepWorld: a fleet ship meets the world and the player (node #664)", (
 		const start = add(surface, scale(dir, 0.1));
 		// Falling at 2 km/s in the planet's own frame: it orbits at tens of
 		// km/s, and a fall in star coordinates would miss it by kilometres.
-		const fall = add(
-			bodyVelocity(world.system, planet.id, world.gameTime),
-			scale(dir, -2),
+		const planetFrameVel = bodyVelocity(
+			world.system,
+			planet.id,
+			world.gameTime,
 		);
+		const fall = add(planetFrameVel, scale(dir, -2));
 		const ship: FleetShip = {
 			id: "raider",
 			projected: false,
@@ -744,6 +748,8 @@ describe("stepWorld: a ship met before the aperture plane owns the tick (§4.2, 
 	const dt = 0.1;
 	const SPEED = 1.0;
 	const LEAD_KM = 0.06;
+	const MEETS_BEFORE_THE_PLANE_KM = 0.01;
+	const MEETS_AFTER_THE_PLANE_KM = 0.08;
 
 	/** The player on a trade station's axis, its centre `LEAD_KM` outside the
 	 *  plane and closing at `SPEED`, so it crosses mid-step; and, given
@@ -827,7 +833,7 @@ describe("stepWorld: a ship met before the aperture plane owns the tick (§4.2, 
 
 	test("a raider met before the crossing owns the tick: the plane is not crossed, the meeting lands", () => {
 		// Met at about 0.01 s, the plane at about 0.06 s.
-		const { step } = enter(0.01);
+		const { step } = enter(MEETS_BEFORE_THE_PLANE_KM);
 		expect(step.plane).toBeNull();
 		expect(step.shipImpacts.map((i) => i.with)).toEqual(["raider"]);
 		expect(step.fleet[0].impacts.map((i) => i.with)).toEqual([PLAYER_SHIP_ID]);
@@ -835,7 +841,7 @@ describe("stepWorld: a ship met before the aperture plane owns the tick (§4.2, 
 
 	test("a raider the step would meet only after the crossing is not met: the plane owns it", () => {
 		// Met at about 0.08 s, after the plane's 0.06 s.
-		const { step, id } = enter(0.08);
+		const { step, id } = enter(MEETS_AFTER_THE_PLANE_KM);
 		expect(step.plane?.stationId).toBe(id);
 		expect(step.shipImpacts).toEqual([]);
 		expect(step.fleet[0].impacts.filter((i) => i.ship)).toEqual([]);
@@ -940,7 +946,7 @@ describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node
 	function playerFall(blocked: boolean) {
 		const world = makeWorld(47);
 		// `still()` points the nose along −z, so the player falls nose first.
-		const dir = v3(0, 0, 1);
+		const dir = scale(STILL_NOSE, -1);
 		const { star, vel, nose, clearance } = starFixture(world, dir);
 		world.ship.pos = add(star.pos, scale(dir, star.radiusKm + HEIGHT_KM));
 		world.ship.vel = add(vel, scale(dir, -FALL_KMS));
@@ -984,7 +990,7 @@ describe("stepWorld: a pair stays apart after the world corrects one of them (no
 	const dt = 0.1;
 	/** The patrol's clearance above the star: inside what the ram's mass
 	 *  split pushes it down by, so the world has to hold it out again. */
-	const PATROL_CLEARANCE_KM = 0.002;
+	const PATROL_CLEARANCE_INSIDE_RAM_PUSH_KM = 0.002;
 	const GAP_KM = 0.01;
 	const RAM_KMS = 0.3;
 
@@ -1010,7 +1016,7 @@ describe("stepWorld: a pair stays apart after the world corrects one of them (no
 			world,
 			dir,
 		);
-		const patrolPos = above("patrol", PATROL_CLEARANCE_KM);
+		const patrolPos = above("patrol", PATROL_CLEARANCE_INSIDE_RAM_PUSH_KM);
 		const patrol: FleetShip = {
 			id: "patrol",
 			projected,
@@ -1119,7 +1125,7 @@ describe("stepWorld: a pair stays apart after the world corrects one of them (no
 describe("stepWorld: a carrier a meeting hands to flight takes the correction the world-held player cannot (node #664)", () => {
 	const dt = 0.1;
 	/** Sage round 5's case: the courier this far clear of the star. */
-	const PLAYER_CLEARANCE_KM = 0.00445;
+	const PLAYER_CLEARANCE_INSIDE_MEETING_PUSH_KM = 0.00445;
 	/** The gap a projected freighter closes across, and how fast. */
 	const GAP_KM = 0.001;
 	const CLOSING_KMS = 0.1;
@@ -1134,12 +1140,12 @@ describe("stepWorld: a carrier a meeting hands to flight takes the correction th
 	function pinnedAgainstStar(projected: boolean) {
 		const world = makeWorld(47);
 		// `still()` points the nose along −z, so the star is under the nose.
-		const dir = v3(0, 0, 1);
+		const dir = scale(STILL_NOSE, -1);
 		const { star, vel, nose, up, clearance, above, outward } = starFixture(
 			world,
 			dir,
 		);
-		world.ship.pos = above("courier", PLAYER_CLEARANCE_KM);
+		world.ship.pos = above("courier", PLAYER_CLEARANCE_INSIDE_MEETING_PUSH_KM);
 		world.ship.vel = vel;
 		const from = { ...world.ship.pos };
 		const freighter: FleetShip = {
@@ -1172,7 +1178,10 @@ describe("stepWorld: a carrier a meeting hands to flight takes the correction th
 			const { world, flown, star, freighter, clearance, nose, up, from } =
 				pinnedAgainstStar(projected);
 			// It started clear of the star by less than the meeting pushes it.
-			expect(clearance("courier", from)).toBeCloseTo(PLAYER_CLEARANCE_KM, 9);
+			expect(clearance("courier", from)).toBeCloseTo(
+				PLAYER_CLEARANCE_INSIDE_MEETING_PUSH_KM,
+				9,
+			);
 			expect(flown.shipImpacts.map((i) => i.with)).toEqual(["freighter"]);
 			const [step] = flown.fleet;
 			expect(step.impacts.map((i) => i.with)).toEqual([PLAYER_SHIP_ID]);
@@ -1336,7 +1345,7 @@ describe("stepWorld: a ram after the player's world meeting leaves the player ou
 	test("the courier is held outside the star, apart from the raider, and billed for the star once", () => {
 		const world = makeWorld(47);
 		// `still()` points the nose along −z, so the star is under the nose.
-		const dir = v3(0, 0, 1);
+		const dir = scale(STILL_NOSE, -1);
 		const { star, vel, nose, up, clearance, above, outward } = starFixture(
 			world,
 			dir,
@@ -1825,6 +1834,8 @@ describe("presentedTrafficStep: a projection is swept along what is drawn (node 
 	});
 });
 
+const FULL_ROUTE_OUTRUNS_BUN_DEFAULT_TIMEOUT_MS = 15_000;
+
 const ALL_PHASES: readonly TrafficRoutePhase[] = [
 	"parked-home",
 	"launch-queued",
@@ -1876,64 +1887,74 @@ describe("collision.md §5: a carrier's exemption is keyed on its route phase", 
 	// The full 0.1-second-step route simulation took about 5.9 seconds in CI,
 	// beyond Bun's default five-second timeout. Its oracle is behavioral;
 	// retain the full route and every assertion with a bounded 15-second budget.
-	test("the boundaries are §12.3's: the launch ends with the centre outside the plane, the arrival starts at the lane's grant", () => {
-		const galaxy = generateGalaxy(0x5ee11e, 0);
-		const record = galaxy.systems.find(
-			(candidate) => generateContents(candidate).stations.length >= 2,
-		);
-		if (!record) throw new Error("multi-station fixture");
-		const home = generateContents(record).stations[0];
-		const actor = stationTrafficRoster(record.index, home)[0];
-		let previous: ReturnType<typeof projectSystemTrafficActor> | null = null;
-		/** The centre's height above the plane on the first tick out of the
-		 *  launch, and the last tick of it. */
-		let launchEnd: { last: number; first: number } | null = null;
-		let arrivalStart: { laneStartedAtS: number | null; t: number } | null =
-			null;
-		const departure = nextTrafficDepartureAtS(actor.schedule, 0);
-		const aboveThePlane = (
-			projection: ReturnType<typeof projectSystemTrafficActor>,
-			stationId: string,
-			t: number,
-		) => {
-			const system = makeSystem(record, t);
-			const frame = stationApertureFrame(system, stationId, t);
-			const body = system.byId.get(stationId);
-			if (!body) throw new Error(`no station ${stationId}`);
-			return dot(sub(projection.pos, body.pos), frame.axis) - frame.planeKm;
-		};
-		for (let t = departure; t < departure + 900; t += 0.1) {
-			const now = projectSystemTrafficActor({ record, actor, gameTime: t });
-			if (
-				previous?.phase === "departing" &&
-				now.phase === "local-departure" &&
-				previous.terminalStationId
-			)
-				launchEnd = {
-					last: aboveThePlane(previous, previous.terminalStationId, t - 0.1),
-					first: aboveThePlane(now, previous.terminalStationId, t),
-				};
-			if (previous?.phase !== "arriving" && now.phase === "arriving")
-				arrivalStart = { laneStartedAtS: now.laneStartedAtS, t };
-			if (now.phase === "docked-away") break;
-			previous = now;
-		}
-		if (!launchEnd) throw new Error("no launch was flown");
-		// §12.3: the exemption ends when the centre has cleared the plane
-		// outward. The launch's last tick is at most its release away from it,
-		// and the first collidable tick is outside.
-		expect(launchEnd.first).toBeGreaterThan(0);
-		expect(launchEnd.last).toBeLessThan(0.05);
-		expect(arrivalStart).not.toBeNull();
-		// The arrival's first tick is the lane's own start: the hold-to-plane
-		// is scripted from the moment the lane is granted, never before.
-		expect(arrivalStart?.t ?? 0).toBeGreaterThanOrEqual(
-			arrivalStart?.laneStartedAtS ?? Number.POSITIVE_INFINITY,
-		);
-		expect(
-			(arrivalStart?.t ?? 0) - (arrivalStart?.laneStartedAtS ?? 0),
-		).toBeLessThan(0.1 + 1e-9);
-	}, 15_000);
+	test(
+		"the boundaries are §12.3's: the launch ends with the centre outside the plane, the arrival starts at the lane's grant",
+		() => {
+			const TICK_S = 0.1;
+			const LAST_LAUNCH_TICK_WITHIN_RELEASE_KM = 0.05;
+			const galaxy = generateGalaxy(0x5ee11e, 0);
+			const record = galaxy.systems.find(
+				(candidate) => generateContents(candidate).stations.length >= 2,
+			);
+			if (!record) throw new Error("multi-station fixture");
+			const home = generateContents(record).stations[0];
+			const actor = stationTrafficRoster(record.index, home)[0];
+			let previous: ReturnType<typeof projectSystemTrafficActor> | null = null;
+			/** The centre's height above the plane on the first tick out of the
+			 *  launch, and the last tick of it. */
+			let launchEnd: { last: number; first: number } | null = null;
+			let arrivalStart: { laneStartedAtS: number | null; t: number } | null =
+				null;
+			const departure = nextTrafficDepartureAtS(actor.schedule, 0);
+			const aboveThePlane = (
+				projection: ReturnType<typeof projectSystemTrafficActor>,
+				stationId: string,
+				t: number,
+			) => {
+				const system = makeSystem(record, t);
+				const frame = stationApertureFrame(system, stationId, t);
+				const body = system.byId.get(stationId);
+				if (!body) throw new Error(`no station ${stationId}`);
+				return dot(sub(projection.pos, body.pos), frame.axis) - frame.planeKm;
+			};
+			for (let t = departure; t < departure + 900; t += TICK_S) {
+				const now = projectSystemTrafficActor({ record, actor, gameTime: t });
+				if (
+					previous?.phase === "departing" &&
+					now.phase === "local-departure" &&
+					previous.terminalStationId
+				)
+					launchEnd = {
+						last: aboveThePlane(
+							previous,
+							previous.terminalStationId,
+							t - TICK_S,
+						),
+						first: aboveThePlane(now, previous.terminalStationId, t),
+					};
+				if (previous?.phase !== "arriving" && now.phase === "arriving")
+					arrivalStart = { laneStartedAtS: now.laneStartedAtS, t };
+				if (now.phase === "docked-away") break;
+				previous = now;
+			}
+			if (!launchEnd) throw new Error("no launch was flown");
+			// §12.3: the exemption ends when the centre has cleared the plane
+			// outward. The launch's last tick is at most its release away from it,
+			// and the first collidable tick is outside.
+			expect(launchEnd.first).toBeGreaterThan(0);
+			expect(launchEnd.last).toBeLessThan(LAST_LAUNCH_TICK_WITHIN_RELEASE_KM);
+			expect(arrivalStart).not.toBeNull();
+			// The arrival's first tick is the lane's own start: the hold-to-plane
+			// is scripted from the moment the lane is granted, never before.
+			expect(arrivalStart?.t ?? 0).toBeGreaterThanOrEqual(
+				arrivalStart?.laneStartedAtS ?? Number.POSITIVE_INFINITY,
+			);
+			expect(
+				(arrivalStart?.t ?? 0) - (arrivalStart?.laneStartedAtS ?? 0),
+			).toBeLessThan(TICK_S + 1e-9);
+		},
+		FULL_ROUTE_OUTRUNS_BUN_DEFAULT_TIMEOUT_MS,
+	);
 });
 
 describe("collision.md §9.1.14: an impact on a carrier goes through H3d's route", () => {
@@ -2072,15 +2093,15 @@ describe("distinctMeetings: a meeting's severity is its worst step (sage round 7
 	});
 });
 
-describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
+describe("collision.md §9.1.14: §6 item 1's corpus row, pinned red: a change that moves it re-runs docs/findings/traffic-collision-corpus.md", () => {
 	const galaxy = generateGalaxy(47, 0);
 	const contentsFor = contentsCache(galaxy);
 	// A run is a pure function of its arguments, and the pinned row and the
 	// red build both read system 0's 1,800 s green run: fly it once.
-	const runs = new Map<string, CorpusResult>();
+	const flownOncePerArguments = new Map<string, CorpusResult>();
 	const run = (index: number, windowS: number, includeExempt = false) => {
 		const key = `${index}:${windowS}:${includeExempt}`;
-		const cached = runs.get(key);
+		const cached = flownOncePerArguments.get(key);
 		if (cached) return cached;
 		const record = galaxy.systems.find((r) => r.index === index);
 		if (!record) throw new Error(`no system ${index}`);
@@ -2091,9 +2112,14 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 			toS: fromS + windowS,
 			includeExempt,
 		});
-		runs.set(key, result);
+		flownOncePerArguments.set(key, result);
 		return result;
 	};
+	const expectSweptAtLeast = (
+		result: CorpusResult,
+		phase: TrafficRoutePhase,
+		atLeast: number,
+	) => expect(result.steps[phase]).toBeGreaterThan(atLeast);
 	const classes = (result: CorpusResult) => {
 		const out: Record<string, number> = {};
 		for (const m of distinctMeetings(result.meetings))
@@ -2104,8 +2130,8 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 	test("RED, pinned: system 9's local approach runs through its trade station at 8.96 km/s", () => {
 		const result = run(9, 1800);
 		// The N behind it, so a run that swept nothing cannot read as clear.
-		expect(result.steps["local-approach"]).toBeGreaterThan(200);
-		expect(result.steps["local-departure"]).toBeGreaterThan(400);
+		expectSweptAtLeast(result, "local-approach", 200);
+		expectSweptAtLeast(result, "local-departure", 400);
 		expect(classes(result)).toEqual({ "approach-through": 1 });
 		const [through] = distinctMeetings(result.meetings);
 		expect(through.met).toContain("station-trade");
@@ -2116,8 +2142,8 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 
 	test("RED, pinned: system 0's launches touch at the release point, under V_SCRAPE", () => {
 		const result = run(0, 1800);
-		expect(result.steps["local-departure"]).toBeGreaterThan(4000);
-		expect(result.steps["lane-queued"]).toBeGreaterThan(1000);
+		expectSweptAtLeast(result, "local-departure", 4000);
+		expectSweptAtLeast(result, "lane-queued", 1000);
 		expect(result.pairSteps).toBeGreaterThan(0);
 		// Three launch-aperture touches stood here too until node #815: all three
 		// were miners (0:station-refinery/traffic-00 twice, 95:station-trade/
@@ -2132,8 +2158,7 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		expect(result.cruiseMeetings).toEqual([]);
 	}, 60_000);
 
-	// glossary-ignore: pad
-	test("the red build: sweeping the exempt phases meets the pad role's deck and berths", () => {
+	test("the red build: sweeping the exempt phases meets a refinery's deck and berths", () => {
 		// 1,800 s, the pinned row's window: its one collidable meeting, the
 		// release-point touch, is at 1,519.5 s, and the subset check below is
 		// vacuous over a green run that met nothing (node #815 took 600 s's three
