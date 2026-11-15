@@ -1,8 +1,8 @@
 /** A cold production-loader session drawing the courier, its cockpit and Voyager: https://github.com/jcfischer/seelite/issues/1228 */
 import { loadavg } from "node:os";
 import { publicUrl } from "./lib/game-url.mjs";
+import { assertHardwareRenderer } from "./lib/players-renderer.mjs";
 import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
-import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 
 const origin = await guardedOrigin(
@@ -32,12 +32,16 @@ try {
 			);
 	});
 	await page.goto(publicUrl(origin, "about"));
-	const renderer = await assertPlayersRenderer(page, "measure");
 	const report = await page.evaluate(async () => {
 		const p = await import("/scripts/fixtures/shared-image-page.ts");
 		const { THREE } = p;
 		const renderer = new THREE.WebGLRenderer();
 		renderer.setSize(1440, 900);
+		Object.assign(renderer.domElement.style, {
+			position: "fixed",
+			inset: "0",
+			zIndex: "2147483647",
+		});
 		document.body.append(renderer.domElement);
 		const scene = new THREE.Scene();
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 3));
@@ -96,9 +100,16 @@ try {
 		while (frames < fromFrame + 120)
 			await new Promise((resolve) => requestAnimationFrame(resolve));
 		stopped = true;
+		const gl = renderer.getContext();
+		const ext = gl.getExtension("WEBGL_debug_renderer_info");
+		const gpu = {
+			unmasked: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
+			generic: gl.getParameter(gl.RENDERER),
+		};
 		renderer.dispose();
 		const sorted = [...gaps].sort((a, b) => a - b);
 		return {
+			gpu,
 			installMs,
 			textureCounts: counts,
 			maps,
@@ -108,6 +119,9 @@ try {
 			over100: gaps.filter((n) => n > 100).length,
 		};
 	});
+	const renderer = assertHardwareRenderer(report.gpu, "measure");
+	if (process.env.STEEL_COLD_SHOT)
+		await page.screenshot({ path: process.env.STEEL_COLD_SHOT });
 	await Promise.all(sizes);
 	if (
 		![
@@ -119,6 +133,14 @@ try {
 		].every(Number.isFinite)
 	)
 		throw new Error("non-finite cold measurement");
+	if (
+		!(
+			report.textureCounts[0] > 0 &&
+			report.textureCounts[1] > report.textureCounts[0] &&
+			report.textureCounts[2] > report.textureCounts[1]
+		)
+	)
+		throw new Error("a cold fixture model uploaded no textures");
 	const steelSettings = report.maps.map((maps) =>
 		maps
 			.filter((map) => map.name.includes("steel-wear"))
