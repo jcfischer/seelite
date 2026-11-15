@@ -22140,7 +22140,7 @@ class Game {
 			this.updateCockpit();
 			return false;
 		}
-		this.clearStationRefusal();
+		this.stationConsoleMessage = result.notice ?? null;
 		// The adopt point delivers a bought hull, saves, bumps the console and
 		// repaints (#631).
 		this.adoptHoldings(

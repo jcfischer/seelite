@@ -41,6 +41,8 @@ import {
 import { ORE_GOODS, oreCargoName } from "../src/ore-goods";
 import { cargoWeights, dropCanisters } from "../src/raider-wreck";
 import { emptyRequests } from "../src/requests";
+import { HULL_IDS } from "../src/hull";
+import { commanderAfterDeath } from "../src/holdings";
 import {
 	newCommanderRecord,
 	parseSave,
@@ -87,6 +89,149 @@ const screen = (i: ConsoleInput) =>
 		cargo: i.commander.cargo,
 		deficitOf: (name) => readDeficit(i.deficits, key, name, i.gameTimeMin),
 	});
+
+const firstOreNotice =
+	"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.";
+const rawSale = (
+	commander = scoopCargo(newCommander("courier"), poor, 3, 0).commander,
+) =>
+	transactAtStation({
+		...input(commander),
+		action: { type: "sell-commodity", commodity: poor },
+	});
+
+test("the first successful raw ore sale from every non-Longwall hull gives the exact notice once", () => {
+	for (const hull of HULL_IDS.filter((h) => h !== "miner")) {
+		const start = scoopCargo(newCommander(hull), poor, 3, 0).commander;
+		const first = rawSale(start);
+		expect(first.accepted).toBe(true);
+		if (!first.accepted) throw Error(first.reason);
+		expect(first.notice).toBe(firstOreNotice);
+		expect(first.commander.firstOreNoticeSeen).toBe(true);
+		expect(start.firstOreNoticeSeen).toBeUndefined();
+		const next = rawSale(first.commander);
+		expect(next.accepted).toBe(true);
+		if (!next.accepted) throw Error(next.reason);
+		expect(next.notice).toBeUndefined();
+	}
+});
+
+test("Longwall, refined goods, purchases and failed raw sales do not give the ore notice", () => {
+	const longwall = rawSale(
+		scoopCargo(newCommander("miner"), poor, 3, 0).commander,
+	);
+	const refined = transactAtStation({
+		...input(
+			scoopCargo(
+				scoopCargo(newCommander("courier"), poor, 3, 0).commander,
+				"Alloys",
+				1,
+				0,
+			).commander,
+		),
+		action: { type: "sell-commodity", commodity: "Alloys" },
+	});
+	const bought = transactAtStation({
+		...input(),
+		action: { type: "buy-commodity", commodity: poor },
+	});
+	for (const result of [longwall, refined, bought]) {
+		expect(result.accepted).toBe(true);
+		if (!result.accepted) throw Error(result.reason);
+		expect(result.notice).toBeUndefined();
+		expect(result.commander.firstOreNoticeSeen).toBeUndefined();
+	}
+	for (const overrides of [
+		{ mining: false },
+		{
+			action: {
+				type: "sell-commodity" as const,
+				commodity: poor,
+				quantity: 99,
+			},
+		},
+	]) {
+		const start = scoopCargo(newCommander("courier"), poor, 3, 0).commander;
+		const failed = transactAtStation({
+			...input(start),
+			action: { type: "sell-commodity", commodity: poor },
+			...overrides,
+		});
+		expect(failed.accepted).toBe(false);
+		expect(failed.commander.firstOreNoticeSeen).toBeUndefined();
+		const later = rawSale(failed.commander);
+		expect(later.accepted && later.notice).toBe(firstOreNotice);
+	}
+	const afterRefined = rawSale(refined.commander);
+	expect(afterRefined.accepted && afterRefined.notice).toBe(firstOreNotice);
+});
+
+test("a hull purchase that auto-sells raw ore carries the notice out of the nested sale", () => {
+	const commander = scoopCargo(
+		{ ...newCommander("freighter"), credits: 1e9 },
+		poor,
+		100,
+		0,
+	).commander;
+	const result = transactAtStation({
+		...input(commander),
+		station: { ...station, type: "shipyard" },
+		action: { type: "buy-hull", hull: "courier" },
+	});
+	expect(result.accepted).toBe(true);
+	if (!result.accepted) throw Error(result.reason);
+	expect(result.sold?.some((lot) => lot.good === poor)).toBe(true);
+	expect(result.notice).toBe(firstOreNotice);
+	expect(result.commander.firstOreNoticeSeen).toBe(true);
+	expect(commander.firstOreNoticeSeen).toBeUndefined();
+});
+
+test("the ore notice record survives save reload and old saves without it remain eligible", () => {
+	const world = newWorld(47);
+	const record = newCommanderRecord("courier");
+	record.state = scoopCargo(record.state, poor, 3, 0).commander;
+	const old = serializeSave({ world, commander: record });
+	expect(JSON.stringify(old)).not.toContain("firstOreNoticeSeen");
+	const loaded = parseSave(old);
+	const first = rawSale(loaded.commander.state);
+	expect(first.accepted && first.notice).toBe(firstOreNotice);
+	loaded.commander.state = first.commander;
+	const again = parseSave(serializeSave(loaded));
+	expect(again.commander.state.firstOreNoticeSeen).toBe(true);
+	const next = rawSale(again.commander.state);
+	expect(next.accepted).toBe(true);
+	if (!next.accepted) throw Error(next.reason);
+	expect(next.notice).toBeUndefined();
+	for (const invalid of [false, "true", 1, null]) {
+		const body = {
+			...old,
+			commander: {
+				...(old.commander as object),
+				state: {
+					...(old.commander as { state: object }).state,
+					firstOreNoticeSeen: invalid,
+				},
+			},
+		};
+		delete (body as { integrity?: number }).integrity;
+		expect(() =>
+			parseSave({ ...body, integrity: fnv1a(JSON.stringify(body)) }),
+		).toThrow(/firstOreNoticeSeen/);
+	}
+});
+
+test("losing a ship or ejecting does not teach the same ore lesson again", () => {
+	const dock = newCommanderRecord("courier");
+	dock.state = rawSale().commander;
+	for (const cause of ["eject", "destroyed"] as const) {
+		const restored = commanderAfterDeath(dock, dock, cause);
+		const withOre = scoopCargo(restored.state, poor, 1, 0).commander;
+		const result = rawSale(withOre);
+		expect(result.accepted).toBe(true);
+		if (!result.accepted) throw Error(result.reason);
+		expect(result.notice).toBeUndefined();
+	}
+});
 
 test("fifteen whole-tonne cargo identities preserve the current Hold names and grades", () => {
 	expect(ORE_GOODS).toHaveLength(15);

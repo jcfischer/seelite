@@ -211,6 +211,9 @@ export const commanderAfterDeath = (
 						...newCommander(PLAYER_BASELINE_HULL),
 						credits: dock.state.credits,
 					}),
+			...(dock.state.firstOreNoticeSeen
+				? { firstOreNoticeSeen: true as const }
+				: {}),
 		},
 		chargeAu: HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu,
 	};

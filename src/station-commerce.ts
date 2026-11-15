@@ -113,6 +113,7 @@ export const recoveredLocked = (
 
 export interface CommanderState {
 	accounting?: CommodityAccount;
+	firstOreNoticeSeen?: true;
 	credits: number;
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;
@@ -338,6 +339,7 @@ export type StationCommerceResult =
 			reason: null;
 			commander: CommanderState;
 			deficits: DeficitMap;
+			notice?: string;
 			/** A hull purchase's auto-sale (#556 D6), for the ladder to bank;
 			 *  absent on every other action. */
 			sold?: readonly SoldLot[];
@@ -644,6 +646,7 @@ function stationTransaction(
 					commander: offer.commander,
 					deficits: offer.deficits,
 					sold: offer.sold,
+					...(offer.notice ? { notice: offer.notice } : {}),
 				}
 			: rejected(input, offer.reason);
 	}
@@ -879,9 +882,19 @@ function stationTransaction(
 		massFromNative(quantity, nativeGrams(good.name))
 	)
 		return rejected(input, "cargo-missing");
+	const firstOreNotice =
+		oreGood(good.name) &&
+		input.commander.hull !== "miner" &&
+		!input.commander.firstOreNoticeSeen;
 	return {
 		accepted: true,
 		reason: null,
+		...(firstOreNotice
+			? {
+					notice:
+						"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.",
+				}
+			: {}),
 		commander: {
 			...withAccount(
 				input.commander,
@@ -892,6 +905,7 @@ function stationTransaction(
 					quoteFromNumber(priceCr),
 				),
 			),
+			...(firstOreNotice ? { firstOreNoticeSeen: true as const } : {}),
 		},
 		deficits: recordTrade(input.deficits, input.stationKey, {
 			goodName: good.name,
@@ -1111,6 +1125,7 @@ export function hullOffer(
 	}
 
 	let state = { commander, deficits: input.deficits };
+	let notice: string | undefined;
 	const lots: SoldLot[] = [];
 	for (const lot of sellable) {
 		if (overflowT <= 0) break;
@@ -1132,6 +1147,7 @@ export function hullOffer(
 		// this function, not a state the pilot can reach.
 		if (!out.accepted)
 			throw new Error(`auto-sale of ${lot.good.name} refused: ${out.reason}`);
+		if (out.notice) notice = out.notice;
 		lots.push({
 			good: lot.good.name,
 			units,
@@ -1159,6 +1175,7 @@ export function hullOffer(
 		commander: withFuelClamped(nextCommander),
 		deficits: state.deficits,
 		...offer,
+		...(notice ? { notice } : {}),
 	};
 }
 

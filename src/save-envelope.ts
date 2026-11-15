@@ -583,6 +583,7 @@ const canonicalCommander = (record: CommanderRecord) => {
 		},
 		state: {
 			credits: displayAmount(accounting.cash),
+			...(record.state.firstOreNoticeSeen ? { firstOreNoticeSeen: true } : {}),
 			accounting: encodeAccount(accounting),
 			cargo,
 			loadout: Object.fromEntries(
@@ -738,6 +739,11 @@ const parseCommander = (
 			// in the table would otherwise print a sentence about the first.
 			fail(`saveSchemaVersion ${version} cannot contain "${key}"`);
 	const state = asObject(o.state, "commander.state");
+	if (
+		state.firstOreNoticeSeen !== undefined &&
+		state.firstOreNoticeSeen !== true
+	)
+		fail("commander.state: firstOreNoticeSeen is not true");
 	if (version < 20 && state.accounting !== undefined)
 		fail("legacy commander contains accounting");
 	const hull = state.hull;
@@ -973,6 +979,9 @@ const parseCommander = (
 		state: {
 			credits: displayAmount(accounting.cash),
 			accounting,
+			...(state.firstOreNoticeSeen === true
+				? { firstOreNoticeSeen: true as const }
+				: {}),
 			cargo,
 			loadout,
 			...(carried.length ? { recoveredFittings: carried } : {}),

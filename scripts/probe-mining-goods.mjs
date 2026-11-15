@@ -248,6 +248,11 @@ try {
 			sale.trade,
 		JSON.stringify({ before, bid, after, ...sale }),
 	);
+	check(
+		"a Longwall ore sale gives no first-ore notice",
+		(await page.locator("[data-live-station-message]").innerText()) === "",
+		await page.locator("[data-live-station-message]").innerText(),
+	);
 	await page.screenshot({ path: `${shots}/sold.png` });
 	await page.evaluate(async () => {
 		const g = window.__seelite;
@@ -271,6 +276,99 @@ try {
 		"without mining the docked market retains exactly its original seventeen rows",
 		off.length === 17 && !off.some((name) => name.includes("ore")),
 		JSON.stringify(off),
+	);
+	const notice =
+		"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.";
+	const firstSaleGood = "Metallic ore POOR";
+	await page.evaluate(async (name) => {
+		const { newCommander, scoopCargo } = await import(
+			"/src/station-commerce.ts"
+		);
+		const g = window.__seelite;
+		const fixture = g.saveEnvelope();
+		fixture.commander.state = scoopCargo(
+			newCommander("courier"),
+			name,
+			3,
+			0,
+		).commander;
+		const oldSave = g.save.serialize(fixture);
+		if (JSON.stringify(oldSave).includes("firstOreNoticeSeen"))
+			throw Error("fixture must have no notice record");
+		await g.save.backend.writeMany(
+			g.save.defaultSlot,
+			["live", "lastDocked"],
+			oldSave,
+		);
+	}, firstSaleGood);
+	await page.goto(
+		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
+	);
+	await bootedGame(page, 90000);
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.clockHeld = true;
+		g.setHeadLook("forward");
+		g.stationConsoleTab = "Market";
+		g.updateCockpit();
+	});
+	const sellOre = () =>
+		page
+			.locator(
+				`[data-live-market-row="${firstSaleGood}"] [data-live-station-action="sell-commodity"]`,
+			)
+			.click();
+	await sellOre();
+	await page.waitForFunction(
+		(notice) =>
+			document.querySelector("[data-live-station-message]")?.textContent ===
+			notice,
+		notice,
+	);
+	const message = page.locator("[data-live-station-message]");
+	check(
+		"the first raw sale from a Courier loaded without a notice record paints the exact sentence",
+		(await message.innerText()) === notice && (await message.isVisible()),
+		await message.innerText(),
+	);
+	await page.screenshot({ path: `${shots}/first-ore-notice.png` });
+	await sellOre();
+	check(
+		"a second raw ore sale clears the notice and does not repeat it",
+		(await message.innerText()) === "" &&
+			(await page.evaluate(
+				(name) => window.__seelite.commander.cargo[name] === 1,
+				firstSaleGood,
+			)),
+		await message.innerText(),
+	);
+	const seen = await page.evaluate(async () => {
+		const g = window.__seelite;
+		g.saveFlush("quit");
+		await g.saveStore.settled();
+		const saved = await g.save.backend.read(g.save.defaultSlot, "live");
+		return saved?.commander.state.firstOreNoticeSeen;
+	});
+	check("the seen record is written to IndexedDB", seen === true, String(seen));
+	await page.goto(
+		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
+	);
+	await bootedGame(page, 90000);
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.setHeadLook("forward");
+		g.stationConsoleTab = "Market";
+		g.updateCockpit();
+	});
+	await sellOre();
+	check(
+		"a raw ore sale after save and reload succeeds without the notice",
+		(await message.innerText()) === "" &&
+			(await page.evaluate(
+				(name) => !window.__seelite.commander.cargo[name],
+				firstSaleGood,
+			)),
+		await message.innerText(),
 	);
 } finally {
 	await browser.close();
