@@ -233,7 +233,6 @@ const addCustodyCost = (
 	cost: Money,
 ): CommodityAccount => {
 	const pool = account.pools[product];
-	if (!pool) fail(`${product} is not a commodity pool`);
 	return {
 		...account,
 		pools: {
@@ -348,9 +347,8 @@ const keys = (value: Record<string, unknown>, expected: readonly string[]) => {
 
 const finite = (raw: Record<string, unknown>, field: string): number => {
 	const value = raw[field];
-	if (typeof value !== "number" || !Number.isFinite(value))
-		fail(`${field} is not a finite number`);
-	return value;
+	if (!Number.isFinite(value)) fail(`${field} is not a finite number`);
+	return value as number;
 };
 
 const whole = (

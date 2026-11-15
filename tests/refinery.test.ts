@@ -58,6 +58,21 @@ import {
 } from "../src/world-state";
 import { holdingsAfterDeath } from "../src/holdings";
 import { fnv1a } from "../src/rng";
+import {
+	commodity,
+	commodityStockResponse,
+	marketQuote,
+	marketRow,
+	marketStationOf,
+} from "../src/market";
+import {
+	massFromNative,
+	quoteFromNumber,
+	quoteMass,
+} from "../src/exact-amount";
+import { nativeGrams } from "../src/commodity-pools";
+import { commanderHold } from "../src/station-commerce";
+import { readDeficit } from "../src/deficits";
 
 const SEED = 47;
 const GOOD = "Silicate ore STD";
@@ -559,6 +574,83 @@ describe("save", () => {
 });
 
 describe("pricing and the commit path", () => {
+	test("quote lookup refuses invalid keys, non-refineries and non-ore", () => {
+		const live = envelope();
+		for (const key of [
+			"bad",
+			carrierKey(0, "absent"),
+			carrierKey(0, "station-trade"),
+		])
+			expect(
+				refineryQuoteAt(live, 0, key as ReturnType<typeof carrierKey>, GOOD, 1),
+			).toEqual(refineryRefusal("not-refinery"));
+		expect(refineryQuoteAt(live, 0, refineryHere.key, "Food", 1)).toEqual(
+			refineryRefusal("unknown-good"),
+		);
+	});
+
+	test("the quote reads market minutes and the product's live deficit", () => {
+		const live = envelope();
+		live.world = advanceTo(live.world, 10000);
+		live.world.galaxies[0].deficits[refineryHere.key] = {
+			goods: { Minerals: 20 },
+			updatedAt: 150,
+		};
+		const record = systemAt(SEED, 0, refineryHere.systemIndex);
+		const station = generateContents(record).stations.find(
+			(s) => s.type === "refinery",
+		)!;
+		const market = marketStationOf(station, SEED);
+		const product = commodity("Minerals");
+		const atMin = live.world.gameTime / 60;
+		const deficit = readDeficit(
+			live.world.galaxies[0].deficits,
+			refineryHere.key,
+			"Minerals",
+			atMin,
+		);
+		const base = marketRow(product, record.economy, market, atMin);
+		const mid = commodityStockResponse(
+			product,
+			base.priceCr,
+			deficit,
+			commanderHold(live.commander.state, 0).capacityT,
+		);
+		const { sellCr } = marketQuote(mid, record.displayTL);
+		const unitValue = quoteMass(
+			quoteFromNumber(sellCr),
+			massFromNative(ore.yieldGPerT, 1),
+			nativeGrams(product.name),
+		);
+		const expectedFee = refineryFeePerTonne(unitValue);
+		let online = live.world.gameTime;
+		while (
+			stationServices(live.world, 0, refineryHere.key, online).exclusive ===
+			false
+		)
+			online += 10;
+		if (online !== live.world.gameTime) {
+			live.world = advanceTo(live.world, online);
+			live.world.galaxies[0].deficits[refineryHere.key].updatedAt +=
+				(online - 10000) / 60;
+		}
+		const result = refineryQuoteAt(live, 0, refineryHere.key, GOOD, 1);
+		if (!result.ok) throw new Error(result.sentence);
+		expect(result.quote.fee).toBe(money.encode(expectedFee));
+	});
+
+	test("an inconsistent ore account is refused by submit without adopting it", () => {
+		const live = envelope();
+		const quoted = refineryQuoteAt(live, 0, refineryHere.key, GOOD, 2);
+		if (!quoted.ok) throw new Error(quoted.sentence);
+		live.commander.state.accounting = {
+			...live.commander.state.accounting!,
+			basis: {},
+		};
+		expect(submitRefineryEnvelope(live, 0, quoted.quote)).toEqual(
+			refineryRefusal("insufficient-ore"),
+		);
+	});
 	const commander = (credits: number, tonnes: number) => {
 		const base = newCommanderRecord("miner", {
 			galaxyIndex: 0,

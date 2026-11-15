@@ -66,6 +66,9 @@ try {
 			});
 			const { integrity, ...body } = raw;
 			body.saveSchemaVersion = 19;
+			body.world.worldSchemaVersion = 4;
+			const { integrity: _worldIntegrity, ...worldBody } = body.world;
+			body.world.integrity = fnv1a(JSON.stringify(worldBody));
 			delete body.commander.state.accounting;
 			return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		};
@@ -366,6 +369,9 @@ try {
 			body.saveSchemaVersion = 19;
 			delete body.commander.state.accounting;
 			body.commander.state.cargo = { Food: -1 };
+			body.world.worldSchemaVersion = 4;
+			const { integrity: _worldIntegrity, ...worldBody } = body.world;
+			body.world.integrity = fnv1a(JSON.stringify(worldBody));
 			const refused = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 			const backend = indexedDbSaveBackend();
 			await backend.write("default", "live", refused);
