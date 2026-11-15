@@ -1900,11 +1900,11 @@ describe("collision.md §9.1.14: §6 item 1's corpus row, pinned red: a change t
 		flownOncePerArguments.set(key, result);
 		return result;
 	};
-	const expectSweptAtLeast = (
+	const expectSweptMoreThan = (
 		result: CorpusResult,
 		phase: TrafficRoutePhase,
-		atLeast: number,
-	) => expect(result.steps[phase]).toBeGreaterThan(atLeast);
+		moreThan: number,
+	) => expect(result.steps[phase]).toBeGreaterThan(moreThan);
 	const classes = (result: CorpusResult) => {
 		const out: Record<string, number> = {};
 		for (const m of distinctMeetings(result.meetings))
@@ -1914,8 +1914,8 @@ describe("collision.md §9.1.14: §6 item 1's corpus row, pinned red: a change t
 
 	test("RED, pinned: system 9's local approach runs through its trade station at 8.96 km/s", () => {
 		const result = run(9, 1800);
-		expectSweptAtLeast(result, "local-approach", 200);
-		expectSweptAtLeast(result, "local-departure", 400);
+		expectSweptMoreThan(result, "local-approach", 200);
+		expectSweptMoreThan(result, "local-departure", 400);
 		expect(classes(result)).toEqual({ "approach-through": 1 });
 		const [through] = distinctMeetings(result.meetings);
 		expect(through.met).toContain("station-trade");
@@ -1925,8 +1925,8 @@ describe("collision.md §9.1.14: §6 item 1's corpus row, pinned red: a change t
 
 	test("RED, pinned: system 0's launches touch at the release point, under V_SCRAPE", () => {
 		const result = run(0, 1800);
-		expectSweptAtLeast(result, "local-departure", 4000);
-		expectSweptAtLeast(result, "lane-queued", 1000);
+		expectSweptMoreThan(result, "local-departure", 4000);
+		expectSweptMoreThan(result, "lane-queued", 1000);
 		expect(result.pairSteps).toBeGreaterThan(0);
 		expect(classes(result)).toEqual({ "release-point": 1 });
 		for (const m of distinctMeetings(result.meetings))
