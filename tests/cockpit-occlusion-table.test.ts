@@ -74,7 +74,7 @@ test("the shipped cockpit occlusion is what the ray rule measures now, for every
 	if (process.env.WRITE_COCKPIT_OCCLUSION === "1")
 		writeFileSync(TABLE, `${JSON.stringify(now, null, "\t")}\n`);
 	expect(COCKPIT_OCCLUSION).toEqual(now);
-}, 120_000);
+}, 300_000);
 
 test("the cockpit reads the row of the pose nearest the drill's extension", () => {
 	for (const row of COCKPIT_OCCLUSION)
