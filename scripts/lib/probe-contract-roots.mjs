@@ -42,6 +42,17 @@ const OWNERS = Object.freeze({
 		"src/system-sweep.ts",
 		"src/system-sweep-view.ts",
 	],
+	"probe-refinery-jobs.mjs": [
+		"scripts/probe-refinery-jobs.mjs",
+		"scripts/lib/commander-fixture.ts",
+		"src/refinery.ts",
+		"src/refinery-pricing.ts",
+		"src/world-state.ts",
+		"src/save-envelope.ts",
+		"src/save-store.ts",
+		"src/live-cockpit.ts",
+		"src/station-console.ts",
+	],
 	"probe-capability-outage.mjs": [
 		"scripts/probe-capability-outage.mjs",
 		"scripts/lib/capability-outage-fixture.mjs",

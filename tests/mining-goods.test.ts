@@ -62,6 +62,7 @@ import { deathWreckRow } from "../src/death-wreck";
 import { scoopWreckContainer } from "../src/derelict-salvage";
 import { STOCK_SCOOP } from "../src/raider-wreck";
 import { fnv1a } from "../src/rng";
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 
 const poor = "Metallic ore POOR";
 const rich = "Metallic ore RICH";
@@ -580,7 +581,12 @@ test("schema20 remains readable and cannot claim schema21 ore", () => {
 		world: newWorld(47),
 		commander: newCommanderRecord("courier"),
 	});
-	const legacy = { ...raw, saveSchemaVersion: 20 };
+	const legacy = {
+		...raw,
+		saveSchemaVersion: 20,
+		world: { ...(raw.world as Record<string, unknown>) },
+	} as any;
+	pairLegacyWorldFixture(legacy);
 	const { integrity, ...body } = legacy;
 	expect(
 		parseSave({ ...body, integrity: fnv1a(JSON.stringify(body)) }).commander
@@ -593,10 +599,13 @@ test("schema20 remains readable and cannot claim schema21 ore", () => {
 			state: scoopCargo(newCommander("courier"), poor, 1, 0).commander,
 		},
 	});
-	const { integrity: previous, ...oreBody } = {
+	const legacyOre = {
 		...withOre,
 		saveSchemaVersion: 20,
-	};
+		world: { ...(withOre.world as Record<string, unknown>) },
+	} as any;
+	pairLegacyWorldFixture(legacyOre);
+	const { integrity: previous, ...oreBody } = legacyOre;
 	expect(() =>
 		parseSave({ ...oreBody, integrity: fnv1a(JSON.stringify(oreBody)) }),
 	).toThrow("schema 21");

@@ -1,5 +1,5 @@
-import { GRADE_NAME, oreCargoName, oreTonnes } from "./ore-goods";
-import { withAccount, accountOf } from "./commodity-pools";
+import { GRADE_NAME, oreCargoName, oreGood, oreTonnes } from "./ore-goods";
+import { withAccount, accountOf, displayAmount } from "./commodity-pools";
 import { oreCapacityLabel } from "./mining-capacity";
 import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
 import type { FieldDiscoveryMotion } from "./field-discovery";
@@ -288,6 +288,14 @@ import {
 } from "./derelict-mesh";
 import { materializeDerelict } from "./world-state";
 import { EQUIPMENT } from "./market";
+import { money } from "./exact-amount";
+import {
+	REFINERY_JOB_LIMIT,
+	productUnits,
+	refineryFinished,
+	type RefineryQuote,
+} from "./refinery";
+import { refineryQuoteAt, submitRefineryEnvelope } from "./refinery-pricing";
 import { gateRefusal } from "./ladder";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
@@ -1312,7 +1320,11 @@ import {
 	firstDayEjectLine,
 	firstDayText,
 } from "./first-day";
-import type { FirstDayPanel } from "./live-cockpit";
+import type {
+	FirstDayPanel,
+	RefineryConsole,
+	RefineryJobRow,
+} from "./live-cockpit";
 import {
 	COMMANDER_KEY,
 	type CommanderOverlayHandle,
@@ -1330,7 +1342,7 @@ import {
 	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
-import { ESCAPE_POD, marketStationOf, marketEpoch } from "./market";
+import { ESCAPE_POD, commodity, marketStationOf, marketEpoch } from "./market";
 import {
 	type HoldBids,
 	type HoldSummary,
@@ -1383,6 +1395,7 @@ import {
 	type Provenance,
 	type TransitionEvent,
 	visit,
+	withRefineryQueue,
 	type WorldState,
 } from "./world-state";
 import {
@@ -3065,6 +3078,13 @@ class Game {
 	private holdBidsCacheKey: string | null | undefined = undefined;
 	private stationConsoleRevision = 0;
 	private stationServicesKey = "";
+	private txSeq = 0;
+	private refineryView: "submit" | "jobs" = "submit";
+	private refineryGood = "";
+	private refineryTonnes = 1;
+	private refineryQuote: RefineryQuote | null = null;
+	private refinerySaving = false;
+	private refineryNotice: string | null = null;
 	/**
 	 * What the till last said when it said no (#443).
 	 *
@@ -4625,6 +4645,7 @@ class Game {
 			this.firstDay = save.commander.firstDay;
 			this.scoopNotice = save.commander.scoopNotice;
 			this.ladders = save.commander.ladders;
+			this.txSeq = save.commander.txSeq;
 			// Explicit, though a restore builds a fresh `Game` and it is empty
 			// already: a death reloads the page into the last dock's commander,
 			// and credit earned before it must not ride into the dock it restores
@@ -5136,6 +5157,8 @@ class Game {
 			onStationTab: (tab) => {
 				if (tab === "Requests" && this.stationConsoleTab !== "Requests")
 					this.requestTab = "current";
+				if (tab === "Refinery" && this.stationConsoleTab !== "Refinery")
+					this.refineryView = "submit";
 				this.stationConsoleTab = tab;
 				// A refusal is about the press that earned it, so **any** tab
 				// press retires it (#443) — including a press on the tab
@@ -5146,6 +5169,17 @@ class Game {
 			},
 			onRequestAction: (action, id) =>
 				this.consolePress(this.actOnRequest(action, id)),
+			onRefineryAction: (action) => this.refineryAction(action),
+			onRefineryGood: (good) => {
+				this.refineryGood = good;
+				this.refineryQuote = null;
+				this.refineryNotice = null;
+				this.updateCockpit();
+			},
+			onRefineryTonnes: (tonnes) => {
+				if (Number.isSafeInteger(tonnes) && tonnes >= 1)
+					this.refineryTonnes = tonnes;
+			},
 			onStationAction: (type, name) => {
 				this.outfittingCandidate = "";
 				if (type === "buy-module") {
@@ -14653,6 +14687,7 @@ class Game {
 	 * that reads past a glossary is a word that ends up meaning both.
 	 */
 	launch(): boolean {
+		if (this.refinerySaving) return false;
 		if (this.dock.phase !== "docked" || !this.dock.stationId) return false;
 		const stationId = this.dock.stationId;
 		const pending = this.playerLaneRequests.get(stationId);
@@ -20903,7 +20938,7 @@ class Game {
 		// The rows read the rungs and the flown hull too: a dock banks rungs,
 		// and a purchase changes the hull, and both must reprice the Shipyard.
 		const rungs = this.rungs();
-		const key = `${marketEpoch(market.phaseMin, context.gameTimeMin)}|${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
+		const key = `${marketEpoch(market.phaseMin, context.gameTimeMin)}|${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}|${this.refineryView}|${this.refineryGood}|${this.refineryTonnes}|${this.refineryQuote?.signature ?? ""}|${this.refinerySaving ? "saving" : ""}|${this.refineryNotice ?? ""}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCacheStationId = this.dock.stationId;
@@ -20919,7 +20954,9 @@ class Game {
 					: undefined,
 			label: this.nameOfStation(station.id),
 			tab:
-				this.stationConsoleTab === "Shipyard" && market.type !== "shipyard"
+				(this.stationConsoleTab === "Shipyard" && market.type !== "shipyard") ||
+				(this.stationConsoleTab === "Refinery" &&
+					(!MINING_ON || market.type !== "refinery"))
 					? "Market"
 					: this.stationConsoleTab,
 			market: freshMarket ?? readMarket(),
@@ -20941,6 +20978,7 @@ class Game {
 					: null,
 			credits: this.commander.credits,
 			hold,
+			refinery: this.refineryConsole(context, services),
 			message: this.stationConsoleMessage,
 			serviceNotice: serviceStatus.notice,
 			// The pilot's own goods, off the same projection rather than off
@@ -21036,6 +21074,7 @@ class Game {
 			state: this.commander,
 			requests: this.requests,
 			sweepReadings: this.sweepReadings,
+			txSeq: this.txSeq,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
 			dockedAt: station ? this.stationKey(station) : null,
@@ -22170,6 +22209,232 @@ class Game {
 			economy: this.world.system.record.economy,
 			gameTimeMin: this.world.gameTime / 60,
 		};
+	}
+
+	private refineryConsole(
+		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
+		services: ReturnType<typeof stationServices> | undefined,
+	): RefineryConsole | null {
+		if (!MINING_ON || context.station.type !== "refinery") return null;
+		const world = advanceTo(this.commerceWorld, this.world.gameTime);
+		const queue =
+			world.galaxies[context.galaxyIndex].refineries[context.stationKey];
+		const ore = Object.entries(this.commander.cargo)
+			.filter(([name, tonnes]) => oreGood(name) !== undefined && tonnes > 0)
+			.map(([good, tonnes]) => ({ good, tonnes }));
+		const selected = ore.some((line) => line.good === this.refineryGood)
+			? this.refineryGood
+			: (ore[0]?.good ?? "");
+		const held =
+			this.refineryQuote?.station === context.stationKey
+				? this.refineryQuote
+				: null;
+		let stale =
+			held !== null &&
+			(held.good !== selected || held.tonnes !== this.refineryTonnes);
+		if (held && !stale) {
+			const fresh = refineryQuoteAt(
+				{ world, commander: this.commanderRecord() },
+				context.galaxyIndex,
+				context.stationKey,
+				held.good,
+				held.tonnes,
+			);
+			stale = !fresh.ok
+				? fresh.reason !== "processing-offline"
+				: fresh.quote.signature !== held.signature;
+		}
+		const online = services?.exclusive !== false;
+		const jobs: RefineryJobRow[] = (queue?.jobs ?? []).map((job) => {
+			let status = "Paused";
+			if (refineryFinished(job)) status = "Ready";
+			else if (online) status = "Processing";
+			return {
+				id: job.id,
+				good: job.good,
+				tonnes: job.tonnes,
+				product: job.product,
+				output: this.refineryProductAmount(job.outputGrams, job.product),
+				status,
+				workLeft: job.work,
+				percent: Math.round((1 - job.work / job.totalWork) * 100),
+			};
+		});
+		return {
+			view: this.refineryView,
+			online,
+			saving: this.refinerySaving,
+			notice: this.refineryNotice,
+			ore,
+			selected,
+			tonnes: this.refineryTonnes,
+			quote: held
+				? {
+						good: held.good,
+						tonnes: held.tonnes,
+						product: held.product,
+						output: this.refineryProductAmount(held.outputGrams, held.product),
+						fee: `${displayAmount(money.parse(held.fee)).toLocaleString("en", { maximumFractionDigits: 3 })} Cr`,
+						position: held.position,
+						workS: held.workAhead,
+						stale,
+					}
+				: null,
+			jobs,
+			queueCount: queue?.jobs.length ?? 0,
+		};
+	}
+
+	private refineryProductAmount(grams: number, product: string): string {
+		const units = productUnits(grams, product);
+		return `${units.toLocaleString("en", { maximumFractionDigits: 3 })} ${commodity(product).unit} ${product}`;
+	}
+
+	private refineryAction(
+		action: "view-submit" | "view-jobs" | "quote" | "submit",
+	): void {
+		if (this.refinerySaving) return;
+		if (action === "view-submit" || action === "view-jobs") {
+			this.refineryView = action === "view-jobs" ? "jobs" : "submit";
+			this.updateCockpit();
+			return;
+		}
+		if (action === "quote") {
+			this.reviewRefineryQuote();
+			return;
+		}
+		void this.submitRefinery();
+	}
+
+	private selectedRefineryGood(
+		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
+	): string {
+		const aboard = Object.entries(this.commander.cargo)
+			.filter(([name, tonnes]) => oreGood(name) !== undefined && tonnes > 0)
+			.map(([good]) => good);
+		return aboard.includes(this.refineryGood)
+			? this.refineryGood
+			: (aboard[0] ?? "");
+	}
+
+	private reviewRefineryQuote(): void {
+		const context = this.dockedStationContext();
+		if (!context || context.station.type !== "refinery") return;
+		const good = this.selectedRefineryGood(context);
+		if (!good) {
+			this.refineryQuote = null;
+			this.refineryNotice = "No ore is aboard.";
+		} else {
+			const world = advanceTo(this.commerceWorld, this.world.gameTime);
+			const result = refineryQuoteAt(
+				{ world, commander: this.commanderRecord() },
+				context.galaxyIndex,
+				context.stationKey,
+				good,
+				this.refineryTonnes,
+			);
+			if (result.ok) {
+				this.refineryQuote = result.quote;
+				this.refineryNotice = "Quote ready. Submission is final once saved.";
+			} else {
+				this.refineryQuote = null;
+				this.refineryNotice = result.sentence;
+			}
+		}
+		this.updateCockpit();
+	}
+
+	private async submitRefinery(): Promise<void> {
+		const quote = this.refineryQuote;
+		if (!quote || this.refinerySaving) return;
+		const context = this.dockedStationContext();
+		if (!context || context.station.type !== "refinery") return;
+		if (
+			quote.good !== this.selectedRefineryGood(context) ||
+			quote.tonnes !== this.refineryTonnes
+		) {
+			this.refineryQuote = null;
+			this.refineryNotice =
+				"The quote changed. Review the updated quote before confirming.";
+			this.updateCockpit();
+			return;
+		}
+		const store = this.saveStore;
+		if (!store) {
+			this.refineryNotice =
+				"Saving is unavailable here; nothing was committed.";
+			this.updateCockpit();
+			return;
+		}
+		const galaxyIndex = context.galaxyIndex;
+		const stationKey = context.stationKey;
+		const txSeq = this.txSeq;
+		const checkpoint = this.commanderRecord().dockedAt !== null;
+		this.refinerySaving = true;
+		this.refineryNotice = "Saving… ore, credits and the job commit together.";
+		this.updateCockpit();
+		try {
+			const outcome = await store.commit({
+				txSeq,
+				checkpoint,
+				apply: (envelope) => {
+					const submitted = submitRefineryEnvelope(
+						envelope,
+						galaxyIndex,
+						quote,
+						envelope.world.gameTime,
+					);
+					if (!submitted.ok) throw new Error(submitted.sentence);
+					return submitted.envelope;
+				},
+				adopt: (committed) => {
+					const queue =
+						committed.world.galaxies[galaxyIndex].refineries[stationKey];
+					const world = queue
+						? withRefineryQueue(
+								advanceTo(this.commerceWorld, this.world.gameTime),
+								galaxyIndex,
+								stationKey,
+								queue,
+							)
+						: this.commerceWorld;
+					this.txSeq = committed.commander.txSeq;
+					this.adopt(
+						"refinery",
+						{
+							holdings: {
+								...this.holdings(),
+								commander: committed.commander.state,
+							},
+							world,
+						},
+						null,
+					);
+				},
+			});
+			if (outcome === "committed") {
+				this.refineryQuote = null;
+				this.refineryView = "jobs";
+				this.refineryNotice = "Submission saved. Your job is in the queue.";
+			} else if (outcome === "stale") {
+				this.refineryQuote = null;
+				this.refineryNotice =
+					"That transaction already succeeded or the quote changed. Review it again.";
+			} else if (outcome === "uncertain") {
+				this.refineryNotice =
+					"The save is uncertain; reload before retrying. Nothing further is written.";
+			} else {
+				this.refineryNotice =
+					"Save failed. Nothing committed. Retry when ready.";
+			}
+		} catch (error) {
+			this.refineryNotice = `${
+				error instanceof Error ? error.message : String(error)
+			} Nothing committed.`;
+		} finally {
+			this.refinerySaving = false;
+			this.updateCockpit();
+		}
 	}
 
 	private navigationTargets(): NavBody[] {

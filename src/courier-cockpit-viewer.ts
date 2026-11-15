@@ -298,7 +298,7 @@ function makeEquipmentLabel(name: string) {
 }
 const loader = new GLTFLoader()
 	.setMeshoptDecoder(MeshoptDecoder)
-	.register(sharedImagePlugin());
+	.register(sharedImagePlugin("cockpit-viewer"));
 let cockpit: THREE.Group, station: THREE.Group;
 let fit = false,
 	view = "pilot",

@@ -16,6 +16,7 @@ import {
 } from "../src/save-store";
 import { fnv1a } from "../src/rng";
 import { money, signedMoney } from "../src/exact-amount";
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 const legacy = (cash: number) => {
 	const e: SaveEnvelope = {
 		world: newWorld(47),
@@ -32,8 +33,8 @@ const legacy = (cash: number) => {
 		basis: { Alloys: { units: 0.25, cr: 0.1 }, Gold: { units: 0, cr: 3 } },
 	};
 	const blob = serializeSave(e) as any;
-	delete blob.commander.state.accounting;
 	blob.saveSchemaVersion = 19;
+	pairLegacyWorldFixture(blob);
 	const { integrity, ...body } = blob;
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
@@ -47,7 +48,7 @@ test("migration writes distinct live and launch records atomically before return
 	const raw = await catalog.prepareForBoot("pilot");
 	const live = parseSave(raw),
 		checkpoint = parseSave(await backend.read("pilot", "lastDocked"));
-	expect((raw as any).saveSchemaVersion).toBe(21);
+	expect((raw as any).saveSchemaVersion).toBe(22);
 	expect(live.commander.state.accounting!.cash).toBe(
 		signedMoney.fromNumber(0.1),
 	);

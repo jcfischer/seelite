@@ -855,7 +855,11 @@ export interface AdoptEffects {
 
 /** What an adoption came from: a hold event, a law-owned world write, or
  *  ammunition spent by the missile combat controller. */
-export type AdoptCause = HoldEvent["kind"] | "world" | "ammunition";
+export type AdoptCause =
+	| HoldEvent["kind"]
+	| "world"
+	| "ammunition"
+	| "refinery";
 
 /** The state an adoption compares: the four Holdings fields and the world. */
 export interface Adopted {
@@ -895,7 +899,8 @@ export function adoptEffects(
 	const moved =
 		(Object.keys(now) as (keyof Holdings)[]).some((k) => now[k] !== was[k]) ||
 		after.world !== before.world;
-	const press = cause === "settlement" || cause === "market";
+	const press =
+		cause === "settlement" || cause === "market" || cause === "refinery";
 	return {
 		save: moved,
 		consoleRevision: press && moved,

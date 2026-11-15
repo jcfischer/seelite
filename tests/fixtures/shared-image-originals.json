@@ -127,5 +127,35 @@
 		"bytes": 10287388,
 		"attributes": "934520ce6a86358f6479557c3420b4efa725c836adae2c761712550b9068fa51",
 		"document": "a9359da42e6b4a157bdc3beb9e47a93eb94497c5a580e0c1be9fe46879f7d1f6"
+	},
+	"courier-hull": {
+		"bytes": 14624396,
+		"attributes": "3acd18dd0d09e72e8939f7c2f2b5591fbccbfade06347d7f762b5cc3ea99cbdb",
+		"document": "ede85e58224e58bd43bde701e72014b022e8b17a169612d8b76442d88de7a249",
+		"preparedSha256": "da5018a56d79e1e754a833dda7011e490ccdb1f4273cfbc09929871ee6a8a441"
+	},
+	"courier-cockpit": {
+		"bytes": 3168308,
+		"attributes": "ea0c2cb84ec65a68f0a5cf8c7ca8ba247c3102c692fb29fb22108dc6be79283d",
+		"document": "4b3540f148b10156058a007eec06e75980b498a6f68ed0b65ffaa64fd8a3378a",
+		"preparedSha256": "abbc11df74e400aa6dd90bfe1d4a0654ed457e6c3fbb43aa0bd27146f2b7a4f6"
+	},
+	"discovery-voyager": {
+		"bytes": 21767436,
+		"attributes": "95c8645a8fb3eaff145c8a4a208d0f5ad03fb6eec8c5dcb0f6f8fbf2505210a9",
+		"document": "ffd095031c5060d978fef9a463a112e83957d7495c923210bf3e9ef48223d10b",
+		"preparedSha256": "4a891a65093223539dd5307984a646b1d28a830023f4c3884433d3df020d1c73"
+	},
+	"lance-interceptor": {
+		"bytes": 13116788,
+		"attributes": "6506dd78c0b3d86b56bb62825c677203916f97cc16fd1cb51a7f7bd4cec32c03",
+		"document": "100b714e9fb1420b4f34697f710e3ee5ad653dfec8471a00c53f3d83587fb392",
+		"preparedSha256": "42c0a5007d46bdd211b762a266e3dd060f9e8091458243c008d365dee5b07686"
+	},
+	"porter": {
+		"bytes": 15096260,
+		"attributes": "ceae544f3e2f336bb09ea05ddb635a45c2f5c275b940a273c6df9e189f86c3fa",
+		"document": "e5fa70c14fc4e1f6e88eeda122dd7054cc3e9f5043c11253bc4b3004c9da85e5",
+		"preparedSha256": "40ccb19e2c18b23f9e36fcde0570d6186311d9f53b51a44c50691fec7138e26f"
 	}
 }

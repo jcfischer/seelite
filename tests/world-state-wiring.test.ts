@@ -53,6 +53,7 @@ const WRITERS = [
 	// them. The offence reaches `Game` as `chargeOffence`'s `world`, which is
 	// held by the `adoptWorld` row below.
 	"visit",
+	"withRefineryQueue",
 ];
 
 describe("the Game's world writes", () => {
