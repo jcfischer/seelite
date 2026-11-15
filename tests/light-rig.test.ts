@@ -85,11 +85,11 @@ const unit = (x: number, y: number, z: number): [number, number, number] => {
 
 /** Directions at a given angle from the star, sampled around the cone so a
  *  result is not an accident of one azimuth. */
-function atAngle(deg: number, samples = 8): [number, number, number][] {
+function atAngle(deg: number, azimuths = 8): [number, number, number][] {
 	const a = (deg * Math.PI) / 180;
 	const out: [number, number, number][] = [];
-	for (let i = 0; i < samples; i++) {
-		const phi = (i / samples) * Math.PI * 2;
+	for (let i = 0; i < azimuths; i++) {
+		const phi = (i / azimuths) * Math.PI * 2;
 		// BAKE_STAR_DIR is +X, so the cone spans the YZ plane around it.
 		out.push(
 			unit(
@@ -101,6 +101,8 @@ function atAngle(deg: number, samples = 8): [number, number, number][] {
 	}
 	return out;
 }
+
+const texelsStraddlingCentre = (texels: number) => [texels / 2 - 1, texels / 2];
 
 const luma = ([r, g, b]: [number, number, number]) =>
 	0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -217,8 +219,8 @@ describe("the equirectangular buffer", () => {
 		// between columns 127 and 128, which carry the same value. Naming both
 		// rather than picking one: an even resolution has no centre texel, and a
 		// test that asserted one would be asserting the tie-break in this scan.
-		expect([width / 2 - 1, width / 2]).toContain(x);
-		expect([height / 2 - 1, height / 2]).toContain(y);
+		expect(texelsStraddlingCentre(width)).toContain(x);
+		expect(texelsStraddlingCentre(height)).toContain(y);
 	});
 });
 
@@ -633,8 +635,8 @@ describe("the gas model (node #433)", () => {
 		const a = gasRadiance([1, 0, 0], gas);
 		const b = gasRadiance([1, 0, 0], { ...gas, seed: 99 });
 		// At least one channel differs.
-		const differ = a.some((v, i) => v !== b[i]);
-		expect(differ).toBe(true);
+		const anyChannelDiffers = a.some((v, i) => v !== b[i]);
+		expect(anyChannelDiffers).toBe(true);
 	});
 
 	test("zero density gives zero", () => {
@@ -708,13 +710,9 @@ describe("the world-frame bake carries no star (node #433, decision 2026-10-04)"
 	});
 
 	test("the parameters cannot carry a star", () => {
-		const withStar = {
-			haze,
-			gas,
-			// @ts-expect-error — the world-frame bake has no star direction
-			starDir: [0, 0, 1],
-		} satisfies SkyBakeParams;
-		expect(withStar.haze).toBe(haze);
+		type CarriesStar = "starDir" extends keyof SkyBakeParams ? true : false;
+		const carriesStar: CarriesStar = false;
+		expect(carriesStar).toBe(false);
 	});
 
 	test("the bake is the sky model at the texel the mapping names", () => {
