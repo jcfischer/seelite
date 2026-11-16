@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { acquire, emptyAccount } from "../src/commodity-pools";
-import { mass, money, signedMoney } from "../src/exact-amount";
+import { mass, massFromNative, money, signedMoney } from "../src/exact-amount";
 import {
 	encodeRefineries,
 	encodeRefineryQueue,
@@ -65,6 +65,8 @@ describe("refinery refusals and boundaries", () => {
 			"The quote changed. Review the updated quote before confirming.",
 		],
 		["not-refinery", "This station has no refinery service."],
+		["nothing-to-collect", "No whole units are ready to collect."],
+		["hold-full", "No room in the hold. Nothing was collected."],
 	])("%s explains the refusal", (reason, sentence) => {
 		expect(refineryRefusal(reason as RefineryRefusalReason)).toEqual({
 			ok: false,
@@ -310,5 +312,91 @@ describe("refinery saved-state validation", () => {
 		expect(() => parseRefineries(null)).toThrow(
 			"refinery: refineries is not an object",
 		);
+	});
+});
+
+describe("saved custody boundaries", () => {
+	const partial = () => ({
+		...job(),
+		taken: 200000,
+		unknownMass: mass.encode(massFromNative(600000, 1)),
+		basis: money.encode(money.fromNumber(1)),
+	});
+	const parse = (value: unknown) =>
+		parseRefineryQueue({ ...queue(), jobs: [value] });
+
+	test.each([
+		[800000, "collected more than it made"],
+		[800001, "collected more than it made"],
+	])("refuses taken amount %i", (taken, message) => {
+		expect(() => parse({ ...partial(), taken })).toThrow(
+			`refinery: job 1: ${message}`,
+		);
+	});
+
+	test("refuses partial output without custody and unknown mass beyond the remainder", () => {
+		const { unknownMass: _unknown, ...legacy } = partial();
+		expect(() => parse(legacy)).toThrow(
+			"refinery: job 1: partial collection without custody",
+		);
+		expect(() =>
+			parse({
+				...partial(),
+				unknownMass: mass.encode(massFromNative(600001, 1)),
+			}),
+		).toThrow("refinery: job 1: unknown mass exceeds its output");
+	});
+
+	test("accepts unknown mass exactly equal to the remainder and basis below the original paid fee", () => {
+		expect(parse(partial()).jobs).toEqual([partial()]);
+		const legacy = job();
+		expect(Object.keys(parse(legacy).jobs[0])).not.toContain("unknownMass");
+		expect(
+			Object.keys(encodeRefineryQueue(parse(legacy)).jobs[0]),
+		).not.toContain("unknownMass");
+	});
+
+	const balance = () => ({
+		grams: 250,
+		basis: money.encode(money.fromNumber(3)),
+		unknownMass: mass.encode(massFromNative(250, 1)),
+	});
+	const pool = (value: unknown) =>
+		parseRefineryQueue({ ...queue(), jobs: [], pool: value });
+
+	test("pool products and unknown eligibility are validated with named refusals", () => {
+		expect(() => pool(null)).toThrow(
+			"refinery: refinery pool is not an object",
+		);
+		expect(() => pool({ Food: balance() })).toThrow(
+			"refinery: Food is not a refined product",
+		);
+		expect(() => pool({ Platinum: null })).toThrow(
+			"refinery: pool balance is not an object",
+		);
+		expect(() =>
+			pool({
+				Platinum: {
+					...balance(),
+					unknownMass: mass.encode(massFromNative(251, 1)),
+				},
+			}),
+		).toThrow("refinery: Platinum: unknown exceeds balance");
+		expect(pool({ Platinum: balance() }).pool).toEqual({ Platinum: balance() });
+	});
+
+	test("empty pools disappear while encoding orders products deterministically", () => {
+		expect(Object.keys(pool({}))).not.toContain("pool");
+		expect(
+			Object.keys(encodeRefineryQueue({ ...queue(), pool: {} })),
+		).not.toContain("pool");
+		const balances = {
+			Platinum: balance(),
+			Alloys: balance(),
+			Gold: balance(),
+		};
+		const wire = encodeRefineryQueue({ ...queue(), pool: balances });
+		expect(Object.keys(wire.pool!)).toEqual(["Alloys", "Gold", "Platinum"]);
+		expect(parseRefineryQueue(wire).pool).toEqual(balances);
 	});
 });

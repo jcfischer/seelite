@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+	mass,
 	money,
 	signedMoney,
 	massFromNative,
@@ -13,7 +14,102 @@ import {
 	remove,
 	recover,
 	migrateAccount,
+	receiveCustody,
+	repoolUnknown,
 } from "../src/commodity-pools";
+
+test("custody receipt moves physical basis without charging or changing ownership pools", () => {
+	const start = migrateAccount(100, 7, {}, { Alloys: { units: 0, cr: 3 } });
+	const amount = massFromNative(2, 1000000);
+	const unknown = massFromNative(0.5, 1000000);
+	const first = receiveCustody(
+		start,
+		"Alloys",
+		amount,
+		unknown,
+		money.fromNumber(11),
+	);
+	expect(first).toEqual({
+		...start,
+		basis: {
+			Alloys: {
+				legacyCost: money.fromNumber(3),
+				heldMass: amount,
+				knownMass: massFromNative(1.5, 1000000),
+				cost: money.fromNumber(14),
+			},
+		},
+	});
+	expect(first.pools).toBe(start.pools);
+	const second = receiveCustody(
+		first,
+		"Alloys",
+		amount,
+		amount,
+		money.fromNumber(2),
+	);
+	expect(second.basis.Alloys).toEqual({
+		legacyCost: money.fromNumber(3),
+		heldMass: massFromNative(4, 1000000),
+		knownMass: massFromNative(1.5, 1000000),
+		cost: money.fromNumber(16),
+	});
+	expect(start.basis.Alloys.heldMass).toBe(mass.fromTicks(0n));
+	const empty = receiveCustody(
+		start,
+		"Gold",
+		amount,
+		amount,
+		money.fromNumber(4),
+	);
+	expect(empty.basis.Gold).toEqual({
+		legacyCost: money.fromTicks(0n),
+		heldMass: amount,
+		knownMass: massFromNative(0, 1),
+		cost: money.fromNumber(4),
+	});
+	expect(() =>
+		receiveCustody(
+			start,
+			"Alloys",
+			amount,
+			massFromNative(3, 1000000),
+			money.fromNumber(1),
+		),
+	).toThrow("custody unknown mass exceeds the amount");
+	expect(() =>
+		receiveCustody(
+			start,
+			"Alloys",
+			-1n as typeof amount,
+			amount,
+			money.fromNumber(1),
+		),
+	).toThrow("Exact amount refused: negative");
+});
+
+test("legacy custody joins existing total and unknown ownership without touching debt or physical basis", () => {
+	const start = migrateAccount(
+		100,
+		7,
+		{ Alloys: 2 },
+		{ Alloys: { units: 1, cr: 3 } },
+	);
+	const result = repoolUnknown(start, "Alloys", massFromNative(3, 1000000));
+	expect(result).toEqual({
+		...start,
+		pools: {
+			...start.pools,
+			Alloys: {
+				totalMass: massFromNative(5, 1000000),
+				unknownMass: massFromNative(4, 1000000),
+				unrecoveredCost: money.fromNumber(3),
+			},
+		},
+	});
+	expect(result.basis).toBe(start.basis);
+	expect(start.pools.Alloys.totalMass).toBe(massFromNative(2, 1000000));
+});
 
 test("committed 10/30 costs recover commodity-wide in either collection order", () => {
 	const start = acquire(

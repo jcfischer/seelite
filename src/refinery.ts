@@ -445,20 +445,18 @@ export function refineryCollect(
 	let pool = queue.pool;
 	const none = mass.fromTicks(0n);
 
-	const folds: number[] = [];
 	const touched = new Set<number>();
 	let total = queue.pool?.[product]?.grams ?? 0;
 	for (const job of queue.jobs) {
 		if (job.product !== product || !refineryFinished(job)) continue;
 		touched.add(job.id);
 		total += remainingGrams(job);
-		if (remainingGrams(job) < unit) folds.push(job.id);
 	}
 	const whole = Math.floor(total / unit);
 	const take = Math.min(whole, Math.max(0, Math.floor(input.roomUnits)));
 	if (take === 0) {
 		if (whole > 0) return refineryRefusal("hold-full");
-		if (folds.length === 0) return refineryRefusal("nothing-to-collect");
+		if (touched.size === 0) return refineryRefusal("nothing-to-collect");
 	}
 
 	let jobs = queue.jobs.map((job) => {
@@ -470,12 +468,11 @@ export function refineryCollect(
 
 	const toPool = (job: RefineryJob) => {
 		const remaining = remainingGrams(job);
-		if (remaining > 0)
-			pool = poolWith(pool, product, {
-				grams: remaining,
-				basis: money.parse(job.basis),
-				unknown: mass.parse(job.unknownMass!),
-			});
+		pool = poolWith(pool, product, {
+			grams: remaining,
+			basis: money.parse(job.basis),
+			unknown: mass.parse(job.unknownMass!),
+		});
 	};
 	const foldSmall = () => {
 		const keep: RefineryJob[] = [];
@@ -496,12 +493,13 @@ export function refineryCollect(
 	let cost = money.fromTicks(0n);
 	let unknown = none;
 	const draw = (source: Source, drawn: number) => {
-		const share =
-			drawn === source.grams
-				? source.basis
-				: transferCost(source.basis, gramsMass(drawn), gramsMass(source.grams))
-						.moved;
+		const share = transferCost(
+			source.basis,
+			gramsMass(drawn),
+			gramsMass(source.grams),
+		).moved;
 		const movedUnknown =
+			// Stryker disable next-line EqualityOperator: Equal masses select the same bigint in both arms; https://github.com/jcfischer/seelite/issues/935
 			source.unknown < gramsMass(drawn) ? source.unknown : gramsMass(drawn);
 		cost = money.add(cost, share);
 		unknown = mass.add(unknown, movedUnknown);
@@ -534,30 +532,30 @@ export function refineryCollect(
 		];
 	});
 	const held = pool?.[product];
-	if (need > 0 && held) {
-		const drawn = Math.min(need, held.grams);
+	const drawn = Math.min(need, held?.grams ?? 0);
+	if (drawn > 0) {
 		const { share, movedUnknown } = draw(
 			{
-				grams: held.grams,
-				basis: money.parse(held.basis),
-				unknown: mass.parse(held.unknownMass),
+				grams: held!.grams,
+				basis: money.parse(held!.basis),
+				unknown: mass.parse(held!.unknownMass),
 			},
 			drawn,
 		);
 		need -= drawn;
 		const { [product]: _gone, ...rest } = pool!;
 		pool =
-			drawn === held.grams
+			drawn === held!.grams
 				? rest
 				: {
 						...rest,
 						[product]: {
-							grams: held.grams - drawn,
+							grams: held!.grams - drawn,
 							basis: money.encode(
-								money.subtract(money.parse(held.basis), share),
+								money.subtract(money.parse(held!.basis), share),
 							),
 							unknownMass: mass.encode(
-								mass.subtract(mass.parse(held.unknownMass), movedUnknown),
+								mass.subtract(mass.parse(held!.unknownMass), movedUnknown),
 							),
 						},
 					};
