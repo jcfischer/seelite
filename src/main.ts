@@ -292,10 +292,16 @@ import { money } from "./exact-amount";
 import {
 	REFINERY_JOB_LIMIT,
 	productUnits,
+	refineryCollectable,
 	refineryFinished,
+	type RefineryQueue,
 	type RefineryQuote,
 } from "./refinery";
-import { refineryQuoteAt, submitRefineryEnvelope } from "./refinery-pricing";
+import {
+	collectRefineryEnvelope,
+	refineryQuoteAt,
+	submitRefineryEnvelope,
+} from "./refinery-pricing";
 import { gateRefusal } from "./ladder";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
@@ -5171,6 +5177,7 @@ class Game {
 			onRequestAction: (action, id) =>
 				this.consolePress(this.actOnRequest(action, id)),
 			onRefineryAction: (action) => this.refineryAction(action),
+			onRefineryCollect: (product) => void this.collectRefinery(product),
 			onRefineryGood: (good) => {
 				this.refineryGood = good;
 				this.refineryQuote = null;
@@ -22291,7 +22298,117 @@ class Game {
 				: null,
 			jobs,
 			queueCount: queue?.jobs.length ?? 0,
+			collectable: this.refineryCollectables(queue),
+			pooled: Object.entries(queue?.pool ?? {}).map(([product, balance]) => ({
+				product,
+				text: this.refineryProductAmount(balance.grams, product),
+			})),
 		};
+	}
+
+	private refineryCollectables(
+		queue: RefineryQueue | undefined,
+	): RefineryConsole["collectable"] {
+		const products = [
+			...new Set(
+				(queue?.jobs ?? [])
+					.filter((job) => refineryFinished(job))
+					.map((job) => job.product),
+			),
+			...Object.keys(queue?.pool ?? {}),
+		];
+		return [...new Set(products)].map((product) => {
+			const units = refineryCollectable(queue, product);
+			const finished = (queue?.jobs ?? []).some(
+				(job) => job.product === product && refineryFinished(job),
+			);
+			return {
+				product,
+				units,
+				finished,
+				text: `${units.toLocaleString("en")} ${commodity(product).unit} ${product}`,
+			};
+		});
+	}
+
+	private async collectRefinery(product: string): Promise<void> {
+		if (this.refinerySaving) return;
+		const context = this.dockedStationContext();
+		if (!context || context.station.type !== "refinery") return;
+		const store = this.saveStore;
+		if (!store) {
+			this.refineryNotice =
+				"Saving is unavailable here; nothing was committed.";
+			this.updateCockpit();
+			return;
+		}
+		const galaxyIndex = context.galaxyIndex;
+		const stationKey = context.stationKey;
+		const txSeq = this.txSeq;
+		const checkpoint = this.commanderRecord().dockedAt !== null;
+		this.refinerySaving = true;
+		this.refineryNotice = "Saving… the collection commits as one transaction.";
+		this.updateCockpit();
+		let units = 0;
+		try {
+			const outcome = await store.commit({
+				txSeq,
+				checkpoint,
+				apply: (envelope) => {
+					const collected = collectRefineryEnvelope(
+						envelope,
+						galaxyIndex,
+						stationKey,
+						product,
+					);
+					if (!collected.ok) throw new Error(collected.sentence);
+					units = collected.units;
+					return collected.envelope;
+				},
+				adopt: (committed) => {
+					const queue =
+						committed.world.galaxies[galaxyIndex].refineries[stationKey];
+					const world = queue
+						? withRefineryQueue(
+								advanceTo(this.commerceWorld, this.world.gameTime),
+								galaxyIndex,
+								stationKey,
+								queue,
+							)
+						: this.commerceWorld;
+					this.txSeq = committed.commander.txSeq;
+					this.adopt(
+						"refinery",
+						{
+							holdings: {
+								...this.holdings(),
+								commander: committed.commander.state,
+							},
+							world,
+						},
+						null,
+					);
+				},
+			});
+			if (outcome === "committed")
+				this.refineryNotice = `Collection saved. ${units} ${commodity(product).unit} ${product} aboard.`;
+			else if (outcome === "stale")
+				this.refineryNotice =
+					"That transaction already succeeded or changed. Review the jobs again.";
+			else if (outcome === "uncertain")
+				this.refineryNotice =
+					"The save is uncertain; reload before retrying. Nothing further is written.";
+			else
+				this.refineryNotice =
+					"Save failed. Nothing committed. Retry when ready.";
+		} catch (error) {
+			this.refineryNotice = `${
+				error instanceof Error ? error.message : String(error)
+			} Nothing committed.`;
+		} finally {
+			this.refinerySaving = false;
+			this.updateCockpit();
+		}
 	}
 
 	private refineryProductAmount(grams: number, product: string): string {

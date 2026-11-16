@@ -360,6 +360,13 @@ export interface RefineryConsole {
 	} | null;
 	jobs: readonly RefineryJobRow[];
 	queueCount: number;
+	collectable: readonly {
+		product: string;
+		text: string;
+		units: number;
+		finished: boolean;
+	}[];
+	pooled: readonly { product: string; text: string }[];
 }
 
 export interface LiveCockpitCallbacks {
@@ -372,6 +379,7 @@ export interface LiveCockpitCallbacks {
 	onNavFilter: (filter: NavFilter, source: "chip" | "query") => void;
 	onSelectTarget: (id: string) => void;
 	onStationTab: (tab: StationConsoleTab) => void;
+	onRefineryCollect?: (product: string) => void;
 	onRefineryAction?: (
 		action: "view-submit" | "view-jobs" | "quote" | "submit",
 	) => void;
@@ -652,6 +660,7 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-refinery-notice { margin: 8px 0; padding: 8px 10px; border-left: 3px solid #d79b50; background: rgba(171, 100, 20, .13); color: #ffe1a9; font-size: 11px; }
 .lc-refinery-status { margin: 8px 0; color: #cb8c51; font-size: 10px; letter-spacing: .08em; }
 .lc-refinery-jobs .lc-station-row { grid-template-columns: minmax(160px, 1.3fr) 1fr 1fr; }
+.lc-refinery [data-live-refinery-collectable] { grid-template-columns: minmax(160px, 1.3fr) 1fr auto; }
 .lc-refinery .lc-station-action:disabled { opacity: .4; cursor: default; }
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
 .lc-station-shipyard .lc-station-row { grid-template-columns: minmax(96px, 1fr) .9fr 1fr 1.8fr 64px; }
@@ -902,6 +911,14 @@ export class LiveCockpit {
 		const refineryAction = element.closest<HTMLElement>(
 			"[data-live-refinery-action]",
 		);
+		const refineryCollect = element.closest<HTMLElement>(
+			"[data-live-refinery-collect]",
+		);
+		if (refineryCollect) {
+			const product = refineryCollect.dataset.liveRefineryCollect;
+			if (product) this.callbacks.onRefineryCollect?.(product);
+			return;
+		}
 		if (refineryAction) {
 			const value = refineryAction.dataset.liveRefineryAction;
 			if (
@@ -2001,7 +2018,20 @@ export class LiveCockpit {
 					)
 					.join("")}</div>`
 			: `<p class="lc-refinery-note">No outstanding jobs. Submit ore to start processing.</p>`;
-		const body = view.view === "submit" ? submit : jobs;
+		const collectRows = view.collectable
+			.map(
+				(row) =>
+					`<div class="lc-station-row" data-live-refinery-collectable="${escapeHtml(row.product)}"><span>COLLECTABLE · ${escapeHtml(row.product)}</span><span class="lc-station-cell">${escapeHtml(row.text)}</span><button class="lc-station-action" type="button" data-live-refinery-collect="${escapeHtml(row.product)}" ${view.saving || (row.units < 1 && !row.finished) ? "disabled" : ""}>COLLECT</button></div>`,
+			)
+			.join("");
+		const pooledRows = view.pooled
+			.map(
+				(row) =>
+					`<div class="lc-station-row" data-live-refinery-pooled="${escapeHtml(row.product)}"><span>POOLED · ${escapeHtml(row.product)}</span><span class="lc-station-cell">${escapeHtml(row.text)}</span><span></span></div>`,
+			)
+			.join("");
+		const jobsView = `${jobs}${collectRows}${pooledRows}`;
+		const body = view.view === "submit" ? submit : jobsView;
 		const notice = view.notice
 			? `<div class="lc-refinery-notice" data-live-refinery-notice role="status">${escapeHtml(view.notice)}</div>`
 			: "";

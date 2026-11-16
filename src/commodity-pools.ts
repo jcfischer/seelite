@@ -252,6 +252,30 @@ export function removeMass(
 	good: string,
 	amount: Mass,
 ): { account: CommodityAccount; share: RemovedShare } {
+	const { account, share } = sendToCustody(a, good, amount);
+	const p = a.pools[poolId(good)];
+	return {
+		account: {
+			...account,
+			pools: {
+				...a.pools,
+				[poolId(good)]: {
+					...p,
+					totalMass: mass.subtract(p.totalMass, equivalentMass(good, amount)),
+					unknownMass: mass.subtract(p.unknownMass, share.unknownMass),
+				},
+			},
+		},
+		share,
+	};
+}
+
+/** Send physical material and basis into custody while retaining ownership pools. */
+export function sendToCustody(
+	a: CommodityAccount,
+	good: string,
+	amount: Mass,
+): { account: CommodityAccount; share: RemovedShare } {
 	mass.fromTicks(amount);
 	knownGood(good);
 	const p = a.pools[poolId(good)],
@@ -269,14 +293,6 @@ export function removeMass(
 	return {
 		account: {
 			...a,
-			pools: {
-				...a.pools,
-				[poolId(good)]: {
-					...p,
-					totalMass: mass.subtract(p.totalMass, equivalent),
-					unknownMass: mass.subtract(p.unknownMass, unknown),
-				},
-			},
 			basis: {
 				...a.basis,
 				[good]: {
@@ -295,6 +311,54 @@ export function removeMass(
 			unknownMass: unknown,
 			knownMass: known,
 			cost: allocation.moved,
+		},
+	};
+}
+
+/**
+ * Bring custody output aboard: physical material and basis only (#935 D16).
+ * The pools already own it, so they do not move.
+ */
+export function receiveCustody(
+	a: CommodityAccount,
+	product: string,
+	amount: Mass,
+	unknown: Mass,
+	cost: Money,
+): CommodityAccount {
+	mass.fromTicks(amount);
+	if (unknown > amount) refuse("custody unknown mass exceeds the amount");
+	const b = a.basis[product] ?? emptyBasis();
+	return {
+		...a,
+		basis: {
+			...a.basis,
+			[product]: {
+				legacyCost: b.legacyCost,
+				heldMass: mass.add(b.heldMass, amount),
+				knownMass: mass.add(b.knownMass, mass.subtract(amount, unknown)),
+				cost: money.add(b.cost, cost),
+			},
+		},
+	};
+}
+
+/** A job saved before custody kept its pools: its output joins them, all unknown-cost. */
+export function repoolUnknown(
+	a: CommodityAccount,
+	product: string,
+	amount: Mass,
+): CommodityAccount {
+	const p = a.pools[product];
+	return {
+		...a,
+		pools: {
+			...a.pools,
+			[product]: {
+				...p,
+				totalMass: mass.add(p.totalMass, amount),
+				unknownMass: mass.add(p.unknownMass, amount),
+			},
 		},
 	};
 }

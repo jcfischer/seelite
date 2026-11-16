@@ -34,12 +34,14 @@ import type { CommanderRecord } from "./save-envelope";
 import { commanderHold } from "./station-commerce";
 import { generateContents } from "./system";
 import {
+	refineryCollect,
 	refineryFeePerTonne,
 	refineryQuote,
 	refineryRefusal,
 	refinerySubmit,
 	type RefineryQuote,
 	type RefineryRefusal,
+	type RefineryCollected,
 	type RefinerySubmitted,
 } from "./refinery";
 import {
@@ -171,6 +173,62 @@ export function submitRefineryEnvelope(
 			commander: {
 				...envelope.commander,
 				state: withAccount(envelope.commander.state, submitted.account),
+			},
+		},
+	};
+}
+
+/** Whole native units of `product` the pilot's hold admits (kg and g goods take no hold). */
+export function collectionRoomUnits(
+	commander: CommanderRecord,
+	product: string,
+): number {
+	if (commodity(product).unit !== "t") return Number.POSITIVE_INFINITY;
+	const hold = commanderHold(
+		commander.state,
+		entrustedTonnesAboard(commander.requests),
+	);
+	return Math.max(0, Math.floor(hold.capacityT - hold.usedT));
+}
+
+export type RefineryCollectResult =
+	| { ok: true; envelope: RefineryEnvelope; units: number }
+	| RefineryRefusal;
+
+/**
+ * The commit's `apply` for a collection: pure over its argument, so the store
+ * may run it again on a checkpoint snapshot. A zero-fit collection refuses,
+ * which is what keeps it from writing a save. An outage does not refuse one
+ * (#921 D6), so no service is read.
+ */
+export function collectRefineryEnvelope(
+	envelope: RefineryEnvelope,
+	galaxyIndex: number,
+	stationKey: CarrierKey,
+	product: string,
+): RefineryCollectResult {
+	if (!isCarrierKey(stationKey)) return notRefinery();
+	const queue = envelope.world.galaxies[galaxyIndex].refineries[stationKey];
+	const collected: RefineryCollected | RefineryRefusal = refineryCollect({
+		account: accountOf(envelope.commander.state),
+		queue,
+		product,
+		roomUnits: collectionRoomUnits(envelope.commander, product),
+	});
+	if (!collected.ok) return collected;
+	return {
+		ok: true,
+		units: collected.units,
+		envelope: {
+			world: withRefineryQueue(
+				envelope.world,
+				galaxyIndex,
+				stationKey,
+				collected.queue,
+			),
+			commander: {
+				...envelope.commander,
+				state: withAccount(envelope.commander.state, collected.account),
 			},
 		},
 	};
