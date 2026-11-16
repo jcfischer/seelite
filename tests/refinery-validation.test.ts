@@ -79,7 +79,7 @@ describe("refinery refusals and boundaries", () => {
 		const result = refinerySubmit({ account, queue: undefined, quote, at: 0 });
 		if (!result.ok) throw new Error(result.sentence);
 		expect(result.account.cash).toBe(signedMoney.fromNumber(0));
-		expect(result.queue.jobs[0]).toEqual(job());
+		expect(result.queue.jobs[0]).toEqual({ ...job(), unknownMass: "0" });
 		expect(result.account.basis[good].heldMass).toBe(mass.fromTicks(0n));
 		expect(account.cash).toBe(signedMoney.fromNumber(5));
 	});

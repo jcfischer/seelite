@@ -1119,6 +1119,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-refinery-collection.mjs",
+			"At a generated refinery with mining on, finishes an 8 t job on an advanced clock, collects partially into a short hold, reloads, collects the rest and sells it at the market.",
+			[
+				"refinery",
+				"collection",
+				"partial collection",
+				"SaveStore.commit",
+				"custody",
+				"mining flag",
+			],
+		),
+		entry(
 			"probe-relay.mjs",
 			"Exercises the pirate relay discovery, targeting, intervention, persistence, and revisit loop.",
 			[
