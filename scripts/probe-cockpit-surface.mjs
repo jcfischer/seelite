@@ -22,7 +22,12 @@
  * panel size, the four finishes, the face mid-tone, the rail lamps and their
  * pools, the canopy glass — went with the procedural cabin in #792.
  */
-import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import {
+	bootBudgetMs,
+	guardedOrigin,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -100,7 +105,9 @@ for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
 	await page.goto(gameUrl(ORIGIN), { waitUntil: "load" });
-	await page.waitForFunction(() => Boolean(window.__seelite));
+	await page.waitForFunction(() => Boolean(window.__seelite), null, {
+		timeout: bootBudgetMs(page),
+	});
 
 	const high = await page.evaluate(state);
 	check(`${viewport.name}: the cabin is in the cabin scene`, high.found);
