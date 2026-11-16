@@ -20,19 +20,12 @@ export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
 			"probe-laser-origin.mjs",
-			"Fires every laser group on the off-centre Longwall bridge and a centred interceptor cockpit in both views; compares each drawn beam endpoint with the physical mount projected by Three.js, including mining-flag parity and cockpit GPU vertices.",
-			[
-				"laser origin",
-				"mount muzzle",
-				"fire groups",
-				"cockpit beams",
-				"chase",
-				"mining flag",
-			],
+			"Fires every laser group on the off-centre Longwall bridge and a centred interceptor cockpit in both views; compares each drawn beam endpoint with the physical mount projected by Three.js, including cockpit GPU vertices.",
+			["laser origin", "mount muzzle", "fire groups", "cockpit beams", "chase"],
 		),
 		entry(
 			"probe-mining-goods.mjs",
-			"Mines whole graded commander cargo in a real field, persists through mining and flagless reloads, docks through clearance and sells raw using the page's quoted bid and credited wallet; flagless markets retain seventeen goods.",
+			"Mines whole graded commander cargo in a real field, persists through mining and reloads, docks through clearance and sells raw using the page's quoted bid and credited wallet; the market lists every good, ore included.",
 			[
 				"mining",
 				"ore cargo",
@@ -41,7 +34,6 @@ export const PROBE_CATALOG = Object.freeze(
 				"market",
 				"raw sale",
 				"commodity pools",
-				"mining flag",
 			],
 		),
 		entry(
@@ -58,7 +50,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-capability-outage.mjs",
-			"Natural service outages gate actual docked commerce only with mining enabled, heal on the game clock, retain attributable repairs across raider pressure changes, show live status beside other notices and keep fuel available.",
+			"Natural service outages gate actual docked commerce, heal on the game clock, retain attributable repairs across raider pressure changes, show live status beside other notices, keep fuel available and gate the same outage again after a reload.",
 			[
 				"capability timing",
 				"commerce refusal",
@@ -66,7 +58,6 @@ export const PROBE_CATALOG = Object.freeze(
 				"repair provenance",
 				"pressure",
 				"fuel",
-				"mining flag",
 			],
 		),
 		entry(
@@ -82,7 +73,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-mining-drill.mjs",
-			"Behind mining=1 the Longwall deploys, holds a rock surface frame, anchors, seats and drills a real deep mouth without a survey; hold gain equals deposit debit; feedback paints, five cockpit switches avoid long tasks, and releasing retracts. A flagless control keeps the old miner groups, collision and cockpit visibility.",
+			"The Longwall deploys, holds a rock surface frame, anchors, seats and drills a real deep mouth without a survey; hold gain equals deposit debit; feedback paints, five cockpit switches avoid long tasks, and releasing retracts while the fire groups keep the drill.",
 			[
 				"drill",
 				"anchor",
@@ -90,12 +81,11 @@ export const PROBE_CATALOG = Object.freeze(
 				"conservation",
 				"cockpit occlusion",
 				"long tasks",
-				"mining flag",
 			],
 		),
 		entry(
 			"probe-mining-mounts.mjs",
-			"With ?mining=1 ALL LASERS fires h1 Pulse and h2+h3 Mining: per-mount nose rays cut one rock at their summed rate; one glass tracer and two complete mining beams reach the cockpit GPU layer, with chase overlay parity. Without the flag combat glass tracers are unchanged.",
+			"ALL LASERS fires h1 Pulse and h2+h3 Mining: per-mount nose rays cut one rock at their summed rate; one glass tracer and two complete mining beams reach the cockpit GPU layer, with chase overlay parity and no Mining Laser tracer from the glass.",
 			[
 				"mining",
 				"mount muzzle",
@@ -104,12 +94,27 @@ export const PROBE_CATALOG = Object.freeze(
 				"extraction",
 				"fire groups",
 				"chase",
-				"flagless combat",
+			],
+		),
+		entry(
+			"probe-mining-release.mjs",
+			"The whole mining loop with no URL flag: a courier at trade rung 2 buys a Mining Laser at a refinery berth through the live console, surveys a deep charted rock, cuts it, scoops the ore and sells it raw from the Market tab; then buys the Longwall, drills a deep mouth into its skips, submits a refinery job, saves and reloads with the debit, the reading, the job and the custody intact, collects the product and sells it.",
+			[
+				"mining release",
+				"no flag",
+				"equipment gate",
+				"survey",
+				"extraction",
+				"scoop",
+				"raw sale",
+				"drill",
+				"refinery",
+				"save reload",
 			],
 		),
 		entry(
 			"probe-mining-survey.mjs",
-			"With ?mining=1 in a charted field: selects the rock in front, holds a survey to a reading with its deep-deposit mark, refuses past range, cuts the rock with the Mining Laser on its drawn surface, debits the deposit per released tonne, draws the beam with flare and sparks in cockpit and chase and no flare beside the surface, scoops a fragment into the Hold page, refuses a full hold and loses an expired fragment without restoring the deposit.",
+			"In a charted field: selects the rock in front, holds a survey to a reading with its deep-deposit mark, refuses past range, cuts the rock with the Mining Laser on its drawn surface, debits the deposit per released tonne, draws the beam with flare and sparks in cockpit and chase and no flare beside the surface, scoops a fragment into the Hold page, refuses a full hold, loses an expired fragment without restoring the deposit, and treats a stale ?mining=0 as no flag at all.",
 			[
 				"mining",
 				"survey",
@@ -1108,26 +1113,24 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-refinery-jobs.mjs",
-			"At a generated refinery with mining on, quotes and submits mined ore through the live console, checks the ore and fee are in both saved records with the job, advances only operational service, reloads to the docked queue and checks the flagless console has no Refinery tab.",
+			"At a generated refinery, quotes and submits mined ore through the live console, checks the ore and fee are in both saved records with the job, advances only operational service, reloads to the docked queue and checks the Refinery tab follows the station's type.",
 			[
 				"refinery",
 				"ore custody",
 				"FIFO queue",
 				"SaveStore.commit",
 				"dock checkpoint",
-				"mining flag",
 			],
 		),
 		entry(
 			"probe-refinery-collection.mjs",
-			"At a generated refinery with mining on, finishes an 8 t job on an advanced clock, collects partially into a short hold, reloads, collects the rest and sells it at the market.",
+			"At a generated refinery, finishes an 8 t job on an advanced clock, collects partially into a short hold, reloads, collects the rest and sells it at the market.",
 			[
 				"refinery",
 				"collection",
 				"partial collection",
 				"SaveStore.commit",
 				"custody",
-				"mining flag",
 			],
 		),
 		entry(

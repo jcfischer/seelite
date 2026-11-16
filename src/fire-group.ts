@@ -15,16 +15,12 @@ const LASERS = new Set([
 	"mining-laser",
 ]);
 /**
- * The primary groups a loadout arms. `mining` is `?mining=1`: with two or more
- * Mining Lasers fitted it adds `MINING LASERS` after `ALL LASERS`, and
- * a cutter hull adds `BUILT-IN DRILL`
+ * The primary groups a loadout arms. With two or more Mining Lasers fitted it
+ * adds `MINING LASERS` after `ALL LASERS`, and a cutter hull adds
+ * `BUILT-IN DRILL`
  * (https://github.com/jcfischer/seelite/issues/1147, #920 D-D11).
  */
-export function fireGroups(
-	loadout: Loadout,
-	hull: HullId,
-	mining = false,
-): FireGroup[] {
+export function fireGroups(loadout: Loadout, hull: HullId): FireGroup[] {
 	const slots = HULL_SPECS[hull].slots;
 	const lasers: FireGroup[] = slots
 		.filter((s) => s.kind === "hardpoint" && LASERS.has(loadout[s.key]?.module))
@@ -49,7 +45,7 @@ export function fireGroups(
 	const miningLasers = lasers.filter(
 		(g) => loadout[g.slots[0]].module === "mining-laser",
 	);
-	if (mining && miningLasers.length > 1)
+	if (miningLasers.length > 1)
 		result.splice(1, 0, {
 			label: "MINING LASERS",
 			trigger: "primary",
@@ -66,7 +62,7 @@ export function fireGroups(
 			kind: "scanner",
 			slots: scanners,
 		});
-	if (mining && HULL_SPECS[hull].cutter)
+	if (HULL_SPECS[hull].cutter)
 		result.push({
 			label: "BUILT-IN DRILL",
 			trigger: "primary",

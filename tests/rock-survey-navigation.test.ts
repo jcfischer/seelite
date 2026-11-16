@@ -41,7 +41,7 @@ const current = nearRocks([fields[0]], shipPos, now, Infinity);
 const near = current.filter((ref) => ref.distKm <= ROCK_DROP_KM);
 const far = current.find((ref) => ref.distKm > ROCK_DROP_KM)!;
 
-function subject(mining = true) {
+function subject() {
 	const rows = new Map<string, DepositRow>();
 	const ordinary = [
 		{
@@ -63,7 +63,6 @@ function subject(mining = true) {
 					"surveyDesignation",
 				],
 				{
-					MINING_ON: mining,
 					nearRocks,
 					rockContact,
 					isRockTargetId,
@@ -186,16 +185,14 @@ describe("surveyed rocks in Navigation (node #1148)", () => {
 		).toEqual([near[4].id]);
 	});
 
-	test("flag-off Navigation retains the ordinary projection and does not read rock state", () => {
-		const { g, ordinary } = subject(false);
-		g.fieldRockSets = () => {
-			throw new Error("Flag-off rock lookup");
-		};
-		expect(g.navigationTargets()).toBe(ordinary);
+	test("without a current field the ordinary projection is unchanged", () => {
+		const { g, ordinary } = subject();
+		g.frameField = null;
+		g.targetId = "station";
+		expect(g.navigationTargets()).toEqual(ordinary);
 		expect(g.navRows()).toEqual(
 			projectNavTargets(shipPos!, ordinary, g.targetId),
 		);
-		expect(g.selectNavigationTarget(near[0].id)).toBe(false);
 	});
 });
 

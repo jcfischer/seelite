@@ -15,7 +15,7 @@ const origin = await guardedOrigin(
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 try {
-	for (const mining of [false, true]) {
+	{
 		const context = await browser.newContext({
 			viewport: { width: 1440, height: 900 },
 		});
@@ -26,16 +26,11 @@ try {
 		await page.goto(
 			gameUrl(origin, {
 				seed: 47,
-				mining: mining ? 1 : undefined,
 				voices: "formant",
 				raider: "off",
 			}),
 		);
 		await bootedGame(page);
-		check(
-			`live mining flag matches initial arm=${mining}`,
-			(await page.evaluate(() => window.__seelite.surveyState().on)) === mining,
-		);
 		await page.evaluate(async () => {
 			const Sim = await import("/src/sim.ts");
 			const W = await import("/src/world-state.ts");
@@ -66,7 +61,7 @@ try {
 			return out;
 		}, unknown.fieldId);
 		check(
-			`unknown rare field is hidden and untargetable with mining=${mining}`,
+			`unknown rare field is hidden and untargetable `,
 			!initial.selectable &&
 				!initial.scope &&
 				initial.target === null &&
@@ -75,11 +70,11 @@ try {
 					.count()) === 0,
 		);
 		check(
-			`unknown physical rocks remain drawn with mining=${mining}`,
+			`unknown physical rocks remain drawn `,
 			initial.rocks > 0 && initial.drawn,
 		);
 		check(
-			`charted field stays available with mining=${mining}`,
+			`charted field stays available `,
 			await page.evaluate(() =>
 				window.__seelite.selectableIds().includes("field-00"),
 			),
@@ -119,7 +114,7 @@ try {
 			return { changed, unstable, known: g.selectableIds().includes(id) };
 		}, unknown.fieldId);
 		check(
-			`unknown physical field reaches stable rendered pixels with mining=${mining}`,
+			`unknown physical field reaches stable rendered pixels `,
 			painted.changed > 0 && painted.unstable === 0 && !painted.known,
 			JSON.stringify(painted),
 		);
@@ -167,7 +162,7 @@ try {
 		await placeFieldDiscovery(page, "known");
 		const row = page.locator(`[data-live-nav-target="${unknown.fieldId}"]`);
 		check(
-			`real normal-flight entry adds Navigation with mining=${mining}`,
+			`real normal-flight entry adds Navigation `,
 			(await row.count()) === 1,
 		);
 		await row.click();
@@ -197,14 +192,8 @@ try {
 		await page.close();
 		page = await context.newPage();
 		watch(page);
-		await page.goto(
-			gameUrl(origin, { voices: "formant", mining: mining ? 1 : undefined }),
-		);
+		await page.goto(gameUrl(origin, { voices: "formant" }));
 		await bootedGame(page);
-		check(
-			`live mining flag matches reload arm=${mining}`,
-			(await page.evaluate(() => window.__seelite.surveyState().on)) === mining,
-		);
 		const loaded = await page.evaluate(async (id) => {
 			const g = window.__seelite;
 			g.clockHeld = true;
@@ -236,7 +225,7 @@ try {
 			};
 		}, unknown.fieldId);
 		check(
-			`reload retains field discovery with mining=${mining}`,
+			`reload retains field discovery `,
 			loaded.known && loaded.ledger.includes(`4:${unknown.fieldId}`),
 		);
 		check(

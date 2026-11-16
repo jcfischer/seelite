@@ -88,7 +88,6 @@ function subjectAt(galaxy: number, system: number) {
 	return Object.assign(
 		Object.create(
 			gameMethods(METHODS, {
-				MINING_ON: false,
 				fieldContactsAt,
 				discoverNearbyFields,
 				nearestFieldPlan,
@@ -135,6 +134,7 @@ function subjectAt(galaxy: number, system: number) {
 			legStartedAtS: 0,
 			stepDetour: () => true,
 			saveDirty: () => {},
+			fineFrame: () => null,
 			nose(this: any) {
 				return normalizeOr(
 					sub(this.targetBody().pos, this.world.ship.pos),

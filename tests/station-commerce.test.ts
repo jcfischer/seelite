@@ -101,7 +101,7 @@ const input = (
 	...overrides,
 });
 
-test("commerce preserves dedicated ore and refuses to strand it during a hull change", () => {
+test("a hull change sells the skips' ore rather than stranding it", () => {
 	const commander = { ...newCommander("miner"), credits: 1e9 };
 	commander.cargo = { "Metallic ore STD": 3000 };
 	const request = input({ commander });
@@ -111,15 +111,13 @@ test("commerce preserves dedicated ore and refuses to strand it during a hull ch
 		station: { ...STATION, type: "shipyard" },
 		action: { type: "buy-hull", hull: "freighter" },
 	});
-	const refused = transactAtStation(sale);
-	expect(refused.accepted).toBe(false);
-	expect(refused.reason).toBe("hull-hold");
-	expect(refused.commander).toBe(commander);
-	expect(refused.deficits).toBe(sale.deficits);
-	expect(
-		transactAtStation({ ...sale, commander: { ...commander, cargo: {} } })
-			.accepted,
-	).toBe(true);
+	const bought = transactAtStation(sale);
+	expect(bought.accepted).toBe(true);
+	if (!bought.accepted) throw new Error(bought.reason);
+	const hold = commanderHold(bought.commander, 0);
+	expect(hold.usedT).toBeLessThanOrEqual(hold.capacityT);
+	expect(bought.commander.cargo["Metallic ore STD"]).toBeLessThan(3000);
+	expect(commander.cargo["Metallic ore STD"]).toBe(3000);
 });
 
 test("ordinary cargo purchases respect raw ore in a shared hold", () => {
@@ -159,7 +157,7 @@ test("shipyard admits exact dedicated ore capacity and refuses excess without se
 	expect(refused.commander.cargo["Metallic ore STD"]).toBe(3001);
 });
 
-test("shipyard auto-sale leaves room for shared raw ore and never sells that ore", () => {
+test("shipyard auto-sale leaves room for shared raw ore by selling it cheapest-first", () => {
 	const commander = {
 		...newCommander("freighter"),
 		credits: 1e9,
@@ -174,8 +172,12 @@ test("shipyard auto-sale leaves room for shared raw ore and never sells that ore
 		}),
 	);
 	expect(result.accepted).toBe(true);
-	expect(result.commander.cargo.Food).toBe(5);
-	expect(commander.cargo.Food).toBe(20);
+	if (!result.accepted) throw new Error(result.reason);
+	const hold = commanderHold(result.commander, 0);
+	expect(hold.usedT).toBeLessThanOrEqual(hold.capacityT);
+	expect(result.commander.cargo["Metallic ore STD"]).toBeUndefined();
+	expect(result.commander.cargo.Food).toBe(20);
+	expect(commander.cargo).toEqual({ Food: 20, "Metallic ore STD": 15 });
 });
 
 test("an earlier commerce refusal retains its reason even with an oversized ore fact", () => {

@@ -60,11 +60,7 @@ export const moduleLabel = (m: FittedModule): string =>
  * the game does not do (`tests/outfit-deltas.test.ts`). A docking computer
  * has none either: its grades differ in price and mass alone (#977).
  */
-export function fitReadout(
-	commander: CommanderState,
-	entrustedT: number,
-	mining = false,
-) {
+export function fitReadout(commander: CommanderState, entrustedT: number) {
 	const ship = { hull: commander.hull, loadout: commander.loadout };
 	const capacity = fittedCapacity(commander.hull, commander.loadout);
 	const ecm = fittedEcm(commander.loadout);
@@ -79,16 +75,12 @@ export function fitReadout(
 		bankE: capacity.bankE,
 		regenPerS: capacity.regenPerS,
 		dps: fittedDps(ship),
-		extractionTPerS: mining
-			? Object.values(commander.loadout).reduce(
-					(rate, m) =>
-						rate +
-						(m.module === "mining-laser"
-							? moduleRow(m).output.extractionTPerS
-							: 0),
-					0,
-				)
-			: 0,
+		extractionTPerS: Object.values(commander.loadout).reduce(
+			(rate, m) =>
+				rate +
+				(m.module === "mining-laser" ? moduleRow(m).output.extractionTPerS : 0),
+			0,
+		),
 		missiles: capacity.missiles,
 		ecmRadiusKm: ecm.radiusKm,
 		ecmCooldownS: ecm.cooldownS,
@@ -300,9 +292,9 @@ export function outfittingScreen(
 		candidate: candidate ?? null,
 		action,
 		offer,
-		before: fitReadout(input.commander, input.entrustedT, input.mining),
+		before: fitReadout(input.commander, input.entrustedT),
 		after: hypothetical?.accepted
-			? fitReadout(hypothetical.commander, input.entrustedT, input.mining)
+			? fitReadout(hypothetical.commander, input.entrustedT)
 			: null,
 		moved:
 			candidate && input.commander.loadout[slot]

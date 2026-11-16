@@ -82,7 +82,6 @@ const input = (commander = newCommander("courier")): ConsoleInput => ({
 	entrustedT: 0,
 	rungs: TOP_RUNGS,
 	hullReach: () => ({ ok: true, systems: 1 }),
-	mining: true,
 });
 const screen = (i: ConsoleInput) =>
 	stationMarketScreen({
@@ -142,27 +141,15 @@ test("Longwall, refined goods, purchases and failed raw sales do not give the or
 		expect(result.notice).toBeUndefined();
 		expect(result.commander.firstOreNoticeSeen).toBeUndefined();
 	}
-	for (const overrides of [
-		{ mining: false },
-		{
-			action: {
-				type: "sell-commodity" as const,
-				commodity: poor,
-				quantity: 99,
-			},
-		},
-	]) {
-		const start = scoopCargo(newCommander("courier"), poor, 3, 0).commander;
-		const failed = transactAtStation({
-			...input(start),
-			action: { type: "sell-commodity", commodity: poor },
-			...overrides,
-		});
-		expect(failed.accepted).toBe(false);
-		expect(failed.commander.firstOreNoticeSeen).toBeUndefined();
-		const later = rawSale(failed.commander);
-		expect(later.accepted && later.notice).toBe(firstOreNotice);
-	}
+	const start = scoopCargo(newCommander("courier"), poor, 3, 0).commander;
+	const failed = transactAtStation({
+		...input(start),
+		action: { type: "sell-commodity", commodity: poor, quantity: 99 },
+	});
+	expect(failed.accepted).toBe(false);
+	expect(failed.commander.firstOreNoticeSeen).toBeUndefined();
+	const later = rawSale(failed.commander);
+	expect(later.accepted && later.notice).toBe(firstOreNotice);
 	const afterRefined = rawSale(refined.commander);
 	expect(afterRefined.accepted && afterRefined.notice).toBe(firstOreNotice);
 });
@@ -251,25 +238,21 @@ test("fifteen whole-tonne cargo identities preserve the current Hold names and g
 	expect(commanderHold(commander, 0).usedT).toBe(6);
 	for (const n of [-1, 0.5, 1.5])
 		expect(scoopCargo(commander, poor, n, 0).accepted).toBe(false);
-	const hold = holdSummary(commander, emptyRequests(), true);
+	const hold = holdSummary(commander, emptyRequests());
 	expect(pilotGoods(hold)).toEqual(commander.cargo);
 	expect(holdBody(hold, new Map([[poor, 2]]))).toContain("sellable");
 	expect(holdBody(hold, null)).not.toContain("no market yet");
 	expect(oreCargoName("gold", "standard")).toBe("Gold-bearing ore STD");
 });
 
-test("flagless Hold keeps ore visible without promising a raw sale", () => {
+test("the Hold keeps ore visible and promises its raw sale", () => {
 	const commander = scoopCargo(newCommander("miner"), poor, 3, 0).commander;
-	const hold = holdSummary(commander, emptyRequests(), false);
+	const hold = holdSummary(commander, emptyRequests());
 	expect(pilotGoods(hold)).toEqual({ [poor]: 3 });
 	expect(hold.oreBay).toEqual({ usedT: 3, capacityT: 3000, freeT: 2997 });
 	const html = holdBody(hold, null);
 	expect(html).toContain(`data-live-hold-row="${poor}"`);
-	expect(html).toContain("yours · raw ore · raw sales unavailable");
-	expect(html).not.toContain("sellable");
-	expect(
-		holdBody(holdSummary(commander, emptyRequests(), true), null),
-	).toContain("yours · raw ore · sellable");
+	expect(html).toContain("yours · raw ore · sellable");
 });
 
 test("the Longwall carries ore in its skips while ordinary ships share their hold", () => {
@@ -283,7 +266,7 @@ test("the Longwall carries ore in its skips while ordinary ships share their hol
 	expect(scoopCargo(newCommander("courier"), poor, 21, 0).tonnes).toBe(20);
 });
 
-test("hull auto-sales use real ore cargo and refuse to discard it without the mining flag", () => {
+test("hull auto-sales use real ore cargo rather than discarding it", () => {
 	const commander = scoopCargo(
 		{ ...newCommander("miner"), credits: 1e9 },
 		poor,
@@ -295,9 +278,6 @@ test("hull auto-sales use real ore cargo and refuse to discard it without the mi
 		station: { ...station, type: "shipyard" as const },
 		action: { type: "buy-hull" as const, hull: "freighter" as const },
 	};
-	const refused = transactAtStation({ ...request, mining: false });
-	expect(refused.accepted).toBe(false);
-	expect(refused.commander).toBe(commander);
 	const bought = transactAtStation(request);
 	expect(bought.accepted).toBe(true);
 	expect(bought.commander.hull).toBe("freighter");
@@ -381,15 +361,7 @@ test("raw markets use the table, grade-specific stock memory, shelf cap and the 
 			(r) => r.commodity.name === poor,
 		),
 	).toMatchObject({ quantity: 63 });
-	const off = { ...input(mined), mining: false };
-	expect(screen(off)).toHaveLength(17);
-	expect(off.commander.cargo[poor]).toBe(3000);
-	expect(
-		transactAtStation({
-			...off,
-			action: { type: "sell-commodity", commodity: poor },
-		}).reason,
-	).toBe("commodity-unavailable");
+	expect(screen(input(mined))).toHaveLength(CARGO_COMMODITIES.length);
 });
 
 test("mined ore has known zero cost and raw sales recover the shared product debt", () => {
@@ -461,7 +433,6 @@ test("production ore quotes and shelves match the ratified instrument across sta
 						deficitOf: () => mark,
 						holdT: 40,
 						cargo: {},
-						mining: true,
 					}).find((r) => r.commodity.name === ore.name)!;
 					expect(row).toMatchObject({
 						buyCr: expected.buyCr,

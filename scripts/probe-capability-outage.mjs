@@ -26,7 +26,6 @@ try {
 	await page.goto(
 		gameUrl(origin, {
 			seed: 1,
-			mining: 1,
 			"models-full": true,
 		}),
 	);
@@ -215,7 +214,7 @@ try {
 	);
 	await bootedGame(page, 180000);
 	check(
-		"a mining-on saved timing domain survives real flag-off reload",
+		"a saved timing domain survives a real reload",
 		await page.evaluate(async (expected) => {
 			const W = await import("/src/world-state.ts");
 			return (
@@ -227,26 +226,26 @@ try {
 			);
 		}, savedTiming),
 	);
-	const off = await placeCapabilityOutage(page);
-	const offBuy = await stockedBuy(page);
+	const again = await placeCapabilityOutage(page);
+	const againBuy = await stockedBuy(page);
 	await page
 		.locator(
 			'[data-live-station-action="buy-commodity"][data-live-station-name="' +
-				offBuy.name +
+				againBuy.name +
 				'"]',
 		)
 		.click();
 	check(
-		"flag-off commerce ignores the same natural outage",
-		!off.availability.operational &&
+		"the reloaded console gates the same natural outage",
+		!again.availability.operational &&
 			(await page.evaluate((buy) => {
 				const c = window.__seelite.commander;
 				return (
-					c.credits < buy.credits &&
-					c.cargo[buy.name] === buy.amount + 1 &&
-					!document.querySelector("[data-live-service-status]")
+					c.credits === buy.credits &&
+					(c.cargo[buy.name] ?? 0) === buy.amount &&
+					document.querySelector("[data-live-service-status]") !== null
 				);
-			}, offBuy)),
+			}, againBuy)),
 	);
 } finally {
 	await browser.close();

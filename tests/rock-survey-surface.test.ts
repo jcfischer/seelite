@@ -226,69 +226,60 @@ describe("survey surface and target instrument (node #1148)", () => {
 		expect(seen.size).toBeGreaterThanOrEqual(3);
 	});
 
-	for (const mining of [true, false]) {
-		test(`instrument uses ${mining ? "survey surface" : "unchanged centre"} range with mining=${mining}`, () => {
-			const rock = rocks.reduce((a, b) => (a.radiusKm > b.radiusKm ? a : b));
-			const id = rockTargetId(plan, rock.slot);
-			const at = resolveRock(fields, id, v3(), 37.5);
-			if (!at) throw new Error("Missing fixture rock");
-			for (const distance of [0, 3.99, 4.01]) {
-				const pos = add(at.pos, v3(0, 0, rock.radiusKm + distance));
-				const ref = resolveRock(fields, id, pos, 37.5);
-				if (!ref) throw new Error("Missing fixture rock");
-				const instrument = () => ({
-					ctx,
-					secondaryText: { setInstrumentSecondary() {}, font: "" },
-					texture: {},
-					primaryText: "",
-				});
-				const displayed: { km: number | null } = { km: null };
-				const subject = Object.assign(
-					Object.create(
-						gameMethods(
-							["updateInstruments", "displayTargetKm", "surveyBlock"],
-							{
-								...bindings,
-								MINING_ON: mining,
-								range: (km: number) => {
-									displayed.km = km;
-									return range(km);
-								},
-							},
-						),
-					),
-					{
-						world: { ship: { pos } },
-						cockpit: {
-							flightInstrument: instrument(),
-							targetInstrument: instrument(),
+	test("the instrument uses the rock surface range", () => {
+		const rock = rocks.reduce((a, b) => (a.radiusKm > b.radiusKm ? a : b));
+		const id = rockTargetId(plan, rock.slot);
+		const at = resolveRock(fields, id, v3(), 37.5);
+		if (!at) throw new Error("Missing fixture rock");
+		for (const distance of [0, 3.99, 4.01]) {
+			const pos = add(at.pos, v3(0, 0, rock.radiusKm + distance));
+			const ref = resolveRock(fields, id, pos, 37.5);
+			if (!ref) throw new Error("Missing fixture rock");
+			const instrument = () => ({
+				ctx,
+				secondaryText: { setInstrumentSecondary() {}, font: "" },
+				texture: {},
+				primaryText: "",
+			});
+			const displayed: { km: number | null } = { km: null };
+			const subject = Object.assign(
+				Object.create(
+					gameMethods(["updateInstruments", "displayTargetKm", "surveyBlock"], {
+						...bindings,
+						range: (km: number) => {
+							displayed.km = km;
+							return range(km);
 						},
-						rockRef: () => {
-							if (!mining) throw new Error("Flag-off rock lookup");
-							return ref;
-						},
-						surveyFiguresFitted: () => ({ rangeKm: 4, dwellS: 4 }),
-						triggerHeld: () => false,
-						weaponAim: () => v3(0, 0, -1),
-						scanReadout: () => ({ designation: {} }),
-						targetRelativeKms: () => 0,
-						surveyDesignation: () => "ROCK",
-						poseThrottleFill() {},
-						etaCache: null,
+					}),
+				),
+				{
+					world: { ship: { pos } },
+					cockpit: {
+						flightInstrument: instrument(),
+						targetInstrument: instrument(),
 					},
-				);
-				const centreKm = length(sub(ref.pos, pos));
-				subject.updateInstruments(
-					{ id, name: "Rock", kind: "rock" },
-					centreKm,
-					{ speed: "0", context: "", title: "FLIGHT" },
-				);
-				expect(subject.cockpit.targetInstrument.primaryText).toBe(
-					`Rock  ${range(mining ? ref.distKm : centreKm)}`,
-				);
-				expect(displayed.km).toBe(mining ? ref.distKm : centreKm);
-				expect(subject.surveyBlock(ref) === null).toBe(ref.distKm <= 4);
-			}
-		});
-	}
+					rockRef: () => ref,
+					surveyFiguresFitted: () => ({ rangeKm: 4, dwellS: 4 }),
+					triggerHeld: () => false,
+					weaponAim: () => v3(0, 0, -1),
+					scanReadout: () => ({ designation: {} }),
+					targetRelativeKms: () => 0,
+					surveyDesignation: () => "ROCK",
+					poseThrottleFill() {},
+					etaCache: null,
+				},
+			);
+			const centreKm = length(sub(ref.pos, pos));
+			subject.updateInstruments({ id, name: "Rock", kind: "rock" }, centreKm, {
+				speed: "0",
+				context: "",
+				title: "FLIGHT",
+			});
+			expect(subject.cockpit.targetInstrument.primaryText).toBe(
+				`Rock  ${range(ref.distKm)}`,
+			);
+			expect(displayed.km).toBe(ref.distKm);
+			expect(subject.surveyBlock(ref) === null).toBe(ref.distKm <= 4);
+		}
+	});
 });

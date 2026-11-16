@@ -251,12 +251,17 @@ describe("extraction and conservation", () => {
 describe("the deep debit", () => {
 	test("debits deep tonnes and rebases the surface debit to now", () => {
 		const row = { surface: 5, at: 0 };
-		const t = 3600 * 2;
+		const t = 360;
 		const next = debitDeep(row, t, 7);
 		expect(next.deep).toBe(7);
 		expect(next.at).toBe(t);
 		expect(next.surface).toBe(debitAt(5, 0, t));
 		expect(debitDeep(next, t, 3).deep).toBe(10);
+	});
+
+	test("a surface debit that has fully recovered is dropped, not written as zero", () => {
+		const next = debitDeep({ surface: 5, at: 0 }, 3600 * 2, 7);
+		expect(next).toEqual({ deep: 7, at: 3600 * 2 });
 	});
 
 	test("what the hold gains is what the deposit loses", () => {

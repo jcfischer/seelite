@@ -344,9 +344,9 @@ describe("debitDeep", () => {
 		expect(debitDeep(undefined, 100, 1)).toStrictEqual({ deep: 1, at: 100 });
 	});
 
-	test("both debits rebase to the new time, recovering an hour at a time", () => {
-		const row = debitDeep({ surface: 3, deep: 1, at: 0 }, 7200, 2);
-		expect(row).toStrictEqual({ surface: 1, deep: 2, at: 7200 });
+	test("both debits rebase to the new time, recovering the rate's tonnes each hour", () => {
+		const row = debitDeep({ surface: 3, deep: 1, at: 0 }, 360, 2);
+		expect(row).toStrictEqual({ surface: 2, deep: 2, at: 360 });
 	});
 
 	test("a row with no surface debit gains none", () => {

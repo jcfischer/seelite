@@ -19,11 +19,11 @@ import {
  * The three traps §8.5 names are all here rather than at the call sites:
  *
  * 1. `marketRow` **throws** for a good the station does not sell, and M5 shows
- *    seventeen rows at every station. So the builder tests `listsCommodity`
- *    first and prices only where it holds — §8.6's obligation 3, which is a
- *    check on the *calls* and not on the absence of a throw.
- * 2. `stationCommodities` is the fourteen-row shape M5 reversed. It is not
- *    imported here; `COMMODITIES` is the row list.
+ *    a row for every good at every station. So the builder tests
+ *    `listsCommodity` first and prices only where it holds — §8.6's obligation
+ *    3, which is a check on the *calls* and not on the absence of a throw.
+ * 2. `stationCommodities` is the listed-at-this-station shape M5 reversed. It
+ *    is not imported here; `CARGO_COMMODITIES` is the row list.
  * 3. The tech gate counts **Fuel**, which `EQUIPMENT` does not hold, because
  *    fuel is priced by the light year. `UNIVERSAL_ITEMS` puts it back at the
  *    front, where `economy-trade.md` §7's table has it — a slice taken off
@@ -35,7 +35,6 @@ import {
 
 import {
 	PRICE_DISPLAY_STEP_CR,
-	COMMODITIES,
 	CARGO_COMMODITIES,
 	commodityStockResponse,
 	type Commodity,
@@ -202,7 +201,6 @@ export type MarketRowFn = (
 ) => MarketRow;
 
 export interface StationMarketScreenInput {
-	mining?: boolean;
 	station: MarketStation;
 	/** The system's economy, 0…7. */
 	economy: number;
@@ -250,9 +248,9 @@ export interface StationMarketScreenInput {
 }
 
 /**
- * **M5:** all seventeen commodity rows, in table order, at every station.
+ * **M5:** every commodity row, in table order, at every station.
  *
- * Iterates `COMMODITIES` and not `stationCommodities` — §8.5.2. The three
+ * Iterates `CARGO_COMMODITIES` and not `stationCommodities` — §8.5.2. The three
  * illegal goods appear everywhere; away from a fence they carry no price, which
  * is the **not traded here** block the tab renders them in.
  */
@@ -263,47 +261,45 @@ export function stationMarketScreen(
 ): readonly ConsoleMarketRow[] {
 	const { station, economy, gameTimeMin, deficitOf, holdT, displayTL, cargo } =
 		input;
-	return (input.mining ? CARGO_COMMODITIES : COMMODITIES).map(
-		(commodity): ConsoleMarketRow => {
-			const held = cargo[commodity.name] ?? 0;
-			// §8.5.1: the test comes first. Asking for a price so the row can be
-			// greyed out throws at every non-fence station in the galaxy.
-			if (!listsCommodity(commodity, station))
-				return { commodity, listed: false, held };
-			const base = row(commodity, economy, station, gameTimeMin);
-			const deficit = deficitOf(commodity.name);
-			const midCr = commodityStockResponse(
-				commodity,
-				base.priceCr,
-				deficit,
-				holdT,
-			);
-			// **One call, two columns.** The till calls the same function with the same
-			// two arguments, which is the only thing that keeps this screen from being
-			// the #193 defect again: a quote the player reads and a figure the till
-			// charges, drifting apart.
-			const { buyCr, sellCr } = quote(midCr, displayTL);
-			const quantity = shelfQuantity(base.quantity, deficit);
-			if (deficit === 0)
-				return { commodity, listed: true, buyCr, sellCr, quantity, held };
-			return {
-				commodity,
-				listed: true,
-				buyCr,
-				sellCr,
-				quantity,
-				held,
-				// Against *this* epoch's base, which is what `base` is: it was derived
-				// from the station's identity and the clock a line ago rather than
-				// remembered from the last visit. And measured on the column it is drawn
-				// beside, not on the mid before the quote quantized it — an arrow whose
-				// arithmetic starts from a figure the row does not print is a #193 drift
-				// with an arrow on it.
-				priceDeltaCr: buyCr - base.priceCr,
-				quantityDelta: quantity - base.quantity,
-			};
-		},
-	);
+	return CARGO_COMMODITIES.map((commodity): ConsoleMarketRow => {
+		const held = cargo[commodity.name] ?? 0;
+		// §8.5.1: the test comes first. Asking for a price so the row can be
+		// greyed out throws at every non-fence station in the galaxy.
+		if (!listsCommodity(commodity, station))
+			return { commodity, listed: false, held };
+		const base = row(commodity, economy, station, gameTimeMin);
+		const deficit = deficitOf(commodity.name);
+		const midCr = commodityStockResponse(
+			commodity,
+			base.priceCr,
+			deficit,
+			holdT,
+		);
+		// **One call, two columns.** The till calls the same function with the same
+		// two arguments, which is the only thing that keeps this screen from being
+		// the #193 defect again: a quote the player reads and a figure the till
+		// charges, drifting apart.
+		const { buyCr, sellCr } = quote(midCr, displayTL);
+		const quantity = shelfQuantity(base.quantity, deficit);
+		if (deficit === 0)
+			return { commodity, listed: true, buyCr, sellCr, quantity, held };
+		return {
+			commodity,
+			listed: true,
+			buyCr,
+			sellCr,
+			quantity,
+			held,
+			// Against *this* epoch's base, which is what `base` is: it was derived
+			// from the station's identity and the clock a line ago rather than
+			// remembered from the last visit. And measured on the column it is drawn
+			// beside, not on the mid before the quote quantized it — an arrow whose
+			// arithmetic starts from a figure the row does not print is a #193 drift
+			// with an arrow on it.
+			priceDeltaCr: buyCr - base.priceCr,
+			quantityDelta: quantity - base.quantity,
+		};
+	});
 }
 
 /**
@@ -536,8 +532,6 @@ export function stationEquipmentScreen(input: {
 	 * indistinguishable in a diff. `TOP_RUNGS` is the explicit open gate.
 	 */
 	rungs: Rungs;
-	/** `?mining=1`: each item's `miningScope` sells it too, https://github.com/jcfischer/seelite/issues/1147 */
-	mining?: boolean;
 }): ConsoleEquipmentScreen {
 	const { type, displayTL, rungs } = input;
 	const gated = (entry: ConsoleEquipmentEntry): ConsoleEquipmentEntry => {
@@ -566,7 +560,7 @@ export function stationEquipmentScreen(input: {
 			priceCr: item.priceCr,
 			per: "unit",
 		};
-		if (item.scope === type || (input.mining && item.miningScope === type))
+		if (item.scope === type || item.miningScope === type)
 			available.push(gated(entry));
 		else unavailable.push({ name: item.name, reason: scopeReason(item.scope) });
 	}

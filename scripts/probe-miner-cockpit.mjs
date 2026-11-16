@@ -164,7 +164,7 @@ const installDrillCamReader = (page) =>
 const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-7;
 
 try {
-	const page = await open({ hull: "miner", mining: "1" });
+	const page = await open({ hull: "miner" });
 	await installDrillCamReader(page);
 	const bridge = await cabinFacts(page);
 	check(
@@ -538,13 +538,15 @@ try {
 			near(installed.eye, installed.want),
 		JSON.stringify({ standIn, installed }),
 	);
-	const offRows = await readFaces(late);
+	const lateRows = await readFaces(late);
 	check(
-		"without the flag the shipped bridge's mining faces read MINING OFF",
-		["survey", "drill", "anchor", "stance"].every(
-			(name) => offRows[name][0][0] === "MINING OFF",
-		) && offRows.ore[0][0].startsWith("ORE "),
-		JSON.stringify(offRows),
+		"the late bridge's mining faces read live state",
+		lateRows.survey[0][0] !== "MINING OFF" &&
+			["drill", "anchor", "stance"].every(
+				(name) => lateRows[name][0][0] !== "MINING OFF",
+			) &&
+			lateRows.ore[0][0].startsWith("ORE "),
+		JSON.stringify(lateRows),
 	);
 	await late.close();
 

@@ -28,7 +28,6 @@ try {
 			seed: CHARTED_FIELD_WORLD,
 			system: 173,
 			hull: "miner",
-			mining: "1",
 			"no-save": "",
 			raider: "off",
 		}),
@@ -39,6 +38,7 @@ try {
 		const S = await import("/src/rock-survey.ts");
 		const g = window.__seelite;
 		g.clockHeld = true;
+		g.fitPrototypeMiningLaser(true);
 		const draw = g.fields[0];
 		if (!draw) return { fields: 0 };
 		const t = g.world.gameTime;
@@ -93,11 +93,6 @@ try {
 			g.cycleTarget(1);
 			return g.surveyState();
 		});
-		check(
-			"front and decay are the defaults",
-			picked.pick === "front" && picked.interrupt === "decay",
-			`${picked.pick}/${picked.interrupt}`,
-		);
 		check(
 			"the target key selects the rock in the reticle",
 			picked.target?.id === setup.id,
@@ -692,50 +687,60 @@ try {
 		});
 	}
 	await page.close();
-	const flagOffPage = await browser.newPage({
+	const staleFlagPage = await browser.newPage({
 		viewport: { width: 1280, height: 800 },
 	});
-	watch(flagOffPage);
-	await flagOffPage.goto(
+	watch(staleFlagPage);
+	await installViewPlacement(staleFlagPage);
+	await staleFlagPage.goto(
 		gameUrl(origin, {
 			seed: CHARTED_FIELD_WORLD,
 			system: 173,
 			hull: "miner",
+			mining: "0",
 			"no-save": "",
 			raider: "off",
 		}),
 	);
-	await bootedGame(flagOffPage, 90000);
-	const flagOff = await flagOffPage.evaluate(async () => {
-		const { range } = await import("/src/units.ts");
+	await bootedGame(staleFlagPage, 90000);
+	const stale = await staleFlagPage.evaluate(async () => {
+		const A = await import("/src/asteroid-field.ts");
+		const T = await import("/src/rock-target.ts");
 		const g = window.__seelite;
 		g.clockHeld = true;
-		g.targetId = g.world.system.bodies.find((b) => b.kind === "station").id;
-		for (let i = 0; i < 2; i++)
-			await new Promise((r) => requestAnimationFrame(r));
-		const target = g.targetBody();
+		g.fitPrototypeMiningLaser(true);
+		const draw = g.fields[0];
+		const rock = draw.rocks[0];
+		const pose = A.rockPose(draw.plan, rock, g.world.gameTime);
+		await window.__placeShipAt(
+			{
+				x: pose.pos.x,
+				y: pose.pos.y,
+				z: pose.pos.z + rock.radiusKm + 2,
+			},
+			pose.vel,
+		);
+		g.targetId = T.rockTargetId(draw.plan, rock.slot);
+		const state = g.surveyState();
 		g.headLook = "left";
 		g.leftTab = "Navigation";
-		const rows = g.navRows();
 		return {
-			on: g.surveyState().on,
-			deep: g.deepCueRender,
-			text: g.cockpit.targetInstrument.primaryText,
-			expected: `${target.name}  ${range(g.targetRange())}`,
-			rows: rows.length,
-			rockRows: rows.filter(
-				(r) => r.kind === "rock" || r.id.startsWith("rock:"),
-			).length,
+			target: state.target?.id ?? null,
+			figures: state.figures,
+			groups: g.fireGroups.map((group) => group.label),
+			rockRows: g
+				.navRows()
+				.filter((r) => r.kind === "rock" || r.id.startsWith("rock:")).length,
 		};
 	});
 	check(
-		"without mining=1 the ordinary instrument is unchanged and mining cues and rock navigation rows are absent",
-		!flagOff.on &&
-			flagOff.rows > 0 &&
-			flagOff.deep === null &&
-			flagOff.text === flagOff.expected &&
-			flagOff.rockRows === 0,
-		JSON.stringify(flagOff),
+		"?mining=0 has no effect: a rock is targetable, the survey instrument is fitted and the fire groups are the mining ones",
+		stale.target !== null &&
+			stale.figures !== null &&
+			stale.rockRows > 0 &&
+			stale.groups.includes("H2 MINING LASER") &&
+			stale.groups.includes("BUILT-IN DRILL"),
+		JSON.stringify(stale),
 	);
 } finally {
 	await browser.close();

@@ -19,8 +19,10 @@ import { describe, expect, test } from "bun:test";
 import { DOMAIN } from "../src/domains";
 import { generateGalaxy, systemSeedFor } from "../src/galaxy";
 import {
+	CARGO_COMMODITIES,
 	COMMODITIES,
 	commodity,
+	listsCommodity,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
 	marketEpoch,
@@ -359,7 +361,7 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		const station = marketStation(record.seed, s);
 		const t = 613.5;
 		const epoch = marketEpoch(station.phaseMin, t);
-		for (const good of stationCommodities(station)) {
+		for (const good of COMMODITIES.filter((c) => listsCommodity(c, station))) {
 			const played = marketRow(good, record.economy, station, t);
 			const swept = marketRowAt(
 				good,
@@ -380,7 +382,7 @@ describe("§4 illegal goods are scoped to a fence, in the shipped module", () =>
 		expect(illegal.sort()).toEqual([...ILLEGAL].sort());
 	});
 
-	test("a fence lists the whole table; every other station lists 14 of 17", () => {
+	test("a fence lists the whole table; every other station lists all but the three illegal goods", () => {
 		let fences = 0;
 		let plain = 0;
 		for (const record of SYSTEMS)
@@ -389,10 +391,10 @@ describe("§4 illegal goods are scoped to a fence, in the shipped module", () =>
 				const listed = stationCommodities(station).map((c) => c.name);
 				if (s.blackMarket) {
 					fences++;
-					expect(listed.length).toBe(COMMODITIES.length);
+					expect(listed.length).toBe(CARGO_COMMODITIES.length);
 				} else {
 					plain++;
-					expect(listed.length).toBe(COMMODITIES.length - 3);
+					expect(listed.length).toBe(CARGO_COMMODITIES.length - 3);
 					for (const name of ILLEGAL) expect(listed).not.toContain(name);
 				}
 			}

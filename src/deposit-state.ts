@@ -1,7 +1,9 @@
 /**
  * Sparse asteroid depletion and survey facts (node #967, #951 D1–D6).
  * Contents remain seed-derived. Times are seconds on the game's clock.
- * Recovery and reading lifetime are calibration placeholders for node #920.
+ * Recovery and reading lifetime are the table node #923 ratified
+ * (https://github.com/jcfischer/seelite/issues/923): 10 t/h per rock and a
+ * 24 h reading.
  */
 import {
 	FIELD_GENERATOR_VERSION,
@@ -13,7 +15,7 @@ import { generateGalaxy } from "./galaxy";
 import { fnv1a } from "./rng";
 import { generateContents } from "./system";
 
-export const RECOVERY_T_PER_H = 1;
+export const RECOVERY_T_PER_H = 10;
 export const SURVEY_LIFETIME_H = 24;
 
 export type DepositKey = `${number}:field-${string}:${number}`;

@@ -5,6 +5,6 @@
 export const CANISTER_SCOOP_RADIUS_KM = 0.05;
 /** And how slowly, relative to the canister. */
 export const CANISTER_SCOOP_SPEED_KMS = 0.25;
-/** Provisional: the calibration is node #922's. A pickup that takes nothing is
- *  not charged. */
+/** The fitted scoop's charge (#1095 D5). A pickup that takes nothing is not
+ *  charged. */
 export const CANISTER_SCOOP_CHARGE_E = 2;

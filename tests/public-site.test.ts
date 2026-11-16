@@ -58,7 +58,7 @@ const UNBOUND_KEY_NAMES = [
  *  #406: the Postcard screen's `6`. 32 since node #691: the outside view's
  *  `V` (`view.toggle`) and its recentre `2` (`view.orbitCentre`). 33: Photo
  *  mode's `F2` (`view.photo`). */
-const MANUAL_KEY_COUNT = 33;
+const MANUAL_KEY_COUNT = 37;
 
 /** The manual page, resolved per row rather than in the `describe` body — a
  *  throw there aborts the file, including the row that names the slugs and

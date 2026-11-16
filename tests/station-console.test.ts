@@ -8,6 +8,7 @@ import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+	CARGO_COMMODITIES,
 	COMMODITIES,
 	type Commodity,
 	DEFICIT_SATURATION_RUNS,
@@ -120,21 +121,22 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 				return marketRow(commodity, economy, s, gameTimeMin);
 			},
 		);
-		const listed = COMMODITIES.filter((c) => listsCommodity(c, station)).map(
-			(c) => c.name,
-		);
+		const listed = CARGO_COMMODITIES.filter((c) =>
+			listsCommodity(c, station),
+		).map((c) => c.name);
 		expect(asked).toEqual(listed);
 	}
 });
 
 test("obligation 3: a non-fence station is the case that separates the builds", () => {
-	const tradeListed = COMMODITIES.filter((c) => listsCommodity(c, TRADE));
-	const fenceListed = COMMODITIES.filter((c) => listsCommodity(c, FENCE));
-	expect(tradeListed.length).toBe(14);
-	expect(fenceListed.length).toBe(17);
+	const tradeListed = CARGO_COMMODITIES.filter((c) => listsCommodity(c, TRADE));
+	const fenceListed = CARGO_COMMODITIES.filter((c) => listsCommodity(c, FENCE));
+	expect(tradeListed.length).toBe(29);
+	expect(fenceListed.length).toBe(32);
+	expect(tradeListed.length).toBeLessThan(fenceListed.length);
 });
 
-test("M5: seventeen rows at every station, priced iff the station lists the good", () => {
+test("M5: a row for every good at every station, priced iff the station lists it", () => {
 	for (const station of [TRADE, FENCE]) {
 		const rows = stationMarketScreen({
 			station,
@@ -145,9 +147,9 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			cargo: {},
 			displayTL: SCREEN_TL,
 		});
-		expect(rows.length).toBe(COMMODITIES.length);
+		expect(rows.length).toBe(CARGO_COMMODITIES.length);
 		expect(rows.map((r) => r.commodity.name)).toEqual(
-			COMMODITIES.map((c) => c.name),
+			CARGO_COMMODITIES.map((c) => c.name),
 		);
 		for (const row of rows) {
 			expect(row.listed).toBe(listsCommodity(row.commodity, station));
@@ -352,6 +354,7 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 	);
 	expect(shipyard.available.map((e) => e.name)).toEqual([
 		...UNIVERSAL_ORDER_FROM_SPEC,
+		"Mining Laser",
 		"Extra Energy Unit",
 		"Military Laser",
 		"Identity Scanner",
@@ -716,22 +719,18 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 	});
 });
 
-test("?mining=1 lists the Mining Laser at shipyards too, and nowhere new without it (#1147, #920 D-D18)", () => {
-	const listed = (type: "refinery" | "shipyard" | "trade", mining?: boolean) =>
-		stationEquipmentScreen({ type, displayTL: 11, rungs: TOP_RUNGS, mining })
+test("the Mining Laser is listed at refineries and shipyards, and nowhere new (#1147, #920 D-D18)", () => {
+	const listed = (type: "refinery" | "shipyard" | "trade") =>
+		stationEquipmentScreen({ type, displayTL: 11, rungs: TOP_RUNGS })
 			.available.map((e) => e.name)
 			.filter((n) => n === "Mining Laser").length;
-	expect(listed("shipyard", true)).toBe(1);
-	expect(listed("shipyard", false)).toBe(0);
-	expect(listed("shipyard")).toBe(0);
-	expect(listed("refinery", true)).toBe(1);
-	expect(listed("refinery", false)).toBe(1);
-	expect(listed("trade", true)).toBe(0);
+	expect(listed("shipyard")).toBe(1);
+	expect(listed("refinery")).toBe(1);
+	expect(listed("trade")).toBe(0);
 	const shipyard = stationEquipmentScreen({
 		type: "shipyard",
 		displayTL: 11,
 		rungs: TOP_RUNGS,
-		mining: true,
 	});
 	expect(shipyard.unavailable.map((e) => e.name)).not.toContain("Mining Laser");
 	expect(

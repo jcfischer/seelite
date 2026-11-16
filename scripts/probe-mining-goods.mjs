@@ -30,7 +30,6 @@ try {
 			seed: 0x5ee11e,
 			system: 173,
 			hull: "miner",
-			mining: "1",
 			raider: "off",
 		}),
 	);
@@ -44,9 +43,7 @@ try {
 			empty,
 		);
 	});
-	await page.goto(
-		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
-	);
+	await page.goto(gameUrl(origin, { seed: 0x5ee11e, raider: "off" }));
 	await bootedGame(page, 90000);
 	const setup = await page.evaluate(async () => {
 		const { rockPose } = await import("/src/asteroid-field.ts");
@@ -158,7 +155,7 @@ try {
 		...window.__seelite.commander.cargo,
 	}));
 	check(
-		"a flagless reload keeps every ore tonne aboard",
+		"a reload keeps every ore tonne aboard",
 		JSON.stringify(flagless) === JSON.stringify(mined.cargo),
 		JSON.stringify(flagless),
 	);
@@ -174,14 +171,12 @@ try {
 			?.textContent;
 	}, setup.name);
 	check(
-		"the flagless Hold says raw sales are unavailable",
-		flaglessHold?.includes("raw sales unavailable") &&
-			!flaglessHold.includes("sellable"),
+		"the Hold says the ore is sellable",
+		flaglessHold?.includes("sellable") &&
+			!flaglessHold.includes("raw sales unavailable"),
 		flaglessHold,
 	);
-	await page.goto(
-		gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
-	);
+	await page.goto(gameUrl(origin, { seed: 0x5ee11e, raider: "off" }));
 	await bootedGame(page, 90000);
 	const reloaded = await page.evaluate(() => ({
 		...window.__seelite.commander.cargo,
@@ -273,14 +268,12 @@ try {
 			rows.map((r) => r.getAttribute("data-live-market-row")),
 		);
 	check(
-		"without mining the docked market retains exactly its original seventeen rows",
-		off.length === 17 && !off.some((name) => name.includes("ore")),
+		"the reloaded docked market lists every good, ore included",
+		off.length === 32 && off.some((name) => name.includes("ore")),
 		JSON.stringify(off),
 	);
 	const reloadToMarket = async ({ holdClock }) => {
-		await page.goto(
-			gameUrl(origin, { seed: 0x5ee11e, mining: "1", raider: "off" }),
-		);
+		await page.goto(gameUrl(origin, { seed: 0x5ee11e, raider: "off" }));
 		await bootedGame(page, 90000);
 		await page.evaluate((hold) => {
 			const g = window.__seelite;

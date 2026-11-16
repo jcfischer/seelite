@@ -870,7 +870,6 @@ await fixturePage.goto(
 		seed: 0x5ee11e,
 		system: 173,
 		hull: "miner",
-		mining: 1,
 		raider: "off",
 	}),
 );

@@ -16,17 +16,13 @@ const { check, watch, exit } = tally();
 const shots = process.env.LASER_ORIGIN_SHOTS ?? "/tmp/seelite-laser-origin";
 await mkdir(shots, { recursive: true });
 try {
-	for (const [hull, mining] of [
-		["miner", undefined],
-		["interceptor", undefined],
-		["miner", "1"],
-	]) {
+	for (const [hull] of [["miner"], ["interceptor"]]) {
 		const page = await browser.newPage({
 			viewport: { width: 1280, height: 800 },
 		});
 		watch(page);
 		await page.goto(
-			gameUrl(origin, { seed: 47, hull, mining, "no-save": "", raider: "off" }),
+			gameUrl(origin, { seed: 47, hull, "no-save": "", raider: "off" }),
 		);
 		await bootedGame(page, 90000);
 		await stopLoop(page);
@@ -163,7 +159,7 @@ try {
 							same(row.actual[i]?.to, beam.to),
 					);
 				check(
-					`${hull} mining=${mining ?? "absent"} ${view} ${row.label}: every beam starts at its selected mount`,
+					`${hull} ${view} ${row.label}: every beam starts at its selected mount`,
 					matches,
 					JSON.stringify(row),
 				);
@@ -175,9 +171,9 @@ try {
 						: row.vertices === 0 && row.actual.length > 0,
 					JSON.stringify({ vertices: row.vertices, beams: row.actual.length }),
 				);
-				console.log(JSON.stringify({ hull, mining, ...row }));
+				console.log(JSON.stringify({ hull, ...row }));
 				await page.screenshot({
-					path: `${shots}/${hull}-${mining ?? "plain"}-${group}-${view}.png`,
+					path: `${shots}/${hull}-${group}-${view}.png`,
 				});
 			}
 		}

@@ -6,9 +6,8 @@
  * go straight into the hold, elsewhere the cutter takes surface ore at the laser's
  * waste share (D-D3), and each deposit is debited by exactly what the hold gains.
  * The struts unfold with the feed and, on the pilot's intervention, hold the ship to the
- * rock's frame once the feet touch inside the speed window (D-D1). Every figure
- * here is a provisional candidate for #922's economic measurement, not a ratified
- * rate.
+ * rock's frame once the feet touch inside the speed window (D-D1). The rate,
+ * energy and heat are the table node #923 ratified.
  */
 import { type DepositRow, debitAt } from "./deposit-state";
 import {
@@ -31,7 +30,7 @@ import {
 	type Vec3,
 } from "./vec3";
 
-/** Candidate drill figures. Speeds km/s, distances km, times s. */
+/** Drill figures. Speeds km/s, distances km, times s. */
 export const DRILL = {
 	deployS: 6,
 	spinUpS: 2,
@@ -245,12 +244,13 @@ export function debitDeep(
 	const deep = debitAt(row?.deep ?? 0, at, t) + n;
 	const surface =
 		row?.surface === undefined ? undefined : debitAt(row.surface, at, t);
-	return {
-		...row,
-		deep,
-		...(surface !== undefined && { surface }),
-		at: t,
+	const next: DepositRow = {
+		...(surface !== undefined && surface > 0 ? { surface } : {}),
+		...(deep > 0 ? { deep } : {}),
+		...(row?.surveyedAt === undefined ? {} : { surveyedAt: row.surveyedAt }),
 	};
+	if (next.surface !== undefined || next.deep !== undefined) next.at = t;
+	return next;
 }
 
 /** The drill's surface ore share (D-D3): the Mining Laser's grade-E share, the rest waste. */
@@ -302,7 +302,7 @@ export function stepDrillSurface(
  * the face, and scales demand from `ASSIST_CAP_KMS` to the fine speed caps.
  */
 
-/** Candidate fine-control figures, km/s and km. */
+/** Fine-control figures, km/s and km. */
 export const FINE = {
 	rangeKm: 0.5,
 	surgeCapKms: 0.01,

@@ -4,6 +4,7 @@ import { systemIndexOfKey } from "../src/carrier-key";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
+import { nearRocks } from "../src/rock-target";
 import { AttitudeFollower } from "../src/attitude-hold";
 import { ORBIT_ASTERN } from "../src/chase-orbit";
 import { DockingComputer } from "../src/docking-computer";
@@ -86,8 +87,8 @@ test("Navigation evaluates ETA for a selectable contact absent from the generate
 			methods(["navRows", "navigationTargets"], {
 				projectNavTargets,
 				isRockTargetId,
+				nearRocks,
 				ETA_INTERVAL_S: 1,
-				MINING_ON: false,
 			}),
 		),
 		{
@@ -98,6 +99,9 @@ test("Navigation evaluates ETA for a selectable contact absent from the generate
 			navEtaAt: -Infinity,
 			navEtaCache: new Map(),
 			navFilter: { kinds: [], query: "" },
+			frameField: null,
+			fieldRockSets: () => [],
+			rockRef: () => null,
 			selectable: () => [contact],
 			bodyFor: (id: string) => (id === contact.id ? contact : null),
 			timeToBody: (body: unknown) => {

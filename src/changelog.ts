@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// https://github.com/jcfischer/seelite/issues/1197 — sentence approved by the principal, 2026-11-07.
+	{
+		date: "2026-11-16",
+		text: "Mine asteroids with Mining Lasers or the Longwall’s drill, sell raw ore, or leave it with refineries for processing and later collection.",
+		node: 1197,
+	},
 	{
 		date: "2026-11-14",
 		text: "The Warden, Shiv, Sluice, Bastion and Rampart fly their authored hulls, with turning habitats on the two capitals.",
