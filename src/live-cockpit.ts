@@ -360,7 +360,12 @@ export interface RefineryConsole {
 	} | null;
 	jobs: readonly RefineryJobRow[];
 	queueCount: number;
-	collectable: readonly { product: string; text: string; units: number }[];
+	collectable: readonly {
+		product: string;
+		text: string;
+		units: number;
+		finished: boolean;
+	}[];
 	pooled: readonly { product: string; text: string }[];
 }
 
@@ -2016,7 +2021,7 @@ export class LiveCockpit {
 		const collectRows = view.collectable
 			.map(
 				(row) =>
-					`<div class="lc-station-row" data-live-refinery-collectable="${escapeHtml(row.product)}"><span>COLLECTABLE · ${escapeHtml(row.product)}</span><span class="lc-station-cell">${escapeHtml(row.text)}</span><button class="lc-station-action" type="button" data-live-refinery-collect="${escapeHtml(row.product)}" ${view.saving || row.units < 1 ? "disabled" : ""}>COLLECT</button></div>`,
+					`<div class="lc-station-row" data-live-refinery-collectable="${escapeHtml(row.product)}"><span>COLLECTABLE · ${escapeHtml(row.product)}</span><span class="lc-station-cell">${escapeHtml(row.text)}</span><button class="lc-station-action" type="button" data-live-refinery-collect="${escapeHtml(row.product)}" ${view.saving || (row.units < 1 && !row.finished) ? "disabled" : ""}>COLLECT</button></div>`,
 			)
 			.join("");
 		const pooledRows = view.pooled

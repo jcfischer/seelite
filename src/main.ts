@@ -22319,9 +22319,13 @@ class Game {
 		];
 		return [...new Set(products)].map((product) => {
 			const units = refineryCollectable(queue, product);
+			const finished = (queue?.jobs ?? []).some(
+				(job) => job.product === product && refineryFinished(job),
+			);
 			return {
 				product,
 				units,
+				finished,
 				text: `${units.toLocaleString("en")} ${commodity(product).unit} ${product}`,
 			};
 		});
