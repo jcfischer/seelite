@@ -466,7 +466,7 @@ export function mountGalaxyChart({
 		inset: "0",
 		background: "#05080d",
 		color: "#cfe6f5",
-		font: "13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace",
+		font: "13px/1.45 Menlo, monospace",
 		overflow: "hidden",
 		display: "flex",
 	});

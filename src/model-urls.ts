@@ -9,12 +9,48 @@
  * kept under `public/` instead would be served at a fixed name, which a
  * browser must revalidate on every boot.
  */
+/** Authored rock archetypes (node #966); loading/drawing follows separately. */
+export const ASTEROIDS_GLB_URL = new URL(
+	"./models/asteroids.glb",
+	import.meta.url,
+).href;
 export const CORIOLIS_GLB_URL = new URL(
 	"./models/coriolis.glb",
 	import.meta.url,
 ).href;
+/** The Coriolis scale detail, fetched when a Coriolis first leaves the outline band (#1142). */
+export const CORIOLIS_DETAIL_GLB_URL = new URL(
+	"./models/coriolis-detail.glb",
+	import.meta.url,
+).href;
+
+/** Full authored Assembly kit, exported in kilometres (node #1073). */
+export const ASSEMBLY_GLB_URL = new URL(
+	"./models/trade-assembly.glb",
+	import.meta.url,
+).href;
+
+/** Flight exports of the approved trade studies, node #1033. */
+export const TRADE_GLB_URLS = {
+	b: new URL("./models/trade-ring.glb", import.meta.url).href,
+	c: new URL("./models/trade-drum.glb", import.meta.url).href,
+	e: new URL("./models/trade-wheel.glb", import.meta.url).href,
+} as const;
+export const RING_DETAIL_GLB_URL = new URL(
+	"./models/trade-ring-detail.glb",
+	import.meta.url,
+).href;
+export const DRUM_DETAIL_GLB_URL = new URL(
+	"./models/trade-drum-detail.glb",
+	import.meta.url,
+).href;
 export const COURIER_COCKPIT_GLB_URL = new URL(
 	"./models/courier-cockpit.glb",
+	import.meta.url,
+).href;
+/** The Longwall bridge, prepared by `spikes/miner-cockpit/prepare-game-asset.mjs` (node #1198). */
+export const MINER_COCKPIT_GLB_URL = new URL(
+	"./models/miner-cockpit.glb",
 	import.meta.url,
 ).href;
 /** Prepared by `spikes/courier-hull/prepare-game-asset.mjs` (node #812). */
@@ -22,15 +58,61 @@ export const COURIER_HULL_GLB_URL = new URL(
 	"./models/courier-hull.glb",
 	import.meta.url,
 ).href;
+/** Derived from the courier's exterior tile: https://github.com/jcfischer/seelite/issues/1232 */
+export const COURIER_NORMAL_MAP_URL = new URL(
+	"./models/courier-steel-wear-normal.webp",
+	import.meta.url,
+).href;
 /** Prepared by `spikes/bollard-hull/prepare-flight-asset.mjs` (node #814). */
 export const BOLLARD_TUG_GLB_URL = new URL(
 	"./models/bollard-tug.glb",
+	import.meta.url,
+).href;
+/** Prepared by `spikes/discovery/prepare-flight-asset.mjs` (node #820). */
+export const DISCOVERY_VOYAGER_GLB_URL = new URL(
+	"./models/discovery-voyager.glb",
 	import.meta.url,
 ).href;
 export const LONGWALL_MINER_GLB_URL = new URL(
 	"./models/longwall-miner.glb",
 	import.meta.url,
 ).href;
+
+/** An image several models share, by the sha256 their prepared GLBs name
+ *  (`src/shared-image.ts`, node #1222). */
+export interface SharedImage {
+	url: string;
+	name: string;
+	anisotropy?: number;
+	ownerAnisotropy?: Readonly<Record<string, number>>;
+}
+/** Approved sampler value shared by courier paint, industrial surfaces and interior owners: https://github.com/jcfischer/seelite/issues/1230 */
+export const EXTERIOR_MAP_ANISOTROPY = 8;
+
+export const SHARED_IMAGES: Readonly<Record<string, SharedImage>> = {
+	"54aabd254dce4e6a9c78e5beb6320c14e7c4506dc39f2329a6c34f11bbfafc1d": {
+		url: new URL("./models/paint-wear.webp", import.meta.url).href,
+		name: "paint-wear",
+	},
+	"7e3dc547c074ca91cf500ce8075b935be53fd84d5f0bf733fb5b0594cceb9014": {
+		url: new URL("./models/rock-albedo.webp", import.meta.url).href,
+		name: "rock-albedo",
+	},
+	"10d4d0776274448b52fc3191941d09dc0a74f1967854f23f86406188bf1eedd7": {
+		url: new URL("./models/industrial-surface.webp", import.meta.url).href,
+		name: "industrial-surface",
+		anisotropy: EXTERIOR_MAP_ANISOTROPY,
+	},
+	b8cf2375235d29d230ab478486f9fd6825492df879084896c18a91275616467f: {
+		url: new URL("./models/steel-wear.webp", import.meta.url).href,
+		name: "steel-wear",
+		ownerAnisotropy: { courier: EXTERIOR_MAP_ANISOTROPY },
+	},
+	ddf48529978a25b3cd43fa716426797afbafad33811747ce32bd7a9fc8886293: {
+		url: new URL("./models/cockpit-steel-wear.webp", import.meta.url).href,
+		name: "cockpit-steel-wear",
+	},
+};
 
 /** Accepted per-fitting station interiors, node #843. */
 export const STATION_INTERIORS_GLB_URL = new URL(
@@ -73,3 +155,48 @@ export const REFINERY_GLB_URLS = {
 	c: new URL("./models/refinery-spar.glb", import.meta.url).href,
 	d: new URL("./models/refinery-works.glb", import.meta.url).href,
 } as const;
+
+/** Prepared by the Porter study (node #813). */
+export const PORTER_GLB_URL = new URL("./models/porter.glb", import.meta.url)
+	.href;
+
+/** The authored outposts, prepared by
+ *  `spikes/stations/prepare-flight-asset.mjs`: forms `a`–`d` (node #1032) and
+ *  the Salvage, `e` (node #1031). */
+export const OUTPOST_GLB_URLS = {
+	a: new URL("./models/outpost-derrick.glb", import.meta.url).href,
+	b: new URL("./models/outpost-buoy.glb", import.meta.url).href,
+	c: new URL("./models/outpost-rig.glb", import.meta.url).href,
+	d: new URL("./models/outpost-cluster.glb", import.meta.url).href,
+	e: new URL("./models/outpost-salvage.glb", import.meta.url).href,
+} as const;
+
+/** The Lance, the interceptor's authored exterior (node #1034), prepared by
+ *  `spikes/seven-ships/prepare-game-asset.mjs`. */
+export const LANCE_INTERCEPTOR_GLB_URL = new URL(
+	"./models/lance-interceptor.glb",
+	import.meta.url,
+).href;
+
+/** Five exteriors of design PR #829 (node #1035). The Bastion and Rampart
+ * embed lossy textures; the other three share the steel-wear image. */
+export const WARDEN_PATROL_GLB_URL = new URL(
+	"./models/warden-patrol.glb",
+	import.meta.url,
+).href;
+export const SHIV_RAIDER_GLB_URL = new URL(
+	"./models/shiv-raider.glb",
+	import.meta.url,
+).href;
+export const BASTION_CARRIER_GLB_URL = new URL(
+	"./models/bastion-carrier.glb",
+	import.meta.url,
+).href;
+export const SLUICE_PROSPECTOR_GLB_URL = new URL(
+	"./models/sluice-prospector.glb",
+	import.meta.url,
+).href;
+export const RAMPART_DREADNOUGHT_GLB_URL = new URL(
+	"./models/rampart-dreadnought.glb",
+	import.meta.url,
+).href;

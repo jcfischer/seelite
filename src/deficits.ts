@@ -21,10 +21,10 @@
  *
  * **The dependency runs from here to `market.ts` and not the other way.** What
  * moved is the map — the row, the key space, the drop rule and the parser.
- * `market.ts`'s §6–§7 divider is the one copy of why §5.2's arithmetic did not
- * come with it; restating any part of that argument here would be the second
- * copy the divider exists to avoid. `market.ts` imports nothing from this
- * file, and `tests/deficits.test.ts` is what keeps that true.
+ * §5.2's arithmetic stayed in `market.ts` because the price response clamps by
+ * `DEFICIT_MAX`, which is `QUANTITY_CAP`: importing it from here would close a
+ * cycle. `market.ts` imports nothing from this file, and
+ * `tests/deficits.test.ts` is what keeps that true.
  *
  * `CarrierKey` is not re-exported here for the reason `carrier-key.ts` gives:
  * two import paths to one persisted identity is the coupling that leaf was

@@ -52,6 +52,13 @@ principal decisions are explicit, not hidden inside adapter code.
 - Distinguish lossless encoding from quantization. Verify exact round trips for
   lossless claims; quantify tolerated deviation for lossy steps. Keep an asset
   checksum and a reproducible preparation command.
+- A model that uses an image other models share embeds no copy of it. After
+  re-exporting one, run `node scripts/share-model-image.mjs`;
+  `tests/shared-image.test.ts` names the model that still embeds the image. If
+  the geometry or materials changed on purpose, run
+  `bun scripts/pin-shared-image-models.ts <model>` first, on the file that still
+  embeds the image, which is what makes that test accept them. Then regenerate that form's collision proxies, whose pinned hash is
+  of the file.
 - Do not globally scale a model to repair a local docking-opening mismatch.
   Adapt the flight export to authoritative geometry or obtain an explicit ruling
   on changing that geometry. Check the procedural fallback fits too.
@@ -234,6 +241,9 @@ before acting. It neither assigns work nor authorizes a merge.
 - [Coriolis #791](https://github.com/jcfischer/seelite/pull/791) and
   [cockpit #794](https://github.com/jcfischer/seelite/pull/794): shipping-loader
   geometry checks, reproducible export and shared viewer/game adoption helpers.
+- [Shipyard LOD #947](receipts/node-947-shipyard-lod-policy.md): reduced levels never added a call
+  and bought 0.03–0.17 ms outside the bay, 1.0–1.7 ms inside it; the cold-install stall was texture
+  upload, which no level removes.
 - [Probe timing #884](https://github.com/jcfischer/seelite/pull/884): deterministic
   state handles can shorten setup; measurements still need truthful coverage and
   machine conditions. Existing waits that measure real elapsed behavior remain.

@@ -1,0 +1,106 @@
+{
+  "role": "raider",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "levels": {
+    "full": {
+      "loaded": true,
+      "fps": 73.40173638101807,
+      "triangles": 3302404,
+      "calls": 109,
+      "modelTriangles": 825596,
+      "meshCount": 22,
+      "bounds": [
+        33.820003509521484,
+        11.67799997329712,
+        56.30805778503418
+      ],
+      "view": "hero",
+      "lod": "full",
+      "lodMode": "full",
+      "distanceRadii": 1.9320183768953698
+    },
+    "reduced": {
+      "loaded": true,
+      "fps": 78.74781255802425,
+      "triangles": 439240,
+      "calls": 109,
+      "modelTriangles": 109805,
+      "meshCount": 22,
+      "bounds": [
+        33.820003509521484,
+        11.67799997329712,
+        56.30805778503418
+      ],
+      "view": "hero",
+      "lod": "reduced",
+      "lodMode": "reduced",
+      "distanceRadii": 1.9320183768953698
+    },
+    "outline": {
+      "loaded": true,
+      "fps": 83.71703641691084,
+      "triangles": 368612,
+      "calls": 105,
+      "modelTriangles": 92148,
+      "meshCount": 21,
+      "bounds": [
+        33.820003509521484,
+        11.67799997329712,
+        56.30805778503418
+      ],
+      "view": "hero",
+      "lod": "outline",
+      "lodMode": "outline",
+      "distanceRadii": 1.9320183768953698
+    }
+  },
+  "transitions": [
+    {
+      "loaded": true,
+      "fps": 84.02969049064004,
+      "triangles": 3302404,
+      "calls": 109,
+      "modelTriangles": 109805,
+      "meshCount": 22,
+      "bounds": [
+        33.820003509521484,
+        11.67799997329712,
+        56.30805778503418
+      ],
+      "view": "hero",
+      "lod": "reduced",
+      "lodMode": "auto",
+      "distanceRadii": 43.99999999999999
+    },
+    {
+      "loaded": true,
+      "fps": 97.33412642621532,
+      "triangles": 368612,
+      "calls": 105,
+      "modelTriangles": 92148,
+      "meshCount": 21,
+      "bounds": [
+        33.820003509521484,
+        11.67799997329712,
+        56.30805778503418
+      ],
+      "view": "hero",
+      "lod": "outline",
+      "lodMode": "auto",
+      "distanceRadii": 439.9999999999999
+    }
+  ],
+  "pop": {
+    "reduced": {
+      "fullFootprintPixels": 532,
+      "controlChangedPixels": 0,
+      "lodChangedPixels": 425
+    },
+    "outline": {
+      "fullFootprintPixels": 3,
+      "controlChangedPixels": 0,
+      "lodChangedPixels": 3
+    }
+  }
+}

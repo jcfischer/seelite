@@ -569,6 +569,7 @@ export interface Result {
  */
 interface Stance {
 	t: number;
+	tankLy: number;
 	credits: number;
 	holdT: number;
 	deficits: DeficitMap;
@@ -646,7 +647,7 @@ function intraOptions(here: Port, st: Stance): Hop[] {
 function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
 	const { systems, contentsFor } = world;
 	const out: Hop[] = [];
-	const inRange = neighbours(systems, here.record, COURIER_TANK_LY);
+	const inRange = neighbours(systems, here.record, st.tankLy);
 	// Counted per **enumeration**, not per decision: `jumpOptions` runs twice
 	// for each decision point — once from `flyingOptions` and once inside
 	// `waitOption` — so a denominator called "decisions" was double what a
@@ -660,10 +661,8 @@ function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
 		// check to make, and this asserts the identity rather than assuming it. The tank is not *tracked*
 		// because fuel is sold at every station (§7) and the trader docks on every
 		// hop: a full refill is always one purchase away, so paying is refuelling.
-		if (ly > COURIER_TANK_LY)
-			throw new Error(
-				`neighbour at ${ly} LY is past the ${COURIER_TANK_LY} LY tank`,
-			);
+		if (ly > st.tankLy)
+			throw new Error(`neighbour at ${ly} LY is past the ${st.tankLy} LY tank`);
 		const fuelCr = ly * FUEL_CR_PER_LY;
 		if (fuelCr > st.credits) continue;
 		for (const to of portsOf(record, contentsFor(record)))
@@ -887,6 +886,7 @@ function shop(port: Port, led: Ledger, tMin: number, buys: boolean): void {
 export type StartPolicy = "first" | "developed" | "rim";
 
 export interface RunOptions {
+	tankLy?: number;
 	/** The dock-and-market stop, seconds. §10.3's swept modelled number. */
 	dockSeconds?: number;
 	/**
@@ -1054,6 +1054,9 @@ export function run(
 	hours: number,
 	opts: RunOptions = {},
 ): Result {
+	const tankLy = opts.tankLy ?? COURIER_TANK_LY;
+	if (!Number.isFinite(tankLy) || tankLy <= 0)
+		throw new Error("invalid fitted trader tank");
 	const dockSeconds = opts.dockSeconds ?? DOCK_SECONDS;
 	const startHoldT = opts.holdT ?? HOLD_REFERENCE_T;
 	const stopAtKit = opts.stopAtKit ?? true;
@@ -1129,6 +1132,7 @@ export function run(
 
 		const stance = {
 			t,
+			tankLy,
 			credits: Math.min(led.credits, capitalCapCr),
 			holdT: led.holdT,
 			deficits,

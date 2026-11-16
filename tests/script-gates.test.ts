@@ -375,7 +375,7 @@ test("publishing is decided once, from the ref", () => {
 	expect(gate?.run).toContain("publish=true");
 });
 
-test("no condition in the file asks the event alone", () => {
+test("only the advisory mutation job asks the event alone", () => {
 	// How a hand-run on a feature branch used to be able to publish: the publish
 	// steps were gated on `github.event_name != 'pull_request'`, and every event
 	// that is not a pull request satisfies that — `workflow_dispatch` from any
@@ -384,8 +384,10 @@ test("no condition in the file asks the event alone", () => {
 	// steps, a branch shipping to the live site.
 	for (const step of ciWorkflow().steps)
 		expect(step.condition ?? "").not.toContain("github.event_name");
-	for (const job of ciWorkflow().jobs)
+	for (const job of ciWorkflow().jobs) {
+		if (job.name === "mutation-changed") continue;
 		expect(job.condition ?? "").not.toContain("github.event_name");
+	}
 });
 
 test("a merge to main is not cancelled by the next push", () => {
@@ -440,6 +442,10 @@ test("the shards split the suite across runners without narrowing it", () => {
 		"bun test tests/",
 		"--shard=${{ matrix.shard }}/${{ matrix.total }}",
 		"--timeout=60000",
+		"--parallel=3",
+		"--no-isolate",
+		"--timings=tests/timings.json",
+		"--update-timings",
 	]);
 	// A shard that skips itself is a shard that never ran, and a shard that
 	// shrugs off a failure reports a green quarter of a suite it did not run.
@@ -449,7 +455,35 @@ test("the shards split the suite across runners without narrowing it", () => {
 	const { scripts } = JSON.parse(
 		readFileSync(repoPath("package.json"), "utf8"),
 	) as unknown as { scripts: Record<string, string> };
-	expect(scripts.test).toBe("bun test tests/");
+	expect(scripts.test).toBe("bun test tests/ --timeout=60000");
+});
+
+const PINNED_BUN = "1.4.2";
+
+test("every bun the CI workflow installs is the pinned release the shard flags exist in", () => {
+	const setups = ciWorkflow().steps.filter(
+		(s) => actionOf(s) === "oven-sh/setup-bun",
+	);
+	expect(setups.map((s) => s.job)).toContain("unit");
+	const writtenVersions = [
+		...readFileSync(repoPath(".github/workflows/ci.yml"), "utf8").matchAll(
+			/^\s+bun-version:\s*(\S+)\s*$/gm,
+		),
+	].map((m) => m[1]);
+	expect(writtenVersions).toEqual(setups.map(() => PINNED_BUN));
+});
+
+test("the timings file the shards balance on is one bun reads", () => {
+	const timings = JSON.parse(
+		readFileSync(repoPath("tests/timings.json"), "utf8"),
+	) as { version: number; files: Record<string, number> };
+	expect(timings.version).toBe(1);
+	const durations = Object.entries(timings.files);
+	expect(durations.length).toBeGreaterThan(100);
+	for (const [file, ms] of durations) {
+		expect(file).toMatch(/^tests\/.*\.test\.ts$/);
+		expect(ms).toBeGreaterThan(0);
+	}
 });
 
 /**

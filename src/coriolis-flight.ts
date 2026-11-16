@@ -1,12 +1,19 @@
 /** Default Coriolis: authored exterior with production berths and navigation fittings. */
 import * as THREE from "three";
+import {
+	applyStationKeyLight,
+	exposeStationMaterial,
+	exposeStationMaterials,
+} from "./station-light";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { loadingPanel, loadRequiredModels } from "./model-load-view";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
 import {
 	buildCoriolisNavigation,
 	installCoriolisBuilder,
+	setStationDetail,
 	type StationFixture,
 	stationSilhouetteKm,
 	type StationMesh,
@@ -14,28 +21,92 @@ import {
 import { STATION_GEOMETRY } from "./station";
 import { stationInterior } from "./station-interior";
 import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
-import { EMISSIVE_CEILING } from "./light-rig";
 import { shared, disposeSubtree } from "./gpu-teardown";
-import { CORIOLIS_GLB_URL } from "./model-urls";
+import { CORIOLIS_DETAIL_GLB_URL, CORIOLIS_GLB_URL } from "./model-urls";
 
-export function createIndustrialCoriolisBuilder(template: THREE.Group) {
-	// The display export has brighter lamps than the game's exposure contract.
-	// Normalize once, preserving the authored relative strengths.
+/** Principal ruling: https://github.com/jcfischer/seelite/issues/1142 */
+export const CORIOLIS_PAINT_LIFT = 2.3;
+/** https://github.com/jcfischer/seelite/issues/1219, https://github.com/jcfischer/seelite/issues/1231 */
+export const CORIOLIS_BUMP_SCALE = 0.022;
+
+/** The principal's ruling of 2026-11-09 keeps the prototype's albedo bump on the
+ * authored Coriolis at Porter's scale; three normalises the surface derivatives,
+ * so the figure carries from the authored model's metres into the world units the
+ * station is drawn in. */
+export function applyAlbedoBump(material: THREE.MeshStandardMaterial) {
+	const map = material.map;
+	if (!map) return;
+	if (material.bumpMap === map && material.bumpScale === CORIOLIS_BUMP_SCALE)
+		return;
+	material.bumpMap = map;
+	material.bumpScale = CORIOLIS_BUMP_SCALE;
+	material.needsUpdate = true;
+}
+export function standardMaterials(root: THREE.Object3D) {
 	const materials = new Set<THREE.MeshStandardMaterial>();
-	template.traverse((o) => {
+	root.traverse((o) => {
 		if (o instanceof THREE.Mesh)
 			for (const m of Array.isArray(o.material) ? o.material : [o.material])
 				if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
 	});
-	const divisor = Math.max(
-		1,
-		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
-	);
-	for (const m of materials) m.emissiveIntensity /= divisor;
-	const base =
-		[...materials].find((m) => m.name === "ceramic-steel-0")?.color.clone() ??
-		new THREE.Color(1, 1, 1);
-	// A small palette per requested role colour, retained with the loaded asset.
+	return materials;
+}
+
+export type IndustrialCoriolisBuilder = ((
+	berthSeed: number,
+	color: number,
+) => StationMesh) & {
+	addDetail(detail: THREE.Group): void;
+};
+
+export const DETAIL_RETRY_MS = 10_000;
+
+export function createIndustrialCoriolisBuilder(
+	template: THREE.Group,
+	fetchDetail?: () => Promise<THREE.Group>,
+	now: () => number = () => performance.now(),
+): IndustrialCoriolisBuilder {
+	const materials = standardMaterials(template);
+	const divisor = exposeStationMaterials(materials);
+	for (const m of materials) applyAlbedoBump(m);
+	const byName = new Map([...materials].map((m) => [m.name, m]));
+	const maps = new Map<string, THREE.Texture>();
+	for (const m of materials) if (m.map) maps.set(m.map.name, m.map);
+	let detail: THREE.Group | undefined;
+	let pending = false;
+	let failure: unknown;
+	let retryAt = 0;
+	const requestDetail = () => {
+		if (detail || pending || !fetchDetail || now() < retryAt) return;
+		pending = true;
+		fetchDetail().then(
+			(scene) => {
+				pending = false;
+				failure = undefined;
+				addDetail(scene);
+			},
+			(error) => {
+				pending = false;
+				failure = error;
+				retryAt = now() + DETAIL_RETRY_MS;
+				console.warn("Coriolis scale detail failed to load", error);
+			},
+		);
+	};
+	const live = new Map<StationMesh, THREE.Object3D>();
+	const attach = (mesh: StationMesh, exterior: THREE.Object3D) => {
+		if (!detail) return;
+		for (const part of detail.children) {
+			const copy = part.clone(true);
+			exterior.add(copy);
+			copy.traverse((o) => {
+				if (o.userData.minDetail) mesh.accessories.push(o);
+			});
+		}
+		exterior.updateMatrixWorld(true);
+		setStationDetail(mesh, mesh.detail);
+	};
+	// https://github.com/jcfischer/seelite/issues/1142
 	const palettes = new Map<string, THREE.MeshStandardMaterial>();
 	// One loaded asset for this page, retained across system changes.
 	template.name = "industrial-coriolis-exterior";
@@ -49,10 +120,9 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			}
 		}
 	});
-	return (berthSeed: number, color: number): StationMesh => {
+	const build = (berthSeed: number, _color: number): StationMesh => {
 		const exterior = template.clone(true);
 		exterior.scale.setScalar(0.001);
-		const tint = new THREE.Color(color);
 		exterior.traverse((o) => {
 			if (
 				!(o instanceof THREE.Mesh) ||
@@ -60,16 +130,13 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 				!o.name.startsWith("ceramic-steel-")
 			)
 				return;
-			const key = o.material.uuid + "/" + color;
+			const key = o.material.uuid;
 			let paint = palettes.get(key);
 			if (!paint) {
 				paint = shared(o.material.clone());
-				// Keep panel-to-panel contrast while applying the station role's paint.
-				paint.color.setRGB(
-					(o.material.color.r * tint.r) / base.r,
-					(o.material.color.g * tint.g) / base.g,
-					(o.material.color.b * tint.b) / base.b,
-				);
+				paint.color.multiplyScalar(CORIOLIS_PAINT_LIFT);
+				paint.roughness = Math.max(paint.roughness, 0.82);
+				applyStationKeyLight(paint);
 				palettes.set(key, paint);
 			}
 			o.material = paint;
@@ -108,7 +175,7 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			if (o.name === NAMEPLATE_NAME && o instanceof THREE.Mesh)
 				nameplates.push(o);
 		});
-		return {
+		const mesh: StationMesh = {
 			root,
 			spinner,
 			type: "trade",
@@ -119,9 +186,51 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			accessories,
 			nameplates,
 			greebles: [],
-			dispose: () => disposeSubtree(root),
+			dispose: () => {
+				live.delete(mesh);
+				disposeSubtree(root);
+			},
+			lateDetail: {
+				request: requestDetail,
+				get attached() {
+					return detail !== undefined;
+				},
+				get failure() {
+					return failure;
+				},
+			},
 		};
+		if (detail) attach(mesh, exterior);
+		else live.set(mesh, exterior);
+		return mesh;
 	};
+	const addDetail = (scene: THREE.Group) => {
+		if (detail) return;
+		scene.traverse((o) => {
+			if (!(o instanceof THREE.Mesh)) return;
+			o.castShadow = true;
+			o.receiveShadow = true;
+			shared(o.geometry);
+			const own = o.material as THREE.MeshStandardMaterial;
+			const base = byName.get(own.name);
+			if (base) {
+				o.material = base;
+				return;
+			}
+			exposeStationMaterial(own, divisor);
+			const map = maps.get(own.userData.baseColorMap);
+			if (map) {
+				own.map = map;
+				own.needsUpdate = true;
+			}
+			applyAlbedoBump(own);
+			byName.set(own.name, shared(own));
+		});
+		detail = scene;
+		for (const [mesh, exterior] of live) attach(mesh, exterior);
+		live.clear();
+	};
+	return Object.assign(build, { addDetail });
 }
 
 async function loadIndustrialStationBuilder(
@@ -129,6 +238,7 @@ async function loadIndustrialStationBuilder(
 ) {
 	const gltf = await new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
+		.register(sharedImagePlugin())
 		.loadAsync(CORIOLIS_GLB_URL, onProgress);
 	gltf.scene.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
@@ -136,12 +246,17 @@ async function loadIndustrialStationBuilder(
 			o.receiveShadow = true;
 		}
 	});
-	return createIndustrialCoriolisBuilder(gltf.scene);
+	return createIndustrialCoriolisBuilder(gltf.scene, async () => {
+		const loaded = await new GLTFLoader()
+			.setMeshoptDecoder(MeshoptDecoder)
+			.loadAsync(CORIOLIS_DETAIL_GLB_URL);
+		return loaded.scene;
+	});
 }
 
 let ready: Promise<void> | undefined;
-/** Await before any game, postcard or station workbench constructs station
- * geometry. `onProgress` hears the download this call starts; a call that
+/** Required when the home exterior or postcard frame draws trade/a; otherwise
+ * the session queue installs this behind the procedural stand-in. `onProgress` hears the download this call starts; a call that
  * finds one already started or done hears nothing, and the boot's tracker
  * counts it on resolve (`model-progress.ts`). */
 export function prepareCoriolisModel(
@@ -155,11 +270,8 @@ export function prepareCoriolisModel(
 		}));
 }
 
-/** The asset is required for the world, so an interrupted download gets a
- * visible retry before any Game (or save-store attachment) is constructed.
- * `also` names the page's other required models — a Game's cockpit
- * (`cockpit-model.ts`). The full-screen panel's form of `loadRequiredModels`,
- * for every page whose world waits on nothing else. */
+/** Workbench loading panel. Game and postcard boot select their required
+ * model IDs in main.ts instead of unconditionally requiring a Coriolis. */
 export function prepareCoriolisPage(
 	also: readonly ModelLoader[] = [],
 ): Promise<void> {

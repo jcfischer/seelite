@@ -1,0 +1,36 @@
+{
+	"label": "before-bb2fd345fab3",
+	"gitRef": "no-git",
+	"served": {
+		"root": "/private/var/folders/gx/9yzsmrn92k39n_6y0zxzsyrw0000gq/T/seelite-1073-before-sZ6bqg"
+	},
+	"capturedAt": "2026-10-23T18:12:03.619Z",
+	"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+	"seed": 47,
+	"quality": "default",
+	"selectedViews": [
+		"assembly-approach",
+		"assembly-flank",
+		"assembly-second-layout"
+	],
+	"views": [
+		{
+			"name": "assembly-approach",
+			"file": "before-bb2fd345fab3/assembly-approach.png",
+			"subject": "station-trade",
+			"gameTime": 0.6721000000238417
+		},
+		{
+			"name": "assembly-flank",
+			"file": "before-bb2fd345fab3/assembly-flank.png",
+			"subject": "station-trade",
+			"gameTime": 1.020299999952316
+		},
+		{
+			"name": "assembly-second-layout",
+			"file": "before-bb2fd345fab3/assembly-second-layout.png",
+			"subject": "station-trade",
+			"gameTime": 0.6621000001430509
+		}
+	]
+}

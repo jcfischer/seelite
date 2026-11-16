@@ -1,5 +1,6 @@
 import { type HullId } from "./hull";
 import {
+	boughtModule,
 	legacyModule,
 	moduleRow,
 	LEGACY_MODULES,
@@ -35,6 +36,8 @@ import {
 import {
 	PRICE_DISPLAY_STEP_CR,
 	COMMODITIES,
+	CARGO_COMMODITIES,
+	commodityStockResponse,
 	type Commodity,
 	EQUIPMENT,
 	type Equipment,
@@ -53,6 +56,10 @@ import {
 	stockResponse,
 } from "./market";
 import type { DockPhase } from "./dock-session";
+import {
+	CAPABILITY_SERVICES,
+	type CapabilityService,
+} from "./capability-slots";
 // **Type-only, and it has to stay that way.** `station-commerce.ts` imports
 // `stationEquipmentScreen` from here, so a value import back would be a cycle;
 // a type import is erased at build and cannot be one. `relief-bands.ts` and
@@ -70,7 +77,8 @@ export type StationConsoleTab =
 	| "Market"
 	| "Equipment"
 	| "Shipyard"
-	| "Requests";
+	| "Requests"
+	| "Refinery";
 
 /**
  * Where a dock is, as far as the console is concerned.
@@ -194,6 +202,7 @@ export type MarketRowFn = (
 ) => MarketRow;
 
 export interface StationMarketScreenInput {
+	mining?: boolean;
 	station: MarketStation;
 	/** The system's economy, 0…7. */
 	economy: number;
@@ -254,40 +263,47 @@ export function stationMarketScreen(
 ): readonly ConsoleMarketRow[] {
 	const { station, economy, gameTimeMin, deficitOf, holdT, displayTL, cargo } =
 		input;
-	return COMMODITIES.map((commodity): ConsoleMarketRow => {
-		const held = cargo[commodity.name] ?? 0;
-		// §8.5.1: the test comes first. Asking for a price so the row can be
-		// greyed out throws at every non-fence station in the galaxy.
-		if (!listsCommodity(commodity, station))
-			return { commodity, listed: false, held };
-		const base = row(commodity, economy, station, gameTimeMin);
-		const deficit = deficitOf(commodity.name);
-		const midCr = stockResponse(base.priceCr, deficit, holdT);
-		// **One call, two columns.** The till calls the same function with the same
-		// two arguments, which is the only thing that keeps this screen from being
-		// the #193 defect again: a quote the player reads and a figure the till
-		// charges, drifting apart.
-		const { buyCr, sellCr } = quote(midCr, displayTL);
-		const quantity = shelfQuantity(base.quantity, deficit);
-		if (deficit === 0)
-			return { commodity, listed: true, buyCr, sellCr, quantity, held };
-		return {
-			commodity,
-			listed: true,
-			buyCr,
-			sellCr,
-			quantity,
-			held,
-			// Against *this* epoch's base, which is what `base` is: it was derived
-			// from the station's identity and the clock a line ago rather than
-			// remembered from the last visit. And measured on the column it is drawn
-			// beside, not on the mid before the quote quantized it — an arrow whose
-			// arithmetic starts from a figure the row does not print is a #193 drift
-			// with an arrow on it.
-			priceDeltaCr: buyCr - base.priceCr,
-			quantityDelta: quantity - base.quantity,
-		};
-	});
+	return (input.mining ? CARGO_COMMODITIES : COMMODITIES).map(
+		(commodity): ConsoleMarketRow => {
+			const held = cargo[commodity.name] ?? 0;
+			// §8.5.1: the test comes first. Asking for a price so the row can be
+			// greyed out throws at every non-fence station in the galaxy.
+			if (!listsCommodity(commodity, station))
+				return { commodity, listed: false, held };
+			const base = row(commodity, economy, station, gameTimeMin);
+			const deficit = deficitOf(commodity.name);
+			const midCr = commodityStockResponse(
+				commodity,
+				base.priceCr,
+				deficit,
+				holdT,
+			);
+			// **One call, two columns.** The till calls the same function with the same
+			// two arguments, which is the only thing that keeps this screen from being
+			// the #193 defect again: a quote the player reads and a figure the till
+			// charges, drifting apart.
+			const { buyCr, sellCr } = quote(midCr, displayTL);
+			const quantity = shelfQuantity(base.quantity, deficit);
+			if (deficit === 0)
+				return { commodity, listed: true, buyCr, sellCr, quantity, held };
+			return {
+				commodity,
+				listed: true,
+				buyCr,
+				sellCr,
+				quantity,
+				held,
+				// Against *this* epoch's base, which is what `base` is: it was derived
+				// from the station's identity and the clock a line ago rather than
+				// remembered from the last visit. And measured on the column it is drawn
+				// beside, not on the mid before the quote quantized it — an arrow whose
+				// arithmetic starts from a figure the row does not print is a #193 drift
+				// with an arrow on it.
+				priceDeltaCr: buyCr - base.priceCr,
+				quantityDelta: quantity - base.quantity,
+			};
+		},
+	);
 }
 
 /**
@@ -520,6 +536,8 @@ export function stationEquipmentScreen(input: {
 	 * indistinguishable in a diff. `TOP_RUNGS` is the explicit open gate.
 	 */
 	rungs: Rungs;
+	/** `?mining=1`: each item's `miningScope` sells it too, https://github.com/jcfischer/seelite/issues/1147 */
+	mining?: boolean;
 }): ConsoleEquipmentScreen {
 	const { type, displayTL, rungs } = input;
 	const gated = (entry: ConsoleEquipmentEntry): ConsoleEquipmentEntry => {
@@ -548,7 +566,8 @@ export function stationEquipmentScreen(input: {
 			priceCr: item.priceCr,
 			per: "unit",
 		};
-		if (item.scope === type) available.push(gated(entry));
+		if (item.scope === type || (input.mining && item.miningScope === type))
+			available.push(gated(entry));
 		else unavailable.push({ name: item.name, reason: scopeReason(item.scope) });
 	}
 
@@ -562,7 +581,9 @@ export function stationEquipmentScreen(input: {
 						e.per === "unit"
 							? {
 									...e,
-									priceCr: moduleRow(legacyModule(input.hull!, e.name)).priceCr,
+									priceCr: moduleRow(
+										boughtModule(input.hull!, input.loadout, e.name),
+									).priceCr,
 									repeatable:
 										repeatableEquipment(e.name) &&
 										(!input.loadout ||
@@ -621,6 +642,9 @@ export const entrustedClause = (
 ): string =>
 	entrustedT > 0 ? `${lead}${Number(entrustedT)} t entrusted${tail}` : "";
 
+const serviceDamagedSentence = (service: CapabilityService): string =>
+	`The ${service} service is damaged.`;
+
 /**
  * One sentence per refusal, keyed by the union itself.
  *
@@ -661,6 +685,9 @@ const REFUSAL_SENTENCES: Record<
 	"equipment-locked": () => "Locked — the row names the rung it needs.",
 	"equipment-unavailable": () => "This station does not fit that.",
 	"fuel-full": () => "The tank is full.",
+	"market-damaged": () => serviceDamagedSentence("market"),
+	"equipment-damaged": () => serviceDamagedSentence("equipment"),
+	"exclusive-damaged": () => serviceDamagedSentence("exclusive"),
 	"hull-hold": () =>
 		"Too much would stay aboard for that hold — the entrusted lot and contraband are never sold.",
 	"hull-locked": () => "Locked — the row names the rung it needs.",
@@ -669,6 +696,8 @@ const REFUSAL_SENTENCES: Record<
 	"hull-unavailable": () => "This station does not sell that hull.",
 	"no-reach": () =>
 		"No system is within that hull's tank from here — it could never leave.",
+	"accounting-overflow": () =>
+		"Transaction exceeds the exact accounting limit; nothing changed.",
 	"insufficient-credits": () => "Not enough credits.",
 	"insufficient-shelf": () => "The shelf is short.",
 	"invalid-quantity": () => "That is not a quantity.",
@@ -685,3 +714,22 @@ export const refusalSentence = (
 export const REFUSAL_REASONS = Object.keys(
 	REFUSAL_SENTENCES,
 ) as readonly CommerceRefusal[];
+
+/** Persistent service status remains visible alongside unrelated notices; healed damage refusals expire. */
+export function stationServiceStatus(
+	services: Partial<Record<CapabilityService, boolean>> | undefined,
+	message: string | null,
+) {
+	const damaged = CAPABILITY_SERVICES.filter(
+		(service) => services?.[service] === false,
+	);
+	const healed = CAPABILITY_SERVICES.some(
+		(service) =>
+			message === serviceDamagedSentence(service) &&
+			services?.[service] !== false,
+	);
+	return {
+		notice: damaged.length ? `Damaged service: ${damaged.join(", ")}.` : null,
+		message: healed ? null : message,
+	};
+}

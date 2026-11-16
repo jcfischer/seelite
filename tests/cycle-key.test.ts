@@ -82,11 +82,11 @@ describe("b toggles bloom while the perf panel is open", () => {
 			DEFAULT_BINDINGS,
 			"fight.cycleFireGroup",
 			{ kind: "key", key: "b" },
-			{ kind: "key", key: "5" },
+			{ kind: "key", key: "8" },
 		);
 		for (const perfPanel of [false, true])
 			expect(
-				resolveKey(layout, { key: "5", view: "cockpit", perfPanel }),
+				resolveKey(layout, { key: "8", view: "cockpit", perfPanel }),
 			).toEqual(["fight.cycleFireGroup"]);
 		expect(resolveKey(layout, { key: "b", view: "cockpit" })).toEqual([]);
 	});

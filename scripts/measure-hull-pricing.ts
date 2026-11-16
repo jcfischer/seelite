@@ -98,7 +98,12 @@ import {
 	HULL_TRADE_IN_FRACTION,
 	STARTING_CREDITS,
 } from "../src/station-commerce";
-import { derivedCeiling, m3PerTonneOfHold } from "../tests/helpers/hull-math";
+import {
+	CEILING_REFERENCE,
+	derivedCeiling,
+	rosterCeiling,
+	m3PerTonneOfHold,
+} from "../tests/helpers/hull-math";
 import {
 	CLOSABLE_RATIO,
 	fixedReferenceResponse,
@@ -696,7 +701,8 @@ console.log(
 	// that changed which berth is largest had two places to agree in — and it
 	// printed a rounded quotient beside a floored constant, which reads as drift
 	// the gate cannot see.
-	const { largestType, boxM3, densestHull, m3PerT, holdT } = derivedCeiling();
+	const { largestType, boxM3, m3PerT, holdT } = derivedCeiling();
+	const live = rosterCeiling();
 	const cell = BERTH_CELL[largestType];
 	console.log(
 		`\n  largest berth cell (${largestType}, and every type is checked): ` +
@@ -711,10 +717,14 @@ console.log(
 			`  ${id.padEnd(13)}${rightAlign(finite(id, m3PerTonneOfHold(HULL_SPECS[id])).toFixed(0), 8)}`,
 		);
 	console.log(
-		`\n  the cargo role is the densest at ${m3PerT.toFixed(0)} m3/t (${densestHull}), so the largest`,
+		`\n  the ceiling's reference hold (${CEILING_REFERENCE.source}) is ${finite("reference", m3PerT).toFixed(0)} m3/t, so the largest`,
 		`\n  hold a berth can admit is ${finite("ceiling", holdT)} t — ` +
 			`declared as HULL_CEILING_HOLD_T = ${HULL_CEILING_HOLD_T} t,`,
 		`\n  priced at ${(hullPriceCr(HULL_CEILING_HOLD_T) as number).toLocaleString("en-GB")} Cr.`,
+	);
+	console.log(
+		`\n  the live roster's densest hold is ${live.densestHull} at ${finite("live", live.m3PerT).toFixed(0)} m3/t, which would`,
+		`\n  derive ${finite("live ceiling", live.holdT)} t. Not adopted (node #813): see CEILING_REFERENCE.`,
 	);
 	console.log(
 		"\n  It is an upper bound in the safe direction: it assumes a hull can be a",

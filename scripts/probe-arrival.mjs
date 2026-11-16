@@ -410,5 +410,157 @@ check(
 	`closest was ${behind.closestId} at ${behind.closestRatio.toFixed(6)} × its radius`,
 );
 
+// Node #971: a contact endpoint, flown through the same Game path as stations.
+// A fresh page owns this fixture; a measured page is never navigated (#121).
+const fieldPage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(fieldPage);
+await fieldPage.goto(
+	gameUrl(ORIGIN, { seed: 47, system: 173, raider: "off" }),
+	{ waitUntil: "load" },
+);
+await bootedGame(fieldPage);
+const fieldArrival = await fieldPage.evaluate(async () => {
+	const g = window.__seelite;
+	const { systemFields, fieldRocks, rockPose } = await import(
+		"/src/asteroid-field.ts"
+	);
+	const field = g.selectable().find((c) => c.kind === "field");
+	if (!field) return { missing: true };
+	const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+	g.world.ship.pos = { x: field.pos.x, y: field.pos.y, z: field.pos.z + 2000 };
+	g.world.ship.vel = { ...field.velocity };
+	g.targetId = field.id;
+	g.faceTarget();
+	g.engageCruise();
+	let cruised = false;
+	for (let i = 0; i < 100 / g.units.MAX_DT; i++) {
+		g.faceTarget();
+		g.step(g.units.MAX_DT);
+		g.render(g.units.MAX_DT);
+		if (g.regime === "cruise") cruised = true;
+		if (cruised && g.regime === "normal") break;
+	}
+	const target = g.targetBody();
+	const { record, contents } = g.world.system;
+	const plan = systemFields(record, contents).find((p) => p.id === field.id);
+	const rocks = fieldRocks(record, plan);
+	return {
+		cruised,
+		exit: g.lastExit,
+		rangeKm: distance(g.world.ship.pos, target.pos),
+		dropRadiusKm: g.cruiseParams.dropRadiusKm,
+		rockCount: rocks.length,
+		clearanceKm: Math.min(
+			...rocks.map(
+				(r) =>
+					distance(g.world.ship.pos, rockPose(plan, r, g.world.gameTime).pos) -
+					r.radiusKm,
+			),
+		),
+		body: g.world.system.byId.has(field.id),
+		mass: g.masses().some((m) => m.id === field.id),
+	};
+});
+check(
+	"cruise arrives at a field contact at the drop radius, outside every rock",
+	!fieldArrival.missing &&
+		fieldArrival.cruised &&
+		fieldArrival.exit.startsWith("arrived at field-") &&
+		Math.abs(fieldArrival.rangeKm - fieldArrival.dropRadiusKm) < 0.1 &&
+		fieldArrival.rockCount > 0 &&
+		fieldArrival.clearanceKm > 0 &&
+		!fieldArrival.body &&
+		!fieldArrival.mass,
+	JSON.stringify(fieldArrival),
+);
+
+const rarePage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(rarePage);
+await rarePage.goto(gameUrl(ORIGIN, { seed: 47, system: 10, raider: "off" }), {
+	waitUntil: "load",
+});
+await bootedGame(rarePage);
+const rareHold = await rarePage.evaluate(async () => {
+	const A = await import("/src/asteroid-field.ts");
+	const g = window.__seelite;
+	const draw = g.fields.find((field) => field.plan.profile === "rare");
+	if (!draw) return { missing: true };
+	const centre = A.fieldCentre(draw.plan, g.world.gameTime);
+	const velocity = A.fieldCentreVelocity(draw.plan, g.world.gameTime);
+	const assist = g.assist;
+	g.assist = false;
+	g.setThrottle(0);
+	g.world.ship.pos = { ...centre, z: centre.z + 1001 };
+	g.world.ship.vel = { ...velocity, z: velocity.z - 60 };
+	g.step(g.units.MAX_DT);
+	g.assist = assist;
+	const field = g.selectable().find((c) => c.id === "field-01");
+	if (!field) return { missing: true };
+	const rel = () =>
+		Math.hypot(
+			g.world.ship.vel.x - field.velocity.x,
+			g.world.ship.vel.y - field.velocity.y,
+			g.world.ship.vel.z - field.velocity.z,
+		);
+	const off = () => ({
+		x: g.world.ship.pos.x - field.pos.x,
+		y: g.world.ship.pos.y - field.pos.y,
+		z: g.world.ship.pos.z - field.pos.z,
+	});
+	g.world.ship.pos = { x: field.pos.x, y: field.pos.y, z: field.pos.z + 2000 };
+	g.world.ship.vel = { ...field.velocity };
+	g.targetId = field.id;
+	g.faceTarget();
+	g.engageCruise();
+	let cruised = false;
+	for (let i = 0; i < 100 / g.units.MAX_DT; i++) {
+		g.faceTarget();
+		g.step(g.units.MAX_DT);
+		g.render(g.units.MAX_DT);
+		if (g.regime === "cruise") cruised = true;
+		if (cruised && g.regime === "normal") break;
+	}
+	g.assist = true;
+	g.setThrottle(0);
+	g.selectable();
+	const before = off();
+	for (let i = 0; i < 60 / g.units.MAX_DT; i++) {
+		g.step(g.units.MAX_DT);
+		g.selectable();
+	}
+	g.render(g.units.MAX_DT);
+	const after = off();
+	return {
+		cruised,
+		exit: g.lastExit,
+		label: g.assistFrame().label,
+		relativeKms: rel(),
+		inertialKms: Math.hypot(
+			field.velocity.x,
+			field.velocity.y,
+			field.velocity.z,
+		),
+		driftKm: Math.hypot(
+			after.x - before.x,
+			after.y - before.y,
+			after.z - before.z,
+		),
+	};
+});
+check(
+	"after a drop at a rare field the assist holds station on it for 60 s, in the field's frame",
+	!rareHold.missing &&
+		rareHold.cruised &&
+		rareHold.exit === "arrived at field-01" &&
+		rareHold.label === "FIELD FRAME" &&
+		rareHold.relativeKms < 1e-3 &&
+		rareHold.inertialKms > 5 &&
+		rareHold.driftKm < 6,
+	JSON.stringify(rareHold),
+);
 await browser.close();
 exit();

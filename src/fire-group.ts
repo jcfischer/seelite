@@ -5,7 +5,7 @@ import type { Loadout } from "./loadout";
 export interface FireGroup {
 	readonly label: string;
 	readonly trigger: "primary" | "secondary";
-	readonly kind: "lasers" | "scanner";
+	readonly kind: "lasers" | "scanner" | "drill";
 	readonly slots: readonly string[];
 }
 const LASERS = new Set([
@@ -14,7 +14,17 @@ const LASERS = new Set([
 	"military-laser",
 	"mining-laser",
 ]);
-export function fireGroups(loadout: Loadout, hull: HullId): FireGroup[] {
+/**
+ * The primary groups a loadout arms. `mining` is `?mining=1`: with two or more
+ * Mining Lasers fitted it adds `MINING LASERS` after `ALL LASERS`, and
+ * a cutter hull adds `BUILT-IN DRILL`
+ * (https://github.com/jcfischer/seelite/issues/1147, #920 D-D11).
+ */
+export function fireGroups(
+	loadout: Loadout,
+	hull: HullId,
+	mining = false,
+): FireGroup[] {
 	const slots = HULL_SPECS[hull].slots;
 	const lasers: FireGroup[] = slots
 		.filter((s) => s.kind === "hardpoint" && LASERS.has(loadout[s.key]?.module))
@@ -36,6 +46,16 @@ export function fireGroups(loadout: Loadout, hull: HullId): FireGroup[] {
 					...lasers,
 				]
 			: lasers;
+	const miningLasers = lasers.filter(
+		(g) => loadout[g.slots[0]].module === "mining-laser",
+	);
+	if (mining && miningLasers.length > 1)
+		result.splice(1, 0, {
+			label: "MINING LASERS",
+			trigger: "primary",
+			kind: "lasers",
+			slots: miningLasers.flatMap((g) => g.slots),
+		});
 	const scanners = slots
 		.filter((s) => loadout[s.key]?.module === "identity-scanner")
 		.map((s) => s.key);
@@ -45,6 +65,13 @@ export function fireGroups(loadout: Loadout, hull: HullId): FireGroup[] {
 			trigger: "primary",
 			kind: "scanner",
 			slots: scanners,
+		});
+	if (mining && HULL_SPECS[hull].cutter)
+		result.push({
+			label: "BUILT-IN DRILL",
+			trigger: "primary",
+			kind: "drill",
+			slots: [],
 		});
 	return result;
 }

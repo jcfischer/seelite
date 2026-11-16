@@ -3,7 +3,8 @@
  * sits, and that a plume is the firing table and nothing else.
  */
 
-import { describe, expect, test } from "bun:test";
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { beforeAll, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
@@ -17,6 +18,8 @@ import {
 	ventThroats,
 } from "../src/vent-plumes";
 
+await useShippedInterceptorHull();
+
 const built = new Map<HullId, THREE.Group>();
 const rootOf = (id: HullId) => {
 	let root = built.get(id);
@@ -26,6 +29,10 @@ const rootOf = (id: HullId) => {
 	}
 	return root;
 };
+
+beforeAll(() => {
+	for (const id of HULL_IDS) rootOf(id);
+}, 60_000);
 
 describe("every throat is the vent the table names", () => {
 	test("a vent drawn off its table position is moved along its own line of action", () => {
@@ -49,7 +56,7 @@ describe("every throat is the vent the table names", () => {
 				expect(Number.isFinite(throat.at.length())).toBe(true);
 			}
 		}
-	});
+	}, 60_000);
 
 	test("every slot has a throat, and the main drive one per bell", () => {
 		for (const id of HULL_IDS) {
@@ -91,7 +98,10 @@ describe("every throat is the vent the table names", () => {
 		// Every line meets metal since #636 (`tests/vent-placement.test.ts`
 		// holds that), so the row has subjects.
 		expect(met).toBeGreaterThan(50);
-	});
+		// Raycasts every throat through every hull's whole mesh, the authored
+		// ones (543k triangles for the voyager, node #820) included: seconds,
+		// so past bun's 5 s default under a loaded machine.
+	}, 60_000);
 });
 
 describe("a plume is the firing table and nothing else", () => {
@@ -181,4 +191,32 @@ describe("a puff leaves its throat and thins", () => {
 		for (let i = 1; i < ages.length; i++)
 			expect(ages[i] - ages[i - 1]).toBeCloseTo(1 / PLUME_PARTICLES, 9);
 	});
+});
+
+describe("a plume is sized by its nozzle, not by its hull's length (node #1094)", () => {
+	test("the miner's main plume is shorter than a sixth of its hull, and no hull's passes half", () => {
+		for (const id of HULL_IDS) {
+			const lengthKm = HULL_SPECS[id].env.lengthKm;
+			const main = ventThroats(rootOf(id), id).filter(
+				(t) => t.family === "main",
+			);
+			expect(main.length).toBeGreaterThan(0);
+			for (const t of main)
+				expect([id, t.reachKm < lengthKm / 2]).toEqual([id, true]);
+			if (id === "miner")
+				for (const t of main) expect(t.reachKm).toBeLessThan(lengthKm / 6);
+		}
+	}, 60_000);
+
+	test("an attitude puff is shorter than its hull's main plume", () => {
+		for (const id of HULL_IDS) {
+			const throats = ventThroats(rootOf(id), id);
+			const main = Math.min(
+				...throats.filter((t) => t.family === "main").map((t) => t.reachKm),
+			);
+			for (const t of throats)
+				if (t.family !== "main")
+					expect([id, t.slot, t.reachKm < main]).toEqual([id, t.slot, true]);
+		}
+	}, 60_000);
 });

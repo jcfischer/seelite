@@ -78,7 +78,7 @@ describe("the recipe's constants agree with the modules that own them", () => {
 	test("a new recipe names the current generator, and 9 is still read", () => {
 		// Node #731's 10 added only undrawn derelict slots, so a version 9 view
 		// rebuilds as taken; the build that draws a wreck removes 9.
-		expect(POSTCARD_GENERATORS).toEqual([WORLD_GENERATOR_VERSION, 9]);
+		expect(POSTCARD_GENERATORS).toEqual([WORLD_GENERATOR_VERSION, 10, 9]);
 	});
 });
 
@@ -145,6 +145,17 @@ describe("round trip", () => {
 		// The geometry did change before 9, so those stay refused.
 		for (const gen of [6, 7, 8])
 			expect(decodePostcard(withPair("gen", String(gen))).ok).toBe(false);
+	});
+
+	test("the unchanged generator-9 and generator-10 scenes retain their own recipe bytes", () => {
+		for (const gen of [9, 10]) {
+			const text = withPair("gen", String(gen));
+			const decoded = decodePostcard(text);
+			expect(decoded.ok).toBe(true);
+			if (!decoded.ok) throw new Error(decoded.reason);
+			expect(decoded.recipe.generator).toBe(gen);
+			expect(encodePostcard(decoded.recipe)).toBe(text);
+		}
 	});
 });
 

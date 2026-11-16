@@ -32,3 +32,34 @@ Create one new 16:10 high-fidelity realistic in-engine exterior screenshot of th
 `adapt_cockpit.py` retains the original seat, dashboard, four screen faces, console housings, switches and materials. It removes the original surrounding canopy/floor, label quads and micro-detail, preserving complete mesh components and UVs. The selected source geometry goes from 36,876 to 13,690 triangles (about 63% reduction). It rotates from cockpit -Z forward to hull +Z forward, narrows equipment to fit the canopy, and aligns the original chair with the seated pilot. `cockpit-adaptation.json` records rebuild results.
 
 `cockpit-instruments.ts` preserves the source viewer's static four-screen fixture renderer. Screen content is applied by the viewer; it is not baked into the exported GLB and is not live game state. The original cockpit wear texture remains packed in the exported model.
+
+## Derived exterior normal (node #1232)
+
+`src/models/courier-steel-wear-normal.webp` comes from image 0 of the shipping
+`src/models/courier-hull.glb`, the painted `steel-wear` tile above. All textured
+exterior materials use that image; the cockpit's separate image is excluded.
+The GLB is unchanged (SHA-256
+`6967208f3169dcb900f24e6164ac09023db5d6b6ee5495a92b157ce20c310c30`).
+
+Reproduce from the repository root:
+
+```sh
+bun scripts/derive-material-maps.ts --out /tmp/seelite-courier-height
+```
+
+The tool converts sRGB channels to linear light and takes luma with weights
+0.2126, 0.7152, 0.0722. It subtracts a radius-24 wrapped blur, then applies a
+radius-1 wrapped blur; each is three separable box passes with Float32 working
+buffers. It divides by three times RMS, takes wrapped central differences
+`dx = v(x+1)-v(x-1)` and `dy = v(y+1)-v(y-1)`, and encodes the unit vector
+`(-2.5*dx, 2.5*dy, 1)`. A flat input yields `(128, 128, 255)`.
+Sharp's default resize halves 1254×1254 to 627×627; WebP quality is 88.
+The result is 210,796 bytes, matching the prototype's recorded size; SHA-256
+`fb9a8c979e8cdf3d99287c89a902fc165941d364615c87ae75659f3a71ca9f3e`.
+
+The full-size height PNG encodes `0.5 + v/2` in the specified output directory.
+It is tool output only, excluded from commits and the bundle. The tool produces
+no roughness map. The browser uses the normal only on the courier exterior,
+at scale `(0.15, -0.15)` on both quality settings, with no bump or roughness map.
+Production verification and pending appearance approval are recorded in
+`docs/receipts/node-1232-courier-normal.md`.

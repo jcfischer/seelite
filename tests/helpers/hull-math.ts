@@ -32,7 +32,7 @@ export const hullBoxM3 = (env: HullEnvelope): number =>
 	env.lengthKm * env.beamKm * env.heightKm * 1e9;
 
 /** Cubic metres of bounding box per tonne of hold — the density §7.2's ceiling
- *  is derived from, and the one figure on which a role differs by 4.7x. */
+ *  is derived from, and the one figure on which a role differs by 7.1x. */
 export const m3PerTonneOfHold = (spec: HullSpec): number =>
 	hullBoxM3(spec.env) / spec.holdT;
 
@@ -57,10 +57,46 @@ export const stretchedToHold = (
 });
 
 /**
- * §7.2's ceiling, derived from the shipped tables rather than declared.
+ * The hold density §7.2's ceiling was ratified against (#182), recorded here
+ * rather than read off the live roster — node #813.
  *
- * One body for the same reason the two above exist: the max-over-types step and
- * the min-over-hulls step were written out in `tests/hull.test.ts` *and* in
+ * Until then the densest hold was the procedural Porter's: its 69.7 x 46.3 x
+ * 19.7 m box carrying 60 t, 1,060 m³ a tonne, which with the trade berth gives
+ * 197 t. The authored O2 Porter that replaced it carries the same 60 t in a box
+ * a third smaller, 698 m³ a tonne, and the same derivation on it gives 299 t —
+ * a ceiling under which the dreadnought (200 t) and the voyager (240 t) would
+ * take a price, which reverses #56's "the capitals have no price, and it is the
+ * ceiling that says so". Whether to adopt it is an economy decision, not a
+ * hull integration's, so the derivation keeps its input and `rosterCeiling`
+ * below prints what the live roster would make of it. `tests/hull.test.ts`
+ * holds both figures exactly.
+ */
+export const CEILING_REFERENCE = {
+	hull: "freighter",
+	source: "procedural Porter (freighter/b) before node #813",
+	env: { lengthKm: 0.0697, beamKm: 0.0463, heightKm: 0.0197 },
+	holdT: 60,
+} as const satisfies {
+	hull: HullId;
+	source: string;
+	env: HullEnvelope;
+	holdT: number;
+};
+
+/** The largest berth cell in the game, and every type is checked. */
+const largestBerth = (): { largestType: StationType; boxM3: number } => {
+	const largestType = STATION_TYPES.reduce((best, type) =>
+		hullBoxM3(BERTH_CELL[type]) > hullBoxM3(BERTH_CELL[best]) ? type : best,
+	);
+	return { largestType, boxM3: hullBoxM3(BERTH_CELL[largestType]) };
+};
+
+/**
+ * §7.2's ceiling, derived from the berth catalogue and `CEILING_REFERENCE`
+ * rather than declared.
+ *
+ * One body for the same reason the two above exist: the max-over-types step
+ * was written out in `tests/hull.test.ts` *and* in
  * `scripts/measure-hull-pricing.ts` section G, so a retune that changed which
  * station type has the largest berth had two places to agree in. The gate
  * asserts `HULL_CEILING_HOLD_T === holdT` and the instrument prints this same
@@ -72,25 +108,30 @@ export const stretchedToHold = (
 export const derivedCeiling = (): {
 	largestType: StationType;
 	boxM3: number;
+	m3PerT: number;
+	holdT: number;
+} => {
+	const { largestType, boxM3 } = largestBerth();
+	const m3PerT = hullBoxM3(CEILING_REFERENCE.env) / CEILING_REFERENCE.holdT;
+	return { largestType, boxM3, m3PerT, holdT: Math.floor(boxM3 / m3PerT) };
+};
+
+/**
+ * The same derivation on the live roster's densest hold: the ceiling
+ * `HULL_CEILING_HOLD_T` would be if `CEILING_REFERENCE` followed the shipped
+ * hulls. A tripwire, not a gate — see `CEILING_REFERENCE`.
+ */
+export const rosterCeiling = (): {
 	densestHull: HullId;
 	m3PerT: number;
 	holdT: number;
 } => {
-	const largestType = STATION_TYPES.reduce((best, type) =>
-		hullBoxM3(BERTH_CELL[type]) > hullBoxM3(BERTH_CELL[best]) ? type : best,
-	);
-	const boxM3 = hullBoxM3(BERTH_CELL[largestType]);
+	const { boxM3 } = largestBerth();
 	const densestHull = PURCHASABLE_HULL_IDS.reduce((best, id) =>
 		m3PerTonneOfHold(HULL_SPECS[id]) < m3PerTonneOfHold(HULL_SPECS[best])
 			? id
 			: best,
 	);
 	const m3PerT = m3PerTonneOfHold(HULL_SPECS[densestHull]);
-	return {
-		largestType,
-		boxM3,
-		densestHull,
-		m3PerT,
-		holdT: Math.floor(boxM3 / m3PerT),
-	};
+	return { densestHull, m3PerT, holdT: Math.floor(boxM3 / m3PerT) };
 };

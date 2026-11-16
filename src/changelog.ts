@@ -28,6 +28,123 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	{
+		date: "2026-11-14",
+		text: "The Warden, Shiv, Sluice, Bastion and Rampart fly their authored hulls, with turning habitats on the two capitals.",
+		node: 1035,
+	},
+	{
+		date: "2026-11-13",
+		text: "Commodity trading rank now reflects profit after purchase and processing costs, with unrecovered costs carried forward.",
+		node: 1192,
+	},
+	// https://github.com/jcfischer/seelite/issues/1229
+	{
+		date: "2026-11-12",
+		text: "The Longwall's drill camera shows a live view of the drill.",
+		node: 1229,
+	},
+	// https://github.com/jcfischer/seelite/issues/1198
+	{
+		date: "2026-11-09",
+		text: "The Longwall has its own two-seat bridge.",
+		node: 1198,
+	},
+	// https://github.com/jcfischer/seelite/issues/1043 — sentence approved by the principal, 2026-11-07.
+	{
+		date: "2026-11-09",
+		text: "Asteroid fields spread into irregular clusters and gaps.",
+		node: 1209,
+	},
+	{
+		date: "2026-11-07",
+		text: "Rare asteroid fields appear on your instruments once you fly within 1,000 km of their centres, with regional Long-Range Scanner leads helping you find them.",
+		node: 1191,
+	},
+	// https://github.com/jcfischer/seelite/issues/1152 — sentence approved by the principal, 2026-11-06.
+	{
+		date: "2026-11-06",
+		text: "Drum stations show more detail, and plate seams on Ring, Drum and Wheel stations stay closed.",
+		node: 1152,
+	},
+	// https://github.com/jcfischer/seelite/issues/1155 — sentence approved by the principal, 2026-11-02.
+	{
+		date: "2026-11-02",
+		text: "Choose a normal or wide cockpit view, with your choice remembered between flights.",
+		node: 1155,
+	},
+	// https://github.com/jcfischer/seelite/issues/1142 — sentence approved by the principal, 2026-10-30.
+	{
+		date: "2026-10-30",
+		text: "Coriolis stations show more details.",
+		node: 1142,
+	},
+	// https://github.com/jcfischer/seelite/issues/1151 — sentence approved by the principal, 2026-10-30.
+	{
+		date: "2026-10-30",
+		text: "Cockpit text now draws on the cabin’s screens, not over the windscreen.",
+		node: 1151,
+	},
+	// https://github.com/jcfischer/seelite/issues/969 — sentence approved by the principal, 2026-10-27.
+	{
+		date: "2026-10-27",
+		text: "Asteroids are solid: you can crash into a rock, or come to rest against it.",
+		node: 969,
+	},
+	// https://github.com/jcfischer/seelite/issues/1034 — sentence approved by the principal, 2026-10-26.
+	{
+		date: "2026-10-26",
+		text: "New 3d model: The Interceptor.",
+		node: 1034,
+	},
+	// https://github.com/jcfischer/seelite/issues/1073 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-23",
+		text: "Assembly trade stations keep their seeded layouts, now built from detailed habitat, truss and service modules around a rotating docking hub.",
+		node: 1073,
+	},
+	// https://github.com/jcfischer/seelite/issues/875 — proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-22",
+		text: "Salvaged modules can carry a special trait with a tradeoff, and armed ships fight with varied fittings you can recover from their wreckage.",
+		node: 875,
+	},
+	// https://github.com/jcfischer/seelite/issues/1033 — proposed copy; principal approval required before merge.
+	{
+		date: "2026-10-20",
+		text: "Ring, Drum and Wheel trade stations have authored exteriors, with docking bays inside their hubs.",
+		node: 1033,
+	},
+	// Node #968: sentence approved by the principal, 2026-10-19.
+	{
+		date: "2026-10-19",
+		text: "Asteroid fields are drawn: every system with one shows its rocks, drifting and turning, and a field far away reads as a scatter of points.",
+		node: 968,
+	},
+	// Node #1031: sentence approved by the principal, 2026-10-19.
+	{
+		date: "2026-10-19",
+		text: "The Salvage outposts have a new exterior: a freighter section welded to cargo pods, a ship's bow and a dish, round a landing deck lit by work lamps.",
+		node: 1031,
+	},
+	// Node #748: proposed sentence for the principal's approval before merge.
+	{
+		date: "2026-10-18",
+		text: "The twin-rim Wheel joins the trade stations you can dock at across the galaxy.",
+		node: 748,
+	},
+	// Node #971: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-17",
+		text: "You can target asteroid fields and cruise to a safe distance from their centre.",
+		node: 971,
+	},
+	// Node #747: proposed sentence for the principal's approval before merge.
+	{
+		date: "2026-10-16",
+		text: "Trade stations now vary between systems: dock at a Coriolis, Ring, Drum or modular Assembly.",
+		node: 747,
+	},
 	// Node #977: sentence approved by the principal, 2026-10-14.
 	{
 		date: "2026-10-14",

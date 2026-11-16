@@ -1,0 +1,67 @@
+{
+  "recordedAt": "2026-10-31T11:47:13.228Z",
+  "reviewedParent": "f1463396137282e73189618296576ec305d865a3",
+  "sourceSha256": {
+    "src/trade-flight.ts": "f62aaedb87b3c1559d2ccf04ce4ffb06c718982022455ea0e7a872db91705997",
+    "src/station-light.ts": "70047590328ab192c9f7acf0d48891fa200864598533cc4710f879068d022b05",
+    "src/coriolis-flight.ts": "585b7c5243e8391aa811f403ce4cd50e40856cd938070e7790e56d3663e7368c",
+    "src/assembly-flight.ts": "6f11997165fd946c3d5fdfe83553aa7c4e7778d7b35221b60198b1e0be8fc8c4",
+    "src/model-urls.ts": "0cbba31bc51fd659786f20ac5def8c8e5c28ed8bf3b31bd4f5d41a8628274ddb"
+  },
+  "fullUnitRun": {
+    "command": "npm test",
+    "exitCode": 0,
+    "passes": 7316,
+    "failures": 0,
+    "files": 446,
+    "elapsedSeconds": 874.4,
+    "fullLogSha256": "4d27754a7cb604ddb2f7c1bfd8098326d1ce4f110caa2013cb680b53f29d3de9",
+    "summary": "review1-unit-summary.txt",
+    "runsInThisFixPass": 1
+  },
+  "affectedTests": {
+    "requiredTradeProxyFiles": 84,
+    "ringCoriolisAssemblyModelUrls": 31,
+    "failures": 0,
+    "regressions": "review1-regressions.txt"
+  },
+  "browser": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "finalRun": {
+      "stationVisuals": {
+        "checks": 92,
+        "exitCode": 0,
+        "log": "review1-probe-station-visuals.txt"
+      },
+      "lightRig": {
+        "checks": 12,
+        "exitCode": 0,
+        "log": "review1-probe-light-rig.txt"
+      }
+    },
+    "earlierAttempts": [
+      "Sandboxed Chromium startup abort before any browser assertions",
+      "Host station-visuals timed out on final Wheel boot at probe-station-visuals.mjs:811",
+      "Host isolated station-visuals timed out on a viewport boot at probe-station-visuals.mjs:505"
+    ],
+    "baseComparison": {
+      "commit": "ec561ec59834003da9e3a2164c440e82400dd9df",
+      "stationVisuals": 92,
+      "lightRig": 12,
+      "exitCode": 0
+    },
+    "scope": "Affected coverage only; supervisor owns final selected PR gate. No timing claim is made for these functional checks."
+  },
+  "retainedEvidenceSha256": {
+    "review1-probe-station-visuals.txt": "2db5f85ca9bb612816c769a784eb5df88cb9a76df9b30add521dadb6f0b5fb47",
+    "review1-probe-light-rig.txt": "21bd42eb7907e93814bb962ee6762fd1a791df7d5f799cc65f8b2a788166b58f",
+    "review1-probe-station-visuals-first-timeout.txt": "d0bedec4df7889d79c1dc72fb7106db67fe54df826c65888d368c04dac389cf1",
+    "review1-probe-station-visuals-second-timeout.txt": "c489231c764613d7707d0c50cea83d8cf53a24332199eb034ae1092f59e1c07b"
+  },
+  "notes": [
+    "The original verification.json and cost.json describe the reviewed combined-file implementation, not this split loading path.",
+    "The boot timeouts did not reproduce in the final isolated branch run; no threshold changed.",
+    "Source and tests stayed unchanged during the full host test run.",
+    "All three regenerated packed proxy hulls are byte-identical to the reviewed parent; only the Ring source fingerprint changed."
+  ]
+}

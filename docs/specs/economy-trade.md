@@ -1611,6 +1611,20 @@ re-derives it from the berth catalogue, then pins it from both sides: a hull
 stretched to 197 t at the cargo role's density fits a trade berth and one at
 198 t does not.
 
+**The density is a recorded reference since node #813, and the live roster
+disagrees with it.** The 1,059.6 m³ a tonne is the procedural Porter's 69.7 ×
+46.3 × 19.7 m box carrying 60 t. The authored O2 Porter that replaced it carries
+the same 60 t in a 67.2 × 42.4 × 14.7 m box, **698 m³ a tonne**, and the same
+derivation on that gives **299 t** — a ceiling under which the dreadnought
+(200 t) and the voyager (240 t) would take a price, against "the capitals have
+no price, and it is the ceiling that says so". Adopting it is an economy
+decision, not a hull integration's, so the ceiling keeps the hold it was
+ratified against: `CEILING_REFERENCE` in `tests/helpers/hull-math.ts` records
+that box, `derivedCeiling` reads it, and `rosterCeiling` derives the live
+figure, which `tests/hull.test.ts` holds exactly at 299 t so the divergence is
+a red row the day either side moves. `scripts/measure-hull-pricing.ts` section G
+prints both.
+
 **The rung count is an output.** The priced roster's own adjacent price steps are
 1.50×, 1.67×, 1.20×, 1.25×, 1.33×, 1.50× — a typical (median) step of **1.42×**
 and a widest of **1.67×**. A gap is an interval wider than **one typical step

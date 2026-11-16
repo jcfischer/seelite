@@ -1,0 +1,131 @@
+/** Bundle models, one loader per install. Only the cockpit is always needed
+ * at boot; every other loader stays lazy. */
+import { prepareCockpitModel } from "./cockpit-model";
+import type { ModelLoader } from "./model-progress";
+import type { HullId } from "./hull";
+import { OUTPOST_FORM } from "./station";
+import type { AuthoredTradeForm } from "./station-mesh";
+
+const tradeLoader =
+	(form: AuthoredTradeForm): ModelLoader =>
+	async (p) =>
+		(await import("./trade-flight")).prepareTradeModel(form, p);
+
+export const modelLoaders = {
+	// Main also imports cockpit-model statically. A dynamic import here can
+	// become an import of main's own unfinished top-level await in the bundle.
+	// Importing the function does not fetch the GLB; calling it still does.
+	cockpit: prepareCockpitModel,
+	"cockpit/miner": (p?: Parameters<ModelLoader>[0]) =>
+		prepareCockpitModel(p, "miner"),
+	coriolis: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./coriolis-flight")).prepareCoriolisModel(p),
+	"trade/b": tradeLoader("b"),
+	"trade/c": tradeLoader("c"),
+	"trade/d": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./assembly-flight")).prepareAssemblyModel(p),
+	"trade/e": tradeLoader("e"),
+	courier: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./courier-hull")).prepareCourierHullModel(p),
+	tug: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./tug-hull")).prepareTugHullModel(p),
+	voyager: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./voyager-hull")).prepareVoyagerHullModel(p),
+	interceptor: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./interceptor-hull")).prepareInterceptorHullModel(p),
+	patrol: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareWardenHullModel(p),
+	raider: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareShivHullModel(p),
+	carrier: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareBastionHullModel(p),
+	prospector: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareSluiceHullModel(p),
+	dreadnought: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./seven-ships-hulls")).prepareRampartHullModel(p),
+	miner: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./longwall-model")).prepareLongwallModel(p, {
+			posableStruts:
+				new URLSearchParams(globalThis.location?.search ?? "").get("mining") ===
+				"1",
+		}),
+	freighter: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./porter-model")).preparePorterModel(p),
+	interiors: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./interior-model")).prepareInteriorModel(p),
+	// The authored field rocks (node #968): points until it installs, plain
+	// procedural rocks if it fails.
+	asteroids: async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./asteroid-model")).prepareAsteroidModel(p),
+	"shipyard/a": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./shipyard-flight")).prepareShipyardModel("a", p),
+	"shipyard/b": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./shipyard-flight")).prepareShipyardModel("b", p),
+	"shipyard/c": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./shipyard-flight")).prepareShipyardModel("c", p),
+	"refinery/a": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./refinery-flight")).prepareRefineryModel("a", p),
+	"refinery/b": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./refinery-flight")).prepareRefineryModel("b", p),
+	"refinery/c": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./refinery-flight")).prepareRefineryModel("c", p),
+	"refinery/d": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./refinery-flight")).prepareRefineryModel("d", p),
+	"outpost/a": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("a", p),
+	"outpost/b": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("b", p),
+	"outpost/c": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("c", p),
+	"outpost/d": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("d", p),
+	"outpost/e": async (p?: Parameters<ModelLoader>[0]) =>
+		(await import("./outpost-flight")).prepareOutpostModel("e", p),
+} satisfies Record<string, ModelLoader>;
+export type ModelId = keyof typeof modelLoaders;
+export const ALL_MODELS = Object.keys(modelLoaders) as ModelId[];
+/** Only the pilot flying the hull needs its cabin, so the session sweep leaves it out, https://github.com/jcfischer/seelite/issues/1198 */
+export const ON_DEMAND_MODELS: ReadonlySet<string> = new Set<ModelId>([
+	"cockpit/miner",
+]);
+export const AUTHORED_HULL_MODELS = [
+	"courier",
+	"tug",
+	"miner",
+	"freighter",
+	"voyager",
+	"interceptor",
+	"patrol",
+	"raider",
+	"carrier",
+	"prospector",
+	"dreadnought",
+] as const satisfies readonly (HullId & ModelId)[];
+export type AuthoredHullModelId = (typeof AUTHORED_HULL_MODELS)[number];
+export const isAuthoredHullModel = (id: unknown): id is AuthoredHullModelId =>
+	(AUTHORED_HULL_MODELS as readonly unknown[]).includes(id);
+export const SHIPYARD_MODELS = ALL_MODELS.filter((id) =>
+	id.startsWith("shipyard/"),
+);
+export const REFINERY_MODELS = ALL_MODELS.filter((id) =>
+	id.startsWith("refinery/"),
+);
+/**
+ * The outpost models a running game sweeps in after boot: the form a world
+ * draws, the Salvage (`OUTPOST_FORM`). The Derrick, Buoy, Rig and Cluster
+ * (node #1032) are in the catalog, so a station of one installs through the
+ * same queue and the workbench draws them, but no world draws one yet (#460),
+ * so no player downloads them.
+ */
+export const OUTPOST_MODELS = ALL_MODELS.filter(
+	(id) => id === `outpost/${OUTPOST_FORM}`,
+);
+
+export function stationModel(station: {
+	type: string;
+	formId: string;
+}): ModelId | null {
+	const id = `${station.type}/${station.formId}`;
+	if (station.type === "trade" && station.formId === "a") return "coriolis";
+	return id in modelLoaders ? (id as ModelId) : null;
+}

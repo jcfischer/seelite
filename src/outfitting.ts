@@ -28,6 +28,7 @@ import {
 } from "./station-commerce";
 import type { ModuleKind } from "./module-catalog";
 import { marketEpoch } from "./market";
+import { fittedEcm } from "./missiles";
 
 export const MODULE_LABELS: Record<ModuleKind, string> = {
 	"pulse-laser": "Pulse laser",
@@ -41,6 +42,7 @@ export const MODULE_LABELS: Record<ModuleKind, string> = {
 	"escape-pod": "Escape pod",
 	"shield-booster": "Shield booster",
 	"fuel-scoop": "Fuel scoop",
+	"cargo-scoop": "Cargo scoop",
 	"long-range-scanner": "Long-range scanner",
 	"extra-energy-unit": "Extra energy unit",
 	"cargo-rack": "Cargo rack",
@@ -49,18 +51,23 @@ export const MODULE_LABELS: Record<ModuleKind, string> = {
 	"power-plant": "Power plant",
 };
 export const moduleLabel = (m: FittedModule): string =>
-	`${MODULE_LABELS[m.module]} · ${m.size}${m.grade}`;
+	`${MODULE_LABELS[m.module]} · ${m.size}${m.grade}${m.variant ? ` · ${m.variant}` : ""}`;
 
 /**
  * What the fitted ship does, as the Equipment tab compares it: one field per
- * effect a game system reads. A module whose figure no system reads (an
- * E.C.M.'s radius) has no field, because a printed change would promise what
+ * effect a game system reads. A module whose figure no system reads has no
+ * field, because a printed change would promise what
  * the game does not do (`tests/outfit-deltas.test.ts`). A docking computer
  * has none either: its grades differ in price and mass alone (#977).
  */
-export function fitReadout(commander: CommanderState, entrustedT: number) {
+export function fitReadout(
+	commander: CommanderState,
+	entrustedT: number,
+	mining = false,
+) {
 	const ship = { hull: commander.hull, loadout: commander.loadout };
 	const capacity = fittedCapacity(commander.hull, commander.loadout);
+	const ecm = fittedEcm(commander.loadout);
 	return {
 		accel: flightPerformance(
 			commander.hull,
@@ -72,7 +79,20 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 		bankE: capacity.bankE,
 		regenPerS: capacity.regenPerS,
 		dps: fittedDps(ship),
+		extractionTPerS: mining
+			? Object.values(commander.loadout).reduce(
+					(rate, m) =>
+						rate +
+						(m.module === "mining-laser"
+							? moduleRow(m).output.extractionTPerS
+							: 0),
+					0,
+				)
+			: 0,
 		missiles: capacity.missiles,
+		ecmRadiusKm: ecm.radiusKm,
+		ecmCooldownS: ecm.cooldownS,
+		ecmDrawPerS: ecm.drawPerS,
 		holdT: commanderHold(commander, entrustedT).capacityT,
 		// Two readers: a fitted tank raises the tank, never the jump (#926).
 		fuelCapacityLy: commanderFuelCapacityLy(commander),
@@ -82,6 +102,8 @@ export function fitReadout(commander: CommanderState, entrustedT: number) {
 		scanRangeKm: capacity.scanRangeKm,
 		scanChargeS: capacity.scanChargeS,
 		signalRangeKm: capacity.signalRangeKm,
+		scoopRadiusKm: capacity.scoopRadiusKm,
+		scoopSpeedKms: capacity.scoopSpeedKms,
 		podCargoPct: capacity.podCargoShare * 100,
 		podCapsuleT: capacity.podCapsuleT,
 		podCarriedModules: capacity.podCarriedModules,
@@ -108,7 +130,11 @@ const FIT_DELTA_ROWS: readonly {
 	{ key: "bankE", label: "BANK", unit: "E", digits: 1 },
 	{ key: "regenPerS", label: "REGEN", unit: "E/s", digits: 1 },
 	{ key: "dps", label: "DPS", unit: "/s", digits: 1 },
+	{ key: "extractionTPerS", label: "EXTRACTION", unit: "t/s", digits: 4 },
 	{ key: "missiles", label: "MISSILES", unit: "", digits: 0 },
+	{ key: "ecmRadiusKm", label: "ECM RADIUS", unit: "km", digits: 2 },
+	{ key: "ecmCooldownS", label: "ECM COOLDOWN", unit: "s", digits: 2 },
+	{ key: "ecmDrawPerS", label: "ECM DRAW", unit: "E/s", digits: 1 },
 	{ key: "holdT", label: "HOLD", unit: "t", digits: 0 },
 	{ key: "fuelCapacityLy", label: "TANK", unit: "LY", digits: 1 },
 	{ key: "jump", label: "JUMP", unit: "LY", digits: 1 },
@@ -122,6 +148,8 @@ const FIT_DELTA_ROWS: readonly {
 		noneAtZero: true,
 	},
 	{ key: "signalRangeKm", label: "SIGNAL RANGE", unit: "km", digits: 0 },
+	{ key: "scoopRadiusKm", label: "PICKUP RADIUS", unit: "km", digits: 3 },
+	{ key: "scoopSpeedKms", label: "PICKUP SPEED", unit: "km/s", digits: 3 },
 	{ key: "podCargoPct", label: "POD CARGO", unit: "%", digits: 0 },
 	{ key: "podCapsuleT", label: "POD CAPSULE", unit: "t", digits: 0 },
 	{ key: "podCarriedModules", label: "POD MODULES", unit: "", digits: 0 },
@@ -250,6 +278,7 @@ export function outfittingScreen(
 				rungs: TOP_RUNGS,
 				commander: {
 					...input.commander,
+					accounting: undefined,
 					credits: Math.max(input.commander.credits, candidate!.row.priceCr),
 				},
 				action,
@@ -271,9 +300,9 @@ export function outfittingScreen(
 		candidate: candidate ?? null,
 		action,
 		offer,
-		before: fitReadout(input.commander, input.entrustedT),
+		before: fitReadout(input.commander, input.entrustedT, input.mining),
 		after: hypothetical?.accepted
-			? fitReadout(hypothetical.commander, input.entrustedT)
+			? fitReadout(hypothetical.commander, input.entrustedT, input.mining)
 			: null,
 		moved:
 			candidate && input.commander.loadout[slot]

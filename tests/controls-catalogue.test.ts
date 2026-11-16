@@ -223,6 +223,9 @@ describe("the catalogue is complete against the source", () => {
 			"fight.faceTarget": "this.beginFaceTurn()",
 			// #892 binds it; #893 gives the method its body.
 			"fight.cycleFireGroup": "this.cycleFireGroup()",
+			"fight.drillHold": "this.toggleDrillHold()",
+			"fight.launchMissile": "this.fireMissile()",
+			"fight.ecm": "this.fireEcm()",
 			"fight.rigIncoming": 'this.combatRig?.command("fight.rigIncoming")',
 			"fight.rigEcm": 'this.combatRig?.command("fight.rigEcm")',
 			"dock.clearance": "this.requestDockingClearance()",
@@ -231,6 +234,7 @@ describe("the catalogue is complete against the source", () => {
 			"view.headPort": 'this.setHeadLook("left")',
 			"view.headForward": 'this.setHeadLook("forward")',
 			"view.headStarboard": 'this.setHeadLook("right")',
+			"view.seatSwap": "this.setMinerSeat(",
 			"view.orbitCentre": "this.chaseOrbit = ORBIT_ASTERN",
 			"view.photo": "this.togglePhotoMode()",
 			// #381 S4: the settings screen's open key is the registry's now, not
@@ -241,6 +245,8 @@ describe("the catalogue is complete against the source", () => {
 			"system.postcard": "this.openPostcardWithModels()",
 			"view.reference": "controlsKeyMove(",
 			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
+			"view.fov":
+				'this.settings.value.cockpitFov === "normal" ? "wide" : "normal"',
 			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",
 			"panel.tabPrevious": "this.liveCockpit.stepTab(-1)",
 			"panel.tabNext": "this.liveCockpit.stepTab(1)",

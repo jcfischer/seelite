@@ -1,3 +1,4 @@
+import { withAccount, migrateAccount } from "../src/commodity-pools";
 import {
 	migrateEquipment,
 	equipmentNames,
@@ -28,6 +29,7 @@ import {
 	type Rungs,
 	emptyLadderRecord,
 	ladderAfterHullSale,
+	ladderFromAccount,
 	ladderAfterMarket,
 } from "../src/ladder";
 import {
@@ -402,7 +404,7 @@ describe("#583 — the row and the till are one function", () => {
 
 describe("#556 D6 — the auto-sale banks trade margin as a manual sale does", () => {
 	test("the same lots, sold by hand, bank the same credit", () => {
-		const commander = rich({ cargo: { Food: 10, Computers: 10 } });
+		const initial = rich({ cargo: { Food: 10, Computers: 10 } });
 		// A basis below any bid, so both lots bank a margin.
 		const record: LadderRecord = {
 			...emptyLadderRecord(),
@@ -411,6 +413,15 @@ describe("#556 D6 — the auto-sale banks trade margin as a manual sale does", (
 				Computers: { units: 10, cr: 10 },
 			},
 		};
+		const commander = withAccount(
+			initial,
+			migrateAccount(
+				initial.credits,
+				record.banked.trade,
+				initial.cargo,
+				record.basis,
+			),
+		);
 		const i = input({
 			commander,
 			action: { type: "buy-hull", hull: "interceptor" },
@@ -419,7 +430,7 @@ describe("#556 D6 — the auto-sale banks trade margin as a manual sale does", (
 		expect(till.accepted).toBe(true);
 		const sold = till.accepted ? (till.sold ?? []) : [];
 		expect(sold.length).toBe(2);
-		const auto = ladderAfterHullSale(record, commander.cargo, sold);
+		const auto = ladderFromAccount(record, till.commander.accounting!);
 		// The control: the same lots through the manual path, one press each.
 		let manual = record;
 		let state = { commander, deficits: i.deficits };

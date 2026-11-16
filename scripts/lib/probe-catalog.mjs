@@ -19,6 +19,170 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-laser-origin.mjs",
+			"Fires every laser group on the off-centre Longwall bridge and a centred interceptor cockpit in both views; compares each drawn beam endpoint with the physical mount projected by Three.js, including mining-flag parity and cockpit GPU vertices.",
+			[
+				"laser origin",
+				"mount muzzle",
+				"fire groups",
+				"cockpit beams",
+				"chase",
+				"mining flag",
+			],
+		),
+		entry(
+			"probe-mining-goods.mjs",
+			"Mines whole graded commander cargo in a real field, persists through mining and flagless reloads, docks through clearance and sells raw using the page's quoted bid and credited wallet; flagless markets retain seventeen goods.",
+			[
+				"mining",
+				"ore cargo",
+				"save",
+				"grade",
+				"market",
+				"raw sale",
+				"commodity pools",
+				"mining flag",
+			],
+		),
+		entry(
+			"probe-accounting.mjs",
+			"Measures complete current save envelopes and distinct live/launch atomic IndexedDB commits, with quota refusal without adoption, for migrated, typical, actual-generator saturation and widest accounting/recovery saves.",
+			[
+				"exact wallet",
+				"commodity pools",
+				"IndexedDB",
+				"quota refusal",
+				"checkpoint migration",
+				"save size",
+			],
+		),
+		entry(
+			"probe-capability-outage.mjs",
+			"Natural service outages gate actual docked commerce only with mining enabled, heal on the game clock, retain attributable repairs across raider pressure changes, show live status beside other notices and keep fuel available.",
+			[
+				"capability timing",
+				"commerce refusal",
+				"recovery",
+				"repair provenance",
+				"pressure",
+				"fuel",
+				"mining flag",
+			],
+		),
+		entry(
+			"probe-miner-cockpit.mjs",
+			"The flown Longwall draws its own bridge, the eye at the study's seat, the live mining faces and the measured occlusion row; a hull change swaps the cabin and frees the old one; a failed load keeps the courier cabin; other hulls never fetch it.",
+			[
+				"miner cockpit",
+				"cabin selection",
+				"seat swap",
+				"cockpit occlusion",
+				"fallback",
+			],
+		),
+		entry(
+			"probe-mining-drill.mjs",
+			"Behind mining=1 the Longwall deploys, holds a rock surface frame, anchors, seats and drills a real deep mouth without a survey; hold gain equals deposit debit; feedback paints, five cockpit switches avoid long tasks, and releasing retracts. A flagless control keeps the old miner groups, collision and cockpit visibility.",
+			[
+				"drill",
+				"anchor",
+				"fine control",
+				"conservation",
+				"cockpit occlusion",
+				"long tasks",
+				"mining flag",
+			],
+		),
+		entry(
+			"probe-mining-mounts.mjs",
+			"With ?mining=1 ALL LASERS fires h1 Pulse and h2+h3 Mining: per-mount nose rays cut one rock at their summed rate; one glass tracer and two complete mining beams reach the cockpit GPU layer, with chase overlay parity. Without the flag combat glass tracers are unchanged.",
+			[
+				"mining",
+				"mount muzzle",
+				"cockpit beams",
+				"beam capacity",
+				"extraction",
+				"fire groups",
+				"chase",
+				"flagless combat",
+			],
+		),
+		entry(
+			"probe-mining-survey.mjs",
+			"With ?mining=1 in a charted field: selects the rock in front, holds a survey to a reading with its deep-deposit mark, refuses past range, cuts the rock with the Mining Laser on its drawn surface, debits the deposit per released tonne, draws the beam with flare and sparks in cockpit and chase and no flare beside the surface, scoops a fragment into the Hold page, refuses a full hold and loses an expired fragment without restoring the deposit.",
+			[
+				"mining",
+				"survey",
+				"rock target",
+				"mining laser",
+				"fragments",
+				"scoop",
+				"hold",
+				"deposit",
+			],
+		),
+		entry(
+			"probe-rock-placement.mjs",
+			"Runs Game cruise exit, launch, flight restore, refused docked restore and guided fallback, then steps their final poses against a supplied rock to verify unsaved whole-rock ghost state; an unplaced control must impact.",
+			["rock ghost", "placement", "cruise exit", "launch", "restore", "save"],
+		),
+		entry(
+			"probe-variants-loadouts.mjs",
+			"Materializes a seeded NPC fit in live combat, checks fitted defence and kill credit, scoops a variant fitting through Game, saves its trait and names it on Equipment.",
+			[
+				"NPC loadouts",
+				"variants",
+				"kill credit",
+				"fitting drops",
+				"scoop",
+				"save",
+				"Equipment",
+			],
+		),
+		entry(
+			"probe-production-boot.mjs",
+			"Builds and serves the production bundle, then verifies fresh Commander, direct and full-model boots render and clear loading without page errors.",
+			["production bundle", "startup", "async imports", "model loading"],
+		),
+		entry(
+			"probe-model-queue.mjs",
+			"Holds optional model responses across boot and a jump, verifies settlement and session retention, terminal failure, and full-catalog boot; reads miner drive glow, main plume and attitude plume pixels before and after the background Longwall install.",
+			[
+				"background loading",
+				"model queue",
+				"boot",
+				"jump",
+				"deterministic readiness",
+			],
+		),
+		entry(
+			"probe-asteroid-field.mjs",
+			"Asteroid fields in a charted system: points only before the rock GLB installs, two BatchedMeshes and one Points draw placed against the camera at the sim pose with drift and spin, plain procedural rocks after a failed load, level steps in both directions with hysteresis, and a jump that frees the field left behind.",
+			[
+				"asteroid field",
+				"BatchedMesh",
+				"model install",
+				"level of detail",
+				"stand-in",
+				"jump teardown",
+			],
+		),
+		entry(
+			"probe-field-flight.mjs",
+			"The flown ship against asteroid-field rocks in the running game: an impact at a rock face names the rock and reads the closing speed in its frame, pressing against a spinning rock rides it without ghost, damage, sinking or jump, and a ship placed inside a rock ghosts it whole and meets it again after leaving.",
+			["asteroid field", "rock collision", "rotating frame", "placement ghost"],
+		),
+		entry(
+			"probe-field-discovery.mjs",
+			"Rare-field regional sweep leads, hidden unknown contacts, scanner-free proximity discovery, selection and real save/reload with both mining-flag settings.",
+			["field discovery", "system sweep", "proximity", "Navigation", "save"],
+		),
+		entry(
+			"probe-missiles.mjs",
+			"Live missile launch spends saved ammunition and destroys a raider; incoming warning paints pixels and the bound ECM pulse spends bank and defeats it, at desktop and narrow widths.",
+			["missiles", "ECM", "lock", "incoming warning", "combat consequence"],
+		),
+		entry(
 			"probe-nebula.mjs",
 			"Seeded sky texture rebakes deterministically, is reused unchanged when the camera turns, shares the reflection source, toggles quality without rebaking and releases replaced GPU targets.",
 			["nebula", "sky", "reflection", "quality", "GPU disposal"],
@@ -127,7 +291,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"measure-cruise-detour.mjs",
-			"Runs the corpus gate for automatic cruise detours through the real Game steering loop.",
+			"Runs seeds 1, 2, 7 and 17 through the real Game steering loop for automatic cruise detours, checking both steering directions with the full 12,000-step budget; --full retains the manual 20-seed corpus.",
 			["cruise routing", "detour geometry", "Game steering"],
 		),
 		entry(
@@ -137,13 +301,19 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-approach-handoff.mjs",
-			"Checks the spatial handoff from long-range approach into the local station flight frame.",
-			["approach", "station handoff", "local frame", "render layers"],
+			"Checks massive-body far-to-approach scale and apparent-size continuity, and rendered planet relief at both layer scales with a relief-off control.",
+			["approach", "planet relief", "surface detail", "render layers"],
 		),
 		entry(
 			"probe-arrival.mjs",
-			"Flies cruise arrivals to stations beside or behind host planets and checks reachable geometry.",
-			["cruise arrival", "host planet", "moving body", "station reachability"],
+			"Flies cruise arrivals to stations beside or behind host planets and to a field contact outside its rocks.",
+			[
+				"cruise arrival",
+				"host planet",
+				"moving body",
+				"station reachability",
+				"field contact",
+			],
 		),
 		entry(
 			"probe-audio-cues.mjs",
@@ -225,6 +395,18 @@ export const PROBE_CATALOG = Object.freeze(
 				"prograde marker",
 				"nose marker",
 				"chase view",
+			],
+		),
+		entry(
+			"probe-npc-vents.mjs",
+			"Flies a forced raider into the duel through the real step, holds the clock off its stern, then reads painted pixels: the raider's own firing table is non-empty and its own hull's, one plume set stands beside its mesh and is not the player's, a raider vent fired alone lights its own throat, a vent its table left out stays dark, and a raider taken out of view loses its set.",
+			[
+				"vent plumes",
+				"thrusters",
+				"firing table",
+				"raider",
+				"NPC hulls",
+				"duel",
 			],
 		),
 		entry(
@@ -483,6 +665,17 @@ export const PROBE_CATALOG = Object.freeze(
 			["fire groups", "primary trigger", "combat HUD"],
 		),
 		entry(
+			"probe-scoop-migration.mjs",
+			"Loads a version 16 save docked at its trade station and sees a full cargo-internal loadout stay unchanged with the station console saying the ship has no cargo scoop, and a free cargo internal load with one 1E scoop and no notice.",
+			[
+				"cargo scoop",
+				"save migration",
+				"legacy save",
+				"station console message",
+				"dock notice",
+			],
+		),
+		entry(
 			"probe-eject.mjs",
 			"Holds the eject key in flight and sees the eject event fire once and no sooner than the hold, a tap fire nothing, and the same key refused without a pod and on the arrival's rails, docked and on the launch's rails, each said on the glass or the docked station console; a spent hold stays spent through a head turn and through the Settings screen emptying the held keys; a hold cut by a lost window focus fires nothing, a held controller Home arms nothing until focus returns and then takes a whole hold, and one cut by a held clock takes a whole hold once the clock runs; a spent hold let go under the Postcard screen arms afresh after it closes; the Controls tab names the binding.",
 			[
@@ -705,7 +898,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-market-shelf.mjs",
-			"Docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment, and with an accepted consignment aboard the hold line's entrusted tonnes on Market and no HELD cell moved by it.",
+			"Migrates distinct schema19 live/launch records before play, banks exact credit through a real market sale, proves refused negative legacy cargo remains exportable through the overlay, then docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment, and with an accepted consignment aboard the hold line's entrusted tonnes on Market and no HELD cell moved by it.",
 			[
 				"station market",
 				"shelf cap",
@@ -735,6 +928,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-shared-image.mjs",
+			"The models that embed no image share one fetch, decode and GPU texture; interiors keep their own settings; teardown keeps the survivor; a failed fetch offers Retry at boot, fails quietly in the background and refetches later.",
+			[
+				"shared image",
+				"GLB models",
+				"texture sharing",
+				"teardown",
+				"Retry",
+				"model queue",
+			],
+		),
+		entry(
 			"probe-model-viewer.mjs",
 			"Checks that the procedural model workbench renders models while remaining isolated from Game.",
 			["model viewer", "workbench", "procedural models", "Game isolation"],
@@ -749,6 +954,17 @@ export const PROBE_CATALOG = Object.freeze(
 				"strafe",
 				"flight assist",
 				"rebind",
+				"flight controls",
+			],
+		),
+		entry(
+			"probe-mouse-sensitivity.mjs",
+			"Steps the Mouse sensitivity row on the settings screen from 100% to 200% and checks the same real mouse movement, with flight assist off, turns the nose twice as fast, that the flick readout's asked turn doubles with it, and that the choice survives a reload.",
+			[
+				"mouse sensitivity",
+				"settings",
+				"pointer lock",
+				"mouse input",
 				"flight controls",
 			],
 		),
@@ -798,6 +1014,29 @@ export const PROBE_CATALOG = Object.freeze(
 			"probe-planet-surfaces.mjs",
 			"Checks generated planet classes, live shader surfaces, terminators, bands, rings, and handoff behavior.",
 			["planet surface", "shader", "planet class", "rings", "atmosphere"],
+		),
+		entry(
+			"probe-planet-gradient.mjs",
+			"Compares terran analytic normals with legacy and fine four-tap normals at 2R, rejects a missing warp Jacobian, and reads finite footprint relief and field equality at 1.2R.",
+			[
+				"planet surface",
+				"analytic gradient",
+				"relief",
+				"footprint",
+				"normal pixels",
+			],
+		),
+		entry(
+			"probe-planet-footprint.mjs",
+			"Checks terran footprint cap arms at close and distant ranges on the ground's four fields and the weather shell's two, exact base arithmetic, the dust shell left alone, deterministic pixels, quality and each program's actual target pixel angle; writes canonical horizon pairs for the principal.",
+			[
+				"planet surface",
+				"footprint",
+				"octaves",
+				"clouds",
+				"quality",
+				"determinism",
+			],
 		),
 		entry(
 			"probe-planets.mjs",
@@ -868,6 +1107,30 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-refinery-jobs.mjs",
+			"At a generated refinery with mining on, quotes and submits mined ore through the live console, checks the ore and fee are in both saved records with the job, advances only operational service, reloads to the docked queue and checks the flagless console has no Refinery tab.",
+			[
+				"refinery",
+				"ore custody",
+				"FIFO queue",
+				"SaveStore.commit",
+				"dock checkpoint",
+				"mining flag",
+			],
+		),
+		entry(
+			"probe-refinery-collection.mjs",
+			"At a generated refinery with mining on, finishes an 8 t job on an advanced clock, collects partially into a short hold, reloads, collects the rest and sells it at the market.",
+			[
+				"refinery",
+				"collection",
+				"partial collection",
+				"SaveStore.commit",
+				"custody",
+				"mining flag",
+			],
+		),
+		entry(
 			"probe-relay.mjs",
 			"Exercises the pirate relay discovery, targeting, intervention, persistence, and revisit loop.",
 			[
@@ -898,11 +1161,6 @@ export const PROBE_CATALOG = Object.freeze(
 			"probe-save.mjs",
 			"Checks browser IndexedDB save/load, transaction failure, migration, autosave, and storage-scale behavior.",
 			["save", "IndexedDB", "migration", "autosave", "storage failure"],
-		),
-		entry(
-			"probe-ship-visuals.mjs",
-			"Checks procedural hull identity in the live chase renderer while keeping cockpit flight instrument-first.",
-			["ship visuals", "hull mesh", "chase view", "cockpit view"],
 		),
 		entry(
 			"probe-sky.mjs",

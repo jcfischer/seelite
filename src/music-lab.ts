@@ -11,19 +11,27 @@
  */
 import { AudioFX } from "./audio";
 import { numbersPhrase } from "./comms";
-import { renderNumbersAhead, sayNumbers } from "./comms-voice";
+import { numbersSpace, renderNumbersAhead, sayNumbers } from "./comms-voice";
 import { Music } from "./music";
 import {
 	DEFAULT_MUSIC_ARMS,
-	type MusicBed,
+	drawnBed,
 	FALL_HOLD_S,
 	initialMusicState,
+	type MusicBed,
 	type MusicReading,
 	type MusicScene,
+	numbersRoom,
 	QUIET_READING,
 	stepMusic,
 } from "./music-director";
 import { FLIGHT_LEVELS, type MusicLevel, musicTheme } from "./music-generate";
+import {
+	CALM_FORM_NAMES,
+	schoolForm,
+	schoolTune,
+} from "./music-generate-school";
+import { TECHNO_STYLE_NAMES, technoStyle } from "./music-generate-techno";
 import type { StationType } from "./station";
 
 const NOTE = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
@@ -41,7 +49,7 @@ export function mountMusicLab() {
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>System</legend>
   <label>Seed <input id="seed" type="number" value="1234" style="width:9em"></label>
   <button id="random">Random system</button>
-  <span id="theme" style="margin-left:12px;font:13px ui-monospace,monospace;color:#8a96a3"></span>
+  <span id="theme" style="margin-left:12px;font:13px Menlo, monospace;color:#8a96a3"></span>
 </fieldset>
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Where</legend>
   <label><input type="radio" name="scene" value="flight" checked> Flight</label>
@@ -49,13 +57,13 @@ export function mountMusicLab() {
     <select id="role"><option>trade</option><option>refinery</option><option>shipyard</option><option>outpost</option></select></label>
   <label><input type="radio" name="scene" value="witchspace"> Witchspace (music yields)</label>
   <label style="margin-left:12px"><input id="cruise" type="checkbox"> Cruise</label>
-  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
+  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="system" selected>Each system: Berlin sequences 60 %, techno 40 % (the default)</option><option value="school">Berlin sequences (fourth)</option>${CALM_FORM_NAMES.map((f) => `<option value="school-${f}">Berlin sequences, ${f} form on every system</option>`).join("")}<option value="techno">Techno (spike)</option>${TECHNO_STYLE_NAMES.map((s) => `<option value="techno-${s}">Techno, ${s} on every system</option>`).join("")}<option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
 </fieldset>
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Danger level</legend>
   ${FLIGHT_LEVELS.map((l, i) => `<label><input type="radio" name="level" value="${l}"${i === 0 ? " checked" : ""}> ${l}</label>`).join(" ")}
 </fieldset>
-<pre id="state" style="font:13px ui-monospace,monospace;color:#8a96a3;background:#12171d;padding:10px;margin:0"></pre>
-<pre id="errors" style="font:13px ui-monospace,monospace;color:#e0a040;margin:8px 0 0"></pre>`;
+<pre id="state" style="font:13px Menlo, monospace;color:#8a96a3;background:#12171d;padding:10px;margin:0"></pre>
+<pre id="errors" style="font:13px Menlo, monospace;color:#e0a040;margin:8px 0 0"></pre>`;
 	document.body.appendChild(root);
 	document.body.style.margin = "0";
 	document.body.style.background = "#0b0e12";
@@ -67,10 +75,25 @@ export function mountMusicLab() {
 		(root.querySelector(`input[name=${name}]:checked`) as HTMLInputElement)
 			.value;
 
+	const formLine = (seed: number, variant: number) => {
+		const chosen = $<HTMLSelectElement>("bed").value;
+		const bed = drawnBed(
+			{ ...DEFAULT_MUSIC_ARMS, bed: chosen as MusicBed },
+			seed,
+		);
+		if (bed === "school")
+			return `, sequences form ${schoolForm(seed, variant)}`;
+		if (bed.startsWith("school-"))
+			return `, sequences form ${bed.slice("school-".length)}`;
+		if (bed === "techno") return `, techno style ${technoStyle(seed, variant)}`;
+		if (bed.startsWith("techno-"))
+			return `, techno style ${bed.slice("techno-".length)}`;
+		return "";
+	};
 	const showTheme = () => {
 		const t = musicTheme(Number(seedIn.value) >>> 0);
 		$("theme").textContent =
-			`${NOTE[t.tonic]} ${t.calmMode}, ${t.bpm} bpm, bell ×${t.bellRatio}`;
+			`${NOTE[t.tonic]} ${t.calmMode}, ${t.bpm} bpm, bell ×${t.bellRatio}, sequences form ${schoolTune(Number(seedIn.value) >>> 0).form}`;
 	};
 	showTheme();
 	seedIn.oninput = showTheme;
@@ -103,18 +126,24 @@ export function mountMusicLab() {
 			systemSeed: Number(seedIn.value) >>> 0,
 			stationRole: $<HTMLSelectElement>("role").value as StationType,
 		};
-		const step = stepMusic(state, reading, STEP_S, {
+		const arms = {
 			...DEFAULT_MUSIC_ARMS,
 			force: checked("level") as MusicLevel,
 			bed: $<HTMLSelectElement>("bed").value as MusicBed,
-		});
+		};
+		const step = stepMusic(state, reading, STEP_S, arms);
 		state = step.state;
 		for (const cmd of step.commands) music.send(cmd);
 		// The numbers station, far off in the music (#600).
 		renderNumbersAhead(numbersPhrase(reading.systemSeed, state.voiceN));
-		if (step.voice) sayNumbers(fx, step.voice);
+		if (step.voice)
+			sayNumbers(
+				fx,
+				step.voice,
+				numbersSpace(numbersRoom(arms, reading.systemSeed)),
+			);
 		$("state").textContent = [
-			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant})` : ""}`,
+			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant}${formLine(reading.systemSeed, state.variant)})` : ""}`,
 			`level    ${state.level}${state.fallS > 0 ? `  falling in ${(FALL_HOLD_S - state.fallS).toFixed(1)} s` : ""}`,
 			`cruise   ${state.cruise}`,
 			`synth    ${music.ready ? "ready" : "loading"}`,

@@ -1,0 +1,12 @@
+{
+  "status": "Principal approved both revised designs",
+  "floorDiameterMetres": 180,
+  "rotationRPM": 2.5,
+  "gravityG": 0.6290122264668208,
+  "outerDiameterApproxMetres": 190,
+  "roles": [
+    "carrier",
+    "dreadnought"
+  ],
+  "author": "Codex"
+}

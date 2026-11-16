@@ -12,6 +12,8 @@
  * (#25).
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { useShippedSevenShips } from "./setup/seven-ships-hull";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
@@ -26,6 +28,7 @@ import {
 	hullBox,
 	impactDamage,
 	pairSeparation,
+	primitiveBox,
 	reachKm,
 	shipPose,
 	sweepShip,
@@ -59,6 +62,9 @@ import {
 	sub,
 	v3,
 } from "../src/vec3";
+
+await useShippedInterceptorHull();
+await useShippedSevenShips();
 
 const unit = (a: Vec3): Vec3 => scale(a, 1 / length(a));
 
@@ -810,5 +816,42 @@ describe("collision.md §9.1.12: a cruise keep-out contains its collision sphere
 		expect(galaxy.systems.length).toBe(256);
 		expect(checked).toBeGreaterThan(2000);
 		expect(tightest).toBeGreaterThan(0);
+	});
+});
+
+describe("primitiveBox: the bounds the collision grid indexes (node #1118)", () => {
+	test("a sphere's bounds are its centre plus and minus its radius", () => {
+		expect(
+			primitiveBox({
+				kind: "sphere",
+				centre: { x: 1, y: -2, z: 3 },
+				radiusKm: 0.5,
+			}),
+		).toEqual({
+			minX: 0.5,
+			minY: -2.5,
+			minZ: 2.5,
+			maxX: 1.5,
+			maxY: -1.5,
+			maxZ: 3.5,
+		});
+	});
+
+	test("a capsule's bounds span both ends, each grown by its radius", () => {
+		expect(
+			primitiveBox({
+				kind: "capsule",
+				a: { x: 1, y: 4, z: -1 },
+				b: { x: -3, y: 2, z: 5 },
+				radiusKm: 0.25,
+			}),
+		).toEqual({
+			minX: -3.25,
+			minY: 1.75,
+			minZ: -1.25,
+			maxX: 1.25,
+			maxY: 4.25,
+			maxZ: 5.25,
+		});
 	});
 });

@@ -1,3 +1,4 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import {
 	migrateEquipment,
 	equipmentNames,
@@ -76,7 +77,7 @@ const WRECK_AT = (() => {
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(15);
+		expect(SAVE_SCHEMA_VERSION).toBe(22);
 		const world = newWorld(56);
 		const raw = serializeSave({
 			world,
@@ -92,6 +93,7 @@ describe("node #482 system sweep", () => {
 		const rehash = (edit: (body: any) => void) => {
 			const { integrity: _, ...body } = JSON.parse(JSON.stringify(current));
 			edit(body);
+			pairLegacyWorldFixture(body);
 			return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		};
 		const old = rehash((body) => {
@@ -99,6 +101,7 @@ describe("node #482 system sweep", () => {
 			body.commander.state.ownedEquipment = [];
 			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
+			delete body.commander.txSeq;
 		});
 		const original = JSON.stringify(old);
 		expect(parseSave(old).commander.sweepReadings).toEqual([]);
@@ -116,6 +119,7 @@ describe("node #482 system sweep", () => {
 					body.saveSchemaVersion = 10;
 					body.commander.state.ownedEquipment = [];
 					delete body.commander.state.loadout;
+					delete body.commander.txSeq;
 				}),
 			),
 		).toThrow("sweepReadings");
@@ -554,6 +558,7 @@ describe("node #769 raider pressure strength and cruise lanes", () => {
 			const saved = serializeSave({ world, commander });
 			const { integrity: _i, ...body } = JSON.parse(JSON.stringify(saved));
 			body.saveSchemaVersion = version;
+			delete body.commander.txSeq;
 			if (version < 13) {
 				body.commander.state.ownedEquipment = [];
 				delete body.commander.state.loadout;
@@ -563,6 +568,7 @@ describe("node #769 raider pressure strength and cruise lanes", () => {
 						delete (fitting as { purchaseCostCr?: number }).purchaseCostCr;
 			}
 			body.commander.sweepReadings = legacy;
+			pairLegacyWorldFixture(body);
 			const raw = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 			const original = JSON.stringify(raw);
 			const loaded = parseSave(raw).commander.sweepReadings;

@@ -20,8 +20,9 @@ Schema 14 writes the slot loadout and optional purchase-cost provenance (node
 `ownedEquipment` field; older versions refuse a loadout. Unknown module kinds,
 sizes, grades, fields, slot keys, incompatible placements and missing plants
 are refused. Missile racks require whole ammunition within capacity; other
-modules cannot carry ammunition. Variant identity is preserved as a nonempty
-string; generating and interpreting traits belongs to the variants node.
+modules cannot carry ammunition. Variant identity must name one trait in that
+module kind's table; unknown and combined identities are refused. Ammunition is
+bounded by the variant's effective capacity, not the unmodified rack.
 
 Typed carried modules occupy one hold tonne each, retain their exact module
 fields, and survive salvage and save round trips. Older recovered fittings keep
@@ -65,8 +66,8 @@ stock (#869), while device behaviours belong to the following outfitting nodes.
 The compatibility console permits repeated hardpoint modules, subject to free
 compatible slots and existing ladder gates. Its legacy name projection describes
 installed module kinds, so the stock pulse projects as Extra Pulse Laser; it is
-not purchase history. Kill credit still ignores equipment until weapon behaviours
-are implemented. Recovered fittings sell at 90% of list value, as ratified by
+not purchase history. Kill credit reads fitted combat lasers and defence.
+Recovered fittings sell at 90% of list value, as ratified by
 Ship outfitting D10; the displayed quote and till use the same fraction.
 
 Typed carried modules and wreck containers retain `id` as a frozen persisted
@@ -77,6 +78,45 @@ must preserve these aliases for existing schema-13 records.
 The death notice counts modules beyond the lost hull's stock fit. It already
 names the lost hull, so its baseline plant and pulse are not separately counted;
 upgraded core modules, weapon replacements and additional slots are counted.
+
+## Variants and NPC fits (node #875)
+
+`src/module-variants.ts` owns per-kind tradeoff tables. `moduleRow` projects a
+single trait from the unmodified catalogue row on every read: effects never
+accumulate and the base catalogue remains unchanged. Overcharged combat lasers
+gain 20% damage for 30% more heat. Other output traits gain 20% of one named
+output for 30% more mass; the precise rack gains 25% capacity, rounded to whole
+missiles. The lightweight trait removes 20% mass but loses 30% list/resale
+value. Computers and pods use that tradeoff because they have no continuous
+output that can be safely scaled. Prices remain independent of station.
+
+An untouched derelict fitting rolls a variant with probability 1/3 on
+`DOMAIN.MODULE_VARIANT`, independently of its cargo and fitting-selection
+draws. New derelict fittings are typed size-1 E modules. A retired Energy Bomb
+draw becomes an Extra Energy Unit; stored legacy wrecks retain their contents.
+Fitted, carried, swapped, ejected and recovered modules retain the exact trait.
+The Equipment tab names traits on both fitted and carried modules.
+
+`src/npc-loadout.ts` derives a fit from system seed, carrier key and instance
+ordinal on `DOMAIN.NPC_LOADOUT`. Raiders, patrols and interceptors draw catalogue
+grades, combat lasers and compatible defence/capacity modules in hull-owned
+slots. Other traffic retains its stock fit and does not return fire. The
+raider's independent 35% missile-rack draw uses `DOMAIN.RAIDER_MISSILE_FIT`
+with the new instance seed from `DOMAIN.NPC_LOADOUT`, so missile-bearing
+instances are reshuffled compared with the earlier missile-only fit. Flight
+reads fitted weapon rates, condition capacity and module mass. The eject
+warning reads the strongest active hostile laser group to retain its reaction
+window when a fit raises damage. Scans and
+manifest drops share the fitted hold. Live kills price the target's actual fit;
+the Equipment preview and the historical pricing instrument keep their fixed
+stock-raider reference.
+
+An independent `DOMAIN.NPC_FITTING_DROP` draw gives a killed armed NPC a 15%
+chance of one fitting from its actual loadout. Its grade, trait and remaining
+ammunition are retained. The fitting uses the existing drifting canister,
+proximity/speed scoop, lifetime and contact rules, occupies one hold tonne, and
+must fit whole. Recovery writes a typed fitting with zero purchase cost through
+Holdings; ordinary cargo generation and its draw sequence are unchanged.
 
 Stock modules are also excluded from wreck salvage: respawn already replaces
 them, so recovering them would mint saleable fittings from repeated deaths.

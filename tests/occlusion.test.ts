@@ -24,12 +24,17 @@
 import { expect, test } from "bun:test";
 import {
 	CLOSED_GATE,
+	type FieldGateInput,
 	OCCLUSION,
 	SHADOW_MAP_TEXELS,
 	participatesInShadow,
 	shadowBox,
 	shadowFit,
+	CLOSED_GATES,
+	rockShadowOnly,
+	type ShadowSubject,
 	stepOcclusionGate,
+	stepOcclusionGates,
 	unionOfSubjects,
 } from "../src/occlusion";
 
@@ -388,4 +393,105 @@ test("the largest station in the frame decides, not the nearest", () => {
 	let onlyTiny = CLOSED_GATE;
 	for (let i = 0; i < 120; i++) onlyTiny = stepOcclusionGate(onlyTiny, [tiny]);
 	expect(onlyTiny.open).toBe(false);
+});
+
+const rocks = (
+	level0Rocks: number,
+	quality: FieldGateInput["quality"] = "high",
+): FieldGateInput => ({ level0Rocks, quality });
+
+test("a level-0 rock opens the gate on quality high after the station's frame count", () => {
+	let gate = CLOSED_GATE;
+	for (let i = 1; i < OCCLUSION.gate.openFrames; i++) {
+		gate = stepOcclusionGate(gate, [], rocks(1));
+		expect(gate.open).toBe(false);
+	}
+	gate = stepOcclusionGate(gate, [], rocks(1));
+	expect(gate.open).toBe(true);
+});
+
+test("a level-0 rock holds the gate open and its loss closes it on the station's close count", () => {
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		gate = stepOcclusionGate(gate, [], rocks(2));
+	expect(gate.open).toBe(true);
+	for (let i = 0; i < 240; i++) gate = stepOcclusionGate(gate, [], rocks(1));
+	expect(gate.open).toBe(true);
+	for (let i = 1; i < OCCLUSION.gate.closeFrames; i++) {
+		gate = stepOcclusionGate(gate, [], rocks(0));
+		expect(gate.open).toBe(true);
+	}
+	expect(stepOcclusionGate(gate, [], rocks(0)).open).toBe(false);
+});
+
+test("a single frame without a level-0 rock does not close the gate", () => {
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		gate = stepOcclusionGate(gate, [], rocks(1));
+	gate = stepOcclusionGate(gate, [], rocks(0));
+	gate = stepOcclusionGate(gate, [], rocks(1));
+	expect(gate.open).toBe(true);
+	expect(gate.pending).toBe(0);
+});
+
+test("field rocks never open the gate on quality low", () => {
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < 240; i++)
+		gate = stepOcclusionGate(gate, [], rocks(5, "low"));
+	expect(gate.open).toBe(false);
+});
+
+test("quality low gives a rock-held gate up on the close count", () => {
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		gate = stepOcclusionGate(gate, [], rocks(1));
+	expect(gate.open).toBe(true);
+	for (let i = 0; i < OCCLUSION.gate.closeFrames; i++)
+		gate = stepOcclusionGate(gate, [], rocks(1, "low"));
+	expect(gate.open).toBe(false);
+});
+
+test("no station in range and no level-0 rock keeps the gate shut", () => {
+	const farStation = { center: [0, 0, -500] as const, radiusKm: 0.87 };
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < 240; i++)
+		gate = stepOcclusionGate(gate, [farStation], rocks(0));
+	expect(gate.open).toBe(false);
+});
+
+test("stations open the gate as before whatever the field says", () => {
+	const inside = { center: [0, 0, 0] as const, radiusKm: 0.87 };
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		gate = stepOcclusionGate(gate, [inside], rocks(0, "low"));
+	expect(gate.open).toBe(true);
+});
+
+test("a level-0 rock on high opens the shadow half and leaves the ambient occlusion shut (#1209)", () => {
+	const rock: FieldGateInput = { level0Rocks: 1, quality: "high" };
+	let gates = CLOSED_GATES;
+	for (let i = 0; i < 60; i++) gates = stepOcclusionGates(gates, [], rock);
+	expect(gates.shadow.open).toBe(true);
+	expect(gates.ao.open).toBe(false);
+	for (let i = 0; i < 60; i++) gates = stepOcclusionGates(gates, []);
+	expect(gates.shadow.open).toBe(false);
+});
+
+test("a station opens both halves, with or without a rock (#1209)", () => {
+	const station: ShadowSubject = { center: [1, 0, 0], radiusKm: 1 };
+	let gates = CLOSED_GATES;
+	for (let i = 0; i < 60; i++)
+		gates = stepOcclusionGates(gates, [station], {
+			level0Rocks: 1,
+			quality: "high",
+		});
+	expect(gates.shadow.open).toBe(true);
+	expect(gates.ao.open).toBe(true);
+});
+
+test("the hull stops casting only while rocks alone hold the shadow open (#1209)", () => {
+	const open = { open: true, pending: 0 };
+	expect(rockShadowOnly(CLOSED_GATES)).toBe(false);
+	expect(rockShadowOnly({ shadow: open, ao: CLOSED_GATES.ao })).toBe(true);
+	expect(rockShadowOnly({ shadow: open, ao: open })).toBe(false);
 });

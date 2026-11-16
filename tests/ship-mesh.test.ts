@@ -14,8 +14,10 @@ import {
 	NAV_LIGHTS,
 	NAV_LIGHT_PROUD,
 	SHIP_DESIGN_ROUND,
+	authoredHullBuilder,
 	buildShipMesh,
 	fleetLayout,
+	installAuthoredHull,
 	isAuthoredHull,
 } from "../src/ship-mesh";
 import {
@@ -24,6 +26,7 @@ import {
 	STRIKER_HULL_ID,
 } from "../src/combat-enemy";
 import { useProceduralHulls } from "./helpers/procedural-hulls";
+import { installShippedSevenShip } from "../scripts/lib/shipped-seven-ships";
 
 useProceduralHulls();
 
@@ -658,27 +661,33 @@ describe("procedural ship visual language", () => {
 	 * named for containment that measured only `size.z / 2` would be a test
 	 * whose name a reader could not have falsified.
 	 */
-	test("the prototype striker's hit sphere is its drawn raider's half-length", () => {
-		const box = bounds(STRIKER_HULL_ID, HULL_SPECS[STRIKER_HULL_ID].variant);
-		const size = box.getSize(new THREE.Vector3());
-		// And the sphere is not sold as containment. The mesh is off-centre, so
-		// the drawn nose is further from the origin than the radius: this pins
-		// the shortfall rather than leaving the name to imply it away.
-		const drawnNoseKm = Math.abs(box.min.z) * ENEMY_VISUAL_SCALE;
-		expect(drawnNoseKm).toBeGreaterThan(ENEMY_COLLISION_RADIUS_KM);
-		expect(drawnNoseKm - ENEMY_COLLISION_RADIUS_KM).toBeLessThan(0.02);
-		// The roster rounds its envelope **up** to 0.1 m, so the built box is up
-		// to 0.1 m under it; the drawn radius is half of that, scaled.
-		const slackKm = (0.0001 / 2) * ENEMY_VISUAL_SCALE;
-		expect(ENEMY_COLLISION_RADIUS_KM).toBeGreaterThanOrEqual(
-			(size.z / 2) * ENEMY_VISUAL_SCALE,
-		);
-		expect(ENEMY_COLLISION_RADIUS_KM).toBeLessThanOrEqual(
-			(size.z / 2) * ENEMY_VISUAL_SCALE + slackKm,
-		);
-		// The long axis, so the sphere contains the hull along the axis it is
-		// aimed down: the raider is longer than it is wide or tall.
-		expect(size.z).toBeGreaterThan(size.x);
-		expect(size.z).toBeGreaterThan(size.y);
+	test("the prototype striker's hit sphere is its drawn raider's half-length", async () => {
+		const loft = authoredHullBuilder(STRIKER_HULL_ID);
+		await installShippedSevenShip("raider");
+		try {
+			const box = bounds(STRIKER_HULL_ID, HULL_SPECS[STRIKER_HULL_ID].variant);
+			const size = box.getSize(new THREE.Vector3());
+
+			const drawnNoseKm = Math.abs(box.min.z) * ENEMY_VISUAL_SCALE;
+			expect(drawnNoseKm).toBeLessThanOrEqual(ENEMY_COLLISION_RADIUS_KM);
+			const cornerKm =
+				Math.hypot(box.min.z, box.min.x, box.min.y) * ENEMY_VISUAL_SCALE;
+			expect(cornerKm).toBeGreaterThan(ENEMY_COLLISION_RADIUS_KM);
+			// The roster rounds its envelope **up** to 0.1 m, so the built box is up
+			// to 0.1 m under it; the drawn radius is half of that, scaled.
+			const slackKm = (0.0001 / 2) * ENEMY_VISUAL_SCALE;
+			expect(ENEMY_COLLISION_RADIUS_KM).toBeGreaterThanOrEqual(
+				(size.z / 2) * ENEMY_VISUAL_SCALE,
+			);
+			expect(ENEMY_COLLISION_RADIUS_KM).toBeLessThanOrEqual(
+				(size.z / 2) * ENEMY_VISUAL_SCALE + slackKm,
+			);
+			// The long axis, so the sphere contains the hull along the axis it is
+			// aimed down: the raider is longer than it is wide or tall.
+			expect(size.z).toBeGreaterThan(size.x);
+			expect(size.z).toBeGreaterThan(size.y);
+		} finally {
+			installAuthoredHull("raider", loft);
+		}
 	});
 });

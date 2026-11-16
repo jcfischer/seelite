@@ -39,7 +39,7 @@ const STYLE = `
   display: flex; flex-direction: column; align-items: center; justify-content: safe center;
   gap: 18px; padding: 24px 16px;
   background: radial-gradient(ellipse at 50% 30%, #0f1d28 0, #05080c 70%);
-  color: #cfdce2; font: 14px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: #cfdce2; font: 14px/1.6 Menlo, Consolas, monospace;
 }
 #seelite-postcard-viewer .card {
   display: block; width: min(92vw, calc((100vh - 200px) * 1.5)); height: auto;

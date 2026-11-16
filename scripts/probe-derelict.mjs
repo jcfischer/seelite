@@ -54,14 +54,17 @@ try {
 	// Node #733: the fixture has no identification. Opening consoles reads no
 	// objective position; a sweep is a deliberate press and carries only regions.
 	await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
 		const g = window.__seelite;
 		g.commander = {
 			...g.commander,
-			loadout: migrateEquipment(g.commander.hull, []).loadout,
+			loadout: {
+				...migrateEquipment(g.commander.hull, []).loadout,
+				i1: makeModule("cargo-scoop", 1),
+			},
 		};
 	});
 	await placeNear(page, fixture, 3000, { look: "left" });
@@ -90,7 +93,7 @@ try {
 				.count()) === 0,
 	);
 	await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
@@ -98,7 +101,10 @@ try {
 		const { LONG_RANGE_SCANNER } = await import("/src/market.ts");
 		g.commander = {
 			...g.commander,
-			loadout: migrateEquipment(g.commander.hull, [LONG_RANGE_SCANNER]).loadout,
+			loadout: {
+				...migrateEquipment(g.commander.hull, [LONG_RANGE_SCANNER]).loadout,
+				i1: makeModule("cargo-scoop", 1),
+			},
 		};
 		g.updateCockpit();
 	});
@@ -180,22 +186,36 @@ try {
 	}, fixture);
 
 	await page.evaluate(async () => {
-		const { migrateEquipment, equipmentNames } = await import(
+		const { migrateEquipment, equipmentNames, makeModule } = await import(
 			"/src/loadout.ts"
 		);
 
 		const g = window.__seelite;
 		g.commander = {
 			...g.commander,
-			loadout: migrateEquipment(g.commander.hull, []).loadout,
+			loadout: {
+				...migrateEquipment(g.commander.hull, []).loadout,
+				i1: makeModule("cargo-scoop", 1),
+			},
 		};
 	});
 	await placeNear(page, fixture, 9.9, { step: true, look: "left" });
 	await page.locator('[data-live-left-tab="Navigation"]').click();
-	const nav = page.locator('[data-live-nav-target="' + fixture.key + '"]');
+	const navSelector = '[data-live-nav-target="' + fixture.key + '"]';
+	const nav = page.locator(navSelector);
+	const paintedRowText = (selector) =>
+		page.evaluate(async (s) => {
+			for (let frame = 0; frame < 10; frame++) {
+				const painted = document.querySelector(s)?.innerText;
+				if (painted) return painted;
+				await new Promise((done) => requestAnimationFrame(done));
+			}
+			return "";
+		}, selector);
+	const navText = await paintedRowText(navSelector);
 	check(
 		"visual floor writes knowledge and paints selectable Navigation wreck",
-		(await nav.count()) === 1 && (await nav.innerText()).includes("Derelict"),
+		(await nav.count()) === 1 && navText.includes("Derelict"),
 	);
 	await nav.click();
 	const found = await page.evaluate((f) => {
@@ -247,7 +267,7 @@ try {
 		// Node #735: the wreck in the scene is the torn one, and what it draws
 		// fills the box the intact hull of its kind draws.
 		const { drawnHullBox } = await import("/src/derelict-tear.ts");
-		const { buildShipMesh } = await import("/src/ship-mesh.ts");
+		const { buildShipMesh, isAuthoredHull } = await import("/src/ship-mesh.ts");
 		const { HULL_SPECS } = await import("/src/hull.ts");
 		const hull = wreck.pose.hull;
 		const intact = drawnHullBox(
@@ -266,6 +286,9 @@ try {
 			frame,
 			liners,
 			sites: drawn.root.userData.torn?.sites.length ?? 0,
+			torn: drawn.root.userData.torn ?? null,
+			hull,
+			authored: isAuthoredHull(hull, HULL_SPECS[hull].variant),
 			envelopeError,
 			finish: drawn.root.userData.finish,
 			containers: drawn.containers.size,
@@ -277,13 +300,20 @@ try {
 		"dark worn roster hull has lamps off",
 		draw.lamps === 0 && draw.emissive === 0 && draw.finish === "worn",
 	);
+	// The tear cuts procedural lofts (node #735), and the authored Porter
+	// (node #813) has none, so a freighter wreck is darkened but whole. This
+	// naturally seeded fixture's wreck may be either; the row says which it
+	// measured, and `tests/derelict-tear.test.ts` holds the tear on every
+	// procedural hull.
 	check(
-		"the drawn wreck is torn: an exposed frame and a liner per tear, inside the intact envelope",
-		draw.frame > 0 &&
-			draw.sites > 0 &&
-			draw.liners === draw.sites &&
+		draw.authored
+			? "the drawn wreck of an authored hull is whole, untorn, inside the intact envelope"
+			: "the drawn wreck is torn: an exposed frame and a liner per tear, inside the intact envelope",
+		(draw.authored
+			? draw.torn === null && draw.frame === 0 && draw.liners === 0
+			: draw.frame > 0 && draw.sites > 0 && draw.liners === draw.sites) &&
 			draw.envelopeError < 5e-5,
-		`frame ${draw.frame}, tears ${draw.sites}, liners ${draw.liners}, envelope off by ${(draw.envelopeError * 1e3).toFixed(4)} m`,
+		`${draw.hull}: frame ${draw.frame}, tears ${draw.sites}, liners ${draw.liners}, envelope off by ${(draw.envelopeError * 1e3).toFixed(4)} m`,
 	);
 	check(
 		"seen containers are pinned on the world row",

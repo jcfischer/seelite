@@ -1,0 +1,159 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "results": [
+    {
+      "name": "ring",
+      "loaded": true,
+      "modelId": "ring",
+      "fps": 60.130718954248366,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 370712,
+      "meshCount": 12,
+      "bounds": [
+        134.1185546875,
+        134.1185546875,
+        34.50000152587891
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "drum",
+      "loaded": true,
+      "modelId": "drum",
+      "fps": 59.99739141776439,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 183728,
+      "meshCount": 11,
+      "bounds": [
+        77.92827758789063,
+        77.92827758789063,
+        104.69000244140625
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "assembly",
+      "loaded": true,
+      "modelId": "assembly",
+      "fps": 59.99200106652458,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 221920,
+      "meshCount": 11,
+      "bounds": [
+        113.34999389648439,
+        128.2182373046875,
+        41.03000030517579
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "wheel",
+      "loaded": true,
+      "modelId": "wheel",
+      "fps": 59.99739141776439,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 398500,
+      "meshCount": 13,
+      "bounds": [
+        173.5,
+        173.5,
+        40.50000152587891
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "derrick",
+      "loaded": true,
+      "modelId": "derrick",
+      "fps": 60.154308879298725,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 192106,
+      "meshCount": 20,
+      "bounds": [
+        40.57999877929688,
+        59.00800170898438,
+        38.39999694824219
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "buoy",
+      "loaded": true,
+      "modelId": "buoy",
+      "fps": 59.984004265528846,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 130090,
+      "meshCount": 21,
+      "bounds": [
+        50.14083557128907,
+        48.523095703125,
+        39.998835754394534
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "rig",
+      "loaded": true,
+      "modelId": "rig",
+      "fps": 60.00521784503012,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 206486,
+      "meshCount": 20,
+      "bounds": [
+        62.74010620117188,
+        74.13999938964844,
+        50.337350463867196
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "cluster",
+      "loaded": true,
+      "modelId": "cluster",
+      "fps": 60.00521784503012,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 195418,
+      "meshCount": 21,
+      "bounds": [
+        89.30000000000001,
+        74.7558837890625,
+        36.37000122070313
+      ],
+      "view": "hero",
+      "errors": []
+    },
+    {
+      "name": "salvage",
+      "loaded": true,
+      "modelId": "salvage",
+      "fps": 59.976009596161305,
+      "triangles": 1,
+      "calls": 1,
+      "modelTriangles": 126388,
+      "meshCount": 17,
+      "bounds": [
+        72.2630401611328,
+        72.15800170898439,
+        25.750000762939454
+      ],
+      "view": "hero",
+      "errors": []
+    }
+  ]
+}

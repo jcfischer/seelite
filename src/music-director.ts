@@ -47,6 +47,18 @@ import {
 	stationBed as legacyStationBed,
 } from "./music-generate-legacy";
 import { berlinFlightBed, berlinStationBed } from "./music-generate-berlin";
+import {
+	CALM_FORM_NAMES,
+	type CalmForm,
+	schoolFlightBed,
+	schoolStationBed,
+} from "./music-generate-school";
+import {
+	TECHNO_STYLE_NAMES,
+	type TechnoStyle,
+	technoFlightBed,
+	technoStationBed,
+} from "./music-generate-techno";
 import { numbersPhrase } from "./comms";
 import {
 	DANUBE_CANCEL_FADE_S,
@@ -56,6 +68,7 @@ import {
 } from "./music-danube";
 import type { MusicCommand, Song } from "./music-score";
 import { beatSeconds, bpmAt } from "./music-sequencer";
+import { mix, seededRand } from "./rng";
 import type { StationType } from "./station";
 
 /** Who owns the sound this frame. */
@@ -156,8 +169,24 @@ export const waltzCadenceS = (voicing: DanubeVoicing): number => {
 
 /** Whether these arms play the numbers station at all (#600): the one
  *  gate the director says them by and the host renders them ahead by. */
-export const numbersOn = (arms: MusicArms) =>
-	arms.voice && arms.bed === "berlin";
+export const numbersOn = (arms: MusicArms, systemSeed: number) => {
+	const bed = drawnBed(arms, systemSeed);
+	return arms.voice && bed !== "legacy" && bed !== "second";
+};
+
+/** The bed a system plays under these arms: the `system` arm's draw, or
+ *  the arm itself. */
+export const drawnBed = (arms: MusicArms, systemSeed: number): MusicBed =>
+	arms.bed === "system" ? systemBed(systemSeed) : arms.bed;
+
+/** Which room the numbers station is heard in: a short slap over techno,
+ *  the far-off wash over every other bed. */
+export type NumbersRoom = "techno" | "far";
+export const numbersRoom = (
+	arms: MusicArms,
+	systemSeed: number,
+): NumbersRoom =>
+	drawnBed(arms, systemSeed).startsWith("techno") ? "techno" : "far";
 
 /** The numbers station's first phrase in calm, and the gap after each. By
  *  ear, and a placeholder until it is heard: rare enough to be an event. */
@@ -193,27 +222,73 @@ export interface MusicArms {
 	 *  #603; the other two stay on `?music=` to compare in flight. */
 	readonly waltz: DanubeVoicing;
 }
-export type MusicBed = "legacy" | "second" | "berlin";
+export type MusicBed =
+	| "legacy"
+	| "second"
+	| "berlin"
+	| "school"
+	| `school-${CalmForm}`
+	| "techno"
+	| "system"
+	| `techno-${TechnoStyle}`;
+
+/** The share of systems that play techno under the `system` bed, the
+ *  sequence school the rest (the principal, 2026-10-24: 60:40). */
+export const TECHNO_SHARE = 0.4;
+const SYSTEM_BED_TAG = 0x62656473;
+
+/** The bed a system plays under the `system` arm, drawn once from its
+ *  seed. */
+export const systemBed = (systemSeed: number): "school" | "techno" =>
+	seededRand(mix(systemSeed >>> 0, SYSTEM_BED_TAG))() < TECHNO_SHARE
+		? "techno"
+		: "school";
 
 /** Each bed's two songs: a system's flight bed and a station's. */
-const BEDS: Readonly<
-	Record<
-		MusicBed,
-		{
-			flight: (systemSeed: number, variant: number) => Song;
-			station: (systemSeed: number, role: StationType, variant: number) => Song;
-		}
-	>
-> = {
+interface BedSongs {
+	flight: (systemSeed: number, variant: number) => Song;
+	station: (systemSeed: number, role: StationType, variant: number) => Song;
+}
+
+const BEDS: Readonly<Record<MusicBed, BedSongs>> = {
 	legacy: { flight: legacyFlightBed, station: legacyStationBed },
 	second: { flight: flightBed, station: stationBed },
 	berlin: { flight: berlinFlightBed, station: berlinStationBed },
+	school: { flight: schoolFlightBed, station: schoolStationBed },
+	...(Object.fromEntries(
+		CALM_FORM_NAMES.map((form) => [
+			`school-${form}`,
+			{
+				flight: (seed: number, variant: number) =>
+					schoolFlightBed(seed, variant, form),
+				station: schoolStationBed,
+			},
+		]),
+	) as Record<`school-${CalmForm}`, BedSongs>),
+	techno: { flight: technoFlightBed, station: technoStationBed },
+	system: {
+		flight: (seed, variant) => BEDS[systemBed(seed)].flight(seed, variant),
+		station: (seed, role, variant) =>
+			BEDS[systemBed(seed)].station(seed, role, variant),
+	},
+	...(Object.fromEntries(
+		TECHNO_STYLE_NAMES.map((style) => [
+			`techno-${style}`,
+			{
+				flight: (seed: number, variant: number) =>
+					technoFlightBed(seed, variant, style),
+				station: technoStationBed,
+			},
+		]),
+	) as Record<`techno-${TechnoStyle}`, BedSongs>),
 };
+/** Every value the bed arm takes. */
+export const MUSIC_BED_NAMES = Object.keys(BEDS) as MusicBed[];
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
 	force: null,
 	lowHull: "threat",
-	bed: "berlin",
+	bed: "system",
 	voice: true,
 	waltz: "hybrid",
 };
@@ -231,8 +306,8 @@ export function musicArms(value: string | null): {
 		if (!token) continue;
 		if (token === "off") arms = { ...arms, off: true };
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
-		else if (token === "legacy" || token === "second" || token === "berlin")
-			arms = { ...arms, bed: token };
+		else if (Object.hasOwn(BEDS, token))
+			arms = { ...arms, bed: token as MusicBed };
 		else if (Object.hasOwn(DANUBE_VOICINGS, token))
 			arms = { ...arms, waltz: token as DanubeVoicing };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
@@ -562,7 +637,7 @@ export function stepMusic(
 	// it; the director only says when and what.
 	let { voiceS, voiceN } = s;
 	let voice: string | undefined;
-	if (numbersOn(arms) && level === "calm") {
+	if (numbersOn(arms, r.systemSeed) && level === "calm") {
 		voiceS += dt;
 		if (voiceS >= (voiceN === 0 ? VOICE_FIRST_S : VOICE_EVERY_S)) {
 			voiceS = 0;

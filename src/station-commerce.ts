@@ -1,3 +1,25 @@
+import { fittingCost } from "./loadout";
+import {
+	accountOf,
+	withAccount,
+	acquire,
+	sell,
+	walletChange,
+	changeCash,
+	displayAmount,
+	nativeGrams,
+	type CommodityAccount,
+} from "./commodity-pools";
+import {
+	signedMoney,
+	money,
+	massFromNative,
+	quoteFromNumber,
+	quoteMass,
+	ExactAmountError,
+} from "./exact-amount";
+import { hasOreBay, miningHold } from "./mining-capacity";
+import { oreGood, oreTonnes } from "./ore-goods";
 import {
 	type Loadout,
 	type FittedModule,
@@ -5,6 +27,7 @@ import {
 	fitted,
 	stockLoadout,
 	moduleRow,
+	boughtModule,
 	legacyModule,
 	moduleFits,
 	carriedModule,
@@ -15,6 +38,7 @@ import {
 	repeatableEquipment,
 	makeModule,
 	fittedCapacity,
+	fittedMassT,
 } from "./loadout";
 import { moduleStock, moduleLocked } from "./module-stock";
 /**
@@ -30,6 +54,7 @@ import { moduleStock, moduleLocked } from "./module-stock";
  * never agreed to, so the two go through one function rather than one rule each.
  */
 import type { CarrierKey } from "./carrier-key";
+import type { CapabilityService } from "./capability-slots";
 import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
 import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "./hull";
 import type { HullReach } from "./hull-reach";
@@ -46,12 +71,16 @@ import {
 	marketRow,
 	shelfQuantity,
 	stockResponse,
+	commodityStockResponse,
 } from "./market";
 import { type GateRefusal, type Rungs, gateRefusal } from "./ladder";
 import {
 	type ConsoleEquipmentEntry,
 	stationEquipmentScreen,
 } from "./station-console";
+
+export const FIRST_ORE_NOTICE =
+	"First ore sold. A dedicated mining ship like the Longwall earns far more per hour.";
 
 export interface RecoveredFitting extends Partial<FittedModule> {
 	id: string;
@@ -86,6 +115,8 @@ export const recoveredLocked = (
 		: moduleLocked(recoveredModule(item, hull), rungs);
 
 export interface CommanderState {
+	accounting?: CommodityAccount;
+	firstOreNoticeSeen?: true;
 	credits: number;
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;
@@ -211,6 +242,7 @@ export type StationAction =
 	| { type: "buy-hull"; hull: HullId };
 
 export interface StationCommerceInput {
+	services?: Partial<Record<CapabilityService, boolean>>;
 	commander: CommanderState;
 	deficits: DeficitMap;
 	station: MarketStation;
@@ -242,6 +274,8 @@ export interface StationCommerceInput {
 	 * hull that can never leave, and no default can know the galaxy.
 	 */
 	hullReach: (hull: HullId) => HullReach;
+	/** `?mining=1`, for `stationEquipmentScreen`'s `mining`: https://github.com/jcfischer/seelite/issues/1147 */
+	mining?: boolean;
 	action: StationAction;
 }
 
@@ -266,11 +300,15 @@ export type ConsoleInput = Omit<StationCommerceInput, "action">;
  * nobody will ever read, and no type says so.
  */
 export type CommerceRefusal =
+	| "market-damaged"
+	| "equipment-damaged"
+	| "exclusive-damaged"
 	| "module-slot"
 	| "missiles-full"
 	| "core-required"
 	| "fuel-full"
 	| "insufficient-credits"
+	| "accounting-overflow"
 	| "equipment-unavailable"
 	| "equipment-owned"
 	| "equipment-locked"
@@ -304,6 +342,7 @@ export type StationCommerceResult =
 			reason: null;
 			commander: CommanderState;
 			deficits: DeficitMap;
+			notice?: string;
 			/** A hull purchase's auto-sale (#556 D6), for the ladder to bank;
 			 *  absent on every other action. */
 			sold?: readonly SoldLot[];
@@ -364,16 +403,13 @@ function fitModuleAt(
 const quantityOf = (action: StationAction): number =>
 	"quantity" in action ? (action.quantity ?? 1) : 1;
 
-/** The hull's hold plus whatever the commander has bolted into it. **`STARTING_HOLD_T`
- *  is gone** (#181): it was a second copy of the courier's 20 t, and a constant
- *  named for the *start* of a game cannot answer for a hold that changes when a
- *  shipyard sells you a freighter. */
+/** The hull's hold plus whatever the commander has bolted into it, read off the
+ *  one capacity projection (#928). **`STARTING_HOLD_T` is gone** (#181): it was
+ *  a second copy of the courier's 20 t, and a constant named for the *start* of
+ *  a game cannot answer for a hold that changes when a shipyard sells you a
+ *  freighter. */
 const holdCapacityT = (commander: CommanderState): number =>
-	HULL_SPECS[commander.hull].holdT +
-	Object.values(commander.loadout).reduce(
-		(n, m) => n + (m.module === "cargo-rack" ? moduleRow(m).output.cargoT : 0),
-		0,
-	);
+	fittedCapacity(commander.hull, commander.loadout).holdT;
 
 const heldTonnes = (cargo: Readonly<Record<string, number>>): number =>
 	Object.entries(cargo).reduce((sum, [name, amount]) => {
@@ -408,16 +444,21 @@ export function scoopCargo(
 ): { accepted: boolean; tonnes: number; commander: CommanderState } {
 	const good = commodity(commodityName);
 	if (good.unit !== "t") return { accepted: false, tonnes: 0, commander };
+	if (oreGood(good.name) && (!Number.isSafeInteger(tonnes) || tonnes < 0))
+		return { accepted: false, tonnes: 0, commander };
 	// What fits, in whole tonnes: a canister of a manifest line can hold more
 	// than the hold has room for, and the rest stays in it (civilian-combat H11).
-	const hold = commanderHold(commander, entrustedT);
+	const hold = cargoHold(commander, entrustedT, good.name);
 	const room = Math.floor(hold.capacityT - hold.usedT);
 	const took = Math.max(0, Math.min(tonnes, room));
 	if (took <= 0) return { accepted: false, tonnes: 0, commander };
 	return {
 		accepted: true,
 		tonnes: took,
-		commander: withCargo(commander, good, took),
+		commander: withAccount(
+			commander,
+			acquire(accountOf(commander), good.name, took),
+		),
 	};
 }
 
@@ -437,7 +478,10 @@ export function recoverWreckCargo(
 	return {
 		accepted: true,
 		tonnes: took,
-		commander: withCargo(commander, good, took),
+		commander: withAccount(
+			commander,
+			acquire(accountOf(commander), good.name, took),
+		),
 	};
 }
 
@@ -447,9 +491,32 @@ const availableEquipment = (
 	stationEquipmentScreen({
 		type: input.station.type,
 		hull: input.commander.hull,
+		loadout: input.commander.loadout,
 		displayTL: input.displayTL,
 		rungs: input.rungs,
+		mining: input.mining,
 	}).available.filter((item) => item.per === "unit");
+
+/** Existing type-scoped modules use exclusive service; unscoped kinds use equipment. */
+export function purchaseService(kind: string): CapabilityService {
+	const legacy = EQUIPMENT.find((entry) => LEGACY_MODULES[entry.name] === kind);
+	return legacy && legacy.scope !== "universal" ? "exclusive" : "equipment";
+}
+
+function damagedPurchase(
+	input: ConsoleInput,
+	service: CapabilityService,
+): StationCommerceResult | null {
+	if (!input.mining || input.services?.[service] !== false) return null;
+	switch (service) {
+		case "market":
+			return rejected(input, "market-damaged");
+		case "equipment":
+			return rejected(input, "equipment-damaged");
+		case "exclusive":
+			return rejected(input, "exclusive-damaged");
+	}
+}
 
 /**
  * One transaction at one console, priced end to end. Returns either untouched
@@ -467,6 +534,27 @@ export function transactAtStation(
 	input: StationCommerceInput,
 	quote: QuoteFn = marketQuote,
 ): StationCommerceResult {
+	let result: StationCommerceResult;
+	try {
+		result = stationTransaction(input, quote);
+	} catch (error) {
+		if (error instanceof ExactAmountError)
+			return rejected(input, "accounting-overflow");
+		throw error;
+	}
+	if (!result.accepted) return result;
+	const hold = miningHold(
+		result.commander.hull,
+		commanderHold(result.commander, input.entrustedT),
+		hasOreBay(result.commander.hull) ? oreTonnes(result.commander.cargo) : 0,
+	);
+	return hold.usedT > hold.capacityT ? rejected(input, "cargo-full") : result;
+}
+
+function stationTransaction(
+	input: StationCommerceInput,
+	quote: QuoteFn,
+): StationCommerceResult {
 	const { action } = input;
 	if (action.type === "buy-module") {
 		const row = moduleStock(input).find(
@@ -482,35 +570,44 @@ export function transactAtStation(
 		};
 		if (moduleLocked(module, input.rungs))
 			return rejected(input, "equipment-locked");
-		if (input.commander.credits < row.priceCr)
+		const damage = damagedPurchase(input, purchaseService(module.module));
+		if (damage) return damage;
+		if (accountOf(input.commander).cash < money.fromNumber(row.priceCr))
 			return rejected(input, "insufficient-credits");
 		const out = fitModuleAt(input, module, action.slot);
 		return out.accepted
 			? {
 					...out,
 					commander: {
-						...out.commander,
-						credits: out.commander.credits - row.priceCr,
+						...changeCash(out.commander, -row.priceCr),
 					},
 				}
 			: out;
 	}
 	if (action.type === "buy-missiles") {
+		const damage = damagedPurchase(input, "equipment");
+		if (damage) return damage;
 		const rack = input.commander.loadout[action.slot];
 		if (!rack || rack.module !== "missile-rack")
 			return rejected(input, "module-slot");
 		const space = moduleRow(rack).output.missiles - (rack.ammo ?? 0);
 		if (space <= 0) return rejected(input, "missiles-full");
 		const price = EQUIPMENT.find((e) => e.name === "Missile")!.priceCr;
-		const count = Math.min(space, Math.floor(input.commander.credits / price));
+		const count = Math.min(
+			space,
+			Number(
+				accountOf(input.commander).cash > 0n
+					? accountOf(input.commander).cash / money.fromNumber(price)
+					: 0n,
+			),
+		);
 		if (!count) return rejected(input, "insufficient-credits");
 		return {
 			accepted: true,
 			reason: null,
 			deficits: input.deficits,
 			commander: {
-				...input.commander,
-				credits: input.commander.credits - count * price,
+				...changeCash(input.commander, -count * price),
 				loadout: {
 					...input.commander.loadout,
 					[action.slot]: { ...rack, ammo: (rack.ammo ?? 0) + count },
@@ -552,6 +649,7 @@ export function transactAtStation(
 					commander: offer.commander,
 					deficits: offer.deficits,
 					sold: offer.sold,
+					...(offer.notice ? { notice: offer.notice } : {}),
 				}
 			: rejected(input, offer.reason);
 	}
@@ -559,14 +657,23 @@ export function transactAtStation(
 		// To the fitted capacity: the hull's tank plus any fitted tank (#926).
 		const wanted =
 			commanderFuelCapacityLy(input.commander) - input.commander.fuelLy;
-		const affordable = input.commander.credits / FUEL_CR_PER_LY;
+		const cash = accountOf(input.commander).cash;
+		const affordable = displayAmount(cash) / FUEL_CR_PER_LY;
 		// **Neither figure is rounded, and the first version rounded both.** A
 		// jump costs the distance flown, which is not a multiple of anything, so
 		// flooring the shortfall to the tenth §6.1 *prices* in left a residue the
 		// tank could never take back — and the next fill then asked for less than
 		// 0.1 LY, got zero, and was refused as a money problem on a full purse.
 		// The price is per light year; a fraction of one costs its fraction.
-		const ly = Math.min(wanted, affordable);
+		let ly = Math.min(wanted, affordable);
+		const costOf = (amount: number) =>
+			quoteMass(quoteFromNumber(FUEL_CR_PER_LY), massFromNative(amount, 1), 1);
+		if (ly > 0 && costOf(ly) > cash) {
+			const view = new DataView(new ArrayBuffer(8));
+			view.setFloat64(0, ly);
+			view.setBigUint64(0, view.getBigUint64(0) - 1n);
+			ly = view.getFloat64(0);
+		}
 		// Two refusals rather than one, because they send the player to
 		// different places — and each is read off the quantity it is about
 		// rather than off the minimum of the two.
@@ -576,8 +683,10 @@ export function transactAtStation(
 			accepted: true,
 			reason: null,
 			commander: {
-				...input.commander,
-				credits: input.commander.credits - ly * FUEL_CR_PER_LY,
+				...withAccount(input.commander, {
+					...accountOf(input.commander),
+					cash: signedMoney.subtract(cash, costOf(ly)),
+				}),
 				fuelLy: input.commander.fuelLy + ly,
 			},
 			deficits: input.deficits,
@@ -633,13 +742,17 @@ export function transactAtStation(
 		const commander = { ...input.commander };
 		if (kept.length) commander.recoveredFittings = kept;
 		else delete commander.recoveredFittings;
+		const proceeds = money.fromNumber(fittingSaleValue(item));
+		const paid = money.fromNumber(fittingCost(item));
+		const margin =
+			proceeds > paid ? money.subtract(proceeds, paid) : money.fromTicks(0n);
 		const next =
 			action.type === "fit-recovered"
 				? fitOne(commander, recoveredModule(item, commander.hull))
-				: {
-						...commander,
-						credits: commander.credits + fittingSaleValue(item),
-					};
+				: withAccount(
+						commander,
+						walletChange(accountOf(commander), proceeds, margin),
+					);
 		if (
 			action.type === "fit-recovered" &&
 			commanderHold(next, input.entrustedT).usedT >
@@ -672,8 +785,17 @@ export function transactAtStation(
 		)
 			return rejected(input, "equipment-owned");
 		if (entry.locked) return rejected(input, "equipment-locked");
+		const damage = damagedPurchase(
+			input,
+			purchaseService(LEGACY_MODULES[entry.name]),
+		);
+		if (damage) return damage;
 		const module = {
-			...legacyModule(input.commander.hull, entry.name),
+			...boughtModule(
+				input.commander.hull,
+				input.commander.loadout,
+				entry.name,
+			),
 			purchaseCostCr: entry.priceCr,
 		};
 		if (!slotFor(input.commander, module))
@@ -684,14 +806,13 @@ export function transactAtStation(
 			commanderHold(next, input.entrustedT).capacityT
 		)
 			return rejected(input, "hull-hold");
-		if (input.commander.credits < entry.priceCr)
+		if (accountOf(input.commander).cash < money.fromNumber(entry.priceCr))
 			return rejected(input, "insufficient-credits");
 		return {
 			accepted: true,
 			reason: null,
 			commander: {
-				...next,
-				credits: input.commander.credits - entry.priceCr,
+				...changeCash(next, -entry.priceCr),
 			},
 			deficits: input.deficits,
 		};
@@ -708,6 +829,10 @@ export function transactAtStation(
 	}
 	if (!listsCommodity(good, input.station))
 		return rejected(input, "commodity-unavailable");
+	if (oreGood(good.name) && !input.mining)
+		return rejected(input, "commodity-unavailable");
+	const damage = damagedPurchase(input, "market");
+	if (damage) return damage;
 	const { base, deficit, holdT, q } = priceAt(input, good, quote);
 	// **The two directions are two prices now**, and picking between them here —
 	// rather than letting each branch read the figure it wants — is what keeps a
@@ -717,20 +842,35 @@ export function transactAtStation(
 	if (action.type === "buy-commodity") {
 		if (good.sellOnly) return rejected(input, "commodity-sell-only");
 		if (shelf < quantity) return rejected(input, "insufficient-shelf");
-		if (input.commander.credits < priceCr * quantity)
-			return rejected(input, "insufficient-credits");
 		if (
-			good.unit === "t" &&
-			commanderHold(input.commander, input.entrustedT).usedT + quantity >
-				holdCapacityT(input.commander)
+			accountOf(input.commander).cash <
+			quoteMass(
+				quoteFromNumber(priceCr),
+				massFromNative(quantity, nativeGrams(good.name)),
+				nativeGrams(good.name),
+			)
 		)
+			return rejected(input, "insufficient-credits");
+		const hold = cargoHold(input.commander, input.entrustedT, good.name);
+		if (good.unit === "t" && hold.usedT + quantity > hold.capacityT)
 			return rejected(input, "cargo-full");
 		return {
 			accepted: true,
 			reason: null,
 			commander: {
-				...withCargo(input.commander, good, quantity),
-				credits: input.commander.credits - priceCr * quantity,
+				...withAccount(
+					input.commander,
+					acquire(
+						accountOf(input.commander),
+						good.name,
+						quantity,
+						quoteMass(
+							quoteFromNumber(priceCr),
+							massFromNative(quantity, nativeGrams(good.name)),
+							nativeGrams(good.name),
+						),
+					),
+				),
 			},
 			deficits: recordTrade(input.deficits, input.stationKey, {
 				goodName: good.name,
@@ -740,14 +880,34 @@ export function transactAtStation(
 			}),
 		};
 	}
-	if ((input.commander.cargo[good.name] ?? 0) < quantity)
+	if (
+		(accountOf(input.commander).basis[good.name]?.heldMass ?? 0n) <
+		massFromNative(quantity, nativeGrams(good.name))
+	)
 		return rejected(input, "cargo-missing");
+	const firstOreNotice =
+		oreGood(good.name) &&
+		input.commander.hull !== "miner" &&
+		!input.commander.firstOreNoticeSeen;
 	return {
 		accepted: true,
 		reason: null,
+		...(firstOreNotice
+			? {
+					notice: FIRST_ORE_NOTICE,
+				}
+			: {}),
 		commander: {
-			...withCargo(input.commander, good, -quantity),
-			credits: input.commander.credits + priceCr * quantity,
+			...withAccount(
+				input.commander,
+				sell(
+					accountOf(input.commander),
+					good.name,
+					quantity,
+					quoteFromNumber(priceCr),
+				),
+			),
+			...(firstOreNotice ? { firstOreNoticeSeen: true as const } : {}),
 		},
 		deficits: recordTrade(input.deficits, input.stationKey, {
 			goodName: good.name,
@@ -768,9 +928,31 @@ export const commanderHold = (
 	commander: CommanderState,
 	entrustedT: number,
 ) => ({
-	usedT: heldTonnes(commander.cargo) + recoveredTonnes(commander) + entrustedT,
+	usedT:
+		heldTonnes(commander.cargo) -
+		(hasOreBay(commander.hull) ? oreTonnes(commander.cargo) : 0) +
+		recoveredTonnes(commander) +
+		entrustedT,
 	capacityT: holdCapacityT(commander),
 });
+
+/** Dedicated raw ore capacity and occupancy, when the hull has ore skips. */
+export const commanderOreBay = (commander: CommanderState) =>
+	hasOreBay(commander.hull)
+		? {
+				usedT: oreTonnes(commander.cargo),
+				capacityT: HULL_SPECS[commander.hull].oreHoldT!,
+			}
+		: undefined;
+
+/** The compartment admitting this good, shared by mining, markets and recovery. */
+export const cargoHold = (
+	commander: CommanderState,
+	entrustedT: number,
+	good: string,
+) =>
+	(oreGood(good) ? commanderOreBay(commander) : undefined) ??
+	commanderHold(commander, entrustedT);
 
 /** Tonnes in one unit of each `CommodityUnit`. */
 const TONNES_PER_UNIT = { t: 1, kg: 1e-3, g: 1e-6 } as const;
@@ -803,13 +985,8 @@ export const flownMassT = (
 			sum + amount * TONNES_PER_UNIT[commodity(name).unit],
 		0,
 	);
-	const fittedT = Object.values(commander.loadout).reduce(
-		(n, m) => n + moduleRow(m).massT,
-		0,
-	);
 	return (
-		HULL_SPECS[hull].massT +
-		fittedT +
+		fittedMassT(hull, commander.loadout) +
 		cargoT +
 		recoveredTonnes(commander) +
 		entrustedT
@@ -901,6 +1078,8 @@ export function hullOffer(
 		return { ...rejected(input, "hull-owned"), ...base };
 	const locked = gateRefusal(hull, input.rungs);
 	if (locked) return { ...rejected(input, "hull-locked"), ...base, locked };
+	const damage = damagedPurchase(input, "exclusive");
+	if (damage) return { ...damage, ...base };
 	const reach = input.hullReach(hull);
 	if (!reach.ok) return { ...rejected(input, "no-reach"), ...base, reach };
 	const reached = { ...base, reach };
@@ -913,10 +1092,14 @@ export function hullOffer(
 			...moved.overflow,
 		],
 	};
-	const capacityT = holdCapacityT({ ...transferred, hull });
-	let overflowT = Math.ceil(
-		commanderHold(transferred, input.entrustedT).usedT - capacityT,
-	);
+	const hold = commanderHold({ ...transferred, hull }, input.entrustedT);
+	const { capacityT, usedT } = hold;
+	const dedicated = hasOreBay(hull);
+	const rawOreT = oreTonnes(commander.cargo);
+	const oreHold = miningHold(hull, hold, rawOreT);
+	if (dedicated && oreHold.usedT > oreHold.capacityT)
+		return { ...rejected(input, "hull-hold"), ...reached };
+	let overflowT = Math.ceil(usedT - capacityT);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))
 		// Contraband is never auto-sold (the principal's ruling): legal goods go
@@ -924,7 +1107,11 @@ export function hullOffer(
 		// Every legal good is listed everywhere (`listsCommodity`), so a legal
 		// lot always has a bid here.
 		.filter(
-			({ good, units }) => good.unit === "t" && units > 0 && !good.illegal,
+			({ good, units }) =>
+				good.unit === "t" &&
+				units > 0 &&
+				!good.illegal &&
+				(!oreGood(good.name) || (input.mining && !dedicated)),
 		)
 		.map((lot) => ({
 			...lot,
@@ -934,8 +1121,13 @@ export function hullOffer(
 	const sellableT = sellable.reduce((sum, lot) => sum + lot.units, 0);
 	if (overflowT > sellableT)
 		return { ...rejected(input, "hull-hold"), ...reached };
+	if (overflowT > 0) {
+		const damage = damagedPurchase(input, "market");
+		if (damage) return { ...damage, ...reached };
+	}
 
 	let state = { commander, deficits: input.deficits };
+	let notice: string | undefined;
 	const lots: SoldLot[] = [];
 	for (const lot of sellable) {
 		if (overflowT <= 0) break;
@@ -957,6 +1149,7 @@ export function hullOffer(
 		// this function, not a state the pilot can reach.
 		if (!out.accepted)
 			throw new Error(`auto-sale of ${lot.good.name} refused: ${out.reason}`);
+		if (out.notice) notice = out.notice;
 		lots.push({
 			good: lot.good.name,
 			units,
@@ -967,14 +1160,13 @@ export function hullOffer(
 	}
 	const saleCr = lots.reduce((sum, lot) => sum + lot.proceedsCr, 0);
 	const offer = { ...reached, sold: lots, saleCr };
-	if (commander.credits + saleCr < offer.netCr)
+	if (accountOf(state.commander).cash < signedMoney.fromNumber(offer.netCr))
 		return { ...rejected(input, "insufficient-credits"), ...offer };
 	const nextCommander = {
-		...state.commander,
+		...changeCash(state.commander, -offer.netCr),
 		loadout: moved.loadout,
 		recoveredFittings: transferred.recoveredFittings,
 		hull,
-		credits: state.commander.credits - offer.netCr,
 	};
 	if (!nextCommander.recoveredFittings?.length)
 		delete nextCommander.recoveredFittings;
@@ -985,6 +1177,7 @@ export function hullOffer(
 		commander: withFuelClamped(nextCommander),
 		deficits: state.deficits,
 		...offer,
+		...(notice ? { notice } : {}),
 	};
 }
 
@@ -1003,7 +1196,10 @@ const priceAt = (input: ConsoleInput, good: Commodity, quote: QuoteFn) => {
 		input.gameTimeMin,
 	);
 	const holdT = holdCapacityT(input.commander);
-	const q = quote(stockResponse(base.priceCr, deficit, holdT), input.displayTL);
+	const q = quote(
+		commodityStockResponse(good, base.priceCr, deficit, holdT),
+		input.displayTL,
+	);
 	return { base, deficit, holdT, q };
 };
 

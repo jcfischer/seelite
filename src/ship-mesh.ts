@@ -16,6 +16,11 @@
  * below replaces the plate extrusion, the lathe, and the stock cylinder.
  */
 import * as THREE from "three";
+import {
+	AUTHORED_HULL_MODELS,
+	isAuthoredHullModel as isAfterBootHull,
+	type AuthoredHullModelId,
+} from "./model-catalog";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { mutePaint } from "./surface";
@@ -46,6 +51,7 @@ import {
 	type HullVariantId,
 } from "./hull";
 import { disposeSubtree, shared } from "./gpu-teardown";
+import { finishHullWork, runHullSlices } from "./hull-install-work";
 import type { Vec3 } from "./vec3";
 import {
 	currentHullFinish,
@@ -56,6 +62,7 @@ import {
 export {
 	HABITABLE_HULLS,
 	SHIP_QUALITY,
+	advanceAuthoredHabitat,
 	setShipDetail,
 	updateShipVisuals,
 } from "./ship-detail";
@@ -66,7 +73,11 @@ import {
 	adoptUndetailedShip,
 	buildShipDetails,
 } from "./ship-detail";
-import { halfPixelKm, levelErrorKm, reducedLevel } from "./authored-levels";
+import {
+	halfPixelKm,
+	levelErrorKm,
+	reducedLevelSteps,
+} from "./authored-levels";
 import type { DetailLevel } from "./detail-level";
 
 export const SHIP_DESIGN_ROUND = 11;
@@ -124,8 +135,10 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
 		{
 			id: "b",
 			name: "Porter",
+			// The authored O2 (node #813): its approved geometry carries the
+			// cassettes to port, where the procedural Porter had them starboard.
 			thesis:
-				"dominant starboard cargo bank against a compact port command keel",
+				"three freight cassettes to port of a compact starboard command keel",
 		},
 		{
 			id: "c",
@@ -312,27 +325,28 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
  */
 export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	courier: 0.036,
-	interceptor: 0.036,
+	interceptor: 0.0328,
 	freighter: 0.04,
 	miner: 0.0422,
-	patrol: 0.034,
+	patrol: 0.0327,
 	explorer: 0.044,
-	raider: 0.038,
+	raider: 0.0347,
 	// A capital hull is roughly seven couriers long. Nothing else in the pool
 	// needs a second glance to work out which of two ships is the bigger; this
 	// one has to answer that at a distance, which is why its detail is many
 	// small repeated parts rather than a few large smooth ones.
-	carrier: 0.2,
+	carrier: 0.2284,
 	// Bollard O4 at 1:1 (node #814): its farthest vertex, 36.03 m, rounded up.
 	tug: 0.0361,
-	prospector: 0.035,
+	prospector: 0.0357,
 	// Longer and narrower than the carrier, and it wears its armour outside.
 	// Two capital classes only earn their places if they cannot be mistaken for
 	// each other at the range a capital ship is first seen.
-	dreadnought: 0.22,
+	dreadnought: 0.2356,
 	// Half the carrier's reach and far thinner than either capital: a sphere and
-	// a spine, which reads as nothing else in the pool at any range.
-	voyager: 0.1,
+	// a spine, which reads as nothing else in the pool at any range. The
+	// authored model's (node #820) farthest vertex, 97.48 m, rounded up.
+	voyager: 0.0975,
 };
 
 export interface ShipMesh {
@@ -2500,22 +2514,21 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * its own. Map #1's Constraint allows the file: authored models are
  * same-origin bundle files (#830, #835, principal 2026-10-09).
  *
- * **There is no procedural fallback yet.** The envelope, the collision box,
- * the vent placement and the muzzles are all measured off the built mesh
- * (`hull.ts`), so a build that quietly drew the old loft would measure a hull
- * the game no longer draws. Building `miner/b` before the install throws, so
- * the model loads before a `Game` is built — and that is **not** what the
- * same Constraint allows: it puts only the cockpit and the home station in
- * the boot set. Installing the rest after boot, with a procedural stand-in,
- * is node #838's; until it lands this hull blocks boot, an interim breach
- * the principal waived on node #838 (2026-10-09).
+ * Node #838 installs this through the background queue. Before it arrives,
+ * the selected miner draws miner/a as a stand-in; the authored template then
+ * replaces every cached stand-in once. The envelope and vent tables in
+ * HULL_SPECS stay fixed at their authored measurements. Chase muzzles follow
+ * the mesh being drawn: measured on miner/a before install, then invalidated
+ * and measured on Longwall B when the stand-in is rebuilt. Headless authored
+ * geometry checks preload the model; the cold-install row explicitly removes
+ * it to measure both sides of this transition.
  *
  * The export is model metres, +Z forward and Y up; this frame is kilometres
  * with the nose at -Z, so the exterior is turned half a turn about Y — a
  * rotation, not a mirror, so its winding survives — scaled by 0.001, and
  * moved so its box is centred on the ship's origin (`prepareLongwall`).
  *
- * It is drawn **stowed** and nothing articulates it. The cutter keeps its
+ * It is stowed by default; the mining drill poses its feed and struts. The cutter keeps its
  * named groups, and each anchor's part groups stay named while its metal is
  * merged (`batchLongwallAnchors`), so a later node can pose them; what mining
  * is, and the deployed envelope it would need, are not this node's.
@@ -2602,20 +2615,51 @@ function longwallGlowDisc() {
 	return disc.scale(0.001, 0.001, 0.001);
 }
 
+export interface LongwallModelOptions {
+	posableStruts?: boolean;
+}
+
 /**
  * Install the decoded Longwall B scene (metres, as exported), or remove it.
  * Await `MeshoptSimplifier.ready` first: the two reduced levels are made
  * here, once, rather than per miner.
  */
-export function installLongwallModel(scene: THREE.Group | null): void {
+export function installLongwallModel(
+	scene: THREE.Group | null,
+	options: LongwallModelOptions = {},
+): void {
 	// Swapped only once the prepare has returned: a prepare that throws leaves
 	// the previous install whole (sage round 8).
-	longwallTemplate = scene ? prepareLongwall(scene) : null;
+	publishLongwall(
+		scene ? finishHullWork(prepareLongwallSteps(scene, options)) : null,
+	);
 }
 
-function prepareLongwall(scene: THREE.Group): THREE.Group {
+/** The browser loader's install: the same preparation in background-install
+ *  slices, published once it has finished (node #907). */
+export async function installLongwallModelSliced(
+	scene: THREE.Group,
+	options: LongwallModelOptions = {},
+	run: <T>(work: Generator<void, T>) => Promise<T> = runHullSlices,
+): Promise<void> {
+	publishLongwall(await run(prepareLongwallSteps(scene, options)));
+}
+
+function publishLongwall(template: THREE.Group | null): void {
+	longwallTemplate = template;
+	for (const key of muzzleCache.keys())
+		if (key.startsWith("miner/")) muzzleCache.delete(key);
+}
+
+function* prepareLongwallSteps(
+	scene: THREE.Group,
+	{ posableStruts = false }: LongwallModelOptions,
+): Generator<void, THREE.Group> {
+	if (posableStruts) separateLongwallMounts(scene);
 	batchLongwallHull(scene);
-	batchLongwallAnchors(scene);
+	yield;
+	if (!posableStruts) batchLongwallAnchors(scene);
+	yield;
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -2662,15 +2706,16 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 		permissive: true,
 	};
 	const kmPerM = 0.001;
+	yield;
 	template.add(
-		reducedLevel(
+		yield* reducedLevelSteps(
 			exterior,
 			halfPixelKm(LONGWALL_MEDIUM_RADII, HULL_REACH_KM.miner) / kmPerM,
 			kmPerM,
 			LONGWALL_LEVEL_NAMES.reduced,
 			rules,
 		),
-		reducedLevel(
+		yield* reducedLevelSteps(
 			exterior,
 			levelErrorKm("outline", HULL_REACH_KM.miner) / kmPerM,
 			kmPerM,
@@ -2697,7 +2742,7 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 	}
 	// Placed by rays against 283k triangles, so once here rather than per
 	// clone: a Traffic miner arriving mid-flight must not pay for them.
-	addNavLights(template);
+	addNavLights(template, yield* navLightPositionSteps(template));
 	template.traverse((o) => {
 		if (o.name === "nav-lights") shared((o as THREE.Points).geometry);
 	});
@@ -2809,6 +2854,200 @@ function mergeByMaterial(
 function batchLongwallHull(scene: THREE.Group): void {
 	const { hull, toHull, meshes } = hullPaintMeshes(scene);
 	for (const batch of mergeByMaterial(meshes, toHull, "hull")) hull.add(batch);
+}
+
+function separateLongwallMounts(scene: THREE.Group): void {
+	const hull = longwallHullGroup(scene);
+	scene.updateMatrixWorld(true);
+	for (const side of ["port", "starboard"]) {
+		const name = `longwall-mount-${side}`;
+		const parts = hull.children.filter((part) =>
+			part.name.startsWith(`${name}-`),
+		);
+		if (!parts.length) continue;
+		const group = new THREE.Group();
+		group.name = name;
+		scene.add(group);
+		group.updateMatrixWorld(true);
+		for (const part of parts) group.attach(part);
+	}
+}
+
+/** One strut's joints in the export's metres: base, elbow and foot, at `deployment` 0…1. */
+export interface StrutJoints {
+	deployment: number;
+	base: readonly number[];
+	elbow: readonly number[];
+	foot: readonly number[];
+}
+
+const STRUT_FORWARD = new THREE.Vector3(0, 0, 1);
+
+const COCKPIT_PARTS = /^(feed|anchor-\d|longwall-mount-)/;
+const COCKPIT_GLASS = /glazing|display/;
+const COCKPIT_SAMPLES = 12;
+
+/** What the Longwall's hull hides from an eye in the ship mesh's frame (km). */
+export interface CockpitOcclusion {
+	readonly axisHitKm: Readonly<
+		Record<"starboard" | "port" | "up" | "down" | "aft" | "fore", number | null>
+	>;
+	readonly parts: readonly { readonly name: string; readonly seen: boolean }[];
+}
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * Round 10, F4: whether the hull would hide each mount, strut and the feed from
+ * `eyeKm`. A part is seen when a ray from the eye reaches one of its sampled
+ * vertices without meeting the hull (glazing and displays excepted). The six
+ * axis hits say how the eye sits in the hull. Measured on the
+ * full level as posed now; measurement runs in headless tests only.
+ */
+export function cockpitOcclusion(
+	root: THREE.Object3D,
+	eyeKm: Vec3,
+): CockpitOcclusion {
+	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
+	root.updateMatrixWorld(true);
+	const parts = full?.children[0]?.children ?? [];
+	const hull: THREE.Mesh[] = [];
+	for (const p of parts)
+		if (p.name === "hull")
+			p.traverse((o) => {
+				if ((o as THREE.Mesh).isMesh && !COCKPIT_GLASS.test(o.name))
+					hull.push(o as THREE.Mesh);
+			});
+	const sides = hull.map((m) => {
+		const list = Array.isArray(m.material) ? m.material : [m.material];
+		const before = list.map((x) => x.side);
+		for (const x of list) x.side = THREE.DoubleSide;
+		return () => list.forEach((x, n) => (x.side = before[n]));
+	});
+	const eye = new THREE.Vector3(eyeKm.x, eyeKm.y, eyeKm.z).applyMatrix4(
+		root.matrixWorld,
+	);
+	const caster = new THREE.Raycaster();
+	const blocked = (to: THREE.Vector3) => {
+		const d = to.clone().sub(eye);
+		caster.set(eye, d.clone().normalize());
+		caster.far = d.length();
+		return hull.some((m) => caster.intersectObject(m, false).length > 0);
+	};
+	try {
+		const axisHit = (x: number, y: number, z: number) => {
+			caster.set(eye, new THREE.Vector3(x, y, z));
+			caster.far = Number.POSITIVE_INFINITY;
+			const hit = caster.intersectObjects(hull, false)[0];
+			return hit ? hit.distance : null;
+		};
+		const value: CockpitOcclusion = {
+			axisHitKm: {
+				starboard: axisHit(1, 0, 0),
+				port: axisHit(-1, 0, 0),
+				up: axisHit(0, 1, 0),
+				down: axisHit(0, -1, 0),
+				aft: axisHit(0, 0, 1),
+				fore: axisHit(0, 0, -1),
+			},
+			parts: parts
+				.filter((p) => COCKPIT_PARTS.test(p.name))
+				.map((p) => {
+					const all: THREE.Vector3[] = [];
+					p.traverse((o) => {
+						const pos = (o as THREE.Mesh).geometry?.attributes?.position;
+						if (!(o as THREE.Mesh).isMesh || !pos) return;
+						for (let n = 0; n < pos.count; n++)
+							all.push(
+								new THREE.Vector3()
+									.fromBufferAttribute(pos, n)
+									.applyMatrix4(o.matrixWorld),
+							);
+					});
+					const step = Math.max(1, Math.floor(all.length / COCKPIT_SAMPLES));
+					const points = all.filter((_, n) => n % step === 0);
+					return { name: p.name, seen: points.some((q) => !blocked(q)) };
+				}),
+		};
+		return value;
+	} finally {
+		for (const put of sides) put();
+	}
+}
+
+/**
+ * https://github.com/jcfischer/seelite/issues/920
+ * The Longwall as the cockpit sees it under `?mining=1` (round 9 F3, round 10
+ * F5, round 11): of the mounts, the feed and the struts, only the parts in
+ * `seen`, the ones `cockpitOcclusion` finds the hull leaves in view; the hull
+ * and every other part hidden. `null` puts back what each part drew before.
+ */
+export function cockpitDrillView(
+	root: THREE.Object3D,
+	view: { seen: ReadonlySet<string> } | null,
+): void {
+	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
+	const parts = full?.children[0]?.children ?? [];
+	const others = root.children.filter((c) => c !== full);
+	const saved = root.userData.cockpitDrillSaved as
+		| Map<THREE.Object3D, boolean>
+		| undefined;
+	if (!view) {
+		if (saved) for (const [o, v] of saved) o.visible = v;
+		root.userData.cockpitDrillSaved = undefined;
+		return;
+	}
+	if (!full) return;
+	const { seen } = view;
+	if (!saved)
+		root.userData.cockpitDrillSaved = new Map(
+			[...parts, ...others, full].map((o) => [o, o.visible]),
+		);
+	full.visible = true;
+	for (const o of others) o.visible = false;
+	for (const o of parts)
+		o.visible = seen.has(o.name) && COCKPIT_PARTS.test(o.name);
+}
+
+/** Pose strut `index` of a built Longwall's model level to `joints`, as the #803 study's viewer does. */
+export function poseLongwallStrut(
+	level: THREE.Object3D,
+	index: number,
+	joints: StrutJoints,
+): void {
+	const part = (name: string) =>
+		level.getObjectByName(`anchor-${index}-${name}`);
+	const body = part("body");
+	const sleeve = part("sleeve");
+	const foot = part("foot");
+	const lower = part("lower");
+	const rod = part("lower-rod");
+	const joint = part("elbow");
+	if (!body || !sleeve || !foot || !lower || !rod || !joint) return;
+	const base = new THREE.Vector3().fromArray(joints.base as number[]);
+	const elbow = new THREE.Vector3().fromArray(joints.elbow as number[]);
+	const end = new THREE.Vector3().fromArray(joints.foot as number[]);
+	const upper = elbow.clone().sub(base);
+	const upperLength = upper.length();
+	const direction = upper.normalize();
+	const lowerVec = end.clone().sub(elbow);
+	const lowerLength = lowerVec.length();
+	const lowerDirection = lowerVec.normalize();
+	body.position.copy(base);
+	body.quaternion.setFromUnitVectors(STRUT_FORWARD, direction);
+	body.scale.set(1.25, 1.25, (upperLength - 3) / 9);
+	sleeve.position.copy(base).addScaledVector(direction, upperLength - 3);
+	sleeve.quaternion.copy(body.quaternion);
+	sleeve.scale.set(1, 1, 3);
+	lower.position.copy(elbow);
+	lower.quaternion.setFromUnitVectors(STRUT_FORWARD, lowerDirection);
+	lower.scale.set(1.25, 1.25, (lowerLength - 3) / 6);
+	rod.position.copy(elbow).addScaledVector(lowerDirection, lowerLength - 3);
+	rod.quaternion.copy(lower.quaternion);
+	rod.scale.set(1, 1, 3);
+	joint.position.copy(elbow);
+	joint.quaternion.copy(lower.quaternion);
+	foot.position.copy(end);
+	foot.quaternion.identity().slerp(lower.quaternion, joints.deployment);
 }
 
 /**
@@ -6828,10 +7067,44 @@ function navLightsMaterial(): THREE.ShaderMaterial {
 }
 
 /** Place the four lights on a built hull's own surface. */
-function addNavLights(root: THREE.Group) {
+function addNavLights(
+	root: THREE.Group,
+	positions: Float32Array | null = navLightPositions(root),
+) {
+	if (!positions) return;
+	const colors = new Float32Array(NAV_LIGHTS.length * 3);
+	const color = new THREE.Color();
+	NAV_LIGHTS.forEach((light, i) => {
+		// The shader is raw, so its colours are linear. `setHex` decodes the
+		// sRGB hex into three's linear working space, and that is the only
+		// decode: a second `convertSRGBToLinear` here crushed every channel that
+		// is not 0 or 255 (#300's review).
+		color.setHex(light.color);
+		colors.set([color.r, color.g, color.b], i * 3);
+	});
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+	geometry.setAttribute("lightColor", new THREE.BufferAttribute(colors, 3));
+	const points = new THREE.Points(geometry, navLightsMaterial());
+	points.name = "nav-lights";
+	points.userData.navLightRoles = NAV_LIGHTS.map((l) => l.role);
+	points.onBeforeRender = (renderer) => {
+		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
+	};
+	root.add(points);
+}
+
+/** Where the four lights go on a built hull, `NAV_LIGHTS` order, kilometres. */
+function navLightPositions(root: THREE.Group): Float32Array | null {
+	return finishHullWork(navLightPositionSteps(root));
+}
+
+function* navLightPositionSteps(
+	root: THREE.Group,
+): Generator<void, Float32Array | null> {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
-	if (box.isEmpty()) return;
+	if (box.isEmpty()) return null;
 	const size = new THREE.Vector3();
 	const centre = new THREE.Vector3();
 	box.getSize(size);
@@ -6847,9 +7120,13 @@ function addNavLights(root: THREE.Group) {
 	 * centre line would otherwise get no light at all, and a light a little off
 	 * the surface is a far smaller error than a missing one.
 	 */
-	const onSurface = (from: THREE.Vector3, inward: THREE.Vector3) => {
+	function* onSurface(
+		from: THREE.Vector3,
+		inward: THREE.Vector3,
+	): Generator<void, THREE.Vector3> {
 		caster.set(from, inward);
 		const hit = caster.intersectObject(root, true).find((h) => h.face);
+		yield;
 		// Proud of the surface, then **clamped back into the hull's own box**.
 		//
 		// Proud on its own is not enough, and the rebase onto #181 is what
@@ -6874,54 +7151,38 @@ function addNavLights(root: THREE.Group) {
 			? hit.point.clone().addScaledVector(inward, -proud)
 			: from.clone().addScaledVector(inward, standoff);
 		return at.clamp(box.min, box.max);
-	};
+	}
 	// The mesh's nose is -Z (`buildShipMesh`'s callers read it back out that
 	// way), so the tail light comes in from the far +Z end.
 	const at: Record<(typeof NAV_LIGHTS)[number]["role"], THREE.Vector3> = {
-		port: onSurface(
+		port: yield* onSurface(
 			new THREE.Vector3(box.min.x - standoff, centre.y, centre.z),
 			new THREE.Vector3(1, 0, 0),
 		),
-		starboard: onSurface(
+		starboard: yield* onSurface(
 			new THREE.Vector3(box.max.x + standoff, centre.y, centre.z),
 			new THREE.Vector3(-1, 0, 0),
 		),
-		dorsal: onSurface(
+		dorsal: yield* onSurface(
 			new THREE.Vector3(centre.x, box.max.y + standoff, centre.z),
 			new THREE.Vector3(0, -1, 0),
 		),
-		tail: onSurface(
+		tail: yield* onSurface(
 			new THREE.Vector3(centre.x, centre.y, box.max.z + standoff),
 			new THREE.Vector3(0, 0, -1),
 		),
 	};
 	const positions = new Float32Array(NAV_LIGHTS.length * 3);
-	const colors = new Float32Array(NAV_LIGHTS.length * 3);
-	const color = new THREE.Color();
 	NAV_LIGHTS.forEach((light, i) => {
 		const p = at[light.role];
 		positions.set([p.x, p.y, p.z], i * 3);
-		// The shader is raw, so its colours are linear. `setHex` decodes the
-		// sRGB hex into three's linear working space, and that is the only
-		// decode: a second `convertSRGBToLinear` here crushed every channel that
-		// is not 0 or 255 (#300's review).
-		color.setHex(light.color);
-		colors.set([color.r, color.g, color.b], i * 3);
 	});
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-	geometry.setAttribute("lightColor", new THREE.BufferAttribute(colors, 3));
-	const points = new THREE.Points(geometry, navLightsMaterial());
-	points.name = "nav-lights";
-	points.userData.navLightRoles = NAV_LIGHTS.map((l) => l.role);
-	points.onBeforeRender = (renderer) => {
-		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
-	};
-	root.add(points);
+	return positions;
 }
 
 /** A part this hull draws as a gun: a pod or a muzzle ring. */
 const GUN_PART = /-(hardpoint-[a-z]+|muzzle)$/;
+const SLOT_MUZZLE = /^muzzle-(h\d+)$/;
 
 const muzzleCache = new Map<string, readonly Vec3[]>();
 
@@ -6978,11 +7239,15 @@ export function shipMuzzlesKm(
 	root.updateMatrixWorld(true);
 	const count = HULL_SPECS[id].hardpoints;
 	const parts: THREE.Object3D[] = [];
+	const named = new Map<string, THREE.Object3D>();
 	root.traverse((o) => {
 		if (GUN_PART.test(o.name)) parts.push(o);
+		const slot = SLOT_MUZZLE.exec(o.name)?.[1];
+		if (slot && !named.has(slot)) named.set(slot, o);
 	});
 	let muzzles: Vec3[];
-	if (parts.length === count) {
+	if (named.size > 0) muzzles = slotMuzzles(root, id, named, key);
+	else if (parts.length === count) {
 		muzzles = parts.map((part) => {
 			const b = new THREE.Box3().setFromObject(part);
 			const c = b.getCenter(new THREE.Vector3());
@@ -6992,6 +7257,36 @@ export function shipMuzzlesKm(
 	const frozen = Object.freeze(muzzles.map((m) => Object.freeze(m)));
 	muzzleCache.set(key, frozen);
 	return frozen;
+}
+
+/**
+ * https://github.com/jcfischer/seelite/issues/1147
+ * A hull whose model marks a hardpoint's muzzle with an empty `muzzle-<slot>`
+ * node fires that slot from it; its other hardpoints, in key order, get
+ * `raycastMuzzles`'s mounts. The order is the slots', never a name sort.
+ */
+function slotMuzzles(
+	root: THREE.Group,
+	id: HullId,
+	named: ReadonlyMap<string, THREE.Object3D>,
+	key: string,
+): Vec3[] {
+	const slots = HULL_SPECS[id].slots.filter((s) => s.kind === "hardpoint");
+	for (const slot of named.keys())
+		if (!slots.some((s) => s.key === slot))
+			throw new Error(`${key}: muzzle-${slot} names no hardpoint`);
+	const rayed = raycastMuzzles(
+		root,
+		slots.filter((s) => !named.has(s.key)).length,
+		key,
+	);
+	let next = 0;
+	return slots.map((s) => {
+		const node = named.get(s.key);
+		if (!node) return rayed[next++];
+		const p = node.getWorldPosition(new THREE.Vector3());
+		return { x: p.x, y: p.y, z: p.z };
+	});
 }
 
 /** `shipMuzzlesKm`'s mounts for a hull with no gun parts. */
@@ -7057,20 +7352,17 @@ function raycastMuzzles(
 export type AuthoredHullBuilder = (
 	root: THREE.Group,
 	exhaust: THREE.MeshStandardMaterial,
-) => ShipLevels;
+) => ShipLevels | undefined;
 
 /**
  * The hulls whose selected variant is an authored model installed after boot
  * (node #831's path): the courier (node #812) and the tug (node #814). Each is
  * drawn as its procedural loft — the stand-in — until its builder is
- * installed. Longwall B is not one of them: it is a template installed before
- * any Game is built (`installLongwallModel`, node #838's waiver).
+ * installed. Longwall B uses its procedural miner/a until its template is
+ * installed (node #838).
  */
-export const AFTER_BOOT_HULL_IDS = ["courier", "tug"] as const;
-export type AfterBootHullId = (typeof AFTER_BOOT_HULL_IDS)[number];
-
-const isAfterBootHull = (id: unknown): id is AfterBootHullId =>
-	(AFTER_BOOT_HULL_IDS as readonly unknown[]).includes(id);
+export const AFTER_BOOT_HULL_IDS = AUTHORED_HULL_MODELS;
+export type AfterBootHullId = AuthoredHullModelId;
 
 const authoredHulls = new Map<AfterBootHullId, AuthoredHullBuilder>();
 /** An authored hull's nav lights, placed once. `addNavLights` finds the
@@ -7124,7 +7416,7 @@ export function rebuildAuthoredStandIn(
 	const id = root.userData.hullId;
 	if (
 		!isAfterBootHull(id) ||
-		!authoredHulls.has(id) ||
+		!(id === "miner" ? longwallTemplate : authoredHulls.has(id)) ||
 		root.userData.variant !== HULL_SPECS[id].variant ||
 		root.userData.authored === true
 	)
@@ -7149,8 +7441,17 @@ function buildAuthoredHull(
 	id: AfterBootHullId,
 	builder: AuthoredHullBuilder,
 ): void {
+	finishHullWork(buildAuthoredHullSteps(root, id, builder));
+}
+
+function* buildAuthoredHullSteps(
+	root: THREE.Group,
+	id: AfterBootHullId,
+	builder: AuthoredHullBuilder,
+	exhaust = makePalette(id).exhaust,
+): Generator<void, void> {
 	root.userData.authored = true;
-	const levels = builder(root, makePalette(id).exhaust);
+	const levels = builder(root, exhaust);
 	// After the model, for the reason the procedural branch gives: the
 	// lights are placed from the built hull's own box.
 	const known = authoredNavLights.get(builder);
@@ -7159,12 +7460,33 @@ function buildAuthoredHull(
 		lights.onBeforeRender = known.onBeforeRender;
 		root.add(lights);
 	} else {
-		addNavLights(root);
+		addNavLights(root, yield* navLightPositionSteps(root));
 		const placed = root.getObjectByName("nav-lights") as THREE.Points;
 		shared(placed.geometry);
 		authoredNavLights.set(builder, placed);
 	}
 	adoptUndetailedShip(root, HULL_REACH_KM[id], levels);
+}
+
+/** Build and warm an unpublished builder, without exposing it to the frame
+ * loop. The caller owns and disposes this temporary root.
+ */
+export function* prepareAuthoredHull(
+	id: AfterBootHullId,
+	builder: AuthoredHullBuilder,
+	exhaust?: THREE.MeshStandardMaterial,
+): Generator<void, THREE.Group> {
+	const root = new THREE.Group();
+	root.userData.hullId = id;
+	root.userData.variant = HULL_SPECS[id].variant;
+	let complete = false;
+	try {
+		yield* buildAuthoredHullSteps(root, id, builder, exhaust);
+		complete = true;
+		return root;
+	} finally {
+		if (!complete) disposeSubtree(root);
+	}
 }
 
 export function buildShipMesh(
@@ -7182,7 +7504,10 @@ export function buildShipMesh(
 		buildAuthoredHull(root, id, authored);
 		return { root };
 	}
-	const plan = SHIP_DETAIL_PLANS[id][variant];
+	const plan =
+		id === "miner" && variant === HULL_SPECS.miner.variant && !longwallTemplate
+			? SHIP_DETAIL_PLANS.miner.a
+			: SHIP_DETAIL_PLANS[id][variant];
 	if (plan.authored) {
 		root.userData.authored = true;
 		// Nav lights come with the template, placed once (`prepareLongwall`).
@@ -7202,6 +7527,49 @@ export function buildShipMesh(
 	return { root };
 }
 
+/** Install the Porter on the shared after-boot path. It keeps its approved full mesh at every range. */
+export function installAuthoredPorter(model: THREE.Object3D | null): void {
+	installAuthoredHull(
+		"freighter",
+		model
+			? (root) => {
+					root.add(model.clone(true));
+					return undefined;
+				}
+			: undefined,
+	);
+}
+
+let authoredExhaust: THREE.MeshStandardMaterial | undefined;
+
+/**
+ * A drive glow for an authored model's nozzle: the procedural disc's material
+ * and its `-exhaust` name, which the main drive's plumes are drawn at
+ * (`isDriveBell`). The disc faces +Z of the geometry it is given; the caller
+ * places and turns it in the model's own frame.
+ */
+export function authoredDriveGlow(name: string, radius: number): THREE.Mesh {
+	authoredExhaust ??= shared(
+		new THREE.MeshStandardMaterial({
+			color: 0x7fc4df,
+			emissive: 0x4a9fca,
+			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+			roughness: 0.36,
+			metalness: 0.08,
+		}),
+	);
+	const glow = new THREE.Mesh(
+		shared(new THREE.CircleGeometry(radius, 24)),
+		authoredExhaust,
+	);
+	glow.name = name + EXHAUST_SUFFIX;
+	return glow;
+}
+
+/** Whether `installAuthoredPorter` has run on this page. */
+export const authoredPorterReady = (): boolean =>
+	authoredHullBuilder("freighter") !== undefined;
+
 /**
  * Is this variant an authored model rather than a loft (node #815)? The
  * procedural visual language — lofted, capped, swept, a named fuselage and
@@ -7211,4 +7579,5 @@ export function buildShipMesh(
  * what the authored model owes instead.
  */
 export const isAuthoredHull = (id: HullId, variant: HullVariantId): boolean =>
+	(id === "freighter" && variant === "b") ||
 	SHIP_DETAIL_PLANS[id][variant].authored === true;

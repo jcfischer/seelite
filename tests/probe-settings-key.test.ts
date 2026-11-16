@@ -129,6 +129,8 @@ describe("the settings key is driven only after the screen exists", () => {
 			"scripts/probe-eject.mjs",
 			// #639 selects the mouse-flight layout on the screen, as a player does.
 			"scripts/probe-mouse-flight-layout.mjs",
+			// Node #640 steps the mouse sensitivity row, as a player does.
+			"scripts/probe-mouse-sensitivity.mjs",
 			"scripts/probe-pad-panels.mjs",
 			"scripts/probe-pointer-lock.mjs",
 		]);

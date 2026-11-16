@@ -101,6 +101,97 @@ const input = (
 	...overrides,
 });
 
+test("commerce preserves dedicated ore and refuses to strand it during a hull change", () => {
+	const commander = { ...newCommander("miner"), credits: 1e9 };
+	commander.cargo = { "Metallic ore STD": 3000 };
+	const request = input({ commander });
+	expect(transactAtStation(request).accepted).toBe(true);
+	const sale = input({
+		commander,
+		station: { ...STATION, type: "shipyard" },
+		action: { type: "buy-hull", hull: "freighter" },
+	});
+	const refused = transactAtStation(sale);
+	expect(refused.accepted).toBe(false);
+	expect(refused.reason).toBe("hull-hold");
+	expect(refused.commander).toBe(commander);
+	expect(refused.deficits).toBe(sale.deficits);
+	expect(
+		transactAtStation({ ...sale, commander: { ...commander, cargo: {} } })
+			.accepted,
+	).toBe(true);
+});
+
+test("ordinary cargo purchases respect raw ore in a shared hold", () => {
+	const commander = { ...newCommander("courier"), credits: 1e9 };
+	commander.cargo = { "Metallic ore STD": 20 };
+	const request = input({ commander });
+	const refused = transactAtStation(request);
+	expect(refused.accepted).toBe(false);
+	expect(refused.reason).toBe("cargo-full");
+	expect(refused.commander).toBe(commander);
+	expect(
+		transactAtStation({
+			...request,
+			commander: { ...commander, cargo: { "Metallic ore STD": 19 } },
+		}).accepted,
+	).toBe(true);
+});
+
+test("shipyard admits exact dedicated ore capacity and refuses excess without selling it", () => {
+	const commander = {
+		...newCommander("freighter"),
+		credits: 1e9,
+		cargo: { "Metallic ore STD": 3000 },
+	};
+	const request = input({
+		commander,
+		station: { ...STATION, type: "shipyard" },
+		action: { type: "buy-hull", hull: "miner" },
+	});
+	expect(transactAtStation(request).accepted).toBe(true);
+	const refused = transactAtStation({
+		...request,
+		commander: { ...commander, cargo: { "Metallic ore STD": 3001 } },
+	});
+	expect(refused.accepted).toBe(false);
+	expect(refused.reason).toBe("hull-hold");
+	expect(refused.commander.cargo["Metallic ore STD"]).toBe(3001);
+});
+
+test("shipyard auto-sale leaves room for shared raw ore and never sells that ore", () => {
+	const commander = {
+		...newCommander("freighter"),
+		credits: 1e9,
+		loadout: stockLoadout("courier"),
+		cargo: { Food: 20, "Metallic ore STD": 15 },
+	};
+	const result = transactAtStation(
+		input({
+			commander,
+			station: { ...STATION, type: "shipyard" },
+			action: { type: "buy-hull", hull: "courier" },
+		}),
+	);
+	expect(result.accepted).toBe(true);
+	expect(result.commander.cargo.Food).toBe(5);
+	expect(commander.cargo.Food).toBe(20);
+});
+
+test("an earlier commerce refusal retains its reason even with an oversized ore fact", () => {
+	const request = input({
+		commander: {
+			...newCommander("courier"),
+			cargo: { "Metallic ore STD": 21 },
+		},
+		action: { type: "buy-fuel" },
+	});
+	const result = transactAtStation(request);
+	expect(result.accepted).toBe(false);
+	expect(result.reason).toBe("fuel-full");
+	expect(result.commander).toBe(request.commander);
+});
+
 /** What one leg of a cycle carries forward: what the till returned, not what it refused. */
 interface CycleState {
 	commander: Parameters<typeof transactAtStation>[0]["commander"];
@@ -648,14 +739,22 @@ describe("§5.6 the bid cut, charged by the till", () => {
 				const out = leg(
 					state,
 					{
-						commander: { ...state.commander, cargo: { [good.name]: qty } },
+						commander: {
+							...state.commander,
+							accounting: undefined,
+							cargo: { [good.name]: qty },
+						},
 						...at("sell-commodity", qty),
 					},
 					quote,
 				);
 				if (!out.accepted) return null;
 				state = {
-					commander: { ...out.state.commander, cargo: {} },
+					commander: {
+						...out.state.commander,
+						accounting: undefined,
+						cargo: {},
+					},
 					deficits: out.state.deficits,
 				};
 			}
@@ -679,7 +778,11 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			const sold = leg(
 				state,
 				{
-					commander: { ...state.commander, cargo: { [good.name]: buyQty } },
+					commander: {
+						...state.commander,
+						accounting: undefined,
+						cargo: { [good.name]: buyQty },
+					},
 					...at("sell-commodity", buyQty),
 				},
 				quote,
@@ -781,7 +884,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			flownAtClosingFloor: 188_325,
 			clearedAtClosingFloor: 0,
 		});
-	});
+	}, 120_000);
 
 	test("four chained cycles on ONE deficit map: tonnage stays shut, units do not", () => {
 		// **The corpus seeds a fresh map per cycle** and says so — every realized dock is

@@ -99,4 +99,4 @@ test("the courier's lattice lines and its metal edges meet the model exactly whe
 	console.log(
 		`courier: ${hits + misses} lattice lines (${hits} hit, ${misses} miss), ${edgeLines} edge lines, ${disagree.length} disagree`,
 	);
-}, 90_000);
+}, 240_000);

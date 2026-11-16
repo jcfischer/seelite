@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+	NO_DOCKING_COMPUTER_TEXT,
+	NO_SCOOP_DOCK_NOTICE,
 	SCOOP_NOTICE_S,
 	nextScoopNotice,
 	scoopExit,
@@ -26,6 +28,12 @@ test("a scoop names the tonnage and the good, and a refusal says why", () => {
 	// three scoops in a row read as three events.
 	expect(SCOOP_NOTICE_S).toBeGreaterThan(1.5);
 	expect(SCOOP_NOTICE_S).toBeLessThan(4);
+});
+
+test("the dock tells a pilot without a scoop that nothing can be taken from space (node #1156)", () => {
+	expect(NO_SCOOP_DOCK_NOTICE.trim()).not.toBe("");
+	expect(NO_SCOOP_DOCK_NOTICE).toMatch(/\bcargo scoop\b/i);
+	expect(NO_SCOOP_DOCK_NOTICE).toMatch(/\bfrom space\b/i);
 });
 
 test("the notice does not go to the element the page hides", () => {
@@ -124,4 +132,16 @@ describe("a partial take (civilian-combat H11)", () => {
 		expect(refused.notice.accepted).toBe(false);
 		expect(refused.cue?.kind).toBe("alert");
 	});
+});
+
+test("the docking computer's key without one is refused on the scoop row", () => {
+	expect(NO_DOCKING_COMPUTER_TEXT).toBe(
+		"No docking computer fitted. Buy one at the Equipment tab.",
+	);
+	const main = readFileSync(repoPath("src/main.ts"), "utf8");
+	const body = main.slice(main.indexOf("toggleDockingComputer() {"));
+	const refusal = body.slice(0, body.indexOf("this.engageDockingComputer()"));
+	expect(refusal).toContain("if (!this.hasDockingComputer)");
+	expect(refusal).toContain("text: NO_DOCKING_COMPUTER_TEXT");
+	expect(refusal).toContain("left: SCOOP_NOTICE_S");
 });

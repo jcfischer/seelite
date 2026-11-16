@@ -1,6 +1,6 @@
 /** Shared fixture and skipped-run baseline for both opening contracts. */
 import { mkdirSync } from "node:fs";
-import { bootedGame, guardedOrigin } from "../probe-guard.mjs";
+import { bootBudgetMs, bootedGame, guardedOrigin } from "../probe-guard.mjs";
 import { gameUrl } from "./game-url.mjs";
 
 export async function openingFixture({ browser, check, watch }) {
@@ -63,7 +63,7 @@ export async function openingFixture({ browser, check, watch }) {
 		watch(page, label);
 		await page.goto(gameUrl(origin, { seed: SEED, raider: "off", ...params }));
 		// This fixture measures opening state, not the asynchronously baked sky.
-		await bootedGame(page, 20000, { sky: false });
+		await bootedGame(page, bootBudgetMs(page), { sky: false });
 		return { context, page };
 	}
 

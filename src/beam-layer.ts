@@ -15,10 +15,12 @@
  */
 import * as THREE from "three";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { type BeamStroke, newBeamQuads, writeBeamQuads } from "./beam-glass";
-
-/** The most strokes one frame draws: a gun per hardpoint and the raider. */
-const BEAM_CAPACITY = 16;
+import {
+	BEAM_CAPACITY,
+	type BeamStroke,
+	newBeamQuads,
+	writeBeamQuads,
+} from "./beam-glass";
 
 const VERTEX = /* glsl */ `
 attribute vec2 edge;

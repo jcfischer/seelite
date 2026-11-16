@@ -76,6 +76,7 @@ import type { CommandId, Layout, Trigger } from "./commands";
 import { anyOf, boundNames, onKeyboard, triggerLabel } from "./key-names";
 import type { Ship } from "./sim";
 import type { DisplayContact } from "./display-contact";
+import { NpcPlumes } from "./npc-plumes";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
 
@@ -92,6 +93,10 @@ import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
  * is the rig's, and the disagreement is recorded here rather than resolved.
  */
 export const RIG_MOUSE: Trigger = { kind: "mouse-button", action: "hold" };
+
+// Layout freezes through its rows; rebind returns a new identity. Weak keys
+// let retired layouts go without an invalidation hook (node #500).
+const rigLegends = new WeakMap<Layout, string>();
 
 /**
  * The legend, read off the layout in force (#381 S5).
@@ -110,6 +115,8 @@ export const RIG_MOUSE: Trigger = { kind: "mouse-button", action: "hold" };
  * drawn on is `?combat=1`, which says what it is.
  */
 export function rigLegend(layout: Layout): string {
+	const held = rigLegends.get(layout);
+	if (held !== undefined) return held;
 	const keys = (id: CommandId) => boundNames(layout, id, onKeyboard);
 	const beam = anyOf([...keys("fight.fireBeam"), triggerLabel(RIG_MOUSE)]);
 	// The mouse-flight layout gives the pulse laser's key to the vertical
@@ -121,7 +128,9 @@ export function rigLegend(layout: Layout): string {
 		const found = keys(id);
 		return found.length > 0 ? anyOf(found) : "unbound";
 	};
-	return `${named("fight.firePulse")} pulse · ${beam} beam · ${named("fight.rigIncoming")} warning · ${named("fight.rigEcm")} ECM`;
+	const legend = `${named("fight.firePulse")} pulse · ${beam} beam · ${named("fight.rigIncoming")} warning · ${named("fight.rigEcm")} ECM`;
+	rigLegends.set(layout, legend);
+	return legend;
 }
 
 /** The font a line was fitted at, and the width its widest text takes there. */
@@ -175,10 +184,10 @@ export function fitLine(
 	const held = cache.get(cacheKey);
 	if (held) return held;
 	let size = startSize;
-	ctx.font = `${size}px ui-monospace, monospace`;
+	ctx.font = `${size}px Menlo, monospace`;
 	while (size > 8 && ctx.measureText(widest).width > w - 16) {
 		size -= 1;
-		ctx.font = `${size}px ui-monospace, monospace`;
+		ctx.font = `${size}px Menlo, monospace`;
 	}
 	const fitted = {
 		font: ctx.font,
@@ -443,6 +452,10 @@ export class CombatPrototypeRig {
 	private readonly impactMaterial: THREE.ShaderMaterial;
 	private impactPoint?: Vec3;
 	private hitFlash = 0;
+	/** Node #637: the striker's firing vents, from its own flight's table. */
+	private readonly plumes = new NpcPlumes();
+	/** The rig's own clock for the plumes' particles: it has no world clock. */
+	private plumeClockS = 0;
 	private wasHit = false;
 	private incoming = false;
 	private ecm = false;
@@ -697,6 +710,7 @@ export class CombatPrototypeRig {
 			pilot.aimNose,
 		);
 		this.enemy = flown.state;
+		this.plumeClockS += Math.max(0, dt);
 		this.contact.pos = flown.state.ship.pos;
 		this.contact.velocity = flown.state.ship.vel;
 
@@ -813,6 +827,13 @@ export class CombatPrototypeRig {
 		RIG_ATTITUDE.lookAt(RIG_ORIGIN, RIG_NOSE, RIG_UP);
 		this.targetMesh.quaternion.setFromRotationMatrix(RIG_ATTITUDE);
 		this.targetMesh.visible = view === "cockpit";
+		this.plumes.draw(
+			this.targetMesh,
+			STRIKER_HULL_ID,
+			this.enemy.firing,
+			this.plumeClockS,
+		);
+		this.plumes.endFrame();
 
 		const flash = this.hitFlash / HIT_SPARK_S;
 		if (this.impactPoint) {
@@ -961,6 +982,7 @@ export class CombatPrototypeRig {
 		view: CombatView,
 		/** The layout in force, which the legend names its keys from. */
 		layout: Layout,
+		readout?: (text: string, fill: string) => void,
 	): void {
 		if (view !== "cockpit") {
 			this.clearOverlay();
@@ -987,7 +1009,8 @@ export class CombatPrototypeRig {
 			const width = ctx.measureText(text).width;
 			drawnLines.push({ text, font: fit.font, width });
 			ctx.fillStyle = fill;
-			ctx.fillText(text, w / 2, y);
+			if (readout) readout(text, fill);
+			else ctx.fillText(text, w / 2, y);
 			return fit;
 		};
 		const s = this.state;
