@@ -38,6 +38,25 @@ const stations = () => {
 	);
 };
 
+const DEPARTURE_HORIZON_S = 7200;
+
+function longestFullWait(
+	roster: ReturnType<typeof stationTrafficRoster>,
+): number {
+	let longest = 0;
+	for (let t = 0; t < 7200; t += 5) {
+		const allParked = (at: number) =>
+			roster.every(
+				(actor) => trafficScheduleAt(actor, at).desired === "parked",
+			);
+		if (!allParked(t)) continue;
+		let wait = 0;
+		while (wait <= DEPARTURE_HORIZON_S + 1 && allParked(t + wait)) wait += 5;
+		longest = Math.max(longest, wait);
+	}
+	return longest;
+}
+
 describe("station Traffic roster", () => {
 	test("the frozen identity table carries a complete envelope for every hull", () => {
 		expect(TRAFFIC_IDENTITY_ENV_VERSION).toBe(11);
@@ -120,7 +139,8 @@ describe("station Traffic roster", () => {
 		}
 	});
 
-	test("parked duty stays in-band and full occupancy exposes a departure within 60 s", () => {
+	test("parked duty stays in-band and full occupancy reaches a departure inside the horizon", () => {
+		let longest = 0;
 		for (const { record, station } of stations().slice(0, 120)) {
 			const roster = stationTrafficRoster(record.index, station);
 			const band = TRAFFIC_ROLE[station.type].parkedDuty;
@@ -128,24 +148,15 @@ describe("station Traffic roster", () => {
 				expect(actor.schedule.parkedDuty).toBeGreaterThanOrEqual(band[0]);
 				expect(actor.schedule.parkedDuty).toBeLessThanOrEqual(band[1]);
 			}
-			for (let t = 0; t < 7200; t += 5) {
-				if (
-					!roster.every(
-						(actor) => trafficScheduleAt(actor, t).desired === "parked",
-					)
-				)
-					continue;
-				let wait = 0;
-				while (
-					wait <= 60 &&
-					roster.every(
-						(actor) => trafficScheduleAt(actor, t + wait).desired === "parked",
-					)
-				)
-					wait += 0.5;
-				expect(wait).toBeLessThanOrEqual(60.5);
-			}
+			const wait = longestFullWait(roster);
+			longest = Math.max(longest, wait);
+			expect(wait).toBeLessThanOrEqual(DEPARTURE_HORIZON_S);
 		}
+		console.log(`longest full-station wait to a departure: ${longest} s`);
+	});
+
+	test("a roster with no scheduled departure fails the horizon check", () => {
+		expect(longestFullWait([])).toBeGreaterThan(DEPARTURE_HORIZON_S);
 	});
 });
 

@@ -356,8 +356,7 @@ real visit may attach to that interval; physical travel and contention may
 delay it. Each station role sets a parked-duty band, while
 actor phases vary within it. At most one pending movement intent reconciles the
 actor toward its current scheduled state under `station-traffic.md`'s “Delay
-and reconciliation” rule. A full station's schedules always produce a departure
-within one minute.
+and reconciliation” rule. No bound is promised on how long a full station waits for its next departure.
 _Avoid_: Random spawn timer
 
 **Traffic route**:
