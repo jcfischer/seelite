@@ -41,10 +41,13 @@ place of the drawn mesh, with the aperture's opening left out. It is
 Three-free and is a function of the form and its seeds. For an aperture of
 kind `pad`, the landing well also derives from the admitted hull envelopes <!-- glossary-ignore: pad -->
 through `padWellDepthKm` (collision.md §2.2). No drawn vertex may
-lie outside it — on a shipyard or a refinery, no vertex of the authored
-model: the sim collides with that whatever is drawn, so the procedural
-stand-in that draws until it installs is not solid (nodes #818, #819). Its
-plant is held to 10 m of empty space and a refinery's rock to 20 m.
+lie outside it — on an authored trade form (Ring, Drum, Assembly or Wheel),
+a shipyard, a refinery or an authored outpost (the Salvage, and the Derrick, Buoy, Rig
+and Cluster, which no pool holds yet), no
+vertex of the authored model: the sim collides with that whatever is drawn,
+so the procedural stand-in that draws until it installs is not solid (nodes
+#818, #819, #1031, #1032, #1033, #1073). Its plant or hull is held to 10 m of empty
+space and a refinery's rock to 20 m.
 `docs/specs/collision.md` §2.2 owns it.
 _Avoid_: hitbox, collision mesh.
 
@@ -225,6 +228,14 @@ owns the projection and `commanderHold` in `station-commerce.ts` owns the
 capacity rule it reads; the station console draws it above the market rows and
 the till refuses against the same figures (#443).
 
+Raw ore is persisted commander cargo in whole tonnes, with the 15 family/grade
+identities owned by `src/ore-goods.ts`. The Longwall has 3,000 t of dedicated
+raw-ore skips; its ordinary hold remains 40 t. Other hulls share their general
+hold with ore. `commanderOreBay` and `cargoHold` in `src/station-commerce.ts`
+own the compartment rule shared by mining, markets and recovery; `src/hold.ts`
+projects its `oreBay` for the glass, labelled `RAW ORE`. Ore contributes flown
+mass once. Raw sales require `?mining=1`; loading without it retains ore aboard.
+
 It is the *player's* hold and nothing else's. **Manifest** above is what an
 ordinary carrier carries, **Traffic hold** is a place a carrier waits, `ScanHold`
 is a charge, and a **held launch** is Traffic refusing one — four senses the same
@@ -345,8 +356,7 @@ real visit may attach to that interval; physical travel and contention may
 delay it. Each station role sets a parked-duty band, while
 actor phases vary within it. At most one pending movement intent reconciles the
 actor toward its current scheduled state under `station-traffic.md`'s “Delay
-and reconciliation” rule. A full station's schedules always produce a departure
-within one minute.
+and reconciliation” rule. No bound is promised on how long a full station waits for its next departure.
 _Avoid_: Random spawn timer
 
 **Traffic route**:
@@ -442,9 +452,12 @@ The stable sequence number distinguishing the original carrier instance from its
 What a carrier enables while it has a particular operational condition.
 _Avoid_: Bonus, percentage effect
 
+**Capability carrier**:
+A generated station child representing one independently available service: market, equipment or the station type's exclusive service. Its `capability` carrier kind and `/capability/` persistence-key segment name this carrier, while its operational condition determines whether that service is available. `docs/specs/capability-operational-time.md` owns its timing contract.
+
 **Intervention**:
 A player action that changes a carrier's operational condition or recovery process.
-_Avoid_: Command, influence spend
+_Avoid_: influence spend
 
 > **Scope of the `Command` alias** (added by [#71](https://github.com/jcfischer/seelite/pull/71), and it is that PR's reading rather than a ruling from [#41](https://github.com/jcfischer/seelite/issues/41), which introduced the term and did not address the question). Every term in this file is a term of the **consequence model**, so the alias bans "Command" as a name for *a player act on a carrier* — not as an English word. `Game.command(id)` runs one command, and `resolveKey` and `resolvePad` map a keypress or a pad press to the ids it reaches in the layout in force — it was `Game.command(key)` until [#381](https://github.com/jcfischer/seelite/issues/381) folded the dispatch onto command ids, and the `commandKey(key)` that stood beside it through that node's first three slices went in its fourth — and `ComputerCommand` is one frame of an autopilot's output; neither is an intervention on a carrier, and renaming them would make the canonical term mean two things. If the model's owner reads the alias more widely than this, this note is what should be corrected.
 
@@ -582,8 +595,10 @@ carrier's signal.
 **Long-Range Scanner**:
 The module a pilot buys at a Shipyard for 1,000 Cr (#481, under #468) to read
 a **Pirate relay** at all: strength and bearing at range, identification much
-closer in, which is #43's close regime — `pirate-relay.ts` owns both figures
-and nothing restates them. Unfitted, nothing is read: no cue, no contact, no
+closer in, which is #43's close regime — `relay-signal-range.ts`, a leaf, owns
+the signal range so the module catalog can read it without a cycle (#1114),
+`pirate-relay.ts` owns the identify range and re-exports the other, and nothing
+restates them. Unfitted, nothing is read: no cue, no contact, no
 target, and no identification is recorded. **An identification already
 recorded is not erased, only unread** — the relay goes dark and is found again
 when the module is back. The relay's **Route detection** dial is deliberately
@@ -673,8 +688,8 @@ _Avoid_: Touchdown deck, apron, exterior pad
 
 **Berth**:
 Where one ship parks in a station interior, addressed as **interior face × depth band** — deck, port wall, starboard wall or overhead; near or deep. In a bay the face is the wall the berth is bolted to; on a landing pad there is one surface, so the face is the *side of the landing lane* the berth stands on and every berth is in the `near` band, because a deck has no depth. Its **family** (open deck pad, wall-side berth, recessed service cradle) changes presentation and parked pose and never the docking interaction. It accepts a hull when its declared clear length, beam and height contain that hull's envelope; there is no S/M/L class. `docs/specs/docking.md` §13.2 owns the catalogue, the fit predicate and the allocation.
-_Avoid_: Docking bay, slot, pad, landing pad
-These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. And **Carrier slot** above is a fourth: the row a carrier is filed under — a **Raider slot**, the relay's, one of a station's **Traffic roster** — with `raider-slots.ts` and `relay-slot.ts` named for it; a berth is where a ship parks, a Carrier slot is what its save row is filed under. The music has its own senses of both: `pad` is a synth voice (`VoiceKind`, #543) and a part of sustained chords in a score, and a **song slot** (`MUSIC_SONG_SLOTS`) is where the synth holds a loaded song. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth. <!-- glossary-ignore: slot, pad, landing pad -->
+_Avoid_: Docking bay, landing pad
+"Slot" and "pad" are not on the _Avoid_ line because the review check matches a word without its sense; used for where a ship parks, both are still aliases for **a berth**. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. And **Carrier slot** above is a fourth: the row a carrier is filed under — a **Raider slot**, the relay's, one of a station's **Traffic roster** — with `raider-slots.ts` and `relay-slot.ts` named for it; a berth is where a ship parks, a Carrier slot is what its save row is filed under. The music has its own senses of both: `pad` is a synth voice (`VoiceKind`, #543) and a part of sustained chords in a score, and a **song slot** (`MUSIC_SONG_SLOTS`) is where the synth holds a loaded song. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth. <!-- glossary-ignore: slot, pad, landing pad -->
 
 **Eject**:
 The pilot launching the **escape pod**: the held `fly.eject` control (node
@@ -711,7 +726,8 @@ tab's label names who the page is about.
 **Natural voice**, before its menu at boot. That answer is a settings row and
 never part of a save; the overlay hosts the question because it is the screen a
 player meets first, not because the voice belongs to a Commander.
-_Avoid_: save game, save file, profile (in player-facing text)
+_Avoid_: save game, save file
+Player-facing text does not call it a profile.
 
 **Ladder**:
 One of three commander-global progressions — combat, trade and exploration —
@@ -723,14 +739,14 @@ console's **Commander** page — a console tab, not the **Commander** overlay.
 `src/ladder.ts` owns thresholds, names, gates and the trade ladder's purchase
 basis (`LadderRecord.basis`, which the hold does not carry);
 `src/kill-credit.ts` owns a kill's price.
-_Avoid_: rating, rank (for the three together), level, XP
+_Avoid_: rating, rank (for the three together), XP
 
 **Rung**:
 A step on a **Ladder**, 0 (the start) to 8 (the top), each exactly twice the
 credit of the one below (#562). Rungs have original names, never Elite's. A
 rung never falls, and a gate blocks only new purchases, so an item owned below
 its rung stays owned.
-_Avoid_: tier (that is #26's hull tier), grade
+It is not a tier: that word is #26's hull tier.
 
 **Banked credit**:
 Ladder credit the save carries. Credit earned in flight — a kill, a first
@@ -738,7 +754,8 @@ arrival — is **unbanked** until the next dock banks it, and is lost with the
 ship before that (#183 D7): a death restores the commander record as it last launched (`CommanderRecord`, #654, #660 D1) — except the ladders' `playedS`, which keeps the time flown before the death (#581) — and a save
 taken in flight does not carry it. Trade credit is earned docked, so it banks
 at once.
-_Avoid_: score, XP
+_Avoid_: XP
+It is not a score: **Score** is the music's term.
 
 **Failed entry**:
 A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; unless it was a barge it does not turn the station hostile. Damage is quadratic in the closing speed above a floor, so a failed entry at the gate speed is survivable by design while one flown at the assist cap is not — "it costs you something, not everything" is a claim about the gate, not a guarantee at any speed. `docs/specs/docking.md` §2 owns the model.
@@ -812,13 +829,32 @@ _Avoid_: Hyperspace (as a place), jump space
 
 **Arrival rift**:
 The world-anchored half of a jump's exit (#195 D2, built by #532): a ring of
-light one hull length behind the arriving ship, facing along its nose, that
+light one hull reach behind the arriving ship, facing along its nose, that
 opens with the new system's light and closes a few seconds later. It is the
 ring a lens makes, and the sky behind it bends round it — **the player's rift
 only** today, because the witchspace pass carries one lens. Owned by
 `src/arrival-rift.ts`; #530's opening reuses it, and a **Hauler**'s jump
 draws its ring at both ends, without the lens (`inter-system-traffic.md` §9).
+Its full-strength radius is `ARRIVAL_RIFT.radiusReaches` times that hull's
+`HULL_REACH_KM`, with no minimum radius. The player's and a **Hauler**'s rings
+use this same law.
 _Avoid_: portal, wormhole (as an object)
+
+**The crossing**:
+What a jump looks like to someone watching it happen (#1006), as against what
+it feels like from inside it (**Witchspace**). Three beats on one clock keyed
+to the instant the hull passes the ring's plane, not to when anyone docks: the
+ring **tears open** with nothing in it, the hull **comes through the plane**
+(or goes into it, departing) over the crossing's own second or two instead of
+appearing and disappearing on the tick, and the ring **seals** — collapsing
+toward a point with a flare, rather than fading out, because a fade carries no
+answer to where the ship went. Its clock is `CROSSING` in
+`src/witchspace-crossing.ts`, a leaf read by both the **Traffic authority**
+that moves a **Hauler** and the **Game** that draws the ring, and by the
+player's own clock for the flare and the seal; the player's exit keeps its own
+**unfurl** and **unfold** ahead of the instant, and the crossing adds the flare
+and the seal to that, not a second ring.
+_Avoid_: warp effect, jump animation, instant appearance/disappearance
 
 **Light shift**:
 What the cruise sky does at speed (#537): the stars crowd toward the ship's
@@ -857,7 +893,7 @@ particular pilot's sky. One per system, drawn from its own domain tag, isotropic
 over rotations — what that buys and what it costs is §11's to say, including
 that an isotropic draw rules nothing out. `src/galaxy-frame.ts` owns the
 arithmetic; `galaxy-generation.md` §11 owns the ruling.
-_Avoid_: Attitude (that is the ship's own quaternion)
+It is not an attitude: that word is the ship's own quaternion.
 
 **Galactic pole**:
 Where a **Sky frame** lands the cluster's reference-plane normal — the direction
@@ -1010,7 +1046,7 @@ _Avoid_: Remix, cover
 **Stem**:
 One part of a score, faded on its own while the song plays (`stem` in
 `MusicCommand`). Two stems moved together are a crossfade between parts.
-_Avoid_: Layer, track
+_Avoid_: track
 
 **Quantum** (music):
 Where a transport move lands: the playing song's next bar line (`"bar"`) or
@@ -1054,7 +1090,7 @@ action meet the hull's metal (§3.2.1).
 What an author — the pilot, the assist, the docking computer, a raider — asks
 of an axis (`LinearDemand`, the stick to `stepAngular`). The sim composes
 demands into vent firings, and nothing fires a vent another way (§3.6).
-_Avoid_: Command — *for the composed vent levels*; those are the **Firing table**.
+The composed vent levels are the **Firing table**, not a command.
 
 **Firing table**:
 How hard each vent fired in one step, 0…1 by slot (`VentLevels`). `stepFlight`

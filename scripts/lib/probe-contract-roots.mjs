@@ -4,6 +4,158 @@
  * An unmapped source or new probe expands to the full suite.
  */
 const OWNERS = Object.freeze({
+	"probe-laser-origin.mjs": [
+		"scripts/probe-laser-origin.mjs",
+		"src/ship-mesh.ts",
+		"src/chase-view.ts",
+		"src/beam-glass.ts",
+		"src/beam-layer.ts",
+		"src/cockpit-eye.ts",
+		"src/fire-group.ts",
+		"src/laser-modules.ts",
+	],
+	"probe-mining-goods.mjs": [
+		"scripts/probe-mining-goods.mjs",
+		"src/ore-goods.ts",
+		"src/station-commerce.ts",
+		"src/station-console.ts",
+		"src/commodity-pools.ts",
+		"src/save-envelope.ts",
+		"src/hold.ts",
+		"src/hold-view.ts",
+	],
+	"probe-accounting.mjs": [
+		"scripts/probe-accounting.mjs",
+		"scripts/lib/accounting-save-cases.ts",
+		"src/commodity-pools.ts",
+		"src/save-envelope.ts",
+		"src/save-store.ts",
+	],
+	"probe-field-discovery.mjs": [
+		"scripts/probe-field-discovery.mjs",
+		"scripts/lib/field-discovery-fixture.mjs",
+		"src/field-discovery.ts",
+		"src/field-contact.ts",
+		"src/asteroid-field.ts",
+		"src/world-state.ts",
+		"src/save-envelope.ts",
+		"src/system-sweep.ts",
+		"src/system-sweep-view.ts",
+	],
+	"probe-refinery-jobs.mjs": [
+		"scripts/probe-refinery-jobs.mjs",
+		"scripts/lib/commander-fixture.ts",
+		"src/refinery.ts",
+		"src/refinery-pricing.ts",
+		"src/world-state.ts",
+		"src/save-envelope.ts",
+		"src/save-store.ts",
+		"src/live-cockpit.ts",
+		"src/station-console.ts",
+	],
+	"probe-refinery-collection.mjs": [
+		"scripts/probe-refinery-collection.mjs",
+		"scripts/lib/commander-fixture.ts",
+		"src/refinery.ts",
+		"src/refinery-pricing.ts",
+		"src/commodity-pools.ts",
+		"src/world-state.ts",
+		"src/save-envelope.ts",
+		"src/save-store.ts",
+		"src/live-cockpit.ts",
+		"src/station-console.ts",
+	],
+	"probe-capability-outage.mjs": [
+		"scripts/probe-capability-outage.mjs",
+		"scripts/lib/capability-outage-fixture.mjs",
+		"src/capability-slots.ts",
+		"src/capability-time.ts",
+		"src/world-state.ts",
+		"src/station-commerce.ts",
+		"src/station-console.ts",
+	],
+	"probe-miner-cockpit.mjs": [
+		"scripts/probe-miner-cockpit.mjs",
+		"src/cockpit-eye.ts",
+		"src/cockpit-model.ts",
+		"src/cockpit-occlusion-table.ts",
+		"src/drill-camera.ts",
+		"src/drill-camera-pass.ts",
+		"src/miner-faces.ts",
+		"src/models/miner-cockpit.glb",
+	],
+	"probe-mining-drill.mjs": [
+		"scripts/probe-mining-drill.mjs",
+		"src/rock-drill.ts",
+		"src/drill-pose.ts",
+		"src/longwall-drill-rig.ts",
+		"src/cockpit-occlusion-table.ts",
+		"src/cockpit-eye.ts",
+		"src/fire-group.ts",
+		"src/ship-mesh.ts",
+		"src/deposit-state.ts",
+	],
+	"probe-mining-mounts.mjs": [
+		"scripts/probe-mining-mounts.mjs",
+		"src/laser-modules.ts",
+		"src/mining-beam.ts",
+		"src/beam-glass.ts",
+		"src/beam-layer.ts",
+		"src/rock-extraction.ts",
+		"src/fire-group.ts",
+		"src/ship-mesh.ts",
+		"src/outfitting.ts",
+		"src/outfitting-view.ts",
+	],
+	"probe-mining-survey.mjs": [
+		"scripts/probe-mining-survey.mjs",
+		"src/rock-survey.ts",
+		"src/rock-extraction.ts",
+		"src/rock-target.ts",
+		"src/mining-beam.ts",
+		"src/deposit-state.ts",
+		"src/hold-view.ts",
+	],
+	"probe-variants-loadouts.mjs": [
+		"scripts/probe-variants-loadouts.mjs",
+		"src/module-variants.ts",
+		"src/npc-loadout.ts",
+		"src/loadout.ts",
+		"src/kill-credit.ts",
+	],
+	"probe-production-boot.mjs": [
+		"scripts/probe-production-boot.mjs",
+		"src/entry.ts",
+		"src/model-catalog.ts",
+		"scripts/lib/async-import-guard.mjs",
+	],
+	"probe-model-queue.mjs": [
+		"scripts/probe-model-queue.mjs",
+		"src/model-queue.ts",
+		"src/model-catalog.ts",
+		"src/system-models.ts",
+	],
+	"probe-asteroid-field.mjs": [
+		"scripts/probe-asteroid-field.mjs",
+		"src/field-draw.ts",
+		"src/field-lod.ts",
+		"src/asteroid-model.ts",
+		"src/asteroid-field.ts",
+		"src/model-catalog.ts",
+		"src/system-models.ts",
+	],
+	"probe-field-flight.mjs": [
+		"scripts/probe-field-flight.mjs",
+		"src/field-collision.ts",
+		"src/asteroid-field.ts",
+		"src/rock-pieces.ts",
+		"src/collision.ts",
+	],
+	"probe-missiles.mjs": [
+		"scripts/probe-missiles.mjs",
+		"src/missiles.ts",
+		"src/missile-combat.ts",
+	],
 	"probe-nebula.mjs": [
 		"scripts/probe-nebula.mjs",
 		"src/nebula.ts",
@@ -19,11 +171,16 @@ const OWNERS = Object.freeze({
 	],
 	"probe-approach-handoff.mjs": [
 		"scripts/probe-approach-handoff.mjs",
+		"src/planet-surface.ts",
 		"src/arrival.ts",
 		"src/station-traffic.ts",
 		"src/docking.ts",
 	],
-	"probe-arrival.mjs": ["scripts/probe-arrival.mjs", "src/arrival.ts"],
+	"probe-arrival.mjs": [
+		"scripts/probe-arrival.mjs",
+		"src/arrival.ts",
+		"src/field-contact.ts",
+	],
 	"probe-audio-cues.mjs": [
 		"scripts/probe-audio-cues.mjs",
 		"src/audio.ts",
@@ -72,6 +229,13 @@ const OWNERS = Object.freeze({
 	"probe-cockpit-surface.mjs": [
 		"scripts/probe-cockpit-surface.mjs",
 		"src/cockpit-surface.ts",
+	],
+	"probe-rock-placement.mjs": [
+		"scripts/probe-rock-placement.mjs",
+		"src/main.ts",
+		"src/collision.ts",
+		"src/sim.ts",
+		"src/save-envelope.ts",
 	],
 	"probe-collision-surface.mjs": [
 		"scripts/probe-collision-surface.mjs",
@@ -150,6 +314,11 @@ const OWNERS = Object.freeze({
 	],
 	"probe-duel-hud.mjs": ["scripts/probe-duel-hud.mjs", "src/duel-hud.ts"],
 	"probe-eject.mjs": ["scripts/probe-eject.mjs", "src/eject.ts"],
+	"probe-scoop-migration.mjs": [
+		"scripts/probe-scoop-migration.mjs",
+		"src/cargo-notice.ts",
+		"src/save-envelope.ts",
+	],
 	"probe-first-day.mjs": [
 		"scripts/probe-first-day.mjs",
 		"src/first-day.ts",
@@ -228,6 +397,8 @@ const OWNERS = Object.freeze({
 	"probe-light-rig.mjs": ["scripts/probe-light-rig.mjs", "src/light-rig.ts"],
 	"probe-live-cockpit.mjs": [
 		"scripts/probe-live-cockpit.mjs",
+		"scripts/fixtures/cockpit-text-cabin.glb",
+		"scripts/fixtures/cockpit-text-cabin.ts",
 		"src/live-cockpit.ts",
 		"src/cockpit-surface.ts",
 		"src/scanner-view.ts",
@@ -245,6 +416,14 @@ const OWNERS = Object.freeze({
 		"src/model-progress.ts",
 		"src/interior-install.ts",
 	],
+	"probe-shared-image.mjs": [
+		"scripts/probe-shared-image.mjs",
+		"scripts/fixtures/shared-image-page.ts",
+		"src/shared-image.ts",
+		"src/gpu-teardown.ts",
+		"src/model-urls.ts",
+		"src/model-queue.ts",
+	],
 	"probe-model-viewer.mjs": [
 		"scripts/probe-model-viewer.mjs",
 		"src/model-viewer.ts",
@@ -254,6 +433,12 @@ const OWNERS = Object.freeze({
 		"src/pilot-demand.ts",
 		"src/layout-choice.ts",
 		"src/pointer.ts",
+	],
+	"probe-mouse-sensitivity.mjs": [
+		"scripts/probe-mouse-sensitivity.mjs",
+		"src/pointer.ts",
+		"src/settings.ts",
+		"src/settings-panel.ts",
 	],
 	"probe-moving-guard.mjs": [
 		"scripts/probe-moving-guard.mjs",
@@ -333,6 +518,18 @@ const OWNERS = Object.freeze({
 		"src/planet-surface.ts",
 		"src/planet-appearance.ts",
 	],
+	"probe-planet-gradient.mjs": [
+		"scripts/probe-planet-gradient.mjs",
+		"src/planet-surface.ts",
+		"src/planet-shaders.ts",
+		"src/planet-classes.glsl.ts",
+	],
+	"probe-planet-footprint.mjs": [
+		"scripts/probe-planet-footprint.mjs",
+		"src/planet-surface.ts",
+		"src/planet-footprint.ts",
+		"src/planet-clouds.ts",
+	],
 	"probe-planets.mjs": [
 		"scripts/probe-planets.mjs",
 		"src/planet-surface.ts",
@@ -396,12 +593,6 @@ const OWNERS = Object.freeze({
 		"src/save-store.ts",
 		"src/save-envelope.ts",
 	],
-	"probe-ship-visuals.mjs": [
-		"scripts/probe-ship-visuals.mjs",
-		"src/ship-mesh.ts",
-		"src/ship-surface.ts",
-		"src/ship-detail.ts",
-	],
 	"probe-shipyard.mjs": [
 		"scripts/probe-shipyard.mjs",
 		"src/station-console.ts",
@@ -464,6 +655,12 @@ const OWNERS = Object.freeze({
 		"src/station-traffic.ts",
 		"src/station-mesh.ts",
 	],
+	"probe-npc-vents.mjs": [
+		"scripts/probe-npc-vents.mjs",
+		"scripts/lib/npc-vent-state.mjs",
+		"src/npc-plumes.ts",
+		"src/vent-plumes.ts",
+	],
 	"probe-vent-display.mjs": [
 		"scripts/probe-vent-display.mjs",
 		"src/vent-plumes.ts",
@@ -495,14 +692,23 @@ const OWNERS = Object.freeze({
 });
 
 export const SMOKE_PROBES = Object.freeze([
+	"probe-production-boot.mjs",
 	"probe-boot.mjs",
 	"probe-live-cockpit.mjs",
+]);
+
+const FOV_CONTRACT_ROOTS = Object.freeze([
+	"scripts/probe-hud.mjs",
+	"scripts/probe-chase-view.mjs",
+	"scripts/probe-cruise-light.mjs",
 ]);
 
 /** Body-only edits to these projections have reviewed consumers. New calls or
  * this-members expand coverage, as do signatures, fields and boot wiring.
  */
 export const MAIN_METHOD_ROOTS = Object.freeze({
+	applyViewFov: FOV_CONTRACT_ROOTS,
+	layerCameras: FOV_CONTRACT_ROOTS,
 	navRows: ["src/station-console.ts", "src/galaxy-finder.ts"],
 	firstDayPanel: ["src/first-day.ts", "src/station-console.ts"],
 	firstDayGlassPrompt: ["src/first-day.ts", "src/hud.ts"],
@@ -513,6 +719,8 @@ export const MAIN_METHOD_ROOTS = Object.freeze({
 
 /** Reviewed callers: a new consumer invalidates the narrower ownership rule. */
 export const MAIN_METHOD_CALLERS = Object.freeze({
+	applyViewFov: ["constructor", "render"],
+	layerCameras: ["applyViewFov"],
 	navRows: ["updateCockpit"],
 	firstDayPanel: ["updateCockpit"],
 	firstDayGlassPrompt: ["cruisePrompt"],

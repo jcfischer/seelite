@@ -100,8 +100,10 @@ test("the renderer's bodies carry the appearance the generator implies", () => {
 		if (
 			body.kind === "ship" ||
 			body.kind === "relay" ||
+			body.kind === "field" ||
 			body.kind === "cargo" ||
-			body.kind === "wreck"
+			body.kind === "wreck" ||
+			body.kind === "rock"
 		)
 			throw new Error("Generated bodies contain a display contact");
 		if (body.kind === "station") {

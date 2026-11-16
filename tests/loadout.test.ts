@@ -1,7 +1,10 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import { expect, test } from "bun:test";
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { EQUIPMENT } from "../src/market";
 import {
+	boughtModule,
+	legacyModule,
 	migrateEquipment,
 	loadoutValue,
 	fittingValue,
@@ -171,6 +174,7 @@ test("a carried typed fitting and a surviving wreck preserve grade, ammo and var
 	// Schema 14 already carried typed fittings and their purchase cost, before
 	// sweep strength was added.
 	raw.saveSchemaVersion = 14;
+	delete raw.commander.txSeq;
 	expect(parseSave(seal(raw))).toEqual(saved);
 });
 test("invalid slots, grades, missing plants and impossible ammunition are refused", () => {
@@ -207,6 +211,7 @@ test("invalid slots, grades, missing plants and impossible ammunition are refuse
 });
 function seal(o: any) {
 	const { integrity: _, ...body } = o;
+	pairLegacyWorldFixture(body);
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 }
 test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the new field", () => {
@@ -224,6 +229,7 @@ test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the n
 	);
 	expect(wrecks.flat().some((c) => c.fitting?.purchaseCostCr === 0)).toBe(true);
 	raw.saveSchemaVersion = 13;
+	delete raw.commander.txSeq;
 	expect(() => parseSave(seal(raw))).toThrow();
 	delete raw.commander.state.loadout.h1.purchaseCostCr;
 	delete raw.commander.state.recoveredFittings[0].purchaseCostCr;
@@ -233,7 +239,7 @@ test("v14 preserves cost in fitted, carried and wreck modules; v13 refuses the n
 });
 test("current saves write only loadout; mixed versions and unknown old ids are refused", () => {
 	const current = fixture();
-	expect(current.saveSchemaVersion).toBe(15);
+	expect(current.saveSchemaVersion).toBe(22);
 	expect(current.commander.state.ownedEquipment).toBeUndefined();
 	expect(() =>
 		parseSave(
@@ -248,7 +254,9 @@ test("current saves write only loadout; mixed versions and unknown old ids are r
 	).toThrow();
 	const old = fixture();
 	old.saveSchemaVersion = 12;
+	delete old.commander.txSeq;
 	old.commander.state.ownedEquipment = [];
+	pairLegacyWorldFixture(old);
 	expect(() => parseSave(seal(old))).toThrow();
 	delete old.commander.state.loadout;
 	old.commander.state.ownedEquipment = ["not equipment"];
@@ -259,4 +267,32 @@ test("current saves write only loadout; mixed versions and unknown old ids are r
 	expect(migrated.commander.state.loadout.h1.module).toBe("beam-laser");
 	expect(JSON.stringify(old)).toBe(original);
 	expect(parseSave(serializeSave(migrated))).toEqual(migrated);
+});
+
+test("a Mining Laser sold into a free mount takes the mount's size; anything else is legacyModule (#1147, #920 D-D18)", () => {
+	const ml = "Mining Laser";
+	const stock = stockLoadout("miner");
+	expect(boughtModule("miner", stock, ml)).toEqual(
+		makeModule("mining-laser", 3),
+	);
+	expect(
+		boughtModule("miner", { ...stock, h2: makeModule("mining-laser", 3) }, ml),
+	).toEqual(makeModule("mining-laser", 3));
+	const full = {
+		...stock,
+		h2: makeModule("mining-laser", 3),
+		h3: makeModule("pulse-laser", 3),
+	};
+	expect(boughtModule("miner", full, ml)).toEqual(legacyModule("miner", ml));
+	expect(legacyModule("miner", ml)).toEqual(makeModule("mining-laser", 1));
+	expect(boughtModule("miner", undefined, ml)).toEqual(
+		legacyModule("miner", ml),
+	);
+	expect(boughtModule("miner", stock, "Extra Pulse Laser")).toEqual(
+		legacyModule("miner", "Extra Pulse Laser"),
+	);
+	const patrol = stockLoadout("patrol");
+	expect(boughtModule("patrol", patrol, ml)).toEqual(
+		legacyModule("patrol", ml),
+	);
 });

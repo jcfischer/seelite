@@ -16,7 +16,7 @@
  * model, triangle for triangle; beyond it, a reduced copy made to a **target**
  * error of half a device pixel at that edge, in `LEVEL_FRAME`, and beyond the
  * second edge a coarser one made to the same target (`authored-levels.ts`).
- * Both copies are made here, once, from the loaded model, and share its
+ * Both copies are made here in frame slices, once, from the loaded model, and share its
  * materials and textures. A reduced level is drawn and never measured: its
  * meshes take no ray (`AuthoredLevelMesh`), so the nav lights, the muzzles and
  * the vent throats are placed on the approved metal.
@@ -25,19 +25,22 @@ import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
-import { levelErrorKm, reducedLevel } from "./authored-levels";
+import { levelErrorKm, reducedLevelSteps } from "./authored-levels";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { HULL_SPECS } from "./hull";
+import { runHullSlices } from "./hull-install-work";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelProgressListener } from "./model-progress";
 import {
 	type AfterBootHullId,
 	type AuthoredHullBuilder,
 	HULL_REACH_KM,
-	buildShipMesh,
 	installAuthoredHull,
+	prepareAuthoredHull,
 } from "./ship-mesh";
-import { ventThroats } from "./vent-plumes";
+import { sharedImagePlugin } from "./shared-image";
+import { HABITAT_ROTOR_NAME } from "./ship-detail";
+import { prepareAuthoredThroats } from "./vent-plumes";
 
 /** One drive nozzle pair, study metres: the throat's centre on the starboard
  *  side of the study (`x`; the port one is its mirror), the closed throat // glossary-ignore: throat
@@ -45,6 +48,10 @@ import { ventThroats } from "./vent-plumes";
 export interface StudyNozzles {
 	readonly x: number;
 	readonly y: number;
+	/** Where each glow stands when the hull's drives are not a mirrored pair
+	 *  (the voyager's three bells, node #820): `side` names the glow, `x`
+	 *  and `y` are its axis in study metres. Absent, the pair is `±x`, `y`. */
+	readonly mounts?: readonly { side: string; x: number; y: number }[];
 	readonly throatZ: number; // glossary-ignore: throat
 	readonly lipZ: number;
 	readonly throatRadius: number; // glossary-ignore: throat
@@ -70,6 +77,8 @@ export interface AuthoredHullDesign {
 	readonly prepareMesh?: (mesh: THREE.Mesh) => void;
 	/** Meshes left out of both reduced levels. */
 	readonly skipInLevels?: (mesh: THREE.Mesh) => boolean;
+
+	readonly habitat?: boolean;
 }
 
 /**
@@ -149,6 +158,16 @@ function discGeometry(n: StudyNozzles): THREE.BufferGeometry {
 }
 
 /**
+ * A task boundary between install phases, so a frame can paint between them.
+ * The phases are the stall (#907): this does not make any one of them cheaper,
+ * it stops them landing as one block (the voyager's 1.52 s became its longest
+ * phase). No rAF wait, so a postcard in a hidden tab still finishes.
+ */
+function yieldTask(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
  * Prepare a loaded study scene once and return the builder `buildShipMesh`
  * calls for every ship of the hull: the template's geometry, materials and
  * textures are shared by every copy and survive any one ship's teardown, and
@@ -206,23 +225,34 @@ export async function createAuthoredHullBuilder(
 	const disc = shared(discGeometry(design.nozzles));
 	const rules = design.skipInLevels ? { skip: design.skipInLevels } : undefined;
 	const reach = HULL_REACH_KM[design.hull];
-	const levels = {
-		reduced: reducedLevel(
+	await yieldTask();
+	const reduced = await runHullSlices(
+		reducedLevelSteps(
 			template,
 			levelErrorKm("reduced", reach) / kmPerM,
 			kmPerM,
 			design.levelNames.reduced,
 			rules,
 		),
-		outline: reducedLevel(
-			template,
-			levelErrorKm("outline", reach) / kmPerM,
-			kmPerM,
-			design.levelNames.outline,
-			rules,
+	);
+	await yieldTask();
+	const levels = {
+		reduced,
+		outline: await runHullSlices(
+			reducedLevelSteps(
+				template,
+				levelErrorKm("outline", reach) / kmPerM,
+				kmPerM,
+				design.levelNames.outline,
+				rules,
+			),
 		),
 	};
 
+	const mounts = design.nozzles.mounts ?? [
+		{ side: "port", x: design.nozzles.x, y: design.nozzles.y },
+		{ side: "starboard", x: -design.nozzles.x, y: design.nozzles.y },
+	];
 	return (root, exhaust) => {
 		const frame = new THREE.Group();
 		frame.name = design.frameName;
@@ -239,20 +269,58 @@ export async function createAuthoredHullBuilder(
 		// What this root carries, for `ventThroats`: the finish in force when
 		// it is asked need not be the one it was built under.
 		root.userData.authoredGlow = glow === bowl ? "bowl" : "disc";
+		if (design.habitat) {
+			const rotors = [full, reduced, outline]
+				.map((level) => level.getObjectByName(HABITAT_ROTOR_NAME))
+				.filter((node): node is THREE.Object3D => node !== undefined)
+				.map((node) => ({ node, rpm: Number(node.userData.rotationRPM) }));
+			root.userData.habitats = rotors;
+		}
 		// Named by the ship's sides, starboard being the mesh's +x: the
 		// half-turn puts the study's +x nozzle there on the port side.
-		for (const [side, x] of [
-			["port", design.nozzles.x],
-			["starboard", -design.nozzles.x],
-		] as const) {
+		for (const mount of mounts) {
 			const mesh = new THREE.Mesh(glow, exhaust);
-			mesh.name = `${design.hull}-${side}-exhaust`;
-			mesh.position.set(x, design.nozzles.y, 0);
+			mesh.name = `${design.hull}-${mount.side}-exhaust`;
+			mesh.position.set(mount.x, mount.y, 0);
 			frame.add(mesh);
 		}
 		root.add(frame);
 		return { full, reduced, outline };
 	};
+}
+
+/** Warm caches without making this builder available to a running Game.
+ * A frame may build ships at every yield: publication must be last, or it
+ * would run the uncached raycasts synchronously. Prepare the other glow too,
+ * without changing the pilot's global finish while the work yields.
+ */
+export async function installPreparedAuthoredHull(
+	id: AfterBootHullId,
+	builder: AuthoredHullBuilder,
+	run: <T>(work: Generator<void, T>) => Promise<T> = runHullSlices,
+): Promise<void> {
+	const warmGlow = async (exhaust?: THREE.MeshStandardMaterial) => {
+		const root = await run(prepareAuthoredHull(id, builder, exhaust));
+		try {
+			await run(prepareAuthoredThroats(root, id, builder));
+			return root.userData.authoredGlow;
+		} finally {
+			disposeSubtree(root);
+		}
+	};
+	const glow = await warmGlow();
+	// Owned by this preparation, rather than by either temporary subtree.
+	const exhaust = shared(
+		new THREE.MeshStandardMaterial({
+			side: glow === "bowl" ? THREE.FrontSide : THREE.BackSide,
+		}),
+	);
+	try {
+		await warmGlow(exhaust);
+	} finally {
+		exhaust.dispose();
+	}
+	installAuthoredHull(id, builder);
 }
 
 /**
@@ -273,19 +341,11 @@ export function authoredHullLoader(
 	return (onProgress) =>
 		(ready ??= new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
+			.register(sharedImagePlugin(id))
 			.loadAsync(url, onProgress)
 			.then(async (gltf) => {
-				installAuthoredHull(id, await createBuilder(gltf.scene));
-				// One ship built now, before the stand-ins are refreshed: the first
-				// build places the nav lights by raycast against the model, and
-				// without this the first Traffic ship drawn mid-flight would pay
-				// it. Every later build reuses them. Its throats are measured off
-				// the same build for the same reason (`ventThroats` keeps them):
-				// otherwise a pilot pays it during replacement, and a shipyard swap
-				// to one pays it on the frame.
-				const { root } = buildShipMesh(id, HULL_SPECS[id].variant);
-				ventThroats(root, id);
-				disposeSubtree(root);
+				await yieldTask();
+				await installPreparedAuthoredHull(id, await createBuilder(gltf.scene));
 			})
 			.catch((error) => {
 				ready = undefined;

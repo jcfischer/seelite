@@ -177,6 +177,9 @@ export interface NavBody {
 	kind: string;
 	stationType?: string;
 	pos: Vec3;
+	distanceKm?: number;
+	detail?: string;
+	disabledReason?: string;
 }
 
 /** One row of the list, as the panel prints it. */
@@ -194,6 +197,8 @@ export interface NavRow {
 	 */
 	etaSeconds: number | null;
 	selected: boolean;
+	detail?: string;
+	disabledReason?: string;
 }
 
 /**
@@ -235,7 +240,7 @@ export const NAV_ORDER_HYSTERESIS_KM = 2;
 
 /** Does one body survive the player's current narrowing? */
 export function navFilterMatches(
-	body: Pick<NavBody, "name" | "kind" | "stationType">,
+	body: Pick<NavBody, "name" | "kind" | "stationType" | "detail">,
 	filter: NavFilter,
 ): boolean {
 	if (filter.kinds.length > 0 && !filter.kinds.includes(body.kind))
@@ -245,6 +250,7 @@ export function navFilterMatches(
 	return (
 		query === "" ||
 		body.name.toLowerCase().includes(query) ||
+		!!body.detail?.toLowerCase().includes(query) ||
 		displayKind.toLowerCase().includes(query)
 	);
 }
@@ -262,12 +268,10 @@ export function navDisplayKind(
  * The Navigation list: the bodies it is given that survive the filter, nearest
  * first.
  *
- * **What is selectable is the caller's rule, not this one's.** A second
- * kind-listability set here would be a second owner of it, and the two would
- * diverge the day a body kind is added: the row would vanish from the list while
- * `T` still cycled to it, or worse, appear and do nothing when clicked. `Game`
- * passes `selectable()` — the same list `cycleTarget` walks and `onSelectTarget`
- * validates against — so there is one answer to "can this be targeted".
+ * **Membership and targeting are the caller's rules, not this one's.** Game
+ * supplies ordinary selectable bodies and known rocks. A rock outside the
+ * targeting limit can remain readable with its owner's disabled reason.
+ * The same owner validates a selection, including after a displayed row ages.
  *
  * Nearest first rather than the cycle order `selectable()` uses. The two answer
  * different questions — cycling wants a stable walk that does not reshuffle as
@@ -293,9 +297,13 @@ export function projectNavTargets(
 			name: body.name,
 			kind: body.kind,
 			displayKind: navDisplayKind(body),
-			distanceKm: length(sub(body.pos, shipPos)),
+			distanceKm: body.distanceKm ?? length(sub(body.pos, shipPos)),
 			etaSeconds: etaFor ? etaFor(body) : null,
 			selected: body.id === targetId,
+			...(body.detail === undefined ? {} : { detail: body.detail }),
+			...(body.disabledReason === undefined
+				? {}
+				: { disabledReason: body.disabledReason }),
 		});
 	}
 	// Without history, distance plus id is a total and reproducible order.

@@ -21,6 +21,7 @@ import {
 	formatLiftRow,
 	liftAndVerifyAuthoredHull,
 } from "../../scripts/lib/authored-hull-prepare.mjs";
+import { graftMounts } from "./mounts/graft-mounts.mjs";
 import { triangleSoup } from "./triangle-soup.mjs";
 
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready]);
@@ -32,7 +33,10 @@ const io = new NodeIO()
 	});
 const source = "spikes/longwall-miner/longwall-miner.glb";
 const target = "src/models/longwall-miner.glb";
-const document = await io.read(source);
+// Node #1147: the approved study's two Mining Laser mounts join the approved
+// export before anything is measured, so every check below is on the hull the
+// game draws, mounts included.
+const document = await graftMounts(await io.read(source), io);
 // Node #887: the study's paints were lit for its own viewer. The lift runs
 // before `approved` is taken so the geometry check below compares the approved
 // export's triangles under the same paints the shipped file carries —

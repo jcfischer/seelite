@@ -12,9 +12,18 @@
  */
 
 import { RINGED_CLASSES, type SurfaceClass } from "./planet-appearance";
-import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
+import {
+	ANALYTIC_RELIEF,
+	CLASS_GLSL,
+	RELIEF,
+	TERRAN_GRADIENT_NOISE,
+	terranHeightGradient,
+} from "./planet-classes.glsl";
+import { PLANET_EXTRA_OCTAVES } from "./planet-footprint";
+import { makeSplicer } from "./shader-splice";
 import {
 	CLOUD_FIELD_GLSL,
+	CLOUD_FOOTPRINT_GLSL,
 	CLOUD_MOTION_GLSL,
 	CLOUD_PROJECTION_GLSL,
 } from "./planet-clouds";
@@ -101,6 +110,39 @@ float fbm${octaves}(vec3 p) {
 	)
 	.join("\n");
 
+/** Continue the original stream, including its offsets and normalisation.
+ * Keep the original accumulation and division in this function. At zero extra
+ * weight the extension loop breaks before touching either sum. Returning via
+ * the original helper instead changed screen-space normals on ANGLE Metal,
+ * despite isolated helper equality (node #755's forced-program regression).
+ * A cell must span at least two target pixels; log-space weighting admits a
+ * fractional last octave instead of popping a whole frequency band on. */
+const FOOTPRINT_VARIANTS = [3, 4, 5, "ridged" as const]
+	.map((kind) => {
+		const ridge = kind === "ridged";
+		const name = ridge ? "ridged" : `fbm${kind}`;
+		const count = ridge ? 4 : kind;
+		const lac = ridge ? "2.07" : "2.03";
+		const offset = ridge ? "9.2" : "17.1";
+		const sample = ridge ? "(1.0 - abs(2.0 * vnoise(p) - 1.0))" : "vnoise(p)";
+		return /* glsl */ `
+float ${name}Footprint(vec3 p, float footprint, float cap) {
+  float extra = clamp(log(0.5 / max(footprint * pow(${lac}, ${count}.0), 1e-12)) / log(${lac}), 0.0, cap);
+  float s = 0.0, a = 0.5, n = 0.0;
+  for (int i = 0; i < ${count}; ++i) {
+    s += a * ${sample}; n += a; p = p * ${lac} + ${offset}; a *= 0.5;
+  }
+  for (int i = 0; i < ${PLANET_EXTRA_OCTAVES}; ++i) {
+    float weight = clamp(extra - float(i), 0.0, 1.0);
+    if (weight <= 0.0) break;
+    s += a * weight * ${sample}; n += a * weight;
+    p = p * ${lac} + ${offset}; a *= 0.5;
+  }
+  return s / n;
+}`;
+	})
+	.join("\n");
+
 export const NOISE_GLSL = /* glsl */ `
 const float PI = 3.14159265;
 ${CRATER_RIM}
@@ -134,6 +176,8 @@ float ridged(vec3 p) {
   }
   return s / n;
 }
+
+${FOOTPRINT_VARIANTS}
 
 // Push the sample point around with another noise field before reading it.
 // Un-warped fbm makes round blobs; warped fbm makes coastlines, because the
@@ -415,31 +459,103 @@ ${SURFACE_VERTEX_BODY}
  * label. That is the trap `main.ts` already records for the vignette, where a
  * probe measured its own assignment being overwritten.
  */
-export const RELIEF_PATHS = ["four-tap", "screen-space", "none"] as const;
+export const RELIEF_PATHS = [
+	"four-tap",
+	"screen-space",
+	"none",
+	"analytic-gradient",
+] as const;
 export type ReliefPath = (typeof RELIEF_PATHS)[number];
+
+/** The relief programs `fragmentFor` can build for one surface class. */
+export function reliefPathsFor(surface: SurfaceClass): readonly ReliefPath[] {
+	return surface === "terran"
+		? RELIEF_PATHS
+		: RELIEF_PATHS.filter((path) => path !== "analytic-gradient");
+}
+
+const gradientSplicer = makeSplicer("terran analytic relief");
+const analyticRelief = gradientSplicer.splice(
+	"fragment",
+	RELIEF,
+	"#ifdef RELIEF_SCREEN_SPACE",
+	ANALYTIC_RELIEF,
+);
+export const TERRAN_GRADIENT_SPLICES = gradientSplicer.log;
+
+// Only the live terran program adopts detail. Bakes retain the original fields,
+// and warp's fbm3 calls keep their octave count. Every replacement is observable.
+const terranSplicer = makeSplicer("terran footprint fields");
+let liveTerran = CLASS_GLSL.terran;
+for (const [base, extended] of [
+	[
+		"fbm5(warp(p * 1.15 + seedOffset, 1.4, 0.85))",
+		"fbm5Footprint(warp(terrainCoordinates(p) * 1.15 + seedOffset, 1.4, 0.85), terrainFootprint * 1.15, terrainOctaveCap)",
+	],
+	[
+		"ridged(p * 11.0 + seedOffset)",
+		"ridgedFootprint(terrainCoordinates(p) * 11.0 + seedOffset, terrainFootprint * 11.0, terrainOctaveCap)",
+	],
+	[
+		"fbm4(p * 2.1 + 53.0 + seedOffset)",
+		"fbm4Footprint(terrainCoordinates(p) * 2.1 + 53.0 + seedOffset, terrainFootprint * 2.1, terrainOctaveCap)",
+	],
+	[
+		"fbm3(p * 4.0 + 7.0)",
+		"fbm3Footprint(terrainCoordinates(p) * 4.0 + 7.0, terrainFootprint * 4.0, terrainOctaveCap)",
+	],
+])
+	liveTerran = terranSplicer.splice("fragment", liveTerran, base, extended);
+export const TERRAN_FOOTPRINT_SPLICES = terranSplicer.log;
+
+const TERRAN_FOOTPRINT_INPUTS = /* glsl */ `
+uniform float surfacePixelAngle;
+uniform float extraOctaveCap;
+float terrainFootprint;
+float terrainOctaveCap;
+// Coordinate seam: replace the unit-sphere frame here when a camera-local
+// ground frame is adopted. Frequencies and the seed stream remain field-owned.
+vec3 terrainCoordinates(vec3 p) { return p; }
+`;
 
 export function fragmentFor(
 	surface: SurfaceClass,
 	relief: ReliefPath = "four-tap",
+	footprint = true,
 ): string {
+	if (!reliefPathsFor(surface).includes(relief))
+		throw new Error("analytic-gradient relief is implemented for terran only");
+	const detail = surface === "terran" && footprint;
+	const analytic = surface === "terran" && relief === "analytic-gradient";
 	return /* glsl */ `
 precision highp float;
-${relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
+${analytic ? "#define RELIEF_ANALYTIC_GRADIENT 1" : relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
 ${relief === "none" ? "#define RELIEF_NONE 1" : ""}
 ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
-${NOISE_GLSL}
+${NOISE_GLSL + (analytic ? TERRAN_GRADIENT_NOISE : "")}
+${detail ? TERRAN_FOOTPRINT_INPUTS : ""}
 ${surface === "terran" ? CLOUD_FIELD_GLSL + CLOUD_PROJECTION_GLSL : ""}
 ${surface === "terran" ? "uniform samplerCube cloudCoverage;\nuniform float cloudCoverageReady;" : ""}
 ${LIGHT_GLSL}
-float height(vec3 p);
-${RELIEF}
-${CLASS_GLSL[surface]}
+float height(vec3 p);${analytic ? "\nvec4 heightAndGradient(vec3 p);" : ""}
+${analytic ? analyticRelief : RELIEF}
+${(detail ? liveTerran : CLASS_GLSL[surface]) + (analytic ? terranHeightGradient(detail) : "")}
 ${RINGED_CLASSES.includes(surface) ? `${RING_GLSL}\n${RING_SHADOW_GLSL}` : ""}
 void main() {
   vec3 p = normalize(vObjP);
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
+${
+	detail
+		? `
+  float cameraR = distance(cameraPosition, vCenter) / vRadius;
+  terrainOctaveCap = extraOctaveCap * (1.0 - smoothstep(1.6, 2.0, cameraR));
+  terrainFootprint = distance(cameraPosition, vWorldP) * surfacePixelAngle
+    / (vRadius * max(abs(dot(V, N)), 0.1));
+`
+		: ""
+}
 
   vec3  albedo = vec3(0.5);
   vec3  emissive = vec3(0.0);
@@ -575,20 +691,13 @@ void main() {
 }
 `;
 
-/**
- * The weather shell, for the classes that have weather separate from the ground.
- *
- * Kept as its own mesh rather than a term in the surface shader for one reason:
- * clouds are at a different altitude, so they cast onto a different part of the
- * disc and they cross the terminator before the ground does. Painting them into
- * the surface loses both, and loses the parallax that sells the gap.
- */
 export const CLOUD_FRAGMENT = /* glsl */ `
 precision highp float;
 ${VARYINGS_GLSL}
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
 ${CLOUD_FIELD_GLSL}
+${CLOUD_FOOTPRINT_GLSL}
 ${CLOUD_MOTION_GLSL}
 ${LIGHT_GLSL}
 uniform float time;
@@ -597,12 +706,35 @@ uniform float cloudCoherent;
 uniform float cloudCover;
 uniform float seedOffset;
 uniform vec3  cloudTint;
+// The quality dial's extra-octave ceiling, shared with the ground's program, and
+// the shell's own target pixel angle, written by its own draw hook below.
+uniform float extraOctaveCap;
+uniform float cloudPixelAngle;
 void main() {
   vec3 p = normalize(vObjP);
+  vec3 N = normalize(vWorldN);
+  vec3 V = normalize(cameraPosition - vWorldP);
   float mask;
   if (cloudCoherent > 0.5) {
-    // Terran weather moves coherently with its baked coverage field.
-    mask = cloudField(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir);
+    // Terran weather moves coherently with its baked coverage field, and keeps
+    // detail from 1.6R down to the 1.2R boundary (node #756, #720 D9) by
+    // extending the broad and wisp fields with the footprint helper the ground
+    // uses.
+    // The fade reads **body** radii: this geometry stands at CLOUD_SHELL_R, so a
+    // band in the shell's own radii would still be adding octaves at 2R and would
+    // move every distant view out of its control noise (#720 D15).
+    float cameraR =
+      distance(cameraPosition, vCenter) / (vRadius / CLOUD_SHELL_R);
+    float cloudOctaveCap =
+      extraOctaveCap * (1.0 - smoothstep(1.6, 2.0, cameraR));
+    // One noise cell must span two target pixels. This is the shell's own target:
+    // inside the band the ground may be drawn half-size while the shells stay in
+    // the ordinary pass (#211), so borrowing the ground's angle would price
+    // octaves this field does not need. The grazing cosine and its 0.1 floor are
+    // the ground's, so the limb does not buy a full cap.
+    float cloudFootprint = distance(cameraPosition, vWorldP) * cloudPixelAngle
+      / (vRadius * max(abs(dot(V, N)), 0.1));
+    mask = cloudFieldFootprint(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir, cloudFootprint, cloudOctaveCap);
   } else {
     // Preserve the pre-node dust field: two shearing scales, no cirrus.
     vec3 slow = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
@@ -615,8 +747,6 @@ void main() {
     mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
   }
 
-  vec3 N = normalize(vWorldN);
-  vec3 V = normalize(cameraPosition - vWorldP);
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);

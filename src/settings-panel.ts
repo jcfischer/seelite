@@ -57,7 +57,7 @@ const STYLE = `
   overflow-y: auto; overscroll-behavior: contain;
   padding: 16px 0;
   background: rgba(2, 6, 12, 0.72);
-  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 13px/1.6 Menlo, monospace;
   color: #cfe3ff;
 }
 #seelite-settings .box {

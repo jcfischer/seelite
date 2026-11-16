@@ -231,7 +231,7 @@ describe("the enemy's condition line", () => {
 // **What these rows bound, and what they do not.** They compare *character
 // counts*, and a character count reaches the glass as a width through one
 // assumption, made far away in `main.ts`: the sky label is drawn in
-// `ui-monospace, Menlo, monospace`, and `labelBounds` asks `ctx.measureText` for
+// `Menlo, monospace` (#1178), and `labelBounds` asks `ctx.measureText` for
 // the box. Under a uniform advance, more characters is the only way to be wider,
 // so this is a pixel bound. Under a proportional face it stops being one — `111`
 // and `106` are equal length and unequal width — and no row here could see it,

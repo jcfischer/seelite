@@ -76,12 +76,14 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
+import { fieldRockSolids } from "./field-collision";
 import { planetApproachEntryTime } from "./planet-approach-boundary";
 import {
 	type Impact,
 	type Primitive,
 	type Reach,
 	type ShipMotion,
+	type Solid,
 	type SolidMotion,
 	IDENTITY_AXES,
 	bodySphere,
@@ -90,6 +92,7 @@ import {
 	pushOutAlong,
 	reachKm,
 	shipPose,
+	solidReach,
 	sweepShip,
 	sweepShipPair,
 } from "./collision";
@@ -136,6 +139,8 @@ export type BodyKind =
 	| "station"
 	| "ship"
 	| "relay"
+	| "field"
+	| "rock"
 	| "wreck"
 	| "cargo";
 
@@ -175,6 +180,18 @@ export interface Ship {
 	vel: Vec3;
 }
 
+interface RockPlacement {
+	placed: boolean;
+	rocks: Set<string>;
+}
+
+const placedRocks = (): RockPlacement => ({ placed: true, rocks: new Set() });
+
+/** Arm transient whole-rock ghosting after placing a ship (collision.md §4.3). */
+export function markShipPlaced(world: World): void {
+	world.rockPlacement = placedRocks();
+}
+
 export interface System {
 	/** What the galaxy knows about this system: name, polity, position in LY. */
 	record: SystemRecord;
@@ -207,6 +224,7 @@ export interface World {
 	galaxy: Galaxy;
 	system: System;
 	ship: Ship;
+	rockPlacement: RockPlacement;
 }
 
 /** A new game starts in galaxy 0 (spec §5.1). Which system within it is
@@ -636,15 +654,17 @@ export function restoreWorld(
 	// them. Building at zero and assigning `gameTime` afterwards would pass
 	// every field check and leave every planet an orbit out of date.
 	const system = makeSystem(record, gameTime);
+	const ship = {
+		pos: arrivalPoint(record, system.contents, null, gameTime),
+		vel: v3(),
+	};
 	return {
 		seed,
 		gameTime,
 		galaxy,
 		system,
-		ship: {
-			pos: arrivalPoint(record, system.contents, null, gameTime),
-			vel: v3(),
-		},
+		ship,
+		rockPlacement: placedRocks(),
 	};
 }
 
@@ -753,6 +773,7 @@ export function jumpWorldTo(world: World, to: SystemRecord): void {
 	// stated in. Carrying the origin system's velocity across would be carrying
 	// a number from a coordinate system that no longer exists.
 	world.ship.vel = v3();
+	markShipPlaced(world);
 }
 
 /**
@@ -1081,8 +1102,8 @@ function addLevel(levels: VentLevels, slot: VentSlot, level: number): void {
  *
  * **`massT` is the flown mass (#865)**: the hull, its fit and its hold, which
  * `flownMassT` in `station-commerce.ts` sums. It defaults to the hull's own,
- * which is the empty ship every NPC flies until outfitting's D16 gives them
- * loadouts, and at that mass the struct is exactly the one #619 solved. A
+ * the empty reference ship; fitted NPCs pass their module mass too (#875).
+ * At the reference mass the struct is exactly the one #619 solved. A
  * heavier ship divides the same forces and couples by more mass and a
  * proportionally larger `boxInertia` — the load is taken as spread through the
  * hull's box — so every authority above falls by `hull / flown`. The assist's
@@ -2037,7 +2058,7 @@ export function stepWorld(
 	solid?: readonly Primitive[] | null,
 	planes: readonly PlaneWatch[] = [],
 	fleet: readonly FleetShip[] = [],
-	extraSolids: readonly { id: string; motion: SolidMotion }[] = [],
+	extraSolids: readonly { id: string; motion: Solid }[] = [],
 ): WorldStep {
 	const from = { ...world.ship.pos };
 	const fromVel = { ...world.ship.vel };
@@ -2396,6 +2417,7 @@ function sweepWorld(
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number },
 	cutS: number | null,
+	placement?: RockPlacement,
 ): {
 	pos: Vec3;
 	vel: Vec3;
@@ -2412,16 +2434,17 @@ function sweepWorld(
 		},
 		starts,
 		{ fromTime: clock.fromTime, toTime: world.gameTime },
+		{ rocks: placement !== undefined },
 	);
-	if (solids.length === 0)
-		return {
-			pos: motion.end.origin,
-			vel: motion.velEnd,
-			impacts: [],
-			ghosts: [],
-			deferred: cutS !== null,
-		};
-	const swept = sweepShip(motion, solids, clock.dt, { planeS: cutS });
+	const swept = sweepShip(motion, solids, clock.dt, {
+		planeS: cutS,
+		placed: placement?.placed,
+		rockGhosts: owner.flatMap((id, i) => (placement?.rocks.has(id) ? [i] : [])),
+	});
+	if (placement) {
+		placement.placed = false;
+		placement.rocks = new Set(swept.rockGhosts.map((i) => owner[i]));
+	}
 	return {
 		pos: swept.pos,
 		vel: swept.vel,
@@ -2922,7 +2945,7 @@ function holdPlanetBoundary(
  *  placed station's place and pose. Snapshot before the clock moves. */
 export interface WorldStarts {
 	/** Persisted local hulls, posed at both ends by their owner. */
-	readonly extraSolids?: readonly { id: string; motion: SolidMotion }[];
+	readonly extraSolids?: readonly { id: string; motion: Solid }[];
 	bodies: ReadonlyMap<string, Vec3>;
 	stations: readonly StationStart[];
 }
@@ -2931,7 +2954,7 @@ export interface WorldStarts {
 export function worldStarts(
 	system: System,
 	gameTime: number,
-	extraSolids: readonly { id: string; motion: SolidMotion }[] = [],
+	extraSolids: readonly { id: string; motion: Solid }[] = [],
 ): WorldStarts {
 	return {
 		extraSolids,
@@ -2958,15 +2981,21 @@ export function worldStarts(
  * `owner[i]` names the body `motions[i]` belongs to. One builder for every
  * ship the sim sweeps — the player, a raider, a carrier (node #664) — so a
  * change to what is solid lands once.
+ *
+ * **`options.rocks` adds the field rocks in reach** (node #969, `field-collision.ts`):
+ * the flown ship's sweep asks for them, a fleet ship's does not, because what a
+ * raider's controller steers clear of is `avoidanceSolids` and rocks are not in
+ * it. Each rock's owner is its own id, so a ghost and an impact name one rock.
  */
 export function worldSolids(
 	system: System,
 	ship: Reach,
 	starts: WorldStarts,
 	clock: { fromTime: number; toTime: number },
-): { owner: string[]; motions: SolidMotion[] } {
+	options: { rocks?: boolean } = {},
+): { owner: string[]; motions: Solid[] } {
 	const owner: string[] = [];
-	const motions: SolidMotion[] = [];
+	const motions: Solid[] = [];
 	for (const body of solidBodies(system)) {
 		const start = starts.bodies.get(body.id);
 		if (!start) continue;
@@ -3011,12 +3040,17 @@ export function worldSolids(
 			!mayMeet(ship, {
 				start: motion.start.origin,
 				end: motion.end.origin,
-				reachKm: reachKm(motion.primitives),
+				reachKm: solidReach(motion),
 			})
 		)
 			continue;
 		owner.push(id);
 		motions.push(motion);
+	}
+	if (options.rocks) {
+		const rocks = fieldRockSolids(system, ship, clock);
+		owner.push(...rocks.owner);
+		motions.push(...rocks.motions);
 	}
 	return { owner, motions };
 }
@@ -3101,7 +3135,14 @@ function collideShip(
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number; planeS: number | null },
 ): { impacts: WorldImpact[]; ghosts: string[]; planeOwns: boolean } {
-	const swept = sweepWorld(world, motion, starts, clock, clock.planeS);
+	const swept = sweepWorld(
+		world,
+		motion,
+		starts,
+		clock,
+		clock.planeS,
+		world.rockPlacement,
+	);
 	world.ship.pos = swept.pos;
 	world.ship.vel = swept.vel;
 	return {
@@ -3218,4 +3259,5 @@ export function resetWorldToStart(world: World): void {
 		world.gameTime,
 	);
 	world.ship.vel = v3();
+	markShipPlaced(world);
 }

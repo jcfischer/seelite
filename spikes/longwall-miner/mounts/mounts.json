@@ -1,0 +1,19 @@
+{
+  "frame": "Longwall export: metres, +Z forward, Y up",
+  "muzzles": {
+    "port": [
+      5.3,
+      4.22,
+      18.0
+    ],
+    "starboard": [
+      -5.3,
+      4.22,
+      18.0
+    ]
+  },
+  "forwardHit": {
+    "port": null,
+    "starboard": null
+  }
+}

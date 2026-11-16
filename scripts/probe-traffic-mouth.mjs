@@ -30,6 +30,18 @@ const FIXTURE_LUMA = 8;
 const LEAK_LUMA = 4;
 const LUMA_TOLERANCE = 1;
 
+/**
+ * **The Coriolis, by seed, and checked.** The gates above were tuned on its
+ * mouth. Seed 54 drew it until node #748 put the Wheel in the trade pool,
+ * which reshuffled the uniform draw and made 54 a Ring; the Ring's mouth bar
+ * covers 4.4x the pixels, and its spill past the hull's edge failed both
+ * leak rows on runs where frame noise was 0. Measuring other forms is not
+ * this probe's job yet, so a pool change that moves this seed off `a` fails
+ * the form row by name instead of measuring a different station.
+ */
+const SEED = 3;
+const FORM_ID = "a";
+
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 await guardedOrigin(ORIGIN);
@@ -42,15 +54,20 @@ try {
 	});
 	watch(page);
 	await installViewPlacement(page);
-	await page.goto(gameUrl(ORIGIN, { seed: 54 }), { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
 	await bootedGame(page);
-	const stationId = await page.evaluate(
-		() =>
-			window.__seelite.world.system.contents.stations.find(
-				(station) => station.type === "trade",
-			)?.id ?? null,
+	const { id: stationId, formId } = await page.evaluate(() => {
+		const station = window.__seelite.world.system.contents.stations.find(
+			(candidate) => candidate.type === "trade",
+		);
+		return { id: station?.id ?? null, formId: station?.formId ?? null };
+	});
+	if (!stationId) throw new Error(`seed ${SEED} has no trade station`);
+	check(
+		`seed ${SEED} builds trade form ${FORM_ID}`,
+		formId === FORM_ID,
+		JSON.stringify({ formId }),
 	);
-	if (!stationId) throw new Error("seed 54 has no trade station");
 	await page.evaluate(
 		(id) => window.__viewAlongAxis(id, 1.5, { comoving: true }),
 		stationId,

@@ -1,0 +1,1396 @@
+Raw instrument output for docs/receipts/node-947-shipyard-lod-policy.md. Every block names the invocation that made it. Machine: Apple M1 Pro, 10 cores, macOS 26.7.1, Chromium 151.0.7922.34 (Playwright), ANGLE Metal, headed, 1440x900 at device scale 2. Tree 64f807d plus this node's instrument. 2026-10-22. Host load averages are printed at the start and end of every run.
+
+##### cost, quality high, form a views 1-5
+##### SEELITE_PROBE_RENDERER=hardware MODE=cost FORMS=a VIEWS=close,approach,mid,edge,far100 BLOCKS=10 FRAMES=60 DIST_FRAMES=180
+  host load average at start: 16.43603515625 / 29.7265625 / 34.66796875
+
+=== form a, system 7 of world 42 ===
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality high, clock held
+  10 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.66 km
+  lod1: target 21.3 m (reached 21.3 m), made in 65 ms
+  lod2: target 213.0 m (reached 206.0 m), made in 60 ms
+  lodc: target 85.2 m (reached 83.1 m), made in 67 ms
+
+  view close: 3.320 km = 2.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          7.213                                                     79     110892       0
+  standin       7.118  -0.094 50/100 (50%)  -0.509 29/100 (29%)    -0.094    319     236404     218
+  full          7.627  +0.415 66/100 (66%)                       +0.415    331     313792     242
+  control       7.680  +0.467 74/100 (74%)  +0.053 58/100 (58%)    +0.467    331     313792     242
+  lod1          7.264  +0.052 66/100 (66%)  -0.363 42/100 (42%)    +0.052    309     232061     220
+  lod2          7.107  -0.106 50/100 (50%)  -0.521 30/100 (30%)    -0.106    270     114868     181
+  lodc          7.338  +0.126 56/100 (56%)  -0.289 35/100 (35%)    +0.126    277     144600     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:252/202900 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.90  p95 10.70  p99 14.30  max 23.20 ms
+  single frames, standin    n=180  p50 9.40  p95 11.60  p99 12.70  max 14.80 ms
+  single frames, full       n=180  p50 9.90  p95 12.00  p99 13.30  max 13.40 ms
+  single frames, control    n=180  p50 10.00  p95 12.00  p99 12.70  max 13.30 ms
+  single frames, lod1       n=180  p50 10.10  p95 12.10  p99 19.70  max 22.50 ms
+  single frames, lod2       n=180  p50 9.20  p95 11.00  p99 11.80  max 12.70 ms
+  single frames, lodc       n=180  p50 9.40  p95 11.70  p99 17.50  max 20.60 ms
+
+  view approach: 9.960 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.747                                                     79     110892       0
+  standin       6.787  +0.041 51/100 (51%)  -0.133 24/100 (24%)    +0.041    319     236404     218
+  full          6.920  +0.173 69/100 (69%)                       +0.173    331     313792     242
+  control       7.004  +0.257 76/100 (76%)  +0.084 56/100 (56%)    +0.257    331     313792     242
+  lod1          6.894  +0.147 63/100 (63%)  -0.026 43/100 (43%)    +0.147    309     232061     220
+  lod2          6.747  -0.000 50/100 (50%)  -0.173 27/100 (27%)    -0.000    270     114868     181
+  lodc          6.856  +0.109 53/100 (53%)  -0.064 31/100 (31%)    +0.109    277     144600     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:252/202900 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.10  p95 9.40  p99 12.20  max 14.80 ms
+  single frames, standin    n=180  p50 9.10  p95 10.50  p99 15.70  max 16.40 ms
+  single frames, full       n=180  p50 9.40  p95 11.30  p99 13.00  max 20.60 ms
+  single frames, control    n=180  p50 9.40  p95 11.20  p99 14.90  max 14.90 ms
+  single frames, lod1       n=180  p50 9.30  p95 10.50  p99 16.20  max 27.00 ms
+  single frames, lod2       n=180  p50 8.60  p95 10.30  p99 20.30  max 20.50 ms
+  single frames, lodc       n=180  p50 8.90  p95 10.20  p99 20.60  max 22.00 ms
+
+  view mid: 24.900 km = 15.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.605                                                     79     110892       0
+  standin       6.598  -0.007 51/100 (51%)  -0.307 7/100 (7%)    -0.007    319     236404     218
+  full          6.905  +0.300 92/100 (92%)                       +0.300    331     313792     242
+  control       6.832  +0.227 88/100 (88%)  -0.073 32/100 (32%)    +0.227    331     313792     242
+  lod1          6.820  +0.215 85/100 (85%)  -0.085 23/100 (23%)    +0.215    309     232061     220
+  lod2          6.503  -0.102 32/100 (32%)  -0.402 2/100 (2%)    -0.102    270     114868     181
+  lodc          6.698  +0.093 70/100 (70%)  -0.207 21/100 (21%)    +0.093    277     144600     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:252/202900 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.20  p95 9.50  p99 9.80  max 9.90 ms
+  single frames, standin    n=180  p50 9.10  p95 10.60  p99 16.40  max 20.00 ms
+  single frames, full       n=180  p50 9.40  p95 10.80  p99 13.20  max 13.40 ms
+  single frames, control    n=180  p50 9.50  p95 10.60  p99 11.10  max 11.10 ms
+  single frames, lod1       n=180  p50 9.40  p95 10.60  p99 12.50  max 14.10 ms
+  single frames, lod2       n=180  p50 8.80  p95 9.90  p99 13.10  max 19.30 ms
+  single frames, lodc       n=180  p50 8.70  p95 9.90  p99 11.10  max 11.20 ms
+
+  view edge: 68.060 km = 41.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.901                                                     58      37052       0
+  standin       3.935  +0.034 69/100 (69%)  -0.085 19/100 (19%)    +0.034    298     162564     218
+  full          4.020  +0.119 100/100 (100%)                       +0.119    310     239952     242
+  control       4.045  +0.144 98/100 (98%)  +0.025 49/100 (49%)    +0.144    310     239952     242
+  lod1          3.975  +0.074 87/100 (87%)  -0.045 27/100 (27%)    +0.074    288     158221     220
+  lod2          3.924  +0.023 63/100 (63%)  -0.096 15/100 (15%)    +0.023    249      41028     181
+  lodc          3.956  +0.055 69/100 (69%)  -0.064 11/100 (11%)    +0.055    256      70760     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:252/202900 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.40  p95 5.80  p99 6.10  max 6.10 ms
+  single frames, standin    n=180  p50 6.40  p95 7.20  p99 8.40  max 8.60 ms
+  single frames, full       n=180  p50 6.60  p95 7.00  p99 7.20  max 7.70 ms
+  single frames, control    n=180  p50 6.60  p95 8.60  p99 18.50  max 18.70 ms
+  single frames, lod1       n=180  p50 6.50  p95 7.30  p99 10.90  max 25.70 ms
+  single frames, lod2       n=180  p50 6.00  p95 6.70  p99 7.50  max 9.60 ms
+  single frames, lodc       n=180  p50 6.20  p95 6.80  p99 7.20  max 7.70 ms
+
+  view far100: 166.000 km = 100.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.994                                                     58      37052       0
+  standin       3.879  -0.115 43/100 (43%)  -0.223 18/100 (18%)    -0.115    154      40316     218
+  full          4.102  +0.108 67/100 (67%)                       +0.108    176     238344     242
+  control       4.057  +0.063 68/100 (68%)  -0.045 44/100 (44%)    +0.063    176     238344     242
+  lod1          4.015  +0.021 65/100 (65%)  -0.087 48/100 (48%)    +0.021    154     156613     220
+  lod2          3.863  -0.131 36/100 (36%)  -0.238 8/100 (8%)    -0.131    115      39420     181
+  lodc          3.896  -0.098 42/100 (42%)  -0.206 15/100 (15%)    -0.098    122      69152     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:118/201292 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.40  p95 7.60  p99 15.70  max 17.80 ms
+  single frames, standin    n=180  p50 6.10  p95 7.10  p99 17.40  max 18.90 ms
+  single frames, full       n=180  p50 6.30  p95 8.00  p99 15.10  max 24.10 ms
+  single frames, control    n=180  p50 6.60  p95 7.10  p99 8.30  max 9.50 ms
+  single frames, lod1       n=180  p50 6.10  p95 6.80  p99 7.30  max 17.50 ms
+  single frames, lod2       n=180  p50 5.80  p95 7.40  p99 13.30  max 15.20 ms
+  single frames, lodc       n=180  p50 5.80  p95 6.50  p99 6.80  max 6.90 ms
+  host load average at end: 11.86572265625 / 21.52490234375 / 30.0595703125
+
+##### cost, quality high, form a views 6-10
+##### MODE=cost FORMS=a VIEWS=far420,far1000,mouth,bay,traffic BLOCKS=10 FRAMES=60 DIST_FRAMES=180
+  host load average at start: 12.513671875 / 21.34326171875 / 29.89501953125
+
+=== form a, system 7 of world 42 ===
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality high, clock held
+  10 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.66 km
+  lod1: target 21.3 m (reached 21.3 m), made in 63 ms
+  lod2: target 213.0 m (reached 206.0 m), made in 60 ms
+  lodc: target 85.2 m (reached 83.1 m), made in 58 ms
+
+  view far420: 697.200 km = 420.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.818                                                     58      37052       0
+  standin       3.906  +0.087 86/100 (86%)  -0.058 42/100 (42%)    +0.087     98      39636     218
+  full          3.964  +0.146 90/100 (90%)                       +0.146    145     237244     242
+  control       3.999  +0.181 91/100 (91%)  +0.035 63/100 (63%)    +0.181    145     237244     242
+  lod1          3.911  +0.093 90/100 (90%)  -0.053 19/100 (19%)    +0.093    123     156377     220
+  lod2          3.857  +0.039 73/100 (73%)  -0.107 20/100 (20%)    +0.039     85      39280     181
+  lodc          3.873  +0.055 79/100 (79%)  -0.091 13/100 (13%)    +0.055     92      69012     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:87/200192 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.30  p95 5.80  p99 6.10  max 6.30 ms
+  single frames, standin    n=180  p50 5.60  p95 6.20  p99 6.70  max 7.00 ms
+  single frames, full       n=180  p50 5.80  p95 6.50  p99 6.90  max 8.60 ms
+  single frames, control    n=180  p50 5.90  p95 6.70  p99 7.10  max 8.10 ms
+  single frames, lod1       n=180  p50 5.70  p95 6.10  p99 6.60  max 7.20 ms
+  single frames, lod2       n=180  p50 5.50  p95 5.90  p99 6.00  max 7.40 ms
+  single frames, lodc       n=180  p50 5.60  p95 6.10  p99 6.70  max 8.60 ms
+
+  view far1000: 1660.000 km = 1000.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.005                                                     62      94588       0
+  standin       3.997  -0.008 40/100 (40%)  -0.123 8/100 (8%)    -0.008    102      97172     218
+  full          4.120  +0.115 100/100 (100%)                       +0.115    149     294780     242
+  control       4.121  +0.116 100/100 (100%)  +0.001 52/100 (52%)    +0.116    149     294780     242
+  lod1          4.068  +0.063 97/100 (97%)  -0.052 1/100 (1%)    +0.063    127     213913     220
+  lod2          4.005  +0.000 47/100 (47%)  -0.115 0/100 (0%)    +0.000     89      96816     181
+  lodc          4.024  +0.019 80/100 (80%)  -0.096 0/100 (0%)    +0.019     96     126548     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:1/12096 Scene*:3/12 Scene*:3/45440 Scene*:87/200192 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.40  p95 5.90  p99 6.10  max 6.20 ms
+  single frames, standin    n=180  p50 5.60  p95 6.10  p99 6.70  max 7.10 ms
+  single frames, full       n=180  p50 6.10  p95 6.80  p99 7.30  max 7.80 ms
+  single frames, control    n=180  p50 6.10  p95 6.80  p99 7.10  max 7.30 ms
+  single frames, lod1       n=180  p50 5.80  p95 6.50  p99 9.10  max 11.70 ms
+  single frames, lod2       n=180  p50 5.70  p95 6.40  p99 11.50  max 28.60 ms
+  single frames, lodc       n=180  p50 5.70  p95 6.30  p99 7.10  max 7.90 ms
+
+  view mouth: 0.772 km = 0.5 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.457                                                     79     110892       0
+  standin       7.643  +1.186 100/100 (100%)  -0.228 10/100 (10%)    +1.186    305     236252     218
+  full          7.871  +1.414 100/100 (100%)                       +1.414    331     313792     242
+  control       7.856  +1.399 100/100 (100%)  -0.015 52/100 (52%)    +1.399    331     313792     242
+  lod1          7.688  +1.231 100/100 (100%)  -0.183 10/100 (10%)    +1.231    309     232061     220
+  lod2          7.248  +0.792 100/100 (100%)  -0.623 0/100 (0%)    +0.792    270     114868     181
+  lodc          7.413  +0.957 100/100 (100%)  -0.458 0/100 (0%)    +0.957    277     144600     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:252/202900 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.00  p95 8.60  p99 9.80  max 10.20 ms
+  single frames, standin    n=180  p50 10.10  p95 10.70  p99 11.30  max 14.20 ms
+  single frames, full       n=180  p50 10.70  p95 11.50  p99 16.10  max 20.40 ms
+  single frames, control    n=180  p50 10.70  p95 11.00  p99 11.30  max 12.30 ms
+  single frames, lod1       n=180  p50 10.30  p95 10.70  p99 11.10  max 11.60 ms
+  single frames, lod2       n=180  p50 9.30  p95 10.60  p99 12.40  max 16.10 ms
+  single frames, lodc       n=180  p50 9.60  p95 13.30  p99 37.20  max 44.80 ms
+
+  view bay: 0.170 km = 0.1 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none         18.276                                                    103     271626       0
+  standin      19.207  +0.931 100/100 (100%)  -1.285 9/100 (9%)    +0.931    216     392626     218
+  full         20.492  +2.216 100/100 (100%)                       +2.216    200     287646     242
+  control      20.521  +2.245 100/100 (100%)  +0.029 44/100 (44%)    +2.245    200     287646     242
+  lod1         20.450  +2.174 100/100 (100%)  -0.042 46/100 (46%)    +2.174    197     277490     220
+  lod2         19.048  +0.773 100/100 (100%)  -1.443 0/100 (0%)    +0.773    187     272678     181
+  lodc         20.422  +2.146 100/100 (100%)  -0.070 29/100 (29%)    +2.146    194     273890     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:1/12096 Scene*:3/12 Scene*:2/962 Scene*:3/45440 Scene*:115/118256 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 20.20  p95 21.60  p99 23.70  max 24.80 ms
+  single frames, standin    n=180  p50 21.70  p95 22.80  p99 23.70  max 25.00 ms
+  single frames, full       n=180  p50 23.00  p95 25.30  p99 25.80  max 26.40 ms
+  single frames, control    n=180  p50 23.00  p95 24.20  p99 25.40  max 27.10 ms
+  single frames, lod1       n=180  p50 23.00  p95 24.80  p99 26.00  max 26.00 ms
+  single frames, lod2       n=180  p50 21.30  p95 23.20  p99 26.60  max 27.20 ms
+  single frames, lodc       n=180  p50 22.90  p95 24.60  p99 25.70  max 28.90 ms
+
+  view traffic: 9.960 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          7.013                                                    239    1529884       0
+  standin       7.247  +0.233 86/100 (86%)  -0.220 20/100 (20%)    +0.233    479    1655396     218
+  full          7.467  +0.453 96/100 (96%)                       +0.453    491    1732784     242
+  control       7.384  +0.371 95/100 (95%)  -0.082 43/100 (43%)    +0.371    491    1732784     242
+  lod1          7.358  +0.345 93/100 (93%)  -0.108 33/100 (33%)    +0.345    469    1651053     220
+  lod2          7.214  +0.201 80/100 (80%)  -0.252 10/100 (10%)    +0.201    430    1533860     181
+  lodc          7.208  +0.194 83/100 (83%)  -0.259 7/100 (7%)    +0.194    437    1563592     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:412/1621892 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 9.90  p95 11.50  p99 12.80  max 13.00 ms
+  single frames, standin    n=180  p50 10.70  p95 11.70  p99 11.90  max 14.20 ms
+  single frames, full       n=180  p50 11.00  p95 12.20  p99 12.70  max 14.10 ms
+  single frames, control    n=180  p50 10.90  p95 11.90  p99 12.60  max 13.00 ms
+  single frames, lod1       n=180  p50 10.70  p95 11.90  p99 12.50  max 15.40 ms
+  single frames, lod2       n=180  p50 10.50  p95 11.80  p99 14.50  max 14.70 ms
+  single frames, lodc       n=180  p50 10.50  p95 11.80  p99 19.60  max 21.70 ms
+  host load average at end: 6.95947265625 / 13.83154296875 / 24.03955078125
+
+##### cost, quality high, form b views 1-5
+##### MODE=cost FORMS=b VIEWS=close,approach,mid,edge,far100 (same knobs)
+  host load average at start: 6.51025390625 / 13.50732421875 / 23.80517578125
+
+=== form b, system 9 of world 42 ===
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality high, clock held
+  10 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.5 km
+  lod1: target 19.2 m (reached 19.1 m), made in 65 ms
+  lod2: target 192.5 m (reached 187.4 m), made in 64 ms
+  lodc: target 77.0 m (reached 76.7 m), made in 66 ms
+
+  view close: 3.000 km = 2.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.775                                                     77     122942       0
+  standin       6.860  +0.085 67/100 (67%)  -0.450 0/100 (0%)    +0.085    308     158250     211
+  full          7.310  +0.535 100/100 (100%)                       +0.535    340     334190     253
+  control       7.242  +0.467 100/100 (100%)  -0.068 39/100 (39%)    +0.467    340     334190     253
+  lod1          7.255  +0.480 97/100 (97%)  -0.055 34/100 (34%)    +0.480    318     241872     231
+  lod2          7.029  +0.254 74/100 (74%)  -0.281 7/100 (7%)    +0.254    270     127296     183
+  lodc          6.830  +0.055 66/100 (66%)  -0.480 4/100 (4%)    +0.055    278     135583     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:2/12098 Scene*:263/211248 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.50  p95 9.80  p99 10.70  max 10.80 ms
+  single frames, standin    n=180  p50 9.50  p95 10.60  p99 11.20  max 24.70 ms
+  single frames, full       n=180  p50 10.00  p95 11.30  p99 13.20  max 13.50 ms
+  single frames, control    n=180  p50 10.20  p95 11.40  p99 12.00  max 13.40 ms
+  single frames, lod1       n=180  p50 10.10  p95 11.60  p99 12.90  max 21.70 ms
+  single frames, lod2       n=180  p50 9.20  p95 10.50  p99 10.90  max 10.90 ms
+  single frames, lodc       n=180  p50 9.40  p95 10.60  p99 10.90  max 11.50 ms
+
+  view approach: 9.000 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.564                                                     82     138878       0
+  standin       6.502  -0.062 38/100 (38%)  -0.442 0/100 (0%)    -0.062    313     174186     211
+  full          6.944  +0.380 92/100 (92%)                       +0.380    345     350126     253
+  control       6.678  +0.113 78/100 (78%)  -0.267 21/100 (21%)    +0.113    345     350126     253
+  lod1          6.718  +0.154 82/100 (82%)  -0.226 26/100 (26%)    +0.154    323     257808     231
+  lod2          6.554  -0.010 55/100 (55%)  -0.390 12/100 (12%)    -0.010    275     143232     183
+  lodc          6.695  +0.131 66/100 (66%)  -0.249 25/100 (25%)    +0.131    283     151519     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:7/28034 Scene*:263/211248 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 9.10  p95 13.00  p99 21.50  max 22.10 ms
+  single frames, standin    n=180  p50 10.10  p95 13.60  p99 29.60  max 29.80 ms
+  single frames, full       n=180  p50 10.00  p95 13.50  p99 16.40  max 55.30 ms
+  single frames, control    n=180  p50 10.20  p95 12.90  p99 17.70  max 38.70 ms
+  single frames, lod1       n=180  p50 9.90  p95 12.10  p99 13.80  max 15.40 ms
+  single frames, lod2       n=180  p50 9.50  p95 18.20  p99 41.10  max 66.10 ms
+  single frames, lodc       n=180  p50 9.50  p95 14.30  p99 20.90  max 20.90 ms
+
+  view mid: 22.500 km = 15.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.870                                                     77     122942       0
+  standin       6.833  -0.037 43/100 (43%)  -0.262 26/100 (26%)    -0.037    308     158250     211
+  full          7.095  +0.225 81/100 (81%)                       +0.225    340     334190     253
+  control       6.963  +0.093 62/100 (62%)  -0.132 43/100 (43%)    +0.093    340     334190     253
+  lod1          6.940  +0.070 64/100 (64%)  -0.155 35/100 (35%)    +0.070    318     241872     231
+  lod2          6.821  -0.049 42/100 (42%)  -0.274 22/100 (22%)    -0.049    270     127296     183
+  lodc          6.867  -0.003 52/100 (52%)  -0.228 32/100 (32%)    -0.003    278     135583     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:2/12098 Scene*:263/211248 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.60  p95 10.10  p99 10.30  max 10.80 ms
+  single frames, standin    n=180  p50 9.60  p95 11.00  p99 12.30  max 13.20 ms
+  single frames, full       n=180  p50 9.70  p95 11.20  p99 12.00  max 12.90 ms
+  single frames, control    n=180  p50 9.80  p95 11.90  p99 15.60  max 19.80 ms
+  single frames, lod1       n=180  p50 9.60  p95 11.00  p99 12.10  max 14.60 ms
+  single frames, lod2       n=180  p50 9.30  p95 11.00  p99 12.50  max 12.60 ms
+  single frames, lodc       n=180  p50 9.40  p95 11.70  p99 32.70  max 41.40 ms
+
+  view edge: 61.500 km = 41.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.119                                                     56      49102       0
+  standin       4.146  +0.027 60/100 (60%)  -0.120 19/100 (19%)    +0.027    287      84410     211
+  full          4.266  +0.147 81/100 (81%)                       +0.147    319     260350     253
+  control       4.322  +0.202 84/100 (84%)  +0.056 71/100 (71%)    +0.202    319     260350     253
+  lod1          4.227  +0.108 79/100 (79%)  -0.038 42/100 (42%)    +0.108    297     168032     231
+  lod2          4.155  +0.036 54/100 (54%)  -0.111 19/100 (19%)    +0.036    249      53456     183
+  lodc          4.158  +0.039 58/100 (58%)  -0.108 29/100 (29%)    +0.039    257      61743     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:2/12098 Scene*:263/211248 Scene*:37/36978 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.80  p95 7.60  p99 12.00  max 18.10 ms
+  single frames, standin    n=180  p50 6.70  p95 9.10  p99 10.20  max 10.30 ms
+  single frames, full       n=180  p50 7.00  p95 9.10  p99 10.10  max 10.50 ms
+  single frames, control    n=180  p50 7.10  p95 10.50  p99 18.40  max 19.00 ms
+  single frames, lod1       n=180  p50 6.90  p95 9.20  p99 13.50  max 14.40 ms
+  single frames, lod2       n=180  p50 6.30  p95 7.80  p99 10.50  max 47.30 ms
+  single frames, lodc       n=180  p50 6.50  p95 8.90  p99 9.80  max 11.20 ms
+
+  view far100: 150.000 km = 100.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.299                                                     56      49102       0
+  standin       4.277  -0.023 41/100 (41%)  -0.203 7/100 (7%)    -0.023    143      50942     211
+  full          4.480  +0.181 75/100 (75%)                       +0.181    185     258742     253
+  control       4.458  +0.159 72/100 (72%)  -0.022 47/100 (47%)    +0.159    185     258742     253
+  lod1          4.415  +0.116 66/100 (66%)  -0.065 36/100 (36%)    +0.116    163     166424     231
+  lod2          4.395  +0.096 55/100 (55%)  -0.085 37/100 (37%)    +0.096    115      51848     183
+  lodc          4.356  +0.057 60/100 (60%)  -0.124 26/100 (26%)    +0.057    123      60135     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:2/12098 Scene*:129/209640 Scene*:37/36978 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 6.00  p95 7.60  p99 9.40  max 13.60 ms
+  single frames, standin    n=180  p50 6.60  p95 9.00  p99 9.60  max 10.00 ms
+  single frames, full       n=180  p50 7.10  p95 8.90  p99 9.10  max 9.30 ms
+  single frames, control    n=180  p50 6.90  p95 8.70  p99 9.30  max 9.90 ms
+  single frames, lod1       n=180  p50 6.90  p95 9.00  p99 12.10  max 13.50 ms
+  single frames, lod2       n=180  p50 6.30  p95 7.80  p99 8.40  max 9.00 ms
+  single frames, lodc       n=180  p50 6.40  p95 8.10  p99 8.40  max 8.40 ms
+  host load average at end: 13.22509765625 / 14.77099609375 / 22.0712890625
+
+##### cost, quality high, form b views 6-10
+##### MODE=cost FORMS=b VIEWS=far420,far1000,mouth,bay,traffic
+  host load average at start: 13.22509765625 / 14.77099609375 / 22.0712890625
+
+=== form b, system 9 of world 42 ===
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality high, clock held
+  10 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.5 km
+  lod1: target 19.2 m (reached 19.1 m), made in 69 ms
+  lod2: target 192.5 m (reached 187.4 m), made in 60 ms
+  lodc: target 77.0 m (reached 76.7 m), made in 62 ms
+
+  view far420: 630.000 km = 420.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.094                                                     56      49102       0
+  standin       4.073  -0.021 54/100 (54%)  -0.164 14/100 (14%)    -0.021     91      50286     211
+  full          4.237  +0.143 100/100 (100%)                       +0.143    154     257642     253
+  control       4.210  +0.116 100/100 (100%)  -0.027 40/100 (40%)    +0.116    154     257642     253
+  lod1          4.180  +0.086 92/100 (92%)  -0.057 9/100 (9%)    +0.086    132     166188     231
+  lod2          4.069  -0.025 50/100 (50%)  -0.168 8/100 (8%)    -0.025     85      51708     183
+  lodc          4.082  -0.013 53/100 (53%)  -0.156 7/100 (7%)    -0.013     93      59995     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:2/12098 Scene*:98/208540 Scene*:37/36978 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.70  p95 9.00  p99 21.80  max 26.90 ms
+  single frames, standin    n=180  p50 6.00  p95 6.70  p99 7.20  max 7.70 ms
+  single frames, full       n=180  p50 6.30  p95 8.10  p99 23.40  max 35.80 ms
+  single frames, control    n=180  p50 6.50  p95 8.00  p99 30.50  max 33.10 ms
+  single frames, lod1       n=180  p50 6.20  p95 7.50  p99 9.70  max 10.70 ms
+  single frames, lod2       n=180  p50 5.70  p95 6.20  p99 7.10  max 7.20 ms
+  single frames, lodc       n=180  p50 5.80  p95 7.20  p99 7.80  max 8.10 ms
+
+  view far1000: 1500.000 km = 1000.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.117                                                     56      49102       0
+  standin       4.129  +0.012 58/100 (58%)  -0.129 3/100 (3%)    +0.012     91      50286     211
+  full          4.258  +0.141 99/100 (99%)                       +0.141    154     257642     253
+  control       4.246  +0.128 100/100 (100%)  -0.013 50/100 (50%)    +0.128    154     257642     253
+  lod1          4.219  +0.102 96/100 (96%)  -0.039 26/100 (26%)    +0.102    132     166188     231
+  lod2          4.129  +0.012 60/100 (60%)  -0.129 0/100 (0%)    +0.012     85      51708     183
+  lodc          4.168  +0.050 73/100 (73%)  -0.091 34/100 (34%)    +0.050     93      59995     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:2/12098 Scene*:98/208540 Scene*:37/36978 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.80  p95 6.60  p99 8.60  max 8.90 ms
+  single frames, standin    n=180  p50 6.00  p95 7.00  p99 7.90  max 8.40 ms
+  single frames, full       n=180  p50 6.70  p95 7.80  p99 8.20  max 8.30 ms
+  single frames, control    n=180  p50 6.60  p95 7.20  p99 7.40  max 7.50 ms
+  single frames, lod1       n=180  p50 6.40  p95 7.10  p99 8.00  max 8.40 ms
+  single frames, lod2       n=180  p50 6.10  p95 7.00  p99 9.20  max 9.90 ms
+  single frames, lodc       n=180  p50 6.10  p95 6.70  p99 7.10  max 7.90 ms
+
+  view mouth: 0.772 km = 0.5 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.678                                                     82     138878       0
+  standin       7.662  +0.984 80/100 (80%)  -0.920 0/100 (0%)    +0.984    313     174186     211
+  full          8.582  +1.904 83/100 (83%)                       +1.904    340     349310     253
+  control       8.622  +1.944 81/100 (81%)  +0.040 51/100 (51%)    +1.944    340     349310     253
+  lod1          8.344  +1.667 80/100 (80%)  -0.238 0/100 (0%)    +1.667    319     257708     231
+  lod2          7.474  +0.797 76/100 (76%)  -1.108 10/100 (10%)    +0.797    275     143232     183
+  lodc          7.660  +0.982 80/100 (80%)  -0.922 0/100 (0%)    +0.982    283     151519     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:7/28034 Scene*:258/210432 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.60  p95 10.60  p99 12.30  max 13.50 ms
+  single frames, standin    n=180  p50 10.80  p95 14.00  p99 15.60  max 18.40 ms
+  single frames, full       n=180  p50 11.90  p95 15.20  p99 16.60  max 17.40 ms
+  single frames, control    n=180  p50 11.90  p95 14.10  p99 15.70  max 15.90 ms
+  single frames, lod1       n=180  p50 11.60  p95 14.60  p99 16.60  max 23.60 ms
+  single frames, lod2       n=180  p50 10.40  p95 13.70  p99 14.90  max 15.30 ms
+  single frames, lodc       n=180  p50 10.70  p95 14.70  p99 20.80  max 21.10 ms
+
+  view bay: 0.170 km = 0.1 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none         11.143                                                     79     124862       0
+  standin      11.817  +0.674 83/100 (83%)  -1.854 0/100 (0%)    +0.674    165     154990     211
+  full         13.671  +2.528 100/100 (100%)                       +2.528    184     323950     253
+  control      13.726  +2.583 100/100 (100%)  +0.055 57/100 (57%)    +2.583    184     323950     253
+  lod1         13.572  +2.429 100/100 (100%)  -0.099 18/100 (18%)    +2.429    181     240848     231
+  lod2         12.033  +0.890 97/100 (97%)  -1.638 0/100 (0%)    +0.890    166     127904     183
+  lodc         13.542  +2.399 100/100 (100%)  -0.129 23/100 (23%)    +2.399    174     136191     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:4/14018 Scene*:105/199088 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 18.50  p95 26.40  p99 27.90  max 29.30 ms
+  single frames, standin    n=180  p50 20.70  p95 27.50  p99 31.40  max 35.10 ms
+  single frames, full       n=180  p50 24.50  p95 30.00  p99 33.40  max 34.90 ms
+  single frames, control    n=180  p50 23.40  p95 30.60  p99 37.80  max 40.20 ms
+  single frames, lod1       n=180  p50 24.20  p95 29.80  p99 34.70  max 37.60 ms
+  single frames, lod2       n=180  p50 21.00  p95 26.20  p99 29.00  max 29.00 ms
+  single frames, lodc       n=180  p50 22.80  p95 29.20  p99 32.10  max 43.30 ms
+
+  view traffic: 9.000 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          7.085                                                    242    1557870       0
+  standin       7.113  +0.028 53/100 (53%)  -0.517 9/100 (9%)    +0.028    473    1593178     211
+  full          7.630  +0.545 81/100 (81%)                       +0.545    505    1769118     253
+  control       7.373  +0.288 75/100 (75%)  -0.257 34/100 (34%)    +0.288    505    1769118     253
+  lod1          7.251  +0.166 64/100 (64%)  -0.379 14/100 (14%)    +0.166    483    1676800     231
+  lod2          7.104  +0.019 50/100 (50%)  -0.526 6/100 (6%)    +0.019    435    1562224     183
+  lodc          7.138  +0.053 57/100 (57%)  -0.492 10/100 (10%)    +0.053    443    1570511     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:7/28034 Scene*:423/1630240 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 10.10  p95 12.20  p99 15.40  max 20.80 ms
+  single frames, standin    n=180  p50 10.80  p95 11.80  p99 13.80  max 18.40 ms
+  single frames, full       n=180  p50 11.20  p95 12.00  p99 13.60  max 19.50 ms
+  single frames, control    n=180  p50 11.30  p95 13.10  p99 17.40  max 20.00 ms
+  single frames, lod1       n=180  p50 11.10  p95 11.80  p99 14.20  max 16.20 ms
+  single frames, lod2       n=180  p50 10.60  p95 11.70  p99 13.30  max 14.50 ms
+  single frames, lodc       n=180  p50 10.80  p95 12.10  p99 16.30  max 18.10 ms
+  host load average at end: 15.57568359375 / 14.81103515625 / 19.9619140625
+
+##### cost, quality high, form c views 1-5
+##### MODE=cost FORMS=c VIEWS=close,approach,mid,edge,far100
+  host load average at start: 14.51611328125 / 14.60400390625 / 19.82763671875
+
+=== form c, system 1 of world 42 ===
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality high, clock held
+  10 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.87 km
+  lod1: target 24.0 m (reached 23.9 m), made in 43 ms
+  lod2: target 239.9 m (reached 222.5 m), made in 41 ms
+  lodc: target 96.0 m (reached 95.7 m), made in 39 ms
+
+  view close: 3.740 km = 2.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.726                                                     79     110892       0
+  standin       6.792  +0.066 61/100 (61%)  -0.148 23/100 (23%)    +0.066    305     162800     205
+  full          6.940  +0.214 76/100 (76%)                       +0.214    317     248604     228
+  control       7.031  +0.305 78/100 (78%)  +0.091 55/100 (55%)    +0.305    317     248604     228
+  lod1          6.911  +0.185 70/100 (70%)  -0.029 41/100 (41%)    +0.185    301     174712     212
+  lod2          6.708  -0.018 48/100 (48%)  -0.232 17/100 (17%)    -0.018    265     119216     176
+  lodc          6.700  -0.026 48/100 (48%)  -0.240 6/100 (6%)    -0.026    275     122292     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:238/137712 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.40  p95 12.10  p99 21.10  max 50.60 ms
+  single frames, standin    n=180  p50 9.40  p95 11.20  p99 16.00  max 16.90 ms
+  single frames, full       n=180  p50 9.70  p95 11.10  p99 12.60  max 13.10 ms
+  single frames, control    n=180  p50 9.80  p95 11.60  p99 16.60  max 19.50 ms
+  single frames, lod1       n=180  p50 9.60  p95 10.60  p99 26.10  max 38.10 ms
+  single frames, lod2       n=180  p50 9.10  p95 14.30  p99 35.30  max 36.40 ms
+  single frames, lodc       n=180  p50 9.30  p95 12.20  p99 22.00  max 24.00 ms
+
+  view approach: 11.220 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.684                                                     79     110892       0
+  standin       6.661  -0.023 42/100 (42%)  -0.045 31/100 (31%)    -0.023    305     162800     205
+  full          6.706  +0.022 53/100 (53%)                       +0.022    317     248604     228
+  control       6.750  +0.066 55/100 (55%)  +0.044 58/100 (58%)    +0.066    317     248604     228
+  lod1          6.671  -0.013 50/100 (50%)  -0.035 43/100 (43%)    -0.013    301     174712     212
+  lod2          6.613  -0.071 30/100 (30%)  -0.092 24/100 (24%)    -0.071    265     119216     176
+  lodc          6.648  -0.037 34/100 (34%)  -0.058 34/100 (34%)    -0.037    275     122292     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:238/137712 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 9.90  p95 21.00  p99 66.60  max 67.90 ms
+  single frames, standin    n=180  p50 9.80  p95 19.70  p99 51.60  max 56.40 ms
+  single frames, full       n=180  p50 9.80  p95 19.70  p99 71.20  max 223.50 ms
+  single frames, control    n=180  p50 9.90  p95 19.80  p99 31.30  max 72.20 ms
+  single frames, lod1       n=180  p50 9.90  p95 40.30  p99 125.80  max 233.40 ms
+  single frames, lod2       n=180  p50 9.60  p95 16.10  p99 25.20  max 28.30 ms
+  single frames, lodc       n=180  p50 9.90  p95 26.40  p99 52.50  max 59.00 ms
+
+  view mid: 28.050 km = 15.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.639                                                     79     110892       0
+  standin       6.698  +0.059 58/100 (58%)  -0.065 36/100 (36%)    +0.059    305     162800     205
+  full          6.763  +0.124 78/100 (78%)                       +0.124    317     248604     228
+  control       6.854  +0.215 72/100 (72%)  +0.091 50/100 (50%)    +0.215    317     248604     228
+  lod1          6.888  +0.248 65/100 (65%)  +0.124 50/100 (50%)    +0.248    301     174712     212
+  lod2          6.745  +0.106 62/100 (62%)  -0.018 41/100 (41%)    +0.106    265     119216     176
+  lodc          6.652  +0.013 50/100 (50%)  -0.111 20/100 (20%)    +0.013    275     122292     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:238/137712 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 8.60  p95 13.80  p99 21.30  max 22.80 ms
+  single frames, standin    n=180  p50 9.40  p95 12.80  p99 15.70  max 16.30 ms
+  single frames, full       n=180  p50 9.50  p95 14.60  p99 22.70  max 28.70 ms
+  single frames, control    n=180  p50 9.40  p95 12.70  p99 19.20  max 21.60 ms
+  single frames, lod1       n=180  p50 9.30  p95 13.30  p99 21.40  max 24.20 ms
+  single frames, lod2       n=180  p50 9.20  p95 12.70  p99 23.20  max 31.00 ms
+  single frames, lodc       n=180  p50 9.40  p95 15.70  p99 82.60  max 111.30 ms
+
+  view edge: 76.670 km = 41.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.987                                                     58      37052       0
+  standin       4.019  +0.032 72/100 (72%)  -0.108 13/100 (13%)    +0.032    284      88960     205
+  full          4.127  +0.140 88/100 (88%)                       +0.140    296     174764     228
+  control       4.114  +0.127 86/100 (86%)  -0.012 53/100 (53%)    +0.127    296     174764     228
+  lod1          4.079  +0.092 84/100 (84%)  -0.048 42/100 (42%)    +0.092    280     100872     212
+  lod2          3.996  +0.009 65/100 (65%)  -0.131 24/100 (24%)    +0.009    244      45376     176
+  lodc          4.025  +0.038 71/100 (71%)  -0.102 29/100 (29%)    +0.038    254      48452     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:238/137712 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 6.40  p95 10.60  p99 21.10  max 25.10 ms
+  single frames, standin    n=180  p50 7.60  p95 12.20  p99 26.40  max 54.70 ms
+  single frames, full       n=180  p50 7.50  p95 12.80  p99 35.50  max 55.20 ms
+  single frames, control    n=180  p50 7.60  p95 19.00  p99 42.60  max 45.90 ms
+  single frames, lod1       n=180  p50 7.30  p95 10.80  p99 19.00  max 21.10 ms
+  single frames, lod2       n=180  p50 7.10  p95 9.70  p99 11.40  max 18.50 ms
+  single frames, lodc       n=180  p50 7.60  p95 17.80  p99 44.20  max 69.20 ms
+
+  view far100: 187.000 km = 100.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.943                                                     58      37052       0
+  standin       3.942  -0.002 57/100 (57%)  -0.100 2/100 (2%)    -0.002    140      39304     205
+  full          4.042  +0.098 96/100 (96%)                       +0.098    162     173156     228
+  control       4.034  +0.091 93/100 (93%)  -0.007 40/100 (40%)    +0.091    162     173156     228
+  lod1          3.995  +0.052 83/100 (83%)  -0.047 19/100 (19%)    +0.052    146      99264     212
+  lod2          3.953  +0.010 56/100 (56%)  -0.088 0/100 (0%)    +0.010    110      43768     176
+  lodc          3.982  +0.039 67/100 (67%)  -0.059 4/100 (4%)    +0.039    120      46844     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:104/136104 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 6.00  p95 7.30  p99 9.70  max 10.50 ms
+  single frames, standin    n=180  p50 6.70  p95 7.30  p99 8.00  max 12.70 ms
+  single frames, full       n=180  p50 7.00  p95 9.20  p99 14.60  max 35.20 ms
+  single frames, control    n=180  p50 6.90  p95 10.00  p99 13.00  max 21.50 ms
+  single frames, lod1       n=180  p50 6.80  p95 11.50  p99 52.40  max 91.40 ms
+  single frames, lod2       n=180  p50 6.60  p95 7.60  p99 9.10  max 11.90 ms
+  single frames, lodc       n=180  p50 6.60  p95 7.40  p99 9.10  max 10.30 ms
+  host load average at end: 18.537109375 / 16.81591796875 / 19.59375
+
+##### cost, quality high, form c views 6-10
+##### MODE=cost FORMS=c VIEWS=far420,far1000,mouth,bay,traffic
+  host load average at start: 18.537109375 / 16.81591796875 / 19.59375
+
+=== form c, system 1 of world 42 ===
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality high, clock held
+  10 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.87 km
+  lod1: target 24.0 m (reached 23.9 m), made in 48 ms
+  lod2: target 239.9 m (reached 222.5 m), made in 55 ms
+  lodc: target 96.0 m (reached 95.7 m), made in 55 ms
+
+  view far420: 785.400 km = 420.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.893                                                     58      37052       0
+  standin       3.913  +0.020 74/100 (74%)  -0.087 10/100 (10%)    +0.020     85      38468     205
+  full          3.999  +0.107 93/100 (93%)                       +0.107    131     172056     228
+  control       3.998  +0.106 91/100 (91%)  -0.001 47/100 (47%)    +0.106    131     172056     228
+  lod1          3.961  +0.068 90/100 (90%)  -0.038 13/100 (13%)    +0.068    115      99028     212
+  lod2          3.910  +0.018 68/100 (68%)  -0.089 0/100 (0%)    +0.018     80      43628     176
+  lodc          3.925  +0.032 75/100 (75%)  -0.074 9/100 (9%)    +0.032     90      46704     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:73/135004 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 5.90  p95 6.90  p99 9.40  max 21.90 ms
+  single frames, standin    n=180  p50 6.10  p95 7.40  p99 10.20  max 12.10 ms
+  single frames, full       n=180  p50 6.70  p95 8.20  p99 11.80  max 16.70 ms
+  single frames, control    n=180  p50 6.70  p95 7.60  p99 8.80  max 9.10 ms
+  single frames, lod1       n=180  p50 6.60  p95 7.40  p99 8.30  max 9.40 ms
+  single frames, lod2       n=180  p50 6.20  p95 7.50  p99 10.90  max 12.50 ms
+  single frames, lodc       n=180  p50 6.30  p95 8.20  p99 10.60  max 26.90 ms
+
+  view far1000: 1870.000 km = 1000.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.922                                                     58      37052       0
+  standin       3.911  -0.012 35/100 (35%)  -0.097 6/100 (6%)    -0.012     85      38468     205
+  full          4.008  +0.085 100/100 (100%)                       +0.085    131     172056     228
+  control       4.027  +0.105 100/100 (100%)  +0.020 63/100 (63%)    +0.105    131     172056     228
+  lod1          3.975  +0.053 92/100 (92%)  -0.033 18/100 (18%)    +0.053    115      99028     212
+  lod2          3.923  +0.001 53/100 (53%)  -0.084 25/100 (25%)    +0.001     80      43628     176
+  lodc          3.953  +0.031 67/100 (67%)  -0.054 13/100 (13%)    +0.031     90      46704     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:73/135004 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 6.70  p95 13.70  p99 26.80  max 29.40 ms
+  single frames, standin    n=180  p50 7.40  p95 11.40  p99 54.00  max 62.70 ms
+  single frames, full       n=180  p50 7.40  p95 14.40  p99 19.40  max 24.90 ms
+  single frames, control    n=180  p50 8.50  p95 13.00  p99 15.80  max 28.10 ms
+  single frames, lod1       n=180  p50 8.40  p95 14.00  p99 34.70  max 62.00 ms
+  single frames, lod2       n=180  p50 7.70  p95 11.00  p99 18.90  max 19.30 ms
+  single frames, lodc       n=180  p50 8.00  p95 12.80  p99 25.00  max 75.90 ms
+
+  view mouth: 0.772 km = 0.4 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          6.868                                                     79     110892       0
+  standin       7.382  +0.514 83/100 (83%)  -1.399 8/100 (8%)    +0.514    284     161868     205
+  full          8.781  +1.913 91/100 (91%)                       +1.913    294     245004     228
+  control       8.348  +1.481 90/100 (90%)  -0.432 29/100 (29%)    +1.481    294     245004     228
+  lod1          8.159  +1.292 90/100 (90%)  -0.622 23/100 (23%)    +1.292    288     174240     212
+  lod2          7.675  +0.808 85/100 (85%)  -1.106 16/100 (16%)    +0.808    265     119216     176
+  lodc          8.140  +1.273 90/100 (90%)  -0.641 16/100 (16%)    +1.273    275     122292     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:215/134112 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 10.10  p95 16.00  p99 24.30  max 64.90 ms
+  single frames, standin    n=180  p50 11.70  p95 19.50  p99 36.20  max 38.60 ms
+  single frames, full       n=180  p50 12.40  p95 19.90  p99 46.70  max 47.20 ms
+  single frames, control    n=180  p50 12.10  p95 20.00  p99 38.80  max 43.00 ms
+  single frames, lod1       n=180  p50 12.40  p95 28.60  p99 55.30  max 75.30 ms
+  single frames, lod2       n=180  p50 11.00  p95 21.00  p99 46.20  max 92.70 ms
+  single frames, lodc       n=180  p50 11.10  p95 17.90  p99 29.00  max 38.40 ms
+
+  view bay: 0.170 km = 0.1 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none         18.848                                                     85     169390       0
+  standin      19.672  +0.824 78/100 (78%)  -2.294 8/100 (8%)    +0.824    185     218866     205
+  full         21.967  +3.118 100/100 (100%)                       +3.118    195     301906     228
+  control      21.337  +2.489 100/100 (100%)  -0.629 41/100 (41%)    +2.489    195     301906     228
+  lod1         21.339  +2.491 100/100 (100%)  -0.628 34/100 (34%)    +2.491    188     230945     212
+  lod2         20.271  +1.423 90/100 (90%)  -1.696 10/100 (10%)    +1.423    170     176502     176
+  lodc         21.186  +2.338 100/100 (100%)  -0.781 22/100 (22%)    +2.338    178     179546     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:1/12096 Scene*:3/12 Scene*:2/962 Scene*:3/45440 Scene*:110/132516 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 20.70  p95 42.80  p99 89.60  max 120.20 ms
+  single frames, standin    n=180  p50 22.10  p95 31.60  p99 52.40  max 60.20 ms
+  single frames, full       n=180  p50 23.60  p95 29.10  p99 35.90  max 46.10 ms
+  single frames, control    n=180  p50 23.70  p95 26.90  p99 33.90  max 38.00 ms
+  single frames, lod1       n=180  p50 23.70  p95 34.30  p99 63.60  max 75.30 ms
+  single frames, lod2       n=180  p50 22.10  p95 26.00  p99 71.10  max 84.10 ms
+  single frames, lodc       n=180  p50 23.40  p95 28.10  p99 45.40  max 50.60 ms
+
+  view traffic: 11.220 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          7.039                                                    239    1529884       0
+  standin       7.152  +0.113 91/100 (91%)  -0.081 18/100 (18%)    +0.113    465    1581792     205
+  full          7.232  +0.193 90/100 (90%)                       +0.193    477    1667596     228
+  control       7.226  +0.187 90/100 (90%)  -0.007 41/100 (41%)    +0.187    477    1667596     228
+  lod1          7.170  +0.131 90/100 (90%)  -0.062 2/100 (2%)    +0.131    461    1593704     212
+  lod2          7.082  +0.042 84/100 (84%)  -0.151 0/100 (0%)    +0.042    425    1538208     176
+  lodc          7.107  +0.068 86/100 (86%)  -0.126 4/100 (4%)    +0.068    435    1541284     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:398/1556704 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=180  p50 10.10  p95 11.20  p99 13.20  max 14.10 ms
+  single frames, standin    n=180  p50 11.10  p95 14.60  p99 31.20  max 43.00 ms
+  single frames, full       n=180  p50 11.10  p95 11.80  p99 13.10  max 13.90 ms
+  single frames, control    n=180  p50 11.10  p95 12.00  p99 13.20  max 23.90 ms
+  single frames, lod1       n=180  p50 11.00  p95 12.30  p99 13.30  max 14.70 ms
+  single frames, lod2       n=180  p50 10.70  p95 11.50  p99 13.10  max 21.70 ms
+  single frames, lodc       n=180  p50 10.80  p95 12.30  p99 18.20  max 20.10 ms
+  host load average at end: 21.775390625 / 29.77734375 / 25.54638671875
+
+##### cost, quality low, form a
+##### MODE=cost QUALITY=low FORMS=a VIEWS=close,edge,far420,traffic BLOCKS=12 FRAMES=60 DIST_FRAMES=120
+  host load average at start: 18.4384765625 / 27.54931640625 / 27.24755859375
+
+=== form a, system 7 of world 42 ===
+  phases (warm HTTP cache, this page): {"fetchMs":50.90000009536743,"glbBytes":10494100,"loadMs":111.79999995231628,"lightmapApplyMs":0.10000002384185791,"builderMs":0.2999999523162842,"firstBuildMs":1.899999976158142,"prewarmMs":45.90000009536743,"lightmap":{"width":4096,"height":4096},"textureUploadMs":346.2999999523163,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":24.199999928474426,"lod1":13.700000047683716,"lod2":8.699999928474426,"lodc":9.5,"standin":19.600000023841858}}
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality low, clock held
+  12 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.66 km
+  lod1: target 21.3 m (reached 21.3 m), made in 64 ms
+  lod2: target 213.0 m (reached 206.0 m), made in 60 ms
+  lodc: target 85.2 m (reached 83.1 m), made in 59 ms
+
+  view close: 3.320 km = 2.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.494                                                     65     110867       0
+  standin       4.524  +0.030 91/144 (63%)  -0.112 40/144 (28%)    +0.030    302     234907     218
+  full          4.637  +0.143 108/144 (75%)                       +0.143    317     313767     242
+  control       4.666  +0.172 111/144 (77%)  +0.029 83/144 (58%)    +0.172    317     313767     242
+  lod1          4.652  +0.158 100/144 (69%)  +0.016 58/144 (40%)    +0.158    295     232036     220
+  lod2          4.467  -0.027 89/144 (62%)  -0.169 42/144 (29%)    -0.027    256     114843     181
+  lodc          4.598  +0.104 96/144 (67%)  -0.038 53/144 (37%)    +0.104    263     144575     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:252/202900 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=120  p50 6.10  p95 8.20  p99 10.10  max 10.40 ms
+  single frames, standin    n=120  p50 7.30  p95 10.90  p99 29.60  max 137.50 ms
+  single frames, full       n=120  p50 7.80  p95 10.30  p99 14.60  max 15.20 ms
+  single frames, control    n=120  p50 7.60  p95 9.50  p99 11.50  max 11.70 ms
+  single frames, lod1       n=120  p50 7.20  p95 9.00  p99 10.30  max 10.80 ms
+  single frames, lod2       n=120  p50 7.00  p95 10.30  p99 12.20  max 21.00 ms
+  single frames, lodc       n=120  p50 6.90  p95 8.50  p99 9.70  max 10.10 ms
+
+  view edge: 68.060 km = 41.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          1.646                                                     44      37027       0
+  standin       1.746  +0.100 140/144 (97%)  -0.060 52/144 (36%)    +0.100    281     161067     218
+  full          1.806  +0.160 144/144 (100%)                       +0.160    296     239927     242
+  control       1.812  +0.166 144/144 (100%)  +0.006 79/144 (55%)    +0.166    296     239927     242
+  lod1          1.774  +0.128 144/144 (100%)  -0.032 18/144 (13%)    +0.128    274     158196     220
+  lod2          1.691  +0.045 133/144 (92%)  -0.115 0/144 (0%)    +0.045    235      41003     181
+  lodc          1.714  +0.068 136/144 (94%)  -0.092 16/144 (11%)    +0.068    242      70735     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:252/202900 Scene*:41/37026 Mesh:1/1
+  single frames, none       n=120  p50 2.80  p95 5.00  p99 7.00  max 11.40 ms
+  single frames, standin    n=120  p50 4.00  p95 7.30  p99 8.30  max 8.80 ms
+  single frames, full       n=120  p50 4.00  p95 7.40  p99 8.40  max 8.60 ms
+  single frames, control    n=120  p50 4.10  p95 5.50  p99 5.80  max 5.80 ms
+  single frames, lod1       n=120  p50 4.00  p95 7.50  p99 8.20  max 9.40 ms
+  single frames, lod2       n=120  p50 3.70  p95 5.70  p99 6.70  max 7.10 ms
+  single frames, lodc       n=120  p50 4.40  p95 7.00  p99 8.40  max 9.00 ms
+
+  view far420: 697.200 km = 420.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          1.752                                                     44      37027       0
+  standin       1.812  +0.060 81/144 (56%)  -0.046 46/144 (32%)    +0.060     84      39611     218
+  full          1.857  +0.106 103/144 (72%)                       +0.106    131     237219     242
+  control       1.850  +0.098 100/144 (69%)  -0.007 61/144 (42%)    +0.098    131     237219     242
+  lod1          1.842  +0.090 100/144 (69%)  -0.016 61/144 (42%)    +0.090    109     156352     220
+  lod2          1.763  +0.012 70/144 (49%)  -0.094 36/144 (25%)    +0.012     71      39255     181
+  lodc          1.789  +0.038 79/144 (55%)  -0.068 41/144 (28%)    +0.038     78      68987     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:87/200192 Scene*:41/37026 Mesh:1/1
+  single frames, none       n=120  p50 3.30  p95 4.30  p99 5.10  max 5.10 ms
+  single frames, standin    n=120  p50 3.50  p95 6.20  p99 8.40  max 8.90 ms
+  single frames, full       n=120  p50 3.90  p95 7.20  p99 8.30  max 9.70 ms
+  single frames, control    n=120  p50 4.00  p95 6.50  p99 9.70  max 10.30 ms
+  single frames, lod1       n=120  p50 3.60  p95 5.50  p99 6.10  max 6.10 ms
+  single frames, lod2       n=120  p50 3.50  p95 7.20  p99 9.70  max 10.30 ms
+  single frames, lodc       n=120  p50 3.50  p95 5.10  p99 6.00  max 7.10 ms
+
+  view traffic: 9.960 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.548                                                    225    1529859       0
+  standin       4.698  +0.151 115/144 (80%)  -0.090 47/144 (33%)    +0.151    462    1653899     218
+  full          4.788  +0.241 127/144 (88%)                       +0.241    477    1732759     242
+  control       4.803  +0.255 126/144 (88%)  +0.014 75/144 (52%)    +0.255    477    1732759     242
+  lod1          4.746  +0.198 123/144 (85%)  -0.043 56/144 (39%)    +0.198    455    1651028     220
+  lod2          4.604  +0.057 105/144 (73%)  -0.184 21/144 (15%)    +0.057    416    1533835     181
+  lodc          4.636  +0.088 103/144 (72%)  -0.153 26/144 (18%)    +0.088    423    1563567     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:412/1621892 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=120  p50 7.50  p95 11.90  p99 13.80  max 31.30 ms
+  single frames, standin    n=120  p50 8.80  p95 15.90  p99 21.50  max 24.40 ms
+  single frames, full       n=120  p50 8.80  p95 9.90  p99 10.20  max 10.40 ms
+  single frames, control    n=120  p50 8.60  p95 11.80  p99 19.70  max 24.20 ms
+  single frames, lod1       n=120  p50 8.50  p95 9.90  p99 10.60  max 11.20 ms
+  single frames, lod2       n=120  p50 8.10  p95 9.60  p99 9.90  max 10.40 ms
+  single frames, lodc       n=120  p50 8.30  p95 9.80  p99 10.20  max 11.00 ms
+  host load average at end: 18.00048828125 / 24.30029296875 / 25.97998046875
+
+##### cost, quality low, form b
+##### MODE=cost QUALITY=low FORMS=b VIEWS=close,edge,far420,traffic BLOCKS=12
+  host load average at start: 18.00048828125 / 24.30029296875 / 25.97998046875
+
+=== form b, system 9 of world 42 ===
+  phases (warm HTTP cache, this page): {"fetchMs":82.10000002384186,"glbBytes":10819548,"loadMs":108.89999997615814,"lightmapApplyMs":0.10000002384185791,"builderMs":0.5,"firstBuildMs":1.600000023841858,"prewarmMs":47.60000002384186,"lightmap":{"width":4096,"height":4096},"textureUploadMs":313.89999997615814,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":17.699999928474426,"lod1":13,"lod2":7.200000047683716,"lodc":8.899999976158142,"standin":4.899999976158142}}
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality low, clock held
+  12 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.5 km
+  lod1: target 19.2 m (reached 19.1 m), made in 66 ms
+  lod2: target 192.5 m (reached 187.4 m), made in 60 ms
+  lodc: target 77.0 m (reached 76.7 m), made in 61 ms
+
+  view close: 3.000 km = 2.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.555                                                     63     122917       0
+  standin       4.558  +0.003 88/144 (61%)  -0.337 15/144 (10%)    +0.003    291     157053     211
+  full          4.896  +0.341 127/144 (88%)                       +0.341    326     334165     253
+  control       4.875  +0.320 126/144 (88%)  -0.021 81/144 (56%)    +0.320    326     334165     253
+  lod1          4.857  +0.302 127/144 (88%)  -0.039 57/144 (40%)    +0.302    304     241847     231
+  lod2          4.528  -0.027 82/144 (57%)  -0.368 17/144 (12%)    -0.027    256     127271     183
+  lodc          4.578  +0.023 91/144 (63%)  -0.318 23/144 (16%)    +0.023    264     135558     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:2/12098 Scene*:263/211248 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=120  p50 6.20  p95 7.60  p99 8.60  max 8.80 ms
+  single frames, standin    n=120  p50 7.30  p95 9.10  p99 10.20  max 18.50 ms
+  single frames, full       n=120  p50 7.70  p95 8.60  p99 9.10  max 9.30 ms
+  single frames, control    n=120  p50 7.60  p95 8.70  p99 9.00  max 9.30 ms
+  single frames, lod1       n=120  p50 7.50  p95 10.00  p99 21.30  max 21.30 ms
+  single frames, lod2       n=120  p50 7.60  p95 10.30  p99 16.20  max 47.70 ms
+  single frames, lodc       n=120  p50 7.30  p95 9.10  p99 10.20  max 39.70 ms
+
+  view edge: 61.500 km = 41.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          1.913                                                     42      49077       0
+  standin       2.051  +0.138 122/144 (85%)  -0.077 41/144 (28%)    +0.138    270      83213     211
+  full          2.128  +0.215 133/144 (92%)                       +0.215    305     260325     253
+  control       2.072  +0.158 130/144 (90%)  -0.057 58/144 (40%)    +0.158    305     260325     253
+  lod1          2.179  +0.266 132/144 (92%)  +0.051 75/144 (52%)    +0.266    283     168007     231
+  lod2          2.011  +0.097 109/144 (76%)  -0.118 32/144 (22%)    +0.097    235      53431     183
+  lodc          1.983  +0.070 109/144 (76%)  -0.145 20/144 (14%)    +0.070    243      61718     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:2/12098 Scene*:263/211248 Scene*:37/36978 Mesh:1/1
+  single frames, none       n=120  p50 3.50  p95 5.40  p99 6.10  max 6.40 ms
+  single frames, standin    n=120  p50 4.50  p95 6.50  p99 7.00  max 7.80 ms
+  single frames, full       n=120  p50 5.00  p95 7.50  p99 8.80  max 9.50 ms
+  single frames, control    n=120  p50 5.10  p95 8.70  p99 9.20  max 9.80 ms
+  single frames, lod1       n=120  p50 5.00  p95 6.50  p99 7.50  max 8.20 ms
+  single frames, lod2       n=120  p50 4.20  p95 6.50  p99 7.20  max 7.70 ms
+  single frames, lodc       n=120  p50 4.10  p95 5.70  p99 7.40  max 11.10 ms
+
+  view far420: 630.000 km = 420.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          1.972                                                     42      49077       0
+  standin       2.012  +0.040 82/144 (57%)  -0.140 33/144 (23%)    +0.040     77      50261     211
+  full          2.152  +0.180 113/144 (78%)                       +0.180    140     257617     253
+  control       2.184  +0.212 115/144 (80%)  +0.033 71/144 (49%)    +0.212    140     257617     253
+  lod1          2.236  +0.264 120/144 (83%)  +0.084 79/144 (55%)    +0.264    118     166163     231
+  lod2          1.975  +0.003 82/144 (57%)  -0.177 32/144 (22%)    +0.003     71      51683     183
+  lodc          1.982  +0.010 84/144 (58%)  -0.170 28/144 (19%)    +0.010     79      59970     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:2/12098 Scene*:98/208540 Scene*:37/36978 Mesh:1/1
+  single frames, none       n=120  p50 6.30  p95 8.00  p99 9.80  max 13.60 ms
+  single frames, standin    n=120  p50 5.70  p95 10.00  p99 13.70  max 23.10 ms
+  single frames, full       n=120  p50 6.30  p95 9.10  p99 11.20  max 13.20 ms
+  single frames, control    n=120  p50 5.80  p95 10.60  p99 13.00  max 13.40 ms
+  single frames, lod1       n=120  p50 6.40  p95 9.50  p99 12.00  max 16.40 ms
+  single frames, lod2       n=120  p50 5.40  p95 8.50  p99 13.90  max 19.10 ms
+  single frames, lodc       n=120  p50 4.90  p95 8.10  p99 10.40  max 17.50 ms
+
+  view traffic: 9.000 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          5.449                                                    228    1557845       0
+  standin       5.624  +0.175 97/144 (67%)  -0.584 48/144 (33%)    +0.175    456    1591981     211
+  full          6.208  +0.759 106/144 (74%)                       +0.759    491    1769093     253
+  control       6.034  +0.585 99/144 (69%)  -0.174 67/144 (47%)    +0.585    491    1769093     253
+  lod1          5.640  +0.191 91/144 (63%)  -0.568 47/144 (33%)    +0.191    469    1676775     231
+  lod2          6.005  +0.556 100/144 (69%)  -0.203 60/144 (42%)    +0.556    421    1562199     183
+  lodc          5.551  +0.102 89/144 (62%)  -0.658 43/144 (30%)    +0.102    429    1570486     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:7/28034 Scene*:423/1630240 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=120  p50 9.00  p95 15.50  p99 26.60  max 45.90 ms
+  single frames, standin    n=120  p50 10.20  p95 16.90  p99 22.60  max 24.70 ms
+  single frames, full       n=120  p50 10.50  p95 16.10  p99 21.80  max 31.50 ms
+  single frames, control    n=120  p50 10.30  p95 17.00  p99 29.50  max 31.20 ms
+  single frames, lod1       n=120  p50 10.80  p95 13.70  p99 18.80  max 41.00 ms
+  single frames, lod2       n=120  p50 10.30  p95 17.50  p99 32.40  max 39.60 ms
+  single frames, lodc       n=120  p50 10.00  p95 13.80  p99 16.70  max 17.80 ms
+  host load average at end: 29.46484375 / 26.04541015625 / 26.41162109375
+
+##### cost, quality low, form c
+##### MODE=cost QUALITY=low FORMS=c VIEWS=close,edge,far420,traffic BLOCKS=12
+  host load average at start: 29.46484375 / 26.04541015625 / 26.41162109375
+
+=== form c, system 1 of world 42 ===
+  phases (warm HTTP cache, this page): {"fetchMs":32.60000002384186,"glbBytes":7992896,"loadMs":123.5,"lightmapApplyMs":0.09999990463256836,"builderMs":0.30000007152557373,"firstBuildMs":1.399999976158142,"prewarmMs":47.299999952316284,"lightmap":{"width":4096,"height":4096},"textureUploadMs":422.60000002384186,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":30.200000047683716,"lod1":16.799999952316284,"lod2":10.100000023841858,"lodc":9.399999976158142,"standin":38.39999997615814}}
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality low, clock held
+  12 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.87 km
+  lod1: target 24.0 m (reached 23.9 m), made in 61 ms
+  lod2: target 239.9 m (reached 222.5 m), made in 43 ms
+  lodc: target 96.0 m (reached 95.7 m), made in 44 ms
+
+  view close: 3.740 km = 2.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          5.253                                                     65     110867       0
+  standin       5.511  +0.257 98/144 (68%)  -0.014 62/144 (43%)    +0.257    288     161583     205
+  full          5.525  +0.272 102/144 (71%)                       +0.272    303     248579     228
+  control       5.680  +0.427 114/144 (79%)  +0.155 80/144 (56%)    +0.427    303     248579     228
+  lod1          5.606  +0.353 110/144 (76%)  +0.081 75/144 (52%)    +0.353    287     174687     212
+  lod2          5.300  +0.047 86/144 (60%)  -0.225 49/144 (34%)    +0.047    251     119191     176
+  lodc          5.361  +0.107 87/144 (60%)  -0.164 54/144 (38%)    +0.107    261     122267     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:238/137712 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=120  p50 6.70  p95 8.10  p99 8.40  max 8.40 ms
+  single frames, standin    n=120  p50 7.90  p95 9.30  p99 9.80  max 10.70 ms
+  single frames, full       n=120  p50 8.10  p95 9.70  p99 10.30  max 11.50 ms
+  single frames, control    n=120  p50 8.20  p95 10.50  p99 13.30  max 13.50 ms
+  single frames, lod1       n=120  p50 8.00  p95 9.40  p99 16.30  max 20.20 ms
+  single frames, lod2       n=120  p50 7.70  p95 9.10  p99 9.70  max 9.90 ms
+  single frames, lodc       n=120  p50 7.90  p95 9.20  p99 10.50  max 10.60 ms
+
+  view edge: 76.670 km = 41.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          1.780                                                     44      37027       0
+  standin       1.860  +0.080 101/144 (70%)  -0.015 55/144 (38%)    +0.080    267      87743     205
+  full          1.875  +0.095 112/144 (78%)                       +0.095    282     174739     228
+  control       1.923  +0.143 113/144 (78%)  +0.048 78/144 (54%)    +0.143    282     174739     228
+  lod1          1.876  +0.096 112/144 (78%)  +0.001 71/144 (49%)    +0.096    266     100847     212
+  lod2          1.816  +0.036 91/144 (63%)  -0.059 48/144 (33%)    +0.036    230      45351     176
+  lodc          1.859  +0.079 105/144 (73%)  -0.016 61/144 (42%)    +0.079    240      48427     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:238/137712 Scene*:41/37026 Mesh:1/1
+  single frames, none       n=120  p50 4.40  p95 6.60  p99 7.40  max 8.60 ms
+  single frames, standin    n=120  p50 6.40  p95 11.30  p99 22.60  max 59.00 ms
+  single frames, full       n=120  p50 5.70  p95 10.30  p99 14.20  max 14.50 ms
+  single frames, control    n=120  p50 5.80  p95 7.90  p99 9.80  max 10.70 ms
+  single frames, lod1       n=120  p50 5.70  p95 10.20  p99 12.60  max 13.60 ms
+  single frames, lod2       n=120  p50 5.60  p95 8.90  p99 11.90  max 12.70 ms
+  single frames, lodc       n=120  p50 5.20  p95 7.60  p99 9.50  max 11.10 ms
+
+  view far420: 785.400 km = 420.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          1.867                                                     44      37027       0
+  standin       1.825  -0.042 68/144 (47%)  -0.073 44/144 (31%)    -0.042     71      38443     205
+  full          1.898  +0.032 105/144 (73%)                       +0.032    117     172031     228
+  control       1.853  -0.013 86/144 (60%)  -0.045 58/144 (40%)    -0.013    117     172031     228
+  lod1          1.852  -0.014 87/144 (60%)  -0.046 56/144 (39%)    -0.014    101      99003     212
+  lod2          1.866  -0.001 90/144 (63%)  -0.033 48/144 (33%)    -0.001     66      43603     176
+  lodc          1.807  -0.059 76/144 (53%)  -0.091 37/144 (26%)    -0.059     76      46679     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:73/135004 Scene*:41/37026 Mesh:1/1
+  single frames, none       n=120  p50 4.30  p95 6.70  p99 7.50  max 9.40 ms
+  single frames, standin    n=120  p50 4.80  p95 6.90  p99 7.70  max 9.20 ms
+  single frames, full       n=120  p50 5.20  p95 8.30  p99 9.60  max 9.70 ms
+  single frames, control    n=120  p50 5.40  p95 7.90  p99 9.30  max 9.40 ms
+  single frames, lod1       n=120  p50 5.00  p95 7.90  p99 9.10  max 9.80 ms
+  single frames, lod2       n=120  p50 5.20  p95 7.70  p99 8.80  max 8.90 ms
+  single frames, lodc       n=120  p50 4.50  p95 6.80  p99 7.80  max 8.10 ms
+
+  view traffic: 11.220 km = 6.0 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.833                                                    225    1529859       0
+  standin       4.933  +0.100 85/144 (59%)  -0.148 54/144 (38%)    +0.100    448    1580575     205
+  full          5.082  +0.248 106/144 (74%)                       +0.248    463    1667571     228
+  control       4.977  +0.144 92/144 (64%)  -0.104 60/144 (42%)    +0.144    463    1667571     228
+  lod1          5.039  +0.206 106/144 (74%)  -0.042 70/144 (49%)    +0.206    447    1593679     212
+  lod2          4.799  -0.034 77/144 (53%)  -0.282 48/144 (33%)    -0.034    411    1538183     176
+  lodc          4.967  +0.133 91/144 (63%)  -0.115 56/144 (39%)    +0.133    421    1541259     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:398/1556704 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=120  p50 8.30  p95 9.60  p99 20.30  max 22.50 ms
+  single frames, standin    n=120  p50 9.10  p95 13.60  p99 37.10  max 42.80 ms
+  single frames, full       n=120  p50 9.10  p95 12.10  p99 16.50  max 19.90 ms
+  single frames, control    n=120  p50 9.50  p95 12.00  p99 14.10  max 14.40 ms
+  single frames, lod1       n=120  p50 9.20  p95 12.90  p99 18.10  max 19.70 ms
+  single frames, lod2       n=120  p50 8.70  p95 11.80  p99 13.40  max 14.90 ms
+  single frames, lodc       n=120  p50 8.70  p95 11.20  p99 17.60  max 48.90 ms
+  host load average at end: 36.34326171875 / 30.3369140625 / 28.10595703125
+
+##### cost, quality low, bay, form a
+##### MODE=cost QUALITY=low FORMS=a VIEWS=bay BLOCKS=12 FRAMES=60 DIST_FRAMES=60
+  host load average at start: 37.28759765625 / 42.9736328125 / 36.88427734375
+
+=== form a, system 7 of world 42 ===
+  phases (warm HTTP cache, this page): {"fetchMs":41.700000047683716,"glbBytes":10494100,"loadMs":178.60000002384186,"lightmapApplyMs":0.09999990463256836,"builderMs":0.40000009536743164,"firstBuildMs":1.6999999284744263,"prewarmMs":36.700000047683716,"lightmap":{"width":4096,"height":4096},"textureUploadMs":346.39999997615814,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":26.800000071525574,"lod1":17.399999976158142,"lod2":14.100000023841858,"lodc":11.899999976158142,"standin":17.799999952316284}}
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality low, clock held
+  12 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.66 km
+  lod1: target 21.3 m (reached 21.3 m), made in 82 ms
+  lod2: target 213.0 m (reached 206.0 m), made in 70 ms
+  lodc: target 85.2 m (reached 83.1 m), made in 111 ms
+
+  view bay: 0.170 km = 0.1 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none         13.110                                                     89     271601       0
+  standin      13.947  +0.837 135/144 (94%)  -0.783 30/144 (21%)    +0.837    200     391453     218
+  full         14.729  +1.619 141/144 (98%)                       +1.619    186     287621     242
+  control      14.781  +1.671 141/144 (98%)  +0.052 80/144 (56%)    +1.671    186     287621     242
+  lod1         14.731  +1.621 144/144 (100%)  +0.002 93/144 (65%)    +1.621    183     277465     220
+  lod2         13.749  +0.639 135/144 (94%)  -0.980 33/144 (23%)    +0.639    173     272653     181
+  lodc         14.686  +1.576 138/144 (96%)  -0.043 56/144 (39%)    +1.576    180     273865     188
+  passes (calls/triangles; * = offscreen target), full: Scene*:1/12096 Scene*:2/0 Scene*:2/962 Scene*:3/45440 Scene*:115/118256 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=60  p50 15.20  p95 17.60  p99 19.70  max 19.70 ms
+  single frames, standin    n=60  p50 16.70  p95 21.00  p99 33.30  max 33.30 ms
+  single frames, full       n=60  p50 17.60  p95 23.10  p99 24.70  max 24.70 ms
+  single frames, control    n=60  p50 17.50  p95 20.40  p99 21.10  max 21.10 ms
+  single frames, lod1       n=60  p50 17.70  p95 24.00  p99 26.90  max 26.90 ms
+  single frames, lod2       n=60  p50 16.70  p95 18.10  p99 27.70  max 27.70 ms
+  single frames, lodc       n=60  p50 17.50  p95 18.40  p99 20.20  max 20.20 ms
+  host load average at end: 13.30712890625 / 32.77197265625 / 33.63134765625
+
+##### cost, quality low, bay, form b
+##### MODE=cost QUALITY=low FORMS=b VIEWS=bay BLOCKS=12
+  host load average at start: 18.50341796875 / 28.50146484375 / 30.439453125
+
+=== form b, system 9 of world 42 ===
+  phases (warm HTTP cache, this page): {"fetchMs":53.5,"glbBytes":10819548,"loadMs":122.60000002384186,"lightmapApplyMs":0.19999992847442627,"builderMs":0.3999999761581421,"firstBuildMs":1.9000000953674316,"prewarmMs":44.699999928474426,"lightmap":{"width":4096,"height":4096},"textureUploadMs":429.09999990463257,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":16.800000071525574,"lod1":17.800000071525574,"lod2":13.399999976158142,"lodc":12,"standin":3.5}}
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality low, clock held
+  12 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.5 km
+  lod1: target 19.2 m (reached 19.1 m), made in 101 ms
+  lod2: target 192.5 m (reached 187.4 m), made in 65 ms
+  lodc: target 77.0 m (reached 76.7 m), made in 168 ms
+
+  view bay: 0.170 km = 0.1 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          8.387                                                     65     124837       0
+  standin       9.057  +0.669 144/144 (100%)  -1.202 0/144 (0%)    +0.669    151     154965     211
+  full         10.259  +1.872 144/144 (100%)                       +1.872    170     323925     253
+  control      10.207  +1.819 144/144 (100%)  -0.052 62/144 (43%)    +1.819    170     323925     253
+  lod1         10.174  +1.787 144/144 (100%)  -0.085 43/144 (30%)    +1.787    167     240823     231
+  lod2          9.089  +0.702 144/144 (100%)  -1.170 0/144 (0%)    +0.702    152     127879     183
+  lodc          9.981  +1.593 144/144 (100%)  -0.278 28/144 (19%)    +1.593    160     136166     191
+  passes (calls/triangles; * = offscreen target), full: Scene*:2/0 Scene*:4/14018 Scene*:105/199088 Scene*:46/73902 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=60  p50 10.60  p95 15.60  p99 49.10  max 49.10 ms
+  single frames, standin    n=60  p50 11.60  p95 25.10  p99 68.50  max 68.50 ms
+  single frames, full       n=60  p50 13.20  p95 16.00  p99 16.50  max 16.50 ms
+  single frames, control    n=60  p50 13.20  p95 21.70  p99 50.90  max 50.90 ms
+  single frames, lod1       n=60  p50 13.00  p95 29.90  p99 59.60  max 59.60 ms
+  single frames, lod2       n=60  p50 12.00  p95 21.90  p99 61.90  max 61.90 ms
+  single frames, lodc       n=60  p50 12.70  p95 18.40  p99 43.00  max 43.00 ms
+  host load average at end: 73.201171875 / 40.84423828125 / 34.80322265625
+
+##### cost, quality low, bay, form c
+##### MODE=cost QUALITY=low FORMS=c VIEWS=bay BLOCKS=12
+  host load average at start: 73.201171875 / 40.84423828125 / 34.80322265625
+
+=== form c, system 1 of world 42 ===
+  phases (warm HTTP cache, this page): {"fetchMs":42.40000009536743,"glbBytes":7992896,"loadMs":142.09999990463257,"lightmapApplyMs":0.10000002384185791,"builderMs":0.5,"firstBuildMs":1.5,"prewarmMs":39.700000047683716,"lightmap":{"width":4096,"height":4096},"textureUploadMs":340.10000002384186,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":25.399999976158142,"lod1":14.600000023841858,"lod2":10,"lodc":11.100000023841858,"standin":38.89999997615814}}
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality low, clock held
+  12 blocks per arm, 60 frames per block, order shuffled from seed 20261022; silhouette 1.87 km
+  lod1: target 24.0 m (reached 23.9 m), made in 50 ms
+  lod2: target 239.9 m (reached 222.5 m), made in 42 ms
+  lodc: target 96.0 m (reached 95.7 m), made in 41 ms
+
+  view bay: 0.170 km = 0.1 silhouette radii; band names full; occlusion on (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none         13.204                                                     71     169365       0
+  standin      13.854  +0.650 118/144 (82%)  -1.053 34/144 (24%)    +0.650    168     217649     205
+  full         14.907  +1.703 136/144 (94%)                       +1.703    181     301881     228
+  control      14.843  +1.638 133/144 (92%)  -0.064 63/144 (44%)    +1.638    181     301881     228
+  lod1         14.933  +1.729 136/144 (94%)  +0.027 74/144 (51%)    +1.729    174     230920     212
+  lod2         13.848  +0.644 118/144 (82%)  -1.058 22/144 (15%)    +0.644    156     176477     176
+  lodc         14.625  +1.421 125/144 (87%)  -0.282 27/144 (19%)    +1.421    164     179521     186
+  passes (calls/triangles; * = offscreen target), full: Scene*:1/12096 Scene*:2/0 Scene*:2/962 Scene*:3/45440 Scene*:110/132516 Scene*:50/73950 Scene*:8/36912 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=60  p50 14.80  p95 15.40  p99 15.60  max 15.60 ms
+  single frames, standin    n=60  p50 16.30  p95 16.80  p99 22.00  max 22.00 ms
+  single frames, full       n=60  p50 17.40  p95 21.80  p99 27.00  max 27.00 ms
+  single frames, control    n=60  p50 17.30  p95 24.40  p99 27.40  max 27.40 ms
+  single frames, lod1       n=60  p50 17.20  p95 22.60  p99 58.40  max 58.40 ms
+  single frames, lod2       n=60  p50 16.20  p95 24.40  p99 30.80  max 30.80 ms
+  single frames, lodc       n=60  p50 17.10  p95 46.20  p99 56.90  max 56.90 ms
+  host load average at end: 42.1279296875 / 44.07861328125 / 37.19677734375
+
+##### cost, six yards in frame (ARMSET=amp), form a. The far420 block is not used: its control arm reads -0.096 ms against a fullx6 per-yard +0.311, and the host load rose to 21-30 during it
+##### MODE=cost ARMSET=amp AMP=6 FORMS=a VIEWS=edge,far100,far420 BLOCKS=10 FRAMES=40 DIST_FRAMES=60
+  host load average at start: 20.271484375 / 29.33251953125 / 25.4140625
+
+=== form a, system 7 of world 42 ===
+  renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+  viewport 1440x900 at device scale 2, cockpit view, quality high, clock held
+  10 blocks per arm, 40 frames per block, order shuffled from seed 20261022; silhouette 1.66 km
+  lod1: target 21.3 m (reached 21.3 m), made in 66 ms
+  lod2: target 213.0 m (reached 206.0 m), made in 59 ms
+  lodc: target 85.2 m (reached 83.1 m), made in 66 ms
+
+  view edge: 68.060 km = 41.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.885                                                     58      37052       0
+  control       4.045  +0.160 86/100 (86%)  -0.030 37/100 (37%)    +0.160    310     239952     242
+  full          4.075  +0.190 87/100 (87%)                       +0.190    310     239952     242
+  standinx6     4.511  +0.626 97/100 (97%)  +0.029 48/100 (48%)    +0.104   1498     790124    1308
+  fullx6        4.483  +0.598 99/100 (99%)                       +0.100   1570    1254452    1452
+  lod1x6        4.305  +0.420 95/100 (95%)  -0.178 32/100 (32%)    +0.070   1438     764066    1320
+  lod2x6        4.030  +0.145 85/100 (85%)  -0.452 5/100 (5%)    +0.024   1204      60908    1086
+  lodcx6        4.137  +0.253 89/100 (89%)  -0.345 22/100 (22%)    +0.042   1246     239300    1128
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:252/202900 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=60  p50 5.40  p95 6.10  p99 7.30  max 7.30 ms
+  single frames, control    n=60  p50 6.80  p95 9.90  p99 29.00  max 29.00 ms
+  single frames, full       n=60  p50 6.70  p95 8.70  p99 11.70  max 11.70 ms
+  single frames, standinx6  n=60  p50 9.60  p95 10.40  p99 11.10  max 11.10 ms
+  single frames, fullx6     n=60  p50 9.70  p95 12.50  p99 15.00  max 15.00 ms
+  single frames, lod1x6     n=60  p50 9.20  p95 10.50  p99 12.10  max 12.10 ms
+  single frames, lod2x6     n=60  p50 8.50  p95 10.20  p99 10.70  max 10.70 ms
+  single frames, lodcx6     n=60  p50 8.60  p95 9.30  p99 10.50  max 10.50 ms
+
+  view far100: 166.000 km = 100.0 silhouette radii; band names lod1; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          3.965                                                     58      37052       0
+  control       4.116  +0.151 81/100 (81%)  +0.009 58/100 (58%)    +0.151    176     238344     242
+  full          4.108  +0.142 78/100 (78%)                       +0.142    176     238344     242
+  standinx6     5.660  +1.695 95/100 (95%)  +0.827 54/100 (54%)    +0.282   1354     667876    1308
+  fullx6        4.833  +0.867 95/100 (95%)                       +0.145   1436    1252844    1452
+  lod1x6        4.738  +0.772 92/100 (92%)  -0.095 42/100 (42%)    +0.129   1304     762458    1320
+  lod2x6        4.246  +0.281 77/100 (77%)  -0.586 28/100 (28%)    +0.047   1070      59300    1086
+  lodcx6        4.206  +0.241 81/100 (81%)  -0.626 21/100 (21%)    +0.040   1112     237692    1128
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:118/201292 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=60  p50 7.20  p95 12.00  p99 16.40  max 16.40 ms
+  single frames, control    n=60  p50 8.20  p95 13.40  p99 18.50  max 18.50 ms
+  single frames, full       n=60  p50 8.00  p95 13.90  p99 24.40  max 24.40 ms
+  single frames, standinx6  n=60  p50 14.20  p95 23.80  p99 26.70  max 26.70 ms
+  single frames, fullx6     n=60  p50 13.00  p95 19.70  p99 21.50  max 21.50 ms
+  single frames, lod1x6     n=60  p50 11.90  p95 18.60  p99 21.60  max 21.60 ms
+  single frames, lod2x6     n=60  p50 10.40  p95 17.40  p99 32.00  max 32.00 ms
+  single frames, lodcx6     n=60  p50 10.90  p95 24.50  p99 57.80  max 57.80 ms
+
+  view far420: 697.200 km = 420.0 silhouette radii; band names lod2; occlusion off (pinned)
+  arm         ms/frame   Δ vs none          Δ vs full          per yard   calls  triangles  meshes
+  none          4.221                                                     58      37052       0
+  control       4.125  -0.096 52/100 (52%)  -0.062 48/100 (48%)    -0.096    176     238344     242
+  full          4.187  -0.034 53/100 (53%)                       -0.034    176     238344     242
+  standinx6     6.959  +2.738 87/100 (87%)  +0.873 55/100 (55%)    +0.456   1354     667876    1308
+  fullx6        6.086  +1.865 83/100 (83%)                       +0.311   1436    1252844    1452
+  lod1x6        6.611  +2.390 84/100 (84%)  +0.525 42/100 (42%)    +0.398   1304     762458    1320
+  lod2x6        5.645  +1.424 70/100 (70%)  -0.441 31/100 (31%)    +0.237   1070      59300    1086
+  lodcx6        5.445  +1.224 74/100 (74%)  -0.641 28/100 (28%)    +0.204   1112     237692    1128
+  passes (calls/triangles; * = offscreen target), full: Scene*:3/12 Scene*:118/201292 Scene*:41/37026 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh*:1/1 Mesh:1/1
+  single frames, none       n=60  p50 6.50  p95 9.50  p99 12.80  max 12.80 ms
+  single frames, control    n=60  p50 7.70  p95 11.10  p99 13.60  max 13.60 ms
+  single frames, full       n=60  p50 8.00  p95 12.70  p99 13.40  max 13.40 ms
+  single frames, standinx6  n=60  p50 11.70  p95 17.50  p99 21.10  max 21.10 ms
+  single frames, fullx6     n=60  p50 12.20  p95 17.10  p99 18.10  max 18.10 ms
+  single frames, lod1x6     n=60  p50 11.60  p95 18.60  p99 50.60  max 50.60 ms
+  single frames, lod2x6     n=60  p50 10.80  p95 14.40  p99 20.10  max 20.10 ms
+  single frames, lodcx6     n=60  p50 9.50  p95 14.00  p99 23.00  max 23.00 ms
+  host load average at end: 21.72802734375 / 26.87451171875 / 24.869140625
+
+##### whole-frame difference from Full
+##### MODE=frames FORMS=a,b,c VIEWS=bay,mouth,close,approach,traffic
+  host load average at start: 48.52734375 / 43.99365234375 / 35.2275390625
+
+=== form a: whole-frame difference from Full, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  view       arm       moved >24/255 of frame px   mean |Δ| code over moved   max |Δ| code     (none = no yard at all)
+  bay        control           0 of 5184000 (0.0000%)           0.0           0
+  bay        lod1              0 of 5184000 (0.0000%)           0.0           0
+  bay        lod2              0 of 5184000 (0.0000%)           0.0           0
+  bay        lodc              0 of 5184000 (0.0000%)           0.0           0
+  bay        none        2177067 of 5184000 (41.9959%)          95.1         236
+  mouth      control           0 of 5184000 (0.0000%)           0.0           0
+  mouth      lod1          64897 of 5184000 (1.2519%)          73.4         241
+  mouth      lod2         817040 of 5184000 (15.7608%)          83.2         248
+  mouth      lodc         234078 of 5184000 (4.5154%)          64.1         242
+  mouth      none         512344 of 5184000 (9.8832%)          93.0         239
+  close      control           0 of 5184000 (0.0000%)           0.0           0
+  close      lod1           6498 of 5184000 (0.1253%)          82.6         238
+  close      lod2          59360 of 5184000 (1.1451%)          87.6         250
+  close      lodc          34569 of 5184000 (0.6668%)          73.5         250
+  close      none          57109 of 5184000 (1.1016%)          91.0         242
+  approach   control           0 of 5184000 (0.0000%)           0.0           0
+  approach   lod1            390 of 5184000 (0.0075%)          71.6         241
+  approach   lod2           5621 of 5184000 (0.1084%)          81.7         242
+  approach   lodc           2993 of 5184000 (0.0577%)          84.4         242
+  approach   none           5278 of 5184000 (0.1018%)          84.5         241
+  traffic    control           0 of 5184000 (0.0000%)           0.0           0
+  traffic    lod1            391 of 5184000 (0.0075%)          71.5         241
+  traffic    lod2           5621 of 5184000 (0.1084%)          81.7         241
+  traffic    lodc           2992 of 5184000 (0.0577%)          84.4         241
+  traffic    none           5275 of 5184000 (0.1018%)          84.5         241
+
+=== form b: whole-frame difference from Full, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  view       arm       moved >24/255 of frame px   mean |Δ| code over moved   max |Δ| code     (none = no yard at all)
+  bay        control           0 of 5184000 (0.0000%)           0.0           0
+  bay        lod1              0 of 5184000 (0.0000%)           0.0           0
+  bay        lod2              0 of 5184000 (0.0000%)           0.0           0
+  bay        lodc              0 of 5184000 (0.0000%)           0.0           0
+  bay        none        2174603 of 5184000 (41.9484%)          83.1         209
+  mouth      control           0 of 5184000 (0.0000%)           0.0           0
+  mouth      lod1          81962 of 5184000 (1.5811%)          71.4         244
+  mouth      lod2         885696 of 5184000 (17.0852%)          79.9         252
+  mouth      lodc         464865 of 5184000 (8.9673%)          61.7         250
+  mouth      none         632982 of 5184000 (12.2103%)          71.6         247
+  close      control           0 of 5184000 (0.0000%)           0.0           0
+  close      lod1           1985 of 5184000 (0.0383%)          70.1         231
+  close      lod2          61411 of 5184000 (1.1846%)          71.9         248
+  close      lodc          61029 of 5184000 (1.1773%)          71.9         248
+  close      none          61061 of 5184000 (1.1779%)          69.7         241
+  approach   control           0 of 5184000 (0.0000%)           0.0           0
+  approach   lod1            876 of 5184000 (0.0169%)          77.3         232
+  approach   lod2          10402 of 5184000 (0.2007%)          69.1         249
+  approach   lodc           8718 of 5184000 (0.1682%)          63.6         249
+  approach   none           8872 of 5184000 (0.1711%)          61.7         243
+  traffic    control           0 of 5184000 (0.0000%)           0.0           0
+  traffic    lod1            876 of 5184000 (0.0169%)          77.3         232
+  traffic    lod2          10402 of 5184000 (0.2007%)          69.1         249
+  traffic    lodc           8718 of 5184000 (0.1682%)          63.6         249
+  traffic    none           8873 of 5184000 (0.1712%)          61.7         243
+
+=== form c: whole-frame difference from Full, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  view       arm       moved >24/255 of frame px   mean |Δ| code over moved   max |Δ| code     (none = no yard at all)
+  bay        control           0 of 5184000 (0.0000%)           0.0           0
+  bay        lod1              0 of 5184000 (0.0000%)           0.0           0
+  bay        lod2              0 of 5184000 (0.0000%)           0.0           0
+  bay        lodc              0 of 5184000 (0.0000%)           0.0           0
+  bay        none        2026925 of 5184000 (39.0996%)          97.2         221
+  mouth      control           0 of 5184000 (0.0000%)           0.0           0
+  mouth      lod1          64119 of 5184000 (1.2369%)          74.2         248
+  mouth      lod2         855422 of 5184000 (16.5012%)          80.4         252
+  mouth      lodc         308503 of 5184000 (5.9511%)          69.9         249
+  mouth      none         522530 of 5184000 (10.0797%)          89.6         244
+  close      control           0 of 5184000 (0.0000%)           0.0           0
+  close      lod1           3711 of 5184000 (0.0716%)          69.2         238
+  close      lod2          46661 of 5184000 (0.9001%)          79.9         242
+  close      lodc          36213 of 5184000 (0.6986%)          78.2         242
+  close      none          42294 of 5184000 (0.8159%)          80.3         242
+  approach   control           0 of 5184000 (0.0000%)           0.0           0
+  approach   lod1            484 of 5184000 (0.0093%)          90.5         235
+  approach   lod2           9127 of 5184000 (0.1761%)          83.2         241
+  approach   lodc           8124 of 5184000 (0.1567%)          82.7         241
+  approach   none           8889 of 5184000 (0.1715%)          84.4         241
+  traffic    control           0 of 5184000 (0.0000%)           0.0           0
+  traffic    lod1            483 of 5184000 (0.0093%)          90.6         235
+  traffic    lod2           9123 of 5184000 (0.1760%)          83.2         241
+  traffic    lodc           8123 of 5184000 (0.1567%)          82.7         241
+  traffic    none           8888 of 5184000 (0.1715%)          84.4         241
+  host load average at end: 29.6748046875 / 39.4658203125 / 34.08935546875
+
+##### inside the bay, 54 poses, form a
+##### MODE=bayposes FORMS=a
+
+=== form a: inside the bay, Full against each level over many poses, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  54 poses (3 depths in the bay, polar angle from the aperture axis 0/25/60/90/135/180 degrees, 4 azimuths where it has one), 5184000 px a frame
+  lod1: poses with any pixel moved >24/255: 1 of 54; most pixels moved in one pose: 362
+  lod2: poses with any pixel moved >24/255: 6 of 54; most pixels moved in one pose: 7434
+  lodc: poses with any pixel moved >24/255: 1 of 54; most pixels moved in one pose: 362
+  moved: depth 0.15 (311 m), polar 0, azimuth 0: lod1 0, lod2 1000, lodc 0
+  moved: depth 0.15 (311 m), polar 25, azimuth 0: lod1 0, lod2 1774, lodc 0
+  moved: depth 0.15 (311 m), polar 25, azimuth 90: lod1 0, lod2 7434, lodc 0
+  moved: depth 0.15 (311 m), polar 25, azimuth 180: lod1 0, lod2 25, lodc 0
+  moved: depth 0.15 (311 m), polar 25, azimuth 270: lod1 0, lod2 8, lodc 0
+  moved: depth 0.15 (311 m), polar 60, azimuth 90: lod1 362, lod2 3577, lodc 362
+
+##### inside the bay, 54 poses, forms b and c
+##### MODE=bayposes FORMS=b / FORMS=c
+
+=== form b: inside the bay, Full against each level over many poses, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  54 poses (3 depths in the bay, polar angle from the aperture axis 0/25/60/90/135/180 degrees, 4 azimuths where it has one), 5184000 px a frame
+  lod1: poses with any pixel moved >24/255: 5 of 54; most pixels moved in one pose: 1117
+  lod2: poses with any pixel moved >24/255: 7 of 54; most pixels moved in one pose: 125990
+  lodc: poses with any pixel moved >24/255: 5 of 54; most pixels moved in one pose: 1117
+  moved: depth 0.15 (311 m), polar 0, azimuth 0: lod1 1117, lod2 125990, lodc 1117
+  moved: depth 0.15 (311 m), polar 25, azimuth 0: lod1 0, lod2 37799, lodc 0
+  moved: depth 0.15 (311 m), polar 25, azimuth 90: lod1 264, lod2 38749, lodc 264
+  moved: depth 0.15 (311 m), polar 25, azimuth 180: lod1 0, lod2 40830, lodc 0
+  moved: depth 0.15 (311 m), polar 25, azimuth 270: lod1 185, lod2 33723, lodc 185
+  moved: depth 0.15 (311 m), polar 60, azimuth 90: lod1 118, lod2 14314, lodc 118
+  moved: depth 0.15 (311 m), polar 60, azimuth 270: lod1 88, lod2 6462, lodc 88
+
+=== form c: inside the bay, Full against each level over many poses, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  54 poses (3 depths in the bay, polar angle from the aperture axis 0/25/60/90/135/180 degrees, 4 azimuths where it has one), 5184000 px a frame
+  lod1: poses with any pixel moved >24/255: 3 of 54; most pixels moved in one pose: 395
+  lod2: poses with any pixel moved >24/255: 5 of 54; most pixels moved in one pose: 12622
+  lodc: poses with any pixel moved >24/255: 3 of 54; most pixels moved in one pose: 395
+  moved: depth 0.15 (311 m), polar 0, azimuth 0: lod1 0, lod2 6916, lodc 0
+  moved: depth 0.15 (311 m), polar 25, azimuth 0: lod1 236, lod2 12622, lodc 236
+  moved: depth 0.15 (311 m), polar 25, azimuth 90: lod1 268, lod2 11693, lodc 268
+  moved: depth 0.15 (311 m), polar 25, azimuth 270: lod1 0, lod2 3, lodc 0
+  moved: depth 0.15 (311 m), polar 60, azimuth 90: lod1 395, lod2 3992, lodc 395
+
+##### transitions at the band edges
+##### MODE=pop FORMS=a / b / c OUT=docs/receipts/node-947-shipyard-lod
+  host load average at start: 27.99169921875 / 28.76025390625 / 26.56103515625
+=== form a: transitions, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  a pair is (arm A, arm B) at one range and sun angle, both arms forced to the stated band state and checked after the render
+  pair  A           B           radii  sun  footprint px  control  moved A→B  of footprint  B only  mean |Δ| code  luma A→B   note
+  p1    full/reduced  lod1/reduced   40.2   35           182        0          9        4.95%       5           4.16  110.3→111.1  lod1 nearest (inbound hold), accessories reduced [66.7 km, 110px bo
+  p1    full/reduced  lod1/reduced   40.2  100           465        0         14        3.01%       0           2.30  27.7→29.1  lod1 nearest (inbound hold), accessories reduced [66.7 km, 110px box]
+  p1    full/reduced  lod1/reduced   40.2  170            96        0          6        6.25%       4           2.97  68.1→67.4  lod1 nearest (inbound hold), accessories reduced [66.7 km, 110px box]
+  p2    full/full   lod1/full    41.9   35           177        0         10        5.65%       3           5.67  101.2→98.0  Full farthest (outbound hold), accessories full [69.6 km, 106px box]
+  p2    full/full   lod1/full    41.9  100           431        0         16        3.71%       2           1.76  33.6→33.5  Full farthest (outbound hold), accessories full [69.6 km, 106px box]
+  p2    full/full   lod1/full    41.9  170           105        0          9        8.57%       6           4.92  61.8→63.7  Full farthest (outbound hold), accessories full [69.6 km, 106px box]
+  p3    full/full   lod1/reduced     42   35           180        0          7        3.89%       2           4.20  105.2→103.0  the outbound switch itself, Full to lod1 [69.7 km, 104px box]
+  p3    full/full   lod1/reduced     42  100           430        0          8        1.86%       0           1.32  33.0→32.8  the outbound switch itself, Full to lod1 [69.7 km, 104px box]
+  p3    full/full   lod1/reduced     42  170            98        0          4        4.08%       2           2.00  65.0→64.3  the outbound switch itself, Full to lod1 [69.7 km, 104px box]
+  p4    full/outline  lod2/outline    401   35             1        0          1      100.00%       0         162.00  186.0→17.1  lod2 nearest (inbound), against Full [665.7 km, 12px box]
+  p4    full/outline  lod2/outline    401  100             4        0          2       50.00%       0          22.17  45.7→44.7  lod2 nearest (inbound), against Full [665.7 km, 12px box]
+  p4    full/outline  lod2/outline    401  170             2        0          2      100.00%       0          57.50  76.9→10.1  lod2 nearest (inbound), against Full [665.7 km, 12px box]
+  p5    lod1/reduced  lod2/reduced  419.5   35            37        0          1        2.70%       1           5.45  93.9→99.3  lod1 farthest (outbound hold), lod1 against lod2 [696.4 km, 12px box]
+  p5    lod1/reduced  lod2/reduced  419.5  100            33        0          1        3.03%       0           2.31  136.8→139.0  lod1 farthest (outbound hold), lod1 against lod2 [696.4 km, 12px bo
+  p5    lod1/reduced  lod2/reduced  419.5  170            39        0          3        7.69%       3          13.03  78.9→91.9  lod1 farthest (outbound hold), lod1 against lod2 [696.4 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9   35            39        0         39      100.00%       0          83.08  99.8→16.1  the outbound switch itself, lod1 to lod2 [697.0 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9  100            33        0         32       96.97%       0          61.51  129.5→71.1  the outbound switch itself, lod1 to lod2 [697.0 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9  170            36        0         36      100.00%       0          71.72  84.5→13.2  the outbound switch itself, lod1 to lod2 [697.0 km, 12px box]
+  host load average at end: 55.0458984375 / 35.25439453125 / 29.029296875
+  host load average at start: 55.0458984375 / 35.25439453125 / 29.029296875
+=== form b: transitions, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  a pair is (arm A, arm B) at one range and sun angle, both arms forced to the stated band state and checked after the render
+  pair  A           B           radii  sun  footprint px  control  moved A→B  of footprint  B only  mean |Δ| code  luma A→B   note
+  p1    full/reduced  lod1/reduced   40.2   35           289        0          3        1.04%       1           0.47  81.7→81.7  lod1 nearest (inbound hold), accessories reduced [60.3 km, 110px box]
+  p1    full/reduced  lod1/reduced   40.2  100           374        0         29        7.75%      11           5.72  83.8→82.8  lod1 nearest (inbound hold), accessories reduced [60.3 km, 110px box]
+  p1    full/reduced  lod1/reduced   40.2  170           282        0         17        6.03%      12           3.30  56.0→58.4  lod1 nearest (inbound hold), accessories reduced [60.3 km, 110px box]
+  p2    full/full   lod1/full    41.9   35           284        0          2        0.70%       2           0.45  83.2→83.7  Full farthest (outbound hold), accessories full [62.8 km, 106px box]
+  p2    full/full   lod1/full    41.9  100           352        0         26        7.39%      12           4.95  85.9→85.9  Full farthest (outbound hold), accessories full [62.9 km, 106px box]
+  p2    full/full   lod1/full    41.9  170           293        0         19        6.48%      12           3.74  57.2→58.1  Full farthest (outbound hold), accessories full [62.9 km, 106px box]
+  p3    full/full   lod1/reduced     42   35           282        0          5        1.77%       3           0.96  84.2→84.0  the outbound switch itself, Full to lod1 [63.0 km, 104px box]
+  p3    full/full   lod1/reduced     42  100           368        0         27        7.34%      12           4.81  80.8→81.3  the outbound switch itself, Full to lod1 [63.0 km, 104px box]
+  p3    full/full   lod1/reduced     42  170           277        0         22        7.94%      13           4.90  58.5→59.6  the outbound switch itself, Full to lod1 [63.0 km, 104px box]
+  p4    full/outline  lod2/outline    401   35             1        0          1      100.00%       0          71.00  86.0→13.0  lod2 nearest (inbound), against Full [601.5 km, 12px box]
+  p4    full/outline  lod2/outline    401  100             5        0          5      100.00%       1          87.40  101.3→40.0  lod2 nearest (inbound), against Full [601.5 km, 12px box]
+  p4    full/outline  lod2/outline    401  170             5        0          5      100.00%       0          46.47  53.7→4.5  lod2 nearest (inbound), against Full [601.5 km, 12px box]
+  p5    lod1/reduced  lod2/reduced  419.5   35            40        0          3        7.50%       1           5.13  98.9→100.5  lod1 farthest (outbound hold), lod1 against lod2 [629.2 km, 12px box
+  p5    lod1/reduced  lod2/reduced  419.5  100            37        0          3        8.11%       1           5.08  89.7→91.7  lod1 farthest (outbound hold), lod1 against lod2 [629.2 km, 12px box]
+  p5    lod1/reduced  lod2/reduced  419.5  170            39        0          3        7.69%       2           7.51  92.6→97.7  lod1 farthest (outbound hold), lod1 against lod2 [629.2 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9   35            36        0         36      100.00%       0          80.68  97.5→16.4  the outbound switch itself, lod1 to lod2 [629.9 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9  100            38        0         37       97.37%       0          74.19  93.3→18.3  the outbound switch itself, lod1 to lod2 [629.8 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9  170            37        0         36       97.30%       0          75.42  91.8→15.9  the outbound switch itself, lod1 to lod2 [629.8 km, 12px box]
+  host load average at end: 59.29443359375 / 37.7490234375 / 30.0830078125
+  host load average at start: 59.29443359375 / 37.7490234375 / 30.0830078125
+=== form c: transitions, ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version) ===
+  a pair is (arm A, arm B) at one range and sun angle, both arms forced to the stated band state and checked after the render
+  pair  A           B           radii  sun  footprint px  control  moved A→B  of footprint  B only  mean |Δ| code  luma A→B   note
+  p1    full/reduced  lod1/reduced   40.2   35           249        0         11        4.42%       3           2.73  93.0→92.8  lod1 nearest (inbound hold), accessories reduced [75.2 km, 110px box]
+  p1    full/reduced  lod1/reduced   40.2  100           261        0          9        3.45%       4           2.04  74.2→73.0  lod1 nearest (inbound hold), accessories reduced [75.2 km, 110px box]
+  p1    full/reduced  lod1/reduced   40.2  170           438        0         11        2.51%       0           1.85  28.5→28.3  lod1 nearest (inbound hold), accessories reduced [75.2 km, 110px box]
+  p2    full/full   lod1/full    41.9   35           239        0          9        3.77%       4           2.42  95.9→95.9  Full farthest (outbound hold), accessories full [78.4 km, 106px box]
+  p2    full/full   lod1/full    41.9  100           221        0          4        1.81%       2           0.80  72.7→72.5  Full farthest (outbound hold), accessories full [78.4 km, 106px box]
+  p2    full/full   lod1/full    41.9  170           391        0          8        2.05%       0           1.03  26.6→27.2  Full farthest (outbound hold), accessories full [78.4 km, 106px box]
+  p3    full/full   lod1/reduced     42   35           227        0          8        3.52%       3           1.99  94.5→94.3  the outbound switch itself, Full to lod1 [78.5 km, 104px box]
+  p3    full/full   lod1/reduced     42  100           240        0         11        4.58%       5           4.78  72.2→73.1  the outbound switch itself, Full to lod1 [78.5 km, 104px box]
+  p3    full/full   lod1/reduced     42  170           390        0         11        2.82%       0           1.35  28.3→28.4  the outbound switch itself, Full to lod1 [78.5 km, 104px box]
+  p4    full/outline  lod2/outline    401   35             1        0          1      100.00%       0          85.00  101.3→14.0  lod2 nearest (inbound), against Full [749.9 km, 12px box]
+  p4    full/outline  lod2/outline    401  100             4        0          4      100.00%       0          84.33  100.8→12.6  lod2 nearest (inbound), against Full [749.9 km, 12px box]
+  p4    full/outline  lod2/outline    401  170             4        0          2       50.00%       0          25.42  15.1→19.4  lod2 nearest (inbound), against Full [749.9 km, 12px box]
+  p5    lod1/reduced  lod2/reduced  419.5   35            38        0          3        7.89%       2          11.15  95.4→102.6  lod1 farthest (outbound hold), lod1 against lod2 [784.5 km, 12px box
+  p5    lod1/reduced  lod2/reduced  419.5  100            38        0          3        7.89%       2           5.57  92.8→98.2  lod1 farthest (outbound hold), lod1 against lod2 [784.5 km, 12px box]
+  p5    lod1/reduced  lod2/reduced  419.5  170            41        0          4        9.76%       0          13.10  107.5→119.9  lod1 farthest (outbound hold), lod1 against lod2 [784.5 km, 12px bo
+  p6    lod1/reduced  lod2/outline  419.9   35            35        0         35      100.00%       0          83.93  99.9→15.4  the outbound switch itself, lod1 to lod2 [785.2 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9  100            37        0         36       97.30%       0          74.98  92.3→16.8  the outbound switch itself, lod1 to lod2 [785.2 km, 12px box]
+  p6    lod1/reduced  lod2/outline  419.9  170            41        0         40       97.56%       0          52.54  107.2→61.6  the outbound switch itself, lod1 to lod2 [785.2 km, 12px box]
+  host load average at end: 53.6767578125 / 37.6162109375 / 30.1728515625
+
+Correction (Sage round 1, 2026-10-23): the historical levels blocks below have INVALID worst mesh ms columns. The old loop timed only its first next() call; later mesh work was excluded. Their total make ms and census columns are unaffected. Corrected worst step ms measurements are appended at the end.
+
+##### candidate levels, phases and texture upload (last of three runs per form)
+##### MODE=levels FORMS=a / b / c
+  host load average at start: 28.14453125 / 34.09619140625 / 34.177734375
+
+=== form a: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":47.700000047683716,"glbBytes":10494100,"loadMs":132.19999992847443,"lightmapApplyMs":0.10000002384185791,"builderMs":0.3999999761581421,"firstBuildMs":2.3000000715255737,"prewarmMs":37.299999952316284,"lightmap":{"width":4096,"height":4096},"textureUploadMs":345.6999999284744,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":37.700000047683716,"lod1":25.899999976158142,"lod2":18.799999952316284,"lodc":17.700000047683716,"standin":37.60000002384186}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst mesh ms
+  full         0.0        0.0      69        69     200924        2355        14769           0          0
+  lod1        21.3       21.3      47        47     119193        1397        14380          75          1
+  lod2       213.0      206.0       8         8       2000          23         9535          64          1
+  lodc        85.2       83.1      15        15      31732         372         9973          77          1
+  host load average at end: 23.76611328125 / 32.73779296875 / 33.68896484375
+  host load average at start: 23.76611328125 / 32.73779296875 / 33.68896484375
+
+=== form b: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":105.69999992847443,"glbBytes":10819548,"loadMs":171,"lightmapApplyMs":0.10000002384185791,"builderMs":0.8999999761581421,"firstBuildMs":3.100000023841858,"prewarmMs":33.89999997615814,"lightmap":{"width":4096,"height":4096},"textureUploadMs":463.7999999523163,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":21.199999928474426,"lod1":22.600000023841858,"lod2":63,"lodc":22.899999976158142,"standin":17.299999952316284}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst mesh ms
+  full         0.0        0.0      80        80     209272        2452        15278           0          0
+  lod1        19.2       19.1      58        58     116954        1371        14908          66          1
+  lod2       192.5      187.4      10        10       2378          28         9078          64          1
+  lodc        77.0       76.7      18        18      10665         125        13491          62          1
+  host load average at end: 25.337890625 / 32.611328125 / 33.62451171875
+  host load average at start: 25.337890625 / 32.611328125 / 33.62451171875
+
+=== form c: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":38.5,"glbBytes":7992896,"loadMs":110.30000007152557,"lightmapApplyMs":0.10000002384185791,"builderMs":0.19999992847442627,"firstBuildMs":2.399999976158142,"prewarmMs":56.90000009536743,"lightmap":{"width":4096,"height":4096},"textureUploadMs":371.39999997615814,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":25.600000023841858,"lod1":16.399999976158142,"lod2":8.699999928474426,"lodc":9.600000023841858,"standin":40.60000002384186}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst mesh ms
+  full         0.0        0.0      55        55     135736        1591         9647           0          0
+  lod1        24.0       23.9      39        39      61844         725         9409          40          1
+  lod2       239.9      222.5       3         3       6348          74         6274          40          1
+  lodc        96.0       95.7      13        13       9424         110         7080          42          1
+  host load average at end: 28.10791015625 / 32.7529296875 / 33.650390625
+
+##### MODE=levels FORMS=a / b / c
+
+=== form a: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":67.5,"glbBytes":10494100,"loadMs":206.69999992847443,"lightmapApplyMs":0.10000002384185791,"builderMs":1.2999999523162842,"firstBuildMs":5.900000095367432,"prewarmMs":63.39999997615814,"lightmap":{"width":4096,"height":4096}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst mesh ms
+  full         0.0        0.0      69        69     200924        2355        14769           0          0
+  lod1        21.3       21.3      47        47     119193        1397        14380         112          1
+  lod2       213.0      206.0       8         8       2000          23         9535         106          5
+  lodc        85.2       83.1      15        15      31732         372         9973          74          2
+
+=== form b: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":61.60000002384186,"glbBytes":10819548,"loadMs":153.19999992847443,"lightmapApplyMs":0.20000004768371582,"builderMs":0.5,"firstBuildMs":2,"prewarmMs":39.700000047683716,"lightmap":{"width":4096,"height":4096}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst mesh ms
+  full         0.0        0.0      80        80     209272        2452        15278           0          0
+  lod1        19.2       19.1      58        58     116954        1371        14908          76          1
+  lod2       192.5      187.4      10        10       2378          28         9078          91          1
+  lodc        77.0       76.7      18        18      10665         125        13491          84          1
+
+=== form c: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":34,"glbBytes":7992896,"loadMs":121.79999995231628,"lightmapApplyMs":0,"builderMs":0.6000000238418579,"firstBuildMs":2.1999999284744263,"prewarmMs":44,"lightmap":{"width":4096,"height":4096}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst mesh ms
+  full         0.0        0.0      55        55     135736        1591         9647           0          0
+  lod1        24.0       23.9      39        39      61844         725         9409          41          1
+  lod2       239.9      222.5       3         3       6348          74         6274          46          1
+  lodc        96.0       95.7      13        13       9424         110         7080          43          1
+
+##### cold install, first set of three runs per form (no aiming step). Form a run 1 and form c's 925 ms in the second set ran at host load 47-59
+##### MODE=install FORMS=a,b,c RUNS=3
+  host load average at start: 35.7392578125 / 30.39404296875 / 28.1513671875
+
+=== form a: cold install, 3 runs ===
+  run 1: frames 13, interval p50 17.1 p95 3447.1 max 3447.1 ms; over 50 ms: 3, over 100 ms: 3; worst three (ms@ms after release) 3447@+4163, 369@+716, 164@+206; download undefined ms, null bytes; release to swap 4214 ms
+  run 2: frames 48, interval p50 16.5 p95 24.2 max 334.7 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 335@+604, 28@+105, 24@+76; download undefined ms, null bytes; release to swap 1106 ms
+  run 3: frames 46, interval p50 16.7 p95 23.5 max 486.6 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 487@+737, 48@+77, 24@+170; download undefined ms, null bytes; release to swap 1251 ms
+
+=== form b: cold install, 3 runs ===
+  run 1: frames 45, interval p50 16.7 p95 20.1 max 23.5 ms; over 50 ms: 0, over 100 ms: 0; worst three (ms@ms after release) 24@+57, 21@+367, 20@+34; download undefined ms, null bytes; release to swap 768 ms
+  run 2: frames 44, interval p50 16.7 p95 24.0 max 30.2 ms; over 50 ms: 0, over 100 ms: 0; worst three (ms@ms after release) 30@+45, 29@+73, 24@+189; download undefined ms, null bytes; release to swap 757 ms
+  run 3: frames 43, interval p50 16.6 p95 18.2 max 24.3 ms; over 50 ms: 0, over 100 ms: 0; worst three (ms@ms after release) 24@+56, 21@+118, 18@+181; download undefined ms, null bytes; release to swap 732 ms
+
+=== form c: cold install, 3 runs ===
+  run 1: frames 50, interval p50 16.6 p95 28.2 max 430.8 ms; over 50 ms: 2, over 100 ms: 1; worst three (ms@ms after release) 431@+803, 83@+172, 28@+283; download undefined ms, null bytes; release to swap 1307 ms
+  run 2: frames 43, interval p50 16.5 p95 21.7 max 422.9 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 423@+604, 31@+45, 22@+101; download undefined ms, null bytes; release to swap 1140 ms
+  run 3: frames 44, interval p50 16.6 p95 22.6 max 377.5 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 378@+575, 29@+43, 23@+104; download undefined ms, null bytes; release to swap 1085 ms
+  host load average at end: 58.78857421875 / 37.93310546875 / 31.10546875
+
+##### cold install, second set, with the camera aimed at the yard afterwards
+##### MODE=install FORMS=a,b,c RUNS=3
+  host load average at start: 47.9365234375 / 37.767578125 / 31.33349609375
+
+=== form a: cold install, 3 runs ===
+  run 1: frames 55, interval p50 16.3 p95 33.0 max 383.1 ms; over 50 ms: 2, over 100 ms: 1; worst three (ms@ms after release) 383@+791, 65@+121, 33@+324; download undefined ms, null bytes; release to swap 2040 ms; after aiming at the yard from 6 radii, max of 30 frames 32.0 ms
+  run 2: frames 43, interval p50 16.7 p95 23.0 max 413.5 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 414@+595, 30@+67, 23@+122; download undefined ms, null bytes; release to swap 1834 ms; after aiming at the yard from 6 radii, max of 30 frames 40.0 ms
+  run 3: frames 46, interval p50 16.7 p95 25.1 max 333.7 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 334@+582, 44@+59, 25@+123; download undefined ms, null bytes; release to swap 1772 ms; after aiming at the yard from 6 radii, max of 30 frames 20.1 ms
+
+=== form b: cold install, 3 runs ===
+  run 1: frames 55, interval p50 16.2 p95 43.7 max 79.5 ms; over 50 ms: 1, over 100 ms: 0; worst three (ms@ms after release) 80@+182, 47@+103, 44@+320; download undefined ms, null bytes; release to swap 2539 ms; after aiming at the yard from 6 radii, max of 30 frames 46.9 ms
+  run 2: frames 62, interval p50 17.1 p95 35.2 max 94.6 ms; over 50 ms: 1, over 100 ms: 0; worst three (ms@ms after release) 95@+658, 44@+157, 35@+349; download undefined ms, null bytes; release to swap 2567 ms; after aiming at the yard from 6 radii, max of 30 frames 32.1 ms
+  run 3: frames 41, interval p50 16.4 p95 25.2 max 43.3 ms; over 50 ms: 0, over 100 ms: 0; worst three (ms@ms after release) 43@+595, 38@+53, 25@+675; download undefined ms, null bytes; release to swap 2271 ms; after aiming at the yard from 6 radii, max of 30 frames 26.7 ms
+
+=== form c: cold install, 3 runs ===
+  run 1: frames 73, interval p50 16.6 p95 63.8 max 925.1 ms; over 50 ms: 4, over 100 ms: 2; worst three (ms@ms after release) 925@+1838, 104@+317, 93@+411; download undefined ms, null bytes; release to swap 3544 ms; after aiming at the yard from 6 radii, max of 30 frames 37.3 ms
+  run 2: frames 45, interval p50 16.8 p95 26.3 max 415.3 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 415@+645, 30@+90, 26@+153; download undefined ms, null bytes; release to swap 2069 ms; after aiming at the yard from 6 radii, max of 30 frames 29.7 ms
+  run 3: frames 54, interval p50 17.1 p95 30.3 max 493.6 ms; over 50 ms: 1, over 100 ms: 1; worst three (ms@ms after release) 494@+876, 31@+61, 30@+308; download undefined ms, null bytes; release to swap 2133 ms; after aiming at the yard from 6 radii, max of 30 frames 26.1 ms
+  host load average at end: 59.12255859375 / 43.4326171875 / 34.0771484375
+
+##### sampled geometric error, both directions
+##### bun scripts/measure-shipyard-level-error.ts
+  40000 area-weighted samples per direction, seed 947, grid 25 m, searched to 400 m
+  form level  target m  reached m  triangles   model→level p50 / p99 / max m (over target)   level→model p50 / p99 / max m (over target)  beyond cap
+  a    lod1      21.3       21.3     119193   0.0 / 5.3 / 38.7 (22)   0.0 / 0.0 / 12.8 (0)   0+0
+  a    lod2     213.0      206.0       2000   26.5 / 153.8 / 169.7 (0)   0.0 / 0.0 / 0.0 (0)   0+0
+  a    lodc      85.2       83.1      31732   1.1 / 124.4 / 164.5 (1270)   0.0 / 0.0 / 0.0 (0)   0+0
+  b    lod1      19.2       19.1     116954   0.0 / 4.6 / 53.8 (93)   0.0 / 0.0 / 3.8 (0)   0+0
+  b    lod2     192.5      187.4       2378   1.7 / 116.3 / 188.6 (0)   0.0 / 0.0 / 0.0 (0)   0+0
+  b    lodc      77.0       76.7      10665   0.5 / 57.1 / 115.6 (131)   0.0 / 0.0 / 0.5 (0)   0+0
+  c    lod1      24.0       23.9      61844   0.0 / 4.9 / 46.7 (19)   0.0 / 0.0 / 18.6 (0)   0+0
+  c    lod2     239.9      222.5       6348   26.5 / 195.0 / 225.4 (0)   0.0 / 0.0 / 0.0 (0)   0+0
+  c    lodc      96.0       95.7       9424   12.5 / 145.0 / 220.6 (1731)   0.0 / 0.0 / 0.0 (0)   0+0
+
+##### Corrected generator step timing, Sage round 1, 2026-10-23
+##### Tree c145871 plus round-1 timing correction; one levels pass per form.
+##### SEELITE_PROBE_RENDERER=hardware MODE=levels FORMS=a,b,c node scripts/measure-shipyard-lod.mjs
+##### Every next() call is timed, including completion; displayed timings rounded to whole milliseconds.
+  host load average at start: 5.91259765625 / 7.65185546875 / 7.94921875
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+
+=== form a: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":19.300000071525574,"glbBytes":10494100,"loadMs":94.5,"lightmapApplyMs":0.09999990463256836,"builderMs":0.5,"firstBuildMs":1.4000000953674316,"prewarmMs":41.799999952316284,"lightmap":{"width":4096,"height":4096},"textureUploadMs":322.59999990463257,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":31.5,"lod1":16,"lod2":9.899999976158142,"lodc":10.100000023841858,"standin":21.899999976158142}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst step ms
+  full         0.0        0.0      69        69     200924        2355        14769           0          0
+  lod1        21.3       21.3      47        47     119193        1397        14380          60         18
+  lod2       213.0      206.0       8         8       2000          23         9535          58         18
+  lodc        85.2       83.1      15        15      31732         372         9973          58         17
+
+=== form b: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":24.899999976158142,"glbBytes":10819548,"loadMs":90.5,"lightmapApplyMs":0,"builderMs":0.40000009536743164,"firstBuildMs":1.399999976158142,"prewarmMs":41.89999997615814,"lightmap":{"width":4096,"height":4096},"textureUploadMs":250.19999992847443,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":21.299999952316284,"lod1":16.700000047683716,"lod2":8.799999952316284,"lodc":10.600000023841858,"standin":6}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst step ms
+  full         0.0        0.0      80        80     209272        2452        15278           0          0
+  lod1        19.2       19.1      58        58     116954        1371        14908          59         16
+  lod2       192.5      187.4      10        10       2378          28         9078          58         15
+  lodc        77.0       76.7      18        18      10665         125        13491          59         15
+
+=== form c: what each candidate level is (ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)) ===
+  phases (warm HTTP cache, this page): {"fetchMs":16.299999952316284,"glbBytes":7992896,"loadMs":75,"lightmapApplyMs":0.10000002384185791,"builderMs":0.2999999523162842,"firstBuildMs":1.100000023841858,"prewarmMs":32.10000002384186,"lightmap":{"width":4096,"height":4096},"textureUploadMs":295.7000000476837,"textures":{"count":2,"estimatedGpuMiB":93.33156331380208},"firstDrawMs":{"full":28.399999976158142,"lod1":15,"lod2":9,"lodc":8.5,"standin":37.700000047683716}}
+  level   target m  reached m  meshes  with uv1  triangles   index KiB  vertex KiB (shared)  make ms  worst step ms
+  full         0.0        0.0      55        55     135736        1591         9647           0          0
+  lod1        24.0       23.9      39        39      61844         725         9409          36         13
+  lod2       239.9      222.5       3         3       6348          74         6274          37         13
+  lodc        96.0       95.7      13        13       9424         110         7080          37         13
+  host load average at end: 7.33642578125 / 7.7646484375 / 7.97412109375

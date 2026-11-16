@@ -15,6 +15,18 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 F = 403.5
 BATCH = {}
+DETAIL = False
+
+def fine_detail(fn):
+    def emit(*args, **kwargs):
+        global DETAIL
+        previous = DETAIL
+        DETAIL = True
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            DETAIL = previous
+    return emit
 MATS = {}
 
 def material(name, color, metal=0.5, rough=0.55, emission=0):
@@ -39,12 +51,11 @@ def material(name, color, metal=0.5, rough=0.55, emission=0):
         m.node_tree.links.new(t.outputs['Color'],mix.inputs[1])
         m.node_tree.links.new(mix.outputs[0],p.inputs['Base Color'])
     MATS[name] = m
-    BATCH[name] = [[], [], []]
     return name
 
 armor = [material('ceramic-steel-'+str(i),(0.42+i*.055,0.43+i*.05,0.40+i*.045),.45,.66) for i in range(4)]
-steel = material('structural-graphite',(.10,.12,.125),.75,.43)
-black = material('recess-and-radiator',(.023,.032,.035),.65,.52)
+steel = material('structural-graphite',(.19,.17,.145),.55,.5)
+black = material('recess-and-radiator',(.062,.05,.038),.6,.6)
 pipe = material('worn-alloy',(.25,.28,.27),.83,.36)
 rust = material('oxide-primer',(.20,.075,.032),.4,.79)
 yellow = material('ochre-safety-paint',(.68,.38,.07),.25,.65)
@@ -54,7 +65,7 @@ white = material('maintenance-white',(1,.83,.53),.1,.3,5)
 red = material('navigation-red',(1,.035,.008),.1,.3,3)
 
 def add_poly(points, mat, uv=None):
-    verts, faces, uvs = BATCH[mat]
+    verts, faces, uvs = BATCH.setdefault((mat, DETAIL), [[], [], []])
     offset = len(verts)
     verts.extend([tuple(p) for p in points])
     faces.append(tuple(range(offset, offset+len(points))))
@@ -111,6 +122,95 @@ def clip(poly, a,b,c):
         if (dp<0)!=(dq<0):
             t=dp/(dp-dq);out.append((p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])))
     return out
+
+R = random.Random(1007)
+green = material('navigation-green',(.02,1,.18),.1,.3,3)
+truss = material('truss-paint',(.46,.41,.33),.3,.58)
+
+def quad(p,x,y,z,w,h,mat):
+    add_poly([p(x-w/2,y-h/2,z),p(x+w/2,y-h/2,z),p(x+w/2,y+h/2,z),p(x-w/2,y+h/2,z)],mat)
+
+@fine_detail
+def panel_detail(p,basis,x0,x1,y0,y1,top):
+    w=x1-x0;h=y1-y0
+    if w>24 and h>18 and R.random()<.62:
+        rows=R.randint(2,max(2,min(6,int((h-10)/6.5))))
+        span=w-R.uniform(8,16);cx=(x0+x1)/2
+        ys=[y0+5+(h-10)*(i+.5)/rows for i in range(rows)]
+        for y in ys:
+            box(p(cx,y,top+.8),(span,2.4,1.6),black,basis)
+            count=int(span/3.1)
+            for k in range(count):
+                if R.random()<.28:continue
+                x=cx-span/2+(k+.5)*span/count
+                quad(p,x,y,top+1.65,1.7,1.15,warm if R.random()<.72 else white)
+    for _ in range(R.randint(3,9)):
+        sx=R.uniform(1.2,5.5);sy=R.uniform(1.2,4.5);sz=R.uniform(.8,3.5)
+        x=R.uniform(x0+sx,x1-sx) if w>2*sx+1 else (x0+x1)/2
+        y=R.uniform(y0+sy,y1-sy) if h>2*sy+1 else (y0+y1)/2
+        box(p(x,y,top+sz/2),(sx,sy,sz),R.choice([steel,pipe,black]),basis)
+    if R.random()<.35 and w>20 and h>14:
+        x=R.uniform(x0+8,x1-8);y=R.uniform(y0+6,y1-6)
+        box(p(x,y,top+.6),(11,8,1.2),black,basis)
+        for i in range(7):box(p(x-4.5+i*1.5,y,top+1.4),(.45,7,.5),pipe,basis)
+
+@fine_detail
+def mast(p,basis,x,y,base,height,tip,lamp=2.4):
+    box(p(x,y,base+1.5),(5,5,3),steel,basis)
+    tube(p(x,y,base+3),p(x,y,base+height),1.6,truss,6)
+    for k in range(3):
+        ang=k*2*math.pi/3;dx=math.cos(ang)*4;dy=math.sin(ang)*4
+        tube(p(x+dx,y+dy,base+1),p(x,y,base+height*.35),.4,steel,5)
+    for f in [.4,.62,.82]:
+        z=base+height*f;arm=R.uniform(3,7)
+        tube(p(x-arm,y,z),p(x+arm,y,z),.5,truss,5)
+        tube(p(x-arm,y,z),p(x-arm,y,z+R.uniform(2,5)),.4,truss,5)
+    box(p(x,y,base+height+lamp/2),(lamp,lamp,lamp),tip,basis)
+
+@fine_detail
+def dish(p,x,y,base,r):
+    tube(p(x,y,base),p(x,y,base+r*.9),.6,steel,6)
+    ring=[p(x+r*math.cos(i*math.pi/8),y+r*math.sin(i*math.pi/8),base+r*1.1) for i in range(16)]
+    add_poly(ring,pipe);add_poly(list(reversed(ring)),steel)
+
+@fine_detail
+def spine_truss(p,basis,a,b,width,height,along_x):
+    def at(t,o,z):
+        s=a+(b-a)*t
+        return p(s,o,z) if along_x else p(o,s,z)
+    length=abs(b-a);steps=max(2,int(length/13))
+    for o in [-width/2,width/2]:
+        tube(at(0,o,height),at(1,o,height),1.3,truss,6)
+        tube(at(0,o,4),at(1,o,4),1.1,truss,6)
+        for i in range(steps+1):
+            t=i/steps
+            tube(at(t,o,4),at(t,o,height),.8,truss,5)
+            if i<steps:
+                t2=(i+1)/steps
+                tube(at(t,o,4),at(t2,o,height),.6,truss,5)
+                tube(at(t,o,height),at(t2,o,4),.6,truss,5)
+            if i%2==0:
+                tube(at(t,-width/2,height),at(t,width/2,height),.6,truss,5)
+                if R.random()<.55:box(at(t,o,height+1.2),(1.4,1.4,1.2),white if R.random()<.5 else warm,basis)
+            if i%9==4 and o>0 and R.random()<.6:box(at(t,o,height+3.5),(6,6,5),red if R.random()<.55 else green,basis)
+    for layer,z in [(0,height),(1,9)]:
+        for i in range(steps):
+            t=i/steps;t2=(i+1)/steps
+            tube(at(t,-width/2,z),at(t2,width/2,z),.75 if layer==0 else .6,truss,5)
+            tube(at(t,width/2,z),at(t2,-width/2,z),.75 if layer==0 else .6,truss,5)
+    for o in [-width/4,width/4] if width>40 else [0]:
+        box(at(.5,o,10),(length if along_x else 5,5 if along_x else length,8),truss,basis)
+        for lane in [-1.4,1.4]:
+            for i in range(int(length/2.2)):
+                if R.random()<.12:continue
+                t=(i+.5)/int(length/2.2)
+                c=at(t,o+lane,14.2)
+                box(c,(1.5,1.5,.3),warm if R.random()<.8 else white,basis)
+    for o in [-width/2+5,width/2-5]:
+        box(at(.5,o,2.2),(length if along_x else 3.2,3.2 if along_x else length,1.4),black,basis)
+        for i in range(int(length/3)):
+            if R.random()<.22:continue
+            box(at((i+.5)/int(length/3),o,3.0),(1.8,1.8,.3) ,warm if R.random()<.75 else white,basis)
 
 def square_face(n,u,v,front=False):
     n,u,v=Vector(n),Vector(u),Vector(v)
@@ -170,6 +270,7 @@ def square_face(n,u,v,front=False):
                 # Inspection hatch rather than another full plate grid.
                 box(p(cx,cy,depth+3),(19,14,2),steel,basis)
                 box(p(cx,cy,depth+4.5),(15,10,1),random.choice(armor),basis)
+            if len(poly)==4:panel_detail(p,basis,x0,x1,y0,y1,depth+2)
     # Trunk pipe runs, collars and tie brackets physically on the face.
     segments=[(-330,-88),(88,330)] if front else [(-330,330)]
     for start,end in segments:
@@ -219,6 +320,28 @@ def square_face(n,u,v,front=False):
             for dx in [-38,-19,0,19,38]:tube(p(x+dx,y+yy,12),p(x+dx,y+yy,22),.6,pipe,6)
         for dx in [-28,28]:box(p(x+dx,y,5),(3,12,12),steel,basis)
         box(p(x-38,y,23),(3,3,2),white,basis)
+    # Scale detail: open truss over the service spines, masts and dishes.
+    for start,end in segments:spine_truss(p,basis,start,end,62,22,False)
+    for lo,hi in [(-330,-120),(120,330)] if front else [(-330,330)]:
+        spine_truss(p,basis,lo,hi,26,16,True)
+    rim=0
+    while rim<12:
+        x=R.uniform(-330,330);y=R.uniform(-330,330)
+        d=abs(x)+abs(y)
+        if d<F-110 or d>F-45:continue
+        mast(p,basis,x,y,6,R.uniform(36,44),red if R.random()<.7 else green)
+        rim+=1
+    placed=0
+    while placed<(5 if front else 16):
+        x=R.uniform(-300,300);y=R.uniform(-300,300)
+        if abs(x)+abs(y)>F-50 or abs(x)<45 or abs(y)<22:continue
+        if front and abs(x)<135 and abs(y)<105:continue
+        mast(p,basis,x,y,6,R.uniform(26,44),red if R.random()<.6 else green,1.1)
+        placed+=1
+    for _ in range(3):
+        x=R.uniform(-260,260);y=R.uniform(-260,260)
+        if abs(x)+abs(y)>F-60 or (front and abs(x)<150 and abs(y)<120) or abs(x)<45:continue
+        dish(p,x,y,7,R.uniform(5,9))
 
 square_face((0,0,1),(1,0,0),(0,1,0),True)
 square_face((0,0,-1),(-1,0,0),(0,1,0))
@@ -286,6 +409,16 @@ for i,a in enumerate(verts):
   n=(a+b).normalized()
   beam(a+n*3,b+n*3,29,16,steel,n)
   beam(a+n*10,b+n*10,3,2,pipe,n)
+  DETAIL = True
+  for t in [.3,.5,.7]:
+   if R.random()<.45:continue
+   c=a.lerp(b,t)+n*14
+   d=(b-a).normalized();v=n.cross(d)
+   h=R.uniform(22,34)
+   tube(c,c+n*h,1.4,truss,6)
+   for f2 in [.45,.75]:tube(c+n*h*f2-d*R.uniform(3,6),c+n*h*f2+d*R.uniform(3,6),.5,truss,5)
+   box(c+n*(h+1.3),(2.6,2.6,2.6),red,(d,v,n))
+  DETAIL = False
   for t in [.07,.28,.49,.70,.93]:
    c=a.lerp(b,t)+n*10
    d=(b-a).normalized();v=n.cross(d)
@@ -354,6 +487,10 @@ for yy in [-90,90]:
   box((x,yy,426),(4,23,29),steel)
 box((0,-119,412),(85,35,22),steel)
 for x in [-30,-15,0,15,30]:box((x,-119,425),(7,24,3),pipe)
+DETAIL = True
+for x,col in [(-118,red),(118,green)]:
+ for y in [-86,86]:box((x,y,436),(7,7,6),col)
+DETAIL = False
 # Four tiny docking signal clusters outside the slot.
 for x in [-76,76]:
  for y in [-43,43]:
@@ -413,15 +550,16 @@ for x in [165,223]:
  for y in [22,70]:box((x,y,F+12.5),(2,2,1),pipe)
 # Material batches keep the model renderable instead of one draw per rivet.
 objects=[]
-for mat,(vertices,faces,uvs) in BATCH.items():
+for (mat,detail),(vertices,faces,uvs) in BATCH.items():
  if not faces:continue
  mesh=bpy.data.meshes.new(mat);mesh.from_pydata(vertices,[],faces);mesh.materials.append(MATS[mat]);mesh.update()
  uv=mesh.uv_layers.new(name='surface-145m')
  for face,coords in zip(mesh.polygons,uvs):
   for index,xy in zip(face.loop_indices,coords):uv.data[index].uv=xy
- ob=bpy.data.objects.new(mat,mesh);bpy.context.collection.objects.link(ob);objects.append(ob)
+ ob=bpy.data.objects.new(('scale-detail-' if detail else '')+mat,mesh);bpy.context.collection.objects.link(ob);objects.append(ob)
+ if detail:ob['minDetail']='full'
  # Small edge radii catch light; preserve microscopic light geometry unmodified.
- if mat not in [warm,white,red,letters]:
+ if mat not in [warm,white,red,green,letters,truss]:
   mod=ob.modifiers.new('machined-edge-bevel','BEVEL');mod.width=.45;mod.segments=1
   mod.affect='EDGES'
   mod=ob.modifiers.new('weighted-flat-panels','WEIGHTED_NORMAL');mod.keep_sharp=True

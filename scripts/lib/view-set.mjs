@@ -1,3 +1,14 @@
+/** Captures build their Game only after the entire model catalog is installed. */
+export const MODEL_BOOT_PARAMS = Object.freeze({ "models-full": true });
+
+const LANCE_FRAMING = {
+	kind: "body-offset",
+	body: "largest-planet",
+	radii: 6,
+	sunAngleDeg: 150,
+	view: "chase",
+};
+
 /**
  * The canonical view set: what a visual node is judged on.
  *
@@ -119,8 +130,16 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1198: "the Longwall's two-seat bridge, its mining faces, and each seat's eye",
+	1152: "the Drum scale detail and trade plate seam backing",
+	1145: "the Ring scale detail, station key light and blooming beacons",
+	1094: "the miner drive glow and firing vent plumes on the installed Longwall",
+	1142: "the Coriolis scale detail, warm paint, station key light and blooming beacons",
+	1035: "the Warden, Shiv, Sluice, Bastion and Rampart authored hulls",
+	1034: "the authored Lance interceptor in the game's chase camera",
+	1073: "the Assembly's authored blocks placed by its own seeded plan",
+	909: "the Bollard paint lift beside the courier and miner under the same game lighting",
 	720: "the terran ground and clouds across the horizon at station altitude and the flight boundary",
-	735: "a derelict's torn sections and exposed frame",
 	732: "dark derelict roster hull and tethered salvage",
 	684: "hauler lane points and hyperspace rings",
 	99: "the light rig",
@@ -162,10 +181,15 @@ export const LEVERS = Object.freeze({
 	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
 	869: "the outfitting console: slots beside stock and the change shown before purchase",
+	1194: "the docked service status beside unrelated notices, and its natural recovery",
+	1148: "the surface DEEP cue, the survey's instrument range and current-field rock readings in Navigation",
+	1191: "unknown and discovered rare-field Navigation and the sourced regional scanner lead",
+	1209: "the organic arrangement of charted and rare fields from far, from above and inside their densest cluster, and hull and cabin beside a rock with the shadow pass alone",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
 	647: "a turn in cruise drawn as the attitude vents' plumes, like a turn in normal flight",
+	637: "the firing vents drawn on an NPC hull — the duel's raider — from its own firing table",
 	651: "the cabin drawn in its own pass, so no world geometry enters it",
 });
 
@@ -268,6 +292,11 @@ export const LEVERS = Object.freeze({
  *   then flown `steps` steps of 1/60 s through the game's own `step` and held
  *   (`holdCruiseTurnState`). The attitude vents fire and saturate because
  *   the sim says so; cruise moves the hull, so no translation vent does.
+ * - `npc-vents` — node #637's NPC plumes: a raider forced ahead in a cruise
+ *   leg interdicts and flies `steps` steps of the duel through the game's own
+ *   `step`, then the clock is held and the player is placed `behindKm` off its
+ *   stern looking at it (`scripts/lib/npc-vent-state.mjs`). The raider stands
+ *   where the sim left it and fires what its own Hull step fired.
  */
 export const SHOT_KINDS = Object.freeze([
 	"derelict",
@@ -285,9 +314,16 @@ export const SHOT_KINDS = Object.freeze([
 	"cruise",
 	"chart",
 	"shipyard-tab",
+	"capability-outage",
+	"mining-survey",
+	"miner-bridge",
+	"field-discovery",
+	"asteroid-field",
 	"docking-notice",
 	"vents",
+	"miner-vents",
 	"cruise-turn",
+	"npc-vents",
 ]);
 
 /**
@@ -300,14 +336,6 @@ export const SHOT_KINDS = Object.freeze([
 export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
 
 /**
- * One clock, and — with two declared exceptions — one seed.
- *
- * **The exceptions are `refinery-cradle-berth` and `ringed-giant`, and each
- * names its own.** `SEED` 47 generates no refinery and no gas giant, so those
- * two carry `seed: 2` and `seed: 5` and their captures navigate. Saying "one
- * seed" of this set would be the class of claim this file's own capture code
- * refuses: a caption asserting a fixture property the frames do not have.
- *
  * **One seed is not one place, and one place is not the whole cluster.** Every
  * row is framed in the system the game boots at, which is `startSystem` — the most
  * *central* well-stocked and orderly one — and a row may name a `system` to stand at
@@ -369,20 +397,51 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
  */
 export const VIEWS = Object.freeze([
 	{
-		name: "derelict",
-		covers: [732, 735],
-		what: "A seeded dark roster hull, lamps off, with containers tethered clear of its envelope, in the cockpit at its first loss.",
-		shot: { kind: "derelict", view: "cockpit" },
+		name: "assembly-approach",
+		what: "Assembly docking hub on its approach axis; world seed 42, system 5.",
+		covers: [1073],
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 5,
+		},
 	},
 	{
-		// Node #735. The view above stands 0.87 km off a hull 60 m long, where a
-		// frame member is under a pixel; this one stands 50 m off the tear that
-		// faces the star most. New with #735, so it has no "before" at an
-		// earlier ref: the derelict view above is the pair.
-		name: "derelict-tear",
-		covers: [735],
-		what: "The same wreck from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
-		shot: { kind: "derelict", framing: "tear", view: "cockpit" },
+		name: "assembly-flank",
+		what: "Assembly habitat, service modules and lattice; world seed 42, system 5.",
+		covers: [1073],
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 2.2,
+			sunAngleDeg: 0,
+			view: "chase",
+			seed: 42,
+			system: 5,
+		},
+	},
+	{
+		name: "assembly-second-layout",
+		what: "A second Assembly layout with its own assembly seed; world seed 42, system 12.",
+		covers: [1073],
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 2.2,
+			sunAngleDeg: 45,
+			view: "chase",
+			seed: 42,
+			system: 12,
+		},
+	},
+	{
+		name: "derelict",
+		covers: [732],
+		what: "A seeded dark roster hull, lamps off, with containers tethered clear of its envelope, in the cockpit at its first loss.",
+		shot: { kind: "derelict", view: "cockpit" },
 	},
 	{
 		name: "cockpit-arrival",
@@ -416,6 +475,129 @@ export const VIEWS = Object.freeze([
 			radii: 8,
 			sunAngleDeg: 175,
 			view: "cockpit",
+		},
+	},
+	{
+		name: "coriolis-approach",
+		covers: [1142],
+		what: "The trade-A Coriolis on its aperture axis at three silhouette radii, seed 42 system 4: surface scale, key shadows and slot beacons.",
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "coriolis-flank",
+		covers: [1142],
+		what: "The trade-A Coriolis flank at four silhouette radii, seed 42 system 4: window rows, lattice and silhouette masts under a 35 degree sun.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "coriolis-range",
+		covers: [1142],
+		what: "The trade-A Coriolis backlit at twenty silhouette radii, seed 42 system 4: the shade side, beacon halos and reduced-detail transition.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+			seed: 42,
+			system: 4,
+		},
+	},
+	{
+		name: "ring-approach",
+		covers: [1145],
+		what: "The trade-B Ring on its aperture axis at three silhouette radii, seed 42 system 1: surface scale, key shadows and slot beacons.",
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 1,
+		},
+	},
+	{
+		name: "ring-flank",
+		covers: [1145],
+		what: "The trade-B Ring flank at four silhouette radii, seed 42 system 1: window rows, lattice and silhouette masts under a 35 degree sun.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+			seed: 42,
+			system: 1,
+		},
+	},
+	{
+		name: "ring-range",
+		covers: [1145],
+		what: "The trade-B Ring backlit at twenty silhouette radii, seed 42 system 1: the shade-side shape and baseline fittings at range.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+			seed: 42,
+			system: 1,
+		},
+	},
+	{
+		name: "drum-approach",
+		covers: [1152],
+		what: "The trade-C Drum on its aperture axis at three silhouette radii, seed 42 system 0: surface scale, key shadows and slot beacons.",
+		shot: {
+			kind: "station-axis",
+			station: "trade",
+			radii: 3,
+			view: "chase",
+			seed: 42,
+			system: 0,
+		},
+	},
+	{
+		name: "drum-flank",
+		covers: [1152],
+		what: "The trade-C Drum flank at four silhouette radii, seed 42 system 0: window rows, lattice and silhouette masts under a 35 degree sun.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+			seed: 42,
+			system: 0,
+		},
+	},
+	{
+		name: "drum-range",
+		covers: [1152],
+		what: "The trade-C Drum backlit at twenty silhouette radii, seed 42 system 0: the shade-side shape and baseline fittings at range.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+			seed: 42,
+			system: 0,
 		},
 	},
 	{
@@ -672,7 +854,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [208, 199, 102, 101, 99, 200, 201, 207, 203],
+		covers: [208, 199, 102, 101, 99, 200, 201, 207, 203, 909],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -682,6 +864,57 @@ export const VIEWS = Object.freeze([
 			view: "chase",
 		},
 	},
+	{
+		name: "hull-chase-miner",
+		covers: [909],
+		what: "The Longwall miner's lifted study paints, in the courier's chase framing and light, beside the Bollard for the principal's paint decision.",
+		shot: {
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "miner",
+		},
+	},
+	{
+		name: "hull-chase-bollard",
+		covers: [909],
+		what: "The Bollard tug's lifted study paints, in the courier's chase framing and light, beside the courier and miner for the principal's paint decision.",
+		shot: {
+			kind: "body-offset",
+			body: "largest-planet",
+			radii: 6,
+			sunAngleDeg: 150,
+			view: "chase",
+			hull: "tug",
+		},
+	},
+	{
+		name: "hull-chase-lance",
+		covers: [1034],
+		what: "The authored Lance interceptor in the game's chase camera, beside the other hulls at the same light and planet framing.",
+		shot: {
+			...LANCE_FRAMING,
+			hull: "interceptor",
+		},
+	},
+	...[
+		{ name: "Warden", hull: "patrol" },
+		{ name: "Shiv", hull: "raider" },
+		{ name: "Sluice", hull: "prospector" },
+		{ name: "Bastion", hull: "carrier", zoom: 4 },
+		{ name: "Rampart", hull: "dreadnought", zoom: 4 },
+	].map(({ name, hull, zoom }) => ({
+		name: `hull-chase-${name.toLowerCase()}`,
+		covers: [1035],
+		what: `The ${name} in the game's chase camera under the same light and planet framing as the Lance.`,
+		shot: {
+			...LANCE_FRAMING,
+			inspectHull: hull,
+			...(zoom && { inspectZoom: zoom }),
+		},
+	})),
 	{
 		name: "planet-terminator",
 		covers: [208, 211, 212, 99, 206, 200, 207],
@@ -1110,6 +1343,12 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "miner-vent-plumes",
+		covers: [1094],
+		what: "The installed Longwall in chase from its flank: throttle drives both aft nozzles while the assist brakes a yaw and roll, showing drive glow and the firing attitude vents.",
+		shot: { kind: "miner-vents", hull: "miner", view: "chase", orbit: 0.9 },
+	},
+	{
 		name: "vent-cue-cockpit",
 		covers: [621],
 		what: "Cockpit, the same state held at the pulse's trough: the prograde marker (the green ring) and the nose cross dimmed in their own tones while the assist cannot meet the speed or the spin. The retrograde marker pulses too, but it is behind the camera here.",
@@ -1126,6 +1365,12 @@ export const VIEWS = Object.freeze([
 			orbit: 0.9,
 			view: "chase",
 		},
+	},
+	{
+		name: "npc-vent-plumes",
+		covers: [637],
+		what: "Cockpit, off the duel's raider's stern: the raider turning onto the player and driving at them, its vents firing from its own Hull step — a glow at each lit throat and a short puff thinning away from it, on the raider's hull rather than the player's.",
+		shot: { kind: "npc-vents", steps: 20, behindKm: 0.2, view: "cockpit" },
 	},
 	/**
 	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
@@ -1461,6 +1706,316 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "capability-market-damaged",
+		covers: [1194],
+		what: "Mining enabled at the generated refinery: natural market damage remains visible alongside an unrelated cargo-scoop notice, before any purchase.",
+		shot: {
+			kind: "capability-outage",
+			system: 2,
+			view: "cockpit",
+			recovered: false,
+		},
+	},
+	{
+		name: "mining-survey-surface",
+		covers: [1148],
+		what: "A completed held survey on a generated rock: the DEEP cue follows the drawn heightfield and the target instrument reads surface range.",
+		shot: {
+			kind: "mining-survey",
+			mode: "surface",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "field-discovery-unknown",
+		covers: [1191],
+		what: "Navigation and scope before proximity discovery, with the physical field left present.",
+		shot: {
+			kind: "field-discovery",
+			mode: "unknown",
+			seed: 47,
+			system: 4,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "field-discovery-lead",
+		covers: [1191],
+		what: "The existing regional sweep reports an aged own-sensors field signal without a target or point geometry.",
+		shot: {
+			kind: "field-discovery",
+			mode: "lead",
+			seed: 47,
+			system: 4,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "field-discovery-known",
+		covers: [1191],
+		what: "Navigation after scanner-free proximity discovery, with the rare field available as a contact.",
+		shot: {
+			kind: "field-discovery",
+			mode: "known",
+			seed: 47,
+			system: 4,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "asteroid-field-charted-far",
+		covers: [1209],
+		what: "The charted field's organic arrangement from the approved study's far stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "far",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-rare-far",
+		covers: [1209],
+		what: "The rare field's organic arrangement from the approved study's far stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "far",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-charted-side",
+		covers: [1209],
+		what: "The charted field's organic arrangement from the approved study's side stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "side",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-rare-side",
+		covers: [1209],
+		what: "The rare field's organic arrangement from the approved study's side stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "side",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-charted-overview",
+		covers: [1209],
+		what: "The charted field's organic arrangement from the approved study's overview stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "overview",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-rare-overview",
+		covers: [1209],
+		what: "The rare field's organic arrangement from the approved study's overview stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "overview",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-charted-dense",
+		covers: [1209],
+		what: "The charted field's organic arrangement from the approved study's dense stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "dense",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-rare-dense",
+		covers: [1209],
+		what: "The rare field's organic arrangement from the approved study's dense stand, with the hull hidden so the field is the subject.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "dense",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-charted-close-chase",
+		covers: [1209],
+		what: "The hull beside the charted field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-charted-close-cockpit",
+		covers: [1209],
+		what: "The cockpit cabin beside the charted field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "charted",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 173,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "asteroid-field-rare-close-chase",
+		covers: [1209],
+		what: "The hull beside the rare field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "chase",
+		},
+	},
+	{
+		name: "asteroid-field-rare-close-cockpit",
+		covers: [1209],
+		what: "The cockpit cabin beside the rare field's biggest rock, level-0 rocks in view on high: the state where rocks alone open the shadow pass, with no ambient occlusion and no hull self-shadow.",
+		shot: {
+			kind: "asteroid-field",
+			profile: "rare",
+			stand: "close",
+			seed: 0x5ee11e,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "mining-survey-navigation",
+		covers: [1148],
+		what: "Current-field readings in nearest-first Navigation, with a selected rock and a readable distant rock beyond the unchanged 40 km targeting limit.",
+		shot: {
+			kind: "mining-survey",
+			mode: "navigation",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-open-pilot",
+		covers: [1198],
+		what: "The Longwall's bridge in open space from the pilot's left seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "open",
+			seat: "pilot",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-open-miner",
+		covers: [1198],
+		what: "The Longwall's bridge in open space from the miner's right seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "open",
+			seat: "miner",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-rock-pilot",
+		covers: [1198],
+		what: "The Longwall's bridge at a rock face from the pilot's seat, drill stowed: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "rock",
+			seat: "pilot",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-drill-pilot",
+		covers: [1198],
+		what: "The Longwall's bridge with the drill out at the rock, from the pilot's seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "drill",
+			seat: "pilot",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "miner-bridge-drill-miner",
+		covers: [1198],
+		what: "The Longwall's bridge with the drill out at the rock, from the miner's seat: canopy, consoles, live faces, and what the hull leaves in view.",
+		shot: {
+			kind: "miner-bridge",
+			stage: "drill",
+			seat: "miner",
+			seed: 0x5ee11e,
+			system: 173,
+			hull: "miner",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "capability-market-recovered",
+		covers: [1194],
+		what: "The same generated refinery market at its natural recovery, with the unrelated notice retained and no stale market-damage status.",
+		shot: {
+			kind: "capability-outage",
+			system: 2,
+			view: "cockpit",
+			recovered: true,
+		},
+	},
+	{
 		name: "outpost-interior-workbench",
 		covers: [165, 147, 257],
 		/**
@@ -1486,10 +2041,11 @@ export const VIEWS = Object.freeze([
 			kind: "workbench-interior",
 			asset: "outpost",
 			// **Named, not defaulted** (#257). The workbench opens on the first
-			// variant in the list; the outpost's selected form is D since the
-			// principal's yes on this node's sheet, and a frame that kept
-			// showing A would be a view of a form the role no longer carries.
-			variant: "d",
+			// variant in the list, and a frame of a form the role no longer
+			// carries judges nothing: D was selected on #257's sheet, and since
+			// #518 the role draws E, the Salvage, from its authored model since
+			// node #1031.
+			variant: "e",
 			radii: 1.25,
 			azimuth: 0.28,
 			elevation: 0.45,
@@ -1528,6 +2084,61 @@ export const VIEWS = Object.freeze([
 			kind: "npc-jump",
 			event: "arrival",
 			framing: "player-lane-point",
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	// #1006's three beats, one frame each. `npc-arrival` and `npc-departure` were
+	// taken half a second **after** the crossing, which is the one moment that
+	// tells a watcher nothing about what just happened — the principal's read of
+	// the `arrival` capture was "the witchspace is open in first frame … no sense
+	// of drama when witchspace opens", and a frame at +0.5 s could not have
+	// shown either the opening or the closing. These rows stand at the opening,
+	// at the crossing, in the swallow, and at the seal.
+	{
+		name: "npc-arrival-opening",
+		covers: [684],
+		what: "The same ring 0.9 s **before** the hauler crosses: open, brightening, and with nothing in it. The build-up the capture had none of — the hull is still in another system, so its name, contact and collision are not here yet.",
+		shot: {
+			kind: "npc-jump",
+			event: "arrival",
+			phaseS: -0.9,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-arrival-crossing",
+		covers: [684],
+		what: "The moment of arrival: 0.05 s after the instant, the hull easing through the ring's plane with the flare up, a wavelength ahead of settling on the lane point.",
+		shot: {
+			kind: "npc-jump",
+			event: "arrival",
+			phaseS: 0.05,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-departure-swallow",
+		covers: [684],
+		what: "0.35 s before the departure instant: the hauler ahead of the lane point it held through its wind-up, standing into the ring that opened in front of it. Where it goes, in other words, is through there.",
+		shot: {
+			kind: "npc-jump",
+			event: "departure",
+			phaseS: -0.35,
+			system: 0,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "npc-departure-seal",
+		covers: [684],
+		what: "The last 0.25 s of that ring's life, the hull long gone: collapsed toward a point and flaring as it closes, so the place where it opened is seen to close.",
+		shot: {
+			kind: "npc-jump",
+			event: "departure",
+			phaseS: 4.55,
 			system: 0,
 			view: "cockpit",
 		},
@@ -1574,12 +2185,17 @@ export const OPENING_SHOT_NAMES = Object.freeze([
 ]);
 
 const SHOT_REQUIREMENTS = {
-	derelict: (s) => s.framing === undefined || s.framing === "tear",
+	derelict: (s) => s.framing === undefined,
 	"npc-jump": (s) =>
 		(s.event === "arrival" || s.event === "departure") &&
 		(s.framing === undefined ||
 			s.framing === "ring" ||
-			s.framing === "player-lane-point"),
+			s.framing === "player-lane-point") &&
+		// Seconds from the crossing instant (#1006): negative in the opening and
+		// in the swallow, positive at the seal. A non-finite or absent one is the
+		// row the set already had — half a second after the jump — and is not what
+		// the beat rows are for, so it is allowed but not trusted.
+		(s.phaseS === undefined || finite(s.phaseS)),
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),
@@ -1609,6 +2225,17 @@ const SHOT_REQUIREMENTS = {
 	"shipyard-tab": (s) =>
 		(s.rungs === "new-game" || s.rungs === "top") &&
 		(s.tab === undefined || s.tab === "Equipment"),
+	"capability-outage": (s) => typeof s.recovered === "boolean",
+	"mining-survey": (s) => s.mode === "surface" || s.mode === "navigation",
+	"miner-bridge": (s) =>
+		s.hull === "miner" &&
+		s.view === "cockpit" &&
+		(s.seat === "pilot" || s.seat === "miner") &&
+		["open", "rock", "drill"].includes(s.stage),
+	"field-discovery": (s) => ["unknown", "lead", "known"].includes(s.mode),
+	"asteroid-field": (s) =>
+		["charted", "rare"].includes(s.profile) &&
+		["far", "side", "overview", "dense", "close"].includes(s.stand),
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	// #647: above the envelope, or the attitude vents fire nothing past the
@@ -1619,6 +2246,14 @@ const SHOT_REQUIREMENTS = {
 		Number.isInteger(s.steps) &&
 		s.steps > 0 &&
 		(s.orbit === undefined || finite(s.orbit)),
+	// Node #637: flown into the duel, and placed off the stern at a range
+	// where a 63.5 m hull is more than a dot.
+	"npc-vents": (s) =>
+		Number.isInteger(s.steps) &&
+		s.steps > 0 &&
+		finite(s.behindKm) &&
+		s.behindKm > 0 &&
+		s.behindKm < 2,
 	// #621: above the cap and above the envelope, or nothing saturates and the
 	// frame is a quiet ship under a caption about a saturated one.
 	vents: (s) =>
@@ -1629,6 +2264,8 @@ const SHOT_REQUIREMENTS = {
 		Number.isInteger(s.steps) &&
 		s.steps > 0 &&
 		(s.orbit === undefined || finite(s.orbit)),
+	"miner-vents": (s) =>
+		s.hull === "miner" && s.view === "chase" && finite(s.orbit),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||
@@ -1709,6 +2346,20 @@ export function validateRunViews(run, views = VIEWS) {
 			`view-set: run "${run.label}" carries ${extra.join(", ")}, ` +
 				`which the view set does not declare — add it to VIEWS or drop it`,
 		);
+}
+
+/** Select named canonical views without silently dropping an unknown request. */
+export function selectViews(names) {
+	if (names === null) return VIEWS;
+	const requested = names.split(",");
+	if (
+		new Set(requested).size !== requested.length ||
+		requested.some((name) => !VIEWS.some((v) => v.name === name))
+	)
+		throw new Error(
+			`Unknown, empty or repeated canonical view in --only ${names}`,
+		);
+	return VIEWS.filter((view) => requested.includes(view.name));
 }
 
 /**
@@ -1828,6 +2479,14 @@ ${runs
 		)
 		.join("\n");
 
+	const heading =
+		views === VIEWS
+			? "Canonical view set"
+			: `Selected canonical views (${views.length} of ${VIEWS.length})`;
+	const selection =
+		views === VIEWS
+			? ""
+			: `<p>Selection: ${views.map((v) => esc(v.name)).join(", ")}</p>`;
 	return `<!doctype html>
 <meta charset="utf-8">
 <title>seelite canonical view set — seed ${SEED}</title>
@@ -1844,7 +2503,8 @@ ${runs
   th em { display:block; color:#5f6b7d; font-style:normal; margin-top:6px; font-size:12px; }
   img { display:block; width:100%; height:auto; background:#000; border:1px solid #1c2230; }
 </style>
-<h1>Canonical view set</h1>
+<h1>${heading}</h1>
+${selection}
 <p class="sub">Seed ${SEED}, ${VIEWPORT.width}×${VIEWPORT.height}, clock started at ${GAME_TIME_S}s and left running. Captured headed — every frame here is the renderer the player gets. Each camera is placed co-moving with its subject, which is what holds a framing; the clock is not stopped.</p>
 <table>
 <thead><tr><th scope="row"></th>${head}</tr></thead>

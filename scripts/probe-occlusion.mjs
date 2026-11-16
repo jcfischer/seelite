@@ -55,6 +55,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { resetToFixture, waitForGateShut } from "./lib/fixture-reset.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
@@ -294,6 +295,7 @@ await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
+await page.evaluate(() => window.__rememberBootPosition());
 
 // ---- what the walk marked, before any pixel is looked at ----
 
@@ -680,6 +682,19 @@ console.log(
 const LADDER_RUNGS = [20, 12, 8, 5, 3, 2, 1.5];
 
 await setView(page, "chase");
+await page.evaluate(
+	([id, radii]) =>
+		window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
+			comoving: true,
+		}),
+	[STATION, LADDER_RUNGS[0]],
+);
+await setView(page, "chase");
+const startedShut = await waitForGateShut(page, settleFrames);
+console.log(
+	`  ladder — started from a shut gate after ` +
+		`${startedShut.frames} frames at ${LADDER_RUNGS[0]} radii, enclosure ${startedShut.enclosureRad.toFixed(3)} rad`,
+);
 const ladder = [];
 for (const rung of LADDER_RUNGS) {
 	await page.evaluate(
@@ -763,7 +778,18 @@ t.check(
 // At the view-set's clock, before the placement: the share of the bay the sun
 // reaches turns with the station (see `REACH_MARGIN_PCT`), and a reset moves
 // the station, so it comes first.
-await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
+const impactsBeforeReset = await page.evaluate(
+	() => window.__seelite.collisionImpacts,
+);
+await resetToFixture(page, CLOCK);
+const impactsAfterReset = await page.evaluate(
+	() => window.__seelite.collisionImpacts,
+);
+t.check(
+	"the bay's clock reset strikes nothing, because the ship leaves the ladder's last rung first",
+	impactsAfterReset === impactsBeforeReset,
+	`collision impacts ${impactsBeforeReset} before the reset, ${impactsAfterReset} after`,
+);
 await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await OCCLUSION_FRAMINGS.berth.place(page);
 await setView(page, OCCLUSION_FRAMINGS.berth.view);

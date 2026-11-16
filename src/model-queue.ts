@@ -1,0 +1,124 @@
+/** Serial, session-long installation state. No renderer, timers or eviction.
+ * Reprioritisation affects pending work; an active download is never cancelled.
+ * A settled model includes its consumer's mesh refresh, or a terminal failure.
+ */
+export type ModelState = "pending" | "loading" | "installed" | "failed";
+export class ModelQueue {
+	private readonly states = new Map<string, ModelState>();
+	private readonly refreshing = new Set<string>();
+	private order: string[];
+	private running?: Promise<void>;
+	private readonly waitedOn = new Set<string>();
+	private readonly waiters = new Set<() => void>();
+	constructor(
+		private readonly loaders: Readonly<Record<string, () => Promise<void>>>,
+		private readonly installed: (id: string) => Promise<void> = async () => {},
+		private readonly warn: (
+			id: string,
+			error: unknown,
+			phase: "load" | "refresh",
+		) => void = (id, error, phase) =>
+			console.warn(
+				phase === "load"
+					? `${id}: background load failed; keeping the procedural stand-in`
+					: `${id}: model installed but mesh refresh failed`,
+				error,
+			),
+		/** Runs once a load has failed for good, so a consumer can draw its
+		 *  stand-in; like `installed`, the model is not settled until it ends. */
+		private readonly failed: (id: string) => Promise<void> = async () => {},
+		/** Fetched only when named, never by the sweep, https://github.com/jcfischer/seelite/issues/1198 */
+		private readonly onDemand: ReadonlySet<string> = new Set(),
+	) {
+		this.order = Object.keys(loaders).filter((id) => !onDemand.has(id));
+		for (const id of Object.keys(loaders)) this.states.set(id, "pending");
+	}
+	state(id: string): ModelState {
+		const state = this.states.get(id);
+		if (!state) throw new Error(`Unknown model: ${id}`);
+		return state;
+	}
+	settled(ids: readonly string[]): boolean {
+		return ids.every(
+			(id) =>
+				["installed", "failed"].includes(this.state(id)) &&
+				!this.refreshing.has(id),
+		);
+	}
+	/** Required boot loads use the Retry panel, then adopt their success here. */
+	adopt(ids: readonly string[]): void {
+		for (const id of ids) {
+			this.state(id);
+			this.states.set(id, "installed");
+		}
+		this.notify();
+	}
+	prioritize(current: readonly string[], next: readonly string[] = []): void {
+		this.order = [
+			...new Set([
+				...current,
+				...next,
+				...Object.keys(this.loaders).filter(
+					(id) => !this.onDemand.has(id) || this.waitedOn.has(id),
+				),
+			]),
+		];
+		for (const id of this.order) this.state(id);
+		this.start();
+	}
+	wait(ids: readonly string[]): Promise<void> {
+		if (this.settled(ids)) return Promise.resolve();
+		for (const id of ids) this.waitedOn.add(id);
+		this.order = [...new Set([...this.order, ...ids])];
+		const done = new Promise<void>((resolve) => {
+			const check = () => {
+				if (this.settled(ids)) {
+					this.waiters.delete(check);
+					resolve();
+				}
+			};
+			this.waiters.add(check);
+		});
+		this.start();
+		return done;
+	}
+	private notify(): void {
+		for (const check of this.waiters) check();
+	}
+	private start(): void {
+		this.running ??= Promise.resolve().then(async () => {
+			for (;;) {
+				const id = this.order.find((id) => this.state(id) === "pending");
+				if (!id) break;
+				this.states.set(id, "loading");
+				try {
+					await this.loaders[id]();
+				} catch (error) {
+					this.states.set(id, "failed");
+					this.refreshing.add(id);
+					this.warn(id, error, "load");
+					try {
+						await this.failed(id);
+					} catch (standInError) {
+						this.warn(id, standInError, "refresh");
+					} finally {
+						this.refreshing.delete(id);
+					}
+					this.notify();
+					continue;
+				}
+				this.states.set(id, "installed");
+				this.refreshing.add(id);
+				try {
+					await this.installed(id);
+				} catch (error) {
+					this.warn(id, error, "refresh");
+				} finally {
+					this.refreshing.delete(id);
+				}
+				this.notify();
+			}
+			this.running = undefined;
+		});
+	}
+}

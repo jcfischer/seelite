@@ -4,6 +4,8 @@
  *   npm run dev                                  # in one shell
  *   npm run views                                # in another
  *   npm run views -- --label before              # name the run yourself
+ *   npm run views -- --boot-timeout-ms 120000    # allow a cold full-model boot
+ *   npm run views -- --only hull-chase,hull-chase-miner,hull-chase-bollard --out view-set/node-909
  *   open view-set/index.html
  *
  * A visual node posts a before/after against this sheet, and the principal says
@@ -43,6 +45,11 @@
  * rule for the same reason it exempts `shot-ships.mjs`.
  */
 import { installHaulerFixture } from "./lib/hauler-fixture.mjs";
+import { placeCapabilityOutage } from "./lib/capability-outage-fixture.mjs";
+import { placeAsteroidField } from "./lib/asteroid-field-fixture.mjs";
+import { deployDrill, placeAtRockFace } from "./lib/miner-bridge-fixture.mjs";
+import { placeMiningSurvey } from "./lib/mining-survey-fixture.mjs";
+import { placeFieldDiscovery } from "./lib/field-discovery-fixture.mjs";
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
 import { execFileSync } from "node:child_process";
@@ -50,10 +57,11 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	GAME_TIME_S,
+	MODEL_BOOT_PARAMS,
 	SEED,
 	SHOT_KINDS,
 	VIEWPORT,
-	VIEWS,
+	selectViews,
 	contactSheet,
 } from "./lib/view-set.mjs";
 import { requireChartSpot } from "./lib/chart-hover-spot.mjs";
@@ -63,6 +71,7 @@ import { assertHorizonFacts } from "./lib/horizon-framing.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import { holdCruiseTurnState, holdVentState } from "./lib/vent-state.mjs";
+import { holdNpcVentState } from "./lib/npc-vent-state.mjs";
 import {
 	bootedGame,
 	guardedTree,
@@ -75,7 +84,7 @@ import { levelsFile, writeRunLevels } from "./lib/levels-report.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
-/** `--out`, `--label` and `--quality`, both `--k v` and `--k=v`. Small enough to read here;
+/** `--out`, `--label`, `--quality` and `--only`, both `--k v` and `--k=v`. Small enough to read here;
  *  `probe-args.mjs` parses a different grammar for a different runner. */
 function arg(name, fallback) {
 	const argv = process.argv.slice(2);
@@ -114,15 +123,27 @@ function gitRef() {
 
 const REF = gitRef();
 const LABEL = arg("label", REF);
-const OUT = arg("out", "view-set");
+// Scoped captures are separate from full runs and explicitly labelled on the sheet.
+// Missing requested frames still refuse the sheet; unknown names refuse before boot.
+const ONLY = arg("only", null);
+const VIEWS = selectViews(ONLY);
+const OUT = arg("out", ONLY === null ? "view-set" : "view-set/selected");
 const QUALITY = arg("quality", null);
+const COCKPIT_FOV = arg("cockpit-fov", null);
+if (COCKPIT_FOV !== null && COCKPIT_FOV !== "normal" && COCKPIT_FOV !== "wide")
+	throw new Error(`--cockpit-fov must be normal or wide, got ${COCKPIT_FOV}`);
 if (QUALITY !== null && QUALITY !== "high" && QUALITY !== "low")
 	throw new Error(`--quality must be high or low, got ${QUALITY}`);
+const BOOT_TIMEOUT_MS = Number(arg("boot-timeout-ms", "20000"));
+if (!Number.isSafeInteger(BOOT_TIMEOUT_MS) || BOOT_TIMEOUT_MS <= 0)
+	throw new Error("--boot-timeout-ms must be a positive integer");
 
-/** Apply an explicitly requested quality after every boot. The setting persists
- * across the refinery seed navigation, but writing it again there makes the
- * capture's renderer state an observation rather than an assumption. */
-async function applyCaptureQuality(page) {
+/** Apply requested settings after each boot, including seed changes. */
+async function applyCaptureSettings(page) {
+	if (COCKPIT_FOV !== null)
+		await page.evaluate((mode) => {
+			window.__seelite.settings.set("cockpitFov", mode);
+		}, COCKPIT_FOV);
 	if (QUALITY === null) return;
 	await page.evaluate((quality) => {
 		window.__seelite.settings.set("quality", quality);
@@ -169,6 +190,11 @@ async function applyCaptureQuality(page) {
  * that says half of what the function guarantees is a name that misleads exactly
  * where a reader is deciding whether they can trust it.
  */
+const MINING_BOOT_SHOTS = [
+	"capability-outage",
+	"mining-survey",
+	"miner-bridge",
+];
 let currentSeed = null;
 /**
  * The system the loaded page was asked to boot at, or `null` for the start
@@ -182,6 +208,8 @@ let currentSeed = null;
  * exactly like a whole one.
  */
 let currentSystem = null;
+let currentHull = "courier";
+let currentMining = false;
 /**
  * Set by a placer that writes world state — the duel's kill (#324 part d) — so
  * the next view boots on a world with no save, as the first boot does.
@@ -194,8 +222,23 @@ let currentSystem = null;
  * route, which opens no save store, and only then is the game loaded.
  */
 let worldWritten = false;
-async function ensureFixture(page, seed, system = null) {
-	if (currentSeed === seed && currentSystem === system && !worldWritten) return;
+async function ensureFixture(
+	page,
+	seed,
+	system = null,
+	hull = "courier",
+	mining = false,
+) {
+	if (
+		currentSeed === seed &&
+		currentSystem === system &&
+		currentHull === hull &&
+		currentMining === mining &&
+		!worldWritten
+	)
+		return;
+	// Hull changes need a fresh Commander: a saved hull takes precedence over ?hull=.
+	if (currentHull !== hull) worldWritten = true;
 	if (worldWritten) {
 		await page.goto(workbenchUrl(SERVING, { "hud-gallery": true }), {
 			waitUntil: "load",
@@ -217,12 +260,35 @@ async function ensureFixture(page, seed, system = null) {
 	// `system` is left off the URL when the row declares none, which is every
 	// row written before #432 and every row that is not a frame of the rim.
 	await page.goto(
-		gameUrl(SERVING, { seed, raider: "off", system, "interiors-full": true }),
+		gameUrl(SERVING, {
+			seed,
+			hull,
+			mining: mining ? 1 : undefined,
+			raider: "off",
+			system,
+			...MODEL_BOOT_PARAMS,
+			"interiors-full": true,
+		}),
 		{
 			waitUntil: "load",
 		},
 	);
-	await bootedGame(page);
+	await bootedGame(page, BOOT_TIMEOUT_MS);
+	// Node #909: a saved courier must not stand in for a requested tug/miner.
+	// Compare the flown state and the drawn hull, including its authored install.
+	const flown = await page.evaluate(() => {
+		const g = window.__seelite;
+		const ship = g.nearScene.getObjectByName("ship");
+		return {
+			hull: g.commander.hull,
+			drawn: ship?.userData.hullId,
+			authored: ship?.userData.authored,
+		};
+	});
+	if (flown.hull !== hull || flown.drawn !== hull || !flown.authored)
+		throw new Error(
+			`capture: asked for authored ${hull}, got ${JSON.stringify(flown)}`,
+		);
 	if (system !== null) {
 		const booted = await page.evaluate(
 			() => window.__seelite.world.system.record.index,
@@ -232,11 +298,13 @@ async function ensureFixture(page, seed, system = null) {
 				`capture: ${seed ? `seed ${seed} ` : ""}system ${system} was asked for and system ${booted} booted — the page refuses an index it cannot use, quietly and for a person at a URL, so the capture is the one that has to refuse loudly`,
 			);
 	}
-	await applyCaptureQuality(page);
+	await applyCaptureSettings(page);
 	await page.evaluate(() => window.__rememberBootPosition());
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	currentSeed = seed;
+	currentMining = mining;
 	currentSystem = system;
+	currentHull = hull;
 }
 
 /**
@@ -329,6 +397,53 @@ async function assertChartHover(page, where, shot, aimed) {
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
+	"asteroid-field": async (page, shot) => {
+		worldWritten = true;
+		const result = await placeAsteroidField(
+			page,
+			shot.profile,
+			shot.stand,
+			shot.view,
+		);
+		if (
+			shot.stand === "close" &&
+			(!result.shadowGate || result.aoGate || result.levels[0] === 0)
+		)
+			throw new Error(
+				`${shot.profile} close row is not the rocks-only shadow state: ${JSON.stringify(result)}`,
+			);
+		return `${result.fieldId} · ${result.rocks} rocks, ${result.within8Km} within 8 km`;
+	},
+	"field-discovery": async (page, shot) => {
+		worldWritten = true;
+		const result = await placeFieldDiscovery(page, shot.mode);
+		return `${result.fieldId} · ${result.mode} at ${result.at.toFixed(3)}s`;
+	},
+	"miner-bridge": async (page, shot) => {
+		worldWritten = true;
+		if (shot.stage !== "open") {
+			const groups = await placeAtRockFace(page);
+			if (shot.stage === "drill") await deployDrill(page, groups);
+		}
+		await page.evaluate((seat) => {
+			const g = window.__seelite;
+			g.view = "cockpit";
+			g.setHeadLook("forward");
+			g.setMinerSeat(seat);
+			g.updateCockpit();
+		}, shot.seat);
+		return `${shot.stage} · ${shot.seat} seat`;
+	},
+	"mining-survey": async (page, shot) => {
+		worldWritten = true;
+		const result = await placeMiningSurvey(page, shot.mode);
+		return `${result.selectedId} · ${shot.mode} at ${result.at.toFixed(3)}s`;
+	},
+	"capability-outage": async (page, shot) => {
+		worldWritten = true;
+		const result = await placeCapabilityOutage(page, shot.recovered);
+		return `${result.stationId} · market ${result.availability.operational ? "operational" : "damaged"} at ${result.at.toFixed(3)}s`;
+	},
 	horizon: async (page, shot) => {
 		assertHorizonFacts(
 			await page.evaluate((s) => window.__horizonView(s), shot),
@@ -336,32 +451,41 @@ const PLACERS = {
 		);
 		return shot.station ?? shot.body;
 	},
-	derelict: async (page, shot) => {
+	derelict: async (page) => {
 		worldWritten = true;
 		const { placeDerelict } = await import("./lib/derelict-state.mjs");
-		const result = await placeDerelict(page, shot);
-		return (
-			result.hull +
-			" · " +
-			result.key +
-			(result.tear ? " · " + result.tear : "")
-		);
+		const result = await placeDerelict(page);
+		return result.hull + " · " + result.key;
 	},
 	"npc-jump": async (page, shot) => {
 		await page.evaluate(installHaulerFixture);
-		const sampled = await page.evaluate((event) => {
-			const f = window.__haulerFixture;
-			f.sample(f.plan.actor.schedule.departureAtS + 1, false);
-			f.sample(f.voyage.tOut - 3.1, false);
-			f.sample(f.voyage.tOut + 0.5);
-			if (event.event === "arrival") f.follow();
-			return f.sample(f.voyage.tOut + 0.5, true, event.framing ?? "ring");
-		}, shot);
+		// Seconds from the crossing instant. The default is the half-second-after
+		// frame the set has always carried; the beat rows (#1006) name their own,
+		// including negative ones — a ring opening before anything is in it is the
+		// frame the set could not draw.
+		const phaseS = shot.phaseS ?? 0.5;
+		const sampled = await page.evaluate(
+			({ event, phaseS, framing }) => {
+				const f = window.__haulerFixture;
+				f.sample(f.plan.actor.schedule.departureAtS + 1, false);
+				f.sample(f.voyage.tOut - 3.1, false);
+				f.sample(f.voyage.tOut + 0.5);
+				if (event === "arrival") f.follow();
+				return f.sample(f.voyage.tOut + phaseS, true, framing ?? "ring");
+			},
+			{ event: shot.event, phaseS, framing: shot.framing },
+		);
 		if (sampled.jump?.kind !== shot.event || sampled.rift <= 0)
 			throw new Error(
 				`NPC ${shot.event} fixture did not draw its ring: ${JSON.stringify(sampled)}`,
 			);
-		return `${sampled.name} · ${sampled.hull} · ${shot.event} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
+		return `${sampled.name} · ${sampled.hull} · ${shot.event} · ${phaseS >= 0 ? "+" : ""}${phaseS.toFixed(2)} s from the crossing · ring ${(sampled.riftRadiusKm * 2).toFixed(3)} km across, strength ${sampled.rift.toFixed(2)}, flare ${sampled.flare.toFixed(2)}, ${
+			sampled.hullThroughPlaneKm === null
+				? shot.event === "arrival"
+					? "no hull in this system yet"
+					: "no hull in this system any more"
+				: `hull origin ${sampled.hullThroughPlaneKm.toFixed(3)} km from ring plane along nose`
+		} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
 	},
 	"station-axis": async (page, shot) => {
 		const id = `station-${shot.station}`;
@@ -375,6 +499,32 @@ const PLACERS = {
 		return id;
 	},
 	"body-offset": async (page, shot) => {
+		if (shot.inspectHull) {
+			worldWritten = true;
+			const installed = await page.evaluate(
+				async ({ hull, zoom }) => {
+					const { isAuthoredHullModel } = await import("/src/model-catalog.ts");
+					const g = window.__seelite;
+					g.setFlownHull(hull);
+					g.chaseOrbit = { ...g.chaseOrbit, zoomScale: zoom };
+					return {
+						flown: g.flownHull,
+						drawn: g.shipMesh.userData.hullId,
+						authored: Boolean(g.shipMesh.userData.authored),
+						expected: isAuthoredHullModel(hull),
+					};
+				},
+				{ hull: shot.inspectHull, zoom: shot.inspectZoom ?? 1 },
+			);
+			if (
+				installed.flown !== shot.inspectHull ||
+				installed.drawn !== shot.inspectHull ||
+				installed.authored !== installed.expected
+			)
+				throw new Error(
+					`capture: inspection hull mismatch ${JSON.stringify(installed)}`,
+				);
+		}
 		const id = await page.evaluate((name) => {
 			if (name !== "largest-planet") return name;
 			const planets = window.__seelite.world.system.bodies.filter(
@@ -840,6 +990,12 @@ const PLACERS = {
 		// The Galaxy Map tab of the Navigation console, clicked as the probe
 		// clicks it. Not a field assignment: the tab mounts the chart.
 		await page.evaluate(() => {
+			const navigation = document.querySelector(
+				'[data-live-left-tab="Navigation"]',
+			);
+			if (!(navigation instanceof HTMLElement))
+				throw new Error("chart placer: no Navigation tab on this build");
+			navigation.click();
 			const tab = document.querySelector('[data-live-left-tab="Galaxy Map"]');
 			if (!(tab instanceof HTMLElement))
 				throw new Error("chart placer: no Galaxy Map tab on this build");
@@ -958,12 +1114,13 @@ const PLACERS = {
 				raider: "off",
 				guided: true,
 				cinematic: "held",
+				...MODEL_BOOT_PARAMS,
 				"interiors-full": true,
 			}),
 			{ waitUntil: "load" },
 		);
-		await bootedGame(page);
-		await applyCaptureQuality(page);
+		await bootedGame(page, BOOT_TIMEOUT_MS);
+		await applyCaptureSettings(page);
 		const result = await page.evaluate(
 			({ want, at }) => {
 				const g = window.__seelite;
@@ -1085,6 +1242,24 @@ const PLACERS = {
 			: "no glass this frame";
 		return `${state.hull} at ${state.speedOverCap.toFixed(2)}× the cap, spinning · ${state.lit.length} vents firing · ${pulse}`;
 	},
+	"miner-vents": async (page, shot) => {
+		worldWritten = true;
+		const state = await page.evaluate(holdVentState, {
+			overCap: 0,
+			spin: 2.5,
+			steps: 6,
+		});
+		await page.evaluate((yaw) => {
+			window.__seelite.chaseYaw = yaw;
+		}, shot.orbit);
+		if (
+			state.hull !== "miner" ||
+			!state.lit.includes("main") ||
+			!state.cue?.angular
+		)
+			throw new Error(`miner vents placer: ${JSON.stringify(state)}`);
+		return `miner · main drive and attitude vents firing · ${state.lit.length} slots`;
+	},
 	/**
 	 * #647's cruise turn: a real cruise leg, the hull spinning past its yaw
 	 * envelope with the assist on, flown by the game's own `step` and held.
@@ -1112,6 +1287,29 @@ const PLACERS = {
 		if (state.lit.length === 0)
 			return `${state.hull} in cruise, spinning · this build draws no vent for a cruise turn`;
 		return `${state.hull} in cruise, spinning · ${state.lit.length} attitude vents firing (${state.lit.map((v) => v.slot).join(", ")}) · angular cue ${state.cue?.angular ? "latched" : "clear"}`;
+	},
+	/**
+	 * Node #637's NPC plumes: the duel's raider flown by the game's own `step`,
+	 * the clock held, the player placed off its stern.
+	 *
+	 * **Read back, not assumed**: a raider that fired nothing throws rather
+	 * than capturing a quiet hull under this caption. A build before node #637
+	 * keeps no table on the raider's contact; that is its honest `before`.
+	 */
+	"npc-vents": async (page, shot) => {
+		worldWritten = true;
+		const state = await page.evaluate(holdNpcVentState, {
+			steps: shot.steps,
+			behindKm: shot.behindKm,
+		});
+		await page.evaluate(
+			() => new Promise((r) => requestAnimationFrame(() => r())),
+		);
+		if (state.absent)
+			return `${state.name} (${state.hull}) · this build keeps no firing table for an NPC hull: no plumes`;
+		if (state.lit.length === 0)
+			throw new Error("npc-vents placer: the raider fired no vent");
+		return `${state.name} (${state.hull}) off its stern · ${state.lit.length} vents firing (${state.lit.map((v) => v.slot).join(", ")})`;
 	},
 	/**
 	 * #537's cruise light shift. A real leg to the farthest body, then the
@@ -1210,7 +1408,7 @@ async function rebuildSheet(out) {
 	}
 	runs.sort((a, b) => (a.capturedAt < b.capturedAt ? -1 : 1));
 	await rm(join(out, "index.html"), { force: true });
-	await writeFile(join(out, "index.html"), contactSheet(runs));
+	await writeFile(join(out, "index.html"), contactSheet(runs, VIEWS));
 	return runs;
 }
 
@@ -1356,13 +1554,18 @@ await page.addInitScript(() => {
 });
 await installViewFraming(page);
 await page.goto(
-	gameUrl(SERVING, { seed: SEED, raider: "off", "interiors-full": true }),
+	gameUrl(SERVING, {
+		seed: SEED,
+		raider: "off",
+		...MODEL_BOOT_PARAMS,
+		"interiors-full": true,
+	}),
 	{
 		waitUntil: "load",
 	},
 );
-await bootedGame(page);
-await applyCaptureQuality(page);
+await bootedGame(page, BOOT_TIMEOUT_MS);
+await applyCaptureSettings(page);
 currentSeed = SEED;
 let renderer;
 const captured = [];
@@ -1430,6 +1633,16 @@ try {
 			// earlier row flushed, its clock ahead of the one `__startClockAt`
 			// puts back, and the dock's first write throws (#583).
 			if (view.shot.kind === "shipyard-tab") worldWritten = true;
+			if (
+				[
+					"capability-outage",
+					"mining-survey",
+					"miner-bridge",
+					"field-discovery",
+					"asteroid-field",
+				].includes(view.shot.kind)
+			)
+				worldWritten = true;
 			// A follow jump saves its new system. Every NPC row needs a fresh home
 			// boot, including the first one after the docked Shipyard fixtures.
 			if (view.shot.kind === "npc-jump") worldWritten = true;
@@ -1439,6 +1652,8 @@ try {
 				page,
 				view.shot.seed ?? SEED,
 				view.shot.system ?? null,
+				view.shot.hull ?? "courier",
+				MINING_BOOT_SHOTS.includes(view.shot.kind),
 			);
 			await setView(page, view.shot.view);
 		} else {
@@ -1487,6 +1702,20 @@ try {
 			undefined,
 			{ timeout: 60_000 },
 		);
+		await page.waitForFunction(
+			() =>
+				(window.__seelite?.lateDetailSettled?.() ?? true) ||
+				window.__seelite?.lateDetailFailure?.() !== undefined,
+			undefined,
+			{ timeout: 60_000 },
+		);
+		const lateDetailFailure = await page.evaluate(() =>
+			window.__seelite?.lateDetailFailure?.(),
+		);
+		if (lateDetailFailure)
+			throw new Error(
+				`${view.name}: the Coriolis scale detail failed to load: ${lateDetailFailure}`,
+			);
 		/**
 		 * And every bakeable body in the world is actually drawn from its cube.
 		 *
@@ -1527,6 +1756,9 @@ try {
 		const gameTime = await page.evaluate(
 			() => window.__seelite?.world.gameTime ?? null,
 		);
+		const fovDeg = await page.evaluate(
+			() => window.__seelite?.nearCamera.fov ?? null,
+		);
 		const horizonFacts =
 			view.shot.kind === "horizon"
 				? assertHorizonFacts(
@@ -1540,7 +1772,14 @@ try {
 		// PNG is on disk by now; the throw stops the manifest and the sheet.
 		if (view.shot.kind === "chart")
 			await assertChartHover(page, "after the shutter", view.shot, chartAimed);
-		captured.push({ name: view.name, file, subject, gameTime, horizonFacts });
+		captured.push({
+			name: view.name,
+			file,
+			subject,
+			gameTime,
+			fovDeg,
+			horizonFacts,
+		});
 		// A chart row says how many foreign pointer events the filter dropped, so
 		// a green run shows whether the physical cursor was in play at all. The
 		// log keeps the last sixteen, so the count is a floor.
@@ -1590,13 +1829,18 @@ const manifest = {
 	renderer,
 	seed: SEED,
 	quality: QUALITY ?? "default",
-	levelsFile: levelsFile(LABEL),
+	cockpitFov: COCKPIT_FOV ?? "default",
+	// The full-set tone report is deliberately absent from scoped captures.
+	levelsFile: ONLY === null ? levelsFile(LABEL) : undefined,
+	selectedViews: ONLY === null ? undefined : VIEWS.map((view) => view.name),
 	views: captured,
 };
 // A failed tone reading must not leave an older complete-looking sheet.
 await rm(join(OUT, "index.html"), { force: true });
-const toneReport = await writeRunLevels(manifest, OUT);
-console.log(`\n${toneReport.table}`);
+if (ONLY === null) {
+	const toneReport = await writeRunLevels(manifest, OUT);
+	console.log(`\n${toneReport.table}`);
+}
 await writeFile(
 	join(dir, "manifest.json"),
 	`${JSON.stringify(manifest, null, "\t")}\n`,

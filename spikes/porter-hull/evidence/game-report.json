@@ -1,0 +1,37 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "hull": "freighter",
+  "playerPorter": true,
+  "portersInNearScene": 2,
+  "cost": {
+    "seed": 813,
+    "blocks": 12,
+    "framesPerBlock": 30,
+    "medianMs": {
+      "none": 1.9566666682561238,
+      "porter": 2.6599999984105427,
+      "derrick": 2.493333331743876
+    },
+    "fourPortersOverBareMs": 0.7033333301544189,
+    "fourDerricksOverBareMs": 0.5366666634877524,
+    "separated": {
+      "porter": "111/144",
+      "derrick": "129/144"
+    },
+    "drawn": {
+      "derrick": {
+        "calls": 591,
+        "triangles": 986042
+      },
+      "none": {
+        "calls": 455,
+        "triangles": 940058
+      },
+      "porter": {
+        "calls": 563,
+        "triangles": 2395266
+      }
+    }
+  },
+  "errors": []
+}

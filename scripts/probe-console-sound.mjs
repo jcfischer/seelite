@@ -38,7 +38,7 @@ const open = async (params) => {
 		waitUntil: "load",
 	});
 	await bootedGame(page);
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.audio.ensure();
 		// Every cue the game plays, in order, through the one dispatcher.
@@ -63,7 +63,7 @@ const open = async (params) => {
 
 /** The cues played while `act` runs in the page. */
 const cuesOf = async (page, act) => {
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		window.__seelite.__cues = [];
 	});
 	await act();
@@ -79,7 +79,7 @@ const checkCues = (name, got, want) =>
 	);
 
 const clickIn = (page, selector) =>
-	page.evaluate((s) => {
+	page.evaluate(async (s) => {
 		const el = document.querySelector(s);
 		if (!(el instanceof HTMLElement)) throw new Error(`no ${s}`);
 		el.click();
@@ -114,9 +114,12 @@ const askClearanceTwice = (page) =>
 /** The cues of one purchase press, with the commander holding `credits`. */
 const buyWith = (page, credits) =>
 	cuesOf(page, async () => {
-		await page.evaluate((cr) => {
+		await page.evaluate(async (cr) => {
 			const g = window.__seelite;
-			g.commander = { ...g.commander, credits: cr };
+			(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+				g,
+				{ credits: cr },
+			);
 			g.updateCockpit();
 		}, credits);
 		await page.waitForTimeout(100);
@@ -128,7 +131,7 @@ const tabPress = (page) =>
 
 const cursorTwice = (page) =>
 	cuesOf(page, () =>
-		page.evaluate(() => {
+		page.evaluate(async () => {
 			const g = window.__seelite;
 			g.panelCommand("panel.cursorDown", null);
 			g.panelCommand("panel.cursorDown", null);
@@ -142,7 +145,7 @@ const cursorTwice = (page) =>
  */
 const hoverRows = async (page) => {
 	const cues = await cuesOf(page, () =>
-		page.evaluate(() => {
+		page.evaluate(async () => {
 			const g = window.__seelite;
 			const shipped = g.consoleFocus.bind(g);
 			g.__hoverCalls = 0;

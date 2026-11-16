@@ -92,12 +92,14 @@ export const POSTCARD_READ_SCHEMAS: readonly number[] = [1, 2, 3];
  * reinterpreted. The test holds this version against `world-state.ts`'s
  * current version.
  *
- * **9 is still read, and a new card is written at 10.** Version 10 (node #731)
+ * **9 and 10 are still read, and a new card is written at 11.** Version 11
+ * adds undrawn capability carriers without moving older carriers (#1194).
+ * Version 10 (node #731)
  * only enumerated derelict slots, and nothing draws one yet, so a version 9
  * view rebuilds exactly as it was taken. The build that first draws a wreck in
  * the scene changes that, and owes this list the removal of 9.
  */
-export const POSTCARD_GENERATORS: readonly number[] = [10, 9];
+export const POSTCARD_GENERATORS: readonly number[] = [11, 10, 9];
 
 /** `GALAXY_COUNT` and `SYSTEMS_PER_GALAXY`, restated for the leaf's reason. */
 export const POSTCARD_GALAXIES = 8;

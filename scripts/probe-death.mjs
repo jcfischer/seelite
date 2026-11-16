@@ -46,6 +46,11 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { warningIsPainted } from "./lib/death-warning-paint.mjs";
+import {
+	installFlightFixtureHooks,
+	rememberFlightFixture,
+} from "./lib/probe-flight-fixture.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -73,7 +78,9 @@ const armed = await page.evaluate(
 		const legal = await import("/src/legal.ts");
 		// The dock checkpoint, then a leg that moved on from it — in the
 		// commander (credits) and in the world (Wanted heat, #654).
-		g.commander.credits = dock;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: dock,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("dock");
 		await g.saveStore.settled();
@@ -84,7 +91,9 @@ const armed = await page.evaluate(
 			(legal.WANTED_HEAT + legal.FUGITIVE_HEAT) / 2,
 			g.world.gameTime,
 		);
-		g.commander.credits = leg;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: leg,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("jump");
 		await g.saveStore.settled();
@@ -113,7 +122,7 @@ check(
 );
 
 const reloaded = page.waitForEvent("load", { timeout: 20000 });
-const killed = await page.evaluate(() => {
+const killed = await page.evaluate(async () => {
 	const g = window.__seelite;
 	setTimeout(() => g.takeDamage(1e6, "fore", "probe"), 0);
 	return true;
@@ -194,13 +203,17 @@ const dockArmed = await dockPage.evaluate(
 		if (!station) return { store: true, station: false };
 		const key = `${g.world.system.record.index}:${station.localCarrierId}`;
 		// Write a dock checkpoint with `dockedAt` set, as a real dock flush would.
-		g.commander.credits = dock;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: dock,
+		});
 		const env = g.saveEnvelope();
 		const record = { ...env.commander, dockedAt: key };
 		const blob = g.save.serialize({ world: env.world, commander: record });
 		await g.save.backend.write(g.save.defaultSlot, "lastDocked", blob);
 		// Move credits on for the leg, then flush `live`.
-		g.commander.credits = dock + 1000;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: dock + 1000,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("jump");
 		await g.saveStore.settled();
@@ -217,7 +230,7 @@ check(
 
 if (dockArmed.store && dockArmed.station) {
 	const dockReloaded = dockPage.waitForEvent("load", { timeout: 20000 });
-	await dockPage.evaluate(() => {
+	await dockPage.evaluate(async () => {
 		setTimeout(() => window.__seelite.takeDamage(1e6, "fore", "probe"), 0);
 	});
 	let dockReloadSeen = false;
@@ -231,7 +244,7 @@ if (dockArmed.store && dockArmed.station) {
 
 	if (dockReloadSeen) {
 		await bootedGame(dockPage);
-		const dockAfter = await dockPage.evaluate(() => {
+		const dockAfter = await dockPage.evaluate(async () => {
 			const g = window.__seelite;
 			return {
 				credits: g.commander.credits,
@@ -272,7 +285,7 @@ await dockPage.close();
  *  reports whether the reload came. */
 const killAndReload = async (p) => {
 	const reloaded = p.waitForEvent("load", { timeout: 20000 });
-	await p.evaluate(() => {
+	await p.evaluate(async () => {
 		setTimeout(() => window.__seelite.takeDamage(1e6, "fore", "probe"), 0);
 	});
 	try {
@@ -346,7 +359,10 @@ const dockBuyLaunch = async (p, label) => {
 						sum + moduleRow(legacyModule(g.commander.hull, name)).priceCr,
 					0,
 				);
-			g.commander.credits = funded;
+			(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(
+				g,
+				{ credits: funded },
+			);
 			const bought = [
 				...fitted.map((equipment) =>
 					g.transactStation({ type: "buy-equipment", equipment }),
@@ -420,7 +436,9 @@ const dockBuyLaunch = async (p, label) => {
 		const g = window.__seelite;
 		await g.saveStore.settled();
 		const record = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
-		g.commander.credits = leg;
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: leg,
+		});
 		g.saveStore.markDirty();
 		g.saveFlush("jump");
 		await g.saveStore.settled();
@@ -581,8 +599,12 @@ const flown = await firstPage.evaluate(async (leg) => {
 	const galaxy = g.world.system.record.galaxy;
 	const elsewhere = (g.world.system.record.index + 1) % 256;
 	g.commerceWorld = ws.visit(g.commerceWorld, galaxy, elsewhere);
-	g.commander.credits = leg;
-	g.commander.cargo = { ...g.commander.cargo, Food: 2 };
+	(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+		credits: leg,
+	});
+	(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+		cargo: { ...g.commander.cargo, Food: 2 },
+	});
 	g.saveStore.markDirty();
 	g.saveFlush("jump");
 	await g.saveStore.settled();
@@ -669,11 +691,17 @@ const warnPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
 watch(warnPage, "eject-warning");
+await installFlightFixtureHooks(warnPage);
 await warnPage.goto(gameUrl(origin, { seed: 42, "no-save": true }));
 await bootedGame(warnPage);
 await warnPage.waitForFunction(() => !window.__seelite.clockHeld);
+const resetNoSaveFlight = await rememberFlightFixture(warnPage);
 const warned = await warnPage.evaluate(async () => {
 	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+	// Moved pixels, and how many of them are amber in the second shot.
+	const { warningPaintDiff: diff } = await import(
+		"/scripts/lib/death-warning-paint.mjs"
+	);
 
 	const g = window.__seelite;
 	const cost = await import("/src/death-cost.ts");
@@ -681,36 +709,17 @@ const warned = await warnPage.evaluate(async () => {
 	const market = await import("/src/market.ts");
 	g.view = "cockpit";
 	g.setHeadLook("forward");
-	const overlay = document.getElementById("overlay");
-	const c2d = overlay.getContext("2d", { willReadFrequently: true });
 	const frames = (n) =>
 		new Promise((resolve) => {
 			let k = 0;
 			const tick = () => (++k >= n ? resolve() : requestAnimationFrame(tick));
 			requestAnimationFrame(tick);
 		});
-	const shot = () => c2d.getImageData(0, 0, overlay.width, overlay.height).data;
-	// Moved pixels, and the mean colour of what moved in the second shot.
-	const diff = (before, after) => {
-		let moved = 0;
-		let r = 0;
-		let gr = 0;
-		let b = 0;
-		for (let i = 0; i < before.length; i += 4) {
-			const d =
-				Math.abs(after[i] - before[i]) +
-				Math.abs(after[i + 1] - before[i + 1]) +
-				Math.abs(after[i + 2] - before[i + 2]) +
-				Math.abs(after[i + 3] - before[i + 3]);
-			if (d < 24) continue;
-			moved += 1;
-			r += after[i];
-			gr += after[i + 1];
-			b += after[i + 2];
-		}
-		return moved === 0
-			? { moved, r: 0, g: 0, b: 0 }
-			: { moved, r: r / moved, g: gr / moved, b: b / moved };
+	const shot = () => {
+		const face = g.cockpit.text.faces.get("notices");
+		if (!face) return null;
+		const { width, height } = face.ctx.canvas;
+		return face.ctx.getImageData(0, 0, width, height).data;
 	};
 	const setHull = (hull) => {
 		g.condition = { ...g.condition, hull };
@@ -726,13 +735,12 @@ const warned = await warnPage.evaluate(async () => {
 	fit(true);
 	setHull(full);
 	await frames(4);
-	const control = shot();
-	await frames(1);
-	const jitter = diff(control, shot());
 	const saidBefore = g.ejectWarningsSaid;
 	setHull(cost.EJECT_WARNING_HULL - 1);
 	await frames(4);
-	const painted = diff(control, shot());
+	const warning = shot();
+	await frames(1);
+	const jitter = diff(warning, shot());
 	const render = g.ejectWarningRender ? { ...g.ejectWarningRender } : null;
 	const saidOnce = g.ejectWarningsSaid - saidBefore;
 	await frames(10);
@@ -746,12 +754,41 @@ const warned = await warnPage.evaluate(async () => {
 	setHull(full);
 	await frames(4);
 	const healed = { due: g.ejectWarningDue, render: g.ejectWarningRender };
+	const control = shot();
+	const painted = diff(control, warning);
+	const want = cost.ejectWarningText(names.ejectPrompt(g.layoutInForce()));
+	const readouts = g.cockpit.text;
+	const write = readouts.write;
+	const controls = [];
+	setHull(cost.EJECT_WARNING_HULL - 1);
+	try {
+		for (const fill of [null, "rgba(255, 110, 96, 0.97)"]) {
+			let intercepted = 0;
+			readouts.write = function (source, lines) {
+				if (source === "notices")
+					lines = lines.flatMap((line) => {
+						if (line.text !== want) return [line];
+						intercepted += 1;
+						return fill === null ? [] : [{ ...line, fill }];
+					});
+				return write.call(this, source, lines);
+			};
+			await frames(4);
+			controls.push({ fill, intercepted, painted: diff(control, shot()) });
+		}
+	} finally {
+		readouts.write = write;
+	}
+	await frames(4);
+	const restored = diff(control, shot());
 	return {
-		want: cost.ejectWarningText(names.ejectPrompt(g.layoutInForce())),
+		want,
 		threshold: cost.EJECT_WARNING_HULL,
 		render,
 		jitter,
 		painted,
+		controls,
+		restored,
 		saidOnce,
 		saidStill,
 		noPod,
@@ -766,9 +803,22 @@ check(
 );
 check(
 	"and the sentence is painted: amber pixels move against the whole-hull control",
-	warned.painted.moved > Math.max(200, warned.jitter.moved * 4) &&
-		warned.painted.r > warned.painted.b + 60,
+	warningIsPainted(warned.painted, warned.jitter),
 	JSON.stringify({ painted: warned.painted, jitter: warned.jitter }),
+);
+check(
+	"removing the warning fails the paint gate on the same face",
+	warned.controls[0].intercepted > 0 &&
+		!warningIsPainted(warned.controls[0].painted, warned.jitter),
+	JSON.stringify(warned.controls[0]),
+);
+check(
+	"refusal-red warning strokes fail the paint gate; restoring amber passes",
+	warned.controls[1].intercepted > 0 &&
+		warned.controls[1].painted.moved > 200 &&
+		!warningIsPainted(warned.controls[1].painted, warned.jitter) &&
+		warningIsPainted(warned.restored, warned.jitter),
+	JSON.stringify({ red: warned.controls[1], restored: warned.restored }),
 );
 check(
 	"the voice says it once per crossing, and again after the warning lapsed",
@@ -783,16 +833,27 @@ check(
 		warned.healed.render === null,
 	JSON.stringify({ noPod: warned.noPod, healed: warned.healed }),
 );
-await warnPage.close();
 
 // ---------------------------------------------------------------------------
 // Arm 2: ?no-save. Nothing to restore: destroyed, held, overlay open.
 // ---------------------------------------------------------------------------
 
-const bare = await browser.newPage({ viewport: { width: 900, height: 620 } });
-watch(bare);
-await bare.goto(gameUrl(origin, { seed: 42, "no-save": true }));
-await bootedGame(bare);
+const bare = warnPage;
+await bare.setViewportSize({ width: 900, height: 620 });
+await resetNoSaveFlight();
+check(
+	"the no-save death starts from a whole, living flight fixture",
+	await bare.evaluate(async () => {
+		const g = window.__seelite;
+		return (
+			!g.dead &&
+			!g.clockHeld &&
+			g.dockPhase === "flying" &&
+			g.condition.hull === g.condition.hullMax &&
+			g.collisionImpacts === 0
+		);
+	}),
+);
 const ended = await bare.evaluate(async () => {
 	const g = window.__seelite;
 	const before = g.commanderOverlay?.isOpen() ?? null;

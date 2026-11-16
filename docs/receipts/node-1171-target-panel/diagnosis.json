@@ -1,0 +1,196 @@
+{
+  "ref": "0ac662f10629ab0066cda17654f90f366d0a7d30",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+  "state": {
+    "width": 512,
+    "height": 302,
+    "instrumentKey": "0.000 km/s|STAR FRAME · INERTIAL 0 km/s|ARTEQUGE  1.144 AU|STATION · TRADE|ETA 990d  REL 29.25 km/s|0|true",
+    "target": {
+      "id": "station-trade",
+      "kind": "station"
+    },
+    "primary": "ARTEQUGE  1.144 AU",
+    "mountVisible": true,
+    "faceVisible": true,
+    "faceDimensions": {
+      "width": 0.12208001613616944,
+      "height": 0.07199999892680811,
+      "widthSegments": 1,
+      "heightSegments": 1
+    },
+    "screen": {
+      "center": {
+        "x": 0.1713600039482117,
+        "y": -0.1394323029228682,
+        "z": -0.3661205599085452
+      },
+      "right": {
+        "x": 1,
+        "y": 0,
+        "z": 0
+      },
+      "up": {
+        "x": 0,
+        "y": 0.837557140656189,
+        "z": -0.546349737929679
+      },
+      "normal": {
+        "x": 0,
+        "y": 0.546349737929679,
+        "z": 0.837557140656189
+      },
+      "widthKm": 0.12208001613616944,
+      "heightKm": 0.07199999892680811
+    }
+  },
+  "oldRows": [
+    {
+      "expected": "STAR",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    },
+    {
+      "expected": "PLANET",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · TRADE",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · REFINERY",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · SHIPYARD",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · OUTPOST",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    },
+    {
+      "expected": "SHIP · INTERCEPTOR · UNKNOWN",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    },
+    {
+      "expected": "SHIP · INTERCEPTOR · HOSTILE",
+      "seen": false,
+      "fits": false,
+      "changed": 0
+    }
+  ],
+  "currentRows": [
+    {
+      "expected": "STAR",
+      "seen": true,
+      "fits": true,
+      "changed": 479
+    },
+    {
+      "expected": "PLANET",
+      "seen": true,
+      "fits": true,
+      "changed": 715
+    },
+    {
+      "expected": "STATION · TRADE",
+      "seen": true,
+      "fits": true,
+      "changed": 1465
+    },
+    {
+      "expected": "STATION · REFINERY",
+      "seen": true,
+      "fits": true,
+      "changed": 1871
+    },
+    {
+      "expected": "STATION · SHIPYARD",
+      "seen": true,
+      "fits": true,
+      "changed": 1798
+    },
+    {
+      "expected": "STATION · OUTPOST",
+      "seen": true,
+      "fits": true,
+      "changed": 1634
+    },
+    {
+      "expected": "SHIP · INTERCEPTOR · UNKNOWN",
+      "seen": true,
+      "fits": true,
+      "changed": 2872
+    },
+    {
+      "expected": "SHIP · INTERCEPTOR · HOSTILE",
+      "seen": true,
+      "fits": true,
+      "changed": 2602
+    }
+  ],
+  "absentRows": [
+    {
+      "expected": "STAR",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    },
+    {
+      "expected": "PLANET",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · TRADE",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · REFINERY",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · SHIPYARD",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    },
+    {
+      "expected": "STATION · OUTPOST",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    },
+    {
+      "expected": "SHIP · INTERCEPTOR · UNKNOWN",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    },
+    {
+      "expected": "SHIP · INTERCEPTOR · HOSTILE",
+      "seen": true,
+      "fits": true,
+      "changed": 0
+    }
+  ]
+}

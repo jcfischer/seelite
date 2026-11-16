@@ -93,6 +93,79 @@ try {
 	check("departure ring paints the frame", departurePixels > 30, {
 		departurePixels,
 	});
+	/**
+	 * #1006 — the three beats, in the frames a watcher actually gets. The rows
+	 * above this sample at `+0.5 s` after the instant, which is the one moment
+	 * that tells them nothing: the ship is already sitting in a ring that opened
+	 * after it arrived and that they never saw open.
+	 *
+	 * `hullThroughPlaneKm` is the hull's stand-off from the ring's plane along its
+	 * nose: negative while it is still behind the plane it is coming through.
+	 * That is what "came through it" and "went through it" mean here, and it is
+	 * what the old law could not produce — the hull jumped from the lane point to
+	 * nowhere in one step, so no frame of it was ever possible.
+	 */
+	const C = fixture.crossing;
+	const depOpening = await sample(fixture.tOut - C.openS + 0.2);
+	check(
+		"the departure ring tears open while the hauler still stands on its lane point",
+		depOpening.phase === "jump-windup" &&
+			depOpening.contact &&
+			depOpening.rift > 0 &&
+			depOpening.rift < 1 &&
+			depOpening.hullThroughPlaneKm < 0 &&
+			Math.abs(depOpening.hullFromLanePointKm) < 1e-6,
+		depOpening,
+	);
+	await sample(fixture.tOut - 0.9);
+	const openingPixels = await pixels();
+	check("the opening paints the frame on its own", openingPixels > 30, {
+		openingPixels,
+	});
+	const depCreep = await sample(fixture.tOut - C.crossS + 0.15);
+	check(
+		"forward creep off the lane point has not yet reached the ring plane",
+		depCreep.hullFromLanePointKm > 0 && depCreep.hullThroughPlaneKm < 0,
+		depCreep,
+	);
+	const depSwallow = await sample(fixture.tOut - 0.05);
+	// A hull creeping forward from the lane point has not necessarily reached
+	// the ring. Move the actual rendered plane beyond this hull: the signed
+	// distance must change sides even though the hull and lane point stay put.
+	const movedPlane = await page.evaluate((at) => {
+		const g = window.__seelite;
+		const f = window.__haulerFixture;
+		const route = g.trafficRoutes.find((r) => r.key === f.plan.actor.key);
+		const id = route.key + "|" + route.jump.kind + "|" + route.jump.atS;
+		const rift = g.trafficRifts.get(id);
+		const anchor = { ...rift.anchor };
+		const shiftKm = 2 * rift.radiusKm;
+		const nose = route.jump.nose;
+		const norm = Math.hypot(nose.x, nose.y, nose.z);
+		try {
+			for (const axis of ["x", "y", "z"])
+				rift.anchor[axis] += (nose[axis] / norm) * shiftKm;
+			return { ...f.sample(at, false), shiftKm };
+		} finally {
+			Object.assign(rift.anchor, anchor);
+		}
+	}, fixture.tOut - 0.05);
+	check(
+		"crossing distance follows the drawn ring plane, not the lane point",
+		depSwallow.hullThroughPlaneKm > 0 &&
+			movedPlane.hullThroughPlaneKm < 0 &&
+			Math.abs(
+				depSwallow.hullThroughPlaneKm -
+					movedPlane.hullThroughPlaneKm -
+					movedPlane.shiftKm,
+			) < 1e-6,
+		{ depSwallow, movedPlane },
+	);
+	check(
+		"and the hauler goes through the ring rather than out of it",
+		depSwallow.hullThroughPlaneKm > 0 && depSwallow.phase === "jump-windup",
+		depSwallow,
+	);
 	await page.evaluate(() => {
 		window.__haulerFixture.follow();
 		window.__npcJumpCues.length = 0;
@@ -127,6 +200,58 @@ try {
 				(cue) => Number.isFinite(cue.spatial.pan) && cue.spatial.gain > 0,
 			),
 		arrivalCues,
+	);
+	// The same three beats at the arrival end, where the hauler is not in this
+	// system at all during the opening: `contact` is false, so the only thing on
+	// the frame is space opening. This is the row that answers "no sense of drama
+	// when witchspace opens" — the ring is on screen a full `openS` before there
+	// is a hull to see, and it seals again once there is.
+	const arrOpening = await sample(fixture.tOut - C.openS + 0.2);
+	check(
+		"the arrival ring opens with the hauler still in another system",
+		arrOpening.phase === "hyperspace-away" &&
+			!arrOpening.contact &&
+			arrOpening.jump?.kind === "arrival" &&
+			arrOpening.rift > 0 &&
+			arrOpening.rift < 1,
+		arrOpening,
+	);
+	await sample(fixture.tOut - 0.9);
+	const arrOpeningPixels = await pixels();
+	check(
+		"a ring opening over an empty lane point paints the frame",
+		arrOpeningPixels > 30,
+		{ arrOpeningPixels },
+	);
+	const arrThrough = await sample(fixture.tOut + 0.05);
+	// Sampled clear of the crossing rather on it: the presentation evaluates the
+	// authority at its own tick, so a frame asked for at `tOut + crossS` is served
+	// from a tick a hair earlier and the last few millimetres of the ease are
+	// still in it. The exactness of the law itself is asserted headlessly, at the
+	// authority's own surface (`tests/inter-system-traffic.test.ts`); what belongs
+	// on a browser row is that the hull is *at* the point, within a metre, once the
+	// crossing is over — and that it was far behind it at the instant.
+	const arrSettled = await sample(fixture.tOut + C.crossS + 0.25);
+	check(
+		"the arriving hull eases through the plane and settles on the lane point",
+		arrThrough.hullThroughPlaneKm < 0 &&
+			arrSettled.contact &&
+			arrSettled.hullThroughPlaneKm > 0 &&
+			Math.abs(arrSettled.hullFromLanePointKm) < 1e-3,
+		{ arrThrough, arrSettled },
+	);
+	const arrSealing = await sample(fixture.tOut + C.windowEndS - 0.05);
+	const arrSealed = await sample(fixture.tOut + C.windowEndS);
+	check(
+		"and the ring is seen to seal: collapsing, flaring as it closes, then gone",
+		arrSealing.rift > 0 &&
+			arrSealing.rift < 0.35 &&
+			arrSealing.flare > 0.05 &&
+			arrSealing.riftRadiusKm > 0 &&
+			arrSealing.riftRadiusKm < arrSettled.riftRadiusKm * 0.2 &&
+			arrSealed.rift === 0 &&
+			arrSealed.riftRadiusKm === 0,
+		{ arrSealing, arrSealed },
 	);
 	const queued = await page.evaluate(() => {
 		const g = window.__seelite,
@@ -196,8 +321,20 @@ try {
 			departed,
 			arrived,
 			queued,
+			arrivalCues,
 			departurePixels,
 			arrivalPixels,
+			depOpening,
+			openingPixels,
+			depCreep,
+			depSwallow,
+			movedPlane,
+			arrOpening,
+			arrOpeningPixels,
+			arrThrough,
+			arrSettled,
+			arrSealing,
+			arrSealed,
 		}),
 	);
 } finally {

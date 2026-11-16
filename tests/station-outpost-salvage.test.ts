@@ -55,10 +55,12 @@ function plan(root: THREE.Object3D) {
 }
 
 describe("outpost E is the choice, on the principal's yes", () => {
-	test("it is in the outpost pool at the pool's reach", () => {
+	// The pool's 0.42 km, raised to 0.43 for the authored model that replaces
+	// the stand-in (node #1031): its mesh reaches 0.4262 km, its proxy 0.4281.
+	test("it is in the outpost pool at the authored model's reach", () => {
 		const form = STATION_FORMS.outpost.find((f) => f.id === "e");
 		expect(form?.name).toBe("Salvage");
-		expect(form?.reachKm).toBe(0.42);
+		expect(form?.reachKm).toBe(0.43);
 	});
 
 	test("it is measured over the seed spread", () => {

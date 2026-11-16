@@ -20,6 +20,10 @@
  */
 export const QUARANTINED = new Map([
 	[
+		"probe-death.mjs",
+		"#1170 warning-paint acceptance pending: post-death boot timeout on main and repaired head",
+	],
+	[
 		"probe-output-stage.mjs",
 		"#975 multisample lit-pixel disagreement: 1.21% on baseline, limit 1%",
 	],

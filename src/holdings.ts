@@ -1,4 +1,23 @@
-import { equipmentNames, withoutModule } from "./loadout";
+import { ExactAmountError, mass, massFromNative } from "./exact-amount";
+import { ladderFromAccount } from "./ladder";
+import {
+	CommodityAccountingError,
+	accountOf,
+	withAccount,
+	migrateAccount,
+	changeCash,
+	remove,
+	removeMass,
+	nativeGrams,
+	projectBasis,
+} from "./commodity-pools";
+import {
+	carriedModule,
+	equipmentNames,
+	withoutModule,
+	type FittedModule,
+	type Loadout,
+} from "./loadout";
 /**
  * What a pilot's act does to their **Holdings** (#626, #627): the commander,
  * the Requests journal, the ladder record and its pending credit — and the
@@ -61,7 +80,7 @@ import {
 import { recordTrade } from "./deficits";
 import { commodity, ESCAPE_POD } from "./market";
 import type { Standing } from "./legal";
-import { PLAYER_KILL } from "./raider-wreck";
+import { PLAYER_KILL, type ScoopGear } from "./raider-wreck";
 import {
 	type RequestOffer,
 	type RequestStation,
@@ -147,9 +166,25 @@ export const commanderAfterDeath = (
 				}
 			: dock.requests,
 	).state;
+	let accounting = dying.state.accounting;
+	const keptCargo = cause === "eject" ? ejectSurvivors(dying.state).cargo : {};
+	if (accounting) {
+		for (const good of Object.keys(dying.state.cargo).sort()) {
+			const lost = mass.subtract(
+				accounting.basis[good].heldMass,
+				massFromNative(keptCargo[good] ?? 0, nativeGrams(good)),
+			);
+			if (lost > 0n) accounting = removeMass(accounting, good, lost).account;
+		}
+		accounting = {
+			...accounting,
+			cash: accountOf(dock.state).cash,
+			bankedTrade: accountOf(dock.state).bankedTrade,
+		};
+	}
 	const ladders = {
 		...ladderAfterDeath(dock.ladders, dying.ladders),
-		basis: {},
+		basis: accounting ? projectBasis(accounting) : {},
 	};
 	if (cause === "eject") {
 		const kept = ejectSurvivors(dying.state);
@@ -158,7 +193,7 @@ export const commanderAfterDeath = (
 			requests,
 			ladders,
 			state: {
-				...dock.state,
+				...(accounting ? withAccount(dock.state, accounting) : dock.state),
 				cargo: kept.cargo,
 				recoveredFittings: kept.carried.length ? kept.carried : undefined,
 				loadout: withoutModule(dock.state.loadout, ESCAPE_POD),
@@ -170,8 +205,15 @@ export const commanderAfterDeath = (
 		requests,
 		ladders,
 		state: {
-			...newCommander(PLAYER_BASELINE_HULL),
-			credits: dock.state.credits,
+			...(accounting
+				? withAccount(newCommander(PLAYER_BASELINE_HULL), accounting)
+				: {
+						...newCommander(PLAYER_BASELINE_HULL),
+						credits: dock.state.credits,
+					}),
+			...(dock.state.firstOreNoticeSeen
+				? { firstOreNoticeSeen: true as const }
+				: {}),
 		},
 		chargeAu: HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu,
 	};
@@ -238,7 +280,7 @@ export type HoldEvent =
 			at: number;
 	  }
 	/** A canister the ship passed close and slow. */
-	| { kind: "scoop"; commodity: string; tonnes: number }
+	| { kind: "scoop"; commodity: string; tonnes: number; fitting?: FittedModule }
 	| {
 			kind: "wreck-scoop";
 			key: CarrierKey;
@@ -248,6 +290,8 @@ export type HoldEvent =
 			at: number;
 			container: { pos: Vec3; vel: Vec3 };
 			ship: { pos: Vec3; vel: Vec3 };
+			gear: ScoopGear;
+			bankE: number;
 	  }
 	/** Any carrier transition (#627 D3). A destroy with the player's
 	 *  provenance is a kill: it pays every accepted Bounty naming the carrier
@@ -265,6 +309,7 @@ export type HoldEvent =
 			 *  reads exactly like an unarmed kill. Read only on a player's
 			 *  destroy. */
 			hull: HullId | null;
+			targetLoadout?: Loadout;
 	  }
 	/** A jump that arrived: what the plan left in the **Hyperspace tank**,
 	 *  the visit, and a first arrival's exploration kind, pending until the
@@ -334,13 +379,19 @@ const withCargoDelta = (
 	delta: Readonly<Record<string, number>>,
 ): CommanderState => {
 	if (Object.keys(delta).length === 0) return commander;
-	const cargo = { ...commander.cargo };
-	for (const [good, change] of Object.entries(delta)) {
-		const amount = (cargo[good] ?? 0) + change;
-		if (amount <= 0) delete cargo[good];
-		else cargo[good] = amount;
+	let accounting =
+		commander.accounting ??
+		migrateAccount(commander.credits, 0, commander.cargo, {});
+	for (const [good, change] of Object.entries(delta).sort(([a], [b]) =>
+		a.localeCompare(b),
+	)) {
+		if (change > 0)
+			throw new CommodityAccountingError(
+				"owned request cargo cannot increase without acquisition",
+			);
+		if (change < 0) accounting = remove(accounting, good, -change).account;
 	}
-	return { ...commander, cargo };
+	return withAccount(commander, accounting);
 };
 
 function settle(
@@ -394,8 +445,7 @@ function settle(
 	const commander = withCargoDelta(
 		result.rewardCr
 			? {
-					...holdings.commander,
-					credits: holdings.commander.credits + result.rewardCr,
+					...changeCash(holdings.commander, result.rewardCr, result.rewardCr),
 				}
 			: holdings.commander,
 		result.cargoDelta,
@@ -403,11 +453,13 @@ function settle(
 	// #183 D3: a settlement's pay banks at once — a report happens docked —
 	// and goods a job took take their basis with them.
 	const ladders = withCapstone(
-		ladderAfterSettlement(
-			holdings.ladders,
-			result.rewardCr ?? 0,
-			commander.cargo,
-		),
+		commander.accounting && holdings.commander.accounting
+			? ladderFromAccount(holdings.ladders, commander.accounting)
+			: ladderAfterSettlement(
+					holdings.ladders,
+					result.rewardCr ?? 0,
+					commander.cargo,
+				),
 		event.at,
 	);
 	const next: Holdings = {
@@ -446,18 +498,20 @@ function trade(
 	// #183 D3: a buy records its basis, a sale banks its margin at once. Both
 	// read the hold as it stood before the press.
 	const ladders = withCapstone(
-		action.type === "buy-hull"
-			? ladderAfterHullSale(
-					holdings.ladders,
-					holdings.commander.cargo,
-					result.sold ?? [],
-				)
-			: ladderAfterMarket(
-					holdings.ladders,
-					action,
-					holdings.commander,
-					result.commander,
-				),
+		holdings.commander.accounting && result.commander.accounting
+			? ladderFromAccount(holdings.ladders, result.commander.accounting)
+			: action.type === "buy-hull"
+				? ladderAfterHullSale(
+						holdings.ladders,
+						holdings.commander.cargo,
+						result.sold ?? [],
+					)
+				: ladderAfterMarket(
+						holdings.ladders,
+						action,
+						holdings.commander,
+						result.commander,
+					),
 		event.at,
 	);
 	return {
@@ -477,6 +531,27 @@ function scoop(
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "scoop" }>,
 ): Applied {
+	if (event.fitting) {
+		const hold = commanderHold(
+			holdings.commander,
+			entrustedTonnesAboard(holdings.requests),
+		);
+		if (hold.capacityT - hold.usedT < 1) return unchanged(holdings, world);
+		return {
+			holdings: {
+				...holdings,
+				commander: {
+					...holdings.commander,
+					recoveredFittings: [
+						...(holdings.commander.recoveredFittings ?? []),
+						carriedModule({ ...event.fitting, purchaseCostCr: 0 }),
+					],
+				},
+			},
+			world,
+			signals: QUIET,
+		};
+	}
 	const took = scoopCargo(
 		holdings.commander,
 		event.commodity,
@@ -534,7 +609,9 @@ function transition(
 							hull: holdings.commander.hull,
 							loadout: holdings.commander.loadout,
 						},
-						event.hull,
+						event.targetLoadout
+							? { hull: event.hull, loadout: event.targetLoadout }
+							: event.hull,
 					),
 				);
 	if (
@@ -667,16 +744,18 @@ function applied(
 				)
 					return unchanged(holdings, world);
 			}
-			const took = scoopWreckContainer(
-				e,
-				event.containerIndex,
-				holdings.commander,
-				entrustedTonnesAboard(holdings.requests),
-				event.container,
-				event.ship,
-				event.at,
-				!!job,
-			);
+			const took = scoopWreckContainer({
+				row: e,
+				index: event.containerIndex,
+				commander: holdings.commander,
+				entrustedT: entrustedTonnesAboard(holdings.requests),
+				container: event.container,
+				ship: event.ship,
+				gear: event.gear,
+				bankE: event.bankE,
+				at: event.at,
+				entrusted: !!job,
+			});
 			if (!took.tonnes && !took.refusal) return unchanged(holdings, world);
 			const signals = {
 				...QUIET,
@@ -739,7 +818,22 @@ export function applyHoldEvent(
 	world: WorldState,
 	event: HoldEvent,
 ): HoldOutcome {
-	return { kind: event.kind, ...applied(holdings, world, event) };
+	try {
+		return { kind: event.kind, ...applied(holdings, world, event) };
+	} catch (error) {
+		if (
+			error instanceof ExactAmountError ||
+			error instanceof CommodityAccountingError
+		)
+			return {
+				kind: event.kind,
+				...unchanged(holdings, world, {
+					...QUIET,
+					message: error.message + "; nothing changed.",
+				}),
+			};
+		throw error;
+	}
 }
 
 /**
@@ -759,9 +853,13 @@ export interface AdoptEffects {
 	redraw: boolean;
 }
 
-/** What an adoption came from: a hold event, or `"world"` — a world write
- *  made outside Holdings, which the law owns (an offence, its lazy clear). */
-export type AdoptCause = HoldEvent["kind"] | "world";
+/** What an adoption came from: a hold event, a law-owned world write, or
+ *  ammunition spent by the missile combat controller. */
+export type AdoptCause =
+	| HoldEvent["kind"]
+	| "world"
+	| "ammunition"
+	| "refinery";
 
 /** The state an adoption compares: the four Holdings fields and the world. */
 export interface Adopted {
@@ -801,7 +899,8 @@ export function adoptEffects(
 	const moved =
 		(Object.keys(now) as (keyof Holdings)[]).some((k) => now[k] !== was[k]) ||
 		after.world !== before.world;
-	const press = cause === "settlement" || cause === "market";
+	const press =
+		cause === "settlement" || cause === "market" || cause === "refinery";
 	return {
 		save: moved,
 		consoleRevision: press && moved,

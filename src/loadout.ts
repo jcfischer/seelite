@@ -18,12 +18,13 @@ import {
 } from "./module-catalog";
 import { EQUIPMENT } from "./market";
 import { SKIM_BAND_R, SKIM_SHELL_R } from "./ship-condition";
+import { variantRow } from "./module-variants";
 
 export interface FittedModule {
 	module: ModuleKind;
 	size: SlotSize;
 	grade: Grade;
-	/** Reserved identity; rolling and interpreting traits belongs to node #875. */
+	/** One per-kind tradeoff identity, interpreted by moduleRow. */
 	variant?: string;
 	ammo?: number;
 	/** Cost basis for trade credit. Zero is salvage; absent is legacy/stock
@@ -49,21 +50,8 @@ export interface ModuleFitting extends FittedModule {
 	id: string;
 	tonnes: number;
 }
-export const LEGACY_MODULES: Readonly<Record<string, ModuleKind>> = {
-	Missile: "missile-rack",
-	"Large Cargo Bay": "cargo-rack",
-	"Extra Pulse Laser": "pulse-laser",
-	"Extra Beam Laser": "beam-laser",
-	"Military Laser": "military-laser",
-	"Mining Laser": "mining-laser",
-	"E.C.M. System": "ecm",
-	"Docking Computer": "docking-computer",
-	"Identity Scanner": "identity-scanner",
-	"Long-Range Scanner": "long-range-scanner",
-	"Fuel Scoops": "fuel-scoop",
-	"Escape Pod": "escape-pod",
-	"Extra Energy Unit": "extra-energy-unit",
-};
+export { LEGACY_MODULES } from "./module-identities";
+import { LEGACY_MODULES } from "./module-identities";
 let rows: ModuleRow[] | undefined;
 export const moduleRows = (): readonly ModuleRow[] =>
 	(rows ??= deriveProposal().rows);
@@ -80,8 +68,16 @@ export function moduleRow(m: FittedModule): ModuleRow {
 			? rowIndex.get(`${m.module}/${m.size}/${m.grade}`)
 			: undefined;
 	if (!r) throw new Error(`Unknown module ${m.module}/${m.size}/${m.grade}`);
-	return r;
+	return variantRow(r, m.variant);
 }
+/** Hull and installed catalogue mass, before cargo and carried fittings. */
+export const fittedMassT = (hull: HullId, loadout: Loadout): number =>
+	HULL_SPECS[hull].massT +
+	Object.values(loadout).reduce(
+		(mass, module) => mass + moduleRow(module).massT,
+		0,
+	);
+
 export const fitted = (loadout: Loadout, name: string): boolean =>
 	Object.values(loadout).some(
 		(m) => m.module === (LEGACY_MODULES[name] ?? name),
@@ -108,6 +104,7 @@ export function fittingValue(f: {
 	module?: string;
 	size?: SlotSize;
 	grade?: Grade;
+	variant?: string;
 }): number {
 	return f.module
 		? moduleRow(f as FittedModule).priceCr * f.tonnes
@@ -145,10 +142,17 @@ export function makeModule(
 }
 export function stockLoadout(hull: HullId): Loadout {
 	const spec = HULL_SPECS[hull],
-		hp = spec.slots.find((s) => s.key === "h1")!;
+		hp = spec.slots.find((s) => s.key === "h1")!,
+		scoopSlot = spec.slots.find(
+			(s) =>
+				s.kind === "internal" &&
+				s.accepts !== "any" &&
+				s.accepts.includes("cargo"),
+		);
 	return {
 		plant: makeModule("power-plant", spec.plantSize),
 		h1: makeModule("pulse-laser", hp.size),
+		...(scoopSlot && { [scoopSlot.key]: makeModule("cargo-scoop", 1) }),
 	};
 }
 /**
@@ -159,8 +163,10 @@ export function stockLoadout(hull: HullId): Loadout {
  * Integrity is the hull's plus every plate's; each pool is the hull's
  * `shieldPool` plus every booster's `pointsPerPool`, and the boosters' draws
  * add (#927). The scoops' rate and draw (#932) and the racks' missiles add.
- * Scanners and the pod do not add: the best fitted one is read (#977).
- * Hold joins here, never in a second projection.
+ * Scanners and the pod do not add: the best fitted one is read (#977), and so
+ * is the cargo scoop, whose window is the widest fitted one's (node #1096).
+ * The hold is the hull's `holdT` plus every rack's `cargoT` (#928); NPCs
+ * pass the same instance-owned fit their combat and manifest read (#875).
  */
 export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	const spec = HULL_SPECS[hull];
@@ -168,6 +174,7 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 		? moduleRow(loadout.plant).output
 		: stockPlant(hull);
 	let bankE = plant.bankE;
+	let holdT = spec.holdT;
 	let fuelCapacityLy = spec.tankLy;
 	let integrity = spec.integrity;
 	let shieldPool = spec.shieldPool;
@@ -178,6 +185,8 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 	let scanRangeKm = 0;
 	let scanChargeS = 0;
 	let signalRangeKm = 0;
+	let scoopRadiusKm = 0;
+	let scoopSpeedKms = 0;
 	let pod = { cargoShare: 0, capsuleT: 0, carriedModules: 0 };
 	for (const m of Object.values(loadout)) {
 		if (m.module === "identity-scanner") {
@@ -185,6 +194,16 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 			if (rangeKm > scanRangeKm) {
 				scanRangeKm = rangeKm;
 				scanChargeS = identityScanChargeS(m.grade);
+			}
+		}
+		if (m.module === "cargo-scoop") {
+			const o = moduleRow(m).output;
+			if (
+				o.scoopRadiusKm > scoopRadiusKm ||
+				(o.scoopRadiusKm === scoopRadiusKm && o.scoopSpeedKms > scoopSpeedKms)
+			) {
+				scoopRadiusKm = o.scoopRadiusKm;
+				scoopSpeedKms = o.scoopSpeedKms;
 			}
 		}
 		if (m.module === "long-range-scanner")
@@ -219,10 +238,12 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 			scoopDrawPerS += row.drawPerS;
 		}
 		if (m.module === "missile-rack") missiles += moduleRow(m).output.missiles;
+		if (m.module === "cargo-rack") holdT += moduleRow(m).output.cargoT;
 	}
 	return {
 		bankE,
 		regenPerS: plant.regenPerS,
+		holdT,
 		fuelCapacityLy,
 		integrity,
 		shieldPool,
@@ -233,6 +254,8 @@ export function fittedCapacity(hull: HullId, loadout: Loadout): FittedCapacity {
 		scanRangeKm,
 		scanChargeS,
 		signalRangeKm,
+		scoopRadiusKm,
+		scoopSpeedKms,
 		podCargoShare: pod.cargoShare,
 		podCapsuleT: pod.cargoShare > 0 ? pod.capsuleT : 0,
 		podCarriedModules: pod.carriedModules,
@@ -333,11 +356,12 @@ export function parseModule(raw: unknown): FittedModule {
 			throw Error("invalid variant");
 		m.variant = o.variant;
 	}
+	const effective = moduleRow(m);
 	if (row.kind === "missile-rack") {
 		if (
 			!Number.isInteger(o.ammo) ||
 			Number(o.ammo) < 0 ||
-			Number(o.ammo) > row.output.missiles
+			Number(o.ammo) > effective.output.missiles
 		)
 			throw Error("invalid missile ammunition");
 		m.ammo = Number(o.ammo);
@@ -388,6 +412,24 @@ export function legacyModule(hull: HullId, name: string): FittedModule {
 	);
 	return makeModule(kind, r?.size ?? 1);
 }
+/**
+ * https://github.com/jcfischer/seelite/issues/1147
+ * The module a till sells under a legacy name to this loadout: `legacyModule`,
+ * except that a Mining Laser whose free slot is a mount takes the mount's size
+ * (#920 D-D18). Without a loadout it is `legacyModule`.
+ */
+export function boughtModule(
+	hull: HullId,
+	loadout: Loadout | undefined,
+	name: string,
+): FittedModule {
+	const m = legacyModule(hull, name);
+	if (m.module !== "mining-laser" || !loadout) return m;
+	const slot = freeSlot(loadout, hull, m);
+	return slot?.kind === "hardpoint" && slot.mount
+		? makeModule(m.module, slot.size)
+		: m;
+}
 export function migrateEquipment(hull: HullId, names: readonly string[]) {
 	const stock = stockLoadout(hull);
 	const loadout: Record<string, FittedModule> = { plant: stock.plant };
@@ -428,6 +470,27 @@ export function migrateEquipment(hull: HullId, names: readonly string[]) {
 		refundCr += Math.max(0, price - moduleRow(m).priceCr);
 	}
 	return { loadout, recoveredFittings, refundCr };
+}
+export function grantLegacyScoop(
+	hull: HullId,
+	loadout: Loadout,
+): { loadout: Loadout; granted: boolean; owed: boolean } {
+	if (Object.values(loadout).some((m) => m.module === "cargo-scoop"))
+		return { loadout, granted: false, owed: false };
+	const scoop = makeModule("cargo-scoop", 1);
+	const slot = HULL_SPECS[hull].slots
+		.filter(
+			(s) =>
+				s.kind === "internal" &&
+				s.accepts !== "any" &&
+				s.accepts.includes("cargo") &&
+				!loadout[s.key] &&
+				moduleFits(scoop, s),
+		)
+		.sort((a, b) => a.key.localeCompare(b.key))[0];
+	return slot
+		? { loadout: { ...loadout, [slot.key]: scoop }, granted: true, owed: false }
+		: { loadout, granted: false, owed: true };
 }
 /** Move the same modules, without resizing, repricing or rerolling them. */
 export function transferLoadout(loadout: Loadout, hull: HullId) {

@@ -32,6 +32,7 @@ import {
 	marketStationOf,
 	stationCommodities,
 	stationFluct,
+	type StationTypeKey,
 } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { type Station, generateContents } from "../src/system";
@@ -210,6 +211,22 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 		const b = marketSeedFor(SYSTEMS[1].seed, LOCAL_CARRIER_ID.trade);
 		expect(a).not.toBe(b);
 	});
+
+	test("a station's phase is not a function of its opening market", () => {
+		let stations = 0;
+		let matched = 0;
+		for (const record of SYSTEMS)
+			for (const s of marketStationsOf(record)) {
+				const seed = marketSeedFor(record.seed, s.localCarrierId);
+				const phaseByte = Math.floor(
+					(marketPhaseMin(seed) / MARKET_PERIOD_MIN) * 256,
+				);
+				stations++;
+				if (phaseByte === stationFluct(seed, 0)) matched++;
+			}
+		expect(stations).toBeGreaterThan(100);
+		expect(matched / stations).toBeLessThan(0.05);
+	});
 });
 
 describe("§5.1 the market is independent of draw order elsewhere", () => {
@@ -303,12 +320,24 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 			DEATH_WRECK: 36,
 			MODULE_STOCK: 37,
 			NEBULA: 38,
+			ASTEROID_FIELD_ROLL: 39,
+			ASTEROID_FIELD: 40,
+			ASTEROID_ROCKS: 41,
+			ASTEROID_DEPOSIT: 42,
+			RAIDER_MISSILE_FIT: 43,
+			MODULE_VARIANT: 44,
+			NPC_LOADOUT: 45,
+			NPC_FITTING_DROP: 46,
+			CAPABILITY_TIME: 47,
+			ASTEROID_LOBES: 48,
+			ASTEROID_ANCHOR: 49,
+			ASTEROID_KEEP: 50,
 		});
 		// And a *new* tag is safe only when it is larger than every existing one,
 		// which is the operation this table was designed for.
 		const tags: number[] = Object.values(DOMAIN);
 		expect(tags.length).toBe(new Set(tags).size);
-		expect(DOMAIN.NEBULA as number).toBe(Math.max(...tags));
+		expect(DOMAIN.ASTEROID_KEEP as number).toBe(Math.max(...tags));
 	});
 
 	test("the market seed is a function of the system seed alone", () => {
@@ -406,5 +435,14 @@ describe("§4 illegal goods are scoped to a fence, in the shipped module", () =>
 			);
 			expect(row.priceCr).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe("§3 a station type without an offset", () => {
+	test("throws rather than pricing NaN", () => {
+		const outpost = "outpost" as unknown as StationTypeKey;
+		expect(() => marketRowAt(commodity("Food"), 0, 0, outpost)).toThrow(
+			/no type offset/,
+		);
 	});
 });

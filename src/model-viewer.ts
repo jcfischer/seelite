@@ -226,7 +226,7 @@ type ViewerState = {
 const STYLE_ID = "seelite-model-viewer-style";
 
 const STYLE = `
-#model-viewer { position: fixed; inset: 0; z-index: 20; overflow: auto; color: #d7e9f2; background: radial-gradient(circle at 50% 38%, #132735, #030609 62%); font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; }
+#model-viewer { position: fixed; inset: 0; z-index: 20; overflow: auto; color: #d7e9f2; background: radial-gradient(circle at 50% 38%, #132735, #030609 62%); font: 12px/1.35 Menlo, monospace; }
 #model-viewer * { box-sizing: border-box; }
 .mv-wrap { min-height: 100%; max-width: 1240px; margin: auto; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 14px; }
 .mv-stage { position: relative; min-height: 620px; overflow: hidden; border: 1px solid rgba(124, 183, 211, .35); background: radial-gradient(circle at 50% 48%, rgba(23, 58, 76, .55), rgba(2, 5, 8, .85) 66%); }

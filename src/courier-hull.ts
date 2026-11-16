@@ -43,8 +43,14 @@ import {
 } from "./authored-hull";
 import { levelErrorKm } from "./authored-levels";
 import { shared } from "./gpu-teardown";
-import { COURIER_HULL_GLB_URL } from "./model-urls";
+import {
+	COURIER_HULL_GLB_URL,
+	COURIER_NORMAL_MAP_URL,
+	EXTERIOR_MAP_ANISOTROPY,
+} from "./model-urls";
 import { HULL_SPECS } from "./hull";
+import type { ModelProgressListener } from "./model-progress";
+import { isSharedImage } from "./shared-image";
 import { type AuthoredHullBuilder, HULL_REACH_KM } from "./ship-mesh";
 
 /** The frame every authored courier's levels and glows hang under. */
@@ -101,6 +107,7 @@ export const COURIER_NOZZLES_M = {
  *  floor is `authored-hull.ts`'s, shared with the tug. */
 export const COURIER_ALLOY_MATERIAL = AUTHORED_ALLOY_MATERIAL;
 export const COURIER_ALLOY_ROUGHNESS = AUTHORED_ALLOY_ROUGHNESS;
+export const COURIER_NORMAL_STRENGTH = 0.15;
 
 /**
  * Prepare a loaded study scene once and return the builder `buildShipMesh`
@@ -111,7 +118,14 @@ export const COURIER_ALLOY_ROUGHNESS = AUTHORED_ALLOY_ROUGHNESS;
  */
 export function createCourierHullBuilder(
 	template: THREE.Object3D,
+	normalMap?: THREE.Texture,
 ): Promise<AuthoredHullBuilder> {
+	if (normalMap) {
+		normalMap.flipY = false;
+		normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
+		normalMap.colorSpace = THREE.NoColorSpace;
+		normalMap.anisotropy = EXTERIOR_MAP_ANISOTROPY;
+	}
 	const unpowered = shared(new THREE.MeshBasicMaterial({ color: 0x01090b }));
 	unpowered.name = "interior-screen-unpowered";
 	return createAuthoredHullBuilder(template, {
@@ -125,6 +139,22 @@ export function createCourierHullBuilder(
 		prepareMesh: (mesh) => {
 			const screen = mesh.name.startsWith(FIXTURE_SCREEN_PREFIX);
 			if (screen) mesh.material = unpowered;
+			for (const material of [
+				mesh.material,
+			].flat() as THREE.MeshStandardMaterial[])
+				if (material.map && !material.name.startsWith("cockpit-")) {
+					if (!isSharedImage(material.map))
+						material.map.anisotropy = EXTERIOR_MAP_ANISOTROPY;
+					if (normalMap) {
+						material.normalMap = normalMap;
+						material.normalScale.set(
+							COURIER_NORMAL_STRENGTH,
+							-COURIER_NORMAL_STRENGTH,
+						);
+						material.bumpMap = null;
+						material.roughnessMap = null;
+					}
+				}
 			// The cabin and the pilot sit inside the closed hull: nothing they
 			// would shade is lit through it, so they stay out of the shadow pass.
 			mesh.castShadow = !screen && !BEHIND_THE_CANOPY.test(mesh.name);
@@ -133,11 +163,25 @@ export function createCourierHullBuilder(
 	});
 }
 
-/** Games start this after construction and refresh their cached couriers on
+let ready: Promise<void> | undefined;
+
+/** The session queue starts this after construction and refreshes cached couriers on
  *  resolution (node #831). The postcard viewer waits before drawing; the ship
  *  workbench waits before building its review hulls (`authoredHullLoader`). */
-export const prepareCourierHullModel = authoredHullLoader(
-	"courier",
-	COURIER_HULL_GLB_URL,
-	createCourierHullBuilder,
-);
+export function prepareCourierHullModel(
+	onProgress?: ModelProgressListener,
+): Promise<void> {
+	if (ready) return ready;
+	const normal = new THREE.TextureLoader().loadAsync(COURIER_NORMAL_MAP_URL);
+	const load = authoredHullLoader(
+		"courier",
+		COURIER_HULL_GLB_URL,
+		async (template) => createCourierHullBuilder(template, await normal),
+	);
+	return (ready = Promise.all([normal, load(onProgress)])
+		.then(() => {})
+		.catch((error) => {
+			ready = undefined;
+			throw error;
+		}));
+}

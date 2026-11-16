@@ -8,6 +8,39 @@ import {
 } from "./probe-contract-roots.mjs";
 
 const snapshotEdges = new WeakMap();
+const parsedCandidates = new Map();
+
+function importCandidatesByText(file, text) {
+	const cached = parsedCandidates.get(file);
+	if (cached?.text === text) return cached.candidateLists;
+	const candidateLists = [];
+	const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+	const walk = (node) => {
+		if (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) return;
+		if (ts.isExportDeclaration(node) && node.isTypeOnly) return;
+		// Literal module paths also cover imports inside page.evaluate and the
+		// new URL(..., import.meta.url) seam used by workers and worklets.
+		if (ts.isStringLiteralLike(node)) {
+			const raw = node.text.split("?")[0];
+			if (raw.startsWith(".") || raw.startsWith("/src/")) {
+				const stem = raw.startsWith("/src/")
+					? raw.slice(1)
+					: posix.normalize(posix.join(posix.dirname(file), raw));
+				candidateLists.push([
+					stem,
+					`${stem}.ts`,
+					`${stem}.js`,
+					`${stem}.mjs`,
+					`${stem}/index.ts`,
+				]);
+			}
+		}
+		ts.forEachChild(node, walk);
+	};
+	walk(ast);
+	parsedCandidates.set(file, { text, candidateLists });
+	return candidateLists;
+}
 
 /** Import closure over a git snapshot, including browser imports and worker URLs. */
 export function dependencyClosure(roots, sources) {
@@ -28,31 +61,10 @@ export function dependencyClosure(roots, sources) {
 		if (text === undefined) return;
 		const children = new Set();
 		edges.set(file, children);
-		const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-		const walk = (node) => {
-			if (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) return;
-			if (ts.isExportDeclaration(node) && node.isTypeOnly) return;
-			// Literal module paths also cover imports inside page.evaluate and the
-			// new URL(..., import.meta.url) seam used by workers and worklets.
-			if (ts.isStringLiteralLike(node)) {
-				const raw = node.text.split("?")[0];
-				if (raw.startsWith(".") || raw.startsWith("/src/")) {
-					const stem = raw.startsWith("/src/")
-						? raw.slice(1)
-						: posix.normalize(posix.join(posix.dirname(file), raw));
-					const resolved = [
-						stem,
-						`${stem}.ts`,
-						`${stem}.js`,
-						`${stem}.mjs`,
-						`${stem}/index.ts`,
-					].find((p) => sources.has(p));
-					if (resolved) children.add(resolved);
-				}
-			}
-			ts.forEachChild(node, walk);
-		};
-		walk(ast);
+		for (const candidates of importCandidatesByText(file, text)) {
+			const resolved = candidates.find((p) => sources.has(p));
+			if (resolved) children.add(resolved);
+		}
 		for (const child of children) visit(child);
 	};
 	for (const root of roots) visit(root);
@@ -96,7 +108,8 @@ export function changedMethods(before, after) {
 		let last = 0;
 		for (const member of game.members) {
 			if (
-				!ts.isMethodDeclaration(member) ||
+				(!ts.isMethodDeclaration(member) &&
+					!ts.isGetAccessorDeclaration(member)) ||
 				!member.body ||
 				!ts.isIdentifier(member.name)
 			)
@@ -269,6 +282,98 @@ export function registryChanges(changedFiles, before, after) {
 	return changed.size ? [...changed].sort() : null;
 }
 
+/** Files no browser probe can observe: documentation, headless tests and lint configuration.
+ * Snapshot-dependent spike study exclusions are defined by isStudyFile below.
+ */
+export const isNonRuntime = (file) =>
+	file.startsWith("docs/") ||
+	file.startsWith("tests/") ||
+	file.endsWith(".md") ||
+	file === "biome.jsonc" ||
+	file === "eslint.config.mjs" ||
+	file === "eslint-suppressions.json";
+
+const spikeReferenceCache = new WeakMap();
+
+function spikeReferences(sources) {
+	let refs = spikeReferenceCache.get(sources);
+	if (refs) return refs;
+	refs = {
+		paths: new Set(),
+		prefixes: new Set(),
+		imports: dependencyClosure(
+			[...sources.keys()].filter(
+				(f) => f.startsWith("src/") || /^scripts\/probe-[^/]+\.mjs$/.test(f),
+			),
+			sources,
+		),
+	};
+	const add = (literal) => {
+		const at = literal.search(/(^|\/)spikes(\/|$)/);
+		if (at < 0) return;
+		const from = literal.indexOf("spikes", at);
+		const tail = literal.slice(from).split(/[?#]/)[0];
+		const glob = tail.search(/[*{[?]/);
+		if (glob < 0) refs.paths.add(tail);
+		else refs.prefixes.add(tail.slice(0, glob));
+	};
+	for (const [file, text] of sources) {
+		if (!text.includes("spikes")) continue;
+		if (!refs.imports.has(file)) continue;
+		if (!/\.(ts|js|mjs)$/.test(file)) {
+			for (const m of text.matchAll(/[^\s"'`()]*spikes[^\s"'`()]*/g)) add(m[0]);
+			continue;
+		}
+		const walk = (node) => {
+			if (
+				ts.isStringLiteralLike(node) ||
+				ts.isTemplateHead(node) ||
+				ts.isTemplateMiddle(node) ||
+				ts.isTemplateTail(node)
+			)
+				add(node.text);
+			ts.forEachChild(node, walk);
+		};
+		walk(ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true));
+	}
+	spikeReferenceCache.set(sources, refs);
+	return refs;
+}
+
+/** A study file: a `spikes/` path outside the import closure of `src/` and probe
+ * scripts that no string literal in that closure, in either revision, names as
+ * the file, an ancestor directory, or the stem of an extensionless import.
+ * Game pages and probes reach `spikes/` only by such
+ * a literal: an import, a `fetch` URL, a `page.goto`, or a path a script
+ * reads. `src/coriolis-spike-viewer.ts` fetches
+ * `/spikes/coriolis/coriolis-industrial.glb` and
+ * `src/courier-cockpit-viewer.ts` loads from `/spikes/courier-cockpit/`, so
+ * those stay runtime. A study file no literal names cannot change what a
+ * browser probe loads, so a change confined to such files needs no browser
+ * run. A glob matches any path starting with its prefix before the first
+ * wildcard, a query or fragment is dropped, and
+ * a literal that is only `spikes` reaches the whole directory. Without
+ * snapshots a `spikes/` path is never a study file.
+ */
+export function isStudyFile(file, impact) {
+	if (!file.startsWith("spikes/") || !impact) return false;
+	return ![impact.before, impact.after].some((sources) => {
+		const { paths, prefixes, imports } = spikeReferences(sources);
+		return (
+			imports.has(file) ||
+			[...prefixes].some((prefix) => file.startsWith(prefix)) ||
+			[...paths].some(
+				(ref) =>
+					ref === "spikes" ||
+					file === ref ||
+					(ref.endsWith("/")
+						? file.startsWith(ref)
+						: file.startsWith(`${ref}/`) || file.startsWith(`${ref}.`)),
+			)
+		);
+	});
+}
+
 /** Deterministic selection from both revisions. Unknown ownership expands all. */
 export function selectImpact(changedFiles, impact, inventory) {
 	if (
@@ -279,12 +384,9 @@ export function selectImpact(changedFiles, impact, inventory) {
 			reason: "Probe dependency ownership differs from the runner inventory.",
 		};
 	const { before, after } = impact;
+	const studies = changedFiles.filter((p) => isStudyFile(p, impact));
 	const runtime = changedFiles.filter(
-		(p) =>
-			!p.startsWith("docs/") &&
-			!p.startsWith("tests/") &&
-			!p.endsWith(".md") &&
-			p !== "biome.jsonc",
+		(p) => !isNonRuntime(p) && !studies.includes(p),
 	);
 	const mainChanged = runtime.includes("src/main.ts");
 	const paths = runtime.filter((p) => p !== "src/main.ts");
@@ -354,6 +456,16 @@ export function selectImpact(changedFiles, impact, inventory) {
 		};
 	return {
 		probes: [...new Set([...SMOKE_PROBES, ...affected])].sort(),
-		reason: `Smoke plus contracts reached through base/head dependencies${methods.length ? `; Game.${methods.join(", Game.")}` : ""}${instruments.length ? `; no probe loads measurement script ${instruments.join(", ")}` : ""}.`,
+		reason:
+			[
+				"Smoke plus contracts reached through base/head dependencies",
+				methods.length && `Game.${methods.join(", Game.")}`,
+				instruments.length &&
+					`no probe loads measurement script ${instruments.join(", ")}`,
+				studies.length &&
+					`spike rule: no src/ or probe-script literal names study files ${studies.join(", ")}`,
+			]
+				.filter(Boolean)
+				.join("; ") + ".",
 	};
 }

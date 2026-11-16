@@ -65,7 +65,10 @@ const PRINT = process.env.PRINT === "1";
 /** How much of each music render the bands are read off, s. */
 const PROBE_RENDER_S = 20;
 /** The renders a row reads past that, and so rendered whole. */
-const FULL_LENGTH = new Set(["music-adaptive-ladder"]);
+const FULL_LENGTH = new Set([
+	"music-adaptive-ladder",
+	"music-adaptive-ladder-techno",
+]);
 const SR = 48000;
 /** 120 bpm in 4/4: a bar is two seconds. The probe songs below say so. */
 const BAR = 2 * SR;
@@ -90,37 +93,43 @@ const RENDERED = {
 	// #548's director renders fade in by design — a crossfade from silence,
 	// and a drone's or station pad's slow attack — so each carries its own
 	// onset, in the band like the rest, rather than the limiter's 10 ms.
-	// Measured on the Berlin bed (#600) as it merges — approved by ear on
-	// 2026-09-30, then changed in review where the principal has not heard it
-	// (4-bar wash notes, no wash under the threat, no cruise stem in a fight) —
-	// over each
-	// render's opening `PROBE_RENDER_S`, the ladder whole; `-second` is the
-	// second bed (D12) and the `-legacy` rows the first, kept to compare
-	// against.
+	// Measured on the default bed, which draws techno for system 1234 and the
+	// school for 987654, over each render's opening `PROBE_RENDER_S`, the ladders
+	// whole; `-school` pins the school. `-berlin` is the Berlin bed (#600), approved
+	// by ear on 2026-09-30, `-second` the second bed (D12) and the `-legacy`
+	// rows the first, kept to compare against.
 	"music-adaptive-run-a": {
-		rms: 0.01545,
-		peak: 0.07171,
-		hz: 889,
-		onset: 426.73,
+		rms: 0.01699,
+		peak: 0.10513,
+		hz: 455,
+		onset: 257.85,
 	},
 	"music-adaptive-run-b": {
-		rms: 0.01553,
-		peak: 0.08242,
-		hz: 1100,
-		onset: 397.88,
+		rms: 0.01047,
+		peak: 0.04852,
+		hz: 1419,
+		onset: 514.85,
 	},
 	"music-adaptive-ladder": {
-		rms: 0.02435,
-		peak: 0.16218,
-		hz: 1220,
-		onset: 422.08,
+		rms: 0.02041,
+		peak: 0.14116,
+		hz: 894,
+		onset: 245.9,
 	},
-	"music-calm": { rms: 0.01749, peak: 0.11267, hz: 1220, onset: 422.08 },
+	"music-calm": { rms: 0.02075, peak: 0.11495, hz: 865, onset: 423.73 },
+	"music-calm-school": { rms: 0.01377, peak: 0.08052, hz: 894, onset: 245.9 },
+	"music-adaptive-ladder-techno": {
+		rms: 0.02072,
+		peak: 0.11849,
+		hz: 865,
+		onset: 423.73,
+	},
+	"music-calm-berlin": { rms: 0.01749, peak: 0.11267, hz: 1220, onset: 422.08 },
 	"music-calm-second": { rms: 0.02423, peak: 0.12964, hz: 694, onset: 387.94 },
 	"music-calm-legacy": { rms: 0.01264, peak: 0.0644, hz: 1104, onset: 298.25 },
-	"music-wary": { rms: 0.01656, peak: 0.11233, hz: 568, onset: 136.35 },
-	"music-threat": { rms: 0.01807, peak: 0.10341, hz: 1582, onset: 255.65 },
-	"music-combat": { rms: 0.01775, peak: 0.11183, hz: 2688, onset: 229.08 },
+	"music-wary": { rms: 0.01717, peak: 0.0963, hz: 1462, onset: 244.04 },
+	"music-threat": { rms: 0.01774, peak: 0.09005, hz: 282, onset: 125.02 },
+	"music-combat": { rms: 0.02291, peak: 0.11176, hz: 2251, onset: 70.63 },
 	"music-station-trade-legacy": {
 		rms: 0.01045,
 		peak: 0.05091,
@@ -128,28 +137,28 @@ const RENDERED = {
 		onset: 494.46,
 	},
 	"music-station-trade": {
-		rms: 0.01665,
-		peak: 0.09226,
-		hz: 889,
-		onset: 426.73,
+		rms: 0.01568,
+		peak: 0.07898,
+		hz: 455,
+		onset: 257.85,
 	},
 	"music-station-refinery": {
-		rms: 0.01648,
-		peak: 0.07835,
-		hz: 1126,
-		onset: 400.06,
+		rms: 0.01698,
+		peak: 0.08291,
+		hz: 520,
+		onset: 258.04,
 	},
 	"music-station-shipyard": {
-		rms: 0.01651,
-		peak: 0.09143,
-		hz: 836,
-		onset: 426.73,
+		rms: 0.01523,
+		peak: 0.07081,
+		hz: 1336,
+		onset: 257.85,
 	},
 	"music-station-outpost": {
-		rms: 0.01625,
-		peak: 0.07503,
-		hz: 995,
-		onset: 426.73,
+		rms: 0.00747,
+		peak: 0.04526,
+		hz: 4071,
+		onset: 460.85,
 	},
 	// #547's orchestral voices alone, and the waltz in its three voicings.
 	// Every waltz row is read over its opening 20 s, which is the intro in
@@ -332,36 +341,42 @@ try {
 	// wash (#600), and so does wary, so wary is still left to the ear.
 	// **A held note outlives a jump**: the Berlin wash's first 32-bar notes
 	// rang on into the threat and read it at 0.06/s here.
+	const LADDER = {
+		calm: [6, 18],
+		wary: [20, 36],
+		threat: [38, 54],
+		combat: [56, 72],
+	};
+	const perS = (ladder, a, b) => {
+		const F = SR / 100;
+		const e = [];
+		for (let k = a * SR; k + F < b * SR; k += F) {
+			let q = 0;
+			for (let j = k + 1; j < k + F; j++) {
+				const d = ladder[j] - ladder[j - 1];
+				q += d * d;
+			}
+			e.push(q);
+		}
+		let n = 0;
+		for (let i = 5; i < e.length; i++) {
+			const jump = (j) =>
+				e[j] > (e[j - 1] + e[j - 2] + e[j - 3] + e[j - 4]) / 2;
+			if (jump(i) && !jump(i - 1)) n++;
+		}
+		return n / (b - a);
+	};
 	const ladder = rendered.get("music-adaptive-ladder");
 	if (ladder) {
-		const perS = (a, b) => {
-			const F = SR / 100;
-			const e = [];
-			for (let k = a * SR; k + F < b * SR; k += F) {
-				let q = 0;
-				for (let j = k + 1; j < k + F; j++) {
-					const d = ladder[j] - ladder[j - 1];
-					q += d * d;
-				}
-				e.push(q);
-			}
-			let n = 0;
-			for (let i = 5; i < e.length; i++) {
-				const jump = (j) =>
-					e[j] > (e[j - 1] + e[j - 2] + e[j - 3] + e[j - 4]) / 2;
-				if (jump(i) && !jump(i - 1)) n++;
-			}
-			return n / (b - a);
-		};
-		const calmRate = perS(6, 18);
-		const threatRate = perS(38, 54);
-		const fightRate = perS(56, 72);
+		const calmRate = perS(ladder, ...LADDER.calm);
+		const threatRate = perS(ladder, ...LADDER.threat);
+		const fightRate = perS(ladder, ...LADDER.combat);
 		check(
 			"the ladder's threat and combat are busier than its calm (#548)",
 			threatRate >= Math.max(1, 2 * calmRate) &&
 				fightRate >= Math.max(3, 4 * calmRate) &&
 				fightRate > threatRate,
-			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
+			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(ladder, ...LADDER.wary).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
 		);
 	}
 	/** Rms over a window in seconds, or the whole buffer: one body for every
@@ -373,6 +388,22 @@ try {
 		for (let i = i0; i < i1; i++) s += x[i] * x[i];
 		return Math.sqrt(s / (i1 - i0));
 	};
+	const techno = rendered.get("music-adaptive-ladder-techno");
+	if (techno) {
+		const [calm, wary, threat, fight] = [
+			LADDER.calm,
+			LADDER.wary,
+			LADDER.threat,
+			LADDER.combat,
+		].map(([a, b]) => perS(techno, a, b));
+		const threatRms = rmsOf(techno, ...LADDER.threat);
+		const fightRms = rmsOf(techno, ...LADDER.combat);
+		check(
+			"the techno ladder rises: wary busier than calm, threat and combat busier than wary, combat louder than threat",
+			wary > calm && threat > wary && fight > wary && fightRms > threatRms,
+			`transients/s calm ${calm.toFixed(2)}, wary ${wary.toFixed(2)}, threat ${threat.toFixed(2)}, combat ${fight.toFixed(2)}; rms threat ${threatRms.toFixed(4)}, combat ${fightRms.toFixed(4)}`,
+		);
+	}
 
 	for (const [row, ask] of [
 		[

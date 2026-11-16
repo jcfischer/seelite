@@ -169,7 +169,9 @@ describe("#660 D2 — an eject: the hold and the pod go, the ship stays", () => 
 
 	test("the record parses: the reload can boot it", () => {
 		const read = parses(after);
-		expect(read.state).toEqual(after.state);
+		const { accounting, ...legacyState } = read.state;
+		expect(legacyState).toEqual(after.state);
+		expect(accounting).toBeDefined();
 		expect(read.requests.byId[courier.id].status).toBe("failed");
 	});
 });
@@ -242,7 +244,9 @@ describe("#660 D6 — a death without ejecting: the ship goes", () => {
 
 	test("the record parses, at the launch station", () => {
 		const read = parses(after);
-		expect(read.state).toEqual(after.state);
+		const { accounting, ...legacyState } = read.state;
+		expect(legacyState).toEqual(after.state);
+		expect(accounting).toBeDefined();
 		expect(read.chargeAu).toBe(after.chargeAu);
 		expect(read.dockedAt).toBe(launch.dockedAt);
 	});

@@ -27,6 +27,25 @@ const summary = (over: Partial<HoldSummary> = {}): HoldSummary => ({
 	...over,
 });
 
+test("dedicated raw ore has its own painted capacity line alongside general cargo", () => {
+	const html = holdBody(
+		summary({
+			capacityT: 40,
+			freeT: 40,
+			oreBay: { usedT: 3000, capacityT: 3000, freeT: 0 },
+		}),
+		null,
+	);
+	expect(html).toContain(
+		"data-live-ore-capacity>RAW ORE 3000 / 3000 t · 0 t free</p>",
+	);
+	expect(html).toContain("data-live-hold-capacity>0 / 40 t · 40 t free");
+	expect(holdBody(summary(), null)).not.toContain("data-live-ore-capacity");
+	expect(holdBody(summary(), null).replace(/<[^>]+>/g, "")).toBe(
+		"0 / 20 t · 20 t freeNothing aboard. The hold takes 20 t.",
+	);
+});
+
 /** A hold carrying one 8 t consignment and nothing of the pilot's. */
 const entrustedHold = (jobOver: Partial<HoldJob> = {}) =>
 	summary({
@@ -285,5 +304,23 @@ describe("the page's own markup carries what the first sheet lacked", () => {
 
 	test("the class appears once, so no other tab quietly takes it", () => {
 		expect(source.match(/lc-hold-body/g)).toHaveLength(2);
+	});
+});
+
+describe("mined ore on the hold page", () => {
+	test("an ore line is the pilot's and names its raw sale", () => {
+		const html = holdBody(
+			summary({
+				usedT: 2,
+				freeT: 18,
+				lines: [{ ...pilotLine("Gold-bearing ore STD", 2), kind: "ore" }],
+			}),
+			null,
+		);
+		expect(html).toContain('data-live-hold-row="Gold-bearing ore STD"');
+		expect(html).toContain('data-live-hold-owner="pilot"');
+		expect(html).toContain("2 t");
+		expect(html).toContain("raw ore · sellable");
+		expect(html).not.toContain("no market yet");
 	});
 });

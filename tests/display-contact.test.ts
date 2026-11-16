@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { fieldContactsAt } from "../src/field-contact";
 import { systemIndexOfKey } from "../src/carrier-key";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -6,6 +7,7 @@ import { projectNavTargets } from "../src/cockpit";
 import { AttitudeFollower } from "../src/attitude-hold";
 import { ORBIT_ASTERN } from "../src/chase-orbit";
 import { DockingComputer } from "../src/docking-computer";
+import { MissileCombat } from "../src/missile-combat";
 import {
 	EJECT_IDLE,
 	type EjectHold,
@@ -28,12 +30,14 @@ import {
 } from "../src/display-contact";
 import { trafficPresence } from "../src/traffic-engagement";
 import { SWEEP_INTERRUPTED, SWEEP_IDLE } from "../src/system-sweep-view";
+import { isRockTargetId } from "../src/rock-target";
 import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
 	CARGO_CONTACT_COLOUR,
 	scoops,
+	STOCK_SCOOP,
 } from "../src/raider-wreck";
 import { length, sub, v3 } from "../src/vec3";
 import {
@@ -79,7 +83,12 @@ test("Navigation evaluates ETA for a selectable contact absent from the generate
 	};
 	const subject = Object.assign(
 		Object.create(
-			methods(["navRows"], { projectNavTargets, ETA_INTERVAL_S: 1 }),
+			methods(["navRows", "navigationTargets"], {
+				projectNavTargets,
+				isRockTargetId,
+				ETA_INTERVAL_S: 1,
+				MINING_ON: false,
+			}),
 		),
 		{
 			world,
@@ -118,6 +127,7 @@ test("selection includes contacts without putting them in generated bodies or ma
 	const subject = Object.assign(
 		Object.create(
 			methods(["selectable", "masses"], {
+				fieldContactsAt,
 				bodyVelocity,
 				bodyAccelerationBound,
 			}),
@@ -125,6 +135,9 @@ test("selection includes contacts without putting them in generated bodies or ma
 		{
 			world,
 			contacts: [contact],
+			commerceWorld: {
+				galaxies: Array.from({ length: 8 }, () => ({ fieldDiscoveries: [] })),
+			},
 			selectableCache: null,
 			massesCache: null,
 			massesAt: NaN,
@@ -191,6 +204,7 @@ test("target lookup and velocity follow the live contact, while bodies keep orbi
 			methods(["bodyFor", "targetBody", "velocityOf", "targetVelocity"], {
 				bodyVelocity,
 				isDisplayContact,
+				isRockTargetId,
 				v3,
 			}),
 		),
@@ -302,7 +316,7 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 					"velocityOf",
 					"targetVelocity",
 				],
-				{ bodyVelocity, isDisplayContact, v3, length, sub },
+				{ bodyVelocity, isDisplayContact, isRockTargetId, v3, length, sub },
 			),
 		),
 		{ world, targetId: contact.id, selectable: () => [contact] },
@@ -337,13 +351,13 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 		CANISTER_SCOOP_SPEED_KMS + 0.01,
 		10,
 	);
-	expect(scoops(canister, world.ship)).toBe(false);
+	expect(scoops(canister, world.ship, STOCK_SCOOP)).toBe(false);
 	world.ship.vel = v3(0, CANISTER_SCOOP_SPEED_KMS - 0.01, 0);
 	expect(subject.targetRelativeKms()).toBeCloseTo(
 		CANISTER_SCOOP_SPEED_KMS - 0.01,
 		10,
 	);
-	expect(scoops(canister, world.ship)).toBe(true);
+	expect(scoops(canister, world.ship, STOCK_SCOOP)).toBe(true);
 
 	subject.targetId = null;
 	expect(subject.targetRelativeKms()).toBeNull();
@@ -357,6 +371,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			methods(
 				[
 					"clearFlightSession",
+					"setLocalFrame",
 					"dropWreckContact",
 					"abortSystemSweep",
 					"dropPointer",
@@ -399,6 +414,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			dockingComputer: new DockingComputer(),
 			computerFollower: new AttitudeFollower(),
 			flickMeter: { reset() {} },
+			missileCombat: new MissileCombat(),
 			selectableCache: null,
 			targetId: null as string | null,
 			ejectHold,
@@ -428,6 +444,19 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 	expect(subject.cargoContacts.size).toBe(0);
 	expect(subject.targetId).toBeNull();
 	expect(subject.selectableCache).toBeNull();
+});
+
+test("a jump clears missile flight, acquisition and ECM readiness from the departed system", () => {
+	const subject = teardownSubject(EJECT_IDLE, false);
+	subject.missileCombat.lock = { targetId: "departed", seconds: 1.5 };
+	subject.missileCombat.missiles = [
+		{ targetId: "player", pos: v3(1, 0, 0), nose: v3(-1, 0, 0), leftS: 12 },
+	];
+	subject.missileCombat.ecmReadyAt = 100;
+	subject.clearFlightSession();
+	expect(subject.missileCombat.lock).toBeNull();
+	expect(subject.missileCombat.missiles).toEqual([]);
+	expect(subject.missileCombat.ecmReadyAt).toBe(0);
 });
 
 test("a jump breaks the system sweep but retains its dated provenance", () => {

@@ -33,6 +33,23 @@ export interface ScoopEvent {
 	refusal?: string | null;
 }
 
+/** What the glass says when the ship's own gear refuses a pickup (node
+ *  #1096): no scoop fitted, or a bank below the pickup's charge. */
+export const SCOOP_REFUSAL_TEXT = {
+	"no-scoop": "No cargo scoop fitted: pickup left in space.",
+	"low-bank": "Energy bank too low to scoop: pickup left in space.",
+} as const;
+
+/** What the glass says to a pilot who presses the docking computer's key
+ *  without one fitted (node #1289). */
+export const NO_DOCKING_COMPUTER_TEXT =
+	"No docking computer fitted. Buy one at the Equipment tab.";
+
+/** What the dock says, once, to a pilot whose old save had no free slot for the
+ *  scoop it is granted (node #1097). */
+export const NO_SCOOP_DOCK_NOTICE =
+	"This ship has no cargo scoop and cannot take anything from space.";
+
 /**
  * The line for one scoop attempt. A refusal is not a failure to say something:
  * a full hold leaves the canister in space, and a pilot who is not told that
@@ -55,6 +72,7 @@ export function scoopNotice(input: ScoopEvent): string {
  * staying in `main.ts` would have left the tier holding half a claim.
  */
 export function scoopExit(input: ScoopEvent): string {
+	if (!input.accepted && input.refusal) return input.refusal.toLowerCase();
 	if (!input.accepted) return "hold full: canister left in space";
 	const left = input.leftT
 		? `, ${input.leftT} ${input.unit ?? "t"} left in the canister`

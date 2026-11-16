@@ -1,0 +1,204 @@
+{
+	"saveSchemaVersion": 18,
+	"world": {
+		"worldSchemaVersion": 4,
+		"worldGeneratorVersion": 11,
+		"seed": 47,
+		"gameTime": 0,
+		"galaxies": [
+			{
+				"galaxyIndex": 0,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [4],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 1,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 2,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 3,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 4,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 5,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 6,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 7,
+				"capabilityTime": {
+					"genesisAt": 0,
+					"anchors": {}
+				},
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			}
+		],
+		"integrity": 3365891144
+	},
+	"commander": {
+		"sweepReadings": [],
+		"requests": {
+			"byId": {},
+			"leadsById": {},
+			"entrustedByLotId": {},
+			"trackedRequestId": null
+		},
+		"state": {
+			"credits": 100,
+			"cargo": {},
+			"loadout": {
+				"h1": {
+					"module": "pulse-laser",
+					"size": 1,
+					"grade": "E"
+				},
+				"i1": {
+					"module": "cargo-scoop",
+					"size": 1,
+					"grade": "E"
+				},
+				"plant": {
+					"module": "power-plant",
+					"size": 1,
+					"grade": "E"
+				}
+			},
+			"fuelLy": 7,
+			"hull": "courier"
+		},
+		"galaxyIndex": 0,
+		"systemIndex": 4,
+		"dockedAt": null,
+		"chargeAu": 0,
+		"permadeath": false,
+		"firstDay": "free",
+		"txSeq": 0,
+		"ladders": {
+			"banked": {
+				"combat": 0,
+				"trade": 0,
+				"exploration": 0
+			},
+			"visited": {
+				"0": {
+					"systems": [0],
+					"stations": []
+				}
+			},
+			"basis": {},
+			"playedS": 0,
+			"capstoneAt": null
+		},
+		"flight": {
+			"pos": [0, 0, 0],
+			"vel": [0, 0, 0],
+			"orientation": [0, 0, 0, 1],
+			"regime": "normal",
+			"throttle": 0,
+			"rates": [0, 0, 0]
+		}
+	},
+	"integrity": 3341294265
+}

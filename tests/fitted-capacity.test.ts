@@ -13,6 +13,10 @@ import {
 	stockLoadout,
 } from "../src/loadout";
 import {
+	CANISTER_SCOOP_RADIUS_KM,
+	CANISTER_SCOOP_SPEED_KMS,
+} from "../src/raider-wreck";
+import {
 	fullCondition,
 	refitCondition,
 	stockCapacity,
@@ -29,6 +33,8 @@ const courierBank = (bankE: number, regenPerS: number) => ({
  *  row on purpose rather than read off `stockCapacity`, so it is an oracle
  *  for that function and not a copy of it. */
 const stockDefence = (id: (typeof HULL_IDS)[number]) => ({
+	// No rack on a stock fit: the hull's own hold (#928).
+	holdT: HULL_SPECS[id].holdT,
 	integrity: HULL_SPECS[id].integrity,
 	shieldPool: HULL_SPECS[id].shieldPool,
 	boosterDrawPerS: 0,
@@ -39,6 +45,17 @@ const stockDefence = (id: (typeof HULL_IDS)[number]) => ({
 	scanRangeKm: 0,
 	scanChargeS: 0,
 	signalRangeKm: 0,
+	...(HULL_SPECS[id].slots.some(
+		(s) =>
+			s.kind === "internal" &&
+			s.accepts !== "any" &&
+			s.accepts.includes("cargo"),
+	)
+		? {
+				scoopRadiusKm: CANISTER_SCOOP_RADIUS_KM,
+				scoopSpeedKms: CANISTER_SCOOP_SPEED_KMS,
+			}
+		: { scoopRadiusKm: 0, scoopSpeedKms: 0 }),
 	podCargoShare: 0,
 	podCapsuleT: 0,
 	podCarriedModules: 0,

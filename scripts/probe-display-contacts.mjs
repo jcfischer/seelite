@@ -87,7 +87,14 @@ try {
 			for (const d of await page.evaluate(designationFrames)) {
 				check(
 					`Target panel paints ${d.expected} within its bounds`,
-					d.seen && d.fits && d.changed > 50,
+					designationPainted(d),
+					JSON.stringify(d),
+				);
+			}
+			for (const d of await page.evaluate(designationFrames, true)) {
+				check(
+					`Target panel rejects absent ${d.expected} paint`,
+					d.seen && d.fits && d.changed === 0 && !designationPainted(d),
 					JSON.stringify(d),
 				);
 			}
@@ -281,8 +288,12 @@ try {
 }
 exit();
 
+function designationPainted(d) {
+	return d.seen && d.fits && d.changed > 50;
+}
+
 /** Read pixels as well as calls; equal names/ranges test cache invalidation. */
-function designationFrames() {
+function designationFrames(suppressPaint = false) {
 	const g = window.__seelite;
 	const ctx = g.cockpit.targetInstrument.ctx;
 	const fillText = ctx.fillText;
@@ -307,22 +318,32 @@ function designationFrames() {
 	return cases.map(([target, expected]) => {
 		let seen = false;
 		let fits = false;
+		let drawnY = 0;
+		ctx.save();
 		try {
+			if (suppressPaint) {
+				ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+				ctx.beginPath();
+				ctx.rect(0, 0, 0, 0);
+				ctx.clip();
+			}
 			ctx.fillText = function (text, x, y, ...args) {
-				if (text === expected && y === 78) {
+				if (text === expected) {
 					seen = true;
+					drawnY = y;
 					fits = x + this.measureText(text).width <= this.canvas.width - 28;
 				}
 				return fillText.call(this, text, x, y, ...args);
 			};
 			g.updateInstruments(target, 100, g.velocityReadout());
-			const actual = ctx.getImageData(0, 54, ctx.canvas.width, 30).data;
+			const band = [0, Math.max(0, drawnY - 24), ctx.canvas.width, 30];
+			const actual = ctx.getImageData(...band).data;
 			ctx.fillText = function (text, x, y, ...args) {
-				if (y !== 78) return fillText.call(this, text, x, y, ...args);
+				if (text !== expected) return fillText.call(this, text, x, y, ...args);
 			};
 			g.cockpit.instrumentKey = "";
 			g.updateInstruments(target, 100, g.velocityReadout());
-			const control = ctx.getImageData(0, 54, ctx.canvas.width, 30).data;
+			const control = ctx.getImageData(...band).data;
 			let changed = 0;
 			for (let i = 0; i < actual.length; i += 4)
 				if (
@@ -334,6 +355,7 @@ function designationFrames() {
 			return { expected, seen, fits, changed };
 		} finally {
 			ctx.fillText = fillText;
+			ctx.restore();
 		}
 	});
 }

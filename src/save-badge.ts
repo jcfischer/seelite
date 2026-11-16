@@ -77,7 +77,7 @@ const STYLE = `
 #seelite-save-badge {
   position: fixed; top: 12px; left: 12px; z-index: 50; margin: 0;
   display: flex; align-items: center; gap: 8px; padding: 5px 10px;
-  font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 600 12px/1.2 Menlo, monospace;
   letter-spacing: .12em; color: #ffb1a8;
   background: rgba(40, 6, 4, .88); border: 1px solid #ff6b5e; border-radius: 4px;
   box-shadow: 0 0 14px rgba(255, 107, 94, .35); cursor: pointer;
