@@ -455,7 +455,7 @@ test("the shards split the suite across runners without narrowing it", () => {
 	const { scripts } = JSON.parse(
 		readFileSync(repoPath("package.json"), "utf8"),
 	) as unknown as { scripts: Record<string, string> };
-	expect(scripts.test).toBe("bun test tests/");
+	expect(scripts.test).toBe("bun test tests/ --timeout=60000");
 });
 
 const PINNED_BUN = "1.4.2";
