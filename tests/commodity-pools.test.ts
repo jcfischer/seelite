@@ -15,8 +15,43 @@ import {
 	recover,
 	migrateAccount,
 	receiveCustody,
+	sendToCustody,
 	repoolUnknown,
 } from "../src/commodity-pools";
+
+test("sending mixed-cost material into custody preserves ownership and round-trips its basis", () => {
+	const start = migrateAccount(
+		100,
+		7,
+		{ Alloys: 2 },
+		{ Alloys: { units: 1, cr: 19 } },
+	);
+	const sent = sendToCustody(start, "Alloys", massFromNative(1.5, 1000000));
+	expect(sent.account.pools).toBe(start.pools);
+	expect(sent.account.cash).toBe(start.cash);
+	expect(sent.account.bankedTrade).toBe(start.bankedTrade);
+	expect(sent.account.basis.Alloys).toEqual({
+		legacyCost: money.fromTicks(0n),
+		heldMass: massFromNative(0.5, 1000000),
+		knownMass: massFromNative(0.5, 1000000),
+		cost: money.fromNumber(9.5),
+	});
+	expect(sent.share).toEqual({
+		totalMass: massFromNative(1.5, 1000000),
+		unknownMass: massFromNative(1, 1000000),
+		knownMass: massFromNative(0.5, 1000000),
+		cost: money.fromNumber(9.5),
+	});
+	expect(
+		receiveCustody(
+			sent.account,
+			"Alloys",
+			sent.share.totalMass,
+			sent.share.unknownMass,
+			sent.share.cost,
+		),
+	).toEqual(start);
+});
 
 test("custody receipt moves physical basis without charging or changing ownership pools", () => {
 	const start = migrateAccount(100, 7, {}, { Alloys: { units: 0, cr: 3 } });

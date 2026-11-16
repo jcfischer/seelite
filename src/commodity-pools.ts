@@ -251,7 +251,30 @@ export function removeMass(
 	a: CommodityAccount,
 	good: string,
 	amount: Mass,
-	retainPool = false,
+): { account: CommodityAccount; share: RemovedShare } {
+	const { account, share } = sendToCustody(a, good, amount);
+	const p = a.pools[poolId(good)];
+	return {
+		account: {
+			...account,
+			pools: {
+				...a.pools,
+				[poolId(good)]: {
+					...p,
+					totalMass: mass.subtract(p.totalMass, equivalentMass(good, amount)),
+					unknownMass: mass.subtract(p.unknownMass, share.unknownMass),
+				},
+			},
+		},
+		share,
+	};
+}
+
+/** Send physical material and basis into custody while retaining ownership pools. */
+export function sendToCustody(
+	a: CommodityAccount,
+	good: string,
+	amount: Mass,
 ): { account: CommodityAccount; share: RemovedShare } {
 	mass.fromTicks(amount);
 	knownGood(good);
@@ -270,16 +293,6 @@ export function removeMass(
 	return {
 		account: {
 			...a,
-			pools: retainPool
-				? a.pools
-				: {
-						...a.pools,
-						[poolId(good)]: {
-							...p,
-							totalMass: mass.subtract(p.totalMass, equivalent),
-							unknownMass: mass.subtract(p.unknownMass, unknown),
-						},
-					},
 			basis: {
 				...a.basis,
 				[good]: {

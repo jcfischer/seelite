@@ -28,7 +28,7 @@ import {
 import {
 	nativeGrams,
 	receiveCustody,
-	removeMass,
+	sendToCustody,
 	repoolUnknown,
 	walletChange,
 	type CommodityAccount,
@@ -291,12 +291,7 @@ export function refinerySubmit(
 	const fee = money.parse(quote.fee);
 	if ((input.account.cash as unknown as bigint) < (fee as unknown as bigint))
 		return refineryRefusal("insufficient-credits");
-	const { account, share } = removeMass(
-		input.account,
-		quote.good,
-		amount,
-		true,
-	);
+	const { account, share } = sendToCustody(input.account, quote.good, amount);
 	const basis = money.add(share.cost, fee);
 	const withCost = addFeeDebt(account, ore.product, fee);
 	const paid = walletChange(
@@ -375,22 +370,23 @@ export interface RefineryCollected {
 	units: number;
 }
 
+const finishedJobs = (queue: RefineryQueue, product: string): RefineryJob[] =>
+	queue.jobs.filter((job) => job.product === product && refineryFinished(job));
+
+const collectableGrams = (queue: RefineryQueue, product: string): number =>
+	(queue.pool?.[product]?.grams ?? 0) +
+	finishedJobs(queue, product).reduce(
+		(sum, job) => sum + remainingGrams(job),
+		0,
+	);
+
 /** Whole native units of `product` collectable now: finished jobs plus its pooled balance. */
 export function refineryCollectable(
 	queue: RefineryQueue | undefined,
 	product: string,
 ): number {
 	if (!queue) return 0;
-	const grams =
-		(queue.pool?.[product]?.grams ?? 0) +
-		queue.jobs.reduce(
-			(sum, job) =>
-				job.product === product && refineryFinished(job)
-					? sum + remainingGrams(job)
-					: sum,
-			0,
-		);
-	return Math.floor(grams / nativeGrams(product));
+	return Math.floor(collectableGrams(queue, product) / nativeGrams(product));
 }
 
 interface Source {
@@ -445,14 +441,8 @@ export function refineryCollect(
 	let pool = queue.pool;
 	const none = mass.fromTicks(0n);
 
-	const touched = new Set<number>();
-	let total = queue.pool?.[product]?.grams ?? 0;
-	for (const job of queue.jobs) {
-		if (job.product !== product || !refineryFinished(job)) continue;
-		touched.add(job.id);
-		total += remainingGrams(job);
-	}
-	const whole = Math.floor(total / unit);
+	const touched = new Set(finishedJobs(queue, product).map((job) => job.id));
+	const whole = Math.floor(collectableGrams(queue, product) / unit);
 	const take = Math.min(whole, Math.max(0, Math.floor(input.roomUnits)));
 	if (take === 0) {
 		if (whole > 0) return refineryRefusal("hold-full");
@@ -588,15 +578,6 @@ const asObject = (raw: unknown, what: string): Record<string, unknown> => {
 	return raw as Record<string, unknown>;
 };
 
-const keys = (value: Record<string, unknown>, expected: readonly string[]) => {
-	const actual = Object.keys(value);
-	if (
-		actual.length !== expected.length ||
-		actual.some((key) => !expected.includes(key))
-	)
-		fail("malformed refinery fields");
-};
-
 const keysWithin = (
 	value: Record<string, unknown>,
 	required: readonly string[],
@@ -609,6 +590,9 @@ const keysWithin = (
 	)
 		fail("malformed refinery fields");
 };
+
+const keys = (value: Record<string, unknown>, expected: readonly string[]) =>
+	keysWithin(value, expected, []);
 
 const finite = (raw: Record<string, unknown>, field: string): number => {
 	const value = raw[field];
