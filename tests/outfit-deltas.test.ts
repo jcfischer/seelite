@@ -31,10 +31,7 @@ function withModule(c: CommanderState, m: FittedModule): CommanderState {
 }
 
 const rowsFor = (m: FittedModule, from: CommanderState = base()) =>
-	fitDeltas(
-		fitReadout(from, 0, true),
-		fitReadout(withModule(from, m), 0, true),
-	);
+	fitDeltas(fitReadout(from, 0), fitReadout(withModule(from, m), 0));
 const row = (rows: ReturnType<typeof fitDeltas>, label: string) =>
 	rows.find((r) => r.label === label);
 
@@ -182,7 +179,7 @@ describe("fitDeltas", () => {
 	});
 });
 
-test("mining extraction preview is signed by size and grade, and absent without the flag", () => {
+test("mining extraction preview is signed by size and grade", () => {
 	const miner = newCommander("miner");
 	const fit = (size: 1 | 3, grade: "E" | "A") => ({
 		...miner,
@@ -191,8 +188,8 @@ test("mining extraction preview is signed by size and grade, and absent without 
 	const e1 = fit(1, "E");
 	const e3 = fit(3, "E");
 	const a3 = fit(3, "A");
-	const rows = (b: CommanderState, a: CommanderState, mining = true) =>
-		fitDeltas(fitReadout(b, 0, mining), fitReadout(a, 0, mining));
+	const rows = (b: CommanderState, a: CommanderState) =>
+		fitDeltas(fitReadout(b, 0), fitReadout(a, 0));
 	expect(row(rows(miner, e1), "EXTRACTION")).toMatchObject({
 		before: "0.0000",
 		after: "0.1000",
@@ -202,5 +199,5 @@ test("mining extraction preview is signed by size and grade, and absent without 
 	expect(row(rows(e1, e3), "EXTRACTION")?.delta).toBe("+0.1250");
 	expect(row(rows(e3, a3), "EXTRACTION")?.delta).toBe("+0.1125");
 	expect(row(rows(a3, e3), "EXTRACTION")?.delta).toBe("−0.1125");
-	expect(row(rows(base(), a3, false), "EXTRACTION")).toBeUndefined();
+	expect(row(rows(base(), base()), "EXTRACTION")).toBeUndefined();
 });

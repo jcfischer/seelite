@@ -27,7 +27,6 @@ try {
 	await installViewFraming(page);
 	const url = gameUrl(origin, {
 		seed: 1,
-		mining: "1",
 		raider: "off",
 		"models-full": true,
 	});

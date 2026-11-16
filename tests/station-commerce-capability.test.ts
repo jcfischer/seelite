@@ -34,7 +34,6 @@ const input = (
 	entrustedT: 0,
 	rungs: TOP_RUNGS,
 	hullReach: () => ({ ok: true, systems: 2 }),
-	mining: true,
 	services: { market: false, equipment: false, exclusive: false },
 	action: { type: "buy-commodity", commodity: "Food" },
 	...patch,
@@ -62,8 +61,8 @@ test("mining services gate commodity trades, unscoped modules and hulls while fu
 	expect(
 		transactAtStation(input({ action: { type: "buy-fuel" } })).accepted,
 	).toBe(true);
-	const off = transactAtStation(input({ mining: false }));
-	expect(off.reason).not.toBe("market-damaged");
+	const repaired = transactAtStation(input({ services: undefined }));
+	expect(repaired.reason).not.toBe("market-damaged");
 });
 
 test("hull rung refusal precedes damage and owned fitting operations remain outside purchase gates", () => {
@@ -169,21 +168,13 @@ test("type-scoped purchases consult exclusive service without changing existing 
 			transactAtStation({ ...row!.state, action, services: undefined }),
 		);
 	}
-	for (const action of [
-		{ type: "buy-fuel" as const },
-		{ type: "buy-commodity" as const, commodity: "Food" },
-		{
-			type: "buy-module" as const,
-			slot: "plant",
-			module: makeModule("power-plant", 1),
-		},
-		{ type: "buy-equipment" as const, equipment: "Mining Laser" },
-	]) {
-		const off = input({ mining: false, action });
-		expect(transactAtStation(off)).toEqual(
-			transactAtStation({ ...off, services: undefined }),
-		);
-	}
+	expect(
+		transactAtStation(
+			input({
+				action: { type: "buy-equipment", equipment: "Mining Laser" },
+			}),
+		).accepted,
+	).toBe(false);
 });
 
 test("hull exchange needs market service only for a real overflow sale", () => {

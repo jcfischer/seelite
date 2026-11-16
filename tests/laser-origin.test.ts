@@ -39,7 +39,6 @@ const deps = {
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	SHOT_SOUND_GAP_S,
-	MINING_ON: false,
 	NO_BEAM_STROKES: [],
 };
 

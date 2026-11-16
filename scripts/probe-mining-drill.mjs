@@ -26,7 +26,6 @@ try {
 			seed: 0x5ee11e,
 			system: 173,
 			hull: "miner",
-			mining: "1",
 			"no-save": "",
 			raider: "off",
 		}),
@@ -329,35 +328,21 @@ try {
 			released.delivered === cut.delivered,
 		JSON.stringify(released),
 	);
-	await page.goto(
-		gameUrl(origin, {
-			seed: 0x5ee11e,
-			system: 173,
-			hull: "miner",
-			"no-save": "",
-			raider: "off",
-		}),
-	);
-	await bootedGame(page, 90000);
-	const flagless = await page.evaluate(() => {
+	const armed = await page.evaluate(() => {
 		const g = window.__seelite;
 		g.clockHeld = true;
 		return {
 			groups: g.fireGroups.map((group) => group.kind),
 			solid: g.flownSolid.length,
 			extension: g.drill.extension,
-			view: g.view,
-			visible: g.shipMesh.visible,
 		};
 	});
 	check(
-		"without the flag the miner has no drill group or extra solid or cockpit hull",
-		!flagless.groups.includes("drill") &&
-			flagless.solid === 1 &&
-			flagless.extension === 0 &&
-			flagless.view === "cockpit" &&
-			!flagless.visible,
-		JSON.stringify(flagless),
+		"a stowed drill adds no solid, and the fire groups carry it",
+		armed.groups.includes("drill") &&
+			armed.solid === 1 &&
+			armed.extension === 0,
+		JSON.stringify(armed),
 	);
 } finally {
 	await browser.close();

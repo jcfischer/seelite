@@ -17,7 +17,7 @@ import {
 	rawQuote,
 } from "../scripts/lib/mining-comparison";
 import { recordTrade } from "../src/deficits";
-import { debitAt } from "../src/deposit-state";
+import { debitAt, RECOVERY_T_PER_H } from "../src/deposit-state";
 import { money, signedMoney } from "../src/exact-amount";
 import { worldFor, portsOf, run } from "../scripts/lib/greedy-trader";
 import { recipeFor } from "../scripts/lib/mining-batch";
@@ -26,7 +26,9 @@ import { ORE_FAMILIES } from "../src/rock-survey";
 
 test("candidate recovery retains whole-tonne clock semantics and refuses invalid clocks", () => {
 	for (const t of [0, 3599, 3600, 7200, 36000])
-		expect(candidateDebit(8, 0, t, 1)).toBe(debitAt(8, 0, t));
+		expect(candidateDebit(800, 0, t, RECOVERY_T_PER_H)).toBe(
+			debitAt(800, 0, t),
+		);
 	expect(candidateDebit(8, 0, 3600, 4)).toBe(4);
 	expect(() => candidateDebit(8, 10, 9, 1)).toThrow();
 	expect(() => candidateDebit(8, 0, 9, NaN)).toThrow();

@@ -1,12 +1,12 @@
 /**
  * https://github.com/jcfischer/seelite/issues/920
- * Prototype for node #920: a Mining Laser's cut releases whole-tonne fragments that
- * drift, expire or are scooped (#872 D3, D4; #917 D8; #1095 D4–D6). A fragment's
- * tonne leaves the deposit when it is released, so a lost fragment restores nothing.
- * Every figure here is a provisional candidate for #922's economic measurement.
+ * A Mining Laser's cut releases whole-tonne fragments that drift, expire or are
+ * scooped (#872 D3, D4; #917 D8; #1095 D4–D6). A fragment's tonne leaves the
+ * deposit when it is released, so a lost fragment restores nothing. The rate and
+ * the ore shares are the table node #923 ratified.
  */
 import { SCOOP_REFUSAL_TEXT } from "./cargo-notice";
-import { type DepositRow, debitAt } from "./deposit-state";
+import { type DepositRow, debitAt, rebasedRow } from "./deposit-state";
 import { type Grade, gradeOutputScale } from "./module-catalog";
 import {
 	type ScoopGear,
@@ -27,7 +27,7 @@ import {
 	v3,
 } from "./vec3";
 
-/** Candidate extraction figures. The scoop window and charge are the fitted scoop's (#1095 D5, D6; node #1100). */
+/** Extraction figures. The scoop window and charge are the fitted scoop's (#1095 D5, D6; node #1100). */
 export const EXTRACTION = {
 	ejectKms: 0.01,
 	ejectSpread: 0.6,
@@ -74,9 +74,9 @@ export function firstHitExtraction(
 }
 
 /**
- * The hardpoint `?mining=1` fits a Mining Laser on, on a boot that writes
- * nothing: `fitted` when one is fitted already, else the first free hardpoint,
- * else the first hardpoint; `null` on a hull with none.
+ * The hardpoint a probe fits a Mining Laser on: `fitted` when one is fitted
+ * already, else the first free hardpoint, else the first hardpoint; `null` on a
+ * hull with none.
  */
 export function prototypeMiningLaserSlot<K extends string>(
 	hardpoints: readonly { key: K }[],
@@ -146,14 +146,12 @@ export function debitSurface(
 	n: number,
 ): DepositRow {
 	const at = row?.at ?? 0;
-	const surface = debitAt(row?.surface ?? 0, at, t) + n;
-	const deep = row?.deep === undefined ? undefined : debitAt(row.deep, at, t);
-	return {
-		...row,
-		surface,
-		...(deep !== undefined && { deep }),
-		at: t,
-	};
+	return rebasedRow(
+		debitAt(row?.surface ?? 0, at, t) + n,
+		row?.deep === undefined ? undefined : debitAt(row.deep, at, t),
+		row?.surveyedAt,
+		t,
+	);
 }
 
 /** A rock's drawn surface: its frame's turn, and its radius along a unit direction as a share of `radiusKm`. */

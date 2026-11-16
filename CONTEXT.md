@@ -234,7 +234,8 @@ raw-ore skips; its ordinary hold remains 40 t. Other hulls share their general
 hold with ore. `commanderOreBay` and `cargoHold` in `src/station-commerce.ts`
 own the compartment rule shared by mining, markets and recovery; `src/hold.ts`
 projects its `oreBay` for the glass, labelled `RAW ORE`. Ore contributes flown
-mass once. Raw sales require `?mining=1`; loading without it retains ore aboard.
+mass once. Raw ore sells at any market; a hull change auto-sells it from a
+shared hold, never from a dedicated ore bay.
 
 It is the *player's* hold and nothing else's. **Manifest** above is what an
 ordinary carrier carries, **Traffic hold** is a place a carrier waits, `ScanHold`

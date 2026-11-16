@@ -60,11 +60,7 @@ test("a new miner game under the flag fits the Mining Laser in h2 at size 3 and 
 
 const MINING_LASER = "Mining Laser";
 
-const buyAt = (
-	type: "refinery" | "shipyard",
-	loadout: Loadout,
-	mining: boolean,
-) =>
+const buyAt = (type: "refinery" | "shipyard", loadout: Loadout) =>
 	transactAtStation({
 		commander: { ...newCommander("miner"), credits: 100_000, loadout },
 		deficits: {},
@@ -79,32 +75,25 @@ const buyAt = (
 		entrustedT: 0,
 		rungs: TOP_RUNGS,
 		hullReach: () => ({ ok: true, systems: 1 }) as const,
-		mining,
 		action: { type: "buy-equipment", equipment: MINING_LASER },
 	});
 
 test("the first Mining Laser bought at a refinery goes to h2 at size 3, and the Pulse Laser stays (D-D7, D-D18)", () => {
-	for (const mining of [false, true]) {
-		const out = buyAt("refinery", stockLoadout("miner"), mining);
-		if (!out.accepted) throw new Error(out.reason);
-		expect(out.commander.loadout.h1).toEqual(makeModule("pulse-laser", 3));
-		const { purchaseCostCr, ...h2 } = out.commander.loadout.h2;
-		expect(h2).toEqual(makeModule("mining-laser", 3));
-		expect(out.commander.recoveredFittings ?? []).toEqual([]);
-		const price = moduleRow(makeModule("mining-laser", 3)).priceCr;
-		expect(purchaseCostCr).toBe(price);
-		expect(out.commander.credits).toBe(100_000 - price);
-	}
+	const out = buyAt("refinery", stockLoadout("miner"));
+	if (!out.accepted) throw new Error(out.reason);
+	expect(out.commander.loadout.h1).toEqual(makeModule("pulse-laser", 3));
+	const { purchaseCostCr, ...h2 } = out.commander.loadout.h2;
+	expect(h2).toEqual(makeModule("mining-laser", 3));
+	expect(out.commander.recoveredFittings ?? []).toEqual([]);
+	const price = moduleRow(makeModule("mining-laser", 3)).priceCr;
+	expect(purchaseCostCr).toBe(price);
+	expect(out.commander.credits).toBe(100_000 - price);
 });
 
-test("a second Mining Laser is bought at a refinery, and under the flag at a shipyard, and fits h3 at size 3 (D-D12, D-D18)", () => {
+test("a second Mining Laser is bought at a refinery or a shipyard and fits h3 at size 3 (D-D12, D-D18)", () => {
 	const one = { ...stockLoadout("miner"), h2: makeModule("mining-laser", 3) };
-	for (const [type, mining] of [
-		["refinery", false],
-		["refinery", true],
-		["shipyard", true],
-	] as const) {
-		const out = buyAt(type, one, mining);
+	for (const type of ["refinery", "shipyard"] as const) {
+		const out = buyAt(type, one);
 		if (!out.accepted) throw new Error(`${type}: ${out.reason}`);
 		expect(out.commander.loadout.h1?.module).toBe("pulse-laser");
 		expect(out.commander.loadout.h2?.module).toBe("mining-laser");
@@ -113,29 +102,16 @@ test("a second Mining Laser is bought at a refinery, and under the flag at a shi
 	}
 });
 
-test("without the flag a shipyard does not list or sell the Mining Laser", () => {
-	const out = buyAt("shipyard", stockLoadout("miner"), false);
-	expect(out.accepted ? "sold" : out.reason).toBe("equipment-unavailable");
-	const screen = (mining: boolean) =>
-		stationEquipmentScreen({
-			hull: "miner",
-			loadout: stockLoadout("miner"),
-			type: "shipyard",
-			displayTL: 11,
-			rungs: TOP_RUNGS,
-			mining,
-		});
-	expect(screen(false).unavailable).toContainEqual({
-		name: MINING_LASER,
-		reason: "refineries only",
+test("a shipyard lists and sells the Mining Laser too (D-D18)", () => {
+	const screen = stationEquipmentScreen({
+		hull: "miner",
+		loadout: stockLoadout("miner"),
+		type: "shipyard",
+		displayTL: 11,
+		rungs: TOP_RUNGS,
 	});
-	expect(screen(false).available.map((e) => e.name)).not.toContain(
-		MINING_LASER,
-	);
-	expect(screen(true).available.map((e) => e.name)).toContain(MINING_LASER);
-	expect(screen(true).unavailable.map((e) => e.name)).not.toContain(
-		MINING_LASER,
-	);
+	expect(screen.available.map((e) => e.name)).toContain(MINING_LASER);
+	expect(screen.unavailable.map((e) => e.name)).not.toContain(MINING_LASER);
 });
 
 test("every other hull is sold the module it was sold before, whatever its loadout", () => {
@@ -147,13 +123,13 @@ test("every other hull is sold the module it was sold before, whatever its loado
 	}
 });
 
-test("two size-3 E Mining Lasers fire as MINING LASERS under the flag and cut 0.45 t/s together (provisional, #922)", () => {
+test("two size-3 E Mining Lasers fire as MINING LASERS and cut 0.45 t/s together (#923)", () => {
 	const loadout = {
 		...stockLoadout("miner"),
 		h2: makeModule("mining-laser", 3),
 		h3: makeModule("mining-laser", 3),
 	};
-	const groups = fireGroups(loadout, "miner", true);
+	const groups = fireGroups(loadout, "miner");
 	expect(groups.map((g) => g.label)).toEqual([
 		"ALL LASERS",
 		"MINING LASERS",
@@ -166,14 +142,10 @@ test("two size-3 E Mining Lasers fire as MINING LASERS under the flag and cut 0.
 		"h2",
 		"h3",
 	]);
-	expect(fireGroups(loadout, "miner", false).map((g) => g.label)).not.toContain(
-		"MINING LASERS",
-	);
 	expect(
 		fireGroups(
 			{ ...stockLoadout("miner"), h2: makeModule("mining-laser", 3) },
 			"miner",
-			true,
 		).map((g) => g.label),
 	).not.toContain("MINING LASERS");
 	const both = firedExtraction(

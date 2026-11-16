@@ -126,7 +126,7 @@ export const FIELD_PROFILE: Readonly<Record<FieldProfileName, FieldProfile>> = {
 };
 
 /** How the approved arrangement spreads each profile (#1043, #1209). Rock counts
- *  and density that follow from it are provisional pending #923. */
+ *  and density that follow from it are the field population node #923 ratified. */
 export const ORGANIC_ARRANGEMENT: Readonly<
 	Record<FieldProfileName, { spanKm: number; lobeRadiusKm: number }>
 > = {
@@ -695,7 +695,7 @@ export function arrangeRocks(
 /**
  * A field's rocks, in slot order: the one production layout that drawing,
  * collision, targeting, surveys and saved deposits all read. The count and
- * radius mix it yields are provisional pending #923.
+ * radius mix it yields are the field population node #923 ratified.
  */
 export function fieldRocks(record: SystemRecord, plan: FieldPlan): Rock[] {
 	const fieldSeed = mix(record.seed, plan.slot);

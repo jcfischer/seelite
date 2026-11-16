@@ -51,14 +51,12 @@ export function miningBeamRays<T>(
 	});
 }
 
-/** The fired hardpoints that draw a tracer from the glass: with the mounts (`?mining=1`) a Mining Laser draws its beam from its mount instead (round 9, F1). */
+/** The fired hardpoints that draw a tracer from the glass: a Mining Laser draws its beam from its mount instead (round 9, F1). */
 export function glassTracerIndices(
 	hull: HullId,
 	loadout: Loadout,
 	fired: readonly number[],
-	mounts: boolean,
 ): number[] {
-	if (!mounts) return [...fired];
 	const keys = hardpointKeys(hull);
 	return fired.filter((i) => loadout[keys[i] ?? ""]?.module !== "mining-laser");
 }

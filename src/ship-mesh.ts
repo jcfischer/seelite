@@ -2976,8 +2976,8 @@ export function cockpitOcclusion(
 
 /**
  * https://github.com/jcfischer/seelite/issues/920
- * The Longwall as the cockpit sees it under `?mining=1` (round 9 F3, round 10
- * F5, round 11): of the mounts, the feed and the struts, only the parts in
+ * The Longwall as the cockpit sees it (round 9 F3, round 10 F5, round 11):
+ * of the mounts, the feed and the struts, only the parts in
  * `seen`, the ones `cockpitOcclusion` finds the hull leaves in view; the hull
  * and every other part hidden. `null` puts back what each part drew before.
  */

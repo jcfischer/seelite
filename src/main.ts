@@ -19,9 +19,7 @@ import {
 	type RockContents,
 	rockContents,
 	SURVEY,
-	SURVEY_INTERRUPTS,
 	type SurveyHold,
-	type SurveyInterrupt,
 	stepSurveyHold,
 	surveyCompleted,
 	surveyFigures,
@@ -47,8 +45,6 @@ import {
 } from "./rock-extraction";
 import { impactRadiusPx, mountBeamStrokes } from "./mining-beam";
 import {
-	aimedRock,
-	cycleWithRocks,
 	type FieldRocks,
 	edgeAngleOff,
 	frontRock,
@@ -56,8 +52,6 @@ import {
 	nearRocks,
 	ROCK_CYCLE_MAX,
 	ROCK_DROP_KM,
-	ROCK_PICKS,
-	type RockPick,
 	type RockRef,
 	resolveRock,
 	rockContact,
@@ -1569,27 +1563,11 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 
-const MINING_QUERY = new URLSearchParams(window.location.search);
-const MINING_ON = MINING_QUERY.get("mining") === "1";
 const COCKPIT_SEEN_PARTS = new Map(
 	COCKPIT_OCCLUSION.flatMap((row) =>
 		row.poses.map((pose) => [pose.seen, new Set(pose.seen)] as const),
 	),
 );
-const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
-	MINING_QUERY.get("rock-pick") ?? "",
-)
-	? (MINING_QUERY.get("rock-pick") as RockPick)
-	: "front";
-const SURVEY_INTERRUPT: SurveyInterrupt = (
-	SURVEY_INTERRUPTS as readonly string[]
-).includes(MINING_QUERY.get("survey-interrupt") ?? "")
-	? (MINING_QUERY.get("survey-interrupt") as SurveyInterrupt)
-	: "decay";
-const positiveParam = (name: string, fallback: number): number => {
-	const v = Number(MINING_QUERY.get(name));
-	return Number.isFinite(v) && v > 0 ? v : fallback;
-};
 const SPARK_RATE_PER_S = 70;
 const SPARK_KMS = 0.12;
 const SPARK_LIFE_S = 0.6;
@@ -1601,10 +1579,6 @@ const FRAGMENT_CSS: Readonly<Record<OreFamily, string>> = {
 	gold: "rgba(255, 214, 80, .95)",
 	platinum: "rgba(240, 240, 250, .95)",
 	gem: "rgba(240, 110, 220, .95)",
-};
-const SURVEY_BASE = {
-	rangeKm: positiveParam("survey-range", SURVEY.rangeKm),
-	dwellS: positiveParam("survey-dwell", SURVEY.dwellS),
 };
 
 /**
@@ -2929,8 +2903,7 @@ class Game {
 
 	private get flownSolid(): readonly Primitive[] {
 		const spec = HULL_SPECS[this.flownHull];
-		const deployed =
-			MINING_ON && spec.cutter !== undefined && this.drill?.extension >= 1;
+		const deployed = spec.cutter !== undefined && this.drill?.extension >= 1;
 		if (
 			this.flownSolidOf?.hull !== this.flownHull ||
 			this.flownSolidOf.deployed !== deployed
@@ -5531,7 +5504,7 @@ class Game {
 	readonly armedFireGroup = new ArmedFireGroup();
 
 	get fireGroups() {
-		return fireGroups(this.commander.loadout, this.commander.hull, MINING_ON);
+		return fireGroups(this.commander.loadout, this.commander.hull);
 	}
 
 	cycleFireGroup() {
@@ -9420,40 +9393,19 @@ class Game {
 		return ref && ref.distKm <= ROCK_DROP_KM ? ref : null;
 	}
 
-	private cycleRockTarget(step: number): boolean {
-		if (ROCK_PICK === "front") {
-			const front = frontRock(
-				nearRocks(
-					this.fieldRockSets(),
-					this.world.ship.pos,
-					this.world.gameTime,
-					ROCK_DROP_KM,
-				),
+	private cycleRockTarget(): boolean {
+		const front = frontRock(
+			nearRocks(
+				this.fieldRockSets(),
 				this.world.ship.pos,
-				this.weaponAim(),
-			);
-			if (!front) return false;
-			this.targetId = front.id;
-			return true;
-		}
-		const near = nearRocks(
-			this.fieldRockSets(),
+				this.world.gameTime,
+				ROCK_DROP_KM,
+			),
 			this.world.ship.pos,
-			this.world.gameTime,
+			this.weaponAim(),
 		);
-		if (near.length === 0) return false;
-		if (ROCK_PICK === "aim") {
-			const aimed = aimedRock(near, this.world.ship.pos, this.weaponAim());
-			if (!aimed || aimed.id === this.targetId) return false;
-			this.targetId = aimed.id;
-			return true;
-		}
-		this.targetId = cycleWithRocks(
-			near.slice(0, ROCK_CYCLE_MAX).map((r) => r.id),
-			this.selectable().map((b) => b.id),
-			this.targetId,
-			step,
-		);
+		if (!front) return false;
+		this.targetId = front.id;
 		return true;
 	}
 
@@ -9461,7 +9413,7 @@ class Game {
 		let best: { rangeKm: number; dwellS: number } | null = null;
 		for (const m of Object.values(this.commander.loadout)) {
 			if (m.module !== "mining-laser") continue;
-			const f = surveyFigures(m.size, m.grade, SURVEY_BASE);
+			const f = surveyFigures(m.size, m.grade);
 			if (
 				!best ||
 				f.rangeKm > best.rangeKm ||
@@ -9517,15 +9469,9 @@ class Game {
 			: null;
 		const figures = this.surveyFiguresFitted();
 		const held = ref && this.surveyBlock(ref) === null ? ref.id : null;
-		const dwellS = figures?.dwellS ?? SURVEY_BASE.dwellS;
+		const dwellS = figures?.dwellS ?? SURVEY.dwellS;
 		const before = this.surveyHold;
-		this.surveyHold = stepSurveyHold(
-			before,
-			held,
-			dt,
-			dwellS,
-			SURVEY_INTERRUPT,
-		);
+		this.surveyHold = stepSurveyHold(before, held, dt, dwellS);
 		if (!ref || !surveyCompleted(before, this.surveyHold, dwellS)) return;
 		this.putDepositRow(ref, {
 			...this.rockDepositRow(ref),
@@ -9853,7 +9799,7 @@ class Game {
 	} | null = null;
 
 	private drillCutter() {
-		return MINING_ON ? (HULL_SPECS[this.flownHull].cutter ?? null) : null;
+		return HULL_SPECS[this.flownHull].cutter ?? null;
 	}
 
 	private drillArmed(): boolean {
@@ -9938,7 +9884,7 @@ class Game {
 	}
 
 	private syncFineThrottle(): boolean {
-		const fine = MINING_ON && this.fineFrame() !== null;
+		const fine = this.fineFrame() !== null;
 		if (fine !== this.fineWas) {
 			this.throttle = fine
 				? rescaleThrottle(this.throttle, ASSIST_CAP_KMS, FINE.surgeCapKms)
@@ -10698,9 +10644,6 @@ class Game {
 			? this.rockRef(this.targetId)
 			: null;
 		return {
-			on: MINING_ON,
-			pick: ROCK_PICK,
-			interrupt: SURVEY_INTERRUPT,
 			figures: this.surveyFiguresFitted(),
 			hold: this.surveyHold,
 			target: ref
@@ -11606,7 +11549,7 @@ class Game {
 				view: this.view,
 				cabin: this.cabinId,
 				quality: this.settings.value.quality,
-				extension: MINING_ON ? this.drill.extension : 0,
+				extension: this.drill.extension,
 				screenVisible: this.drillCameraScreenVisible(d.plane),
 				enabled: this.drillCameraEnabled,
 			});
@@ -11654,10 +11597,9 @@ class Game {
 		const c = this.condition;
 		const hold = this.minedHold();
 		const d = this.drill;
-		const survey = MINING_ON ? this.surveyState() : null;
+		const survey = this.surveyState();
 		return {
-			mining: MINING_ON,
-			surveyDesignation: survey?.designation || null,
+			surveyDesignation: survey.designation || null,
 			minedT: this.minedT,
 			holdLabel: oreCapacityLabel(this.flownHull),
 			holdUsedT: hold.usedT,
@@ -11808,7 +11750,7 @@ class Game {
 	}
 
 	private displayTargetKm(target: Body | null, centreKm: number): number {
-		return MINING_ON && target?.kind === "rock"
+		return target?.kind === "rock"
 			? (this.rockRef(target.id)?.distKm ?? centreKm)
 			: centreKm;
 	}
@@ -12693,7 +12635,7 @@ class Game {
 				this.beginFaceTurn();
 				return;
 			case "fight.drillHold":
-				if (MINING_ON) this.toggleDrillHold();
+				this.toggleDrillHold();
 				break;
 			case "fight.cycleFireGroup":
 				this.cycleFireGroup();
@@ -13410,7 +13352,7 @@ class Game {
 	}
 
 	cycleTarget(step: number) {
-		if (MINING_ON && this.cycleRockTarget(step)) return;
+		if (this.cycleRockTarget()) return;
 		const list = this.selectable();
 		if (list.length === 0) return;
 		const at = list.findIndex((b) => b.id === this.targetId);
@@ -13659,7 +13601,7 @@ class Game {
 		label: string;
 		velocityAt: (gameTime: number) => Vec3;
 	} {
-		const fine = MINING_ON ? this.fineFrame() : null;
+		const fine = this.fineFrame();
 		if (fine) return fine;
 		const view = this.relayView;
 		if (view && this.proximityFrameBodyId === null) {
@@ -13869,7 +13811,6 @@ class Game {
 			this.flownHull,
 			this.commander.loadout,
 			this.firedMuzzleIndices,
-			MINING_ON,
 		);
 	}
 
@@ -18341,7 +18282,7 @@ class Game {
 				impulse.yaw !== 0 ||
 				Object.keys(direct).length > 0,
 		);
-		const turnShare = MINING_ON && this.fineFrame() !== null ? FINE_STICK : 1;
+		const turnShare = this.fineFrame() !== null ? FINE_STICK : 1;
 		const fineTurn = (a: Angular): Angular => ({
 			pitch: a.pitch * turnShare,
 			yaw: a.yaw * turnShare,
@@ -18567,9 +18508,9 @@ class Game {
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
 		this.stepScan(dt);
-		if (MINING_ON) this.stepSurvey(dt);
-		if (MINING_ON) this.stepExtraction(dt);
-		if (MINING_ON) this.stepDrill(dt);
+		this.stepSurvey(dt);
+		this.stepExtraction(dt);
+		this.stepDrill(dt);
 		this.stepSystemSweep();
 		this.stepFieldDiscovery(previous);
 		// §7: the tank refills passively in normal flight, and that is the
@@ -19556,7 +19497,7 @@ class Game {
 
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
-		if (MINING_ON) this.poseDrillMesh();
+		this.poseDrillMesh();
 		this.shipMesh.quaternion.copy(this.orientation);
 		this.anchorFleet();
 		for (const parked of this.fleet)
@@ -19607,7 +19548,6 @@ class Game {
 		// #535's prologue is empty space: the ship has not arrived yet.
 		const hullShown = this.view === "chase" && this.opening?.shot !== "forming";
 		const drillView =
-			MINING_ON &&
 			this.view === "cockpit" &&
 			!!HULL_SPECS[this.flownHull].cutter &&
 			this.opening?.shot !== "forming";
@@ -20065,8 +20005,7 @@ class Game {
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
 		this.audio.weapons(this.simulationHeld ? SILENT_WEAPONS : this.weaponMix);
-		if (MINING_ON && (this.simulationHeld || !this.drillCutter()))
-			this.audio.drill(0, 0);
+		if (this.simulationHeld || !this.drillCutter()) this.audio.drill(0, 0);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -20383,7 +20322,7 @@ class Game {
 		const dockContext = this.dockedStationContext();
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).
-		const hold = holdSummary(this.commander, this.requests, MINING_ON);
+		const hold = holdSummary(this.commander, this.requests);
 		// One board per update: the console draws it and the first day asks it
 		// whether a Local run is posted (#408). Station control's log is written
 		// here, once, before the panel reads it.
@@ -20525,7 +20464,7 @@ class Game {
 	 */
 	private requestsView(
 		context = this.dockedStationContext(),
-		hold = holdSummary(this.commander, this.requests, MINING_ON),
+		hold = holdSummary(this.commander, this.requests),
 	): RequestsView {
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
@@ -20871,10 +20810,9 @@ class Game {
 		// One projection for the whole console (#443) — see the key below for
 		// why it is built before the memo is consulted. Built first now because
 		// the market's HELD column reads it too.
-		const hold = holdSummary(this.commander, this.requests, MINING_ON);
+		const hold = holdSummary(this.commander, this.requests);
 		const readMarket = () =>
 			stationMarketScreen({
-				mining: MINING_ON,
 				station: market,
 				economy,
 				gameTimeMin,
@@ -20971,8 +20909,7 @@ class Game {
 			label: this.nameOfStation(station.id),
 			tab:
 				(this.stationConsoleTab === "Shipyard" && market.type !== "shipyard") ||
-				(this.stationConsoleTab === "Refinery" &&
-					(!MINING_ON || market.type !== "refinery"))
+				(this.stationConsoleTab === "Refinery" && market.type !== "refinery")
 					? "Market"
 					: this.stationConsoleTab,
 			market: freshMarket ?? readMarket(),
@@ -20982,7 +20919,6 @@ class Game {
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
-				mining: MINING_ON,
 			}),
 			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else.
 			shipyard:
@@ -22112,14 +22048,11 @@ class Game {
 			entrustedT: entrustedTonnesAboard(this.requests),
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
-			mining: MINING_ON,
-			services: MINING_ON
-				? stationServices(
-						advanceTo(this.commerceWorld, this.world.gameTime),
-						context.galaxyIndex,
-						context.stationKey,
-					)
-				: undefined,
+			services: stationServices(
+				advanceTo(this.commerceWorld, this.world.gameTime),
+				context.galaxyIndex,
+				context.stationKey,
+			),
 		};
 	}
 
@@ -22185,7 +22118,7 @@ class Game {
 			// `?? "invalid-quantity"` this replaced was a default arm in all but
 			// name — it would have printed "That is not a quantity." over a full
 			// hold, which is #443's own failure one turn later.
-			const hold = holdSummary(this.commander, this.requests, MINING_ON);
+			const hold = holdSummary(this.commander, this.requests);
 			this.stationConsoleMessage = refusalSentence(result.reason, {
 				freeT: hold.freeT,
 				capacityT: hold.capacityT,
@@ -22231,7 +22164,7 @@ class Game {
 		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
 		services: ReturnType<typeof stationServices> | undefined,
 	): RefineryConsole | null {
-		if (!MINING_ON || context.station.type !== "refinery") return null;
+		if (context.station.type !== "refinery") return null;
 		const world = advanceTo(this.commerceWorld, this.world.gameTime);
 		const queue =
 			world.galaxies[context.galaxyIndex].refineries[context.stationKey];
@@ -22565,7 +22498,6 @@ class Game {
 
 	private navigationTargets(): NavBody[] {
 		const ordinary = this.selectable();
-		if (!MINING_ON) return ordinary;
 		const rocks = nearRocks(
 			this.fieldRockSets().filter(
 				({ plan }) => plan.id === this.frameField?.id,
@@ -23395,7 +23327,7 @@ class Game {
 		this.cockpitRaiderBeam = null;
 		const raider = this.raiderFiring && this.raiderListed;
 		const rig = this.combatRig?.tracerStrokes(this.view) ?? NO_BEAM_STROKES;
-		const mining = MINING_ON ? this.miningBeam : null;
+		const mining = this.miningBeam;
 		const any =
 			this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0 || !!mining;
 		if (!(this.view === "cockpit" && any && this.flightGlassShown())) {
@@ -23506,7 +23438,7 @@ class Game {
 				text: ejectWarningText(ejectPrompt(this.bindings)),
 				fill: FLOOR_TONE_FILL.action,
 			});
-		if (MINING_ON) {
+		{
 			this.cockpit.text.write("ore", [
 				{
 					text: this.oreLine(),
@@ -23695,10 +23627,10 @@ class Game {
 		this.deepCueRender = null;
 		this.fragmentRender = null;
 		this.impactRender = null;
-		if (MINING_ON) this.drawDeepDepositCue(ctx, camPos, place);
-		if (MINING_ON) this.drawImpact(ctx, camPos, place, h);
-		if (MINING_ON) this.drawFragments(ctx, camPos, place, w, h);
-		if (MINING_ON) this.drawDrill(ctx, camPos, place, w, h);
+		this.drawDeepDepositCue(ctx, camPos, place);
+		this.drawImpact(ctx, camPos, place, h);
+		this.drawFragments(ctx, camPos, place, w, h);
+		this.drawDrill(ctx, camPos, place, w, h);
 
 		// The attitude reference: a short level line rolled to the system's
 		// reference plane. Faint, because it is a background fact rather than
@@ -23940,7 +23872,7 @@ class Game {
 		}
 		// The cockpit's tracer is in the frame, behind the cabin
 		// (`drawCockpitBeams`, node #806); chase has no cabin and keeps its own.
-		const chaseMining = MINING_ON && this.view === "chase" && this.miningBeam;
+		const chaseMining = this.view === "chase" && this.miningBeam;
 		this.chaseMiningRender = 0;
 		if (chaseMining) this.drawChaseMiningBeam(ctx, w, h, chaseMining);
 		if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
@@ -24191,8 +24123,9 @@ class Game {
 				);
 			}
 		}
-		const rockSelected =
-			MINING_ON && isRockTargetId(this.targetId) ? this.targetBody() : null;
+		const rockSelected = isRockTargetId(this.targetId)
+			? this.targetBody()
+			: null;
 		for (const body of rockSelected
 			? [...this.selectable(), rockSelected]
 			: this.selectable()) {
@@ -24828,7 +24761,7 @@ if (postcard) {
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			prepareCourierHullModel,
 			prepareTugHullModel,
-			(p) => prepareLongwallModel(p, { posableStruts: MINING_ON }),
+			(p) => prepareLongwallModel(p, { posableStruts: true }),
 			preparePorterModel,
 			prepareVoyagerHullModel,
 			prepareInterceptorHullModel,
@@ -25107,7 +25040,6 @@ if (postcard) {
 		);
 		game = new Game(worldSeed, null, askedSystem);
 	}
-	if (MINING_ON) game.fitPrototypeMiningLaser(plan.writesNothing);
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
 	// Held until a store is attached or the player chooses (§11.2 step 4).

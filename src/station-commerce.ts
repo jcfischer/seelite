@@ -274,8 +274,6 @@ export interface StationCommerceInput {
 	 * hull that can never leave, and no default can know the galaxy.
 	 */
 	hullReach: (hull: HullId) => HullReach;
-	/** `?mining=1`, for `stationEquipmentScreen`'s `mining`: https://github.com/jcfischer/seelite/issues/1147 */
-	mining?: boolean;
 	action: StationAction;
 }
 
@@ -494,7 +492,6 @@ const availableEquipment = (
 		loadout: input.commander.loadout,
 		displayTL: input.displayTL,
 		rungs: input.rungs,
-		mining: input.mining,
 	}).available.filter((item) => item.per === "unit");
 
 /** Existing type-scoped modules use exclusive service; unscoped kinds use equipment. */
@@ -507,7 +504,7 @@ function damagedPurchase(
 	input: ConsoleInput,
 	service: CapabilityService,
 ): StationCommerceResult | null {
-	if (!input.mining || input.services?.[service] !== false) return null;
+	if (input.services?.[service] !== false) return null;
 	switch (service) {
 		case "market":
 			return rejected(input, "market-damaged");
@@ -829,8 +826,6 @@ function stationTransaction(
 	}
 	if (!listsCommodity(good, input.station))
 		return rejected(input, "commodity-unavailable");
-	if (oreGood(good.name) && !input.mining)
-		return rejected(input, "commodity-unavailable");
 	const damage = damagedPurchase(input, "market");
 	if (damage) return damage;
 	const { base, deficit, holdT, q } = priceAt(input, good, quote);
@@ -1111,7 +1106,7 @@ export function hullOffer(
 				good.unit === "t" &&
 				units > 0 &&
 				!good.illegal &&
-				(!oreGood(good.name) || (input.mining && !dedicated)),
+				(!oreGood(good.name) || !dedicated),
 		)
 		.map((lot) => ({
 			...lot,

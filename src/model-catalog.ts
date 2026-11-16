@@ -45,9 +45,7 @@ export const modelLoaders = {
 		(await import("./seven-ships-hulls")).prepareRampartHullModel(p),
 	miner: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./longwall-model")).prepareLongwallModel(p, {
-			posableStruts:
-				new URLSearchParams(globalThis.location?.search ?? "").get("mining") ===
-				"1",
+			posableStruts: true,
 		}),
 	freighter: async (p?: Parameters<ModelLoader>[0]) =>
 		(await import("./porter-model")).preparePorterModel(p),

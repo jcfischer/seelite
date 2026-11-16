@@ -128,7 +128,6 @@ const compareLines = (a: HoldLine, b: HoldLine): number => {
 export function holdSummary(
 	commander: CommanderState,
 	requests: RequestsState,
-	mining = false,
 ): HoldSummary {
 	const entrustedT = entrustedTonnesAboard(requests);
 	const { usedT, capacityT } = commanderHold(commander, entrustedT);
@@ -144,7 +143,7 @@ export function holdSummary(
 			amount,
 			unit: commodity(goodName).unit,
 			owner: "pilot",
-			...(oreGood(goodName) ? { kind: "ore" as const, sellable: mining } : {}),
+			...(oreGood(goodName) ? { kind: "ore" as const, sellable: true } : {}),
 		});
 	}
 	for (const item of commander.recoveredFittings ?? [])
@@ -210,7 +209,7 @@ export function holdSummary(
 		freeT: capacityT - usedT,
 		entrustedT,
 		lines,
-		...(oreBay && (mining || oreBay.usedT > 0)
+		...(oreBay
 			? {
 					oreBay: {
 						...oreBay,

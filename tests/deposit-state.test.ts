@@ -59,18 +59,17 @@ const fixture = (seed = 1, galaxyIndex = 0) => {
 
 describe("deposit rows (node #967)", () => {
 	test("recovery is whole-tonne linear on the seconds game clock", () => {
-		expect(RECOVERY_T_PER_H).toBe(1);
+		expect(RECOVERY_T_PER_H).toBe(10);
 		expect(SURVEY_LIFETIME_H).toBe(24);
 		for (const [t, expected] of [
-			[10, 3],
-			[3609.999, 3],
-			[3610, 2],
-			[7210, 1],
+			[10, 25],
+			[3609.999, 16],
+			[7210, 5],
 			[10810, 0],
 			[1e9, 0],
 		])
-			expect(debitAt(3, 10, t)).toBe(expected);
-		expect(() => debitAt(3, 10, 9)).toThrow();
+			expect(debitAt(25, 10, t)).toBe(expected);
+		expect(() => debitAt(25, 10, 9)).toThrow();
 	});
 	test("reading expires exactly at its lifetime", () => {
 		expect(surveyLive({ surveyedAt: 10 }, 86409.999)).toBe(true);
@@ -80,17 +79,17 @@ describe("deposit rows (node #967)", () => {
 	test("compaction retains either debit and every live reading; drops only fully derivable rows", () => {
 		const key = depositKey(0, "field-00", 1);
 		for (const row of [
-			{ surface: 25, at: 0 },
-			{ deep: 25, at: 0 },
+			{ surface: 241, at: 0 },
+			{ deep: 241, at: 0 },
 			{ surveyedAt: 1 },
-			{ surface: 24, at: 0, surveyedAt: 1 },
+			{ surface: 240, at: 0, surveyedAt: 1 },
 		]) {
 			expect(isDerivable(row, 86400)).toBe(false);
 			expect(
 				compactDeposits({ rows: { [key]: row } }, 86400).rows[key],
 			).toEqual(row);
 		}
-		const expired = { surface: 24, deep: 1, at: 0, surveyedAt: 0 };
+		const expired = { surface: 240, deep: 1, at: 0, surveyedAt: 0 };
 		expect(isDerivable(expired, 86400)).toBe(true);
 		const original = { rows: { [key]: expired } };
 		expect(compactDeposits(original, 86400)).toEqual(emptyDeposits());

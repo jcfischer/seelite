@@ -1,7 +1,9 @@
 /**
  * Sparse asteroid depletion and survey facts (node #967, #951 D1–D6).
  * Contents remain seed-derived. Times are seconds on the game's clock.
- * Recovery and reading lifetime are calibration placeholders for node #920.
+ * Recovery and reading lifetime are the table node #923 ratified
+ * (https://github.com/jcfischer/seelite/issues/923): 10 t/h per rock and a
+ * 24 h reading.
  */
 import {
 	FIELD_GENERATOR_VERSION,
@@ -13,7 +15,7 @@ import { generateGalaxy } from "./galaxy";
 import { fnv1a } from "./rng";
 import { generateContents } from "./system";
 
-export const RECOVERY_T_PER_H = 1;
+export const RECOVERY_T_PER_H = 10;
 export const SURVEY_LIFETIME_H = 24;
 
 export type DepositKey = `${number}:field-${string}:${number}`;
@@ -82,6 +84,26 @@ export function debitAt(taken: number, at: number, t: number): number {
 }
 export const surveyLive = (row: DepositRow, t: number): boolean =>
 	row.surveyedAt !== undefined && t - row.surveyedAt < SURVEY_LIFETIME_H * 3600;
+/**
+ * A deposit row rebuilt from debits already rebased to `t`, dropping a debit
+ * that has fully recovered. A row never carries a zero debit: the save parser
+ * refuses one, so a rock cut and then drilled after its surface debit had
+ * recovered would fail its next commit.
+ */
+export function rebasedRow(
+	surface: number | undefined,
+	deep: number | undefined,
+	surveyedAt: number | undefined,
+	t: number,
+): DepositRow {
+	const next: DepositRow = {
+		...(surface !== undefined && surface > 0 ? { surface } : {}),
+		...(deep !== undefined && deep > 0 ? { deep } : {}),
+		...(surveyedAt === undefined ? {} : { surveyedAt }),
+	};
+	if (next.surface !== undefined || next.deep !== undefined) next.at = t;
+	return next;
+}
 export const isDerivable = (row: DepositRow, t: number): boolean =>
 	debitAt(row.surface ?? 0, row.at ?? 0, t) === 0 &&
 	debitAt(row.deep ?? 0, row.at ?? 0, t) === 0 &&

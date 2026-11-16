@@ -1,8 +1,8 @@
 /**
  * https://github.com/jcfischer/seelite/issues/920
- * Prototype for node #920: candidate rock contents on `ASTEROID_DEPOSIT` and the
- * Mining Laser's survey hold (#872 D5, D15; #951 D1, D3). Every figure here is a
- * provisional candidate for #922's economic measurement, not a ratified rate.
+ * Rock contents on `ASTEROID_DEPOSIT` and the Mining Laser's survey hold
+ * (#872 D5, D15; #951 D1, D3). The reading's lifetime is the table node #923
+ * ratified.
  */
 import {
 	FIELD_PROFILE,
@@ -30,7 +30,7 @@ export {
 	type OreGrade,
 } from "./ore-goods";
 
-/** Candidate family weights per field profile: charted is common ore, rare is richer in precious ore (#872 D6). */
+/** Ore family weights per field profile: charted is common ore, rare is richer in precious ore (#872 D6). */
 export const FAMILY_WEIGHTS: Readonly<
 	Record<FieldProfileName, Readonly<Record<OreFamily, number>>>
 > = {
@@ -43,7 +43,7 @@ export const FAMILY_WEIGHTS: Readonly<
 	},
 	rare: { silicate: 0.2, metallic: 0.3, gold: 0.2, platinum: 0.15, gem: 0.15 },
 };
-/** Candidate grade weights per field profile. */
+/** Ore grade weights per field profile. */
 export const GRADE_WEIGHTS: Readonly<
 	Record<FieldProfileName, Readonly<Record<OreGrade, number>>>
 > = {
@@ -51,7 +51,7 @@ export const GRADE_WEIGHTS: Readonly<
 	rare: { poor: 0.25, standard: 0.45, rich: 0.3 },
 };
 
-/** Candidate reserve scale, whole tonnes: surface ore grows with area, a deep deposit with volume. */
+/** Reserve scale, whole tonnes: surface ore grows with area, a deep deposit with volume. */
 export const RESERVE = {
 	surfaceMinT: 2,
 	surfaceAtLargestT: 150,
@@ -84,7 +84,7 @@ const pick = <K extends string>(
 	return order[order.length - 1];
 };
 
-/** Candidate contents for one rock. Every rock makes the same draws in the same order. */
+/** A rock's contents. Every rock makes the same draws in the same order. */
 export function rockContents(
 	systemSeed: number,
 	fieldSlot: number,
@@ -128,16 +128,12 @@ export function rockContents(
 	};
 }
 
-/** Candidate survey figures for a size 1, grade E Mining Laser. */
+/** Survey figures for a size 1, grade E Mining Laser. */
 export const SURVEY = {
 	rangeKm: 4,
 	coneDeg: 8,
 	dwellS: 4,
 } as const;
-
-/** How an interrupted scan treats its progress: the variants the principal flies. */
-export const SURVEY_INTERRUPTS = ["reset", "hold", "decay"] as const;
-export type SurveyInterrupt = (typeof SURVEY_INTERRUPTS)[number];
 
 /** The fitted Mining Laser's survey figures: range by size, dwell by grade, as #977 scales the identity scanner. */
 export function surveyFigures(
@@ -160,14 +156,13 @@ export const beginSurveyHold = (): SurveyHold => ({ key: null, chargeS: 0 });
 
 /**
  * One frame of the survey. `held` is the rock under a valid hold this frame (in range, in the cone,
- * trigger released, laser fitted), or `null`. A new rock starts over; an interrupted hold follows `interrupt`.
+ * trigger released, laser fitted), or `null`. A new rock starts over; a hold that drops decays.
  */
 export function stepSurveyHold(
 	hold: SurveyHold,
 	held: string | null,
 	dt: number,
 	dwellS: number,
-	interrupt: SurveyInterrupt,
 ): SurveyHold {
 	const step = Math.max(0, dt);
 	if (held !== null) {
@@ -176,9 +171,8 @@ export function stepSurveyHold(
 		const chargeS = Math.min(dwellS, hold.chargeS + step);
 		return chargeS === hold.chargeS ? hold : { key: held, chargeS };
 	}
-	if (hold.chargeS >= dwellS || interrupt === "reset")
+	if (hold.chargeS >= dwellS)
 		return hold.key === null && hold.chargeS === 0 ? hold : beginSurveyHold();
-	if (interrupt === "hold") return hold;
 	const chargeS = Math.max(0, hold.chargeS - step);
 	return chargeS === 0 ? beginSurveyHold() : { key: hold.key, chargeS };
 }

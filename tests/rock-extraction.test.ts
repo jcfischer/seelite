@@ -76,18 +76,25 @@ describe("the cut", () => {
 
 describe("the deposit", () => {
 	test("a release debits whole tonnes and rebases both debits", () => {
-		const t = 7200;
+		const t = 360;
 		const row = debitSurface(
 			{ surface: 5, deep: 3, at: 0, surveyedAt: 10 },
 			t,
 			1,
 		);
-		expect(row).toEqual({ surface: 4, deep: 1, at: t, surveyedAt: 10 });
-		expect(debitAt(row.surface ?? 0, row.at ?? 0, t)).toBe(4);
+		expect(row).toEqual({ surface: 5, deep: 2, at: t, surveyedAt: 10 });
+		expect(debitAt(row.surface ?? 0, row.at ?? 0, t)).toBe(5);
 	});
 
 	test("a first release creates the row", () => {
 		expect(debitSurface(undefined, 50, 1)).toEqual({ surface: 1, at: 50 });
+	});
+
+	test("a deep debit that has fully recovered is dropped, not written as zero", () => {
+		expect(debitSurface({ deep: 3, at: 0 }, 3600 * 2, 1)).toEqual({
+			surface: 1,
+			at: 3600 * 2,
+		});
 	});
 });
 
@@ -447,7 +454,7 @@ describe("the prototype's Mining Laser fit", () => {
 	});
 });
 
-test("Game fits the prototype laser only on a boot that writes nothing", async () => {
+test("a probe fits its own Mining Laser: the boot hands none out", async () => {
 	const main = await Bun.file(
 		new URL("../src/main.ts", import.meta.url),
 	).text();
@@ -456,8 +463,8 @@ test("Game fits the prototype laser only on a boot that writes nothing", async (
 	);
 	expect(at).toBeGreaterThan(0);
 	expect(main.slice(at, at + 120)).toContain("if (!writesNothing) return;");
-	expect(main).toContain(
-		"if (MINING_ON) game.fitPrototypeMiningLaser(plan.writesNothing);",
+	expect(main).not.toContain(
+		"game.fitPrototypeMiningLaser(plan.writesNothing);",
 	);
 });
 

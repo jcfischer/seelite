@@ -26,7 +26,6 @@ try {
 	await installViewFraming(page);
 	const url = gameUrl(origin, {
 		seed: 1,
-		mining: "1",
 		raider: "off",
 		"models-full": true,
 	});
@@ -86,7 +85,7 @@ try {
 	);
 	const tabs = await page.locator("[data-live-station-tab]").allInnerTexts();
 	check(
-		"the Refinery tab appears at a refinery with mining on",
+		"the Refinery tab appears at a refinery",
 		tabs.includes("Refinery"),
 		JSON.stringify(tabs),
 	);
@@ -267,12 +266,13 @@ try {
 		gameUrl(origin, { seed: 1, raider: "off", "models-full": true }),
 	);
 	await bootedGame(page, 180000);
-	const off = await page.evaluate(() => {
+	const plain = await page.evaluate(() => {
 		const g = window.__seelite;
 		g.setHeadLook("forward");
 		g.stationConsoleRevision++;
 		g.updateCockpit();
 		return {
+			station: g.dockedStationContext()?.station.type ?? null,
 			tabs: [...document.querySelectorAll("[data-live-station-tab]")].map(
 				(tab) => tab.textContent,
 			),
@@ -280,9 +280,11 @@ try {
 		};
 	});
 	check(
-		"without mining the docked console has no Refinery tab",
-		!off.tabs.includes("Refinery") && off.refinery === null,
-		JSON.stringify(off),
+		"the docked console offers its Refinery tab only where the station is a refinery",
+		plain.station === "refinery"
+			? plain.tabs.includes("Refinery") && plain.refinery !== null
+			: !plain.tabs.includes("Refinery") && plain.refinery === null,
+		JSON.stringify(plain),
 	);
 } finally {
 	await browser.close();

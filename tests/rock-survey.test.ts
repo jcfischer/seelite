@@ -90,14 +90,11 @@ describe("survey figures", () => {
 });
 
 describe("survey hold", () => {
-	const run = (
-		frames: (string | null)[],
-		interrupt: "reset" | "hold" | "decay",
-	) => {
+	const run = (frames: (string | null)[]) => {
 		let hold = beginSurveyHold();
 		let completions = 0;
 		for (const held of frames) {
-			const next = stepSurveyHold(hold, held, 1, 4, interrupt);
+			const next = stepSurveyHold(hold, held, 1, 4);
 			if (surveyCompleted(hold, next, 4)) completions++;
 			hold = next;
 		}
@@ -105,36 +102,29 @@ describe("survey hold", () => {
 	};
 
 	test("four unbroken seconds on one rock complete one survey", () => {
-		expect(run(["a", "a", "a", "a", "a", "a"], "reset").completions).toBe(1);
+		expect(run(["a", "a", "a", "a", "a", "a"]).completions).toBe(1);
 	});
 
-	test("changing rock starts over in every variant", () => {
-		for (const v of ["reset", "hold", "decay"] as const)
-			expect(run(["a", "a", "a", "b", "b", "b"], v)).toEqual({
-				hold: { key: "b", chargeS: 3 },
-				completions: 0,
-			});
-	});
-
-	test("an interruption resets, holds or decays", () => {
-		const frames = ["a", "a", "a", null, "a"];
-		expect(run(frames, "reset")).toEqual({
-			hold: { key: "a", chargeS: 1 },
+	test("changing rock starts over", () => {
+		expect(run(["a", "a", "a", "b", "b", "b"])).toEqual({
+			hold: { key: "b", chargeS: 3 },
 			completions: 0,
 		});
-		expect(run(frames, "hold").completions).toBe(1);
-		expect(run(frames, "decay")).toEqual({
+	});
+
+	test("an interruption decays the hold by the time it was dropped", () => {
+		expect(run(["a", "a", "a", null, "a"])).toEqual({
 			hold: { key: "a", chargeS: 3 },
 			completions: 0,
 		});
 	});
 
 	test("a completed hold does not complete again until it breaks", () => {
+		expect(run(["a", "a", "a", "a", "a", "a", "a", "a", "a"]).completions).toBe(
+			1,
+		);
 		expect(
-			run(["a", "a", "a", "a", "a", "a", "a", "a", "a"], "hold").completions,
-		).toBe(1);
-		expect(
-			run(["a", "a", "a", "a", null, "a", "a", "a", "a"], "hold").completions,
+			run(["a", "a", "a", "a", null, "a", "a", "a", "a"]).completions,
 		).toBe(2);
 	});
 });
@@ -167,36 +157,11 @@ describe("survey reading", () => {
 		expect(now?.surfaceLeftT).toBe(15);
 		expect(now?.deepLeftT).toBe(70);
 		const later = surveyReading(contents, row, 2 * 3600, 24);
-		expect(later?.surfaceLeftT).toBe(17);
-		expect(later?.deepLeftT).toBe(72);
-	});
-});
-
-describe("rock target cycle (near variant)", () => {
-	const { cycleWithRocks } =
-		require("../src/rock-target") as typeof import("../src/rock-target");
-	const rocks = ["rock:a:1", "rock:a:2"];
-	const ordinary = ["station-trade", "planet-1"];
-
-	test("from an ordinary target the key goes to the nearest rock", () => {
-		expect(cycleWithRocks(rocks, ordinary, "station-trade", 1)).toBe(
-			"rock:a:1",
-		);
-		expect(cycleWithRocks(rocks, ordinary, null, 1)).toBe("rock:a:1");
-		expect(cycleWithRocks(rocks, ordinary, "station-trade", -1)).toBe(
-			"rock:a:2",
-		);
-	});
-
-	test("past the last rock the cycle continues into the ordinary list", () => {
-		expect(cycleWithRocks(rocks, ordinary, "rock:a:1", 1)).toBe("rock:a:2");
-		expect(cycleWithRocks(rocks, ordinary, "rock:a:2", 1)).toBe(
-			"station-trade",
-		);
-	});
-
-	test("a rock that left the near set restarts at the nearest", () => {
-		expect(cycleWithRocks(rocks, ordinary, "rock:b:9", 1)).toBe("rock:a:1");
+		expect(later?.surfaceLeftT).toBe(20);
+		expect(later?.deepLeftT).toBe(90);
+		const half = surveyReading(contents, row, 3600, 24);
+		expect(half?.surfaceLeftT).toBe(20);
+		expect(half?.deepLeftT).toBe(80);
 	});
 });
 

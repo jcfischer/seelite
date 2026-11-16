@@ -1,8 +1,8 @@
 /**
  * https://github.com/jcfischer/seelite/issues/920
- * Prototype for node #920: individual rocks as selectable targets while mining is on.
- * Rocks stay out of `Game.selectable()`, whose membership is cached per system; a
- * `rock:` id resolves here against the ship's position and the game clock instead.
+ * Individual rocks as selectable targets. Rocks stay out of `Game.selectable()`,
+ * whose membership is cached per system; a `rock:` id resolves here against the
+ * ship's position and the game clock instead.
  */
 import {
 	type FieldPlan,
@@ -15,20 +15,17 @@ import type { DisplayContact } from "./display-contact";
 import { spinQuat } from "./field-lod";
 import { type Vec3, v3 } from "./vec3";
 
-/** Candidate: how near a rock has to be to join the target cycle, km. */
+/** How near a rock has to be to join the target cycle, km. */
 export const ROCK_SELECT_KM = 12;
-/** Candidate: how many of the nearest rocks the cycle offers. */
+/** How many of the nearest rocks the cycle offers. */
 export const ROCK_CYCLE_MAX = 12;
-/** Candidate: the aim variant's widest acceptable angle off the sightline, degrees. */
+/** The widest angle off the sightline a rock still counts as aimed at, degrees. */
 export const ROCK_AIM_DEG = 20;
 /** A selected rock farther than this is dropped as a target, km. */
 export const ROCK_DROP_KM = 40;
 
-/** Candidate: the front variant's cone when the sightline meets no rock, degrees. */
+/** The front cone when the sightline meets no rock, degrees. */
 export const ROCK_FRONT_DEG = 5;
-
-export const ROCK_PICKS = ["front", "near", "aim"] as const;
-export type RockPick = (typeof ROCK_PICKS)[number];
 
 export interface FieldRocks {
 	plan: FieldPlan;
@@ -135,22 +132,6 @@ export function resolveRock(
 		vel: pose.vel,
 		distKm: Math.max(0, dist(pose.pos, shipPos) - rock.radiusKm),
 	};
-}
-
-/** The next target id under the `near` variant: from anything but a near rock the key goes to the nearest rock; past the rocks it continues into the ordinary list. */
-export function cycleWithRocks(
-	rockIds: readonly string[],
-	ordinaryIds: readonly string[],
-	current: string | null,
-	step: number,
-): string | null {
-	const list = [...rockIds, ...ordinaryIds];
-	if (list.length === 0) return null;
-	if (rockIds.length > 0 && (current === null || !rockIds.includes(current)))
-		return step >= 0 ? rockIds[0] : rockIds[rockIds.length - 1];
-	const at = current === null ? -1 : list.indexOf(current);
-	if (at === -1) return step >= 0 ? list[0] : list[list.length - 1];
-	return list[(at + step + list.length * 2) % list.length];
 }
 
 /** A rock as a target contact. */

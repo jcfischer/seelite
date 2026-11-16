@@ -829,11 +829,8 @@ export function marketStationOf(
  *  and the one place §4's scope has to be applied. */
 export const stationCommodities = (
 	station: MarketStation,
-	mining = false,
 ): readonly Commodity[] =>
-	(mining ? CARGO_COMMODITIES : COMMODITIES).filter((c) =>
-		listsCommodity(c, station),
-	);
+	CARGO_COMMODITIES.filter((c) => listsCommodity(c, station));
 
 /**
  * The game's entry point: one good at one station at one moment.
@@ -916,8 +913,7 @@ export interface Equipment {
 	scope: "universal" | "refinery" | "shipyard";
 	/**
 	 * https://github.com/jcfischer/seelite/issues/1147
-	 * A second station type that sells the item behind `?mining=1` only
-	 * (#920 D-D18); #1149 decides whether it is listed there without the flag.
+	 * A second station type that sells the item as well (#920 D-D18).
 	 */
 	miningScope?: "shipyard";
 	newToSeelite?: boolean;

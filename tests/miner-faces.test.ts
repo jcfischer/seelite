@@ -7,7 +7,6 @@ import {
 } from "../src/miner-faces";
 
 const state = (over: Partial<MinerFaceState> = {}): MinerFaceState => ({
-	mining: true,
 	surveyDesignation: null,
 	minedT: 12,
 	holdLabel: "RAW ORE",
@@ -35,18 +34,6 @@ test("every face has a title and rows; the drill camera is not one of them", () 
 		expect(rows[name].length).toBeGreaterThan(0);
 	}
 	expect(MINER_FACE_SCREENS as readonly string[]).not.toContain("drillcam");
-});
-
-test("without the mining flag the mining faces say so and read no drill", () => {
-	const rows = minerFaceRows(state({ mining: false }));
-	for (const name of ["survey", "drill", "anchor", "stance"] as const)
-		expect(texts(rows[name])).toEqual(["MINING OFF"]);
-	expect(texts(rows.ore)).toEqual(["ORE 12 T", "RAW ORE 12/3000 T"]);
-	expect(texts(rows.lasers)).toEqual([
-		"BUILT-IN DRILL",
-		"HEAT 20%",
-		"ENERGY 80%",
-	]);
 });
 
 test("the survey face reads the designation's first three parts, or asks for a rock", () => {
@@ -102,7 +89,7 @@ test("the anchor face names each count of feet, and each face's tones hold", () 
 		"THREE FEET GRIPPED",
 		"FOUR FEET GRIPPED",
 	]);
-	const rows = minerFaceRows(state({ mining: false }));
+	const rows = minerFaceRows(state());
 	expect(rows.ore[0][1]).toBe("#ffb347");
 	expect(rows.survey[0][1]).toBe("#9fb7c0");
 });

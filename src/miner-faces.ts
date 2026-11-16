@@ -32,7 +32,6 @@ export const MINER_FACE_TITLES: Readonly<Record<MinerFaceScreen, string>> = {
 export type MinerFaceRow = readonly [text: string, colour: string];
 
 export interface MinerFaceState {
-	readonly mining: boolean;
 	readonly surveyDesignation: string | null;
 	readonly minedT: number;
 	readonly holdLabel: string;
@@ -52,8 +51,6 @@ export interface MinerFaceState {
 
 const GRIPPED = ["NO FEET", "ONE FOOT", "TWO FEET", "THREE FEET", "FOUR FEET"];
 
-const OFF: readonly MinerFaceRow[] = [["MINING OFF", QUIET]];
-
 /** Each face's rows, from live game state only. */
 export function minerFaceRows(
 	s: MinerFaceState,
@@ -64,41 +61,30 @@ export function minerFaceRows(
 	const gap: MinerFaceRow[] =
 		d.gapM === null ? [] : [[`GAP ${d.gapM.toFixed(1)} M`, PALE]];
 	return {
-		survey: !s.mining
-			? OFF
-			: s.surveyDesignation
-				? s.surveyDesignation
-						.split(" · ")
-						.slice(0, 3)
-						.map((part): MinerFaceRow => [part, GREEN])
-				: [["NO ROCK TARGETED", QUIET]],
+		survey: s.surveyDesignation
+			? s.surveyDesignation
+					.split(" · ")
+					.slice(0, 3)
+					.map((part): MinerFaceRow => [part, GREEN])
+			: [["NO ROCK TARGETED", QUIET]],
 		ore: [
 			[`ORE ${s.minedT} T`, AMBER],
 			[`${s.holdLabel} ${Math.round(s.holdUsedT)}/${s.holdCapacityT} T`, AMBER],
 		],
-		drill: !s.mining
-			? OFF
-			: [
-					[
-						contact ? "CONTACT" : (d.block as string),
-						contact ? GREEN : idle ? QUIET : REFUSAL,
-					],
-					...gap,
-				],
-		anchor: !s.mining
-			? OFF
-			: [
-					[`${GRIPPED[d.feetOnRock]} GRIPPED`, AMBER],
-					d.anchored ? ["ANCHORED", GREEN] : [d.anchorWhy, QUIET],
-				],
-		stance: !s.mining
-			? OFF
-			: [
-					[
-						`${d.feetOnRock}/4 FEET GRIPPED`,
-						d.feetOnRock === 4 ? GREEN : AMBER,
-					],
-				],
+		drill: [
+			[
+				contact ? "CONTACT" : (d.block as string),
+				contact ? GREEN : idle ? QUIET : REFUSAL,
+			],
+			...gap,
+		],
+		anchor: [
+			[`${GRIPPED[d.feetOnRock]} GRIPPED`, AMBER],
+			d.anchored ? ["ANCHORED", GREEN] : [d.anchorWhy, QUIET],
+		],
+		stance: [
+			[`${d.feetOnRock}/4 FEET GRIPPED`, d.feetOnRock === 4 ? GREEN : AMBER],
+		],
 		lasers: [
 			[s.fireGroup, PALE],
 			[`HEAT ${s.heatPercent}%`, AMBER],
