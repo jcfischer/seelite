@@ -1,0 +1,165 @@
+{
+	"saveSchemaVersion": 17,
+	"world": {
+		"worldSchemaVersion": 3,
+		"worldGeneratorVersion": 10,
+		"seed": 47,
+		"gameTime": 1000,
+		"galaxies": [
+			{
+				"galaxyIndex": 0,
+				"objective": {
+					"0:raider-00": { "instanceOrdinal": 0, "condition": "disabled" }
+				},
+				"episodes": {
+					"0:raider-00": {
+						"ordinal": 1,
+						"initiating": {
+							"key": "0:raider-00",
+							"instanceOrdinal": 0,
+							"episodeOrdinal": 1,
+							"kind": "disable",
+							"occurredAt": 1000,
+							"cause": {
+								"causeKind": "player-weapons",
+								"actorId": "player",
+								"playerRole": "direct"
+							}
+						},
+						"latest": {
+							"key": "0:raider-00",
+							"instanceOrdinal": 0,
+							"episodeOrdinal": 1,
+							"kind": "disable",
+							"occurredAt": 1000,
+							"cause": {
+								"causeKind": "player-weapons",
+								"actorId": "player",
+								"playerRole": "direct"
+							}
+						},
+						"closed": false
+					}
+				},
+				"knowledge": {
+					"0:raider-00": {
+						"observedInstanceOrdinal": 0,
+						"observedCondition": "disabled",
+						"observedAt": 1000,
+						"source": "test"
+					}
+				},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 1,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 2,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 3,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 4,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 5,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 6,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			},
+			{
+				"galaxyIndex": 7,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": { "heat": 0, "updatedAt": 0 }
+			}
+		],
+		"integrity": 4177149586
+	},
+	"commander": {
+		"sweepReadings": [],
+		"requests": {
+			"byId": {},
+			"leadsById": {},
+			"entrustedByLotId": {},
+			"trackedRequestId": null
+		},
+		"state": {
+			"credits": 4321,
+			"cargo": { "Food": 3 },
+			"loadout": {
+				"h1": { "module": "pulse-laser", "size": 1, "grade": "E" },
+				"i1": { "module": "cargo-scoop", "size": 1, "grade": "E" },
+				"plant": { "module": "power-plant", "size": 1, "grade": "E" }
+			},
+			"fuelLy": 7,
+			"hull": "courier"
+		},
+		"galaxyIndex": 0,
+		"systemIndex": 0,
+		"dockedAt": null,
+		"chargeAu": 0,
+		"permadeath": false,
+		"firstDay": "free",
+		"txSeq": 0,
+		"ladders": {
+			"banked": { "combat": 0, "trade": 0, "exploration": 0 },
+			"visited": { "0": { "systems": [0], "stations": [] } },
+			"basis": {},
+			"playedS": 0,
+			"capstoneAt": null
+		},
+		"flight": {
+			"pos": [0, 0, 0],
+			"vel": [0, 0, 0],
+			"orientation": [0, 0, 0, 1],
+			"regime": "normal",
+			"throttle": 0,
+			"rates": [0, 0, 0]
+		}
+	},
+	"integrity": 3085742618
+}

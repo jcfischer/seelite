@@ -1,0 +1,11 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3-sustained.json",
+	"overrides": {
+		"systemsPerWorld": 24,
+		"hours": 8,
+		"routeRevisitLoadT": 1000000
+	},
+	"axes": {
+		"routeFields": [1]
+	}
+}

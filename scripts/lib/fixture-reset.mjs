@@ -109,3 +109,47 @@ export async function resetToFixture(page, clockS) {
 			: `resetToFixture: the occlusion gate was open before the reset and the boot position ${at} is holding it open — its close counter read 0 after the boot frames (enclosure ${rad} rad at clock ${clockS} s)`,
 	);
 }
+
+/**
+ * Node #1042: run frames until the occlusion gate is shut, and say how many it
+ * took.
+ *
+ * A gate opens after `openFrames` and closes only after `closeFrames`, and
+ * between `closeRad` and `openRad` an open gate is held open by the pose it
+ * stands at. So the state a ladder inherits is whatever the sections before it
+ * left, plus however many frames this host happened to draw since: on `main` a
+ * flank pose at 0.36–0.43 rad held the gate open into the 20 and 12 radii rungs
+ * on two runs in three, and three settle frames per rung let it close partway
+ * down the ladder and reopen at 3. Place the camera on a pose whose enclosure
+ * is under `closeRad`, call this, and every run starts from the same shut gate.
+ *
+ * `advance(page, frames)` draws that many frames (`settleFrames`), passed in so
+ * this file still imports nothing. A gate that never shuts means the pose is
+ * enclosed, and it throws with the enclosure rather than reading on.
+ *
+ * @param {object} page
+ * @param {(page: object, frames: number) => Promise<unknown>} advance
+ * @param {{ batchFrames?: number, maxFrames?: number }} [limits]
+ * @returns {Promise<{ frames: number, enclosureRad: number }>}
+ */
+export async function waitForGateShut(
+	page,
+	advance,
+	{ batchFrames = 10, maxFrames = 300 } = {},
+) {
+	let frames = 0;
+	for (;;) {
+		const s = await page.evaluate(() => window.__seelite.occlusionState);
+		if (typeof s?.open !== "boolean")
+			throw new Error(
+				`waitForGateShut: the occlusion gate read ${String(s?.open)}; it must be a boolean`,
+			);
+		if (!s.open) return { frames, enclosureRad: s.enclosureRad };
+		if (frames >= maxFrames)
+			throw new Error(
+				`waitForGateShut: the occlusion gate was still open after ${frames} frames (enclosure ${Number(s.enclosureRad).toFixed(4)} rad, pending ${s.pending}); the pose is holding it open`,
+			);
+		await advance(page, batchFrames);
+		frames += batchFrames;
+	}
+}

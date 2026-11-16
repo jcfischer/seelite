@@ -20,6 +20,7 @@
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "../../src/station";
 import type { StationInterior } from "../../src/station-interior";
+import { forEachWorldVertex } from "./world-triangles";
 
 /**
  * The bay's own parts — what lies beyond the opening on purpose.
@@ -78,6 +79,92 @@ function twoSided<T>(root: THREE.Object3D, body: () => T): T {
 		return body();
 	} finally {
 		for (const [material, side] of saved) material.side = side;
+	}
+}
+
+function fingerprintOf(geometry: THREE.BufferGeometry) {
+	const position = geometry.getAttribute("position");
+	const index = geometry.getIndex();
+	return {
+		position,
+		positionVersion: "version" in position ? position.version : -1,
+		index,
+		indexVersion: index ? index.version : -1,
+		shape: JSON.stringify([
+			geometry.drawRange,
+			geometry.groups,
+			Object.keys(geometry.morphAttributes),
+		]),
+	};
+}
+
+type Fingerprint = ReturnType<typeof fingerprintOf>;
+
+const sameFingerprint = (a: Fingerprint, b: Fingerprint) =>
+	(Object.keys(a) as (keyof Fingerprint)[]).every((k) => a[k] === b[k]);
+
+const raycastMemos = new WeakMap<
+	THREE.BufferGeometry,
+	{ fingerprint: Fingerprint; hits: Map<string, THREE.Intersection[]> }
+>();
+
+function memoFor(geometry: THREE.BufferGeometry) {
+	const fingerprint = fingerprintOf(geometry);
+	const known = raycastMemos.get(geometry);
+	if (known && sameFingerprint(known.fingerprint, fingerprint)) return known;
+	const memo = { fingerprint, hits: new Map<string, THREE.Intersection[]>() };
+	raycastMemos.set(geometry, memo);
+	return memo;
+}
+
+const keyNumbers = new Float64Array(24);
+const keyWords = new Uint32Array(keyNumbers.buffer);
+
+function raycastKey(mesh: THREE.Mesh, raycaster: THREE.Raycaster): string {
+	keyNumbers.set(mesh.matrixWorld.elements, 0);
+	raycaster.ray.origin.toArray(keyNumbers, 16);
+	raycaster.ray.direction.toArray(keyNumbers, 19);
+	keyNumbers[22] = raycaster.near;
+	keyNumbers[23] = raycaster.far;
+	const materials = Array.isArray(mesh.material)
+		? mesh.material
+		: [mesh.material];
+	return `${keyWords.join(",")}|${materials.map((m) => m?.side).join(",")}`;
+}
+
+const remembering = <T>(on: boolean, body: () => T): T =>
+	on ? rememberingRaycasts(body) : body();
+
+function rememberingRaycasts<T>(body: () => T): T {
+	const prototype = THREE.Mesh.prototype;
+	const cast = prototype.raycast;
+	prototype.raycast = function (
+		this: THREE.Mesh,
+		raycaster: THREE.Raycaster,
+		intersects: THREE.Intersection[],
+	) {
+		if (
+			(this as THREE.SkinnedMesh).isSkinnedMesh ||
+			this.morphTargetInfluences !== undefined ||
+			Object.keys(this.geometry.morphAttributes).length > 0 ||
+			!this.geometry.getAttribute("position")
+		)
+			return cast.call(this, raycaster, intersects);
+		const memo = memoFor(this.geometry);
+		const key = raycastKey(this, raycaster);
+		let hits = memo.hits.get(key);
+		if (!hits) {
+			hits = [];
+			cast.call(this, raycaster, hits);
+			memo.hits.set(key, hits);
+		}
+		for (const hit of hits)
+			intersects.push({ ...hit, point: hit.point.clone(), object: this });
+	};
+	try {
+		return body();
+	} finally {
+		prototype.raycast = cast;
 	}
 }
 
@@ -204,37 +291,26 @@ export function corridorIntrusions(
 	// The aperture plane, read off the bars' own centre — they straddle it.
 	const front = mouthPlane(root) * core;
 	const found = new Map<string, number>();
-	const v = new THREE.Vector3();
-	const instance = new THREE.Matrix4();
-	root.traverse((object) => {
-		const mesh = object as THREE.Mesh;
-		const position = mesh.geometry?.getAttribute?.("position");
-		if (!position) return;
-		// The aperture's own frame lives in the corridor by construction — it
-		// *is* the opening.
-		if (object.name.startsWith("aperture")) return;
-		// A light pool is a lit decal lying on a surface, with no volume a ship
-		// could strike (#300). The mouth ring's pools reach a few metres inside
-		// the corridor from lamps that stand outside it, and a ship flying
-		// through a pool of light is flying through light.
-		if (object.userData.pool) return;
-		const instanced = object as THREE.InstancedMesh;
-		const count = instanced.isInstancedMesh ? instanced.count : 1;
-		for (let n = 0; n < count; n++) {
-			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
-			else instance.identity();
-			for (let i = 0; i < position.count; i++) {
-				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
-				v.applyMatrix4(instance);
-				mesh.localToWorld(v);
-				v.multiplyScalar(core);
-				if (v.z <= front + WALL_EPSILON_KM) continue;
-				if (Math.hypot(v.x, v.y) > radius) continue;
-				const name = object.name || object.type;
-				found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
-			}
-		}
-	});
+	forEachWorldVertex(
+		root,
+		(v, object) => {
+			v.multiplyScalar(core);
+			if (v.z <= front + WALL_EPSILON_KM) return;
+			if (Math.hypot(v.x, v.y) > radius) return;
+			const name = object.name || object.type;
+			found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
+		},
+		(object) => {
+			// The aperture's own frame lives in the corridor by construction — it
+			// *is* the opening.
+			if (object.name.startsWith("aperture")) return false;
+			// A light pool is a lit decal lying on a surface, with no volume a ship
+			// could strike (#300). The mouth ring's pools reach a few metres inside
+			// the corridor from lamps that stand outside it, and a ship flying
+			// through a pool of light is flying through light.
+			return !object.userData.pool;
+		},
+	);
 	return found;
 }
 
@@ -336,8 +412,16 @@ export interface Crossing {
  * a ray exactly on it asks a question about float32 rather than about geometry.
  *
  * Nothing here asserts. The assertion lives in the test.
+ *
+ * `remember` answers a raycast made before from memory, keyed on everything
+ * it reads: worth it for a caller that casts one station again and again,
+ * a cost for one that casts each station once.
  */
-export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
+export function crossings(
+	root: THREE.Object3D,
+	type: StationType,
+	remember = false,
+): Crossing[] {
 	const core = STATION_GEOMETRY[type].coreRadiusKm;
 	const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
 	const band = bayBand(root);
@@ -350,32 +434,36 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 	const CELLS = 9;
 	/** How far out the outermost sample sits, as a share of the half-extent. */
 	const EDGE_FRACTION = 0.99;
-	twoSided(root, () => {
-		for (let ix = 0; ix < CELLS; ix++) {
-			for (let iy = 0; iy < CELLS; iy++) {
-				const cell = ix * CELLS + iy;
-				const x = ((ix / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (widthKm / 2);
-				const y = ((iy / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (heightKm / 2);
-				for (const hit of castDown(root, x, y, core, band)) {
-					const name = hit.object.name || hit.object.type;
-					// The aperture's own frame lives in the opening by
-					// construction — it *is* what frames it.
-					if (name.startsWith("aperture") || BAY_PART.test(name)) continue;
-					const past = (band.max.z - hit.point.z) * core;
-					found.set(name, Math.min(found.get(name) ?? past, past));
-					wasCut.set(
-						name,
-						(wasCut.get(name) ?? false) ||
-							(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
-								undefined,
-					);
-					const seen = rays.get(name) ?? new Set<number>();
-					seen.add(cell);
-					rays.set(name, seen);
+	twoSided(root, () =>
+		remembering(remember, () => {
+			for (let ix = 0; ix < CELLS; ix++) {
+				for (let iy = 0; iy < CELLS; iy++) {
+					const cell = ix * CELLS + iy;
+					const x =
+						((ix / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (widthKm / 2);
+					const y =
+						((iy / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (heightKm / 2);
+					for (const hit of castDown(root, x, y, core, band)) {
+						const name = hit.object.name || hit.object.type;
+						// The aperture's own frame lives in the opening by
+						// construction — it *is* what frames it.
+						if (name.startsWith("aperture") || BAY_PART.test(name)) continue;
+						const past = (band.max.z - hit.point.z) * core;
+						found.set(name, Math.min(found.get(name) ?? past, past));
+						wasCut.set(
+							name,
+							(wasCut.get(name) ?? false) ||
+								(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
+									undefined,
+						);
+						const seen = rays.get(name) ?? new Set<number>();
+						seen.add(cell);
+						rays.set(name, seen);
+					}
 				}
 			}
-		}
-	});
+		}),
+	);
 	return [...found]
 		.map(([name, pastMouthKm]) => ({
 			name,

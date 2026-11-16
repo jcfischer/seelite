@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "station": "station-trade",
+    "hull": "courier"
+  },
+  "report": [
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-03-face-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.6903506393592028,
+      "camToShipKm": 0.3637306630081145,
+      "camToStationKm": 1.0361872396559813,
+      "planeKm": 0.428,
+      "detail": []
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-04-wide.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7761984274019895,
+      "camToShipKm": 2.7699277979630237,
+      "camToStationKm": 3.205679958965917,
+      "planeKm": 0.428,
+      "detail": []
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-06-hero.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.5799172333530764,
+      "camToShipKm": 0.51778374156621,
+      "camToStationKm": 1.0690575285154194,
+      "planeKm": 0.428,
+      "detail": []
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-07-sun-wide.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7542545944969267,
+      "camToShipKm": 1.4540659422190896,
+      "camToStationKm": 2.1483190907442165,
+      "planeKm": 0.428,
+      "detail": []
+    },
+    {
+      "file": "/Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-1145/spikes/station-scale/evidence-ring/before/trade-b-08-sun-close.png",
+      "type": "trade",
+      "scale": 1,
+      "shipToStationKm": 0.7045565986057102,
+      "camToShipKm": 0.3856518325884832,
+      "camToStationKm": 1.0361670140559074,
+      "planeKm": 0.428,
+      "detail": []
+    }
+  ]
+}

@@ -60,6 +60,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
 import { directRunNotice, isSuiteChild } from "./lib/probe-contention.mjs";
+import { watchLaunchedBrowsers } from "./lib/orphan-browsers.mjs";
 
 /** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
@@ -540,6 +541,7 @@ export async function launchChromium(options = {}) {
 	// shipped, which is the whole reason the check below exists).
 	printCondition("machine", directRunNotice());
 	const browser = await chromium.launch(launchOptions);
+	watchLaunchedBrowsers();
 	// **What this launch actually was, recorded on the browser it opened.** A
 	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row
 	// names the launch when the lock is refused — otherwise re-runs the resolver
@@ -599,7 +601,19 @@ export function rendererLaneNotice({ mode, direct }) {
  * callback, so a probe that stopped there would read a world whose meshes have
  * never been positioned.
  */
-export async function bootedGame(page, timeout = 20000, { sky = true } = {}) {
+/**
+ * How long a boot may take on this page: a `models-full` boot installs every
+ * model before the game exists, so it gets the full-set budget.
+ */
+export function bootBudgetMs(page) {
+	return new URL(page.url()).searchParams.has("models-full") ? 120000 : 20000;
+}
+
+export async function bootedGame(
+	page,
+	timeout = bootBudgetMs(page),
+	{ sky = true } = {},
+) {
 	// Readiness is one observation: a reload may replace the game between waits.
 	// The game draws immediately; measurements wait for its progressive sky.
 	await page.waitForFunction(
@@ -652,6 +666,18 @@ export async function shipyardModelsSettled(page, timeout = 60000) {
 export async function refineryModelsSettled(page, timeout = 60000) {
 	await page.waitForFunction(
 		() => window.__seelite?.refineryModelsSettled === true,
+		null,
+		{ timeout },
+	);
+}
+
+/**
+ * Wait until the authored outpost Salvage's background load has settled
+ * (#1031), for `shipyardModelsSettled`'s reason.
+ */
+export async function outpostModelsSettled(page, timeout = 60000) {
+	await page.waitForFunction(
+		() => window.__seelite?.outpostModelsSettled === true,
 		null,
 		{ timeout },
 	);

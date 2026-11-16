@@ -59,7 +59,10 @@ import {
 	type StationType,
 	slotPhaseRad,
 } from "../../src/station";
-import { stationInterior } from "../../src/station-interior";
+import {
+	type StationInterior,
+	stationInterior,
+} from "../../src/station-interior";
 import {
 	type StationProxy,
 	stationProxyOf,
@@ -254,6 +257,30 @@ export const HISTORICAL_FORM: Readonly<Record<StationType, StationFormId>> = {
 	outpost: OUTPOST_FORM,
 };
 
+/**
+ * The station a flight is flown against: the interior its berths come from and
+ * the proxy it is swept against. These and the rest of `FlightOptions` are
+ * everything `flyTheComputer` reads.
+ */
+export function flightStation(
+	opts: Pick<FlightOptions, "type" | "stationPlan" | "proxy">,
+): { interior: StationInterior; proxy: StationProxy } {
+	const type = opts.type ?? "trade";
+	const seeds = opts.stationPlan ?? {
+		formId: HISTORICAL_FORM[type],
+		berthSeed: 1,
+		assemblySeed: 0,
+	};
+	return {
+		interior: stationInterior(
+			type,
+			STATION_GEOMETRY[type].aperturePlaneKm,
+			seeds.berthSeed,
+		),
+		proxy: opts.proxy ?? stationProxyOf({ type, ...seeds }),
+	};
+}
+
 export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const type = opts.type ?? "trade";
 	const { axis, reference } = opts;
@@ -262,17 +289,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const dt = opts.dt ?? 0.05;
 	const swing = opts.axisSwingRadPerS ?? 0;
 	const pivot = cross(axis, reference);
-	const seeds = opts.stationPlan ?? {
-		formId: HISTORICAL_FORM[type],
-		berthSeed: 1,
-		assemblySeed: 0,
-	};
-
-	const interior = stationInterior(
-		type,
-		STATION_GEOMETRY[type].aperturePlaneKm,
-		seeds.berthSeed,
-	);
+	const { interior, proxy } = flightStation(opts);
 	const state = initialState(opts, interior, envelope);
 
 	// Start well off the axis, so the line-up phase is genuinely exercised: a
@@ -296,7 +313,6 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let ghostSteps = 0;
 	// The station stands at the origin of its own frame, which is the frame
 	// this harness flies in: a proxy at rest, turning with the slot. // glossary-ignore: slot
-	const proxy = opts.proxy ?? stationProxyOf({ type, ...seeds });
 	const box = hullSolid(opts.hull);
 	const limitS = opts.limitS ?? GRANT_WINDOW_S;
 	let previousPhase: ComputerPhase = "idle";

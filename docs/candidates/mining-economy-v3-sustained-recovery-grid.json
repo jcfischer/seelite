@@ -1,0 +1,6 @@
+{
+	"candidatePath": "docs/candidates/mining-economy-v3-sustained.json",
+	"axes": {
+		"recoveryTPerH": [0, 1, 5, 10, 25]
+	}
+}

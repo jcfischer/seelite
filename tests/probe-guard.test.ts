@@ -488,6 +488,7 @@ test("sky readiness cannot accept a missing game during reload", async () => {
 	let at = 0;
 	try {
 		await bootedGame({
+			url: () => "http://localhost:5173/play/?boot=direct",
 			waitForFunction: async (
 				predicate: (sky: boolean) => unknown,
 				sky: boolean,
@@ -503,4 +504,31 @@ test("sky readiness cannot accept a missing game during reload", async () => {
 	} finally {
 		scope.window = previous;
 	}
+});
+
+test("full-catalog fixtures get an install deadline while player boots and explicit budgets keep theirs", async () => {
+	const deadline = async (url: string, explicit?: number) => {
+		let observed = 0;
+		await bootedGame(
+			{
+				url: () => url,
+				waitForFunction: async (
+					_predicate: unknown,
+					_sky: boolean,
+					options: { timeout: number },
+				) => {
+					observed = options.timeout;
+				},
+			},
+			explicit,
+		);
+		return observed;
+	};
+	expect(await deadline("http://localhost:5173/play/?boot=direct")).toBe(20000);
+	expect(
+		await deadline("http://localhost:5173/play/?boot=direct&models-full"),
+	).toBe(120000);
+	expect(await deadline("http://localhost:5173/play/?models-full", 1234)).toBe(
+		1234,
+	);
 });

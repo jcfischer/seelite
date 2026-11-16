@@ -17,7 +17,8 @@
  *  voices: a burst of filtered noise, and a sine that drops in pitch.
  *  `pulse`, `epiano`, `harpsi` and `softsaw` are the Danube versions':
  *  a chip's pulse wave, an electric piano, a harpsichord and a soft-edged
- *  saw lead. */
+ *  saw lead. `moog` is saws and a sub square into a four-pole ladder
+ *  filter that saturates. */
 export type VoiceKind =
 	| "pad"
 	| "pluck"
@@ -36,6 +37,7 @@ export type VoiceKind =
 	| "epiano"
 	| "harpsi"
 	| "softsaw"
+	| "moog"
 	| "sampler";
 
 /**
@@ -147,6 +149,10 @@ export interface TempoPoint {
  * - For **softsaw**, `unison` saws (default 8), each with its edge rounded
  *   wider as the envelope falls, so a note mellows as it rings;
  *   `detune` and `spread` as for analog.
+ * - `phaser`, `phaserS` — analog: a four-stage phaser after the filter,
+ *   the string machine's swirl. `phaser` is its depth, `0`..`1` (0, the
+ *   default, is off); `phaserS` one sweep of its notches, s. Its phase is the
+ *   part's, on the synth's clock, so every note of a chord swirls as one.
  * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.
  * - `reverb`, `echo` — the part's sends into the song's space
  *   (`music-space.ts`), `0`..`1`. **Both default to 0**: a part is dry
@@ -179,6 +185,8 @@ export interface PartSpec {
 	readonly pan?: number;
 	readonly reverb?: number;
 	readonly echo?: number;
+	readonly phaser?: number;
+	readonly phaserS?: number;
 	/** Strings, brass, flute: the vibrato's rate, when it starts into a note,
 	 *  and how long it takes to reach its depth (#547 D15). */
 	readonly vibratoHz?: number;

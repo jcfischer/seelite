@@ -174,6 +174,8 @@ Each galaxy owns separate typed domains for:
 - player knowledge and visited state;
 - sparse market stock deficits;
 - player legal status;
+- bounded causal capability timing, approved by #937;
+- discovered rare-field identities, approved by #1190 and built by #1191;
 - later explicitly approved domains.
 
 The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain stores the envelope-relative pair `(systemIndex, localCarrierId)`; combining it with the containing `galaxyIndex` reconstructs the full `CarrierKey`. `economy-trade.md` §5.5 records the same pair without inventing a second key name. A bare `Station.id` is not persistent identity. Any serialized embedded galaxy index must match its containing envelope or fail loudly. Sparse absence is meaningful, so the save format must carry domain integrity validation and reject a truncated or partially written snapshot atomically; the model must not reinterpret corruption as an untouched healthy carrier.
@@ -256,9 +258,39 @@ amounts and remaining amounts between zero and that initial amount, loss on
 the world clock and the matching own-loss knowledge. `salvage.md` owns the
 recovery and placement details.
 
+**Capability timing (#937, built by #1194)** is a required `capabilityTime`
+domain at world schema 4 / generator 11 / save envelope 18. It stores a timing
+genesis and at most one causal anchor per generated capability carrier. It does
+not store generated service tables, pressure counts, availability projections or
+outage history. Before a raider mutation or lazy recovery discards prior facts,
+an explicitly supplied dependent-settlement callback runs and affected
+capability anchors are replaced. The callback is optional while no production
+dependent exists. The #1195 refinery build must integrate it centrally through
+all fact-replacing production paths before retaining queue work across them.
+Queries before retained anchors refuse. Received legacy schema-3 integrity is
+checked before initialization at the migration clock; old work is not invented.
+The structural authority is `capability-operational-time.md`.
+
+**Rare-field discoveries (#1191)** are a bounded per-galaxy set of stable
+`systemIndex:field-01` identities. A missing set means empty; an empty set is
+omitted so existing world-schema-4 integrity bytes remain unchanged. Save
+envelope 19 admits this domain and the regional field sweep reading. Older
+envelopes load empty and refuse assembled discovery data. Discoveries survive
+field-generator and deposit migrations, including stable slots which no longer
+generate a field. Historical field sweep provenance likewise validates the
+stable rare slot rather than requiring a field to remain generated. Neither
+domain stores point geometry, survey facts or rock contents.
+
 ## 8. Derived effects
 
 Capabilities and consequences are projections of generated carrier definitions plus effective objective condition at `gameTime`. Route safety, services, traffic, enemy capabilities, prices, and map presentation are never persisted merely because they can be derived from those facts.
+
+Independent station service outages also read their bounded causal timing domain
+from §7. Their current availability is still derived rather than persisted;
+timing anchors retain the causal information the seed and current raider state
+alone cannot reconstruct. `capability-operational-time.md` supersedes a stateless
+current-raider projection and unrestricted historical-query promise for these
+capability carriers.
 
 A wider effect still requires a carrier whose fiction defines that consequence area. This representation does not create territory ownership, influence bars, fleet command, or autonomous faction simulation.
 
@@ -326,6 +358,21 @@ carry the reasoning; they are **not restated here**, because a third copy of a
 decision is the drift this document warns about elsewhere. Cloud storage is not
 deferred either — it is ruled out by the map's browser-only, no-backend, no
 runtime network constraint, which is a constraint rather than an open question.
+
+**Durable gameplay transactions were never on this list either, and the shared
+mechanism is now chosen and built.** #936 ratified the save-before-success
+contract for gameplay acts that must be durably accepted before they may show
+success — footprint lock and field adoption, a commit made while docked as a
+checkpoint write, one `txSeq` on the commander record under save schema 16, and
+read-back recovery of a write whose outcome is unknown — and node #943 built
+the shared mechanism: `SaveStore.commit` in `src/save-store.ts`, whose header,
+together with `tests/save-commit.test.ts`, carries the local reasoning and the
+named failure cases. **The rules are
+[#936's closing receipt](https://github.com/jcfischer/seelite/issues/936)'s and
+are not restated here** — a third copy of a decision is the drift this document
+warns about elsewhere. The Game-level Saving display and the suppression of
+repeat input and departure while a commit is pending ship with the first
+consumer (refinery submission and collection), not with the store.
 
 This model deliberately does not choose:
 
@@ -513,7 +560,9 @@ fails and raises its own badge rather than blocking the upgrade forever.
   `?boot=direct`** (§11.6); without it, `?seed` sets nothing aside.
 - **In play**: the save-fault badge (`hud-and-scanner.md` §5.3) is raised by a
   debounced write that has failed `SAVE_RETRY_LIMIT` times **or by any failed
-  dock, undock or jump flush**. The second half came with the badge: before it,
+  dock, undock or jump flush**, and — since node #943 (#936 D4) — by a
+  transaction commit whose write did not land (`commitFault`,
+  `commander-flow.ts`). The second half came with the badge: before it,
   `saveFlush` only logged a failed flush (`main.ts`, its `.catch`), so the dock
   flush — the write that lays down `lastDocked` — could fail with no player
   surface at all. A failed `quit` flush on a tab close has no frame left to

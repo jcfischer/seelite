@@ -15,7 +15,7 @@
  * `tests/cold-rocky-moons.test.ts`) hold that no existing stream moved.
  *
  * The refinery ships four forms (node #745) and the shipyard three (node
- * #746); the trade role still holds one.
+ * #746); node #748 completes the trade pool with the Wheel.
  * Reach, uniformity and slot independence also run on stand-in pools of // glossary-ignore: slot
  * several members through the same draw.
  */
@@ -110,13 +110,12 @@ describe("the pools", () => {
 		);
 	});
 
-	test("the refinery and shipyard pools hold every built form in id order (nodes #745, #746)", () => {
+	test("every drawn role holds every built form in id order", () => {
 		// Pinned so that growing a pool is a deliberate edit with a red row
 		// beside it, not a side effect. Node #744 ratified every built form,
-		// uniformly drawn; node #745 grew the refinery pool and node #746 the
-		// shipyard's.
+		// uniformly drawn; nodes #745–#748 grow the three pools.
 		expect(STATION_FORM_POOL).toEqual({
-			trade: ["a"],
+			trade: ["a", "b", "c", "d", "e"],
 			shipyard: ["a", "b", "c"],
 			refinery: ["a", "b", "c", "d"],
 		});
@@ -183,33 +182,34 @@ describe("the draw", () => {
 		// which a draw stuck on one member fails by far, and the counts'
 		// chi-square is held under its p = 0.001 critical value, which a draw
 		// leaning on one member fails where every share is still inside ±40%.
-		for (const type of DRAWN_STATION_TYPES) {
-			const pool = STAND_IN[type];
-			const counts = new Map<StationFormId, number>();
-			for (const seed of SYSTEM_SEEDS) {
-				const id = stationForms(seed, STAND_IN)[type];
-				counts.set(id, (counts.get(id) ?? 0) + 1);
-			}
-			const expected = SYSTEM_SEEDS.length / pool.length;
-			const chiSquare = pool.reduce(
-				(sum, id) => sum + ((counts.get(id) ?? 0) - expected) ** 2 / expected,
-				0,
-			);
-			const critical = CHI_SQUARE_P001[pool.length - 1];
-			expect([
-				type,
-				critical !== undefined,
-				chiSquare < (critical ?? 0),
-			]).toEqual([type, true, true]);
-			for (const id of pool) {
-				const share = (counts.get(id) ?? 0) / expected;
-				expect([type, id, share > 0.6 && share < 1.4]).toEqual([
+		for (const pools of [STATION_FORM_POOL, STAND_IN])
+			for (const type of DRAWN_STATION_TYPES) {
+				const pool = pools[type];
+				const counts = new Map<StationFormId, number>();
+				for (const seed of SYSTEM_SEEDS) {
+					const id = stationForms(seed, pools)[type];
+					counts.set(id, (counts.get(id) ?? 0) + 1);
+				}
+				const expected = SYSTEM_SEEDS.length / pool.length;
+				const chiSquare = pool.reduce(
+					(sum, id) => sum + ((counts.get(id) ?? 0) - expected) ** 2 / expected,
+					0,
+				);
+				const critical = CHI_SQUARE_P001[pool.length - 1];
+				expect([
 					type,
-					id,
-					true,
-				]);
+					critical !== undefined,
+					chiSquare < (critical ?? 0),
+				]).toEqual([type, true, true]);
+				for (const id of pool) {
+					const share = (counts.get(id) ?? 0) / expected;
+					expect([type, id, share > 0.6 && share < 1.4]).toEqual([
+						type,
+						id,
+						true,
+					]);
+				}
 			}
-		}
 	});
 
 	test("the slots are separate streams: one role's form does not decide another's", () => {
@@ -306,6 +306,25 @@ describe("the draw", () => {
 });
 
 describe("the mesh, the reach and the proxy read the one field", () => {
+	test("a generated trade station still refuses a drawn form with no proxy", () => {
+		// Every built trade form now has a proxy. Inject an unsupported runtime
+		// form into the pool so the generator, not a hand-made station, draws it.
+		const unsupported = "unsupported" as StationFormId;
+		const pool = STATION_FORM_POOL.trade;
+		try {
+			STATION_FORM_POOL.trade = [unsupported];
+			const station = generateContents(
+				generateGalaxy(WORLD_SEED, 0).systems[0],
+			).stations.find((s) => s.type === "trade");
+			if (!station) throw new Error("system 0 generates no trade station");
+			expect(station.formId).toBe(unsupported);
+			expect(() => stationProxyOf(station)).toThrow(
+				"trade form unsupported has no proxy",
+			);
+		} finally {
+			STATION_FORM_POOL.trade = pool;
+		}
+	});
 	test("a generated refinery with an unsupported form still refuses its proxy", () => {
 		for (const g of GALAXIES) {
 			for (const record of generateGalaxy(WORLD_SEED, g).systems) {
@@ -388,19 +407,19 @@ describe("the mesh, the reach and the proxy read the one field", () => {
 	});
 
 	test("the proxy cache is keyed on the form: a second form at the same seeds is not handed the first's", () => {
-		// The first call caches the trade Coriolis at these seeds. A form with
-		// no proxy at the same type and seeds must be refused, not served the
-		// cached Coriolis — which is what a key without the form would do.
+		// The Wheel must get its own proxy at the Coriolis's seeds, and an
+		// unsupported form must be refused rather than given either cached one.
 		const seeds = { berthSeed: 913, assemblySeed: 917 };
-		expect(
-			stationProxyOf({ type: "trade", formId: "a", ...seeds }),
-		).toBeDefined();
-		const unpooled = STATION_FORMS.trade.find(
-			(f) => !formsInPlay("trade").includes(f.id),
-		);
-		if (!unpooled) throw new Error("every trade form is pooled");
+		const a = stationProxyOf({ type: "trade", formId: "a", ...seeds });
+		const e = stationProxyOf({ type: "trade", formId: "e", ...seeds });
+		expect(e).not.toBe(a);
+		expect(e.spinning).not.toEqual(a.spinning);
 		expect(() =>
-			stationProxyOf({ type: "trade", formId: unpooled.id, ...seeds }),
+			stationProxyOf({
+				type: "trade",
+				formId: "unsupported" as StationFormId,
+				...seeds,
+			}),
 		).toThrow(/has no proxy/);
 	});
 });

@@ -128,7 +128,7 @@ export const HULL_LUMA_CALIBRATION = Object.freeze({
 		hull: "courier",
 		authored: true,
 		modelSha256:
-			"6967208f3169dcb900f24e6164ac09023db5d6b6ee5495a92b157ce20c310c30",
+			"da5018a56d79e1e754a833dda7011e490ccdb1f4273cfbc09929871ee6a8a441",
 	}),
 	ref: "node-887",
 	peak: 238.21,

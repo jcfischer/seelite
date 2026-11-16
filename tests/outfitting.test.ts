@@ -33,7 +33,10 @@ const input = (): StationCommerceInput => ({
 
 test("removal carries the exact module as one tonne and selling returns ninety percent", () => {
 	const i = input();
-	const laser = { ...makeModule("pulse-laser", 1, "D"), variant: "kept-trait" };
+	const laser = {
+		...makeModule("pulse-laser", 1, "D"),
+		variant: "overcharged",
+	};
 	i.commander = {
 		...i.commander,
 		loadout: { ...i.commander.loadout, h1: laser },
@@ -212,6 +215,36 @@ test("the equipment readout prices the fitted weapon, not a carried upgrade", ()
 		recoveredFittings: [carriedModule(makeModule("military-laser", 1, "A"))],
 	};
 	expect(fitReadout(carried, 0).credit).toBe(fitReadout(c, 0).credit);
+});
+
+test("the live Equipment preview prints extraction only with mining enabled", async () => {
+	const { outfittingBody } = await import("../src/outfitting-view");
+	const i = input();
+	i.commander = {
+		...newCommander("miner"),
+		recoveredFittings: [carriedModule(makeModule("mining-laser", 3, "A"))],
+	};
+	for (const mining of [false, true]) {
+		const screen = outfittingScreen({ ...i, mining }, "h2", "hold:0");
+		expect(screen.after).not.toBeNull();
+		const hold = commanderHold(i.commander, 0);
+		const html = outfittingBody(
+			screen,
+			{
+				capacityT: hold.capacityT,
+				freeT: hold.capacityT - hold.usedT,
+				entrustedT: 0,
+			},
+			{ ly: i.commander.fuelLy, capacityLy: screen.before.fuelCapacityLy },
+		);
+		if (mining) {
+			expect(html).toContain('data-outfit-delta="EXTRACTION"');
+			expect(html).toContain("+0.3375");
+			expect(html).toContain("t/s");
+		} else {
+			expect(html).not.toContain('data-outfit-delta="EXTRACTION"');
+		}
+	}
 });
 
 test("missile refills use rack capacity and affordable whole ammunition", () => {

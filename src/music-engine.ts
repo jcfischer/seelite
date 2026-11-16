@@ -29,6 +29,7 @@ import {
 import { compileSong, type NoteSink, Player } from "./music-sequencer";
 import { Space, type SpaceSpec } from "./music-space";
 import {
+	type RenderMode,
 	type ResolvedPart,
 	type RoomSends,
 	resolvePart,
@@ -136,6 +137,7 @@ interface Room {
 
 export class MusicEngine implements NoteSink, VoiceGain {
 	private readonly bank: VoiceBank;
+	private readonly countOnly: boolean;
 	private readonly slots: (Slot | null)[] = new Array(MUSIC_SONG_SLOTS).fill(
 		null,
 	);
@@ -172,13 +174,20 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	/**
 	 * `onNote` hears every note as it is scheduled, by song id, frame and part
 	 * name: for tests and instruments. The worklet passes none.
+	 *
+	 * `mode.countOnly` (`RenderMode`) renders no sample: `render` leaves
+	 * its buffers as they were, and `sounding` holds what a full render
+	 * holds. No room is fed, so every room stays silent, and a slot search
+	 * for a fifth song may pick another slot than a full render would.
 	 */
 	constructor(
 		private readonly sampleRate: number,
 		readonly cap = MUSIC_VOICE_CAP,
 		private readonly onNote?: (id: string, frame: number, part: string) => void,
+		mode: RenderMode = {},
 	) {
-		this.bank = new VoiceBank(cap, sampleRate);
+		this.bank = new VoiceBank(cap, sampleRate, mode);
+		this.countOnly = mode.countOnly ?? false;
 	}
 
 	/** The song the transport is moving, while it plays. */
@@ -352,6 +361,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		}
 		const whole = n === BLOCK;
 		const L = whole ? this.bufL : this.bufL.subarray(0, n);
+		if (this.countOnly) {
+			this.bank.render(L, frame, this);
+			return;
+		}
 		const stereo: StereoOut = whole
 			? this.stereo
 			: {

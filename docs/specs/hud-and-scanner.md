@@ -5,6 +5,13 @@
 **Context:** flight (#5 and #21), docking (#9), and target-marker (#10) work
 provide the simulation surfaces this visual contract will eventually consume.
 
+**Placement amendment, node #1151 (2026-10-30).** Stationary cockpit readouts
+use the cabin model’s named screens, as specified in
+[cockpit text surfaces](cockpit-text-surfaces.md). This replaces the glass strip,
+course and duel bands, stationary notices, and their glass-fit rules below.
+Those older placement derivations remain as history. Bearings, target labels
+and docking geometry keep their spatial projections.
+
 ## 0. Scope and vocabulary
 
 This is the cockpit-first language for a pilot flying normal, assist-off, cruise,
@@ -25,7 +32,8 @@ declined it while `economy-trade.md` §11 was handing it here, and the screen wa
 owned by nobody for as long as neither half was buildable. §8 is the answer and
 §8.1's M1 is why it lives in the cockpit at all.
 
-A **flight floor** is the small set of information that remains on glass. A
+A **flight floor** is the small set of information that remains available in
+forward flight: spatial cues on glass and readouts on cabin screens. A
 **director** is the centred, target-specific guide that temporarily answers the
 pilot's immediate action. The **compact scanner** is a read-only local radar. A
 **side panel** is an intentional, dismissible view; it is never a permanent
@@ -828,6 +836,10 @@ housings. The laser tracer shared that line until node #806. The authored cabin
 (#794) reaches above it, so the cockpit's beams are drawn into the frame now,
 before the cabin pass, and the cabin's own fittings hide them
 (`src/beam-glass.ts`).
+
+**The docking computer's key without a computer says so (node #1289).** The
+refusal is "No docking computer fitted. Buy one at the Equipment tab.", drawn
+red on the scoop's glass row for the scoop's notice time.
 
 **The director, the flight-floor strip and the glass notices still overpaint
 the dash, and that is open.** They are on the overlay and clipped at

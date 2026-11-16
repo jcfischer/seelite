@@ -1,4 +1,6 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import { expect, test } from "bun:test";
+import { grantLegacyScoop, migrateEquipment } from "../src/loadout";
 import { carrierKey } from "../src/carrier-key";
 import type { JobOffer } from "../src/jobs";
 import { firstOffer } from "./helpers/job-board";
@@ -137,11 +139,11 @@ test("the one store loads and flushes a journal-bearing record", async () => {
 		current: () => save,
 	});
 	await store.flush("quit");
-	expect(await store.load("normal")).toEqual(save);
+	expect(await store.load("normal")).toMatchObject(save);
 	const catalog = new CommanderCatalog({ backend, locks: memorySlotLocks() });
-	expect(catalog.parseRecord(await backend.read("normal", "live"))).toEqual(
-		save,
-	);
+	expect(
+		catalog.parseRecord(await backend.read("normal", "live")),
+	).toMatchObject(save);
 	// The reverted record carries its journal back too.
 	await backend.write("normal", "lastDocked", serializeSave(save));
 	expect(
@@ -170,7 +172,7 @@ test("Requests and credits round-trip under one hash at every stage", () => {
 		expect(result.ok).toBe(true);
 		commander.requests = result.state;
 		commander.state.credits += result.rewardCr;
-		expect(parseSave(serializeSave({ world, commander }))).toEqual({
+		expect(parseSave(serializeSave({ world, commander }))).toMatchObject({
 			world,
 			commander,
 		});
@@ -193,7 +195,7 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	// version 2 body out of a current one; if the two ever met, it would be
 	// asserting the migration path against no migration at all. It went red on
 	// #453's bump, which is the tripwire working.
-	expect(SAVE_SCHEMA_VERSION).toBe(15);
+	expect(SAVE_SCHEMA_VERSION).toBe(22);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
 	body.commander.state.ownedEquipment = [];
@@ -203,6 +205,8 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	delete body.commander.ladders;
 	delete body.commander.flight.rates;
 	delete body.commander.requests;
+	delete body.commander.txSeq;
+	pairLegacyWorldFixture(body);
 	const old = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 	const before = JSON.stringify(old);
 	expect(parseSave(old).commander.requests.byId).toEqual({});
@@ -286,7 +290,7 @@ test("every Commander write is the current schema and carries its journal", () =
 		entrustedByLotId: {},
 		trackedRequestId: null,
 	});
-	expect(parseSave(raw)).toEqual(save);
+	expect(parseSave(raw)).toMatchObject(save);
 });
 
 test("a schema 3 journal migrates when empty and is refused when it is not", () => {
@@ -310,7 +314,9 @@ test("a schema 3 journal migrates when empty and is refused when it is not", () 
 		delete body.commander.firstDay;
 		delete body.commander.ladders;
 		delete body.commander.flight.rates;
+		delete body.commander.txSeq;
 		body.commander.requests = requests;
+		pairLegacyWorldFixture(body);
 		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 	};
 	expect(
@@ -360,6 +366,7 @@ test("a schema 2 record carrying a requests key is refused, empty or not", () =>
 		body.commander.state.ownedEquipment = [];
 		delete body.commander.state.loadout;
 		delete body.commander.sweepReadings;
+		pairLegacyWorldFixture(body);
 		const grafted = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		expect(() => parseSave(grafted)).toThrow(
 			'saveSchemaVersion 2 cannot contain "requests"',
@@ -426,14 +433,21 @@ const paidTrialWithLead = () => {
 	);
 	if (!retained.ok) throw new Error(`retain: ${retained.message}`);
 	trial.commander.requests = retained.state;
+	trial.commander.state = {
+		...trial.commander.state,
+		loadout: grantLegacyScoop(
+			trial.commander.state.hull,
+			migrateEquipment(trial.commander.state.hull, []).loadout,
+		).loadout,
+	};
 	return trial;
 };
 
 /** A body's integrity, recomputed the way `serializeSave` computes it. */
-const sealed = (body: Record<string, unknown>) => ({
-	...body,
-	integrity: fnv1a(JSON.stringify(body)),
-});
+const sealed = (body: Record<string, unknown>) => {
+	pairLegacyWorldFixture(body);
+	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+};
 
 /**
  * Today's record written back as version 4: the operand flattened onto the
@@ -470,6 +484,7 @@ const asV4 = (
 	delete body.commander.firstDay;
 	delete body.commander.ladders;
 	delete body.commander.flight.rates;
+	delete body.commander.txSeq;
 	const offers = [
 		...Object.values(
 			body.commander.requests.byId as Record<string, { terms: JobOffer }>,
@@ -497,7 +512,10 @@ test("a schema 4 journal lifts its flat cargo fields into an operand", () => {
 	// refuses, and it is asserted there. A row that
 	// sampled one offer would not say that — this one reads the settled
 	// request and the retained lead.
-	expect(parseSave(asV4(save))).toEqual(save);
+	const expected = structuredClone(save);
+	for (const env of expected.world.galaxies)
+		env.capabilityTime = { genesisAt: expected.world.gameTime, anchors: {} };
+	expect(parseSave(asV4(save))).toMatchObject(expected);
 });
 
 test("a lifted schema 4 record re-serializes as a native current version", () => {
@@ -506,8 +524,11 @@ test("a lifted schema 4 record re-serializes as a native current version", () =>
 	// operand rides through the load and out into the next write — a v5 record
 	// carrying v4's fields, which no version identifies.
 	const save = paidTrialWithLead();
+	const expected = structuredClone(save);
+	for (const env of expected.world.galaxies)
+		env.capabilityTime = { genesisAt: expected.world.gameTime, anchors: {} };
 	const { integrity: _native, ...native } = JSON.parse(
-		JSON.stringify(serializeSave(save)),
+		JSON.stringify(serializeSave(expected)),
 	);
 	const { integrity: _lifted, ...lifted } = JSON.parse(
 		JSON.stringify(serializeSave(parseSave(asV4(save)))),

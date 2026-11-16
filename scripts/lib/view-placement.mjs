@@ -123,10 +123,17 @@ export async function installViewFraming(page) {
 				if (!g.hasDockingComputer)
 					g.commander = {
 						...g.commander,
-						loadout: migrateEquipment(g.commander.hull, [
-							...equipmentNames(g.commander.loadout ?? {}),
-							g.dockingComputerName,
-						]).loadout,
+						loadout: {
+							...migrateEquipment(g.commander.hull, [
+								...equipmentNames(g.commander.loadout ?? {}),
+								g.dockingComputerName,
+							]).loadout,
+							...Object.fromEntries(
+								Object.entries(g.commander.loadout ?? {}).filter(
+									([, m]) => m.module === "cargo-scoop",
+								),
+							),
+						},
 					};
 				g.toggleDockingComputer();
 			}
@@ -148,10 +155,17 @@ export async function installViewFraming(page) {
 						if (!g.hasDockingComputer)
 							g.commander = {
 								...g.commander,
-								loadout: migrateEquipment(g.commander.hull, [
-									...equipmentNames(g.commander.loadout ?? {}),
-									g.dockingComputerName,
-								]).loadout,
+								loadout: {
+									...migrateEquipment(g.commander.hull, [
+										...equipmentNames(g.commander.loadout ?? {}),
+										g.dockingComputerName,
+									]).loadout,
+									...Object.fromEntries(
+										Object.entries(g.commander.loadout ?? {}).filter(
+											([, m]) => m.module === "cargo-scoop",
+										),
+									),
+								},
 							};
 						g.toggleDockingComputer();
 					}

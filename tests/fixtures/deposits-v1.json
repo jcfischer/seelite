@@ -1,0 +1,11 @@
+{
+	"fieldGeneratorVersion": 1,
+	"fingerprints": {
+		"0:field-00": 2656431356,
+		"2:field-00": 2176469440
+	},
+	"rows": {
+		"0:field-00:0": { "surveyedAt": 0 },
+		"2:field-00:2": { "surface": 3, "deep": 2, "at": 0, "surveyedAt": 0 }
+	}
+}

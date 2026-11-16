@@ -199,11 +199,10 @@ try {
 			L.LADDERS.map((l) => [l, L.threshold(l, L.TOP_RUNG)]),
 		);
 		g.ladders = { ...g.ladders, banked };
-		g.commander = {
-			...g.commander,
-			credits: 100_000,
+		(await import("/scripts/lib/commander-fixture.ts")).setCommanderFixture(g, {
+			credits: 100000,
 			cargo: { Food: foodT },
-		};
+		});
 		g.stationConsoleRevision += 1;
 		g.updateCockpit();
 	}, FOOD_T);
@@ -259,7 +258,7 @@ try {
 	// -------------------------------------------------------------------
 	// Damage the courier first, so a whole condition afterwards is the
 	// purchase resetting it rather than a ship that was never struck.
-	const purse = await page.evaluate(() => {
+	const purse = await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.condition = { ...g.condition, hull: 10 };
 		return g.commander.credits;
@@ -335,9 +334,19 @@ try {
 	// what this measures is the launch hook, and `deliverHull`'s choice of it
 	// is `tests/flown-hull.test.ts`'s.
 	// -------------------------------------------------------------------
-	const waiting = await page.evaluate(() => {
+	const waiting = await page.evaluate(async () => {
 		const g = window.__seelite;
-		g.commander = { ...g.commander, hull: "explorer" };
+		const { transferLoadout } = await import("/src/loadout.ts");
+		const moved = transferLoadout(g.commander.loadout, "explorer");
+		g.commander = {
+			...g.commander,
+			hull: "explorer",
+			loadout: moved.loadout,
+			recoveredFittings: [
+				...(g.commander.recoveredFittings ?? []),
+				...moved.overflow,
+			],
+		};
 		g.hullOnLaunch = "explorer";
 		g.setHeadLook("forward");
 		g.launch();
@@ -368,15 +377,18 @@ try {
 	// -------------------------------------------------------------------
 	// #584: a reload flies the saved hull, and ?hull= is reported, not obeyed.
 	// -------------------------------------------------------------------
-	await page.evaluate(() => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
-		g.saveStore?.markDirty();
-		g.saveFlush("dock");
+		if (!g.saveStore) throw new Error("shipyard reload needs a save store");
+		g.saveStore.markDirty();
+		await g.saveStore.flush("dock");
 	});
-	await page.evaluate(() => window.__seelite.saveStore?.settled());
-	const savedHull = await page.evaluate(
-		() => window.__seelite.saveEnvelope().commander.state.hull,
-	);
+	const savedHull = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { parseSave } = await import("/src/save-envelope.ts");
+		const stored = await g.save.backend.read(g.save.defaultSlot, "live");
+		return parseSave(stored).commander.state.hull;
+	});
 	check("the save records the explorer", savedHull === "explorer", savedHull);
 	await page.close();
 	warnings.length = 0;

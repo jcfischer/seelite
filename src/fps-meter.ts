@@ -45,7 +45,7 @@ const STYLE = `
 #seelite-fps {
   position: fixed; top: 8px; right: 10px; z-index: 40;
   padding: 4px 8px; pointer-events: none;
-  font: 11px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  font: 11px/1.4 Menlo, monospace;
   color: #cfe6f2; background: rgba(4, 11, 16, .66);
   border: 1px solid rgba(124, 183, 211, .3);
   letter-spacing: .06em; white-space: pre;

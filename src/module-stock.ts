@@ -24,6 +24,7 @@ const NEW_GATES: Record<string, Gate> = {
 	"identity-scanner": { ladder: "exploration", rung: 0 },
 	"long-range-scanner": { ladder: "exploration", rung: 0 },
 	"escape-pod": { ladder: "exploration", rung: 0 },
+	"cargo-scoop": { ladder: "trade", rung: 0 },
 };
 export function moduleGate(m: FittedModule): Gate {
 	const legacy = Object.keys(LEGACY_MODULES).find(
@@ -61,9 +62,13 @@ export function moduleStock(input: ModuleStockInput): readonly ModuleRow[] {
 		if (
 			row.size === 1 &&
 			row.grade === "E" &&
-			["pulse-laser", "cargo-rack", "fuel-tank", "power-plant"].includes(
-				row.kind,
-			)
+			[
+				"pulse-laser",
+				"cargo-rack",
+				"cargo-scoop",
+				"fuel-tank",
+				"power-plant",
+			].includes(row.kind)
 		)
 			return true;
 		const legacy = EQUIPMENT.find((e) => LEGACY_MODULES[e.name] === row.kind);

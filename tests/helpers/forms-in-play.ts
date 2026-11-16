@@ -21,6 +21,25 @@ export const FORMS_IN_PLAY: readonly (readonly [StationType, StationFormId])[] =
 		formsInPlay(type).map((formId) => [type, formId] as const),
 	);
 
+/**
+ * The outpost forms built ahead of any pool (node #1032): the Derrick, Buoy,
+ * Rig and Cluster are authored, solid and drawn when something builds one (the
+ * station workbench, a forced form), but no world draws them until the fiction
+ * map puts them in play (#460), so `formsInPlay` does not list them. The rows
+ * that measure a form's proxy, reach and mesh read this too, so that
+ * pooling one later finds it already held to them.
+ */
+export const OUTPOST_FORMS_AHEAD: readonly (readonly [
+	StationType,
+	StationFormId,
+])[] = (["a", "b", "c", "d"] as const).map((form) => ["outpost", form]);
+
+/** Every form a proxy row measures: the forms in play, and those built ahead. */
+export const FORMS_MEASURED: readonly (readonly [
+	StationType,
+	StationFormId,
+])[] = [...FORMS_IN_PLAY, ...OUTPOST_FORMS_AHEAD];
+
 /** A station record a builder or the proxy reads, at the given seeds. */
 export function stationInForm(
 	type: StationType,

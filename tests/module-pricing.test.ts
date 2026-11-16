@@ -15,7 +15,7 @@ import {
 describe("module pricing proposal", () => {
 	test("covers the complete first catalogue, with every size and grade", () => {
 		const rows = deriveProposal().rows;
-		expect(new Set(rows.map((r) => r.kind)).size).toBe(17);
+		expect(new Set(rows.map((r) => r.kind)).size).toBe(18);
 		expect([...new Set(rows.map((r) => r.kind))].sort()).toEqual(
 			(
 				[
@@ -32,6 +32,7 @@ describe("module pricing proposal", () => {
 					"escape-pod",
 					"extra-energy-unit",
 					"cargo-rack",
+					"cargo-scoop",
 					"shield-booster",
 					"armour-plating",
 					"fuel-tank",
@@ -39,7 +40,7 @@ describe("module pricing proposal", () => {
 				] satisfies ModuleKind[]
 			).sort(),
 		);
-		expect(rows.length).toBe(17 * 3 * 3);
+		expect(rows.length).toBe(18 * 3 * 3);
 		expect(
 			new Set(rows.map((r) => `${r.kind}/${r.size}/${r.grade}`)).size,
 		).toBe(rows.length);
@@ -81,6 +82,13 @@ describe("module pricing proposal", () => {
 				expect(e.output.capsuleT).toBe({ 1: 5, 2: 10, 3: 20 }[e.size]);
 			} else
 				for (const key of Object.keys(e.output)) {
+					if (e.kind === "cargo-scoop" && key === "scoopRadiusKm") {
+						expect([d.output[key], a.output[key]]).toEqual([
+							e.output[key],
+							e.output[key],
+						]);
+						continue;
+					}
 					expect(d.output[key]).toBeLessThan(e.output[key]);
 					expect(e.output[key]).toBeLessThan(a.output[key]);
 				}

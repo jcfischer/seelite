@@ -170,7 +170,7 @@ export function drawGlassNotice(
 	ctx.save();
 	ctx.globalAlpha = notice.alpha;
 	ctx.fillStyle = notice.fill;
-	ctx.font = "16px ui-monospace, Menlo, monospace";
+	ctx.font = "16px Menlo, monospace";
 	ctx.textAlign = "center";
 	ctx.fillText(
 		notice.text,

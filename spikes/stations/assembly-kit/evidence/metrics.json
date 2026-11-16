@@ -1,0 +1,4435 @@
+{
+  "sources": {
+    "blocks.mjs": "4fc35084ceb6c2fb9239e58d4095509d5ccdcea7d7d342fcf0423edb17a8e3fd",
+    "build_kit.py": "952d3466800572f3b6613e7ab792069e9ab14df36ebaa715f70dcb8de78751c3",
+    "../build_model.py": "94f674ceeb55f4683b230537a8055ef9fd97fc97856e47594c736c98d38dbde8",
+    "../geometry.py": "fcec145cc6564cdb379196830e7f466010f2036b1b001bd7a5c35cd2b448f148",
+    "../final_shapes.py": "26967cd1207766211056e43c6febab3b97d3590f9cdbd9d83679b36516cef3e5",
+    "../industrial-surface.png": "4589b25606011e41faf5b2951f37551bfd2a0918f5ce85f8ceee7adeba0d1cb5",
+    "joints.ts": "080d69ad87c3abc2b040949b17eefd708dcd93cf3f4aab11a6b473291ff69719",
+    "assembly.ts": "3da815fc30d23e497bb40ac86fff5dd2f3a456f88085bd8b6293efd3a187aeb9",
+    "../../../src/assembly-flight.ts": "f4e50ee9643f4d4a504a8c97eea1ba1b043e4ee22b1e3fa21932a41cb22f00c1",
+    "../../../src/assembly-plan.ts": "288f854b898658fbc4afe6757789afe276b6ce380679cfece204cddaf6ede0a2",
+    "prepare.ts": "3e77b421a950c1d80d9bca5f347fc4728b20bf5c1747af73d11e3ae403215727",
+    "viewer.ts": "2ef4140be8817848ea75f51d00d461faeae5fe3a10cd5f603c834d72f20b0704",
+    "index.html": "dc7cfe03e1dc12b6108ea5542083538e2a352b7976337d029ed839f70ef7553e",
+    "capture.mjs": "4f9bdd9731c20b9488534e6c624e2217a9e2fac9a5a61afa04d11be07f86d947"
+  },
+  "base": "bb2fd345fab3bccbf9fd321adb398abe86c3f842",
+  "capturedAt": "2026-10-23T18:04:21.769Z",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "asset": {
+    "batches": 58,
+    "bytes": 15364144,
+    "sha256": "11161fc504a58722f5104fc442fdedc0e7f21526ec71532e98a7beb57e95f05d",
+    "units": "km",
+    "blocks": [
+      "HUB",
+      "HUB_STATIC",
+      "NODE",
+      "TUBE",
+      "TRUSS",
+      "RADIATOR",
+      "TANKS",
+      "DISH",
+      "LINK"
+    ],
+    "authoring": "Blender build_kit.py via stations/build_model.py and geometry.py",
+    "source": "blocks.blend",
+    "sourceSha256": "299a9da10e988610a85d8d91df3ec449f6334a17d18f7bf705ba575b14d1597b",
+    "texture": "../industrial-surface.png"
+  },
+  "lighting": "Station study rig: ACES 1.12, room environment 0.36; key 4.5, fill 1.1, rim 1.0. Phases 0 and quarter turn (hub-quarter), studio background; no frame-time claim.",
+  "plans": {
+    "0": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          7,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 9,
+        "dx": -2,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          4
+        ],
+        "host": 3
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          8,
+          9,
+          2
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          4,
+          6,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          7,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          6,
+          4,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 4,
+        "dx": 2,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          0,
+          9
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": -2,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          3,
+          4,
+          4
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          2,
+          1,
+          8,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          1,
+          9,
+          7,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          3,
+          3,
+          4,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          9,
+          2,
+          0,
+          8
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 4,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          7,
+          2,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          4,
+          6,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          3,
+          0
+        ],
+        "host": 2
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ],
+    "1": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          3
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          5
+        ],
+        "host": 3
+      },
+      {
+        "module": 3,
+        "dx": -2,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          3,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          1,
+          7,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          1,
+          2,
+          7,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          5,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 5,
+        "dx": 3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          2,
+          8,
+          7,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 4,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          5,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          3,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          8,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 1,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ],
+    "47": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -2,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          7,
+          0,
+          4
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          4,
+          6,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 2,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          4
+        ],
+        "host": 3
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          4,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          8,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          6,
+          4,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 4,
+        "dx": 2,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          7,
+          8,
+          2
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          4,
+          0,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 9,
+        "dx": -4,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": -3,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          9,
+          0,
+          0,
+          9
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          1,
+          0,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          1,
+          2,
+          8,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          4,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          2,
+          2,
+          7,
+          8
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 4,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          5,
+          6,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          9,
+          7,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          5,
+          6,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          6,
+          6,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 2,
+        "dy": 1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          8,
+          2,
+          7
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          3,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 2,
+        "dy": 2,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": 2
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          9,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": 1,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ],
+    "1234": [
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": -3,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          7,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 2,
+        "dx": -2,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          0,
+          4
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          4,
+          0,
+          3
+        ],
+        "host": 1
+      },
+      {
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          8,
+          2,
+          9
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "joined": [
+          true,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          4,
+          6,
+          0,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          8,
+          0,
+          6,
+          1
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 2,
+        "dy": -1,
+        "joined": [
+          false,
+          true,
+          false,
+          true
+        ],
+        "beside": [
+          0,
+          3,
+          0,
+          8
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 3,
+        "dy": -1,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -4,
+        "dy": 0,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          3,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": -3,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          3,
+          9,
+          8,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          4,
+          5
+        ],
+        "host": 0
+      },
+      {
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          9,
+          1,
+          8,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          3,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "joined": [
+          true,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          1,
+          8,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          3,
+          0,
+          3,
+          3
+        ],
+        "host": 0
+      },
+      {
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          9,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "joined": [
+          false,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          0,
+          1,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 3,
+        "dx": 2,
+        "dy": 1,
+        "joined": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          2,
+          8,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 2,
+        "dx": 3,
+        "dy": 1,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          3,
+          0,
+          0,
+          0
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": -1,
+        "dy": 2,
+        "joined": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "beside": [
+          0,
+          6,
+          0,
+          0
+        ],
+        "host": 1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "joined": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "beside": [
+          7,
+          0,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "joined": [
+          false,
+          true,
+          true,
+          true
+        ],
+        "beside": [
+          0,
+          7,
+          6,
+          6
+        ],
+        "host": -1
+      },
+      {
+        "module": 7,
+        "dx": 1,
+        "dy": 3,
+        "joined": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "beside": [
+          6,
+          0,
+          0,
+          0
+        ],
+        "host": 0
+      },
+      {
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "joined": [
+          false,
+          false,
+          true,
+          false
+        ],
+        "beside": [
+          0,
+          0,
+          6,
+          0
+        ],
+        "host": -1
+      }
+    ]
+  },
+  "authoredInstances": {
+    "0": [
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": -2,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": 2,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": -2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 2,
+        "dy": 0,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 3,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": 4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
+      }
+    ],
+    "1": [
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": -2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 5,
+        "dx": 3,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 4,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": 3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
+      }
+    ],
+    "47": [
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 2,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": 2,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 3,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": -4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": -3,
+        "dy": 0,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 3,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": 4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -3,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 2,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 3,
+        "dy": 1,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 2,
+        "dy": 2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 2,
+        "dy": 2,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": 1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": 1,
+        "dy": 3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
+      }
+    ],
+    "1234": [
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -4,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": -3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": -2,
+        "dy": -2,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -3,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 4,
+        "dx": -2,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": -1,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": -1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 2,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 3,
+        "dy": -1,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": -4,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": -3,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "DISH",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "LINK",
+        "module": 9,
+        "dx": -2,
+        "dy": 0,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": -1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "HUB_STATIC",
+        "module": 1,
+        "dx": 0,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 1,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "TANKS",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": -1.5707963267948966
+      },
+      {
+        "block": "LINK",
+        "module": 8,
+        "dx": 2,
+        "dy": 0,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 5,
+        "dx": -2,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 1,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TUBE",
+        "module": 3,
+        "dx": 2,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "NODE",
+        "module": 2,
+        "dx": 3,
+        "dy": 1,
+        "turn": 0
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": -1,
+        "dy": 2,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": -1,
+        "dy": 2,
+        "turn": 0
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 2,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 3,
+        "turn": 1.5707963267948966
+      },
+      {
+        "block": "RADIATOR",
+        "module": 7,
+        "dx": 1,
+        "dy": 3,
+        "turn": 0
+      },
+      {
+        "block": "LINK",
+        "module": 7,
+        "dx": 1,
+        "dy": 3,
+        "turn": 3.141592653589793
+      },
+      {
+        "block": "TRUSS",
+        "module": 6,
+        "dx": 0,
+        "dy": 4,
+        "turn": 1.5707963267948966
+      }
+    ]
+  },
+  "rows": [
+    {
+      "file": "seed-0-overview-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 258,
+      "triangles": 77496
+    },
+    {
+      "file": "seed-0-overview-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 268,
+      "triangles": 408344
+    },
+    {
+      "file": "seed-0-hub-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 176,
+      "triangles": 75472
+    },
+    {
+      "file": "seed-0-hub-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 200,
+      "triangles": 407792
+    },
+    {
+      "file": "seed-0-hub-quarter-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 75474
+    },
+    {
+      "file": "seed-0-hub-quarter-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 201,
+      "triangles": 407794
+    },
+    {
+      "file": "seed-0-joint-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.30000000000000004,
+          0,
+          0
+        ],
+        "camera": [
+          -0.4600000000000001,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_X",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": 0,
+            "joined": [
+              false,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              0,
+              3,
+              4,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              2,
+              1,
+              8,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 1,
+          "target": [
+            -0.30000000000000004,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 65,
+      "triangles": 73024
+    },
+    {
+      "file": "seed-0-joint-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.30000000000000004,
+          0,
+          0
+        ],
+        "camera": [
+          -0.4600000000000001,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_X",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": 0,
+            "joined": [
+              false,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              0,
+              3,
+              4,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              2,
+              1,
+              8,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 1,
+          "target": [
+            -0.30000000000000004,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 94,
+      "triangles": 406520
+    },
+    {
+      "file": "seed-0-rear-procedural.png",
+      "seed": 0,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 258,
+      "triangles": 77496
+    },
+    {
+      "file": "seed-0-rear-authored.png",
+      "seed": 0,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 268,
+      "triangles": 408344
+    },
+    {
+      "file": "seed-1-overview-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 243,
+      "triangles": 61672
+    },
+    {
+      "file": "seed-1-overview-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 259,
+      "triangles": 313352
+    },
+    {
+      "file": "seed-1-hub-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 169,
+      "triangles": 60760
+    },
+    {
+      "file": "seed-1-hub-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 191,
+      "triangles": 312800
+    },
+    {
+      "file": "seed-1-hub-quarter-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 170,
+      "triangles": 60762
+    },
+    {
+      "file": "seed-1-hub-quarter-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 192,
+      "triangles": 312802
+    },
+    {
+      "file": "seed-1-joint-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.21,
+          0,
+          0
+        ],
+        "camera": [
+          -0.37,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "HUB–TUBE_X",
+          "a": {
+            "module": 1,
+            "dx": 0,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              6,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              1,
+              7,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 0,
+          "target": [
+            -0.21,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 87,
+      "triangles": 59032
+    },
+    {
+      "file": "seed-1-joint-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.21,
+          0,
+          0
+        ],
+        "camera": [
+          -0.37,
+          0.14,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "HUB–TUBE_X",
+          "a": {
+            "module": 1,
+            "dx": 0,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              6,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 3,
+            "dx": -1,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              1,
+              7,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 0,
+          "target": [
+            -0.21,
+            0,
+            0
+          ]
+        }
+      },
+      "calls": 106,
+      "triangles": 291792
+    },
+    {
+      "file": "seed-1-rear-procedural.png",
+      "seed": 1,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 243,
+      "triangles": 61672
+    },
+    {
+      "file": "seed-1-rear-authored.png",
+      "seed": 1,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 259,
+      "triangles": 313352
+    },
+    {
+      "file": "seed-47-overview-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 260,
+      "triangles": 99864
+    },
+    {
+      "file": "seed-47-overview-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 268,
+      "triangles": 459208
+    },
+    {
+      "file": "seed-47-hub-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 179,
+      "triangles": 97904
+    },
+    {
+      "file": "seed-47-hub-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 200,
+      "triangles": 458656
+    },
+    {
+      "file": "seed-47-hub-quarter-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 180,
+      "triangles": 97906
+    },
+    {
+      "file": "seed-47-hub-quarter-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 201,
+      "triangles": 458658
+    },
+    {
+      "file": "seed-47-joint-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.4,
+          0.1,
+          0
+        ],
+        "camera": [
+          0.5600000000000002,
+          0.24000000000000005,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TRUSS_Y",
+          "a": {
+            "module": 2,
+            "dx": 2,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              4,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 6,
+            "dx": 2,
+            "dy": 1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              7,
+              8,
+              2,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            0.4,
+            0.1,
+            0
+          ]
+        }
+      },
+      "calls": 55,
+      "triangles": 94720
+    },
+    {
+      "file": "seed-47-joint-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.4,
+          0.1,
+          0
+        ],
+        "camera": [
+          0.5600000000000002,
+          0.24000000000000005,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TRUSS_Y",
+          "a": {
+            "module": 2,
+            "dx": 2,
+            "dy": 0,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              3,
+              3,
+              4,
+              6
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 6,
+            "dx": 2,
+            "dy": 1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              7,
+              8,
+              2,
+              7
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            0.4,
+            0.1,
+            0
+          ]
+        }
+      },
+      "calls": 84,
+      "triangles": 457264
+    },
+    {
+      "file": "seed-47-rear-procedural.png",
+      "seed": 47,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 260,
+      "triangles": 99864
+    },
+    {
+      "file": "seed-47-rear-authored.png",
+      "seed": 47,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 268,
+      "triangles": 459208
+    },
+    {
+      "file": "seed-1234-overview-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 257,
+      "triangles": 78744
+    },
+    {
+      "file": "seed-1234-overview-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "overview",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          1.15,
+          0.8000000000000004,
+          2.7600000000000002
+        ],
+        "joint": null
+      },
+      "calls": 268,
+      "triangles": 469120
+    },
+    {
+      "file": "seed-1234-hub-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 176,
+      "triangles": 76368
+    },
+    {
+      "file": "seed-1234-hub-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "hub",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 193,
+      "triangles": 468220
+    },
+    {
+      "file": "seed-1234-hub-quarter-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 177,
+      "triangles": 76370
+    },
+    {
+      "file": "seed-1234-hub-quarter-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "hub-quarter",
+      "phase": 1.5707963267948966,
+      "framing": {
+        "target": [
+          0.21,
+          0,
+          0.035
+        ],
+        "camera": [
+          0.44999999999999996,
+          0.30000000000000004,
+          0.5750000000000001
+        ],
+        "joint": null
+      },
+      "calls": 194,
+      "triangles": 468222
+    },
+    {
+      "file": "seed-1234-joint-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.4,
+          -0.30000000000000004,
+          0
+        ],
+        "camera": [
+          -0.56,
+          -0.4400000000000001,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_Y",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": -2,
+            "joined": [
+              false,
+              false,
+              false,
+              true
+            ],
+            "beside": [
+              0,
+              0,
+              0,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 4,
+            "dx": -2,
+            "dy": -1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              8,
+              8,
+              2,
+              9
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            -0.4,
+            -0.30000000000000004,
+            0
+          ]
+        }
+      },
+      "calls": 38,
+      "triangles": 72048
+    },
+    {
+      "file": "seed-1234-joint-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "joint",
+      "phase": 0,
+      "framing": {
+        "target": [
+          -0.4,
+          -0.30000000000000004,
+          0
+        ],
+        "camera": [
+          -0.56,
+          -0.4400000000000001,
+          0.4000000000000001
+        ],
+        "joint": {
+          "kind": "NODE–TUBE_Y",
+          "a": {
+            "module": 2,
+            "dx": -2,
+            "dy": -2,
+            "joined": [
+              false,
+              false,
+              false,
+              true
+            ],
+            "beside": [
+              0,
+              0,
+              0,
+              4
+            ],
+            "host": -1
+          },
+          "b": {
+            "module": 4,
+            "dx": -2,
+            "dy": -1,
+            "joined": [
+              true,
+              true,
+              true,
+              true
+            ],
+            "beside": [
+              8,
+              8,
+              2,
+              9
+            ],
+            "host": -1
+          },
+          "direction": 3,
+          "target": [
+            -0.4,
+            -0.30000000000000004,
+            0
+          ]
+        }
+      },
+      "calls": 67,
+      "triangles": 465724
+    },
+    {
+      "file": "seed-1234-rear-procedural.png",
+      "seed": 1234,
+      "authored": false,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 257,
+      "triangles": 78744
+    },
+    {
+      "file": "seed-1234-rear-authored.png",
+      "seed": 1234,
+      "authored": true,
+      "view": "rear",
+      "phase": 0,
+      "framing": {
+        "target": [
+          0,
+          0,
+          0.06
+        ],
+        "camera": [
+          -1.1999999999999995,
+          0.8,
+          -2.6400000000000006
+        ],
+        "joint": null
+      },
+      "calls": 268,
+      "triangles": 469120
+    }
+  ],
+  "errors": []
+}

@@ -30,7 +30,7 @@ export function mountWorkLightTuner(): void {
 	panel.id = "worklight-tuner";
 	panel.style.cssText =
 		"position:fixed;top:12px;right:12px;z-index:10000;padding:10px 12px;" +
-		"background:rgba(8,12,18,.82);color:#cfe3f0;font:12px/1.4 ui-monospace,monospace;" +
+		"background:rgba(8,12,18,.82);color:#cfe3f0;font:12px/1.4 Menlo, monospace;" +
 		"border:1px solid #2c4a5c;border-radius:6px;min-width:240px";
 	const title = document.createElement("div");
 	title.textContent = "work lights";

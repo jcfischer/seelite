@@ -350,6 +350,7 @@ export function isAuthoredStation(root: THREE.Object3D): boolean {
 export const AUTHORED_FIXTURE_NAMES: Readonly<
 	Partial<Record<StationType, readonly string[]>>
 > = Object.freeze({
+	trade: SPEC_FIXTURE_NAMES.trade,
 	shipyard: Object.freeze(["windows", "mouth-strobe"]),
 	// An authored refinery (node #819) carries its study's amber lamps as
 	// `windows`, and since the principal's ruling (2026-10-13, "add lights")

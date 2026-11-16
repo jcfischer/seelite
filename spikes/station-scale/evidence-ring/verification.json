@@ -1,0 +1,65 @@
+{
+  "recordedAt": "2026-10-31T10:29:42.618Z",
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "stdout": "",
+      "recordedAt": "2026-10-31T10:29:56.451Z"
+    },
+    {
+      "name": "format",
+      "command": "npm run format:check",
+      "exitCode": 0,
+      "stdout": "\n> seelite@0.1.0 format:check\n> biome format src scripts tests index.html\n\nChecked 1231 files in 310ms. No fixes applied.\n",
+      "recordedAt": "2026-10-31T10:29:57.300Z"
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "exitCode": 0,
+      "stdout": "\n> seelite@0.1.0 lint\n> biome lint scripts\n\nChecked 327 files in 85ms. No fixes applied.\n",
+      "recordedAt": "2026-10-31T10:29:57.725Z"
+    },
+    {
+      "name": "comments",
+      "command": "npm run lint:comments",
+      "exitCode": 0,
+      "stdout": "\n> seelite@0.1.0 lint:comments\n> node scripts/eslint/suppressions-guard.mjs && eslint .\n\n",
+      "recordedAt": "2026-10-31T10:30:07.253Z"
+    },
+    {
+      "name": "wiring",
+      "command": "node scripts/check-launcher-wiring.mjs",
+      "exitCode": 0,
+      "stdout": "ok   154 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself\n",
+      "recordedAt": "2026-10-31T10:30:07.392Z"
+    }
+  ],
+  "sourceSha256": {
+    "src/trade-flight.ts": "4c4bd0eaa709e50236aef14dd983b84ea08755aba1bea606463e8c7f202561dd",
+    "src/station-light.ts": "6f6927df7641a678b94b71c7902b15e532c5963fc0d5c682a2f9cd244d8d5110",
+    "src/coriolis-flight.ts": "95a902589863d82297a44d0bfc736a87acf28feba62e059da96583922bcf8e09",
+    "src/assembly-flight.ts": "a27801f8e84839bcb5e61000da034ec9cd7ecbcf07e2981b351603aad201a67d"
+  },
+  "notes": [
+    "Full host suite was run once: 7312 pass, 1 stale-module failure. Fresh corrected-code affected tests pass 30/30. This record does not mark the full suite green.",
+    "Check timestamps are record times, not historic command start times."
+  ],
+  "timingSourceMatches": true,
+  "probes": [
+    {
+      "name": "probe-light-rig",
+      "exitCode": 0,
+      "log": "probe-light-rig.log",
+      "sha256": "a6cda07515e5b70e68ad495a709a24d40064793535ce0ae3ac358e3ab1463e7b"
+    },
+    {
+      "name": "probe-station-visuals",
+      "exitCode": 0,
+      "log": "probe-station-visuals.log",
+      "sha256": "1d9c633d9bee77d6a4f0af4590cf881177dd88ac30bbe7cf0334812f85c5a04f"
+    }
+  ]
+}
