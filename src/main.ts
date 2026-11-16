@@ -23921,12 +23921,12 @@ class Game {
 			const promptWidth = m.width;
 			// **A plate behind a docking notice** (#597, the principal's ruling on
 			// the sheet). The line lands on the slot whenever a station is near,
-			// and red over lit plating and a nameplate did not read. Only for the
-			// notice: every other prompt kept its look.
+			// and red over lit plating and a nameplate did not read. Drawn for the
+			// notice, and since node #1290 for every prompt.
 			// One predicate for the plate and the tone, so the two cannot disagree.
 			const notice =
 				this.dockingNotice?.text === prompt ? this.dockingNotice : null;
-			if (notice && this.view !== "cockpit") {
+			if (this.view !== "cockpit") {
 				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
 				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
 				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;
