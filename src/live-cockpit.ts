@@ -280,6 +280,7 @@ export interface LiveCockpitState {
 		hold: HoldSummary;
 		/** The till's last refusal, in the console's words, or `null`. */
 		message: string | null;
+		serviceNotice?: string | null;
 		cargo: readonly string[];
 		ownedEquipment: readonly string[];
 		recoveredFittings?: readonly {
@@ -295,6 +296,7 @@ export interface LiveCockpitState {
 		 *  the fitted one, hull plus tanks (#926), never the jump range. */
 		fuelLy: number;
 		fuelCapacityLy: number;
+		refinery?: RefineryConsole | null;
 		/** Changes only when an accepted action replaces the displayed state. */
 		revision: number;
 	} | null;
@@ -325,6 +327,48 @@ export interface LiveCockpitState {
 /** Both left tabs' readout block, one copy so the two cannot drift apart. */
 const LEFT_READOUT = `<div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span><span><b>STANDING</b><em data-live-legal-status></em></span></div>`;
 
+/** One queued job's row on the Refinery tab. */
+export interface RefineryJobRow {
+	id: number;
+	good: string;
+	tonnes: number;
+	product: string;
+	output: string;
+	status: string;
+	workLeft: number;
+	percent: number;
+}
+
+/** The Refinery tab's whole view (node #1195). */
+export interface RefineryConsole {
+	view: "submit" | "jobs";
+	online: boolean;
+	saving: boolean;
+	notice: string | null;
+	ore: readonly { good: string; tonnes: number }[];
+	selected: string;
+	tonnes: number;
+	quote: {
+		good: string;
+		tonnes: number;
+		product: string;
+		output: string;
+		fee: string;
+		position: number;
+		workS: number;
+		stale: boolean;
+	} | null;
+	jobs: readonly RefineryJobRow[];
+	queueCount: number;
+	collectable: readonly {
+		product: string;
+		text: string;
+		units: number;
+		finished: boolean;
+	}[];
+	pooled: readonly { product: string; text: string }[];
+}
+
 export interface LiveCockpitCallbacks {
 	onSweep?: () => void;
 	onRequestAction?: (action: string, id: string) => void;
@@ -335,6 +379,12 @@ export interface LiveCockpitCallbacks {
 	onNavFilter: (filter: NavFilter, source: "chip" | "query") => void;
 	onSelectTarget: (id: string) => void;
 	onStationTab: (tab: StationConsoleTab) => void;
+	onRefineryCollect?: (product: string) => void;
+	onRefineryAction?: (
+		action: "view-submit" | "view-jobs" | "quote" | "submit",
+	) => void;
+	onRefineryGood?: (good: string) => void;
+	onRefineryTonnes?: (tonnes: number) => void;
 	onStationAction: (action: StationAction["type"], name: string) => void;
 	onOutfittingSelect?: (kind: "slot" | "candidate", name: string) => void;
 	onLaunch: () => void;
@@ -427,7 +477,7 @@ function navEta(seconds: number | null) {
 }
 
 const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${WRECK_CUE_STYLE}
-#live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
+#live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
 #live-cockpit * { box-sizing: border-box; }
 .lc-director { position: absolute; top: 38%; left: 50%; width: 172px; transform: translate(-50%, -50%); color: #ffe0a2; text-align: center; }
@@ -499,11 +549,21 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-chip[aria-pressed="true"] { border-color: #ffe0a2; background: rgba(223, 122, 20, .26); color: #fff0c9; }
 .lc-nav-query { flex: 1 1 96px; min-width: 84px; border: 1px solid rgba(229, 170, 82, .5); border-radius: 3px; padding: 4px 7px; background: rgba(8, 5, 3, .6); color: #ffe1a9; font: inherit; font-size: 11px; }
 .lc-nav-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; max-height: 234px; overflow: auto; }
+/* https://github.com/jcfischer/seelite/issues/1234 - a populated charted field
+   puts 596 rows in this list and the panel shows six. Skipping the layout and
+   paint of the rows outside it is 4.7 ms of frame the list used to spend on
+   rows no pilot can see.
+   A contained row paints at the second rendering opportunity after it is
+   inserted, not on the tick its text is written: the panel's first painted
+   frame carries the rows, a same-tick DOM read of it does not. */
+.lc-nav-list > li { content-visibility: auto; contain-intrinsic-size: auto 45px; }
 .lc-sweep-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-height: 280px; overflow: auto; }
 .lc-sweep-list li { padding: 10px 12px; border-left: 3px solid #c39a60; background: #a0743012; }
 .lc-sweep-list small { color: #bfa57c; }
-.lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
-.lc-nav-row:hover { background: rgba(223, 122, 20, .14); }
+.lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 3px 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
+.lc-nav-row:not(:disabled):hover { background: rgba(223, 122, 20, .14); }
+.lc-nav-row:disabled { cursor: default; opacity: .65; }
+.lc-nav-detail { grid-column: 1 / -1; color: #e7b77d; font-size: 10px; line-height: 1.4; }
 .lc-nav-row[aria-current="true"] { background: rgba(223, 122, 20, .3); color: #fff0c9; }
 /* The pad's cursor. A ring *and* a wash rather than a ring alone: a 2px amber
    outline on an amber console was the principal's first finding on the flown
@@ -587,6 +647,21 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-station-equipment .lc-station-row > :nth-child(4) { justify-self: end; }
 .lc-station-action { border: 1px solid rgba(229, 170, 82, .52); border-radius: 3px; padding: 2px 6px; background: rgba(223, 122, 20, .16); color: #ffe1a9; cursor: pointer; font: inherit; font-size: 10px; }
 .lc-station-action:hover { background: rgba(223, 122, 20, .32); }
+.lc-refinery { flex: 1; overflow: auto; margin-top: 8px; }
+.lc-refinery-columns { display: grid; grid-template-columns: minmax(240px, 1fr) 1.2fr; gap: 24px; align-items: start; }
+.lc-refinery label { display: block; margin-bottom: 10px; }
+.lc-refinery label span { display: block; color: #cb8c51; font-size: 10px; letter-spacing: .08em; margin-bottom: 4px; }
+.lc-refinery select, .lc-refinery input { font: inherit; font-size: 11px; color: #ffd48c; background: #17120e; border: 1px solid #846039; border-radius: 3px; padding: 4px 6px; }
+.lc-refinery-quote { border: 1px solid rgba(229, 170, 82, .35); border-radius: 4px; padding: 12px; background: rgba(0, 0, 0, .22); }
+.lc-refinery-quote h3 { margin: 0 0 8px; color: #cb8c51; font-size: 11px; letter-spacing: .1em; }
+.lc-refinery-quote strong { display: block; color: #ffe1a9; font-size: 18px; margin-bottom: 8px; }
+.lc-refinery-note { color: #ad9a82; font-size: 10px; margin: 6px 0 0; }
+.lc-refinery-warn { color: #ffb898; font-size: 11px; margin: 8px 0; }
+.lc-refinery-notice { margin: 8px 0; padding: 8px 10px; border-left: 3px solid #d79b50; background: rgba(171, 100, 20, .13); color: #ffe1a9; font-size: 11px; }
+.lc-refinery-status { margin: 8px 0; color: #cb8c51; font-size: 10px; letter-spacing: .08em; }
+.lc-refinery-jobs .lc-station-row { grid-template-columns: minmax(160px, 1.3fr) 1fr 1fr; }
+.lc-refinery [data-live-refinery-collectable] { grid-template-columns: minmax(160px, 1.3fr) 1fr auto; }
+.lc-refinery .lc-station-action:disabled { opacity: .4; cursor: default; }
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
 .lc-station-shipyard .lc-station-row { grid-template-columns: minmax(96px, 1fr) .9fr 1fr 1.8fr 64px; }
 .lc-station-shipyard .lc-station-row > :nth-child(5) { justify-self: end; }
@@ -644,6 +719,8 @@ export class LiveCockpit {
 			name: HTMLSpanElement;
 			kind: HTMLElement;
 			range: HTMLElement;
+			detail?: HTMLSpanElement;
+			disabledReason?: HTMLSpanElement;
 		}
 	>();
 	private elements: CockpitElements | null = null;
@@ -736,6 +813,15 @@ export class LiveCockpit {
 					{ ...this.filter, query: (field as HTMLInputElement).value },
 					"query",
 				);
+			if (field.matches("[data-live-refinery-tonnes]"))
+				this.callbacks.onRefineryTonnes?.(
+					Number.parseInt((field as HTMLInputElement).value, 10),
+				);
+		});
+		this.root.addEventListener("change", (event) => {
+			const field = event.target as HTMLElement;
+			if (field.matches("[data-live-refinery-good]"))
+				this.callbacks.onRefineryGood?.((field as HTMLSelectElement).value);
 		});
 		this.root.addEventListener("pointerover", (event) => {
 			const row = (event.target as HTMLElement).closest(
@@ -816,9 +902,32 @@ export class LiveCockpit {
 				value === "Market" ||
 				value === "Equipment" ||
 				value === "Shipyard" ||
-				value === "Requests"
+				value === "Requests" ||
+				value === "Refinery"
 			)
 				this.callbacks.onStationTab(value);
+			return;
+		}
+		const refineryAction = element.closest<HTMLElement>(
+			"[data-live-refinery-action]",
+		);
+		const refineryCollect = element.closest<HTMLElement>(
+			"[data-live-refinery-collect]",
+		);
+		if (refineryCollect) {
+			const product = refineryCollect.dataset.liveRefineryCollect;
+			if (product) this.callbacks.onRefineryCollect?.(product);
+			return;
+		}
+		if (refineryAction) {
+			const value = refineryAction.dataset.liveRefineryAction;
+			if (
+				value === "view-submit" ||
+				value === "view-jobs" ||
+				value === "quote" ||
+				value === "submit"
+			)
+				this.callbacks.onRefineryAction?.(value);
 			return;
 		}
 		if (element.closest("[data-live-launch-cancel]")) {
@@ -915,7 +1024,7 @@ export class LiveCockpit {
 		"[data-live-launch]",
 		"[data-live-launch-cancel]",
 		"[data-live-nav-kind]",
-		"[data-live-nav-target]",
+		"[data-live-nav-target]:not(:disabled)",
 		// **The rail's GALAXY MAP button, which is not a tab.** It carries
 		// `data-live-left-tab` and no `lc-tab` class, so dropping that attribute
 		// wholesale took it out of the walk *and* out of `stepTab`'s reach — a
@@ -1391,7 +1500,7 @@ export class LiveCockpit {
 		// list would become unusable exactly while it was being used.
 		// **The Requests tab is in it** (node #690): docking or launching resets
 		// the tab to Current without a press, so no revision moves with it.
-		const key = `${state.stationConsole?.outfitting?.epoch}|${state.sweep?.fitted}|${state.leftTab === "Sweep" ? JSON.stringify(state.sweep) : ""}|${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.firstDay?.eject ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
+		const key = `${state.stationConsole?.outfitting?.epoch}|${state.sweep?.fitted}|${state.leftTab === "Sweep" ? JSON.stringify(state.sweep) : ""}|${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.firstDay?.eject ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}|${JSON.stringify(state.stationConsole?.refinery ?? null)}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1633,7 +1742,18 @@ export class LiveCockpit {
 			eta: navEta(row.etaSeconds),
 		}));
 		const key = cells
-			.map(({ row, range, eta }) => `${row.id}:${row.selected}:${range}:${eta}`)
+			.map(({ row, range, eta }) =>
+				JSON.stringify([
+					row.id,
+					row.selected,
+					row.name,
+					row.displayKind,
+					range,
+					eta,
+					row.detail,
+					row.disabledReason,
+				]),
+			)
 			.join("|");
 		if (key === this.lastNavKey) return;
 		this.lastNavKey = key;
@@ -1673,9 +1793,34 @@ export class LiveCockpit {
 				this.navRowsById.set(row.id, rowElements);
 			}
 			rowElements.button.setAttribute("aria-current", String(row.selected));
+			rowElements.button.disabled = row.disabledReason !== undefined;
+			rowElements.button.title = row.disabledReason ?? "";
 			rowElements.name.textContent = row.name;
 			rowElements.kind.textContent = row.displayKind.toUpperCase();
 			rowElements.range.textContent = `${rangeText} · ${eta}`;
+			if (row.detail !== undefined) {
+				if (!rowElements.detail) {
+					rowElements.detail = document.createElement("span");
+					rowElements.detail.className = "lc-nav-detail";
+					rowElements.button.append(rowElements.detail);
+				}
+				rowElements.detail.textContent = row.detail;
+			} else if (rowElements.detail) {
+				rowElements.detail.remove();
+				delete rowElements.detail;
+			}
+			if (row.disabledReason !== undefined) {
+				if (!rowElements.disabledReason) {
+					rowElements.disabledReason = document.createElement("span");
+					rowElements.disabledReason.className = "lc-nav-detail";
+					rowElements.disabledReason.dataset.liveNavDisabled = "";
+					rowElements.button.append(rowElements.disabledReason);
+				}
+				rowElements.disabledReason.textContent = row.disabledReason;
+			} else if (rowElements.disabledReason) {
+				rowElements.disabledReason.remove();
+				delete rowElements.disabledReason;
+			}
 			const current = navList.children.item(index);
 			if (current !== rowElements.item)
 				navList.insertBefore(rowElements.item, current);
@@ -1781,37 +1926,42 @@ export class LiveCockpit {
 	private stationConsole(state: LiveCockpitState) {
 		const stationConsole = state.stationConsole;
 		if (!stationConsole || state.dockPhase !== "docked") return "";
-		const tabs = (["Market", "Equipment", "Shipyard", "Requests"] as const)
+		const tabs = (
+			["Market", "Equipment", "Shipyard", "Requests", "Refinery"] as const
+		)
 			.filter((tab) => tab !== "Requests" || !!state.requests)
 			// #556 D8: at shipyards only, and absent rather than empty elsewhere.
 			.filter((tab) => tab !== "Shipyard" || !!stationConsole.shipyard)
+			.filter((tab) => tab !== "Refinery" || !!stationConsole.refinery)
 			.map(
 				(tab) =>
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.stationControl(state.firstDay?.stationLine ?? null)}${this.holdLine(stationConsole.hold)}${this.stationMessage(stationConsole.message)}${
-			stationConsole.tab === "Requests"
-				? requestsBody(state.requests)
-				: stationConsole.tab === "Market"
-					? this.market(stationConsole.market)
-					: stationConsole.tab === "Shipyard" && stationConsole.shipyard
-						? this.shipyard(stationConsole.shipyard, stationConsole.credits)
-						: stationConsole.outfitting
-							? outfittingBody(stationConsole.outfitting, stationConsole.hold, {
-									ly: stationConsole.fuelLy,
-									capacityLy: stationConsole.fuelCapacityLy,
-								})
-							: this.equipment(
-									stationConsole.equipment,
-									stationConsole.ownedEquipment,
-									stationConsole.recoveredFittings ?? [],
-									{
-										ly: stationConsole.fuelLy,
-										capacityLy: stationConsole.fuelCapacityLy,
-									},
-								)
-		}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${this.commanderLine(stationConsole)}</p></section>`;
+		let body: string;
+		if (stationConsole.tab === "Requests") body = requestsBody(state.requests);
+		else if (stationConsole.tab === "Market")
+			body = this.market(stationConsole.market);
+		else if (stationConsole.tab === "Refinery" && stationConsole.refinery)
+			body = this.refinery(stationConsole.refinery);
+		else if (stationConsole.tab === "Shipyard" && stationConsole.shipyard)
+			body = this.shipyard(stationConsole.shipyard, stationConsole.credits);
+		else if (stationConsole.outfitting)
+			body = outfittingBody(stationConsole.outfitting, stationConsole.hold, {
+				ly: stationConsole.fuelLy,
+				capacityLy: stationConsole.fuelCapacityLy,
+			});
+		else
+			body = this.equipment(
+				stationConsole.equipment,
+				stationConsole.ownedEquipment,
+				stationConsole.recoveredFittings ?? [],
+				{
+					ly: stationConsole.fuelLy,
+					capacityLy: stationConsole.fuelCapacityLy,
+				},
+			);
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.stationControl(state.firstDay?.stationLine ?? null)}${this.holdLine(stationConsole.hold)}${stationConsole.serviceNotice ? `<div data-live-service-status>${this.stationMessage(stationConsole.serviceNotice)}</div>` : ""}${this.stationMessage(stationConsole.message)}${body}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${this.commanderLine(stationConsole)}</p></section>`;
 	}
 
 	/**
@@ -1838,6 +1988,54 @@ export class LiveCockpit {
 		return stationConsole.tab === "Market"
 			? credits
 			: `${credits} · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}`;
+	}
+
+	private refinery(view: RefineryConsole) {
+		const disabled = view.saving || !view.online;
+		let status = "PROCESSING OFFLINE";
+		if (view.saving) status = "SAVING…";
+		else if (view.online) status = "PROCESSING ONLINE";
+		const quote = view.quote;
+		const oreOptions = view.ore
+			.map(
+				(entry) =>
+					`<option value="${escapeHtml(entry.good)}" ${entry.good === view.selected ? "selected" : ""}>${escapeHtml(entry.good)} · ${entry.tonnes} t</option>`,
+			)
+			.join("");
+		const stale =
+			quote?.stale === true
+				? `<p class="lc-refinery-warn" data-live-refinery-stale>The quote changed. Review it again before confirming.</p>`
+				: "";
+		const quoteBody = quote
+			? `<div class="lc-refinery-quote" data-live-refinery-quote><h3>YOUR QUOTE</h3><strong>${escapeHtml(quote.output)}</strong><div class="lc-station-row"><span>INPUT</span><span class="lc-station-cell">${quote.tonnes} t · ${escapeHtml(quote.good)}</span></div><div class="lc-station-row"><span>FEE</span><span class="lc-station-cell" data-live-refinery-fee>${escapeHtml(quote.fee)}</span></div><div class="lc-station-row"><span>QUEUE POSITION</span><span class="lc-station-cell">${quote.position}</span></div><div class="lc-station-row"><span>WORK AHEAD</span><span class="lc-station-cell">${quote.workS}s</span></div>${stale}<button class="lc-station-action" type="button" data-live-refinery-action="submit" ${view.saving || !view.online ? "disabled" : ""}>SUBMIT & PAY</button><p class="lc-refinery-note">Final after saving · no cancellation</p></div>`
+			: `<div class="lc-refinery-quote"><h3>BEFORE YOU COMMIT</h3><p>Your quote shows the output, the fee and the queue-inclusive work ahead.</p><p class="lc-refinery-note">No ore or credits move until you confirm and the save lands.</p></div>`;
+		const submit = `<div class="lc-refinery-columns"><div><label><span>ORE ABOARD</span><select data-live-refinery-good ${view.saving ? "disabled" : ""}>${oreOptions || `<option value="">no ore aboard</option>`}</select></label><label><span>QUANTITY · WHOLE TONNES</span><input type="number" min="1" step="1" value="${view.tonnes}" data-live-refinery-tonnes ${view.saving ? "disabled" : ""}></label><button class="lc-station-action" type="button" data-live-refinery-action="quote" ${disabled || !view.ore.length ? "disabled" : ""}>REVIEW QUOTE</button></div>${quoteBody}</div>`;
+		const jobs = view.jobs.length
+			? `<div class="lc-refinery-jobs" data-live-refinery-jobs>${view.jobs
+					.map(
+						(job) =>
+							`<div class="lc-station-row" data-live-refinery-job="${job.id}"><span>J${job.id} · ${job.tonnes} t<br>${escapeHtml(job.good)}</span><span class="lc-station-cell">${escapeHtml(job.output)}</span><span class="lc-station-cell">${escapeHtml(job.status)}${job.workLeft > 0 ? ` · ${job.percent}%` : ""}</span></div>`,
+					)
+					.join("")}</div>`
+			: `<p class="lc-refinery-note">No outstanding jobs. Submit ore to start processing.</p>`;
+		const collectRows = view.collectable
+			.map(
+				(row) =>
+					`<div class="lc-station-row" data-live-refinery-collectable="${escapeHtml(row.product)}"><span>COLLECTABLE · ${escapeHtml(row.product)}</span><span class="lc-station-cell">${escapeHtml(row.text)}</span><button class="lc-station-action" type="button" data-live-refinery-collect="${escapeHtml(row.product)}" ${view.saving || (row.units < 1 && !row.finished) ? "disabled" : ""}>COLLECT</button></div>`,
+			)
+			.join("");
+		const pooledRows = view.pooled
+			.map(
+				(row) =>
+					`<div class="lc-station-row" data-live-refinery-pooled="${escapeHtml(row.product)}"><span>POOLED · ${escapeHtml(row.product)}</span><span class="lc-station-cell">${escapeHtml(row.text)}</span><span></span></div>`,
+			)
+			.join("");
+		const jobsView = `${jobs}${collectRows}${pooledRows}`;
+		const body = view.view === "submit" ? submit : jobsView;
+		const notice = view.notice
+			? `<div class="lc-refinery-notice" data-live-refinery-notice role="status">${escapeHtml(view.notice)}</div>`
+			: "";
+		return `<div class="lc-refinery" data-live-refinery><nav class="lc-tabs" aria-label="refinery views"><button class="lc-tab" type="button" data-live-refinery-action="view-submit" aria-selected="${view.view === "submit"}">Submit</button><button class="lc-tab" type="button" data-live-refinery-action="view-jobs" aria-selected="${view.view === "jobs"}">Jobs & collection</button></nav><p class="lc-refinery-status" data-live-refinery-status>${status} · QUEUE ${view.queueCount}/8</p>${notice}${body}</div>`;
 	}
 
 	private market(rows: readonly ConsoleMarketRow[]) {
@@ -2101,6 +2299,10 @@ function firstDayBody(panel: FirstDayPanel | undefined): string {
  */
 function hullRefusalNote(offer: HullOffer, credits: number): string {
 	switch (offer.reason) {
+		case "exclusive-damaged":
+			return "EXCLUSIVE SERVICE DAMAGED";
+		case "market-damaged":
+			return "MARKET SERVICE DAMAGED";
 		case "hull-owned":
 			return "THE HULL YOU FLY";
 		case "hull-locked":

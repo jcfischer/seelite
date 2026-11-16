@@ -28,6 +28,7 @@
  * of the five were red there.
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
 import { describe, expect, test } from "bun:test";
 import {
 	type ApertureFrame,
@@ -48,6 +49,8 @@ import { rolledEnvelope } from "./helpers/rolled-envelope";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
+
+await useShippedInterceptorHull();
 
 /** Awkward on purpose, for `docking.test.ts`'s reason: on a world axis a
  *  transposition can hide behind coordinates that happen to agree. */

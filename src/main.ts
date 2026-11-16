@@ -1,12 +1,166 @@
+import { GRADE_NAME, oreCargoName, oreGood, oreTonnes } from "./ore-goods";
+import { withAccount, accountOf, displayAmount } from "./commodity-pools";
+import { oreCapacityLabel } from "./mining-capacity";
+import { fieldContactsAt, nearestFieldPlan } from "./field-contact";
+import type { FieldDiscoveryMotion } from "./field-discovery";
+import { discoverNearbyFields } from "./world-state";
+import {
+	type DepositKey,
+	type DepositRow,
+	debitAt,
+	depositKey,
+	SURVEY_LIFETIME_H,
+} from "./deposit-state";
+import {
+	beginSurveyHold,
+	ORE_FAMILY_NAME,
+	type OreFamily,
+	type OreGrade,
+	type RockContents,
+	rockContents,
+	SURVEY,
+	SURVEY_INTERRUPTS,
+	type SurveyHold,
+	type SurveyInterrupt,
+	stepSurveyHold,
+	surveyCompleted,
+	surveyFigures,
+	surveyReading,
+} from "./rock-survey";
+import {
+	beamHit,
+	beginCut,
+	firstHitExtraction,
+	prototypeMiningLaserSlot,
+	type Cut,
+	debitSurface,
+	type Anchor,
+	type Fragment,
+	FRAGMENT_REFUSAL_NOTICE,
+	fragmentAt,
+	oreShare,
+	pullFragment,
+	releaseFragment,
+	type RockShape,
+	stepCut,
+	stepFragments,
+} from "./rock-extraction";
+import { impactRadiusPx, mountBeamStrokes } from "./mining-beam";
+import {
+	aimedRock,
+	cycleWithRocks,
+	type FieldRocks,
+	edgeAngleOff,
+	frontRock,
+	isRockTargetId,
+	nearRocks,
+	ROCK_CYCLE_MAX,
+	ROCK_DROP_KM,
+	ROCK_PICKS,
+	type RockPick,
+	type RockRef,
+	resolveRock,
+	rockContact,
+	rockDirectionNow,
+	rockLocalVector,
+} from "./rock-target";
+import {
+	type FieldPlan,
+	fieldCentreVelocity,
+	fieldRocks,
+	systemFields,
+} from "./asteroid-field";
+import { rockPose } from "./asteroid-field";
+import { FieldDraw } from "./field-draw";
+import { pxPerRadianFor, rockArchetype } from "./field-lod";
+import { radiusAt } from "./rock-heightfields";
+import { authoredRockShapes, buildStandInRocks } from "./asteroid-model";
+import { prebuildRockPieces, setRockShapeSource } from "./field-collision";
+import { ROCK_ASSETS, getRockHeightfields } from "./rock-assets";
+import { rockPiecesThread } from "./rock-pieces-thread";
 import { generateNebulae, nebulaView } from "./nebula";
 import {
 	startNebulaBake,
 	nebulaOptions,
 	type NebulaBakeJob,
 } from "./nebula-bake";
-import { ArmedFireGroup, fireGroups } from "./fire-group";
-import { groupLaserRates, groupMuzzleIndices } from "./laser-modules";
 import {
+	beginDrillCut,
+	DRILL,
+	DRILL_RATES,
+	debitDeep,
+	type DrillContact,
+	type DrillStop,
+	drillContact,
+	drillFaceKm,
+	FINE,
+	fineDemand,
+	fineReadout,
+	ANCHOR,
+	anchorAllowed,
+	FINE_STICK,
+	seatBlend,
+	seatPose,
+	longwallFrame,
+	rescaleThrottle,
+	shipFrameM,
+	shipPointKm,
+	stepDrillCut,
+	stepDrillSurface,
+	stepFeed,
+	stepSpin,
+	strutReach,
+} from "./rock-drill";
+import { COCKPIT_OCCLUSION, cockpitSeenParts } from "./cockpit-occlusion-table";
+import {
+	type BridgeSeat,
+	type CabinId,
+	cabinForHull,
+	cockpitEyeKm,
+} from "./cockpit-eye";
+import {
+	MINER_FACE_SCREENS,
+	MINER_FACE_TITLES,
+	type MinerFaceScreen,
+	type MinerFaceState,
+	minerFaceRows,
+} from "./miner-faces";
+import { poseLongwallDrill } from "./drill-pose";
+import {
+	DRILL_CAMERA,
+	drillCameraActive,
+	drillCameraOverlay,
+	drillCameraPose,
+} from "./drill-camera";
+import { DrillCameraFeed } from "./drill-camera-pass";
+import { cockpitDrillView } from "./ship-mesh";
+import { ArmedFireGroup, fireGroups } from "./fire-group";
+import { MissileCombat, missileVisible } from "./missile-combat";
+import {
+	MISSILE,
+	fittedEcm,
+	missileAmmo,
+	stepMissile,
+	type MissileTarget,
+	type Missile,
+} from "./missiles";
+import {
+	glassTracerIndices,
+	hardpointKeys,
+	miningBeamRays,
+	groupLaserRates,
+	groupMuzzleIndices,
+} from "./laser-modules";
+import {
+	npcLoadout,
+	npcFitSeed,
+	npcFittingDrop,
+	armedNpc,
+} from "./npc-loadout";
+import { dropFittingCanister } from "./raider-wreck";
+import { fittedDps } from "./kill-credit";
+import {
+	type Loadout,
 	fitted,
 	fittedCapacity,
 	equipmentNames,
@@ -16,6 +170,8 @@ import {
 	parseModule,
 	stepFuelScoop,
 	stockLoadout,
+	makeModule,
+	moduleRow,
 } from "./loadout";
 import { outfittingScreen } from "./outfitting";
 import {
@@ -23,9 +179,28 @@ import {
 	commanderJumpRangeLy,
 } from "./station-commerce";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
-import { homeRefineryForm, homeShipyardForm } from "./home-shipyard";
+import { ModelQueue } from "./model-queue";
+import {
+	ALL_MODELS,
+	ON_DEMAND_MODELS,
+	modelLoaders,
+	type ModelId,
+	isAuthoredHullModel,
+	SHIPYARD_MODELS,
+	REFINERY_MODELS,
+	OUTPOST_MODELS,
+} from "./model-catalog";
+import {
+	bootModelIds,
+	systemModelIds,
+	trafficRosterHulls,
+} from "./system-models";
 import { lightShipsByWorkLights, type YardWorkLight } from "./ship-work-light";
-import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
+import {
+	INTERIOR_SLICE_MS,
+	nextInteriorFrame,
+	runInteriorSlices,
+} from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
@@ -113,6 +288,20 @@ import {
 } from "./derelict-mesh";
 import { materializeDerelict } from "./world-state";
 import { EQUIPMENT } from "./market";
+import { money } from "./exact-amount";
+import {
+	REFINERY_JOB_LIMIT,
+	productUnits,
+	refineryCollectable,
+	refineryFinished,
+	type RefineryQueue,
+	type RefineryQuote,
+} from "./refinery";
+import {
+	collectRefineryEnvelope,
+	refineryQuoteAt,
+	submitRefineryEnvelope,
+} from "./refinery-pricing";
 import { gateRefusal } from "./ladder";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
@@ -143,15 +332,17 @@ import {
 	type SkyBakeParams,
 } from "./light-rig";
 import {
-	CLOSED_GATE,
+	CLOSED_GATES,
 	enclosureRad,
 	OCCLUSION,
-	type OcclusionGate,
+	type FieldGateInput,
+	type OcclusionGates,
 	SHADOW_MAP_TEXELS,
 	type ShadowSubject,
 	shadowBox,
 	shadowFit,
-	stepOcclusionGate,
+	rockShadowOnly,
+	stepOcclusionGates,
 } from "./occlusion";
 import {
 	hideNonOccluders,
@@ -159,7 +350,7 @@ import {
 	restoreVisibility,
 	subjectOf,
 } from "./occlusion-mesh";
-import { SettingsStore, VOLUME_KEY } from "./settings";
+import { COCKPIT_FOV_DEG, SettingsStore, VOLUME_KEY } from "./settings";
 /**
  * Static, unlike `frame-attribution` below.
  *
@@ -190,6 +381,7 @@ import {
 	type MusicState,
 	musicArms,
 	numbersOn,
+	numbersRoom,
 	stepMusic,
 	waltzDuckDb,
 } from "./music-director";
@@ -217,6 +409,7 @@ import {
 	renderLine,
 	renderNumbersAhead,
 	sayLine,
+	numbersSpace,
 	sayNumbers,
 	useNeuralVoice,
 } from "./comms-voice";
@@ -267,6 +460,7 @@ import {
 	type FloorTone,
 	type HeadLook,
 	type NavFilter,
+	type NavBody,
 	type NavRow,
 	type ScannerContact,
 	flightFloorCells,
@@ -368,6 +562,7 @@ import {
 	makeSystem,
 	makeWorld,
 	makeWorldAtSystem,
+	markShipPlaced,
 	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
@@ -395,7 +590,13 @@ import {
 	thrustShares,
 	worldStarts,
 } from "./sim";
-import { type Flick, FlickMeter, couplePxS, pointerImpulse } from "./pointer";
+import {
+	type Flick,
+	FlickMeter,
+	couplePxS,
+	pointerImpulse,
+	requestLock,
+} from "./pointer";
 import { AttitudeFollower, noseTurnStick } from "./attitude-hold";
 import {
 	heldVents,
@@ -412,6 +613,7 @@ import {
 	withAlpha,
 } from "./vent-cue";
 import { type VentPlumes, buildVentPlumes } from "./vent-plumes";
+import { NpcPlumes } from "./npc-plumes";
 import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
@@ -419,7 +621,11 @@ import {
 	surfaceSphere,
 } from "./planet-surface";
 import { PlanetHalfResolution, useHalfResolution } from "./planet-half-res";
-import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
+import {
+	type ReliefPath,
+	RELIEF_PATHS,
+	reliefPathsFor,
+} from "./planet-shaders";
 import {
 	BAKE_FACE_SIZES,
 	PLANET_RELIEF_PATHS,
@@ -481,6 +687,7 @@ import {
 } from "./ship-condition";
 import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import { PLAYER_LASER_RANGE_KM } from "./laser";
+import type { Grade } from "./module-catalog";
 import {
 	type Engagement,
 	engage,
@@ -563,7 +770,6 @@ import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
 	duelBandCells,
-	duelBandWidestRows,
 	HULL_TEMP_LABEL,
 	SCOOP_LABEL,
 	onTargetMark,
@@ -586,7 +792,6 @@ import {
 	drawTracerSegments,
 	stepGunFeedback,
 	type TracerSegment,
-	tracerPorts,
 } from "./gun-feedback";
 import {
 	GIMBAL_CONE_RAD,
@@ -640,8 +845,9 @@ import {
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
-	scoops,
+	scoopAttempt,
 	CANISTER_RADIUS_KM,
+	CANISTER_SCOOP_CHARGE_E,
 	CARGO_CONTACT_COLOUR,
 	CARGO_CONTACT_CSS,
 	type Canister,
@@ -652,7 +858,10 @@ import {
 	stepCanisters,
 } from "./raider-wreck";
 import {
+	NO_SCOOP_DOCK_NOTICE,
+	NO_DOCKING_COMPUTER_TEXT,
 	SCOOP_NOTICE_S,
+	SCOOP_REFUSAL_TEXT,
 	type ScoopNotice,
 	nextScoopNotice,
 	scoopExit,
@@ -722,6 +931,7 @@ import {
 	RESTITUTION,
 	SEPARATION_KM,
 	V_SCRAPE_KMS,
+	shipPrimitives,
 	hullBox,
 	impactDamage,
 	reachKm,
@@ -767,6 +977,7 @@ import {
 	HULL_SPECS,
 	purchasableHullNamed,
 	type HullEnvelope,
+	type HullCutter,
 	type HullId,
 } from "./hull";
 import {
@@ -774,10 +985,10 @@ import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
 	AFTER_BOOT_HULL_IDS,
-	type AfterBootHullId,
 	buildShipMesh,
 	rebuildAuthoredStandIn,
 	fleetLayout,
+	advanceAuthoredHabitat,
 	measureMuzzles,
 	shipMuzzlesKm,
 	updateShipVisuals,
@@ -802,6 +1013,11 @@ import {
 } from "./chase-orbit";
 import { ArrivalRift } from "./arrival-rift";
 import {
+	CROSSING as CROSSING_TIMELINE,
+	npcRiftLook,
+	npcRiftVisible,
+} from "./witchspace-crossing";
+import {
 	buildHaulerPlans,
 	inboundCandidates,
 	routeVoyages,
@@ -813,7 +1029,6 @@ import {
 	type WitchspaceState,
 	abortWitchspace,
 	arriveWitchspace,
-	npcRiftStrength,
 	beginWitchspace,
 	entryWitchspace,
 	idleWitchspace,
@@ -900,12 +1115,15 @@ import {
 import {
 	buildAuthoredCabin,
 	buildPerimeterLamps,
-	COCKPIT_MODEL_LAMPS,
+	cockpitModelReady,
+	cabinConsoleLamps,
 	carriedConsoleLamp,
-	type CockpitScreen,
 	containedFace,
-	INSTRUMENT_FACE_KM,
+	COCKPIT_MODEL_KM_PER_M,
+	MINER_SEAT_OFFSET_M,
+	releaseAuthoredCabin,
 	SCANNER_FACE_KM,
+	type ScreenFrame,
 	screenMount,
 } from "./cockpit-model";
 import {
@@ -976,6 +1194,18 @@ import {
 } from "./commands";
 import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
+
+setRockShapeSource(getRockHeightfields);
+Promise.resolve()
+	.then(() => {
+		const rockThread = rockPiecesThread();
+		return prebuildRockPieces(rockThread.build).finally(rockThread.close);
+	})
+	.catch((e) =>
+		console.warn("rock pieces: off-thread build failed, built on first use", e),
+	);
+
+const CHASE_FOV_DEG = 60;
 
 /**
  * The keys that are only ever half of a press, for the capture modal.
@@ -1097,7 +1327,11 @@ import {
 	firstDayEjectLine,
 	firstDayText,
 } from "./first-day";
-import type { FirstDayPanel } from "./live-cockpit";
+import type {
+	FirstDayPanel,
+	RefineryConsole,
+	RefineryJobRow,
+} from "./live-cockpit";
 import {
 	COMMANDER_KEY,
 	type CommanderOverlayHandle,
@@ -1115,8 +1349,13 @@ import {
 	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
-import { ESCAPE_POD, marketStationOf, marketEpoch } from "./market";
-import { type HoldBids, holdSummary, pilotGoods } from "./hold";
+import { ESCAPE_POD, commodity, marketStationOf, marketEpoch } from "./market";
+import {
+	type HoldBids,
+	type HoldSummary,
+	holdSummary,
+	pilotGoods,
+} from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
 import {
@@ -1137,6 +1376,7 @@ import {
 import { BeamLayer } from "./beam-layer";
 import {
 	commanderHold,
+	commanderOreBay,
 	flownMassT,
 	newCommander,
 	shipyardScreen,
@@ -1149,7 +1389,9 @@ import {
 	newWorld as newPersistentWorld,
 	observeDocking,
 	observeScan,
+	setDepositRow,
 	advanceTo,
+	stationServices,
 	effectiveCarrier,
 	type EffectiveCarrier,
 	haulerAvailability,
@@ -1160,11 +1402,13 @@ import {
 	type Provenance,
 	type TransitionEvent,
 	visit,
+	withRefineryQueue,
 	type WorldState,
 } from "./world-state";
 import {
 	type StationConsoleTab,
 	marketDisplayChanged,
+	stationServiceStatus,
 	refusalSentence,
 	stationEquipmentScreen,
 	stationMarketScreen,
@@ -1192,6 +1436,7 @@ import {
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+import { compileWhenReady } from "./compile-when-ready";
 
 /** #408 D1: where a guided start asks for clearance — outside the docking
  *  computer's standoff on the aperture axis, the placement `__parkInBerth`
@@ -1323,6 +1568,44 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
  * `forceRaider`. With neither, the leg law runs as a player meets it.
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
+
+const MINING_QUERY = new URLSearchParams(window.location.search);
+const MINING_ON = MINING_QUERY.get("mining") === "1";
+const COCKPIT_SEEN_PARTS = new Map(
+	COCKPIT_OCCLUSION.flatMap((row) =>
+		row.poses.map((pose) => [pose.seen, new Set(pose.seen)] as const),
+	),
+);
+const ROCK_PICK: RockPick = (ROCK_PICKS as readonly string[]).includes(
+	MINING_QUERY.get("rock-pick") ?? "",
+)
+	? (MINING_QUERY.get("rock-pick") as RockPick)
+	: "front";
+const SURVEY_INTERRUPT: SurveyInterrupt = (
+	SURVEY_INTERRUPTS as readonly string[]
+).includes(MINING_QUERY.get("survey-interrupt") ?? "")
+	? (MINING_QUERY.get("survey-interrupt") as SurveyInterrupt)
+	: "decay";
+const positiveParam = (name: string, fallback: number): number => {
+	const v = Number(MINING_QUERY.get(name));
+	return Number.isFinite(v) && v > 0 ? v : fallback;
+};
+const SPARK_RATE_PER_S = 70;
+const SPARK_KMS = 0.12;
+const SPARK_LIFE_S = 0.6;
+const SPARK_TRAIL_S = 0.05;
+const HEAT_GLOW_S = 4;
+const FRAGMENT_CSS: Readonly<Record<OreFamily, string>> = {
+	silicate: "rgba(214, 196, 160, .95)",
+	metallic: "rgba(150, 190, 230, .95)",
+	gold: "rgba(255, 214, 80, .95)",
+	platinum: "rgba(240, 240, 250, .95)",
+	gem: "rgba(240, 110, 220, .95)",
+};
+const SURVEY_BASE = {
+	rangeKm: positiveParam("survey-range", SURVEY.rangeKm),
+	dwellS: positiveParam("survey-dwell", SURVEY.dwellS),
+};
 
 /**
  * The flight sound's arms (#544), from `?flightsound=`: comma-separated
@@ -1527,9 +1810,6 @@ const browserPlatform = (): string =>
 	(navigator as Navigator & { userAgentData?: { platform?: string } })
 		.userAgentData?.platform || navigator.platform;
 
-/** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
- *  forward, so the view is from the nose rather than from inside the cube. */
-const COCKPIT_FORWARD_KM = 0.008;
 /** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
 const MIRROR_SCRATCH = new THREE.Vector3();
 const MIRROR_LIGHT: CabinLightState = newCabinLightState();
@@ -1714,6 +1994,13 @@ interface ProbeRayMath {
 	closestApproachKm: typeof closestApproachKm;
 }
 
+import {
+	CockpitReadouts,
+	paintCockpitInstrument,
+	cockpitCanvasFace,
+	routeCockpitSources,
+} from "./cockpit-text";
+
 interface Instrument {
 	ctx: CanvasRenderingContext2D;
 	texture: THREE.CanvasTexture;
@@ -1782,9 +2069,6 @@ const FLOOR_BANDS = DUEL_BAND;
  *  over a lit station face, and translucent so the slot stays visible. */
 const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
 const PROMPT_PLATE_PAD_PX = 8;
-/** How far the hull-temperature plate stands in from its band, top and
- *  bottom, as a share of the band (#931). */
-const FLOOR_TEMP_PLATE_INSET = 0.12;
 
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
@@ -1831,8 +2115,6 @@ const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
  */
 const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
-/** The duel band's widest rows, for the floor's fit (#932). */
-const DUEL_BAND_WIDEST_ROWS = duelBandWidestRows();
 /** The widest reading the line under a selected target's name can print, for the
  *  label's reservation. #395: the fit held the raider's reading because until
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
@@ -1856,11 +2138,6 @@ const TARGET_CONDITION_WIDEST = targetConditionWidest();
  */
 const TARGET_CONDITION_DX = 20;
 const TARGET_CONDITION_DY = 18;
-/** Where the baseline sits inside the band, and how big the value type is —
- *  both fractions of it, so the band is the one thing to change. */
-const FLOOR_BASELINE_FRACTION = 0.35;
-const FLOOR_VALUE_FRACTION = 0.5;
-const FLOOR_LABEL_FRACTION = 0.385;
 
 /** §4's grammar, once. `cockpit.ts` decides which tone a reading earned; this
  *  is the only place a tone becomes a colour. */
@@ -1870,134 +2147,10 @@ const FLOOR_TONE_FILL: Record<FloorTone, string> = {
 	confirmed: "rgba(150, 255, 190, 0.95)",
 	refused: "rgba(255, 110, 96, 0.97)",
 };
-const FLOOR_LABEL_FILL = "rgba(120, 165, 195, 0.75)";
-const FLOOR_FONT_FAMILY = "ui-monospace, Menlo, monospace";
-/** Between a label and its value, and between one cell and the next. */
-const FLOOR_LABEL_GAP_PX = 5;
-const FLOOR_CELL_GAP_PX = 22;
-/** Clear of the glass edges at every viewport. */
-const FLOOR_MARGIN_PX = 14;
-/** How far the strip may be shrunk to fit. Below this it is not an instrument
- *  read at a glance, and the answer would have to be a different layout. */
-const FLOOR_MIN_SCALE = 0.62;
 
 /** How far past the tolerance ring the nose marker is allowed to sit before it
  *  stops moving. Beyond this the error is off-scale and the marker says so. */
 const MARKER_MAX_FRACTION = 1.3;
-
-/** The throat is the thing the ship goes through, so it is the brightest line
- *  in the corridor — and it carries the blocking state, because a refusal has
- *  to reach the part of the picture the pilot is aiming at. */
-/** A font at a scale, built rather than parsed back out of a declaration. */
-const floorFont = (fraction: number, scale: number): string =>
-	`${Math.max(7, Math.round(FLOOR_STRIP_HEIGHT_PX * fraction * scale))}px ${FLOOR_FONT_FAMILY}`;
-
-/**
- * One run's per-cell widths and their total.
- *
- * **The fit and the draw share this.** They each had their own copy of
- * `label + gap + value`, which is two spellings of the metric the fit exists to
- * guarantee — a change to the layout that landed in one would have made the fit
- * describe a run the draw does not produce. The pairs carry their own labels
- * rather than being indexed against `FLIGHT_FLOOR_LABELS`, so the two paths
- * also agree on where a label comes from.
- */
-function floorRunWidths(
-	ctx: CanvasRenderingContext2D,
-	cells: readonly { label: string; value: string }[],
-	scale: number,
-): { widths: number[]; total: number; labelWidths: number[] } {
-	const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
-	const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
-	const labelGap = FLOOR_LABEL_GAP_PX * scale;
-	const labelWidths: number[] = [];
-	const widths = cells.map((cell) => {
-		ctx.font = labelFont;
-		const label = ctx.measureText(cell.label).width;
-		labelWidths.push(label);
-		ctx.font = valueFont;
-		return label + labelGap + ctx.measureText(cell.value).width;
-	});
-	return {
-		widths,
-		labelWidths,
-		total:
-			widths.reduce((a, b) => a + b, 0) +
-			FLOOR_CELL_GAP_PX * scale * (cells.length - 1),
-	};
-}
-
-/**
- * Where one floor run landed, and the band it landed in.
- *
- * **One shape, because this PR proved what four copies cost**: adding `top` and
- * `height` so a sampler could stop keeping its own glyph height meant editing
- * the field's type, the local it is built into, and the course row's separate
- * literal. The course row has a label like any other cell (`COURSE_CUE_LABEL`),
- * so it is one of these rather than a second shape.
- */
-interface FloorBox {
-	label: string;
-	x: number;
-	y: number;
-	width: number;
-	/** The band the run occupies, so a sampler reads it rather than keeping a
-	 *  glyph height that goes lenient when the type is raised. */
-	height: number;
-	top: number;
-}
-
-/**
- * A floor box from its band, so the band→baseline rule is written once.
- *
- * The strip derived its baseline down from the glass bottom while the course
- * row derived its own up from `floorTopY` — the same rule from opposite ends,
- * in two six-field literals. That is "two runs on one floor authored two ways"
- * again, in the block whose comment argues against it.
- */
-function floorBox(
-	label: string,
-	x: number,
-	width: number,
-	top: number,
-): FloorBox {
-	return {
-		label,
-		x,
-		width,
-		top,
-		height: FLOOR_STRIP_HEIGHT_PX,
-		y: top + FLOOR_STRIP_HEIGHT_PX * (1 - FLOOR_BASELINE_FRACTION),
-	};
-}
-
-/**
- * Paint one floor cell: its label, then its value in §4's tone.
- *
- * **One painter, because the floor has two runs.** §5.2 says "two runs on one
- * floor authored two ways is how a floor comes to look like two instruments",
- * and the course row was authored the second way in the same change that wrote
- * the sentence — the strip's loop and the row each repeating the same
- * font/fill/label/value sequence, so a tone or gap change had to land twice.
- * Copying the block is also what dropped the strip's `ctx.restore()`: the
- * course block brought its own save/restore pair and read as the closing one.
- */
-function drawFloorCell(
-	ctx: CanvasRenderingContext2D,
-	cell: FloorCell,
-	at: { x: number; baselineY: number; labelWidth: number },
-	type: { labelGap: number; labelFont: string; valueFont: string },
-) {
-	ctx.font = type.labelFont;
-	ctx.fillStyle = FLOOR_LABEL_FILL;
-	ctx.fillText(cell.label, at.x, at.baselineY);
-	ctx.font = type.valueFont;
-	ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
-	// The label width comes from the measuring pass rather than a second
-	// `measureText` here — four labels re-measured every frame for a value that
-	// changes only with the viewport.
-	ctx.fillText(cell.value, at.x + at.labelWidth + type.labelGap, at.baselineY);
-}
 
 /** One cell's value by label. Throws rather than printing `undefined` on a
  *  label that does not exist — a blank readout is what this is fixing. */
@@ -2125,6 +2278,7 @@ interface HologramSystem {
 }
 
 interface CockpitHardware {
+	text: CockpitReadouts;
 	mesh: THREE.Group;
 	scannerTexture: THREE.CanvasTexture;
 	scannerCtx: CanvasRenderingContext2D;
@@ -2210,18 +2364,38 @@ const FLEET_REACH_KM =
 		),
 	);
 
-/** Each after-boot hull's loader (node #831; the tug since node #814), imported
- *  on demand so neither model's module is in the boot chunk. */
-const AFTER_BOOT_HULL_MODELS: Record<
-	AfterBootHullId,
-	() => Promise<() => Promise<void>>
-> = {
-	courier: () =>
-		import("./courier-hull").then((m) => m.prepareCourierHullModel),
-	tug: () => import("./tug-hull").then((m) => m.prepareTugHullModel),
-};
+/** One session queue. Required loads adopt their result before a Game exists. */
+let installedGame: Game | undefined;
+const models = new ModelQueue(
+	modelLoaders,
+	async (id) => {
+		await installedGame?.modelInstalled(id as ModelId);
+	},
+	undefined,
+	async (id) => {
+		await installedGame?.modelFailed(id as ModelId);
+	},
+	ON_DEMAND_MODELS,
+);
+async function requireModels(
+	ids: readonly ModelId[],
+	view = loadingPanel("game"),
+	building = false,
+) {
+	await loadRequiredModels(
+		ids.map((id) => modelLoaders[id]),
+		view,
+		{ then: building ? "building" : "done" },
+	);
+	if (installedGame)
+		for (const id of ids) await installedGame.modelInstalled(id);
+	models.adopt(ids);
+}
 
 class Game {
+	/** Rock collision data, inlined in the bundle and decoded on first read, so it is available before the authored rock model installs. */
+	readonly rockAssets = ROCK_ASSETS;
+
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
 	readonly composer: EffectComposer;
@@ -2590,6 +2764,7 @@ class Game {
 	private padAudioNoticeSaid = false;
 	private throttle = 0;
 	private frameBody: Body | null = null;
+	private frameField: FieldPlan | null = null;
 	/** A surface stop can happen farther than `NEAR_FAR_KM` from a giant's
 	 * centre. Hold that one blocker's frame while the ship remains in its
 	 * near-surface band; ordinary nearest-centre selection is unchanged. */
@@ -2666,7 +2841,10 @@ class Game {
 	 *  the one statement of what it is made of. */
 	private layoutNotices: readonly LayoutNotice[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
-	private commander = newCommander(bootHull(ASKED_HULL, null).hull);
+	private commander = (() => {
+		const c = newCommander(bootHull(ASKED_HULL, null).hull);
+		return withAccount(c, accountOf(c));
+	})();
 
 	/**
 	 * The hull being flown — handling, mesh, condition capacity and berth
@@ -2727,12 +2905,14 @@ class Game {
 				paid: f.assisted ? null : +(f.deliveredRadS / f.askedRadS).toFixed(2),
 				durationS: +f.durationS.toFixed(2),
 			};
+		const sensitivity = this.settings.value.mouseSensitivity;
 		return {
 			hull: this.flownHull,
 			assist: this.assist,
+			mouseSensitivity: sensitivity,
 			couplePxS: {
-				pitch: Math.round(couplePxS(a.pitch)),
-				yaw: Math.round(couplePxS(a.yaw)),
+				pitch: Math.round(couplePxS(a.pitch, sensitivity)),
+				yaw: Math.round(couplePxS(a.yaw, sensitivity)),
 			},
 			lastFlick: read(this.flickMeter.last),
 			hardestFlick: read(this.flickMeter.hardest),
@@ -2741,15 +2921,26 @@ class Game {
 
 	/** The flown hull's collision solid (`collision.md` §2.3, P1): its box,
 	 *  about its measured centre. Cached on the hull like the performance. */
-	private flownSolidOf: { hull: HullId; solid: readonly Primitive[] } | null =
-		null;
+	private flownSolidOf: {
+		hull: HullId;
+		deployed: boolean;
+		solid: readonly Primitive[];
+	} | null = null;
 
 	private get flownSolid(): readonly Primitive[] {
-		if (this.flownSolidOf?.hull !== this.flownHull) {
-			const spec = HULL_SPECS[this.flownHull];
+		const spec = HULL_SPECS[this.flownHull];
+		const deployed =
+			MINING_ON && spec.cutter !== undefined && this.drill?.extension >= 1;
+		if (
+			this.flownSolidOf?.hull !== this.flownHull ||
+			this.flownSolidOf.deployed !== deployed
+		) {
 			this.flownSolidOf = {
 				hull: this.flownHull,
-				solid: [hullBox(spec.env, spec.envCentre)],
+				deployed,
+				solid: deployed
+					? shipPrimitives(spec, true)
+					: [hullBox(spec.env, spec.envCentre)],
 			};
 		}
 		return this.flownSolidOf.solid;
@@ -2893,6 +3084,14 @@ class Game {
 	private holdBidsCache: HoldBids = null;
 	private holdBidsCacheKey: string | null | undefined = undefined;
 	private stationConsoleRevision = 0;
+	private stationServicesKey = "";
+	private txSeq = 0;
+	private refineryView: "submit" | "jobs" = "submit";
+	private refineryGood = "";
+	private refineryTonnes = 1;
+	private refineryQuote: RefineryQuote | null = null;
+	private refinerySaving = false;
+	private refineryNotice: string | null = null;
 	/**
 	 * What the till last said when it said no (#443).
 	 *
@@ -2903,6 +3102,8 @@ class Game {
 	 * produced the refusal lives on this side.
 	 */
 	private stationConsoleMessage: string | null = null;
+	scoopNotice = false;
+	private restoringDocked = false;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -3053,6 +3254,7 @@ class Game {
 	 *  which is why this is a field rather than a `readonly` built in the
 	 *  constructor — `performJump` clears it (#187). */
 	private selectableCache: Body[] | null = null;
+	private selectableDiscoveries: readonly string[] | null = null;
 	/** Producers register stable objects; only selection and scanner merge them. */
 	private readonly contacts: DisplayContact[] = [];
 	private registerContact(contact: DisplayContact) {
@@ -3064,6 +3266,14 @@ class Game {
 	}
 	/** The raider encounter on this leg, from its draw to its end (#324). */
 	encounter: Encounter | null = null;
+	readonly missileCombat = new MissileCombat();
+	missileRender: {
+		text: string;
+		incoming: boolean;
+		x: number;
+		y: number;
+		width: number;
+	} | null = null;
 	/** Where the encounter's raider is this frame, for the renderer. */
 	private encounterView: EncounterContact | null = null;
 	/**
@@ -3185,11 +3395,14 @@ class Game {
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	/**
-	 * Ordinary carriers the player has fired on (`civilian-combat.md` H2, H3):
+	 * Ordinary carriers the player has fired on (`civilian-control.md` H2, H3):
 	 * flown rather than projected while engaged. An engagement ends in a kill
 	 * or, in this change, when the ship leaves the materialization band.
 	 */
 	private readonly trafficEngagements = new Map<CarrierKey, Engagement>();
+	/** Node #637: the plumes on every NPC hull that fires — the raider and
+	 *  engaged Traffic — each drawn from its own flight's firing table. */
+	private readonly npcPlumes = new NpcPlumes();
 	/**
 	 * The hails this session has heard (`#396` §3), newest last, capped at
 	 * `HAIL_LOG_KEEP`.
@@ -3353,60 +3566,7 @@ class Game {
 		key: string;
 		chain: CourseChain | null;
 	} | null = null;
-	/**
-	 * What §5's flight-floor strip painted this frame, or `null` when it painted
-	 * nothing — a focused console has replaced the glass.
-	 *
-	 * **Written by the draw, from the values it drew**, the same pattern as
-	 * `directorRender`. A record assembled beside the draw from the same state
-	 * would let a probe assert a strip that was never painted, which is the
-	 * check-that-cannot-fail this repo has shipped once already.
-	 */
-	floorRender: {
-		cells: FloorCell[];
-		boxes: FloorBox[];
-		/** §8.3's course row as painted, or `null` where no course is set and
-		 *  the row was deliberately not drawn. */
-		courseRow: FloorCell | null;
-		courseBox: FloorBox | null;
-		baselineY: number;
-		glassBottomY: number;
-		/** What the strip was shrunk by to fit its widest reading in this
-		 *  viewport — 1 where it did not have to shrink at all. */
-		scale: number;
-		marginPx: number;
-		/**
-		 * How far the widest reading still overruns the margins at the fitted
-		 * scale — zero at both viewports `probe-live-cockpit.mjs` measures.
-		 *
-		 * **Two things can put it above zero**, and the check does not care
-		 * which: the legibility clamp binding on a viewport too narrow for the
-		 * widest run, or the type size rounding to a whole pixel above what the
-		 * linear solve predicted. The solve assumes width is linear in size,
-		 * which is close but not exact, so the confirming measurement is what
-		 * decides — and the residue is what it decides *with*.
-		 */
-		overflowPx: number;
-		/** #324's duel row as painted, or `null` where no fight is on and the
-		 *  row was deliberately not drawn. */
-		duelRow: FloorCell[] | null;
-		duelBox: FloorBox | null;
-		/** The plate under the hull-temperature cell as painted (#931), or
-		 *  `null` when the hull is at ambient and no cell was drawn. */
-		tempPlate: FloorBox | null;
-		/** The plate under the scoop's `SCOOPING` line as painted (#932), or
-		 *  `null` when the scoop is not filling. Beside the TEMP cell it is the
-		 *  same plate, drawn once under both. */
-		scoopPlate: FloorBox | null;
-		source: {
-			regime: string;
-			spoolLeftS: number;
-			jumpChargeLeftS: number;
-			throttle: number;
-			assist: boolean;
-			chargeAu: number;
-		};
-	} | null = null;
+	floorRender: null = null;
 	/**
 	 * What §3's docking director drew this frame, or `null` when it drew
 	 * nothing. The same pattern as `cockpitPrompt`: the record is written by the
@@ -3556,11 +3716,18 @@ class Game {
 	/** The tracer's geometry and pacing, for a probe to read rather than
 	 *  restate. The ports are the flown hull's, one per gun (#607). */
 	get gunTracer() {
-		return {
-			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
-			firedPorts: tracerPorts(HULL_SPECS[this.flownHull].hardpoints).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
+		const glass = this.glassFiredIndices();
+		const segments = this.playerBeamFrame(
+			Array.from(
+				{ length: HULL_SPECS[this.flownHull].hardpoints },
+				(_, i) => i,
 			),
+		);
+		return {
+			firedPorts: segments
+				.filter(({ muzzleIndex }) => glass.includes(muzzleIndex))
+				.map(({ from }) => from),
+			segments,
 			aim: TRACER_AIM,
 			holdS: TRACER_HOLD_S,
 			soundGapS: SHOT_SOUND_GAP_S,
@@ -4483,7 +4650,9 @@ class Game {
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
+			this.scoopNotice = save.commander.scoopNotice;
 			this.ladders = save.commander.ladders;
+			this.txSeq = save.commander.txSeq;
 			// Explicit, though a restore builds a fresh `Game` and it is empty
 			// already: a death reloads the page into the last dock's commander,
 			// and credit earned before it must not ride into the dock it restores
@@ -4624,7 +4793,7 @@ class Game {
 		// One field of view across all three, and that is load-bearing rather than
 		// tidy: the layers composite into one image, so a body's projected size
 		// has to agree across the seam it crosses.
-		const fov = 60;
+		const fov = COCKPIT_FOV_DEG.normal;
 		// Its far plane just clears the star sphere; the layer writes no depth
 		// anyway, so the numbers only have to bracket the geometry.
 		this.backdropCamera = new THREE.PerspectiveCamera(
@@ -4663,6 +4832,7 @@ class Game {
 
 		this.buildBackdrop();
 		this.buildBodies();
+		this.buildFields();
 		// Construct before buildLights applies the stored quality. The composer
 		// adds it in its original position below; Low is off from frame one.
 		this.bloomPass = new UnrealBloomPass(
@@ -4989,22 +5159,13 @@ class Game {
 				this.updateCockpit();
 			},
 			onSelectTarget: (id) => {
-				// **Through `selectable()`, not through `byId`.** `byId` holds
-				// moons, which the list deliberately omits and `cycleTarget`
-				// cannot reach — accepting one here would make the list's stated
-				// reason for omitting them false, and give the player a target
-				// `T` could never return to.
-				if (!this.selectable().some((body) => body.id === id)) {
-					this.consolePress(false);
-					return;
-				}
-				this.targetId = id;
-				this.consolePress(true);
-				this.updateCockpit();
+				this.selectNavigationTarget(id);
 			},
 			onStationTab: (tab) => {
 				if (tab === "Requests" && this.stationConsoleTab !== "Requests")
 					this.requestTab = "current";
+				if (tab === "Refinery" && this.stationConsoleTab !== "Refinery")
+					this.refineryView = "submit";
 				this.stationConsoleTab = tab;
 				// A refusal is about the press that earned it, so **any** tab
 				// press retires it (#443) — including a press on the tab
@@ -5015,6 +5176,18 @@ class Game {
 			},
 			onRequestAction: (action, id) =>
 				this.consolePress(this.actOnRequest(action, id)),
+			onRefineryAction: (action) => this.refineryAction(action),
+			onRefineryCollect: (product) => void this.collectRefinery(product),
+			onRefineryGood: (good) => {
+				this.refineryGood = good;
+				this.refineryQuote = null;
+				this.refineryNotice = null;
+				this.updateCockpit();
+			},
+			onRefineryTonnes: (tonnes) => {
+				if (Number.isSafeInteger(tonnes) && tonnes >= 1)
+					this.refineryTonnes = tonnes;
+			},
 			onStationAction: (type, name) => {
 				this.outfittingCandidate = "";
 				if (type === "buy-module") {
@@ -5136,6 +5309,7 @@ class Game {
 		if (neuralWanted(applied.voice, VOICE_ARMS.engine))
 			void this.neural.start();
 		this.settings.subscribe((next) => {
+			if (next.cockpitFov !== applied.cockpitFov) this.applyViewFov();
 			if (next.voice !== applied.voice && VOICE_ARMS.engine === "setting")
 				this.applyVoice(next.voice);
 			for (const bus of BUSES) {
@@ -5303,22 +5477,7 @@ class Game {
 				) !== "take"
 			)
 				return;
-			// **A refusal is read, not thrown** — it is the ordinary case, not the
-			// exceptional one: Chrome holds out after the player's own Escape and
-			// past a rate limit whatever the reason, a window that is not the key
-			// window cannot be locked at all, and Safari refuses outright without a
-			// gesture it may or may not have just seen. Dropping the promise made
-			// every refused click an unhandled rejection, which surfaces as a page
-			// error — which is why `probe-gun-feedback.mjs` had to stub this call
-			// out to keep its own click real. **And the promise is not assumed:**
-			// the returning form of this call is not universal, and on an engine
-			// that hands back `undefined` a `.catch` taken straight off it is the
-			// very uncaught error this line exists to remove. TypeScript cannot see
-			// that, because its own `lib.dom` declares the Promise. The retry is the
-			// next click, which is where we are standing.
-			void Promise.resolve(this.renderer.domElement.requestPointerLock()).catch(
-				() => {},
-			);
+			requestLock(this.renderer.domElement);
 		});
 		window.addEventListener("mousemove", (e) => {
 			if (!this.canvasHoldsLock()) return;
@@ -5372,7 +5531,7 @@ class Game {
 	readonly armedFireGroup = new ArmedFireGroup();
 
 	get fireGroups() {
-		return fireGroups(this.commander.loadout, this.commander.hull);
+		return fireGroups(this.commander.loadout, this.commander.hull, MINING_ON);
 	}
 
 	cycleFireGroup() {
@@ -5903,7 +6062,8 @@ class Game {
 			// loop's own work brought forward, and pinning every body during it
 			// would switch #207's selector off for the whole session.
 			for (const visual of this.bodyVisuals.values())
-				visual.applyReliefBand(path);
+				if (reliefPathsFor(visual.surfaceClass()).includes(path))
+					visual.applyReliefBand(path);
 			for (const [scene, camera] of surfaceScenes)
 				this.renderer.compile(scene, camera);
 			this.planetHalfRes.prewarmSurfaces(
@@ -5911,6 +6071,19 @@ class Game {
 				this.approachCamera,
 				surfaces,
 			);
+			const detailRestores = [...this.bodyVisuals.values()]
+				.map((visual) => visual.prewarmFootprint())
+				.filter((undo) => undo !== null);
+			if (detailRestores.length) {
+				for (const [scene, camera] of surfaceScenes)
+					this.renderer.compile(scene, camera);
+				this.planetHalfRes.prewarmSurfaces(
+					this.renderer,
+					this.approachCamera,
+					surfaces,
+				);
+				for (const undo of detailRestores) undo();
+			}
 		}
 		for (const [id, visual] of this.bodyVisuals) {
 			const was = before.get(id);
@@ -5942,6 +6115,17 @@ class Game {
 					[this.nearScene, this.nearCamera],
 				] as const)
 					this.renderer.compile(scene, camera);
+				const undoDetail = policyVisual.prewarmFootprint();
+				if (undoDetail) {
+					for (const [scene, camera] of surfaceScenes)
+						this.renderer.compile(scene, camera);
+					this.planetHalfRes.prewarmSurfaces(
+						this.renderer,
+						this.approachCamera,
+						surfaces,
+					);
+					undoDetail();
+				}
 			}
 			policyVisual.setSurfaceClass(wasClass);
 			policyVisual.applyReliefBand(wasPath);
@@ -6572,7 +6756,6 @@ class Game {
 	 * `quality: high` would otherwise pay for nothing.
 	 */
 	private applyOcclusion() {
-		const gated = this.occlusionPinned || this.occlusionGate.open;
 		const casting = this.shadowSun;
 		for (const sun of [this.nearShadowSun, this.cabinShadowSun]) {
 			if (!sun || sun === casting) continue;
@@ -6583,8 +6766,30 @@ class Game {
 			sun.castShadow = false;
 			sun.target.position.set(0, 0, 0);
 		}
-		if (casting) casting.castShadow = this.occlusionWanted.shadows && gated;
-		if (this.gtaoPass) this.gtaoPass.enabled = this.occlusionWanted.ao && gated;
+		const pinned = this.occlusionPinned;
+		if (casting)
+			casting.castShadow =
+				this.occlusionWanted.shadows &&
+				(pinned || this.occlusionGate.shadow.open);
+		if (this.gtaoPass)
+			this.gtaoPass.enabled =
+				this.occlusionWanted.ao && (pinned || this.occlusionGate.ao.open);
+		this.holdHullCasters(!pinned && rockShadowOnly(this.occlusionGate));
+	}
+
+	private heldHullCasters: THREE.Object3D[] | null = null;
+	private holdHullCasters(hold: boolean) {
+		if (hold && !this.heldHullCasters) {
+			const casters: THREE.Object3D[] = [];
+			this.shipMesh?.traverse((o) => {
+				if (o.castShadow) casters.push(o);
+			});
+			for (const o of casters) o.castShadow = false;
+			this.heldHullCasters = casters;
+		} else if (!hold && this.heldHullCasters) {
+			for (const o of this.heldHullCasters) o.castShadow = true;
+			this.heldHullCasters = null;
+		}
 	}
 
 	/**
@@ -6602,8 +6807,9 @@ class Game {
 		return {
 			wanted: this.occlusionWanted,
 			pinned: this.occlusionPinned,
-			open: this.occlusionGate.open,
-			pending: this.occlusionGate.pending,
+			open: this.occlusionGate.shadow.open,
+			aoOpen: this.occlusionGate.ao.open,
+			pending: this.occlusionGate.shadow.pending,
 			enclosureRad: enclosureRad(this.stationSubjects),
 		};
 	}
@@ -6615,7 +6821,7 @@ class Game {
 	 *  gate for as long as it is held. */
 	private occlusionPinned = false;
 	/** #241's gate, advanced once per frame in `render`. */
-	private occlusionGate: OcclusionGate = CLOSED_GATE;
+	private occlusionGate: OcclusionGates = CLOSED_GATES;
 	/** This frame's near-layer stations, as shadow subjects. Built once at the
 	 *  top of the shadow work and read by both the gate and `fitShadowCamera`,
 	 *  because `subjectOf` walks a mesh's world matrix and doing it twice a
@@ -6741,6 +6947,7 @@ class Game {
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
 		this.shipMesh.name = "ship";
+		this.heldHullCasters = null;
 		// #201. Once at build, not per frame: a hull's materials do not change
 		// class after it is built, and the walk is a full traverse.
 		this.markedOcclusion.push(["ship", markOcclusion(this.shipMesh)]);
@@ -6791,8 +6998,10 @@ class Game {
 			if (marked >= 0)
 				this.markedOcclusion[marked] = ["ship", markOcclusion(this.shipMesh)];
 		}
+		rebuildAuthoredStandIn(this.tenderMesh);
+		// A rebuilt hull's throats are measured again on its next firing frame.
 		for (const root of this.trafficMeshes.values())
-			rebuildAuthoredStandIn(root);
+			if (rebuildAuthoredStandIn(root)) this.npcPlumes.forget(root);
 		for (const parked of this.fleet) {
 			if (!rebuildAuthoredStandIn(parked.mesh)) continue;
 			const name = `fleet-${parked.mesh.name || "hull"}`;
@@ -6808,31 +7017,221 @@ class Game {
 			);
 	}
 
-	/** A background failure keeps that hull's loft and never reaches the boot
-	 *  Retry panel. Each live Game starts this once, after construction. A
-	 *  postcard requires the models separately, then calls this to refresh its
-	 *  stand-ins. The courier, the player's own hull, loads first; the tug's
-	 *  download starts when the courier's has settled (node #814), so the two
-	 *  do not share the link. Each hull fails alone. */
-	private authoredHullsLoad?: Promise<void>;
-	loadAuthoredHullsAfterBoot(): Promise<void> {
-		return (this.authoredHullsLoad ??= AFTER_BOOT_HULL_IDS.reduce(
-			(previous, id) => previous.then(() => this.loadAuthoredHull(id)),
-			Promise.resolve(),
-		));
+	/** Queue readiness includes current-system mesh refreshes, not an elapsed delay. */
+	modelsSettled(): boolean {
+		return (
+			models.settled(this.currentModelIds()) &&
+			!this.interiorRefresh &&
+			!this.fieldRefresh &&
+			this.lateDetailSettled()
+		);
 	}
-	private loadAuthoredHull(id: AfterBootHullId): Promise<void> {
-		return AFTER_BOOT_HULL_MODELS[id]()
-			.then(async (prepare) => {
-				await prepare();
-				this.refreshAuthoredHulls();
-			})
-			.catch((error) => {
-				console.warn(
-					`${id} hull: background load failed; keeping the procedural hull`,
-					error,
-				);
+	lateDetailSettled(): boolean {
+		for (const station of this.stationVisuals.values())
+			if (station.detail === "full" && station.lateDetail?.attached === false)
+				return false;
+		return true;
+	}
+	lateDetailFailure(): string | undefined {
+		for (const station of this.stationVisuals.values())
+			if (station.lateDetail?.failure)
+				return String(station.lateDetail.failure);
+		return undefined;
+	}
+	private currentModelIds(): ModelId[] {
+		this.ensureTrafficActors();
+		return systemModelIds(
+			this.world.system,
+			[
+				...this.trafficCandidates().map((a) => a.hullId),
+				...(this.tenderMesh.parent ? [RELAY_TENDER_HULL_ID] : []),
+				...this.fleet.map((p) => p.mesh.userData.hullId as HullId),
+				...Array.from(
+					this.derelictMeshes.values(),
+					(d) => d.root.userData.hullId as HullId,
+				),
+			],
+			this.flownHull,
+		);
+	}
+	/** Derive the complete destination roster before arrival, from seeded contents. */
+	private nextModelIds(): ModelId[] {
+		const next = this.nextHop();
+		if (!next) return [];
+		const contentsFor = (index: number) => this.trafficContentsFor(index);
+		return systemModelIds(
+			makeSystem(next, this.world.gameTime),
+			trafficRosterHulls(this.world.galaxy, next.index, contentsFor),
+			this.flownHull,
+		);
+	}
+	startModelQueue(): void {
+		models.prioritize(this.currentModelIds(), this.nextModelIds());
+		void this.refreshFields();
+	}
+	/** Install callbacks always inspect live caches; a jump never waits for them. */
+	async modelInstalled(id: ModelId): Promise<void> {
+		if (id === "cockpit/miner") this.syncCabin();
+		else if (isAuthoredHullModel(id)) this.refreshAuthoredHulls();
+		else if (id === "interiors") await this.refreshInteriorMeshes();
+		else if (id === "asteroids") await this.refreshFields();
+		else if (id === "coriolis")
+			await this.refreshAuthoredStations("trade", "a");
+		else if (id.startsWith("trade/"))
+			await this.refreshAuthoredStations("trade", id.split("/")[1]);
+		else if (id.startsWith("shipyard/"))
+			await this.refreshAuthoredStations("shipyard", id.split("/")[1]);
+		else if (id.startsWith("refinery/"))
+			await this.refreshAuthoredStations("refinery", id.split("/")[1]);
+		else if (id.startsWith("outpost/"))
+			await this.refreshAuthoredStations("outpost", id.split("/")[1]);
+	}
+	/** A background load failed for good: the field rocks fall back to plain
+	 *  procedural shapes, never to points alone (node #968). */
+	async modelFailed(id: ModelId): Promise<void> {
+		if (id === "asteroids") await this.refreshFields();
+	}
+
+	/** One draw per field of the current system, built with the system and
+	 *  disposed with it (node #968). Shapes arrive later, in `refreshFields`. */
+	private fieldDraws: FieldDraw[] = [];
+	/** The current system's field draws, for probes. */
+	get fields(): readonly FieldDraw[] {
+		return this.fieldDraws;
+	}
+	private fieldRefresh?: Promise<void>;
+	/** The authored shapes were fetched but would not become a batch. */
+	private fieldShapesFailed = false;
+	/** Bumped by every build and teardown, so a slice in flight for a system
+	 *  already left installs nothing into the next one. */
+	private fieldEpoch = 0;
+	private readonly fieldBuffer = new THREE.Vector2();
+	private readonly fieldLook = new THREE.Vector3();
+	private buildFields(): void {
+		this.disposeFields();
+		const { record, contents } = this.world.system;
+		for (const plan of systemFields(record, contents)) {
+			const draw = new FieldDraw(plan, fieldRocks(record, plan));
+			this.nearScene.add(draw.root);
+			this.fieldDraws.push(draw);
+		}
+	}
+	private disposeFields(): void {
+		this.fieldEpoch++;
+		for (const draw of this.fieldDraws) draw.dispose();
+		this.fieldDraws = [];
+	}
+	/** Give every field without meshes the shapes its model state allows:
+	 *  authored once the GLB is installed, the plain stand-in once it failed,
+	 *  none (points only) while it is still on its way. */
+	private refreshFields(): Promise<void> {
+		if (this.fieldRefresh) return this.fieldRefresh;
+		if (!this.fieldsWantMeshes()) return Promise.resolve();
+		const run = this.installFieldMeshes().finally(() => {
+			if (this.fieldRefresh === run) this.fieldRefresh = undefined;
+		});
+		return (this.fieldRefresh = run);
+	}
+	private fieldsWantMeshes(): boolean {
+		const state = models.state("asteroids");
+		return (
+			(state === "installed" || state === "failed") &&
+			this.fieldDraws.some((d) => !d.meshesInstalled)
+		);
+	}
+	/** One pass per system: a jump during a slice ends the pass for the system
+	 *  left, and the loop goes round again for the one arrived in. */
+	private async installFieldMeshes() {
+		while (this.fieldsWantMeshes()) {
+			const epoch = this.fieldEpoch;
+			const live = () => epoch === this.fieldEpoch;
+			let shapes =
+				models.state("asteroids") === "installed" && !this.fieldShapesFailed
+					? authoredRockShapes()
+					: undefined;
+			let kind: "authored" | "standin" = "authored";
+			if (!shapes) {
+				// A failed load, or an install the loader reports without shapes.
+				kind = "standin";
+				shapes = await runInteriorSlices(buildStandInRocks(), { live });
+			}
+			if (!shapes) continue;
+			for (const draw of this.fieldDraws) {
+				if (!live()) break;
+				try {
+					await draw.install(shapes, kind, nextInteriorFrame, live, (mesh) =>
+						this.warmFieldBatch(mesh, shapes, live),
+					);
+				} catch (error) {
+					// The authored batch would not build or compile here: draw the
+					// plain rocks instead, never points alone.
+					console.warn("asteroids: batch install failed; plain rocks", error);
+					this.fieldShapesFailed = true;
+					break;
+				}
+			}
+			if (this.fieldShapesFailed && kind === "authored") continue;
+			if (live() && this.fieldDraws.some((d) => !d.meshesInstalled)) return;
+		}
+	}
+	/** Compile the batch's program and upload its maps while it is hidden, one
+	 *  step per frame, so the swap from points is not the frame that pays for
+	 *  them (#953 measured a 70 ms first frame). The composer target is the one
+	 *  gameplay renders into, so the same program variant is built. */
+	private async warmFieldBatch(
+		mesh: THREE.BatchedMesh,
+		shapes: { textures: THREE.Texture[] },
+		live: () => boolean,
+	) {
+		const target = this.renderer.getRenderTarget();
+		for (const texture of shapes.textures) {
+			this.renderer.initTexture(texture);
+			await nextInteriorFrame();
+			if (!live()) return;
+		}
+		try {
+			this.renderer.setRenderTarget(this.composer.renderTarget1);
+			await compileWhenReady(
+				this.renderer,
+				mesh,
+				this.nearCamera,
+				this.nearScene,
+			);
+		} finally {
+			this.renderer.setRenderTarget(target);
+		}
+		await nextInteriorFrame();
+	}
+	private fieldGateInput(): FieldGateInput {
+		let level0Rocks = 0;
+		for (const draw of this.fieldDraws)
+			if (draw.root.visible) level0Rocks += draw.perLevel[0];
+		return { level0Rocks, quality: this.settings.value.quality };
+	}
+
+	private updateFields(camPos: Vec3): void {
+		if (!this.fieldDraws.length) return;
+		const quality = this.settings.value.quality;
+		const pxPerRadian = pxPerRadianFor(
+			this.renderer.getDrawingBufferSize(this.fieldBuffer).y,
+			this.nearCamera.fov,
+		);
+		const look = this.nearCamera.getWorldDirection(this.fieldLook);
+		const forward = { x: look.x, y: look.y, z: look.z };
+		for (const draw of this.fieldDraws)
+			draw.update({
+				gameTime: this.world.gameTime,
+				camera: camPos,
+				pxPerRadian,
+				forward,
+				quality,
+				shadows: LIGHT_RIG.quality[quality].shadows,
 			});
+	}
+
+	/** Compatibility handles for existing probes; every load uses the same queue. */
+	loadAuthoredHullsAfterBoot(): Promise<void> {
+		return models.wait(AFTER_BOOT_HULL_IDS);
 	}
 
 	private readonly interiorPresentations = new Map<
@@ -6869,7 +7268,6 @@ class Game {
 			release: [],
 		});
 	}
-	private interiorLoad?: Promise<void>;
 	private interiorWarningShown = false;
 	private warnInteriorFailure(error: unknown): void {
 		if (this.interiorWarningShown) return;
@@ -6879,27 +7277,18 @@ class Game {
 			error,
 		);
 	}
-	interiorModelsSettled = false;
-	/** Current interim install seam; node #838 owns the future general queue. */
+	get interiorModelsSettled(): boolean {
+		return models.settled(["interiors"]) && !this.interiorRefresh;
+	}
 	loadInteriorsAfterBoot(): Promise<void> {
-		return (this.interiorLoad ??= import("./interior-model")
-			.then(async ({ prepareInteriorModel }) => {
-				await prepareInteriorModel();
-				await this.refreshInteriorMeshes();
-			})
-			.catch((error) => this.warnInteriorFailure(error))
-			.finally(() => {
-				this.interiorModelsSettled = true;
-			}));
+		return models.wait(["interiors"]);
 	}
 
 	private interiorRefresh?: Promise<void>;
 	private refreshInteriorMeshes(): Promise<void> {
 		if (this.interiorRefresh) return this.interiorRefresh;
-		this.interiorModelsSettled = false;
 		return (this.interiorRefresh = this.installInteriorMeshes().finally(() => {
 			this.interiorRefresh = undefined;
-			this.interiorModelsSettled = true;
 		}));
 	}
 	private async installInteriorMeshes(): Promise<void> {
@@ -6945,10 +7334,11 @@ class Game {
 		for (const mesh of meshes) {
 			if (!live()) return;
 			const target = this.renderer.getRenderTarget();
-			let compiled: Promise<THREE.Object3D>;
+			let compiled: Promise<void>;
 			try {
 				this.renderer.setRenderTarget(this.composer.renderTarget1);
-				compiled = this.renderer.compileAsync(
+				compiled = compileWhenReady(
+					this.renderer,
 					mesh,
 					this.nearCamera,
 					this.nearScene,
@@ -6963,68 +7353,29 @@ class Game {
 			}
 		}
 	}
-	/**
-	 * The authored shipyards (node #818) install after boot, each replacing
-	 * its form's procedural stand-in wherever one is drawn; a form that fails
-	 * keeps its stand-in, and the sim collides with the authored yard either
-	 * way. Settled once every form has installed or failed (`shipyards-full`
-	 * waits for it).
-	 */
-	shipyardModelsSettled = false;
-	private shipyardLoad?: Promise<void>;
+	get shipyardModelsSettled(): boolean {
+		return models.settled(SHIPYARD_MODELS);
+	}
 	loadShipyardsAfterBoot(): Promise<void> {
-		return (this.shipyardLoad ??= import("./shipyard-flight")
-			.then(({ SHIPYARD_FORMS, prepareShipyardModel }) =>
-				Promise.all(
-					SHIPYARD_FORMS.map((form) =>
-						prepareShipyardModel(form)
-							.then(() => this.refreshAuthoredStations("shipyard", form))
-							.catch((error) =>
-								console.warn(
-									`shipyard ${form}: background load failed; keeping the procedural form`,
-									error,
-								),
-							),
-					),
-				),
-			)
-			.then(() => {})
-			.finally(() => {
-				this.shipyardModelsSettled = true;
-			}));
+		return models.wait(SHIPYARD_MODELS);
 	}
-	/**
-	 * The authored refineries (node #819), installed after boot as the
-	 * shipyards are, each replacing its form's procedural stand-in wherever
-	 * one is drawn; a form that fails keeps its stand-in. Settled once every
-	 * form has installed or failed (`refineries-full` waits for it).
-	 */
-	refineryModelsSettled = false;
-	private refineryLoad?: Promise<void>;
+	get refineryModelsSettled(): boolean {
+		return models.settled(REFINERY_MODELS);
+	}
 	loadRefineriesAfterBoot(): Promise<void> {
-		return (this.refineryLoad ??= import("./refinery-flight")
-			.then(({ REFINERY_FORMS, prepareRefineryModel }) =>
-				Promise.all(
-					REFINERY_FORMS.map((form) =>
-						prepareRefineryModel(form)
-							.then(() => this.refreshAuthoredStations("refinery", form))
-							.catch((error) =>
-								console.warn(
-									`refinery ${form}: background load failed; keeping the procedural form`,
-									error,
-								),
-							),
-					),
-				),
-			)
-			.then(() => {})
-			.finally(() => {
-				this.refineryModelsSettled = true;
-			}));
+		return models.wait(REFINERY_MODELS);
 	}
+	get outpostModelsSettled(): boolean {
+		return models.settled(OUTPOST_MODELS);
+	}
+	loadOutpostsAfterBoot(): Promise<void> {
+		return models.wait(OUTPOST_MODELS);
+	}
+
 	/**
 	 * Rebuild every drawn station of `type` and `form` from its installed
-	 * model (the shipyards, node #818; the refineries, node #819). The new
+	 * model (the shipyards, node #818; the refineries, node #819; the outposts,
+	 * nodes #1031 and #1032). The new
 	 * mesh compiles off-scene first and replaces the old one only if the
 	 * station is still the one drawn; a jump during the compile ends the
 	 * refresh, since the new system was built with whatever had installed.
@@ -7032,7 +7383,7 @@ class Game {
 	 * for the whole system, as an interior install redoes them.
 	 */
 	private async refreshAuthoredStations(
-		type: "shipyard" | "refinery",
+		type: "trade" | "shipyard" | "refinery" | "outpost",
 		form: string,
 	): Promise<void> {
 		const system = this.world.system;
@@ -7045,7 +7396,12 @@ class Game {
 			const previous = this.stationVisuals.get(body.id);
 			// Built after the install (a home station, a later jump): already
 			// the authored model.
-			if (!previous || isAuthoredStation(previous.root)) continue;
+			if (
+				!previous ||
+				isAuthoredStation(previous.root) ||
+				previous.root.getObjectByName("industrial-coriolis-exterior")
+			)
+				continue;
 			const live = () => this.stationVisuals.get(body.id) === previous;
 			const built = buildStationMesh(station, body.color);
 			built.root.name = body.id;
@@ -7090,7 +7446,7 @@ class Game {
 			let compiled: Promise<unknown>;
 			try {
 				this.renderer.setRenderTarget(this.composer.renderTarget1);
-				compiled = this.renderer.compileAsync(root, camera, scene);
+				compiled = compileWhenReady(this.renderer, root, camera, scene);
 			} finally {
 				this.renderer.setRenderTarget(target);
 			}
@@ -7106,12 +7462,15 @@ class Game {
 
 	/** Sharing a card waits for the authored kit, even after a background failure. */
 	private async openPostcardWithModels(): Promise<void> {
-		const { prepareInteriorModel } = await import("./interior-model");
-		await loadRequiredModels(
-			[prepareInteriorModel],
-			loadingPanel("postcard interiors"),
-		);
-		await this.refreshInteriorMeshes();
+		const ids = this.currentModelIds();
+		const view = loadingPanel("postcard models");
+		view({ kind: "loading", fraction: null });
+		await models.wait(ids);
+		const failed = ids.filter((id) => models.state(id) === "failed");
+		if (failed.length) {
+			await requireModels(failed, view);
+		}
+		view({ kind: "done" });
 		this.postcardPanel?.open();
 	}
 
@@ -7144,14 +7503,10 @@ class Game {
 		old.removeFromParent();
 		disposeSubtree(old);
 		this.shipMesh = mesh;
-		const marked = this.markedOcclusion.findIndex(([name]) => name === "ship");
-		const record: (typeof this.markedOcclusion)[number] = [
-			"ship",
-			markOcclusion(mesh),
-		];
-		if (marked >= 0) this.markedOcclusion[marked] = record;
-		else this.markedOcclusion.push(record);
+		this.recordOcclusion("ship", markOcclusion(mesh));
 		this.nearScene.add(mesh);
+		this.syncCabin();
+		if (installedGame === this) this.startModelQueue();
 	}
 
 	/**
@@ -7313,6 +7668,7 @@ class Game {
 		for (const contact of this.trafficContacts.values())
 			this.unregisterContact(contact);
 		for (const mesh of this.trafficMeshes.values()) {
+			this.npcPlumes.forget(mesh);
 			mesh.removeFromParent();
 			disposeSubtree(mesh);
 		}
@@ -8069,7 +8425,18 @@ class Game {
 		}
 	}
 
-	/** The listener is the camera: its right axis, not the hull's, pans a ring. */
+	/**
+	 * One frame of a Traffic carrier's ring, at either end of its jump.
+	 *
+	 * The age is **signed** (#1006): a ring runs from `CROSSING.openS` before its
+	 * crossing to `CROSSING.windowEndS` after it, so a watcher sees it tear open
+	 * with nothing in it, flare as the hull passes through, and seal behind it.
+	 * The old window was `[0, riftEndS)` — the ring could only appear once the
+	 * ship was already sitting inside it, which is the frame the principal saw.
+	 * The ring is drawn from `route.jump` alone, so an arrival whose hauler is
+	 * still in another system (`present: false`) gets its opening on screen.
+	 * The listener is the camera: its right axis, not the hull's, pans a ring.
+	 */
 	private updateTrafficRifts(
 		cameraPos: Vec3,
 		cameraRotation: THREE.Quaternion,
@@ -8087,8 +8454,7 @@ class Game {
 				? TRAFFIC_DEMATERIALIZE_KM
 				: TRAFFIC_MATERIALIZE_KM;
 			if (
-				age < 0 ||
-				age >= WITCHSPACE.riftEndS ||
+				!npcRiftVisible(age) ||
 				length(sub(jump.pos, this.world.ship.pos)) > range
 			)
 				continue;
@@ -8104,10 +8470,13 @@ class Game {
 				this.trafficRifts.set(id, rift);
 				this.nearScene.add(rift.object);
 			}
-			const strength = npcRiftStrength(age);
-			rift.update(strength, age, cameraPos);
+			const { strength, flare } = npcRiftLook(age);
+			rift.update(strength, age, cameraPos, flare);
 			if (!this.trafficJumpSounds.has(id)) {
-				this.trafficJumpSounds.set(id, jump.atS + WITCHSPACE.riftEndS);
+				// The sound arrives with the *opening*, not with the ship: the ring's
+				// own length is the crossing's window, and it starts `openS` before
+				// the hull is here at all.
+				this.trafficJumpSounds.set(id, jump.atS + CROSSING_TIMELINE.windowEndS);
 				const rel = sub(jump.pos, cameraPos),
 					distance = length(rel);
 				const r = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRotation);
@@ -8126,7 +8495,7 @@ class Game {
 				});
 				this.play({
 					kind: "witchspaceRift",
-					seconds: WITCHSPACE.riftEndS,
+					seconds: CROSSING_TIMELINE.windowS,
 					spatial,
 				});
 			}
@@ -8181,7 +8550,7 @@ class Game {
 	}
 
 	/**
-	 * One frame of civilian combat (`civilian-combat.md` H2, H3, H10).
+	 * One frame of civilian combat (`civilian-control.md` H2, H3, H10).
 	 *
 	 * **A shot that lands on a projected carrier engages it**: the carrier is
 	 * handed from its projection to flight at the pose it is drawn in, and the
@@ -8244,6 +8613,7 @@ class Game {
 						nose,
 						up: route?.up ?? null,
 						voyageOrdinal: this.trafficVoyage(actor),
+						loadout: this.npcFitFor(actor.hullId, actor.key),
 					},
 					carrierInstanceSeed(
 						this.trafficHomeRecord({ key }).seed,
@@ -8360,7 +8730,11 @@ class Game {
 			instanceOrdinal,
 			voyageOrdinal,
 			{
-				holdT: HULL_SPECS[actor.hullId].holdT,
+				// A scan and a kill read the same fitted hold.
+				holdT: fittedCapacity(
+					actor.hullId,
+					this.npcFitFor(actor.hullId, actor.key, instanceOrdinal),
+				).holdT,
 				government: record.government,
 			},
 		);
@@ -8429,7 +8803,7 @@ class Game {
 	}
 
 	/**
-	 * The sustained-fire charge (`civilian-combat.md` H4's third rung, #396): the
+	 * The sustained-fire charge (`civilian-control.md` H4's third rung, #396): the
 	 * pilot's fire has landed on this ordinary carrier for `ASSAULT_FIRE_S`, and
 	 * that is an offence before a single hull point has been spent.
 	 *
@@ -8581,7 +8955,7 @@ class Game {
 	}
 
 	/**
-	 * A hull strike (`civilian-combat.md` H3b, H3c, H3d): the carrier is disabled
+	 * A hull strike (`civilian-control.md` H3b, H3c, H3d): the carrier is disabled
 	 * by the player's own fire and booked into its home berth in the same tick,
 	 * and the strike is an offence.
 	 *
@@ -8622,7 +8996,7 @@ class Game {
 	}
 
 	/**
-	 * A kill (`civilian-combat.md` H1, H4, H9, H11): the carrier's destroy with
+	 * A kill (`civilian-control.md` H1, H4, H9, H11): the carrier's destroy with
 	 * its scheduled replacement, the manifest a scan would have shown dropped as
 	 * canisters, and the offence judged on its true standing and written.
 	 */
@@ -8710,6 +9084,24 @@ class Game {
 				frameVel: this.localFrame(),
 				frameBodyId: this.frameBody?.id ?? null,
 			}),
+			...dropFittingCanister(
+				{
+					systemSeed: this.trafficHomeRecord(actor).seed,
+					government: this.trafficHomeRecord(actor).government,
+					key: actor.key,
+					killedAt: this.world.gameTime,
+					pos: engagement.flight.ship.pos,
+					vel: engagement.flight.ship.vel,
+					frameVel: this.localFrame(),
+					frameBodyId: this.frameBody?.id ?? null,
+				},
+				armedNpc(actor.hullId)
+					? npcFittingDrop(
+							engagement.loadout ?? this.npcFitFor(actor.hullId, actor.key),
+							this.npcFitSeedFor(actor.key),
+						)
+					: undefined,
+			),
 		];
 		this.play({ kind: "explosion" });
 		this.trafficEngagements.delete(actor.key);
@@ -8870,6 +9262,18 @@ class Game {
 		this.sweepCharge = null;
 	}
 
+	private stepFieldDiscovery(previous: FieldDiscoveryMotion) {
+		this.adoptWorld(
+			discoverNearbyFields(this.commerceWorld, {
+				record: this.world.system.record,
+				contents: this.world.system.contents,
+				shipPos: this.world.ship.pos,
+				gameTime: this.world.gameTime,
+				previous,
+			}),
+		);
+	}
+
 	private stepSystemSweep() {
 		const before = this.sweepCharge;
 		if (!before) return;
@@ -8983,15 +9387,1359 @@ class Game {
 		this.saveDirty();
 	}
 
+	private surveyHold: SurveyHold = beginSurveyHold();
+	deepCueRender: { x: number; y: number; facing: boolean; mouth: Vec3 } | null =
+		null;
+
+	fitPrototypeMiningLaser(writesNothing: boolean) {
+		if (!writesNothing) return;
+		const hardpoints = HULL_SPECS[this.commander.hull].slots.filter(
+			(s) => s.kind === "hardpoint",
+		);
+		const key = prototypeMiningLaserSlot(hardpoints, this.commander.loadout);
+		const slot = hardpoints.find((s) => s.key === key);
+		if (!slot) return;
+		const loadout = {
+			...this.commander.loadout,
+			[slot.key]: makeModule("mining-laser", slot.size),
+		};
+		this.commander = { ...this.commander, loadout };
+	}
+
+	private fieldRockSets(): FieldRocks[] {
+		return this.fieldDraws.map((d) => ({ plan: d.plan, rocks: d.rocks }));
+	}
+
+	private rockRef(id: string): RockRef | null {
+		const ref = resolveRock(
+			this.fieldRockSets(),
+			id,
+			this.world.ship.pos,
+			this.world.gameTime,
+		);
+		return ref && ref.distKm <= ROCK_DROP_KM ? ref : null;
+	}
+
+	private cycleRockTarget(step: number): boolean {
+		if (ROCK_PICK === "front") {
+			const front = frontRock(
+				nearRocks(
+					this.fieldRockSets(),
+					this.world.ship.pos,
+					this.world.gameTime,
+					ROCK_DROP_KM,
+				),
+				this.world.ship.pos,
+				this.weaponAim(),
+			);
+			if (!front) return false;
+			this.targetId = front.id;
+			return true;
+		}
+		const near = nearRocks(
+			this.fieldRockSets(),
+			this.world.ship.pos,
+			this.world.gameTime,
+		);
+		if (near.length === 0) return false;
+		if (ROCK_PICK === "aim") {
+			const aimed = aimedRock(near, this.world.ship.pos, this.weaponAim());
+			if (!aimed || aimed.id === this.targetId) return false;
+			this.targetId = aimed.id;
+			return true;
+		}
+		this.targetId = cycleWithRocks(
+			near.slice(0, ROCK_CYCLE_MAX).map((r) => r.id),
+			this.selectable().map((b) => b.id),
+			this.targetId,
+			step,
+		);
+		return true;
+	}
+
+	private surveyFiguresFitted(): { rangeKm: number; dwellS: number } | null {
+		let best: { rangeKm: number; dwellS: number } | null = null;
+		for (const m of Object.values(this.commander.loadout)) {
+			if (m.module !== "mining-laser") continue;
+			const f = surveyFigures(m.size, m.grade, SURVEY_BASE);
+			if (
+				!best ||
+				f.rangeKm > best.rangeKm ||
+				(f.rangeKm === best.rangeKm && f.dwellS < best.dwellS)
+			)
+				best = f;
+		}
+		return best;
+	}
+
+	private rockDepositKey(ref: RockRef): DepositKey {
+		return depositKey(
+			this.world.system.record.index,
+			ref.plan.id,
+			ref.rock.slot,
+		);
+	}
+
+	private rockDepositRow(ref: RockRef): DepositRow | undefined {
+		const galaxy = this.world.system.record.galaxy;
+		return this.commerceWorld.galaxies[galaxy].deposits.rows[
+			this.rockDepositKey(ref)
+		];
+	}
+
+	private rockContentsOf(ref: RockRef): RockContents {
+		return rockContents(
+			this.world.system.record.seed,
+			ref.plan.slot,
+			ref.plan.profile,
+			ref.rock,
+		);
+	}
+
+	private surveyBlock(ref: RockRef | null): string | null {
+		if (!ref) return "NO ROCK";
+		const figures = this.surveyFiguresFitted();
+		if (!figures) return "NO MINING LASER";
+		if (this.triggerHeld()) return "FIRING";
+		if (ref.distKm > figures.rangeKm)
+			return `OUT OF RANGE ${figures.rangeKm.toFixed(1)} KM`;
+		if (
+			edgeAngleOff(ref, this.world.ship.pos, this.weaponAim()) >
+			(SURVEY.coneDeg * Math.PI) / 180
+		)
+			return "HOLD IN VIEW";
+		return null;
+	}
+
+	private stepSurvey(dt: number) {
+		const ref = isRockTargetId(this.targetId)
+			? this.rockRef(this.targetId)
+			: null;
+		const figures = this.surveyFiguresFitted();
+		const held = ref && this.surveyBlock(ref) === null ? ref.id : null;
+		const dwellS = figures?.dwellS ?? SURVEY_BASE.dwellS;
+		const before = this.surveyHold;
+		this.surveyHold = stepSurveyHold(
+			before,
+			held,
+			dt,
+			dwellS,
+			SURVEY_INTERRUPT,
+		);
+		if (!ref || !surveyCompleted(before, this.surveyHold, dwellS)) return;
+		this.putDepositRow(ref, {
+			...this.rockDepositRow(ref),
+			surveyedAt: this.world.gameTime,
+		});
+	}
+
+	private gunFiredNow = false;
+	miningBeam: {
+		hit: { rockId: string; offset: Vec3 } | null;
+		distKm: number;
+		rays: {
+			muzzleIndex: number;
+			hit: { rockId: string; offset: Vec3 } | null;
+		}[];
+	} | null = null;
+	private sparks: {
+		rockId: string;
+		offset: Vec3;
+		vel: Vec3;
+		bornAt: number;
+	}[] = [];
+	private sparkDebt = 0;
+	private heatSpots = new Map<string, { offset: Vec3; at: number }>();
+	chaseMiningRender = 0;
+	impactRender: { x: number; y: number; r: number; sparks: number } | null =
+		null;
+	private cut: Cut = beginCut();
+	fragments: Fragment[] = [];
+	private fragmentSeq = 0;
+	private miningNotice = { text: "", left: 0 };
+	miningLog = {
+		cutRockId: null as string | null,
+		released: 0,
+		waste: 0,
+		taken: 0,
+		lost: 0,
+		refused: 0,
+	};
+
+	private minedHold(): { usedT: number; capacityT: number } {
+		return (
+			commanderOreBay(this.commander) ??
+			commanderHold(this.commander, entrustedTonnesAboard(this.requests))
+		);
+	}
+
+	private get minedT(): number {
+		return oreTonnes(this.commander.cargo);
+	}
+
+	private takeMinedOre(name: string, tonnes: number): void {
+		this.adoptHoldings(
+			applyHoldEvent(this.holdings(), this.commerceWorld, {
+				kind: "scoop",
+				commodity: name,
+				tonnes,
+			}),
+		);
+	}
+
+	private sayMining(text: string) {
+		this.miningNotice = { text, left: 3 };
+	}
+
+	private miningRays() {
+		const group = this.armedFireGroup.current(this.fireGroups);
+		const hardpoints = hardpointKeys(this.flownHull);
+		const lasers = (group?.slots ?? []).flatMap((key) => {
+			const m = this.commander.loadout[key];
+			return m?.module === "mining-laser"
+				? [
+						{
+							grade: m.grade,
+							extractionTPerS: moduleRow(m).output.extractionTPerS,
+							muzzleIndex: hardpoints.indexOf(key),
+						},
+					]
+				: [];
+		});
+		return miningBeamRays(lasers, this.miningMuzzlesWorld(), this.nose());
+	}
+
+	private miningMuzzlesWorld(): Vec3[] {
+		return muzzlesWorld(
+			this.world.ship.pos,
+			this.orientation,
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant),
+		);
+	}
+
+	private putDepositRow(ref: RockRef, row: DepositRow) {
+		this.commerceWorld = setDepositRow(
+			this.commerceWorld,
+			this.world.system.record.galaxy,
+			this.rockDepositKey(ref),
+			row,
+			this.world.gameTime,
+		);
+		this.saveDirty();
+	}
+
+	private rockShape(ref: RockRef): RockShape {
+		const field = ROCK_ASSETS.heightfields.fields[rockArchetype(ref.rock)];
+		const t = this.world.gameTime;
+		return {
+			toLocal: (v) => rockLocalVector(ref, v, t),
+			toWorld: (v) => rockDirectionNow(ref, v, t),
+			radiusAt: (d) => radiusAt(field, [d.x, d.y, d.z]),
+		};
+	}
+
+	private stepExtraction(dt: number) {
+		const now = this.world.gameTime;
+		this.miningNotice.left = Math.max(0, this.miningNotice.left - dt);
+		const fired = this.gunFiredNow ? this.miningRays() : [];
+		this.miningLog.cutRockId = null;
+		this.miningBeam = null;
+		this.sparks = this.sparks.filter((k) => now - k.bornAt < SPARK_LIFE_S);
+		if (fired.length > 0) {
+			const near = nearRocks(
+				this.fieldRockSets(),
+				this.world.ship.pos,
+				now,
+				PLAYER_LASER_RANGE_KM,
+			);
+			const targets = near.map((r) => ({
+				id: r.id,
+				pos: r.pos,
+				vel: r.vel,
+				radiusKm: r.rock.radiusKm,
+				shape: this.rockShape(r),
+			}));
+			const rays = fired.map((ray) => ({
+				...ray,
+				met: beamHit(ray.origin, ray.aim, targets, PLAYER_LASER_RANGE_KM),
+			}));
+			const { hit, cutting } = firstHitExtraction(rays);
+			const ref = hit && near.find((r) => r.id === hit.id);
+			this.miningBeam = {
+				hit: null,
+				distKm: PLAYER_LASER_RANGE_KM,
+				rays: rays.map((r) => {
+					const rock = r.met && near.find((n) => n.id === r.met?.id);
+					return {
+						muzzleIndex: r.muzzleIndex,
+						hit:
+							r.met && rock
+								? { rockId: rock.id, offset: sub(r.met.point, rock.pos) }
+								: null,
+					};
+				}),
+			};
+			if (hit && ref) {
+				this.miningLog.cutRockId = ref.id;
+				const offset = sub(hit.point, ref.pos);
+				this.miningBeam = {
+					...this.miningBeam,
+					hit: { rockId: ref.id, offset },
+					distKm: hit.distKm,
+				};
+				this.heatSpots.set(ref.id, { offset, at: now });
+				this.sparkDebt += SPARK_RATE_PER_S * dt;
+				for (; this.sparkDebt >= 1; this.sparkDebt--) {
+					const n = hit.normal;
+					const r = () => Math.random() * 2 - 1;
+					const dir = normalizeOr(
+						{ x: n.x + r() * 0.8, y: n.y + r() * 0.8, z: n.z + r() * 0.8 },
+						n,
+					);
+					this.sparks.push({
+						rockId: ref.id,
+						offset,
+						vel: scale(dir, SPARK_KMS * (0.4 + Math.random() * 0.6)),
+						bornAt: now,
+					});
+				}
+				const contents = this.rockContentsOf(ref);
+				const row = this.rockDepositRow(ref);
+				const taken =
+					row?.surface === undefined
+						? 0
+						: debitAt(row.surface, row.at ?? 0, now);
+				const step = stepCut(
+					this.cut,
+					ref.id,
+					cutting.rate,
+					oreShare(cutting.grade),
+					dt,
+					contents.surfaceT - taken,
+				);
+				this.cut = step.cut;
+				if (step.depleted) this.sayMining("ROCK DEPLETED · WASTE ONLY");
+				if (step.ore > 0)
+					this.putDepositRow(ref, debitSurface(row, now, step.ore));
+				const ore = { family: contents.family, grade: contents.grade };
+				for (let i = 0; i < step.ore + step.waste; i++) {
+					const n = this.fragmentSeq++;
+					this.fragments.push(
+						releaseFragment(
+							`frag:${n}`,
+							n,
+							i < step.ore ? ore : null,
+							hit,
+							ref.pos,
+							now,
+						),
+					);
+				}
+				this.miningLog.released += step.ore;
+				this.miningLog.waste += step.waste;
+			}
+		}
+		if (this.fragments.length === 0) return;
+		this.fragments = this.fragments.map((f) => {
+			const rock = this.fragmentRock(f.rockId);
+			return rock ? pullFragment(f, rock, this.world.ship, now, dt) : f;
+		});
+		const scooped = stepFragments(
+			this.fragments,
+			this.world.ship,
+			now,
+			(f) => this.fragmentRock(f.rockId),
+			this.flownCapacity(),
+			() => this.condition.energy,
+			(f) => {
+				if (!f.ore) throw new Error("mining: scoop callback requires ore");
+				const hold = this.minedHold();
+				if (hold.usedT + 1 > hold.capacityT) return "hold-full";
+				this.spendScoopCharge();
+				const name = oreCargoName(f.ore.family, f.ore.grade);
+				this.takeMinedOre(name, 1);
+				return "taken";
+			},
+		);
+		this.fragments = scooped.kept;
+		this.miningLog.taken += scooped.taken.length;
+		this.miningLog.lost += scooped.lost.length;
+		this.miningLog.refused += scooped.refused.length;
+		for (const f of scooped.taken)
+			if (f.ore)
+				this.sayMining(
+					`SCOOPED 1 T ${oreCargoName(f.ore.family, f.ore.grade).toUpperCase()} · -${CANISTER_SCOOP_CHARGE_E} E`,
+				);
+		for (const { verdict } of scooped.refused)
+			this.sayMining(FRAGMENT_REFUSAL_NOTICE[verdict]);
+		if (scooped.lost.length)
+			this.sayMining(`${scooped.lost.length} T LOST · FRAGMENT EXPIRED`);
+	}
+
+	private miningBeamSegments(beam: NonNullable<Game["miningBeam"]>) {
+		const all = this.miningMuzzlesWorld();
+		const nose = this.nose();
+		return beam.rays.flatMap((ray) => {
+			const muzzle = all[ray.muzzleIndex];
+			if (!muzzle) return [];
+			const rock = ray.hit && this.fragmentRock(ray.hit.rockId);
+			const end =
+				ray.hit && rock
+					? add(rock.pos, ray.hit.offset)
+					: add(muzzle, scale(nose, PLAYER_LASER_RANGE_KM));
+			return [{ muzzle, end, hit: ray.hit !== null }];
+		});
+	}
+
+	drill = {
+		extension: 0,
+		spin: 0,
+		rotorRad: 0,
+		powered: false,
+		cut: beginDrillCut(),
+		surfaceCut: { key: null as string | null, oreT: 0, wasteT: 0 },
+		contact: null as DrillContact | null,
+		rockId: null as string | null,
+		stop: null as DrillStop | null,
+		delivered: 0,
+		face: null as Vec3 | null,
+		contactPoint: null as Vec3 | null,
+		feet: [] as {
+			onRock: boolean;
+			rockId: string | null;
+			rockM: number | null;
+			reachM: number;
+			target: [number, number, number];
+		}[],
+		anchorWhy: "DEPLOYING" as ReturnType<typeof anchorAllowed>,
+		holdRockId: null as string | null,
+		grip: false,
+		held: null as {
+			rockId: string;
+			from: { pos: Vec3; nose: Vec3; up: Vec3 };
+			to: { pos: Vec3; nose: Vec3; up: Vec3 };
+			at: number;
+		} | null,
+		fine: null as ReturnType<typeof fineReadout> | null,
+	};
+	drillLineRender: { line: string; readout: string | null } | null = null;
+	private fineWas = false;
+	private drillRocksCache: {
+		t: number;
+		pos: Vec3;
+		rocks: readonly RockRef[];
+	} | null = null;
+
+	private nearDrillRocks(): readonly RockRef[] {
+		const t = this.world.gameTime;
+		const pos = this.world.ship.pos;
+		const cache = this.drillRocksCache;
+		if (
+			cache &&
+			cache.t === t &&
+			cache.pos.x === pos.x &&
+			cache.pos.y === pos.y &&
+			cache.pos.z === pos.z
+		)
+			return cache.rocks;
+		const rocks = nearRocks(this.fieldRockSets(), pos, t, FINE.rangeKm);
+		this.drillRocksCache = { t, pos: { ...pos }, rocks };
+		return rocks;
+	}
+
+	private fineCache: {
+		t: number;
+		value: ReturnType<Game["computeFineFrame"]>;
+	} | null = null;
+
+	private drillCutter() {
+		return MINING_ON ? (HULL_SPECS[this.flownHull].cutter ?? null) : null;
+	}
+
+	private drillArmed(): boolean {
+		return (
+			this.drillCutter() !== null &&
+			this.armedFireGroup.current(this.fireGroups)?.kind === "drill"
+		);
+	}
+
+	private drillTriggerHeld(): boolean {
+		return this.drillArmed() && this.drill.extension >= 1 && this.triggerHeld();
+	}
+
+	private rockTargets(near: readonly RockRef[]) {
+		return near.map((r) => ({
+			id: r.id,
+			pos: r.pos,
+			vel: r.vel,
+			radiusKm: r.rock.radiusKm,
+			shape: this.rockShape(r),
+		}));
+	}
+
+	private surfaceVelocityAt(ref: RockRef, local: Vec3, t: number): Vec3 {
+		const h = 0.05;
+		return add(
+			rockPose(ref.plan, ref.rock, t).vel,
+			scale(
+				sub(
+					rockDirectionNow(ref, local, t + h),
+					rockDirectionNow(ref, local, t - h),
+				),
+				1 / (2 * h),
+			),
+		);
+	}
+
+	private fineFrame() {
+		const t = this.world.gameTime;
+		if (this.fineCache?.t !== t)
+			this.fineCache = { t, value: this.computeFineFrame() };
+		return this.fineCache.value;
+	}
+
+	private computeFineFrame(): {
+		frameId: string;
+		label: string;
+		velocityAt: (gameTime: number) => Vec3;
+		rangeKm: number | null;
+	} | null {
+		const cutter = this.drillCutter();
+		if (
+			!cutter ||
+			!this.drillArmed() ||
+			this.regime === "cruise" ||
+			this.drill.held
+		)
+			return null;
+		const t = this.world.gameTime;
+		const ship = this.world.ship;
+		const near = this.nearDrillRocks();
+		if (near.length === 0) return null;
+		const nose = this.nose();
+		const face = drillFaceKm(
+			ship.pos,
+			nose,
+			this.shipUp(),
+			cutter,
+			this.drill.extension,
+		);
+		const hit = beamHit(face, nose, this.rockTargets(near), FINE.rangeKm);
+		const ref = (hit && near.find((r) => r.id === hit.id)) || near[0];
+		const local = hit ? rockLocalVector(ref, sub(hit.point, ref.pos), t) : null;
+		return {
+			frameId: ref.id,
+			label: local ? "ROCK SURFACE FRAME" : "ROCK FRAME",
+			velocityAt: local
+				? (gt) => this.surfaceVelocityAt(ref, local, gt)
+				: (gt) => rockPose(ref.plan, ref.rock, gt).vel,
+			rangeKm: hit && hit.id === ref.id ? hit.distKm : null,
+		};
+	}
+
+	private syncFineThrottle(): boolean {
+		const fine = MINING_ON && this.fineFrame() !== null;
+		if (fine !== this.fineWas) {
+			this.throttle = fine
+				? rescaleThrottle(this.throttle, ASSIST_CAP_KMS, FINE.surgeCapKms)
+				: rescaleThrottle(this.throttle, FINE.surgeCapKms, ASSIST_CAP_KMS);
+			this.fineWas = fine;
+		}
+		return fine;
+	}
+
+	toggleDrillHold() {
+		const cutter = this.drillCutter();
+		if (!cutter) return;
+		if (this.drill.held) {
+			this.drill.held = null;
+			this.sayMining("STRUTS RELEASED");
+			return;
+		}
+		const ref = this.drill.holdRockId
+			? this.rockRef(this.drill.holdRockId)
+			: null;
+		if (this.drill.anchorWhy !== "OK" || !ref) {
+			this.sayMining(`STRUTS CANNOT ANCHOR · ${this.drill.anchorWhy}`);
+			return;
+		}
+		const t = this.world.gameTime;
+		const ship = this.world.ship;
+		const local = (p: { pos: Vec3; nose: Vec3; up: Vec3 }) => ({
+			pos: rockLocalVector(ref, sub(p.pos, ref.pos), t),
+			nose: rockLocalVector(ref, p.nose, t),
+			up: rockLocalVector(ref, p.up, t),
+		});
+		const from = local({ pos: ship.pos, nose: this.nose(), up: this.shipUp() });
+		const seat = this.seatTarget(ref, cutter);
+		this.drill.held = {
+			rockId: ref.id,
+			from,
+			to: seat ? local(seat) : from,
+			at: t,
+		};
+		this.sayMining(
+			seat ? "STRUTS ANCHORING · DRAWING IN" : "STRUTS ANCHORED · HOLDING",
+		);
+	}
+
+	private seatTarget(ref: RockRef, cutter: HullCutter) {
+		const ship = this.world.ship;
+		const nose = this.nose();
+		const up = this.shipUp();
+		const face = drillFaceKm(ship.pos, nose, up, cutter, 1);
+		const target = this.rockTargets([ref]);
+		const hit =
+			beamHit(face, nose, target, ANCHOR.reachKm * 2) ??
+			beamHit(
+				face,
+				normalizeOr(sub(ref.pos, face), nose),
+				target,
+				length(sub(ref.pos, face)),
+			);
+		return hit ? seatPose(hit.point, hit.normal, up, cutter) : null;
+	}
+
+	private applyDrillHold(flying: boolean) {
+		const held = this.drill.held;
+		if (!held) return;
+		const ref = this.rockRef(held.rockId);
+		if (!ref || !flying || !this.drillArmed()) {
+			this.drill.held = null;
+			this.sayMining("STRUTS RELEASED");
+			return;
+		}
+		const t = this.world.gameTime;
+		const s = seatBlend((t - held.at) / ANCHOR.seatS);
+		const mix = (a: Vec3, b: Vec3) => add(scale(a, 1 - s), scale(b, s));
+		const pos = mix(held.from.pos, held.to.pos);
+		this.world.ship.pos = add(ref.pos, rockDirectionNow(ref, pos, t));
+		this.world.ship.vel = this.surfaceVelocityAt(ref, pos, t);
+		this.setAttitude(
+			rockDirectionNow(ref, mix(held.from.nose, held.to.nose), t),
+			rockDirectionNow(ref, mix(held.from.up, held.to.up), t),
+		);
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.throttle = 0;
+	}
+
+	private drillSeating(): number | null {
+		const held = this.drill.held;
+		if (!held || held.from === held.to) return null;
+		const s = (this.world.gameTime - held.at) / ANCHOR.seatS;
+		return s < 1 ? s : null;
+	}
+
+	private stepDrill(dt: number) {
+		const cutter = this.drillCutter();
+		if (!cutter) return;
+		const now = this.world.gameTime;
+		const ship = this.world.ship;
+		const flying =
+			flightLive(this.dock.phase) && !collisionExempt(this.dock.phase);
+		const armed = this.drillArmed();
+		if (
+			!armed &&
+			this.drill.extension <= 0 &&
+			this.drill.spin <= 0 &&
+			!this.drill.held
+		) {
+			this.audio.drill(0, 0);
+			return;
+		}
+		this.applyDrillHold(flying);
+		const nose = this.nose();
+		const up = this.shipUp();
+		const near = this.nearDrillRocks();
+		const targets = this.rockTargets(near);
+		const room = beamHit(
+			drillFaceKm(ship.pos, nose, up, cutter, 0),
+			nose,
+			targets,
+			cutter.feedTravelKm + 0.01,
+		);
+		this.drill.extension = stepFeed(
+			this.drill.extension,
+			flying && armed,
+			dt,
+			room?.distKm ?? Number.POSITIVE_INFINITY,
+			cutter,
+		);
+		this.drill.spin = stepSpin(this.drill.spin, this.drill.powered, dt);
+		this.drill.rotorRad =
+			(this.drill.rotorRad + DRILL.rotorRadPerS * this.drill.spin * dt) %
+			(2 * Math.PI);
+		const face = drillFaceKm(ship.pos, nose, up, cutter, this.drill.extension);
+		this.drill.face = face;
+		const hit =
+			this.drill.extension > 0 ? beamHit(face, nose, targets, 0.05) : null;
+		const ref = hit ? (near.find((r) => r.id === hit.id) ?? null) : null;
+		let surfaceVel = ship.vel;
+		let deepMouth: Vec3 | null = null;
+		if (ref && hit) {
+			surfaceVel = this.surfaceVelocityAt(
+				ref,
+				rockLocalVector(ref, sub(hit.point, ref.pos), now),
+				now,
+			);
+			const dir = this.rockContentsOf(ref).deepDir;
+			deepMouth = dir ? rockDirectionNow(ref, dir, now) : null;
+		}
+		this.stepStruts(
+			cutter,
+			near,
+			targets,
+			ref,
+			surfaceVel,
+			hit?.distKm ?? null,
+		);
+		const fine = this.fineFrame();
+		this.drill.fine = fine
+			? fineReadout(nose, ship.vel, fine.velocityAt(now), fine.rangeKm)
+			: null;
+		const contact = drillContact({
+			extension: this.drill.extension,
+			nose,
+			faceVel: this.drill.held ? surfaceVel : ship.vel,
+			hit: hit && { point: hit.point, normal: hit.normal, distKm: hit.distKm },
+			surfaceVel,
+			rockCentre: ref?.pos ?? ship.pos,
+			deepMouth,
+		});
+		this.drill.contact = contact;
+		this.drill.rockId = ref?.id ?? null;
+		this.drill.contactPoint = hit?.point ?? null;
+		const triggered = this.drillTriggerHeld();
+		const touching = contact.block === null ? ref : null;
+		this.drill.stop = null;
+		if (!touching || !hit) {
+			this.drill.cut = beginDrillCut();
+			this.drill.surfaceCut = { key: null, oreT: 0, wasteT: 0 };
+			this.audio.drill(this.drill.spin, 0);
+			return;
+		}
+		const contents = this.rockContentsOf(touching);
+		const name = oreCargoName(contents.family, contents.grade);
+		const { tonnes, waste, stop } = this.drillExtract(touching, contact, dt);
+		this.drill.stop = triggered ? stop : null;
+		if (tonnes > 0) {
+			this.takeMinedOre(name, tonnes);
+			this.drill.delivered += tonnes;
+			this.sayMining(
+				`DRILLED ${tonnes} T ${name.toUpperCase()} · ${contact.deposit === "deep" ? "DEEP" : "SURFACE"}`,
+			);
+		}
+		for (let i = 0; i < waste; i++) {
+			const n = this.fragmentSeq++;
+			this.fragments.push(
+				releaseFragment(
+					`frag:${n}`,
+					n,
+					null,
+					{
+						id: touching.id,
+						point: hit.point,
+						normal: hit.normal,
+						distKm: hit.distKm,
+					},
+					touching.pos,
+					now,
+				),
+			);
+		}
+		if (this.drill.stop === "HOLD FULL")
+			this.sayMining("HOLD FULL · DRILL STOPPED");
+		else if (this.drill.stop === "DEPLETED")
+			this.sayMining(
+				contact.deposit === "deep"
+					? "DEEP DEPOSIT EXHAUSTED · DRILL STOPPED"
+					: "SURFACE ORE EXHAUSTED · WASTE ONLY",
+			);
+		else if (this.drill.stop === "NO POWER")
+			this.sayMining(
+				this.condition.heatLocked ? "DRILL HEAT LOCKED" : "DRILL · NO ENERGY",
+			);
+		const cutting =
+			this.drill.powered &&
+			this.drill.spin > 0 &&
+			stop !== "HOLD FULL" &&
+			stop !== "NO POWER";
+		this.audio.drill(this.drill.spin, cutting ? this.drill.spin : 0);
+		if (!cutting) return;
+		this.emitDrillSparks(touching, hit, surfaceVel, dt);
+	}
+
+	private drillExtract(touching: RockRef, contact: DrillContact, dt: number) {
+		const now = this.world.gameTime;
+		const row = this.rockDepositRow(touching);
+		const hold = this.minedHold();
+		const holdFreeT = hold.capacityT - hold.usedT;
+		const powered = this.drill.powered;
+		let tonnes = 0;
+		let waste = 0;
+		let stop: DrillStop | null;
+		if (contact.deposit === "deep") {
+			this.drill.surfaceCut = { key: null, oreT: 0, wasteT: 0 };
+			const step = stepDrillCut(this.drill.cut, {
+				key: touching.id,
+				powered,
+				spin: this.drill.spin,
+				rateTPerS: DRILL.rateTPerS,
+				dt,
+				holdFreeT,
+				reserveLeftT: this.reserveLeftT(touching, "deep"),
+			});
+			this.drill.cut = step.cut;
+			stop = step.stop;
+			tonnes = step.tonnes;
+			if (tonnes > 0) this.putDepositRow(touching, debitDeep(row, now, tonnes));
+		} else {
+			this.drill.cut = beginDrillCut();
+			const step = stepDrillSurface(this.drill.surfaceCut, {
+				key: touching.id,
+				powered,
+				spin: this.drill.spin,
+				rateTPerS: DRILL.rateTPerS,
+				dt,
+				holdFreeT,
+				reserveLeftT: this.reserveLeftT(touching, "surface"),
+			});
+			this.drill.surfaceCut = step.cut;
+			stop = step.stop;
+			tonnes = step.ore;
+			waste = step.waste;
+			if (tonnes > 0)
+				this.putDepositRow(touching, debitSurface(row, now, tonnes));
+		}
+		return { tonnes, waste, stop };
+	}
+
+	private emitDrillSparks(
+		touching: RockRef,
+		hit: NonNullable<ReturnType<typeof beamHit>>,
+		surfaceVel: Vec3,
+		dt: number,
+	) {
+		const now = this.world.gameTime;
+		const offset = sub(hit.point, touching.pos);
+		this.heatSpots.set(touching.id, { offset, at: now });
+		this.sparkDebt += SPARK_RATE_PER_S * this.drill.spin * dt;
+		for (; this.sparkDebt >= 1; this.sparkDebt--) {
+			const n = hit.normal;
+			const r = () => Math.random() * 2 - 1;
+			const dir = normalizeOr(
+				{ x: n.x + r() * 1.2, y: n.y + r() * 1.2, z: n.z + r() * 1.2 },
+				n,
+			);
+			this.sparks.push({
+				rockId: touching.id,
+				offset,
+				vel: add(
+					sub(surfaceVel, touching.vel),
+					scale(dir, SPARK_KMS * 0.3 * (0.4 + Math.random() * 0.6)),
+				),
+				bornAt: now,
+			});
+		}
+	}
+
+	private stepStruts(
+		cutter: HullCutter,
+		near: readonly RockRef[],
+		targets: ReturnType<Game["rockTargets"]>,
+		cutRock: RockRef | null,
+		cutSurfaceVel: Vec3,
+		faceGapKm: number | null,
+	) {
+		const ship = this.world.ship;
+		const nose = this.nose();
+		const up = this.shipUp();
+		const frame = longwallFrame(cutter);
+		const nearest = cutRock ?? near[0] ?? null;
+		const grip =
+			nearest !== null && nearest.rock.radiusKm <= ANCHOR.gripRadiusKm
+				? nearest
+				: null;
+		this.drill.grip = grip !== null;
+		this.drill.feet = [0, 1, 2, 3].map((i) => {
+			const reach = strutReach(i);
+			const base = shipPointKm(ship.pos, nose, up, frame.toShip(reach.base));
+			const study = shipPointKm(ship.pos, nose, up, frame.toShip(reach.foot));
+			const column = shipPointKm(
+				ship.pos,
+				nose,
+				up,
+				frame.toShip([reach.foot[0], reach.foot[1], reach.base[2]]),
+			);
+			const seen =
+				this.drill.extension <= 0
+					? null
+					: grip
+						? beamHit(
+								study,
+								normalizeOr(sub(grip.pos, study), nose),
+								this.rockTargets([grip]),
+								length(sub(grip.pos, study)),
+							)
+						: beamHit(column, nose, targets, (reach.reachM * 2) / 1000);
+			const seenM = seen ? length(sub(seen.point, base)) * 1000 : null;
+			const met = seen && seenM !== null && seenM <= reach.reachM ? seen : null;
+			return {
+				onRock: met !== null && this.drill.extension >= 1,
+				rockId: met?.id ?? null,
+				rockM: seenM,
+				reachM: reach.reachM,
+				target: met
+					? frame.toExport(shipFrameM(ship.pos, nose, up, met.point))
+					: reach.foot,
+			};
+		});
+		const counts = new Map<string, number>();
+		for (const f of this.drill.feet)
+			if (f.onRock && f.rockId)
+				counts.set(f.rockId, (counts.get(f.rockId) ?? 0) + 1);
+		const rockId =
+			cutRock?.id ?? [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+		const rock = rockId ? (near.find((r) => r.id === rockId) ?? null) : null;
+		this.drill.holdRockId = rock?.id ?? null;
+		const frameVel = !rock
+			? ship.vel
+			: rock.id === cutRock?.id
+				? cutSurfaceVel
+				: this.surfaceVelocityAt(
+						rock,
+						rockLocalVector(rock, sub(ship.pos, rock.pos), this.world.gameTime),
+						this.world.gameTime,
+					);
+		this.drill.anchorWhy = this.drill.held
+			? "OK"
+			: anchorAllowed({
+					extension: this.drill.extension,
+					faceGapKm: rock && rock.id === cutRock?.id ? faceGapKm : null,
+					feetOnRock: rockId ? (counts.get(rockId) ?? 0) : 0,
+					relKms: length(sub(ship.vel, frameVel)),
+				});
+	}
+
+	private reserveLeftT(ref: RockRef, kind: "deep" | "surface"): number {
+		const contents = this.rockContentsOf(ref);
+		const row = this.rockDepositRow(ref);
+		const debit = row?.[kind];
+		return (
+			(kind === "deep" ? contents.deepT : contents.surfaceT) -
+			(debit === undefined
+				? 0
+				: debitAt(debit, row?.at ?? 0, this.world.gameTime))
+		);
+	}
+
+	drillLine(): { line: string; readout: string | null; ok: boolean } {
+		const d = this.drill;
+		const c = d.contact;
+		const pct = Math.round(d.extension * 100);
+		const m = (km: number | null) =>
+			km === null ? "-" : (km * 1000).toFixed(1);
+		const feet = d.feet.filter((f) => f.onRock).length;
+		const seating = this.drillSeating();
+		const struts = d.held
+			? seating !== null
+				? `STRUTS DRAWING IN ${Math.round(seating * 100)}%`
+				: "ANCHORED · PRESS 4 TO RELEASE"
+			: d.extension >= 1
+				? `${d.grip ? "GRIP" : "FEET"} ${feet}/4 · ${d.anchorWhy === "OK" ? "PRESS 4 TO ANCHOR" : d.anchorWhy}`
+				: "";
+		const fine = d.fine
+			? `FINE${d.fine.rangeKm === null ? "" : ` · RANGE ${m(d.fine.rangeKm)} M`} · CLOSE ${m(d.fine.closingKms)} · SLIDE ${m(d.fine.slideKms)} M/S`
+			: null;
+		const contactFigures =
+			c && c.gapKm !== null
+				? `GAP ${m(c.gapKm)} M · ${Math.round(c.alignDeg ?? 0)}°${c.mouthDeg === null ? "" : ` · MOUTH ${Math.round(c.mouthDeg)}°`}`
+				: null;
+		const readout =
+			[fine, contactFigures, struts].filter(Boolean).join(" · ") || null;
+		if (d.extension <= 0)
+			return {
+				line: !this.drillArmed()
+					? "DRILL STOWED · ARM BUILT-IN DRILL"
+					: "DRILL STOWED · NO ROOM AHEAD",
+				readout,
+				ok: false,
+			};
+		if (d.extension < 1)
+			return { line: `DRILL DEPLOYING ${pct}%`, readout, ok: false };
+		if (!c || c.block !== null) {
+			const why = c?.block ?? "NO ROCK";
+			const figure =
+				why === "OUT OF REACH"
+					? ` ${m(c?.gapKm ?? null)} M`
+					: why === "ALIGN"
+						? ` ${Math.round(c?.alignDeg ?? 0)}°`
+						: why === "CLOSING"
+							? ` ${m(c?.closingKms ?? null)} M/S`
+							: why === "SLIDING"
+								? ` ${m(c?.slideKms ?? null)} M/S`
+								: "";
+			return { line: `DRILL DEPLOYED · ${why}${figure}`, readout, ok: false };
+		}
+		const ref = d.rockId ? this.rockRef(d.rockId) : null;
+		const deep = c.deposit === "deep";
+		const left = ref ? this.reserveLeftT(ref, deep ? "deep" : "surface") : 0;
+		const state = d.stop
+			? d.stop
+			: d.powered
+				? `CUTTING ${(DRILL.rateTPerS * d.spin).toFixed(2)} T/S`
+				: "HOLD TRIGGER";
+		return {
+			line: `DRILL CONTACT ${deep ? "DEEP" : "SURFACE"} · ${state} · ${left} T LEFT · ${d.delivered} T DRILLED`,
+			readout,
+			ok: true,
+		};
+	}
+
+	private drawDrill(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+		w: number,
+		h: number,
+	) {
+		if (!this.drillCutter()) return;
+		const { line, readout, ok } = this.drillLine();
+		ctx.save();
+		ctx.textAlign = "center";
+		const y = h * 0.38;
+		const width = Math.min(
+			w - 20,
+			Math.max(
+				ctx.measureText(line).width,
+				ctx.measureText(readout ?? "").width,
+			) + 16,
+		);
+		ctx.fillStyle = "rgba(1, 5, 8, .85)";
+		ctx.fillRect((w - width) / 2, y - 12, width, readout ? 34 : 18);
+		ctx.fillStyle = ok ? "rgba(150, 255, 170, .95)" : "rgba(255, 210, 140, .9)";
+		ctx.fillText(line, w / 2, y, w - 36);
+		if (readout) ctx.fillText(readout, w / 2, y + 16, w - 36);
+		const point = this.drill.contactPoint;
+		if (point && this.drill.extension > 0) {
+			const at = place(normalizeOr(sub(point, camPos), { x: 0, y: 0, z: -1 }));
+			if (at?.on) {
+				ctx.strokeStyle = ctx.fillStyle;
+				ctx.lineWidth = ok ? 2.5 : 1.5;
+				ctx.beginPath();
+				ctx.arc(at.x, at.y, ok ? 12 : 8, 0, 2 * Math.PI);
+				ctx.stroke();
+			}
+		}
+		ctx.restore();
+		this.drillLineRender = { line, readout };
+	}
+
+	private poseDrillMesh() {
+		const cutter = HULL_SPECS[this.flownHull].cutter;
+		if (!cutter) return;
+		poseLongwallDrill(
+			this.shipMesh,
+			cutter,
+			this.drill.extension,
+			this.drill.rotorRad,
+			this.drill.feet.map((foot) => foot?.target),
+		);
+	}
+
+	private drawImpact(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+		h: number,
+	) {
+		const now = this.world.gameTime;
+		const pxPerRadian = h / ((this.nearCamera.fov * Math.PI) / 180);
+		const anchors = new Map<string, Anchor | null>();
+		const anchorOf = (rockId: string) => {
+			if (!anchors.has(rockId)) anchors.set(rockId, this.fragmentRock(rockId));
+			return anchors.get(rockId) ?? null;
+		};
+		const at = (rockId: string, offset: Vec3) => {
+			const rock = anchorOf(rockId);
+			if (!rock) return null;
+			const pos = add(rock.pos, offset);
+			const to = sub(pos, camPos);
+			const p = place(normalizeOr(to, { x: 0, y: 0, z: -1 }));
+			return p?.on ? { ...p, d: length(to), rock, pos } : null;
+		};
+		ctx.save();
+		ctx.globalCompositeOperation = "lighter";
+		for (const [rockId, spot] of this.heatSpots) {
+			const age = now - spot.at;
+			if (age > HEAT_GLOW_S) {
+				this.heatSpots.delete(rockId);
+				continue;
+			}
+			const p = at(rockId, spot.offset);
+			if (!p) continue;
+			const r = impactRadiusPx(p.d, pxPerRadian) * 0.8;
+			const a = 0.55 * (1 - age / HEAT_GLOW_S);
+			const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+			g.addColorStop(0, `rgba(255, 120, 30, ${a})`);
+			g.addColorStop(1, "rgba(255, 60, 0, 0)");
+			ctx.fillStyle = g;
+			ctx.beginPath();
+			ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+			ctx.fill();
+		}
+		let drawn = 0;
+		ctx.lineCap = "round";
+		for (const k of this.sparks) {
+			const age = now - k.bornAt;
+			const rock = anchorOf(k.rockId);
+			if (!rock) continue;
+			const head = add(rock.pos, add(k.offset, scale(k.vel, age)));
+			const tail = add(
+				rock.pos,
+				add(k.offset, scale(k.vel, Math.max(0, age - SPARK_TRAIL_S))),
+			);
+			const a = place(normalizeOr(sub(head, camPos), { x: 0, y: 0, z: -1 }));
+			const b = place(normalizeOr(sub(tail, camPos), { x: 0, y: 0, z: -1 }));
+			if (!a?.on || !b) continue;
+			const life = 1 - age / SPARK_LIFE_S;
+			ctx.strokeStyle = `rgba(255, ${Math.round(150 + 90 * life)}, ${Math.round(60 * life)}, ${life})`;
+			ctx.lineWidth = 1 + life;
+			ctx.beginPath();
+			ctx.moveTo(b.x, b.y);
+			ctx.lineTo(a.x, a.y);
+			ctx.stroke();
+			drawn++;
+		}
+		const beam = this.miningBeam;
+		if (beam?.hit) {
+			const p = at(beam.hit.rockId, beam.hit.offset);
+			if (p) {
+				const flicker = 0.75 + 0.25 * Math.random();
+				const r = impactRadiusPx(p.d, pxPerRadian) * flicker;
+				const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+				g.addColorStop(0, "rgba(255, 255, 235, 1)");
+				g.addColorStop(0.25, "rgba(255, 200, 90, .9)");
+				g.addColorStop(1, "rgba(255, 90, 10, 0)");
+				ctx.fillStyle = g;
+				ctx.beginPath();
+				ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.globalCompositeOperation = "source-over";
+				ctx.font = "11px Menlo, monospace";
+				ctx.fillStyle = "rgba(255, 200, 120, .9)";
+				ctx.textAlign = "right";
+				ctx.fillText(
+					`CUTTING ${p.d < 1 ? `${Math.round(p.d * 1000)} M` : `${p.d.toFixed(1)} KM`}`,
+					p.x - r - 6,
+					p.y + 4,
+				);
+				this.impactRender = { x: p.x, y: p.y, r, sparks: drawn };
+			}
+		}
+		ctx.restore();
+	}
+
+	private fragmentRock(rockId: string): Anchor | null {
+		const ref = this.rockRef(rockId);
+		return ref ? { pos: ref.pos, vel: ref.vel } : null;
+	}
+
+	fragmentPlaces(): (Fragment & Anchor)[] {
+		const now = this.world.gameTime;
+		const rocks = new Map<string, Anchor | null>();
+		const out: (Fragment & Anchor)[] = [];
+		for (const f of this.fragments) {
+			if (!rocks.has(f.rockId))
+				rocks.set(f.rockId, this.fragmentRock(f.rockId));
+			const rock = rocks.get(f.rockId);
+			if (rock) out.push({ ...f, ...fragmentAt(f, rock, now) });
+		}
+		return out;
+	}
+
+	private drawFragments(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+		w: number,
+		h: number,
+	) {
+		const ship = this.world.ship;
+		let nearest: { f: Fragment & Anchor; d: number } | null = null;
+		ctx.save();
+		for (const f of this.fragmentPlaces()) {
+			const to = sub(f.pos, camPos);
+			const d = length(to);
+			if (d > PLAYER_LASER_RANGE_KM * 1.5) continue;
+			const at = place(normalizeOr(to, { x: 0, y: 0, z: -1 }));
+			if (!at?.on) continue;
+			const r = f.ore ? 4 : 2;
+			ctx.fillStyle = f.ore
+				? FRAGMENT_CSS[f.ore.family]
+				: "rgba(150, 150, 150, .6)";
+			ctx.beginPath();
+			ctx.moveTo(at.x, at.y - r);
+			ctx.lineTo(at.x + r, at.y);
+			ctx.lineTo(at.x, at.y + r);
+			ctx.lineTo(at.x - r, at.y);
+			ctx.closePath();
+			ctx.fill();
+			if (f.ore && (!nearest || d < nearest.d)) nearest = { f, d };
+			if (f.ore && nearest?.f === f)
+				this.fragmentRender = { x: at.x, y: at.y, id: f.id };
+		}
+		ctx.font = "11px Menlo, monospace";
+		if (nearest) {
+			const at = place(
+				normalizeOr(sub(nearest.f.pos, camPos), { x: 0, y: 0, z: -1 }),
+			);
+			if (at?.on) {
+				const closing = length(sub(nearest.f.vel, ship.vel));
+				ctx.strokeStyle = FRAGMENT_CSS[nearest.f.ore?.family ?? "silicate"];
+				ctx.lineWidth = 1.5;
+				ctx.strokeRect(at.x - 8, at.y - 8, 16, 16);
+				ctx.fillStyle = ctx.strokeStyle;
+				ctx.fillText(
+					`${Math.round(nearest.d * 1000)} M · ${Math.round(closing * 1000)} M/S`,
+					at.x + 12,
+					at.y + 4,
+				);
+			}
+		}
+		ctx.textAlign = "center";
+		ctx.fillStyle = "rgba(255, 210, 140, .9)";
+		const line = this.oreLine();
+		if (this.view !== "cockpit") {
+			ctx.fillText(line, w / 2, h * 0.7);
+			if (this.miningNotice.left > 0)
+				ctx.fillText(this.miningNotice.text, w / 2, h * 0.7 - 16);
+		}
+		ctx.restore();
+		this.miningLineRender = {
+			line,
+			notice: this.miningNotice.left > 0 ? this.miningNotice.text : null,
+		};
+	}
+
+	fragmentRender: { x: number; y: number; id: string } | null = null;
+	miningLineRender: { line: string; notice: string | null } | null = null;
+
+	private drawDeepDepositCue(
+		ctx: CanvasRenderingContext2D,
+		camPos: Vec3,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+	) {
+		if (!isRockTargetId(this.targetId)) return;
+		const ref = this.rockRef(this.targetId);
+		if (!ref) return;
+		const reading = surveyReading(
+			this.rockContentsOf(ref),
+			this.rockDepositRow(ref),
+			this.world.gameTime,
+			SURVEY_LIFETIME_H,
+		);
+		if (!reading?.deepDir) return;
+		const d = rockDirectionNow(ref, reading.deepDir, this.world.gameTime);
+		const r = ref.rock.radiusKm * this.rockShape(ref).radiusAt(reading.deepDir);
+		const mouth = {
+			x: ref.pos.x + d.x * r,
+			y: ref.pos.y + d.y * r,
+			z: ref.pos.z + d.z * r,
+		};
+		const facing =
+			d.x * (camPos.x - mouth.x) +
+				d.y * (camPos.y - mouth.y) +
+				d.z * (camPos.z - mouth.z) >
+			0;
+		const at = place(normalizeOr(sub(mouth, camPos), d));
+		if (!at?.on) return;
+		ctx.save();
+		ctx.strokeStyle = facing
+			? "rgba(255, 176, 64, .95)"
+			: "rgba(255, 176, 64, .4)";
+		ctx.fillStyle = ctx.strokeStyle;
+		ctx.lineWidth = 2;
+		ctx.setLineDash(facing ? [] : [3, 3]);
+		ctx.beginPath();
+		ctx.arc(at.x, at.y, 7, 0, Math.PI * 2);
+		ctx.stroke();
+		ctx.font = "11px Menlo, monospace";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		ctx.fillText(facing ? "DEEP" : "DEEP · FAR SIDE", at.x, at.y + 18);
+		ctx.restore();
+		this.deepCueRender = { x: at.x, y: at.y, facing, mouth };
+	}
+
+	private surveyDesignation(
+		id: string,
+		ref: RockRef | null = this.rockRef(id),
+	): string {
+		if (!ref) return "ROCK · OUT OF RANGE";
+		const reading = surveyReading(
+			this.rockContentsOf(ref),
+			this.rockDepositRow(ref),
+			this.world.gameTime,
+			SURVEY_LIFETIME_H,
+		);
+		if (reading) {
+			const deep = reading.deepDir ? ` · DEEP ${reading.deepLeftT} T` : "";
+			return `${reading.family.toUpperCase()} ${GRADE_NAME[reading.grade]} · ${reading.surfaceLeftT} T${deep}`;
+		}
+		const figures = this.surveyFiguresFitted();
+		if (this.surveyHold.key === id && figures && this.surveyHold.chargeS > 0)
+			return `ROCK · SURVEYING ${Math.floor((this.surveyHold.chargeS / figures.dwellS) * 100)}%`;
+		return `ROCK · ${this.surveyBlock(ref) ?? "SURVEYING 0%"}`;
+	}
+
+	surveyState() {
+		const ref = isRockTargetId(this.targetId)
+			? this.rockRef(this.targetId)
+			: null;
+		return {
+			on: MINING_ON,
+			pick: ROCK_PICK,
+			interrupt: SURVEY_INTERRUPT,
+			figures: this.surveyFiguresFitted(),
+			hold: this.surveyHold,
+			target: ref
+				? { id: ref.id, distKm: ref.distKm, radiusKm: ref.rock.radiusKm }
+				: null,
+			block: ref ? this.surveyBlock(ref) : null,
+			designation: ref ? this.surveyDesignation(ref.id) : null,
+			contents: ref ? this.rockContentsOf(ref) : null,
+			row: ref ? (this.rockDepositRow(ref) ?? null) : null,
+			near: nearRocks(
+				this.fieldRockSets(),
+				this.world.ship.pos,
+				this.world.gameTime,
+			)
+				.slice(0, ROCK_CYCLE_MAX)
+				.map((r) => ({ id: r.id, distKm: r.distKm })),
+		};
+	}
+
 	/** What the pilot has recorded about this carrier, re-derived from the row's
 	 *  own clock and voyage. `null` is F8's `UNKNOWN`. */
 	private recordedReading(actor: TrafficActor): CarrierReading | null {
 		const record = this.trafficHomeRecord(actor);
+		const row = readKnowledge(
+			this.commerceWorld.galaxies[record.galaxy],
+			actor.key,
+		);
 		return carrierReading({
 			systemSeed: record.seed,
 			key: actor.key,
-			row: readKnowledge(this.commerceWorld.galaxies[record.galaxy], actor.key),
-			holdT: HULL_SPECS[actor.hullId].holdT,
+			row,
+			holdT: fittedCapacity(
+				actor.hullId,
+				this.npcFitFor(
+					actor.hullId,
+					actor.key,
+					row?.scan?.observedInstanceOrdinal,
+				),
+			).holdT,
 			government: record.government,
 			gameTime: this.world.gameTime,
 		});
@@ -9358,21 +11106,29 @@ class Game {
 	}
 
 	/** The physical cockpit: the authored courier cabin and its live instruments. */
-	private buildCockpit() {
+	private buildCockpit(cabinId: CabinId = this.cabinToDraw()) {
+		this.cabinId = cabinId;
+		this.minerFaces = [];
+		this.drillCamera?.feed.dispose();
+		this.drillCamera = null;
 		this.cockpit = {} as CockpitHardware;
 		// #792's authored cabin replaces the procedural one. `cockpit-model.ts`
 		// owns its placement — the pilot eye at the origin, at `CABIN_SCALE`
 		// times life size — and where each screen is; what is mounted on the
 		// screens is still this class's, so the instruments keep their names.
-		const cabin = buildAuthoredCabin();
+		const cabin = buildAuthoredCabin(cabinId);
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
-		cockpit.add(cabin.root);
+		const seat = new THREE.Group();
+		seat.name = "cockpit-seat";
+		cockpit.add(seat);
+		this.cockpitSeat = seat;
+		seat.add(cabin.root);
 		// The spike's under-console lamps, carried from model metres into the
 		// cabin's frame the way a world lamp is (`cabinLight`). Parented to the
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
-		for (const lamp of COCKPIT_MODEL_LAMPS) {
+		for (const lamp of cabinConsoleLamps(cabinId)) {
 			// The composed carry — gain then carry, in one reachable function:
 			// see `COCKPIT_MODEL_LAMP_GAIN`.
 			const carried = carriedConsoleLamp(lamp);
@@ -9396,7 +11152,7 @@ class Game {
 		// already carries under its window sill is left alone — so there is nothing
 		// ungated to see at low quality, and the casts go through the same gate as the
 		// console's so they respond when the setting moves mid-flight.
-		for (const lamp of buildPerimeterLamps()) {
+		for (const lamp of cabinId === "miner" ? [] : buildPerimeterLamps()) {
 			cabin.modelSpace.add(lamp);
 			const light = lamp.children.find((o) => o instanceof THREE.PointLight);
 			if (light instanceof THREE.PointLight) gated.push(light);
@@ -9406,51 +11162,84 @@ class Game {
 		// keeps the cool fill alone, as the procedural cabin did.
 		registerKeyLight(...gated);
 		const inset = cockpitMaterial("inset");
-		// Each live face fills its screen's width or height, whichever binds,
-		// and keeps its own aspect. The procedural mount's figures stay its
-		// own: one uniform scale per screen carries them onto the model.
-		const mountOn = (
-			screen: CockpitScreen,
-			faceWidthKm: number,
-			faceHeightKm: number,
-			name: string,
-		) => {
-			const frame = cabin.screens[screen];
-			const fit = containedFace(frame, faceWidthKm / faceHeightKm);
-			const mount = screenMount(frame);
-			mount.name = name;
-			mount.scale.setScalar(fit.widthKm / faceWidthKm);
-			cockpit.add(mount);
-			return mount;
-		};
-		const scannerMount = mountOn(
+		const faceScreens: readonly string[] =
+			cabinId === "miner" ? MINER_FACE_SCREENS : [];
+		const textScreens = Object.fromEntries(
+			Object.entries(cabin.screens).filter(
+				([name]) => !faceScreens.includes(name),
+			),
+		);
+		const routes = routeCockpitSources(textScreens, [
 			"radar",
-			SCANNER_FACE_KM[0],
-			SCANNER_FACE_KM[1],
-			"scanner-mount",
-		);
-		const flightMount = mountOn(
 			"flight",
-			INSTRUMENT_FACE_KM[0],
-			INSTRUMENT_FACE_KM[1],
-			"flight-mount",
-		);
-		const targetMount = mountOn(
 			"target",
-			INSTRUMENT_FACE_KM[0],
-			INSTRUMENT_FACE_KM[1],
-			"target-mount",
+			"fallback",
+		]);
+		const routeFrame = (name: string) => {
+			const route = routes.get(name);
+			if (!route) throw new Error(`Missing cockpit source route: ${name}`);
+			return route.frame;
+		};
+		this.cockpit.text = new CockpitReadouts(
+			seat,
+			textScreens,
+			routeFrame("fallback"),
+			new Set(faceScreens),
 		);
-		this.buildScannerAssembly(scannerMount, flightMount, targetMount, inset);
-		this.buildHologramSystem(scannerMount);
+		const scannerFrame = routeFrame("radar");
+		const scannerMount = screenMount(scannerFrame);
+		scannerMount.name = "scanner-hardware-mount";
+		scannerMount.scale.setScalar(scannerFrame.widthKm / SCANNER_FACE_KM[0]);
+		seat.add(scannerMount);
+		this.buildScannerAssembly(scannerMount, inset, {
+			radar: scannerFrame,
+			flight: routeFrame("flight"),
+			target: routeFrame("target"),
+		});
+		this.buildHologramSystem(
+			scannerMount,
+			scannerFrame.widthKm / scannerFrame.heightKm,
+		);
+		if (cabinId === "miner") this.buildMinerFaces(cabin.screens, seat);
+		if (cabinId === "miner") this.buildDrillCamera(cabin.screens, seat);
 		this.cockpit.mesh = cockpit;
 		// #201: the walk marks every standard material for the occlusion
 		// passes; the screens and labels are `MeshBasicMaterial` and fall out.
-		this.markedOcclusion.push(["cockpit", markOcclusion(cockpit)]);
+		this.recordOcclusion("cockpit", markOcclusion(cockpit));
 		// Into its own scene (#651), and `cabin-pass.ts` has why. The tunnel
 		// lines are not the cabin's and stay in the near layer.
 		this.cabinScene.add(cockpit);
 		this.nearScene.add(this.tunnelLines.root);
+	}
+
+	private cabinToDraw(): CabinId {
+		const wanted = cabinForHull(this.flownHull);
+		return cockpitModelReady(wanted) ? wanted : "courier";
+	}
+
+	/** Replace the drawn cabin when the flown hull or a finished load asks for another, https://github.com/jcfischer/seelite/issues/1198 */
+	private syncCabin(): void {
+		const next = this.cabinToDraw();
+		if (next === this.cabinId) return;
+		this.replaceCabin(next);
+	}
+
+	private replaceCabin(next: CabinId): void {
+		const old = this.cockpit.mesh;
+		old.removeFromParent();
+		releaseAuthoredCabin(old);
+		this.minerSeat = "pilot";
+		this.buildCockpit(next);
+	}
+
+	private recordOcclusion(
+		name: string,
+		marked: ReturnType<typeof markOcclusion>,
+	) {
+		const at = this.markedOcclusion.findIndex(([n]) => n === name);
+		const record: (typeof this.markedOcclusion)[number] = [name, marked];
+		if (at >= 0) this.markedOcclusion[at] = record;
+		else this.markedOcclusion.push(record);
 	}
 
 	/** What each occlusion walk marked, kept for `probe-occlusion.mjs` to read
@@ -9465,60 +11254,46 @@ class Game {
 	/** Build the scanner face, the two readout faces and the throttle hardware. */
 	private buildScannerAssembly(
 		scannerMount: THREE.Group,
-		flightMount: THREE.Group,
-		targetMount: THREE.Group,
 		inset: THREE.MeshStandardMaterial,
+		frames: { radar: ScreenFrame; flight: ScreenFrame; target: ScreenFrame },
 	) {
-		const scannerCanvas = document.createElement("canvas");
-		scannerCanvas.width = 800;
-		scannerCanvas.height = 400;
-		this.cockpit.scannerCtx = scannerCanvas.getContext(
-			"2d",
-		) as CanvasRenderingContext2D;
-		this.cockpit.scannerTexture = new THREE.CanvasTexture(scannerCanvas);
-		this.cockpit.scannerTexture.colorSpace = THREE.SRGBColorSpace;
+		const scannerFace = cockpitCanvasFace({
+			frame: frames.radar,
+			name: "scanner",
+			width: 800,
+			height: Math.max(
+				1,
+				Math.round((800 * frames.radar.heightKm) / frames.radar.widthKm),
+			),
+		});
+		this.cockpit.scannerCtx = scannerFace.ctx;
+		this.cockpit.scannerTexture = scannerFace.texture;
 		this.paintScannerBackground();
-		const scanner = new THREE.Mesh(
-			new THREE.PlaneGeometry(...SCANNER_FACE_KM),
-			new THREE.MeshBasicMaterial({
-				map: this.cockpit.scannerTexture,
-				polygonOffset: true,
-				polygonOffsetFactor: -1,
-				polygonOffsetUnits: -1,
-			}),
-		);
-		scanner.name = "scanner";
-		scanner.position.y = 0.00108;
-		scanner.rotation.x = -Math.PI / 2;
-		scannerMount.add(scanner);
-		const makeInstrument = (name: string, mount: THREE.Group) => {
-			const canvas = document.createElement("canvas");
-			canvas.width = 512;
-			canvas.height = 256;
-			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-			const texture = new THREE.CanvasTexture(canvas);
-			texture.colorSpace = THREE.SRGBColorSpace;
-			const face = new THREE.Mesh(
-				new THREE.PlaneGeometry(...INSTRUMENT_FACE_KM),
-				new THREE.MeshBasicMaterial({
-					map: texture,
-					transparent: true,
-					depthWrite: false,
-				}),
-			);
-			face.name = name;
-			face.position.y = 0.001;
-			face.rotation.x = -Math.PI / 2;
-			mount.add(face);
+		this.cockpit.text.root.add(scannerFace.mount);
+		const makeInstrument = (
+			name: string,
+			frame: ScreenFrame,
+			mountName: string,
+		) => {
+			const { ctx, texture, mount } = cockpitCanvasFace({
+				frame,
+				name,
+				width: 512,
+				height: Math.max(1, Math.round((512 * frame.heightKm) / frame.widthKm)),
+			});
+			mount.name = mountName;
+			this.cockpit.text.root.add(mount);
 			return { ctx, texture, primaryText: "", secondaryText: new TextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument(
 			"flight-instrument",
-			flightMount,
+			frames.flight,
+			"flight-mount",
 		);
 		this.cockpit.targetInstrument = makeInstrument(
 			"target-instrument",
-			targetMount,
+			frames.target,
+			"target-mount",
 		);
 		const throttleTrack = new THREE.Mesh(
 			cockpitForm(0.0022, 0.0014, 0.014),
@@ -9542,9 +11317,10 @@ class Game {
 	}
 
 	/** Create the static radar geometry and the reusable live-contact pool. */
-	private buildHologramSystem(scannerMount: THREE.Group) {
+	private buildHologramSystem(scannerMount: THREE.Group, aspect: number) {
 		const root = new THREE.Group();
 		root.name = "scanner-hologram";
+		root.scale.z = SCANNER_FACE_KM[0] / SCANNER_FACE_KM[1] / aspect;
 		root.position.y = 0.0013;
 		scannerMount.add(root);
 		const hologramMaterial = new THREE.LineBasicMaterial({
@@ -9643,6 +11419,337 @@ class Game {
 		this.cockpit.scannerTexture.needsUpdate = true;
 	}
 
+	cockpitSeat: THREE.Group | null = null;
+	cabinId: CabinId = "courier";
+	minerSeat: BridgeSeat = "pilot";
+
+	setMinerSeat(seat: BridgeSeat) {
+		this.minerSeat = seat;
+		if (this.cockpitSeat)
+			this.cockpitSeat.position.x =
+				seat === "miner" ? -MINER_SEAT_OFFSET_M * COCKPIT_MODEL_KM_PER_M : 0;
+	}
+
+	minerFaces: {
+		name: MinerFaceScreen;
+		ctx: CanvasRenderingContext2D;
+		texture: THREE.CanvasTexture;
+		key: string;
+	}[] = [];
+	minerFaceReadings: ReturnType<typeof minerFaceRows> | null = null;
+	private minerFacesPaintedAt = -Infinity;
+	drillCameraEnabled = true;
+	private drillCamera: {
+		feed: DrillCameraFeed;
+		plane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+		overlay: { ctx: CanvasRenderingContext2D; texture: THREE.CanvasTexture };
+		active: boolean;
+		frames: number;
+		overlayKey: string;
+	} | null = null;
+
+	private buildMinerFaces(
+		frames: Record<string, ScreenFrame>,
+		seat: THREE.Group,
+	) {
+		for (const name of MINER_FACE_SCREENS) {
+			const frame = frames[name];
+			if (!frame) continue;
+			const aspect = name === "stance" ? frame.widthKm / frame.heightKm : 1.5;
+			const fit = containedFace(frame, aspect);
+			const canvas = document.createElement("canvas");
+			canvas.height = name === "stance" ? 540 : 320;
+			canvas.width = Math.round(canvas.height * aspect);
+			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+			const texture = new THREE.CanvasTexture(canvas);
+			texture.colorSpace = THREE.SRGBColorSpace;
+			const face = new THREE.Mesh(
+				new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+				new THREE.MeshBasicMaterial({
+					map: texture,
+					polygonOffset: true,
+					polygonOffsetFactor: -1,
+					polygonOffsetUnits: -1,
+				}),
+			);
+			face.name = `miner-${name}-face`;
+			face.rotation.x = -Math.PI / 2;
+			face.position.y = frame.widthKm * 0.01;
+			const mount = screenMount(frame);
+			mount.name = `miner-${name}-mount`;
+			mount.add(face);
+			seat.add(mount);
+			this.minerFaces.push({ name, ctx, texture, key: "" });
+		}
+	}
+
+	private orientDrillCameraFace(
+		face: THREE.Mesh,
+		frame: ScreenFrame,
+		step: number,
+	) {
+		face.rotation.x = -Math.PI / 2;
+		face.position.y = frame.widthKm * 0.01 * step;
+	}
+
+	private buildDrillCamera(
+		frames: Record<string, ScreenFrame>,
+		seat: THREE.Group,
+	) {
+		const frame = frames.drillcam;
+		if (!frame) return;
+		const aspect = frame.widthKm / frame.heightKm;
+		const fit = containedFace(frame, aspect);
+		const height = Math.max(1, Math.round(DRILL_CAMERA.widthTexels / aspect));
+		const feed = new DrillCameraFeed(
+			DRILL_CAMERA.widthTexels,
+			height,
+			DRILL_CAMERA.fovDeg,
+		);
+		const mount = screenMount(frame);
+		mount.name = "miner-drillcam-mount";
+		const plate = new THREE.Mesh(
+			new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+			new THREE.MeshBasicMaterial({ color: 0x01090b, toneMapped: false }),
+		);
+		plate.name = "miner-drillcam-plate";
+		this.orientDrillCameraFace(plate, frame, 1);
+		mount.add(plate);
+		const plane = new THREE.Mesh(
+			new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+			new THREE.MeshBasicMaterial({
+				map: feed.target.texture,
+				toneMapped: false,
+			}),
+		);
+		plane.name = "miner-drillcam-feed";
+		plane.visible = false;
+		this.orientDrillCameraFace(plane, frame, 1.04);
+		mount.add(plane);
+		const canvas = document.createElement("canvas");
+		canvas.width = DRILL_CAMERA.widthTexels;
+		canvas.height = height;
+		const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const overlay = new THREE.Mesh(
+			new THREE.PlaneGeometry(fit.widthKm, fit.heightKm),
+			new THREE.MeshBasicMaterial({
+				map: texture,
+				transparent: true,
+				depthWrite: false,
+				toneMapped: false,
+			}),
+		);
+		overlay.name = "miner-drillcam-overlay";
+		this.orientDrillCameraFace(overlay, frame, 1.08);
+		mount.add(overlay);
+		seat.add(mount);
+		this.drillCamera = {
+			feed,
+			plane,
+			overlay: { ctx, texture },
+			active: false,
+			frames: -1,
+			overlayKey: "",
+		};
+		this.paintDrillCameraOverlay();
+	}
+
+	private paintDrillCameraOverlay() {
+		const d = this.drillCamera;
+		if (!d) return;
+		const shown = d.active ? Math.floor(d.frames / 30) * 30 : 0;
+		const overlay = drillCameraOverlay(d.active, shown);
+		const key = `${d.active}:${shown}`;
+		if (key === d.overlayKey) return;
+		d.overlayKey = key;
+		const { ctx, texture } = d.overlay;
+		const { width: w, height: h } = ctx.canvas;
+		ctx.clearRect(0, 0, w, h);
+		ctx.textAlign = "left";
+		ctx.fillStyle = "#d8f6ff";
+		ctx.font = "26px Menlo, monospace";
+		ctx.fillText(overlay.title, 20, 40);
+		if (d.active) {
+			ctx.textAlign = "right";
+			ctx.fillStyle = "#9fb7c0";
+			ctx.font = "22px Menlo, monospace";
+			ctx.fillText(overlay.line, w - 20, h - 18);
+		} else {
+			ctx.textAlign = "center";
+			ctx.fillStyle = "#ffb347";
+			ctx.font = "46px Menlo, monospace";
+			ctx.fillText(overlay.line, w / 2, h / 2 + 16);
+		}
+		texture.needsUpdate = true;
+	}
+
+	private readonly drillCameraCorner = new THREE.Vector3();
+
+	private drillCameraScreenVisible(face: THREE.Object3D): boolean {
+		this.cockpit.mesh.updateMatrixWorld(true);
+		this.cabinCamera.updateMatrixWorld(true);
+		const p = face
+			.getWorldPosition(this.drillCameraCorner)
+			.project(this.cabinCamera);
+		return Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1 && p.z >= -1 && p.z <= 1;
+	}
+
+	private updateDrillCamera() {
+		const d = this.drillCamera;
+		if (!d) return;
+		const cutter = HULL_SPECS[this.flownHull].cutter;
+		const active =
+			cutter !== undefined &&
+			drillCameraActive({
+				view: this.view,
+				cabin: this.cabinId,
+				quality: this.settings.value.quality,
+				extension: MINING_ON ? this.drill.extension : 0,
+				screenVisible: this.drillCameraScreenVisible(d.plane),
+				enabled: this.drillCameraEnabled,
+			});
+		if (active && cutter)
+			d.feed.render(
+				this.renderer,
+				this.nearScene,
+				this.shipMesh,
+				drillCameraPose(
+					this.shipMesh.position,
+					this.nose(),
+					this.shipUp(),
+					cutter,
+					this.drill.extension,
+				),
+			);
+		d.active = active;
+		d.frames = d.feed.frames;
+		d.plane.visible = active;
+		this.paintDrillCameraOverlay();
+	}
+
+	drillCameraReport() {
+		const d = this.drillCamera;
+		if (!d) return null;
+		return {
+			active: d.active,
+			frames: d.frames,
+			enabled: this.drillCameraEnabled,
+			quality: this.settings.value.quality,
+			view: this.view,
+			fov: this.cabinCamera.fov,
+			cabin: this.cabinId,
+			extension: this.drill.extension,
+			screenVisible: this.drillCameraScreenVisible(d.plane),
+			overlay: drillCameraOverlay(
+				d.active,
+				d.active ? Math.floor(d.frames / 30) * 30 : 0,
+			),
+			target: { width: d.feed.target.width, height: d.feed.target.height },
+		};
+	}
+
+	private minerFaceState(): MinerFaceState {
+		const c = this.condition;
+		const hold = this.minedHold();
+		const d = this.drill;
+		const survey = MINING_ON ? this.surveyState() : null;
+		return {
+			mining: MINING_ON,
+			surveyDesignation: survey?.designation || null,
+			minedT: this.minedT,
+			holdLabel: oreCapacityLabel(this.flownHull),
+			holdUsedT: hold.usedT,
+			holdCapacityT: hold.capacityT,
+			fireGroup: this.armedFireGroup.label(this.fireGroups),
+			heatPercent: Math.round((c.heat / HEAT_LOCK) * 100),
+			energyPercent: Math.round((c.energy / Math.max(1, c.energyMax)) * 100),
+			drill: {
+				block: d.contact ? d.contact.block : "STOWED",
+				gapM: d.contact?.gapKm == null ? null : d.contact.gapKm * 1000,
+				anchored: d.held !== null,
+				anchorWhy: d.anchorWhy,
+				feetOnRock: d.feet.filter((f) => f.onRock).length,
+			},
+		};
+	}
+
+	private paintStanceFigure(ctx: CanvasRenderingContext2D) {
+		const { width: w, height: h } = ctx.canvas;
+		const cyan = "#5fe3ff";
+		const x = w / 2;
+		ctx.strokeStyle = cyan;
+		ctx.lineWidth = 5;
+		ctx.strokeRect(x - 30, h * 0.2, 60, h * 0.61);
+		ctx.lineWidth = 3;
+		for (const y of [0.28, 0.44, 0.61])
+			ctx.strokeRect(x - 50, h * y, 100, h * 0.11);
+		const reach = Math.min(w * 0.33, 130);
+		[
+			[-25, 0.26, -reach, 0.17],
+			[25, 0.26, reach, 0.17],
+			[-25, 0.35, -reach - 10, 0.43],
+			[25, 0.35, reach + 10, 0.43],
+		].forEach(([x0, y0, x1, y1], i) => {
+			const gripped = this.drill.feet[i]?.onRock === true;
+			ctx.strokeStyle = cyan;
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.moveTo(x + x0, h * y0);
+			ctx.lineTo(x + x1, h * y1);
+			ctx.stroke();
+			ctx.fillStyle = gripped ? "#6dff9a" : "#2c4650";
+			ctx.beginPath();
+			ctx.arc(x + x1, h * y1, 12, 0, Math.PI * 2);
+			ctx.fill();
+		});
+	}
+
+	private paintMinerFaces() {
+		if (!this.minerFaces.length) return;
+		const now = performance.now();
+		if (now - this.minerFacesPaintedAt < 200) return;
+		this.minerFacesPaintedAt = now;
+		const rows = minerFaceRows(this.minerFaceState());
+		this.minerFaceReadings = rows;
+		const feet = this.drill.feet.map((f) => f.onRock);
+		for (const face of this.minerFaces) {
+			const key = JSON.stringify([
+				rows[face.name],
+				face.name === "stance" && feet,
+			]);
+			if (key === face.key) continue;
+			face.key = key;
+			const { ctx } = face;
+			const { width: w, height: h } = ctx.canvas;
+			ctx.fillStyle = "#02080b";
+			ctx.fillRect(0, 0, w, h);
+			ctx.strokeStyle = "#5fe3ff";
+			ctx.lineWidth = 4;
+			ctx.strokeRect(10, 10, w - 20, h - 20);
+			ctx.textAlign = "center";
+			ctx.fillStyle = "#d8f6ff";
+			ctx.font = "34px Menlo, monospace";
+			ctx.fillText(MINER_FACE_TITLES[face.name], w / 2, 62);
+			if (face.name === "stance") {
+				this.paintStanceFigure(ctx);
+				ctx.font = "28px Menlo, monospace";
+				for (const [text, colour] of rows.stance) {
+					ctx.fillStyle = colour;
+					ctx.fillText(text, w / 2, h - 34, w - 40);
+				}
+			} else {
+				ctx.font = "40px Menlo, monospace";
+				rows[face.name].forEach(([text, colour], i) => {
+					ctx.fillStyle = colour;
+					ctx.fillText(text, w / 2, 140 + i * 62, w - 40);
+				});
+			}
+			face.texture.needsUpdate = true;
+		}
+	}
+
 	private updateHologramContacts(contacts: readonly ScannerContact[]) {
 		const hologram = this.cockpit.hologram;
 		for (const glyph of hologram.glyphPool)
@@ -9700,6 +11807,12 @@ class Game {
 		this.etaAt = this.world.gameTime;
 	}
 
+	private displayTargetKm(target: Body | null, centreKm: number): number {
+		return MINING_ON && target?.kind === "rock"
+			? (this.rockRef(target.id)?.distKm ?? centreKm)
+			: centreKm;
+	}
+
 	private updateInstruments(
 		target: Body | null,
 		targetKm: number,
@@ -9717,7 +11830,10 @@ class Game {
 			scan.actor === undefined
 				? (target?.name ?? "")
 				: this.drawnName(scan.actor);
-		const targetText = target ? `${drawn}  ${range(targetKm)}` : "NO TARGET";
+		const instrumentKm = this.displayTargetKm(target, targetKm);
+		const targetText = target
+			? `${drawn}  ${range(instrumentKm)}`
+			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		// REL rides this instrument and not only the left console, which is
 		// hidden unless the pilot turns their head (`hud-and-scanner.md` §3).
@@ -9730,7 +11846,10 @@ class Game {
 			this.targetRelativeKms(),
 			"  ",
 		)}`;
-		const designation = targetDesignation(target, scan.designation);
+		const designation =
+			target?.kind === "rock"
+				? this.surveyDesignation(target.id)
+				: targetDesignation(target, scan.designation);
 		// `chargeAu` is **not** in this key any more: the target instrument stopped
 		// printing it when §5's strip took it, and a key holding a value no
 		// painted pixel depends on repaints two canvas textures on the frame the
@@ -9738,54 +11857,15 @@ class Game {
 		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${targetSecondary}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
-		const paint = (
-			instrument: Instrument,
-			title: string,
-			primary: string,
-			secondary: string,
-			accent: string,
-			designation = "",
-		) => {
-			const { ctx, secondaryText: raster } = instrument;
-			const { width, height } = ctx.canvas;
-			ctx.clearRect(0, 0, width, height);
-			ctx.fillStyle = "rgba(1, 8, 11, .9)";
-			ctx.fillRect(0, 0, width, height);
-			ctx.strokeStyle = accent;
-			ctx.globalAlpha = 0.72;
-			ctx.lineWidth = 4;
-			ctx.strokeRect(12, 12, width - 24, height - 24);
-			ctx.globalAlpha = 1;
-			ctx.fillStyle = accent;
-			ctx.font = "22px ui-monospace, monospace";
-			ctx.fillText(title, 28, 46);
-			if (designation) ctx.fillText(designation, 28, 78);
-			let primarySize = 42;
-			const primaryWidth = width - 56;
-			ctx.font = `${primarySize}px ui-monospace, monospace`;
-			while (
-				primarySize > 24 &&
-				ctx.measureText(primary).width > primaryWidth
-			) {
-				primarySize -= 1;
-				ctx.font = `${primarySize}px ui-monospace, monospace`;
-			}
-			ctx.fillStyle = "#e7f6ff";
-			ctx.fillText(primary, 28, 128);
-			instrument.primaryText = primary;
-			raster.setInstrumentSecondary(secondary, accent, width);
-			ctx.font = raster.font;
-			ctx.fillStyle = accent;
-			ctx.fillText(secondary, 28, 192);
-		};
-		paint(
+
+		paintCockpitInstrument(
 			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
 		);
-		paint(
+		paintCockpitInstrument(
 			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
@@ -10506,6 +12586,10 @@ class Game {
 			case "view.headStarboard":
 				this.setHeadLook("right");
 				return;
+			case "view.seatSwap":
+				if (this.cabinId === "miner")
+					this.setMinerSeat(this.minerSeat === "pilot" ? "miner" : "pilot");
+				return;
 			// **The settings screen's own door, folded here in #381 S4.** It
 			// was `settings-panel.ts`'s window listener, which made `z` the
 			// panel's key rather than the registry's — so #369 D12's "`z` is
@@ -10575,6 +12659,12 @@ class Game {
 			case "fight.rigEcm":
 				if (this.combatRig?.command("fight.rigEcm")) return;
 				break;
+			case "fight.launchMissile":
+				this.fireMissile();
+				return;
+			case "fight.ecm":
+				this.fireEcm();
+				return;
 			case "fly.cruise":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) this.cancelSpoolUp();
@@ -10602,6 +12692,9 @@ class Game {
 			case "fight.faceTarget":
 				this.beginFaceTurn();
 				return;
+			case "fight.drillHold":
+				if (MINING_ON) this.toggleDrillHold();
+				break;
 			case "fight.cycleFireGroup":
 				this.cycleFireGroup();
 				return;
@@ -10649,6 +12742,13 @@ class Game {
 				}
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
+				return;
+			case "view.fov":
+				if (this.view === "cockpit")
+					this.settings.set(
+						"cockpitFov",
+						this.settings.value.cockpitFov === "normal" ? "wide" : "normal",
+					);
 				return;
 			case "tune.reset":
 				// Back to the spec's own figures, from wherever the tuning has got
@@ -11256,17 +13356,19 @@ class Game {
 		return this.massesCache;
 	}
 
-	/**
-	 * Everything selectable, in a stable order — stations first, then planets,
-	 * each by id. Stable so that cycling is a walk rather than a reshuffle as the
-	 * ship moves.
-	 *
-	 * Built **once**. The marker overlay walks this every frame and the set it
-	 * walks changes only when the system does; the sort is the expensive half,
-	 * because `localeCompare` is ICU collation rather than a comparison. The
-	 * order is position-independent, which is what makes one build enough.
-	 */
 	private selectable(): Body[] {
+		const known =
+			this.commerceWorld.galaxies[this.world.system.record.galaxy]
+				.fieldDiscoveries;
+		const fields = fieldContactsAt(
+			this.world.system,
+			this.world.gameTime,
+			known,
+		);
+		if (this.selectableDiscoveries !== known) {
+			this.selectableCache = null;
+			this.selectableDiscoveries = known;
+		}
 		if (!this.selectableCache) {
 			const order = {
 				station: 0,
@@ -11280,6 +13382,8 @@ class Game {
 				// kind missing here is a build error rather than a silent NaN.
 				cargo: 6,
 				wreck: 7,
+				field: 8,
+				rock: 9,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -11287,6 +13391,7 @@ class Game {
 					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
 				);
 			this.selectableCache.push(...this.contacts);
+			this.selectableCache.push(...fields);
 		}
 		return this.selectableCache;
 	}
@@ -11305,6 +13410,7 @@ class Game {
 	}
 
 	cycleTarget(step: number) {
+		if (MINING_ON && this.cycleRockTarget(step)) return;
 		const list = this.selectable();
 		if (list.length === 0) return;
 		const at = list.findIndex((b) => b.id === this.targetId);
@@ -11333,6 +13439,10 @@ class Game {
 
 	/** Resolve through the same selection projection that exposes contacts. */
 	private bodyFor(id: string): Body | null {
+		if (isRockTargetId(id)) {
+			const ref = this.rockRef(id);
+			return ref ? rockContact(ref) : null;
+		}
 		return (
 			this.world.system.byId.get(id) ??
 			this.selectable().find((body) => body.id === id) ??
@@ -11549,6 +13659,8 @@ class Game {
 		label: string;
 		velocityAt: (gameTime: number) => Vec3;
 	} {
+		const fine = MINING_ON ? this.fineFrame() : null;
+		if (fine) return fine;
 		const view = this.relayView;
 		if (view && this.proximityFrameBodyId === null) {
 			const { pos } = this.relayNow(view);
@@ -11564,10 +13676,15 @@ class Game {
 					velocityAt: (t) => this.relayVelocityAt(view, t),
 				};
 		}
+		const field = this.frameField;
 		const body = this.frameBody;
 		return {
-			frameId: body?.id ?? this.world.system.contents.star.id,
-			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
+			frameId: field?.id ?? body?.id ?? this.world.system.contents.star.id,
+			label: field
+				? "FIELD FRAME"
+				: body
+					? `${body.kind.toUpperCase()} FRAME`
+					: "STAR FRAME",
 			velocityAt: this.localFrameSource(),
 		};
 	}
@@ -11607,6 +13724,8 @@ class Game {
 
 	/** `localFrame`'s body, fixed now, as a velocity at any game time. */
 	private localFrameSource(): (gameTime: number) => Vec3 {
+		const field = this.frameField;
+		if (field) return (t) => fieldCentreVelocity(field, t);
 		return this.bodyFrameSource(this.frameBody?.id ?? null);
 	}
 
@@ -11624,13 +13743,27 @@ class Game {
 				const surfaceKm =
 					length(sub(held.pos, this.world.ship.pos)) - held.radiusKm;
 				if (surfaceKm <= NEAR_FAR_KM) {
-					this.frameBody = held;
+					this.setLocalFrame(held);
 					return;
 				}
 			}
 			this.proximityFrameBodyId = null;
 		}
-		this.frameBody = this.nearestBody();
+		const body = this.nearestBody();
+		this.setLocalFrame(
+			body,
+			nearestFieldPlan(
+				this.world.system,
+				this.world.ship.pos,
+				this.world.gameTime,
+				body ? length(sub(body.pos, this.world.ship.pos)) : NEAR_FAR_KM,
+			),
+		);
+	}
+
+	private setLocalFrame(body: Body | null, field: FieldPlan | null = null) {
+		this.frameBody = body;
+		this.frameField = field;
 	}
 
 	/** The nearest body within `NEAR_FAR_KM`, centre to ship, or `null`. */
@@ -11699,30 +13832,68 @@ class Game {
 		);
 	}
 
-	/**
-	 * The chase beams on the canvas (#607 D3): from each of the flown hull's
-	 * muzzles, `PLAYER_LASER_RANGE_KM` along the gimballed beam, projected
-	 * through the camera and cut at its plane. A muzzle is the hull's own, so a
-	 * shipyard trade moves it with the hull.
-	 */
-	private chaseBeamPx(w: number, h: number) {
+	private drawChaseMiningBeam(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		beam: NonNullable<Game["miningBeam"]>,
+	) {
+		const strokes = mountBeamStrokes(
+			this.miningBeamSegments(beam),
+			this.cameraPos(),
+			this.cameraRotation(),
+			(this.nearCamera.fov * Math.PI) / 180,
+			this.nearCamera.aspect,
+			this.world.gameTime,
+		);
+		ctx.save();
+		ctx.globalCompositeOperation = "lighter";
+		ctx.lineCap = "round";
+		for (const stroke of strokes) {
+			ctx.strokeStyle =
+				stroke.layer === "glow"
+					? `rgba(255, 140, 40, ${stroke.alpha})`
+					: `rgba(255, 210, 120, ${stroke.alpha})`;
+			ctx.lineWidth = stroke.widthPx;
+			ctx.beginPath();
+			ctx.moveTo(stroke.from.x * w, stroke.from.y * h);
+			ctx.lineTo(stroke.to.x * w, stroke.to.y * h);
+			ctx.stroke();
+		}
+		this.chaseMiningRender = strokes.filter((s) => s.layer === "core").length;
+		ctx.restore();
+	}
+
+	private glassFiredIndices() {
+		return glassTracerIndices(
+			this.flownHull,
+			this.commander.loadout,
+			this.firedMuzzleIndices,
+			MINING_ON,
+		);
+	}
+
+	private playerBeamPx(w: number, h: number, fired = this.glassFiredIndices()) {
+		const mounts = shipMuzzlesKm(
+			this.flownHull,
+			HULL_SPECS[this.flownHull].variant,
+		);
+		const indices = mounts.flatMap((_, i) => (fired.includes(i) ? [i] : []));
 		const muzzles = muzzlesWorld(
 			this.world.ship.pos,
 			this.orientation,
-			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant).filter(
-				(_, i) => this.firedMuzzleIndices.includes(i),
-			),
+			indices.map((i) => mounts[i]),
 		);
 		const camPos = this.cameraPos();
 		const camRot = this.cameraRotation();
 		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
 		const px = (m: { ndcX: number; ndcY: number }) => ndcToPx(m, w, h);
-		const out: TracerSegment[] = [];
-		for (const [a, b] of beamSegments(
+		const out: (TracerSegment & { muzzleIndex: number })[] = [];
+		for (const [i, [a, b]] of beamSegments(
 			muzzles,
 			this.beamAim(),
 			PLAYER_LASER_RANGE_KM,
-		)) {
+		).entries()) {
 			const seg = projectSegment(
 				a,
 				b,
@@ -11731,9 +13902,14 @@ class Game {
 				fovYRad,
 				this.nearCamera.aspect,
 			);
-			if (seg) out.push({ from: px(seg[0]), to: px(seg[1]) });
+			if (seg)
+				out.push({ muzzleIndex: indices[i], from: px(seg[0]), to: px(seg[1]) });
 		}
 		return out;
+	}
+
+	private playerBeamFrame(fired = this.glassFiredIndices()) {
+		return this.playerBeamPx(1, 1, fired);
 	}
 
 	/** Where the gimballed beam points (#324): the boresight turned toward the
@@ -12144,7 +14320,15 @@ class Game {
 	/** §7's toggle. Refused without the equipment, and it never bypasses a
 	 *  check — `dockingComputerStep` refuses the same conditions a pilot fails. */
 	toggleDockingComputer() {
-		if (!this.hasDockingComputer) return;
+		if (!this.hasDockingComputer) {
+			this.scoop = {
+				text: NO_DOCKING_COMPUTER_TEXT,
+				left: SCOOP_NOTICE_S,
+				accepted: false,
+				canisterId: null,
+			};
+			return;
+		}
 		if (!this.dockingComputer.engaged) {
 			this.engageDockingComputer();
 			return;
@@ -12374,6 +14558,7 @@ class Game {
 			// charge is cancelled rather than frozen, because a frozen one would
 			// resume on launch with a notice from before the dock.
 			this.cancelJumpCharge("docked");
+			this.missileCombat.reset();
 			// A dock ends any encounter: a station is not a place a raider follows.
 			this.encounter = null;
 			this.encounterView = null;
@@ -12480,6 +14665,7 @@ class Game {
 		// caller's comment names what runs rather than implying the rest — it
 		// was missing, and nothing failed.
 		this.stepDockingProtocol();
+		if (wasArriving && this.dock.phase === "docked") this.sayScoopNotice();
 		if (!out.ship) return;
 		this.world.ship.pos = out.ship.pos;
 		this.world.ship.vel = out.ship.vel;
@@ -12497,6 +14683,7 @@ class Game {
 		// the station until the pilot takes over.
 		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
 			const { axis } = this.poseOfStation(wasAt);
+			markShipPlaced(this.world);
 			this.world.ship.vel = add(
 				this.world.ship.vel,
 				scale(axis, LAUNCH_EXIT_KMS),
@@ -12516,6 +14703,7 @@ class Game {
 	 * that reads past a glossary is a word that ends up meaning both.
 	 */
 	launch(): boolean {
+		if (this.refinerySaving) return false;
 		if (this.dock.phase !== "docked" || !this.dock.stationId) return false;
 		const stationId = this.dock.stationId;
 		const pending = this.playerLaneRequests.get(stationId);
@@ -12778,6 +14966,19 @@ class Game {
 	 * and never for a permadeath commander, whose save an eject ends (§9).
 	 */
 	private stepEjectWarning() {
+		const raider = this.duelRaider();
+		const hostileDamagePerS = Math.max(
+			0,
+			raider && this.encounter
+				? fittedDps({
+						hull: RAIDER_HULL_ID,
+						loadout: this.encounterFit(this.encounter),
+					})
+				: 0,
+			...[...this.trafficEngagements.values()]
+				.filter((e) => e.intent === "attacker" && e.loadout)
+				.map((e) => fittedDps({ hull: e.hullId, loadout: e.loadout! })),
+		);
 		const due =
 			!this.openingActive &&
 			ejectWarningDue({
@@ -12786,6 +14987,7 @@ class Game {
 				flying: this.dock.phase === "flying",
 				alive: !this.dead && isAlive(this.condition),
 				hull: this.condition.hull,
+				hostileDamagePerS,
 			});
 		const step = stepEjectWarning(this.ejectWarningSpoken, due);
 		this.ejectWarningSpoken = step.spoken;
@@ -12889,6 +15091,7 @@ class Game {
 		const stationId = this.dock.stationId;
 		this.dock = skipTraversal(this.dock, this.world.gameTime);
 		if (stationId) this.closePlayerTrafficEvent(stationId, "lane");
+		this.sayScoopNotice();
 		return true;
 	}
 
@@ -13166,6 +15369,8 @@ class Game {
 	 * to drop and a reset has a clock rewind's worth.
 	 */
 	private clearFlightSession() {
+		this.missileCombat.reset();
+		this.missileRender = null;
 		this.regime = "normal";
 		this.spoolLeftS = 0;
 		this.throttle = 0;
@@ -13200,6 +15405,7 @@ class Game {
 		for (const [key, contact] of this.wreckContacts)
 			this.dropWreckContact(key, contact);
 		this.selectableCache = null;
+		this.selectableDiscoveries = null;
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
 		// otherwise carry the old system's canister blips — and a reset while
@@ -13234,7 +15440,7 @@ class Game {
 		this.detour = null;
 		this.cruiseTrackId = null;
 		this.faceTurnId = null;
-		this.frameBody = null;
+		this.setLocalFrame(null);
 		this.proximityFrameBodyId = null;
 		this.dockingComputer.disengage();
 		this.dockingNotice = null;
@@ -13259,6 +15465,7 @@ class Game {
 		// has hit twice now.
 		const replacesSystem = !canResetWorldToStart(this.world);
 		resetWorldToStart(this.world);
+		this.gunFiredNow = false;
 		// A reset is a new start, and its clock runs from zero again (#515).
 		this.defenderWatches = {};
 		if (replacesSystem) {
@@ -13295,7 +15502,7 @@ class Game {
 		// where they darken 0.002% of it. `applyOcclusion` writes the two flags
 		// straight away rather than waiting for the next `render`, so a probe
 		// that resets and reads them back sees the reset state.
-		this.occlusionGate = CLOSED_GATE;
+		this.occlusionGate = CLOSED_GATES;
 		this.applyOcclusion();
 
 		// #544's thrust shares: a reset is a ship at rest, and the flight sound
@@ -13427,6 +15634,7 @@ class Game {
 	setCourseTo(course: Course | null) {
 		this.course = course;
 		this.jumpNotice = "";
+		if (installedGame === this) this.startModelQueue();
 	}
 
 	/**
@@ -13631,18 +15839,276 @@ class Game {
 		);
 	}
 
-	/**
-	 * One frame of the leg's raider encounter (#324): step it, then do the
-	 * three things only `Game` can — drop the player out of cruise, land the
-	 * raider's fire through `takeDamage`, and say how it ended.
-	 */
+	/** One carrier instance owns its fit across fights, scans and drops. */
+	private npcFitFor(
+		hull: HullId,
+		key: CarrierKey,
+		instanceOrdinal = this.carrierCondition(key).instanceOrdinal,
+	) {
+		return npcLoadout(hull, this.npcFitSeedFor(key, instanceOrdinal));
+	}
+
+	private npcFitSeedFor(
+		key: CarrierKey,
+		instanceOrdinal = this.carrierCondition(key).instanceOrdinal,
+	) {
+		return npcFitSeed(
+			this.trafficHomeRecord({ key }).seed,
+			key,
+			instanceOrdinal,
+		);
+	}
+
+	private encounterFit(encounter: Encounter): Loadout {
+		return (encounter.loadout ??= this.npcFitFor(
+			RAIDER_HULL_ID,
+			encounter.slot.key,
+		));
+	}
+
+	/** Only identified live combat contacts can acquire a missile lock. */
+	private missileTarget(id: string | null): MissileTarget | null {
+		if (!id) return null;
+		const e = this.encounter;
+		if (e?.phase === "duel" && e.slot.key === id && e.raider)
+			return {
+				id,
+				pos: e.raider.flight.ship.pos,
+				vel: e.raider.flight.ship.vel,
+				radiusKm: HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2,
+			};
+		const actor = this.trafficActorByKey(id as CarrierKey);
+		const contact = this.trafficContacts.get(id as CarrierKey);
+		if (actor && contact) {
+			const ship = this.trafficEngagements.get(actor.key)?.flight.ship;
+			return {
+				id,
+				pos: ship?.pos ?? contact.pos,
+				vel: ship?.vel ?? contact.velocity,
+				radiusKm: HULL_SPECS[actor.hullId].env.lengthKm / 2,
+			};
+		}
+		return null;
+	}
+	private missileControlsLive(): boolean {
+		return (
+			!this.dead &&
+			!this.photoMode &&
+			!this.openingActive &&
+			!this.combatRig &&
+			flightLive(this.dock.phase) &&
+			this.regime !== "cruise"
+		);
+	}
+	private fireMissile() {
+		if (!this.missileControlsLive()) return;
+		const target = this.missileTarget(this.targetId),
+			origin = this.weaponOrigin(),
+			nose = this.weaponAim();
+		// Revalidate at the press: a selection, turn, or obstruction since the
+		// last simulation step cannot spend a stale lock.
+		this.missileCombat.acquire(target, origin, nose, this.fightSolids(), 0);
+		const loadout = this.missileCombat.launch(
+			this.commander.loadout,
+			target,
+			origin,
+			nose,
+			this.world.gameTime,
+		);
+		if (!loadout) return;
+		this.adopt(
+			"ammunition",
+			{
+				holdings: {
+					...this.holdings(),
+					commander: { ...this.commander, loadout },
+				},
+				world: this.commerceWorld,
+			},
+			null,
+		);
+	}
+	private fireEcm() {
+		if (!this.missileControlsLive()) return;
+		this.condition = {
+			...this.condition,
+			energy: this.missileCombat.ecm(
+				this.commander.loadout,
+				this.condition.energy,
+				this.world.gameTime,
+				this.world.ship.pos,
+			),
+		};
+	}
+	private stepMissileCombat(dt: number, solids: readonly AvoidSphere[]) {
+		const control = this.missileCombat;
+		if (!this.missileControlsLive()) {
+			control.lock = null;
+			control.missiles = [];
+			control.enemy = null;
+			return;
+		}
+		const origin = this.weaponOrigin(),
+			nose = this.weaponAim(),
+			now = this.world.gameTime;
+		control.acquire(
+			this.missileTarget(this.targetId),
+			origin,
+			nose,
+			solids,
+			dt,
+		);
+		const e = this.encounter;
+		if (e?.phase === "duel" && e.raider) {
+			control.launchEnemy(
+				this.npcFitSeedFor(e.slot.key),
+				e.raider.flight.ship.pos,
+				e.raider.flight.nose,
+				{
+					id: "player",
+					...this.world.ship,
+					radiusKm: HULL_SPECS[this.flownHull].env.lengthKm / 2,
+				},
+				solids,
+				now,
+				dt,
+				this.encounterFit(e),
+			);
+			if (control.enemy) {
+				e.loadout = control.enemy.loadout;
+			}
+		} else control.enemy = null;
+		const flying: Missile[] = [];
+		const frame = this.assistFrameMotion(dt);
+		for (const missile of control.missiles) {
+			const target =
+				missile.targetId === "player"
+					? {
+							id: "player",
+							...this.world.ship,
+							radiusKm: HULL_SPECS[this.flownHull].env.lengthKm / 2,
+						}
+					: this.missileTarget(missile.targetId);
+			const step = stepMissile(
+				missile,
+				target,
+				scale(add(frame.start, frame.end), 0.5),
+				dt,
+			);
+			if (
+				step.missile &&
+				missileVisible(
+					missile.pos,
+					{ id: "", pos: step.missile.pos, vel: v3(), radiusKm: 0 },
+					solids,
+				)
+			)
+				flying.push(step.missile);
+			if (step.hit && target && missileVisible(missile.pos, target, solids))
+				this.landMissile(missile, target);
+		}
+		control.missiles = flying;
+		// A kill or disappearance on this step drops the acquisition immediately.
+		if (!this.missileTarget(control.lock?.targetId ?? null))
+			control.lock = null;
+	}
+	private landMissile(missile: Missile, target: MissileTarget) {
+		if (target.id === "player") {
+			this.takeDamage(
+				MISSILE.damage,
+				sideStruck(this.nose(), sub(missile.pos, target.pos)),
+				"missile hit",
+			);
+			this.struckFor = STRUCK_FLASH_S;
+			return;
+		}
+		const e = this.encounter;
+		if (e?.slot.key === target.id && e.raider) {
+			const landed = landRaiderImpacts(
+				e,
+				{
+					...e.raider.flight.ship,
+					impacts: [
+						{
+							damage: MISSILE.damage,
+							side: sideStruck(
+								e.raider.flight.nose,
+								sub(missile.pos, target.pos),
+							),
+						},
+					],
+				},
+				this.encounterView,
+			);
+			if (!landed) return;
+			if (landed.wreck)
+				this.endEncounter(e, landed.encounter, landed.wreck, undefined);
+			else {
+				this.encounter = landed.encounter;
+				this.encounterView = landed.contact;
+			}
+			return;
+		}
+		const actor = this.trafficActorByKey(target.id as CarrierKey);
+		if (!actor) return;
+		let engagement = this.trafficEngagements.get(actor.key);
+		if (!engagement) {
+			const route = this.trafficRouteByKey(actor.key);
+			engagement = engage(
+				{
+					key: actor.key,
+					hullId: actor.hullId,
+					pos: target.pos,
+					vel: target.vel,
+					nose:
+						route?.nose ??
+						normalizeOr(sub(target.vel, this.localFrame()), v3(0, 0, -1)),
+					up: route?.up ?? null,
+					voyageOrdinal: this.trafficVoyage(actor),
+					loadout: this.npcFitFor(actor.hullId, actor.key),
+				},
+				carrierInstanceSeed(
+					this.trafficHomeRecord(actor).seed,
+					actor.key,
+					this.carrierCondition(actor.key).instanceOrdinal,
+					DOMAIN.TRAFFIC_ENGAGEMENT,
+				),
+				{
+					assaultAlreadyCharged: assaultCharged(this.legalStatus(), actor.key),
+					byPilot: true,
+				},
+			);
+		}
+		if (!engagement.struckOnce) this.hailTrafficCarrier(actor);
+		const before = engagement.condition;
+		engagement = {
+			...provoke(engagement),
+			struckOnce: true,
+			condition: applyDamage(
+				before,
+				MISSILE.damage,
+				sideStruck(engagement.flight.nose, sub(missile.pos, target.pos)),
+			),
+		};
+		if (!isAlive(engagement.condition))
+			this.destroyTrafficCarrier(actor, engagement);
+		else {
+			if (engagement.condition.hull < before.hull)
+				this.divertTrafficCarrier(actor, engagement);
+			this.trafficEngagements.set(actor.key, engagement);
+		}
+	}
+
+	/** Step the encounter, land return fire, and record its end. */
 	private stepRaider(
 		dt: number,
 		shot: PlayerShot,
 		solids: readonly AvoidSphere[],
 	) {
-		const encounter = this.encounter;
-		if (!encounter) return;
+		const current = this.encounter;
+		if (!current) return;
+		this.encounterFit(current);
+		const encounter = current;
 		const { name } = encounter;
 		const step = stepEncounter(encounter, {
 			gameTime: this.world.gameTime,
@@ -13717,6 +16183,22 @@ class Game {
 					// in, so they keep station with it after the player leaves.
 					frameBodyId: this.frameBody?.id ?? null,
 				}),
+				...dropFittingCanister(
+					{
+						systemSeed: record.seed,
+						government: record.government,
+						key: encounter.slot.key,
+						killedAt: now,
+						pos: wreck.pos,
+						vel: wreck.vel,
+						frameVel: this.localFrame(),
+						frameBodyId: this.frameBody?.id ?? null,
+					},
+					npcFittingDrop(
+						this.encounterFit(encounter),
+						this.npcFitSeedFor(encounter.slot.key),
+					),
+				),
 			];
 			this.play({ kind: "explosion" });
 		}
@@ -13831,12 +16313,21 @@ class Game {
 			};
 		});
 	}
+	private spendScoopCharge() {
+		this.condition = {
+			...this.condition,
+			energy: Math.max(0, this.condition.energy - CANISTER_SCOOP_CHARGE_E),
+		};
+	}
 	private stepDerelictScoops() {
 		if (this.regime === "cruise" || this.dock.phase !== "flying") return;
+		const gear = this.flownCapacity();
 		for (const { key, row, pose } of this.derelictsAt())
 			for (let i = 0; i < row.containers.length; i++) {
 				const container = tetherPose(pose, i);
-				if (!scoops(container, this.world.ship)) continue;
+				const bankE = this.condition.energy;
+				if (scoopAttempt(container, this.world.ship, gear, bankE) === "out")
+					continue;
 				const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
 					kind: "wreck-scoop",
 					key,
@@ -13846,10 +16337,13 @@ class Game {
 					at: this.world.gameTime,
 					container,
 					ship: this.world.ship,
+					gear,
+					bankE,
 				});
 				this.adoptHoldings(outcome);
 				const tried = outcome.signals.wreckScoop;
 				if (!tried) continue;
+				if (tried.tonnes > 0) this.spendScoopCharge();
 				const event = {
 					...tried,
 					// Notice dedupe key only; the wreck stays on its persisted row.
@@ -13935,25 +16429,28 @@ class Game {
 	private stepCargoCanisters(dt: number) {
 		if (this.canisters.length === 0) return;
 		// `stepCanisters` owns the order (scoop, then drift); this owns the hold.
-		const step = stepCanisters(
-			this.canisters,
-			this.world.ship,
+		const step = stepCanisters({
+			canisters: this.canisters,
+			ship: this.world.ship,
 			dt,
-			this.world.gameTime,
+			now: this.world.gameTime,
 			// Applied per canister, inside the step: a second canister scooped
 			// in the same step is judged against the hold the first one left.
-			(canister) => {
+			accept: (canister) => {
 				const before = this.holdings();
 				const outcome = applyHoldEvent(before, this.commerceWorld, {
 					kind: "scoop",
 					commodity: canister.commodity,
 					tonnes: canister.tonnes,
+					fitting: canister.fitting,
 				});
 				if (outcome.holdings === before) return 0;
 				// The adopt point saves an accepted canister (#631): one dirty
 				// mark per canister rather than one per step, which the store's
 				// debounce reads as the same instant.
 				this.adoptHoldings(outcome);
+				this.spendScoopCharge();
+				if (canister.fitting) return 1;
 				// What went aboard, read off the hold: a tonne good, so exact.
 				return (
 					(outcome.holdings.commander.cargo[canister.commodity] ?? 0) -
@@ -13965,13 +16462,15 @@ class Game {
 			// so a pilot who flies past `NEAR_FAR_KM` would drop every canister at
 			// the station to star rest and lose them inside their five minutes
 			// (sage #355).
-			(canister) =>
+			frameFor: (canister) =>
 				this.frameMotion(this.bodyFrameSource(canister.frameBodyId), dt),
-		);
+			gear: this.flownCapacity(),
+			bankE: () => this.condition.energy,
+		});
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.
-		for (const { canister, accepted, tonnes } of step.scoops) {
+		for (const { canister, accepted, tonnes, refusal } of step.scoops) {
 			// A refusal reports the canister's tonnes; a take what it took and,
 			// when the hold could not take it all, what is left (H11).
 			const event = {
@@ -13980,6 +16479,7 @@ class Game {
 				tonnes: accepted ? tonnes : canister.tonnes,
 				accepted,
 				leftT: accepted ? canister.tonnes - tonnes : undefined,
+				refusal: refusal ? SCOOP_REFUSAL_TEXT[refusal] : undefined,
 			};
 			// The exit line and the glass: the canister disappearing is what
 			// expiring and flying past also look like, so the event needs to say
@@ -14735,15 +17235,20 @@ class Game {
 		// The numbers station, far off in the music (#600). The next phrase is
 		// rendered ahead, in idle time, never inside this step.
 		// Only where it will be said, and worked out only when it changes.
-		if (numbersOn(DIRECTOR_ARMS) && step.state.bed === "flight") {
-			const seed = this.world.system.record.seed;
+		const seed = this.world.system.record.seed;
+		if (numbersOn(DIRECTOR_ARMS, seed) && step.state.bed === "flight") {
 			const n = step.state.voiceN;
 			if (seed !== this.numbersAhead.seed || n !== this.numbersAhead.n) {
 				this.numbersAhead = { seed, n };
 				renderNumbersAhead(numbersPhrase(seed, n));
 			}
 		}
-		if (step.voice) void sayNumbers(this.audio, step.voice);
+		if (step.voice)
+			void sayNumbers(
+				this.audio,
+				step.voice,
+				numbersSpace(numbersRoom(DIRECTOR_ARMS, seed)),
+			);
 	}
 
 	/** The numbers phrase last rendered ahead: its system and index (#600). */
@@ -14963,6 +17468,7 @@ class Game {
 						inScene: rift.object.parent === this.nearScene,
 						visible: rift.object.visible,
 						strength: rift.strength,
+						flare: rift.flare,
 						radiusKm: rift.radiusKm,
 						anchor: { ...rift.anchor },
 					}
@@ -15012,7 +17518,7 @@ class Game {
 			this.clearArrivalRift();
 			return;
 		}
-		this.arrivalRift.update(look.rift, phase, camPos);
+		this.arrivalRift.update(look.rift, phase, camPos, look.riftFlare);
 	}
 	private readonly witchspaceSize = new THREE.Vector2();
 	/**
@@ -15303,6 +17809,7 @@ class Game {
 	private rebuildSystem() {
 		// The last arrival's rift belongs to the system being left.
 		this.clearArrivalRift();
+		this.disposeFields();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
 		for (const handle of this.interiorPresentations.values())
@@ -15333,13 +17840,12 @@ class Game {
 				this.markedOcclusion.splice(i, 1);
 
 		this.buildBodies();
-		this.interiorModelsSettled = false;
-		void this.loadInteriorsAfterBoot()
-			.then(() => this.refreshInteriorMeshes())
-			.catch((error) => this.warnInteriorFailure(error))
-			.finally(() => {
-				this.interiorModelsSettled = true;
-			});
+		this.buildFields();
+		if (models.state("interiors") === "installed")
+			void this.refreshInteriorMeshes().catch((error) =>
+				this.warnInteriorFailure(error),
+			);
+		this.startModelQueue();
 		this.buildEnvironment();
 		// The sky is a picture of *this* system's neighbourhood, so a jump to a
 		// different star draws a different sky (#431). The faint population is
@@ -15444,10 +17950,12 @@ class Game {
 			: exitVelocity(this.nose(), this.cruiseSpeedKms, frameVelocity);
 		this.proximityFrameBodyId = stopInBodyFrame ? matchBodyId : null;
 		if (this.proximityFrameBodyId)
-			this.frameBody =
-				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
+			this.setLocalFrame(
+				this.world.system.byId.get(this.proximityFrameBodyId) ?? null,
+			);
 		this.regime = "normal";
 		// The other end of the leg — see the note beside the engage.
+		markShipPlaced(this.world);
 		this.saveDirty();
 		this.detour = null;
 		this.cruiseSpeedKms = 0;
@@ -15521,14 +18029,20 @@ class Game {
 		// on the sim clock wherever the ship is. The trigger is the pilot's
 		// (`triggerHeld`), and what the gun delivered is this frame's shot.
 		const armedGroup = this.armedFireGroup.current(this.fireGroups);
-		const gun = stepCondition(
+		const drilling = this.drillArmed();
+		const powered = stepCondition(
 			this.condition,
 			dt,
-			this.laserTriggerHeld(),
-			groupLaserRates(this.commander.loadout, armedGroup),
+			drilling ? this.drillTriggerHeld() : this.laserTriggerHeld(),
+			drilling
+				? DRILL_RATES
+				: groupLaserRates(this.commander.loadout, armedGroup),
 		);
+		this.drill.powered = drilling && powered.fired;
+		const gun = drilling ? { ...powered, fired: false, damage: 0 } : powered;
 		if (gun.fired)
 			this.firedMuzzleIndices = groupMuzzleIndices(this.flownHull, armedGroup);
+		this.gunFiredNow = gun.fired;
 		// The star heats the hull wherever the ship is, docked included (#931):
 		// a station is far outside any band, so there it only cools. It reads
 		// the frame-start position, as the gun reads the frame-start trigger.
@@ -15638,12 +18152,13 @@ class Game {
 		this.stepRaider(dt, shot, solids);
 		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot, solids);
+		this.stepMissileCombat(dt, solids);
 		this.stepCargoCanisters(dt);
 		this.stepDerelictScoops();
 		this.stepDerelictFinding();
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
-		// flyable balance rig over the shared flight loop, not production combat.
+		// flyable balance rig over the shared flight loop, not production control.
 		this.combatRig?.step(dt, this.held, this.regime === "cruise", {
 			ship: this.world.ship,
 			nose: this.nose(),
@@ -15794,8 +18309,11 @@ class Game {
 		const flying = !handsHeld && contextFliesShip(this.padContext());
 		const { dx, dy } = this.takePointer();
 		if (!flying) this.flickMeter.reset();
+		// The settings row's turn per pixel (node #640), read each frame so a
+		// change on the screen flies on the next one.
+		const sensitivity = this.settings.value.mouseSensitivity;
 		const impulse = flying
-			? pointerImpulse(dx, dy)
+			? pointerImpulse(dx, dy, sensitivity)
 			: { pitch: 0, yaw: 0, roll: 0 };
 
 		// Rotation carries momentum (`stepAngular`, inside the Hull step): the
@@ -15823,9 +18341,16 @@ class Game {
 				impulse.yaw !== 0 ||
 				Object.keys(direct).length > 0,
 		);
+		const turnShare = MINING_ON && this.fineFrame() !== null ? FINE_STICK : 1;
+		const fineTurn = (a: Angular): Angular => ({
+			pitch: a.pitch * turnShare,
+			yaw: a.yaw * turnShare,
+			roll: a.roll * turnShare,
+		});
 		const hands = {
-			stick: faceStick ?? { pitch, yaw, roll },
-			impulse,
+			stick: fineTurn(faceStick ?? { pitch, yaw, roll }),
+			impulse: fineTurn(impulse),
+
 			turnAssist: faceStick ? true : this.assist,
 			direct,
 		};
@@ -15841,6 +18366,7 @@ class Game {
 				dt,
 				{ pitch: impulse.pitch - unpaid.pitch, yaw: impulse.yaw - unpaid.yaw },
 				this.assist,
+				sensitivity,
 			);
 		};
 
@@ -15916,18 +18442,20 @@ class Game {
 			return;
 		}
 
+		const fine = this.syncFineThrottle();
+		const asked = pilotDemand(
+			pilotHands(pilotHeld, {
+				assist: this.assist,
+				throttle: this.throttle,
+				padTrim: handsHeld ? 0 : padAxes.throttleTrim,
+				padHeave: handsHeld ? 0 : padAxes.heave,
+			}),
+		);
 		const flown = this.advanceNormalFlight(
 			dt,
 			approaches,
 			hands,
-			pilotDemand(
-				pilotHands(pilotHeld, {
-					assist: this.assist,
-					throttle: this.throttle,
-					padTrim: handsHeld ? 0 : padAxes.throttleTrim,
-					padHeave: handsHeld ? 0 : padAxes.heave,
-				}),
-			),
+			fine ? fineDemand(asked) : asked,
 		);
 		meterFlick(flown);
 	}
@@ -15945,6 +18473,10 @@ class Game {
 		hands: HullHands,
 		demand: LinearDemand,
 	): HullStep {
+		const previous = {
+			shipPos: { ...this.world.ship.pos },
+			gameTime: this.world.gameTime,
+		};
 		// `before` is the approaches from the top of the step, for every station
 		// close enough to be flown into: a plane crossing is a property of the
 		// pair of frames, and the "before" half stops existing the moment the
@@ -16035,7 +18567,11 @@ class Game {
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
 		this.stepScan(dt);
+		if (MINING_ON) this.stepSurvey(dt);
+		if (MINING_ON) this.stepExtraction(dt);
+		if (MINING_ON) this.stepDrill(dt);
 		this.stepSystemSweep();
+		this.stepFieldDiscovery(previous);
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
@@ -16366,6 +18902,7 @@ class Game {
 				nose: ship.motion.end.z,
 				up: ship.motion.end.y,
 				voyageOrdinal: this.trafficVoyage(actor),
+				loadout: this.npcFitFor(actor.hullId, actor.key),
 			},
 			carrierInstanceSeed(
 				this.trafficHomeRecord({ key: actor.key }).seed,
@@ -16458,6 +18995,10 @@ class Game {
 	 */
 	private stepCruise(dt: number, contactTargetAtFrameStart: Mass | null) {
 		if (!this.stepDetour(dt)) return;
+		const previous = {
+			shipPos: { ...this.world.ship.pos },
+			gameTime: this.world.gameTime,
+		};
 		const nose = this.nose();
 		const target = this.targetBody();
 		const targetMotion = target
@@ -16488,6 +19029,7 @@ class Game {
 		// stop with its blocker through the unconsumed interval.
 		advanceWorldClock(this.world, dt);
 		this.world.ship.pos = step.pos;
+		this.stepFieldDiscovery(previous);
 		this.cruiseSpeedKms = step.speedKms;
 		this.closingKms = step.closingKms;
 		this.world.ship.vel = scale(nose, step.speedKms);
@@ -16603,14 +19145,12 @@ class Game {
 	 * keeps the offsets the scaffold tuned by eye.
 	 */
 	private cameraPos() {
-		const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-			this.orientation,
-		);
 		if (this.view === "cockpit") {
-			return add(
-				this.world.ship.pos,
-				scale(v3(forward.x, forward.y, forward.z), COCKPIT_FORWARD_KM),
+			const eye = cockpitEyeKm(this.cabinId, this.minerSeat);
+			const world = new THREE.Vector3(eye.x, eye.y, eye.z).applyQuaternion(
+				this.orientation,
 			);
+			return add(this.world.ship.pos, v3(world.x, world.y, world.z));
 		}
 		// Behind and above in the ship's own frame, turned by the orbit's one
 		// rotation (`chase-orbit.ts`). `cameraRotation` applies the same
@@ -16647,6 +19187,29 @@ class Game {
 		}
 	}
 
+	private get layerCameras() {
+		return [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+			this.nearCamera,
+			this.cabinCamera,
+		] as const;
+	}
+
+	private applyViewFov() {
+		const fov =
+			this.view === "cockpit"
+				? COCKPIT_FOV_DEG[this.settings.value.cockpitFov]
+				: CHASE_FOV_DEG;
+		if (this.nearCamera.fov === fov) return;
+		for (const camera of this.layerCameras) {
+			camera.fov = fov;
+			camera.updateProjectionMatrix();
+		}
+		this.focalPx = focalPx(this.renderer.getSize(new THREE.Vector2()).y, fov);
+	}
+
 	/**
 	 * Place everything relative to the camera, and draw.
 	 *
@@ -16656,6 +19219,7 @@ class Game {
 	 * position, which is not.
 	 */
 	render(dt = 0) {
+		this.applyViewFov();
 		// #535: the opening films the ship from outside, from a camera its shot
 		// places; everything else about the frame is the chase view's.
 		const shotCam = this.openingCamera();
@@ -16669,6 +19233,7 @@ class Game {
 		this.updateRelayPresentation(camPos);
 		this.updateDerelictPresentation(camPos);
 		this.updateTenderPresentation(camPos);
+		this.updateFields(camPos);
 		this.presentDirector(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
@@ -16805,6 +19370,7 @@ class Game {
 				// granulation are `f(gameTime)` like every other time-varying thing
 				// (#6), so they survive a pause and a save.
 				visual.setTime(this.world.gameTime);
+				visual.setDetailQuality(this.settings.value.quality);
 
 				/**
 				 * #207's band, from the size this body actually looks.
@@ -16990,6 +19556,7 @@ class Game {
 
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
+		if (MINING_ON) this.poseDrillMesh();
 		this.shipMesh.quaternion.copy(this.orientation);
 		this.anchorFleet();
 		for (const parked of this.fleet)
@@ -17027,19 +19594,71 @@ class Game {
 				parked.mesh.position.length(),
 				shipQuality,
 			);
+		const shipClock = this.world.gameTime;
+		advanceAuthoredHabitat(this.shipMesh, shipClock);
+		if (this.raiderMesh.parent)
+			advanceAuthoredHabitat(this.raiderMesh, shipClock);
+		for (const mesh of this.trafficMeshes.values())
+			if (mesh.parent) advanceAuthoredHabitat(mesh, shipClock);
+		for (const parked of this.fleet)
+			advanceAuthoredHabitat(parked.mesh, shipClock);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		// #535's prologue is empty space: the ship has not arrived yet.
-		this.shipMesh.visible =
-			this.view === "chase" && this.opening?.shot !== "forming";
+		const hullShown = this.view === "chase" && this.opening?.shot !== "forming";
+		const drillView =
+			MINING_ON &&
+			this.view === "cockpit" &&
+			!!HULL_SPECS[this.flownHull].cutter &&
+			this.opening?.shot !== "forming";
+		cockpitDrillView(
+			this.shipMesh,
+			drillView
+				? {
+						seen:
+							COCKPIT_SEEN_PARTS.get(
+								cockpitSeenParts(
+									this.drill.extension,
+									this.cabinId,
+									this.minerSeat,
+								),
+							) ?? new Set(),
+					}
+				: null,
+		);
+		this.shipMesh.visible = hullShown || drillView;
 		// The plumes ride the hull and are seen when it is (#621).
 		const plumes = this.ventPlumes.object;
 		plumes.position.copy(this.shipMesh.position);
 		plumes.quaternion.copy(this.shipMesh.quaternion);
-		plumes.visible = this.shipMesh.visible;
+		plumes.visible = hullShown;
 		// Hidden, it draws nothing, so it is not written either.
 		if (plumes.visible)
 			this.ventPlumes.update(this.ventFiring, this.world.gameTime);
+		// **And on every NPC hull that keeps a firing table** (node #637): the
+		// raider from the encounter's contact, an engaged carrier from its
+		// flight. Projected Traffic is a schedule, not a Hull step, so it has no
+		// table and draws none; nor does the raider while the interdiction's
+		// lock turns it, which fires no vent.
+		const view = this.encounterView;
+		if (view)
+			this.npcPlumes.draw(
+				this.raiderMesh,
+				RAIDER_HULL_ID,
+				view.firing,
+				this.world.gameTime,
+			);
+		for (const [key, engagement] of this.trafficEngagements) {
+			const mesh = this.trafficMeshes.get(key);
+			if (mesh)
+				this.npcPlumes.draw(
+					mesh,
+					engagement.hullId,
+					engagement.flight.firing,
+					this.world.gameTime,
+				);
+		}
+		this.npcPlumes.endFrame();
 		// The shipyards' baked work lights on the hulls inside them (#818).
 		// Every frame, so a ship that left a yard or a system draws none.
 		const yards: YardWorkLight[] = [];
@@ -17067,9 +19686,10 @@ class Game {
 		this.syncCabinMirrors();
 		this.syncInteriorFloods();
 
-		this.occlusionGate = stepOcclusionGate(
+		this.occlusionGate = stepOcclusionGates(
 			this.occlusionGate,
 			this.buildStationSubjects(),
+			this.fieldGateInput(),
 		);
 		this.applyOcclusion();
 		this.fitShadowCamera();
@@ -17089,6 +19709,7 @@ class Game {
 		// After the cameras are aimed and the raider placed, so the beams land
 		// where this frame's overlay puts its marks.
 		this.drawCockpitBeams(camPos);
+		this.updateDrillCamera();
 
 		const attribution = this.frameAttribution;
 		if (attribution?.snapshotMode === "full") this.renderer.info.reset();
@@ -17117,6 +19738,7 @@ class Game {
 				performance.now() - renderStartedAt,
 			);
 		this.drawMarkers(camPos);
+		this.cockpit.text.flush();
 		this.frames++;
 	}
 
@@ -17443,6 +20065,8 @@ class Game {
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
 		this.audio.weapons(this.simulationHeld ? SILENT_WEAPONS : this.weaponMix);
+		if (MINING_ON && (this.simulationHeld || !this.drillCutter()))
+			this.audio.drill(0, 0);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -17749,15 +20373,17 @@ class Game {
 			return;
 		}
 		const target = this.targetBody();
-		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const centreKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const targetKm = this.displayTargetKm(target, centreKm);
 		const velocity = this.velocityReadout();
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
+		this.paintMinerFaces();
 		const dockContext = this.dockedStationContext();
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).
-		const hold = holdSummary(this.commander, this.requests);
+		const hold = holdSummary(this.commander, this.requests, MINING_ON);
 		// One board per update: the console draws it and the first day asks it
 		// whether a Local run is posted (#408). Station control's log is written
 		// here, once, before the panel reads it.
@@ -17899,7 +20525,7 @@ class Game {
 	 */
 	private requestsView(
 		context = this.dockedStationContext(),
-		hold = holdSummary(this.commander, this.requests),
+		hold = holdSummary(this.commander, this.requests, MINING_ON),
 	): RequestsView {
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
@@ -18076,8 +20702,9 @@ class Game {
 			next,
 		);
 		const refit =
-			this.commander.loadout !== next.holdings.commander.loadout ||
-			this.commander.hull !== next.holdings.commander.hull;
+			cause !== "ammunition" &&
+			(this.commander.loadout !== next.holdings.commander.loadout ||
+				this.commander.hull !== next.holdings.commander.hull);
 		if (refit) {
 			this.armedFireGroup.reset();
 			this.floorFit = null;
@@ -18228,12 +20855,26 @@ class Game {
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
+		const services = this.consoleInput(context).services;
+		const serviceKey = services
+			? `${stationKey}|${JSON.stringify(services)}`
+			: "";
+		if (this.stationServicesKey !== serviceKey) {
+			this.stationServicesKey = serviceKey;
+			this.stationConsoleRevision++;
+		}
+		const serviceStatus = stationServiceStatus(
+			services,
+			this.stationConsoleMessage,
+		);
+		this.stationConsoleMessage = serviceStatus.message;
 		// One projection for the whole console (#443) — see the key below for
 		// why it is built before the memo is consulted. Built first now because
 		// the market's HELD column reads it too.
-		const hold = holdSummary(this.commander, this.requests);
+		const hold = holdSummary(this.commander, this.requests, MINING_ON);
 		const readMarket = () =>
 			stationMarketScreen({
+				mining: MINING_ON,
 				station: market,
 				economy,
 				gameTimeMin,
@@ -18313,7 +20954,7 @@ class Game {
 		// The rows read the rungs and the flown hull too: a dock banks rungs,
 		// and a purchase changes the hull, and both must reprice the Shipyard.
 		const rungs = this.rungs();
-		const key = `${marketEpoch(market.phaseMin, context.gameTimeMin)}|${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
+		const key = `${marketEpoch(market.phaseMin, context.gameTimeMin)}|${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}|${this.refineryView}|${this.refineryGood}|${this.refineryTonnes}|${this.refineryQuote?.signature ?? ""}|${this.refinerySaving ? "saving" : ""}|${this.refineryNotice ?? ""}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCacheStationId = this.dock.stationId;
@@ -18329,7 +20970,9 @@ class Game {
 					: undefined,
 			label: this.nameOfStation(station.id),
 			tab:
-				this.stationConsoleTab === "Shipyard" && market.type !== "shipyard"
+				(this.stationConsoleTab === "Shipyard" && market.type !== "shipyard") ||
+				(this.stationConsoleTab === "Refinery" &&
+					(!MINING_ON || market.type !== "refinery"))
 					? "Market"
 					: this.stationConsoleTab,
 			market: freshMarket ?? readMarket(),
@@ -18339,6 +20982,7 @@ class Game {
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
+				mining: MINING_ON,
 			}),
 			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else.
 			shipyard:
@@ -18350,7 +20994,9 @@ class Game {
 					: null,
 			credits: this.commander.credits,
 			hold,
+			refinery: this.refineryConsole(context, services),
 			message: this.stationConsoleMessage,
+			serviceNotice: serviceStatus.notice,
 			// The pilot's own goods, off the same projection rather than off
 			// `commander.cargo` a second time. The footer lists what can be
 			// sold; the hold line above it says what the ship is carrying, and
@@ -18444,12 +21090,14 @@ class Game {
 			state: this.commander,
 			requests: this.requests,
 			sweepReadings: this.sweepReadings,
+			txSeq: this.txSeq,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
 			dockedAt: station ? this.stationKey(station) : null,
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
+			scoopNotice: this.scoopNotice,
 			// The record with its basis brought into line with the hold. **A
 			// guard, not a known path**: today the one non-sale removal is a job
 			// hand-over, which reconciles as it settles.
@@ -18523,6 +21171,7 @@ class Game {
 				body.pos.z + snap.axis.z * distance,
 			);
 			this.world.ship.vel = this.stationVelocity(station.id);
+			markShipPlaced(this.world);
 			this.targetId = station.id;
 			this.setThrottle(0);
 			this.setAttitude(
@@ -18579,6 +21228,7 @@ class Game {
 			// not hold a berth for a ship that went back to the arrival point.
 			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
 			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
+			markShipPlaced(this.world);
 			this.orientation.copy(from.orientation);
 			this.targetId = from.targetId;
 			return false;
@@ -18610,11 +21260,17 @@ class Game {
 		if (!station) return false;
 		const id = station.id;
 		const t0 = this.world.gameTime;
-		const ok = this.dockByProtocol(id, () => {
-			// D2: a failed re-dock is not undone — the ship stays beside the
-			// station, not at the arrival point.
-			return false;
-		});
+		this.restoringDocked = true;
+		let ok: boolean;
+		try {
+			ok = this.dockByProtocol(id, () => {
+				// D2: a failed re-dock is not undone — the ship stays beside the
+				// station, not at the arrival point.
+				return false;
+			});
+		} finally {
+			this.restoringDocked = false;
+		}
 		// D3: the clock moved on by the run-in.
 		const elapsed = this.world.gameTime - t0;
 		console.log(
@@ -18632,6 +21288,20 @@ class Game {
 	 * a Wanted pilot whose launch station will not take them — is on the log
 	 * alone, since there is no console to say it on.
 	 */
+	sayScoopNotice(): void {
+		if (
+			!this.scoopNotice ||
+			this.restoringDocked ||
+			this.dockPhase !== "docked" ||
+			this.stationConsoleMessage !== null
+		)
+			return;
+		this.scoopNotice = false;
+		this.stationConsoleMessage = NO_SCOOP_DOCK_NOTICE;
+		this.updateCockpit();
+		this.saveDirty();
+	}
+
 	showWake(wake: DeathWake): void {
 		const text = wakeText(wake);
 		this.wakeShown = wake;
@@ -18687,6 +21357,7 @@ class Game {
 			body.pos.z + axis.z * rangeKm,
 		);
 		this.world.ship.vel = this.stationVelocity(id);
+		markShipPlaced(this.world);
 		this.orientation.setFromUnitVectors(
 			new THREE.Vector3(0, 0, -1),
 			new THREE.Vector3(-axis.x, -axis.y, -axis.z),
@@ -19252,8 +21923,14 @@ class Game {
 		ctx.textAlign = "center";
 		ctx.fillStyle = FIRST_DAY_CONTROLS_FILL;
 		const top = Math.round(h * FIRST_DAY_CONTROLS_TOP);
-		for (const [i, text] of lines.entries())
-			ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
+		if (this.view === "cockpit")
+			this.cockpit.text.write(
+				"controls",
+				lines.map((text) => ({ text, fill: FIRST_DAY_CONTROLS_FILL })),
+			);
+		else
+			for (const [i, text] of lines.entries())
+				ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
 		ctx.restore();
 		this.firstDayControlsShown = lines;
 	}
@@ -19308,6 +21985,14 @@ class Game {
 				key,
 				transition: event,
 				hull,
+				targetLoadout:
+					hull && armedNpc(hull)
+						? (this.trafficEngagements.get(key)?.loadout ??
+							(this.encounter?.slot.key === key
+								? this.encounterFit(this.encounter)
+								: undefined) ??
+							this.npcFitFor(hull, key))
+						: undefined,
 			}),
 		);
 	}
@@ -19318,6 +22003,7 @@ class Game {
 			this.commerceWorld.galaxies[this.world.system.record.galaxy],
 			key,
 			this.world.gameTime,
+			this.commerceWorld,
 		);
 	}
 
@@ -19426,6 +22112,14 @@ class Game {
 			entrustedT: entrustedTonnesAboard(this.requests),
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
+			mining: MINING_ON,
+			services: MINING_ON
+				? stationServices(
+						advanceTo(this.commerceWorld, this.world.gameTime),
+						context.galaxyIndex,
+						context.stationKey,
+					)
+				: undefined,
 		};
 	}
 
@@ -19491,7 +22185,7 @@ class Game {
 			// `?? "invalid-quantity"` this replaced was a default arm in all but
 			// name — it would have printed "That is not a quantity." over a full
 			// hold, which is #443's own failure one turn later.
-			const hold = holdSummary(this.commander, this.requests);
+			const hold = holdSummary(this.commander, this.requests, MINING_ON);
 			this.stationConsoleMessage = refusalSentence(result.reason, {
 				freeT: hold.freeT,
 				capacityT: hold.capacityT,
@@ -19502,6 +22196,7 @@ class Game {
 			return false;
 		}
 		this.clearStationRefusal();
+		if (result.notice) this.stationConsoleMessage = result.notice;
 		// The adopt point delivers a bought hull, saves, bumps the console and
 		// repaints (#631).
 		this.adoptHoldings(
@@ -19532,6 +22227,398 @@ class Game {
 		};
 	}
 
+	private refineryConsole(
+		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
+		services: ReturnType<typeof stationServices> | undefined,
+	): RefineryConsole | null {
+		if (!MINING_ON || context.station.type !== "refinery") return null;
+		const world = advanceTo(this.commerceWorld, this.world.gameTime);
+		const queue =
+			world.galaxies[context.galaxyIndex].refineries[context.stationKey];
+		const ore = Object.entries(this.commander.cargo)
+			.filter(([name, tonnes]) => oreGood(name) !== undefined && tonnes > 0)
+			.map(([good, tonnes]) => ({ good, tonnes }));
+		const selected = ore.some((line) => line.good === this.refineryGood)
+			? this.refineryGood
+			: (ore[0]?.good ?? "");
+		const held =
+			this.refineryQuote?.station === context.stationKey
+				? this.refineryQuote
+				: null;
+		let stale =
+			held !== null &&
+			(held.good !== selected || held.tonnes !== this.refineryTonnes);
+		if (held && !stale) {
+			const fresh = refineryQuoteAt(
+				{ world, commander: this.commanderRecord() },
+				context.galaxyIndex,
+				context.stationKey,
+				held.good,
+				held.tonnes,
+			);
+			stale = !fresh.ok
+				? fresh.reason !== "processing-offline"
+				: fresh.quote.signature !== held.signature;
+		}
+		const online = services?.exclusive !== false;
+		const jobs: RefineryJobRow[] = (queue?.jobs ?? []).map((job) => {
+			let status = "Paused";
+			if (refineryFinished(job)) status = "Ready";
+			else if (online) status = "Processing";
+			return {
+				id: job.id,
+				good: job.good,
+				tonnes: job.tonnes,
+				product: job.product,
+				output: this.refineryProductAmount(job.outputGrams, job.product),
+				status,
+				workLeft: job.work,
+				percent: Math.round((1 - job.work / job.totalWork) * 100),
+			};
+		});
+		return {
+			view: this.refineryView,
+			online,
+			saving: this.refinerySaving,
+			notice: this.refineryNotice,
+			ore,
+			selected,
+			tonnes: this.refineryTonnes,
+			quote: held
+				? {
+						good: held.good,
+						tonnes: held.tonnes,
+						product: held.product,
+						output: this.refineryProductAmount(held.outputGrams, held.product),
+						fee: `${displayAmount(money.parse(held.fee)).toLocaleString("en", { maximumFractionDigits: 3 })} Cr`,
+						position: held.position,
+						workS: held.workAhead,
+						stale,
+					}
+				: null,
+			jobs,
+			queueCount: queue?.jobs.length ?? 0,
+			collectable: this.refineryCollectables(queue),
+			pooled: Object.entries(queue?.pool ?? {}).map(([product, balance]) => ({
+				product,
+				text: this.refineryProductAmount(balance.grams, product),
+			})),
+		};
+	}
+
+	private refineryCollectables(
+		queue: RefineryQueue | undefined,
+	): RefineryConsole["collectable"] {
+		const products = [
+			...new Set(
+				(queue?.jobs ?? [])
+					.filter((job) => refineryFinished(job))
+					.map((job) => job.product),
+			),
+			...Object.keys(queue?.pool ?? {}),
+		];
+		return [...new Set(products)].map((product) => {
+			const units = refineryCollectable(queue, product);
+			const finished = (queue?.jobs ?? []).some(
+				(job) => job.product === product && refineryFinished(job),
+			);
+			return {
+				product,
+				units,
+				finished,
+				text: `${units.toLocaleString("en")} ${commodity(product).unit} ${product}`,
+			};
+		});
+	}
+
+	private async collectRefinery(product: string): Promise<void> {
+		if (this.refinerySaving) return;
+		const context = this.dockedStationContext();
+		if (!context || context.station.type !== "refinery") return;
+		const store = this.saveStore;
+		if (!store) {
+			this.refineryNotice =
+				"Saving is unavailable here; nothing was committed.";
+			this.updateCockpit();
+			return;
+		}
+		const galaxyIndex = context.galaxyIndex;
+		const stationKey = context.stationKey;
+		const txSeq = this.txSeq;
+		const checkpoint = this.commanderRecord().dockedAt !== null;
+		this.refinerySaving = true;
+		this.refineryNotice = "Saving… the collection commits as one transaction.";
+		this.updateCockpit();
+		let units = 0;
+		try {
+			const outcome = await store.commit({
+				txSeq,
+				checkpoint,
+				apply: (envelope) => {
+					const collected = collectRefineryEnvelope(
+						envelope,
+						galaxyIndex,
+						stationKey,
+						product,
+					);
+					if (!collected.ok) throw new Error(collected.sentence);
+					units = collected.units;
+					return collected.envelope;
+				},
+				adopt: (committed) => {
+					const queue =
+						committed.world.galaxies[galaxyIndex].refineries[stationKey];
+					const world = queue
+						? withRefineryQueue(
+								advanceTo(this.commerceWorld, this.world.gameTime),
+								galaxyIndex,
+								stationKey,
+								queue,
+							)
+						: this.commerceWorld;
+					this.txSeq = committed.commander.txSeq;
+					this.adopt(
+						"refinery",
+						{
+							holdings: {
+								...this.holdings(),
+								commander: committed.commander.state,
+							},
+							world,
+						},
+						null,
+					);
+				},
+			});
+			if (outcome === "committed")
+				this.refineryNotice = `Collection saved. ${units} ${commodity(product).unit} ${product} aboard.`;
+			else if (outcome === "stale")
+				this.refineryNotice =
+					"That transaction already succeeded or changed. Review the jobs again.";
+			else if (outcome === "uncertain")
+				this.refineryNotice =
+					"The save is uncertain; reload before retrying. Nothing further is written.";
+			else
+				this.refineryNotice =
+					"Save failed. Nothing committed. Retry when ready.";
+		} catch (error) {
+			this.refineryNotice = `${
+				error instanceof Error ? error.message : String(error)
+			} Nothing committed.`;
+		} finally {
+			this.refinerySaving = false;
+			this.updateCockpit();
+		}
+	}
+
+	private refineryProductAmount(grams: number, product: string): string {
+		const units = productUnits(grams, product);
+		return `${units.toLocaleString("en", { maximumFractionDigits: 3 })} ${commodity(product).unit} ${product}`;
+	}
+
+	private refineryAction(
+		action: "view-submit" | "view-jobs" | "quote" | "submit",
+	): void {
+		if (this.refinerySaving) return;
+		if (action === "view-submit" || action === "view-jobs") {
+			this.refineryView = action === "view-jobs" ? "jobs" : "submit";
+			this.updateCockpit();
+			return;
+		}
+		if (action === "quote") {
+			this.reviewRefineryQuote();
+			return;
+		}
+		void this.submitRefinery();
+	}
+
+	private selectedRefineryGood(
+		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
+	): string {
+		const aboard = Object.entries(this.commander.cargo)
+			.filter(([name, tonnes]) => oreGood(name) !== undefined && tonnes > 0)
+			.map(([good]) => good);
+		return aboard.includes(this.refineryGood)
+			? this.refineryGood
+			: (aboard[0] ?? "");
+	}
+
+	private reviewRefineryQuote(): void {
+		const context = this.dockedStationContext();
+		if (!context || context.station.type !== "refinery") return;
+		const good = this.selectedRefineryGood(context);
+		if (!good) {
+			this.refineryQuote = null;
+			this.refineryNotice = "No ore is aboard.";
+		} else {
+			const world = advanceTo(this.commerceWorld, this.world.gameTime);
+			const result = refineryQuoteAt(
+				{ world, commander: this.commanderRecord() },
+				context.galaxyIndex,
+				context.stationKey,
+				good,
+				this.refineryTonnes,
+			);
+			if (result.ok) {
+				this.refineryQuote = result.quote;
+				this.refineryNotice = "Quote ready. Submission is final once saved.";
+			} else {
+				this.refineryQuote = null;
+				this.refineryNotice = result.sentence;
+			}
+		}
+		this.updateCockpit();
+	}
+
+	private async submitRefinery(): Promise<void> {
+		const quote = this.refineryQuote;
+		if (!quote || this.refinerySaving) return;
+		const context = this.dockedStationContext();
+		if (!context || context.station.type !== "refinery") return;
+		if (
+			quote.good !== this.selectedRefineryGood(context) ||
+			quote.tonnes !== this.refineryTonnes
+		) {
+			this.refineryQuote = null;
+			this.refineryNotice =
+				"The quote changed. Review the updated quote before confirming.";
+			this.updateCockpit();
+			return;
+		}
+		const store = this.saveStore;
+		if (!store) {
+			this.refineryNotice =
+				"Saving is unavailable here; nothing was committed.";
+			this.updateCockpit();
+			return;
+		}
+		const galaxyIndex = context.galaxyIndex;
+		const stationKey = context.stationKey;
+		const txSeq = this.txSeq;
+		const checkpoint = this.commanderRecord().dockedAt !== null;
+		this.refinerySaving = true;
+		this.refineryNotice = "Saving… ore, credits and the job commit together.";
+		this.updateCockpit();
+		try {
+			const outcome = await store.commit({
+				txSeq,
+				checkpoint,
+				apply: (envelope) => {
+					const submitted = submitRefineryEnvelope(
+						envelope,
+						galaxyIndex,
+						quote,
+						envelope.world.gameTime,
+					);
+					if (!submitted.ok) throw new Error(submitted.sentence);
+					return submitted.envelope;
+				},
+				adopt: (committed) => {
+					const queue =
+						committed.world.galaxies[galaxyIndex].refineries[stationKey];
+					const world = queue
+						? withRefineryQueue(
+								advanceTo(this.commerceWorld, this.world.gameTime),
+								galaxyIndex,
+								stationKey,
+								queue,
+							)
+						: this.commerceWorld;
+					this.txSeq = committed.commander.txSeq;
+					this.adopt(
+						"refinery",
+						{
+							holdings: {
+								...this.holdings(),
+								commander: committed.commander.state,
+							},
+							world,
+						},
+						null,
+					);
+				},
+			});
+			if (outcome === "committed") {
+				this.refineryQuote = null;
+				this.refineryView = "jobs";
+				this.refineryNotice = "Submission saved. Your job is in the queue.";
+			} else if (outcome === "stale") {
+				this.refineryQuote = null;
+				this.refineryNotice =
+					"That transaction already succeeded or the quote changed. Review it again.";
+			} else if (outcome === "uncertain") {
+				this.refineryNotice =
+					"The save is uncertain; reload before retrying. Nothing further is written.";
+			} else {
+				this.refineryNotice =
+					"Save failed. Nothing committed. Retry when ready.";
+			}
+		} catch (error) {
+			this.refineryNotice = `${
+				error instanceof Error ? error.message : String(error)
+			} Nothing committed.`;
+		} finally {
+			this.refinerySaving = false;
+			this.updateCockpit();
+		}
+	}
+
+	private navigationTargets(): NavBody[] {
+		const ordinary = this.selectable();
+		if (!MINING_ON) return ordinary;
+		const rocks = nearRocks(
+			this.fieldRockSets().filter(
+				({ plan }) => plan.id === this.frameField?.id,
+			),
+			this.world.ship.pos,
+			this.world.gameTime,
+			Infinity,
+		);
+		const selected = isRockTargetId(this.targetId)
+			? this.rockRef(this.targetId)
+			: null;
+		if (selected && !rocks.some(({ id }) => id === selected.id))
+			rocks.push(selected);
+		return [
+			...ordinary,
+			...rocks
+				.filter((ref) => {
+					if (ref.id === selected?.id) return true;
+					const row = this.rockDepositRow(ref);
+					return (
+						row?.surveyedAt !== undefined &&
+						surveyReading(
+							this.rockContentsOf(ref),
+							row,
+							this.world.gameTime,
+							SURVEY_LIFETIME_H,
+						) !== null
+					);
+				})
+				.map((ref) => ({
+					...rockContact(ref),
+					name: `Rock ${ref.rock.slot}`,
+					distanceKm: ref.distKm,
+					detail: this.surveyDesignation(ref.id, ref),
+					...(ref.distKm > ROCK_DROP_KM
+						? { disabledReason: `OUT OF RANGE · ${ROCK_DROP_KM} KM LIMIT` }
+						: {}),
+				})),
+		];
+	}
+
+	private selectNavigationTarget(id: string): boolean {
+		const row = this.navigationTargets().find((body) => body.id === id);
+		if (!row || row.disabledReason !== undefined) {
+			this.consolePress(false);
+			return false;
+		}
+		this.targetId = id;
+		this.consolePress(true);
+		this.updateCockpit();
+		return true;
+	}
+
 	/**
 	 * The Navigation console's target list.
 	 *
@@ -19555,18 +22642,13 @@ class Game {
 		}
 		const rows = projectNavTargets(
 			this.world.ship.pos,
-			// **`selectable()`, not `system.bodies`.** It is the one list that
-			// decides what can be targeted at all — `cycleTarget` walks it and
-			// `onSelectTarget` validates against it — so the list shows exactly
-			// what a click on it can do. Handing the projection every body and
-			// letting it hold its own kind rule would be a second owner, and the
-			// day a body kind is added the two answers diverge silently.
-			this.selectable(),
+			this.navigationTargets(),
 			this.targetId,
 			{
 				filter: this.navFilter,
 				previousOrder: this.navOrder,
 				etaFor: ({ id }) => {
+					if (isRockTargetId(id)) return null;
 					const cached = this.navEtaCache.get(id);
 					if (cached !== undefined) return cached;
 					const body = this.bodyFor(id);
@@ -19576,6 +22658,10 @@ class Game {
 				},
 			},
 		);
+		if (rows.some(({ kind }) => kind === "rock"))
+			rows.sort(
+				(a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id),
+			);
 		this.navOrder = rows.map(({ id }) => id);
 		return rows;
 	}
@@ -19588,7 +22674,15 @@ class Game {
 			{
 				orientation: this.orientation,
 				output: this.scannerContactBuffer,
-				flooredContacts: this.contacts,
+				flooredContacts: [
+					...this.contacts,
+					...fieldContactsAt(
+						this.world.system,
+						this.world.gameTime,
+						this.commerceWorld.galaxies[this.world.system.record.galaxy]
+							.fieldDiscoveries,
+					),
+				],
 			},
 		);
 	}
@@ -20027,246 +23121,38 @@ class Game {
 		});
 	}
 
-	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
+	private drawFlightFloor() {
 		const cells = this.floorCells();
-		const courseRow = courseCue(this.courseCueState());
-
-		// **Fitted to the widest reading the strip can take, not to this one.**
-		// Sized to the live values it re-centred whenever a digit changed, and
-		// the fit taken on a full tank — where the regeneration suffix is
-		// absent — was a fifth too narrow for the run drawn a second later. At
-		// 390 px that clipped both ends, and the check measuring the incidental
-		// run passed.
-		const available = w - 2 * FLOOR_MARGIN_PX;
-		if (this.floorFit?.width !== w) {
-			// **Solved rather than searched.** The step-down loop ran up to
-			// nineteen full measurements on every distinct canvas width, and a
-			// resize drag missed on every frame and appended to a map nothing
-			// evicted. Text width is very nearly linear in the type size, so one
-			// measurement gives the ratio; the second confirms it, and the
-			// residue is recorded rather than drawn over.
-			// The handle's own copy, not a second derivation with the same
-			// arguments — a third parameter would otherwise have to be threaded
-			// to two call sites that must agree.
-			const widestCells = FLIGHT_FLOOR_LABELS.map((label) => ({
-				label,
-				value: this.floorWidest[label],
+		const line = (cells: readonly FloorCell[]) => {
+			const runs = cells.map((cell, i) => ({
+				text:
+					[cell.label, cell.value].filter(Boolean).join(" ") +
+					(i < cells.length - 1 ? "   " : ""),
+				fill: FLOOR_TONE_FILL[cell.tone],
 			}));
-			// **Both runs on the floor are fitted, not just the strip.** The
-			// course row is centred on the same axis and drawn at the same
-			// scale, so a solve that ignored it would fit one instrument and
-			// clip the other — which is #92's own failure with a second run
-			// added to the floor.
-			const widestCourse = [
-				{ label: COURSE_CUE_LABEL, value: this.courseWidest },
-			];
-			// And the duel row (#324), for the same reason: a third run on the
-			// same axis at the same scale.
-			// The duel band's widest rows, in combat and out of it (#932):
-			// `duelBandWidestRows` composes them by `duelBandCells`' own rule,
-			// so SHD, HEAT and SCOOPING are never fitted as one row.
-			const widestDuelRows = DUEL_BAND_WIDEST_ROWS;
-			const groups = this.fireGroups;
-			const widestGroup = groups.map((group, index) => ({
-				label: "",
-				value: group.label + " · " + (index + 1) + "/" + groups.length,
-			}));
-			if (!widestGroup.length)
-				widestGroup.push({ label: "", value: "NO WEAPONS" });
-			const runAt = (scale: number) =>
-				Math.max(
-					floorRunWidths(ctx, widestCells, scale).total,
-					floorRunWidths(ctx, widestCourse, scale).total,
-					...widestDuelRows.flatMap((row) =>
-						widestGroup.map(
-							(group) => floorRunWidths(ctx, [...row, group], scale).total,
-						),
-					),
-				);
-			const atOne = runAt(1);
-			const solved = Math.max(
-				FLOOR_MIN_SCALE,
-				Math.min(1, available / Math.max(1, atOne)),
-			);
-			// Rounded down to a step so a one-pixel viewport change does not
-			// re-lay the strip out at an imperceptibly different size.
-			const stepped = Math.max(FLOOR_MIN_SCALE, Math.floor(solved * 50) / 50);
-			const fitted = runAt(stepped);
-			this.floorFit = {
-				width: w,
-				scale: stepped,
-				// **The clamp fails open, and says so.** `FLOOR_MIN_SCALE` is a
-				// floor on legibility, so a viewport too narrow for the widest
-				// run at that size draws anyway — the alternative is a floor
-				// instrument that vanishes. What it must not do is fail open
-				// *silently*: the overflow is recorded, and the browser check
-				// requires it to be zero at every shipped viewport.
-				overflowPx: Math.max(0, fitted - available),
-			};
-		}
-		const { scale } = this.floorFit;
-		const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
-		const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
-		const labelGap = FLOOR_LABEL_GAP_PX * scale;
-		const cellGap = FLOOR_CELL_GAP_PX * scale;
-		const { widths, labelWidths, total } = floorRunWidths(ctx, cells, scale);
-		// The three typography arguments are identical at both call sites and
-		// come from one fit solve, so they travel together rather than as three
-		// of eight positionals a reader has to align.
-		const floorType = { labelGap, labelFont, valueFont };
-
-		const glassBottomY = h * GLASS_BOTTOM_FRACTION;
-		const baselineY =
-			glassBottomY - FLOOR_STRIP_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
-		let x = (w - total) / 2;
-		const boxes: FloorBox[] = [];
-		ctx.save();
-		ctx.textAlign = "left";
-		for (const [i, cell] of cells.entries()) {
-			// Every floor box states its own band, so nothing sampling one keeps
-			// a glyph height of its own.
-			boxes.push(
-				floorBox(
-					cell.label,
-					x,
-					widths[i],
-					glassBottomY - FLOOR_STRIP_HEIGHT_PX,
-				),
-			);
-			drawFloorCell(
-				ctx,
-				cell,
-				{ x, baselineY, labelWidth: labelWidths[i] },
-				floorType,
-			);
-			x += widths[i] + cellGap;
-		}
-		// §8.3's course row, above the strip and on the same centre axis.
-		//
-		// **Drawn from the same run-measuring pass as the strip**, so the two
-		// cannot come to be laid out two ways; it is one cell in the strip's own
-		// label/value/tone grammar, in its own band, rather than a fifth cell
-		// (#117 D1). With no course it is absent, and absence here moves nothing
-		// below it (#117 D2).
-		// One painter for every centred row above the strip: measure the run,
-		// centre it, box it in its band, paint each cell. The course row and
-		// #324's duel row were this block twice.
-		let tempPlate: FloorBox | null = null;
-		let scoopPlate: FloorBox | null = null;
-		const drawBandRow = (
-			rowCells: FloorCell[],
-			label: string,
-			band: number,
-		): FloorBox => {
-			const run = floorRunWidths(ctx, rowCells, scale);
-			let rowX = (w - run.total) / 2;
-			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
-			// **A plate behind the hull-temperature cell** (#931, the
-			// principal's ruling on the sheet). It shows only near a star, so
-			// the sky behind it is the brightest and warmest the glass meets,
-			// and red and amber over it did not read — #597's case for the
-			// docking notice, and its plate. Short of half a cell gap each side,
-			// so it never reaches the next cell's ink. The scoop's line (#932)
-			// shows in the same sky, beside it, so one plate spans both: drawn
-			// before either cell, so neither's ink is under it.
-			let plateFrom = Number.NaN;
-			let plateTo = Number.NaN;
-			let hasTemp = false;
-			let hasScoop = false;
-			let cellX = rowX;
-			for (const [i, cell] of rowCells.entries()) {
-				hasTemp ||= cell.label === HULL_TEMP_LABEL;
-				hasScoop ||= cell.label === SCOOP_LABEL;
-				if (cell.label === HULL_TEMP_LABEL || cell.label === SCOOP_LABEL) {
-					if (Number.isNaN(plateFrom)) plateFrom = cellX;
-					plateTo = cellX + run.widths[i];
-				}
-				cellX += run.widths[i] + cellGap;
-			}
-			if (!Number.isNaN(plateFrom)) {
-				const pad = (cellGap / 2) * 0.8;
-				const plate = floorBox(
-					hasTemp ? HULL_TEMP_LABEL : SCOOP_LABEL,
-					plateFrom - pad,
-					plateTo - plateFrom + 2 * pad,
-					box.top + FLOOR_TEMP_PLATE_INSET * box.height,
-				);
-				plate.height = box.height * (1 - 2 * FLOOR_TEMP_PLATE_INSET);
-				ctx.fillStyle = PROMPT_PLATE_FILL;
-				ctx.fillRect(plate.x, plate.top, plate.width, plate.height);
-				if (hasTemp) tempPlate = plate;
-				if (hasScoop) scoopPlate = plate;
-			}
-			for (const [i, cell] of rowCells.entries()) {
-				drawFloorCell(
-					ctx,
-					cell,
-					{ x: rowX, baselineY: box.y, labelWidth: run.labelWidths[i] },
-					floorType,
-				);
-				rowX += run.widths[i] + cellGap;
-			}
-			return box;
+			return { text: runs.map((run) => run.text).join(""), runs };
 		};
-		const courseBox =
-			courseRow === null
-				? null
-				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
-		// The armed group stays readable in peace; combat adds shields and heat.
-		// The scoop's line shows only out of combat (#932): `duelBandCells`
-		// owns which, so the fit above takes the row as one or the other.
-		const duelRow: FloorCell[] = [
-			...duelBandCells({
-				fighting: this.duelRowShown(),
-				condition: this.condition,
-				scooping: this.scooping,
-				fuelLy: this.commander.fuelLy,
-			}),
-			{
-				label: "",
-				value: this.armedFireGroup.label(this.fireGroups),
-				tone: "passive",
-			},
-		];
-		const duelBox = drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
-		// **The strip's own save, closed once for both runs.** It was closed at
-		// the end of the cell loop until the course block was pasted in there
-		// with a save/restore pair of its own, which read as the closing one —
-		// so `ctx.save()` ran every frame with no match, pushing an entry onto
-		// the 2D state stack and leaking `textAlign`, the value font and the
-		// last cell's fill into every later draw on the overlay.
-		ctx.restore();
-
-		this.floorRender = {
-			cells,
-			boxes,
-			// **Written by the draw, from what the draw drew.** `null` is the
-			// row that was not painted, which is the state #117 D2 chose — and
-			// a record assembled beside the draw would let a probe assert a
-			// course row that never landed.
-			courseRow,
-			courseBox,
-			duelRow,
-			duelBox,
-			tempPlate,
-			scoopPlate,
-			baselineY,
-			glassBottomY,
-			scale,
-			marginPx: FLOOR_MARGIN_PX,
-			overflowPx: this.floorFit.overflowPx,
-			// The scalars the cells were built from, stamped by the draw — so a
-			// check can compare the instrument against the ship without
-			// restating the projection that maps one to the other.
-			source: {
-				regime: this.regime,
-				spoolLeftS: this.spoolLeftS,
-				jumpChargeLeftS: this.jumpCharge.leftS,
-				throttle: this.throttle,
-				assist: this.assist,
-				chargeAu: this.chargeAu,
-			},
-		};
+		this.cockpit.text.write("status", [
+			line(cells.slice(0, 2)),
+			line(cells.slice(2)),
+		]);
+		const course = courseCue(this.courseCueState());
+		if (course) this.cockpit.text.write("course", [line([course])]);
+		this.cockpit.text.write("combat", [
+			line(
+				duelBandCells({
+					fighting: this.duelRowShown(),
+					condition: this.condition,
+					scooping: this.scooping,
+					fuelLy: this.commander.fuelLy,
+				}),
+			),
+		]);
+		this.cockpit.text.write("lasers", [
+			{ text: this.armedFireGroup.label(this.fireGroups) },
+		]);
+		this.floorRender = null;
+		return;
 	}
 
 	/**
@@ -20458,7 +23344,8 @@ class Game {
 		// the strip — or the course row #117 put above it — cannot leave this
 		// line sitting on top of either. The course band is subtracted whether
 		// or not a course is set: see `FLOOR_BANDS`.
-		ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
+		if (this.view !== "cockpit")
+			ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -20508,7 +23395,9 @@ class Game {
 		this.cockpitRaiderBeam = null;
 		const raider = this.raiderFiring && this.raiderListed;
 		const rig = this.combatRig?.tracerStrokes(this.view) ?? NO_BEAM_STROKES;
-		const any = this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0;
+		const mining = MINING_ON ? this.miningBeam : null;
+		const any =
+			this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0 || !!mining;
 		if (!(this.view === "cockpit" && any && this.flightGlassShown())) {
 			// Nothing to draw: one call to disable the pass if it drew last
 			// frame, and no allocation on the frames between shots.
@@ -20518,12 +23407,19 @@ class Game {
 		}
 		const strokes = this.cockpitStrokes;
 		strokes.length = 0;
-		if (this.gunFeedback.tracerLeftS > 0)
-			for (const stroke of tracerStrokes(
-				this.gunTracer.firedPorts,
-				this.onFrame(this.beamAim()) ?? TRACER_AIM,
+		if (mining)
+			for (const stroke of mountBeamStrokes(
+				this.miningBeamSegments(mining),
+				camPos,
+				this.cameraRotation(),
+				(this.nearCamera.fov * Math.PI) / 180,
+				this.nearCamera.aspect,
+				this.world.gameTime,
 			))
 				strokes.push(stroke);
+		if (this.gunFeedback.tracerLeftS > 0)
+			for (const { from, to } of this.playerBeamFrame())
+				strokes.push(...tracerStrokes([from], to));
 		if (raider) {
 			const from = this.onFrame(directionTo(camPos, this.raiderContact.pos));
 			if (from) {
@@ -20548,6 +23444,116 @@ class Game {
 		if (!dir) return null;
 		const m = this.markerNdc(dir);
 		return m.behind || !m.onScreen ? null : ndcToPx(m, 1, 1);
+	}
+
+	private oreLine() {
+		const hold = this.minedHold();
+		const ore = this.fragments.filter((f) => f.ore).length;
+		return `ORE ${this.minedT} T ABOARD · ${ore} FRAGMENTS · ${oreCapacityLabel(this.flownHull)} ${Math.round(hold.usedT)}/${hold.capacityT} T`;
+	}
+
+	private presentCockpitReadouts(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+	) {
+		this.drawFlightFloor();
+		const target = this.targetBody();
+		const prompt = this.cruisePrompt(
+			target ? length(sub(target.pos, this.world.ship.pos)) : null,
+		);
+		const notice =
+			this.dockingNotice?.text === prompt ? this.dockingNotice : null;
+		this.cockpit.text.write("prompt", [
+			{
+				text: prompt,
+				fill: notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL,
+			},
+		]);
+		const notices: { text: string; fill: string; alpha?: number }[] = [];
+		const arming = ejectArming(this.ejectHold);
+		for (const [value, lifeS, fill] of [
+			[
+				this.scoop,
+				SCOOP_NOTICE_S,
+				this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
+			],
+			[this.charged, CHARGE_NOTICE_S, FLOOR_TONE_FILL.action],
+			[this.ejectRefused, EJECT_REFUSED_S, FLOOR_TONE_FILL.refused],
+		] as const) {
+			if (
+				value.left > 0 &&
+				value.text &&
+				!(value === this.ejectRefused && arming !== null)
+			)
+				notices.push({
+					text: value.text,
+					fill,
+					alpha: Math.min(1, value.left / (lifeS * 0.4)),
+				});
+		}
+
+		if (arming !== null)
+			notices.push({
+				text: ejectArmingText(arming),
+				fill: FLOOR_TONE_FILL.action,
+			});
+		else if (
+			this.ejectWarningDue &&
+			!(this.ejectRefused.left > 0 && this.ejectRefused.text)
+		)
+			notices.push({
+				text: ejectWarningText(ejectPrompt(this.bindings)),
+				fill: FLOOR_TONE_FILL.action,
+			});
+		if (MINING_ON) {
+			this.cockpit.text.write("ore", [
+				{
+					text: this.oreLine(),
+					fill: "#ffd28c",
+				},
+			]);
+			if (isRockTargetId(this.targetId))
+				this.cockpit.text.write("survey", [
+					{ text: this.surveyDesignation(this.targetId), fill: "#ffd28c" },
+				]);
+			if (this.miningNotice.left > 0)
+				notices.push({ text: this.miningNotice.text, fill: "#ffd28c" });
+		}
+		this.cockpit.text.write("notices", notices);
+		this.drawFirstDayControls(ctx, w, h);
+		this.drawMissileHud(ctx, w, h, true);
+		const director = this.directorState();
+		if (director) {
+			const text =
+				director.blocking?.text ??
+				(director.laneWait
+					? laneWaitText(director.laneWait)
+					: director.grantRemainingS === null
+						? "NO GRANT"
+						: `CLEARED · ${duration(director.grantRemainingS)} left`);
+			this.cockpit.text.write("clearance", [
+				{
+					text,
+					fill: director.blocking
+						? FLOOR_TONE_FILL.refused
+						: director.laneWait
+							? FLOOR_TONE_FILL.action
+							: FLOOR_TONE_FILL.confirmed,
+				},
+			]);
+		}
+	}
+
+	private drawReadoutNotice(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		glassBottom: number,
+		notice: Parameters<typeof drawGlassNotice>[4],
+	) {
+		if (this.view !== "cockpit")
+			drawGlassNotice(ctx, w, h, glassBottom, notice);
 	}
 
 	/**
@@ -20587,7 +23593,7 @@ class Game {
 			// still take.
 			if (!this.ejectWarningDue) return;
 			const text = ejectWarningText(ejectPrompt(this.bindings));
-			drawGlassNotice(ctx, w, h, glassBottom, {
+			this.drawReadoutNotice(ctx, w, h, glassBottom, {
 				text,
 				alpha: 1,
 				fill: FLOOR_TONE_FILL.action,
@@ -20596,7 +23602,7 @@ class Game {
 			this.ejectWarningRender = { text };
 			return;
 		}
-		drawGlassNotice(ctx, w, h, glassBottom, {
+		this.drawReadoutNotice(ctx, w, h, glassBottom, {
 			text: line.text,
 			alpha: line.alpha,
 			fill: line.refused ? FLOOR_TONE_FILL.refused : FLOOR_TONE_FILL.action,
@@ -20637,6 +23643,7 @@ class Game {
 	 * same place whichever layer rendered it — see that module's docstring.
 	 */
 	private drawMarkers(camPos: Vec3) {
+		this.cockpit.text.begin();
 		const ctx = this.overlayCtx;
 		if (!ctx) return;
 		const w = this.overlay.width;
@@ -20653,6 +23660,7 @@ class Game {
 		this.hostileFireRender = { beam: null, rim: 0 };
 		this.ejectRender = null;
 		this.ejectWarningRender = null;
+		if (this.view === "cockpit") this.presentCockpitReadouts(ctx, w, h);
 		if (!this.flightGlassShown()) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
@@ -20684,6 +23692,13 @@ class Game {
 			const m = this.markerNdc(dir);
 			return m.behind ? null : { ...toPixels(m.ndcX, m.ndcY), on: m.onScreen };
 		};
+		this.deepCueRender = null;
+		this.fragmentRender = null;
+		this.impactRender = null;
+		if (MINING_ON) this.drawDeepDepositCue(ctx, camPos, place);
+		if (MINING_ON) this.drawImpact(ctx, camPos, place, h);
+		if (MINING_ON) this.drawFragments(ctx, camPos, place, w, h);
+		if (MINING_ON) this.drawDrill(ctx, camPos, place, w, h);
 
 		// The attitude reference: a short level line rolled to the system's
 		// reference plane. Faint, because it is a background fact rather than
@@ -20749,8 +23764,12 @@ class Game {
 		// within a few pixels of each other share one marker.** A kill drops them
 		// at one point, and at any range their labels printed over each other
 		// into an unreadable smear on the first captured frame.
-		const cargoMarks: { x: number; y: number; goods: string[]; km: number }[] =
-			[];
+		const cargoMarks: {
+			x: number;
+			y: number;
+			goods: string[];
+			km: number;
+		}[] = [];
 		for (const canister of this.canisters) {
 			// The selected canister is drawn by the marker loop below, with the
 			// ring and the label every selected target gets. Drawing it here too
@@ -20767,12 +23786,17 @@ class Game {
 				near.goods.push(canister.commodity);
 				near.km = Math.min(near.km, km);
 			} else
-				cargoMarks.push({ x: at.x, y: at.y, goods: [canister.commodity], km });
+				cargoMarks.push({
+					x: at.x,
+					y: at.y,
+					goods: [canister.commodity],
+					km,
+				});
 		}
 		ctx.strokeStyle = CARGO_CONTACT_CSS;
 		ctx.fillStyle = CARGO_CONTACT_CSS;
 		ctx.lineWidth = 1.5;
-		ctx.font = "11px ui-monospace, Menlo, monospace";
+		ctx.font = "11px Menlo, monospace";
 		for (const mark of cargoMarks) {
 			ctx.beginPath();
 			ctx.moveTo(mark.x, mark.y - 6);
@@ -20844,7 +23868,7 @@ class Game {
 			// reads as one event even when three land within a few seconds of
 			// each other.
 			const alpha = Math.min(1, notice.left / (lifeS * 0.4));
-			drawGlassNotice(ctx, w, h, glassBottom, {
+			this.drawReadoutNotice(ctx, w, h, glassBottom, {
 				text: notice.text,
 				alpha,
 				fill,
@@ -20916,11 +23940,14 @@ class Game {
 		}
 		// The cockpit's tracer is in the frame, behind the cabin
 		// (`drawCockpitBeams`, node #806); chase has no cabin and keeps its own.
+		const chaseMining = MINING_ON && this.view === "chase" && this.miningBeam;
+		this.chaseMiningRender = 0;
+		if (chaseMining) this.drawChaseMiningBeam(ctx, w, h, chaseMining);
 		if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
 			// From the hull's muzzles, its range along the beam, as the camera
 			// sees it (#607 D3). Not the cockpit's ports on a glass chase does
 			// not have.
-			const segments = this.chaseBeamPx(w, h);
+			const segments = this.playerBeamPx(w, h);
 			drawTracerSegments(ctx, segments);
 			this.beamRender = segments;
 		}
@@ -20962,9 +23989,26 @@ class Game {
 			}
 		}
 
+		// Missile tracking pips are cockpit cues in world direction; float64
+		// sim positions never pass through the scene graph.
+		if (shipCues)
+			for (const missile of this.missileCombat.missiles) {
+				const dir = directionTo(camPos, missile.pos),
+					at = dir && place(dir);
+				if (!at?.on) continue;
+				ctx.save();
+				ctx.strokeStyle = missile.targetId === "player" ? "#ff8068" : "#b8e9ef";
+				ctx.beginPath();
+				ctx.moveTo(at.x, at.y - 4);
+				ctx.lineTo(at.x + 4, at.y + 4);
+				ctx.lineTo(at.x - 4, at.y + 4);
+				ctx.closePath();
+				ctx.stroke();
+				ctx.restore();
+			}
 		this.drawDockingDirector(ctx, w, h, camPos);
-		if (shipCues) this.drawFlightFloor(ctx, w, h);
-		else this.floorRender = null;
+		this.drawMissileHud(ctx, w, h, shipCues);
+		this.floorRender = null;
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of
@@ -20994,12 +24038,12 @@ class Game {
 			const promptWidth = m.width;
 			// **A plate behind a docking notice** (#597, the principal's ruling on
 			// the sheet). The line lands on the slot whenever a station is near,
-			// and red over lit plating and a nameplate did not read. Only for the
-			// notice: every other prompt kept its look.
+			// and red over lit plating and a nameplate did not read. Drawn for the
+			// notice, and since node #1290 for every prompt.
 			// One predicate for the plate and the tone, so the two cannot disagree.
 			const notice =
 				this.dockingNotice?.text === prompt ? this.dockingNotice : null;
-			if (notice) {
+			if (this.view !== "cockpit") {
 				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
 				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
 				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;
@@ -21018,18 +24062,26 @@ class Game {
 			}
 			// §4's tone: the notice's own, else the prompt's amber.
 			ctx.fillStyle = notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL;
-			ctx.fillText(prompt, x, y);
+			if (this.view !== "cockpit") ctx.fillText(prompt, x, y);
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
 		} else {
 			this.cockpitPrompt.reset();
 		}
 		this.drawFirstDayControls(ctx, w, h);
-		this.combatRig?.drawOverlay(ctx, w, h, this.view, this.bindings);
+		this.combatRig?.drawOverlay(
+			ctx,
+			w,
+			h,
+			this.view,
+			this.bindings,
+			(text, fill) =>
+				this.cockpit.text.append("prototype-combat", [{ text, fill }]),
+		);
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
-		ctx.font = "11px ui-monospace, Menlo, monospace";
+		ctx.font = "11px Menlo, monospace";
 		this.markerLabels.beginFrame(this.world.gameTime);
 		const labelBounds = (
 			x: number,
@@ -21102,7 +24154,7 @@ class Game {
 		// labels' order against it is unchanged by node #478.
 		let edgeLabel: MarkerLabelBounds | null = null;
 		const selectedLabel = (name: string, km: number) =>
-			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
+			`${name}  ${range(this.displayTargetKm(selectedBody, km))}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
 			}`;
 		if (raiderSelected)
@@ -21139,7 +24191,11 @@ class Game {
 				);
 			}
 		}
-		for (const body of this.selectable()) {
+		const rockSelected =
+			MINING_ON && isRockTargetId(this.targetId) ? this.targetBody() : null;
+		for (const body of rockSelected
+			? [...this.selectable(), rockSelected]
+			: this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
 			const selected = this.isSelectedTarget(body.id);
@@ -21286,6 +24342,82 @@ class Game {
 	 * arrow, which would be a second permanent edge cue beside the selected
 	 * target's. `core` is `null` where the frame has no glass for it.
 	 */
+	/** Plated and fitted to the viewport, including the narrow cockpit. The
+	 * record is written from the painted text, as the flight floor's is. */
+	private drawMissileHud(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		shown: boolean,
+	) {
+		this.missileRender = null;
+		if (!shown || !flightLive(this.dock.phase)) return;
+		const control = this.missileCombat,
+			now = this.world.gameTime;
+		const incoming = control.missiles.some((m) => m.targetId === "player");
+		const nearest = Math.min(
+			...control.missiles
+				.filter((m) => m.targetId === "player")
+				.map((m) => length(sub(m.pos, this.world.ship.pos))),
+		);
+		const ammo = missileAmmo(this.commander.loadout);
+		const capacity = this.flownCapacity().missiles;
+		const ecm = fittedEcm(this.commander.loadout);
+		if (!capacity && !ecm.radiusKm && !incoming && control.noticeUntil <= now)
+			return;
+		const lock = control.lock?.seconds ?? 0;
+		const state =
+			lock >= MISSILE.lockS
+				? "LOCKED"
+				: lock > 0
+					? `LOCK ${Math.floor((lock / MISSILE.lockS) * 100)}%`
+					: "NO LOCK";
+		const left = Math.max(0, control.ecmReadyAt - now);
+		const lines = [
+			...(incoming ? [`INCOMING MISSILE · ${nearest.toFixed(2)} km`] : []),
+			...(capacity
+				? [
+						`MISSILES ${ammo}/${capacity} · ${state} · ${spoken(this.bindings, "fight.launchMissile")}`,
+					]
+				: []),
+			...(ecm.radiusKm
+				? [
+						`ECM ${left > 0 ? `${left.toFixed(1)}s` : "READY"} · ${ecm.radiusKm.toFixed(2)} km · ${spoken(this.bindings, "fight.ecm")}`,
+					]
+				: []),
+			...(control.noticeUntil > now ? [control.notice] : []),
+		];
+		if (this.view === "cockpit") {
+			this.cockpit.text.write(
+				"missiles",
+				lines.map((text) => ({ text, fill: incoming ? "#ff8068" : "#b8e9ef" })),
+			);
+			this.missileRender = null;
+			return;
+		}
+		ctx.save();
+		ctx.font = "13px Menlo, monospace";
+		ctx.textAlign = "center";
+		const width = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 20;
+		const fit = Math.min(1, (w - 24) / width),
+			x = w / 2,
+			y = h * 0.13;
+		ctx.translate(x, y);
+		ctx.scale(fit, fit);
+		ctx.fillStyle = "rgba(4, 10, 17, 0.9)";
+		ctx.fillRect(-width / 2, -15, width, lines.length * 19 + 8);
+		ctx.fillStyle = incoming ? "#ff8068" : "#b8e9ef";
+		for (const [i, line] of lines.entries()) ctx.fillText(line, 0, i * 19);
+		ctx.restore();
+		this.missileRender = {
+			text: lines.join("\n"),
+			incoming,
+			x: x - (width * fit) / 2,
+			y: y - 15 * fit,
+			width: width * fit,
+		};
+	}
+
 	private drawCoreMark(
 		ctx: CanvasRenderingContext2D,
 		core: Vec3 | null,
@@ -21491,11 +24623,11 @@ function paintNameplates(mesh: StationMesh, name: string) {
 	const text = name.toUpperCase();
 	const margin = canvas.width * 0.06;
 	let size = 132;
-	ctx.font = `bold ${size}px monospace`;
+	ctx.font = `bold ${size}px Menlo, monospace`;
 	const width = ctx.measureText(text).width;
 	if (width > canvas.width - margin * 2) {
 		size = Math.floor((size * (canvas.width - margin * 2)) / width);
-		ctx.font = `bold ${size}px monospace`;
+		ctx.font = `bold ${size}px Menlo, monospace`;
 	}
 	ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 	const texture = new THREE.CanvasTexture(canvas);
@@ -21641,43 +24773,31 @@ if (postcard) {
 		throw new Error(
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
-	const { prepareCockpitModel } = await import("./cockpit-model");
-	const { prepareLongwallModel } = await import("./longwall-model");
-	await (await import("./coriolis-flight")).prepareCoriolisPage([
-		prepareCockpitModel,
-		prepareLongwallModel,
-	]);
+	const frameWorld = restoreWorld(
+		postcard.recipe.seed,
+		postcard.recipe.galaxy,
+		postcard.recipe.system,
+		postcard.recipe.timeS,
+	);
+	const contentsFor = (index: number) =>
+		generateContents(frameWorld.galaxy.systems.find((r) => r.index === index)!);
+	await requireModels(
+		systemModelIds(
+			frameWorld.system,
+			trafficRosterHulls(
+				frameWorld.galaxy,
+				postcard.recipe.system,
+				contentsFor,
+			),
+			"courier",
+		),
+		loadingPanel("postcard models"),
+	);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
-	// A postcard must draw the authored hulls: a failure is a visible Retry,
-	// unlike a live game's background fallback. Wait after Game construction,
-	// then refresh the stand-ins before mounting the single-frame viewer.
-	const { prepareCourierHullModel } = await import("./courier-hull");
-	const { prepareTugHullModel } = await import("./tug-hull");
-	await loadRequiredModels(
-		[prepareCourierHullModel, prepareTugHullModel],
-		loadingPanel("postcard hull"),
-	);
-	await game.loadAuthoredHullsAfterBoot();
-	const { prepareInteriorModel } = await import("./interior-model");
-	await loadRequiredModels(
-		[prepareInteriorModel],
-		loadingPanel("postcard interiors"),
-	);
-	await game.loadInteriorsAfterBoot();
-	// The card draws the authored shipyards, as it draws the authored hulls.
-	const { shipyardModelLoaders } = await import("./shipyard-flight");
-	await loadRequiredModels(
-		[...shipyardModelLoaders],
-		loadingPanel("postcard shipyards"),
-	);
-	await game.loadShipyardsAfterBoot();
-	// And the authored refineries (node #819).
-	const { refineryModelLoaders } = await import("./refinery-flight");
-	await loadRequiredModels(
-		[...refineryModelLoaders],
-		loadingPanel("postcard refineries"),
-	);
-	await game.loadRefineriesAfterBoot();
+	installedGame = game;
+	await game.modelInstalled("interiors");
+	// A postcard of a field draws its rocks, not its points.
+	await game.modelInstalled("asteroids");
 	await game.whenSkyReady();
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
@@ -21685,13 +24805,15 @@ if (postcard) {
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station") {
-		// The station workbench draws the authored shipyards (node #818) and
-		// refineries (node #819).
+		// The station workbench draws the authored shipyards (node #818),
+		// refineries (node #819) and outposts (nodes #1031, #1032).
 		const { shipyardModelLoaders } = await import("./shipyard-flight");
 		const { refineryModelLoaders } = await import("./refinery-flight");
+		const { outpostModelLoaders } = await import("./outpost-flight");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			...shipyardModelLoaders,
 			...refineryModelLoaders,
+			...outpostModelLoaders,
 		]);
 	}
 	// The ship workbench draws every variant: the courier the game flies
@@ -21700,10 +24822,16 @@ if (postcard) {
 		const { prepareCourierHullModel } = await import("./courier-hull");
 		const { prepareTugHullModel } = await import("./tug-hull");
 		const { prepareLongwallModel } = await import("./longwall-model");
+		const { preparePorterModel } = await import("./porter-model");
+		const { prepareVoyagerHullModel } = await import("./voyager-hull");
+		const { prepareInterceptorHullModel } = await import("./interceptor-hull");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
 			prepareCourierHullModel,
 			prepareTugHullModel,
-			prepareLongwallModel,
+			(p) => prepareLongwallModel(p, { posableStruts: MINING_ON }),
+			preparePorterModel,
+			prepareVoyagerHullModel,
+			prepareInterceptorHullModel,
 		]);
 	}
 	const { mountModelViewer } = await import("./model-viewer");
@@ -21764,35 +24892,11 @@ if (postcard) {
 	// `?seed=N` visit booted somebody else's galaxy with nothing said, so a
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
-	// Fetch in parallel with the Commander catalog; wait only at world construction.
+	// Open the Commander overlay before requesting the selected boot models.
 	// **One relay for the download (#833)**: it starts on the full-screen panel,
-	// since nothing yet says whether the overlay opens, and moves into the
-	// overlay once the plan says it does.
+	// and moves into the overlay once the plan says it opens.
 	//
-	// Node #831 loads the courier after Game construction. The miner's
-	// interim boot wait remains under the principal's waiver on node #838.
 	const loading = loadRelay(loadingPanel("game"));
-	const stationModel = Promise.all([
-		import("./coriolis-flight"),
-		import("./cockpit-model"),
-		import("./longwall-model"),
-		query.has("interiors-full")
-			? import("./interior-model")
-			: Promise.resolve(null),
-	]).then(([m, cockpit, longwall, interiors]) =>
-		loadRequiredModels(
-			[
-				m.prepareCoriolisModel,
-				cockpit.prepareCockpitModel,
-				longwall.prepareLongwallModel,
-				...(interiors ? [interiors.prepareInteriorModel] : []),
-			],
-			loading.view,
-			{ then: "building" },
-		),
-	);
-	// Keep a fast rejection handled while IndexedDB is still opening.
-	void stationModel.catch(() => {});
 	const boot = bootMode(query);
 	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
 	// #432). Where the permission is computed and why it is the boot's rather than
@@ -21951,33 +25055,32 @@ if (postcard) {
 	};
 	const overlay = overlayBeforeModels(plan) ? mountOverlay() : null;
 	if (overlay) loading.moveTo(overlay.loading);
-	await stationModel;
-	// A Commander docked at a shipyard waits for that form's model too: the
-	// home exterior is the one station model the boot holds for (map #1,
-	// #830/#835). Every other shipyard installs after boot (node #818).
-	const homeShipyard = homeShipyardForm(plan.loaded);
-	if (homeShipyard) {
-		const { prepareShipyardModel } = await import("./shipyard-flight");
-		await loadRequiredModels(
-			[(progress) => prepareShipyardModel(homeShipyard, progress)],
-			loading.view,
-			{ then: "building" },
-		);
-	}
-	// And a Commander docked at a refinery for that form's (node #819).
-	const homeRefinery = homeRefineryForm(plan.loaded);
-	if (homeRefinery) {
-		const { prepareRefineryModel } = await import("./refinery-flight");
-		await loadRequiredModels(
-			[(progress) => prepareRefineryModel(homeRefinery, progress)],
-			loading.view,
-			{ then: "building" },
-		);
-	}
-	// The `Game` build blocks the page for seconds, so the "Building the
-	// world" line has to be on screen before it starts, not queued behind it.
-	await nextPaint();
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
+	const freshWorld = () =>
+		askedSystem === null
+			? makeWorld(worldSeed)
+			: makeWorldAtSystem(worldSeed, askedSystem);
+	const bootWorld = (() => {
+		if (!plan.loaded) return freshWorld();
+		try {
+			return restoreWorld(
+				plan.loaded.world.seed,
+				plan.loaded.commander.galaxyIndex,
+				plan.loaded.commander.systemIndex,
+				plan.loaded.world.gameTime,
+			);
+		} catch {
+			return freshWorld();
+		} // Game reports the restore fault below.
+	})();
+	await requireModels(
+		query.has("models-full")
+			? ALL_MODELS
+			: bootModelIds(bootWorld.system, plan.loaded?.commander.dockedAt ?? null),
+		loading.view,
+		true,
+	);
+	await nextPaint();
 	let game: Game;
 	try {
 		game = new Game(worldSeed, plan.loaded, askedSystem);
@@ -21997,21 +25100,35 @@ if (postcard) {
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
 		restoreFaulted = true;
+		await requireModels(
+			bootModelIds(freshWorld().system, null),
+			loading.view,
+			true,
+		);
 		game = new Game(worldSeed, null, askedSystem);
 	}
+	if (MINING_ON) game.fitPrototypeMiningLaser(plan.writesNothing);
 	// The world is built: the loading panel or the overlay's line goes.
 	loading.view({ kind: "done" });
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	// Before the `interiors-full` wait: a probe boot that awaits the sliced
 	// install must not let the sim run through it (#843).
 	game.clockHeld = true;
-	void game.loadAuthoredHullsAfterBoot();
+	installedGame = game;
+	game.startModelQueue();
+	// Models adopted before construction already draw authored geometry.
+	if (models.state("interiors") === "installed")
+		await game.modelInstalled("interiors");
+	// The full-set boot is settled before the first frame a probe reads.
+	if (query.has("models-full")) await game.modelInstalled("asteroids");
 	if (query.has("interiors-full")) await game.loadInteriorsAfterBoot();
 	else void game.loadInteriorsAfterBoot();
 	if (query.has("shipyards-full")) await game.loadShipyardsAfterBoot();
 	else void game.loadShipyardsAfterBoot();
 	if (query.has("refineries-full")) await game.loadRefineriesAfterBoot();
 	else void game.loadRefineriesAfterBoot();
+	if (query.has("outposts-full")) await game.loadOutpostsAfterBoot();
+	else void game.loadOutpostsAfterBoot();
 	game.saveFault = plan.fault;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander
@@ -22137,6 +25254,7 @@ if (postcard) {
 				// What the death took, said where the pilot wakes (node #704).
 				// After the restore, so a docked wake is on the console.
 				if (plan.wake) game.showWake(plan.wake);
+				game.sayScoopNotice();
 				return;
 			}
 			if (plan.wake) game.showWake(plan.wake);

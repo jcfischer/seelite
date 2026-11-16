@@ -137,9 +137,10 @@ import {
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
 const SUBJECT = "station-trade";
-/** Eight silhouette radii: the framing `cockpit-backlit` uses, where the
- *  station is about a third of the frame and its plating is resolvable. */
-const RADII = 8;
+/** Four silhouette radii keep the pooled Assembly's sparse structure above
+ * the mask's sampling floor. This measures light on its plating; the canonical
+ * cockpit-backlit view keeps its own framing. */
+const RADII = 4;
 
 /** Repeats of the hull measurement in one page, so the row can print the
  *  same-build noise beside the reading rather than one sample of it. */

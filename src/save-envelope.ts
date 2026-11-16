@@ -1,7 +1,20 @@
+import { oreGood } from "./ore-goods";
+import { signedMoney, mass, money, massFromNative } from "./exact-amount";
+import {
+	migrateAccount,
+	encodeAccount,
+	parseAccount,
+	displayAmount,
+	projectBasis,
+	walletChange,
+	encodeShare,
+	nativeGrams,
+} from "./commodity-pools";
 import {
 	carriedModule,
 	parseLoadout,
 	parseModule,
+	grantLegacyScoop,
 	migrateEquipment,
 	type Loadout,
 } from "./loadout";
@@ -55,7 +68,7 @@ import {
 	seededLadderRecord,
 	serializeLadders,
 } from "./ladder";
-import { COMMODITIES, EQUIPMENT } from "./market";
+import { CARGO_COMMODITIES, EQUIPMENT } from "./market";
 import { fnv1a } from "./rng";
 import {
 	GALAXY_COUNT,
@@ -158,7 +171,41 @@ import {
  * at. An 11–14 pressure row keeps its region as observed and loads with a
  * `null` strength; one carrying either new field was assembled
  * (`parseSweepReadings`, `SWEEP_STRENGTH_SCHEMA`). */
-export const SAVE_SCHEMA_VERSION = 15;
+/**
+ * **16 adds `commander.txSeq` (#936 D4, built by node #943)** — the one
+ * transaction sequence number a durable gameplay commit moves by exactly one.
+ * A v15 and older record loads with `txSeq: 0` and may not carry the key
+ * (`LEGACY_SCHEMA_FORBIDS`); a current record without it is truncated, and one
+ * carrying a negative, fractional or unsafe integer is refused, because
+ * `commit`'s staleness gate is the only thing refusing a repeat submission and
+ * a sequence number that cannot be compared is worse than a refused save.
+ * No history of operations is stored: the record grows by a few bytes and the
+ * bound is fixed (#936 D4).
+ */
+/**
+ * **18 adds world capability timing.** Version 17 and earlier keep their original
+ * outer and nested hashes until validation, then migrate the world to schema 4.
+ *
+ * **17 grants the cargo scoop once (node #1097, settled by #1095 D8).** A
+ * record older than 17 loads with a size-1 grade-E cargo scoop in the first
+ * empty cargo-accepting internal slot in key order, the flex slot never; where
+ * none is free it loads unchanged and carries `scoopNotice`, which the next
+ * dock says and clears. The grant is keyed on the version, so a 17 record
+ * whose pilot sold the scoop is not granted another. A record older than 17
+ * may not carry `scoopNotice`, and a 17 record carries it only as `true`
+ * (`LEGACY_SCHEMA_FORBIDS`).
+ */
+/**
+ * **22 admits the world's refinery queues (node #1195).** The queue lives in
+ * the world rather than the commander, so the commander's shape does not move;
+ * the envelope version is what says a record may carry a world schema 5. A 21
+ * record loads with every refinery empty and keeps its world's original hashes
+ * until `parseWorld` validates and lifts them.
+ *
+ * Schema21 admits whole-tonne raw ore; older envelopes retain their original
+ * catalogue.
+ */
+export const SAVE_SCHEMA_VERSION = 22;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -194,10 +241,13 @@ export const SAVE_SCHEMA_VERSION = 15;
  * **11 is every save written between nodes #482 and #705**, and **12 every
  * save written from node #705 until the slot loadout**. **13 adds the typed
  * loadout and 14 its purchase cost**; all four carry a sweep ledger whose
- * pressure rows have no strength.
+ * pressure rows have no strength. **15 adds the pressure row's strength** and
+ * is every save written between node #769 and node #943; it predates `txSeq`.
+ * **16 is every save written between node #943 and node #1097**; it predates
+ * the cargo-scoop grant.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
 ] as const;
 
 /**
@@ -217,15 +267,28 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
 > = {
-	2: ["requests", "firstDay", "ladders", "sweepReadings"],
-	3: ["firstDay", "ladders", "sweepReadings"],
-	4: ["firstDay", "ladders", "sweepReadings"],
-	5: ["firstDay", "ladders", "sweepReadings"],
-	6: ["ladders", "sweepReadings"],
-	7: ["sweepReadings"],
-	8: ["sweepReadings"],
-	9: ["sweepReadings"],
-	10: ["sweepReadings"],
+	2: [
+		"requests",
+		"firstDay",
+		"ladders",
+		"sweepReadings",
+		"txSeq",
+		"scoopNotice",
+	],
+	3: ["firstDay", "ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	4: ["firstDay", "ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	5: ["firstDay", "ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	6: ["ladders", "sweepReadings", "txSeq", "scoopNotice"],
+	7: ["sweepReadings", "txSeq", "scoopNotice"],
+	8: ["sweepReadings", "txSeq", "scoopNotice"],
+	9: ["sweepReadings", "txSeq", "scoopNotice"],
+	10: ["sweepReadings", "txSeq", "scoopNotice"],
+	11: ["txSeq", "scoopNotice"],
+	12: ["txSeq", "scoopNotice"],
+	13: ["txSeq", "scoopNotice"],
+	14: ["txSeq", "scoopNotice"],
+	15: ["txSeq", "scoopNotice"],
+	16: ["scoopNotice"],
 };
 
 /**
@@ -274,11 +337,11 @@ const migrateV3Requests = (raw: unknown): RequestsState => {
  * `procurement` and both move cargo, so no genuine v4 record loses its
  * operand here.
  */
-const migrateV4Requests = (raw: unknown): unknown => {
-	if (raw === null || typeof raw !== "object") return raw;
+const migrateV4Requests = (raw: unknown): WireValue => {
+	if (raw === null || typeof raw !== "object") return raw as WireValue;
 	const journal = raw as Record<string, unknown>;
-	const lift = (offer: unknown): unknown => {
-		if (offer === null || typeof offer !== "object") return offer;
+	const lift = (offer: unknown): WireValue => {
+		if (offer === null || typeof offer !== "object") return offer as WireValue;
 		const { goodName, tonnes, entrusted, ...rest } = offer as Record<
 			string,
 			unknown
@@ -289,9 +352,10 @@ const migrateV4Requests = (raw: unknown): unknown => {
 	};
 	const map = (
 		container: unknown,
-		each: (row: Record<string, unknown>) => unknown,
-	): unknown => {
-		if (container === null || typeof container !== "object") return container;
+		each: (row: Record<string, unknown>) => WireValue,
+	): WireValue => {
+		if (container === null || typeof container !== "object")
+			return container as WireValue;
 		// **A null prototype, because the keys are a save's.** `JSON.parse`
 		// makes `__proto__` an own key, and assigning it on an ordinary object
 		// reaches `Object.prototype`'s setter instead of storing a row — the
@@ -303,7 +367,7 @@ const migrateV4Requests = (raw: unknown): unknown => {
 			out[id] =
 				row !== null && typeof row === "object"
 					? each(row as Record<string, unknown>)
-					: row;
+					: (row as WireValue);
 		return out;
 	};
 	return {
@@ -371,6 +435,16 @@ export interface CommanderRecord {
 	permadeath: boolean;
 	/** #408 D4: New game's choice, written at creation and never edited. */
 	firstDay: FirstDayChoice;
+	/**
+	 * The transaction sequence number (#936 D4, node #943). A non-negative
+	 * safe integer; a successful `SaveStore.commit` moves it by exactly one.
+	 * An action records it when it is quoted or shown, and a commit whose
+	 * recorded value is not the current one is refused as stale — which is
+	 * also what refuses a second submission or collection. Legacy versions
+	 * load at 0.
+	 */
+	txSeq: number;
+	scoopNotice: boolean;
 	/** The three ladders' banked record (#183 D9). Beside `state` in the one
 	 *  record, so a death's revert to `lastDocked` moves the credits and the
 	 *  rungs together. */
@@ -386,6 +460,39 @@ export interface SaveEnvelope {
 
 const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
+};
+
+/**
+ * A JSON value on the wire before it is validated (#46).
+ *
+ * The integrity hash has proved the bytes are self-consistent, not that they
+ * are the shape the reader wants. The v4 migration passes through everything
+ * it does not reshape and `parseRequests` is the validator, so a migrator
+ * names this and nothing stronger — `unknown` said the same thing less
+ * honestly about values a JSON store cannot hold at all.
+ */
+type WireValue =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly unknown[]
+	| { readonly [key: string]: unknown };
+
+/**
+ * The record as the store holds it: plain JSON, with the integrity hash over
+ * the rest of the body (#89 D5, #46 — the hash covers what was written, so
+ * the writer's own key order is part of the type's meaning).
+ *
+ * The two halves stay each module's wire blob: the envelope's shape is this
+ * module's business; what lives under `world` and `commander` is validated by
+ * `parseWorld` and `parseCommander`, not here.
+ */
+export type SaveRecordBody = {
+	saveSchemaVersion: number;
+	world: unknown;
+	commander: unknown;
+	integrity: number;
 };
 
 /** A new game's commander: at rest, undocked, and a charge the caller names —
@@ -418,6 +525,8 @@ export const newCommanderRecord = (
 	chargeAu: options.chargeAu ?? 0,
 	permadeath: options.permadeath ?? false,
 	firstDay: options.firstDay ?? "free",
+	txSeq: 0,
+	scoopNotice: false,
 	// A new game is paid for nothing it starts with: its own system is seeded
 	// (#183 D9's migration rule, applied to the start). The start station is
 	// not: its first dock, a guided start's included, earns one kind.
@@ -445,6 +554,14 @@ export const newCommanderRecord = (
  *  equal saves would then hash differently. This is `world-state.ts`'s
  *  `canonicalEnvelope` rule applied across the boundary. */
 const canonicalCommander = (record: CommanderRecord) => {
+	const accounting =
+		record.state.accounting ??
+		migrateAccount(
+			record.state.credits,
+			record.ladders.banked.trade,
+			record.state.cargo,
+			record.ladders.basis,
+		);
 	const cargo: Record<string, number> = {};
 	for (const name of Object.keys(record.state.cargo).sort())
 		cargo[name] = record.state.cargo[name];
@@ -474,7 +591,9 @@ const canonicalCommander = (record: CommanderRecord) => {
 			trackedRequestId: record.requests.trackedRequestId,
 		},
 		state: {
-			credits: record.state.credits,
+			credits: displayAmount(accounting.cash),
+			...(record.state.firstOreNoticeSeen ? { firstOreNoticeSeen: true } : {}),
+			accounting: encodeAccount(accounting),
 			cargo,
 			loadout: Object.fromEntries(
 				Object.entries(
@@ -497,7 +616,16 @@ const canonicalCommander = (record: CommanderRecord) => {
 		chargeAu: record.chargeAu,
 		permadeath: record.permadeath,
 		firstDay: record.firstDay,
-		ladders: serializeLadders(record.ladders),
+		txSeq: record.txSeq,
+		...(record.scoopNotice ? { scoopNotice: true } : {}),
+		ladders: serializeLadders({
+			...record.ladders,
+			banked: {
+				...record.ladders.banked,
+				trade: displayAmount(accounting.bankedTrade),
+			},
+			basis: projectBasis(accounting),
+		}),
 		flight: {
 			pos: [...record.flight.pos],
 			vel: [...record.flight.vel],
@@ -529,7 +657,7 @@ const refuseDerelicts = (world: unknown, version: number): void => {
  * the headroom, and an opaque exported file is one neither the player nor a bug
  * report can read.
  */
-export const serializeSave = (save: SaveEnvelope): unknown => {
+export const serializeSave = (save: SaveEnvelope): SaveRecordBody => {
 	const body = {
 		saveSchemaVersion: SAVE_SCHEMA_VERSION,
 		world: serializeWorld(save.world),
@@ -620,6 +748,13 @@ const parseCommander = (
 			// in the table would otherwise print a sentence about the first.
 			fail(`saveSchemaVersion ${version} cannot contain "${key}"`);
 	const state = asObject(o.state, "commander.state");
+	if (
+		state.firstOreNoticeSeen !== undefined &&
+		state.firstOreNoticeSeen !== true
+	)
+		fail("commander.state: firstOreNoticeSeen is not true");
+	if (version < 20 && state.accounting !== undefined)
+		fail("legacy commander contains accounting");
 	const hull = state.hull;
 	if (
 		typeof hull !== "string" ||
@@ -634,13 +769,17 @@ const parseCommander = (
 	// since #443 is the hold projection, on every console update while docked.
 	// A save boundary that admits a name nothing can price is the same class as
 	// a hull that is not in the roster, two checks above.
-	const goodNames = new Set(COMMODITIES.map((good) => good.name));
+	const goodNames = new Set(CARGO_COMMODITIES.map((good) => good.name));
 	for (const name of Object.keys(cargoRaw).sort()) {
 		const amount = cargoRaw[name];
-		if (typeof amount !== "number" || !Number.isFinite(amount))
-			fail(`commander.state.cargo: ${name} is not a finite quantity`);
+		if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0)
+			fail(
+				`commander.state.cargo: ${name} is not a finite nonnegative quantity`,
+			);
 		if (!goodNames.has(name))
 			fail(`commander.state.cargo: ${name} is not a commodity`);
+		if (oreGood(name) && (version < 21 || !Number.isSafeInteger(amount)))
+			fail(`commander.state.cargo: ${name} requires whole tonnes in schema 21`);
 		cargo[name] = amount as number;
 	}
 	const recovered = state.recoveredFittings;
@@ -731,6 +870,28 @@ const parseCommander = (
 	const firstDay: FirstDayChoice = hasFirstDay
 		? (o.firstDay as FirstDayChoice)
 		: "free";
+	// #936 D4. Below 16 the forbids table has already refused the key, so an
+	// older record loads at 0. At 16 an absent key is a truncation (refused,
+	// not read as 0 — #89's obligation 5), and a value that is not a
+	// non-negative safe integer is refused rather than trusted: the staleness
+	// gate that refuses a repeat submission compares this number, and one
+	// that cannot be compared — fractional, or past `Number.MAX_SAFE_INTEGER`
+	// where successive increments collide — is worse than a refused save.
+	if (version >= 16) {
+		if (!Number.isSafeInteger(o.txSeq))
+			fail(`commander: txSeq ${String(o.txSeq)} is not a whole safe integer`);
+		if ((o.txSeq as number) < 0)
+			fail(`commander: txSeq ${String(o.txSeq)} is negative`);
+	}
+	const txSeq = version >= 16 ? (o.txSeq as number) : 0;
+	if (o.scoopNotice !== undefined && o.scoopNotice !== true)
+		fail(`commander: scoopNotice ${String(o.scoopNotice)} is not true`);
+	let scoopNotice = o.scoopNotice === true;
+	if (version < 17) {
+		const granted = grantLegacyScoop(hull as HullId, loadout);
+		loadout = granted.loadout;
+		scoopNotice = granted.owed;
+	}
 	// **Bounded, not merely finite — and bounded on both indices.** For a round
 	// the system index was checked only for being a non-negative integer while
 	// the comment claimed it covered "a system the galaxy does not have", so
@@ -777,6 +938,38 @@ const parseCommander = (
 		if (line.units > (cargo[good] ?? 0))
 			fail(`commander.ladders.basis: ${good} covers more than is aboard`);
 	}
+	const credits = num(state, "credits", "commander.state");
+	let accounting =
+		version >= 20
+			? parseAccount(state.accounting)
+			: migrateAccount(credits, ladders.banked.trade, cargo, ladders.basis);
+	if (
+		version < 21 &&
+		Object.keys(accounting.basis).some((name) => oreGood(name))
+	)
+		fail("legacy accounting contains raw ore");
+	if (version >= 20) {
+		if (
+			state.credits !== displayAmount(accounting.cash) ||
+			ladders.banked.trade !== displayAmount(accounting.bankedTrade)
+		)
+			fail("commander accounting projection mismatch");
+		for (const good of new Set([
+			...Object.keys(cargo),
+			...Object.keys(accounting.basis),
+		])) {
+			const expected = displayAmount(
+				accounting.basis[good]?.heldMass ?? 0n,
+				"mass",
+				nativeGrams(good),
+			);
+			if ((cargo[good] ?? 0) !== expected)
+				fail("commander cargo accounting mismatch: " + good);
+		}
+	}
+	if (refundCr !== 0)
+		accounting = walletChange(accounting, signedMoney.fromNumber(refundCr));
+
 	return {
 		sweepReadings: [], // Cross-galaxy provenance validation follows world parsing.
 		requests:
@@ -793,7 +986,11 @@ const parseCommander = (
 							now,
 						),
 		state: {
-			credits: num(state, "credits", "commander.state") + refundCr,
+			credits: displayAmount(accounting.cash),
+			accounting,
+			...(state.firstOreNoticeSeen === true
+				? { firstOreNoticeSeen: true as const }
+				: {}),
 			cargo,
 			loadout,
 			...(carried.length ? { recoveredFittings: carried } : {}),
@@ -821,7 +1018,17 @@ const parseCommander = (
 		),
 		permadeath: o.permadeath as boolean,
 		firstDay,
-		ladders,
+		txSeq,
+		scoopNotice,
+		ladders: {
+			...ladders,
+			tradeExact: accounting.bankedTrade,
+			banked: {
+				...ladders.banked,
+				trade: displayAmount(accounting.bankedTrade),
+			},
+			basis: projectBasis(accounting),
+		},
 		flight: parseFlight(o.flight, version),
 	};
 };
@@ -883,7 +1090,46 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	// old world's bytes equal to its hash; this is where the version that may
 	// carry one is enforced, as `flight.rates` is one level down.
 	if ((version as number) < 9) refuseDerelicts(o.world, version as number);
+	const worldVersion = asObject(o.world, "world").worldSchemaVersion;
+	let expectedWorldVersion = 5;
+	if ((version as number) < 18) expectedWorldVersion = 3;
+	else if ((version as number) < 22) expectedWorldVersion = 4;
+	if (worldVersion !== expectedWorldVersion)
+		fail("world schema is incompatible with saveSchemaVersion");
 	const world = parseWorld(o.world);
+	if (
+		(version as number) < 21 &&
+		world.galaxies.some((g) =>
+			g.deathWreck?.containers.some((c) => c.kind === "good" && oreGood(c.id)),
+		)
+	)
+		fail("legacy world contains raw ore");
+	if (
+		(version as number) < 19 &&
+		(asObject(o.world, "world").galaxies as unknown[]).some(
+			(g) => asObject(g, "galaxy").fieldDiscoveries !== undefined,
+		)
+	)
+		fail("legacy world contains field discoveries");
+	if ((version as number) < 20) {
+		for (const g of world.galaxies)
+			for (const container of g.deathWreck?.containers ?? [])
+				if (container.ownedShare)
+					fail("legacy world contains recovery accounting");
+	}
+	if ((version as number) < 20) {
+		for (const g of world.galaxies)
+			for (const c of g.deathWreck?.containers ?? [])
+				if (c.kind === "good") {
+					const totalMass = massFromNative(c.left, nativeGrams(c.id));
+					c.ownedShare = encodeShare({
+						totalMass,
+						unknownMass: totalMass,
+						knownMass: mass.fromTicks(0n),
+						cost: money.fromTicks(0n),
+					});
+				}
+	}
 	if ((version as number) < 14) {
 		for (const g of world.galaxies)
 			for (const row of [g.deathWreck, ...Object.values(g.derelicts ?? {})])

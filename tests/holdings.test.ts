@@ -932,6 +932,24 @@ describe("the figures the probes used to pin", () => {
  * a fresh world, so there is none).
  */
 describe("the adopt point (#631)", () => {
+	test("refinery presses repaint and accepted custody invalidates the console", () => {
+		const world = newWorld(47);
+		const before = { holdings: holdings(), world };
+		expect(adoptEffects("refinery", before, before)).toEqual({
+			save: false,
+			consoleRevision: false,
+			requestRevision: false,
+			redraw: true,
+		});
+		expect(
+			adoptEffects("refinery", before, { ...before, world: { ...world } }),
+		).toEqual({
+			save: true,
+			consoleRevision: true,
+			requestRevision: false,
+			redraw: true,
+		});
+	});
 	const effectsOf = (before: Holdings, world: WorldState, out: HoldOutcome) =>
 		adoptEffects(out.kind, { holdings: before, world }, out);
 	/** The effects that fire, by name, so a red row says which. */
@@ -1180,4 +1198,32 @@ describe("#654 — the commander record a death restores", () => {
 			ladders: { ...docked.ladders, playedS: 1800 },
 		});
 	});
+});
+
+test("exact procurement consumes unknown shares first while reward leaves debt unchanged", async () => {
+	const { migrateAccount, withAccount } = await import(
+		"../src/commodity-pools"
+	);
+	const { money, massFromNative } = await import("../src/exact-amount");
+	const base = holdings({ cargo: { [GOOD]: TONNES + 2 } });
+	const start = {
+		...base,
+		commander: withAccount(
+			base.commander,
+			migrateAccount(base.commander.credits, 0, base.commander.cargo, {
+				[GOOD]: { units: TONNES, cr: TONNES * 10 },
+			}),
+		),
+	};
+	const [, delivered, reported] = flyProcurement(start, newWorld(1));
+	const pool = delivered.holdings.commander.accounting!.pools[GOOD];
+	expect(pool.totalMass).toBe(massFromNative(2, 1000000));
+	expect(pool.unknownMass).toBe(massFromNative(0, 1000000));
+	expect(pool.unrecoveredCost).toBe(money.fromNumber(TONNES * 10));
+	expect(
+		reported.holdings.commander.accounting!.pools[GOOD].unrecoveredCost,
+	).toBe(pool.unrecoveredCost);
+	expect(reported.holdings.commander.accounting!.bankedTrade).toBe(
+		money.fromNumber(purchase.rewardCr),
+	);
 });

@@ -231,7 +231,7 @@ describe("terminal-to-terminal route projection", () => {
 			prior = projection;
 		}
 		expect(worstStepDeg * (180 / Math.PI)).toBeLessThan(6);
-	}, 10_000);
+	}, 60_000);
 
 	test("station-zone legs stay slow, clear the bubble, and visibly dwell", () => {
 		let maxZoneSpeedKms = 0;

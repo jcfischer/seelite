@@ -13,7 +13,7 @@ import {
 	contractRoots,
 } from "../scripts/lib/probe-contract-roots.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
@@ -30,11 +30,42 @@ function readSources(dir: string) {
 }
 readSources("src");
 readSources("scripts");
+readSources("spikes");
 const inventory = discoverProbeFiles(resolve(root, "scripts"));
 const impact = (paths: string[], before = sources, after = sources) =>
 	selectImpact(paths, { before, after }, inventory);
 
 describe("production contract ownership", () => {
+	test("the alternate cockpit asset selects its live rendering probe", () => {
+		expect(impact(["scripts/fixtures/cockpit-text-cabin.glb"]).probes).toEqual(
+			[...new Set([...SMOKE_PROBES, "probe-live-cockpit.mjs"])].sort(),
+		);
+	});
+	test("the alternate cockpit module selects its live rendering probe", () => {
+		expect(impact(["scripts/fixtures/cockpit-text-cabin.ts"]).probes).toEqual(
+			[...new Set([...SMOKE_PROBES, "probe-live-cockpit.mjs"])].sort(),
+		);
+	});
+	test("rock placement declares its Game placement paths as an owner", () => {
+		expect(PROBE_ROOTS["probe-rock-placement.mjs"]).toContain("src/main.ts");
+	});
+	test("removing any Game placement arm still selects the rock placement probe", async () => {
+		const main = sources.get("src/main.ts")!;
+		const calls = [...main.matchAll(/markShipPlaced\(this\.world\);/g)];
+		expect(calls).toHaveLength(5);
+		for (const call of calls) {
+			const after = new Map(sources);
+			after.set(
+				"src/main.ts",
+				main.slice(0, call.index) + main.slice(call.index! + call[0].length),
+			);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before: sources, after },
+			});
+			expect(result.probes).toContain("probe-rock-placement.mjs");
+		}
+	});
 	test("new probe contracts inherit game dependencies unless reviewed standalone", () => {
 		const roots = contractRoots("probe-new-game-contract.mjs", [
 			"src/new-feature.ts",
@@ -66,10 +97,147 @@ describe("production contract ownership", () => {
 				callers,
 			);
 	});
+	test.each([
+		[
+			"applyViewFov",
+			"if (this.nearCamera.fov === fov) return;",
+			"if (this.nearCamera.fov !== fov) return;",
+		],
+		[
+			"layerCameras",
+			"private get layerCameras() {\n\t\treturn [\n\t\t\tthis.backdropCamera,",
+			"private get layerCameras() {\n\t\treturn [",
+		],
+	])(
+		"a body-only %s edit selects its reviewed FOV contracts and smoke",
+		async (method, from, to) => {
+			const main = sources.get("src/main.ts")!;
+			const edited = main.replace(from, to);
+			expect(changedMethods(main, edited)).toEqual([method]);
+			const after = new Map(sources);
+			after.set("src/main.ts", edited);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before: sources, after },
+			});
+			expect(result.mode).toBe("affected");
+			expect(result.probes).toEqual(
+				[
+					...SMOKE_PROBES,
+					"probe-hud.mjs",
+					"probe-chase-view.mjs",
+					"probe-cruise-light.mjs",
+				].sort(),
+			);
+		},
+	);
+	test("a body-only unowned getter edit expands to all probes", async () => {
+		const main = sources.get("src/main.ts")!;
+		const edited = main.replace(
+			'this.view === "cockpit" && !this.cabinHidden',
+			'this.view === "cockpit" || !this.cabinHidden',
+		);
+		expect(changedMethods(main, edited)).toEqual(["drawsCabin"]);
+		const after = new Map(sources);
+		after.set("src/main.ts", edited);
+		const result = await selectProbes({
+			changedFiles: ["src/main.ts"],
+			impact: { before: sources, after },
+		});
+		expect(result.mode).toBe("all");
+		expect(result.probes).toEqual(inventory);
+		expect(result.reason).toContain("unowned methods");
+	});
+	test.each([false, true])(
+		"a new layerCameras reader expands to all probes (already in base: %s)",
+		async (alreadyInBase) => {
+			const main = sources.get("src/main.ts")!;
+			const withReader = main.replace(
+				"private navRows(): NavRow[] {",
+				"private navRows(): NavRow[] { void this.layerCameras;",
+			);
+			expect(methodCallers(withReader, "layerCameras")).toEqual([
+				"applyViewFov",
+				"navRows",
+			]);
+			const before = new Map(sources);
+			before.set("src/main.ts", alreadyInBase ? withReader : main);
+			const after = new Map(sources);
+			after.set(
+				"src/main.ts",
+				withReader.replace(
+					"private get layerCameras() {\n\t\treturn [\n\t\t\tthis.backdropCamera,",
+					"private get layerCameras() {\n\t\treturn [",
+				),
+			);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before, after },
+			});
+			expect(result.mode).toBe("all");
+			expect(result.probes).toEqual(inventory);
+			expect(result.reason).toContain(
+				"method callers differ from reviewed ownership",
+			);
+		},
+	);
+	test("a new layerCameras collaborator expands to all probes", async () => {
+		const main = sources.get("src/main.ts")!;
+		const edited = main.replace(
+			"private get layerCameras() {",
+			"private get layerCameras() { this.saveFlush();",
+		);
+		expect(changedMethods(main, edited)).toEqual(["layerCameras"]);
+		expect(methodCallers(edited, "layerCameras")).toEqual(["applyViewFov"]);
+		const after = new Map(sources);
+		after.set("src/main.ts", edited);
+		const result = await selectProbes({
+			changedFiles: ["src/main.ts"],
+			impact: { before: sources, after },
+		});
+		expect(result.mode).toBe("all");
+		expect(result.probes).toEqual(inventory);
+		expect(result.reason).toContain("introduces new calls/member access");
+	});
+	test.each([false, true])(
+		"a new applyViewFov caller expands to all probes (already in base: %s)",
+		async (alreadyInBase) => {
+			const main = sources.get("src/main.ts")!;
+			const withCaller = main.replace(
+				"private navRows(): NavRow[] {",
+				"private navRows(): NavRow[] { this.applyViewFov();",
+			);
+			expect(methodCallers(withCaller, "applyViewFov")).toEqual([
+				"constructor",
+				"navRows",
+				"render",
+			]);
+			const before = new Map(sources);
+			before.set("src/main.ts", alreadyInBase ? withCaller : main);
+			const after = new Map(sources);
+			after.set(
+				"src/main.ts",
+				withCaller.replace(
+					"if (this.nearCamera.fov === fov) return;",
+					"if (this.nearCamera.fov !== fov) return;",
+				),
+			);
+			const result = await selectProbes({
+				changedFiles: ["src/main.ts"],
+				impact: { before, after },
+			});
+			expect(result.mode).toBe("all");
+			expect(result.probes).toEqual(inventory);
+			expect(result.reason).toContain(
+				"method callers differ from reviewed ownership",
+			);
+		},
+	);
 	test("owns every runner probe and roots exist", () => {
 		expect(Object.keys(PROBE_ROOTS).sort()).toEqual(inventory);
 		for (const roots of Object.values(PROBE_ROOTS))
-			for (const path of roots) expect(sources.has(path)).toBe(true);
+			for (const path of roots)
+				expect(existsSync(resolve(root, path))).toBe(true);
 	});
 	test("equipment display excludes music and cinematics but keeps its consumers and smoke", () => {
 		const selected = impact(["src/outfitting-view.ts"]).probes!;
@@ -89,6 +257,15 @@ describe("production contract ownership", () => {
 		const music = impact(["src/music-worklet.ts"]).probes!;
 		expect(music).toContain("probe-music.mjs");
 		expect(music).toContain("probe-music-game.mjs");
+	});
+	test("a comment burn-down slice selects its file's contracts, not the suite", () => {
+		const slice = impact([
+			"src/market.ts",
+			"eslint-suppressions.json",
+			"tests/market.test.ts",
+		]).probes!;
+		expect(slice).toEqual(impact(["src/market.ts"]).probes!);
+		expect(slice).toContain("probe-market-shelf.mjs");
 	});
 	test("new ownerless sources and catalog drift expand coverage", () => {
 		expect(impact(["src/unknown.ts"]).probes).toBeUndefined();
@@ -288,6 +465,29 @@ describe("deterministic browser impact", () => {
 			[...sources.keys()].sort(),
 		);
 	});
+	test("a path's edges follow its text and the snapshot's files, not an earlier snapshot", () => {
+		const first = new Map([
+			["src/root.ts", 'import "./a";'],
+			["src/a.ts", ""],
+			["src/b/index.ts", ""],
+		]);
+		expect([...dependencyClosure(["src/root.ts"], first)].sort()).toEqual([
+			"src/a.ts",
+			"src/root.ts",
+		]);
+		const edited = new Map(first);
+		edited.set("src/root.ts", 'import "./b";');
+		expect([...dependencyClosure(["src/root.ts"], edited)].sort()).toEqual([
+			"src/b/index.ts",
+			"src/root.ts",
+		]);
+		const moved = new Map(edited);
+		moved.set("src/b.ts", "");
+		expect([...dependencyClosure(["src/root.ts"], moved)].sort()).toEqual([
+			"src/b.ts",
+			"src/root.ts",
+		]);
+	});
 	test("a changed helper reaches its owner, not an unrelated synth", () => {
 		const sources = new Map([
 			["src/panel.ts", 'import "./text";'],
@@ -328,5 +528,141 @@ describe("deterministic browser impact", () => {
 		expect(
 			changedMethods(before, before.replace("panel()", "other()")),
 		).toBeNull();
+	});
+	test("existing getter bodies use the same body-only boundary", () => {
+		const before = "class Game { get cameras() { return [this.near]; } }";
+		expect(changedMethods(before, before.replace("[this.near]", "[]"))).toEqual(
+			["cameras"],
+		);
+		for (const after of [
+			before.replace("get cameras()", "get other()"),
+			before.replace("get cameras()", "get cameras(): Camera[]"),
+			before.replace("class Game {", "class Game { fov = 60;"),
+			before.replace("class Game {", "class Game { get extra() { return 1; }"),
+			"class Game {}",
+		])
+			expect(changedMethods(before, after)).toBeNull();
+	});
+
+	describe("spike rule: study files under spikes/", () => {
+		const real = { before: sources, after: sources };
+		const select = (files: string[], impact = real) =>
+			selectProbes({ changedFiles: files, impact });
+		test("a study confined diff selects no probe and names the rule", async () => {
+			const result = await select([
+				"spikes/stations/assembly-kit/index.html",
+				"spikes/stations/assembly-kit/viewer.ts",
+			]);
+			expect(result.mode).toBe("none");
+			expect(result.probes).toEqual([]);
+			expect(result.reason).toContain("spike rule");
+		});
+		test("the Coriolis glb that src/ fetches by URL is runtime", async () => {
+			const result = await select(["spikes/coriolis/coriolis-industrial.glb"]);
+			expect(result.mode).not.toBe("none");
+			expect(result.reason).not.toContain("spike rule");
+		});
+		test("a courier-cockpit asset that src/ loads from its directory is runtime", async () => {
+			const result = await select(["spikes/courier-cockpit/anything.png"]);
+			expect(result.mode).not.toBe("none");
+			expect(result.reason).not.toContain("spike rule");
+		});
+		test("a study file is runtime when only the base or only the head names it", async () => {
+			const naming = new Map([
+				["src/viewer.ts", 'fetch("/spikes/demo/model.glb");'],
+			]);
+			const bare = new Map([["src/viewer.ts", ""]]);
+			const files = ["spikes/demo/model.glb"];
+			for (const impact of [
+				{ before: naming, after: bare },
+				{ before: bare, after: naming },
+			])
+				expect((await select(files, impact)).mode).not.toBe("none");
+			expect((await select(files, { before: bare, after: bare })).mode).toBe(
+				"none",
+			);
+		});
+		test("a relative import, a glob and a bare spikes literal reach the files under them", async () => {
+			const bare = new Map([["src/a.ts", ""]]);
+			const cases: [string, string][] = [
+				['import "../spikes/demo/lib";', "spikes/demo/lib.ts"],
+				['import.meta.glob("/spikes/demo/**/*.glb");', "spikes/demo/x/y.glb"],
+				[
+					'import.meta.glob("/spikes/demo/model-*.glb");',
+					"spikes/demo/model-a.glb",
+				],
+				[
+					'import.meta.glob("/spikes/demo/model-{a,b}.glb");',
+					"spikes/demo/model-a.glb",
+				],
+				[
+					'import.meta.glob("/spikes/demo/model-[ab].glb");',
+					"spikes/demo/model-a.glb",
+				],
+				['join(root, "spikes", name);', "spikes/demo/z.ts"],
+				["fetch(`/spikes/demo/${name}.glb`);", "spikes/demo/q.glb"],
+			];
+			for (const [text, file] of cases) {
+				const naming = new Map([["src/a.ts", text]]);
+				expect(
+					(await select([file], { before: bare, after: naming })).mode,
+				).not.toBe("none");
+			}
+		});
+		test("transitive spike imports retain their owners in either revision", async () => {
+			for (const root of [
+				"src/outfitting-view.ts",
+				"scripts/probe-outfitting.mjs",
+			]) {
+				const naming = new Map([
+					[root, 'import "../spikes/demo/entry";'],
+					["spikes/demo/entry.ts", 'import "./lib";'],
+					["spikes/demo/lib.ts", "export const value = 1;"],
+				]);
+				const bare = new Map([[root, ""]]);
+				for (const impact of [
+					{ before: naming, after: bare },
+					{ before: bare, after: naming },
+				]) {
+					const result = await select(["spikes/demo/lib.ts"], impact);
+					expect(result.mode).toBe("affected");
+					expect(result.probes).toContain("probe-outfitting.mjs");
+				}
+			}
+		});
+		test("URLs named by transitive runtime imports stay runtime", async () => {
+			const naming = new Map([
+				["src/a.ts", 'import "../spikes/demo/entry";'],
+				["spikes/demo/entry.ts", 'fetch("/spikes/other/model.glb");'],
+			]);
+			const result = await select(["spikes/other/model.glb"], {
+				before: naming,
+				after: naming,
+			});
+			expect(result.mode).toBe("all");
+		});
+		test("a comment that mentions a study does not reach it", async () => {
+			const impact = {
+				before: new Map([["src/a.ts", "// see spikes/demo/model.glb"]]),
+				after: new Map([["src/a.ts", "// see spikes/demo/model.glb"]]),
+			};
+			expect((await select(["spikes/demo/model.glb"], impact)).mode).toBe(
+				"none",
+			);
+		});
+		test("a study file beside a runtime change keeps the runtime owners only", () => {
+			const result = impact([
+				"src/outfitting.ts",
+				"spikes/stations/assembly-kit/viewer.ts",
+			]);
+			expect(result.probes).toBeDefined();
+			expect(result.reason).toContain("study files");
+		});
+		test("without snapshots a spikes/ path is never a study file", async () => {
+			const result = await selectProbes({
+				changedFiles: ["spikes/stations/assembly-kit/viewer.ts"],
+			});
+			expect(result.reason).not.toContain("spike rule");
+		});
 	});
 });

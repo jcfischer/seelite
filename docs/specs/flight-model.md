@@ -286,8 +286,15 @@ A bounded assist cannot reproduce two things #5 did.
   The principal flew Mechan's test (spin hard, then stop the nose on a star in
   two or three movements) on both arms and kept this law. The carry arm was
   removed. It was not Elite's virtual stick (a deflection that returns to
-  centre), and that law was not flown. How hot a pixel is belongs to the
-  sensitivity node ([#640](https://github.com/jcfischer/seelite/issues/640)).
+  centre), and that law was not flown. How hot a pixel is is the player's
+  (node [#640](https://github.com/jcfischer/seelite/issues/640)): the Mouse
+  sensitivity settings row multiplies `MOUSE_RAD_PER_PX` linearly, with no
+  deadzone and no curve, and 100% is the figure above. Every pixel figure in
+  this item is at 100%; at a sensitivity `s` the couple's limit is
+  `angularAuthority / (MOUSE_RAD_PER_PX × s)`. `MOUSE_MAX_STEP` stays in
+  radians at every step, so the order of the two clips does not move with the
+  row; its pixel equivalent does (about 55 px a frame at 100%). The row's steps
+  are provisional until the principal flies Mechan's test on them.
   `__seelite.pointerReadout` reads a flick's peak speed over 50 ms and,
   with the assist off, the part that reached the rate after the spike guard
   and the couple.

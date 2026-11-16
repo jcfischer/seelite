@@ -69,9 +69,12 @@ export const strength = (ship: FittedShip): number => {
 	return strengthOf(shieldPool + integrity, fittedDps(ship));
 };
 
-/** A target's S: zero when it never fires (#562 D4). A target flies its
- *  stock fit until NPC loadouts (#875). */
-export const targetStrength = (hull: HullId): number => {
+/** A live target supplies its actual fit. A hull alone is the stock reference
+ * used by the pricing instrument and the Equipment preview. */
+export const targetStrength = (target: HullId | FittedShip): number => {
+	if (typeof target !== "string")
+		return isArmedTarget(target.hull) ? strength(target) : 0;
+	const hull = target;
 	if (!isArmedTarget(hull)) return 0;
 	const { shieldPool, integrity } = stockCapacity(hull);
 	return strengthOf(shieldPool + integrity, PULSE_LASER.damagePerS);
@@ -83,7 +86,10 @@ export const targetStrength = (hull: HullId): number => {
  * pays close to 0. An unarmed target pays exactly 0 (#562 D4); it still pays
  * in cargo, bounty and heat, which are not this ladder's.
  */
-export const killCredit = (own: FittedShip, target: HullId): number => {
+export const killCredit = (
+	own: FittedShip,
+	target: HullId | FittedShip,
+): number => {
 	const st = targetStrength(target);
 	if (st === 0) return 0;
 	return (CREDIT_K * st) / (strength(own) + st);

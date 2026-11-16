@@ -156,11 +156,12 @@ describe("H2: the shared condition model", () => {
 		expect(seconds).toBeLessThan(secondsOnTarget("courier") + 1);
 	});
 
-	test("a Porter is about 57 s on target, a miner 74, a courier 34, a patrol 33", () => {
+	test("a Porter is about 44 s on target, a miner 74, a courier 34, a patrol 33", () => {
 		// 45, 54, 34 and 32 before #866, when every hull had the one 106-point
 		// pool. Each hull's own pool (#866) makes the heavy carriers longer work;
-		// the principal accepted that as R1 on #866.
-		expect(Math.round(secondsOnTarget("freighter"))).toBe(57);
+		// the principal accepted that as R1 on #866. Node #813's smaller
+		// Porter is 129 integrity and 137 shield under the same mass laws.
+		expect(Math.round(secondsOnTarget("freighter"))).toBe(44);
 		expect(Math.round(secondsOnTarget("miner"))).toBe(74);
 		expect(Math.round(secondsOnTarget("courier"))).toBe(34);
 		expect(Math.round(secondsOnTarget("patrol"))).toBe(33);

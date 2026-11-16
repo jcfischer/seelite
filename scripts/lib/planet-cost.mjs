@@ -1,3 +1,5 @@
+import { seededShuffler } from "./measurement.mjs";
+
 /**
  * The half of #206's planet-cost sweep that is not a browser — its columns, the
  * way a reading is lifted out of the `?fps` readout, and the refusals.
@@ -378,3 +380,362 @@ export function vsyncRefusal(msPerFrame) {
 		`--disable-gpu-vsync and --disable-frame-rate-limit reached the browser.`
 	);
 }
+
+/**
+ * The apparent sizes the close-detail band is priced at (node #758): the
+ * band's outer edge and the 2R fade end, the station orbit floor, and the
+ * flight boundary. Each is also a rung of `RADII`.
+ */
+export const CLOSE_DETAIL_RADII = Object.freeze([2, 1.6, 1.5, 1.2]);
+
+/** The extra-octave caps node #720 D10 asks the ladder to walk. */
+export const CAP_LADDER = Object.freeze([0, 2, 4, 6]);
+
+/**
+ * The arms of node #720 D8, D9, D10 and D11, each a complete state.
+ *
+ * `interim` is the shipped frame: High quality, the cap the game writes itself,
+ * the ground at half resolution inside the band, screen-space relief and the
+ * clouds on their own full-resolution footprint. Every other arm moves exactly
+ * one lever away from it, so a difference between two cells is one lever's.
+ * `cap-6` is the same state as `interim` reached through the override, which
+ * makes the pair the instrument's own noise floor and a check that the override
+ * writes what the game writes.
+ */
+export const CLOSE_DETAIL_ARMS = Object.freeze(
+	[
+		{
+			name: "interim",
+			cap: "shipped",
+			halfRes: true,
+			relief: "screen-space",
+			clouds: "extended",
+			prices: "the shipped frame: High, the interim cap, half-res ground",
+		},
+		{
+			name: "cap-0",
+			cap: 0,
+			halfRes: true,
+			relief: "screen-space",
+			clouds: "extended",
+			prices: "the band off; interim minus this is what the band costs",
+		},
+		{
+			name: "cap-2",
+			cap: 2,
+			halfRes: true,
+			relief: "screen-space",
+			clouds: "extended",
+			prices: "the cap ladder, 2 extra octaves",
+		},
+		{
+			name: "cap-4",
+			cap: 4,
+			halfRes: true,
+			relief: "screen-space",
+			clouds: "extended",
+			prices: "the cap ladder, 4 extra octaves",
+		},
+		{
+			name: "cap-6",
+			cap: 6,
+			halfRes: true,
+			relief: "screen-space",
+			clouds: "extended",
+			prices: "the cap ladder, 6 extra octaves; the interim state by override",
+		},
+		{
+			name: "full-res",
+			cap: "shipped",
+			halfRes: false,
+			relief: "screen-space",
+			clouds: "extended",
+			prices: "the ground drawn at full resolution inside the band (D11)",
+		},
+		{
+			name: "analytic-gradient",
+			cap: "shipped",
+			halfRes: true,
+			relief: "analytic-gradient",
+			clouds: "extended",
+			prices: "the analytic relief against screen-space (D8)",
+		},
+		{
+			name: "clouds-at-ground",
+			cap: "shipped",
+			halfRes: true,
+			relief: "screen-space",
+			clouds: "at-ground",
+			prices: "the clouds on the ground's footprint, not their own (D9)",
+		},
+	].map((a) => Object.freeze(a)),
+);
+
+/**
+ * `null` if the arms are the roster node #758 names, a sentence if not.
+ *
+ * Checked rather than trusted because the arm list is what the receipt claims
+ * to have priced: a roster missing the full-res arm, or an arm that moves two
+ * levers, prints a complete table that answers a different question.
+ *
+ * @param {ReadonlyArray<{name: string, cap: number | string, halfRes: boolean, relief: string, clouds: string}>} arms
+ * @returns {string | null}
+ */
+export function closeDetailArmsRefusal(arms) {
+	const names = arms.map((a) => a.name);
+	const twice = names.find((n, i) => names.indexOf(n) !== i);
+	if (twice) return `arm "${twice}" is listed twice`;
+	const base = arms.find((a) => a.name === "interim");
+	if (!base) return "no interim arm: every other arm is read against it";
+	for (const cap of CAP_LADDER)
+		if (!arms.some((a) => a.cap === cap))
+			return `the cap ladder has no arm at cap ${cap}`;
+	for (const name of ["full-res", "analytic-gradient", "clouds-at-ground"])
+		if (!arms.some((a) => a.name === name))
+			return `no ${name} arm: node #720 names it as a cost arm`;
+	for (const arm of arms) {
+		if (arm === base) continue;
+		const moved = ["cap", "halfRes", "relief", "clouds"].filter(
+			(k) => arm[k] !== base[k],
+		);
+		if (moved.length !== 1)
+			return `arm "${arm.name}" moves ${moved.length} levers (${moved.join(", ") || "none"}) off interim; a delta is one lever's only if exactly one moved`;
+	}
+	return null;
+}
+
+/**
+ * Every arm at every radius, once, in a seeded shuffled order in which no arm
+ * runs twice in a row.
+ *
+ * A fixed nest runs the last arm on the hottest machine and a block of one arm
+ * pools whatever drift happens inside it (`lib/measurement.mjs`). Shuffling
+ * breaks that; refusing adjacent repeats makes the interleaving a property of
+ * the order rather than a likelihood. Resampling stays deterministic because
+ * the shuffler is one seeded stream.
+ *
+ * @param {number} seed printed by the caller
+ * @param {ReadonlyArray<{name: string}>} arms
+ * @param {ReadonlyArray<number>} radii
+ * @returns {{arm: string, radii: number}[]}
+ */
+export function sweepOrder(seed, arms, radii) {
+	if (!Number.isInteger(seed))
+		throw new Error(`the order seed must be an integer, got ${seed}`);
+	if (arms.length < 2)
+		throw new Error(
+			"fewer than two arms: there is nothing to interleave, and a one-arm sweep is a block",
+		);
+	const cells = arms.flatMap((a) =>
+		radii.map((r) => ({ arm: a.name, radii: r })),
+	);
+	const shuffle = seededShuffler(seed);
+	for (let attempt = 0; attempt < 100000; attempt++) {
+		const order = shuffle(cells);
+		if (order.every((c, i) => i === 0 || c.arm !== order[i - 1].arm))
+			return order;
+	}
+	throw new Error(
+		`no order of ${arms.length} arms over ${radii.length} radii avoids a repeat from seed ${seed}`,
+	);
+}
+
+/**
+ * `null` if the state read back from the page is the state the arm asked for,
+ * a sentence naming the lever that is not.
+ *
+ * The page applies an arm through four doors (a cap override, the half-res
+ * allowance, a pinned relief path, a cloud-footprint hook) and any of them can
+ * be refused or overwritten by the frame loop without an error. A cell priced
+ * on a state it is not in prints a complete row for the wrong arm, so the
+ * read-back is the arm's proof.
+ *
+ * @param {{name: string, cap: number | string, halfRes: boolean, relief: string, clouds: string}} arm
+ * @param {{quality: string, renderScale: number | string, interimCap: number, groundCap: number, cloudCap: number, halfResEngaged: boolean, surfacePath: string, hasCloudShell: boolean, cloudAngleRatio: number, halfResRatio: number}} seen
+ * @returns {string | null}
+ */
+export function armLandedRefusal(arm, seen) {
+	const who = `arm "${arm.name}"`;
+	if (seen.quality !== "high")
+		return `${who}: quality reads "${seen.quality}", not "high"; Low adds no octaves so no cell here prices the band`;
+	if (seen.renderScale !== 1)
+		return `${who}: the render scale reads ${seen.renderScale}, not 1; Auto or a reduced scale moves the buffer inside a cell`;
+	const cap = arm.cap === "shipped" ? seen.interimCap : arm.cap;
+	if (!(seen.groundCap === cap))
+		return `${who}: the ground's cap reads ${seen.groundCap}, not ${cap}`;
+	if (!seen.hasCloudShell)
+		return `${who}: the subject has no cloud shell, so the cloud lever prices nothing`;
+	if (!(seen.cloudCap === cap))
+		return `${who}: the cloud shell's cap reads ${seen.cloudCap} while the ground's is ${cap}; cloud and ground share one cap`;
+	if (arm.halfRes && !seen.halfResEngaged)
+		return `${who}: the ground is not drawn at half resolution, so this is not the shipped half-res state`;
+	if (!arm.halfRes && seen.halfResEngaged)
+		return `${who}: the ground is still drawn at half resolution, so this is not the full-res arm`;
+	if (seen.surfacePath !== arm.relief)
+		return `${who}: the subject is drawn with "${seen.surfacePath}", not ${arm.relief}`;
+	if (arm.clouds === "at-ground") {
+		if (!seen.halfResEngaged)
+			return `${who}: with the ground at full resolution its footprint is the clouds' own, so the arm is the extended arm under another name; it needs the half-res ground`;
+		if (!(Math.abs(seen.cloudAngleRatio - seen.halfResRatio) < 0.05))
+			return `${who}: the clouds' pixel angle is ${seen.cloudAngleRatio}x their own, not the ground's footprint (${seen.halfResRatio}x)`;
+	} else if (!(Math.abs(seen.cloudAngleRatio - 1) < 0.001))
+		return `${who}: the clouds read ${seen.cloudAngleRatio}x their own footprint; an extended arm leaves them at 1x`;
+	return null;
+}
+
+/**
+ * The lane's name, or a throw: the band is priced on the player's GPU or not at
+ * all.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {string}
+ */
+export function laneOf(env) {
+	if (env.SEELITE_PROBE_RENDERER !== "hardware")
+		throw new Error(
+			"the close-detail sweep runs on the GPU lane: set SEELITE_PROBE_RENDERER=hardware. CPU figures do not price this",
+		);
+	return "GPU lane (SEELITE_PROBE_RENDERER=hardware, headed)";
+}
+
+/**
+ * The build a dev server declared, as a string a figure can carry. A dirty tree
+ * is marked, since a SHA that does not describe the code is a false citation.
+ *
+ * @param {{head?: string, dirty?: boolean} | null | undefined} tree
+ * @returns {string}
+ */
+export function buildShaOf(tree) {
+	if (!tree?.head)
+		throw new Error(
+			"the server's tree declaration carries no head: a figure without a build SHA cannot be cited",
+		);
+	return tree.dirty ? `${tree.head}+dirty` : tree.head;
+}
+
+const IDENTITY_FIELDS = ["renderer", "pixelRatio", "buildSha", "lane"];
+
+/**
+ * Renderer, pixel ratio, build SHA and lane on one line, or a throw naming the
+ * one that is missing.
+ *
+ * @param {{renderer?: string, pixelRatio?: number, buildSha?: string, lane?: string}} identity
+ * @returns {string}
+ */
+export function identityLine(identity) {
+	for (const field of IDENTITY_FIELDS)
+		if (identity[field] === undefined || identity[field] === "")
+			throw new Error(`a figure must name its ${field}; this one carries none`);
+	return `${identity.renderer} | pixel ratio ${identity.pixelRatio} | build ${identity.buildSha} | ${identity.lane}`;
+}
+
+/**
+ * Put the identity on every row, so a cell lifted out of the JSON still names
+ * where it was read.
+ *
+ * @template {object} Row
+ * @param {Row[]} rows
+ * @param {{renderer?: string, pixelRatio?: number, buildSha?: string, lane?: string}} identity
+ * @returns {(Row & {renderer: string, buildSha: string, lane: string})[]}
+ */
+export function stampRows(rows, identity) {
+	identityLine(identity);
+	return rows.map((r) => ({
+		...r,
+		renderer: identity.renderer,
+		buildSha: identity.buildSha,
+		lane: identity.lane,
+	}));
+}
+
+/**
+ * One arm's cell minus another's at a radius, in ms. A missing cell throws.
+ *
+ * @param {ReadonlyArray<{arm: string, radii: number, ms: number}>} rows
+ * @param {string} arm
+ * @param {string} versus
+ * @param {number} radii
+ * @returns {number}
+ */
+export function armDelta(rows, arm, versus, radii) {
+	const at = (name) => {
+		const row = rows.find((r) => r.arm === name && r.radii === radii);
+		if (!row) throw new Error(`no ${name} cell at ${radii} radii`);
+		return finite(`${name} at ${radii} radii`, row.ms);
+	};
+	return at(arm) - at(versus);
+}
+
+/**
+ * `interim` minus `cap-6` at each radius: two cells of one state, so the gap is
+ * the instrument's own disagreement and the floor under every other delta.
+ *
+ * @param {ReadonlyArray<{arm: string, radii: number, ms: number}>} rows
+ * @param {ReadonlyArray<number>} radii
+ * @returns {Record<number, number>}
+ */
+export function controlPairGap(rows, radii) {
+	return Object.fromEntries(
+		radii.map((r) => [r, armDelta(rows, "interim", "cap-6", r)]),
+	);
+}
+
+/**
+ * The gap between two sweeps' reading of every cell. The sweeps must hold the
+ * same cells; a comparison across different rosters would pair strangers.
+ *
+ * @param {ReadonlyArray<{arm: string, radii: number, pixelRatio: number, ms: number}>} a
+ * @param {ReadonlyArray<{arm: string, radii: number, pixelRatio: number, ms: number}>} b
+ * @returns {{arm: string, radii: number, pixelRatio: number, aMs: number, bMs: number, gapMs: number}[]}
+ */
+export function sweepAgreement(a, b) {
+	const key = (r) => `${r.pixelRatio}|${r.arm}|${r.radii}`;
+	const bByKey = new Map(b.map((r) => [key(r), r]));
+	if (a.length !== b.length || a.some((r) => !bByKey.has(key(r))))
+		throw new Error("the two sweeps do not hold the same cells");
+	return a.map((r) => {
+		const other = bByKey.get(key(r));
+		return {
+			arm: r.arm,
+			radii: r.radii,
+			pixelRatio: r.pixelRatio,
+			aMs: finite(key(r), r.ms),
+			bMs: finite(key(r), other.ms),
+			gapMs: Math.abs(r.ms - other.ms),
+		};
+	});
+}
+
+/**
+ * How far a cell's readings moved between its first two and its last two, as a
+ * fraction of the lower of the two means.
+ *
+ * Node #758's first sweeps showed cells whose opening readings were the
+ * preceding cell's cost and whose closing readings were their own: 27.9, 27.2,
+ * 22.0, 14.0, 13.9 after a 25.8 ms cell. The settle had passed on two readings
+ * still at the old level. A median of five cannot recover a cell that spends
+ * three readings in the previous state, so the trend is measured and the cell
+ * read again.
+ *
+ * @param {ReadonlyArray<number>} samplesMs five readings, in the order taken
+ * @returns {number}
+ */
+export function cellTrend(samplesMs) {
+	if (samplesMs.length !== 5)
+		throw new Error(
+			`a cell's trend is read off five readings, got ${samplesMs.length}`,
+		);
+	const ms = samplesMs.map((v) => finite("trend reading", v));
+	const head = (ms[0] + ms[1]) / 2;
+	const tail = (ms[3] + ms[4]) / 2;
+	return Math.abs(head - tail) / Math.min(head, tail);
+}
+
+/**
+ * The trend past which a cell is read again. Set from the first protocol's
+ * 160 cells: steady cells reached 0.25; three predecessor tails read 0.68,
+ * 0.97 and 1.62. Later runs overlap this initial gap: accepted trends reach
+ * 0.39, and a spike and a decay triggered re-reads at 0.46 and 0.49. This is a
+ * sampling heuristic, not a classifier of predecessor tails.
+ */
+export const CELL_TREND_LIMIT = 0.4;

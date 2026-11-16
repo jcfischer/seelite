@@ -28,6 +28,7 @@ const params = {
 	voices: "formant",
 	raider: "off",
 	cinematic: "off",
+	"models-full": false,
 	"interiors-full": false,
 };
 const options = {
@@ -259,8 +260,7 @@ try {
 	const failed = await livePage();
 	let warnings = 0;
 	failed.on("console", (m) => {
-		if (m.type() === "warning" && m.text().includes("station interiors:"))
-			warnings++;
+		if (m.type() === "warning" && m.text().includes("interiors:")) warnings++;
 	});
 	await failed.route("**/*station-interiors*.glb*", (route) => route.abort());
 	await failed.goto(gameUrl(origin, params));

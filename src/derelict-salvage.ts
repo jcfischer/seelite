@@ -1,5 +1,15 @@
+import {
+	accountOf,
+	withAccount,
+	recover,
+	parseShare,
+	encodeShare,
+	displayAmount,
+	nativeGrams,
+} from "./commodity-pools";
 /** Owned wreck recovery: one row and hold change through the shared scoop gate. */
-import { scoops } from "./raider-wreck";
+import { scoopAttempt, type ScoopGear } from "./raider-wreck";
+import { SCOOP_REFUSAL_TEXT } from "./cargo-notice";
 import {
 	type CommanderState,
 	commanderHold,
@@ -8,17 +18,30 @@ import {
 import { type DerelictRow, PLAYER_SALVAGE } from "./world-state";
 import type { Vec3 } from "./vec3";
 
-export function scoopWreckContainer(
-	row: DerelictRow,
-	index: number,
-	commander: CommanderState,
-	entrustedT: number,
-	container: { pos: Vec3; vel: Vec3 },
-	ship: { pos: Vec3; vel: Vec3 },
-	at: number,
-	/** A named job item stays separate from every owned-cargo path. */
+export function scoopWreckContainer({
+	row,
+	index,
+	commander,
+	entrustedT,
+	container,
+	ship,
+	gear,
+	bankE,
+	at,
 	entrusted = false,
-) {
+}: {
+	row: DerelictRow;
+	index: number;
+	commander: CommanderState;
+	entrustedT: number;
+	container: { pos: Vec3; vel: Vec3 };
+	ship: { pos: Vec3; vel: Vec3 };
+	gear: ScoopGear;
+	bankE: number;
+	at: number;
+	/** A named job item stays separate from every owned-cargo path. */
+	entrusted?: boolean;
+}) {
 	const hold = commanderHold(commander, entrustedT);
 	const freeT = hold.capacityT - hold.usedT;
 	const unchanged = (refusal: string | null = null) => ({
@@ -29,8 +52,10 @@ export function scoopWreckContainer(
 		refusal,
 	});
 	const item = row.containers[index];
-	if (row.salvaged || !item || item.left <= 0 || !scoops(container, ship))
-		return unchanged();
+	if (row.salvaged || !item || item.left <= 0) return unchanged();
+	const attempt = scoopAttempt(container, ship, gear, bankE);
+	if (attempt === "out") return unchanged();
+	if (attempt !== "take") return unchanged(SCOOP_REFUSAL_TEXT[attempt]);
 	if ((entrusted || item.kind === "fitting") && freeT < item.left)
 		return unchanged(
 			`Hold full: ${freeT} t free; ${item.left} t ${item.id} must be recovered whole.`,
@@ -54,8 +79,31 @@ export function scoopWreckContainer(
 		return unchanged(
 			"Hold full: " + freeT + " t free; " + item.id + " left in space.",
 		);
+	const ownRecovery =
+		item.ownedShare && !entrusted
+			? recover(
+					accountOf(commander),
+					item.id,
+					parseShare(item.ownedShare, item.id),
+					took,
+				)
+			: null;
 	const containers = row.containers.map((c, i) =>
-		i === index ? { ...c, left: c.left - took } : { ...c },
+		i === index
+			? {
+					...c,
+					left: ownRecovery
+						? displayAmount(
+								ownRecovery.remaining.totalMass,
+								"mass",
+								nativeGrams(item.id),
+							)
+						: c.left - took,
+					...(ownRecovery
+						? { ownedShare: encodeShare(ownRecovery.remaining) }
+						: {}),
+				}
+			: { ...c },
 	);
 	return {
 		row: {
@@ -65,7 +113,9 @@ export function scoopWreckContainer(
 				? { salvaged: { at, cause: PLAYER_SALVAGE } }
 				: {}),
 		},
-		commander: recovery.commander,
+		commander: ownRecovery
+			? withAccount(commander, ownRecovery.account)
+			: recovery.commander,
 		tonnes: took,
 		freeT,
 		refusal: null,

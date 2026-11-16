@@ -233,7 +233,10 @@ describe("the volume holds what it says it holds", () => {
 			// body the aperture is cut into, which is the thing the bay has to fit
 			// inside, and it is the same object `#128`'s hull-reaches-the-plane row
 			// measures.
-			const body = root.getObjectByName("core");
+			// The Wheel's core is its rim; its slot and bay belong to the hub.
+			const body = root.getObjectByName(
+				type === "trade" && formId === "e" ? "hub" : "core",
+			);
 			const hull = new THREE.Box3();
 			if (body) hull.setFromObject(body);
 			const label = `${type} ${formId}`;

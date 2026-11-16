@@ -77,7 +77,10 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:2::press → view.orbitCentre @ flight/instrument/console/modal chase -",
 	"key:3::hold → view.orbitStarboard @ flight/instrument/console/modal chase -",
 	"key:3::press → view.headStarboard @ flight/instrument/console/modal cockpit -",
+	"key:4::press → fight.drillHold @ flight/instrument/console/modal cockpit/chase -",
+	"key:5::press → view.seatSwap @ flight/instrument/console/modal cockpit -",
 	"key:6::press → system.postcard @ flight/instrument/console/modal cockpit/chase -",
+	"key:7::press → view.fov @ flight/instrument/console/modal cockpit -",
 	"key:9::press → system.commander @ flight/instrument/console/modal cockpit/chase -",
 	"key:;::press → tune.dropRadiusDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:=::press → tune.vMaxUp @ flight/instrument/console/modal cockpit/chase -",
@@ -108,6 +111,8 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:enter::press → panel.activate @ flight/instrument/console/modal cockpit/chase requests",
 	"key:f1::press → view.reference @ flight/instrument/console/modal cockpit/chase -",
 	"key:f2::press → view.photo @ flight/instrument/console/modal cockpit/chase -",
+	"key:f7::press → fight.launchMissile @ flight/instrument/console/modal cockpit/chase -",
+	"key:f8::press → fight.ecm @ flight/instrument/console/modal cockpit/chase -",
 	"key:f::press → fight.faceTarget @ flight/instrument/console/modal cockpit/chase -",
 	"key:g::press → fight.targetPrevious @ flight/instrument/console/modal cockpit/chase -",
 	"key:h::press → perf.atmosphere @ flight/instrument/console/modal cockpit/chase - perf",
@@ -147,6 +152,55 @@ const keyRows = (bindings: readonly Binding[]) =>
 		.sort();
 
 describe("the catalogue #369 ratified", () => {
+	test("the seat switch ships on 5 in the cockpit (#1198)", () => {
+		const swap = COMMANDS.find((c) => c.id === "view.seatSwap");
+		expect(swap?.defaultTriggers).toEqual([{ kind: "key", key: "5" }]);
+	});
+
+	describe("a saved binding on 5 keeps the key from the seat switch (#1198)", () => {
+		const facts = {
+			key: "5",
+			code: "Digit5",
+			context: "flight",
+			view: "cockpit",
+			perfPanel: false,
+		} as const;
+		const toggle = DEFAULT_BINDINGS.find((b) => b.command === "view.toggle");
+		if (toggle === undefined) throw new Error("view.toggle is not shipped");
+		const onFive = rebind(DEFAULT_BINDINGS, "view.toggle", toggle.trigger, {
+			kind: "key",
+			key: "5",
+		});
+
+		test("the default layout's 5 switches seats", () => {
+			expect(resolveKey(DEFAULT_BINDINGS, facts)).toEqual(["view.seatSwap"]);
+		});
+
+		test("only the player's command answers, and no clash is reported", () => {
+			expect(resolveKey(onFive, facts)).toEqual(["view.toggle"]);
+			expect(
+				collisions(onFive).filter((c) => c.commands.includes("view.seatSwap")),
+			).toEqual([]);
+		});
+
+		test("the seat switch moved onto a taken key still warns and fires both", () => {
+			const swap = DEFAULT_BINDINGS.find((b) => b.command === "view.seatSwap");
+			if (swap === undefined) throw new Error("view.seatSwap is not shipped");
+			const moved = rebind(DEFAULT_BINDINGS, "view.seatSwap", swap.trigger, {
+				kind: "key",
+				key: "7",
+			});
+			const seven = { ...facts, key: "7", code: "Digit7" };
+			expect([...resolveKey(moved, seven)].sort()).toEqual([
+				"view.fov",
+				"view.seatSwap",
+			]);
+			expect(
+				collisions(moved).filter((c) => c.commands.includes("view.seatSwap")),
+			).toHaveLength(1);
+		});
+	});
+
 	test("every id is namespaced, unique, and not a key string", () => {
 		const ids = COMMANDS.map((c) => c.id);
 		expect(new Set(ids).size).toBe(ids.length);
@@ -333,7 +387,7 @@ describe("the axis law names which key is which", () => {
 		const main = codeOf("src/main.ts");
 		const passedThrough =
 			/dx: this\.mouseDx, dy: this\.mouseDy/.test(main) &&
-			/pointerImpulse\(dx, dy\)/.test(main);
+			/pointerImpulse\(dx, dy, sensitivity\)/.test(main);
 		const negated = (field: string, px: string) =>
 			passedThrough &&
 			new RegExp(`${field}:\\s*-${px}\\s*\\*\\s*MOUSE_RAD_PER_PX`).test(
@@ -511,18 +565,18 @@ describe("the pad and the chord are resolved through the layout", () => {
 		// bought by the pad row being a row of its own. Cruise moves off `j`
 		// and Triangle keeps engaging it.
 		//
-		// **Onto `5`, because every letter in this game is already bound** —
-		// `4`, `5`, `7`, `8` and the backslash are the only free characters
+		// **Onto `8`, because every letter in this game is already bound** —
+		// `8` and the backslash are the only free characters
 		// the shipped layout leaves (`6` is the Postcard screen's, #406). A letter target would be a legal D5 collision
 		// and this row would then be measuring that instead.
 		const layout = rebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
 			{ kind: "key", key: "j" },
-			{ kind: "key", key: "5" },
+			{ kind: "key", key: "8" },
 		);
 		expect(resolveKey(layout, { key: "j", view: "cockpit" })).toEqual([]);
-		expect(resolveKey(layout, { key: "5", view: "cockpit" })).toEqual([
+		expect(resolveKey(layout, { key: "8", view: "cockpit" })).toEqual([
 			"fly.cruise",
 		]);
 		expect(

@@ -1,3 +1,4 @@
+import { STOCK_SCOOP } from "../src/raider-wreck";
 import {
 	migrateEquipment,
 	equipmentNames,
@@ -5,6 +6,7 @@ import {
 	moduleRow,
 } from "../src/loadout";
 import { expect, test } from "bun:test";
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 import {
 	deathWreckContents,
 	deathWreckRow,
@@ -170,6 +172,8 @@ test("wreck recovery takes native kg/g units with a full hold and updates basis 
 		const pose = { pos: v3(), vel: v3() };
 		const outcome = applyHoldEvent(holdings, world, {
 			kind: "wreck-scoop",
+			gear: STOCK_SCOOP,
+			bankE: 100,
 			key: wreck.key,
 			galaxyIndex: 0,
 			instanceOrdinal: wreck.instanceOrdinal,
@@ -388,6 +392,8 @@ test("the Holdings wreck scoop recovers goods and fittings once and removes a st
 		const at = { pos: v3(), vel: v3() };
 		const event = {
 			kind: "wreck-scoop" as const,
+			gear: STOCK_SCOOP,
+			bankE: 100,
 			key: wreck.key,
 			galaxyIndex: 0,
 			instanceOrdinal: wreck.instanceOrdinal,
@@ -548,24 +554,56 @@ test("death scoop honors speed, partial tonnes, whole fittings and native kg/g w
 	};
 	const pose = { pos: v3(), vel: v3() };
 	const full = { ...dying.state, cargo: { Food: 19 } };
-	const partial = scoopWreckContainer(row, 0, full, 0, pose, pose, 1);
+	const partial = scoopWreckContainer({
+		row,
+		index: 0,
+		commander: full,
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 1,
+	});
 	expect(partial.tonnes).toBe(1);
 	expect(partial.row.containers[0].left).toBe(7);
-	const kg = scoopWreckContainer(row, 1, partial.commander, 0, pose, pose, 1);
+	const kg = scoopWreckContainer({
+		row,
+		index: 1,
+		commander: partial.commander,
+		entrustedT: 0,
+		container: pose,
+		ship: pose,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		at: 1,
+	});
 	expect(kg.commander.cargo.Gold).toBe(12);
 	expect(
-		scoopWreckContainer(row, 2, kg.commander, 0, pose, pose, 1).refusal,
+		scoopWreckContainer({
+			row,
+			index: 2,
+			commander: kg.commander,
+			entrustedT: 0,
+			container: pose,
+			ship: pose,
+			gear: STOCK_SCOOP,
+			bankE: 100,
+			at: 1,
+		}).refusal,
 	).toContain("0 t free");
 	expect(
-		scoopWreckContainer(
+		scoopWreckContainer({
 			row,
-			1,
-			full,
-			0,
-			pose,
-			{ pos: v3(), vel: v3(2, 0, 0) },
-			1,
-		).tonnes,
+			index: 1,
+			commander: full,
+			entrustedT: 0,
+			container: pose,
+			ship: { pos: v3(), vel: v3(2, 0, 0) },
+			gear: STOCK_SCOOP,
+			bankE: 100,
+			at: 1,
+		}).tonnes,
 	).toBe(0);
 });
 
@@ -574,6 +612,8 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 	raw.saveSchemaVersion = 11;
 	raw.commander.state.ownedEquipment = [];
 	delete raw.commander.state.loadout;
+	delete raw.commander.txSeq;
+	pairLegacyWorldFixture(raw);
 	const { integrity, ...body } = raw;
 	raw.integrity = fnv1a(JSON.stringify(body));
 	expect(parseSave(raw).world.galaxies.every((g) => !g.deathWreck)).toBe(true);
@@ -751,4 +791,218 @@ test("stock respawn modules cannot be farmed from an otherwise empty death wreck
 			),
 		),
 	).toBe(true);
+});
+
+test("own recovery preserves exact unknown shares and basis across partial collection and reload", async () => {
+	const { withAccount, migrateAccount, acquire, remove } = await import(
+		"../src/commodity-pools"
+	);
+	const { money, massFromNative } = await import("../src/exact-amount");
+	const { holdingsAfterDeath } = await import("../src/holdings");
+	const origin = {
+		...dying,
+		state: withAccount(
+			newCommanderRecord("courier").state,
+			migrateAccount(100, 0, { Alloys: 2 }, { Alloys: { units: 1, cr: 40 } }),
+		),
+	};
+	let at = DEATH_AT;
+	while (
+		!deathWreckContents(47, at, origin.state, "destroyed").some(
+			(c) => c.id === "Alloys",
+		)
+	)
+		at++;
+	const dock = {
+		...origin,
+		state: withAccount(
+			newCommanderRecord("courier").state,
+			migrateAccount(100, 0, {}, {}),
+		),
+	};
+	const lost = holdingsAfterDeath(
+		dock,
+		{ world: { ...newWorld(47), gameTime: at }, commander: origin },
+		"destroyed",
+		system.contents.star.id,
+	);
+	const wreck = lost.world.galaxies[0].deathWreck!;
+	let h = {
+		commander: withAccount(
+			lost.commander.state,
+			acquire(lost.commander.state.accounting!, "Food", 19),
+		),
+		requests: origin.requests,
+		ladders: lost.commander.ladders,
+		ladderPending: emptyPending(),
+	};
+	const pose = { pos: v3(), vel: v3() };
+	const event = {
+		kind: "wreck-scoop" as const,
+		gear: STOCK_SCOOP,
+		bankE: 100,
+		key: wreck.key,
+		galaxyIndex: 0,
+		instanceOrdinal: wreck.instanceOrdinal,
+		containerIndex: 0,
+		at,
+		container: pose,
+		ship: pose,
+	};
+	const first = applyHoldEvent(h, lost.world, event);
+	expect(first.signals.wreckScoop?.tonnes).toBe(1);
+	expect(first.holdings.commander.accounting!.pools.Alloys.unknownMass).toBe(
+		massFromNative(1, 1000000),
+	);
+	expect(first.holdings.commander.accounting!.basis.Alloys.cost).toBe(
+		money.fromNumber(0),
+	);
+	const reload = parseSave(
+		serializeSave({
+			world: first.world,
+			commander: { ...lost.commander, state: first.holdings.commander },
+		}),
+	);
+	h = {
+		...h,
+		commander: withAccount(
+			reload.commander.state,
+			remove(reload.commander.state.accounting!, "Food", 1).account,
+		),
+	};
+	const second = applyHoldEvent(h, reload.world, event);
+	expect(second.signals.wreckScoop?.tonnes).toBe(1);
+	expect(second.holdings.commander.accounting!.basis.Alloys.cost).toBe(
+		money.fromNumber(40),
+	);
+	expect(
+		second.holdings.commander.accounting!.pools.Alloys.unrecoveredCost,
+	).toBe(money.fromNumber(40));
+	expect(second.world.galaxies[0].deathWreck).toBeUndefined();
+});
+
+test("death and recovery retain fractional legacy mass and exact acquisition dust", async () => {
+	const { emptyAccount, acquire, withAccount, parseShare } = await import(
+		"../src/commodity-pools"
+	);
+	const { holdingsAfterDeath } = await import("../src/holdings");
+	const account = acquire(
+		acquire(emptyAccount(), "Alloys", 0.1),
+		"Alloys",
+		0.2,
+	);
+	const origin = {
+		...dying,
+		state: withAccount(newCommanderRecord("courier").state, account),
+	};
+	let at = DEATH_AT;
+	while (
+		!deathWreckContents(47, at, origin.state, "destroyed").some(
+			(c) => c.id === "Alloys",
+		)
+	)
+		at++;
+	const lost = holdingsAfterDeath(
+		newCommanderRecord("courier"),
+		{ world: { ...newWorld(47), gameTime: at }, commander: origin },
+		"destroyed",
+		system.contents.star.id,
+	);
+	const reload = parseSave(serializeSave(lost));
+	const row = reload.world.galaxies[0].deathWreck!;
+	expect(parseShare(row.containers[0].ownedShare).totalMass).toBe(
+		account.basis.Alloys.heldMass,
+	);
+	const pose = { pos: v3(), vel: v3() };
+	const out = applyHoldEvent(
+		{
+			commander: reload.commander.state,
+			requests: origin.requests,
+			ladders: reload.commander.ladders,
+			ladderPending: emptyPending(),
+		},
+		reload.world,
+		{
+			kind: "wreck-scoop",
+			gear: STOCK_SCOOP,
+			bankE: 100,
+			key: row.key,
+			galaxyIndex: 0,
+			instanceOrdinal: row.instanceOrdinal,
+			containerIndex: 0,
+			at,
+			container: pose,
+			ship: pose,
+		},
+	);
+	expect(out.holdings.commander.accounting!.basis.Alloys.heldMass).toBe(
+		account.basis.Alloys.heldMass,
+	);
+	expect(out.world.galaxies[0].deathWreck).toBeUndefined();
+});
+
+test("legacy own-wreck material migrates as unknown-cost and stays ineligible on recovery", async () => {
+	const { fnv1a } = await import("../src/rng");
+	const { parseShare } = await import("../src/commodity-pools");
+	const { massFromNative, money } = await import("../src/exact-amount");
+	let at = DEATH_AT;
+	const state = {
+		...newCommanderRecord("courier").state,
+		cargo: { Alloys: 2 },
+	};
+	while (
+		!deathWreckContents(47, at, state, "destroyed").some(
+			(c) => c.id === "Alloys",
+		)
+	)
+		at++;
+	const world = worldAfterDeath(
+		{ ...newWorld(47), gameTime: at },
+		{ ...dying, state },
+		"destroyed",
+		system.contents.star.id,
+	);
+	const raw = serializeSave({
+		world,
+		commander: newCommanderRecord("courier"),
+	}) as any;
+	raw.saveSchemaVersion = 19;
+	pairLegacyWorldFixture(raw);
+	const { integrity, ...body } = raw;
+	raw.integrity = fnv1a(JSON.stringify(body));
+	const original = JSON.stringify(raw),
+		loaded = parseSave(raw),
+		row = loaded.world.galaxies[0].deathWreck!;
+	expect(parseShare(row.containers[0].ownedShare).unknownMass).toBe(
+		massFromNative(2, 1000000),
+	);
+	const pose = { pos: v3(), vel: v3() };
+	const out = applyHoldEvent(
+		{
+			commander: loaded.commander.state,
+			requests: loaded.commander.requests,
+			ladders: loaded.commander.ladders,
+			ladderPending: emptyPending(),
+		},
+		loaded.world,
+		{
+			kind: "wreck-scoop",
+			gear: STOCK_SCOOP,
+			bankE: 100,
+			key: row.key,
+			galaxyIndex: 0,
+			instanceOrdinal: row.instanceOrdinal,
+			containerIndex: 0,
+			at,
+			container: pose,
+			ship: pose,
+		},
+	);
+	expect(out.holdings.commander.accounting!.pools.Alloys.unknownMass).toBe(
+		massFromNative(2, 1000000),
+	);
+	expect(out.holdings.commander.accounting!.bankedTrade).toBe(
+		money.fromNumber(0),
+	);
+	expect(JSON.stringify(raw)).toBe(original);
 });

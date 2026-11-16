@@ -10,9 +10,12 @@
  * needs that the study did not have.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { createTugHullBuilder } from "../src/tug-hull";
 import { buildDerelictMesh } from "../src/derelict-mesh";
 import { DETAIL_RADII } from "../src/detail-level";
 import {
@@ -23,14 +26,19 @@ import {
 import {
 	COURIER_ALLOY_MATERIAL,
 	COURIER_ALLOY_ROUGHNESS,
+	COURIER_NORMAL_STRENGTH,
 	COURIER_LENGTH_INSET_KM,
 	COURIER_FRAME_NAME,
 	COURIER_LEVEL_NAMES,
 	FIXTURE_SCREEN_PREFIX,
 	courierLevelErrorKm,
+	createCourierHullBuilder,
+	prepareCourierHullModel,
 } from "../src/courier-hull";
+import { COURIER_NORMAL_MAP_URL } from "../src/model-urls";
 import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
+import { createSharedImages } from "../src/shared-image";
 import {
 	HULL_REACH_KM,
 	authoredHullBuilder,
@@ -470,16 +478,29 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 			ventThroats(root, "courier")
 				.filter((t) => t.family === "main")
 				.map((t) => t.at.z);
-		let pairs = 0;
-		for (const built of HULL_FINISH_IDS)
-			for (const asked of HULL_FINISH_IDS) {
-				setHullFinish(built);
+		const finishes = new Map(
+			HULL_FINISH_IDS.map((finish) => {
+				setHullFinish(finish);
 				const root = courier();
 				const own = courier();
 				own.userData.authored = false;
-				const fresh = mainsOf(own);
+				return [finish, { root, fresh: mainsOf(own) }] as const;
+			}),
+		);
+		const builtUnder = (finish: (typeof HULL_FINISH_IDS)[number]) => {
+			const known = finishes.get(finish);
+			if (!known) throw new Error(`no courier built under ${finish}`);
+			return known;
+		};
+		let pairs = 0;
+		for (const built of HULL_FINISH_IDS)
+			for (const asked of HULL_FINISH_IDS) {
+				const { root, fresh } = builtUnder(built);
 				setHullFinish(asked);
-				if (courier().userData.authoredGlow === root.userData.authoredGlow)
+				if (
+					builtUnder(asked).root.userData.authoredGlow ===
+					root.userData.authoredGlow
+				)
 					continue;
 				pairs++;
 				expect([built, asked, mainsOf(root)]).toEqual([built, asked, fresh]);
@@ -723,3 +744,251 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 			});
 	});
 });
+
+async function loadWithFakeImages(file: string) {
+	const bytes = readFileSync(file);
+	return (
+		await new GLTFLoader()
+			.setMeshoptDecoder(MeshoptDecoder)
+			.register(() => ({
+				name: "EXT_texture_webp",
+				loadTexture: async () => new THREE.Texture(),
+			}))
+			.register(() => ({
+				name: "SEELITE_shared_image",
+				loadTexture: async () => new THREE.Texture(),
+			}))
+			.parseAsync(
+				bytes.buffer.slice(
+					bytes.byteOffset,
+					bytes.byteOffset + bytes.byteLength,
+				) as ArrayBuffer,
+				"",
+			)
+	).scene;
+}
+
+function mappedMaterials(root: THREE.Object3D) {
+	const found: [string, THREE.Texture][] = [];
+	root.traverse((object) => {
+		if (!(object instanceof THREE.Mesh)) return;
+		for (const material of [
+			object.material,
+		].flat() as THREE.MeshStandardMaterial[])
+			if (material.map) found.push([material.name, material.map]);
+	});
+	return found;
+}
+
+test("the built shipped courier uses anisotropy 8 on every exterior map", async () => {
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const cockpit = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+	cockpit.name = "cockpit-test";
+	const exterior = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+	exterior.name = "exterior-test";
+	template.add(new THREE.Mesh(new THREE.BoxGeometry(), [cockpit, exterior]));
+	const builder = await createCourierHullBuilder(template);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	const painted = mappedMaterials(root);
+	expect(painted.length).toBeGreaterThan(2);
+	expect(painted.find(([name]) => name === "blue-grey-0")?.[1].anisotropy).toBe(
+		8,
+	);
+	expect(
+		painted.find(([name]) => name === "cockpit-test")?.[1].anisotropy,
+	).toBe(1);
+	for (const [name, map] of painted)
+		expect([name, map.anisotropy]).toEqual([
+			name,
+			name.startsWith("cockpit-") ? 1 : 8,
+		]);
+}, 30_000);
+
+test("another authored hull keeps three's default map anisotropy", async () => {
+	const template = await loadWithFakeImages("src/models/bollard-tug.glb");
+	const builder = await createTugHullBuilder(template);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	const painted = mappedMaterials(root);
+	expect(painted.length).toBeGreaterThan(0);
+	for (const [name, map] of painted)
+		expect([name, map.anisotropy]).toEqual([name, 1]);
+	root.traverse((o) => {
+		if (o instanceof THREE.Mesh)
+			for (const m of [o.material].flat() as THREE.MeshStandardMaterial[])
+				expect(m.normalMap).toBeNull();
+	});
+}, 30_000);
+
+test("the courier leaves registry maps, owner copies and clones at their declared settings", async () => {
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const registry = createSharedImages(
+		{
+			plain: { url: "/plain.webp", name: "plain" },
+			filtered: { url: "/filtered.webp", name: "filtered", anisotropy: 4 },
+		},
+		async () => new THREE.Texture(),
+	);
+	const expected = new Map<THREE.Texture, number>();
+	for (const [hash, anisotropy] of [
+		["plain", 1],
+		["filtered", 4],
+	] as const) {
+		for (const owner of [undefined, "interior"]) {
+			const base = await registry.texture(
+				hash,
+				owner,
+				new THREE.TextureLoader(),
+			);
+			for (const map of [base, base.clone()]) {
+				expected.set(map, anisotropy);
+				const material = new THREE.MeshStandardMaterial({ map });
+				material.name = `registry-${hash}-${owner}-${map.uuid}`;
+				template.add(new THREE.Mesh(new THREE.BoxGeometry(), material));
+			}
+		}
+	}
+	const builder = await createCourierHullBuilder(template);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	const painted = mappedMaterials(root).filter(([name]) =>
+		name.startsWith("registry-"),
+	);
+	expect(new Set(painted.map(([, map]) => map))).toEqual(
+		new Set(expected.keys()),
+	);
+	for (const [, map] of painted)
+		expect(map.anisotropy).toBe(expected.get(map)!);
+	for (const [map, anisotropy] of expected)
+		expect(map.anisotropy).toBe(anisotropy);
+}, 30_000);
+
+test("optional courier normal covers all exterior levels, preserves cockpit and envelope, and removes bump and roughness maps", async () => {
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const materials = new Set<THREE.MeshStandardMaterial>();
+	template.traverse((o) => {
+		if (o instanceof THREE.Mesh)
+			for (const m of [o.material].flat())
+				if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
+	});
+	for (const m of materials) {
+		m.bumpMap = new THREE.Texture();
+		m.roughnessMap = new THREE.Texture();
+	}
+	const cockpitMaps = [...materials]
+		.filter((m) => m.name.startsWith("cockpit-"))
+		.map((m) => [m, m.bumpMap, m.roughnessMap] as const);
+	const normal = new THREE.Texture();
+	expect(COURIER_NORMAL_STRENGTH).toBe(0.15);
+	const before = courier();
+	const builder = await createCourierHullBuilder(template, normal);
+	const root = new THREE.Group();
+	builder(root, new THREE.MeshStandardMaterial());
+	let exteriors = 0;
+	for (const level of Object.values(COURIER_LEVEL_NAMES)) {
+		let mapped = 0;
+		root.getObjectByName(level)!.traverse((o) => {
+			if (!(o instanceof THREE.Mesh)) return;
+			for (const m of [o.material].flat() as THREE.MeshStandardMaterial[]) {
+				if (!m.map || m.name.startsWith("cockpit-")) continue;
+				mapped++;
+				expect(m.normalMap).toBe(normal);
+				expect(m.normalScale.toArray()).toEqual([
+					COURIER_NORMAL_STRENGTH,
+					-COURIER_NORMAL_STRENGTH,
+				]);
+				expect(m.bumpMap).toBeNull();
+				expect(m.roughnessMap).toBeNull();
+			}
+		});
+		expect(mapped).toBeGreaterThan(0);
+		exteriors += mapped;
+	}
+	expect(exteriors).toBeGreaterThan(10);
+	for (const [m, bump, roughness] of cockpitMaps) {
+		expect(m.normalMap).toBeNull();
+		expect(m.bumpMap).toBe(bump);
+		expect(m.roughnessMap).toBe(roughness);
+	}
+	expect(normal.flipY).toBe(false);
+	expect(normal.wrapS).toBe(THREE.RepeatWrapping);
+	expect(normal.wrapT).toBe(THREE.RepeatWrapping);
+	expect(normal.colorSpace).toBe(THREE.NoColorSpace);
+	expect(normal.anisotropy).toBe(8);
+	const box = new THREE.Box3().setFromObject(root);
+	const oldBox = new THREE.Box3().setFromObject(before);
+	expect(box.min.distanceTo(oldBox.min)).toBeLessThan(1e-10);
+	expect(box.max.distanceTo(oldBox.max)).toBeLessThan(1e-10);
+}, 30_000);
+
+test("courier browser preparation fetches both assets concurrently, retries either failure and shares success", async () => {
+	const previous = authoredHullBuilder("courier");
+	const template = await loadWithFakeImages("src/models/courier-hull.glb");
+	const deferred = <T>() => {
+		let resolve!: (value: T) => void;
+		let reject!: (reason: Error) => void;
+		const promise = new Promise<T>((yes, no) => {
+			resolve = yes;
+			reject = no;
+		});
+		return { promise, resolve, reject };
+	};
+	const attempts = Array.from({ length: 4 }, () => ({
+		glb: deferred<{ scene: THREE.Object3D }>(),
+		normal: deferred<THREE.Texture>(),
+	}));
+	let glbFetches = 0;
+	const glb = spyOn(GLTFLoader.prototype, "loadAsync").mockImplementation(
+		() => attempts[glbFetches++].glb.promise as never,
+	);
+	let fetches = 0;
+	const texture = spyOn(
+		THREE.TextureLoader.prototype,
+		"loadAsync",
+	).mockImplementation((url) => {
+		expect(url).toBe(COURIER_NORMAL_MAP_URL);
+		return attempts[fetches++].normal.promise;
+	});
+	const start = (index: number) => {
+		const promise = prepareCourierHullModel();
+		expect(prepareCourierHullModel()).toBe(promise);
+		expect(glbFetches).toBe(index + 1);
+		expect(fetches).toBe(index + 1);
+		return promise;
+	};
+	try {
+		const normalFailed = start(0);
+		attempts[0].normal.reject(new Error("normal fetch failed"));
+		await expect(normalFailed).rejects.toThrow("normal fetch failed");
+		expect(authoredHullBuilder("courier")).toBe(previous);
+
+		const glbFailed = start(1);
+		attempts[0].glb.resolve({ scene: template.clone(true) });
+		attempts[1].glb.reject(new Error("GLB fetch failed"));
+		await expect(glbFailed).rejects.toThrow("GLB fetch failed");
+		attempts[1].normal.reject(new Error("late normal failure"));
+		expect(authoredHullBuilder("courier")).toBe(previous);
+
+		const glbFailedAfterNormal = start(2);
+		attempts[2].normal.resolve(new THREE.Texture());
+		attempts[2].glb.reject(new Error("GLB failed after normal loaded"));
+		await expect(glbFailedAfterNormal).rejects.toThrow(
+			"GLB failed after normal loaded",
+		);
+		expect(authoredHullBuilder("courier")).toBe(previous);
+
+		const succeeded = start(3);
+		attempts[3].glb.resolve({ scene: template.clone(true) });
+		attempts[3].normal.resolve(new THREE.Texture());
+		await succeeded;
+		await prepareCourierHullModel();
+		expect(fetches).toBe(4);
+		expect(glb).toHaveBeenCalledTimes(4);
+		expect(authoredHullBuilder("courier")).not.toBe(previous);
+	} finally {
+		glb.mockRestore();
+		texture.mockRestore();
+		installAuthoredHull("courier", previous);
+	}
+}, 30_000);

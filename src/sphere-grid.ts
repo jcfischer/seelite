@@ -1,12 +1,14 @@
 /**
- * A uniform grid over bounding spheres, for a solid with hundreds or
+ * A uniform grid over axis-aligned bounds, for a solid with hundreds or
  * thousands of primitives (the authored shipyards' proxies, node #818: 483 to
  * 2,806 boxes a list under the principal's 10 m collision rule).
  *
- * Every sphere is entered in each cell its bounding box touches; one larger
- * than `LARGE_CELLS` cells across is kept apart and always returned. A query
- * names a box and returns every sphere that may touch it, each once: a
- * superset, so a caller keeps its exact test and only skips the far ones.
+ * Every primitive is entered in each cell its bounds touch, which keeps a long
+ * thin plate in the cells along it (node #1118); one spanning more cells than
+ * any `LARGE_CELLS`-wide cube is kept apart and always returned. A query
+ * names a box and returns every primitive whose bounds may touch it, each
+ * once: a superset, so a caller keeps its exact test and only skips the far
+ * ones.
  *
  * Pure arithmetic, no imports: `sim.ts` and `collision.ts` reach it, and both
  * are headless.
@@ -21,19 +23,78 @@ export const INDEXED_ABOVE = 128;
 /** The grid's cell, kilometres. */
 export const INDEX_CELL_KM = 0.05;
 
-export interface Sphere {
-	x: number;
-	y: number;
-	z: number;
-	r: number;
+/** An axis-aligned box, kilometres. */
+export interface Bounds {
+	minX: number;
+	minY: number;
+	minZ: number;
+	maxX: number;
+	maxY: number;
+	maxZ: number;
 }
 
-export interface SphereGrid {
+/** The bounds of a box centred at `(cx, cy, cz)` with half-extents
+ *  `hx, hy, hz` along `axes` (unit, orthogonal; absent is the frame's). */
+export function boundsOfBox(
+	cx: number,
+	cy: number,
+	cz: number,
+	axes:
+		| readonly [
+				{ readonly x: number; readonly y: number; readonly z: number },
+				{ readonly x: number; readonly y: number; readonly z: number },
+				{ readonly x: number; readonly y: number; readonly z: number },
+		  ]
+		| undefined,
+	hx: number,
+	hy: number,
+	hz: number,
+): Bounds {
+	let ex = hx;
+	let ey = hy;
+	let ez = hz;
+	if (axes) {
+		const [a, b, c] = axes;
+		ex = Math.abs(a.x) * hx + Math.abs(b.x) * hy + Math.abs(c.x) * hz;
+		ey = Math.abs(a.y) * hx + Math.abs(b.y) * hy + Math.abs(c.y) * hz;
+		ez = Math.abs(a.z) * hx + Math.abs(b.z) * hy + Math.abs(c.z) * hz;
+	}
+	return {
+		minX: cx - ex,
+		minY: cy - ey,
+		minZ: cz - ez,
+		maxX: cx + ex,
+		maxY: cy + ey,
+		maxZ: cz + ez,
+	};
+}
+
+/** The bounds of a sphere, or of a capsule from `a` to `b`. */
+export function boundsOfSegment(
+	ax: number,
+	ay: number,
+	az: number,
+	bx: number,
+	by: number,
+	bz: number,
+	r: number,
+): Bounds {
+	return {
+		minX: Math.min(ax, bx) - r,
+		minY: Math.min(ay, by) - r,
+		minZ: Math.min(az, bz) - r,
+		maxX: Math.max(ax, bx) + r,
+		maxY: Math.max(ay, by) + r,
+		maxZ: Math.max(az, bz) + r,
+	};
+}
+
+export interface BoxGrid {
 	readonly cell: number;
 	readonly cells: Map<number, number[]>;
-	/** Spheres too large to enter cell by cell; every query returns them. */
+	/** Primitives too large to enter cell by cell; every query returns them. */
 	readonly large: number[];
-	/** One stamp per sphere, so a query returns each once. */
+	/** One stamp per primitive, so a query returns each once. */
 	readonly stamps: Uint32Array;
 	stamp: number;
 }
@@ -43,23 +104,18 @@ const LARGE_CELLS = 8;
 const key = (i: number, j: number, k: number) =>
 	((i + SPAN / 2) * SPAN + (j + SPAN / 2)) * SPAN + (k + SPAN / 2);
 
-export function buildSphereGrid(
-	spheres: readonly Sphere[],
-	cell: number,
-): SphereGrid {
+export function buildBoxGrid(boxes: readonly Bounds[], cell: number): BoxGrid {
 	const cells = new Map<number, number[]>();
 	const large: number[] = [];
-	spheres.forEach((s, n) => {
-		if (s.r * 2 > cell * LARGE_CELLS) {
+	boxes.forEach((b, n) => {
+		const lo = [b.minX, b.minY, b.minZ].map((v) => Math.floor(v / cell));
+		const hi = [b.maxX, b.maxY, b.maxZ].map((v) => Math.floor(v / cell));
+		const span =
+			(hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1);
+		if (span > (LARGE_CELLS + 1) ** 3) {
 			large.push(n);
 			return;
 		}
-		const lo = [s.x - s.r, s.y - s.r, s.z - s.r].map((v) =>
-			Math.floor(v / cell),
-		);
-		const hi = [s.x + s.r, s.y + s.r, s.z + s.r].map((v) =>
-			Math.floor(v / cell),
-		);
 		for (let i = lo[0]; i <= hi[0]; i++)
 			for (let j = lo[1]; j <= hi[1]; j++)
 				for (let k = lo[2]; k <= hi[2]; k++) {
@@ -73,15 +129,15 @@ export function buildSphereGrid(
 		cell,
 		cells,
 		large,
-		stamps: new Uint32Array(spheres.length),
+		stamps: new Uint32Array(boxes.length),
 		stamp: 0,
 	};
 }
 
-/** Every sphere that may touch the box `[min, max]`, each once, until
- *  `visit` returns `true`. */
-export function querySphereGrid(
-	grid: SphereGrid,
+/** Every primitive whose bounds may touch the box `[min, max]`, each once,
+ *  until `visit` returns `true`. */
+export function queryBoxGrid(
+	grid: BoxGrid,
 	minX: number,
 	minY: number,
 	minZ: number,

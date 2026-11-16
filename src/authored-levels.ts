@@ -21,6 +21,7 @@ import {
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { DETAIL_RADII } from "./detail-level";
 import { shared } from "./gpu-teardown";
+import { finishHullWork } from "./hull-install-work";
 import { LEVEL_STAND_IN } from "./ship-detail";
 
 /**
@@ -156,6 +157,21 @@ export function reducedLevel(
 	name: string,
 	rules: LevelRules = {},
 ): THREE.Object3D {
+	return finishHullWork(
+		reducedLevelSteps(template, errorM, kmPerM, name, rules),
+	);
+}
+
+/** One mesh per step, so background installs do not simplify every mesh in
+ * one task. Uses the synchronous path's calculations and traversal order.
+ */
+export function* reducedLevelSteps(
+	template: THREE.Object3D,
+	errorM: number,
+	kmPerM: number,
+	name: string,
+	rules: LevelRules = {},
+): Generator<void, THREE.Object3D> {
 	const level = template.clone(true);
 	level.name = name;
 	level.updateMatrixWorld(true);
@@ -208,6 +224,7 @@ export function reducedLevel(
 			mesh.parent?.add(stand);
 		}
 		mesh.removeFromParent();
+		yield;
 	}
 	level.userData[LEVEL_REACHED_ERROR_KM] = reachedKm;
 	return level;

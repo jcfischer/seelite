@@ -1,6 +1,8 @@
 import { PROBE_CATALOG } from "./probe-catalog.mjs";
 import { discoverProbeFiles } from "./probe-inventory.mjs";
 import {
+	isNonRuntime,
+	isStudyFile,
 	PROBE_REGISTRIES,
 	registryChanges,
 	selectImpact,
@@ -68,12 +70,6 @@ const isGlobalRisk = (file, withImpact = false) =>
 			HARNESS_FILES.has(file) ||
 			file.startsWith("scripts/lib/probe-"))) ||
 	file.startsWith(".github/");
-
-const isNonRuntime = (file) =>
-	file.startsWith("docs/") ||
-	file.startsWith("tests/") ||
-	file.endsWith(".md") ||
-	file === "biome.jsonc";
 
 /** Several probe lists as one, each file once, in order. */
 const union = (...lists) => [...new Set(lists.flat())].sort();
@@ -198,7 +194,8 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 		);
 
 	const onlyDirectOrNonRuntime = changedFiles.every(
-		(file) => directProbe(file) || isNonRuntime(file),
+		(file) =>
+			directProbe(file) || isNonRuntime(file) || isStudyFile(file, impact),
 	);
 	if (!onlyDirectOrNonRuntime) {
 		if (!impact) return null;
@@ -212,7 +209,13 @@ function selectDeterministic(allChanged, directlyChanged, impact) {
 			: all(selected.reason, true);
 	}
 	if (!forced.length)
-		return result("none", [], "Only documentation or headless tests changed.");
+		return result(
+			"none",
+			[],
+			changedFiles.some((file) => isStudyFile(file, impact))
+				? "Only documentation, headless tests and study files under spikes/ that no src/ or probe-script literal names changed (spike rule)."
+				: "Only documentation or headless tests changed.",
+		);
 	return result(
 		"exact",
 		impact ? union(SMOKE_PROBES, forced) : forced,

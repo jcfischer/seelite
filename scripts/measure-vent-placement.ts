@@ -3,7 +3,8 @@
  *
  *   bun scripts/measure-vent-placement.ts
  *
- * It installs the shipped courier (node #812) and tug (node #814) models
+ * It installs the shipped courier (node #812), tug (node #814) and voyager
+ * (node #820) models
  * first, so their rows are measured on the hulls the game draws.
  *
  * The table put every vent on its envelope's box, and no attitude vent's line
@@ -39,9 +40,13 @@ import {
 	coupleArms,
 } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+import "../tests/setup/authored-hulls";
 import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedCourierHull } from "./lib/shipped-courier-hull";
 import { installShippedTugHull } from "./lib/shipped-tug-hull";
+import { installShippedInterceptorHull } from "./lib/shipped-interceptor-hull";
+import { installShippedSevenShips } from "./lib/shipped-seven-ships";
+import { installShippedVoyagerHull } from "./lib/shipped-voyager-hull";
 import { axisLineTester, hullMetal } from "./lib/axis-line-hits";
 
 /** Steps per half-extent: a reach is found to a quarter of a percent. */
@@ -55,7 +60,16 @@ type Vec = readonly [number, number, number];
  *  along `dir` meet metal? `p` in kilometres from the envelope's centre,
  *  which is the whole root's box centre: the frame `ventThroats` draws in,
  *  and the box `tests/hull.test.ts` holds `env` to. The metal set is smaller
- *  than that box on purpose; the origin is not. */
+ *  than that box on purpose; the origin is not.
+ *
+ *  Every line this instrument asks about runs along a hull axis, so the
+ *  question is two-dimensional: the line meets a triangle exactly when its
+ *  point lies inside the triangle's projection across that axis, and the
+ *  triangle faces the line's start the way `Raycaster` requires of a
+ *  `FrontSide` material. That is the ray cast it replaces — from far outside,
+ *  through the whole hull, any face — answered from a grid of projected
+ *  triangles, because the authored Porter (node #813) is 363k triangles and a
+ *  ray tested against every one of them made this a run of hours. */
 function lineTester(root: THREE.Object3D) {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
@@ -78,12 +92,22 @@ function lineTester(root: THREE.Object3D) {
 }
 
 /** The largest step `i ≤ cap` whose line, and the two a step inward, meet
- *  metal; as a fraction of the half-extent. `NaN` if none does. */
+ *  metal; as a fraction of the half-extent. `NaN` if none does.
+ *
+ *  An arm that reaches the box's own face is asked again three steps in: there
+ *  the line grazes the hull's silhouette, where the projected-triangle answer
+ *  and a cast along the vent's own push can part company by less than a step,
+ *  which the dreadnought's yaw pair did (node #1035). Every arm short of the
+ *  face is reported as measured. */
 function reachOf(line: (f: number) => boolean, cap = STEPS): number {
-	for (let i = cap; i >= 2; i--)
-		if (line(i / STEPS) && line((i - 1) / STEPS) && line((i - 2) / STEPS))
-			return i / STEPS;
-	return Number.NaN;
+	const answer = (limit: number) => {
+		for (let i = limit; i >= 2; i--)
+			if (line(i / STEPS) && line((i - 1) / STEPS) && line((i - 2) / STEPS))
+				return i / STEPS;
+		return Number.NaN;
+	};
+	const reached = answer(cap);
+	return reached === cap / STEPS && cap === STEPS ? answer(STEPS - 3) : reached;
 }
 
 /** The slide offsets, nearest the box's own first, so a tie keeps the pair
@@ -163,7 +187,10 @@ if (import.meta.main) {
 	// installed.
 	await installShippedCourierHull();
 	await installShippedTugHull();
+	await installShippedVoyagerHull();
+	await installShippedInterceptorHull();
 	await installShippedLongwall();
+	await installShippedSevenShips();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {
 		const spec = HULL_SPECS[id];

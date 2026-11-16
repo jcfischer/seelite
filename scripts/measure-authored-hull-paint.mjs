@@ -36,6 +36,7 @@ import {
 	tintLuma,
 	UNLIFTED_PAINTS,
 } from "./lib/authored-hull-paint.mjs";
+import { readSharedModel } from "./lib/shared-image-io.mjs";
 import { textureMeanLuma } from "./lib/texture-luma.mjs";
 
 const finite = (label, value) => {
@@ -102,7 +103,7 @@ console.log(
 
 for (const asset of AUTHORED_HULL_ASSETS) {
 	const study = await io.read(asset.study);
-	const shipped = await io.read(asset.shipped);
+	const shipped = await readSharedModel(io, asset.shipped);
 	const { tris, total } = shares(shipped);
 	const before = await paintRows(study, tris, total);
 	const after = await paintRows(shipped, tris, total);

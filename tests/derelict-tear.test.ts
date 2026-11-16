@@ -16,12 +16,17 @@
  *    tear made in place would cut every live ship of that hull.
  */
 
+import { useShippedInterceptorHull } from "./setup/interceptor-hull";
+import { useShippedSevenShips } from "./setup/seven-ships-hull";
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { buildDerelictMesh, disposeDerelict } from "../src/derelict-mesh";
 import { drawnBoxes, drawnHullBox, tearHull } from "../src/derelict-tear";
 import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+
+await useShippedInterceptorHull();
+await useShippedSevenShips();
 
 /** The hulls a derelict is drawn from (`derelict.ts`), at their flown variant. */
 const live = (id: HullId) => buildShipMesh(id, HULL_SPECS[id].variant).root;
@@ -138,8 +143,8 @@ describe("a derelict's envelope is the intact hull's", () => {
 		// The instrument's own control: delete every fuselage triangle touching
 		// the nose's plane — which is the hull's foremost — and `drawnHullBox`
 		// moves while `Box3.setFromObject` does not.
-		const root = live("interceptor");
-		const fuselage = root.getObjectByName("interceptor-fuselage") as THREE.Mesh;
+		const root = live("explorer");
+		const fuselage = root.getObjectByName("explorer-fuselage") as THREE.Mesh;
 		const before = drawnHullBox(root);
 		const cut = fuselage.geometry.clone();
 		const position = cut.getAttribute("position");
@@ -441,7 +446,7 @@ describe("the live ship is untouched", () => {
 	});
 
 	test("a wreck disposes the tear's geometry and not the roster's", () => {
-		const wreck = buildDerelictMesh("freighter");
+		const wreck = buildDerelictMesh("explorer");
 		const owned = new Set<THREE.BufferGeometry>();
 		const shared = new Set<THREE.BufferGeometry>();
 		wreck.traverse((o) => {
@@ -471,7 +476,7 @@ describe("the live ship is untouched", () => {
 
 describe("the broken look goes dark with the rest", () => {
 	test("the frame, the liner and the scorched skin carry no light of their own", () => {
-		const wreck = buildDerelictMesh("interceptor");
+		const wreck = buildDerelictMesh("explorer");
 		let frame = 0;
 		let liners = 0;
 		wreck.traverse((o) => {

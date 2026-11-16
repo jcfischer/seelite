@@ -64,7 +64,18 @@ import {
 	type WorldState,
 } from "../src/world-state";
 
+function legacyWorldFixture(raw: unknown): any {
+	const o = structuredClone(raw) as any;
+	o.worldSchemaVersion = 3;
+	for (const env of o.galaxies) delete env.capabilityTime;
+	const { integrity, ...body } = o;
+	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+}
 const WORLD = 0x5ee11e;
+const VERSION_10_BASELINE_FINGERPRINTS = [
+	2240710115, 2950027290, 1577563467, 1853774124, 621039426, 3750933717,
+	1834849230, 1207904577,
+];
 
 /** The trade station of system 3, galaxy 0 — one carrier slot, used wherever a
  *  test needs *a* slot rather than a particular one. */
@@ -133,7 +144,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// berths, less the visitor's) in every system `hasRaiderOutpost` admits, 1,148
 		// more; that too is said by kind below. Node #731 added one to three
 		// derelict slots to every system by government, 5,040; by kind below.
-		expect(carriers).toBe(38086);
+		expect(carriers).toBe(45626);
 		// #351 enrolled the relay and its tender: one of each in every system
 		// with a station to watch.
 		let raiders = 0;
@@ -141,6 +152,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		let tenders = 0;
 		let outpostCarriers = 0;
 		let derelicts = 0;
+		let capabilities = 0;
 		let expectedDerelicts = 0;
 		let expectedRaiders = 0;
 		let expectedRelays = 0;
@@ -151,6 +163,7 @@ describe("§9.1 namespace and baseline stability", () => {
 				if (c.kind === "relay") relays++;
 				if (c.kind === "relay-tender") tenders++;
 				if (c.kind === "derelict") derelicts++;
+				if (c.kind === "capability") capabilities++;
 				if (
 					(c.kind === "station" && c.stationType === "outpost") ||
 					(c.kind === "traffic" && c.homeStationType === "outpost")
@@ -171,7 +184,13 @@ describe("§9.1 namespace and baseline stability", () => {
 		expect(derelicts).toBe(expectedDerelicts);
 		// 21736 is version 5's station and Traffic set, still unmoved.
 		expect(
-			carriers - raiders - relays - tenders - outpostCarriers - derelicts,
+			carriers -
+				raiders -
+				relays -
+				tenders -
+				outpostCarriers -
+				derelicts -
+				capabilities,
 		).toBe(21736);
 		let systemsWithStations = 0;
 		let widest = 0;
@@ -182,13 +201,13 @@ describe("§9.1 namespace and baseline stability", () => {
 			systemsWithStations += perSystem.size;
 			widest = Math.max(widest, ...perSystem.values());
 		}
-		expect(widest).toBe(26);
+		expect(widest).toBe(34);
 		expect(systemsWithStations).toBe(8 * 256);
 		// Eight station and Traffic carriers at the least plus one raider slot;
 		// eighteen at the most plus four, and an outpost's two beside those;
 		// and the relay and its tender in each; and one to three derelicts.
 		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * (8 + 1 + 2 + 1));
-		expect(carriers).toBeLessThanOrEqual(8 * 256 * (18 + 2 + 4 + 2 + 3));
+		expect(carriers).toBeLessThanOrEqual(8 * 256 * (18 + 2 + 4 + 2 + 3 + 8));
 	});
 
 	test("a local id repeats across systems and never inside one", () => {
@@ -211,7 +230,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// and #324's four raider slots, and #351's relay and its tender, and node
 		// #491's outpost with its one Traffic carrier, and node #731's three
 		// derelict slots.
-		expect(globalIds.size).toBe(29);
+		expect(globalIds.size).toBe(37);
 	});
 
 	test("station and Traffic carrier metadata stay structurally discriminated", () => {
@@ -295,7 +314,13 @@ describe("§9.1 namespace and baseline stability", () => {
 	): number => {
 		const parts: string[] = [];
 		for (const c of enumerateCarriers(WORLD, galaxy)) {
-			if (!keep(c) || isOutpostCarrier(c) || isDerelict(c)) continue;
+			if (
+				!keep(c) ||
+				isOutpostCarrier(c) ||
+				isDerelict(c) ||
+				c.kind === "capability"
+			)
+				continue;
 			const generatedType =
 				c.kind === "station"
 					? c.stationType
@@ -314,8 +339,20 @@ describe("§9.1 namespace and baseline stability", () => {
 	/** Each supported version's carrier kinds and version-7 identity goldens. */
 	const MIGRATION_IDENTITY_GOLDENS: Record<
 		number,
-		{ kinds: GeneratedCarrier["kind"][]; goldens: number[] }
+		{ kinds: GeneratedCarrier["kind"][]; goldens: number[]; baseline?: boolean }
 	> = {
+		10: {
+			kinds: [
+				"station",
+				"traffic",
+				"raider",
+				"relay",
+				"relay-tender",
+				"derelict",
+			],
+			goldens: VERSION_10_BASELINE_FINGERPRINTS,
+			baseline: true,
+		},
 		6: {
 			kinds: ["station", "traffic", "raider"],
 			goldens: [
@@ -365,13 +402,19 @@ describe("§9.1 namespace and baseline stability", () => {
 	});
 
 	test("versions 6, 7, 8 and 9 keep every carrier identity and type through the rebase", () => {
-		for (const [version, { kinds, goldens }] of Object.entries(
+		for (const [version, { kinds, goldens, baseline }] of Object.entries(
 			MIGRATION_IDENTITY_GOLDENS,
 		))
 			expect({
 				version,
 				hashes: [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
-					migrationIdentityFingerprint(g, (c) => kinds.includes(c.kind)),
+					baseline
+						? carrierBaselineFingerprint(
+								WORLD,
+								g,
+								(c) => c.kind !== "capability",
+							)
+						: migrationIdentityFingerprint(g, (c) => kinds.includes(c.kind)),
 				),
 			}).toEqual({ version, hashes: goldens });
 	});
@@ -386,7 +429,8 @@ describe("§9.1 namespace and baseline stability", () => {
 				carrierBaselineFingerprint(
 					WORLD,
 					g,
-					(c) => !isOutpostCarrier(c) && !isDerelict(c),
+					(c) =>
+						!isOutpostCarrier(c) && !isDerelict(c) && c.kind !== "capability",
 				),
 			),
 		).toEqual(VERSION_8_BASELINE_FINGERPRINTS);
@@ -404,11 +448,22 @@ describe("§9.1 namespace and baseline stability", () => {
 		// fingerprints, hashed over every carrier but the derelicts.
 		expect(
 			[0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
-				carrierBaselineFingerprint(WORLD, g, (c) => !isDerelict(c)),
+				carrierBaselineFingerprint(
+					WORLD,
+					g,
+					(c) => !isDerelict(c) && c.kind !== "capability",
+				),
 			),
 		).toEqual(VERSION_9_BASELINE_FINGERPRINTS);
 	});
 
+	test("version 11 moves no version-10 carrier", () => {
+		expect(
+			[0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
+				carrierBaselineFingerprint(WORLD, g, (c) => c.kind !== "capability"),
+			),
+		).toEqual(VERSION_10_BASELINE_FINGERPRINTS);
+	});
 	test("every supported old generator version has an identity golden", () => {
 		for (const version of LEGACY_WORLD_GENERATOR_VERSIONS)
 			expect(MIGRATION_IDENTITY_GOLDENS[version]?.goldens).toHaveLength(8);
@@ -418,7 +473,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(10);
+		expect(WORLD_GENERATOR_VERSION).toBe(11);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -495,8 +550,8 @@ const VERSION_9_BASELINE_FINGERPRINTS = [
 ];
 
 const GOLDEN_FINGERPRINTS = [
-	2240710115, 2950027290, 1577563467, 1853774124, 621039426, 3750933717,
-	1834849230, 1207904577,
+	3184663648, 3983124722, 918239107, 2449049888, 233068355, 396838080,
+	3072036612, 2535047707,
 ];
 
 // ---------------------------------------------------------------------------
@@ -2165,6 +2220,7 @@ describe("§9.8 hard bounds", () => {
 		let w = newWorld(WORLD);
 		let touched = 0;
 		for (const c of enumerateCarriers(WORLD, 0)) {
+			if (c.kind === "capability") continue;
 			if (touched >= 40) break;
 			w = applyTransition(w, 0, c.key, {
 				kind: "disable",
@@ -2504,7 +2560,7 @@ describe("§9.9 atomicity and integrity", () => {
 			occurredAt: 10,
 			cause: PLAYER,
 		});
-		const raw = serializeWorld(destroyed);
+		const raw = legacyWorldFixture(serializeWorld(destroyed));
 		expect(
 			(raw as { worldGeneratorVersion: number }).worldGeneratorVersion,
 		).toBe(6);
@@ -2540,7 +2596,7 @@ describe("§9.9 atomicity and integrity", () => {
 				occurredAt: 10,
 				cause: PLAYER,
 			});
-			const raw = serializeWorld(changed);
+			const raw = legacyWorldFixture(serializeWorld(changed));
 			const loaded = parseWorld(raw);
 			expect(loaded.worldGeneratorVersion).toBe(WORLD_GENERATOR_VERSION);
 			expect(loaded.galaxies[0].objective[key]).toEqual(
@@ -2561,7 +2617,10 @@ describe("§9.9 atomicity and integrity", () => {
 		// model: a version-6 body that was edited is refused as edited.
 		const world = newWorld(WORLD);
 		world.worldGeneratorVersion = 6;
-		const raw = serializeWorld(world) as Record<string, unknown>;
+		const raw = legacyWorldFixture(serializeWorld(world)) as Record<
+			string,
+			unknown
+		>;
 		raw.gameTime = 99;
 		expect(() => parseWorld(raw)).toThrow(/integrity check failed/);
 	});

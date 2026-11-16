@@ -639,7 +639,11 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 				for (const _ of codeOf(file).matchAll(call)) found.push(file);
 			return found;
 		};
-		expect(doors(/requestPointerLock\s*\(/g)).toEqual(["src/main.ts"]);
+		expect(doors(/requestPointerLock\s*\(/g)).toEqual(["src/pointer.ts"]);
+		expect(doors(/\brequestLock\s*\(/g).sort()).toEqual([
+			"src/main.ts",
+			"src/pointer.ts",
+		]);
 		expect(doors(/exitPointerLock\s*\(/g).sort()).toEqual([
 			"src/commander-overlay.ts",
 			"src/main.ts",
@@ -651,7 +655,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		const asked = codeOf("src/main.ts");
 		const door = asked.slice(
 			asked.indexOf('addEventListener("click"'),
-			asked.indexOf("requestPointerLock"),
+			asked.indexOf("requestLock(", asked.indexOf('addEventListener("click"')),
 		);
 		expect(door).toContain("pointerLockMove(");
 		// **The gate's meaning, not the formatter's layout.** Sage, round 3, on the

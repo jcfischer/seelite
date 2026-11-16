@@ -1,0 +1,45 @@
+bun test v1.4.2 (744846f84)
+
+tests/station-route.test.ts:
+(pass) Traffic destination selection > sorts station ids, excludes home/unfitting/unreachable, and cycles by away ordinal [0.22ms]
+(pass) Traffic destination selection > collection order cannot change the selected station [0.14ms]
+(pass) Traffic destination selection > traffic routes around the planet approach boundary [1.20ms]
+(pass) terminal-to-terminal route projection > a one-station actor stays abstract while away and returns to its home berth [9.49ms]
+(pass) terminal-to-terminal route projection > one home-owned Carrier traverses the specified phase order [4069.77ms]
+(pass) terminal-to-terminal route projection > every visible moving phase carries a continuous complete attitude [14260.40ms]
+(pass) terminal-to-terminal route projection > station-zone legs stay slow, clear the bubble, and visibly dwell [4115.41ms]
+(pass) terminal-to-terminal route projection > a player-input timeline delays the shared queues without changing identity [852.54ms]
+(pass) terminal-to-terminal route projection > a completed player clearance still delays a direct historical replay [2925.28ms]
+(pass) terminal-to-terminal route projection > an older incompatible player request does not block a fitting Carrier [365.72ms]
+(pass) terminal-to-terminal route projection > shared lane arbitration honors ready time instead of privileging the player [1544.30ms]
+(pass) terminal-to-terminal route projection > a committed traversal does not reset an older queued launch behind the player [0.23ms]
+(pass) terminal-to-terminal route projection > a committed lane traversal cannot retroactively block its own Carrier [902.06ms]
+(pass) terminal-to-terminal route projection > bunched departures retain the first launch as the committed lane owner [0.86ms]
+(pass) terminal-to-terminal route projection > a physical visit keeps its granted berth when current occupancy is replayed [2212.75ms]
+(pass) terminal-to-terminal route projection > a parked schedule boundary remains pending until the outbound leg docks [62.84ms]
+(pass) terminal-to-terminal route projection > a long visit stays continuous across later schedule intent boundaries [1611.51ms]
+(fail) terminal-to-terminal route projection > the actor returns physically and requests any fitting home berth [7004.36ms]
+  ^ this test timed out after 5000ms.
+(pass) terminal-to-terminal route projection > route projection is independent of query cadence [541.20ms]
+(pass) terminal-to-terminal route projection > a route gives the lane back when it said it would (#521) [1299.42ms]
+(pass) terminal-to-terminal route projection > cold cache warm-up obeys a fixed canonical tick budget [39.77ms]
+(pass) terminal-to-terminal route projection > cold presentation parks only actors whose base schedule is parked [1.02ms]
+(pass) terminal-to-terminal route projection > phase-equivalent cold queries do work independent of epoch age [22.77ms]
+(pass) canonical Traffic cruise > direct evaluation equals repeated canonical stepping including a fractional tick [2.40ms]
+(pass) canonical Traffic cruise > render cadence is not an input to route progress [17.98ms]
+(pass) canonical Traffic cruise > detour guidance also replays from its physical-leg boundary [1.20ms]
+(pass) canonical Traffic cruise > work depends on active-leg age, not the absolute epoch [0.50ms]
+(pass) canonical Traffic cruise > an exhausted actor regenerates against its explicit hull capacity and retries [0.32ms]
+(pass) canonical Traffic cruise > an unavailable detour stops in the blocker frame instead of becoming an arrival [0.19ms]
+(pass) canonical Traffic cruise > replay preserves an initially blocked route until guidance replans it [0.06ms]
+(pass) node #491: Traffic stays on its own side of the line > no lawful station's carrier is routed to the outpost [615.24ms]
+(pass) node #491: Traffic stays on its own side of the line > the outpost's own carrier goes away abstractly and comes home [0.53ms]
+
+1 tests failed:
+(fail) terminal-to-terminal route projection > the actor returns physically and requests any fitting home berth [7004.36ms]
+  ^ this test timed out after 5000ms.
+
+ 31 pass
+ 1 fail
+ 6052 expect() calls
+Ran 32 tests across 1 file. [52.34s]

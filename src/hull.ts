@@ -33,7 +33,8 @@
  * this box and `BERTH_CELL` had been sized from the declaration: against the
  * meshes, `miner/a` and `miner/c` are 40.0 m and 47.5 m tall to a 40 m cell and
  * fit no berth in the game at all. `tests/hull.test.ts` rebuilds each selected
- * variant's mesh and compares.
+ * variant's mesh and compares. `RETAINED_ENVELOPE_HULLS` names authored
+ * replacements required to fit inside the established simulation box instead.
  *
  * **Mass is a density band, not a density table.** Each row's `massT` is its
  * selected variant's box volume against a role density — a freighter dense for
@@ -60,6 +61,11 @@ export const HULL_IDS = [
 	"voyager",
 ] as const;
 export type HullId = (typeof HULL_IDS)[number];
+
+/** Authored replacements constrained to the existing simulation envelope. https://github.com/jcfischer/seelite/issues/1034 */
+export const RETAINED_ENVELOPE_HULLS: ReadonlySet<HullId> = new Set([
+	"interceptor",
+]);
 
 export const HULL_VARIANT_IDS = ["a", "b", "c"] as const;
 export type HullVariantId = (typeof HULL_VARIANT_IDS)[number];
@@ -98,7 +104,7 @@ export interface HullEnvelope {
  *
  * `collision.md` §2.3 (P1) puts the box on the ship, and a selected mesh is not
  * built about its origin: the carrier's box sits 13.5 m above the ship's sim
- * position and the freighter's 3 m to starboard. A box centred on the origin
+ * position and the freighter's 1.6 m aft. A box centred on the origin
  * would leave that much hull outside it, so the box carries the offset
  * (§9.1.10). Measured off the selected variant's built mesh, as `env` is, and
  * rounded to the nearest 0.1 m; `tests/collision.test.ts` rebuilds every mesh
@@ -108,6 +114,24 @@ export interface HullBoxCentre {
 	rightKm: number;
 	upKm: number;
 	foreKm: number;
+}
+
+/**
+ * A hull's solid cutter at full feed, kilometres, in the ship's body frame
+ * (#949 D3, node #959): a second collision box ahead of the bow. Its rotor is a
+ * square `radiusKm` either side of the keel line, centred `downKm` below the
+ * ship's axis, and it reaches from the bow plane `bowKm` forward to
+ * `bowKm + feedTravelKm`.
+ *
+ * Whether it is deployed is an input to the sweep (`shipPrimitives` in
+ * `collision.ts`), not a fact about the hull — where that input comes from is
+ * Drill interaction's (#920).
+ */
+export interface HullCutter {
+	radiusKm: number;
+	downKm: number;
+	bowKm: number;
+	feedTravelKm: number;
 }
 
 /**
@@ -374,6 +398,13 @@ export type HullSlot =
 			readonly key: string;
 			readonly kind: "hardpoint" | "utility";
 			readonly size: SlotSize;
+			/**
+			 * https://github.com/jcfischer/seelite/issues/1147
+			 * A hardpoint on a mount the hull's model draws (D-D10). A Mining Laser
+			 * bought into it takes its size (D-D18). Only the miner has one, and NPC
+			 * miners fly `stockLoadout`, which leaves it empty (D-D9).
+			 */
+			readonly mount?: true;
 	  }
 	| {
 			readonly key: string;
@@ -391,12 +422,21 @@ type TaggedInternal = readonly [SlotSize, readonly InternalFamily[]];
  */
 const slotLayout = (layout: {
 	readonly hardpoint: readonly SlotSize[];
+	readonly mounts?: readonly SlotSize[];
 	readonly utility: readonly SlotSize[];
 	readonly internal: readonly TaggedInternal[];
 	readonly flex: SlotSize;
 }): readonly HullSlot[] => [
 	...layout.hardpoint.map(
 		(size, i): HullSlot => ({ key: `h${i + 1}`, kind: "hardpoint", size }),
+	),
+	...(layout.mounts ?? []).map(
+		(size, i): HullSlot => ({
+			key: `h${layout.hardpoint.length + i + 1}`,
+			kind: "hardpoint",
+			size,
+			mount: true,
+		}),
 	),
 	...layout.utility.map(
 		(size, i): HullSlot => ({ key: `u${i + 1}`, kind: "utility", size }),
@@ -413,7 +453,8 @@ const slotLayout = (layout: {
 ];
 
 /** Total slot capacity: the sum of every slot's size, the plant excluded.
- *  A heavier hull never has less (`tests/hull-slots.test.ts`). */
+ *  A heavier hull never has less, except the authored Porter: node #813
+ *  lowered its mass while retaining the saved slot layout (`tests/hull-slots.test.ts`). */
 export const slotCapacity = (id: HullId): number =>
 	HULL_SPECS[id].slots.reduce((sum, slot) => sum + slot.size, 0);
 
@@ -473,10 +514,12 @@ export const POWER_PLANT_OUTPUT: Readonly<
  * What a fitted ship holds, as numbers: `fittedCapacity` in `loadout.ts`
  * computes it and `ship-condition.ts` reads it (#925). The bank and its regen,
  * the fuel the tank carries (#926), and the defence that plates and boosters
- * raise (#927); the sibling slice #928 adds hold here rather than in a second
- * shape.
+ * raise (#927), and the hold the racks add (#928).
  */
 export interface FittedCapacity extends PlantOutput, DefenceCapacity {
+	/** Tonnes the hold carries: the hull's `holdT` plus every fitted rack's
+	 *  `cargoT` (#873). Every hold reader reads this, never the bare hull row. */
+	holdT: number;
 	/** Light years of fuel the ship carries: the hull's `tankLy` plus every
 	 *  fitted tank's `fuelLy` (#873 R1). Capacity only — the jump range stays
 	 *  the hull's `tankLy`, and this field is named apart from it. */
@@ -493,6 +536,8 @@ export interface FittedCapacity extends PlantOutput, DefenceCapacity {
 	scanChargeS: number;
 	/** The best fitted long-range scanner's `signalRangeKm`; 0 with none. */
 	signalRangeKm: number;
+	scoopRadiusKm: number;
+	scoopSpeedKms: number;
 	/** What the best fitted escape pod brings back from an eject (#977): the
 	 *  share of the pilot's own cargo, the tonnes of it the capsule takes
 	 *  (0 when the share is), and the carried modules. All 0 with no pod. */
@@ -575,6 +620,9 @@ export interface HullSpec {
 	readonly env: HullEnvelope;
 	/** Where that box is centred in the ship's body frame (`HullBoxCentre`). */
 	readonly envCentre: HullBoxCentre;
+	/** The hull's solid cutter (`HullCutter`), on the one hull that carries
+	 *  one: the miner. Absent everywhere else. */
+	readonly cutter?: HullCutter;
 	/**
 	 * Mass, tonnes, and thrust, meganewtons — #26's D5, and the two numbers every
 	 * handling figure in `sim.ts` derives from.
@@ -598,6 +646,7 @@ export interface HullSpec {
 	 *  is the reference the stock deficit's response is stated against — #26's D6
 	 *  defers the *multiplier* to the pricing node, not the capacities. */
 	readonly holdT: number;
+	readonly oreHoldT?: number;
 	/** Forward weapon mounts. `combat-model.md` §2 fires one forward weapon
 	 *  today, so a second mount is a property #8's build will read rather than
 	 *  one anything reads now. */
@@ -883,15 +932,15 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			retro: 0.5,
 			strafe: 0.416667,
 			pitch: 0.00838067,
-			yaw: 0.00839002,
-			roll: 0.00593896,
+			yaw: 0.00840055,
+			roll: 0.00587882,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			yaw: { y: -0.025, fore: 0.995, aft: 0.9975 },
 			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.725, port: 0.9775, starboard: 0.9775 },
+			roll: { z: 0.55, port: 0.9875, starboard: 0.9875 },
 		},
 		holdT: 8,
 		hardpoints: 2,
@@ -916,24 +965,28 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	freighter: {
 		role: "cargo",
 		variant: "b",
-		env: { lengthKm: 0.0697, beamKm: 0.0463, heightKm: 0.0197 },
-		envCentre: { rightKm: 0.003, upKm: 0.0012, foreKm: -0.0013 },
-		massT: 140,
-		thrustMN: 168,
+		// The authored O2 Porter's box (node #813). It is a third smaller by
+		// volume than the procedural Porter it replaced, so the mass is
+		// re-derived at the role's 2.20 t per 1,000 m³ and the thrust scaled
+		// with it: the acceleration a freighter flies at is unchanged.
+		env: { lengthKm: 0.0672, beamKm: 0.0424, heightKm: 0.0147 },
+		envCentre: { rightKm: 0.0005, upKm: 0.0004, foreKm: -0.0016 },
+		massT: 92,
+		thrustMN: 110.4,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00778113,
-			yaw: 0.010385,
-			roll: 0.00573199,
+			pitch: 0.00755031,
+			yaw: 0.010074,
+			roll: 0.00513139,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: -0.4, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.45, port: 0.995, starboard: 0.9725 },
+			yaw: { y: -0.2, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0.575, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.225, port: 0.9825, starboard: 0.9975 },
 		},
 		// Three times the reference, which is the case #26's D6 names by number:
 		// a 60 t hold leans three times as hard on a market that remembers it.
@@ -951,8 +1004,8 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			flex: 2,
 		}),
 		plantSize: 2,
-		shieldPool: 176,
-		integrity: 166,
+		shieldPool: 137,
+		integrity: 129,
 		tankLy: 7,
 		chargeAu: 12,
 		priceCr: 69_000,
@@ -969,6 +1022,15 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		// goes red the day either figure moves.
 		env: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
 		envCentre: { rightKm: 0, upKm: 0, foreKm: 0 },
+		// The spike's figures (node #956's `CUTTER_KM`, after #949's `drill.ts`):
+		// rotor x ±5.5 m and y −8.91…+2.09 m, from the bow plane at 42.2 m — half
+		// the hull box — to bow + #803's 10.6 m feed travel, 52.8 m.
+		cutter: {
+			radiusKm: 0.0055,
+			downKm: 0.00341,
+			bowKm: 0.0422,
+			feedTravelKm: 0.0106,
+		},
 		massT: 215,
 		thrustMN: 215,
 		ventShares: {
@@ -987,9 +1049,11 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			roll: { z: 0.925, port: 0.97, starboard: 0.97 },
 		},
 		holdT: 40,
-		hardpoints: 1,
+		oreHoldT: 3000,
+		hardpoints: 3,
 		slots: slotLayout({
 			hardpoint: [3],
+			mounts: [3, 3],
 			utility: [2, 1, 1],
 			internal: [
 				[3, ["cargo"]],
@@ -1009,8 +1073,8 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	patrol: {
 		role: "security",
 		variant: "a",
-		env: { lengthKm: 0.0586, beamKm: 0.0385, heightKm: 0.011 },
-		envCentre: { rightKm: 0, upKm: 0.0009, foreKm: 0.0002 },
+		env: { lengthKm: 0.0554, beamKm: 0.0339, heightKm: 0.0122 },
+		envCentre: { rightKm: 0, upKm: 0.0018, foreKm: -0.0006 },
 		massT: 46,
 		// Under the interceptor's 2.800 km/s², deliberately: **the `fast` role
 		// accelerates hardest**, and a police hull that out-accelerated it would
@@ -1025,16 +1089,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00745941,
-			yaw: 0.0103157,
-			roll: 0.00519862,
+			pitch: 0.0077194,
+			yaw: 0.00992841,
+			roll: 0.0049802,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: -0.025, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.625, port: 0.9825, starboard: 0.9825 },
+			yaw: { y: -0.175, fore: 0.9925, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9925, aft: 0.96 },
+			roll: { z: 0.4, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 6,
 		hardpoints: 2,
@@ -1102,24 +1166,25 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	raider: {
 		role: "outlaw",
 		variant: "a",
-		env: { lengthKm: 0.0635, beamKm: 0.0344, heightKm: 0.0109 },
-		envCentre: { rightKm: 0, upKm: 0.0005, foreKm: 0.0027 },
+		env: { lengthKm: 0.0564, beamKm: 0.0339, heightKm: 0.0117 },
+		// Stryker disable next-line UnaryOperator: envCentre is where the builder re-centres the authored model, so the sign slides the hull and the box it collides through together; this hull's display reach is its procedural loft's, and nothing else reads the slide
+		envCentre: { rightKm: 0, upKm: 0.0016, foreKm: -0.0011 },
 		massT: 42,
 		thrustMN: 113,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00741782,
-			yaw: 0.00932014,
-			roll: 0.00429537,
+			pitch: 0.00765957,
+			yaw: 0.00983335,
+			roll: 0.00484686,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0.075, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.7, port: 0.9975, starboard: 0.9975 },
+			yaw: { y: -0.25, fore: 0.9925, aft: 0.9975 },
+			pitch: { x: 0.075, fore: 0.9925, aft: 0.965 },
+			roll: { z: 0.4, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 10,
 		hardpoints: 2,
@@ -1143,24 +1208,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	carrier: {
 		role: "capital",
 		variant: "a",
-		env: { lengthKm: 0.3797, beamKm: 0.1764, heightKm: 0.145 },
-		envCentre: { rightKm: 0, upKm: 0.0135, foreKm: -0.0048 },
+		env: { lengthKm: 0.4068, beamKm: 0.1895, heightKm: 0.1895 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.019 },
 		massT: 14000,
 		thrustMN: 8400,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00825631,
-			yaw: 0.00876069,
-			roll: 0.00568054,
+			pitch: 0.00880219,
+			yaw: 0.0087691,
+			roll: 0.00672997,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: -0.05, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.775, port: 0.985, starboard: 0.985 },
+			yaw: { y: -0.15, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: -0.2, fore: 0.99, aft: 0.9975 },
+			roll: { z: 0.425, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 400,
 		hardpoints: 6,
@@ -1234,24 +1299,25 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	prospector: {
 		role: "prospect",
 		variant: "a",
-		env: { lengthKm: 0.0665, beamKm: 0.0253, heightKm: 0.0192 },
-		envCentre: { rightKm: 0, upKm: -0.0023, foreKm: 0.0013 },
+		env: { lengthKm: 0.0664, beamKm: 0.0201, heightKm: 0.015 },
+		// Stryker disable next-line UnaryOperator: envCentre is where the builder re-centres the authored model, so the sign slides the hull and the box it collides through together; this hull's display reach is its procedural loft's, and nothing else reads the slide
+		envCentre: { rightKm: 0, upKm: 0.0005, foreKm: -0.0011 },
 		massT: 58,
 		thrustMN: 110,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00810055,
-			yaw: 0.00899218,
-			roll: 0.00433099,
+			pitch: 0.00799396,
+			yaw: 0.00835805,
+			roll: 0.00340446,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0.075, fore: 0.8325, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.925 },
-			roll: { z: 0.5, port: 0.995, starboard: 0.995 },
+			yaw: { y: -0.5, fore: 0.88, aft: 0.9975 },
+			pitch: { x: -0.275, fore: 0.9025, aft: 0.9875 },
+			roll: { z: 0.65, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 12,
 		hardpoints: 1,
@@ -1276,24 +1342,24 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	dreadnought: {
 		role: "battle-line",
 		variant: "a",
-		env: { lengthKm: 0.4066, beamKm: 0.1331, heightKm: 0.1111 },
-		envCentre: { rightKm: 0, upKm: 0.0091, foreKm: 0.0007 },
+		env: { lengthKm: 0.432, beamKm: 0.1895, heightKm: 0.1895 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.0184 },
 		massT: 12000,
 		thrustMN: 8400,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00774348,
-			yaw: 0.00797764,
-			roll: 0.00406323,
+			pitch: 0.00863529,
+			yaw: 0.008592,
+			roll: 0.00633739,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.775, port: 0.9825, starboard: 0.9825 },
+			yaw: { y: -0.1, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: -0.2, fore: 0.9925, aft: 0.9925 },
+			roll: { z: 0.4, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 200,
 		hardpoints: 8,
@@ -1326,10 +1392,15 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	voyager: {
 		role: "expedition",
 		variant: "a",
-		env: { lengthKm: 0.191, beamKm: 0.0295, heightKm: 0.0301 },
+		// **The envelope is Discovery / Voyager A's (node #820), scaled to this
+		// row's 191 m** and not drawn 1:1: the model's box rounded up, against the
+		// loft's 191 x 29.5 x 30.1 m. The length, the mass and the thrust stand
+		// (`voyager-hull.ts` gives the reason); the beam and height are what the
+		// mesh measures. The loft still stands in until the model installs.
+		env: { lengthKm: 0.191, beamKm: 0.0329, heightKm: 0.0361 },
 		envCentre: { rightKm: 0, upKm: 0.002, foreKm: 0.002 },
-		// 2.24 t per 1,000 m³ of its box: a spine and a sphere enclose little of
-		// the box they span, so the density sits high in the band.
+		// 1.68 t per 1,000 m³ of its box (was 2.24 on the loft's thinner one): a
+		// spine and a sphere enclose little of the box they span.
 		massT: 380,
 		// 0.5 km/s², under the carrier's 0.6: an expedition hull is not a warship.
 		thrustMN: 190,
@@ -1337,16 +1408,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00743102,
-			yaw: 0.00740524,
-			roll: 0.00227722,
+			pitch: 0.00746292,
+			yaw: 0.00741931,
+			roll: 0.00274582,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.99, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.985 },
-			roll: { z: 0.7, port: 0.995, starboard: 0.995 },
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.825, port: 0.99, starboard: 0.9975 },
 		},
 		holdT: 240,
 		hardpoints: 1,

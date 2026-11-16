@@ -56,6 +56,7 @@ import {
 	type RefineryPadFrame,
 } from "./refinery-pad-frame";
 import * as THREE from "three";
+import { ASSEMBLY_CELL_KM } from "./assembly-plan";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
 	BLINKING_CORE_GAIN,
@@ -281,6 +282,12 @@ export interface StationMesh {
 	 * trusting the marks.
 	 */
 	dispose(): void;
+	/** https://github.com/jcfischer/seelite/issues/1142 */
+	lateDetail?: {
+		request(): void;
+		readonly attached: boolean;
+		readonly failure: unknown;
+	};
 }
 
 /** One clock-driven light. `base` is its lit intensity; the waveform scales it. */
@@ -1014,12 +1021,19 @@ function mouthStrobes(
 export function buildCoriolisNavigation(
 	fixtures: StationFixture[],
 	structure: THREE.Object3D,
+	mounts = {
+		originZ: 0.4035,
+		strobeX: 0.25,
+		beaconX: 0.18,
+		beaconY: 0.16,
+		nameZ: 0.4035,
+	},
 ) {
 	const group = new THREE.Group();
 	group.name = "aperture";
 	const cast = castOntoStructure(structure, "trade");
 	const mount = (x: number, y: number) => {
-		const hit = cast(new THREE.Vector3(x, y, 0.4035), PLUS_Z, 0.15);
+		const hit = cast(new THREE.Vector3(x, y, mounts.originZ), PLUS_Z, 0.15);
 		if (!hit)
 			throw new Error("Coriolis navigation fitting has no mounting surface");
 		return hit.point;
@@ -1048,10 +1062,10 @@ export function buildCoriolisNavigation(
 	group.add(
 		mouthStrobes("trade", fixtures, w, h, bar, aperturePlaneKm - bar / 2),
 	);
-	group.add(buildMouthNameplate(aperture, 0.4035));
+	group.add(buildMouthNameplate(aperture, mounts.nameZ));
 	group.add(
 		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.copy(mount(side * 0.25, 0));
+			position.copy(mount(side * mounts.strobeX, 0));
 		}),
 	);
 	for (const side of [-1, 1]) {
@@ -1062,7 +1076,7 @@ export function buildCoriolisNavigation(
 				side < 0 ? "beacon-coriolis-a" : "beacon-coriolis-b", // glossary-ignore: beacon
 				side < 0 ? "strobe-a" : "strobe-b",
 				0,
-				mount(side * 0.18, 0.16),
+				mount(side * mounts.beaconX, mounts.beaconY),
 				PLUS_Z,
 				null,
 				0.6,
@@ -1946,7 +1960,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	rim.material = flatCloneOf(
 		rim.material as THREE.Material,
 	) as THREE.MeshStandardMaterial;
-	rim.name = "core";
+	rim.name = "rim";
 	group.add(rim);
 
 	// **Recessed modules and slim fins, not lugs.**
@@ -2080,27 +2094,42 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	// wider than the thing it was cut into, which is why the dock read as
 	// enormous. It is sized from the aperture now — the slot plus a frame either
 	// side — rather than from a fraction of the ring.
-	const slot = STATION_GEOMETRY.trade.aperture;
-	const throat = slot.widthKm * 0.5 + r * 0.11;
-	group.add(
+	// The hub holds the role's whole bay, not only the slot's rectangle.
+	const throat = r * 0.34;
+	const hubMember = new THREE.Group();
+	hubMember.name = "hub-member";
+	hubMember.add(
 		shell(
 			[
 				{ z: -r * 0.42, w: throat * 0.72, h: throat * 0.72, e: 6 },
 				{ z: -r * 0.24, w: throat, h: throat, e: 6, hard: true },
 				{ z: r * 0.24, w: throat, h: throat, e: 6, hard: true },
-				{ z: r * 0.34, w: throat * 0.86, h: throat * 0.86, e: 6 },
+				{
+					z: STATION_GEOMETRY.trade.aperturePlaneKm,
+					w: throat,
+					h: throat,
+					e: 6,
+				},
 			],
-			plainMaterial(0x8b95a0, 0.6, 0.5),
-			"hub",
+			hullMaterial(color, "trade"),
+			"core",
 			8,
 			true,
 			apertureCut("trade"),
 		),
 	);
+	group.add(hubMember);
 	// **On the hub's own front cap**, at the same z its last ring sits at. Set
 	// short of it the hub stood 6 m past the mouth — a station poking into the
 	// corridor a ship flies down, which is the one place nothing may be.
-	group.add(buildAperture("trade", fixtures, r * 0.34, berthSeed));
+	group.add(
+		buildAperture(
+			"trade",
+			fixtures,
+			STATION_GEOMETRY.trade.aperturePlaneKm,
+			berthSeed,
+		),
+	);
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2;
@@ -2114,13 +2143,15 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 			);
 		}),
 	);
-	group.add(
-		// On the rim's crown, the face of the tube that looks down the axis
-		// (#300's review): the ring turns whole, so a lamp there sweeps a
-		// circle in the approach's frame. It stood past the rim's outer face,
-		// metres off the hull, at an offset written for a 42 m lamp.
-		strobePair("trade", fixtures, LAMP_POOL_KM.tube, (side, position) => {
-			position.set(0, side * major, tube);
+	hubMember.add(
+		// The hub turns with the rim. Its front cap keeps the pair visible
+		// above the cockpit dash, which covers the lower rim on approach.
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(
+				side * throat * 0.85,
+				0,
+				STATION_GEOMETRY.trade.aperturePlaneKm,
+			);
 		}),
 	);
 	// On the rim's two side faces, never on its outer one. #102's rule and this
@@ -2158,6 +2189,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
  *  +Z cap is the dock. The one form whose length, not its width, is the cue. */
 function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const body = r * 0.46;
@@ -2166,8 +2198,8 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 			[
 				{ z: -r * 1.02, w: body * 0.5, h: body * 0.5, e: 2.6 },
 				{ z: -r * 0.86, w: body, h: body, e: 2.6, hard: true },
-				{ z: r * 0.72, w: body, h: body, e: 2.6, hard: true },
-				{ z: r * 0.88, w: body * 0.72, h: body * 0.72, e: 2.6 },
+				{ z: r * 0.6, w: body, h: body, e: 2.6, hard: true },
+				{ z: plane, w: body * 0.72, h: body * 0.72, e: 2.6 },
 			],
 			hullMaterial(color, "trade"),
 			"core",
@@ -2185,8 +2217,15 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 		band.position.z = z;
 		group.add(band);
 	}
-	// At the drum's own front cap (`r * 0.88`), not 20 m in front of it.
-	group.add(buildAperture("trade", fixtures, r * 0.88, berthSeed));
+	// The cap and its mouth share the role's docking plane.
+	group.add(buildAperture("trade", fixtures, plane, berthSeed));
+	// The barrel's flank windows are hidden by its end cap on approach.
+	group.add(
+		portRun("trade", 12, (i, count, position, normal) => {
+			normal.set(0, 0, 1);
+			position.set(-body * 0.5 + (i / (count - 1)) * body, body * 0.4, plane);
+		}),
+	);
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2 * 3;
@@ -2201,11 +2240,11 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 		// review). It stood out on the barrel's side, metres off the hull and
 		// hidden from the axis by the cap.
 		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.set(0, side * body * 0.5, r * 0.88);
+			position.set(0, side * body * 0.5, plane);
 		}),
 	);
 	// Down the barrel, on the opposite helix to the window run so the two do not
-	// sit on each other. Short of the front cap at `r * 0.88`, which is where the
+	// sit on each other. Short of the front cap, which is where the
 	// aperture is and the one place nothing may be.
 	group.add(
 		greebleRun(
@@ -4226,7 +4265,7 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
  * the ISS's proportion at the scale the other trade forms are drawn to, and
  * makes the eleven-cell diamond 1.8 km across the spine.
  */
-const MODULAR_CELL_KM = 0.2;
+const MODULAR_CELL_KM = ASSEMBLY_CELL_KM;
 
 /**
  * The unit step of a `DIRECTIONS` index, in the plan's plane.
@@ -4320,21 +4359,22 @@ function buildTradeModular(
 	const hubR = r * 0.34;
 	const spun = new THREE.Group();
 	spun.name = "spun";
-	spun.add(
-		shell(
-			[
-				{ z: -r * 0.3, w: hubR * 0.78, h: hubR * 0.78, e: 2 },
-				{ z: -r * 0.2, w: hubR, h: hubR, e: 2, hard: true },
-				{ z: r * 0.6, w: hubR, h: hubR, e: 2, hard: true },
-				{ z: plane, w: hubR * 0.92, h: hubR * 0.92, e: 2 },
-			],
-			hullMaterial(color, "trade"),
-			"core",
-			12,
-			true,
-			apertureCut("trade"),
-		),
-	);
+	if (!assemblyBlocks)
+		spun.add(
+			shell(
+				[
+					{ z: -r * 0.3, w: hubR * 0.78, h: hubR * 0.78, e: 2 },
+					{ z: -r * 0.2, w: hubR, h: hubR, e: 2, hard: true },
+					{ z: r * 0.6, w: hubR, h: hubR, e: 2, hard: true },
+					{ z: plane, w: hubR * 0.92, h: hubR * 0.92, e: 2 },
+				],
+				hullMaterial(color, "trade"),
+				"core",
+				12,
+				true,
+				apertureCut("trade"),
+			),
+		);
 	spun.add(buildAperture("trade", fixtures, plane, berthSeed));
 	// The strobe pair on the hub's front cap, above and below the slot (§5,
 	// #300's review): the hub is what turns, and the spine's longerons the
@@ -4345,6 +4385,10 @@ function buildTradeModular(
 		}),
 	);
 	group.add(spun);
+	if (assemblyBlocks) {
+		assemblyBlocks(placements, group, spun);
+		return { group, fixtures, spinner: spun };
+	}
 
 	const pools = new Pools();
 	const tubeR = c * 0.24;
@@ -4561,7 +4605,7 @@ function buildTradeModular(
 		}),
 	);
 	// Clutter on the hub's own flank, between the ports of its docked tubes.
-	group.add(
+	spun.add(
 		greebleRun(
 			"trade",
 			"trade-d",
@@ -4583,7 +4627,7 @@ function buildTradeModular(
 					},
 				},
 			],
-			group,
+			spun,
 		),
 	);
 	return { group, fixtures, spinner: spun };
@@ -5834,7 +5878,8 @@ const WHEEL = Object.freeze({
 	wheelZKm: 0.16,
 	hubHalfKm: 0.175,
 	collarHalfKm: 0.2,
-	hubFrontKm: 0.26,
+	// The flown mouth is the role's plane; only the hub's front extends.
+	hubFrontKm: STATION_GEOMETRY.trade.aperturePlaneKm,
 	hubAftKm: -0.24,
 	/** A spoke's half-extent along the axis, and across it. */
 	spokeHalfKm: 0.026,
@@ -6076,26 +6121,28 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 		barrel(z + 0.02, collar),
 		barrel(z + 0.04, hub),
 	];
-	group.add(
-		shell(
-			[
-				barrel(WHEEL.hubAftKm, hub * 0.7),
-				barrel(WHEEL.hubAftKm + 0.02, hub),
-				...collarAt(aft),
-				...collarAt(fore),
-				// No taper at the cap: the bay runs to the mouth at full section,
-				// and a cap drawn in to 0.91 let its corners out over the last 6 m
-				// (sage, #334 round 1). `the hub contains the bay` holds it.
-				barrel(WHEEL.hubFrontKm - 0.03, hub),
-				barrel(WHEEL.hubFrontKm, hub),
-			],
-			plainMaterial(0x8b95a0, 0.6, 0.5),
-			"hub",
-			20,
-			true,
-			apertureCut("trade"),
-		),
+	const hubShell = shell(
+		[
+			barrel(WHEEL.hubAftKm, hub * 0.7),
+			barrel(WHEEL.hubAftKm + 0.02, hub),
+			...collarAt(aft),
+			...collarAt(fore),
+			// No taper at the cap: the bay runs to the mouth at full section,
+			// and a cap drawn in to 0.91 let its corners out over the last 6 m
+			// (sage, #334 round 1). `the hub contains the bay` holds it.
+			barrel(WHEEL.hubFrontKm - 0.03, hub),
+			barrel(WHEEL.hubFrontKm, hub),
+		],
+		plainMaterial(0x8b95a0, 0.6, 0.5),
+		"hub",
+		20,
+		true,
+		apertureCut("trade"),
 	);
+	const hubMember = new THREE.Group();
+	hubMember.name = "hub-member";
+	hubMember.add(hubShell);
+	group.add(hubMember);
 	group.add(buildAperture("trade", fixtures, WHEEL.hubFrontKm, berthSeed));
 
 	// Paired ports along the finished rim's fore face, the face the approach sees.
@@ -6111,15 +6158,11 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 			);
 		}),
 	);
-	// On the same face, on the rim's centre line where no port stands.
-	group.add(
+	// The hub turns with the rims. Its forward cap keeps both strobes in
+	// the cockpit's narrow approach view, where the outer rim can leave it.
+	hubMember.add(
 		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			const theta = Math.PI / 4;
-			position.set(
-				side * Math.cos(theta) * centre,
-				side * Math.sin(theta) * centre,
-				fore + width / 2,
-			);
+			position.set(side * hub * 0.85, 0, WHEEL.hubFrontKm);
 		}),
 	);
 	// Clutter on the hub barrel between the collars, far inside the outline.
@@ -6360,14 +6403,14 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "b",
 			name: "Ring",
 			thesis: "spun torus on a fixed hub; the dock is a tunnel on the axis",
-			reachKm: 0.73,
+			reachKm: 0.75,
 			build: buildTradeRing,
 		},
 		{
 			id: "c",
 			name: "Drum",
 			thesis: "O'Neill barrel end-on; length rather than width is the cue",
-			reachKm: 0.66,
+			reachKm: 0.7,
 			build: buildTradeDrum,
 		},
 		{
@@ -6503,7 +6546,11 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "c",
 			name: "Rig",
 			thesis: "an angled truss holding a deck out over a drill head",
-			reachKm: 0.42,
+			// The authored Rig (node #1032) hangs its pad off the drill body's
+			// flank, so the body stands well off the lane's axis: its mesh reaches
+			// 0.5716 km and its proxy 0.5781, measured 2026-10-19. The stand-in
+			// stays inside the 0.42 it had.
+			reachKm: 0.58,
 			build: buildOutpostRig,
 		},
 		{
@@ -6513,8 +6560,10 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 				"the Assembly's grammar at a fifth of the size: a core can under the pad, a truss spine, cans and fins solved by wave function collapse",
 			// The spine's tips are 0.27 km out; a leaf beside a tip cell reaches
 			// about 0.25. The pool's figure, and the seed spread is measured
-			// against it.
-			reachKm: 0.42,
+			// against it. The authored Cluster (node #1032) puts its cans a pad
+			// away from the lane: its mesh reaches 0.4925 km and its proxy
+			// 0.4974, measured 2026-10-19.
+			reachKm: 0.5,
 			build: buildOutpostCluster,
 		},
 		{
@@ -6522,9 +6571,10 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Salvage",
 			thesis:
 				"welded together from salvage — hull sections, cargo pods and a ship's forward half bolted round the pad; improvised, asymmetric, lit by work lamps",
-			// Grown to 0.40 km at most, each piece's box checked as it is kept;
-			// the seed spread is measured against the pool's figure.
-			reachKm: 0.42,
+			// The larger of stand-in, mesh and proxy (node #1031): the procedural
+			// form grows to 0.40 km at most; the authored model's mesh reaches
+			// 0.4262 km and its proxy 0.4281, measured 2026-10-19.
+			reachKm: 0.43,
 			build: buildOutpostSalvage,
 		},
 	],
@@ -6565,6 +6615,30 @@ export function installCoriolisBuilder(
 	builder: ((berthSeed: number, color: number) => StationMesh) | null,
 ) {
 	coriolisBuilder = builder;
+}
+
+export type AuthoredTradeForm = "b" | "c" | "e";
+export type AssemblyBlocks = (
+	placements: readonly Placement[],
+	group: THREE.Group,
+	spinner: THREE.Group,
+) => void;
+let assemblyBlocks: AssemblyBlocks | null = null;
+export function installAssemblyBlocks(draw: AssemblyBlocks | null) {
+	assemblyBlocks = draw;
+}
+const tradeBuilders = new Map<
+	AuthoredTradeForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** Install a trade exterior after its queued asset has loaded (node #1033). */
+export function installTradeBuilder(
+	form: AuthoredTradeForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) tradeBuilders.set(form, builder);
+	else tradeBuilders.delete(form);
 }
 
 export type ShipyardForm = "a" | "b" | "c";
@@ -6641,6 +6715,43 @@ export function buildRefineryNavigation(
 		berthSeed,
 		0,
 		drawPad,
+	);
+}
+
+export type OutpostForm = "a" | "b" | "c" | "d" | "e";
+const outpostBuilders = new Map<
+	OutpostForm,
+	(berthSeed: number, color: number) => StationMesh
+>();
+
+/** An authored outpost (the Salvage, node #1031; the Derrick, Buoy, Rig and
+ *  Cluster, node #1032), installed by `outpost-flight.ts` once its model has
+ *  loaded. Until then the form draws its procedural stand-in. `null`
+ *  uninstalls, for a test. */
+export function installOutpostBuilder(
+	form: OutpostForm,
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	if (builder) outpostBuilders.set(form, builder);
+	else outpostBuilders.delete(form);
+}
+
+/**
+ * The outpost's aperture for an authored exterior that draws its own pad
+ * (node #1031): the lit frame round the lane and the mouth's name, at the
+ * sim's plane, without the procedural deck and berths.
+ */
+export function buildOutpostNavigation(
+	fixtures: StationFixture[],
+	berthSeed: number,
+): THREE.Group {
+	return buildAperture(
+		"outpost",
+		fixtures,
+		STATION_GEOMETRY.outpost.aperturePlaneKm,
+		berthSeed,
+		0,
+		false,
 	);
 }
 
@@ -6742,12 +6853,20 @@ export function buildStationForm(
 ): StationMesh {
 	if (type === "trade" && formId === "a" && coriolisBuilder)
 		return coriolisBuilder(berthSeed, color);
+	if (type === "trade") {
+		const authored = tradeBuilders.get(formId as AuthoredTradeForm);
+		if (authored) return authored(berthSeed, color);
+	}
 	if (type === "shipyard") {
 		const authored = shipyardBuilders.get(formId as ShipyardForm);
 		if (authored) return authored(berthSeed, color);
 	}
 	if (type === "refinery") {
 		const authored = refineryBuilders.get(formId as RefineryForm);
+		if (authored) return authored(berthSeed, color);
+	}
+	if (type === "outpost") {
+		const authored = outpostBuilders.get(formId as OutpostForm);
 		if (authored) return authored(berthSeed, color);
 	}
 	const form = formOf(type, formId);
@@ -6762,7 +6881,10 @@ export function buildStationForm(
 	// whole turns its trusses with it; a shipyard's static frame is the group
 	// too, and its hub spins inside.
 	const finish = currentStationFinish();
-	if (finish.fixtures)
+	if (
+		finish.fixtures &&
+		!(type === "trade" && formId === "d" && assemblyBlocks)
+	)
 		built.group.add(
 			buildMacroFixtures({
 				type,
@@ -6893,6 +7015,7 @@ export function updateStationVisuals(
 ): void {
 	const level = detailLevel(mesh.detail, distanceKm / mesh.silhouetteKm);
 	if (level !== mesh.detail) setStationDetail(mesh, level);
+	if (level !== "outline") mesh.lateDetail?.request();
 
 	const drawGreebles = STATION_QUALITY[quality].greebles;
 	for (const instanced of mesh.greebles) instanced.visible = drawGreebles;

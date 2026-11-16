@@ -185,9 +185,9 @@ describe("trade E — the Wheel", () => {
 	});
 
 	test("the hub contains the bay: its section at every depth, and its back wall", () => {
-		// The form's stated reason for its hub's size. No shared row can hold it:
-		// the bay-in-body row runs only for the selected form and reads `core`,
-		// which on the Wheel is the rim. So cast from the axis toward the bay's
+		// The shared bay-in-body row measures the Wheel's hub box, not its rim
+		// named `core`. This stronger row measures the actual section: cast
+		// from the axis toward the bay's
 		// corner at depths through the whole bay and require the hub's wall to
 		// be at least that far out. The hub is `FrontSide`, so the cast uses a
 		// double-sided stand-in on the same geometry and transform.

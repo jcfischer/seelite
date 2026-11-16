@@ -18,6 +18,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sharedImagePlugin } from "./shared-image";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { ModelLoader, ModelProgressListener } from "./model-progress";
@@ -221,6 +222,7 @@ export function prepareRefineryModel(
 	if (!promise) {
 		promise = new GLTFLoader()
 			.setMeshoptDecoder(MeshoptDecoder)
+			.register(sharedImagePlugin())
 			.loadAsync(REFINERY_GLB_URLS[form], onProgress)
 			.then((gltf) => {
 				installRefineryBuilder(form, createRefineryBuilder(form, gltf.scene));

@@ -35,7 +35,7 @@ The asset preflight was prepared on the design branch `spike/shipyard-models-800
   re-seated square to their faces and the study's size-comparison ships
   removed, and the principal approved that ("approved. run the full browser
   gate").
-- **Open:** SOP §4's measured LOD selection. The browser gate passed on
+- **Open:** ~~SOP §4's measured LOD selection~~ (measured in [node #947](node-947-shipyard-lod-policy.md): Full outside the bay, a bay level proposed). The browser gate passed on
   6be0b9b4 except `output-stage`, red on `main` too (see Delivery evidence). Sage review: seven rounds on PR #939.
 
 ## Rulings during the integration (principal, 2026-10-12)
@@ -271,7 +271,7 @@ off-scene and swapped only if still drawn; a failure keeps the stand-in.
 boots wait for it (`shipyards-full`), as for the interiors. The postcard and
 the station workbench require the models.
 
-**Pending:** SOP §4's measured LOD selection, and the frame cost in game.
+**Pending:** ~~SOP §4's measured LOD selection, and the frame cost in game~~ — both are in [node #947's receipt](node-947-shipyard-lod-policy.md).
 
 ## Delivery evidence
 

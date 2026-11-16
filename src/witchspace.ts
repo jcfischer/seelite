@@ -35,6 +35,7 @@
 import { HYPERSPACE_SWEEP_S } from "./audio";
 import type { Cue } from "./audio-cue";
 import { JUMP_CHARGE_S } from "./hyperspace";
+import { CROSSING, crossingFlare, sealFlare } from "./witchspace-crossing";
 import {
 	DEFAULT_WITCHSPACE_ARMS,
 	type WitchspaceSoundArms,
@@ -119,6 +120,16 @@ export const WITCHSPACE = Object.freeze({
 	/** The arrival rift opens with the new light, and is gone by here. */
 	riftEndS: 7.5,
 	/**
+	 * How long the rift's opening takes once the new light has started: full at
+	 * `riftFullS`. Named because #1006's flare marks the moment the ring is
+	 * fully open — the crossing a chase camera sees — and that moment must not
+	 * be restated in the flare's own file.
+	 */
+	riftOpenS: 0.5,
+	get riftFullS() {
+		return this.unfoldAtS + this.riftOpenS;
+	},
+	/**
 	 * The fraction of light speed the look reaches at `beta` one. Under one,
 	 * because a camera cannot see all the way round.
 	 */
@@ -156,6 +167,13 @@ export interface WitchspaceLook {
 	whiteout: number;
 	/** The world-anchored arrival object's strength. */
 	rift: number;
+	/**
+	 * The world-anchored object's flare (#1006): light without size, peaking as
+	 * the ring finishes opening and again as it seals. Kept apart from `rift`
+	 * because the radius is read off the strength, and a brightening that also
+	 * grew the ring would read as the ring getting bigger.
+	 */
+	riftFlare: number;
 }
 
 export type WitchspaceState =
@@ -290,6 +308,7 @@ const NOTHING: WitchspaceLook = Object.freeze({
 	tunnel: 0,
 	whiteout: 0,
 	rift: 0,
+	riftFlare: 0,
 });
 
 /** What the state draws. Pure in the state; nothing is remembered. */
@@ -310,6 +329,7 @@ export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
 				tunnel: 0,
 				whiteout: W.flashPeak * smoothstep(-W.flashS, 0, t),
 				rift: 0,
+				riftFlare: 0,
 			};
 		}
 		case "exit": {
@@ -330,8 +350,16 @@ export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
 				whiteout: W.flashPeak * (1 - smoothstep(0, W.flashS, t)),
 				// Opens with the new light, lingers, and closes behind the ship.
 				rift:
-					smoothstep(W.unfoldAtS, W.unfoldAtS + 0.5, t) *
+					smoothstep(W.unfoldAtS, W.riftFullS, t) *
 					(1 - smoothstep(W.exitS + 1, W.riftEndS, t)),
+				// #1006: the dark holds at one until `unfoldAtS`, so the instant the
+				// ring can be seen at all is the crossing a chase camera watches, and
+				// `riftEndS` is where it stops being seen. Keying the flare on those
+				// two rather than on the cut is what keeps #532's exit clock untouched
+				// — nothing before the new light is on a screen to be flared.
+				riftFlare:
+					CROSSING.flarePeak *
+					(crossingFlare(t - W.riftFullS) + sealFlare(t, W.riftEndS)),
 			};
 		}
 		case "retract": {
@@ -344,6 +372,7 @@ export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
 				tunnel: from.tunnel * k,
 				whiteout: from.whiteout * k,
 				rift: from.rift * k,
+				riftFlare: from.riftFlare * k,
 			};
 		}
 	}
@@ -522,15 +551,4 @@ export function witchspaceSkyZoom(beta: number): number {
 	if (beta <= 0) return 1;
 	const b = WITCHSPACE.peakBeta * Math.min(1, beta);
 	return Math.sqrt((1 - b) / (1 + b));
-}
-
-/** NPC rings open at the jump; the existing exit clock still owns closing. */
-export function npcRiftStrength(ageS: number): number {
-	if (ageS < 0 || ageS >= WITCHSPACE.riftEndS) return 0;
-	const look = (sinceS: number) =>
-		witchspaceLook({ kind: "exit", sinceS, from: "arrival" }).rift;
-	return (
-		look(Math.min(ageS + WITCHSPACE.unfoldAtS, WITCHSPACE.unfoldAtS + 0.5)) *
-		look(Math.max(ageS, WITCHSPACE.unfoldAtS + 0.5))
-	);
 }

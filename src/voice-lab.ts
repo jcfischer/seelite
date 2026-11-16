@@ -45,7 +45,7 @@ export function mountVoiceLab() {
 <h1 style="margin:0 0 4px;font-size:20px">Voice lab</h1>
 <p style="margin:0 0 16px;color:#8a96a3">A formant synthesiser, seelite's own, and a ship's radio. Words from the lexicon, or phonemes in brackets: <code>[K AA1 B R AH0]</code>.</p>
 <p><select id="preset" style="width:100%">${PRESETS.map((p) => `<option>${p}</option>`).join("")}</select></p>
-<p><textarea id="text" rows="3" style="width:100%;box-sizing:border-box;font:15px ui-monospace,monospace;background:#12171d;color:#dde3ea;border:1px solid #2a323c">${PRESETS[0]}</textarea></p>
+<p><textarea id="text" rows="3" style="width:100%;box-sizing:border-box;font:15px Menlo, monospace;background:#12171d;color:#dde3ea;border:1px solid #2a323c">${PRESETS[0]}</textarea></p>
 <p>
   <label>Engine <select id="engine"><option value="neural">neural (Kokoro, in the browser)</option><option value="formant">formant</option></select></label>
   <label style="margin-left:12px">Backend <select id="ep"><option value="wasm">WASM, q8 (88 MB)</option><option value="webgpu">WebGPU, fp16 (156 MB)</option></select></label>
@@ -71,8 +71,8 @@ export function mountVoiceLab() {
   <label style="margin-left:12px">Gain <input id="gain" type="range" min="0.5" max="3" step="0.1" value="${RADIO_NEURAL.gain}"> <span id="gainV">${RADIO_NEURAL.gain.toFixed(2)}</span></label>
 </p>
 <p><button id="say" style="font-size:16px;padding:6px 18px">Say it</button></p>
-<pre id="info" style="font:13px ui-monospace,monospace;color:#8a96a3;background:#12171d;padding:10px;white-space:pre-wrap"></pre>
-<details style="color:#8a96a3"><summary>Words the lexicon knows</summary><p style="font:13px ui-monospace,monospace">${Object.keys(LEXICON).join(" ").toLowerCase()}</p></details>`;
+<pre id="info" style="font:13px Menlo, monospace;color:#8a96a3;background:#12171d;padding:10px;white-space:pre-wrap"></pre>
+<details style="color:#8a96a3"><summary>Words the lexicon knows</summary><p style="font:13px Menlo, monospace">${Object.keys(LEXICON).join(" ").toLowerCase()}</p></details>`;
 	document.body.appendChild(root);
 
 	const $ = <T extends HTMLElement>(id: string) =>

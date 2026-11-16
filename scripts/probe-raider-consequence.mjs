@@ -81,6 +81,7 @@ const kill = await page.evaluate(async () => {
 	if (!encounter?.raider) return { error: "no duel", phase: encounter?.phase };
 	const key = encounter.slot.key;
 	const name = encounter.name;
+	const targetLoadout = structuredClone(encounter.loadout);
 	// The raider's last point of hull, and every shield spent, two kilometres
 	// ahead at the ship's velocity: at that hull it flees at once, and from
 	// further out it leaves the laser's reach before a shot lands.
@@ -154,6 +155,7 @@ const kill = await page.evaluate(async () => {
 		pendingDelta: g.ladderPending.combat - pendingBefore,
 		ownHull: g.commander.hull,
 		ownLoadout: g.commander.loadout,
+		targetLoadout,
 	};
 });
 check(
@@ -164,14 +166,25 @@ check(
 // #564: the kill path the game flew prices the raider on the combat ladder,
 // pending until a dock. Read off the page's own formula, never restated.
 const expectedCredit = await page.evaluate(
-	async (own) =>
-		(await import("/src/kill-credit.ts")).killCredit(own, "raider"),
-	{ hull: kill.ownHull, loadout: kill.ownLoadout },
+	async ({ own, targetLoadout }) => {
+		const { killCredit } = await import("/src/kill-credit.ts");
+		const { RAIDER_HULL_ID } = await import("/src/raider-slots.ts");
+		return {
+			fitted: killCredit(own, { hull: RAIDER_HULL_ID, loadout: targetLoadout }),
+			stock: killCredit(own, RAIDER_HULL_ID),
+		};
+	},
+	{
+		own: { hull: kill.ownHull, loadout: kill.ownLoadout },
+		targetLoadout: kill.targetLoadout,
+	},
 );
 check(
 	"the kill is pending combat credit at the game's price for a raider (#564)",
-	expectedCredit > 0 && Math.abs(kill.pendingDelta - expectedCredit) < 1e-9,
-	`${kill.pendingDelta} against ${expectedCredit}`,
+	expectedCredit.fitted > 0 &&
+		Math.abs(expectedCredit.fitted - expectedCredit.stock) > 1e-9 &&
+		Math.abs(kill.pendingDelta - expectedCredit.fitted) < 1e-9,
+	`${kill.pendingDelta} against fitted ${expectedCredit.fitted}, stock ${expectedCredit.stock}`,
 );
 check(
 	"the kill writes the slot's destruction into world state",
@@ -384,6 +397,72 @@ if (process.env.SHOT_DIR) {
 	console.log(`  shot  ${to}`);
 }
 
+const gate = await page.evaluate(() => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const fitted = g.commander.loadout;
+	const saved = {
+		commander: g.commander,
+		condition: g.condition,
+		canisters: g.canisters,
+	};
+	const bare = Object.fromEntries(
+		Object.entries(fitted).filter(([, m]) => m.module !== "cargo-scoop"),
+	);
+	const arm = (loadout, energy) => {
+		g.commander = { ...g.commander, loadout, cargo: {} };
+		g.condition = { ...g.condition, energy };
+		const now = g.world.gameTime;
+		g.canisters = [
+			{
+				id: "gate#0",
+				commodity: "Food",
+				tonnes: 1,
+				pos: { ...g.world.ship.pos },
+				vel: { ...g.world.ship.vel },
+				frameBodyId: null,
+				restsAt: now,
+				expiresAt: now + 300,
+			},
+		];
+		const before = g.condition.energy;
+		g.step(dt);
+		g.render(dt);
+		return {
+			left: g.canisters.length,
+			food: g.commander.cargo.Food ?? 0,
+			notice: g.scoop.text,
+			spent: before - g.condition.energy,
+		};
+	};
+	const unfitted = arm(bare, 100);
+	const flat = arm(fitted, 0.5);
+	const taken = arm(fitted, 100);
+	g.commander = saved.commander;
+	g.condition = saved.condition;
+	g.canisters = saved.canisters;
+	return { unfitted, flat, taken };
+});
+check(
+	"a ship with no scoop takes nothing, leaves the canister, and says it has no scoop",
+	gate.unfitted.left === 1 &&
+		gate.unfitted.food === 0 &&
+		/NO CARGO SCOOP/.test(gate.unfitted.notice),
+	JSON.stringify(gate.unfitted),
+);
+check(
+	"a fitted scoop on a bank below the charge leaves the canister and says the bank is too low",
+	gate.flat.left === 1 &&
+		gate.flat.food === 0 &&
+		/BANK TOO LOW/.test(gate.flat.notice),
+	JSON.stringify(gate.flat),
+);
+check(
+	"a fitted scoop with the charge takes the canister and the bank pays for it",
+	gate.taken.left === 0 && gate.taken.food === 1 && gate.taken.spent > 0,
+	JSON.stringify(gate.taken),
+);
+
 // **The scoop is flown, not placed.** This row set the ship onto the canister
 // with the canister's own velocity, which proves the scoop predicate and not
 // that a pilot can reach one. The third playtest could not: a fleeing raider
@@ -437,13 +516,22 @@ const scoop = await page.evaluate(() => {
 	// Any lit text, not only green: the refusal is drawn in §4's red, and a
 	// filter tuned to the cargo green would call that "nothing drawn".
 	const band = (fraction) => {
-		const overlay = document.getElementById("overlay");
+		const overlay =
+			g.view === "cockpit"
+				? (g.cockpit.text.faces.get("notices")?.ctx.canvas ??
+					document.getElementById("overlay"))
+				: document.getElementById("overlay");
 		const c2d = overlay.getContext("2d", { willReadFrequently: true });
 		const y = Math.max(
 			0,
 			Math.min(overlay.height - 90, Math.round(overlay.height * fraction) - 60),
 		);
-		const data = c2d.getImageData(0, y, overlay.width, 90).data;
+		const data = c2d.getImageData(
+			0,
+			g.view === "cockpit" ? 0 : y,
+			overlay.width,
+			g.view === "cockpit" ? overlay.height : 90,
+		).data;
 		let lit = 0;
 		for (let i = 0; i < data.length; i += 4)
 			if (data[i + 3] > 40 && (data[i] > 150 || data[i + 1] > 150)) lit++;
@@ -565,7 +653,11 @@ const refusal = await page.evaluate(() => {
 	// control frame with the notice suppressed, this shows what reached the
 	// canvas and which hue it added.
 	const tone = () => {
-		const overlay = document.getElementById("overlay");
+		const overlay =
+			g.view === "cockpit"
+				? (g.cockpit.text.faces.get("notices")?.ctx.canvas ??
+					document.getElementById("overlay"))
+				: document.getElementById("overlay");
 		const c2d = overlay.getContext("2d", { willReadFrequently: true });
 		// The same clamp the other readback has: this copy had lost it, which is
 		// the drift sage's dedupe finding was pointing at.
@@ -573,7 +665,12 @@ const refusal = await page.evaluate(() => {
 			0,
 			Math.min(overlay.height - 90, Math.round(overlay.height * 0.62) - 60),
 		);
-		const data = c2d.getImageData(0, y, overlay.width, 90).data;
+		const data = c2d.getImageData(
+			0,
+			g.view === "cockpit" ? 0 : y,
+			overlay.width,
+			g.view === "cockpit" ? overlay.height : 90,
+		).data;
 		let red = 0;
 		let green = 0;
 		for (let i = 0; i < data.length; i += 4) {

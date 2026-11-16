@@ -147,7 +147,12 @@ describe("the silhouette budget is a budget", () => {
 				);
 				expect(reach).toBeLessThanOrEqual(form.reachKm * (1 + 1e-6));
 				// And not slack: a declaration nothing approaches catches nothing.
-				expect(reach).toBeGreaterThan(form.reachKm * 0.6);
+				// An outpost's declaration is the authored model's reach (nodes
+				// #1031, #1032), which can stand well off its procedural
+				// stand-in (the Rig's, 0.28 km, against 0.58); the model is
+				// measured against it in `tests/outpost-flight.test.ts`.
+				if (type !== "outpost")
+					expect(reach).toBeGreaterThan(form.reachKm * 0.6);
 			}
 		}
 	});
@@ -1077,7 +1082,9 @@ describe("§128 — the hull comes up to the plane the checks read", () => {
 			const { root } = buildStationForm(type, formId, GREY, 0, 0);
 			root.updateMatrixWorld(true);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
-			const hull = root.getObjectByName("core") as THREE.Object3D;
+			const hull = root.getObjectByName(
+				type === "trade" && formId === "e" ? "hub" : "core",
+			) as THREE.Object3D;
 			const reach = new THREE.Box3().setFromObject(hull).max.z * core;
 			const plane = STATION_GEOMETRY[type].aperturePlaneKm;
 			// Up to the plane and not past it: the aperture frame stands proud of

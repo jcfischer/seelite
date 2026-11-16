@@ -45,6 +45,7 @@ const EPIANO = 14;
 const HARPSI = 15;
 const SOFTSAW = 16;
 const SAMPLER = 17;
+const MOOG = 18;
 const KIND: Record<VoiceKind, number> = {
 	pad: PAD,
 	pluck: PLUCK,
@@ -64,6 +65,7 @@ const KIND: Record<VoiceKind, number> = {
 	harpsi: HARPSI,
 	softsaw: SOFTSAW,
 	sampler: SAMPLER,
+	moog: MOOG,
 };
 /** The voices that are two signals, one a side; every other is one, panned.
  *  Indexed by kind, and filled by name (sage round 8), so a kind added or
@@ -108,6 +110,7 @@ export interface ResolvedPart {
 	readonly envDecayCoef: number;
 	/** The state-variable filter's damping, from the resonance. */
 	readonly damp: number;
+	readonly ladderK: number;
 	readonly drive: number;
 	/** Strings: the drive's gain into its `tanh` and the `1 / tanh` that
 	 *  keeps its level — constants of the part, so not worked per sample. */
@@ -119,6 +122,8 @@ export interface ResolvedPart {
 	/** The sweep: cycles per frame (0 for none), and its depth in octaves. */
 	readonly sweepInc: number;
 	readonly sweepOct: number;
+	readonly phaser: number;
+	readonly phaserInc: number;
 	readonly attackS: number;
 	readonly decayS: number;
 	readonly vibratoHz: number;
@@ -183,6 +188,8 @@ const BASE: VoiceDefaults = {
 	rosinLow: 1,
 	sweepS: 0,
 	sweepOct: 0,
+	phaser: 0,
+	phaserS: 9,
 	width: 0.5,
 	pwmHz: 0,
 	pwmDepth: 0,
@@ -395,6 +402,22 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		sustain: 1,
 		releaseS: 0.25,
 	},
+	moog: {
+		...BASE,
+		attackS: 0.005,
+		decayS: 1.2,
+		sustain: 0.6,
+		releaseS: 0.3,
+		cutoffHz: 600,
+		unison: 3,
+		detune: 0.07,
+		drift: 0.3,
+		envAmount: 2,
+		envDecayS: 0.6,
+		resonance: 0.35,
+		index: 0,
+		drive: 0.2,
+	},
 };
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
@@ -426,6 +449,7 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		envAmount: d.envAmount,
 		envDecayCoef: fall60(d.envDecayS, sampleRate),
 		damp: 2 - 1.9 * Math.max(0, Math.min(1, d.resonance)),
+		ladderK: LADDER_K_MAX * Math.max(0, Math.min(1, d.resonance)),
 		drive: d.drive,
 		driveK: 1 + 8 * d.drive,
 		driveNorm: 1 / Math.tanh(1 + 8 * d.drive),
@@ -434,6 +458,8 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		sweepInc:
 			d.sweepS > 0 && d.sweepOct !== 0 ? 1 / (d.sweepS * sampleRate) : 0,
 		sweepOct: d.sweepS > 0 ? d.sweepOct : 0,
+		phaser: Math.max(0, Math.min(1, d.phaser)),
+		phaserInc: d.phaserS > 0 ? 1 / (d.phaserS * sampleRate) : 0,
 		attackS: d.attackS,
 		decayS: d.decayS,
 		vibratoHz: d.vibratoHz,
@@ -521,6 +547,10 @@ const DRONE_ROWS = 64;
 const DRIFT_GLIDE = 0.002;
 /** Frames between filter-coefficient updates on the swept voices. */
 const CUT_EVERY = 8;
+const LADDER_K_MAX = 3.8;
+const LADDER_MAX_HZ = 0.3;
+const ladderCoef = (hz: number, sr: number) =>
+	1 - Math.exp((-2 * Math.PI * Math.min(hz, LADDER_MAX_HZ * sr)) / sr);
 /** The bow noise's one-pole that takes its lows away, per frame. */
 const BOW_HIGHPASS = 0.2;
 /** The rosin's comb: how much of each period feeds back, which is how
@@ -580,6 +610,15 @@ const hermite = (t: number, xm: number, x0: number, x1: number, x2: number) => {
 	const c3 = 0.5 * (x2 - xm) + 1.5 * (x0 - x1);
 	return ((c3 * t + c2) * t + c1) * t + x0;
 };
+
+/** How a bank or an engine renders. With `countOnly`, notes, envelopes,
+ *  stages, fades, halts and a recording running out all run as before, so
+ *  `sounding` holds what a full render holds; no oscillator, mix or room
+ *  runs and no sample is written. For tests that count voices: the worklet
+ *  never sets it. */
+export interface RenderMode {
+	readonly countOnly?: boolean;
+}
 
 export class VoiceBank {
 	private readonly stage: Uint8Array;
@@ -643,6 +682,8 @@ export class VoiceBank {
 	/** Whether a drone voice ran this block: only then do the tables move. */
 	private droneRan = false;
 	private readonly g: Float64Array;
+	private readonly apState: Float64Array;
+	private readonly apCoef: Float64Array;
 	/** The pluck's delay line: one per slot, sized once for the floor. */
 	private readonly line: Float32Array[];
 	private readonly lineW: Int32Array;
@@ -662,10 +703,14 @@ export class VoiceBank {
 	 *  phases. */
 	private readonly noise = xorshift(0x9e3779b9);
 
+	private readonly countOnly: boolean;
+
 	constructor(
 		readonly cap: number,
 		private readonly sampleRate: number,
+		mode: RenderMode = {},
 	) {
+		this.countOnly = mode.countOnly ?? false;
 		const f64 = () => new Float64Array(cap);
 		this.stage = new Uint8Array(cap);
 		this.kind = new Uint8Array(cap);
@@ -715,6 +760,8 @@ export class VoiceBank {
 		// it changed.
 		this.drone = new DroneTables(xorshift(0x2545f491));
 		this.g = f64();
+		this.apState = new Float64Array(cap * PHASER_SLOT);
+		this.apCoef = new Float64Array(cap * 2);
 		const lineLen = Math.ceil(sampleRate / PLUCK_FLOOR_HZ) + 4;
 		this.line = Array.from({ length: cap }, () => new Float32Array(lineLen));
 		this.lineW = new Int32Array(cap);
@@ -931,6 +978,7 @@ export class VoiceBank {
 		this.bp[i] = 0;
 		this.lp2[i] = 0;
 		this.bp2[i] = 0;
+		this.apState.fill(0, i * PHASER_SLOT, (i + 1) * PHASER_SLOT);
 		this.fenv[i] = 0;
 		this.idxEnv[i] = 1;
 		this.age[i] = 0;
@@ -1032,6 +1080,11 @@ export class VoiceBank {
 				this.glideTo[i] = f / sr;
 				this.unisonOn(i, part);
 				this.ph2[i] = 0.5 * (this.noise() + 1);
+				break;
+			case MOOG:
+				this.inc1[i] = f / sr;
+				this.unisonOn(i, part);
+				this.g[i] = ladderCoef(part.cutoffHz, sr);
 				break;
 			case SAMPLER:
 				// A read position into the recording, in its frames.
@@ -1177,6 +1230,7 @@ export class VoiceBank {
 			const amp = this.amp[i];
 			let env = this.env[i];
 			let stage = this.stage[i];
+			const synth = !this.countOnly || kind === SAMPLER;
 			for (let s = s0; s < n; s++) {
 				if (stage !== STAGE_RELEASE && s >= releaseAt) stage = STAGE_RELEASE;
 				if (stage === STAGE_ATTACK) {
@@ -1198,7 +1252,7 @@ export class VoiceBank {
 						break;
 					}
 				}
-				const x = this.sample(i, kind, part, env, frame + s);
+				const x = synth ? this.sample(i, kind, part, env, frame + s) : 0;
 				// A recording that has run out ends its note, whatever the
 				// envelope says.
 				if (this.ended) {
@@ -1206,6 +1260,7 @@ export class VoiceBank {
 					stage = STAGE_FREE;
 					break;
 				}
+				if (this.countOnly) continue;
 				const k = env * amp * gains.gain(owner, pIx, frame + s);
 				const l = x * k * part.panL;
 				const r = (STEREO[kind] ? this.sideR : x) * k * part.panR;
@@ -1262,6 +1317,8 @@ export class VoiceBank {
 				return this.softsaw(i, part, env, at);
 			case SAMPLER:
 				return this.sampler(i);
+			case MOOG:
+				return this.moog(i, part, at);
 			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
@@ -1376,8 +1433,34 @@ export class VoiceBank {
 				part.cutoffHz * 2 ** (part.envAmount * this.fenv[i]) * sweep(part, at),
 				sr,
 			);
-		this.sideR = this.svf2(i, r, part.damp);
-		return this.svf(i, l, part.damp, false);
+		const outR = this.svf2(i, r, part.damp);
+		const outL = this.svf(i, l, part.damp, false);
+		if (part.phaser === 0) {
+			this.sideR = outR;
+			return outL;
+		}
+		if (this.age[i] % CUT_EVERY === 1) {
+			this.apCoef[2 * i] = phaserCoef(part, at, 0, sr);
+			this.apCoef[2 * i + 1] = phaserCoef(part, at, PHASER_STEREO, sr);
+		}
+		this.sideR = this.phase(i, 1, outR, part.phaser);
+		return this.phase(i, 0, outL, part.phaser);
+	}
+
+	private phase(i: number, side: number, x: number, depth: number): number {
+		const s = this.apState;
+		const o = i * PHASER_SLOT + side * (2 * PHASER_STAGES + 1);
+		const a = this.apCoef[2 * i + side];
+		let y = x + PHASER_FEEDBACK * s[o + 2 * PHASER_STAGES];
+		for (let k = 0; k < PHASER_STAGES; k++) {
+			const x1 = o + 2 * k;
+			const out = a * y + s[x1] - a * s[x1 + 1];
+			s[x1] = y;
+			s[x1 + 1] = out;
+			y = out;
+		}
+		s[o + 2 * PHASER_STAGES] = y;
+		return (x + depth * y) / (1 + depth);
 	}
 
 	/** A legato note's glide and change of weight, from the frame it begins;
@@ -1576,6 +1659,48 @@ export class VoiceBank {
 		}
 		this.sideR = r;
 		return l;
+	}
+
+	private moog(i: number, part: ResolvedPart, at: number) {
+		const sr = this.sampleRate;
+		const n = part.unison;
+		const base = i * MAX_OPS;
+		const t = this.age[i]++ / sr;
+		this.wander(i, part);
+		let x = 0;
+		for (let k = 0; k < n; k++) {
+			const o = base + k;
+			const inc = this.inc1[i] * semis(this.opOff[o] + this.opJit[o]);
+			x += saw(this.opPh[o], inc);
+			this.opPh[o] = wrap(this.opPh[o] + inc);
+		}
+		x /= Math.sqrt(n);
+		if (part.index > 0) {
+			const inc = this.inc1[i] / 2;
+			const p = this.ph2[i];
+			x += part.index * (saw(p, inc) - saw(wrap(p + 0.5), inc));
+			this.ph2[i] = wrap(p + inc);
+		}
+		if (t < part.attackS) this.fenv[i] = t / part.attackS;
+		else if (t === 0) this.fenv[i] = 1;
+		else this.fenv[i] *= part.envDecayCoef;
+		if (this.age[i] % CUT_EVERY === 1)
+			this.g[i] = ladderCoef(
+				part.cutoffHz * 2 ** (part.envAmount * this.fenv[i]) * sweep(part, at),
+				sr,
+			);
+		const k = part.ladderK;
+		const g = this.g[i];
+		const u = Math.tanh((1 + 3 * part.drive) * 0.5 * x - k * this.bp2[i]);
+		const a = this.lp[i] + g * (u - Math.tanh(this.lp[i]));
+		const b = this.bp[i] + g * (Math.tanh(a) - Math.tanh(this.bp[i]));
+		const c = this.lp2[i] + g * (Math.tanh(b) - Math.tanh(this.lp2[i]));
+		const d = this.bp2[i] + g * (Math.tanh(c) - Math.tanh(this.bp2[i]));
+		this.lp[i] = a;
+		this.bp[i] = b;
+		this.lp2[i] = c;
+		this.bp2[i] = d;
+		return d * (1 + 0.5 * k) * 1.6;
 	}
 
 	/** The acid: a saw into two resonant stages; an envelope that snaps the
@@ -1782,7 +1907,7 @@ export class VoiceBank {
 
 /** One step of a Chamberlin state-variable filter whose state is row `i` of
  *  `lp` and `bp`: its lowpass output, or with `band` its bandpass. */
-function svfStep(
+export function svfStep(
 	lp: Float64Array,
 	bp: Float64Array,
 	i: number,
@@ -1791,10 +1916,22 @@ function svfStep(
 	damp: number,
 	band: boolean,
 ): number {
-	lp[i] += g * bp[i];
-	bp[i] += g * (x - lp[i] - damp * bp[i]);
+	const c = g * (g + 2 * damp) > SVF_STABLE ? svfLimit(damp) : g;
+	lp[i] += c * bp[i];
+	bp[i] += c * (x - lp[i] - damp * bp[i]);
 	return band ? bp[i] : lp[i];
 }
+
+/** The filter's poles stay inside the unit circle while `g² + 2·g·damp < 4`;
+ *  this keeps a margin under that edge, where a pole rings at Nyquist and
+ *  decays too slowly to hear before it has grown. */
+export const SVF_STABLE = 3;
+
+/** The largest coefficient the state-variable filter takes at `damp`. A
+ *  cutoff swept toward the rate (a low rate puts the same cutoff nearer it)
+ *  asks for more, and a coefficient past this grows without bound. */
+export const svfLimit = (damp: number) =>
+	Math.sqrt(damp * damp + SVF_STABLE) - damp;
 
 /** Where a part's slow sweep has the filter at frame `at`: a multiple of
  *  the cutoff, 1 at the bottom of the cycle and `2^sweepOct` at its top. */
@@ -1805,6 +1942,28 @@ function sweep(part: ResolvedPart, at: number): number {
 		2 **
 		(part.sweepOct * 0.5 * (1 - Math.cos(2 * Math.PI * (ph - Math.floor(ph)))))
 	);
+}
+
+const PHASER_STAGES = 4;
+const PHASER_SLOT = 2 * (2 * PHASER_STAGES + 1);
+const PHASER_FEEDBACK = 0.45;
+const PHASER_STEREO = 0.25;
+const PHASER_LOW_HZ = 240;
+const PHASER_OCT = 3.4;
+
+function phaserCoef(
+	part: ResolvedPart,
+	at: number,
+	offset: number,
+	sampleRate: number,
+): number {
+	const ph = at * part.phaserInc + offset;
+	const hz =
+		PHASER_LOW_HZ *
+		2 **
+			(PHASER_OCT * 0.5 * (1 - Math.cos(2 * Math.PI * (ph - Math.floor(ph)))));
+	const t = Math.tan((Math.PI * hz) / sampleRate);
+	return (t - 1) / (t + 1);
 }
 
 /** Chamberlin state-variable coefficient, capped where it stays stable. */

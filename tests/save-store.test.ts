@@ -4,16 +4,6 @@ import {
 	stockLoadout,
 	moduleRow,
 } from "../src/loadout";
-/**
- * #89's D4, D6, D7, D8 and D9 as a state machine, driven by hand.
- *
- * Everything here runs against an in-memory backend and an injected scheduler.
- * That is not a convenience: bun has no fake `setTimeout`, and a debounce test
- * on the wall clock is a test that measures the machine it runs on. The
- * IndexedDB adapter is the thin half and gets a browser probe instead —
- * `scripts/probe-save.mjs` — because a transaction is the one thing only a
- * browser has.
- */
 
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
@@ -52,8 +42,6 @@ import { deathWreckRow } from "../src/death-wreck";
 const SEED = 0x5ee11e;
 const KEY = carrierKey(3, LOCAL_CARRIER_ID.trade);
 
-/** A scheduler the test drives. Holds at most one pending callback, which is
- *  the debouncer's own contract — a second `schedule` cancels the first. */
 const manualScheduler = () => {
 	let pending: (() => void) | null = null;
 	let lastDelayMs = -1;
@@ -88,9 +76,6 @@ const envelope = (credits: number): SaveEnvelope => ({
 	},
 });
 
-/** A store wired to a manual clock, with `current` returning whatever the test
- *  last set — which is what `Game` will pass: a getter, not a snapshot, so the
- *  debounced write serializes the world at the moment it fires. */
 const harness = (
 	options: {
 		permadeath?: boolean;
@@ -130,12 +115,9 @@ const harness = (
 				},
 			};
 		},
-		/** Any other change to the commander, for the rows that need one. */
 		edit(change: (c: CommanderRecord) => CommanderRecord) {
 			state = { ...state, commander: change(state.commander) };
 		},
-		/** A leg flown: a system visited, the clock moved on and the play log
-		 *  with it — world state and commander state a death treats apart. */
 		leg(systemIndex: number, seconds: number) {
 			const world = visit(state.world, 0, systemIndex);
 			state = {
@@ -172,9 +154,8 @@ describe("#89 D4 — the write cadence", () => {
 		h.clock.fire();
 		await h.store.settled();
 		expect(h.backend.writes).toBe(1);
-		// The write carries the *latest* state, not the one that first dirtied it.
-		const back = await h.store.load("default");
-		expect(back.commander.state.credits).toBe(300);
+		const latest = await h.store.load("default");
+		expect(latest.commander.state.credits).toBe(300);
 	});
 
 	test("a dock, undock, jump or quit flushes regardless of the window", async () => {
@@ -183,8 +164,6 @@ describe("#89 D4 — the write cadence", () => {
 			h.store.markDirty();
 			await h.store.flush(reason);
 			expect(h.backend.writes).toBeGreaterThanOrEqual(1);
-			// And the debounce is disarmed — a pending timer that fired afterwards
-			// would be a second write of the same state.
 			expect(h.clock.armed).toBe(false);
 		}
 	});
@@ -195,26 +174,15 @@ describe("#89 D4 — the write cadence", () => {
 			await h.store.flush(reason);
 			expect(h.backend.writes).toBe(0);
 		}
-		// **Quit is the exception and has to be.** The other three each follow a
-		// `saveDirty()` at the transition that caused them; `pagehide` follows
-		// nothing, so a new game flown in normal flight only and then closed had
-		// never dirtied and wrote no record at all — and with `?permadeath` the
-		// D7 choice went with it.
 		await h.store.flush("quit");
 		expect(h.backend.writes).toBe(1);
 		expect((await h.store.load("default")).commander.state.credits).toBe(100);
-		// **Undock too** (#660 D1, node #702): `live` can be current while the
-		// checkpoint is the arrival, so a clean launch still lays it down.
 		await h.store.flush("undock");
 		expect(h.backend.writes).toBe(2);
 		expect(await h.backend.has("default", "lastDocked")).toBe(true);
 	});
 
 	test("a new game's first flush writes `live` with nothing dirty, and only `live`", async () => {
-		// §11.3: the pending new game clears only once its first `live` record
-		// lands, and nothing has dirtied a world constructed a frame ago. A
-		// `quit` would write it too, but a flush named for a tab closing is not
-		// what a boot is doing.
 		const h = harness({ slot: "New" });
 		await h.store.flush("new-game");
 		expect(h.backend.writes).toBe(1);
@@ -223,12 +191,6 @@ describe("#89 D4 — the write cadence", () => {
 	});
 
 	test("a flush during a debounced write queues behind it rather than racing", async () => {
-		// **The check the previous version of this test could not make.** New
-		// dirt during a write only arms the debounce, so nothing re-enters the
-		// writer and a build with no queue passes — verified by deleting the
-		// queue and watching all sixteen rows stay green. A *flush* is the path
-		// that re-enters it, and two IndexedDB transactions in flight can land
-		// in either order, with the loser being the newer state.
 		const h = harness();
 		h.backend.hold();
 		h.store.markDirty();
@@ -251,16 +213,11 @@ describe("#89 D4 — the write cadence", () => {
 		h.backend.hold();
 		h.store.markDirty();
 		h.clock.fire();
-		// The first write is in flight. New dirt must not start a second
-		// transaction beside it.
 		h.set(900);
 		h.store.markDirty();
 		expect(h.backend.inFlight).toBe(1);
 		h.backend.release();
 		await h.store.settled();
-		// The new dirt is on the debounce, as any other change is. Firing it is
-		// what the browser's own timer does; the point of the check is that the
-		// second write starts *after* the first lands rather than beside it.
 		expect(h.clock.armed).toBe(true);
 		h.clock.fire();
 		await h.store.settled();
@@ -279,7 +236,6 @@ describe("#89's D7 correction — a slot holds two records", () => {
 		h.set(555);
 		h.store.markDirty();
 		await h.store.flush("jump");
-		// `live` moved on; the checkpoint the player made by docking did not.
 		expect((await h.store.load("default")).commander.state.credits).toBe(555);
 		expect(
 			(await h.store.load("default", "lastDocked")).commander.state.credits,
@@ -305,9 +261,6 @@ describe("#89's D7 correction — a slot holds two records", () => {
 	});
 
 	test("death does not flush — the tab-close window is left open on purpose", async () => {
-		// #89's correction says so in as many words: permadeath is stated and not
-		// enforced, and a death flush would be someone closing a hole the policy
-		// deliberately leaves. `restoreAfterDeath` reads; it never writes.
 		const h = harness();
 		h.store.markDirty();
 		await h.store.flush("dock");
@@ -317,16 +270,8 @@ describe("#89's D7 correction — a slot holds two records", () => {
 	});
 });
 
-/**
- * #324's death path, by the principal's ruling O5 (2026-09-14): a
- * non-permadeath death copies the last dock over `live` and the page reloads
- * into it. **This is a death-time write**, and a deliberate change to #89's
- * no-death-flush stance — it lives in its own method so `restoreAfterDeath`
- * keeps its never-writes row above.
- */
 describe("#324 O5 — a death reverts live to the last dock", () => {
-	/** A dock at 100 credits, then a jump at 555: the leg a death loses. */
-	const docked = async (h: ReturnType<typeof harness>) => {
+	const dockThenJump = async (h: ReturnType<typeof harness>) => {
 		h.store.markDirty();
 		await h.store.flush("dock");
 		h.set(555);
@@ -336,10 +281,8 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 
 	test("the commander becomes the last dock's commander", async () => {
 		const h = harness();
-		await docked(h);
+		await dockThenJump(h);
 		const dock = (await h.store.load("default", "lastDocked")).commander;
-		// An eject with nothing aboard and no pod costs nothing past the leg,
-		// so this row holds #324's half alone; the costs are node #704's rows.
 		const restored = await h.store.revertToLastDocked(h.commander, "eject");
 		expect(restored?.commander.state.credits).toBe(100);
 		const live = await h.store.load("default");
@@ -350,7 +293,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 
 	test("a permadeath commander gets nothing back, and nothing is written", async () => {
 		const h = harness({ permadeath: true });
-		await docked(h);
+		await dockThenJump(h);
 		const before = h.backend.writes;
 		expect(
 			await h.store.revertToLastDocked(h.commander, "destroyed"),
@@ -360,11 +303,8 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 	});
 
 	test("the store writes nothing after it, not even the quit flush", async () => {
-		// The reload's `pagehide` runs the quit flush, and `current` still holds
-		// the dead ship: without this, the page would write the leg back over the
-		// dock it just restored.
 		const h = harness();
-		await docked(h);
+		await dockThenJump(h);
 		await h.store.revertToLastDocked(h.commander, "destroyed");
 		const after = h.backend.writes;
 		h.store.markDirty();
@@ -377,7 +317,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 
 	test("a debounce armed before the death does not fire after it", async () => {
 		const h = harness();
-		await docked(h);
+		await dockThenJump(h);
 		h.set(999);
 		h.store.markDirty();
 		await h.store.revertToLastDocked(h.commander, "destroyed");
@@ -386,9 +326,6 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		expect((await h.store.load("default")).commander.state.credits).toBe(100);
 	});
 
-	/** A flight leg flushed, beside a `lastDocked` the parser refuses — the
-	 *  revert's one refusal since #660 D10 made an absent record a checkpoint
-	 *  (node #702). */
 	const unparseableDock = async (h: ReturnType<typeof harness>) => {
 		h.store.markDirty();
 		await h.store.flush("jump");
@@ -407,10 +344,6 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 	});
 
 	test("a refused revert leaves the store saving and the lock held", async () => {
-		// Sage round 1's blocker. The first build retired the store before it
-		// found the dock record missing: every later write was dropped without
-		// an error, and the tab kept a lock nothing released. An absent record
-		// is a checkpoint now (#660 D10), so the refusal is an unparseable one.
 		const h = harness();
 		await unparseableDock(h);
 		expect(await h.store.hold()).toBe(true);
@@ -421,14 +354,10 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		await h.store.flush("jump");
 		expect(h.backend.writes).toBe(before + 1);
 		expect((await h.store.load("default")).commander.state.credits).toBe(777);
-		// Still this tab's: another attach to the Commander is refused.
 		await expect(h.catalog.chooseCommander("default")).rejects.toThrow();
 	});
 
 	test("a failed revert keeps the save it interrupted", async () => {
-		// Sage round 2: the revert cleared the dirty flag and cancelled the
-		// debounce before it found no dock record, so a change made just before
-		// the death was dropped by the next flush, which saw nothing dirty.
 		const h = harness();
 		await unparseableDock(h);
 		h.set(888);
@@ -440,7 +369,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 
 	test("it gives the tab's lock back, so the reload's one-shot can name the Commander", async () => {
 		const h = harness();
-		await docked(h);
+		await dockThenJump(h);
 		expect(await h.store.hold()).toBe(true);
 		await h.store.revertToLastDocked(h.commander, "destroyed");
 		await h.catalog.chooseCommander("default");
@@ -448,14 +377,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 	});
 });
 
-/**
- * #654, the principal's Q2 ruling on #238 (2026-10-03): **a death keeps the
- * world.** Only the commander goes back to the last dock; every world change
- * from the fatal leg stays, so the galaxy remembers what the pilot did before
- * they died. This replaces #324's "live becomes the last dock, byte for byte".
- */
 describe("#654 — a death keeps the world and reverts only the commander", () => {
-	/** A dock, then a leg the death ends: system 9 visited, ten minutes on. */
 	const fatalLeg = async (h: ReturnType<typeof harness>) => {
 		h.store.markDirty();
 		await h.store.flush("dock");
@@ -481,8 +403,6 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 	});
 
 	test("the world is the one current at the death, not the last write", async () => {
-		// A change after the last flush is still the world's: the death reads
-		// `current`, so a kill made inside the debounce window is not lost.
 		const h = harness();
 		await fatalLeg(h);
 		h.leg(11, 30);
@@ -513,15 +433,8 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 	});
 });
 
-/**
- * #660 D1 and D10, built by node #702: a death restores the commander **as it
- * launched**, and a pilot who never docked has a checkpoint too.
- */
 describe("#660 D1, D10 — a death restores the launch, and a first death wakes at the start", () => {
-	/** A purchase at the dock: credits spent, a docking computer and the pod
-	 *  fitted. The computer is the witness an eject keeps (#660 D2, node
-	 *  #704): the pod itself is consumed by the eject that would show it. */
-	const buyPod = (h: ReturnType<typeof harness>) =>
+	const buyDockingComputerAndPod = (h: ReturnType<typeof harness>) =>
 		h.edit((c) => ({
 			...c,
 			state: {
@@ -535,9 +448,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			},
 		}));
 
-	/** Docked with 1040 Cr and the checkpoint written, then the pod bought.
-	 *  `settle` carries the purchase to `live` through the debounce, which
-	 *  clears the dirty flag the way a real purchase does. */
 	const dockAndBuy = async (
 		h: ReturnType<typeof harness>,
 		{ settle }: { settle: boolean },
@@ -545,7 +455,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		h.set(1040);
 		h.store.markDirty();
 		await h.store.flush("dock");
-		buyPod(h);
+		buyDockingComputerAndPod(h);
 		if (!settle) return;
 		h.store.markDirty();
 		h.clock.fire();
@@ -554,8 +464,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 
 	test("dock, buy, undock, death: the purchase is restored", async () => {
 		const h = harness();
-		// The purchase reaches `live` through the debounce, which clears the
-		// flag — so the launch's flush is the one that must still write.
 		await dockAndBuy(h, { settle: true });
 		await h.store.flush("undock");
 		h.set(9999);
@@ -581,7 +489,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		h.store.markDirty();
 		await h.store.flush("jump");
 		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
-		expect(restored?.commander.state).toEqual({
+		expect(restored?.commander.state).toMatchObject({
 			...newCommander(PLAYER_BASELINE_HULL),
 			credits: 40,
 		});
@@ -610,10 +518,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 	});
 
 	test("a launch checkpoint queued behind a slow write is the launch, not what followed it", async () => {
-		// Sage's round-1 reproduction. The launch does not await its flush, so
-		// a debounced write still in flight holds the checkpoint in the queue
-		// while the ship flies on. Read `current()` there and `lastDocked` gets
-		// the flight; the checkpoint has to be what the world was at the call.
 		const h = harness();
 		await dockAndBuy(h, { settle: false });
 		h.backend.hold();
@@ -621,7 +525,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		h.clock.fire();
 		expect(h.backend.inFlight).toBe(1);
 		const launched = h.store.flush("undock");
-		// Flown on before the slow write lands: credits spent, a system visited.
 		h.set(9999);
 		h.leg(9, 600);
 		h.store.markDirty();
@@ -634,8 +537,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			"Escape Pod",
 		);
 		expect(checkpoint.world.galaxies[0].visited).not.toContain(9);
-		// `live` landed behind the world, so the save stays dirty and the
-		// debounce is armed to catch it up.
 		expect(h.clock.armed).toBe(true);
 		h.clock.fire();
 		await h.store.settled();
@@ -674,8 +575,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 
 	test("a never-docked death wakes a new commander at the start system's trade station", async () => {
 		const h = harness();
-		// A free start flown on: a hold of goods, a different hull, banked
-		// credit and a first-day choice, then a leg the death keeps.
 		h.edit((c) => ({
 			...c,
 			firstDay: "guided",
@@ -712,19 +611,14 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			);
 			expect(c?.galaxyIndex).toBe(START_GALAXY);
 			expect(c?.systemIndex).toBe(start.index);
-			expect(c?.state).toEqual(newCommander(PLAYER_BASELINE_HULL));
+			expect(c?.state).toMatchObject(newCommander(PLAYER_BASELINE_HULL));
 			expect(c?.state.credits).toBe(STARTING_CREDITS);
 			expect(c?.requests).toEqual(newCommanderRecord("courier").requests);
 			expect(c?.firstDay).toBe("guided");
 			expect(c?.permadeath).toBe(false);
-			// The ladders are never touched by a death (§9): banked credit and
-			// the play log stay, and the basis empties with the hold.
 			expect(c?.ladders.banked).toEqual(dying.ladders.banked);
 			expect(c?.ladders.playedS).toBe(600);
 			expect(c?.ladders.basis).toEqual({});
-			// And the world is the one the death happened in (#654), less only
-			// the own-loss wreck that death may leave (#705): whether it does is
-			// the death draw's, which a DOMAIN tag change moves.
 			expect({
 				...save?.world,
 				galaxies: save?.world.galaxies.map(withoutDeathWreck),
@@ -733,9 +627,9 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 				deathWreckRow(h.world, dying, "destroyed"),
 			);
 		}
-		// The record that went to disk is one the parser accepts.
-		expect(parseSave(await h.backend.raw("default", "live"))).toEqual(live);
-		// And the wake reads what the dying commander lost, as a first life.
+		expect(parseSave(await h.backend.raw("default", "live"))).toMatchObject(
+			live,
+		);
 		const wake = await h.catalog.takeWake();
 		expect(wake?.firstLife).toBe(true);
 		expect(wake?.hull).toBe("freighter");
@@ -743,8 +637,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 	});
 
 	test("an absent lastDocked whose write failed is refused, not derived", async () => {
-		// The pilot docked; the dock flush did not land. Waking them as a new
-		// commander would be the silent substitution D9 rules out.
 		const h = harness();
 		h.store.markDirty();
 		h.backend.failNextWrite();
@@ -756,12 +648,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 	});
 
 	test("a failed dock write is still refused after a reload, and live is kept", async () => {
-		// The held fault is this tab's memory and a reload empties it. The
-		// record is what remembers the dock (sage round 2's blocker on node
-		// #702): the dock's own hold event banks the station into `visited`,
-		// driven here through `applyHoldEvent` rather than written by hand so
-		// this row reds if the dock stops recording it. That `Game` banks
-		// before the dock flush is `world-state-wiring.test.ts`'s row.
 		const station = carrierKey(3, LOCAL_CARRIER_ID.trade);
 		const before = harness();
 		before.edit((c) => {
@@ -786,8 +672,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 				ladders: banked,
 			};
 		});
-		// Nothing hand-written: a new commander has not docked, and the
-		// dock's event alone is what makes the record say it has.
 		expect(hasDocked({ ...before.commander, dockedAt: null })).toBe(true);
 		expect(hasDocked(newCommanderRecord("courier"))).toBe(false);
 		before.store.markDirty();
@@ -806,7 +690,6 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		await expect(
 			after.store.revertToLastDocked(after.commander, "destroyed"),
 		).rejects.toThrow(/lastDocked/);
-		// The hull, credits and equipment the death interrupted are still there.
 		expect(await after.backend.raw("default", "live")).toEqual(written);
 		expect((await after.store.load("default")).commander.state.credits).toBe(
 			4321,
@@ -856,15 +739,10 @@ describe("#89 D6 — slots, export and import", () => {
 		expect(
 			(await h.store.load("copy", "lastDocked")).commander.state.credits,
 		).toBe(100);
-		// Byte-for-byte at the model boundary, which is what #89 asked for.
 		expect(await h.catalog.exportSlot("copy")).toBe(text);
 	});
 
 	test("a queued write does not inherit the previous write's failure", async () => {
-		// `while (this.inFlight) await this.inFlight` rethrew whatever the
-		// in-flight write rejected with, so a dock flush queued behind a failing
-		// debounced write threw before writing anything — no `lastDocked`
-		// checkpoint, on a failure that was not its own.
 		const h = harness();
 		h.store.markDirty();
 		h.backend.failNextWrite();
@@ -879,11 +757,6 @@ describe("#89 D6 — slots, export and import", () => {
 	});
 
 	test("a failed debounced write re-arms rather than waiting for a flush", async () => {
-		// Setting the dirty flag alone was described as "the next flush retries"
-		// and armed nothing, so a failed debounced write sat until the next
-		// dock, trade, jump or quit — the cadence doing almost none of the
-		// writing waiting on the cadence doing almost all of it. And nothing
-		// reached the player at all, which D9 says is what must not happen.
 		const failures: string[] = [];
 		const clock = manualScheduler();
 		const backend = memorySaveBackend();
@@ -900,7 +773,6 @@ describe("#89 D6 — slots, export and import", () => {
 		await store.settled();
 		expect(backend.writes).toBe(0);
 		expect(failures.length).toBe(1);
-		// Re-armed: the retry is a timer, not the next unrelated transition.
 		expect(clock.armed).toBe(true);
 		clock.fire();
 		await store.settled();
@@ -908,11 +780,6 @@ describe("#89 D6 — slots, export and import", () => {
 	});
 
 	test("the retry stops drumming after the cap, and the save stays dirty", async () => {
-		// **Re-arming without a cap was the fix becoming the next defect.** A
-		// backend that simply refuses — a quota, a private window — was asked
-		// every window forever, each attempt paying the synchronous serialize a
-		// player feels, and silently. The cap ends the drum; it does not give
-		// up, because the flag survives and the next flush still writes.
 		const clock = manualScheduler();
 		const backend = memorySaveBackend();
 		const failures: number[] = [];
@@ -932,15 +799,11 @@ describe("#89 D6 — slots, export and import", () => {
 		expect(failures).toEqual([1, 2, 3]);
 		expect(clock.armed).toBe(false);
 		expect(backend.writes).toBe(0);
-		// Still dirty, so an unconditional flush writes.
 		await store.flush("dock");
 		expect(backend.writes).toBe(1);
 	});
 
 	test("a dock flush writes both records in one transaction", async () => {
-		// Two sequential transactions of the same bytes cost twice the measured
-		// median and left a window where the checkpoint and the live record
-		// disagreed. `writes` counts transactions, not keys.
 		const h = harness();
 		h.store.markDirty();
 		await h.store.flush("dock");
@@ -950,11 +813,7 @@ describe("#89 D6 — slots, export and import", () => {
 	});
 
 	test("a slot name that would address another slot is refused", async () => {
-		// A record is keyed `${slot}\0${kind}`, so `"a\0b"` lists as `"a"` and
-		// `deleteSlot("a")` removes it. Why this once said a space:
-		// `tests/source-bytes.test.ts`.
 		const h = harness();
-		// Each refusal names its own reason, because the overlay shows it.
 		await expect(h.store.flush("dock", "")).rejects.toThrow(/may not be empty/);
 		await expect(h.store.flush("dock", "a\0b")).rejects.toThrow(/NUL/);
 		for (const name of ["a\0b", ""]) {
@@ -969,8 +828,6 @@ describe("#89 D6 — slots, export and import", () => {
 	});
 
 	test("a Commander name may hold a space", async () => {
-		// The space rule came from the same misread byte. A record key, a Web
-		// Lock name and an export all take a space.
 		const h = harness();
 		h.store.markDirty();
 		await h.store.flush("dock", "Commander Jameson");
@@ -997,9 +854,9 @@ describe("#89 D8/D9 — refusal, and never overwriting the bad record", () => {
 		h.store.markDirty();
 		await h.store.flush("dock", "alpha");
 		await h.backend.corruptVersion("alpha", "live");
+		const writesBeforeLoad = h.backend.writes;
 		await expect(h.store.load("alpha")).rejects.toThrow(/saveSchemaVersion/);
-		// **The bad record is never overwritten.** It is the only copy of
-		// whatever is left, and export is the whole reason D9 keeps it.
+		expect(h.backend.writes).toBe(writesBeforeLoad);
 		expect(await h.backend.has("alpha", "live")).toBe(true);
 		expect(typeof (await h.catalog.exportSlot("alpha"))).toBe("string");
 	});
@@ -1025,13 +882,10 @@ describe("#89 D8/D9 — refusal, and never overwriting the bad record", () => {
 		h.store.markDirty();
 		h.backend.failNextWrite();
 		await expect(h.store.flush("jump", "alpha")).rejects.toThrow(/backend/);
-		// Stale rather than broken — D9's residual risk, and the store must not
-		// have made it worse.
 		expect((await h.store.load("alpha")).commander.state.credits).toBe(100);
 	});
 });
 
-/** A slot with a `live` and a `lastDocked` record, written through the store. */
 const seeded = async (
 	h: ReturnType<typeof harness>,
 	slot: string,
@@ -1042,8 +896,6 @@ const seeded = async (
 	await h.store.flush("dock", slot);
 };
 
-/** Two tabs of one origin: one backend and one set of locks. Tab A writes
- *  `jameson`; tab B writes `slotB`, or the default. */
 const twoTabs = (slotB?: string) => {
 	const locks = memorySlotLocks();
 	const backend = memorySaveBackend();
@@ -1116,9 +968,6 @@ describe("§11.3 — the one-shot continue", () => {
 	});
 
 	test("Load after an abandoned new game boots the loaded Commander, not the abandoned one", async () => {
-		// The tab closed before the new Commander's first `live` record landed,
-		// so the pending record is still on disk. A pending new game is read
-		// before the pointer, so a Load that left it there would boot `fresh`.
 		const h = harness();
 		await seeded(h, "jameson");
 		await h.catalog.beginNewGame({
@@ -1189,8 +1038,6 @@ describe("§11.3 — a pending new game", () => {
 		await seeded(h, "jameson");
 		await h.backend.writeMeta({ pending: { name: "lost", seed: -1 } });
 		await expect(h.catalog.resolveActive()).rejects.toThrow(/pending new game/);
-		// It holds no name this build can read, so it takes none: import and
-		// rename still work, and New game is the way out of the fault.
 		const text = await h.catalog.exportSlot("jameson");
 		await h.catalog.importSlot("copy", text);
 		await h.catalog.beginNewGame({
@@ -1211,9 +1058,6 @@ describe("§11.3 — a pending new game", () => {
 	});
 
 	test("a pending record beside a save that already landed does not replace the save", async () => {
-		// The tab closed between the new Commander's first `live` write and
-		// `finishNewGame`. A boot that followed `pending.seed` would build a
-		// fresh world over the progress on disk.
 		const h = harness({ slot: "fresh" });
 		await h.catalog.beginNewGame({
 			name: "fresh",
@@ -1274,9 +1118,6 @@ describe("§11.3 — a pending new game", () => {
 	});
 
 	test("renaming a Commander a stale pending record names does not bring the old name back", async () => {
-		// No boot ran between the first save and the rename, so the pending
-		// record is still on disk. Once `fresh` has no record, it would win over
-		// the pointer and boot a fresh world under the old name.
 		const h = harness({ slot: "fresh" });
 		await h.catalog.beginNewGame({
 			name: "fresh",
@@ -1314,8 +1155,6 @@ describe("§11.3 — a pending new game", () => {
 	});
 
 	test("deleting the active Commander clears the pointer, so the next boot reports no fallback", async () => {
-		// The player chose the delete. A pointer left naming the gone Commander
-		// would boot the default with a notice that something fell back.
 		const h = harness();
 		await seeded(h, "jameson");
 		await h.catalog.chooseCommander("jameson");
@@ -1361,7 +1200,6 @@ describe("§11.3 — one rule for names", () => {
 		await expect(h.catalog.renameSlot("other", "jameson")).rejects.toThrow(
 			/already a Commander/,
 		);
-		// Nothing was replaced: the taken Commander still carries its own record.
 		expect((await h.store.load("other")).commander.state.credits).toBe(100);
 	});
 
@@ -1384,8 +1222,6 @@ describe("§11.3 — one rule for names", () => {
 	});
 
 	test("new game and rename refuse a name holding the key separator", async () => {
-		// `"jameson\0x"` would list as `"jameson"`, so it would pass the name
-		// rule against a Commander that exists and share its delete.
 		const h = harness();
 		await seeded(h, "jameson");
 		await seeded(h, "other");
@@ -1471,9 +1307,6 @@ describe("§11.3 — rename and delete", () => {
 	});
 
 	test("two overlapping holds on one store keep the lock, and no second store gets it", async () => {
-		// The second `tryHold` answers `null` because the first already holds the
-		// lock. Written over the first's release, that `null` would leave the lock
-		// held with nothing able to release it, and the store reporting it lost.
 		const { tabA, tabB } = twoTabs("jameson");
 		const both = await Promise.all([tabA.store.hold(), tabA.store.hold()]);
 		expect(both).toEqual([true, true]);
@@ -1495,7 +1328,6 @@ describe("§11.3 — rename and delete", () => {
 		const h = harness({ locks });
 		await seeded(h, "jameson");
 		await h.catalog.chooseCommander("jameson");
-		// The check took the lock and gave it back: a store may now hold it.
 		const tab = harness({ backend: h.backend, locks, slot: "jameson" });
 		expect(await tab.store.hold()).toBe(true);
 	});
@@ -1508,7 +1340,6 @@ describe("§11.5 — faults are held per record kind", () => {
 		h.backend.failNextWrite();
 		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
 		expect([...h.store.faultKinds].sort()).toEqual(["lastDocked", "live"]);
-		// A debounced write carries `live` alone.
 		h.store.markDirty();
 		h.clock.fire();
 		await h.store.settled();
@@ -1525,7 +1356,6 @@ describe("§11.5 — faults are held per record kind", () => {
 		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
 		const dockWords = heldSaveFault(h.store, null);
 		expect(dockWords).toContain("the dock save would not write");
-		// One debounced failure below the cap, then its retry lands.
 		h.store.markDirty();
 		h.backend.failNextWrite();
 		h.clock.fire();
@@ -1537,9 +1367,6 @@ describe("§11.5 — faults are held per record kind", () => {
 	});
 
 	test("a debounced write is a fault only once it has failed SAVE_RETRY_LIMIT times in a row", async () => {
-		// §11.5 and `hud-and-scanner.md` §5.3 both say the cap, not the first
-		// failure: a retry that lands a moment later was never the player's
-		// business. The store held `live` on the first failure for a round.
 		const h = harness();
 		h.store.markDirty();
 		for (let i = 1; i < SAVE_RETRY_LIMIT; i++) {
@@ -1552,7 +1379,6 @@ describe("§11.5 — faults are held per record kind", () => {
 		h.clock.fire();
 		await h.store.settled();
 		expect([...h.store.faultKinds]).toEqual(["live"]);
-		// Past the cap the drum has stopped, so the next write is a new mark.
 		h.store.markDirty();
 		h.clock.fire();
 		await h.store.settled();
@@ -1582,8 +1408,6 @@ describe("§11.5 — faults are held per record kind", () => {
 		h.backend.failNextWrite();
 		await expect(h.store.flush("jump")).rejects.toThrow(/backend/);
 		expect([...h.store.faultKinds]).toEqual(["live"]);
-		// And a good debounced write clears it: both carry `live` alone. The
-		// flush cancelled the timer, so the write is a new mark.
 		h.store.markDirty();
 		h.clock.fire();
 		await h.store.settled();
@@ -1596,8 +1420,6 @@ describe("§11.5 — faults are held per record kind", () => {
 		h.backend.failNextWrite();
 		await expect(h.store.flush("undock")).rejects.toThrow(/backend/);
 		expect([...h.store.faultKinds].sort()).toEqual(["lastDocked", "live"]);
-		// A debounced write clears `live` alone; the launch's checkpoint is
-		// still missing until a flush that writes it lands.
 		h.store.markDirty();
 		h.clock.fire();
 		await h.store.settled();

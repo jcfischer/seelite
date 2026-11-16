@@ -166,7 +166,8 @@ raises the spine, hangs a run of pods under it and stacks its drives. Placed by
 the same arithmetic as round ten: at about half the carrier's reach it is
 compared only with the carrier, and at more than six lengths to its height it
 is far slenderer than either capital, which `tests/hull-voyager.test.ts`
-asserts at half again the slenderer of the two. It docks nowhere by length
+asserts at half again the slenderer of the two. (Six lengths to the height
+is the loft's; the authored model below is 5.3.) It docks nowhere by length
 rather than by section — its section would pass a slot — and
 `tests/aperture-fit.test.ts` states that difference rather than leaving
 "capitals fit no aperture" to be read as true of it.
@@ -246,6 +247,29 @@ drive glows are placed by measurement, inside mouths that the barrel's end
 cap closes at z −26.0 m (`TUG_NOZZLES_M`). Until the model installs, the
 loft is 4.5 m taller than the declared box. The figures are
 `tests/tug-hull.test.ts`'s and `tests/bollard-asset.test.ts`'s.
+
+**Since node #820 the voyager's selected variant is an authored model, by the
+same path.** Discovery / Voyager A, the study the principal accepted on #809
+(`src/voyager-hull.ts`, `src/models/discovery-voyager.glb`), replaces the
+Odyssey loft as `voyager/a`; the loft stands in until the model installs, and
+`voyager/b` and `/c` stay procedural. The model is the study's, turned (its
+nose is +X in the file, `spikes/discovery/prepare-flight-asset.mjs` carries
+it onto +Z) and with the paints as accepted: **the #887 lift is not applied**,
+so the hull is as bright as the study drew it and a lift, if wanted, is the
+tug's #909 over again. **It is scaled to the roster's 191 m**, as the
+courier is, and unlike the tug: the study's 141.6 m says of itself that it is
+not a gameplay dimension, and drawn 1:1 its box would be a third of the volume
+the row's 380 t was set against. The beam and height are what the mesh
+measures at that scale (32.9 × 36.1 m, against the loft's 29.5 × 30.1), and
+the vents' shares are re-solved on them with no hull's handling retuned. Its
+three bells (two above the axis and one below, so `ventThroats` finds three
+main-drive throats) take drive glows by measurement
+(`VOYAGER_NOZZLES_M`), the first hull whose drives are not a mirrored pair
+(`StudyNozzles.mounts`). It is a capital and docks nowhere; the model is
+longer than any berth at the study's own size and at any scale above ×0.64 of it. The voyager
+appears in no Traffic and no shipyard, so a pilot sees it in the `?fleet`
+review and the ship workbench. The figures are `tests/voyager-hull.test.ts`'s
+and `tests/discovery-asset.test.ts`'s.
 
 **Since node #815 the miner's selected variant is an authored model too**,
 Longwall B (`miner/b`, `src/models/longwall-miner.glb`), and its levels are
@@ -478,11 +502,34 @@ ordinary traffic and fleet-review hulls all receive the gate from their actual
 camera-relative range each frame, including ships materialised after a setting
 change.
 
+### 3.3 An authored hull: the O2 Porter (node #813)
+
+`freighter/b` is no longer built here. It is the O2 Modular Carrier the
+principal approved on #797, authored in Blender (`spikes/porter-hull/`) and
+shipped from `src/models/porter.glb` at a content-hashed URL;
+`src/porter-model.ts` installs it through the after-boot model queue and
+`buildShipMesh` clones it. Until installation the procedural Porter stands in;
+postcards and full-model boots await it. Three of this spec's
+promises do not reach it, and each is said where it is checked rather than
+skipped quietly: it has no machinery zone, generated clutter or service rails
+(§3.2) because the model carries its own; its surface is its own materials and
+ignores the hull finishes (§3.1); and a freighter wreck is darkened but not
+torn, because the tear cuts lofts and the model has none. It keeps the nav
+lights, the drive glow (seated in its six nozzles) and every rule the berth and
+collision box read.
+
+It is turned half a turn into the game's frame, not mirrored, so its three
+cassettes are to **port** of the command keel. The spike's prose and the
+procedural Porter both said starboard; the approved frames show port, and the
+geometry the principal approved is what ships.
+
 ## 4. Verification contract
 
 Headless tests assert every candidate has stable hull and variant identity,
 deterministic bounds, declared reach, distinct design theses, compact exhausts,
-intersecting canopy fairings and structurally mounted nacelles. The mount
+intersecting canopy fairings and structurally mounted nacelles — every
+procedural candidate, for the part-name rows: the authored Porter (§3.3) has no
+named fairing, loft or nacelle, and those rows say so where they skip it. The mount
 assertion names no side: it was written as port and starboard, which outlawed
 any drive layout that is not laterally paired, and the rankings kept choosing
 the layouts it forbade. It now says what it always meant — every nacelle

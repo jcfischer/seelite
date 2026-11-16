@@ -1,3 +1,4 @@
+import { pairLegacyWorldFixture } from "./legacy-world-fixture";
 /**
  * Node #731: the derelict row — government-keyed slots, a seeded loss schedule,
  * derived contents pinned on first touch, and the save (`salvage.md` S1, S2, S6,
@@ -94,6 +95,7 @@ const resealedSave = (
 ): unknown => {
 	const { integrity: _, ...body } = JSON.parse(JSON.stringify(raw));
 	edit(body);
+	pairLegacyWorldFixture(body);
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
 
@@ -497,11 +499,11 @@ describe("the save", () => {
 		expect(parseWorld(serializeWorld(world))).toEqual(world);
 	});
 
-	test("the schema is 15, and 8 is still read", () => {
+	test("the schema is 22, and 8 is still read", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(15);
+		expect(SAVE_SCHEMA_VERSION).toBe(22);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([
-			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+			2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
 		]);
 	});
 
@@ -519,6 +521,7 @@ describe("the save", () => {
 				body.commander.state.ownedEquipment = [];
 				delete body.commander.state.loadout;
 				delete body.commander.sweepReadings;
+				delete body.commander.txSeq;
 			},
 		);
 		const loaded = parseSave(v8);
@@ -539,6 +542,7 @@ describe("the save", () => {
 				body.commander.state.ownedEquipment = [];
 				delete body.commander.state.loadout;
 				delete body.commander.sweepReadings;
+				delete body.commander.txSeq;
 			},
 		);
 		expect(() => parseSave(v8)).toThrow("derelicts is not a version 8 field");
