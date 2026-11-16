@@ -32,6 +32,7 @@ import { installCockpitTextProbe } from "./lib/cockpit-text-probe.mjs";
  * a beam was drawn, so a dead key fails them rather than passes.
  */
 import {
+	bootBudgetMs,
 	bootedGame,
 	guardedOrigin,
 	installCamSim,
@@ -381,7 +382,9 @@ async function probeChaseControls({ browser, check, watch, origin }) {
 		const page = await browser.newPage({ viewport });
 		watch(page, viewport.name);
 		await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
-		await page.waitForFunction(() => window.__seelite?.frames > 1);
+		await page.waitForFunction(() => window.__seelite?.frames > 1, null, {
+			timeout: bootBudgetMs(page),
+		});
 		const cockpit = await page.evaluate(state);
 		check(
 			`${viewport.name}: cockpit keeps the hull out of the flight view`,
@@ -485,7 +488,9 @@ async function probeChaseControls({ browser, check, watch, origin }) {
 		const page = await browser.newPage({ viewport });
 		watch(page, `${viewport.name} fleet`);
 		await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
-		await page.waitForFunction(() => window.__seelite?.frames > 1);
+		await page.waitForFunction(() => window.__seelite?.frames > 1, null, {
+			timeout: bootBudgetMs(page),
+		});
 		const ungated = await page.evaluate(state);
 		check(
 			`${viewport.name}: the default game carries no review fleet`,
