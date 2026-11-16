@@ -9393,7 +9393,7 @@ class Game {
 		return ref && ref.distKm <= ROCK_DROP_KM ? ref : null;
 	}
 
-	private cycleRockTarget(step: number): boolean {
+	private cycleRockTarget(): boolean {
 		const front = frontRock(
 			nearRocks(
 				this.fieldRockSets(),
@@ -13352,7 +13352,7 @@ class Game {
 	}
 
 	cycleTarget(step: number) {
-		if (this.cycleRockTarget(step)) return;
+		if (this.cycleRockTarget()) return;
 		const list = this.selectable();
 		if (list.length === 0) return;
 		const at = list.findIndex((b) => b.id === this.targetId);

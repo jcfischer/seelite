@@ -151,15 +151,15 @@ try {
 	);
 	await page.goto(gameUrl(origin, { seed: 0x5ee11e, raider: "off" }));
 	await bootedGame(page, 90000);
-	const flagless = await page.evaluate(() => ({
+	const reloadedHold = await page.evaluate(() => ({
 		...window.__seelite.commander.cargo,
 	}));
 	check(
 		"a reload keeps every ore tonne aboard",
-		JSON.stringify(flagless) === JSON.stringify(mined.cargo),
-		JSON.stringify(flagless),
+		JSON.stringify(reloadedHold) === JSON.stringify(mined.cargo),
+		JSON.stringify(reloadedHold),
 	);
-	const flaglessHold = await page.evaluate(async (name) => {
+	const holdText = await page.evaluate(async (name) => {
 		const g = window.__seelite;
 		g.rightTab = "Hold";
 		g.setHeadLook("right");
@@ -172,9 +172,9 @@ try {
 	}, setup.name);
 	check(
 		"the Hold says the ore is sellable",
-		flaglessHold?.includes("sellable") &&
-			!flaglessHold.includes("raw sales unavailable"),
-		flaglessHold,
+		holdText?.includes("sellable") &&
+			!holdText.includes("raw sales unavailable"),
+		holdText,
 	);
 	await page.goto(gameUrl(origin, { seed: 0x5ee11e, raider: "off" }));
 	await bootedGame(page, 90000);
@@ -262,15 +262,15 @@ try {
 		g.stationConsoleTab = "Market";
 		g.updateCockpit();
 	});
-	const off = await page
+	const marketRows = await page
 		.locator("[data-live-market-row]")
 		.evaluateAll((rows) =>
 			rows.map((r) => r.getAttribute("data-live-market-row")),
 		);
 	check(
 		"the reloaded docked market lists every good, ore included",
-		off.length === 32 && off.some((name) => name.includes("ore")),
-		JSON.stringify(off),
+		marketRows.length === 32 && marketRows.some((name) => name.includes("ore")),
+		JSON.stringify(marketRows),
 	);
 	const reloadToMarket = async ({ holdClock }) => {
 		await page.goto(gameUrl(origin, { seed: 0x5ee11e, raider: "off" }));

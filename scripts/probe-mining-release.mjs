@@ -36,6 +36,60 @@ const shots =
 await mkdir(shots, { recursive: true });
 const SEED = 0x5ee11e;
 
+const dockAt = (page, stationType, tab) =>
+	page.evaluate(
+		async ({ stationType, tab }) => {
+			const g = window.__seelite;
+			const station = g.world.system.bodies.find(
+				(b) =>
+					b.kind === "station" &&
+					(stationType === null || b.stationType === stationType),
+			);
+			if (!station) throw Error(`no ${stationType ?? "trade"} station`);
+			await window.__parkInBerth(
+				station.id,
+				g.berthIdsOfStation(station.id)[0],
+			);
+			g.stationConsoleRevision++;
+			g.stationConsoleTab = tab;
+			g.setHeadLook("forward");
+			g.updateCockpit();
+			return { docked: g.dock.phase };
+		},
+		{ stationType, tab },
+	);
+
+const sellOne = async (page, name) => {
+	const row = page.locator(`[data-live-market-row="${name}"]`);
+	await row.waitFor();
+	const before = Number.parseFloat(
+		await page.locator("[data-live-commander]").innerText(),
+	);
+	const bid = Number.parseFloat(
+		await row.locator("[data-live-sell]").innerText(),
+	);
+	await row.locator('[data-live-station-action="sell-commodity"]').click();
+	await page.waitForFunction(
+		(before) =>
+			Number.parseFloat(
+				document.querySelector("[data-live-commander]")?.textContent ?? "",
+			) > before,
+		before,
+	);
+	const sale = await page.evaluate(async (name) => {
+		const g = window.__seelite;
+		const { displayAmount, accountOf } = await import(
+			"/src/commodity-pools.ts"
+		);
+		return {
+			credits: g.commander.credits,
+			left: g.commander.cargo[name] ?? 0,
+			trade: displayAmount(accountOf(g.commander).bankedTrade),
+		};
+	}, name);
+	return { before, bid, sale };
+};
+
 try {
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
@@ -362,46 +416,13 @@ try {
 	await page.screenshot({ path: `${shots}/hold.png` });
 
 	const oreName = scooped.cargo[0][0];
-	await page.evaluate(async () => {
-		const g = window.__seelite;
-		const station = g.world.system.bodies.find((b) => b.kind === "station");
-		await window.__parkInBerth(station.id, g.berthIdsOfStation(station.id)[0]);
-		g.setHeadLook("forward");
-		g.stationConsoleTab = "Market";
-		g.updateCockpit();
-	});
-	const rawRow = page.locator(`[data-live-market-row="${oreName}"]`);
-	await rawRow.waitFor();
-	const rawBefore = Number.parseFloat(
-		await page.locator("[data-live-commander]").innerText(),
-	);
-	const bid = Number.parseFloat(
-		await rawRow.locator("[data-live-sell]").innerText(),
-	);
-	await rawRow.locator('[data-live-station-action="sell-commodity"]').click();
-	await page.waitForFunction(
-		(before) =>
-			Number.parseFloat(
-				document.querySelector("[data-live-commander]")?.textContent ?? "",
-			) > before,
-		rawBefore,
-	);
-	const rawSale = await page.evaluate(async (name) => {
-		const g = window.__seelite;
-		const { displayAmount, accountOf } = await import(
-			"/src/commodity-pools.ts"
-		);
-		return {
-			credits: g.commander.credits,
-			left: g.commander.cargo[name] ?? 0,
-			trade: displayAmount(accountOf(g.commander).bankedTrade),
-		};
-	}, oreName);
+	await dockAt(page, null, "Market");
+	const raw = await sellOne(page, oreName);
 	check(
 		"docked, the Market SELL button pays the quoted bid for the raw ore",
-		Math.abs(rawSale.credits - rawBefore - bid) < 0.11 &&
-			rawSale.left === scooped.taken - 1,
-		JSON.stringify({ rawBefore, bid, ...rawSale }),
+		Math.abs(raw.sale.credits - raw.before - raw.bid) < 0.11 &&
+			raw.sale.left === scooped.taken - 1,
+		JSON.stringify(raw),
 	);
 	await page.screenshot({ path: `${shots}/raw-sale.png` });
 
@@ -576,15 +597,6 @@ try {
 		const ref = seatNow().ref;
 		const out = {
 			id,
-			debug: {
-				block: g.drill.contact?.block ?? null,
-				held: g.drill.held !== null,
-				extension: g.drill.extension,
-				powered: g.drill.powered,
-				spin: g.drill.spin,
-				stop: g.drill.stop,
-				energy: g.condition.energy,
-			},
 			armed: g.armedFireGroup
 				.current(g.fireGroups)
 				?.label?.startsWith("BUILT-IN DRILL"),
@@ -616,27 +628,16 @@ try {
 	);
 	await page.screenshot({ path: `${shots}/drill.png` });
 
-	const submitted = await page.evaluate(async () => {
-		const g = window.__seelite;
-		const station = g.world.system.bodies.find(
-			(b) => b.kind === "station" && b.stationType === "refinery",
-		);
-		await window.__parkInBerth(station.id, g.berthIdsOfStation(station.id)[0]);
-		g.stationConsoleRevision++;
-		g.stationConsoleTab = "Refinery";
-		g.setHeadLook("forward");
-		g.updateCockpit();
-		return {
-			docked: g.dock.phase,
-			ore: Object.entries(g.commander.cargo)
-				.filter(([, t]) => t > 0)
-				.map(([name, tonnes]) => [name, tonnes]),
-		};
-	});
+	const submittedDock = await dockAt(page, "refinery", "Refinery");
+	const submitted = await page.evaluate(() => ({
+		ore: Object.entries(window.__seelite.commander.cargo)
+			.filter(([, t]) => t > 0)
+			.map(([name, tonnes]) => [name, tonnes]),
+	}));
 	check(
 		"the docked refinery offers the mined ore",
-		submitted.docked === "docked" && submitted.ore.length > 0,
-		JSON.stringify(submitted),
+		submittedDock.docked === "docked" && submitted.ore.length > 0,
+		JSON.stringify({ ...submittedDock, ...submitted }),
 	);
 	await page.locator('[data-live-station-tab="Refinery"]').click();
 	await page.locator("[data-live-refinery-tonnes]").fill("4");
@@ -660,17 +661,6 @@ try {
 			view: view ? { jobs: view.jobs.length, queue: view.queueCount } : null,
 			ore: g.commander.cargo,
 			notice: g.refineryNotice ?? null,
-			rows: (() => {
-				try {
-					return JSON.stringify(
-						window.__seelite.commerceWorld.galaxies.map(
-							(galaxy) => galaxy.deposits.rows,
-						),
-					);
-				} catch {
-					return null;
-				}
-			})(),
 			message: g.stationConsoleMessage ?? null,
 			saving: g.refinerySaving ?? null,
 		};
@@ -736,24 +726,15 @@ try {
 		JSON.stringify({ jobs: afterReload.jobs, hull: afterReload.hull }),
 	);
 
-	const sold = await page.evaluate(async () => {
+	await page.evaluate(async () => {
 		const g = window.__seelite;
 		const W = await import("/src/world-state.ts");
 		const Sim = await import("/src/sim.ts");
-		const galaxy = g.world.system.record.galaxy;
 		const advance = g.world.gameTime + 600;
 		Sim.advanceWorldClock(g.world, advance - g.world.gameTime);
 		g.adoptWorld(W.advanceTo(g.commerceWorld, advance));
-		const station = g.world.system.bodies.find(
-			(b) => b.kind === "station" && b.stationType === "refinery",
-		);
-		await window.__parkInBerth(station.id, g.berthIdsOfStation(station.id)[0]);
-		g.stationConsoleRevision++;
-		g.stationConsoleTab = "Refinery";
-		g.setHeadLook("forward");
-		g.updateCockpit();
-		return { docked: g.dock.phase };
 	});
+	const sold = await dockAt(page, "refinery", "Refinery");
 	check(
 		"the refinery berth is still open after the pass",
 		sold.docked === "docked",
@@ -794,41 +775,14 @@ try {
 		);
 	});
 	if (!product) throw Error("no refined product in the hold");
-	const productRow = page.locator(`[data-live-market-row="${product}"]`);
-	await productRow.waitFor();
-	const saleBefore = Number.parseFloat(
-		await page.locator("[data-live-commander]").innerText(),
-	);
-	const productBid = Number.parseFloat(
-		await productRow.locator("[data-live-sell]").innerText(),
-	);
-	await productRow
-		.locator('[data-live-station-action="sell-commodity"]')
-		.click();
-	await page.waitForFunction(
-		(before) =>
-			Number.parseFloat(
-				document.querySelector("[data-live-commander]")?.textContent ?? "",
-			) > before,
-		saleBefore,
-	);
-	const productSale = await page.evaluate(async (name) => {
-		const g = window.__seelite;
-		const { displayAmount, accountOf } = await import(
-			"/src/commodity-pools.ts"
-		);
-		return {
-			credits: g.commander.credits,
-			left: g.commander.cargo[name] ?? 0,
-			trade: displayAmount(accountOf(g.commander).bankedTrade),
-		};
-	}, product);
+	const productSale = await sellOne(page, product);
 	check(
 		"the refined product sells at its quoted bid and banks trading rating",
-		Math.abs(productSale.credits - saleBefore - productBid) < 0.11 &&
-			productSale.left === (collected.cargo[product] ?? 0) - 1 &&
-			productSale.trade > 0,
-		JSON.stringify({ saleBefore, productBid, ...productSale }),
+		Math.abs(productSale.sale.credits - productSale.before - productSale.bid) <
+			0.11 &&
+			productSale.sale.left === (collected.cargo[product] ?? 0) - 1 &&
+			productSale.sale.trade > 0,
+		JSON.stringify(productSale),
 	);
 	await page.screenshot({ path: `${shots}/product-sale.png` });
 } finally {

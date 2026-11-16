@@ -122,64 +122,60 @@ try {
 		state.group === "ALL LASERS",
 		JSON.stringify(state),
 	);
-	{
-		check(
-			"only the Pulse Laser has a glass tracer",
-			state.ports === 1 && state.pulse === 1,
-			JSON.stringify(state),
-		);
-		check(
-			"both mining beams reach the cockpit GPU layer, whole from the bridge eye forward, beside the Pulse tracer",
-			state.mining === state.miningAhead &&
-				state.miningAhead >= 56 &&
-				state.vertices === state.expected,
-			JSON.stringify(state),
-		);
-		check(
-			"each mount ray starts at its physical muzzle along the nose",
-			JSON.stringify(state.rays.map((r) => r.origin)) ===
-				JSON.stringify(state.muzzles) &&
-				state.rays.every(
-					(r) => JSON.stringify(r.aim) === JSON.stringify(state.nose),
-				),
-			JSON.stringify(state.rays),
-		);
-		check(
-			"rays meeting the same rock cut at the summed 0.45 t/s",
-			state.hits?.length === 2 &&
-				state.hits.every((id) => id === state.hit) &&
-				state.cut === state.hit &&
-				Math.abs(state.cutOre - 0.45 * 0.5 * 0.05) < 1e-10,
-			JSON.stringify(state),
-		);
-		check(
-			"cockpit mining beams stay off the overlay",
-			state.overlay === 0,
-			String(state.overlay),
-		);
-	}
+	check(
+		"only the Pulse Laser has a glass tracer",
+		state.ports === 1 && state.pulse === 1,
+		JSON.stringify(state),
+	);
+	check(
+		"both mining beams reach the cockpit GPU layer, whole from the bridge eye forward, beside the Pulse tracer",
+		state.mining === state.miningAhead &&
+			state.miningAhead >= 56 &&
+			state.vertices === state.expected,
+		JSON.stringify(state),
+	);
+	check(
+		"each mount ray starts at its physical muzzle along the nose",
+		JSON.stringify(state.rays.map((r) => r.origin)) ===
+			JSON.stringify(state.muzzles) &&
+			state.rays.every(
+				(r) => JSON.stringify(r.aim) === JSON.stringify(state.nose),
+			),
+		JSON.stringify(state.rays),
+	);
+	check(
+		"rays meeting the same rock cut at the summed 0.45 t/s",
+		state.hits?.length === 2 &&
+			state.hits.every((id) => id === state.hit) &&
+			state.cut === state.hit &&
+			Math.abs(state.cutOre - 0.45 * 0.5 * 0.05) < 1e-10,
+		JSON.stringify(state),
+	);
+	check(
+		"cockpit mining beams stay off the overlay",
+		state.overlay === 0,
+		String(state.overlay),
+	);
 	await page.screenshot({ path: "probe-shots/mining-mounts/cockpit.png" });
-	{
-		const chase = await page.evaluate(() => {
-			const g = window.__seelite;
-			g.view = "chase";
-			g.keys.add(" ");
-			g.step(0.05);
-			g.render(0);
-			g.keys.delete(" ");
-			return {
-				segments: g.chaseMiningRender,
-				pulse: g.beamRender?.length ?? 0,
-				vertices: g.beamLayer.vertexCount,
-			};
-		});
-		check(
-			"chase draws both mining beams beside the Pulse tracer and disables cockpit quads",
-			chase.segments === 32 && chase.pulse === 1 && chase.vertices === 0,
-			JSON.stringify(chase),
-		);
-		await page.screenshot({ path: "probe-shots/mining-mounts/chase.png" });
-	}
+	const chase = await page.evaluate(() => {
+		const g = window.__seelite;
+		g.view = "chase";
+		g.keys.add(" ");
+		g.step(0.05);
+		g.render(0);
+		g.keys.delete(" ");
+		return {
+			segments: g.chaseMiningRender,
+			pulse: g.beamRender?.length ?? 0,
+			vertices: g.beamLayer.vertexCount,
+		};
+	});
+	check(
+		"chase draws both mining beams beside the Pulse tracer and disables cockpit quads",
+		chase.segments === 32 && chase.pulse === 1 && chase.vertices === 0,
+		JSON.stringify(chase),
+	);
+	await page.screenshot({ path: "probe-shots/mining-mounts/chase.png" });
 	await page.evaluate(async () => {
 		const g = window.__seelite;
 		const station = g.world.system.bodies.find((b) => b.kind === "station");

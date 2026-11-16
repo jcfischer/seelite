@@ -84,6 +84,26 @@ export function debitAt(taken: number, at: number, t: number): number {
 }
 export const surveyLive = (row: DepositRow, t: number): boolean =>
 	row.surveyedAt !== undefined && t - row.surveyedAt < SURVEY_LIFETIME_H * 3600;
+/**
+ * A deposit row rebuilt from debits already rebased to `t`, dropping a debit
+ * that has fully recovered. A row never carries a zero debit: the save parser
+ * refuses one, so a rock cut and then drilled after its surface debit had
+ * recovered would fail its next commit.
+ */
+export function rebasedRow(
+	surface: number | undefined,
+	deep: number | undefined,
+	surveyedAt: number | undefined,
+	t: number,
+): DepositRow {
+	const next: DepositRow = {
+		...(surface !== undefined && surface > 0 ? { surface } : {}),
+		...(deep !== undefined && deep > 0 ? { deep } : {}),
+		...(surveyedAt === undefined ? {} : { surveyedAt }),
+	};
+	if (next.surface !== undefined || next.deep !== undefined) next.at = t;
+	return next;
+}
 export const isDerivable = (row: DepositRow, t: number): boolean =>
 	debitAt(row.surface ?? 0, row.at ?? 0, t) === 0 &&
 	debitAt(row.deep ?? 0, row.at ?? 0, t) === 0 &&

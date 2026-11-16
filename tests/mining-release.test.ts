@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { carrierKey } from "../src/carrier-key";
 import {
 	accountOf,
@@ -210,8 +210,7 @@ describe("a mined, refined and sold tonne reconciles (#935)", () => {
 	});
 
 	test("credits, cost basis and trading rating follow #935's recovery rule", () => {
-		const { quote, paid, held, sold, ladder, after } = run();
-		console.log(JSON.stringify({ held: held.cargo, after, quote }));
+		const { quote, paid, held, sold, ladder } = run();
 		const proceeds = sold.commander.credits - held.credits;
 		expect(proceeds).toBeGreaterThan(0);
 		const fee = displayAmount(money.parse(quote.fee));
@@ -269,14 +268,20 @@ describe("a save from before the release plays on", () => {
 });
 
 describe("the flag is gone from the source", () => {
-	const files = ["src/main.ts", "src/fire-group.ts", "src/hold.ts"];
+	const srcDir = new URL("../src/", import.meta.url);
+	const files = readdirSync(srcDir, { recursive: true })
+		.map((entry) => String(entry))
+		.filter((entry) => entry.endsWith(".ts"))
+		.map((entry) => new URL(entry, srcDir));
+
+	test("the scan covers every source file", () => {
+		expect(files.length).toBeGreaterThan(100);
+		expect(files.some((file) => file.pathname.endsWith("/main.ts"))).toBe(true);
+	});
 
 	test("no MINING_ON and no ?mining read remains", () => {
 		for (const file of files) {
-			const source = readFileSync(
-				new URL(`../${file}`, import.meta.url),
-				"utf8",
-			);
+			const source = readFileSync(file, "utf8");
 			expect(source).not.toContain("MINING_ON");
 			expect(source).not.toContain('get("mining")');
 			expect(source).not.toContain("rock-pick");

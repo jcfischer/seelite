@@ -6,7 +6,7 @@
  * the ore shares are the table node #923 ratified.
  */
 import { SCOOP_REFUSAL_TEXT } from "./cargo-notice";
-import { type DepositRow, debitAt } from "./deposit-state";
+import { type DepositRow, debitAt, rebasedRow } from "./deposit-state";
 import { type Grade, gradeOutputScale } from "./module-catalog";
 import {
 	type ScoopGear,
@@ -146,15 +146,12 @@ export function debitSurface(
 	n: number,
 ): DepositRow {
 	const at = row?.at ?? 0;
-	const surface = debitAt(row?.surface ?? 0, at, t) + n;
-	const deep = row?.deep === undefined ? undefined : debitAt(row.deep, at, t);
-	const next: DepositRow = {
-		...(surface > 0 ? { surface } : {}),
-		...(deep !== undefined && deep > 0 ? { deep } : {}),
-		...(row?.surveyedAt === undefined ? {} : { surveyedAt: row.surveyedAt }),
-	};
-	if (next.surface !== undefined || next.deep !== undefined) next.at = t;
-	return next;
+	return rebasedRow(
+		debitAt(row?.surface ?? 0, at, t) + n,
+		row?.deep === undefined ? undefined : debitAt(row.deep, at, t),
+		row?.surveyedAt,
+		t,
+	);
 }
 
 /** A rock's drawn surface: its frame's turn, and its radius along a unit direction as a share of `radiusKm`. */

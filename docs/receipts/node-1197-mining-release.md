@@ -54,7 +54,9 @@ sell raw ore and refine it, and the figures are the table #923 ratified.
 - The survey decays when the hold is dropped (the old default), and the front
   rock is the target pick (the old default).
 - A hull change auto-sells raw ore from a shared hold like any other legal
-  cargo; a dedicated ore bay is still never auto-sold.
+  cargo. Ore is never auto-sold into a hull that keeps a dedicated ore bay
+  (the Longwall's skips); leaving a hull that has one for a hull without one
+  sells the skips' ore rather than stranding it over the new hold.
 - `scripts/measure-mining-nav-budget.mjs` keeps its two-page arm structure; its
   `?mining` parameter is now inert, so both pages are the same page. The
   instrument's node (#1234) is closed and its budget was met with mining on.

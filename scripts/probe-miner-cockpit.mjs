@@ -541,10 +541,10 @@ try {
 	const lateRows = await readFaces(late);
 	check(
 		"the late bridge's mining faces read live state",
-		lateRows.survey[0][0] !== "MINING OFF" &&
-			["drill", "anchor", "stance"].every(
-				(name) => lateRows[name][0][0] !== "MINING OFF",
-			) &&
+		lateRows.survey[0][0] === "NO ROCK TARGETED" &&
+			lateRows.drill[0][0] === "STOWED" &&
+			lateRows.anchor[0][0] === "NO FEET GRIPPED" &&
+			lateRows.stance[0][0] === "0/4 FEET GRIPPED" &&
 			lateRows.ore[0][0].startsWith("ORE "),
 		JSON.stringify(lateRows),
 	);
