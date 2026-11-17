@@ -16,6 +16,7 @@
  * below replaces the plate extrusion, the lathe, and the stock cylinder.
  */
 import * as THREE from "three";
+import { cockpitHullRays } from "./cockpit-hull-rays";
 import {
 	AUTHORED_HULL_MODELS,
 	isAuthoredHullModel as isAfterBootHull,
@@ -2885,7 +2886,6 @@ const STRUT_FORWARD = new THREE.Vector3(0, 0, 1);
 
 const COCKPIT_PARTS = /^(feed|anchor-\d|longwall-mount-)/;
 const COCKPIT_GLASS = /glazing|display/;
-const COCKPIT_SAMPLES = 12;
 
 /** What the Longwall's hull hides from an eye in the ship mesh's frame (km). */
 export interface CockpitOcclusion {
@@ -2898,7 +2898,7 @@ export interface CockpitOcclusion {
 /**
  * https://github.com/jcfischer/seelite/issues/920
  * Round 10, F4: whether the hull would hide each mount, strut and the feed from
- * `eyeKm`. A part is seen when a ray from the eye reaches one of its sampled
+ * `eyeKm`. A part is seen when a ray from the eye reaches one of its
  * vertices without meeting the hull (glazing and displays excepted). The six
  * axis hits say how the eye sits in the hull. Measured on the
  * full level as posed now; measurement runs in headless tests only.
@@ -2917,61 +2917,51 @@ export function cockpitOcclusion(
 				if ((o as THREE.Mesh).isMesh && !COCKPIT_GLASS.test(o.name))
 					hull.push(o as THREE.Mesh);
 			});
-	const sides = hull.map((m) => {
-		const list = Array.isArray(m.material) ? m.material : [m.material];
-		const before = list.map((x) => x.side);
-		for (const x of list) x.side = THREE.DoubleSide;
-		return () => list.forEach((x, n) => (x.side = before[n]));
-	});
+	const hullHit = cockpitHullRays(hull);
 	const eye = new THREE.Vector3(eyeKm.x, eyeKm.y, eyeKm.z).applyMatrix4(
 		root.matrixWorld,
 	);
-	const caster = new THREE.Raycaster();
+	const ray = new THREE.Ray();
 	const blocked = (to: THREE.Vector3) => {
 		const d = to.clone().sub(eye);
-		caster.set(eye, d.clone().normalize());
-		caster.far = d.length();
-		return hull.some((m) => caster.intersectObject(m, false).length > 0);
+		ray.set(eye, d.clone().normalize());
+		return hullHit(ray, d.length()) !== null;
 	};
-	try {
-		const axisHit = (x: number, y: number, z: number) => {
-			caster.set(eye, new THREE.Vector3(x, y, z));
-			caster.far = Number.POSITIVE_INFINITY;
-			const hit = caster.intersectObjects(hull, false)[0];
-			return hit ? hit.distance : null;
-		};
-		const value: CockpitOcclusion = {
-			axisHitKm: {
-				starboard: axisHit(1, 0, 0),
-				port: axisHit(-1, 0, 0),
-				up: axisHit(0, 1, 0),
-				down: axisHit(0, -1, 0),
-				aft: axisHit(0, 0, 1),
-				fore: axisHit(0, 0, -1),
-			},
-			parts: parts
-				.filter((p) => COCKPIT_PARTS.test(p.name))
-				.map((p) => {
-					const all: THREE.Vector3[] = [];
-					p.traverse((o) => {
-						const pos = (o as THREE.Mesh).geometry?.attributes?.position;
-						if (!(o as THREE.Mesh).isMesh || !pos) return;
-						for (let n = 0; n < pos.count; n++)
-							all.push(
-								new THREE.Vector3()
-									.fromBufferAttribute(pos, n)
-									.applyMatrix4(o.matrixWorld),
-							);
-					});
-					const step = Math.max(1, Math.floor(all.length / COCKPIT_SAMPLES));
-					const points = all.filter((_, n) => n % step === 0);
-					return { name: p.name, seen: points.some((q) => !blocked(q)) };
-				}),
-		};
-		return value;
-	} finally {
-		for (const put of sides) put();
-	}
+	const axisHit = (x: number, y: number, z: number) => {
+		ray.set(eye, new THREE.Vector3(x, y, z));
+		return hullHit(ray);
+	};
+	const value: CockpitOcclusion = {
+		axisHitKm: {
+			starboard: axisHit(1, 0, 0),
+			port: axisHit(-1, 0, 0),
+			up: axisHit(0, 1, 0),
+			down: axisHit(0, -1, 0),
+			aft: axisHit(0, 0, 1),
+			fore: axisHit(0, 0, -1),
+		},
+		parts: parts
+			.filter((p) => COCKPIT_PARTS.test(p.name))
+			.map((p) => {
+				let seen = false;
+				const tested = new Set<string>();
+				p.traverse((o) => {
+					const pos = (o as THREE.Mesh).geometry?.attributes?.position;
+					if (seen || !(o as THREE.Mesh).isMesh || !pos) return;
+					for (let n = 0; n < pos.count && !seen; n++) {
+						const q = new THREE.Vector3()
+							.fromBufferAttribute(pos, n)
+							.applyMatrix4(o.matrixWorld);
+						const key = q.toArray().join(",");
+						if (tested.has(key)) continue;
+						tested.add(key);
+						seen = !blocked(q);
+					}
+				});
+				return { name: p.name, seen };
+			}),
+	};
+	return value;
 }
 
 /**

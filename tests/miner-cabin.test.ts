@@ -224,6 +224,9 @@ describe("the bridge eye in the production hull", () => {
 			COCKPIT_OCCLUSION.find((r) => r.cabin === "miner" && r.seat === seat);
 		expect(row("pilot")?.eyeKm).toEqual(cockpitEyeKm("miner", "pilot"));
 		expect(row("miner")?.eyeKm).toEqual(cockpitEyeKm("miner", "miner"));
-		expect(cockpitSeenParts(0, "courier", "pilot")).toEqual(["anchor-3-elbow"]);
+		expect(cockpitSeenParts(0, "courier", "pilot")).toEqual([
+			"anchor-2-elbow",
+			"anchor-3-elbow",
+		]);
 	});
 });
