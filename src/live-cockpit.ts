@@ -104,6 +104,17 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> =
 		]),
 	) as Record<LaneRefusal, string>;
 
+/** Why REVIEW QUOTE is disabled, in the pilot's words; null when it is pressable. */
+export function refineryQuoteBlock(
+	view: Pick<RefineryConsole, "saving" | "online" | "ore">,
+): string | null {
+	if (view.saving) return "Saving: the quote returns when the save finishes.";
+	if (!view.online)
+		return "Processing is offline at this refinery: quotes return when it restarts.";
+	if (!view.ore.length) return "No ore is aboard to quote.";
+	return null;
+}
+
 /** A held launch's notice: the reason, then Traffic's estimate when it has
  *  one (#521). Keyed into the value key, so the figure re-renders as it runs
  *  down rather than freezing at the first frame's. */
@@ -1991,7 +2002,6 @@ export class LiveCockpit {
 	}
 
 	private refinery(view: RefineryConsole) {
-		const disabled = view.saving || !view.online;
 		let status = "PROCESSING OFFLINE";
 		if (view.saving) status = "SAVING…";
 		else if (view.online) status = "PROCESSING ONLINE";
@@ -2009,7 +2019,8 @@ export class LiveCockpit {
 		const quoteBody = quote
 			? `<div class="lc-refinery-quote" data-live-refinery-quote><h3>YOUR QUOTE</h3><strong>${escapeHtml(quote.output)}</strong><div class="lc-station-row"><span>INPUT</span><span class="lc-station-cell">${quote.tonnes} t · ${escapeHtml(quote.good)}</span></div><div class="lc-station-row"><span>FEE</span><span class="lc-station-cell" data-live-refinery-fee>${escapeHtml(quote.fee)}</span></div><div class="lc-station-row"><span>QUEUE POSITION</span><span class="lc-station-cell">${quote.position}</span></div><div class="lc-station-row"><span>WORK AHEAD</span><span class="lc-station-cell">${quote.workS}s</span></div>${stale}<button class="lc-station-action" type="button" data-live-refinery-action="submit" ${view.saving || !view.online ? "disabled" : ""}>SUBMIT & PAY</button><p class="lc-refinery-note">Final after saving · no cancellation</p></div>`
 			: `<div class="lc-refinery-quote"><h3>BEFORE YOU COMMIT</h3><p>Your quote shows the output, the fee and the queue-inclusive work ahead.</p><p class="lc-refinery-note">No ore or credits move until you confirm and the save lands.</p></div>`;
-		const submit = `<div class="lc-refinery-columns"><div><label><span>ORE ABOARD</span><select data-live-refinery-good ${view.saving ? "disabled" : ""}>${oreOptions || `<option value="">no ore aboard</option>`}</select></label><label><span>QUANTITY · WHOLE TONNES</span><input type="number" min="1" step="1" value="${view.tonnes}" data-live-refinery-tonnes ${view.saving ? "disabled" : ""}></label><button class="lc-station-action" type="button" data-live-refinery-action="quote" ${disabled || !view.ore.length ? "disabled" : ""}>REVIEW QUOTE</button></div>${quoteBody}</div>`;
+		const reviewReason = refineryQuoteBlock(view);
+		const submit = `<div class="lc-refinery-columns"><div><label><span>ORE ABOARD</span><select data-live-refinery-good ${view.saving ? "disabled" : ""}>${oreOptions || `<option value="">no ore aboard</option>`}</select></label><label><span>QUANTITY · WHOLE TONNES</span><input type="number" min="1" step="1" value="${view.tonnes}" data-live-refinery-tonnes ${view.saving ? "disabled" : ""}></label><button class="lc-station-action" type="button" data-live-refinery-action="quote" ${refineryQuoteBlock(view) ? "disabled" : ""}>REVIEW QUOTE</button>${reviewReason ? `<p class="lc-refinery-note" data-live-refinery-reason>${reviewReason}</p>` : ""}</div>${quoteBody}</div>`;
 		const jobs = view.jobs.length
 			? `<div class="lc-refinery-jobs" data-live-refinery-jobs>${view.jobs
 					.map(
