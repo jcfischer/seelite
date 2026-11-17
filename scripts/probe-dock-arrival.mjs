@@ -800,6 +800,7 @@ const liveConsole = await page.evaluate(async () => {
 			style?.display !== "none" &&
 			(consoleEl?.getBoundingClientRect().width ?? 0) > innerWidth * 0.5,
 		marketRows: document.querySelectorAll("[data-live-market-row]").length,
+		cargoRows: (await import("/src/market.ts")).CARGO_COMMODITIES.length,
 		floorHidden: g.floorRender === null,
 		canvasCovering:
 			box?.left === 0 &&
@@ -816,11 +817,11 @@ check(
 	liveConsole.phase === "docked" &&
 		liveConsole.present &&
 		liveConsole.visible &&
-		liveConsole.marketRows === 17 &&
+		liveConsole.marketRows === liveConsole.cargoRows &&
 		liveConsole.floorHidden &&
 		liveConsole.canvasCovering &&
 		!liveConsole.renderEligible,
-	`phase ${liveConsole.phase}, console=${liveConsole.present}/${liveConsole.visible}, rows=${liveConsole.marketRows}, floor hidden=${liveConsole.floorHidden}, cover=${liveConsole.canvasCovering}, render=${liveConsole.renderEligible}`,
+	`phase ${liveConsole.phase}, console=${liveConsole.present}/${liveConsole.visible}, rows=${liveConsole.marketRows}/${liveConsole.cargoRows}, floor hidden=${liveConsole.floorHidden}, cover=${liveConsole.canvasCovering}, render=${liveConsole.renderEligible}`,
 );
 
 // Commerce uses the live console, not the gallery fixture. A completed round

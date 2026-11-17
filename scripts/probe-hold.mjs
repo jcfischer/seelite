@@ -24,6 +24,7 @@ import {
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { marketInService } from "./lib/market-in-service.mjs";
 
 const origin = process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5343";
 // The screenshots this writes are the node's third tier — a person reads them
@@ -103,6 +104,7 @@ try {
 	// ---------------------------------------------------------------------
 	// Docked, with a consignment aboard and a tonne of the pilot's own.
 	// ---------------------------------------------------------------------
+	await marketInService(page);
 	const station = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const id =

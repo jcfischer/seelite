@@ -1972,7 +1972,7 @@ export class LiveCockpit {
 					capacityLy: stationConsole.fuelCapacityLy,
 				},
 			);
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.stationControl(state.firstDay?.stationLine ?? null)}${this.holdLine(stationConsole.hold)}${stationConsole.serviceNotice ? `<div data-live-service-status>${this.stationMessage(stationConsole.serviceNotice)}</div>` : ""}${this.stationMessage(stationConsole.message)}${body}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${this.commanderLine(stationConsole)}</p></section>`;
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.stationControl(state.firstDay?.stationLine ?? null)}${this.holdLine(stationConsole.hold)}${stationConsole.serviceNotice ? `<p class="lc-station-message" data-live-service-status role="status">${escapeHtml(stationConsole.serviceNotice)}</p>` : ""}${this.stationMessage(stationConsole.message)}${body}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${this.commanderLine(stationConsole)}</p></section>`;
 	}
 
 	/**
