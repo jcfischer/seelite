@@ -52,13 +52,39 @@ and volume laws make worth tens of thousands of tonnes each.
 
 ## Recovery does not change
 
-`RECOVERY_T_PER_H` stays 10. The instrument sweeps it at 0.01, 1, 100 and 1,000
-t/h against the new reserves and every value gives the same 3.53× charted
-refined ratio: with a field of 2.2 million t and a 3,000 t hold, a rock is never
-drained and waited on, so recovery no longer binds. Raising it would make fields
-regenerate as fast as they are mined; lowering it would not restore the old
-scarcity, because the field is large enough that the pilot simply moves on. The
-ratified 10 t/h stays as the slow, field-scale regeneration it was.
+`RECOVERY_T_PER_H` stays 10. The sweep is reproducible:
+
+```bash
+bun scripts/measure-mining-economy.ts --grid docs/candidates/mining-economy-v3-rock-reserves-recovery-grid.json
+```
+
+That grid runs the ratified sustained candidate
+(`docs/candidates/mining-economy-v3-ratification-sustained.json`, Longwall 3/A,
+24 h, six fields per pilot) at 0.01, 1, 100 and 1,000 t/h. The charted refined
+p50 ratio to good trade, with the same candidate at the shipped 10 t/h for
+reference:
+
+| `recoveryTPerH` | Charted refined p50 | Charted refined p10 / p90 | Rocks drained |
+| --- | ---: | ---: | ---: |
+| 0.01 | 3.64 | 2.08 / 6.79 | 80 |
+| 1 | 3.54 | 2.06 / 6.92 | 180 |
+| 10 (shipped) | 3.53 | 2.18 / 7.00 | 157 |
+| 100 | 3.53 | 2.04 / 7.09 | 77 |
+| 1,000 | 3.53 | 2.06 / 6.88 | 41 |
+
+Four orders of magnitude move the p50 by at most 3%, and no charted refined
+sample waits for recovery at any of them (`recoveryWaitS` is 0 in every row).
+The mechanism is visible in the same table: rocks do run dry at every rate
+(41–180 drained rocks across the 24 rows), and the pilot does not wait on them
+because the field holds about 2.2 million t and the hold is 3,000 t — it moves
+to the next rock. Recovery therefore no longer binds the trip. Raising it would
+make fields regenerate as fast as they are mined; lowering it would not restore
+the old scarcity, because the pilot simply moves on. The ratified 10 t/h stays
+as the slow, field-scale regeneration it was.
+
+`tests/mining-comparison.test.ts` runs the same sweep headlessly (four rates
+against the shipped one, on the same candidate file) and asserts the 5% band,
+no recovery wait, and that rocks still drain.
 
 ## The #923 table does not hold, and this is why
 
@@ -93,25 +119,34 @@ its measured returns no longer do.
 
 ## The instrument's small-reserve tests
 
-`scripts/lib/mining-comparison.ts` gains an optional `reserveScale` (default 1,
-the shipped reserves). Eight of its tests exercise depletion, revisits and the
-fee/fuel cash flow, and the shipped reserves no longer reach those states in a
-test-sized clock. They run at `reserveScale: 0.001`; the balance runs above use
-the default 1. The instrument's "production reads the shipped rocks" test still
+`scripts/lib/mining-comparison.ts` takes an instrument-only
+`InstrumentHarness` as `comparison(candidate, harness)`, whose `reserveScale`
+(default 1, the shipped reserves) multiplies every rock's reserve. It is **not**
+a `Candidate` field: `validate` refuses any candidate key it does not name, so a
+candidate file cannot ship a smaller reserve and still validate. Eight tests
+exercise depletion, revisits and the fee/fuel cash flow, and the shipped
+reserves no longer reach those states in a test-sized clock; they pass
+`SMALL_RESERVES = { reserveScale: 0.001 }`. The balance runs above use the
+default 1, and the instrument's "production reads the shipped rocks" test still
 reads scale 1.
 
 ## Evidence
 
 - `tests/rock-reserves.test.ts` (new): the chosen figures; the median charted
   rock at 400 t or more over four seeds; every charted field's median at 400 t or
-  more over three seeds; the largest rock scaling up; a full Longwall hold
-  leaving most of the largest rock; an old-scale debit (150 t surface, 600 t
-  deep) loading through `parseDeposits` and a whole save through `parseSave` and
-  reading as the new reserve minus the debit.
+  more over three seeds; every rock's surface and deep reserve inside the
+  `(r/r1)²` and `(r/r1)³` law bounds (the bounds the law allows for its per-rock
+  draw, not a threshold on one rock); a full Longwall hold leaving most of the
+  largest rock; an old-scale debit (150 t surface, 600 t deep) loading through
+  `parseDeposits` and a whole save through `parseSave` and reading as the new
+  reserve minus the debit.
 - `scripts/probe-rock-reserves.mjs` (new, in the catalog): boots
   `?seed=2&hull=miner&no-save=&raider=off`, reads `rockContents` for all 758
   rocks of the start system's charted field through `window.__seelite`, and
-  asserts the median total is at least 400 t. 4/4 checks passed.
+  asserts the median total is at least 400 t and that every rock's reserve falls
+  inside the area and volume law bounds (758 rocks, 0 violations). 4/4 checks
+  passed.
+- `tests/mining-comparison.test.ts`: 47/47 passed, including the recovery sweep.
 - `scripts/probe-mining-release.mjs`: 21/21 checks passed with the new reserves.
   Its surveyed rock read `SILICATE STD · 38160 T · DEEP 45767 T`, and the
   drill's debit still equalled the skips' gain.
@@ -125,5 +160,29 @@ reads scale 1.
   would dominate the median and break the area and volume laws.
 - `RECOVERY_T_PER_H` stays 10, because the sweep shows it no longer binds and
   raising it would remove depletion entirely.
-- The instrument's `reserveScale` is optional and defaults to the shipped
-  reserves, because the ratified candidate files must keep validating.
+- The instrument's `reserveScale` lives on an `InstrumentHarness` argument
+  rather than on `Candidate`, because a test fixture knob inside the candidate
+  schema would let a ratified input file carry a reserve the game does not ship.
+
+## Review round 1
+
+Four findings were fixed and one nit; none were declined.
+
+- **The test-only reserve scale left the candidate schema.** `reserveScale` is
+  now an `InstrumentHarness` argument to `comparison(candidate, harness)` and is
+  no longer a `Candidate` field or an `OPTIONAL_FIELDS` entry, so a candidate
+  file cannot ship a non-shipped reserve and still validate. The eight tests
+  that need a small-reserve world pass `SMALL_RESERVES`.
+- **One `depositOf` helper, one place to change the reserve.** The `scenario`
+  function wraps `rockContents` + `scaledReserve` once and uses it for the
+  initial deposit map and for every route stop's stock.
+- **The recovery sweep has an artifact.** The grid input is
+  `docs/candidates/mining-economy-v3-rock-reserves-recovery-grid.json`, its
+  numbers are in the table above, and
+  `tests/mining-comparison.test.ts` reproduces the invariance headlessly.
+- **The law check verifies the law.** `scripts/probe-rock-reserves.mjs` and the
+  matching test check every rock's reserve against the bounds `(r/r1)²` and
+  `(r/r1)³` allow for that rock's own draw, instead of asserting a floor on the
+  largest rock's tonnage. The probe reports 758 rocks and 0 violations.
+- **Nit: the magic `0.001`.** It is named `SMALL_RESERVES` once in the test
+  file.

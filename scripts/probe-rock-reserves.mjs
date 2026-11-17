@@ -6,8 +6,9 @@
  * system's charted field through `window.__seelite`: every rock's surface and
  * deep reserve, the field's median total and its largest rock. The principal's
  * ruling of 2026-11-17 makes a few dozen tonnes per asteroid unrealistic; the
- * median rock must hold at least 400 t of minable ore, and the largest must
- * scale up by the unchanged area and volume laws.
+ * median rock must hold at least 400 t of minable ore. Every rock's reserve is
+ * checked against the area and volume laws the reserve scale is read through,
+ * not against a threshold on one rock.
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import {
@@ -47,6 +48,7 @@ try {
 	await bootedGame(page, 120000);
 	const field = await page.evaluate(async () => {
 		const S = await import("/src/rock-survey.ts");
+		const A = await import("/src/asteroid-field.ts");
 		const g = window.__seelite;
 		g.clockHeld = true;
 		const draw = g.fields.find((entry) => entry.plan.profile === "charted");
@@ -59,6 +61,32 @@ try {
 				rock,
 			),
 		);
+		const [, r1] = A.FIELD_PROFILE[draw.plan.profile].rockRadiusKm;
+		const laws = draw.rocks.map((rock, i) => {
+			const size = rock.radiusKm / r1;
+			const surface = S.RESERVE.surfaceAtLargestT * size * size;
+			const deep = S.RESERVE.deepAtLargestT * size ** 3;
+			const surfaceT = contents[i].surfaceT;
+			const deepT = contents[i].deepT;
+			const surfaceInside =
+				surfaceT >=
+					Math.min(S.RESERVE.surfaceMinT, Math.round(surface * 0.5)) &&
+				surfaceT <= Math.max(S.RESERVE.surfaceMinT, Math.round(surface * 1.5));
+			const deepInside =
+				deepT === 0 ||
+				(deepT >= Math.min(S.RESERVE.deepMinT, Math.round(deep * 0.5)) &&
+					deepT <= Math.max(S.RESERVE.deepMinT, Math.round(deep * 1.5)));
+			return {
+				slot: rock.slot,
+				radiusKm: rock.radiusKm,
+				surfaceInside,
+				deepInside,
+			};
+		});
+		const largestIndex = draw.rocks.reduce(
+			(best, rock, i) => (rock.radiusKm > draw.rocks[best].radiusKm ? i : best),
+			0,
+		);
 		return {
 			charted: g.fields.filter((entry) => entry.plan.profile === "charted")
 				.length,
@@ -67,6 +95,14 @@ try {
 			surface: contents.map((entry) => entry.surfaceT),
 			deep: contents.map((entry) => entry.deepT),
 			total: contents.map((entry) => entry.surfaceT + entry.deepT),
+			lawViolations: laws.filter(
+				(rock) => !rock.surfaceInside || !rock.deepInside,
+			),
+			largestRock: {
+				radiusKm: draw.rocks[largestIndex].radiusKm,
+				surfaceT: contents[largestIndex].surfaceT,
+				deepT: contents[largestIndex].deepT,
+			},
 		};
 	});
 	check(
@@ -97,9 +133,13 @@ try {
 			JSON.stringify(summary),
 		);
 		check(
-			"the largest rock scales up by the area and volume laws",
-			summary.largestSurfaceT >= 40000 && summary.largestDeepT >= 100000,
-			JSON.stringify(summary),
+			"every rock's reserve falls inside the area and volume laws",
+			field.lawViolations.length === 0,
+			JSON.stringify({
+				rocks: field.rocks,
+				violations: field.lawViolations.slice(0, 5),
+				largestRock: field.largestRock,
+			}),
 		);
 	}
 } finally {

@@ -9,7 +9,7 @@
  * https://github.com/jcfischer/seelite/issues/1302
  */
 import { describe, expect, test } from "bun:test";
-import { fieldRocks, systemFields } from "../src/asteroid-field";
+import { FIELD_PROFILE, fieldRocks, systemFields } from "../src/asteroid-field";
 import {
 	canonicalDeposits,
 	depositKey,
@@ -82,12 +82,37 @@ describe("the reserve scale (node #1302)", () => {
 		}
 	});
 
-	test("the largest rock scales up by the area and volume laws", () => {
-		const contents = contentsOf(2).map(({ contents }) => contents);
-		const surface = contents.map((c) => c.surfaceT);
-		const deep = contents.map((c) => c.deepT);
-		expect(Math.max(...surface)).toBeGreaterThanOrEqual(40_000);
-		expect(Math.max(...deep)).toBeGreaterThanOrEqual(100_000);
+	test("every rock's reserve falls inside the area and volume laws", () => {
+		const [, r1] = FIELD_PROFILE.charted.rockRadiusKm;
+		const inside = (value: number, law: number, floor: number) =>
+			value >= Math.min(floor, Math.round(law * 0.5)) &&
+			value <= Math.max(floor, Math.round(law * 1.5));
+		const rocks = contentsOf(2);
+		let deep = 0;
+		for (const { rock, contents } of rocks) {
+			const size = rock.radiusKm / r1;
+			expect(
+				inside(
+					contents.surfaceT,
+					RESERVE.surfaceAtLargestT * size * size,
+					RESERVE.surfaceMinT,
+				),
+			).toBe(true);
+			expect(
+				inside(
+					contents.deepT,
+					RESERVE.deepAtLargestT * size ** 3,
+					RESERVE.deepMinT,
+				) || contents.deepT === 0,
+			).toBe(true);
+			deep += Number(contents.deepT > 0);
+		}
+		expect(deep).toBeGreaterThan(0);
+		const largest = rocks.reduce((best, next) =>
+			next.rock.radiusKm > best.rock.radiusKm ? next : best,
+		);
+		expect(largest.contents.surfaceT).toBeGreaterThan(40_000);
+		expect(largest.contents.deepT).toBeGreaterThan(100_000);
 	});
 });
 

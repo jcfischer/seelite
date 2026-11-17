@@ -5,12 +5,14 @@ import {
 	initialCapabilityTime,
 	queryCapabilityTime,
 } from "../src/capability-time";
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 import {
 	candidateDefaults,
 	comparison,
 	grid,
 	type Candidate,
+	type InstrumentHarness,
 	candidateDebit,
 	serviceQueue,
 	makeMiningFit,
@@ -23,6 +25,8 @@ import { worldFor, portsOf, run } from "../scripts/lib/greedy-trader";
 import { recipeFor } from "../scripts/lib/mining-batch";
 import { commodity, listsCommodity } from "../src/market";
 import { ORE_FAMILIES } from "../src/rock-survey";
+
+const SMALL_RESERVES: InstrumentHarness = { reserveScale: 0.001 };
 
 test("candidate recovery retains whole-tonne clock semantics and refuses invalid clocks", () => {
 	for (const t of [0, 3599, 3600, 7200, 36000])
@@ -211,17 +215,19 @@ test("all fifteen buy recipes are visible and refinery history conserves committ
 });
 
 test("exhaustion is visible at zero recovery, with nonzero unsold custody and no finite-output masking", () => {
-	const report = comparison({
-		...candidateDefaults(),
-		seeds: [47],
-		galaxies: [0],
-		systemsPerWorld: 1,
-		hours: 0.5,
-		rockLimit: 10,
-		recoveryTPerH: 0,
-		reserveScale: 0.001,
-		loadouts: [{ hull: "courier", size: 1, grade: "A" }],
-	});
+	const report = comparison(
+		{
+			...candidateDefaults(),
+			seeds: [47],
+			galaxies: [0],
+			systemsPerWorld: 1,
+			hours: 0.5,
+			rockLimit: 10,
+			recoveryTPerH: 0,
+			loadouts: [{ hull: "courier", size: 1, grade: "A" }],
+		},
+		SMALL_RESERVES,
+	);
 	expect(report.rows.some((r) => r.exhaustions > 0)).toBe(true);
 	expect(report.rows.some((r) => r.passiveS > 0)).toBe(true);
 	expect(() =>
@@ -407,8 +413,12 @@ const rulingCandidate = (patch: Partial<Candidate> = {}): Candidate => ({
 	onePass: true,
 	...patch,
 });
-const chartedRow = (c: Candidate, path: string) => {
-	const row = comparison(c).rows.find(
+const chartedRow = (
+	c: Candidate,
+	path: string,
+	harness: InstrumentHarness = {},
+) => {
+	const row = comparison(c, harness).rows.find(
 		(r) => r.path === path && r.profile === "charted",
 	);
 	if (!row) throw new Error(`no charted ${path} row`);
@@ -438,7 +448,7 @@ test("a candidate without the ruled fields keeps the wait-for-full pilot", () =>
 		onePass: _pass,
 		...historical
 	} = rulingCandidate();
-	const row = chartedRow({ ...historical, reserveScale: 0.001 }, "raw");
+	const row = chartedRow(historical, "raw", SMALL_RESERVES);
 	expect(row.trips).toBe(0);
 	expect(row.soldRawG).toBe(0);
 });
@@ -458,8 +468,9 @@ test("the largest share limits surveys and the organic layout supplies more rock
 
 test("a docked pilot collects and sells a fast refinery's whole output through the general hold", () => {
 	const row = chartedRow(
-		rulingCandidate({ serviceSPerT: 0.1, collectS: 5, reserveScale: 0.001 }),
+		rulingCandidate({ serviceSPerT: 0.1, collectS: 5 }),
 		"refine",
+		SMALL_RESERVES,
 	);
 	expect(row.pendingJobs).toBe(0);
 	expect(row.heldRawG).toBe(0);
@@ -645,8 +656,8 @@ test("proportional fees leave a two-refinery pilot the fuel to reach the second 
 			hours: 2,
 			galaxies: [1],
 			systemsPerWorld: 2,
-			reserveScale: 0.001,
 		}),
+		SMALL_RESERVES,
 	).rows.filter((r) => r.path === "refine-parallel");
 	expect(rows.length).toBeGreaterThan(0);
 	for (const row of rows) expect(row.refusedFuel).toBe(0);
@@ -696,8 +707,12 @@ const routeCandidate = (patch: Partial<Candidate> = {}): Candidate => ({
 const approximateCr = (encoded: string) =>
 	Number((signedMoney.parse(encoded) * 1_000_000n) / money.fromNumber(1)) /
 	1_000_000;
-const routeRow = (c: Candidate, path: string) => {
-	const row = comparison(c).rows.find(
+const routeRow = (
+	c: Candidate,
+	path: string,
+	harness: InstrumentHarness = {},
+) => {
+	const row = comparison(c, harness).rows.find(
 		(r) => r.path === path && r.profile === "charted",
 	);
 	if (!row?.route) throw new Error(`no charted ${path} route row`);
@@ -706,20 +721,18 @@ const routeRow = (c: Candidate, path: string) => {
 
 test("a one-field route that never returns earns exactly what one pass earns", () => {
 	const onePass = routeCandidate({
-		reserveScale: 0.001,
 		routeFields: undefined,
 		routeRevisitLoadT: undefined,
 		routeChartedFindS: undefined,
 		routeReferenceHours: undefined,
 	});
 	const route = routeCandidate({
-		reserveScale: 0.001,
 		routeFields: 1,
 		routeRevisitLoadT: 1_000_000,
 	});
 	for (const path of ["raw", "refine"]) {
-		const a = chartedRow(onePass, path);
-		const b = routeRow(route, path);
+		const a = chartedRow(onePass, path, SMALL_RESERVES);
+		const b = routeRow(route, path, SMALL_RESERVES);
 		expect(b.cashDelta).toBe(a.cashDelta);
 		expect(b.activeS).toBeCloseTo(a.activeS, 6);
 		expect(b.inputG).toBe(a.inputG);
@@ -745,10 +758,7 @@ test("a candidate without a route produces the historical paths and no route dat
 });
 
 test("a route names distinct same-profile fields, nearest first, and charges their jumps and fuel", () => {
-	const row = routeRow(
-		routeCandidate({ hours: 4, reserveScale: 0.001 }),
-		"raw",
-	);
+	const row = routeRow(routeCandidate({ hours: 4 }), "raw", SMALL_RESERVES);
 	const names = row.route.fields.map((f) => `${f.system}/${f.field}`);
 	expect(row.route.fields.length).toBeGreaterThan(1);
 	expect(new Set(names).size).toBe(names.length);
@@ -797,9 +807,9 @@ test("depletion carries between passes and a return finds only what recovery res
 				routeRevisitLoadT: 5,
 				recoveryTPerH,
 				hours: 3,
-				reserveScale: 0.001,
 			}),
 			"raw",
+			SMALL_RESERVES,
 		);
 	const none = withRecovery(0);
 	const some = withRecovery(1);
@@ -823,9 +833,9 @@ test("a return skips rocks the pilot's live survey shows are empty or below grad
 			routeFields: 1,
 			routeRevisitLoadT: 5,
 			hours: 3,
-			reserveScale: 0.001,
 		}),
 		"raw",
+		SMALL_RESERVES,
 	);
 	const first = row.route.visits[0];
 	const returned = row.route.visits.filter((v) => v.kind === "restored");
@@ -835,6 +845,39 @@ test("a return skips rocks the pilot's live survey shows are empty or below grad
 	expect(row.surveys).toBe(row.route.rocksSurveyed);
 	expect(row.resurveys).toBe(0);
 }, 30_000);
+
+test("recovery no longer binds the shipped reserves: four orders of magnitude give the same charted refined return", () => {
+	const ratified: Candidate = JSON.parse(
+		readFileSync(
+			"docs/candidates/mining-economy-v3-ratification-sustained.json",
+			"utf8",
+		),
+	);
+	const measure = (recoveryTPerH: number) => {
+		const report = comparison({ ...ratified, recoveryTPerH });
+		const summary = report.summaries["miner/3/A/charted/refine"];
+		if (!summary) throw new Error("no charted refined summary");
+		const rows = report.rows.filter(
+			(r) => r.path === "refine" && r.profile === "charted",
+		);
+		return {
+			ratio: summary.tradeRatio.p50,
+			drainedRocks: rows.reduce((sum, r) => sum + r.exhaustions, 0),
+			waitingRows: rows.filter((r) => (r.route?.recoveryWaitS ?? 0) > 0).length,
+		};
+	};
+	const shipped = measure(RECOVERY_T_PER_H);
+	if (shipped.ratio === null)
+		throw new Error("the shipped rate has no charted refined samples");
+	for (const rate of [0.01, 1, 100, 1000]) {
+		const swept = measure(rate);
+		if (swept.ratio === null)
+			throw new Error(`${rate} t/h has no charted refined samples`);
+		expect(Math.abs(swept.ratio / shipped.ratio - 1)).toBeLessThan(0.05);
+		expect(swept.waitingRows).toBe(0);
+		expect(swept.drainedRocks).toBeGreaterThan(0);
+	}
+}, 120_000);
 
 test("rare fields cost their search on the first visit only", () => {
 	const row = comparison(

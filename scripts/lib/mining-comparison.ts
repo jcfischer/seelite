@@ -133,6 +133,10 @@ export interface Candidate {
 	routeRevisitLoadT?: number;
 	routeChartedFindS?: number;
 	routeReferenceHours?: number;
+}
+
+/** Instrument-only switches for a measurement run: `reserveScale` multiplies every rock's reserve (default 1, the shipped reserves) so a test can reach depletion inside a test-sized clock. A candidate file never carries these; `validate` refuses any field it does not name. */
+export interface InstrumentHarness {
 	reserveScale?: number;
 }
 
@@ -148,7 +152,6 @@ const OPTIONAL_FIELDS = [
 	"routeRevisitLoadT",
 	"routeChartedFindS",
 	"routeReferenceHours",
-	"reserveScale",
 ] as const satisfies readonly (keyof Candidate)[];
 
 const scaledReserve = (
@@ -253,8 +256,6 @@ function validate(c: Candidate) {
 	if (c.collectS !== undefined) valid("collection seconds", c.collectS, 0.01);
 	if (c.feeShareOfProduct !== undefined)
 		valid("fee share", c.feeShareOfProduct, 0, 1);
-	if (c.reserveScale !== undefined)
-		valid("reserve scale", c.reserveScale, 0.0001, 1);
 	if (
 		c.fieldLayout !== undefined &&
 		c.fieldLayout !== "baseline" &&
@@ -660,6 +661,7 @@ interface ScenarioInput {
 	};
 	path: "raw" | "refine" | "buy-refine" | "refine-parallel";
 	buyOre?: { family: OreFamily; grade: OreGrade };
+	reserveScale?: number;
 	other?: Port;
 	route?: {
 		stops: RouteStop[];
@@ -679,6 +681,7 @@ function scenario({
 	trade,
 	path,
 	buyOre,
+	reserveScale,
 	other,
 	route,
 	cache,
@@ -700,12 +703,12 @@ function scenario({
 			"mining comparison: parallel scenario needs a second reachable refinery",
 		);
 	let venue = port;
-	let deposits = rocks.map((rock) =>
+	const depositOf = (seed: number, fieldPlan: FieldPlan, rock: Rock) =>
 		scaledReserve(
-			rockContents(record.seed, plan.slot, plan.profile, rock),
-			c.reserveScale,
-		),
-	);
+			rockContents(seed, fieldPlan.slot, fieldPlan.profile, rock),
+			reserveScale,
+		);
+	let deposits = rocks.map((rock) => depositOf(record.seed, plan, rock));
 	let debits: Debit[] = rocks.map(() => ({ taken: 0, at: 0 }));
 	const worthMining = (deposit: RockContents) =>
 		deposit.deepT > 0 &&
@@ -726,15 +729,7 @@ function scenario({
 			stock = {
 				rocks: chosen,
 				deposits: chosen.map((rock) =>
-					scaledReserve(
-						rockContents(
-							stop.port.record.seed,
-							stop.plan.slot,
-							stop.plan.profile,
-							rock,
-						),
-						c.reserveScale,
-					),
+					depositOf(stop.port.record.seed, stop.plan, rock),
 				),
 			};
 			cache.stocks.set(key, stock);
@@ -1862,11 +1857,19 @@ function routeReporting(
 }
 
 /** Deterministic model predictions, with all candidate inputs distinct from consequences. */
-export function comparison(c: Candidate) {
-	return compare(c, comparisonCache());
+export function comparison(c: Candidate, harness: InstrumentHarness = {}) {
+	return compare(c, comparisonCache(), false, harness);
 }
-function compare(c: Candidate, cache: ComparisonCache, minedOnly = false) {
+function compare(
+	c: Candidate,
+	cache: ComparisonCache,
+	minedOnly = false,
+	harness: InstrumentHarness = {},
+) {
 	validate(c);
+	const reserveScale = harness.reserveScale;
+	if (reserveScale !== undefined)
+		valid("reserve scale", reserveScale, 0.0001, 1);
 	const routed = c.routeFields !== undefined;
 	const rows: ReturnType<typeof scenario>[] = [];
 	const refusedScenarios: {
@@ -1981,6 +1984,7 @@ function compare(c: Candidate, cache: ComparisonCache, minedOnly = false) {
 									elapsedS,
 									trade,
 									path,
+									reserveScale,
 									other: path === "refine-parallel" ? other : undefined,
 									route: routeContext
 										? {
@@ -2025,6 +2029,7 @@ function compare(c: Candidate, cache: ComparisonCache, minedOnly = false) {
 										trade,
 										path: "buy-refine",
 										buyOre: { family, grade },
+										reserveScale,
 										cache,
 									}),
 								);

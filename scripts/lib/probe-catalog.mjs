@@ -128,7 +128,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-rock-reserves.mjs",
-			"Boots seed 2 in the Longwall and reads the start system's charted field: the median rock holds at least 400 t of minable ore, its surface reserve carries the median, and the largest rock scales up by the unchanged area and volume laws.",
+			"Boots seed 2 in the Longwall and reads the start system's charted field: the median rock holds at least 400 t of minable ore, its surface reserve carries the median, and every rock's reserve falls inside the unchanged area and volume laws.",
 			[
 				"rock reserve",
 				"charted field",
