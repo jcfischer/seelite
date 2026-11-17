@@ -1,0 +1,44 @@
+{
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "stats": {
+    "modules": 42,
+    "drawCalls": 1138,
+    "triangles": 1168865,
+    "fps": 119.99206662887413,
+    "geometries": 551
+  },
+  "growth": {
+    "retained": true,
+    "added": [
+      "district-2-1-0"
+    ]
+  },
+  "geometry": {
+    "axes": [
+      [
+        -1,
+        0,
+        2.220446049250313e-16
+      ],
+      [
+        1,
+        0,
+        2.220446049250313e-16
+      ]
+    ],
+    "aperture": [
+      104,
+      104,
+      104,
+      109,
+      109,
+      109,
+      104,
+      104,
+      104
+    ],
+    "scope": "Nine rays through inner slot, not a production collision certification"
+  },
+  "errors": [],
+  "scope": "Isolated viewer only; FPS is display-paced, not production headroom"
+}
