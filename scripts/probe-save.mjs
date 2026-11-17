@@ -32,6 +32,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
+import { marketInService } from "./lib/market-in-service.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -520,8 +521,13 @@ try {
 	// -----------------------------------------------------------------------
 	// The wire is real: a price that changed survives a reload
 	// -----------------------------------------------------------------------
+	const tradeStationId = await page.evaluate(() => {
+		const { stations } = window.__seelite.world.system.contents;
+		return (stations.find((s) => s.spinRpm > 0) ?? stations[0]).id;
+	});
+	await marketInService(page, tradeStationId);
 	const trade = await page.evaluate(
-		async ([targetSeed]) => {
+		async ([targetSeed, stationId]) => {
 			const { migrateEquipment, equipmentNames } = await import(
 				"/src/loadout.ts"
 			);
@@ -534,9 +540,9 @@ try {
 			// business re-flying a cruise leg, so the ship is parked within the
 			// docking computer's reach the way `probe-docking.mjs` parks one, and
 			// the autopilot flies the part that matters.
-			const station =
-				g.world.system.contents.stations.find((s) => s.spinRpm > 0) ??
-				g.world.system.contents.stations[0];
+			const station = g.world.system.contents.stations.find(
+				(s) => s.id === stationId,
+			);
 			const body = g.world.system.byId.get(station.id);
 			const vel = g.stationVelocity(station.id);
 			g.world.ship.pos = {
@@ -624,7 +630,7 @@ try {
 				cargo: g.commanderRecord().state.cargo,
 			};
 		},
-		[SEED],
+		[SEED, tradeStationId],
 	);
 
 	check(

@@ -46,6 +46,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { marketInService } from "./lib/market-in-service.mjs";
 import { warningIsPainted } from "./lib/death-warning-paint.mjs";
 import {
 	installFlightFixtureHooks,
@@ -326,6 +327,7 @@ const FITTED = ["Docking Computer", "Escape Pod"];
  *  launch: the commander a death will restore, at its cost. */
 const dockBuyLaunch = async (p, label) => {
 	await p.waitForFunction(() => !window.__seelite.clockHeld);
+	await marketInService(p);
 	const docked = await p.evaluate(
 		async ({ funds, fitted }) => {
 			const { legacyModule, moduleRow, equipmentNames } = await import(

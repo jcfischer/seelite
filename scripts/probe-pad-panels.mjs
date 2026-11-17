@@ -65,6 +65,7 @@ import {
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { marketInService } from "./lib/market-in-service.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -733,6 +734,7 @@ try {
 					return station.id;
 			return null;
 		});
+		await marketInService(page, stationId);
 		const docked = await page.evaluate(async (id) => {
 			const g = window.__seelite;
 			window.__placeOnAxis(id, g.dockingSnapshot(id).planeKm + 4.5);
