@@ -10,7 +10,8 @@ import {
 	cockpitOcclusion,
 	installLongwallModel,
 } from "../src/ship-mesh";
-import { COCKPIT_FORWARD_KM } from "../src/cockpit-eye";
+import { COCKPIT_FORWARD_KM, cockpitEyeKm } from "../src/cockpit-eye";
+import { poseLongwallDrill } from "../src/drill-pose";
 import { v3 } from "../src/vec3";
 
 const COCKPIT_EYE = v3(0, 0, -COCKPIT_FORWARD_KM);
@@ -39,6 +40,23 @@ function drawn(root: THREE.Object3D) {
 }
 
 const miner = () => buildShipMesh("miner", HULL_SPECS.miner.variant).root;
+
+test("both bridge seats see the unobstructed sections of both deployed upper arms", () => {
+	const root = miner();
+	const cutter = HULL_SPECS.miner.cutter;
+	if (!cutter) throw new Error("the Longwall needs its cutter");
+	poseLongwallDrill(root, cutter, 1);
+	for (const seat of ["pilot", "miner"] as const) {
+		const seen = cockpitOcclusion(root, cockpitEyeKm("miner", seat));
+		for (const arm of [0, 1])
+			for (const section of ["body", "sleeve", "elbow", "lower"])
+				expect(
+					seen.parts.find((p) => p.name === `anchor-${arm}-${section}`),
+				).toEqual({ name: `anchor-${arm}-${section}`, seen: true });
+		for (const arm of [2, 3])
+			expect(seen.parts.find((p) => p.name === `anchor-${arm}-body`)?.seen).toBe(false);
+	}
+}, 60_000);
 
 test("from the cockpit eye the Longwall's hull hides the mounts and drill head", () => {
 	const seen = cockpitOcclusion(miner(), COCKPIT_EYE);
