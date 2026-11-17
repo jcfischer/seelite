@@ -164,15 +164,20 @@ for (const width of [900, 390]) {
 		const rows = [g.commander.loadout.h1, g.commander.loadout.h2].map(
 			moduleRow,
 		);
+		const tracer = g.gunTracer;
 		return {
 			heat: g.condition.heat,
 			expected: rows.reduce((s, r) => s + r.heatPerS, 0) * 0.05,
-			ports: g.gunTracer.firedPorts.length,
+			ports: tracer.firedPorts,
+			pulsePort: tracer.segments.find((s) => s.muzzleIndex === 1)?.from,
+			mountBeams: g.miningBeam?.rays.map((r) => r.muzzleIndex) ?? [],
 		};
 	});
 	check(
-		`${width}: Mining fires alongside Pulse on the same trigger`,
-		Math.abs(mining.heat - mining.expected) < 1e-9 && mining.ports === 2,
+		`${width}: Mining fires alongside Pulse on the same trigger, Pulse from the glass and Mining from its mount`,
+		Math.abs(mining.heat - mining.expected) < 1e-9 &&
+			JSON.stringify(mining.ports) === JSON.stringify([mining.pulsePort]) &&
+			JSON.stringify(mining.mountBeams) === JSON.stringify([0]),
 		JSON.stringify(mining),
 	);
 	await page.close();

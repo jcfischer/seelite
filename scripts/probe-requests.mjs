@@ -23,6 +23,7 @@ import {
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installFakePad, STANDARD_INDEX as B } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { marketInService } from "./lib/market-in-service.mjs";
 
 const origin = process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5343";
 const out = process.env.REQUESTS_EVIDENCE ?? "/tmp/seelite-411-evidence";
@@ -89,6 +90,7 @@ try {
 			g.updateCockpit();
 		});
 
+	await marketInService(page);
 	const station = await dockAt(page);
 	check(
 		"a normal docked Game has Requests beside Market and Equipment",

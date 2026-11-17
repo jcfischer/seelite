@@ -21,6 +21,7 @@ import {
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
+import { marketInService } from "./lib/market-in-service.mjs";
 
 const origin = process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5343";
 const headed = process.env.HEADED === "1";
@@ -106,6 +107,7 @@ try {
 		JSON.stringify(migrated),
 	);
 
+	await marketInService(page);
 	const station = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const id =
@@ -129,11 +131,16 @@ try {
 
 	// The page's own figures: the cap and the sentence built from it.
 	const rule = await page.evaluate(async () => {
-		const { QUANTITY_CAP } = await import("/src/market.ts");
+		const { QUANTITY_CAP, CARGO_COMMODITIES } = await import("/src/market.ts");
 		const { SHELF_MAX_MARK, SHELF_MAX_TITLE } = await import(
 			"/src/station-console.ts"
 		);
-		return { cap: QUANTITY_CAP, mark: SHELF_MAX_MARK, title: SHELF_MAX_TITLE };
+		return {
+			cap: QUANTITY_CAP,
+			mark: SHELF_MAX_MARK,
+			title: SHELF_MAX_TITLE,
+			goods: CARGO_COMMODITIES.length,
+		};
 	});
 
 	/** Every listed row as the glass draws it. */
@@ -194,7 +201,7 @@ try {
 	// ---------------------------------------------------------------------
 	check(
 		"with an empty hold every HELD cell is drawn and blank",
-		rows.length === 17 && rows.every((row) => row.held === ""),
+		rows.length === rule.goods && rows.every((row) => row.held === ""),
 		JSON.stringify(rows.filter((row) => row.held !== "")),
 	);
 	const header = await page
