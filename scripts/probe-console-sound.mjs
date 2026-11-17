@@ -18,6 +18,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { marketInService } from "./lib/market-in-service.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 
 const ORIGIN =
@@ -85,9 +86,10 @@ const clickIn = (page, selector) =>
 		el.click();
 	}, selector);
 
-/** Dock at `__station()`, head forward on its console. */
-const dock = (page) =>
-	page.evaluate(async () => {
+/** Dock at `__station()` with its market in service, head forward on its console. */
+const dock = async (page) => {
+	await marketInService(page, await page.evaluate(() => window.__station()));
+	return page.evaluate(async () => {
 		const g = window.__seelite;
 		const id = window.__station();
 		await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
@@ -95,6 +97,7 @@ const dock = (page) =>
 		g.updateCockpit();
 		return g.dock.phase;
 	});
+};
 
 /** Ask `__station()` for clearance twice from its aperture axis. A page of its
  *  own: a grant reserves the berth `dock` parks in. */

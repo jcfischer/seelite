@@ -1123,6 +1123,11 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-refinery-quote.mjs",
+			"Boots the Longwall, docks at a refinery through a real clearance with ore aboard, and checks REVIEW QUOTE is enabled with no reason shown and that pressing it shows the quote.",
+			["refinery", "quote", "clearance dock", "disabled reason"],
+		),
+		entry(
 			"probe-refinery-collection.mjs",
 			"At a generated refinery, finishes an 8 t job on an advanced clock, collects partially into a short hold, reloads, collects the rest and sells it at the market.",
 			[
