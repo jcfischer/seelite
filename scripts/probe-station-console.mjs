@@ -174,6 +174,9 @@ await page.goto(workbenchUrl(ORIGIN, { seed: 42, "hud-gallery": "docked" }), {
 	waitUntil: "load",
 });
 await page.waitForSelector("#state-gallery");
+const CARGO_ROWS = await page.evaluate(
+	async () => (await import("/src/market.ts")).CARGO_COMMODITIES.length,
+);
 
 // --- Obligation 11 - M4's negative, asserted inside an arrival we start ----
 await page.waitForSelector("[data-gallery-station-console]", {
@@ -214,14 +217,14 @@ check(
 	`floor ${docked.floor}, scanner ${docked.scanner}, director ${docked.director}`,
 );
 
-// --- Obligation 2 — seventeen rows, priced iff the station lists the good ---
+// --- Obligation 2 — one row per cargo good, priced iff the station lists it ---
 for (const station of ["trade", "fence", "yard"]) {
 	await page.locator(`[data-gallery-station="${station}"]`).click();
 	const measured = await page.evaluate(measureConsole);
 	check(
-		`2: ${station} shows seventeen commodity rows`,
-		measured.activeStation === station && measured.rows.length === 17,
-		`${measured.rows.length} rows at ${measured.activeStation}`,
+		`2: ${station} shows one row per cargo commodity`,
+		measured.activeStation === station && measured.rows.length === CARGO_ROWS,
+		`${measured.rows.length}/${CARGO_ROWS} rows at ${measured.activeStation}`,
 	);
 	const marked = measured.rows.filter((row) => row.illegal).map((r) => r.name);
 	check(
@@ -232,7 +235,7 @@ for (const station of ["trade", "fence", "yard"]) {
 	);
 	// The biconditional §8.6 asks for, and not the constant fourteen: a row is
 	// priced exactly when the station lists it, which away from a fence is every
-	// legal good and at one is all seventeen.
+	// legal good and at one is every good.
 	const expectListed = (row) => !row.illegal || station === "fence";
 	check(
 		`2: ${station} prices a row iff the station lists the good`,
@@ -357,9 +360,9 @@ for (const [when, measured] of [
 	check(
 		`12: ${when} the roll, there is a market tab to find nothing on`,
 		measured.consolePresent &&
-			measured.rows.length === 17 &&
+			measured.rows.length === CARGO_ROWS &&
 			measured.consoleText.includes("Food"),
-		`${measured.rows.length} rows, ${measured.consoleText.length} chars`,
+		`${measured.rows.length}/${CARGO_ROWS} rows, ${measured.consoleText.length} chars`,
 	);
 	const text = measured.consoleText.toLowerCase();
 	const hit = COUNTDOWN_WORDS.find((word) => text.includes(word));
@@ -495,7 +498,7 @@ check(
 
 // --- §6's responsive rule, for the state §7's inventory never had ---------
 // Back to Market first: obligation 7 left the Equipment tab up, and the media
-// query this measures is `.sg-market-row`'s seventeen-row grid.
+// query this measures is `.sg-market-row`'s one-row-per-good grid.
 await page.locator('[data-gallery-console-tab="Market"]').click();
 await page.setViewportSize({ width: 390, height: 844 });
 const narrow = await page.evaluate(measureConsole);
@@ -517,13 +520,13 @@ await page.locator('[data-gallery-look="forward"]').click();
 
 check(
 	"narrow: the market grid is what is measured, not the equipment list",
-	narrow.activeTab === "Market" && narrow.rows.length === 17,
-	`${narrow.activeTab}, ${narrow.rows.length} rows`,
+	narrow.activeTab === "Market" && narrow.rows.length === CARGO_ROWS,
+	`${narrow.activeTab}, ${narrow.rows.length}/${CARGO_ROWS} rows`,
 );
 check(
 	"narrow: the console fits the cockpit shell and never scrolls the page sideways",
 	// Inside the cockpit rather than inside the viewport: the gallery page
-	// scrolls vertically by design, and a seventeen-row table on a 390 px
+	// scrolls vertically by design, and a full market table on a 390 px
 	// screen is meant to scroll *itself*. Sideways is the one that is always a
 	// defect.
 	narrow.consoleVisible &&

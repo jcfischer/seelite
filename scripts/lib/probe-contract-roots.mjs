@@ -53,6 +53,11 @@ const OWNERS = Object.freeze({
 		"src/live-cockpit.ts",
 		"src/station-console.ts",
 	],
+	"probe-refinery-quote.mjs": [
+		"scripts/probe-refinery-quote.mjs",
+		"src/live-cockpit.ts",
+		"src/station-console.ts",
+	],
 	"probe-refinery-collection.mjs": [
 		"scripts/probe-refinery-collection.mjs",
 		"scripts/lib/commander-fixture.ts",
