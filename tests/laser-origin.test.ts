@@ -14,7 +14,7 @@ import {
 	SHOT_SOUND_GAP_S,
 } from "../src/gun-feedback";
 import { ndcToPx } from "../src/hud";
-import { HULL_IDS, HULL_SPECS } from "../src/hull";
+import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
 import { glassTracerIndices } from "../src/laser-modules";
 import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import { stockLoadout } from "../src/loadout";
@@ -58,6 +58,11 @@ const framePoint = (p: THREE.Vector3, camera: THREE.PerspectiveCamera) => {
 	return { x: (ndc.x + 1) / 2, y: (1 - ndc.y) / 2 };
 };
 
+const pulseOnlyLoadout = (hull: HullId) => {
+	const { h2: _mining, ...rest } = stockLoadout(hull);
+	return hull === "miner" ? rest : stockLoadout(hull);
+};
+
 for (const hull of HULL_IDS) {
 	for (const view of ["cockpit", "chase"] as const) {
 		describe(`${hull} ${view}: physical laser origins`, () => {
@@ -89,7 +94,7 @@ for (const hull of HULL_IDS) {
 						flownHull: hull,
 						orientation: rotation,
 						world: { ship: { pos: position }, gameTime: 0 },
-						commander: { loadout: stockLoadout(hull) },
+						commander: { loadout: pulseOnlyLoadout(hull) },
 						firedMuzzleIndices: selected,
 						cockpitStrokes: [],
 						gunFeedback: { tracerLeftS: 0.08 },
