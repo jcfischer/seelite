@@ -14,6 +14,7 @@ import {
 } from "../src/loadout";
 import { marketStationOf } from "../src/market";
 import { npcLoadout } from "../src/npc-loadout";
+import { withoutStockMiningLaser } from "./helpers/bare-loadout";
 import {
 	firedExtraction,
 	prototypeMiningLaserSlot,
@@ -45,12 +46,15 @@ test("the miner has h1 and the size-3 mount slots h2 and h3, and no other slot m
 test("NPC and Traffic miners fly the stock fit: the Mining Laser in the first mount (node #1300)", () => {
 	for (let seed = 1; seed < 60; seed++) {
 		const fit = npcLoadout("miner", seed);
-		expect(Object.keys(fit).filter((k) => /^h\d$/.test(k))).toEqual(["h1", "h2"]);
+		expect(Object.keys(fit).filter((k) => /^h\d$/.test(k))).toEqual([
+			"h1",
+			"h2",
+		]);
 		expect(fit).toEqual(stockLoadout("miner"));
 	}
 });
 
-test("a new miner game under the flag fits the Mining Laser in h2 at size 3 and keeps the Pulse Laser in h1", () => {
+test("a new miner game fits the Mining Laser in h2 at size 3 and keeps the Pulse Laser in h1", () => {
 	const stock = stockLoadout("miner");
 	expect(stock.h1).toEqual(makeModule("pulse-laser", 3));
 	expect(stock.h2).toEqual(makeModule("mining-laser", 3));
@@ -79,7 +83,7 @@ const buyAt = (type: "refinery" | "shipyard", loadout: Loadout) =>
 	});
 
 test("the first Mining Laser bought at a refinery goes to h2 at size 3, and the Pulse Laser stays (D-D7, D-D18)", () => {
-	const { h2: _fitted, ...bare } = stockLoadout("miner");
+	const bare = withoutStockMiningLaser(stockLoadout("miner"));
 	const out = buyAt("refinery", bare);
 	if (!out.accepted) throw new Error(out.reason);
 	expect(out.commander.loadout.h1).toEqual(makeModule("pulse-laser", 3));

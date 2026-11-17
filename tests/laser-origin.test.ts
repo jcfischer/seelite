@@ -58,11 +58,6 @@ const framePoint = (p: THREE.Vector3, camera: THREE.PerspectiveCamera) => {
 	return { x: (ndc.x + 1) / 2, y: (1 - ndc.y) / 2 };
 };
 
-const pulseOnlyLoadout = (hull: HullId) => {
-	const { h2: _mining, ...rest } = stockLoadout(hull);
-	return hull === "miner" ? rest : stockLoadout(hull);
-};
-
 for (const hull of HULL_IDS) {
 	for (const view of ["cockpit", "chase"] as const) {
 		describe(`${hull} ${view}: physical laser origins`, () => {
@@ -94,7 +89,7 @@ for (const hull of HULL_IDS) {
 						flownHull: hull,
 						orientation: rotation,
 						world: { ship: { pos: position }, gameTime: 0 },
-						commander: { loadout: pulseOnlyLoadout(hull) },
+						commander: { loadout: stockLoadout(hull) },
 						firedMuzzleIndices: selected,
 						cockpitStrokes: [],
 						gunFeedback: { tracerLeftS: 0.08 },
@@ -116,11 +111,14 @@ for (const hull of HULL_IDS) {
 					});
 					if (view === "cockpit") subject.drawCockpitBeams(camera.position);
 					else drawn = subject.playerBeamPx(1, 1);
-					expect(drawn).toHaveLength(selected.length);
+					const glass = glassTracerIndices(hull, stockLoadout(hull), selected);
+					if (hull === "miner")
+						expect(glass).toEqual(selected.filter((i) => i !== 1));
+					expect(drawn).toHaveLength(glass.length);
 					expect(subject.gunTracer.firedPorts).toEqual(
 						drawn.map((beam) => beam.from),
 					);
-					selected.forEach((index, beam) => {
+					glass.forEach((index, beam) => {
 						const mount = mounts[index];
 						const from = new THREE.Vector3(mount.x, mount.y, mount.z);
 						const to = from

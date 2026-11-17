@@ -6,6 +6,7 @@ import { moduleGate } from "../src/module-stock";
 import { parseModule, carriedModule, transferLoadout } from "../src/loadout";
 import { outfittingScreen, fitReadout } from "../src/outfitting";
 import { makeModule, moduleRow } from "../src/loadout";
+import { withoutStockMiningLaser } from "./helpers/bare-loadout";
 import { marketStationOf } from "../src/market";
 import {
 	commanderHold,
@@ -221,7 +222,7 @@ test("the live Equipment preview prints extraction", async () => {
 	const { outfittingBody } = await import("../src/outfitting-view");
 	const i = input();
 	const fresh = newCommander("miner");
-	const { h2: _fitted, ...bareLoadout } = fresh.loadout;
+	const bareLoadout = withoutStockMiningLaser(fresh.loadout);
 	i.commander = {
 		...fresh,
 		loadout: bareLoadout,
