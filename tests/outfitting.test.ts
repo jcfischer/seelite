@@ -220,8 +220,11 @@ test("the equipment readout prices the fitted weapon, not a carried upgrade", ()
 test("the live Equipment preview prints extraction", async () => {
 	const { outfittingBody } = await import("../src/outfitting-view");
 	const i = input();
+	const fresh = newCommander("miner");
+	const { h2: _fitted, ...bareLoadout } = fresh.loadout;
 	i.commander = {
-		...newCommander("miner"),
+		...fresh,
+		loadout: bareLoadout,
 		recoveredFittings: [carriedModule(makeModule("mining-laser", 3, "A"))],
 	};
 	const screen = outfittingScreen(i, "h2", "hold:0");
