@@ -219,6 +219,7 @@ test("exhaustion is visible at zero recovery, with nonzero unsold custody and no
 		hours: 0.5,
 		rockLimit: 10,
 		recoveryTPerH: 0,
+		reserveScale: 0.001,
 		loadouts: [{ hull: "courier", size: 1, grade: "A" }],
 	});
 	expect(report.rows.some((r) => r.exhaustions > 0)).toBe(true);
@@ -437,7 +438,7 @@ test("a candidate without the ruled fields keeps the wait-for-full pilot", () =>
 		onePass: _pass,
 		...historical
 	} = rulingCandidate();
-	const row = chartedRow(historical, "raw");
+	const row = chartedRow({ ...historical, reserveScale: 0.001 }, "raw");
 	expect(row.trips).toBe(0);
 	expect(row.soldRawG).toBe(0);
 });
@@ -457,7 +458,7 @@ test("the largest share limits surveys and the organic layout supplies more rock
 
 test("a docked pilot collects and sells a fast refinery's whole output through the general hold", () => {
 	const row = chartedRow(
-		rulingCandidate({ serviceSPerT: 0.1, collectS: 5 }),
+		rulingCandidate({ serviceSPerT: 0.1, collectS: 5, reserveScale: 0.001 }),
 		"refine",
 	);
 	expect(row.pendingJobs).toBe(0);
@@ -644,6 +645,7 @@ test("proportional fees leave a two-refinery pilot the fuel to reach the second 
 			hours: 2,
 			galaxies: [1],
 			systemsPerWorld: 2,
+			reserveScale: 0.001,
 		}),
 	).rows.filter((r) => r.path === "refine-parallel");
 	expect(rows.length).toBeGreaterThan(0);
@@ -704,12 +706,14 @@ const routeRow = (c: Candidate, path: string) => {
 
 test("a one-field route that never returns earns exactly what one pass earns", () => {
 	const onePass = routeCandidate({
+		reserveScale: 0.001,
 		routeFields: undefined,
 		routeRevisitLoadT: undefined,
 		routeChartedFindS: undefined,
 		routeReferenceHours: undefined,
 	});
 	const route = routeCandidate({
+		reserveScale: 0.001,
 		routeFields: 1,
 		routeRevisitLoadT: 1_000_000,
 	});
@@ -741,7 +745,10 @@ test("a candidate without a route produces the historical paths and no route dat
 });
 
 test("a route names distinct same-profile fields, nearest first, and charges their jumps and fuel", () => {
-	const row = routeRow(routeCandidate({ hours: 4 }), "raw");
+	const row = routeRow(
+		routeCandidate({ hours: 4, reserveScale: 0.001 }),
+		"raw",
+	);
 	const names = row.route.fields.map((f) => `${f.system}/${f.field}`);
 	expect(row.route.fields.length).toBeGreaterThan(1);
 	expect(new Set(names).size).toBe(names.length);
@@ -790,6 +797,7 @@ test("depletion carries between passes and a return finds only what recovery res
 				routeRevisitLoadT: 5,
 				recoveryTPerH,
 				hours: 3,
+				reserveScale: 0.001,
 			}),
 			"raw",
 		);
@@ -815,6 +823,7 @@ test("a return skips rocks the pilot's live survey shows are empty or below grad
 			routeFields: 1,
 			routeRevisitLoadT: 5,
 			hours: 3,
+			reserveScale: 0.001,
 		}),
 		"raw",
 	);

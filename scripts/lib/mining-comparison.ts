@@ -133,6 +133,7 @@ export interface Candidate {
 	routeRevisitLoadT?: number;
 	routeChartedFindS?: number;
 	routeReferenceHours?: number;
+	reserveScale?: number;
 }
 
 const OPTIONAL_FIELDS = [
@@ -147,7 +148,23 @@ const OPTIONAL_FIELDS = [
 	"routeRevisitLoadT",
 	"routeChartedFindS",
 	"routeReferenceHours",
+	"reserveScale",
 ] as const satisfies readonly (keyof Candidate)[];
+
+const scaledReserve = (
+	contents: RockContents,
+	scale: number | undefined,
+): RockContents =>
+	scale === undefined || scale === 1
+		? contents
+		: {
+				...contents,
+				surfaceT: Math.max(1, Math.round(contents.surfaceT * scale)),
+				deepT:
+					contents.deepT === 0
+						? 0
+						: Math.max(1, Math.round(contents.deepT * scale)),
+			};
 
 /** Unratified design inputs authorized by https://github.com/jcfischer/seelite/issues/922 */
 export function candidateDefaults(): Candidate {
@@ -236,6 +253,8 @@ function validate(c: Candidate) {
 	if (c.collectS !== undefined) valid("collection seconds", c.collectS, 0.01);
 	if (c.feeShareOfProduct !== undefined)
 		valid("fee share", c.feeShareOfProduct, 0, 1);
+	if (c.reserveScale !== undefined)
+		valid("reserve scale", c.reserveScale, 0.0001, 1);
 	if (
 		c.fieldLayout !== undefined &&
 		c.fieldLayout !== "baseline" &&
@@ -682,7 +701,10 @@ function scenario({
 		);
 	let venue = port;
 	let deposits = rocks.map((rock) =>
-		rockContents(record.seed, plan.slot, plan.profile, rock),
+		scaledReserve(
+			rockContents(record.seed, plan.slot, plan.profile, rock),
+			c.reserveScale,
+		),
 	);
 	let debits: Debit[] = rocks.map(() => ({ taken: 0, at: 0 }));
 	const worthMining = (deposit: RockContents) =>
@@ -704,11 +726,14 @@ function scenario({
 			stock = {
 				rocks: chosen,
 				deposits: chosen.map((rock) =>
-					rockContents(
-						stop.port.record.seed,
-						stop.plan.slot,
-						stop.plan.profile,
-						rock,
+					scaledReserve(
+						rockContents(
+							stop.port.record.seed,
+							stop.plan.slot,
+							stop.plan.profile,
+							rock,
+						),
+						c.reserveScale,
 					),
 				),
 			};
