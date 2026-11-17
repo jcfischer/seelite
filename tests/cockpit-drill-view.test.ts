@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
-import type * as THREE from "three";
+import * as THREE from "three";
+import { cockpitHullRays } from "../src/cockpit-hull-rays";
+import { COCKPIT_OCCLUSION } from "../src/cockpit-occlusion-table";
 import { installShippedLongwall } from "../scripts/lib/install-longwall";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import { HULL_SPECS } from "../src/hull";
@@ -23,6 +25,91 @@ beforeAll(async () => {
 	await MeshoptSimplifier.ready;
 	installLongwallModel(scene, { posableStruts: true });
 }, 60_000);
+
+test("the authored hull agrees with independent double-sided rays for every measured eye and pose", () => {
+	const root = miner();
+	const cutter = HULL_SPECS.miner.cutter;
+	if (!cutter) throw new Error("the Longwall needs its cutter");
+	root.updateMatrixWorld(true);
+	const full = root.getObjectByName("longwall-exterior");
+	if (!full) throw new Error("the Longwall needs its exterior");
+	const hull: THREE.Mesh[] = [];
+	full.getObjectByName("hull")?.traverse((o) => {
+		if ((o as THREE.Mesh).isMesh && !/glazing|display/.test(o.name))
+			hull.push(o as THREE.Mesh);
+	});
+	const sides = new Map<THREE.Material, THREE.Side>();
+	for (const mesh of hull)
+		for (const material of Array.isArray(mesh.material)
+			? mesh.material
+			: [mesh.material]) {
+			if (!sides.has(material)) sides.set(material, material.side);
+			material.side = THREE.DoubleSide;
+		}
+	const hit = cockpitHullRays(hull);
+	const caster = new THREE.Raycaster();
+	try {
+		for (const row of COCKPIT_OCCLUSION)
+			for (const pose of row.poses) {
+				if (row.cabin === "miner")
+					for (const arm of [2, 3])
+						expect(pose.seen).not.toContain(`anchor-${arm}-body`);
+				poseLongwallDrill(root, cutter, pose.extension);
+				root.updateMatrixWorld(true);
+				const eye = new THREE.Vector3(row.eyeKm.x, row.eyeKm.y, row.eyeKm.z);
+				for (const part of full.children[0].children.filter((p) =>
+					PARTS.test(p.name),
+				)) {
+					const points: THREE.Vector3[] = [];
+					const coordinates = new Set<string>();
+					part.traverse((o) => {
+						const pos = (o as THREE.Mesh).geometry?.attributes.position;
+						if (!pos) return;
+						for (let n = 0; n < pos.count; n++) {
+							const point = new THREE.Vector3()
+								.fromBufferAttribute(pos, n)
+								.applyMatrix4(o.matrixWorld);
+							const key = point.toArray().join();
+							if (!coordinates.has(key)) points.push(point);
+							coordinates.add(key);
+						}
+					});
+					const aim = (point: THREE.Vector3) => {
+						const delta = point.clone().sub(eye);
+						caster.set(eye, delta.clone().normalize());
+						caster.far = delta.length();
+					};
+					let witness: THREE.Vector3 | undefined;
+					if (pose.seen.includes(part.name)) {
+						witness = points.find((point) => {
+							aim(point);
+							return hit(caster.ray, caster.far) === null;
+						});
+						expect(witness).toBeDefined();
+					}
+					const samples = [
+						points[0],
+						points[Math.floor(points.length / 2)],
+						points.at(-1),
+						witness,
+					];
+					for (const point of samples) {
+						if (!point) continue;
+						aim(point);
+						const measured = hit(caster.ray, caster.far);
+						const reference =
+							caster.intersectObjects(hull, false)[0]?.distance ?? null;
+						if (reference === null) {
+							expect(measured).toBeNull();
+							expect(pose.seen).toContain(part.name);
+						} else expect(measured).toBeCloseTo(reference, 10);
+					}
+				}
+			}
+	} finally {
+		for (const [material, side] of sides) material.side = side;
+	}
+}, 300_000);
 afterAll(async () => {
 	await installShippedLongwall();
 });
@@ -54,7 +141,9 @@ test("both bridge seats see the unobstructed sections of both deployed upper arm
 					seen.parts.find((p) => p.name === `anchor-${arm}-${section}`),
 				).toEqual({ name: `anchor-${arm}-${section}`, seen: true });
 		for (const arm of [2, 3])
-			expect(seen.parts.find((p) => p.name === `anchor-${arm}-body`)?.seen).toBe(false);
+			expect(
+				seen.parts.find((p) => p.name === `anchor-${arm}-body`)?.seen,
+			).toBe(false);
 	}
 }, 60_000);
 

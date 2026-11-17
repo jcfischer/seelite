@@ -1,6 +1,7 @@
 // A default-layout probe (#381 D11): 5 swaps seats, B cycles, 4 anchors. The Longwall's own cabin by flown hull, https://github.com/jcfischer/seelite/issues/1198
 import { mkdir } from "node:fs/promises";
 import { gameUrl } from "./lib/game-url.mjs";
+import { cockpitArmPixels } from "./lib/cockpit-arm-probe.mjs";
 import { deployDrill, placeAtRockFace } from "./lib/miner-bridge-fixture.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import {
@@ -16,7 +17,7 @@ const origin = await guardedOrigin(
 );
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
-const shots = "probe-shots/miner-cockpit";
+const shots = process.env.PROBE_SHOTS ?? "probe-shots/miner-cockpit";
 await mkdir(shots, { recursive: true });
 const CABIN_GLB = /miner-cockpit[^/]*\.glb/;
 const FIXTURE = {
@@ -164,6 +165,33 @@ const installDrillCamReader = (page) =>
 const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-7;
 
 try {
+	const arms = await open({ seed: 2, system: false, hull: "miner" });
+	const groups = await arms.evaluate(() => {
+		const g = window.__seelite;
+		g.clockHeld = true;
+		return g.fireGroups.map((group) => group.label);
+	});
+	await deployDrill(arms, groups);
+	for (const seat of ["pilot", "miner"]) {
+		const pixels = await cockpitArmPixels(arms, seat);
+		check(
+			`${seat} seat draws both side arms in the table and at their projected pixels`,
+			pixels.extension === 1 &&
+				pixels.arms.every(
+					(arm) =>
+						["body", "sleeve", "elbow", "lower"].every(
+							(section) =>
+								pixels.seen.includes(`anchor-${arm.arm}-${section}`) &&
+								arm.shown.includes(`anchor-${arm.arm}-${section}`),
+						) &&
+						arm.changed > 100 &&
+						arm.missing === 0,
+				),
+			JSON.stringify(pixels),
+		);
+		await arms.screenshot({ path: `${shots}/far-arm-${seat}.png` });
+	}
+	await arms.close();
 	const page = await open({ hull: "miner" });
 	await installDrillCamReader(page);
 	const bridge = await cabinFacts(page);
