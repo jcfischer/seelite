@@ -12,7 +12,7 @@
  * full one. A wrong refusal wastes a minute; a wrong pass ships.
  */
 import { expect, test, describe } from "bun:test";
-import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
+import { CI_PROBE_CONCURRENCY, LOCAL_PROBE_CONCURRENCY, parseArgs, probeConcurrency, resolveOnly } from "../scripts/lib/probe-args.mjs";
 
 const ALL = ["probe-alpha.mjs", "probe-beta.mjs", "probe-cost.mjs"];
 /** `probe-cost` stands in for the report-only probes, whose exit is not a verdict. */
@@ -250,5 +250,25 @@ describe("watching a run", () => {
 		// A bare `--log` has no path; the runner refuses the empty string.
 		expect(parseArgs(["--log", "--show-output"]).log).toBe("");
 		expect(resolve(["--log", "x.log"]).refusal).toBeUndefined();
+	});
+});
+
+describe("how many probes run at once", () => {
+	test("a local run takes two at a time", () => {
+		expect(LOCAL_PROBE_CONCURRENCY).toBe(2);
+		expect(probeConcurrency({})).toBe(2);
+		expect(probeConcurrency({ CI: "false" })).toBe(2);
+	});
+	test("CI keeps four", () => {
+		expect(CI_PROBE_CONCURRENCY).toBe(4);
+		expect(probeConcurrency({ CI: "true" })).toBe(4);
+	});
+	test("PROBE_CONCURRENCY wins either way", () => {
+		expect(probeConcurrency({ PROBE_CONCURRENCY: "1" })).toBe(1);
+		expect(probeConcurrency({ PROBE_CONCURRENCY: "6", CI: "true" })).toBe(6);
+	});
+	test("a nonsense value runs serially rather than not at all", () => {
+		expect(probeConcurrency({ PROBE_CONCURRENCY: "0" })).toBe(1);
+		expect(probeConcurrency({ PROBE_CONCURRENCY: "lots" })).toBe(1);
 	});
 });
