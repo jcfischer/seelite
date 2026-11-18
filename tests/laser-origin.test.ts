@@ -14,7 +14,7 @@ import {
 	SHOT_SOUND_GAP_S,
 } from "../src/gun-feedback";
 import { ndcToPx } from "../src/hud";
-import { HULL_IDS, HULL_SPECS } from "../src/hull";
+import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
 import { glassTracerIndices } from "../src/laser-modules";
 import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import { stockLoadout } from "../src/loadout";
@@ -111,11 +111,14 @@ for (const hull of HULL_IDS) {
 					});
 					if (view === "cockpit") subject.drawCockpitBeams(camera.position);
 					else drawn = subject.playerBeamPx(1, 1);
-					expect(drawn).toHaveLength(selected.length);
+					const glass = glassTracerIndices(hull, stockLoadout(hull), selected);
+					if (hull === "miner")
+						expect(glass).toEqual(selected.filter((i) => i !== 1));
+					expect(drawn).toHaveLength(glass.length);
 					expect(subject.gunTracer.firedPorts).toEqual(
 						drawn.map((beam) => beam.from),
 					);
-					selected.forEach((index, beam) => {
+					glass.forEach((index, beam) => {
 						const mount = mounts[index];
 						const from = new THREE.Vector3(mount.x, mount.y, mount.z);
 						const to = from

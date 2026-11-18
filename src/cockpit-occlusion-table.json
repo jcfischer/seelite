@@ -10,7 +10,7 @@
 		"poses": [
 			{
 				"extension": 0,
-				"seen": ["anchor-3-elbow"]
+				"seen": ["anchor-2-elbow", "anchor-3-elbow"]
 			},
 			{
 				"extension": 0.25,
@@ -50,13 +50,20 @@
 		"poses": [
 			{
 				"extension": 0,
-				"seen": ["anchor-1-body", "longwall-mount-port"]
+				"seen": [
+					"anchor-0-body",
+					"anchor-1-body",
+					"anchor-1-elbow",
+					"longwall-mount-port"
+				]
 			},
 			{
 				"extension": 0.25,
 				"seen": [
+					"anchor-0-elbow",
 					"anchor-1-body",
 					"anchor-1-elbow",
+					"anchor-1-lower",
 					"anchor-1-sleeve",
 					"longwall-mount-port"
 				]
@@ -70,6 +77,8 @@
 					"anchor-0-sleeve",
 					"anchor-1-body",
 					"anchor-1-elbow",
+					"anchor-1-foot",
+					"anchor-1-lower",
 					"longwall-mount-port"
 				]
 			},
@@ -78,9 +87,12 @@
 				"seen": [
 					"anchor-0-body",
 					"anchor-0-elbow",
+					"anchor-0-foot",
+					"anchor-0-lower",
 					"anchor-0-sleeve",
 					"anchor-1-body",
 					"anchor-1-elbow",
+					"anchor-1-foot",
 					"anchor-1-lower",
 					"anchor-1-sleeve",
 					"longwall-mount-port"
@@ -90,10 +102,15 @@
 				"extension": 1,
 				"seen": [
 					"anchor-0-body",
+					"anchor-0-elbow",
+					"anchor-0-foot",
+					"anchor-0-lower",
 					"anchor-0-sleeve",
 					"anchor-1-body",
 					"anchor-1-elbow",
+					"anchor-1-foot",
 					"anchor-1-lower",
+					"anchor-1-lower-rod",
 					"anchor-1-sleeve",
 					"longwall-mount-port"
 				]
@@ -111,7 +128,7 @@
 		"poses": [
 			{
 				"extension": 0,
-				"seen": ["longwall-mount-starboard"]
+				"seen": ["anchor-0-body", "anchor-0-elbow", "longwall-mount-starboard"]
 			},
 			{
 				"extension": 0.25,
@@ -120,6 +137,7 @@
 					"anchor-0-elbow",
 					"anchor-0-lower",
 					"anchor-0-sleeve",
+					"anchor-1-elbow",
 					"longwall-mount-starboard"
 				]
 			},
@@ -128,9 +146,12 @@
 				"seen": [
 					"anchor-0-body",
 					"anchor-0-elbow",
+					"anchor-0-foot",
 					"anchor-0-lower",
 					"anchor-1-body",
 					"anchor-1-elbow",
+					"anchor-1-foot",
+					"anchor-1-lower",
 					"anchor-1-sleeve",
 					"longwall-mount-starboard"
 				]
@@ -140,10 +161,12 @@
 				"seen": [
 					"anchor-0-body",
 					"anchor-0-elbow",
+					"anchor-0-foot",
 					"anchor-0-lower",
 					"anchor-0-sleeve",
 					"anchor-1-body",
 					"anchor-1-elbow",
+					"anchor-1-foot",
 					"anchor-1-lower",
 					"anchor-1-sleeve",
 					"longwall-mount-starboard"
@@ -156,9 +179,12 @@
 					"anchor-0-elbow",
 					"anchor-0-foot",
 					"anchor-0-lower",
+					"anchor-0-lower-rod",
 					"anchor-0-sleeve",
 					"anchor-1-body",
 					"anchor-1-elbow",
+					"anchor-1-foot",
+					"anchor-1-lower",
 					"anchor-1-sleeve",
 					"longwall-mount-starboard"
 				]

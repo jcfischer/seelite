@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { HULL_SPECS } from "../src/hull";
+import { withoutStockMiningLaser } from "./helpers/bare-loadout";
 import {
 	freeSlot,
 	type FittedModule,
@@ -180,7 +181,9 @@ describe("fitDeltas", () => {
 });
 
 test("mining extraction preview is signed by size and grade", () => {
-	const miner = newCommander("miner");
+	const full = newCommander("miner");
+	const bareLoadout = withoutStockMiningLaser(full.loadout);
+	const miner = { ...full, loadout: bareLoadout };
 	const fit = (size: 1 | 3, grade: "E" | "A") => ({
 		...miner,
 		loadout: { ...miner.loadout, h2: makeModule("mining-laser", size, grade) },
