@@ -22,7 +22,7 @@ and the worked example are in [docs/work-graph-maps.md](docs/work-graph-maps.md)
 
 ```bash
 # --repo is not optional; see below
-soma graph node 1 --repo jcfischer/seelite      # the machine map: destination, constraints, notes, decisions
+soma graph node 1 --repo jcfischer/seelite      # the machine map: destination, notes, decisions
 soma graph frontier 1 --repo jcfischer/seelite  # what is takeable right now on the machine
 soma graph node 460 --repo jcfischer/seelite    # the fiction map (split out of #1 on 2026-09-21)
 soma graph frontier 460 --repo jcfischer/seelite
@@ -39,12 +39,14 @@ working a #460 node means reading **both** maps, and neither is a summary of
 the other: #460 for what it adds, #1 for what binds underneath. What those
 constraints say is on #460, and deliberately not here.
 
-#1's **Constraints** section binds every answer — an option that violates one is
-not on the table. #1's **Notes** section carries the delivery SOP (claim →
+#1's **Constraints** bind every answer — an option that violates one is not on
+the table. They live in [docs/map-1-constraints.md](docs/map-1-constraints.md),
+moved out of the map's body when it reached the tracker's size limit; the map
+links there. #1's **Notes** section carries the delivery SOP (claim →
 branch → worktree → TDD → PR → sage review → merge), when to stop reviewing, and
 the repo's verification culture. Do not restate either here; read them there, so
-there is one authoritative copy rather than two that drift. The map owns
-constraints and decisions, `docs/specs/` owns ratified structural detail, and
+there is one authoritative copy rather than two that drift.
+`docs/map-1-constraints.md` owns the constraints, the map owns decisions, `docs/specs/` owns ratified structural detail, and
 `CONTEXT.md` owns vocabulary with pointers to those specs.
 
 The `orienteer` skill walks the map. Every graph operation is a `soma graph`
