@@ -142,6 +142,11 @@ const OWNERS = Object.freeze({
 		"src/deposit-state.ts",
 		"src/hold-view.ts",
 	],
+	"probe-rock-reserves.mjs": [
+		"scripts/probe-rock-reserves.mjs",
+		"src/rock-survey.ts",
+		"src/asteroid-field.ts",
+	],
 	"probe-variants-loadouts.mjs": [
 		"scripts/probe-variants-loadouts.mjs",
 		"src/module-variants.ts",

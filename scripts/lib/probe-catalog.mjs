@@ -127,6 +127,17 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-rock-reserves.mjs",
+			"Boots seed 2 in the Longwall and reads the start system's charted field: the median rock holds at least 400 t of minable ore, its surface reserve carries the median, and every rock's reserve falls inside the unchanged area and volume laws.",
+			[
+				"rock reserve",
+				"charted field",
+				"survey",
+				"median tonnage",
+				"area and volume laws",
+			],
+		),
+		entry(
 			"probe-rock-placement.mjs",
 			"Runs Game cruise exit, launch, flight restore, refused docked restore and guided fallback, then steps their final poses against a supplied rock to verify unsaved whole-rock ghost state; an unplaced control must impact.",
 			["rock ghost", "placement", "cruise exit", "launch", "restore", "save"],

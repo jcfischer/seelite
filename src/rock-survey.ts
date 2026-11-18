@@ -51,14 +51,14 @@ export const GRADE_WEIGHTS: Readonly<
 	rare: { poor: 0.25, standard: 0.45, rich: 0.3 },
 };
 
-/** Reserve scale, whole tonnes: surface ore grows with area, a deep deposit with volume. */
+/** Reserve scale, whole tonnes (node #1302): surface ore grows with area and a deep deposit with volume, so the median charted rock holds about 500 t and the largest about 50,000 t of surface ore. The floors keep the smallest rocks worth a survey. */
 export const RESERVE = {
-	surfaceMinT: 2,
-	surfaceAtLargestT: 150,
+	surfaceMinT: 50,
+	surfaceAtLargestT: 50000,
 	deepChanceAtSmallest: 0.2,
 	deepChanceAtLargest: 0.9,
-	deepMinT: 30,
-	deepAtLargestT: 600,
+	deepMinT: 100,
+	deepAtLargestT: 200000,
 } as const;
 
 /** What a rock holds: `f(seed)`, never saved (#951 D1). */
