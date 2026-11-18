@@ -16,6 +16,7 @@ const state = (over: Partial<MinerFaceState> = {}): MinerFaceState => ({
 	heatPercent: 20,
 	energyPercent: 80,
 	drill: {
+		fine: null,
 		block: null,
 		gapM: 0.3,
 		anchored: false,
@@ -60,6 +61,37 @@ test("the drill face reads contact and gap, or what blocks it", () => {
 			minerFaceRows(state({ drill: { ...state().drill, block, gapM: null } }))
 				.drill,
 		).toEqual([[block, "#9fb7c0"]]);
+});
+
+test("fine figures join contact and gap on the drill face and disappear when off", () => {
+	const normal = state();
+	const fine = {
+		rangeKm: 0.0123,
+		closingKms: -0.0004,
+		slideKms: 0.0007,
+	};
+	const rows = minerFaceRows({
+		...normal,
+		drill: { ...normal.drill, fine },
+	});
+	expect(texts(rows.drill)).toEqual([
+		"CONTACT",
+		"GAP 0.3 M",
+		"RANGE 12.3 M",
+		"CLOSE -0.4 M/S",
+		"SLIDE 0.7 M/S",
+	]);
+	expect(texts(minerFaceRows(normal).drill)).toEqual(["CONTACT", "GAP 0.3 M"]);
+	expect(
+		texts(
+			minerFaceRows({
+				...normal,
+				drill: { ...normal.drill, fine: { ...fine, rangeKm: null } },
+			}).drill,
+		),
+	).toContain("RANGE —");
+	for (const name of MINER_FACE_SCREENS.filter((name) => name !== "drill"))
+		expect(rows[name]).toEqual(minerFaceRows(normal)[name]);
 });
 
 test("the anchor and stance faces read the feet on the rock and the hold", () => {

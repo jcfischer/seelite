@@ -117,6 +117,7 @@ import {
 	MINER_FACE_TITLES,
 	type MinerFaceScreen,
 	type MinerFaceState,
+	fineFigures,
 	minerFaceRows,
 } from "./miner-faces";
 import { poseLongwallDrill } from "./drill-pose";
@@ -10294,9 +10295,11 @@ class Game {
 			: d.extension >= 1
 				? `${d.grip ? "GRIP" : "FEET"} ${feet}/4 · ${d.anchorWhy === "OK" ? "PRESS 4 TO ANCHOR" : d.anchorWhy}`
 				: "";
-		const fine = d.fine
-			? `FINE${d.fine.rangeKm === null ? "" : ` · RANGE ${m(d.fine.rangeKm)} M`} · CLOSE ${m(d.fine.closingKms)} · SLIDE ${m(d.fine.slideKms)} M/S`
-			: null;
+		let fine: string | null = null;
+		if (this.view === "chase" && d.fine) {
+			const figures = fineFigures(d.fine);
+			fine = `FINE${figures.range === null ? "" : ` · RANGE ${figures.range} M`} · CLOSE ${figures.close} · SLIDE ${figures.slide} M/S`;
+		}
 		const contactFigures =
 			c && c.gapKm !== null
 				? `GAP ${m(c.gapKm)} M · ${Math.round(c.alignDeg ?? 0)}°${c.mouthDeg === null ? "" : ` · MOUTH ${Math.round(c.mouthDeg)}°`}`
@@ -11608,6 +11611,7 @@ class Game {
 			heatPercent: Math.round((c.heat / HEAT_LOCK) * 100),
 			energyPercent: Math.round((c.energy / Math.max(1, c.energyMax)) * 100),
 			drill: {
+				fine: d.fine,
 				block: d.contact ? d.contact.block : "STOWED",
 				gapM: d.contact?.gapKm == null ? null : d.contact.gapKm * 1000,
 				anchored: d.held !== null,
@@ -11651,12 +11655,13 @@ class Game {
 	private paintMinerFaces() {
 		if (!this.minerFaces.length) return;
 		const now = performance.now();
-		if (now - this.minerFacesPaintedAt < 200) return;
-		this.minerFacesPaintedAt = now;
+		const refreshAll = now - this.minerFacesPaintedAt >= 200;
+		if (refreshAll) this.minerFacesPaintedAt = now;
 		const rows = minerFaceRows(this.minerFaceState());
 		this.minerFaceReadings = rows;
 		const feet = this.drill.feet.map((f) => f.onRock);
 		for (const face of this.minerFaces) {
+			if (!refreshAll && face.name !== "drill") continue;
 			const key = JSON.stringify([
 				rows[face.name],
 				face.name === "stance" && feet,
@@ -11682,10 +11687,16 @@ class Game {
 					ctx.fillText(text, w / 2, h - 34, w - 40);
 				}
 			} else {
-				ctx.font = "40px Menlo, monospace";
+				const compact = rows[face.name].length > 3;
+				ctx.font = `${compact ? 32 : 40}px Menlo, monospace`;
 				rows[face.name].forEach(([text, colour], i) => {
 					ctx.fillStyle = colour;
-					ctx.fillText(text, w / 2, 140 + i * 62, w - 40);
+					ctx.fillText(
+						text,
+						w / 2,
+						compact ? 112 + i * 42 : 140 + i * 62,
+						w - 40,
+					);
 				});
 			}
 			face.texture.needsUpdate = true;

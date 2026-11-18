@@ -52,6 +52,13 @@ console. With no `screen-fallback`, the remaining sources share the emergency
 console. Without `?mining=1` the survey, drill, anchor and stance faces read
 `MINING OFF`.
 
+While fine mode is active, the Longwall's drill-contact monitor also shows
+`RANGE` in metres and `CLOSE` and `SLIDE` in metres per second. These rows
+refresh every frame, alongside the existing contact and gap. Leaving fine mode
+restores the ordinary rows. The mining seat (key 5) faces this console; key 7
+widens the field of view. Cockpit glass omits the fine-mode line; chase view
+keeps it.
+
 ## The Longwall bridge's drill camera
 
 `screen-drillcam` is a live feed rather than a text source (#1229). A second

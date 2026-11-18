@@ -1,3 +1,5 @@
+import type { fineReadout } from "./rock-drill";
+
 /**
  * What the Longwall bridge's mining faces read
  * (https://github.com/jcfischer/seelite/issues/1198). The study places survey,
@@ -41,6 +43,7 @@ export interface MinerFaceState {
 	readonly heatPercent: number;
 	readonly energyPercent: number;
 	readonly drill: {
+		readonly fine: ReturnType<typeof fineReadout> | null;
 		readonly block: string | null;
 		readonly gapM: number | null;
 		readonly anchored: boolean;
@@ -51,6 +54,16 @@ export interface MinerFaceState {
 
 const GRIPPED = ["NO FEET", "ONE FOOT", "TWO FEET", "THREE FEET", "FOUR FEET"];
 
+/** Fine-mode range in metres and speeds in metres per second, at display precision. */
+export function fineFigures(fine: ReturnType<typeof fineReadout>) {
+	const metres = (km: number) => (km * 1000).toFixed(1);
+	return {
+		range: fine.rangeKm === null ? null : metres(fine.rangeKm),
+		close: metres(fine.closingKms),
+		slide: metres(fine.slideKms),
+	};
+}
+
 /** Each face's rows, from live game state only. */
 export function minerFaceRows(
 	s: MinerFaceState,
@@ -60,6 +73,14 @@ export function minerFaceRows(
 	const idle = d.block === "STOWED" || d.block === "DEPLOYING";
 	const gap: MinerFaceRow[] =
 		d.gapM === null ? [] : [[`GAP ${d.gapM.toFixed(1)} M`, PALE]];
+	const figures = d.fine ? fineFigures(d.fine) : null;
+	const fine: MinerFaceRow[] = figures
+		? [
+				[`RANGE ${figures.range === null ? "—" : `${figures.range} M`}`, PALE],
+				[`CLOSE ${figures.close} M/S`, PALE],
+				[`SLIDE ${figures.slide} M/S`, PALE],
+			]
+		: [];
 	return {
 		survey: s.surveyDesignation
 			? s.surveyDesignation
@@ -77,6 +98,7 @@ export function minerFaceRows(
 				contact ? GREEN : idle ? QUIET : REFUSAL,
 			],
 			...gap,
+			...fine,
 		],
 		anchor: [
 			[`${GRIPPED[d.feetOnRock]} GRIPPED`, AMBER],
