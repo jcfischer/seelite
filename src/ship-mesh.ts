@@ -16,7 +16,11 @@
  * below replaces the plate extrusion, the lathe, and the stock cylinder.
  */
 import * as THREE from "three";
-import { cockpitHullRays } from "./cockpit-hull-rays";
+import {
+	cockpitHullMeshes,
+	cockpitHullRays,
+	type CockpitHullSource,
+} from "./cockpit-hull-rays";
 import {
 	AUTHORED_HULL_MODELS,
 	isAuthoredHullModel as isAfterBootHull,
@@ -2887,6 +2891,16 @@ const STRUT_FORWARD = new THREE.Vector3(0, 0, 1);
 const COCKPIT_PARTS = /^(feed|anchor-\d|longwall-mount-)/;
 const COCKPIT_GLASS = /glazing|display/;
 
+/** The flown hull surfaces that can hide effects from the cockpit eye. */
+export function cockpitHullSource(
+	root: THREE.Object3D,
+): CockpitHullSource | null {
+	const node = root
+		.getObjectByName(LONGWALL_LEVEL_NAMES.full)
+		?.getObjectByName("hull");
+	return node ? { node, transparentNames: COCKPIT_GLASS } : null;
+}
+
 /** What the Longwall's hull hides from an eye in the ship mesh's frame (km). */
 export interface CockpitOcclusion {
 	readonly axisHitKm: Readonly<
@@ -2910,13 +2924,8 @@ export function cockpitOcclusion(
 	const full = root.getObjectByName(LONGWALL_LEVEL_NAMES.full);
 	root.updateMatrixWorld(true);
 	const parts = full?.children[0]?.children ?? [];
-	const hull: THREE.Mesh[] = [];
-	for (const p of parts)
-		if (p.name === "hull")
-			p.traverse((o) => {
-				if ((o as THREE.Mesh).isMesh && !COCKPIT_GLASS.test(o.name))
-					hull.push(o as THREE.Mesh);
-			});
+	const source = cockpitHullSource(root);
+	const hull = source ? cockpitHullMeshes(source) : [];
 	const hullHit = cockpitHullRays(hull);
 	const eye = new THREE.Vector3(eyeKm.x, eyeKm.y, eyeKm.z).applyMatrix4(
 		root.matrixWorld,

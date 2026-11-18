@@ -17,6 +17,7 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 await mkdir("probe-shots/mining-drill", { recursive: true });
 try {
+	await probeSparkOcclusion(browser, origin, check, watch);
 	await probeFineMonitor(browser, origin, check, watch);
 	const page = await browser.newPage({
 		viewport: { width: 1280, height: 800 },
@@ -350,6 +351,210 @@ try {
 	await browser.close();
 }
 exit();
+
+async function probeSparkOcclusion(browser, origin, check, watch) {
+	const page = await browser.newPage({
+		viewport: { width: 1280, height: 800 },
+	});
+	watch(page);
+	await installViewPlacement(page);
+	await page.goto(
+		gameUrl(origin, { seed: 2, hull: "miner", "no-save": "", raider: "off" }),
+	);
+	await bootedGame(page, 90000);
+	const groups = await placeAtRockFace(page);
+	await deployDrill(page, groups);
+	await page.keyboard.press("4");
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		for (let t = 0; t < 4.3; t += g.units.MAX_DT) g.step(g.units.MAX_DT);
+	});
+	await page.keyboard.down("Space");
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		for (let t = 0; t < 1; t += g.units.MAX_DT) g.step(g.units.MAX_DT);
+		g.render(0);
+	});
+	await page.keyboard.up("Space");
+	const result = await page.evaluate(async () => {
+		const THREE = await import("/node_modules/three/build/three.module.js");
+		const { cockpitHullMeshes, cockpitHullRays } = await import(
+			"/src/cockpit-hull-rays.ts"
+		);
+		const { cockpitHullSource } = await import("/src/ship-mesh.ts");
+		const g = window.__seelite;
+		const live = [...g.sparks];
+		const rock = g.rockRef(g.drill.held.rockId);
+		const canvas = g.overlay;
+		const ctx = g.overlayCtx;
+		const hull = cockpitHullMeshes(cockpitHullSource(g.shipMesh));
+		const rows = [];
+		let clearControl = [];
+		for (const seat of ["pilot", "miner"]) {
+			g.setMinerSeat(seat);
+			g.view = "cockpit";
+			g.render(0);
+			g.shipMesh.updateWorldMatrix(true, true);
+			const hit = cockpitHullRays(hull);
+			const caster = new THREE.Raycaster();
+			const blocked = (x, y) => {
+				caster.setFromCamera(
+					new THREE.Vector2(
+						(x / canvas.width) * 2 - 1,
+						1 - (y / canvas.height) * 2,
+					),
+					g.nearCamera,
+				);
+				return hit(caster.ray, 0.2) !== null;
+			};
+			const paint = (sparks, view) => {
+				g.view = view;
+				const heat = g.heatSpots;
+				const beam = g.miningBeam;
+				g.heatSpots = new Map();
+				g.miningBeam = null;
+				g.sparks = [];
+				g.render(0);
+				const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+				g.sparks = sparks;
+				g.render(0);
+				g.heatSpots = heat;
+				g.miningBeam = beam;
+				let pixels = 0;
+				let onHull = 0;
+				const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+				for (let i = 0; i < data.length; i += 4) {
+					if (
+						Math.abs(data[i] - before[i]) +
+							Math.abs(data[i + 1] - before[i + 1]) +
+							Math.abs(data[i + 2] - before[i + 2]) <
+						24
+					)
+						continue;
+					pixels++;
+					const n = i / 4;
+					if (
+						blocked(
+							(n % canvas.width) + 0.5,
+							Math.floor(n / canvas.width) + 0.5,
+						)
+					)
+						onHull++;
+				}
+				return { pixels, onHull };
+			};
+			const actual = paint(live, "cockpit");
+			const samples = { hidden: [], clear: [] };
+			const cam = g.cameraPos();
+			for (let y = 80; y < canvas.height - 80; y += 40)
+				for (let x = 80; x < canvas.width - 80; x += 40) {
+					const isBlocked = blocked(x, y);
+					const bucket = isBlocked ? samples.hidden : samples.clear;
+					if (
+						bucket.length >= 3 ||
+						![-4, 0, 4].every((dx) =>
+							[-4, 0, 4].every((dy) => blocked(x + dx, y + dy) === isBlocked),
+						)
+					)
+						continue;
+					blocked(x, y);
+					const p = caster.ray.direction.clone().multiplyScalar(0.1);
+					bucket.push({
+						rockId: rock.id,
+						offset: {
+							x: cam.x + p.x - rock.pos.x,
+							y: cam.y + p.y - rock.pos.y,
+							z: cam.z + p.z - rock.pos.z,
+						},
+						vel: { x: 0, y: 0, z: 0 },
+						bornAt: g.world.gameTime - 0.1,
+					});
+				}
+			const hidden = paint(samples.hidden, "cockpit");
+			const clear = paint(samples.clear, "cockpit");
+			let crossing = null;
+			for (let y = 100; y < canvas.height - 100 && !crossing; y += 20)
+				for (let x = 100; x < canvas.width - 180 && !crossing; x += 20) {
+					const left = blocked(x, y);
+					const right = blocked(x + 80, y);
+					if (left === right) continue;
+					if (
+						![x, x + 80].every((px) =>
+							[-4, 0, 4].every((d) => blocked(px + d, y) === blocked(px, y)),
+						)
+					)
+						continue;
+					const atPixel = (px) => {
+						blocked(px, y);
+						return caster.ray.direction.clone().multiplyScalar(0.1);
+					};
+					const tail = atPixel(x);
+					const head = atPixel(x + 80);
+					const age = 0.01;
+					const velocity = head.clone().sub(tail).divideScalar(age);
+					crossing = {
+						rockId: rock.id,
+						offset: {
+							x: cam.x + tail.x - rock.pos.x,
+							y: cam.y + tail.y - rock.pos.y,
+							z: cam.z + tail.z - rock.pos.z,
+						},
+						vel: { x: velocity.x, y: velocity.y, z: velocity.z },
+						bornAt: g.world.gameTime - age,
+					};
+				}
+			const partial = paint(crossing ? [crossing] : [], "cockpit");
+			const chase = paint(samples.hidden, "chase");
+			clearControl = samples.clear;
+			rows.push({
+				seat,
+				actual,
+				hidden,
+				clear,
+				partial,
+				crossing: !!crossing,
+				chase,
+				samples: [samples.hidden.length, samples.clear.length],
+			});
+		}
+		g.view = "cockpit";
+		g.sparks = [...live, ...clearControl];
+		g.render(0);
+		return { anchored: !!g.drill.held, live: live.length, rows };
+	});
+	check(
+		"anchored seed 2 drill sparks leave no pixels on the hull silhouette from either seat",
+		result.anchored &&
+			result.live > 0 &&
+			result.rows.every(
+				(r) =>
+					r.actual.onHull === 0 && r.hidden.pixels === 0 && r.samples[0] === 3,
+			),
+		JSON.stringify(result),
+	);
+	check(
+		"streaks crossing a canopy edge retain their visible portion without painting the hull",
+		result.rows.every(
+			(r) => r.crossing && r.partial.pixels > 0 && r.partial.onHull === 0,
+		),
+		JSON.stringify(result),
+	);
+	check(
+		"clear canopy sparks remain painted and chase sparks retain their strokes",
+		result.rows.every(
+			(r) =>
+				r.clear.pixels > 0 &&
+				r.clear.onHull === 0 &&
+				r.chase.pixels > 0 &&
+				r.samples[1] === 3,
+		),
+		JSON.stringify(result),
+	);
+	await page.screenshot({
+		path: "probe-shots/mining-drill/cockpit-sparks.png",
+	});
+	await page.close();
+}
 
 async function probeFineMonitor(browser, origin, check, watch) {
 	const monitor = await browser.newPage({

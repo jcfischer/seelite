@@ -106,6 +106,7 @@ import {
 	strutReach,
 } from "./rock-drill";
 import { COCKPIT_OCCLUSION, cockpitSeenParts } from "./cockpit-occlusion-table";
+import { cockpitHullBlocker } from "./cockpit-hull-rays";
 import {
 	type BridgeSeat,
 	type CabinId,
@@ -128,7 +129,7 @@ import {
 	drillCameraPose,
 } from "./drill-camera";
 import { DrillCameraFeed } from "./drill-camera-pass";
-import { cockpitDrillView } from "./ship-mesh";
+import { cockpitDrillView, cockpitHullSource } from "./ship-mesh";
 import { ArmedFireGroup, fireGroups } from "./fire-group";
 import { MissileCombat, missileVisible } from "./missile-combat";
 import {
@@ -10439,6 +10440,25 @@ class Game {
 		}
 		let drawn = 0;
 		ctx.lineCap = "round";
+		const hullSource =
+			this.view === "cockpit" && this.sparks.length > 0
+				? cockpitHullSource(this.shipMesh)
+				: null;
+		let occlusion = null;
+		if (hullSource) {
+			const inverse = this.orientation.clone().invert();
+			const local = (p: Vec3) =>
+				new THREE.Vector3(
+					p.x - this.world.ship.pos.x,
+					p.y - this.world.ship.pos.y,
+					p.z - this.world.ship.pos.z,
+				).applyQuaternion(inverse);
+			occlusion = {
+				hit: cockpitHullBlocker(this.shipMesh, hullSource),
+				eye: local(camPos),
+				local,
+			};
+		}
 		for (const k of this.sparks) {
 			const age = now - k.bornAt;
 			const rock = anchorOf(k.rockId);
@@ -10451,14 +10471,48 @@ class Game {
 			const a = place(normalizeOr(sub(head, camPos), { x: 0, y: 0, z: -1 }));
 			const b = place(normalizeOr(sub(tail, camPos), { x: 0, y: 0, z: -1 }));
 			if (!a?.on || !b) continue;
+			const segments = occlusion
+				? occlusion.hit.visibleSegments(
+						occlusion.eye,
+						occlusion.local(tail),
+						occlusion.local(head),
+					)
+				: [[0, 1]];
 			const life = 1 - age / SPARK_LIFE_S;
 			ctx.strokeStyle = `rgba(255, ${Math.round(150 + 90 * life)}, ${Math.round(60 * life)}, ${life})`;
 			ctx.lineWidth = 1 + life;
 			ctx.beginPath();
-			ctx.moveTo(b.x, b.y);
-			ctx.lineTo(a.x, a.y);
+			for (const [start, end] of segments) {
+				const project = (t: number) =>
+					place(
+						normalizeOr(sub(add(tail, scale(sub(head, tail), t)), camPos), {
+							x: 0,
+							y: 0,
+							z: -1,
+						}),
+					);
+				const from = start === 0 ? b : project(start);
+				const to = end === 1 ? a : project(end);
+				if (!from || !to) continue;
+				const dx = to.x - from.x;
+				const dy = to.y - from.y;
+				const distance = Math.hypot(dx, dy);
+				const margin = ctx.lineWidth / 2 + 1;
+				const insetStart = start > 0 ? margin : 0;
+				const insetEnd = end < 1 ? margin : 0;
+				if (distance < insetStart + insetEnd) continue;
+				const inverseLength = distance > 0 ? 1 / distance : 0;
+				ctx.moveTo(
+					from.x + dx * inverseLength * insetStart,
+					from.y + dy * inverseLength * insetStart,
+				);
+				ctx.lineTo(
+					to.x - dx * inverseLength * insetEnd,
+					to.y - dy * inverseLength * insetEnd,
+				);
+			}
 			ctx.stroke();
-			drawn++;
+			if (segments.length > 0) drawn++;
 		}
 		const beam = this.miningBeam;
 		if (beam?.hit) {
