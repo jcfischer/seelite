@@ -143,6 +143,7 @@ export function makeModule(
 export function stockLoadout(hull: HullId): Loadout {
 	const spec = HULL_SPECS[hull],
 		hp = spec.slots.find((s) => s.key === "h1")!,
+		mount = spec.slots.find((s) => s.kind === "hardpoint" && s.mount),
 		scoopSlot = spec.slots.find(
 			(s) =>
 				s.kind === "internal" &&
@@ -152,6 +153,7 @@ export function stockLoadout(hull: HullId): Loadout {
 	return {
 		plant: makeModule("power-plant", spec.plantSize),
 		h1: makeModule("pulse-laser", hp.size),
+		...(mount && { [mount.key]: makeModule("mining-laser", mount.size) }),
 		...(scoopSlot && { [scoopSlot.key]: makeModule("cargo-scoop", 1) }),
 	};
 }
