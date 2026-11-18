@@ -106,6 +106,7 @@ import {
 	strutReach,
 } from "./rock-drill";
 import { COCKPIT_OCCLUSION, cockpitSeenParts } from "./cockpit-occlusion-table";
+import { cockpitHullBlocker } from "./cockpit-hull-rays";
 import {
 	type BridgeSeat,
 	type CabinId,
@@ -10439,6 +10440,37 @@ class Game {
 		}
 		let drawn = 0;
 		ctx.lineCap = "round";
+		const hullHit =
+			this.view === "cockpit" && this.sparks.length > 0
+				? cockpitHullBlocker(this.shipMesh)
+				: null;
+		const shipInverse = this.orientation.clone().invert();
+		const eyeOffset = sub(camPos, this.world.ship.pos);
+		const eye = new THREE.Vector3(
+			eyeOffset.x,
+			eyeOffset.y,
+			eyeOffset.z,
+		).applyQuaternion(shipInverse);
+		const ray = new THREE.Ray();
+		const point = new THREE.Vector3();
+		const sparkBlocked = (head: Vec3, tail: Vec3, steps: number) => {
+			if (!hullHit) return false;
+			for (let i = 0; i <= steps; i++) {
+				const t = i / steps;
+				point
+					.set(
+						tail.x + (head.x - tail.x) * t - this.world.ship.pos.x,
+						tail.y + (head.y - tail.y) * t - this.world.ship.pos.y,
+						tail.z + (head.z - tail.z) * t - this.world.ship.pos.z,
+					)
+					.applyQuaternion(shipInverse)
+					.sub(eye);
+				const far = point.length();
+				ray.set(eye, point.normalize());
+				if (hullHit(ray, far) !== null) return true;
+			}
+			return false;
+		};
 		for (const k of this.sparks) {
 			const age = now - k.bornAt;
 			const rock = anchorOf(k.rockId);
@@ -10451,6 +10483,14 @@ class Game {
 			const a = place(normalizeOr(sub(head, camPos), { x: 0, y: 0, z: -1 }));
 			const b = place(normalizeOr(sub(tail, camPos), { x: 0, y: 0, z: -1 }));
 			if (!a?.on || !b) continue;
+			if (
+				sparkBlocked(
+					head,
+					tail,
+					Math.max(1, Math.ceil(Math.hypot(a.x - b.x, a.y - b.y))),
+				)
+			)
+				continue;
 			const life = 1 - age / SPARK_LIFE_S;
 			ctx.strokeStyle = `rgba(255, ${Math.round(150 + 90 * life)}, ${Math.round(60 * life)}, ${life})`;
 			ctx.lineWidth = 1 + life;

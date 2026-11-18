@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { cockpitHullRays } from "../src/cockpit-hull-rays";
+import { cockpitHullBlocker, cockpitHullRays } from "../src/cockpit-hull-rays";
 
 test("hull rays agree with double-sided raycasting across indexed, transformed and partitioned surfaces", () => {
 	const meshes = Array.from({ length: 40 }, (_, n) => {
@@ -40,6 +40,44 @@ test("hull rays agree with double-sided raycasting across indexed, transformed a
 
 test("an empty hull leaves every ray unobstructed", () => {
 	expect(cockpitHullRays([])(new THREE.Ray())).toBeNull();
+});
+
+test("cockpit hull rays stay in ship coordinates, ignore glazing and refresh on model replacement", () => {
+	const root = new THREE.Group();
+	const exterior = new THREE.Group();
+	exterior.name = "longwall-exterior";
+	const hull = new THREE.Group();
+	hull.name = "hull";
+	const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.004, 0.006));
+	panel.position.z = -0.005;
+	const glass = panel.clone();
+	glass.name = "glazing";
+	glass.position.x = 0.01;
+	hull.add(panel, glass);
+	exterior.add(hull);
+	root.add(exterior);
+	root.position.set(1234, 5678, 9000);
+	root.rotation.set(0.3, 0.5, 0.7);
+	const hit = cockpitHullBlocker(root);
+	if (!hit) throw new Error("the hull must supply its rays");
+	const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, 0, -1));
+	expect(hit(ray, 0.1)).toBeCloseTo(0.005, 10);
+	expect(hit(ray, 0.004)).toBeNull();
+	ray.origin.x = 0.01;
+	expect(hit(ray, 0.1)).toBeNull();
+	root.position.set(-9000, 5000, 1200);
+	root.rotation.set(1.2, 0.6, 0.2);
+	expect(cockpitHullBlocker(root)).toBe(hit);
+	ray.origin.x = 0;
+	expect(hit(ray, 0.1)).toBeCloseTo(0.005, 10);
+	exterior.remove(hull);
+	expect(cockpitHullBlocker(root)).toBeNull();
+	const replacement = hull.clone();
+	replacement.position.z = -0.01;
+	exterior.add(replacement);
+	const replaced = cockpitHullBlocker(root);
+	expect(replaced).not.toBe(hit);
+	expect(replaced?.(ray, 0.1)).toBeCloseTo(0.015, 10);
 });
 
 test("flat hull panels block both directions, including the finite endpoint", () => {

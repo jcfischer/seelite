@@ -29,8 +29,11 @@ function partition(triangles: THREE.Triangle[]): HullNode {
 	};
 }
 
-/** Nearest double-sided hull hit in world kilometres, bounded by the ray's target distance. */
-export function cockpitHullRays(meshes: readonly THREE.Mesh[]) {
+/** Nearest double-sided hull hit in the chosen kilometre frame, bounded by the ray's target distance. */
+export function cockpitHullRays(
+	meshes: readonly THREE.Mesh[],
+	worldToFrame = new THREE.Matrix4(),
+) {
 	const triangles: THREE.Triangle[] = [];
 	for (const mesh of meshes) {
 		const pos = mesh.geometry.getAttribute("position");
@@ -42,7 +45,13 @@ export function cockpitHullRays(meshes: readonly THREE.Mesh[]) {
 					.fromBufferAttribute(pos, index ? index.getX(n + i) : n + i)
 					.applyMatrix4(mesh.matrixWorld),
 			);
-			triangles.push(new THREE.Triangle(a, b, c));
+			triangles.push(
+				new THREE.Triangle(
+					a.applyMatrix4(worldToFrame),
+					b.applyMatrix4(worldToFrame),
+					c.applyMatrix4(worldToFrame),
+				),
+			);
 		}
 	}
 	const tree = partition(triangles);
@@ -79,4 +88,29 @@ export function cockpitHullRays(meshes: readonly THREE.Mesh[]) {
 		visit(tree);
 		return hit ? nearest : null;
 	};
+}
+
+const HULL_RAYS = new WeakMap<
+	THREE.Object3D,
+	ReturnType<typeof cockpitHullRays>
+>();
+
+/** Cached opaque Longwall hull rays in ship-local kilometres, independent of the display pose. */
+export function cockpitHullBlocker(root: THREE.Object3D) {
+	const hull = root
+		.getObjectByName("longwall-exterior")
+		?.getObjectByName("hull");
+	if (!hull) return null;
+	let hit = HULL_RAYS.get(hull);
+	if (!hit) {
+		root.updateWorldMatrix(true, true);
+		const meshes: THREE.Mesh[] = [];
+		hull.traverse((o) => {
+			if (o instanceof THREE.Mesh && !/glazing|display/.test(o.name))
+				meshes.push(o);
+		});
+		hit = cockpitHullRays(meshes, root.matrixWorld.clone().invert());
+		HULL_RAYS.set(hull, hit);
+	}
+	return hit;
 }

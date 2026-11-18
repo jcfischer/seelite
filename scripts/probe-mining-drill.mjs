@@ -382,10 +382,8 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 		const g = window.__seelite;
 		const live = [...g.sparks];
 		const rock = g.rockRef(g.drill.held.rockId);
-		const canvas = document.createElement("canvas");
-		canvas.width = g.overlay.width;
-		canvas.height = g.overlay.height;
-		const ctx = canvas.getContext("2d");
+		const canvas = g.overlay;
+		const ctx = g.overlayCtx;
 		const hull = [];
 		g.shipMesh
 			.getObjectByName("longwall-exterior")
@@ -394,6 +392,7 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 				if (o.isMesh && !/glazing|display/.test(o.name)) hull.push(o);
 			});
 		const rows = [];
+		let clearControl = [];
 		for (const seat of ["pilot", "miner"]) {
 			g.setMinerSeat(seat);
 			g.view = "cockpit";
@@ -413,33 +412,30 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 			};
 			const paint = (sparks, view) => {
 				g.view = view;
-				g.sparks = sparks;
 				const heat = g.heatSpots;
 				const beam = g.miningBeam;
 				g.heatSpots = new Map();
 				g.miningBeam = null;
-				ctx.clearRect(0, 0, canvas.width, canvas.height);
-				const cam = g.cameraPos();
-				const place = (dir) => {
-					const m = g.markerNdc(dir);
-					return m.behind
-						? null
-						: {
-								x: ((m.ndcX + 1) * canvas.width) / 2,
-								y: ((1 - m.ndcY) * canvas.height) / 2,
-								on: m.onScreen,
-							};
-				};
-				g.drawImpact(ctx, cam, place, canvas.height);
+				g.sparks = [];
+				g.render(0);
+				const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+				g.sparks = sparks;
+				g.render(0);
 				g.heatSpots = heat;
 				g.miningBeam = beam;
 				let pixels = 0;
 				let onHull = 0;
 				const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-				for (let i = 3; i < data.length; i += 4) {
-					if (data[i] < 8) continue;
+				for (let i = 0; i < data.length; i += 4) {
+					if (
+						Math.abs(data[i] - before[i]) +
+							Math.abs(data[i + 1] - before[i + 1]) +
+							Math.abs(data[i + 2] - before[i + 2]) <
+						24
+					)
+						continue;
 					pixels++;
-					const n = (i - 3) / 4;
+					const n = i / 4;
 					if (
 						blocked(
 							(n % canvas.width) + 0.5,
@@ -480,6 +476,7 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 			const hidden = paint(samples.hidden, "cockpit");
 			const clear = paint(samples.clear, "cockpit");
 			const chase = paint(samples.hidden, "chase");
+			clearControl = samples.clear;
 			rows.push({
 				seat,
 				actual,
@@ -490,7 +487,7 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 			});
 		}
 		g.view = "cockpit";
-		g.sparks = live;
+		g.sparks = [...live, ...clearControl];
 		g.render(0);
 		return { anchored: !!g.drill.held, live: live.length, rows };
 	});
