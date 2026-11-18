@@ -17,7 +17,7 @@ the player presses its poster (click-to-play, 2026-10-03, `src/public-site.ts`)
 manifest and only the recordings a loaded song plays, each once a session
 (2026-10-06, `src/music-samples.ts`). The voice is
 the one trained model the game runs and the samples the one recorded asset; the
-map's Constraints carry the rulings.
+map's Constraints ([map-1-constraints.md](map-1-constraints.md)) carry the rulings.
 
 ## Stack and asset exceptions
 
@@ -33,7 +33,7 @@ a frame of the Docking Waltz film, which the game's own code drew, served only
 for the link previews a crawler fetches. No page and no game loads it, and
 `src/social-preview.ts` says where it came from. The music's instrument
 samples are the other exception, by the principal's ruling of 2026-10-06 in
-the map's Constraints — open-licensed (CC0 or CC BY) recordings, chosen by
+the map's Constraints ([map-1-constraints.md](map-1-constraints.md)) — open-licensed (CC0 or CC BY) recordings, chosen by
 ear in blind auditions: `scripts/fetch-music-samples.mjs` prepares them into
 `public/music-samples/` and records each file's source and checksum, and the
 chosen sets are **tracked in Git LFS** (`.gitattributes`). The deploy pulls
