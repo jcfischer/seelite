@@ -378,19 +378,16 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 	await page.keyboard.up("Space");
 	const result = await page.evaluate(async () => {
 		const THREE = await import("/node_modules/three/build/three.module.js");
-		const { cockpitHullRays } = await import("/src/cockpit-hull-rays.ts");
+		const { cockpitHullMeshes, cockpitHullRays } = await import(
+			"/src/cockpit-hull-rays.ts"
+		);
+		const { cockpitHullSource } = await import("/src/ship-mesh.ts");
 		const g = window.__seelite;
 		const live = [...g.sparks];
 		const rock = g.rockRef(g.drill.held.rockId);
 		const canvas = g.overlay;
 		const ctx = g.overlayCtx;
-		const hull = [];
-		g.shipMesh
-			.getObjectByName("longwall-exterior")
-			.getObjectByName("hull")
-			.traverse((o) => {
-				if (o.isMesh && !/glazing|display/.test(o.name)) hull.push(o);
-			});
+		const hull = cockpitHullMeshes(cockpitHullSource(g.shipMesh));
 		const rows = [];
 		let clearControl = [];
 		for (const seat of ["pilot", "miner"]) {
@@ -475,6 +472,38 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 				}
 			const hidden = paint(samples.hidden, "cockpit");
 			const clear = paint(samples.clear, "cockpit");
+			let crossing = null;
+			for (let y = 100; y < canvas.height - 100 && !crossing; y += 20)
+				for (let x = 100; x < canvas.width - 180 && !crossing; x += 20) {
+					const left = blocked(x, y);
+					const right = blocked(x + 80, y);
+					if (left === right) continue;
+					if (
+						![x, x + 80].every((px) =>
+							[-4, 0, 4].every((d) => blocked(px + d, y) === blocked(px, y)),
+						)
+					)
+						continue;
+					const atPixel = (px) => {
+						blocked(px, y);
+						return caster.ray.direction.clone().multiplyScalar(0.1);
+					};
+					const tail = atPixel(x);
+					const head = atPixel(x + 80);
+					const age = 0.01;
+					const velocity = head.clone().sub(tail).divideScalar(age);
+					crossing = {
+						rockId: rock.id,
+						offset: {
+							x: cam.x + tail.x - rock.pos.x,
+							y: cam.y + tail.y - rock.pos.y,
+							z: cam.z + tail.z - rock.pos.z,
+						},
+						vel: { x: velocity.x, y: velocity.y, z: velocity.z },
+						bornAt: g.world.gameTime - age,
+					};
+				}
+			const partial = paint(crossing ? [crossing] : [], "cockpit");
 			const chase = paint(samples.hidden, "chase");
 			clearControl = samples.clear;
 			rows.push({
@@ -482,6 +511,8 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 				actual,
 				hidden,
 				clear,
+				partial,
+				crossing: !!crossing,
 				chase,
 				samples: [samples.hidden.length, samples.clear.length],
 			});
@@ -499,6 +530,13 @@ async function probeSparkOcclusion(browser, origin, check, watch) {
 				(r) =>
 					r.actual.onHull === 0 && r.hidden.pixels === 0 && r.samples[0] === 3,
 			),
+		JSON.stringify(result),
+	);
+	check(
+		"streaks crossing a canopy edge retain their visible portion without painting the hull",
+		result.rows.every(
+			(r) => r.crossing && r.partial.pixels > 0 && r.partial.onHull === 0,
+		),
 		JSON.stringify(result),
 	);
 	check(
