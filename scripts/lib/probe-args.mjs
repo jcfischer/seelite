@@ -250,7 +250,8 @@ export const CI_PROBE_CONCURRENCY = 4;
  * @returns {number}
  */
 export function probeConcurrency(env) {
-	if (env.PROBE_CONCURRENCY !== undefined && env.PROBE_CONCURRENCY !== "") return Math.max(1, Number(env.PROBE_CONCURRENCY) || 1);
+	if (env.PROBE_CONCURRENCY !== undefined && env.PROBE_CONCURRENCY !== "")
+		return Math.max(1, Number(env.PROBE_CONCURRENCY) || 1);
 	const inCI = !!env.CI && env.CI !== "false" && env.CI !== "0";
 	return inCI ? CI_PROBE_CONCURRENCY : LOCAL_PROBE_CONCURRENCY;
 }

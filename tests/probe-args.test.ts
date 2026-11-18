@@ -12,7 +12,13 @@
  * full one. A wrong refusal wastes a minute; a wrong pass ships.
  */
 import { expect, test, describe } from "bun:test";
-import { CI_PROBE_CONCURRENCY, LOCAL_PROBE_CONCURRENCY, parseArgs, probeConcurrency, resolveOnly } from "../scripts/lib/probe-args.mjs";
+import {
+	CI_PROBE_CONCURRENCY,
+	LOCAL_PROBE_CONCURRENCY,
+	parseArgs,
+	probeConcurrency,
+	resolveOnly,
+} from "../scripts/lib/probe-args.mjs";
 
 const ALL = ["probe-alpha.mjs", "probe-beta.mjs", "probe-cost.mjs"];
 /** `probe-cost` stands in for the report-only probes, whose exit is not a verdict. */
