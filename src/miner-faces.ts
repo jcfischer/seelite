@@ -54,6 +54,16 @@ export interface MinerFaceState {
 
 const GRIPPED = ["NO FEET", "ONE FOOT", "TWO FEET", "THREE FEET", "FOUR FEET"];
 
+/** Fine-mode range in metres and speeds in metres per second, at display precision. */
+export function fineFigures(fine: ReturnType<typeof fineReadout>) {
+	const metres = (km: number) => (km * 1000).toFixed(1);
+	return {
+		range: fine.rangeKm === null ? null : metres(fine.rangeKm),
+		close: metres(fine.closingKms),
+		slide: metres(fine.slideKms),
+	};
+}
+
 /** Each face's rows, from live game state only. */
 export function minerFaceRows(
 	s: MinerFaceState,
@@ -63,14 +73,12 @@ export function minerFaceRows(
 	const idle = d.block === "STOWED" || d.block === "DEPLOYING";
 	const gap: MinerFaceRow[] =
 		d.gapM === null ? [] : [[`GAP ${d.gapM.toFixed(1)} M`, PALE]];
-	const fine: MinerFaceRow[] = d.fine
+	const figures = d.fine ? fineFigures(d.fine) : null;
+	const fine: MinerFaceRow[] = figures
 		? [
-				[
-					`RANGE ${d.fine.rangeKm === null ? "—" : (d.fine.rangeKm * 1000).toFixed(1)} M`,
-					PALE,
-				],
-				[`CLOSE ${(d.fine.closingKms * 1000).toFixed(1)} M/S`, PALE],
-				[`SLIDE ${(d.fine.slideKms * 1000).toFixed(1)} M/S`, PALE],
+				[`RANGE ${figures.range === null ? "—" : `${figures.range} M`}`, PALE],
+				[`CLOSE ${figures.close} M/S`, PALE],
+				[`SLIDE ${figures.slide} M/S`, PALE],
 			]
 		: [];
 	return {

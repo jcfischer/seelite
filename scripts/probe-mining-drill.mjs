@@ -17,162 +17,7 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 await mkdir("probe-shots/mining-drill", { recursive: true });
 try {
-	const monitor = await browser.newPage({
-		viewport: { width: 1280, height: 800 },
-	});
-	watch(monitor);
-	await installViewPlacement(monitor);
-	await monitor.goto(
-		gameUrl(origin, { seed: 2, hull: "miner", "no-save": "", raider: "off" }),
-	);
-	await bootedGame(monitor, 90000);
-	const monitorGroups = await placeAtRockFace(monitor);
-	await deployDrill(monitor, monitorGroups);
-	await monitor.keyboard.press("5");
-	const fineMonitor = await monitor.evaluate(async () => {
-		const { Vector3 } = await import(
-			"/node_modules/three/build/three.module.js"
-		);
-		const g = window.__seelite;
-		const face = g.minerFaces.find((f) => f.name === "drill");
-		if (!face || !g.drill.fine)
-			throw new Error("fine mode and drill monitor required");
-		const ctx = face.ctx;
-		const fillText = ctx.fillText;
-		const hud = g.overlayCtx;
-		const hudFillText = hud.fillText;
-		const labels = /^(RANGE|CLOSE|SLIDE) /;
-		const { width, height } = ctx.canvas;
-		const pixels = () => ctx.getImageData(0, 0, width, height).data;
-		const capture = (omit = "") => {
-			const draws = [];
-			const glass = [];
-			ctx.fillText = function (text, ...args) {
-				if (String(text).startsWith(omit) && omit) return;
-				draws.push({ text: String(text), y: args[1], font: this.font });
-				return fillText.call(this, text, ...args);
-			};
-			hud.fillText = function (text, ...args) {
-				glass.push(String(text));
-				return hudFillText.call(this, text, ...args);
-			};
-			try {
-				face.key = "";
-				g.updateCockpit();
-				g.render(0);
-			} finally {
-				ctx.fillText = fillText;
-				hud.fillText = hudFillText;
-			}
-			return { draws, glass, pixels: pixels() };
-		};
-		const first = capture();
-		const ink = ["RANGE", "CLOSE", "SLIDE"].map((label) => {
-			const control = capture(label);
-			let changed = 0;
-			for (let i = 0; i < first.pixels.length; i += 4)
-				if (
-					Math.abs(first.pixels[i] - control.pixels[i]) +
-						Math.abs(first.pixels[i + 1] - control.pixels[i + 1]) +
-						Math.abs(first.pixels[i + 2] - control.pixels[i + 2]) >
-					24
-				)
-					changed++;
-			return { label, changed };
-		});
-		g.throttle = 0.1;
-		g.step(g.units.MAX_DT);
-		g.updateCockpit();
-		g.render(0);
-		const previous = face.key;
-		const version = face.texture.version;
-		g.throttle = 0.2;
-		g.step(g.units.MAX_DT);
-		g.minerFacesPaintedAt = performance.now();
-		g.updateCockpit();
-		g.render(0);
-		const live = {
-			changed: previous !== face.key,
-			painted: face.texture.version > version,
-			fine: g.drill.fine,
-			rows: g.minerFaceReadings.drill.map(([text]) => text),
-		};
-		g.view = "chase";
-		const chase = capture().glass;
-		g.view = "cockpit";
-		const fine = g.drill.fine;
-		g.drill.fine = null;
-		const off = capture();
-		g.drill.fine = fine;
-		capture();
-		const mesh = g.cabinScene.getObjectByName("miner-drill-face");
-		const positions = mesh.geometry.getAttribute("position");
-		const visible = Array.from({ length: positions.count }, (_, i) =>
-			new Vector3()
-				.fromBufferAttribute(positions, i)
-				.applyMatrix4(mesh.matrixWorld)
-				.project(g.cabinCamera),
-		).every((p) => Math.abs(p.x) < 1 && Math.abs(p.y) < 1 && Math.abs(p.z) < 1);
-		return {
-			visible,
-			ink,
-			live,
-			chase,
-			rows: first.draws,
-			glass: first.glass,
-			off: off.draws.map((d) => d.text),
-			fits: first.draws
-				.filter((d) => labels.test(d.text))
-				.every((d) => d.y > 80 && d.y < height - 20),
-		};
-	});
-	check(
-		"fine range, close and slide are painted on the cabin monitor",
-		fineMonitor.ink.every((r) => r.changed > 100) &&
-			fineMonitor.visible &&
-			fineMonitor.fits &&
-			fineMonitor.rows.some((r) => r.text.startsWith("RANGE")),
-		JSON.stringify(fineMonitor),
-	);
-	check(
-		"fine figures update on the next rendered frame inside the normal monitor interval",
-		fineMonitor.live.changed &&
-			fineMonitor.live.painted &&
-			fineMonitor.live.rows.includes(
-				`RANGE ${(fineMonitor.live.fine.rangeKm * 1000).toFixed(1)} M`,
-			) &&
-			fineMonitor.live.rows.includes(
-				`CLOSE ${(fineMonitor.live.fine.closingKms * 1000).toFixed(1)} M/S`,
-			) &&
-			fineMonitor.live.rows.includes(
-				`SLIDE ${(fineMonitor.live.fine.slideKms * 1000).toFixed(1)} M/S`,
-			),
-		JSON.stringify(fineMonitor.live),
-	);
-	check(
-		"fine figures leave the cockpit HUD and remain on chase HUD",
-		fineMonitor.glass.length > 0 &&
-			!fineMonitor.glass.some((s) => /FINE|RANGE|CLOSE|SLIDE/.test(s)) &&
-			fineMonitor.chase.some(
-				(s) =>
-					s.includes("FINE") &&
-					s.includes("RANGE") &&
-					s.includes("CLOSE") &&
-					s.includes("SLIDE"),
-			),
-		JSON.stringify({ cockpit: fineMonitor.glass, chase: fineMonitor.chase }),
-	);
-	check(
-		"fine off restores contact and gap without fine figures on the monitor",
-		fineMonitor.off.some((s) => s.startsWith("GAP")) &&
-			fineMonitor.off.length === 3 &&
-			!fineMonitor.off.some((s) => /RANGE|CLOSE|SLIDE/.test(s)),
-		JSON.stringify(fineMonitor.off),
-	);
-	await monitor.screenshot({
-		path: "probe-shots/mining-drill/fine-monitor-cockpit.png",
-	});
-	await monitor.close();
+	await probeFineMonitor(browser, origin, check, watch);
 	const page = await browser.newPage({
 		viewport: { width: 1280, height: 800 },
 	});
@@ -505,3 +350,167 @@ try {
 	await browser.close();
 }
 exit();
+
+async function probeFineMonitor(browser, origin, check, watch) {
+	const monitor = await browser.newPage({
+		viewport: { width: 1280, height: 800 },
+	});
+	watch(monitor);
+	await installViewPlacement(monitor);
+	await monitor.goto(
+		gameUrl(origin, { seed: 2, hull: "miner", "no-save": "", raider: "off" }),
+	);
+	await bootedGame(monitor, 90000);
+	const monitorGroups = await placeAtRockFace(monitor);
+	await deployDrill(monitor, monitorGroups);
+	await monitor.keyboard.press("5");
+	const fineMonitor = await monitor.evaluate(async () => {
+		const { Vector3 } = await import(
+			"/node_modules/three/build/three.module.js"
+		);
+		const { fineFigures } = await import("/src/miner-faces.ts");
+		const g = window.__seelite;
+		const face = g.minerFaces.find((f) => f.name === "drill");
+		if (!face || !g.drill.fine)
+			throw new Error("fine mode and drill monitor required");
+		const ctx = face.ctx;
+		const fillText = ctx.fillText;
+		const hud = g.overlayCtx;
+		const hudFillText = hud.fillText;
+		const labels = /^(RANGE|CLOSE|SLIDE) /;
+		const { width, height } = ctx.canvas;
+		const pixels = () => ctx.getImageData(0, 0, width, height).data;
+		const capture = (omit = "") => {
+			const draws = [];
+			const glass = [];
+			ctx.fillText = function (text, ...args) {
+				if (String(text).startsWith(omit) && omit) return;
+				draws.push({ text: String(text), y: args[1], font: this.font });
+				return fillText.call(this, text, ...args);
+			};
+			hud.fillText = function (text, ...args) {
+				glass.push(String(text));
+				return hudFillText.call(this, text, ...args);
+			};
+			try {
+				face.key = "";
+				g.updateCockpit();
+				g.render(0);
+			} finally {
+				ctx.fillText = fillText;
+				hud.fillText = hudFillText;
+			}
+			return { draws, glass, pixels: pixels() };
+		};
+		function changedPixels(a, b, threshold) {
+			let changed = 0;
+			for (let i = 0; i < a.length; i += 4)
+				if (
+					Math.abs(a[i] - b[i]) +
+						Math.abs(a[i + 1] - b[i + 1]) +
+						Math.abs(a[i + 2] - b[i + 2]) >
+					threshold
+				)
+					changed++;
+			return changed;
+		}
+		const first = capture();
+		const ink = ["RANGE", "CLOSE", "SLIDE"].map((label) => {
+			const control = capture(label);
+			const changed = changedPixels(first.pixels, control.pixels, 24);
+			return { label, changed };
+		});
+		g.throttle = 0.1;
+		g.step(g.units.MAX_DT);
+		g.updateCockpit();
+		g.render(0);
+		const previous = face.key;
+		const version = face.texture.version;
+		g.throttle = 0.2;
+		g.step(g.units.MAX_DT);
+		g.minerFacesPaintedAt = performance.now();
+		g.updateCockpit();
+		g.render(0);
+		const live = {
+			changed: previous !== face.key,
+			painted: face.texture.version > version,
+			figures: fineFigures(g.drill.fine),
+			rows: g.minerFaceReadings.drill.map(([text]) => text),
+		};
+		g.view = "chase";
+		const chase = capture().glass;
+		g.view = "cockpit";
+		const fine = g.drill.fine;
+		g.drill.fine = null;
+		const off = capture();
+		g.drill.fine = fine;
+		capture();
+		const mesh = g.cabinScene.getObjectByName("miner-drill-face");
+		const positions = mesh.geometry.getAttribute("position");
+		const visible = Array.from({ length: positions.count }, (_, i) =>
+			new Vector3()
+				.fromBufferAttribute(positions, i)
+				.applyMatrix4(mesh.matrixWorld)
+				.project(g.cabinCamera),
+		).every((p) => Math.abs(p.x) < 1 && Math.abs(p.y) < 1 && Math.abs(p.z) < 1);
+		return {
+			visible,
+			ink,
+			live,
+			chase,
+			rows: first.draws,
+			glass: first.glass,
+			off: off.draws.map((d) => d.text),
+			fits: first.draws
+				.filter((d) => labels.test(d.text))
+				.every((d) => d.y > 80 && d.y < height - 20),
+		};
+	});
+	check(
+		"fine range, close and slide are painted on the cabin monitor",
+		fineMonitor.ink.every((r) => r.changed > 100) &&
+			fineMonitor.visible &&
+			fineMonitor.fits &&
+			fineMonitor.rows.some((r) => r.text.startsWith("RANGE")),
+		JSON.stringify(fineMonitor),
+	);
+	check(
+		"fine figures update on the next rendered frame inside the normal monitor interval",
+		fineMonitor.live.changed &&
+			fineMonitor.live.painted &&
+			fineMonitor.live.rows.includes(
+				`RANGE ${fineMonitor.live.figures.range} M`,
+			) &&
+			fineMonitor.live.rows.includes(
+				`CLOSE ${fineMonitor.live.figures.close} M/S`,
+			) &&
+			fineMonitor.live.rows.includes(
+				`SLIDE ${fineMonitor.live.figures.slide} M/S`,
+			),
+		JSON.stringify(fineMonitor.live),
+	);
+	check(
+		"fine figures leave the cockpit HUD and remain on chase HUD",
+		fineMonitor.glass.length > 0 &&
+			!fineMonitor.glass.some((s) => /FINE|RANGE|CLOSE|SLIDE/.test(s)) &&
+			fineMonitor.chase.some(
+				(s) =>
+					s.includes("FINE") &&
+					s.includes("RANGE") &&
+					s.includes("CLOSE") &&
+					s.includes("SLIDE"),
+			),
+		JSON.stringify({ cockpit: fineMonitor.glass, chase: fineMonitor.chase }),
+	);
+	check(
+		"fine off restores contact and gap without fine figures on the monitor",
+		fineMonitor.off.some((s) => s.startsWith("GAP")) &&
+			fineMonitor.off.length === 3 &&
+			!fineMonitor.off.some((s) => /RANGE|CLOSE|SLIDE/.test(s)),
+		JSON.stringify(fineMonitor.off),
+	);
+	await monitor.screenshot({
+		path: "probe-shots/mining-drill/fine-monitor-cockpit.png",
+	});
+	await monitor.close();
+}

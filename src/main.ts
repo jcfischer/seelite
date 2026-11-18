@@ -117,6 +117,7 @@ import {
 	MINER_FACE_TITLES,
 	type MinerFaceScreen,
 	type MinerFaceState,
+	fineFigures,
 	minerFaceRows,
 } from "./miner-faces";
 import { poseLongwallDrill } from "./drill-pose";
@@ -10294,10 +10295,11 @@ class Game {
 			: d.extension >= 1
 				? `${d.grip ? "GRIP" : "FEET"} ${feet}/4 · ${d.anchorWhy === "OK" ? "PRESS 4 TO ANCHOR" : d.anchorWhy}`
 				: "";
-		const fine =
-			this.view === "chase" && d.fine
-				? `FINE${d.fine.rangeKm === null ? "" : ` · RANGE ${m(d.fine.rangeKm)} M`} · CLOSE ${m(d.fine.closingKms)} · SLIDE ${m(d.fine.slideKms)} M/S`
-				: null;
+		let fine: string | null = null;
+		if (this.view === "chase" && d.fine) {
+			const figures = fineFigures(d.fine);
+			fine = `FINE${figures.range === null ? "" : ` · RANGE ${figures.range} M`} · CLOSE ${figures.close} · SLIDE ${figures.slide} M/S`;
+		}
 		const contactFigures =
 			c && c.gapKm !== null
 				? `GAP ${m(c.gapKm)} M · ${Math.round(c.alignDeg ?? 0)}°${c.mouthDeg === null ? "" : ` · MOUTH ${Math.round(c.mouthDeg)}°`}`

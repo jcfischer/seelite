@@ -89,7 +89,7 @@ test("fine figures join contact and gap on the drill face and disappear when off
 				drill: { ...normal.drill, fine: { ...fine, rangeKm: null } },
 			}).drill,
 		),
-	).toContain("RANGE — M");
+	).toContain("RANGE —");
 	for (const name of MINER_FACE_SCREENS.filter((name) => name !== "drill"))
 		expect(rows[name]).toEqual(minerFaceRows(normal)[name]);
 });
