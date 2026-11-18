@@ -1,3 +1,5 @@
+import type { fineReadout } from "./rock-drill";
+
 /**
  * What the Longwall bridge's mining faces read
  * (https://github.com/jcfischer/seelite/issues/1198). The study places survey,
@@ -41,6 +43,7 @@ export interface MinerFaceState {
 	readonly heatPercent: number;
 	readonly energyPercent: number;
 	readonly drill: {
+		readonly fine: ReturnType<typeof fineReadout> | null;
 		readonly block: string | null;
 		readonly gapM: number | null;
 		readonly anchored: boolean;
@@ -60,6 +63,16 @@ export function minerFaceRows(
 	const idle = d.block === "STOWED" || d.block === "DEPLOYING";
 	const gap: MinerFaceRow[] =
 		d.gapM === null ? [] : [[`GAP ${d.gapM.toFixed(1)} M`, PALE]];
+	const fine: MinerFaceRow[] = d.fine
+		? [
+				[
+					`RANGE ${d.fine.rangeKm === null ? "—" : (d.fine.rangeKm * 1000).toFixed(1)} M`,
+					PALE,
+				],
+				[`CLOSE ${(d.fine.closingKms * 1000).toFixed(1)} M/S`, PALE],
+				[`SLIDE ${(d.fine.slideKms * 1000).toFixed(1)} M/S`, PALE],
+			]
+		: [];
 	return {
 		survey: s.surveyDesignation
 			? s.surveyDesignation
@@ -77,6 +90,7 @@ export function minerFaceRows(
 				contact ? GREEN : idle ? QUIET : REFUSAL,
 			],
 			...gap,
+			...fine,
 		],
 		anchor: [
 			[`${GRIPPED[d.feetOnRock]} GRIPPED`, AMBER],
