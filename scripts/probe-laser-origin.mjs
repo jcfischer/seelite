@@ -37,6 +37,7 @@ try {
 			);
 			const { NEAR_KM } = await import("/src/chase-view.ts");
 			const { PLAYER_LASER_RANGE_KM } = await import("/src/laser.ts");
+			const { tracerPorts } = await import("/src/gun-feedback.ts");
 
 			function fireGroup(group, view) {
 				g.armedFireGroup.reset();
@@ -82,7 +83,13 @@ try {
 						.applyQuaternion(inverse);
 					if (-from.z < NEAR_KM)
 						from.lerp(to, (NEAR_KM + from.z) / (from.z - to.z));
-					return [{ slot, index, mount, from: frame(from), to: frame(to) }];
+					const port =
+						g.view === "cockpit" && !HULL_SPECS[g.flownHull].cutter
+							? tracerPorts(keys.length)[index]
+							: null;
+					return [
+						{ slot, index, mount, from: port ?? frame(from), to: frame(to) },
+					];
 				});
 			}
 			function drawnBeams(view) {
@@ -159,7 +166,7 @@ try {
 							same(row.actual[i]?.to, beam.to),
 					);
 				check(
-					`${hull} ${view} ${row.label}: every beam starts at its selected mount`,
+					`${hull} ${view} ${row.label}: every beam starts at its selected mount, or its glass port in a cockpit that cannot see the hull`,
 					matches,
 					JSON.stringify(row),
 				);

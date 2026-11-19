@@ -796,6 +796,7 @@ import {
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	drawTracerSegments,
+	fromGlassPorts,
 	stepGunFeedback,
 	type TracerSegment,
 } from "./gun-feedback";
@@ -13953,7 +13954,10 @@ class Game {
 	}
 
 	private playerBeamFrame(fired = this.glassFiredIndices()) {
-		return this.playerBeamPx(1, 1, fired);
+		const frame = this.playerBeamPx(1, 1, fired);
+		const spec = HULL_SPECS[this.flownHull];
+		if (this.view !== "cockpit" || spec.cutter) return frame;
+		return fromGlassPorts(frame, spec.hardpoints);
 	}
 
 	/** Where the gimballed beam points (#324): the boresight turned toward the

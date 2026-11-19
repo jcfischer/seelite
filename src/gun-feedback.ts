@@ -88,6 +88,20 @@ export function tracerPorts(
 		y: left.y,
 	}));
 }
+/**
+ * https://github.com/jcfischer/seelite/issues/1331
+ * A cockpit that does not draw its hull cannot show a mount, so each beam
+ * starts at its gun's glass port and keeps its end on the sightline.
+ */
+export function fromGlassPorts<
+	T extends {
+		readonly muzzleIndex: number;
+		readonly from: { x: number; y: number };
+	},
+>(segments: readonly T[], guns: number): T[] {
+	const ports = tracerPorts(guns);
+	return segments.map((s) => ({ ...s, from: ports[s.muzzleIndex] ?? s.from }));
+}
 export const TRACER_AIM = { x: 0.5, y: 0.5 } as const;
 export const TRACER_COLOUR = "rgba(116, 234, 255, 0.98)";
 

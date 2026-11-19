@@ -13,6 +13,7 @@ import {
 	TRACER_HOLD_S,
 	SHOT_SOUND_GAP_S,
 	tracerPorts,
+	fromGlassPorts,
 } from "../src/gun-feedback";
 import { ndcToPx } from "../src/hud";
 import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
@@ -37,6 +38,7 @@ const deps = {
 	PLAYER_LASER_RANGE_KM,
 	glassTracerIndices,
 	tracerStrokes,
+	fromGlassPorts,
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	SHOT_SOUND_GAP_S,
