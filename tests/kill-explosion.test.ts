@@ -1,5 +1,8 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
+	EXPLOSION_BASE_REACH_KM,
+	EXPLOSION_FIREBALL,
+	EXPLOSION_PARTICLES,
 	EXPLOSION_POINTS,
 	type KillExplosion,
 	explosionCentre,
@@ -92,4 +95,119 @@ test("the same clock draws the same frame, and the debris cools and fades", () =
 	expect(glow(101)).toBeGreaterThan(
 		glow(e.at + explosionDurationS(e.reachKm) - 0.05),
 	);
+});
+
+describe("the shape of every point, through its life", () => {
+	const e = kill({ reachKm: 0.05 });
+	const duration = explosionDurationS(e.reachKm);
+	const cloud = explosionCloudKm(e.reachKm);
+	const ages = [0, 0.1, 0.3, 0.7, 1.4, duration * 0.6, duration * 0.95];
+	const at = (age: number) => explosionPoints(e, e.at + age);
+	const radius = (p: { offset: [number, number, number] }) =>
+		Math.hypot(...p.offset);
+	const fireball = (age: number) => at(age).slice(1, 1 + EXPLOSION_FIREBALL);
+	const debris = (age: number) => at(age).slice(1 + EXPLOSION_FIREBALL);
+
+	test("a fighter's lasts three seconds, a hull four times its reach 4.2, and none past six", () => {
+		expect(explosionDurationS(EXPLOSION_BASE_REACH_KM)).toBeCloseTo(3, 9);
+		expect(explosionDurationS(4 * EXPLOSION_BASE_REACH_KM)).toBeCloseTo(4.2, 9);
+		expect(explosionDurationS(100)).toBe(6);
+		expect(explosionDurationS(0)).toBeGreaterThan(1.8);
+		expect(explosionCloudKm(0.05)).toBeCloseTo(0.3, 12);
+	});
+
+	test("the flash is eight reaches wide at the kill, two once it has gone, at the centre", () => {
+		const flash = (age: number) => at(age)[0];
+		expect(flash(0).offset).toEqual([0, 0, 0]);
+		expect(flash(0).sizeKm).toBeCloseTo(8 * e.reachKm, 6);
+		expect(flash(0.15).sizeKm).toBeCloseTo(5 * e.reachKm, 6);
+		expect(flash(0.3).sizeKm).toBeCloseTo(2 * e.reachKm, 6);
+		expect(flash(1).sizeKm).toBeCloseTo(2 * e.reachKm, 6);
+		expect(flash(0).heat[0]).toBeCloseTo(1.4, 6);
+		expect(flash(0.15).heat[0]).toBeCloseTo(1.4 * 0.5 ** 1.5, 6);
+		expect(flash(0).heat[1]).toBeCloseTo(1.4, 6);
+		expect(flash(0).heat[2]).toBeCloseTo(1.4 * 0.85, 6);
+	});
+
+	test("the fireball grows to 1.2 reaches by a third of the life and its points swell with it", () => {
+		const grown = 0.35 * duration;
+		for (const age of ages) {
+			const ball = Math.min(1, age / grown);
+			const points = fireball(age);
+			expect(points).toHaveLength(EXPLOSION_FIREBALL);
+			for (const p of points) {
+				expect(radius(p)).toBeLessThanOrEqual(1.2 * e.reachKm * ball + 1e-9);
+				expect(p.sizeKm).toBeCloseTo(e.reachKm * (1.2 + 2.4 * ball), 6);
+			}
+			if (ball > 0)
+				expect(Math.max(...points.map(radius))).toBeGreaterThan(
+					0.7 * 1.2 * e.reachKm * ball,
+				);
+		}
+	});
+
+	test("the debris flies out to the cloud's radius, each point between three tenths and all of it", () => {
+		for (const age of ages) {
+			const spread = 1 - (1 - age / duration) ** 3;
+			const points = debris(age);
+			expect(points).toHaveLength(EXPLOSION_PARTICLES);
+			for (const p of points) {
+				expect(radius(p)).toBeGreaterThanOrEqual(0.3 * cloud * spread - 1e-6);
+				expect(radius(p)).toBeLessThanOrEqual(cloud * spread + 1e-6);
+				expect(p.sizeKm).toBeGreaterThanOrEqual(0.35 * e.reachKm - 1e-9);
+				expect(p.sizeKm).toBeLessThanOrEqual(0.6 * e.reachKm + 1e-9);
+			}
+			if (age > 0) {
+				const r = points.map(radius);
+				expect(Math.max(...r)).toBeGreaterThan(0.9 * cloud * spread);
+				expect(Math.min(...r)).toBeLessThan(0.4 * cloud * spread);
+			}
+		}
+		const sizes = debris(1).map((p) => p.sizeKm);
+		expect(Math.max(...sizes) - Math.min(...sizes)).toBeGreaterThan(
+			0.2 * e.reachKm,
+		);
+	});
+
+	test("the points leave in every direction, not along one axis", () => {
+		const points = debris(1.4);
+		for (const axis of [0, 1, 2]) {
+			const values = points.map((p) => p.offset[axis] / radius(p));
+			expect(Math.min(...values)).toBeLessThan(-0.8);
+			expect(Math.max(...values)).toBeGreaterThan(0.8);
+			const mean = values.reduce((s, v) => s + v, 0) / values.length;
+			expect(Math.abs(mean)).toBeLessThan(0.25);
+		}
+	});
+
+	test("a point cools from white through yellow to red, and fades", () => {
+		for (const age of ages)
+			for (const p of at(age).slice(1)) {
+				const [r, g, b] = p.heat;
+				expect(r).toBeGreaterThanOrEqual(g - 1e-9);
+				expect(g).toBeGreaterThanOrEqual(b - 1e-9);
+				expect(b).toBeGreaterThanOrEqual(0);
+			}
+		const first = debris(0)[0].heat;
+		expect(first[0]).toBeCloseTo(1 - 0.35 * 0.15, 6);
+		expect(first[1]).toBeCloseTo((1 - 0.55 * 0.15) ** 1.6, 6);
+		expect(first[2]).toBeCloseTo(0.85 * 0.85 ** 3, 6);
+		const ball = fireball(0)[0].heat;
+		expect(ball[0]).toBeCloseTo(1 - 0.35 * 0.2, 6);
+		const late = debris(duration * 0.95)[0].heat;
+		expect(late[0]).toBeLessThan(0.01);
+		expect(late[2]).toBeCloseTo(0, 6);
+	});
+
+	test("two kills with different keys scatter their debris differently", () => {
+		const other = explosionPoints(
+			kill({ reachKm: 0.05, key: "other" }),
+			e.at + 1,
+		);
+		expect(other.slice(1).map((p) => p.offset)).not.toEqual(
+			at(1)
+				.slice(1)
+				.map((p) => p.offset),
+		);
+	});
 });
