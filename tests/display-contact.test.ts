@@ -15,6 +15,7 @@ import {
 	idleEjectHold,
 	stepEjectHold,
 } from "../src/eject";
+import { releaseHeldKey } from "../src/held-keys";
 import { keyDispatch } from "../src/key-dispatch";
 import {
 	NO_ATTITUDE,
@@ -790,9 +791,16 @@ function ejectReleaseSubject(hold: EjectHold, down = ["backspace"]) {
 	const keys = new Set(down);
 	const pad = { held: false }; // glossary-ignore: pad
 	const subject = Object.assign(
-		Object.create(methods(["releasePhysicalKey"], { keyDispatch, EJECT_IDLE })),
+		Object.create(
+			methods(["releasePhysicalKey"], {
+				keyDispatch,
+				releaseHeldKey,
+				EJECT_IDLE,
+			}),
+		),
 		{
 			keysPhysicallyDown: keys,
+			physicalKeyCodes: new Map<string, string>(),
 			ejectHold: hold,
 			// The release handler asks the aggregate physical control. These are
 			// two keyboard sources and the controller; this is not a binding test.
