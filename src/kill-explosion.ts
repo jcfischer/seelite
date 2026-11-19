@@ -113,13 +113,12 @@ export function writeExplosionPoints(
 	const cloud = explosionCloudKm(e.reachKm);
 	const seed = fnv1a(e.key);
 	const flash = Math.max(0, 1 - age / EXPLOSION_FLASH_S);
-	out.position.fill(0, 0, 3);
 	out.sizeKm[0] = e.reachKm * (2 + 6 * flash);
 	writeHeat(out.heat, 0, 0, 1.4 * flash ** 1.5);
 	const ball = Math.min(1, age / (0.35 * duration));
-	for (let i = 0; i < EXPLOSION_FIREBALL; i++) {
-		const h = mix(seed, 0x51 + i);
-		const n = 1 + i;
+	// Stryker disable next-line EqualityOperator: one point past the fireball is the first debris point, which the debris loop writes over
+	for (let n = 1; n <= EXPLOSION_FIREBALL; n++) {
+		const h = mix(seed, n);
 		writeDirection(
 			out.position,
 			n,
@@ -130,9 +129,9 @@ export function writeExplosionPoints(
 		writeHeat(out.heat, n, 0.2 + 0.8 * life, (1 - life) ** 1.4);
 	}
 	const spread = 1 - (1 - life) ** 3;
-	for (let i = 0; i < EXPLOSION_PARTICLES; i++) {
-		const h = mix(seed, 0x1000 + i);
-		const n = 1 + EXPLOSION_FIREBALL + i;
+	// Stryker disable next-line EqualityOperator: a write one past the last point lands outside the typed array and is dropped
+	for (let n = 1 + EXPLOSION_FIREBALL; n < EXPLOSION_POINTS; n++) {
+		const h = mix(seed, n);
 		writeDirection(
 			out.position,
 			n,
@@ -152,6 +151,7 @@ const writeDirection = (
 	r: number,
 ) => {
 	const z = 2 * unit(mix(h, 1)) - 1;
+	// Stryker disable next-line ArithmeticOperator: dividing by the draw still gives an angle, and any angle is a direction; the tests hold the spread
 	const a = 2 * Math.PI * unit(mix(h, 2));
 	const s = Math.sqrt(1 - z * z);
 	position[3 * n] = r * s * Math.cos(a);

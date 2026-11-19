@@ -194,6 +194,9 @@ describe("the shape of every point, through its life", () => {
 		expect(first[2]).toBeCloseTo(0.85 * 0.85 ** 3, 6);
 		const ball = fireball(0)[0].heat;
 		expect(ball[0]).toBeCloseTo(1 - 0.35 * 0.2, 6);
+		const mid = fireball(duration / 2)[0].heat;
+		expect(mid[0]).toBeCloseTo(0.5 ** 1.4 * (1 - 0.35 * 0.6), 6);
+		expect(mid[2]).toBeCloseTo(0.5 ** 1.4 * 0.4 ** 3 * 0.85, 6);
 		const late = debris(duration * 0.95)[0].heat;
 		expect(late[0]).toBeLessThan(0.01);
 		expect(late[2]).toBeCloseTo(0, 6);
