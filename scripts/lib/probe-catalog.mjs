@@ -204,6 +204,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["nebula", "sky", "reflection", "quality", "GPU disposal"],
 		),
 		entry(
+			"probe-station-waltz.mjs",
+			"Engages the docking computer at every station of two systems with different governments, at least three roles between them, and checks the loaded waltz version is the one stationWaltz names on the page; ?waltz= forces one version and an unknown value warns once.",
+			["station waltz", "docking computer", "music director", "waltz override"],
+		),
+		entry(
 			"probe-music-game.mjs",
 			"Live music unlock, audible station and flight beds, and docking-waltz engage, resolve, duck and cancel commands.",
 			["music director", "audio unlock", "docking computer", "live music bus"],

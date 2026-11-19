@@ -102,6 +102,17 @@ export interface MusicReading {
 	readonly hullShare: number;
 	readonly systemSeed: number;
 	readonly stationRole: StationType | null;
+	readonly waltz: StationWaltz | null;
+}
+
+/**
+ * The waltz the game picked for the station the docking computer flies to
+ * (node #1324): the version's name and the song that plays it. A reading
+ * with none plays the arms' voicing.
+ */
+export interface StationWaltz {
+	readonly version: string;
+	readonly song: Song;
 }
 
 /**
@@ -124,7 +135,7 @@ export const CRUISE_TEMPO = 1.06;
 /** The ship bus under the waltz (#547 D5): about 6 dB. */
 export const WALTZ_DUCK_DB = 6;
 
-const cadences = new Map<DanubeVoicing, number>();
+const cadences = new WeakMap<Song, number>();
 
 /**
  * From the plane to the cadence's end (#547 D1), in one voicing: one waltz
@@ -133,10 +144,14 @@ const cadences = new Map<DanubeVoicing, number>();
  * after it. Read off the song the director loads, so a retuned cadence — or a
  * voicing given a tempo map of its own — moves it (sage round 1).
  */
-export const waltzCadenceS = (voicing: DanubeVoicing): number => {
-	const known = cadences.get(voicing);
+export const waltzCadenceS = (voicing: DanubeVoicing): number =>
+	songCadenceS(danubeSong(voicing));
+
+/** `waltzCadenceS` for any song on the waltz's contract, a station's version
+ *  as well as a voicing (node #1324). */
+export const songCadenceS = (song: Song): number => {
+	const known = cadences.get(song);
 	if (known !== undefined) return known;
-	const song = danubeSong(voicing);
 	const at = song.sections.findIndex((x) => x.name === song.resolve);
 	if (at < 0) throw new Error(`${song.name} has no resolve section`);
 	const startOf = (i: number) =>
@@ -163,7 +178,7 @@ export const waltzCadenceS = (voicing: DanubeVoicing): number => {
 	const first = startOf(at);
 	for (let bar = first; bar < first + song.sections[at].bars; bar++)
 		s += barS(bar);
-	cadences.set(voicing, s);
+	cadences.set(song, s);
 	return s;
 };
 
@@ -333,6 +348,7 @@ export const QUIET_READING: MusicReading = {
 	hullShare: 1,
 	systemSeed: 1,
 	stationRole: null,
+	waltz: null,
 };
 
 export function dangerLevel(
@@ -380,8 +396,10 @@ export interface MusicState {
 	readonly waltz: "none" | "playing" | "resolving";
 	/** Time since the resolve, while the cadence plays. */
 	readonly waltzS: number;
-	/** The voicing loaded as `danube`, once a waltz has been. */
-	readonly waltzKey: DanubeVoicing | null;
+	/** The version loaded as `danube`, once a waltz has been: a voicing or a
+	 *  station's version (node #1324), with its cadence hold. */
+	readonly waltzKey: string | null;
+	readonly waltzHoldS: number;
 }
 
 export const initialMusicState = (): MusicState => ({
@@ -399,6 +417,7 @@ export const initialMusicState = (): MusicState => ({
 	waltz: "none",
 	waltzS: 0,
 	waltzKey: null,
+	waltzHoldS: 0,
 });
 
 const other = (id: FlightId | null): FlightId =>
@@ -458,7 +477,7 @@ function stepWaltz(
 		// said rather than covered (sage round 3).
 		if (s.waltzKey === null)
 			throw new Error("a waltz resolving with none loaded");
-		const hold = waltzCadenceS(s.waltzKey);
+		const hold = s.waltzHoldS;
 		if (r.scene === "docked" && !arms.off && s.waltzS < hold) {
 			const waltzS = r.held ? s.waltzS : s.waltzS + dt;
 			if (waltzS < hold)
@@ -470,13 +489,23 @@ function stepWaltz(
 		// Held — the opening, a menu — nothing starts.
 		if (s.waltz === "playing" || r.held)
 			return { state: s, commands: cmds, done: true };
-		if (s.waltzKey !== arms.waltz)
-			cmds.push({ type: "load", id: "danube", song: danubeSong(arms.waltz) });
+		const pick = r.waltz ?? {
+			version: arms.waltz,
+			song: danubeSong(arms.waltz),
+		};
+		if (s.waltzKey !== pick.version)
+			cmds.push({ type: "load", id: "danube", song: pick.song });
 		// `play`, not a crossfade: the bed stops starting notes on its line and
 		// the ones sounding ring out, so the intro's chord bows in whole.
 		cmds.push({ type: "play", id: "danube", at: "bar" });
 		return {
-			state: { ...s, bed: "none", waltz: "playing", waltzKey: arms.waltz },
+			state: {
+				...s,
+				bed: "none",
+				waltz: "playing",
+				waltzKey: pick.version,
+				waltzHoldS: songCadenceS(pick.song),
+			},
 			commands: cmds,
 			done: true,
 		};
