@@ -181,6 +181,13 @@ describe("a modal panel takes the whole pad", () => {
 		expect(padIntents(press("a"), "modal").activate).toBe(true);
 		expect(padIntents(press("b"), "modal").back).toBe(true);
 	});
+
+	test("the shoulders step a tab, and claim nothing else", () => {
+		expect(padIntents(press("l1"), "modal").tabDelta).toBe(-1);
+		expect(padIntents(press("r1"), "modal").tabDelta).toBe(1);
+		expect(padIntents(press("l1"), "modal").buttons).toEqual([]);
+		expect(padIntents(press("r1"), "modal").buttons).toEqual([]);
+	});
 });
 
 describe("the sticks are a command, and they carry their own magnitude", () => {

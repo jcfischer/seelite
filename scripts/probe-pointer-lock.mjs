@@ -622,7 +622,7 @@ check(
 	`mounted=${settingsMounted} locked-before=${beforeSettings} lock=${await lockHolder(page)} surface=${await surface(page)}`,
 );
 
-// The first row, which is the render scale — a real control whose value changes
+// The first row, which is the field of view — a real control whose value changes
 // when it is actuated, so the click's effect is read rather than assumed. Read
 // *after* the screen is up: before the keystroke there is no screen to have rows.
 const rowBefore = await page.evaluate(

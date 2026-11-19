@@ -58,16 +58,16 @@ const settle = () =>
 const sensitivity = () =>
 	page.evaluate(() => window.__seelite.settings.value.mouseSensitivity);
 
-/** The settings row for mouse sensitivity, as drawn. */
+/** The settings row for mouse sensitivity, found by name (#645). */
 const row = () =>
 	page.evaluate(() => {
-		const el = [...document.querySelectorAll("#seelite-settings .row")].find(
-			(r) =>
-				r.querySelector(".name")?.textContent?.trim() === "Mouse sensitivity",
-		);
+		const el = document.querySelector('[data-settings-row="mouseSensitivity"]');
+		const panel = window.__seelite.settingsPanel();
 		return {
 			value: el?.querySelector(".value")?.textContent?.trim() ?? null,
 			selected: el?.getAttribute("aria-selected") ?? null,
+			cursor: panel.cursor,
+			tab: panel.tab,
 		};
 	});
 
@@ -147,15 +147,18 @@ if (!mounted) {
 }
 await page.keyboard.press("z");
 await settle();
-// The row is the last of the settings and the layout row follows it, so ↑
-// from the first row wraps onto the layout row and ↑ again lands here.
-await page.keyboard.press("ArrowUp");
-await page.keyboard.press("ArrowUp");
+// Found by name through the page-level read (#645).
+await page.evaluate(() =>
+	window.__seelite.settingsPanel.focusRow("mouseSensitivity"),
+);
 await settle();
 const before = await row();
 check(
 	"the Mouse sensitivity row is on the screen, reads 100% and takes the cursor",
-	before.value?.includes("100%") === true && before.selected === "true",
+	before.value?.includes("100%") === true &&
+		before.selected === "true" &&
+		before.cursor === "mouseSensitivity" &&
+		before.tab === "controls",
 	JSON.stringify(before),
 );
 await page.keyboard.press("Escape");
@@ -181,7 +184,14 @@ check(
 // ---------------------------------------------------------------------------
 await page.keyboard.press("z");
 await settle();
-// The cursor is where it was left.
+// Reopening in the same page puts the cursor and tab back where they were
+// (#645); this is the page-level read of that, not a walk to it.
+const reopened = await page.evaluate(() => window.__seelite.settingsPanel());
+check(
+	"reopened, the screen is on the tab and row it was closed on",
+	reopened.tab === "controls" && reopened.cursor === "mouseSensitivity",
+	`tab ${reopened.tab}; cursor ${reopened.cursor}`,
+);
 await page.keyboard.press("ArrowRight");
 await page.keyboard.press("ArrowRight");
 await settle();
