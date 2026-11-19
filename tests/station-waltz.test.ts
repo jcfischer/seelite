@@ -179,3 +179,124 @@ describe("the director plays the station's version (node #1324)", () => {
 		expect(load.song.name).toContain("(hybrid)");
 	});
 });
+
+describe("the tag table is #751's resolution (D8)", () => {
+	const ALL_ROLES = ["trade", "refinery", "shipyard", "outpost"];
+	const IND = ["Rich Ind", "Average Ind", "Poor Ind", "Mainly Ind"];
+	const AGRI = ["Mainly Agri", "Rich Agri", "Average Agri", "Poor Agri"];
+	const T = (
+		roles: string[],
+		governments: string[],
+		economies: string[],
+		never: string[] = [],
+	) => ({ roles, governments, economies, never });
+	const D8: Record<string, ReturnType<typeof T>> = {
+		hybrid: T(ALL_ROLES, [...GOVERNMENT_NAMES], [...ECONOMY_NAMES]),
+		techno: T(
+			["trade", "shipyard"],
+			["Corporate State", "Democracy", "Confederacy"],
+			["Rich Ind", "Average Ind", "Mainly Ind"],
+		),
+		synthwave: T(
+			["trade", "shipyard"],
+			["Corporate State", "Democracy"],
+			["Rich Ind", "Average Ind", "Rich Agri"],
+		),
+		minimal: T(
+			["trade", "shipyard"],
+			["Corporate State", "Democracy", "Confederacy"],
+			["Rich Ind", "Rich Agri"],
+			["outpost"],
+		),
+		"minimal-piano": T(
+			["trade", "shipyard"],
+			["Corporate State", "Democracy", "Confederacy"],
+			["Rich Ind", "Rich Agri"],
+			["outpost"],
+		),
+		berlin: T(
+			["refinery", "shipyard"],
+			["Communist", "Dictatorship", "Confederacy"],
+			IND,
+		),
+		industrial: T(
+			["refinery", "outpost"],
+			["Dictatorship", "Communist", "Anarchy"],
+			["Poor Ind", "Mainly Ind"],
+		),
+		doom: T(
+			["refinery", "outpost"],
+			["Anarchy", "Feudal", "Dictatorship"],
+			["Poor Ind", "Poor Agri"],
+			["Corporate State", "Democracy"],
+		),
+		dnb: T(
+			["trade", "outpost"],
+			["Anarchy", "Feudal", "Multi-gov"],
+			[...ECONOMY_NAMES],
+		),
+		dub: T(["trade", "outpost"], ["Anarchy", "Multi-gov", "Feudal"], AGRI),
+		ambient: T(
+			["trade", "refinery"],
+			["Democracy", "Confederacy", "Multi-gov"],
+			AGRI,
+			["outpost"],
+		),
+		"ambient-piano": T(
+			["trade", "refinery"],
+			["Democracy", "Confederacy", "Multi-gov"],
+			AGRI,
+			["outpost"],
+		),
+		jazz: T(
+			["trade"],
+			["Democracy", "Corporate State", "Confederacy", "Multi-gov"],
+			["Rich Ind", "Rich Agri"],
+			["Anarchy"],
+		),
+		"jazz-trio": T(
+			["trade"],
+			["Democracy", "Corporate State", "Confederacy", "Multi-gov"],
+			["Rich Ind", "Rich Agri"],
+			["Anarchy"],
+		),
+		"jazz-upright": T(
+			["trade"],
+			["Democracy", "Corporate State", "Confederacy", "Multi-gov"],
+			["Rich Ind", "Rich Agri"],
+			["Anarchy"],
+		),
+		bossa: T(["trade"], ["Democracy", "Multi-gov", "Confederacy"], AGRI, [
+			"Dictatorship",
+		]),
+		gamelan: T(
+			["trade", "refinery"],
+			["Feudal", "Multi-gov", "Communist"],
+			AGRI,
+		),
+		baroque: T(
+			["trade", "shipyard"],
+			["Feudal", "Dictatorship", "Corporate State"],
+			["Rich Ind", "Rich Agri"],
+			["outpost"],
+		),
+		musicbox: T(
+			["trade"],
+			["Democracy", "Corporate State"],
+			["Rich Agri", "Average Agri"],
+			["outpost", "Anarchy"],
+		),
+	};
+	const sorted = (xs: readonly string[]) => [...xs].sort();
+
+	test("every row's roles, governments, economies and exclusions are the resolution's", () => {
+		expect(WALTZ_VERSIONS).toEqual(Object.keys(D8));
+		for (const row of WALTZ_TABLE) {
+			const want = D8[row.version];
+			expect(sorted(row.roles)).toEqual(sorted(want.roles));
+			expect(sorted(row.governments)).toEqual(sorted(want.governments));
+			expect(sorted(row.economies)).toEqual(sorted(want.economies));
+			expect(sorted(row.never)).toEqual(sorted(want.never));
+		}
+	});
+});

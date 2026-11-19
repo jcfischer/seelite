@@ -579,6 +579,8 @@ describe("the docking computer's waltz (#603)", () => {
 	});
 
 	test("?music= picks the voicing, and hybrid is the default", () => {
+		expect(musicArms("oxygene").waltzNamed).toBe(true);
+		expect(musicArms("techno,calm").waltzNamed).toBe(false);
 		expect(DEFAULT_MUSIC_ARMS.waltz).toBe("hybrid");
 		for (const v of ["orchestra", "oxygene", "hybrid"] as const) {
 			const { arms } = musicArms(v);
