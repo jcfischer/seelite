@@ -1189,6 +1189,7 @@ import {
 	VIEW_MODES,
 } from "./commands";
 import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
+import { pressHeldKey, releaseHeldKey } from "./held-keys";
 import { keyDispatch } from "./key-dispatch";
 
 setRockShapeSource(getRockHeightfields);
@@ -2470,6 +2471,7 @@ class Game {
 	 */
 	releaseHeldKeys() {
 		this.keys.clear();
+		this.keyCodes.clear();
 	}
 	/** How many keys the game currently believes are down — what `probe-boot`
 	 *  asserts on, since "the ship kept flying" is otherwise only a comment. */
@@ -2642,6 +2644,8 @@ class Game {
 	private systemStars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
 	private readonly keys = new Set<string>();
+	private readonly keyCodes = new Map<string, string>();
+	private readonly physicalKeyCodes = new Map<string, string>();
 	/**
 	 * The keys physically down, which `keys` is not once a screen has emptied
 	 * it (`releaseHeldKeys`): added beside `keys` on a press and deleted on
@@ -5398,6 +5402,7 @@ class Game {
 		window.addEventListener("blur", () => {
 			this.mouseFiring = false;
 			this.loseEjectFocus();
+			this.releaseHeldKeys();
 		});
 		window.addEventListener("focus", () => this.regainEjectFocus());
 		// **A key unlocks the sound as well as a click**, because #283's pad
@@ -12391,7 +12396,7 @@ class Game {
 			// `keysPhysicallyDown` is not cleared here: a screen may stop the
 			// keyup before it bubbles this far, so it is let go of in the
 			// capture phase (`releasePhysicalKey`).
-			this.keys.delete(route.key);
+			releaseHeldKey(this.keys, this.keyCodes, route.key, e.code);
 			return;
 		}
 		// **The rebind modal takes every key that is left, and takes it here**
@@ -12513,8 +12518,13 @@ class Game {
 				this.command(id);
 			return;
 		}
-		this.keys.add(route.key);
-		this.keysPhysicallyDown.add(route.key);
+		pressHeldKey(this.keys, this.keyCodes, route.key, e.code);
+		pressHeldKey(
+			this.keysPhysicallyDown,
+			this.physicalKeyCodes,
+			route.key,
+			e.code,
+		);
 		// One-shot commands fire on the press, not on the held state: engaging
 		// cruise and stepping a dial are events, and reading them out of `keys`
 		// each frame would repeat them sixty times a second.
@@ -14899,7 +14909,12 @@ class Game {
 			editable: false,
 		});
 		if (route.kind === "release") {
-			this.keysPhysicallyDown.delete(route.key);
+			releaseHeldKey(
+				this.keysPhysicallyDown,
+				this.physicalKeyCodes,
+				route.key,
+				e.code,
+			);
 			// A release and a new press can both arrive before the next frame.
 			// Cancel now, or that frame sees only the new press and inherits the
 			// old fill or spent latch. Another physical eject source still down
