@@ -14,6 +14,10 @@
  * version's name is read off `window.__seelite`, and it is compared with
  * `stationWaltz` called on the page.
  *
+ * Outposts refuse clearance (#491), so the computer is engaged at the other
+ * stations only, and the run waits out the cancel's fade between them: the
+ * synth refuses a new waltz while the last one still sounds.
+ *
  * A default-layout probe (#381 D11): the F8 press is the trusted key that opens
  * the sound through the game's unlock listener.
  */
@@ -61,6 +65,7 @@ const dockAt = (page) =>
 		);
 		const { stationWaltz } = await import("/src/station-waltz.ts");
 		const { startSystem } = await import("/src/galaxy.ts");
+		const { DANUBE_CANCEL_FADE_S } = await import("/src/music-danube.ts");
 		const g = window.__seelite;
 		const waitFor = async (done) => {
 			for (let i = 0; i < 40 && !done(); i++)
@@ -84,7 +89,10 @@ const dockAt = (page) =>
 		const record = g.world.system.record;
 		const start = startSystem(g.world.galaxy);
 		const rows = [];
-		for (const station of g.world.system.contents.stations) {
+		const dockable = g.world.system.contents.stations.filter(
+			(s) => s.type !== "outpost",
+		);
+		for (const station of dockable) {
 			const snap = g.dockingSnapshot(station.id);
 			await window.__viewAlongAxis(station.id, snap.planeKm + 4.5, {
 				comoving: true,
@@ -102,6 +110,9 @@ const dockAt = (page) =>
 			});
 			if (g.dockingComputer.engaged) g.toggleDockingComputer();
 			await waitFor(() => g.musicState.waltz === "none");
+			await new Promise((r) =>
+				setTimeout(r, (DANUBE_CANCEL_FADE_S + 0.75) * 1000),
+			);
 		}
 		return {
 			system: record.index,
@@ -119,7 +130,9 @@ const chosen = await (async () => {
 		const systems = g.world.galaxy.systems.map((s) => ({
 			index: s.index,
 			government: s.government,
-			roles: generateContents(s).stations.map((st) => st.type),
+			roles: generateContents(s)
+				.stations.map((st) => st.type)
+				.filter((t) => t !== "outpost"),
 		}));
 		const rich = systems
 			.filter((s) => s.roles.length >= 3)

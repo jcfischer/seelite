@@ -221,7 +221,6 @@ export function stationWaltz(
 	let best: { version: string; score: number } | null = null;
 	for (const tags of table) {
 		const weight = waltzWeight(tags, system, role);
-		// Stryker disable next-line ConditionalExpression: a null weight scores -ln(u) / 0, which is Infinity and never wins
 		if (weight === null) continue;
 		const score = -Math.log(waltzDraw(system, role, tags.version)) / weight;
 		// Stryker disable next-line EqualityOperator: two candidates tie only on an exact float equality of distinct hashes
