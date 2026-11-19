@@ -300,3 +300,62 @@ describe("the tag table is #751's resolution (D8)", () => {
 		}
 	});
 });
+
+describe("the start pin is the start system's trade station and nothing else (#751 D3)", () => {
+	const nowhere = { galaxy: -1, index: -1 };
+	const free = (role: "trade" | "refinery") =>
+		galaxy.systems.find((s) => stationWaltz(s, role, nowhere) !== PINNED_WALTZ);
+
+	test("another role at the start system plays its own pick", () => {
+		const s = free("refinery");
+		if (!s) throw new Error("no refinery pick other than hybrid");
+		expect(stationWaltz(s, "refinery", s)).toBe(
+			stationWaltz(s, "refinery", nowhere),
+		);
+	});
+
+	test("the same index in another galaxy, or another index in this one, is not pinned", () => {
+		const s = free("trade");
+		if (!s) throw new Error("no trade pick other than hybrid");
+		const own = stationWaltz(s, "trade", nowhere);
+		expect(
+			stationWaltz(s, "trade", { galaxy: s.galaxy + 1, index: s.index }),
+		).toBe(own);
+		expect(
+			stationWaltz(s, "trade", { galaxy: s.galaxy, index: s.index + 1 }),
+		).toBe(own);
+		expect(stationWaltz(s, "trade", s)).toBe(PINNED_WALTZ);
+	});
+
+	test("a table with no candidate for the role falls back to hybrid", () => {
+		const outpostOnly: WaltzTags = {
+			version: "polka",
+			roles: ["outpost"],
+			governments: [],
+			economies: [],
+			never: [],
+		};
+		expect(
+			stationWaltz(galaxy.systems[3], "trade", nowhere, [outpostOnly]),
+		).toBe(PINNED_WALTZ);
+	});
+});
+
+describe("waltzSong", () => {
+	test("hybrid is the waltz's own voicing, loaded or not", () => {
+		expect(waltzSong(PINNED_WALTZ, null)?.name).toContain("(hybrid)");
+	});
+
+	test("another version is the loaded one, and none before the versions load", async () => {
+		expect(waltzSong("jazz-trio", null)).toBeNull();
+		expect(waltzSong("jazz-trio", {})).toBeNull();
+		const versions = await loadVersions({
+			"./music-danube-variants/jazz-trio.ts": () =>
+				import("../src/music-danube-variants/jazz-trio"),
+		});
+		const song = waltzSong("jazz-trio", versions);
+		expect(song).not.toBeNull();
+		expect(song).toBe(Object.values(versions)[0]);
+		expect(song?.name).not.toContain("(hybrid)");
+	});
+});

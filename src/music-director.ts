@@ -178,7 +178,7 @@ export const songCadenceS = (song: Song): number => {
 	const first = startOf(at);
 	for (let bar = first; bar < first + song.sections[at].bars; bar++)
 		s += barS(bar);
-	// Stryker disable next-line all: the cache saves recomputing only; a miss computes the same seconds
+	// Stryker disable next-line BlockStatement, CallExpression: the cache saves recomputing only; a miss computes the same seconds
 	cadences.set(song, s);
 	return s;
 };
