@@ -12,6 +12,7 @@ import {
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	SHOT_SOUND_GAP_S,
+	tracerPorts,
 } from "../src/gun-feedback";
 import { ndcToPx } from "../src/hud";
 import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
@@ -133,8 +134,12 @@ for (const hull of HULL_IDS) {
 						inCamera(to);
 						if (-from.z < NEAR_KM)
 							from.lerp(to, (NEAR_KM + from.z) / (from.z - to.z));
+						const glassPort =
+							view === "cockpit" && !spec.cutter
+								? tracerPorts(spec.hardpoints)[index]
+								: null;
 						for (const [actual, expected] of [
-							[drawn[beam].from, framePoint(from, camera)],
+							[drawn[beam].from, glassPort ?? framePoint(from, camera)],
 							[drawn[beam].to, framePoint(to, camera)],
 						]) {
 							for (const axis of ["x", "y"] as const)
@@ -187,7 +192,9 @@ for (const view of ["cockpit", "chase"] as const) {
 				),
 			).toEqual([1]);
 			expect(subject.gunTracer.firedPorts).toEqual(
-				drawn.map((beam: BeamStroke) => beam.from),
+				view === "cockpit"
+					? visible.map((i) => tracerPorts(2)[i])
+					: drawn.map((beam: BeamStroke) => beam.from),
 			);
 		});
 	}
