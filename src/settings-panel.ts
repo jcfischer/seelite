@@ -159,6 +159,12 @@ export interface SettingsRowView {
 	readonly tab: SettingTab;
 }
 
+interface ScreenRow extends SettingsRowView {
+	readonly value: () => string;
+	readonly note: () => string;
+	readonly step: (direction: number) => void;
+}
+
 /**
  * What the settings screen tells a probe about itself.
  *
@@ -258,14 +264,43 @@ export function mountSettingsPanel(
 	let tab: SettingTab = "display";
 	let cursor = 0;
 
-	const rowsIn = (which: SettingTab): SettingsRowView[] => {
-		const rows: SettingsRowView[] = settingKeysIn(which).map((key) => ({
+	const stepSetting = (key: keyof Settings, direction: number) => {
+		const allowed = settingSpec(key).allowed as readonly Settings[typeof key][];
+		const at = allowed.indexOf(store.value[key]);
+		const next = allowed[(at + direction + allowed.length) % allowed.length];
+		store.set(key, next);
+	};
+
+	const settingRow = (key: keyof Settings, which: SettingTab): ScreenRow => {
+		const spec = settingSpec(key);
+		const describe = spec.describe as (v: Settings[typeof key]) => string;
+		return {
 			id: key,
-			label: settingSpec(key).label,
+			label: spec.label,
 			tab: which,
-		}));
+			value: () => {
+				const shown = describe(store.value[key]);
+				const actual = granted?.(key, store.value[key]);
+				return actual
+					? `${shown} <span class="granted">(${actual})</span>`
+					: shown;
+			},
+			note: () => spec.note,
+			step: (direction) => stepSetting(key, direction),
+		};
+	};
+
+	const rowsIn = (which: SettingTab): ScreenRow[] => {
+		const rows = settingKeysIn(which).map((key) => settingRow(key, which));
 		if (layoutRow?.tab === which)
-			rows.push({ id: "layout", label: layoutRow.label, tab: which });
+			rows.push({
+				id: "layout",
+				label: layoutRow.label,
+				tab: which,
+				value: () => escapeHtml(layoutRow.value()),
+				note: () => layoutRow.note(),
+				step: (direction) => layoutRow.step(direction),
+			});
 		return rows;
 	};
 
@@ -274,18 +309,8 @@ export function mountSettingsPanel(
 	const widestTab = () =>
 		Math.max(...SETTING_TABS.map((which) => rowsIn(which).length));
 
-	const stepSetting = (key: keyof Settings, direction: number) => {
-		const allowed = settingSpec(key).allowed as readonly Settings[typeof key][];
-		const at = allowed.indexOf(store.value[key]);
-		const next = allowed[(at + direction + allowed.length) % allowed.length];
-		store.set(key, next);
-	};
-
 	const stepRow = (index: number, direction: number) => {
-		const row = rowsIn(tab)[index];
-		if (!row) return;
-		if (row.id === "layout") layoutRow?.step(direction);
-		else stepSetting(row.id as keyof Settings, direction);
+		rowsIn(tab)[index]?.step(direction);
 	};
 
 	const changeTab = (direction: number) => {
@@ -318,36 +343,17 @@ export function mountSettingsPanel(
 
 	const draw = () => {
 		if (!root) return;
-		const keys = settingKeysIn(tab);
-		const drawn = keys.map((key, i) => {
-			const spec = settingSpec(key);
-			const describe = spec.describe as (v: Settings[typeof key]) => string;
-			const value = describe(store.value[key]);
-			const actual = granted?.(key, store.value[key]);
-			return rowMarkup({
-				rowId: key,
+		const rows = rowsIn(tab);
+		const drawn = rows.map((row, i) =>
+			rowMarkup({
+				rowId: row.id,
 				selected: cursor === i + 1,
-				label: spec.label,
-				value: `${value}${actual ? ` <span class="granted">(${actual})</span>` : ""}`,
-			});
-		});
-		const at = keys.length;
-		if (layoutRow?.tab === tab)
-			drawn.push(
-				rowMarkup({
-					rowId: "layout",
-					selected: cursor === at + 1,
-					label: escapeHtml(layoutRow.label),
-					value: escapeHtml(layoutRow.value()),
-				}),
-			);
-		const selected = rowsIn(tab)[cursor - 1];
-		let note = STRIP_NOTE;
-		if (selected)
-			note =
-				selected.id === "layout"
-					? escapeHtml(layoutRow?.note() ?? "")
-					: escapeHtml(settingSpec(selected.id as keyof Settings).note);
+				label: escapeHtml(row.label),
+				value: row.value(),
+			}),
+		);
+		const selected = rows[cursor - 1];
+		const note = selected ? escapeHtml(selected.note()) : STRIP_NOTE;
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Settings" data-cursor="${cursor === 0 ? "strip" : "row"}">
   <div class="head"><h2>Settings</h2><div class="tabs" role="tablist">${SETTING_TABS.map(
 		(which) =>
@@ -430,7 +436,13 @@ export function mountSettingsPanel(
 		tab,
 		tabs: SETTING_TABS,
 		cursor: cursor === 0 ? "strip" : (rowsIn(tab)[cursor - 1]?.id ?? "strip"),
-		rows: SETTING_TABS.flatMap((which) => rowsIn(which)),
+		rows: SETTING_TABS.flatMap((which) =>
+			rowsIn(which).map(({ id, label, tab: rowTab }) => ({
+				id,
+				label,
+				tab: rowTab,
+			})),
+		),
 	});
 
 	const onKey = (e: KeyboardEvent) => {
