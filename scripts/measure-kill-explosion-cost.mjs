@@ -75,7 +75,7 @@ const setup = await page.evaluate(async (count) => {
 	window.__killArm = (arm, frames) => {
 		const gl = g.renderer.getContext();
 		g.killExplosions.clear();
-		if (arm === "burst") for (const k of kills) g.killExplosions.spawn(k);
+		if (arm === "burst") for (const k of kills) g.killExplosions.start(k);
 		g.render(0);
 		const sync = new Uint8Array(4);
 		const started = performance.now();

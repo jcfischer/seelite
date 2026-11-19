@@ -13,7 +13,7 @@ import {
 	explosionCentre,
 	explosionCloudKm,
 	explosionLive,
-	explosionPoints,
+	writeExplosionPoints,
 } from "./kill-explosion";
 import type { Vec3 } from "./vec3";
 
@@ -65,7 +65,7 @@ interface Live {
 /** Every explosion the near scene is drawing, and the verbs that drive them. */
 export interface KillExplosions {
 	object: THREE.Group;
-	spawn(explosion: KillExplosion): void;
+	start(explosion: KillExplosion): void;
 	update(t: number, cameraPos: Vec3): number;
 	live(): readonly KillExplosion[];
 	clear(): void;
@@ -135,10 +135,10 @@ export function buildKillExplosions(): KillExplosions {
 		) as THREE.BufferAttribute;
 		const sizes = geometry.getAttribute("sizeKm") as THREE.BufferAttribute;
 		const heats = geometry.getAttribute("heat") as THREE.BufferAttribute;
-		explosionPoints(explosion, t).forEach((p, i) => {
-			positions.setXYZ(i, p.offset[0], p.offset[1], p.offset[2]);
-			sizes.setX(i, p.sizeKm);
-			heats.setXYZ(i, p.heat[0], p.heat[1], p.heat[2]);
+		writeExplosionPoints(explosion, t, {
+			position: positions.array as Float32Array,
+			sizeKm: sizes.array as Float32Array,
+			heat: heats.array as Float32Array,
 		});
 		positions.needsUpdate = true;
 		sizes.needsUpdate = true;
@@ -147,7 +147,7 @@ export function buildKillExplosions(): KillExplosions {
 
 	return {
 		object: group,
-		spawn(explosion) {
+		start(explosion) {
 			live = [...live, build(explosion)];
 		},
 		update(t, cameraPos) {

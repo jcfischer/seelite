@@ -92,7 +92,11 @@ const kill = await page.evaluate(async () => {
 						y: shipPos.y + ahead.y * 2,
 						z: shipPos.z + ahead.z * 2,
 					},
-					vel: { ...g.world.ship.vel },
+					vel: {
+						x: g.world.ship.vel.x + ahead.x * 0.3,
+						y: g.world.ship.vel.y + ahead.y * 0.3,
+						z: g.world.ship.vel.z + ahead.z * 0.3,
+					},
 				},
 			},
 			condition: {
@@ -186,7 +190,6 @@ if (EVIDENCE) {
 
 const drift = await page.evaluate(async () => {
 	const g = window.__seelite;
-	const { explosionCentre } = await import("/src/kill-explosion.ts");
 	const dt = g.units.MAX_DT;
 	const e = g.killExplosions.live()[0];
 	if (!e) return { error: "no live explosion" };
@@ -196,35 +199,32 @@ const drift = await page.evaluate(async () => {
 	}
 	const points = g.killExplosions.object.children[0];
 	const cam = g.cameraPos();
-	const centre = explosionCentre(e, g.world.gameTime);
+	const age = g.world.gameTime - e.at;
+	const ship = g.world.ship.vel;
+	const drawnAt = {
+		x: points.position.x + cam.x,
+		y: points.position.y + cam.y,
+		z: points.position.z + cam.z,
+	};
 	return {
-		age: g.world.gameTime - e.at,
-		drawnAt: {
-			x: points.position.x + cam.x,
-			y: points.position.y + cam.y,
-			z: points.position.z + cam.z,
-		},
-		centre,
-		moved: Math.hypot(
-			centre.x - e.pos.x,
-			centre.y - e.pos.y,
-			centre.z - e.pos.z,
+		age,
+		offWreck: Math.hypot(
+			drawnAt.x - (e.pos.x + e.vel.x * age),
+			drawnAt.y - (e.pos.y + e.vel.y * age),
+			drawnAt.z - (e.pos.z + e.vel.z * age),
 		),
-		expected: Math.hypot(e.vel.x, e.vel.y, e.vel.z) * (g.world.gameTime - e.at),
+		apartFromShip:
+			Math.hypot(e.vel.x - ship.x, e.vel.y - ship.y, e.vel.z - ship.z) * age,
 	};
 });
 if (EVIDENCE)
 	await page.screenshot({ path: `${EVIDENCE}/kill-explosion-1s.png` });
 check(
-	"a second on, it is drawn where the wreck's velocity carried it",
+	"a second on, it is drawn where the wreck's own velocity carried it, not where the ship's would have",
 	!drift.error &&
 		drift.age > 0.9 &&
-		Math.abs(drift.moved - drift.expected) < 1e-6 &&
-		Math.hypot(
-			drift.drawnAt.x - drift.centre.x,
-			drift.drawnAt.y - drift.centre.y,
-			drift.drawnAt.z - drift.centre.z,
-		) < 1e-3,
+		drift.offWreck < 1e-3 &&
+		drift.apartFromShip > 0.1,
 	JSON.stringify(drift),
 );
 

@@ -25,7 +25,7 @@ test("every kill path in Game plays the explosion cue only with the explosion dr
 	expect(main.match(/kind: "explosion"/g)?.length).toBe(1);
 	const detonate = methodBodyOf(main, "detonate", "src/main.ts");
 	expect(detonate).toContain('kind: "explosion"');
-	expect(detonate).toContain("this.killExplosions.spawn(");
+	expect(detonate).toContain("this.killExplosions.start(");
 	for (const path of [
 		"scrapTrafficCarrier",
 		"endEncounter",

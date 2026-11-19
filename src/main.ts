@@ -613,6 +613,7 @@ import {
 	type KillExplosions,
 	buildKillExplosions,
 } from "./kill-explosion-mesh";
+import type { KillExplosion } from "./kill-explosion";
 import { NpcPlumes } from "./npc-plumes";
 import type { SurfaceClass } from "./planet-appearance";
 import {
@@ -17154,26 +17155,20 @@ class Game {
 	 * design: a loop takes a level every frame (`flight`, and `ambient` on the
 	 * `?flightsound=legacy` arm), not a cue.
 	 */
-	private detonate(kill: {
-		key: string;
-		pos: Vec3;
-		vel: Vec3;
-		reachKm: number;
-	}) {
-		this.play({ kind: "explosion" });
-		this.killExplosions.spawn({
-			key: kill.key,
-			at: this.world.gameTime,
-			pos: { ...kill.pos },
-			vel: { ...kill.vel },
-			reachKm: kill.reachKm,
-		});
-	}
-
 	private play(cue: Cue) {
 		// Hits play since #545, which gave them the gate this arm once said they
 		// owed: a fall is a hit only when `applyDamage` struck (`weapon-sound.ts`).
 		this.audio.play(cue);
+	}
+
+	private detonate(kill: Omit<KillExplosion, "at">) {
+		this.play({ kind: "explosion" });
+		this.killExplosions.start({
+			...kill,
+			at: this.world.gameTime,
+			pos: { ...kill.pos },
+			vel: { ...kill.vel },
+		});
 	}
 
 	/**
