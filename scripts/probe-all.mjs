@@ -73,7 +73,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createServer } from "vite";
 import { freePort } from "./lib/free-port.mjs";
-import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
+import { parseArgs, probeConcurrency, resolveOnly } from "./lib/probe-args.mjs";
 import { failureKind, killedCode } from "./lib/probe-failure-kind.mjs";
 import {
 	loadSuffix,
@@ -139,19 +139,21 @@ const REPORTERS = new Set([
 const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 600_000);
 
 /**
- * How many probes run at once: six, measured on the Mac Mini (M5 Pro, 18 cores)
- * in `docs/receipts/node-1175-parallel-probes.md`.
+ * How many probes run at once: `probeConcurrency` in `scripts/lib/probe-args.mjs`,
+ * two locally and four in CI unless `PROBE_CONCURRENCY` says otherwise. Six was
+ * measured on the Mac Mini (M5 Pro, 18 cores) in
+ * `docs/receipts/node-1175-parallel-probes.md`. The principal set the local
+ * default to two on 2026-11-18.
  *
  * Probes that assert on rendered pixels over a pumped clock change what they
  * measure when another browser shares the GPU, so those run alone after the
  * pool (`EXCLUSIVE` in `scripts/lib/probe-schedule.mjs`); a probe joins it when
  * it is red at this concurrency and green alone, as `probe-planet-surfaces`
- * was. The rest share the machine at the per-probe slowdown the receipt
- * measured. Three full runs at six failed on `bootedGame`'s 20 s deadline on
- * 2026-11-05, with the cause open (#1184). Another machine re-measures before it
- * trusts this number; `PROBE_CONCURRENCY=1` gives the serial run.
+ * was. Three full runs at six failed on `bootedGame`'s 20 s deadline on
+ * 2026-11-05, with the cause open (#1184). `PROBE_CONCURRENCY=1` gives the
+ * serial run.
  */
-const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 4);
+const CONCURRENCY = probeConcurrency(process.env);
 
 // Which probes to run: everything here, or the subset `resolveOnly` selects.
 // `probe-inventory.mjs` owns exclusions such as this runner and `probe-guard`,
