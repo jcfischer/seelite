@@ -13,6 +13,9 @@ import {
 	stream,
 } from "./galaxy";
 import { fnv1a, mix } from "./rng";
+import { danubeSong } from "./music-danube";
+import { versionId } from "./music-danube-load";
+import type { Song } from "./music-score";
 import { STATION_TYPES, type StationType } from "./station";
 
 type Government = (typeof GOVERNMENT_NAMES)[number];
@@ -224,4 +227,17 @@ export function stationWaltz(
 			best = { version: tags.version, score };
 	}
 	return best?.version ?? PINNED_WALTZ;
+}
+
+/**
+ * The song a version plays: `hybrid` from the waltz's own voicings, any other
+ * version from the loaded `versions` under the loader's id for its file.
+ * `null` while the versions have not loaded, or for a version none loaded.
+ */
+export function waltzSong(
+	version: string,
+	versions: Readonly<Record<string, Song>> | null,
+): Song | null {
+	if (version === PINNED_WALTZ) return danubeSong(PINNED_WALTZ);
+	return versions?.[versionId(`${version}.ts`)] ?? null;
 }

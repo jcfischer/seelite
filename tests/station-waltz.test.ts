@@ -21,6 +21,7 @@ import {
 	type WaltzTags,
 	stationWaltz,
 	waltzDraw,
+	waltzSong,
 	waltzWeight,
 } from "../src/station-waltz";
 
@@ -98,17 +99,28 @@ describe("the weighted pick (#751 D1, D2, D9)", () => {
 		expect(PINNED_WALTZ).toBe("hybrid");
 	});
 
-	test("over the whole galaxy every version wins a station, and no excluded version is picked", () => {
-		const picks = pickAll();
-		const wins = Object.fromEntries(WALTZ_VERSIONS.map((v) => [v, 0]));
-		for (const p of picks) wins[p]++;
-		expect(Object.entries(wins).filter(([, n]) => n === 0)).toEqual([]);
-		stations.forEach(({ system, role }, i) => {
-			const tags = WALTZ_TABLE.find((t) => t.version === picks[i]);
-			if (!tags) throw new Error(picks[i]);
-			expect(waltzWeight(tags, system, role)).not.toBeNull();
-		});
-	});
+	test.each([1, 42, WORLD])(
+		"over the whole galaxy of world %p every version wins a station, and no excluded version is picked",
+		(world) => {
+			const g = generateGalaxy(world, 0);
+			const first = startSystem(g);
+			const all = g.systems.flatMap((system) =>
+				generateContents(system).stations.map((s) => ({
+					system,
+					role: s.type,
+					pick: stationWaltz(system, s.type, first),
+				})),
+			);
+			const wins = Object.fromEntries(WALTZ_VERSIONS.map((v) => [v, 0]));
+			for (const { pick } of all) wins[pick]++;
+			expect(Object.entries(wins).filter(([, n]) => n === 0)).toEqual([]);
+			for (const { system, role, pick } of all) {
+				const tags = WALTZ_TABLE.find((t) => t.version === pick);
+				if (!tags) throw new Error(pick);
+				expect(waltzWeight(tags, system, role)).not.toBeNull();
+			}
+		},
+	);
 
 	test("a version added to the table moves only stations that now play it", () => {
 		const before = pickAll();
@@ -141,7 +153,8 @@ describe("the director plays the station's version (node #1324)", () => {
 			"./music-danube-variants/jazz-trio.ts": () =>
 				import("../src/music-danube-variants/jazz-trio"),
 		});
-		const song = versions["danube-jazz-trio"];
+		const song = waltzSong("jazz-trio", versions);
+		if (!song) throw new Error("jazz-trio did not load");
 		const step = stepMusic(
 			initialMusicState(),
 			{ ...computer, waltz: { version: "jazz-trio", song } },

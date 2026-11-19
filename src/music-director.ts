@@ -311,25 +311,30 @@ export const DEFAULT_MUSIC_ARMS: MusicArms = {
 /** The default voicing's cadence hold, for the tests and the probe. */
 export const WALTZ_CADENCE_S = waltzCadenceS(DEFAULT_MUSIC_ARMS.waltz);
 
+/** The arms `?music=` names, the tokens it did not know, and whether it named
+ *  a voicing of the waltz, which then plays at every station (node #1324). */
 export function musicArms(value: string | null): {
 	arms: MusicArms;
 	unknown: string[];
+	waltzNamed: boolean;
 } {
 	let arms = DEFAULT_MUSIC_ARMS;
 	const unknown: string[] = [];
+	let waltzNamed = false;
 	for (const token of (value ?? "").split(",").map((t) => t.trim())) {
 		if (!token) continue;
 		if (token === "off") arms = { ...arms, off: true };
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
 		else if (Object.hasOwn(BEDS, token))
 			arms = { ...arms, bed: token as MusicBed };
-		else if (Object.hasOwn(DANUBE_VOICINGS, token))
+		else if (Object.hasOwn(DANUBE_VOICINGS, token)) {
 			arms = { ...arms, waltz: token as DanubeVoicing };
-		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
+			waltzNamed = true;
+		} else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
 			arms = { ...arms, force: token as MusicLevel };
 		else unknown.push(token);
 	}
-	return { arms, unknown };
+	return { arms, unknown, waltzNamed };
 }
 
 /** A quiet reading: in flight, nothing near, a whole ship, the synth ready.

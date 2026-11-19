@@ -492,9 +492,8 @@ import {
 	startSystem,
 	stream,
 } from "./galaxy";
-import { PINNED_WALTZ, WALTZ_VERSIONS, stationWaltz } from "./station-waltz";
+import { WALTZ_VERSIONS, stationWaltz, waltzSong } from "./station-waltz";
 import { danubeVariants } from "./music-danube-variants";
-import { DANUBE_VOICINGS, danubeSong } from "./music-danube";
 import type { Song } from "./music-score";
 // The plane a system's bodies orbit near, and the plane the horizon line is
 // rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
@@ -1679,11 +1678,6 @@ if (WALTZ_PARAM !== null && WALTZ_OVERRIDE === null)
 	console.warn(
 		`?waltz: unknown ${WALTZ_PARAM}; playing each station's own version`,
 	);
-const MUSIC_NAMES_WALTZ = (
-	new URLSearchParams(window.location.search).get("music") ?? ""
-)
-	.split(",")
-	.some((t) => Object.hasOwn(DANUBE_VOICINGS, t.trim()));
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
@@ -17213,9 +17207,14 @@ class Game {
 	private stepMusicDirector(dt: number) {
 		if (!this.waltzVersionsAsked) {
 			this.waltzVersionsAsked = true;
-			void danubeVariants().then((versions) => {
-				this.waltzVersions = versions;
-			});
+			danubeVariants()
+				.then((versions) => {
+					this.waltzVersions = versions;
+				})
+				.catch((error: unknown) => {
+					this.waltzVersionsAsked = false;
+					console.warn("docking waltz versions failed to load", error);
+				});
 		}
 		const dock = this.dock;
 		const scene: MusicScene = this.dead
@@ -17321,22 +17320,26 @@ class Game {
 	private waltzVersions: Readonly<Record<string, Song>> | null = null;
 	private waltzVersionsAsked = false;
 
+	private waltzPicked: { key: string; waltz: StationWaltz } | null = null;
+
 	private dockingWaltz(): StationWaltz | null {
-		if (MUSIC_NAMES_WALTZ && WALTZ_OVERRIDE === null) return null;
+		if (MUSIC_ARMS.waltzNamed && WALTZ_OVERRIDE === null) return null;
+		if (this.musicState.waltz === "playing") return null;
 		const nearest = this.stationsByRange()[0];
 		if (!nearest) return null;
-		const station = stationOf(this.world.system, nearest.id);
 		const { record } = this.world.system;
+		const key = `${record.galaxy}/${record.index}/${nearest.id}`;
+		if (this.waltzPicked?.key === key) return this.waltzPicked.waltz;
+		const station = stationOf(this.world.system, nearest.id);
 		const start =
 			this.world.galaxy.index === 0
 				? startSystem(this.world.galaxy)
 				: { galaxy: 0, index: -1 };
 		const version = WALTZ_OVERRIDE ?? stationWaltz(record, station.type, start);
-		const song =
-			version === PINNED_WALTZ
-				? danubeSong(PINNED_WALTZ)
-				: this.waltzVersions?.[`danube-${version}`];
-		return song ? { version, song } : null;
+		const song = waltzSong(version, this.waltzVersions);
+		if (!song) return null;
+		this.waltzPicked = { key, waltz: { version, song } };
+		return this.waltzPicked.waltz;
 	}
 
 	get waltzVersion(): string | null {

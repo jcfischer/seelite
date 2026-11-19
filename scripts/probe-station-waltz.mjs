@@ -13,6 +13,9 @@
  * roles. At every station of each the computer is engaged, the loaded
  * version's name is read off `window.__seelite`, and it is compared with
  * `stationWaltz` called on the page.
+ *
+ * A default-layout probe (#381 D11): the F8 press is the trusted key that opens
+ * the sound through the game's unlock listener.
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import {
@@ -59,6 +62,10 @@ const dockAt = (page) =>
 		const { stationWaltz } = await import("/src/station-waltz.ts");
 		const { startSystem } = await import("/src/galaxy.ts");
 		const g = window.__seelite;
+		const waitFor = async (done) => {
+			for (let i = 0; i < 40 && !done(); i++)
+				await new Promise((r) => setTimeout(r, 100));
+		};
 		g.clearTrafficPresentation();
 		g.trafficSystemIndex = g.world.system.record.index;
 		g.trafficActors = [];
@@ -85,8 +92,7 @@ const dockAt = (page) =>
 			g.targetId = station.id;
 			g.requestDockingClearance();
 			g.toggleDockingComputer();
-			for (let i = 0; i < 40 && g.musicState.waltz !== "playing"; i++)
-				await new Promise((r) => setTimeout(r, 100));
+			await waitFor(() => g.musicState.waltz === "playing");
 			rows.push({
 				station: station.id,
 				role: station.type,
@@ -95,8 +101,7 @@ const dockAt = (page) =>
 				picked: stationWaltz(record, station.type, start),
 			});
 			if (g.dockingComputer.engaged) g.toggleDockingComputer();
-			for (let i = 0; i < 40 && g.musicState.waltz !== "none"; i++)
-				await new Promise((r) => setTimeout(r, 100));
+			await waitFor(() => g.musicState.waltz === "none");
 		}
 		return {
 			system: record.index,
@@ -119,15 +124,28 @@ const chosen = await (async () => {
 		const rich = systems
 			.filter((s) => s.roles.length >= 3)
 			.sort((a, b) => b.roles.length - a.roles.length);
-		const first = rich[0];
-		const second = systems.find(
-			(s) => s.government !== first.government && s.roles.length >= 2,
-		);
+		const first = rich[0] ?? null;
+		const second =
+			systems.find(
+				(s) =>
+					first !== null &&
+					s.government !== first.government &&
+					s.roles.length >= 2,
+			) ?? null;
 		return [first, second];
 	});
 	await page.close();
 	return picked;
 })();
+check(
+	"the galaxy holds a system with three stations and another of a different government with two",
+	chosen.every((s) => s !== null),
+	JSON.stringify(chosen),
+);
+if (chosen.some((s) => s === null)) {
+	await browser.close();
+	exit();
+}
 
 const seen = [];
 for (const system of chosen) {
