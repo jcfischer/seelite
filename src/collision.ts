@@ -1,51 +1,3 @@
-/**
- * Collision: what meeting a surface does, and how the meeting is found inside
- * one tick (`docs/specs/collision.md`).
- *
- * **What is turned on.** The player against star, planet and moon spheres
- * (§2.1, node #661) and against every station's proxy (§2.2, node #663), in
- * normal flight with the assist on and off, with the aperture plane weighed
- * against the impacts (§4.2) — and since node #664, every other ship: raiders,
- * a relay's defender and Traffic carriers against bodies, proxies, the player
- * and each other (C4b, §6), through `sweepShipPair` below. The player meets
- * them in normal flight; while the player cruises, the flown ones still meet
- * bodies, proxies and each other (`stepFleet`). The resolver is
- * written against a **generic
- * primitive** — sphere, capsule, oriented box or convex rock cone — in a solid's own frame, so a
- * station proxy is data handed to the same sweep and not a second resolver.
- *
- * **No Three.js, and no import of `sim.ts`.** `sim.ts` imports this, and the
- * sim may not import a renderer (CLAUDE.md). Everything is float64 kilometres.
- * Every query is taken relative to the met solid's own start origin, so a
- * star-centred coordinate at an AU never meets a 0.1 m separation in one
- * subtraction.
- *
- * Four parts, in this order:
- *
- * 1. **The law** (§3, P2, P3) — closing speed, damage, bounce. Pure functions,
- *    no geometry.
- * 2. **The distance query** — the gap between the ship's box and one
- *    primitive, its outward normal and the two witness points. Sphere-against-
- *    box is exact (a point clamped into a box); capsule, box and cone go through GJK
- *    on their cores, a primitive being a convex core swept by a radius.
- * 3. **The sweep** (§3.1, §4.1, §4.3) — conservative advancement on that
- *    query. A separating plane at the closest points stays a separating plane
- *    until something crosses it, and nothing can cross it faster than the
- *    bound below, so an advance by `gap / bound` cannot step over any
- *    primitive however thin. That is §4.1's requirement met by construction
- *    rather than by a sub-step count.
- * 4. **Ship against ship** (C4b) — the same sweep, with the meeting landed on
- *    both ships: one damage, each its own side, and a momentum-conserving
- *    impulse split by mass.
- *
- * **A ship is every box in its primitive list** (node #959). The hull box (P1)
- * is always one; a deployed cutter (#949 D3) is a second, and it meets
- * everything the hull does — rocks, stations, ships and canisters (#956 Q3).
- * Each box carries the `ShipPart` it is, and every impact names the part that
- * met the surface (#956 Q4), so a caller can tell a cutter strike from a hull
- * strike. What a cutter strike costs is not decided here.
- */
-
 import { DOCKING_DAMAGE_SCALE, V_GATE_KMS } from "./docking";
 import {
 	type Bounds,
@@ -77,10 +29,6 @@ import {
 	sub,
 	v3,
 } from "./vec3";
-
-// ---------------------------------------------------------------------------
-// 1. The law
-// ---------------------------------------------------------------------------
 
 /**
  * **P2 (principal, 2026-10-03).** Below this closing speed an impact costs
@@ -130,18 +78,10 @@ export const RESTING_KM = 1.5 * SEPARATION_KM;
  */
 export const RESTING_CLOSING_FLOOR_KMS = 1e-12;
 
-/** The sweep declares an impact at or under this gap. */
 const CONTACT_KM = 0.5 * SEPARATION_KM;
 
-/** Each advance aims to leave this much gap, so a bound that is met exactly
- *  still lands short of the surface rather than on it. */
 const ADVANCE_TARGET_KM = 0.25 * SEPARATION_KM;
 
-/**
- * The most advances one pair may take in one step. Reaching it is read as an
- * impact at the time reached, never as clear: a sweep that gave up is not a
- * sweep that found nothing.
- */
 const MAX_ADVANCES = 64;
 
 /**
@@ -176,10 +116,6 @@ export function bounce(u: Vec3, normal: Vec3): Vec3 {
 	return un < 0 ? sub(u, scale(normal, (1 + RESTITUTION) * un)) : u;
 }
 
-// ---------------------------------------------------------------------------
-// 2. Shapes and the distance query
-// ---------------------------------------------------------------------------
-
 /**
  * Which of a ship's own primitives a box is (node #959, #956 Q4): its hull box
  * (P1) or its deployed cutter (#949 D3).
@@ -206,15 +142,8 @@ export type Primitive =
 	| {
 			readonly kind: "box";
 			readonly centre: Vec3;
-			/** The box's own axes in the solid's frame, unit and orthogonal. */
 			readonly axes: readonly [Vec3, Vec3, Vec3];
-			/** Half the box's extent along each axis. */
 			readonly half: readonly [number, number, number];
-			/**
-			 * The ship part this box is, on a ship's own list. Absent on a
-			 * station's or a body's box; a ship box without one is read as
-			 * the hull, which is what every ship list was before the cutter.
-			 */
 			readonly part?: ShipPart;
 	  };
 
@@ -315,7 +244,6 @@ export function shipPrimitives(
 	return [box, cutterBox(hull.cutter)];
 }
 
-/** The part a box on a ship's list is: its own, or the hull when unnamed. */
 const partOf = (p: Surface): ShipPart => (p.kind === "box" && p.part) || "hull";
 
 /** A star, a planet or a moon: a sphere at `radiusKm` (§2.1, C1). */
@@ -327,7 +255,6 @@ export const bodySphere = (radiusKm: number): Primitive => ({
 
 type Surface = Primitive | (ConvexHull & { kind: "hull" });
 
-/** A primitive placed in the world (relative to some reference point). */
 type Placed =
 	| { kind: "point"; c: Vec3; r: number }
 	| { kind: "segment"; a: Vec3; b: Vec3; r: number }
@@ -369,11 +296,9 @@ function place(p: Surface, pose: Pose): Placed {
 
 type PlacedBox = Placed & { kind: "box" };
 
-/** The ship's hull box, placed. `sweepShip` refuses a ship without one. */
 const placeBox = (p: Primitive, pose: Pose): PlacedBox =>
 	place(p, pose) as PlacedBox;
 
-/** The core's support point in direction `d` (the radius excluded). */
 function support(s: Placed, d: Vec3): Vec3 {
 	if (s.kind === "point") return s.c;
 	if (s.kind === "segment") return dot(s.a, d) >= dot(s.b, d) ? s.a : s.b;
@@ -395,7 +320,6 @@ function support(s: Placed, d: Vec3): Vec3 {
 	return out;
 }
 
-/** The furthest any point of the shape (radius included) reaches along `n`. */
 function extentAlong(s: Placed, n: Vec3): number {
 	if (s.kind === "box") {
 		let h = dot(s.c, n);
@@ -411,7 +335,6 @@ const radiusOf = (s: Placed): number =>
 const centreOf = (s: Placed): Vec3 =>
 	s.kind === "segment" ? scale(add(s.a, s.b), 0.5) : s.c;
 
-/** The point of a box nearest `p`, exactly: `p` clamped into the box. */
 function closestOnBox(box: PlacedBox, p: Vec3): Vec3 {
 	const d = sub(p, box.c);
 	let out = box.c;
@@ -500,14 +423,12 @@ export function pushOutAlong(
 	);
 }
 
-/** One vertex of the Minkowski difference `A − B`, with its two witnesses. */
 interface Vertex {
 	w: Vec3;
 	a: Vec3;
 	b: Vec3;
 }
 
-/** A point of the simplex nearest the origin, as weights on its vertices. */
 interface Nearest {
 	v: Vec3;
 	keep: Vertex[];
@@ -527,7 +448,6 @@ function nearestOnSegment(p: Vertex, q: Vertex): Nearest {
 	};
 }
 
-/** Ericson's closest point on a triangle, to the origin (RTCD §5.1.5). */
 function nearestOnTriangle(a: Vertex, b: Vertex, c: Vertex): Nearest {
 	const ab = sub(b.w, a.w);
 	const ac = sub(c.w, a.w);
@@ -564,7 +484,6 @@ function nearestOnTriangle(a: Vertex, b: Vertex, c: Vertex): Nearest {
 	}
 	const denom = va + vb + vc;
 	if (!(denom > 0)) {
-		// A degenerate triangle: its nearest point is on one of its edges.
 		const edges = [
 			nearestOnSegment(a, b),
 			nearestOnSegment(b, c),
@@ -583,11 +502,6 @@ function nearestOnTriangle(a: Vertex, b: Vertex, c: Vertex): Nearest {
 	};
 }
 
-/**
- * The nearest point of a tetrahedron to the origin, or `null` when the origin
- * is inside it. A face is a candidate when the origin lies on the far side of
- * its plane from the fourth vertex; a flat tetrahedron makes every face one.
- */
 function nearestOnTetrahedron(s: Vertex[]): Nearest | null {
 	const faces: [number, number, number, number][] = [
 		[0, 1, 2, 3],
@@ -612,11 +526,6 @@ function nearestOnTetrahedron(s: Vertex[]): Nearest | null {
 	return outside ? best : null;
 }
 
-/**
- * GJK on two convex cores: their nearest points, or `null` when they
- * intersect. Polytopes and segments only, so it terminates on a vertex of the
- * difference; the tolerances guard rounding, not convergence.
- */
 function gjk(A: Placed, B: Placed): { a: Vec3; b: Vec3 } | null {
 	const vertex = (d: Vec3): Vertex => {
 		const a = support(A, d);
@@ -632,8 +541,6 @@ function gjk(A: Placed, B: Placed): { a: Vec3; b: Vec3 } | null {
 		const vv = lengthSq(v);
 		if (vv <= 1e-24) return null;
 		const next = vertex(scale(v, -1));
-		// No vertex further toward the origin than the current nearest point:
-		// it is the nearest point of the whole difference.
 		if (vv - dot(v, next.w) <= 1e-12 * vv + 1e-20) break;
 		if (simplex.some((s) => lengthSq(sub(s.w, next.w)) <= 1e-24)) break;
 		simplex = [...nearest.keep, next];
@@ -643,7 +550,6 @@ function gjk(A: Placed, B: Placed): { a: Vec3; b: Vec3 } | null {
 			found = nearestOnTriangle(simplex[0], simplex[1], simplex[2]);
 		else found = nearestOnTetrahedron(simplex);
 		if (!found) return null;
-		// No progress is the end of the descent, not a reason to keep going.
 		if (lengthSq(found.v) >= vv) break;
 		nearest = found;
 	}
@@ -655,10 +561,6 @@ function gjk(A: Placed, B: Placed): { a: Vec3; b: Vec3 } | null {
 	});
 	return { a, b };
 }
-
-// ---------------------------------------------------------------------------
-// 3. The sweep
-// ---------------------------------------------------------------------------
 
 /** A solid's pose and origin velocity at both ends of a step. */
 export interface Motion {
@@ -705,13 +607,11 @@ export interface Spin {
  * revolution keeps its axis.
  */
 export function spinBetween(from: Pose, to: Pose): Spin {
-	// R = Σ to_i ⊗ from_i, so R·from_i = to_i.
 	const col = (k: "x" | "y" | "z") => ({
 		x: to.x[k] * from.x.x + to.y[k] * from.y.x + to.z[k] * from.z.x,
 		y: to.x[k] * from.x.y + to.y[k] * from.y.y + to.z[k] * from.z.y,
 		z: to.x[k] * from.x.z + to.y[k] * from.y.z + to.z[k] * from.z.z,
 	});
-	// Row k of R: R[k][j] = Σ_i to_i[k] · from_i[j].
 	const r0 = col("x");
 	const r1 = col("y");
 	const r2 = col("z");
@@ -768,7 +668,6 @@ export function spinBetween(from: Pose, to: Pose): Spin {
 	};
 }
 
-/** The pose a fraction `s` of the way through the step, relative to `ref`. */
 function poseAt(m: Motion, spin: Spin, s: number, ref: Vec3): Pose {
 	const origin = add(
 		sub(m.start.origin, ref),
@@ -786,8 +685,6 @@ function poseAt(m: Motion, spin: Spin, s: number, ref: Vec3): Pose {
 
 const lerp = (a: Vec3, b: Vec3, s: number): Vec3 => add(a, scale(sub(b, a), s));
 
-/** A point's velocity on a solid at fraction `s`: the origin's, plus the
- *  solid's turn about its origin at that point. */
 function pointVelocity(
 	m: Motion,
 	spin: Spin,
@@ -802,7 +699,6 @@ function pointVelocity(
 	);
 }
 
-/** What a solid's turn about its origin adds to a point's velocity. */
 function turnVelocity(spin: Spin, dt: number, pose: Pose, point: Vec3): Vec3 {
 	if (spin.angle === 0 || !(dt > 0)) return v3();
 	const omega = scale(spin.axis, spin.angle / dt);
@@ -834,52 +730,24 @@ export function mayMeet(ship: Reach, solid: Reach): boolean {
 
 /** What one step's sweep found and did. `piece` identifies the cone of a met rock. */
 export interface Impact {
-	/** Index of the met solid in the list handed to `sweepShip`. */
 	solid: number;
-	/** Seconds into the step. A resting pair is met at 0. */
 	timeS: number;
-	/** Where the two met, world coordinates. */
 	point: Vec3;
-	/** The surface's outward normal there. */
 	normal: Vec3;
-	/** §3's `v_n`, km/s. */
 	closingKms: number;
-	/** §3's damage, for `applyDamage`. Zero below `V_SCRAPE_KMS`. */
 	damage: number;
-	/** The side `sideStruck` selects for it. */
 	side: ShieldSide;
-	/** A resting pair (§3.1) rather than a swept impact. */
 	resting: boolean;
-	/** Which of the ship's primitives met the surface (#956 Q4). */
 	part: ShipPart;
 	piece?: number;
 }
 
 export interface SweepResult {
-	/** The ship's origin at the end of the step, outside every met surface. */
 	pos: Vec3;
-	/** The ship's velocity at the end of the step. */
 	vel: Vec3;
-	/**
-	 * Every pair met this step, earliest first: resting pairs at the start, then
-	 * the swept impact that owns the tick (§4.2), if there is one. Each is billed
-	 * on its own side, so a caller lands every one through `applyDamage`.
-	 */
 	impacts: Impact[];
-	/**
-	 * The solids, by index, with a primitive that overlapped the ship at the
-	 * start and so was not tested (§4.3) — once each, however many of its
-	 * primitives overlapped. The rule fails open by design, so this list is
-	 * how a caller sees that it did.
-	 */
 	ghosts: number[];
 	rockGhosts: number[];
-	/**
-	 * §4.2: the aperture plane owned the tick. The ship's centre crossed a plane
-	 * at `planeS` before any impact (a tie goes to the impact), so nothing was
-	 * resolved: `impacts` is empty, and `pos` and `vel` are the step's own,
-	 * for the caller's six checks to place. Always `false` without a plane.
-	 */
 	planeOwns: boolean;
 }
 
@@ -892,12 +760,6 @@ export interface SweepResult {
 export interface SweepOptions {
 	placed?: boolean;
 	rockGhosts?: readonly number[];
-	/**
-	 * Seconds into the step at which the ship's centre crosses an aperture
-	 * plane, or `null` when it crosses none. An impact at or before it owns the
-	 * tick; one after it is never reached, because the plane's checks place
-	 * the ship (`docking.md` §2, §12).
-	 */
 	planeS?: number | null;
 	diagnostics?: SweepDiagnostics;
 }
@@ -911,33 +773,25 @@ export interface SweepDiagnostics {
 
 interface PairState {
 	solid: number;
-	/** The ship's box this pair sweeps. */
 	shipBox: Primitive;
-	/** The met solid's primitive. */
 	primitive: Surface;
 	reach: number;
 	piece?: number;
 }
 
-/** A pair the ship ends the step against, and how it met it. */
 interface Touching {
 	pair: PairState;
 	normal: Vec3;
-	/** The start-of-step closing speed: a resting pair bounces on it. */
 	closingKms: number;
 }
 
-/** What every stage of one sweep reads, fixed for the step. */
 interface Sweep {
 	ship: SolidMotion;
-	/** Every box on the ship's list: the hull, and a deployed cutter. */
 	shipBoxes: readonly Primitive[];
 	shipReach: number;
 	shipSpin: Spin;
-	/** At rest, both ships keep the own-turn exemption (§3.1). */
 	restingShipPair: boolean;
 	solids: readonly Solid[];
-	/** Each solid's turn across the step, by index — computed once. */
 	spins: readonly Spin[];
 	dt: number;
 	diagnostics?: SweepDiagnostics;
@@ -946,7 +800,6 @@ interface Sweep {
 	rockGhosts?: readonly number[];
 }
 
-/** The ship's end translation, as each stage corrects it. */
 interface End {
 	origin: Vec3;
 	vel: Vec3;
@@ -989,12 +842,10 @@ export function sweepShip(
 	return { ...result, impacts: contacts.map(({ impact }) => impact) };
 }
 
-/** Keep each impact with its surface so the pair resolver can name B's part. */
 interface MotionSweepResult extends Omit<SweepResult, "impacts"> {
 	contacts: { impact: Impact; surface: Surface }[];
 }
 
-/** `sweepShip`'s body, retaining the met primitive internally. */
 function sweepMotion(
 	ship: SolidMotion,
 	solids: readonly Solid[],
@@ -1037,10 +888,6 @@ function sweepMotion(
 		origin: ship.end.origin,
 		vel: ship.velEnd,
 	});
-	// A resting pair can stop this step's thrust without a billed impact:
-	// its start speed is zero (§3.1). The unconstrained path's crossing is
-	// then unreachable, so that contact still owns the tick (§4.2). A ship
-	// departing the surface is not constrained and may cross another plane.
 	let end: End = stopped;
 	const met = resolveEarliest(sweep, swept, end);
 	const impactFirst =
@@ -1083,19 +930,9 @@ function solidIndex(primitives: readonly Primitive[]) {
 	}
 	return found;
 }
-/** A solid's reach, read once per primitive list rather than every step. */
 const solidReachKm = (primitives: readonly Primitive[]) =>
 	solidIndex(primitives).reach;
 
-/**
- * The primitives `primitiveMayMeet` has to look at, in list order. A short
- * list is all of them. A long one (an authored shipyard's thousands of boxes,
- * node #818) is narrowed through its grid: the ship's path is taken into the
- * solid's own frame at both ends of the step and grown by everything
- * `primitiveMayMeet` allows for — the ship's reach, the resting margin, the
- * sagitta of the solid's turn, and how far that turn carries the ship's end
- * against the solid — so a primitive it could pass is never skipped.
- */
 function nearPrimitives(
 	sweep: Sweep,
 	solid: SolidMotion,
@@ -1148,7 +985,6 @@ export function primitiveBox(p: Primitive): Bounds {
 	return boundsOfBox(c.x, c.y, c.z, p.axes, p.half[0], p.half[1], p.half[2]);
 }
 
-/** A primitive's bounding sphere in its solid's frame. */
 function primitiveBound(p: Primitive): { centre: Vec3; radiusKm: number } {
 	if (p.kind === "sphere") return { centre: p.centre, radiusKm: p.radiusKm };
 	if (p.kind === "capsule")
@@ -1162,13 +998,6 @@ function primitiveBound(p: Primitive): { centre: Vec3; radiusKm: number } {
 	};
 }
 
-/**
- * Whether one primitive's bounding sphere can meet the ship's within the step.
- * The primitive's centre is taken at both ends of the step and joined by a
- * chord; a solid that turns carries it on an arc instead, which leaves the
- * chord by at most its sagitta, `|c| · (1 − cos(θ / 2))`, so that is added to
- * the radius. Conservative: a primitive this rejects cannot be met.
- */
 function primitiveMayMeet(
 	sweep: Sweep,
 	solid: SolidMotion,
@@ -1409,10 +1238,6 @@ function classifyRock(
 		recordStartContact(sweep, pair, gap, result, touching);
 }
 
-/**
- * §4.3 and §3.1: every pair at the start of the step is a ghost, resting or
- * swept. Ghosts and resting impacts go onto `result` as they are found.
- */
 function classifyPairs(
 	sweep: Sweep,
 	result: MotionSweepResult,
@@ -1455,12 +1280,6 @@ function classifyPairs(
 	return { touching, swept };
 }
 
-/**
- * §3.1: a resting pair's inward motion is stopped at the surface. The
- * relative displacement loses its inward component along the pair's normal;
- * what is left — a turn carrying a corner in, a surface curving under a
- * slide — is pushed out by `settleTouching`.
- */
 function stopResting(
 	sweep: Sweep,
 	touching: readonly Touching[],
@@ -1483,12 +1302,6 @@ function stopResting(
 	return { origin, vel: end.vel, constrained };
 }
 
-/**
- * §4.1, §4.2: sweep every other pair; the earliest impact among them. The
- * ship is left at the separation outside it, carried with the met solid for
- * the rest of the step, and bounced; the impact is handed back for the caller
- * to weigh against the plane. `null` when no pair is met.
- */
 function resolveEarliest(
 	sweep: Sweep,
 	swept: readonly PairState[],
@@ -1520,11 +1333,6 @@ function resolveEarliest(
 	const shipBoxAt = placeBox(pair.shipBox, shipAt);
 	const surfaceAt = place(pair.primitive, solidAt);
 	const gap = separation(shipBoxAt, surfaceAt);
-	// The advance stops short of the surface, so an overlap here is a bound
-	// that failed; take the way the ship came *relative to the solid* as the
-	// normal — a moon carried at 32 km/s would otherwise lift it along the
-	// moon's own path — and, with no relative motion, out from the
-	// primitive's centre.
 	const normal = gap.overlap
 		? overlapNormal(
 				sub(
@@ -1541,13 +1349,9 @@ function resolveEarliest(
 		pointVelocity(solid, solidSpin, dt, s, solidAt, onSurface),
 	);
 	const closing = closingSpeed(u, normal);
-	// The bounce changes the ship's linear velocity only (§3), and the
-	// frame's change across the rest of the step rides along with it.
 	const kick = sub(bounce(u, normal), u);
 	const carried = sub(solid.velEnd, lerp(solid.velStart, solid.velEnd, s));
 	const vel = add(add(lerp(motion.velStart, motion.velEnd, s), kick), carried);
-	// Left at the separation outside the surface, then carried with the
-	// solid — turned with it where it spins — for the rest of the step.
 	const lift = gap.overlap ? SEPARATION_KM : SEPARATION_KM - gap.distanceKm;
 	const local = sub(add(shipAt.origin, scale(normal, lift)), solidAt.origin);
 	const remaining = solidSpin.angle * (1 - s);
@@ -1573,12 +1377,6 @@ function resolveEarliest(
 	};
 }
 
-/**
- * The end of the step: every touched pair apart by the separation, with no
- * inward velocity left against it (§3.1). A resting pair that closed faster
- * than `V_SCRAPE_KMS` bounces on the speed it closed at — unless a swept
- * impact has already bounced the ship this step.
- */
 function settleTouching(
 	sweep: Sweep,
 	touching: readonly Touching[],
@@ -1600,7 +1398,6 @@ function settleTouching(
 		let normal = r.normal;
 		let push: number;
 		if (gap.overlap) {
-			// Out along the pair's own normal until the two projections part.
 			const shipLow = -extentAlong(shipEnd, scale(normal, -1));
 			push = extentAlong(surface, normal) + SEPARATION_KM - shipLow;
 		} else {
@@ -1608,8 +1405,6 @@ function settleTouching(
 			push = SEPARATION_KM - gap.distanceKm;
 		}
 		if (push > 0) origin = add(origin, scale(normal, push));
-		// Own rotation is held by separating the boxes (§3.1), rather than
-		// adding translation to the other ship only when it happens to be A.
 		const surfaceVel = sweep.restingShipPair
 			? solid.velEnd
 			: pointVelocity(
@@ -1637,8 +1432,6 @@ function settleTouching(
 	return { origin, vel };
 }
 
-/** The first of `back` and `out` that has a direction, as a unit vector;
- *  `+x` when neither has. */
 function overlapNormal(back: Vec3, out: Vec3): Vec3 {
 	for (const d of [back, out]) {
 		const n = length(d);
@@ -1647,15 +1440,6 @@ function overlapNormal(back: Vec3, out: Vec3): Vec3 {
 	return v3(1, 0, 0);
 }
 
-/**
- * Conservative advancement for one pair: the fraction of the step at which
- * the gap first falls to `CONTACT_KM`, or `null` if it does not.
- *
- * The bound is the separating plane's: at the closest points, the plane
- * normal to `n` separates the two by the gap, and neither can cross it faster
- * than its translation along `n` plus its turn at its reach. Advancing by
- * `gap / bound` therefore never steps past a surface, however thin (§4.1).
- */
 function advance(
 	sweep: Sweep,
 	ship: SolidMotion,
@@ -1722,10 +1506,6 @@ function advance(
 	return s;
 }
 
-// ---------------------------------------------------------------------------
-// 4. Ship against ship (C4b, node #664)
-// ---------------------------------------------------------------------------
-
 /** A ship across one step, as the pair resolver reads it: its motion and its
  *  mass, which the impulse is split by. */
 export interface ShipMotion extends SolidMotion {
@@ -1755,21 +1535,14 @@ export function shipImpulse(
 
 /** One meeting of two ships, as each lands it. */
 export interface ShipPairImpact {
-	/** Seconds into the step. A resting pair is met at 0. */
 	timeS: number;
-	/** Where they met, world coordinates. */
 	point: Vec3;
-	/** From B toward A. */
 	normal: Vec3;
-	/** §3's `v_n`: the closing speed of the two points, km/s. */
 	closingKms: number;
-	/** §3's damage, the same on each side (C4b). */
 	damage: number;
-	/** The side each ship is struck on, each by its own `sideStruck`. */
 	sideA: ShieldSide;
 	sideB: ShieldSide;
 	resting: boolean;
-	/** Which of each ship's primitives met the other (#956 Q4). */
 	partA: ShipPart;
 	partB: ShipPart;
 }
@@ -1778,10 +1551,6 @@ export interface ShipPairResult {
 	a: { pos: Vec3; vel: Vec3 };
 	b: { pos: Vec3; vel: Vec3 };
 	impacts: ShipPairImpact[];
-	/**
-	 * At least one primitive pair overlapped at the start and was not tested
-	 * (§4.3). Other pairs can still impact or hold the ships apart.
-	 */
 	ghost: boolean;
 }
 
@@ -1828,39 +1597,25 @@ export function sweepShipPair(
 		impacts: [],
 		ghost: swept.ghosts.length > 0,
 	};
-	// Overlap ghosts only that primitive pair. Other pairs still contribute
-	// their impacts and resting corrections, even when nothing is billed.
 	const billed = swept.contacts.length > 0;
-	/** A's share of what `sweepShip` did to A against an immovable B. */
 	const shareA =
 		options.bProjected && !billed ? 1 : b.massT / (a.massT + b.massT);
 	const correction = sub(swept.pos, a.end.origin);
 	result.a.pos = add(a.end.origin, scale(correction, shareA));
 	result.b.pos = sub(b.end.origin, scale(correction, 1 - shareA));
 	if (!billed) {
-		// Resting, nothing billed: the hold's velocity change, split the way
-		// the separation is, so momentum is kept.
 		const dv = sub(swept.vel, a.velEnd);
 		result.a.vel = add(a.velEnd, scale(dv, shareA));
 		result.b.vel = sub(b.velEnd, scale(dv, 1 - shareA));
 		return result;
 	}
-	// Each ship's turn across the step, as its box was swept turning
-	// (`sweepShip`).
 	const aSpin = spinBetween(a.start, a.end);
 	const bSpin = spinBetween(b.start, b.end);
 	for (const { impact, surface } of swept.contacts) {
 		const n = impact.normal;
-		// Each pose at the meeting, on the arc its box was swept along: a chord
-		// between its two end noses lags a fast turn by tens of degrees.
 		const s = dt > 0 ? impact.timeS / dt : 0;
 		const aAt = poseAt(a, aSpin, s, v3());
 		const bAt = poseAt(b, bSpin, s, v3());
-		// What the two turns add to the points' relative normal velocity. A
-		// swept `closingKms` is measured on the points, turns included, so the
-		// impulse must take the points to it; a resting one keeps both ships'
-		// own-turn exemption (§3.1), and so does this. The impulse is linear
-		// only (§3), so the turns' share is the same after it as before.
 		const turns = impact.resting
 			? 0
 			: dot(

@@ -378,6 +378,7 @@ import {
 	musicArms,
 	numbersOn,
 	numbersRoom,
+	type StationWaltz,
 	stepMusic,
 	waltzDuckDb,
 } from "./music-director";
@@ -488,8 +489,12 @@ import {
 	GALAXY_RADIUS_LY,
 	GOVERNMENT_NAMES,
 	type SystemRecord,
+	startSystem,
 	stream,
 } from "./galaxy";
+import { WALTZ_VERSIONS, stationWaltz, waltzSong } from "./station-waltz";
+import { danubeVariants } from "./music-danube-variants";
+import type { Song } from "./music-score";
 // The plane a system's bodies orbit near, and the plane the horizon line is
 // rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
 // that module's whole subject is the relation between this plane and the
@@ -1664,6 +1669,15 @@ const VOICE_ARMS = voiceArms(
 );
 /** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
 const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };
+const WALTZ_PARAM = new URLSearchParams(window.location.search).get("waltz");
+const WALTZ_OVERRIDE =
+	WALTZ_PARAM !== null && WALTZ_VERSIONS.includes(WALTZ_PARAM)
+		? WALTZ_PARAM
+		: null;
+if (WALTZ_PARAM !== null && WALTZ_OVERRIDE === null)
+	console.warn(
+		`?waltz: unknown ${WALTZ_PARAM}; playing each station's own version`,
+	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
@@ -17192,6 +17206,17 @@ class Game {
 	 * where it holds; and under the opening, which holds it as well.
 	 */
 	private stepMusicDirector(dt: number) {
+		if (!this.waltzVersionsAsked) {
+			this.waltzVersionsAsked = true;
+			danubeVariants()
+				.then((versions) => {
+					this.waltzVersions = versions;
+				})
+				.catch((error: unknown) => {
+					this.waltzVersionsAsked = false;
+					console.warn("docking waltz versions failed to load", error);
+				});
+		}
 		const dock = this.dock;
 		const scene: MusicScene = this.dead
 			? "dead"
@@ -17228,6 +17253,7 @@ class Game {
 				hullShare: c.hull / c.hullMax,
 				systemSeed: this.world.system.record.seed,
 				stationRole: station?.type ?? null,
+				waltz: scene === "dockingComputer" ? this.dockingWaltz() : null,
 			},
 			dt,
 			DIRECTOR_ARMS,
@@ -17291,6 +17317,35 @@ class Game {
 	}
 	/** The director's memory: bed, level, its hold and the variant (#548). */
 	private musicState: MusicState = initialMusicState();
+
+	private waltzVersions: Readonly<Record<string, Song>> | null = null;
+	private waltzVersionsAsked = false;
+
+	private waltzPicked: { key: string; waltz: StationWaltz } | null = null;
+
+	private dockingWaltz(): StationWaltz | null {
+		if (MUSIC_ARMS.waltzNamed && WALTZ_OVERRIDE === null) return null;
+		if (this.musicState.waltz === "playing") return null;
+		const nearest = this.stationsByRange()[0];
+		if (!nearest) return null;
+		const { record } = this.world.system;
+		const key = `${record.galaxy}/${record.index}/${nearest.id}`;
+		if (this.waltzPicked?.key === key) return this.waltzPicked.waltz;
+		const station = stationOf(this.world.system, nearest.id);
+		const start =
+			this.world.galaxy.index === 0
+				? startSystem(this.world.galaxy)
+				: { galaxy: 0, index: -1 };
+		const version = WALTZ_OVERRIDE ?? stationWaltz(record, station.type, start);
+		const song = waltzSong(version, this.waltzVersions);
+		if (!song) return null;
+		this.waltzPicked = { key, waltz: { version, song } };
+		return this.waltzPicked.waltz;
+	}
+
+	get waltzVersion(): string | null {
+		return this.musicState.waltzKey;
+	}
 
 	/** When each message tone last sounded (#546), on the wall clock: a
 	 *  message's gap is a thing heard, and a held sim clock does not stop it. */
