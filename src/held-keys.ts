@@ -25,8 +25,6 @@ export function releaseHeldKey(
 	code: string,
 ): void {
 	held.delete(key);
-	const pressed = codes.get(code);
-	if (pressed === undefined) return;
-	held.delete(pressed);
+	held.delete(codes.get(code) ?? key);
 	codes.delete(code);
 }

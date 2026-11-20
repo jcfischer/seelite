@@ -61,4 +61,30 @@ describe("a yaw key let go is no longer held (#390)", () => {
 		keys.release("a", "KeyA");
 		expect([...held]).toEqual(["d"]);
 	});
+
+	test("a release clears the key it names even when its code pressed another", () => {
+		const held = new Set<string>();
+		const keys = fly(held, new Map());
+		keys.press("d", "KeyD");
+		keys.press("a", "KeyA");
+		keys.release("d", "KeyA");
+		expect(held.has("d")).toBe(false);
+	});
+
+	test("keys pressed without a code do not release each other", () => {
+		const held = new Set<string>();
+		const keys = fly(held, new Map());
+		keys.press("a", "");
+		keys.press("d", "");
+		keys.release("a", "");
+		expect([...held]).toEqual(["d"]);
+	});
+
+	test("a released key leaves no code behind", () => {
+		const codes = new Map<string, string>();
+		const keys = fly(new Set<string>(), codes);
+		keys.press("d", "KeyD");
+		keys.release("∂", "KeyD", true);
+		expect(codes.size).toBe(0);
+	});
 });
