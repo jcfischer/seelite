@@ -586,6 +586,11 @@ const OWNERS = Object.freeze({
 		"src/output-stage.ts",
 		"src/settings.ts",
 	],
+	"probe-kill-explosion.mjs": [
+		"scripts/probe-kill-explosion.mjs",
+		"src/kill-explosion.ts",
+		"src/kill-explosion-mesh.ts",
+	],
 	"probe-raider-consequence.mjs": [
 		"scripts/probe-raider-consequence.mjs",
 		"src/raider-wreck.ts",

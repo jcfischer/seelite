@@ -614,6 +614,11 @@ import {
 	withAlpha,
 } from "./vent-cue";
 import { type VentPlumes, buildVentPlumes } from "./vent-plumes";
+import {
+	type KillExplosions,
+	buildKillExplosions,
+} from "./kill-explosion-mesh";
+import type { KillExplosion } from "./kill-explosion";
 import { NpcPlumes } from "./npc-plumes";
 import type { SurfaceClass } from "./planet-appearance";
 import {
@@ -3392,6 +3397,7 @@ class Game {
 	/** Node #637: the plumes on every NPC hull that fires — the raider and
 	 *  engaged Traffic — each drawn from its own flight's firing table. */
 	private readonly npcPlumes = new NpcPlumes();
+	readonly killExplosions: KillExplosions = buildKillExplosions();
 	/**
 	 * The hails this session has heard (`#396` §3), newest last, capped at
 	 * `HAIL_LOG_KEEP`.
@@ -4876,6 +4882,7 @@ class Game {
 		this.warp = warpField(this.world.seed);
 		if (this.combatRig) this.registerContact(this.combatRig.contact);
 		this.nearScene.add(this.warp.object);
+		this.nearScene.add(this.killExplosions.object);
 		// Something is selected on frame one. §6 makes selection a convenience
 		// rather than a rail, but a cruise panel with an empty target field on
 		// boot reads as broken, and the nearest station is what a ship at the
@@ -7664,6 +7671,7 @@ class Game {
 		this.trafficContacts.clear();
 		this.trafficMeshes.clear();
 		this.trafficSweptEnds.clear();
+		this.killExplosions.clear();
 	}
 
 	/** Reset presentation and transient authority when its system changes. */
@@ -9092,7 +9100,12 @@ class Game {
 					: undefined,
 			),
 		];
-		this.play({ kind: "explosion" });
+		this.detonate({
+			key: actor.key,
+			pos: engagement.flight.ship.pos,
+			vel: engagement.flight.ship.vel,
+			reachKm: HULL_REACH_KM[actor.hullId],
+		});
 		this.trafficEngagements.delete(actor.key);
 		this.forgetTrafficContact(actor.key);
 		// The lock goes with the ship, as the raider's, relay's and canister's
@@ -16221,7 +16234,12 @@ class Game {
 					),
 				),
 			];
-			this.play({ kind: "explosion" });
+			this.detonate({
+				key: encounter.slot.key,
+				pos: wreck.pos,
+				vel: wreck.vel,
+				reachKm: HULL_REACH_KM[RAIDER_HULL_ID],
+			});
 		}
 		const notice = ended.end ? ENCOUNTER_END_NOTICE[ended.end] : null;
 		// A pilot the same tick killed keeps "ship destroyed" as the line.
@@ -16750,7 +16768,7 @@ class Game {
 					relayDestruction(record.index, now, plan.watchedStationId),
 					null,
 				);
-				this.play({ kind: "explosion" });
+				this.detonate({ key, pos, vel, reachKm: RELAY_HIT_RADIUS_KM });
 				this.lastExit = "pirate relay destroyed";
 			}
 		}
@@ -16819,7 +16837,7 @@ class Game {
 			dt,
 			false,
 		).condition;
-		const { pos } = this.tenderNow(view, plan);
+		const { pos, vel } = this.tenderNow(view, plan);
 		if (
 			shot.fired &&
 			shot.damage > 0 &&
@@ -16844,7 +16862,12 @@ class Game {
 				// same hull, which only a player's destroy reads.
 				for (const t of tenderKill(record.index, now, plan.watchedStationId))
 					this.applyCarrierTransition(t.key, t.event, RELAY_TENDER_HULL_ID);
-				this.play({ kind: "explosion" });
+				this.detonate({
+					key,
+					pos,
+					vel,
+					reachKm: HULL_REACH_KM[RELAY_TENDER_HULL_ID],
+				});
 				this.lastExit = "relay tender destroyed";
 				this.tenderView = null;
 			}
@@ -17151,6 +17174,16 @@ class Game {
 		// Hits play since #545, which gave them the gate this arm once said they
 		// owed: a fall is a hit only when `applyDamage` struck (`weapon-sound.ts`).
 		this.audio.play(cue);
+	}
+
+	private detonate(kill: Omit<KillExplosion, "at">) {
+		this.play({ kind: "explosion" });
+		this.killExplosions.start({
+			...kill,
+			at: this.world.gameTime,
+			pos: { ...kill.pos },
+			vel: { ...kill.vel },
+		});
 	}
 
 	/**
@@ -19295,6 +19328,7 @@ class Game {
 		this.updateRelayPresentation(camPos);
 		this.updateDerelictPresentation(camPos);
 		this.updateTenderPresentation(camPos);
+		this.killExplosions.update(this.world.gameTime, camPos);
 		this.updateFields(camPos);
 		this.presentDirector(camPos);
 

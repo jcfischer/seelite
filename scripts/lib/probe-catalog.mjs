@@ -1107,6 +1107,11 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-kill-explosion.mjs",
+			"Kills a live raider with the laser and checks one explosion starts at the wreck as its hull goes, is drawn by the renderer, drifts with the wreck's velocity and leaves no scene object behind after its duration.",
+			["kill explosion", "raider kill", "combat effect", "scene cleanup"],
+		),
+		entry(
 			"probe-raider-consequence.mjs",
 			"Checks live persistence and presentation after a raider kill, including operational condition, wreck, scoop, and revisit.",
 			["raider kill", "world state", "wreck", "cargo scoop", "revisit"],
