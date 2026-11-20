@@ -511,3 +511,59 @@ describe("the loader", () => {
 		expect(r.errors[0]).toContain('"../x" is not a set name');
 	});
 });
+
+describe("holding one version's samples (node #1325)", () => {
+	test("release drops a set, and a second version's load holds only its own", async () => {
+		const r = rig({ rich: RICH, pizz: PIZZ });
+		r.loader.attach(r.dec);
+		r.loader.load(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		expect(r.loader.heldSets).toEqual(["rich"]);
+		expect(r.loader.heldCount).toBe(1);
+		r.loader.replaceWith(songOn("pizz", [[40, 0.3]]));
+		await r.loader.ready();
+		expect(r.loader.heldSets).toEqual(["pizz"]);
+		expect(r.loader.heldCount).toBe(1);
+		expect(r.sent.filter((c) => c.type === "release")).toEqual([
+			{ type: "release", set: "rich" },
+		]);
+		r.loader.releaseAll();
+		expect(r.loader.heldCount).toBe(0);
+		expect(r.loader.heldSets).toEqual([]);
+	});
+
+	test("the worklet forgets a released set", async () => {
+		const r = rig({ rich: RICH });
+		r.loader.attach(r.dec);
+		const song = songOn("rich", [[60, 0.3]]);
+		r.loader.load(song);
+		await r.loader.ready();
+		expect(play(r.engine, song)).toBeGreaterThan(0.01);
+		r.loader.releaseAll();
+		expect(play(r.engine, { ...song, name: "after" })).toBe(0);
+	});
+
+	test("a load still in flight when its set is released is discarded", async () => {
+		const r = rig({ rich: RICH });
+		r.loader.attach(r.dec);
+		r.loader.load(songOn("rich", [[60, 0.3]]));
+		await new Promise((go) => setTimeout(go, 0));
+		r.loader.releaseAll();
+		await r.loader.ready();
+		expect(r.loader.heldCount).toBe(0);
+		expect(
+			r.sent.filter((c) => c.type === "samples" && c.set === "rich").length,
+		).toEqual(1);
+	});
+
+	test("a failed fetch or decode leaves the part to its fallback and holds nothing", async () => {
+		const r = rig({ rich: RICH }, true);
+		r.loader.attach(r.dec);
+		const backed = songOn("rich", [[60, 0.3]], "keys");
+		r.loader.replaceWith(backed);
+		await r.loader.ready();
+		expect(r.loader.heldCount).toBe(0);
+		expect(r.errors.length).toBeGreaterThan(0);
+		expect(play(r.engine, backed)).toBeGreaterThan(0.01);
+	});
+});

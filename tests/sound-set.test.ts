@@ -180,6 +180,7 @@ const MOVES: Record<MusicCommand["type"], true | string> = {
 	tempo: true,
 	sync: "moves nothing: the render sends it around every scripted command",
 	samples: "moves nothing: Music sends a set when a song that names it loads",
+	release: "moves nothing: Music lets a set go when the docking run is over",
 };
 
 test("every transport move is rendered for the ear, or says why not (#560)", () => {

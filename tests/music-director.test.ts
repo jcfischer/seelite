@@ -5,7 +5,8 @@
  * the principal's ear.
  */
 import { describe, expect, test } from "bun:test";
-import { DANUBE_CANCEL_FADE_S } from "../src/music-danube";
+import { DANUBE_CANCEL_FADE_S, danubeSong } from "../src/music-danube";
+import { VARIANT as JAZZ_TRIO } from "../src/music-danube-variants/jazz-trio";
 import {
 	DEFAULT_MUSIC_ARMS,
 	dangerLevel,
@@ -646,4 +647,82 @@ describe("the docking computer's waltz (#603)", () => {
 			Math.round((WALTZ_CADENCE_S - 1.125) * SR),
 		);
 	}, 30000);
+});
+
+describe("the sampled waltz's samples (node #1325)", () => {
+	const song = JAZZ_TRIO;
+	const near = at({
+		approach: true,
+		waltz: { version: "jazz-trio", song },
+	});
+	const kinds = (steps: ReturnType<typeof stepMusic>[]) =>
+		steps.map((s) => {
+			if (!s.samples) return "-";
+			return "load" in s.samples ? "load" : "release";
+		});
+	const run = (readings: MusicReading[]) => {
+		let state = initialMusicState();
+		const out: ReturnType<typeof stepMusic>[] = [];
+		for (const r of readings) {
+			const s = stepMusic(state, r, 0.1);
+			state = s.state;
+			out.push(s);
+		}
+		return out;
+	};
+
+	test("loading starts once on approach, not before", () => {
+		const out = run([calm, near, near, near]);
+		expect(kinds(out)).toEqual(["-", "load", "-", "-"]);
+		const first = out[1].samples;
+		expect(first && "load" in first && first.load).toBe(song);
+	});
+
+	test("arming the computer starts it as well: the waltz's own load holds the version", () => {
+		const armed = at({ ...near, scene: "dockingComputer" });
+		const out = run([calm, armed]);
+		expect(out[1].commands.map((c) => c.type)).toContain("load");
+		expect(out[1].state.samplesKey).toBe("jazz-trio");
+	});
+
+	test("leaving the radius without docking releases", () => {
+		expect(kinds(run([near, near, calm, calm]))).toEqual([
+			"load",
+			"-",
+			"release",
+			"-",
+		]);
+	});
+
+	test("a berth holds the samples and undocking releases them, with no reload at the door", () => {
+		const docked = at({ scene: "docked", stationRole: "trade" });
+		const out = run([
+			near,
+			at({ ...near, scene: "dockingComputer" }),
+			docked,
+			docked,
+			near,
+			near,
+			calm,
+			near,
+		]);
+		expect(kinds(out)).toEqual([
+			"load",
+			"-",
+			"-",
+			"-",
+			"release",
+			"-",
+			"-",
+			"load",
+		]);
+	});
+
+	test("a version with no sampled part loads nothing", () => {
+		const synth = at({
+			approach: true,
+			waltz: { version: "hybrid", song: danubeSong("hybrid") },
+		});
+		expect(kinds(run([synth, synth]))).toEqual(["-", "-"]);
+	});
 });

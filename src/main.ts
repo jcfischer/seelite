@@ -17283,6 +17283,11 @@ class Game {
 		const station = dock.stationId
 			? stationOf(this.world.system, dock.stationId)
 			: null;
+		const approach =
+			scene === "dockingComputer" ||
+			(scene === "flight" &&
+				(this.stationsByRange()[0]?.km ?? Number.POSITIVE_INFINITY) <=
+					VICINITY_KM);
 		const phase = this.encounter?.phase ?? "over";
 		let engaged = false;
 		// Hostile to the pilot, not merely armed: a patrol running from another
@@ -17306,12 +17311,17 @@ class Game {
 				hullShare: c.hull / c.hullMax,
 				systemSeed: this.world.system.record.seed,
 				stationRole: station?.type ?? null,
-				waltz: scene === "dockingComputer" ? this.dockingWaltz() : null,
+				waltz: approach ? this.dockingWaltz() : null,
+				approach,
 			},
 			dt,
 			DIRECTOR_ARMS,
 		);
 		this.musicState = step.state;
+		if (step.samples) {
+			if ("load" in step.samples) this.music.preload(step.samples.load);
+			else this.music.releaseSamples();
+		}
 		for (const cmd of step.commands) this.music.send(cmd);
 		// The engine and thrusters sink under the waltz (#547 D5).
 		this.audio.duck(

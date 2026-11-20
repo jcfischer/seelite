@@ -148,6 +148,7 @@ interface SetState {
 	readonly manifest: Promise<SampleManifest | null>;
 	/** Recordings sent, or on their way. */
 	readonly asked: Set<string>;
+	readonly held: Set<string>;
 }
 
 export class SampleLoader {
@@ -193,6 +194,33 @@ export class SampleLoader {
 			this.jobs.add(job);
 			job.finally(() => this.jobs.delete(job));
 		}
+	}
+
+	release(set: string) {
+		if (!this.sets.delete(set)) return;
+		this.o.send({ type: "release", set }, []);
+	}
+
+	releaseAll() {
+		for (const set of [...this.sets.keys()]) this.release(set);
+		this.waiting.length = 0;
+	}
+
+	replaceWith(song: Song) {
+		const keep = new Set(setsOf(song));
+		for (const set of [...this.sets.keys()])
+			if (!keep.has(set)) this.release(set);
+		this.load(song);
+	}
+
+	get heldCount(): number {
+		let n = 0;
+		for (const s of this.sets.values()) n += s.held.size;
+		return n;
+	}
+
+	get heldSets(): string[] {
+		return [...this.sets.keys()];
 	}
 
 	/**
@@ -242,7 +270,11 @@ export class SampleLoader {
 			this.fail(set, err);
 			return null;
 		});
-		const state = { manifest, asked: new Set<string>() };
+		const state = {
+			manifest,
+			asked: new Set<string>(),
+			held: new Set<string>(),
+		};
 		this.sets.set(set, state);
 		return state;
 	}
@@ -250,7 +282,7 @@ export class SampleLoader {
 	private async loadSet(set: string, song: Song): Promise<void> {
 		const state = this.stateOf(set);
 		const m = await state.manifest;
-		if (!m) return;
+		if (!m || this.sets.get(set) !== state) return;
 		const layers = manifestLayers(m);
 		const wanted = [...zonesPlayed(song, set, m)].filter(
 			(k) => !state.asked.has(k),
@@ -279,7 +311,8 @@ export class SampleLoader {
 						this.fail(set, err, s.file);
 						return null;
 					});
-					if (!zone) return;
+					if (!zone || this.sets.get(set) !== state) return;
+					state.held.add(k);
 					// One zone, in its layer's place; the other layers empty.
 					const bank: SampleBank = {
 						rate,

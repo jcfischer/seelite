@@ -798,6 +798,10 @@ export class VoiceBank {
 		});
 	}
 
+	removeSamples(name: string) {
+		this.sets.delete(name);
+	}
+
 	/** Whether a sample set has arrived. */
 	hasSamples(name: string): boolean {
 		return this.sets.has(name);
