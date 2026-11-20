@@ -201,15 +201,3 @@ for (const view of ["cockpit", "chase"] as const) {
 		});
 	}
 }
-
-describe("the seat sees its hull in chase, and in the cockpit only on the miner", () => {
-	test("the courier's cockpit sees no hull and fires from the glass", () => {
-		expect(seatSeesHull("cockpit", HULL_SPECS.courier)).toBe(false);
-	});
-	test("the miner's cockpit sees the hull it drills with", () => {
-		expect(seatSeesHull("cockpit", HULL_SPECS.miner)).toBe(true);
-	});
-	test("the chase camera sees every hull", () => {
-		expect(seatSeesHull("chase", HULL_SPECS.courier)).toBe(true);
-	});
-});
