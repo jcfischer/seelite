@@ -154,6 +154,7 @@ interface SetState {
 export class SampleLoader {
 	private ctx: Decoder | null = null;
 	private readonly sets = new Map<string, SetState>();
+	private readonly preloaded = new Set<string>();
 	/** Songs loaded before there was a context to decode on. */
 	private readonly waiting: Song[] = [];
 	/** The loads still running; each leaves as it settles. */
@@ -202,14 +203,19 @@ export class SampleLoader {
 	}
 
 	releaseAll() {
-		for (const set of [...this.sets.keys()]) this.release(set);
+		for (const set of [...this.preloaded]) this.release(set);
+		this.preloaded.clear();
 		this.waiting.length = 0;
 	}
 
 	replaceWith(song: Song) {
 		const keep = new Set(setsOf(song));
-		for (const set of [...this.sets.keys()])
-			if (!keep.has(set)) this.release(set);
+		for (const set of [...this.preloaded])
+			if (!keep.has(set)) {
+				this.release(set);
+				this.preloaded.delete(set);
+			}
+		for (const set of keep) if (!this.sets.has(set)) this.preloaded.add(set);
 		this.load(song);
 	}
 
@@ -220,7 +226,7 @@ export class SampleLoader {
 	}
 
 	get heldSets(): string[] {
-		return [...this.sets.keys()];
+		return [...this.sets].filter(([, s]) => s.held.size > 0).map(([k]) => k);
 	}
 
 	/**

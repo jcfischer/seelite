@@ -516,7 +516,7 @@ describe("holding one version's samples (node #1325)", () => {
 	test("release drops a set, and a second version's load holds only its own", async () => {
 		const r = rig({ rich: RICH, pizz: PIZZ });
 		r.loader.attach(r.dec);
-		r.loader.load(songOn("rich", [[60, 0.3]]));
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
 		await r.loader.ready();
 		expect(r.loader.heldSets).toEqual(["rich"]);
 		expect(r.loader.heldCount).toBe(1);
@@ -536,7 +536,7 @@ describe("holding one version's samples (node #1325)", () => {
 		const r = rig({ rich: RICH });
 		r.loader.attach(r.dec);
 		const song = songOn("rich", [[60, 0.3]]);
-		r.loader.load(song);
+		r.loader.replaceWith(song);
 		await r.loader.ready();
 		expect(play(r.engine, song)).toBeGreaterThan(0.01);
 		r.loader.releaseAll();
@@ -546,14 +546,40 @@ describe("holding one version's samples (node #1325)", () => {
 	test("a load still in flight when its set is released is discarded", async () => {
 		const r = rig({ rich: RICH });
 		r.loader.attach(r.dec);
-		r.loader.load(songOn("rich", [[60, 0.3]]));
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
 		await new Promise((go) => setTimeout(go, 0));
 		r.loader.releaseAll();
 		await r.loader.ready();
 		expect(r.loader.heldCount).toBe(0);
-		expect(
-			r.sent.filter((c) => c.type === "samples" && c.set === "rich").length,
-		).toEqual(1);
+		const kinds = r.sent.map((c) => c.type);
+		const release = kinds.lastIndexOf("release");
+		expect(release).toBeGreaterThanOrEqual(0);
+		expect(kinds.slice(release + 1)).not.toContain("samples");
+	});
+
+	test("a set released before its manifest arrives sends no samples", async () => {
+		const r = rig({ rich: RICH });
+		r.loader.attach(r.dec);
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
+		r.loader.releaseAll();
+		await r.loader.ready();
+		expect(r.loader.heldCount).toBe(0);
+		const recorded = r.sent.filter(
+			(c) =>
+				c.type === "samples" &&
+				c.bank.layers.some((l) => l.zones.some((z) => z.data !== null)),
+		);
+		expect(recorded).toEqual([]);
+	});
+
+	test("releaseAll leaves a set another song loaded", async () => {
+		const r = rig({ rich: RICH, pizz: RICH });
+		r.loader.attach(r.dec);
+		r.loader.load(songOn("pizz", [[60, 0.3]]));
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.releaseAll();
+		expect(r.loader.heldSets).toEqual(["pizz"]);
 	});
 
 	test("a failed fetch or decode leaves the part to its fallback and holds nothing", async () => {

@@ -5,7 +5,7 @@
  * them go on the way out. `?waltz=jazz-trio` (piano-grand-rich plus
  * bass-pizz) is the version; the probe stands the ship far from the
  * station, then inside the approach radius, and reads off the page when the
- * samples are all ready against the intro's length, then leaves the radius
+ * samples are all ready against the opening's length, then leaves the radius
  * and reads the held count back to zero.
  *
  * A default-layout probe (#381 D11): the F8 press is the trusted key that opens
@@ -91,12 +91,12 @@ check(
 	"inside the approach radius the version's two sample sets load",
 	run.startedMs !== null &&
 		run.near.sets.join() === "bass-pizz,piano-grand-rich" &&
-		run.near.count + run.errors.length > 0,
+		run.near.count > 0,
 	JSON.stringify({ near: run.near, failed: run.errors.length }),
 );
 console.log(
 	`samples all ready ${(run.readyMs / 1000).toFixed(2)} s after the approach began, ` +
-		`against an intro of ${INTRO_S.toFixed(1)} s; ${run.near.count} decoded recordings held, ${run.errors.length} failed to load (a checkout holding Git LFS pointers cannot decode them: the parts then play their synth fallback)`,
+		`against an opening of ${INTRO_S.toFixed(1)} s; ${run.near.count} decoded recordings held, ${run.errors.length} failed to load (a checkout holding Git LFS pointers cannot decode them: the parts then play their synth fallback)`,
 );
 check(
 	"every failure is named and the run goes on",

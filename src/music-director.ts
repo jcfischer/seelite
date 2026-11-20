@@ -545,7 +545,11 @@ function stepSamples(
 	arms: MusicArms,
 ): { state: MusicState; samples?: SampleOrder } {
 	let s = state;
-	const sampled = r.waltz && setsOf(r.waltz.song).length > 0 ? r.waltz : null;
+	const sampled =
+		r.waltz &&
+		(r.waltz.version === state.samplesKey || setsOf(r.waltz.song).length > 0)
+			? r.waltz
+			: null;
 	if (s.waltz === "playing" && s.waltzKey !== null && s.samplesKey === null)
 		s = { ...s, samplesKey: s.waltzKey };
 	const near = r.approach && !arms.off;
@@ -598,7 +602,7 @@ function stepBeds(
 	r: MusicReading,
 	dt: number,
 	arms: MusicArms,
-): { state: MusicState; commands: MusicCommand[]; voice?: string } {
+): Omit<MusicStep, "samples"> {
 	const waltz = stepWaltz(state, r, dt, arms);
 	if (waltz.done) return { state: waltz.state, commands: waltz.commands };
 	let s = waltz.state;
