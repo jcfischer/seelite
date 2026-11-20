@@ -363,6 +363,19 @@ module, and a row asserts it. A pair whose bounding spheres the swept motion
 does not reach is not tested. The bounding spheres are `reachKm`, `radiusKm`
 and the box's half-diagonal.
 
+`src/collision.ts` meets it by **conservative advancement**. The plane through
+the closest points of the ship and a primitive separates them until something
+crosses it, and neither can cross it faster than its translation along the
+plane's normal plus its turn at its reach. An advance by `gap / bound`
+therefore never steps past a surface, however thin, so the requirement holds
+by construction rather than by a sub-step count. A pair that reaches
+`MAX_ADVANCES` is read as an impact at the time reached, never as clear.
+
+If an advance still ends overlapped, the bound failed. The impact normal is
+then the way the ship came **relative to the solid**, because a moon carried at
+32 km/s would otherwise lift the ship along the moon's own path; with no
+relative motion it points out from the primitive's centre.
+
 ### 4.2 The earliest impact owns the tick (C3)
 
 On the tick's swept motion, the **earliest** event in time wins. The events are
@@ -394,6 +407,11 @@ tick. Time of impact is the only order that matches what was flown.
 The map says a sweep that starts inside a volume owes the case its own answer
 (#30). **A pair that overlaps at the start of a tick is not tested until it has
 separated.** There is no damage and no push-out.
+
+The rule fails open by design. `SweepResult.ghosts` (and `rockGhosts` for rock
+solids) lists, once each, the solids with a primitive that overlapped the ship
+at the start and so went untested. It is the only signal a caller has that the
+rule fired, not an optional diagnostic.
 
 A flying ship can only start inside a proxy by being placed there:
 

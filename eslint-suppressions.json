@@ -1762,9 +1762,6 @@
   "src/collision.ts": {
     "max-params": {
       "count": 1
-    },
-    "seelite/no-comments": {
-      "count": 113
     }
   },
   "src/combat-enemy.ts": {
