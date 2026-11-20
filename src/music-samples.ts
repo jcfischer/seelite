@@ -148,11 +148,13 @@ interface SetState {
 	readonly manifest: Promise<SampleManifest | null>;
 	/** Recordings sent, or on their way. */
 	readonly asked: Set<string>;
+	readonly held: Set<string>;
 }
 
 export class SampleLoader {
 	private ctx: Decoder | null = null;
 	private readonly sets = new Map<string, SetState>();
+	private readonly preloaded = new Set<string>();
 	/** Songs loaded before there was a context to decode on. */
 	private readonly waiting: Song[] = [];
 	/** The loads still running; each leaves as it settles. */
@@ -193,6 +195,38 @@ export class SampleLoader {
 			this.jobs.add(job);
 			job.finally(() => this.jobs.delete(job));
 		}
+	}
+
+	release(set: string) {
+		if (!this.sets.delete(set)) return;
+		this.o.send({ type: "release", set }, []);
+	}
+
+	releaseAll() {
+		for (const set of [...this.preloaded]) this.release(set);
+		this.preloaded.clear();
+		this.waiting.length = 0;
+	}
+
+	replaceWith(song: Song) {
+		const keep = new Set(setsOf(song));
+		for (const set of [...this.preloaded])
+			if (!keep.has(set)) {
+				this.release(set);
+				this.preloaded.delete(set);
+			}
+		for (const set of keep) if (!this.sets.has(set)) this.preloaded.add(set);
+		this.load(song);
+	}
+
+	get heldCount(): number {
+		let n = 0;
+		for (const s of this.sets.values()) n += s.held.size;
+		return n;
+	}
+
+	get heldSets(): string[] {
+		return [...this.sets].filter(([, s]) => s.held.size > 0).map(([k]) => k);
 	}
 
 	/**
@@ -242,7 +276,11 @@ export class SampleLoader {
 			this.fail(set, err);
 			return null;
 		});
-		const state = { manifest, asked: new Set<string>() };
+		const state = {
+			manifest,
+			asked: new Set<string>(),
+			held: new Set<string>(),
+		};
 		this.sets.set(set, state);
 		return state;
 	}
@@ -250,7 +288,7 @@ export class SampleLoader {
 	private async loadSet(set: string, song: Song): Promise<void> {
 		const state = this.stateOf(set);
 		const m = await state.manifest;
-		if (!m) return;
+		if (!m || this.sets.get(set) !== state) return;
 		const layers = manifestLayers(m);
 		const wanted = [...zonesPlayed(song, set, m)].filter(
 			(k) => !state.asked.has(k),
@@ -279,7 +317,8 @@ export class SampleLoader {
 						this.fail(set, err, s.file);
 						return null;
 					});
-					if (!zone) return;
+					if (!zone || this.sets.get(set) !== state) return;
+					state.held.add(k);
 					// One zone, in its layer's place; the other layers empty.
 					const bank: SampleBank = {
 						rate,

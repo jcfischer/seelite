@@ -482,6 +482,13 @@ const OWNERS = Object.freeze({
 		"src/music-danube-variants.ts",
 		"src/music-danube-load.ts",
 	],
+	"probe-waltz-preload.mjs": [
+		"scripts/probe-waltz-preload.mjs",
+		"src/music.ts",
+		"src/music-samples.ts",
+		"src/music-director.ts",
+		"src/station-waltz.ts",
+	],
 	"probe-music-game.mjs": [
 		"scripts/probe-music-game.mjs",
 		"src/music.ts",
