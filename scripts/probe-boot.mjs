@@ -910,6 +910,35 @@ async function settingsGate() {
 	await page.waitForFunction(() => document.hasFocus(), null, {
 		timeout: 5000,
 	});
+	const heldAfter = (ending) =>
+		page.evaluate((how) => {
+			window.dispatchEvent(
+				new KeyboardEvent("keydown", { key: "d", code: "KeyD" }),
+			);
+			if (how === "option")
+				window.dispatchEvent(
+					new KeyboardEvent("keyup", {
+						key: "∂",
+						code: "KeyD",
+						altKey: true,
+					}),
+				);
+			else window.dispatchEvent(new Event("blur"));
+			const held = window.__seelite.heldKeyCount;
+			window.dispatchEvent(
+				new KeyboardEvent("keyup", { key: "d", code: "KeyD" }),
+			);
+			window.dispatchEvent(new Event("focus"));
+			return held;
+		}, ending);
+	check(
+		"D let go under Option is no longer held (#390)",
+		(await heldAfter("option")) === 0,
+	);
+	check(
+		"a window blur lets go of a held flight key",
+		(await heldAfter("blur")) === 0,
+	);
 	// Hold throttle, then open the screen while it is still down.
 	await page.keyboard.down("Shift");
 	await page.waitForFunction(() => window.__seelite.heldKeyCount > 0, null, {

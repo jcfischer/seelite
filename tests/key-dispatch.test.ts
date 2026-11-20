@@ -324,7 +324,9 @@ describe("main.ts acts on the route", () => {
 	});
 
 	test("a release deletes the key, and a swallow reaches nothing", () => {
-		expect(branch("release")).toContain("this.keys.delete(route.key);");
+		expect(branch("release")).toContain(
+			"releaseHeldKey(this.keys, this.keyCodes, route.key, e.code);",
+		);
 		const swallow = branch("swallow") ?? "";
 		expect(swallow).not.toContain("this.keys.add");
 		expect(swallow).not.toContain("this.command(");

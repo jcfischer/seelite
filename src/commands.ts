@@ -2206,9 +2206,8 @@ export const yieldsItsKey = (b: Binding): boolean =>
  * rather than an omission.** `main.ts` keeps its held set as the characters
  * `keyDispatch` hands it, so `isHeld` asks the layout for a key rather than a
  * position: on AZERTY the W position is held as `z` and pitch is not flown.
- * Giving the held set the code is the same change #390 needs for the macOS
- * Option release — where a key released under Option reports a different
- * character and stays held — and that node owns it.
+ * The macOS Option release, where a key let go under Option reports a
+ * different character, is cleared by its code instead (`held-keys.ts`, #390).
  *
  * A list rather than one id: nothing in the shipped layout answers twice, and
  * `collisions()` is what holds that, but a player layout may — D5 is warn and

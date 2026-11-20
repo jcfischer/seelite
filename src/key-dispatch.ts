@@ -7,9 +7,9 @@
  *
  * 1. **A release clears the key it names.** Whatever is held with it, a keyup
  *    takes its key out of the held set — a flight key stuck down is worse than
- *    any modifier rule. The limit is the *name*: on macOS a key released under
- *    Option reports the Option character (`∂` for D), and the key it was
- *    pressed as stays held. That is #390, and it is older than this module.
+ *    any modifier rule. On macOS a key released under Option reports the
+ *    Option character (`∂` for D); `held-keys.ts` clears the key it was
+ *    pressed as by its code (#390).
  *
  * Between rulings 1 and 2 sits #380's gate, which is not one of #377's four and
  * so takes no number: **a key typed into a field is the field's.** The cockpit
