@@ -19,6 +19,7 @@ import {
 	HULL_PRICE_STEP_CR,
 	HULL_PRICE_UPPER_EXPONENT,
 	HULL_SPECS,
+	seatSeesHull,
 	HULL_VARIANT_IDS,
 	hullPriceCr,
 	isCapital,
@@ -654,5 +655,17 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		expect(fits(HULL_CEILING_HOLD_T + 1)).toBe(false);
 		for (const id of DOCKABLE_HULL_IDS)
 			expect([id, fits(HULL_SPECS[id].holdT)]).toEqual([id, true]);
+	});
+});
+
+describe("the seat sees its hull in chase, and in the cockpit only on the miner", () => {
+	test("the courier's cockpit sees no hull and fires from the glass", () => {
+		expect(seatSeesHull("cockpit", HULL_SPECS.courier)).toBe(false);
+	});
+	test("the miner's cockpit sees the hull it drills with", () => {
+		expect(seatSeesHull("cockpit", HULL_SPECS.miner)).toBe(true);
+	});
+	test("the chase camera sees every hull", () => {
+		expect(seatSeesHull("chase", HULL_SPECS.courier)).toBe(true);
 	});
 });

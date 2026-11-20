@@ -12,9 +12,11 @@ import {
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	SHOT_SOUND_GAP_S,
+	tracerPorts,
+	fromGlassPorts,
 } from "../src/gun-feedback";
 import { ndcToPx } from "../src/hud";
-import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
+import { HULL_IDS, HULL_SPECS, seatSeesHull, type HullId } from "../src/hull";
 import { glassTracerIndices } from "../src/laser-modules";
 import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import { stockLoadout } from "../src/loadout";
@@ -28,6 +30,7 @@ await useShippedSevenShips();
 
 const deps = {
 	HULL_SPECS,
+	seatSeesHull,
 	shipMuzzlesKm,
 	muzzlesWorld,
 	beamSegments,
@@ -36,6 +39,7 @@ const deps = {
 	PLAYER_LASER_RANGE_KM,
 	glassTracerIndices,
 	tracerStrokes,
+	fromGlassPorts,
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	SHOT_SOUND_GAP_S,
@@ -133,8 +137,11 @@ for (const hull of HULL_IDS) {
 						inCamera(to);
 						if (-from.z < NEAR_KM)
 							from.lerp(to, (NEAR_KM + from.z) / (from.z - to.z));
+						const glassPort = !seatSeesHull(view, spec)
+							? tracerPorts(spec.hardpoints)[index]
+							: null;
 						for (const [actual, expected] of [
-							[drawn[beam].from, framePoint(from, camera)],
+							[drawn[beam].from, glassPort ?? framePoint(from, camera)],
 							[drawn[beam].to, framePoint(to, camera)],
 						]) {
 							for (const axis of ["x", "y"] as const)
@@ -187,7 +194,9 @@ for (const view of ["cockpit", "chase"] as const) {
 				),
 			).toEqual([1]);
 			expect(subject.gunTracer.firedPorts).toEqual(
-				drawn.map((beam: BeamStroke) => beam.from),
+				view === "cockpit"
+					? visible.map((i) => tracerPorts(2)[i])
+					: drawn.map((beam: BeamStroke) => beam.from),
 			);
 		});
 	}

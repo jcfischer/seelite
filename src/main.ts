@@ -796,6 +796,7 @@ import {
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	drawTracerSegments,
+	fromGlassPorts,
 	stepGunFeedback,
 	type TracerSegment,
 } from "./gun-feedback";
@@ -982,6 +983,7 @@ import {
 	HULL_IDS,
 	HULL_SPECS,
 	purchasableHullNamed,
+	seatSeesHull,
 	type HullEnvelope,
 	type HullCutter,
 	type HullId,
@@ -13953,7 +13955,10 @@ class Game {
 	}
 
 	private playerBeamFrame(fired = this.glassFiredIndices()) {
-		return this.playerBeamPx(1, 1, fired);
+		const frame = this.playerBeamPx(1, 1, fired);
+		const spec = HULL_SPECS[this.flownHull];
+		if (seatSeesHull(this.view, spec)) return frame;
+		return fromGlassPorts(frame, spec.hardpoints);
 	}
 
 	/** Where the gimballed beam points (#324): the boresight turned toward the
@@ -19719,7 +19724,7 @@ class Game {
 		const hullShown = this.view === "chase" && this.opening?.shot !== "forming";
 		const drillView =
 			this.view === "cockpit" &&
-			!!HULL_SPECS[this.flownHull].cutter &&
+			seatSeesHull(this.view, HULL_SPECS[this.flownHull]) &&
 			this.opening?.shot !== "forming";
 		cockpitDrillView(
 			this.shipMesh,
