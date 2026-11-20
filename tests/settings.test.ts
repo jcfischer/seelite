@@ -16,10 +16,14 @@ import {
 	type Settings,
 	SETTING_KEYS,
 	SettingsStore,
+	SETTING_TABS,
+	settingKeysIn,
 	settingSpec,
+	TAB_LABELS,
 	VOLUME_KEY,
 } from "../src/settings";
 import { BUSES } from "../src/audio-cue";
+import { STRIP_NOTE } from "../src/settings-panel";
 
 /**
  * The real global, so it can be put back.
@@ -354,5 +358,78 @@ describe("the mouse sensitivity row (node #640)", () => {
 		expect(loadSettings().mouseSensitivity).toBe(1);
 		installStorage({ [KEY]: `{"mouseSensitivity":"2"}` });
 		expect(loadSettings().mouseSensitivity).toBe(1);
+	});
+});
+
+describe("the settings screen's tabs (#645)", () => {
+	test("three tabs, in the order the screen draws them", () => {
+		expect(SETTING_TABS).toEqual(["display", "sound", "controls"]);
+		expect(SETTING_TABS.map((tab) => TAB_LABELS[tab])).toEqual([
+			"Display",
+			"Sound",
+			"Controls",
+		]);
+	});
+
+	test("each tab's rows, in the order they shipped", () => {
+		expect(settingKeysIn("display")).toEqual([
+			"cockpitFov",
+			"renderScale",
+			"quality",
+			"antialias",
+			"dither",
+			"vignette",
+			"ao",
+		]);
+		expect(settingKeysIn("sound")).toEqual([
+			"volumeMaster",
+			"volumeShip",
+			"volumeCombat",
+			"volumeConsole",
+			"volumeMusic",
+			"voice",
+		]);
+		expect(settingKeysIn("controls")).toEqual(["mouseSensitivity"]);
+	});
+
+	test("a row with no tab, or a tab with no rows, is red", () => {
+		const grouped = SETTING_TABS.flatMap((tab) => settingKeysIn(tab));
+		expect(new Set(grouped).size).toBe(SETTING_KEYS.length);
+		for (const key of SETTING_KEYS) {
+			const tab = (settingSpec(key) as { tab?: string }).tab;
+			expect(SETTING_TABS as readonly (string | undefined)[]).toContain(tab);
+		}
+		for (const tab of SETTING_TABS)
+			expect(settingKeysIn(tab).length).toBeGreaterThan(0);
+	});
+
+	test("the tab strip's note is the one the screen prints", () => {
+		expect(STRIP_NOTE).toBe("←→ changes the tab. ↓ goes to the first setting.");
+	});
+
+	test("Quality carries node #645's approved rewrite, word for word", () => {
+		expect(settingSpec("quality").note).toBe(
+			"High makes the metal read as metal: the star reflects off hulls and the cabin, panel lines catch a moving sun, the console is lit from above, and a close station casts the star's shadow. Low drops all four; the picture stays lit and the panel lines stay painted. Corner shading is the Occlusion row.",
+		);
+	});
+
+	test("Quality's approved note keeps the High and Low details and drops the planet-target sentence", () => {
+		const note = settingSpec("quality").note;
+		expect(note).toContain("High makes the metal read as metal");
+		expect(note).toContain("Low drops all four");
+		expect(note).not.toContain("half-resolution");
+	});
+
+	test("Voice carries node #645's approved rewrite, word for word", () => {
+		expect(settingSpec("voice").note).toBe(
+			"Natural is a speech model that runs in your browser: 110 to 190 MB, downloaded once and kept until the game ships a new one; a private window keeps nothing. Until it is ready, the synthesised voice speaks. Synthesised needs no download, and choosing it deletes the downloaded voice. Ask puts the question on the Commander screen.",
+		);
+	});
+
+	test("Voice's approved note keeps the Natural and Synthesised details and drops the smaller-model fallback sentence", () => {
+		const note = settingSpec("voice").note;
+		expect(note).toContain("Natural is a speech model");
+		expect(note).toContain("Synthesised needs no download");
+		expect(note).not.toContain("smaller");
 	});
 });

@@ -12147,6 +12147,7 @@ class Game {
 			if (intents.back) return panel.close();
 			if (intents.focusDelta !== 0) panel.moveCursor(intents.focusDelta);
 			if (intents.valueDelta !== 0) panel.stepValue(intents.valueDelta);
+			if (intents.tabDelta !== 0) panel.moveTab(intents.tabDelta);
 			// Cross advances the focused row, which is what clicking it does on
 			// that screen. The branch ignored `activate` entirely, so the one
 			// button a pad player reaches for first did nothing. Sage, round 5.
@@ -25546,6 +25547,7 @@ if (postcard) {
 			// `game.settings`, so the row reads and steps it through the game.
 			{
 				label: "Keyboard layout",
+				tab: "controls",
 				value: () => LAYOUT_LABELS[game.layoutInForce().base],
 				note: () => layoutChoiceNote(game.layoutInForce(), browserPlatform()),
 				step: (direction) => {

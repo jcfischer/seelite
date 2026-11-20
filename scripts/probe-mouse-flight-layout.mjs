@@ -62,22 +62,30 @@ check(
 if (mounted) {
 	await page.keyboard.press("z");
 	await settle();
-	// The layout row is the last; ↑ from the first row wraps onto it.
-	await page.keyboard.press("ArrowUp");
+	// Found by name through the page-level read (#645).
+	await page.evaluate(() => window.__seelite.settingsPanel.focusRow("layout"));
+	await settle();
 	await page.keyboard.press("ArrowRight");
 	await settle();
 }
 const row = await page.evaluate(() => {
-	const el = document.querySelector("[data-settings-layout]");
+	const panel = window.__seelite.settingsPanel();
+	const el = document.querySelector('[data-settings-row="layout"]');
 	return {
 		value: el?.querySelector(".value")?.textContent?.trim() ?? null,
 		selected: el?.getAttribute("aria-selected") ?? null,
-		note: el?.nextElementSibling?.textContent?.trim() ?? null,
+		note:
+			document.querySelector("#seelite-settings .note")?.textContent?.trim() ??
+			null,
+		cursor: panel.cursor,
+		tab: panel.tab,
 	};
 });
 check(
 	"the settings screen's layout row steps onto Mouse flight",
 	row.selected === "true" &&
+		row.cursor === "layout" &&
+		row.tab === "controls" &&
 		row.value?.includes("Mouse flight") === true &&
 		(await base()) === "mouse-flight",
 	`row ${JSON.stringify(row)}; layout ${await base()}`,

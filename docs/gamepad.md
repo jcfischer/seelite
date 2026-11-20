@@ -217,8 +217,10 @@ On the Galaxy Map tab the right stick orbits the cluster, which is the one thing
 a stick still does inside a console.
 
 On the settings screen, ← and → change the focused row's value, which is what
-that screen's own hint line says. The pad adopts its model rather than inventing
-a second one beside it.
+that screen's own hint line says, and on its tab strip they change the tab. The
+pad adopts its model rather than inventing a second one beside it. L1 and R1
+step that screen's tabs (#645); the Commander overlay shares the `modal`
+context and has no tabs, so there they do nothing.
 
 **`home` is the eject, held** (node #703), and no press reaches it: every other
 button runs a command on its press, which a hold there would fire first. It is <!-- glossary-ignore: Command -->

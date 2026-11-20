@@ -668,6 +668,15 @@ try {
 			backToMenu !== null,
 		JSON.stringify({ before, moved, form: form !== null }),
 	);
+	const at = (await state(padTab)).selected;
+	await press(STANDARD_INDEX.l1);
+	await press(STANDARD_INDEX.r1);
+	const shoulders = (await state(padTab)).selected;
+	check(
+		"the shoulders do nothing on the overlay, which has no tabs",
+		JSON.stringify(shoulders) === JSON.stringify(at),
+		`${JSON.stringify(at)} → ${JSON.stringify(shoulders)}`,
+	);
 } finally {
 	for (const context of contexts) await context.close().catch(() => {});
 	await browser.close();

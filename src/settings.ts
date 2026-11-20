@@ -48,7 +48,27 @@ const volumeRow = (label: string, note: string) =>
 		label,
 		describe: describeVolume,
 		note,
+		tab: "sound" as const,
 	}) as const;
+
+/**
+ * The settings screen's three tabs, in the order it draws them (#645).
+ *
+ * A tab is presentation only: it decides where a row is drawn and never which
+ * field stores it, so moving a row between tabs moves no persisted value. The
+ * table is a list rather than three literals spread over the schema so the
+ * screen can walk it, and `tests/settings.test.ts` holds it against `SCHEMA`
+ * in both directions: a row with no tab and a tab with no rows are each red.
+ */
+export const SETTING_TABS = ["display", "sound", "controls"] as const;
+export type SettingTab = (typeof SETTING_TABS)[number];
+
+/** What each tab's label reads on the strip. */
+export const TAB_LABELS = {
+	display: "Display",
+	sound: "Sound",
+	controls: "Controls",
+} as const satisfies Record<SettingTab, string>;
 
 /** One place for the schema, because the default and the validator drift apart
  *  when they are written separately. */
@@ -60,6 +80,7 @@ const SCHEMA = {
 		describe: (v: keyof typeof COCKPIT_FOV_DEG) =>
 			`${v === "wide" ? "Wide" : "Normal"} (${COCKPIT_FOV_DEG[v]}°)`,
 		note: "The vertical field of view in every cockpit cabin. Chase view keeps its own field of view.",
+		tab: "display" as const,
 	},
 	/**
 	 * A multiplier on the device pixel ratio, or `"auto"` to let the game pick.
@@ -107,6 +128,7 @@ const SCHEMA = {
 			v === "auto" ? "Auto" : `${Math.round(v * 100)}%`,
 		/** Why someone would move it, in the words of what they would see. */
 		note: "Lower is faster and softer. Below 100% the cockpit's glow thins: bloom's own chain is a fixed size, but it reads a smaller frame, so fine highlights are averaged away before they can pass its brightness threshold. Auto holds 60 fps by picking a step for you, and shows which one it is using.",
+		tab: "display" as const,
 	},
 	/**
 	 * Which lighting terms the frame gets — #98's quality key, and #99's answer
@@ -215,7 +237,8 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Quality",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and — once a station is close enough to be worth the frame it costs — casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal. A close planet's surface uses a shared half-resolution target at either setting; Low uses it throughout the approach layer. The atmosphere, rings, cockpit and HUD stay at full resolution. Corner and contact shading is the Occlusion row, not this one.",
+		note: "High makes the metal read as metal: the star reflects off hulls and the cabin, panel lines catch a moving sun, the console is lit from above, and a close station casts the star's shadow. Low drops all four; the picture stays lit and the panel lines stay painted. Corner shading is the Occlusion row.",
+		tab: "display" as const,
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.
@@ -242,6 +265,7 @@ const SCHEMA = {
 		label: "Antialiasing",
 		describe: (v: number) => (v === 0 ? "Off" : `${v}x`),
 		note: "Smooths the stair-stepping on rails, hull edges and station plating. It is the most expensive setting in this game by a wide margin — on an M1 Pro at full resolution, 2x costs about four times the frame and 4x about six. Turn it up only if the frame meter says you can afford it, and turn Resolution down first if it is close.",
+		tab: "display" as const,
 	},
 	/**
 	 * Whether the output stage stipples the last bit — #200.
@@ -266,6 +290,7 @@ const SCHEMA = {
 		label: "Dither",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Its cost is too small for this game's own frame-cost instrument to separate from noise; leave it on unless you want to see the bands the eight-bit screen actually has.",
+		tab: "display" as const,
 	},
 	/**
 	 * Whether the cockpit's corners fall off — #200.
@@ -281,6 +306,7 @@ const SCHEMA = {
 		label: "Vignette",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Darkens the corners of the cockpit view by up to 15%, so the frame's edges stop competing with the instruments. Never applied in the chase view. Off is the flat frame.",
+		tab: "display" as const,
 	},
 	/**
 	 * Whether corners and contacts darken — #201's ambient occlusion.
@@ -296,6 +322,7 @@ const SCHEMA = {
 		label: "Occlusion",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Darkens corners, seams and the ground a ship stands on, so an interior reads as a room rather than as flat boxes. It shows most inside a station bay and barely at all in open space, and it is not cheap — on the machine this was measured on it costs roughly as much again as the rest of a cockpit frame. Turn it off first if you are short of frames and Antialiasing is already off.",
+		tab: "display" as const,
 	},
 	/**
 	 * One volume row per bus (#552, after #542's D1 and D2), after every other
@@ -334,7 +361,8 @@ const SCHEMA = {
 		label: "Voice",
 		describe: (v: string) =>
 			v === "neural" ? "Natural" : v === "formant" ? "Synthesised" : "Ask",
-		note: "Natural is a speech model that runs in your browser: about 110 to 190 MB, downloaded from this site and kept in your browser, and downloaded again only when the game ships a new version of it. A private window keeps nothing, so there it downloads again each time the game starts. If your browser cannot run the larger version, the smaller one is downloaded instead and the larger one deleted. Until it is ready, the synthesised voice speaks. Synthesised is the game's own small voice, with nothing to download. Choosing Synthesised deletes the downloaded voice and every line it kept. Ask puts the question on the Commander screen.",
+		note: "Natural is a speech model that runs in your browser: 110 to 190 MB, downloaded once and kept until the game ships a new one; a private window keeps nothing. Until it is ready, the synthesised voice speaks. Synthesised needs no download, and choosing it deletes the downloaded voice. Ask puts the question on the Commander screen.",
+		tab: "sound" as const,
 	},
 	/**
 	 * How far the nose turns per pixel of mouse movement (node #640): a
@@ -356,6 +384,7 @@ const SCHEMA = {
 		label: "Mouse sensitivity",
 		describe: (v: number) => `${Math.round(v * 100)}%`,
 		note: "How far the nose turns for each bit the mouse moves. Higher turns faster; lower holds an aim steadier. The response is straight: no dead zone, no curve, so a small movement always does a small thing. 100% is the game's original setting.",
+		tab: "controls" as const,
 	},
 } as const;
 
@@ -386,6 +415,16 @@ export type Settings = {
 
 export const SETTING_KEYS = Object.keys(SCHEMA) as (keyof typeof SCHEMA)[];
 export const settingSpec = (key: keyof typeof SCHEMA) => SCHEMA[key];
+
+/**
+ * The settings rows one tab draws, in the schema's order.
+ *
+ * Filtering the one ordered list is what keeps a tab's rows in the order they
+ * shipped: the order a player learns is `SETTING_KEYS`, and a tab is a window
+ * onto it rather than a list of its own that could disagree.
+ */
+export const settingKeysIn = (tab: SettingTab): (keyof typeof SCHEMA)[] =>
+	SETTING_KEYS.filter((key) => SCHEMA[key].tab === tab);
 
 /**
  * Every row's fallback, taken from the schema.

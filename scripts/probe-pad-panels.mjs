@@ -955,6 +955,37 @@ try {
 		const open = await page.evaluate(() =>
 			Boolean(document.querySelector("[data-settings-panel]")),
 		);
+		const panel = () => page.evaluate(() => window.__seelite.settingsPanel());
+
+		// **The strip is a cursor position, and ←→ is its own key there** (#645):
+		// on the strip it changes the tab, on a row the row's value.
+		const opened = await panel();
+		await tap(B.right);
+		const onNextTab = await panel();
+		check(
+			"on the tab strip, d-pad right changes the tab and the cursor stays on it",
+			open &&
+				opened.cursor === "strip" &&
+				opened.tab === "display" &&
+				onNextTab.tab === "sound" &&
+				onNextTab.cursor === "strip",
+			`opened ${JSON.stringify(opened)}; right ${JSON.stringify(onNextTab)}`,
+		);
+
+		// **The shoulders step the tab** (#645): down once from the strip lands
+		// on the tab's first row, and R1 carries that rank into the next tab.
+		await tap(B.down);
+		const onFirstRow = await panel();
+		await tap(B.r1);
+		const afterShoulder = await panel();
+		check(
+			"R1 steps the tab and lands the cursor on its first row",
+			onFirstRow.cursor === "volumeMaster" &&
+				afterShoulder.tab === "controls" &&
+				afterShoulder.cursor === "mouseSensitivity",
+			`row ${JSON.stringify(onFirstRow)}; R1 ${JSON.stringify(afterShoulder)}`,
+		);
+
 		const before = await page.evaluate(() => ({
 			...window.__seelite.settings.value,
 		}));
@@ -964,79 +995,266 @@ try {
 		}));
 		const changed = Object.keys(before).filter((k) => before[k] !== after[k]);
 		check(
-			"d-pad right changes a setting, as the screen's own hint line says",
-			open && changed.length === 1,
-			`open ${open}; changed ${changed.join(", ") || "nothing"}`,
+			"d-pad right on a row changes a setting, as the screen's hint line says",
+			changed.length === 1,
+			`changed ${changed.join(", ") || "nothing"}`,
 		);
 
-		// **The screen scrolls under the cursor.** At 700x480 the last rows sit
-		// below the viewport, and the pad has no other way to reach them — a
-		// cursor walked onto one changed a setting the player could not see.
-		// Sage found it, round 6; the keyboard had the same hole, because a
-		// mouse can scroll and nobody had tried without one.
-		// **A viewport the dialog does not fit.** `#seelite-settings` is the
-		// scroll container and only overflows when the box is taller than the
-		// window — at 700x480 all six rows and their notes fit, so the first
-		// version of this check reached the last row with nothing to scroll and
-		// passed with the fix removed. The overflow is asserted below rather
-		// than assumed.
-		await page.setViewportSize({ width: 700, height: 320 });
+		await tap(B.l1);
+		const backFromRow = await panel();
+		await tap(B.up);
+		const onStrip = await panel();
+		await tap(B.r1);
+		const shoulderOnStrip = await panel();
+		check(
+			"L1 from a row lands on the previous tab's first row, and on the strip it stays there",
+			backFromRow.tab === "sound" &&
+				backFromRow.cursor === "volumeMaster" &&
+				onStrip.cursor === "strip" &&
+				shoulderOnStrip.tab === "controls" &&
+				shoulderOnStrip.cursor === "strip",
+			`from row ${JSON.stringify(backFromRow)}; strip ${JSON.stringify(onStrip)}; R1 there ${JSON.stringify(shoulderOnStrip)}`,
+		);
+
+		// --- the keyboard walks the same screen (#645) ---------------------
+		await page.click('[data-settings-tab="display"]');
 		await frames(2);
-		const overflows = await page.evaluate(() => {
-			const overlay = document.querySelector("#seelite-settings");
-			return overlay ? overlay.scrollHeight > overlay.clientHeight + 1 : false;
-		});
-		const box = () =>
+		const displayRowIds = (await panel()).rows
+			.filter((r) => r.tab === "display")
+			.map((r) => r.id);
+		const drawnNotes = () =>
+			page.evaluate(
+				() => document.querySelectorAll("#seelite-settings .note").length,
+			);
+		const drawnNote = () =>
+			page.evaluate(
+				() =>
+					document
+						.querySelector("#seelite-settings .note")
+						?.textContent?.trim() ?? null,
+			);
+		const played = [await panel()];
+		for (let i = 0; i < displayRowIds.length; i++) {
+			await page.keyboard.press("ArrowDown");
+			played.push(await panel());
+		}
+		await page.keyboard.press("ArrowDown");
+		const wrappedDown = await panel();
+		await page.keyboard.press("ArrowUp");
+		const wrappedUp = await panel();
+		check(
+			"↓ walks the strip and the tab's rows, and wraps within the tab only",
+			played
+				.slice(1)
+				.every(
+					(p, i) => p.cursor === displayRowIds[i] && p.tab === "display",
+				) &&
+				wrappedDown.cursor === "strip" &&
+				wrappedDown.tab === "display" &&
+				wrappedUp.cursor === displayRowIds.at(-1),
+			`walk ${played.map((p) => p.cursor).join(" → ")}; then ↓ ${wrappedDown.cursor}, ↑ ${wrappedUp.cursor}`,
+		);
+
+		await page.keyboard.press("ArrowDown");
+		const stripNote = await drawnNote();
+		await page.keyboard.press("ArrowRight");
+		const steppedTab = await panel();
+		await page.keyboard.press("ArrowLeft");
+		const steppedBack = await panel();
+		await page.click('[data-settings-tab="controls"]');
+		await frames(2);
+		await page.keyboard.press("ArrowRight");
+		const wrappedTab = await panel();
+		check(
+			"←→ on the strip changes the tab, wraps, and leaves the cursor on it",
+			stripNote === "←→ changes the tab. ↓ goes to the first setting." &&
+				steppedTab.tab === "sound" &&
+				steppedTab.cursor === "strip" &&
+				steppedBack.tab === "display" &&
+				steppedBack.cursor === "strip" &&
+				wrappedTab.tab === "display" &&
+				wrappedTab.cursor === "strip" &&
+				(await drawnNotes()) === 1,
+			`note ${JSON.stringify(stripNote)}; → ${steppedTab.tab}, ← ${steppedBack.tab}, Controls → ${wrappedTab.tab}`,
+		);
+
+		await page.evaluate(() =>
+			window.__seelite.settingsPanel.focusRow("antialias"),
+		);
+		await frames(2);
+		const rowNote = await drawnNote();
+		const beforeAntialias = await page.evaluate(
+			() => window.__seelite.settings.value.antialias,
+		);
+		await page.keyboard.press("ArrowRight");
+		const afterAntialias = await page.evaluate(
+			() => window.__seelite.settings.value.antialias,
+		);
+		const granted = await page.evaluate(
+			() =>
+				document.querySelector('[data-settings-row="antialias"] .granted')
+					?.textContent ?? null,
+		);
+		await page.evaluate(() => window.__seelite.settings.set("antialias", 0));
+		check(
+			"←→ on a row steps its value, and that row's note is the one drawn",
+			beforeAntialias === 0 &&
+				afterAntialias === 2 &&
+				rowNote !== null &&
+				rowNote.includes("stair-stepping") &&
+				(await drawnNotes()) === 1 &&
+				(granted === null ||
+					(granted.startsWith("(") && granted.endsWith(")"))),
+			`antialias ${beforeAntialias} → ${afterAntialias}; granted ${granted}; note ${JSON.stringify(rowNote?.slice(0, 48))}`,
+		);
+
+		// A click on a tab opens it on the strip; a click on a row selects it
+		// and steps it, which is what a click on a row has always done.
+		await page.click('[data-settings-tab="sound"]');
+		await frames(2);
+		const clickedTab = await panel();
+		const musicBefore = await page.evaluate(
+			() => window.__seelite.settings.value.volumeMusic,
+		);
+		await page.click('[data-settings-row="volumeMusic"]');
+		await frames(2);
+		const clickedRow = await panel();
+		const musicAfter = await page.evaluate(
+			() => window.__seelite.settings.value.volumeMusic,
+		);
+		await page.evaluate(() => window.__seelite.settings.set("volumeMusic", 1));
+		check(
+			"a click on a tab opens it on the strip, and a click on a row selects and steps it",
+			clickedTab.tab === "sound" &&
+				clickedTab.cursor === "strip" &&
+				clickedRow.cursor === "volumeMusic" &&
+				musicBefore === 1 &&
+				musicAfter === 0,
+			`tab ${clickedTab.tab}/${clickedTab.cursor}; row ${clickedRow.cursor}; music ${musicBefore} → ${musicAfter}`,
+		);
+
+		// Closed on a tab and row, it reopens on them in the same page.
+		await page.keyboard.press("Escape");
+		await frames(2);
+		await page.keyboard.press("z");
+		await frames(2);
+		const reopened = await panel();
+		check(
+			"closed on a tab and row, it reopens on them in the same page",
+			reopened.open &&
+				reopened.tab === "sound" &&
+				reopened.cursor === "volumeMusic",
+			`${reopened.tab}/${reopened.cursor}`,
+		);
+
+		// **Every tab fits 700x480 with every row selected** (#645), and the box
+		// does not resize or move when the tab changes: its height is reserved
+		// from the longest tab, so Display's height is every tab's height.
+		await page.setViewportSize({ width: 700, height: 480 });
+		await frames(2);
+		const geometry = () =>
 			page.evaluate(() => {
-				// **Against the scroll container, not the box.** `.box` is the
-				// thing that overflows, so its own rect contains every row by
-				// construction and the check passed with the fix removed.
-				// `#seelite-settings` is what has `overflow-y: auto`, and its
-				// rect is what the player can actually see.
 				const overlay = document.querySelector("#seelite-settings");
-				const rows = [...document.querySelectorAll("#seelite-settings .row")];
+				const box = overlay?.querySelector(".box");
+				const head = overlay?.querySelector(".head");
+				const note = overlay?.querySelector(".note");
+				if (!overlay || !box || !head || !note) return null;
+				return {
+					height: Math.round(box.getBoundingClientRect().height),
+					strip: Math.round(head.getBoundingClientRect().top),
+					scrolls: overlay.scrollHeight > overlay.clientHeight + 1,
+					fits: note.scrollHeight <= note.clientHeight + 1,
+				};
+			});
+		const states = [];
+		for (const which of (await panel()).tabs) {
+			await page.click(`[data-settings-tab="${which}"]`);
+			await frames(2);
+			const rows = (await panel()).rows.filter((r) => r.tab === which).length;
+			states.push(await geometry());
+			for (let i = 0; i < rows; i++) {
+				await tap(B.down);
+				states.push(await geometry());
+			}
+		}
+		const first = states[0];
+		const offHeight = states.filter(
+			(s) => !s || s.height !== first.height,
+		).length;
+		const offStrip = states.filter((s) => !s || s.strip !== first.strip).length;
+		const scrolling = states.filter((s) => !s || s.scrolls).length;
+		const clipped = states.filter((s) => !s || !s.fits).length;
+		check(
+			"every tab fits 700x480 with each row selected, at one box height, its note whole",
+			offHeight === 0 && offStrip === 0 && scrolling === 0 && clipped === 0,
+			`${states.length} states; height ${first?.height} (${offHeight} off), strip top ${first?.strip} (${offStrip} off), ${scrolling} scroll, ${clipped} clipped note`,
+		);
+
+		// **The failure case: a window the box does not fit.** At 700x360 the
+		// overlay scrolls, and the walk keeps the selected row *and* the note
+		// area on screen — the note is where the row explains itself.
+		await page.setViewportSize({ width: 700, height: 360 });
+		await frames(2);
+		await page.click('[data-settings-tab="display"]');
+		await frames(2);
+		const sight = () =>
+			page.evaluate(() => {
+				const overlay = document.querySelector("#seelite-settings");
+				const note = overlay?.querySelector(".note");
+				const rows = [...(overlay?.querySelectorAll(".row") ?? [])];
 				const at = rows.findIndex(
 					(r) => r.getAttribute("aria-selected") === "true",
 				);
-				if (!overlay || at === -1) return null;
+				if (!overlay || !note) return null;
 				const o = overlay.getBoundingClientRect();
-				const r = rows[at].getBoundingClientRect();
+				const inside = (r) => r.top >= o.top - 1 && r.bottom <= o.bottom + 1;
 				return {
-					index: at,
-					rows: rows.length,
-					visible: r.top >= o.top - 1 && r.bottom <= o.bottom + 1,
+					overflows: overlay.scrollHeight > overlay.clientHeight + 1,
+					cursorOnStrip: at === -1,
+					row: at === -1 || inside(rows[at].getBoundingClientRect()),
+					note: inside(note.getBoundingClientRect()),
 				};
 			});
-		// Every row the walk lands on, so one that scrolled out of sight fails
-		// the check rather than being averaged away by a later one that did not.
-		let lowest = null;
-		for (let i = 0; i < 12; i++) {
+		const displayRows = (await panel()).rows.filter(
+			(r) => r.tab === "display",
+		).length;
+		let walked = 0;
+		let scrolled = 0;
+		let lost = null;
+		for (let i = 0; i <= displayRows; i++) {
+			const now = await sight();
+			if (!now) {
+				lost = { i, read: "nothing" };
+				break;
+			}
+			walked++;
+			if (now.overflows) scrolled++;
+			if (!now.row || !now.note) lost = { i, ...now };
 			await tap(B.down);
-			const now = await box();
-			if (now && (lowest === null || !now.visible)) lowest = now;
 		}
 		await page.setViewportSize({ width: 1280, height: 860 });
 		await frames(2);
 		check(
-			"walking the settings screen keeps the selected row on screen",
-			overflows &&
-				lowest !== null &&
-				lowest.index > 0 &&
-				lowest.visible === true,
-			lowest === null
-				? "no selected row found"
-				: `dialog overflows ${overflows}; reached row ${lowest.index} of ${lowest.rows}; on screen ${lowest.visible}`,
+			"at 700x360 the overlay scrolls, and the row and its note stay on screen",
+			walked === displayRows + 1 && scrolled === walked && lost === null,
+			lost !== null
+				? `lost at ${JSON.stringify(lost)}`
+				: `${walked} states walked, ${scrolled} over their window`,
 		);
 
 		// Cross advances the focused row, which is what clicking it does on that
 		// screen. The modal branch ignored `activate` entirely, so the one button
 		// a pad player reaches for first did nothing. Sage found it, round 5.
 		//
-		// **The layout is a row too** (#639). The keyboard layout is the
-		// screen's last row and is stored with the bindings, not in
-		// `settings`, so a walk that lands on it changes a value this read
-		// would otherwise not see — the first run of #639 read that as
-		// "changed nothing".
+		// **The layout is a row too** (#639). The keyboard layout is drawn on
+		// the Controls tab and is stored with the bindings, not in `settings`,
+		// so a walk that lands on it changes a value this read would otherwise
+		// not see — the first run of #639 read that as "changed nothing". It is
+		// reached by name through the page-level read (#645), not by counting.
+		await page.evaluate(() =>
+			window.__seelite.settingsPanel.focusRow("layout"),
+		);
+		await frames(2);
 		const rowValues = () =>
 			page.evaluate(() => ({
 				...window.__seelite.settings.value,
@@ -1062,6 +1280,34 @@ try {
 		// Back to the shipped layout if Cross moved it, so no later page in
 		// this browser flies another one.
 		await page.evaluate(() => window.__seelite.selectLayout("default"));
+
+		// **Nothing about the position is written to storage.** Closed on
+		// Sound with Voice under the cursor, a reload opens Display with the
+		// cursor on the strip — which is what a page whose module state started
+		// again looks like.
+		await page.keyboard.press("z");
+		await frames(2);
+		await page.evaluate(() => window.__seelite.settingsPanel.focusRow("voice"));
+		await frames(2);
+		const beforeReload = await panel();
+		await page.keyboard.press("Escape");
+		await frames(2);
+		await page.reload({ waitUntil: "load" });
+		await bootedGame(page);
+		const remounted = await waitForSettingsPanel(page);
+		await page.keyboard.press("z");
+		await frames(2);
+		const reloaded = await panel();
+		check(
+			"closed on a tab and row, a reload opens Display with the cursor on the strip",
+			beforeReload.tab === "sound" &&
+				beforeReload.cursor === "voice" &&
+				remounted &&
+				reloaded.open &&
+				reloaded.tab === "display" &&
+				reloaded.cursor === "strip",
+			`closed on ${beforeReload.tab}/${beforeReload.cursor}; mounted ${remounted}; after reload ${reloaded.tab}/${reloaded.cursor}`,
+		);
 	}
 } finally {
 	await browser.close();

@@ -245,6 +245,8 @@ export function padIntents(
 			else if (name === "down") focusDelta += 1;
 			else if (name === "left") valueDelta -= 1;
 			else if (name === "right") valueDelta += 1;
+			else if (name === "l1") tabDelta -= 1;
+			else if (name === "r1") tabDelta += 1;
 			else if (name === "a") activate = true;
 			else if (name === "b") back = true;
 			continue;
