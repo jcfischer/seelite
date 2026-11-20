@@ -792,6 +792,20 @@ const PLACERS = {
 							g.shipUp(),
 						);
 					}
+					if (aftermath === "explosion") {
+						const e = g.killExplosions.live()[0];
+						if (!e)
+							throw new Error("duel placer: the kill started no explosion");
+						const q = g.world.ship.pos;
+						g.setAttitude(
+							{ x: e.pos.x - q.x, y: e.pos.y - q.y, z: e.pos.z - q.z },
+							g.shipUp(),
+						);
+						while (g.world.gameTime - e.at < 0.4) {
+							g.step(dt);
+							g.render(dt);
+						}
+					}
 					if (aftermath === "log") {
 						g.world.gameTime += 601;
 						g.leftTab = "Communications";

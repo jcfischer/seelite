@@ -255,7 +255,7 @@ describe("the view set itself", () => {
 	});
 
 	test("declares its views with unique kebab-case names", () => {
-		expect(VIEWS.length).toBe(122);
+		expect(VIEWS.length).toBe(123);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -845,7 +845,7 @@ describe("the contact sheet", () => {
 			views.some((row) => row.name === v.name),
 		);
 		const html = contactSheet([run], views);
-		expect(html).toContain("Selected canonical views (3 of 122)");
+		expect(html).toContain("Selected canonical views (3 of 123)");
 		expect(html).toContain(
 			"Selection: hull-chase, hull-chase-miner, hull-chase-bollard",
 		);
@@ -882,7 +882,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–49.0s");
+		expect(html).toContain("· clock 0.6–49.4s");
 		expect(html).not.toContain("pinned");
 	});
 

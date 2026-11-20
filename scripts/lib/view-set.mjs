@@ -130,6 +130,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	1090: "the explosion a kill in combat ends in",
 	1198: "the Longwall's two-seat bridge, its mining faces, and each seat's eye",
 	1152: "the Drum scale detail and trade plate seam backing",
 	1145: "the Ring scale detail, station key light and blooming beacons",
@@ -1298,6 +1299,17 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "raider-explosion",
+		covers: [1090],
+		what: "A raider killed by the laser two kilometres ahead, 0.4 s on: the flash fading, the fireball and the debris cloud flying out from the wreck (#1090).",
+		shot: {
+			kind: "duel",
+			headLook: "forward",
+			aftermath: "explosion",
+			view: "cockpit",
+		},
+	},
+	{
 		name: "raider-log",
 		covers: [324],
 		what: "Ten minutes after a kill, head turned to the Communications console: the raider log's destroyed and under-repair lines (#324 part d).",
@@ -2270,6 +2282,7 @@ const SHOT_REQUIREMENTS = {
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||
 			s.aftermath === "canisters" ||
+			s.aftermath === "explosion" ||
 			s.aftermath === "log"),
 };
 
