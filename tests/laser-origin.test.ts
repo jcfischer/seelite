@@ -16,7 +16,7 @@ import {
 	fromGlassPorts,
 } from "../src/gun-feedback";
 import { ndcToPx } from "../src/hud";
-import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
+import { HULL_IDS, HULL_SPECS, seatSeesHull, type HullId } from "../src/hull";
 import { glassTracerIndices } from "../src/laser-modules";
 import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import { stockLoadout } from "../src/loadout";
@@ -30,6 +30,7 @@ await useShippedSevenShips();
 
 const deps = {
 	HULL_SPECS,
+	seatSeesHull,
 	shipMuzzlesKm,
 	muzzlesWorld,
 	beamSegments,
@@ -136,10 +137,9 @@ for (const hull of HULL_IDS) {
 						inCamera(to);
 						if (-from.z < NEAR_KM)
 							from.lerp(to, (NEAR_KM + from.z) / (from.z - to.z));
-						const glassPort =
-							view === "cockpit" && !spec.cutter
-								? tracerPorts(spec.hardpoints)[index]
-								: null;
+						const glassPort = !seatSeesHull(view, spec)
+							? tracerPorts(spec.hardpoints)[index]
+							: null;
 						for (const [actual, expected] of [
 							[drawn[beam].from, glassPort ?? framePoint(from, camera)],
 							[drawn[beam].to, framePoint(to, camera)],
@@ -201,3 +201,15 @@ for (const view of ["cockpit", "chase"] as const) {
 		});
 	}
 }
+
+describe("the seat sees its hull in chase, and in the cockpit only on the miner", () => {
+	test("the courier's cockpit sees no hull and fires from the glass", () => {
+		expect(seatSeesHull("cockpit", HULL_SPECS.courier)).toBe(false);
+	});
+	test("the miner's cockpit sees the hull it drills with", () => {
+		expect(seatSeesHull("cockpit", HULL_SPECS.miner)).toBe(true);
+	});
+	test("the chase camera sees every hull", () => {
+		expect(seatSeesHull("chase", HULL_SPECS.courier)).toBe(true);
+	});
+});

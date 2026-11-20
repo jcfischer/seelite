@@ -38,6 +38,7 @@ try {
 			const { NEAR_KM } = await import("/src/chase-view.ts");
 			const { PLAYER_LASER_RANGE_KM } = await import("/src/laser.ts");
 			const { tracerPorts } = await import("/src/gun-feedback.ts");
+			const { seatSeesHull } = await import("/src/hull.ts");
 
 			function fireGroup(group, view) {
 				g.armedFireGroup.reset();
@@ -83,10 +84,9 @@ try {
 						.applyQuaternion(inverse);
 					if (-from.z < NEAR_KM)
 						from.lerp(to, (NEAR_KM + from.z) / (from.z - to.z));
-					const port =
-						g.view === "cockpit" && !HULL_SPECS[g.flownHull].cutter
-							? tracerPorts(keys.length)[index]
-							: null;
+					const port = !seatSeesHull(g.view, HULL_SPECS[g.flownHull])
+						? tracerPorts(keys.length)[index]
+						: null;
 					return [
 						{ slot, index, mount, from: port ?? frame(from), to: frame(to) },
 					];

@@ -1483,3 +1483,16 @@ export const isCapital = (id: HullId): boolean =>
 export const DOCKABLE_HULL_IDS: readonly HullId[] = HULL_IDS.filter(
 	(id) => !isCapital(id),
 );
+
+/**
+ * Whether the seat sees its own hull. The chase camera always does; the
+ * cockpit draws the hull only for a hull with a cutter, whose drill view
+ * shows the parts the seat can see. A cockpit that sees no hull fires from
+ * its glass ports (#1331).
+ */
+export function seatSeesHull(
+	view: "cockpit" | "chase",
+	spec: Pick<HullSpec, "cutter">,
+): boolean {
+	return view === "chase" || spec.cutter !== undefined;
+}
