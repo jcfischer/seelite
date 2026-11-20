@@ -196,6 +196,8 @@ export const DOMAIN = {
 	ASTEROID_LOBES: 48,
 	ASTEROID_ANCHOR: 49,
 	ASTEROID_KEEP: 50,
+	// https://github.com/jcfischer/seelite/issues/1324 — which version of the docking waltz a station plays.
+	STATION_WALTZ: 51,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

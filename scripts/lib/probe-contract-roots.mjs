@@ -476,6 +476,12 @@ const OWNERS = Object.freeze({
 		"src/collision.ts",
 		"src/cruise-guidance.ts",
 	],
+	"probe-station-waltz.mjs": [
+		"scripts/probe-station-waltz.mjs",
+		"src/station-waltz.ts",
+		"src/music-danube-variants.ts",
+		"src/music-danube-load.ts",
+	],
 	"probe-music-game.mjs": [
 		"scripts/probe-music-game.mjs",
 		"src/music.ts",
