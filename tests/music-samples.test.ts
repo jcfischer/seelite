@@ -304,17 +304,19 @@ function rig(
 	const engine = new MusicEngine(SR, 24);
 	const errors: string[] = [];
 	const sent: MusicCommand[] = [];
+	const transfers: Transferable[][] = [];
 	const loader = new SampleLoader({
 		base: "/samples/",
 		fetchFile: fetch,
-		send: (cmd) => {
+		send: (cmd, transfer) => {
 			sent.push(cmd);
+			transfers.push(transfer);
 			engine.command(cmd, 0);
 		},
 		errors,
 	});
 	const dec = decoder(fail);
-	return { loader, engine, errors, sent, fetched, dec };
+	return { loader, engine, errors, sent, transfers, fetched, dec };
 }
 
 /** A song of one sampler part on `set`, `notes` as (pitch, vel). */
@@ -564,6 +566,7 @@ describe("holding one version's samples (node #1325)", () => {
 		r.loader.releaseAll();
 		await r.loader.ready();
 		expect(r.loader.heldCount).toBe(0);
+		expect(r.fetched.filter((p) => !p.endsWith("manifest.json"))).toEqual([]);
 		const recorded = r.sent.filter(
 			(c) =>
 				c.type === "samples" &&
@@ -589,7 +592,72 @@ describe("holding one version's samples (node #1325)", () => {
 		r.loader.replaceWith(backed);
 		await r.loader.ready();
 		expect(r.loader.heldCount).toBe(0);
+		expect(r.loader.heldSets).toEqual([]);
 		expect(r.errors.length).toBeGreaterThan(0);
 		expect(play(r.engine, backed)).toBeGreaterThan(0.01);
+	});
+
+	test("a release moves no buffer to the worklet", async () => {
+		const r = rig({ rich: RICH });
+		r.loader.attach(r.dec);
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.releaseAll();
+		const at = r.sent.findIndex((c) => c.type === "release");
+		expect(at).toBeGreaterThanOrEqual(0);
+		expect(r.transfers[at]).toEqual([]);
+	});
+
+	test("a second version on the same set keeps it: nothing is released", async () => {
+		const r = rig({ rich: RICH });
+		r.loader.attach(r.dec);
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.replaceWith(
+			songOn("rich", [
+				[60, 0.3],
+				[72, 0.3],
+			]),
+		);
+		await r.loader.ready();
+		expect(r.sent.filter((c) => c.type === "release")).toEqual([]);
+		expect(r.loader.heldSets).toEqual(["rich"]);
+		expect(r.loader.heldCount).toBe(2);
+	});
+
+	test("a set a bed loaded first is not the waltz's to release", async () => {
+		const r = rig({ rich: RICH });
+		r.loader.attach(r.dec);
+		r.loader.load(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.replaceWith(songOn("rich", [[72, 0.3]]));
+		await r.loader.ready();
+		r.loader.releaseAll();
+		expect(r.loader.heldSets).toEqual(["rich"]);
+	});
+
+	test("what releaseAll let go is forgotten, so a bed's later load of it stays", async () => {
+		const r = rig({ rich: RICH });
+		r.loader.attach(r.dec);
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.releaseAll();
+		r.loader.load(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.releaseAll();
+		expect(r.loader.heldSets).toEqual(["rich"]);
+	});
+
+	test("a set replaced away is forgotten, so a bed's later load of it stays", async () => {
+		const r = rig({ rich: RICH, pizz: PIZZ });
+		r.loader.attach(r.dec);
+		r.loader.replaceWith(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.replaceWith(songOn("pizz", [[40, 0.3]]));
+		await r.loader.ready();
+		r.loader.load(songOn("rich", [[60, 0.3]]));
+		await r.loader.ready();
+		r.loader.releaseAll();
+		expect(r.loader.heldSets).toEqual(["rich"]);
 	});
 });

@@ -658,7 +658,8 @@ describe("the sampled waltz's samples (node #1325)", () => {
 	const kinds = (steps: ReturnType<typeof stepMusic>[]) =>
 		steps.map((s) => {
 			if (!s.samples) return "-";
-			return "load" in s.samples ? "load" : "release";
+			if ("load" in s.samples) return "load";
+			return s.samples.release === true ? "release" : "?";
 		});
 	const run = (readings: MusicReading[]) => {
 		let state = initialMusicState();
@@ -705,6 +706,7 @@ describe("the sampled waltz's samples (node #1325)", () => {
 			near,
 			calm,
 			near,
+			near,
 		]);
 		expect(kinds(out)).toEqual([
 			"load",
@@ -715,6 +717,55 @@ describe("the sampled waltz's samples (node #1325)", () => {
 			"-",
 			"-",
 			"load",
+			"-",
+		]);
+	});
+
+	test("armed outside the radius, the waltz's samples stay held while it plays", () => {
+		const armedFar = at({
+			scene: "dockingComputer",
+			waltz: { version: "jazz-trio", song },
+		});
+		const out = run([calm, armedFar, armedFar]);
+		expect(kinds(out)).toEqual(["-", "-", "-"]);
+		expect(out[2].state.samplesKey).toBe("jazz-trio");
+	});
+
+	test("a held computer inside the radius loads before the waltz can start", () => {
+		const heldArmed = at({ ...near, scene: "dockingComputer", held: true });
+		expect(kinds(run([calm, heldArmed]))).toEqual(["-", "load"]);
+	});
+
+	test("a pilot who dies inside the radius loads nothing", () => {
+		expect(kinds(run([calm, at({ ...near, scene: "dead" })]))).toEqual([
+			"-",
+			"-",
+		]);
+	});
+
+	test("a synth-only waltz through a whole docking holds and releases nothing", () => {
+		const synth = { version: "hybrid", song: danubeSong("hybrid") };
+		const close = at({ approach: true, waltz: synth });
+		const docked = at({ scene: "docked", stationRole: "trade" });
+		const out = run([
+			close,
+			at({ ...close, scene: "dockingComputer" }),
+			docked,
+			docked,
+			close,
+			close,
+			calm,
+		]);
+		expect(kinds(out)).toEqual(["-", "-", "-", "-", "-", "-", "-"]);
+	});
+
+	test("a berth with nothing held does not count the next station's samples as docked", () => {
+		const docked = at({ scene: "docked", stationRole: "trade" });
+		expect(kinds(run([docked, calm, near, near]))).toEqual([
+			"-",
+			"-",
+			"load",
+			"-",
 		]);
 	});
 
