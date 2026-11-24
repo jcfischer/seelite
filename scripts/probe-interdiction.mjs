@@ -320,9 +320,6 @@ check(
 );
 await playtest.close();
 
-// ---------------------------------------------------------------------------
-// Node #1336: an involuntary interdiction fields one matched, stable fit.
-// ---------------------------------------------------------------------------
 
 const INTERCEPTOR_FIXTURE = [
 	["h1", "beam-laser", 2, "E"],
@@ -474,7 +471,6 @@ check(
 	JSON.stringify(interceptorMatch),
 );
 
-// Scope control: a relay's defender keeps its ordinary seeded fit.
 const scopePage = await browser.newPage({
 	viewport: { width: 900, height: 620 },
 });

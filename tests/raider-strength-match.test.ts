@@ -6,7 +6,7 @@ import {
 	makeModule,
 	stockLoadout,
 } from "../src/loadout";
-import { npcLoadout } from "../src/npc-loadout";
+import { HULL_SPECS } from "../src/hull";
 import {
 	EARLIEST_MISSILE_FLIGHT_S,
 	FIRST_MISSILE_LAUNCH_S,
@@ -177,8 +177,8 @@ describe("tougher pilot: fitted interceptor", () => {
 	test("the interceptor is matched up: some seeds field a stronger fit than the courier's", () => {
 		const stronger = SEEDS.filter(
 			(seed) =>
-				describeFit(selectRaiderFit(seed, interceptor).loadout) !==
-				describeFit(selectRaiderFit(seed, courier).loadout),
+				selectRaiderFit(seed, interceptor).verdict.strength >
+				selectRaiderFit(seed, courier).verdict.strength,
 		);
 		expect(stronger.length).toBeGreaterThan(100);
 	});
@@ -245,9 +245,14 @@ describe("rack rejection", () => {
 	});
 });
 
-describe("relay defender scope", () => {
-	test("its ordinary seeded fit is not matched", () => {
-		const ordinary = npcLoadout(RAIDER_HULL_ID, 12345);
-		expect(npcLoadout(RAIDER_HULL_ID, 12345)).toEqual(ordinary);
+describe("the floor fit", () => {
+	test("every stock hull's selection is eligible, so the floor is never an unjudged fallback", () => {
+		for (const hull of Object.keys(HULL_SPECS) as (keyof typeof HULL_SPECS)[]) {
+			const pilot = { hull, loadout: stockLoadout(hull) };
+			for (const seed of SEEDS) {
+				const picked = selectRaiderFit(seed, pilot);
+				expect(picked.verdict.ok, `${hull} seed ${seed}`).toBe(true);
+			}
+		}
 	});
 });
