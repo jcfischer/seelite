@@ -548,7 +548,9 @@ function stepSamples(
 	const sampled = r.waltz && setsOf(r.waltz.song).length > 0 ? r.waltz : null;
 	if (
 		s.waltz === "playing" &&
+		// Stryker disable next-line ConditionalExpression: stepWaltz sets waltzKey in the same step that sets waltz to playing, so it is never null here
 		s.waltzKey !== null &&
+		// Stryker disable next-line ConditionalExpression: a samplesKey already set came from the same reading's waltz, so adopting waltzKey writes the value it holds
 		s.samplesKey === null &&
 		sampled !== null
 	)
