@@ -320,7 +320,6 @@ check(
 );
 await playtest.close();
 
-
 const INTERCEPTOR_FIXTURE = [
 	["h1", "beam-laser", 2, "E"],
 	["u1", "shield-booster", 1, "E"],
@@ -366,23 +365,18 @@ const matchProbe = async (pilot) => {
 		g.forceRaider("behind", 1, 30);
 		I.steps(1.2);
 		const inContest = g.encounter;
-		const identity = (e) =>
+		const identity = (loadout) =>
 			JSON.stringify(
-				Object.entries(e.loadout).map(([k, m]) => [
-					k,
-					m.module,
-					m.size,
-					m.grade,
-				]),
+				Object.entries(loadout).map(([k, m]) => [k, m.module, m.size, m.grade]),
 			);
-		const atContest = identity(inContest);
+		const atContest = identity(inContest.loadout);
 		const expected = match.selectRaiderFit(
 			g.npcFitSeedFor(inContest.slot.key),
 			pilot,
 		);
 		I.steps(2.8);
 		const duel = g.encounter;
-		const atDuel = duel?.phase === "duel" ? identity(duel) : null;
+		const atDuel = duel?.phase === "duel" ? identity(duel.loadout) : null;
 		g.cycleFireGroup?.();
 		g.condition = { ...g.condition, hull: g.condition.hull - 1 };
 		I.steps(10);
@@ -397,15 +391,8 @@ const matchProbe = async (pilot) => {
 		return {
 			atContest,
 			atDuel,
-			atLater: later?.phase === "duel" ? identity(later) : null,
-			expectedIdentity: JSON.stringify(
-				Object.entries(expected.loadout).map(([k, m]) => [
-					k,
-					m.module,
-					m.size,
-					m.grade,
-				]),
-			),
+			atLater: later?.phase === "duel" ? identity(later.loadout) : null,
+			expectedIdentity: identity(expected.loadout),
 			verdict: expected.verdict,
 			fit: Object.entries(expected.loadout).map(
 				([k, m]) => `${k}=${m.module}/${m.size}${m.grade}`,
