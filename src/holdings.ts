@@ -67,7 +67,7 @@ import {
 	awardRaiderKill,
 	bankRaiderCash,
 	isRaiderSlotKey,
-	raiderBountyCr,
+	raiderKillPayCr,
 } from "./raider-cash";
 import { RAIDER_HULL_ID } from "./raider-slots";
 import {
@@ -600,7 +600,7 @@ function transition(
 			? effectiveCarrier(
 					world.galaxies[galaxyIndex],
 					key,
-					Math.max(change.occurredAt, world.gameTime),
+					change.occurredAt,
 					world,
 				)
 			: null;
@@ -641,9 +641,10 @@ function transition(
 	const award = sanctioned
 		? awardRaiderKill(
 				holdings.commander,
+				galaxyIndex,
 				key,
 				before.instanceOrdinal,
-				raiderBountyCr({
+				raiderKillPayCr({
 					hull: RAIDER_HULL_ID,
 					loadout: event.targetLoadout ?? stockLoadout(RAIDER_HULL_ID),
 				}),

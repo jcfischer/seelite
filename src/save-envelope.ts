@@ -1244,7 +1244,8 @@ function parseRaiderCash(raw: unknown): RaiderCash | null {
 	const ledger = asObject(awarded, "commander.state.raiderCash.awarded");
 	for (const [key, ordinal] of Object.entries(ledger))
 		if (
-			!isCarrierKey(key) ||
+			!/^\d+\/.+$/.test(key) ||
+			!isCarrierKey(key.slice(key.indexOf("/") + 1)) ||
 			!Number.isSafeInteger(ordinal) ||
 			(ordinal as number) < 0
 		)

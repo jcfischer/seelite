@@ -8,7 +8,7 @@ import {
 } from "../src/holdings";
 import { emptyLadderRecord, emptyPending } from "../src/ladder";
 import { npcLoadout } from "../src/npc-loadout";
-import { raiderBountyCr } from "../src/raider-cash";
+import { raiderKillPayCr } from "../src/raider-cash";
 import { raiderDestruction } from "../src/raider-wreck";
 import { RAIDER_HULL_ID } from "../src/raider-slots";
 import { emptyRequests } from "../src/requests";
@@ -63,7 +63,7 @@ const dock = (h: Holdings, world = newWorld(SEED)) =>
 describe("raider cash bounty (node #1338)", () => {
 	test("ordinary seeded fits price at 125, 295 and 426 Cr", () => {
 		const price = (seed: number) =>
-			raiderBountyCr({
+			raiderKillPayCr({
 				hull: RAIDER_HULL_ID,
 				loadout: npcLoadout(RAIDER_HULL_ID, seed),
 			});
@@ -87,10 +87,35 @@ describe("raider cash bounty (node #1338)", () => {
 	});
 
 	test("pilot standing, damage and trading rating do not move the price", () => {
-		const weak = kill(holdings(), { seed: 906 });
-		expect(weak.holdings.commander.raiderCash?.pendingCr).toBe(125);
-		const strong = kill(holdings(), { seed: 98 });
-		expect(strong.holdings.commander.raiderCash?.pendingCr).toBe(295);
+		const base = kill(holdings(), { seed: 98 }).holdings.commander.raiderCash;
+		const h = holdings();
+		const variants: Holdings[] = [
+			{ ...h, commander: { ...h.commander, standing: "wanted" } as never },
+			{ ...h, commander: { ...h.commander, credits: 1 } },
+			{
+				...h,
+				ladders: {
+					...h.ladders,
+					rungs: { combat: 5, trade: 5, exploration: 5 },
+				} as never,
+			},
+		];
+		for (const v of variants)
+			expect(kill(v, { seed: 98 }).holdings.commander.raiderCash).toEqual(base);
+		expect(base?.pendingCr).toBe(295);
+	});
+
+	test("the same slot in another galaxy pays its own first kill", () => {
+		const first = kill(holdings());
+		const second = applyHoldEvent(first.holdings, first.world, {
+			kind: "carrier",
+			galaxyIndex: 1,
+			key: KEY,
+			transition: raiderDestruction(3, 5_000),
+			hull: RAIDER_HULL_ID,
+			targetLoadout: npcLoadout(RAIDER_HULL_ID, 234),
+		});
+		expect(second.holdings.commander.raiderCash?.pendingCr).toBe(852);
 	});
 
 	test("a duplicate event pays once; a replacement in the same slot pays again", () => {
@@ -119,7 +144,7 @@ describe("raider cash bounty (node #1338)", () => {
 		const relay = applyHoldEvent(holdings(), newWorld(SEED), {
 			kind: "carrier",
 			galaxyIndex: 0,
-			key: carrierKey(3, "relay"),
+			key: carrierKey(3, "relay-00"),
 			transition: raiderDestruction(3, 5_000),
 			hull: null,
 		});
@@ -137,7 +162,7 @@ describe("raider cash bounty (node #1338)", () => {
 		);
 		expect(saved.commander.state.raiderCash).toEqual({
 			pendingCr: 426,
-			awarded: { [KEY]: 0 },
+			awarded: { [`0/${KEY}`]: 0 },
 		});
 		const reloaded = { ...out.holdings, commander: saved.commander.state };
 		const dup = kill(reloaded);

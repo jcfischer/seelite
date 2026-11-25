@@ -20844,7 +20844,7 @@ class Game {
 		// A request is ready to report: nothing else says so (#546).
 		if (signals?.readied) this.consoleNotify("good");
 		if (signals?.raiderCash) {
-			const text = `+${signals.raiderCash.earnedCr} Cr sanctioned bounty — ${signals.raiderCash.pendingCr} Cr pending until you dock`;
+			const text = `+${signals.raiderCash.earnedCr} Cr raider kill pay — ${signals.raiderCash.pendingCr} Cr pending until you dock`;
 			this.scoop = {
 				text,
 				left: SCOOP_NOTICE_S,

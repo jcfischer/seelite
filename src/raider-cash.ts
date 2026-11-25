@@ -8,7 +8,7 @@ export const STRENGTH_PER_CREDIT = 20;
 /**
  * What a commander carries between a kill and the next dock.
  *
- * `awarded` maps a raider slot to the last instance ordinal paid, so a replayed
+ * `awarded` maps a galaxy and raider slot to the last instance ordinal paid, so a replayed
  * event or a reload cannot pay an instance twice and a replacement in the same
  * slot (a higher ordinal) is still eligible. It is bounded by the slot count.
  */
@@ -25,7 +25,10 @@ export const emptyRaiderCash = (): RaiderCash => ({
 export const raiderCashOf = (c: Pick<CommanderState, "raiderCash">) =>
 	c.raiderCash ?? emptyRaiderCash();
 
-export const raiderBountyCr = (fit: FittedShip): number =>
+export const paidKey = (galaxyIndex: number, key: CarrierKey): string =>
+	`${galaxyIndex}/${key}`;
+
+export const raiderKillPayCr = (fit: FittedShip): number =>
 	Math.round(strength(fit) / STRENGTH_PER_CREDIT);
 
 /** A raider slot's key. Relay defenders fill these slots too. */
@@ -41,12 +44,14 @@ export interface RaiderAward {
  *  instance was already paid. */
 export const awardRaiderKill = (
 	commander: CommanderState,
+	galaxyIndex: number,
 	key: CarrierKey,
 	instanceOrdinal: number,
 	priceCr: number,
 ): RaiderAward => {
 	const cash = raiderCashOf(commander);
-	const paid = cash.awarded[key];
+	const slot = paidKey(galaxyIndex, key);
+	const paid = cash.awarded[slot];
 	if (paid !== undefined && paid >= instanceOrdinal)
 		return { commander, earnedCr: 0 };
 	return {
@@ -54,7 +59,7 @@ export const awardRaiderKill = (
 			...commander,
 			raiderCash: {
 				pendingCr: cash.pendingCr + priceCr,
-				awarded: { ...cash.awarded, [key]: instanceOrdinal },
+				awarded: { ...cash.awarded, [slot]: instanceOrdinal },
 			},
 		},
 		earnedCr: priceCr,
