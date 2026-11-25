@@ -1,4 +1,4 @@
-import type { RaiderCash } from "./raider-cash";
+import { type RaiderCash, isPaidKey } from "./raider-cash";
 import { oreGood } from "./ore-goods";
 import { signedMoney, mass, money, massFromNative } from "./exact-amount";
 import {
@@ -1244,8 +1244,7 @@ function parseRaiderCash(raw: unknown): RaiderCash | null {
 	const ledger = asObject(awarded, "commander.state.raiderCash.awarded");
 	for (const [key, ordinal] of Object.entries(ledger))
 		if (
-			!/^\d+\/.+$/.test(key) ||
-			!isCarrierKey(key.slice(key.indexOf("/") + 1)) ||
+			!isPaidKey(key) ||
 			!Number.isSafeInteger(ordinal) ||
 			(ordinal as number) < 0
 		)

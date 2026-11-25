@@ -6,6 +6,7 @@ import {
 	applyHoldEvent,
 	commanderAfterDeath,
 } from "../src/holdings";
+import { legalStandingAt } from "../src/legal";
 import { emptyLadderRecord, emptyPending } from "../src/ladder";
 import { npcLoadout } from "../src/npc-loadout";
 import { raiderKillPayCr } from "../src/raider-cash";
@@ -70,6 +71,11 @@ describe("raider cash bounty (node #1338)", () => {
 		expect([906, 98, 234].map(price)).toEqual([125, 295, 426]);
 	});
 
+	test("a slot ordinal past the roster pays nothing", () => {
+		const out = kill(holdings(), { key: carrierKey(3, "raider-999") });
+		expect(out.holdings.commander.raiderCash?.pendingCr ?? 0).toBe(0);
+	});
+
 	test("a kill is pending, then banks once on dock, and re-docking adds zero", () => {
 		const out = kill(holdings());
 		expect(out.holdings.commander.credits).toBe(holdings().commander.credits);
@@ -90,7 +96,6 @@ describe("raider cash bounty (node #1338)", () => {
 		const base = kill(holdings(), { seed: 98 }).holdings.commander.raiderCash;
 		const h = holdings();
 		const variants: Holdings[] = [
-			{ ...h, commander: { ...h.commander, standing: "wanted" } as never },
 			{ ...h, commander: { ...h.commander, credits: 1 } },
 			{
 				...h,
@@ -102,6 +107,18 @@ describe("raider cash bounty (node #1338)", () => {
 		];
 		for (const v of variants)
 			expect(kill(v, { seed: 98 }).holdings.commander.raiderCash).toEqual(base);
+		const wanted = newWorld(SEED);
+		wanted.galaxies[0].legalStatus = {
+			...wanted.galaxies[0].legalStatus,
+			heat: 30,
+			updatedAt: 5_000,
+		};
+		expect(legalStandingAt(wanted.galaxies[0].legalStatus, 5_000)).toBe(
+			"wanted",
+		);
+		expect(
+			kill(h, { seed: 98, world: wanted }).holdings.commander.raiderCash,
+		).toEqual(base);
 		expect(base?.pendingCr).toBe(295);
 	});
 
