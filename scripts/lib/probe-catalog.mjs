@@ -210,7 +210,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-waltz-preload.mjs",
-			"Approaching a station whose waltz is sampled (?waltz=jazz-trio) loads its two sample sets and records the time to ready against the 16 s intro; leaving the approach radius releases them and the held count reads zero.",
+			"Arming the docking computer at a station whose waltz is sampled (?waltz=jazz-trio) loads its two sample sets, none before, and records the time to ready against the 16 s intro; disarming without docking releases them once the waltz has stopped and the held count reads zero.",
 			["station waltz", "sample preload", "sample release", "music director"],
 		),
 		entry(

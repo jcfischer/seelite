@@ -1,12 +1,13 @@
 /**
  * https://github.com/jcfischer/seelite/issues/1325
  *
- * A sampled docking-waltz version loads its samples on approach and lets
- * them go on the way out. `?waltz=jazz-trio` (piano-grand-rich plus
- * bass-pizz) is the version; the probe stands the ship far from the
- * station, then inside the approach radius, and reads off the page when the
- * samples are all ready against the opening's length, then leaves the radius
- * and reads the held count back to zero.
+ * A sampled docking-waltz version loads its samples when the docking computer
+ * is armed, and lets them go once the run is over. `?waltz=jazz-trio`
+ * (piano-grand-rich plus bass-pizz) is the version. The probe stands the ship
+ * inside the approach radius and reads that nothing is held, arms the
+ * computer and reads off the page when the samples are all ready against the
+ * opening's length, then disarms and reads the held count back to zero once
+ * the waltz has stopped.
  *
  * A default-layout probe (#381 D11): the F8 press is the trusted key that opens
  * the sound through the game's unlock listener.
@@ -41,62 +42,85 @@ await bootedGame(page);
 await page.keyboard.press("F8");
 
 const run = await page.evaluate(async () => {
-	const { VICINITY_KM } = await import("/src/docking.ts");
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
 	const g = window.__seelite;
 	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-	for (let i = 0; i < 50 && !g.music.ready; i++) await sleep(100);
+	const waitFor = async (done, tries = 400) => {
+		for (let i = 0; i < tries && !done(); i++) await sleep(50);
+		return done();
+	};
+	await waitFor(() => g.music.ready, 100);
 	await sleep(1500);
+	g.updateTrafficAuthority = () => {};
+	g.updateTrafficPresentation = () => {};
+	if (!g.hasDockingComputer)
+		g.commander = {
+			...g.commander,
+			loadout: migrateEquipment(g.commander.hull, [
+				...equipmentNames(g.commander.loadout ?? {}),
+				g.dockingComputerName,
+			]).loadout,
+		};
 	const station = g.world.system.contents.stations.find(
 		(s) => s.type !== "outpost",
 	);
 	const snap = g.dockingSnapshot(station.id);
-	const stand = (km) =>
-		window.__viewAlongAxis(station.id, km, { comoving: true });
 	const held = () => ({
 		count: g.music.heldSamples,
 		sets: [...g.music.heldSampleSets].sort(),
 	});
-	const out = { ready: g.music.ready, vicinityKm: VICINITY_KM };
+	const out = { ready: g.music.ready };
 
-	await stand(VICINITY_KM * 4);
+	await window.__viewAlongAxis(station.id, snap.planeKm + 4.5, {
+		comoving: true,
+	});
 	await sleep(1500);
-	out.far = held();
+	out.close = held();
 
+	g.targetId = station.id;
+	g.requestDockingClearance();
 	const t0 = performance.now();
-	await stand(snap.planeKm + 4.5);
-	let started = null;
-	for (let i = 0; i < 600 && started === null; i++) {
-		if (g.music.heldSampleSets.length > 0) started = performance.now() - t0;
-		else await sleep(50);
-	}
-	out.startedMs = started;
+	g.toggleDockingComputer();
+	out.engaged = g.dockingComputer.engaged;
+	out.started = await waitFor(() => g.music.heldSampleSets.length > 0, 600);
 	await g.music.samplesReady();
 	out.readyMs = performance.now() - t0;
-	out.near = held();
+	out.armed = held();
 	out.errors = g.music.errors.filter((e) => e.startsWith("sample set"));
 
-	await stand(VICINITY_KM * 4);
-	await sleep(1500);
+	if (g.dockingComputer.engaged) g.toggleDockingComputer();
+	out.stopped = await waitFor(() => g.musicState.waltz === "none", 800);
+	await sleep(500);
 	out.after = held();
 	return out;
 });
 
-check("the worklet is ready", run.ready, JSON.stringify(run.far));
+check("the worklet is ready", run.ready, JSON.stringify(run.close));
 check(
-	"far from the station nothing is held",
-	run.far.count === 0 && run.far.sets.length === 0,
-	JSON.stringify(run.far),
+	"inside the approach radius, unarmed, nothing is held",
+	run.close.count === 0 && run.close.sets.length === 0,
+	JSON.stringify(run.close),
 );
 check(
-	"inside the approach radius the version's two sample sets load",
-	run.startedMs !== null &&
-		run.near.sets.join() === "bass-pizz,piano-grand-rich" &&
-		run.near.count > 0,
-	JSON.stringify({ near: run.near, failed: run.errors.length }),
+	"arming the docking computer loads the version's two sample sets",
+	run.engaged &&
+		run.started &&
+		run.armed.sets.join() === "bass-pizz,piano-grand-rich" &&
+		run.armed.count > 0,
+	JSON.stringify({
+		engaged: run.engaged,
+		armed: run.armed,
+		failed: run.errors.length,
+	}),
 );
 console.log(
-	`samples all ready ${(run.readyMs / 1000).toFixed(2)} s after the approach began, ` +
-		`against an opening of ${INTRO_S.toFixed(1)} s; ${run.near.count} decoded recordings held, ${run.errors.length} failed to load (a checkout holding Git LFS pointers cannot decode them: the parts then play their synth fallback)`,
+	`samples all ready ${(run.readyMs / 1000).toFixed(2)} s after the computer was armed, ` +
+		`against an opening of ${INTRO_S.toFixed(1)} s; ${run.armed.count} decoded recordings held, ${run.errors.length} failed to load (a checkout holding Git LFS pointers cannot decode them: the parts then play their synth fallback)`,
+);
+check(
+	"the samples are ready inside the opening",
+	run.readyMs < INTRO_S * 1000,
+	`${(run.readyMs / 1000).toFixed(2)} s against ${INTRO_S.toFixed(1)} s`,
 );
 check(
 	"every failure is named and the run goes on",
@@ -104,9 +128,9 @@ check(
 	JSON.stringify(run.errors.slice(0, 3)),
 );
 check(
-	"leaving the radius without docking releases every sample",
-	run.after.count === 0 && run.after.sets.length === 0,
-	JSON.stringify(run.after),
+	"disarming without docking releases every sample once the waltz has stopped",
+	run.stopped && run.after.count === 0 && run.after.sets.length === 0,
+	JSON.stringify({ stopped: run.stopped, after: run.after }),
 );
 await browser.close();
 exit();

@@ -651,129 +651,108 @@ describe("the docking computer's waltz (#603)", () => {
 
 describe("the sampled waltz's samples (node #1325)", () => {
 	const song = JAZZ_TRIO;
-	const near = at({
-		approach: true,
-		waltz: { version: "jazz-trio", song },
-	});
+	const jazz = { version: "jazz-trio", song };
+	const armed = at({ scene: "dockingComputer", waltz: jazz });
+	const docked = at({ scene: "docked", stationRole: "trade" });
 	const kinds = (steps: ReturnType<typeof stepMusic>[]) =>
 		steps.map((s) => {
 			if (!s.samples) return "-";
 			if ("load" in s.samples) return "load";
 			return s.samples.release === true ? "release" : "?";
 		});
-	const run = (readings: MusicReading[]) => {
+	const run = (
+		readings: MusicReading[],
+		arms: MusicArms = DEFAULT_MUSIC_ARMS,
+	) => {
 		let state = initialMusicState();
 		const out: ReturnType<typeof stepMusic>[] = [];
 		for (const r of readings) {
-			const s = stepMusic(state, r, 0.1);
+			const s = stepMusic(state, r, 0.1, arms);
 			state = s.state;
 			out.push(s);
 		}
 		return out;
 	};
+	const calmFor = (seconds: number) =>
+		Array.from({ length: Math.round(seconds / 0.1) }, () => calm);
 
-	test("loading starts once on approach, not before", () => {
-		const out = run([calm, near, near, near]);
+	test("arming the computer loads the version once, in the step the waltz loads", () => {
+		const out = run([calm, armed, armed, armed]);
 		expect(kinds(out)).toEqual(["-", "load", "-", "-"]);
 		const first = out[1].samples;
 		expect(first && "load" in first && first.load).toBe(song);
-	});
-
-	test("arming the computer starts it as well: the waltz's own load holds the version", () => {
-		const armed = at({ ...near, scene: "dockingComputer" });
-		const out = run([calm, armed]);
 		expect(out[1].commands.map((c) => c.type)).toContain("load");
-		expect(out[1].state.samplesKey).toBe("jazz-trio");
 	});
 
-	test("leaving the radius without docking releases", () => {
-		expect(kinds(run([near, near, calm, calm]))).toEqual([
-			"load",
+	test("a waltz in the reading loads nothing until the computer is armed", () => {
+		expect(kinds(run([at({ waltz: jazz }), at({ waltz: jazz })]))).toEqual([
 			"-",
-			"release",
 			"-",
 		]);
 	});
 
-	test("a berth holds the samples and undocking releases them, with no reload at the door", () => {
-		const docked = at({ scene: "docked", stationRole: "trade" });
+	test("a held computer still loads; with the music off nothing loads", () => {
+		expect(kinds(run([calm, at({ ...armed, held: true })]))).toEqual([
+			"-",
+			"load",
+		]);
+		expect(
+			kinds(run([calm, armed], { ...DEFAULT_MUSIC_ARMS, off: true })),
+		).toEqual(["-", "-"]);
+	});
+
+	test("a pilot who dies or jumps with a waltz in the reading loads nothing", () => {
+		expect(
+			kinds(
+				run([
+					at({ scene: "dead", waltz: jazz }),
+					at({ scene: "witchspace", waltz: jazz }),
+				]),
+			),
+		).toEqual(["-", "-"]);
+	});
+
+	test("disarming without docking releases once, when the waltz has stopped", () => {
+		const out = run([armed, armed, ...calmFor(WALTZ_CADENCE_S + 10)]);
+		const k = kinds(out);
+		expect(k.filter((x) => x === "release")).toEqual(["release"]);
+		const at_ = k.indexOf("release");
+		expect(out[at_].state.waltz).toBe("none");
+		expect(out[at_ - 1].state.waltz).not.toBe("none");
+		expect(out.at(-1)?.state.samplesKey).toBeNull();
+	});
+
+	test("a berth holds the samples and undocking releases them", () => {
 		const out = run([
-			near,
-			at({ ...near, scene: "dockingComputer" }),
-			docked,
-			docked,
-			near,
-			near,
+			armed,
+			armed,
+			...Array.from(
+				{ length: Math.round((WALTZ_CADENCE_S + 10) / 0.1) },
+				() => docked,
+			),
 			calm,
-			near,
-			near,
-		]);
-		expect(kinds(out)).toEqual([
-			"load",
-			"-",
-			"-",
-			"-",
-			"release",
-			"-",
-			"-",
-			"load",
-			"-",
-		]);
-	});
-
-	test("armed outside the radius, the waltz's samples stay held while it plays", () => {
-		const armedFar = at({
-			scene: "dockingComputer",
-			waltz: { version: "jazz-trio", song },
-		});
-		const out = run([calm, armedFar, armedFar]);
-		expect(kinds(out)).toEqual(["-", "-", "-"]);
-		expect(out[2].state.samplesKey).toBe("jazz-trio");
-	});
-
-	test("a held computer inside the radius loads before the waltz can start", () => {
-		const heldArmed = at({ ...near, scene: "dockingComputer", held: true });
-		expect(kinds(run([calm, heldArmed]))).toEqual(["-", "load"]);
-	});
-
-	test("a pilot who dies inside the radius loads nothing", () => {
-		expect(kinds(run([calm, at({ ...near, scene: "dead" })]))).toEqual([
-			"-",
-			"-",
-		]);
-	});
-
-	test("a synth-only waltz through a whole docking holds and releases nothing", () => {
-		const synth = { version: "hybrid", song: danubeSong("hybrid") };
-		const close = at({ approach: true, waltz: synth });
-		const docked = at({ scene: "docked", stationRole: "trade" });
-		const out = run([
-			close,
-			at({ ...close, scene: "dockingComputer" }),
-			docked,
-			docked,
-			close,
-			close,
 			calm,
 		]);
-		expect(kinds(out)).toEqual(["-", "-", "-", "-", "-", "-", "-"]);
+		const k = kinds(out);
+		expect(k.slice(0, -2).filter((x) => x !== "-")).toEqual(["load"]);
+		expect(k.slice(-2)).toEqual(["release", "-"]);
 	});
 
-	test("a berth with nothing held does not count the next station's samples as docked", () => {
-		const docked = at({ scene: "docked", stationRole: "trade" });
-		expect(kinds(run([docked, calm, near, near]))).toEqual([
-			"-",
-			"-",
+	test("the next arming after a release loads again", () => {
+		const out = run([armed, ...calmFor(WALTZ_CADENCE_S + 10), armed]);
+		expect(kinds(out).filter((x) => x !== "-")).toEqual([
 			"load",
-			"-",
+			"release",
+			"load",
 		]);
 	});
 
-	test("a version with no sampled part loads nothing", () => {
+	test("a version with no sampled part loads nothing and releases nothing", () => {
 		const synth = at({
-			approach: true,
+			scene: "dockingComputer",
 			waltz: { version: "hybrid", song: danubeSong("hybrid") },
 		});
-		expect(kinds(run([synth, synth]))).toEqual(["-", "-"]);
+		const out = run([synth, synth, docked, ...calmFor(2)]);
+		expect(kinds(out).filter((x) => x !== "-")).toEqual([]);
 	});
 });

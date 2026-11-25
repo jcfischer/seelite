@@ -104,7 +104,6 @@ export interface MusicReading {
 	readonly systemSeed: number;
 	readonly stationRole: StationType | null;
 	readonly waltz: StationWaltz | null;
-	readonly approach: boolean;
 }
 
 /**
@@ -357,7 +356,6 @@ export const QUIET_READING: MusicReading = {
 	systemSeed: 1,
 	stationRole: null,
 	waltz: null,
-	approach: false,
 };
 
 export function dangerLevel(
@@ -410,8 +408,6 @@ export interface MusicState {
 	readonly waltzKey: string | null;
 	readonly waltzHoldS: number;
 	readonly samplesKey: string | null;
-	readonly samplesDocked: boolean;
-	readonly samplesSpent: boolean;
 }
 
 export const initialMusicState = (): MusicState => ({
@@ -431,8 +427,6 @@ export const initialMusicState = (): MusicState => ({
 	waltzKey: null,
 	waltzHoldS: 0,
 	samplesKey: null,
-	samplesDocked: false,
-	samplesSpent: false,
 });
 
 const other = (id: FlightId | null): FlightId =>
@@ -540,51 +534,20 @@ export interface MusicStep {
 }
 
 function stepSamples(
-	state: MusicState,
+	s: MusicState,
 	r: MusicReading,
 	arms: MusicArms,
 ): { state: MusicState; samples?: SampleOrder } {
-	let s = state;
+	if (r.scene === "docked") return { state: s };
 	const sampled = r.waltz && setsOf(r.waltz.song).length > 0 ? r.waltz : null;
-	if (
-		s.waltz === "playing" &&
-		// Stryker disable next-line ConditionalExpression: stepWaltz sets waltzKey in the same step that sets waltz to playing, so it is never null here
-		s.waltzKey !== null &&
-		// Stryker disable next-line ConditionalExpression: a samplesKey already set came from the same reading's waltz, so adopting waltzKey writes the value it holds
-		s.samplesKey === null &&
-		sampled !== null
-	)
-		s = { ...s, samplesKey: s.waltzKey };
-	const near = r.approach && !arms.off;
-	const berthed = r.scene === "docked";
-	if (berthed) {
-		return s.samplesKey !== null && !s.samplesDocked
-			? { state: { ...s, samplesDocked: true } }
-			: { state: s };
-	}
-	if (s.waltz !== "none") return { state: s };
-	if (s.samplesKey !== null && (s.samplesDocked || !near))
-		return {
-			state: {
-				...s,
-				samplesKey: null,
-				samplesDocked: false,
-				samplesSpent: near,
-			},
-			samples: { release: true },
-		};
-	if (!near)
-		return { state: s.samplesSpent ? { ...s, samplesSpent: false } : s };
-	if (
-		sampled &&
-		!s.samplesSpent &&
-		s.samplesKey !== sampled.version &&
-		(r.scene === "flight" || r.scene === "dockingComputer")
-	)
+	const armed = r.scene === "dockingComputer" && !arms.off;
+	if (armed && sampled && s.samplesKey !== sampled.version)
 		return {
 			state: { ...s, samplesKey: sampled.version },
 			samples: { load: sampled.song },
 		};
+	if (!armed && s.waltz === "none" && s.samplesKey !== null)
+		return { state: { ...s, samplesKey: null }, samples: { release: true } };
 	return { state: s };
 }
 

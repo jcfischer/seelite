@@ -17283,11 +17283,6 @@ class Game {
 		const station = dock.stationId
 			? stationOf(this.world.system, dock.stationId)
 			: null;
-		const approach =
-			scene === "dockingComputer" ||
-			(scene === "flight" &&
-				(this.stationsByRange()[0]?.km ?? Number.POSITIVE_INFINITY) <=
-					VICINITY_KM);
 		const phase = this.encounter?.phase ?? "over";
 		let engaged = false;
 		// Hostile to the pilot, not merely armed: a patrol running from another
@@ -17311,8 +17306,7 @@ class Game {
 				hullShare: c.hull / c.hullMax,
 				systemSeed: this.world.system.record.seed,
 				stationRole: station?.type ?? null,
-				waltz: approach ? this.dockingWaltz() : null,
-				approach,
+				waltz: scene === "dockingComputer" ? this.dockingWaltz() : null,
 			},
 			dt,
 			DIRECTOR_ARMS,
