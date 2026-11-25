@@ -226,6 +226,8 @@ async function boot() {
 					slotCondition: g.carrierCondition(key).condition,
 					canistersDropped: g.canisters.length - canistersBefore,
 					pilotHull: g.condition.hull,
+					pendingCr: g.commander.raiderCash?.pendingCr ?? 0,
+					glassNotice: g.scoop.text,
 				};
 			},
 			/** A jump to the nearest other system and back, through the shipped
@@ -416,6 +418,15 @@ function defenderKilledRow(label, result) {
 			result.canistersDropped > 0 &&
 			result.lastExit === `${result.name} destroyed`,
 		JSON.stringify(result),
+	);
+	check(
+		`${label}: the sanctioned bounty is pending in flight and the glass says so`,
+		result.pendingCr > 0 &&
+			result.glassNotice.includes(`${result.pendingCr} Cr pending`),
+		JSON.stringify({
+			pendingCr: result.pendingCr,
+			glassNotice: result.glassNotice,
+		}),
 	);
 }
 

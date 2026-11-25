@@ -1,3 +1,4 @@
+import type { RaiderCash } from "./raider-cash";
 import { oreGood } from "./ore-goods";
 import { signedMoney, mass, money, massFromNative } from "./exact-amount";
 import {
@@ -593,6 +594,20 @@ const canonicalCommander = (record: CommanderRecord) => {
 		state: {
 			credits: displayAmount(accounting.cash),
 			...(record.state.firstOreNoticeSeen ? { firstOreNoticeSeen: true } : {}),
+			...(record.state.raiderCash &&
+			(record.state.raiderCash.pendingCr > 0 ||
+				Object.keys(record.state.raiderCash.awarded).length > 0)
+				? {
+						raiderCash: {
+							pendingCr: record.state.raiderCash.pendingCr,
+							awarded: Object.fromEntries(
+								Object.entries(record.state.raiderCash.awarded).sort(
+									([a], [b]) => a.localeCompare(b),
+								),
+							),
+						},
+					}
+				: {}),
 			accounting: encodeAccount(accounting),
 			cargo,
 			loadout: Object.fromEntries(
@@ -753,6 +768,7 @@ const parseCommander = (
 		state.firstOreNoticeSeen !== true
 	)
 		fail("commander.state: firstOreNoticeSeen is not true");
+	const raiderCash = parseRaiderCash(state.raiderCash);
 	if (version < 20 && state.accounting !== undefined)
 		fail("legacy commander contains accounting");
 	const hull = state.hull;
@@ -991,6 +1007,7 @@ const parseCommander = (
 			...(state.firstOreNoticeSeen === true
 				? { firstOreNoticeSeen: true as const }
 				: {}),
+			...(raiderCash ? { raiderCash } : {}),
 			cargo,
 			loadout,
 			...(carried.length ? { recoveredFittings: carried } : {}),
@@ -1217,3 +1234,23 @@ export function parseSave(raw: unknown): SaveEnvelope {
 /** The opening credits figure, re-exported so a new-game caller does not have
  *  to import commerce for one constant. */
 export { STARTING_CREDITS };
+
+function parseRaiderCash(raw: unknown): RaiderCash | null {
+	if (raw === undefined) return null;
+	const o = asObject(raw, "commander.state.raiderCash");
+	const { pendingCr, awarded } = o;
+	if (!Number.isSafeInteger(pendingCr) || (pendingCr as number) < 0)
+		fail("commander.state.raiderCash: pendingCr is not a whole number");
+	const ledger = asObject(awarded, "commander.state.raiderCash.awarded");
+	for (const [key, ordinal] of Object.entries(ledger))
+		if (
+			!isCarrierKey(key) ||
+			!Number.isSafeInteger(ordinal) ||
+			(ordinal as number) < 0
+		)
+			fail(`commander.state.raiderCash: ${key} is not a paid instance`);
+	return {
+		pendingCr: pendingCr as number,
+		awarded: ledger as Record<string, number>,
+	};
+}

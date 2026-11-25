@@ -14,6 +14,7 @@ import {
 import {
 	carriedModule,
 	equipmentNames,
+	stockLoadout,
 	withoutModule,
 	type FittedModule,
 	type Loadout,
@@ -63,6 +64,13 @@ import type { CommanderRecord, SaveEnvelope } from "./save-envelope";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
 import { killCredit } from "./kill-credit";
 import {
+	awardRaiderKill,
+	bankRaiderCash,
+	isRaiderSlotKey,
+	raiderBountyCr,
+} from "./raider-cash";
+import { RAIDER_HULL_ID } from "./raider-slots";
+import {
 	type LadderRecord,
 	type PendingCredit,
 	bankOnDock,
@@ -104,6 +112,7 @@ import {
 	type TransitionEvent,
 	type WorldState,
 	applyTransition,
+	effectiveCarrier,
 	effectiveDerelict,
 	scoopDerelict,
 	setDeficits,
@@ -345,6 +354,7 @@ export interface HoldSignals {
 	/** A request became ready to report (#546). Not every change to the
 	 *  journal: a kill can advance a stage without readying one. */
 	readied: boolean;
+	raiderCash?: { earnedCr: number; pendingCr: number };
 }
 
 export interface HoldOutcome {
@@ -585,6 +595,15 @@ function transition(
 	event: Extract<HoldEvent, { kind: "carrier" }>,
 ): Applied {
 	const { galaxyIndex, key, transition: change } = event;
+	const before =
+		change.kind === "destroy"
+			? effectiveCarrier(
+					world.galaxies[galaxyIndex],
+					key,
+					Math.max(change.occurredAt, world.gameTime),
+					world,
+				)
+			: null;
 	// The world first, then the credit: the order every kill site had.
 	const next = applyTransition(world, galaxyIndex, key, change);
 	// H8: only the player's own gun is a kill. Not gated on the world having
@@ -614,15 +633,44 @@ function transition(
 							: event.hull,
 					),
 				);
+	const sanctioned =
+		event.hull === RAIDER_HULL_ID &&
+		isRaiderSlotKey(key) &&
+		before !== null &&
+		before.condition !== "destroyed";
+	const award = sanctioned
+		? awardRaiderKill(
+				holdings.commander,
+				key,
+				before.instanceOrdinal,
+				raiderBountyCr({
+					hull: RAIDER_HULL_ID,
+					loadout: event.targetLoadout ?? stockLoadout(RAIDER_HULL_ID),
+				}),
+			)
+		: null;
+	const commander = award?.commander ?? holdings.commander;
 	if (
 		requests === holdings.requests &&
-		ladderPending === holdings.ladderPending
+		ladderPending === holdings.ladderPending &&
+		commander === holdings.commander
 	)
 		return unchanged(holdings, next);
 	return {
-		holdings: { ...holdings, requests, ladderPending },
+		holdings: { ...holdings, commander, requests, ladderPending },
 		world: next,
-		signals: { ...QUIET, readied: readiedBy(holdings.requests, requests) },
+		signals: {
+			...QUIET,
+			readied: readiedBy(holdings.requests, requests),
+			...(award && award.earnedCr > 0
+				? {
+						raiderCash: {
+							earnedCr: award.earnedCr,
+							pendingCr: commander.raiderCash?.pendingCr ?? 0,
+						},
+					}
+				: {}),
+		},
 	};
 }
 
@@ -663,6 +711,7 @@ function dock(
 				gameTime: event.at,
 			}),
 			ladderPending: emptyPending(),
+			commander: bankRaiderCash(holdings.commander),
 		},
 		world,
 		signals: QUIET,

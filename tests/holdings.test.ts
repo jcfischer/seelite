@@ -1,3 +1,4 @@
+import { npcLoadout } from "../src/npc-loadout";
 import {
 	migrateEquipment,
 	equipmentNames,
@@ -887,6 +888,34 @@ describe("the figures the probes used to pin", () => {
 		);
 		expect(again.holdings).toBe(paid.holdings);
 		expect(again.world).toBe(paid.world);
+	});
+
+	test("a strong defender earns 426 Cr and the relay job still pays its 400 Cr (node #1338)", () => {
+		const defender = applyHoldEvent(withBounty(), newWorld(0x5ee11e), {
+			...carrierEvent(
+				RAIDER_KEY,
+				raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+				RAIDER_HULL_ID,
+			),
+			targetLoadout: npcLoadout(RAIDER_HULL_ID, 234),
+		} as HoldEvent);
+		expect(defender.holdings.commander.raiderCash?.pendingCr).toBe(426);
+		const ready = killRelay(defender.holdings, defender.world, null);
+		const before = ready.holdings.commander.credits;
+		const paid = applyHoldEvent(
+			ready.holdings,
+			ready.world,
+			bountyPress("report", 120),
+		);
+		expect(paid.holdings.commander.credits - before).toBe(400);
+		expect(paid.holdings.commander.raiderCash?.pendingCr).toBe(426);
+		const docked = applyHoldEvent(paid.holdings, paid.world, {
+			kind: "dock",
+			galaxyIndex: 0,
+			station: RELAY_HOME.station.id as CarrierKey,
+			at: 200,
+		});
+		expect(docked.holdings.commander.credits - before).toBe(400 + 426);
 	});
 
 	test("a Wanted pilot's Accept is refused and nothing is taken", () => {
