@@ -270,6 +270,9 @@ describe("raider cash keys (node #1338)", () => {
 		const next = awardRaiderKill(first.commander, 0, KEY, 1, 7);
 		expect(next.earnedCr).toBe(7);
 		expect(next.commander.raiderCash?.pendingCr).toBe(57);
+		const high = awardRaiderKill(c, 0, KEY, 2, 9).commander;
+		expect(awardRaiderKill(high, 0, KEY, 2, 9).earnedCr).toBe(0);
+		expect(awardRaiderKill(high, 0, KEY, 1, 9).earnedCr).toBe(0);
 		expect(bankRaiderCash(c)).toBe(c);
 		const empty = { ...c, raiderCash: emptyRaiderCash() };
 		expect(bankRaiderCash(empty)).toBe(empty);
