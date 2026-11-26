@@ -546,7 +546,7 @@ function stepSamples(
 			state: { ...s, samplesKey: sampled.version },
 			samples: { load: sampled.song },
 		};
-	if (!armed && s.waltz === "none" && s.samplesKey !== null)
+	if (!armed && s.samplesKey !== null)
 		return { state: { ...s, samplesKey: null }, samples: { release: true } };
 	return { state: s };
 }
