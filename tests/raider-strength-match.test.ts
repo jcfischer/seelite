@@ -15,12 +15,14 @@ import {
 	hasRack,
 	isStarterPilot,
 	judgeFit,
+	lighteningChain,
 	selectRaiderFit,
 	snapshotFit,
 	stockCourierShip,
 	strengthCeiling,
 	survivalSeconds,
 } from "../src/raider-strength-match";
+import { npcLoadout } from "../src/npc-loadout";
 import { RAIDER_HULL_ID } from "../src/raider-slots";
 import { MISSILE } from "../src/missiles";
 
@@ -246,12 +248,20 @@ describe("rack rejection", () => {
 });
 
 describe("the floor fit", () => {
-	test("every stock hull's selection is eligible, so the floor is never an unjudged fallback", () => {
+	test("every seed's floor is eligible against every stock hull, so the floor is never an unjudged fallback", () => {
+		const floors = new Map<string, Loadout>();
+		for (const seed of SEEDS) {
+			const floor = lighteningChain(npcLoadout(RAIDER_HULL_ID, seed)).at(-1);
+			if (floor) floors.set(describeFit(floor), floor);
+		}
+		expect(floors.size).toBeGreaterThan(0);
 		for (const hull of Object.keys(HULL_SPECS) as (keyof typeof HULL_SPECS)[]) {
 			const pilot = { hull, loadout: stockLoadout(hull) };
-			for (const seed of SEEDS) {
-				const picked = selectRaiderFit(seed, pilot);
-				expect(picked.verdict.ok, `${hull} seed ${seed}`).toBe(true);
+			for (const [fit, floor] of floors) {
+				const verdict = judgeFit(floor, pilot);
+				expect(verdict.ok, `${hull} floor [${fit}]: ${verdict.reason}`).toBe(
+					true,
+				);
 			}
 		}
 	});
