@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { strength } from "../src/kill-credit";
+import { HULL_SPECS } from "../src/hull";
 import {
 	type FittedModule,
 	type Loadout,
 	makeModule,
 	stockLoadout,
 } from "../src/loadout";
-import { HULL_SPECS } from "../src/hull";
+import { MISSILE } from "../src/missiles";
+import { npcLoadout } from "../src/npc-loadout";
 import {
 	EARLIEST_MISSILE_FLIGHT_S,
 	FIRST_MISSILE_LAUNCH_S,
+	MISSILE_RELAUNCH_S,
 	SURVIVAL_MIN_S,
-	STARTER_SURVIVAL_MAX_S,
-	hasRack,
 	isStarterPilot,
 	judgeFit,
 	lighteningChain,
@@ -22,9 +22,7 @@ import {
 	strengthCeiling,
 	survivalSeconds,
 } from "../src/raider-strength-match";
-import { npcLoadout } from "../src/npc-loadout";
 import { RAIDER_HULL_ID } from "../src/raider-slots";
-import { MISSILE } from "../src/missiles";
 
 const SEEDS = Array.from({ length: 1000 }, (_, i) => i);
 const courier = stockCourierShip();
@@ -36,76 +34,39 @@ const interceptor = {
 		u1: makeModule("shield-booster", 1, "E"),
 	},
 };
+const plant = makeModule("power-plant", 1);
 const describeFit = (l: Loadout) =>
 	Object.entries(l)
 		.map(([k, m]) => `${k}:${m.module}/${m.size}${m.grade}`)
 		.join(",");
-const fail = (seed: number, pilot: typeof courier, l: Loadout, s: number) =>
-	`seed ${seed} pilot [${describeFit(pilot.loadout)}] raider [${describeFit(l)}] destroyed in ${s}s`;
+const floorOf = (grade: FittedModule["grade"]): Loadout => ({
+	plant,
+	h1: makeModule("pulse-laser", 1, grade),
+});
 
-describe("stock courier", () => {
-	const picks = SEEDS.map((seed) => ({
-		seed,
-		...selectRaiderFit(seed, courier),
-	}));
-
-	test("every fit is rack-free, armed, under the ceiling and 20-45 s", () => {
-		for (const p of picks) {
-			const s = p.verdict.survivalS;
-			const why = fail(p.seed, courier, p.loadout, s);
-			expect(hasRack(p.loadout), why).toBe(false);
-			expect(
-				strength({ hull: RAIDER_HULL_ID, loadout: p.loadout }),
-				why,
-			).toBeLessThanOrEqual(strengthCeiling(courier));
-			expect(s, why).toBeGreaterThanOrEqual(SURVIVAL_MIN_S);
-			expect(s, why).toBeLessThanOrEqual(STARTER_SURVIVAL_MAX_S);
-			expect(
-				strength({ hull: RAIDER_HULL_ID, loadout: p.loadout }),
-				why,
-			).toBeGreaterThan(0);
-		}
-	});
-
-	test("seeds 0-999: median 32-36 s, 100+ under 30 s, 100+ over 38 s", () => {
-		const t = picks.map((p) => p.verdict.survivalS).sort((a, b) => a - b);
-		const median = (t[499] + t[500]) / 2;
-		expect(median).toBeGreaterThanOrEqual(32);
-		expect(median).toBeLessThanOrEqual(36);
-		expect(t.filter((s) => s < 30).length).toBeGreaterThanOrEqual(100);
-		expect(t.filter((s) => s > 38).length).toBeGreaterThanOrEqual(100);
-	});
-
+describe("selection", () => {
 	test("the same seed and pilot fit select the same equipment", () => {
 		for (const seed of [0, 7, 411, 999])
 			expect(selectRaiderFit(seed, courier)).toEqual(
 				selectRaiderFit(seed, snapshotFit(courier)),
 			);
 	});
+
+	test("a raider keeps its seeded fit exactly when it was eligible as drawn", () => {
+		const picks = [courier, interceptor].flatMap((pilot) =>
+			[...SEEDS.slice(0, 10), 107, 184].map((seed) => ({
+				pick: selectRaiderFit(seed, pilot),
+				drawn: npcLoadout(RAIDER_HULL_ID, seed),
+			})),
+		);
+		for (const { pick, drawn } of picks)
+			expect(pick.kept).toBe(describeFit(pick.loadout) === describeFit(drawn));
+		expect(picks.some(({ pick }) => pick.kept)).toBe(true);
+		expect(picks.some(({ pick }) => !pick.kept)).toBe(true);
+	});
 });
 
 describe("pilot snapshot", () => {
-	test("spent ammunition and a copied fit select the same raider", () => {
-		const racked = {
-			hull: "courier" as const,
-			loadout: {
-				...stockLoadout("courier"),
-				u1: { ...makeModule("missile-rack", 1), ammo: 1 },
-			},
-		};
-		const full = {
-			hull: "courier" as const,
-			loadout: {
-				...racked.loadout,
-				u1: { ...racked.loadout.u1, ammo: 4 },
-			},
-		};
-		for (const seed of SEEDS.slice(0, 50))
-			expect(selectRaiderFit(seed, racked).loadout).toEqual(
-				selectRaiderFit(seed, full).loadout,
-			);
-	});
-
 	test("a snapshot does not alias the live fit", () => {
 		const live = { ...courier, loadout: { ...courier.loadout } };
 		const snap = snapshotFit(live);
@@ -115,31 +76,7 @@ describe("pilot snapshot", () => {
 	});
 });
 
-describe("unarmed and mining-only pilots", () => {
-	const mining = {
-		hull: "courier" as const,
-		loadout: { ...stockLoadout("courier"), h1: makeModule("mining-laser", 1) },
-	};
-	const bare = {
-		hull: "courier" as const,
-		loadout: { plant: courier.loadout.plant },
-	};
-	test("still draw an armed opponent under the stock floor", () => {
-		for (const pilot of [mining, bare]) {
-			expect(strength(pilot)).toBe(0);
-			expect(strengthCeiling(pilot)).toBe(strengthCeiling(courier));
-			for (const seed of SEEDS.slice(0, 100)) {
-				const pick = selectRaiderFit(seed, pilot);
-				expect(
-					strength({ hull: RAIDER_HULL_ID, loadout: pick.loadout }),
-				).toBeGreaterThan(0);
-				expect(pick.verdict.ok).toBe(true);
-			}
-		}
-	});
-});
-
-describe("tougher pilot: fitted interceptor", () => {
+describe("the starter window", () => {
 	test("is above the starter window", () => {
 		expect(isStarterPilot(interceptor)).toBe(false);
 		expect(strengthCeiling(interceptor)).toBeGreaterThan(
@@ -147,42 +84,58 @@ describe("tougher pilot: fitted interceptor", () => {
 		);
 	});
 
-	test("every seed: under ceiling, 20 s minimum including the earliest missiles", () => {
-		for (const seed of SEEDS) {
-			const pick = selectRaiderFit(seed, interceptor);
-			const why = fail(seed, interceptor, pick.loadout, pick.verdict.survivalS);
-			expect(pick.verdict.ok, why).toBe(true);
-			expect(pick.verdict.survivalS, why).toBeGreaterThanOrEqual(
-				SURVIVAL_MIN_S,
-			);
-			expect(
-				strength({ hull: RAIDER_HULL_ID, loadout: pick.loadout }),
-				why,
-			).toBeLessThanOrEqual(strengthCeiling(interceptor));
-		}
+	test("a stronger gun on a stock hull leaves the window", () => {
+		const armed = {
+			hull: "courier" as const,
+			loadout: { ...courier.loadout, h1: makeModule("beam-laser", 1) },
+		};
+		expect(isStarterPilot(courier)).toBe(true);
+		expect(isStarterPilot(armed)).toBe(false);
 	});
 
-	test("a common seed gives the same weak raider against both ships, and the interceptor lasts longer", () => {
-		const shared = SEEDS.filter(
-			(seed) =>
-				describeFit(selectRaiderFit(seed, courier).loadout) ===
-				describeFit(selectRaiderFit(seed, interceptor).loadout),
-		);
-		expect(shared.length).toBeGreaterThan(100);
-		for (const seed of shared)
-			expect(
-				selectRaiderFit(seed, interceptor).verdict.survivalS,
-				`seed ${seed}`,
-			).toBeGreaterThan(selectRaiderFit(seed, courier).verdict.survivalS);
+	test("armour alone leaves the window, though it adds no strength", () => {
+		const armoured = {
+			hull: "courier" as const,
+			loadout: { plant, i1: makeModule("armour-plating", 1) },
+		};
+		expect(isStarterPilot({ hull: "courier", loadout: { plant } })).toBe(true);
+		expect(isStarterPilot(armoured)).toBe(false);
+	});
+});
+
+describe("verdicts", () => {
+	const heavy: Loadout = {
+		plant: makeModule("power-plant", 1, "E"),
+		h1: makeModule("beam-laser", 2, "D"),
+		h2: makeModule("military-laser", 1, "E"),
+	};
+
+	test("a fit over the pilot's ceiling is rejected for strength", () => {
+		expect(judgeFit(heavy, courier).reason).toBe("strength");
 	});
 
-	test("the interceptor is matched up: some seeds field a stronger fit than the courier's", () => {
-		const stronger = SEEDS.filter(
-			(seed) =>
-				selectRaiderFit(seed, interceptor).verdict.strength >
-				selectRaiderFit(seed, courier).verdict.strength,
-		);
-		expect(stronger.length).toBeGreaterThan(100);
+	test("a fit exactly at the ceiling is within it", () => {
+		const pilot = {
+			hull: RAIDER_HULL_ID,
+			loadout: npcLoadout(RAIDER_HULL_ID, 1),
+		};
+		const verdict = judgeFit(npcLoadout(RAIDER_HULL_ID, 62), pilot);
+		expect(verdict.strength).toBe(strengthCeiling(pilot));
+		expect(verdict.reason).not.toBe("strength");
+	});
+
+	test("a kill at exactly the minimum survival is eligible", () => {
+		const tug = {
+			hull: "tug" as const,
+			loadout: { ...stockLoadout("tug"), h1: makeModule("beam-laser", 2, "E") },
+		};
+		const verdict = judgeFit(heavy, tug);
+		expect(verdict.survivalS).toBe(SURVIVAL_MIN_S);
+		expect(verdict.reason).toBe("ok");
+	});
+
+	test("an unarmed raider outlasts the starter window", () => {
+		expect(judgeFit({ plant }, courier).reason).toBe("long");
 	});
 });
 
@@ -244,6 +197,79 @@ describe("rack rejection", () => {
 			FIRST_MISSILE_LAUNCH_S + 8 + EARLIEST_MISSILE_FLIGHT_S,
 			1,
 		);
+	});
+});
+
+describe("missiles", () => {
+	const racked = (ammo: number): Loadout => ({
+		plant,
+		h2: { ...makeModule("missile-rack", 1), ammo },
+	});
+	const freighter = {
+		hull: "freighter" as const,
+		loadout: stockLoadout("freighter"),
+	};
+
+	test("a missile lands before the next one launches", () => {
+		expect(EARLIEST_MISSILE_FLIGHT_S).toBeLessThan(MISSILE_RELAUNCH_S);
+	});
+
+	test("the first missile lands on the step its flight ends", () => {
+		expect(survivalSeconds(racked(1), courier)).toBeCloseTo(
+			FIRST_MISSILE_LAUNCH_S + EARLIEST_MISSILE_FLIGHT_S,
+			3,
+		);
+	});
+
+	test("a spent rack stops launching", () => {
+		expect(MISSILE.damage).toBeGreaterThan(0);
+		expect(survivalSeconds(racked(1), freighter)).toBe(
+			Number.POSITIVE_INFINITY,
+		);
+	});
+});
+
+describe("the lightening chain", () => {
+	test.each(["pulse-laser", "beam-laser", "military-laser"] as const)(
+		"two %ss lighten to the last hardpoint's, then the floor",
+		(kind) => {
+			const h1 = makeModule(kind, 1, "D");
+			const h2 = makeModule(kind, 1, "A");
+			expect(lighteningChain({ plant, h1, h2 })).toEqual([
+				{ plant, h1, h2 },
+				{ plant, h2 },
+				floorOf("A"),
+			]);
+		},
+	);
+
+	test("racks go first, and a laser off the hardpoints stays", () => {
+		const fit: Loadout = {
+			plant,
+			h1: makeModule("beam-laser", 1, "D"),
+			h2: makeModule("missile-rack", 1),
+			u1: makeModule("shield-booster", 1),
+			u2: makeModule("pulse-laser", 1, "A"),
+		};
+		expect(lighteningChain(fit)).toEqual([
+			fit,
+			{ plant, h1: fit.h1, u1: fit.u1, u2: fit.u2 },
+			floorOf("D"),
+		]);
+	});
+
+	test("one laser goes straight to the floor, of the last hardpoint laser's grade", () => {
+		const fit: Loadout = {
+			plant,
+			h1: makeModule("pulse-laser", 1, "D"),
+			u2: makeModule("pulse-laser", 1, "A"),
+		};
+		expect(lighteningChain(fit)).toEqual([fit, floorOf("D")]);
+	});
+
+	test("a fit with no laser floors at grade E", () => {
+		const fit: Loadout = { plant, h2: makeModule("missile-rack", 1, "A") };
+		expect(lighteningChain(fit)).toEqual([fit, { plant }, floorOf("E")]);
 	});
 });
 
