@@ -701,6 +701,14 @@ describe("the sampled waltz's samples (node #1325)", () => {
 		).toEqual(["-", "-"]);
 	});
 
+	test("a held computer keeps its samples while the waltz waits to start", () => {
+		const held = at({ ...armed, held: true });
+		const out = run([calm, held, held, held, armed]);
+		expect(kinds(out)).toEqual(["-", "load", "-", "-", "-"]);
+		expect(out[3].state.waltz).toBe("none");
+		expect(out[3].state.samplesKey).toBe("jazz-trio");
+	});
+
 	test("a pilot who dies or jumps with a waltz in the reading loads nothing", () => {
 		expect(
 			kinds(
