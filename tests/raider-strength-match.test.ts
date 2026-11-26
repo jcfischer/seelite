@@ -258,6 +258,16 @@ describe("the lightening chain", () => {
 		]);
 	});
 
+	test("dropping the extra hardpoint lasers keeps a laser off the hardpoints", () => {
+		const fit: Loadout = {
+			plant,
+			h1: makeModule("beam-laser", 1, "D"),
+			h2: makeModule("pulse-laser", 1, "A"),
+			u2: makeModule("pulse-laser", 1, "D"),
+		};
+		expect(lighteningChain(fit)[1]).toEqual({ plant, h2: fit.h2, u2: fit.u2 });
+	});
+
 	test("one laser goes straight to the floor, of the last hardpoint laser's grade", () => {
 		const fit: Loadout = {
 			plant,
