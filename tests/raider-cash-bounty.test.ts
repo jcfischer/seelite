@@ -241,6 +241,7 @@ describe("raider cash keys (node #1338)", () => {
 			String(KEY),
 			"0/raider-00",
 			"0/",
+			`0/${KEY}\n`,
 		])
 			expect(isPaidKey(bad)).toBe(false);
 	});
@@ -248,7 +249,13 @@ describe("raider cash keys (node #1338)", () => {
 	test("only the roster's raider slots are raider slot keys", () => {
 		for (const ordinal of [0, 1, 2, 3])
 			expect(isRaiderSlotKey(carrierKey(13, `raider-0${ordinal}`))).toBe(true);
-		for (const bad of ["raider-04", "raider-0", "xraider-00", "raider-00x"])
+		for (const bad of [
+			"raider-04",
+			"raider-0",
+			"xraider-00",
+			"raider-00x",
+			"raider-00\n",
+		])
 			expect(isRaiderSlotKey(carrierKey(3, bad))).toBe(false);
 		expect(isRaiderSlotKey("x3:raider-00" as typeof KEY)).toBe(false);
 		expect(isRaiderSlotKey("raider-00" as typeof KEY)).toBe(false);

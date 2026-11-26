@@ -68,8 +68,7 @@ export const awardRaiderKill = (
 	const cash = raiderCashOf(commander);
 	const slot = paidKey(galaxyIndex, key);
 	const paid = cash.awarded[slot];
-	if (paid !== undefined && paid >= instanceOrdinal)
-		return { commander, earnedCr: 0 };
+	if ((paid ?? -1) >= instanceOrdinal) return { commander, earnedCr: 0 };
 	return {
 		commander: {
 			...commander,
