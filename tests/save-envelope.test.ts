@@ -448,3 +448,96 @@ describe("#936 D4 — txSeq in the save envelope", () => {
 		}
 	});
 });
+
+describe("raider cash in the save (node #1338)", () => {
+	const withCash = (raiderCash: unknown) => {
+		const base = commander();
+		return {
+			...base,
+			state: { ...base.state, raiderCash },
+		} as unknown as CommanderRecord;
+	};
+	const load = (raiderCash: unknown) =>
+		parseSave(
+			serializeSave({ world: world(), commander: withCash(raiderCash) }),
+		).commander.state.raiderCash;
+	const loadRaw = (raiderCash: unknown) => {
+		const raw = structuredClone(
+			serializeSave({ world: world(), commander: commander() }),
+		) as any;
+		raw.commander.state.raiderCash = raiderCash;
+		const { integrity, ...body } = raw;
+		return parseSave({ ...body, integrity: fnv1a(JSON.stringify(body)) });
+	};
+	const AWARDED = { "1/3:raider-00": 2, "0/3:raider-01": 0 };
+
+	test("a pending total and its ledger round-trip, in a canonical key order", () => {
+		const forward = serializeSave({
+			world: world(),
+			commander: withCash({ pendingCr: 7, awarded: AWARDED }),
+		});
+		const reversed = serializeSave({
+			world: world(),
+			commander: withCash({
+				pendingCr: 7,
+				awarded: Object.fromEntries(Object.entries(AWARDED).reverse()),
+			}),
+		});
+		expect(JSON.stringify(reversed)).toBe(JSON.stringify(forward));
+		const back = parseSave(forward).commander.state.raiderCash;
+		expect(back).toEqual({ pendingCr: 7, awarded: AWARDED });
+		expect(Object.keys(back?.awarded ?? {})).toEqual([
+			"0/3:raider-01",
+			"1/3:raider-00",
+		]);
+	});
+
+	test("a pending total with an empty ledger, and a ledger with nothing pending, both persist", () => {
+		expect(load({ pendingCr: 5, awarded: {} })).toEqual({
+			pendingCr: 5,
+			awarded: {},
+		});
+		expect(load({ pendingCr: 0, awarded: AWARDED })).toEqual({
+			pendingCr: 0,
+			awarded: AWARDED,
+		});
+	});
+
+	test("an empty record writes no bytes, and an absent one loads as nothing", () => {
+		expect(load({ pendingCr: 0, awarded: {} })).toBeUndefined();
+		expect(load(undefined)).toBeUndefined();
+		const bytes = JSON.stringify(
+			serializeSave({
+				world: world(),
+				commander: withCash({ pendingCr: 0, awarded: {} }),
+			}),
+		);
+		expect(bytes).not.toContain("raiderCash");
+	});
+
+	test("a malformed record is refused by name", () => {
+		expect(() => loadRaw("x")).toThrow(
+			/commander\.state\.raiderCash is not an object/,
+		);
+		for (const pendingCr of [-1, 1.5, "7", null])
+			expect(() =>
+				load({ pendingCr, awarded: { "0/3:raider-00": 0 } }),
+			).toThrow(/raiderCash: pendingCr is not a whole number/);
+		expect(() => loadRaw({ pendingCr: 1, awarded: [] })).toThrow(
+			/commander\.state\.raiderCash\.awarded is not an object/,
+		);
+		for (const [key, ordinal] of [
+			["raider-00", 1],
+			["x/3:raider-00", 1],
+			["0/raider-00", 1],
+			["0/3:raider-00", -1],
+			["0/3:raider-00", 0.5],
+			["0/3:raider-00", "1"],
+		] as const)
+			expect(() => load({ pendingCr: 0, awarded: { [key]: ordinal } })).toThrow(
+				new RegExp(
+					`raiderCash: ${key.replace(/\W/g, ".")} is not a paid instance`,
+				),
+			);
+	});
+});

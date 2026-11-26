@@ -1256,3 +1256,72 @@ test("exact procurement consumes unknown shares first while reward leaves debt u
 		money.fromNumber(purchase.rewardCr),
 	);
 });
+
+describe("raider cash at a carrier transition (node #1338)", () => {
+	const KILL_PAY = (out: ReturnType<typeof killRaider>) =>
+		out.holdings.commander.raiderCash?.pendingCr;
+
+	test("a kill signals what it earned and what is now pending; a replay signals nothing", () => {
+		const first = killRaider(holdings());
+		const earned = KILL_PAY(first) ?? 0;
+		expect(earned).toBeGreaterThan(0);
+		expect(first.signals.raiderCash).toEqual({
+			earnedCr: earned,
+			pendingCr: earned,
+		});
+		const replay = killRaider(first.holdings);
+		expect(replay.signals.raiderCash).toBeUndefined();
+		expect(KILL_PAY(replay)).toBe(earned);
+	});
+
+	test("only the raider hull is sanctioned, even in a raider slot", () => {
+		const out = applyHoldEvent(
+			holdings(),
+			newWorld(0x5ee11e),
+			carrierEvent(
+				RAIDER_KEY,
+				raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+				"patrol",
+			),
+		);
+		expect(out.holdings.commander.raiderCash).toBeUndefined();
+		expect(out.signals.raiderCash).toBeUndefined();
+	});
+
+	test("an ordinary hull's kill still moves the ladder alone", () => {
+		const start = holdings();
+		const out = applyHoldEvent(
+			start,
+			newWorld(0x5ee11e),
+			carrierEvent(
+				carrierKey(RELAY_HOME.record.index, "traffic-00"),
+				raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+				"patrol",
+			),
+		);
+		expect(out.holdings).not.toBe(start);
+		expect(out.holdings.ladderPending.combat).toBeGreaterThan(0);
+		expect(out.holdings.commander).toBe(start.commander);
+	});
+
+	test("a kill that changes nothing returns the holdings it was given", () => {
+		const start = holdings();
+		const out = killRelay(start, newWorld(0x5ee11e), null);
+		expect(out.holdings).toBe(start);
+	});
+
+	test("an unarmed raider records its award and moves nothing else", () => {
+		const start = holdings();
+		const out = applyHoldEvent(start, newWorld(0x5ee11e), {
+			...carrierEvent(
+				RAIDER_KEY,
+				raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+				RAIDER_HULL_ID,
+			),
+			targetLoadout: {},
+		} as unknown as HoldEvent);
+		expect(out.holdings.commander).not.toBe(start.commander);
+		expect(out.holdings.commander.raiderCash?.pendingCr).toBe(0);
+		expect(out.signals.raiderCash).toBeUndefined();
+	});
+});

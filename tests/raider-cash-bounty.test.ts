@@ -9,7 +9,15 @@ import {
 import { legalStandingAt } from "../src/legal";
 import { emptyLadderRecord, emptyPending } from "../src/ladder";
 import { npcLoadout } from "../src/npc-loadout";
-import { raiderKillPayCr } from "../src/raider-cash";
+import {
+	awardRaiderKill,
+	bankRaiderCash,
+	emptyRaiderCash,
+	isPaidKey,
+	isRaiderSlotKey,
+	paidKey,
+	raiderKillPayCr,
+} from "../src/raider-cash";
 import { raiderDestruction } from "../src/raider-wreck";
 import { RAIDER_HULL_ID } from "../src/raider-slots";
 import { emptyRequests } from "../src/requests";
@@ -218,5 +226,45 @@ describe("raider cash bounty (node #1338)", () => {
 		const ejected = commanderAfterDeath(dockRecord, dying, "eject");
 		expect(ejected.state.credits).toBe(dockRecord.state.credits);
 		expect(ejected.state.raiderCash).toBeUndefined();
+	});
+});
+
+describe("raider cash keys (node #1338)", () => {
+	test("a paid key is a galaxy index, a slash and a carrier key", () => {
+		expect(isPaidKey(paidKey(0, KEY))).toBe(true);
+		expect(isPaidKey(paidKey(12, KEY))).toBe(true);
+		for (const bad of [
+			`/${KEY}`,
+			`x/${KEY}`,
+			`1x/${KEY}`,
+			`x1/${KEY}`,
+			String(KEY),
+			"0/raider-00",
+			"0/",
+		])
+			expect(isPaidKey(bad)).toBe(false);
+	});
+
+	test("only the roster's raider slots are raider slot keys", () => {
+		for (const ordinal of [0, 1, 2, 3])
+			expect(isRaiderSlotKey(carrierKey(13, `raider-0${ordinal}`))).toBe(true);
+		for (const bad of ["raider-04", "raider-0", "xraider-00", "raider-00x"])
+			expect(isRaiderSlotKey(carrierKey(3, bad))).toBe(false);
+		expect(isRaiderSlotKey("x3:raider-00" as typeof KEY)).toBe(false);
+		expect(isRaiderSlotKey("raider-00" as typeof KEY)).toBe(false);
+	});
+
+	test("awarding twice for one instance changes nothing, banking nothing changes nothing", () => {
+		const c = newCommander(PLAYER_BASELINE_HULL);
+		const first = awardRaiderKill(c, 0, KEY, 0, 50);
+		expect(first.earnedCr).toBe(50);
+		const dup = awardRaiderKill(first.commander, 0, KEY, 0, 50);
+		expect(dup).toEqual({ commander: first.commander, earnedCr: 0 });
+		const next = awardRaiderKill(first.commander, 0, KEY, 1, 7);
+		expect(next.earnedCr).toBe(7);
+		expect(next.commander.raiderCash?.pendingCr).toBe(57);
+		expect(bankRaiderCash(c)).toBe(c);
+		const empty = { ...c, raiderCash: emptyRaiderCash() };
+		expect(bankRaiderCash(empty)).toBe(empty);
 	});
 });

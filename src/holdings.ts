@@ -67,6 +67,7 @@ import {
 	awardRaiderKill,
 	bankRaiderCash,
 	isRaiderSlotKey,
+	raiderCashOf,
 	raiderKillPayCr,
 } from "./raider-cash";
 import { RAIDER_HULL_ID } from "./raider-slots";
@@ -595,15 +596,6 @@ function transition(
 	event: Extract<HoldEvent, { kind: "carrier" }>,
 ): Applied {
 	const { galaxyIndex, key, transition: change } = event;
-	const before =
-		change.kind === "destroy"
-			? effectiveCarrier(
-					world.galaxies[galaxyIndex],
-					key,
-					change.occurredAt,
-					world,
-				)
-			: null;
 	// The world first, then the credit: the order every kill site had.
 	const next = applyTransition(world, galaxyIndex, key, change);
 	// H8: only the player's own gun is a kill. Not gated on the world having
@@ -633,17 +625,18 @@ function transition(
 							: event.hull,
 					),
 				);
-	const sanctioned =
-		event.hull === RAIDER_HULL_ID &&
-		isRaiderSlotKey(key) &&
-		before !== null &&
-		before.condition !== "destroyed";
+	const sanctioned = event.hull === RAIDER_HULL_ID && isRaiderSlotKey(key);
 	const award = sanctioned
 		? awardRaiderKill(
 				holdings.commander,
 				galaxyIndex,
 				key,
-				before.instanceOrdinal,
+				effectiveCarrier(
+					world.galaxies[galaxyIndex],
+					key,
+					change.occurredAt,
+					world,
+				).instanceOrdinal,
 				raiderKillPayCr({
 					hull: RAIDER_HULL_ID,
 					loadout: event.targetLoadout ?? stockLoadout(RAIDER_HULL_ID),
@@ -667,7 +660,7 @@ function transition(
 				? {
 						raiderCash: {
 							earnedCr: award.earnedCr,
-							pendingCr: commander.raiderCash?.pendingCr ?? 0,
+							pendingCr: raiderCashOf(commander).pendingCr,
 						},
 					}
 				: {}),

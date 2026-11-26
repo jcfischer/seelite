@@ -26,32 +26,30 @@ export const emptyRaiderCash = (): RaiderCash => ({
 export const raiderCashOf = (c: Pick<CommanderState, "raiderCash">) =>
 	c.raiderCash ?? emptyRaiderCash();
 
-export const PAID_KEY_SEPARATOR = "/";
-
 export const paidKey = (galaxyIndex: number, key: CarrierKey): string =>
-	`${galaxyIndex}${PAID_KEY_SEPARATOR}${key}`;
+	`${galaxyIndex}/${key}`;
+
+const PAID_KEY = /^\d+\/(.+)$/;
 
 export const isPaidKey = (paid: string): boolean => {
-	const at = paid.indexOf(PAID_KEY_SEPARATOR);
-	return (
-		at > 0 &&
-		/^\d+$/.test(paid.slice(0, at)) &&
-		isCarrierKey(paid.slice(at + 1))
-	);
+	const match = PAID_KEY.exec(paid);
+	return match !== null && isCarrierKey(match[1]);
 };
 
 export const raiderKillPayCr = (fit: FittedShip): number =>
 	Math.round(strength(fit) / STRENGTH_PER_CREDIT);
 
-/** A raider slot's key. Relay defenders fill these slots too. */
-export const isRaiderSlotKey = (key: CarrierKey): boolean =>
-	isCarrierKey(key) &&
+const RAIDER_LOCAL_IDS: ReadonlySet<string> = new Set(
 	Array.from({ length: RAIDER_SLOT_MAX }, (_, ordinal) =>
 		raiderLocalId(ordinal),
-	).some(
-		(id) =>
-			key.endsWith(`:${id}`) && /^\d+$/.test(key.slice(0, -id.length - 1)),
-	);
+	),
+);
+
+/** A raider slot's key. Relay defenders fill these slots too. */
+export const isRaiderSlotKey = (key: CarrierKey): boolean => {
+	const match = /^\d+:(.+)$/.exec(key);
+	return match !== null && RAIDER_LOCAL_IDS.has(match[1]);
+};
 
 export interface RaiderAward {
 	commander: CommanderState;
