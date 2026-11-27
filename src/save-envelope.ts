@@ -1,4 +1,5 @@
 import { oreGood } from "./ore-goods";
+import { type MusicFirst, parseMusicFirsts } from "./music-firsts";
 import { signedMoney, mass, money, massFromNative } from "./exact-amount";
 import {
 	migrateAccount,
@@ -445,6 +446,7 @@ export interface CommanderRecord {
 	 */
 	txSeq: number;
 	scoopNotice: boolean;
+	musicFirsts: readonly MusicFirst[];
 	/** The three ladders' banked record (#183 D9). Beside `state` in the one
 	 *  record, so a death's revert to `lastDocked` moves the credits and the
 	 *  rungs together. */
@@ -527,6 +529,7 @@ export const newCommanderRecord = (
 	firstDay: options.firstDay ?? "free",
 	txSeq: 0,
 	scoopNotice: false,
+	musicFirsts: [],
 	// A new game is paid for nothing it starts with: its own system is seeded
 	// (#183 D9's migration rule, applied to the start). The start station is
 	// not: its first dock, a guided start's included, earns one kind.
@@ -618,6 +621,9 @@ const canonicalCommander = (record: CommanderRecord) => {
 		firstDay: record.firstDay,
 		txSeq: record.txSeq,
 		...(record.scoopNotice ? { scoopNotice: true } : {}),
+		...(record.musicFirsts.length
+			? { musicFirsts: [...record.musicFirsts] }
+			: {}),
 		ladders: serializeLadders({
 			...record.ladders,
 			banked: {
@@ -1020,6 +1026,7 @@ const parseCommander = (
 		firstDay,
 		txSeq,
 		scoopNotice,
+		musicFirsts: parseMusicFirsts(o.musicFirsts),
 		ladders: {
 			...ladders,
 			tradeExact: accounting.bankedTrade,

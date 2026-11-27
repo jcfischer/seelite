@@ -1,4 +1,4 @@
-/** Live music integration: unlock, station/flight beds and docking waltz commands.
+/** Live music integration: unlock, station/flight beds, the boot set-piece and docking waltz commands.
  * Offline synth bands remain in probe-music.mjs; no render window is shortened.
  */
 import { installViewFraming } from "./lib/view-placement.mjs";
@@ -195,6 +195,70 @@ try {
 				live.heard > 1e-3 &&
 				live.errors.length === 0,
 			`bed ${live.bed} at ${live.level}; rms at the music bus ${live.heard.toFixed(4)}; errors ${live.errors.join("; ") || 0}`,
+		);
+		await game.close();
+	}
+	{
+		const game = await browser.newPage({
+			viewport: { width: 900, height: 620 },
+		});
+		watch(game);
+		const settle = () =>
+			game.evaluate(async () => {
+				const g = window.__seelite;
+				for (let i = 0; i < 100 && !g.music.ready; i++)
+					await new Promise((r) => setTimeout(r, 100));
+				for (let i = 0; i < 30 && g.musicState.piece === null; i++)
+					await new Promise((r) => setTimeout(r, 100));
+				const { SET_PIECES } = await import("/src/music-director.ts");
+				const piece = g.musicState.piece;
+				return {
+					ready: g.music.ready,
+					piece,
+					song: piece ? SET_PIECES[piece].song.name : null,
+					errors: [...g.music.errors],
+				};
+			});
+		await game.goto(
+			gameUrl(
+				origin,
+				{ seed: 19, raider: "off", voices: "formant" },
+				{ boot: null },
+			),
+			{ waitUntil: "load" },
+		);
+		await bootedGame(game);
+		await game.keyboard.press("Enter");
+		await game.fill('[data-field="name"]', "Probe Boot");
+		for (let i = 0; i < 5; i++) await game.keyboard.press("ArrowDown");
+		const reloaded = game.waitForEvent("load", { timeout: 30000 });
+		await game.keyboard.press("Enter");
+		await reloaded;
+		await bootedGame(game);
+		await game.keyboard.press("Enter");
+		const started = await settle();
+		check(
+			"New game plays Zarathustra on the page its reload boots (#589 D3)",
+			started.ready &&
+				started.piece === "strauss-zarathustra" &&
+				started.errors.length === 0,
+			`ready ${started.ready}; piece ${started.piece} (${started.song}); errors ${started.errors.join("; ") || 0}`,
+		);
+		const again = game.waitForEvent("load", { timeout: 30000 });
+		await game.reload();
+		await again;
+		await bootedGame(game);
+		await game.keyboard.press("F8");
+		const before = await settle();
+		await game.keyboard.press("Enter");
+		const after = await settle();
+		check(
+			"a reload plays no piece until Continue is clicked, and the click plays Zarathustra (#589 D3)",
+			before.ready &&
+				before.piece === null &&
+				after.piece === "strauss-zarathustra" &&
+				after.errors.length === 0,
+			`before the click ${before.piece}; after ${after.piece} (${after.song}); errors ${after.errors.join("; ") || 0}`,
 		);
 		await game.close();
 	}

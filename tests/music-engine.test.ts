@@ -6,7 +6,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import { MusicEngine, MUSIC_HEADROOM } from "../src/music-engine";
-import type { MusicCommand, NoteEvent, Song } from "../src/music-score";
+import {
+	MUSIC_SONG_SLOTS,
+	type MusicCommand,
+	type NoteEvent,
+	type Song,
+} from "../src/music-score";
 
 const SR = 48000;
 /** 120 bpm in 4/4: a bar is two seconds. */
@@ -862,9 +867,9 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		// With every slot's room ringing, a load takes one whose room a stop
 		// now is fading, and the new song's line set it back to full.
 		const e = new MusicEngine(SR, 16);
-		// 480 bpm: a bar is half a second, so four songs play in two. A long
-		// room on the first three, a short one on the last, so the tails a
-		// load can land on are about as loud as each other.
+		// 480 bpm: a bar is half a second, so every slot's song plays in turn.
+		// A long room on all but the last, a short one on the last, so the tails
+		// a load can land on are about as loud as each other.
 		const hall = (name: string, beat: number, reverbS = 20): Song => ({
 			name,
 			beatsPerBar: 4,
@@ -879,19 +884,22 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 			tempo: [{ bar: 0, bpm: 480 }],
 			space: { reverbS },
 		});
-		const ids = ["a", "b", "c", "d"];
+		const ids = Array.from({ length: MUSIC_SONG_SLOTS }, (_, i) =>
+			String.fromCharCode(97 + i),
+		);
+		const last = ids[ids.length - 1];
 		for (const id of ids)
 			e.command(
-				{ type: "load", id, song: hall(id, 0, id === "d" ? 1 : 20) },
+				{ type: "load", id, song: hall(id, 0, id === last ? 1 : 20) },
 				0,
 			);
 		const snap = (s: number) => s * SR - ((s * SR) % 128);
 		// Each plays one bar, on the bar: every room rings.
 		const plays = new Map(ids.map((id, i) => [snap(i * 0.5 + 0.1), id]));
-		const stopAt = snap(1.7);
+		const stopAt = snap(ids.length * 0.5 - 0.3);
 		const fadeS = 2;
 		// Late in the fade, where the rooms are at a fifth.
-		const loadAt = snap(3.3);
+		const loadAt = snap(ids.length * 0.5 + 1.3);
 		const eNote = loadAt + 0.375 * SR;
 		const L = new Float32Array(128);
 		const R = new Float32Array(128);
@@ -902,8 +910,8 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 			if (id) e.command({ type: "play", id, at: "bar" }, f);
 			if (f === stopAt) e.command({ type: "stop", at: "now", fadeS }, f);
 			if (f === loadAt) {
-				e.command({ type: "load", id: "e", song: hall("e", 3) }, f);
-				e.command({ type: "play", id: "e", at: "bar" }, f);
+				e.command({ type: "load", id: "z", song: hall("z", 3) }, f);
+				e.command({ type: "play", id: "z", at: "bar" }, f);
 			}
 			e.render(L, f, R);
 			for (let k = 0; k < 128; k++) {

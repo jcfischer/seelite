@@ -66,6 +66,11 @@ import {
 	type DanubeVoicing,
 	danubeSong,
 } from "./music-danube";
+import { BRUCKNER_ADAGIO } from "./music-classical/bruckner-7-adagio";
+import { DVORAK_LARGO } from "./music-classical/dvorak-largo";
+import { MARS } from "./music-classical/holst-mars";
+import { ZARATHUSTRA } from "./music-classical/strauss-zarathustra";
+import { MUSIC_FIRSTS, type MusicFirst } from "./music-firsts";
 import type { MusicCommand, Song } from "./music-score";
 import { beatSeconds, bpmAt } from "./music-sequencer";
 import { mix, seededRand } from "./rng";
@@ -103,7 +108,73 @@ export interface MusicReading {
 	readonly systemSeed: number;
 	readonly stationRole: StationType | null;
 	readonly waltz: StationWaltz | null;
+	readonly wallDtS: number;
+	readonly gameTimeS: number;
+	readonly heard: boolean;
+	readonly firsts: readonly MusicFirst[];
+	readonly cue: SetPieceCue | null;
 }
+
+/** The fixed moments that ask for a set-piece (#589 D3, D5, D6). */
+export type SetPieceCue = "boot" | "newHull" | "capitalShip";
+
+/** The set-pieces this director plays (#589 D3, D5, D6, D7). */
+export type SetPieceId =
+	| "strauss-zarathustra"
+	| "dvorak-largo"
+	| "bruckner-7-adagio"
+	| "holst-mars";
+
+/** A one-shot score's length on its own tempo map, bar by bar. */
+export const songSeconds = (song: Song): number => {
+	let bar = 0;
+	let s = 0;
+	for (const section of song.sections)
+		for (let i = 0; i < section.bars; i++, bar++)
+			s += beatSeconds(
+				bpmAt(song.tempo, bar, false),
+				bpmAt(song.tempo, bar, true),
+				song.beatsPerBar,
+				song.beatsPerBar,
+			);
+	return s;
+};
+
+const pieceOf = (song: Song) => ({
+	song,
+	seconds: songSeconds(song),
+	bars: song.sections.reduce((n, x) => n + x.bars, 0),
+});
+
+/** Each piece's score, its length and its bar count. */
+export const SET_PIECES: Readonly<
+	Record<SetPieceId, { song: Song; seconds: number; bars: number }>
+> = {
+	"strauss-zarathustra": pieceOf(ZARATHUSTRA),
+	"dvorak-largo": pieceOf(DVORAK_LARGO),
+	"bruckner-7-adagio": pieceOf(BRUCKNER_ADAGIO),
+	"holst-mars": pieceOf(MARS),
+};
+
+const PIECE_OF_CUE: Readonly<Record<SetPieceCue, SetPieceId>> = {
+	boot: "strauss-zarathustra",
+	newHull: "dvorak-largo",
+	capitalShip: "bruckner-7-adagio",
+};
+
+/** A cut is two of the piece's bars (D10), at its mean bar. */
+export const setPieceCutFadeS = (id: SetPieceId): number =>
+	(2 * SET_PIECES[id].seconds) / SET_PIECES[id].bars;
+
+/** Game time between two chance pieces (#589 D4's start value). */
+export const CHANCE_COOLDOWN_S = 25 * 60;
+
+/** Whether a chance piece may play now: the boot piece starts the clock, and
+ *  a page that played none has no clock running. */
+export const chanceCooldownOpen = (s: MusicState, gameTimeS: number): boolean =>
+	s.cooldownFromS === null || gameTimeS - s.cooldownFromS >= CHANCE_COOLDOWN_S;
+
+type PieceSlot = "piece-a" | "piece-b";
 
 /**
  * The waltz the game picked for the station the docking computer flies to
@@ -355,6 +426,11 @@ export const QUIET_READING: MusicReading = {
 	systemSeed: 1,
 	stationRole: null,
 	waltz: null,
+	wallDtS: 0,
+	gameTimeS: 0,
+	heard: true,
+	firsts: MUSIC_FIRSTS,
+	cue: null,
 };
 
 export function dangerLevel(
@@ -406,6 +482,14 @@ export interface MusicState {
 	 *  station's version (node #1324), with its cadence hold. */
 	readonly waltzKey: string | null;
 	readonly waltzHoldS: number;
+	readonly piece: SetPieceId | null;
+	readonly pieceSlot: PieceSlot | null;
+	readonly pieceS: number;
+	readonly pieceFallS: number;
+	readonly pieceClockS: number;
+	readonly pieceFreeAtS: Readonly<Record<PieceSlot, number>>;
+	readonly bootOwed: boolean;
+	readonly cooldownFromS: number | null;
 }
 
 export const initialMusicState = (): MusicState => ({
@@ -424,6 +508,14 @@ export const initialMusicState = (): MusicState => ({
 	waltzS: 0,
 	waltzKey: null,
 	waltzHoldS: 0,
+	piece: null,
+	pieceSlot: null,
+	pieceS: 0,
+	pieceFallS: 0,
+	pieceClockS: 0,
+	pieceFreeAtS: { "piece-a": 0, "piece-b": 0 },
+	bootOwed: false,
+	cooldownFromS: null,
 });
 
 const other = (id: FlightId | null): FlightId =>
@@ -519,17 +611,123 @@ function stepWaltz(
 	return { state: s, commands: cmds, done: false };
 }
 
+const rankThreat = () => rank("threat");
+
+function stepSetPiece(
+	state: MusicState,
+	r: MusicReading,
+	dt: number,
+	arms: MusicArms,
+): {
+	state: MusicState;
+	commands: MusicCommand[];
+	done: boolean;
+	played?: MusicFirst;
+} {
+	const cmds: MusicCommand[] = [];
+	const clock = state.pieceClockS + r.wallDtS;
+	let s: MusicState = { ...state, pieceClockS: clock };
+	const target = dangerLevel(r, arms);
+	const owned = r.scene === "flight" || r.scene === "docked";
+	if (s.piece !== null && s.pieceSlot !== null) {
+		const piece = s.piece;
+		const fallS =
+			piece === "holst-mars" && rank(target) < rankThreat()
+				? s.pieceFallS + (r.held ? 0 : dt)
+				: 0;
+		const cut =
+			arms.off ||
+			!owned ||
+			(piece !== "holst-mars" &&
+				r.scene === "flight" &&
+				rank(target) >= rankThreat()) ||
+			(piece === "holst-mars" && fallS >= FALL_HOLD_S);
+		const pieceS = s.pieceS + r.wallDtS;
+		if (cut) {
+			const fadeS = setPieceCutFadeS(piece);
+			cmds.push({ type: "stop", at: "now", fadeS });
+			s = {
+				...s,
+				piece: null,
+				pieceS: 0,
+				pieceFallS: 0,
+				pieceFreeAtS: { ...s.pieceFreeAtS, [s.pieceSlot]: clock + fadeS },
+			};
+		} else if (pieceS >= SET_PIECES[piece].seconds)
+			s = { ...s, piece: null, pieceS: 0, pieceFallS: 0 };
+		else
+			return {
+				state: { ...s, pieceS, pieceFallS: fallS },
+				commands: cmds,
+				done: true,
+			};
+	}
+	if (arms.off)
+		return { state: { ...s, bootOwed: false }, commands: cmds, done: false };
+	if (!owned || s.waltz !== "none")
+		return { state: s, commands: cmds, done: false };
+	const unheard = (id: SetPieceId) =>
+		r.heard && !r.firsts.includes(id as MusicFirst);
+	let start: SetPieceId | null = null;
+	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
+		start = "holst-mars";
+	else if (rank(target) >= rankThreat()) start = null;
+	else if (s.bootOwed) start = "strauss-zarathustra";
+	else if (r.cue !== null && r.cue !== "boot" && unheard(PIECE_OF_CUE[r.cue]))
+		start = PIECE_OF_CUE[r.cue];
+	if (start === null) return { state: s, commands: cmds, done: false };
+	const prefer: PieceSlot = s.pieceSlot === "piece-a" ? "piece-b" : "piece-a";
+	const other: PieceSlot = prefer === "piece-a" ? "piece-b" : "piece-a";
+	const slot =
+		[prefer, other].find((id) => s.pieceFreeAtS[id] <= clock) ?? null;
+	if (slot === null) return { state: s, commands: cmds, done: false };
+	cmds.push(
+		{ type: "load", id: slot, song: SET_PIECES[start].song },
+		{ type: "play", id: slot, at: "bar" },
+	);
+	const boot = start === "strauss-zarathustra";
+	return {
+		state: {
+			...s,
+			bed: "none",
+			piece: start,
+			pieceSlot: slot,
+			pieceS: 0,
+			pieceFallS: 0,
+			...(boot ? { bootOwed: false, cooldownFromS: r.gameTimeS } : {}),
+		},
+		commands: cmds,
+		done: true,
+		...(boot ? {} : { played: start as MusicFirst }),
+	};
+}
+
 export function stepMusic(
 	state: MusicState,
 	r: MusicReading,
 	dt: number,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
-): { state: MusicState; commands: MusicCommand[]; voice?: string } {
-	if (!r.ready) return { state, commands: [] };
-	const waltz = stepWaltz(state, r, dt, arms);
-	if (waltz.done) return { state: waltz.state, commands: waltz.commands };
+): {
+	state: MusicState;
+	commands: MusicCommand[];
+	voice?: string;
+	played?: MusicFirst;
+} {
+	const asked =
+		r.cue === "boot" && !state.bootOwed ? { ...state, bootOwed: true } : state;
+	if (!r.ready) return { state: asked, commands: [] };
+	const piece = stepSetPiece(asked, r, dt, arms);
+	const played = piece.played ? { played: piece.played } : {};
+	if (piece.done)
+		return { state: piece.state, commands: piece.commands, ...played };
+	const waltz = stepWaltz(piece.state, r, dt, arms);
+	if (waltz.done)
+		return {
+			state: waltz.state,
+			commands: [...piece.commands, ...waltz.commands],
+		};
 	let s = waltz.state;
-	const cmds = waltz.commands;
+	const cmds = [...piece.commands, ...waltz.commands];
 
 	// Before the hold: death holds the clock as the ship dies, and the fade is
 	// what it owes (D2).

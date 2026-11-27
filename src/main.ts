@@ -378,10 +378,13 @@ import {
 	musicArms,
 	numbersOn,
 	numbersRoom,
+	type SetPieceCue,
 	type StationWaltz,
 	stepMusic,
 	waltzDuckDb,
 } from "./music-director";
+import { type MusicFirst, withFirst } from "./music-firsts";
+import { bootPieceOwed, leaveBootMark, takeBootMark } from "./boot-piece";
 import {
 	COMMS_LINES,
 	type CommsLineId,
@@ -4652,6 +4655,7 @@ class Game {
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
 			this.scoopNotice = save.commander.scoopNotice;
+			this.musicFirsts = save.commander.musicFirsts;
 			this.ladders = save.commander.ladders;
 			this.txSeq = save.commander.txSeq;
 			// Explicit, though a restore builds a fresh `Game` and it is empty
@@ -7520,6 +7524,7 @@ class Game {
 	 * next launch and the ship stays the old hull in the old berth until then.
 	 */
 	private receiveHull(hull: HullId): void {
+		this.markMusicFirst("hull-bought");
 		const stationId = this.dock.stationId;
 		const berthId = this.dock.berthId;
 		if (this.dock.phase !== "docked" || !stationId || !berthId) {
@@ -9394,6 +9399,8 @@ class Game {
 			{ instanceOrdinal, voyageOrdinal: this.trafficVoyage(actor) },
 		);
 		this.saveDirty();
+		if (HULL_SPECS[actor.hullId].role === "capital")
+			this.setPieceCue = "capitalShip";
 	}
 
 	private surveyHold: SurveyHold = beginSurveyHold();
@@ -14696,6 +14703,11 @@ class Game {
 				this.setFlownHull(this.hullOnLaunch);
 				this.hullOnLaunch = null;
 			}
+			if (
+				this.musicFirsts.includes("hull-bought") &&
+				!this.musicFirsts.includes("dvorak-largo")
+			)
+				this.setPieceCue = "newHull";
 			// **This is where `dockedAt` becomes null**, so this is where the
 			// record stops describing a parked ship. Left to the debounce, a tab
 			// closed in the first moments of a launch reloaded as still parked —
@@ -17258,7 +17270,7 @@ class Game {
 	 * pilot's situation and sends the synth what to play. On a held clock too,
 	 * where it holds; and under the opening, which holds it as well.
 	 */
-	private stepMusicDirector(dt: number) {
+	private stepMusicDirector(dt: number, wallDtS: number) {
 		if (!this.waltzVersionsAsked) {
 			this.waltzVersionsAsked = true;
 			danubeVariants()
@@ -17307,11 +17319,18 @@ class Game {
 				systemSeed: this.world.system.record.seed,
 				stationRole: station?.type ?? null,
 				waltz: scene === "dockingComputer" ? this.dockingWaltz() : null,
+				wallDtS,
+				gameTimeS: this.world.gameTime,
+				heard: this.audio.audible("music"),
+				firsts: this.musicFirsts,
+				cue: this.setPieceCue,
 			},
 			dt,
 			DIRECTOR_ARMS,
 		);
+		this.setPieceCue = null;
 		this.musicState = step.state;
+		if (step.played) this.markMusicFirst(step.played);
 		for (const cmd of step.commands) this.music.send(cmd);
 		// The engine and thrusters sink under the waltz (#547 D5).
 		this.audio.duck(
@@ -17370,6 +17389,23 @@ class Game {
 	}
 	/** The director's memory: bed, level, its hold and the variant (#548). */
 	private musicState: MusicState = initialMusicState();
+
+	musicFirsts: readonly MusicFirst[] = [];
+	private setPieceCue: SetPieceCue | null = null;
+	private bootPieceCued = false;
+
+	cueBootPiece() {
+		if (this.bootPieceCued) return;
+		this.bootPieceCued = true;
+		this.setPieceCue = "boot";
+	}
+
+	private markMusicFirst(first: MusicFirst) {
+		const next = withFirst(this.musicFirsts, first);
+		if (next === this.musicFirsts) return;
+		this.musicFirsts = next;
+		this.saveDirty();
+	}
 
 	private waltzVersions: Readonly<Record<string, Song>> | null = null;
 	private waltzVersionsAsked = false;
@@ -20176,7 +20212,7 @@ class Game {
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
 		this.stepFlightSound(this.simulationHeld ? 0 : dt);
-		this.stepMusicDirector(this.simulationHeld ? 0 : dt);
+		this.stepMusicDirector(this.simulationHeld ? 0 : dt, dt);
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
 		this.audio.weapons(this.simulationHeld ? SILENT_WEAPONS : this.weaponMix);
@@ -21209,6 +21245,7 @@ class Game {
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
 			scoopNotice: this.scoopNotice,
+			musicFirsts: this.musicFirsts,
 			// The record with its basis brought into line with the hold. **A
 			// guard, not a known path**: today the one non-sale removal is a job
 			// hand-over, which reconciles as it settles.
@@ -25081,6 +25118,15 @@ if (postcard) {
 		notice: plan.notice,
 		seedPrefill: plan.seedPrefill,
 	});
+	let bootPieceAsked = false;
+	const sessionStore = () => {
+		try {
+			return window.sessionStorage;
+		} catch {
+			return null;
+		}
+	};
+	const bootMark = takeBootMark(sessionStore());
 	const mountOverlay = (): CommanderOverlayHandle => {
 		// #604: whether to download the natural voice, asked on the Commander
 		// screen at boot while the row says Ask — and under `?voices=ask` on a
@@ -25100,7 +25146,11 @@ if (postcard) {
 						// models are in. A reload mid-download would start them over;
 						// a finished one is cached under `public/_headers`' immutable
 						// rule for `/assets/*` (#834). The overlay stays busy until then.
-						reload: () => gate.ready().then(() => window.location.reload()),
+						reload: () =>
+							gate.ready().then((game) => {
+								leaveBootMark(sessionStore(), game.dead ? "skip" : "owed");
+								window.location.reload();
+							}),
 					}),
 			boot: overlayBoot(),
 			openAtBoot,
@@ -25133,6 +25183,7 @@ if (postcard) {
 							return messageOf(error);
 						}
 					}
+					leaveBootMark(sessionStore(), "skip");
 					window.location.reload();
 					return null;
 				}
@@ -25140,6 +25191,11 @@ if (postcard) {
 				if (fault === null) {
 					await beginFirstDay(plan.writesNothing ? null : slot);
 					game.clockHeld = false;
+					if (!bootPieceAsked) {
+						bootPieceAsked = true;
+						if (bootPieceOwed({ wake: plan.wake, mark: bootMark, click: true }))
+							game.cueBootPiece();
+					}
 				}
 				return fault;
 			},
@@ -25329,6 +25385,7 @@ if (postcard) {
 					: null;
 			if (restored && slot) {
 				await catalog.chooseCommander(slot);
+				leaveBootMark(sessionStore(), "skip");
 				window.location.reload();
 				return;
 			}
@@ -25424,6 +25481,8 @@ if (postcard) {
 		if (fault === null) {
 			await beginFirstDay(plan.slot);
 			game.clockHeld = false;
+			if (bootPieceOwed({ wake: plan.wake, mark: bootMark, click: false }))
+				game.cueBootPiece();
 		} else {
 			plan = withLockFault(plan, fault);
 			openAtBoot = true;
