@@ -350,7 +350,10 @@ test("Equipment previews the candidate before purchase and the fitted weapon oth
 	expect(installed).toContain("STATION STOCK · H1");
 	expect(installed).not.toContain("No compatible modules here.");
 	expect(installed).not.toContain("FITTINGS IN HOLD");
-	expect(installed).not.toContain("moves to the hold");
+	expect(installed).toContain("compare.</b></div>");
+	expect(installed).toMatch(
+		/<\/div>\s*<\/div><\/section><section><h3>STATION STOCK/,
+	);
 
 	i.commander.credits = 100_000;
 	i.commander.recoveredFittings = [carriedModule(makeModule("beam-laser", 1))];
