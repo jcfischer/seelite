@@ -147,3 +147,15 @@ describe("a part's defaults", () => {
 		expect(pad.level).toBe(0.5);
 	});
 });
+
+describe("sample sets (node #1325)", () => {
+	test("a removed set is no longer held, and the others are", () => {
+		const b = bank();
+		const set = { rate: SR, gain: 1, layers: [] };
+		b.addSamples("s", set);
+		b.addSamples("t", set);
+		expect(b.hasSamples("s")).toBe(true);
+		b.removeSamples("s");
+		expect([b.hasSamples("s"), b.hasSamples("t")]).toEqual([false, true]);
+	});
+});

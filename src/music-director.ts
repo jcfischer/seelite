@@ -67,6 +67,7 @@ import {
 	danubeSong,
 } from "./music-danube";
 import type { MusicCommand, Song } from "./music-score";
+import { setsOf } from "./music-samples";
 import { beatSeconds, bpmAt } from "./music-sequencer";
 import { mix, seededRand } from "./rng";
 import type { StationType } from "./station";
@@ -406,6 +407,7 @@ export interface MusicState {
 	 *  station's version (node #1324), with its cadence hold. */
 	readonly waltzKey: string | null;
 	readonly waltzHoldS: number;
+	readonly samplesKey: string | null;
 }
 
 export const initialMusicState = (): MusicState => ({
@@ -424,6 +426,7 @@ export const initialMusicState = (): MusicState => ({
 	waltzS: 0,
 	waltzKey: null,
 	waltzHoldS: 0,
+	samplesKey: null,
 });
 
 const other = (id: FlightId | null): FlightId =>
@@ -519,13 +522,53 @@ function stepWaltz(
 	return { state: s, commands: cmds, done: false };
 }
 
+/** What the director asks of the sample loader: load a song's sets, or let
+ *  every set go (node #1325). */
+export type SampleOrder = { load: Song } | { release: true };
+
+export interface MusicStep {
+	state: MusicState;
+	commands: MusicCommand[];
+	voice?: string;
+	samples?: SampleOrder;
+}
+
+function stepSamples(
+	s: MusicState,
+	r: MusicReading,
+	arms: MusicArms,
+): { state: MusicState; samples?: SampleOrder } {
+	if (r.scene === "docked") return { state: s };
+	const sampled = r.waltz && setsOf(r.waltz.song).length > 0 ? r.waltz : null;
+	const armed = r.scene === "dockingComputer" && !arms.off;
+	if (armed && sampled && s.samplesKey !== sampled.version)
+		return {
+			state: { ...s, samplesKey: sampled.version },
+			samples: { load: sampled.song },
+		};
+	if (!armed && s.samplesKey !== null)
+		return { state: { ...s, samplesKey: null }, samples: { release: true } };
+	return { state: s };
+}
+
 export function stepMusic(
 	state: MusicState,
 	r: MusicReading,
 	dt: number,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
-): { state: MusicState; commands: MusicCommand[]; voice?: string } {
+): MusicStep {
 	if (!r.ready) return { state, commands: [] };
+	const beds = stepBeds(state, r, dt, arms);
+	const sampled = stepSamples(beds.state, r, arms);
+	return { ...beds, state: sampled.state, samples: sampled.samples };
+}
+
+function stepBeds(
+	state: MusicState,
+	r: MusicReading,
+	dt: number,
+	arms: MusicArms,
+): Omit<MusicStep, "samples"> {
 	const waltz = stepWaltz(state, r, dt, arms);
 	if (waltz.done) return { state: waltz.state, commands: waltz.commands };
 	let s = waltz.state;

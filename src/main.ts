@@ -17312,6 +17312,10 @@ class Game {
 			DIRECTOR_ARMS,
 		);
 		this.musicState = step.state;
+		if (step.samples) {
+			if ("load" in step.samples) this.music.preload(step.samples.load);
+			else this.music.releaseSamples();
+		}
 		for (const cmd of step.commands) this.music.send(cmd);
 		// The engine and thrusters sink under the waltz (#547 D5).
 		this.audio.duck(

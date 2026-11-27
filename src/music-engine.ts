@@ -310,6 +310,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			case "samples":
 				this.bank.addSamples(cmd.set, cmd.bank);
 				return;
+			case "release":
+				this.bank.removeSamples(cmd.set);
+				return;
 		}
 	}
 
