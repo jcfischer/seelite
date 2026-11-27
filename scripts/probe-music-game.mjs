@@ -248,9 +248,9 @@ try {
 		await game.reload();
 		await again;
 		await bootedGame(game);
-		await game.keyboard.press("F8");
+		await game.mouse.click(2, 2);
 		const before = await settle();
-		await game.keyboard.press("Enter");
+		await game.click('#seelite-commander [data-kind="continue"]');
 		const after = await settle();
 		check(
 			"a reload plays no piece until Continue is clicked, and the click plays Zarathustra (#589 D3)",
@@ -258,7 +258,7 @@ try {
 				before.piece === null &&
 				after.piece === "strauss-zarathustra" &&
 				after.errors.length === 0,
-			`before the click ${before.piece}; after ${after.piece} (${after.song}); errors ${after.errors.join("; ") || 0}`,
+			`ready ${before.ready}; before the click ${before.piece}; after ${after.piece} (${after.song}); errors ${after.errors.join("; ") || 0}`,
 		);
 		await game.close();
 	}

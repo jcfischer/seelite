@@ -743,6 +743,11 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 		expect(loads(out.steps[5].commands)).toEqual([ZARATHUSTRA.name]);
 	});
 
+	test("danger read while docked does not hold back a piece: the ladder is flight's", () => {
+		const out = run([[1, { ...docked, sinceStruckS: 0, cue: "boot" }]]);
+		expect(loads(out.commands)).toEqual([ZARATHUSTRA.name]);
+	});
+
 	test("the boot plays over the opening, which holds the clock (#771 Q3)", () => {
 		const out = run([[1, { ...fresh, held: true, cue: "boot" }]]);
 		expect(loads(out.commands)).toEqual([ZARATHUSTRA.name]);

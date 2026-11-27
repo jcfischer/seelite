@@ -671,7 +671,7 @@ function stepSetPiece(
 	let start: SetPieceId | null = null;
 	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
 		start = "holst-mars";
-	else if (rank(target) >= rankThreat()) start = null;
+	else if (r.scene === "flight" && rank(target) >= rankThreat()) start = null;
 	else if (s.bootOwed) start = "strauss-zarathustra";
 	else if (r.cue !== null && r.cue !== "boot" && unheard(PIECE_OF_CUE[r.cue]))
 		start = PIECE_OF_CUE[r.cue];
