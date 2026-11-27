@@ -28,10 +28,7 @@ export function leaveBootMark(
 	try {
 		// Stryker disable next-line OptionalChaining: a null store throws into the catch below, which ends the call the same way
 		store?.setItem(BOOT_PIECE_KEY, mark);
-		// Stryker disable next-line BlockStatement: the catch ends the call, and so does an empty one
-	} catch {
-		return;
-	}
+	} catch {}
 }
 
 /** Read once per page, at boot; the mark is taken whatever it says. */

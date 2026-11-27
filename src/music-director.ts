@@ -156,9 +156,8 @@ export const SET_PIECES: Readonly<
 	"holst-mars": pieceOf(MARS),
 };
 
-const FIRST_OF_CUE: Readonly<
-	Record<Exclude<SetPieceCue, "boot">, FirstPieceId>
-> = {
+const FIRST_OF_CUE: Readonly<Record<SetPieceCue, FirstPieceId | null>> = {
+	boot: null,
 	newHull: "dvorak-largo",
 	capitalShip: "bruckner-7-adagio",
 };
@@ -687,14 +686,13 @@ function startPiece(
 	if (arms.off) return { ...none, state: { ...s, bootOwed: false } };
 	if (!ownsScene(r) || s.waltz !== "none") return none;
 	const unheard = (id: FirstPieceId) => r.heard && !r.firsts.includes(id);
+	const cued = r.cue === null ? null : FIRST_OF_CUE[r.cue];
 	let start: SetPieceId | null = null;
 	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
 		start = "holst-mars";
 	else if (tenseInFlight(r, target)) start = null;
 	else if (s.bootOwed) start = "strauss-zarathustra";
-	// Stryker disable next-line ConditionalExpression,StringLiteral: a boot cue has already set bootOwed, so the branch above takes it first
-	else if (r.cue !== null && r.cue !== "boot" && unheard(FIRST_OF_CUE[r.cue]))
-		start = FIRST_OF_CUE[r.cue];
+	else if (cued !== null && unheard(cued)) start = cued;
 	if (start === null) return none;
 	const prefer: PieceSlot = s.pieceSlot === "piece-a" ? "piece-b" : "piece-a";
 	const fallback: PieceSlot = prefer === "piece-a" ? "piece-b" : "piece-a";

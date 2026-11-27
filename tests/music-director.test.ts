@@ -1028,6 +1028,27 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 		expect(out.state.piece).toBeNull();
 	});
 
+	test("from either slot, a piece goes back to its own when the other is still fading", () => {
+		const out = run([
+			[0.1, { ...docked, cue: "boot" }],
+			[0.1, { ...docked, scene: "witchspace" }],
+			[0.1, { ...docked, cue: "capitalShip" }],
+			[0.1, { ...docked, scene: "witchspace" }],
+			[8, fresh],
+			[0.1, combat],
+			[0.1, { ...combat, scene: "witchspace" }],
+			[4, docked],
+			[0.1, { ...docked, cue: "newHull" }],
+		]);
+		expect(pieceLoads(out.commands)).toEqual([
+			"piece-a",
+			"piece-b",
+			"piece-a",
+			"piece-a",
+		]);
+		expect(out.state.piece).toBe("dvorak-largo");
+	});
+
 	test("a piece goes back to its own slot when the other is still fading", () => {
 		const out = run([
 			[0.1, { ...fresh, cue: "boot" }],

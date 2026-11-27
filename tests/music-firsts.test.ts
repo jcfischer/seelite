@@ -20,6 +20,17 @@ describe("the saved firsts (#589 D13)", () => {
 		expect(() => parseMusicFirsts("holst-mars")).toThrow("not an array");
 	});
 
+	test("a record without the field has heard none", () => {
+		expect(parseMusicFirsts(undefined)).toEqual([]);
+	});
+
+	test("a saved set reads back in the set's own order", () => {
+		expect(parseMusicFirsts(["holst-mars", "hull-bought"])).toEqual([
+			"hull-bought",
+			"holst-mars",
+		]);
+	});
+
 	test("adding a first already there changes nothing", () => {
 		const once = withFirst([], "dvorak-largo");
 		expect(withFirst(once, "dvorak-largo")).toBe(once);
