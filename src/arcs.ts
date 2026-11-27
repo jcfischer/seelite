@@ -116,6 +116,11 @@ interface Cand {
 	flownLy: number;
 }
 
+const boardRow = (offer: JobOffer | null): offer is JobOffer =>
+	offer !== null &&
+	// Stryker disable next-line ConditionalExpression: the board binds only Courier, Procurement and Bounty, so this drops none
+	refuseStep(offer) === null;
+
 const keyOf = (record: SystemRecord, station: Station): CarrierKey =>
 	carrierKey(record.index, station.localCarrierId);
 
@@ -149,9 +154,6 @@ class Planner {
 		return c;
 	}
 
-	/** The systems one hop may reach, this one first. The order is not a
-	 *  preference: `candidates` sorts its offers totally, so the answer does not
-	 *  depend on it. */
 	reach(record: SystemRecord): SystemRecord[] {
 		let list = this.neighbourhoods.get(record.index);
 		// Stryker disable next-line ConditionalExpression: the cache saves a second walk only; a miss walks the same systems
@@ -192,7 +194,7 @@ class Planner {
 		};
 		const offers = canPostJobs(station)
 			? [bindCourier(ctx), bindProcurement(ctx), bindBounty(ctx)].filter(
-					(o): o is JobOffer => o !== null && refuseStep(o) === null,
+					boardRow,
 				)
 			: [];
 		// Stryker disable next-line CallExpression: a miss that files nothing rebinds the same offers
@@ -219,7 +221,7 @@ class Planner {
 					a.offer.requester.carrierKey,
 					b.offer.requester.carrierKey,
 				) ||
-				(a.offer.id < b.offer.id ? -1 : 1),
+				a.offer.id.localeCompare(b.offer.id),
 		);
 	}
 
@@ -266,14 +268,19 @@ export const systemsOf = (steps: readonly ArcStep[]): Set<number> => {
 	return s;
 };
 
-/** The whole-arc lengths D10 admits, shortest first. A route is only accepted
- *  at one of these totals, so a plan past `ARC_MAX_STEPS` is never built. */
 const ARC_LENGTHS: readonly number[] = [
 	ARC_MIN_STEPS,
 	ARC_MIN_STEPS + 1,
 	ARC_MIN_STEPS + 2,
 	ARC_MAX_STEPS,
 ];
+
+const preferredFirst = (cands: Cand[], id: string | undefined): Cand[] => {
+	const i = cands.findIndex((c) => c.offer.id === id);
+	// Stryker disable next-line EqualityOperator: a rebuild at index 0 is the same list
+	if (i < 0) return cands;
+	return [cands[i], ...cands.slice(0, i), ...cands.slice(i + 1)];
+};
 
 function route(
 	planner: Planner,
@@ -285,14 +292,11 @@ function route(
 		const remaining = total - taken.length;
 		if (remaining < 1) continue;
 		const used = new Set<CarrierKey>(taken.map((s) => s.requester.carrierKey));
-		const found = search(planner, {
-			taken,
-			pos: start,
-			remaining,
-			used,
-			path: [],
-			prefer,
-		});
+		const found = search(
+			planner,
+			{ taken, pos: start, remaining, used, path: [] },
+			preferredFirst(planner.candidates(start, used), prefer),
+		);
 		if (found) return found;
 	}
 	return null;
@@ -304,13 +308,16 @@ interface SearchState {
 	remaining: number;
 	used: Set<CarrierKey>;
 	path: Cand[];
-	prefer: string | undefined;
 }
 
-function search(planner: Planner, state: SearchState): Cand[] | null {
-	const { taken, pos, remaining, used, path, prefer } = state;
-	const cands = planner.candidates(pos, used);
+function search(
+	planner: Planner,
+	state: SearchState,
+	cands: Cand[],
+): Cand[] | null {
+	const { taken, remaining, used, path } = state;
 	const sofar = [...taken, ...path.map((c) => stepOf(c.offer, c.flownLy))];
+	// Stryker disable next-line EqualityOperator: a search never starts with fewer than one step left
 	if (remaining === 1) {
 		for (const c of cands) {
 			if (!planner.isAnswer(c.offer)) continue;
@@ -324,23 +331,21 @@ function search(planner: Planner, state: SearchState): Cand[] | null {
 		return null;
 	}
 	const mids = cands.filter((c) => !planner.isAnswer(c.offer));
-	if (path.length === 0 && prefer) {
-		const i = mids.findIndex((c) => c.offer.id === prefer);
-		// Stryker disable next-line EqualityOperator: moving the first candidate to the front is the same list
-		if (i > 0) mids.unshift(...mids.splice(i, 1));
-	}
 	let tried = 0;
 	for (const c of mids) {
 		if (tried++ >= BRANCH_LIMIT) break;
 		used.add(c.offer.requester.carrierKey);
-		const found = search(planner, {
-			taken,
-			pos: reportSystem(c.offer),
-			remaining: remaining - 1,
-			used,
-			path: [...path, c],
-			prefer,
-		});
+		const found = search(
+			planner,
+			{
+				taken,
+				pos: reportSystem(c.offer),
+				remaining: remaining - 1,
+				used,
+				path: [...path, c],
+			},
+			planner.candidates(reportSystem(c.offer), used),
+		);
 		used.delete(c.offer.requester.carrierKey);
 		if (found) return found;
 	}
@@ -352,10 +357,9 @@ interface Deficit {
 	units: number;
 }
 
+// Stryker disable next-line ObjectLiteral, StringLiteral: every market lists a legal tonne good, so this fallback is never returned
 const NO_DEFICIT: Deficit = { good: "", units: 0 };
 
-/** The largest deficit a legal tonne good has at this station, decayed to the
- *  clock. A market that lists no such good has no deficit to note. */
 const deficitOfNote = (
 	world: ArcWorld,
 	record: SystemRecord,
@@ -384,8 +388,6 @@ const kindOrder = (
 	const kinds: QuestionKind[] = [];
 	if (raiders) kinds.push("raiders-on-route");
 	if (shortage) kinds.push("unexplained-shortage");
-	// The coin picks which question a place asks when it could ask both;
-	// reversing a single kind is that kind, so no count is read here.
 	const coin =
 		mix(mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS), 77) &
 		1;

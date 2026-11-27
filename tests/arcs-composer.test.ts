@@ -17,6 +17,7 @@ import { type DeficitMap, recordTrade } from "../src/deficits";
 import { generateGalaxy, type SystemRecord } from "../src/galaxy";
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
 import { canPostJobs } from "../src/jobs";
+import { marketStationOf, stationCommodities } from "../src/market";
 import { bountyTargetOf } from "../src/pirate-relay";
 import { type Station, generateContents } from "../src/system";
 import { newWorld } from "../src/world-state";
@@ -25,8 +26,6 @@ const BASE = 0x5ee11e;
 const JUMP = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 const HOLD = HULL_SPECS[PLAYER_BASELINE_HULL].holdT;
 
-/** The world `scripts/measure-arcs.ts` sweeps: a generated galaxy, a relay
- *  environment and the baseline hull's reach and hold. */
 const sweepWorld = (seed: number, deficits: DeficitMap = {}): ArcWorld => {
 	const galaxy = generateGalaxy(seed, 0);
 	const env = newWorld(seed).galaxies[0];
@@ -103,13 +102,12 @@ export const playLine = (seed: number): string => {
 		arc = recordStep(arc, next);
 	}
 	const openingText = `${arc.kind}|${arc.question}|${arc.requester.carrierKey}|${arc.requesterName}|${arc.answerFamily}|${arc.answerPayoutCr}|${arc.foreseen.join(",")}`;
-	const families = [...new Set(arc.taken.map((s) => s.family))].sort().join("+");
+	const families = [...new Set(arc.taken.map((s) => s.family))]
+		.sort()
+		.join("+");
 	return `${seed}|opened|${openingText}|${steps.join(";")}|${families}|${systemsOf(arc.taken).size}|${flownLyOf(arc).toFixed(4)}|drift:${drift.join(";")}`;
 };
 
-/** The seeds `scripts/measure-arcs.ts` sweeps, pinned. They are the D10
- *  evidence: both question kinds, arcs of three, four and five steps, and the
- *  worlds where no route answers the question. */
 const SWEPT_SEEDS = [
 	6218014, 6218016, 6218017, 6218018, 6218020, 6218022, 6218025, 6218027,
 	6218030, 6218033, 6218037, 6218040, 6218042, 6218045, 6218047, 6218050,
@@ -153,8 +151,6 @@ describe("the pinned sweep", () => {
 	});
 });
 
-/** Three systems on an equilateral triangle 3.5 ly a side: each reaches the
- *  other two and nothing else at a 4 ly jump. */
 const TRIANGLE = [
 	[0, 0, 0],
 	[3.5, 0, 0],
@@ -171,30 +167,28 @@ interface Mini {
 	deficitT?: number;
 	deficitAt?: (index: number) => number;
 	bountyAt?: readonly number[];
-	/** Moves the station's own draws, so a second world at the same place has a
-	 *  different coin and berth seed. */
-	salt?: number;
-	/** The stations a system carries; the default is its one trade station. */
+	drawSalt?: number;
 	stationsAt?: (index: number, trade: Station) => Station[];
-	/** Replaces the stocked shelf a system gets by default. */
-	goodsAt?: (index: number) => Record<string, number>;
+	shelfAt?: (index: number) => Record<string, number>;
 }
 
-/** A system placed on the x axis, one trade station each, and (by default) a
- *  stocked shelf everywhere so procurement binds. */
 const mini = (
 	positions: readonly (readonly [number, number, number])[],
 	options: Mini = {},
-): { systems: SystemRecord[]; world: ArcWorld; stationOf: (i: number) => Station } => {
+): {
+	systems: SystemRecord[];
+	world: ArcWorld;
+	stationOf: (i: number) => Station;
+} => {
 	const {
 		government = 4,
 		jump = 4,
 		deficitT = 12,
 		deficitAt = () => deficitT,
 		bountyAt = [],
-		salt = 0,
+		drawSalt = 0,
 		stationsAt,
-		goodsAt,
+		shelfAt,
 	} = options;
 	const systems = positions.map((pos, index) => ({
 		...generateGalaxy(BASE, 0).systems[index + 1],
@@ -207,8 +201,8 @@ const mini = (
 		...TRADE,
 		localCarrierId: `mini-${index}`,
 		name: `MINI ${index} TRADE`,
-		berthSeed: TRADE.berthSeed + salt,
-		assemblySeed: TRADE.assemblySeed + salt,
+		berthSeed: TRADE.berthSeed + drawSalt,
+		assemblySeed: TRADE.assemblySeed + drawSalt,
 	});
 	const contents = (record: SystemRecord) => ({
 		...generateContents(record),
@@ -218,15 +212,18 @@ const mini = (
 	});
 	const deficits: DeficitMap = {};
 	for (const record of systems) {
-		const goods = goodsAt?.(record.index) ?? { Food: deficitAt(record.index) };
+		const goods = shelfAt?.(record.index) ?? {
+			Food: deficitAt(record.index),
+		};
 		const row: Record<string, number> = {};
 		for (const [good, units] of Object.entries(goods))
 			if (units > 0) row[good] = units;
 		if (Object.keys(row).length === 0) continue;
-		deficits[carrierKey(record.index, stationOf(record.index).localCarrierId)] = {
-			goods: row,
-			updatedAt: 0,
-		};
+		deficits[carrierKey(record.index, stationOf(record.index).localCarrierId)] =
+			{
+				goods: row,
+				updatedAt: 0,
+			};
 	}
 	const targets = new Set(bountyAt);
 	const world: ArcWorld = {
@@ -251,7 +248,10 @@ const mini = (
 
 describe("openArc's refusals", () => {
 	test("a station that posts no work is refused by name", () => {
-		const { systems, world, stationOf } = mini([[0, 0, 0], [3, 0, 0]]);
+		const { systems, world, stationOf } = mini([
+			[0, 0, 0],
+			[3, 0, 0],
+		]);
 		const outpost: Station = {
 			...stationOf(0),
 			type: "outpost",
@@ -264,12 +264,15 @@ describe("openArc's refusals", () => {
 	});
 
 	test("a system at peace with a full shelf has no question to ask", () => {
-		const { systems, world, stationOf } = mini([
-			[0, 0, 0],
-			[3, 0, 0],
-			[6, 0, 0],
-			[9, 0, 0],
-		], { deficitT: 0 });
+		const { systems, world, stationOf } = mini(
+			[
+				[0, 0, 0],
+				[3, 0, 0],
+				[6, 0, 0],
+				[9, 0, 0],
+			],
+			{ deficitT: 0 },
+		);
 		expect(openArc(world, systems[0], stationOf(0))).toEqual({
 			ok: false,
 			reason: "MINI 0 TRADE has no question to ask",
@@ -289,9 +292,24 @@ describe("openArc's refusals", () => {
 });
 
 describe("the question kinds", () => {
+	test("every market station lists a legal tonne good, so a deficit has a good to name", () => {
+		for (const seed of [BASE, BASE + 1, BASE + 2]) {
+			for (const record of generateGalaxy(seed, 0).systems) {
+				for (const station of generateContents(record).stations) {
+					if (!canPostJobs(station)) continue;
+					const listed = stationCommodities(
+						marketStationOf(station, record.seed),
+					);
+					expect(
+						listed.some((c) => !c.illegal && c.unit === "t"),
+						`${record.name} ${station.name}`,
+					).toBe(true);
+				}
+			}
+		}
+	});
+
 	test("raiders open where the leg chance is at least the midpoint", () => {
-		// raiderLegChance(3) is 0.4286, above the 0.4 midpoint; government 4 is
-		// 0.3714, below it.
 		const violent = mini(TRIANGLE, {
 			government: 3,
 			bountyAt: [0],
@@ -326,7 +344,7 @@ describe("the question kinds", () => {
 				government: 3,
 				bountyAt: [0],
 				deficitT: 12,
-				salt,
+				drawSalt: salt,
 			});
 			const opened = openArc(both.world, both.systems[0], both.stationOf(0));
 			if (!opened.ok) throw new Error(`no arc for salt ${salt}`);
@@ -340,7 +358,11 @@ describe("the question kinds", () => {
 
 	test("a shortage opens at twice the procurement floor and not a tonne under", () => {
 		const atFloor = mini(TRIANGLE, { deficitT: 8 });
-		const opened = openArc(atFloor.world, atFloor.systems[0], atFloor.stationOf(0));
+		const opened = openArc(
+			atFloor.world,
+			atFloor.systems[0],
+			atFloor.stationOf(0),
+		);
 		expect(opened.ok && opened.arc.kind).toBe("unexplained-shortage");
 		expect(opened.ok && opened.arc.answerFamily).toBe("procurement");
 
@@ -372,7 +394,10 @@ describe("the question kinds", () => {
 		const key = carrierKey(0, "mini-0");
 		const tied: ArcWorld = {
 			...world,
-			deficits: { ...world.deficits, [key]: { goods: { Food: 12, Machinery: 12 }, updatedAt: 0 } },
+			deficits: {
+				...world.deficits,
+				[key]: { goods: { Food: 12, Machinery: 12 }, updatedAt: 0 },
+			},
 		};
 		const opened = openArc(tied, systems[0], stationOf(0));
 		expect(opened.ok && opened.arc.question).toBe(
@@ -390,16 +415,15 @@ describe("steps a station cannot post", () => {
 			name: "MINI 1 OUTPOST",
 		};
 		const world = mini(TRIANGLE, {
-			stationsAt: (index, trade) =>
-				index === 1 ? [trade, outpost] : [trade],
+			stationsAt: (index, trade) => (index === 1 ? [trade, outpost] : [trade]),
 		});
 		const opened = openArc(world.world, world.systems[0], world.stationOf(0));
 		expect(opened.ok).toBe(true);
 		const next = opened.ok ? nextStep(opened.arc, world.world) : null;
 		expect(next?.kind).toBe("step");
-		expect(
-			next?.kind === "step" && next.offer.requester.carrierKey,
-		).not.toBe(carrierKey(1, "mini-1-outpost"));
+		expect(next?.kind === "step" && next.offer.requester.carrierKey).not.toBe(
+			carrierKey(1, "mini-1-outpost"),
+		);
 	});
 });
 
@@ -419,7 +443,7 @@ describe("the arcs D10 refuses", () => {
 		};
 		const oneSystem = mini([[0, 0, 0]], {
 			stationsAt: (_index, trade) => [trade, refinery, shipyard],
-			goodsAt: () => ({ Food: 12 }),
+			shelfAt: () => ({ Food: 12 }),
 		});
 		expect(
 			openArc(oneSystem.world, oneSystem.systems[0], oneSystem.stationOf(0)),
@@ -458,6 +482,19 @@ describe("the arcs D10 refuses", () => {
 	});
 });
 
+describe("two rows at one desk", () => {
+	test("a tie on distance is broken by the offer id, so the plan is the same every run", () => {
+		const world = mini(TRIANGLE, { bountyAt: [1] });
+		const opened = openArc(world.world, world.systems[0], world.stationOf(0));
+		if (!opened.ok) throw new Error("no arc");
+		expect(opened.arc.foreseen).toEqual([
+			"request-v1/0/1/mini-1/bounty-1",
+			"request-v1/0/2/mini-2/procurement-1",
+			"request-v1/0/0/mini-0/procurement-1",
+		]);
+	});
+});
+
 describe("nextStep's plan", () => {
 	test("the first step is the nearest offer, and its budget reaches the reported station", () => {
 		const { record, station, world } = seededWorld(6218014);
@@ -467,7 +504,9 @@ describe("nextStep's plan", () => {
 		if (first.kind !== "step") throw new Error("no step");
 		expect(first.rerouted).toBe(false);
 		expect(first.flownLy).toBe(0);
-		expect(systemIndexOfKey(first.offer.requester.carrierKey)).toBe(record.index);
+		expect(systemIndexOfKey(first.offer.requester.carrierKey)).toBe(
+			record.index,
+		);
 	});
 
 	test("a world that lost the planned step reroutes to one that still binds", () => {
@@ -503,7 +542,10 @@ describe("nextStep's plan", () => {
 		if (!opening.ok) throw new Error("no arc");
 		const elsewhere = {
 			...opening.arc,
-			requester: { ...opening.arc.requester, carrierKey: carrierKey(9999, "x") },
+			requester: {
+				...opening.arc.requester,
+				carrierKey: carrierKey(9999, "x"),
+			},
 		};
 		expect(() => nextStep(elsewhere, world)).toThrow("arcs: no system 9999");
 	});
@@ -597,7 +639,9 @@ describe("nextStep's plan", () => {
 			"answer",
 		);
 		const own = { ...step, requester: opening.arc.requester };
-		expect(nextStep({ ...opening.arc, taken: [own] }, world).kind).toBe("answer");
+		expect(nextStep({ ...opening.arc, taken: [own] }, world).kind).toBe(
+			"answer",
+		);
 	});
 
 	test("the plan keeps its foreseen step when a nearer one appears", () => {
@@ -649,7 +693,10 @@ describe("the arc's shape", () => {
 		if (!opening.ok) throw new Error("no arc");
 		const first = nextStep(opening.arc, world);
 		if (first.kind !== "step") throw new Error("no step");
-		expect(flownLyOf(recordStep(opening.arc, first))).toBeCloseTo(first.flownLy, 10);
+		expect(flownLyOf(recordStep(opening.arc, first))).toBeCloseTo(
+			first.flownLy,
+			10,
+		);
 		expect(flownLyOf(opening.arc)).toBe(0);
 	});
 
