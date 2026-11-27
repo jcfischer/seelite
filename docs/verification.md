@@ -30,6 +30,15 @@ owners; URL references without an owner still expand to all.
 `src/courier-cockpit-viewer.ts` name their spike assets by URL, so those stay
 runtime. `isStudyFile` in `scripts/lib/probe-impact.mjs` owns the rule.
 
+A source file the head adds that no other file in the head reaches, by import
+or by an `import.meta.glob` prefix, cannot change what a page or probe loads,
+so it selects smoke and does not count as ownerless. Node #1341 added
+`src/arcs.ts`, reached only by its tests and a measurement script, and its PR
+ran all 134 probes until ranger's 150-minute limit killed the run. A file the
+base already has is never exempt, because HTML page entries sit outside the
+snapshot. A diff that changes HTML stays ownerless and expands to all.
+`unreachedNewSources` in `scripts/lib/probe-impact.mjs` owns the rule.
+
 The PR runner requires a clean checkout at the selected HEAD. Its printed base
 and head identify the evidence. Re-run selection after changing the diff or
 merging main. No service or credential is required for git-based selection.

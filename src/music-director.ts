@@ -72,6 +72,7 @@ import { MARS } from "./music-classical/holst-mars";
 import { ZARATHUSTRA } from "./music-classical/strauss-zarathustra";
 import { MUSIC_FIRSTS, type MusicFirst } from "./music-firsts";
 import type { MusicCommand, Song } from "./music-score";
+import { setsOf } from "./music-samples";
 import { beatSeconds, bpmAt } from "./music-sequencer";
 import { mix, seededRand } from "./rng";
 import type { StationType } from "./station";
@@ -490,6 +491,7 @@ export interface MusicState {
 	readonly pieceFreeAtS: Readonly<Record<PieceSlot, number>>;
 	readonly bootOwed: boolean;
 	readonly cooldownFromS: number | null;
+	readonly samplesKey: string | null;
 }
 
 export const initialMusicState = (): MusicState => ({
@@ -516,6 +518,7 @@ export const initialMusicState = (): MusicState => ({
 	pieceFreeAtS: { "piece-a": 0, "piece-b": 0 },
 	bootOwed: false,
 	cooldownFromS: null,
+	samplesKey: null,
 });
 
 const other = (id: FlightId | null): FlightId =>
@@ -733,21 +736,57 @@ function stepSetPiece(
 	return { ...next, commands: [...going.commands, ...next.commands] };
 }
 
+/** What the director asks of the sample loader: load a song's sets, or let
+ *  every set go (node #1325). */
+export type SampleOrder = { load: Song } | { release: true };
+
+export interface MusicStep {
+	state: MusicState;
+	commands: MusicCommand[];
+	voice?: string;
+	samples?: SampleOrder;
+	played?: MusicFirst;
+}
+
+function stepSamples(
+	s: MusicState,
+	r: MusicReading,
+	arms: MusicArms,
+): { state: MusicState; samples?: SampleOrder } {
+	if (r.scene === "docked") return { state: s };
+	const sampled = r.waltz && setsOf(r.waltz.song).length > 0 ? r.waltz : null;
+	const armed = r.scene === "dockingComputer" && !arms.off;
+	if (armed && sampled && s.samplesKey !== sampled.version)
+		return {
+			state: { ...s, samplesKey: sampled.version },
+			samples: { load: sampled.song },
+		};
+	if (!armed && s.samplesKey !== null)
+		return { state: { ...s, samplesKey: null }, samples: { release: true } };
+	return { state: s };
+}
+
 export function stepMusic(
 	state: MusicState,
 	r: MusicReading,
 	dt: number,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
-): {
-	state: MusicState;
-	commands: MusicCommand[];
-	voice?: string;
-	played?: MusicFirst;
-} {
+): MusicStep {
 	const asked =
 		r.cue === "boot" && !state.bootOwed ? { ...state, bootOwed: true } : state;
 	if (!r.ready) return { state: asked, commands: [] };
-	const piece = stepSetPiece(asked, r, dt, arms);
+	const beds = stepBeds(asked, r, dt, arms);
+	const sampled = stepSamples(beds.state, r, arms);
+	return { ...beds, state: sampled.state, samples: sampled.samples };
+}
+
+function stepBeds(
+	state: MusicState,
+	r: MusicReading,
+	dt: number,
+	arms: MusicArms,
+): Omit<MusicStep, "samples"> {
+	const piece = stepSetPiece(state, r, dt, arms);
 	const played = piece.played ? { played: piece.played } : {};
 	if (piece.done)
 		return { state: piece.state, commands: piece.commands, ...played };

@@ -169,6 +169,8 @@ import {
 	makeModule,
 	moduleRow,
 } from "./loadout";
+import { fitExterior } from "./hardpoint-exterior";
+import { registerFittingPreview } from "./hardpoint-preview";
 import { outfittingScreen } from "./outfitting";
 import {
 	commanderFuelCapacityLy,
@@ -5094,6 +5096,7 @@ class Game {
 		// that box in the top-left corner while the CSS stretches nothing.
 		this.sizeOverlay();
 		this.hud = document.getElementById("hud") as HTMLElement;
+		registerFittingPreview();
 		this.liveCockpit = new LiveCockpit({
 			/**
 			 * A `Controls` row opens the rebind modal on it (#381 S4).
@@ -6933,6 +6936,16 @@ class Game {
 		this.layers.set(body.id, layer);
 	}
 
+	private fitShipExterior(root: THREE.Group) {
+		fitExterior(
+			root,
+			this.flownHull,
+			this.flownHull === this.commander.hull
+				? this.commander.loadout
+				: stockLoadout(this.flownHull),
+		);
+	}
+
 	private buildShip() {
 		// One hull, and it is the player's.
 		//
@@ -6958,6 +6971,7 @@ class Game {
 		// Every role's station maps now, beside the hull's: built lazily they
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
+		this.fitShipExterior(this.shipMesh);
 		this.shipMesh.name = "ship";
 		this.heldHullCasters = null;
 		// #201. Once at build, not per frame: a hull's materials do not change
@@ -7003,6 +7017,7 @@ class Game {
 	 *  hull is not yet installed is left as it is. */
 	private refreshAuthoredHulls(): void {
 		if (rebuildAuthoredStandIn(this.shipMesh)) {
+			this.fitShipExterior(this.shipMesh);
 			this.mountVentPlumes(this.shipMesh, this.flownHull);
 			const marked = this.markedOcclusion.findIndex(
 				([name]) => name === "ship",
@@ -7507,6 +7522,7 @@ class Game {
 		const old = this.shipMesh;
 		const mesh = buildShipMesh(hull, HULL_SPECS[hull].variant).root;
 		measureMuzzles(hull, HULL_SPECS[hull].variant, mesh);
+		this.fitShipExterior(mesh);
 		this.mountVentPlumes(mesh, hull);
 		mesh.name = "ship";
 		mesh.position.copy(old.position);
@@ -17339,6 +17355,10 @@ class Game {
 		this.setPieceCue = null;
 		this.musicState = step.state;
 		if (step.played) this.markMusicFirst(step.played);
+		if (step.samples) {
+			if ("load" in step.samples) this.music.preload(step.samples.load);
+			else this.music.releaseSamples();
+		}
 		for (const cmd of step.commands) this.music.send(cmd);
 		// The engine and thrusters sink under the waltz (#547 D5).
 		this.audio.duck(
@@ -20883,8 +20903,10 @@ class Game {
 		// delivered now already took a whole condition. One waiting for the
 		// launch is not flown yet: the flown ship keeps the bank it has until
 		// `setFlownHull` gives the new hull a whole condition.
-		if (refit && this.commander.hull === this.flownHull)
+		if (refit && this.commander.hull === this.flownHull) {
 			this.condition = refitCondition(this.condition, this.flownCapacity());
+			this.fitShipExterior(this.shipMesh);
+		}
 		if (effects.consoleRevision) this.stationConsoleRevision += 1;
 		if (effects.requestRevision) this.requestRevision += 1;
 		// A request is ready to report: nothing else says so (#546).

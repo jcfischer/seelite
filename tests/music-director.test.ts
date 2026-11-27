@@ -12,7 +12,8 @@ import {
 	ZARATHUSTRA,
 	ZARATHUSTRA_SECONDS,
 } from "../src/music-classical/strauss-zarathustra";
-import { DANUBE_CANCEL_FADE_S } from "../src/music-danube";
+import { DANUBE_CANCEL_FADE_S, danubeSong } from "../src/music-danube";
+import { VARIANT as JAZZ_TRIO } from "../src/music-danube-variants/jazz-trio";
 import {
 	CHANCE_COOLDOWN_S,
 	chanceCooldownOpen,
@@ -973,4 +974,120 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 		expect(heard).toContain("danube");
 		expect(state.piece).toBe("holst-mars");
 	}, 60000);
+});
+
+describe("the sampled waltz's samples (node #1325)", () => {
+	const song = JAZZ_TRIO;
+	const jazz = { version: "jazz-trio", song };
+	const armed = at({ scene: "dockingComputer", waltz: jazz });
+	const docked = at({ scene: "docked", stationRole: "trade" });
+	const kinds = (steps: ReturnType<typeof stepMusic>[]) =>
+		steps.map((s) => {
+			if (!s.samples) return "-";
+			if ("load" in s.samples) return "load";
+			return s.samples.release === true ? "release" : "?";
+		});
+	const run = (
+		readings: MusicReading[],
+		arms: MusicArms = DEFAULT_MUSIC_ARMS,
+	) => {
+		let state = initialMusicState();
+		const out: ReturnType<typeof stepMusic>[] = [];
+		for (const r of readings) {
+			const s = stepMusic(state, r, 0.1, arms);
+			state = s.state;
+			out.push(s);
+		}
+		return out;
+	};
+	const calmFor = (seconds: number) =>
+		Array.from({ length: Math.round(seconds / 0.1) }, () => calm);
+
+	test("arming the computer loads the version once, in the step the waltz loads", () => {
+		const out = run([calm, armed, armed, armed]);
+		expect(kinds(out)).toEqual(["-", "load", "-", "-"]);
+		const first = out[1].samples;
+		expect(first && "load" in first && first.load).toBe(song);
+		expect(out[1].commands.map((c) => c.type)).toContain("load");
+	});
+
+	test("a waltz in the reading loads nothing until the computer is armed", () => {
+		expect(kinds(run([at({ waltz: jazz }), at({ waltz: jazz })]))).toEqual([
+			"-",
+			"-",
+		]);
+	});
+
+	test("a held computer still loads; with the music off nothing loads", () => {
+		expect(kinds(run([calm, at({ ...armed, held: true })]))).toEqual([
+			"-",
+			"load",
+		]);
+		expect(
+			kinds(run([calm, armed], { ...DEFAULT_MUSIC_ARMS, off: true })),
+		).toEqual(["-", "-"]);
+	});
+
+	test("a held computer keeps its samples while the waltz waits to start", () => {
+		const held = at({ ...armed, held: true });
+		const out = run([calm, held, held, held, armed]);
+		expect(kinds(out)).toEqual(["-", "load", "-", "-", "-"]);
+		expect(out[3].state.waltz).toBe("none");
+		expect(out[3].state.samplesKey).toBe("jazz-trio");
+	});
+
+	test("a pilot who dies or jumps with a waltz in the reading loads nothing", () => {
+		expect(
+			kinds(
+				run([
+					at({ scene: "dead", waltz: jazz }),
+					at({ scene: "witchspace", waltz: jazz }),
+				]),
+			),
+		).toEqual(["-", "-"]);
+	});
+
+	test("disarming without docking releases once, when the waltz has stopped", () => {
+		const out = run([armed, armed, ...calmFor(WALTZ_CADENCE_S + 10)]);
+		const k = kinds(out);
+		expect(k.filter((x) => x === "release")).toEqual(["release"]);
+		const at_ = k.indexOf("release");
+		expect(out[at_].state.waltz).toBe("none");
+		expect(out[at_ - 1].state.waltz).not.toBe("none");
+		expect(out.at(-1)?.state.samplesKey).toBeNull();
+	});
+
+	test("a berth holds the samples and undocking releases them", () => {
+		const out = run([
+			armed,
+			armed,
+			...Array.from(
+				{ length: Math.round((WALTZ_CADENCE_S + 10) / 0.1) },
+				() => docked,
+			),
+			calm,
+			calm,
+		]);
+		const k = kinds(out);
+		expect(k.slice(0, -2).filter((x) => x !== "-")).toEqual(["load"]);
+		expect(k.slice(-2)).toEqual(["release", "-"]);
+	});
+
+	test("the next arming after a release loads again", () => {
+		const out = run([armed, ...calmFor(WALTZ_CADENCE_S + 10), armed]);
+		expect(kinds(out).filter((x) => x !== "-")).toEqual([
+			"load",
+			"release",
+			"load",
+		]);
+	});
+
+	test("a version with no sampled part loads nothing and releases nothing", () => {
+		const synth = at({
+			scene: "dockingComputer",
+			waltz: { version: "hybrid", song: danubeSong("hybrid") },
+		});
+		const out = run([synth, synth, docked, ...calmFor(2)]);
+		expect(kinds(out).filter((x) => x !== "-")).toEqual([]);
+	});
 });

@@ -331,3 +331,46 @@ test("the Equipment screen lists fuel as the first ship row, with one FILL", asy
 	});
 	expect(full).toContain("TANK FULL");
 });
+
+test("Equipment previews the candidate before purchase and the fitted weapon otherwise", async () => {
+	const { outfittingBody } = await import("../src/outfitting-view");
+	const i = input();
+	i.commander = {
+		...i.commander,
+		loadout: { ...i.commander.loadout, h1: makeModule("missile-rack", 1) },
+	};
+	const screen = outfittingScreen(i, "h1");
+	const render = (state: typeof screen) =>
+		outfittingBody(
+			state,
+			{ freeT: 20, capacityT: 20, entrustedT: 0 },
+			{ ly: 7, capacityLy: 7 },
+		);
+	const installed = render(screen);
+	expect(installed).toContain(
+		'data-live-outfit-preview><seelite-fitting family="missile-rack"></seelite-fitting><b>Select a slot, then a module to compare.</b>',
+	);
+	expect(installed).toContain("STATION STOCK · H1");
+	expect(installed).not.toContain("No compatible modules here.");
+	expect(installed).not.toContain("FITTINGS IN HOLD");
+	expect(installed).toContain("compare.</b></div>");
+	expect(installed).toMatch(
+		/<\/div>\s*<\/div><\/section><section><h3>STATION STOCK/,
+	);
+
+	i.commander.credits = 100_000;
+	i.commander.recoveredFittings = [carriedModule(makeModule("beam-laser", 1))];
+	const selection = render(outfittingScreen(i, "h1", "hold:0"));
+	expect(selection).toContain(
+		'data-live-outfit-preview><seelite-fitting family="beam-laser"></seelite-fitting><b>Beam laser',
+	);
+	expect(selection).toContain("FITTINGS IN HOLD · SELL AT 90%");
+	expect(selection).toContain("moves to the hold · 1 t</small>");
+
+	const empty = render({ ...screen, slots: [], stock: [] });
+	expect(empty).toContain("No compatible modules here.");
+	expect(empty).toContain("data-live-outfit-preview><b>Select a slot");
+	expect(render(outfittingScreen(i, "plant"))).toContain(
+		"data-live-outfit-preview><b>Select a slot",
+	);
+});

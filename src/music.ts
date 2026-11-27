@@ -149,6 +149,22 @@ export class Music {
 		this.samples.load(song);
 	}
 
+	preload(song: Song) {
+		this.samples.replaceWith(song);
+	}
+
+	releaseSamples() {
+		this.samples.releaseAll();
+	}
+
+	get heldSamples(): number {
+		return this.samples.heldCount;
+	}
+
+	get heldSampleSets(): string[] {
+		return this.samples.heldSets;
+	}
+
 	/**
 	 * Resolves once every recording the loaded songs play has been sent to the
 	 * worklet or has failed; a song loaded before `attach` counts once

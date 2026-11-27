@@ -10,8 +10,10 @@ import {
 	MUSIC_SONG_SLOTS,
 	type MusicCommand,
 	type NoteEvent,
+	type SampleBank,
 	type Song,
 } from "../src/music-score";
+import { rms } from "./lib/audio-measure";
 
 const SR = 48000;
 /** 120 bpm in 4/4: a bar is two seconds. */
@@ -984,5 +986,45 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 			expect(L[i]).toBe(0);
 			expect(R[i]).toBe(0);
 		}
+	});
+});
+
+describe("sample sets (node #1325)", () => {
+	const recording = Int16Array.from({ length: SR / 4 }, (_, i) =>
+		Math.round(16000 * Math.sin((2 * Math.PI * 261.6 * i) / SR)),
+	);
+	const set: SampleBank = {
+		rate: SR,
+		gain: 1,
+		layers: [
+			{
+				maxVelocity: 1,
+				zones: [{ root: 60, scale: 1 / 32767, data: recording }],
+			},
+		],
+	};
+	const sampled: Song = {
+		name: "sampled",
+		beatsPerBar: 4,
+		parts: { k: { voice: "sampler", samples: "s", level: 1 } },
+		sections: [{ name: "A", bars: 1, events: beats("k", 60) }],
+		tempo: [{ bar: 0, bpm: 120 }],
+	};
+	const level = (e: MusicEngine) => {
+		e.command({ type: "load", id: "sampled", song: sampled }, 0);
+		e.command({ type: "play", id: "sampled", at: "bar" }, 0);
+		const out = new Float32Array(BAR);
+		for (let f = 0; f < BAR; f += 128) e.render(out.subarray(f, f + 128), f);
+		return rms(out);
+	};
+
+	test("a held set plays, and a released one is silent", () => {
+		const kept = new MusicEngine(SR, 8);
+		kept.command({ type: "samples", set: "s", bank: set }, 0);
+		const released = new MusicEngine(SR, 8);
+		released.command({ type: "samples", set: "s", bank: set }, 0);
+		released.command({ type: "release", set: "s" }, 0);
+		expect(level(kept)).toBeGreaterThan(0.001);
+		expect(level(released)).toBe(0);
 	});
 });

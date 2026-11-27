@@ -399,7 +399,8 @@ export type MusicCommand =
 			readonly type: "samples";
 			readonly set: string;
 			readonly bank: SampleBank;
-	  };
+	  }
+	| { readonly type: "release"; readonly set: string };
 
 /** The processor's registered name: the worklet registers it and the
  *  controller constructs it, from this one copy. */

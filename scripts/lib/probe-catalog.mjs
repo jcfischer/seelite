@@ -209,6 +209,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["station waltz", "docking computer", "music director", "waltz override"],
 		),
 		entry(
+			"probe-waltz-preload.mjs",
+			"Arming the docking computer at a station whose waltz is sampled (?waltz=jazz-trio) loads its two sample sets, none before, and records the time to ready against the 16 s intro; disarming without docking releases them once the waltz has stopped and the held count reads zero.",
+			["station waltz", "sample preload", "sample release", "music director"],
+		),
+		entry(
 			"probe-music-game.mjs",
 			"Live music unlock, audible station and flight beds, and docking-waltz engage, resolve, duck and cancel commands.",
 			["music director", "audio unlock", "docking computer", "live music bus"],
