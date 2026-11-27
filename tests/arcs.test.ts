@@ -9,6 +9,7 @@ import {
 	openArc,
 	recordStep,
 	refuseStep,
+	systemsOf,
 } from "../src/arcs";
 import { carrierKey, systemIndexOfKey } from "../src/carrier-key";
 import { recordTrade } from "../src/deficits";
@@ -131,12 +132,7 @@ describe("nextStep", () => {
 			new Set(done.taken.map((s) => s.family)).size,
 		).toBeGreaterThanOrEqual(2);
 		const sys = systemIndexOfKey;
-		const systems = new Set(
-			done.taken.flatMap((s) => [
-				sys(s.requester.carrierKey),
-				sys(s.reportAt.carrierKey),
-			]),
-		);
+		const systems = systemsOf(done.taken);
 		expect(systems.size).toBeGreaterThanOrEqual(2);
 		let at = sys(arc.requester.carrierKey);
 		for (const o of offers) {

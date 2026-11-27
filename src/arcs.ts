@@ -111,11 +111,6 @@ export type NextResult =
 	| { kind: "answer"; bonusCr: number; text: string }
 	| { kind: "none"; reason: string };
 
-interface Pos {
-	systemIndex: number;
-	key: CarrierKey;
-}
-
 interface Cand {
 	offer: JobOffer;
 	flownLy: number;
@@ -201,8 +196,8 @@ class Planner {
 		return offers;
 	}
 
-	candidates(from: Pos, used: ReadonlySet<CarrierKey>): Cand[] {
-		const here = this.system(from.systemIndex);
+	candidates(fromSystem: number, used: ReadonlySet<CarrierKey>): Cand[] {
+		const here = this.system(fromSystem);
 		const out: Cand[] = [];
 		for (const record of this.reach(here)) {
 			const hop = distanceLy(here.pos, record.pos);
@@ -243,10 +238,8 @@ const matchesAnswer = (
 	systemIndexOfKey(step.requester.carrierKey) === scope.system &&
 	(scope.key === null || step.requester.carrierKey === scope.key);
 
-const reportPos = (step: { reportAt: JobStationRef }): Pos => ({
-	systemIndex: systemIndexOfKey(step.reportAt.carrierKey),
-	key: step.reportAt.carrierKey,
-});
+const reportSystem = (step: { reportAt: JobStationRef }): number =>
+	systemIndexOfKey(step.reportAt.carrierKey);
 
 const requesterSystem = (step: { requester: JobStationRef }): number =>
 	systemIndexOfKey(step.requester.carrierKey);
@@ -260,7 +253,7 @@ const stepOf = (offer: JobOffer, flownLy: number): ArcStep => ({
 	distanceLy: flownLy,
 });
 
-const systemsOf = (steps: readonly ArcStep[]): Set<number> => {
+export const systemsOf = (steps: readonly ArcStep[]): Set<number> => {
 	const s = new Set<number>();
 	for (const step of steps) {
 		s.add(requesterSystem(step));
@@ -272,7 +265,7 @@ const systemsOf = (steps: readonly ArcStep[]): Set<number> => {
 function route(
 	planner: Planner,
 	taken: readonly ArcStep[],
-	start: Pos,
+	start: number,
 	prefer: string | undefined,
 ): Cand[] | null {
 	const maxMore = ARC_MAX_STEPS - taken.length;
@@ -297,7 +290,7 @@ function route(
 
 interface SearchState {
 	taken: readonly ArcStep[];
-	pos: Pos;
+	pos: number;
 	remaining: number;
 	used: Set<CarrierKey>;
 	path: Cand[];
@@ -331,7 +324,7 @@ function search(planner: Planner, state: SearchState): Cand[] | null {
 		used.add(c.offer.requester.carrierKey);
 		const found = search(planner, {
 			taken,
-			pos: reportPos(c.offer),
+			pos: reportSystem(c.offer),
 			remaining: remaining - 1,
 			used,
 			path: [...path, c],
@@ -411,16 +404,12 @@ export function openArc(
 	const reqKey = keyOf(record, station);
 	const reasons: string[] = [];
 	for (const kind of kinds) {
-		const planner = new Planner(world, ANSWER_FAMILY[kind], {
-			key: kind === "unexplained-shortage" ? reqKey : null,
-			system: record.index,
-		});
-		const plan = route(
-			planner,
-			[],
-			{ systemIndex: record.index, key: reqKey },
-			undefined,
+		const planner = new Planner(
+			world,
+			ANSWER_FAMILY[kind],
+			scopeFor(kind, reqKey),
 		);
+		const plan = route(planner, [], record.index, undefined);
 		if (!plan) {
 			reasons.push(
 				`no route of ${ARC_MIN_STEPS}-${ARC_MAX_STEPS} steps answers ${kind}`,
@@ -454,10 +443,16 @@ export const recordStep = (
 	taken: [...arc.taken, stepOf(step.offer, step.flownLy)],
 });
 
-const answerScopeOf = (arc: Arc): AnswerScope => ({
-	key: arc.kind === "unexplained-shortage" ? arc.requester.carrierKey : null,
-	system: systemIndexOfKey(arc.requester.carrierKey),
+const scopeFor = (
+	kind: QuestionKind,
+	requesterKey: CarrierKey,
+): AnswerScope => ({
+	key: kind === "unexplained-shortage" ? requesterKey : null,
+	system: systemIndexOfKey(requesterKey),
 });
+
+const answerScopeOf = (arc: Arc): AnswerScope =>
+	scopeFor(arc.kind, arc.requester.carrierKey);
 
 const resolved = (arc: Arc): boolean => {
 	const scope = answerScopeOf(arc);
@@ -482,12 +477,9 @@ export function nextStep(arc: Arc, world: ArcWorld): NextResult {
 		return { kind: "none", reason: "the arc spent its steps unanswered" };
 	const planner = new Planner(world, arc.answerFamily, answerScopeOf(arc));
 	const last = arc.taken[arc.taken.length - 1];
-	const start: Pos = last
-		? reportPos(last)
-		: {
-				systemIndex: systemIndexOfKey(arc.requester.carrierKey),
-				key: arc.requester.carrierKey,
-			};
+	const start = last
+		? reportSystem(last)
+		: systemIndexOfKey(arc.requester.carrierKey);
 	const plan = route(planner, arc.taken, start, arc.foreseen[arc.taken.length]);
 	if (!plan)
 		return { kind: "none", reason: "no route reaches the answer from here" };

@@ -5,6 +5,7 @@ import {
 	nextStep,
 	openArc,
 	recordStep,
+	systemsOf,
 } from "../src/arcs";
 import { systemIndexOfKey } from "../src/carrier-key";
 import { recordTrade } from "../src/deficits";
@@ -72,12 +73,7 @@ for (let n = 0; n < SEEDS; n++) {
 	}
 	if (outcome === "answered") answered++;
 	const families = new Set(arc.taken.map((s) => s.family));
-	const systems = new Set(
-		arc.taken.flatMap((s) => [
-			systemIndexOfKey(s.requester.carrierKey),
-			systemIndexOfKey(s.reportAt.carrierKey),
-		]),
-	);
+	const systems = systemsOf(arc.taken);
 	const ly = flownLyOf(arc);
 	console.log(
 		`seed ${seed} ${arc.kind}: ${outcome}, ${arc.taken.length} steps, families ${[...families].join("+")}, ${systems.size} systems, ${ly.toFixed(1)} ly, bonus ${arc.answerPayoutCr} Cr`,
