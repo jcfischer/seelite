@@ -71,6 +71,83 @@ try {
 			)
 			.count()) === 2,
 	);
+	const library = page.locator(".lc-fitting-library");
+	const browseState = () =>
+		page.evaluate(() =>
+			JSON.stringify([
+				window.__seelite.commander,
+				document.querySelector(".lc-outfit-panes")?.innerHTML,
+				document.querySelector("[data-live-outfit-preview]")?.textContent,
+			]),
+		);
+	const beforeBrowsing = await browseState();
+	await library.locator("summary").click();
+	const picker = library.getByRole("combobox", { name: "Hardpoint model" });
+	const families = [
+		"pulse-laser",
+		"beam-laser",
+		"military-laser",
+		"mining-laser",
+		"missile-rack",
+		"autocannon",
+		"railgun",
+		"scattergun",
+		"plasma-projector",
+	];
+	const concepts = {
+		autocannon: ["20.0", "2,725", "7.34"],
+		railgun: ["20.0", "6,575", "3.04"],
+		scattergun: ["16.0", "725", "22.07"],
+		"plasma-projector": ["18.0", "1,650", "10.91"],
+	};
+	for (const family of families) {
+		await picker.selectOption(family);
+		const image = library.getByRole("img", { name: family + " 3D preview" });
+		const initial = await image.evaluate(async (img) => {
+			await img.decode();
+			const canvas = document.createElement("canvas");
+			canvas.width = img.naturalWidth;
+			canvas.height = img.naturalHeight;
+			const ctx = canvas.getContext("2d");
+			ctx.drawImage(img, 0, 0);
+			const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+			let visible = 0;
+			for (let i = 3; i < rgba.length; i += 4) if (rgba[i] > 128) visible++;
+			return { src: img.src, visible };
+		});
+		check(
+			family + " renders a visible model",
+			initial.visible > 100 && (await image.isVisible()),
+		);
+		await library
+			.getByRole("button", { name: "Rotate " + family + " preview" })
+			.click();
+		check(
+			family + " rotates",
+			initial.src !== (await image.getAttribute("src")),
+		);
+		if (concepts[family]) {
+			const [dps, price, value] = concepts[family];
+			const stats = await library.locator("p").innerText();
+			check(
+				family + " shows proposed performance and price",
+				(await picker.locator("option:checked").innerText()).includes(
+					"Concept",
+				) &&
+					stats.includes(dps + " sustained DPS") &&
+					stats.includes(price + " Cr proposed") &&
+					stats.includes(value + " DPS per 1,000 Cr"),
+			);
+		}
+		if (family === "pulse-laser" || family === "railgun") {
+			await page.screenshot({ path: `${out}/equipment-${family}.png` });
+		}
+	}
+	await library.locator("summary").click();
+	check(
+		"browsing preserves commander, stock and fitting controls",
+		beforeBrowsing === (await browseState()),
+	);
 	// Fuel is the first ship row (hotfix after #869): it was a 9 px footnote.
 	await page.evaluate(async () => {
 		const g = window.__seelite;
