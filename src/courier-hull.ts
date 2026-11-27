@@ -126,6 +126,12 @@ export function createCourierHullBuilder(
 		normalMap.colorSpace = THREE.NoColorSpace;
 		normalMap.anisotropy = EXTERIOR_MAP_ANISOTROPY;
 	}
+	if (!template.getObjectByName("muzzle-h1")) {
+		const port = new THREE.Object3D();
+		port.name = "muzzle-h1";
+		port.position.set(0, -0.1, 33);
+		template.add(port);
+	}
 	const unpowered = shared(new THREE.MeshBasicMaterial({ color: 0x01090b }));
 	unpowered.name = "interior-screen-unpowered";
 	return createAuthoredHullBuilder(template, {
