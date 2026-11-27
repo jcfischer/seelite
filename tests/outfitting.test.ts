@@ -335,7 +335,10 @@ test("the Equipment screen lists fuel as the first ship row, with one FILL", asy
 test("Equipment previews the candidate before purchase and the fitted weapon otherwise", async () => {
 	const { outfittingBody } = await import("../src/outfitting-view");
 	const i = input();
-	i.commander.loadout.h1 = makeModule("missile-rack", 1);
+	i.commander = {
+		...i.commander,
+		loadout: { ...i.commander.loadout, h1: makeModule("missile-rack", 1) },
+	};
 	const screen = outfittingScreen(i, "h1");
 	const render = (state: typeof screen) =>
 		outfittingBody(
