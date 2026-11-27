@@ -303,6 +303,53 @@ describe("production contract ownership", () => {
 		// The name alone does not exempt a source file.
 		expect(impact(["src/measure-unknown.ts"]).probes).toBeUndefined();
 	});
+	test("a new source no runtime file reaches selects smoke, not the suite", () => {
+		const smoke = [...SMOKE_PROBES].sort();
+		const added = new Map(sources);
+		added.set(
+			"src/arc-orphan.ts",
+			'import { b } from "./arc-orphan-b.ts";\nexport const a = b;',
+		);
+		added.set("src/arc-orphan-b.ts", "export const b = 1;");
+		added.set(
+			"scripts/measure-arc-orphan.ts",
+			'import { a } from "../src/arc-orphan.ts";\nconsole.log(a);',
+		);
+		const fresh = impact(
+			[
+				"src/arc-orphan.ts",
+				"src/arc-orphan-b.ts",
+				"scripts/measure-arc-orphan.ts",
+			],
+			sources,
+			added,
+		);
+		expect(fresh.probes).toEqual(smoke);
+		expect(fresh.reason).toContain(
+			"no runtime file reaches new source src/arc-orphan.ts, src/arc-orphan-b.ts",
+		);
+
+		const wired = new Map(added);
+		wired.set(
+			"src/main.ts",
+			`import "./arc-orphan.ts";\n${sources.get("src/main.ts")}`,
+		);
+		expect(
+			impact(["src/arc-orphan.ts"], sources, wired).probes,
+		).toBeUndefined();
+
+		const globbed = new Map(sources);
+		globbed.set(
+			"src/music-danube-variants/new-take.ts",
+			"export const VARIANT = {};",
+		);
+		expect(
+			impact(["src/music-danube-variants/new-take.ts"], sources, globbed)
+				.probes,
+		).not.toEqual(smoke);
+
+		expect(impact(["src/arc-orphan.ts"], added, added).probes).toBeUndefined();
+	});
 	test("a new probe's catalog and roots entries select that probe and smoke", async () => {
 		// The retro on 2026-10-11: registering one new probe sent #865 to all
 		// probes, because both registries live under scripts/lib/probe-*.
