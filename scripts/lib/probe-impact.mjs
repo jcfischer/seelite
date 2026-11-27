@@ -71,6 +71,27 @@ export function dependencyClosure(roots, sources) {
 	return seen;
 }
 
+/** New files in `after` that no other file reaches, by import or by an
+ * `import.meta.glob` prefix. A page entry is named only by HTML, outside the
+ * snapshot, so a file `before` already has is never one of them, and a diff
+ * that changes HTML stays ownerless.
+ */
+export function unreachedNewSources(paths, before, after) {
+	const added = paths.filter((p) => !before.has(p) && after.has(p));
+	if (!added.length) return [];
+	const rest = [...after.keys()].filter((f) => !added.includes(f));
+	const reached = new Set(dependencyClosure(rest, after));
+	const globs = rest.flatMap((file) =>
+		importCandidatesByText(file, after.get(file))
+			.map(([stem]) => stem)
+			.filter((stem) => stem.includes("*"))
+			.map((stem) => stem.slice(0, stem.indexOf("*"))),
+	);
+	return added.filter(
+		(p) => !reached.has(p) && !globs.some((prefix) => p.startsWith(prefix)),
+	);
+}
+
 /** Null means at least one path has no declared owner: expand, never guess. */
 export function affectedProbes(changed, before, after, contracts) {
 	const covered = new Set();
@@ -447,7 +468,12 @@ export function selectImpact(changedFiles, impact, inventory) {
 					dependencyClosure(roots, b).has(p),
 			),
 	);
-	const owned = paths.filter((p) => !instruments.includes(p));
+	const unreached = unreachedNewSources(paths, before, after).filter(
+		(p) => !instruments.includes(p),
+	);
+	const owned = paths.filter(
+		(p) => !instruments.includes(p) && !unreached.includes(p),
+	);
 	const affected = affectedProbes(owned, a, b, PROBE_ROOTS);
 	if (!affected)
 		return {
@@ -462,6 +488,8 @@ export function selectImpact(changedFiles, impact, inventory) {
 				methods.length && `Game.${methods.join(", Game.")}`,
 				instruments.length &&
 					`no probe loads measurement script ${instruments.join(", ")}`,
+				unreached.length &&
+					`no runtime file reaches new source ${unreached.join(", ")}`,
 				studies.length &&
 					`spike rule: no src/ or probe-script literal names study files ${studies.join(", ")}`,
 			]
