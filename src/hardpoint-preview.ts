@@ -1,8 +1,11 @@
 import * as THREE from "three";
 import { conceptEstimate, isConcept } from "./concept-estimates";
-import { fittingFamilies } from "./fitting-families";
 import { buildFitting } from "./hardpoint-model";
-import { isFittingFamily, type FittingFamily } from "./fitting-families";
+import {
+	fittingFamilies,
+	isFittingFamily,
+	type FittingFamily,
+} from "./fitting-families";
 
 export const fittingPreviewSteps = 8;
 
