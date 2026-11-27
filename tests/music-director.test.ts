@@ -669,7 +669,12 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 
 	const run = (
 		legs: readonly (readonly [number, MusicReading])[],
-		opts: { dt?: number; gameDt?: number; state?: MusicState } = {},
+		opts: {
+			dt?: number;
+			gameDt?: number;
+			state?: MusicState;
+			onStep?: (commands: readonly MusicCommand[], endS: number) => void;
+		} = {},
 	) => {
 		const dt = opts.dt ?? 0.1;
 		const gameDt = opts.gameDt ?? dt;
@@ -686,6 +691,7 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 				first = false;
 				state = s.state;
 				steps.push({ commands: s.commands, played: s.played });
+				opts.onStep?.(s.commands, steps.length * dt);
 			}
 		}
 		return {
@@ -695,6 +701,7 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 			played: steps.flatMap((s) => (s.played ? [s.played] : [])),
 		};
 	};
+
 	const loads = (cmds: readonly MusicCommand[]) =>
 		cmds.flatMap((c) => (c.type === "load" ? [c.song.name] : []));
 	const pieceLoads = (cmds: readonly MusicCommand[]) =>
@@ -926,45 +933,40 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 	test("through the real engine: a boot, a first, a cut and Mars, with no command refused", () => {
 		const SR = 48000;
 		const heard: string[] = [];
+		const refused: string[] = [];
 		const engine = new MusicEngine(SR, undefined, (id) => heard.push(id), {
 			countOnly: true,
 		});
 		const out = new Float32Array(128);
 		let frame = 0;
-		let state = initialMusicState();
-		const legs: [number, MusicReading][] = [
-			[0.1, { ...docked, cue: "boot" }],
-			[seconds("strauss-zarathustra") + 2, docked],
-			[3, fresh],
-			[0.1, { ...fresh, cue: "newHull" }],
-			[3, fresh],
-			[0.1, { ...fresh, scene: "dockingComputer" }],
-			[4, { ...fresh, scene: "dockingComputer" }],
-			[3, fresh],
-			[0.1, { ...fresh, cue: "capitalShip" }],
-			[2, fresh],
-			[6, combat],
-		];
-		let t = 0;
-		for (const [secs, r] of legs) {
-			let first = true;
-			for (let end = t + secs; t < end - 1e-9; t += 0.1) {
-				const s = stepMusic(
-					state,
-					{ ...r, wallDtS: 0.1, cue: first ? r.cue : null },
-					0.1,
-				);
-				first = false;
-				state = s.state;
-				for (const cmd of s.commands) engine.command(cmd, frame);
-				for (
-					const stop = Math.round((t + 0.1) * SR);
-					frame < stop;
-					frame += 128
-				)
-					engine.render(out, frame);
-			}
-		}
+		const { state } = run(
+			[
+				[0.1, { ...docked, cue: "boot" }],
+				[seconds("strauss-zarathustra") + 2, docked],
+				[3, fresh],
+				[0.1, { ...fresh, cue: "newHull" }],
+				[3, fresh],
+				[0.1, { ...fresh, scene: "dockingComputer" }],
+				[4, { ...fresh, scene: "dockingComputer" }],
+				[3, fresh],
+				[0.1, { ...fresh, cue: "capitalShip" }],
+				[2, fresh],
+				[6, combat],
+			],
+			{
+				onStep: (commands, endS) => {
+					for (const cmd of commands)
+						try {
+							engine.command(cmd, frame);
+						} catch (error) {
+							refused.push(`${cmd.type}: ${String(error)}`);
+						}
+					for (const stop = Math.round(endS * SR); frame < stop; frame += 128)
+						engine.render(out, frame);
+				},
+			},
+		);
+		expect(refused).toEqual([]);
 		expect(heard).toContain("piece-a");
 		expect(heard).toContain("piece-b");
 		expect(heard).toContain("station");

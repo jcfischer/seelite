@@ -118,12 +118,11 @@ export interface MusicReading {
 /** The fixed moments that ask for a set-piece (#589 D3, D5, D6). */
 export type SetPieceCue = "boot" | "newHull" | "capitalShip";
 
-/** The set-pieces this director plays (#589 D3, D5, D6, D7). */
-export type SetPieceId =
-	| "strauss-zarathustra"
-	| "dvorak-largo"
-	| "bruckner-7-adagio"
-	| "holst-mars";
+/** The once-per-commander pieces: every first but the hull mark (#589 D5, D6, D7). */
+export type FirstPieceId = Exclude<MusicFirst, "hull-bought">;
+
+/** The set-pieces this director plays: the boot's and the firsts (#589 D3). */
+export type SetPieceId = "strauss-zarathustra" | FirstPieceId;
 
 /** A one-shot score's length on its own tempo map, bar by bar. */
 export const songSeconds = (song: Song): number => {
@@ -156,8 +155,9 @@ export const SET_PIECES: Readonly<
 	"holst-mars": pieceOf(MARS),
 };
 
-const PIECE_OF_CUE: Readonly<Record<SetPieceCue, SetPieceId>> = {
-	boot: "strauss-zarathustra",
+const FIRST_OF_CUE: Readonly<
+	Record<Exclude<SetPieceCue, "boot">, FirstPieceId>
+> = {
 	newHull: "dvorak-largo",
 	capitalShip: "bruckner-7-adagio",
 };
@@ -613,93 +613,120 @@ function stepWaltz(
 
 const rankThreat = () => rank("threat");
 
+const clearPiece = (s: MusicState): MusicState => ({
+	...s,
+	piece: null,
+	pieceS: 0,
+	pieceFallS: 0,
+});
+
+type PieceStep = {
+	state: MusicState;
+	commands: MusicCommand[];
+	done: boolean;
+	played?: FirstPieceId;
+};
+
+function continuePiece(
+	s: MusicState,
+	r: MusicReading,
+	dt: number,
+	arms: MusicArms,
+	target: MusicLevel,
+): PieceStep {
+	const piece = s.piece;
+	const slot = s.pieceSlot;
+	if (piece === null || slot === null)
+		return { state: s, commands: [], done: false };
+	const mars = piece === "holst-mars";
+	const fallS =
+		mars && rank(target) < rankThreat() ? s.pieceFallS + (r.held ? 0 : dt) : 0;
+	const cut =
+		arms.off ||
+		(r.scene !== "flight" && r.scene !== "docked") ||
+		(!mars && r.scene === "flight" && rank(target) >= rankThreat()) ||
+		(mars && fallS >= FALL_HOLD_S);
+	if (cut) {
+		const fadeS = setPieceCutFadeS(piece);
+		return {
+			state: {
+				...clearPiece(s),
+				pieceFreeAtS: { ...s.pieceFreeAtS, [slot]: s.pieceClockS + fadeS },
+			},
+			commands: [{ type: "stop", at: "now", fadeS }],
+			done: false,
+		};
+	}
+	const pieceS = s.pieceS + r.wallDtS;
+	if (pieceS >= SET_PIECES[piece].seconds)
+		return { state: clearPiece(s), commands: [], done: false };
+	return {
+		state: { ...s, pieceS, pieceFallS: fallS },
+		commands: [],
+		done: true,
+	};
+}
+
+function startPiece(
+	s: MusicState,
+	r: MusicReading,
+	arms: MusicArms,
+	target: MusicLevel,
+): PieceStep {
+	const none = { state: s, commands: [], done: false };
+	if (arms.off) return { ...none, state: { ...s, bootOwed: false } };
+	if ((r.scene !== "flight" && r.scene !== "docked") || s.waltz !== "none")
+		return none;
+	const unheard = (id: FirstPieceId) => r.heard && !r.firsts.includes(id);
+	const tense = r.scene === "flight" && rank(target) >= rankThreat();
+	let start: SetPieceId | null = null;
+	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
+		start = "holst-mars";
+	else if (tense) start = null;
+	else if (s.bootOwed) start = "strauss-zarathustra";
+	else if (r.cue !== null && r.cue !== "boot" && unheard(FIRST_OF_CUE[r.cue]))
+		start = FIRST_OF_CUE[r.cue];
+	if (start === null) return none;
+	const prefer: PieceSlot = s.pieceSlot === "piece-a" ? "piece-b" : "piece-a";
+	const fallback: PieceSlot = prefer === "piece-a" ? "piece-b" : "piece-a";
+	const slot = [prefer, fallback].find(
+		(id) => s.pieceFreeAtS[id] <= s.pieceClockS,
+	);
+	if (slot === undefined) return none;
+	const commands: MusicCommand[] = [
+		{ type: "load", id: slot, song: SET_PIECES[start].song },
+		{ type: "play", id: slot, at: "bar" },
+	];
+	const state: MusicState = {
+		...clearPiece(s),
+		bed: "none",
+		piece: start,
+		pieceSlot: slot,
+	};
+	if (start === "strauss-zarathustra")
+		return {
+			state: { ...state, bootOwed: false, cooldownFromS: r.gameTimeS },
+			commands,
+			done: true,
+		};
+	return { state, commands, done: true, played: start };
+}
+
 function stepSetPiece(
 	state: MusicState,
 	r: MusicReading,
 	dt: number,
 	arms: MusicArms,
-): {
-	state: MusicState;
-	commands: MusicCommand[];
-	done: boolean;
-	played?: MusicFirst;
-} {
-	const cmds: MusicCommand[] = [];
-	const clock = state.pieceClockS + r.wallDtS;
-	let s: MusicState = { ...state, pieceClockS: clock };
+): PieceStep {
 	const target = dangerLevel(r, arms);
-	const owned = r.scene === "flight" || r.scene === "docked";
-	if (s.piece !== null && s.pieceSlot !== null) {
-		const piece = s.piece;
-		const fallS =
-			piece === "holst-mars" && rank(target) < rankThreat()
-				? s.pieceFallS + (r.held ? 0 : dt)
-				: 0;
-		const cut =
-			arms.off ||
-			!owned ||
-			(piece !== "holst-mars" &&
-				r.scene === "flight" &&
-				rank(target) >= rankThreat()) ||
-			(piece === "holst-mars" && fallS >= FALL_HOLD_S);
-		const pieceS = s.pieceS + r.wallDtS;
-		if (cut) {
-			const fadeS = setPieceCutFadeS(piece);
-			cmds.push({ type: "stop", at: "now", fadeS });
-			s = {
-				...s,
-				piece: null,
-				pieceS: 0,
-				pieceFallS: 0,
-				pieceFreeAtS: { ...s.pieceFreeAtS, [s.pieceSlot]: clock + fadeS },
-			};
-		} else if (pieceS >= SET_PIECES[piece].seconds)
-			s = { ...s, piece: null, pieceS: 0, pieceFallS: 0 };
-		else
-			return {
-				state: { ...s, pieceS, pieceFallS: fallS },
-				commands: cmds,
-				done: true,
-			};
-	}
-	if (arms.off)
-		return { state: { ...s, bootOwed: false }, commands: cmds, done: false };
-	if (!owned || s.waltz !== "none")
-		return { state: s, commands: cmds, done: false };
-	const unheard = (id: SetPieceId) =>
-		r.heard && !r.firsts.includes(id as MusicFirst);
-	let start: SetPieceId | null = null;
-	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
-		start = "holst-mars";
-	else if (r.scene === "flight" && rank(target) >= rankThreat()) start = null;
-	else if (s.bootOwed) start = "strauss-zarathustra";
-	else if (r.cue !== null && r.cue !== "boot" && unheard(PIECE_OF_CUE[r.cue]))
-		start = PIECE_OF_CUE[r.cue];
-	if (start === null) return { state: s, commands: cmds, done: false };
-	const prefer: PieceSlot = s.pieceSlot === "piece-a" ? "piece-b" : "piece-a";
-	const other: PieceSlot = prefer === "piece-a" ? "piece-b" : "piece-a";
-	const slot =
-		[prefer, other].find((id) => s.pieceFreeAtS[id] <= clock) ?? null;
-	if (slot === null) return { state: s, commands: cmds, done: false };
-	cmds.push(
-		{ type: "load", id: slot, song: SET_PIECES[start].song },
-		{ type: "play", id: slot, at: "bar" },
-	);
-	const boot = start === "strauss-zarathustra";
-	return {
-		state: {
-			...s,
-			bed: "none",
-			piece: start,
-			pieceSlot: slot,
-			pieceS: 0,
-			pieceFallS: 0,
-			...(boot ? { bootOwed: false, cooldownFromS: r.gameTimeS } : {}),
-		},
-		commands: cmds,
-		done: true,
-		...(boot ? {} : { played: start as MusicFirst }),
+	const s: MusicState = {
+		...state,
+		pieceClockS: state.pieceClockS + r.wallDtS,
 	};
+	const going = continuePiece(s, r, dt, arms, target);
+	if (going.done) return going;
+	const next = startPiece(going.state, r, arms, target);
+	return { ...next, commands: [...going.commands, ...next.commands] };
 }
 
 export function stepMusic(
