@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { buildFitting } from "../src/hardpoint-model";
-import { catalogFamilies, fittingExitName, fittingFamilies } from "../src/fitting-families";
+import {
+	catalogFamilies,
+	fittingExitName,
+	fittingFamilies,
+} from "../src/fitting-families";
 
 test("each family has its own visible shell with a common shoe and forward exit", () => {
 	const counts = new Set<number>();
