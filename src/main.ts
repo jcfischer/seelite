@@ -384,7 +384,12 @@ import {
 	waltzDuckDb,
 } from "./music-director";
 import { type MusicFirst, withFirst } from "./music-firsts";
-import { bootPieceOwed, leaveBootMark, takeBootMark } from "./boot-piece";
+import {
+	type BootMark,
+	bootPieceOwed,
+	leaveBootMark,
+	takeBootMark,
+} from "./boot-piece";
 import {
 	COMMS_LINES,
 	type CommsLineId,
@@ -17265,11 +17270,6 @@ class Game {
 	/** The flight sound's memory: last regime and the hull's heat (#544). */
 	private flightSoundState: FlightSoundState = QUIET_FLIGHT;
 
-	/**
-	 * The adaptive music each frame (#548): `music-director.ts` reads the
-	 * pilot's situation and sends the synth what to play. On a held clock too,
-	 * where it holds; and under the opening, which holds it as well.
-	 */
 	private musicScene(): MusicScene {
 		const docked =
 			this.dock.phase === "docked" || this.dock.phase === "arriving";
@@ -17281,6 +17281,11 @@ class Game {
 		return docked ? "docked" : "flight";
 	}
 
+	/**
+	 * The adaptive music each frame (#548): `music-director.ts` reads the
+	 * pilot's situation and sends the synth what to play. On a held clock too,
+	 * where it holds; and under the opening, which holds it as well.
+	 */
 	private stepMusicDirector(dt: number, wallDtS: number) {
 		if (!this.waltzVersionsAsked) {
 			this.waltzVersionsAsked = true;
@@ -25132,6 +25137,10 @@ if (postcard) {
 		}
 	};
 	const bootMark = takeBootMark(sessionStore());
+	const reloadWith = (mark: Exclude<BootMark, null>) => {
+		leaveBootMark(sessionStore(), mark);
+		window.location.reload();
+	};
 	const mountOverlay = (): CommanderOverlayHandle => {
 		// #604: whether to download the natural voice, asked on the Commander
 		// screen at boot while the row says Ask — and under `?voices=ask` on a
@@ -25153,8 +25162,7 @@ if (postcard) {
 						// rule for `/assets/*` (#834). The overlay stays busy until then.
 						reload: () =>
 							gate.ready().then((game) => {
-								leaveBootMark(sessionStore(), game.dead ? "skip" : "owed");
-								window.location.reload();
+								reloadWith(game.dead ? "skip" : "owed");
 							}),
 					}),
 			boot: overlayBoot(),
@@ -25188,8 +25196,7 @@ if (postcard) {
 							return messageOf(error);
 						}
 					}
-					leaveBootMark(sessionStore(), "skip");
-					window.location.reload();
+					reloadWith("skip");
 					return null;
 				}
 				const fault = plan.writesNothing ? null : await attach(slot);
@@ -25356,7 +25363,7 @@ if (postcard) {
 			} catch (error) {
 				return messageOf(error);
 			}
-			window.location.reload();
+			reloadWith("owed");
 			return new Promise<never>(() => {});
 		}
 		// Every result, not only a fault: a lock fault from a one-shot boot is
@@ -25390,8 +25397,7 @@ if (postcard) {
 					: null;
 			if (restored && slot) {
 				await catalog.chooseCommander(slot);
-				leaveBootMark(sessionStore(), "skip");
-				window.location.reload();
+				reloadWith("skip");
 				return;
 			}
 		} catch (error) {
