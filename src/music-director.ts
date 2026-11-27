@@ -66,6 +66,11 @@ import {
 	type DanubeVoicing,
 	danubeSong,
 } from "./music-danube";
+import { BRUCKNER_ADAGIO } from "./music-classical/bruckner-7-adagio";
+import { DVORAK_LARGO } from "./music-classical/dvorak-largo";
+import { MARS } from "./music-classical/holst-mars";
+import { ZARATHUSTRA } from "./music-classical/strauss-zarathustra";
+import { MUSIC_FIRSTS, type MusicFirst } from "./music-firsts";
 import type { MusicCommand, Song } from "./music-score";
 import { setsOf } from "./music-samples";
 import { beatSeconds, bpmAt } from "./music-sequencer";
@@ -104,7 +109,72 @@ export interface MusicReading {
 	readonly systemSeed: number;
 	readonly stationRole: StationType | null;
 	readonly waltz: StationWaltz | null;
+	readonly wallDtS: number;
+	readonly gameTimeS: number;
+	readonly heard: boolean;
+	readonly firsts: readonly MusicFirst[];
+	readonly cue: SetPieceCue | null;
 }
+
+/** The fixed moments that ask for a set-piece (#589 D3, D5, D6). */
+export type SetPieceCue = "boot" | "newHull" | "capitalShip";
+
+/** The once-per-commander pieces: every first but the hull mark (#589 D5, D6, D7). */
+export type FirstPieceId = Exclude<MusicFirst, "hull-bought">;
+
+/** The set-pieces this director plays: the boot's and the firsts (#589 D3). */
+export type SetPieceId = "strauss-zarathustra" | FirstPieceId;
+
+/** A one-shot score's length on its own tempo map, bar by bar. */
+export const songSeconds = (song: Song): number => {
+	let bar = 0;
+	let s = 0;
+	for (const section of song.sections)
+		for (let i = 0; i < section.bars; i++, bar++)
+			s += beatSeconds(
+				bpmAt(song.tempo, bar, false),
+				bpmAt(song.tempo, bar, true),
+				song.beatsPerBar,
+				song.beatsPerBar,
+			);
+	return s;
+};
+
+const pieceOf = (song: Song) => ({
+	song,
+	seconds: songSeconds(song),
+	bars: song.sections.reduce((n, x) => n + x.bars, 0),
+});
+
+/** Each piece's score, its length and its bar count. */
+export const SET_PIECES: Readonly<
+	Record<SetPieceId, { song: Song; seconds: number; bars: number }>
+> = {
+	"strauss-zarathustra": pieceOf(ZARATHUSTRA),
+	"dvorak-largo": pieceOf(DVORAK_LARGO),
+	"bruckner-7-adagio": pieceOf(BRUCKNER_ADAGIO),
+	"holst-mars": pieceOf(MARS),
+};
+
+const FIRST_OF_CUE: Readonly<Record<SetPieceCue, FirstPieceId | null>> = {
+	boot: null,
+	newHull: "dvorak-largo",
+	capitalShip: "bruckner-7-adagio",
+};
+
+/** A cut is two of the piece's bars (D10), at its mean bar. */
+export const setPieceCutFadeS = (id: SetPieceId): number =>
+	(2 * SET_PIECES[id].seconds) / SET_PIECES[id].bars;
+
+/** Game time between two chance pieces (#589 D4's start value). */
+export const CHANCE_COOLDOWN_S = 25 * 60;
+
+/** Whether a chance piece may play now: the boot piece starts the clock, and
+ *  a page that played none has no clock running. */
+export const chanceCooldownOpen = (s: MusicState, gameTimeS: number): boolean =>
+	s.cooldownFromS === null || gameTimeS - s.cooldownFromS >= CHANCE_COOLDOWN_S;
+
+type PieceSlot = "piece-a" | "piece-b";
 
 /**
  * The waltz the game picked for the station the docking computer flies to
@@ -356,6 +426,11 @@ export const QUIET_READING: MusicReading = {
 	systemSeed: 1,
 	stationRole: null,
 	waltz: null,
+	wallDtS: 0,
+	gameTimeS: 0,
+	heard: true,
+	firsts: MUSIC_FIRSTS,
+	cue: null,
 };
 
 export function dangerLevel(
@@ -407,6 +482,14 @@ export interface MusicState {
 	 *  station's version (node #1324), with its cadence hold. */
 	readonly waltzKey: string | null;
 	readonly waltzHoldS: number;
+	readonly piece: SetPieceId | null;
+	readonly pieceSlot: PieceSlot | null;
+	readonly pieceS: number;
+	readonly pieceFallS: number;
+	readonly pieceClockS: number;
+	readonly pieceFreeAtS: Readonly<Record<PieceSlot, number>>;
+	readonly bootOwed: boolean;
+	readonly cooldownFromS: number | null;
 	readonly samplesKey: string | null;
 }
 
@@ -426,6 +509,14 @@ export const initialMusicState = (): MusicState => ({
 	waltzS: 0,
 	waltzKey: null,
 	waltzHoldS: 0,
+	piece: null,
+	pieceSlot: null,
+	pieceS: 0,
+	pieceFallS: 0,
+	pieceClockS: 0,
+	pieceFreeAtS: { "piece-a": 0, "piece-b": 0 },
+	bootOwed: false,
+	cooldownFromS: null,
 	samplesKey: null,
 });
 
@@ -522,6 +613,132 @@ function stepWaltz(
 	return { state: s, commands: cmds, done: false };
 }
 
+const ownsScene = (r: MusicReading) =>
+	r.scene === "flight" || r.scene === "docked";
+
+const tenseInFlight = (r: MusicReading, target: MusicLevel) =>
+	r.scene === "flight" && rank(target) >= rank("threat");
+
+const clearPiece = (s: MusicState): MusicState => ({
+	...s,
+	piece: null,
+	pieceS: 0,
+	pieceFallS: 0,
+});
+
+type PieceStep = {
+	state: MusicState;
+	commands: MusicCommand[];
+	done: boolean;
+	played?: FirstPieceId;
+};
+
+function continuePiece(
+	s: MusicState,
+	r: MusicReading,
+	dt: number,
+	arms: MusicArms,
+	target: MusicLevel,
+): PieceStep {
+	const piece = s.piece;
+	const slot = s.pieceSlot;
+	// Stryker disable next-line ConditionalExpression: a piece is only ever set together with its slot, so the slot test never decides
+	if (piece === null || slot === null)
+		return { state: s, commands: [], done: false };
+	const mars = piece === "holst-mars";
+	const fallS =
+		mars && rank(target) < rank("threat")
+			? s.pieceFallS + (r.held ? 0 : dt)
+			: 0;
+	const cut =
+		arms.off ||
+		!ownsScene(r) ||
+		(!mars && tenseInFlight(r, target)) ||
+		(mars && fallS >= FALL_HOLD_S);
+	if (cut) {
+		const fadeS = setPieceCutFadeS(piece);
+		return {
+			state: {
+				...clearPiece(s),
+				pieceFreeAtS: { ...s.pieceFreeAtS, [slot]: s.pieceClockS + fadeS },
+			},
+			commands: [{ type: "stop", at: "now", fadeS }],
+			done: false,
+		};
+	}
+	const pieceS = s.pieceS + r.wallDtS;
+	if (pieceS >= SET_PIECES[piece].seconds)
+		return { state: clearPiece(s), commands: [], done: false };
+	return {
+		state: { ...s, pieceS, pieceFallS: fallS },
+		commands: [],
+		done: true,
+	};
+}
+
+function startPiece(
+	s: MusicState,
+	r: MusicReading,
+	arms: MusicArms,
+	target: MusicLevel,
+): PieceStep {
+	const none = { state: s, commands: [], done: false };
+	if (arms.off) return { ...none, state: { ...s, bootOwed: false } };
+	if (!ownsScene(r) || s.waltz !== "none") return none;
+	const unheard = (id: FirstPieceId) => r.heard && !r.firsts.includes(id);
+	const cued = r.cue === null ? null : FIRST_OF_CUE[r.cue];
+	// Stryker disable next-line ConditionalExpression: with no cue, unheard(null) is true and the start is null either way
+	const anyCued = cued !== null;
+	const cuedFirst = anyCued && unheard(cued) ? cued : null;
+	let start: SetPieceId | null;
+	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
+		start = "holst-mars";
+	else if (tenseInFlight(r, target)) start = null;
+	else if (s.bootOwed) start = "strauss-zarathustra";
+	else start = cuedFirst;
+	if (start === null) return none;
+	const prefer: PieceSlot = s.pieceSlot === "piece-a" ? "piece-b" : "piece-a";
+	const fallback: PieceSlot = prefer === "piece-a" ? "piece-b" : "piece-a";
+	const slot = [prefer, fallback].find(
+		(id) => s.pieceFreeAtS[id] <= s.pieceClockS,
+	);
+	if (slot === undefined) return none;
+	const commands: MusicCommand[] = [
+		{ type: "load", id: slot, song: SET_PIECES[start].song },
+		{ type: "play", id: slot, at: "bar" },
+	];
+	const state: MusicState = {
+		...clearPiece(s),
+		bed: "none",
+		piece: start,
+		pieceSlot: slot,
+	};
+	if (start === "strauss-zarathustra")
+		return {
+			state: { ...state, bootOwed: false, cooldownFromS: r.gameTimeS },
+			commands,
+			done: true,
+		};
+	return { state, commands, done: true, played: start };
+}
+
+function stepSetPiece(
+	state: MusicState,
+	r: MusicReading,
+	dt: number,
+	arms: MusicArms,
+): PieceStep {
+	const target = dangerLevel(r, arms);
+	const s: MusicState = {
+		...state,
+		pieceClockS: state.pieceClockS + r.wallDtS,
+	};
+	const going = continuePiece(s, r, dt, arms, target);
+	if (going.done) return going;
+	const next = startPiece(going.state, r, arms, target);
+	return { ...next, commands: [...going.commands, ...next.commands] };
+}
+
 /** What the director asks of the sample loader: load a song's sets, or let
  *  every set go (node #1325). */
 export type SampleOrder = { load: Song } | { release: true };
@@ -531,6 +748,7 @@ export interface MusicStep {
 	commands: MusicCommand[];
 	voice?: string;
 	samples?: SampleOrder;
+	played?: MusicFirst;
 }
 
 function stepSamples(
@@ -557,8 +775,10 @@ export function stepMusic(
 	dt: number,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
 ): MusicStep {
-	if (!r.ready) return { state, commands: [] };
-	const beds = stepBeds(state, r, dt, arms);
+	const asked =
+		r.cue === "boot" && !state.bootOwed ? { ...state, bootOwed: true } : state;
+	if (!r.ready) return { state: asked, commands: [] };
+	const beds = stepBeds(asked, r, dt, arms);
 	const sampled = stepSamples(beds.state, r, arms);
 	return { ...beds, state: sampled.state, samples: sampled.samples };
 }
@@ -569,10 +789,18 @@ function stepBeds(
 	dt: number,
 	arms: MusicArms,
 ): Omit<MusicStep, "samples"> {
-	const waltz = stepWaltz(state, r, dt, arms);
-	if (waltz.done) return { state: waltz.state, commands: waltz.commands };
+	const piece = stepSetPiece(state, r, dt, arms);
+	const played = piece.played ? { played: piece.played } : {};
+	if (piece.done)
+		return { state: piece.state, commands: piece.commands, ...played };
+	const waltz = stepWaltz(piece.state, r, dt, arms);
+	if (waltz.done)
+		return {
+			state: waltz.state,
+			commands: [...piece.commands, ...waltz.commands],
+		};
 	let s = waltz.state;
-	const cmds = waltz.commands;
+	const cmds = [...piece.commands, ...waltz.commands];
 
 	// Before the hold: death holds the clock as the ship dies, and the fade is
 	// what it owes (D2).

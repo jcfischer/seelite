@@ -192,6 +192,7 @@ export const commanderAfterDeath = (
 			...dock,
 			requests,
 			ladders,
+			musicFirsts: dying.musicFirsts,
 			state: {
 				...(accounting ? withAccount(dock.state, accounting) : dock.state),
 				cargo: kept.cargo,
@@ -204,6 +205,7 @@ export const commanderAfterDeath = (
 		...dock,
 		requests,
 		ladders,
+		musicFirsts: dying.musicFirsts,
 		state: {
 			...(accounting
 				? withAccount(newCommander(PLAYER_BASELINE_HULL), accounting)

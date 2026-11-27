@@ -185,6 +185,32 @@ test("a resume that rejects removes nothing and throws nothing", async () => {
 	expect(target.live()).toEqual(REQUIRED);
 });
 
+test("the returned attempt opens the sound without an event, once", () => {
+	const target = recordingTarget();
+	let running = false;
+	let tries = 0;
+	let unlocked = 0;
+	const attempt = armAudioUnlock(
+		target,
+		() => {
+			tries++;
+			return running;
+		},
+		() => unlocked++,
+	);
+	attempt();
+	expect(unlocked).toBe(0);
+	expect(target.live()).toEqual(REQUIRED);
+	running = true;
+	attempt();
+	expect(unlocked).toBe(1);
+	expect(target.live()).toEqual([]);
+	attempt();
+	target.fire("keydown");
+	expect(tries).toBe(2);
+	expect(unlocked).toBe(1);
+});
+
 test("main.ts arms the unlock through the leaf and adds no listener of its own", () => {
 	const main = codeOf("src/main.ts");
 	expect(main).toMatch(/\barmAudioUnlock\s*\(\s*window\b/);

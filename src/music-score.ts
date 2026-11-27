@@ -306,7 +306,7 @@ export interface Song {
 export const MUSIC_VOICE_CAP = 24;
 
 /** The most songs loaded at once. A crossfade needs two. */
-export const MUSIC_SONG_SLOTS = 4;
+export const MUSIC_SONG_SLOTS = 6;
 
 /**
  * Where a transport move lands (D5): the next bar line of the song that is
