@@ -17270,6 +17270,17 @@ class Game {
 	 * pilot's situation and sends the synth what to play. On a held clock too,
 	 * where it holds; and under the opening, which holds it as well.
 	 */
+	private musicScene(): MusicScene {
+		const docked =
+			this.dock.phase === "docked" || this.dock.phase === "arriving";
+		if (this.dead) return "dead";
+		if (this.openingActive) return docked ? "docked" : "flight";
+		if (this.witchspace.kind !== "idle" || charging(this.jumpCharge))
+			return "witchspace";
+		if (this.dockingComputer.engaged) return "dockingComputer";
+		return docked ? "docked" : "flight";
+	}
+
 	private stepMusicDirector(dt: number, wallDtS: number) {
 		if (!this.waltzVersionsAsked) {
 			this.waltzVersionsAsked = true;
@@ -17283,16 +17294,7 @@ class Game {
 				});
 		}
 		const dock = this.dock;
-		const scene: MusicScene = this.dead
-			? "dead"
-			: (this.witchspace.kind !== "idle" && !this.openingActive) ||
-					charging(this.jumpCharge)
-				? "witchspace"
-				: this.dockingComputer.engaged
-					? "dockingComputer"
-					: dock.phase === "docked" || dock.phase === "arriving"
-						? "docked"
-						: "flight";
+		const scene = this.musicScene();
 		const station = dock.stationId
 			? stationOf(this.world.system, dock.stationId)
 			: null;

@@ -238,15 +238,15 @@ try {
 		const started = await settle();
 		const opening = await game.evaluate(async () => {
 			const g = window.__seelite;
-			for (let i = 0; i < 200 && g.opening?.shot !== "flypast"; i++)
+			for (let i = 0; i < 600 && g.opening?.shot !== "dock"; i++)
 				await new Promise((r) => setTimeout(r, 100));
 			return { shot: g.opening?.shot ?? null, piece: g.musicState.piece };
 		});
 		check(
-			"New game plays Zarathustra under the opening its reload boots, through the arrival (#589 D3)",
+			"New game plays Zarathustra under the opening its reload boots, through to the dock (#589 D3)",
 			started.ready &&
 				started.piece === "strauss-zarathustra" &&
-				opening.shot === "flypast" &&
+				opening.shot === "dock" &&
 				opening.piece === "strauss-zarathustra" &&
 				started.errors.length === 0,
 			`ready ${started.ready}; piece ${started.piece} (${started.song}); at ${opening.shot} ${opening.piece}; errors ${started.errors.join("; ") || 0}`,
