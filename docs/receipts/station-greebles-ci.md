@@ -210,3 +210,43 @@ at normal indices 30–32, beyond the sample. The diagnostic reports exactly
 assertion exits 1. This validates classification, not the original defect.
 The temporary case and values are restored before committing. Log:
 `/tmp/greeble1206-final-response-forced-red.log`.
+
+## Cause: bun 1.4.2 on Linux x64 (node #1284)
+
+The failure is the pinned runtime, not station geometry or a state leak in the
+suite. Node #1336's PR #1339 adds two test files that land in shard 3, and with
+them shard 3 failed the three greeble rows on every run: CI runs 45954755419
+(first attempt and retry) and, on `main` before it, the shard-3 red at
+`0b3084f5` on 2026-11-20. Each failure dump shows the stock trade-a core with
+108 NaN normal components and finite positions.
+
+The defect reproduces off CI under Linux x64 (Rancher Desktop, Rosetta,
+`oven/bun` images) with CI's exact shard-3 flags on #1339's tree at `a2152157`:
+
+| bun   | runs | greeble rows |
+| ----- | ---- | ------------ |
+| 1.4.2 | 2    | red both     |
+| 1.4.3 | 1    | green        |
+| 1.4.4 | 1    | green        |
+| 1.4.5 | 2    | green both   |
+
+The same shard passes on Darwin arm64 (1.4.2 and 1.4.4) and on Linux arm64
+(1.4.2), and no single quarter of shard 3's other files, run in one process
+before `station-greebles.test.ts`, reproduces it. That fits a JIT fault in
+the x64 build that depends on what has warmed it, which a later bun fixed.
+The other rows red in the container (biome lint and git-history rows) fail
+identically on every version, because the container has the macOS
+`node_modules` and no git; they are not part of this finding.
+
+Correction: CI pins bun 1.4.4, the version the suite runs on locally. These are
+emulated runs, one or two per version, of a fault that depends on what warmed
+the JIT, so they show 1.4.2 is red where later releases were not; they do not
+prove 1.4.4 can never fault. The native check is #1339 rebased onto this pin:
+its shard 3 is the mix that failed both CI attempts on 1.4.2.
+
+The existing row `the production polyhedron inputs retain finite normals across
+warmed construction` catches the fault only under a mix that triggers it. On
+this branch's own shard layout it was not shown to fail on 1.4.2, so it is a
+detector, not a guard that fires on every run.
+Logs stay outside the repository: `g-q0..q3.log`, `s142b.log`, `s143.log`,
+`s144.log`, `s145.log` and `s145b.log` in the session scratchpad.
