@@ -611,7 +611,11 @@ function stepWaltz(
 	return { state: s, commands: cmds, done: false };
 }
 
-const rankThreat = () => rank("threat");
+const ownsScene = (r: MusicReading) =>
+	r.scene === "flight" || r.scene === "docked";
+
+const tenseInFlight = (r: MusicReading, target: MusicLevel) =>
+	r.scene === "flight" && rank(target) >= rank("threat");
 
 const clearPiece = (s: MusicState): MusicState => ({
 	...s,
@@ -640,11 +644,13 @@ function continuePiece(
 		return { state: s, commands: [], done: false };
 	const mars = piece === "holst-mars";
 	const fallS =
-		mars && rank(target) < rankThreat() ? s.pieceFallS + (r.held ? 0 : dt) : 0;
+		mars && rank(target) < rank("threat")
+			? s.pieceFallS + (r.held ? 0 : dt)
+			: 0;
 	const cut =
 		arms.off ||
-		(r.scene !== "flight" && r.scene !== "docked") ||
-		(!mars && r.scene === "flight" && rank(target) >= rankThreat()) ||
+		!ownsScene(r) ||
+		(!mars && tenseInFlight(r, target)) ||
 		(mars && fallS >= FALL_HOLD_S);
 	if (cut) {
 		const fadeS = setPieceCutFadeS(piece);
@@ -675,14 +681,12 @@ function startPiece(
 ): PieceStep {
 	const none = { state: s, commands: [], done: false };
 	if (arms.off) return { ...none, state: { ...s, bootOwed: false } };
-	if ((r.scene !== "flight" && r.scene !== "docked") || s.waltz !== "none")
-		return none;
+	if (!ownsScene(r) || s.waltz !== "none") return none;
 	const unheard = (id: FirstPieceId) => r.heard && !r.firsts.includes(id);
-	const tense = r.scene === "flight" && rank(target) >= rankThreat();
 	let start: SetPieceId | null = null;
 	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
 		start = "holst-mars";
-	else if (tense) start = null;
+	else if (tenseInFlight(r, target)) start = null;
 	else if (s.bootOwed) start = "strauss-zarathustra";
 	else if (r.cue !== null && r.cue !== "boot" && unheard(FIRST_OF_CUE[r.cue]))
 		start = FIRST_OF_CUE[r.cue];
