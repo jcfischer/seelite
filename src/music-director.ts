@@ -687,12 +687,15 @@ function startPiece(
 	if (!ownsScene(r) || s.waltz !== "none") return none;
 	const unheard = (id: FirstPieceId) => r.heard && !r.firsts.includes(id);
 	const cued = r.cue === null ? null : FIRST_OF_CUE[r.cue];
-	let start: SetPieceId | null = null;
+	// Stryker disable next-line ConditionalExpression: with no cue, unheard(null) is true and the start is null either way
+	const anyCued = cued !== null;
+	const cuedFirst = anyCued && unheard(cued) ? cued : null;
+	let start: SetPieceId | null;
 	if (r.scene === "flight" && target === "combat" && unheard("holst-mars"))
 		start = "holst-mars";
 	else if (tenseInFlight(r, target)) start = null;
 	else if (s.bootOwed) start = "strauss-zarathustra";
-	else if (cued !== null && unheard(cued)) start = cued;
+	else start = cuedFirst;
 	if (start === null) return none;
 	const prefer: PieceSlot = s.pieceSlot === "piece-a" ? "piece-b" : "piece-a";
 	const fallback: PieceSlot = prefer === "piece-a" ? "piece-b" : "piece-a";
