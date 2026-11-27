@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { buildFitting } from "../src/hardpoint-model";
-import { fittingExitName, fittingFamilies } from "../src/fitting-families";
+import { catalogFamilies, fittingExitName, fittingFamilies } from "../src/fitting-families";
 
 test("each family has its own visible shell with a common shoe and forward exit", () => {
 	const counts = new Set<number>();
@@ -56,13 +56,7 @@ test("Courier H1 seats each catalog fitting inside the bow, with its exit on the
 	const root = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
 	const skin = [...root.children];
 	const [nose] = shipMuzzlesKm("courier", HULL_SPECS.courier.variant, root);
-	for (const family of [
-		"pulse-laser",
-		"beam-laser",
-		"military-laser",
-		"mining-laser",
-		"missile-rack",
-	] as const) {
+	for (const family of catalogFamilies) {
 		fitExterior(root, "courier", {
 			h1: { module: family, size: 1, grade: "E" },
 		});

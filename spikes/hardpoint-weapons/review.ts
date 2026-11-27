@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { buildFitting } from "../../src/hardpoint-model";
 import {
+	catalogFamilies,
 	fittingFamilies,
 	type FittingFamily,
 } from "../../src/fitting-families";
@@ -41,14 +42,14 @@ const camera = new THREE.PerspectiveCamera(60, 1.9, 0.0001, 2);
 camera.position.set(-CHASE_BACK_KM * 0.8, CHASE_UP_KM, -CHASE_BACK_KM * 0.6);
 camera.lookAt(0, 0, 0);
 const grid = document.querySelector(".grid")!;
-for (const [index, family] of fittingFamilies.entries()) {
+for (const family of fittingFamilies) {
 	const tile = document.createElement("article");
 	grid.append(tile);
 	const title = document.createElement("h2");
 	title.textContent = family.replaceAll("-", " ").toUpperCase();
 	tile.append(title);
 	const sub = document.createElement("small");
-	sub.textContent = index < 5 ? "CATALOG" : "CONCEPT";
+	sub.textContent = catalogFamilies.some((name) => name === family) ? "CATALOG" : "CONCEPT";
 	tile.append(sub);
 	const preview = document.createElement("img");
 	preview.alt = family + " Equipment model";
