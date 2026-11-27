@@ -320,5 +320,182 @@ check(
 );
 await playtest.close();
 
+const INTERCEPTOR_FIXTURE = [
+	["h1", "beam-laser", 2, "E"],
+	["u1", "shield-booster", 1, "E"],
+];
+console.log(
+	`fixture: interceptor with ${INTERCEPTOR_FIXTURE.map(([k, m, s, g]) => `${k}=${m}/${s}${g}`).join(", ")}`,
+);
+
+const matchProbe = async (pilot) => {
+	const matchPage = await browser.newPage({
+		viewport: { width: 900, height: 620 },
+	});
+	watch(matchPage);
+	await matchPage.goto(gameUrl(origin, { seed: 42 }));
+	await bootedGame(matchPage);
+	await matchPage.evaluate(installHelpers);
+	const result = await matchPage.evaluate(async (fixture) => {
+		const match = await import("/src/raider-strength-match.ts");
+		const loadouts = await import("/src/loadout.ts");
+		const credit = await import("/src/kill-credit.ts");
+		const lasers = await import("/src/laser-modules.ts");
+		const groups = await import("/src/fire-group.ts");
+		const g = window.__seelite;
+		const I = window.__int;
+		if (fixture) {
+			g.flownHull = "interceptor";
+			g.commander = {
+				...g.commander,
+				hull: "interceptor",
+				loadout: {
+					...loadouts.stockLoadout("interceptor"),
+					...Object.fromEntries(
+						fixture.map(([key, module, size, grade]) => [
+							key,
+							loadouts.makeModule(module, size, grade),
+						]),
+					),
+				},
+			};
+		}
+		const pilot = { hull: g.flownHull, loadout: g.commander.loadout };
+		I.cruise();
+		g.forceRaider("behind", 1, 30);
+		I.steps(1.2);
+		const inContest = g.encounter;
+		const identity = (loadout) =>
+			JSON.stringify(
+				Object.entries(loadout).map(([k, m]) => [k, m.module, m.size, m.grade]),
+			);
+		const atContest = identity(inContest.loadout);
+		const expected = match.selectRaiderFit(
+			g.npcFitSeedFor(inContest.slot.key),
+			pilot,
+		);
+		I.steps(2.8);
+		const duel = g.encounter;
+		const atDuel = duel?.phase === "duel" ? identity(duel.loadout) : null;
+		g.cycleFireGroup?.();
+		g.condition = { ...g.condition, hull: g.condition.hull - 1 };
+		I.steps(10);
+		const later = g.encounter;
+		const rates = later?.raider?.combat?.laserRates ?? null;
+		const expectedRates = lasers.groupLaserRates(
+			expected.loadout,
+			groups
+				.fireGroups(expected.loadout, "raider")
+				.find((x) => x.kind === "lasers"),
+		);
+		return {
+			atContest,
+			atDuel,
+			atLater: later?.phase === "duel" ? identity(later.loadout) : null,
+			expectedIdentity: identity(expected.loadout),
+			verdict: expected.verdict,
+			fit: Object.entries(expected.loadout).map(
+				([k, m]) => `${k}=${m.module}/${m.size}${m.grade}`,
+			),
+			rates,
+			expectedRates,
+			dpsFitted: credit.fittedDps({
+				hull: "raider",
+				loadout: expected.loadout,
+			}),
+			ratesDps: rates?.damagePerS ?? null,
+			struck:
+				g.condition.hull < g.condition.hullMax ||
+				g.condition.fore < g.condition.shieldMax,
+			rackFree: !match.hasRack(expected.loadout),
+			starter: match.isStarterPilot(pilot),
+		};
+	}, pilot);
+	await matchPage.close();
+	return result;
+};
+
+const courierMatch = await matchProbe(null);
+console.log(
+	`courier raider fit: ${courierMatch.fit.join(", ")} (${courierMatch.verdict.survivalS.toFixed(1)} s)`,
+);
+check(
+	"an involuntary interdiction fields the selected fit, stable from contest into the duel",
+	courierMatch.atContest === courierMatch.expectedIdentity &&
+		courierMatch.atDuel === courierMatch.expectedIdentity &&
+		courierMatch.atLater === courierMatch.expectedIdentity,
+	JSON.stringify(courierMatch),
+);
+check(
+	"the stock courier meets a rack-free raider inside the 20-45 s window",
+	courierMatch.starter &&
+		courierMatch.rackFree &&
+		courierMatch.verdict.ok &&
+		courierMatch.verdict.survivalS >= 20 &&
+		courierMatch.verdict.survivalS <= 45,
+	JSON.stringify(courierMatch.verdict),
+);
+check(
+	"the raider's actual guns are the selected fit's",
+	courierMatch.rates !== null &&
+		Math.abs(courierMatch.ratesDps - courierMatch.dpsFitted) < 1e-9 &&
+		courierMatch.rates.damagePerS === courierMatch.expectedRates.damagePerS,
+	JSON.stringify([courierMatch.rates, courierMatch.expectedRates]),
+);
+
+const interceptorMatch = await matchProbe(INTERCEPTOR_FIXTURE);
+console.log(
+	`interceptor raider fit: ${interceptorMatch.fit.join(", ")} (${interceptorMatch.verdict.survivalS.toFixed(1)} s)`,
+);
+check(
+	"a fitted interceptor draws a stable fit under its own ceiling and 20 s floor",
+	interceptorMatch.starter === false &&
+		interceptorMatch.verdict.ok &&
+		interceptorMatch.verdict.survivalS >= 20 &&
+		interceptorMatch.verdict.strength <= interceptorMatch.verdict.ceiling &&
+		interceptorMatch.atContest === interceptorMatch.expectedIdentity &&
+		interceptorMatch.atLater === interceptorMatch.expectedIdentity,
+	JSON.stringify(interceptorMatch),
+);
+
+const scopePage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(scopePage);
+await scopePage.goto(gameUrl(origin, { seed: 42 }));
+await bootedGame(scopePage);
+const scope = await scopePage.evaluate(async () => {
+	const enc = await import("/src/encounter.ts");
+	const npc = await import("/src/npc-loadout.ts");
+	const g = window.__seelite;
+	const record = g.world.system.record;
+	const slot = g.slotOperational ? null : null;
+	void slot;
+	const defender = enc.defenderEncounter(
+		g.slotOperational,
+		record.index,
+		record,
+		{
+			target: "relay-scope-control",
+			instance: 0,
+			ordinal: 0,
+			calledAtS: g.world.gameTime,
+		},
+	);
+	if (!defender) return { defender: null };
+	const fit = g.encounterFit(defender);
+	const ordinary = npc.npcLoadout("raider", g.npcFitSeedFor(defender.slot.key));
+	return {
+		origin: defender.origin,
+		same: JSON.stringify(fit) === JSON.stringify(ordinary),
+	};
+});
+check(
+	"a relay defender still receives its ordinary seeded fit",
+	scope.origin === "defender" && scope.same === true,
+	JSON.stringify(scope),
+);
+await scopePage.close();
+
 await browser.close();
 exit();

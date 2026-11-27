@@ -154,6 +154,7 @@ import {
 	armedNpc,
 } from "./npc-loadout";
 import { dropFittingCanister } from "./raider-wreck";
+import { selectRaiderFit } from "./raider-strength-match";
 import { fittedDps } from "./kill-credit";
 import {
 	type Loadout,
@@ -15914,10 +15915,13 @@ class Game {
 	}
 
 	private encounterFit(encounter: Encounter): Loadout {
-		return (encounter.loadout ??= this.npcFitFor(
-			RAIDER_HULL_ID,
-			encounter.slot.key,
-		));
+		return (encounter.loadout ??=
+			encounter.origin === "leg"
+				? selectRaiderFit(this.npcFitSeedFor(encounter.slot.key), {
+						hull: this.flownHull,
+						loadout: this.commander.loadout,
+					}).loadout
+				: this.npcFitFor(RAIDER_HULL_ID, encounter.slot.key));
 	}
 
 	/** Only identified live combat contacts can acquire a missile lock. */

@@ -1,0 +1,150 @@
+import { describe, expect, test } from "bun:test";
+import { strength } from "../src/kill-credit";
+import { type Loadout, makeModule, stockLoadout } from "../src/loadout";
+import {
+	SURVIVAL_MIN_S,
+	STARTER_SURVIVAL_MAX_S,
+	hasRack,
+	selectRaiderFit,
+	stockCourierShip,
+	strengthCeiling,
+} from "../src/raider-strength-match";
+import { RAIDER_HULL_ID } from "../src/raider-slots";
+
+const SEEDS = Array.from({ length: 1000 }, (_, i) => i);
+const courier = stockCourierShip();
+const interceptor = {
+	hull: "interceptor" as const,
+	loadout: {
+		...stockLoadout("interceptor"),
+		h1: makeModule("beam-laser", 2, "E"),
+		u1: makeModule("shield-booster", 1, "E"),
+	},
+};
+const describeFit = (l: Loadout) =>
+	Object.entries(l)
+		.map(([k, m]) => `${k}:${m.module}/${m.size}${m.grade}`)
+		.join(",");
+const fail = (seed: number, pilot: typeof courier, l: Loadout, s: number) =>
+	`seed ${seed} pilot [${describeFit(pilot.loadout)}] raider [${describeFit(l)}] destroyed in ${s}s`;
+
+describe("stock courier", () => {
+	const picks = SEEDS.map((seed) => ({
+		seed,
+		...selectRaiderFit(seed, courier),
+	}));
+
+	test("every fit is rack-free, armed, under the ceiling and 20-45 s", () => {
+		for (const p of picks) {
+			const s = p.verdict.survivalS;
+			const why = fail(p.seed, courier, p.loadout, s);
+			expect(hasRack(p.loadout), why).toBe(false);
+			expect(
+				strength({ hull: RAIDER_HULL_ID, loadout: p.loadout }),
+				why,
+			).toBeLessThanOrEqual(strengthCeiling(courier));
+			expect(s, why).toBeGreaterThanOrEqual(SURVIVAL_MIN_S);
+			expect(s, why).toBeLessThanOrEqual(STARTER_SURVIVAL_MAX_S);
+			expect(
+				strength({ hull: RAIDER_HULL_ID, loadout: p.loadout }),
+				why,
+			).toBeGreaterThan(0);
+		}
+	});
+
+	test("seeds 0-999: median 32-36 s, 100+ under 30 s, 100+ over 38 s", () => {
+		const t = picks.map((p) => p.verdict.survivalS).sort((a, b) => a - b);
+		const median = (t[499] + t[500]) / 2;
+		expect(median).toBeGreaterThanOrEqual(32);
+		expect(median).toBeLessThanOrEqual(36);
+		expect(t.filter((s) => s < 30).length).toBeGreaterThanOrEqual(100);
+		expect(t.filter((s) => s > 38).length).toBeGreaterThanOrEqual(100);
+	});
+});
+
+describe("pilot snapshot", () => {
+	test("spent ammunition and a copied fit select the same raider", () => {
+		const racked = {
+			hull: "courier" as const,
+			loadout: {
+				...stockLoadout("courier"),
+				u1: { ...makeModule("missile-rack", 1), ammo: 1 },
+			},
+		};
+		const full = {
+			hull: "courier" as const,
+			loadout: {
+				...racked.loadout,
+				u1: { ...racked.loadout.u1, ammo: 4 },
+			},
+		};
+		for (const seed of SEEDS.slice(0, 50))
+			expect(selectRaiderFit(seed, racked).loadout).toEqual(
+				selectRaiderFit(seed, full).loadout,
+			);
+	});
+});
+
+describe("unarmed and mining-only pilots", () => {
+	const mining = {
+		hull: "courier" as const,
+		loadout: { ...stockLoadout("courier"), h1: makeModule("mining-laser", 1) },
+	};
+	const bare = {
+		hull: "courier" as const,
+		loadout: { plant: courier.loadout.plant },
+	};
+	test("still draw an armed opponent under the stock floor", () => {
+		for (const pilot of [mining, bare]) {
+			expect(strength(pilot)).toBe(0);
+			expect(strengthCeiling(pilot)).toBe(strengthCeiling(courier));
+			for (const seed of SEEDS.slice(0, 100)) {
+				const pick = selectRaiderFit(seed, pilot);
+				expect(
+					strength({ hull: RAIDER_HULL_ID, loadout: pick.loadout }),
+				).toBeGreaterThan(0);
+				expect(pick.verdict.ok).toBe(true);
+			}
+		}
+	});
+});
+
+describe("tougher pilot: fitted interceptor", () => {
+	test("every seed: under ceiling, 20 s minimum including the earliest missiles", () => {
+		for (const seed of SEEDS) {
+			const pick = selectRaiderFit(seed, interceptor);
+			const why = fail(seed, interceptor, pick.loadout, pick.verdict.survivalS);
+			expect(pick.verdict.ok, why).toBe(true);
+			expect(pick.verdict.survivalS, why).toBeGreaterThanOrEqual(
+				SURVIVAL_MIN_S,
+			);
+			expect(
+				strength({ hull: RAIDER_HULL_ID, loadout: pick.loadout }),
+				why,
+			).toBeLessThanOrEqual(strengthCeiling(interceptor));
+		}
+	});
+
+	test("a common seed gives the same weak raider against both ships, and the interceptor lasts longer", () => {
+		const shared = SEEDS.filter(
+			(seed) =>
+				describeFit(selectRaiderFit(seed, courier).loadout) ===
+				describeFit(selectRaiderFit(seed, interceptor).loadout),
+		);
+		expect(shared.length).toBeGreaterThan(100);
+		for (const seed of shared)
+			expect(
+				selectRaiderFit(seed, interceptor).verdict.survivalS,
+				`seed ${seed}`,
+			).toBeGreaterThan(selectRaiderFit(seed, courier).verdict.survivalS);
+	});
+
+	test("the interceptor is matched up: some seeds field a stronger fit than the courier's", () => {
+		const stronger = SEEDS.filter(
+			(seed) =>
+				selectRaiderFit(seed, interceptor).verdict.strength >
+				selectRaiderFit(seed, courier).verdict.strength,
+		);
+		expect(stronger.length).toBeGreaterThan(100);
+	});
+});
