@@ -235,14 +235,21 @@ try {
 		await game.keyboard.press("Enter");
 		await reloaded;
 		await bootedGame(game);
-		await game.keyboard.press("Enter");
 		const started = await settle();
+		const opening = await game.evaluate(async () => {
+			const g = window.__seelite;
+			for (let i = 0; i < 200 && g.opening?.shot !== "flypast"; i++)
+				await new Promise((r) => setTimeout(r, 100));
+			return { shot: g.opening?.shot ?? null, piece: g.musicState.piece };
+		});
 		check(
-			"New game plays Zarathustra on the page its reload boots (#589 D3)",
+			"New game plays Zarathustra under the opening its reload boots, through the arrival (#589 D3)",
 			started.ready &&
 				started.piece === "strauss-zarathustra" &&
+				opening.shot === "flypast" &&
+				opening.piece === "strauss-zarathustra" &&
 				started.errors.length === 0,
-			`ready ${started.ready}; piece ${started.piece} (${started.song}); errors ${started.errors.join("; ") || 0}`,
+			`ready ${started.ready}; piece ${started.piece} (${started.song}); at ${opening.shot} ${opening.piece}; errors ${started.errors.join("; ") || 0}`,
 		);
 		const again = game.waitForEvent("load", { timeout: 30000 });
 		await game.reload();

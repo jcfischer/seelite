@@ -69,12 +69,17 @@ export type UnlockTarget = {
  * calls `tryUnlock`, which tries to open the context and answers whether it is
  * running — now, or by a promise once its `resume()` has settled. On the first
  * `true`, every listener is removed and `onUnlocked` runs, once.
+ *
+ * Returns the same attempt, to call without an event: a page that a click
+ * reloaded may already be allowed to sound, and has no input to wait for
+ * (https://github.com/jcfischer/seelite/issues/771). Once unlocked it does
+ * nothing.
  */
 export function armAudioUnlock(
 	target: UnlockTarget,
 	tryUnlock: () => boolean | PromiseLike<boolean>,
 	onUnlocked: () => void,
-): void {
+): () => void {
 	let done = false;
 	const finish = () => {
 		if (done) return;
@@ -97,4 +102,5 @@ export function armAudioUnlock(
 	};
 	for (const type of AUDIO_UNLOCK_EVENTS)
 		target.addEventListener(type, listener);
+	return listener;
 }

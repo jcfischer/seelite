@@ -5440,7 +5440,7 @@ class Game {
 		// (node #550): which events the browser honours, and why the listeners
 		// stay until the unlock works, are `audio-unlock.ts`'s. A gamepad button
 		// is none of them.
-		armAudioUnlock(
+		this.openSoundNow = armAudioUnlock(
 			window,
 			() => {
 				const resumed = this.audio.ensure();
@@ -17285,7 +17285,8 @@ class Game {
 		const dock = this.dock;
 		const scene: MusicScene = this.dead
 			? "dead"
-			: this.witchspace.kind !== "idle" || charging(this.jumpCharge)
+			: (this.witchspace.kind !== "idle" && !this.openingActive) ||
+					charging(this.jumpCharge)
 				? "witchspace"
 				: this.dockingComputer.engaged
 					? "dockingComputer"
@@ -17398,7 +17399,9 @@ class Game {
 		if (this.bootPieceCued) return;
 		this.bootPieceCued = true;
 		this.setPieceCue = "boot";
+		this.openSoundNow();
 	}
+	private openSoundNow: () => void = () => {};
 
 	private markMusicFirst(first: MusicFirst) {
 		const next = withFirst(this.musicFirsts, first);
