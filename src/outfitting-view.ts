@@ -1,3 +1,4 @@
+import { isFittingFamily } from "./hardpoint-model";
 import { escapeHtml as esc } from "./escape-html";
 import { fitDeltas, moduleLabel, type OutfittingScreen } from "./outfitting";
 import { refusalSentence, type RefusalHold } from "./station-console";
@@ -80,6 +81,12 @@ export function outfittingBody(
 	} else if (s.offer && !s.offer.accepted) {
 		confirm = `<span class="lc-station-locked">${s.candidate?.locked ? locked(s.candidate.locked) : esc(refusalSentence(s.offer.reason, hold))}</span>`;
 	}
+	const selected =
+		s.candidate?.module ?? s.slots.find((row) => row.key === s.slot)?.module;
+	const preview =
+		selected && isFittingFamily(selected.module)
+			? `<seelite-fitting family="${selected.module}"></seelite-fitting>`
+			: "";
 	const missilePrice = EQUIPMENT.find((e) => e.name === "Missile")!.priceCr;
-	return `<div class="lc-outfitting" data-live-outfitting><div class="lc-outfit-panes"><section><h3>SHIP SLOTS</h3><div class="lc-outfit-scroll">${fuelRow}${slots}${carried ? `<h3>FITTINGS IN HOLD · SELL AT 90%</h3>${carried}` : ""}</div></section><section><h3>STATION STOCK · ${esc(s.slot.toUpperCase())}</h3><div class="lc-outfit-scroll">${stock || "No compatible modules here."}</div></section></div><div class="lc-outfit-preview" data-live-outfit-preview><b>${s.candidate ? esc(moduleLabel(s.candidate.module)) : "Select a slot, then a module to compare."}</b>${delta}${s.moved ? `<small>${esc(s.moved)} moves to the hold · 1 t</small>` : ""}${confirm}</div><div class="lc-outfit-services"><span>MISSILES ${missilePrice} Cr each · rearm a fitted rack</span></div></div>`;
+	return `<div class="lc-outfitting" data-live-outfitting><div class="lc-outfit-panes"><section><h3>SHIP SLOTS</h3><div class="lc-outfit-scroll">${fuelRow}${slots}${carried ? `<h3>FITTINGS IN HOLD · SELL AT 90%</h3>${carried}` : ""}</div></section><section><h3>STATION STOCK · ${esc(s.slot.toUpperCase())}</h3><div class="lc-outfit-scroll">${stock || "No compatible modules here."}</div></section></div><div class="lc-outfit-preview" data-live-outfit-preview>${preview}<b>${s.candidate ? esc(moduleLabel(s.candidate.module)) : "Select a slot, then a module to compare."}</b>${delta}${s.moved ? `<small>${esc(s.moved)} moves to the hold · 1 t</small>` : ""}${confirm}</div><div class="lc-outfit-services"><span>MISSILES ${missilePrice} Cr each · rearm a fitted rack</span></div></div>`;
 }
