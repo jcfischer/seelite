@@ -14,6 +14,7 @@ import {
 import {
 	carriedModule,
 	equipmentNames,
+	stockLoadout,
 	withoutModule,
 	type FittedModule,
 	type Loadout,
@@ -63,6 +64,14 @@ import type { CommanderRecord, SaveEnvelope } from "./save-envelope";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
 import { killCredit } from "./kill-credit";
 import {
+	awardRaiderKill,
+	bankRaiderCash,
+	isRaiderSlotKey,
+	raiderCashOf,
+	raiderKillPayCr,
+} from "./raider-cash";
+import { RAIDER_HULL_ID } from "./raider-slots";
+import {
 	type LadderRecord,
 	type PendingCredit,
 	bankOnDock,
@@ -104,6 +113,7 @@ import {
 	type TransitionEvent,
 	type WorldState,
 	applyTransition,
+	effectiveCarrier,
 	effectiveDerelict,
 	scoopDerelict,
 	setDeficits,
@@ -345,6 +355,7 @@ export interface HoldSignals {
 	/** A request became ready to report (#546). Not every change to the
 	 *  journal: a kill can advance a stage without readying one. */
 	readied: boolean;
+	raiderCash?: { earnedCr: number; pendingCr: number };
 }
 
 export interface HoldOutcome {
@@ -614,15 +625,46 @@ function transition(
 							: event.hull,
 					),
 				);
+	const sanctioned = event.hull === RAIDER_HULL_ID && isRaiderSlotKey(key);
+	const award = sanctioned
+		? awardRaiderKill(
+				holdings.commander,
+				galaxyIndex,
+				key,
+				effectiveCarrier(
+					world.galaxies[galaxyIndex],
+					key,
+					change.occurredAt,
+					world,
+				).instanceOrdinal,
+				raiderKillPayCr({
+					hull: RAIDER_HULL_ID,
+					loadout: event.targetLoadout ?? stockLoadout(RAIDER_HULL_ID),
+				}),
+			)
+		: null;
+	const commander = award?.commander ?? holdings.commander;
 	if (
 		requests === holdings.requests &&
-		ladderPending === holdings.ladderPending
+		ladderPending === holdings.ladderPending &&
+		commander === holdings.commander
 	)
 		return unchanged(holdings, next);
 	return {
-		holdings: { ...holdings, requests, ladderPending },
+		holdings: { ...holdings, commander, requests, ladderPending },
 		world: next,
-		signals: { ...QUIET, readied: readiedBy(holdings.requests, requests) },
+		signals: {
+			...QUIET,
+			readied: readiedBy(holdings.requests, requests),
+			...(award && award.earnedCr > 0
+				? {
+						raiderCash: {
+							earnedCr: award.earnedCr,
+							pendingCr: raiderCashOf(commander).pendingCr,
+						},
+					}
+				: {}),
+		},
 	};
 }
 
@@ -663,6 +705,7 @@ function dock(
 				gameTime: event.at,
 			}),
 			ladderPending: emptyPending(),
+			commander: bankRaiderCash(holdings.commander),
 		},
 		world,
 		signals: QUIET,

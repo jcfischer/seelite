@@ -1,3 +1,4 @@
+import type { RaiderCash } from "./raider-cash";
 import { fittingCost } from "./loadout";
 import {
 	accountOf,
@@ -117,6 +118,7 @@ export const recoveredLocked = (
 export interface CommanderState {
 	accounting?: CommodityAccount;
 	firstOreNoticeSeen?: true;
+	raiderCash?: RaiderCash;
 	credits: number;
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;

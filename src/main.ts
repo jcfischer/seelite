@@ -20847,6 +20847,15 @@ class Game {
 		if (effects.requestRevision) this.requestRevision += 1;
 		// A request is ready to report: nothing else says so (#546).
 		if (signals?.readied) this.consoleNotify("good");
+		if (signals?.raiderCash) {
+			const text = `+${signals.raiderCash.earnedCr} Cr raider kill pay — ${signals.raiderCash.pendingCr} Cr pending until you dock`;
+			this.scoop = {
+				text,
+				left: SCOOP_NOTICE_S,
+				accepted: true,
+				canisterId: null,
+			};
+		}
 		if (effects.save) this.saveDirty();
 		if (effects.redraw) this.updateCockpit();
 	}

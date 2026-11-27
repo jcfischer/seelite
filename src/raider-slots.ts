@@ -38,6 +38,9 @@ export const RAIDER_SLOT_MAX = 4;
 export const raiderSlotCount = (government: number): number =>
 	RAIDER_SLOT_MAX - Math.floor(clampGovernment(government) / 2);
 
+export const raiderLocalId = (ordinal: number): string =>
+	`raider-${String(ordinal).padStart(2, "0")}`;
+
 export interface RaiderSlot {
 	localCarrierId: string;
 	key: CarrierKey;
@@ -50,7 +53,7 @@ export const raiderSlots = (
 	government: number,
 ): RaiderSlot[] =>
 	Array.from({ length: raiderSlotCount(government) }, (_, ordinal) => {
-		const localCarrierId = `raider-${String(ordinal).padStart(2, "0")}`;
+		const localCarrierId = raiderLocalId(ordinal);
 		return { localCarrierId, key: carrierKey(systemIndex, localCarrierId) };
 	});
 
