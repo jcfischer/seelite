@@ -6,7 +6,7 @@ import {
 	fittingFamilies,
 	type FittingFamily,
 } from "../../src/fitting-families";
-import { fittingStudio } from "../../src/hardpoint-preview";
+import { fittingPreviewSteps, fittingStudio } from "../../src/hardpoint-preview";
 import { hardpointSeats, placeFitting } from "../../src/hardpoint-exterior";
 import { buildShipMesh } from "../../src/ship-mesh";
 import { HULL_SPECS } from "../../src/hull";
@@ -56,7 +56,7 @@ for (const family of fittingFamilies) {
 	tile.append(preview);
 	let step = 0;
 	function draw() {
-		studio.show(family, 0.87 + (step * Math.PI) / 4, 608, 320);
+		studio.show(family, step, 608, 320);
 		preview.src = studio.renderer.domElement.toDataURL();
 	}
 	draw();
@@ -117,7 +117,7 @@ for (const family of fittingFamilies) {
 	const rotate = document.createElement("button");
 	rotate.textContent = "Rotate fitting";
 	rotate.onclick = () => {
-		step++;
+		step = (step + 1) % fittingPreviewSteps;
 		draw();
 	};
 	tile.append(rotate);

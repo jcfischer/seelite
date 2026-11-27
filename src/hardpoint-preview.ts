@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { buildFitting } from "./hardpoint-model";
 import { isFittingFamily, type FittingFamily } from "./fitting-families";
 
+export const fittingPreviewSteps = 8;
+
 export function fittingStudio() {
 	const renderer = new THREE.WebGLRenderer({
 		alpha: true,
@@ -21,7 +23,7 @@ export function fittingStudio() {
 	const models = new Map<FittingFamily, THREE.Group>();
 	function show(
 		family: FittingFamily,
-		angle: number,
+		step: number,
 		width: number,
 		height: number,
 	) {
@@ -39,6 +41,7 @@ export function fittingStudio() {
 		camera.top = 1.52;
 		camera.bottom = -1.52;
 		camera.updateProjectionMatrix();
+		const angle = 0.87 + (step * 2 * Math.PI) / fittingPreviewSteps;
 		camera.position.set(6 * Math.sin(angle), 3.3, -6 * Math.cos(angle));
 		camera.lookAt(0, 1, -0.33);
 		renderer.render(scene, camera);
@@ -72,7 +75,7 @@ export function registerFittingPreview() {
 				let src = views.get(id);
 				if (!src) {
 					studio ??= fittingStudio();
-					studio.show(selected, 0.87 + (step * Math.PI) / 4, 288, 168);
+					studio.show(selected, step, 288, 168);
 					src = studio.renderer.domElement.toDataURL();
 					views.set(id, src);
 				}
@@ -80,7 +83,7 @@ export function registerFittingPreview() {
 			}
 			draw(family);
 			button.onclick = () => {
-				step = (step + 1) % 8;
+				step = (step + 1) % fittingPreviewSteps;
 				draw(family);
 			};
 		}
