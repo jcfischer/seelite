@@ -1,9 +1,6 @@
 import * as THREE from "three";
-import {
-	buildFitting,
-	isFittingFamily,
-	type FittingFamily,
-} from "./hardpoint-model";
+import { buildFitting } from "./hardpoint-model";
+import { isFittingFamily, type FittingFamily } from "./fitting-families";
 
 export function fittingStudio() {
 	const renderer = new THREE.WebGLRenderer({

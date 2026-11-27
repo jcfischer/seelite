@@ -5087,6 +5087,7 @@ class Game {
 		// that box in the top-left corner while the CSS stretches nothing.
 		this.sizeOverlay();
 		this.hud = document.getElementById("hud") as HTMLElement;
+		registerFittingPreview();
 		this.liveCockpit = new LiveCockpit({
 			/**
 			 * A `Controls` row opens the rebind modal on it (#381 S4).
@@ -6961,7 +6962,6 @@ class Game {
 		// Every role's station maps now, beside the hull's: built lazily they
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
-		registerFittingPreview();
 		this.fitShipExterior(this.shipMesh);
 		this.shipMesh.name = "ship";
 		this.heldHullCasters = null;

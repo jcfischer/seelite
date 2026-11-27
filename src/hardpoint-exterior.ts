@@ -3,11 +3,12 @@ import { HULL_SPECS, type HullId, type SlotSize } from "./hull";
 import { shipMuzzlesKm } from "./ship-mesh";
 import { hardpointKeys } from "./laser-modules";
 import type { Loadout } from "./loadout";
+import { buildFitting } from "./hardpoint-model";
 import {
-	buildFitting,
+	fittingExitName,
 	isFittingFamily,
 	type FittingFamily,
-} from "./hardpoint-model";
+} from "./fitting-families";
 import { disposeSubtree } from "./gpu-teardown";
 
 export function placeFitting(
@@ -20,9 +21,7 @@ export function placeFitting(
 	model.scale.setScalar([0, 1.2, 1.7, 2.25][size] / 1000);
 	model.position.copy(seat);
 	if (hull === "courier") {
-		const port = model.getObjectByName(
-			family === "missile-rack" ? "launch-exit" : "muzzle",
-		)!;
+		const port = model.getObjectByName(fittingExitName(family))!;
 		model.scale.multiplyScalar(0.78);
 		model.position.addScaledVector(port.position, -model.scale.z);
 		model.position.z -= 0.00022;
@@ -31,6 +30,8 @@ export function placeFitting(
 	}
 	return model;
 }
+
+const triangleEdgeClearanceKm = 1e-8;
 
 const seats = new WeakMap<
 	THREE.Group,
@@ -42,25 +43,28 @@ export function hardpointSeats(root: THREE.Group, hull: HullId) {
 	if (cached && cached.shape === root.children[0]) return cached.points;
 	const spec = HULL_SPECS[hull];
 	root.updateWorldMatrix(true, true);
-	const points = shipMuzzlesKm(hull, spec.variant).map((m) => {
+	const caster = new THREE.Raycaster();
+	const down = new THREE.Vector3(0, -1, 0).transformDirection(root.matrixWorld);
+	const inset = Math.min(0.004, spec.env.lengthKm * 0.07);
+	const points = shipMuzzlesKm(hull, spec.variant).map((m, index) => {
 		if (hull === "courier") return new THREE.Vector3(m.x, m.y, m.z);
-		const z = m.z + Math.min(0.004, spec.env.lengthKm * 0.07);
-		const from = root.localToWorld(
-			new THREE.Vector3(m.x, spec.env.heightKm * 2, z),
+		for (const fraction of [1, 0.5, 0.25, 0]) {
+			const from = root.localToWorld(
+				new THREE.Vector3(
+					m.x + triangleEdgeClearanceKm,
+					spec.env.heightKm * 2,
+					m.z + inset * fraction,
+				),
+			);
+			caster.set(from, down);
+			const hit = caster
+				.intersectObjects(root.children, true)
+				.find((h) => h.face && h.object.visible);
+			if (hit) return root.worldToLocal(hit.point);
+		}
+		throw new Error(
+			`${hull}/h${index + 1}: no hull surface under the hardpoint`,
 		);
-		const direction = new THREE.Vector3(0, -1, 0).transformDirection(
-			root.matrixWorld,
-		);
-		const hits = new THREE.Raycaster(from, direction).intersectObjects(
-			root.children,
-			true,
-		);
-		const hit = hits.find(
-			(h) => h.object instanceof THREE.Mesh && h.object.visible,
-		);
-		return hit
-			? root.worldToLocal(hit.point)
-			: new THREE.Vector3(m.x, m.y, m.z);
 	});
 	seats.set(root, { shape: root.children[0], points });
 	return points;

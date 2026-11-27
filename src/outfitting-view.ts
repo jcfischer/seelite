@@ -1,4 +1,4 @@
-import { isFittingFamily } from "./hardpoint-model";
+import { isFittingFamily } from "./fitting-families";
 import { escapeHtml as esc } from "./escape-html";
 import { fitDeltas, moduleLabel, type OutfittingScreen } from "./outfitting";
 import { refusalSentence, type RefusalHold } from "./station-console";

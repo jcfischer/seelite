@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { buildFitting } from "../../src/hardpoint-model";
 import {
 	fittingFamilies,
-	buildFitting,
 	type FittingFamily,
-} from "../../src/hardpoint-model";
+} from "../../src/fitting-families";
 import { fittingStudio } from "../../src/hardpoint-preview";
 import { hardpointSeats, placeFitting } from "../../src/hardpoint-exterior";
 import { buildShipMesh } from "../../src/ship-mesh";
