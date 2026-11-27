@@ -238,8 +238,15 @@ The other rows red in the container (biome lint and git-history rows) fail
 identically on every version, because the container has the macOS
 `node_modules` and no git; they are not part of this finding.
 
-Correction: CI pins bun 1.4.4, the version the suite runs on locally. The
-regression check is the existing row `the production polyhedron inputs retain
-finite normals across warmed construction`, red on 1.4.2 under that file mix.
+Correction: CI pins bun 1.4.4, the version the suite runs on locally. These are
+emulated runs, one or two per version, of a fault that depends on what warmed
+the JIT, so they show 1.4.2 is red where later releases were not; they do not
+prove 1.4.4 can never fault. The native check is #1339 rebased onto this pin:
+its shard 3 is the mix that failed both CI attempts on 1.4.2.
+
+The existing row `the production polyhedron inputs retain finite normals across
+warmed construction` catches the fault only under a mix that triggers it. On
+this branch's own shard layout it was not shown to fail on 1.4.2, so it is a
+detector, not a guard that fires on every run.
 Logs stay outside the repository: `g-q0..q3.log`, `s142b.log`, `s143.log`,
 `s144.log`, `s145.log` and `s145b.log` in the session scratchpad.

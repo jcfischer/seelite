@@ -267,8 +267,9 @@ jobs:
   # flags are recent: `latest` ran 1.4.4 on 2026-10-28, and a release that drops
   # or renames one would turn every shard red with nothing changed here. 1.4.4 is
   # the version the suite runs on locally. 1.4.2 built NaN normals for the
-  # station core's PolyhedronGeometry on Linux x64 once a shard had warmed it;
-  # 1.4.3 onward do not (https://github.com/jcfischer/seelite/issues/1284).
+  # station core's PolyhedronGeometry on Linux x64 once a shard had warmed it,
+  # and 1.4.3 to 1.4.5 did not in the same emulated runs
+  # (https://github.com/jcfischer/seelite/issues/1284).
   #
   # `fail-fast: false` so all four report. With it on, the first red shard
   # cancelled the rest, and "cancelled" is the worst thing a shard can report:
