@@ -458,7 +458,7 @@ test("the shards split the suite across runners without narrowing it", () => {
 	expect(scripts.test).toBe("bun test tests/ --timeout=60000");
 });
 
-const PINNED_BUN = "1.4.2";
+const PINNED_BUN = "1.4.4";
 
 test("every bun the CI workflow installs is the pinned release the shard flags exist in", () => {
 	const setups = ciWorkflow().steps.filter(

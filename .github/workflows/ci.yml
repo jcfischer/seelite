@@ -107,7 +107,7 @@ jobs:
           cache: npm
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
       - run: npm ci
       - run: npm run test:mutation:control
       - run: npm run test:mutation:changed
@@ -265,8 +265,10 @@ jobs:
   #
   # bun is pinned (`bun-version` below, and in `mutation-changed`) because these
   # flags are recent: `latest` ran 1.4.4 on 2026-10-28, and a release that drops
-  # or renames one would turn every shard red with nothing changed here. 1.4.2 is
-  # the version the suite was measured on locally.
+  # or renames one would turn every shard red with nothing changed here. 1.4.4 is
+  # the version the suite runs on locally. 1.4.2 built NaN normals for the
+  # station core's PolyhedronGeometry on Linux x64 once a shard had warmed it;
+  # 1.4.3 onward do not (https://github.com/jcfischer/seelite/issues/1284).
   #
   # `fail-fast: false` so all four report. With it on, the first red shard
   # cancelled the rest, and "cancelled" is the worst thing a shard can report:
@@ -313,7 +315,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
 
       - name: Unit tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         run: >
