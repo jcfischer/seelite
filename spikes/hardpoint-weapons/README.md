@@ -8,11 +8,11 @@ Start Vite and open `/spikes/hardpoint-weapons/`. Rotate the fitting to compare 
 
 ## Edit or integrate a fitting
 
-Edit the cross sections, fixtures and finish in [hardpoint-model.ts](../../src/hardpoint-model.ts). Each family has a housing mesh, a separate optic mesh where the fitting glows, a bottom-centred attachment named `attachment` and a forward exit named `muzzle` or `launch-exit`. Local positive Y points up and negative Z points forward. The GLB contains the unscaled model in metres.
+Edit the cross sections, fixtures and finish in [hardpoint-model.ts](../../src/hardpoint-model.ts). Each family has a housing mesh, a separate lens mesh where the fitting has optics, a bottom-centred attachment named `attachment` and a forward exit named `muzzle` or `launch-exit`. Local positive Y points up and negative Z points forward. The GLB contains the unscaled model in metres.
 
-All three catalog sizes use the same geometry. The exterior scales it by 1.65, 2.5 or 3.4 for sizes 1, 2 and 3, then converts metres to kilometres. Grades E, D and A and salvaged variants retain their family silhouette. Slot compatibility, price, ammo and weapon behaviour come from the existing catalog.
+All three catalog sizes use the same geometry. The exterior scales it by 1.2, 1.7 or 2.25 for sizes 1, 2 and 3, then converts metres to kilometres. Grades E, D and A and salvaged variants retain their family silhouette. Slot compatibility, price, ammo and weapon behaviour come from the existing catalog.
 
-[Exterior placement](../../src/hardpoint-exterior.ts) follows hardpoint slot order and uses the hull surface just aft of each muzzle to seat the fitting. Replacing a fitting, changing hull or installing an authored hull refreshes the exterior. A hull-specific fairing meets the underside of the shoe. The Courier nose fairing and its chase firing-origin check belong to [the Courier nose integration](https://github.com/jcfischer/seelite/issues/1331).
+[Exterior placement](../../src/hardpoint-exterior.ts) follows hardpoint slot order and seats deck fittings low in the skin just aft of each muzzle. On the Courier, H1 aligns the fitting’s named exit with the centreline of the bow at the authored nose marker. The nose insert is 78% of the equivalent deck fitting to meet the tapered end plate. Replacing a fitting, changing hull or installing an authored hull refreshes the exterior. A hull-specific fairing meets the underside of the shoe. The Courier nose fairing and its chase firing-origin check belong to [the Courier nose integration](https://github.com/jcfischer/seelite/issues/1331).
 
 ## Review the concepts
 

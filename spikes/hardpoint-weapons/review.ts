@@ -59,7 +59,12 @@ for (const [index, family] of fittingFamilies.entries()) {
 		preview.src = studio.renderer.domElement.toDataURL();
 	}
 	draw();
-	const model = placeFitting(family, family === "scattergun" ? 1 : 2, seat);
+	const model = placeFitting(
+		family,
+		family === "scattergun" ? 1 : 2,
+		seat,
+		"interceptor",
+	);
 	hull.add(model);
 	studio.renderer.setSize(1920, 1080, false);
 	camera.aspect = 1920 / 1080;

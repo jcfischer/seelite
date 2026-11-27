@@ -20,11 +20,11 @@ export function isFittingFamily(name: string): name is FittingFamily {
 
 type XYZ = [number, number, number];
 type Section = [z: number, width: number, height: number, centreY: number];
-const shell = 0xc6b496;
-const bevel = 0x918371;
-const graphite = 0x38332e;
-const trim = 0x665e52;
-const ochre = 0xcc8d31;
+const shell = 0x737a7c;
+const bevel = 0x545957;
+const graphite = 0x353a3b;
+const trim = 0x555755;
+const ochre = 0x927445;
 const dark = 0x18191a;
 
 function plateFinish() {
@@ -39,7 +39,8 @@ function plateFinish() {
 		for (let x = 0; x < size; x++) {
 			const px = x % 128,
 				py = y % 96;
-			let value = 222 + noise() * 24;
+			const brushed = 4 * Math.sin(y * 1.7) + 6 * Math.sin((x + y) / 28);
+			let value = 213 + brushed + noise() * 28;
 			if (px < 2 || py < 2) value = 87 + noise() * 20;
 			else if (px === 2 || py === 2) value = 250;
 			const bolt = Math.hypot(
@@ -102,8 +103,8 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 				v = pos.getY(i);
 			if (nx > ny && nx > nz) u = pos.getZ(i);
 			else if (ny > nz) v = pos.getZ(i);
-			uv[2 * i] = painted ? u * 0.43 + 0.24 : 250.5 / 256;
-			uv[2 * i + 1] = painted ? v * 0.43 + 0.38 : 250.5 / 256;
+			uv[2 * i] = painted ? u * 0.69 + 0.24 : 250.5 / 256;
+			uv[2 * i + 1] = painted ? v * 0.69 + 0.38 : 250.5 / 256;
 		}
 		g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 		const rgb = new THREE.Color(color);
@@ -111,7 +112,7 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 		for (let i = 0; i < colors.length; i += 3) rgb.toArray(colors, i);
 		g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 		if (
-			[0xff951d, 0xe22b53, 0xad52ff, 0x91df37, 0x43ecff, 0xffae37].includes(
+			[0xbd7434, 0x88303e, 0x715584, 0x637f42, 0x578d98, 0xaa753f].includes(
 				color,
 			)
 		)
@@ -209,7 +210,7 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 			barrel(0.36, 0.15, [0, 1.08, -1.1], 0x781c32);
 			add(
 				new THREE.SphereGeometry(0.295, 16, 10).scale(1, 1, 0.35),
-				0xe22b53,
+				0x88303e,
 				[0, 1.08, -1.18],
 			);
 			for (const side of [-1, 1]) {
@@ -229,7 +230,7 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 				shell,
 			);
 			box([1.62, 0.22, 0.06], [0, 1.03, -1.74], graphite);
-			box([1.39, 0.075, 0.07], [0, 1.04, -1.78], 0x43ecff);
+			box([1.39, 0.075, 0.07], [0, 1.04, -1.78], 0x578d98);
 			for (const x of [-0.55, 0.55])
 				box([0.2, 0.04, 0.66], [x, 1.45, -0.24], graphite);
 			exitZ = -1.82;
@@ -256,7 +257,7 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 			add(prism, graphite, [0, 1.13, -1.48]);
 			add(
 				new THREE.ShapeGeometry(lens).scale(0.92, 0.92, 1).rotateY(Math.PI),
-				0xad52ff,
+				0x715584,
 				[0, 1.1, -1.49],
 			);
 			casing(
@@ -281,7 +282,7 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 					ochre,
 				);
 			barrel(0.34, 0.35, [0, 1.12, -0.39], graphite);
-			barrel(0.32, 0.42, [0, 1.12, -0.76], 0x91df37);
+			barrel(0.32, 0.42, [0, 1.12, -0.76], 0x637f42);
 			exitZ = -0.97;
 			break;
 		case "missile-rack":
@@ -322,7 +323,7 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 				const theta = (i * Math.PI) / 3;
 				const glow = new THREE.BoxGeometry(0.11, 0.25, 0.24);
 				glow.rotateZ(theta);
-				add(glow, 0xffae37, [
+				add(glow, 0xaa753f, [
 					0.14 + Math.cos(theta) * 0.803,
 					1.25 + Math.sin(theta) * 0.803,
 					-0.08,
@@ -407,7 +408,7 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 				arc.rotateY(Math.PI / 2);
 				add(arc, shell, [x, 1.33, -0.8]);
 			}
-			add(new THREE.SphereGeometry(0.48, 18, 12), 0xff951d, [0, 1.33, -0.86]);
+			add(new THREE.SphereGeometry(0.48, 18, 12), 0xbd7434, [0, 1.33, -0.86]);
 			exitZ = -1.35;
 			exitY = 1.33;
 			break;
@@ -422,8 +423,10 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 			new THREE.MeshStandardMaterial({
 				vertexColors: true,
 				map: finish,
-				metalness: 0.38,
-				roughness: 0.52,
+				metalness: 0.48,
+				roughness: 0.62,
+				bumpMap: finish,
+				bumpScale: 0.000028,
 			}),
 		),
 	);
@@ -433,7 +436,11 @@ export function buildFitting(family: FittingFamily): THREE.Group {
 		const light = new THREE.Mesh(
 			shared(mergeGeometries(optics)),
 			shared(
-				new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
+				new THREE.MeshStandardMaterial({
+					vertexColors: true,
+					metalness: 0.28,
+					roughness: 0.23,
+				}),
 			),
 		);
 		light.name = "optic";

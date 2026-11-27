@@ -13,11 +13,22 @@ import { disposeSubtree } from "./gpu-teardown";
 export function placeFitting(
 	family: FittingFamily,
 	size: SlotSize,
-	shoe: THREE.Vector3,
+	seat: THREE.Vector3,
+	hull: HullId,
 ) {
 	const model = buildFitting(family);
-	model.scale.setScalar([0, 1.65, 2.5, 3.4][size] / 1000);
-	model.position.copy(shoe);
+	model.scale.setScalar([0, 1.2, 1.7, 2.25][size] / 1000);
+	model.position.copy(seat);
+	if (hull === "courier") {
+		const port = model.getObjectByName(
+			family === "missile-rack" ? "launch-exit" : "muzzle",
+		)!;
+		model.scale.multiplyScalar(0.78);
+		model.position.addScaledVector(port.position, -model.scale.z);
+		model.position.z -= 0.00022;
+	} else {
+		model.position.y -= 0.33 * model.scale.y;
+	}
 	return model;
 }
 
@@ -32,6 +43,7 @@ export function hardpointSeats(root: THREE.Group, hull: HullId) {
 	const spec = HULL_SPECS[hull];
 	root.updateWorldMatrix(true, true);
 	const points = shipMuzzlesKm(hull, spec.variant).map((m) => {
+		if (hull === "courier") return new THREE.Vector3(m.x, m.y, m.z);
 		const z = m.z + Math.min(0.004, spec.env.lengthKm * 0.07);
 		const from = root.localToWorld(
 			new THREE.Vector3(m.x, spec.env.heightKm * 2, z),
@@ -66,7 +78,7 @@ export function fitExterior(root: THREE.Group, hull: HullId, loadout: Loadout) {
 	for (const [index, key] of hardpointKeys(hull).entries()) {
 		const row = loadout[key];
 		if (!row || !isFittingFamily(row.module)) continue;
-		const model = placeFitting(row.module, row.size, points[index]);
+		const model = placeFitting(row.module, row.size, points[index], hull);
 		model.name = key + "-" + row.module;
 		fittings.add(model);
 	}

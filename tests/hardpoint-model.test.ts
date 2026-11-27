@@ -21,7 +21,7 @@ test("each family has its own visible shell with a common shoe and forward exit"
 });
 
 import { fitExterior } from "../src/hardpoint-exterior";
-import { buildShipMesh } from "../src/ship-mesh";
+import { buildShipMesh, shipMuzzlesKm } from "../src/ship-mesh";
 import { HULL_SPECS, HULL_IDS, type HullId } from "../src/hull";
 import { stockLoadout } from "../src/loadout";
 import { hardpointKeys } from "../src/laser-modules";
@@ -51,4 +51,29 @@ function checkMounts(hull: HullId) {
 }
 test("equipping, swapping and clearing fittings follows each hull's slots", () => {
 	for (const hull of HULL_IDS) checkMounts(hull);
+});
+
+test("Courier H1 seats each catalog fitting inside the bow, with its exit on the nose axis", () => {
+	const root = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
+	const [nose] = shipMuzzlesKm("courier", HULL_SPECS.courier.variant, root);
+	for (const family of [
+		"pulse-laser",
+		"beam-laser",
+		"military-laser",
+		"mining-laser",
+		"missile-rack",
+	] as const) {
+		fitExterior(root, "courier", {
+			h1: { module: family, size: 1, grade: "E" },
+		});
+		const mount = root.getObjectByName("h1-" + family)!;
+		const port = mount
+			.getObjectByName(family === "missile-rack" ? "launch-exit" : "muzzle")!
+			.getWorldPosition(new THREE.Vector3());
+		expect(port.x).toBeCloseTo(nose.x, 7);
+		expect(port.y).toBeCloseTo(nose.y, 7);
+		expect(nose.z - port.z).toBeCloseTo(0.00022, 7);
+
+		expect(mount.position.z).toBeGreaterThan(nose.z);
+	}
 });
