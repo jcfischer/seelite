@@ -140,26 +140,27 @@ class Planner {
 
 	contentsOf(record: SystemRecord): SystemContents {
 		let c = this.contents.get(record.index);
+		// Stryker disable next-line ConditionalExpression: the cache saves asking twice only; a miss asks for the same contents
 		if (!c) {
 			c = this.world.contentsOf(record);
+			// Stryker disable next-line CallExpression: a miss that files nothing recomputes the same contents
 			this.contents.set(record.index, c);
 		}
 		return c;
 	}
 
+	/** The systems one hop may reach, this one first. The order is not a
+	 *  preference: `candidates` sorts its offers totally, so the answer does not
+	 *  depend on it. */
 	reach(record: SystemRecord): SystemRecord[] {
 		let list = this.neighbourhoods.get(record.index);
+		// Stryker disable next-line ConditionalExpression: the cache saves a second walk only; a miss walks the same systems
 		if (!list) {
 			list = [
 				record,
-				...reachable(this.world.systems, record, this.world.maxJump)
-					.slice()
-					.sort(
-						(a, b) =>
-							distanceLy(record.pos, a.pos) - distanceLy(record.pos, b.pos) ||
-							a.index - b.index,
-					),
+				...reachable(this.world.systems, record, this.world.maxJump),
 			];
+			// Stryker disable next-line CallExpression: a miss that files nothing recomputes the same neighbourhood
 			this.neighbourhoods.set(record.index, list);
 		}
 		return list;
@@ -168,6 +169,7 @@ class Planner {
 	board(record: SystemRecord, station: Station): JobOffer[] {
 		const key = keyOf(record, station);
 		const hit = this.boards.get(key);
+		// Stryker disable next-line ConditionalExpression: the cache saves rebinding only; a rebuild binds the same offers
 		if (hit) return hit;
 		const ctx: BindContext = {
 			galaxyIndex: this.world.galaxyIndex,
@@ -184,6 +186,7 @@ class Planner {
 			gameTimeMin: this.world.gameTimeMin,
 			settled: this.world.settledAt?.(key) ?? {},
 			bountyTarget: this.world.bountyTargetOf(record),
+			// Stryker disable next-line ArrayDeclaration: the composer binds no Salvage row, so no binder reads this list
 			salvageTargets: [],
 			holdT: this.world.holdT,
 		};
@@ -192,6 +195,7 @@ class Planner {
 					(o): o is JobOffer => o !== null && refuseStep(o) === null,
 				)
 			: [];
+		// Stryker disable next-line CallExpression: a miss that files nothing rebinds the same offers
 		this.boards.set(key, offers);
 		return offers;
 	}
@@ -262,23 +266,29 @@ export const systemsOf = (steps: readonly ArcStep[]): Set<number> => {
 	return s;
 };
 
+/** The whole-arc lengths D10 admits, shortest first. A route is only accepted
+ *  at one of these totals, so a plan past `ARC_MAX_STEPS` is never built. */
+const ARC_LENGTHS: readonly number[] = [
+	ARC_MIN_STEPS,
+	ARC_MIN_STEPS + 1,
+	ARC_MIN_STEPS + 2,
+	ARC_MAX_STEPS,
+];
+
 function route(
 	planner: Planner,
 	taken: readonly ArcStep[],
 	start: number,
 	prefer: string | undefined,
 ): Cand[] | null {
-	const maxMore = ARC_MAX_STEPS - taken.length;
-	for (
-		let more = Math.max(1, ARC_MIN_STEPS - taken.length);
-		more <= maxMore;
-		more++
-	) {
+	for (const total of ARC_LENGTHS) {
+		const remaining = total - taken.length;
+		if (remaining < 1) continue;
 		const used = new Set<CarrierKey>(taken.map((s) => s.requester.carrierKey));
 		const found = search(planner, {
 			taken,
 			pos: start,
-			remaining: more,
+			remaining,
 			used,
 			path: [],
 			prefer,
@@ -316,6 +326,7 @@ function search(planner: Planner, state: SearchState): Cand[] | null {
 	const mids = cands.filter((c) => !planner.isAnswer(c.offer));
 	if (path.length === 0 && prefer) {
 		const i = mids.findIndex((c) => c.offer.id === prefer);
+		// Stryker disable next-line EqualityOperator: moving the first candidate to the front is the same list
 		if (i > 0) mids.unshift(...mids.splice(i, 1));
 	}
 	let tried = 0;
@@ -336,19 +347,28 @@ function search(planner: Planner, state: SearchState): Cand[] | null {
 	return null;
 }
 
+interface Deficit {
+	good: string;
+	units: number;
+}
+
+const NO_DEFICIT: Deficit = { good: "", units: 0 };
+
+/** The largest deficit a legal tonne good has at this station, decayed to the
+ *  clock. A market that lists no such good has no deficit to note. */
 const deficitOfNote = (
 	world: ArcWorld,
 	record: SystemRecord,
 	station: Station,
-): { good: string; units: number } | null => {
+): Deficit => {
 	const key = keyOf(record, station);
-	let best: { good: string; units: number } | null = null;
+	let best: Deficit | null = null;
 	for (const c of stationCommodities(marketStationOf(station, record.seed))) {
 		if (c.illegal || c.unit !== "t") continue;
 		const units = readDeficit(world.deficits, key, c.name, world.gameTimeMin);
 		if (!best || units > best.units) best = { good: c.name, units };
 	}
-	return best;
+	return best ?? NO_DEFICIT;
 };
 
 const kindOrder = (
@@ -356,22 +376,20 @@ const kindOrder = (
 	record: SystemRecord,
 	station: Station,
 ): QuestionKind[] => {
+	// Stryker disable next-line EqualityOperator: the midpoint sits at government 3.5, so no integer government lands on it
 	const raiders = raiderLegChance(record.government) >= RAIDER_OPEN_CHANCE;
-	const deficit = deficitOfNote(world, record, station);
 	const shortage =
-		deficit !== null &&
-		deficit.units >= SHORTAGE_DEFICIT_FACTOR * PROCUREMENT_MIN_DEFICIT_T;
+		deficitOfNote(world, record, station).units >=
+		SHORTAGE_DEFICIT_FACTOR * PROCUREMENT_MIN_DEFICIT_T;
 	const kinds: QuestionKind[] = [];
 	if (raiders) kinds.push("raiders-on-route");
 	if (shortage) kinds.push("unexplained-shortage");
-	if (kinds.length === 2) {
-		const coin =
-			mix(
-				mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS),
-				77,
-			) & 1;
-		if (coin) kinds.reverse();
-	}
+	// The coin picks which question a place asks when it could ask both;
+	// reversing a single kind is that kind, so no count is read here.
+	const coin =
+		mix(mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS), 77) &
+		1;
+	if (coin) kinds.reverse();
 	return kinds;
 };
 
@@ -383,7 +401,7 @@ const questionText = (
 ): string =>
 	kind === "raiders-on-route"
 		? `Who is sending raiders down the cruise lanes out of ${record.name}?`
-		: `Why is ${station.name} short of ${deficitOfNote(world, record, station)?.good ?? "goods"}?`;
+		: `Why is ${station.name} short of ${deficitOfNote(world, record, station).good}?`;
 
 /**
  * Opens an arc on a question at `station`, or refuses with a reason.
