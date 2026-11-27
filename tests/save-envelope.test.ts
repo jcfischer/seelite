@@ -22,6 +22,7 @@ import {
 	SAVE_SCHEMA_VERSION,
 	serializeSave,
 } from "../src/save-envelope";
+import { withFirst } from "../src/music-firsts";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { restoreWorld } from "../src/sim";
 import {
@@ -446,5 +447,24 @@ describe("#936 D4 — txSeq in the save envelope", () => {
 			});
 			expect(() => parseSave(raw)).toThrow(/txSeq/);
 		}
+	});
+});
+
+describe("the saved music firsts (#589 D13, node #771)", () => {
+	const commander = () => newCommanderRecord("courier");
+
+	test("the set survives a round trip", () => {
+		const c = {
+			...commander(),
+			musicFirsts: withFirst(withFirst([], "holst-mars"), "hull-bought"),
+		};
+		const back = parseSave(serializeSave({ world: newWorld(7), commander: c }));
+		expect(back.commander.musicFirsts).toEqual(["hull-bought", "holst-mars"]);
+	});
+
+	test("a record written without the field loads with the empty set: no migration", () => {
+		const raw = serializeSave({ world: newWorld(7), commander: commander() });
+		expect(JSON.stringify(raw)).not.toContain("musicFirsts");
+		expect(parseSave(raw).commander.musicFirsts).toEqual([]);
 	});
 });

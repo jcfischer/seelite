@@ -58,6 +58,18 @@ describe("the boot piece (D3, D3a)", () => {
 		expect(takeBootMark(store)).toBeNull();
 	});
 
+	test("a mark this build does not know reads as none", () => {
+		const store = memory();
+		store.setItem(BOOT_PIECE_KEY, "later");
+		expect(takeBootMark(store)).toBeNull();
+	});
+
+	test("a boot with no wake at all plays it on Continue", () => {
+		expect(bootPieceOwed({ wake: undefined, mark: null, click: true })).toBe(
+			true,
+		);
+	});
+
 	test("no session store, or one that throws, reads as no mark", () => {
 		expect(takeBootMark(null)).toBeNull();
 		const refusing: MarkStore = {

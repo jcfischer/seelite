@@ -931,6 +931,115 @@ describe("classical set-pieces (#589 D10, node #771)", () => {
 		expect(jumps(after)).toEqual([]);
 	});
 
+	const one = (
+		state: MusicState,
+		r: MusicReading,
+		wallDtS: number,
+		arms: MusicArms = DEFAULT_MUSIC_ARMS,
+	) => stepMusic(state, { ...r, wallDtS }, wallDtS, arms);
+
+	test("the cooldown is open before any boot, and shut for 25 minutes after one (D4)", () => {
+		expect(chanceCooldownOpen(initialMusicState(), 0)).toBe(true);
+		const boot = one(
+			initialMusicState(),
+			{ ...docked, gameTimeS: 100, cue: "boot" },
+			0.1,
+		);
+		expect(chanceCooldownOpen(boot.state, 100 + 24 * 60)).toBe(false);
+		expect(chanceCooldownOpen(boot.state, 100 + 25 * 60)).toBe(true);
+	});
+
+	test("a cut fades every piece over a short tail, never backwards", () => {
+		for (const id of Object.keys(SET_PIECES) as SetPieceId[]) {
+			expect(setPieceCutFadeS(id)).toBeGreaterThan(0);
+			expect(setPieceCutFadeS(id)).toBeLessThan(seconds(id) / 3);
+		}
+	});
+
+	test("a cut is one stop now, faded over the piece's two bars", () => {
+		const out = run([
+			[0.1, { ...docked, cue: "boot" }],
+			[0.1, { ...docked, scene: "witchspace" }],
+		]);
+		expect(out.steps[1].commands).toEqual([
+			{
+				type: "stop",
+				at: "now",
+				fadeS: setPieceCutFadeS("strauss-zarathustra"),
+			},
+		]);
+	});
+
+	test("a piece starts on the first frame, ends on the frame its length is reached with the bed in that frame, and the next goes to the other slot", () => {
+		const start = one(initialMusicState(), { ...docked, cue: "boot" }, 0);
+		expect(pieceLoads(start.commands)).toEqual(["piece-a"]);
+		const end = one(start.state, docked, seconds("strauss-zarathustra"));
+		expect(end.state.piece).toBeNull();
+		expect(end.commands.map((c) => c.type)).toEqual(["load", "crossfade"]);
+		const next = one(end.state, { ...docked, cue: "newHull" }, 0.1);
+		expect(pieceLoads(next.commands)).toEqual(["piece-b"]);
+	});
+
+	test("Mars is cut on the frame its fall reaches the hold, not one later (D7)", () => {
+		let state = one(initialMusicState(), combat, 0.5).state;
+		expect(state.piece).toBe("holst-mars");
+		let longest = 0;
+		for (let i = 0; i < 200 && state.piece === "holst-mars"; i++) {
+			longest = Math.max(longest, state.pieceFallS);
+			state = one(state, fresh, 0.5).state;
+		}
+		expect(state.piece).toBeNull();
+		expect(longest).toBe(FALL_HOLD_S - 0.5);
+	});
+
+	test("a boot asked for while the music is off is not owed once it is back on", () => {
+		const off = { ...DEFAULT_MUSIC_ARMS, off: true };
+		const asked = one(
+			initialMusicState(),
+			{ ...docked, cue: "boot" },
+			0.1,
+			off,
+		);
+		const on = run([[1, docked]], { state: asked.state });
+		expect(pieceLoads(on.commands)).toEqual([]);
+	});
+
+	test("a boot in the berth waits for the waltz's cadence, then plays", () => {
+		const waltz = { version: "hybrid", song: danubeSong("hybrid") };
+		const out = run([
+			[1, { ...fresh, scene: "dockingComputer", waltz }],
+			[0.1, { ...docked, cue: "boot" }],
+		]);
+		expect(out.state.waltz).not.toBe("none");
+		expect(pieceLoads(out.commands)).toEqual([]);
+		const later = run([[120, docked]], { state: out.state });
+		expect(loads(later.commands)).toContain(ZARATHUSTRA.name);
+	});
+
+	test("a slot still fading its cut is not loaded again: with both fading, nothing starts", () => {
+		const out = run([
+			[0.1, { ...docked, cue: "boot" }],
+			[0.1, { ...docked, scene: "witchspace" }],
+			[0.1, { ...docked, cue: "newHull" }],
+			[0.1, { ...docked, scene: "witchspace" }],
+			[0.1, { ...docked, cue: "capitalShip" }],
+		]);
+		expect(pieceLoads(out.commands)).toEqual(["piece-a", "piece-b"]);
+		expect(out.state.piece).toBeNull();
+	});
+
+	test("a piece goes back to its own slot when the other is still fading", () => {
+		const out = run([
+			[0.1, { ...fresh, cue: "boot" }],
+			[0.1, combat],
+			[0.1, { ...combat, scene: "witchspace" }],
+			[5, docked],
+			[0.1, { ...docked, cue: "capitalShip" }],
+		]);
+		expect(pieceLoads(out.commands)).toEqual(["piece-a", "piece-b", "piece-b"]);
+		expect(out.state.piece).toBe("bruckner-7-adagio");
+	});
+
 	test("through the real engine: a boot, a first, a cut and Mars, with no command refused", () => {
 		const SR = 48000;
 		const heard: string[] = [];

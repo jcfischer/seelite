@@ -11,6 +11,7 @@
  */
 
 /** The session-store key the mark is kept under. */
+// Stryker disable next-line StringLiteral: the key only has to match itself across one reload, so any other name reads back the same
 export const BOOT_PIECE_KEY = "seelite.boot-piece";
 
 /** What the page before this one left: a start, a death, or nothing. */
@@ -25,7 +26,9 @@ export function leaveBootMark(
 	mark: Exclude<BootMark, null>,
 ): void {
 	try {
+		// Stryker disable next-line OptionalChaining: a null store throws into the catch below, which ends the call the same way
 		store?.setItem(BOOT_PIECE_KEY, mark);
+		// Stryker disable next-line BlockStatement: the catch ends the call, and so does an empty one
 	} catch {
 		return;
 	}
@@ -34,7 +37,9 @@ export function leaveBootMark(
 /** Read once per page, at boot; the mark is taken whatever it says. */
 export function takeBootMark(store: MarkStore | null): BootMark {
 	try {
+		// Stryker disable next-line OptionalChaining: a null store throws into the catch, which answers null as the chain does
 		const mark = store?.getItem(BOOT_PIECE_KEY) ?? null;
+		// Stryker disable next-line OptionalChaining: reached only with a store, since a null one threw on the line above
 		store?.removeItem(BOOT_PIECE_KEY);
 		return mark === "owed" || mark === "skip" ? mark : null;
 	} catch {

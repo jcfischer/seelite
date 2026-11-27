@@ -1,33 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { commanderAfterDeath } from "../src/holdings";
 import { parseMusicFirsts, withFirst } from "../src/music-firsts";
-import {
-	newCommanderRecord,
-	parseSave,
-	serializeSave,
-} from "../src/save-envelope";
-import { newWorld } from "../src/world-state";
+import { newCommanderRecord } from "../src/save-envelope";
 
 const commander = () => newCommanderRecord("courier");
 
 describe("the saved firsts (#589 D13)", () => {
 	test("a new commander has heard none", () => {
 		expect(commander().musicFirsts).toEqual([]);
-	});
-
-	test("the set survives a round trip", () => {
-		const c = {
-			...commander(),
-			musicFirsts: withFirst(withFirst([], "holst-mars"), "hull-bought"),
-		};
-		const back = parseSave(serializeSave({ world: newWorld(7), commander: c }));
-		expect(back.commander.musicFirsts).toEqual(["hull-bought", "holst-mars"]);
-	});
-
-	test("a record written without the field loads with the empty set: no migration", () => {
-		const raw = serializeSave({ world: newWorld(7), commander: commander() });
-		expect(JSON.stringify(raw)).not.toContain("musicFirsts");
-		expect(parseSave(raw).commander.musicFirsts).toEqual([]);
 	});
 
 	test("an unknown or repeated entry is refused by name", () => {

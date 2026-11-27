@@ -643,6 +643,7 @@ function continuePiece(
 ): PieceStep {
 	const piece = s.piece;
 	const slot = s.pieceSlot;
+	// Stryker disable next-line ConditionalExpression: a piece is only ever set together with its slot, so the slot test never decides
 	if (piece === null || slot === null)
 		return { state: s, commands: [], done: false };
 	const mars = piece === "holst-mars";
@@ -691,6 +692,7 @@ function startPiece(
 		start = "holst-mars";
 	else if (tenseInFlight(r, target)) start = null;
 	else if (s.bootOwed) start = "strauss-zarathustra";
+	// Stryker disable next-line ConditionalExpression,StringLiteral: a boot cue has already set bootOwed, so the branch above takes it first
 	else if (r.cue !== null && r.cue !== "boot" && unheard(FIRST_OF_CUE[r.cue]))
 		start = FIRST_OF_CUE[r.cue];
 	if (start === null) return none;
