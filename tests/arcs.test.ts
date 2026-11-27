@@ -34,6 +34,7 @@ const worldWith = (
 	deficits,
 	gameTimeMin: 0,
 	maxJump,
+	holdT: HULL_SPECS[PLAYER_BASELINE_HULL].holdT,
 	bountyTargetOf: (r) => bountyTargetOf(r, generateContents(r), ENV, 0),
 });
 
@@ -172,7 +173,7 @@ describe("nextStep", () => {
 				family: "courier" as const,
 				requester: arc.requester,
 				reportAt: arc.requester,
-				rewardCr: 0,
+				payCr: 0,
 				distanceLy: 0,
 			})),
 		};

@@ -33,6 +33,7 @@ for (let n = 0; n < SEEDS; n++) {
 		deficits: {},
 		gameTimeMin: 0,
 		maxJump: HULL_SPECS[PLAYER_BASELINE_HULL].tankLy,
+		holdT: HULL_SPECS[PLAYER_BASELINE_HULL].holdT,
 		bountyTargetOf: (r) => bountyTargetOf(r, generateContents(r), env, 0),
 	};
 	const record = galaxy.systems[n % galaxy.systems.length];

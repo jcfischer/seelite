@@ -34,7 +34,7 @@ export const ARC_MAX_STEPS = 6;
 export const ARC_MIN_FAMILIES = 2;
 export const ARC_MIN_SYSTEMS = 2;
 /** Share of the foreseen step rewards paid for the answer, rounded to 10 Cr. */
-export const ANSWER_BONUS_SHARE = 0.5;
+export const ANSWER_PAYOUT_SHARE = 0.5;
 /** A shortage opens an arc at this many times the procurement floor. */
 export const SHORTAGE_DEFICIT_FACTOR = 2;
 /** Raiders open an arc where the leg chance is at least the anarchy figure's
@@ -74,6 +74,7 @@ export interface ArcWorld {
 	deficits: DeficitMap;
 	gameTimeMin: number;
 	maxJump: number;
+	holdT: number;
 	bountyTargetOf: (record: SystemRecord) => BountyTarget | null;
 	settledAt?: (key: CarrierKey) => Readonly<Record<string, number>>;
 }
@@ -83,7 +84,7 @@ export interface ArcStep {
 	family: JobFamily;
 	requester: JobStationRef;
 	reportAt: JobStationRef;
-	rewardCr: number;
+	payCr: number;
 	distanceLy: number;
 }
 
@@ -189,7 +190,7 @@ class Planner {
 			settled: this.world.settledAt?.(key) ?? {},
 			bountyTarget: this.world.bountyTargetOf(record),
 			salvageTargets: [],
-			holdT: 20,
+			holdT: this.world.holdT,
 		};
 		const offers = canPostJobs(station)
 			? [bindCourier(ctx), bindProcurement(ctx), bindBounty(ctx)].filter(
@@ -224,12 +225,16 @@ class Planner {
 	}
 
 	isAnswer(offer: JobOffer): boolean {
-		return (
-			offer.family === this.answerFamily &&
-			(this.answerKey === null || offer.requester.carrierKey === this.answerKey)
-		);
+		return matchesAnswer(offer, this.answerFamily, this.answerKey);
 	}
 }
+
+const matchesAnswer = (
+	step: { family: JobFamily; requester: JobStationRef },
+	family: JobFamily,
+	key: CarrierKey | null,
+): boolean =>
+	step.family === family && (key === null || step.requester.carrierKey === key);
 
 const reportPos = (step: { reportAt: JobStationRef }): Pos => ({
 	systemIndex: systemIndexOfKey(step.reportAt.carrierKey),
@@ -244,7 +249,7 @@ const stepOf = (offer: JobOffer, flownLy: number): ArcStep => ({
 	family: offer.family,
 	requester: offer.requester,
 	reportAt: offer.reportAt,
-	rewardCr: offer.rewardCr,
+	payCr: offer.rewardCr,
 	distanceLy: flownLy,
 });
 
@@ -425,7 +430,7 @@ export function openArc(
 				requester: { galaxyIndex: world.galaxyIndex, carrierKey: reqKey },
 				requesterName: station.name,
 				answerFamily: ANSWER_FAMILY[kind],
-				answerBonusCr: roundTo10(total * ANSWER_BONUS_SHARE),
+				answerBonusCr: roundTo10(total * ANSWER_PAYOUT_SHARE),
 				foreseen: plan.map((c) => c.offer.id),
 				taken: [],
 			},
@@ -448,11 +453,7 @@ const answerKeyOf = (arc: Arc): CarrierKey | null =>
 
 const resolved = (arc: Arc): boolean => {
 	const key = answerKeyOf(arc);
-	return arc.taken.some(
-		(s) =>
-			s.family === arc.answerFamily &&
-			(key === null || s.requester.carrierKey === key),
-	);
+	return arc.taken.some((s) => matchesAnswer(s, arc.answerFamily, key));
 };
 
 /**
