@@ -28,7 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// https://github.com/jcfischer/seelite/issues/771
+	// https://github.com/jcfischer/seelite/issues/771 — sentence approved by the principal, 2026-11-27.
 	{
 		date: "2026-11-27",
 		text: "Classical music marks the big moments: Also sprach Zarathustra when you start, then Dvořák, Bruckner and Holst’s Mars the first time you fly a new ship, scan a capital ship and fight.",
