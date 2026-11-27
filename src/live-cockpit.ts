@@ -649,6 +649,14 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${
 .lc-outfit-deltas { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10px; color: #c19667; }
 .lc-outfit-deltas b { color: #ffe1a9; }
 .lc-outfit-deltas i { font-style: normal; color: #fff4dc; }
+.lc-fitting-library { color: #ffe1a9; border-top: 1px solid #754421; padding: 4px; }
+.lc-fitting-library summary { cursor: pointer; }
+.lc-fitting-library[open] { flex: 1; overflow: auto; }
+.lc-outfitting:has(.lc-fitting-library[open]) > :is(.lc-outfit-panes,.lc-outfit-preview) { display: none; }
+seelite-fitting-browser { display: block; margin-top: 8px; }
+seelite-fitting-browser select { background: #150a03; color: #ffe1a9; border: 1px solid #8d5529; font: inherit; padding: 4px; }
+seelite-fitting-browser > div { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+seelite-fitting-browser p { white-space: pre-line; line-height: 1.5; }
 .lc-outfit-services { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 9px; color: #c19667; }
 .lc-outfit-fuel > div { display: flex; flex-direction: column; gap: 3px; padding: 6px; color: #ffe1a9; }
 .lc-outfit-fuel small { color: #c19667; font-size: 9px; }

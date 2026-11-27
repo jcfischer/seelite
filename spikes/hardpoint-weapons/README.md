@@ -24,3 +24,14 @@ All three catalog sizes use the same geometry. The exterior scales it by 1.2, 1.
 | Plasma projector | 2 | Lead a slow bolt as a bright orb leaves the cradle. | A missile rack offers a lock. |
 
 The four concept cards are review fixtures. Their cues and trade-offs are proposals for the pilot's keep, revise or drop decision.
+
+### Equipment estimates
+
+Each proposal uses grade E at the size shown. The proposed price uses the catalog row for the listed peer at that size and grade, including its price weight, the catalog's size and grade multipliers and rounding to 25 Cr. Sustained DPS assumes every projectile hits, including every scatter pellet. The cycle runs from the start of one burst or charge to the start of the next. Value divides sustained DPS by the displayed price in thousands of credits.
+
+| Concept | Size | Proposed cycle | DPS | Price peer (weight) |
+| --- | --- | --- | ---: | --- |
+| Autocannon | 2 | Six 5-damage rounds at 0.1 s intervals, then 1 s reload after the last round | 30 / 1.5 = 20 | Beam laser (2.5) |
+| Railgun | 2 | Charge 2 s, deal 80 damage, cool for 2 s | 80 / 4 = 20 | Military laser (6) |
+| Scattergun | 1 | Eight 3-damage pellets together, then 1.5 s reload | 24 / 1.5 = 16 | Pulse laser (1) |
+| Plasma projector | 2 | Charge 1 s, release one 54-damage bolt, recover for 2 s | 54 / 3 = 18 | Missile rack (1.5) |

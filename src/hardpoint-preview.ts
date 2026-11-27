@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { conceptEstimate, isConcept } from "./concept-estimates";
+import { fittingFamilies } from "./fitting-families";
 import { buildFitting } from "./hardpoint-model";
 import { isFittingFamily, type FittingFamily } from "./fitting-families";
 
@@ -89,4 +91,44 @@ export function registerFittingPreview() {
 		}
 	}
 	customElements.define("seelite-fitting", FittingPreview);
+	class FittingBrowser extends HTMLElement {
+		connectedCallback() {
+			const picker = document.createElement("select");
+			picker.setAttribute("aria-label", "Hardpoint model");
+			for (const family of fittingFamilies) {
+				const name = family.replaceAll("-", " ");
+				picker.add(
+					new Option(
+						name[0].toUpperCase() +
+							name.slice(1) +
+							(isConcept(family) ? " · Concept" : ""),
+						family,
+					),
+				);
+			}
+			const result = document.createElement("div");
+			const show = () => {
+				const family = picker.value;
+				if (!isFittingFamily(family)) return;
+				const model = document.createElement("seelite-fitting");
+				model.setAttribute("family", family);
+				result.replaceChildren(model);
+				if (isConcept(family)) {
+					const estimate = conceptEstimate(family);
+					const stats = document.createElement("p");
+					stats.textContent = `Size ${estimate.size} · Grade E estimates (all projectiles hit)\n${estimate.dps.toFixed(1)} sustained DPS · ${estimate.priceCr.toLocaleString("en-US")} Cr proposed\n${estimate.value.toFixed(2)} DPS per 1,000 Cr`;
+					result.append(stats);
+				}
+			};
+			picker.onchange = show;
+			this.replaceChildren(picker, result);
+			const details = this.closest("details");
+			if (details)
+				details.ontoggle = () => {
+					if (details.open && !result.firstChild) show();
+				};
+			if (!details || details.open) show();
+		}
+	}
+	customElements.define("seelite-fitting-browser", FittingBrowser);
 }
