@@ -1,3 +1,4 @@
+import { systemIndexOfKey } from "../src/carrier-key";
 import { recordTrade } from "../src/deficits";
 import {
 	type Arc,
@@ -65,20 +66,14 @@ for (let n = 0; n < SEEDS; n++) {
 			outcome = `no route (${next.reason})`;
 			break;
 		}
-		arc = recordStep(arc, next.offer);
-		arc = {
-			...arc,
-			taken: arc.taken.map((s, i) =>
-				i === arc.taken.length - 1 ? { ...s, distanceLy: next.flownLy } : s,
-			),
-		};
+		arc = recordStep(arc, next);
 	}
 	if (outcome === "answered") answered++;
 	const families = new Set(arc.taken.map((s) => s.family));
 	const systems = new Set(
 		arc.taken.flatMap((s) => [
-			Number(s.requester.carrierKey.split(":")[0]),
-			Number(s.reportAt.carrierKey.split(":")[0]),
+			systemIndexOfKey(s.requester.carrierKey),
+			systemIndexOfKey(s.reportAt.carrierKey),
 		]),
 	);
 	const ly = arc.taken.reduce((sum, s) => sum + s.distanceLy, 0);

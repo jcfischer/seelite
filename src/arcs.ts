@@ -377,7 +377,7 @@ const questionText = (
 	station: Station,
 ): string =>
 	kind === "raiders-on-route"
-		? `Who is sending raiders down the lanes out of ${record.name}?`
+		? `Who is sending raiders down the cruise lanes out of ${record.name}?`
 		: `Why is ${station.name} short of ${deficitOfNote(world, record, station)?.good ?? "goods"}?`;
 
 /**
@@ -435,13 +435,25 @@ export function openArc(
 }
 
 /** The arc with one more reported step. */
-export const recordStep = (arc: Arc, offer: JobOffer): Arc => ({
+export const recordStep = (
+	arc: Arc,
+	step: { offer: JobOffer; flownLy: number },
+): Arc => ({
 	...arc,
-	taken: [...arc.taken, stepOf(offer, offer.distanceLy)],
+	taken: [...arc.taken, stepOf(step.offer, step.flownLy)],
 });
 
-const resolved = (arc: Arc): boolean =>
-	arc.taken.some((s) => s.family === arc.answerFamily);
+const answerKeyOf = (arc: Arc): CarrierKey | null =>
+	arc.kind === "unexplained-shortage" ? arc.requester.carrierKey : null;
+
+const resolved = (arc: Arc): boolean => {
+	const key = answerKeyOf(arc);
+	return arc.taken.some(
+		(s) =>
+			s.family === arc.answerFamily &&
+			(key === null || s.requester.carrierKey === key),
+	);
+};
 
 /**
  * Names the next step, the answer, or that there is no route.
@@ -459,11 +471,7 @@ export function nextStep(arc: Arc, world: ArcWorld): NextResult {
 		};
 	if (arc.taken.length >= ARC_MAX_STEPS)
 		return { kind: "none", reason: "the arc spent its steps unanswered" };
-	const planner = new Planner(
-		world,
-		arc.answerFamily,
-		arc.kind === "unexplained-shortage" ? arc.requester.carrierKey : null,
-	);
+	const planner = new Planner(world, arc.answerFamily, answerKeyOf(arc));
 	const last = arc.taken[arc.taken.length - 1];
 	const start: Pos = last
 		? reportPos(last)

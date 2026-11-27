@@ -10,7 +10,7 @@ import {
 	recordStep,
 	refuseStep,
 } from "../src/arcs";
-import { carrierKey } from "../src/carrier-key";
+import { carrierKey, systemIndexOfKey } from "../src/carrier-key";
 import { recordTrade } from "../src/deficits";
 import { distanceLy, generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
@@ -65,7 +65,7 @@ const play = (arc: Arc, world: ArcWorld) => {
 		const n = nextStep(arc, world);
 		if (n.kind !== "step") return { arc, final: n, offers };
 		offers.push(n.offer);
-		arc = recordStep(arc, n.offer);
+		arc = recordStep(arc, n);
 	}
 	throw new Error("did not terminate");
 };
@@ -104,6 +104,21 @@ describe("openArc", () => {
 });
 
 describe("nextStep", () => {
+	test("a procurement step at another station does not answer the shortage", () => {
+		const { arc, deficits } = opened();
+		const world = worldWith(deficits);
+		const first = nextStep(arc, world);
+		if (first.kind !== "step") throw new Error("no first step");
+		const one = recordStep(arc, first);
+		const other = {
+			...one.taken[0],
+			family: arc.answerFamily,
+			requester: { ...arc.requester, carrierKey: carrierKey(999999, "x") },
+		};
+		const n = nextStep({ ...one, taken: [other] }, world);
+		expect(n.kind).not.toBe("answer");
+	});
+
 	test("plays out to the answer over 3-6 steps, 2+ families and 2+ systems, every hop in reach", () => {
 		const { arc, deficits } = opened();
 		const world = worldWith(deficits);
@@ -114,7 +129,7 @@ describe("nextStep", () => {
 		expect(
 			new Set(done.taken.map((s) => s.family)).size,
 		).toBeGreaterThanOrEqual(2);
-		const sys = (k: string) => Number(k.split(":")[0]);
+		const sys = systemIndexOfKey;
 		const systems = new Set(
 			done.taken.flatMap((s) => [
 				sys(s.requester.carrierKey),
