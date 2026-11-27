@@ -6,23 +6,23 @@ import {
 } from "./carrier-key";
 import { type DeficitMap, readDeficit } from "./deficits";
 import { DOMAIN } from "./domains";
-import { type SystemRecord, distanceLy } from "./galaxy";
+import { distanceLy, type SystemRecord } from "./galaxy";
 import { reachable } from "./galaxy-route";
 import {
 	type BindContext,
 	type BountyTarget,
-	type JobFamily,
-	type JobOffer,
-	type JobStationRef,
-	NO_EXCLUDED_STATION,
-	PROCUREMENT_MIN_DEFICIT_T,
 	bindBounty,
 	bindCourier,
 	bindProcurement,
 	canPostJobs,
 	deliveryCandidates,
+	type JobFamily,
+	type JobOffer,
+	type JobStationRef,
+	NO_EXCLUDED_STATION,
+	PROCUREMENT_MIN_DEFICIT_T,
 } from "./jobs";
-import { stationCommodities, marketStationOf } from "./market";
+import { marketStationOf, stationCommodities } from "./market";
 import { RAIDER_LEG_CHANCE, raiderLegChance } from "./raider-slots";
 import { mix } from "./rng";
 import type { Station, SystemContents } from "./system";
@@ -94,7 +94,7 @@ export interface Arc {
 	requester: JobStationRef;
 	requesterName: string;
 	answerFamily: JobFamily;
-	answerBonusCr: number;
+	answerPayoutCr: number;
 	foreseen: readonly string[];
 	taken: readonly ArcStep[];
 }
@@ -134,7 +134,7 @@ class Planner {
 	constructor(
 		readonly world: ArcWorld,
 		readonly answerFamily: JobFamily,
-		readonly answerKey: CarrierKey | null,
+		readonly answerScope: AnswerScope,
 	) {}
 
 	system(index: number): SystemRecord {
@@ -225,16 +225,23 @@ class Planner {
 	}
 
 	isAnswer(offer: JobOffer): boolean {
-		return matchesAnswer(offer, this.answerFamily, this.answerKey);
+		return matchesAnswer(offer, this.answerFamily, this.answerScope);
 	}
+}
+
+interface AnswerScope {
+	key: CarrierKey | null;
+	system: number;
 }
 
 const matchesAnswer = (
 	step: { family: JobFamily; requester: JobStationRef },
 	family: JobFamily,
-	key: CarrierKey | null,
+	scope: AnswerScope,
 ): boolean =>
-	step.family === family && (key === null || step.requester.carrierKey === key);
+	step.family === family &&
+	systemIndexOfKey(step.requester.carrierKey) === scope.system &&
+	(scope.key === null || step.requester.carrierKey === scope.key);
 
 const reportPos = (step: { reportAt: JobStationRef }): Pos => ({
 	systemIndex: systemIndexOfKey(step.reportAt.carrierKey),
@@ -404,11 +411,10 @@ export function openArc(
 	const reqKey = keyOf(record, station);
 	const reasons: string[] = [];
 	for (const kind of kinds) {
-		const planner = new Planner(
-			world,
-			ANSWER_FAMILY[kind],
-			kind === "unexplained-shortage" ? reqKey : null,
-		);
+		const planner = new Planner(world, ANSWER_FAMILY[kind], {
+			key: kind === "unexplained-shortage" ? reqKey : null,
+			system: record.index,
+		});
 		const plan = route(
 			planner,
 			[],
@@ -430,7 +436,7 @@ export function openArc(
 				requester: { galaxyIndex: world.galaxyIndex, carrierKey: reqKey },
 				requesterName: station.name,
 				answerFamily: ANSWER_FAMILY[kind],
-				answerBonusCr: roundTo10(total * ANSWER_PAYOUT_SHARE),
+				answerPayoutCr: roundTo10(total * ANSWER_PAYOUT_SHARE),
 				foreseen: plan.map((c) => c.offer.id),
 				taken: [],
 			},
@@ -448,12 +454,14 @@ export const recordStep = (
 	taken: [...arc.taken, stepOf(step.offer, step.flownLy)],
 });
 
-const answerKeyOf = (arc: Arc): CarrierKey | null =>
-	arc.kind === "unexplained-shortage" ? arc.requester.carrierKey : null;
+const answerScopeOf = (arc: Arc): AnswerScope => ({
+	key: arc.kind === "unexplained-shortage" ? arc.requester.carrierKey : null,
+	system: systemIndexOfKey(arc.requester.carrierKey),
+});
 
 const resolved = (arc: Arc): boolean => {
-	const key = answerKeyOf(arc);
-	return arc.taken.some((s) => matchesAnswer(s, arc.answerFamily, key));
+	const scope = answerScopeOf(arc);
+	return arc.taken.some((s) => matchesAnswer(s, arc.answerFamily, scope));
 };
 
 /**
@@ -467,12 +475,12 @@ export function nextStep(arc: Arc, world: ArcWorld): NextResult {
 	if (resolved(arc))
 		return {
 			kind: "answer",
-			bonusCr: arc.answerBonusCr,
+			bonusCr: arc.answerPayoutCr,
 			text: `Answered: ${arc.question}`,
 		};
 	if (arc.taken.length >= ARC_MAX_STEPS)
 		return { kind: "none", reason: "the arc spent its steps unanswered" };
-	const planner = new Planner(world, arc.answerFamily, answerKeyOf(arc));
+	const planner = new Planner(world, arc.answerFamily, answerScopeOf(arc));
 	const last = arc.taken[arc.taken.length - 1];
 	const start: Pos = last
 		? reportPos(last)

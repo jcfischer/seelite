@@ -76,8 +76,8 @@ describe("openArc", () => {
 		const { arc, key } = opened();
 		expect(arc.question.length).toBeGreaterThan(0);
 		expect(arc.requester.carrierKey).toBe(key);
-		expect(arc.answerBonusCr).toBeGreaterThan(0);
-		expect(arc.answerBonusCr % 10).toBe(0);
+		expect(arc.answerPayoutCr).toBeGreaterThan(0);
+		expect(arc.answerPayoutCr % 10).toBe(0);
 		expect(arc.foreseen.length).toBeGreaterThanOrEqual(ARC_MIN_STEPS);
 		expect(arc.foreseen.length).toBeLessThanOrEqual(ARC_MAX_STEPS);
 	});
@@ -161,6 +161,37 @@ describe("nextStep", () => {
 			if (drifted.kind === "none")
 				expect(drifted.reason.length).toBeGreaterThan(0);
 		}
+	});
+
+	test("a bounty in a neighbouring system does not answer a raiders arc", () => {
+		const { arc, deficits } = opened();
+		const raiders = {
+			...arc,
+			kind: "raiders-on-route" as const,
+			answerFamily: "bounty" as const,
+		};
+		const elsewhere = {
+			...arc.requester,
+			carrierKey: carrierKey(
+				(systemIndexOfKey(arc.requester.carrierKey) + 1) % 50,
+				"x",
+			),
+		};
+		const bounty = {
+			offerId: "b",
+			family: "bounty" as const,
+			requester: elsewhere,
+			reportAt: elsewhere,
+			payCr: 0,
+			distanceLy: 0,
+		};
+		expect(
+			nextStep({ ...raiders, taken: [bounty] }, worldWith(deficits)).kind,
+		).not.toBe("answer");
+		const home = { ...bounty, requester: arc.requester };
+		expect(
+			nextStep({ ...raiders, taken: [home] }, worldWith(deficits)).kind,
+		).toBe("answer");
 	});
 
 	test("answers no route once the budget is spent", () => {

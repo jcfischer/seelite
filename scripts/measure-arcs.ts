@@ -1,12 +1,13 @@
-import { systemIndexOfKey } from "../src/carrier-key";
-import { recordTrade } from "../src/deficits";
 import {
 	type Arc,
 	type ArcWorld,
+	flownLyOf,
 	nextStep,
 	openArc,
 	recordStep,
 } from "../src/arcs";
+import { systemIndexOfKey } from "../src/carrier-key";
+import { recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
 import { canPostJobs } from "../src/jobs";
@@ -77,9 +78,9 @@ for (let n = 0; n < SEEDS; n++) {
 			systemIndexOfKey(s.reportAt.carrierKey),
 		]),
 	);
-	const ly = arc.taken.reduce((sum, s) => sum + s.distanceLy, 0);
+	const ly = flownLyOf(arc);
 	console.log(
-		`seed ${seed} ${arc.kind}: ${outcome}, ${arc.taken.length} steps, families ${[...families].join("+")}, ${systems.size} systems, ${ly.toFixed(1)} ly, bonus ${arc.answerBonusCr} Cr`,
+		`seed ${seed} ${arc.kind}: ${outcome}, ${arc.taken.length} steps, families ${[...families].join("+")}, ${systems.size} systems, ${ly.toFixed(1)} ly, bonus ${arc.answerPayoutCr} Cr`,
 	);
 }
 
